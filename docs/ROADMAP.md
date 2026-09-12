@@ -1,0 +1,115 @@
+# Roadmap — FPS Simulator Engine
+
+Milestones are ordered, not dated (hobby project, no fixed deadline — see
+VISION.md). Sizes are relative effort, not calendar estimates: S / M / L.
+
+## M0 — Project & Infrastructure Setup (S)
+No engine code yet — get the project, tooling, and pipelines standing.
+- GitHub repository, Git Flow branches (`main` + `develop`), branch
+  protection, PR-gated merges
+- `.gitignore`, `.editorconfig`, local `commit-msg` hook (Conventional
+  Commits validation)
+- `vcpkg.json` manifest + CMake toolchain wiring
+- Windows bootstrap script (`scripts/bootstrap-windows.ps1`): VS Build
+  Tools at a custom `--installPath`, Windows SDK, CMake, Ninja, Git, vcpkg
+- WSL bootstrap script (`scripts/bootstrap-wsl.sh`): CMake, Ninja, vcpkg,
+  clang-tidy, clang-format, gdb, GitHub CLI, kubectl, helm
+- `.vscode/extensions.json` recommended extensions
+- GitHub Actions CI pipeline: build+test client (Windows runner) and
+  server (Linux runner), clang-format/clang-tidy, warnings-as-errors,
+  ASan+UBSan, asset-pipeline check (ephemeral signing key)
+- Self-hosted k3s cluster (single node, own hardware)
+- Helm chart(s) for the dedicated server; push-based CD workflow
+  (GitHub Actions → `helm upgrade`/`helm uninstall` on push/branch-delete)
+- Shared `hostPath` volume for signed asset packs
+
+**Exercises:** ENGINEERING.md in full (CI/CD, Git Workflow, Developer
+Environment, Deployment & CD), ADR-08, ADR-25
+**Exit criteria:** a fresh clone + the two bootstrap scripts produce a
+working build environment on both sides; CI is green on a skeleton
+commit; pushing a test branch deploys a hello-world server container to
+k3s and tears down automatically on branch delete
+
+## M1 — De-risking Spikes (S)
+Prove the riskiest unknowns work in isolation before building on them.
+No gameplay yet.
+- Falcor renders a textured, rotating primitive on the Windows target
+- Minimal GameNetworkingSockets round-trip: Windows client ↔ Linux
+  dedicated server
+- Minimal PhysX prediction/reconciliation test: one entity, snap/blend
+  correction (ADR-04) visibly acceptable (no wild jitter)
+
+**Exercises:** ADR-02, ADR-03, ADR-04, ADR-09, ADR-11 (C++23), ADR-12
+(Google C++ Style Guide), ADR-13 (GoogleTest/Benchmark) — the first code
+written on this project, so where these foundational tooling ADRs are
+first exercised in practice
+**Exit criteria:** all three spikes run standalone and demonstrably work
+
+## M2 — Networked Movement Skeleton (M)
+- US-01 Connect to Dedicated Server
+- US-02 Join a Match (2–8 Players)
+- US-04 Move Player Character
+- US-05 Manage Stamina
+- Placeholder/hardcoded test space (not yet through the OpenUSD pipeline)
+
+**Exercises:** ADR-01, ADR-05, ADR-06, ADR-21, ADR-24
+**Exit criteria:** 2–8 Windows clients connect to the Linux server, join a
+match, move (walk/run/crouch/prone) in a placeholder space, see each
+other with prediction + reconciliation working
+
+## M3 — Combat Skeleton (L)
+- US-06 Aim Weapon, US-07 Fire Rifle, US-08 Reload Rifle,
+  US-09 Apply Weapon Recoil
+- US-10 Simulate Bullet Ballistics, US-11 Detect Hit by Impact Location,
+  US-12 Apply Damage by Hit Location
+
+**Exercises:** ADR-02, ADR-23 (through Damage phase), ADR-24
+(WeaponHandling), ADR-14 (Slang shaders exercised by weapon-related
+rendering, e.g. muzzle flash/tracer effects)
+**Exit criteria:** players aim/fire/reload a rifle; bullets follow a real
+server-computed physics trajectory; hits resolve by body part with damage
+applied (debug HUD/log is enough, no scoring yet)
+
+## M4 — Full Round Loop (M)
+- US-03 Spawn into a Round, US-13 Player Death (No Respawn),
+  US-14 Determine Round End / Win Condition
+
+**Exercises:** ADR-22 (Lua), ADR-23 (Scripts/Behaviours phase), ADR-10
+(Steam Audio — first point in the roadmap where audio cues, e.g. death/
+round-end stingers, become meaningful to exercise)
+**Exit criteria:** a complete round is playable start to finish — spawn,
+fight, permanent death for the round, win condition ends the round, next
+round starts automatically
+
+## M5 — Asset Pipeline (M)
+Replaces the placeholder level/assets from M2–M4 with the real pipeline.
+- Asset cooker CLI: Assimp + meshoptimizer (meshes), DirectXTex (textures),
+  OpenUSD-authored test map baked to runtime format
+- Signed, verified packs (client + server split)
+
+**Exercises:** ADR-15 through ADR-20
+**Exit criteria:** both executables load exclusively from signed, verified
+packs produced by the cooker; no hardcoded/placeholder content remains
+
+## M6 — Hardening & v1 Release (S)
+- US-15 Server-Side Validation (Anti-Cheat Baseline)
+- Full v1 "definition of done" verification pass (REQUIREMENTS.md)
+
+**Exercises:** §8 Security concept, ADR-18 (signing enforced)
+**Exit criteria:** matches REQUIREMENTS.md's v1 definition of done exactly
+
+---
+
+## Beyond v1 (not planned in detail)
+- More weapons, more maps
+- Network encryption (deferred per ADR/§8, trusted-LAN-only in v1)
+- Matchmaking/master server
+- Cross-platform client (would require revisiting Falcor's Linux/Vulkan
+  path — currently Windows-only, see ADR-09)
+- Incremental asset rebuild (vs. full rebake, see ADR risk notes)
+- LuaJIT, if policy-script performance ever becomes a bottleneck
+- Production (`main`) deployment target — explicitly undecided for now
+  (see ENGINEERING.md, Deployment & CD)
+- Agones, if fleet-scale dynamic server allocation is ever needed
+- Remote/public access to non-production environments (VPN or
+  port-forwarding) — LAN-only for now
