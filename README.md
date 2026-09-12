@@ -37,4 +37,4 @@ This is a solo-developer hobby project with no fixed deadline.
 
 ## License
 
-Not yet decided.
+[MIT](LICENSE)
