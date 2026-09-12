@@ -1,0 +1,38 @@
+# EditorConfig — https://editorconfig.org
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# C++ (Google C++ Style Guide — 2-space indent, 80-col)
+[*.{h,hpp,hh,inl,c,cc,cpp,cxx}]
+indent_size = 2
+max_line_length = 80
+
+# Lua (gameplay scripting — Scripts/Behaviours phase)
+[*.lua]
+indent_size = 2
+
+# CMake
+[{CMakeLists.txt,*.cmake}]
+indent_size = 2
+
+# Data / config
+[*.{json,yml,yaml}]
+indent_size = 2
+
+[*.md]
+indent_size = 2
+trim_trailing_whitespace = false
+
+# Windows-only scripts keep CRLF
+[*.{ps1,bat,cmd}]
+end_of_line = crlf
+
+[Makefile]
+indent_style = tab
