@@ -31,18 +31,19 @@ working build environment on both sides; CI is green on a skeleton commit
 
 ### M0b — Server & k8s Infra
 - Self-hosted k3s cluster (single node, own hardware)
-- Self-hosted GitHub Actions runner on the same host/LAN (hosted runners
-  can't reach a LAN-only cluster)
-- Server Dockerfile; Helm chart(s) for the dedicated server; push-based
-  CD workflow (GitHub Actions → `helm upgrade`/`helm uninstall` on
-  push/branch-delete)
+- Flux installed in the cluster, reconciling `main` and `develop` from
+  Git (GHCR image + Helm chart). No self-hosted GitHub Actions runner
+  anywhere in this pipeline — `feature/*`/`hotfix/*`/`release/*`
+  branches are not deployed to k3s at all (see ADR-0026)
+- Server Dockerfile; Helm chart(s) for the dedicated server
 - Shared `hostPath` volume for signed asset packs
 - CI addition: `helm lint` + `docker build` validation on every PR
   touching the chart/Dockerfile
 
-**Exercises:** ENGINEERING.md's CI/CD and Deployment & CD sections
-**Exit criteria:** pushing a test branch deploys a hello-world server
-container to k3s and tears down automatically on branch delete
+**Exercises:** ENGINEERING.md's CI/CD and Deployment & CD sections;
+ADR-0026
+**Exit criteria:** Flux reconciles `main`/`develop` to a hello-world
+server automatically on merge, in their respective namespaces
 
 ## M1 — De-risking Spikes (S)
 Prove the riskiest unknowns work in isolation before building on them.
