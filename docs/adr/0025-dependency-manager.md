@@ -1,6 +1,6 @@
 # Dependency Manager: vcpkg
 
-Dependencies are managed via vcpkg (MIT, manifest mode via `vcpkg.json`), integrated in CI via `lukka/run-vcpkg`.
+Dependencies are managed via vcpkg (MIT, manifest mode via `vcpkg.json`), vendored as a pinned git submodule (`third_party/vcpkg`) rather than installed via a CI action like `lukka/run-vcpkg` — a fixed submodule commit gives reproducible dependency resolution per-clone without depending on a third-party action's own version pinning. See `docs/ENGINEERING.md`'s CI/CD section for the binary-cache mechanism (a GitHub Packages NuGet feed, not vcpkg's native GitHub-Actions-cache backend, which was removed upstream).
 
 ## Considered Options
 
