@@ -33,7 +33,7 @@ find_package(spdlog CONFIG REQUIRED)
 enable_testing()
 find_package(GTest CONFIG REQUIRED)
 
-add_subdirectory(src/shared)
+add_subdirectory(src/modules/version)
 add_subdirectory(src/server)
 if (WIN32)
   add_subdirectory(src/client)

@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_ENGINE_VERSION_H_
-#define AUGUSTA_ENGINE_VERSION_H_
+#ifndef AUGUSTA_VERSION_H_
+#define AUGUSTA_VERSION_H_
 
 #include <string_view>
 
@@ -11,4 +11,4 @@ std::string_view EngineVersion();
 
 }  // namespace augusta
 
-#endif  // AUGUSTA_ENGINE_VERSION_H_
+#endif  // AUGUSTA_VERSION_H_
