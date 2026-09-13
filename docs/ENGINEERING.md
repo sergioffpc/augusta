@@ -57,6 +57,10 @@ the decisions already made in ARCHITECTURE.md:
      end to end — the real release private key never touches CI
 - **Not in CI:** TSan (expensive/noisy — run manually/periodically
   instead) and Tracy (interactive profiling tool, not a CI check).
+- **Releases:** a separate workflow, triggered only on `v*` tags, builds
+  Release-config client/server binaries and attaches them to a GitHub
+  Release — not run on every push, so cutting a release is a deliberate
+  tag rather than automatic.
 - **Artifacts/releases:** out of scope for now — CI validates
   build+test+lint only. A publishing pipeline gets built when there's an
   actual release to make.
