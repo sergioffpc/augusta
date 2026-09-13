@@ -20,7 +20,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
-  path: ./clusters/r630/flux-system
+  path: ./clusters/onprem/flux-system
   prune: true
   sourceRef:
     kind: GitRepository
@@ -35,7 +35,7 @@ spec:
   dependsOn:
     - name: flux-system
   interval: 10m
-  path: ./clusters/r630/apps
+  path: ./clusters/onprem/apps
   prune: true
   sourceRef:
     kind: GitRepository
