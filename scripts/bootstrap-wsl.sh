@@ -13,7 +13,8 @@ sudo apt-get install -y \
   gdb \
   curl \
   git \
-  gnupg
+  gnupg \
+  sccache
 
 if ! command -v gh >/dev/null 2>&1; then
   curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /usr/share/keyrings/githubcli-archive-keyring.gpg >/dev/null

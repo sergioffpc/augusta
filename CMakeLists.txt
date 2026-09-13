@@ -8,6 +8,14 @@ if (NOT DEFINED CMAKE_TOOLCHAIN_FILE)
       CACHE STRING "Vcpkg toolchain file")
 endif()
 
+# Use sccache when it's on PATH (ADR-0008). Skip it under MSVC's default
+# Visual Studio generator - sccache only works there via Ninja.
+find_program(SCCACHE_PROGRAM sccache)
+if (SCCACHE_PROGRAM AND (NOT CMAKE_GENERATOR MATCHES "Visual Studio"))
+  set(CMAKE_C_COMPILER_LAUNCHER "${SCCACHE_PROGRAM}")
+  set(CMAKE_CXX_COMPILER_LAUNCHER "${SCCACHE_PROGRAM}")
+endif()
+
 project(augusta LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)

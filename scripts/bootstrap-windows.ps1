@@ -23,6 +23,7 @@ Install-WingetPackage -Id "Microsoft.WindowsSDK.10"
 Install-WingetPackage -Id "Kitware.CMake"
 Install-WingetPackage -Id "Ninja-build.Ninja"
 Install-WingetPackage -Id "Git.Git"
+Install-WingetPackage -Id "Mozilla.sccache"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
