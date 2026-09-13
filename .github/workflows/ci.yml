@@ -2,6 +2,13 @@ name: CI
 
 on:
   push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -12,7 +19,51 @@ env:
   SCCACHE_GHA_ENABLED: "true"
 
 jobs:
+  changes:
+    runs-on: ubuntu-26.04
+    outputs:
+      run_build: ${{ steps.filter.outputs.run_build }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - id: filter
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          else
+            base="${{ github.event.before }}"
+          fi
+
+          if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null; then
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff --name-only "$base" "${{ github.sha }}" \
+              | grep -qE '^(src/|tests/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party$|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$)'; then
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  format:
+    needs: changes
+    if: needs.changes.outputs.run_build == 'true'
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format
+
+      - name: Check formatting
+        run: find src tests \( -name '*.cpp' -o -name '*.h' \) | xargs clang-format --dry-run --Werror
+
   build-client:
+    needs: [changes, format]
+    if: needs.changes.outputs.run_build == 'true'
     # Pinned rather than windows-latest, so the toolchain doesn't shift
     # underneath us when GitHub migrates the "latest" runner image.
     runs-on: windows-2025
@@ -51,9 +102,11 @@ jobs:
         run: ctest --preset windows
 
   build-server:
+    needs: [changes, format]
+    if: needs.changes.outputs.run_build == 'true'
     # Pinned rather than ubuntu-latest - see build-client. This also makes
-    # clang-format/clang-tidy's version stable without needing to pull them
-    # from apt.llvm.org (a stable runner image already gives a stable distro
+    # clang-tidy's version stable without needing to pull it from
+    # apt.llvm.org (a stable runner image already gives a stable distro
     # package version).
     runs-on: ubuntu-26.04
     steps:
@@ -61,8 +114,8 @@ jobs:
         with:
           submodules: true
 
-      - name: Install LLVM tools + mono
-        run: sudo apt-get update && sudo apt-get install -y clang-format clang-tidy ninja-build mono-complete
+      - name: Install clang-tidy + mono
+        run: sudo apt-get update && sudo apt-get install -y clang-tidy ninja-build mono-complete
 
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
 
@@ -74,9 +127,6 @@ jobs:
           nuget_path=$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1)
           mono "$nuget_path" sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
           mono "$nuget_path" setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
-
-      - name: Check formatting
-        run: find src tests \( -name '*.cpp' -o -name '*.h' \) | xargs clang-format --dry-run --Werror
 
       - name: Configure
         run: cmake --preset linux
@@ -91,6 +141,8 @@ jobs:
         run: ctest --preset linux
 
   sanitizers:
+    needs: [changes, format]
+    if: needs.changes.outputs.run_build == 'true' && github.event_name == 'pull_request'
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
