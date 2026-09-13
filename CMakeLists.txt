@@ -1,9 +1,10 @@
 cmake_minimum_required(VERSION 3.25)
 
-# Default to the vcpkg submodule's toolchain (pinned in vcpkg/, see .gitmodules)
-# unless the caller already picked one. Must run before project().
+# Default to the vcpkg submodule's toolchain (pinned in third_party/vcpkg,
+# see .gitmodules) unless the caller already picked one. Must run before
+# project().
 if (NOT DEFINED CMAKE_TOOLCHAIN_FILE)
-  set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg/scripts/buildsystems/vcpkg.cmake"
+  set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/vcpkg/scripts/buildsystems/vcpkg.cmake"
       CACHE STRING "Vcpkg toolchain file")
 endif()
 

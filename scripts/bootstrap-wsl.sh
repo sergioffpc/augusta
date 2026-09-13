@@ -35,10 +35,11 @@ fi
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# vcpkg is a pinned git submodule (vcpkg/) rather than a machine-wide install,
-# so dependency resolution is reproducible per-clone (see CMakeLists.txt).
+# vcpkg is a pinned git submodule (third_party/vcpkg) rather than a
+# machine-wide install, so dependency resolution is reproducible per-clone
+# (see CMakeLists.txt).
 git -C "$repo_root" submodule update --init --recursive
-"$repo_root/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+"$repo_root/third_party/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
 
 git -C "$repo_root" config core.hooksPath .githooks
 

@@ -26,10 +26,11 @@ Install-WingetPackage -Id "Git.Git"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
-# vcpkg is a pinned git submodule (vcpkg/) rather than a machine-wide install,
-# so dependency resolution is reproducible per-clone (see CMakeLists.txt).
+# vcpkg is a pinned git submodule (third_party/vcpkg) rather than a
+# machine-wide install, so dependency resolution is reproducible per-clone
+# (see CMakeLists.txt).
 git -C $repoRoot submodule update --init --recursive
-& "$repoRoot\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+& "$repoRoot\third_party\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
 
 git -C $repoRoot config core.hooksPath .githooks
 

@@ -20,12 +20,12 @@ jobs:
 
       - name: Bootstrap vcpkg
         shell: pwsh
-        run: .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
 
       - name: Configure vcpkg NuGet cache
         shell: pwsh
         run: |
-          $nugetPath = & ".\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
+          $nugetPath = & ".\third_party\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
           & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
           & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
 
@@ -50,11 +50,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y clang-format clang-tidy ninja-build mono-complete
 
       - name: Bootstrap vcpkg
-        run: ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
+        run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
 
       - name: Configure vcpkg NuGet cache
         run: |
-          nuget_path=$(./vcpkg/vcpkg fetch nuget | tail -n 1)
+          nuget_path=$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1)
           mono "$nuget_path" sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
           mono "$nuget_path" setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
 
@@ -84,11 +84,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y mono-complete
 
       - name: Bootstrap vcpkg
-        run: ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
+        run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
 
       - name: Configure vcpkg NuGet cache
         run: |
-          nuget_path=$(./vcpkg/vcpkg fetch nuget | tail -n 1)
+          nuget_path=$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1)
           mono "$nuget_path" sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
 
       - name: Configure (ASan + UBSan)
