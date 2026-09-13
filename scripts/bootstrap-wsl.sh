@@ -3,18 +3,27 @@
 # (docs/ENGINEERING.md, Developer Environment).
 set -euo pipefail
 
+LLVM_VERSION="18"
+
 sudo apt-get update
 sudo apt-get install -y \
   build-essential \
   cmake \
   ninja-build \
-  clang-tidy \
-  clang-format \
   gdb \
   curl \
   git \
   gnupg \
   sccache
+
+# Pinned to the same LLVM_VERSION as .github/workflows/ci.yml, so local
+# clang-format/clang-tidy output matches what CI enforces.
+wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+chmod +x /tmp/llvm.sh
+sudo /tmp/llvm.sh "$LLVM_VERSION"
+sudo apt-get install -y "clang-format-$LLVM_VERSION" "clang-tidy-$LLVM_VERSION"
+sudo update-alternatives --install /usr/bin/clang-format clang-format "/usr/bin/clang-format-$LLVM_VERSION" 100
+sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy "/usr/bin/clang-tidy-$LLVM_VERSION" 100
 
 if ! command -v gh >/dev/null 2>&1; then
   curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /usr/share/keyrings/githubcli-archive-keyring.gpg >/dev/null

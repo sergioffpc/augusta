@@ -1,5 +1,6 @@
 # Build output
 build/
+build-san/
 out/
 bin/
 obj/
@@ -29,9 +30,11 @@ _deps/
 *.VC.db
 *.VC.opendb
 
-# VS Code (recommended extensions are committed, everything else is personal)
+# VS Code (project-wide settings are committed, personal overrides are not)
 .vscode/*
 !.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
 
 # Ninja / compile commands
 .ninja_deps

@@ -1,0 +1,69 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "windows",
+      "displayName": "Windows (Ninja + cl)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "linux",
+      "displayName": "Linux (Ninja)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "linux-sanitizers",
+      "displayName": "Linux (ASan + UBSan)",
+      "inherits": "linux",
+      "binaryDir": "${sourceDir}/build-san",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "windows", "configurePreset": "windows" },
+    { "name": "linux", "configurePreset": "linux" },
+    { "name": "linux-sanitizers", "configurePreset": "linux-sanitizers" }
+  ],
+  "testPresets": [
+    {
+      "name": "windows",
+      "configurePreset": "windows",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "linux",
+      "configurePreset": "linux",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "linux-sanitizers",
+      "configurePreset": "linux-sanitizers",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

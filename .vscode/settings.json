@@ -1,0 +1,28 @@
+{
+  "editor.formatOnSave": true,
+  "editor.rulers": [120],
+  "[cpp]": { "editor.defaultFormatter": "xaver.clang-format" },
+  "[c]": { "editor.defaultFormatter": "xaver.clang-format" },
+
+  "C_Cpp.intelliSenseEngine": "disabled",
+
+  "cmake.useCMakePresets": "always",
+  "cmake.configureOnOpen": true,
+
+  "files.exclude": {
+    "**/build": true,
+    "**/build-san": true
+  },
+  "search.exclude": {
+    "third_party/**": true,
+    "**/build": true,
+    "**/build-san": true,
+    "**/vcpkg_installed": true
+  },
+  "files.watcherExclude": {
+    "third_party/**": true,
+    "**/build/**": true,
+    "**/build-san/**": true,
+    "**/vcpkg_installed/**": true
+  }
+}
