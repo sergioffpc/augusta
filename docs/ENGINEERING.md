@@ -39,19 +39,30 @@ the decisions already made in ARCHITECTURE.md:
 
 - **Provider:** GitHub Actions — native Windows and Linux runners match
   the client/server platform split exactly.
-- **Trigger:** every push (solo project, no formal PR gating needed).
+- **Trigger:** `push` to `main`/`develop`, and `pull_request` targeting
+  either. A `changes` job diffs against the base commit first and skips
+  build/test/lint entirely when nothing under `src/`, `tests/`,
+  `CMakeLists.txt`, `CMakePresets.json`, `vcpkg.json`, the `third_party`
+  submodule pointer, `.clang-format`/`.clang-tidy`, or the workflow file
+  itself changed (a docs-only PR shouldn't pay for a full build).
+  `concurrency` cancels a still-running run for the same branch/PR when
+  a new push arrives, so superseded runs don't keep burning minutes.
 - **Pipeline stages:**
-  1. Build + unit test the client on a Windows runner
-  2. Build + unit test the server on a Linux runner
+  1. `clang-format` check, alone in its own fast job — gates everything
+     below (`needs:`), so a formatting slip fails in seconds instead of
+     after a full Windows + Linux + sanitizers build
+  2. Build + unit test the client on a Windows runner
+  3. Build + unit test the server on a Linux runner, plus `clang-tidy`
+     (Google style checks profile)
+  4. ASan + UBSan test build, Linux only, and only for `pull_request`
+     runs — skipped on the `push` that lands after merge, since the PR
+     already validated it
   - Dependency restore: `vcpkg install` (manifest mode) before the build
     step, both runners. Binary cache via a GitHub Packages NuGet feed
     (vcpkg's native GitHub-Actions-cache backend was removed upstream in
     2026 — a NuGet feed is now the supported caching path).
-  3. `clang-format` check (fails on unformatted diffs)
-  4. `clang-tidy` (Google style checks profile)
   5. Compile with a strict warning set, treated as errors
-  6. ASan + UBSan test build, both platforms
-  7. Asset pipeline check: build the asset cooker, generate a fresh
+  6. Asset pipeline check: build the asset cooker, generate a fresh
      throwaway Ed25519 keypair for this run, cook the test assets, sign
      with the ephemeral key, and verify the signed pack loads correctly
      end to end — the real release private key never touches CI
