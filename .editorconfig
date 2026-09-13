@@ -9,14 +9,10 @@ trim_trailing_whitespace = true
 indent_style = space
 indent_size = 4
 
-# C++ (Google C++ Style Guide — 2-space indent, 80-col)
+# C++ (Google C++ Style Guide, 2-space indent; 120-col per .clang-format)
 [*.{h,hpp,hh,inl,c,cc,cpp,cxx}]
 indent_size = 2
-max_line_length = 80
-
-# Lua (gameplay scripting — Scripts/Behaviours phase)
-[*.lua]
-indent_size = 2
+max_line_length = 120
 
 # CMake
 [{CMakeLists.txt,*.cmake}]
