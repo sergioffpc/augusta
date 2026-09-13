@@ -18,14 +18,14 @@ jobs:
     # Pinned rather than ubuntu-latest - see ci.yml's build-client comment.
     runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: true
 
       - name: Install build tools
         run: sudo apt-get update && sudo apt-get install -y ninja-build mono-complete
 
-      - uses: mozilla-actions/sccache-action@v0.0.11
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
 
       - name: Bootstrap vcpkg
         run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
@@ -35,7 +35,7 @@ jobs:
           nuget_path=$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1)
           mono "$nuget_path" sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
 
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@faaca9a8f6edddba5725ffe5adefdab6669a2eca # v3
         with:
           languages: cpp
           build-mode: manual
@@ -50,4 +50,4 @@ jobs:
       - name: Build
         run: cmake --build --preset linux
 
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@faaca9a8f6edddba5725ffe5adefdab6669a2eca # v3
