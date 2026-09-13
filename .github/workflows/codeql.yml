@@ -1,0 +1,51 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+  packages: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build mono-complete
+
+      - uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Bootstrap vcpkg
+        run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: Configure vcpkg NuGet cache
+        run: |
+          nuget_path=$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1)
+          mono "$nuget_path" sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: cpp
+
+      # Real CMake/vcpkg build rather than CodeQL's autobuild, which
+      # doesn't know how to init the vcpkg submodule or pick our preset.
+      - name: Configure
+        run: cmake --preset linux
+        env:
+          VCPKG_BINARY_SOURCES: "clear;nuget,GitHubPackages,readwrite"
+
+      - name: Build
+        run: cmake --build --preset linux
+
+      - uses: github/codeql-action/analyze@v3
