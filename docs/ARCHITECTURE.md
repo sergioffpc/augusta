@@ -347,6 +347,9 @@ aid only and do not affect numbering.
 - [ADR-0022 — Gameplay scripting language: Lua](./adr/0022-gameplay-scripting-language.md)
 - [ADR-0023 — SimulationWorld phase pipeline](./adr/0023-simulationworld-phase-pipeline.md)
 
+### Infrastructure & CD
+- [ADR-0026 — CD strategy: Flux for main/develop, push-based for ephemeral environments](./adr/0026-cd-strategy.md)
+
 ## 10. Quality Requirements
 See [REQUIREMENTS.md](./REQUIREMENTS.md) — Non-Functional Requirements
 (NFR-01 to NFR-06).
