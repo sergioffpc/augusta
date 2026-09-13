@@ -17,7 +17,7 @@ function Install-WingetPackage {
   winget @args
 }
 
-Install-WingetPackage -Id "Microsoft.VisualStudio.2022.BuildTools" `
+Install-WingetPackage -Id "Microsoft.VisualStudio.BuildTools" `
   -Override @("--wait", "--quiet", "--add", "Microsoft.VisualStudio.Workload.VCTools", "--includeRecommended")
 Install-WingetPackage -Id "Microsoft.WindowsSDK.10"
 Install-WingetPackage -Id "Kitware.CMake"
@@ -35,4 +35,4 @@ git -C $repoRoot submodule update --init --recursive
 
 git -C $repoRoot config core.hooksPath .githooks
 
-Write-Host "Windows bootstrap complete."
+Write-Host "Windows bootstrap complete. Open a new terminal (this one's PATH predates the tools just installed) before running cmake/ninja."

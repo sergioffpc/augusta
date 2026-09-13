@@ -17,15 +17,12 @@ sudo apt-get install -y \
   curl \
   git \
   gnupg \
-  sccache
-
-if ! command -v gh >/dev/null 2>&1; then
-  curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /usr/share/keyrings/githubcli-archive-keyring.gpg >/dev/null
-  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-    | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
-  sudo apt-get update
-  sudo apt-get install -y gh
-fi
+  sccache \
+  zip \
+  unzip \
+  tar \
+  pkg-config \
+  gh
 
 if ! command -v kubectl >/dev/null 2>&1; then
   curl -fsSL -o /tmp/kubectl "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"

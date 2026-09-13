@@ -5,7 +5,7 @@
       "name": "Debug Server (gdb)",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/build/src/server/augusta_server",
+      "program": "${workspaceFolder}/build-linux/src/server/augusta_server",
       "cwd": "${workspaceFolder}",
       "MIMode": "gdb",
       "preLaunchTask": "CMake: build"
@@ -14,7 +14,7 @@
       "name": "Debug Client (MSVC)",
       "type": "cppvsdbg",
       "request": "launch",
-      "program": "${workspaceFolder}\\build\\src\\client\\augusta_client.exe",
+      "program": "${workspaceFolder}\\build-windows\\src\\client\\augusta_client.exe",
       "cwd": "${workspaceFolder}",
       "preLaunchTask": "CMake: build"
     }

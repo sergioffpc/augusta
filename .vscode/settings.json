@@ -10,19 +10,16 @@
   "cmake.configureOnOpen": true,
 
   "files.exclude": {
-    "**/build": true,
-    "**/build-san": true
+    "**/build*": true
   },
   "search.exclude": {
     "third_party/**": true,
-    "**/build": true,
-    "**/build-san": true,
+    "**/build*": true,
     "**/vcpkg_installed": true
   },
   "files.watcherExclude": {
     "third_party/**": true,
-    "**/build/**": true,
-    "**/build-san/**": true,
+    "**/build*/**": true,
     "**/vcpkg_installed/**": true
   }
 }

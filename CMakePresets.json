@@ -6,7 +6,7 @@
       "name": "windows",
       "displayName": "Windows (Ninja + cl)",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build",
+      "binaryDir": "${sourceDir}/build-windows",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
@@ -21,10 +21,11 @@
       "name": "linux",
       "displayName": "Linux (Ninja)",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build",
+      "binaryDir": "${sourceDir}/build-linux",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "VCPKG_INSTALL_OPTIONS": "--x-packages-root=$env{HOME}/.cache/augusta-vcpkg/packages;--x-buildtrees-root=$env{HOME}/.cache/augusta-vcpkg/buildtrees;--downloads-root=$env{HOME}/.cache/augusta-vcpkg/downloads"
       },
       "condition": {
         "type": "equals",

@@ -39,10 +39,15 @@ execution policy blocks running local scripts at all:
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force   # this session only
 .\scripts\bootstrap-windows.ps1
-cmake --preset windows
-cmake --build --preset windows
-ctest --preset windows
 ```
+
+Then build **from inside VS Code** (open the repo, install the recommended
+extensions), using the CMake Tools extension's Configure/Build/Test commands
+(command palette, or the status bar buttons) with the `windows` preset. A
+plain terminal doesn't have `cl.exe`'s `INCLUDE`/`LIB`/`PATH` set up, which
+the Ninja generator needs and a Build Tools-only install has no Start Menu
+shortcut to get for you — CMake Tools finds and loads it automatically,
+which a raw `cmake --preset windows` in a terminal won't.
 
 **WSL2 (server / shared core):**
 ```bash
