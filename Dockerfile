@@ -1,0 +1,49 @@
+# syntax=docker/dockerfile:1
+
+# Build stage: same base as the CI Linux runner (see .github/workflows/ci.yml)
+# so the image is built with the exact toolchain/glibc combination CI already
+# validates the server against.
+FROM ubuntu:26.04 AS build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential \
+      cmake \
+      ninja-build \
+      git \
+      curl \
+      zip \
+      unzip \
+      tar \
+      pkg-config \
+      ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+# vcpkg bootstrap depends only on the submodule + manifest, not on source
+# changes, so it's copied and run first to keep that layer cached across
+# src/ edits.
+COPY third_party/vcpkg third_party/vcpkg
+COPY vcpkg.json CMakeLists.txt CMakePresets.json ./
+RUN ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+COPY src src
+COPY tests tests
+
+RUN cmake --preset linux
+RUN cmake --build --preset linux --target augusta_server
+
+# Runtime stage: just the binary and the shared libraries it links against
+# (vcpkg's own dependencies are linked statically) - no build toolchain, no
+# vcpkg source tree.
+FROM ubuntu:26.04 AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libstdc++6 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --no-create-home --shell /usr/sbin/nologin augusta
+
+COPY --from=build /workspace/build-linux/src/server/augusta_server /usr/local/bin/augusta_server
+
+USER augusta
+ENTRYPOINT ["/usr/local/bin/augusta_server"]
