@@ -37,6 +37,7 @@ jobs:
       - uses: github/codeql-action/init@v3
         with:
           languages: cpp
+          build-mode: manual
 
       # Real CMake/vcpkg build rather than CodeQL's autobuild, which
       # doesn't know how to init the vcpkg submodule or pick our preset.

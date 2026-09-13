@@ -27,6 +27,39 @@ Unreal/Unity/Godot.
 Early stage — see [docs/ROADMAP.md](docs/ROADMAP.md) for the milestone plan.
 This is a solo-developer hobby project with no fixed deadline.
 
+## Building
+
+One-time setup, then the same CMake presets on either side.
+
+**Windows (client):**
+```powershell
+.\scripts\bootstrap-windows.ps1   # VS Build Tools (system-wide), CMake, Ninja, vcpkg, sccache
+cmake --preset windows
+cmake --build --preset windows
+ctest --preset windows
+```
+
+**WSL2 (server / shared core):**
+```bash
+./scripts/bootstrap-wsl.sh        # build-essential, CMake, Ninja, vcpkg, sccache, pinned clang-format/clang-tidy
+cmake --preset linux
+cmake --build --preset linux
+ctest --preset linux
+```
+
+Both bootstrap scripts also `git submodule update --init` the vendored vcpkg
+(`third_party/vcpkg`) and wire up the Conventional Commits `commit-msg` hook.
+
+**Sanitizer build (Linux, ASan+UBSan):**
+```bash
+cmake --preset linux-sanitizers
+cmake --build --preset linux-sanitizers
+ctest --preset linux-sanitizers
+```
+
+The three presets (`windows`, `linux`, `linux-sanitizers`) are defined in
+[CMakePresets.json](CMakePresets.json) and are what CI builds with too.
+
 ## Documentation
 
 - [VISION.md](docs/VISION.md) — product vision and v1 definition of done
