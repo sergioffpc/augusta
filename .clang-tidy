@@ -1,5 +1,46 @@
+# Enforces docs/adr/0012-coding-style.md (Google C++ Style Guide) as fully as
+# clang-tidy can check. google-* is Google's own dedicated check group, but on
+# its own it only covers a handful of style-guide rules; readability-* and
+# modernize-* pick up the rest (identifier naming, braces, TODO format, using
+# nullptr/override, range-based for, etc.) - google-cloud-cpp uses the same
+# three-group combination for the same reason.
 Checks: >
   google-*,
-  -google-readability-todo
-WarningsAsErrors: ''
-HeaderFilterRegex: '^(src|tests)/'
+  readability-*,
+  modernize-*,
+  -modernize-use-trailing-return-type
+
+# Trailing return type is a stylistic alternative the guide doesn't mandate
+# either way, so it's the one thing above we don't turn into a hard rule.
+WarningsAsErrors: "*"
+
+HeaderFilterRegex: '^(src|tests)/.*\.h$'
+
+CheckOptions:
+  - { key: readability-identifier-naming.NamespaceCase,          value: lower_case }
+  - { key: readability-identifier-naming.ClassCase,              value: CamelCase  }
+  - { key: readability-identifier-naming.StructCase,             value: CamelCase  }
+  - { key: readability-identifier-naming.EnumCase,               value: CamelCase  }
+  - { key: readability-identifier-naming.UnionCase,              value: CamelCase  }
+  - { key: readability-identifier-naming.TypeAliasCase,          value: CamelCase  }
+  - { key: readability-identifier-naming.TypedefCase,            value: CamelCase  }
+  - { key: readability-identifier-naming.TemplateParameterCase,  value: CamelCase  }
+  - { key: readability-identifier-naming.FunctionCase,           value: CamelCase  }
+  - { key: readability-identifier-naming.VariableCase,           value: lower_case }
+  - { key: readability-identifier-naming.ParameterCase,          value: lower_case }
+  - { key: readability-identifier-naming.ClassMemberCase,        value: lower_case }
+  - { key: readability-identifier-naming.ClassMemberSuffix,      value: _          }
+  - { key: readability-identifier-naming.PrivateMemberSuffix,    value: _          }
+  - { key: readability-identifier-naming.ProtectedMemberSuffix,  value: _          }
+  - { key: readability-identifier-naming.ConstexprVariableCase,   value: CamelCase }
+  - { key: readability-identifier-naming.ConstexprVariablePrefix, value: k         }
+  - { key: readability-identifier-naming.GlobalConstantCase,      value: CamelCase }
+  - { key: readability-identifier-naming.GlobalConstantPrefix,    value: k         }
+  - { key: readability-identifier-naming.StaticConstantCase,      value: CamelCase }
+  - { key: readability-identifier-naming.StaticConstantPrefix,    value: k         }
+  - { key: readability-identifier-naming.MemberConstantCase,      value: CamelCase }
+  - { key: readability-identifier-naming.MemberConstantPrefix,    value: k         }
+  - { key: readability-identifier-naming.EnumConstantCase,        value: CamelCase }
+  - { key: readability-identifier-naming.EnumConstantPrefix,      value: k         }
+  - { key: readability-identifier-naming.MacroDefinitionCase,     value: UPPER_CASE }
+  - { key: readability-function-size.LineThreshold,               value: 60         }
