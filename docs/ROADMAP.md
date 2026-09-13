@@ -5,30 +5,44 @@ VISION.md). Sizes are relative effort, not calendar estimates: S / M / L.
 
 ## M0 — Project & Infrastructure Setup (S)
 No engine code yet — get the project, tooling, and pipelines standing.
+Split into two sub-milestones: M0a covers everything needed to write,
+build, and test code locally and in CI; M0b covers containerizing and
+deploying the server onto the self-hosted k3s cluster.
+
+### M0a — Client & Dev Environment
 - GitHub repository, Git Flow branches (`main` + `develop`), branch
   protection, PR-gated merges
 - `.gitignore`, `.editorconfig`, local `commit-msg` hook (Conventional
   Commits validation)
 - `vcpkg.json` manifest + CMake toolchain wiring
 - Windows bootstrap script (`scripts/bootstrap-windows.ps1`): VS Build
-  Tools at a custom `--installPath`, Windows SDK, CMake, Ninja, Git, vcpkg
+  Tools installed system-wide, Windows SDK, CMake, Ninja, Git, vcpkg
 - WSL bootstrap script (`scripts/bootstrap-wsl.sh`): CMake, Ninja, vcpkg,
   clang-tidy, clang-format, gdb, GitHub CLI, kubectl, helm
 - `.vscode/extensions.json` recommended extensions
 - GitHub Actions CI pipeline: build+test client (Windows runner) and
   server (Linux runner), clang-format/clang-tidy, warnings-as-errors,
-  ASan+UBSan, asset-pipeline check (ephemeral signing key)
-- Self-hosted k3s cluster (single node, own hardware)
-- Helm chart(s) for the dedicated server; push-based CD workflow
-  (GitHub Actions → `helm upgrade`/`helm uninstall` on push/branch-delete)
-- Shared `hostPath` volume for signed asset packs
+  ASan+UBSan
 
-**Exercises:** ENGINEERING.md in full (CI/CD, Git Workflow, Developer
-Environment, Deployment & CD), ADR-0008, ADR-0025
+**Exercises:** ENGINEERING.md's Developer Environment, Code Quality, and
+Git Workflow sections; ADR-0008, ADR-0011, ADR-0012, ADR-0013, ADR-0025
 **Exit criteria:** a fresh clone + the two bootstrap scripts produce a
-working build environment on both sides; CI is green on a skeleton
-commit; pushing a test branch deploys a hello-world server container to
-k3s and tears down automatically on branch delete
+working build environment on both sides; CI is green on a skeleton commit
+
+### M0b — Server & k8s Infra
+- Self-hosted k3s cluster (single node, own hardware)
+- Self-hosted GitHub Actions runner on the same host/LAN (hosted runners
+  can't reach a LAN-only cluster)
+- Server Dockerfile; Helm chart(s) for the dedicated server; push-based
+  CD workflow (GitHub Actions → `helm upgrade`/`helm uninstall` on
+  push/branch-delete)
+- Shared `hostPath` volume for signed asset packs
+- CI addition: `helm lint` + `docker build` validation on every PR
+  touching the chart/Dockerfile
+
+**Exercises:** ENGINEERING.md's CI/CD and Deployment & CD sections
+**Exit criteria:** pushing a test branch deploys a hello-world server
+container to k3s and tears down automatically on branch delete
 
 ## M1 — De-risking Spikes (S)
 Prove the riskiest unknowns work in isolation before building on them.
@@ -86,6 +100,9 @@ Replaces the placeholder level/assets from M2–M4 with the real pipeline.
 - Asset cooker CLI: Assimp + meshoptimizer (meshes), DirectXTex (textures),
   OpenUSD-authored test map baked to runtime format
 - Signed, verified packs (client + server split)
+- CI addition: asset-pipeline check — build the cooker, generate a fresh
+  throwaway Ed25519 keypair for the run, cook the test assets, sign with
+  the ephemeral key, verify the signed pack loads end to end
 
 **Exercises:** ADR-0015 through ADR-0020
 **Exit criteria:** both executables load exclusively from signed, verified

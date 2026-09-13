@@ -29,8 +29,9 @@ _deps/
 *.VC.db
 *.VC.opendb
 
-# VS Code
-.vscode/
+# VS Code (recommended extensions are committed, everything else is personal)
+.vscode/*
+!.vscode/extensions.json
 
 # Ninja / compile commands
 .ninja_deps

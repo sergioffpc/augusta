@@ -1,0 +1,14 @@
+#!/bin/sh
+# Validates commit messages against Conventional Commits (docs/ENGINEERING.md, Code Quality).
+
+commit_msg_file="$1"
+first_line=$(head -n 1 "$commit_msg_file")
+
+pattern='^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([a-z0-9.-]+\))?!?: .+'
+
+if ! echo "$first_line" | grep -Eq "$pattern"; then
+  echo "commit-msg: '$first_line' does not follow Conventional Commits." >&2
+  echo "Expected: <type>(<optional scope>): <description>" >&2
+  echo "Types: build chore ci docs feat fix perf refactor revert style test" >&2
+  exit 1
+fi

@@ -1,0 +1,2 @@
+add_executable(augusta_client main.cpp)
+target_link_libraries(augusta_client PRIVATE augusta_shared spdlog::spdlog)
