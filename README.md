@@ -32,8 +32,13 @@ This is a solo-developer hobby project with no fixed deadline.
 One-time setup, then the same CMake presets on either side.
 
 **Windows (client):**
+
+`bootstrap-windows.ps1` installs Visual Studio Build Tools, so it needs an
+**elevated** PowerShell (Win+X → "Terminal (Admin)"), and PowerShell's default
+execution policy blocks running local scripts at all:
 ```powershell
-.\scripts\bootstrap-windows.ps1   # VS Build Tools (system-wide), CMake, Ninja, vcpkg, sccache
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force   # this session only
+.\scripts\bootstrap-windows.ps1
 cmake --preset windows
 cmake --build --preset windows
 ctest --preset windows
@@ -41,7 +46,7 @@ ctest --preset windows
 
 **WSL2 (server / shared core):**
 ```bash
-./scripts/bootstrap-wsl.sh        # build-essential, CMake, Ninja, vcpkg, sccache, pinned clang-format/clang-tidy
+./scripts/bootstrap-wsl.sh        # build-essential, CMake, Ninja, clang-format/clang-tidy, vcpkg, sccache
 cmake --preset linux
 cmake --build --preset linux
 ctest --preset linux

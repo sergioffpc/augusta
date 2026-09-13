@@ -10,11 +10,12 @@ permissions:
 env:
   VCPKG_BINARY_SOURCES: "clear;nuget,GitHubPackages,readwrite"
   SCCACHE_GHA_ENABLED: "true"
-  LLVM_VERSION: "18"
 
 jobs:
   build-client:
-    runs-on: windows-latest
+    # Pinned rather than windows-latest, so the toolchain doesn't shift
+    # underneath us when GitHub migrates the "latest" runner image.
+    runs-on: windows-2025
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,23 +51,18 @@ jobs:
         run: ctest --preset windows
 
   build-server:
-    runs-on: ubuntu-latest
+    # Pinned rather than ubuntu-latest - see build-client. This also makes
+    # clang-format/clang-tidy's version stable without needing to pull them
+    # from apt.llvm.org (a stable runner image already gives a stable distro
+    # package version).
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
 
-      - name: Install pinned LLVM tools (clang-format/clang-tidy)
-        # Ubuntu's own package version drifts whenever the runner image's
-        # base OS changes; apt.llvm.org lets us pin the major version
-        # explicitly so formatting/lint output doesn't silently shift.
-        run: |
-          wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-          chmod +x /tmp/llvm.sh
-          sudo /tmp/llvm.sh ${{ env.LLVM_VERSION }}
-          sudo apt-get install -y clang-format-${{ env.LLVM_VERSION }} clang-tidy-${{ env.LLVM_VERSION }} ninja-build mono-complete
-          sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-${{ env.LLVM_VERSION }} 100
-          sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-${{ env.LLVM_VERSION }} 100
+      - name: Install LLVM tools + mono
+        run: sudo apt-get update && sudo apt-get install -y clang-format clang-tidy ninja-build mono-complete
 
       - uses: mozilla-actions/sccache-action@v0.0.11
 
@@ -95,7 +91,7 @@ jobs:
         run: ctest --preset linux
 
   sanitizers:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
         with:
