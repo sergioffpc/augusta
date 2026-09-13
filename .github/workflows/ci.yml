@@ -3,6 +3,10 @@ name: CI
 on:
   push:
 
+permissions:
+  contents: read
+  packages: write
+
 env:
   VCPKG_BINARY_SOURCES: "clear;nuget,GitHubPackages,readwrite"
 
@@ -34,8 +38,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install LLVM tools
-        run: sudo apt-get update && sudo apt-get install -y clang-format clang-tidy ninja-build
+      - name: Install LLVM tools + mono
+        run: sudo apt-get update && sudo apt-get install -y clang-format clang-tidy ninja-build mono-complete
 
       - name: Configure vcpkg NuGet cache
         run: |
@@ -44,10 +48,10 @@ jobs:
           mono "$nuget_path" setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
 
       - name: Check formatting
-        run: find src tests -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
+        run: find src tests \( -name '*.cpp' -o -name '*.h' \) | xargs clang-format --dry-run --Werror
 
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE="${VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake" -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE="${VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake" -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
       - name: Lint (clang-tidy)
         run: find src -name '*.cpp' | xargs clang-tidy -p build
@@ -62,6 +66,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install mono
+        run: sudo apt-get update && sudo apt-get install -y mono-complete
 
       - name: Configure vcpkg NuGet cache
         run: |
