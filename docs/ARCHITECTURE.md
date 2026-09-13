@@ -51,7 +51,7 @@ No matchmaking, master server, or third-party platform integration in v1.
 - Server-authoritative model: server is the single source of truth for all
   gameplay-affecting state
 - Client-side prediction for responsiveness, reconciled via smooth correction
-  against authoritative server snapshots (not exact replay — see ADR-04)
+  against authoritative server snapshots (not exact replay — see ADR-0004)
 - Multithreaded from v1: dedicated Main/Render, Simulation, and Network I/O threads
 - Custom lightweight binary protocol for game-state messages
 - Mechanism vs. policy vs. data separation: engine mechanism (movement,
@@ -59,7 +59,7 @@ No matchmaking, master server, or third-party platform integration in v1.
   lifecycle, win conditions, spawn rules) is encapsulated in sandboxed
   Lua scripts run in a dedicated Scripts/Behaviours phase; tunable
   balance values are data-driven configuration — a third category (see
-  §8, ADR-22, ADR-23)
+  §8, ADR-0022, ADR-0023)
 - Rendering built on NVIDIA Falcor (D3D12), used exclusively by the Windows
   client. The server is Linux-only, headless, and entirely decoupled from
   Falcor/graphics-API concerns.
@@ -99,7 +99,7 @@ No matchmaking, master server, or third-party platform integration in v1.
 - Networking — sends commands, receives authoritative server state
 - ClientRuntime
   - PredictionWorld (ECS) — consumes commands + authoritative server
-    state; runs client-side prediction and reconciliation (ADR-04); emits
+    state; runs client-side prediction and reconciliation (ADR-0004); emits
     an immutable prediction state each simulation tick
   - PresentationWorld (ECS) — consumes the prediction state; interpolates/
     smooths for display; emits presentation state each render frame
@@ -144,7 +144,7 @@ WeaponHandling → Commit)
 | Phase | Category | Responsibility |
 |---|---|---|
 | CommandIngestion | Mechanism | Applies this tick's local input commands |
-| Reconciliation | Mechanism | Ingests any newly arrived authoritative state; applies smooth snap/blend correction (ADR-04) — no rollback/resimulate |
+| Reconciliation | Mechanism | Ingests any newly arrived authoritative state; applies smooth snap/blend correction (ADR-0004) — no rollback/resimulate |
 | Movement | Mechanism | Predicted PhysX movement, stamina |
 | WeaponHandling | Mechanism | Predicts local fire feedback only (muzzle flash, sound cue, recoil, ammo count) — no bullet trajectory; hit/damage stays server-authoritative |
 | Commit | Mechanism | Packages the tick's predicted state into the immutable Prediction State |
@@ -243,7 +243,7 @@ Damage → Scripts/Behaviours → Commit)
 3. Server simulates authoritative movement (PhysX)
 4. Server broadcasts authoritative position/state
 5. Client compares against its predicted state; if divergent, smoothly
-   corrects (snap/blend) — no exact-replay assumption (see ADR-04)
+   corrects (snap/blend) — no exact-replay assumption (see ADR-0004)
 
 **Scenario: Round End**
 1. Server evaluates win condition each tick (e.g., one side eliminated)
@@ -271,7 +271,7 @@ now.
 - **Threading:** fixed dedicated threads, no generic job/task scheduler in
   v1. Client: 3 threads (Main/Render, Simulation [ECS + PhysX], Network
   I/O). Server: 2 threads (Simulation, Network I/O) — no render thread,
-  since it's headless (see ADR-05).
+  since it's headless (see ADR-0005).
 - **Determinism strategy:** PhysX does not guarantee cross-platform bit-exact
   determinism (confirmed: NVIDIA docs state cross-platform determinism is
   unsupported). Client prediction is therefore treated as approximate/visual
@@ -306,122 +306,46 @@ now.
 
 ## 9. Architecture Decisions (ADRs)
 
-ADR numbers are stable identifiers assigned in decision order; the groupings
-below are a reading aid only and do not affect numbering.
+Full decisions live in [`docs/adr/`](./adr/); ADR numbers are stable
+identifiers assigned in decision order. The groupings below are a reading
+aid only and do not affect numbering.
 
 ### Core Engine
-- **ADR-01 — ECS library:** Flecs, for entity/component management shared
-  across client and server.
-- **ADR-02 — Physics:** PhysX for general collision/movement; ballistics
-  implemented as a custom module (learning focus + determinism control).
-- **ADR-03 — Networking transport:** GameNetworkingSockets (Valve) over UDP.
-- **ADR-04 — Reconciliation model:** Approximate client-side prediction with
-  smooth corrective reconciliation, not exact resimulation — driven by PhysX's
-  documented lack of cross-platform determinism.
-- **ADR-05 — Threading:** Multithreaded from v1, using fixed dedicated
-  threads rather than a generic job system. Client: 3 threads (Main/Render,
-  Simulation, Network I/O). Server: 2 threads (Simulation, Network I/O) —
-  no render thread, since it's headless.
-- **ADR-06 — Codebase structure:** Single shared codebase/core for client and
-  dedicated server, to minimize simulation divergence.
-- **ADR-07 — Serialization:** Custom binary format over a schema-compiler
-  library, given the small and stable v1 message set.
+- [ADR-0001 — ECS library: Flecs](./adr/0001-ecs-library.md)
+- [ADR-0002 — Physics & ballistics](./adr/0002-physics-and-ballistics.md)
+- [ADR-0003 — Networking transport: GameNetworkingSockets](./adr/0003-networking-transport.md)
+- [ADR-0004 — Reconciliation model](./adr/0004-reconciliation-model.md)
+- [ADR-0005 — Threading model](./adr/0005-threading-model.md)
+- [ADR-0006 — Shared client/server codebase](./adr/0006-shared-client-server-codebase.md)
+- [ADR-0007 — Serialization format](./adr/0007-serialization-format.md)
 
 ### Tooling & Build
-- **ADR-08 — Build tooling:** CMake + Ninja + sccache for cross-platform,
-  fast, cached builds.
-- **ADR-11 — Language standard:** C++23, avoiding std modules given current
-  toolchain immaturity.
-- **ADR-12 — Coding style:** Google C++ Style Guide.
-- **ADR-13 — Testing/benchmarking:** GoogleTest + Google Benchmark.
-- **ADR-25 — Dependency manager:** vcpkg (MIT, manifest mode via
-  `vcpkg.json`), integrated in CI via `lukka/run-vcpkg`. Chosen over
-  Conan for broader, more current coverage of this project's specific
-  dependencies (PhysX 5.x, GameNetworkingSockets, meshoptimizer,
-  DirectXTex — all stale or entirely absent on Conan Center) and
-  simpler GitHub Actions integration. Also covers Steam Audio and
-  OpenUSD via maintained vcpkg ports, replacing manual SDK download /
-  build_usd.py. NVIDIA Falcor remains outside any package manager —
-  vendored and built from source (it fetches its own sub-dependencies,
-  e.g. Slang, via NVIDIA's internal Packman tool).
+- [ADR-0008 — Build tooling](./adr/0008-build-tooling.md)
+- [ADR-0011 — Language standard: C++23](./adr/0011-language-standard.md)
+- [ADR-0012 — Coding style](./adr/0012-coding-style.md)
+- [ADR-0013 — Testing & benchmarking](./adr/0013-testing-and-benchmarking.md)
+- [ADR-0025 — Dependency manager: vcpkg](./adr/0025-dependency-manager.md)
 
 ### Rendering & Audio
-- **ADR-09 — Renderer:** NVIDIA Falcor (D3D12), Windows client only. The
-  server is Linux-only and headless, fully decoupled from Falcor — its
-  platform limitations (Linux/Vulkan experimental support) never come into
-  play. Falcor is a research/prototyping framework, not built for shipping
-  games, and has had no commits since Jan 2025 (~20 months stale as of
-  writing).
-- **ADR-10 — Audio:** Steam Audio (Apache 2.0), Windows client only.
-- **ADR-14 — Shading language:** Slang (Apache 2.0). Already Falcor's default
-  shader compiler/vendored dependency; formalized here as an explicit choice.
-  Consideration: pin to Falcor's vendored Slang version, or take an
-  independent/newer version if needed.
+- [ADR-0009 — Renderer: NVIDIA Falcor](./adr/0009-renderer.md)
+- [ADR-0010 — Audio: Steam Audio](./adr/0010-audio.md)
+- [ADR-0014 — Shading language: Slang](./adr/0014-shading-language.md)
 
 ### Asset Pipeline
-- **ADR-15 — Map/level authoring format:** OpenUSD, used purely as an
-  offline authoring/interchange format. Maps are baked at build time into
-  the engine's own lightweight runtime format; OpenUSD/Hydra and their
-  toolchain are never linked into shipped binaries — consistent with the
-  industry pattern (Remedy Northlight, Polyphony Digital) of
-  USD-for-authoring → custom-runtime-format.
-- **ADR-16 — Mesh import & optimization:** Assimp (multi-format import) +
-  meshoptimizer (vertex cache optimization, simplification, quantization).
-- **ADR-17 — Texture compression:** DirectXTex/texconv, baked to
-  BC7/BC5/BC4 in DDS containers. KTX2 evaluated and rejected — no benefit
-  without Basis Universal transcoding on a D3D12-only client.
-- **ADR-18 — Runtime asset format:** a single signed, verified pack file,
-  content-hashed with BLAKE3 and signed with Ed25519. Assets are addressed
-  by relative path within the pack — no cross-pack GUID/manifest
-  indirection layer at this scale (the pack's own internal table of
-  contents, needed to resolve those relative paths, is an implementation
-  detail, not a separate addressing system).
-- **ADR-19 — Client/server pack split:** separate client pack (full:
-  geometry, textures, meshes, audio) and server pack (stripped: collision
-  geometry, spawn points, hitboxes), baked from the same source, to keep
-  the headless Linux server lean.
-- **ADR-20 — Audio asset format:** mono uncompressed PCM for v1 SFX,
-  matching Steam Audio's per-source spatialization model.
+- [ADR-0015 — Map/level authoring format: OpenUSD](./adr/0015-map-authoring-format.md)
+- [ADR-0016 — Mesh import & optimization](./adr/0016-mesh-import-and-optimization.md)
+- [ADR-0017 — Texture compression](./adr/0017-texture-compression.md)
+- [ADR-0018 — Runtime asset format](./adr/0018-runtime-asset-format.md)
+- [ADR-0019 — Client/server pack split](./adr/0019-client-server-pack-split.md)
+- [ADR-0020 — Audio asset format](./adr/0020-audio-asset-format.md)
 
 ### Client Runtime
-- **ADR-21 — Client runtime decomposition:** ClientRuntime splits into two
-  ECS worlds mapped onto the two client threads from ADR-05:
-  PredictionWorld (Simulation thread, fixed tick — input + authoritative
-  state in, immutable prediction state out) and PresentationWorld
-  (Main/Render thread, per-frame — prediction state in, presentation state
-  out to Renderer and Audio). Phase-level detail within each world is
-  deferred to a future, more detailed diagram.
-- **ADR-24 — PredictionWorld & PresentationWorld phase pipelines:**
-  PredictionWorld: 5 phases (CommandIngestion, Reconciliation, Movement,
-  WeaponHandling, Commit) — no Ballistics/HitDetection/Damage/
-  Scripts-Behaviours; those remain exclusively server-side, consistent
-  with the Fire Rifle scenario in §6 (client predicts only immediate
-  feedback, never the bullet's outcome). PresentationWorld: 5 phases
-  (Interpolation, Camera, Animation, AudioCues, Commit) —
-  translates the fixed-tick Prediction State into smooth, frame-rate-
-  independent visuals/audio. Neither client world contains a
-  Scripts/Behaviours phase — game policy is exclusively server-authoritative.
+- [ADR-0021 — Client runtime decomposition](./adr/0021-client-runtime-decomposition.md)
+- [ADR-0024 — Client world phase pipelines](./adr/0024-client-world-phase-pipelines.md)
 
 ### Server Runtime
-- **ADR-22 — Gameplay scripting language:** Lua (MIT, lua.org reference
-  implementation) embedded via sol2 (MIT, header-only C++ binding),
-  running in a sandboxed environment (no io/os/package.loadlib) for the
-  SimulationWorld's Scripts/Behaviours phase. Encapsulates game policy
-  separately from mechanism code. LuaJIT considered and deferred: policy
-  logic is low-frequency, not hot-path numeric work, so JIT performance is
-  unnecessary, and LuaJIT's upstream is stalled (would mean depending on
-  the OpenResty-maintained fork rather than lua.org directly). Python —
-  already used for offline asset tooling via OpenUSD — is deliberately
-  not reused here: it is not designed for embedding into a 60Hz real-time
-  tick loop (CPython overhead, GIL).
-- **ADR-23 — SimulationWorld phase pipeline:** eight ordered phases per
-  tick — CommandIngestion, Movement, WeaponHandling, Ballistics,
-  HitDetection, Damage, Scripts/Behaviours, Commit. Scripts/
-  Behaviours runs last, after Damage resolves the tick's deaths, so it
-  can evaluate win conditions and schedule round transitions/spawns for
-  the next tick. Weapon/ammo damage values are data-driven configuration
-  (not mechanism code or policy scripts) — a third category alongside
-  mechanism and policy.
+- [ADR-0022 — Gameplay scripting language: Lua](./adr/0022-gameplay-scripting-language.md)
+- [ADR-0023 — SimulationWorld phase pipeline](./adr/0023-simulationworld-phase-pipeline.md)
 
 ## 10. Quality Requirements
 See [REQUIREMENTS.md](./REQUIREMENTS.md) — Non-Functional Requirements
@@ -441,7 +365,7 @@ See [REQUIREMENTS.md](./REQUIREMENTS.md) — Non-Functional Requirements
 - **No automated test strategy defined yet** for physics/networking
   determinism-sensitive code — worth addressing early given the reconciliation
   risk above.
-- **Falcor dependency** (see ADR-09): a fork/vendor of the source is
+- **Falcor dependency** (see ADR-0009): a fork/vendor of the source is
   recommended to insulate against upstream abandonment.
 - **Cross-OS local development:** building and testing requires both a
   Windows and a Linux environment simultaneously — largely mitigated now
@@ -450,7 +374,7 @@ See [REQUIREMENTS.md](./REQUIREMENTS.md) — Non-Functional Requirements
   session.
 - **C++23 module support (`import std;`)** is still immature on both MSVC
   and GCC/Clang — avoid depending on it; stick to headers.
-- **OpenUSD tooling weight** (see ADR-15): revisit if it becomes
+- **OpenUSD tooling weight** (see ADR-0015): revisit if it becomes
   disproportionate to actual map count/complexity.
 - **Signing key management:** losing or leaking the pack-signing private
   key would require re-keying and re-signing all shipped packs — back it
@@ -465,13 +389,4 @@ See [REQUIREMENTS.md](./REQUIREMENTS.md) — Non-Functional Requirements
   exposed API surface before shipping any script content.
 
 ## 12. Glossary
-| Term | Meaning |
-|---|---|
-| ECS | Entity Component System — data-oriented architecture pattern |
-| Tick | One discrete simulation step on the server |
-| Authoritative server | Server holds the single source of truth for game state |
-| Client-side prediction | Client simulates its own actions locally before server confirmation |
-| Reconciliation | Process of correcting client-predicted state against server truth |
-| Hitbox | Collision volume used to resolve bullet impacts against a player |
-| ADS | Aim Down Sights |
-| RTT | Round-Trip Time (network latency) |
+See [`CONTEXT.md`](../CONTEXT.md) at the repo root for the project's domain vocabulary.

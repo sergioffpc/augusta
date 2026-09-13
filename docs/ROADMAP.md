@@ -24,7 +24,7 @@ No engine code yet — get the project, tooling, and pipelines standing.
 - Shared `hostPath` volume for signed asset packs
 
 **Exercises:** ENGINEERING.md in full (CI/CD, Git Workflow, Developer
-Environment, Deployment & CD), ADR-08, ADR-25
+Environment, Deployment & CD), ADR-0008, ADR-0025
 **Exit criteria:** a fresh clone + the two bootstrap scripts produce a
 working build environment on both sides; CI is green on a skeleton
 commit; pushing a test branch deploys a hello-world server container to
@@ -37,10 +37,10 @@ No gameplay yet.
 - Minimal GameNetworkingSockets round-trip: Windows client ↔ Linux
   dedicated server
 - Minimal PhysX prediction/reconciliation test: one entity, snap/blend
-  correction (ADR-04) visibly acceptable (no wild jitter)
+  correction (ADR-0004) visibly acceptable (no wild jitter)
 
-**Exercises:** ADR-02, ADR-03, ADR-04, ADR-09, ADR-11 (C++23), ADR-12
-(Google C++ Style Guide), ADR-13 (GoogleTest/Benchmark) — the first code
+**Exercises:** ADR-0002, ADR-0003, ADR-0004, ADR-0009, ADR-0011 (C++23), ADR-0012
+(Google C++ Style Guide), ADR-0013 (GoogleTest/Benchmark) — the first code
 written on this project, so where these foundational tooling ADRs are
 first exercised in practice
 **Exit criteria:** all three spikes run standalone and demonstrably work
@@ -52,7 +52,7 @@ first exercised in practice
 - US-05 Manage Stamina
 - Placeholder/hardcoded test space (not yet through the OpenUSD pipeline)
 
-**Exercises:** ADR-01, ADR-05, ADR-06, ADR-21, ADR-24
+**Exercises:** ADR-0001, ADR-0005, ADR-0006, ADR-0021, ADR-0024
 **Exit criteria:** 2–8 Windows clients connect to the Linux server, join a
 match, move (walk/run/crouch/prone) in a placeholder space, see each
 other with prediction + reconciliation working
@@ -63,8 +63,8 @@ other with prediction + reconciliation working
 - US-10 Simulate Bullet Ballistics, US-11 Detect Hit by Impact Location,
   US-12 Apply Damage by Hit Location
 
-**Exercises:** ADR-02, ADR-23 (through Damage phase), ADR-24
-(WeaponHandling), ADR-14 (Slang shaders exercised by weapon-related
+**Exercises:** ADR-0002, ADR-0023 (through Damage phase), ADR-0024
+(WeaponHandling), ADR-0014 (Slang shaders exercised by weapon-related
 rendering, e.g. muzzle flash/tracer effects)
 **Exit criteria:** players aim/fire/reload a rifle; bullets follow a real
 server-computed physics trajectory; hits resolve by body part with damage
@@ -74,7 +74,7 @@ applied (debug HUD/log is enough, no scoring yet)
 - US-03 Spawn into a Round, US-13 Player Death (No Respawn),
   US-14 Determine Round End / Win Condition
 
-**Exercises:** ADR-22 (Lua), ADR-23 (Scripts/Behaviours phase), ADR-10
+**Exercises:** ADR-0022 (Lua), ADR-0023 (Scripts/Behaviours phase), ADR-0010
 (Steam Audio — first point in the roadmap where audio cues, e.g. death/
 round-end stingers, become meaningful to exercise)
 **Exit criteria:** a complete round is playable start to finish — spawn,
@@ -87,7 +87,7 @@ Replaces the placeholder level/assets from M2–M4 with the real pipeline.
   OpenUSD-authored test map baked to runtime format
 - Signed, verified packs (client + server split)
 
-**Exercises:** ADR-15 through ADR-20
+**Exercises:** ADR-0015 through ADR-0020
 **Exit criteria:** both executables load exclusively from signed, verified
 packs produced by the cooker; no hardcoded/placeholder content remains
 
@@ -95,7 +95,7 @@ packs produced by the cooker; no hardcoded/placeholder content remains
 - US-15 Server-Side Validation (Anti-Cheat Baseline)
 - Full v1 "definition of done" verification pass (REQUIREMENTS.md)
 
-**Exercises:** §8 Security concept, ADR-18 (signing enforced)
+**Exercises:** §8 Security concept, ADR-0018 (signing enforced)
 **Exit criteria:** matches REQUIREMENTS.md's v1 definition of done exactly
 
 ---
@@ -105,7 +105,7 @@ packs produced by the cooker; no hardcoded/placeholder content remains
 - Network encryption (deferred per ADR/§8, trusted-LAN-only in v1)
 - Matchmaking/master server
 - Cross-platform client (would require revisiting Falcor's Linux/Vulkan
-  path — currently Windows-only, see ADR-09)
+  path — currently Windows-only, see ADR-0009)
 - Incremental asset rebuild (vs. full rebake, see ADR risk notes)
 - LuaJIT, if policy-script performance ever becomes a bottleneck
 - Production (`main`) deployment target — explicitly undecided for now

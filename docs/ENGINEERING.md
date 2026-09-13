@@ -17,16 +17,16 @@ the decisions already made in ARCHITECTURE.md:
 - **No I/O inside ECS worlds.** Worlds are pure state transformations;
   device input, networking, rendering, and audio live at the boundaries.
 - **Determinism is not assumed, it's engineered around.** PhysX doesn't
-  guarantee cross-platform determinism (ADR-04) — the architecture
+  guarantee cross-platform determinism (ADR-0004) — the architecture
   corrects for reality (smooth reconciliation) instead of pretending
   otherwise.
 - **The server is the only source of truth.** Nothing from a client is
   trusted until validated (US-15).
 - **Content is signed and verified, not just loaded.** Integrity is
-  structural (ADR-18), not an afterthought.
+  structural (ADR-0018), not an afterthought.
 - **No premature optimization.** Profile first (Tracy), then optimize;
-  don't build custom allocators or job systems speculatively (ADR-05,
-  ADR-07 risk notes).
+  don't build custom allocators or job systems speculatively (ADR-0005,
+  ADR-0007 risk notes).
 - **Recoverable failures are values, not control flow.** `std::expected`
   for expected failure modes; exceptions only for truly unrecoverable
   startup errors; never exceptions in the per-tick hot path.
@@ -102,7 +102,7 @@ undecided/deferred.
   create/destroy-environment.
 - **Access:** LAN-only — no public exposure, no VPN/tunnel needed for now.
 - **Asset packs:** built and signed manually, separately from the CD
-  pipeline (see ADR-18, CI/CD above). Packs are versioned independently
+  pipeline (see ADR-0018, CI/CD above). Packs are versioned independently
   of code deploys and can be shared across multiple server
   instances/versions. Stored on a shared `hostPath` persistent volume on
   the k3s node, populated manually after signing, mounted read-only into
@@ -135,30 +135,30 @@ undecided/deferred.
   registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was
   considered and rejected: Falcor's CMake presets only test/support
   MSVC on Windows, and stacking an unsupported compiler on top of an
-  already-unmaintained dependency, ADR-09, isn't worth the purity.)
+  already-unmaintained dependency, ADR-0009, isn't worth the purity.)
 - **Editor experience:** a committed `.vscode/extensions.json` lists
   recommended extensions (C++ tools, CMake Tools, clangd/clang-format,
   GitLens, EditorConfig, Lua, YAML/Helm, GitHub Actions) — VS Code
   prompts to install these whenever the folder is opened, on either
   side (WSL remote or native Windows), no container required.
-- **Dependency hermeticity:** the `vcpkg.json` manifest (ADR-25) is what
+- **Dependency hermeticity:** the `vcpkg.json` manifest (ADR-0025) is what
   actually makes dependency acquisition reproducible on both sides —
   not a container.
 
 ## Code Quality
 
-- Google C++ Style Guide (ADR-12), enforced via `clang-format` +
+- Google C++ Style Guide (ADR-0012), enforced via `clang-format` +
   `clang-tidy` in CI — not as local pre-commit hooks, to keep local
   tooling minimal; CI is the enforcement point.
 - Strict warnings-as-errors in CI (see CI/CD above).
 - ASan/UBSan in CI; TSan run manually/periodically given multithreading
-  (ADR-05).
+  (ADR-0005).
 - **Commit messages:** Conventional Commits format, enforced locally via
   a custom `commit-msg` git hook (a small regex-matching script) — no
   Node.js/`commitlint` dependency, consistent with keeping the toolchain
   to what the project already uses (C++, Lua, Python for asset tooling).
 - Testing: GoogleTest (unit) + Google Benchmark (micro-benchmarks),
-  per ADR-13.
+  per ADR-0013.
 - No formal code review process — solo project; CI's build, test, lint,
   and sanitizer gates are the primary quality gate.
 

@@ -31,9 +31,11 @@ This is a solo-developer hobby project with no fixed deadline.
 
 - [VISION.md](docs/VISION.md) — product vision and v1 definition of done
 - [REQUIREMENTS.md](docs/REQUIREMENTS.md) — functional and non-functional requirements
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — arc42 architecture document and ADRs
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — arc42 architecture document
 - [ENGINEERING.md](docs/ENGINEERING.md) — engineering practices, CI/CD, workflow
 - [ROADMAP.md](docs/ROADMAP.md) — milestone-driven roadmap
+- [CONTEXT.md](CONTEXT.md) — domain glossary
+- [docs/adr/](docs/adr/) — architecture decision records
 
 ## License
 
