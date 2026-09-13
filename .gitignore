@@ -1,5 +1,6 @@
-# Build output
-build/
+# Build output (CMakePresets.json binaryDir per preset - build-windows/build-linux
+# stay separate since Windows-native and WSL share the same checkout, see ENGINEERING.md)
+build*/
 out/
 bin/
 obj/
@@ -29,8 +30,11 @@ _deps/
 *.VC.db
 *.VC.opendb
 
-# VS Code
-.vscode/
+# VS Code (project-wide settings are committed, personal overrides are not)
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
 
 # Ninja / compile commands
 .ninja_deps

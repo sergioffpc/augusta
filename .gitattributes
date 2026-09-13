@@ -1,0 +1,8 @@
+# Enforce LF at the git level (mirrors .editorconfig, which only affects editors,
+# not what actually gets committed regardless of a contributor's core.autocrlf).
+* text=auto eol=lf
+
+# Windows-only scripts keep CRLF.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf

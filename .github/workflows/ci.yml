@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  VCPKG_BINARY_SOURCES: "clear;nuget,GitHubPackages,readwrite"
+  SCCACHE_GHA_ENABLED: "true"
+
+jobs:
+  build-client:
+    # Pinned rather than windows-latest, so the toolchain doesn't shift
+    # underneath us when GitHub migrates the "latest" runner image.
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: true
+
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+
+      - name: Install Ninja
+        run: choco install ninja -y
+        shell: pwsh
+
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Configure vcpkg NuGet cache
+        shell: pwsh
+        run: |
+          $nugetPath = & ".\third_party\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
+          & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
+          & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
+
+      - name: Configure
+        run: cmake --preset windows
+        shell: pwsh
+
+      - name: Build
+        run: cmake --build --preset windows
+
+      - name: Test
+        run: ctest --preset windows
+
+  build-server:
+    # Pinned rather than ubuntu-latest - see build-client. This also makes
+    # clang-format/clang-tidy's version stable without needing to pull them
+    # from apt.llvm.org (a stable runner image already gives a stable distro
+    # package version).
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: true
+
+      - name: Install LLVM tools + mono
+        run: sudo apt-get update && sudo apt-get install -y clang-format clang-tidy ninja-build mono-complete
+
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+
+      - name: Bootstrap vcpkg
+        run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: Configure vcpkg NuGet cache
+        run: |
+          nuget_path=$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1)
+          mono "$nuget_path" sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
+          mono "$nuget_path" setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
+
+      - name: Check formatting
+        run: find src tests \( -name '*.cpp' -o -name '*.h' \) | xargs clang-format --dry-run --Werror
+
+      - name: Configure
+        run: cmake --preset linux
+
+      - name: Lint (clang-tidy)
+        run: find src -name '*.cpp' | xargs clang-tidy -p build-linux
+
+      - name: Build
+        run: cmake --build --preset linux
+
+      - name: Test
+        run: ctest --preset linux
+
+  sanitizers:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: true
+
+      - name: Install mono
+        run: sudo apt-get update && sudo apt-get install -y mono-complete
+
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+
+      - name: Bootstrap vcpkg
+        run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: Configure vcpkg NuGet cache
+        run: |
+          nuget_path=$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1)
+          mono "$nuget_path" sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
+
+      - name: Configure (ASan + UBSan)
+        run: cmake --preset linux-sanitizers
+
+      - name: Build
+        run: cmake --build --preset linux-sanitizers
+
+      - name: Test
+        run: ctest --preset linux-sanitizers

@@ -57,6 +57,10 @@ the decisions already made in ARCHITECTURE.md:
      end to end — the real release private key never touches CI
 - **Not in CI:** TSan (expensive/noisy — run manually/periodically
   instead) and Tracy (interactive profiling tool, not a CI check).
+- **Releases:** a separate workflow, triggered only on `v*` tags, builds
+  Release-config client/server binaries and attaches them to a GitHub
+  Release — not run on every push, so cutting a release is a deliberate
+  tag rather than automatic.
 - **Artifacts/releases:** out of scope for now — CI validates
   build+test+lint only. A publishing pipeline gets built when there's an
   actual release to make.
@@ -128,10 +132,10 @@ undecided/deferred.
   cross-compiled from WSL/Linux (not viable given Falcor/D3D12/NVIDIA
   SDK's MSVC-specific toolchain assumptions). A
   `scripts/bootstrap-windows.ps1` script (winget-driven) installs Visual
-  Studio Build Tools to a custom, project-specific path
-  (`--installPath`) — Microsoft's own supported side-by-side mechanism,
-  letting different projects pin independent Build Tools versions —
-  plus the Windows SDK, CMake, Ninja, vcpkg, and Git. (A fully hermetic,
+  Studio Build Tools system-wide (default install location) — simpler
+  than pinning a project-specific path, at the cost of not being able to
+  side-by-side independent Build Tools versions per project — plus the
+  Windows SDK, CMake, Ninja, vcpkg, and Git. (A fully hermetic,
   registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was
   considered and rejected: Falcor's CMake presets only test/support
   MSVC on Windows, and stacking an unsupported compiler on top of an
