@@ -78,18 +78,18 @@ the decisions already made in ARCHITECTURE.md:
 - **Commit messages:** Conventional Commits, enforced via the local
   `commit-msg` hook (see Code Quality below).
 
-## Deployment & CD (Non-Production)
+## Deployment & CD
 
-Covers `develop`, `feature/*`, `hotfix/*`, and `release/*` — production
-(`main`) deployment is explicitly out of scope here and remains
-undecided/deferred.
+Covers `main` and `develop` only — `feature/*`, `hotfix/*`, and
+`release/*` branches are not deployed to k3s at all (see ADR-0026 for
+why, and why there's no self-hosted GitHub Actions runner in this
+pipeline).
 
 - **Infrastructure:** self-hosted k3s, single node, on the developer's
   own hardware. No cloud provider involved.
-- **Isolation:** one Kubernetes namespace per environment — `develop` is
-  long-lived; `feature-*`, `hotfix-*`, `release-*` namespaces are
-  ephemeral, created on branch push and deleted on branch delete. No
-  concurrency limit on ephemeral namespaces for now.
+- **Isolation:** two fixed, long-lived Kubernetes namespaces —
+  `production` (tracks `main`) and `develop` (tracks `develop`). No
+  per-branch/ephemeral namespaces.
 - **Container images:** built in CI, pushed to GitHub Container Registry
   (GHCR).
 - **Server exposure:** plain Kubernetes `Service` (`NodePort`, port
@@ -97,13 +97,11 @@ undecided/deferred.
   dynamic allocation, which this project doesn't need (one server
   instance per environment); revisit only if matchmaking/dynamic
   multi-server allocation is ever needed (Beyond v1).
-- **CD mechanism:** push-based — a GitHub Actions workflow runs
-  `helm upgrade --install` on push to a tracked branch, and
-  `helm uninstall` (+ namespace deletion) on the corresponding branch's
-  `delete` event. No ArgoCD/Flux — running a GitOps controller is
-  unnecessary operational overhead for a solo developer when GitHub's
-  native push/delete triggers already map directly onto
-  create/destroy-environment.
+- **CD mechanism:** pull-based via Flux, running inside the k3s cluster
+  and reconciling each branch's `HelmRelease` from Git — nothing outside
+  the cluster needs inbound access to the LAN, and no external PR can
+  trigger execution on the cluster host, since there's no CI runner in
+  this path at all (see ADR-0026).
 - **Access:** LAN-only — no public exposure, no VPN/tunnel needed for now.
 - **Asset packs:** built and signed manually, separately from the CD
   pipeline (see ADR-0018, CI/CD above). Packs are versioned independently
@@ -111,11 +109,7 @@ undecided/deferred.
   instances/versions. Stored on a shared `hostPath` persistent volume on
   the k3s node, populated manually after signing, mounted read-only into
   every server pod. Each environment's Helm values specify which
-  `packVersion` to load (defaulting to the latest for ephemeral branches
-  unless overridden).
-- **Namespace naming:** derived from the branch name — lowercased, `/`
-  and `_` replaced with `-`, truncated to fit Kubernetes' 63-character
-  limit.
+  `packVersion` to load.
 
 ## Developer Environment
 
