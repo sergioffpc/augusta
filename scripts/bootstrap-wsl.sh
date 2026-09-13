@@ -33,19 +33,13 @@ if ! command -v helm >/dev/null 2>&1; then
   curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 fi
 
-VCPKG_ROOT="${VCPKG_ROOT:-$HOME/vcpkg}"
-if [ ! -d "$VCPKG_ROOT" ]; then
-  echo "Cloning vcpkg to $VCPKG_ROOT..."
-  git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
-fi
-"$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
-
-if ! grep -q "VCPKG_ROOT" "$HOME/.bashrc" 2>/dev/null; then
-  echo "export VCPKG_ROOT=\"$VCPKG_ROOT\"" >>"$HOME/.bashrc"
-  echo "export PATH=\"\$VCPKG_ROOT:\$PATH\"" >>"$HOME/.bashrc"
-fi
-
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# vcpkg is a pinned git submodule (vcpkg/) rather than a machine-wide install,
+# so dependency resolution is reproducible per-clone (see CMakeLists.txt).
+git -C "$repo_root" submodule update --init --recursive
+"$repo_root/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+
 git -C "$repo_root" config core.hooksPath .githooks
 
-echo "WSL bootstrap complete. Restart your shell (or 'source ~/.bashrc') to pick up VCPKG_ROOT."
+echo "WSL bootstrap complete."

@@ -24,17 +24,13 @@ Install-WingetPackage -Id "Kitware.CMake"
 Install-WingetPackage -Id "Ninja-build.Ninja"
 Install-WingetPackage -Id "Git.Git"
 
-$vcpkgRoot = "C:\vcpkg"
-if (-not (Test-Path $vcpkgRoot)) {
-  Write-Host "Cloning vcpkg to $vcpkgRoot..."
-  git clone https://github.com/microsoft/vcpkg.git $vcpkgRoot
-}
-& "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
-
-[Environment]::SetEnvironmentVariable("VCPKG_ROOT", $vcpkgRoot, "User")
-Write-Host "VCPKG_ROOT set to $vcpkgRoot (restart your shell to pick it up)."
-
 $repoRoot = Split-Path -Parent $PSScriptRoot
+
+# vcpkg is a pinned git submodule (vcpkg/) rather than a machine-wide install,
+# so dependency resolution is reproducible per-clone (see CMakeLists.txt).
+git -C $repoRoot submodule update --init --recursive
+& "$repoRoot\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+
 git -C $repoRoot config core.hooksPath .githooks
 
 Write-Host "Windows bootstrap complete."

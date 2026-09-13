@@ -5,7 +5,8 @@
 
 namespace augusta {
 
-// The engine's semantic version, tracked by hand until releases exist (see docs/ROADMAP.md).
+// The engine's semantic version, tracked by hand until releases exist (see
+// docs/ROADMAP.md).
 std::string_view EngineVersion();
 
 }  // namespace augusta

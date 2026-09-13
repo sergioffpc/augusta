@@ -15,16 +15,22 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
 
       - name: Configure vcpkg NuGet cache
         shell: pwsh
         run: |
-          $nugetPath = & "$env:VCPKG_INSTALLATION_ROOT\vcpkg" fetch nuget | Select-Object -Last 1
+          $nugetPath = & ".\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
           & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
           & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
 
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+        run: cmake -S . -B build
         shell: pwsh
 
       - name: Build
@@ -37,13 +43,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Install LLVM tools + mono
         run: sudo apt-get update && sudo apt-get install -y clang-format clang-tidy ninja-build mono-complete
 
+      - name: Bootstrap vcpkg
+        run: ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
       - name: Configure vcpkg NuGet cache
         run: |
-          nuget_path=$(${VCPKG_INSTALLATION_ROOT}/vcpkg fetch nuget | tail -n 1)
+          nuget_path=$(./vcpkg/vcpkg fetch nuget | tail -n 1)
           mono "$nuget_path" sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
           mono "$nuget_path" setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
 
@@ -51,7 +62,7 @@ jobs:
         run: find src tests \( -name '*.cpp' -o -name '*.h' \) | xargs clang-format --dry-run --Werror
 
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE="${VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake" -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
       - name: Lint (clang-tidy)
         run: find src -name '*.cpp' | xargs clang-tidy -p build
@@ -66,19 +77,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Install mono
         run: sudo apt-get update && sudo apt-get install -y mono-complete
 
+      - name: Bootstrap vcpkg
+        run: ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
       - name: Configure vcpkg NuGet cache
         run: |
-          nuget_path=$(${VCPKG_INSTALLATION_ROOT}/vcpkg fetch nuget | tail -n 1)
+          nuget_path=$(./vcpkg/vcpkg fetch nuget | tail -n 1)
           mono "$nuget_path" sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
 
       - name: Configure (ASan + UBSan)
         run: |
           cmake -S . -B build-san -G Ninja \
-            -DCMAKE_TOOLCHAIN_FILE="${VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake" \
             -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
