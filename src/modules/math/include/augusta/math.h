@@ -39,9 +39,7 @@ inline float Length(const Vec3& vec) { return glm::length(vec); }
 // invoke undefined behavior on the zero vector: returns vec unchanged
 // (i.e. the zero vector) instead of dividing by zero - callers that need
 // a fallback direction must check for this case themselves.
-inline Vec3 Normalize(const Vec3& vec) {
-  return Length(vec) > 0.0F ? glm::normalize(vec) : vec;
-}
+inline Vec3 Normalize(const Vec3& vec) { return Length(vec) > 0.0F ? glm::normalize(vec) : vec; }
 
 }  // namespace augusta::math
 
