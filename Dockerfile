@@ -43,7 +43,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --no-create-home --shell /usr/sbin/nologin augusta
 
-COPY --from=build /workspace/build/linux-x64/src/server/augustad /usr/local/bin/augustad
+COPY --from=build /workspace/build/x64-linux/src/server/augustad /usr/local/bin/augustad
 
 USER augusta
 ENTRYPOINT ["/usr/local/bin/augustad"]

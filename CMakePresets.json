@@ -6,7 +6,7 @@
       "name": "windows",
       "displayName": "Windows (Ninja + cl)",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/windows-x64",
+      "binaryDir": "${sourceDir}/build/x64-windows",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
@@ -21,7 +21,7 @@
       "name": "linux",
       "displayName": "Linux (Ninja)",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/linux-x64",
+      "binaryDir": "${sourceDir}/build/x64-linux",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
@@ -37,7 +37,7 @@
       "name": "linux-san",
       "displayName": "Linux (ASan + UBSan)",
       "inherits": "linux",
-      "binaryDir": "${sourceDir}/build/linux-x64-san",
+      "binaryDir": "${sourceDir}/build/x64-linux-san",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
