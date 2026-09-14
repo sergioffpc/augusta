@@ -99,7 +99,7 @@ pipeline).
 - **Infrastructure:** self-hosted k3s, single node, on the developer's
   own hardware. No cloud provider involved.
 - **Isolation:** two fixed, long-lived Kubernetes namespaces —
-  `production` (tracks `main`) and `develop` (tracks `develop`). No
+  `staging` (tracks `main`) and `develop` (tracks `develop`). No
   per-branch/ephemeral namespaces.
 - **Container images:** built in CI, pushed to GitHub Container Registry
   (GHCR).

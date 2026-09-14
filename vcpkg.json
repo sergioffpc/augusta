@@ -4,6 +4,7 @@
   "dependencies": [
     "spdlog",
     "gtest",
-    "benchmark"
+    "benchmark",
+    "glm"
   ]
 }

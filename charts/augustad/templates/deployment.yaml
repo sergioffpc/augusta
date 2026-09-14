@@ -1,21 +1,21 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "augusta-server.fullname" . }}
+  name: {{ include "augustad.fullname" . }}
   labels:
-    {{- include "augusta-server.labels" . | nindent 4 }}
+    {{- include "augustad.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "augusta-server.selectorLabels" . | nindent 6 }}
+      {{- include "augustad.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "augusta-server.selectorLabels" . | nindent 8 }}
+        {{- include "augustad.selectorLabels" . | nindent 8 }}
     spec:
       containers:
-        - name: augusta-server
+        - name: augustad
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:

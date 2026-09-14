@@ -31,7 +31,7 @@ COPY src src
 COPY tests tests
 
 RUN cmake --preset linux
-RUN cmake --build --preset linux --target augusta_server
+RUN cmake --build --preset linux --target augustad
 
 # Runtime stage: just the binary and the shared libraries it links against
 # (vcpkg's own dependencies are linked statically) - no build toolchain, no
@@ -43,7 +43,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --no-create-home --shell /usr/sbin/nologin augusta
 
-COPY --from=build /workspace/build-linux/src/server/augusta_server /usr/local/bin/augusta_server
+COPY --from=build /workspace/build/linux-x64/src/server/augustad /usr/local/bin/augustad
 
 USER augusta
-ENTRYPOINT ["/usr/local/bin/augusta_server"]
+ENTRYPOINT ["/usr/local/bin/augustad"]
