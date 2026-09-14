@@ -36,6 +36,8 @@ find_package(benchmark CONFIG REQUIRED)
 
 add_subdirectory(src/modules/version)
 add_subdirectory(src/modules/logging)
+add_subdirectory(src/modules/math)
+add_subdirectory(src/modules/physics)
 add_subdirectory(src/server)
 if (WIN32)
   add_subdirectory(src/client)
