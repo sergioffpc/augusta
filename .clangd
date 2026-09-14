@@ -3,20 +3,15 @@
 # clangd's usual "borrow flags from a sibling translation unit" heuristic has
 # nothing to borrow from and misses their third-party include dirs (glm,
 # spdlog) from vcpkg_installed. Every path that doesn't exist on a given
-# clangd instance is silently ignored, so it's safe to list them all:
+# clangd instance is silently ignored, so it's safe to list both triplets.
 #
-# - both platform triplets (x64-windows, x64-windows), and
-# - both path spellings ENGINEERING.md's single-shared-checkout model
-#   implies: native Windows (C:/Users/sergi/...) and WSL2 remote
-#   (/mnt/c/Users/sergi/...), since the same checkout is opened by clangd
-#   from both sides.
-#
-# These must be absolute: clangd resolves Add's relative paths against the
-# borrowed compile command's build directory (e.g. build/windows-x64), not
-# the workspace root, so a workspace-relative path here would double up
-# (build/windows-x64/build/windows-x64/...) and silently fail to resolve.
+# Relative, and deliberately not workspace-relative: clangd resolves Add's
+# relative paths against the *borrowed* compile command's directory, which
+# CMakePresets.json sets to the build dir itself (build/windows-x64 or
+# build/linux-x64) - and vcpkg_installed is a direct child of that same
+# build dir on both platforms. So a bare "vcpkg_installed/<triplet>/include"
+# lands in the right place with no machine- or user-specific path baked in.
 CompileFlags:
   Add:
-    - -IC:/Users/sergi/src/github/sergioffpc/augusta/build/windows-x64/vcpkg_installed/x64-windows/include
-    - -IC:/Users/sergi/src/github/sergioffpc/augusta/build/linux-x64/vcpkg_installed/x64-linux/include
-    - -I/mnt/c/Users/sergi/src/github/sergioffpc/augusta/build/linux-x64/vcpkg_installed/x64-linux/include
+    - -Ivcpkg_installed/x64-windows/include
+    - -Ivcpkg_installed/x64-linux/include
