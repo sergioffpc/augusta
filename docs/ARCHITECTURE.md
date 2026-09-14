@@ -17,7 +17,7 @@ Top quality goals (see [REQUIREMENTS.md](./REQUIREMENTS.md) for full NFR list):
   via NVIDIA Falcor (D3D12). Server: Linux-only, headless.
 - **Licensing:** third-party dependencies must be free/open-source (Flecs
   [MIT], PhysX [BSD-3], GameNetworkingSockets [BSD-3], Falcor [BSD-3],
-  Steam Audio [Apache 2.0], Slang [Apache 2.0])
+  Steam Audio [Apache 2.0], miniaudio [MIT], Slang [Apache 2.0])
 - **Language:** C++23 (avoid C++23 std modules/`import std` — still immature
   on MSVC and GCC/Clang)
 - **Coding style:** Google C++ Style Guide
@@ -360,6 +360,7 @@ aid only and do not affect numbering.
 - [ADR-0009 — Renderer: NVIDIA Falcor](./adr/0009-renderer.md)
 - [ADR-0010 — Audio: Steam Audio](./adr/0010-audio.md)
 - [ADR-0014 — Shading language: Slang](./adr/0014-shading-language.md)
+- [ADR-0028 — Audio output: miniaudio](./adr/0028-audio-output.md)
 
 ### Asset Pipeline
 - [ADR-0015 — Map/level authoring format: OpenUSD](./adr/0015-map-authoring-format.md)
