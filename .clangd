@@ -1,0 +1,17 @@
+# Fallback flags for headers that clangd can't map to a compile_commands.json
+# entry: interface-only modules (math, logging) have no .cpp of their own, so
+# clangd's usual "borrow flags from a sibling translation unit" heuristic has
+# nothing to borrow from and misses their third-party include dirs (glm,
+# spdlog) from vcpkg_installed. Every path that doesn't exist on a given
+# clangd instance is silently ignored, so it's safe to list both triplets.
+#
+# Relative, and deliberately not workspace-relative: clangd resolves Add's
+# relative paths against the *borrowed* compile command's directory, which
+# CMakePresets.json sets to the build dir itself (build/windows-x64 or
+# build/linux-x64) - and vcpkg_installed is a direct child of that same
+# build dir on both platforms. So a bare "vcpkg_installed/<triplet>/include"
+# lands in the right place with no machine- or user-specific path baked in.
+CompileFlags:
+  Add:
+    - -Ivcpkg_installed/x64-windows/include
+    - -Ivcpkg_installed/x64-linux/include

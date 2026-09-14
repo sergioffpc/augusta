@@ -1,0 +1,24 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: augustad-staging
+  namespace: flux-system
+spec:
+  interval: 5m
+  releaseName: augustad
+  targetNamespace: staging
+  install:
+    createNamespace: true
+  chart:
+    spec:
+      chart: charts/augustad
+      reconcileStrategy: Revision
+      sourceRef:
+        kind: GitRepository
+        name: augusta-main
+  # image.tag assumes CI tags GHCR images by branch name (main/develop) - that
+  # push step doesn't exist yet (see ROADMAP.md M0b), so this HelmRelease
+  # reconciles but the pod can't pull an image until it does.
+  values:
+    image:
+      tag: main

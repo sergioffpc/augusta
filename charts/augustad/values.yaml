@@ -1,0 +1,26 @@
+image:
+  repository: ghcr.io/sergioffpc/augustad
+  tag: ""
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+service:
+  type: NodePort
+  # Left unset by default so Kubernetes assigns the node port, per
+  # ADR-0026/ENGINEERING.md; set per-environment (see clusters/onprem/apps)
+  # where a stable address is needed. UDP matches GameNetworkingSockets (see
+  # ROADMAP.md M1) once the server actually listens - it doesn't yet, see
+  # deployment.yaml.
+  port: 7777
+  nodePort: ""
+
+# Shared hostPath volume on the k3s node holding signed asset packs
+# (ENGINEERING.md's Deployment & CD section). Populated manually after
+# signing, mounted read-only into every server pod. Not read by the server
+# binary yet - lands with the M5 asset pipeline.
+assetPacks:
+  hostPath: /srv/augusta/asset-packs
+  packVersion: ""
+
+resources: {}

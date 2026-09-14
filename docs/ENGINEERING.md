@@ -39,19 +39,30 @@ the decisions already made in ARCHITECTURE.md:
 
 - **Provider:** GitHub Actions — native Windows and Linux runners match
   the client/server platform split exactly.
-- **Trigger:** every push (solo project, no formal PR gating needed).
+- **Trigger:** `push` to `main`/`develop`, and `pull_request` targeting
+  either. A `changes` job diffs against the base commit first and skips
+  build/test/lint entirely when nothing under `src/`, `tests/`,
+  `CMakeLists.txt`, `CMakePresets.json`, `vcpkg.json`, the `third_party`
+  submodule pointer, `.clang-format`/`.clang-tidy`, or the workflow file
+  itself changed (a docs-only PR shouldn't pay for a full build).
+  `concurrency` cancels a still-running run for the same branch/PR when
+  a new push arrives, so superseded runs don't keep burning minutes.
 - **Pipeline stages:**
-  1. Build + unit test the client on a Windows runner
-  2. Build + unit test the server on a Linux runner
+  1. `clang-format` check, alone in its own fast job — gates everything
+     below (`needs:`), so a formatting slip fails in seconds instead of
+     after a full Windows + Linux + sanitizers build
+  2. Build + unit test the client on a Windows runner
+  3. Build + unit test the server on a Linux runner, plus `clang-tidy`
+     (Google style checks profile)
+  4. ASan + UBSan test build, Linux only, and only for `pull_request`
+     runs — skipped on the `push` that lands after merge, since the PR
+     already validated it
   - Dependency restore: `vcpkg install` (manifest mode) before the build
     step, both runners. Binary cache via a GitHub Packages NuGet feed
     (vcpkg's native GitHub-Actions-cache backend was removed upstream in
     2026 — a NuGet feed is now the supported caching path).
-  3. `clang-format` check (fails on unformatted diffs)
-  4. `clang-tidy` (Google style checks profile)
   5. Compile with a strict warning set, treated as errors
-  6. ASan + UBSan test build, both platforms
-  7. Asset pipeline check: build the asset cooker, generate a fresh
+  6. Asset pipeline check: build the asset cooker, generate a fresh
      throwaway Ed25519 keypair for this run, cook the test assets, sign
      with the ephemeral key, and verify the signed pack loads correctly
      end to end — the real release private key never touches CI
@@ -78,18 +89,18 @@ the decisions already made in ARCHITECTURE.md:
 - **Commit messages:** Conventional Commits, enforced via the local
   `commit-msg` hook (see Code Quality below).
 
-## Deployment & CD (Non-Production)
+## Deployment & CD
 
-Covers `develop`, `feature/*`, `hotfix/*`, and `release/*` — production
-(`main`) deployment is explicitly out of scope here and remains
-undecided/deferred.
+Covers `main` and `develop` only — `feature/*`, `hotfix/*`, and
+`release/*` branches are not deployed to k3s at all (see ADR-0026 for
+why, and why there's no self-hosted GitHub Actions runner in this
+pipeline).
 
 - **Infrastructure:** self-hosted k3s, single node, on the developer's
   own hardware. No cloud provider involved.
-- **Isolation:** one Kubernetes namespace per environment — `develop` is
-  long-lived; `feature-*`, `hotfix-*`, `release-*` namespaces are
-  ephemeral, created on branch push and deleted on branch delete. No
-  concurrency limit on ephemeral namespaces for now.
+- **Isolation:** two fixed, long-lived Kubernetes namespaces —
+  `staging` (tracks `main`) and `develop` (tracks `develop`). No
+  per-branch/ephemeral namespaces.
 - **Container images:** built in CI, pushed to GitHub Container Registry
   (GHCR).
 - **Server exposure:** plain Kubernetes `Service` (`NodePort`, port
@@ -97,13 +108,11 @@ undecided/deferred.
   dynamic allocation, which this project doesn't need (one server
   instance per environment); revisit only if matchmaking/dynamic
   multi-server allocation is ever needed (Beyond v1).
-- **CD mechanism:** push-based — a GitHub Actions workflow runs
-  `helm upgrade --install` on push to a tracked branch, and
-  `helm uninstall` (+ namespace deletion) on the corresponding branch's
-  `delete` event. No ArgoCD/Flux — running a GitOps controller is
-  unnecessary operational overhead for a solo developer when GitHub's
-  native push/delete triggers already map directly onto
-  create/destroy-environment.
+- **CD mechanism:** pull-based via Flux, running inside the k3s cluster
+  and reconciling each branch's `HelmRelease` from Git — nothing outside
+  the cluster needs inbound access to the LAN, and no external PR can
+  trigger execution on the cluster host, since there's no CI runner in
+  this path at all (see ADR-0026).
 - **Access:** LAN-only — no public exposure, no VPN/tunnel needed for now.
 - **Asset packs:** built and signed manually, separately from the CD
   pipeline (see ADR-0018, CI/CD above). Packs are versioned independently
@@ -111,11 +120,7 @@ undecided/deferred.
   instances/versions. Stored on a shared `hostPath` persistent volume on
   the k3s node, populated manually after signing, mounted read-only into
   every server pod. Each environment's Helm values specify which
-  `packVersion` to load (defaulting to the latest for ephemeral branches
-  unless overridden).
-- **Namespace naming:** derived from the branch name — lowercased, `/`
-  and `_` replaced with `-`, truncated to fit Kubernetes' 63-character
-  limit.
+  `packVersion` to load.
 
 ## Developer Environment
 

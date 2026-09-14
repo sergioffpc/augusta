@@ -1,8 +1,8 @@
-#include <spdlog/spdlog.h>
-
+#include "augusta/logging.h"
 #include "augusta/version.h"
 
 int main() {
-  spdlog::info("augusta server v{} starting", augusta::EngineVersion());
+  augusta::logging::Init();
+  INFO("augusta server v{} starting", augusta::EngineVersion());
   return 0;
 }

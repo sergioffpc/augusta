@@ -1,0 +1,26 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: augustad-develop
+  namespace: flux-system
+spec:
+  interval: 5m
+  releaseName: augustad
+  targetNamespace: develop
+  install:
+    createNamespace: true
+  chart:
+    spec:
+      chart: charts/augustad
+      reconcileStrategy: Revision
+      sourceRef:
+        kind: GitRepository
+        name: augusta-develop
+  # See staging.yaml - same caveat on image.tag pending the GHCR push step.
+  values:
+    image:
+      tag: develop
+    service:
+      # Pinned (rather than left to Kubernetes to assign) so this
+      # environment has a stable address for LAN clients to connect to.
+      nodePort: 30777

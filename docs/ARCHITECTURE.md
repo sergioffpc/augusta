@@ -87,14 +87,27 @@ No matchmaking, master server, or third-party platform integration in v1.
 ```
 
 **Shared Core** (compiled into both client and server)
-- ECS World (Flecs) — entities: players, bullets, round state
-- Physics Layer — PhysX wrapper (collision, movement) + custom Ballistics module
+- ECS (Flecs) — shared entity/component data: players, bullets, round
+  state. Each World below is its own Flecs world instance built
+  directly on the library; not a separate wrapped module in its own
+  right.
+- Physics — PhysX wrapper (collision, movement); one interface used
+  identically by PredictionWorld and SimulationWorld
+- WeaponHandling — aim/ADS, fire, reload, recoil, ammo rules; one
+  interface used identically by both Worlds. The client/server
+  difference isn't in this module's logic, it's in what each World
+  does with the result: the server treats it as authoritative and
+  feeds Ballistics, the client uses it only for local predicted
+  feedback pending reconciliation - same split as Physics.
 - Networking Protocol — message definitions + custom binary serialization
 - Match/Round State — round lifecycle, win conditions
 - Level Data — lightweight custom runtime format, baked offline from
   OpenUSD source
 
 **Client-only** (Windows-only)
+- Window — Win32 window creation, message pump, resize/close/focus
+  events; owns the window handle that Renderer's swapchain and Input's
+  device hooks both need, so neither has to manage it itself
 - Input handling — reads device input, hands commands to PredictionWorld
 - Networking — sends commands, receives authoritative server state
 - ClientRuntime
@@ -170,6 +183,17 @@ exclusively server-authoritative.
 - Input Validation — anti-cheat baseline (US-15); rejects/filters invalid
   commands before they reach the world (does not apply to outbound
   authoritative state)
+- Ballistics — custom bullet trajectory simulation (gravity, travel
+  time), hand-rolled instead of PhysX's generic projectile handling
+  (ADR-0002). Exclusively server-side (ADR-0024): the client never
+  simulates a bullet's outcome, only predicts local fire feedback, so
+  this isn't part of Shared Core despite being physics-adjacent.
+- Scripting (Lua) — sandboxed script hooks for game policy (round
+  lifecycle, win conditions, spawn rules); small interface (e.g. a
+  RunHook call) hiding the Lua embedding and the restricted-environment
+  sandbox (§8) that upholds "no I/O inside ECS worlds" structurally.
+  Server-only - game policy is exclusively server-authoritative, never
+  run by either client world.
 - ServerRuntime
   - SimulationWorld (ECS) — the single authoritative world (no prediction,
     no presentation needed). Runs mechanism systems in C++ (movement via
@@ -346,6 +370,9 @@ aid only and do not affect numbering.
 ### Server Runtime
 - [ADR-0022 — Gameplay scripting language: Lua](./adr/0022-gameplay-scripting-language.md)
 - [ADR-0023 — SimulationWorld phase pipeline](./adr/0023-simulationworld-phase-pipeline.md)
+
+### Infrastructure & CD
+- [ADR-0026 — CD strategy: Flux for main/develop, push-based for ephemeral environments](./adr/0026-cd-strategy.md)
 
 ## 10. Quality Requirements
 See [REQUIREMENTS.md](./REQUIREMENTS.md) — Non-Functional Requirements

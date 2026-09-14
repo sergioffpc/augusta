@@ -1,0 +1,19 @@
+.git
+.github
+.vscode
+.cache
+
+build/
+
+# Windows-only client target - not part of the server image, see Dockerfile
+src/client
+
+# Local vcpkg working directories - regenerated inside the build stage
+third_party/vcpkg/buildtrees
+third_party/vcpkg/downloads
+third_party/vcpkg/packages
+third_party/vcpkg/installed
+vcpkg_installed/
+
+docs
+*.md

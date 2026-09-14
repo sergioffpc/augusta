@@ -1,0 +1,22 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: augusta-main
+  namespace: flux-system
+spec:
+  interval: 1m
+  ref:
+    branch: main
+  url: https://github.com/sergioffpc/augusta
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: augusta-develop
+  namespace: flux-system
+spec:
+  interval: 1m
+  ref:
+    branch: develop
+  url: https://github.com/sergioffpc/augusta
