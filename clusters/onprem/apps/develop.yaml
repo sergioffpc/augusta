@@ -7,6 +7,11 @@ spec:
   interval: 5m
   releaseName: augustad
   targetNamespace: develop
+  # Defaults to this HelmRelease's own namespace (flux-system) if unset,
+  # which every environment shares - pin it to targetNamespace so each
+  # environment gets its own Helm release storage instead of colliding on
+  # the same (flux-system, augustad) release record.
+  storageNamespace: develop
   install:
     createNamespace: true
   chart:
