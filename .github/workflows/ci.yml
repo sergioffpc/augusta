@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-26.04
     outputs:
       run_build: ${{ steps.filter.outputs.run_build }}
+      run_container: ${{ steps.filter.outputs.run_container }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -38,14 +39,24 @@ jobs:
 
           if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
+            echo "run_container=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          if git diff --name-only "$base" "${{ github.sha }}" \
+          changed="$(git diff --name-only "$base" "${{ github.sha }}")"
+
+          if echo "$changed" \
               | grep -qE '^(src/|tests/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party$|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$)'; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if echo "$changed" \
+              | grep -qE '^(Dockerfile$|\.dockerignore$|charts/|\.github/workflows/ci\.yml$)'; then
+            echo "run_container=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_container=false" >> "$GITHUB_OUTPUT"
           fi
 
   format:
@@ -170,3 +181,37 @@ jobs:
 
       - name: Test
         run: ctest --preset linux-sanitizers
+
+  container:
+    needs: changes
+    if: needs.changes.outputs.run_container == 'true'
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+
+      - name: Lint Helm chart
+        run: helm lint charts/augusta-server
+
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      # Only main/develop pushes publish - PRs (including from forks) just
+      # validate that the image builds, same reasoning as ADR-0026's decision
+      # to keep this pipeline off a self-hosted runner.
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build server image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          push: ${{ github.event_name == 'push' }}
+          tags: ghcr.io/${{ github.repository_owner }}/augusta-server:${{ github.ref_name }}
