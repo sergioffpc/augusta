@@ -7,8 +7,8 @@
 #
 # Relative, and deliberately not workspace-relative: clangd resolves Add's
 # relative paths against the *borrowed* compile command's directory, which
-# CMakePresets.json sets to the build dir itself (build/windows-x64 or
-# build/linux-x64) - and vcpkg_installed is a direct child of that same
+# CMakePresets.json sets to the build dir itself (build/x64-windows or
+# build/x64-linux) - and vcpkg_installed is a direct child of that same
 # build dir on both platforms. So a bare "vcpkg_installed/<triplet>/include"
 # lands in the right place with no machine- or user-specific path baked in.
 CompileFlags:
