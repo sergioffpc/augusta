@@ -1,17 +1,17 @@
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
-  name: augusta-server-develop
+  name: augustad-develop
   namespace: flux-system
 spec:
   interval: 5m
-  releaseName: augusta-server
+  releaseName: augustad
   targetNamespace: develop
   install:
     createNamespace: true
   chart:
     spec:
-      chart: charts/augusta-server
+      chart: charts/augustad
       reconcileStrategy: Revision
       sourceRef:
         kind: GitRepository
@@ -20,3 +20,7 @@ spec:
   values:
     image:
       tag: develop
+    service:
+      # Pinned (rather than left to Kubernetes to assign) so this
+      # environment has a stable address for LAN clients to connect to.
+      nodePort: 30777

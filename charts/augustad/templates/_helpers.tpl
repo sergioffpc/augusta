@@ -1,13 +1,13 @@
-{{- define "augusta-server.name" -}}
+{{- define "augustad.name" -}}
 {{- .Chart.Name -}}
 {{- end -}}
 
-{{- define "augusta-server.fullname" -}}
+{{- define "augustad.fullname" -}}
 {{- .Release.Name -}}
 {{- end -}}
 
-{{- define "augusta-server.labels" -}}
-app.kubernetes.io/name: {{ include "augusta-server.name" . }}
+{{- define "augustad.labels" -}}
+app.kubernetes.io/name: {{ include "augustad.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/* Flux's helm-controller synthesizes versions like "0.1.0+<sha>" for
@@ -15,7 +15,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end -}}
 
-{{- define "augusta-server.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "augusta-server.name" . }}
+{{- define "augustad.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "augustad.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
