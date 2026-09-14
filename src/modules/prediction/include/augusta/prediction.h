@@ -1,0 +1,115 @@
+#ifndef AUGUSTA_PREDICTION_H_
+#define AUGUSTA_PREDICTION_H_
+
+#include <memory>
+#include <optional>
+
+#include "augusta/input.h"
+#include "augusta/physics.h"
+
+// augusta::prediction orchestrates PredictionWorld (ADR-0024): the
+// client-side ECS pipeline, run once per fixed tick on the Simulation
+// thread (ADR-0005), alongside SimulationWorld's server-side counterpart
+// (augusta::simulation). It composes augusta::physics - the same
+// interface SimulationWorld's Movement phase uses (ARCHITECTURE.md §5) -
+// into the five ordered phases ADR-0024 defines (see Phase below), and
+// emits an immutable Prediction State each tick for
+// augusta::presentation to consume.
+//
+// Unlike SimulationWorld, PredictionWorld only ever predicts the local
+// player - never a bullet's trajectory or outcome (ADR-0024: Ballistics/
+// HitDetection/Damage stay exclusively server-side) - so World::Tick
+// takes a single input::Command, not a per-player list the way
+// augusta::simulation::World::Tick does.
+//
+// Like augusta::simulation, World owns one Flecs world (ADR-0001)
+// internally, entirely encapsulated behind Impl (prediction.cpp) - no
+// flecs header leaks in here. Phase's five values become five
+// dependency-chained flecs::Phase entities, each with one registered
+// flecs::system that runs once per Tick regardless of matched entities
+// - see prediction.cpp. Entity/component shapes still aren't designed,
+// so a system's body is presently a stub; what each one will eventually
+// do is documented on its Phase enumerator below.
+//
+// WeaponHandling has no C++ home yet, same forward reference as in
+// augusta::simulation - see that header's comment.
+namespace augusta::prediction {
+
+// PredictionWorld's five phases (ADR-0024), executed in this exact
+// order every tick. No Ballistics/HitDetection/Damage/Scripts-
+// Behaviours phase exists here - those remain exclusively server-side
+// (ADR-0024), so this pipeline predicts only immediate local feedback,
+// never a bullet's outcome or game policy.
+enum class Phase {
+  // Mechanism. Applies this tick's local input command
+  // (augusta::input::Command, from Input::Sample) to the local player's
+  // entity.
+  kCommandIngestion,
+  // Mechanism. Ingests any authoritative physics::BodyState newly
+  // arrived from the server since the last tick and applies smooth
+  // snap/blend correction (ADR-0004) via physics::World::Reconcile - no
+  // rollback/resimulate. A no-op on ticks where nothing new arrived.
+  kReconciliation,
+  // Mechanism. Predicted PhysX movement, stamina -
+  // augusta::physics::World::Step, same interface SimulationWorld's
+  // Movement phase uses on the authoritative body.
+  kMovement,
+  // Mechanism. Predicts local fire feedback only (muzzle flash, sound
+  // cue, recoil, ammo count) - no bullet trajectory; hit/damage stays
+  // server-authoritative (ADR-0024). Not yet a module of its own - see
+  // the header comment above.
+  kWeaponHandling,
+  // Mechanism. Packages the tick's predicted state into the immutable
+  // Prediction State (State, below).
+  kCommit,
+};
+
+// PredictionWorld's per-tick output - ADR-0024/ARCHITECTURE.md's
+// "Prediction State", consumed by augusta::presentation::World::RunFrame.
+// Deliberately empty for now - same deferred-design posture as
+// augusta::simulation::State; its real shape depends on ECS component
+// shapes not yet designed.
+struct State {};
+
+// The client's single PredictionWorld. The client constructs exactly
+// one, on the Simulation thread (ADR-0005), predicting only the local
+// player. Owns the physics sub-world plus the Flecs world it runs inside
+// of (see header comment); no I/O happens inside Tick (ARCHITECTURE.md
+// §8) - augusta::networking, not this class, is responsible for sending
+// commands and receiving authoritative state.
+//
+// Move-only: copying would either duplicate or alias the owned Flecs
+// world, neither of which is meaningful.
+class World {
+ public:
+  // Constructs an empty World: an empty physics::World (using
+  // stamina_config for the local player's body) and the Flecs world with
+  // Phase's five phases and their systems registered (see header
+  // comment).
+  explicit World(const physics::StaminaConfig& stamina_config);
+  ~World();
+
+  World(const World&) = delete;
+  World& operator=(const World&) = delete;
+  World(World&&) noexcept;
+  World& operator=(World&&) noexcept;
+
+  // Runs all five Phase values above, in their declared order, for one
+  // fixed tick of duration delta_time seconds (internally, one
+  // flecs::world::progress(delta_time) call), for the local player only.
+  // command is this tick's local input. authoritative_state is the
+  // newest physics::BodyState received from the server since the last
+  // Tick call, if any - std::nullopt on ticks where nothing new arrived,
+  // in which case Reconciliation is a no-op. Returns the tick's
+  // Prediction State.
+  State Tick(const input::Command& command, const std::optional<physics::BodyState>& authoritative_state,
+             float delta_time);
+
+ private:
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
+};
+
+}  // namespace augusta::prediction
+
+#endif  // AUGUSTA_PREDICTION_H_
