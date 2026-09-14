@@ -143,7 +143,7 @@ jobs:
         run: cmake --preset linux
 
       - name: Lint (clang-tidy)
-        run: find src -name '*.cpp' | xargs clang-tidy -p build/linux-x64
+        run: find src -name '*.cpp' | xargs clang-tidy -p build/x64-linux
 
       - name: Build
         run: cmake --build --preset linux
