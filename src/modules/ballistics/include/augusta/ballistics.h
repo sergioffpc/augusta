@@ -105,7 +105,7 @@ class World {
   // the World - different ammo types can fire simultaneously with
   // different gravity/max_range.
   BulletHandle Fire(const math::Vec3& origin, const math::Vec3& direction, float initial_speed,
-                     const BulletConfig& config);
+                    const BulletConfig& config);
 
   // Advances handle's bullet by one fixed tick of delta_time seconds:
   // integrates gravity, then tests the tick's movement segment against
