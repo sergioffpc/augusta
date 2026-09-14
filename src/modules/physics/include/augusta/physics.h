@@ -89,6 +89,21 @@ struct StaminaConfig {
   float forced_walk_below = 0.0F;
 };
 
+// The result of one World::Raycast query.
+struct RaycastHit {
+  // True if the ray intersected any body within max_distance. If false,
+  // every other field here is unspecified.
+  bool has_hit = false;
+  // Which body was hit. Only meaningful if has_hit is true.
+  BodyHandle body{};
+  // World-space point where the ray intersected body. Only meaningful
+  // if has_hit is true.
+  math::Vec3 point;
+  // Distance along the ray from origin to point. Only meaningful if
+  // has_hit is true.
+  float distance = 0.0F;
+};
+
 // Owns every body's PhysX state for one side (client or server) of the
 // engine. One World instance is created per process; see
 // ARCHITECTURE.md §8 (Threading) for which thread owns it on each side.
@@ -135,6 +150,18 @@ class World {
   // authoritative state just received over the network and get back the
   // corrected state to continue simulating from.
   BodyState Reconcile(BodyHandle handle, const BodyState& authoritative);
+
+  // Casts a ray from origin in direction (need not be pre-normalized) up
+  // to max_distance, against every body currently in this World, and
+  // returns the closest intersection. Tests only bodies created via
+  // CreateBody - there is no static world geometry (walls, terrain) in
+  // this World to hit yet; that depends on Level Data, not yet designed
+  // (ARCHITECTURE.md's Shared Core list). Used by augusta::ballistics
+  // for player hit detection (US-11): PhysX's cross-platform
+  // non-determinism (see the header comment above) isn't a correctness
+  // concern there, since ballistics runs exclusively server-side - there
+  // is no second, client-side computation to diverge from.
+  [[nodiscard]] RaycastHit Raycast(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const;
 };
 
 }  // namespace augusta::physics
