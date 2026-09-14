@@ -214,4 +214,7 @@ jobs:
         with:
           context: .
           push: ${{ github.event_name == 'push' }}
-          tags: ghcr.io/${{ github.repository_owner }}/augusta-server:${{ github.ref_name }}
+          # github.ref_name is only a plain branch name (safe as a Docker
+          # tag) on push - for pull_request it's "<pr-number>/merge", which
+          # contains a "/" and Docker rejects as a tag.
+          tags: ghcr.io/${{ github.repository_owner }}/augusta-server:${{ github.event_name == 'push' && github.ref_name || github.sha }}
