@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "augusta-server.fullname" . }}
+  labels:
+    {{- include "augusta-server.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "augusta-server.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "augusta-server.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: augusta-server
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: game
+              containerPort: {{ .Values.service.port }}
+              protocol: UDP
+          env:
+            - name: AUGUSTA_PACK_VERSION
+              value: {{ .Values.assetPacks.packVersion | quote }}
+          volumeMounts:
+            - name: asset-packs
+              mountPath: /srv/augusta/asset-packs
+              readOnly: true
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: asset-packs
+          hostPath:
+            path: {{ .Values.assetPacks.hostPath }}
+            type: DirectoryOrCreate

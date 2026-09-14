@@ -1,0 +1,23 @@
+image:
+  repository: ghcr.io/sergioffpc/augusta-server
+  tag: ""
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+service:
+  type: NodePort
+  # Kubernetes assigns the actual node port; ADR-0026/ENGINEERING.md don't
+  # fix one. UDP matches GameNetworkingSockets (see ROADMAP.md M1) once the
+  # server actually listens - it doesn't yet, see deployment.yaml.
+  port: 7777
+
+# Shared hostPath volume on the k3s node holding signed asset packs
+# (ENGINEERING.md's Deployment & CD section). Populated manually after
+# signing, mounted read-only into every server pod. Not read by the server
+# binary yet - lands with the M5 asset pipeline.
+assetPacks:
+  hostPath: /srv/augusta/asset-packs
+  packVersion: ""
+
+resources: {}
