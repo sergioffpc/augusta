@@ -59,24 +59,32 @@ jobs:
 
   build-server:
     runs-on: ubuntu-26.04
+    # See ci.yml's build-server for why this isn't the workflow-level
+    # NuGet default: nuget.exe runs under Mono here, and Mono's
+    # untrusted-by-default cert store fails every restore/push with
+    # CERTIFICATE_VERIFY_FAILED.
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
-      - name: Install Ninja + mono
-        run: sudo apt-get update && sudo apt-get install -y ninja-build mono-complete
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
 
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
 
+      - name: Cache vcpkg binaries
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .vcpkg-bincache
+          key: vcpkg-bincache-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-bincache-
+
       - name: Bootstrap vcpkg
         run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-
-      - name: Configure vcpkg NuGet cache
-        run: |
-          nuget_path=$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1)
-          mono "$nuget_path" sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
-          mono "$nuget_path" setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
 
       - name: Configure
         run: cmake --preset linux

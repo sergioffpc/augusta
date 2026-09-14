@@ -120,24 +120,38 @@ jobs:
     # apt.llvm.org (a stable runner image already gives a stable distro
     # package version).
     runs-on: ubuntu-26.04
+    # Overrides the workflow-level NuGet/GitHubPackages default (Windows-
+    # only, see build-client): that path runs nuget.exe under Mono here,
+    # and Mono's own bundled cert store is untrusted-by-default on a
+    # fresh runner image, failing every restore/push with
+    # CERTIFICATE_VERIFY_FAILED (silently - vcpkg just rebuilds from
+    # source instead of erroring). x-gha (GitHub Actions' own cache
+    # backend for vcpkg) would have sidestepped Mono entirely, but it was
+    # removed upstream (microsoft/vcpkg-tool#1662); actions/cache over
+    # the local files provider is GitHub Actions' own recommended
+    # replacement.
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
-      - name: Install clang-tidy + mono
-        run: sudo apt-get update && sudo apt-get install -y clang-tidy ninja-build mono-complete
+      - name: Install clang-tidy
+        run: sudo apt-get update && sudo apt-get install -y clang-tidy ninja-build
 
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
 
+      - name: Cache vcpkg binaries
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .vcpkg-bincache
+          key: vcpkg-bincache-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-bincache-
+
       - name: Bootstrap vcpkg
         run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-
-      - name: Configure vcpkg NuGet cache
-        run: |
-          nuget_path=$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1)
-          mono "$nuget_path" sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
-          mono "$nuget_path" setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
 
       - name: Configure
         run: cmake --preset linux
@@ -155,23 +169,27 @@ jobs:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true' && github.event_name == 'pull_request'
     runs-on: ubuntu-26.04
+    # See build-server's env override for why this isn't the workflow-
+    # level NuGet default.
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
-      - name: Install mono
-        run: sudo apt-get update && sudo apt-get install -y mono-complete
-
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .vcpkg-bincache
+          key: vcpkg-bincache-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-bincache-
 
       - name: Bootstrap vcpkg
         run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-
-      - name: Configure vcpkg NuGet cache
-        run: |
-          nuget_path=$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1)
-          mono "$nuget_path" sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
 
       - name: Configure (ASan + UBSan)
         run: cmake --preset linux-san
