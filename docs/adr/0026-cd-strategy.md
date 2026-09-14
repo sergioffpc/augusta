@@ -33,7 +33,7 @@ essential, ephemeral branches are simply not deployed to k3s at all.
   removes that attack surface entirely, not just for `main`/`develop`.
 - `feature/*`, `hotfix/*`, `release/*` branches get no automated
   deployment; verify server changes locally before merging to `develop`.
-- M0b's k3s scope is just two fixed Helm releases (`main` → production
+- M0b's k3s scope is just two fixed Helm releases (`main` → staging
   namespace, `develop` → develop namespace), both owned by Flux.
 - CI (build/test, `helm lint`/`docker build`) is unaffected: it never
   needed cluster access, so it stays on GitHub-hosted runners and just

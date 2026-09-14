@@ -1,12 +1,12 @@
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
-  name: augustad-production
+  name: augustad-staging
   namespace: flux-system
 spec:
   interval: 5m
   releaseName: augustad
-  targetNamespace: production
+  targetNamespace: staging
   install:
     createNamespace: true
   chart:

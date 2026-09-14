@@ -16,7 +16,7 @@ spec:
       sourceRef:
         kind: GitRepository
         name: augusta-develop
-  # See production.yaml - same caveat on image.tag pending the GHCR push step.
+  # See staging.yaml - same caveat on image.tag pending the GHCR push step.
   values:
     image:
       tag: develop
