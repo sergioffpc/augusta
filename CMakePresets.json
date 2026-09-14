@@ -6,7 +6,7 @@
       "name": "windows",
       "displayName": "Windows (Ninja + cl)",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build-windows",
+      "binaryDir": "${sourceDir}/build/windows-x64",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
@@ -21,7 +21,7 @@
       "name": "linux",
       "displayName": "Linux (Ninja)",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build-linux",
+      "binaryDir": "${sourceDir}/build/linux-x64",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
@@ -34,10 +34,10 @@
       }
     },
     {
-      "name": "linux-sanitizers",
+      "name": "linux-san",
       "displayName": "Linux (ASan + UBSan)",
       "inherits": "linux",
-      "binaryDir": "${sourceDir}/build-san",
+      "binaryDir": "${sourceDir}/build/linux-x64-san",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
@@ -48,7 +48,7 @@
   "buildPresets": [
     { "name": "windows", "configurePreset": "windows" },
     { "name": "linux", "configurePreset": "linux" },
-    { "name": "linux-sanitizers", "configurePreset": "linux-sanitizers" }
+    { "name": "linux-san", "configurePreset": "linux-san" }
   ],
   "testPresets": [
     {
@@ -62,8 +62,8 @@
       "output": { "outputOnFailure": true }
     },
     {
-      "name": "linux-sanitizers",
-      "configurePreset": "linux-sanitizers",
+      "name": "linux-san",
+      "configurePreset": "linux-san",
       "output": { "outputOnFailure": true }
     }
   ]

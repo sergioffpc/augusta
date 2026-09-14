@@ -62,12 +62,12 @@ Both bootstrap scripts also `git submodule update --init` the vendored vcpkg
 
 **Sanitizer build (Linux, ASan+UBSan):**
 ```bash
-cmake --preset linux-sanitizers
-cmake --build --preset linux-sanitizers
-ctest --preset linux-sanitizers
+cmake --preset linux-san
+cmake --build --preset linux-san
+ctest --preset linux-san
 ```
 
-The three presets (`windows`, `linux`, `linux-sanitizers`) are defined in
+The three presets (`windows`, `linux`, `linux-san`) are defined in
 [CMakePresets.json](CMakePresets.json) and are what CI builds with too.
 
 ## Documentation

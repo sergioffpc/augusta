@@ -1,6 +1,7 @@
-# Build output (CMakePresets.json binaryDir per preset - build-windows/build-linux
-# stay separate since Windows-native and WSL share the same checkout, see ENGINEERING.md)
-build*/
+# Build output (CMakePresets.json binaryDir per preset - build/windows-x64,
+# build/linux-x64, etc. stay separate since Windows-native and WSL share the
+# same checkout, see ENGINEERING.md)
+build/
 out/
 bin/
 obj/

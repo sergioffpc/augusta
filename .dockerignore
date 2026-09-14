@@ -3,9 +3,7 @@
 .vscode
 .cache
 
-build-windows/
-build-linux/
-build-san/
+build/
 
 # Windows-only client target - not part of the server image, see Dockerfile
 src/client
