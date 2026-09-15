@@ -35,6 +35,15 @@ if (WIN32)
     OUTPUT ${FALCOR_STAMP}
     COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} checkout -- CMakePresets.json
     COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} apply ${CMAKE_SOURCE_DIR}/cmake/patches/falcor-augusta.patch
+    # setup.bat (Falcor's own documented first step, README.md) pulls
+    # dependencies.xml's "tools_*" entries into tools/.packman/ (ninja,
+    # cmake, ...) - the windows-ninja-msvc-base preset's CMAKE_MAKE_PROGRAM
+    # points there. Falcor's own root CMakeLists.txt only pulls the
+    # *external/packman* dependencies itself, and only after project() -
+    # which is too late, since project() needs CMAKE_MAKE_PROGRAM (ninja)
+    # resolvable immediately. Without this, a fresh checkout's first
+    # configure fails ("tools/.packman/ninja/ninja.exe: no such file").
+    COMMAND ${FALCOR_DIR}/setup.bat
     COMMAND ${CMAKE_COMMAND} -S ${FALCOR_DIR} --preset ${FALCOR_PRESET}
     COMMAND ${CMAKE_COMMAND} --build ${FALCOR_BUILD_DIR} --config ${CMAKE_BUILD_TYPE} --target Falcor
     COMMAND ${CMAKE_COMMAND} -E touch ${FALCOR_STAMP}
