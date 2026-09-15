@@ -81,7 +81,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: true
+          # recursive, not just true: third_party/falcor (ADR-0009) has its
+          # own nested submodules (glfw, imgui, fmt, ...) that need pulling
+          # too - see .gitmodules.
+          submodules: recursive
 
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
 
@@ -94,6 +97,27 @@ jobs:
       - name: Bootstrap vcpkg
         shell: pwsh
         run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Cache vendored Falcor build (ADR-0009)
+        id: falcor-commit
+        shell: pwsh
+        run: |
+          $sha = git -C third_party/falcor rev-parse HEAD
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # C:\packman-repo is packman's own machine-wide download cache
+          # (outside the workspace - see third_party/falcor/setup.bat);
+          # third_party/falcor/build is its own build tree, produced by
+          # src/modules/renderer/CMakeLists.txt's own build step. Building
+          # Falcor from scratch is slow, so both are cached and keyed on the
+          # pinned submodule commit (ADR-0025-style pinning) rather than
+          # rebuilding on every run.
+          path: |
+            C:\packman-repo
+            third_party/falcor/build
+          key: falcor-${{ steps.falcor-commit.outputs.sha }}
 
       - name: Configure vcpkg NuGet cache
         shell: pwsh
@@ -157,11 +181,16 @@ jobs:
         run: cmake --preset linux
 
       - name: Lint (clang-tidy)
-        # src/client is Windows-only (CMakeLists.txt gates it on WIN32) and
-        # isn't part of this Linux configure's build graph at all, so it has
-        # no compile_commands.json entry here - excluded rather than linted
-        # against the wrong platform's (missing) compile flags.
-        run: find src -name '*.cpp' -not -path 'src/client/*' | xargs clang-tidy -p build/x64-linux
+        # src/client and src/modules/renderer are Windows-only (CMakeLists.txt
+        # gates both on WIN32 - the latter since ADR-0009's Falcor backend is
+        # Windows-only) and aren't part of this Linux configure's build graph
+        # at all, so they have no compile_commands.json entry here - excluded
+        # rather than linted against the wrong platform's (missing) compile
+        # flags. Note: clang-tidy given multiple files in one invocation
+        # cascades a spurious error onto every file *after* the first one
+        # missing its compile_commands entry, not just that file itself - so
+        # a stray Windows-only file left in this list fails the whole batch.
+        run: find src -name '*.cpp' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' | xargs clang-tidy -p build/x64-linux
 
       - name: Build
         run: cmake --build --preset linux

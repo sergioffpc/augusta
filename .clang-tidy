@@ -26,13 +26,14 @@ Checks: >
 # Flecs's own header.
 #
 # readability-convert-member-functions-to-static is disabled because most
-# module classes (physics::World, renderer::Renderer, networking::Client,
-# ...) are still placeholder stubs awaiting real third-party integration
-# (PhysX, Falcor, GameNetworkingSockets, Lua, Steam Audio) - their methods
-# don't touch instance state yet only because there's no real state to
-# touch, not because they're meant to be static. Chasing this check per
-# stub would just mean undoing it the moment each real implementation
-# lands.
+# module classes (physics::World, networking::Client, ...) are still
+# placeholder stubs awaiting real third-party integration (PhysX,
+# GameNetworkingSockets, Lua, Steam Audio) - their methods don't touch
+# instance state yet only because there's no real state to touch, not
+# because they're meant to be static. Chasing this check per stub would
+# just mean undoing it the moment each real implementation lands.
+# (renderer::Renderer is real as of M1's Falcor spike, ADR-0009 - but it's
+# Windows-only and this clang-tidy run is Linux-only, so it's moot there.)
 #
 # modernize-use-scoped-lock is disabled because this clang-tidy build
 # (LLVM 21.1 on the Linux CI runner) segfaults analyzing it against a

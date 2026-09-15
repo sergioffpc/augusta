@@ -44,7 +44,6 @@ add_subdirectory(src/modules/networking)
 add_subdirectory(src/modules/scripting)
 add_subdirectory(src/modules/audio)
 add_subdirectory(src/modules/input)
-add_subdirectory(src/modules/renderer)
 add_subdirectory(src/modules/animation)
 add_subdirectory(src/modules/simulation)
 add_subdirectory(src/modules/prediction)
@@ -52,6 +51,10 @@ add_subdirectory(src/modules/presentation)
 add_subdirectory(src/modules/replication)
 add_subdirectory(src/server)
 if (WIN32)
+  # NVIDIA Falcor (ADR-0009) is Windows-only, so augusta_renderer's real
+  # implementation only builds here - nothing on Linux (only the
+  # WIN32-only client links it) ever needed it in that build graph anyway.
+  add_subdirectory(src/modules/renderer)
   add_subdirectory(src/client)
 endif()
 add_subdirectory(tests)

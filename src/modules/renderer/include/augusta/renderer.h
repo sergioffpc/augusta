@@ -2,6 +2,7 @@
 #define AUGUSTA_RENDERER_H_
 
 #include <cstdint>
+#include <memory>
 #include <string>
 
 #include "augusta/input.h"
@@ -67,6 +68,18 @@ class Renderer {
   // client that can't render. input_sink must outlive this Renderer.
   Renderer(const Config& config, input::EventSink& input_sink);
 
+  // Falcor's Device/Window/Swapchain are unique hardware resources owned
+  // through Impl (see the .cpp) - ~Renderer waits for the GPU to go idle
+  // before tearing them down, same as Falcor::SampleApp's own destructor.
+  ~Renderer();
+
+  // Non-copyable/non-movable, same reasoning as ClientRuntime (the sole
+  // owner ties window/device lifetime to the thread that constructed it).
+  Renderer(const Renderer&) = delete;
+  Renderer& operator=(const Renderer&) = delete;
+  Renderer(Renderer&&) = delete;
+  Renderer& operator=(Renderer&&) = delete;
+
   // Drains the OS/Falcor event queue and returns immediately - never
   // waits for or presents a frame. Updates the state ShouldClose/GetSize
   // return, and synchronously calls input_sink's matching method for
@@ -101,6 +114,10 @@ class Renderer {
   // itself (ADR-0009's vendored-fork note); this is expected to require
   // a small patch to the vendored copy.
   void SetCursorLocked(bool locked);
+
+ private:
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace augusta::renderer
