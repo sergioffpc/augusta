@@ -166,6 +166,21 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
   // swapchain - same as handleWindowSizeChange does for a size change.
   void RecreateSwapchain() {
     device->wait();
+    // The old swapchain's underlying DXGI swap chain is bound to the
+    // window's HWND; explicitly drop it (rather than letting the
+    // assignment below replace it, which would briefly construct the
+    // new one while the old one is still alive) so it's fully torn down
+    // before a second swap chain is created against the same HWND.
+    swapchain.reset();
+    // Dropping the ref above only *enqueues* the back buffers' GPU
+    // resources for release (Texture::~Texture() -> Device::
+    // releaseResource(), deferred until a later fence signal - see
+    // Device::executeDeferredReleases()) rather than freeing them on the
+    // spot. A second wait() signals the fence again and flushes that
+    // queue, so the old swap chain's DXGI resources are actually gone
+    // before creating a new one on the same HWND - without this,
+    // createSwapchain() fails with E_ACCESSDENIED.
+    device->wait();
     const auto size = window->getClientAreaSize();
     Falcor::Swapchain::Desc desc;
     desc.format = Falcor::ResourceFormat::BGRA8UnormSrgb;
