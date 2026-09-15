@@ -197,7 +197,11 @@ std::optional<input::MouseButton> MapMouseButton(Falcor::Input::MouseButton butt
 
 }  // namespace
 
-struct Renderer::Impl : public Falcor::Window::ICallbacks {
+// final: Falcor::Window::ICallbacks (a pure-virtual interface) has no
+// virtual destructor of its own, so a non-final Impl deleted through
+// unique_ptr<Impl> trips -Wdelete-non-abstract-non-virtual-dtor - Impl is
+// never subclassed, so final is both the fix and the correct contract.
+struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   input::EventSink& input_sink;
 
   Falcor::ref<Falcor::Device> device;
