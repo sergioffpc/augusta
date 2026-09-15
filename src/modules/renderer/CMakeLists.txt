@@ -60,46 +60,58 @@ if (WIN32)
   )
   add_custom_target(falcor_build DEPENDS ${FALCOR_STAMP})
 
-  # Falcor.dll's own PUBLIC link/include requirements (fmt, Vulkan-Headers,
-  # slang/gfx, imgui, ...) - copied verbatim from compile_commands.json /
-  # the ninja link edge for Source/Samples/SampleAppTemplate, a real
-  # consumer of `Falcor` built the same way this target will be, rather
-  # than re-derived by hand from Source/Falcor/CMakeLists.txt's own
-  # target_link_libraries/target_compile_definitions (which augusta's
-  # plain IMPORTED target below can't just inherit the way a foreign
-  # add_subdirectory() consumer normally would).
-  add_library(falcor SHARED IMPORTED GLOBAL)
-  set_target_properties(falcor PROPERTIES
-    IMPORTED_LOCATION "${FALCOR_BIN_DIR}/Falcor.dll"
-    IMPORTED_IMPLIB "${FALCOR_BUILD_DIR}/Source/Falcor/${CMAKE_BUILD_TYPE}/Falcor.lib"
-    INTERFACE_INCLUDE_DIRECTORIES
-      "${FALCOR_DIR}/Source/Falcor;\
-${FALCOR_DIR}/external/fmt/include;\
-${FALCOR_DIR}/external/vulkan-headers/include;\
-${FALCOR_DIR}/external/imgui;\
-${FALCOR_DIR}/external/imgui_addons;\
-${FALCOR_DIR}/external/packman/nanovdb/include;\
-${FALCOR_DIR}/external/include;\
-${FALCOR_DIR}/external/packman/rtxdi/rtxdi-sdk/include;\
-${FALCOR_DIR}/external/pybind11/include;\
-${FALCOR_DIR}/external/packman/python/Include;\
-${FALCOR_DIR}/external/packman/slang/include"
-    INTERFACE_COMPILE_DEFINITIONS
-      "NOMINMAX;UNICODE;_USE_MATH_DEFINES;\
-FALCOR_ENABLE_ASSERTS=$<IF:$<CONFIG:Debug>,1,0>;\
-FALCOR_ENABLE_PROFILER=1;FALCOR_HAS_D3D12=1;FALCOR_HAS_VULKAN=1;\
-FALCOR_HAS_AFTERMATH=0;FALCOR_HAS_NVAPI=0;FALCOR_HAS_CUDA=0;\
-FALCOR_HAS_D3D12_AGILITY_SDK=1;FALCOR_HAS_RTXDI=1;\
-IMGUI_USER_CONFIG=\"Utils/UI/ImGuiConfig.h\""
-    INTERFACE_LINK_LIBRARIES
-      "${FALCOR_BUILD_DIR}/external/fmt/${CMAKE_BUILD_TYPE}/fmt.lib;\
-${FALCOR_DIR}/external/packman/python/libs/python310.lib;\
-${FALCOR_DIR}/external/packman/slang/lib/slang.lib;\
-${FALCOR_DIR}/external/packman/slang/lib/gfx.lib"
+  # Falcor's own PUBLIC link/include/compile-definition requirements (fmt,
+  # Vulkan-Headers, slang/gfx, imgui, ...) - copied verbatim from
+  # compile_commands.json / the ninja link edge for
+  # Source/Samples/SampleAppTemplate, a real consumer of `Falcor` built
+  # the same way this target will be, rather than re-derived by hand from
+  # Source/Falcor/CMakeLists.txt's own target_link_libraries/
+  # target_compile_definitions.
+  #
+  # Applied directly to augusta_renderer rather than parked on a separate
+  # `add_library(falcor ... IMPORTED)` target: CMake validates that an
+  # IMPORTED target's INTERFACE_INCLUDE_DIRECTORIES already exist on disk
+  # at configure time and hard-errors otherwise ("includes non-existent
+  # path") - but these packman-fetched directories (nanovdb, slang, ...)
+  # don't exist yet on a fresh checkout, only after falcor_build's custom
+  # command has actually run once, at build time. A plain (non-IMPORTED)
+  # target like augusta_renderer isn't checked this way, since referencing
+  # not-yet-generated paths is normal for anything fed by a custom command.
+  target_include_directories(augusta_renderer PRIVATE
+    "${FALCOR_DIR}/Source/Falcor"
+    "${FALCOR_DIR}/external/vulkan-headers/include"
+    "${FALCOR_DIR}/external/imgui"
+    "${FALCOR_DIR}/external/imgui_addons"
+    "${FALCOR_DIR}/external/packman/nanovdb/include"
+    "${FALCOR_DIR}/external/include"
+    "${FALCOR_DIR}/external/packman/rtxdi/rtxdi-sdk/include"
+    "${FALCOR_DIR}/external/pybind11/include"
+    "${FALCOR_DIR}/external/packman/python/Include"
+    "${FALCOR_DIR}/external/packman/slang/include"
   )
-  add_dependencies(falcor falcor_build)
-
-  target_link_libraries(augusta_renderer PUBLIC falcor)
+  target_compile_definitions(augusta_renderer PRIVATE
+    NOMINMAX UNICODE _USE_MATH_DEFINES
+    FALCOR_ENABLE_ASSERTS=$<IF:$<CONFIG:Debug>,1,0>
+    FALCOR_ENABLE_PROFILER=1 FALCOR_HAS_D3D12=1 FALCOR_HAS_VULKAN=1
+    FALCOR_HAS_AFTERMATH=0 FALCOR_HAS_NVAPI=0 FALCOR_HAS_CUDA=0
+    FALCOR_HAS_D3D12_AGILITY_SDK=1 FALCOR_HAS_RTXDI=1
+    IMGUI_USER_CONFIG="Utils/UI/ImGuiConfig.h"
+    # Source/Falcor/Utils/Math/Float16.h uses std::float_denorm_style /
+    # numeric_limits::has_denorm, deprecated as of C++23 - not our header
+    # to fix, and MSVC's own STL suggests this exact macro to silence it.
+    _SILENCE_CXX23_DENORM_DEPRECATION_WARNING
+    # external/packman/nanovdb's NanoVDB.h calls plain sprintf - not our
+    # header to fix either.
+    _CRT_SECURE_NO_WARNINGS
+  )
+  target_link_libraries(augusta_renderer PUBLIC
+    "${FALCOR_BUILD_DIR}/Source/Falcor/${CMAKE_BUILD_TYPE}/Falcor.lib"
+    "${FALCOR_BUILD_DIR}/external/fmt/${CMAKE_BUILD_TYPE}/fmt.lib"
+    "${FALCOR_DIR}/external/packman/python/libs/python310.lib"
+    "${FALCOR_DIR}/external/packman/slang/lib/slang.lib"
+    "${FALCOR_DIR}/external/packman/slang/lib/gfx.lib"
+  )
+  add_dependencies(augusta_renderer falcor_build)
 
   # augusta_math (glm) and Falcor's own fmt (external/fmt) both put an
   # `fmt/format.h` on the include path via their respective vcpkg/packman
@@ -112,8 +124,12 @@ ${FALCOR_DIR}/external/packman/slang/lib/gfx.lib"
 
   # Falcor's own sources build with this project-specific warning policy
   # (Source/Falcor/CMakeLists.txt); only this target's one translation unit
-  # consumes Falcor's public headers, so only it needs to match.
+  # consumes Falcor's public headers, so only it needs to match. /wd5311
+  # isn't part of that copied policy - it's this machine's much newer
+  # MSVC/STL (Falcor's own list predates it) flagging nlohmann/json.hpp
+  # and pybind11's pre-C++23 `operator""x` literal-operator syntax, in
+  # vendored headers this target doesn't own either.
   target_compile_options(augusta_renderer PRIVATE
-    $<$<CXX_COMPILER_ID:MSVC>:/wd4819 /wd4251 /wd4244 /wd4267 /wd4100 /wd4201 /wd4245 /wd4189 /wd4127 /wd4701 /wd4703 /wd4324 /wd4505 /wd4702 /wd4389 /wd4459 /wd4268>
+    $<$<CXX_COMPILER_ID:MSVC>:/wd4819 /wd4251 /wd4244 /wd4267 /wd4100 /wd4201 /wd4245 /wd4189 /wd4127 /wd4701 /wd4703 /wd4324 /wd4505 /wd4702 /wd4389 /wd4459 /wd4268 /wd5311>
   )
 endif()

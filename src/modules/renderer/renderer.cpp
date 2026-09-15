@@ -6,9 +6,13 @@
 #include <Falcor.h>
 #include <Utils/Math/Matrix.h>
 #include <Utils/Threading.h>
+#include <Utils/Timing/FrameRate.h>
+#include <Utils/Timing/ProfilerUI.h>
+#include <Utils/UI/Gui.h>
 
 #include <chrono>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -25,6 +29,25 @@
 namespace augusta::renderer {
 
 namespace {
+
+// Layout for the debug GUI windows (ADR-0009's spike scope: Falcor's own
+// ImGui wrapper, not a bespoke augusta HUD - PresentationWorld's real UI
+// doesn't exist yet).
+constexpr Falcor::uint2 kStatsWindowSize(300, 70);
+constexpr Falcor::uint2 kStatsWindowPos(10, 10);
+constexpr Falcor::uint2 kSettingsWindowSize(300, 230);
+constexpr Falcor::uint2 kSettingsWindowPos(10, 90);
+constexpr Falcor::uint2 kProfilerWindowSize(800, 600);
+constexpr Falcor::uint2 kProfilerWindowPos(10, 330);
+
+constexpr float kMinRotationSpeed = 0.0F;
+constexpr float kMaxRotationSpeed = 5.0F;
+
+const Falcor::Gui::DropdownList kCullModeList = {
+    {static_cast<std::uint32_t>(Falcor::RasterizerState::CullMode::None), "None"},
+    {static_cast<std::uint32_t>(Falcor::RasterizerState::CullMode::Front), "Front"},
+    {static_cast<std::uint32_t>(Falcor::RasterizerState::CullMode::Back), "Back"},
+};
 
 // One cube vertex - see BuildCubeGeometry. 4 unique vertices per face
 // (not 8 shared corners) so every face gets its own straight UV mapping.
@@ -82,7 +105,20 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
   Falcor::ref<Falcor::Sampler> sampler;
   std::uint32_t index_count = 0;
 
+  Falcor::FrameRate frame_rate;
+  std::unique_ptr<Falcor::Gui> gui;
+  std::unique_ptr<Falcor::ProfilerUI> profiler_ui;
+
+  // Render settings, live-editable from the Settings window (DrawGui).
+  Falcor::float4 clear_color{0.0F, 0.0F, 1.0F, 1.0F};
+  Falcor::RasterizerState::CullMode cull_mode = Falcor::RasterizerState::CullMode::None;
+  bool wireframe_enabled = false;
+  bool vsync_enabled = false;
+  float rotation_speed = 1.0F;
+  float rotation_angle = 0.0F;
+
   std::chrono::steady_clock::time_point start_time;
+  std::chrono::steady_clock::time_point last_frame_time;
   bool cursor_locked = false;
 
   Impl(const Config& config, input::EventSink& sink) : input_sink(sink) {
@@ -92,6 +128,7 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
     Falcor::Threading::start();
 
     device = Falcor::make_ref<Falcor::Device>(Falcor::Device::Desc{});
+    device->getProfiler()->setEnabled(true);
 
     Falcor::Window::Desc window_desc;
     window_desc.width = config.width;
@@ -100,20 +137,17 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
     window_desc.resizableWindow = true;
     window = Falcor::Window::create(window_desc, this);
 
-    Falcor::Swapchain::Desc swapchain_desc;
-    swapchain_desc.format = Falcor::ResourceFormat::BGRA8UnormSrgb;
-    swapchain_desc.width = window->getClientAreaSize().x;
-    swapchain_desc.height = window->getClientAreaSize().y;
-    swapchain_desc.imageCount = 3;
-    swapchain_desc.enableVSync = false;
-    swapchain = Falcor::make_ref<Falcor::Swapchain>(device, swapchain_desc, window->getApiHandle());
-
-    CreateTargetFbo(swapchain_desc.width, swapchain_desc.height);
+    RecreateSwapchain();
+    const auto size = window->getClientAreaSize();
+    CreateTargetFbo(size.x, size.y);
     BuildCubeGeometry();
     BuildCheckerboardTexture();
     BuildRasterPass();
 
+    gui = std::make_unique<Falcor::Gui>(device, size.x, size.y);
+
     start_time = std::chrono::steady_clock::now();
+    last_frame_time = start_time;
   }
 
   ~Impl() {
@@ -124,6 +158,28 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
   void CreateTargetFbo(std::uint32_t width, std::uint32_t height) {
     target_fbo = Falcor::Fbo::create2D(device, width, height, Falcor::ResourceFormat::BGRA8UnormSrgb,
                                        Falcor::ResourceFormat::D32Float);
+  }
+
+  // Swapchain::Desc::enableVSync can only be set at construction (no
+  // runtime setter on Swapchain itself), so toggling VSync from the
+  // Settings window means tearing down and recreating the whole
+  // swapchain - same as handleWindowSizeChange does for a size change.
+  void RecreateSwapchain() {
+    device->wait();
+    const auto size = window->getClientAreaSize();
+    Falcor::Swapchain::Desc desc;
+    desc.format = Falcor::ResourceFormat::BGRA8UnormSrgb;
+    desc.width = size.x;
+    desc.height = size.y;
+    desc.imageCount = 3;
+    desc.enableVSync = vsync_enabled;
+    swapchain = Falcor::make_ref<Falcor::Swapchain>(device, desc, window->getApiHandle());
+  }
+
+  void RebuildRasterizerState() const {
+    auto rasterizer_desc = Falcor::RasterizerState::Desc().setCullMode(cull_mode).setFillMode(
+        wireframe_enabled ? Falcor::RasterizerState::FillMode::Wireframe : Falcor::RasterizerState::FillMode::Solid);
+    raster_pass->getState()->setRasterizerState(Falcor::RasterizerState::create(rasterizer_desc));
   }
 
   // A unit cube (half-extent 0.5, centered on the model origin), 4
@@ -209,31 +265,103 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
     raster_pass->getState()->setVao(vao);
 
     // Winding order isn't pinned down yet (no camera/coordinate-system
-    // ADR exists for it), so disable culling rather than risk the cube
-    // rendering as invisible from every angle.
-    auto rasterizer_desc = Falcor::RasterizerState::Desc().setCullMode(Falcor::RasterizerState::CullMode::None);
-    raster_pass->getState()->setRasterizerState(Falcor::RasterizerState::create(rasterizer_desc));
+    // ADR exists for it), so cull_mode defaults to None rather than risk
+    // the cube rendering as invisible from every angle - live-editable
+    // from the Settings window regardless (DrawGui).
+    RebuildRasterizerState();
   }
 
   void Draw() {
     auto* render_context = device->getRenderContext();
-    render_context->clearFbo(target_fbo.get(), Falcor::float4(0.05F, 0.05F, 0.08F, 1.0F), 1.0F, 0,
-                             Falcor::FboAttachmentType::All);
 
-    const float elapsed = std::chrono::duration<float>(std::chrono::steady_clock::now() - start_time).count();
-    const Falcor::float4x4 model = Falcor::math::matrixFromRotation(elapsed, Falcor::float3(0.3F, 1.0F, 0.0F));
-    const Falcor::float4x4 view = Falcor::math::matrixFromTranslation(Falcor::float3(0.0F, 0.0F, -3.0F));
-    const float aspect = static_cast<float>(target_fbo->getWidth()) / static_cast<float>(target_fbo->getHeight());
-    const Falcor::float4x4 projection = Falcor::math::perspective(0.9F, aspect, 0.1F, 100.0F);
-    const Falcor::float4x4 mvp = Falcor::math::mul(projection, Falcor::math::mul(view, model));
+    const auto now = std::chrono::steady_clock::now();
+    const float delta_time = std::chrono::duration<float>(now - last_frame_time).count();
+    last_frame_time = now;
+    rotation_angle += delta_time * rotation_speed;
 
-    auto root_var = raster_pass->getRootVar();
-    root_var["PerFrameCB"]["gMvp"] = mvp;
-    root_var["gTexture"] = texture;
-    root_var["gSampler"] = sampler;
+    {
+      FALCOR_PROFILE(render_context, "Frame");
 
-    raster_pass->getState()->setFbo(target_fbo);
-    raster_pass->drawIndexed(render_context, index_count, 0, 0);
+      {
+        FALCOR_PROFILE(render_context, "Clear");
+        render_context->clearFbo(target_fbo.get(), clear_color, 1.0F, 0, Falcor::FboAttachmentType::All);
+      }
+
+      {
+        FALCOR_PROFILE(render_context, "Cube");
+
+        const Falcor::float4x4 model =
+            Falcor::math::matrixFromRotation(rotation_angle, Falcor::float3(0.3F, 1.0F, 0.0F));
+        const Falcor::float4x4 view = Falcor::math::matrixFromTranslation(Falcor::float3(0.0F, 0.0F, -3.0F));
+        const float aspect = static_cast<float>(target_fbo->getWidth()) / static_cast<float>(target_fbo->getHeight());
+        const Falcor::float4x4 projection = Falcor::math::perspective(0.9F, aspect, 0.1F, 100.0F);
+        const Falcor::float4x4 mvp = Falcor::math::mul(projection, Falcor::math::mul(view, model));
+
+        auto root_var = raster_pass->getRootVar();
+        root_var["PerFrameCB"]["gMvp"] = mvp;
+        root_var["gTexture"] = texture;
+        root_var["gSampler"] = sampler;
+
+        raster_pass->getState()->setFbo(target_fbo);
+        raster_pass->drawIndexed(render_context, index_count, 0, 0);
+      }
+    }
+    device->getProfiler()->endFrame(render_context);
+    frame_rate.newFrame();
+
+    DrawGui(render_context);
+  }
+
+  // Falcor's own ImGui wrapper (Gui/ProfilerUI) rather than a bespoke
+  // augusta overlay - see the file header comment. The profiler window
+  // mirrors Falcor::SampleApp::renderUI()'s own pattern: its open/close
+  // state IS the profiler's enabled flag, so closing the window also
+  // stops the profiler from timing events until it's reopened.
+  void DrawGui(Falcor::RenderContext* render_context) {
+    gui->beginFrame();
+
+    {
+      Falcor::Gui::Window stats_window(gui.get(), "Stats", kStatsWindowSize, kStatsWindowPos);
+      stats_window.text(Falcor::to_string(frame_rate));
+      stats_window.text(fmt::format("Frame #{}", frame_rate.getFrameCount()));
+    }
+
+    {
+      Falcor::Gui::Window settings_window(gui.get(), "Settings", kSettingsWindowSize, kSettingsWindowPos);
+      settings_window.text(fmt::format("GPU: {}", device->getInfo().adapterName));
+      settings_window.text(fmt::format("API: {}", device->getInfo().apiName));
+      settings_window.text(fmt::format("Resolution: {}x{}", target_fbo->getWidth(), target_fbo->getHeight()));
+
+      settings_window.rgbaColor("Clear color", clear_color);
+      settings_window.slider("Rotation speed", rotation_speed, kMinRotationSpeed, kMaxRotationSpeed);
+
+      auto cull_mode_value = static_cast<std::uint32_t>(cull_mode);
+      if (settings_window.dropdown("Cull mode", kCullModeList, cull_mode_value)) {
+        cull_mode = static_cast<Falcor::RasterizerState::CullMode>(cull_mode_value);
+        RebuildRasterizerState();
+      }
+      if (settings_window.checkbox("Wireframe", wireframe_enabled)) {
+        RebuildRasterizerState();
+      }
+      if (settings_window.checkbox("VSync", vsync_enabled)) {
+        RecreateSwapchain();
+      }
+    }
+
+    bool profiler_open = device->getProfiler()->isEnabled();
+    {
+      Falcor::Gui::Window profiler_window(gui.get(), "Profiler", profiler_open, kProfilerWindowSize,
+                                          kProfilerWindowPos);
+      if (profiler_open) {
+        if (!profiler_ui) {
+          profiler_ui = std::make_unique<Falcor::ProfilerUI>(device->getProfiler());
+        }
+        profiler_ui->render();
+      }
+    }
+    device->getProfiler()->setEnabled(profiler_open);
+
+    gui->render(render_context, target_fbo, static_cast<float>(frame_rate.getLastFrameTime()));
   }
 
   void handleWindowSizeChange() override {
@@ -245,6 +373,7 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
     device->wait();
     swapchain->resize(size.x, size.y);
     CreateTargetFbo(size.x, size.y);
+    gui->onWindowResize(size.x, size.y);
   }
 
   void handleRenderFrame() override {
@@ -254,6 +383,9 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
   }
 
   void handleKeyboardEvent(const Falcor::KeyboardEvent& event) override {
+    if (gui->onKeyboardEvent(event)) {
+      return;
+    }
     input::Action action;
     if (event.type == Falcor::KeyboardEvent::Type::KeyPressed) {
       action = input::Action::kPressed;
@@ -268,6 +400,9 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
   }
 
   void handleMouseEvent(const Falcor::MouseEvent& event) override {
+    if (gui->onMouseEvent(event)) {
+      return;
+    }
     switch (event.type) {
       case Falcor::MouseEvent::Type::Move:
         input_sink.OnMouseMoveEvent({.x = event.screenPos.x, .y = event.screenPos.y});
@@ -321,6 +456,7 @@ void Renderer::RenderFrame() {
   render_context->resourceBarrier(swapchain_image, Falcor::Resource::State::Present);
   render_context->submit();
   impl_->swapchain->present();
+  impl_->device->endFrame();
 }
 
 void Renderer::SetCursorLocked([[maybe_unused]] bool locked) {
