@@ -1,5 +1,6 @@
 add_library(augusta_renderer STATIC
   renderer.cpp
+  debug_hud.cpp
 )
 target_include_directories(augusta_renderer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(augusta_renderer PUBLIC augusta_input)
@@ -18,10 +19,16 @@ if (WIN32)
   # which pins CMAKE_POLICY_VERSION_MINIMUM for its vendored (old) pybind11
   # copy against newer CMake, and turns on CMAKE_EXPORT_COMPILE_COMMANDS so
   # the exact flags below could be lifted verbatim from a real,
-  # verified-working compile of a Falcor sample. The submodule checkout
-  # itself stays a pristine, unmodified upstream commit - the patch is
-  # applied fresh (over a hard reset, so this is idempotent across
-  # reconfigures) rather than committed into it.
+  # verified-working compile of a Falcor sample. The same patch also
+  # retunes Source/Falcor/Utils/Timing/ProfilerUI.{h,cpp}'s HUD-only
+  # defaults (graph on/CPU time/no averaging, bright shades-of-green event
+  # palette) per the user's request - those two fields/that palette are
+  # private to ProfilerUI with no public setter, so there's no way to
+  # reach them from augusta's own code without this. The submodule
+  # checkout itself stays a pristine, unmodified upstream commit - the
+  # patch is applied fresh (over a hard reset covering every file it
+  # touches, so this is idempotent across reconfigures) rather than
+  # committed into it.
   find_package(Git REQUIRED)
 
   set(FALCOR_DIR ${CMAKE_SOURCE_DIR}/third_party/falcor)
@@ -34,6 +41,7 @@ if (WIN32)
   add_custom_command(
     OUTPUT ${FALCOR_STAMP}
     COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} checkout -- CMakePresets.json
+      Source/Falcor/Utils/Timing/ProfilerUI.h Source/Falcor/Utils/Timing/ProfilerUI.cpp
     COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} apply ${CMAKE_SOURCE_DIR}/cmake/patches/falcor-augusta.patch
     # windows-ninja-msvc-base's CMAKE_MAKE_PROGRAM points at
     # tools/.packman/ninja/ninja.exe, needed immediately by project() - but
@@ -72,6 +80,15 @@ if (WIN32)
       "${FALCOR_BUILD_DIR}/Source/Falcor/${CMAKE_BUILD_TYPE}/Falcor.lib"
       "${FALCOR_BIN_DIR}/Falcor.dll"
       "${FALCOR_BUILD_DIR}/external/fmt/${CMAKE_BUILD_TYPE}/fmt.lib"
+    # Ninja only re-runs a custom command when one of its declared
+    # DEPENDS changes (or the command line itself does) - without this,
+    # editing the patch's *content* (e.g. tweaking a color inside
+    # ProfilerUI.cpp's patched hunk) left falcor.stamp looking up to date
+    # and silently skipped re-applying it, even though `git apply` above
+    # references the file.
+    DEPENDS
+      ${CMAKE_SOURCE_DIR}/cmake/patches/falcor-augusta.patch
+      ${CMAKE_SOURCE_DIR}/cmake/patches/falcor-tools-dependencies.xml
     VERBATIM
   )
   add_custom_target(falcor_build DEPENDS ${FALCOR_STAMP})
@@ -153,8 +170,9 @@ if (WIN32)
   target_include_directories(augusta_renderer BEFORE PRIVATE "${FALCOR_DIR}/external/fmt/include")
 
   # Falcor's own sources build with this project-specific warning policy
-  # (Source/Falcor/CMakeLists.txt); only this target's one translation unit
-  # consumes Falcor's public headers, so only it needs to match. /wd5311
+  # (Source/Falcor/CMakeLists.txt); only this target's translation units
+  # (renderer.cpp, debug_hud.cpp) consume Falcor's public headers, so only
+  # this target needs to match. /wd5311
   # isn't part of that copied policy - it's this machine's much newer
   # MSVC/STL (Falcor's own list predates it) flagging nlohmann/json.hpp
   # and pybind11's pre-C++23 `operator""x` literal-operator syntax, in

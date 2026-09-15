@@ -140,8 +140,9 @@ pipeline).
   Studio Build Tools system-wide (default install location) — simpler
   than pinning a project-specific path, at the cost of not being able to
   side-by-side independent Build Tools versions per project — plus the
-  Windows SDK, CMake, Ninja, vcpkg, and Git. (A fully hermetic,
-  registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was
+  Windows SDK, CMake, Ninja, vcpkg, Git, and clang-format (for the
+  `pre-commit` hook below).
+  (A fully hermetic, registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was
   considered and rejected: Falcor's CMake presets only test/support
   MSVC on Windows, and stacking an unsupported compiler on top of an
   already-unmaintained dependency, ADR-0009, isn't worth the purity.)
@@ -157,8 +158,14 @@ pipeline).
 ## Code Quality
 
 - Google C++ Style Guide (ADR-0012), enforced via `clang-format` +
-  `clang-tidy` in CI — not as local pre-commit hooks, to keep local
-  tooling minimal; CI is the enforcement point.
+  `clang-tidy`. `clang-format` also runs as a local `pre-commit` git
+  hook (auto-formats staged `.cpp`/`.h` files under `src/`/`tests/`,
+  same scope as CI's own check) so most formatting issues never reach
+  a push; CI's `format` job stays as the actual gate, since the hook
+  can be skipped (`--no-verify`), missing, or running a different
+  local `clang-format` version than CI's. `clang-tidy` stays CI-only —
+  slower, and needs a full `compile_commands.json`, a poor fit for a
+  commit-time hook.
 - Strict warnings-as-errors in CI (see CI/CD above).
 - ASan/UBSan in CI; TSan run manually/periodically given multithreading
   (ADR-0005).

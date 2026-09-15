@@ -1,0 +1,23 @@
+#!/bin/sh
+# Auto-formats staged C++ files with clang-format (docs/ENGINEERING.md,
+# Code Quality). Mirrors the scope of CI's `format` job (src/ and tests/,
+# *.cpp and *.h) but only touches staged files, and fixes instead of just
+# reporting - CI's dry-run check stays as the actual gate, in case
+# clang-format is missing/mismatched locally or this hook is bypassed via
+# --no-verify.
+
+if ! command -v clang-format >/dev/null 2>&1; then
+  echo "pre-commit: clang-format not found on PATH - skipping local formatting (CI will still catch this)." >&2
+  exit 0
+fi
+
+files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^(src|tests)/.*\.(cpp|h)$' || true)
+
+if [ -z "$files" ]; then
+  exit 0
+fi
+
+echo "$files" | while IFS= read -r f; do
+  clang-format -i "$f"
+  git add "$f"
+done
