@@ -8,10 +8,21 @@ Checks: >
   google-*,
   readability-*,
   modernize-*,
-  -modernize-use-trailing-return-type
+  -modernize-use-trailing-return-type,
+  -clang-analyzer-core.StackAddressEscape
 
 # Trailing return type is a stylistic alternative the guide doesn't mandate
 # either way, so it's the one thing above we don't turn into a hard rule.
+#
+# clang-analyzer-core.StackAddressEscape is disabled because of a false
+# positive inside Flecs's own fluent term/query builder chain
+# (addons/cpp/mixins/query/builder_i.hpp's `*this->term_ = flecs::term(...);
+# return *this;`), reached via this codebase's
+# `ecs.system(name).kind(phase).run(...)` pattern for a zero-component
+# system (augusta::simulation/prediction/presentation World::Impl) - not a
+# real bug in our code, and not fixable from the call site since it's
+# Flecs's own header.
+
 WarningsAsErrors: "*"
 
 HeaderFilterRegex: '^(src|tests)/.*\.h$'

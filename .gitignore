@@ -45,6 +45,7 @@ compile_commands.json
 # Packages / vcpkg
 vcpkg_installed/
 packages/
+.vcpkg-bincache/
 
 # OS
 .DS_Store

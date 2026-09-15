@@ -5,6 +5,7 @@
     "spdlog",
     "gtest",
     "benchmark",
-    "glm"
+    "glm",
+    "flecs"
   ]
 }
