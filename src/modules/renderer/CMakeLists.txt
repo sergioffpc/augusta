@@ -12,8 +12,9 @@ if (WIN32)
   # subdirectory, ...), which would resolve to *this* repo's root instead
   # of Falcor's own if embedded, breaking its build. Instead it's built
   # standalone via its own CMakePresets.json preset -
-  # "windows-ninja-msvc-augusta", added by third_party/falcor-augusta.patch
-  # (ADR-0009 anticipated needing a small patch to the vendored copy),
+  # "windows-ninja-msvc-augusta", added by cmake/patches/falcor-augusta.patch
+  # (ADR-0009 anticipated needing a small patch to the vendored copy; see
+  # cmake/patches/ for augusta's own third-party patches/overrides generally),
   # which pins CMAKE_POLICY_VERSION_MINIMUM for its vendored (old) pybind11
   # copy against newer CMake, and turns on CMAKE_EXPORT_COMPILE_COMMANDS so
   # the exact flags below could be lifted verbatim from a real,
@@ -33,12 +34,28 @@ if (WIN32)
   add_custom_command(
     OUTPUT ${FALCOR_STAMP}
     COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} checkout -- CMakePresets.json
-    COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} apply ${CMAKE_SOURCE_DIR}/third_party/falcor-augusta.patch
+    COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} apply ${CMAKE_SOURCE_DIR}/cmake/patches/falcor-augusta.patch
     COMMAND ${CMAKE_COMMAND} -S ${FALCOR_DIR} --preset ${FALCOR_PRESET}
     COMMAND ${CMAKE_COMMAND} --build ${FALCOR_BUILD_DIR} --config ${CMAKE_BUILD_TYPE} --target Falcor
     COMMAND ${CMAKE_COMMAND} -E touch ${FALCOR_STAMP}
     WORKING_DIRECTORY ${FALCOR_DIR}
     COMMENT "Patching and building vendored Falcor (ADR-0009) - slow on a clean checkout"
+    # Without these, Ninja's static graph validation has no rule for any
+    # of these files (only falcor.stamp is a declared OUTPUT) and fails
+    # outright ("missing and no known rule to make it") on a build where
+    # they don't already exist - the add_dependencies() order-only edge
+    # below isn't enough on its own. python310.lib/slang.lib/gfx.lib are
+    # packman-fetched prebuilts (populated by this same command's own
+    # `cmake --preset` configure step, which pulls packman dependencies -
+    # see Falcor's root CMakeLists.txt); fmt.lib is genuinely built from
+    # source by the `--target Falcor` step, same as Falcor.lib/Falcor.dll.
+    BYPRODUCTS
+      "${FALCOR_BUILD_DIR}/Source/Falcor/${CMAKE_BUILD_TYPE}/Falcor.lib"
+      "${FALCOR_BIN_DIR}/Falcor.dll"
+      "${FALCOR_BUILD_DIR}/external/fmt/${CMAKE_BUILD_TYPE}/fmt.lib"
+      "${FALCOR_DIR}/external/packman/python/libs/python310.lib"
+      "${FALCOR_DIR}/external/packman/slang/lib/slang.lib"
+      "${FALCOR_DIR}/external/packman/slang/lib/gfx.lib"
     VERBATIM
   )
   add_custom_target(falcor_build DEPENDS ${FALCOR_STAMP})
