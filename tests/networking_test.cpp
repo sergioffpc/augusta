@@ -124,6 +124,10 @@ bool PerformRoundTrip(Server& server, Client& client, RoundTripResult& result) {
 class NetworkingTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() { augusta::networking::Init(); }
+  // Without this, GameNetworkingSockets' still-referenced OpenSSL state
+  // reads as a leak under ASan once this process exits - see
+  // networking.h's own note on Shutdown().
+  static void TearDownTestSuite() { augusta::networking::Shutdown(); }
 };
 
 TEST_F(NetworkingTest, RoundTripsAMessageBothWays) {

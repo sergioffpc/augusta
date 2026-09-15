@@ -37,6 +37,8 @@ void Init() {
   }
 }
 
+void Shutdown() { GameNetworkingSockets_Kill(); }
+
 // ---- Client ----
 
 struct Client::Impl {

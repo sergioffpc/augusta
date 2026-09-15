@@ -43,6 +43,14 @@ namespace augusta::networking {
 // Server.
 void Init();
 
+// Releases the transport library's process-wide state. Call at most
+// once, after every Client/Server has been destroyed. augustac/augustad
+// never call this - the OS reclaims everything at process exit either
+// way - but a process that constructs and tears down Client/Server
+// instances before exiting (e.g. a test) needs it, or GameNetworkingSockets'
+// still-referenced OpenSSL state reads as a leak under ASan.
+void Shutdown();
+
 // A server address in "host:port" form (e.g. "192.168.1.10:27015"). A
 // numeric IP, not a hostname - no DNS resolution in v1, matching the
 // direct-IP-only scope above.
