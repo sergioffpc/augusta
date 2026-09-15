@@ -10,6 +10,14 @@
 #include <Utils/Timing/ProfilerUI.h>
 #include <Utils/UI/Gui.h>
 
+// Falcor.dll exports imgui's own symbols (Source/Falcor/CMakeLists.txt sets
+// IMGUI_API=dllexport for its own build only), so a direct <imgui.h>
+// include here - same as Falcor's own ProfilerUI.cpp does - links fine
+// against that import lib. Used below to theme the HUD beyond what Gui's
+// own widget wrappers expose (ApplyHudTheme).
+#include <imgui.h>
+
+#include <cfloat>
 #include <chrono>
 #include <cstdint>
 #include <memory>
@@ -33,21 +41,108 @@ namespace {
 // Layout for the debug GUI windows (ADR-0009's spike scope: Falcor's own
 // ImGui wrapper, not a bespoke augusta HUD - PresentationWorld's real UI
 // doesn't exist yet).
-constexpr Falcor::uint2 kStatsWindowSize(300, 70);
 constexpr Falcor::uint2 kStatsWindowPos(10, 10);
-constexpr Falcor::uint2 kSettingsWindowSize(300, 230);
 constexpr Falcor::uint2 kSettingsWindowPos(10, 90);
-constexpr Falcor::uint2 kProfilerWindowSize(800, 600);
 constexpr Falcor::uint2 kProfilerWindowPos(10, 330);
+constexpr float kProfilerMinWidth = 700.0F;
 
-constexpr float kMinRotationSpeed = 0.0F;
-constexpr float kMaxRotationSpeed = 5.0F;
+// All 3 windows auto-resize to fit their content (no fixed size hint) -
+// Gui::WindowFlags::AutoResize maps to ImGuiWindowFlags_AlwaysAutoResize,
+// recomputed every frame, so this also tracks content that changes size
+// at runtime (e.g. the Profiler window's event table).
+// Not constexpr: FALCOR_ENUM_CLASS_OPERATORS' operator| isn't declared
+// constexpr, so this has to be a plain const initialized at namespace
+// scope (runs once, before main, same as any other global with a
+// non-constant initializer).
+const Falcor::Gui::WindowFlags kAutoResizeWindowFlags =
+    Falcor::Gui::WindowFlags::Default | Falcor::Gui::WindowFlags::AutoResize;
+
+// VS Code's Dark+ editor background (#1E1E1E), used as the default clear
+// color so the rendered window blends with this editor's own chrome.
+constexpr float kDefaultClearColorChannel = 0.1176F;
+
+// Monochrome HUD theme - black/white/grey only, no color. Falcor's own
+// ImGui wrapper only exposes a handful of style knobs (Gui.cpp's own
+// constructor tweaks 3-4 colors the same way); everything else here goes
+// through <imgui.h> directly. Note: Falcor::ProfilerUI (the Profiler
+// window's contents) hardcodes its own bar/graph colors
+// (Source/Falcor/Utils/Timing/ProfilerUI.cpp's kColorPalette etc.) rather
+// than reading the ImGui style, so this theme can't reach those - only a
+// patch to that vendored file could, which is out of scope for a
+// colors-only pass (cmake/patches/ only carries the CMakePresets tweak
+// today).
+constexpr ImVec4 kAccentPrimary(1.0F, 1.0F, 1.0F, 1.0F);          // white
+constexpr ImVec4 kAccentSecondary(0.65F, 0.65F, 0.65F, 1.0F);     // grey
+
+// Neutral grey steps for widget backgrounds (idle -> hovered -> active),
+// named so the repeated identical r=g=b literals below don't read as
+// unexplained magic numbers.
+constexpr float kGreyStepIdle = 0.16F;
+constexpr float kGreyStepHovered = 0.20F;
+constexpr float kGreyStepActive = 0.26F;
+constexpr float kGreyStepScrollbarGrab = 0.24F;
+
+void ApplyHudTheme() {
+  ImGuiStyle& style = ImGui::GetStyle();
+
+  style.Colors[ImGuiCol_WindowBg] = ImVec4(0.09F, 0.10F, 0.11F, 0.92F);
+  style.Colors[ImGuiCol_ChildBg] = ImVec4(0.09F, 0.10F, 0.11F, 0.0F);
+  style.Colors[ImGuiCol_PopupBg] = ImVec4(0.08F, 0.09F, 0.10F, 0.96F);
+  style.Colors[ImGuiCol_Border] = ImVec4(0.20F, 0.22F, 0.24F, 0.7F);
+  style.Colors[ImGuiCol_TitleBg] = ImVec4(0.11F, 0.13F, 0.14F, 1.0F);
+  style.Colors[ImGuiCol_TitleBgActive] = ImVec4(kGreyStepIdle, kGreyStepIdle, kGreyStepIdle, 1.0F);
+  style.Colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.09F, 0.10F, 0.11F, 0.8F);
+  style.Colors[ImGuiCol_FrameBg] = ImVec4(0.13F, 0.14F, 0.15F, 1.0F);
+  style.Colors[ImGuiCol_FrameBgHovered] = ImVec4(kGreyStepHovered, kGreyStepHovered, kGreyStepHovered, 1.0F);
+  style.Colors[ImGuiCol_FrameBgActive] = ImVec4(kGreyStepActive, kGreyStepActive, kGreyStepActive, 1.0F);
+  style.Colors[ImGuiCol_CheckMark] = kAccentPrimary;
+  style.Colors[ImGuiCol_SliderGrab] = kAccentSecondary;
+  style.Colors[ImGuiCol_SliderGrabActive] = kAccentPrimary;
+  style.Colors[ImGuiCol_Button] = ImVec4(kGreyStepIdle, kGreyStepIdle, kGreyStepIdle, 1.0F);
+  style.Colors[ImGuiCol_ButtonHovered] = ImVec4(kAccentSecondary.x, kAccentSecondary.y, kAccentSecondary.z, 0.35F);
+  style.Colors[ImGuiCol_ButtonActive] = ImVec4(kAccentPrimary.x, kAccentPrimary.y, kAccentPrimary.z, 0.55F);
+  style.Colors[ImGuiCol_Header] = ImVec4(kAccentPrimary.x, kAccentPrimary.y, kAccentPrimary.z, 0.20F);
+  style.Colors[ImGuiCol_HeaderHovered] = ImVec4(kAccentPrimary.x, kAccentPrimary.y, kAccentPrimary.z, 0.35F);
+  style.Colors[ImGuiCol_HeaderActive] = ImVec4(kAccentPrimary.x, kAccentPrimary.y, kAccentPrimary.z, 0.50F);
+  style.Colors[ImGuiCol_ResizeGrip] = ImVec4(kAccentPrimary.x, kAccentPrimary.y, kAccentPrimary.z, 0.25F);
+  style.Colors[ImGuiCol_ResizeGripHovered] = ImVec4(kAccentPrimary.x, kAccentPrimary.y, kAccentPrimary.z, 0.55F);
+  style.Colors[ImGuiCol_ResizeGripActive] = kAccentPrimary;
+  style.Colors[ImGuiCol_Separator] = ImVec4(0.20F, 0.22F, 0.24F, 0.7F);
+  style.Colors[ImGuiCol_SeparatorHovered] = ImVec4(kAccentSecondary.x, kAccentSecondary.y, kAccentSecondary.z, 0.6F);
+  style.Colors[ImGuiCol_SeparatorActive] = kAccentPrimary;
+  style.Colors[ImGuiCol_ScrollbarBg] = ImVec4(0.08F, 0.09F, 0.10F, 0.6F);
+  style.Colors[ImGuiCol_ScrollbarGrab] =
+      ImVec4(kGreyStepScrollbarGrab, kGreyStepScrollbarGrab, kGreyStepScrollbarGrab, 1.0F);
+  style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(kAccentSecondary.x, kAccentSecondary.y, kAccentSecondary.z, 0.5F);
+  style.Colors[ImGuiCol_ScrollbarGrabActive] = kAccentPrimary;
+  style.Colors[ImGuiCol_PlotLines] = kAccentSecondary;
+  style.Colors[ImGuiCol_PlotLinesHovered] = kAccentPrimary;
+  style.Colors[ImGuiCol_PlotHistogram] = kAccentSecondary;
+  style.Colors[ImGuiCol_PlotHistogramHovered] = kAccentPrimary;
+  style.Colors[ImGuiCol_TextSelectedBg] = ImVec4(kAccentPrimary.x, kAccentPrimary.y, kAccentPrimary.z, 0.30F);
+}
 
 const Falcor::Gui::DropdownList kCullModeList = {
     {static_cast<std::uint32_t>(Falcor::RasterizerState::CullMode::None), "None"},
     {static_cast<std::uint32_t>(Falcor::RasterizerState::CullMode::Front), "Front"},
     {static_cast<std::uint32_t>(Falcor::RasterizerState::CullMode::Back), "Back"},
 };
+
+constexpr float kAccentStripWidth = 3.0F;
+
+// The mockup's title bars carried a colored left-edge strip
+// (`.hud-title::before`) that plain ImGuiCol_Title* slots can't express -
+// draw it directly. Must run with the target Gui::Window already open
+// (i.e. from inside its scope): Gui::Window's constructor is what calls
+// ImGui::Begin, and that's what makes GetWindowPos()/GetWindowDrawList()
+// refer to the right window.
+void DrawWindowAccentStrip() {
+  const ImVec2 window_pos = ImGui::GetWindowPos();
+  const float title_height = ImGui::GetFrameHeight();
+  ImGui::GetWindowDrawList()->AddRectFilled(
+      window_pos, ImVec2(window_pos.x + kAccentStripWidth, window_pos.y + title_height),
+      ImGui::GetColorU32(kAccentPrimary));
+}
 
 // One cube vertex - see BuildCubeGeometry. 4 unique vertices per face
 // (not 8 shared corners) so every face gets its own straight UV mapping.
@@ -110,11 +205,10 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
   std::unique_ptr<Falcor::ProfilerUI> profiler_ui;
 
   // Render settings, live-editable from the Settings window (DrawGui).
-  Falcor::float4 clear_color{0.0F, 0.0F, 1.0F, 1.0F};
+  Falcor::float4 clear_color{kDefaultClearColorChannel, kDefaultClearColorChannel, kDefaultClearColorChannel, 1.0F};
   Falcor::RasterizerState::CullMode cull_mode = Falcor::RasterizerState::CullMode::None;
   bool wireframe_enabled = false;
   bool vsync_enabled = false;
-  float rotation_speed = 1.0F;
   float rotation_angle = 0.0F;
 
   std::chrono::steady_clock::time_point start_time;
@@ -145,6 +239,16 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
     BuildRasterPass();
 
     gui = std::make_unique<Falcor::Gui>(device, size.x, size.y);
+    // Gui's constructor leaves its freshly created ImGuiContext current
+    // (Utils/UI/Gui.cpp's GuiImpl ctor: CreateContext + SetCurrentContext,
+    // never reset before returning) - same context ApplyHudTheme's
+    // ImGui::GetStyle() call below ends up touching.
+    ApplyHudTheme();
+    // Falcor already bundles a monospace face (data/framework/fonts/
+    // consolab.ttf) and loads it under the name "monospace" in Gui's own
+    // constructor - reuse that instead of shipping a font of our own, to
+    // match the technical/data-readout look from the mockup.
+    gui->setActiveFont("monospace");
 
     start_time = std::chrono::steady_clock::now();
     last_frame_time = start_time;
@@ -292,7 +396,7 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
     const auto now = std::chrono::steady_clock::now();
     const float delta_time = std::chrono::duration<float>(now - last_frame_time).count();
     last_frame_time = now;
-    rotation_angle += delta_time * rotation_speed;
+    rotation_angle += delta_time;
 
     {
       FALCOR_PROFILE(render_context, "Frame");
@@ -336,19 +440,21 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
     gui->beginFrame();
 
     {
-      Falcor::Gui::Window stats_window(gui.get(), "Stats", kStatsWindowSize, kStatsWindowPos);
+      Falcor::Gui::Window stats_window(gui.get(), "Stats", Falcor::uint2(0, 0), kStatsWindowPos, kAutoResizeWindowFlags);
+      DrawWindowAccentStrip();
       stats_window.text(Falcor::to_string(frame_rate));
       stats_window.text(fmt::format("Frame #{}", frame_rate.getFrameCount()));
     }
 
     {
-      Falcor::Gui::Window settings_window(gui.get(), "Settings", kSettingsWindowSize, kSettingsWindowPos);
+      Falcor::Gui::Window settings_window(gui.get(), "Settings", Falcor::uint2(0, 0), kSettingsWindowPos,
+                                          kAutoResizeWindowFlags);
+      DrawWindowAccentStrip();
       settings_window.text(fmt::format("GPU: {}", device->getInfo().adapterName));
       settings_window.text(fmt::format("API: {}", device->getInfo().apiName));
       settings_window.text(fmt::format("Resolution: {}x{}", target_fbo->getWidth(), target_fbo->getHeight()));
 
       settings_window.rgbaColor("Clear color", clear_color);
-      settings_window.slider("Rotation speed", rotation_speed, kMinRotationSpeed, kMaxRotationSpeed);
 
       auto cull_mode_value = static_cast<std::uint32_t>(cull_mode);
       if (settings_window.dropdown("Cull mode", kCullModeList, cull_mode_value)) {
@@ -365,9 +471,22 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
 
     bool profiler_open = device->getProfiler()->isEnabled();
     {
-      Falcor::Gui::Window profiler_window(gui.get(), "Profiler", profiler_open, kProfilerWindowSize,
-                                          kProfilerWindowPos);
+      // AutoResize alone settles on the narrowest width that fits the
+      // event table, squeezing the graph (ProfilerUI::renderGraph fills
+      // whatever's left of the window's width) down to a sliver - a
+      // minimum-width constraint (checked by the next Begin(), i.e. the
+      // Window constructor right below) keeps AutoResize for height while
+      // guaranteeing the graph real estate.
+      ImGui::SetNextWindowSizeConstraints(ImVec2(kProfilerMinWidth, 0.0F), ImVec2(FLT_MAX, FLT_MAX));
+      Falcor::Gui::Window profiler_window(gui.get(), "Profiler", profiler_open, Falcor::uint2(0, 0),
+                                          kProfilerWindowPos, kAutoResizeWindowFlags);
       if (profiler_open) {
+        // Unlike Stats/Settings (no close button, so always re-opened),
+        // this window's `open` flag is real and persists across frames -
+        // only draw the strip while the window is actually pushed
+        // (ImGui::Begin/GetWindowDrawList would otherwise run outside a
+        // matching Begin/End pair when the window is closed).
+        DrawWindowAccentStrip();
         if (!profiler_ui) {
           profiler_ui = std::make_unique<Falcor::ProfilerUI>(device->getProfiler());
         }
