@@ -9,7 +9,8 @@ Checks: >
   readability-*,
   modernize-*,
   -modernize-use-trailing-return-type,
-  -clang-analyzer-core.StackAddressEscape
+  -clang-analyzer-core.StackAddressEscape,
+  -readability-convert-member-functions-to-static
 
 # Trailing return type is a stylistic alternative the guide doesn't mandate
 # either way, so it's the one thing above we don't turn into a hard rule.
@@ -22,6 +23,15 @@ Checks: >
 # system (augusta::simulation/prediction/presentation World::Impl) - not a
 # real bug in our code, and not fixable from the call site since it's
 # Flecs's own header.
+#
+# readability-convert-member-functions-to-static is disabled because most
+# module classes (physics::World, renderer::Renderer, networking::Client,
+# ...) are still placeholder stubs awaiting real third-party integration
+# (PhysX, Falcor, GameNetworkingSockets, Lua, Steam Audio) - their methods
+# don't touch instance state yet only because there's no real state to
+# touch, not because they're meant to be static. Chasing this check per
+# stub would just mean undoing it the moment each real implementation
+# lands.
 
 WarningsAsErrors: "*"
 
