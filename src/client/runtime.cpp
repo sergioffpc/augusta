@@ -57,13 +57,7 @@ struct ClientRuntime::Impl {
   prediction::State latest_prediction_state;
 
   explicit Impl(const Config& cfg)
-      : config(cfg),
-        input(cfg.input),
-        audio(),
-        network(),
-        prediction(cfg.stamina),
-        presentation(audio),
-        renderer(cfg.renderer, input) {}
+      : config(cfg), input(cfg.input), prediction(cfg.stamina), presentation(audio), renderer(cfg.renderer, input) {}
 
   // Simulation thread body (ADR-0005): fixed-rate loop sampling local
   // input and ticking PredictionWorld. Runs until running is cleared by
@@ -120,7 +114,9 @@ void ClientRuntime::Run() {
   impl_->running.store(true, std::memory_order_relaxed);
   impl_->simulation_thread = std::thread([this] { impl_->SimulationThreadMain(); });
   impl_->network_thread = std::thread([this] { impl_->NetworkThreadMain(); });
-  ThreadJoiner joiner{impl_->running, impl_->simulation_thread, impl_->network_thread};
+  ThreadJoiner joiner{.running = impl_->running,
+                      .simulation_thread = impl_->simulation_thread,
+                      .network_thread = impl_->network_thread};
 
   INFO("ClientRuntime: Main/Render loop starting");
   while (!impl_->renderer.ShouldClose()) {

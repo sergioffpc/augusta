@@ -7,10 +7,8 @@ namespace augusta::animation {
 // enough is defined here for callers to construct/link against this
 // module.
 
-Engine::Engine() {
-  // Nothing to own yet - no animators exist until CreateAnimator is
-  // called.
-}
+// Nothing to own yet - no animators exist until CreateAnimator is called.
+Engine::Engine() = default;
 
 AnimatorHandle Engine::CreateAnimator() {
   // TODO(sergioffpc): allocate per-character blend state.

@@ -12,9 +12,8 @@ void Init() {
 
 // ---- Client ----
 
-Client::Client() {
-  // Nothing to own yet - no connection exists until Connect is called.
-}
+// Nothing to own yet - no connection exists until Connect is called.
+Client::Client() = default;
 
 void Client::Connect([[maybe_unused]] const Endpoint& server) {
   // TODO(sergioffpc): begin an async GameNetworkingSockets connection.

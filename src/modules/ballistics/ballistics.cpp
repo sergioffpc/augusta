@@ -6,9 +6,8 @@ namespace augusta::ballistics {
 // integrate gravity or test physics_world::Raycast yet. Just enough is
 // defined here for callers to construct/link against this module.
 
-World::World() {
-  // Nothing to own yet - no bullets exist until Fire is called.
-}
+// Nothing to own yet - no bullets exist until Fire is called.
+World::World() = default;
 
 BulletHandle World::Fire([[maybe_unused]] const math::Vec3& origin, [[maybe_unused]] const math::Vec3& direction,
                          [[maybe_unused]] float initial_speed, [[maybe_unused]] const BulletConfig& config) {

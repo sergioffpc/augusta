@@ -6,10 +6,9 @@ namespace augusta::audio {
 // Audio nor miniaudio are wired in yet (ADR-0010, ADR-0028). Just enough
 // is defined here for callers to construct/link against this module.
 
-Engine::Engine() {
-  // TODO(sergioffpc): open the output device and initialize Steam
-  // Audio's HRTF context.
-}
+// TODO(sergioffpc): open the output device and initialize Steam Audio's
+// HRTF context.
+Engine::Engine() = default;
 
 SoundHandle Engine::LoadSound([[maybe_unused]] const std::string& asset_path) {
   // TODO(sergioffpc): decode the mono PCM asset via miniaudio.

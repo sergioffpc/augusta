@@ -82,7 +82,7 @@ ServerRuntime::~ServerRuntime() = default;
 void ServerRuntime::Run() {
   impl_->running.store(true, std::memory_order_relaxed);
   impl_->network_thread = std::thread([this] { impl_->NetworkThreadMain(); });
-  ThreadJoiner joiner{impl_->running, impl_->network_thread};
+  ThreadJoiner joiner{.running = impl_->running, .network_thread = impl_->network_thread};
 
   const auto tick_duration = std::chrono::duration<float>(1.0F / impl_->config.tick_rate_hz);
   INFO("ServerRuntime: Simulation loop starting");
