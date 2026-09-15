@@ -1,0 +1,12 @@
+<project toolsVersion="6.0">
+    <!-- Tools -->
+    <dependency name="tools_python" linkPath="tools/.packman/python">
+        <package name="python" version="3.10.11+nv1-${platform}" platforms="windows-x86_64 linux-x86_64" />
+    </dependency>
+    <dependency name="tools_cmake" linkPath="tools/.packman/cmake">
+        <package name="cmake" version="3.24.1+nv3-${platform}" platforms="windows-x86_64 linux-x86_64" />
+    </dependency>
+    <dependency name="tools_ninja" linkPath="tools/.packman/ninja">
+        <package name="ninja" version="1.10.2+pipeline2996563-${platform}" platforms="windows-x86_64 linux-x86_64" />
+    </dependency>
+</project>

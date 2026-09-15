@@ -35,36 +35,43 @@ if (WIN32)
     OUTPUT ${FALCOR_STAMP}
     COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} checkout -- CMakePresets.json
     COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} apply ${CMAKE_SOURCE_DIR}/cmake/patches/falcor-augusta.patch
-    # setup.bat (Falcor's own documented first step, README.md) pulls
-    # dependencies.xml's "tools_*" entries into tools/.packman/ (ninja,
-    # cmake, ...) - the windows-ninja-msvc-base preset's CMAKE_MAKE_PROGRAM
-    # points there. Falcor's own root CMakeLists.txt only pulls the
-    # *external/packman* dependencies itself, and only after project() -
-    # which is too late, since project() needs CMAKE_MAKE_PROGRAM (ninja)
-    # resolvable immediately. Without this, a fresh checkout's first
-    # configure fails ("tools/.packman/ninja/ninja.exe: no such file").
-    COMMAND ${FALCOR_DIR}/setup.bat
+    # windows-ninja-msvc-base's CMAKE_MAKE_PROGRAM points at
+    # tools/.packman/ninja/ninja.exe, needed immediately by project() - but
+    # Falcor's own root CMakeLists.txt only pulls packman dependencies
+    # *after* project(), too late for this on a fresh checkout. Falcor's
+    # documented fix is setup.bat, pulling the *whole* dependencies.xml
+    # first - but that runs packman pull against external/packman/* (e.g.
+    # slang) a second time in a row once Falcor's own CMakeLists.txt does
+    # its own pull moments later, and packman isn't reliably idempotent
+    # against its own immediately-preceding run for at least that entry
+    # ("Link ... cannot be created because it already exists as a
+    # different type of file"). Pulling only the tools/.packman/* entries
+    # here - via a copy of dependencies.xml's own <dependency name="tools_*">
+    # elements (cmake/patches/falcor-tools-dependencies.xml) - satisfies
+    # project()'s immediate need without ever touching external/packman/*
+    # twice. packman resolves each entry's linkPath relative to the
+    # project file's own location, so the copy has to land inside
+    # ${FALCOR_DIR} for tools/.packman/ninja to end up in the right place.
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/cmake/patches/falcor-tools-dependencies.xml ${FALCOR_DIR}/tools-dependencies.xml
+    COMMAND ${FALCOR_DIR}/tools/packman/packman.cmd pull ${FALCOR_DIR}/tools-dependencies.xml --platform windows-x86_64
     COMMAND ${CMAKE_COMMAND} -S ${FALCOR_DIR} --preset ${FALCOR_PRESET}
     COMMAND ${CMAKE_COMMAND} --build ${FALCOR_BUILD_DIR} --config ${CMAKE_BUILD_TYPE} --target Falcor
     COMMAND ${CMAKE_COMMAND} -E touch ${FALCOR_STAMP}
     WORKING_DIRECTORY ${FALCOR_DIR}
     COMMENT "Patching and building vendored Falcor (ADR-0009) - slow on a clean checkout"
-    # Without these, Ninja's static graph validation has no rule for any
-    # of these files (only falcor.stamp is a declared OUTPUT) and fails
-    # outright ("missing and no known rule to make it") on a build where
-    # they don't already exist - the add_dependencies() order-only edge
-    # below isn't enough on its own. python310.lib/slang.lib/gfx.lib are
-    # packman-fetched prebuilts (populated by this same command's own
-    # `cmake --preset` configure step, which pulls packman dependencies -
-    # see Falcor's root CMakeLists.txt); fmt.lib is genuinely built from
-    # source by the `--target Falcor` step, same as Falcor.lib/Falcor.dll.
+    # Without these, Ninja's static graph validation has no rule for
+    # Falcor.lib/Falcor.dll/fmt.lib (only falcor.stamp is a declared
+    # OUTPUT) and fails outright ("missing and no known rule to make it")
+    # on a build where they don't already exist - the add_dependencies()
+    # order-only edge below isn't enough on its own. fmt.lib is genuinely
+    # built from source by the `--target Falcor` step, same as
+    # Falcor.lib/Falcor.dll. python310.lib/slang.lib/gfx.lib are NOT
+    # listed here on purpose - see the comment by their target_link_options
+    # use further down for why.
     BYPRODUCTS
       "${FALCOR_BUILD_DIR}/Source/Falcor/${CMAKE_BUILD_TYPE}/Falcor.lib"
       "${FALCOR_BIN_DIR}/Falcor.dll"
       "${FALCOR_BUILD_DIR}/external/fmt/${CMAKE_BUILD_TYPE}/fmt.lib"
-      "${FALCOR_DIR}/external/packman/python/libs/python310.lib"
-      "${FALCOR_DIR}/external/packman/slang/lib/slang.lib"
-      "${FALCOR_DIR}/external/packman/slang/lib/gfx.lib"
     VERBATIM
   )
   add_custom_target(falcor_build DEPENDS ${FALCOR_STAMP})
@@ -116,6 +123,20 @@ if (WIN32)
   target_link_libraries(augusta_renderer PUBLIC
     "${FALCOR_BUILD_DIR}/Source/Falcor/${CMAKE_BUILD_TYPE}/Falcor.lib"
     "${FALCOR_BUILD_DIR}/external/fmt/${CMAKE_BUILD_TYPE}/fmt.lib"
+  )
+  # python310.lib/slang.lib/gfx.lib live under external/packman/python and
+  # external/packman/slang - directories packman itself creates as
+  # links (junctions), not plain directories. target_link_libraries()
+  # (and BYPRODUCTS above) register a full-path library argument as a
+  # tracked Ninja *file* dependency, which makes Ninja pre-create its
+  # parent directory as a plain folder before this target's own custom
+  # command ever runs - colliding with packman's own attempt to link
+  # that same path moments later ("already exists as a different type of
+  # file"). target_link_options() emits the same literal path on the
+  # link command line without Ninja tracking it as a dependency, sidestepping
+  # that; add_dependencies() below still guarantees these files exist by
+  # link time regardless.
+  target_link_options(augusta_renderer PUBLIC
     "${FALCOR_DIR}/external/packman/python/libs/python310.lib"
     "${FALCOR_DIR}/external/packman/slang/lib/slang.lib"
     "${FALCOR_DIR}/external/packman/slang/lib/gfx.lib"
