@@ -157,7 +157,11 @@ jobs:
         run: cmake --preset linux
 
       - name: Lint (clang-tidy)
-        run: find src -name '*.cpp' | xargs clang-tidy -p build/x64-linux
+        # src/client is Windows-only (CMakeLists.txt gates it on WIN32) and
+        # isn't part of this Linux configure's build graph at all, so it has
+        # no compile_commands.json entry here - excluded rather than linted
+        # against the wrong platform's (missing) compile flags.
+        run: find src -name '*.cpp' -not -path 'src/client/*' | xargs clang-tidy -p build/x64-linux
 
       - name: Build
         run: cmake --build --preset linux

@@ -4,6 +4,8 @@
 
 #include <array>
 
+#include "augusta/logging.h"
+
 namespace augusta::simulation {
 
 namespace {
@@ -59,31 +61,39 @@ struct World::Impl {
     // Bodies are stubs until those shapes exist; this only establishes
     // each system's place in the pipeline.
     ecs.system("CommandIngestionSystem").kind(phases[kCommandIngestion]).run([](flecs::iter&) {
+      TRACE("SimulationWorld: CommandIngestion phase");
       // TODO(sergioffpc): apply each connected player's this-tick
       // input::Command to their entity.
     });
     ecs.system("MovementSystem").kind(phases[kMovement]).run([](flecs::iter&) {
+      TRACE("SimulationWorld: Movement phase");
       // TODO(sergioffpc): physics::World::Step per player body.
     });
     ecs.system("WeaponHandlingSystem").kind(phases[kWeaponHandling]).run([](flecs::iter&) {
+      TRACE("SimulationWorld: WeaponHandling phase");
       // TODO(sergioffpc): not yet a module of its own - see simulation.h.
     });
     ecs.system("BallisticsSystem").kind(phases[kBallistics]).run([](flecs::iter&) {
+      TRACE("SimulationWorld: Ballistics phase");
       // TODO(sergioffpc): ballistics::World::Step per in-flight bullet.
     });
     ecs.system("HitDetectionSystem").kind(phases[kHitDetection]).run([](flecs::iter&) {
+      TRACE("SimulationWorld: HitDetection phase");
       // Already folded into BallisticsSystem's ballistics::World::Step
       // call - see simulation.h's Phase::kHitDetection doc comment.
       // Kept as its own phase/system for pipeline ordering.
     });
     ecs.system("DamageSystem").kind(phases[kDamage]).run([](flecs::iter&) {
+      TRACE("SimulationWorld: Damage phase");
       // TODO(sergioffpc): apply damage from each bullet's resolved
       // ballistics::BodyPart.
     });
     ecs.system("ScriptsBehavioursSystem").kind(phases[kScriptsBehaviours]).run([](flecs::iter&) {
+      TRACE("SimulationWorld: ScriptsBehaviours phase");
       // TODO(sergioffpc): scripting::Engine::RunHook per relevant hook.
     });
     ecs.system("CommitSystem").kind(phases[kCommit]).run([](flecs::iter&) {
+      TRACE("SimulationWorld: Commit phase");
       // TODO(sergioffpc): package the tick's resolved state into State.
     });
   }
