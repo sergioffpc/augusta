@@ -16,7 +16,8 @@
       "request": "launch",
       "program": "${workspaceFolder}\\build\\x64-windows\\src\\client\\augustac.exe",
       "cwd": "${workspaceFolder}",
-      "preLaunchTask": "CMake: build"
+      "preLaunchTask": "CMake: build",
+      "externalConsole": true
     }
   ]
 }
