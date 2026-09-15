@@ -5,7 +5,7 @@
 
 int main() {
   augusta::logging::Init();
-  INFO("augusta client v{} starting", augusta::EngineVersion());
+  INFO("subsystem=client event=starting version={}", augusta::EngineVersion());
 
   // augusta::networking::Init() must run once, process-wide, before any
   // Client/Server is constructed - see networking.h.

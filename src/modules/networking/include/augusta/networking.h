@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -73,6 +74,17 @@ class Client {
  public:
   Client();
 
+  // Closes the connection, if any, and releases the underlying
+  // transport connection.
+  ~Client();
+
+  // Not copyable or movable - owns a live transport connection the same
+  // way Renderer owns a live GPU device (see renderer.h).
+  Client(const Client&) = delete;
+  Client& operator=(const Client&) = delete;
+  Client(Client&&) = delete;
+  Client& operator=(Client&&) = delete;
+
   // Begins connecting to server; returns immediately. Calling again
   // before GetState() reports kDisconnected is undefined behavior.
   void Connect(const Endpoint& server);
@@ -95,6 +107,10 @@ class Client {
   // Returns every message received since the last call, in arrival
   // order. Empty once drained.
   [[nodiscard]] std::vector<Payload> ReceiveMessages();
+
+ private:
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
 // ---- Server ----
@@ -139,6 +155,17 @@ class Server {
   // address can't be bound.
   explicit Server(const Endpoint& local_endpoint);
 
+  // Closes the listen socket and every connected peer's connection.
+  ~Server();
+
+  // Not copyable or movable - owns a live listen socket and every
+  // connected peer's connection the same way Renderer owns a live GPU
+  // device (see renderer.h).
+  Server(const Server&) = delete;
+  Server& operator=(const Server&) = delete;
+  Server(Server&&) = delete;
+  Server& operator=(Server&&) = delete;
+
   // Drains connection-lifecycle events since the last call (see
   // PeerEventType) and returns them in arrival order. Every
   // kConnectRequested event must be answered with Accept or Disconnect
@@ -167,6 +194,10 @@ class Server {
   // Returns every message received from any peer since the last call,
   // in arrival order. Empty once drained.
   [[nodiscard]] std::vector<PeerMessage> ReceiveMessages();
+
+ private:
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace augusta::networking
