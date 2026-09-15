@@ -46,19 +46,21 @@ struct World::Impl {
     // arguments have somewhere to flow into the ECS (a singleton,
     // presumably, once one is designed).
     ecs.system("CommandIngestionSystem").kind(phases[kCommandIngestion]).run([](flecs::iter&) {
-      // TODO: apply this tick's input::Command to the local player's entity.
+      // TODO(sergioffpc): apply this tick's input::Command to the local
+      // player's entity.
     });
     ecs.system("ReconciliationSystem").kind(phases[kReconciliation]).run([](flecs::iter&) {
-      // TODO: physics::World::Reconcile against authoritative_state, if any arrived.
+      // TODO(sergioffpc): physics::World::Reconcile against
+      // authoritative_state, if any arrived.
     });
     ecs.system("MovementSystem").kind(phases[kMovement]).run([](flecs::iter&) {
-      // TODO: physics::World::Step for the local player body.
+      // TODO(sergioffpc): physics::World::Step for the local player body.
     });
     ecs.system("WeaponHandlingSystem").kind(phases[kWeaponHandling]).run([](flecs::iter&) {
-      // TODO: not yet a module of its own - see prediction.h.
+      // TODO(sergioffpc): not yet a module of its own - see prediction.h.
     });
     ecs.system("CommitSystem").kind(phases[kCommit]).run([](flecs::iter&) {
-      // TODO: package the tick's predicted state into State.
+      // TODO(sergioffpc): package the tick's predicted state into State.
     });
   }
 };
@@ -71,8 +73,9 @@ World& World::operator=(World&&) noexcept = default;
 
 State World::Tick(const input::Command& command, const std::optional<physics::BodyState>& authoritative_state,
                    float delta_time) {
-  // Not yet consumed - see Tick's own doc comment in prediction.h: there
-  // is no ECS entity/component shape for these to flow into yet.
+  // TODO(sergioffpc): not yet consumed - see Tick's own doc comment in
+  // prediction.h: there is no ECS entity/component shape for these to
+  // flow into yet.
   (void)command;
   (void)authoritative_state;
   impl_->ecs.progress(delta_time);

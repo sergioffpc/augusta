@@ -23,12 +23,14 @@
 // aren't designed, so a system's body is presently a stub; what each one
 // will eventually do is documented on its Phase enumerator below.
 //
-// Camera and Animation have no C++ home of their own yet -
-// ARCHITECTURE.md doesn't list either as a separate Shared Core/
-// client-only module the way WeaponHandling is; they're expected to stay
-// systems inside this module. What augusta::renderer::Renderer::
-// RenderFrame actually draws from the resulting Presentation State is
-// still deliberately undesigned (see renderer.h) - revisit both headers
+// Camera has no C++ home of its own yet - ARCHITECTURE.md doesn't list
+// it as a separate Shared Core/client-only module the way WeaponHandling
+// is; it's expected to stay a system inside this module. Animation does
+// have one now: augusta::animation::Engine (see that header) - this
+// module owns the one Engine instance and calls Update from its
+// Animation phase. What augusta::renderer::Renderer::RenderFrame
+// actually draws from the resulting Presentation State is still
+// deliberately undesigned (see renderer.h) - revisit both headers
 // together once that lands.
 namespace augusta::presentation {
 
@@ -46,8 +48,10 @@ enum class Phase {
   // header comment above.
   kCamera,
   // Mechanism. Drives skeletal/procedural animation from interpolated
-  // movement and weapon state. Not yet a module of its own - see the
-  // header comment above.
+  // movement and weapon state - augusta::animation::Engine::Update, once
+  // per visible player character (local and remote alike, unlike
+  // Interpolation/Camera which only concern the local player's own
+  // predicted state).
   kAnimation,
   // Mechanism. Translates events carried in the Prediction State (e.g.
   // fire, footstep) into spatialized audio cues -

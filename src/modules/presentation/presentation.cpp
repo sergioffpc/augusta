@@ -4,6 +4,8 @@
 
 #include <flecs.h>
 
+#include "augusta/animation.h"
+
 namespace augusta::presentation {
 
 namespace {
@@ -24,6 +26,7 @@ enum PhaseIndex : std::size_t {
 struct World::Impl {
   flecs::world ecs;
   audio::Engine& audio_engine;
+  animation::Engine animation;
   PhaseEntities phases;
   // The previous call's latest, for kInterpolation to blend against (see
   // RunFrame's doc comment in presentation.h). Unset until the first
@@ -51,23 +54,29 @@ struct World::Impl {
     // has somewhere to flow into the ECS (a singleton, presumably, once
     // one is designed).
     ecs.system("InterpolationSystem").kind(phases[kInterpolation]).run([](flecs::iter&) {
-      // TODO: blend the last two prediction::State values.
+      // TODO(sergioffpc): blend the last two prediction::State values.
     });
     ecs.system("CameraSystem").kind(phases[kCamera]).run([](flecs::iter&) {
-      // TODO: not yet a module of its own - see presentation.h.
+      // TODO(sergioffpc): not yet a module of its own - see presentation.h.
     });
-    ecs.system("AnimationSystem").kind(phases[kAnimation]).run([](flecs::iter&) {
-      // TODO: not yet a module of its own - see presentation.h.
+    ecs.system("AnimationSystem").kind(phases[kAnimation]).run([this](flecs::iter&) {
+      // TODO(sergioffpc): animation.Update per visible player character,
+      // once there's a per-character handle to iterate and a
+      // animation::LocomotionInput to build from interpolated movement -
+      // see presentation.h's Phase::kAnimation doc comment. The capture
+      // only proves animation is reachable from here; no call is made
+      // yet.
+      (void)animation;
     });
     ecs.system("AudioCuesSystem").kind(phases[kAudioCues]).run([this](flecs::iter&) {
-      // TODO: audio_engine.SetListener then PlaySound per this frame's
-      // cues - see presentation.h's Phase::kAudioCues doc comment. The
-      // capture only proves audio_engine is reachable from here; no call
-      // is made yet.
+      // TODO(sergioffpc): audio_engine.SetListener then PlaySound per
+      // this frame's cues - see presentation.h's Phase::kAudioCues doc
+      // comment. The capture only proves audio_engine is reachable from
+      // here; no call is made yet.
       (void)audio_engine;
     });
     ecs.system("CommitSystem").kind(phases[kCommit]).run([](flecs::iter&) {
-      // TODO: package the frame's presentation data into State.
+      // TODO(sergioffpc): package the frame's presentation data into State.
     });
   }
 };
@@ -79,8 +88,6 @@ World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
 State World::RunFrame(const prediction::State& latest) {
-  // Not yet consumed - see RunFrame's own doc comment in presentation.h:
-  // there is no ECS entity/component shape for this to flow into yet.
   impl_->ecs.progress();
   impl_->previous_state = latest;
   impl_->has_previous_state = true;

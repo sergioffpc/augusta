@@ -59,17 +59,17 @@ struct World::Impl {
     // Bodies are stubs until those shapes exist; this only establishes
     // each system's place in the pipeline.
     ecs.system("CommandIngestionSystem").kind(phases[kCommandIngestion]).run([](flecs::iter&) {
-      // TODO: apply each connected player's this-tick input::Command to
-      // their entity.
+      // TODO(sergioffpc): apply each connected player's this-tick
+      // input::Command to their entity.
     });
     ecs.system("MovementSystem").kind(phases[kMovement]).run([](flecs::iter&) {
-      // TODO: physics::World::Step per player body.
+      // TODO(sergioffpc): physics::World::Step per player body.
     });
     ecs.system("WeaponHandlingSystem").kind(phases[kWeaponHandling]).run([](flecs::iter&) {
-      // TODO: not yet a module of its own - see simulation.h.
+      // TODO(sergioffpc): not yet a module of its own - see simulation.h.
     });
     ecs.system("BallisticsSystem").kind(phases[kBallistics]).run([](flecs::iter&) {
-      // TODO: ballistics::World::Step per in-flight bullet.
+      // TODO(sergioffpc): ballistics::World::Step per in-flight bullet.
     });
     ecs.system("HitDetectionSystem").kind(phases[kHitDetection]).run([](flecs::iter&) {
       // Already folded into BallisticsSystem's ballistics::World::Step
@@ -77,13 +77,14 @@ struct World::Impl {
       // Kept as its own phase/system for pipeline ordering.
     });
     ecs.system("DamageSystem").kind(phases[kDamage]).run([](flecs::iter&) {
-      // TODO: apply damage from each bullet's resolved ballistics::BodyPart.
+      // TODO(sergioffpc): apply damage from each bullet's resolved
+      // ballistics::BodyPart.
     });
     ecs.system("ScriptsBehavioursSystem").kind(phases[kScriptsBehaviours]).run([](flecs::iter&) {
-      // TODO: scripting::Engine::RunHook per relevant hook.
+      // TODO(sergioffpc): scripting::Engine::RunHook per relevant hook.
     });
     ecs.system("CommitSystem").kind(phases[kCommit]).run([](flecs::iter&) {
-      // TODO: package the tick's resolved state into State.
+      // TODO(sergioffpc): package the tick's resolved state into State.
     });
   }
 };
@@ -96,9 +97,9 @@ World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
 State World::Tick(const std::vector<input::Command>& commands, float delta_time) {
-  // Not yet consumed - see Tick's own doc comment in simulation.h:
-  // per-entity command association isn't designed until ECS component
-  // shapes are.
+  // TODO(sergioffpc): not yet consumed - see Tick's own doc comment in
+  // simulation.h: per-entity command association isn't designed until
+  // ECS component shapes are.
   (void)commands;
   impl_->ecs.progress(delta_time);
   return State{};
