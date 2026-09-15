@@ -67,9 +67,8 @@ constexpr float kMinWindowWidth = 700.0F;
 const Falcor::Gui::WindowFlags kAutoResizeWindowFlags =
     Falcor::Gui::WindowFlags::Default | Falcor::Gui::WindowFlags::AutoResize;
 
-// VS Code's Dark+ editor background (#1E1E1E), used as the default clear
-// color so the rendered window blends with this editor's own chrome.
-constexpr float kDefaultClearColorChannel = 0.1176F;
+// Default clear color - near-black, close to this editor's own chrome.
+constexpr float kDefaultClearColorChannel = 0.016F;
 
 // Monochrome HUD theme - black/white/grey only, no color. Falcor's own
 // ImGui wrapper only exposes a handful of style knobs (Gui.cpp's own
