@@ -1,0 +1,42 @@
+diff --git a/CMakePresets.json b/CMakePresets.json
+index 8d52e7b1..cfd264a2 100644
+--- a/CMakePresets.json
++++ b/CMakePresets.json
+@@ -96,6 +96,18 @@
+                 "windows-ninja-msvc-base"
+             ]
+         },
++        {
++            "name": "windows-ninja-msvc-augusta",
++            "displayName": "Windows Ninja/MSVC (augusta)",
++            "description": "augusta's own vendoring of this submodule (see augusta's ADR-0009): pins policy compatibility for the vendored pybind11 copy against newer CMake, and exports compile_commands.json so augusta's own build can mirror this target's exact compile flags.",
++            "inherits": [
++                "windows-ninja-msvc-base"
++            ],
++            "cacheVariables": {
++                "CMAKE_POLICY_VERSION_MINIMUM": "3.5",
++                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
++            }
++        },
+         {
+             "name": "windows-ninja-msvc-ci",
+             "displayName": "Windows Ninja/MSVC (CI)",
+@@ -178,6 +190,18 @@
+             "configurePreset": "windows-ninja-msvc",
+             "configuration": "Debug"
+         },
++        {
++            "name": "windows-ninja-msvc-augusta-release",
++            "displayName": "Release",
++            "configurePreset": "windows-ninja-msvc-augusta",
++            "configuration": "Release"
++        },
++        {
++            "name": "windows-ninja-msvc-augusta-debug",
++            "displayName": "Debug",
++            "configurePreset": "windows-ninja-msvc-augusta",
++            "configuration": "Debug"
++        },
+         {
+             "name": "windows-ninja-msvc-ci-release",
+             "displayName": "Release",

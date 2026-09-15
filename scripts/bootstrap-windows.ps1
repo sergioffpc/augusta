@@ -30,10 +30,12 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 # vcpkg is a pinned git submodule (third_party/vcpkg) rather than a
 # machine-wide install, so dependency resolution is reproducible per-clone
 # (see CMakeLists.txt). NVIDIA Falcor (ADR-0009) is vendored the same way
-# (third_party/falcor, a pinned fork per ADR-0025) - --recursive also pulls
-# in its own nested submodules (glfw, imgui, ...). Falcor's remaining
-# packman-fetched binary dependencies are pulled lazily on first build, by
-# src/modules/renderer/CMakeLists.txt's own build step.
+# (third_party/falcor, pinned per ADR-0025 - plain upstream, no fork) -
+# --recursive also pulls in its own nested submodules (glfw, imgui, ...).
+# src/modules/renderer/CMakeLists.txt's own build step applies
+# third_party/falcor-augusta.patch (a small patch to the vendored copy,
+# per ADR-0009) and pulls Falcor's remaining packman-fetched binary
+# dependencies lazily, on first build.
 git -C $repoRoot submodule update --init --recursive
 & "$repoRoot\third_party\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
 

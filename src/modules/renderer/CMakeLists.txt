@@ -5,31 +5,40 @@ target_include_directories(augusta_renderer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/i
 target_link_libraries(augusta_renderer PUBLIC augusta_input)
 
 if (WIN32)
-  # NVIDIA Falcor (ADR-0009) is vendored as a pinned fork (ADR-0025,
-  # third_party/falcor) rather than pulled in via add_subdirectory(): its
-  # root CMakeLists.txt relies on ${CMAKE_SOURCE_DIR} throughout (packman
-  # fetch paths, its own external/ subdirectory, ...), which would resolve
-  # to *this* repo's root instead of Falcor's own if embedded, breaking its
-  # build. Instead it's built standalone via its own CMakePresets.json
-  # preset - "windows-ninja-msvc-augusta", a small patch to the fork
-  # (ADR-0009 anticipated needing one) that pins CMAKE_POLICY_VERSION_MINIMUM
-  # for its vendored (old) pybind11 copy against newer CMake, and turns on
-  # CMAKE_EXPORT_COMPILE_COMMANDS so the exact flags below could be lifted
-  # verbatim from a real, verified-working compile of a Falcor sample.
+  # NVIDIA Falcor (ADR-0009) is vendored as a pinned git submodule
+  # (ADR-0025, third_party/falcor, plain upstream - no fork) rather than
+  # pulled in via add_subdirectory(): its root CMakeLists.txt relies on
+  # ${CMAKE_SOURCE_DIR} throughout (packman fetch paths, its own external/
+  # subdirectory, ...), which would resolve to *this* repo's root instead
+  # of Falcor's own if embedded, breaking its build. Instead it's built
+  # standalone via its own CMakePresets.json preset -
+  # "windows-ninja-msvc-augusta", added by third_party/falcor-augusta.patch
+  # (ADR-0009 anticipated needing a small patch to the vendored copy),
+  # which pins CMAKE_POLICY_VERSION_MINIMUM for its vendored (old) pybind11
+  # copy against newer CMake, and turns on CMAKE_EXPORT_COMPILE_COMMANDS so
+  # the exact flags below could be lifted verbatim from a real,
+  # verified-working compile of a Falcor sample. The submodule checkout
+  # itself stays a pristine, unmodified upstream commit - the patch is
+  # applied fresh (over a hard reset, so this is idempotent across
+  # reconfigures) rather than committed into it.
+  find_package(Git REQUIRED)
+
   set(FALCOR_DIR ${CMAKE_SOURCE_DIR}/third_party/falcor)
   set(FALCOR_PRESET windows-ninja-msvc-augusta)
   set(FALCOR_BUILD_DIR ${FALCOR_DIR}/build/${FALCOR_PRESET})
   set(FALCOR_BIN_DIR ${FALCOR_BUILD_DIR}/bin/${CMAKE_BUILD_TYPE} CACHE INTERNAL "Falcor's own build output directory")
-  set(FALCOR_DIR ${FALCOR_DIR} CACHE INTERNAL "Vendored Falcor fork's root directory")
+  set(FALCOR_DIR ${FALCOR_DIR} CACHE INTERNAL "Vendored Falcor submodule's root directory")
 
   set(FALCOR_STAMP ${CMAKE_CURRENT_BINARY_DIR}/falcor.stamp)
   add_custom_command(
     OUTPUT ${FALCOR_STAMP}
+    COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} checkout -- CMakePresets.json
+    COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} apply ${CMAKE_SOURCE_DIR}/third_party/falcor-augusta.patch
     COMMAND ${CMAKE_COMMAND} -S ${FALCOR_DIR} --preset ${FALCOR_PRESET}
     COMMAND ${CMAKE_COMMAND} --build ${FALCOR_BUILD_DIR} --config ${CMAKE_BUILD_TYPE} --target Falcor
     COMMAND ${CMAKE_COMMAND} -E touch ${FALCOR_STAMP}
     WORKING_DIRECTORY ${FALCOR_DIR}
-    COMMENT "Building vendored Falcor (ADR-0009) - slow on a clean checkout"
+    COMMENT "Patching and building vendored Falcor (ADR-0009) - slow on a clean checkout"
     VERBATIM
   )
   add_custom_target(falcor_build DEPENDS ${FALCOR_STAMP})

@@ -325,8 +325,9 @@ void Renderer::RenderFrame() {
 
 void Renderer::SetCursorLocked([[maybe_unused]] bool locked) {
   // TODO(sergioffpc): Falcor exposes no cursor-lock/hide hook (ADR-0009) -
-  // needs a small patch to the vendored fork. Deferred: no input consumer
-  // calls this yet (mouselook lands with gameplay input handling, M2+).
+  // needs a small patch to the vendored submodule (third_party/falcor-
+  // augusta.patch). Deferred: no input consumer calls this yet (mouselook
+  // lands with gameplay input handling, M2+).
 }
 
 }  // namespace augusta::renderer
