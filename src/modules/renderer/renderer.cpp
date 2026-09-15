@@ -41,9 +41,16 @@ namespace {
 // Layout for the debug GUI windows (ADR-0009's spike scope: Falcor's own
 // ImGui wrapper, not a bespoke augusta HUD - PresentationWorld's real UI
 // doesn't exist yet).
+// Y offsets are hand-measured (ImGui::GetWindowSize() logged at runtime),
+// not computed - AutoResize means the real heights below (Stats 122px,
+// Settings 182px, at time of measurement) only change if a window's own
+// content (line count) changes, so a fixed-position layout has to be
+// re-measured then, same as this fix did (Stats grew past Settings' old
+// y=90 once the CPU/Memory/geometry lines were added). ~20px margin below
+// each measured height.
 constexpr Falcor::uint2 kStatsWindowPos(10, 10);
-constexpr Falcor::uint2 kSettingsWindowPos(10, 90);
-constexpr Falcor::uint2 kProfilerWindowPos(10, 330);
+constexpr Falcor::uint2 kSettingsWindowPos(10, 150);
+constexpr Falcor::uint2 kProfilerWindowPos(10, 350);
 constexpr float kProfilerMinWidth = 700.0F;
 
 // All 3 windows auto-resize to fit their content (no fixed size hint) -
