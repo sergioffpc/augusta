@@ -51,7 +51,10 @@ namespace {
 constexpr Falcor::uint2 kStatsWindowPos(10, 10);
 constexpr Falcor::uint2 kSettingsWindowPos(10, 150);
 constexpr Falcor::uint2 kProfilerWindowPos(10, 350);
-constexpr float kProfilerMinWidth = 700.0F;
+// Applied to all 3 windows (ImGui::SetNextWindowSizeConstraints, right
+// before each one's Begin() below) so they line up at a consistent
+// width instead of each auto-shrinking to its own narrowest content.
+constexpr float kMinWindowWidth = 700.0F;
 
 // All 3 windows auto-resize to fit their content (no fixed size hint) -
 // Gui::WindowFlags::AutoResize maps to ImGuiWindowFlags_AlwaysAutoResize,
@@ -469,6 +472,7 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
     gui->beginFrame();
 
     {
+      ImGui::SetNextWindowSizeConstraints(ImVec2(kMinWindowWidth, 0.0F), ImVec2(FLT_MAX, FLT_MAX));
       Falcor::Gui::Window stats_window(gui.get(), "Stats", Falcor::uint2(0, 0), kStatsWindowPos,
                                        kAutoResizeWindowFlags);
       DrawWindowAccentStrip();
@@ -496,6 +500,7 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
     }
 
     {
+      ImGui::SetNextWindowSizeConstraints(ImVec2(kMinWindowWidth, 0.0F), ImVec2(FLT_MAX, FLT_MAX));
       Falcor::Gui::Window settings_window(gui.get(), "Settings", Falcor::uint2(0, 0), kSettingsWindowPos,
                                           kAutoResizeWindowFlags);
       DrawWindowAccentStrip();
@@ -526,7 +531,7 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
       // minimum-width constraint (checked by the next Begin(), i.e. the
       // Window constructor right below) keeps AutoResize for height while
       // guaranteeing the graph real estate.
-      ImGui::SetNextWindowSizeConstraints(ImVec2(kProfilerMinWidth, 0.0F), ImVec2(FLT_MAX, FLT_MAX));
+      ImGui::SetNextWindowSizeConstraints(ImVec2(kMinWindowWidth, 0.0F), ImVec2(FLT_MAX, FLT_MAX));
       Falcor::Gui::Window profiler_window(gui.get(), "Profiler", profiler_open, Falcor::uint2(0, 0), kProfilerWindowPos,
                                           kAutoResizeWindowFlags);
       if (profiler_open) {
