@@ -462,66 +462,64 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
     DrawGui(render_context);
   }
 
+  void DrawStatsWindow() {
+    ImGui::SetNextWindowSizeConstraints(ImVec2(kMinWindowWidth, 0.0F), ImVec2(FLT_MAX, FLT_MAX));
+    Falcor::Gui::Window stats_window(gui.get(), "Stats", Falcor::uint2(0, 0), kStatsWindowPos,
+                                     kAutoResizeWindowFlags);
+    DrawWindowAccentStrip();
+    // Falcor::to_string() reports getAverageFrameTime(), smoothed over
+    // the last 60 frames - kept as the stable "true" FPS reading. CPU
+    // below is single-frame and unsmoothed, and only the Clear+Cube
+    // command-recording portion of the frame (see last_cpu_frame_time_ms) -
+    // not comparable to the FPS reading above, which covers the whole
+    // paced frame.
+    stats_window.text(Falcor::to_string(frame_rate));
+    stats_window.text(fmt::format("CPU: {:.2f} ms", last_cpu_frame_time_ms));
+    stats_window.text(fmt::format("Frame #{}", frame_rate.getFrameCount()));
+    // getCurrentRSS(): resident/working set size for this process
+    // (Core/Platform/OS.h) - actual RAM in use, not committed/virtual
+    // size, and not GPU memory (Falcor exposes no VRAM query).
+    constexpr double kBytesPerMebibyte = 1024.0 * 1024.0;
+    stats_window.text(
+        fmt::format("Memory: {:.1f} MB", static_cast<double>(Falcor::getCurrentRSS()) / kBytesPerMebibyte));
+    // Falcor exposes no GPU-side pipeline-statistics query (no
+    // vertices/primitives-submitted counter to read back), so this is
+    // what augusta itself already knows about what it's submitting:
+    // the cube's own geometry plus 1 drawIndexed() call per frame -
+    // exact today because there's exactly one draw call in the scene.
+    stats_window.text(fmt::format("Vertices: {} | Triangles: {} | Draws: 1", vertex_count, index_count / 3));
+  }
+
+  void DrawSettingsWindow() {
+    ImGui::SetNextWindowSizeConstraints(ImVec2(kMinWindowWidth, 0.0F), ImVec2(FLT_MAX, FLT_MAX));
+    Falcor::Gui::Window settings_window(gui.get(), "Settings", Falcor::uint2(0, 0), kSettingsWindowPos,
+                                        kAutoResizeWindowFlags);
+    DrawWindowAccentStrip();
+    settings_window.text(fmt::format("GPU: {}", device->getInfo().adapterName));
+    settings_window.text(fmt::format("API: {}", device->getInfo().apiName));
+    settings_window.text(fmt::format("Resolution: {}x{}", target_fbo->getWidth(), target_fbo->getHeight()));
+
+    settings_window.rgbaColor("Clear color", clear_color);
+
+    auto cull_mode_value = static_cast<std::uint32_t>(cull_mode);
+    if (settings_window.dropdown("Cull mode", kCullModeList, cull_mode_value)) {
+      cull_mode = static_cast<Falcor::RasterizerState::CullMode>(cull_mode_value);
+      RebuildRasterizerState();
+    }
+    if (settings_window.checkbox("Wireframe", wireframe_enabled)) {
+      RebuildRasterizerState();
+    }
+    if (settings_window.checkbox("VSync", vsync_enabled)) {
+      RecreateSwapchain();
+    }
+  }
+
   // Falcor's own ImGui wrapper (Gui/ProfilerUI) rather than a bespoke
   // augusta overlay - see the file header comment. The profiler window
   // mirrors Falcor::SampleApp::renderUI()'s own pattern: its open/close
   // state IS the profiler's enabled flag, so closing the window also
   // stops the profiler from timing events until it's reopened.
-  void DrawGui(Falcor::RenderContext* render_context) {
-    gui->beginFrame();
-
-    {
-      ImGui::SetNextWindowSizeConstraints(ImVec2(kMinWindowWidth, 0.0F), ImVec2(FLT_MAX, FLT_MAX));
-      Falcor::Gui::Window stats_window(gui.get(), "Stats", Falcor::uint2(0, 0), kStatsWindowPos,
-                                       kAutoResizeWindowFlags);
-      DrawWindowAccentStrip();
-      // Falcor::to_string() reports getAverageFrameTime(), smoothed over
-      // the last 60 frames - kept as the stable "true" FPS reading. CPU
-      // below is single-frame and unsmoothed, and only the Clear+Cube
-      // command-recording portion of the frame (see last_cpu_frame_time_ms) -
-      // not comparable to the FPS reading above, which covers the whole
-      // paced frame.
-      stats_window.text(Falcor::to_string(frame_rate));
-      stats_window.text(fmt::format("CPU: {:.2f} ms", last_cpu_frame_time_ms));
-      stats_window.text(fmt::format("Frame #{}", frame_rate.getFrameCount()));
-      // getCurrentRSS(): resident/working set size for this process
-      // (Core/Platform/OS.h) - actual RAM in use, not committed/virtual
-      // size, and not GPU memory (Falcor exposes no VRAM query).
-      constexpr double kBytesPerMebibyte = 1024.0 * 1024.0;
-      stats_window.text(
-          fmt::format("Memory: {:.1f} MB", static_cast<double>(Falcor::getCurrentRSS()) / kBytesPerMebibyte));
-      // Falcor exposes no GPU-side pipeline-statistics query (no
-      // vertices/primitives-submitted counter to read back), so this is
-      // what augusta itself already knows about what it's submitting:
-      // the cube's own geometry plus 1 drawIndexed() call per frame -
-      // exact today because there's exactly one draw call in the scene.
-      stats_window.text(fmt::format("Vertices: {} | Triangles: {} | Draws: 1", vertex_count, index_count / 3));
-    }
-
-    {
-      ImGui::SetNextWindowSizeConstraints(ImVec2(kMinWindowWidth, 0.0F), ImVec2(FLT_MAX, FLT_MAX));
-      Falcor::Gui::Window settings_window(gui.get(), "Settings", Falcor::uint2(0, 0), kSettingsWindowPos,
-                                          kAutoResizeWindowFlags);
-      DrawWindowAccentStrip();
-      settings_window.text(fmt::format("GPU: {}", device->getInfo().adapterName));
-      settings_window.text(fmt::format("API: {}", device->getInfo().apiName));
-      settings_window.text(fmt::format("Resolution: {}x{}", target_fbo->getWidth(), target_fbo->getHeight()));
-
-      settings_window.rgbaColor("Clear color", clear_color);
-
-      auto cull_mode_value = static_cast<std::uint32_t>(cull_mode);
-      if (settings_window.dropdown("Cull mode", kCullModeList, cull_mode_value)) {
-        cull_mode = static_cast<Falcor::RasterizerState::CullMode>(cull_mode_value);
-        RebuildRasterizerState();
-      }
-      if (settings_window.checkbox("Wireframe", wireframe_enabled)) {
-        RebuildRasterizerState();
-      }
-      if (settings_window.checkbox("VSync", vsync_enabled)) {
-        RecreateSwapchain();
-      }
-    }
-
+  void DrawProfilerWindow() {
     bool profiler_open = device->getProfiler()->isEnabled();
     {
       // AutoResize alone settles on the narrowest width that fits the
@@ -547,7 +545,13 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
       }
     }
     device->getProfiler()->setEnabled(profiler_open);
+  }
 
+  void DrawGui(Falcor::RenderContext* render_context) {
+    gui->beginFrame();
+    DrawStatsWindow();
+    DrawSettingsWindow();
+    DrawProfilerWindow();
     gui->render(render_context, target_fbo, static_cast<float>(frame_rate.getLastFrameTime()));
   }
 
