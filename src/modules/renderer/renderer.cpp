@@ -199,6 +199,7 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
   Falcor::ref<Falcor::Vao> vao;
   Falcor::ref<Falcor::Texture> texture;
   Falcor::ref<Falcor::Sampler> sampler;
+  std::uint32_t vertex_count = 0;
   std::uint32_t index_count = 0;
 
   Falcor::FrameRate frame_rate;
@@ -355,6 +356,7 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
       indices.insert(indices.end(), {base, static_cast<std::uint16_t>(base + 1), static_cast<std::uint16_t>(base + 2),
                                      base, static_cast<std::uint16_t>(base + 2), static_cast<std::uint16_t>(base + 3)});
     }
+    vertex_count = static_cast<std::uint32_t>(vertices.size());
     index_count = static_cast<std::uint32_t>(indices.size());
 
     auto vertex_buffer = device->createBuffer(vertices.size() * sizeof(Vertex), Falcor::ResourceBindFlags::Vertex,
@@ -472,6 +474,18 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
       stats_window.text(Falcor::to_string(frame_rate));
       stats_window.text(fmt::format("CPU: {:.2f} ms", last_cpu_frame_time_ms));
       stats_window.text(fmt::format("Frame #{}", frame_rate.getFrameCount()));
+      // getCurrentRSS(): resident/working set size for this process
+      // (Core/Platform/OS.h) - actual RAM in use, not committed/virtual
+      // size, and not GPU memory (Falcor exposes no VRAM query).
+      constexpr double kBytesPerMebibyte = 1024.0 * 1024.0;
+      stats_window.text(
+          fmt::format("Memory: {:.1f} MB", static_cast<double>(Falcor::getCurrentRSS()) / kBytesPerMebibyte));
+      // Falcor exposes no GPU-side pipeline-statistics query (no
+      // vertices/primitives-submitted counter to read back), so this is
+      // what augusta itself already knows about what it's submitting:
+      // the cube's own geometry plus 1 drawIndexed() call per frame -
+      // exact today because there's exactly one draw call in the scene.
+      stats_window.text(fmt::format("Vertices: {} | Triangles: {} | Draws: 1", vertex_count, index_count / 3));
     }
 
     {
