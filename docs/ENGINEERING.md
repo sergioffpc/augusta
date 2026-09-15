@@ -157,8 +157,14 @@ pipeline).
 ## Code Quality
 
 - Google C++ Style Guide (ADR-0012), enforced via `clang-format` +
-  `clang-tidy` in CI — not as local pre-commit hooks, to keep local
-  tooling minimal; CI is the enforcement point.
+  `clang-tidy`. `clang-format` also runs as a local `pre-commit` git
+  hook (auto-formats staged `.cpp`/`.h` files under `src/`/`tests/`,
+  same scope as CI's own check) so most formatting issues never reach
+  a push; CI's `format` job stays as the actual gate, since the hook
+  can be skipped (`--no-verify`), missing, or running a different
+  local `clang-format` version than CI's. `clang-tidy` stays CI-only —
+  slower, and needs a full `compile_commands.json`, a poor fit for a
+  commit-time hook.
 - Strict warnings-as-errors in CI (see CI/CD above).
 - ASan/UBSan in CI; TSan run manually/periodically given multithreading
   (ADR-0005).
