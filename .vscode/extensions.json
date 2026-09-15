@@ -6,6 +6,7 @@
     "xaver.clang-format",
     "editorconfig.editorconfig",
     "redhat.vscode-yaml",
-    "github.vscode-github-actions"
+    "github.vscode-github-actions",
+    "shader-slang.slang-language-extension"
   ]
 }
