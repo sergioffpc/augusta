@@ -1,8 +1,8 @@
 #include "augusta/prediction.h"
 
-#include <array>
-
 #include <flecs.h>
+
+#include <array>
 
 namespace augusta::prediction {
 
@@ -72,7 +72,7 @@ World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
 State World::Tick(const input::Command& command, const std::optional<physics::BodyState>& authoritative_state,
-                   float delta_time) {
+                  float delta_time) {
   // TODO(sergioffpc): not yet consumed - see Tick's own doc comment in
   // prediction.h: there is no ECS entity/component shape for these to
   // flow into yet.

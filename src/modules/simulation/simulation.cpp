@@ -1,8 +1,8 @@
 #include "augusta/simulation.h"
 
-#include <array>
-
 #include <flecs.h>
+
+#include <array>
 
 namespace augusta::simulation {
 
