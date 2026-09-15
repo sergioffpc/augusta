@@ -4,6 +4,8 @@
 
 #include <array>
 
+#include "augusta/logging.h"
+
 namespace augusta::prediction {
 
 namespace {
@@ -46,20 +48,25 @@ struct World::Impl {
     // arguments have somewhere to flow into the ECS (a singleton,
     // presumably, once one is designed).
     ecs.system("CommandIngestionSystem").kind(phases[kCommandIngestion]).run([](flecs::iter&) {
+      TRACE("PredictionWorld: CommandIngestion phase");
       // TODO(sergioffpc): apply this tick's input::Command to the local
       // player's entity.
     });
     ecs.system("ReconciliationSystem").kind(phases[kReconciliation]).run([](flecs::iter&) {
+      TRACE("PredictionWorld: Reconciliation phase");
       // TODO(sergioffpc): physics::World::Reconcile against
       // authoritative_state, if any arrived.
     });
     ecs.system("MovementSystem").kind(phases[kMovement]).run([](flecs::iter&) {
+      TRACE("PredictionWorld: Movement phase");
       // TODO(sergioffpc): physics::World::Step for the local player body.
     });
     ecs.system("WeaponHandlingSystem").kind(phases[kWeaponHandling]).run([](flecs::iter&) {
+      TRACE("PredictionWorld: WeaponHandling phase");
       // TODO(sergioffpc): not yet a module of its own - see prediction.h.
     });
     ecs.system("CommitSystem").kind(phases[kCommit]).run([](flecs::iter&) {
+      TRACE("PredictionWorld: Commit phase");
       // TODO(sergioffpc): package the tick's predicted state into State.
     });
   }
