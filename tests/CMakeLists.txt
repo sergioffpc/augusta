@@ -6,3 +6,7 @@ gtest_discover_tests(augusta_version_tests)
 
 add_executable(augusta_version_benchmarks version_benchmark.cpp)
 target_link_libraries(augusta_version_benchmarks PRIVATE augusta_version benchmark::benchmark benchmark::benchmark_main)
+
+add_executable(augusta_networking_tests networking_test.cpp)
+target_link_libraries(augusta_networking_tests PRIVATE augusta_networking GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_networking_tests)

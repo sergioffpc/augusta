@@ -2,8 +2,10 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <mutex>
 #include <optional>
+#include <string_view>
 #include <thread>
 
 #include "augusta/logging.h"
@@ -91,11 +93,23 @@ struct ClientRuntime::Impl {
   // connection until running is cleared by ThreadJoiner.
   void NetworkThreadMain() {
     network.Connect(config.server);
+    bool sent_hello = false;
     while (running.load(std::memory_order_relaxed)) {
       network.PumpEvents();
-      // TODO(sergioffpc): nothing decodes these yet - see this module's
-      // header comment.
-      static_cast<void>(network.ReceiveMessages());
+
+      // TODO(sergioffpc): M1 spike only (issue #31) - a literal hello
+      // proving the transport round-trips a message at all. Replace
+      // with real Command encoding once the Networking Protocol
+      // (ADR-0007) exists; see this module's header comment.
+      if (!sent_hello && network.GetState() == networking::ConnectionState::kConnected) {
+        constexpr std::string_view kHello = "hello from augustac";
+        const auto* bytes = reinterpret_cast<const std::byte*>(kHello.data());
+        network.Send(networking::Payload(bytes, bytes + kHello.size()));
+        sent_hello = true;
+      }
+      for ([[maybe_unused]] const networking::Payload& payload : network.ReceiveMessages()) {
+        TRACE("subsystem=clientruntime event=received bytes={}", payload.size());
+      }
     }
     network.Disconnect();
   }
@@ -118,7 +132,7 @@ void ClientRuntime::Run() {
                       .simulation_thread = impl_->simulation_thread,
                       .network_thread = impl_->network_thread};
 
-  INFO("ClientRuntime: Main/Render loop starting");
+  INFO("subsystem=clientruntime event=loop_starting loop=render");
   while (!impl_->renderer.ShouldClose()) {
     impl_->renderer.PumpEvents();
     presentation::State frame_state = impl_->presentation.RunFrame(impl_->GetLatestPredictionState());
@@ -127,7 +141,7 @@ void ClientRuntime::Run() {
     static_cast<void>(frame_state);
     impl_->renderer.RenderFrame();
   }
-  INFO("ClientRuntime: Main/Render loop stopping");
+  INFO("subsystem=clientruntime event=loop_stopping loop=render");
 }
 
 }  // namespace augusta::runtime
