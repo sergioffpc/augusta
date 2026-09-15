@@ -133,9 +133,9 @@ void ApplyHudTheme() {
 }
 
 const Falcor::Gui::DropdownList kCullModeList = {
-    {static_cast<std::uint32_t>(Falcor::RasterizerState::CullMode::None), "None"},
-    {static_cast<std::uint32_t>(Falcor::RasterizerState::CullMode::Front), "Front"},
-    {static_cast<std::uint32_t>(Falcor::RasterizerState::CullMode::Back), "Back"},
+    {.value = static_cast<std::uint32_t>(Falcor::RasterizerState::CullMode::None), .label = "None"},
+    {.value = static_cast<std::uint32_t>(Falcor::RasterizerState::CullMode::Front), .label = "Front"},
+    {.value = static_cast<std::uint32_t>(Falcor::RasterizerState::CullMode::Back), .label = "Back"},
 };
 
 constexpr float kAccentStripWidth = 3.0F;
