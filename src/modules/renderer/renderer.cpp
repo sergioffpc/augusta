@@ -202,6 +202,15 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
   std::uint32_t index_count = 0;
 
   Falcor::FrameRate frame_rate;
+  // Set inside Draw() itself, spanning only the Clear+Cube command
+  // recording - real CPU work, nothing else (not the profiler's own
+  // GPU-timing sync, ImGui's command recording, submission, or present's
+  // vsync/compositor wait - Falcor doesn't expose those split out, so
+  // there's no clean "total" to pair this against). Deliberately NOT
+  // paired with frame_rate's own getLastFrameTime() either: that clock
+  // resets mid-Draw() (before DrawGui(), not at the RenderFrame()
+  // boundary), so its interval isn't comparable to this one.
+  float last_cpu_frame_time_ms = 0.0F;
   std::unique_ptr<Falcor::Gui> gui;
   std::unique_ptr<Falcor::ProfilerUI> profiler_ui;
 
@@ -426,6 +435,16 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
         raster_pass->drawIndexed(render_context, index_count, 0, 0);
       }
     }
+    // Stopped here, before Profiler::endFrame() below - that call does its
+    // own mpFence->wait() ("Wait for GPU timings to be available from last
+    // frame", Utils/Timing/Profiler.cpp), a real CPU-GPU stall that has
+    // nothing to do with recording this frame's commands. Timing across it
+    // would make last_cpu_frame_time_ms mostly measure GPU-timing-readback
+    // wait, not CPU work - which is exactly why it used to come out close
+    // to last_total_frame_time_ms regardless of how cheap the actual draw
+    // calls were.
+    last_cpu_frame_time_ms = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - now).count();
+
     device->getProfiler()->endFrame(render_context);
     frame_rate.newFrame();
 
@@ -444,7 +463,14 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
       Falcor::Gui::Window stats_window(gui.get(), "Stats", Falcor::uint2(0, 0), kStatsWindowPos,
                                        kAutoResizeWindowFlags);
       DrawWindowAccentStrip();
+      // Falcor::to_string() reports getAverageFrameTime(), smoothed over
+      // the last 60 frames - kept as the stable "true" FPS reading. CPU
+      // below is single-frame and unsmoothed, and only the Clear+Cube
+      // command-recording portion of the frame (see last_cpu_frame_time_ms) -
+      // not comparable to the FPS reading above, which covers the whole
+      // paced frame.
       stats_window.text(Falcor::to_string(frame_rate));
+      stats_window.text(fmt::format("CPU: {:.2f} ms", last_cpu_frame_time_ms));
       stats_window.text(fmt::format("Frame #{}", frame_rate.getFrameCount()));
     }
 
@@ -579,6 +605,9 @@ Size Renderer::GetSize() const {
 }
 
 void Renderer::RenderFrame() {
+  // Sets impl_->last_cpu_frame_time_ms itself, around just the
+  // command-recording portion - see the field's own comment (Impl) for
+  // why that can't be measured from out here.
   impl_->Draw();
 
   auto* render_context = impl_->device->getRenderContext();
@@ -591,6 +620,7 @@ void Renderer::RenderFrame() {
   render_context->copyResource(swapchain_image, impl_->target_fbo->getColorTexture(0).get());
   render_context->resourceBarrier(swapchain_image, Falcor::Resource::State::Present);
   render_context->submit();
+
   impl_->swapchain->present();
   impl_->device->endFrame();
 }
