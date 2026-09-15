@@ -24,6 +24,10 @@ Install-WingetPackage -Id "Kitware.CMake"
 Install-WingetPackage -Id "Ninja-build.Ninja"
 Install-WingetPackage -Id "Git.Git"
 Install-WingetPackage -Id "Mozilla.sccache"
+# clang-format only - clang-tidy stays CI-only (Linux/WSL), see
+# docs/ENGINEERING.md, Code Quality. Backs the .githooks/pre-commit hook
+# below.
+Install-WingetPackage -Id "LLVM.LLVM"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
