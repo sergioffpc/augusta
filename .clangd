@@ -15,3 +15,15 @@ CompileFlags:
   Add:
     - -Ivcpkg_installed/x64-windows/include
     - -Ivcpkg_installed/x64-linux/include
+---
+# Vendored upstream code (ADR-0009/ADR-0025: plain submodules, never
+# forked/edited except via cmake/patches/*.patch) has no compile_commands.json
+# entry of its own - clangd falls back to guessed flags when a file under
+# here is opened directly, which produces noisy/inaccurate diagnostics (e.g.
+# Falcor's own Window::ICallbacks flagged for a non-virtual destructor,
+# which is Falcor's design, not ours to fix). Not our code to lint either
+# way, so suppress diagnostics outright instead of chasing false positives.
+If:
+  PathMatch: .*third_party/.*
+Diagnostics:
+  Suppress: "*"
