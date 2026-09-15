@@ -1,5 +1,6 @@
 add_library(augusta_renderer STATIC
   renderer.cpp
+  debug_hud.cpp
 )
 target_include_directories(augusta_renderer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(augusta_renderer PUBLIC augusta_input)
@@ -169,8 +170,9 @@ if (WIN32)
   target_include_directories(augusta_renderer BEFORE PRIVATE "${FALCOR_DIR}/external/fmt/include")
 
   # Falcor's own sources build with this project-specific warning policy
-  # (Source/Falcor/CMakeLists.txt); only this target's one translation unit
-  # consumes Falcor's public headers, so only it needs to match. /wd5311
+  # (Source/Falcor/CMakeLists.txt); only this target's translation units
+  # (renderer.cpp, debug_hud.cpp) consume Falcor's public headers, so only
+  # this target needs to match. /wd5311
   # isn't part of that copied policy - it's this machine's much newer
   # MSVC/STL (Falcor's own list predates it) flagging nlohmann/json.hpp
   # and pybind11's pre-C++23 `operator""x` literal-operator syntax, in
