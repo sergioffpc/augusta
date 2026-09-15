@@ -71,8 +71,8 @@ constexpr float kDefaultClearColorChannel = 0.1176F;
 // patch to that vendored file could, which is out of scope for a
 // colors-only pass (cmake/patches/ only carries the CMakePresets tweak
 // today).
-constexpr ImVec4 kAccentPrimary(1.0F, 1.0F, 1.0F, 1.0F);          // white
-constexpr ImVec4 kAccentSecondary(0.65F, 0.65F, 0.65F, 1.0F);     // grey
+constexpr ImVec4 kAccentPrimary(1.0F, 1.0F, 1.0F, 1.0F);       // white
+constexpr ImVec4 kAccentSecondary(0.65F, 0.65F, 0.65F, 1.0F);  // grey
 
 // Neutral grey steps for widget backgrounds (idle -> hovered -> active),
 // named so the repeated identical r=g=b literals below don't read as
@@ -113,7 +113,8 @@ void ApplyHudTheme() {
   style.Colors[ImGuiCol_ScrollbarBg] = ImVec4(0.08F, 0.09F, 0.10F, 0.6F);
   style.Colors[ImGuiCol_ScrollbarGrab] =
       ImVec4(kGreyStepScrollbarGrab, kGreyStepScrollbarGrab, kGreyStepScrollbarGrab, 1.0F);
-  style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(kAccentSecondary.x, kAccentSecondary.y, kAccentSecondary.z, 0.5F);
+  style.Colors[ImGuiCol_ScrollbarGrabHovered] =
+      ImVec4(kAccentSecondary.x, kAccentSecondary.y, kAccentSecondary.z, 0.5F);
   style.Colors[ImGuiCol_ScrollbarGrabActive] = kAccentPrimary;
   style.Colors[ImGuiCol_PlotLines] = kAccentSecondary;
   style.Colors[ImGuiCol_PlotLinesHovered] = kAccentPrimary;
@@ -139,9 +140,9 @@ constexpr float kAccentStripWidth = 3.0F;
 void DrawWindowAccentStrip() {
   const ImVec2 window_pos = ImGui::GetWindowPos();
   const float title_height = ImGui::GetFrameHeight();
-  ImGui::GetWindowDrawList()->AddRectFilled(
-      window_pos, ImVec2(window_pos.x + kAccentStripWidth, window_pos.y + title_height),
-      ImGui::GetColorU32(kAccentPrimary));
+  ImGui::GetWindowDrawList()->AddRectFilled(window_pos,
+                                            ImVec2(window_pos.x + kAccentStripWidth, window_pos.y + title_height),
+                                            ImGui::GetColorU32(kAccentPrimary));
 }
 
 // One cube vertex - see BuildCubeGeometry. 4 unique vertices per face
@@ -440,7 +441,8 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
     gui->beginFrame();
 
     {
-      Falcor::Gui::Window stats_window(gui.get(), "Stats", Falcor::uint2(0, 0), kStatsWindowPos, kAutoResizeWindowFlags);
+      Falcor::Gui::Window stats_window(gui.get(), "Stats", Falcor::uint2(0, 0), kStatsWindowPos,
+                                       kAutoResizeWindowFlags);
       DrawWindowAccentStrip();
       stats_window.text(Falcor::to_string(frame_rate));
       stats_window.text(fmt::format("Frame #{}", frame_rate.getFrameCount()));
@@ -478,8 +480,8 @@ struct Renderer::Impl : public Falcor::Window::ICallbacks {
       // Window constructor right below) keeps AutoResize for height while
       // guaranteeing the graph real estate.
       ImGui::SetNextWindowSizeConstraints(ImVec2(kProfilerMinWidth, 0.0F), ImVec2(FLT_MAX, FLT_MAX));
-      Falcor::Gui::Window profiler_window(gui.get(), "Profiler", profiler_open, Falcor::uint2(0, 0),
-                                          kProfilerWindowPos, kAutoResizeWindowFlags);
+      Falcor::Gui::Window profiler_window(gui.get(), "Profiler", profiler_open, Falcor::uint2(0, 0), kProfilerWindowPos,
+                                          kAutoResizeWindowFlags);
       if (profiler_open) {
         // Unlike Stats/Settings (no close button, so always re-opened),
         // this window's `open` flag is real and persists across frames -
