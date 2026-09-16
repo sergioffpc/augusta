@@ -261,9 +261,9 @@ BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta
   // forced-walk threshold, and depletes; otherwise stamina recovers.
   const bool sprinting = input.sprint && state.stamina > impl_->stamina_config.forced_walk_below;
   if (sprinting) {
-    state.stamina = std::max(0.0F, state.stamina - impl_->stamina_config.deplete_per_second * delta_time);
+    state.stamina = std::max(0.0F, state.stamina - (impl_->stamina_config.deplete_per_second * delta_time));
   } else {
-    state.stamina = std::min(1.0F, state.stamina + impl_->stamina_config.regen_per_second * delta_time);
+    state.stamina = std::min(1.0F, state.stamina + (impl_->stamina_config.regen_per_second * delta_time));
   }
 
   const math::Vec3 direction = math::Normalize(input.direction);
@@ -322,8 +322,8 @@ BodyState World::Reconcile(BodyHandle handle, const BodyState& authoritative) {
     corrected = authoritative;
     LD("subsystem=physics event=reconcile_snap handle={} error={:.3f}", static_cast<std::uint32_t>(handle), error);
   } else {
-    corrected.position = record.state.position + (authoritative.position - record.state.position) * kBlendFactor;
-    corrected.velocity = record.state.velocity + (authoritative.velocity - record.state.velocity) * kBlendFactor;
+    corrected.position = record.state.position + ((authoritative.position - record.state.position) * kBlendFactor);
+    corrected.velocity = record.state.velocity + ((authoritative.velocity - record.state.velocity) * kBlendFactor);
     corrected.stance = authoritative.stance;
     corrected.stamina = authoritative.stamina;
     LD("subsystem=physics event=reconcile_blend handle={} error={:.3f}", static_cast<std::uint32_t>(handle), error);
