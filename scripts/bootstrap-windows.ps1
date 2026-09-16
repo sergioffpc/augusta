@@ -68,7 +68,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 # (third_party/falcor, pinned per ADR-0025 - plain upstream, no fork) -
 # --recursive also pulls in its own nested submodules (glfw, imgui, ...).
 # src/modules/renderer/CMakeLists.txt's own build step applies
-# cmake/patches/falcor-augusta.patch (a small patch to the vendored copy,
+# cmake/patches/falcor.patch (a small patch to the vendored copy,
 # per ADR-0009) and pulls Falcor's remaining packman-fetched binary
 # dependencies lazily, on first build.
 git -C $repoRoot submodule update --init --recursive
