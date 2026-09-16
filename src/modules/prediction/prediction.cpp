@@ -1,6 +1,7 @@
 #include "augusta/prediction.h"
 
 #include <flecs.h>
+#include <nvtx3/nvtx3.hpp>
 
 #include <array>
 
@@ -43,7 +44,13 @@ struct World::Impl {
   State tick_state;
 
   explicit Impl(const physics::StaminaConfig& stamina_config)
-      : physics(stamina_config), local_body(physics.CreateBody(math::Vec3(0.0F, 0.0F, 0.0F))) {
+      // enable_gpu=true: PredictionWorld is exclusively client-side (see
+      // this class's own header comment) - the server's SimulationWorld
+      // never passes this, so GPU is requested here only, not threaded
+      // through as a Config field. See physics::World's own header
+      // comment for why this currently has no observable effect.
+      : physics(stamina_config, /*enable_gpu=*/true),
+        local_body(physics.CreateBody(math::Vec3(0.0F, 0.0F, 0.0F))) {
     // Chain the five phases in Phase's declared order (ADR-0024): each
     // depends_on the previous one, and the first depends on Flecs's
     // built-in OnUpdate phase, so a single ecs.progress() call runs them
@@ -61,11 +68,13 @@ struct World::Impl {
     // (see prediction.h's header comment) - local_body is a single
     // hardcoded handle rather than something discovered by a query.
     ecs.system("CommandIngestionSystem").kind(phases[kCommandIngestion]).run([](flecs::iter&) {
+      const nvtx3::scoped_range range{"CommandIngestion"};
       LT("subsystem=predictionworld event=command_ingestion");
       // tick_command is already staged by Tick() - nothing else to
       // ingest yet without an entity/component to apply it to.
     });
     ecs.system("ReconciliationSystem").kind(phases[kReconciliation]).run([this](flecs::iter&) {
+      const nvtx3::scoped_range range{"Reconciliation"};
       if (!tick_authoritative_state.has_value()) {
         return;
       }
@@ -73,14 +82,17 @@ struct World::Impl {
       physics.Reconcile(local_body, *tick_authoritative_state);
     });
     ecs.system("MovementSystem").kind(phases[kMovement]).run([this](flecs::iter& sys_iter) {
+      const nvtx3::scoped_range range{"Movement"};
       LT("subsystem=predictionworld event=movement");
       tick_state.local_body = physics.Step(local_body, tick_command.movement, sys_iter.delta_time());
     });
     ecs.system("WeaponHandlingSystem").kind(phases[kWeaponHandling]).run([](flecs::iter&) {
+      const nvtx3::scoped_range range{"WeaponHandling"};
       LT("subsystem=predictionworld event=weapon_handling");
       // TODO(sergioffpc): not yet a module of its own - see prediction.h.
     });
     ecs.system("CommitSystem").kind(phases[kCommit]).run([](flecs::iter&) {
+      const nvtx3::scoped_range range{"Commit"};
       LT("subsystem=predictionworld event=commit");
       // tick_state.local_body is already committed by MovementSystem -
       // nothing else in State to package yet.

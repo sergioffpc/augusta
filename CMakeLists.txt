@@ -33,6 +33,20 @@ find_package(flecs CONFIG REQUIRED)
 find_package(GameNetworkingSockets CONFIG REQUIRED)
 find_package(unofficial-omniverse-physx-sdk CONFIG REQUIRED)
 
+# NVTX (github.com/NVIDIA/NVTX) is header-only and not on vcpkg, so it's
+# vendored as a pinned git submodule (third_party/nvtx) like Falcor,
+# rather than fetched. Its own third_party/nvtx/c/CMakeLists.txt is NOT
+# added as a subdirectory: it calls project(nvtx3 ...) with no LANGUAGES,
+# which implicitly also enables C for this whole build (this project is
+# CXX-only, see project() above) and pulls in the compiled nvtxw3-loader
+# static lib, tests, and install rules this repo has no use for - all we
+# actually want is the header-only nvtx3::scoped_range C++ API
+# (nvtx3/nvtx3.hpp and its nvtxDetail/ headers, no .c/.cpp of their own),
+# so a plain INTERFACE target for the include path is the whole
+# integration.
+add_library(nvtx3-cpp INTERFACE)
+target_include_directories(nvtx3-cpp INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/nvtx/c/include")
+
 enable_testing()
 find_package(GTest CONFIG REQUIRED)
 find_package(benchmark CONFIG REQUIRED)

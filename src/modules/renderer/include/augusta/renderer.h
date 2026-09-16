@@ -25,9 +25,8 @@
 // OS/Falcor event queue (cheap, safe to call often, e.g. once per
 // Simulation tick's worth of wall time even though it runs on the
 // Main/Render thread); RenderFrame does the actual GPU work and should be
-// called at the app's presentation rate instead. The app's own main loop
-// (ClientRuntime, not yet designed) decides that split; this module just
-// exposes the two primitives.
+// called at the app's presentation rate instead. ClientRuntime's Run()
+// loop decides that split; this module just exposes the two primitives.
 //
 // Interface scope, for now: enough to drive M1's Falcor spike (a
 // textured, rotating primitive on screen) and to establish the seam

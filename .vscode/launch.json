@@ -5,6 +5,15 @@
   // matching preset (windows/windows-debug, linux/linux-debug) before F5-ing
   // a given config, or the binary it launches may be stale.
   "configurations": [
+    // The (gdb) configs below debug the Linux build of augustad (the real
+    // deployment target, ADR-0026) and need a real gdb on PATH - only
+    // works from WSL, not plain Windows (no MIDebuggerPath is set here,
+    // so VS Code falls back to expecting "gdb" to resolve on its own,
+    // which it can't on Windows: "Unable to determine path to debugger").
+    // For debugging augustad natively on Windows during dev, use the
+    // (MSVC) Server configs instead - augustad builds for both platforms
+    // (see the top-level CMakeLists.txt: src/server isn't WIN32-gated the
+    // way src/client and src/modules/renderer are).
     {
       "name": "Debug Server - Release (gdb)",
       "type": "cppdbg",
@@ -22,6 +31,24 @@
       "cwd": "${workspaceFolder}",
       "MIMode": "gdb",
       "preLaunchTask": "CMake: build"
+    },
+    {
+      "name": "Debug Server - Release (MSVC)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}\\build\\x64-windows\\src\\server\\augustad.exe",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "CMake: build",
+      "externalConsole": true
+    },
+    {
+      "name": "Debug Server - Debug (MSVC)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}\\build\\x64-windows-debug\\src\\server\\augustad.exe",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "CMake: build",
+      "externalConsole": true
     },
     {
       "name": "Debug Client - Release (MSVC)",

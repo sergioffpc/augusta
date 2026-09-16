@@ -1,5 +1,7 @@
 #include "runtime.h"
 
+#include <nvtx3/nvtx3.hpp>
+
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -67,6 +69,7 @@ struct ClientRuntime::Impl {
   void SimulationThreadMain() {
     const auto tick_duration = std::chrono::duration<float>(1.0F / config.tick_rate_hz);
     while (running.load(std::memory_order_relaxed)) {
+      const nvtx3::scoped_range range{"Simulation Tick"};
       const auto tick_start = std::chrono::steady_clock::now();
 
       input::Command command = input.Sample();
@@ -95,6 +98,7 @@ struct ClientRuntime::Impl {
     network.Connect(config.server);
     bool sent_hello = false;
     while (running.load(std::memory_order_relaxed)) {
+      const nvtx3::scoped_range range{"Network PumpEvents"};
       network.PumpEvents();
 
       // TODO(sergioffpc): M1 spike only (issue #31) - a literal hello
@@ -134,6 +138,7 @@ void ClientRuntime::Run() {
 
   LI("subsystem=clientruntime event=loop_starting loop=render");
   while (!impl_->renderer.ShouldClose()) {
+    const nvtx3::scoped_range range{"Main/Render Frame"};
     impl_->renderer.PumpEvents();
     presentation::State frame_state = impl_->presentation.RunFrame(impl_->GetLatestPredictionState());
     // TODO(sergioffpc): renderer.RenderFrame() doesn't consume

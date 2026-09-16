@@ -1,9 +1,8 @@
 add_library(augusta_renderer STATIC
   renderer.cpp
-  debug_hud.cpp
 )
 target_include_directories(augusta_renderer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(augusta_renderer PUBLIC augusta_input)
+target_link_libraries(augusta_renderer PUBLIC augusta_input PRIVATE nvtx3-cpp)
 
 if (WIN32)
   # NVIDIA Falcor (ADR-0009) is vendored as a pinned git submodule
@@ -37,10 +36,73 @@ if (WIN32)
   set(FALCOR_BIN_DIR ${FALCOR_BUILD_DIR}/bin/${CMAKE_BUILD_TYPE} CACHE INTERNAL "Falcor's own build output directory")
   set(FALCOR_DIR ${FALCOR_DIR} CACHE INTERNAL "Vendored Falcor submodule's root directory")
 
+  # NVIDIA Nsight Aftermath SDK (optional, GPU crash dump capture) - unlike
+  # Falcor's other binary deps it isn't packman-fetchable (EULA-gated on
+  # NVIDIA's developer site), so it can't be fetched here the way those are.
+  # Instead it's autodetected from an installed NVIDIA Nsight Graphics,
+  # which bundles the Aftermath SDK as a component (confirmed present at
+  # "...\Nsight Graphics <version>\SDKs\NsightAftermathSDK\<version>\" on a
+  # real install - both version segments float, hence the globs below). If
+  # several Nsight Graphics installs/SDK versions are present side by side,
+  # the lexicographically last one wins - not a true version-sort, but the
+  # version strings observed in practice (YYYY.M.build.rev) happen to
+  # compare correctly that way. No Nsight Graphics installed means no
+  # Aftermath support - there's nowhere else this looks.
+  # Falcor's own external/CMakeLists.txt autodetects Aftermath purely from
+  # ${FALCOR_DIR}/external/packman/aftermath/include/GFSDK_Aftermath.h
+  # existing at *its* configure time, so the custom command below syncs the
+  # discovered directory into that path first. FALCOR_HAS_AFTERMATH in
+  # target_compile_definitions further down has to track this same
+  # condition: it's an augusta-side compile definition for augusta_renderer's
+  # own TUs (which pull in Falcor's headers directly, e.g. Device::Desc's
+  # enableAftermath field and the AftermathContext member it gates on
+  # Device), and a mismatch against what Falcor.lib itself was actually built
+  # with would desync struct layouts between this target's object code and
+  # Falcor.lib's.
+  file(GLOB AUGUSTA_AFTERMATH_SYSTEM_CANDIDATES
+    "$ENV{ProgramFiles}/NVIDIA Corporation/Nsight Graphics */SDKs/NsightAftermathSDK/*"
+  )
+  set(AUGUSTA_AFTERMATH_SYSTEM_DIRS "")
+  foreach(candidate ${AUGUSTA_AFTERMATH_SYSTEM_CANDIDATES})
+    if (EXISTS "${candidate}/include/GFSDK_Aftermath.h")
+      list(APPEND AUGUSTA_AFTERMATH_SYSTEM_DIRS "${candidate}")
+    endif()
+  endforeach()
+  if (AUGUSTA_AFTERMATH_SYSTEM_DIRS)
+    list(SORT AUGUSTA_AFTERMATH_SYSTEM_DIRS)
+    list(GET AUGUSTA_AFTERMATH_SYSTEM_DIRS -1 AUGUSTA_AFTERMATH_DIR)
+    set(AUGUSTA_AFTERMATH_HEADER ${AUGUSTA_AFTERMATH_DIR}/include/GFSDK_Aftermath.h)
+  endif()
+
+  if (AUGUSTA_AFTERMATH_HEADER AND EXISTS ${AUGUSTA_AFTERMATH_HEADER})
+    message(STATUS "Nsight Aftermath SDK found at ${AUGUSTA_AFTERMATH_DIR} - enabling FALCOR_HAS_AFTERMATH")
+    set(FALCOR_HAS_AFTERMATH_VALUE 1)
+    set(FALCOR_AFTERMATH_SYNC_COMMAND
+      COMMAND ${CMAKE_COMMAND} -E copy_directory "${AUGUSTA_AFTERMATH_DIR}" ${FALCOR_DIR}/external/packman/aftermath)
+    # Falcor's own deploy_dependencies target (which would normally copy
+    # the runtime DLL(s) next to Falcor.dll) is never built here - the
+    # custom command below only builds `--target Falcor` (see its own
+    # comment) - so they're copied next to Falcor.dll directly instead,
+    # from where src/client/CMakeLists.txt's own POST_BUILD step already
+    # picks up everything under FALCOR_BIN_DIR. Globbed rather than a fixed
+    # GFSDK_Aftermath_Lib.x64.dll (+ llvm_7_0_1.dll on older SDKs) filename
+    # list: the exact set of runtime DLLs an SDK ships has changed between
+    # versions (the llvm one is gone as of the 2026.3 SDK, statically
+    # linked in instead), and this way it doesn't need updating either way.
+    file(GLOB AUGUSTA_AFTERMATH_RUNTIME_DLLS "${AUGUSTA_AFTERMATH_DIR}/lib/x64/*.dll")
+    if (AUGUSTA_AFTERMATH_RUNTIME_DLLS)
+      set(FALCOR_AFTERMATH_DEPLOY_COMMAND
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${AUGUSTA_AFTERMATH_RUNTIME_DLLS} ${FALCOR_BIN_DIR})
+    endif()
+    set(FALCOR_AFTERMATH_DEPENDS ${AUGUSTA_AFTERMATH_HEADER})
+  else()
+    set(FALCOR_HAS_AFTERMATH_VALUE 0)
+  endif()
+
   set(FALCOR_STAMP ${CMAKE_CURRENT_BINARY_DIR}/falcor.stamp)
   add_custom_command(
     OUTPUT ${FALCOR_STAMP}
-    COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} checkout -- CMakePresets.json
+    COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} checkout -- CMakeLists.txt CMakePresets.json
       Source/Falcor/Utils/Timing/ProfilerUI.h Source/Falcor/Utils/Timing/ProfilerUI.cpp
     COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} apply ${CMAKE_SOURCE_DIR}/cmake/patches/falcor-augusta.patch
     # windows-ninja-msvc-base's CMAKE_MAKE_PROGRAM points at
@@ -73,8 +135,10 @@ if (WIN32)
     # reviving the pybind11 CMAKE_POLICY_VERSION_MINIMUM error. Passing it
     # explicitly here makes it immune to that, regardless of which path
     # triggers the reconfigure.
+    ${FALCOR_AFTERMATH_SYNC_COMMAND}
     COMMAND ${CMAKE_COMMAND} -S ${FALCOR_DIR} --preset ${FALCOR_PRESET} -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     COMMAND ${CMAKE_COMMAND} --build ${FALCOR_BUILD_DIR} --config ${CMAKE_BUILD_TYPE} --target Falcor
+    ${FALCOR_AFTERMATH_DEPLOY_COMMAND}
     COMMAND ${CMAKE_COMMAND} -E touch ${FALCOR_STAMP}
     WORKING_DIRECTORY ${FALCOR_DIR}
     COMMENT "Patching and building vendored Falcor (ADR-0009) - slow on a clean checkout"
@@ -100,6 +164,7 @@ if (WIN32)
     DEPENDS
       ${CMAKE_SOURCE_DIR}/cmake/patches/falcor-augusta.patch
       ${CMAKE_SOURCE_DIR}/cmake/patches/falcor-tools-dependencies.xml
+      ${FALCOR_AFTERMATH_DEPENDS}
     VERBATIM
   )
   add_custom_target(falcor_build DEPENDS ${FALCOR_STAMP})
@@ -123,7 +188,6 @@ if (WIN32)
   # not-yet-generated paths is normal for anything fed by a custom command.
   target_include_directories(augusta_renderer PRIVATE
     "${FALCOR_DIR}/Source/Falcor"
-    "${FALCOR_DIR}/external/vulkan-headers/include"
     "${FALCOR_DIR}/external/imgui"
     "${FALCOR_DIR}/external/imgui_addons"
     "${FALCOR_DIR}/external/packman/nanovdb/include"
@@ -136,8 +200,8 @@ if (WIN32)
   target_compile_definitions(augusta_renderer PRIVATE
     NOMINMAX UNICODE _USE_MATH_DEFINES
     FALCOR_ENABLE_ASSERTS=$<IF:$<CONFIG:Debug>,1,0>
-    FALCOR_ENABLE_PROFILER=1 FALCOR_HAS_D3D12=1 FALCOR_HAS_VULKAN=1
-    FALCOR_HAS_AFTERMATH=0 FALCOR_HAS_NVAPI=0 FALCOR_HAS_CUDA=0
+    FALCOR_ENABLE_PROFILER=1 FALCOR_HAS_D3D12=1 FALCOR_HAS_VULKAN=0
+    FALCOR_HAS_AFTERMATH=${FALCOR_HAS_AFTERMATH_VALUE} FALCOR_HAS_NVAPI=0 FALCOR_HAS_CUDA=0
     FALCOR_HAS_D3D12_AGILITY_SDK=1 FALCOR_HAS_RTXDI=1
     IMGUI_USER_CONFIG="Utils/UI/ImGuiConfig.h"
     # Source/Falcor/Utils/Math/Float16.h uses std::float_denorm_style /
@@ -189,9 +253,9 @@ if (WIN32)
   target_include_directories(augusta_renderer BEFORE PRIVATE "${FALCOR_DIR}/external/fmt/include")
 
   # Falcor's own sources build with this project-specific warning policy
-  # (Source/Falcor/CMakeLists.txt); only this target's translation units
-  # (renderer.cpp, debug_hud.cpp) consume Falcor's public headers, so only
-  # this target needs to match. /wd5311
+  # (Source/Falcor/CMakeLists.txt); only this target's translation unit
+  # (renderer.cpp) consumes Falcor's public headers, so only this target
+  # needs to match. /wd5311
   # isn't part of that copied policy - it's this machine's much newer
   # MSVC/STL (Falcor's own list predates it) flagging nlohmann/json.hpp
   # and pybind11's pre-C++23 `operator""x` literal-operator syntax, in

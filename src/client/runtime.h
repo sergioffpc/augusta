@@ -32,13 +32,13 @@
 // Simulation thread always reconciles against std::nullopt (see
 // prediction::World::Tick).
 //
-// This currently only compiles - it isn't yet called from main.cpp,
-// because Renderer and audio::Engine have no implementation behind
-// their declarations yet (see renderer.h, audio.h); constructing a
-// ClientRuntime today would fail to link. networking::Client (ADR-0003)
-// and physics::World (ADR-0002, constructed inside prediction::World)
-// are both real now - see networking.cpp and physics.cpp. Revisit
-// main.cpp once Renderer/audio::Engine land too.
+// Constructed and run from main.cpp today. Renderer (ADR-0009, the M1
+// Falcor spike), networking::Client (ADR-0003), and physics::World
+// (ADR-0002, constructed inside prediction::World) are all real -
+// audio::Engine is still a placeholder stub (see audio.h/audio.cpp),
+// which is why there's no sound yet; a stub still links and runs as a
+// no-op, same as every other module before its real implementation
+// landed (see e.g. physics.h's own history).
 namespace augusta::runtime {
 
 // Everything ClientRuntime needs to construct its owned sub-worlds/
