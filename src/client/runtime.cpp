@@ -59,6 +59,42 @@ struct ClientRuntime::Impl {
   std::mutex prediction_state_mutex;
   prediction::State latest_prediction_state;
 
+  // NVTX counters (nvtx3::counter, third_party/nvtx) mirroring
+  // networking::ConnectionStats field-for-field - plotted on the Nsight
+  // Systems timeline alongside the Simulation/Network/Render ranges below,
+  // sampled once per NetworkThreadMain loop iteration. sample_no_value()
+  // is used instead of skipping the sample while GetStats() returns
+  // std::nullopt (not yet kConnected), so the timeline shows an explicit
+  // gap rather than a misleading flat line at whatever value came before.
+  nvtx3::counter<double> net_ping_ms{"network.ping_ms", "Round-trip time to server"};
+  nvtx3::counter<double> net_quality_local{"network.quality_local", "Local packet delivery quality (0-1)"};
+  nvtx3::counter<double> net_quality_remote{"network.quality_remote", "Remote-reported packet delivery quality (0-1)"};
+  nvtx3::counter<double> net_in_bytes_per_sec{"network.in_bytes_per_sec", "Inbound throughput"};
+  nvtx3::counter<double> net_out_bytes_per_sec{"network.out_bytes_per_sec", "Outbound throughput"};
+  nvtx3::counter<double> net_max_jitter_us{"network.max_jitter_us", "Worst jitter since last GetStats() call"};
+  nvtx3::counter<double> net_pending_bytes{"network.pending_bytes", "Bytes queued or in flight"};
+
+  void SampleNetworkStats() {
+    const std::optional<networking::ConnectionStats> stats = network.GetStats();
+    if (!stats.has_value()) {
+      net_ping_ms.sample_no_value(nvtx3::no_value_reason::unavailable);
+      net_quality_local.sample_no_value(nvtx3::no_value_reason::unavailable);
+      net_quality_remote.sample_no_value(nvtx3::no_value_reason::unavailable);
+      net_in_bytes_per_sec.sample_no_value(nvtx3::no_value_reason::unavailable);
+      net_out_bytes_per_sec.sample_no_value(nvtx3::no_value_reason::unavailable);
+      net_max_jitter_us.sample_no_value(nvtx3::no_value_reason::unavailable);
+      net_pending_bytes.sample_no_value(nvtx3::no_value_reason::unavailable);
+      return;
+    }
+    net_ping_ms.sample(static_cast<double>(stats->ping_ms));
+    net_quality_local.sample(static_cast<double>(stats->quality_local));
+    net_quality_remote.sample(static_cast<double>(stats->quality_remote));
+    net_in_bytes_per_sec.sample(static_cast<double>(stats->in_bytes_per_sec));
+    net_out_bytes_per_sec.sample(static_cast<double>(stats->out_bytes_per_sec));
+    net_max_jitter_us.sample(static_cast<double>(stats->max_jitter_us));
+    net_pending_bytes.sample(static_cast<double>(stats->pending_bytes));
+  }
+
   explicit Impl(const Config& cfg)
       : config(cfg), input(cfg.input), prediction(cfg.stamina), presentation(audio), renderer(cfg.renderer, input) {}
 
@@ -99,6 +135,7 @@ struct ClientRuntime::Impl {
     while (running.load(std::memory_order_relaxed)) {
       const nvtx3::scoped_range range{"Network PumpEvents"};
       network.PumpEvents();
+      SampleNetworkStats();
 
       // TODO(sergioffpc): M1 spike only (issue #31) - a literal hello
       // proving the transport round-trips a message at all. Replace
