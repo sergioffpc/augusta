@@ -57,13 +57,6 @@ using physx::PxSceneDesc;
 using physx::PxSceneFlag;
 using physx::PxTolerancesScale;
 using physx::PxVec3;
-#ifndef NDEBUG
-using physx::PxDefaultPvdSocketTransportCreate;
-using physx::PxPvd;
-using physx::PxPvdInstrumentationFlag;
-using physx::PxPvdSceneFlag;
-using physx::PxPvdTransport;
-#endif
 
 // ---- Tuning constants ----
 // Spike placeholders (ADR-0002 doesn't pin these down, and unlike
@@ -85,16 +78,6 @@ constexpr float kDynamicFriction = 0.5F;
 constexpr float kRestitution = 0.1F;
 constexpr float kMinMoveDistance = 0.001F;  // PxController::move's own minDist parameter.
 constexpr int kWorkerThreadCount = 1;
-
-#ifndef NDEBUG
-// PhysX Visual Debugger (PVD) connection - debug builds only, per this
-// constant block's own guard. Non-fatal if no PVD instance is listening
-// (see the connect() call site): matches this constructor's own
-// enable_gpu fallback-not-failure posture.
-constexpr const char* kPvdHost = "127.0.0.1";
-constexpr int kPvdPort = 5425;  // PVD's own default listening port.
-constexpr unsigned int kPvdTimeoutMs = 10;
-#endif
 
 // ADR-0004 snap/blend correction: an error at or beyond kSnapDistance
 // teleports the predicted body directly to the authoritative state (too
@@ -166,10 +149,6 @@ struct World::Impl {
   LogErrorCallback error_callback;
   PxDefaultAllocator allocator;
   PxFoundation* foundation = nullptr;
-#ifndef NDEBUG
-  PxPvd* pvd = nullptr;
-  PxPvdTransport* pvd_transport = nullptr;
-#endif
   PxPhysics* physics = nullptr;
   PxDefaultCpuDispatcher* dispatcher = nullptr;
   // Non-null only when enable_gpu was requested AND a CUDA-capable
@@ -184,40 +163,14 @@ struct World::Impl {
   std::unordered_map<BodyHandle, BodyRecord> bodies;
   std::uint32_t next_handle = 1;
 
-#ifndef NDEBUG
-  // Attempts a PVD connection whether or not an actual PVD instance is
-  // listening - PxPvd::connect() failing just means nothing shows up in
-  // PVD, not a World construction failure. Split out of the constructor
-  // to keep it within this codebase's function-size lint threshold.
-  PxPvd* ConnectPvd() {
-    PxPvd* pvd_instance = PxCreatePvd(*foundation);
-    pvd_transport = PxDefaultPvdSocketTransportCreate(kPvdHost, kPvdPort, kPvdTimeoutMs);
-    if (pvd_instance->connect(*pvd_transport, PxPvdInstrumentationFlag::eALL)) {
-      LI("subsystem=physics event=pvd_connected host={} port={}", kPvdHost, kPvdPort);
-    } else {
-      LD("subsystem=physics event=pvd_unavailable host={} port={}", kPvdHost, kPvdPort);
-    }
-    return pvd_instance;
-  }
-#endif
-
   Impl(const StaminaConfig& config, bool enable_gpu) : stamina_config(config) {
     foundation = PxCreateFoundation(PX_PHYSICS_VERSION, allocator, error_callback);
     if (foundation == nullptr) {
       throw std::runtime_error("physics::World: PxCreateFoundation failed");
     }
-#ifndef NDEBUG
-    pvd = ConnectPvd();
-#endif
 
     const PxTolerancesScale scale;
-    physics = PxCreatePhysics(PX_PHYSICS_VERSION, *foundation, scale, true,
-#ifndef NDEBUG
-                              pvd
-#else
-                              nullptr
-#endif
-    );
+    physics = PxCreatePhysics(PX_PHYSICS_VERSION, *foundation, scale, true);
     if (physics == nullptr) {
       throw std::runtime_error("physics::World: PxCreatePhysics failed");
     }
@@ -250,13 +203,6 @@ struct World::Impl {
     }
 
     scene = physics->createScene(scene_desc);
-#ifndef NDEBUG
-    if (auto* pvd_client = scene->getScenePvdClient(); pvd_client != nullptr) {
-      pvd_client->setScenePvdFlag(PxPvdSceneFlag::eTRANSMIT_CONSTRAINTS, true);
-      pvd_client->setScenePvdFlag(PxPvdSceneFlag::eTRANSMIT_CONTACTS, true);
-      pvd_client->setScenePvdFlag(PxPvdSceneFlag::eTRANSMIT_SCENEQUERIES, true);
-    }
-#endif
     controller_manager = PxCreateControllerManager(*scene);
     material = physics->createMaterial(kStaticFriction, kDynamicFriction, kRestitution);
     LD("subsystem=physics event=world_created gpu={}", cuda_context_manager != nullptr);
@@ -289,16 +235,6 @@ struct World::Impl {
     if (physics != nullptr) {
       physics->release();
     }
-#ifndef NDEBUG
-    // Released after physics (which references it), same ordering
-    // constraint as cuda_context_manager above.
-    if (pvd != nullptr) {
-      pvd->release();
-    }
-    if (pvd_transport != nullptr) {
-      pvd_transport->release();
-    }
-#endif
     if (foundation != nullptr) {
       foundation->release();
     }
