@@ -1,5 +1,4 @@
 #include "augusta/networking.h"
-#include "augusta/logging.h"
 
 #include <steam/isteamnetworkingsockets.h>
 #include <steam/isteamnetworkingutils.h>  // SteamNetworkingIPAddr::ParseString's inline body lives here.
@@ -11,6 +10,8 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+
+#include "augusta/logging.h"
 
 // M1 spike (ADR-0003): the first real (non-stub) body for this module.
 // Both Client and Server route GameNetworkingSockets' single global
