@@ -1,9 +1,9 @@
 #include "augusta/prediction.h"
 
 #include <flecs.h>
-#include <nvtx3/nvtx3.hpp>
 
 #include <array>
+#include <nvtx3/nvtx3.hpp>
 
 #include "augusta/logging.h"
 #include "augusta/math.h"
@@ -49,8 +49,7 @@ struct World::Impl {
       // never passes this, so GPU is requested here only, not threaded
       // through as a Config field. See physics::World's own header
       // comment for why this currently has no observable effect.
-      : physics(stamina_config, /*enable_gpu=*/true),
-        local_body(physics.CreateBody(math::Vec3(0.0F, 0.0F, 0.0F))) {
+      : physics(stamina_config, /*enable_gpu=*/true), local_body(physics.CreateBody(math::Vec3(0.0F, 0.0F, 0.0F))) {
     // Chain the five phases in Phase's declared order (ADR-0024): each
     // depends_on the previous one, and the first depends on Flecs's
     // built-in OnUpdate phase, so a single ecs.progress() call runs them

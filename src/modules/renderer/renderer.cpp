@@ -6,11 +6,11 @@
 #include <Falcor.h>
 #include <Utils/Math/Matrix.h>
 #include <Utils/Threading.h>
-#include <nvtx3/nvtx3.hpp>
 
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <nvtx3/nvtx3.hpp>
 #include <optional>
 #include <vector>
 

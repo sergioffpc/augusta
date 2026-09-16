@@ -1,11 +1,10 @@
 #include "runtime.h"
 
-#include <nvtx3/nvtx3.hpp>
-
 #include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <mutex>
+#include <nvtx3/nvtx3.hpp>
 #include <optional>
 #include <string_view>
 #include <thread>

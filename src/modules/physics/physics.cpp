@@ -213,9 +213,9 @@ struct World::Impl {
     const PxTolerancesScale scale;
     physics = PxCreatePhysics(PX_PHYSICS_VERSION, *foundation, scale, true,
 #ifndef NDEBUG
-                               pvd
+                              pvd
 #else
-                               nullptr
+                              nullptr
 #endif
     );
     if (physics == nullptr) {
