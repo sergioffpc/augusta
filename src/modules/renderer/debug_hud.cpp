@@ -158,8 +158,8 @@ void DebugHud::DrawStatsWindow(const FrameStats& stats) {
   // Renderer::Impl::last_cpu_frame_time_ms) - not comparable to the FPS
   // reading above, which covers the whole paced frame.
   stats_window.text(stats.frame_rate_text);
-  stats_window.text(fmt::format("CPU: {:.2f} ms", stats.cpu_frame_time_ms));
   stats_window.text(fmt::format("Frame #{}", stats.frame_count));
+  stats_window.text(fmt::format("CPU: {:.2f} ms", stats.cpu_frame_time_ms));
   // getCurrentRSS(): resident/working set size for this process
   // (Core/Platform/OS.h) - actual RAM in use, not committed/virtual size,
   // and not GPU memory (Falcor exposes no VRAM query).
