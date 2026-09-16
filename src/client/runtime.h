@@ -33,11 +33,12 @@
 // prediction::World::Tick).
 //
 // This currently only compiles - it isn't yet called from main.cpp,
-// because Renderer, audio::Engine, networking::Client, and
-// physics::World (constructed inside prediction::World) have no
-// implementation behind their declarations yet (see e.g. renderer.h,
-// audio.h); constructing a ClientRuntime today would fail to link.
-// Revisit main.cpp once those land.
+// because Renderer and audio::Engine have no implementation behind
+// their declarations yet (see renderer.h, audio.h); constructing a
+// ClientRuntime today would fail to link. networking::Client (ADR-0003)
+// and physics::World (ADR-0002, constructed inside prediction::World)
+// are both real now - see networking.cpp and physics.cpp. Revisit
+// main.cpp once Renderer/audio::Engine land too.
 namespace augusta::runtime {
 
 // Everything ClientRuntime needs to construct its owned sub-worlds/

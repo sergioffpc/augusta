@@ -14,3 +14,11 @@ target_link_libraries(augusta_networking_tests PRIVATE augusta_networking GTest:
 # launch can take longer than 5s once Windows Defender scans the newly written
 # binaries - CTest's discovery run then times out even though the test itself is fine.
 gtest_discover_tests(augusta_networking_tests DISCOVERY_TIMEOUT 30)
+
+add_executable(augusta_physics_tests physics_test.cpp)
+target_link_libraries(augusta_physics_tests PRIVATE augusta_physics GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_physics_tests)
+
+add_executable(augusta_prediction_tests prediction_test.cpp)
+target_link_libraries(augusta_prediction_tests PRIVATE augusta_prediction GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_prediction_tests)

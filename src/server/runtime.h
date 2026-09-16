@@ -31,11 +31,11 @@
 // called from a SIGINT/SIGTERM handler main() installs.
 //
 // Like its client-side counterpart, this currently only compiles - it
-// isn't yet called from main.cpp, because networking::Server and
-// physics::World (constructed inside simulation::World) have no
-// implementation behind their declarations yet; constructing a
-// ServerRuntime today would fail to link. Revisit main.cpp once those
-// land.
+// isn't yet called from main.cpp. networking::Server (ADR-0003) and
+// physics::World (ADR-0002, constructed inside simulation::World) are
+// both real now (see networking.cpp, physics.cpp); ballistics::World and
+// scripting::Engine (also constructed inside simulation::World) are
+// still placeholder stubs. Revisit main.cpp once those land too.
 namespace augusta::runtime {
 
 // Everything ServerRuntime needs to construct SimulationWorld and start

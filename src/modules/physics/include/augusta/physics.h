@@ -2,6 +2,7 @@
 #define AUGUSTA_PHYSICS_H_
 
 #include <cstdint>
+#include <memory>
 
 #include "augusta/math.h"
 
@@ -111,8 +112,18 @@ class World {
  public:
   // Constructs an empty World (no bodies yet), using config for every
   // body's stamina rules. config is copied; there is no way to change it
-  // for a World already constructed.
+  // for a World already constructed. Creates its own PhysX foundation/
+  // physics/scene instance (ADR-0002) - not shared with any other World,
+  // matching the "one World instance per process" contract above.
   explicit World(const StaminaConfig& config);
+  ~World();
+
+  // Move-only: copying would either duplicate or alias the owned PhysX
+  // scene, neither of which is meaningful.
+  World(const World&) = delete;
+  World& operator=(const World&) = delete;
+  World(World&&) noexcept;
+  World& operator=(World&&) noexcept;
 
   // Creates a new body at initial_position, with default BodyState
   // otherwise (standing, zero velocity, full stamina). Returns a handle
@@ -162,6 +173,10 @@ class World {
   // concern there, since ballistics runs exclusively server-side - there
   // is no second, client-side computation to diverge from.
   [[nodiscard]] RaycastHit Raycast(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const;
+
+ private:
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace augusta::physics

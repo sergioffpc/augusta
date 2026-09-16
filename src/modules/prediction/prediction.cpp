@@ -5,6 +5,7 @@
 #include <array>
 
 #include "augusta/logging.h"
+#include "augusta/math.h"
 
 namespace augusta::prediction {
 
@@ -26,9 +27,23 @@ enum PhaseIndex : std::size_t {
 struct World::Impl {
   flecs::world ecs;
   physics::World physics;
+  // M1 spike (issue #32): the one entity this pipeline predicts, ahead of
+  // real ECS component shapes (see prediction.h's header comment) -
+  // spawned once here rather than discovered via a component query.
+  physics::BodyHandle local_body;
   PhaseEntities phases;
 
-  explicit Impl(const physics::StaminaConfig& stamina_config) : physics(stamina_config) {
+  // Staged by Tick() immediately before each ecs.progress() call, read by
+  // the phase systems below; not meaningful outside of a Tick call. Once
+  // real ECS component shapes exist, CommandIngestion applying this to an
+  // entity (rather than the systems closing over it directly) is what
+  // replaces this.
+  input::Command tick_command;
+  std::optional<physics::BodyState> tick_authoritative_state;
+  State tick_state;
+
+  explicit Impl(const physics::StaminaConfig& stamina_config)
+      : physics(stamina_config), local_body(physics.CreateBody(math::Vec3(0.0F, 0.0F, 0.0F))) {
     // Chain the five phases in Phase's declared order (ADR-0024): each
     // depends_on the previous one, and the first depends on Flecs's
     // built-in OnUpdate phase, so a single ecs.progress() call runs them
@@ -43,23 +58,23 @@ struct World::Impl {
     // Phase's matching enumerator in prediction.h. Each uses run()
     // rather than each(): it fires exactly once per Tick regardless of
     // matched entities, since ECS component shapes aren't designed yet
-    // (see prediction.h's header comment). Bodies are stubs until those
-    // shapes exist, and until Tick's per-call command/authoritative_state
-    // arguments have somewhere to flow into the ECS (a singleton,
-    // presumably, once one is designed).
+    // (see prediction.h's header comment) - local_body is a single
+    // hardcoded handle rather than something discovered by a query.
     ecs.system("CommandIngestionSystem").kind(phases[kCommandIngestion]).run([](flecs::iter&) {
       LT("subsystem=predictionworld event=command_ingestion");
-      // TODO(sergioffpc): apply this tick's input::Command to the local
-      // player's entity.
+      // tick_command is already staged by Tick() - nothing else to
+      // ingest yet without an entity/component to apply it to.
     });
-    ecs.system("ReconciliationSystem").kind(phases[kReconciliation]).run([](flecs::iter&) {
+    ecs.system("ReconciliationSystem").kind(phases[kReconciliation]).run([this](flecs::iter&) {
+      if (!tick_authoritative_state.has_value()) {
+        return;
+      }
       LT("subsystem=predictionworld event=reconciliation");
-      // TODO(sergioffpc): physics::World::Reconcile against
-      // authoritative_state, if any arrived.
+      physics.Reconcile(local_body, *tick_authoritative_state);
     });
-    ecs.system("MovementSystem").kind(phases[kMovement]).run([](flecs::iter&) {
+    ecs.system("MovementSystem").kind(phases[kMovement]).run([this](flecs::iter& sys_iter) {
       LT("subsystem=predictionworld event=movement");
-      // TODO(sergioffpc): physics::World::Step for the local player body.
+      tick_state.local_body = physics.Step(local_body, tick_command.movement, sys_iter.delta_time());
     });
     ecs.system("WeaponHandlingSystem").kind(phases[kWeaponHandling]).run([](flecs::iter&) {
       LT("subsystem=predictionworld event=weapon_handling");
@@ -67,7 +82,8 @@ struct World::Impl {
     });
     ecs.system("CommitSystem").kind(phases[kCommit]).run([](flecs::iter&) {
       LT("subsystem=predictionworld event=commit");
-      // TODO(sergioffpc): package the tick's predicted state into State.
+      // tick_state.local_body is already committed by MovementSystem -
+      // nothing else in State to package yet.
     });
   }
 };
@@ -80,13 +96,10 @@ World& World::operator=(World&&) noexcept = default;
 
 State World::Tick(const input::Command& command, const std::optional<physics::BodyState>& authoritative_state,
                   float delta_time) {
-  // TODO(sergioffpc): not yet consumed - see Tick's own doc comment in
-  // prediction.h: there is no ECS entity/component shape for these to
-  // flow into yet.
-  (void)command;
-  (void)authoritative_state;
+  impl_->tick_command = command;
+  impl_->tick_authoritative_state = authoritative_state;
   impl_->ecs.progress(delta_time);
-  return State{};
+  return impl_->tick_state;
 }
 
 }  // namespace augusta::prediction
