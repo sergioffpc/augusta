@@ -22,7 +22,7 @@ extern "C" void HandleShutdownSignal(int /*signal*/) {
 
 int main() {
   augusta::logging::Init();
-  INFO("subsystem=server event=starting version={}", augusta::EngineVersion());
+  LI("subsystem=server event=starting version={}", augusta::EngineVersion());
 
   // augusta::networking::Init() must run once, process-wide, before any
   // Client/Server is constructed - see networking.h.
