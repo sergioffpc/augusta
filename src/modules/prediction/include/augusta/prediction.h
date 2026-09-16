@@ -66,10 +66,16 @@ enum class Phase {
 
 // PredictionWorld's per-tick output - ADR-0024/ARCHITECTURE.md's
 // "Prediction State", consumed by augusta::presentation::World::RunFrame.
-// Deliberately empty for now - same deferred-design posture as
-// augusta::simulation::State; its real shape depends on ECS component
-// shapes not yet designed.
-struct State {};
+// Beyond local_body, deliberately empty for now - same deferred-design
+// posture as augusta::simulation::State; its real shape depends on ECS
+// component shapes not yet designed.
+struct State {
+  // The local player's predicted body state as of this tick, after
+  // Movement and any Reconciliation (M1 spike, issue #32: this is the
+  // "one entity under prediction" the spike proves out, ahead of real
+  // ECS component shapes).
+  physics::BodyState local_body;
+};
 
 // The client's single PredictionWorld. The client constructs exactly
 // one, on the Simulation thread (ADR-0005), predicting only the local
@@ -82,10 +88,10 @@ struct State {};
 // world, neither of which is meaningful.
 class World {
  public:
-  // Constructs an empty World: an empty physics::World (using
-  // stamina_config for the local player's body) and the Flecs world with
-  // Phase's five phases and their systems registered (see header
-  // comment).
+  // Constructs an empty World: a physics::World (using stamina_config)
+  // holding the one local-player body this spike predicts (M1, issue
+  // #32), spawned at the world origin, plus the Flecs world with Phase's
+  // five phases and their systems registered (see header comment).
   explicit World(const physics::StaminaConfig& stamina_config);
   ~World();
 
