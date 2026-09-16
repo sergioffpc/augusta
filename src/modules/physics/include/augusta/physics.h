@@ -115,7 +115,18 @@ class World {
   // for a World already constructed. Creates its own PhysX foundation/
   // physics/scene instance (ADR-0002) - not shared with any other World,
   // matching the "one World instance per process" contract above.
-  explicit World(const StaminaConfig& config);
+  //
+  // enable_gpu requests a PxCudaContextManager and GPU-accelerated scene
+  // dynamics (client only, see augusta::prediction::World's own
+  // constructor - the server's SimulationWorld always leaves this false).
+  // Falls back to CPU silently (logged, not thrown) if no CUDA-capable
+  // GPU/driver is available. Currently has no observable effect: this
+  // World only ever drives PxController::move() (see physics.cpp's
+  // header comment), never PxScene::simulate()/fetchResults(), and the
+  // GPU dynamics pipeline only accelerates the latter. It's wired in now
+  // so a future switch to real rigid-body dynamics (props, ragdolls,
+  // projectiles) doesn't also need to plumb this through every caller.
+  explicit World(const StaminaConfig& config, bool enable_gpu = false);
   ~World();
 
   // Move-only: copying would either duplicate or alias the owned PhysX

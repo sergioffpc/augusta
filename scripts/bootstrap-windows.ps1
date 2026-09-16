@@ -76,4 +76,21 @@ git -C $repoRoot submodule update --init --recursive
 
 git -C $repoRoot config core.hooksPath .githooks
 
+# NVIDIA Nsight Aftermath SDK (optional, GPU crash dump capture - see
+# src/modules/renderer/CMakeLists.txt, mirroring its own detection).
+# Autodetected from an installed Nsight Graphics, which bundles it as a
+# component - there's no separate download/setup step, so this only checks
+# whether one's installed and reminds you if not. Builds work fine without
+# it (FALCOR_HAS_AFTERMATH=0).
+$aftermathFromNsightGraphics = Get-ChildItem -Path "$env:ProgramFiles\NVIDIA Corporation" `
+  -Filter "Nsight Graphics *" -Directory -ErrorAction SilentlyContinue |
+  ForEach-Object { Get-ChildItem -Path "$($_.FullName)\SDKs\NsightAftermathSDK" -Directory -ErrorAction SilentlyContinue } |
+  Where-Object { Test-Path "$($_.FullName)\include\GFSDK_Aftermath.h" } |
+  Select-Object -First 1
+if (-not $aftermathFromNsightGraphics) {
+  Write-Host ("No NVIDIA Nsight Graphics install with a bundled Aftermath SDK was found - GPU crash dumps " +
+    "stay disabled. To enable: install Nsight Graphics (developer.nvidia.com/nsight-graphics), which bundles " +
+    "the Aftermath SDK as a component; augusta picks it up automatically on the next cmake reconfigure.")
+}
+
 Write-Host "Windows bootstrap complete. Open a new terminal (this one's PATH predates the tools just installed) before running cmake/ninja."

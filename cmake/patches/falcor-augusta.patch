@@ -1,3 +1,21 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 365785a2..b1e4f9a7 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -58,7 +58,12 @@ message(STATUS "Platform: ${FALCOR_PLATFORM}")
+ 
+ # Check if D3D12/Vulkan are available.
+ set(FALCOR_HAS_D3D12 ${FALCOR_WINDOWS})
+-set(FALCOR_HAS_VULKAN ON)
++# augusta (ADR-0009): D3D12 is the only backend this renderer targets -
++# augusta_renderer's own Device::Desc already requests Type::D3D12
++# explicitly (src/modules/renderer/renderer.cpp), so the Vulkan backend
++# would otherwise just be dead code compiled into Falcor.lib/Falcor.dll
++# for no reason.
++set(FALCOR_HAS_VULKAN OFF)
+ 
+ # -----------------------------------------------------------------------------
+ # git submodules
 diff --git a/CMakePresets.json b/CMakePresets.json
 index 8d52e7b1..14273cae 100644
 --- a/CMakePresets.json

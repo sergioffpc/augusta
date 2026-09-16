@@ -140,6 +140,28 @@ ConnectionState Client::GetState() const {
   return impl_->state;
 }
 
+std::optional<ConnectionStats> Client::GetStats() const {
+  std::lock_guard<std::mutex> lock(impl_->mutex);
+  if (impl_->state != ConnectionState::kConnected) {
+    return std::nullopt;
+  }
+
+  SteamNetConnectionRealTimeStatus_t status;
+  if (SteamNetworkingSockets()->GetConnectionRealTimeStatus(impl_->connection, &status, 0, nullptr) != k_EResultOK) {
+    return std::nullopt;
+  }
+
+  return ConnectionStats{
+      .ping_ms = status.m_nPing,
+      .quality_local = status.m_flConnectionQualityLocal,
+      .quality_remote = status.m_flConnectionQualityRemote,
+      .in_bytes_per_sec = status.m_flInBytesPerSec,
+      .out_bytes_per_sec = status.m_flOutBytesPerSec,
+      .max_jitter_us = status.m_usecMaxJitter,
+      .pending_bytes = status.m_cbPendingUnreliable + status.m_cbPendingReliable + status.m_cbSentUnackedReliable,
+  };
+}
+
 void Client::Send(const Payload& payload) {
   std::lock_guard<std::mutex> lock(impl_->mutex);
   if (impl_->state != ConnectionState::kConnected) {

@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -74,6 +75,37 @@ enum class ConnectionState {
                   // dropped, or a local Disconnect() call.
 };
 
+// A snapshot of Client's connection quality/throughput, sourced directly
+// from GameNetworkingSockets' own per-connection instrumentation
+// (ADR-0003) - see Client::GetStats. None of this is computed by this
+// module itself.
+struct ConnectionStats {
+  // Current round-trip time to the server, in milliseconds.
+  int ping_ms = 0;
+  // Packet delivery success rate, 0..1 (1 = no loss): measured locally,
+  // and as reported back by the server for the reverse direction.
+  // quality_remote in particular is commonly negative right after
+  // connecting - same "not measured yet" convention as max_jitter_us
+  // below - until the server has echoed back enough acks to compute it.
+  float quality_local = 0.0F;
+  float quality_remote = 0.0F;
+  // Actual throughput over the underlying transport's recent history, in
+  // bytes per second - not the same as m_nSendRateBytesPerSecond's
+  // estimated channel *capacity*, which can run well ahead of this.
+  float in_bytes_per_sec = 0.0F;
+  float out_bytes_per_sec = 0.0F;
+  // Worst jitter observed since the last GetStats() call, in
+  // microseconds - a high-water mark, cleared each time it's read.
+  // Negative means no data available yet (not every connection can
+  // measure jitter); kept as GameNetworkingSockets' own sentinel rather
+  // than mapped to something else.
+  std::int32_t max_jitter_us = -1;
+  // Bytes queued to send (reliable + unreliable) plus reliable bytes
+  // already placed on the wire but not yet acknowledged - i.e.
+  // everything currently in flight or waiting to be.
+  int pending_bytes = 0;
+};
+
 // The client side of one connection to one dedicated server
 // (ARCHITECTURE.md §7's client-only Networking: "sends commands,
 // receives authoritative server state"). The client process constructs
@@ -106,6 +138,12 @@ class Client {
   void PumpEvents();
 
   [[nodiscard]] ConnectionState GetState() const;
+
+  // Returns a snapshot of this connection's real-time quality/throughput
+  // (ConnectionStats), or std::nullopt if not currently kConnected. Safe
+  // to call every frame - the underlying transport maintains these from
+  // its own rolling window; this doesn't block or perform I/O.
+  [[nodiscard]] std::optional<ConnectionStats> GetStats() const;
 
   // Sends payload to the server. A no-op if GetState() isn't
   // kConnected - mirrors UDP's own best-effort semantics; there is no

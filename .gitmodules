@@ -5,3 +5,7 @@
 	path = third_party/falcor
 	url = https://github.com/NVIDIAGameWorks/Falcor.git
 	ignore = all
+[submodule "third_party/nvtx"]
+	path = third_party/nvtx
+	url = https://github.com/NVIDIA/NVTX.git
+	ignore = all

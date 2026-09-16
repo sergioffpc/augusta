@@ -32,12 +32,15 @@ namespace {
 
 // Individual using-declarations rather than `using namespace physx` -
 // Google style (ADR-0012) forbids using-directives.
+using physx::PxBroadPhaseType;
 using physx::PxCapsuleControllerDesc;
 using physx::PxController;
 using physx::PxControllerCollisionFlag;
 using physx::PxControllerCollisionFlags;
 using physx::PxControllerFilters;
 using physx::PxControllerManager;
+using physx::PxCudaContextManager;
+using physx::PxCudaContextManagerDesc;
 using physx::PxDefaultAllocator;
 using physx::PxDefaultCpuDispatcher;
 using physx::PxDefaultCpuDispatcherCreate;
@@ -51,8 +54,16 @@ using physx::PxPhysics;
 using physx::PxRaycastBuffer;
 using physx::PxScene;
 using physx::PxSceneDesc;
+using physx::PxSceneFlag;
 using physx::PxTolerancesScale;
 using physx::PxVec3;
+#ifndef NDEBUG
+using physx::PxDefaultPvdSocketTransportCreate;
+using physx::PxPvd;
+using physx::PxPvdInstrumentationFlag;
+using physx::PxPvdSceneFlag;
+using physx::PxPvdTransport;
+#endif
 
 // ---- Tuning constants ----
 // Spike placeholders (ADR-0002 doesn't pin these down, and unlike
@@ -74,6 +85,16 @@ constexpr float kDynamicFriction = 0.5F;
 constexpr float kRestitution = 0.1F;
 constexpr float kMinMoveDistance = 0.001F;  // PxController::move's own minDist parameter.
 constexpr int kWorkerThreadCount = 1;
+
+#ifndef NDEBUG
+// PhysX Visual Debugger (PVD) connection - debug builds only, per this
+// constant block's own guard. Non-fatal if no PVD instance is listening
+// (see the connect() call site): matches this constructor's own
+// enable_gpu fallback-not-failure posture.
+constexpr const char* kPvdHost = "127.0.0.1";
+constexpr int kPvdPort = 5425;  // PVD's own default listening port.
+constexpr unsigned int kPvdTimeoutMs = 10;
+#endif
 
 // ADR-0004 snap/blend correction: an error at or beyond kSnapDistance
 // teleports the predicted body directly to the authoritative state (too
@@ -145,8 +166,17 @@ struct World::Impl {
   LogErrorCallback error_callback;
   PxDefaultAllocator allocator;
   PxFoundation* foundation = nullptr;
+#ifndef NDEBUG
+  PxPvd* pvd = nullptr;
+  PxPvdTransport* pvd_transport = nullptr;
+#endif
   PxPhysics* physics = nullptr;
   PxDefaultCpuDispatcher* dispatcher = nullptr;
+  // Non-null only when enable_gpu was requested AND a CUDA-capable
+  // GPU/driver was actually found - see the constructor. Currently has
+  // no observable effect on Step's own output; see World's own header
+  // comment for why it's wired in ahead of need.
+  PxCudaContextManager* cuda_context_manager = nullptr;
   PxScene* scene = nullptr;
   PxControllerManager* controller_manager = nullptr;
   PxMaterial* material = nullptr;
@@ -154,13 +184,40 @@ struct World::Impl {
   std::unordered_map<BodyHandle, BodyRecord> bodies;
   std::uint32_t next_handle = 1;
 
-  explicit Impl(const StaminaConfig& config) : stamina_config(config) {
+#ifndef NDEBUG
+  // Attempts a PVD connection whether or not an actual PVD instance is
+  // listening - PxPvd::connect() failing just means nothing shows up in
+  // PVD, not a World construction failure. Split out of the constructor
+  // to keep it within this codebase's function-size lint threshold.
+  PxPvd* ConnectPvd() {
+    PxPvd* pvd_instance = PxCreatePvd(*foundation);
+    pvd_transport = PxDefaultPvdSocketTransportCreate(kPvdHost, kPvdPort, kPvdTimeoutMs);
+    if (pvd_instance->connect(*pvd_transport, PxPvdInstrumentationFlag::eALL)) {
+      LI("subsystem=physics event=pvd_connected host={} port={}", kPvdHost, kPvdPort);
+    } else {
+      LD("subsystem=physics event=pvd_unavailable host={} port={}", kPvdHost, kPvdPort);
+    }
+    return pvd_instance;
+  }
+#endif
+
+  Impl(const StaminaConfig& config, bool enable_gpu) : stamina_config(config) {
     foundation = PxCreateFoundation(PX_PHYSICS_VERSION, allocator, error_callback);
     if (foundation == nullptr) {
       throw std::runtime_error("physics::World: PxCreateFoundation failed");
     }
+#ifndef NDEBUG
+    pvd = ConnectPvd();
+#endif
+
     const PxTolerancesScale scale;
-    physics = PxCreatePhysics(PX_PHYSICS_VERSION, *foundation, scale);
+    physics = PxCreatePhysics(PX_PHYSICS_VERSION, *foundation, scale, true,
+#ifndef NDEBUG
+                              pvd
+#else
+                              nullptr
+#endif
+    );
     if (physics == nullptr) {
       throw std::runtime_error("physics::World: PxCreatePhysics failed");
     }
@@ -169,10 +226,40 @@ struct World::Impl {
     dispatcher = PxDefaultCpuDispatcherCreate(kWorkerThreadCount);
     scene_desc.cpuDispatcher = dispatcher;
     scene_desc.filterShader = PxDefaultSimulationFilterShader;
+
+    if (enable_gpu) {
+      const PxCudaContextManagerDesc cuda_desc;
+      // Unqualified, not physx::PxCreateCudaContextManager: gpu/PxGpu.h
+      // declares it PX_C_EXPORT (extern "C") at global scope, only its
+      // parameter/return types live in namespace physx.
+      cuda_context_manager = ::PxCreateCudaContextManager(*foundation, cuda_desc);
+      if (cuda_context_manager != nullptr && cuda_context_manager->contextIsValid()) {
+        scene_desc.cudaContextManager = cuda_context_manager;
+        scene_desc.flags |= PxSceneFlag::eENABLE_GPU_DYNAMICS;
+        scene_desc.broadPhaseType = PxBroadPhaseType::eGPU;
+        LI("subsystem=physics event=gpu_context_created device=\"{}\"", cuda_context_manager->getDeviceName());
+      } else {
+        // No CUDA-capable GPU/driver on this machine - fall back to CPU
+        // rather than fail World construction over it.
+        LW("subsystem=physics event=gpu_unavailable fallback=cpu");
+        if (cuda_context_manager != nullptr) {
+          cuda_context_manager->release();
+          cuda_context_manager = nullptr;
+        }
+      }
+    }
+
     scene = physics->createScene(scene_desc);
+#ifndef NDEBUG
+    if (auto* pvd_client = scene->getScenePvdClient(); pvd_client != nullptr) {
+      pvd_client->setScenePvdFlag(PxPvdSceneFlag::eTRANSMIT_CONSTRAINTS, true);
+      pvd_client->setScenePvdFlag(PxPvdSceneFlag::eTRANSMIT_CONTACTS, true);
+      pvd_client->setScenePvdFlag(PxPvdSceneFlag::eTRANSMIT_SCENEQUERIES, true);
+    }
+#endif
     controller_manager = PxCreateControllerManager(*scene);
     material = physics->createMaterial(kStaticFriction, kDynamicFriction, kRestitution);
-    LD("subsystem=physics event=world_created");
+    LD("subsystem=physics event=world_created gpu={}", cuda_context_manager != nullptr);
   }
 
   ~Impl() {
@@ -190,19 +277,35 @@ struct World::Impl {
     if (scene != nullptr) {
       scene->release();
     }
+    // Released after the scene (which references it), matching
+    // PxCudaContextManager::release()'s own documented ordering
+    // requirement - never released while a scene is still using it.
+    if (cuda_context_manager != nullptr) {
+      cuda_context_manager->release();
+    }
     if (dispatcher != nullptr) {
       dispatcher->release();
     }
     if (physics != nullptr) {
       physics->release();
     }
+#ifndef NDEBUG
+    // Released after physics (which references it), same ordering
+    // constraint as cuda_context_manager above.
+    if (pvd != nullptr) {
+      pvd->release();
+    }
+    if (pvd_transport != nullptr) {
+      pvd_transport->release();
+    }
+#endif
     if (foundation != nullptr) {
       foundation->release();
     }
   }
 };
 
-World::World(const StaminaConfig& config) : impl_(std::make_unique<Impl>(config)) {}
+World::World(const StaminaConfig& config, bool enable_gpu) : impl_(std::make_unique<Impl>(config, enable_gpu)) {}
 World::~World() = default;
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;

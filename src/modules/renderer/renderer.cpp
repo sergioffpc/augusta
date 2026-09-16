@@ -6,15 +6,13 @@
 #include <Falcor.h>
 #include <Utils/Math/Matrix.h>
 #include <Utils/Threading.h>
-#include <Utils/Timing/FrameRate.h>
 
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <nvtx3/nvtx3.hpp>
 #include <optional>
 #include <vector>
-
-#include "debug_hud.h"
 
 // M1 spike (ADR-0009): the first real (non-stub) body for this module.
 // Bypasses Falcor::SampleApp entirely - per ADR-0009, SampleApp fuses
@@ -91,22 +89,10 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   Falcor::ref<Falcor::Vao> vao;
   Falcor::ref<Falcor::Texture> texture;
   Falcor::ref<Falcor::Sampler> sampler;
-  std::uint32_t vertex_count = 0;
   std::uint32_t index_count = 0;
 
-  Falcor::FrameRate frame_rate;
-  // Set inside Draw() itself, spanning only the Clear+Cube command
-  // recording - real CPU work, nothing else (not the profiler's own
-  // GPU-timing sync, ImGui's command recording, submission, or present's
-  // vsync/compositor wait - Falcor doesn't expose those split out, so
-  // there's no clean "total" to pair this against). Deliberately NOT
-  // paired with frame_rate's own getLastFrameTime() either: that clock
-  // resets mid-Draw() (before DrawDebugHud(), not at the RenderFrame()
-  // boundary), so its interval isn't comparable to this one.
-  float last_cpu_frame_time_ms = 0.0F;
-  std::unique_ptr<DebugHud> debug_hud;
-
-  // Render settings, live-editable from the Settings window (DebugHud).
+  // Render settings - fixed defaults for now (no in-app editor; use
+  // NVIDIA Nsight/Tracy for profiling instead).
   Falcor::float4 clear_color{kDefaultClearColorChannel, kDefaultClearColorChannel, kDefaultClearColorChannel, 1.0F};
   Falcor::RasterizerState::CullMode cull_mode = Falcor::RasterizerState::CullMode::None;
   bool wireframe_enabled = false;
@@ -123,7 +109,21 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     // Window/Device construction below doesn't appear to depend on them.
     Falcor::Threading::start();
 
-    device = Falcor::make_ref<Falcor::Device>(Falcor::Device::Desc{});
+    // Requested explicitly rather than left at Type::Default, even though
+    // Falcor.lib is itself now built with FALCOR_HAS_VULKAN=OFF
+    // (cmake/patches/falcor-augusta.patch) so getDefaultDeviceType()
+    // could only ever resolve to D3D12 anyway - this documents the
+    // choice at the call site instead of relying on that patch being
+    // read. D3D12 is the only backend this renderer targets (ADR-0009).
+    Falcor::Device::Desc device_desc;
+    device_desc.type = Falcor::Device::Type::D3D12;
+    // Always requested, not gated on FALCOR_HAS_AFTERMATH here: Falcor's
+    // own Device ctor (Device.cpp) already handles the "compiled without
+    // Aftermath support" case itself (a logWarning, not a hard failure)
+    // when no Nsight Graphics install was found to source the SDK from
+    // (see this module's own CMakeLists.txt) - nothing else to guard here.
+    device_desc.enableAftermath = true;
+    device = Falcor::make_ref<Falcor::Device>(device_desc);
 
     Falcor::Window::Desc window_desc;
     window_desc.width = config.width;
@@ -138,8 +138,6 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     BuildCubeGeometry();
     BuildCheckerboardTexture();
     BuildRasterPass();
-
-    debug_hud = std::make_unique<DebugHud>(device, size);
 
     start_time = std::chrono::steady_clock::now();
     last_frame_time = start_time;
@@ -156,9 +154,9 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   }
 
   // Swapchain::Desc::enableVSync can only be set at construction (no
-  // runtime setter on Swapchain itself), so toggling VSync from the
-  // Settings window means tearing down and recreating the whole
-  // swapchain - same as handleWindowSizeChange does for a size change.
+  // runtime setter on Swapchain itself), so changing vsync_enabled means
+  // tearing down and recreating the whole swapchain - same as
+  // handleWindowSizeChange does for a size change.
   void RecreateSwapchain() {
     device->wait();
     // The old swapchain's underlying DXGI swap chain is bound to the
@@ -236,7 +234,6 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
       indices.insert(indices.end(), {base, static_cast<std::uint16_t>(base + 1), static_cast<std::uint16_t>(base + 2),
                                      base, static_cast<std::uint16_t>(base + 2), static_cast<std::uint16_t>(base + 3)});
     }
-    vertex_count = static_cast<std::uint32_t>(vertices.size());
     index_count = static_cast<std::uint32_t>(indices.size());
 
     auto vertex_buffer = device->createBuffer(vertices.size() * sizeof(Vertex), Falcor::ResourceBindFlags::Vertex,
@@ -277,8 +274,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
 
     // Winding order isn't pinned down yet (no camera/coordinate-system
     // ADR exists for it), so cull_mode defaults to None rather than risk
-    // the cube rendering as invisible from every angle - live-editable
-    // from the Settings window regardless (DebugHud).
+    // the cube rendering as invisible from every angle.
     RebuildRasterizerState();
   }
 
@@ -291,14 +287,21 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     rotation_angle += delta_time;
 
     {
+      // Named to match the FALCOR_PROFILE scopes below (GPU-side, read by
+      // Falcor's own Profiler/ProfilerUI) - these are the CPU-side
+      // command-recording durations for the same spans, visible in
+      // Nsight Systems, so the two can be lined up on one timeline.
+      const nvtx3::scoped_range frame_range{"Frame"};
       FALCOR_PROFILE(render_context, "Frame");
 
       {
+        const nvtx3::scoped_range clear_range{"Clear"};
         FALCOR_PROFILE(render_context, "Clear");
         render_context->clearFbo(target_fbo.get(), clear_color, 1.0F, 0, Falcor::FboAttachmentType::All);
       }
 
       {
+        const nvtx3::scoped_range cube_range{"Cube"};
         FALCOR_PROFILE(render_context, "Cube");
 
         const Falcor::float4x4 model =
@@ -317,41 +320,8 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
         raster_pass->drawIndexed(render_context, index_count, 0, 0);
       }
     }
-    // Stopped here, before Profiler::endFrame() below - that call does its
-    // own mpFence->wait() ("Wait for GPU timings to be available from last
-    // frame", Utils/Timing/Profiler.cpp), a real CPU-GPU stall that has
-    // nothing to do with recording this frame's commands. Timing across it
-    // would make last_cpu_frame_time_ms mostly measure GPU-timing-readback
-    // wait, not CPU work - which is exactly why it used to come out close
-    // to last_total_frame_time_ms regardless of how cheap the actual draw
-    // calls were.
-    last_cpu_frame_time_ms = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - now).count();
 
     device->getProfiler()->endFrame(render_context);
-    frame_rate.newFrame();
-
-    DrawDebugHud(render_context);
-  }
-
-  void DrawDebugHud(Falcor::RenderContext* render_context) {
-    debug_hud->Render(render_context, target_fbo, device->getInfo().adapterName, device->getInfo().apiName,
-                      Falcor::uint2(target_fbo->getWidth(), target_fbo->getHeight()),
-                      DebugHud::FrameStats{
-                          .frame_rate_text = Falcor::to_string(frame_rate),
-                          .cpu_frame_time_ms = last_cpu_frame_time_ms,
-                          .frame_count = frame_rate.getFrameCount(),
-                          .vertex_count = vertex_count,
-                          .index_count = index_count,
-                          .delta_time_s = static_cast<float>(frame_rate.getLastFrameTime()),
-                      },
-                      DebugHud::RenderSettings{
-                          .clear_color = clear_color,
-                          .cull_mode = cull_mode,
-                          .wireframe_enabled = wireframe_enabled,
-                          .vsync_enabled = vsync_enabled,
-                          .on_rasterizer_state_changed = [this] { RebuildRasterizerState(); },
-                          .on_vsync_changed = [this] { RecreateSwapchain(); },
-                      });
   }
 
   void handleWindowSizeChange() override {
@@ -363,7 +333,6 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     device->wait();
     swapchain->resize(size.x, size.y);
     CreateTargetFbo(size.x, size.y);
-    debug_hud->OnWindowResize(size.x, size.y);
   }
 
   void handleRenderFrame() override {
@@ -373,9 +342,6 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   }
 
   void handleKeyboardEvent(const Falcor::KeyboardEvent& event) override {
-    if (debug_hud->OnKeyboardEvent(event)) {
-      return;
-    }
     input::Action action;
     if (event.type == Falcor::KeyboardEvent::Type::KeyPressed) {
       action = input::Action::kPressed;
@@ -390,9 +356,6 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   }
 
   void handleMouseEvent(const Falcor::MouseEvent& event) override {
-    if (debug_hud->OnMouseEvent(event)) {
-      return;
-    }
     switch (event.type) {
       case Falcor::MouseEvent::Type::Move:
         input_sink.OnMouseMoveEvent({.x = event.screenPos.x, .y = event.screenPos.y});
@@ -433,9 +396,6 @@ Size Renderer::GetSize() const {
 }
 
 void Renderer::RenderFrame() {
-  // Sets impl_->last_cpu_frame_time_ms itself, around just the
-  // command-recording portion - see the field's own comment (Impl) for
-  // why that can't be measured from out here.
   impl_->Draw();
 
   auto* render_context = impl_->device->getRenderContext();
