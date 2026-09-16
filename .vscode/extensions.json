@@ -7,6 +7,8 @@
     "xaver.clang-format",
     "editorconfig.editorconfig",
     "redhat.vscode-yaml",
+    "ms-kubernetes-tools.vscode-kubernetes-tools",
+    "sumneko.lua",
     "github.vscode-github-actions",
     "shader-slang.slang-language-extension"
   ]

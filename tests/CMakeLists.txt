@@ -9,4 +9,8 @@ target_link_libraries(augusta_version_benchmarks PRIVATE augusta_version benchma
 
 add_executable(augusta_networking_tests networking_test.cpp)
 target_link_libraries(augusta_networking_tests PRIVATE augusta_networking GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_networking_tests)
+# DISCOVERY_TIMEOUT above the 5s default: this binary pulls in GameNetworkingSockets,
+# protobuf, and abseil as DLLs, and a fresh (especially Debug-config) build's first
+# launch can take longer than 5s once Windows Defender scans the newly written
+# binaries - CTest's discovery run then times out even though the test itself is fine.
+gtest_discover_tests(augusta_networking_tests DISCOVERY_TIMEOUT 30)

@@ -29,6 +29,37 @@ Install-WingetPackage -Id "Mozilla.sccache"
 # below.
 Install-WingetPackage -Id "LLVM.LLVM"
 
+# Unlike the other packages here, LLVM's installer doesn't add itself to
+# PATH under winget's --silent flag (that's an interactive-installer
+# checkbox, unchecked by default in silent mode) - add its default
+# install location explicitly rather than relying on that checkbox.
+$llvmBin = "$env:ProgramFiles\LLVM\bin"
+if ((Test-Path $llvmBin) -and
+    ([System.Environment]::GetEnvironmentVariable("Path", "Machine") -notlike "*$llvmBin*")) {
+  $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+  [System.Environment]::SetEnvironmentVariable("Path", "$machinePath;$llvmBin", "Machine")
+}
+
+# winget/MSI installers update the Machine/User PATH in the registry, but
+# this process's own $env:PATH was captured at shell startup and won't see
+# that change without this - without it, every check below would report a
+# false failure even on a fully successful install (this is also why a
+# fresh terminal is needed afterward to actually use these tools).
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
+  [System.Environment]::GetEnvironmentVariable("Path", "User")
+
+# A silently-missing tool here doesn't fail loud until much later - e.g.
+# clang-format's absence only shows up as ".githooks/pre-commit: not
+# found on PATH - skipping" at commit time, which is easy to miss and
+# leaves every local commit unformatted. Check now, once, instead.
+$requiredCommands = @("cmake", "ninja", "git", "sccache", "clang-format")
+$missing = $requiredCommands | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) }
+if ($missing) {
+  throw "Bootstrap installed packages but these commands still aren't on PATH: $($missing -join ', '). " +
+    "Try opening a new terminal and re-running this script; if a specific package failed to install, " +
+    "check 'winget list' and re-run 'winget install' for it directly."
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
 # vcpkg is a pinned git submodule (third_party/vcpkg) rather than a

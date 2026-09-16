@@ -1,10 +1,25 @@
 {
   "editor.formatOnSave": true,
   "editor.rulers": [120],
+  "files.autoSave": "afterDelay",
   "[cpp]": { "editor.defaultFormatter": "xaver.clang-format" },
   "[c]": { "editor.defaultFormatter": "xaver.clang-format" },
 
   "C_Cpp.intelliSenseEngine": "disabled",
+  "editor.detectIndentation": false,
+
+  "git.detectSubmodules": false,
+  "git.autofetch": true,
+
+  "terminal.integrated.profiles.windows": {
+    "Developer PowerShell": {
+      "path": "cmd.exe",
+      "args": [
+        "/k",
+        "for /f \"usebackq tokens=*\" %i in (`\"%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe\" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find VC\\Auxiliary\\Build\\vcvars64.bat`) do call \"%i\" && powershell.exe -NoExit"
+      ]
+    }
+  },
 
   "cmake.useCMakePresets": "always",
   "cmake.configureOnOpen": true,
