@@ -47,6 +47,10 @@ vcpkg_installed/
 packages/
 .vcpkg-bincache/
 
+# Asset pipeline authoring/cooking tools (scripts/bootstrap-asset-pipeline.ps1)
+# - dev-machine tools, not vendored build dependencies (see ADR-0015).
+tools/asset-pipeline/
+
 # OS
 .DS_Store
 Thumbs.db
