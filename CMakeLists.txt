@@ -30,6 +30,7 @@ endif()
 
 find_package(spdlog CONFIG REQUIRED)
 find_package(flecs CONFIG REQUIRED)
+find_package(GameNetworkingSockets CONFIG REQUIRED)
 
 enable_testing()
 find_package(GTest CONFIG REQUIRED)

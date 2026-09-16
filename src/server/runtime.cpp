@@ -2,7 +2,9 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <mutex>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -62,10 +64,16 @@ struct ServerRuntime::Impl {
           network.Accept(event.peer);
         }
       }
-      // TODO(sergioffpc): decode each received PeerMessage's Payload
-      // into an input::Command and store it into latest_commands - the
-      // Networking Protocol (ADR-0007) isn't designed yet.
-      static_cast<void>(network.ReceiveMessages());
+      // TODO(sergioffpc): M1 spike only (issue #31) - decode each
+      // received PeerMessage's Payload into an input::Command and store
+      // it into latest_commands instead of just echoing a literal hello
+      // back, once the Networking Protocol (ADR-0007) exists.
+      for (const networking::PeerMessage& message : network.ReceiveMessages()) {
+        TRACE("subsystem=serverruntime event=received bytes={}", message.payload.size());
+        constexpr std::string_view kHello = "hello from augustad";
+        const auto* bytes = reinterpret_cast<const std::byte*>(kHello.data());
+        network.Send(message.from, networking::Payload(bytes, bytes + kHello.size()));
+      }
     }
   }
 
@@ -85,7 +93,7 @@ void ServerRuntime::Run() {
   ThreadJoiner joiner{.running = impl_->running, .network_thread = impl_->network_thread};
 
   const auto tick_duration = std::chrono::duration<float>(1.0F / impl_->config.tick_rate_hz);
-  INFO("ServerRuntime: Simulation loop starting");
+  INFO("subsystem=serverruntime event=loop_starting loop=simulation");
   while (impl_->running.load(std::memory_order_relaxed)) {
     const auto tick_start = std::chrono::steady_clock::now();
 
@@ -99,7 +107,7 @@ void ServerRuntime::Run() {
     std::this_thread::sleep_until(tick_start +
                                   std::chrono::duration_cast<std::chrono::steady_clock::duration>(tick_duration));
   }
-  INFO("ServerRuntime: Simulation loop stopping");
+  INFO("subsystem=serverruntime event=loop_stopping loop=simulation");
 }
 
 void ServerRuntime::Stop() { impl_->running.store(false, std::memory_order_relaxed); }

@@ -6,6 +6,7 @@
     "gtest",
     "benchmark",
     "glm",
-    "flecs"
+    "flecs",
+    "gamenetworkingsockets"
   ]
 }
