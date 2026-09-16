@@ -24,7 +24,11 @@ Top quality goals (see [REQUIREMENTS.md](./REQUIREMENTS.md) for full NFR list):
 - **Testing:** GoogleTest (unit) + Google Benchmark (micro-benchmarks)
 - **Content tooling:** OpenUSD (Tomorrow Open Source Technology License 1.0,
   Apache-derived) for offline map authoring/baking only — not linked into
-  shipped client or server binaries
+  shipped client or server binaries. Same constraint for usd-optimize
+  (Apache 2.0, stage cleanup), usd-validation-nvidia (Apache 2.0 +
+  CC-BY-4.0, validation), and Adobe's USD-Fileformat-plugins (Apache 2.0,
+  glTF/FBX/OBJ ingestion as USD layers, ADR-0016) — all offline/build-time
+  only.
 - **Organizational:** solo developer / small informal team, hobby project, no
   fixed deadline, milestone-driven
 
@@ -250,12 +254,15 @@ Damage → Scripts/Behaviours → Commit)
 | Commit | Mechanism | Packages tick state into Authoritative State for Networking |
 
 **Tooling** (offline, not shipped)
-- Level baking tool — converts OpenUSD-authored maps into the engine's
-  runtime level format, including Steam Audio baked reflection/occlusion data
-- Asset cooker CLI — imports meshes via Assimp, optimizes via meshoptimizer,
-  compresses textures via DirectXTex (BC7/BC5/BC4, DDS), and packages
-  everything into signed, verified pack files (separate client and
-  server packs)
+- Level baking tool — cleans up the OpenUSD-authored (ADR-0015) map with
+  usd-optimize (dedup instances, flatten hierarchy, remove degenerate
+  geometry), validates it with usd-validation-nvidia, then converts it into the
+  engine's runtime level format, including Steam Audio baked
+  reflection/occlusion data
+- Asset cooker CLI — reads meshes directly from the cleaned OpenUSD stage
+  (ADR-0016), optimizes via meshoptimizer, compresses textures via
+  DirectXTex (BC7/BC5/BC4, DDS), and packages everything into signed,
+  verified pack files (separate client and server packs)
 
 ## 6. Runtime View
 
