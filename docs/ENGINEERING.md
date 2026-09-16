@@ -163,7 +163,7 @@ pipeline).
   already-unmaintained dependency, ADR-0009, isn't worth the purity.)
 - **Editor experience:** a committed `.vscode/extensions.json` lists
   recommended extensions (C++ tools, CMake Tools, clangd/clang-format,
-  GitLens, EditorConfig, Lua, YAML/Helm, GitHub Actions) — VS Code
+  EditorConfig, Lua, YAML/Helm, GitHub Actions) — VS Code
   prompts to install these whenever the folder is opened, on either
   side (WSL remote or native Windows), no container required.
 - **Dependency hermeticity:** the `vcpkg.json` manifest (ADR-0025) is what

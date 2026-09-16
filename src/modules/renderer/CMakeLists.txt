@@ -62,7 +62,18 @@ if (WIN32)
     # ${FALCOR_DIR} for tools/.packman/ninja to end up in the right place.
     COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/cmake/patches/falcor-tools-dependencies.xml ${FALCOR_DIR}/tools-dependencies.xml
     COMMAND ${FALCOR_DIR}/tools/packman/packman.cmd pull ${FALCOR_DIR}/tools-dependencies.xml --platform windows-x86_64
-    COMMAND ${CMAKE_COMMAND} -S ${FALCOR_DIR} --preset ${FALCOR_PRESET}
+    # -DCMAKE_POLICY_VERSION_MINIMUM is redundant with the preset's own
+    # cacheVariables entry (both set it) but not with what actually
+    # happens in practice: FALCOR_BUILD_DIR is shared across every one of
+    # augusta's own outer presets (windows, windows-debug, ...), so the
+    # first build under a *second* outer preset reconfigures an
+    # already-cached Falcor build tree - and CMake's own "cache variable
+    # changed, regenerating" path for an existing cache doesn't reliably
+    # re-derive preset-only cacheVariables, silently dropping this one and
+    # reviving the pybind11 CMAKE_POLICY_VERSION_MINIMUM error. Passing it
+    # explicitly here makes it immune to that, regardless of which path
+    # triggers the reconfigure.
+    COMMAND ${CMAKE_COMMAND} -S ${FALCOR_DIR} --preset ${FALCOR_PRESET} -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     COMMAND ${CMAKE_COMMAND} --build ${FALCOR_BUILD_DIR} --config ${CMAKE_BUILD_TYPE} --target Falcor
     COMMAND ${CMAKE_COMMAND} -E touch ${FALCOR_STAMP}
     WORKING_DIRECTORY ${FALCOR_DIR}
@@ -79,7 +90,7 @@ if (WIN32)
     BYPRODUCTS
       "${FALCOR_BUILD_DIR}/Source/Falcor/${CMAKE_BUILD_TYPE}/Falcor.lib"
       "${FALCOR_BIN_DIR}/Falcor.dll"
-      "${FALCOR_BUILD_DIR}/external/fmt/${CMAKE_BUILD_TYPE}/fmt.lib"
+      "${FALCOR_BUILD_DIR}/external/fmt/${CMAKE_BUILD_TYPE}/$<IF:$<CONFIG:Debug>,fmtd,fmt>.lib"
     # Ninja only re-runs a custom command when one of its declared
     # DEPENDS changes (or the command line itself does) - without this,
     # editing the patch's *content* (e.g. tweaking a color inside
@@ -136,10 +147,18 @@ if (WIN32)
     # external/packman/nanovdb's NanoVDB.h calls plain sprintf - not our
     # header to fix either.
     _CRT_SECURE_NO_WARNINGS
+    # Matches the same fix applied to Falcor's own build in
+    # cmake/patches/falcor-augusta.patch: any TU that includes Falcor's
+    # vendored external/fmt/include/fmt/format.h (as this target's own
+    # .cpp files do) hits the same long-obsolete _SECURE_SCL/checked_ptr
+    # code path in Debug config on newer MSVC otherwise.
+    _SECURE_SCL=0
   )
   target_link_libraries(augusta_renderer PUBLIC
     "${FALCOR_BUILD_DIR}/Source/Falcor/${CMAKE_BUILD_TYPE}/Falcor.lib"
-    "${FALCOR_BUILD_DIR}/external/fmt/${CMAKE_BUILD_TYPE}/fmt.lib"
+    # fmt's own CMakeLists applies a "d" debug postfix to its output name
+    # (fmtd.lib) - unlike Falcor.lib itself, which doesn't get one.
+    "${FALCOR_BUILD_DIR}/external/fmt/${CMAKE_BUILD_TYPE}/$<IF:$<CONFIG:Debug>,fmtd,fmt>.lib"
   )
   # python310.lib/slang.lib/gfx.lib live under external/packman/python and
   # external/packman/slang - directories packman itself creates as

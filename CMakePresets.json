@@ -18,6 +18,16 @@
       }
     },
     {
+      "name": "windows-debug",
+      "displayName": "Windows Debug (Ninja + cl)",
+      "inherits": "windows",
+      "binaryDir": "${sourceDir}/build/x64-windows-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_MSVC_DEBUG_INFORMATION_FORMAT": "Embedded"
+      }
+    },
+    {
       "name": "linux",
       "displayName": "Linux (Ninja)",
       "generator": "Ninja",
@@ -34,6 +44,15 @@
       }
     },
     {
+      "name": "linux-debug",
+      "displayName": "Linux Debug (Ninja)",
+      "inherits": "linux",
+      "binaryDir": "${sourceDir}/build/x64-linux-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
       "name": "linux-san",
       "displayName": "Linux (ASan + UBSan)",
       "inherits": "linux",
@@ -47,7 +66,9 @@
   ],
   "buildPresets": [
     { "name": "windows", "configurePreset": "windows" },
+    { "name": "windows-debug", "configurePreset": "windows-debug" },
     { "name": "linux", "configurePreset": "linux" },
+    { "name": "linux-debug", "configurePreset": "linux-debug" },
     { "name": "linux-san", "configurePreset": "linux-san" }
   ],
   "testPresets": [
@@ -57,8 +78,18 @@
       "output": { "outputOnFailure": true }
     },
     {
+      "name": "windows-debug",
+      "configurePreset": "windows-debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
       "name": "linux",
       "configurePreset": "linux",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "linux-debug",
+      "configurePreset": "linux-debug",
       "output": { "outputOnFailure": true }
     },
     {
