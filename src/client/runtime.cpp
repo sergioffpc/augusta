@@ -108,7 +108,7 @@ struct ClientRuntime::Impl {
         sent_hello = true;
       }
       for ([[maybe_unused]] const networking::Payload& payload : network.ReceiveMessages()) {
-        TRACE("subsystem=clientruntime event=received bytes={}", payload.size());
+        LT("subsystem=clientruntime event=received bytes={}", payload.size());
       }
     }
     network.Disconnect();
@@ -132,7 +132,7 @@ void ClientRuntime::Run() {
                       .simulation_thread = impl_->simulation_thread,
                       .network_thread = impl_->network_thread};
 
-  INFO("subsystem=clientruntime event=loop_starting loop=render");
+  LI("subsystem=clientruntime event=loop_starting loop=render");
   while (!impl_->renderer.ShouldClose()) {
     impl_->renderer.PumpEvents();
     presentation::State frame_state = impl_->presentation.RunFrame(impl_->GetLatestPredictionState());
@@ -141,7 +141,7 @@ void ClientRuntime::Run() {
     static_cast<void>(frame_state);
     impl_->renderer.RenderFrame();
   }
-  INFO("subsystem=clientruntime event=loop_stopping loop=render");
+  LI("subsystem=clientruntime event=loop_stopping loop=render");
 }
 
 }  // namespace augusta::runtime

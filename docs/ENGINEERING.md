@@ -126,6 +126,21 @@ pipeline).
 
 - **Model:** a single shared checkout on the Windows filesystem (NTFS) is
   used by both sides — no separate clones.
+- **Client↔server local testing:** WSL2's default NAT networking gives the
+  WSL VM its own IP, separate from the Windows host's `127.0.0.1` — a
+  native Windows `augustac` can't reach a WSL-hosted `augustad` on
+  `127.0.0.1` without it (UDP localhost forwarding, unlike TCP's, isn't
+  reliable across WSL2 versions). Enable WSL2's mirrored networking mode
+  instead, so the WSL VM shares the host's network interfaces (including
+  loopback): add to `%UserProfile%\.wslconfig`
+  ```ini
+  [wsl2]
+  networkingMode=mirrored
+  ```
+  then `wsl --shutdown` and restart WSL. After that, `127.0.0.1:<port>`
+  reaches a WSL-hosted `augustad` from a native Windows `augustac`, no
+  need to look up the WSL VM's IP. Requires a reasonably recent
+  Windows 11 + WSL2 version; confirm with `wsl --version`.
 - **Server / shared core (Linux, via WSL2):** develop and build directly
   inside WSL2, accessing the repo via `/mnt/c/...`. No Docker container —
   a `scripts/bootstrap-wsl.sh` setup script installs CMake, Ninja,

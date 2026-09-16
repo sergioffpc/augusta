@@ -1,4 +1,5 @@
 #include "augusta/networking.h"
+#include "augusta/logging.h"
 
 #include <steam/isteamnetworkingsockets.h>
 #include <steam/isteamnetworkingutils.h>  // SteamNetworkingIPAddr::ParseString's inline body lives here.
@@ -7,6 +8,7 @@
 #include <array>
 #include <mutex>
 #include <stdexcept>
+#include <string>
 #include <unordered_set>
 #include <vector>
 
@@ -28,16 +30,29 @@ namespace {
 // own loop, not a cap on how many messages can be received overall.
 constexpr int kMaxMessagesPerBatch = 16;
 
+// Peer IPs are fine to log (ADR-0029) - direct-IP connections, no
+// matchmaking/relay to anonymize, so the server already sees them.
+std::string FormatAddr(const SteamNetworkingIPAddr& addr) {
+  std::array<char, SteamNetworkingIPAddr::k_cchMaxString> buf;
+  addr.ToString(buf.data(), buf.size(), /*bWithPort=*/true);
+  return buf.data();
+}
+
 }  // namespace
 
 void Init() {
   SteamNetworkingErrMsg err_msg;
   if (!GameNetworkingSockets_Init(nullptr, err_msg)) {
+    LE("subsystem=networking event=init_failed reason={}", err_msg);
     throw std::runtime_error(std::string("networking::Init: ") + err_msg);
   }
+  LI("subsystem=networking event=init");
 }
 
-void Shutdown() { GameNetworkingSockets_Kill(); }
+void Shutdown() {
+  GameNetworkingSockets_Kill();
+  LI("subsystem=networking event=shutdown");
+}
 
 // ---- Client ----
 
@@ -55,15 +70,23 @@ struct Client::Impl {
     switch (info->m_info.m_eState) {
       case k_ESteamNetworkingConnectionState_Connecting:
         self->state = ConnectionState::kConnecting;
+        LD("subsystem=networking event=state_changed role=client state=connecting");
         break;
       case k_ESteamNetworkingConnectionState_Connected:
         self->state = ConnectionState::kConnected;
+        LI("subsystem=networking event=state_changed role=client state=connected");
         break;
       case k_ESteamNetworkingConnectionState_ClosedByPeer:
       case k_ESteamNetworkingConnectionState_ProblemDetectedLocally:
         SteamNetworkingSockets()->CloseConnection(info->m_hConn, 0, nullptr, false);
         self->connection = k_HSteamNetConnection_Invalid;
         self->state = ConnectionState::kDisconnected;
+        if (info->m_info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally) {
+          LW("subsystem=networking event=state_changed role=client state=disconnected "
+             "reason=problem_detected_locally");
+        } else {
+          LI("subsystem=networking event=state_changed role=client state=disconnected reason=closed_by_peer");
+        }
         break;
       default:
         break;
@@ -81,6 +104,7 @@ void Client::Connect(const Endpoint& server) {
   if (!addr.ParseString(server.address.c_str())) {
     throw std::runtime_error("networking::Client::Connect: invalid address " + server.address);
   }
+  LI("subsystem=networking event=connecting role=client server_addr={}", server.address);
 
   // Both config values must be supplied here, not via a
   // SetConnectionUserData call after ConnectByIPAddress returns: GNS can
@@ -120,6 +144,7 @@ void Client::Send(const Payload& payload) {
   if (impl_->state != ConnectionState::kConnected) {
     return;
   }
+  LT("subsystem=networking event=send role=client bytes={}", payload.size());
   SteamNetworkingSockets()->SendMessageToConnection(impl_->connection, payload.data(),
                                                     static_cast<std::uint32_t>(payload.size()),
                                                     k_nSteamNetworkingSend_Unreliable, nullptr);
@@ -145,6 +170,9 @@ std::vector<Payload> Client::ReceiveMessages() {
       messages.emplace_back(bytes, bytes + incoming[i]->m_cbSize);
       incoming[i]->Release();
     }
+  }
+  if (!messages.empty()) {
+    LT("subsystem=networking event=receive role=client count={}", messages.size());
   }
   return messages;
 }
@@ -172,15 +200,21 @@ struct Server::Impl {
       return;
     }
     const auto peer = static_cast<PeerId>(info->m_hConn);
+    const auto peer_id = static_cast<std::uint32_t>(peer);
+    const std::string peer_addr = FormatAddr(info->m_info.m_addrRemote);
     std::lock_guard<std::mutex> lock(self->mutex);
     switch (info->m_info.m_eState) {
       case k_ESteamNetworkingConnectionState_Connecting:
         self->pending_peers.insert(info->m_hConn);
+        LD("subsystem=networking event=state_changed role=server state=connecting peer={} peer_addr={}", peer_id,
+           peer_addr);
         break;
       case k_ESteamNetworkingConnectionState_Connected:
         SteamNetworkingSockets()->SetConnectionPollGroup(info->m_hConn, self->poll_group);
         self->connected_peers.insert(info->m_hConn);
         self->queued_events.push_back(PeerEvent{.peer = peer, .type = PeerEventType::kConnected});
+        LI("subsystem=networking event=state_changed role=server state=connected peer={} peer_addr={}", peer_id,
+           peer_addr);
         break;
       case k_ESteamNetworkingConnectionState_ClosedByPeer:
       case k_ESteamNetworkingConnectionState_ProblemDetectedLocally:
@@ -188,6 +222,15 @@ struct Server::Impl {
         self->pending_peers.erase(info->m_hConn);
         self->connected_peers.erase(info->m_hConn);
         self->queued_events.push_back(PeerEvent{.peer = peer, .type = PeerEventType::kDisconnected});
+        if (info->m_info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally) {
+          LW("subsystem=networking event=state_changed role=server state=disconnected peer={} peer_addr={} "
+             "reason=problem_detected_locally",
+             peer_id, peer_addr);
+        } else {
+          LI("subsystem=networking event=state_changed role=server state=disconnected peer={} peer_addr={} "
+             "reason=closed_by_peer",
+             peer_id, peer_addr);
+        }
         break;
       default:
         break;
@@ -220,6 +263,7 @@ Server::Server(const Endpoint& local_endpoint) : impl_(std::make_unique<Impl>())
   if (impl_->listen_socket == k_HSteamListenSocket_Invalid) {
     throw std::runtime_error("networking::Server: failed to bind " + local_endpoint.address);
   }
+  LI("subsystem=networking event=listening address={}", local_endpoint.address);
 }
 
 Server::~Server() {
@@ -272,6 +316,7 @@ void Server::Send(PeerId peer, const Payload& payload) {
       return;
     }
   }
+  LT("subsystem=networking event=send role=server peer={} bytes={}", static_cast<std::uint32_t>(peer), payload.size());
   SteamNetworkingSockets()->SendMessageToConnection(connection, payload.data(),
                                                     static_cast<std::uint32_t>(payload.size()),
                                                     k_nSteamNetworkingSend_Unreliable, nullptr);
@@ -283,6 +328,7 @@ void Server::Broadcast(const Payload& payload) {
     std::lock_guard<std::mutex> lock(impl_->mutex);
     peers.assign(impl_->connected_peers.begin(), impl_->connected_peers.end());
   }
+  LT("subsystem=networking event=broadcast role=server peers={} bytes={}", peers.size(), payload.size());
   for (HSteamNetConnection connection : peers) {
     SteamNetworkingSockets()->SendMessageToConnection(connection, payload.data(),
                                                       static_cast<std::uint32_t>(payload.size()),
@@ -302,6 +348,9 @@ std::vector<PeerMessage> Server::ReceiveMessages() {
                                      .payload = Payload(bytes, bytes + incoming[i]->m_cbSize)});
       incoming[i]->Release();
     }
+  }
+  if (!messages.empty()) {
+    LT("subsystem=networking event=receive role=server count={}", messages.size());
   }
   return messages;
 }

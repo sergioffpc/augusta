@@ -22,10 +22,12 @@ process-wide `"augusta"` logger (ADR-0027) is kept rather than one logger
 per module, so the console pattern is fixed here rather than left open as
 ADR-0027 did: `[%Y-%m-%d %H:%M:%S.%e] [%l] %v`.
 
-No level is a safe place for credentials, session/auth tokens, or player
-IPs - this applies unconditionally, including `TRACE`. It matters most
+No level is a safe place for credentials or session/auth tokens - this
+applies unconditionally, including `TRACE`. Peer IPs are fine to log
+(direct-IP connections, no matchmaking/relay to anonymize per
+ARCHITECTURE.md §3, so the server already sees them) - it matters most
 for `augusta::networking`, which is taking on GameNetworkingSockets
-(Steam) session tickets and peer addresses.
+(Steam) session tickets.
 
 ## Consequences
 
