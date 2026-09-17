@@ -7,6 +7,7 @@
 #include <array>
 #include <cstring>
 #include <fstream>
+#include <mio/mmap.hpp>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -48,8 +49,6 @@ constexpr std::uint32_t kMaxProperties = 256;
 // any real v1 texture while still rejecting a hostile/corrupt blob long
 // before an oversized allocation.
 constexpr std::uint32_t kMaxTextureBytes = 256U * 1024 * 1024;
-
-constexpr std::size_t kStreamChunkSize = 64 * 1024;
 
 void EnsureSodiumInitialized() {
   static const bool kInitialized = [] {
@@ -563,24 +562,12 @@ std::expected<std::vector<IndexEntry>, LoadError> ParsePackIndex(std::span<const
   return index;
 }
 
-// Re-opens path and reads exactly size bytes starting at offset - the
-// lazy, on-demand counterpart to holding the whole file resident:
-// ResolveMesh/ResolveScene call this once per resolve, for just the blob
-// they need, rather than copying out of a buffer kept alive for the
-// Pack's whole lifetime.
-std::optional<std::vector<std::byte>> ReadBlobBytes(const std::filesystem::path& path, std::uint64_t offset,
-                                                    std::uint64_t size) {
-  std::ifstream file(path, std::ios::binary);
-  if (!file) {
-    return std::nullopt;
-  }
-  file.seekg(static_cast<std::streamoff>(offset));
-  std::vector<std::byte> bytes(size);
-  file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-  if (!file) {
-    return std::nullopt;
-  }
-  return bytes;
+// A zero-copy view into entry's raw bytes within mapping. Safe by
+// construction: ParsePackIndex already validated entry's own
+// [offset, offset+size) falls entirely within the pack's data section
+// (see its own comment), so this can never read outside mapping.
+std::span<const std::byte> BlobBytes(const mio::mmap_source& mapping, const IndexEntry& entry) {
+  return {reinterpret_cast<const std::byte*>(mapping.data()) + entry.offset, entry.size};
 }
 
 // Rejects entries.size()/each path exceeding this module's pragmatic v1
@@ -719,63 +706,67 @@ std::expected<void, WriteError> WritePackFile(const std::filesystem::path& outpu
   return {};
 }
 
-// The result of one sequential pass over a pack's [0, hashed_length)
-// range (see Pack::Load): the BLAKE3 hash of that whole range, and the
-// slice of it that is the index section (captured as it streams by,
-// rather than re-read afterward).
-struct HashAndIndexBytes {
-  std::array<std::byte, kBlake3HashSize> hash;
-  std::vector<std::byte> index_bytes;
-};
-
-// Hashes file's [0, hashed_length) range in fixed-size chunks, capturing
-// the tail of that range from index_offset onward as the index's own
-// bytes. Never holds more than one chunk plus the (size-capped) index
-// bytes at a time - the streaming counterpart to the old whole-file-
-// forever buffer this replaced.
-std::expected<HashAndIndexBytes, LoadError> HashAndCaptureIndex(std::ifstream& file, std::uint64_t hashed_length,
-                                                                std::uint64_t index_offset) {
-  file.clear();
-  file.seekg(0);
-  blake3_hasher hasher;
-  blake3_hasher_init(&hasher);
-
-  HashAndIndexBytes result;
-  std::vector<std::byte> chunk(kStreamChunkSize);
-  std::uint64_t pos = 0;
-  while (pos < hashed_length) {
-    const std::uint64_t want = std::min<std::uint64_t>(kStreamChunkSize, hashed_length - pos);
-    file.read(reinterpret_cast<char*>(chunk.data()), static_cast<std::streamsize>(want));
-    if (!file) {
-      return std::unexpected(LoadError::kIoError);
-    }
-    blake3_hasher_update(&hasher, chunk.data(), want);
-
-    const std::uint64_t chunk_end = pos + want;
-    if (chunk_end > index_offset) {
-      const std::uint64_t capture_start = std::max(pos, index_offset);
-      const std::uint64_t offset_in_chunk = capture_start - pos;
-      result.index_bytes.insert(result.index_bytes.end(), chunk.begin() + static_cast<std::ptrdiff_t>(offset_in_chunk),
-                                chunk.begin() + static_cast<std::ptrdiff_t>(want));
-    }
-    pos = chunk_end;
-  }
-
-  blake3_hasher_finalize(&hasher, reinterpret_cast<std::uint8_t*>(result.hash.data()), result.hash.size());
-  return result;
-}
-
-// Reads the trailer immediately following the hashed/captured range -
-// the file's read position is already there, since HashAndCaptureIndex
-// reads exactly up through hashed_length and no further.
-std::expected<PackTrailer, LoadError> ReadTrailer(std::ifstream& file) {
-  PackTrailer trailer;
-  file.read(reinterpret_cast<char*>(trailer.hash.data()), static_cast<std::streamsize>(trailer.hash.size()));
-  file.read(reinterpret_cast<char*>(trailer.signature.data()), static_cast<std::streamsize>(trailer.signature.size()));
-  if (!file) {
+// Memory-maps path and validates its size is within [kHeaderSize +
+// kTrailerSize, kMaxPackSize] - every subsequent offset/length Pack::Load
+// computes is relative to the returned mapping's own size(), not any
+// size queried before mapping.
+std::expected<mio::mmap_source, LoadError> OpenValidatedMapping(const std::filesystem::path& path) {
+  // Checked before mapping anything, same as before mio existed here:
+  // keeps mio from ever being asked to map an empty/absent file (its own
+  // behavior for that case isn't relied upon). This is deliberately not
+  // the source of truth for the bounds re-check below - path could be
+  // replaced between this check and make_mmap_source() (e.g. a
+  // concurrent redeploy), so the real bounds check is against the
+  // mapping's own size(), the size actually mapped.
+  std::error_code size_error;
+  const auto file_size = std::filesystem::file_size(path, size_error);
+  if (size_error) {
     return std::unexpected(LoadError::kIoError);
   }
-  return trailer;
+  if (file_size < kHeaderSize + kTrailerSize || file_size > kMaxPackSize) {
+    return std::unexpected(LoadError::kTruncated);
+  }
+
+  std::error_code map_error;
+  // path.native() (std::wstring on Windows), not path.string(): mio's
+  // narrow-string overload assumes UTF-8 and converts via
+  // MultiByteToWideChar(CP_UTF8, ...) before calling CreateFileW, but
+  // path.string() re-encodes to the system ANSI codepage instead - a
+  // pack path with non-ASCII characters would silently fail to open.
+  // The wide overload passes straight to CreateFileW with no conversion.
+  mio::mmap_source mapping = mio::make_mmap_source(path.native(), map_error);
+  if (map_error) {
+    return std::unexpected(LoadError::kIoError);
+  }
+
+  if (mapping.size() < kHeaderSize + kTrailerSize || mapping.size() > kMaxPackSize) {
+    return std::unexpected(LoadError::kTruncated);
+  }
+  return mapping;
+}
+
+// The BLAKE3 hash of mapped's [0, hashed_length) range, and the trailer
+// (also BLAKE3 hash + Ed25519 signature, see PackTrailer) immediately
+// following it. Unlike the old chunked-ifstream-read version this
+// replaced, this can't fail: mapped is already the whole file resident
+// (mio, backed by the OS page cache) and hashed_length/kTrailerSize are
+// already validated to fit within it (see Pack::Load), so there's no I/O
+// left to go wrong here - just pointer arithmetic and a hash.
+struct HashAndTrailer {
+  std::array<std::byte, kBlake3HashSize> hash;
+  PackTrailer trailer;
+};
+
+HashAndTrailer HashAndReadTrailer(std::span<const std::byte> mapped, std::uint64_t hashed_length) {
+  HashAndTrailer result;
+  blake3_hasher hasher;
+  blake3_hasher_init(&hasher);
+  blake3_hasher_update(&hasher, mapped.data(), hashed_length);
+  blake3_hasher_finalize(&hasher, reinterpret_cast<std::uint8_t*>(result.hash.data()), result.hash.size());
+
+  std::memcpy(result.trailer.hash.data(), mapped.data() + hashed_length, kBlake3HashSize);
+  std::memcpy(result.trailer.signature.data(), mapped.data() + hashed_length + kBlake3HashSize, kEd25519SignatureSize);
+  return result;
 }
 
 }  // namespace
@@ -884,7 +875,7 @@ std::expected<void, WriteError> WritePack(const std::filesystem::path& output_pa
 }
 
 struct Pack::Impl {
-  std::filesystem::path path;
+  mio::mmap_source mapping;
   std::vector<IndexEntry> index;
 };
 
@@ -896,61 +887,41 @@ Pack::~Pack() = default;
 std::expected<Pack, LoadError> Pack::Load(const std::filesystem::path& path, const Ed25519PublicKey& public_key) {
   EnsureSodiumInitialized();
 
-  std::error_code size_error;
-  const auto file_size = std::filesystem::file_size(path, size_error);
-  if (size_error) {
-    return std::unexpected(LoadError::kIoError);
+  auto mapping = OpenValidatedMapping(path);
+  if (!mapping) {
+    return std::unexpected(mapping.error());
   }
-  if (file_size < kHeaderSize + kTrailerSize || file_size > kMaxPackSize) {
-    return std::unexpected(LoadError::kTruncated);
-  }
-  const std::uint64_t hashed_length = file_size - kTrailerSize;
+  const std::uint64_t hashed_length = mapping->size() - kTrailerSize;
+  const std::span<const std::byte> mapped(reinterpret_cast<const std::byte*>(mapping->data()), mapping->size());
 
-  std::ifstream file(path, std::ios::binary);
-  if (!file) {
-    return std::unexpected(LoadError::kIoError);
-  }
-
-  std::vector<std::byte> header_bytes(kHeaderSize);
-  file.read(reinterpret_cast<char*>(header_bytes.data()), static_cast<std::streamsize>(header_bytes.size()));
-  if (!file) {
-    return std::unexpected(LoadError::kIoError);
-  }
-
-  auto header = ParsePackHeader(header_bytes, hashed_length);
+  auto header = ParsePackHeader(mapped.first(kHeaderSize), hashed_length);
   if (!header) {
     return std::unexpected(header.error());
   }
 
-  auto hashed = HashAndCaptureIndex(file, hashed_length, header->index_offset);
-  if (!hashed) {
-    return std::unexpected(hashed.error());
-  }
-
-  auto trailer = ReadTrailer(file);
-  if (!trailer) {
-    return std::unexpected(trailer.error());
-  }
+  const HashAndTrailer hashed = HashAndReadTrailer(mapped, hashed_length);
 
   // Verified in this order (integrity, then authenticity) purely for a
   // clearer error to the caller - both checks are on untrusted data
   // either way, and neither is trusted until both pass.
-  if (hashed->hash != trailer->hash) {
+  if (hashed.hash != hashed.trailer.hash) {
     return std::unexpected(LoadError::kHashMismatch);
   }
-  if (crypto_sign_verify_detached(reinterpret_cast<const unsigned char*>(trailer->signature.data()),
-                                  reinterpret_cast<const unsigned char*>(trailer->hash.data()), trailer->hash.size(),
+  if (crypto_sign_verify_detached(reinterpret_cast<const unsigned char*>(hashed.trailer.signature.data()),
+                                  reinterpret_cast<const unsigned char*>(hashed.trailer.hash.data()),
+                                  hashed.trailer.hash.size(),
                                   reinterpret_cast<const unsigned char*>(public_key.data())) != 0) {
     return std::unexpected(LoadError::kSignatureInvalid);
   }
 
-  auto index = ParsePackIndex(hashed->index_bytes, header->index_offset, header->index_count);
+  auto index = ParsePackIndex(mapped.subspan(header->index_offset, hashed_length - header->index_offset),
+                              header->index_offset, header->index_count);
   if (!index) {
     return std::unexpected(index.error());
   }
 
   Pack pack;
-  pack.impl_ = std::make_unique<Impl>(Impl{.path = path, .index = std::move(*index)});
+  pack.impl_ = std::make_unique<Impl>(Impl{.mapping = std::move(*mapping), .index = std::move(*index)});
   return pack;
 }
 
@@ -964,11 +935,7 @@ std::expected<MeshData, ResolveError> Pack::ResolveMesh(std::string_view path) c
     return std::unexpected(ResolveError::kTypeMismatch);
   }
 
-  auto blob = ReadBlobBytes(impl_->path, match->offset, match->size);
-  if (!blob) {
-    return std::unexpected(ResolveError::kIoError);
-  }
-  auto mesh = DecodeMeshBlob(*blob);
+  auto mesh = DecodeMeshBlob(BlobBytes(impl_->mapping, *match));
   if (!mesh) {
     return std::unexpected(ResolveError::kCorruptBlob);
   }
@@ -985,11 +952,7 @@ std::expected<SceneData, ResolveError> Pack::ResolveScene(std::string_view path)
     return std::unexpected(ResolveError::kTypeMismatch);
   }
 
-  auto blob = ReadBlobBytes(impl_->path, match->offset, match->size);
-  if (!blob) {
-    return std::unexpected(ResolveError::kIoError);
-  }
-  auto scene = DecodeSceneBlob(*blob);
+  auto scene = DecodeSceneBlob(BlobBytes(impl_->mapping, *match));
   if (!scene) {
     return std::unexpected(ResolveError::kCorruptBlob);
   }
@@ -1006,11 +969,7 @@ std::expected<TextureData, ResolveError> Pack::ResolveTexture(std::string_view p
     return std::unexpected(ResolveError::kTypeMismatch);
   }
 
-  auto blob = ReadBlobBytes(impl_->path, match->offset, match->size);
-  if (!blob) {
-    return std::unexpected(ResolveError::kIoError);
-  }
-  auto texture = DecodeTextureBlob(*blob);
+  auto texture = DecodeTextureBlob(BlobBytes(impl_->mapping, *match));
   if (!texture) {
     return std::unexpected(ResolveError::kCorruptBlob);
   }

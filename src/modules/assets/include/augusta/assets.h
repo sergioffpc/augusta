@@ -23,10 +23,12 @@
 //
 // Every pack is BLAKE3-hashed and Ed25519-signed (ADR-0030/ADR-0031's
 // trailer step): Load() verifies the signature before trusting anything
-// else in the file, and WritePack() requires a signing key. Blob data
-// (mesh/scene bytes) is read lazily, on demand, from disk per resolve
-// call - only the header and index are held in memory for a Pack's
-// lifetime.
+// else in the file, and WritePack() requires a signing key. Load()
+// memory-maps the pack file once (mio) rather than copying it into a
+// buffer; the BLAKE3 hash is computed directly off that mapping, and
+// every Resolve* call decodes straight out of it too - the file's bytes
+// are never read from disk more than once for a Pack's lifetime, and no
+// blob is ever copied into a separate in-memory buffer before decoding.
 namespace augusta::assets {
 
 // The kind of a pack's index entry (ADR-0031's per-blob type tag).
@@ -214,9 +216,6 @@ enum class ResolveError {
   // decode to semantically invalid data (e.g. a triangle index at or past
   // the mesh's own point count).
   kCorruptBlob,
-  // The pack file could not be re-opened or read to fetch this blob's
-  // bytes, after Load() itself already read it successfully once.
-  kIoError,
 };
 
 // A loaded pack file (ADR-0031's header/index/trailer). Load() verifies
