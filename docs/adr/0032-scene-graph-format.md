@@ -45,12 +45,13 @@ rather than inferring intent from geometry shape or prim naming.
   per-node transform cost for a value the loader can recompute in one
   parent-chain walk, and risks the stored value silently drifting from the
   local transform it should be derived from.
-- **Client/server pack split (ADR-0019) for the scene blob** — collision/
-  spawn-point/hitbox-only server nodes vs. full client nodes: not built yet.
-  The cooker still emits a single pack; this blob's format doesn't prevent
-  splitting later (the client build would just omit collision/spawn-point/
-  hitbox references from the nodes it emits), but doing so is a separate
-  piece of work, not required to have a scene graph at all.
+- **Client/server pack split (ADR-0019) for the scene blob** — built in
+  issue #51: the cooker emits two scene blobs from the same traversal, one
+  per pack. Collision/spawn-point/hitbox references are populated in both;
+  the server's copy has its mesh/material references stripped instead
+  (the reverse of what this section originally proposed - stripping
+  collision/spawn-point/hitbox from the client - since ADR-0019/ADR-0031
+  settled on shipping that data to both packs, not server-only).
 - **True runtime GPU instancing**: deferred. De-instancing at cook time is
   simpler and sufficient until instance count becomes a real performance
   problem; revisit if it does.

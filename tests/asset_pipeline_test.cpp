@@ -71,9 +71,10 @@ class AssetPipelineTest : public ::testing::Test {
 // optimizer's actual effect.
 TEST_F(AssetPipelineTest, CooksFixtureMeshAndLoadsItBack) {
   const auto pack_path = MakePackPath("augusta_asset_pipeline_test_mesh.pack");
+  const auto server_pack_path = MakePackPath("augusta_asset_pipeline_test_mesh_server.pack");
   const auto keys = augusta::assets::GenerateEd25519KeyPair();
 
-  const auto report = Cook(FixturePath("mesh_fixture.usda"), pack_path, keys.private_key);
+  const auto report = Cook(FixturePath("mesh_fixture.usda"), pack_path, server_pack_path, keys.private_key);
   ASSERT_TRUE(report.has_value());
   EXPECT_EQ(report->mesh_count, 1U);
   EXPECT_EQ(report->node_count, 1U);
@@ -103,9 +104,10 @@ TEST_F(AssetPipelineTest, CooksFixtureMeshAndLoadsItBack) {
 
 TEST_F(AssetPipelineTest, CooksFixtureSceneGraphAndLoadsItBack) {
   const auto pack_path = MakePackPath("augusta_asset_pipeline_test_scene.pack");
+  const auto server_pack_path = MakePackPath("augusta_asset_pipeline_test_scene_server.pack");
   const auto keys = augusta::assets::GenerateEd25519KeyPair();
 
-  const auto report = Cook(FixturePath("scene_fixture.usda"), pack_path, keys.private_key);
+  const auto report = Cook(FixturePath("scene_fixture.usda"), pack_path, server_pack_path, keys.private_key);
   ASSERT_TRUE(report.has_value());
   EXPECT_EQ(report->mesh_count, 1U);
   EXPECT_EQ(report->node_count, 3U);  // Root, Root/Child, Root/Spawn
@@ -159,9 +161,11 @@ TEST_F(AssetPipelineTest, CooksFixtureSceneGraphAndLoadsItBack) {
 // still proves the optimizer isn't a passthrough.
 TEST_F(AssetPipelineTest, OptimizesDuplicateTrianglesFixture) {
   const auto pack_path = MakePackPath("augusta_asset_pipeline_test_duplicate_triangles.pack");
+  const auto server_pack_path = MakePackPath("augusta_asset_pipeline_test_duplicate_triangles_server.pack");
   const auto keys = augusta::assets::GenerateEd25519KeyPair();
 
-  const auto report = Cook(FixturePath("duplicate_triangles_fixture.usda"), pack_path, keys.private_key);
+  const auto report =
+      Cook(FixturePath("duplicate_triangles_fixture.usda"), pack_path, server_pack_path, keys.private_key);
   ASSERT_TRUE(report.has_value());
   EXPECT_EQ(report->mesh_count, 1U);
 
@@ -220,9 +224,10 @@ TEST_F(AssetPipelineTest, EncodesAndResolvesTextureBlob) {
 // BC7-compress it (issue #49/ADR-0017), not skip it.
 TEST_F(AssetPipelineTest, CooksFixtureTextureAndLoadsItBack) {
   const auto pack_path = MakePackPath("augusta_asset_pipeline_test_texture.pack");
+  const auto server_pack_path = MakePackPath("augusta_asset_pipeline_test_texture_server.pack");
   const auto keys = augusta::assets::GenerateEd25519KeyPair();
 
-  const auto report = Cook(FixturePath("texture_fixture.usda"), pack_path, keys.private_key);
+  const auto report = Cook(FixturePath("texture_fixture.usda"), pack_path, server_pack_path, keys.private_key);
   ASSERT_TRUE(report.has_value());
   EXPECT_EQ(report->mesh_count, 1U);
   EXPECT_EQ(report->texture_count, 1U);
@@ -242,38 +247,92 @@ TEST_F(AssetPipelineTest, CooksFixtureTextureAndLoadsItBack) {
   EXPECT_LT(texture->dds_bytes.size(), 8U * 8U * 4U);
 }
 
-TEST_F(AssetPipelineTest, RejectsNonTriangularTopology) {
-  const auto pack_path = MakePackPath("augusta_asset_pipeline_test_bad_topology.pack");
+// client_server_split_fixture.usda combines a textured visual mesh
+// (Root/Visual) with PhysX-authored collision/hitbox/spawn-point data
+// (Root/Collider, Root/Hitbox, Root/Spawn) - issue #51/ADR-0019. The
+// client pack must resolve everything; the server pack must resolve only
+// the collision/hitbox/spawn-point content and genuinely lack the
+// mesh/texture bytes (kNotFound, not a corrupted/empty read), and must be
+// smaller than the client pack for the same fixture.
+TEST_F(AssetPipelineTest, SplitsClientAndServerPacks) {
+  const auto client_path = MakePackPath("augusta_asset_pipeline_test_split_client.pack");
+  const auto server_path = MakePackPath("augusta_asset_pipeline_test_split_server.pack");
   const auto keys = augusta::assets::GenerateEd25519KeyPair();
 
-  const auto report = Cook(FixturePath("bad_topology_fixture.usda"), pack_path, keys.private_key);
+  const auto report = Cook(FixturePath("client_server_split_fixture.usda"), client_path, server_path, keys.private_key);
+  ASSERT_TRUE(report.has_value());
+  EXPECT_EQ(report->mesh_count, 1U);
+  EXPECT_EQ(report->texture_count, 1U);
+
+  auto client_pack = Pack::Load(client_path, keys.public_key);
+  ASSERT_TRUE(client_pack.has_value());
+  auto server_pack = Pack::Load(server_path, keys.public_key);
+  ASSERT_TRUE(server_pack.has_value());
+
+  // Client resolves both visual and collision/spawn/hitbox content.
+  EXPECT_TRUE(client_pack->ResolveMesh("Root/Visual").has_value());
+  EXPECT_TRUE(client_pack->ResolveTexture("Root/Visual/Mat/DiffuseTexture").has_value());
+  EXPECT_TRUE(client_pack->ResolveCollision("Root/Collider").has_value());
+  EXPECT_TRUE(client_pack->ResolveHitbox("Root/Hitbox").has_value());
+  EXPECT_TRUE(client_pack->ResolveSpawnPoint("Root/Spawn").has_value());
+
+  // Server resolves collision/spawn/hitbox content...
+  EXPECT_TRUE(server_pack->ResolveCollision("Root/Collider").has_value());
+  EXPECT_TRUE(server_pack->ResolveHitbox("Root/Hitbox").has_value());
+  EXPECT_TRUE(server_pack->ResolveSpawnPoint("Root/Spawn").has_value());
+
+  // ...but genuinely lacks the mesh/texture content - not found, not a
+  // corrupted or empty read.
+  const auto server_mesh = server_pack->ResolveMesh("Root/Visual");
+  ASSERT_FALSE(server_mesh.has_value());
+  EXPECT_EQ(server_mesh.error(), augusta::assets::ResolveError::kNotFound);
+  const auto server_texture = server_pack->ResolveTexture("Root/Visual/Mat/DiffuseTexture");
+  ASSERT_FALSE(server_texture.has_value());
+  EXPECT_EQ(server_texture.error(), augusta::assets::ResolveError::kNotFound);
+
+  // Sanity check that stripping the client pack's mesh/texture content
+  // actually removed bytes, not just references.
+  EXPECT_LT(std::filesystem::file_size(server_path), std::filesystem::file_size(client_path));
+}
+
+TEST_F(AssetPipelineTest, RejectsNonTriangularTopology) {
+  const auto pack_path = MakePackPath("augusta_asset_pipeline_test_bad_topology.pack");
+  const auto server_pack_path = MakePackPath("augusta_asset_pipeline_test_bad_topology_server.pack");
+  const auto keys = augusta::assets::GenerateEd25519KeyPair();
+
+  const auto report = Cook(FixturePath("bad_topology_fixture.usda"), pack_path, server_pack_path, keys.private_key);
   ASSERT_FALSE(report.has_value());
   EXPECT_EQ(report.error().code, CookError::kUnsupportedTopology);
 }
 
 TEST_F(AssetPipelineTest, RejectsNegativeIndex) {
   const auto pack_path = MakePackPath("augusta_asset_pipeline_test_negative_index.pack");
+  const auto server_pack_path = MakePackPath("augusta_asset_pipeline_test_negative_index_server.pack");
   const auto keys = augusta::assets::GenerateEd25519KeyPair();
 
-  const auto report = Cook(FixturePath("negative_index_fixture.usda"), pack_path, keys.private_key);
+  const auto report = Cook(FixturePath("negative_index_fixture.usda"), pack_path, server_pack_path, keys.private_key);
   ASSERT_FALSE(report.has_value());
   EXPECT_EQ(report.error().code, CookError::kNegativeIndex);
 }
 
 TEST_F(AssetPipelineTest, RejectsOutOfRangeIndex) {
   const auto pack_path = MakePackPath("augusta_asset_pipeline_test_out_of_range_index.pack");
+  const auto server_pack_path = MakePackPath("augusta_asset_pipeline_test_out_of_range_index_server.pack");
   const auto keys = augusta::assets::GenerateEd25519KeyPair();
 
-  const auto report = Cook(FixturePath("out_of_range_index_fixture.usda"), pack_path, keys.private_key);
+  const auto report =
+      Cook(FixturePath("out_of_range_index_fixture.usda"), pack_path, server_pack_path, keys.private_key);
   ASSERT_FALSE(report.has_value());
   EXPECT_EQ(report.error().code, CookError::kIndexOutOfRange);
 }
 
 TEST_F(AssetPipelineTest, RejectsInconsistentTopology) {
   const auto pack_path = MakePackPath("augusta_asset_pipeline_test_inconsistent_topology.pack");
+  const auto server_pack_path = MakePackPath("augusta_asset_pipeline_test_inconsistent_topology_server.pack");
   const auto keys = augusta::assets::GenerateEd25519KeyPair();
 
-  const auto report = Cook(FixturePath("inconsistent_topology_fixture.usda"), pack_path, keys.private_key);
+  const auto report =
+      Cook(FixturePath("inconsistent_topology_fixture.usda"), pack_path, server_pack_path, keys.private_key);
   ASSERT_FALSE(report.has_value());
   EXPECT_EQ(report.error().code, CookError::kInconsistentTopology);
 }
@@ -307,7 +366,8 @@ class PackLoadNegativeTest : public AssetPipelineTest {
   void SetUp() override {
     keys_ = augusta::assets::GenerateEd25519KeyPair();
     const auto valid_path = MakePackPath("augusta_asset_pipeline_test_valid_source.pack");
-    const auto report = Cook(FixturePath("mesh_fixture.usda"), valid_path, keys_.private_key);
+    const auto valid_server_path = MakePackPath("augusta_asset_pipeline_test_valid_source_server.pack");
+    const auto report = Cook(FixturePath("mesh_fixture.usda"), valid_path, valid_server_path, keys_.private_key);
     ASSERT_TRUE(report.has_value());
     valid_bytes_ = ReadFileBytes(valid_path);
     ASSERT_FALSE(valid_bytes_.empty());

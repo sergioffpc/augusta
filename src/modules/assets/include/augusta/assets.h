@@ -50,6 +50,15 @@ bool IsValidAssetType(std::uint8_t value);
 // A cooked mesh's render-relevant data: positions and a flat triangle
 // index buffer. No normals/UVs yet (those land with meshoptimizer
 // integration, per ADR-0031's fuller conversion mapping).
+//
+// Also reused, unchanged, for collision geometry and hitbox shapes
+// (ResolveCollision/ResolveHitbox): both are PhysX-authored USD geometry
+// read the same points-plus-triangle-index way as a render mesh, and
+// ADR-0031 deliberately reuses this shape rather than defining a new one
+// for them. Unlike a render mesh, collision/hitbox geometry is never run
+// through meshoptimizer's simplify pass (a physics query silently missing
+// geometry it should have hit is worse than an unsimplified triangle
+// list).
 struct MeshData {
   std::vector<math::Vec3> points;
   std::vector<std::uint32_t> indices;
@@ -113,6 +122,16 @@ struct TextureData {
   TextureFormat format = TextureFormat::kBC7;
 };
 
+// A cooked spawn-point marker (ADR-0032): the point's own local
+// translation/rotation, as recorded on the authoring prim's SceneNode.
+// Unlike MeshData-shaped blobs, a spawn point has no geometry - it's a
+// bare transform, resolvable directly by path without walking the whole
+// scene graph.
+struct SpawnPointData {
+  math::Vec3 translation{0.0F, 0.0F, 0.0F};
+  math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};
+};
+
 // Sanitizes a USD prim path (e.g. "/Geom/Cube") into the pack-relative
 // path ADR-0031 addresses its blob by: the leading '/' is stripped, '/'
 // is kept as the path separator.
@@ -137,6 +156,12 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeSceneBlob(const SceneDa
 // Encodes texture into the pack's texture-blob byte layout (ADR-0031),
 // for augusta::asset_cooking to embed as an AssetEntry's data.
 std::expected<std::vector<std::byte>, EncodeError> EncodeTextureBlob(const TextureData& texture);
+
+// Encodes spawn_point into the pack's spawn-point-blob byte layout
+// (ADR-0031/ADR-0032). Collision and hitbox blobs need no analogous
+// EncodeCollisionBlob/EncodeHitboxBlob - they reuse EncodeMeshBlob
+// directly (see MeshData's own comment).
+std::expected<std::vector<std::byte>, EncodeError> EncodeSpawnPointBlob(const SpawnPointData& spawn_point);
 
 // One raw blob to be written into a pack, already encoded (e.g. by
 // EncodeMeshBlob) and addressed (e.g. by SanitizePrimPath).
@@ -248,6 +273,18 @@ class Pack {
 
   // Resolves a texture by its pack-relative path (see SanitizePrimPath).
   [[nodiscard]] std::expected<TextureData, ResolveError> ResolveTexture(std::string_view path) const;
+
+  // Resolves PhysX-authored collision geometry by its pack-relative path
+  // (ADR-0019/ADR-0031). Present in both client and server packs.
+  [[nodiscard]] std::expected<MeshData, ResolveError> ResolveCollision(std::string_view path) const;
+
+  // Resolves a hitbox shape by its pack-relative path (ADR-0019/ADR-0031).
+  // Present in both client and server packs.
+  [[nodiscard]] std::expected<MeshData, ResolveError> ResolveHitbox(std::string_view path) const;
+
+  // Resolves a spawn-point marker by its pack-relative path (ADR-0019/
+  // ADR-0032). Present in both client and server packs.
+  [[nodiscard]] std::expected<SpawnPointData, ResolveError> ResolveSpawnPoint(std::string_view path) const;
 
  private:
   Pack();
