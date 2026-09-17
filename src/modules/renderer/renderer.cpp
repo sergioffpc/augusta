@@ -111,7 +111,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
 
     // Requested explicitly rather than left at Type::Default, even though
     // Falcor.lib is itself now built with FALCOR_HAS_VULKAN=OFF
-    // (cmake/patches/falcor-augusta.patch) so getDefaultDeviceType()
+    // (cmake/patches/falcor.patch) so getDefaultDeviceType()
     // could only ever resolve to D3D12 anyway - this documents the
     // choice at the call site instead of relying on that patch being
     // read. D3D12 is the only backend this renderer targets (ADR-0009).
@@ -252,7 +252,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   }
 
   // A small procedural checkerboard - the asset pipeline (ADR-0015 -
-  // ADR-0020, M5) doesn't exist yet, and this spike only needs to prove
+  // ADR-0020, M2) doesn't exist yet, and this spike only needs to prove
   // Falcor samples *some* texture onto the primitive.
   void BuildCheckerboardTexture() {
     constexpr std::uint32_t kSize = 64;
@@ -417,7 +417,7 @@ void Renderer::SetCursorLocked([[maybe_unused]] bool locked) {
   // TODO(sergioffpc): Falcor exposes no cursor-lock/hide hook (ADR-0009) -
   // needs a small patch to the vendored submodule (cmake/patches/falcor-
   // augusta.patch). Deferred: no input consumer calls this yet (mouselook
-  // lands with gameplay input handling, M2+).
+  // lands with gameplay input handling, M3+).
 }
 
 }  // namespace augusta::renderer
