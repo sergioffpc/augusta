@@ -31,12 +31,15 @@ endif()
 find_package(spdlog CONFIG REQUIRED)
 
 # flecs/GameNetworkingSockets/PhysX back the client/server shared runtime
-# (ECS worlds, networking transport, physics - ADR-0001/0002/0003) - not
-# needed to build the offline asset-cooking tool alone (see
-# AUGUSTA_BUILD_RUNTIME's else() branch further down), so a tools-only
-# configure (the windows-tools preset) skips requiring and installing
-# them, via the vcpkg manifest's own "runtime" feature (vcpkg.json).
-option(AUGUSTA_BUILD_RUNTIME "Build the client/server shared runtime and its modules, rather than the offline asset-cooking tool" ON)
+# (ECS worlds, networking transport, physics - ADR-0001/0002/0003); USD/
+# DirectXTex/meshoptimizer back the offline asset-cooking tool
+# (ADR-0015/0016/0017/0030). Independent options rather than one switch,
+# so a single configure can build either, neither, or both - the vcpkg
+# manifest's own "runtime"/"tools" features (vcpkg.json) still gate which
+# of the two dependency sets actually get installed, via
+# VCPKG_MANIFEST_FEATURES on the chosen preset.
+option(AUGUSTA_BUILD_RUNTIME "Build the client/server shared runtime and its modules" ON)
+option(AUGUSTA_BUILD_TOOLS "Build the offline asset-cooking tool (tools/asset-cooking)" OFF)
 if (AUGUSTA_BUILD_RUNTIME)
   find_package(flecs CONFIG REQUIRED)
   find_package(GameNetworkingSockets CONFIG REQUIRED)
@@ -44,16 +47,11 @@ if (AUGUSTA_BUILD_RUNTIME)
 endif()
 
 # NVTX (github.com/NVIDIA/NVTX) is header-only and not on vcpkg, so it's
-# vendored as a pinned git submodule (third_party/nvtx) like Falcor,
-# rather than fetched. Its own third_party/nvtx/c/CMakeLists.txt is NOT
-# added as a subdirectory: it calls project(nvtx3 ...) with no LANGUAGES,
-# which implicitly also enables C for this whole build (this project is
-# CXX-only, see project() above) and pulls in the compiled nvtxw3-loader
-# static lib, tests, and install rules this repo has no use for - all we
-# actually want is the header-only nvtx3::scoped_range C++ API
-# (nvtx3/nvtx3.hpp and its nvtxDetail/ headers, no .c/.cpp of their own),
-# so a plain INTERFACE target for the include path is the whole
-# integration.
+# vendored as a pinned git submodule (third_party/nvtx) instead. Not
+# added via add_subdirectory: its own CMakeLists.txt pulls in a compiled
+# loader lib, tests, and install rules this repo has no use for - a plain
+# INTERFACE target for the header path is all the nvtx3::scoped_range API
+# actually needs.
 add_library(nvtx3-cpp INTERFACE)
 target_include_directories(nvtx3-cpp INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/nvtx/c/include")
 
@@ -87,17 +85,12 @@ if (AUGUSTA_BUILD_RUNTIME)
     add_subdirectory(src/modules/renderer)
     add_subdirectory(src/client)
   endif()
-else()
+endif()
+
+if (AUGUSTA_BUILD_TOOLS)
   # Offline authoring-time tooling (ARCHITECTURE.md "Tooling" section) -
   # not part of the shipped client/server build graph above, kept as its
-  # own target tree under tools/ rather than joining src/'s. Mutually
-  # exclusive with the runtime above rather than a separate on/off switch
-  # of its own: the cooker pulls in authoring-only vcpkg dependencies
-  # (USD, DirectXTex, meshoptimizer - the manifest's own "tools" feature,
-  # vcpkg.json) that augustac/augustad never need, and vice versa
-  # (flecs/GameNetworkingSockets/PhysX, the "runtime" feature) - see the
-  # windows-tools preset (CMakePresets.json), which sets
-  # AUGUSTA_BUILD_RUNTIME=OFF to land here instead.
+  # own target tree under tools/ rather than joining src/'s.
   add_subdirectory(tools/asset-cooking)
 endif()
 

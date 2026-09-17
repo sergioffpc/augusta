@@ -35,7 +35,8 @@
       "binaryDir": "${sourceDir}/build/x64-windows-tools",
       "cacheVariables": {
         "VCPKG_MANIFEST_FEATURES": "tools",
-        "AUGUSTA_BUILD_RUNTIME": "OFF"
+        "AUGUSTA_BUILD_RUNTIME": "OFF",
+        "AUGUSTA_BUILD_TOOLS": "ON"
       }
     },
     {
