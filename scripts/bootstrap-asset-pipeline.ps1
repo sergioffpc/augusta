@@ -36,7 +36,7 @@ if ($missing) {
 }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$toolsDir = Join-Path $repoRoot "tools\asset-pipeline"
+$toolsDir = Join-Path $repoRoot "tools\asset-authoring"
 New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
 
 function Sync-GitRepo {
