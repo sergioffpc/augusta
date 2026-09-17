@@ -10,3 +10,4 @@ target_compile_definitions(augusta_logging INTERFACE
   $<$<CONFIG:Debug>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE>
   $<$<NOT:$<CONFIG:Debug>>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO>
 )
+augusta_set_module_scope(augusta_logging SHARED)

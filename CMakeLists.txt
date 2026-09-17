@@ -47,6 +47,8 @@ find_package(unofficial-omniverse-physx-sdk CONFIG REQUIRED)
 add_library(nvtx3-cpp INTERFACE)
 target_include_directories(nvtx3-cpp INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/nvtx/c/include")
 
+include(cmake/AugustaModule.cmake)
+
 enable_testing()
 find_package(GTest CONFIG REQUIRED)
 find_package(benchmark CONFIG REQUIRED)
@@ -74,6 +76,11 @@ if (WIN32)
   add_subdirectory(src/modules/renderer)
   add_subdirectory(src/client)
 endif()
+
+# Every module and both runtime targets above have now made their own
+# target_link_libraries() calls, so the client/server module dependency
+# graph is complete - see cmake/AugustaModule.cmake.
+augusta_check_module_scopes()
 
 # Offline authoring-time tooling (ARCHITECTURE.md "Tooling" section) - not
 # part of the shipped client/server build graph above, kept as its own

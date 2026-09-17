@@ -6,3 +6,4 @@ target_link_libraries(augusta_presentation
   PUBLIC augusta_prediction augusta_audio
   PRIVATE augusta_animation augusta_logging $<IF:$<TARGET_EXISTS:flecs::flecs>,flecs::flecs,flecs::flecs_static>
 )
+augusta_set_module_scope(augusta_presentation CLIENT_ONLY)

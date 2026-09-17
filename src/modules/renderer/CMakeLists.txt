@@ -3,6 +3,7 @@ add_library(augusta_renderer STATIC
 )
 target_include_directories(augusta_renderer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(augusta_renderer PUBLIC augusta_input PRIVATE nvtx3-cpp)
+augusta_set_module_scope(augusta_renderer CLIENT_ONLY)
 
 if (WIN32)
   # NVIDIA Falcor (ADR-0009) is vendored as a pinned git submodule

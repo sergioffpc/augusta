@@ -6,3 +6,4 @@ target_link_libraries(augusta_networking PRIVATE
   augusta_logging
   $<IF:$<TARGET_EXISTS:GameNetworkingSockets::GameNetworkingSockets>,GameNetworkingSockets::GameNetworkingSockets,GameNetworkingSockets::GameNetworkingSockets_s>
 )
+augusta_set_module_scope(augusta_networking SHARED)
