@@ -18,7 +18,7 @@ service:
 # Shared hostPath volume on the k3s node holding signed asset packs
 # (ENGINEERING.md's Deployment & CD section). Populated manually after
 # signing, mounted read-only into every server pod. Not read by the server
-# binary yet - lands with the M5 asset pipeline.
+# binary yet - lands with the M2 asset pipeline.
 assetPacks:
   hostPath: /srv/augusta/asset-packs
   packVersion: ""

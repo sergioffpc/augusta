@@ -252,7 +252,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   }
 
   // A small procedural checkerboard - the asset pipeline (ADR-0015 -
-  // ADR-0020, M5) doesn't exist yet, and this spike only needs to prove
+  // ADR-0020, M2) doesn't exist yet, and this spike only needs to prove
   // Falcor samples *some* texture onto the primitive.
   void BuildCheckerboardTexture() {
     constexpr std::uint32_t kSize = 64;
@@ -417,7 +417,7 @@ void Renderer::SetCursorLocked([[maybe_unused]] bool locked) {
   // TODO(sergioffpc): Falcor exposes no cursor-lock/hide hook (ADR-0009) -
   // needs a small patch to the vendored submodule (cmake/patches/falcor-
   // augusta.patch). Deferred: no input consumer calls this yet (mouselook
-  // lands with gameplay input handling, M2+).
+  // lands with gameplay input handling, M3+).
 }
 
 }  // namespace augusta::renderer

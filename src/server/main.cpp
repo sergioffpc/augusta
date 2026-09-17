@@ -31,7 +31,7 @@ int main() {
   augusta::runtime::Config config;
   // TODO(sergioffpc): hardcoded placeholders - there's no command-line/
   // config parsing yet, and script_path assumes an asset pack layout
-  // the asset pipeline (ROADMAP.md M5) hasn't built yet.
+  // the asset pipeline (ROADMAP.md M2) hasn't built yet.
   config.script_path = "scripts/round.lua";
   config.listen.address = "0.0.0.0:27015";
 
