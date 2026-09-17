@@ -24,6 +24,7 @@ WORKDIR /workspace
 # changes, so it's copied and run first to keep that layer cached across
 # src/ edits.
 COPY third_party/vcpkg third_party/vcpkg
+COPY cmake cmake
 COPY vcpkg.json CMakeLists.txt CMakePresets.json ./
 RUN ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
 
