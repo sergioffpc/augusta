@@ -6,7 +6,9 @@
 #include <pxr/base/gf/vec3d.h>
 #include <pxr/base/gf/vec3f.h>
 #include <pxr/base/plug/registry.h>
+#include <pxr/base/tf/token.h>
 #include <pxr/base/vt/array.h>
+#include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/usd/primRange.h>
@@ -15,9 +17,18 @@
 #include <pxr/usd/usdGeom/metrics.h>
 #include <pxr/usd/usdGeom/tokens.h>
 #include <pxr/usd/usdGeom/xformable.h>
+#include <pxr/usd/usdShade/input.h>
+#include <pxr/usd/usdShade/shader.h>
+
+// DirectXTex.h pulls in <windows.h> (via d3d11.h), whose macros corrupt
+// OpenUSD's own template headers (e.g. GfVec4i/GfVec4h) if parsed while
+// those macros are active - it must come after every pxr/ include above,
+// never before.
+#include <DirectXTex.h>
 
 #include <algorithm>
 #include <cstdint>
+#include <filesystem>
 #include <format>
 #include <optional>
 #include <string>
@@ -57,6 +68,148 @@ void EnsureUsdPluginPathConfigured() {
 // is read, so a resolved hitbox_path currently always misses.
 constexpr auto kSpawnPointAttr = "augusta:spawnPoint";
 constexpr auto kHitboxAttr = "augusta:hitbox";
+
+// augusta:textureFormat: custom string attribute (same authoring
+// convention as kSpawnPointAttr/kHitboxAttr above) selecting which BC
+// format a UsdUVTexture prim compresses to (ADR-0017/issue #49). Driven
+// directly by the authored prim rather than inferred from which
+// UsdPreviewSurface input it feeds (diffuseColor vs. normal vs.
+// roughness, say) - that would need walking the full shading-network
+// connection graph via UsdShadeConnectableAPI, which no fixture here
+// exercises yet. Defaults to BC7 (the common sRGB color-texture case)
+// when absent or unrecognized.
+constexpr auto kTextureFormatAttr = "augusta:textureFormat";
+constexpr auto kUsdUVTextureShaderId = "UsdUVTexture";
+
+assets::TextureFormat ReadTextureFormatAttr(const pxr::UsdPrim& prim) {
+  const pxr::UsdAttribute attr = prim.GetAttribute(pxr::TfToken(kTextureFormatAttr));
+  std::string value;
+  if (attr && attr.Get(&value)) {
+    if (value == "bc5") {
+      return assets::TextureFormat::kBC5;
+    }
+    if (value == "bc4") {
+      return assets::TextureFormat::kBC4;
+    }
+  }
+  return assets::TextureFormat::kBC7;
+}
+
+DXGI_FORMAT ToDxgiFormat(assets::TextureFormat format) {
+  switch (format) {
+    case assets::TextureFormat::kBC5:
+      return DXGI_FORMAT_BC5_UNORM;
+    case assets::TextureFormat::kBC4:
+      return DXGI_FORMAT_BC4_UNORM;
+    case assets::TextureFormat::kBC7:
+      return DXGI_FORMAT_BC7_UNORM;
+  }
+  return DXGI_FORMAT_BC7_UNORM;
+}
+
+// DirectXTex's WIC-backed loaders (LoadFromWICFile) need COM initialized
+// on the calling thread - they don't do this themselves. thread_local
+// (COM apartment state is per-thread, unlike EnsureUsdPluginPathConfigured's
+// process-wide plugin registry) so a multi-threaded caller doesn't skip
+// this on a thread that never ran it. Returns false if COM is unusable on
+// this thread (e.g. RPC_E_CHANGED_MODE, because something else already
+// initialized it with an incompatible apartment model) - the caller must
+// check this rather than let every later LoadFromWICFile call fail with a
+// generic, misleading "failed to load" error.
+bool EnsureComInitialized() {
+  thread_local const bool kInitialized = [] {
+    // S_FALSE (already initialized on this thread, e.g. by USD's own COM
+    // use) is success too - only a hard FAILED() return means WIC calls
+    // on this thread won't work.
+    const HRESULT init_result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    return SUCCEEDED(init_result) || init_result == S_FALSE;
+  }();
+  return kInitialized;
+}
+
+// Resolves a UsdUVTexture prim's inputs:file into an absolute filesystem
+// path. SdfAssetPath's own resolved path (populated by USD's asset
+// resolver at attribute-read time) is preferred; a stage referencing a
+// texture that exists on disk relative to the stage's own layer always
+// has one. The stage_path fallback only matters for a value the resolver
+// left unresolved (e.g. a bare relative string with no matching file at
+// read time).
+std::filesystem::path ResolveTextureFilePath(const pxr::SdfAssetPath& asset_path,
+                                             const std::filesystem::path& stage_path) {
+  std::filesystem::path resolved = asset_path.GetResolvedPath();
+  if (resolved.empty()) {
+    resolved = asset_path.GetAssetPath();
+  }
+  if (resolved.is_relative()) {
+    resolved = stage_path.parent_path() / resolved;
+  }
+  return resolved;
+}
+
+// Loads a UsdUVTexture prim's referenced image via DirectXTex/WIC and
+// block-compresses it (ADR-0017) to the format kTextureFormatAttr
+// selects, returning the result as a pack-ready TextureData.
+std::expected<assets::TextureData, CookErrorDetail> CookTexture(const pxr::UsdPrim& prim, const std::string& prim_path,
+                                                                const std::filesystem::path& stage_path) {
+  const pxr::UsdShadeShader shader(prim);
+  const pxr::UsdShadeInput file_input = shader.GetInput(pxr::TfToken("file"));
+  pxr::SdfAssetPath asset_path;
+  if (!file_input || !file_input.Get(&asset_path)) {
+    return std::unexpected(CookErrorDetail{
+        .code = CookError::kMissingTextureFile,
+        .prim_path = prim_path,
+        .message = "UsdUVTexture prim has no inputs:file",
+    });
+  }
+
+  const std::filesystem::path texture_path = ResolveTextureFilePath(asset_path, stage_path);
+
+  if (!EnsureComInitialized()) {
+    return std::unexpected(CookErrorDetail{
+        .code = CookError::kTextureLoadFailed,
+        .prim_path = prim_path,
+        .message = "COM could not be initialized on this thread (CoInitializeEx failed) - WIC texture loading "
+                   "is unavailable",
+    });
+  }
+
+  DirectX::TexMetadata metadata;
+  DirectX::ScratchImage image;
+  if (FAILED(DirectX::LoadFromWICFile(texture_path.wstring().c_str(), DirectX::WIC_FLAGS_NONE, &metadata, image))) {
+    return std::unexpected(CookErrorDetail{
+        .code = CookError::kTextureLoadFailed,
+        .prim_path = prim_path,
+        .message = std::format("failed to load texture image {}", texture_path.string()),
+    });
+  }
+
+  const assets::TextureFormat format = ReadTextureFormatAttr(prim);
+  DirectX::ScratchImage compressed;
+  if (FAILED(DirectX::Compress(image.GetImages(), image.GetImageCount(), image.GetMetadata(), ToDxgiFormat(format),
+                               DirectX::TEX_COMPRESS_DEFAULT, DirectX::TEX_THRESHOLD_DEFAULT, compressed))) {
+    return std::unexpected(CookErrorDetail{
+        .code = CookError::kTextureCompressFailed,
+        .prim_path = prim_path,
+        .message = std::format("failed to BC-compress texture image {}", texture_path.string()),
+    });
+  }
+
+  DirectX::Blob dds_blob;
+  if (FAILED(DirectX::SaveToDDSMemory(compressed.GetImages(), compressed.GetImageCount(), compressed.GetMetadata(),
+                                      DirectX::DDS_FLAGS_NONE, dds_blob))) {
+    return std::unexpected(CookErrorDetail{
+        .code = CookError::kTextureCompressFailed,
+        .prim_path = prim_path,
+        .message = std::format("failed to encode DDS for texture image {}", texture_path.string()),
+    });
+  }
+
+  const auto* dds_bytes = reinterpret_cast<const std::byte*>(dds_blob.GetBufferPointer());
+  return assets::TextureData{
+      .dds_bytes = std::vector<std::byte>(dds_bytes, dds_bytes + dds_blob.GetBufferSize()),
+      .format = format,
+  };
+}
 
 // Z-up -> Y-up is a quarter turn about the X axis (see
 // StageCorrectionMatrix's comment for the sign/direction reasoning).
@@ -364,6 +517,44 @@ std::expected<assets::SceneNode, CookErrorDetail> BuildNode(const pxr::UsdPrim& 
   return node;
 }
 
+std::size_t CountEntriesOfType(const std::vector<assets::AssetEntry>& entries, assets::AssetType type) {
+  return static_cast<std::size_t>(std::count_if(
+      entries.begin(), entries.end(), [type](const assets::AssetEntry& entry) { return entry.type == type; }));
+}
+
+// UsdShadeShader prims aren't part of the scene graph's spatial hierarchy
+// (they still get the generic node BuildNode produces, same as any other
+// non-mesh prim, via Cook()'s own call to BuildNode) - a UsdUVTexture one
+// is additionally cooked into its own texture blob (ADR-0017/issue #49)
+// and appended to entries. A no-op for any other prim. prim_path is
+// BuildNode's already-sanitized node.name for the same prim (Cook() reuses
+// it rather than sanitizing prim's path a second time).
+std::expected<void, CookErrorDetail> MaybeCookTexturePrim(const pxr::UsdPrim& prim, const std::string& prim_path,
+                                                          const std::filesystem::path& stage_path,
+                                                          std::vector<assets::AssetEntry>& entries) {
+  pxr::TfToken shader_id;
+  if (!prim.IsA<pxr::UsdShadeShader>() || !pxr::UsdShadeShader(prim).GetShaderId(&shader_id) ||
+      shader_id != kUsdUVTextureShaderId) {
+    return {};
+  }
+
+  auto texture_data = CookTexture(prim, prim_path, stage_path);
+  if (!texture_data) {
+    return std::unexpected(texture_data.error());
+  }
+  auto texture_blob = assets::EncodeTextureBlob(*texture_data);
+  if (!texture_blob) {
+    return std::unexpected(CookErrorDetail{
+        .code = CookError::kContentTooLarge,
+        .prim_path = prim_path,
+        .message = "texture exceeds pack size limits",
+    });
+  }
+  entries.push_back(
+      assets::AssetEntry{.type = assets::AssetType::kTexture, .path = prim_path, .data = std::move(*texture_blob)});
+  return {};
+}
+
 }  // namespace
 
 std::expected<CookReport, CookErrorDetail> Cook(const std::filesystem::path& stage_path,
@@ -394,8 +585,15 @@ std::expected<CookReport, CookErrorDetail> Cook(const std::filesystem::path& sta
     if (!node) {
       return std::unexpected(node.error());
     }
+    // node->name is prim's sanitized path (BuildNode) - reused below
+    // instead of sanitizing it again, captured before the move.
+    const std::string prim_path = node->name;
     node_index_of.emplace(prim.GetPath(), static_cast<std::uint32_t>(scene.nodes.size()));
     scene.nodes.push_back(std::move(*node));
+
+    if (auto texture = MaybeCookTexturePrim(prim, prim_path, stage_path, entries); !texture) {
+      return std::unexpected(texture.error());
+    }
   }
 
   auto scene_blob = assets::EncodeSceneBlob(scene);
@@ -409,10 +607,8 @@ std::expected<CookReport, CookErrorDetail> Cook(const std::filesystem::path& sta
   entries.push_back(
       assets::AssetEntry{.type = assets::AssetType::kScene, .path = "Scene", .data = std::move(*scene_blob)});
 
-  const auto mesh_count =
-      static_cast<std::size_t>(std::count_if(entries.begin(), entries.end(), [](const assets::AssetEntry& entry) {
-        return entry.type == assets::AssetType::kMesh;
-      }));
+  const std::size_t mesh_count = CountEntriesOfType(entries, assets::AssetType::kMesh);
+  const std::size_t texture_count = CountEntriesOfType(entries, assets::AssetType::kTexture);
 
   if (auto written = assets::WritePack(output_pack_path, entries, signing_key); !written) {
     return std::unexpected(CookErrorDetail{
@@ -422,7 +618,7 @@ std::expected<CookReport, CookErrorDetail> Cook(const std::filesystem::path& sta
     });
   }
 
-  return CookReport{.mesh_count = mesh_count, .node_count = scene.nodes.size()};
+  return CookReport{.mesh_count = mesh_count, .texture_count = texture_count, .node_count = scene.nodes.size()};
 }
 
 }  // namespace augusta::asset_cooking

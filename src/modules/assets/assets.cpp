@@ -44,6 +44,10 @@ constexpr std::uint32_t kMaxMeshPoints = 16'000'000;
 constexpr std::uint32_t kMaxMeshIndices = 48'000'000;
 constexpr std::uint32_t kMaxSceneNodes = 1'000'000;
 constexpr std::uint32_t kMaxProperties = 256;
+// A single BC7-compressed 8K DDS is well under this; comfortably above
+// any real v1 texture while still rejecting a hostile/corrupt blob long
+// before an oversized allocation.
+constexpr std::uint32_t kMaxTextureBytes = 256U * 1024 * 1024;
 
 constexpr std::size_t kStreamChunkSize = 64 * 1024;
 
@@ -437,6 +441,32 @@ std::optional<SceneData> DecodeSceneBlob(std::span<const std::byte> blob) {
   return scene;
 }
 
+// Texture blob wire format: format byte, then a length-prefixed DDS byte
+// string (DirectXTex's own SaveToDDSMemory output, opaque to this
+// module beyond its outer length).
+std::optional<TextureData> DecodeTextureBlob(std::span<const std::byte> blob) {
+  ByteReader reader(blob);
+
+  const auto format = reader.ReadU8();
+  if (!format || !IsValidTextureFormat(*format)) {
+    return std::nullopt;
+  }
+
+  const auto dds_size = reader.ReadU32();
+  if (!dds_size || *dds_size > kMaxTextureBytes) {
+    return std::nullopt;
+  }
+  const auto dds_bytes = reader.ReadBytes(*dds_size);
+  if (!dds_bytes) {
+    return std::nullopt;
+  }
+
+  return TextureData{
+      .dds_bytes = std::vector<std::byte>(dds_bytes->begin(), dds_bytes->end()),
+      .format = static_cast<TextureFormat>(*format),
+  };
+}
+
 struct IndexEntry {
   AssetType type;
   std::string path;
@@ -764,6 +794,16 @@ bool IsValidAssetType(std::uint8_t value) {
   return false;
 }
 
+bool IsValidTextureFormat(std::uint8_t value) {
+  switch (static_cast<TextureFormat>(value)) {
+    case TextureFormat::kBC7:
+    case TextureFormat::kBC5:
+    case TextureFormat::kBC4:
+      return true;
+  }
+  return false;
+}
+
 std::string SanitizePrimPath(std::string_view usd_prim_path) {
   if (!usd_prim_path.empty() && usd_prim_path.front() == '/') {
     usd_prim_path.remove_prefix(1);
@@ -802,6 +842,18 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeSceneBlob(const SceneDa
       return std::unexpected(encoded.error());
     }
   }
+  return blob;
+}
+
+std::expected<std::vector<std::byte>, EncodeError> EncodeTextureBlob(const TextureData& texture) {
+  if (texture.dds_bytes.size() > kMaxTextureBytes) {
+    return std::unexpected(EncodeError::kTooLarge);
+  }
+
+  std::vector<std::byte> blob;
+  AppendU8(blob, static_cast<std::uint8_t>(texture.format));
+  AppendU32(blob, static_cast<std::uint32_t>(texture.dds_bytes.size()));
+  AppendBytes(blob, texture.dds_bytes);
   return blob;
 }
 
@@ -942,6 +994,27 @@ std::expected<SceneData, ResolveError> Pack::ResolveScene(std::string_view path)
     return std::unexpected(ResolveError::kCorruptBlob);
   }
   return std::move(*scene);
+}
+
+std::expected<TextureData, ResolveError> Pack::ResolveTexture(std::string_view path) const {
+  const auto match = std::find_if(impl_->index.begin(), impl_->index.end(),
+                                  [&](const IndexEntry& entry) { return entry.path == path; });
+  if (match == impl_->index.end()) {
+    return std::unexpected(ResolveError::kNotFound);
+  }
+  if (match->type != AssetType::kTexture) {
+    return std::unexpected(ResolveError::kTypeMismatch);
+  }
+
+  auto blob = ReadBlobBytes(impl_->path, match->offset, match->size);
+  if (!blob) {
+    return std::unexpected(ResolveError::kIoError);
+  }
+  auto texture = DecodeTextureBlob(*blob);
+  if (!texture) {
+    return std::unexpected(ResolveError::kCorruptBlob);
+  }
+  return std::move(*texture);
 }
 
 }  // namespace augusta::assets

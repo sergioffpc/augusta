@@ -184,6 +184,64 @@ TEST_F(AssetPipelineTest, OptimizesDuplicateTrianglesFixture) {
   }
 }
 
+// Exercises augusta_assets' own texture-blob encode/resolve seam
+// directly (WritePack/Pack::Load/ResolveTexture) - issue #49 - without
+// going through Cook()/DirectXTex, which CooksFixtureTextureAndLoadsItBack
+// below covers for the cooker side.
+TEST_F(AssetPipelineTest, EncodesAndResolvesTextureBlob) {
+  const auto pack_path = MakePackPath("augusta_asset_pipeline_test_texture_blob.pack");
+  const auto keys = augusta::assets::GenerateEd25519KeyPair();
+
+  const std::vector<std::byte> dds_bytes = {std::byte{0x44}, std::byte{0x44}, std::byte{0x53},
+                                            std::byte{0x20}, std::byte{0xAB}, std::byte{0xCD}};
+  const augusta::assets::TextureData texture{.dds_bytes = dds_bytes, .format = augusta::assets::TextureFormat::kBC5};
+
+  const auto blob = augusta::assets::EncodeTextureBlob(texture);
+  ASSERT_TRUE(blob.has_value());
+
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kTexture, .path = "Tex", .data = *blob},
+  };
+  const auto written = augusta::assets::WritePack(pack_path, entries, keys.private_key);
+  ASSERT_TRUE(written.has_value());
+
+  auto pack = Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  const auto resolved = pack->ResolveTexture("Tex");
+  ASSERT_TRUE(resolved.has_value());
+  EXPECT_EQ(resolved->format, augusta::assets::TextureFormat::kBC5);
+  EXPECT_EQ(resolved->dds_bytes, dds_bytes);
+}
+
+// texture_fixture.usda's Mat/DiffuseTexture is a UsdUVTexture reading
+// texture_fixture.png (an 8x8 solid-color PNG fixture image), bound to
+// TestMesh's UsdPreviewSurface diffuseColor. Cook() must resolve and
+// BC7-compress it (issue #49/ADR-0017), not skip it.
+TEST_F(AssetPipelineTest, CooksFixtureTextureAndLoadsItBack) {
+  const auto pack_path = MakePackPath("augusta_asset_pipeline_test_texture.pack");
+  const auto keys = augusta::assets::GenerateEd25519KeyPair();
+
+  const auto report = Cook(FixturePath("texture_fixture.usda"), pack_path, keys.private_key);
+  ASSERT_TRUE(report.has_value());
+  EXPECT_EQ(report->mesh_count, 1U);
+  EXPECT_EQ(report->texture_count, 1U);
+
+  auto pack = Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  const auto texture = pack->ResolveTexture("TestMesh/Mat/DiffuseTexture");
+  ASSERT_TRUE(texture.has_value());
+  EXPECT_EQ(texture->format, augusta::assets::TextureFormat::kBC7);
+
+  // Not exact byte equality (BC7 output isn't a stable byte-for-byte
+  // invariant, per issue #49's own acceptance criteria) - just a
+  // plausible size: bigger than an empty/truncated blob, smaller than
+  // the uncompressed 8x8x4-byte source would be as a sanity ceiling.
+  EXPECT_GT(texture->dds_bytes.size(), 0U);
+  EXPECT_LT(texture->dds_bytes.size(), 8U * 8U * 4U);
+}
+
 TEST_F(AssetPipelineTest, RejectsNonTriangularTopology) {
   const auto pack_path = MakePackPath("augusta_asset_pipeline_test_bad_topology.pack");
   const auto keys = augusta::assets::GenerateEd25519KeyPair();

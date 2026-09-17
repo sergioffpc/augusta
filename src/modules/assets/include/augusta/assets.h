@@ -85,6 +85,32 @@ struct SceneData {
   std::vector<SceneNode> nodes;
 };
 
+// The DirectXTex block-compression format a texture blob was compressed
+// to (ADR-0017), one-to-one with DXGI_FORMAT_BC7_UNORM/BC5_UNORM/
+// BC4_UNORM. Its own enum rather than depending on DXGI_FORMAT directly:
+// augusta_assets has no DirectXTex/D3D dependency of its own - only the
+// offline cooker (tools/asset-cooking) links DirectXTex (see this
+// module's CMakeLists.txt).
+enum class TextureFormat : std::uint8_t {
+  kBC7,
+  kBC5,
+  kBC4,
+};
+
+// True if value is one of TextureFormat's defined enumerators - a texture
+// blob's format byte is untrusted wire data and must be checked against
+// this before being treated as a TextureFormat.
+bool IsValidTextureFormat(std::uint8_t value);
+
+// A cooked texture (ADR-0017/ADR-0031): DirectXTex's own SaveToDDSMemory
+// output (DDS header included) plus the block format it was compressed
+// to, so a caller can pick a shader/PSO without re-parsing the DDS
+// header itself.
+struct TextureData {
+  std::vector<std::byte> dds_bytes;
+  TextureFormat format = TextureFormat::kBC7;
+};
+
 // Sanitizes a USD prim path (e.g. "/Geom/Cube") into the pack-relative
 // path ADR-0031 addresses its blob by: the leading '/' is stripped, '/'
 // is kept as the path separator.
@@ -105,6 +131,10 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeMeshBlob(const MeshData
 
 // Encodes scene into the pack's scene-blob byte layout (ADR-0032).
 std::expected<std::vector<std::byte>, EncodeError> EncodeSceneBlob(const SceneData& scene);
+
+// Encodes texture into the pack's texture-blob byte layout (ADR-0031),
+// for augusta::asset_cooking to embed as an AssetEntry's data.
+std::expected<std::vector<std::byte>, EncodeError> EncodeTextureBlob(const TextureData& texture);
 
 // One raw blob to be written into a pack, already encoded (e.g. by
 // EncodeMeshBlob) and addressed (e.g. by SanitizePrimPath).
@@ -216,6 +246,9 @@ class Pack {
   // Resolves a scene graph by its pack-relative path (see
   // SanitizePrimPath).
   [[nodiscard]] std::expected<SceneData, ResolveError> ResolveScene(std::string_view path) const;
+
+  // Resolves a texture by its pack-relative path (see SanitizePrimPath).
+  [[nodiscard]] std::expected<TextureData, ResolveError> ResolveTexture(std::string_view path) const;
 
  private:
   Pack();
