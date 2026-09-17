@@ -5,7 +5,9 @@
     "spdlog",
     "gtest",
     "benchmark",
-    "glm"
+    "glm",
+    "blake3",
+    "libsodium"
   ],
   "features": {
     "runtime": {

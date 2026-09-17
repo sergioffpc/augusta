@@ -14,24 +14,21 @@ add_library(augusta_asset_cooking_lib STATIC
 )
 target_include_directories(augusta_asset_cooking_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(augusta_asset_cooking_lib PRIVATE ${PXR_INCLUDE_DIRS})
+# augusta_assets is PUBLIC, not PRIVATE: asset_cooking.h itself includes
+# augusta/assets.h (Cook()'s signing_key parameter is an
+# assets::Ed25519PrivateKey), so a consumer of this library needs
+# augusta_assets' own public include path too, not just this library's.
+target_link_libraries(augusta_asset_cooking_lib PUBLIC augusta_assets)
 target_link_libraries(augusta_asset_cooking_lib PRIVATE
-  augusta_assets
   ${PXR_LIBRARIES}
   meshoptimizer::meshoptimizer
   Microsoft::DirectXTex
 )
 
-# vcpkg's usd port installs each Pxr module's plugInfo.json under a
-# "usd/" subtree next to that module's library (bin/usd for Windows'
-# flat-DLL layout, lib/usd for Linux's .so layout) - OpenUSD's
-# PlugRegistry has no way to find these on its own (no PXR_PLUGINPATH_NAME
-# is set for a caller by default), and without it any pxr:: call that
-# touches the plugin registry (e.g. UsdStage::Open, since opening a stage
-# needs a registered Sdf file format) aborts. cook.cpp points
-# PXR_PLUGINPATH_NAME here itself before making any pxr:: call, using this
-# compile-time-baked path - fine since augusta_asset_cooking never ships
-# outside a full repo checkout (ARCHITECTURE.md "Tooling": offline-only),
-# so there's no "installed elsewhere" case to support.
+# vcpkg's usd port doesn't set PXR_PLUGINPATH_NAME for a caller, so
+# cook.cpp registers this compile-time-baked plugInfo.json path itself
+# before any pxr:: call (see EnsureUsdPluginPathConfigured's own comment
+# for why - ADR-0030).
 if (WIN32)
   set(AUGUSTA_USD_PLUGIN_PATH "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin/usd")
 else()
