@@ -62,6 +62,13 @@ class AssetPipelineTest : public ::testing::Test {
   std::vector<std::filesystem::path> cleanup_;
 };
 
+// mesh_fixture.usda's 2-triangle quad happens to already be in
+// cache-optimal order, so meshopt_optimizeVertexCache/
+// meshopt_optimizeVertexFetch (OptimizeMesh, issue #48) leave its point
+// and index order unchanged and this test's exact-order assertions below
+// stay valid without themselves asserting anything about reordering -
+// OptimizesDuplicateTrianglesFixture below is what exercises the
+// optimizer's actual effect.
 TEST_F(AssetPipelineTest, CooksFixtureMeshAndLoadsItBack) {
   const auto pack_path = MakePackPath("augusta_asset_pipeline_test_mesh.pack");
   const auto keys = augusta::assets::GenerateEd25519KeyPair();
@@ -135,6 +142,46 @@ TEST_F(AssetPipelineTest, CooksFixtureSceneGraphAndLoadsItBack) {
 
   const auto mesh = pack->ResolveMesh("Root/Child");
   EXPECT_TRUE(mesh.has_value());
+}
+
+// duplicate_triangles_fixture.usda authors the same unit quad twice (8
+// points, 4 triangles - the second copy's points exactly coincide with
+// the first's), an as-authored shape no real content-authoring workflow
+// would produce deliberately. Cook() must not pass this through as-is
+// (issue #48/ADR-0016): meshoptimizer's weld pass merges the coincident
+// duplicate vertices down to the 4 geometrically distinct positions -
+// verified empirically against this fixture, not assumed. Welding turns
+// the diagonal edge shared by the two (now-identical) triangle pairs
+// into a non-manifold edge (touched by all 4 triangles at once), which
+// meshopt_simplify's default (non-permissive) options correctly and
+// conservatively decline to collapse rather than risk corrupting the
+// mesh - so the index count stays at the raw 12 while the point count
+// still proves the optimizer isn't a passthrough.
+TEST_F(AssetPipelineTest, OptimizesDuplicateTrianglesFixture) {
+  const auto pack_path = MakePackPath("augusta_asset_pipeline_test_duplicate_triangles.pack");
+  const auto keys = augusta::assets::GenerateEd25519KeyPair();
+
+  const auto report = Cook(FixturePath("duplicate_triangles_fixture.usda"), pack_path, keys.private_key);
+  ASSERT_TRUE(report.has_value());
+  EXPECT_EQ(report->mesh_count, 1U);
+
+  auto pack = Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  const auto mesh = pack->ResolveMesh("TestMesh");
+  ASSERT_TRUE(mesh.has_value());
+
+  // Raw fixture: 8 points, 4 triangles (12 indices).
+  EXPECT_EQ(mesh->points.size(), 4U);
+  EXPECT_EQ(mesh->indices.size(), 12U);
+
+  // Every index must still resolve within the welded point buffer and
+  // describe whole triangles - the mesh must remain valid, not just
+  // smaller.
+  EXPECT_EQ(mesh->indices.size() % 3, 0U);
+  for (auto index : mesh->indices) {
+    EXPECT_LT(index, mesh->points.size());
+  }
 }
 
 // Exercises augusta_assets' own texture-blob encode/resolve seam
