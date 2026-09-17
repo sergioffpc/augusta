@@ -21,3 +21,4 @@ else()
     -Wl,--start-group unofficial::omniverse-physx-sdk::sdk -Wl,--end-group
   )
 endif()
+augusta_set_module_scope(augusta_physics SHARED)

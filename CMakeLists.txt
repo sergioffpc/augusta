@@ -29,23 +29,33 @@ else()
 endif()
 
 find_package(spdlog CONFIG REQUIRED)
-find_package(flecs CONFIG REQUIRED)
-find_package(GameNetworkingSockets CONFIG REQUIRED)
-find_package(unofficial-omniverse-physx-sdk CONFIG REQUIRED)
+
+# flecs/GameNetworkingSockets/PhysX back the client/server shared runtime
+# (ECS worlds, networking transport, physics - ADR-0001/0002/0003); USD/
+# DirectXTex/meshoptimizer back the offline asset-cooking tool
+# (ADR-0015/0016/0017/0030). Independent options rather than one switch,
+# so a single configure can build either, neither, or both - the vcpkg
+# manifest's own "runtime"/"tools" features (vcpkg.json) still gate which
+# of the two dependency sets actually get installed, via
+# VCPKG_MANIFEST_FEATURES on the chosen preset.
+option(AUGUSTA_BUILD_RUNTIME "Build the client/server shared runtime and its modules" ON)
+option(AUGUSTA_BUILD_TOOLS "Build the offline asset-cooking tool (tools/asset-cooking)" OFF)
+if (AUGUSTA_BUILD_RUNTIME)
+  find_package(flecs CONFIG REQUIRED)
+  find_package(GameNetworkingSockets CONFIG REQUIRED)
+  find_package(unofficial-omniverse-physx-sdk CONFIG REQUIRED)
+endif()
 
 # NVTX (github.com/NVIDIA/NVTX) is header-only and not on vcpkg, so it's
-# vendored as a pinned git submodule (third_party/nvtx) like Falcor,
-# rather than fetched. Its own third_party/nvtx/c/CMakeLists.txt is NOT
-# added as a subdirectory: it calls project(nvtx3 ...) with no LANGUAGES,
-# which implicitly also enables C for this whole build (this project is
-# CXX-only, see project() above) and pulls in the compiled nvtxw3-loader
-# static lib, tests, and install rules this repo has no use for - all we
-# actually want is the header-only nvtx3::scoped_range C++ API
-# (nvtx3/nvtx3.hpp and its nvtxDetail/ headers, no .c/.cpp of their own),
-# so a plain INTERFACE target for the include path is the whole
-# integration.
+# vendored as a pinned git submodule (third_party/nvtx) instead. Not
+# added via add_subdirectory: its own CMakeLists.txt pulls in a compiled
+# loader lib, tests, and install rules this repo has no use for - a plain
+# INTERFACE target for the header path is all the nvtx3::scoped_range API
+# actually needs.
 add_library(nvtx3-cpp INTERFACE)
 target_include_directories(nvtx3-cpp INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/nvtx/c/include")
+
+include(cmake/AugustaModule.cmake)
 
 enable_testing()
 find_package(GTest CONFIG REQUIRED)
@@ -54,23 +64,40 @@ find_package(benchmark CONFIG REQUIRED)
 add_subdirectory(src/modules/version)
 add_subdirectory(src/modules/logging)
 add_subdirectory(src/modules/math)
-add_subdirectory(src/modules/physics)
-add_subdirectory(src/modules/ballistics)
-add_subdirectory(src/modules/networking)
-add_subdirectory(src/modules/scripting)
-add_subdirectory(src/modules/audio)
-add_subdirectory(src/modules/input)
-add_subdirectory(src/modules/animation)
-add_subdirectory(src/modules/simulation)
-add_subdirectory(src/modules/prediction)
-add_subdirectory(src/modules/presentation)
-add_subdirectory(src/modules/replication)
-add_subdirectory(src/server)
-if (WIN32)
-  # NVIDIA Falcor (ADR-0009) is Windows-only, so augusta_renderer's real
-  # implementation only builds here - nothing on Linux (only the
-  # WIN32-only client links it) ever needed it in that build graph anyway.
-  add_subdirectory(src/modules/renderer)
-  add_subdirectory(src/client)
+add_subdirectory(src/modules/assets)
+if (AUGUSTA_BUILD_RUNTIME)
+  add_subdirectory(src/modules/physics)
+  add_subdirectory(src/modules/ballistics)
+  add_subdirectory(src/modules/networking)
+  add_subdirectory(src/modules/scripting)
+  add_subdirectory(src/modules/audio)
+  add_subdirectory(src/modules/input)
+  add_subdirectory(src/modules/animation)
+  add_subdirectory(src/modules/simulation)
+  add_subdirectory(src/modules/prediction)
+  add_subdirectory(src/modules/presentation)
+  add_subdirectory(src/modules/replication)
+  add_subdirectory(src/server)
+  if (WIN32)
+    # NVIDIA Falcor (ADR-0009) is Windows-only, so augusta_renderer's real
+    # implementation only builds here - nothing on Linux (only the
+    # WIN32-only client links it) ever needed it in that build graph anyway.
+    add_subdirectory(src/modules/renderer)
+    add_subdirectory(src/client)
+  endif()
 endif()
+
+if (AUGUSTA_BUILD_TOOLS)
+  # Offline authoring-time tooling (ARCHITECTURE.md "Tooling" section) -
+  # not part of the shipped client/server build graph above, kept as its
+  # own target tree under tools/ rather than joining src/'s.
+  add_subdirectory(tools/asset-cooking)
+endif()
+
+# Every module and both runtime targets above have now made their own
+# target_link_libraries() calls, so the client/server module dependency
+# graph is complete - see cmake/AugustaModule.cmake. A no-op when
+# AUGUSTA_BUILD_RUNTIME is OFF, since none of the tagged targets exist.
+augusta_check_module_scopes()
+
 add_subdirectory(tests)

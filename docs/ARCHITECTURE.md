@@ -259,10 +259,12 @@ Damage → Scripts/Behaviours → Commit)
   geometry), validates it with usd-validation-nvidia, then converts it into the
   engine's runtime level format, including Steam Audio baked
   reflection/occlusion data
-- Asset cooker CLI — reads meshes directly from the cleaned OpenUSD stage
-  (ADR-0016), optimizes via meshoptimizer, compresses textures via
-  DirectXTex (BC7/BC5/BC4, DDS), and packages everything into signed,
-  verified pack files (separate client and server packs)
+- Asset cooker CLI (`tools/asset-cooking/`, target `augusta_asset_cooking`,
+  C++ per ADR-0025's meshoptimizer/DirectXTex/OpenUSD vcpkg ports) — reads
+  meshes directly from the cleaned OpenUSD stage (ADR-0016), optimizes via
+  meshoptimizer, compresses textures via DirectXTex (BC7/BC5/BC4, DDS), and
+  packages everything into signed, verified pack files (separate client
+  and server packs). Full ordered pipeline: ADR-0030.
 
 ## 6. Runtime View
 
@@ -292,12 +294,11 @@ v1 gameplay: a Linux dedicated server process and up to 8 Windows client
 processes, on the same LAN/localhost.
 
 Non-production development/test deployment: the server also runs on a
-self-hosted, single-node k3s cluster (developer's own hardware), one
-Kubernetes namespace per environment (`develop` persistent;
-`feature/*`/`hotfix/*`/`release/*` ephemeral, torn down on branch
-delete) — see ENGINEERING.md, Deployment & CD. LAN-only access; this
-removes the need for a separate Linux VM/WSL2 just to run the server
-locally, since k3s now hosts it.
+self-hosted, single-node k3s cluster (developer's own hardware), two fixed,
+long-lived Kubernetes namespaces (`staging` tracks `main`, `develop` tracks
+`develop`) — no per-branch/ephemeral namespaces — see ENGINEERING.md,
+Deployment & CD. LAN-only access; this removes the need for a separate
+Linux VM/WSL2 just to run the server locally, since k3s now hosts it.
 
 Production deployment (`main`) is explicitly out of scope/undecided for
 now.

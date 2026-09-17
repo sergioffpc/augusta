@@ -6,8 +6,25 @@
     "gtest",
     "benchmark",
     "glm",
-    "flecs",
-    "gamenetworkingsockets",
-    "physx"
-  ]
+    "blake3",
+    "libsodium"
+  ],
+  "features": {
+    "runtime": {
+      "description": "Client/server shared runtime (ECS worlds, networking transport, physics) - ADR-0001, ADR-0002, ADR-0003, ADR-0006. Not needed to build the offline asset-cooking tool alone.",
+      "dependencies": [
+        "flecs",
+        "gamenetworkingsockets",
+        "physx"
+      ]
+    },
+    "tools": {
+      "description": "Offline asset-cooking tool (tools/asset-cooking) - ADR-0015, ADR-0016, ADR-0017, ADR-0030. Not needed by the client or server runtime.",
+      "dependencies": [
+        "usd",
+        "meshoptimizer",
+        "directxtex"
+      ]
+    }
+  }
 }

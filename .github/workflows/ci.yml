@@ -24,6 +24,7 @@ jobs:
     outputs:
       run_build: ${{ steps.filter.outputs.run_build }}
       run_container: ${{ steps.filter.outputs.run_container }}
+      run_tools: ${{ steps.filter.outputs.run_tools }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -40,13 +41,14 @@ jobs:
           if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
             echo "run_container=true" >> "$GITHUB_OUTPUT"
+            echo "run_tools=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           changed="$(git diff --name-only "$base" "${{ github.sha }}")"
 
           if echo "$changed" \
-              | grep -qE '^(src/|tests/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party$|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$)'; then
+              | grep -qE '^(src/|tests/|tools/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party$|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$)'; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
@@ -57,6 +59,17 @@ jobs:
             echo "run_container=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_container=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Only the slice of the tree the cooker/pack format/its tests
+          # actually touch - not every src/ change (unlike run_build
+          # above), so a normal client/server PR doesn't pay OpenUSD's
+          # install cost.
+          if echo "$changed" \
+              | grep -qE '^(tools/asset-cooking/|src/modules/assets/|tests/asset_pipeline_test\.cpp$|tests/fixtures/|vcpkg\.json$|CMakeLists\.txt$|CMakePresets\.json$|\.github/workflows/ci\.yml$)'; then
+            echo "run_tools=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_tools=false" >> "$GITHUB_OUTPUT"
           fi
 
   format:
@@ -70,7 +83,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y clang-format
 
       - name: Check formatting
-        run: find src tests \( -name '*.cpp' -o -name '*.h' \) | xargs clang-format --dry-run --Werror
+        run: find src tests tools \( -name '*.cpp' -o -name '*.h' \) | xargs clang-format --dry-run --Werror
 
   build-client:
     needs: [changes, format]
@@ -127,6 +140,11 @@ jobs:
           & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
 
       - name: Configure
+        # AUGUSTA_BUILD_RUNTIME defaults to ON (the windows preset's own
+        # default), building the client/server runtime - the offline
+        # cooker (tools/) is a separate, independent build (see the root
+        # CMakeLists.txt's AUGUSTA_BUILD_TOOLS option), covered by
+        # this workflow's own build-tools job instead, not built here.
         run: cmake --preset windows
         shell: pwsh
 
@@ -162,7 +180,11 @@ jobs:
           submodules: true
 
       - name: Install clang-tidy
-        run: sudo apt-get update && sudo apt-get install -y clang-tidy ninja-build
+        # autoconf/autoconf-archive/automake/libtool: vcpkg's libsodium port
+        # builds via autotools on Linux (vcpkg_run_autoreconf) and needs
+        # these from the system package manager - not bundled with vcpkg
+        # itself.
+        run: sudo apt-get update && sudo apt-get install -y clang-tidy ninja-build autoconf autoconf-archive automake libtool
 
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
 
@@ -178,6 +200,10 @@ jobs:
         run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
 
       - name: Configure
+        # AUGUSTA_BUILD_RUNTIME defaults to ON (builds augustad's
+        # runtime); the offline cooker (tools/) isn't built here (see
+        # this workflow's own build-tools job) or shipped in the
+        # server image (Dockerfile) either way.
         run: cmake --preset linux
 
       - name: Lint (clang-tidy)
@@ -198,6 +224,65 @@ jobs:
       - name: Test
         run: ctest --preset linux
 
+  build-tools:
+    needs: [changes, format]
+    if: needs.changes.outputs.run_tools == 'true'
+    # Windows-2025, same as build-client/release.yml's build-tools: the
+    # cooker needs MSVC + OpenUSD, and this is the same authoring-
+    # workstation OS the rest of the content-authoring toolchain
+    # (Omniverse USD Composer, ADR-0015) targets. ENGINEERING.md's own
+    # "Asset pipeline check" (stage 6) is this job: build the cooker, sign
+    # with a fresh throwaway keypair, verify the signed pack loads end to
+    # end - done by augusta_asset_pipeline_tests itself (it generates its
+    # own in-process keypair per test, see tests/asset_pipeline_test.cpp),
+    # not by shelling out to the CLI.
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+
+      - name: Install Ninja and LLVM (clang-tidy)
+        run: choco install ninja llvm -y
+        shell: pwsh
+
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Configure vcpkg NuGet cache
+        shell: pwsh
+        run: |
+          $nugetPath = & ".\third_party\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
+          & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
+          & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
+
+      - name: Configure
+        run: cmake --preset windows-tools
+        shell: pwsh
+
+      - name: Lint (clang-tidy)
+        # This is a Windows configure, so tools/ actually has a
+        # compile_commands.json entry here (unlike build-server's Linux
+        # configure, which never builds tools/ at all).
+        run: Get-ChildItem -Path tools -Recurse -Include *.cpp | ForEach-Object { clang-tidy -p build/x64-windows-tools $_.FullName }
+        shell: pwsh
+
+      - name: Build
+        run: cmake --build --preset windows-tools --target augusta_asset_cooking augusta_asset_pipeline_tests
+
+      - name: Test
+        # -R scopes this to the asset pipeline tests this job actually
+        # builds (see the Build step above) - tests/CMakeLists.txt still
+        # unconditionally registers augusta_version_tests with CTest even
+        # on this tools-only configure, and an unfiltered `ctest` here
+        # would fail on it as "augusta_version_tests_NOT_BUILT".
+        run: ctest --preset windows-tools -R 'AssetPipelineTest|PackLoadNegativeTest'
+
   sanitizers:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true' && github.event_name == 'pull_request'
@@ -210,6 +295,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
+
+      - name: Install build tools
+        # Same reasoning as build-server: the linux-san preset also uses the
+        # Ninja generator, and vcpkg's libsodium port needs the autotools
+        # toolchain from the system package manager to build from source.
+        run: sudo apt-get update && sudo apt-get install -y ninja-build autoconf autoconf-archive automake libtool
 
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
 
@@ -234,8 +325,14 @@ jobs:
         run: ctest --preset linux-san
 
   container:
-    needs: changes
-    if: needs.changes.outputs.run_container == 'true'
+    needs: [changes, build-server]
+    # build-server only runs when run_build is true (see changes above), so
+    # a skipped result there is fine - only an actual failure should block
+    # the image build.
+    if: |
+      always() &&
+      needs.changes.outputs.run_container == 'true' &&
+      (needs.build-server.result == 'success' || needs.build-server.result == 'skipped')
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

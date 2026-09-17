@@ -16,6 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       tar \
       pkg-config \
       ca-certificates \
+      autoconf \
+      autoconf-archive \
+      automake \
+      libtool \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
@@ -24,12 +28,19 @@ WORKDIR /workspace
 # changes, so it's copied and run first to keep that layer cached across
 # src/ edits.
 COPY third_party/vcpkg third_party/vcpkg
+COPY cmake cmake
 COPY vcpkg.json CMakeLists.txt CMakePresets.json ./
 RUN ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
 
 COPY src src
 COPY tests tests
 
+# AUGUSTA_BUILD_RUNTIME defaults to ON (the linux preset's own default),
+# which builds augustad's runtime and is mutually exclusive with the
+# offline cooker (ARCHITECTURE.md "Tooling" section - see the root
+# CMakeLists.txt's AUGUSTA_BUILD_RUNTIME else() branch), which pulls in
+# vcpkg deps (USD, DirectXTex) augustad never needs - tools/ isn't even
+# COPYed into this build context.
 RUN cmake --preset linux
 RUN cmake --build --preset linux --target augustad
 

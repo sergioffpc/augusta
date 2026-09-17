@@ -7,8 +7,9 @@ target_link_libraries(augustac_runtime
   # nvtx3-cpp (third_party/nvtx, see the root CMakeLists.txt) is
   # header-only - runtime.cpp uses it to name the Main/Render,
   # Simulation, and Network I/O thread loops for Nsight Systems.
-  PRIVATE augusta_logging nvtx3-cpp
+  PRIVATE augusta_assets augusta_logging nvtx3-cpp
 )
+augusta_set_module_scope(augustac_runtime CLIENT_ONLY)
 
 add_executable(augustac main.cpp)
 target_link_libraries(augustac PRIVATE augusta_version augusta_logging augusta_networking augustac_runtime)

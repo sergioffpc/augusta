@@ -23,7 +23,10 @@ jobs:
           submodules: true
 
       - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+        # autoconf/autoconf-archive/automake/libtool: see ci.yml's
+        # build-server - vcpkg's libsodium port needs these to build via
+        # autotools on Linux.
+        run: sudo apt-get update && sudo apt-get install -y ninja-build autoconf autoconf-archive automake libtool
 
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
 
