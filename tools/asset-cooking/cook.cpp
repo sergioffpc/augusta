@@ -1,3 +1,4 @@
+#include <meshoptimizer.h>
 #include <pxr/base/gf/matrix4d.h>
 #include <pxr/base/gf/quatd.h>
 #include <pxr/base/gf/rotation.h>
@@ -191,6 +192,73 @@ std::expected<std::vector<std::uint32_t>, CookErrorDetail> ReadIndices(const pxr
   return indices;
 }
 
+// meshoptimizer pass (ADR-0016: vertex cache optimization, simplification,
+// quantization) - turns the as-authored read into GPU-ready data rather
+// than a passthrough of the source mesh. MeshData has no per-vertex
+// attributes beyond position yet, so vertex identity here is position
+// identity.
+void OptimizeMesh(assets::MeshData& mesh) {
+  const std::size_t vertex_count = mesh.points.size();
+  const std::size_t index_count = mesh.indices.size();
+  if (vertex_count == 0 || index_count == 0) {
+    return;
+  }
+
+  // Weld vertices that share the exact same position first - every later
+  // pass assumes the vertex buffer has no redundant entries, and authored
+  // content routinely has coincident points from mirrored/merged geometry.
+  std::vector<unsigned int> remap(vertex_count);
+  const std::size_t unique_vertex_count = meshopt_generateVertexRemap(
+      remap.data(), mesh.indices.data(), index_count, mesh.points.data(), vertex_count, sizeof(math::Vec3));
+
+  std::vector<std::uint32_t> welded_indices(index_count);
+  meshopt_remapIndexBuffer(welded_indices.data(), mesh.indices.data(), index_count, remap.data());
+
+  std::vector<math::Vec3> welded_points(unique_vertex_count);
+  meshopt_remapVertexBuffer(welded_points.data(), mesh.points.data(), vertex_count, sizeof(math::Vec3), remap.data());
+
+  mesh.indices = std::move(welded_indices);
+  mesh.points = std::move(welded_points);
+
+  // Collapse degenerate/redundant triangles (e.g. the duplicate faces
+  // welding above can expose) within a tight 1%-of-extents error budget -
+  // conservative enough to leave legitimate detail alone, unlike a target
+  // triangle-count ratio that would decimate every mesh uniformly.
+  // target_index_count 0 means "simplify as far as target_error allows".
+  std::vector<std::uint32_t> simplified_indices(mesh.indices.size());
+  float simplify_error = 0.0F;
+  const std::size_t simplified_index_count =
+      meshopt_simplify(simplified_indices.data(), mesh.indices.data(), mesh.indices.size(),
+                       reinterpret_cast<const float*>(mesh.points.data()), mesh.points.size(), sizeof(math::Vec3),
+                       /*target_index_count=*/0, /*target_error=*/0.01F, /*options=*/0, &simplify_error);
+  simplified_indices.resize(simplified_index_count);
+  mesh.indices = std::move(simplified_indices);
+
+  // Vertex cache optimization: reorder indices for GPU post-transform
+  // cache locality, without touching the vertex buffer.
+  meshopt_optimizeVertexCache(mesh.indices.data(), mesh.indices.data(), mesh.indices.size(), mesh.points.size());
+
+  // Vertex fetch optimization: reorder the vertex buffer itself (indices
+  // are remapped in place to match) for cache-friendly fetch order.
+  std::vector<math::Vec3> fetch_optimized_points(mesh.points.size());
+  const std::size_t fetch_vertex_count =
+      meshopt_optimizeVertexFetch(fetch_optimized_points.data(), mesh.indices.data(), mesh.indices.size(),
+                                  mesh.points.data(), mesh.points.size(), sizeof(math::Vec3));
+  fetch_optimized_points.resize(fetch_vertex_count);
+  mesh.points = std::move(fetch_optimized_points);
+
+  // Quantization: snap each position component to a limited mantissa
+  // precision (meshopt_quantizeFloat) - reduces stored-value entropy for
+  // later compression without changing the pack's on-disk vertex format,
+  // which stays plain float32 (ADR-0031, EncodeMeshBlob).
+  constexpr int kQuantizationMantissaBits = 12;
+  for (math::Vec3& point : mesh.points) {
+    point.x = meshopt_quantizeFloat(point.x, kQuantizationMantissaBits);
+    point.y = meshopt_quantizeFloat(point.y, kQuantizationMantissaBits);
+    point.z = meshopt_quantizeFloat(point.z, kQuantizationMantissaBits);
+  }
+}
+
 std::expected<assets::MeshData, CookErrorDetail> ReadMesh(const pxr::UsdGeomMesh& mesh, const std::string& prim_path) {
   pxr::VtArray<int> face_vertex_counts;
   pxr::VtArray<pxr::GfVec3f> usd_points;
@@ -219,6 +287,8 @@ std::expected<assets::MeshData, CookErrorDetail> ReadMesh(const pxr::UsdGeomMesh
     return std::unexpected(indices.error());
   }
   mesh_data.indices = std::move(*indices);
+
+  OptimizeMesh(mesh_data);
 
   return mesh_data;
 }
