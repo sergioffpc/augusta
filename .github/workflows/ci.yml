@@ -127,9 +127,12 @@ jobs:
           & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
 
       - name: Configure
-        # AUGUSTA_BUILD_ASSET_COOKING=OFF: the offline cooker (tools/) is
-        # validated by its own build-tools job below, not here.
-        run: cmake --preset windows -DAUGUSTA_BUILD_ASSET_COOKING=OFF
+        # AUGUSTA_BUILD_RUNTIME defaults to ON (the windows preset's own
+        # default) which builds the client/server runtime - the offline
+        # cooker (tools/) is mutually exclusive with it (see the root
+        # CMakeLists.txt's AUGUSTA_BUILD_RUNTIME else() branch) and is
+        # validated by its own build-tools job below instead.
+        run: cmake --preset windows
         shell: pwsh
 
       - name: Build
@@ -180,10 +183,12 @@ jobs:
         run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
 
       - name: Configure
-        # AUGUSTA_BUILD_ASSET_COOKING=OFF: the offline cooker (tools/) is
-        # validated by its own build-tools job below, and the server image
-        # (see Dockerfile) never ships it either.
-        run: cmake --preset linux -DAUGUSTA_BUILD_ASSET_COOKING=OFF
+        # AUGUSTA_BUILD_RUNTIME defaults to ON (builds augustad's runtime)
+        # and is mutually exclusive with the offline cooker (tools/) - see
+        # the root CMakeLists.txt's AUGUSTA_BUILD_RUNTIME else() branch -
+        # which is validated by its own build-tools job below instead, and
+        # which the server image (see Dockerfile) never ships either way.
+        run: cmake --preset linux
 
       - name: Lint (clang-tidy)
         # src/client and src/modules/renderer are Windows-only (CMakeLists.txt
@@ -209,9 +214,14 @@ jobs:
     # Offline authoring tooling (tools/asset-cooking, ARCHITECTURE.md
     # "Tooling" section) - built and tested on its own, scoped to just the
     # cooker targets, so its build time stays out of build-client/
-    # build-server above. Windows, not Linux: this is the same authoring
-    # workstation OS the rest of the content-authoring toolchain
-    # (Omniverse USD Composer, ADR-0015) targets.
+    # build-server above. The windows-tools preset (CMakePresets.json)
+    # sets AUGUSTA_BUILD_RUNTIME=OFF and narrows VCPKG_MANIFEST_FEATURES
+    # to just "tools", so this job's vcpkg install skips
+    # flecs/GameNetworkingSockets/PhysX entirely - it never needs the
+    # client/server runtime to build or test the cooker. Windows, not
+    # Linux: this is the same authoring workstation OS the rest of the
+    # content-authoring toolchain (Omniverse USD Composer, ADR-0015)
+    # targets.
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -238,14 +248,14 @@ jobs:
           & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
 
       - name: Configure
-        run: cmake --preset windows
+        run: cmake --preset windows-tools
         shell: pwsh
 
       - name: Build
-        run: cmake --build --preset windows --target augusta_asset_cooking augusta_asset_pipeline_tests
+        run: cmake --build --preset windows-tools --target augusta_asset_cooking augusta_asset_pipeline_tests
 
       - name: Test
-        run: ctest --preset windows -R '^AssetPipelineTest\.'
+        run: ctest --preset windows-tools -R '^AssetPipelineTest\.'
 
   sanitizers:
     needs: [changes, format]

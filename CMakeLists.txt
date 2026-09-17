@@ -29,9 +29,19 @@ else()
 endif()
 
 find_package(spdlog CONFIG REQUIRED)
-find_package(flecs CONFIG REQUIRED)
-find_package(GameNetworkingSockets CONFIG REQUIRED)
-find_package(unofficial-omniverse-physx-sdk CONFIG REQUIRED)
+
+# flecs/GameNetworkingSockets/PhysX back the client/server shared runtime
+# (ECS worlds, networking transport, physics - ADR-0001/0002/0003) - not
+# needed to build the offline asset-cooking tool alone (see
+# AUGUSTA_BUILD_RUNTIME's else() branch further down), so a tools-only
+# configure (the windows-tools preset) skips requiring and installing
+# them, via the vcpkg manifest's own "runtime" feature (vcpkg.json).
+option(AUGUSTA_BUILD_RUNTIME "Build the client/server shared runtime and its modules, rather than the offline asset-cooking tool" ON)
+if (AUGUSTA_BUILD_RUNTIME)
+  find_package(flecs CONFIG REQUIRED)
+  find_package(GameNetworkingSockets CONFIG REQUIRED)
+  find_package(unofficial-omniverse-physx-sdk CONFIG REQUIRED)
+endif()
 
 # NVTX (github.com/NVIDIA/NVTX) is header-only and not on vcpkg, so it's
 # vendored as a pinned git submodule (third_party/nvtx) like Falcor,
@@ -57,42 +67,44 @@ add_subdirectory(src/modules/version)
 add_subdirectory(src/modules/logging)
 add_subdirectory(src/modules/math)
 add_subdirectory(src/modules/assets)
-add_subdirectory(src/modules/physics)
-add_subdirectory(src/modules/ballistics)
-add_subdirectory(src/modules/networking)
-add_subdirectory(src/modules/scripting)
-add_subdirectory(src/modules/audio)
-add_subdirectory(src/modules/input)
-add_subdirectory(src/modules/animation)
-add_subdirectory(src/modules/simulation)
-add_subdirectory(src/modules/prediction)
-add_subdirectory(src/modules/presentation)
-add_subdirectory(src/modules/replication)
-add_subdirectory(src/server)
-if (WIN32)
-  # NVIDIA Falcor (ADR-0009) is Windows-only, so augusta_renderer's real
-  # implementation only builds here - nothing on Linux (only the
-  # WIN32-only client links it) ever needed it in that build graph anyway.
-  add_subdirectory(src/modules/renderer)
-  add_subdirectory(src/client)
+if (AUGUSTA_BUILD_RUNTIME)
+  add_subdirectory(src/modules/physics)
+  add_subdirectory(src/modules/ballistics)
+  add_subdirectory(src/modules/networking)
+  add_subdirectory(src/modules/scripting)
+  add_subdirectory(src/modules/audio)
+  add_subdirectory(src/modules/input)
+  add_subdirectory(src/modules/animation)
+  add_subdirectory(src/modules/simulation)
+  add_subdirectory(src/modules/prediction)
+  add_subdirectory(src/modules/presentation)
+  add_subdirectory(src/modules/replication)
+  add_subdirectory(src/server)
+  if (WIN32)
+    # NVIDIA Falcor (ADR-0009) is Windows-only, so augusta_renderer's real
+    # implementation only builds here - nothing on Linux (only the
+    # WIN32-only client links it) ever needed it in that build graph anyway.
+    add_subdirectory(src/modules/renderer)
+    add_subdirectory(src/client)
+  endif()
+else()
+  # Offline authoring-time tooling (ARCHITECTURE.md "Tooling" section) -
+  # not part of the shipped client/server build graph above, kept as its
+  # own target tree under tools/ rather than joining src/'s. Mutually
+  # exclusive with the runtime above rather than a separate on/off switch
+  # of its own: the cooker pulls in authoring-only vcpkg dependencies
+  # (USD, DirectXTex, meshoptimizer - the manifest's own "tools" feature,
+  # vcpkg.json) that augustac/augustad never need, and vice versa
+  # (flecs/GameNetworkingSockets/PhysX, the "runtime" feature) - see the
+  # windows-tools preset (CMakePresets.json), which sets
+  # AUGUSTA_BUILD_RUNTIME=OFF to land here instead.
+  add_subdirectory(tools/asset-cooking)
 endif()
 
 # Every module and both runtime targets above have now made their own
 # target_link_libraries() calls, so the client/server module dependency
-# graph is complete - see cmake/AugustaModule.cmake.
+# graph is complete - see cmake/AugustaModule.cmake. A no-op when
+# AUGUSTA_BUILD_RUNTIME is OFF, since none of the tagged targets exist.
 augusta_check_module_scopes()
-
-# Offline authoring-time tooling (ARCHITECTURE.md "Tooling" section) - not
-# part of the shipped client/server build graph above, kept as its own
-# target tree under tools/ rather than joining src/'s. Added before
-# tests/ below, since the asset-pipeline integration test links
-# augusta_asset_cooking_lib directly. Off by default for a server-only
-# build (see Dockerfile): the cooker pulls in authoring-only vcpkg
-# dependencies (USD, DirectXTex) that augustad never needs, and the
-# server image doesn't even COPY tools/ into its build context.
-option(AUGUSTA_BUILD_ASSET_COOKING "Build the offline asset-cooking tool and its tests" ON)
-if (AUGUSTA_BUILD_ASSET_COOKING)
-  add_subdirectory(tools/asset-cooking)
-endif()
 
 add_subdirectory(tests)
