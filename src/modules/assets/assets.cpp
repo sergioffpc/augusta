@@ -43,8 +43,8 @@ void AppendF32(std::vector<std::byte>& buf, float value) {
 }
 
 void AppendChars(std::vector<std::byte>& buf, std::string_view chars) {
-  for (char c : chars) {
-    buf.push_back(static_cast<std::byte>(static_cast<unsigned char>(c)));
+  for (char chr : chars) {
+    buf.push_back(static_cast<std::byte>(static_cast<unsigned char>(chr)));
   }
 }
 
@@ -131,13 +131,13 @@ std::optional<MeshData> DecodeMeshBlob(std::span<const std::byte> blob) {
   // get a chance to reject a corrupt or truncated blob.
   MeshData mesh;
   for (std::uint32_t i = 0; i < *point_count; ++i) {
-    const auto x = reader.ReadF32();
-    const auto y = reader.ReadF32();
-    const auto z = reader.ReadF32();
-    if (!x || !y || !z) {
+    const auto pos_x = reader.ReadF32();
+    const auto pos_y = reader.ReadF32();
+    const auto pos_z = reader.ReadF32();
+    if (!pos_x || !pos_y || !pos_z) {
       return std::nullopt;
     }
-    mesh.points.emplace_back(*x, *y, *z);
+    mesh.points.emplace_back(*pos_x, *pos_y, *pos_z);
   }
 
   const auto index_count = reader.ReadU32();
@@ -162,6 +162,94 @@ struct IndexEntry {
   std::uint64_t offset;
   std::uint64_t size;
 };
+
+struct PackHeader {
+  std::uint64_t index_offset;
+  std::uint32_t index_count;
+};
+
+std::expected<std::vector<std::byte>, LoadError> ReadPackBytes(const std::filesystem::path& path) {
+  std::error_code file_error;
+  const auto file_size = std::filesystem::file_size(path, file_error);
+  if (file_error) {
+    return std::unexpected(LoadError::kIoError);
+  }
+
+  std::ifstream file(path, std::ios::binary);
+  if (!file) {
+    return std::unexpected(LoadError::kIoError);
+  }
+  std::vector<std::byte> bytes(file_size);
+  file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+  if (!file) {
+    return std::unexpected(LoadError::kIoError);
+  }
+  return bytes;
+}
+
+std::expected<PackHeader, LoadError> ParsePackHeader(std::span<const std::byte> bytes) {
+  ByteReader header_reader(bytes);
+  const auto magic = header_reader.ReadBytes(kMagic.size());
+  if (!magic || std::memcmp(magic->data(), kMagic.data(), kMagic.size()) != 0) {
+    return std::unexpected(LoadError::kBadMagic);
+  }
+
+  const auto version = header_reader.ReadU32();
+  if (!version) {
+    return std::unexpected(LoadError::kTruncated);
+  }
+  if (*version != kFormatVersion) {
+    return std::unexpected(LoadError::kUnsupportedVersion);
+  }
+
+  const auto data_offset = header_reader.ReadU64();
+  const auto index_offset = header_reader.ReadU64();
+  const auto index_count = header_reader.ReadU32();
+  if (!data_offset || !index_offset || !index_count) {
+    return std::unexpected(LoadError::kTruncated);
+  }
+  // The data section always starts immediately after the header
+  // (WritePack never writes it anywhere else) - a header claiming
+  // otherwise is internally inconsistent, not just short.
+  if (*data_offset != kHeaderSize) {
+    return std::unexpected(LoadError::kTruncated);
+  }
+  if (*index_offset > bytes.size()) {
+    return std::unexpected(LoadError::kTruncated);
+  }
+
+  return PackHeader{.index_offset = *index_offset, .index_count = *index_count};
+}
+
+std::expected<std::vector<IndexEntry>, LoadError> ParsePackIndex(std::span<const std::byte> bytes,
+                                                                 std::uint64_t index_offset,
+                                                                 std::uint32_t index_count) {
+  // No reserve() here either, for the same reason as DecodeMeshBlob's -
+  // index_count is still just an untrusted header field at this point.
+  ByteReader index_reader{std::span(bytes).subspan(index_offset)};
+  std::vector<IndexEntry> index;
+  for (std::uint32_t i = 0; i < index_count; ++i) {
+    const auto type = index_reader.ReadU8();
+    const auto path_length = index_reader.ReadU32();
+    if (!type || !path_length) {
+      return std::unexpected(LoadError::kTruncated);
+    }
+    const auto path_bytes = index_reader.ReadBytes(*path_length);
+    const auto offset = index_reader.ReadU64();
+    const auto size = index_reader.ReadU64();
+    if (!path_bytes || !offset || !size) {
+      return std::unexpected(LoadError::kTruncated);
+    }
+    if (*offset > bytes.size() || *size > bytes.size() - *offset) {
+      return std::unexpected(LoadError::kTruncated);
+    }
+
+    std::string entry_path(reinterpret_cast<const char*>(path_bytes->data()), path_bytes->size());
+    index.push_back(IndexEntry{
+        .type = static_cast<AssetType>(*type), .path = std::move(entry_path), .offset = *offset, .size = *size});
+  }
+  return index;
+}
 
 }  // namespace
 
@@ -243,92 +331,37 @@ Pack& Pack::operator=(Pack&&) noexcept = default;
 Pack::~Pack() = default;
 
 std::expected<Pack, LoadError> Pack::Load(const std::filesystem::path& path) {
-  std::error_code ec;
-  const auto file_size = std::filesystem::file_size(path, ec);
-  if (ec) {
-    return std::unexpected(LoadError::kIoError);
+  auto bytes = ReadPackBytes(path);
+  if (!bytes) {
+    return std::unexpected(bytes.error());
   }
 
-  std::ifstream in(path, std::ios::binary);
-  if (!in) {
-    return std::unexpected(LoadError::kIoError);
-  }
-  std::vector<std::byte> bytes(file_size);
-  in.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-  if (!in) {
-    return std::unexpected(LoadError::kIoError);
+  const auto header = ParsePackHeader(*bytes);
+  if (!header) {
+    return std::unexpected(header.error());
   }
 
-  ByteReader header_reader(bytes);
-  const auto magic = header_reader.ReadBytes(kMagic.size());
-  if (!magic || std::memcmp(magic->data(), kMagic.data(), kMagic.size()) != 0) {
-    return std::unexpected(LoadError::kBadMagic);
-  }
-
-  const auto version = header_reader.ReadU32();
-  if (!version) {
-    return std::unexpected(LoadError::kTruncated);
-  }
-  if (*version != kFormatVersion) {
-    return std::unexpected(LoadError::kUnsupportedVersion);
-  }
-
-  const auto data_offset = header_reader.ReadU64();
-  const auto index_offset = header_reader.ReadU64();
-  const auto index_count = header_reader.ReadU32();
-  if (!data_offset || !index_offset || !index_count) {
-    return std::unexpected(LoadError::kTruncated);
-  }
-  // The data section always starts immediately after the header
-  // (WritePack never writes it anywhere else) - a header claiming
-  // otherwise is internally inconsistent, not just short.
-  if (*data_offset != kHeaderSize) {
-    return std::unexpected(LoadError::kTruncated);
-  }
-  if (*index_offset > bytes.size()) {
-    return std::unexpected(LoadError::kTruncated);
-  }
-
-  // No reserve() here either, for the same reason as DecodeMeshBlob's -
-  // *index_count is still just an untrusted header field at this point.
-  ByteReader index_reader(std::span(bytes).subspan(*index_offset));
-  std::vector<IndexEntry> index;
-  for (std::uint32_t i = 0; i < *index_count; ++i) {
-    const auto type = index_reader.ReadU8();
-    const auto path_length = index_reader.ReadU32();
-    if (!type || !path_length) {
-      return std::unexpected(LoadError::kTruncated);
-    }
-    const auto path_bytes = index_reader.ReadBytes(*path_length);
-    const auto offset = index_reader.ReadU64();
-    const auto size = index_reader.ReadU64();
-    if (!path_bytes || !offset || !size) {
-      return std::unexpected(LoadError::kTruncated);
-    }
-    if (*offset > bytes.size() || *size > bytes.size() - *offset) {
-      return std::unexpected(LoadError::kTruncated);
-    }
-
-    std::string entry_path(reinterpret_cast<const char*>(path_bytes->data()), path_bytes->size());
-    index.push_back(IndexEntry{static_cast<AssetType>(*type), std::move(entry_path), *offset, *size});
+  auto index = ParsePackIndex(*bytes, header->index_offset, header->index_count);
+  if (!index) {
+    return std::unexpected(index.error());
   }
 
   Pack pack;
-  pack.impl_ = std::make_unique<Impl>(std::move(bytes), std::move(index));
+  pack.impl_ = std::make_unique<Impl>(std::move(*bytes), std::move(*index));
   return pack;
 }
 
 std::expected<MeshData, ResolveError> Pack::ResolveMesh(std::string_view path) const {
-  const auto it = std::find_if(impl_->index.begin(), impl_->index.end(),
-                               [&](const IndexEntry& entry) { return entry.path == path; });
-  if (it == impl_->index.end()) {
+  const auto match = std::find_if(impl_->index.begin(), impl_->index.end(),
+                                  [&](const IndexEntry& entry) { return entry.path == path; });
+  if (match == impl_->index.end()) {
     return std::unexpected(ResolveError::kNotFound);
   }
-  if (it->type != AssetType::kMesh) {
+  if (match->type != AssetType::kMesh) {
     return std::unexpected(ResolveError::kTypeMismatch);
   }
 
-  const std::span<const std::byte> blob(impl_->bytes.data() + it->offset, it->size);
+  const std::span<const std::byte> blob(impl_->bytes.data() + match->offset, match->size);
   auto mesh = DecodeMeshBlob(blob);
   if (!mesh) {
     return std::unexpected(ResolveError::kCorruptBlob);
