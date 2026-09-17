@@ -283,8 +283,14 @@ jobs:
         run: ctest --preset linux-san
 
   container:
-    needs: changes
-    if: needs.changes.outputs.run_container == 'true'
+    needs: [changes, build-server]
+    # build-server only runs when run_build is true (see changes above), so
+    # a skipped result there is fine - only an actual failure should block
+    # the image build.
+    if: |
+      always() &&
+      needs.changes.outputs.run_container == 'true' &&
+      (needs.build-server.result == 'success' || needs.build-server.result == 'skipped')
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
