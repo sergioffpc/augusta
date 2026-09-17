@@ -12,22 +12,16 @@ if (WIN32)
   # subdirectory, ...), which would resolve to *this* repo's root instead
   # of Falcor's own if embedded, breaking its build. Instead it's built
   # standalone via its own CMakePresets.json preset -
-  # "windows-ninja-msvc-augusta", added by cmake/patches/falcor-augusta.patch
+  # "windows-ninja-msvc-augusta", added by cmake/patches/falcor.patch
   # (ADR-0009 anticipated needing a small patch to the vendored copy; see
   # cmake/patches/ for augusta's own third-party patches/overrides generally),
   # which pins CMAKE_POLICY_VERSION_MINIMUM for its vendored (old) pybind11
   # copy against newer CMake, and turns on CMAKE_EXPORT_COMPILE_COMMANDS so
   # the exact flags below could be lifted verbatim from a real,
-  # verified-working compile of a Falcor sample. The same patch also
-  # retunes Source/Falcor/Utils/Timing/ProfilerUI.{h,cpp}'s HUD-only
-  # defaults (graph on/CPU time/no averaging, bright shades-of-green event
-  # palette) per the user's request - those two fields/that palette are
-  # private to ProfilerUI with no public setter, so there's no way to
-  # reach them from augusta's own code without this. The submodule
-  # checkout itself stays a pristine, unmodified upstream commit - the
-  # patch is applied fresh (over a hard reset covering every file it
-  # touches, so this is idempotent across reconfigures) rather than
-  # committed into it.
+  # verified-working compile of a Falcor sample. The submodule checkout
+  # itself stays a pristine, unmodified upstream commit - the patch is
+  # applied fresh (over a hard reset covering every file it touches, so
+  # this is idempotent across reconfigures) rather than committed into it.
   find_package(Git REQUIRED)
 
   set(FALCOR_DIR ${CMAKE_SOURCE_DIR}/third_party/falcor)
@@ -102,9 +96,16 @@ if (WIN32)
   set(FALCOR_STAMP ${CMAKE_CURRENT_BINARY_DIR}/falcor.stamp)
   add_custom_command(
     OUTPUT ${FALCOR_STAMP}
+    # tools-dependencies.xml doesn't exist upstream - falcor.patch's own
+    # last hunk creates it fresh (a git-apply "new file" diff) rather than
+    # this being a copy_if_different of a file kept alongside the patch,
+    # so it has to be removed before every re-apply the same way the
+    # checkout below resets the patch's other, tracked-file hunks:
+    # `git apply` refuses to recreate a file that's already sitting there
+    # untracked from the previous run.
+    COMMAND ${CMAKE_COMMAND} -E rm -f ${FALCOR_DIR}/tools-dependencies.xml
     COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} checkout -- CMakeLists.txt CMakePresets.json
-      Source/Falcor/Utils/Timing/ProfilerUI.h Source/Falcor/Utils/Timing/ProfilerUI.cpp
-    COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} apply ${CMAKE_SOURCE_DIR}/cmake/patches/falcor-augusta.patch
+    COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} apply ${CMAKE_SOURCE_DIR}/cmake/patches/falcor.patch
     # windows-ninja-msvc-base's CMAKE_MAKE_PROGRAM points at
     # tools/.packman/ninja/ninja.exe, needed immediately by project() - but
     # Falcor's own root CMakeLists.txt only pulls packman dependencies
@@ -116,13 +117,14 @@ if (WIN32)
     # against its own immediately-preceding run for at least that entry
     # ("Link ... cannot be created because it already exists as a
     # different type of file"). Pulling only the tools/.packman/* entries
-    # here - via a copy of dependencies.xml's own <dependency name="tools_*">
-    # elements (cmake/patches/falcor-tools-dependencies.xml) - satisfies
-    # project()'s immediate need without ever touching external/packman/*
-    # twice. packman resolves each entry's linkPath relative to the
-    # project file's own location, so the copy has to land inside
-    # ${FALCOR_DIR} for tools/.packman/ninja to end up in the right place.
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/cmake/patches/falcor-tools-dependencies.xml ${FALCOR_DIR}/tools-dependencies.xml
+    # here - via the tools-dependencies.xml the git apply above just
+    # created, itself just dependencies.xml's own
+    # <dependency name="tools_*"> elements - satisfies project()'s
+    # immediate need without ever touching external/packman/* twice.
+    # packman resolves each entry's linkPath relative to the project
+    # file's own location, so it has to actually live inside ${FALCOR_DIR}
+    # for tools/.packman/ninja to end up in the right place - which is
+    # exactly where the patch put it.
     COMMAND ${FALCOR_DIR}/tools/packman/packman.cmd pull ${FALCOR_DIR}/tools-dependencies.xml --platform windows-x86_64
     # -DCMAKE_POLICY_VERSION_MINIMUM is redundant with the preset's own
     # cacheVariables entry (both set it) but not with what actually
@@ -157,13 +159,12 @@ if (WIN32)
       "${FALCOR_BUILD_DIR}/external/fmt/${CMAKE_BUILD_TYPE}/$<IF:$<CONFIG:Debug>,fmtd,fmt>.lib"
     # Ninja only re-runs a custom command when one of its declared
     # DEPENDS changes (or the command line itself does) - without this,
-    # editing the patch's *content* (e.g. tweaking a color inside
-    # ProfilerUI.cpp's patched hunk) left falcor.stamp looking up to date
-    # and silently skipped re-applying it, even though `git apply` above
-    # references the file.
+    # editing the patch's *content* (e.g. tweaking a CMakePresets.json
+    # cache variable inside its patched hunk) left falcor.stamp looking
+    # up to date and silently skipped re-applying it, even though
+    # `git apply` above references the file.
     DEPENDS
-      ${CMAKE_SOURCE_DIR}/cmake/patches/falcor-augusta.patch
-      ${CMAKE_SOURCE_DIR}/cmake/patches/falcor-tools-dependencies.xml
+      ${CMAKE_SOURCE_DIR}/cmake/patches/falcor.patch
       ${FALCOR_AFTERMATH_DEPENDS}
     VERBATIM
   )
@@ -212,7 +213,7 @@ if (WIN32)
     # header to fix either.
     _CRT_SECURE_NO_WARNINGS
     # Matches the same fix applied to Falcor's own build in
-    # cmake/patches/falcor-augusta.patch: any TU that includes Falcor's
+    # cmake/patches/falcor.patch: any TU that includes Falcor's
     # vendored external/fmt/include/fmt/format.h (as this target's own
     # .cpp files do) hits the same long-obsolete _SECURE_SCL/checked_ptr
     # code path in Debug config on newer MSVC otherwise.

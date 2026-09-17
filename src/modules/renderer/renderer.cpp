@@ -111,7 +111,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
 
     // Requested explicitly rather than left at Type::Default, even though
     // Falcor.lib is itself now built with FALCOR_HAS_VULKAN=OFF
-    // (cmake/patches/falcor-augusta.patch) so getDefaultDeviceType()
+    // (cmake/patches/falcor.patch) so getDefaultDeviceType()
     // could only ever resolve to D3D12 anyway - this documents the
     // choice at the call site instead of relying on that patch being
     // read. D3D12 is the only backend this renderer targets (ADR-0009).
