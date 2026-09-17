@@ -259,10 +259,12 @@ Damage → Scripts/Behaviours → Commit)
   geometry), validates it with usd-validation-nvidia, then converts it into the
   engine's runtime level format, including Steam Audio baked
   reflection/occlusion data
-- Asset cooker CLI — reads meshes directly from the cleaned OpenUSD stage
-  (ADR-0016), optimizes via meshoptimizer, compresses textures via
-  DirectXTex (BC7/BC5/BC4, DDS), and packages everything into signed,
-  verified pack files (separate client and server packs)
+- Asset cooker CLI (`tools/asset-cooking/`, target `augusta_asset_cooking`,
+  C++ per ADR-0025's meshoptimizer/DirectXTex/OpenUSD vcpkg ports) — reads
+  meshes directly from the cleaned OpenUSD stage (ADR-0016), optimizes via
+  meshoptimizer, compresses textures via DirectXTex (BC7/BC5/BC4, DDS), and
+  packages everything into signed, verified pack files (separate client
+  and server packs). Full ordered pipeline: ADR-0030.
 
 ## 6. Runtime View
 

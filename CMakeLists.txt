@@ -74,3 +74,8 @@ if (WIN32)
   add_subdirectory(src/client)
 endif()
 add_subdirectory(tests)
+
+# Offline authoring-time tooling (ARCHITECTURE.md "Tooling" section) - not
+# part of the shipped client/server build graph above, kept as its own
+# target tree under tools/ rather than joining src/'s.
+add_subdirectory(tools/asset-cooking)

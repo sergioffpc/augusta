@@ -8,6 +8,9 @@
     "glm",
     "flecs",
     "gamenetworkingsockets",
-    "physx"
+    "physx",
+    "usd",
+    "meshoptimizer",
+    "directxtex"
   ]
 }
