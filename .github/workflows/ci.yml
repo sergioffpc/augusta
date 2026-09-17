@@ -131,7 +131,8 @@ jobs:
         # default) which builds the client/server runtime - the offline
         # cooker (tools/) is mutually exclusive with it (see the root
         # CMakeLists.txt's AUGUSTA_BUILD_RUNTIME else() branch) and is
-        # validated by its own build-tools job below instead.
+        # only built/tested at release time (release.yml's build-tools
+        # job), not on every push/PR here.
         run: cmake --preset windows
         shell: pwsh
 
@@ -186,8 +187,9 @@ jobs:
         # AUGUSTA_BUILD_RUNTIME defaults to ON (builds augustad's runtime)
         # and is mutually exclusive with the offline cooker (tools/) - see
         # the root CMakeLists.txt's AUGUSTA_BUILD_RUNTIME else() branch -
-        # which is validated by its own build-tools job below instead, and
-        # which the server image (see Dockerfile) never ships either way.
+        # which is only built/tested at release time (release.yml's
+        # build-tools job), and which the server image (see Dockerfile)
+        # never ships either way.
         run: cmake --preset linux
 
       - name: Lint (clang-tidy)
@@ -207,55 +209,6 @@ jobs:
 
       - name: Test
         run: ctest --preset linux
-
-  build-tools:
-    needs: [changes, format]
-    if: needs.changes.outputs.run_build == 'true'
-    # Offline authoring tooling (tools/asset-cooking, ARCHITECTURE.md
-    # "Tooling" section) - built and tested on its own, scoped to just the
-    # cooker targets, so its build time stays out of build-client/
-    # build-server above. The windows-tools preset (CMakePresets.json)
-    # sets AUGUSTA_BUILD_RUNTIME=OFF and narrows VCPKG_MANIFEST_FEATURES
-    # to just "tools", so this job's vcpkg install skips
-    # flecs/GameNetworkingSockets/PhysX entirely - it never needs the
-    # client/server runtime to build or test the cooker. Windows, not
-    # Linux: this is the same authoring workstation OS the rest of the
-    # content-authoring toolchain (Omniverse USD Composer, ADR-0015)
-    # targets.
-    runs-on: windows-2025
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
-
-      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
-
-      - name: Install Ninja
-        run: choco install ninja -y
-        shell: pwsh
-
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-
-      - name: Bootstrap vcpkg
-        shell: pwsh
-        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
-
-      - name: Configure vcpkg NuGet cache
-        shell: pwsh
-        run: |
-          $nugetPath = & ".\third_party\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
-          & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
-          & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
-
-      - name: Configure
-        run: cmake --preset windows-tools
-        shell: pwsh
-
-      - name: Build
-        run: cmake --build --preset windows-tools --target augusta_asset_cooking augusta_asset_pipeline_tests
-
-      - name: Test
-        run: ctest --preset windows-tools -R '^AssetPipelineTest\.'
 
   sanitizers:
     needs: [changes, format]
