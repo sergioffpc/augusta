@@ -16,6 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       tar \
       pkg-config \
       ca-certificates \
+      autoconf \
+      autoconf-archive \
+      automake \
+      libtool \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
