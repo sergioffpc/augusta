@@ -180,7 +180,11 @@ jobs:
           submodules: true
 
       - name: Install clang-tidy
-        run: sudo apt-get update && sudo apt-get install -y clang-tidy ninja-build
+        # autoconf/autoconf-archive/automake/libtool: vcpkg's libsodium port
+        # builds via autotools on Linux (vcpkg_run_autoreconf) and needs
+        # these from the system package manager - not bundled with vcpkg
+        # itself.
+        run: sudo apt-get update && sudo apt-get install -y clang-tidy ninja-build autoconf autoconf-archive automake libtool
 
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
 
@@ -272,7 +276,12 @@ jobs:
         run: cmake --build --preset windows-tools --target augusta_asset_cooking augusta_asset_pipeline_tests
 
       - name: Test
-        run: ctest --preset windows-tools
+        # -R scopes this to the asset pipeline tests this job actually
+        # builds (see the Build step above) - tests/CMakeLists.txt still
+        # unconditionally registers augusta_version_tests with CTest even
+        # on this tools-only configure, and an unfiltered `ctest` here
+        # would fail on it as "augusta_version_tests_NOT_BUILT".
+        run: ctest --preset windows-tools -R 'AssetPipelineTest|PackLoadNegativeTest'
 
   sanitizers:
     needs: [changes, format]
@@ -286,6 +295,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
+
+      - name: Install build tools
+        # Same reasoning as build-server: the linux-san preset also uses the
+        # Ninja generator, and vcpkg's libsodium port needs the autotools
+        # toolchain from the system package manager to build from source.
+        run: sudo apt-get update && sudo apt-get install -y ninja-build autoconf autoconf-archive automake libtool
 
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
 
