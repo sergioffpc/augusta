@@ -11,12 +11,12 @@ Defines the on-disk byte layout of the pack file ADR-0018 describes, and how the
 **Addressing:** each blob's pack-relative path is the source USD prim's path, sanitized (leading `/` stripped; `/` kept as the path separator). No separate authored ID — consistent with ADR-0018 already rejecting a GUID/manifest indirection layer. Renaming or moving a prim in the authored stage therefore changes its runtime path; nothing here guards against that.
 
 **File layout**, in write order:
-1. **Header** — magic (`"AUGP"`), format version, TOC offset/count, data section offset. Written first as a placeholder, patched once the TOC offset is known.
+1. **Header** — magic (`"AUGP"`), format version, index offset/count, data section offset. Written first as a placeholder, patched once the index offset is known.
 2. **Data section** — every asset blob, back-to-back, in traversal order. Offsets are recorded as each blob is written.
-3. **TOC** — one entry per blob: type tag (Mesh/Texture/Audio/Collision/SpawnPoint/Hitbox), path, offset, size. Written after the data section, since it needs the recorded offsets.
-4. **Trailer** — BLAKE3 hash of everything from byte 0 through the end of the TOC, followed by the Ed25519 signature of that hash (ADR-0030's pack → hash → sign order). Appended last.
+3. **Index** — one entry per blob: type tag (Mesh/Texture/Audio/Collision/SpawnPoint/Hitbox), path, offset, size. Written after the data section, since it needs the recorded offsets.
+4. **Trailer** — BLAKE3 hash of everything from byte 0 through the end of the index, followed by the Ed25519 signature of that hash (ADR-0030's pack → hash → sign order). Appended last.
 
-Verifying a pack means re-hashing everything but the trailer and checking the signature before trusting the header/TOC at all — the header is otherwise just as untrusted as the data it points into.
+Verifying a pack means re-hashing everything but the trailer and checking the signature before trusting the header/index at all — the header is otherwise just as untrusted as the data it points into.
 
 ## Considered Options
 

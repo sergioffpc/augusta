@@ -54,6 +54,7 @@ find_package(benchmark CONFIG REQUIRED)
 add_subdirectory(src/modules/version)
 add_subdirectory(src/modules/logging)
 add_subdirectory(src/modules/math)
+add_subdirectory(src/modules/assets)
 add_subdirectory(src/modules/physics)
 add_subdirectory(src/modules/ballistics)
 add_subdirectory(src/modules/networking)
@@ -73,9 +74,18 @@ if (WIN32)
   add_subdirectory(src/modules/renderer)
   add_subdirectory(src/client)
 endif()
-add_subdirectory(tests)
 
 # Offline authoring-time tooling (ARCHITECTURE.md "Tooling" section) - not
 # part of the shipped client/server build graph above, kept as its own
-# target tree under tools/ rather than joining src/'s.
-add_subdirectory(tools/asset-cooking)
+# target tree under tools/ rather than joining src/'s. Added before
+# tests/ below, since the asset-pipeline integration test links
+# augusta_asset_cooking_lib directly. Off by default for a server-only
+# build (see Dockerfile): the cooker pulls in authoring-only vcpkg
+# dependencies (USD, DirectXTex) that augustad never needs, and the
+# server image doesn't even COPY tools/ into its build context.
+option(AUGUSTA_BUILD_ASSET_COOKING "Build the offline asset-cooking tool and its tests" ON)
+if (AUGUSTA_BUILD_ASSET_COOKING)
+  add_subdirectory(tools/asset-cooking)
+endif()
+
+add_subdirectory(tests)

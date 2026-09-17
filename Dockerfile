@@ -30,7 +30,11 @@ RUN ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
 COPY src src
 COPY tests tests
 
-RUN cmake --preset linux
+# AUGUSTA_BUILD_ASSET_COOKING=OFF: the cooker is authoring-only tooling
+# (ARCHITECTURE.md "Tooling" section) that pulls in vcpkg deps (USD,
+# DirectXTex) augustad never needs, and tools/ isn't even COPYed into
+# this build context.
+RUN cmake --preset linux -DAUGUSTA_BUILD_ASSET_COOKING=OFF
 RUN cmake --build --preset linux --target augustad
 
 # Runtime stage: just the binary and the shared libraries it links against
