@@ -55,6 +55,19 @@ enum class CookError {
   // A mesh or the scene graph exceeded augusta::assets' pragmatic v1
   // size limits (EncodeError::kTooLarge).
   kContentTooLarge,
+  // A UsdShadeShader prim with info:id "UsdUVTexture" has no inputs:file
+  // attribute at all (an SdfAssetPath value that's merely unresolved -
+  // e.g. naming a file that doesn't exist - still reads successfully and
+  // surfaces later as kTextureLoadFailed instead, once DirectXTex
+  // actually tries to open it).
+  kMissingTextureFile,
+  // DirectXTex could not load the texture's source image - unsupported/
+  // corrupt image data, or inputs:file names a path that doesn't exist
+  // (see CookErrorDetail::message).
+  kTextureLoadFailed,
+  // DirectXTex could not block-compress the loaded image (e.g. a
+  // dimension not a multiple of 4, which BC7/BC5/BC4 require).
+  kTextureCompressFailed,
   // The assembled pack could not be written to output_pack_path
   // (augusta::assets::WriteError - see CookErrorDetail::message).
   kPackWriteFailed,
@@ -63,6 +76,7 @@ enum class CookError {
 // What Cook() did, for the caller (CLI or test) to report.
 struct CookReport {
   std::size_t mesh_count = 0;
+  std::size_t texture_count = 0;
   std::size_t node_count = 0;
 };
 

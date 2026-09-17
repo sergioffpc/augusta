@@ -71,7 +71,8 @@ int RunCook(std::string_view stage_path, std::string_view output_path, std::stri
     return 1;
   }
 
-  std::println("cooked {} mesh(es), {} node(s) into {}", report->mesh_count, report->node_count, output_path);
+  std::println("cooked {} mesh(es), {} texture(s), {} node(s) into {}", report->mesh_count, report->texture_count,
+               report->node_count, output_path);
   return 0;
 }
 
