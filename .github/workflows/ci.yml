@@ -208,39 +208,44 @@ jobs:
     if: needs.changes.outputs.run_build == 'true'
     # Offline authoring tooling (tools/asset-cooking, ARCHITECTURE.md
     # "Tooling" section) - built and tested on its own, scoped to just the
-    # cooker targets, so its authoring-only vcpkg deps (USD, DirectXTex)
-    # and build time stay out of build-client/build-server above.
-    runs-on: ubuntu-26.04
-    # See build-server's env override for why this isn't the workflow-
-    # level NuGet default.
-    env:
-      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+    # cooker targets, so its build time stays out of build-client/
+    # build-server above. Windows, not Linux: this is the same authoring
+    # workstation OS the rest of the content-authoring toolchain
+    # (Omniverse USD Composer, ADR-0015) targets.
+    runs-on: windows-2025
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+
+      - name: Install Ninja
+        run: choco install ninja -y
+        shell: pwsh
+
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
 
-      - name: Cache vcpkg binaries
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .vcpkg-bincache
-          key: vcpkg-bincache-${{ hashFiles('vcpkg.json') }}
-          restore-keys: |
-            vcpkg-bincache-
-
       - name: Bootstrap vcpkg
-        run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+        shell: pwsh
+        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Configure vcpkg NuGet cache
+        shell: pwsh
+        run: |
+          $nugetPath = & ".\third_party\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
+          & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
+          & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
 
       - name: Configure
-        run: cmake --preset linux
+        run: cmake --preset windows
+        shell: pwsh
 
       - name: Build
-        run: cmake --build --preset linux --target augusta_asset_cooking augusta_asset_pipeline_tests
+        run: cmake --build --preset windows --target augusta_asset_cooking augusta_asset_pipeline_tests
 
       - name: Test
-        run: ctest --preset linux -R '^AssetPipelineTest\.'
+        run: ctest --preset windows -R '^AssetPipelineTest\.'
 
   sanitizers:
     needs: [changes, format]
