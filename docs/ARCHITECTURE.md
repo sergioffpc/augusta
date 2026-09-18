@@ -337,10 +337,12 @@ now.
   not just by convention.
 - **Asset packaging & integrity:** runtime assets ship as a single signed
   pack file per target (client/server), never as loose files. Content is
-  hashed with BLAKE3 and signed with Ed25519; the public key is embedded
-  in each binary for load-time verification, the private key never leaves
-  the developer's machine. A failed verification refuses to load and exits
-  with an error. Assets are addressed by relative path within the pack.
+  hashed with BLAKE3 and signed with Ed25519; both the client and server
+  take the pack path and the expected public key as external inputs
+  (CLI arguments, issue #60) rather than embedding the public key in the
+  binary, the private key never leaves the developer's machine. A failed
+  verification refuses to load and exits with an error. Assets are
+  addressed by relative path within the pack.
 
 ## 9. Architecture Decisions (ADRs)
 
