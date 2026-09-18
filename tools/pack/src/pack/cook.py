@@ -16,8 +16,8 @@ from pathlib import Path
 
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade
 
-from asset_pipeline import _meshoptimizer, _textconv
-from asset_pipeline.pack import (
+from pack import _meshoptimizer, _textconv
+from pack.pack import (
     AssetEntry,
     MeshData,
     SceneNode,
@@ -26,13 +26,13 @@ from asset_pipeline.pack import (
     encode_spawn_point_blob,
     encode_texture_blob,
 )
-from asset_pipeline.pack import ASSET_TYPE_COLLISION as _TYPE_COLLISION
-from asset_pipeline.pack import ASSET_TYPE_HITBOX as _TYPE_HITBOX
-from asset_pipeline.pack import ASSET_TYPE_MESH as _TYPE_MESH
-from asset_pipeline.pack import ASSET_TYPE_SCENE as _TYPE_SCENE
-from asset_pipeline.pack import ASSET_TYPE_SPAWN_POINT as _TYPE_SPAWN_POINT
-from asset_pipeline.pack import ASSET_TYPE_TEXTURE as _TYPE_TEXTURE
-from asset_pipeline.pack import NO_PARENT, TEXTURE_FORMAT_BC4, TEXTURE_FORMAT_BC5, TEXTURE_FORMAT_BC7, write_pack
+from pack.pack import ASSET_TYPE_COLLISION as _TYPE_COLLISION
+from pack.pack import ASSET_TYPE_HITBOX as _TYPE_HITBOX
+from pack.pack import ASSET_TYPE_MESH as _TYPE_MESH
+from pack.pack import ASSET_TYPE_SCENE as _TYPE_SCENE
+from pack.pack import ASSET_TYPE_SPAWN_POINT as _TYPE_SPAWN_POINT
+from pack.pack import ASSET_TYPE_TEXTURE as _TYPE_TEXTURE
+from pack.pack import NO_PARENT, TEXTURE_FORMAT_BC4, TEXTURE_FORMAT_BC5, TEXTURE_FORMAT_BC7, write_pack
 
 # augusta:spawnPoint / augusta:hitbox: custom bool attributes (ADR-0032's
 # authoring convention) rather than a native USD prim type. A hitbox is

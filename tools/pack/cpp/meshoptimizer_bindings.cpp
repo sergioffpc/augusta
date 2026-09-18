@@ -78,7 +78,7 @@ py::tuple OptimizeMesh(std::vector<float> points, std::vector<std::uint32_t> ind
 
 PYBIND11_MODULE(_meshoptimizer, m) {
   m.doc() =
-      "Thin bindings over meshoptimizer (ADR-0016), called from asset_pipeline.cook - weld/simplify/"
+      "Thin bindings over meshoptimizer (ADR-0016), called from pack.cook - weld/simplify/"
       "optimize-cache/optimize-fetch/quantize.";
   m.def("optimize_mesh", &OptimizeMesh, py::arg("points"), py::arg("indices"),
         "points: flat [x0,y0,z0,x1,y1,z1,...] float list. indices: flat triangle-list uint32 list. Returns "

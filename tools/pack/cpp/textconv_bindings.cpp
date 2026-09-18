@@ -77,7 +77,7 @@ py::bytes CompressTexture(const std::filesystem::path& image_path, const std::st
 
 PYBIND11_MODULE(_textconv, m) {
   m.doc() =
-      "Thin bindings over DirectXTex (ADR-0017), called from asset_pipeline.cook - WIC image load + "
+      "Thin bindings over DirectXTex (ADR-0017), called from pack.cook - WIC image load + "
       "BC7/BC5/BC4 block compression + DDS encode.";
   m.def("compress_texture", &CompressTexture, py::arg("image_path"), py::arg("format") = "bc7",
         "Loads image_path via WIC, BC-compresses to `format` (bc7/bc5/bc4), returns SaveToDDSMemory bytes.");

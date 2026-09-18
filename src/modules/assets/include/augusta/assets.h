@@ -17,7 +17,7 @@
 
 // augusta::assets loads runtime packs (ADR-0018/ADR-0031) and resolves
 // their content by pack-relative path. Linked by both the client and
-// server (ADR-0006). The offline cooker (tools/asset-pipeline, ADR-0030)
+// server (ADR-0006). The offline cooker (tools/pack, ADR-0030)
 // is pure Python and does not link this module - it reimplements the same
 // wire format independently (validated against this module's WritePack,
 // kept private for exactly that reason - see encoder.h) rather than
@@ -102,7 +102,7 @@ struct SceneData {
 // to (ADR-0017), one-to-one with DXGI_FORMAT_BC7_UNORM/BC5_UNORM/
 // BC4_UNORM. Its own enum rather than depending on DXGI_FORMAT directly:
 // augusta_assets has no DirectXTex/D3D dependency of its own - only the
-// offline cooker's native modules (tools/asset-pipeline/cpp) link DirectXTex.
+// offline cooker's native modules (tools/pack/cpp) link DirectXTex.
 enum class TextureFormat : std::uint8_t {
   kBC7,
   kBC5,
@@ -143,7 +143,7 @@ std::string SanitizePrimPath(std::string_view usd_prim_path);
 // The Encode*/WritePack functions (and matching Decode* half) live in
 // their own, private header/source pairs (encoder.h/encoder.cpp,
 // decoder.h/decoder.cpp - not under include/augusta/, not installed):
-// the pack-cooking pipeline (tools/asset-pipeline, ADR-0030) is pure
+// the pack-cooking pipeline (tools/pack, ADR-0030) is pure
 // Python and reimplements this wire format independently rather than
 // linking against it, so nothing outside this module calls Encode*/
 // WritePack. They remain as the wire format's canonical reference and as
@@ -181,7 +181,7 @@ enum class ReadKeyFileError {
 
 // Reads a raw 32-byte Ed25519 public key from path - the runtime-side
 // counterpart to whatever key file a developer generated to sign packs
-// (tools/asset-pipeline's keys.py). Every caller of Pack::Load outside a
+// (tools/pack's keys.py). Every caller of Pack::Load outside a
 // test (the client/server executables, ADR-0019) needs this same "read
 // the public key I was handed, then load a pack against it" step, so it
 // lives here rather than being duplicated per executable.

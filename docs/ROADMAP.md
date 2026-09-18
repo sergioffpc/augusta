@@ -65,9 +65,9 @@ Built before any gameplay milestone needs a test map, so nothing
 downstream ever touches a hardcoded placeholder.
 - Level baking tool: usd-optimize (stage cleanup) + usd-validation-nvidia
   (validation) on the OpenUSD-authored test map, baked to runtime format
-- Asset cooker (`tools/asset-pipeline`, pure Python): meshoptimizer
+- Asset cooker (`tools/pack`, pure Python): meshoptimizer
   (meshes, read directly from the cleaned USD stage) and DirectXTex
-  (textures) via two small native bindings (`tools/asset-pipeline/cpp/`,
+  (textures) via two small native bindings (`tools/pack/cpp/`,
   no OpenUSD - see ADR-0030)
 - Signed, verified packs (client + server split)
 - CI addition: asset-pipeline check — generate a fresh throwaway Ed25519

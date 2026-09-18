@@ -11,7 +11,7 @@
 // Private (not under include/augusta/, never installed) declarations of
 // augusta_assets' Encode* blob functions and WritePack (ADR-0031/ADR-0032/
 // ADR-0007), implemented in encoder.cpp/assets.cpp. No production code
-// calls these - the pack-cooking pipeline (tools/asset-pipeline, ADR-0030)
+// calls these - the pack-cooking pipeline (tools/pack, ADR-0030)
 // is pure Python and reimplements this same wire format independently.
 // They serve as that format's canonical reference and as augusta_assets'
 // own round-trip test fixture (tests/assets_test.cpp, which gets a private

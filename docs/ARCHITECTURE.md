@@ -259,11 +259,11 @@ Damage → Scripts/Behaviours → Commit)
   geometry), validates it with usd-validation-nvidia, then converts it into the
   engine's runtime level format, including Steam Audio baked
   reflection/occlusion data
-- Asset cooker (`tools/asset-pipeline`, a pure-Python project - `cooker`
+- Asset cooker (`tools/pack`, a pure-Python project - `augustap`
   console-script entry point) — walks the cleaned OpenUSD stage via
   usd-optimize's own `pxr` build, optimizes meshes via meshoptimizer and
   compresses textures via DirectXTex (BC7/BC5/BC4, DDS) through two small
-  native pybind11 modules (`tools/asset-pipeline/cpp/`, per ADR-0025's
+  native pybind11 modules (`tools/pack/cpp/`, per ADR-0025's
   vcpkg ports - neither links OpenUSD, see ADR-0030), and packages
   everything into signed, verified pack files (separate client and server
   packs) via a pure-Python reimplementation of augusta_assets' wire format.
