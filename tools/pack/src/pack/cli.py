@@ -24,17 +24,12 @@ import time
 import uuid
 from pathlib import Path
 
-from asset_pipeline.cook import CookError, cook_stage
-from asset_pipeline.keys import read_private_key
-from asset_pipeline.optimize import OptimizeError, optimize_stage
-from asset_pipeline.progress import Progress
-from asset_pipeline.validate import ValidationError, validate_stage
-
-
-def _default_assets_root() -> Path:
-    # sys.executable is <assets-root>/python/Scripts/python.exe inside the
-    # hermetic venv this project is installed into.
-    return Path(sys.executable).resolve().parents[2]
+from pack.assets_root import default_assets_root
+from pack.cook import CookError, cook_stage
+from pack.keys import read_private_key
+from pack.optimize import OptimizeError, optimize_stage
+from pack.progress import Progress
+from pack.validate import ValidationError, validate_stage
 
 
 _USD_EXTENSIONS = (".usd", ".usda", ".usdc", ".usdz")
@@ -81,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--assets-root",
         type=Path,
-        default=_default_assets_root(),
+        default=default_assets_root(),
         help="Hermetic environment root (default: inferred from this interpreter's own venv).",
     )
     parser.add_argument("--client-output-pack", type=Path, default=None, help="Default: <assets-root>/packs/<stage>.client.pack")
@@ -118,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
         ("Signing key", signing_key_path),
     ):
         if not path.exists():
-            print(f"{label} not found: {path} - run tools\\asset-pipeline\\scripts\\bootstrap-windows.ps1 {assets_root} first.", file=sys.stderr)
+            print(f"{label} not found: {path} - run tools\\pack\\scripts\\bootstrap-windows.ps1 {assets_root} first.", file=sys.stderr)
             return 1
 
     signing_key = read_private_key(signing_key_path)

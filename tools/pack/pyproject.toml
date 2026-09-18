@@ -1,5 +1,5 @@
 [project]
-name = "asset-pipeline"
+name = "pack"
 version = "0.1.0"
 description = "Augusta asset-cooking pipeline (ADR-0030): usd-optimize -> usd-validation-nvidia -> pure-Python cook/pack."
 requires-python = ">=3.12,<3.13"
@@ -11,12 +11,14 @@ dependencies = [
 ]
 
 [project.scripts]
-cooker = "asset_pipeline.cli:main"
-cooker-keygen = "asset_pipeline.keys:main"
+augustap = "pack.cli:main"
+augustap-keygen = "pack.keys:main"
+augustap-inspect = "pack.pack_cli:inspect_main"
+augustap-verify = "pack.pack_cli:verify_main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/asset_pipeline"]
+packages = ["src/pack"]

@@ -23,7 +23,7 @@ from pathlib import Path
 import blake3
 import nacl.bindings
 
-from asset_pipeline.wire import ByteWriter
+from pack.wire import ByteWriter
 
 # Pragmatic v1 sanity limits (wire_format.h/assets.cpp) - narrowing
 # guards, not just validation: every limit here is comfortably under
@@ -63,13 +63,13 @@ TEXTURE_FORMAT_BC4 = 2
 # kSceneNodeNoParent).
 NO_PARENT = 0xFFFFFFFF
 
-_MAGIC = b"AUGP"
-_FORMAT_VERSION = 1
+MAGIC = b"AUGP"
+FORMAT_VERSION = 1
 # magic(4) + version(u32=4) + data_offset(u64=8) + index_offset(u64=8) +
 # index_count(u32=4) - assets.cpp's kHeaderSize.
-_HEADER_SIZE = 4 + 4 + 8 + 8 + 4
-_BLAKE3_HASH_SIZE = 32
-_ED25519_SIGNATURE_SIZE = 64
+HEADER_SIZE = 4 + 4 + 8 + 8 + 4
+BLAKE3_HASH_SIZE = 32
+ED25519_SIGNATURE_SIZE = 64
 
 
 class EncodeError(ValueError):
@@ -213,7 +213,7 @@ def write_pack(output_path: Path, entries: list[AssetEntry], signing_key: bytes)
     data_section = bytearray()
     offsets: list[int] = []
     sizes: list[int] = []
-    cursor = _HEADER_SIZE
+    cursor = HEADER_SIZE
     for entry in entries:
         offsets.append(cursor)
         sizes.append(len(entry.data))
@@ -229,13 +229,13 @@ def write_pack(output_path: Path, entries: list[AssetEntry], signing_key: bytes)
         index_section.u64(size)
 
     header = ByteWriter()
-    header.raw(_MAGIC)
-    header.u32(_FORMAT_VERSION)
-    header.u64(_HEADER_SIZE)
+    header.raw(MAGIC)
+    header.u32(FORMAT_VERSION)
+    header.u64(HEADER_SIZE)
     header.u64(index_offset)
     header.u32(len(entries))
 
-    total_size = len(header) + len(data_section) + len(index_section) + _BLAKE3_HASH_SIZE + _ED25519_SIGNATURE_SIZE
+    total_size = len(header) + len(data_section) + len(index_section) + BLAKE3_HASH_SIZE + ED25519_SIGNATURE_SIZE
     if total_size > MAX_PACK_SIZE:
         raise WriteError("pack exceeds size limit")
 
@@ -248,7 +248,7 @@ def write_pack(output_path: Path, entries: list[AssetEntry], signing_key: bytes)
     # crypto_sign_detached(hash, signing_key) would have produced. PyNaCl
     # (nacl.bindings) exposes no detached-signing entry point directly.
     signed = nacl.bindings.crypto_sign(pack_hash, signing_key)
-    signature = signed[:_ED25519_SIGNATURE_SIZE]
+    signature = signed[:ED25519_SIGNATURE_SIZE]
 
     output_path = Path(output_path)
     tmp_path = output_path.with_name(output_path.name + ".tmp")

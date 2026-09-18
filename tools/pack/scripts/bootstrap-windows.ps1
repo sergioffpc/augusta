@@ -4,14 +4,14 @@ Builds a hermetic authoring/cooking environment for the Asset Pipeline
 (ADR-0015, ADR-0016, ADR-0017, ROADMAP.md M2) entirely under -AssetsRoot.
 
 Cooking (always): a self-contained Python environment (uv-managed - no
-system/global Python involved) with the tools/asset-pipeline Python project
+system/global Python involved) with the tools/pack Python project
 installed into it (pulling in usd-optimize/usd-validation-nvidia/pynacl/
 blake3 as its own dependencies, plus the two small native _meshoptimizer/
 _textconv extension modules built and placed into that same project -
 ADR-0030's cooker is pure Python otherwise, including the pack format and
 key generation), a signing keypair, and the authoring/packs/keys content
 dirs (the cooker reads stages from authoring/, relative to it).
-Everything the installed `cooker` command needs to run lives under
+Everything the installed `augustap` command needs to run lives under
 this one root, so it never depends on what's on PATH in whatever shell it's
 invoked from.
 
@@ -46,7 +46,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$assetPipelineProject = Split-Path -Parent $PSScriptRoot
+$packProject = Split-Path -Parent $PSScriptRoot
 
 function Install-WingetPackage {
   param([string]$Id, [string[]]$Override)
@@ -141,7 +141,7 @@ if (-not $SkipAuthoring) {
       }
 
       Write-Host "Scaffolding the Augusta USD Composer app (repo template replay)..."
-      .\repo.bat template replay (Join-Path $assetPipelineProject "composer\augusta.playback.toml")
+      .\repo.bat template replay (Join-Path $packProject "composer\augusta.playback.toml")
       if ($LASTEXITCODE -ne 0) {
         throw "repo template replay failed (exit $LASTEXITCODE)."
       }
@@ -164,51 +164,43 @@ if (-not $SkipAuthoring) {
   Sync-GitRepo -Url "https://github.com/adobe/USD-Fileformat-plugins.git" -Path $adobePluginsDir
 }
 
-# --- Hermetic Python (ADR-0015/ADR-0016): the asset-pipeline project ---
-# uv-managed venv under $AssetsRoot - self-contained, no system Python
-# involved. tools/asset-pipeline (this repo's own Python project - see its
-# pyproject.toml) is installed into it editable, pulling in usd-optimize
-# (Python API only, no CLI) and usd-validation-nvidia (CLI) as its
-# dependencies. This produces $pythonDir\Scripts\cooker.exe, the
-# actual pipeline entry point (copied to $binDir below) - editable so local
-# edits to tools/asset-pipeline take effect without rerunning this script.
-$venvPython = Join-Path $pythonDir "Scripts\python.exe"
-if (-not (Test-Path $venvPython)) {
-  Write-Host "Creating hermetic Python environment at $pythonDir (uv)..."
-  uv venv --python 3.12 $pythonDir
-  if ($LASTEXITCODE -ne 0) {
-    throw "uv venv failed (exit $LASTEXITCODE)."
-  }
+# --- Hermetic Python (ADR-0015/ADR-0016): the pack project ---
+# Installed with `uv tool install`, the mechanism uv provides for exactly this:
+# an isolated, uv-managed venv per tool (no system Python involved) plus the
+# tool's own console scripts placed in a bin directory. Both are redirected
+# under $AssetsRoot - the venv to $pythonDir\pack, the commands
+# (augustap, augustap-keygen, augustap-inspect, augustap-verify) to $binDir. tools/pack (this repo's
+# own Python project - see its pyproject.toml) is installed editable, pulling
+# in usd-optimize (Python API only, no CLI) and usd-validation-nvidia (CLI) as
+# its dependencies, so local edits to it take effect without rerunning this
+# script. The two variables are scoped to this process.
+if (Test-Path (Join-Path $pythonDir "pyvenv.cfg")) {
+  throw "$pythonDir is a plain venv from an earlier version of this script; delete it and re-run (it is fully regenerated)."
 }
-Write-Host "Installing asset-pipeline (from $assetPipelineProject) into $pythonDir..."
-uv pip install --python $venvPython --upgrade --editable $assetPipelineProject
+$env:UV_TOOL_DIR = $pythonDir
+$env:UV_TOOL_BIN_DIR = $binDir
+$venvPython = Join-Path $pythonDir "pack\Scripts\python.exe"
+Write-Host "Installing pack (from $packProject) into $pythonDir, commands into $binDir (uv tool)..."
+uv tool install --python 3.12 --force --editable $packProject
 if ($LASTEXITCODE -ne 0) {
-  throw "uv pip install failed (exit $LASTEXITCODE)."
-}
-
-# The user-facing commands live in $binDir, not buried in the venv. The
-# console-script launchers pip/uv generate embed the absolute path of the
-# venv's python.exe, so a plain copy runs from anywhere; refreshed on every
-# run so it never goes stale after a reinstall.
-foreach ($command in "cooker", "cooker-keygen") {
-  Copy-Item (Join-Path $pythonDir "Scripts\$command.exe") $binDir -Force
+  throw "uv tool install failed (exit $LASTEXITCODE)."
 }
 
 # --- Native modules build (ADR-0030) ---
-# tools/asset-pipeline/cpp is its own standalone CMake project (own
+# tools/pack/cpp is its own standalone CMake project (own
 # vcpkg.json/CMakePresets.json, independent of the client/server build) that
-# builds the two pybind11 modules straight into ../src/asset_pipeline, so
-# `import asset_pipeline._meshoptimizer`/`_textconv` just work with no
+# builds the two pybind11 modules straight into ../src/pack, so
+# `import pack._meshoptimizer`/`_textconv` just work with no
 # separate copy step. PYTHON_EXECUTABLE (the variable pybind11's vcpkg port's
 # legacy FindPythonInterp reads) points cmake at this venv, so the built
 # extensions' ABI matches the interpreter that imports them. pybind11 tags
 # the actual filename with the Python ABI (e.g.
 # _meshoptimizer.cp312-win_amd64.pyd) - Python's import machinery resolves
 # that back to the plain module name regardless, so check by glob.
-$nativeSourceDir = Join-Path $assetPipelineProject "cpp"
-$assetPipelinePackageDir = Join-Path $assetPipelineProject "src\asset_pipeline"
-$nativeModulesBuilt = (Get-ChildItem $assetPipelinePackageDir -Filter "_meshoptimizer*.pyd" -ErrorAction SilentlyContinue) -and
-  (Get-ChildItem $assetPipelinePackageDir -Filter "_textconv*.pyd" -ErrorAction SilentlyContinue)
+$nativeSourceDir = Join-Path $packProject "cpp"
+$packPackageDir = Join-Path $packProject "src\pack"
+$nativeModulesBuilt = (Get-ChildItem $packPackageDir -Filter "_meshoptimizer*.pyd" -ErrorAction SilentlyContinue) -and
+  (Get-ChildItem $packPackageDir -Filter "_textconv*.pyd" -ErrorAction SilentlyContinue)
 if (-not $nativeModulesBuilt) {
   Write-Host "Building the native modules ($nativeSourceDir)..."
   cmake --preset windows -S $nativeSourceDir "-DPYTHON_EXECUTABLE=$venvPython"
@@ -219,17 +211,17 @@ if (-not $nativeModulesBuilt) {
   if ($LASTEXITCODE -ne 0) {
     throw "cmake build failed (exit $LASTEXITCODE)."
   }
-  $nativeModulesBuilt = (Get-ChildItem $assetPipelinePackageDir -Filter "_meshoptimizer*.pyd" -ErrorAction SilentlyContinue) -and
-    (Get-ChildItem $assetPipelinePackageDir -Filter "_textconv*.pyd" -ErrorAction SilentlyContinue)
+  $nativeModulesBuilt = (Get-ChildItem $packPackageDir -Filter "_meshoptimizer*.pyd" -ErrorAction SilentlyContinue) -and
+    (Get-ChildItem $packPackageDir -Filter "_textconv*.pyd" -ErrorAction SilentlyContinue)
   if (-not $nativeModulesBuilt) {
-    throw "The native modules build did not produce both _meshoptimizer and _textconv in $assetPipelinePackageDir - see the cmake output above."
+    throw "The native modules build did not produce both _meshoptimizer and _textconv in $packPackageDir - see the cmake output above."
   }
 }
 
 # Not regenerated on a re-run: overwriting it would silently invalidate every
 # pack already signed with the old key and the public key already deployed
 # for verification (main.cpp's <public_key_path> argument, ADR-0018). Goes
-# through the cooker-keygen entry point (asset_pipeline/keys.py,
+# through the augustap-keygen entry point (pack/keys.py,
 # pynacl - pure Python, no native module or CLI binary involved).
 $signingKeyPrefix = Join-Path $keysDir "augusta"
 $signingKeyPath = "$signingKeyPrefix.key"
@@ -237,10 +229,10 @@ if (Test-Path $signingKeyPath) {
   Write-Host "Signing keypair already exists at $signingKeyPrefix.key/.pub - leaving it as is."
 } else {
   Write-Host "Generating Ed25519 signing keypair at $signingKeyPrefix.key/.pub..."
-  $genKeypairExe = Join-Path $binDir "cooker-keygen.exe"
+  $genKeypairExe = Join-Path $binDir "augustap-keygen.exe"
   & $genKeypairExe $signingKeyPrefix
   if ($LASTEXITCODE -ne 0) {
-    throw "cooker-keygen failed (exit $LASTEXITCODE)."
+    throw "augustap-keygen failed (exit $LASTEXITCODE)."
   }
 }
 
@@ -249,13 +241,13 @@ Write-Host "Hermetic environment ready at $AssetsRoot (never commit any of it, e
 Write-Host "  - $authoringDir  : raw USD stages - the cooker's input root"
 Write-Host "  - $packsDir      : signed packs cooked via the cooker"
 Write-Host "  - $keysDir       : Ed25519 signing keypair (augusta.key/augusta.pub)"
-Write-Host "  - $binDir        : the cooker and cooker-keygen commands"
-Write-Host "  - $pythonDir     : hermetic Python venv (uv), asset-pipeline installed editable from tools\asset-pipeline"
-Write-Host "                     (includes the native _meshoptimizer/_textconv modules - $assetPipelinePackageDir)"
+Write-Host "  - $binDir        : the augustap, augustap-keygen, augustap-inspect and augustap-verify commands"
+Write-Host "  - $pythonDir     : hermetic Python venv (uv tool), pack installed editable from tools\pack"
+Write-Host "                     (includes the native _meshoptimizer/_textconv modules - $packPackageDir)"
 if (-not $SkipAuthoring) {
   Write-Host "  - $kitAppTemplateDir : USD Composer (kit-app-template)"
   Write-Host "  - $adobePluginsDir : Adobe USD-Fileformat-plugins (see its README to build)"
 }
 Write-Host ""
-$cookerExe = Join-Path $binDir "cooker.exe"
-Write-Host "Cook a stage saved under $authoringDir, e.g.: $cookerExe Example"
+$augustapExe = Join-Path $binDir "augustap.exe"
+Write-Host "Cook a stage saved under $authoringDir, e.g.: $augustapExe Example"

@@ -17,7 +17,7 @@
 // internals (encoder.h/WritePack). Links only augusta_assets - no USD/
 // DirectXTex/meshoptimizer - so it builds and runs under the plain
 // runtime presets (windows/linux/sanitizers). These tests pin down
-// augusta_assets' wire format, which tools/asset-pipeline's Python
+// augusta_assets' wire format, which tools/pack's Python
 // WritePack reimplementation (ADR-0030) is validated against.
 namespace {
 
@@ -151,7 +151,7 @@ TEST_F(PackTest, WritePackRejectsDuplicatePaths) {
 
 // Exercises augusta_assets' own texture-blob encode/write/resolve seam
 // directly (WritePack/Pack::Load/ResolveTexture) - actually compressing an
-// image (DirectXTex) happens in tools/asset-pipeline (Python), which this
+// image (DirectXTex) happens in tools/pack (Python), which this
 // module has no dependency on.
 TEST_F(PackTest, EncodesAndResolvesTextureBlob) {
   const auto pack_path = MakePackPath("augusta_assets_test_texture_blob.pack");

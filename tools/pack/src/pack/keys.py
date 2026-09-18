@@ -31,6 +31,13 @@ def read_private_key(path: Path) -> bytes:
     return data
 
 
+def read_public_key(path: Path) -> bytes:
+    data = path.read_bytes()
+    if len(data) != PUBLIC_KEY_SIZE:
+        raise ValueError(f"{path}: expected a {PUBLIC_KEY_SIZE}-byte Ed25519 public key, got {len(data)} bytes")
+    return data
+
+
 def write_keypair(prefix: Path) -> tuple[Path, Path]:
     """Generates a new keypair, writing it to <prefix>.pub / <prefix>.key. Returns (pub_path, key_path)."""
     public_key, private_key = generate_keypair()
