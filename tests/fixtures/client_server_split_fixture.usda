@@ -1,0 +1,62 @@
+#usda 1.0
+(
+    defaultPrim = "Root"
+    upAxis = "Y"
+    metersPerUnit = 1
+)
+
+def Xform "Root"
+{
+    def Mesh "Visual"
+    {
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)]
+        int[] faceVertexCounts = [3, 3]
+        int[] faceVertexIndices = [0, 1, 2, 0, 2, 3]
+        rel material:binding = </Root/Visual/Mat>
+
+        def Material "Mat"
+        {
+            token outputs:surface.connect = </Root/Visual/Mat/PreviewSurface.outputs:surface>
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </Root/Visual/Mat/DiffuseTexture.outputs:rgb>
+                token outputs:surface
+            }
+
+            def Shader "DiffuseTexture"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @texture_fixture.png@
+                float3 outputs:rgb
+            }
+        }
+    }
+
+    def Mesh "Collider" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        point3f[] points = [(0, 0, 0), (2, 0, 0), (2, 2, 0), (0, 2, 0)]
+        int[] faceVertexCounts = [3, 3]
+        int[] faceVertexIndices = [0, 1, 2, 0, 2, 3]
+    }
+
+    def Mesh "Hitbox" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        custom bool augusta:hitbox = true
+        point3f[] points = [(0, 0, 0), (0.5, 0, 0), (0.5, 0.5, 0), (0, 0.5, 0)]
+        int[] faceVertexCounts = [3, 3]
+        int[] faceVertexIndices = [0, 1, 2, 0, 2, 3]
+    }
+
+    def Xform "Spawn"
+    {
+        custom bool augusta:spawnPoint = true
+        double3 xformOp:translate = (5, 0, 5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+}

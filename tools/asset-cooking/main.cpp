@@ -52,14 +52,15 @@ int RunGenKeypair(std::string_view prefix) {
   return 0;
 }
 
-int RunCook(std::string_view stage_path, std::string_view output_path, std::string_view private_key_path) {
+int RunCook(std::string_view stage_path, std::string_view client_output_path, std::string_view server_output_path,
+            std::string_view private_key_path) {
   const auto signing_key = ReadPrivateKeyFile(private_key_path);
   if (!signing_key) {
     std::println(stderr, "could not read Ed25519 private key from {}", private_key_path);
     return 1;
   }
 
-  const auto report = augusta::asset_cooking::Cook(stage_path, output_path, *signing_key);
+  const auto report = augusta::asset_cooking::Cook(stage_path, client_output_path, server_output_path, *signing_key);
   if (!report) {
     const auto& detail = report.error();
     if (detail.prim_path.empty()) {
@@ -71,22 +72,29 @@ int RunCook(std::string_view stage_path, std::string_view output_path, std::stri
     return 1;
   }
 
-  std::println("cooked {} mesh(es), {} texture(s), {} node(s) into {}", report->mesh_count, report->texture_count,
-               report->node_count, output_path);
+  std::println("cooked {} mesh(es), {} texture(s), {} node(s) into {} (client) and {} (server)", report->mesh_count,
+               report->texture_count, report->node_count, client_output_path, server_output_path);
   return 0;
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
-  if (argc == 3 && std::string_view(argv[1]) == "--gen-keypair") {
+  // <exe> --gen-keypair <prefix>
+  constexpr int kGenKeypairArgc = 3;
+  // <exe> <stage.usd> <client_output.pack> <server_output.pack> <signing_key.key>
+  constexpr int kCookArgc = 5;
+
+  if (argc == kGenKeypairArgc && std::string_view(argv[1]) == "--gen-keypair") {
     return RunGenKeypair(argv[2]);
   }
-  if (argc == 4) {
-    return RunCook(argv[1], argv[2], argv[3]);
+  if (argc == kCookArgc) {
+    return RunCook(argv[1], argv[2], argv[3], argv[4]);
   }
 
-  std::println(stderr, "usage: augusta_asset_cooking <stage.usd> <output.pack> <signing_key.key>");
+  std::println(stderr,
+               "usage: augusta_asset_cooking <stage.usd> <client_output.pack> <server_output.pack> "
+               "<signing_key.key>");
   std::println(stderr, "       augusta_asset_cooking --gen-keypair <key_prefix>");
   return 1;
 }

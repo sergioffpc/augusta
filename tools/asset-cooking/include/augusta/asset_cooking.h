@@ -13,19 +13,22 @@
 // augusta::assets can load. Offline-only - never linked into the shipped
 // client/server binaries (ARCHITECTURE.md "Tooling").
 //
-// Cook() walks every prim in the stage, emitting one mesh blob per
-// UsdGeomMesh (as before) plus a single scene-graph blob (ADR-0032) tying
-// the whole stage's hierarchy/transforms/references together. The
+// Cook() walks every prim in the stage once, emitting one mesh blob per
+// UsdGeomMesh, one collision/hitbox blob per PhysX-authored collider/
+// hitbox prim (colliders/joints from Composer, ADR-0015), one spawn-point
+// blob per augusta:spawnPoint marker, and a scene-graph blob (ADR-0032)
+// tying the whole stage's hierarchy/transforms/references together. The
 // authored stage's upAxis/metersPerUnit are normalized into the runtime's
 // fixed Y-up/right-handed/1-meter convention by correcting each
 // top-level node's transform - nothing downstream ever branches on how a
-// given stage was authored. Collider/hitbox blob *content* (PhysX-
-// authored collision geometry, ADR-0031's ADR-0007-reuse) is not
-// implemented yet - only the spawn-point marker and each node's
-// mesh/hitbox *reference fields* are populated (see cook.cpp's ReadNode
-// for exactly what's read per prim); resolving a hitbox_path today
-// yields ResolveError::kNotFound until that follow-up lands, which is
-// expected fail-closed behavior, not a bug.
+// given stage was authored.
+//
+// That single read/traversal produces two packs (ADR-0019): the client
+// pack gets everything (mesh, texture, collision, hitbox, spawn point,
+// and a scene graph with full mesh/material references); the server pack
+// gets only collision, hitbox, and spawn-point blobs, plus a scene graph
+// with mesh/material references stripped from every node - the headless
+// server never receives visual content, even by reference.
 namespace augusta::asset_cooking {
 
 enum class CookError {
@@ -91,13 +94,15 @@ struct CookErrorDetail {
   std::string message;
 };
 
-// Reads every prim from the stage at stage_path, building a scene graph
-// (ADR-0032) plus one mesh blob per UsdGeomMesh prim, and writes them
-// into a new pack file at output_pack_path signed with signing_key.
-// Overwrites output_pack_path if it already exists (atomically - see
-// augusta::assets::WritePack).
+// Reads every prim from the stage at stage_path once, then writes two
+// signed pack files from that single read: a full client pack at
+// client_output_path, and a stripped server pack (collision/hitbox/
+// spawn-point content only, ADR-0019) at server_output_path. Both are
+// signed with the same signing_key. Overwrites either output path if it
+// already exists (atomically - see augusta::assets::WritePack).
 std::expected<CookReport, CookErrorDetail> Cook(const std::filesystem::path& stage_path,
-                                                const std::filesystem::path& output_pack_path,
+                                                const std::filesystem::path& client_output_path,
+                                                const std::filesystem::path& server_output_path,
                                                 const assets::Ed25519PrivateKey& signing_key);
 
 }  // namespace augusta::asset_cooking

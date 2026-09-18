@@ -17,6 +17,7 @@
 #include <pxr/usd/usdGeom/metrics.h>
 #include <pxr/usd/usdGeom/tokens.h>
 #include <pxr/usd/usdGeom/xformable.h>
+#include <pxr/usd/usdPhysics/collisionAPI.h>
 #include <pxr/usd/usdShade/input.h>
 #include <pxr/usd/usdShade/shader.h>
 
@@ -30,6 +31,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <format>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -63,11 +65,27 @@ void EnsureUsdPluginPathConfigured() {
 
 // augusta:spawnPoint / augusta:hitbox: custom bool attributes (ADR-0032's
 // authoring convention) rather than a native USD prim type - USD has no
-// built-in notion of either. Hitbox *content* (actual collision geometry)
-// isn't cooked yet (see asset_cooking.h's top comment); only this marker
-// is read, so a resolved hitbox_path currently always misses.
+// built-in notion of either. A hitbox is authored as a UsdGeomMesh with
+// PhysicsCollisionAPI applied (same as any other collider) plus this
+// marker; the marker is what distinguishes "this collider is a hitbox"
+// from general world collision geometry (see BuildNode).
 constexpr auto kSpawnPointAttr = "augusta:spawnPoint";
 constexpr auto kHitboxAttr = "augusta:hitbox";
+
+// True if prim is a PhysX-authored collider (colliders/joints from
+// Composer, ADR-0015): a UsdGeomMesh with UsdPhysicsCollisionAPI applied
+// and collision not explicitly disabled. USD defaults
+// physics:collisionEnabled to true once the API is applied, so an absent
+// attribute still counts as enabled.
+bool HasCollisionEnabled(const pxr::UsdPrim& prim) {
+  if (!prim.HasAPI<pxr::UsdPhysicsCollisionAPI>()) {
+    return false;
+  }
+  bool enabled = true;
+  const pxr::UsdPhysicsCollisionAPI collision_api(prim);
+  collision_api.GetCollisionEnabledAttr().Get(&enabled);
+  return enabled;
+}
 
 // augusta:textureFormat: custom string attribute (same authoring
 // convention as kSpawnPointAttr/kHitboxAttr above) selecting which BC
@@ -412,7 +430,13 @@ void OptimizeMesh(assets::MeshData& mesh) {
   }
 }
 
-std::expected<assets::MeshData, CookErrorDetail> ReadMesh(const pxr::UsdGeomMesh& mesh, const std::string& prim_path) {
+// Reads a UsdGeomMesh's points/triangle-index buffer as authored, with no
+// meshoptimizer pass applied - shared by ReadMesh (visual, optimized
+// afterward below) and collision/hitbox geometry reading (BuildNode),
+// where meshoptimizer's lossy simplification could let a physics query
+// miss geometry it should have hit.
+std::expected<assets::MeshData, CookErrorDetail> ReadRawMeshGeometry(const pxr::UsdGeomMesh& mesh,
+                                                                     const std::string& prim_path) {
   pxr::VtArray<int> face_vertex_counts;
   pxr::VtArray<pxr::GfVec3f> usd_points;
   pxr::VtArray<int> face_vertex_indices;
@@ -441,18 +465,30 @@ std::expected<assets::MeshData, CookErrorDetail> ReadMesh(const pxr::UsdGeomMesh
   }
   mesh_data.indices = std::move(*indices);
 
-  OptimizeMesh(mesh_data);
+  return mesh_data;
+}
 
+std::expected<assets::MeshData, CookErrorDetail> ReadMesh(const pxr::UsdGeomMesh& mesh, const std::string& prim_path) {
+  auto mesh_data = ReadRawMeshGeometry(mesh, prim_path);
+  if (!mesh_data) {
+    return mesh_data;
+  }
+  OptimizeMesh(*mesh_data);
   return mesh_data;
 }
 
 using NodeIndexMap = std::unordered_map<pxr::SdfPath, std::uint32_t, pxr::SdfPath::Hash>;
 
 // Builds prim's own SceneNode (name, parent link, corrected transform,
-// spawn-point/hitbox markers), appending a mesh AssetEntry to entries if
-// prim is a UsdGeomMesh. node_index_of must already contain every
-// ancestor of prim - guaranteed by pre-order traversal (see Cook()'s own
-// comment on its Traverse() call).
+// spawn-point/hitbox markers), appending to entries a spawn-point
+// AssetEntry if augusta:spawnPoint is set, and - if prim is a
+// UsdGeomMesh - exactly one geometry AssetEntry: kHitbox if
+// augusta:hitbox is set, else kCollision if a PhysX collider is applied
+// (ADR-0015), else kMesh. This function only reads and emits entries into
+// one combined list - splitting them into the client/server packs is
+// Cook()'s job, based on each entry's AssetType. node_index_of must
+// already contain every ancestor of prim - guaranteed by pre-order
+// traversal (see Cook()'s own comment on its Traverse() call).
 std::expected<assets::SceneNode, CookErrorDetail> BuildNode(const pxr::UsdPrim& prim, const pxr::GfMatrix4d& correction,
                                                             const NodeIndexMap& node_index_of,
                                                             std::vector<assets::AssetEntry>& entries) {
@@ -492,26 +528,86 @@ std::expected<assets::SceneNode, CookErrorDetail> BuildNode(const pxr::UsdPrim& 
   node.scale = local.scale;
 
   node.is_spawn_point = ReadBoolAttr(prim, kSpawnPointAttr);
-  if (ReadBoolAttr(prim, kHitboxAttr)) {
+  if (node.is_spawn_point) {
+    const assets::SpawnPointData spawn_point{.translation = node.translation, .rotation = node.rotation};
+    auto spawn_blob = assets::EncodeSpawnPointBlob(spawn_point);
+    if (!spawn_blob) {
+      return std::unexpected(CookErrorDetail{
+          .code = CookError::kContentTooLarge,
+          .prim_path = prim_path,
+          .message = "spawn point exceeds pack size limits",
+      });
+    }
+    entries.push_back(
+        assets::AssetEntry{.type = assets::AssetType::kSpawnPoint, .path = prim_path, .data = std::move(*spawn_blob)});
+  }
+
+  const bool is_hitbox = ReadBoolAttr(prim, kHitboxAttr);
+  if (is_hitbox) {
     node.hitbox_path = prim_path;
   }
 
   if (prim.IsA<pxr::UsdGeomMesh>()) {
-    auto mesh_data = ReadMesh(pxr::UsdGeomMesh(prim), prim_path);
-    if (!mesh_data) {
-      return std::unexpected(mesh_data.error());
+    const pxr::UsdGeomMesh geom_mesh(prim);
+
+    // A mesh prim contributes exactly one geometry blob, addressed by its
+    // own path - a hitbox marker or an applied PhysX collider (ADR-0015)
+    // means this prim is a physics-only proxy, not also separately
+    // rendered, so it's read raw (no meshoptimizer simplification, which
+    // could let a physics query miss geometry it should have hit) and
+    // filed as kHitbox/kCollision instead of kMesh. A render mesh that
+    // happens to double as its own collider is a separate authoring
+    // choice this cooker doesn't support yet - it would need two blobs
+    // at one path, which ADR-0031's path-only addressing can't express.
+    if (is_hitbox) {
+      auto hitbox_data = ReadRawMeshGeometry(geom_mesh, prim_path);
+      if (!hitbox_data) {
+        return std::unexpected(hitbox_data.error());
+      }
+      auto hitbox_blob = assets::EncodeMeshBlob(*hitbox_data);
+      if (!hitbox_blob) {
+        return std::unexpected(CookErrorDetail{
+            .code = CookError::kContentTooLarge,
+            .prim_path = prim_path,
+            .message = "hitbox exceeds pack size limits",
+        });
+      }
+      entries.push_back(
+          assets::AssetEntry{.type = assets::AssetType::kHitbox, .path = prim_path, .data = std::move(*hitbox_blob)});
+      // node.hitbox_path is already set above.
+    } else if (HasCollisionEnabled(prim)) {
+      auto collision_data = ReadRawMeshGeometry(geom_mesh, prim_path);
+      if (!collision_data) {
+        return std::unexpected(collision_data.error());
+      }
+      auto collision_blob = assets::EncodeMeshBlob(*collision_data);
+      if (!collision_blob) {
+        return std::unexpected(CookErrorDetail{
+            .code = CookError::kContentTooLarge,
+            .prim_path = prim_path,
+            .message = "collision geometry exceeds pack size limits",
+        });
+      }
+      entries.push_back(assets::AssetEntry{
+          .type = assets::AssetType::kCollision, .path = prim_path, .data = std::move(*collision_blob)});
+      node.collider_path = prim_path;
+    } else {
+      auto mesh_data = ReadMesh(geom_mesh, prim_path);
+      if (!mesh_data) {
+        return std::unexpected(mesh_data.error());
+      }
+      auto blob = assets::EncodeMeshBlob(*mesh_data);
+      if (!blob) {
+        return std::unexpected(CookErrorDetail{
+            .code = CookError::kContentTooLarge,
+            .prim_path = prim_path,
+            .message = "mesh exceeds pack size limits",
+        });
+      }
+      entries.push_back(
+          assets::AssetEntry{.type = assets::AssetType::kMesh, .path = prim_path, .data = std::move(*blob)});
+      node.mesh_path = prim_path;
     }
-    auto blob = assets::EncodeMeshBlob(*mesh_data);
-    if (!blob) {
-      return std::unexpected(CookErrorDetail{
-          .code = CookError::kContentTooLarge,
-          .prim_path = prim_path,
-          .message = "mesh exceeds pack size limits",
-      });
-    }
-    entries.push_back(
-        assets::AssetEntry{.type = assets::AssetType::kMesh, .path = prim_path, .data = std::move(*blob)});
-    node.mesh_path = prim_path;
   }
 
   return node;
@@ -555,10 +651,31 @@ std::expected<void, CookErrorDetail> MaybeCookTexturePrim(const pxr::UsdPrim& pr
   return {};
 }
 
+// True for the AssetType values ADR-0019 puts in the server pack:
+// collision geometry, hitboxes, and spawn points. Mesh/texture/scene are
+// client-only (scene is handled separately - see Cook() - since it needs
+// its mesh/material references stripped rather than being dropped
+// outright).
+bool IsServerPackAssetType(assets::AssetType type) {
+  switch (type) {
+    case assets::AssetType::kCollision:
+    case assets::AssetType::kHitbox:
+    case assets::AssetType::kSpawnPoint:
+      return true;
+    case assets::AssetType::kMesh:
+    case assets::AssetType::kTexture:
+    case assets::AssetType::kAudio:
+    case assets::AssetType::kScene:
+      return false;
+  }
+  return false;
+}
+
 }  // namespace
 
 std::expected<CookReport, CookErrorDetail> Cook(const std::filesystem::path& stage_path,
-                                                const std::filesystem::path& output_pack_path,
+                                                const std::filesystem::path& client_output_path,
+                                                const std::filesystem::path& server_output_path,
                                                 const assets::Ed25519PrivateKey& signing_key) {
   EnsureUsdPluginPathConfigured();
 
@@ -596,29 +713,71 @@ std::expected<CookReport, CookErrorDetail> Cook(const std::filesystem::path& sta
     }
   }
 
-  auto scene_blob = assets::EncodeSceneBlob(scene);
-  if (!scene_blob) {
+  const std::size_t mesh_count = CountEntriesOfType(entries, assets::AssetType::kMesh);
+  const std::size_t texture_count = CountEntriesOfType(entries, assets::AssetType::kTexture);
+  const std::size_t node_count = scene.nodes.size();
+
+  // Client scene: full node data, mesh/material references intact.
+  auto client_scene_blob = assets::EncodeSceneBlob(scene);
+  if (!client_scene_blob) {
     return std::unexpected(CookErrorDetail{
         .code = CookError::kContentTooLarge,
         .prim_path = "",
         .message = "scene graph exceeds pack size limits",
     });
   }
-  entries.push_back(
-      assets::AssetEntry{.type = assets::AssetType::kScene, .path = "Scene", .data = std::move(*scene_blob)});
 
-  const std::size_t mesh_count = CountEntriesOfType(entries, assets::AssetType::kMesh);
-  const std::size_t texture_count = CountEntriesOfType(entries, assets::AssetType::kTexture);
-
-  if (auto written = assets::WritePack(output_pack_path, entries, signing_key); !written) {
+  // Server scene: same nodes/hierarchy/collision-spawn-hitbox references,
+  // but mesh path stripped (ADR-0019) - the server never receives visual
+  // content, even as a dangling path it can't resolve. material_path is
+  // cleared too even though no fixture/prim populates it yet (material
+  // binding isn't cooked at all today) - so a future cook that starts
+  // setting it doesn't also have to remember to strip it here.
+  assets::SceneData server_scene = scene;
+  for (assets::SceneNode& node : server_scene.nodes) {
+    node.mesh_path.reset();
+    node.material_path.reset();
+  }
+  auto server_scene_blob = assets::EncodeSceneBlob(server_scene);
+  if (!server_scene_blob) {
     return std::unexpected(CookErrorDetail{
-        .code = CookError::kPackWriteFailed,
+        .code = CookError::kContentTooLarge,
         .prim_path = "",
-        .message = std::format("WriteError code {}", static_cast<int>(written.error())),
+        .message = "scene graph exceeds pack size limits",
     });
   }
 
-  return CookReport{.mesh_count = mesh_count, .texture_count = texture_count, .node_count = scene.nodes.size()};
+  // Server pack: only the collision/hitbox/spawn-point entries, plus the
+  // stripped scene. Built before client_entries below so entries can be
+  // moved rather than copied there - entries' own mesh/texture blob bytes
+  // are typically the bulk of a cook's data, and only this (much smaller)
+  // filtered subset needs to survive as an independent copy.
+  std::vector<assets::AssetEntry> server_entries;
+  std::ranges::copy_if(entries, std::back_inserter(server_entries),
+                       [](const assets::AssetEntry& entry) { return IsServerPackAssetType(entry.type); });
+  server_entries.push_back(
+      assets::AssetEntry{.type = assets::AssetType::kScene, .path = "Scene", .data = std::move(*server_scene_blob)});
+  if (auto written = assets::WritePack(server_output_path, server_entries, signing_key); !written) {
+    return std::unexpected(CookErrorDetail{
+        .code = CookError::kPackWriteFailed,
+        .prim_path = "",
+        .message = std::format("server pack: WriteError code {}", static_cast<int>(written.error())),
+    });
+  }
+
+  // Client pack: everything cooked from this stage, plus the full scene.
+  std::vector<assets::AssetEntry> client_entries = std::move(entries);
+  client_entries.push_back(
+      assets::AssetEntry{.type = assets::AssetType::kScene, .path = "Scene", .data = std::move(*client_scene_blob)});
+  if (auto written = assets::WritePack(client_output_path, client_entries, signing_key); !written) {
+    return std::unexpected(CookErrorDetail{
+        .code = CookError::kPackWriteFailed,
+        .prim_path = "",
+        .message = std::format("client pack: WriteError code {}", static_cast<int>(written.error())),
+    });
+  }
+
+  return CookReport{.mesh_count = mesh_count, .texture_count = texture_count, .node_count = node_count};
 }
 
 }  // namespace augusta::asset_cooking
