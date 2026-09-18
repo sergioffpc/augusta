@@ -30,24 +30,12 @@ if (AUGUSTA_BUILD_RUNTIME)
 
   add_executable(augusta_assets_tests assets_test.cpp)
   target_link_libraries(augusta_assets_tests PRIVATE augusta_assets GTest::gtest GTest::gtest_main)
+  # WritePack/Encode*/Pack::Load round-trip coverage (below) exercises
+  # augusta_assets' own private pack-format internals directly (encoder.h/
+  # decoder.h, not under include/augusta/ - see that header's own comment
+  # on why: the pack-cooking pipeline, tools/asset-pipeline, reimplements
+  # this wire format in pure Python instead of linking against it). This
+  # target gets a private include path to see them; nothing else needs to.
+  target_include_directories(augusta_assets_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
   gtest_discover_tests(augusta_assets_tests)
-endif()
-
-# Only when tools/asset-cooking is part of this configure (see
-# AUGUSTA_BUILD_RUNTIME's else() branch in the top-level CMakeLists.txt) -
-# off whenever AUGUSTA_BUILD_RUNTIME is ON, which never adds that
-# subdirectory.
-if (TARGET augusta_asset_cooking_lib)
-  add_executable(augusta_asset_pipeline_tests asset_pipeline_test.cpp)
-  target_link_libraries(augusta_asset_pipeline_tests PRIVATE augusta_asset_cooking_lib augusta_assets GTest::gtest GTest::gtest_main)
-  # The fixture stage lives next to this CMakeLists.txt rather than beside
-  # the test binary, so the test needs its absolute source path baked in.
-  target_compile_definitions(augusta_asset_pipeline_tests PRIVATE
-    AUGUSTA_ASSET_PIPELINE_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
-  )
-  # DISCOVERY_TIMEOUT above the 5s default: this binary pulls in OpenUSD's
-  # DLLs (like augusta_networking_tests above pulls in GameNetworkingSockets'),
-  # and a fresh build's first launch can take longer than 5s once Windows
-  # Defender scans the newly written binaries.
-  gtest_discover_tests(augusta_asset_pipeline_tests DISCOVERY_TIMEOUT 30)
 endif()

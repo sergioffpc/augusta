@@ -97,11 +97,6 @@
       "output": { "outputOnFailure": true }
     },
     {
-      "name": "windows-tools",
-      "configurePreset": "windows-tools",
-      "output": { "outputOnFailure": true }
-    },
-    {
       "name": "linux",
       "configurePreset": "linux",
       "output": { "outputOnFailure": true }

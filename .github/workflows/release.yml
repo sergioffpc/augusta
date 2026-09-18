@@ -104,15 +104,17 @@ jobs:
 
   build-tools:
     runs-on: windows-2025
-    # Offline authoring tooling (tools/asset-cooking, ARCHITECTURE.md
-    # "Tooling" section) - never shipped in the client/server binaries
-    # above. Also covered path-filtered on every PR by ci.yml's own
-    # (identically-named) build-tools job; this is the unconditional
-    # release-gate build of the same targets. The windows-tools preset
-    # (CMakePresets.json) sets
-    # AUGUSTA_BUILD_RUNTIME=OFF/AUGUSTA_BUILD_TOOLS=ON and narrows
-    # VCPKG_MANIFEST_FEATURES to just "tools", so this job's vcpkg install
-    # skips flecs/GameNetworkingSockets/PhysX entirely.
+    # Offline authoring tooling's native support modules
+    # (tools/asset-pipeline/cooking, ARCHITECTURE.md "Tooling" section) -
+    # never shipped in the client/server binaries above. The asset cooker
+    # itself is pure Python (tools/asset-pipeline, ADR-0030); this job only
+    # builds its two small native bindings. Also covered path-filtered on
+    # every PR by ci.yml's own (identically-named) build-tools job; this is
+    # the unconditional release-gate build of the same targets. The
+    # windows-tools preset (CMakePresets.json) sets AUGUSTA_BUILD_RUNTIME=
+    # OFF/AUGUSTA_BUILD_TOOLS=ON and narrows VCPKG_MANIFEST_FEATURES to
+    # just "tools", so this job's vcpkg install skips flecs/
+    # GameNetworkingSockets/PhysX entirely.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -142,10 +144,7 @@ jobs:
         shell: pwsh
 
       - name: Build
-        run: cmake --build --preset windows-tools --target augusta_asset_cooking augusta_asset_pipeline_tests
-
-      - name: Test
-        run: ctest --preset windows-tools -R '^AssetPipelineTest\.'
+        run: cmake --build --preset windows-tools --target augusta_meshoptimizer_py augusta_textconv_py
 
   publish:
     needs: [build-client, build-server, build-tools]

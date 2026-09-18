@@ -1,0 +1,22 @@
+[project]
+name = "asset-pipeline"
+version = "0.1.0"
+description = "Augusta asset-cooking pipeline (ADR-0030): usd-optimize -> usd-validation-nvidia -> pure-Python cook/pack."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "usd-optimize>=1.2.1",
+  "usd-validation-nvidia>=1.21.0",
+  "pynacl>=1.5.0",
+  "blake3>=0.4.1",
+]
+
+[project.scripts]
+asset-pipeline = "asset_pipeline.cli:main"
+asset-pipeline-gen-keypair = "asset_pipeline.keys:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/asset_pipeline"]

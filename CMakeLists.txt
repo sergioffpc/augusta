@@ -39,7 +39,7 @@ find_package(spdlog CONFIG REQUIRED)
 # of the two dependency sets actually get installed, via
 # VCPKG_MANIFEST_FEATURES on the chosen preset.
 option(AUGUSTA_BUILD_RUNTIME "Build the client/server shared runtime and its modules" ON)
-option(AUGUSTA_BUILD_TOOLS "Build the offline asset-cooking tool (tools/asset-cooking)" OFF)
+option(AUGUSTA_BUILD_TOOLS "Build the offline asset-cooking tool (tools/asset-pipeline/cooking)" OFF)
 if (AUGUSTA_BUILD_RUNTIME)
   find_package(flecs CONFIG REQUIRED)
   find_package(GameNetworkingSockets CONFIG REQUIRED)
@@ -91,7 +91,7 @@ if (AUGUSTA_BUILD_TOOLS)
   # Offline authoring-time tooling (ARCHITECTURE.md "Tooling" section) -
   # not part of the shipped client/server build graph above, kept as its
   # own target tree under tools/ rather than joining src/'s.
-  add_subdirectory(tools/asset-cooking)
+  add_subdirectory(tools/asset-pipeline/cooking)
 endif()
 
 # Every module and both runtime targets above have now made their own

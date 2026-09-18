@@ -65,12 +65,14 @@ Built before any gameplay milestone needs a test map, so nothing
 downstream ever touches a hardcoded placeholder.
 - Level baking tool: usd-optimize (stage cleanup) + usd-validation-nvidia
   (validation) on the OpenUSD-authored test map, baked to runtime format
-- Asset cooker CLI (`tools/asset-cooking/`): meshoptimizer (meshes, read
-  directly from the cleaned USD stage), DirectXTex (textures)
+- Asset cooker (`tools/asset-pipeline`, pure Python): meshoptimizer
+  (meshes, read directly from the cleaned USD stage) and DirectXTex
+  (textures) via two small native bindings (`tools/asset-pipeline/cooking/`,
+  no OpenUSD - see ADR-0030)
 - Signed, verified packs (client + server split)
-- CI addition: asset-pipeline check — build the cooker, generate a fresh
-  throwaway Ed25519 keypair for the run, cook the test assets, sign with
-  the ephemeral key, verify the signed pack loads end to end
+- CI addition: asset-pipeline check — generate a fresh throwaway Ed25519
+  keypair for the run, cook the test assets, sign with the ephemeral key,
+  verify the signed pack loads end to end
 
 **Exercises:** ADR-0015 through ADR-0020, ADR-0030, ADR-0031
 **Exit criteria:** both executables load exclusively from signed, verified

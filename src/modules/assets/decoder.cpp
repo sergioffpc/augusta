@@ -1,4 +1,4 @@
-#include "augusta/decoder.h"
+#include "decoder.h"
 
 #include <cstdint>
 #include <optional>
@@ -9,9 +9,9 @@
 #include "wire_format.h"
 
 // The Decode* half of augusta_assets' blob (de)serialization (ADR-0031/
-// ADR-0032/ADR-0007) - see encoder.cpp for the matching Encode* half
-// (part of the public API), and wire_format.h for the byte-level
-// primitives (and scene-node flag bits) both sides share.
+// ADR-0032/ADR-0007) - see encoder.cpp for the matching Encode* half, and
+// wire_format.h for the byte-level primitives (and scene-node flag bits)
+// both sides share. Both halves are private (see encoder.h's own comment).
 namespace augusta::assets {
 
 namespace {

@@ -259,12 +259,15 @@ Damage → Scripts/Behaviours → Commit)
   geometry), validates it with usd-validation-nvidia, then converts it into the
   engine's runtime level format, including Steam Audio baked
   reflection/occlusion data
-- Asset cooker CLI (`tools/asset-cooking/`, target `augusta_asset_cooking`,
-  C++ per ADR-0025's meshoptimizer/DirectXTex/OpenUSD vcpkg ports) — reads
-  meshes directly from the cleaned OpenUSD stage (ADR-0016), optimizes via
-  meshoptimizer, compresses textures via DirectXTex (BC7/BC5/BC4, DDS), and
-  packages everything into signed, verified pack files (separate client
-  and server packs). Full ordered pipeline: ADR-0030.
+- Asset cooker (`tools/asset-pipeline`, a pure-Python project - `asset-pipeline`
+  console-script entry point) — walks the cleaned OpenUSD stage via
+  usd-optimize's own `pxr` build, optimizes meshes via meshoptimizer and
+  compresses textures via DirectXTex (BC7/BC5/BC4, DDS) through two small
+  native pybind11 modules (`tools/asset-pipeline/cooking/`, per ADR-0025's
+  vcpkg ports - neither links OpenUSD, see ADR-0030), and packages
+  everything into signed, verified pack files (separate client and server
+  packs) via a pure-Python reimplementation of augusta_assets' wire format.
+  Full ordered pipeline: ADR-0030.
 
 ## 6. Runtime View
 

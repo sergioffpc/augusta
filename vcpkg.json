@@ -20,11 +20,11 @@
       ]
     },
     "tools": {
-      "description": "Offline asset-cooking tool (tools/asset-cooking) - ADR-0015, ADR-0016, ADR-0017, ADR-0030. Not needed by the client or server runtime.",
+      "description": "Offline asset-cooking tool's native bindings (tools/asset-pipeline/cooking) - ADR-0016, ADR-0017, ADR-0030. USD stage walking is pure Python (usd-optimize's pip-installed pxr build) instead, deliberately not vcpkg's usd port - see that directory's CMakeLists.txt. Not needed by the client or server runtime.",
       "dependencies": [
-        "usd",
         "meshoptimizer",
-        "directxtex"
+        "directxtex",
+        "pybind11"
       ]
     }
   }
