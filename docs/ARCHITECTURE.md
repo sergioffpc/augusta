@@ -259,7 +259,7 @@ Damage → Scripts/Behaviours → Commit)
   geometry), validates it with usd-validation-nvidia, then converts it into the
   engine's runtime level format, including Steam Audio baked
   reflection/occlusion data
-- Asset cooker (`tools/asset-pipeline`, a pure-Python project - `asset-pipeline`
+- Asset cooker (`tools/asset-pipeline`, a pure-Python project - `cooker`
   console-script entry point) — walks the cleaned OpenUSD stage via
   usd-optimize's own `pxr` build, optimizes meshes via meshoptimizer and
   compresses textures via DirectXTex (BC7/BC5/BC4, DDS) through two small

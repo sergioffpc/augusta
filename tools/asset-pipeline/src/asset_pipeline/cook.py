@@ -10,6 +10,7 @@ compression).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -334,7 +335,18 @@ def _maybe_cook_texture_prim(prim: Usd.Prim, prim_path: str, stage_path: Path, e
 _SERVER_PACK_ASSET_TYPES = frozenset({_TYPE_COLLISION, _TYPE_HITBOX, _TYPE_SPAWN_POINT})
 
 
-def cook_stage(stage_path: Path, client_output_path: Path, server_output_path: Path, signing_key: bytes) -> CookReport:
+def cook_stage(
+    stage_path: Path,
+    client_output_path: Path,
+    server_output_path: Path,
+    signing_key: bytes,
+    on_prim: Callable[[int, int, str], None] | None = None,
+) -> CookReport:
+    """Bakes stage_path into signed client/server packs.
+
+    on_prim(done, total, prim_path), if given, is called after each prim is
+    cooked - the only part of cooking that scales with the stage's size.
+    """
     stage = Usd.Stage.Open(str(stage_path))
     if not stage:
         raise CookError("stage_open_failed", "", str(stage_path))
@@ -350,13 +362,16 @@ def cook_stage(stage_path: Path, client_output_path: Path, server_output_path: P
     # becomes its own node subtree, de-instanced at cook time. Traverse()
     # visits prims pre-order (a parent always before its children), which
     # _build_node relies on.
-    for prim in stage.Traverse(Usd.TraverseInstanceProxies(Usd.PrimDefaultPredicate)):
+    prims = list(stage.Traverse(Usd.TraverseInstanceProxies(Usd.PrimDefaultPredicate)))
+    for done, prim in enumerate(prims, start=1):
         node = _build_node(prim, correction, node_index_of, entries)
         prim_path = node.name
         node_index_of[str(prim.GetPath())] = len(nodes)
         nodes.append(node)
 
         _maybe_cook_texture_prim(prim, prim_path, stage_path, entries)
+        if on_prim is not None:
+            on_prim(done, len(prims), prim_path)
 
     mesh_count = sum(1 for entry in entries if entry.type == _TYPE_MESH)
     texture_count = sum(1 for entry in entries if entry.type == _TYPE_TEXTURE)

@@ -11,8 +11,8 @@ dependencies = [
 ]
 
 [project.scripts]
-asset-pipeline = "asset_pipeline.cli:main"
-asset-pipeline-gen-keypair = "asset_pipeline.keys:main"
+cooker = "asset_pipeline.cli:main"
+cooker-keygen = "asset_pipeline.keys:main"
 
 [build-system]
 requires = ["hatchling"]
