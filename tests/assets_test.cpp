@@ -14,13 +14,11 @@
 #include "encoder.h"
 
 // Unit tests for augusta_assets, including its own private pack-format
-// internals (encoder.h/WritePack) - this links only augusta_assets, no
-// USD/DirectXTex/meshoptimizer, so it builds and runs under the plain
-// runtime presets (windows/linux/sanitizers), not just windows-tools. The
-// pack-cooking pipeline itself (tools/asset-pipeline) is pure Python and
-// has its own test coverage; these tests exist to keep augusta_assets'
-// wire format correct and pin down what tools/asset-pipeline's Python
-// WritePack reimplementation is validated against.
+// internals (encoder.h/WritePack). Links only augusta_assets - no USD/
+// DirectXTex/meshoptimizer - so it builds and runs under the plain
+// runtime presets (windows/linux/sanitizers). These tests pin down
+// augusta_assets' wire format, which tools/asset-pipeline's Python
+// WritePack reimplementation (ADR-0030) is validated against.
 namespace {
 
 using augusta::assets::Ed25519PublicKey;
@@ -53,8 +51,7 @@ void WriteFileBytes(const std::filesystem::path& path, const void* data, std::si
 }
 
 // Client/server startup (issue #60) reads its public key from exactly
-// this kind of file - the same 32 raw bytes the cooker's --gen-keypair
-// mode writes.
+// this kind of file: 32 raw bytes, no framing.
 TEST_F(ReadEd25519PublicKeyFileTest, RoundTripsAValidKeyFile) {
   const auto keys = GenerateEd25519KeyPair();
   const auto path = MakePath("augusta_assets_test_valid.pub");
@@ -154,8 +151,8 @@ TEST_F(PackTest, WritePackRejectsDuplicatePaths) {
 
 // Exercises augusta_assets' own texture-blob encode/write/resolve seam
 // directly (WritePack/Pack::Load/ResolveTexture) - actually compressing an
-// image (DirectXTex) happens in tools/asset-pipeline (Python) now, which
-// this module has no dependency on.
+// image (DirectXTex) happens in tools/asset-pipeline (Python), which this
+// module has no dependency on.
 TEST_F(PackTest, EncodesAndResolvesTextureBlob) {
   const auto pack_path = MakePackPath("augusta_assets_test_texture_blob.pack");
   const auto keys = GenerateEd25519KeyPair();

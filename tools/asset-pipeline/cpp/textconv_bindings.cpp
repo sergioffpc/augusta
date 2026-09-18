@@ -31,7 +31,7 @@ bool EnsureComInitialized() {
 
 // augusta:textureFormat (ADR-0017/issue #49): selects which BC format a
 // texture compresses to. Defaults to BC7 (the common sRGB color-texture
-// case) for an unrecognized value, same as the old C++ cooker.
+// case) for an unrecognized value.
 DXGI_FORMAT ToDxgiFormat(const std::string& format) {
   if (format == "bc5") {
     return DXGI_FORMAT_BC5_UNORM;
@@ -75,7 +75,7 @@ py::bytes CompressTexture(const std::filesystem::path& image_path, const std::st
 }
 
 PYBIND11_MODULE(_textconv, m) {
-  m.doc() = "Thin bindings over DirectXTex (ADR-0017), called from asset_pipeline.texture - WIC image load + "
+  m.doc() = "Thin bindings over DirectXTex (ADR-0017), called from asset_pipeline.cook - WIC image load + "
             "BC7/BC5/BC4 block compression + DDS encode.";
   m.def("compress_texture", &CompressTexture, py::arg("image_path"), py::arg("format") = "bc7",
         "Loads image_path via WIC, BC-compresses to `format` (bc7/bc5/bc4), returns SaveToDDSMemory bytes.");

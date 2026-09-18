@@ -31,20 +31,10 @@ endif()
 find_package(spdlog CONFIG REQUIRED)
 
 # flecs/GameNetworkingSockets/PhysX back the client/server shared runtime
-# (ECS worlds, networking transport, physics - ADR-0001/0002/0003); USD/
-# DirectXTex/meshoptimizer back the offline asset-cooking tool
-# (ADR-0015/0016/0017/0030). Independent options rather than one switch,
-# so a single configure can build either, neither, or both - the vcpkg
-# manifest's own "runtime"/"tools" features (vcpkg.json) still gate which
-# of the two dependency sets actually get installed, via
-# VCPKG_MANIFEST_FEATURES on the chosen preset.
-option(AUGUSTA_BUILD_RUNTIME "Build the client/server shared runtime and its modules" ON)
-option(AUGUSTA_BUILD_TOOLS "Build the offline asset-cooking tool (tools/asset-pipeline/cooking)" OFF)
-if (AUGUSTA_BUILD_RUNTIME)
-  find_package(flecs CONFIG REQUIRED)
-  find_package(GameNetworkingSockets CONFIG REQUIRED)
-  find_package(unofficial-omniverse-physx-sdk CONFIG REQUIRED)
-endif()
+# (ECS worlds, networking transport, physics - ADR-0001/0002/0003).
+find_package(flecs CONFIG REQUIRED)
+find_package(GameNetworkingSockets CONFIG REQUIRED)
+find_package(unofficial-omniverse-physx-sdk CONFIG REQUIRED)
 
 # NVTX (github.com/NVIDIA/NVTX) is header-only and not on vcpkg, so it's
 # vendored as a pinned git submodule (third_party/nvtx) instead. Not
@@ -65,39 +55,29 @@ add_subdirectory(src/modules/version)
 add_subdirectory(src/modules/logging)
 add_subdirectory(src/modules/math)
 add_subdirectory(src/modules/assets)
-if (AUGUSTA_BUILD_RUNTIME)
-  add_subdirectory(src/modules/physics)
-  add_subdirectory(src/modules/ballistics)
-  add_subdirectory(src/modules/networking)
-  add_subdirectory(src/modules/scripting)
-  add_subdirectory(src/modules/audio)
-  add_subdirectory(src/modules/input)
-  add_subdirectory(src/modules/animation)
-  add_subdirectory(src/modules/simulation)
-  add_subdirectory(src/modules/prediction)
-  add_subdirectory(src/modules/presentation)
-  add_subdirectory(src/modules/replication)
-  add_subdirectory(src/server)
-  if (WIN32)
-    # NVIDIA Falcor (ADR-0009) is Windows-only, so augusta_renderer's real
-    # implementation only builds here - nothing on Linux (only the
-    # WIN32-only client links it) ever needed it in that build graph anyway.
-    add_subdirectory(src/modules/renderer)
-    add_subdirectory(src/client)
-  endif()
-endif()
-
-if (AUGUSTA_BUILD_TOOLS)
-  # Offline authoring-time tooling (ARCHITECTURE.md "Tooling" section) -
-  # not part of the shipped client/server build graph above, kept as its
-  # own target tree under tools/ rather than joining src/'s.
-  add_subdirectory(tools/asset-pipeline/cooking)
+add_subdirectory(src/modules/physics)
+add_subdirectory(src/modules/ballistics)
+add_subdirectory(src/modules/networking)
+add_subdirectory(src/modules/scripting)
+add_subdirectory(src/modules/audio)
+add_subdirectory(src/modules/input)
+add_subdirectory(src/modules/animation)
+add_subdirectory(src/modules/simulation)
+add_subdirectory(src/modules/prediction)
+add_subdirectory(src/modules/presentation)
+add_subdirectory(src/modules/replication)
+add_subdirectory(src/server)
+if (WIN32)
+  # NVIDIA Falcor (ADR-0009) is Windows-only, so augusta_renderer's real
+  # implementation only builds here - nothing on Linux (only the
+  # WIN32-only client links it) ever needed it in that build graph anyway.
+  add_subdirectory(src/modules/renderer)
+  add_subdirectory(src/client)
 endif()
 
 # Every module and both runtime targets above have now made their own
 # target_link_libraries() calls, so the client/server module dependency
-# graph is complete - see cmake/AugustaModule.cmake. A no-op when
-# AUGUSTA_BUILD_RUNTIME is OFF, since none of the tagged targets exist.
+# graph is complete - see cmake/AugustaModule.cmake.
 augusta_check_module_scopes()
 
 add_subdirectory(tests)

@@ -127,12 +127,6 @@ jobs:
           & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
 
       - name: Configure
-        # AUGUSTA_BUILD_RUNTIME defaults to ON (the windows preset's own
-        # default), building the client/server runtime - the offline
-        # cooker's native support modules (tools/, windows-tools preset,
-        # see the root CMakeLists.txt's AUGUSTA_BUILD_TOOLS option) aren't
-        # built here and have no dedicated CI job of their own; the cooker
-        # itself is pure Python (tools/asset-pipeline, ADR-0030).
         run: cmake --preset windows
         shell: pwsh
 
@@ -188,12 +182,6 @@ jobs:
         run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
 
       - name: Configure
-        # AUGUSTA_BUILD_RUNTIME defaults to ON (builds augustad's
-        # runtime); the offline cooker's native support modules (tools/,
-        # windows-tools preset) aren't built here, have no dedicated CI job
-        # of their own, and aren't shipped in the server image (Dockerfile)
-        # either way. The cooker itself is pure Python (tools/asset-pipeline,
-        # ADR-0030).
         run: cmake --preset linux
 
       - name: Lint (clang-tidy)

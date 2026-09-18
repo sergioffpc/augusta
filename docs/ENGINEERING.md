@@ -162,7 +162,7 @@ pipeline).
   MSVC on Windows, and stacking an unsupported compiler on top of an
   already-unmaintained dependency, ADR-0009, isn't worth the purity.)
 - **Asset pipeline tooling (authoring-only, opt-in):** a separate
-  `scripts/bootstrap-asset-pipeline.ps1` script builds a hermetic
+  `tools/asset-pipeline/scripts/bootstrap-asset-pipeline.ps1` script builds a hermetic
   authoring/cooking environment under a caller-chosen `-AssetsRoot`
   (ADR-0015, ADR-0016, ADR-0017, ADR-0030) — NVIDIA Omniverse USD Composer
   (via kit-app-template, since the old Launcher was deprecated), a
@@ -173,7 +173,7 @@ pipeline).
   out of `bootstrap-windows.ps1`: these are heavier, GPU-dependent,
   authoring-only tools never linked into shipped binaries (ARCHITECTURE.md
   §2), so only whoever is actually authoring content runs it.
-  `meshoptimizer` and DirectXTex are `tools/asset-pipeline/cooking`'s own
+  `meshoptimizer` and DirectXTex are `tools/asset-pipeline/cpp`'s own
   C++ build dependencies (two small pybind11 modules, no OpenUSD - see
   ADR-0030) — vendored via `vcpkg.json` (ADR-0025) like the rest of the
   codebase, not fetched by this script.

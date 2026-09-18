@@ -31,7 +31,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$repoRoot = Split-Path -Parent $PSScriptRoot
+$assetPipelineProject = Split-Path -Parent $PSScriptRoot
 
 function Install-WingetPackage {
   param([string]$Id, [string[]]$Override)
@@ -44,10 +44,10 @@ function Install-WingetPackage {
 }
 
 # uv manages its own Python interpreters (see the venv creation below) - no
-# system-wide Python install needed, unlike an earlier version of this
-# script. VCRedist is a genuine OS-level dependency uv can't provide: usd-
-# optimize's USD runtime DLLs import MSVCP140.dll/VCRUNTIME140*.dll, not
-# bundled in its wheel (see usd-optimize's own PyPI README).
+# system-wide Python install needed. VCRedist is a genuine OS-level
+# dependency uv can't provide: usd-optimize's USD runtime DLLs import
+# MSVCP140.dll/VCRUNTIME140*.dll, not bundled in its wheel (see
+# usd-optimize's own PyPI README).
 Install-WingetPackage -Id "astral-sh.uv"
 Install-WingetPackage -Id "Microsoft.VCRedist.2015+.x64"
 
@@ -131,7 +131,6 @@ if (-not (Test-Path $venvPython)) {
     throw "uv venv failed (exit $LASTEXITCODE)."
   }
 }
-$assetPipelineProject = Join-Path $repoRoot "tools\asset-pipeline"
 Write-Host "Installing asset-pipeline (from $assetPipelineProject) into $pythonDir..."
 uv pip install --python $venvPython --upgrade --editable $assetPipelineProject
 if ($LASTEXITCODE -ne 0) {
@@ -144,34 +143,35 @@ if ($LASTEXITCODE -ne 0) {
 $adobePluginsDir = Join-Path $toolsDir "USD-Fileformat-plugins"
 Sync-GitRepo -Url "https://github.com/adobe/USD-Fileformat-plugins.git" -Path $adobePluginsDir
 
-# --- Native cooking-support modules build (ADR-0030) ---
-# augusta_meshoptimizer_py/augusta_textconv_py (tools/asset-pipeline/
-# cooking/*_bindings.cpp) are vcpkg-vendored C++ targets of the augusta
-# repo itself (CMakePresets.json's windows-tools preset) - they still
-# configure/build through the repo's own build/ tree (that's where the
-# top-level CMakeLists.txt/vcpkg.json live), but that directory's
-# CMakeLists.txt points RUNTIME_OUTPUT_DIRECTORY straight at
-# ../src/asset_pipeline, so `import asset_pipeline._meshoptimizer`/
-# `_textconv` just work with no separate copy step. Neither links USD (see
-# that CMakeLists.txt's own comment on why) - cook.py walks the stage via
-# usd-optimize's pip-installed pxr build instead, and everything else
-# (the pack format, key generation) is pure Python (pack.py/keys.py).
-# -DPython3_EXECUTABLE points cmake's Python discovery at this venv, so
-# the built extensions' ABI matches the interpreter that imports them.
-# pybind11 tags the actual filename with the Python ABI (e.g.
+# --- Native modules build (ADR-0030) ---
+# tools/asset-pipeline/cpp is its own standalone CMake project (own
+# vcpkg.json/CMakePresets.json, independent of the client/server build) that
+# builds the two pybind11 modules straight into ../src/asset_pipeline, so
+# `import asset_pipeline._meshoptimizer`/`_textconv` just work with no
+# separate copy step. PYTHON_EXECUTABLE (the variable pybind11's vcpkg port's
+# legacy FindPythonInterp reads) points cmake at this venv, so the built
+# extensions' ABI matches the interpreter that imports them. pybind11 tags
+# the actual filename with the Python ABI (e.g.
 # _meshoptimizer.cp312-win_amd64.pyd) - Python's import machinery resolves
 # that back to the plain module name regardless, so check by glob.
+$nativeSourceDir = Join-Path $assetPipelineProject "cpp"
 $assetPipelinePackageDir = Join-Path $assetPipelineProject "src\asset_pipeline"
-$cookingModulesBuilt = (Get-ChildItem $assetPipelinePackageDir -Filter "_meshoptimizer*.pyd" -ErrorAction SilentlyContinue) -and
+$nativeModulesBuilt = (Get-ChildItem $assetPipelinePackageDir -Filter "_meshoptimizer*.pyd" -ErrorAction SilentlyContinue) -and
   (Get-ChildItem $assetPipelinePackageDir -Filter "_textconv*.pyd" -ErrorAction SilentlyContinue)
-if (-not $cookingModulesBuilt) {
-  Write-Host "Building augusta_meshoptimizer_py/augusta_textconv_py (windows-tools preset)..."
-  cmake --preset windows-tools -S $repoRoot "-DPython3_EXECUTABLE=$venvPython"
-  cmake --build --preset windows-tools --target augusta_meshoptimizer_py augusta_textconv_py
-  $cookingModulesBuilt = (Get-ChildItem $assetPipelinePackageDir -Filter "_meshoptimizer*.pyd" -ErrorAction SilentlyContinue) -and
+if (-not $nativeModulesBuilt) {
+  Write-Host "Building the native modules ($nativeSourceDir)..."
+  cmake --preset windows -S $nativeSourceDir "-DPYTHON_EXECUTABLE=$venvPython"
+  if ($LASTEXITCODE -ne 0) {
+    throw "cmake configure failed (exit $LASTEXITCODE)."
+  }
+  cmake --build (Join-Path $nativeSourceDir "build\x64-windows")
+  if ($LASTEXITCODE -ne 0) {
+    throw "cmake build failed (exit $LASTEXITCODE)."
+  }
+  $nativeModulesBuilt = (Get-ChildItem $assetPipelinePackageDir -Filter "_meshoptimizer*.pyd" -ErrorAction SilentlyContinue) -and
     (Get-ChildItem $assetPipelinePackageDir -Filter "_textconv*.pyd" -ErrorAction SilentlyContinue)
-  if (-not $cookingModulesBuilt) {
-    throw "augusta_meshoptimizer_py/augusta_textconv_py build did not produce both modules in $assetPipelinePackageDir - see the cmake output above."
+  if (-not $nativeModulesBuilt) {
+    throw "The native modules build did not produce both _meshoptimizer and _textconv in $assetPipelinePackageDir - see the cmake output above."
   }
 }
 

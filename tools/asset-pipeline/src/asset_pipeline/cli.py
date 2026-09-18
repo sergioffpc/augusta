@@ -59,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
         ("Signing key", signing_key_path),
     ):
         if not path.exists():
-            print(f"{label} not found: {path} - run scripts\\bootstrap-asset-pipeline.ps1 {assets_root} first.", file=sys.stderr)
+            print(f"{label} not found: {path} - run tools\\asset-pipeline\\scripts\\bootstrap-asset-pipeline.ps1 {assets_root} first.", file=sys.stderr)
             return 1
 
     signing_key = read_private_key(signing_key_path)

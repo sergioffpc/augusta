@@ -8,24 +8,9 @@
     "glm",
     "blake3",
     "libsodium",
-    "mio"
-  ],
-  "features": {
-    "runtime": {
-      "description": "Client/server shared runtime (ECS worlds, networking transport, physics) - ADR-0001, ADR-0002, ADR-0003, ADR-0006. Not needed to build the offline asset-cooking tool alone.",
-      "dependencies": [
-        "flecs",
-        "gamenetworkingsockets",
-        "physx"
-      ]
-    },
-    "tools": {
-      "description": "Offline asset-cooking tool's native bindings (tools/asset-pipeline/cooking) - ADR-0016, ADR-0017, ADR-0030. USD stage walking is pure Python (usd-optimize's pip-installed pxr build) instead, deliberately not vcpkg's usd port - see that directory's CMakeLists.txt. Not needed by the client or server runtime.",
-      "dependencies": [
-        "meshoptimizer",
-        "directxtex",
-        "pybind11"
-      ]
-    }
-  }
+    "mio",
+    "flecs",
+    "gamenetworkingsockets",
+    "physx"
+  ]
 }

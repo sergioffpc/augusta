@@ -13,9 +13,8 @@ namespace py = pybind11;
 namespace {
 
 constexpr std::size_t kVertexStride = 3 * sizeof(float);
-// Same as the old C++ cooker's OptimizeMesh (see git history) - reduces
-// stored-value entropy for later compression without changing the pack's
-// on-disk vertex format, which stays plain float32.
+// Reduces stored-value entropy for later compression without changing the
+// pack's on-disk vertex format, which stays plain float32.
 constexpr int kQuantizationMantissaBits = 12;
 
 }  // namespace
@@ -81,7 +80,7 @@ py::tuple OptimizeMesh(std::vector<float> points, std::vector<std::uint32_t> ind
 
 PYBIND11_MODULE(_meshoptimizer, m) {
   m.doc() =
-      "Thin bindings over meshoptimizer (ADR-0016), called from asset_pipeline.mesh - weld/simplify/"
+      "Thin bindings over meshoptimizer (ADR-0016), called from asset_pipeline.cook - weld/simplify/"
       "optimize-cache/optimize-fetch/quantize.";
   m.def("optimize_mesh", &OptimizeMesh, py::arg("points"), py::arg("indices"),
         "points: flat [x0,y0,z0,x1,y1,z1,...] float list. indices: flat triangle-list uint32 list. Returns "

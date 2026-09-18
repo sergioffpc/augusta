@@ -2,16 +2,17 @@
 (ADR-0007/ADR-0018/ADR-0030/ADR-0031/ADR-0032): the Encode* blob functions
 and WritePack (header/data/index/trailer, BLAKE3 hash, Ed25519 sign).
 
-This project deliberately does not link augusta_assets to reuse that C++
-code (see src/modules/assets/encoder.h's own comment): doing so would mean
-loading vcpkg's own OpenUSD build in the same process as usd-optimize's
-pip-installed one, which crashes with a DLL-name collision the moment both
-load. Every constant and field order below is validated byte-for-byte
-against augusta_assets' own implementation (wire_format.h, encoder.cpp,
-assets.cpp) - a pack written here decodes identically to one WritePack()
-would have produced from the same entries, confirmed by cross-checking
-BLAKE3 (the `blake3` package) and Ed25519 (`pynacl`'s libsodium bindings)
-output against the real C++ blake3/libsodium libraries directly.
+augusta_assets itself has no OpenUSD dependency (only libsodium/BLAKE3/
+mio), so linking it here wouldn't touch the DLL-collision problem ADR-0030
+describes - this is a separate, deliberate choice to keep the cooker's
+write path entirely in Python rather than crossing into C++ for it via a
+binding (see that ADR's Considered Options). Every constant and field
+order below is validated byte-for-byte against augusta_assets' own
+implementation (wire_format.h, encoder.cpp, assets.cpp): a pack written
+here decodes identically to one WritePack() would have produced from the
+same entries, confirmed by cross-checking BLAKE3 (the `blake3` package)
+and Ed25519 (`pynacl`'s libsodium bindings) output against the real C++
+blake3/libsodium libraries directly.
 """
 
 from __future__ import annotations

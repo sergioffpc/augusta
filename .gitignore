@@ -47,13 +47,15 @@ vcpkg_installed/
 packages/
 .vcpkg-bincache/
 
-# Asset pipeline authoring/cooking tools (scripts/bootstrap-asset-pipeline.ps1)
-# - dev-machine tools, not vendored build dependencies (see ADR-0015).
+# Asset pipeline authoring/cooking tools (tools/asset-pipeline/scripts/
+# bootstrap-asset-pipeline.ps1) - dev-machine tools, not vendored build
+# dependencies (see ADR-0015).
 tools/asset-authoring/
 
-# Local asset content tree (scripts/bootstrap-asset-pipeline.ps1's default
-# -AssetsRoot): raw authored USD stages, cooked packs, and Ed25519 signing
-# keys. Never belongs in git - especially assets/keys/.
+# Local asset content tree (a natural -AssetsRoot for tools/asset-pipeline/
+# scripts/bootstrap-asset-pipeline.ps1): raw authored USD stages, cooked
+# packs, and Ed25519 signing keys. Never belongs in git - especially
+# assets/keys/.
 /assets/
 
 # Python (tools/asset-pipeline) build/install artifacts - the hermetic venv
@@ -64,7 +66,7 @@ __pycache__/
 .venv/
 
 # Native _meshoptimizer/_textconv extension modules (tools/asset-pipeline/
-# cooking/*_bindings.cpp) and any runtime DLLs they need alongside them
+# cpp/*_bindings.cpp) and any runtime DLLs they need alongside them
 # (DirectXTex, meshoptimizer, ...) - CMake builds these straight into this
 # path (RUNTIME_OUTPUT_DIRECTORY); compiled binaries, not source.
 # pybind11's actual filenames are ABI-tagged (e.g.

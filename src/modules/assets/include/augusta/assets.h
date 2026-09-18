@@ -102,8 +102,7 @@ struct SceneData {
 // to (ADR-0017), one-to-one with DXGI_FORMAT_BC7_UNORM/BC5_UNORM/
 // BC4_UNORM. Its own enum rather than depending on DXGI_FORMAT directly:
 // augusta_assets has no DirectXTex/D3D dependency of its own - only the
-// offline cooker (tools/asset-pipeline/cooking) links DirectXTex (see this
-// module's CMakeLists.txt).
+// offline cooker's native modules (tools/asset-pipeline/cpp) link DirectXTex.
 enum class TextureFormat : std::uint8_t {
   kBC7,
   kBC5,
@@ -144,11 +143,11 @@ std::string SanitizePrimPath(std::string_view usd_prim_path);
 // The Encode*/WritePack functions (and matching Decode* half) live in
 // their own, private header/source pairs (encoder.h/encoder.cpp,
 // decoder.h/decoder.cpp - not under include/augusta/, not installed):
-// nothing outside this module calls them anymore now that the pack-
-// cooking pipeline (tools/asset-pipeline) reimplements this wire format in
-// pure Python instead of linking against it (ADR-0030). Kept as the
-// canonical reference/round-trip test fixture (tests/assets_test.cpp)
-// rather than removed outright.
+// the pack-cooking pipeline (tools/asset-pipeline, ADR-0030) is pure
+// Python and reimplements this wire format independently rather than
+// linking against it, so nothing outside this module calls Encode*/
+// WritePack. They remain as the wire format's canonical reference and as
+// tests/assets_test.cpp's round-trip fixture.
 namespace augusta::assets {
 
 // One raw blob to be written into a pack, already encoded (e.g. by
@@ -169,10 +168,9 @@ struct Ed25519KeyPair {
   Ed25519PrivateKey private_key;
 };
 
-// Generates a new Ed25519 keypair (libsodium's CSPRNG). Used by the
-// cooker's --gen-keypair mode and directly by tests that need a
-// throwaway keypair for a single run (ENGINEERING.md's asset-pipeline CI
-// check), without shelling out to a CLI.
+// Generates a new Ed25519 keypair (libsodium's CSPRNG), for tests that
+// need a throwaway keypair for a single run (ENGINEERING.md's
+// asset-pipeline CI check) without shelling out to a CLI.
 Ed25519KeyPair GenerateEd25519KeyPair();
 
 enum class ReadKeyFileError {
@@ -181,17 +179,13 @@ enum class ReadKeyFileError {
   kIoError,
 };
 
-// Reads a raw 32-byte Ed25519 public key from path (the same byte layout
-// the cooker's --gen-keypair mode writes, e.g. augusta_assets.pub) -
-// the runtime-side counterpart to a key file the cooker or a developer
-// already generated. Every caller of Pack::Load outside a test (the
-// client/server executables, ADR-0019) needs this same "read the public
-// key I was handed, then load a pack against it" step, so it lives here
-// rather than being duplicated per executable.
+// Reads a raw 32-byte Ed25519 public key from path - the runtime-side
+// counterpart to whatever key file a developer generated to sign packs
+// (tools/asset-pipeline's keys.py). Every caller of Pack::Load outside a
+// test (the client/server executables, ADR-0019) needs this same "read
+// the public key I was handed, then load a pack against it" step, so it
+// lives here rather than being duplicated per executable.
 std::expected<Ed25519PublicKey, ReadKeyFileError> ReadEd25519PublicKeyFile(const std::filesystem::path& path);
-
-// WritePack/WriteError moved to the private encoder.h - see this header's
-// own comment above AssetEntry.
 
 enum class LoadError {
   // path could not be opened or read.

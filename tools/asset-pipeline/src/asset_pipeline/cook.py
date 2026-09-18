@@ -1,16 +1,11 @@
 """The asset cooker itself (ADR-0030): walks an authored OpenUSD stage and
-bakes it into signed client/server packs (ADR-0031/ADR-0032). A from-
-scratch Python port of what used to be a C++ cooker (tools/asset-pipeline/
-cooking/cook.cpp in git history) linking vcpkg's own OpenUSD build - that
-build can't coexist in the same process as usd-optimize's pip-installed
-one (see pack.py's own comment), so this walks the stage through pxr
-itself (the same pip-installed build optimize.py already uses) instead,
+bakes it into signed client/server packs (ADR-0031/ADR-0032). Walks the
+stage through pxr directly (the same pip-installed usd-optimize build
+optimize.py already uses, rather than linking a second, independently-
+built OpenUSD - see ADR-0030 for why those can't coexist in one process),
 and calls the small native _meshoptimizer/_textconv bindings only for the
-two pieces with no Python equivalent.
-
-Mirrors cook.cpp's algorithm closely enough to diff against it line by
-line; see that file's own comments (git history) for the reasoning behind
-each step this repeats.
+two pieces with no Python equivalent (mesh optimization, texture
+compression).
 """
 
 from __future__ import annotations
@@ -57,9 +52,8 @@ _TEXTURE_FORMAT_NAMES = {TEXTURE_FORMAT_BC7: "bc7", TEXTURE_FORMAT_BC5: "bc5", T
 
 
 class CookError(RuntimeError):
-    """Raised when cooking fails - carries the same detail the old C++
-    cooker's CookErrorDetail did: a code, the offending prim's path (empty
-    if not tied to one), and a human-readable message.
+    """Raised when cooking fails: carries a code, the offending prim's
+    path (empty if not tied to one), and a human-readable message.
     """
 
     def __init__(self, code: str, prim_path: str, message: str) -> None:
@@ -147,6 +141,8 @@ def _decompose(matrix: Gf.Matrix4d) -> tuple[tuple[float, float, float], tuple[f
     return translation, rotation_xyzw, scale
 
 
+# (translation_xyz, rotation_xyzw, scale_xyz) - matches _decompose's own
+# return shape above.
 _IDENTITY_TRANSFORM = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0), (1.0, 1.0, 1.0))
 
 

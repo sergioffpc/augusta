@@ -10,14 +10,13 @@
 
 // Private (not under include/augusta/, never installed) declarations of
 // augusta_assets' Encode* blob functions and WritePack (ADR-0031/ADR-0032/
-// ADR-0007), implemented in encoder.cpp/assets.cpp. The pack-cooking
-// pipeline (tools/asset-pipeline) reimplements this same wire format in
-// pure Python instead of linking against it (ADR-0030) - these no longer
-// have any production caller, and stay only as the canonical reference the
-// Python side is validated against, and for augusta_assets' own round-trip
-// tests (tests/assets_test.cpp), which gets a private include path to this
-// directory for exactly that reason. Mirrors decoder.h's own (pre-existing)
-// non-public status.
+// ADR-0007), implemented in encoder.cpp/assets.cpp. No production code
+// calls these - the pack-cooking pipeline (tools/asset-pipeline, ADR-0030)
+// is pure Python and reimplements this same wire format independently.
+// They serve as that format's canonical reference and as augusta_assets'
+// own round-trip test fixture (tests/assets_test.cpp, which gets a private
+// include path to this directory for exactly that reason) - same
+// non-public status as decoder.h.
 namespace augusta::assets {
 
 enum class EncodeError {

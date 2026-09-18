@@ -8,8 +8,8 @@
 
 // Private (not under include/augusta/, never installed) declarations for
 // decoder.cpp's blob decoders - see encoder.h's own comment for why
-// Encode*/WritePack are equally private now. These are NOT part of the
-// public contract: a caller only ever gets typed data back through
+// Encode*/WritePack are equally private. These are NOT part of the public
+// contract: a caller only ever gets typed data back through
 // Pack::Resolve* (assets.cpp), never a raw decoder call. This header
 // exists purely so assets.cpp can see decoder.cpp's definitions from a
 // separate translation unit.
