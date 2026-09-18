@@ -1,4 +1,4 @@
-#include "augusta/encoder.h"
+#include "encoder.h"
 
 #include <cstdint>
 #include <expected>

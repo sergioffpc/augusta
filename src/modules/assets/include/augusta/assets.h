@@ -17,18 +17,20 @@
 
 // augusta::assets loads runtime packs (ADR-0018/ADR-0031) and resolves
 // their content by pack-relative path. Linked by both the client and
-// server (ADR-0006), and by the offline cooker (augusta::asset_cooking,
-// ADR-0030) so the pack's byte layout is defined in exactly one place
-// rather than duplicated between writer and reader.
+// server (ADR-0006). The offline cooker (tools/asset-pipeline, ADR-0030)
+// is pure Python and does not link this module - it reimplements the same
+// wire format independently (validated against this module's WritePack,
+// kept private for exactly that reason - see encoder.h) rather than
+// sharing code across the language boundary.
 //
 // Every pack is BLAKE3-hashed and Ed25519-signed (ADR-0030/ADR-0031's
 // trailer step): Load() verifies the signature before trusting anything
-// else in the file, and WritePack() requires a signing key. Load()
-// memory-maps the pack file once (mio) rather than copying it into a
-// buffer; the BLAKE3 hash is computed directly off that mapping, and
-// every Resolve* call decodes straight out of it too - the file's bytes
-// are never read from disk more than once for a Pack's lifetime, and no
-// blob is ever copied into a separate in-memory buffer before decoding.
+// else in the file. Load() memory-maps the pack file once (mio) rather
+// than copying it into a buffer; the BLAKE3 hash is computed directly off
+// that mapping, and every Resolve* call decodes straight out of it too -
+// the file's bytes are never read from disk more than once for a Pack's
+// lifetime, and no blob is ever copied into a separate in-memory buffer
+// before decoding.
 namespace augusta::assets {
 
 // The kind of a pack's index entry (ADR-0031's per-blob type tag).
@@ -100,8 +102,7 @@ struct SceneData {
 // to (ADR-0017), one-to-one with DXGI_FORMAT_BC7_UNORM/BC5_UNORM/
 // BC4_UNORM. Its own enum rather than depending on DXGI_FORMAT directly:
 // augusta_assets has no DirectXTex/D3D dependency of its own - only the
-// offline cooker (tools/asset-cooking) links DirectXTex (see this
-// module's CMakeLists.txt).
+// offline cooker's native modules (tools/asset-pipeline/cpp) link DirectXTex.
 enum class TextureFormat : std::uint8_t {
   kBC7,
   kBC5,
@@ -139,16 +140,14 @@ std::string SanitizePrimPath(std::string_view usd_prim_path);
 
 }  // namespace augusta::assets
 
-// The Encode* blob functions (EncodeMeshBlob, EncodeSceneBlob,
-// EncodeTextureBlob, EncodeSpawnPointBlob) and EncodeError live in their
-// own header/source pair (encoder.h/encoder.cpp) rather than here,
-// mirroring the Decode* half's own decoder.h/decoder.cpp split -
-// included down here, after MeshData/SceneData/TextureData/
-// SpawnPointData above are already defined, so every existing
-// "#include <augusta/assets.h>" still sees them without any
-// caller-visible change.
-#include "augusta/encoder.h"
-
+// The Encode*/WritePack functions (and matching Decode* half) live in
+// their own, private header/source pairs (encoder.h/encoder.cpp,
+// decoder.h/decoder.cpp - not under include/augusta/, not installed):
+// the pack-cooking pipeline (tools/asset-pipeline, ADR-0030) is pure
+// Python and reimplements this wire format independently rather than
+// linking against it, so nothing outside this module calls Encode*/
+// WritePack. They remain as the wire format's canonical reference and as
+// tests/assets_test.cpp's round-trip fixture.
 namespace augusta::assets {
 
 // One raw blob to be written into a pack, already encoded (e.g. by
@@ -169,10 +168,9 @@ struct Ed25519KeyPair {
   Ed25519PrivateKey private_key;
 };
 
-// Generates a new Ed25519 keypair (libsodium's CSPRNG). Used by the
-// cooker's --gen-keypair mode and directly by tests that need a
-// throwaway keypair for a single run (ENGINEERING.md's asset-pipeline CI
-// check), without shelling out to a CLI.
+// Generates a new Ed25519 keypair (libsodium's CSPRNG), for tests that
+// need a throwaway keypair for a single run (ENGINEERING.md's
+// asset-pipeline CI check) without shelling out to a CLI.
 Ed25519KeyPair GenerateEd25519KeyPair();
 
 enum class ReadKeyFileError {
@@ -181,36 +179,13 @@ enum class ReadKeyFileError {
   kIoError,
 };
 
-// Reads a raw 32-byte Ed25519 public key from path (the same byte layout
-// the cooker's --gen-keypair mode writes, e.g. augusta_assets.pub) -
-// the runtime-side counterpart to a key file the cooker or a developer
-// already generated. Every caller of Pack::Load outside a test (the
-// client/server executables, ADR-0019) needs this same "read the public
-// key I was handed, then load a pack against it" step, so it lives here
-// rather than being duplicated per executable.
+// Reads a raw 32-byte Ed25519 public key from path - the runtime-side
+// counterpart to whatever key file a developer generated to sign packs
+// (tools/asset-pipeline's keys.py). Every caller of Pack::Load outside a
+// test (the client/server executables, ADR-0019) needs this same "read
+// the public key I was handed, then load a pack against it" step, so it
+// lives here rather than being duplicated per executable.
 std::expected<Ed25519PublicKey, ReadKeyFileError> ReadEd25519PublicKeyFile(const std::filesystem::path& path);
-
-enum class WriteError {
-  // output_path (or its temporary file) could not be created, written,
-  // or renamed into place.
-  kIoError,
-  // Two or more entries share the same path - ResolveMesh/ResolveScene
-  // would be ambiguous about which one they name.
-  kDuplicatePath,
-  // entries.size(), an entry's path, or a blob exceeded this module's
-  // pragmatic v1 size limits (kMaxEntries, kMaxPathLength, kMaxPackSize).
-  kTooLarge,
-};
-
-// Writes entries into a new pack file at output_path, in ADR-0031's
-// header/data/index/trailer write order, signing the trailer with
-// signing_key. The write is atomic: entries are assembled into a
-// temporary file first, which is only renamed into place at output_path
-// once fully written - a failed cook can never leave a truncated or
-// half-written file at output_path, and never touches a previously valid
-// pack there until the new one is complete.
-std::expected<void, WriteError> WritePack(const std::filesystem::path& output_path,
-                                          const std::vector<AssetEntry>& entries, const Ed25519PrivateKey& signing_key);
 
 enum class LoadError {
   // path could not be opened or read.

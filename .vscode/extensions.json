@@ -9,6 +9,8 @@
     "redhat.vscode-yaml",
     "sumneko.lua",
     "github.vscode-github-actions",
-    "shader-slang.slang-language-extension"
+    "shader-slang.slang-language-extension",
+    "ms-python.python",
+    "ms-python.vscode-pylance"
   ]
 }

@@ -9,8 +9,7 @@
       "binaryDir": "${sourceDir}/build/x64-windows",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "VCPKG_MANIFEST_FEATURES": "runtime"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       },
       "condition": {
         "type": "equals",
@@ -29,17 +28,6 @@
       }
     },
     {
-      "name": "windows-tools",
-      "displayName": "Windows tools-only (Ninja + cl)",
-      "inherits": "windows",
-      "binaryDir": "${sourceDir}/build/x64-windows-tools",
-      "cacheVariables": {
-        "VCPKG_MANIFEST_FEATURES": "tools",
-        "AUGUSTA_BUILD_RUNTIME": "OFF",
-        "AUGUSTA_BUILD_TOOLS": "ON"
-      }
-    },
-    {
       "name": "linux",
       "displayName": "Linux (Ninja)",
       "generator": "Ninja",
@@ -47,7 +35,6 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "VCPKG_MANIFEST_FEATURES": "runtime",
         "VCPKG_INSTALL_OPTIONS": "--x-packages-root=$env{HOME}/.cache/augusta-vcpkg/packages;--x-buildtrees-root=$env{HOME}/.cache/augusta-vcpkg/buildtrees;--downloads-root=$env{HOME}/.cache/augusta-vcpkg/downloads"
       },
       "condition": {
@@ -80,7 +67,6 @@
   "buildPresets": [
     { "name": "windows", "configurePreset": "windows" },
     { "name": "windows-debug", "configurePreset": "windows-debug" },
-    { "name": "windows-tools", "configurePreset": "windows-tools" },
     { "name": "linux", "configurePreset": "linux" },
     { "name": "linux-debug", "configurePreset": "linux-debug" },
     { "name": "linux-san", "configurePreset": "linux-san" }
@@ -94,11 +80,6 @@
     {
       "name": "windows-debug",
       "configurePreset": "windows-debug",
-      "output": { "outputOnFailure": true }
-    },
-    {
-      "name": "windows-tools",
-      "configurePreset": "windows-tools",
       "output": { "outputOnFailure": true }
     },
     {

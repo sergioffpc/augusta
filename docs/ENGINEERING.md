@@ -162,19 +162,21 @@ pipeline).
   MSVC on Windows, and stacking an unsupported compiler on top of an
   already-unmaintained dependency, ADR-0009, isn't worth the purity.)
 - **Asset pipeline tooling (authoring-only, opt-in):** a separate
-  `scripts/bootstrap-asset-pipeline.ps1` script fetches the Asset Pipeline's
-  authoring/cooking tools (ADR-0015, ADR-0016, ADR-0017) — NVIDIA Omniverse
-  USD Composer (via kit-app-template, since the old Launcher was
-  deprecated), the standalone `usd-optimize`/`usd-validation-nvidia` (pip),
-  and Adobe's USD-Fileformat-plugins — into `tools/asset-authoring/`
-  (gitignored: dev-machine tools, not vendored build dependencies).
-  Deliberately kept out of `bootstrap-windows.ps1`: these are heavier,
-  GPU-dependent, authoring-only tools never linked into shipped binaries
-  (ARCHITECTURE.md §2), so only whoever is actually authoring content runs
-  it. `meshoptimizer`, DirectXTex, and OpenUSD itself are the asset
-  cooker's (`tools/asset-cooking/`) own C++ build dependencies instead —
-  vendored via `vcpkg.json` (ADR-0025) like the rest of the codebase, not
-  fetched by this script.
+  `tools/asset-pipeline/scripts/bootstrap-windows.ps1` script builds a hermetic
+  authoring/cooking environment under a caller-chosen `-AssetsRoot`
+  (ADR-0015, ADR-0016, ADR-0017, ADR-0030) — NVIDIA Omniverse USD Composer
+  (via kit-app-template, since the old Launcher was deprecated), a
+  uv-managed Python venv with `tools/asset-pipeline` (this repo's own
+  pure-Python cooker project, pulling in `usd-optimize`/
+  `usd-validation-nvidia`/`pynacl`/`blake3` as its own dependencies)
+  installed editable, and Adobe's USD-Fileformat-plugins. Deliberately kept
+  out of `bootstrap-windows.ps1`: these are heavier, GPU-dependent,
+  authoring-only tools never linked into shipped binaries (ARCHITECTURE.md
+  §2), so only whoever is actually authoring content runs it.
+  `meshoptimizer` and DirectXTex are `tools/asset-pipeline/cpp`'s own
+  C++ build dependencies (two small pybind11 modules, no OpenUSD - see
+  ADR-0030) — vendored via `vcpkg.json` (ADR-0025) like the rest of the
+  codebase, not fetched by this script.
 - **Editor experience:** a committed `.vscode/extensions.json` lists
   recommended extensions (C++ tools, CMake Tools, clangd/clang-format,
   EditorConfig, Lua, YAML/Helm, GitHub Actions) — VS Code
