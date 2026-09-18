@@ -112,6 +112,66 @@ float SpeedMultiplierForStance(Stance stance) {
   return 1.0F;
 }
 
+// Decision half of Step's stamina rule (US-05): given this tick's sprint
+// request and the current stamina, resolves whether sprint is actually
+// honored (forced_walk_below can override it) and the resulting stamina.
+// Pure - no PxController calls - so it stays unit-testable independent of
+// PhysX; Step (mechanism half) just applies the result.
+struct StaminaResult {
+  bool sprinting = false;
+  float stamina = 1.0F;
+};
+
+StaminaResult ResolveStamina(bool sprint_requested, float current_stamina, const StaminaConfig& config,
+                             float delta_time) {
+  StaminaResult result;
+  result.sprinting = sprint_requested && current_stamina > config.forced_walk_below;
+  if (result.sprinting) {
+    result.stamina = std::max(0.0F, current_stamina - (config.deplete_per_second * delta_time));
+  } else {
+    result.stamina = std::min(1.0F, current_stamina + (config.regen_per_second * delta_time));
+  }
+  return result;
+}
+
+// Decision half of Step's move speed: this tick's horizontal speed given
+// stance and the effective (post-ResolveStamina) sprint state. Pure, same
+// testability rationale as ResolveStamina above.
+float ResolveSpeed(Stance stance, bool sprinting) {
+  float speed = kWalkSpeed * SpeedMultiplierForStance(stance);
+  if (sprinting && stance == Stance::kStanding) {
+    speed *= kSprintMultiplier;
+  }
+  return speed;
+}
+
+// Decision half of Reconcile (ADR-0004 snap/blend correction): computes the
+// corrected BodyState from the predicted and authoritative states, and
+// whether this correction snapped rather than blended. Pure - no
+// PxController calls - so it stays unit-testable independent of PhysX;
+// Reconcile (mechanism half) just applies the result to the controller.
+struct ReconciliationResult {
+  BodyState state;
+  bool snapped = false;
+  float error = 0.0F;
+};
+
+ReconciliationResult ResolveReconciliation(const BodyState& predicted, const BodyState& authoritative) {
+  ReconciliationResult result;
+  result.error = math::Length(authoritative.position - predicted.position);
+  if (result.error >= kSnapDistance) {
+    result.state = authoritative;
+    result.snapped = true;
+    return result;
+  }
+  result.state = predicted;
+  result.state.position = predicted.position + ((authoritative.position - predicted.position) * kBlendFactor);
+  result.state.velocity = predicted.velocity + ((authoritative.velocity - predicted.velocity) * kBlendFactor);
+  result.state.stance = authoritative.stance;
+  result.state.stamina = authoritative.stamina;
+  return result;
+}
+
 PxVec3 ToPx(const math::Vec3& vec) { return {vec.x, vec.y, vec.z}; }
 math::Vec3 FromPx(const PxVec3& vec) { return {vec.x, vec.y, vec.z}; }
 math::Vec3 FromPx(const PxExtendedVec3& vec) {
@@ -296,20 +356,11 @@ BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta
     state.stance = input.desired_stance;
   }
 
-  // Stamina depletion/recovery (US-05): sprint is honored only above the
-  // forced-walk threshold, and depletes; otherwise stamina recovers.
-  const bool sprinting = input.sprint && state.stamina > impl_->stamina_config.forced_walk_below;
-  if (sprinting) {
-    state.stamina = std::max(0.0F, state.stamina - (impl_->stamina_config.deplete_per_second * delta_time));
-  } else {
-    state.stamina = std::min(1.0F, state.stamina + (impl_->stamina_config.regen_per_second * delta_time));
-  }
+  const StaminaResult stamina = ResolveStamina(input.sprint, state.stamina, impl_->stamina_config, delta_time);
+  state.stamina = stamina.stamina;
 
   const math::Vec3 direction = math::Normalize(input.direction);
-  float speed = kWalkSpeed * SpeedMultiplierForStance(state.stance);
-  if (sprinting && state.stance == Stance::kStanding) {
-    speed *= kSprintMultiplier;
-  }
+  const float speed = ResolveSpeed(state.stance, stamina.sprinting);
 
   // Simple constant-acceleration gravity: reset the accumulated vertical
   // speed whenever the controller was grounded as of the previous Step,
@@ -354,31 +405,22 @@ BodyState World::Reconcile(BodyHandle handle, const BodyState& authoritative) {
     return authoritative;
   }
   BodyRecord& record = body_it->second;
-  const float error = math::Length(authoritative.position - record.state.position);
-
-  BodyState corrected = record.state;
-  if (error >= kSnapDistance) {
-    corrected = authoritative;
-    LD("subsystem=physics event=reconcile_snap handle={} error={:.3f}", static_cast<std::uint32_t>(handle), error);
-  } else {
-    corrected.position = record.state.position + ((authoritative.position - record.state.position) * kBlendFactor);
-    corrected.velocity = record.state.velocity + ((authoritative.velocity - record.state.velocity) * kBlendFactor);
-    corrected.stance = authoritative.stance;
-    corrected.stamina = authoritative.stamina;
-    LD("subsystem=physics event=reconcile_blend handle={} error={:.3f}", static_cast<std::uint32_t>(handle), error);
-  }
+  const ReconciliationResult result = ResolveReconciliation(record.state, authoritative);
+  LD("subsystem=physics event={} handle={} error={:.3f}", result.snapped ? "reconcile_snap" : "reconcile_blend",
+     static_cast<std::uint32_t>(handle), result.error);
 
   // Applied directly against the controller (not via SetState): SetState
   // also resets fall/ground tracking, which is correct for an intentional
   // teleport (spawn/respawn) but would spuriously interrupt gravity
   // continuity for what is, outside of the kSnapDistance case above, a
   // small in-place correction.
-  if (corrected.stance != record.state.stance) {
-    record.controller->resize(HeightForStance(corrected.stance));
+  if (result.state.stance != record.state.stance) {
+    record.controller->resize(HeightForStance(result.state.stance));
   }
-  record.controller->setFootPosition(PxExtendedVec3(corrected.position.x, corrected.position.y, corrected.position.z));
-  record.state = corrected;
-  return corrected;
+  record.controller->setFootPosition(
+      PxExtendedVec3(result.state.position.x, result.state.position.y, result.state.position.z));
+  record.state = result.state;
+  return result.state;
 }
 
 RaycastHit World::Raycast(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const {

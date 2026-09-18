@@ -170,6 +170,26 @@ std::expected<const IndexEntry*, ResolveError> FindIndexEntry(const std::vector<
   return &*match;
 }
 
+// Shared shape behind every Pack::Resolve* method: look up path's index
+// entry (rejecting a type mismatch), decode its blob bytes via decode, and
+// map a decode failure to kCorruptBlob. Factored out once all six
+// Resolve* methods turned out to be this same sequence with nothing but
+// the target type/AssetType/decoder differing.
+template <typename T>
+std::expected<T, ResolveError> ResolveAsset(const std::vector<IndexEntry>& index, const mio::mmap_source& mapping,
+                                            std::string_view path, AssetType expected_type,
+                                            std::optional<T> (*decode)(std::span<const std::byte>)) {
+  const auto match = FindIndexEntry(index, path, expected_type);
+  if (!match) {
+    return std::unexpected(match.error());
+  }
+  auto value = decode(BlobBytes(mapping, **match));
+  if (!value) {
+    return std::unexpected(ResolveError::kCorruptBlob);
+  }
+  return std::move(*value);
+}
+
 // Rejects entries.size()/each path exceeding this module's pragmatic v1
 // limits, and any two entries sharing a path (ResolveMesh/ResolveScene
 // would be ambiguous about which one they name).
@@ -521,81 +541,27 @@ std::expected<Pack, LoadError> Pack::Load(const std::filesystem::path& path, con
 }
 
 std::expected<MeshData, ResolveError> Pack::ResolveMesh(std::string_view path) const {
-  const auto match = FindIndexEntry(impl_->index, path, AssetType::kMesh);
-  if (!match) {
-    return std::unexpected(match.error());
-  }
-
-  auto mesh = DecodeMeshBlob(BlobBytes(impl_->mapping, **match));
-  if (!mesh) {
-    return std::unexpected(ResolveError::kCorruptBlob);
-  }
-  return std::move(*mesh);
+  return ResolveAsset<MeshData>(impl_->index, impl_->mapping, path, AssetType::kMesh, DecodeMeshBlob);
 }
 
 std::expected<SceneData, ResolveError> Pack::ResolveScene(std::string_view path) const {
-  const auto match = FindIndexEntry(impl_->index, path, AssetType::kScene);
-  if (!match) {
-    return std::unexpected(match.error());
-  }
-
-  auto scene = DecodeSceneBlob(BlobBytes(impl_->mapping, **match));
-  if (!scene) {
-    return std::unexpected(ResolveError::kCorruptBlob);
-  }
-  return std::move(*scene);
+  return ResolveAsset<SceneData>(impl_->index, impl_->mapping, path, AssetType::kScene, DecodeSceneBlob);
 }
 
 std::expected<TextureData, ResolveError> Pack::ResolveTexture(std::string_view path) const {
-  const auto match = FindIndexEntry(impl_->index, path, AssetType::kTexture);
-  if (!match) {
-    return std::unexpected(match.error());
-  }
-
-  auto texture = DecodeTextureBlob(BlobBytes(impl_->mapping, **match));
-  if (!texture) {
-    return std::unexpected(ResolveError::kCorruptBlob);
-  }
-  return std::move(*texture);
+  return ResolveAsset<TextureData>(impl_->index, impl_->mapping, path, AssetType::kTexture, DecodeTextureBlob);
 }
 
 std::expected<MeshData, ResolveError> Pack::ResolveCollision(std::string_view path) const {
-  const auto match = FindIndexEntry(impl_->index, path, AssetType::kCollision);
-  if (!match) {
-    return std::unexpected(match.error());
-  }
-
-  auto collision = DecodeMeshBlob(BlobBytes(impl_->mapping, **match));
-  if (!collision) {
-    return std::unexpected(ResolveError::kCorruptBlob);
-  }
-  return std::move(*collision);
+  return ResolveAsset<MeshData>(impl_->index, impl_->mapping, path, AssetType::kCollision, DecodeMeshBlob);
 }
 
 std::expected<MeshData, ResolveError> Pack::ResolveHitbox(std::string_view path) const {
-  const auto match = FindIndexEntry(impl_->index, path, AssetType::kHitbox);
-  if (!match) {
-    return std::unexpected(match.error());
-  }
-
-  auto hitbox = DecodeMeshBlob(BlobBytes(impl_->mapping, **match));
-  if (!hitbox) {
-    return std::unexpected(ResolveError::kCorruptBlob);
-  }
-  return std::move(*hitbox);
+  return ResolveAsset<MeshData>(impl_->index, impl_->mapping, path, AssetType::kHitbox, DecodeMeshBlob);
 }
 
 std::expected<SpawnPointData, ResolveError> Pack::ResolveSpawnPoint(std::string_view path) const {
-  const auto match = FindIndexEntry(impl_->index, path, AssetType::kSpawnPoint);
-  if (!match) {
-    return std::unexpected(match.error());
-  }
-
-  auto spawn_point = DecodeSpawnPointBlob(BlobBytes(impl_->mapping, **match));
-  if (!spawn_point) {
-    return std::unexpected(ResolveError::kCorruptBlob);
-  }
-  return std::move(*spawn_point);
+  return ResolveAsset<SpawnPointData>(impl_->index, impl_->mapping, path, AssetType::kSpawnPoint, DecodeSpawnPointBlob);
 }
 
 }  // namespace augusta::assets
