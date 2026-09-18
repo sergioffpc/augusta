@@ -572,8 +572,8 @@ std::expected<assets::SceneNode, CookErrorDetail> BuildNode(const pxr::UsdPrim& 
             .message = "hitbox exceeds pack size limits",
         });
       }
-      entries.push_back(assets::AssetEntry{
-          .type = assets::AssetType::kHitbox, .path = prim_path, .data = std::move(*hitbox_blob)});
+      entries.push_back(
+          assets::AssetEntry{.type = assets::AssetType::kHitbox, .path = prim_path, .data = std::move(*hitbox_blob)});
       // node.hitbox_path is already set above.
     } else if (HasCollisionEnabled(prim)) {
       auto collision_data = ReadRawMeshGeometry(geom_mesh, prim_path);
@@ -755,8 +755,8 @@ std::expected<CookReport, CookErrorDetail> Cook(const std::filesystem::path& sta
   std::vector<assets::AssetEntry> server_entries;
   std::ranges::copy_if(entries, std::back_inserter(server_entries),
                        [](const assets::AssetEntry& entry) { return IsServerPackAssetType(entry.type); });
-  server_entries.push_back(assets::AssetEntry{
-      .type = assets::AssetType::kScene, .path = "Scene", .data = std::move(*server_scene_blob)});
+  server_entries.push_back(
+      assets::AssetEntry{.type = assets::AssetType::kScene, .path = "Scene", .data = std::move(*server_scene_blob)});
   if (auto written = assets::WritePack(server_output_path, server_entries, signing_key); !written) {
     return std::unexpected(CookErrorDetail{
         .code = CookError::kPackWriteFailed,
@@ -767,8 +767,8 @@ std::expected<CookReport, CookErrorDetail> Cook(const std::filesystem::path& sta
 
   // Client pack: everything cooked from this stage, plus the full scene.
   std::vector<assets::AssetEntry> client_entries = std::move(entries);
-  client_entries.push_back(assets::AssetEntry{
-      .type = assets::AssetType::kScene, .path = "Scene", .data = std::move(*client_scene_blob)});
+  client_entries.push_back(
+      assets::AssetEntry{.type = assets::AssetType::kScene, .path = "Scene", .data = std::move(*client_scene_blob)});
   if (auto written = assets::WritePack(client_output_path, client_entries, signing_key); !written) {
     return std::unexpected(CookErrorDetail{
         .code = CookError::kPackWriteFailed,

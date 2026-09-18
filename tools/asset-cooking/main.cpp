@@ -53,7 +53,7 @@ int RunGenKeypair(std::string_view prefix) {
 }
 
 int RunCook(std::string_view stage_path, std::string_view client_output_path, std::string_view server_output_path,
-           std::string_view private_key_path) {
+            std::string_view private_key_path) {
   const auto signing_key = ReadPrivateKeyFile(private_key_path);
   if (!signing_key) {
     std::println(stderr, "could not read Ed25519 private key from {}", private_key_path);
@@ -92,8 +92,9 @@ int main(int argc, char** argv) {
     return RunCook(argv[1], argv[2], argv[3], argv[4]);
   }
 
-  std::println(stderr, "usage: augusta_asset_cooking <stage.usd> <client_output.pack> <server_output.pack> "
-                       "<signing_key.key>");
+  std::println(stderr,
+               "usage: augusta_asset_cooking <stage.usd> <client_output.pack> <server_output.pack> "
+               "<signing_key.key>");
   std::println(stderr, "       augusta_asset_cooking --gen-keypair <key_prefix>");
   return 1;
 }
