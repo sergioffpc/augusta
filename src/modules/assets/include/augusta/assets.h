@@ -137,22 +137,16 @@ struct SpawnPointData {
 // is kept as the path separator.
 std::string SanitizePrimPath(std::string_view usd_prim_path);
 
-enum class EncodeError {
-  // A count or length exceeded what the wire format's fields can hold, or
-  // this module's own pragmatic v1 sanity limits (kMaxPathLength,
-  // kMaxMeshPoints, kMaxMeshIndices, kMaxSceneNodes, kMaxProperties).
-  kTooLarge,
-};
-
 }  // namespace augusta::assets
 
 // The Encode* blob functions (EncodeMeshBlob, EncodeSceneBlob,
-// EncodeTextureBlob, EncodeSpawnPointBlob) live in their own header/
-// source pair (encoder.h/encoder.cpp) rather than here, mirroring the
-// Decode* half's own decoder.h/decoder.cpp split - included down here,
-// after MeshData/SceneData/TextureData/SpawnPointData/EncodeError above
-// are already defined, so every existing "#include <augusta/assets.h>"
-// still sees them without any caller-visible change.
+// EncodeTextureBlob, EncodeSpawnPointBlob) and EncodeError live in their
+// own header/source pair (encoder.h/encoder.cpp) rather than here,
+// mirroring the Decode* half's own decoder.h/decoder.cpp split -
+// included down here, after MeshData/SceneData/TextureData/
+// SpawnPointData above are already defined, so every existing
+// "#include <augusta/assets.h>" still sees them without any
+// caller-visible change.
 #include "augusta/encoder.h"
 
 namespace augusta::assets {

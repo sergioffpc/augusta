@@ -24,6 +24,13 @@
 // the ordinary header-guard mechanism.
 namespace augusta::assets {
 
+enum class EncodeError {
+  // A count or length exceeded what the wire format's fields can hold, or
+  // this module's own pragmatic v1 sanity limits (kMaxPathLength,
+  // kMaxMeshPoints, kMaxMeshIndices, kMaxSceneNodes, kMaxProperties).
+  kTooLarge,
+};
+
 // Encodes mesh into the pack's mesh-blob byte layout (ADR-0031), for
 // augusta::asset_cooking to embed as an AssetEntry's data. The exact
 // on-disk layout is otherwise an implementation detail, shared only with
