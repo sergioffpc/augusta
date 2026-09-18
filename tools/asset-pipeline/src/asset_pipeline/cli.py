@@ -37,13 +37,37 @@ def _default_assets_root() -> Path:
     return Path(sys.executable).resolve().parents[2]
 
 
+_USD_EXTENSIONS = (".usd", ".usda", ".usdc", ".usdz")
+
+
+class StageNotFoundError(Exception):
+    """Raised when stage doesn't resolve to exactly one authored USD file."""
+
+
 def _resolve_stage(authoring_dir: Path, stage: Path) -> Path | None:
     """Returns authoring_dir/stage, or None if stage isn't a plain relative
     path staying inside authoring_dir (absolute, or escaping via '..').
+
+    The USD extension is optional: a stage without one is looked up as
+    <stage>.usd/.usda/.usdc/.usdz. Raises StageNotFoundError if none or more
+    than one of those exists.
     """
     if stage.is_absolute() or ".." in stage.parts:
         return None
-    return authoring_dir / stage
+
+    path = authoring_dir / stage
+    if path.suffix.lower() in _USD_EXTENSIONS:
+        return path
+
+    candidates = [path.with_name(path.name + extension) for extension in _USD_EXTENSIONS]
+    found = [candidate for candidate in candidates if candidate.is_file()]
+    if not found:
+        tried = ", ".join(_USD_EXTENSIONS)
+        raise StageNotFoundError(f"Stage not found: {path} (tried extensions {tried})")
+    if len(found) > 1:
+        names = ", ".join(candidate.name for candidate in found)
+        raise StageNotFoundError(f"Stage name is ambiguous, several files match: {names} - pass the extension explicitly.")
+    return found[0]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -51,7 +75,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "stage",
         type=Path,
-        help="Raw authored USD stage (e.g. exported from USD Composer), relative to <assets-root>/authoring.",
+        help="Raw authored USD stage (e.g. exported from USD Composer), relative to <assets-root>/authoring. "
+        "The extension is optional: 'Stage' finds Stage.usd, .usda, .usdc or .usdz.",
     )
     parser.add_argument(
         "--assets-root",
@@ -73,7 +98,11 @@ def main(argv: list[str] | None = None) -> int:
     authoring_dir = assets_root / "authoring"
     packs_dir = assets_root / "packs"
 
-    stage_path = _resolve_stage(authoring_dir, args.stage)
+    try:
+        stage_path = _resolve_stage(authoring_dir, args.stage)
+    except StageNotFoundError as error:
+        print(error, file=sys.stderr)
+        return 1
     if stage_path is None:
         print(f"Stage must be a path relative to {authoring_dir} (no absolute paths or '..'): {args.stage}", file=sys.stderr)
         return 1

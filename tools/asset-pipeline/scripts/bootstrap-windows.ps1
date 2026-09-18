@@ -83,7 +83,8 @@ $packsDir = Join-Path $AssetsRoot "packs"
 $keysDir = Join-Path $AssetsRoot "keys"
 $toolsDir = Join-Path $AssetsRoot "tools"
 $pythonDir = Join-Path $AssetsRoot "python"
-New-Item -ItemType Directory -Force -Path $authoringDir, $packsDir, $keysDir | Out-Null
+$binDir = Join-Path $AssetsRoot "bin"
+New-Item -ItemType Directory -Force -Path $authoringDir, $packsDir, $keysDir, $binDir | Out-Null
 if (-not $SkipAuthoring) {
   New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
 }
@@ -169,8 +170,8 @@ if (-not $SkipAuthoring) {
 # pyproject.toml) is installed into it editable, pulling in usd-optimize
 # (Python API only, no CLI) and usd-validation-nvidia (CLI) as its
 # dependencies. This produces $pythonDir\Scripts\cooker.exe, the
-# actual pipeline entry point - editable so local edits to tools/asset-
-# pipeline take effect without rerunning this script.
+# actual pipeline entry point (copied to $binDir below) - editable so local
+# edits to tools/asset-pipeline take effect without rerunning this script.
 $venvPython = Join-Path $pythonDir "Scripts\python.exe"
 if (-not (Test-Path $venvPython)) {
   Write-Host "Creating hermetic Python environment at $pythonDir (uv)..."
@@ -183,6 +184,14 @@ Write-Host "Installing asset-pipeline (from $assetPipelineProject) into $pythonD
 uv pip install --python $venvPython --upgrade --editable $assetPipelineProject
 if ($LASTEXITCODE -ne 0) {
   throw "uv pip install failed (exit $LASTEXITCODE)."
+}
+
+# The user-facing commands live in $binDir, not buried in the venv. The
+# console-script launchers pip/uv generate embed the absolute path of the
+# venv's python.exe, so a plain copy runs from anywhere; refreshed on every
+# run so it never goes stale after a reinstall.
+foreach ($command in "cooker", "cooker-keygen") {
+  Copy-Item (Join-Path $pythonDir "Scripts\$command.exe") $binDir -Force
 }
 
 # --- Native modules build (ADR-0030) ---
@@ -228,7 +237,7 @@ if (Test-Path $signingKeyPath) {
   Write-Host "Signing keypair already exists at $signingKeyPrefix.key/.pub - leaving it as is."
 } else {
   Write-Host "Generating Ed25519 signing keypair at $signingKeyPrefix.key/.pub..."
-  $genKeypairExe = Join-Path $pythonDir "Scripts\cooker-keygen.exe"
+  $genKeypairExe = Join-Path $binDir "cooker-keygen.exe"
   & $genKeypairExe $signingKeyPrefix
   if ($LASTEXITCODE -ne 0) {
     throw "cooker-keygen failed (exit $LASTEXITCODE)."
@@ -240,6 +249,7 @@ Write-Host "Hermetic environment ready at $AssetsRoot (never commit any of it, e
 Write-Host "  - $authoringDir  : raw USD stages - the cooker's input root"
 Write-Host "  - $packsDir      : signed packs cooked via the cooker"
 Write-Host "  - $keysDir       : Ed25519 signing keypair (augusta.key/augusta.pub)"
+Write-Host "  - $binDir        : the cooker and cooker-keygen commands"
 Write-Host "  - $pythonDir     : hermetic Python venv (uv), asset-pipeline installed editable from tools\asset-pipeline"
 Write-Host "                     (includes the native _meshoptimizer/_textconv modules - $assetPipelinePackageDir)"
 if (-not $SkipAuthoring) {
@@ -247,5 +257,5 @@ if (-not $SkipAuthoring) {
   Write-Host "  - $adobePluginsDir : Adobe USD-Fileformat-plugins (see its README to build)"
 }
 Write-Host ""
-$cookerExe = Join-Path $pythonDir "Scripts\cooker.exe"
-Write-Host "Cook a stage saved under $authoringDir, e.g.: $cookerExe Example.usda"
+$cookerExe = Join-Path $binDir "cooker.exe"
+Write-Host "Cook a stage saved under $authoringDir, e.g.: $cookerExe Example"
