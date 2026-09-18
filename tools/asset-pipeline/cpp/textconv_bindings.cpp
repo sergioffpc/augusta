@@ -49,8 +49,9 @@ DXGI_FORMAT ToDxgiFormat(const std::string& format) {
 // (DDS header included) as bytes. Raises RuntimeError on any failure.
 py::bytes CompressTexture(const std::filesystem::path& image_path, const std::string& format) {
   if (!EnsureComInitialized()) {
-    throw std::runtime_error("COM could not be initialized on this thread (CoInitializeEx failed) - WIC texture "
-                             "loading is unavailable");
+    throw std::runtime_error(
+        "COM could not be initialized on this thread (CoInitializeEx failed) - WIC texture "
+        "loading is unavailable");
   }
 
   DirectX::TexMetadata metadata;
@@ -75,8 +76,9 @@ py::bytes CompressTexture(const std::filesystem::path& image_path, const std::st
 }
 
 PYBIND11_MODULE(_textconv, m) {
-  m.doc() = "Thin bindings over DirectXTex (ADR-0017), called from asset_pipeline.cook - WIC image load + "
-            "BC7/BC5/BC4 block compression + DDS encode.";
+  m.doc() =
+      "Thin bindings over DirectXTex (ADR-0017), called from asset_pipeline.cook - WIC image load + "
+      "BC7/BC5/BC4 block compression + DDS encode.";
   m.def("compress_texture", &CompressTexture, py::arg("image_path"), py::arg("format") = "bc7",
         "Loads image_path via WIC, BC-compresses to `format` (bc7/bc5/bc4), returns SaveToDDSMemory bytes.");
 }

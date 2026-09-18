@@ -1,3 +1,4 @@
+#include <meshoptimizer.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -5,8 +6,6 @@
 #include <cstdint>
 #include <utility>
 #include <vector>
-
-#include <meshoptimizer.h>
 
 namespace py = pybind11;
 
@@ -35,8 +34,8 @@ py::tuple OptimizeMesh(std::vector<float> points, std::vector<std::uint32_t> ind
   // Weld vertices that share the exact same position first - every later
   // pass assumes the vertex buffer has no redundant entries.
   std::vector<unsigned int> remap(vertex_count);
-  const std::size_t unique_vertex_count =
-      meshopt_generateVertexRemap(remap.data(), indices.data(), index_count, points.data(), vertex_count, kVertexStride);
+  const std::size_t unique_vertex_count = meshopt_generateVertexRemap(remap.data(), indices.data(), index_count,
+                                                                      points.data(), vertex_count, kVertexStride);
 
   std::vector<std::uint32_t> welded_indices(index_count);
   meshopt_remapIndexBuffer(welded_indices.data(), indices.data(), index_count, remap.data());
@@ -54,8 +53,7 @@ py::tuple OptimizeMesh(std::vector<float> points, std::vector<std::uint32_t> ind
   float simplify_error = 0.0F;
   const std::size_t simplified_index_count =
       meshopt_simplify(simplified_indices.data(), indices.data(), indices.size(), points.data(), points.size() / 3,
-                       kVertexStride, /*target_index_count=*/0, /*target_error=*/0.01F, /*options=*/0,
-                       &simplify_error);
+                       kVertexStride, /*target_index_count=*/0, /*target_error=*/0.01F, /*options=*/0, &simplify_error);
   simplified_indices.resize(simplified_index_count);
   indices = std::move(simplified_indices);
 
