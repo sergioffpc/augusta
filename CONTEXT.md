@@ -30,6 +30,20 @@ _Avoid_: Resync, rollback
 The measured network latency between a client and the server for a single request/response cycle.
 _Avoid_: Ping, lag
 
+### Architecture
+
+**Mechanism**:
+Engine-side C++ code that provides a capability without deciding when or how it's invoked for gameplay purposes (e.g. the ballistics/hit-detection pipeline, the ECS phase runner).
+_Avoid_: Engine code, core logic
+
+**Game policy**:
+Gameplay-specific rules (round lifecycle, win conditions, spawn rules) that decide how mechanism is used, implemented as sandboxed Lua in SimulationWorld's Scripts/Behaviours phase, kept out of C++ so it can change without touching mechanism code.
+_Avoid_: Game logic, gameplay code (too broad — conflates policy with mechanism)
+
+**Data-driven configuration**:
+Tunable values (e.g. weapon/ammo damage) read from data files rather than expressed as mechanism code or policy scripts — a third category alongside mechanism and policy.
+_Avoid_: Config, settings (too generic — this specifically means gameplay-tunable values, not engine/app configuration)
+
 ### Combat
 
 **Hitbox**:
