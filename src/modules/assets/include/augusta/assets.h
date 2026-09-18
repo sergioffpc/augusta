@@ -144,24 +144,18 @@ enum class EncodeError {
   kTooLarge,
 };
 
-// Encodes mesh into the pack's mesh-blob byte layout (ADR-0031), for
-// augusta::asset_cooking to embed as an AssetEntry's data. The exact
-// on-disk layout is otherwise an implementation detail, shared only with
-// Pack's own decode path.
-std::expected<std::vector<std::byte>, EncodeError> EncodeMeshBlob(const MeshData& mesh);
+}  // namespace augusta::assets
 
-// Encodes scene into the pack's scene-blob byte layout (ADR-0032).
-std::expected<std::vector<std::byte>, EncodeError> EncodeSceneBlob(const SceneData& scene);
+// The Encode* blob functions (EncodeMeshBlob, EncodeSceneBlob,
+// EncodeTextureBlob, EncodeSpawnPointBlob) live in their own header/
+// source pair (encoder.h/encoder.cpp) rather than here, mirroring the
+// Decode* half's own decoder.h/decoder.cpp split - included down here,
+// after MeshData/SceneData/TextureData/SpawnPointData/EncodeError above
+// are already defined, so every existing "#include <augusta/assets.h>"
+// still sees them without any caller-visible change.
+#include "augusta/encoder.h"
 
-// Encodes texture into the pack's texture-blob byte layout (ADR-0031),
-// for augusta::asset_cooking to embed as an AssetEntry's data.
-std::expected<std::vector<std::byte>, EncodeError> EncodeTextureBlob(const TextureData& texture);
-
-// Encodes spawn_point into the pack's spawn-point-blob byte layout
-// (ADR-0031/ADR-0032). Collision and hitbox blobs need no analogous
-// EncodeCollisionBlob/EncodeHitboxBlob - they reuse EncodeMeshBlob
-// directly (see MeshData's own comment).
-std::expected<std::vector<std::byte>, EncodeError> EncodeSpawnPointBlob(const SpawnPointData& spawn_point);
+namespace augusta::assets {
 
 // One raw blob to be written into a pack, already encoded (e.g. by
 // EncodeMeshBlob) and addressed (e.g. by SanitizePrimPath).

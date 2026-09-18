@@ -1,4 +1,4 @@
-#include "decoder.h"
+#include "augusta/decoder.h"
 
 #include <cstdint>
 #include <optional>

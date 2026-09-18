@@ -13,7 +13,7 @@
 #include <stdexcept>
 #include <system_error>
 
-#include "decoder.h"
+#include "augusta/decoder.h"
 #include "wire_format.h"
 
 namespace augusta::assets {
