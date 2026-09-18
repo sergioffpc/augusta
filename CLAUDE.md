@@ -8,6 +8,13 @@ Issues are tracked in this repo's GitHub Issues, using the `gh` CLI. See `docs/a
 
 Single-context layout: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
+### Coding standards
+
+Judgment calls for generated C++ code that `clang-format`/`clang-tidy` (ADR-0012)
+can't check — single responsibility, KISS, DRY, decision/mechanism separation,
+comments, testing, naming, ownership, error handling. See
+`docs/agents/coding-standards.md`.
+
 ### Profiling
 
 To use nsys refer to 'C:\Program Files\NVIDIA Corporation\Nsight Systems 2026.5.1\skills\nsight-systems\SKILL.md'
