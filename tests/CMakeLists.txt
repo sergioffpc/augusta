@@ -27,6 +27,10 @@ if (AUGUSTA_BUILD_RUNTIME)
   add_executable(augusta_prediction_tests prediction_test.cpp)
   target_link_libraries(augusta_prediction_tests PRIVATE augusta_prediction GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_prediction_tests)
+
+  add_executable(augusta_assets_tests assets_test.cpp)
+  target_link_libraries(augusta_assets_tests PRIVATE augusta_assets GTest::gtest GTest::gtest_main)
+  gtest_discover_tests(augusta_assets_tests)
 endif()
 
 # Only when tools/asset-cooking is part of this configure (see

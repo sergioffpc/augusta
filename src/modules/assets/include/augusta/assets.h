@@ -175,6 +175,21 @@ struct Ed25519KeyPair {
 // check), without shelling out to a CLI.
 Ed25519KeyPair GenerateEd25519KeyPair();
 
+enum class ReadKeyFileError {
+  // path could not be opened, or its size didn't match the key type
+  // being read (a short/long read - see ReadEd25519PublicKeyFile).
+  kIoError,
+};
+
+// Reads a raw 32-byte Ed25519 public key from path (the same byte layout
+// the cooker's --gen-keypair mode writes, e.g. augusta_assets.pub) -
+// the runtime-side counterpart to a key file the cooker or a developer
+// already generated. Every caller of Pack::Load outside a test (the
+// client/server executables, ADR-0019) needs this same "read the public
+// key I was handed, then load a pack against it" step, so it lives here
+// rather than being duplicated per executable.
+std::expected<Ed25519PublicKey, ReadKeyFileError> ReadEd25519PublicKeyFile(const std::filesystem::path& path);
+
 enum class WriteError {
   // output_path (or its temporary file) could not be created, written,
   // or renamed into place.
@@ -219,6 +234,13 @@ enum class LoadError {
   // the file was tampered with, or was signed by a different key.
   kSignatureInvalid,
 };
+
+// A human-readable phrase for error (e.g. "failed signature verification")
+// - every caller of Pack::Load outside a test needs to turn a LoadError
+// into an actionable message for whoever's running the process (the
+// client/server executables, ADR-0019), so it lives here rather than
+// being duplicated per executable.
+std::string_view DescribeLoadError(LoadError error);
 
 enum class ResolveError {
   // No index entry has this path.

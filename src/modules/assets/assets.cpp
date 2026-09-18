@@ -410,6 +410,27 @@ Ed25519KeyPair GenerateEd25519KeyPair() {
   return pair;
 }
 
+std::expected<Ed25519PublicKey, ReadKeyFileError> ReadEd25519PublicKeyFile(const std::filesystem::path& path) {
+  std::ifstream key_file(path, std::ios::binary);
+  if (!key_file) {
+    return std::unexpected(ReadKeyFileError::kIoError);
+  }
+  Ed25519PublicKey key;
+  key_file.read(reinterpret_cast<char*>(key.data()), static_cast<std::streamsize>(key.size()));
+  if (!key_file || key_file.gcount() != static_cast<std::streamsize>(key.size())) {
+    return std::unexpected(ReadKeyFileError::kIoError);
+  }
+  // A short read (file smaller than 32 bytes) is already caught above by
+  // gcount(); this catches the opposite - a file with trailing bytes past
+  // the key, which would otherwise go silently unnoticed - by checking
+  // there's nothing left to read.
+  key_file.peek();
+  if (!key_file.eof()) {
+    return std::unexpected(ReadKeyFileError::kIoError);
+  }
+  return key;
+}
+
 std::expected<void, WriteError> WritePack(const std::filesystem::path& output_path,
                                           const std::vector<AssetEntry>& entries,
                                           const Ed25519PrivateKey& signing_key) {
@@ -432,6 +453,26 @@ struct Pack::Impl {
   mio::mmap_source mapping;
   std::vector<IndexEntry> index;
 };
+
+std::string_view DescribeLoadError(LoadError error) {
+  switch (error) {
+    case LoadError::kIoError:
+      return "could not be opened or read";
+    case LoadError::kBadMagic:
+      return "is not an augusta pack file (bad magic)";
+    case LoadError::kUnsupportedVersion:
+      return "was written by an incompatible pack format version";
+    case LoadError::kTruncated:
+      return "is truncated, or exceeds this build's pack size limits";
+    case LoadError::kInvalidIndex:
+      return "has a corrupt index";
+    case LoadError::kHashMismatch:
+      return "failed its integrity check (content hash mismatch)";
+    case LoadError::kSignatureInvalid:
+      return "failed signature verification";
+  }
+  return "failed to load for an unknown reason";
+}
 
 Pack::Pack() = default;
 Pack::Pack(Pack&&) noexcept = default;
