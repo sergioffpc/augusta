@@ -65,9 +65,9 @@ Sync-GitRepo -Url "https://github.com/NVIDIA-Omniverse/kit-app-template.git" -Pa
 
 # --- Cooking (ADR-0015/ADR-0016): usd-optimize, usd-validation-nvidia ---
 # Both standalone (no Omniverse Kit needed) - see ADR-0015. Installed into
-# the current Python environment, same as any other pip package; augusta's
-# own cooker CLI (M2, not yet implemented) will invoke them as libraries or
-# subprocesses once it exists.
+# the current Python environment, same as any other pip package;
+# tools/asset-pipeline.ps1 invokes their CLIs (usdOptimize,
+# nvidia_usd_validate) as subprocesses ahead of augusta's own cooker.
 python -m pip install --upgrade usd-optimize usd-validation-nvidia
 
 # --- Cooking (ADR-0016): Adobe USD-Fileformat-plugins (glTF/FBX/OBJ ingestion) ---
@@ -85,4 +85,6 @@ Write-Host "  - usd-optimize / usd-validation-nvidia: installed into the current
 Write-Host "  - Adobe USD-Fileformat-plugins: cloned to `"$adobePluginsDir`" - see its README to build"
 Write-Host ""
 Write-Host ("Not fetched by this script: meshoptimizer and DirectXTex (ADR-0016/ADR-0017) - those are C++ build " +
-  "dependencies for augusta's own cooker CLI, added via vcpkg.json once the cooker (ROADMAP.md M2) is implemented.")
+  "dependencies for augusta's own cooker CLI, vendored via vcpkg.json instead. Once this script's tools are on " +
+  "PATH and the cooker is built (cmake --build --preset windows-tools --target augusta_asset_cooking), run the " +
+  "full pipeline with tools\asset-pipeline.ps1.")
