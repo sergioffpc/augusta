@@ -52,40 +52,48 @@ constexpr std::uint8_t kNodeHasCollider = 1U << 2;
 constexpr std::uint8_t kNodeHasHitbox = 1U << 3;
 constexpr std::uint8_t kNodeIsSpawnPoint = 1U << 4;
 
-void AppendU8(std::vector<std::byte>& buf, std::uint8_t value) { buf.push_back(static_cast<std::byte>(value)); }
+// [[maybe_unused]] on every Append*/ReadBytes-adjacent free function below:
+// this header is shared across assets.cpp/encoder.cpp/decoder.cpp, and no
+// single one of those translation units calls every helper here - GCC's
+// -Wunused-function (with -Werror, as the Linux sanitizer build uses)
+// would otherwise fail a TU for not using, say, AppendU64 just because
+// only assets.cpp's pack-container assembly needs it.
+[[maybe_unused]] void AppendU8(std::vector<std::byte>& buf, std::uint8_t value) {
+  buf.push_back(static_cast<std::byte>(value));
+}
 
-void AppendU32(std::vector<std::byte>& buf, std::uint32_t value) {
+[[maybe_unused]] void AppendU32(std::vector<std::byte>& buf, std::uint32_t value) {
   for (std::size_t i = 0; i < sizeof(value); ++i) {
     buf.push_back(static_cast<std::byte>((value >> (kBitsPerByte * i)) & kByteMask));
   }
 }
 
-void AppendU64(std::vector<std::byte>& buf, std::uint64_t value) {
+[[maybe_unused]] void AppendU64(std::vector<std::byte>& buf, std::uint64_t value) {
   for (std::size_t i = 0; i < sizeof(value); ++i) {
     buf.push_back(static_cast<std::byte>((value >> (kBitsPerByte * i)) & kByteMask));
   }
 }
 
-void AppendF32(std::vector<std::byte>& buf, float value) {
+[[maybe_unused]] void AppendF32(std::vector<std::byte>& buf, float value) {
   std::uint32_t bits = 0;
   std::memcpy(&bits, &value, sizeof(bits));
   AppendU32(buf, bits);
 }
 
-void AppendChars(std::vector<std::byte>& buf, std::string_view chars) {
+[[maybe_unused]] void AppendChars(std::vector<std::byte>& buf, std::string_view chars) {
   for (char chr : chars) {
     buf.push_back(static_cast<std::byte>(static_cast<unsigned char>(chr)));
   }
 }
 
-void AppendBytes(std::vector<std::byte>& buf, std::span<const std::byte> data) {
+[[maybe_unused]] void AppendBytes(std::vector<std::byte>& buf, std::span<const std::byte> data) {
   buf.insert(buf.end(), data.begin(), data.end());
 }
 
 // Appends a length-prefixed string, failing if it exceeds kMaxPathLength
 // (used for names/paths/property keys/values alike - all the same kind of
 // short authored string).
-[[nodiscard]] bool AppendString(std::vector<std::byte>& buf, std::string_view str) {
+[[maybe_unused]] [[nodiscard]] bool AppendString(std::vector<std::byte>& buf, std::string_view str) {
   if (str.size() > kMaxPathLength) {
     return false;
   }
@@ -94,7 +102,8 @@ void AppendBytes(std::vector<std::byte>& buf, std::span<const std::byte> data) {
   return true;
 }
 
-[[nodiscard]] bool AppendOptionalPath(std::vector<std::byte>& blob, const std::optional<std::string>& path) {
+[[maybe_unused]] [[nodiscard]] bool AppendOptionalPath(std::vector<std::byte>& blob,
+                                                       const std::optional<std::string>& path) {
   return !path || AppendString(blob, *path);
 }
 

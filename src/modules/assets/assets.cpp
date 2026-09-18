@@ -160,8 +160,7 @@ std::span<const std::byte> BlobBytes(const mio::mmap_source& mapping, const Inde
 // caller's own next step.
 std::expected<const IndexEntry*, ResolveError> FindIndexEntry(const std::vector<IndexEntry>& index,
                                                               std::string_view path, AssetType expected_type) {
-  const auto match =
-      std::find_if(index.begin(), index.end(), [&](const IndexEntry& entry) { return entry.path == path; });
+  const auto match = std::ranges::find_if(index, [&](const IndexEntry& entry) { return entry.path == path; });
   if (match == index.end()) {
     return std::unexpected(ResolveError::kNotFound);
   }
