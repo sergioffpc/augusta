@@ -1,6 +1,6 @@
 # Logging Policy: Level Semantics and Structured Message Format
 
-Building on ADR-0027 (spdlog, console-only, level tied to build type), this
+Building on ADR-0027 (console-only, level tied to build type), this
 defines what each level is for and how a log line is written, for both
 client and server. `TRACE` is the highest-frequency tier: per-tick ECS
 phase transitions (SimulationWorld/PredictionWorld/PresentationWorld) and
@@ -21,8 +21,8 @@ second key, and callers add whatever else is relevant (`tick=`, `bytes=`,
 process-wide `"augusta"` logger (ADR-0027) is kept rather than one logger
 per module, so the console pattern is fixed here rather than left open as
 ADR-0027 did: `<UTC ISO-8601 time> <LEVEL> <message>`, e.g.
-`2024-02-01T12:00:00Z INFO subsystem=client event=starting` (spdlog pattern
-`%Y-%m-%dT%H:%M:%SZ %^%*%$ %v`, with `%*` the upper-case level - see `augusta::logging::MakeFormatter`).
+`2024-02-01T12:00:00Z INFO subsystem=client event=starting` (see
+`augusta::logging::FormatLine`).
 
 No level is a safe place for credentials or session/auth tokens - this
 applies unconditionally, including `TRACE`. Peer IPs are fine to log

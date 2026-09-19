@@ -28,8 +28,6 @@ else()
   add_compile_options(-Wall -Wextra -Werror)
 endif()
 
-find_package(spdlog CONFIG REQUIRED)
-
 # flecs/GameNetworkingSockets/PhysX back the client/server shared runtime
 # (ECS worlds, networking transport, physics - ADR-0001/0002/0003).
 find_package(flecs CONFIG REQUIRED)

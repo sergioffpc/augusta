@@ -211,8 +211,8 @@ pipeline).
 
 ## Observability
 
-- **Logging:** spdlog — mature, fast, no reason to hand-roll one given
-  the project's learning focus is elsewhere (ballistics, networking, ECS).
+- **Logging:** Boost.Log (ADR-0036) — mature, no reason to hand-roll one
+  given the project's learning focus is elsewhere (ballistics, networking, ECS).
 - **Profiling:** Tracy — purpose-built for real-time, multithreaded frame
   profiling; the primary tool for inspecting client and server
   performance during development.

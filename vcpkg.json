@@ -2,7 +2,7 @@
   "name": "augusta",
   "version": "0.1.0",
   "dependencies": [
-    "spdlog",
+    "boost-log",
     "gtest",
     "benchmark",
     "glm",
