@@ -11,6 +11,8 @@
     "mio",
     "flecs",
     "gamenetworkingsockets",
-    "physx"
+    "physx",
+    "boost-dll",
+    "yaml-cpp"
   ]
 }

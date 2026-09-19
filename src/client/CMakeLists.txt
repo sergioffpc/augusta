@@ -27,7 +27,7 @@ target_compile_definitions(augustac_runtime PRIVATE NOMINMAX)
 augusta_set_module_scope(augustac_runtime CLIENT_ONLY)
 
 add_executable(augustac main.cpp)
-target_link_libraries(augustac PRIVATE augusta_assets augusta_version augusta_logging augusta_networking augustac_runtime augustac_scene)
+target_link_libraries(augustac PRIVATE augusta_assets augusta_config augusta_version augusta_logging augusta_networking augustac_runtime augustac_scene)
 
 # Falcor.dll (ADR-0009) and its own runtime dependencies (D3D12 Agility SDK,
 # dxcompiler, ...) and shader library need to sit next to augustac.exe -

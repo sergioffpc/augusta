@@ -3,6 +3,7 @@
 #include <print>
 
 #include "augusta/assets.h"
+#include "augusta/config.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/version.h"
@@ -25,18 +26,28 @@ extern "C" void HandleShutdownSignal(int /*signal*/) {
 
 int main(int argc, char** argv) {
   augusta::logging::Init();
+
+  // Settings come from a config file - augustad.yaml next to the executable
+  // unless --config names another (ADR-0034) - not from the command line.
+  const auto config_file =
+      augusta::config::ResolveConfigFile(argc, argv, "augustad", augusta::config::kServerConfigFileName);
+  if (!config_file) {
+    std::println(stderr, "{}", config_file.error());
+    return 1;
+  }
+  const auto file_config = augusta::config::LoadServerConfig(*config_file);
+  if (!file_config) {
+    std::println(stderr, "{}", file_config.error());
+    return 1;
+  }
   LI("subsystem=server event=starting version={}", augusta::EngineVersion());
 
   // Verified before anything else starts (no socket, world, or thread is
   // spun up yet) - a bad pack or key means this process exits here, never
   // partially running against untrusted content (ADR-0018,
   // ARCHITECTURE.md §8).
-  if (argc != 3) {
-    std::println(stderr, "usage: augustad <server_pack_path> <public_key_path>");
-    return 1;
-  }
-  const std::filesystem::path pack_path = argv[1];
-  const std::filesystem::path public_key_path = argv[2];
+  const std::filesystem::path& pack_path = file_config->pack_path;
+  const std::filesystem::path& public_key_path = file_config->public_key_path;
 
   const auto public_key = augusta::assets::ReadEd25519PublicKeyFile(public_key_path);
   if (!public_key) {
@@ -59,11 +70,10 @@ int main(int argc, char** argv) {
   augusta::networking::Init();
 
   augusta::runtime::Config config;
-  // TODO(sergioffpc): hardcoded placeholders - there's no command-line/
-  // config parsing yet, and script_path assumes an asset pack layout
-  // the asset pipeline (ROADMAP.md M2) hasn't built yet.
+  // TODO(sergioffpc): hardcoded placeholder - script_path assumes an asset
+  // pack layout the asset pipeline (ROADMAP.md M2) hasn't built yet.
   config.script_path = "scripts/round.lua";
-  config.listen.address = "0.0.0.0:27015";
+  config.listen.address = file_config->listen_address;
 
   augusta::runtime::ServerRuntime runtime(config);
   g_runtime = &runtime;

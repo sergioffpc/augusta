@@ -1,0 +1,16 @@
+# The server's startup settings (ADR-0034). Copy this next to augustad(.exe) as
+# augustad.yaml and edit it, or keep it anywhere and run
+# `augustad --config <this file>`.
+
+# Where the relative paths below start from (required). A relative value is
+# relative to this file's directory, so "." means the directory of this file.
+base_dir: .
+
+# Server pack to load (required).
+pack: packs/level.server.pack
+
+# Ed25519 public key the pack is signed with (required).
+public_key: keys/augusta.pub
+
+# Local address to listen on (optional, default 0.0.0.0:27015).
+listen_address: 0.0.0.0:27015

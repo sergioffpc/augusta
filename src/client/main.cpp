@@ -2,6 +2,7 @@
 #include <print>
 
 #include "augusta/assets.h"
+#include "augusta/config.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/version.h"
@@ -10,18 +11,28 @@
 
 int main(int argc, char** argv) {
   augusta::logging::Init();
+
+  // Settings come from a config file - augustac.yaml next to the executable
+  // unless --config names another (ADR-0034) - not from the command line.
+  const auto config_file =
+      augusta::config::ResolveConfigFile(argc, argv, "augustac", augusta::config::kClientConfigFileName);
+  if (!config_file) {
+    std::println(stderr, "{}", config_file.error());
+    return 1;
+  }
+  const auto file_config = augusta::config::LoadClientConfig(*config_file);
+  if (!file_config) {
+    std::println(stderr, "{}", file_config.error());
+    return 1;
+  }
   LI("subsystem=client event=starting version={}", augusta::EngineVersion());
 
   // Verified before anything else starts (no renderer/audio device,
   // network socket, or thread is spun up yet) - a bad pack or key means
   // this process exits here, never partially running against untrusted
   // content (ADR-0018, ARCHITECTURE.md §8).
-  if (argc != 3) {
-    std::println(stderr, "usage: augustac <client_pack_path> <public_key_path>");
-    return 1;
-  }
-  const std::filesystem::path pack_path = argv[1];
-  const std::filesystem::path public_key_path = argv[2];
+  const std::filesystem::path& pack_path = file_config->pack_path;
+  const std::filesystem::path& public_key_path = file_config->public_key_path;
 
   const auto public_key = augusta::assets::ReadEd25519PublicKeyFile(public_key_path);
   if (!public_key) {
@@ -53,10 +64,8 @@ int main(int argc, char** argv) {
 
   augusta::runtime::Config config;
   config.renderer.title = "augusta";
-  // TODO(sergioffpc): hardcoded placeholder - there's no command-line/
-  // config parsing yet, and no server discovery beyond direct IP:port
-  // (ARCHITECTURE.md §3).
-  config.server.address = "127.0.0.1:27015";
+  // Direct IP:port only, no server discovery (ARCHITECTURE.md §3).
+  config.server.address = file_config->server_address;
 
   augusta::runtime::ClientRuntime runtime(config, *scene);
   runtime.Run();
