@@ -65,6 +65,43 @@ TEST(BuildRenderSceneTest, PlacesMeshGeometryInWorldSpaceThroughTheParentChain) 
   EXPECT_EQ(result->meshes[0].indices, (std::vector<std::uint32_t>{0, 1, 2}));
 }
 
+TEST(BuildRenderSceneTest, ReadsAMeshsBaseColorFromItsNodeProperty) {
+  SceneData scene;
+  scene.nodes.push_back(Node("Root/Tri", augusta::assets::kSceneNodeNoParent));
+  scene.nodes.back().mesh_path = "Root/Tri";
+  scene.nodes.back().properties.emplace_back("base_color", "0.25 0.5 1");
+
+  const auto result = BuildRenderScene(scene, ResolveTriangle());
+
+  ASSERT_TRUE(result.has_value());
+  ExpectNear(result->meshes[0].color, {0.25F, 0.5F, 1.0F});
+}
+
+TEST(BuildRenderSceneTest, KeepsTheDefaultColorWhenANodeHasNoBaseColor) {
+  SceneData scene;
+  scene.nodes.push_back(Node("Root/Tri", augusta::assets::kSceneNodeNoParent));
+  scene.nodes.back().mesh_path = "Root/Tri";
+
+  const auto result = BuildRenderScene(scene, ResolveTriangle());
+
+  ASSERT_TRUE(result.has_value());
+  ExpectNear(result->meshes[0].color, augusta::renderer::SceneMesh{}.color);
+}
+
+TEST(BuildRenderSceneTest, RejectsAMalformedBaseColorNamingTheNode) {
+  for (const char* value : {"0.5 0.5", "red", "0.1 0.2 0.3 0.4", ""}) {
+    SceneData scene;
+    scene.nodes.push_back(Node("Root/Tri", augusta::assets::kSceneNodeNoParent));
+    scene.nodes.back().mesh_path = "Root/Tri";
+    scene.nodes.back().properties.emplace_back("base_color", value);
+
+    const auto result = BuildRenderScene(scene, ResolveTriangle());
+
+    ASSERT_FALSE(result.has_value()) << value;
+    EXPECT_NE(result.error().find("Root/Tri"), std::string::npos) << value;
+  }
+}
+
 TEST(BuildRenderSceneTest, AppliesAParentsRotationToItsChildren) {
   SceneData scene;
   scene.nodes.push_back(Node("Root", augusta::assets::kSceneNodeNoParent));

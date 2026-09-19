@@ -41,10 +41,11 @@ constexpr float kDefaultClearColorChannel = 0.016F;
 struct Vertex {
   Falcor::float3 position;
   Falcor::float3 normal;
+  Falcor::float3 color;
 };
 
 // Expands every mesh's indexed triangles into 3 unshared vertices each,
-// carrying the triangle's own face normal: cooked meshes have positions and
+// carrying the triangle's own face normal and its mesh's color: cooked meshes have positions and
 // indices only (no normals - see assets::MeshData), so flat shading is the
 // one lighting model the data supports. Throws std::runtime_error on an
 // index at or past its mesh's position count.
@@ -64,7 +65,9 @@ std::vector<Vertex> BuildFlatShadedVertices(const Scene& scene) {
       // NOLINTEND(readability-identifier-length)
       const math::Vec3 normal = math::Normalize(math::Cross(b - a, c - a));
       for (const math::Vec3* corner : {&a, &b, &c}) {
-        vertices.push_back({.position = {corner->x, corner->y, corner->z}, .normal = {normal.x, normal.y, normal.z}});
+        vertices.push_back({.position = {corner->x, corner->y, corner->z},
+                            .normal = {normal.x, normal.y, normal.z},
+                            .color = {mesh.color.x, mesh.color.y, mesh.color.z}});
       }
     }
   }
@@ -256,6 +259,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     auto buffer_layout = Falcor::VertexBufferLayout::create();
     buffer_layout->addElement("POSITION", offsetof(Vertex, position), Falcor::ResourceFormat::RGB32Float, 1, 0);
     buffer_layout->addElement("NORMAL", offsetof(Vertex, normal), Falcor::ResourceFormat::RGB32Float, 1, 1);
+    buffer_layout->addElement("COLOR", offsetof(Vertex, color), Falcor::ResourceFormat::RGB32Float, 1, 2);
     auto layout = Falcor::VertexLayout::create();
     layout->addBufferLayout(0, buffer_layout);
 
