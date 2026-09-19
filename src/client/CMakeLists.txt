@@ -1,3 +1,15 @@
+# Cooked scene graph -> renderer::Scene. Split from augustac_runtime so its
+# tests need neither Falcor nor a window: it only uses renderer.h's plain
+# scene types, so it takes that header's directory rather than linking
+# augusta_renderer.
+add_library(augustac_scene STATIC scene_loader.cpp)
+target_include_directories(augustac_scene PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_SOURCE_DIR}/src/modules/renderer/include
+)
+target_link_libraries(augustac_scene PUBLIC augusta_assets augusta_input augusta_math)
+augusta_set_module_scope(augustac_scene CLIENT_ONLY)
+
 add_library(augustac_runtime STATIC
   runtime.cpp
 )
@@ -15,7 +27,7 @@ target_compile_definitions(augustac_runtime PRIVATE NOMINMAX)
 augusta_set_module_scope(augustac_runtime CLIENT_ONLY)
 
 add_executable(augustac main.cpp)
-target_link_libraries(augustac PRIVATE augusta_assets augusta_version augusta_logging augusta_networking augustac_runtime)
+target_link_libraries(augustac PRIVATE augusta_assets augusta_version augusta_logging augusta_networking augustac_runtime augustac_scene)
 
 # Falcor.dll (ADR-0009) and its own runtime dependencies (D3D12 Agility SDK,
 # dxcompiler, ...) and shader library need to sit next to augustac.exe -

@@ -33,3 +33,11 @@ target_link_libraries(augusta_assets_tests PRIVATE augusta_assets GTest::gtest G
 # target gets a private include path to see them; nothing else needs to.
 target_include_directories(augusta_assets_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
 gtest_discover_tests(augusta_assets_tests)
+
+if (WIN32)
+  # The client is Windows-only (Falcor, ADR-0009), and so is the scene
+  # loader's target.
+  add_executable(augusta_client_scene_tests client_scene_test.cpp)
+  target_link_libraries(augusta_client_scene_tests PRIVATE augustac_scene GTest::gtest GTest::gtest_main)
+  gtest_discover_tests(augusta_client_scene_tests)
+endif()

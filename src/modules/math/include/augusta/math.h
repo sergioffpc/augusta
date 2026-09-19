@@ -60,6 +60,27 @@ inline float Length(const Vec3& vec) { return glm::length(vec); }
 // a fallback direction must check for this case themselves.
 inline Vec3 Normalize(const Vec3& vec) { return Length(vec) > 0.0F ? glm::normalize(vec) : vec; }
 
+// The inverse of transform: maps back what transform mapped. transform must
+// be invertible (no zero scale) - GLM does not check.
+inline Mat4 Inverse(const Mat4& transform) { return glm::inverse(transform); }
+
+// Applies transform to point (translation included, unlike for a free vector).
+inline Vec3 TransformPoint(const Mat4& transform, const Vec3& point) { return {transform * glm::vec4(point, 1.0F)}; }
+
+// The translation part of transform.
+inline Vec3 TranslationOf(const Mat4& transform) { return {transform[3]}; }
+
+// The rotation part of transform, as a unit quaternion. Assumes transform has
+// no shear; a uniform or non-uniform scale is discarded.
+inline Quat RotationOf(const Mat4& transform) {
+  // NOLINTBEGIN(readability-identifier-length) - x/y/z are the basis axes' own notation.
+  const Vec3 x = Normalize(Vec3(transform[0]));
+  const Vec3 y = Normalize(Vec3(transform[1]));
+  const Vec3 z = Normalize(Vec3(transform[2]));
+  // NOLINTEND(readability-identifier-length)
+  return glm::normalize(glm::quat_cast(glm::mat3(x, y, z)));
+}
+
 }  // namespace augusta::math
 
 #endif  // AUGUSTA_MATH_H_

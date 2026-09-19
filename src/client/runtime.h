@@ -76,7 +76,11 @@ class ClientRuntime {
   // process-wide, before this constructor runs (see networking.h) -
   // ClientRuntime doesn't call it itself since Init() is a one-time
   // process concern, not a per-instance one.
-  explicit ClientRuntime(const Config& config);
+  //
+  // scene is what the Renderer draws every frame - loaded from the client
+  // pack by the caller (see scene_loader.h), since where content comes from
+  // is the executable's business, not the orchestrator's.
+  ClientRuntime(const Config& config, const renderer::Scene& scene);
 
   // Run() always stops and joins the Simulation and Network I/O
   // threads it spawned before returning, including if the Main/Render

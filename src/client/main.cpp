@@ -6,6 +6,7 @@
 #include "augusta/networking.h"
 #include "augusta/version.h"
 #include "runtime.h"
+#include "scene_loader.h"
 
 int main(int argc, char** argv) {
   augusta::logging::Init();
@@ -33,10 +34,18 @@ int main(int argc, char** argv) {
     return 1;
   }
   LI("subsystem=client event=pack_verified path={}", pack_path.string());
-  // pack itself is dropped here - resolving specific assets from it
-  // (ResolveMesh/ResolveScene/...) is out of scope for this startup gate
-  // (issue #60); that's future work once there's ECS component shape/
-  // gameplay code ready to consume what it resolves.
+
+  // Only the scene graph and its meshes are consumed so far (what the
+  // renderer draws); collision/hitbox/texture/audio resolution waits for
+  // the ECS component shapes and gameplay code that will use them. Built
+  // here, before the window opens, so a pack without a usable scene exits
+  // like a bad pack does.
+  const auto scene = augusta::client::LoadRenderScene(*pack);
+  if (!scene) {
+    std::println(stderr, "client pack {}: {}", pack_path.string(), scene.error());
+    return 1;
+  }
+  LI("subsystem=client event=scene_loaded meshes={}", scene->meshes.size());
 
   // augusta::networking::Init() must run once, process-wide, before any
   // Client/Server is constructed - see networking.h.
@@ -49,7 +58,7 @@ int main(int argc, char** argv) {
   // (ARCHITECTURE.md §3).
   config.server.address = "127.0.0.1:27015";
 
-  augusta::runtime::ClientRuntime runtime(config);
+  augusta::runtime::ClientRuntime runtime(config, *scene);
   runtime.Run();
 
   return 0;

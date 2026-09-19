@@ -8,16 +8,19 @@
 #include <Utils/Threading.h>
 #include <Utils/Timing/FrameRate.h>
 
-#include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <nvtx3/nvtx3.hpp>
 #include <optional>
+#include <stdexcept>
 #include <vector>
 
+#include "augusta/math.h"
 #include "debug_hud.h"
 
-// M1 spike (ADR-0009): the first real (non-stub) body for this module.
+// ADR-0009: the first real (non-stub) body for this module.
 // Bypasses Falcor::SampleApp entirely - per ADR-0009, SampleApp fuses
 // window/device/swapchain/main-loop into one blocking run() call, which
 // can't give PumpEvents()/RenderFrame() the independent cadences
@@ -34,12 +37,51 @@ namespace {
 // Default clear color - near-black, close to this editor's own chrome.
 constexpr float kDefaultClearColorChannel = 0.016F;
 
-// One cube vertex - see BuildCubeGeometry. 4 unique vertices per face
-// (not 8 shared corners) so every face gets its own straight UV mapping.
+// One vertex of the flat-shaded scene geometry - see BuildFlatShadedVertices.
 struct Vertex {
   Falcor::float3 position;
-  Falcor::float2 uv;
+  Falcor::float3 normal;
 };
+
+// Expands every mesh's indexed triangles into 3 unshared vertices each,
+// carrying the triangle's own face normal: cooked meshes have positions and
+// indices only (no normals - see assets::MeshData), so flat shading is the
+// one lighting model the data supports. Throws std::runtime_error on an
+// index at or past its mesh's position count.
+std::vector<Vertex> BuildFlatShadedVertices(const Scene& scene) {
+  std::vector<Vertex> vertices;
+  for (const SceneMesh& mesh : scene.meshes) {
+    for (const std::uint32_t index : mesh.indices) {
+      if (index >= mesh.positions.size()) {
+        throw std::runtime_error("scene mesh index out of range for its positions");
+      }
+    }
+    for (std::size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
+      // NOLINTBEGIN(readability-identifier-length) - a/b/c are the triangle's own corner notation.
+      const math::Vec3& a = mesh.positions[mesh.indices[i]];
+      const math::Vec3& b = mesh.positions[mesh.indices[i + 1]];
+      const math::Vec3& c = mesh.positions[mesh.indices[i + 2]];
+      // NOLINTEND(readability-identifier-length)
+      const math::Vec3 normal = math::Normalize(math::Cross(b - a, c - a));
+      for (const math::Vec3* corner : {&a, &b, &c}) {
+        vertices.push_back({.position = {corner->x, corner->y, corner->z}, .normal = {normal.x, normal.y, normal.z}});
+      }
+    }
+  }
+  return vertices;
+}
+
+// GLM matrices are column-major (m[column][row]); Falcor's are row-major
+// (m[row][column]) - same math, transposed storage.
+Falcor::float4x4 ToFalcor(const math::Mat4& matrix) {
+  auto result = Falcor::float4x4::zeros();
+  for (int row = 0; row < 4; ++row) {
+    for (int column = 0; column < 4; ++column) {
+      result[row][column] = matrix[column][row];
+    }
+  }
+  return result;
+}
 
 std::optional<input::Key> MapKey(Falcor::Input::Key key) {
   switch (key) {
@@ -90,9 +132,8 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   Falcor::ref<Falcor::Fbo> target_fbo;
   Falcor::ref<Falcor::RasterPass> raster_pass;
   Falcor::ref<Falcor::Vao> vao;
-  Falcor::ref<Falcor::Texture> texture;
-  Falcor::ref<Falcor::Sampler> sampler;
-  std::uint32_t index_count = 0;
+  std::uint32_t vertex_count = 0;
+  Camera camera;
 
   // Debug HUD (FPS, RTT) - see debug_hud.h. frame_rate is ticked once
   // per RenderFrame; hud_stats carries what the caller supplies.
@@ -106,10 +147,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   Falcor::RasterizerState::CullMode cull_mode = Falcor::RasterizerState::CullMode::None;
   bool wireframe_enabled = false;
   bool vsync_enabled = false;
-  float rotation_angle = 0.0F;
 
-  std::chrono::steady_clock::time_point start_time;
-  std::chrono::steady_clock::time_point last_frame_time;
   bool cursor_locked = false;
 
   Impl(const Config& config, input::EventSink& sink) : input_sink(sink) {
@@ -145,12 +183,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     const auto size = window->getClientAreaSize();
     CreateTargetFbo(size.x, size.y);
     debug_hud = std::make_unique<DebugHud>(device, Falcor::uint2(size.x, size.y));
-    BuildCubeGeometry();
-    BuildCheckerboardTexture();
     BuildRasterPass();
-
-    start_time = std::chrono::steady_clock::now();
-    last_frame_time = start_time;
   }
 
   ~Impl() {
@@ -200,101 +233,58 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     raster_pass->getState()->setRasterizerState(Falcor::RasterizerState::create(rasterizer_desc));
   }
 
-  // A unit cube (half-extent 0.5, centered on the model origin), 4
-  // vertices per face so each face gets its own [0,1] UV rectangle.
-  void BuildCubeGeometry() {
-    constexpr float kHalf = 0.5F;
-    const std::vector<Vertex> vertices = {
-        // +X
-        {{kHalf, -kHalf, -kHalf}, {0, 1}},
-        {{kHalf, -kHalf, kHalf}, {1, 1}},
-        {{kHalf, kHalf, kHalf}, {1, 0}},
-        {{kHalf, kHalf, -kHalf}, {0, 0}},
-        // -X
-        {{-kHalf, -kHalf, kHalf}, {0, 1}},
-        {{-kHalf, -kHalf, -kHalf}, {1, 1}},
-        {{-kHalf, kHalf, -kHalf}, {1, 0}},
-        {{-kHalf, kHalf, kHalf}, {0, 0}},
-        // +Y
-        {{-kHalf, kHalf, -kHalf}, {0, 1}},
-        {{kHalf, kHalf, -kHalf}, {1, 1}},
-        {{kHalf, kHalf, kHalf}, {1, 0}},
-        {{-kHalf, kHalf, kHalf}, {0, 0}},
-        // -Y
-        {{-kHalf, -kHalf, kHalf}, {0, 1}},
-        {{kHalf, -kHalf, kHalf}, {1, 1}},
-        {{kHalf, -kHalf, -kHalf}, {1, 0}},
-        {{-kHalf, -kHalf, -kHalf}, {0, 0}},
-        // +Z
-        {{kHalf, -kHalf, kHalf}, {0, 1}},
-        {{-kHalf, -kHalf, kHalf}, {1, 1}},
-        {{-kHalf, kHalf, kHalf}, {1, 0}},
-        {{kHalf, kHalf, kHalf}, {0, 0}},
-        // -Z
-        {{-kHalf, -kHalf, -kHalf}, {0, 1}},
-        {{kHalf, -kHalf, -kHalf}, {1, 1}},
-        {{kHalf, kHalf, -kHalf}, {1, 0}},
-        {{-kHalf, kHalf, -kHalf}, {0, 0}},
-    };
-
-    std::vector<std::uint16_t> indices;
-    indices.reserve(6 * 6);
-    for (std::uint16_t face = 0; face < 6; ++face) {
-      const std::uint16_t base = face * 4;
-      indices.insert(indices.end(), {base, static_cast<std::uint16_t>(base + 1), static_cast<std::uint16_t>(base + 2),
-                                     base, static_cast<std::uint16_t>(base + 2), static_cast<std::uint16_t>(base + 3)});
+  // Replaces the drawn geometry with scene's, as one vertex buffer drawn in
+  // a single call. Nothing is touched if scene is invalid (the throw comes
+  // before any member is assigned).
+  void UploadScene(const Scene& scene) {
+    const std::vector<Vertex> vertices = BuildFlatShadedVertices(scene);
+    if (vertices.size() > std::numeric_limits<std::uint32_t>::max()) {
+      throw std::runtime_error("scene has too many vertices to draw");
     }
-    index_count = static_cast<std::uint32_t>(indices.size());
+    camera = scene.camera;
+    vertex_count = static_cast<std::uint32_t>(vertices.size());
+    if (vertices.empty()) {
+      vao = nullptr;
+      return;
+    }
 
+    // The previous scene's buffers may still be in flight on the GPU.
+    device->wait();
     auto vertex_buffer = device->createBuffer(vertices.size() * sizeof(Vertex), Falcor::ResourceBindFlags::Vertex,
                                               Falcor::MemoryType::DeviceLocal, vertices.data());
-    auto index_buffer = device->createBuffer(indices.size() * sizeof(std::uint16_t), Falcor::ResourceBindFlags::Index,
-                                             Falcor::MemoryType::DeviceLocal, indices.data());
 
     auto buffer_layout = Falcor::VertexBufferLayout::create();
     buffer_layout->addElement("POSITION", offsetof(Vertex, position), Falcor::ResourceFormat::RGB32Float, 1, 0);
-    buffer_layout->addElement("TEXCOORD", offsetof(Vertex, uv), Falcor::ResourceFormat::RG32Float, 1, 1);
+    buffer_layout->addElement("NORMAL", offsetof(Vertex, normal), Falcor::ResourceFormat::RGB32Float, 1, 1);
     auto layout = Falcor::VertexLayout::create();
     layout->addBufferLayout(0, buffer_layout);
 
-    vao = Falcor::Vao::create(Falcor::Vao::Topology::TriangleList, layout, {vertex_buffer}, index_buffer,
-                              Falcor::ResourceFormat::R16Uint);
+    vao = Falcor::Vao::create(Falcor::Vao::Topology::TriangleList, layout, {vertex_buffer});
+    raster_pass->getState()->setVao(vao);
   }
 
-  // A small procedural checkerboard - the asset pipeline (ADR-0015 -
-  // ADR-0020, M2) doesn't exist yet, and this spike only needs to prove
-  // Falcor samples *some* texture onto the primitive.
-  void BuildCheckerboardTexture() {
-    constexpr std::uint32_t kSize = 64;
-    constexpr std::uint32_t kCheckSize = 8;
-    std::vector<std::uint32_t> pixels(static_cast<std::size_t>(kSize) * kSize);
-    for (std::uint32_t y = 0; y < kSize; ++y) {
-      for (std::uint32_t x = 0; x < kSize; ++x) {
-        const bool light = ((x / kCheckSize) + (y / kCheckSize)) % 2 == 0;
-        pixels[(y * kSize) + x] = light ? 0xFFE0E0E0u : 0xFF303030u;
-      }
-    }
-    texture = device->createTexture2D(kSize, kSize, Falcor::ResourceFormat::RGBA8Unorm, 1, 1, pixels.data());
-    sampler = device->createSampler(Falcor::Sampler::Desc{});
+  // World-to-clip transform of the current camera: the inverse of the
+  // camera's own placement, then a right-handed perspective projection.
+  [[nodiscard]] Falcor::float4x4 ViewProjection() const {
+    const math::Mat4 camera_to_world = math::ToMat4(camera.position, camera.rotation, math::Vec3(1.0F));
+    const Falcor::float4x4 view = ToFalcor(math::Inverse(camera_to_world));
+    const float aspect = static_cast<float>(target_fbo->getWidth()) / static_cast<float>(target_fbo->getHeight());
+    const Falcor::float4x4 projection = Falcor::math::perspective(camera.vertical_fov, aspect, 0.1F, 1000.0F);
+    return Falcor::math::mul(projection, view);
   }
 
   void BuildRasterPass() {
     raster_pass = Falcor::RasterPass::create(device, "Augusta/Renderer/Renderer.3d.slang", "vsMain", "psMain");
-    raster_pass->getState()->setVao(vao);
 
-    // Winding order isn't pinned down yet (no camera/coordinate-system
-    // ADR exists for it), so cull_mode defaults to None rather than risk
-    // the cube rendering as invisible from every angle.
+    // Cooked meshes carry their authored winding through the cooker's
+    // handedness fix (ADR-0032), but nothing has verified it end to end
+    // yet, so cull_mode defaults to None rather than risk a scene
+    // rendering as invisible from every angle.
     RebuildRasterizerState();
   }
 
   void Draw() {
     auto* render_context = device->getRenderContext();
-
-    const auto now = std::chrono::steady_clock::now();
-    const float delta_time = std::chrono::duration<float>(now - last_frame_time).count();
-    last_frame_time = now;
-    rotation_angle += delta_time;
 
     {
       // Named to match the FALCOR_PROFILE scopes below (GPU-side, read by
@@ -310,24 +300,15 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
         render_context->clearFbo(target_fbo.get(), clear_color, 1.0F, 0, Falcor::FboAttachmentType::All);
       }
 
-      {
-        const nvtx3::scoped_range cube_range{"Cube"};
-        FALCOR_PROFILE(render_context, "Cube");
-
-        const Falcor::float4x4 model =
-            Falcor::math::matrixFromRotation(rotation_angle, Falcor::float3(0.3F, 1.0F, 0.0F));
-        const Falcor::float4x4 view = Falcor::math::matrixFromTranslation(Falcor::float3(0.0F, 0.0F, -3.0F));
-        const float aspect = static_cast<float>(target_fbo->getWidth()) / static_cast<float>(target_fbo->getHeight());
-        const Falcor::float4x4 projection = Falcor::math::perspective(0.9F, aspect, 0.1F, 100.0F);
-        const Falcor::float4x4 mvp = Falcor::math::mul(projection, Falcor::math::mul(view, model));
+      if (vertex_count > 0) {
+        const nvtx3::scoped_range scene_range{"Scene"};
+        FALCOR_PROFILE(render_context, "Scene");
 
         auto root_var = raster_pass->getRootVar();
-        root_var["PerFrameCB"]["gMvp"] = mvp;
-        root_var["gTexture"] = texture;
-        root_var["gSampler"] = sampler;
+        root_var["PerFrameCB"]["gViewProj"] = ViewProjection();
 
         raster_pass->getState()->setFbo(target_fbo);
-        raster_pass->drawIndexed(render_context, index_count, 0, 0);
+        raster_pass->draw(render_context, vertex_count, 0);
       }
     }
 
@@ -429,6 +410,8 @@ void Renderer::RenderFrame() {
   impl_->swapchain->present();
   impl_->device->endFrame();
 }
+
+void Renderer::SetScene(const Scene& scene) { impl_->UploadScene(scene); }
 
 void Renderer::SetDebugHudStats(const DebugHudStats& stats) { impl_->hud_stats = stats; }
 
