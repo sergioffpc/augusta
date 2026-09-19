@@ -4,6 +4,11 @@
   // preset is currently active (status bar / command palette) - switch to the
   // matching preset (windows/windows-debug, linux/linux-debug) before F5-ing
   // a given config, or the binary it launches may be stale.
+  //
+  // The (MSVC) configs start from config/augustac.yaml / config/augustad.yaml
+  // (ADR-0034): local copies of config/*.example.yaml, git-ignored because they
+  // hold this machine's paths. Create them before the first F5. The (gdb)
+  // configs pass none: they run on Linux, where those Windows paths don't exist.
   "configurations": [
     // The (gdb) configs below debug the Linux build of augustad (the real
     // deployment target, ADR-0026) and need a real gdb on PATH - only
@@ -38,6 +43,7 @@
       "request": "launch",
       "program": "${workspaceFolder}\\build\\x64-windows\\src\\server\\augustad.exe",
       "cwd": "${workspaceFolder}",
+      "args": ["--config", "${workspaceFolder}/config/augustad.yaml"],
       "preLaunchTask": "CMake: build",
       "externalConsole": true
     },
@@ -47,6 +53,7 @@
       "request": "launch",
       "program": "${workspaceFolder}\\build\\x64-windows-debug\\src\\server\\augustad.exe",
       "cwd": "${workspaceFolder}",
+      "args": ["--config", "${workspaceFolder}/config/augustad.yaml"],
       "preLaunchTask": "CMake: build",
       "externalConsole": true
     },
@@ -56,6 +63,7 @@
       "request": "launch",
       "program": "${workspaceFolder}\\build\\x64-windows\\src\\client\\augustac.exe",
       "cwd": "${workspaceFolder}",
+      "args": ["--config", "${workspaceFolder}/config/augustac.yaml"],
       "preLaunchTask": "CMake: build",
       "externalConsole": true
     },
@@ -65,6 +73,7 @@
       "request": "launch",
       "program": "${workspaceFolder}\\build\\x64-windows-debug\\src\\client\\augustac.exe",
       "cwd": "${workspaceFolder}",
+      "args": ["--config", "${workspaceFolder}/config/augustac.yaml"],
       "preLaunchTask": "CMake: build",
       "externalConsole": true
     }
