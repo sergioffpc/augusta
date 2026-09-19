@@ -4,6 +4,10 @@ add_executable(augusta_version_tests version_test.cpp)
 target_link_libraries(augusta_version_tests PRIVATE augusta_version GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_version_tests)
 
+add_executable(augusta_logging_tests logging_test.cpp)
+target_link_libraries(augusta_logging_tests PRIVATE augusta_logging GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_logging_tests)
+
 add_executable(augusta_version_benchmarks version_benchmark.cpp)
 target_link_libraries(augusta_version_benchmarks PRIVATE augusta_version benchmark::benchmark benchmark::benchmark_main)
 
@@ -17,11 +21,14 @@ gtest_discover_tests(augusta_networking_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_physics_tests physics_test.cpp)
 target_link_libraries(augusta_physics_tests PRIVATE augusta_physics GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_physics_tests)
+# DISCOVERY_TIMEOUT above the 5s default, same reason as the networking tests
+# above: the PhysX DLLs make a fresh build's first launch slow under Windows Defender.
+gtest_discover_tests(augusta_physics_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_prediction_tests prediction_test.cpp)
 target_link_libraries(augusta_prediction_tests PRIVATE augusta_prediction GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_prediction_tests)
+# Links augusta_physics publicly, so the same PhysX DLL launch cost applies.
+gtest_discover_tests(augusta_prediction_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_assets_tests assets_test.cpp)
 target_link_libraries(augusta_assets_tests PRIVATE augusta_assets GTest::gtest GTest::gtest_main)
