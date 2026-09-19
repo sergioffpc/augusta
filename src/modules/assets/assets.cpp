@@ -5,9 +5,10 @@
 
 #include <algorithm>
 #include <array>
+#include <boost/interprocess/file_mapping.hpp>
+#include <boost/interprocess/mapped_region.hpp>
 #include <cstring>
 #include <fstream>
-#include <mio/mmap.hpp>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -37,6 +38,13 @@ constexpr std::uint64_t kTrailerSize = kBlake3HashSize + kEd25519SignatureSize;
 // encoder.cpp/decoder.cpp); these two are pack-container-only.
 constexpr std::uint32_t kMaxEntries = 1U << 20;
 constexpr std::uint64_t kMaxPackSize = 8ULL * 1024 * 1024 * 1024;
+
+// A read-only view of a whole pack file, kept mapped for a Pack's lifetime.
+using Mapping = boost::interprocess::mapped_region;
+
+std::span<const std::byte> MappedBytes(const Mapping& mapping) {
+  return {static_cast<const std::byte*>(mapping.get_address()), mapping.get_size()};
+}
 
 void EnsureSodiumInitialized() {
   static const bool kInitialized = [] {
@@ -151,8 +159,8 @@ std::expected<std::vector<IndexEntry>, LoadError> ParsePackIndex(std::span<const
 // construction: ParsePackIndex already validated entry's own
 // [offset, offset+size) falls entirely within the pack's data section
 // (see its own comment), so this can never read outside mapping.
-std::span<const std::byte> BlobBytes(const mio::mmap_source& mapping, const IndexEntry& entry) {
-  return {reinterpret_cast<const std::byte*>(mapping.data()) + entry.offset, entry.size};
+std::span<const std::byte> BlobBytes(const Mapping& mapping, const IndexEntry& entry) {
+  return MappedBytes(mapping).subspan(entry.offset, entry.size);
 }
 
 // The path-lookup-plus-type-check every Pack::Resolve* method starts
@@ -177,7 +185,7 @@ std::expected<const IndexEntry*, ResolveError> FindIndexEntry(const std::vector<
 // Resolve* methods turned out to be this same sequence with nothing but
 // the target type/AssetType/decoder differing.
 template <typename T>
-std::expected<T, ResolveError> ResolveAsset(const std::vector<IndexEntry>& index, const mio::mmap_source& mapping,
+std::expected<T, ResolveError> ResolveAsset(const std::vector<IndexEntry>& index, const Mapping& mapping,
                                             std::string_view path, AssetType expected_type,
                                             std::optional<T> (*decode)(std::span<const std::byte>)) {
   const auto match = FindIndexEntry(index, path, expected_type);
@@ -329,16 +337,15 @@ std::expected<void, WriteError> WritePackFile(const std::filesystem::path& outpu
 
 // Memory-maps path and validates its size is within [kHeaderSize +
 // kTrailerSize, kMaxPackSize] - every subsequent offset/length Pack::Load
-// computes is relative to the returned mapping's own size(), not any
+// computes is relative to the returned mapping's own size, not any
 // size queried before mapping.
-std::expected<mio::mmap_source, LoadError> OpenValidatedMapping(const std::filesystem::path& path) {
-  // Checked before mapping anything, same as before mio existed here:
-  // keeps mio from ever being asked to map an empty/absent file (its own
-  // behavior for that case isn't relied upon). This is deliberately not
-  // the source of truth for the bounds re-check below - path could be
-  // replaced between this check and make_mmap_source() (e.g. a
-  // concurrent redeploy), so the real bounds check is against the
-  // mapping's own size(), the size actually mapped.
+std::expected<Mapping, LoadError> OpenValidatedMapping(const std::filesystem::path& path) {
+  // Checked before mapping anything: keeps Boost.Interprocess from ever
+  // being asked to map an empty/absent file (its own behavior for that
+  // case isn't relied upon). This is deliberately not the source of truth
+  // for the bounds re-check below - path could be replaced between this
+  // check and the mapping (e.g. a concurrent redeploy), so the real bounds
+  // check is against the mapping's own size, the size actually mapped.
   std::error_code size_error;
   const auto file_size = std::filesystem::file_size(path, size_error);
   if (size_error) {
@@ -348,29 +355,28 @@ std::expected<mio::mmap_source, LoadError> OpenValidatedMapping(const std::files
     return std::unexpected(LoadError::kTruncated);
   }
 
-  std::error_code map_error;
-  // path.native() (std::wstring on Windows), not path.string(): mio's
-  // narrow-string overload assumes UTF-8 and converts via
-  // MultiByteToWideChar(CP_UTF8, ...) before calling CreateFileW, but
-  // path.string() re-encodes to the system ANSI codepage instead - a
-  // pack path with non-ASCII characters would silently fail to open.
-  // The wide overload passes straight to CreateFileW with no conversion.
-  mio::mmap_source mapping = mio::make_mmap_source(path.native(), map_error);
-  if (map_error) {
+  try {
+    // path.c_str() (const wchar_t* on Windows), not path.string(): the
+    // narrow overload takes the system ANSI codepage there, so a pack path
+    // with non-ASCII characters would silently fail to open. The wide
+    // overload goes straight to CreateFileW. The file_mapping can go
+    // out of scope once the region exists: the mapping stays valid without it.
+    const boost::interprocess::file_mapping file(path.c_str(), boost::interprocess::read_only);
+    Mapping mapping(file, boost::interprocess::read_only);
+    if (mapping.get_size() < kHeaderSize + kTrailerSize || mapping.get_size() > kMaxPackSize) {
+      return std::unexpected(LoadError::kTruncated);
+    }
+    return mapping;
+  } catch (const boost::interprocess::interprocess_exception&) {
     return std::unexpected(LoadError::kIoError);
   }
-
-  if (mapping.size() < kHeaderSize + kTrailerSize || mapping.size() > kMaxPackSize) {
-    return std::unexpected(LoadError::kTruncated);
-  }
-  return mapping;
 }
 
 // The BLAKE3 hash of mapped's [0, hashed_length) range, and the trailer
 // (also BLAKE3 hash + Ed25519 signature, see PackTrailer) immediately
 // following it. Unlike the old chunked-ifstream-read version this
 // replaced, this can't fail: mapped is already the whole file resident
-// (mio, backed by the OS page cache) and hashed_length/kTrailerSize are
+// (memory-mapped, backed by the OS page cache) and hashed_length/kTrailerSize are
 // already validated to fit within it (see Pack::Load), so there's no I/O
 // left to go wrong here - just pointer arithmetic and a hash.
 struct HashAndTrailer {
@@ -471,7 +477,7 @@ std::expected<void, WriteError> WritePack(const std::filesystem::path& output_pa
 }
 
 struct Pack::Impl {
-  mio::mmap_source mapping;
+  Mapping mapping;
   std::vector<IndexEntry> index;
 };
 
@@ -507,8 +513,8 @@ std::expected<Pack, LoadError> Pack::Load(const std::filesystem::path& path, con
   if (!mapping) {
     return std::unexpected(mapping.error());
   }
-  const std::uint64_t hashed_length = mapping->size() - kTrailerSize;
-  const std::span<const std::byte> mapped(reinterpret_cast<const std::byte*>(mapping->data()), mapping->size());
+  const std::span<const std::byte> mapped = MappedBytes(*mapping);
+  const std::uint64_t hashed_length = mapped.size() - kTrailerSize;
 
   auto header = ParsePackHeader(mapped.first(kHeaderSize), hashed_length);
   if (!header) {

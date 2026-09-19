@@ -25,7 +25,7 @@
 //
 // Every pack is BLAKE3-hashed and Ed25519-signed (ADR-0030/ADR-0031's
 // trailer step): Load() verifies the signature before trusting anything
-// else in the file. Load() memory-maps the pack file once (mio) rather
+// else in the file. Load() memory-maps the pack file once (Boost.Interprocess) rather
 // than copying it into a buffer; the BLAKE3 hash is computed directly off
 // that mapping, and every Resolve* call decodes straight out of it too -
 // the file's bytes are never read from disk more than once for a Pack's
