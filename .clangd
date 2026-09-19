@@ -1,8 +1,8 @@
 # Fallback flags for headers that clangd can't map to a compile_commands.json
-# entry: interface-only modules (math, logging) have no .cpp of their own, so
+# entry: the interface-only module (math) has no .cpp of its own, so
 # clangd's usual "borrow flags from a sibling translation unit" heuristic has
-# nothing to borrow from and misses their third-party include dirs (glm,
-# spdlog) from vcpkg_installed. Every path that doesn't exist on a given
+# nothing to borrow from and misses its third-party include dirs (glm)
+# from vcpkg_installed. Every path that doesn't exist on a given
 # clangd instance is silently ignored, so it's safe to list both triplets.
 #
 # Relative, and deliberately not workspace-relative: clangd resolves Add's

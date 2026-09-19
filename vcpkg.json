@@ -2,15 +2,17 @@
   "name": "augusta",
   "version": "0.1.0",
   "dependencies": [
-    "spdlog",
-    "gtest",
     "benchmark",
-    "glm",
     "blake3",
-    "libsodium",
-    "mio",
+    "boost-dll",
+    "boost-interprocess",
+    "boost-log",
     "flecs",
     "gamenetworkingsockets",
-    "physx"
+    "glm",
+    "gtest",
+    "libsodium",
+    "physx",
+    "yaml-cpp"
   ]
 }

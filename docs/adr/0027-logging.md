@@ -1,5 +1,9 @@
 # Logging: `augusta::logging`, a Header-Only spdlog Wrapper, Console-Only
 
+> The library is superseded by ADR-0036 (Boost.Log replaces spdlog, and the
+> module is no longer header-only); the console-only, build-type-level and
+> stdout-capture decisions below still stand.
+
 `augusta::logging` is a header-only module wrapping spdlog behind fast
 macros (`TRACE`/`DEBUG`/`INFO`/`WARN`/`ERR`/`CRIT`), backed by a single
 process-wide, thread-safe logger writing only to a colored console sink —

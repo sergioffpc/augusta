@@ -45,8 +45,10 @@ build: configure
 test: build
 	$(RUN) ctest --preset $(PRESET)
 
+# Nothing to clean before the first configure (or after distclean): the clean
+# target only exists inside a configured build tree.
 clean:
-	$(RUN) cmake --build --preset $(PRESET) --target clean
+	$(if $(wildcard $(BUILD_DIR)),$(RUN) cmake --build --preset $(PRESET) --target clean,@echo Nothing to clean: $(BUILD_DIR) does not exist.)
 
 distclean:
 	cmake -E rm -rf $(BUILD_DIR)
