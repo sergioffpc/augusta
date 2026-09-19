@@ -9,6 +9,9 @@ target_link_libraries(augustac_runtime
   # Simulation, and Network I/O thread loops for Nsight Systems.
   PRIVATE augusta_assets augusta_logging nvtx3-cpp
 )
+# NOMINMAX: something in this TU's includes pulls in <windows.h>, whose
+# min/max macros would break std::min/std::max in runtime.cpp.
+target_compile_definitions(augustac_runtime PRIVATE NOMINMAX)
 augusta_set_module_scope(augustac_runtime CLIENT_ONLY)
 
 add_executable(augustac main.cpp)

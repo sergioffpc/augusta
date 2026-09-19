@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "augusta/input.h"
@@ -54,6 +55,29 @@ struct Config {
 struct Size {
   std::uint32_t width = 0;
   std::uint32_t height = 0;
+};
+
+// Connection numbers for the debug HUD. The renderer only formats them: how
+// they are sourced from the transport is the caller's business.
+struct DebugHudNetStats {
+  // Round-trip time to the server, in milliseconds.
+  int rtt_ms = 0;
+  // Recent worst jitter in milliseconds; nullopt if not measured yet.
+  std::optional<float> jitter_ms;
+  // Packet loss in percent (worst of the two directions); nullopt if not
+  // measured yet.
+  std::optional<float> loss_percent;
+  // Actual throughput over the connection, in bytes per second.
+  float in_bytes_per_sec = 0.0F;
+  float out_bytes_per_sec = 0.0F;
+};
+
+// What the debug HUD (a green one-line readout over the frame, e.g.
+// `FPS: 120 (8.3ms) | RTT: 10ms | ...`) shows besides the frame time the
+// renderer measures itself.
+struct DebugHudStats {
+  // nullopt while not connected (drawn as `RTT: --`).
+  std::optional<DebugHudNetStats> net;
 };
 
 // Owns the client's single OS window, GPU device, and swapchain. The
@@ -113,6 +137,11 @@ class Renderer {
   // itself (ADR-0009's vendored-fork note); this is expected to require
   // a small patch to the vendored copy.
   void SetCursorLocked(bool locked);
+
+  // Updates the values the debug HUD shows, from the Main/Render
+  // thread. Call as often as they change; the HUD is drawn by every
+  // RenderFrame.
+  void SetDebugHudStats(const DebugHudStats& stats);
 
  private:
   struct Impl;
