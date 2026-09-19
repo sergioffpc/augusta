@@ -32,11 +32,16 @@ inline void Init() {
 // SPDLOG_ACTIVE_LEVEL (set per build type by the augusta_logging CMake
 // target) decides at compile time which of these expand to real calls and
 // which compile away entirely.
-#define TRACE(...) SPDLOG_TRACE(__VA_ARGS__)
-#define DEBUG(...) SPDLOG_DEBUG(__VA_ARGS__)
-#define INFO(...) SPDLOG_INFO(__VA_ARGS__)
-#define WARN(...) SPDLOG_WARN(__VA_ARGS__)
-#define ERR(...) SPDLOG_ERROR(__VA_ARGS__)
-#define CRIT(...) SPDLOG_CRITICAL(__VA_ARGS__)
+// L-prefixed rather than bare T/D/I/W/E/C: those collide with the T(...)
+// functional-cast idiom GLM's templates use internally (glm/detail/_vectorize.hpp),
+// which breaks compilation wherever a translation unit includes this header
+// before something that pulls in <glm/...> (e.g. client/main.cpp -> runtime.h
+// -> audio.h/physics.h -> math.h).
+#define LT(...) SPDLOG_TRACE(__VA_ARGS__)
+#define LD(...) SPDLOG_DEBUG(__VA_ARGS__)
+#define LI(...) SPDLOG_INFO(__VA_ARGS__)
+#define LW(...) SPDLOG_WARN(__VA_ARGS__)
+#define LE(...) SPDLOG_ERROR(__VA_ARGS__)
+#define LC(...) SPDLOG_CRITICAL(__VA_ARGS__)
 
 #endif  // AUGUSTA_LOGGING_H_

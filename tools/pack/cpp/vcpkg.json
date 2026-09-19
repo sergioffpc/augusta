@@ -1,0 +1,9 @@
+{
+  "name": "augusta-asset-pipeline-cooking",
+  "version": "0.1.0",
+  "dependencies": [
+    "meshoptimizer",
+    "directxtex",
+    "pybind11"
+  ]
+}

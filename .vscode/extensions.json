@@ -1,11 +1,16 @@
 {
   "recommendations": [
+    "ms-vscode-remote.remote-wsl",
     "ms-vscode.cpptools",
     "ms-vscode.cmake-tools",
     "llvm-vs-code-extensions.vscode-clangd",
     "xaver.clang-format",
     "editorconfig.editorconfig",
     "redhat.vscode-yaml",
-    "github.vscode-github-actions"
+    "sumneko.lua",
+    "github.vscode-github-actions",
+    "shader-slang.slang-language-extension",
+    "ms-python.python",
+    "ms-python.vscode-pylance"
   ]
 }

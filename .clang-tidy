@@ -8,10 +8,40 @@ Checks: >
   google-*,
   readability-*,
   modernize-*,
-  -modernize-use-trailing-return-type
+  -modernize-use-trailing-return-type,
+  -clang-analyzer-core.StackAddressEscape,
+  -readability-convert-member-functions-to-static,
+  -modernize-use-scoped-lock
 
 # Trailing return type is a stylistic alternative the guide doesn't mandate
 # either way, so it's the one thing above we don't turn into a hard rule.
+#
+# clang-analyzer-core.StackAddressEscape is disabled because of a false
+# positive inside Flecs's own fluent term/query builder chain
+# (addons/cpp/mixins/query/builder_i.hpp's `*this->term_ = flecs::term(...);
+# return *this;`), reached via this codebase's
+# `ecs.system(name).kind(phase).run(...)` pattern for a zero-component
+# system (augusta::simulation/prediction/presentation World::Impl) - not a
+# real bug in our code, and not fixable from the call site since it's
+# Flecs's own header.
+#
+# readability-convert-member-functions-to-static is disabled because most
+# module classes (physics::World, networking::Client, ...) are still
+# placeholder stubs awaiting real third-party integration (PhysX,
+# GameNetworkingSockets, Lua, Steam Audio) - their methods don't touch
+# instance state yet only because there's no real state to touch, not
+# because they're meant to be static. Chasing this check per stub would
+# just mean undoing it the moment each real implementation lands.
+# (renderer::Renderer is real as of M1's Falcor spike, ADR-0009 - but it's
+# Windows-only and this clang-tidy run is Linux-only, so it's moot there.)
+#
+# modernize-use-scoped-lock is disabled because this clang-tidy build
+# (LLVM 21.1 on the Linux CI runner) segfaults analyzing it against a
+# plain `std::lock_guard<std::mutex> lock(...)` declaration (crashes
+# inside UseScopedLockCheck::diagOnSingleLock) - e.g. src/client/
+# runtime.cpp's GetLatestPredictionState. A clang-tidy bug, not something
+# fixable from our code.
+
 WarningsAsErrors: "*"
 
 HeaderFilterRegex: '^(src|tests)/.*\.h$'

@@ -1,3 +1,11 @@
 [submodule "third_party/vcpkg"]
 	path = third_party/vcpkg
 	url = https://github.com/microsoft/vcpkg.git
+[submodule "third_party/falcor"]
+	path = third_party/falcor
+	url = https://github.com/NVIDIAGameWorks/Falcor.git
+	ignore = all
+[submodule "third_party/nvtx"]
+	path = third_party/nvtx
+	url = https://github.com/NVIDIA/NVTX.git
+	ignore = all

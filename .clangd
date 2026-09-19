@@ -7,11 +7,23 @@
 #
 # Relative, and deliberately not workspace-relative: clangd resolves Add's
 # relative paths against the *borrowed* compile command's directory, which
-# CMakePresets.json sets to the build dir itself (build/windows-x64 or
-# build/linux-x64) - and vcpkg_installed is a direct child of that same
+# CMakePresets.json sets to the build dir itself (build/x64-windows or
+# build/x64-linux) - and vcpkg_installed is a direct child of that same
 # build dir on both platforms. So a bare "vcpkg_installed/<triplet>/include"
 # lands in the right place with no machine- or user-specific path baked in.
 CompileFlags:
   Add:
     - -Ivcpkg_installed/x64-windows/include
     - -Ivcpkg_installed/x64-linux/include
+---
+# Vendored upstream code (ADR-0009/ADR-0025: plain submodules, never
+# forked/edited except via cmake/patches/*.patch) has no compile_commands.json
+# entry of its own - clangd falls back to guessed flags when a file under
+# here is opened directly, which produces noisy/inaccurate diagnostics (e.g.
+# Falcor's own Window::ICallbacks flagged for a non-virtual destructor,
+# which is Falcor's design, not ours to fix). Not our code to lint either
+# way, so suppress diagnostics outright instead of chasing false positives.
+If:
+  PathMatch: .*third_party/.*
+Diagnostics:
+  Suppress: "*"

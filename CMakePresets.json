@@ -6,7 +6,7 @@
       "name": "windows",
       "displayName": "Windows (Ninja + cl)",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/windows-x64",
+      "binaryDir": "${sourceDir}/build/x64-windows",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
@@ -18,10 +18,20 @@
       }
     },
     {
+      "name": "windows-debug",
+      "displayName": "Windows Debug (Ninja + cl)",
+      "inherits": "windows",
+      "binaryDir": "${sourceDir}/build/x64-windows-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_MSVC_DEBUG_INFORMATION_FORMAT": "Embedded"
+      }
+    },
+    {
       "name": "linux",
       "displayName": "Linux (Ninja)",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/linux-x64",
+      "binaryDir": "${sourceDir}/build/x64-linux",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
@@ -34,10 +44,19 @@
       }
     },
     {
+      "name": "linux-debug",
+      "displayName": "Linux Debug (Ninja)",
+      "inherits": "linux",
+      "binaryDir": "${sourceDir}/build/x64-linux-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
       "name": "linux-san",
       "displayName": "Linux (ASan + UBSan)",
       "inherits": "linux",
-      "binaryDir": "${sourceDir}/build/linux-x64-san",
+      "binaryDir": "${sourceDir}/build/x64-linux-san",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
@@ -47,7 +66,9 @@
   ],
   "buildPresets": [
     { "name": "windows", "configurePreset": "windows" },
+    { "name": "windows-debug", "configurePreset": "windows-debug" },
     { "name": "linux", "configurePreset": "linux" },
+    { "name": "linux-debug", "configurePreset": "linux-debug" },
     { "name": "linux-san", "configurePreset": "linux-san" }
   ],
   "testPresets": [
@@ -57,8 +78,18 @@
       "output": { "outputOnFailure": true }
     },
     {
+      "name": "windows-debug",
+      "configurePreset": "windows-debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
       "name": "linux",
       "configurePreset": "linux",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "linux-debug",
+      "configurePreset": "linux-debug",
       "output": { "outputOnFailure": true }
     },
     {

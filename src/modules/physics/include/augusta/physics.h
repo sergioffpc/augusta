@@ -2,6 +2,7 @@
 #define AUGUSTA_PHYSICS_H_
 
 #include <cstdint>
+#include <memory>
 
 #include "augusta/math.h"
 
@@ -89,6 +90,21 @@ struct StaminaConfig {
   float forced_walk_below = 0.0F;
 };
 
+// The result of one World::Raycast query.
+struct RaycastHit {
+  // True if the ray intersected any body within max_distance. If false,
+  // every other field here is unspecified.
+  bool has_hit = false;
+  // Which body was hit. Only meaningful if has_hit is true.
+  BodyHandle body{};
+  // World-space point where the ray intersected body. Only meaningful
+  // if has_hit is true.
+  math::Vec3 point;
+  // Distance along the ray from origin to point. Only meaningful if
+  // has_hit is true.
+  float distance = 0.0F;
+};
+
 // Owns every body's PhysX state for one side (client or server) of the
 // engine. One World instance is created per process; see
 // ARCHITECTURE.md §8 (Threading) for which thread owns it on each side.
@@ -96,8 +112,29 @@ class World {
  public:
   // Constructs an empty World (no bodies yet), using config for every
   // body's stamina rules. config is copied; there is no way to change it
-  // for a World already constructed.
-  explicit World(const StaminaConfig& config);
+  // for a World already constructed. Creates its own PhysX foundation/
+  // physics/scene instance (ADR-0002) - not shared with any other World,
+  // matching the "one World instance per process" contract above.
+  //
+  // enable_gpu requests a PxCudaContextManager and GPU-accelerated scene
+  // dynamics (client only, see augusta::prediction::World's own
+  // constructor - the server's SimulationWorld always leaves this false).
+  // Falls back to CPU silently (logged, not thrown) if no CUDA-capable
+  // GPU/driver is available. Currently has no observable effect: this
+  // World only ever drives PxController::move() (see physics.cpp's
+  // header comment), never PxScene::simulate()/fetchResults(), and the
+  // GPU dynamics pipeline only accelerates the latter. It's wired in now
+  // so a future switch to real rigid-body dynamics (props, ragdolls,
+  // projectiles) doesn't also need to plumb this through every caller.
+  explicit World(const StaminaConfig& config, bool enable_gpu = false);
+  ~World();
+
+  // Move-only: copying would either duplicate or alias the owned PhysX
+  // scene, neither of which is meaningful.
+  World(const World&) = delete;
+  World& operator=(const World&) = delete;
+  World(World&&) noexcept;
+  World& operator=(World&&) noexcept;
 
   // Creates a new body at initial_position, with default BodyState
   // otherwise (standing, zero velocity, full stamina). Returns a handle
@@ -135,6 +172,22 @@ class World {
   // authoritative state just received over the network and get back the
   // corrected state to continue simulating from.
   BodyState Reconcile(BodyHandle handle, const BodyState& authoritative);
+
+  // Casts a ray from origin in direction (need not be pre-normalized) up
+  // to max_distance, against every body currently in this World, and
+  // returns the closest intersection. Tests only bodies created via
+  // CreateBody - there is no static world geometry (walls, terrain) in
+  // this World to hit yet; that depends on Level Data, not yet designed
+  // (ARCHITECTURE.md's Shared Core list). Used by augusta::ballistics
+  // for player hit detection (US-11): PhysX's cross-platform
+  // non-determinism (see the header comment above) isn't a correctness
+  // concern there, since ballistics runs exclusively server-side - there
+  // is no second, client-side computation to diverge from.
+  [[nodiscard]] RaycastHit Raycast(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const;
+
+ private:
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace augusta::physics

@@ -60,19 +60,38 @@ written on this project, so where these foundational tooling ADRs are
 first exercised in practice
 **Exit criteria:** all three spikes run standalone and demonstrably work
 
-## M2 — Networked Movement Skeleton (M)
+## M2 — Asset Pipeline (M)
+Built before any gameplay milestone needs a test map, so nothing
+downstream ever touches a hardcoded placeholder.
+- Level baking tool: usd-optimize (stage cleanup) + usd-validation-nvidia
+  (validation) on the OpenUSD-authored test map, baked to runtime format
+- Asset cooker (`tools/pack`, pure Python): meshoptimizer
+  (meshes, read directly from the cleaned USD stage) and DirectXTex
+  (textures) via two small native bindings (`tools/pack/cpp/`,
+  no OpenUSD - see ADR-0030)
+- Signed, verified packs (client + server split)
+- CI addition: asset-pipeline check — generate a fresh throwaway Ed25519
+  keypair for the run, cook the test assets, sign with the ephemeral key,
+  verify the signed pack loads end to end
+
+**Exercises:** ADR-0015 through ADR-0020, ADR-0030, ADR-0031
+**Exit criteria:** both executables load exclusively from signed, verified
+packs produced by the cooker; a real (if simple) test map exists for every
+milestone from here on to use
+
+## M3 — Networked Movement Skeleton (M)
 - US-01 Connect to Dedicated Server
 - US-02 Join a Match (2–8 Players)
 - US-04 Move Player Character
 - US-05 Manage Stamina
-- Placeholder/hardcoded test space (not yet through the OpenUSD pipeline)
+- Test space loaded from the real asset pipeline's signed pack (M2)
 
 **Exercises:** ADR-0001, ADR-0005, ADR-0006, ADR-0021, ADR-0024
 **Exit criteria:** 2–8 Windows clients connect to the Linux server, join a
-match, move (walk/run/crouch/prone) in a placeholder space, see each
+match, move (walk/run/crouch/prone) in the pipeline's test map, see each
 other with prediction + reconciliation working
 
-## M3 — Combat Skeleton (L)
+## M4 — Combat Skeleton (L)
 - US-06 Aim Weapon, US-07 Fire Rifle, US-08 Reload Rifle,
   US-09 Apply Weapon Recoil
 - US-10 Simulate Bullet Ballistics, US-11 Detect Hit by Impact Location,
@@ -85,7 +104,7 @@ rendering, e.g. muzzle flash/tracer effects)
 server-computed physics trajectory; hits resolve by body part with damage
 applied (debug HUD/log is enough, no scoring yet)
 
-## M4 — Full Round Loop (M)
+## M5 — Full Round Loop (M)
 - US-03 Spawn into a Round, US-13 Player Death (No Respawn),
   US-14 Determine Round End / Win Condition
 
@@ -95,19 +114,6 @@ round-end stingers, become meaningful to exercise)
 **Exit criteria:** a complete round is playable start to finish — spawn,
 fight, permanent death for the round, win condition ends the round, next
 round starts automatically
-
-## M5 — Asset Pipeline (M)
-Replaces the placeholder level/assets from M2–M4 with the real pipeline.
-- Asset cooker CLI: Assimp + meshoptimizer (meshes), DirectXTex (textures),
-  OpenUSD-authored test map baked to runtime format
-- Signed, verified packs (client + server split)
-- CI addition: asset-pipeline check — build the cooker, generate a fresh
-  throwaway Ed25519 keypair for the run, cook the test assets, sign with
-  the ephemeral key, verify the signed pack loads end to end
-
-**Exercises:** ADR-0015 through ADR-0020
-**Exit criteria:** both executables load exclusively from signed, verified
-packs produced by the cooker; no hardcoded/placeholder content remains
 
 ## M6 — Hardening & v1 Release (S)
 - US-15 Server-Side Validation (Anti-Cheat Baseline)

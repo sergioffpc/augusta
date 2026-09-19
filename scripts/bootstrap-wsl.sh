@@ -34,6 +34,14 @@ if ! command -v helm >/dev/null 2>&1; then
   curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 fi
 
+# WSL2 mirrored networking (set up by bootstrap-windows.ps1) puts WSL and
+# Windows on the same 127.0.0.1 port space, so sccache's default port
+# (4226) collides between the two sides' independent sccache servers -
+# give WSL's its own port.
+if ! grep -q "^export SCCACHE_SERVER_PORT=" ~/.bashrc 2>/dev/null; then
+  echo "export SCCACHE_SERVER_PORT=4227" >> ~/.bashrc
+fi
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # vcpkg is a pinned git submodule (third_party/vcpkg) rather than a

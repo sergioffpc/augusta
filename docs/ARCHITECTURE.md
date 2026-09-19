@@ -17,14 +17,18 @@ Top quality goals (see [REQUIREMENTS.md](./REQUIREMENTS.md) for full NFR list):
   via NVIDIA Falcor (D3D12). Server: Linux-only, headless.
 - **Licensing:** third-party dependencies must be free/open-source (Flecs
   [MIT], PhysX [BSD-3], GameNetworkingSockets [BSD-3], Falcor [BSD-3],
-  Steam Audio [Apache 2.0], Slang [Apache 2.0])
+  Steam Audio [Apache 2.0], miniaudio [MIT], Slang [Apache 2.0])
 - **Language:** C++23 (avoid C++23 std modules/`import std` — still immature
   on MSVC and GCC/Clang)
 - **Coding style:** Google C++ Style Guide
 - **Testing:** GoogleTest (unit) + Google Benchmark (micro-benchmarks)
 - **Content tooling:** OpenUSD (Tomorrow Open Source Technology License 1.0,
   Apache-derived) for offline map authoring/baking only — not linked into
-  shipped client or server binaries
+  shipped client or server binaries. Same constraint for usd-optimize
+  (Apache 2.0, stage cleanup), usd-validation-nvidia (Apache 2.0 +
+  CC-BY-4.0, validation), and Adobe's USD-Fileformat-plugins (Apache 2.0,
+  glTF/FBX/OBJ ingestion as USD layers, ADR-0016) — all offline/build-time
+  only.
 - **Organizational:** solo developer / small informal team, hobby project, no
   fixed deadline, milestone-driven
 
@@ -105,10 +109,12 @@ No matchmaking, master server, or third-party platform integration in v1.
   OpenUSD source
 
 **Client-only** (Windows-only)
-- Window — Win32 window creation, message pump, resize/close/focus
-  events; owns the window handle that Renderer's swapchain and Input's
-  device hooks both need, so neither has to manage it itself
-- Input handling — reads device input, hands commands to PredictionWorld
+- Input handling — turns keyboard/mouse events pushed by Renderer into
+  commands for PredictionWorld. There is no separate Window module:
+  Falcor fuses window creation with its GPU device/swapchain into one
+  object (ADR-0009), so Renderer owns the OS window and pushes device
+  events to Input rather than a third module managing the window handle
+  independently
 - Networking — sends commands, receives authoritative server state
 - ClientRuntime
   - PredictionWorld (ECS) — consumes commands + authoritative server
@@ -116,8 +122,12 @@ No matchmaking, master server, or third-party platform integration in v1.
     an immutable prediction state each simulation tick
   - PresentationWorld (ECS) — consumes the prediction state; interpolates/
     smooths for display; emits presentation state each render frame
-- Renderer — NVIDIA Falcor (D3D12), shaders authored in Slang; consumes
-  presentation state
+- Renderer — NVIDIA Falcor (D3D12), shaders authored in Slang; owns the
+  client's single OS window (see Input handling, above) and consumes
+  presentation state. Exposes pumping window/device events and rendering
+  a frame as two separate operations rather than one combined loop, so
+  the Main/Render thread can drain events at a different cadence than it
+  presents frames
 - Audio — Steam Audio; consumes presentation state
 - HUD/UI
 
@@ -244,12 +254,20 @@ Damage → Scripts/Behaviours → Commit)
 | Commit | Mechanism | Packages tick state into Authoritative State for Networking |
 
 **Tooling** (offline, not shipped)
-- Level baking tool — converts OpenUSD-authored maps into the engine's
-  runtime level format, including Steam Audio baked reflection/occlusion data
-- Asset cooker CLI — imports meshes via Assimp, optimizes via meshoptimizer,
-  compresses textures via DirectXTex (BC7/BC5/BC4, DDS), and packages
-  everything into signed, verified pack files (separate client and
-  server packs)
+- Level baking tool — cleans up the OpenUSD-authored (ADR-0015) map with
+  usd-optimize (dedup instances, flatten hierarchy, remove degenerate
+  geometry), validates it with usd-validation-nvidia, then converts it into the
+  engine's runtime level format, including Steam Audio baked
+  reflection/occlusion data
+- Asset cooker (`tools/pack`, a pure-Python project - `augustap`
+  console-script entry point) — walks the cleaned OpenUSD stage via
+  usd-optimize's own `pxr` build, optimizes meshes via meshoptimizer and
+  compresses textures via DirectXTex (BC7/BC5/BC4, DDS) through two small
+  native pybind11 modules (`tools/pack/cpp/`, per ADR-0025's
+  vcpkg ports - neither links OpenUSD, see ADR-0030), and packages
+  everything into signed, verified pack files (separate client and server
+  packs) via a pure-Python reimplementation of augusta_assets' wire format.
+  Full ordered pipeline: ADR-0030.
 
 ## 6. Runtime View
 
@@ -279,12 +297,11 @@ v1 gameplay: a Linux dedicated server process and up to 8 Windows client
 processes, on the same LAN/localhost.
 
 Non-production development/test deployment: the server also runs on a
-self-hosted, single-node k3s cluster (developer's own hardware), one
-Kubernetes namespace per environment (`develop` persistent;
-`feature/*`/`hotfix/*`/`release/*` ephemeral, torn down on branch
-delete) — see ENGINEERING.md, Deployment & CD. LAN-only access; this
-removes the need for a separate Linux VM/WSL2 just to run the server
-locally, since k3s now hosts it.
+self-hosted, single-node k3s cluster (developer's own hardware), two fixed,
+long-lived Kubernetes namespaces (`staging` tracks `main`, `develop` tracks
+`develop`) — no per-branch/ephemeral namespaces — see ENGINEERING.md,
+Deployment & CD. LAN-only access; this removes the need for a separate
+Linux VM/WSL2 just to run the server locally, since k3s now hosts it.
 
 Production deployment (`main`) is explicitly out of scope/undecided for
 now.
@@ -323,10 +340,12 @@ now.
   not just by convention.
 - **Asset packaging & integrity:** runtime assets ship as a single signed
   pack file per target (client/server), never as loose files. Content is
-  hashed with BLAKE3 and signed with Ed25519; the public key is embedded
-  in each binary for load-time verification, the private key never leaves
-  the developer's machine. A failed verification refuses to load and exits
-  with an error. Assets are addressed by relative path within the pack.
+  hashed with BLAKE3 and signed with Ed25519; both the client and server
+  take the pack path and the expected public key as external inputs
+  (CLI arguments, issue #60) rather than embedding the public key in the
+  binary, the private key never leaves the developer's machine. A failed
+  verification refuses to load and exits with an error. Assets are
+  addressed by relative path within the pack.
 
 ## 9. Architecture Decisions (ADRs)
 
@@ -354,6 +373,7 @@ aid only and do not affect numbering.
 - [ADR-0009 — Renderer: NVIDIA Falcor](./adr/0009-renderer.md)
 - [ADR-0010 — Audio: Steam Audio](./adr/0010-audio.md)
 - [ADR-0014 — Shading language: Slang](./adr/0014-shading-language.md)
+- [ADR-0028 — Audio output: miniaudio](./adr/0028-audio-output.md)
 
 ### Asset Pipeline
 - [ADR-0015 — Map/level authoring format: OpenUSD](./adr/0015-map-authoring-format.md)

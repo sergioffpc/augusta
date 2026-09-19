@@ -126,6 +126,21 @@ pipeline).
 
 - **Model:** a single shared checkout on the Windows filesystem (NTFS) is
   used by both sides — no separate clones.
+- **Client↔server local testing:** WSL2's default NAT networking gives the
+  WSL VM its own IP, separate from the Windows host's `127.0.0.1` — a
+  native Windows `augustac` can't reach a WSL-hosted `augustad` on
+  `127.0.0.1` without it (UDP localhost forwarding, unlike TCP's, isn't
+  reliable across WSL2 versions). Enable WSL2's mirrored networking mode
+  instead, so the WSL VM shares the host's network interfaces (including
+  loopback): add to `%UserProfile%\.wslconfig`
+  ```ini
+  [wsl2]
+  networkingMode=mirrored
+  ```
+  then `wsl --shutdown` and restart WSL. After that, `127.0.0.1:<port>`
+  reaches a WSL-hosted `augustad` from a native Windows `augustac`, no
+  need to look up the WSL VM's IP. Requires a reasonably recent
+  Windows 11 + WSL2 version; confirm with `wsl --version`.
 - **Server / shared core (Linux, via WSL2):** develop and build directly
   inside WSL2, accessing the repo via `/mnt/c/...`. No Docker container —
   a `scripts/bootstrap-wsl.sh` setup script installs CMake, Ninja,
@@ -140,14 +155,31 @@ pipeline).
   Studio Build Tools system-wide (default install location) — simpler
   than pinning a project-specific path, at the cost of not being able to
   side-by-side independent Build Tools versions per project — plus the
-  Windows SDK, CMake, Ninja, vcpkg, and Git. (A fully hermetic,
-  registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was
+  Windows SDK, CMake, Ninja, vcpkg, Git, and clang-format (for the
+  `pre-commit` hook below).
+  (A fully hermetic, registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was
   considered and rejected: Falcor's CMake presets only test/support
   MSVC on Windows, and stacking an unsupported compiler on top of an
   already-unmaintained dependency, ADR-0009, isn't worth the purity.)
+- **Asset pipeline tooling (authoring-only, opt-in):** a separate
+  `tools/pack/scripts/bootstrap-windows.ps1` script builds a hermetic
+  authoring/cooking environment under a caller-chosen `-AssetsRoot`
+  (ADR-0015, ADR-0016, ADR-0017, ADR-0030) — NVIDIA Omniverse USD Composer
+  (via kit-app-template, since the old Launcher was deprecated), a
+  uv-managed Python venv with `tools/pack` (this repo's own
+  pure-Python cooker project, pulling in `usd-optimize`/
+  `usd-validation-nvidia`/`pynacl`/`blake3` as its own dependencies)
+  installed editable, and Adobe's USD-Fileformat-plugins. Deliberately kept
+  out of `bootstrap-windows.ps1`: these are heavier, GPU-dependent,
+  authoring-only tools never linked into shipped binaries (ARCHITECTURE.md
+  §2), so only whoever is actually authoring content runs it.
+  `meshoptimizer` and DirectXTex are `tools/pack/cpp`'s own
+  C++ build dependencies (two small pybind11 modules, no OpenUSD - see
+  ADR-0030) — vendored via `vcpkg.json` (ADR-0025) like the rest of the
+  codebase, not fetched by this script.
 - **Editor experience:** a committed `.vscode/extensions.json` lists
   recommended extensions (C++ tools, CMake Tools, clangd/clang-format,
-  GitLens, EditorConfig, Lua, YAML/Helm, GitHub Actions) — VS Code
+  EditorConfig, Lua, YAML/Helm, GitHub Actions) — VS Code
   prompts to install these whenever the folder is opened, on either
   side (WSL remote or native Windows), no container required.
 - **Dependency hermeticity:** the `vcpkg.json` manifest (ADR-0025) is what
@@ -157,8 +189,14 @@ pipeline).
 ## Code Quality
 
 - Google C++ Style Guide (ADR-0012), enforced via `clang-format` +
-  `clang-tidy` in CI — not as local pre-commit hooks, to keep local
-  tooling minimal; CI is the enforcement point.
+  `clang-tidy`. `clang-format` also runs as a local `pre-commit` git
+  hook (auto-formats staged `.cpp`/`.h` files under `src/`/`tests/`,
+  same scope as CI's own check) so most formatting issues never reach
+  a push; CI's `format` job stays as the actual gate, since the hook
+  can be skipped (`--no-verify`), missing, or running a different
+  local `clang-format` version than CI's. `clang-tidy` stays CI-only —
+  slower, and needs a full `compile_commands.json`, a poor fit for a
+  commit-time hook.
 - Strict warnings-as-errors in CI (see CI/CD above).
 - ASan/UBSan in CI; TSan run manually/periodically given multithreading
   (ADR-0005).

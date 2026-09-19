@@ -25,7 +25,7 @@ jobs:
       run_build: ${{ steps.filter.outputs.run_build }}
       run_container: ${{ steps.filter.outputs.run_container }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -46,7 +46,7 @@ jobs:
           changed="$(git diff --name-only "$base" "${{ github.sha }}")"
 
           if echo "$changed" \
-              | grep -qE '^(src/|tests/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party$|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$)'; then
+              | grep -qE '^(src/|tests/|tools/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party$|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$)'; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
@@ -64,13 +64,13 @@ jobs:
     if: needs.changes.outputs.run_build == 'true'
     runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install clang-format
         run: sudo apt-get update && sudo apt-get install -y clang-format
 
       - name: Check formatting
-        run: find src tests \( -name '*.cpp' -o -name '*.h' \) | xargs clang-format --dry-run --Werror
+        run: find src tests tools \( -name '*.cpp' -o -name '*.h' \) | xargs clang-format --dry-run --Werror
 
   build-client:
     needs: [changes, format]
@@ -81,7 +81,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: true
+          # recursive, not just true: third_party/falcor (ADR-0009) has its
+          # own nested submodules (glfw, imgui, fmt, ...) that need pulling
+          # too - see .gitmodules.
+          submodules: recursive
 
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
 
@@ -94,6 +97,27 @@ jobs:
       - name: Bootstrap vcpkg
         shell: pwsh
         run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Cache vendored Falcor build (ADR-0009)
+        id: falcor-commit
+        shell: pwsh
+        run: |
+          $sha = git -C third_party/falcor rev-parse HEAD
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # C:\packman-repo is packman's own machine-wide download cache
+          # (outside the workspace - see third_party/falcor/setup.bat);
+          # third_party/falcor/build is its own build tree, produced by
+          # src/modules/renderer/CMakeLists.txt's own build step. Building
+          # Falcor from scratch is slow, so both are cached and keyed on the
+          # pinned submodule commit (ADR-0025-style pinning) rather than
+          # rebuilding on every run.
+          path: |
+            C:\packman-repo
+            third_party/falcor/build
+          key: falcor-${{ steps.falcor-commit.outputs.sha }}
 
       - name: Configure vcpkg NuGet cache
         shell: pwsh
@@ -120,30 +144,57 @@ jobs:
     # apt.llvm.org (a stable runner image already gives a stable distro
     # package version).
     runs-on: ubuntu-26.04
+    # Overrides the workflow-level NuGet/GitHubPackages default (Windows-
+    # only, see build-client): that path runs nuget.exe under Mono here,
+    # and Mono's own bundled cert store is untrusted-by-default on a
+    # fresh runner image, failing every restore/push with
+    # CERTIFICATE_VERIFY_FAILED (silently - vcpkg just rebuilds from
+    # source instead of erroring). x-gha (GitHub Actions' own cache
+    # backend for vcpkg) would have sidestepped Mono entirely, but it was
+    # removed upstream (microsoft/vcpkg-tool#1662); actions/cache over
+    # the local files provider is GitHub Actions' own recommended
+    # replacement.
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
-      - name: Install clang-tidy + mono
-        run: sudo apt-get update && sudo apt-get install -y clang-tidy ninja-build mono-complete
+      - name: Install clang-tidy
+        # autoconf/autoconf-archive/automake/libtool: vcpkg's libsodium port
+        # builds via autotools on Linux (vcpkg_run_autoreconf) and needs
+        # these from the system package manager - not bundled with vcpkg
+        # itself.
+        run: sudo apt-get update && sudo apt-get install -y clang-tidy ninja-build autoconf autoconf-archive automake libtool
 
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
 
+      - name: Cache vcpkg binaries
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .vcpkg-bincache
+          key: vcpkg-bincache-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-bincache-
+
       - name: Bootstrap vcpkg
         run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-
-      - name: Configure vcpkg NuGet cache
-        run: |
-          nuget_path=$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1)
-          mono "$nuget_path" sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
-          mono "$nuget_path" setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
 
       - name: Configure
         run: cmake --preset linux
 
       - name: Lint (clang-tidy)
-        run: find src -name '*.cpp' | xargs clang-tidy -p build/linux-x64
+        # src/client and src/modules/renderer are Windows-only (CMakeLists.txt
+        # gates both on WIN32 - the latter since ADR-0009's Falcor backend is
+        # Windows-only) and aren't part of this Linux configure's build graph
+        # at all, so they have no compile_commands.json entry here - excluded
+        # rather than linted against the wrong platform's (missing) compile
+        # flags. Note: clang-tidy given multiple files in one invocation
+        # cascades a spurious error onto every file *after* the first one
+        # missing its compile_commands entry, not just that file itself - so
+        # a stray Windows-only file left in this list fails the whole batch.
+        run: find src -name '*.cpp' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' | xargs clang-tidy -p build/x64-linux
 
       - name: Build
         run: cmake --build --preset linux
@@ -155,23 +206,33 @@ jobs:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true' && github.event_name == 'pull_request'
     runs-on: ubuntu-26.04
+    # See build-server's env override for why this isn't the workflow-
+    # level NuGet default.
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
-      - name: Install mono
-        run: sudo apt-get update && sudo apt-get install -y mono-complete
+      - name: Install build tools
+        # Same reasoning as build-server: the linux-san preset also uses the
+        # Ninja generator, and vcpkg's libsodium port needs the autotools
+        # toolchain from the system package manager to build from source.
+        run: sudo apt-get update && sudo apt-get install -y ninja-build autoconf autoconf-archive automake libtool
 
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
 
+      - name: Cache vcpkg binaries
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .vcpkg-bincache
+          key: vcpkg-bincache-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-bincache-
+
       - name: Bootstrap vcpkg
         run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-
-      - name: Configure vcpkg NuGet cache
-        run: |
-          nuget_path=$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1)
-          mono "$nuget_path" sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
 
       - name: Configure (ASan + UBSan)
         run: cmake --preset linux-san
@@ -183,8 +244,14 @@ jobs:
         run: ctest --preset linux-san
 
   container:
-    needs: changes
-    if: needs.changes.outputs.run_container == 'true'
+    needs: [changes, build-server]
+    # build-server only runs when run_build is true (see changes above), so
+    # a skipped result there is fine - only an actual failure should block
+    # the image build.
+    if: |
+      always() &&
+      needs.changes.outputs.run_container == 'true' &&
+      (needs.build-server.result == 'success' || needs.build-server.result == 'skipped')
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

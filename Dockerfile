@@ -16,6 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       tar \
       pkg-config \
       ca-certificates \
+      autoconf \
+      autoconf-archive \
+      automake \
+      libtool \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
@@ -24,6 +28,7 @@ WORKDIR /workspace
 # changes, so it's copied and run first to keep that layer cached across
 # src/ edits.
 COPY third_party/vcpkg third_party/vcpkg
+COPY cmake cmake
 COPY vcpkg.json CMakeLists.txt CMakePresets.json ./
 RUN ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
 
@@ -43,7 +48,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --no-create-home --shell /usr/sbin/nologin augusta
 
-COPY --from=build /workspace/build/linux-x64/src/server/augustad /usr/local/bin/augustad
+COPY --from=build /workspace/build/x64-linux/src/server/augustad /usr/local/bin/augustad
 
 USER augusta
 ENTRYPOINT ["/usr/local/bin/augustad"]

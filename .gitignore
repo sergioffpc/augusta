@@ -1,5 +1,5 @@
-# Build output (CMakePresets.json binaryDir per preset - build/windows-x64,
-# build/linux-x64, etc. stay separate since Windows-native and WSL share the
+# Build output (CMakePresets.json binaryDir per preset - build/x64-windows,
+# build/x64-linux, etc. stay separate since Windows-native and WSL share the
 # same checkout, see ENGINEERING.md)
 build/
 out/
@@ -45,6 +45,24 @@ compile_commands.json
 # Packages / vcpkg
 vcpkg_installed/
 packages/
+.vcpkg-bincache/
+
+# Python (tools/pack) build/install artifacts - the hermetic venv
+# itself lives under -AssetsRoot (see above), never inside the checkout.
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+
+# Native _meshoptimizer/_textconv extension modules (tools/pack/
+# cpp/*_bindings.cpp) and any runtime DLLs they need alongside them
+# (DirectXTex, meshoptimizer, ...) - CMake builds these straight into this
+# path (RUNTIME_OUTPUT_DIRECTORY); compiled binaries, not source.
+# pybind11's actual filenames are ABI-tagged (e.g.
+# _meshoptimizer.cp312-win_amd64.pyd) - Python resolves that back to the
+# plain module name on import regardless.
+tools/pack/src/pack/*.pyd
+tools/pack/src/pack/*.dll
 
 # OS
 .DS_Store
