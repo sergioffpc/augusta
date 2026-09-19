@@ -1,10 +1,44 @@
 #ifndef AUGUSTA_LOGGING_H_
 #define AUGUSTA_LOGGING_H_
 
+#include <spdlog/pattern_formatter.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
+#include <array>
+#include <memory>
+#include <string_view>
+
 namespace augusta::logging {
+
+namespace detail {
+
+// spdlog's own `%l` prints the level in lower case, so the upper-case names
+// the console format wants come from this custom flag (registered as `%*`).
+class UpperCaseLevelFlag : public spdlog::custom_flag_formatter {
+ public:
+  void format(const spdlog::details::log_msg& msg, const std::tm& /*time*/, spdlog::memory_buf_t& dest) override {
+    static constexpr std::array<std::string_view, spdlog::level::n_levels> kNames = {
+        "TRACE", "DEBUG", "INFO", "WARN", "ERROR", "CRITICAL", "OFF",
+    };
+    const std::string_view name = kNames[msg.level];
+    dest.append(name.data(), name.data() + name.size());
+  }
+
+  [[nodiscard]] std::unique_ptr<custom_flag_formatter> clone() const override {
+    return std::make_unique<UpperCaseLevelFlag>();
+  }
+};
+
+}  // namespace detail
+
+/// The console line format (ADR-0029): `<UTC ISO-8601 time> <LEVEL> <message>`,
+/// e.g. `2024-02-01T12:00:00Z INFO subsystem=client event=starting`.
+inline std::unique_ptr<spdlog::formatter> MakeFormatter() {
+  auto formatter = std::make_unique<spdlog::pattern_formatter>(spdlog::pattern_time_type::utc);
+  formatter->add_flag<detail::UpperCaseLevelFlag>('*').set_pattern("%Y-%m-%dT%H:%M:%SZ %^%*%$ %v");
+  return formatter;
+}
 
 // Configures the process-wide default logger: a single thread-safe, colored
 // console sink (ADR-0027 — no file sink, the platform captures stdout).
@@ -24,6 +58,7 @@ inline void Init() {
   // (spdlog defaults new loggers to `info`).
   logger->set_level(static_cast<spdlog::level::level_enum>(SPDLOG_ACTIVE_LEVEL));
   logger->flush_on(spdlog::level::warn);
+  logger->set_formatter(MakeFormatter());
   spdlog::set_default_logger(logger);
 }
 

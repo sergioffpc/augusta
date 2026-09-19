@@ -155,7 +155,7 @@ pipeline).
   Studio Build Tools system-wide (default install location) — simpler
   than pinning a project-specific path, at the cost of not being able to
   side-by-side independent Build Tools versions per project — plus the
-  Windows SDK, CMake, Ninja, vcpkg, Git, and clang-format (for the
+  Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, and clang-format (for the
   `pre-commit` hook below).
   (A fully hermetic, registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was
   considered and rejected: Falcor's CMake presets only test/support

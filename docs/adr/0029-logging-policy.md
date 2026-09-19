@@ -20,7 +20,9 @@ second key, and callers add whatever else is relevant (`tick=`, `bytes=`,
 ...). This is convention, not an enforced schema. The single
 process-wide `"augusta"` logger (ADR-0027) is kept rather than one logger
 per module, so the console pattern is fixed here rather than left open as
-ADR-0027 did: `[%Y-%m-%d %H:%M:%S.%e] [%l] %v`.
+ADR-0027 did: `<UTC ISO-8601 time> <LEVEL> <message>`, e.g.
+`2024-02-01T12:00:00Z INFO subsystem=client event=starting` (spdlog pattern
+`%Y-%m-%dT%H:%M:%SZ %^%*%$ %v`, with `%*` the upper-case level - see `augusta::logging::MakeFormatter`).
 
 No level is a safe place for credentials or session/auth tokens - this
 applies unconditionally, including `TRACE`. Peer IPs are fine to log
