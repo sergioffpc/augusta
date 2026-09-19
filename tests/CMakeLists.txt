@@ -4,6 +4,10 @@ add_executable(augusta_version_tests version_test.cpp)
 target_link_libraries(augusta_version_tests PRIVATE augusta_version GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_version_tests)
 
+add_executable(augusta_logging_tests logging_test.cpp)
+target_link_libraries(augusta_logging_tests PRIVATE augusta_logging GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_logging_tests)
+
 add_executable(augusta_version_benchmarks version_benchmark.cpp)
 target_link_libraries(augusta_version_benchmarks PRIVATE augusta_version benchmark::benchmark benchmark::benchmark_main)
 
