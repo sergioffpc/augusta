@@ -17,6 +17,10 @@ namespace augusta::client {
 /// Pack-relative path the cooker files a stage's scene graph under.
 inline constexpr std::string_view kScenePath = "Scene";
 
+/// Key of the node property (ADR-0032) holding a mesh's base color: three
+/// space-separated linear RGB floats, e.g. "0.35 0.38 0.35".
+inline constexpr std::string_view kBaseColorProperty = "base_color";
+
 /// Looks up a mesh by its pack-relative path, e.g. Pack::ResolveMesh.
 using MeshResolver = std::function<std::expected<assets::MeshData, assets::ResolveError>(std::string_view)>;
 

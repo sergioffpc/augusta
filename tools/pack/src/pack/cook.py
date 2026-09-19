@@ -40,6 +40,9 @@ from pack.pack import NO_PARENT, TEXTURE_FORMAT_BC4, TEXTURE_FORMAT_BC5, TEXTURE
 # other collider) plus this marker.
 _SPAWN_POINT_ATTR = "augusta:spawnPoint"
 _HITBOX_ATTR = "augusta:hitbox"
+# Node property (ADR-0032) carrying a visual mesh's constant displayColor as
+# "r g b" linear floats; the client reads it as the mesh's base color.
+BASE_COLOR_PROPERTY = "base_color"
 # augusta:textureFormat: selects which BC format a UsdUVTexture prim
 # compresses to (ADR-0017/issue #49). Defaults to BC7 when absent/
 # unrecognized.
@@ -215,9 +218,8 @@ def _optimize_mesh(mesh: MeshData) -> MeshData:
 
 def _read_raw_mesh_geometry(mesh: UsdGeom.Mesh, prim_path: str) -> MeshData:
     """Reads a UsdGeomMesh's points/triangle-index buffer as authored,
-    with no meshoptimizer pass applied - shared by _read_mesh (visual,
-    optimized afterward) and collision/hitbox geometry reading
-    (_build_node), where meshoptimizer's lossy simplification could let a
+    with no meshoptimizer pass applied - shared by the visual path (optimized afterward) and
+    collision/hitbox geometry reading (_build_node), where meshoptimizer's lossy simplification could let a
     physics query miss geometry it should have hit.
     """
     face_vertex_counts = mesh.GetFaceVertexCountsAttr().Get()
@@ -233,8 +235,54 @@ def _read_raw_mesh_geometry(mesh: UsdGeom.Mesh, prim_path: str) -> MeshData:
     return MeshData(points=points, indices=indices)
 
 
-def _read_mesh(mesh: UsdGeom.Mesh, prim_path: str) -> MeshData:
-    return _optimize_mesh(_read_raw_mesh_geometry(mesh, prim_path))
+# A UsdGeomCube's 8 corners, ordered (-,-,-) (+,-,-) (+,+,-) (-,+,-)
+# (-,-,+) (+,-,+) (+,+,+) (-,+,+), and its 12 outward-CCW triangles.
+_CUBE_CORNER_SIGNS = [(-1, -1, -1), (1, -1, -1), (1, 1, -1), (-1, 1, -1), (-1, -1, 1), (1, -1, 1), (1, 1, 1), (-1, 1, 1)]
+_CUBE_INDICES = [4, 5, 6, 4, 6, 7, 1, 0, 3, 1, 3, 2, 5, 1, 2, 5, 2, 6, 0, 4, 7, 0, 7, 3, 3, 7, 6, 3, 6, 2, 0, 1, 5, 0, 5, 4]
+
+
+def _read_cube_geometry(cube: UsdGeom.Cube, prim_path: str) -> MeshData:
+    """Expands a UsdGeomCube (an edge-length box centered on its own
+    origin) into the same triangle buffer a UsdGeomMesh box would give,
+    so a cube is cooked exactly like a mesh from here on.
+    """
+    size = cube.GetSizeAttr().Get()
+    if size is None or size <= 0:
+        raise CookError("invalid_cube_size", prim_path, f"cube size {size} must be positive")
+    half = size / 2
+    points = [(sx * half, sy * half, sz * half) for sx, sy, sz in _CUBE_CORNER_SIGNS]
+    return MeshData(points=points, indices=list(_CUBE_INDICES))
+
+
+def _read_raw_geometry(prim: Usd.Prim, prim_path: str) -> MeshData | None:
+    """Reads prim's triangle geometry as authored if it is a UsdGeomMesh
+    or UsdGeomCube, or None for any other prim type.
+    """
+    if prim.IsA(UsdGeom.Mesh):
+        return _read_raw_mesh_geometry(UsdGeom.Mesh(prim), prim_path)
+    if prim.IsA(UsdGeom.Cube):
+        return _read_cube_geometry(UsdGeom.Cube(prim), prim_path)
+    return None
+
+
+def _read_base_color(prim: Usd.Prim) -> str | None:
+    """prim's constant primvars:displayColor as an "r g b" string, or None
+    if it has none. Only the first element is used: per-face/per-vertex
+    color isn't supported.
+    """
+    gprim = UsdGeom.Gprim(prim)
+    colors = gprim.GetDisplayColorAttr().Get() if gprim else None
+    if not colors:
+        return None
+    return " ".join(f"{channel:g}" for channel in colors[0])
+
+
+def _is_guide(prim: Usd.Prim) -> bool:
+    """True if prim is authored with purpose "guide": a DCC-only helper
+    (e.g. a spawn-point marker) that is never rendered.
+    """
+    imageable = UsdGeom.Imageable(prim)
+    return bool(imageable) and imageable.GetPurposeAttr().Get() == UsdGeom.Tokens.guide
 
 
 def _build_node(
@@ -244,8 +292,8 @@ def _build_node(
     entries: list[AssetEntry],
 ) -> SceneNode:
     """Builds prim's own SceneNode, appending a spawn-point AssetEntry if
-    augusta:spawnPoint is set, and - if prim is a UsdGeomMesh - exactly
-    one geometry AssetEntry: kHitbox if augusta:hitbox is set, else
+    augusta:spawnPoint is set, and - if prim is a UsdGeomMesh or UsdGeomCube - at
+    most one geometry AssetEntry: kHitbox if augusta:hitbox is set, else
     kCollision if a PhysX collider is applied, else kMesh. node_index_of
     must already contain every ancestor of prim - guaranteed by pre-order
     traversal (see cook_stage's own comment on its Traverse() call).
@@ -289,24 +337,26 @@ def _build_node(
     if is_hitbox:
         node.hitbox_path = prim_path
 
-    if prim.IsA(UsdGeom.Mesh):
-        geom_mesh = UsdGeom.Mesh(prim)
-        # A mesh prim contributes exactly one geometry blob, addressed by
-        # its own path - a hitbox marker or an applied PhysX collider
-        # means this prim is a physics-only proxy, read raw (no
-        # meshoptimizer simplification) and filed as kHitbox/kCollision
-        # instead of kMesh.
+    geometry = _read_raw_geometry(prim, prim_path)
+    if geometry is not None:
+        # A geometry prim contributes at most one blob, addressed by its
+        # own path - a hitbox marker or an applied PhysX collider means
+        # this prim is a physics-only proxy, kept raw (no meshoptimizer
+        # simplification) and filed as kHitbox/kCollision instead of
+        # kMesh. A guide-purpose prim that is neither is a DCC-only helper
+        # and contributes nothing.
         if is_hitbox:
-            hitbox_data = _read_raw_mesh_geometry(geom_mesh, prim_path)
-            entries.append(AssetEntry(type=_TYPE_HITBOX, path=prim_path, data=encode_mesh_blob(hitbox_data)))
+            entries.append(AssetEntry(type=_TYPE_HITBOX, path=prim_path, data=encode_mesh_blob(geometry)))
         elif _has_collision_enabled(prim):
-            collision_data = _read_raw_mesh_geometry(geom_mesh, prim_path)
-            entries.append(AssetEntry(type=_TYPE_COLLISION, path=prim_path, data=encode_mesh_blob(collision_data)))
+            entries.append(AssetEntry(type=_TYPE_COLLISION, path=prim_path, data=encode_mesh_blob(geometry)))
             node.collider_path = prim_path
-        else:
-            mesh_data = _read_mesh(geom_mesh, prim_path)
+        elif not _is_guide(prim):
+            mesh_data = _optimize_mesh(geometry)
             entries.append(AssetEntry(type=_TYPE_MESH, path=prim_path, data=encode_mesh_blob(mesh_data)))
             node.mesh_path = prim_path
+            base_color = _read_base_color(prim)
+            if base_color is not None:
+                node.properties.append((BASE_COLOR_PROPERTY, base_color))
 
     return node
 
@@ -396,7 +446,8 @@ def cook_stage(
             collider_path=node.collider_path,
             hitbox_path=node.hitbox_path,
             is_spawn_point=node.is_spawn_point,
-            properties=node.properties,
+            # The server never receives visual content (ADR-0019), color included.
+            properties=[(key, value) for key, value in node.properties if key != BASE_COLOR_PROPERTY],
         )
         for node in nodes
     ]

@@ -65,6 +65,8 @@ struct Size {
 struct SceneMesh {
   std::vector<math::Vec3> positions;
   std::vector<std::uint32_t> indices;
+  /// Base color, linear RGB in [0, 1].
+  math::Vec3 color{0.8F, 0.8F, 0.8F};
 };
 
 /// The viewpoint a Scene is drawn from. The camera looks down its local -Z

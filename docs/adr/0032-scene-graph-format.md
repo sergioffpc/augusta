@@ -39,6 +39,8 @@ applied on a prim alongside PhysX Collision API schemas (colliders/joints
 authored in Composer, ADR-0015). The cooker reads these attributes directly
 rather than inferring intent from geometry shape or prim naming.
 
+**Geometry prims:** the cooker reads `UsdGeomMesh` and `UsdGeomCube` alike. A cube is expanded to the same 12-triangle box a mesh would give, so it takes the same hitbox/collider/visual path; its scale lives in the node's local transform. usd-validation-nvidia's primitive-fit rule rejects box-shaped meshes, so authored boxes must be cubes. Geometry with `purpose = "guide"` that is neither a collider nor a hitbox (e.g. a spawn-point marker) produces no visual mesh.
+
 ## Considered Options
 
 - **Storing world transforms instead of local:** rejected — doubles the

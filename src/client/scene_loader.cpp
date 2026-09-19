@@ -2,6 +2,8 @@
 
 #include <cstddef>
 #include <format>
+#include <optional>
+#include <sstream>
 #include <vector>
 
 #include "augusta/math.h"
@@ -46,6 +48,23 @@ renderer::SceneMesh ToWorldSpace(const assets::MeshData& mesh, const math::Mat4&
   return result;
 }
 
+// The node's base color, or nullopt if it has none. The error names the node
+// whose value is malformed.
+std::expected<std::optional<math::Vec3>, std::string> ParseBaseColor(const assets::SceneNode& node) {
+  for (const auto& [key, value] : node.properties) {
+    if (key != kBaseColorProperty) {
+      continue;
+    }
+    std::istringstream stream(value);
+    math::Vec3 color;
+    if (!(stream >> color.x >> color.y >> color.z) || !(stream >> std::ws).eof()) {
+      return std::unexpected(std::format("node {} has a malformed {} \"{}\"", node.name, kBaseColorProperty, value));
+    }
+    return color;
+  }
+  return std::nullopt;
+}
+
 renderer::Camera CameraAtSpawnPoint(const math::Mat4& spawn_world) {
   renderer::Camera camera;
   camera.position = math::TranslationOf(spawn_world) + math::Vec3(0.0F, kEyeHeight, 0.0F);
@@ -75,7 +94,14 @@ std::expected<renderer::Scene, std::string> BuildRenderScene(const assets::Scene
       return std::unexpected(
           std::format("mesh {} of node {} {}", *node.mesh_path, node.name, DescribeResolveError(mesh.error())));
     }
+    const auto color = ParseBaseColor(node);
+    if (!color) {
+      return std::unexpected(color.error());
+    }
     result.meshes.push_back(ToWorldSpace(*mesh, world[i]));
+    if (*color) {
+      result.meshes.back().color = **color;
+    }
   }
   return result;
 }
