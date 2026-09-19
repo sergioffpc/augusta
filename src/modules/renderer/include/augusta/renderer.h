@@ -5,8 +5,10 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "augusta/input.h"
+#include "augusta/math.h"
 
 // augusta::renderer wraps NVIDIA Falcor/D3D12 (ADR-0009), used exclusively
 // by the Windows client. It also owns the client's single OS window:
@@ -29,12 +31,12 @@
 // called at the app's presentation rate instead. ClientRuntime's Run()
 // loop decides that split; this module just exposes the two primitives.
 //
-// Interface scope, for now: enough to drive M1's Falcor spike (a
-// textured, rotating primitive on screen) and to establish the seam
-// PresentationWorld will render through. What RenderFrame actually draws
-// - consuming Presentation State - is deliberately not designed yet: that
-// type doesn't exist until the ECS (ADR-0001) and PresentationWorld
-// (ADR-0021, ADR-0024) are. Revisit this header once those land.
+// Interface scope, for now: enough to draw one static Scene (a list of
+// world-space triangle meshes seen from one camera) and to establish the
+// seam PresentationWorld will render through. Consuming Presentation State
+// is deliberately not designed yet: that type doesn't exist until the ECS
+// (ADR-0001) and PresentationWorld (ADR-0021, ADR-0024) are. Revisit this
+// header once those land.
 namespace augusta::renderer {
 
 // Default initial client-area size, in pixels (see Config::width/height).
@@ -55,6 +57,30 @@ struct Config {
 struct Size {
   std::uint32_t width = 0;
   std::uint32_t height = 0;
+};
+
+/// One triangle-list mesh with its positions already in world space (Y-up,
+/// right-handed, 1 unit = 1 m - ADR-0032). Winding is counter-clockwise seen
+/// from the front face.
+struct SceneMesh {
+  std::vector<math::Vec3> positions;
+  std::vector<std::uint32_t> indices;
+};
+
+/// The viewpoint a Scene is drawn from. The camera looks down its local -Z
+/// axis with +Y up, before rotation is applied.
+struct Camera {
+  math::Vec3 position{0.0F, 1.7F, 5.0F};
+  math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};
+  /// Vertical field of view, in radians.
+  float vertical_fov = 0.9F;
+};
+
+/// Everything the renderer draws: static geometry plus the camera it is
+/// seen from.
+struct Scene {
+  std::vector<SceneMesh> meshes;
+  Camera camera;
 };
 
 // Connection numbers for the debug HUD. The renderer only formats them: how
@@ -125,10 +151,14 @@ class Renderer {
   // independently of how often PumpEvents is called. From the
   // Main/Render thread.
   //
-  // What gets drawn is not yet part of this interface (see the header
-  // comment) - today this only proves Falcor renders M1's test
-  // primitive into the window.
+  // Draws the scene last passed to SetScene (just the cleared frame and the
+  // debug HUD until then).
   void RenderFrame();
+
+  /// Replaces the drawn scene, uploading its geometry to the GPU. From the
+  /// Main/Render thread. Throws std::runtime_error if a mesh index is out
+  /// of range for its positions or the scene has too many vertices to draw.
+  void SetScene(const Scene& scene);
 
   // Hides the OS cursor and confines/relocks it to this window each
   // frame, for continuous mouselook (as opposed to the free OS cursor a

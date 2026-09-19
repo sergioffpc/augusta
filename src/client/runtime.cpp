@@ -224,7 +224,10 @@ struct ClientRuntime::Impl {
   }
 };
 
-ClientRuntime::ClientRuntime(const Config& config) : impl_(std::make_unique<Impl>(config)) {}
+ClientRuntime::ClientRuntime(const Config& config, const renderer::Scene& scene)
+    : impl_(std::make_unique<Impl>(config)) {
+  impl_->renderer.SetScene(scene);
+}
 
 ClientRuntime::~ClientRuntime() = default;
 
