@@ -21,7 +21,7 @@ To use nsys refer to 'C:\Program Files\NVIDIA Corporation\Nsight Systems 2026.5.
 
 ### Graphics/GPU debugging
 
-Nsight Graphics is the replacement for augusta_renderer's now-removed in-app debug HUD: frame capture, draw-call/pixel inspection, and shader debugging for the D3D12 backend. Launch 'C:\Program Files\NVIDIA Corporation\Nsight Graphics 2026.3.1\host\windows-desktop-nomad-x64\ngfx-ui.exe' and attach to (or launch) `augustac.exe`.
+Nsight Graphics is the replacement for augusta_renderer's former full in-app debug HUD (only a small FPS/RTT readout, `DebugHud`, remains): frame capture, draw-call/pixel inspection, and shader debugging for the D3D12 backend. Launch 'C:\Program Files\NVIDIA Corporation\Nsight Graphics 2026.3.1\host\windows-desktop-nomad-x64\ngfx-ui.exe' and attach to (or launch) `augustac.exe`.
 
 renderer.cpp also requests `enableAftermath` unconditionally on the Falcor `Device::Desc` - on a GPU crash/TDR this writes a `.nv-gpudmp` crash dump next to `augustac.exe`, decodable with 'C:\Program Files\NVIDIA Corporation\Nsight Graphics 2026.3.1\host\windows-desktop-nomad-x64\nv-aftermath-format.exe'.
 

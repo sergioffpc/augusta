@@ -6,6 +6,7 @@
 #include <Falcor.h>
 #include <Utils/Math/Matrix.h>
 #include <Utils/Threading.h>
+#include <Utils/Timing/FrameRate.h>
 
 #include <chrono>
 #include <cstdint>
@@ -13,6 +14,8 @@
 #include <nvtx3/nvtx3.hpp>
 #include <optional>
 #include <vector>
+
+#include "debug_hud.h"
 
 // M1 spike (ADR-0009): the first real (non-stub) body for this module.
 // Bypasses Falcor::SampleApp entirely - per ADR-0009, SampleApp fuses
@@ -91,6 +94,12 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   Falcor::ref<Falcor::Sampler> sampler;
   std::uint32_t index_count = 0;
 
+  // Debug HUD (FPS, RTT) - see debug_hud.h. frame_rate is ticked once
+  // per RenderFrame; hud_stats carries what the caller supplies.
+  std::unique_ptr<DebugHud> debug_hud;
+  Falcor::FrameRate frame_rate;
+  DebugHudStats hud_stats;
+
   // Render settings - fixed defaults for now (no in-app editor; use
   // NVIDIA Nsight/Tracy for profiling instead).
   Falcor::float4 clear_color{kDefaultClearColorChannel, kDefaultClearColorChannel, kDefaultClearColorChannel, 1.0F};
@@ -135,6 +144,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     RecreateSwapchain();
     const auto size = window->getClientAreaSize();
     CreateTargetFbo(size.x, size.y);
+    debug_hud = std::make_unique<DebugHud>(device, Falcor::uint2(size.x, size.y));
     BuildCubeGeometry();
     BuildCheckerboardTexture();
     BuildRasterPass();
@@ -322,6 +332,12 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     }
 
     device->getProfiler()->endFrame(render_context);
+
+    frame_rate.newFrame();
+    debug_hud->Render(render_context, target_fbo,
+                      {.average_frame_time_s = frame_rate.getAverageFrameTime(),
+                       .net = hud_stats.net,
+                       .delta_time_s = static_cast<float>(frame_rate.getLastFrameTime())});
   }
 
   void handleWindowSizeChange() override {
@@ -333,6 +349,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     device->wait();
     swapchain->resize(size.x, size.y);
     CreateTargetFbo(size.x, size.y);
+    debug_hud->OnWindowResize(size.x, size.y);
   }
 
   void handleRenderFrame() override {
@@ -412,6 +429,8 @@ void Renderer::RenderFrame() {
   impl_->swapchain->present();
   impl_->device->endFrame();
 }
+
+void Renderer::SetDebugHudStats(const DebugHudStats& stats) { impl_->hud_stats = stats; }
 
 void Renderer::SetCursorLocked([[maybe_unused]] bool locked) {
   // TODO(sergioffpc): Falcor exposes no cursor-lock/hide hook (ADR-0009) -

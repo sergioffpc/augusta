@@ -1,5 +1,6 @@
 #include "runtime.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -59,6 +60,21 @@ struct ClientRuntime::Impl {
   std::mutex prediction_state_mutex;
   prediction::State latest_prediction_state;
 
+  // Connection numbers for the renderer's debug HUD: written by the Network
+  // I/O thread (PublishHudNetStats), read by the Main/Render thread once per
+  // frame. They should be consistent with each other, so - like
+  // latest_prediction_state above - a mutex-guarded copy.
+  std::mutex hud_net_mutex;
+  std::optional<renderer::DebugHudNetStats> latest_hud_net;
+
+  // Network I/O thread only. GetStats() reports jitter as a high-water mark
+  // cleared by every read, and that thread reads it far faster than anyone
+  // can read a HUD, so the HUD shows the peak over the last kJitterWindow.
+  static constexpr std::chrono::seconds kJitterWindow{1};
+  std::chrono::steady_clock::time_point jitter_window_start = std::chrono::steady_clock::now();
+  std::int32_t jitter_window_max_us = -1;
+  std::optional<float> hud_jitter_ms;
+
   // NVTX counters (nvtx3::counter, third_party/nvtx) mirroring
   // networking::ConnectionStats field-for-field - plotted on the Nsight
   // Systems timeline alongside the Simulation/Network/Render ranges below,
@@ -74,8 +90,56 @@ struct ClientRuntime::Impl {
   nvtx3::counter<double> net_max_jitter_us{"network.max_jitter_us", "Worst jitter since last GetStats() call"};
   nvtx3::counter<double> net_pending_bytes{"network.pending_bytes", "Bytes queued or in flight"};
 
+  // Packet loss in percent, from the worse of the two directions. Qualities
+  // are 0..1 (1 = no loss); negative means not measured yet.
+  static std::optional<float> PacketLossPercent(const networking::ConnectionStats& stats) {
+    std::optional<float> worst_quality;
+    for (const float quality : {stats.quality_local, stats.quality_remote}) {
+      if (quality >= 0.0F) {
+        worst_quality = worst_quality.has_value() ? std::min(*worst_quality, quality) : quality;
+      }
+    }
+    if (!worst_quality.has_value()) {
+      return std::nullopt;
+    }
+    return (1.0F - std::min(*worst_quality, 1.0F)) * 100.0F;
+  }
+
+  void PublishHudNetStats(const std::optional<networking::ConnectionStats>& stats) {
+    std::optional<renderer::DebugHudNetStats> net;
+    if (stats.has_value()) {
+      const auto now = std::chrono::steady_clock::now();
+      jitter_window_max_us = std::max(jitter_window_max_us, stats->max_jitter_us);
+      if (now - jitter_window_start >= kJitterWindow) {
+        constexpr float kMicrosecondsPerMillisecond = 1000.0F;
+        hud_jitter_ms =
+            jitter_window_max_us >= 0
+                ? std::optional<float>(static_cast<float>(jitter_window_max_us) / kMicrosecondsPerMillisecond)
+                : std::nullopt;
+        jitter_window_max_us = -1;
+        jitter_window_start = now;
+      }
+      net = renderer::DebugHudNetStats{.rtt_ms = stats->ping_ms,
+                                       .jitter_ms = hud_jitter_ms,
+                                       .loss_percent = PacketLossPercent(*stats),
+                                       .in_bytes_per_sec = stats->in_bytes_per_sec,
+                                       .out_bytes_per_sec = stats->out_bytes_per_sec};
+    } else {
+      jitter_window_max_us = -1;
+      hud_jitter_ms.reset();
+    }
+    const std::lock_guard<std::mutex> lock(hud_net_mutex);
+    latest_hud_net = net;
+  }
+
+  std::optional<renderer::DebugHudNetStats> GetLatestHudNet() {
+    const std::lock_guard<std::mutex> lock(hud_net_mutex);
+    return latest_hud_net;
+  }
+
   void SampleNetworkStats() {
     const std::optional<networking::ConnectionStats> stats = network.GetStats();
+    PublishHudNetStats(stats);
     if (!stats.has_value()) {
       net_ping_ms.sample_no_value(nvtx3::no_value_reason::unavailable);
       net_quality_local.sample_no_value(nvtx3::no_value_reason::unavailable);
@@ -176,6 +240,7 @@ void ClientRuntime::Run() {
   while (!impl_->renderer.ShouldClose()) {
     const nvtx3::scoped_range range{"Main/Render Frame"};
     impl_->renderer.PumpEvents();
+    impl_->renderer.SetDebugHudStats({.net = impl_->GetLatestHudNet()});
     presentation::State frame_state = impl_->presentation.RunFrame(impl_->GetLatestPredictionState());
     // TODO(sergioffpc): renderer.RenderFrame() doesn't consume
     // Presentation State yet - see renderer.h's own note on this.
