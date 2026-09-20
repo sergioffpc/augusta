@@ -39,7 +39,12 @@ struct ServerRuntime::Impl {
 
   explicit Impl(const Config& cfg)
       : config(cfg),
-        host(server::HostConfig{.stamina = cfg.stamina, .script_path = cfg.script_path, .listen = cfg.listen}) {}
+        host(server::HostConfig{
+            .stamina = cfg.stamina,
+            .script_path = cfg.script_path,
+            .listen = cfg.listen,
+            .collision = cfg.collision,
+        }) {}
 
   // Network I/O thread body (ADR-0005): pumps the connection until running is
   // cleared by ThreadJoiner or Stop().

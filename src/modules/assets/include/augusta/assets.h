@@ -98,6 +98,14 @@ struct SceneData {
   std::vector<SceneNode> nodes;
 };
 
+/// Pack-relative path the cooker files a stage's scene graph under.
+inline constexpr std::string_view kScenePath = "Scene";
+
+/// The world transform of every node, index for index with scene.nodes
+/// (ADR-0032 stores only local transforms). Relies on ADR-0032's ordering, with
+/// every parent listed before its children, which Pack::ResolveScene guarantees.
+std::vector<math::Mat4> ComputeWorldTransforms(const SceneData& scene);
+
 // The DirectXTex block-compression format a texture blob was compressed
 // to (ADR-0017), one-to-one with DXGI_FORMAT_BC7_UNORM/BC5_UNORM/
 // BC4_UNORM. Its own enum rather than depending on DXGI_FORMAT directly:
@@ -227,6 +235,10 @@ enum class ResolveError {
   // the mesh's own point count).
   kCorruptBlob,
 };
+
+/// A phrase for error that follows the asset's name; expected_type is what the
+/// asset should have been ("mesh", "scene", "collision geometry").
+std::string DescribeResolveError(ResolveError error, std::string_view expected_type);
 
 // A loaded pack file (ADR-0031's header/index/trailer). Load() verifies
 // the BLAKE3 hash and Ed25519 signature before parsing the index, and

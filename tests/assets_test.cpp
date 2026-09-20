@@ -272,4 +272,46 @@ TEST_F(PackLoadNegativeTest, RejectsWrongPublicKeyAsSignatureInvalid) {
   EXPECT_EQ(pack.error(), augusta::assets::LoadError::kSignatureInvalid);
 }
 
+TEST(ComputeWorldTransformsTest, ChainsEachNodeThroughItsParents) {
+  augusta::assets::SceneData scene;
+  augusta::assets::SceneNode root;
+  root.name = "Root";
+  root.translation = augusta::math::Vec3(1.0F, 0.0F, 0.0F);
+  augusta::assets::SceneNode child;
+  child.name = "Root/Child";
+  child.parent_index = 0;
+  child.translation = augusta::math::Vec3(0.0F, 2.0F, 0.0F);
+  augusta::assets::SceneNode grandchild;
+  grandchild.name = "Root/Child/Grandchild";
+  grandchild.parent_index = 1;
+  grandchild.scale = augusta::math::Vec3(2.0F, 2.0F, 2.0F);
+  scene.nodes = {root, child, grandchild};
+
+  const auto world = augusta::assets::ComputeWorldTransforms(scene);
+
+  ASSERT_EQ(world.size(), 3U);
+  const augusta::math::Vec3 origin(0.0F, 0.0F, 0.0F);
+  const augusta::math::Vec3 one(1.0F, 1.0F, 1.0F);
+  EXPECT_NEAR(augusta::math::Length(augusta::math::TransformPoint(world[0], origin) - augusta::math::Vec3(1, 0, 0)),
+              0.0F, 1e-5F);
+  EXPECT_NEAR(augusta::math::Length(augusta::math::TransformPoint(world[1], origin) - augusta::math::Vec3(1, 2, 0)),
+              0.0F, 1e-5F);
+  // The grandchild's own scale applies to its points, on top of its parents' offsets.
+  EXPECT_NEAR(augusta::math::Length(augusta::math::TransformPoint(world[2], one) - augusta::math::Vec3(3, 4, 2)), 0.0F,
+              1e-5F);
+}
+
+TEST(ComputeWorldTransformsTest, ANodeWithNoParentIsItsOwnRoot) {
+  augusta::assets::SceneData scene;
+  augusta::assets::SceneNode node;
+  node.name = "Only";
+  node.translation = augusta::math::Vec3(0.0F, 5.0F, 0.0F);
+  scene.nodes = {node};
+
+  const auto world = augusta::assets::ComputeWorldTransforms(scene);
+
+  ASSERT_EQ(world.size(), 1U);
+  EXPECT_NEAR(augusta::math::TranslationOf(world[0]).y, 5.0F, 1e-5F);
+}
+
 }  // namespace

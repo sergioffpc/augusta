@@ -5,6 +5,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <unordered_map>
+#include <vector>
 
 #include <PxPhysicsAPI.h>
 
@@ -20,9 +21,8 @@
 // A World only ever runs PxController::move() - it never calls
 // PxScene::simulate()/fetchResults(). CCT movement is sweep-based and
 // self-contained; nothing here needs the rigid-body dynamics loop, since
-// every body is player-controlled and there is no other dynamic geometry
-// yet (see Raycast's own doc comment on the absence of static Level
-// Data).
+// every body is player-controlled and the only other geometry is the
+// map's static meshes (AddStaticMesh), which never move.
 //
 // Engine convention (not yet pinned down project-wide - see
 // augusta::input::Command's yaw/pitch comment): Y is up, matching both
@@ -35,11 +35,13 @@ namespace {
 // Google style (ADR-0012) forbids using-directives.
 using physx::PxBroadPhaseType;
 using physx::PxCapsuleControllerDesc;
+using physx::PxCapsuleGeometry;
 using physx::PxController;
 using physx::PxControllerCollisionFlag;
 using physx::PxControllerCollisionFlags;
 using physx::PxControllerFilters;
 using physx::PxControllerManager;
+using physx::PxCookingParams;
 using physx::PxCudaContextManager;
 using physx::PxCudaContextManagerDesc;
 using physx::PxDefaultAllocator;
@@ -50,13 +52,25 @@ using physx::PxErrorCallback;
 using physx::PxErrorCode;
 using physx::PxExtendedVec3;
 using physx::PxFoundation;
+using physx::PxIdentity;
 using physx::PxMaterial;
+using physx::PxOverlapBuffer;
 using physx::PxPhysics;
+using physx::PxQuat;
+using physx::PxQueryFilterData;
+using physx::PxQueryFlag;
 using physx::PxRaycastBuffer;
+using physx::PxRigidActorExt;
+using physx::PxRigidStatic;
 using physx::PxScene;
 using physx::PxSceneDesc;
 using physx::PxSceneFlag;
 using physx::PxTolerancesScale;
+using physx::PxTransform;
+using physx::PxTriangleMesh;
+using physx::PxTriangleMeshDesc;
+using physx::PxTriangleMeshGeometry;
+using physx::PxU32;
 using physx::PxVec3;
 
 // ---- Tuning constants ----
@@ -79,6 +93,10 @@ constexpr float kDynamicFriction = 0.5F;
 constexpr float kRestitution = 0.1F;
 constexpr float kMinMoveDistance = 0.001F;  // PxController::move's own minDist parameter.
 constexpr int kWorkerThreadCount = 1;
+
+// A stance change that grows the capsule is tested for headroom with a capsule
+// shrunk by this much, so touching the floor or a wall is not "overlapping".
+constexpr float kStanceCheckSkin = 0.02F;
 
 // ADR-0004 snap/blend correction: an error at or beyond kSnapDistance
 // teleports the predicted body directly to the authoritative state (too
@@ -171,6 +189,20 @@ ReconciliationResult ResolveReconciliation(const BodyState& predicted, const Bod
   result.state.stance = authoritative.stance;
   result.state.stamina = authoritative.stamina;
   return result;
+}
+
+// Every triangle twice, once per winding: a cooked map's triangles can face
+// either way, and the character controller only collides with the side a
+// triangle faces (PxMeshGeometryFlag::eDOUBLE_SIDED does not change that), so a
+// body would otherwise fall through a floor or walk through a wall authored the
+// "wrong" way round.
+std::vector<std::uint32_t> WithBothWindings(const std::vector<std::uint32_t>& indices) {
+  std::vector<std::uint32_t> both = indices;
+  both.reserve(indices.size() * 2);
+  for (std::size_t i = 0; i + 2 < indices.size(); i += 3) {
+    both.insert(both.end(), {indices[i], indices[i + 2], indices[i + 1]});
+  }
+  return both;
 }
 
 PxVec3 ToPx(const math::Vec3& vec) { return {vec.x, vec.y, vec.z}; }
@@ -293,6 +325,9 @@ struct World::Impl {
   PxScene* scene = nullptr;
   PxControllerManager* controller_manager = nullptr;
   PxMaterial* material = nullptr;
+  // Static map geometry added by AddStaticMesh; released with the World.
+  std::vector<PxTriangleMesh*> static_meshes;
+  std::vector<PxRigidStatic*> static_actors;
   StaminaConfig stamina_config;
   std::unordered_map<BodyHandle, BodyRecord> bodies;
   std::uint32_t next_handle = 1;
@@ -332,11 +367,37 @@ struct World::Impl {
     LD("subsystem=physics event=world_created gpu={}", cuda_context_manager != nullptr);
   }
 
+  // Decision half of a stance change: a smaller capsule always fits, a taller
+  // one only if it does not overlap static geometry (e.g. standing up under a
+  // low ceiling). A static-only scene query never sees the body's own
+  // controller, which is dynamic.
+  bool CanChangeStance(const BodyRecord& record, Stance current, Stance target) const {
+    if (HeightForStance(target) <= HeightForStance(current)) {
+      return true;
+    }
+    const float height = HeightForStance(target);
+    const PxExtendedVec3 foot = record.controller->getFootPosition();
+    const float center_y = static_cast<float>(foot.y) + kCapsuleRadius + (height * 0.5F);
+    // A PxCapsuleGeometry lies along x; the rotation stands it up along y.
+    const PxTransform pose(PxVec3(static_cast<float>(foot.x), center_y, static_cast<float>(foot.z)),
+                           PxQuat(physx::PxHalfPi, PxVec3(0.0F, 0.0F, 1.0F)));
+    const PxCapsuleGeometry capsule(kCapsuleRadius - kStanceCheckSkin, height * 0.5F);
+    PxOverlapBuffer hit;
+    const PxQueryFilterData filter(PxQueryFlag::eSTATIC | PxQueryFlag::eANY_HIT);
+    return !scene->overlap(capsule, pose, hit, filter);
+  }
+
   ~Impl() {
     for (auto& [handle, record] : bodies) {
       if (record.controller != nullptr) {
         record.controller->release();
       }
+    }
+    for (PxRigidStatic* actor : static_actors) {
+      actor->release();
+    }
+    for (PxTriangleMesh* mesh : static_meshes) {
+      mesh->release();
     }
     if (material != nullptr) {
       material->release();
@@ -363,6 +424,59 @@ World::World(const StaminaConfig& config, bool enable_gpu) : impl_(std::make_uni
 World::~World() = default;
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
+
+std::string_view DescribeStaticMeshError(StaticMeshError error) {
+  switch (error) {
+    case StaticMeshError::kEmpty:
+      return "the mesh has no triangles";
+    case StaticMeshError::kInvalidIndex:
+      return "the mesh's indices are not whole triangles inside its points";
+    case StaticMeshError::kCookingFailed:
+      return "PhysX could not build a collision mesh from it";
+  }
+  return "unknown static mesh error";
+}
+
+std::expected<void, StaticMeshError> ValidateStaticMesh(const StaticMesh& mesh) {
+  if (mesh.points.empty() || mesh.indices.empty()) {
+    return std::unexpected(StaticMeshError::kEmpty);
+  }
+  const bool whole_triangles = mesh.indices.size() % 3 == 0;
+  const bool in_range =
+      std::ranges::all_of(mesh.indices, [&](std::uint32_t index) { return index < mesh.points.size(); });
+  if (!whole_triangles || !in_range) {
+    return std::unexpected(StaticMeshError::kInvalidIndex);
+  }
+  return {};
+}
+
+std::expected<void, StaticMeshError> World::AddStaticMesh(const StaticMesh& mesh) {
+  if (const auto valid = ValidateStaticMesh(mesh); !valid) {
+    return valid;
+  }
+  const std::vector<std::uint32_t> both_windings = WithBothWindings(mesh.indices);
+
+  PxTriangleMeshDesc desc;
+  desc.points.count = static_cast<PxU32>(mesh.points.size());
+  desc.points.stride = sizeof(math::Vec3);
+  desc.points.data = mesh.points.data();
+  desc.triangles.count = static_cast<PxU32>(both_windings.size() / 3);
+  desc.triangles.stride = 3 * sizeof(std::uint32_t);
+  desc.triangles.data = both_windings.data();
+
+  const PxCookingParams params(impl_->physics->getTolerancesScale());
+  PxTriangleMesh* cooked = PxCreateTriangleMesh(params, desc, impl_->physics->getPhysicsInsertionCallback());
+  if (cooked == nullptr) {
+    return std::unexpected(StaticMeshError::kCookingFailed);
+  }
+  PxRigidStatic* actor = impl_->physics->createRigidStatic(PxTransform(PxIdentity));
+  PxRigidActorExt::createExclusiveShape(*actor, PxTriangleMeshGeometry(cooked), *impl_->material);
+  impl_->scene->addActor(*actor);
+  impl_->static_meshes.push_back(cooked);
+  impl_->static_actors.push_back(actor);
+  LD("subsystem=physics event=static_mesh_added triangles={}", mesh.indices.size() / 3);
+  return {};
+}
 
 BodyHandle World::CreateBody(const math::Vec3& initial_position) {
   PxCapsuleControllerDesc desc;
@@ -404,12 +518,7 @@ BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta
   BodyRecord& record = body_it->second;
   BodyState& state = record.state;
 
-  if (input.desired_stance != state.stance) {
-    // TODO(sergioffpc): reject the transition when the target capsule
-    // would overlap static geometry (e.g. standing up under a low
-    // ceiling) - there is no static Level Data to collide against yet
-    // (see Raycast's own doc comment above), so every transition
-    // currently succeeds.
+  if (input.desired_stance != state.stance && impl_->CanChangeStance(record, state.stance, input.desired_stance)) {
     record.controller->resize(HeightForStance(input.desired_stance));
     state.stance = input.desired_stance;
   }

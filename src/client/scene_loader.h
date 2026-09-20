@@ -14,9 +14,6 @@
 // scene's first spawn point (or the renderer's default camera if it has none).
 namespace augusta::client {
 
-/// Pack-relative path the cooker files a stage's scene graph under.
-inline constexpr std::string_view kScenePath = "Scene";
-
 /// Key of the node property (ADR-0032) holding a mesh's base color: three
 /// space-separated linear RGB floats, e.g. "0.35 0.38 0.35".
 inline constexpr std::string_view kBaseColorProperty = "base_color";
@@ -56,7 +53,7 @@ std::expected<renderer::Scene, SceneError> BuildRenderScene(const assets::SceneD
 
 /// Resolves the scene graph at scene_path in pack and builds its render scene.
 std::expected<renderer::Scene, SceneError> LoadRenderScene(const assets::Pack& pack,
-                                                           std::string_view scene_path = kScenePath);
+                                                           std::string_view scene_path = assets::kScenePath);
 
 }  // namespace augusta::client
 

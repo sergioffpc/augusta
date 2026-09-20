@@ -102,6 +102,11 @@ struct World::Impl {
 World::World(const physics::StaminaConfig& stamina_config) : impl_(std::make_unique<Impl>(stamina_config)) {}
 
 World::~World() = default;
+
+std::expected<void, physics::StaticMeshError> World::AddStaticMesh(const physics::StaticMesh& mesh) {
+  return impl_->physics.AddStaticMesh(mesh);
+}
+
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 

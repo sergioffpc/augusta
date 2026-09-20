@@ -437,6 +437,30 @@ Ed25519KeyPair GenerateEd25519KeyPair() {
   return pair;
 }
 
+std::string DescribeResolveError(ResolveError error, std::string_view expected_type) {
+  switch (error) {
+    case ResolveError::kNotFound:
+      return "not found";
+    case ResolveError::kTypeMismatch:
+      return std::format("is not a {}", expected_type);
+    case ResolveError::kCorruptBlob:
+      return "is corrupt";
+  }
+  return "unknown error";
+}
+
+// SceneData lists parents before children (ADR-0032), so one forward pass sees
+// each parent's transform already done.
+std::vector<math::Mat4> ComputeWorldTransforms(const SceneData& scene) {
+  std::vector<math::Mat4> world;
+  world.reserve(scene.nodes.size());
+  for (const SceneNode& node : scene.nodes) {
+    const math::Mat4 local = math::ToMat4(node.translation, node.rotation, node.scale);
+    world.push_back(node.parent_index == kSceneNodeNoParent ? local : world[node.parent_index] * local);
+  }
+  return world;
+}
+
 std::expected<Ed25519PublicKey, ReadKeyFileError> ReadEd25519PublicKeyFile(const std::filesystem::path& path) {
   std::ifstream key_file(path, std::ios::binary);
   if (!key_file) {

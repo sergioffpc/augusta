@@ -1,7 +1,9 @@
 #include "host.h"
 
 #include <cstddef>
+#include <format>
 #include <mutex>
+#include <stdexcept>
 #include <string_view>
 #include <vector>
 
@@ -10,9 +12,28 @@
 
 namespace augusta::server {
 
+namespace {
+
+// The authoritative world with the map's collision already in it. Built
+// before the socket exists, so a map that is rejected never leaves a bound
+// port behind.
+simulation::World BuildSimulation(const HostConfig& config) {
+  simulation::World simulation(config.stamina, config.script_path);
+  for (const physics::StaticMesh& mesh : config.collision) {
+    if (const auto added = simulation.AddStaticMesh(mesh); !added) {
+      throw std::runtime_error(
+          std::format("server::Host: map collision rejected: {}", physics::DescribeStaticMeshError(added.error())));
+    }
+  }
+  return simulation;
+}
+
+}  // namespace
+
 struct Host::Impl {
-  networking::Server network;
+  // Declared before the socket so it is constructed first; see BuildSimulation.
   simulation::World simulation;
+  networking::Server network;
 
   // Guards latest_commands: written by the Network I/O thread as client
   // commands arrive, read once per Simulation tick. Always empty today - see
@@ -20,7 +41,7 @@ struct Host::Impl {
   std::mutex commands_mutex;
   std::vector<input::Command> latest_commands;
 
-  explicit Impl(const HostConfig& config) : network(config.listen), simulation(config.stamina, config.script_path) {}
+  explicit Impl(const HostConfig& config) : simulation(BuildSimulation(config)), network(config.listen) {}
 
   std::vector<input::Command> GetLatestCommands() {
     const std::lock_guard<std::mutex> lock(commands_mutex);

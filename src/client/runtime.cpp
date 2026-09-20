@@ -161,7 +161,7 @@ struct ClientRuntime::Impl {
   explicit Impl(const Config& cfg)
       : config(cfg),
         input(cfg.input),
-        session(harness::SessionConfig{.stamina = cfg.stamina, .server = cfg.server}),
+        session(harness::SessionConfig{.stamina = cfg.stamina, .server = cfg.server, .collision = cfg.collision}),
         presentation(audio),
         renderer(cfg.renderer, input) {}
 
