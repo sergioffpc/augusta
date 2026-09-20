@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "augusta/networking.h"
 #include "augusta/physics.h"
@@ -49,6 +50,9 @@ struct Config {
   std::string script_path;
   // Local address to listen on (US-01).
   networking::Endpoint listen;
+  // The level's collision, built by augusta::level from the server pack by the
+  // caller: where content comes from is the executable's business.
+  std::vector<physics::StaticMesh> level;
   // Simulation thread's fixed tick rate, in Hz. NFR-01 requires >= 60 Hz
   // sustained, no missed ticks.
   float tick_rate_hz = 60.0F;

@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_PREDICTION_H_
 #define AUGUSTA_PREDICTION_H_
 
+#include <expected>
 #include <memory>
 #include <optional>
 
@@ -94,6 +95,9 @@ class World {
   // five phases and their systems registered (see header comment).
   explicit World(const physics::StaminaConfig& stamina_config);
   ~World();
+
+  /// Adds immovable level geometry to this world's physics, the same way SimulationWorld does.
+  std::expected<void, physics::StaticMeshError> AddStaticMesh(const physics::StaticMesh& mesh);
 
   World(const World&) = delete;
   World& operator=(const World&) = delete;

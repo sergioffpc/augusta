@@ -1,7 +1,9 @@
 #include "augusta/client_session.h"
 
 #include <cstddef>
+#include <format>
 #include <memory>
+#include <stdexcept>
 #include <string_view>
 
 #include "augusta/logging.h"
@@ -15,7 +17,14 @@ struct Session::Impl {
   // Network I/O thread only.
   bool sent_hello = false;
 
-  explicit Impl(const SessionConfig& config) : server(config.server), prediction(config.stamina) {}
+  explicit Impl(const SessionConfig& config) : server(config.server), prediction(config.stamina) {
+    for (const physics::StaticMesh& mesh : config.level) {
+      if (const auto added = prediction.AddStaticMesh(mesh); !added) {
+        throw std::runtime_error(std::format("client_session::Session: level collision rejected: {}",
+                                             physics::DescribeStaticMeshError(added.error())));
+      }
+    }
+  }
 };
 
 Session::Session(const SessionConfig& config) : impl_(std::make_unique<Impl>(config)) {}

@@ -1,4 +1,5 @@
 #include <chrono>
+#include <stdexcept>
 #include <string>
 #include <thread>
 
@@ -14,6 +15,7 @@
 #include "augusta/input.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
+#include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "host.h"
 
@@ -29,6 +31,7 @@ using augusta::input::Command;
 using augusta::math::Vec3;
 using augusta::networking::ConnectionState;
 using augusta::networking::Endpoint;
+using augusta::physics::StaticMesh;
 using augusta::server::Host;
 using augusta::server::HostConfig;
 
@@ -119,6 +122,64 @@ TEST_F(SessionTest, StaysConnectedWhileTheTestAlternatesTicksAndNetworkWork) {
   }
 
   EXPECT_EQ(session_.GetState(), ConnectionState::kConnected);
+}
+
+// A large horizontal slab at height y, its triangles facing up.
+StaticMesh FloorAt(float y) {
+  constexpr float kExtent = 100.0F;
+  return StaticMesh{.points = {Vec3(-kExtent, y, -kExtent), Vec3(-kExtent, y, kExtent), Vec3(kExtent, y, kExtent),
+                               Vec3(kExtent, y, -kExtent)},
+                    .indices = {0, 1, 2, 0, 2, 3}};
+}
+
+// The client spawns its predicted body at the origin, so a floor two meters
+// below it is where that body must come to rest.
+constexpr float kFloorHeight = -2.0F;
+constexpr int kFallTicks = 120;
+
+TEST(LevelSessionTest, ThePredictedBodyRestsOnTheLevelsFloor) {
+  const Endpoint address{.address = LoopbackAddress()};
+  Session session(SessionConfig{.server = address, .level = {FloorAt(kFloorHeight)}});
+
+  augusta::prediction::State state;
+  for (int i = 0; i < kFallTicks; ++i) {
+    state = session.Tick(Command{}, kFixedTick);
+  }
+
+  EXPECT_NEAR(state.local_body.position.y, kFloorHeight, 0.2F);
+}
+
+TEST(LevelSessionTest, WithoutALevelThePredictedBodyKeepsFalling) {
+  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}});
+
+  augusta::prediction::State state;
+  for (int i = 0; i < kFallTicks; ++i) {
+    state = session.Tick(Command{}, kFixedTick);
+  }
+
+  EXPECT_LT(state.local_body.position.y, kFloorHeight - 5.0F);
+}
+
+TEST(LevelSessionTest, ASessionRefusesALevelMeshPhysicsRejects) {
+  EXPECT_THROW(Session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .level = {StaticMesh{}}}),
+               std::runtime_error);
+}
+
+TEST(LevelHostTest, AHostAcceptsALevelAndKeepsTicking) {
+  Host host(HostConfig{
+      .script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}, .level = {FloorAt(0.0F)}});
+
+  for (int i = 0; i < 10; ++i) {
+    host.Tick(kFixedTick);
+  }
+  SUCCEED();
+}
+
+TEST(LevelHostTest, AHostRefusesALevelMeshPhysicsRejects) {
+  EXPECT_THROW(Host(HostConfig{.script_path = "scripts/round.lua",
+                               .listen = Endpoint{.address = LoopbackAddress()},
+                               .level = {StaticMesh{}}}),
+               std::runtime_error);
 }
 
 }  // namespace

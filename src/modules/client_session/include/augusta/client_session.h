@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include "augusta/input.h"
 #include "augusta/networking.h"
@@ -30,12 +31,15 @@ struct SessionConfig {
   physics::StaminaConfig stamina;
   /// The dedicated server to connect to (US-01).
   networking::Endpoint server;
+  /// The level's collision, as built by augusta::level from the client pack.
+  std::vector<physics::StaticMesh> level;
 };
 
 /// The client's network connection and PredictionWorld, without a window or a GPU.
 class Session {
  public:
-  /// Constructs the connection and the PredictionWorld; connects to nothing yet.
+  /// Constructs the connection and the PredictionWorld with the level's collision;
+  /// connects to nothing yet. Throws std::runtime_error if a level mesh is rejected.
   explicit Session(const SessionConfig& config);
   ~Session();
 
