@@ -16,6 +16,8 @@ using augusta::assets::ResolveError;
 using augusta::assets::SceneData;
 using augusta::assets::SceneNode;
 using augusta::client::BuildRenderScene;
+using augusta::client::DescribeSceneError;
+using augusta::client::SceneErrorCode;
 using augusta::math::Quat;
 using augusta::math::Vec3;
 
@@ -98,7 +100,9 @@ TEST(BuildRenderSceneTest, RejectsAMalformedBaseColorNamingTheNode) {
     const auto result = BuildRenderScene(scene, ResolveTriangle());
 
     ASSERT_FALSE(result.has_value()) << value;
-    EXPECT_NE(result.error().find("Root/Tri"), std::string::npos) << value;
+    EXPECT_EQ(result.error().code, SceneErrorCode::kMalformedBaseColor) << value;
+    EXPECT_EQ(result.error().node, "Root/Tri") << value;
+    EXPECT_EQ(result.error().subject, value);
   }
 }
 
@@ -158,8 +162,22 @@ TEST(BuildRenderSceneTest, ReportsTheMeshItCouldNotResolve) {
   const auto result = BuildRenderScene(scene, ResolveTriangle());
 
   ASSERT_FALSE(result.has_value());
-  EXPECT_NE(result.error().find("Root/Missing"), std::string::npos);
-  EXPECT_NE(result.error().find("Root"), std::string::npos);
+  EXPECT_EQ(result.error().code, SceneErrorCode::kMeshUnresolved);
+  EXPECT_EQ(result.error().node, "Root");
+  EXPECT_EQ(result.error().subject, "Root/Missing");
+  EXPECT_EQ(result.error().resolve_error, ResolveError::kNotFound);
+}
+
+TEST(DescribeSceneErrorTest, NamesTheAssetThatFailedToResolve) {
+  const auto scene = DescribeSceneError(
+      {.code = SceneErrorCode::kSceneUnresolved, .subject = "Scene", .resolve_error = ResolveError::kTypeMismatch});
+  const auto mesh = DescribeSceneError({.code = SceneErrorCode::kMeshUnresolved,
+                                        .node = "Root",
+                                        .subject = "Root/Missing",
+                                        .resolve_error = ResolveError::kNotFound});
+
+  EXPECT_EQ(scene, "scene Scene is not a scene");
+  EXPECT_EQ(mesh, "mesh Root/Missing of node Root not found");
 }
 
 }  // namespace

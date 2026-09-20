@@ -32,12 +32,12 @@ int main(int argc, char** argv) {
   const auto config_file =
       augusta::config::ResolveConfigFile(argc, argv, "augustad", augusta::config::kServerConfigFileName);
   if (!config_file) {
-    std::println(stderr, "{}", config_file.error());
+    std::println(stderr, "{}", augusta::config::DescribeConfigError(config_file.error()));
     return 1;
   }
   const auto file_config = augusta::config::LoadServerConfig(*config_file);
   if (!file_config) {
-    std::println(stderr, "{}", file_config.error());
+    std::println(stderr, "{}", augusta::config::DescribeConfigError(file_config.error()));
     return 1;
   }
   LI("subsystem=server event=starting version={}", augusta::EngineVersion());

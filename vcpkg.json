@@ -7,6 +7,7 @@
     "boost-dll",
     "boost-interprocess",
     "boost-log",
+    "boost-program-options",
     "flecs",
     "gamenetworkingsockets",
     "glm",

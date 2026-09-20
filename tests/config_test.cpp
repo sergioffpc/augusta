@@ -12,6 +12,9 @@
 // Unit tests for augusta_config's YAML schema and file loading (ADR-0034).
 namespace {
 
+using augusta::config::ConfigError;
+using augusta::config::ConfigErrorCode;
+using augusta::config::DescribeConfigError;
 using augusta::config::LoadClientConfig;
 using augusta::config::LoadServerConfig;
 using augusta::config::ParseClientConfig;
@@ -105,28 +108,32 @@ TEST(ParseClientConfigTest, RejectsAMissingBaseDir) {
   const auto config = ParseClientConfig("pack: a.pack\npublic_key: k.pub\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
-  EXPECT_TRUE(Contains(config.error(), "missing required key 'base_dir'")) << config.error();
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kMissingKey);
+  EXPECT_EQ(config.error().subject, "base_dir");
 }
 
 TEST(ParseClientConfigTest, RejectsAnEmptyBaseDir) {
   const auto config = ParseClientConfig("base_dir: ''\npack: a.pack\npublic_key: k.pub\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
-  EXPECT_TRUE(Contains(config.error(), "'base_dir' must not be empty")) << config.error();
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kEmptyValue);
+  EXPECT_EQ(config.error().subject, "base_dir");
 }
 
 TEST(ParseClientConfigTest, RejectsAMissingRequiredKey) {
   const auto config = ParseClientConfig("base_dir: content\npublic_key: k.pub\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
-  EXPECT_TRUE(Contains(config.error(), "missing required key 'pack'")) << config.error();
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kMissingKey);
+  EXPECT_EQ(config.error().subject, "pack");
 }
 
 TEST(ParseClientConfigTest, RejectsAnEmptyRequiredValue) {
   const auto config = ParseClientConfig("base_dir: content\npack: ''\npublic_key: k.pub\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
-  EXPECT_TRUE(Contains(config.error(), "'pack' must not be empty")) << config.error();
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kEmptyValue);
+  EXPECT_EQ(config.error().subject, "pack");
 }
 
 TEST(ParseClientConfigTest, RejectsAnUnknownKey) {
@@ -135,7 +142,8 @@ TEST(ParseClientConfigTest, RejectsAnUnknownKey) {
       ParseClientConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\nserver_adress: x\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
-  EXPECT_TRUE(Contains(config.error(), "unknown key 'server_adress'")) << config.error();
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownKey);
+  EXPECT_EQ(config.error().subject, "server_adress");
 }
 
 TEST(ParseClientConfigTest, RejectsAKeyThatBelongsToTheServer) {
@@ -143,40 +151,48 @@ TEST(ParseClientConfigTest, RejectsAKeyThatBelongsToTheServer) {
       ParseClientConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\nlisten_address: x\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
-  EXPECT_TRUE(Contains(config.error(), "unknown key 'listen_address'")) << config.error();
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownKey);
+  EXPECT_EQ(config.error().subject, "listen_address");
 }
 
 TEST(ParseClientConfigTest, RejectsADuplicateKey) {
   const auto config = ParseClientConfig("base_dir: content\npack: a.pack\npack: b.pack\npublic_key: k.pub\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kDuplicateKey);
+  EXPECT_EQ(config.error().subject, "pack");
 }
 
 TEST(ParseClientConfigTest, RejectsANonScalarValue) {
   const auto config = ParseClientConfig("base_dir: content\npack: [a.pack, b.pack]\npublic_key: k.pub\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
-  EXPECT_TRUE(Contains(config.error(), "'pack' must be a string")) << config.error();
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kNonStringValue);
+  EXPECT_EQ(config.error().subject, "pack");
 }
 
 TEST(ParseClientConfigTest, RejectsAKeyWithNoValue) {
   const auto config = ParseClientConfig("base_dir: content\npack:\npublic_key: k.pub\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
-  EXPECT_TRUE(Contains(config.error(), "'pack' must be a string")) << config.error();
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kNonStringValue);
+  EXPECT_EQ(config.error().subject, "pack");
 }
 
 TEST(ParseClientConfigTest, RejectsATopLevelThatIsNotAMapping) {
-  ASSERT_FALSE(ParseClientConfig("- a\n- b\n", kFileDir).has_value());
-  ASSERT_FALSE(ParseClientConfig("just a string\n", kFileDir).has_value());
-  ASSERT_FALSE(ParseClientConfig("", kFileDir).has_value());
+  for (const auto text : {"- a\n- b\n", "just a string\n", ""}) {
+    const auto config = ParseClientConfig(text, kFileDir);
+
+    ASSERT_FALSE(config.has_value()) << text;
+    EXPECT_EQ(config.error().code, ConfigErrorCode::kNotAMapping) << text;
+  }
 }
 
 TEST(ParseClientConfigTest, RejectsInvalidYaml) {
   const auto config = ParseClientConfig("pack: [unterminated\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
-  EXPECT_TRUE(Contains(config.error(), "invalid YAML")) << config.error();
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidYaml);
 }
 
 TEST(ParseServerConfigTest, ReadsEveryKey) {
@@ -204,7 +220,8 @@ TEST(ParseServerConfigTest, RejectsAMissingBaseDir) {
   const auto config = ParseServerConfig("pack: a.pack\npublic_key: k.pub\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
-  EXPECT_TRUE(Contains(config.error(), "missing required key 'base_dir'")) << config.error();
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kMissingKey);
+  EXPECT_EQ(config.error().subject, "base_dir");
 }
 
 TEST(ParseServerConfigTest, RejectsAKeyThatBelongsToTheClient) {
@@ -212,10 +229,11 @@ TEST(ParseServerConfigTest, RejectsAKeyThatBelongsToTheClient) {
       ParseServerConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\nserver_address: x\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
-  EXPECT_TRUE(Contains(config.error(), "unknown key 'server_address'")) << config.error();
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownKey);
+  EXPECT_EQ(config.error().subject, "server_address");
 }
 
-std::expected<std::filesystem::path, std::string> Resolve(std::vector<const char*> args) {
+std::expected<std::filesystem::path, ConfigError> Resolve(std::vector<const char*> args) {
   args.insert(args.begin(), "augustac");
   return ResolveConfigFile(static_cast<int>(args.size()), args.data(), "augustac", "augustac.yaml");
 }
@@ -239,7 +257,8 @@ TEST(ResolveConfigFileTest, RejectsConfigWithoutAFile) {
   const auto file = Resolve({"--config"});
 
   ASSERT_FALSE(file.has_value());
-  EXPECT_TRUE(Contains(file.error(), "usage: augustac [--config <file>]")) << file.error();
+  EXPECT_EQ(file.error().code, ConfigErrorCode::kInvalidArguments);
+  EXPECT_TRUE(Contains(file.error().subject, "usage: augustac [--config <file>]")) << file.error().subject;
 }
 
 TEST(ResolveConfigFileTest, RejectsAnEmptyFileName) { ASSERT_FALSE(Resolve({"--config", ""}).has_value()); }
@@ -260,8 +279,24 @@ TEST(ResolveConfigFileTest, UsageNamesTheProgramAndTheDefaultFile) {
   const auto file = ResolveConfigFile(2, args, "augustad", "augustad.yaml");
 
   ASSERT_FALSE(file.has_value());
-  EXPECT_TRUE(Contains(file.error(), "usage: augustad [--config <file>]")) << file.error();
-  EXPECT_TRUE(Contains(file.error(), "augustad.yaml")) << file.error();
+  EXPECT_EQ(file.error().code, ConfigErrorCode::kInvalidArguments);
+  EXPECT_TRUE(Contains(file.error().subject, "usage: augustad [--config <file>]")) << file.error().subject;
+  EXPECT_TRUE(Contains(file.error().subject, "augustad.yaml")) << file.error().subject;
+}
+
+TEST(DescribeConfigErrorTest, NamesTheKeyAndTheFile) {
+  const ConfigError error{.code = ConfigErrorCode::kMissingKey, .subject = "pack", .file = "dir/augustac.yaml"};
+
+  const auto message = DescribeConfigError(error);
+
+  EXPECT_TRUE(Contains(message, "missing required key 'pack'")) << message;
+  EXPECT_TRUE(Contains(message, std::filesystem::path("dir/augustac.yaml").string())) << message;
+}
+
+TEST(DescribeConfigErrorTest, OmitsTheFileWhenThereIsNone) {
+  const auto message = DescribeConfigError({.code = ConfigErrorCode::kUnknownKey, .subject = "typo"});
+
+  EXPECT_EQ(message, "unknown key 'typo'");
 }
 
 class LoadConfigTest : public ::testing::Test {
@@ -310,7 +345,8 @@ TEST_F(LoadConfigTest, NamesTheFileWhenItCannotBeOpened) {
   const auto config = LoadClientConfig(file);
 
   ASSERT_FALSE(config.has_value());
-  EXPECT_TRUE(Contains(config.error(), file.string())) << config.error();
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kCannotOpenFile);
+  EXPECT_EQ(config.error().file, file);
 }
 
 TEST_F(LoadConfigTest, NamesTheFileWhenItsContentsAreInvalid) {
@@ -319,8 +355,9 @@ TEST_F(LoadConfigTest, NamesTheFileWhenItsContentsAreInvalid) {
   const auto config = LoadClientConfig(file);
 
   ASSERT_FALSE(config.has_value());
-  EXPECT_TRUE(Contains(config.error(), file.string())) << config.error();
-  EXPECT_TRUE(Contains(config.error(), "missing required key 'pack'")) << config.error();
+  EXPECT_EQ(config.error().file, file);
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kMissingKey);
+  EXPECT_EQ(config.error().subject, "pack");
 }
 
 }  // namespace

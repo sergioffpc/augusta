@@ -15,12 +15,14 @@ namespace {
 // How far above a spawn point's origin (its feet) the camera sits.
 constexpr float kEyeHeight = 1.7F;
 
-std::string_view DescribeResolveError(assets::ResolveError error) {
+// What is wrong with an asset that failed to resolve, as a phrase that follows
+// the asset's name; expected_type is what it should have been ("scene", "mesh").
+std::string DescribeResolveError(assets::ResolveError error, std::string_view expected_type) {
   switch (error) {
     case assets::ResolveError::kNotFound:
       return "not found";
     case assets::ResolveError::kTypeMismatch:
-      return "is not a mesh";
+      return std::format("is not a {}", expected_type);
     case assets::ResolveError::kCorruptBlob:
       return "is corrupt";
   }
@@ -50,7 +52,7 @@ renderer::SceneMesh ToWorldSpace(const assets::MeshData& mesh, const math::Mat4&
 
 // The node's base color, or nullopt if it has none. The error names the node
 // whose value is malformed.
-std::expected<std::optional<math::Vec3>, std::string> ParseBaseColor(const assets::SceneNode& node) {
+std::expected<std::optional<math::Vec3>, SceneError> ParseBaseColor(const assets::SceneNode& node) {
   for (const auto& [key, value] : node.properties) {
     if (key != kBaseColorProperty) {
       continue;
@@ -58,7 +60,8 @@ std::expected<std::optional<math::Vec3>, std::string> ParseBaseColor(const asset
     std::istringstream stream(value);
     math::Vec3 color;
     if (!(stream >> color.x >> color.y >> color.z) || !(stream >> std::ws).eof()) {
-      return std::unexpected(std::format("node {} has a malformed {} \"{}\"", node.name, kBaseColorProperty, value));
+      return std::unexpected(
+          SceneError{.code = SceneErrorCode::kMalformedBaseColor, .node = node.name, .subject = value});
     }
     return color;
   }
@@ -74,8 +77,21 @@ renderer::Camera CameraAtSpawnPoint(const math::Mat4& spawn_world) {
 
 }  // namespace
 
-std::expected<renderer::Scene, std::string> BuildRenderScene(const assets::SceneData& scene,
-                                                             const MeshResolver& resolve_mesh) {
+std::string DescribeSceneError(const SceneError& error) {
+  switch (error.code) {
+    case SceneErrorCode::kSceneUnresolved:
+      return std::format("scene {} {}", error.subject, DescribeResolveError(error.resolve_error, "scene"));
+    case SceneErrorCode::kMeshUnresolved:
+      return std::format("mesh {} of node {} {}", error.subject, error.node,
+                         DescribeResolveError(error.resolve_error, "mesh"));
+    case SceneErrorCode::kMalformedBaseColor:
+      return std::format("node {} has a malformed {} \"{}\"", error.node, kBaseColorProperty, error.subject);
+  }
+  return "unknown scene error";
+}
+
+std::expected<renderer::Scene, SceneError> BuildRenderScene(const assets::SceneData& scene,
+                                                            const MeshResolver& resolve_mesh) {
   const std::vector<math::Mat4> world = ComputeWorldTransforms(scene);
 
   renderer::Scene result;
@@ -91,8 +107,10 @@ std::expected<renderer::Scene, std::string> BuildRenderScene(const assets::Scene
     }
     const auto mesh = resolve_mesh(*node.mesh_path);
     if (!mesh) {
-      return std::unexpected(
-          std::format("mesh {} of node {} {}", *node.mesh_path, node.name, DescribeResolveError(mesh.error())));
+      return std::unexpected(SceneError{.code = SceneErrorCode::kMeshUnresolved,
+                                        .node = node.name,
+                                        .subject = *node.mesh_path,
+                                        .resolve_error = mesh.error()});
     }
     const auto color = ParseBaseColor(node);
     if (!color) {
@@ -106,10 +124,11 @@ std::expected<renderer::Scene, std::string> BuildRenderScene(const assets::Scene
   return result;
 }
 
-std::expected<renderer::Scene, std::string> LoadRenderScene(const assets::Pack& pack, std::string_view scene_path) {
+std::expected<renderer::Scene, SceneError> LoadRenderScene(const assets::Pack& pack, std::string_view scene_path) {
   const auto scene = pack.ResolveScene(scene_path);
   if (!scene) {
-    return std::unexpected(std::format("scene {} {}", scene_path, DescribeResolveError(scene.error())));
+    return std::unexpected(SceneError{
+        .code = SceneErrorCode::kSceneUnresolved, .subject = std::string(scene_path), .resolve_error = scene.error()});
   }
   return BuildRenderScene(*scene, [&pack](std::string_view path) { return pack.ResolveMesh(path); });
 }

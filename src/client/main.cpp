@@ -1,5 +1,9 @@
+#include <expected>
 #include <filesystem>
+#include <format>
 #include <print>
+#include <string>
+#include <utility>
 
 #include "augusta/assets.h"
 #include "augusta/config.h"
@@ -9,6 +13,46 @@
 #include "runtime.h"
 #include "scene_loader.h"
 
+namespace {
+
+enum class PackFailure {
+  kPublicKeyUnreadable,
+  kPackRejected,
+};
+
+struct PackError {
+  PackFailure failure;
+  // Why Pack::Load refused the pack; only meaningful for kPackRejected.
+  augusta::assets::LoadError load_error{};
+};
+
+// Reads the Ed25519 public key and loads the pack against it.
+std::expected<augusta::assets::Pack, PackError> LoadVerifiedPack(const std::filesystem::path& pack_path,
+                                                                 const std::filesystem::path& public_key_path) {
+  const auto public_key = augusta::assets::ReadEd25519PublicKeyFile(public_key_path);
+  if (!public_key) {
+    return std::unexpected(PackError{.failure = PackFailure::kPublicKeyUnreadable});
+  }
+  auto pack = augusta::assets::Pack::Load(pack_path, *public_key);
+  if (!pack) {
+    return std::unexpected(PackError{.failure = PackFailure::kPackRejected, .load_error = pack.error()});
+  }
+  return std::move(*pack);
+}
+
+std::string DescribePackError(const PackError& error, const std::filesystem::path& pack_path,
+                              const std::filesystem::path& public_key_path) {
+  switch (error.failure) {
+    case PackFailure::kPublicKeyUnreadable:
+      return std::format("could not read Ed25519 public key from {}", public_key_path.string());
+    case PackFailure::kPackRejected:
+      return std::format("client pack {} {}", pack_path.string(), augusta::assets::DescribeLoadError(error.load_error));
+  }
+  return "unknown pack error";
+}
+
+}  // namespace
+
 int main(int argc, char** argv) {
   augusta::logging::Init();
 
@@ -17,12 +61,12 @@ int main(int argc, char** argv) {
   const auto config_file =
       augusta::config::ResolveConfigFile(argc, argv, "augustac", augusta::config::kClientConfigFileName);
   if (!config_file) {
-    std::println(stderr, "{}", config_file.error());
+    std::println(stderr, "{}", augusta::config::DescribeConfigError(config_file.error()));
     return 1;
   }
   const auto file_config = augusta::config::LoadClientConfig(*config_file);
   if (!file_config) {
-    std::println(stderr, "{}", file_config.error());
+    std::println(stderr, "{}", augusta::config::DescribeConfigError(file_config.error()));
     return 1;
   }
   LI("subsystem=client event=starting version={}", augusta::EngineVersion());
@@ -32,16 +76,9 @@ int main(int argc, char** argv) {
   // this process exits here, never partially running against untrusted
   // content (ADR-0018, ARCHITECTURE.md §8).
   const std::filesystem::path& pack_path = file_config->pack_path;
-  const std::filesystem::path& public_key_path = file_config->public_key_path;
-
-  const auto public_key = augusta::assets::ReadEd25519PublicKeyFile(public_key_path);
-  if (!public_key) {
-    std::println(stderr, "could not read Ed25519 public key from {}", public_key_path.string());
-    return 1;
-  }
-  const auto pack = augusta::assets::Pack::Load(pack_path, *public_key);
+  const auto pack = LoadVerifiedPack(pack_path, file_config->public_key_path);
   if (!pack) {
-    std::println(stderr, "client pack {} {}", pack_path.string(), augusta::assets::DescribeLoadError(pack.error()));
+    std::println(stderr, "{}", DescribePackError(pack.error(), pack_path, file_config->public_key_path));
     return 1;
   }
   LI("subsystem=client event=pack_verified path={}", pack_path.string());
@@ -53,7 +90,7 @@ int main(int argc, char** argv) {
   // like a bad pack does.
   const auto scene = augusta::client::LoadRenderScene(*pack);
   if (!scene) {
-    std::println(stderr, "client pack {}: {}", pack_path.string(), scene.error());
+    std::println(stderr, "client pack {}: {}", pack_path.string(), augusta::client::DescribeSceneError(scene.error()));
     return 1;
   }
   LI("subsystem=client event=scene_loaded meshes={}", scene->meshes.size());
