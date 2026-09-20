@@ -1,7 +1,5 @@
 #include "augusta/networking.h"
 
-#include <gtest/gtest.h>
-
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
@@ -11,6 +9,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 // M1 spike (ADR-0003): this is the "standalone round-trip" issue #31
 // asks for - a Server and Client talking over real GameNetworkingSockets

@@ -1,7 +1,7 @@
-#include <gtest/gtest.h>
-
 #include <string>
 #include <string_view>
+
+#include <gtest/gtest.h>
 
 #include "augusta/assets.h"
 #include "augusta/math.h"

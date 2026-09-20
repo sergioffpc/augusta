@@ -1,5 +1,13 @@
 #include "augusta/renderer.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <memory>
+#include <optional>
+#include <stdexcept>
+#include <vector>
+
 #include <Core/API/Swapchain.h>
 #include <Core/Pass/RasterPass.h>
 #include <Core/Window.h>
@@ -7,15 +15,7 @@
 #include <Utils/Math/Matrix.h>
 #include <Utils/Threading.h>
 #include <Utils/Timing/FrameRate.h>
-
-#include <cstddef>
-#include <cstdint>
-#include <limits>
-#include <memory>
 #include <nvtx3/nvtx3.hpp>
-#include <optional>
-#include <stdexcept>
-#include <vector>
 
 #include "augusta/math.h"
 #include "debug_hud.h"

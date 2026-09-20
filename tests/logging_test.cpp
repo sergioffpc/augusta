@@ -1,9 +1,9 @@
 #include "augusta/logging.h"
 
-#include <gtest/gtest.h>
-
 #include <chrono>
 #include <string>
+
+#include <gtest/gtest.h>
 
 namespace {
 

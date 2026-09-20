@@ -1,8 +1,8 @@
 #include "augusta/simulation.h"
 
-#include <flecs.h>
-
 #include <array>
+
+#include <flecs.h>
 
 #include "augusta/logging.h"
 

@@ -1,9 +1,5 @@
 #include "augusta/networking.h"
 
-#include <steam/isteamnetworkingsockets.h>
-#include <steam/isteamnetworkingutils.h>  // SteamNetworkingIPAddr::ParseString's inline body lives here.
-#include <steam/steamnetworkingsockets.h>
-
 #include <array>
 #include <cstdint>
 #include <functional>
@@ -13,6 +9,10 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
+#include <steam/isteamnetworkingsockets.h>
+#include <steam/isteamnetworkingutils.h>  // SteamNetworkingIPAddr::ParseString's inline body lives here.
+#include <steam/steamnetworkingsockets.h>
 
 #include "augusta/logging.h"
 

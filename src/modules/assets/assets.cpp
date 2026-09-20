@@ -1,18 +1,18 @@
 #include "augusta/assets.h"
 
-#include <blake3.h>
-#include <sodium.h>
-
 #include <algorithm>
 #include <array>
-#include <boost/interprocess/file_mapping.hpp>
-#include <boost/interprocess/mapped_region.hpp>
 #include <cstring>
 #include <fstream>
 #include <optional>
 #include <span>
 #include <stdexcept>
 #include <system_error>
+
+#include <blake3.h>
+#include <boost/interprocess/file_mapping.hpp>
+#include <boost/interprocess/mapped_region.hpp>
+#include <sodium.h>
 
 #include "decoder.h"
 #include "encoder.h"
