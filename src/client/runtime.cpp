@@ -3,14 +3,13 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <cstddef>
 #include <mutex>
 #include <optional>
-#include <string_view>
 #include <thread>
 
 #include <nvtx3/nvtx3.hpp>
 
+#include "augusta/harness.h"
 #include "augusta/logging.h"
 
 namespace augusta::runtime {
@@ -44,8 +43,7 @@ struct ClientRuntime::Impl {
   Config config;
   input::Input input;
   audio::Engine audio;
-  networking::Client network;
-  prediction::World prediction;
+  harness::Session session;
   presentation::World presentation;
   renderer::Renderer renderer;
 
@@ -139,7 +137,7 @@ struct ClientRuntime::Impl {
   }
 
   void SampleNetworkStats() {
-    const std::optional<networking::ConnectionStats> stats = network.GetStats();
+    const std::optional<networking::ConnectionStats> stats = session.GetStats();
     PublishHudNetStats(stats);
     if (!stats.has_value()) {
       net_ping_ms.sample_no_value(nvtx3::no_value_reason::unavailable);
@@ -161,7 +159,11 @@ struct ClientRuntime::Impl {
   }
 
   explicit Impl(const Config& cfg)
-      : config(cfg), input(cfg.input), prediction(cfg.stamina), presentation(audio), renderer(cfg.renderer, input) {}
+      : config(cfg),
+        input(cfg.input),
+        session(harness::SessionConfig{.stamina = cfg.stamina, .server = cfg.server}),
+        presentation(audio),
+        renderer(cfg.renderer, input) {}
 
   // Prediction thread body (ADR-0005): fixed-rate loop sampling local
   // input and ticking PredictionWorld. Runs until running is cleared by
@@ -173,19 +175,15 @@ struct ClientRuntime::Impl {
       const auto tick_start = std::chrono::steady_clock::now();
 
       input::Command command = input.Sample();
-      // TODO(sergioffpc): no authoritative state to reconcile against
-      // yet - deserializing one from network.ReceiveMessages() needs
-      // the Networking Protocol (ADR-0007), not designed yet. See this
-      // module's header comment.
-      prediction::State state = prediction.Tick(command, std::nullopt, tick_duration.count());
+      prediction::State state = session.Tick(command, tick_duration.count());
 
       {
         std::lock_guard<std::mutex> lock(prediction_state_mutex);
         latest_prediction_state = state;
       }
 
-      // TODO(sergioffpc): serialize command and network.Send(...) it -
-      // same Networking Protocol gap as above.
+      // TODO(sergioffpc): serialize command and send it through session -
+      // needs the Networking Protocol (ADR-0007), not designed yet.
 
       std::this_thread::sleep_until(tick_start +
                                     std::chrono::duration_cast<std::chrono::steady_clock::duration>(tick_duration));
@@ -195,28 +193,14 @@ struct ClientRuntime::Impl {
   // Network I/O thread body (ADR-0005): connects once, then pumps the
   // connection until running is cleared by ThreadJoiner.
   void NetworkThreadMain() {
-    network.Connect(config.server);
-    bool sent_hello = false;
+    session.Connect();
     while (running.load(std::memory_order_relaxed)) {
       const nvtx3::scoped_range range{"Network PumpEvents"};
-      network.PumpEvents();
+      session.PumpEvents();
       SampleNetworkStats();
-
-      // TODO(sergioffpc): M1 spike only (issue #31) - a literal hello
-      // proving the transport round-trips a message at all. Replace
-      // with real Command encoding once the Networking Protocol
-      // (ADR-0007) exists; see this module's header comment.
-      if (!sent_hello && network.GetState() == networking::ConnectionState::kConnected) {
-        constexpr std::string_view kHello = "hello from augustac";
-        const auto* bytes = reinterpret_cast<const std::byte*>(kHello.data());
-        network.Send(networking::Payload(bytes, bytes + kHello.size()), networking::Reliability::kUnreliable);
-        sent_hello = true;
-      }
-      for ([[maybe_unused]] const networking::Payload& payload : network.ReceiveMessages()) {
-        LT("subsystem=clientruntime event=received bytes={}", payload.size());
-      }
+      session.ExchangeMessages();
     }
-    network.Disconnect();
+    session.Disconnect();
   }
 
   prediction::State GetLatestPredictionState() {

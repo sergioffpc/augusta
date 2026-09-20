@@ -2,14 +2,10 @@
 
 #include <atomic>
 #include <chrono>
-#include <cstddef>
-#include <mutex>
-#include <string_view>
 #include <thread>
-#include <vector>
 
-#include "augusta/input.h"
 #include "augusta/logging.h"
+#include "host.h"
 
 namespace augusta::runtime {
 
@@ -36,51 +32,21 @@ struct ThreadJoiner {
 
 struct ServerRuntime::Impl {
   Config config;
-  networking::Server network;
-  simulation::World simulation;
+  server::Host host;
 
   std::atomic<bool> running{false};
   std::thread network_thread;
 
-  // Guards latest_commands: written by the Network I/O thread as client
-  // commands arrive, read once per Simulation tick. Always empty today
-  // - see this module's header comment on the Networking Protocol gap.
-  std::mutex commands_mutex;
-  std::vector<input::Command> latest_commands;
+  explicit Impl(const Config& cfg)
+      : config(cfg),
+        host(server::HostConfig{.stamina = cfg.stamina, .script_path = cfg.script_path, .listen = cfg.listen}) {}
 
-  explicit Impl(const Config& cfg) : config(cfg), network(cfg.listen), simulation(cfg.stamina, cfg.script_path) {}
-
-  // Network I/O thread body (ADR-0005): accepts connecting peers and
-  // pumps the connection until running is cleared by ThreadJoiner or
-  // Stop().
+  // Network I/O thread body (ADR-0005): pumps the connection until running is
+  // cleared by ThreadJoiner or Stop().
   void NetworkThreadMain() {
     while (running.load(std::memory_order_relaxed)) {
-      for (const networking::PeerEvent& event : network.PumpEvents()) {
-        if (event.type == networking::PeerEventType::kConnectRequested) {
-          // TODO(sergioffpc): run Input Validation/any join policy
-          // (US-15) before accepting - not yet a module of its own, see
-          // this module's header comment. Accepts unconditionally for
-          // now.
-          network.Accept(event.peer);
-        }
-      }
-      // TODO(sergioffpc): M1 spike only (issue #31) - decode each
-      // received PeerMessage's Payload into an input::Command and store
-      // it into latest_commands instead of just echoing a literal hello
-      // back, once the Networking Protocol (ADR-0007) exists.
-      for (const networking::PeerMessage& message : network.ReceiveMessages()) {
-        LT("subsystem=serverruntime event=received bytes={}", message.payload.size());
-        constexpr std::string_view kHello = "hello from augustad";
-        const auto* bytes = reinterpret_cast<const std::byte*>(kHello.data());
-        network.Send(message.from, networking::Payload(bytes, bytes + kHello.size()),
-                     networking::Reliability::kUnreliable);
-      }
+      host.PumpNetwork();
     }
-  }
-
-  std::vector<input::Command> GetLatestCommands() {
-    std::lock_guard<std::mutex> lock(commands_mutex);
-    return latest_commands;
   }
 };
 
@@ -98,8 +64,7 @@ void ServerRuntime::Run() {
   while (impl_->running.load(std::memory_order_relaxed)) {
     const auto tick_start = std::chrono::steady_clock::now();
 
-    std::vector<input::Command> commands = impl_->GetLatestCommands();
-    simulation::State state = impl_->simulation.Tick(commands, tick_duration.count());
+    simulation::State state = impl_->host.Tick(tick_duration.count());
     // TODO(sergioffpc): hand state to augusta::replication (scaffolded,
     // not implemented) to encode and network.Broadcast - see this
     // module's header comment.

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <mutex>
 #include <stdexcept>
 #include <unordered_map>
 
@@ -189,6 +190,78 @@ class LogErrorCallback : public PxErrorCallback {
   }
 };
 
+// PhysX allows one PxFoundation per process, and creating PxPhysics on it is
+// costly, so every World shares one of each, created by the first World and
+// released with the last - a server and several clients in one test process
+// each own a World.
+struct PhysxProcessState {
+  std::mutex mutex;
+  int users = 0;
+  // Must outlive the foundation, so they live here rather than in each World.
+  LogErrorCallback error_callback;
+  PxDefaultAllocator allocator;
+  PxFoundation* foundation = nullptr;
+  PxPhysics* physics = nullptr;
+};
+
+PhysxProcessState& ProcessState() {
+  static PhysxProcessState state;
+  return state;
+}
+
+struct PhysxHandles {
+  PxFoundation* foundation;
+  PxPhysics* physics;
+};
+
+PhysxHandles AcquirePhysx() {
+  PhysxProcessState& state = ProcessState();
+  const std::lock_guard<std::mutex> lock(state.mutex);
+  if (state.users == 0) {
+    state.foundation = PxCreateFoundation(PX_PHYSICS_VERSION, state.allocator, state.error_callback);
+    if (state.foundation == nullptr) {
+      throw std::runtime_error("physics::World: PxCreateFoundation failed");
+    }
+    const PxTolerancesScale scale;
+    state.physics = PxCreatePhysics(PX_PHYSICS_VERSION, *state.foundation, scale, true);
+    if (state.physics == nullptr) {
+      state.foundation->release();
+      state.foundation = nullptr;
+      throw std::runtime_error("physics::World: PxCreatePhysics failed");
+    }
+  }
+  ++state.users;
+  return {.foundation = state.foundation, .physics = state.physics};
+}
+
+void ReleasePhysx() {
+  PhysxProcessState& state = ProcessState();
+  const std::lock_guard<std::mutex> lock(state.mutex);
+  if (--state.users == 0) {
+    state.physics->release();
+    state.foundation->release();
+    state.physics = nullptr;
+    state.foundation = nullptr;
+  }
+}
+
+// Holds one use of the shared PhysX state for as long as it lives. Being a
+// member, it is released even if the owning World's constructor throws after
+// it was acquired, when the World's destructor would not run.
+class PhysxLease {
+ public:
+  PhysxLease() : handles_(AcquirePhysx()) {}
+  ~PhysxLease() { ReleasePhysx(); }
+  PhysxLease(const PhysxLease&) = delete;
+  PhysxLease& operator=(const PhysxLease&) = delete;
+
+  [[nodiscard]] PxFoundation* Foundation() const { return handles_.foundation; }
+  [[nodiscard]] PxPhysics* Physics() const { return handles_.physics; }
+
+ private:
+  PhysxHandles handles_;
+};
+
 }  // namespace
 
 // Per-body bookkeeping PhysX's controller doesn't itself track: a CCT has
@@ -206,10 +279,11 @@ struct BodyRecord {
 };
 
 struct World::Impl {
-  LogErrorCallback error_callback;
-  PxDefaultAllocator allocator;
-  PxFoundation* foundation = nullptr;
-  PxPhysics* physics = nullptr;
+  // Declared first so it is released last: everything below that PhysX
+  // created must be released before the shared foundation can go.
+  PhysxLease lease;
+  PxFoundation* foundation = lease.Foundation();
+  PxPhysics* physics = lease.Physics();
   PxDefaultCpuDispatcher* dispatcher = nullptr;
   // Non-null only when enable_gpu was requested AND a CUDA-capable
   // GPU/driver was actually found - see the constructor. Currently has
@@ -224,16 +298,6 @@ struct World::Impl {
   std::uint32_t next_handle = 1;
 
   Impl(const StaminaConfig& config, bool enable_gpu) : stamina_config(config) {
-    foundation = PxCreateFoundation(PX_PHYSICS_VERSION, allocator, error_callback);
-    if (foundation == nullptr) {
-      throw std::runtime_error("physics::World: PxCreateFoundation failed");
-    }
-
-    const PxTolerancesScale scale;
-    physics = PxCreatePhysics(PX_PHYSICS_VERSION, *foundation, scale, true);
-    if (physics == nullptr) {
-      throw std::runtime_error("physics::World: PxCreatePhysics failed");
-    }
     PxSceneDesc scene_desc(physics->getTolerancesScale());
     scene_desc.gravity = PxVec3(0.0F, kGravity, 0.0F);
     dispatcher = PxDefaultCpuDispatcherCreate(kWorkerThreadCount);
@@ -291,12 +355,6 @@ struct World::Impl {
     }
     if (dispatcher != nullptr) {
       dispatcher->release();
-    }
-    if (physics != nullptr) {
-      physics->release();
-    }
-    if (foundation != nullptr) {
-      foundation->release();
     }
   }
 };

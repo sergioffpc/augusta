@@ -15,7 +15,7 @@ add_library(augustac_runtime STATIC
 )
 target_include_directories(augustac_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustac_runtime
-  PUBLIC augusta_audio augusta_input augusta_networking augusta_physics augusta_prediction augusta_presentation augusta_renderer
+  PUBLIC augusta_audio augusta_harness augusta_input augusta_networking augusta_physics augusta_prediction augusta_presentation augusta_renderer
   # nvtx3-cpp (third_party/nvtx, see the root CMakeLists.txt) is
   # header-only - runtime.cpp uses it to name the Main/Render,
   # Simulation, and Network I/O thread loops for Nsight Systems.
