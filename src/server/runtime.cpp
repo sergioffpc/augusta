@@ -72,7 +72,8 @@ struct ServerRuntime::Impl {
         LT("subsystem=serverruntime event=received bytes={}", message.payload.size());
         constexpr std::string_view kHello = "hello from augustad";
         const auto* bytes = reinterpret_cast<const std::byte*>(kHello.data());
-        network.Send(message.from, networking::Payload(bytes, bytes + kHello.size()));
+        network.Send(message.from, networking::Payload(bytes, bytes + kHello.size()),
+                     networking::Reliability::kUnreliable);
       }
     }
   }

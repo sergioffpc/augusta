@@ -208,7 +208,7 @@ struct ClientRuntime::Impl {
       if (!sent_hello && network.GetState() == networking::ConnectionState::kConnected) {
         constexpr std::string_view kHello = "hello from augustac";
         const auto* bytes = reinterpret_cast<const std::byte*>(kHello.data());
-        network.Send(networking::Payload(bytes, bytes + kHello.size()));
+        network.Send(networking::Payload(bytes, bytes + kHello.size()), networking::Reliability::kUnreliable);
         sent_hello = true;
       }
       for ([[maybe_unused]] const networking::Payload& payload : network.ReceiveMessages()) {
