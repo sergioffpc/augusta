@@ -137,9 +137,9 @@ StaticMesh FloorAt(float y) {
 constexpr float kFloorHeight = -2.0F;
 constexpr int kFallTicks = 120;
 
-TEST(LevelSessionTest, ThePredictedBodyRestsOnTheLevelsFloor) {
+TEST(MapSessionTest, ThePredictedBodyRestsOnTheMapsFloor) {
   const Endpoint address{.address = LoopbackAddress()};
-  Session session(SessionConfig{.server = address, .level = {FloorAt(kFloorHeight)}});
+  Session session(SessionConfig{.server = address, .collision = {FloorAt(kFloorHeight)}});
 
   augusta::prediction::State state;
   for (int i = 0; i < kFallTicks; ++i) {
@@ -149,7 +149,7 @@ TEST(LevelSessionTest, ThePredictedBodyRestsOnTheLevelsFloor) {
   EXPECT_NEAR(state.local_body.position.y, kFloorHeight, 0.2F);
 }
 
-TEST(LevelSessionTest, WithoutALevelThePredictedBodyKeepsFalling) {
+TEST(MapSessionTest, WithoutAMapThePredictedBodyKeepsFalling) {
   Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}});
 
   augusta::prediction::State state;
@@ -160,14 +160,15 @@ TEST(LevelSessionTest, WithoutALevelThePredictedBodyKeepsFalling) {
   EXPECT_LT(state.local_body.position.y, kFloorHeight - 5.0F);
 }
 
-TEST(LevelSessionTest, ASessionRefusesALevelMeshPhysicsRejects) {
-  EXPECT_THROW(Session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .level = {StaticMesh{}}}),
+TEST(MapSessionTest, ASessionRefusesAMapMeshPhysicsRejects) {
+  EXPECT_THROW(Session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .collision = {StaticMesh{}}}),
                std::runtime_error);
 }
 
-TEST(LevelHostTest, AHostAcceptsALevelAndKeepsTicking) {
-  Host host(HostConfig{
-      .script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}, .level = {FloorAt(0.0F)}});
+TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
+  Host host(HostConfig{.script_path = "scripts/round.lua",
+                       .listen = Endpoint{.address = LoopbackAddress()},
+                       .collision = {FloorAt(0.0F)}});
 
   for (int i = 0; i < 10; ++i) {
     host.Tick(kFixedTick);
@@ -175,10 +176,10 @@ TEST(LevelHostTest, AHostAcceptsALevelAndKeepsTicking) {
   SUCCEED();
 }
 
-TEST(LevelHostTest, AHostRefusesALevelMeshPhysicsRejects) {
+TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
   EXPECT_THROW(Host(HostConfig{.script_path = "scripts/round.lua",
                                .listen = Endpoint{.address = LoopbackAddress()},
-                               .level = {StaticMesh{}}}),
+                               .collision = {StaticMesh{}}}),
                std::runtime_error);
 }
 

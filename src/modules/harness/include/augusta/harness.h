@@ -33,15 +33,15 @@ struct SessionConfig {
   physics::StaminaConfig stamina{};
   /// The dedicated server to connect to (US-01).
   networking::Endpoint server{};
-  /// The level's collision, as built by augusta::level from the client pack.
-  std::vector<physics::StaticMesh> level{};
+  /// The map's collision, as built by augusta::map from the client pack.
+  std::vector<physics::StaticMesh> collision{};
 };
 
 /// The client's network connection and PredictionWorld, without a window or a GPU.
 class Session {
  public:
-  /// Constructs the connection and the PredictionWorld with the level's collision;
-  /// connects to nothing yet. Throws std::runtime_error if a level mesh is rejected.
+  /// Constructs the connection and the PredictionWorld with the map's collision;
+  /// connects to nothing yet. Throws std::runtime_error if a map mesh is rejected.
   explicit Session(const SessionConfig& config);
   ~Session();
 

@@ -22,7 +22,7 @@
 // PxScene::simulate()/fetchResults(). CCT movement is sweep-based and
 // self-contained; nothing here needs the rigid-body dynamics loop, since
 // every body is player-controlled and the only other geometry is the
-// level's static meshes (AddStaticMesh), which never move.
+// map's static meshes (AddStaticMesh), which never move.
 //
 // Engine convention (not yet pinned down project-wide - see
 // augusta::input::Command's yaw/pitch comment): Y is up, matching both
@@ -191,7 +191,7 @@ ReconciliationResult ResolveReconciliation(const BodyState& predicted, const Bod
   return result;
 }
 
-// Every triangle twice, once per winding: a cooked level's triangles can face
+// Every triangle twice, once per winding: a cooked map's triangles can face
 // either way, and the character controller only collides with the side a
 // triangle faces (PxMeshGeometryFlag::eDOUBLE_SIDED does not change that), so a
 // body would otherwise fall through a floor or walk through a wall authored the
@@ -325,7 +325,7 @@ struct World::Impl {
   PxScene* scene = nullptr;
   PxControllerManager* controller_manager = nullptr;
   PxMaterial* material = nullptr;
-  // Static level geometry added by AddStaticMesh; released with the World.
+  // Static map geometry added by AddStaticMesh; released with the World.
   std::vector<PxTriangleMesh*> static_meshes;
   std::vector<PxRigidStatic*> static_actors;
   StaminaConfig stamina_config;

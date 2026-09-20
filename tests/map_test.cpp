@@ -1,4 +1,4 @@
-#include "augusta/level.h"
+#include "augusta/map.h"
 
 #include <cstddef>
 #include <filesystem>
@@ -13,7 +13,7 @@
 #include "encoder.h"
 
 // Builds a real signed pack in a temp file and loads it back, so what is tested
-// is the level module reading a Pack the way both executables do.
+// is the map module reading a Pack the way both executables do.
 namespace {
 
 using augusta::assets::AssetEntry;
@@ -23,8 +23,8 @@ using augusta::assets::Pack;
 using augusta::assets::ResolveError;
 using augusta::assets::SceneData;
 using augusta::assets::SceneNode;
-using augusta::level::LevelErrorCode;
-using augusta::level::LoadCollision;
+using augusta::map::LoadCollision;
+using augusta::map::MapErrorCode;
 using augusta::math::Vec3;
 
 // A unit square on the ground plane, as a collision mesh blob.
@@ -51,7 +51,7 @@ std::vector<std::byte> SceneBlob(const std::vector<SceneNode>& nodes) {
   return augusta::assets::EncodeSceneBlob(scene).value();
 }
 
-class LevelTest : public ::testing::Test {
+class MapTest : public ::testing::Test {
  protected:
   void TearDown() override {
     for (const auto& path : cleanup_) {
@@ -61,7 +61,7 @@ class LevelTest : public ::testing::Test {
 
   // Writes entries into a signed pack and loads it.
   Pack MakePack(const std::string& name, const std::vector<AssetEntry>& entries) {
-    const auto path = std::filesystem::temp_directory_path() / ("augusta_level_test_" + name + ".pack");
+    const auto path = std::filesystem::temp_directory_path() / ("augusta_map_test_" + name + ".pack");
     cleanup_.push_back(path);
     const auto keys = augusta::assets::GenerateEd25519KeyPair();
     EXPECT_TRUE(augusta::assets::WritePack(path, entries, keys.private_key).has_value());
@@ -74,7 +74,7 @@ class LevelTest : public ::testing::Test {
   std::vector<std::filesystem::path> cleanup_;
 };
 
-TEST_F(LevelTest, PlacesEachColliderInWorldSpaceThroughItsParents) {
+TEST_F(MapTest, PlacesEachColliderInWorldSpaceThroughItsParents) {
   SceneNode ground = Node("Ground", augusta::assets::kSceneNodeNoParent);
   ground.collider_path = "Ground";
   SceneNode crate = Node("Ground/Crate", 0);
@@ -83,16 +83,16 @@ TEST_F(LevelTest, PlacesEachColliderInWorldSpaceThroughItsParents) {
   const Pack pack = MakePack("world_space", {AssetEntry{AssetType::kCollision, "Ground", SquareBlob()},
                                              AssetEntry{AssetType::kScene, "Scene", SceneBlob({ground, crate})}});
 
-  const auto level = LoadCollision(pack);
+  const auto collision = LoadCollision(pack);
 
-  ASSERT_TRUE(level.has_value());
-  ASSERT_EQ(level->size(), 2U);
-  EXPECT_NEAR((*level)[0].points[3].x, 1.0F, 1e-5F);
-  EXPECT_NEAR((*level)[1].points[3].x, 11.0F, 1e-5F);
-  EXPECT_EQ((*level)[1].indices.size(), 6U);
+  ASSERT_TRUE(collision.has_value());
+  ASSERT_EQ(collision->size(), 2U);
+  EXPECT_NEAR((*collision)[0].points[3].x, 1.0F, 1e-5F);
+  EXPECT_NEAR((*collision)[1].points[3].x, 11.0F, 1e-5F);
+  EXPECT_EQ((*collision)[1].indices.size(), 6U);
 }
 
-TEST_F(LevelTest, NodesWithoutAColliderAddNothing) {
+TEST_F(MapTest, NodesWithoutAColliderAddNothing) {
   SceneNode ground = Node("Ground", augusta::assets::kSceneNodeNoParent);
   ground.collider_path = "Ground";
   SceneNode decoration = Node("Decoration", augusta::assets::kSceneNodeNoParent);
@@ -101,74 +101,74 @@ TEST_F(LevelTest, NodesWithoutAColliderAddNothing) {
       MakePack("no_collider_nodes", {AssetEntry{AssetType::kCollision, "Ground", SquareBlob()},
                                      AssetEntry{AssetType::kScene, "Scene", SceneBlob({ground, decoration})}});
 
-  const auto level = LoadCollision(pack);
+  const auto collision = LoadCollision(pack);
 
-  ASSERT_TRUE(level.has_value());
-  EXPECT_EQ(level->size(), 1U);
+  ASSERT_TRUE(collision.has_value());
+  EXPECT_EQ(collision->size(), 1U);
 }
 
-TEST_F(LevelTest, APackWithNoCollisionAtAllIsAnError) {
+TEST_F(MapTest, APackWithNoCollisionAtAllIsAnError) {
   SceneNode decoration = Node("Decoration", augusta::assets::kSceneNodeNoParent);
   decoration.mesh_path = "Decoration";
   const Pack pack = MakePack("no_collision", {AssetEntry{AssetType::kScene, "Scene", SceneBlob({decoration})}});
 
-  const auto level = LoadCollision(pack);
+  const auto collision = LoadCollision(pack);
 
-  ASSERT_FALSE(level.has_value());
-  EXPECT_EQ(level.error().code, LevelErrorCode::kNoCollision);
+  ASSERT_FALSE(collision.has_value());
+  EXPECT_EQ(collision.error().code, MapErrorCode::kNoCollision);
 }
 
-TEST_F(LevelTest, AColliderThatIsNotInThePackNamesIt) {
+TEST_F(MapTest, AColliderThatIsNotInThePackNamesIt) {
   SceneNode ground = Node("Ground", augusta::assets::kSceneNodeNoParent);
   ground.collider_path = "Missing";
   const Pack pack = MakePack("missing_collider", {AssetEntry{AssetType::kScene, "Scene", SceneBlob({ground})}});
 
-  const auto level = LoadCollision(pack);
+  const auto collision = LoadCollision(pack);
 
-  ASSERT_FALSE(level.has_value());
-  EXPECT_EQ(level.error().code, LevelErrorCode::kColliderUnresolved);
-  EXPECT_EQ(level.error().node, "Ground");
-  EXPECT_EQ(level.error().subject, "Missing");
-  EXPECT_EQ(level.error().resolve_error, ResolveError::kNotFound);
+  ASSERT_FALSE(collision.has_value());
+  EXPECT_EQ(collision.error().code, MapErrorCode::kColliderUnresolved);
+  EXPECT_EQ(collision.error().node, "Ground");
+  EXPECT_EQ(collision.error().subject, "Missing");
+  EXPECT_EQ(collision.error().resolve_error, ResolveError::kNotFound);
 }
 
-TEST_F(LevelTest, AnEmptyColliderIsAnErrorNamingIt) {
+TEST_F(MapTest, AnEmptyColliderIsAnErrorNamingIt) {
   SceneNode ground = Node("Ground", augusta::assets::kSceneNodeNoParent);
   ground.collider_path = "Empty";
   const Pack pack = MakePack("empty_collider", {AssetEntry{AssetType::kCollision, "Empty", EmptyBlob()},
                                                 AssetEntry{AssetType::kScene, "Scene", SceneBlob({ground})}});
 
-  const auto level = LoadCollision(pack);
+  const auto collision = LoadCollision(pack);
 
-  ASSERT_FALSE(level.has_value());
-  EXPECT_EQ(level.error().code, LevelErrorCode::kInvalidCollider);
-  EXPECT_EQ(level.error().node, "Ground");
-  EXPECT_EQ(level.error().subject, "Empty");
-  EXPECT_EQ(level.error().static_mesh_error, augusta::physics::StaticMeshError::kEmpty);
+  ASSERT_FALSE(collision.has_value());
+  EXPECT_EQ(collision.error().code, MapErrorCode::kInvalidCollider);
+  EXPECT_EQ(collision.error().node, "Ground");
+  EXPECT_EQ(collision.error().subject, "Empty");
+  EXPECT_EQ(collision.error().static_mesh_error, augusta::physics::StaticMeshError::kEmpty);
 }
 
-TEST_F(LevelTest, APackWithoutASceneIsAnError) {
+TEST_F(MapTest, APackWithoutASceneIsAnError) {
   const Pack pack = MakePack("no_scene", {AssetEntry{AssetType::kCollision, "Ground", SquareBlob()}});
 
-  const auto level = LoadCollision(pack);
+  const auto collision = LoadCollision(pack);
 
-  ASSERT_FALSE(level.has_value());
-  EXPECT_EQ(level.error().code, LevelErrorCode::kSceneUnresolved);
-  EXPECT_EQ(level.error().subject, std::string(augusta::assets::kScenePath));
+  ASSERT_FALSE(collision.has_value());
+  EXPECT_EQ(collision.error().code, MapErrorCode::kSceneUnresolved);
+  EXPECT_EQ(collision.error().subject, std::string(augusta::assets::kScenePath));
 }
 
-TEST(DescribeLevelErrorTest, ASceneOfTheWrongTypeIsNotDescribedAsCollisionGeometry) {
-  const std::string message = augusta::level::DescribeLevelError(
-      {.code = LevelErrorCode::kSceneUnresolved, .subject = "Scene", .resolve_error = ResolveError::kTypeMismatch});
+TEST(DescribeMapErrorTest, ASceneOfTheWrongTypeIsNotDescribedAsCollisionGeometry) {
+  const std::string message = augusta::map::DescribeMapError(
+      {.code = MapErrorCode::kSceneUnresolved, .subject = "Scene", .resolve_error = ResolveError::kTypeMismatch});
 
   EXPECT_EQ(message, "scene Scene is not a scene");
 }
 
-TEST(DescribeLevelErrorTest, NamesWhatWasMissing) {
-  const std::string message = augusta::level::DescribeLevelError({.code = LevelErrorCode::kColliderUnresolved,
-                                                                  .node = "Ground",
-                                                                  .subject = "Missing",
-                                                                  .resolve_error = ResolveError::kNotFound});
+TEST(DescribeMapErrorTest, NamesWhatWasMissing) {
+  const std::string message = augusta::map::DescribeMapError({.code = MapErrorCode::kColliderUnresolved,
+                                                              .node = "Ground",
+                                                              .subject = "Missing",
+                                                              .resolve_error = ResolveError::kNotFound});
 
   EXPECT_NE(message.find("Missing"), std::string::npos) << message;
   EXPECT_NE(message.find("Ground"), std::string::npos) << message;

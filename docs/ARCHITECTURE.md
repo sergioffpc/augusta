@@ -107,8 +107,8 @@ No matchmaking, master server, or third-party platform integration in v1.
 - Match/Round State — round lifecycle, win conditions
 - Level Data — lightweight custom runtime format, baked offline from
   OpenUSD source. Its collision geometry is built into a physics::World's static
-  meshes by one shared module (augusta_level), so PredictionWorld and
-  SimulationWorld collide against the same level
+  meshes by one shared module (augusta_map), so PredictionWorld and
+  SimulationWorld collide against the same map
 
 **Client-only** (Windows-only)
 - Input handling — turns keyboard/mouse events pushed by Renderer into

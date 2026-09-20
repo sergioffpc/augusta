@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_LEVEL_H_
-#define AUGUSTA_LEVEL_H_
+#ifndef AUGUSTA_MAP_H_
+#define AUGUSTA_MAP_H_
 
 #include <expected>
 #include <string>
@@ -9,14 +9,14 @@
 #include "augusta/assets.h"
 #include "augusta/physics.h"
 
-// augusta::level turns a verified Pack (ADR-0018) into what a physics::World
-// needs to make the level solid. Client and server both call it with their own
+// augusta::map turns a verified Pack (ADR-0018) into what a physics::World
+// needs to make the map solid. Client and server both call it with their own
 // pack (ADR-0019 ships collision data in both), so PredictionWorld and
 // SimulationWorld collide against the same geometry built by the same code.
-namespace augusta::level {
+namespace augusta::map {
 
-/// Why a level's collision could not be built from a pack.
-enum class LevelErrorCode {
+/// Why a map's collision could not be built from a pack.
+enum class MapErrorCode {
   /// The scene graph could not be resolved; subject is its path.
   kSceneUnresolved,
   /// A node's collider could not be resolved; node is the node's name and subject the collider's path.
@@ -24,13 +24,13 @@ enum class LevelErrorCode {
   /// A node's collider resolved but is not a usable mesh; node is the node's name,
   /// subject the collider's path, and static_mesh_error says what is wrong with it.
   kInvalidCollider,
-  /// The scene has no collider at all, so the level would have no floor or walls.
+  /// The scene has no collider at all, so the map would have no floor or walls.
   kNoCollision,
 };
 
-/// A failure to build a level's collision: what went wrong (code) and what it is about.
-struct LevelError {
-  LevelErrorCode code;
+/// A failure to build a map's collision: what went wrong (code) and what it is about.
+struct MapError {
+  MapErrorCode code;
   std::string node{};
   std::string subject{};
   /// Why the pack could not resolve it, for the two kUnresolved codes.
@@ -40,13 +40,13 @@ struct LevelError {
 };
 
 /// A message describing error, for whoever runs the process to read.
-std::string DescribeLevelError(const LevelError& error);
+std::string DescribeMapError(const MapError& error);
 
 /// The collision meshes of the scene graph at scene_path in pack, in world space,
 /// one per node that references a collider.
-std::expected<std::vector<physics::StaticMesh>, LevelError> LoadCollision(
+std::expected<std::vector<physics::StaticMesh>, MapError> LoadCollision(
     const assets::Pack& pack, std::string_view scene_path = assets::kScenePath);
 
-}  // namespace augusta::level
+}  // namespace augusta::map
 
-#endif  // AUGUSTA_LEVEL_H_
+#endif  // AUGUSTA_MAP_H_

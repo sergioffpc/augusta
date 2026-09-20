@@ -43,7 +43,7 @@ struct ServerRuntime::Impl {
             .stamina = cfg.stamina,
             .script_path = cfg.script_path,
             .listen = cfg.listen,
-            .level = cfg.level,
+            .collision = cfg.collision,
         }) {}
 
   // Network I/O thread body (ADR-0005): pumps the connection until running is

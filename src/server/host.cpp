@@ -14,15 +14,15 @@ namespace augusta::server {
 
 namespace {
 
-// The authoritative world with the level's collision already in it. Built
-// before the socket exists, so a level that is rejected never leaves a bound
+// The authoritative world with the map's collision already in it. Built
+// before the socket exists, so a map that is rejected never leaves a bound
 // port behind.
 simulation::World BuildSimulation(const HostConfig& config) {
   simulation::World simulation(config.stamina, config.script_path);
-  for (const physics::StaticMesh& mesh : config.level) {
+  for (const physics::StaticMesh& mesh : config.collision) {
     if (const auto added = simulation.AddStaticMesh(mesh); !added) {
       throw std::runtime_error(
-          std::format("server::Host: level collision rejected: {}", physics::DescribeStaticMeshError(added.error())));
+          std::format("server::Host: map collision rejected: {}", physics::DescribeStaticMeshError(added.error())));
     }
   }
   return simulation;

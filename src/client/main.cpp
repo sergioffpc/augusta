@@ -9,8 +9,8 @@
 
 #include "augusta/assets.h"
 #include "augusta/config.h"
-#include "augusta/level.h"
 #include "augusta/logging.h"
+#include "augusta/map.h"
 #include "augusta/networking.h"
 #include "augusta/version.h"
 #include "runtime.h"
@@ -68,15 +68,15 @@ std::expected<augusta::config::ClientConfig, augusta::config::ConfigError> LoadC
 // The same collision the server builds from its own pack, so the client's
 // prediction and the server's simulation agree on where the walls are. Reports
 // what is wrong and returns nullopt.
-std::optional<std::vector<augusta::physics::StaticMesh>> LoadLevel(const augusta::assets::Pack& pack,
-                                                                   const std::filesystem::path& pack_path) {
-  auto level = augusta::level::LoadCollision(pack);
-  if (!level) {
-    std::println(stderr, "client pack {}: {}", pack_path.string(), augusta::level::DescribeLevelError(level.error()));
+std::optional<std::vector<augusta::physics::StaticMesh>> LoadMap(const augusta::assets::Pack& pack,
+                                                                 const std::filesystem::path& pack_path) {
+  auto collision = augusta::map::LoadCollision(pack);
+  if (!collision) {
+    std::println(stderr, "client pack {}: {}", pack_path.string(), augusta::map::DescribeMapError(collision.error()));
     return std::nullopt;
   }
-  LI("subsystem=client event=level_loaded colliders={}", level->size());
-  return *std::move(level);
+  LI("subsystem=client event=map_loaded colliders={}", collision->size());
+  return *std::move(collision);
 }
 
 }  // namespace
@@ -115,8 +115,8 @@ int main(int argc, char** argv) {
   }
   LI("subsystem=client event=scene_loaded meshes={}", scene->meshes.size());
 
-  auto level = LoadLevel(*pack, pack_path);
-  if (!level) {
+  auto collision = LoadMap(*pack, pack_path);
+  if (!collision) {
     return 1;
   }
 
@@ -128,7 +128,7 @@ int main(int argc, char** argv) {
   config.renderer.title = "augusta";
   // Direct IP:port only, no server discovery (ARCHITECTURE.md §3).
   config.server.address = file_config->server_address;
-  config.level = *std::move(level);
+  config.collision = *std::move(collision);
 
   augusta::runtime::ClientRuntime runtime(config, *scene);
   runtime.Run();

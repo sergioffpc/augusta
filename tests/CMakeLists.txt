@@ -34,12 +34,12 @@ target_link_libraries(augusta_prediction_tests PRIVATE augusta_prediction GTest:
 # Links augusta_physics publicly, so the same PhysX DLL launch cost applies.
 gtest_discover_tests(augusta_prediction_tests DISCOVERY_TIMEOUT 30)
 
-add_executable(augusta_level_tests level_test.cpp)
-target_link_libraries(augusta_level_tests PRIVATE augusta_level GTest::gtest GTest::gtest_main)
+add_executable(augusta_map_tests map_test.cpp)
+target_link_libraries(augusta_map_tests PRIVATE augusta_map GTest::gtest GTest::gtest_main)
 # Builds real packs with augusta_assets' private encoder (see augusta_assets_tests below).
-target_include_directories(augusta_level_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
+target_include_directories(augusta_map_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_level_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_map_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_session_tests session_test.cpp)
 target_link_libraries(augusta_session_tests PRIVATE augusta_harness augustad_host GTest::gtest GTest::gtest_main)

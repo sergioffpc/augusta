@@ -93,7 +93,7 @@ struct StaminaConfig {
   float forced_walk_below = 0.0F;
 };
 
-/// A triangle mesh of immovable level geometry, already in world space.
+/// A triangle mesh of immovable map geometry, already in world space.
 struct StaticMesh {
   std::vector<math::Vec3> points{};
   /// Three indices into points per triangle.
@@ -122,7 +122,7 @@ struct RaycastHit {
   // every other field here is unspecified.
   bool has_hit = false;
   // Which body was hit. Only meaningful if has_hit is true and the hit was a
-  // body: it is left at its default when the ray hit static level geometry.
+  // body: it is left at its default when the ray hit static map geometry.
   BodyHandle body{};
   // World-space point where the ray intersected body. Only meaningful
   // if has_hit is true.
@@ -170,7 +170,7 @@ class World {
   BodyHandle CreateBody(const math::Vec3& initial_position);
 
   /// Adds mesh as immovable geometry that bodies collide with and stand on.
-  /// Meant to be called while loading a level, before bodies are stepped.
+  /// Meant to be called while loading a map, before bodies are stepped.
   std::expected<void, StaticMeshError> AddStaticMesh(const StaticMesh& mesh);
 
   // Removes a body from this World and invalidates its handle. Calling

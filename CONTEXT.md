@@ -44,6 +44,14 @@ _Avoid_: Game logic, gameplay code (too broad — conflates policy with mechanis
 Tunable values (e.g. weapon/ammo damage) read from data files rather than expressed as mechanism code or policy scripts — a third category alongside mechanism and policy.
 _Avoid_: Config, settings (too generic — this specifically means gameplay-tunable values, not engine/app configuration)
 
+**Map**:
+The static space a match is played in - its collision, spawn points and hitboxes - authored in OpenUSD (ADR-0015) and cooked into the signed pack. The shared `map` module builds its collision into the physics of both the client's PredictionWorld and the server's SimulationWorld.
+_Avoid_: Level, stage (a *scene graph* is how the pack stores the map, not the map itself)
+
+**Harness**:
+Where anything that plays connects to the server: the client's network connection and PredictionWorld without a window or GPU. The real client, an automated test and a future autonomous agent each plug into one, supplying the input for every tick.
+_Avoid_: Client session, bot
+
 ### Combat
 
 **Hitbox**:

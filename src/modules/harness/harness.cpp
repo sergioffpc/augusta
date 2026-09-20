@@ -18,9 +18,9 @@ struct Session::Impl {
   bool sent_hello = false;
 
   explicit Impl(const SessionConfig& config) : server(config.server), prediction(config.stamina) {
-    for (const physics::StaticMesh& mesh : config.level) {
+    for (const physics::StaticMesh& mesh : config.collision) {
       if (const auto added = prediction.AddStaticMesh(mesh); !added) {
-        throw std::runtime_error(std::format("harness::Session: level collision rejected: {}",
+        throw std::runtime_error(std::format("harness::Session: map collision rejected: {}",
                                              physics::DescribeStaticMeshError(added.error())));
       }
     }

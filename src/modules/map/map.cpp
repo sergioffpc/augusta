@@ -1,4 +1,4 @@
-#include "augusta/level.h"
+#include "augusta/map.h"
 
 #include <cstddef>
 #include <format>
@@ -8,30 +8,30 @@
 
 #include "augusta/math.h"
 
-namespace augusta::level {
+namespace augusta::map {
 
-std::string DescribeLevelError(const LevelError& error) {
+std::string DescribeMapError(const MapError& error) {
   switch (error.code) {
-    case LevelErrorCode::kSceneUnresolved:
+    case MapErrorCode::kSceneUnresolved:
       return std::format("scene {} {}", error.subject, assets::DescribeResolveError(error.resolve_error, "scene"));
-    case LevelErrorCode::kColliderUnresolved:
+    case MapErrorCode::kColliderUnresolved:
       return std::format("collider {} of node {} {}", error.subject, error.node,
                          assets::DescribeResolveError(error.resolve_error, "collision geometry"));
-    case LevelErrorCode::kInvalidCollider:
+    case MapErrorCode::kInvalidCollider:
       return std::format("collider {} of node {}: {}", error.subject, error.node,
                          physics::DescribeStaticMeshError(error.static_mesh_error));
-    case LevelErrorCode::kNoCollision:
-      return "the scene has no collider, so the level would have no floor or walls";
+    case MapErrorCode::kNoCollision:
+      return "the scene has no collider, so the map would have no floor or walls";
   }
-  return "unknown level error";
+  return "unknown map error";
 }
 
-std::expected<std::vector<physics::StaticMesh>, LevelError> LoadCollision(const assets::Pack& pack,
-                                                                          std::string_view scene_path) {
+std::expected<std::vector<physics::StaticMesh>, MapError> LoadCollision(const assets::Pack& pack,
+                                                                        std::string_view scene_path) {
   const auto scene = pack.ResolveScene(scene_path);
   if (!scene) {
-    return std::unexpected(LevelError{
-        .code = LevelErrorCode::kSceneUnresolved, .subject = std::string(scene_path), .resolve_error = scene.error()});
+    return std::unexpected(MapError{
+        .code = MapErrorCode::kSceneUnresolved, .subject = std::string(scene_path), .resolve_error = scene.error()});
   }
 
   const std::vector<math::Mat4> world = assets::ComputeWorldTransforms(*scene);
@@ -43,10 +43,10 @@ std::expected<std::vector<physics::StaticMesh>, LevelError> LoadCollision(const 
     }
     auto collision = pack.ResolveCollision(*node.collider_path);
     if (!collision) {
-      return std::unexpected(LevelError{.code = LevelErrorCode::kColliderUnresolved,
-                                        .node = node.name,
-                                        .subject = *node.collider_path,
-                                        .resolve_error = collision.error()});
+      return std::unexpected(MapError{.code = MapErrorCode::kColliderUnresolved,
+                                      .node = node.name,
+                                      .subject = *node.collider_path,
+                                      .resolve_error = collision.error()});
     }
     physics::StaticMesh mesh{.indices = std::move(collision->indices)};
     mesh.points.reserve(collision->points.size());
@@ -54,17 +54,17 @@ std::expected<std::vector<physics::StaticMesh>, LevelError> LoadCollision(const 
       mesh.points.push_back(math::TransformPoint(world[i], point));
     }
     if (const auto valid = physics::ValidateStaticMesh(mesh); !valid) {
-      return std::unexpected(LevelError{.code = LevelErrorCode::kInvalidCollider,
-                                        .node = node.name,
-                                        .subject = *node.collider_path,
-                                        .static_mesh_error = valid.error()});
+      return std::unexpected(MapError{.code = MapErrorCode::kInvalidCollider,
+                                      .node = node.name,
+                                      .subject = *node.collider_path,
+                                      .static_mesh_error = valid.error()});
     }
     meshes.push_back(std::move(mesh));
   }
   if (meshes.empty()) {
-    return std::unexpected(LevelError{.code = LevelErrorCode::kNoCollision});
+    return std::unexpected(MapError{.code = MapErrorCode::kNoCollision});
   }
   return meshes;
 }
 
-}  // namespace augusta::level
+}  // namespace augusta::map

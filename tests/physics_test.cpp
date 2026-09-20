@@ -144,7 +144,7 @@ TEST(PhysicsWorldTest, RaycastHitsACreatedBody) {
   EXPECT_LT(hit.point.y, 10.0F);
 }
 
-// ---- Static level geometry (issue #77) ----
+// ---- Static map geometry (issue #77) ----
 
 // A flat rectangle as two triangles, corners in counter-clockwise order seen
 // from the side the normal points to.
@@ -214,7 +214,7 @@ TEST(StaticGeometryTest, WithoutAFloorABodyKeepsFalling) {
 
 class WallTest : public ::testing::TestWithParam<bool> {};
 
-// A cooked level's triangles can face either way, so the wall must stop a body
+// A cooked map's triangles can face either way, so the wall must stop a body
 // whichever side its triangles face.
 TEST_P(WallTest, AWallStopsAWalkingBody) {
   World world = WorldWithFloor();

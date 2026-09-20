@@ -8,8 +8,8 @@
 
 #include "augusta/assets.h"
 #include "augusta/config.h"
-#include "augusta/level.h"
 #include "augusta/logging.h"
+#include "augusta/map.h"
 #include "augusta/networking.h"
 #include "augusta/version.h"
 #include "runtime.h"
@@ -38,19 +38,19 @@ std::expected<augusta::config::ServerConfig, augusta::config::ConfigError> LoadC
   return augusta::config::LoadServerConfig(*config_file);
 }
 
-// Only the level's collision is consumed so far; spawn points and hitboxes wait
+// Only the map's collision is consumed so far; spawn points and hitboxes wait
 // for the gameplay code that will use them. Built before any socket or thread
-// starts, so a pack without a usable level exits like a bad pack does. Reports
+// starts, so a pack without a usable map exits like a bad pack does. Reports
 // what is wrong and returns nullopt.
-std::optional<std::vector<augusta::physics::StaticMesh>> LoadLevel(const augusta::assets::Pack& pack,
-                                                                   const std::filesystem::path& pack_path) {
-  auto level = augusta::level::LoadCollision(pack);
-  if (!level) {
-    std::println(stderr, "server pack {}: {}", pack_path.string(), augusta::level::DescribeLevelError(level.error()));
+std::optional<std::vector<augusta::physics::StaticMesh>> LoadMap(const augusta::assets::Pack& pack,
+                                                                 const std::filesystem::path& pack_path) {
+  auto collision = augusta::map::LoadCollision(pack);
+  if (!collision) {
+    std::println(stderr, "server pack {}: {}", pack_path.string(), augusta::map::DescribeMapError(collision.error()));
     return std::nullopt;
   }
-  LI("subsystem=server event=level_loaded colliders={}", level->size());
-  return *std::move(level);
+  LI("subsystem=server event=map_loaded colliders={}", collision->size());
+  return *std::move(collision);
 }
 
 }  // namespace
@@ -84,8 +84,8 @@ int main(int argc, char** argv) {
   }
   LI("subsystem=server event=pack_verified path={}", pack_path.string());
 
-  auto level = LoadLevel(*pack, pack_path);
-  if (!level) {
+  auto collision = LoadMap(*pack, pack_path);
+  if (!collision) {
     return 1;
   }
 
@@ -98,7 +98,7 @@ int main(int argc, char** argv) {
   // pack layout the asset pipeline (ROADMAP.md M2) hasn't built yet.
   config.script_path = "scripts/round.lua";
   config.listen.address = file_config->listen_address;
-  config.level = *std::move(level);
+  config.collision = *std::move(collision);
 
   augusta::runtime::ServerRuntime runtime(config);
   g_runtime = &runtime;

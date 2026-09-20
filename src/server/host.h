@@ -27,16 +27,16 @@ struct HostConfig {
   std::string script_path{};
   /// Local address to listen on (US-01).
   networking::Endpoint listen{};
-  /// The level's collision, as built by augusta::level from the server pack.
-  std::vector<physics::StaticMesh> level{};
+  /// The map's collision, as built by augusta::map from the server pack.
+  std::vector<physics::StaticMesh> collision{};
 };
 
 /// The server's listening socket and its SimulationWorld, without threads or a clock.
 class Host {
  public:
-  /// Constructs SimulationWorld with the level's collision (throws what its
+  /// Constructs SimulationWorld with the map's collision (throws what its
   /// scripting engine throws if script_path fails to load, and
-  /// std::runtime_error if a level mesh is rejected) and starts listening
+  /// std::runtime_error if a map mesh is rejected) and starts listening
   /// (throws std::runtime_error if the address can't be bound).
   explicit Host(const HostConfig& config);
   ~Host();
