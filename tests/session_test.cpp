@@ -10,7 +10,7 @@
 
 #include <gtest/gtest.h>
 
-#include "augusta/client_session.h"
+#include "augusta/harness.h"
 #include "augusta/input.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
@@ -23,8 +23,8 @@
 // their ticks by hand.
 namespace {
 
-using augusta::client_session::Session;
-using augusta::client_session::SessionConfig;
+using augusta::harness::Session;
+using augusta::harness::SessionConfig;
 using augusta::input::Command;
 using augusta::math::Vec3;
 using augusta::networking::ConnectionState;

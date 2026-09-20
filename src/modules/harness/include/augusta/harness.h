@@ -9,12 +9,14 @@
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 
-// augusta::client_session is the client's connection to a match without the
-// parts that need a window or a GPU: the network connection and the
-// PredictionWorld (ADR-0021, ADR-0024), and nothing of Input, Renderer, Audio
-// or PresentationWorld. ClientRuntime (src/client) owns one and drives it from
-// its Prediction and Network I/O threads (ADR-0005); a test drives it by hand,
-// so client/server behavior can be checked in CI with no display.
+// augusta::harness is where anything that plays talks to the server: the
+// client's network connection and PredictionWorld (ADR-0021, ADR-0024), without
+// the parts that need a window or a GPU (Input, Renderer, Audio,
+// PresentationWorld). Whatever supplies the input for a tick plugs in here:
+// ClientRuntime (src/client) drives one from its Prediction and Network I/O
+// threads (ADR-0005), an automated test drives one by hand so client/server
+// behavior can be checked in CI with no display, and a future autonomous agent
+// would drive one the same way.
 //
 // Nothing here owns a thread or reads a clock: the caller decides when the
 // network is serviced (PumpEvents, ExchangeMessages) and when a tick happens
@@ -22,7 +24,7 @@
 // different threads, as in ClientRuntime: Connect, Disconnect, PumpEvents,
 // ExchangeMessages, GetState and GetStats from the Network I/O thread, and Tick
 // from the Prediction thread.
-namespace augusta::client_session {
+namespace augusta::harness {
 
 /// What a Session needs to connect and predict.
 struct SessionConfig {
@@ -72,6 +74,6 @@ class Session {
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace augusta::client_session
+}  // namespace augusta::harness
 
 #endif  // AUGUSTA_CLIENT_SESSION_H_

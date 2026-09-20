@@ -1,4 +1,4 @@
-#include "augusta/client_session.h"
+#include "augusta/harness.h"
 
 #include <cstddef>
 #include <memory>
@@ -6,7 +6,7 @@
 
 #include "augusta/logging.h"
 
-namespace augusta::client_session {
+namespace augusta::harness {
 
 struct Session::Impl {
   networking::Endpoint server;
@@ -54,4 +54,4 @@ prediction::State Session::Tick(const input::Command& command, float delta_time)
   return impl_->prediction.Tick(command, std::nullopt, delta_time);
 }
 
-}  // namespace augusta::client_session
+}  // namespace augusta::harness
