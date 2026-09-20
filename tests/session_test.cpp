@@ -1,7 +1,12 @@
 #include <chrono>
+#include <cstdint>
+#include <memory>
+#include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 
 #ifdef _WIN32
 #include <process.h>
@@ -17,7 +22,10 @@
 #include "augusta/networking.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
+#include "augusta/protocol.h"
+#include "augusta/version.h"
 #include "host.h"
+#include "match.h"
 
 // The seam the M3 tickets test through (issue #73): a real server host and a
 // real client session, both without a window, a GPU or a wall-clock loop, in
@@ -32,6 +40,7 @@ using augusta::math::Vec3;
 using augusta::networking::ConnectionState;
 using augusta::networking::Endpoint;
 using augusta::physics::StaticMesh;
+using augusta::protocol::JoinRefusal;
 using augusta::server::Host;
 using augusta::server::HostConfig;
 
@@ -122,6 +131,94 @@ TEST_F(SessionTest, StaysConnectedWhileTheTestAlternatesTicksAndNetworkWork) {
   }
 
   EXPECT_EQ(session_.GetState(), ConnectionState::kConnected);
+}
+
+// A host and however many clients a test starts, all driven by hand.
+class JoinTest : public ::testing::Test {
+ protected:
+  JoinTest()
+      : host_(HostConfig{.script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}}) {}
+
+  // Starts connecting a new client that presents engine_version.
+  Session& AddClient(const std::string& engine_version = std::string(augusta::EngineVersion())) {
+    sessions_.push_back(std::make_unique<Session>(
+        SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .engine_version = engine_version}));
+    sessions_.back()->Connect();
+    return *sessions_.back();
+  }
+
+  // Runs both sides' network work until every client has been answered, or the
+  // deadline passes.
+  bool WaitForAnswers() {
+    const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+    while (std::chrono::steady_clock::now() < deadline) {
+      host_.PumpNetwork();
+      bool all_answered = true;
+      for (const auto& session : sessions_) {
+        session->PumpEvents();
+        session->ExchangeMessages();
+        all_answered = all_answered && (session->GetSessionId().has_value() || session->GetRefusal().has_value());
+      }
+      if (all_answered) {
+        return true;
+      }
+      std::this_thread::sleep_for(kPollInterval);
+    }
+    return false;
+  }
+
+  Host host_;
+  std::vector<std::unique_ptr<Session>> sessions_;
+};
+
+TEST_F(JoinTest, AClientWithTheMatchingVersionIsAdmittedWithASessionId) {
+  Session& client = AddClient();
+
+  ASSERT_TRUE(WaitForAnswers());
+
+  EXPECT_TRUE(client.GetSessionId().has_value());
+  EXPECT_FALSE(client.GetRefusal().has_value());
+}
+
+TEST_F(JoinTest, SessionIdsAreUniqueAmongConnectedClients) {
+  constexpr int kClients = 3;
+  for (int i = 0; i < kClients; ++i) {
+    AddClient();
+  }
+
+  ASSERT_TRUE(WaitForAnswers());
+
+  std::set<augusta::protocol::SessionId> ids;
+  for (const auto& session : sessions_) {
+    ASSERT_TRUE(session->GetSessionId().has_value());
+    ids.insert(*session->GetSessionId());
+  }
+  EXPECT_EQ(ids.size(), static_cast<std::size_t>(kClients));
+}
+
+TEST_F(JoinTest, AClientWithAnotherEngineVersionIsRefusedForTheVersion) {
+  Session& client = AddClient("0.0.0-not-the-servers");
+
+  ASSERT_TRUE(WaitForAnswers());
+
+  EXPECT_EQ(client.GetRefusal(), JoinRefusal::kVersionMismatch);
+  EXPECT_FALSE(client.GetSessionId().has_value());
+}
+
+TEST_F(JoinTest, TheNinthClientIsRefusedBecauseTheMatchIsFull) {
+  for (std::size_t i = 0; i < augusta::server::kMaxPlayers; ++i) {
+    AddClient();
+  }
+  ASSERT_TRUE(WaitForAnswers());
+  for (const auto& session : sessions_) {
+    ASSERT_TRUE(session->GetSessionId().has_value());
+  }
+
+  Session& ninth = AddClient();
+  ASSERT_TRUE(WaitForAnswers());
+
+  EXPECT_EQ(ninth.GetRefusal(), JoinRefusal::kMatchFull);
+  EXPECT_FALSE(ninth.GetSessionId().has_value());
 }
 
 // A large horizontal slab at height y, its triangles facing up.

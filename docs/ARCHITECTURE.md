@@ -363,6 +363,7 @@ aid only and do not affect numbering.
 - [ADR-0005 — Threading model](./adr/0005-threading-model.md)
 - [ADR-0006 — Shared client/server codebase](./adr/0006-shared-client-server-codebase.md)
 - [ADR-0007 — Serialization format](./adr/0007-serialization-format.md)
+- [ADR-0038 — Networking Protocol: message catalogue and reliability split](./adr/0038-networking-protocol-messages.md)
 
 ### Tooling & Build
 - [ADR-0008 — Build tooling](./adr/0008-build-tooling.md)
