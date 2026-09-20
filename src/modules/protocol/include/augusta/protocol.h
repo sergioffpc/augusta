@@ -67,7 +67,7 @@ enum class JoinRefusal : std::uint8_t {
 /// Client to server: the first message on a new connection.
 struct JoinRequest {
   /// The client's engine version (augusta::EngineVersion); at most kMaxEngineVersionLength bytes.
-  std::string engine_version;
+  std::string engine_version{};
 };
 
 /// Server to client: the join succeeded.
@@ -92,7 +92,7 @@ struct SequencedCommand {
 /// ones the client has not seen acknowledged (at most kMaxCommandsPerMessage,
 /// the newest), so one lost datagram does not drop input.
 struct Commands {
-  std::vector<SequencedCommand> commands;
+  std::vector<SequencedCommand> commands{};
 };
 
 /// One player's body inside an Authoritative State update.
@@ -108,7 +108,7 @@ struct AuthoritativeState {
   /// The highest command sequence of the recipient that the server has processed, 0 if none.
   std::uint32_t acknowledged_sequence = 0;
   /// Every player in the match, at most kMaxPlayers.
-  std::vector<PlayerState> players;
+  std::vector<PlayerState> players{};
 };
 
 /// Any message of the protocol.
