@@ -1,11 +1,14 @@
 #include <chrono>
+#include <cmath>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <variant>
 #include <vector>
 
 #ifdef _WIN32
@@ -39,6 +42,7 @@ using augusta::input::Command;
 using augusta::math::Vec3;
 using augusta::networking::ConnectionState;
 using augusta::networking::Endpoint;
+using augusta::physics::Stance;
 using augusta::physics::StaticMesh;
 using augusta::protocol::JoinRefusal;
 using augusta::server::Host;
@@ -206,7 +210,7 @@ TEST_F(JoinTest, AClientWithAnotherEngineVersionIsRefusedForTheVersion) {
 }
 
 TEST_F(JoinTest, TheNinthClientIsRefusedBecauseTheMatchIsFull) {
-  for (std::size_t i = 0; i < augusta::server::kMaxPlayers; ++i) {
+  for (std::size_t i = 0; i < augusta::protocol::kMaxPlayers; ++i) {
     AddClient();
   }
   ASSERT_TRUE(WaitForAnswers());
@@ -278,6 +282,244 @@ TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
                                .listen = Endpoint{.address = LoopbackAddress()},
                                .collision = {StaticMesh{}}}),
                std::runtime_error);
+}
+
+// A joined client and a host with flat ground, driven tick by tick.
+class MovementTest : public ::testing::Test {
+ protected:
+  static constexpr auto kNetworkDelay = std::chrono::milliseconds(8);
+  // The ticks SetUp runs, each with one command sent.
+  static constexpr int kSettleTicks = 30;
+
+  MovementTest()
+      : host_(HostConfig{.script_path = "scripts/round.lua",
+                         .listen = Endpoint{.address = LoopbackAddress()},
+                         .collision = {FloorAt(0.0F)}}),
+        session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}) {}
+
+  void SetUp() override {
+    session_.Connect();
+    const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+    while (!session_.GetSessionId().has_value() && std::chrono::steady_clock::now() < deadline) {
+      host_.PumpNetwork();
+      session_.PumpEvents();
+      session_.ExchangeMessages();
+      std::this_thread::sleep_for(kPollInterval);
+    }
+    ASSERT_TRUE(session_.GetSessionId().has_value());
+    // The first server tick puts the new player in the world; let it settle on the floor.
+    for (int i = 0; i < kSettleTicks; ++i) {
+      Step(Command{});
+    }
+  }
+
+  // The server takes in what has arrived and ticks; the client takes in the state it gets back.
+  void ServerTickAndDeliver() {
+    std::this_thread::sleep_for(kNetworkDelay);
+    host_.PumpNetwork();
+    host_.Tick(kFixedTick);
+    std::this_thread::sleep_for(kNetworkDelay);
+    session_.PumpEvents();
+    session_.ExchangeMessages();
+  }
+
+  // One tick of the whole match: the client predicts and sends command, then the server ticks.
+  void Step(const Command& command) {
+    session_.Tick(command, kFixedTick);
+    ServerTickAndDeliver();
+  }
+
+  [[nodiscard]] augusta::physics::BodyState Self() const {
+    const auto state = session_.GetAuthoritativeState();
+    EXPECT_TRUE(state.has_value());
+    if (state.has_value()) {
+      for (const auto& player : state->players) {
+        if (player.session == *session_.GetSessionId()) {
+          return player.body;
+        }
+      }
+    }
+    ADD_FAILURE() << "this client's player is not in the state";
+    return {};
+  }
+
+  static Command Walking(Stance stance = Stance::kStanding) {
+    Command command;
+    command.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+    command.movement.desired_stance = stance;
+    return command;
+  }
+
+  static float HorizontalSpeed(const augusta::physics::BodyState& body) {
+    return std::hypot(body.velocity.x, body.velocity.z);
+  }
+
+  Host host_;
+  Session session_;
+};
+
+TEST_F(MovementTest, AForwardCommandMovesTheAuthoritativePlayerAndTheStateReachesTheClient) {
+  const float start = Self().position.x;
+
+  for (int i = 0; i < 60; ++i) {
+    Step(Walking());
+  }
+
+  EXPECT_GT(Self().position.x, start + 2.0F);
+}
+
+TEST_F(MovementTest, TheServerAcknowledgesTheCommandsItHasProcessed) {
+  constexpr int kSteps = 20;
+  for (int i = 0; i < kSteps; ++i) {
+    Step(Walking());
+  }
+
+  const auto state = session_.GetAuthoritativeState();
+  ASSERT_TRUE(state.has_value());
+  EXPECT_GE(state->acknowledged_sequence, kSettleTicks + kSteps - 2U);
+  EXPECT_LE(state->acknowledged_sequence, kSettleTicks + kSteps);
+}
+
+TEST_F(MovementTest, StanceCommandsChangeTheAuthoritativeStanceAndSpeed) {
+  const auto walk_at = [&](Stance stance) {
+    for (int i = 0; i < 20; ++i) {
+      Step(Walking(stance));
+    }
+    EXPECT_EQ(Self().stance, stance);
+    return HorizontalSpeed(Self());
+  };
+
+  const float standing = walk_at(Stance::kStanding);
+  const float crouching = walk_at(Stance::kCrouching);
+  const float prone = walk_at(Stance::kProne);
+
+  EXPECT_GT(standing, crouching + 0.3F);
+  EXPECT_GT(crouching, prone + 0.3F);
+}
+
+TEST_F(MovementTest, ALostDatagramDoesNotLoseAMovementCommand) {
+  constexpr int kDeliveredSteps = 2;
+  constexpr int kLostCommands = 3;
+  for (int i = 0; i < kDeliveredSteps; ++i) {
+    Step(Walking());
+  }
+
+  std::uint32_t previous = session_.GetAuthoritativeState()->acknowledged_sequence;
+
+  // Commands the server never hears, then one that arrives together with them.
+  augusta::networking::SimulateNetworkConditions({.loss_percent = 100.0F});
+  for (int i = 0; i < kLostCommands; ++i) {
+    session_.Tick(Walking(), kFixedTick);
+    std::this_thread::sleep_for(kNetworkDelay);
+  }
+  augusta::networking::SimulateNetworkConditions({});
+  session_.Tick(Walking(), kFixedTick);
+  const std::uint32_t last_sent = kSettleTicks + kDeliveredSteps + kLostCommands + 1;
+
+  // The server consumes one command per tick, so every sequence passes through
+  // the acknowledgement in turn; a lost one would make it skip.
+  std::uint32_t acknowledged = 0;
+  for (int i = 0; i < 12; ++i) {
+    ServerTickAndDeliver();
+    acknowledged = session_.GetAuthoritativeState()->acknowledged_sequence;
+    EXPECT_LE(acknowledged, previous + 1) << "the server skipped a command";
+    previous = acknowledged;
+  }
+
+  EXPECT_EQ(acknowledged, last_sent);
+}
+
+// A client speaking the protocol by hand, to send what a real one would not.
+class RawClient {
+ public:
+  explicit RawClient(const Endpoint& server) { client_.Connect(server); }
+
+  ~RawClient() { client_.Disconnect(); }
+
+  // Runs host and client until the server has admitted this one.
+  bool Join(Host& host) {
+    const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+    bool requested = false;
+    while (std::chrono::steady_clock::now() < deadline) {
+      client_.PumpEvents();
+      host.PumpNetwork();
+      if (!requested && client_.GetState() == ConnectionState::kConnected) {
+        Send(augusta::protocol::JoinRequest{.engine_version = std::string(augusta::EngineVersion())});
+        requested = true;
+      }
+      for (const auto& payload : client_.ReceiveMessages()) {
+        const auto message = augusta::protocol::Decode(payload);
+        if (message.has_value() && std::holds_alternative<augusta::protocol::JoinAccepted>(*message)) {
+          return true;
+        }
+      }
+      std::this_thread::sleep_for(kPollInterval);
+    }
+    return false;
+  }
+
+  void Send(const augusta::protocol::Message& message) {
+    client_.Send(augusta::protocol::Encode(message), augusta::networking::Reliability::kReliable);
+  }
+
+  // The Authoritative State updates received since the last call.
+  std::vector<augusta::protocol::AuthoritativeState> Receive() {
+    client_.PumpEvents();
+    std::vector<augusta::protocol::AuthoritativeState> states;
+    for (const auto& payload : client_.ReceiveMessages()) {
+      const auto message = augusta::protocol::Decode(payload);
+      if (message.has_value()) {
+        if (const auto* state = std::get_if<augusta::protocol::AuthoritativeState>(&*message)) {
+          states.push_back(*state);
+        }
+      }
+    }
+    return states;
+  }
+
+ private:
+  augusta::networking::Client client_;
+};
+
+TEST_F(MovementTest, CommandsThatAreOutOfOrderNonFiniteOrOutOfRangeAreDroppedWithoutAffectingTheWorld) {
+  RawClient raw(Endpoint{.address = LoopbackAddress()});
+  ASSERT_TRUE(raw.Join(host_));
+
+  const auto command = [](std::uint32_t sequence, float yaw = 0.0F, float pitch = 0.0F) {
+    augusta::protocol::SequencedCommand sequenced{.sequence = sequence};
+    sequenced.command.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+    sequenced.command.yaw = yaw;
+    sequenced.command.pitch = pitch;
+    return sequenced;
+  };
+  constexpr float kNaN = std::numeric_limits<float>::quiet_NaN();
+  constexpr float kImpossiblePitch = 5.0F;
+  // 1 and 4 are good; 2 and 3 are numbers no client produces; 6 arrives before 5.
+  raw.Send(augusta::protocol::Commands{
+      .commands = {command(1), command(2, kNaN), command(3, 0.0F, kImpossiblePitch), command(4)}});
+  raw.Send(augusta::protocol::Commands{.commands = {command(6)}});
+  raw.Send(augusta::protocol::Commands{.commands = {command(5)}});
+
+  std::vector<std::uint32_t> acknowledged;
+  for (int i = 0; i < 12; ++i) {
+    std::this_thread::sleep_for(kNetworkDelay);
+    host_.PumpNetwork();
+    host_.Tick(kFixedTick);
+    std::this_thread::sleep_for(kNetworkDelay);
+    for (const auto& state : raw.Receive()) {
+      acknowledged.push_back(state.acknowledged_sequence);
+      for (const auto& player : state.players) {
+        EXPECT_TRUE(std::isfinite(player.body.position.x) && std::isfinite(player.body.position.y));
+      }
+    }
+  }
+
+  ASSERT_FALSE(acknowledged.empty());
+  EXPECT_EQ(acknowledged.back(), 6U);
+  for (const std::uint32_t ack : acknowledged) {
+    EXPECT_TRUE(ack == 0 || ack == 1 || ack == 4 || ack == 6)
+        << "processed a command that should have been dropped: " << ack;
+  }
 }
 
 }  // namespace

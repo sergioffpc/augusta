@@ -17,15 +17,10 @@
 // validated commands in from augusta::networking::Server and
 // SimulationWorld's Authoritative State back out to it each tick.
 //
-// What ServerRuntime does NOT yet do: decode a received client Payload
-// into an input::Command, or encode SimulationWorld's returned
-// simulation::State back into a Payload to Broadcast - the Networking
-// Protocol (ADR-0007) isn't designed yet, the same gap src/client/
-// runtime.h documents for its own side. Nor does it run Input
-// Validation (US-15, ARCHITECTURE.md's anti-cheat baseline) - that's
-// not yet a module of its own. Nor does it hand Authoritative State to
-// augusta::replication - scaffolded (src/modules/replication) but not
-// implemented yet.
+// Decoding what clients send, admitting them, screening their commands,
+// and encoding and sending each tick's Authoritative State (via
+// augusta::replication) is server::Host's work (host.h); this class only
+// runs Host on the two threads.
 //
 // Unlike the client, there's no window to signal shutdown (headless) -
 // Stop() is this runtime's own explicit lifecycle control instead, e.g.

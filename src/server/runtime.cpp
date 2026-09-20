@@ -69,11 +69,7 @@ void ServerRuntime::Run() {
   while (impl_->running.load(std::memory_order_relaxed)) {
     const auto tick_start = std::chrono::steady_clock::now();
 
-    simulation::State state = impl_->host.Tick(tick_duration.count());
-    // TODO(sergioffpc): hand state to augusta::replication (scaffolded,
-    // not implemented) to encode and network.Broadcast - see this
-    // module's header comment.
-    static_cast<void>(state);
+    impl_->host.Tick(tick_duration.count());
 
     std::this_thread::sleep_until(tick_start +
                                   std::chrono::duration_cast<std::chrono::steady_clock::duration>(tick_duration));

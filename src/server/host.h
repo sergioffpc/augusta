@@ -16,7 +16,7 @@
 // both by hand, so a match can be driven tick by tick with no sleeping.
 //
 // The Network I/O thread's PumpNetwork and the Simulation thread's Tick may
-// run concurrently: what they share (the latest commands) is guarded inside.
+// run concurrently: what they share (the joined players and their commands) is guarded inside.
 namespace augusta::server {
 
 /// Everything a Host needs to construct SimulationWorld and start listening.
@@ -50,7 +50,8 @@ class Host {
   /// Does one round of the Network I/O thread's work: connection events and received messages.
   void PumpNetwork();
 
-  /// Runs one fixed tick of SimulationWorld on the latest commands and returns its state.
+  /// Runs one fixed tick of SimulationWorld on one command per player, sends each client its update, and returns the
+  /// state.
   simulation::State Tick(float delta_time);
 
  private:

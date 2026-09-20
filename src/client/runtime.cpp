@@ -182,9 +182,6 @@ struct ClientRuntime::Impl {
         latest_prediction_state = state;
       }
 
-      // TODO(sergioffpc): serialize command and send it through session -
-      // needs the Networking Protocol (ADR-0007), not designed yet.
-
       std::this_thread::sleep_until(tick_start +
                                     std::chrono::duration_cast<std::chrono::steady_clock::duration>(tick_duration));
     }

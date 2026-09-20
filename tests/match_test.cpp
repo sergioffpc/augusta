@@ -12,7 +12,7 @@ namespace {
 
 using augusta::networking::PeerId;
 using augusta::protocol::JoinRefusal;
-using augusta::server::kMaxPlayers;
+using augusta::protocol::kMaxPlayers;
 using augusta::server::Match;
 
 constexpr const char* kVersion = "1.2.3";

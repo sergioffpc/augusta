@@ -1,6 +1,6 @@
 #include "augusta/protocol.h"
 
-#include <algorithm>
+#include <bit>
 #include <cassert>
 #include <limits>
 #include <optional>
@@ -21,25 +21,56 @@ void WriteU32(Bytes& out, std::uint32_t value) {
   }
 }
 
-// Walks a payload front to back; every read reports whether the bytes were
-// there instead of running past the end.
+void WriteF32(Bytes& out, float value) { WriteU32(out, std::bit_cast<std::uint32_t>(value)); }
+
+void WriteBool(Bytes& out, bool value) { WriteU8(out, value ? 1 : 0); }
+
+void WriteVec3(Bytes& out, const math::Vec3& value) {
+  WriteF32(out, value.x);
+  WriteF32(out, value.y);
+  WriteF32(out, value.z);
+}
+
+void WriteCommand(Bytes& out, const input::Command& command) {
+  WriteVec3(out, command.movement.direction);
+  WriteBool(out, command.movement.sprint);
+  WriteU8(out, static_cast<std::uint8_t>(command.movement.desired_stance));
+  WriteF32(out, command.yaw);
+  WriteF32(out, command.pitch);
+  WriteBool(out, command.ads);
+  WriteBool(out, command.fire);
+  WriteBool(out, command.reload);
+}
+
+void WriteBodyState(Bytes& out, const physics::BodyState& body) {
+  WriteVec3(out, body.position);
+  WriteVec3(out, body.velocity);
+  WriteU8(out, static_cast<std::uint8_t>(body.stance));
+  WriteF32(out, body.stamina);
+}
+
+// Walks a payload front to back. The first problem it meets is remembered and
+// every read after it returns a zero value, so a decoder can read all of a
+// message's fields and ask once at the end whether they were all there.
 class Reader {
  public:
   explicit Reader(std::span<const std::byte> bytes) : bytes_(bytes) {}
 
-  std::optional<std::uint8_t> ReadU8() {
+  std::uint8_t ReadU8() {
     if (bytes_.empty()) {
-      return std::nullopt;
+      Fail(DecodeError::kTruncated);
+      return 0;
     }
     const auto value = static_cast<std::uint8_t>(bytes_.front());
     bytes_ = bytes_.subspan(1);
     return value;
   }
 
-  std::optional<std::uint32_t> ReadU32() {
+  std::uint32_t ReadU32() {
     constexpr std::size_t kSize = sizeof(std::uint32_t);
     if (bytes_.size() < kSize) {
-      return std::nullopt;
+      Fail(DecodeError::kTruncated);
+      return 0;
     }
     std::uint32_t value = 0;
     for (std::size_t i = 0; i < kSize; ++i) {
@@ -49,70 +80,146 @@ class Reader {
     return value;
   }
 
-  // The length is checked against what is left before anything is allocated.
-  std::optional<std::string> ReadBytes(std::size_t length) {
+  float ReadF32() { return std::bit_cast<float>(ReadU32()); }
+
+  bool ReadBool() {
+    const std::uint8_t value = ReadU8();
+    if (value > 1) {
+      Fail(DecodeError::kInvalidEnum);
+    }
+    return value == 1;
+  }
+
+  // An enumerator between first and last, which must be consecutive.
+  template <typename Enum>
+  Enum ReadEnum(Enum first, Enum last) {
+    const std::uint8_t value = ReadU8();
+    if (value < static_cast<std::uint8_t>(first) || value > static_cast<std::uint8_t>(last)) {
+      Fail(DecodeError::kInvalidEnum);
+      return first;
+    }
+    return static_cast<Enum>(value);
+  }
+
+  math::Vec3 ReadVec3() {
+    const float x = ReadF32();
+    const float y = ReadF32();
+    const float z = ReadF32();
+    return {x, y, z};
+  }
+
+  // The number of elements of a list, at most max_count. It is checked before
+  // the caller allocates for them.
+  std::size_t ReadCount(std::size_t max_count) {
+    const std::size_t count = ReadU8();
+    if (count > max_count) {
+      Fail(DecodeError::kFieldTooLong);
+      return 0;
+    }
+    return count;
+  }
+
+  std::string ReadString(std::size_t max_length) {
+    const std::size_t length = ReadCount(max_length);
     if (bytes_.size() < length) {
-      return std::nullopt;
+      Fail(DecodeError::kTruncated);
+      return {};
     }
     std::string value(length, '\0');
-    std::transform(bytes_.begin(), bytes_.begin() + static_cast<std::ptrdiff_t>(length), value.begin(),
-                   [](std::byte byte) { return static_cast<char>(byte); });
+    for (std::size_t i = 0; i < length; ++i) {
+      value[i] = static_cast<char>(bytes_[i]);
+    }
     bytes_ = bytes_.subspan(length);
     return value;
   }
 
+  [[nodiscard]] std::optional<DecodeError> Error() const { return error_; }
   [[nodiscard]] bool AtEnd() const { return bytes_.empty(); }
 
  private:
+  void Fail(DecodeError error) {
+    if (!error_.has_value()) {
+      error_ = error;
+    }
+  }
+
   std::span<const std::byte> bytes_;
+  std::optional<DecodeError> error_;
 };
 
-std::expected<Message, DecodeError> DecodeJoinRequest(Reader& reader) {
-  const std::optional<std::uint8_t> length = reader.ReadU8();
-  if (!length.has_value()) {
-    return std::unexpected(DecodeError::kTruncated);
-  }
-  if (*length > kMaxEngineVersionLength) {
-    return std::unexpected(DecodeError::kFieldTooLong);
-  }
-  std::optional<std::string> version = reader.ReadBytes(*length);
-  if (!version.has_value()) {
-    return std::unexpected(DecodeError::kTruncated);
-  }
-  return JoinRequest{.engine_version = std::move(*version)};
+input::Command ReadCommand(Reader& reader) {
+  input::Command command;
+  command.movement.direction = reader.ReadVec3();
+  command.movement.sprint = reader.ReadBool();
+  command.movement.desired_stance = reader.ReadEnum(physics::Stance::kStanding, physics::Stance::kProne);
+  command.yaw = reader.ReadF32();
+  command.pitch = reader.ReadF32();
+  command.ads = reader.ReadBool();
+  command.fire = reader.ReadBool();
+  command.reload = reader.ReadBool();
+  return command;
 }
 
-std::expected<Message, DecodeError> DecodeJoinAccepted(Reader& reader) {
-  const std::optional<std::uint32_t> session = reader.ReadU32();
-  if (!session.has_value()) {
-    return std::unexpected(DecodeError::kTruncated);
-  }
-  return JoinAccepted{.session = static_cast<SessionId>(*session)};
+physics::BodyState ReadBodyState(Reader& reader) {
+  physics::BodyState body;
+  body.position = reader.ReadVec3();
+  body.velocity = reader.ReadVec3();
+  body.stance = reader.ReadEnum(physics::Stance::kStanding, physics::Stance::kProne);
+  body.stamina = reader.ReadF32();
+  return body;
 }
 
-std::expected<Message, DecodeError> DecodeJoinRefused(Reader& reader) {
-  const std::optional<std::uint8_t> reason = reader.ReadU8();
-  if (!reason.has_value()) {
-    return std::unexpected(DecodeError::kTruncated);
-  }
-  switch (static_cast<JoinRefusal>(*reason)) {
-    case JoinRefusal::kVersionMismatch:
-    case JoinRefusal::kMatchFull:
-      return JoinRefused{.reason = static_cast<JoinRefusal>(*reason)};
-  }
-  return std::unexpected(DecodeError::kInvalidEnum);
+JoinRequest ReadJoinRequest(Reader& reader) {
+  return JoinRequest{.engine_version = reader.ReadString(kMaxEngineVersionLength)};
 }
 
-std::expected<Message, DecodeError> DecodeBody(MessageType type, Reader& reader) {
+JoinAccepted ReadJoinAccepted(Reader& reader) {
+  return JoinAccepted{.session = static_cast<SessionId>(reader.ReadU32())};
+}
+
+JoinRefused ReadJoinRefused(Reader& reader) {
+  return JoinRefused{.reason = reader.ReadEnum(JoinRefusal::kVersionMismatch, JoinRefusal::kMatchFull)};
+}
+
+Commands ReadCommands(Reader& reader) {
+  Commands message;
+  const std::size_t count = reader.ReadCount(kMaxCommandsPerMessage);
+  message.commands.reserve(count);
+  for (std::size_t i = 0; i < count; ++i) {
+    const std::uint32_t sequence = reader.ReadU32();
+    message.commands.push_back(SequencedCommand{.sequence = sequence, .command = ReadCommand(reader)});
+  }
+  return message;
+}
+
+AuthoritativeState ReadAuthoritativeState(Reader& reader) {
+  AuthoritativeState state;
+  state.tick = reader.ReadU32();
+  state.acknowledged_sequence = reader.ReadU32();
+  const std::size_t count = reader.ReadCount(kMaxPlayers);
+  state.players.reserve(count);
+  for (std::size_t i = 0; i < count; ++i) {
+    const auto session = static_cast<SessionId>(reader.ReadU32());
+    state.players.push_back(PlayerState{.session = session, .body = ReadBodyState(reader)});
+  }
+  return state;
+}
+
+// nullopt when type is not a message of this protocol.
+std::optional<Message> ReadBody(MessageType type, Reader& reader) {
   switch (type) {
     case MessageType::kJoinRequest:
-      return DecodeJoinRequest(reader);
+      return ReadJoinRequest(reader);
     case MessageType::kJoinAccepted:
-      return DecodeJoinAccepted(reader);
+      return ReadJoinAccepted(reader);
     case MessageType::kJoinRefused:
-      return DecodeJoinRefused(reader);
+      return ReadJoinRefused(reader);
+    case MessageType::kCommands:
+      return ReadCommands(reader);
+    case MessageType::kAuthoritativeState:
+      return ReadAuthoritativeState(reader);
   }
-  return std::unexpected(DecodeError::kUnknownType);
+  return std::nullopt;
 }
 
 // One overload per message: the type tag, then the fields.
@@ -124,7 +231,7 @@ struct Encoder {
     WriteU8(out, static_cast<std::uint8_t>(MessageType::kJoinRequest));
     WriteU8(out, static_cast<std::uint8_t>(message.engine_version.size()));
     for (const char character : message.engine_version) {
-      out.push_back(static_cast<std::byte>(character));
+      WriteU8(out, static_cast<std::uint8_t>(character));
     }
   }
 
@@ -137,6 +244,28 @@ struct Encoder {
     WriteU8(out, static_cast<std::uint8_t>(MessageType::kJoinRefused));
     WriteU8(out, static_cast<std::uint8_t>(message.reason));
   }
+
+  void operator()(const Commands& message) const {
+    assert(message.commands.size() <= kMaxCommandsPerMessage);
+    WriteU8(out, static_cast<std::uint8_t>(MessageType::kCommands));
+    WriteU8(out, static_cast<std::uint8_t>(message.commands.size()));
+    for (const SequencedCommand& sequenced : message.commands) {
+      WriteU32(out, sequenced.sequence);
+      WriteCommand(out, sequenced.command);
+    }
+  }
+
+  void operator()(const AuthoritativeState& message) const {
+    assert(message.players.size() <= kMaxPlayers);
+    WriteU8(out, static_cast<std::uint8_t>(MessageType::kAuthoritativeState));
+    WriteU32(out, message.tick);
+    WriteU32(out, message.acknowledged_sequence);
+    WriteU8(out, static_cast<std::uint8_t>(message.players.size()));
+    for (const PlayerState& player : message.players) {
+      WriteU32(out, static_cast<std::uint32_t>(player.session));
+      WriteBodyState(out, player.body);
+    }
+  }
 };
 
 }  // namespace
@@ -148,16 +277,21 @@ Bytes Encode(const Message& message) {
 }
 
 std::expected<Message, DecodeError> Decode(std::span<const std::byte> payload) {
-  Reader reader(payload);
-  const std::optional<std::uint8_t> type = reader.ReadU8();
-  if (!type.has_value()) {
+  if (payload.empty()) {
     return std::unexpected(DecodeError::kEmpty);
   }
-  std::expected<Message, DecodeError> message = DecodeBody(static_cast<MessageType>(*type), reader);
-  if (message.has_value() && !reader.AtEnd()) {
+  Reader reader(payload.subspan(1));
+  std::optional<Message> message = ReadBody(static_cast<MessageType>(payload.front()), reader);
+  if (!message.has_value()) {
+    return std::unexpected(DecodeError::kUnknownType);
+  }
+  if (reader.Error().has_value()) {
+    return std::unexpected(*reader.Error());
+  }
+  if (!reader.AtEnd()) {
     return std::unexpected(DecodeError::kTrailingBytes);
   }
-  return message;
+  return std::move(*message);
 }
 
 std::string_view DescribeDecodeError(DecodeError error) {
@@ -173,7 +307,7 @@ std::string_view DescribeDecodeError(DecodeError error) {
     case DecodeError::kInvalidEnum:
       return "field holds a value its enumeration lacks";
     case DecodeError::kFieldTooLong:
-      return "string field longer than allowed";
+      return "string or list field longer than allowed";
   }
   return "unknown decode error";
 }

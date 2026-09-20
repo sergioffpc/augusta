@@ -17,12 +17,28 @@ gtest_discover_tests(augusta_config_tests)
 
 add_executable(augusta_protocol_tests protocol_test.cpp)
 target_link_libraries(augusta_protocol_tests PRIVATE augusta_protocol GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_protocol_tests)
+# Links PhysX through augusta_physics, so the same first-launch cost applies as below.
+gtest_discover_tests(augusta_protocol_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_match_tests match_test.cpp)
 target_link_libraries(augusta_match_tests PRIVATE augustad_match GTest::gtest GTest::gtest_main)
 # Links networking (for PeerId), so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_match_tests DISCOVERY_TIMEOUT 30)
+
+add_executable(augusta_command_queue_tests command_queue_test.cpp)
+target_link_libraries(augusta_command_queue_tests PRIVATE augustad_commands GTest::gtest GTest::gtest_main)
+# Links PhysX through augusta_input, so the same first-launch cost applies as below.
+gtest_discover_tests(augusta_command_queue_tests DISCOVERY_TIMEOUT 30)
+
+add_executable(augusta_replication_tests replication_test.cpp)
+target_link_libraries(augusta_replication_tests PRIVATE augusta_replication GTest::gtest GTest::gtest_main)
+# Links PhysX through augusta_simulation, so the same first-launch cost applies as below.
+gtest_discover_tests(augusta_replication_tests DISCOVERY_TIMEOUT 30)
+
+add_executable(augusta_simulation_tests simulation_test.cpp)
+target_link_libraries(augusta_simulation_tests PRIVATE augusta_simulation GTest::gtest GTest::gtest_main)
+# Links PhysX, so the same first-launch cost applies as below.
+gtest_discover_tests(augusta_simulation_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_networking_tests networking_test.cpp)
 target_link_libraries(augusta_networking_tests PRIVATE augusta_networking GTest::gtest GTest::gtest_main)
