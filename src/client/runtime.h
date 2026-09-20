@@ -2,6 +2,7 @@
 #define AUGUSTA_RUNTIME_H_
 
 #include <memory>
+#include <vector>
 
 #include "augusta/audio.h"
 #include "augusta/input.h"
@@ -51,6 +52,9 @@ struct Config {
   physics::StaminaConfig stamina;
   // The dedicated server to connect to (US-01).
   networking::Endpoint server;
+  // The map's collision, built by augusta::map from the client pack by the
+  // caller, like the scene: where content comes from is the executable's business.
+  std::vector<physics::StaticMesh> collision;
   // Simulation thread's fixed tick rate, in Hz. Defaults to NFR-01's
   // server tick rate (>= 60 Hz, REQUIREMENTS.md) - PredictionWorld
   // ticking at a different rate than the server it predicts against

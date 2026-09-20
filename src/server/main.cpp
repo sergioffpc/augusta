@@ -1,10 +1,15 @@
 #include <csignal>
+#include <expected>
 #include <filesystem>
+#include <optional>
 #include <print>
+#include <utility>
+#include <vector>
 
 #include "augusta/assets.h"
 #include "augusta/config.h"
 #include "augusta/logging.h"
+#include "augusta/map.h"
 #include "augusta/networking.h"
 #include "augusta/version.h"
 #include "runtime.h"
@@ -22,20 +27,38 @@ extern "C" void HandleShutdownSignal(int /*signal*/) {
   }
 }
 
+// Settings come from a config file - augustad.yaml next to the executable
+// unless --config names another (ADR-0034) - not from the command line.
+std::expected<augusta::config::ServerConfig, augusta::config::ConfigError> LoadConfig(int argc, char** argv) {
+  const auto config_file =
+      augusta::config::ResolveConfigFile(argc, argv, "augustad", augusta::config::kServerConfigFileName);
+  if (!config_file) {
+    return std::unexpected(config_file.error());
+  }
+  return augusta::config::LoadServerConfig(*config_file);
+}
+
+// Only the map's collision is consumed so far; spawn points and hitboxes wait
+// for the gameplay code that will use them. Built before any socket or thread
+// starts, so a pack without a usable map exits like a bad pack does. Reports
+// what is wrong and returns nullopt.
+std::optional<std::vector<augusta::physics::StaticMesh>> LoadMap(const augusta::assets::Pack& pack,
+                                                                 const std::filesystem::path& pack_path) {
+  auto collision = augusta::map::LoadCollision(pack);
+  if (!collision) {
+    std::println(stderr, "server pack {}: {}", pack_path.string(), augusta::map::DescribeMapError(collision.error()));
+    return std::nullopt;
+  }
+  LI("subsystem=server event=map_loaded colliders={}", collision->size());
+  return *std::move(collision);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
   augusta::logging::Init();
 
-  // Settings come from a config file - augustad.yaml next to the executable
-  // unless --config names another (ADR-0034) - not from the command line.
-  const auto config_file =
-      augusta::config::ResolveConfigFile(argc, argv, "augustad", augusta::config::kServerConfigFileName);
-  if (!config_file) {
-    std::println(stderr, "{}", augusta::config::DescribeConfigError(config_file.error()));
-    return 1;
-  }
-  const auto file_config = augusta::config::LoadServerConfig(*config_file);
+  const auto file_config = LoadConfig(argc, argv);
   if (!file_config) {
     std::println(stderr, "{}", augusta::config::DescribeConfigError(file_config.error()));
     return 1;
@@ -60,10 +83,11 @@ int main(int argc, char** argv) {
     return 1;
   }
   LI("subsystem=server event=pack_verified path={}", pack_path.string());
-  // pack itself is dropped here - resolving specific assets from it
-  // (ResolveCollision/ResolveSpawnPoint/...) is out of scope for this
-  // startup gate (issue #60); that's future work once there's ECS
-  // component shape/gameplay code ready to consume what it resolves.
+
+  auto collision = LoadMap(*pack, pack_path);
+  if (!collision) {
+    return 1;
+  }
 
   // augusta::networking::Init() must run once, process-wide, before any
   // Client/Server is constructed - see networking.h.
@@ -74,6 +98,7 @@ int main(int argc, char** argv) {
   // pack layout the asset pipeline (ROADMAP.md M2) hasn't built yet.
   config.script_path = "scripts/round.lua";
   config.listen.address = file_config->listen_address;
+  config.collision = *std::move(collision);
 
   augusta::runtime::ServerRuntime runtime(config);
   g_runtime = &runtime;

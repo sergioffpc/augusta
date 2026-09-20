@@ -1,13 +1,16 @@
 #include <expected>
 #include <filesystem>
 #include <format>
+#include <optional>
 #include <print>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "augusta/assets.h"
 #include "augusta/config.h"
 #include "augusta/logging.h"
+#include "augusta/map.h"
 #include "augusta/networking.h"
 #include "augusta/version.h"
 #include "runtime.h"
@@ -51,20 +54,37 @@ std::string DescribePackError(const PackError& error, const std::filesystem::pat
   return "unknown pack error";
 }
 
+// Settings come from a config file - augustac.yaml next to the executable
+// unless --config names another (ADR-0034) - not from the command line.
+std::expected<augusta::config::ClientConfig, augusta::config::ConfigError> LoadConfig(int argc, char** argv) {
+  const auto config_file =
+      augusta::config::ResolveConfigFile(argc, argv, "augustac", augusta::config::kClientConfigFileName);
+  if (!config_file) {
+    return std::unexpected(config_file.error());
+  }
+  return augusta::config::LoadClientConfig(*config_file);
+}
+
+// The same collision the server builds from its own pack, so the client's
+// prediction and the server's simulation agree on where the walls are. Reports
+// what is wrong and returns nullopt.
+std::optional<std::vector<augusta::physics::StaticMesh>> LoadMap(const augusta::assets::Pack& pack,
+                                                                 const std::filesystem::path& pack_path) {
+  auto collision = augusta::map::LoadCollision(pack);
+  if (!collision) {
+    std::println(stderr, "client pack {}: {}", pack_path.string(), augusta::map::DescribeMapError(collision.error()));
+    return std::nullopt;
+  }
+  LI("subsystem=client event=map_loaded colliders={}", collision->size());
+  return *std::move(collision);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
   augusta::logging::Init();
 
-  // Settings come from a config file - augustac.yaml next to the executable
-  // unless --config names another (ADR-0034) - not from the command line.
-  const auto config_file =
-      augusta::config::ResolveConfigFile(argc, argv, "augustac", augusta::config::kClientConfigFileName);
-  if (!config_file) {
-    std::println(stderr, "{}", augusta::config::DescribeConfigError(config_file.error()));
-    return 1;
-  }
-  const auto file_config = augusta::config::LoadClientConfig(*config_file);
+  const auto file_config = LoadConfig(argc, argv);
   if (!file_config) {
     std::println(stderr, "{}", augusta::config::DescribeConfigError(file_config.error()));
     return 1;
@@ -95,6 +115,11 @@ int main(int argc, char** argv) {
   }
   LI("subsystem=client event=scene_loaded meshes={}", scene->meshes.size());
 
+  auto collision = LoadMap(*pack, pack_path);
+  if (!collision) {
+    return 1;
+  }
+
   // augusta::networking::Init() must run once, process-wide, before any
   // Client/Server is constructed - see networking.h.
   augusta::networking::Init();
@@ -103,6 +128,7 @@ int main(int argc, char** argv) {
   config.renderer.title = "augusta";
   // Direct IP:port only, no server discovery (ARCHITECTURE.md §3).
   config.server.address = file_config->server_address;
+  config.collision = *std::move(collision);
 
   augusta::runtime::ClientRuntime runtime(config, *scene);
   runtime.Run();

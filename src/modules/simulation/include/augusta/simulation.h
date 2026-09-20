@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_SIMULATION_H_
 #define AUGUSTA_SIMULATION_H_
 
+#include <expected>
 #include <memory>
 #include <string>
 #include <vector>
@@ -113,6 +114,9 @@ class World {
   // scripting::Engine's constructor throws if script_path fails to load.
   World(const physics::StaminaConfig& stamina_config, const std::string& script_path);
   ~World();
+
+  /// Adds immovable level geometry to this world's physics, the same way PredictionWorld does.
+  std::expected<void, physics::StaticMeshError> AddStaticMesh(const physics::StaticMesh& mesh);
 
   World(const World&) = delete;
   World& operator=(const World&) = delete;

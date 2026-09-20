@@ -15,32 +15,6 @@ namespace {
 // How far above a spawn point's origin (its feet) the camera sits.
 constexpr float kEyeHeight = 1.7F;
 
-// What is wrong with an asset that failed to resolve, as a phrase that follows
-// the asset's name; expected_type is what it should have been ("scene", "mesh").
-std::string DescribeResolveError(assets::ResolveError error, std::string_view expected_type) {
-  switch (error) {
-    case assets::ResolveError::kNotFound:
-      return "not found";
-    case assets::ResolveError::kTypeMismatch:
-      return std::format("is not a {}", expected_type);
-    case assets::ResolveError::kCorruptBlob:
-      return "is corrupt";
-  }
-  return "unknown error";
-}
-
-// World transform of every node. SceneData lists parents before children
-// (ADR-0032), so one forward pass sees each parent's transform already done.
-std::vector<math::Mat4> ComputeWorldTransforms(const assets::SceneData& scene) {
-  std::vector<math::Mat4> world;
-  world.reserve(scene.nodes.size());
-  for (const assets::SceneNode& node : scene.nodes) {
-    const math::Mat4 local = math::ToMat4(node.translation, node.rotation, node.scale);
-    world.push_back(node.parent_index == assets::kSceneNodeNoParent ? local : world[node.parent_index] * local);
-  }
-  return world;
-}
-
 renderer::SceneMesh ToWorldSpace(const assets::MeshData& mesh, const math::Mat4& world) {
   renderer::SceneMesh result{.indices = mesh.indices};
   result.positions.reserve(mesh.points.size());
@@ -80,10 +54,10 @@ renderer::Camera CameraAtSpawnPoint(const math::Mat4& spawn_world) {
 std::string DescribeSceneError(const SceneError& error) {
   switch (error.code) {
     case SceneErrorCode::kSceneUnresolved:
-      return std::format("scene {} {}", error.subject, DescribeResolveError(error.resolve_error, "scene"));
+      return std::format("scene {} {}", error.subject, assets::DescribeResolveError(error.resolve_error, "scene"));
     case SceneErrorCode::kMeshUnresolved:
       return std::format("mesh {} of node {} {}", error.subject, error.node,
-                         DescribeResolveError(error.resolve_error, "mesh"));
+                         assets::DescribeResolveError(error.resolve_error, "mesh"));
     case SceneErrorCode::kMalformedBaseColor:
       return std::format("node {} has a malformed {} \"{}\"", error.node, kBaseColorProperty, error.subject);
   }
@@ -92,7 +66,7 @@ std::string DescribeSceneError(const SceneError& error) {
 
 std::expected<renderer::Scene, SceneError> BuildRenderScene(const assets::SceneData& scene,
                                                             const MeshResolver& resolve_mesh) {
-  const std::vector<math::Mat4> world = ComputeWorldTransforms(scene);
+  const std::vector<math::Mat4> world = assets::ComputeWorldTransforms(scene);
 
   renderer::Scene result;
   bool has_spawn_point = false;
