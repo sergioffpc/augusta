@@ -2,7 +2,10 @@
 #define AUGUSTA_PHYSICS_H_
 
 #include <cstdint>
+#include <expected>
 #include <memory>
+#include <string_view>
+#include <vector>
 
 #include "augusta/math.h"
 
@@ -90,12 +93,36 @@ struct StaminaConfig {
   float forced_walk_below = 0.0F;
 };
 
+/// A triangle mesh of immovable level geometry, already in world space.
+struct StaticMesh {
+  std::vector<math::Vec3> points;
+  /// Three indices into points per triangle.
+  std::vector<std::uint32_t> indices;
+};
+
+/// Why a StaticMesh could not be added to a World.
+enum class StaticMeshError {
+  /// No points or no triangles.
+  kEmpty,
+  /// The indices are not whole triangles, or one points outside points.
+  kInvalidIndex,
+  /// PhysX could not build a collision mesh from it.
+  kCookingFailed,
+};
+
+/// Whether mesh is a whole, in-range triangle list World::AddStaticMesh can take.
+std::expected<void, StaticMeshError> ValidateStaticMesh(const StaticMesh& mesh);
+
+/// A phrase for error, for a startup failure to report.
+std::string_view DescribeStaticMeshError(StaticMeshError error);
+
 // The result of one World::Raycast query.
 struct RaycastHit {
   // True if the ray intersected any body within max_distance. If false,
   // every other field here is unspecified.
   bool has_hit = false;
-  // Which body was hit. Only meaningful if has_hit is true.
+  // Which body was hit. Only meaningful if has_hit is true and the hit was a
+  // body: it is left at its default when the ray hit static level geometry.
   BodyHandle body{};
   // World-space point where the ray intersected body. Only meaningful
   // if has_hit is true.
@@ -142,6 +169,10 @@ class World {
   // with it.
   BodyHandle CreateBody(const math::Vec3& initial_position);
 
+  /// Adds mesh as immovable geometry that bodies collide with and stand on.
+  /// Meant to be called while loading a level, before bodies are stepped.
+  std::expected<void, StaticMeshError> AddStaticMesh(const StaticMesh& mesh);
+
   // Removes a body from this World and invalidates its handle. Calling
   // any other method with a handle after it has been destroyed is
   // undefined behavior.
@@ -174,11 +205,8 @@ class World {
   BodyState Reconcile(BodyHandle handle, const BodyState& authoritative);
 
   // Casts a ray from origin in direction (need not be pre-normalized) up
-  // to max_distance, against every body currently in this World, and
-  // returns the closest intersection. Tests only bodies created via
-  // CreateBody - there is no static world geometry (walls, terrain) in
-  // this World to hit yet; that depends on Level Data, not yet designed
-  // (ARCHITECTURE.md's Shared Core list). Used by augusta::ballistics
+  // to max_distance, against every body and static mesh currently in this
+  // World, and returns the closest intersection. Used by augusta::ballistics
   // for player hit detection (US-11): PhysX's cross-platform
   // non-determinism (see the header comment above) isn't a correctness
   // concern there, since ballistics runs exclusively server-side - there
