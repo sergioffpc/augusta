@@ -56,19 +56,19 @@ class LiveHandlers {
  public:
   std::int64_t Add(StatusHandler handler) {
     const std::lock_guard<std::mutex> lock(mutex_);
-    const std::int64_t id = next_id_++;
-    handlers_.emplace(id, std::move(handler));
-    return id;
+    const std::int64_t handler_id = next_id_++;
+    handlers_.emplace(handler_id, std::move(handler));
+    return handler_id;
   }
 
-  void Remove(std::int64_t id) {
+  void Remove(std::int64_t handler_id) {
     const std::lock_guard<std::mutex> lock(mutex_);
-    handlers_.erase(id);
+    handlers_.erase(handler_id);
   }
 
-  void Dispatch(std::int64_t id, SteamNetConnectionStatusChangedCallback_t* info) {
+  void Dispatch(std::int64_t handler_id, SteamNetConnectionStatusChangedCallback_t* info) {
     const std::lock_guard<std::mutex> lock(mutex_);
-    if (const auto found = handlers_.find(id); found != handlers_.end()) {
+    if (const auto found = handlers_.find(handler_id); found != handlers_.end()) {
       found->second(info);
     }
   }
@@ -96,7 +96,7 @@ class LiveRegistration {
   LiveRegistration& operator=(const LiveRegistration&) = delete;
 
   // What to set as the connection's user data so its events reach the handler.
-  [[nodiscard]] std::int64_t id() const { return id_; }
+  [[nodiscard]] std::int64_t Id() const { return id_; }
 
  private:
   std::int64_t id_;
@@ -195,7 +195,7 @@ void Client::Connect(const Endpoint& server) {
   std::array<SteamNetworkingConfigValue_t, 2> options;
   options[0].SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged,
                     reinterpret_cast<void*>(&OnStatusChanged));
-  options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, impl_->registration.id());
+  options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, impl_->registration.Id());
 
   std::lock_guard<std::mutex> lock(impl_->mutex);
   impl_->state = ConnectionState::kConnecting;
@@ -355,7 +355,7 @@ Server::Server(const Endpoint& local_endpoint) : impl_(std::make_unique<Impl>())
   std::array<SteamNetworkingConfigValue_t, 2> options;
   options[0].SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged,
                     reinterpret_cast<void*>(&OnStatusChanged));
-  options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, impl_->registration.id());
+  options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, impl_->registration.Id());
 
   impl_->poll_group = SteamNetworkingSockets()->CreatePollGroup();
   impl_->listen_socket =
