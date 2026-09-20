@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_CLIENT_SESSION_H_
-#define AUGUSTA_CLIENT_SESSION_H_
+#ifndef AUGUSTA_HARNESS_H_
+#define AUGUSTA_HARNESS_H_
 
 #include <memory>
 #include <optional>
@@ -76,4 +76,4 @@ class Session {
 
 }  // namespace augusta::harness
 
-#endif  // AUGUSTA_CLIENT_SESSION_H_
+#endif  // AUGUSTA_HARNESS_H_
