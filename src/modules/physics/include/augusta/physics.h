@@ -20,7 +20,7 @@
 // same interface, called from two different orchestrators. PhysX does not
 // guarantee cross-platform bit-exact determinism, so callers must not
 // assume the client and server ever produce identical results from the
-// same inputs; client-side divergence is corrected via Reconcile, not
+// same inputs; client-side divergence is corrected via Correct, not
 // avoided.
 namespace augusta::physics {
 
@@ -59,7 +59,7 @@ struct MovementInput {
 };
 
 // A body's full movement-relevant state at a point in time: what
-// World::Step returns, what World::SetState and World::Reconcile consume,
+// World::Step returns, what World::SetState and World::Correct consume,
 // and what the caller packages into its own Prediction/Authoritative State
 // each tick.
 struct BodyState {
@@ -183,26 +183,22 @@ class World {
   // input, applies stance transitions, and applies stamina depletion/
   // recovery (StaminaConfig). Returns the resulting state, which is also
   // the new internally-held state for handle (visible to a subsequent
-  // Step, SetState, or Reconcile call).
+  // Step, SetState, or Correct call).
   BodyState Step(BodyHandle handle, const MovementInput& input, float delta_time);
 
   // Overwrites handle's state immediately, with no blending - e.g. for
   // spawning or respawning a player at a fixed point (US-03). Unlike
-  // Reconcile, the change is instantaneous and visually discontinuous;
+  // Correct, the change is instantaneous and visually discontinuous;
   // do not use this to correct client-side prediction drift.
   void SetState(BodyHandle handle, const BodyState& state);
 
-  // Smoothly corrects handle's predicted state toward the server's
-  // authoritative state, using snap/blend correction rather than an
-  // exact replay (ADR-0004) - because PhysX does not guarantee
-  // cross-platform determinism, an authoritative state that already
-  // differs from the prediction is expected, not an error condition.
-  // Only meaningful on the client side (PredictionWorld's Reconciliation
-  // phase); SimulationWorld, being itself authoritative, never calls
-  // this. Hides the blend curve/rate entirely - callers only supply the
-  // authoritative state just received over the network and get back the
-  // corrected state to continue simulating from.
-  BodyState Reconcile(BodyHandle handle, const BodyState& authoritative);
+  /// Moves handle's body to corrected (position, stance and the rest of the
+  /// state) in place, keeping its fall and ground tracking, and returns it.
+  /// This is only the mechanism of a client-side correction: deciding how far
+  /// to move toward the server's state (ADR-0004 snap/blend) is
+  /// augusta::prediction's job, which then applies the result here. Unlike
+  /// SetState, a correction is not a teleport, so gravity continues across it.
+  BodyState Correct(BodyHandle handle, const BodyState& corrected);
 
   // Casts a ray from origin in direction (need not be pre-normalized) up
   // to max_distance, against every body and static mesh currently in this

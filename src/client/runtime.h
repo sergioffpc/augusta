@@ -24,14 +24,10 @@
 // Input/Networking/ClientRuntime/Renderer/Audio diagram this class
 // implements; this header doesn't redraw it.
 //
-// What ClientRuntime does NOT yet do: turn a Command into wire bytes to
-// send, or turn received bytes back into an authoritative
-// physics::BodyState to reconcile against - the Networking Protocol
-// (ADR-0007, custom binary format) isn't designed yet (see
-// networking.h's own note on this). Until it is, the Network I/O thread
-// pumps the connection but has nothing meaningful to decode, and the
-// Simulation thread always reconciles against std::nullopt (see
-// prediction::World::Tick).
+// Sending commands, receiving authoritative state and reconciling the
+// prediction against it is harness::Session's work (see harness.h); the
+// Prediction thread only hands it each tick's command, and the Network I/O
+// thread only pumps it.
 //
 // Constructed and run from main.cpp today. Renderer (ADR-0009, the M1
 // Falcor spike), networking::Client (ADR-0003), and physics::World

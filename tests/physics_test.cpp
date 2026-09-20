@@ -87,49 +87,51 @@ TEST(PhysicsWorldTest, SprintDepletesStaminaAndForcesWalkBelowThreshold) {
   EXPECT_LT(state.stamina, 1.0F);
 }
 
-TEST(PhysicsWorldTest, ReconciliationConvergesTowardAuthoritativeWithoutOvershoot) {
+TEST(PhysicsWorldTest, CorrectMovesTheBodyAndTheNextStepStartsFromThere) {
   World world{StaminaConfig{}};
   const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
 
-  BodyState authoritative{};
-  authoritative.position = Vec3(1.0F, 0.0F, 0.0F);
-  authoritative.stance = Stance::kStanding;
-  authoritative.stamina = 1.0F;
+  BodyState corrected{};
+  corrected.position = Vec3(5.0F, 10.0F, -3.0F);
+  corrected.stamina = 0.5F;
+  const BodyState returned = world.Correct(body, corrected);
+  const BodyState stepped = world.Step(body, MovementInput{}, 1.0F / 60.0F);
 
-  // No Step calls between corrections - isolates the blend curve from
-  // gravity/movement, the way repeated authoritative arrivals do on
-  // ticks where the client already has nothing new to predict.
-  float previous_error = Length(authoritative.position - Vec3(0.0F, 0.0F, 0.0F));
-  bool converged = false;
-  for (int i = 0; i < 50; ++i) {
-    const BodyState corrected = world.Reconcile(body, authoritative);
-    const float error = Length(authoritative.position - corrected.position);
-    // The defining "no wild jitter" property: each correction strictly
-    // narrows the gap, never overshoots or oscillates past it.
-    EXPECT_LE(error, previous_error) << "iteration " << i;
-    previous_error = error;
-    if (error < 1e-3F) {
-      converged = true;
-      break;
-    }
-  }
-  EXPECT_TRUE(converged);
+  EXPECT_EQ(returned.position, corrected.position);
+  EXPECT_NEAR(stepped.position.x, 5.0F, 1e-3F);
+  EXPECT_NEAR(stepped.position.z, -3.0F, 1e-3F);
+  EXPECT_NEAR(stepped.position.y, 10.0F, 0.2F);
+  EXPECT_NEAR(stepped.stamina, 0.5F, 0.05F);
 }
 
-TEST(PhysicsWorldTest, ReconciliationSnapsForLargeDivergence) {
+TEST(PhysicsWorldTest, CorrectChangesTheStance) {
   World world{StaminaConfig{}};
   const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
 
-  BodyState authoritative{};
-  authoritative.position = Vec3(100.0F, 0.0F, 0.0F);
-  authoritative.stance = Stance::kStanding;
-  authoritative.stamina = 1.0F;
+  BodyState corrected{};
+  corrected.stance = Stance::kProne;
+  world.Correct(body, corrected);
+  MovementInput input{};
+  input.desired_stance = Stance::kProne;
+  const BodyState stepped = world.Step(body, input, 1.0F / 60.0F);
 
-  const BodyState corrected = world.Reconcile(body, authoritative);
+  EXPECT_EQ(stepped.stance, Stance::kProne);
+}
 
-  EXPECT_NEAR(corrected.position.x, 100.0F, 1e-3F);
-  EXPECT_NEAR(corrected.position.y, 0.0F, 1e-3F);
-  EXPECT_NEAR(corrected.position.z, 0.0F, 1e-3F);
+TEST(PhysicsWorldTest, CorrectKeepsGravityGoingInsteadOfRestartingTheFall) {
+  World world{StaminaConfig{}};
+  const auto body = world.CreateBody(Vec3(0.0F, 100.0F, 0.0F));
+  BodyState state{};
+  for (int i = 0; i < 30; ++i) {
+    state = world.Step(body, MovementInput{}, 1.0F / 60.0F);
+  }
+  const float fall_speed_before = -state.velocity.y;
+
+  state.position.x += 1.0F;
+  world.Correct(body, state);
+  const BodyState after = world.Step(body, MovementInput{}, 1.0F / 60.0F);
+
+  EXPECT_GE(-after.velocity.y, fall_speed_before);
 }
 
 TEST(PhysicsWorldTest, RaycastHitsACreatedBody) {

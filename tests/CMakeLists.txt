@@ -54,6 +54,11 @@ target_link_libraries(augusta_physics_tests PRIVATE augusta_physics GTest::gtest
 # above: the PhysX DLLs make a fresh build's first launch slow under Windows Defender.
 gtest_discover_tests(augusta_physics_tests DISCOVERY_TIMEOUT 30)
 
+add_executable(augusta_reconciliation_tests reconciliation_test.cpp)
+target_link_libraries(augusta_reconciliation_tests PRIVATE augusta_prediction GTest::gtest GTest::gtest_main)
+# Links augusta_physics publicly, so the same PhysX DLL launch cost applies.
+gtest_discover_tests(augusta_reconciliation_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_prediction_tests prediction_test.cpp)
 target_link_libraries(augusta_prediction_tests PRIVATE augusta_prediction GTest::gtest GTest::gtest_main)
 # Links augusta_physics publicly, so the same PhysX DLL launch cost applies.

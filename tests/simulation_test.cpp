@@ -71,6 +71,27 @@ class SimulationTest : public ::testing::Test {
   World world_;
 };
 
+TEST_F(SimulationTest, AWallStopsAWalkingPlayer) {
+  constexpr float kWallX = 3.0F;
+  constexpr float kHalfWidth = 20.0F;
+  constexpr float kHeight = 5.0F;
+  constexpr float kBottom = 0.0F;
+  ASSERT_TRUE(
+      world_
+          .AddStaticMesh(StaticMesh{.points = {Vec3(kWallX, kBottom, -kHalfWidth), Vec3(kWallX, kHeight, -kHalfWidth),
+                                               Vec3(kWallX, kHeight, kHalfWidth), Vec3(kWallX, kBottom, kHalfWidth)},
+                                    .indices = {0, 1, 2, 0, 2, 3}})
+          .has_value());
+  // Dropped a little above the floor: a body placed exactly on it starts overlapping it.
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F));
+  Run(kSettleTicks, {});
+
+  const State state = Run(120, {PlayerCommand{.player = kAlice, .command = Walking(Vec3(1.0F, 0.0F, 0.0F))}});
+
+  EXPECT_LT(Body(state, kAlice).position.x, kWallX);
+  EXPECT_GT(Body(state, kAlice).position.x, kWallX - 1.0F);
+}
+
 TEST_F(SimulationTest, AnEmptyWorldHasAnEmptyState) { EXPECT_TRUE(world_.Tick({}, kTick).players.empty()); }
 
 TEST_F(SimulationTest, AddedPlayersAppearInTheStateOrderedById) {
