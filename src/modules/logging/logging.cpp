@@ -1,5 +1,8 @@
 #include "augusta/logging.h"
 
+#include <iostream>
+#include <mutex>
+
 #include <boost/log/attributes/attribute_name.hpp>
 #include <boost/log/attributes/value_extraction.hpp>
 #include <boost/log/core.hpp>
@@ -7,8 +10,6 @@
 #include <boost/log/sources/severity_logger.hpp>
 #include <boost/log/utility/manipulators/add_value.hpp>
 #include <boost/log/utility/setup/console.hpp>
-#include <iostream>
-#include <mutex>
 
 #ifdef _WIN32
 #include <windows.h>

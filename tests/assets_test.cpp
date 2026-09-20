@@ -1,7 +1,5 @@
 #include "augusta/assets.h"
 
-#include <gtest/gtest.h>
-
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -9,6 +7,8 @@
 #include <span>
 #include <string_view>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "augusta/math.h"
 #include "encoder.h"

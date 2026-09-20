@@ -1,11 +1,7 @@
 #include "augusta/config.h"
 
-#include <yaml-cpp/yaml.h>
-
 #include <algorithm>
 #include <array>
-#include <boost/dll/runtime_symbol_info.hpp>
-#include <boost/program_options.hpp>
 #include <format>
 #include <fstream>
 #include <map>
@@ -13,6 +9,10 @@
 #include <span>
 #include <sstream>
 #include <string>
+
+#include <boost/dll/runtime_symbol_info.hpp>
+#include <boost/program_options.hpp>
+#include <yaml-cpp/yaml.h>
 
 namespace augusta::config {
 

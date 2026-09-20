@@ -3,12 +3,12 @@
 
 // DirectXTex.h pulls in <windows.h> (via d3d11.h) - CoInitializeEx below
 // comes from that same transitive include.
-#include <DirectXTex.h>
-
 #include <filesystem>
 #include <format>
 #include <stdexcept>
 #include <string>
+
+#include <DirectXTex.h>
 
 namespace py = pybind11;
 

@@ -1,8 +1,8 @@
 #include "augusta/presentation.h"
 
-#include <flecs.h>
-
 #include <array>
+
+#include <flecs.h>
 #include <nvtx3/nvtx3.hpp>
 
 #include "augusta/animation.h"

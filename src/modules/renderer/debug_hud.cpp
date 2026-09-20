@@ -4,11 +4,11 @@
 // fine against its import lib (same as Falcor's own ProfilerUI.cpp). Used for
 // the two things Falcor::Gui's own wrappers don't expose: text color and a
 // see-through, borderless window.
-#include <imgui.h>
-
 #include <cmath>
 #include <format>
 #include <string>
+
+#include <imgui.h>
 
 namespace augusta::renderer {
 

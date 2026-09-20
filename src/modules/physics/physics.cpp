@@ -1,11 +1,11 @@
 #include "augusta/physics.h"
 
-#include <PxPhysicsAPI.h>
-
 #include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 #include <unordered_map>
+
+#include <PxPhysicsAPI.h>
 
 #include "augusta/logging.h"
 
