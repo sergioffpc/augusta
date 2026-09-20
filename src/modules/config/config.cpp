@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <boost/dll/runtime_symbol_info.hpp>
+#include <boost/program_options.hpp>
 #include <format>
 #include <fstream>
 #include <map>
@@ -118,18 +119,41 @@ std::expected<Config, std::string> LoadFile(const std::filesystem::path& file, P
 std::expected<std::filesystem::path, std::string> ResolveConfigFile(int argc, const char* const* argv,
                                                                     std::string_view program,
                                                                     std::string_view default_file_name) {
-  if (argc <= 1) {
+  const auto usage = std::format("usage: {} [--config <file>]\n  without --config, reads {} next to the executable",
+                                 program, default_file_name);
+
+  namespace po = boost::program_options;
+  po::options_description options;
+  options.add_options()("config", po::value<std::string>(), "config file, relative to the working directory");
+
+  // Prefix guessing is off so `--conf` is an error, not a silent `--config`;
+  // the empty positional description makes a bare argument an error too,
+  // where Boost would otherwise ignore it.
+  po::variables_map arguments;
+  try {
+    po::store(po::command_line_parser(argc, argv)
+                  .options(options)
+                  .positional(po::positional_options_description())
+                  .style(po::command_line_style::default_style & ~po::command_line_style::allow_guessing)
+                  .run(),
+              arguments);
+    po::notify(arguments);
+  } catch (const po::error& error) {
+    return std::unexpected(std::format("{}\n{}", error.what(), usage));
+  }
+
+  if (arguments.empty()) {
     const auto directory = ExecutableDirectory();
     if (!directory) {
       return std::unexpected(std::format("cannot locate the executable's directory to find {}", default_file_name));
     }
     return *directory / default_file_name;
   }
-  if (argc == 3 && std::string_view(argv[1]) == "--config" && argv[2][0] != '\0') {
-    return std::filesystem::path(argv[2]);
+  const auto& file = arguments["config"].as<std::string>();
+  if (file.empty()) {
+    return std::unexpected(std::format("--config needs a file name\n{}", usage));
   }
-  return std::unexpected(std::format("usage: {} [--config <file>]\n  without --config, reads {} next to the executable",
-                                     program, default_file_name));
+  return std::filesystem::path(file);
 }
 
 std::expected<ClientConfig, std::string> ParseClientConfig(std::string_view yaml_text,
