@@ -23,13 +23,13 @@ namespace {
 // destructor's own doc comment in runtime.h).
 struct ThreadJoiner {
   std::atomic<bool>& running;
-  std::thread& simulation_thread;
+  std::thread& prediction_thread;
   std::thread& network_thread;
 
   ~ThreadJoiner() {
     running.store(false, std::memory_order_relaxed);
-    if (simulation_thread.joinable()) {
-      simulation_thread.join();
+    if (prediction_thread.joinable()) {
+      prediction_thread.join();
     }
     if (network_thread.joinable()) {
       network_thread.join();
@@ -49,10 +49,10 @@ struct ClientRuntime::Impl {
   renderer::Renderer renderer;
 
   std::atomic<bool> running{false};
-  std::thread simulation_thread;
+  std::thread prediction_thread;
   std::thread network_thread;
 
-  // Guards latest_prediction_state: written once per Simulation tick,
+  // Guards latest_prediction_state: written once per Prediction tick,
   // read once per Main/Render frame. prediction::State is empty today
   // (see prediction.h) - a plain mutex-guarded copy is more than fast
   // enough; revisit (e.g. double-buffering) only if profiling says
@@ -162,13 +162,13 @@ struct ClientRuntime::Impl {
   explicit Impl(const Config& cfg)
       : config(cfg), input(cfg.input), prediction(cfg.stamina), presentation(audio), renderer(cfg.renderer, input) {}
 
-  // Simulation thread body (ADR-0005): fixed-rate loop sampling local
+  // Prediction thread body (ADR-0005): fixed-rate loop sampling local
   // input and ticking PredictionWorld. Runs until running is cleared by
   // ThreadJoiner.
-  void SimulationThreadMain() {
+  void PredictionThreadMain() {
     const auto tick_duration = std::chrono::duration<float>(1.0F / config.tick_rate_hz);
     while (running.load(std::memory_order_relaxed)) {
-      const nvtx3::scoped_range range{"Simulation Tick"};
+      const nvtx3::scoped_range range{"Prediction Tick"};
       const auto tick_start = std::chrono::steady_clock::now();
 
       input::Command command = input.Sample();
@@ -233,10 +233,10 @@ ClientRuntime::~ClientRuntime() = default;
 
 void ClientRuntime::Run() {
   impl_->running.store(true, std::memory_order_relaxed);
-  impl_->simulation_thread = std::thread([this] { impl_->SimulationThreadMain(); });
+  impl_->prediction_thread = std::thread([this] { impl_->PredictionThreadMain(); });
   impl_->network_thread = std::thread([this] { impl_->NetworkThreadMain(); });
   ThreadJoiner joiner{.running = impl_->running,
-                      .simulation_thread = impl_->simulation_thread,
+                      .prediction_thread = impl_->prediction_thread,
                       .network_thread = impl_->network_thread};
 
   LI("subsystem=clientruntime event=loop_starting loop=render");
