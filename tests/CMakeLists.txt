@@ -42,7 +42,7 @@ target_include_directories(augusta_level_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/m
 gtest_discover_tests(augusta_level_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_session_tests session_test.cpp)
-target_link_libraries(augusta_session_tests PRIVATE augusta_client_session augustad_host GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_session_tests PRIVATE augusta_harness augustad_host GTest::gtest GTest::gtest_main)
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_session_tests DISCOVERY_TIMEOUT 30)
 

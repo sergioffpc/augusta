@@ -1,4 +1,4 @@
-#include "augusta/client_session.h"
+#include "augusta/harness.h"
 
 #include <cstddef>
 #include <format>
@@ -8,7 +8,7 @@
 
 #include "augusta/logging.h"
 
-namespace augusta::client_session {
+namespace augusta::harness {
 
 struct Session::Impl {
   networking::Endpoint server;
@@ -20,7 +20,7 @@ struct Session::Impl {
   explicit Impl(const SessionConfig& config) : server(config.server), prediction(config.stamina) {
     for (const physics::StaticMesh& mesh : config.level) {
       if (const auto added = prediction.AddStaticMesh(mesh); !added) {
-        throw std::runtime_error(std::format("client_session::Session: level collision rejected: {}",
+        throw std::runtime_error(std::format("harness::Session: level collision rejected: {}",
                                              physics::DescribeStaticMeshError(added.error())));
       }
     }
@@ -63,4 +63,4 @@ prediction::State Session::Tick(const input::Command& command, float delta_time)
   return impl_->prediction.Tick(command, std::nullopt, delta_time);
 }
 
-}  // namespace augusta::client_session
+}  // namespace augusta::harness

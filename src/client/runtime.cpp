@@ -9,7 +9,7 @@
 
 #include <nvtx3/nvtx3.hpp>
 
-#include "augusta/client_session.h"
+#include "augusta/harness.h"
 #include "augusta/logging.h"
 
 namespace augusta::runtime {
@@ -43,7 +43,7 @@ struct ClientRuntime::Impl {
   Config config;
   input::Input input;
   audio::Engine audio;
-  client_session::Session session;
+  harness::Session session;
   presentation::World presentation;
   renderer::Renderer renderer;
 
@@ -161,7 +161,7 @@ struct ClientRuntime::Impl {
   explicit Impl(const Config& cfg)
       : config(cfg),
         input(cfg.input),
-        session(client_session::SessionConfig{.stamina = cfg.stamina, .server = cfg.server, .level = cfg.level}),
+        session(harness::SessionConfig{.stamina = cfg.stamina, .server = cfg.server, .level = cfg.level}),
         presentation(audio),
         renderer(cfg.renderer, input) {}
 
