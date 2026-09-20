@@ -83,7 +83,8 @@ ambiguous — not as a default way to avoid thinking about ownership.
 
 ## Error handling
 
-See [ADR-0033](../adr/0033-error-handling.md).
+See [ADR-0033](../adr/0033-error-handling.md). Never return an error as a string —
+always as a type.
 
 ## Enforcement
 
