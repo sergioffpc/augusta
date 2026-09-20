@@ -11,6 +11,7 @@ Checks: >
   -modernize-use-trailing-return-type,
   -clang-analyzer-core.StackAddressEscape,
   -readability-convert-member-functions-to-static,
+  -readability-identifier-length,
   -modernize-use-scoped-lock
 
 # Trailing return type is a stylistic alternative the guide doesn't mandate
@@ -34,6 +35,11 @@ Checks: >
 # just mean undoing it the moment each real implementation lands.
 # (renderer::Renderer is real as of M1's Falcor spike, ADR-0009 - but it's
 # Windows-only and this clang-tidy run is Linux-only, so it's moot there.)
+#
+# readability-identifier-length is disabled because the Google style guide sets
+# no minimum name length, and a short name is the natural one in a small scope
+# (a `to` beside a `from`, an `id` next to the map it indexes). The check's
+# default of three characters was rejecting ordinary code.
 #
 # modernize-use-scoped-lock is disabled because this clang-tidy build
 # (LLVM 21.1 on the Linux CI runner) segfaults analyzing it against a
