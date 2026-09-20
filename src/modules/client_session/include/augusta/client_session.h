@@ -27,9 +27,9 @@ namespace augusta::client_session {
 /// What a Session needs to connect and predict.
 struct SessionConfig {
   /// Every player body's stamina rules, shared with the server's SimulationWorld.
-  physics::StaminaConfig stamina;
+  physics::StaminaConfig stamina{};
   /// The dedicated server to connect to (US-01).
-  networking::Endpoint server;
+  networking::Endpoint server{};
 };
 
 /// The client's network connection and PredictionWorld, without a window or a GPU.
