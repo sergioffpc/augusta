@@ -1,9 +1,12 @@
 #include "augusta/networking.h"
 
 #include <array>
+#include <cstdint>
+#include <functional>
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -39,6 +42,75 @@ std::string FormatAddr(const SteamNetworkingIPAddr& addr) {
   return buf.data();
 }
 
+using StatusHandler = std::function<void(SteamNetConnectionStatusChangedCallback_t*)>;
+
+// GameNetworkingSockets queues connection-status events and delivers them on
+// the next RunCallbacks, each carrying the user data it was created with - so
+// an event for a connection whose Client/Server has since been destroyed
+// still arrives. The user data is therefore an id looked up here, never a
+// pointer: a destroyed owner's id is gone from the map and its events are
+// dropped, and ids are never reused, so a new owner allocated at the same
+// address cannot receive them. The lock is held while a handler runs, so an
+// owner cannot finish unregistering (and be destroyed) mid-callback.
+class LiveHandlers {
+ public:
+  std::int64_t Add(StatusHandler handler) {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::int64_t handler_id = next_id_++;
+    handlers_.emplace(handler_id, std::move(handler));
+    return handler_id;
+  }
+
+  void Remove(std::int64_t handler_id) {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    handlers_.erase(handler_id);
+  }
+
+  void Dispatch(std::int64_t handler_id, SteamNetConnectionStatusChangedCallback_t* info) {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    if (const auto found = handlers_.find(handler_id); found != handlers_.end()) {
+      found->second(info);
+    }
+  }
+
+ private:
+  std::mutex mutex_;
+  // 0 is GameNetworkingSockets' "no user data".
+  std::int64_t next_id_ = 1;
+  std::unordered_map<std::int64_t, StatusHandler> handlers_;
+};
+
+LiveHandlers& LiveNetworkingHandlers() {
+  static LiveHandlers live;
+  return live;
+}
+
+// Registers a handler for as long as it lives. An owner declares it as its
+// last member, so it unregisters first - before the members the handler
+// reads are destroyed.
+class LiveRegistration {
+ public:
+  explicit LiveRegistration(StatusHandler handler) : id_(LiveNetworkingHandlers().Add(std::move(handler))) {}
+  ~LiveRegistration() { LiveNetworkingHandlers().Remove(id_); }
+  LiveRegistration(const LiveRegistration&) = delete;
+  LiveRegistration& operator=(const LiveRegistration&) = delete;
+
+  // What to set as the connection's user data so its events reach the handler.
+  [[nodiscard]] std::int64_t Id() const { return id_; }
+
+ private:
+  std::int64_t id_;
+};
+
+// The status-changed callback both roles register with GameNetworkingSockets.
+void OnStatusChanged(SteamNetConnectionStatusChangedCallback_t* info) {
+  LiveNetworkingHandlers().Dispatch(info->m_info.m_nUserData, info);
+}
+
+int SendFlags(Reliability reliability) {
+  return reliability == Reliability::kReliable ? k_nSteamNetworkingSend_Reliable : k_nSteamNetworkingSend_Unreliable;
+}
+
 }  // namespace
 
 void Init() {
@@ -55,6 +127,14 @@ void Shutdown() {
   LI("subsystem=networking event=shutdown");
 }
 
+void SimulateNetworkConditions(const SimulatedConditions& conditions) {
+  ISteamNetworkingUtils* utils = SteamNetworkingUtils();
+  utils->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_FakePacketLag_Send, conditions.latency_ms);
+  utils->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketLoss_Send, conditions.loss_percent);
+  LI("subsystem=networking event=simulated_conditions latency_ms={} loss_percent={}", conditions.latency_ms,
+     conditions.loss_percent);
+}
+
 // ---- Client ----
 
 struct Client::Impl {
@@ -62,26 +142,22 @@ struct Client::Impl {
   HSteamNetConnection connection = k_HSteamNetConnection_Invalid;
   ConnectionState state = ConnectionState::kDisconnected;
 
-  static void OnStatusChanged(SteamNetConnectionStatusChangedCallback_t* info) {
-    auto* self = reinterpret_cast<Impl*>(info->m_info.m_nUserData);
-    if (self == nullptr) {
-      return;
-    }
-    std::lock_guard<std::mutex> lock(self->mutex);
+  void HandleStatusChanged(SteamNetConnectionStatusChangedCallback_t* info) {
+    std::lock_guard<std::mutex> lock(mutex);
     switch (info->m_info.m_eState) {
       case k_ESteamNetworkingConnectionState_Connecting:
-        self->state = ConnectionState::kConnecting;
+        state = ConnectionState::kConnecting;
         LD("subsystem=networking event=state_changed role=client state=connecting");
         break;
       case k_ESteamNetworkingConnectionState_Connected:
-        self->state = ConnectionState::kConnected;
+        state = ConnectionState::kConnected;
         LI("subsystem=networking event=state_changed role=client state=connected");
         break;
       case k_ESteamNetworkingConnectionState_ClosedByPeer:
       case k_ESteamNetworkingConnectionState_ProblemDetectedLocally:
         SteamNetworkingSockets()->CloseConnection(info->m_hConn, 0, nullptr, false);
-        self->connection = k_HSteamNetConnection_Invalid;
-        self->state = ConnectionState::kDisconnected;
+        connection = k_HSteamNetConnection_Invalid;
+        state = ConnectionState::kDisconnected;
         if (info->m_info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally) {
           LW("subsystem=networking event=state_changed role=client state=disconnected "
              "reason=problem_detected_locally");
@@ -93,6 +169,9 @@ struct Client::Impl {
         break;
     }
   }
+
+  // Last, so it unregisters before the members HandleStatusChanged reads go.
+  LiveRegistration registration{[this](SteamNetConnectionStatusChangedCallback_t* info) { HandleStatusChanged(info); }};
 };
 
 Client::Client() : impl_(std::make_unique<Impl>()) {}
@@ -115,8 +194,8 @@ void Client::Connect(const Endpoint& server) {
   // from OnStatusChanged until this call supplies it up front.
   std::array<SteamNetworkingConfigValue_t, 2> options;
   options[0].SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged,
-                    reinterpret_cast<void*>(&Impl::OnStatusChanged));
-  options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, reinterpret_cast<intptr_t>(impl_.get()));
+                    reinterpret_cast<void*>(&OnStatusChanged));
+  options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, impl_->registration.Id());
 
   std::lock_guard<std::mutex> lock(impl_->mutex);
   impl_->state = ConnectionState::kConnecting;
@@ -162,15 +241,14 @@ std::optional<ConnectionStats> Client::GetStats() const {
   };
 }
 
-void Client::Send(const Payload& payload) {
+void Client::Send(const Payload& payload, Reliability reliability) {
   std::lock_guard<std::mutex> lock(impl_->mutex);
   if (impl_->state != ConnectionState::kConnected) {
     return;
   }
   LT("subsystem=networking event=send role=client bytes={}", payload.size());
-  SteamNetworkingSockets()->SendMessageToConnection(impl_->connection, payload.data(),
-                                                    static_cast<std::uint32_t>(payload.size()),
-                                                    k_nSteamNetworkingSend_Unreliable, nullptr);
+  SteamNetworkingSockets()->SendMessageToConnection(
+      impl_->connection, payload.data(), static_cast<std::uint32_t>(payload.size()), SendFlags(reliability), nullptr);
 }
 
 std::vector<Payload> Client::ReceiveMessages() {
@@ -217,34 +295,30 @@ struct Server::Impl {
   // OnStatusChanged since the last PumpEvents call.
   std::vector<PeerEvent> queued_events;
 
-  static void OnStatusChanged(SteamNetConnectionStatusChangedCallback_t* info) {
-    auto* self = reinterpret_cast<Impl*>(info->m_info.m_nUserData);
-    if (self == nullptr) {
-      return;
-    }
+  void HandleStatusChanged(SteamNetConnectionStatusChangedCallback_t* info) {
     const auto peer = static_cast<PeerId>(info->m_hConn);
     const auto peer_id = static_cast<std::uint32_t>(peer);
     const std::string peer_addr = FormatAddr(info->m_info.m_addrRemote);
-    std::lock_guard<std::mutex> lock(self->mutex);
+    std::lock_guard<std::mutex> lock(mutex);
     switch (info->m_info.m_eState) {
       case k_ESteamNetworkingConnectionState_Connecting:
-        self->pending_peers.insert(info->m_hConn);
+        pending_peers.insert(info->m_hConn);
         LD("subsystem=networking event=state_changed role=server state=connecting peer={} peer_addr={}", peer_id,
            peer_addr);
         break;
       case k_ESteamNetworkingConnectionState_Connected:
-        SteamNetworkingSockets()->SetConnectionPollGroup(info->m_hConn, self->poll_group);
-        self->connected_peers.insert(info->m_hConn);
-        self->queued_events.push_back(PeerEvent{.peer = peer, .type = PeerEventType::kConnected});
+        SteamNetworkingSockets()->SetConnectionPollGroup(info->m_hConn, poll_group);
+        connected_peers.insert(info->m_hConn);
+        queued_events.push_back(PeerEvent{.peer = peer, .type = PeerEventType::kConnected});
         LI("subsystem=networking event=state_changed role=server state=connected peer={} peer_addr={}", peer_id,
            peer_addr);
         break;
       case k_ESteamNetworkingConnectionState_ClosedByPeer:
       case k_ESteamNetworkingConnectionState_ProblemDetectedLocally:
         SteamNetworkingSockets()->CloseConnection(info->m_hConn, 0, nullptr, false);
-        self->pending_peers.erase(info->m_hConn);
-        self->connected_peers.erase(info->m_hConn);
-        self->queued_events.push_back(PeerEvent{.peer = peer, .type = PeerEventType::kDisconnected});
+        pending_peers.erase(info->m_hConn);
+        connected_peers.erase(info->m_hConn);
+        queued_events.push_back(PeerEvent{.peer = peer, .type = PeerEventType::kDisconnected});
         if (info->m_info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally) {
           LW("subsystem=networking event=state_changed role=server state=disconnected peer={} peer_addr={} "
              "reason=problem_detected_locally",
@@ -259,6 +333,9 @@ struct Server::Impl {
         break;
     }
   }
+
+  // Last, so it unregisters before the members HandleStatusChanged reads go.
+  LiveRegistration registration{[this](SteamNetConnectionStatusChangedCallback_t* info) { HandleStatusChanged(info); }};
 };
 
 Server::Server(const Endpoint& local_endpoint) : impl_(std::make_unique<Impl>()) {
@@ -277,8 +354,8 @@ Server::Server(const Endpoint& local_endpoint) : impl_(std::make_unique<Impl>())
   // connection to tag and no listen socket to inherit a default from.
   std::array<SteamNetworkingConfigValue_t, 2> options;
   options[0].SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged,
-                    reinterpret_cast<void*>(&Impl::OnStatusChanged));
-  options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, reinterpret_cast<intptr_t>(impl_.get()));
+                    reinterpret_cast<void*>(&OnStatusChanged));
+  options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, impl_->registration.Id());
 
   impl_->poll_group = SteamNetworkingSockets()->CreatePollGroup();
   impl_->listen_socket =
@@ -331,7 +408,7 @@ void Server::Disconnect(PeerId peer) {
   SteamNetworkingSockets()->CloseConnection(connection, 0, nullptr, false);
 }
 
-void Server::Send(PeerId peer, const Payload& payload) {
+void Server::Send(PeerId peer, const Payload& payload, Reliability reliability) {
   const auto connection = static_cast<HSteamNetConnection>(peer);
   {
     std::lock_guard<std::mutex> lock(impl_->mutex);
@@ -340,12 +417,11 @@ void Server::Send(PeerId peer, const Payload& payload) {
     }
   }
   LT("subsystem=networking event=send role=server peer={} bytes={}", static_cast<std::uint32_t>(peer), payload.size());
-  SteamNetworkingSockets()->SendMessageToConnection(connection, payload.data(),
-                                                    static_cast<std::uint32_t>(payload.size()),
-                                                    k_nSteamNetworkingSend_Unreliable, nullptr);
+  SteamNetworkingSockets()->SendMessageToConnection(
+      connection, payload.data(), static_cast<std::uint32_t>(payload.size()), SendFlags(reliability), nullptr);
 }
 
-void Server::Broadcast(const Payload& payload) {
+void Server::Broadcast(const Payload& payload, Reliability reliability) {
   std::vector<HSteamNetConnection> peers;
   {
     std::lock_guard<std::mutex> lock(impl_->mutex);
@@ -353,9 +429,8 @@ void Server::Broadcast(const Payload& payload) {
   }
   LT("subsystem=networking event=broadcast role=server peers={} bytes={}", peers.size(), payload.size());
   for (HSteamNetConnection connection : peers) {
-    SteamNetworkingSockets()->SendMessageToConnection(connection, payload.data(),
-                                                      static_cast<std::uint32_t>(payload.size()),
-                                                      k_nSteamNetworkingSend_Unreliable, nullptr);
+    SteamNetworkingSockets()->SendMessageToConnection(
+        connection, payload.data(), static_cast<std::uint32_t>(payload.size()), SendFlags(reliability), nullptr);
   }
 }
 
