@@ -22,13 +22,13 @@ namespace augusta::server {
 /// Everything a Host needs to construct SimulationWorld and start listening.
 struct HostConfig {
   /// Every player body's stamina rules (physics::World, shared with PredictionWorld).
-  physics::StaminaConfig stamina;
+  physics::StaminaConfig stamina{};
   /// Lua game-policy script for SimulationWorld's Scripts/Behaviours phase.
-  std::string script_path;
+  std::string script_path{};
   /// Local address to listen on (US-01).
-  networking::Endpoint listen;
+  networking::Endpoint listen{};
   /// The level's collision, as built by augusta::level from the server pack.
-  std::vector<physics::StaticMesh> level;
+  std::vector<physics::StaticMesh> level{};
 };
 
 /// The server's listening socket and its SimulationWorld, without threads or a clock.

@@ -95,9 +95,9 @@ struct StaminaConfig {
 
 /// A triangle mesh of immovable level geometry, already in world space.
 struct StaticMesh {
-  std::vector<math::Vec3> points;
+  std::vector<math::Vec3> points{};
   /// Three indices into points per triangle.
-  std::vector<std::uint32_t> indices;
+  std::vector<std::uint32_t> indices{};
 };
 
 /// Why a StaticMesh could not be added to a World.
