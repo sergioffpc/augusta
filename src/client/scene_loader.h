@@ -41,8 +41,8 @@ enum class SceneErrorCode {
 /// about (the other fields, empty or default when the code has none).
 struct SceneError {
   SceneErrorCode code;
-  std::string node;
-  std::string subject;
+  std::string node{};
+  std::string subject{};
   assets::ResolveError resolve_error{};
 };
 
