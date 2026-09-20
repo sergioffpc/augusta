@@ -1,6 +1,9 @@
 #include "augusta/simulation.h"
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
+#include <unordered_map>
 
 #include <flecs.h>
 
@@ -28,14 +31,39 @@ enum PhaseIndex : std::size_t {
   kCommit,
 };
 
+// A player entity's components.
+struct Player {
+  PlayerId id{};
+};
+
+struct Body {
+  physics::BodyHandle handle{};
+  physics::BodyState state{};
+};
+
+// What CommandIngestion last decided the player is trying to do; Movement acts on it.
+struct Intent {
+  physics::MovementInput input{};
+};
+
 }  // namespace
 
 struct World::Impl {
+  // Where a player lives, for RemovePlayer.
+  struct Slot {
+    flecs::entity entity;
+    physics::BodyHandle body{};
+  };
+
   flecs::world ecs;
   physics::World physics;
   ballistics::World ballistics;
   scripting::Engine scripting;
   PhaseEntities phases;
+  std::unordered_map<PlayerId, Slot> players;
+  // Set by Tick for CommandIngestion to read, and filled by Commit for Tick to return.
+  std::unordered_map<PlayerId, input::Command> tick_commands;
+  State committed;
 
   Impl(const physics::StaminaConfig& stamina_config, const std::string& script_path)
       : physics(stamina_config), scripting(script_path) {
@@ -60,15 +88,14 @@ struct World::Impl {
     // (see simulation.h's header comment) - there is nothing to iterate.
     // Bodies are stubs until those shapes exist; this only establishes
     // each system's place in the pipeline.
-    ecs.system("CommandIngestionSystem").kind(phases[kCommandIngestion]).run([](flecs::iter&) {
-      LT("subsystem=simulationworld event=command_ingestion");
-      // TODO(sergioffpc): apply each connected player's this-tick
-      // input::Command to their entity.
-    });
-    ecs.system("MovementSystem").kind(phases[kMovement]).run([](flecs::iter&) {
-      LT("subsystem=simulationworld event=movement");
-      // TODO(sergioffpc): physics::World::Step per player body.
-    });
+    ecs.system<const Player, Intent>("CommandIngestionSystem")
+        .kind(phases[kCommandIngestion])
+        .each([this](const Player& player, Intent& intent) { IngestCommand(player, intent); });
+    ecs.system<Body, const Intent>("MovementSystem")
+        .kind(phases[kMovement])
+        .each([this](flecs::iter& it, std::size_t /*row*/, Body& body, const Intent& intent) {
+          body.state = physics.Step(body.handle, intent.input, it.delta_time());
+        });
     ecs.system("WeaponHandlingSystem").kind(phases[kWeaponHandling]).run([](flecs::iter&) {
       LT("subsystem=simulationworld event=weapon_handling");
       // TODO(sergioffpc): not yet a module of its own - see simulation.h.
@@ -92,10 +119,22 @@ struct World::Impl {
       LT("subsystem=simulationworld event=scripts_behaviours");
       // TODO(sergioffpc): scripting::Engine::RunHook per relevant hook.
     });
-    ecs.system("CommitSystem").kind(phases[kCommit]).run([](flecs::iter&) {
-      LT("subsystem=simulationworld event=commit");
-      // TODO(sergioffpc): package the tick's resolved state into State.
-    });
+    ecs.system<const Player, const Body>("CommitSystem")
+        .kind(phases[kCommit])
+        .each([this](const Player& player, const Body& body) {
+          committed.players.push_back(PlayerState{.player = player.id, .body = body.state});
+        });
+  }
+
+  // A player with no command this tick stops and keeps the stance it asked for.
+  void IngestCommand(const Player& player, Intent& intent) {
+    const auto command = tick_commands.find(player.id);
+    if (command == tick_commands.end()) {
+      intent.input.direction = math::Vec3{};
+      intent.input.sprint = false;
+      return;
+    }
+    intent.input = command->second.movement;
   }
 };
 
@@ -111,13 +150,42 @@ std::expected<void, physics::StaticMeshError> World::AddStaticMesh(const physics
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
-State World::Tick(const std::vector<input::Command>& commands, float delta_time) {
-  // TODO(sergioffpc): not yet consumed - see Tick's own doc comment in
-  // simulation.h: per-entity command association isn't designed until
-  // ECS component shapes are.
-  (void)commands;
-  impl_->ecs.progress(delta_time);
-  return State{};
+void World::AddPlayer(PlayerId player, const math::Vec3& spawn) {
+  Impl& impl = *impl_;
+  if (impl.players.contains(player)) {
+    return;
+  }
+  const physics::BodyHandle body = impl.physics.CreateBody(spawn);
+  physics::BodyState initial{};
+  initial.position = spawn;
+  const flecs::entity entity =
+      impl.ecs.entity().set<Player>({.id = player}).set<Body>({.handle = body, .state = initial}).set<Intent>({});
+  impl.players.emplace(player, Impl::Slot{.entity = entity, .body = body});
+}
+
+void World::RemovePlayer(PlayerId player) {
+  Impl& impl = *impl_;
+  const auto slot = impl.players.find(player);
+  if (slot == impl.players.end()) {
+    return;
+  }
+  impl.physics.DestroyBody(slot->second.body);
+  slot->second.entity.destruct();
+  impl.players.erase(slot);
+}
+
+State World::Tick(const std::vector<PlayerCommand>& commands, float delta_time) {
+  Impl& impl = *impl_;
+  impl.tick_commands.clear();
+  for (const PlayerCommand& entry : commands) {
+    impl.tick_commands[entry.player] = entry.command;
+  }
+  impl.committed.players.clear();
+  impl.ecs.progress(delta_time);
+  // The ECS visits players in storage order; the state is ordered by id.
+  std::ranges::sort(impl.committed.players,
+                    [](const PlayerState& a, const PlayerState& b) { return a.player < b.player; });
+  return impl.committed;
 }
 
 }  // namespace augusta::simulation

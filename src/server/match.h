@@ -19,14 +19,11 @@
 // disconnect - is Host's mechanism.
 namespace augusta::server {
 
-/// The players a match supports (US-02).
-inline constexpr std::size_t kMaxPlayers = 8;
-
 /// The players in one match, keyed by the transport's handle for each.
 class Match {
  public:
   /// A match that admits only clients whose engine version is engine_version, up to capacity of them.
-  explicit Match(std::string engine_version, std::size_t capacity = kMaxPlayers);
+  explicit Match(std::string engine_version, std::size_t capacity = protocol::kMaxPlayers);
 
   /// Admits peer and returns its session ID, or says why not. A peer that is
   /// already in the match gets the session it already has.

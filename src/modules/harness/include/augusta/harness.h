@@ -27,7 +27,7 @@
 // (Tick), and hands in the input for that tick. The two are meant for two
 // different threads, as in ClientRuntime: Connect, Disconnect, PumpEvents,
 // ExchangeMessages, GetState and GetStats from the Network I/O thread, and Tick
-// from the Prediction thread.
+// from the Prediction thread (the transport is safe to send from both).
 namespace augusta::harness {
 
 /// What a Session needs to connect and predict.
@@ -83,7 +83,13 @@ class Session {
   /// ExchangeMessages; safe to read from any thread.
   [[nodiscard]] std::optional<protocol::JoinRefusal> GetRefusal() const;
 
+  /// The newest Authoritative State received from the server, or nullopt until
+  /// one arrives. Set by ExchangeMessages; safe to read from any thread.
+  [[nodiscard]] std::optional<protocol::AuthoritativeState> GetAuthoritativeState() const;
+
   /// Runs one fixed tick of PredictionWorld for command and returns its state.
+  /// Once the server has admitted this client, also sends command to it,
+  /// together with the recent commands the server has not yet acknowledged.
   prediction::State Tick(const input::Command& command, float delta_time);
 
  private:

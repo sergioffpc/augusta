@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_SIMULATION_H_
 #define AUGUSTA_SIMULATION_H_
 
+#include <cstdint>
 #include <expected>
 #include <memory>
 #include <string>
@@ -8,6 +9,7 @@
 
 #include "augusta/ballistics.h"
 #include "augusta/input.h"
+#include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/scripting.h"
 
@@ -25,11 +27,11 @@
 // implementation detail, not part of its public interface, so no flecs
 // header leaks in here. Phase's eight values become, in the same order,
 // eight dependency-chained flecs::Phase entities, each with one
-// registered flecs::system (named "<Phase>System") that runs once per
-// Tick regardless of matched entities - see simulation.cpp. Entity/
-// component shapes still aren't designed, so a system's body is
-// presently a stub; what each one will eventually do is documented on
-// its Phase enumerator below.
+// registered flecs::system (named "<Phase>System") - see simulation.cpp.
+// A player is one entity with a physics body; CommandIngestion, Movement
+// and Commit act on players today, and the other phases' bodies are stubs
+// until what they need (bullets, damage) is designed; what each one will
+// eventually do is documented on its Phase enumerator below.
 //
 // WeaponHandling has no C++ home yet either: ARCHITECTURE.md's Shared
 // Core lists it as its own module (one interface used identically by
@@ -87,13 +89,31 @@ enum class Phase {
   kCommit,
 };
 
+/// The server's name for one player inside SimulationWorld. The caller picks
+/// it (server::Host uses the player's session, see augusta::replication) and
+/// it is unique among the players currently in the world.
+enum class PlayerId : std::uint32_t {};
+
+/// One player's validated command for one tick.
+struct PlayerCommand {
+  PlayerId player{};
+  input::Command command{};
+};
+
+/// One player's body as of the end of a tick.
+struct PlayerState {
+  PlayerId player{};
+  physics::BodyState body{};
+};
+
 // SimulationWorld's per-tick output - ADR-0023/ARCHITECTURE.md's
-// "Authoritative State". Deliberately empty for now: its real shape
-// depends on ECS component shapes (see header comment) and on what
-// augusta::replication ends up needing to send, neither of which exist
-// yet - same deferred-design posture as augusta::renderer's "what gets
-// drawn".
-struct State {};
+// "Authoritative State", for augusta::replication to send to clients.
+// Today it holds every player's body; later phases add what they resolve
+// (bullets, damage).
+struct State {
+  /// Every player in the world, ordered by PlayerId.
+  std::vector<PlayerState> players;
+};
 
 // The single authoritative SimulationWorld. The server constructs
 // exactly one, on the Simulation thread (ADR-0005). Owns the mechanism
@@ -123,14 +143,21 @@ class World {
   World(World&&) noexcept;
   World& operator=(World&&) noexcept;
 
+  /// Puts a new player, standing and at full stamina, at spawn. player must not already be in the world.
+  void AddPlayer(PlayerId player, const math::Vec3& spawn);
+
+  /// Takes player and its body out of the world; a no-op if it is not in it.
+  void RemovePlayer(PlayerId player);
+
   // Runs all eight Phase values above, in their declared order, for one
   // fixed tick of duration delta_time seconds (internally, one
   // flecs::world::progress(delta_time) call). commands holds this tick's
-  // validated input from every connected player (US-02, 2-8 players) -
-  // unlike PredictionWorld, which only ever ticks the local player (see
-  // augusta::prediction::World::Tick). Returns the tick's Authoritative
+  // validated input, at most one per player (US-02, 2-8 players) - unlike
+  // PredictionWorld, which only ever ticks the local player (see
+  // augusta::prediction::World::Tick). A player with no command this tick
+  // stops moving and keeps its stance. Returns the tick's Authoritative
   // State.
-  State Tick(const std::vector<input::Command>& commands, float delta_time);
+  State Tick(const std::vector<PlayerCommand>& commands, float delta_time);
 
  private:
   struct Impl;

@@ -1,9 +1,11 @@
 #include "augusta/protocol.h"
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
+#include <limits>
 #include <string>
 #include <variant>
 
@@ -12,7 +14,9 @@
 // The codec is pure: every case here is bytes in, message or error out.
 namespace {
 
+using augusta::protocol::AuthoritativeState;
 using augusta::protocol::Bytes;
+using augusta::protocol::Commands;
 using augusta::protocol::Decode;
 using augusta::protocol::DecodeError;
 using augusta::protocol::Encode;
@@ -20,9 +24,13 @@ using augusta::protocol::JoinAccepted;
 using augusta::protocol::JoinRefusal;
 using augusta::protocol::JoinRefused;
 using augusta::protocol::JoinRequest;
+using augusta::protocol::kMaxCommandsPerMessage;
 using augusta::protocol::kMaxEngineVersionLength;
+using augusta::protocol::kMaxPlayers;
 using augusta::protocol::Message;
 using augusta::protocol::MessageType;
+using augusta::protocol::PlayerState;
+using augusta::protocol::SequencedCommand;
 using augusta::protocol::SessionId;
 
 Bytes BytesOf(std::initializer_list<std::uint8_t> values) {
@@ -36,6 +44,8 @@ Bytes BytesOf(std::initializer_list<std::uint8_t> values) {
 constexpr auto kJoinRequestType = static_cast<std::uint8_t>(MessageType::kJoinRequest);
 constexpr auto kJoinAcceptedType = static_cast<std::uint8_t>(MessageType::kJoinAccepted);
 constexpr auto kJoinRefusedType = static_cast<std::uint8_t>(MessageType::kJoinRefused);
+constexpr auto kCommandsType = static_cast<std::uint8_t>(MessageType::kCommands);
+constexpr auto kAuthoritativeStateType = static_cast<std::uint8_t>(MessageType::kAuthoritativeState);
 
 Message RoundTrip(const Message& message) {
   const auto decoded = Decode(Encode(message));
@@ -91,14 +101,16 @@ TEST(ProtocolTest, AnEmptyPayloadIsEmpty) { EXPECT_EQ(Decode(Bytes{}).error(), D
 
 TEST(ProtocolTest, AnUnknownTypeIsRejected) {
   EXPECT_EQ(Decode(BytesOf({0})).error(), DecodeError::kUnknownType);
-  EXPECT_EQ(Decode(BytesOf({4, 0, 0, 0, 0})).error(), DecodeError::kUnknownType);
+  EXPECT_EQ(Decode(BytesOf({6, 0, 0, 0, 0})).error(), DecodeError::kUnknownType);
   EXPECT_EQ(Decode(BytesOf({0xFF})).error(), DecodeError::kUnknownType);
 }
 
 TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
-  const std::array<Message, 3> messages = {JoinRequest{.engine_version = "0.1.0"},
+  const std::array<Message, 5> messages = {JoinRequest{.engine_version = "0.1.0"},
                                            JoinAccepted{.session = static_cast<SessionId>(7)},
-                                           JoinRefused{.reason = JoinRefusal::kMatchFull}};
+                                           JoinRefused{.reason = JoinRefusal::kMatchFull},
+                                           Commands{.commands = {SequencedCommand{.sequence = 1}, {.sequence = 2}}},
+                                           AuthoritativeState{.tick = 3, .players = {PlayerState{}, {}}}};
   for (const Message& message : messages) {
     const Bytes whole = Encode(message);
     for (std::size_t length = 1; length < whole.size(); ++length) {
@@ -135,6 +147,152 @@ TEST(ProtocolTest, BytesAfterAMessageAreTrailing) {
   EXPECT_EQ(Decode(BytesOf({kJoinRequestType, 0, 0})).error(), DecodeError::kTrailingBytes);
   EXPECT_EQ(Decode(BytesOf({kJoinAcceptedType, 1, 0, 0, 0, 0})).error(), DecodeError::kTrailingBytes);
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 1, 1})).error(), DecodeError::kTrailingBytes);
+}
+
+// A command with every field set to something other than its default.
+SequencedCommand BusyCommand(std::uint32_t sequence) {
+  SequencedCommand sequenced{.sequence = sequence};
+  sequenced.command.movement.direction = augusta::math::Vec3(0.5F, -0.25F, 1.0F);
+  sequenced.command.movement.sprint = true;
+  sequenced.command.movement.desired_stance = augusta::physics::Stance::kProne;
+  sequenced.command.yaw = 3.5F;
+  sequenced.command.pitch = -1.25F;
+  sequenced.command.ads = true;
+  sequenced.command.fire = true;
+  sequenced.command.reload = true;
+  return sequenced;
+}
+
+void ExpectSameCommand(const SequencedCommand& actual, const SequencedCommand& expected) {
+  EXPECT_EQ(actual.sequence, expected.sequence);
+  EXPECT_EQ(actual.command.movement.direction, expected.command.movement.direction);
+  EXPECT_EQ(actual.command.movement.sprint, expected.command.movement.sprint);
+  EXPECT_EQ(actual.command.movement.desired_stance, expected.command.movement.desired_stance);
+  EXPECT_EQ(actual.command.yaw, expected.command.yaw);
+  EXPECT_EQ(actual.command.pitch, expected.command.pitch);
+  EXPECT_EQ(actual.command.ads, expected.command.ads);
+  EXPECT_EQ(actual.command.fire, expected.command.fire);
+  EXPECT_EQ(actual.command.reload, expected.command.reload);
+}
+
+TEST(ProtocolTest, CommandsRoundTripWithEveryField) {
+  const Commands sent{.commands = {BusyCommand(41), BusyCommand(42), SequencedCommand{.sequence = 43}}};
+
+  const auto decoded = RoundTrip(sent);
+
+  ASSERT_TRUE(std::holds_alternative<Commands>(decoded));
+  const Commands& received = std::get<Commands>(decoded);
+  ASSERT_EQ(received.commands.size(), sent.commands.size());
+  for (std::size_t i = 0; i < sent.commands.size(); ++i) {
+    ExpectSameCommand(received.commands[i], sent.commands[i]);
+  }
+}
+
+TEST(ProtocolTest, CommandsWithNoCommandsRoundTrip) {
+  const auto decoded = RoundTrip(Commands{});
+
+  EXPECT_TRUE(std::get<Commands>(decoded).commands.empty());
+}
+
+TEST(ProtocolTest, CommandsCarryTheMostAMessageAllows) {
+  Commands sent;
+  for (std::uint32_t i = 0; i < kMaxCommandsPerMessage; ++i) {
+    sent.commands.push_back(BusyCommand(i + 1));
+  }
+
+  EXPECT_EQ(std::get<Commands>(RoundTrip(sent)).commands.size(), kMaxCommandsPerMessage);
+}
+
+TEST(ProtocolTest, MoreCommandsThanAMessageAllowsIsTooLong) {
+  EXPECT_EQ(Decode(BytesOf({kCommandsType, static_cast<std::uint8_t>(kMaxCommandsPerMessage + 1)})).error(),
+            DecodeError::kFieldTooLong);
+}
+
+TEST(ProtocolTest, ANonFiniteFloatSurvivesTheCodecForTheServerToJudge) {
+  SequencedCommand sequenced = BusyCommand(1);
+  sequenced.command.yaw = std::numeric_limits<float>::quiet_NaN();
+  sequenced.command.movement.direction.x = std::numeric_limits<float>::infinity();
+
+  const auto decoded = std::get<Commands>(RoundTrip(Commands{.commands = {sequenced}}));
+
+  EXPECT_TRUE(std::isnan(decoded.commands[0].command.yaw));
+  EXPECT_TRUE(std::isinf(decoded.commands[0].command.movement.direction.x));
+}
+
+TEST(ProtocolTest, ACommandsStanceOrFlagOutsideItsRangeIsInvalid) {
+  const Bytes payload = Encode(Commands{.commands = {BusyCommand(1)}});
+  // type, count, sequence (4), direction (12), then sprint and stance.
+  constexpr std::size_t kSprintOffset = 2 + 4 + 12;
+  constexpr std::size_t kStanceOffset = kSprintOffset + 1;
+
+  Bytes bad_flag = payload;
+  bad_flag[kSprintOffset] = static_cast<std::byte>(2);
+  EXPECT_EQ(Decode(bad_flag).error(), DecodeError::kInvalidEnum);
+
+  Bytes bad_stance = payload;
+  bad_stance[kStanceOffset] = static_cast<std::byte>(3);
+  EXPECT_EQ(Decode(bad_stance).error(), DecodeError::kInvalidEnum);
+}
+
+TEST(ProtocolTest, AuthoritativeStateRoundTrips) {
+  AuthoritativeState sent{.tick = 900, .acknowledged_sequence = 875};
+  for (std::uint32_t i = 0; i < 3; ++i) {
+    PlayerState player{.session = static_cast<SessionId>(10 + i)};
+    player.body.position = augusta::math::Vec3(1.0F + static_cast<float>(i), 2.0F, -3.5F);
+    player.body.velocity = augusta::math::Vec3(0.0F, -9.81F, 3.0F);
+    player.body.stance = static_cast<augusta::physics::Stance>(i);
+    player.body.stamina = 0.25F * static_cast<float>(i);
+    sent.players.push_back(player);
+  }
+
+  const auto decoded = RoundTrip(sent);
+
+  ASSERT_TRUE(std::holds_alternative<AuthoritativeState>(decoded));
+  const auto& received = std::get<AuthoritativeState>(decoded);
+  EXPECT_EQ(received.tick, sent.tick);
+  EXPECT_EQ(received.acknowledged_sequence, sent.acknowledged_sequence);
+  ASSERT_EQ(received.players.size(), sent.players.size());
+  for (std::size_t i = 0; i < sent.players.size(); ++i) {
+    EXPECT_EQ(received.players[i].session, sent.players[i].session);
+    EXPECT_EQ(received.players[i].body.position, sent.players[i].body.position);
+    EXPECT_EQ(received.players[i].body.velocity, sent.players[i].body.velocity);
+    EXPECT_EQ(received.players[i].body.stance, sent.players[i].body.stance);
+    EXPECT_EQ(received.players[i].body.stamina, sent.players[i].body.stamina);
+  }
+}
+
+TEST(ProtocolTest, AuthoritativeStateWithAFullMatchRoundTrips) {
+  AuthoritativeState sent;
+  sent.players.resize(kMaxPlayers);
+
+  EXPECT_EQ(std::get<AuthoritativeState>(RoundTrip(sent)).players.size(), kMaxPlayers);
+}
+
+TEST(ProtocolTest, MorePlayersThanAMatchHoldsIsTooLong) {
+  // type, tick (4), acknowledged sequence (4), then the count.
+  const Bytes payload =
+      BytesOf({kAuthoritativeStateType, 0, 0, 0, 0, 0, 0, 0, 0, static_cast<std::uint8_t>(kMaxPlayers + 1)});
+
+  EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
+}
+
+TEST(ProtocolTest, APlayersStanceOutsideItsRangeIsInvalid) {
+  Bytes payload = Encode(AuthoritativeState{.players = {PlayerState{}}});
+  // type, tick, acknowledged sequence, count, session, position (12), velocity (12), then stance.
+  constexpr std::size_t kStanceOffset = 1 + 4 + 4 + 1 + 4 + 12 + 12;
+  payload[kStanceOffset] = static_cast<std::byte>(3);
+
+  EXPECT_EQ(Decode(payload).error(), DecodeError::kInvalidEnum);
+}
+
+TEST(ProtocolTest, BytesAfterCommandsAndStateAreTrailing) {
+  Bytes commands = Encode(Commands{});
+  commands.push_back(std::byte{0});
+  Bytes state = Encode(AuthoritativeState{});
+  state.push_back(std::byte{0});
+
+  EXPECT_EQ(Decode(commands).error(), DecodeError::kTrailingBytes);
+  EXPECT_EQ(Decode(state).error(), DecodeError::kTrailingBytes);
 }
 
 TEST(ProtocolTest, EveryErrorAndRefusalHasADescription) {

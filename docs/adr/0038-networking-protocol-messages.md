@@ -29,10 +29,30 @@ supersedes is unreliable.
 | Join request | client → server | reliable | engine version |
 | Join accepted | server → client | reliable | session ID |
 | Join refused | server → client | reliable | reason: version mismatch, match full |
+| Commands | client → server | unreliable | up to 8 commands, oldest first: sequence, movement direction, sprint, desired stance, yaw, pitch, ADS, fire, reload |
+| Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, and per player (at most 8): session ID, position, velocity, stance, stamina |
 
-Later messages (commands, Authoritative State updates) are added here as they
-are built; per-tick traffic is unreliable and carries recent commands redundantly
-so one lost datagram does not drop input.
+Per-tick traffic is unreliable because a newer message supersedes an older one,
+and it is made loss-tolerant without retransmission:
+
+- **Commands are repeated until acknowledged.** Each command has a sequence number
+  (from 1, one per client tick). Every Commands message carries all the commands
+  the client has not yet seen acknowledged, capped at the newest 8, so one lost
+  datagram does not drop input. The Authoritative State update carries, for its
+  recipient, the highest sequence the server has processed; the client forgets
+  commands up to it.
+- **The server takes each command in once.** A sequence not newer than the last
+  taken in from that client is dropped (routine, since commands repeat), and so is
+  a command with a non-finite or out-of-range number. The codec still decodes
+  such numbers faithfully; judging them is the server's sanity gate, kept apart so
+  the anti-cheat baseline (US-15) grows in one place.
+- **One command per tick.** The server consumes one queued command per tick per
+  player. If none is queued it repeats the last movement for about 100 ms and then
+  reduces the player to no movement; a repeated tick never repeats a one-shot
+  action. The acknowledged sequence is the last command actually consumed.
+- **State is newest-wins.** An update carries the server tick, and a client
+  ignores one not newer than the update it holds. Every recipient is sent every
+  player.
 
 **Joining.** A connection is accepted at the transport unconditionally, because a
 refusal is itself a message and needs a connection to travel on. The client's

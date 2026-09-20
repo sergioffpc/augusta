@@ -1,0 +1,178 @@
+#include "augusta/simulation.h"
+
+#include <cmath>
+#include <vector>
+
+#include <gtest/gtest.h>
+
+// SimulationWorld on flat ground: players are entities with bodies, moved by
+// the commands of each tick.
+namespace {
+
+using augusta::input::Command;
+using augusta::math::Vec3;
+using augusta::physics::Stance;
+using augusta::physics::StaticMesh;
+using augusta::simulation::PlayerCommand;
+using augusta::simulation::PlayerId;
+using augusta::simulation::State;
+using augusta::simulation::World;
+
+constexpr float kTick = 1.0F / 60.0F;
+constexpr int kSettleTicks = 30;
+constexpr int kWalkTicks = 60;
+
+constexpr PlayerId kAlice = static_cast<PlayerId>(1);
+constexpr PlayerId kBob = static_cast<PlayerId>(2);
+
+StaticMesh Floor() {
+  constexpr float kExtent = 100.0F;
+  return StaticMesh{.points = {Vec3(-kExtent, 0.0F, -kExtent), Vec3(-kExtent, 0.0F, kExtent),
+                               Vec3(kExtent, 0.0F, kExtent), Vec3(kExtent, 0.0F, -kExtent)},
+                    .indices = {0, 1, 2, 0, 2, 3}};
+}
+
+Command Walking(Vec3 direction, Stance stance = Stance::kStanding) {
+  Command command;
+  command.movement.direction = direction;
+  command.movement.desired_stance = stance;
+  return command;
+}
+
+class SimulationTest : public ::testing::Test {
+ protected:
+  SimulationTest() : world_(augusta::physics::StaminaConfig{}, "scripts/round.lua") {
+    EXPECT_TRUE(world_.AddStaticMesh(Floor()).has_value());
+  }
+
+  // Ticks n times with the same commands and returns the last state.
+  State Run(int ticks, const std::vector<PlayerCommand>& commands) {
+    State state;
+    for (int i = 0; i < ticks; ++i) {
+      state = world_.Tick(commands, kTick);
+    }
+    return state;
+  }
+
+  static const augusta::physics::BodyState& Body(const State& state, PlayerId player) {
+    for (const auto& entry : state.players) {
+      if (entry.player == player) {
+        return entry.body;
+      }
+    }
+    ADD_FAILURE() << "player not in state";
+    return state.players.front().body;
+  }
+
+  static float HorizontalSpeed(const augusta::physics::BodyState& body) {
+    return std::hypot(body.velocity.x, body.velocity.z);
+  }
+
+  World world_;
+};
+
+TEST_F(SimulationTest, AnEmptyWorldHasAnEmptyState) { EXPECT_TRUE(world_.Tick({}, kTick).players.empty()); }
+
+TEST_F(SimulationTest, AddedPlayersAppearInTheStateOrderedById) {
+  world_.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F));
+  world_.AddPlayer(kAlice, Vec3(-5.0F, 0.0F, 0.0F));
+
+  const State state = world_.Tick({}, kTick);
+
+  ASSERT_EQ(state.players.size(), 2U);
+  EXPECT_EQ(state.players[0].player, kAlice);
+  EXPECT_EQ(state.players[1].player, kBob);
+}
+
+TEST_F(SimulationTest, APlayerStartsStandingWhereItSpawned) {
+  world_.AddPlayer(kAlice, Vec3(3.0F, 0.0F, -2.0F));
+  Run(kSettleTicks, {});
+
+  const State state = world_.Tick({}, kTick);
+
+  EXPECT_NEAR(Body(state, kAlice).position.x, 3.0F, 0.05F);
+  EXPECT_NEAR(Body(state, kAlice).position.z, -2.0F, 0.05F);
+  EXPECT_EQ(Body(state, kAlice).stance, Stance::kStanding);
+}
+
+TEST_F(SimulationTest, AForwardCommandMovesThatPlayerOnly) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F));
+  world_.AddPlayer(kBob, Vec3(0.0F, 0.0F, 10.0F));
+  Run(kSettleTicks, {});
+  const float start = Body(world_.Tick({}, kTick), kAlice).position.x;
+  const float bob_start = Body(world_.Tick({}, kTick), kBob).position.x;
+
+  const State state = Run(kWalkTicks, {PlayerCommand{.player = kAlice, .command = Walking(Vec3(1.0F, 0.0F, 0.0F))}});
+
+  EXPECT_GT(Body(state, kAlice).position.x, start + 2.0F);
+  EXPECT_NEAR(Body(state, kBob).position.x, bob_start, 0.01F);
+}
+
+TEST_F(SimulationTest, StanceCommandsChangeTheStanceAndTheSpeed) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F));
+  Run(kSettleTicks, {});
+  const auto walk_at = [&](Stance stance) {
+    const State state =
+        Run(kWalkTicks / 4, {PlayerCommand{.player = kAlice, .command = Walking(Vec3(0.0F, 0.0F, 1.0F), stance)}});
+    EXPECT_EQ(Body(state, kAlice).stance, stance);
+    return HorizontalSpeed(Body(state, kAlice));
+  };
+
+  const float standing = walk_at(Stance::kStanding);
+  const float crouching = walk_at(Stance::kCrouching);
+  const float prone = walk_at(Stance::kProne);
+
+  EXPECT_GT(standing, crouching + 0.3F);
+  EXPECT_GT(crouching, prone + 0.3F);
+  EXPECT_GT(prone, 0.1F);
+}
+
+TEST_F(SimulationTest, APlayerWithNoCommandStopsAndKeepsItsStance) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F));
+  Run(kSettleTicks, {});
+  Run(kWalkTicks / 2,
+      {PlayerCommand{.player = kAlice, .command = Walking(Vec3(1.0F, 0.0F, 0.0F), Stance::kCrouching)}});
+
+  const State state = Run(kWalkTicks / 2, {});
+
+  EXPECT_NEAR(HorizontalSpeed(Body(state, kAlice)), 0.0F, 0.01F);
+  EXPECT_EQ(Body(state, kAlice).stance, Stance::kCrouching);
+}
+
+TEST_F(SimulationTest, ACommandForAPlayerNotInTheWorldIsIgnored) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F));
+
+  const State state = Run(kSettleTicks, {PlayerCommand{.player = kBob, .command = Walking(Vec3(1.0F, 0.0F, 0.0F))}});
+
+  ASSERT_EQ(state.players.size(), 1U);
+  EXPECT_EQ(state.players[0].player, kAlice);
+}
+
+TEST_F(SimulationTest, ARemovedPlayerLeavesTheState) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F));
+  world_.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F));
+  Run(kSettleTicks, {});
+
+  world_.RemovePlayer(kAlice);
+  const State state = world_.Tick({}, kTick);
+
+  ASSERT_EQ(state.players.size(), 1U);
+  EXPECT_EQ(state.players[0].player, kBob);
+}
+
+TEST_F(SimulationTest, RemovingAPlayerNotInTheWorldChangesNothing) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F));
+
+  world_.RemovePlayer(kBob);
+
+  EXPECT_EQ(world_.Tick({}, kTick).players.size(), 1U);
+}
+
+TEST_F(SimulationTest, AddingAPlayerTwiceKeepsOne) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F));
+  world_.AddPlayer(kAlice, Vec3(9.0F, 0.0F, 0.0F));
+
+  EXPECT_EQ(world_.Tick({}, kTick).players.size(), 1U);
+}
+
+}  // namespace
