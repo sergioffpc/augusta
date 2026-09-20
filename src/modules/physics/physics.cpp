@@ -371,11 +371,11 @@ struct World::Impl {
   // one only if it does not overlap static geometry (e.g. standing up under a
   // low ceiling). A static-only scene query never sees the body's own
   // controller, which is dynamic.
-  bool CanChangeStance(const BodyRecord& record, Stance from, Stance to) const {
-    if (HeightForStance(to) <= HeightForStance(from)) {
+  bool CanChangeStance(const BodyRecord& record, Stance current, Stance target) const {
+    if (HeightForStance(target) <= HeightForStance(current)) {
       return true;
     }
-    const float height = HeightForStance(to);
+    const float height = HeightForStance(target);
     const PxExtendedVec3 foot = record.controller->getFootPosition();
     const float center_y = static_cast<float>(foot.y) + kCapsuleRadius + (height * 0.5F);
     // A PxCapsuleGeometry lies along x; the rotation stands it up along y.
