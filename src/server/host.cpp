@@ -1,14 +1,20 @@
 #include "host.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <expected>
 #include <format>
 #include <mutex>
 #include <stdexcept>
-#include <string_view>
+#include <string>
+#include <variant>
 #include <vector>
 
 #include "augusta/input.h"
 #include "augusta/logging.h"
+#include "augusta/protocol.h"
+#include "augusta/version.h"
+#include "match.h"
 
 namespace augusta::server {
 
@@ -28,12 +34,17 @@ simulation::World BuildSimulation(const HostConfig& config) {
   return simulation;
 }
 
+// The transport's handle as a number, for log lines.
+std::uint32_t PeerNumber(networking::PeerId peer) { return static_cast<std::uint32_t>(peer); }
+
 }  // namespace
 
 struct Host::Impl {
   // Declared before the socket so it is constructed first; see BuildSimulation.
   simulation::World simulation;
   networking::Server network;
+  // Network I/O thread only.
+  Match match{std::string(EngineVersion())};
 
   // Guards latest_commands: written by the Network I/O thread as client
   // commands arrive, read once per Simulation tick. Always empty today - see
@@ -47,6 +58,37 @@ struct Host::Impl {
     const std::lock_guard<std::mutex> lock(commands_mutex);
     return latest_commands;
   }
+
+  void Reply(networking::PeerId peer, const protocol::Message& message) {
+    network.Send(peer, protocol::Encode(message), networking::Reliability::kReliable);
+  }
+
+  void HandleJoinRequest(networking::PeerId peer, const protocol::JoinRequest& request) {
+    const auto session = match.Join(peer, request.engine_version);
+    if (!session.has_value()) {
+      LI("subsystem=serverruntime event=join_refused peer={} reason=\"{}\"", PeerNumber(peer),
+         protocol::DescribeJoinRefusal(session.error()));
+      Reply(peer, protocol::JoinRefused{.reason = session.error()});
+      return;
+    }
+    LI("subsystem=serverruntime event=joined peer={} players={}", PeerNumber(peer), match.PlayerCount());
+    Reply(peer, protocol::JoinAccepted{.session = *session});
+  }
+
+  void HandleMessage(const networking::PeerMessage& message) {
+    const std::expected<protocol::Message, protocol::DecodeError> decoded = protocol::Decode(message.payload);
+    if (!decoded.has_value()) {
+      LW("subsystem=serverruntime event=dropped peer={} bytes={} reason=\"{}\"", PeerNumber(message.from),
+         message.payload.size(), protocol::DescribeDecodeError(decoded.error()));
+      return;
+    }
+    if (const auto* request = std::get_if<protocol::JoinRequest>(&*decoded)) {
+      HandleJoinRequest(message.from, *request);
+      return;
+    }
+    LW("subsystem=serverruntime event=dropped peer={} bytes={} reason=\"not a client message\"",
+       PeerNumber(message.from), message.payload.size());
+  }
 };
 
 Host::Host(const HostConfig& config) : impl_(std::make_unique<Impl>(config)) {}
@@ -54,24 +96,26 @@ Host::Host(const HostConfig& config) : impl_(std::make_unique<Impl>(config)) {}
 Host::~Host() = default;
 
 void Host::PumpNetwork() {
-  networking::Server& network = impl_->network;
-  for (const networking::PeerEvent& event : network.PumpEvents()) {
-    if (event.type == networking::PeerEventType::kConnectRequested) {
-      // TODO(sergioffpc): run Input Validation/any join policy (US-15) before
-      // accepting - not yet a module of its own. Accepts unconditionally for
-      // now.
-      network.Accept(event.peer);
+  Impl& impl = *impl_;
+  for (const networking::PeerEvent& event : impl.network.PumpEvents()) {
+    switch (event.type) {
+      case networking::PeerEventType::kConnectRequested:
+        // Every connection is accepted, since a refusal is a message and needs
+        // the connection to travel on; whether the peer joins the match is
+        // decided by its JoinRequest. TODO(sergioffpc): input validation and
+        // any join policy (US-15) is not yet a module of its own.
+        impl.network.Accept(event.peer);
+        break;
+      case networking::PeerEventType::kConnected:
+        break;
+      case networking::PeerEventType::kDisconnected:
+        impl.match.Leave(event.peer);
+        break;
     }
   }
-  // TODO(sergioffpc): M1 spike only (issue #31) - decode each received
-  // PeerMessage's Payload into an input::Command and store it into
-  // latest_commands instead of just echoing a literal hello back, once the
-  // Networking Protocol (ADR-0007) exists.
-  for (const networking::PeerMessage& message : network.ReceiveMessages()) {
-    LT("subsystem=serverruntime event=received bytes={}", message.payload.size());
-    constexpr std::string_view kHello = "hello from augustad";
-    const auto* bytes = reinterpret_cast<const std::byte*>(kHello.data());
-    network.Send(message.from, networking::Payload(bytes, bytes + kHello.size()), networking::Reliability::kUnreliable);
+  for (const networking::PeerMessage& message : impl.network.ReceiveMessages()) {
+    LT("subsystem=serverruntime event=received peer={} bytes={}", PeerNumber(message.from), message.payload.size());
+    impl.HandleMessage(message);
   }
 }
 

@@ -3,12 +3,15 @@
 
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "augusta/input.h"
 #include "augusta/networking.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
+#include "augusta/protocol.h"
+#include "augusta/version.h"
 
 // augusta::harness is where anything that plays talks to the server: the
 // client's network connection and PredictionWorld (ADR-0021, ADR-0024), without
@@ -33,6 +36,8 @@ struct SessionConfig {
   physics::StaminaConfig stamina{};
   /// The dedicated server to connect to (US-01).
   networking::Endpoint server{};
+  /// The engine version to present when joining; the server admits only its own.
+  std::string engine_version = std::string(EngineVersion());
   /// The map's collision, as built by augusta::map from the client pack.
   std::vector<physics::StaticMesh> collision{};
 };
@@ -69,6 +74,14 @@ class Session {
 
   /// The connection's quality numbers, or nullopt if not connected.
   [[nodiscard]] std::optional<networking::ConnectionStats> GetStats() const;
+
+  /// The session the server assigned once it admitted this client, or nullopt
+  /// until then. Set by ExchangeMessages; safe to read from any thread.
+  [[nodiscard]] std::optional<protocol::SessionId> GetSessionId() const;
+
+  /// Why the server refused this client, or nullopt if it has not. Set by
+  /// ExchangeMessages; safe to read from any thread.
+  [[nodiscard]] std::optional<protocol::JoinRefusal> GetRefusal() const;
 
   /// Runs one fixed tick of PredictionWorld for command and returns its state.
   prediction::State Tick(const input::Command& command, float delta_time);

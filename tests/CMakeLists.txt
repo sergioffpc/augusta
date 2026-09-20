@@ -15,6 +15,15 @@ add_executable(augusta_config_tests config_test.cpp)
 target_link_libraries(augusta_config_tests PRIVATE augusta_config GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_config_tests)
 
+add_executable(augusta_protocol_tests protocol_test.cpp)
+target_link_libraries(augusta_protocol_tests PRIVATE augusta_protocol GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_protocol_tests)
+
+add_executable(augusta_match_tests match_test.cpp)
+target_link_libraries(augusta_match_tests PRIVATE augustad_match GTest::gtest GTest::gtest_main)
+# Links networking (for PeerId), so the same first-launch cost applies as below.
+gtest_discover_tests(augusta_match_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_networking_tests networking_test.cpp)
 target_link_libraries(augusta_networking_tests PRIVATE augusta_networking GTest::gtest GTest::gtest_main)
 # DISCOVERY_TIMEOUT above the 5s default: this binary pulls in GameNetworkingSockets,
