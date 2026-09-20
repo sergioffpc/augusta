@@ -1,13 +1,13 @@
 #include "augusta/config.h"
 
-#include <gtest/gtest.h>
-
 #include <expected>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 // Unit tests for augusta_config's YAML schema and file loading (ADR-0034).
 namespace {

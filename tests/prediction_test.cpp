@@ -1,9 +1,9 @@
 #include "augusta/prediction.h"
 
-#include <gtest/gtest.h>
-
 #include <cmath>
 #include <optional>
+
+#include <gtest/gtest.h>
 
 #include "augusta/math.h"
 

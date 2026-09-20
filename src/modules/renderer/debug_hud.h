@@ -1,12 +1,12 @@
 #ifndef AUGUSTA_RENDERER_DEBUG_HUD_H_
 #define AUGUSTA_RENDERER_DEBUG_HUD_H_
 
-#include <Falcor.h>
-#include <Utils/UI/Gui.h>
-
 #include <cstdint>
 #include <memory>
 #include <optional>
+
+#include <Falcor.h>
+#include <Utils/UI/Gui.h>
 
 #include "augusta/renderer.h"
 
