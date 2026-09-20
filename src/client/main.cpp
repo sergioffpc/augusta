@@ -1,5 +1,9 @@
+#include <expected>
 #include <filesystem>
+#include <format>
 #include <print>
+#include <string>
+#include <utility>
 
 #include "augusta/assets.h"
 #include "augusta/config.h"
@@ -8,6 +12,26 @@
 #include "augusta/version.h"
 #include "runtime.h"
 #include "scene_loader.h"
+
+namespace {
+
+// Reads the Ed25519 public key and loads the pack against it; the error is
+// the message to print, so main() only decides to exit.
+std::expected<augusta::assets::Pack, std::string> LoadVerifiedPack(const std::filesystem::path& pack_path,
+                                                                   const std::filesystem::path& public_key_path) {
+  const auto public_key = augusta::assets::ReadEd25519PublicKeyFile(public_key_path);
+  if (!public_key) {
+    return std::unexpected(std::format("could not read Ed25519 public key from {}", public_key_path.string()));
+  }
+  auto pack = augusta::assets::Pack::Load(pack_path, *public_key);
+  if (!pack) {
+    return std::unexpected(
+        std::format("client pack {} {}", pack_path.string(), augusta::assets::DescribeLoadError(pack.error())));
+  }
+  return std::move(*pack);
+}
+
+}  // namespace
 
 int main(int argc, char** argv) {
   augusta::logging::Init();
@@ -32,16 +56,9 @@ int main(int argc, char** argv) {
   // this process exits here, never partially running against untrusted
   // content (ADR-0018, ARCHITECTURE.md §8).
   const std::filesystem::path& pack_path = file_config->pack_path;
-  const std::filesystem::path& public_key_path = file_config->public_key_path;
-
-  const auto public_key = augusta::assets::ReadEd25519PublicKeyFile(public_key_path);
-  if (!public_key) {
-    std::println(stderr, "could not read Ed25519 public key from {}", public_key_path.string());
-    return 1;
-  }
-  const auto pack = augusta::assets::Pack::Load(pack_path, *public_key);
+  const auto pack = LoadVerifiedPack(pack_path, file_config->public_key_path);
   if (!pack) {
-    std::println(stderr, "client pack {} {}", pack_path.string(), augusta::assets::DescribeLoadError(pack.error()));
+    std::println(stderr, "{}", pack.error());
     return 1;
   }
   LI("subsystem=client event=pack_verified path={}", pack_path.string());
