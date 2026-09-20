@@ -24,14 +24,39 @@ inline constexpr std::string_view kBaseColorProperty = "base_color";
 /// Looks up a mesh by its pack-relative path, e.g. Pack::ResolveMesh.
 using MeshResolver = std::function<std::expected<assets::MeshData, assets::ResolveError>(std::string_view)>;
 
+/// Why a render scene could not be built.
+enum class SceneErrorCode {
+  /// The scene graph could not be resolved from the pack; subject is its path
+  /// and resolve_error says why.
+  kSceneUnresolved,
+  /// A node's mesh could not be resolved; node is the node's name, subject the
+  /// mesh's path and resolve_error says why.
+  kMeshUnresolved,
+  /// A node's base color is not three floats; node is the node's name and
+  /// subject the malformed value.
+  kMalformedBaseColor,
+};
+
+/// A failure to build a render scene: what went wrong (code) and what it is
+/// about (the other fields, empty or default when the code has none).
+struct SceneError {
+  SceneErrorCode code;
+  std::string node;
+  std::string subject;
+  assets::ResolveError resolve_error{};
+};
+
+/// A message for error fit to print to whoever runs the process.
+std::string DescribeSceneError(const SceneError& error);
+
 /// Builds the render scene for scene, resolving each node's mesh through
 /// resolve_mesh. The error names the node or mesh that could not be used.
-std::expected<renderer::Scene, std::string> BuildRenderScene(const assets::SceneData& scene,
-                                                             const MeshResolver& resolve_mesh);
+std::expected<renderer::Scene, SceneError> BuildRenderScene(const assets::SceneData& scene,
+                                                            const MeshResolver& resolve_mesh);
 
 /// Resolves the scene graph at scene_path in pack and builds its render scene.
-std::expected<renderer::Scene, std::string> LoadRenderScene(const assets::Pack& pack,
-                                                            std::string_view scene_path = kScenePath);
+std::expected<renderer::Scene, SceneError> LoadRenderScene(const assets::Pack& pack,
+                                                           std::string_view scene_path = kScenePath);
 
 }  // namespace augusta::client
 
