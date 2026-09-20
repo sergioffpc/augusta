@@ -34,6 +34,37 @@ TEST(PhysicsWorldTest, StepMovesBodyAlongInputDirection) {
   EXPECT_GT(state.position.x, 0.0F);
 }
 
+TEST(PhysicsWorldTest, SeveralWorldsCoexistInOneProcess) {
+  // A server and its clients run in one process in tests, each with its own
+  // World; PhysX allows only one foundation per process, so they must share it.
+  World first{StaminaConfig{}};
+  World second{StaminaConfig{}};
+  const auto first_body = first.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
+  const auto second_body = second.CreateBody(Vec3(10.0F, 0.0F, 0.0F));
+
+  MovementInput input{};
+  input.direction = Vec3(1.0F, 0.0F, 0.0F);
+  BodyState first_state{};
+  BodyState second_state{};
+  for (int i = 0; i < 30; ++i) {
+    first_state = first.Step(first_body, input, kFixedTick);
+    second_state = second.Step(second_body, MovementInput{}, kFixedTick);
+  }
+
+  EXPECT_GT(first_state.position.x, 0.0F);
+  EXPECT_NEAR(second_state.position.x, 10.0F, 0.01F);
+}
+
+TEST(PhysicsWorldTest, AWorldCanBeCreatedAfterAllOthersWereDestroyed) {
+  {
+    World first{StaminaConfig{}};
+  }
+  World second{StaminaConfig{}};
+
+  const auto body = second.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
+  EXPECT_NO_THROW(second.Step(body, MovementInput{}, kFixedTick));
+}
+
 TEST(PhysicsWorldTest, SprintDepletesStaminaAndForcesWalkBelowThreshold) {
   StaminaConfig config;
   config.deplete_per_second = 1.0F;
