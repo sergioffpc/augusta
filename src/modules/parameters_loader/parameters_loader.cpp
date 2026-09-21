@@ -96,6 +96,33 @@ std::expected<physics::StaminaConfig, LoadError> ReadStamina(const sol::table& r
       .deplete_per_second = *deplete, .regen_per_second = *regen, .forced_walk_below = *forced_walk_below};
 }
 
+// Long enough for any script that only states values and computes a few from
+// each other, short enough that one that never returns is stopped in milliseconds.
+constexpr int kInstructionLimit = 1'000'000;
+
+void StopAtTheInstructionLimit(lua_State* state, lua_Debug* /*debug*/) {
+  luaL_error(state, "instruction limit of %d exceeded", kInstructionLimit);
+}
+
+// A Lua state of its own (it shares no global with a policy script) holding only
+// the pure libraries. There is no io, os, package, debug or coroutine, so the
+// script cannot reach the filesystem, the process or the clock; the base
+// functions that read files or compile more code and math's randomness are
+// taken out, so loading the same script always gives the same result; and a
+// script that runs on past the instruction limit is stopped with an error.
+sol::state MakeSandbox() {
+  sol::state lua;
+  lua.open_libraries(sol::lib::base, sol::lib::math, sol::lib::string, sol::lib::table);
+  for (const char* name : {"dofile", "loadfile", "load", "print", "collectgarbage"}) {
+    lua[name] = sol::lua_nil;
+  }
+  for (const char* name : {"random", "randomseed"}) {
+    lua["math"][name] = sol::lua_nil;
+  }
+  lua_sethook(lua.lua_state(), StopAtTheInstructionLimit, LUA_MASKCOUNT, kInstructionLimit);
+  return lua;
+}
+
 }  // namespace
 
 std::string DescribeLoadError(const LoadError& error) {
@@ -117,8 +144,7 @@ std::string DescribeLoadError(const LoadError& error) {
 }
 
 std::expected<Parameters, LoadError> Load(std::string_view script) {
-  sol::state lua;
-  lua.open_libraries(sol::lib::base, sol::lib::math, sol::lib::string, sol::lib::table);
+  sol::state lua = MakeSandbox();
 
   const sol::protected_function_result result = lua.safe_script(script, sol::script_pass_on_error, "=parameters");
   if (!result.valid()) {
