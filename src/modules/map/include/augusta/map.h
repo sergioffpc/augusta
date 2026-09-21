@@ -22,7 +22,7 @@ enum class MapErrorCode {
   /// A node's collider could not be resolved; node is the node's name and subject the collider's path.
   kColliderUnresolved,
   /// A node's collider resolved but is not a usable mesh; node is the node's name,
-  /// subject the collider's path, and static_mesh_error says what is wrong with it.
+  /// subject the collider's path, and collision_mesh_error says what is wrong with it.
   kInvalidCollider,
   /// The scene has no collider at all, so the map would have no floor or walls.
   kNoCollision,
@@ -36,7 +36,7 @@ struct MapError {
   /// Why the pack could not resolve it, for the two kUnresolved codes.
   assets::ResolveError resolve_error{};
   /// What is wrong with the mesh, for kInvalidCollider.
-  physics::StaticMeshError static_mesh_error{};
+  physics::CollisionMeshError collision_mesh_error{};
 };
 
 /// A message describing error, for whoever runs the process to read.
@@ -44,7 +44,7 @@ std::string DescribeMapError(const MapError& error);
 
 /// The collision meshes of the scene graph at scene_path in pack, in world space,
 /// one per node that references a collider.
-std::expected<std::vector<physics::StaticMesh>, MapError> LoadCollision(
+std::expected<std::vector<physics::CollisionMesh>, MapError> LoadCollision(
     const assets::Pack& pack, std::string_view scene_path = assets::kScenePath);
 
 }  // namespace augusta::map

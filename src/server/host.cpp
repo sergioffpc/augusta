@@ -29,10 +29,10 @@ namespace {
 // port behind.
 simulation::World BuildSimulation(const HostConfig& config) {
   simulation::World simulation(config.stamina, config.script_path);
-  for (const physics::StaticMesh& mesh : config.collision) {
-    if (const auto added = simulation.AddStaticMesh(mesh); !added) {
+  for (const physics::CollisionMesh& mesh : config.collision) {
+    if (const auto added = simulation.AddCollisionMesh(mesh); !added) {
       throw std::runtime_error(
-          std::format("server::Host: map collision rejected: {}", physics::DescribeStaticMeshError(added.error())));
+          std::format("server::Host: map collision rejected: {}", physics::DescribeCollisionMeshError(added.error())));
     }
   }
   return simulation;

@@ -42,8 +42,8 @@ std::expected<augusta::config::ServerConfig, augusta::config::ConfigError> LoadC
 // for the gameplay code that will use them. Built before any socket or thread
 // starts, so a pack without a usable map exits like a bad pack does. Reports
 // what is wrong and returns nullopt.
-std::optional<std::vector<augusta::physics::StaticMesh>> LoadMap(const augusta::assets::Pack& pack,
-                                                                 const std::filesystem::path& pack_path) {
+std::optional<std::vector<augusta::physics::CollisionMesh>> LoadMap(const augusta::assets::Pack& pack,
+                                                                    const std::filesystem::path& pack_path) {
   auto collision = augusta::map::LoadCollision(pack);
   if (!collision) {
     std::println(stderr, "server pack {}: {}", pack_path.string(), augusta::map::DescribeMapError(collision.error()));

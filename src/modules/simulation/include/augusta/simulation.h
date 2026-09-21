@@ -136,7 +136,7 @@ class World {
   ~World();
 
   /// Adds immovable level geometry to this world's physics, the same way PredictionWorld does.
-  std::expected<void, physics::StaticMeshError> AddStaticMesh(const physics::StaticMesh& mesh);
+  std::expected<void, physics::CollisionMeshError> AddCollisionMesh(const physics::CollisionMesh& mesh);
 
   World(const World&) = delete;
   World& operator=(const World&) = delete;

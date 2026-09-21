@@ -125,8 +125,8 @@ World::World(const physics::StaminaConfig& stamina_config) : impl_(std::make_uni
 
 World::~World() = default;
 
-std::expected<void, physics::StaticMeshError> World::AddStaticMesh(const physics::StaticMesh& mesh) {
-  return impl_->physics.AddStaticMesh(mesh);
+std::expected<void, physics::CollisionMeshError> World::AddCollisionMesh(const physics::CollisionMesh& mesh) {
+  return impl_->physics.AddCollisionMesh(mesh);
 }
 
 World::World(World&&) noexcept = default;

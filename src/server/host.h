@@ -28,7 +28,7 @@ struct HostConfig {
   /// Local address to listen on (US-01).
   networking::Endpoint listen{};
   /// The map's collision, as built by augusta::map from the server pack.
-  std::vector<physics::StaticMesh> collision{};
+  std::vector<physics::CollisionMesh> collision{};
 };
 
 /// The server's listening socket and its SimulationWorld, without threads or a clock.

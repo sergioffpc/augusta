@@ -47,7 +47,7 @@ struct Config {
   networking::Endpoint listen;
   // The map's collision, built by augusta::map from the server pack by the
   // caller: where content comes from is the executable's business.
-  std::vector<physics::StaticMesh> collision;
+  std::vector<physics::CollisionMesh> collision;
   // Simulation thread's fixed tick rate, in Hz. NFR-01 requires >= 60 Hz
   // sustained, no missed ticks.
   float tick_rate_hz = 60.0F;

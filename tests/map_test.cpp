@@ -144,7 +144,7 @@ TEST_F(MapTest, AnEmptyColliderIsAnErrorNamingIt) {
   EXPECT_EQ(collision.error().code, MapErrorCode::kInvalidCollider);
   EXPECT_EQ(collision.error().node, "Ground");
   EXPECT_EQ(collision.error().subject, "Empty");
-  EXPECT_EQ(collision.error().static_mesh_error, augusta::physics::StaticMeshError::kEmpty);
+  EXPECT_EQ(collision.error().collision_mesh_error, augusta::physics::CollisionMeshError::kEmpty);
 }
 
 TEST_F(MapTest, APackWithoutASceneIsAnError) {

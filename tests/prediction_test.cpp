@@ -18,8 +18,8 @@ namespace {
 using augusta::input::Command;
 using augusta::math::Vec3;
 using augusta::physics::BodyState;
+using augusta::physics::CollisionMesh;
 using augusta::physics::StaminaConfig;
-using augusta::physics::StaticMesh;
 using augusta::prediction::Acknowledgement;
 using augusta::prediction::State;
 using augusta::prediction::World;
@@ -28,11 +28,11 @@ constexpr float kFixedTick = 1.0F / 60.0F;
 constexpr int kSettleTicks = 30;
 constexpr int kBudgetTicks = 9;  // NFR-02's 150 ms at 60 Hz.
 
-StaticMesh Floor() {
+CollisionMesh Floor() {
   constexpr float kExtent = 100.0F;
-  return StaticMesh{.points = {Vec3(-kExtent, 0.0F, -kExtent), Vec3(-kExtent, 0.0F, kExtent),
-                               Vec3(kExtent, 0.0F, kExtent), Vec3(kExtent, 0.0F, -kExtent)},
-                    .indices = {0, 1, 2, 0, 2, 3}};
+  return CollisionMesh{.points = {Vec3(-kExtent, 0.0F, -kExtent), Vec3(-kExtent, 0.0F, kExtent),
+                                  Vec3(kExtent, 0.0F, kExtent), Vec3(kExtent, 0.0F, -kExtent)},
+                       .indices = {0, 1, 2, 0, 2, 3}};
 }
 
 TEST(PredictionWorldTest, TicksTheLocalEntityForwardEachCall) {
@@ -52,7 +52,7 @@ TEST(PredictionWorldTest, TicksTheLocalEntityForwardEachCall) {
 class ReconciliationTest : public ::testing::Test {
  protected:
   ReconciliationTest() : world_{StaminaConfig{}} {
-    EXPECT_TRUE(world_.AddStaticMesh(Floor()).has_value());
+    EXPECT_TRUE(world_.AddCollisionMesh(Floor()).has_value());
     for (int i = 0; i < kSettleTicks; ++i) {
       Tick(std::nullopt);
     }

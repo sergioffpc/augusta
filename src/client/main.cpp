@@ -68,8 +68,8 @@ std::expected<augusta::config::ClientConfig, augusta::config::ConfigError> LoadC
 // The same collision the server builds from its own pack, so the client's
 // prediction and the server's simulation agree on where the walls are. Reports
 // what is wrong and returns nullopt.
-std::optional<std::vector<augusta::physics::StaticMesh>> LoadMap(const augusta::assets::Pack& pack,
-                                                                 const std::filesystem::path& pack_path) {
+std::optional<std::vector<augusta::physics::CollisionMesh>> LoadMap(const augusta::assets::Pack& pack,
+                                                                    const std::filesystem::path& pack_path) {
   auto collision = augusta::map::LoadCollision(pack);
   if (!collision) {
     std::println(stderr, "client pack {}: {}", pack_path.string(), augusta::map::DescribeMapError(collision.error()));

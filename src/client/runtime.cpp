@@ -39,6 +39,20 @@ struct ThreadJoiner {
   }
 };
 
+// The PredictionWorld a Session predicts in, with the map's collision loaded:
+// a body that has already ticked has been predicted without it, and
+// reconciliation cannot account for that.
+prediction::World MakePredictionWorld(const Config& cfg) {
+  prediction::World world(cfg.stamina);
+  for (const physics::CollisionMesh& mesh : cfg.collision) {
+    if (const auto added = world.AddCollisionMesh(mesh); !added) {
+      throw std::runtime_error(
+          std::format("ClientRuntime: map collision rejected: {}", physics::DescribeCollisionMeshError(added.error())));
+    }
+  }
+  return world;
+}
+
 }  // namespace
 
 struct ClientRuntime::Impl {
@@ -163,16 +177,9 @@ struct ClientRuntime::Impl {
   explicit Impl(const Config& cfg)
       : config(cfg),
         input(cfg.input),
-        session(harness::SessionConfig{.stamina = cfg.stamina, .server = cfg.server}),
+        session(harness::SessionConfig{.server = cfg.server}, MakePredictionWorld(cfg)),
         presentation(audio),
-        renderer(cfg.renderer, input) {
-    for (const physics::StaticMesh& mesh : cfg.collision) {
-      if (const auto added = session.AddStaticMesh(mesh); !added) {
-        throw std::runtime_error(
-            std::format("ClientRuntime: map collision rejected: {}", physics::DescribeStaticMeshError(added.error())));
-      }
-    }
-  }
+        renderer(cfg.renderer, input) {}
 
   // Prediction thread body (ADR-0005): fixed-rate loop sampling local
   // input and ticking PredictionWorld. Runs until running is cleared by

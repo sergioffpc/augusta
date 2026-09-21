@@ -94,14 +94,14 @@ struct StaminaConfig {
 };
 
 /// A triangle mesh of immovable map geometry, already in world space.
-struct StaticMesh {
+struct CollisionMesh {
   std::vector<math::Vec3> points{};
   /// Three indices into points per triangle.
   std::vector<std::uint32_t> indices{};
 };
 
-/// Why a StaticMesh could not be added to a World.
-enum class StaticMeshError {
+/// Why a CollisionMesh could not be added to a World.
+enum class CollisionMeshError {
   /// No points or no triangles.
   kEmpty,
   /// The indices are not whole triangles, or one points outside points.
@@ -110,11 +110,11 @@ enum class StaticMeshError {
   kCookingFailed,
 };
 
-/// Whether mesh is a whole, in-range triangle list World::AddStaticMesh can take.
-std::expected<void, StaticMeshError> ValidateStaticMesh(const StaticMesh& mesh);
+/// Whether mesh is a whole, in-range triangle list World::AddCollisionMesh can take.
+std::expected<void, CollisionMeshError> ValidateCollisionMesh(const CollisionMesh& mesh);
 
 /// A phrase for error, for a startup failure to report.
-std::string_view DescribeStaticMeshError(StaticMeshError error);
+std::string_view DescribeCollisionMeshError(CollisionMeshError error);
 
 // The result of one World::Raycast query.
 struct RaycastHit {
@@ -171,7 +171,7 @@ class World {
 
   /// Adds mesh as immovable geometry that bodies collide with and stand on.
   /// Meant to be called while loading a map, before bodies are stepped.
-  std::expected<void, StaticMeshError> AddStaticMesh(const StaticMesh& mesh);
+  std::expected<void, CollisionMeshError> AddCollisionMesh(const CollisionMesh& mesh);
 
   // Removes a body from this World and invalidates its handle. Calling
   // any other method with a handle after it has been destroyed is
@@ -201,7 +201,7 @@ class World {
   BodyState Correct(BodyHandle handle, const BodyState& corrected);
 
   // Casts a ray from origin in direction (need not be pre-normalized) up
-  // to max_distance, against every body and static mesh currently in this
+  // to max_distance, against every body and collision mesh currently in this
   // World, and returns the closest intersection. Used by augusta::ballistics
   // for player hit detection (US-11): PhysX's cross-platform
   // non-determinism (see the header comment above) isn't a correctness

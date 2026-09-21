@@ -1,14 +1,12 @@
 #ifndef AUGUSTA_HARNESS_H_
 #define AUGUSTA_HARNESS_H_
 
-#include <expected>
 #include <memory>
 #include <optional>
 #include <string>
 
 #include "augusta/input.h"
 #include "augusta/networking.h"
-#include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
 #include "augusta/version.h"
@@ -30,10 +28,8 @@
 // from the Prediction thread (the transport is safe to send from both).
 namespace augusta::harness {
 
-/// What a Session needs to connect and predict.
+/// What a Session needs to connect.
 struct SessionConfig {
-  /// Every player body's stamina rules, shared with the server's SimulationWorld.
-  physics::StaminaConfig stamina{};
   /// The dedicated server to connect to (US-01).
   networking::Endpoint server{};
   /// The engine version to present when joining; the server admits only its own.
@@ -43,9 +39,12 @@ struct SessionConfig {
 /// The client's network connection and PredictionWorld, without a window or a GPU.
 class Session {
  public:
-  /// Constructs the connection and an empty PredictionWorld; connects to nothing
-  /// yet. Load the map with AddStaticMesh before the first Tick.
-  explicit Session(const SessionConfig& config);
+  /// Constructs the connection around prediction, which the Session takes over
+  /// and Ticks; connects to nothing yet. Load the map into prediction
+  /// (World::AddCollisionMesh) before handing it over: a body that has already
+  /// ticked has been predicted without it, and reconciliation cannot account
+  /// for that.
+  Session(const SessionConfig& config, prediction::World prediction);
   ~Session();
 
   // Not copyable or movable: owns a live network connection.
@@ -53,12 +52,6 @@ class Session {
   Session& operator=(const Session&) = delete;
   Session(Session&&) = delete;
   Session& operator=(Session&&) = delete;
-
-  /// Adds a piece of the map's collision (as built by augusta::map from the
-  /// client pack) to the PredictionWorld's physics. Call before the first Tick,
-  /// from the thread that will Tick: a body that has already ticked has been
-  /// predicted without it, and reconciliation cannot account for that.
-  std::expected<void, physics::StaticMeshError> AddStaticMesh(const physics::StaticMesh& mesh);
 
   /// Begins connecting to the configured server; returns immediately.
   void Connect();

@@ -43,8 +43,8 @@ using augusta::input::Command;
 using augusta::math::Vec3;
 using augusta::networking::ConnectionState;
 using augusta::networking::Endpoint;
+using augusta::physics::CollisionMesh;
 using augusta::physics::Stance;
-using augusta::physics::StaticMesh;
 using augusta::protocol::JoinRefusal;
 using augusta::server::Host;
 using augusta::server::HostConfig;
@@ -52,6 +52,9 @@ using augusta::server::HostConfig;
 constexpr auto kPollInterval = std::chrono::milliseconds(10);
 constexpr auto kPollDeadline = std::chrono::seconds(5);
 constexpr float kFixedTick = 1.0F / 60.0F;
+
+// A PredictionWorld with no map, on default stamina rules.
+augusta::prediction::World EmptyWorld() { return augusta::prediction::World(augusta::physics::StaminaConfig{}); }
 
 // ctest runs every test case in its own process, possibly in parallel, so a
 // fixed port would collide; derive one from the process id instead.
@@ -82,7 +85,7 @@ class SessionTest : public ::testing::Test {
   // it until Lua is embedded, ADR-0022); point it at a real script then.
   SessionTest()
       : host_(HostConfig{.script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}}),
-        session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}) {}
+        session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld()) {}
 
   // Runs both sides' network work until the session reports connected, or
   // the deadline passes.
@@ -147,7 +150,8 @@ class JoinTest : public ::testing::Test {
   // Starts connecting a new client that presents engine_version.
   Session& AddClient(const std::string& engine_version = std::string(augusta::EngineVersion())) {
     sessions_.push_back(std::make_unique<Session>(
-        SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .engine_version = engine_version}));
+        SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .engine_version = engine_version},
+        EmptyWorld()));
     sessions_.back()->Connect();
     return *sessions_.back();
   }
@@ -227,11 +231,18 @@ TEST_F(JoinTest, TheNinthClientIsRefusedBecauseTheMatchIsFull) {
 }
 
 // A large horizontal slab at height y, its triangles facing up.
-StaticMesh FloorAt(float y) {
+CollisionMesh FloorAt(float y) {
   constexpr float kExtent = 100.0F;
-  return StaticMesh{.points = {Vec3(-kExtent, y, -kExtent), Vec3(-kExtent, y, kExtent), Vec3(kExtent, y, kExtent),
-                               Vec3(kExtent, y, -kExtent)},
-                    .indices = {0, 1, 2, 0, 2, 3}};
+  return CollisionMesh{.points = {Vec3(-kExtent, y, -kExtent), Vec3(-kExtent, y, kExtent), Vec3(kExtent, y, kExtent),
+                                  Vec3(kExtent, y, -kExtent)},
+                       .indices = {0, 1, 2, 0, 2, 3}};
+}
+
+// A PredictionWorld whose map is a floor at height y.
+augusta::prediction::World WorldWithFloorAt(float y) {
+  augusta::prediction::World world = EmptyWorld();
+  EXPECT_TRUE(world.AddCollisionMesh(FloorAt(y)).has_value());
+  return world;
 }
 
 // The client spawns its predicted body at the origin, so a floor two meters
@@ -240,9 +251,7 @@ constexpr float kFloorHeight = -2.0F;
 constexpr int kFallTicks = 120;
 
 TEST(MapSessionTest, ThePredictedBodyRestsOnTheMapsFloor) {
-  const Endpoint address{.address = LoopbackAddress()};
-  Session session(SessionConfig{.server = address});
-  ASSERT_TRUE(session.AddStaticMesh(FloorAt(kFloorHeight)).has_value());
+  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, WorldWithFloorAt(kFloorHeight));
 
   augusta::prediction::State state;
   for (int i = 0; i < kFallTicks; ++i) {
@@ -253,7 +262,7 @@ TEST(MapSessionTest, ThePredictedBodyRestsOnTheMapsFloor) {
 }
 
 TEST(MapSessionTest, WithoutAMapThePredictedBodyKeepsFalling) {
-  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}});
+  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
 
   augusta::prediction::State state;
   for (int i = 0; i < kFallTicks; ++i) {
@@ -263,13 +272,13 @@ TEST(MapSessionTest, WithoutAMapThePredictedBodyKeepsFalling) {
   EXPECT_LT(state.local_body.position.y, kFloorHeight - 5.0F);
 }
 
-TEST(MapSessionTest, ASessionRefusesAMapMeshPhysicsRejects) {
-  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}});
+TEST(MapSessionTest, APredictionWorldRefusesAMapMeshPhysicsRejects) {
+  augusta::prediction::World world = EmptyWorld();
 
-  const auto added = session.AddStaticMesh(StaticMesh{});
+  const auto added = world.AddCollisionMesh(CollisionMesh{});
 
   ASSERT_FALSE(added.has_value());
-  EXPECT_EQ(added.error(), augusta::physics::StaticMeshError::kEmpty);
+  EXPECT_EQ(added.error(), augusta::physics::CollisionMeshError::kEmpty);
 }
 
 TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
@@ -286,7 +295,7 @@ TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
 TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
   EXPECT_THROW(Host(HostConfig{.script_path = "scripts/round.lua",
                                .listen = Endpoint{.address = LoopbackAddress()},
-                               .collision = {StaticMesh{}}}),
+                               .collision = {CollisionMesh{}}}),
                std::runtime_error);
 }
 
@@ -305,13 +314,11 @@ class MovementTest : public ::testing::Test {
 
   // The client always knows the floor; the host knows server_map, which a test
   // may make differ from it to give the two something to disagree about.
-  explicit MovementTest(std::vector<StaticMesh> server_map)
+  explicit MovementTest(std::vector<CollisionMesh> server_map)
       : host_(HostConfig{.script_path = "scripts/round.lua",
                          .listen = Endpoint{.address = LoopbackAddress()},
                          .collision = std::move(server_map)}),
-        session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}) {
-    EXPECT_TRUE(session_.AddStaticMesh(FloorAt(kGroundHeight)).has_value());
-  }
+        session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, WorldWithFloorAt(kGroundHeight)) {}
 
   void TearDown() override { augusta::networking::SimulateNetworkConditions({}); }
 
@@ -610,13 +617,13 @@ TEST_F(MovementTest, CommandsThatAreOutOfOrderNonFiniteOrOutOfRangeAreDroppedWit
 }
 
 // A vertical wall across the walking path, at x, that only the server knows.
-StaticMesh WallAt(float x) {
+CollisionMesh WallAt(float x) {
   constexpr float kHalfWidth = 20.0F;
   constexpr float kHeight = 5.0F;
   constexpr float kBottom = -1.0F;
-  return StaticMesh{.points = {Vec3(x, kBottom, -kHalfWidth), Vec3(x, kHeight, -kHalfWidth),
-                               Vec3(x, kHeight, kHalfWidth), Vec3(x, kBottom, kHalfWidth)},
-                    .indices = {0, 1, 2, 0, 2, 3}};
+  return CollisionMesh{.points = {Vec3(x, kBottom, -kHalfWidth), Vec3(x, kHeight, -kHalfWidth),
+                                  Vec3(x, kHeight, kHalfWidth), Vec3(x, kBottom, kHalfWidth)},
+                       .indices = {0, 1, 2, 0, 2, 3}};
 }
 
 class DivergedMovementTest : public MovementTest {

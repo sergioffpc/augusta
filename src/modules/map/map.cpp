@@ -19,15 +19,15 @@ std::string DescribeMapError(const MapError& error) {
                          assets::DescribeResolveError(error.resolve_error, "collision geometry"));
     case MapErrorCode::kInvalidCollider:
       return std::format("collider {} of node {}: {}", error.subject, error.node,
-                         physics::DescribeStaticMeshError(error.static_mesh_error));
+                         physics::DescribeCollisionMeshError(error.collision_mesh_error));
     case MapErrorCode::kNoCollision:
       return "the scene has no collider, so the map would have no floor or walls";
   }
   return "unknown map error";
 }
 
-std::expected<std::vector<physics::StaticMesh>, MapError> LoadCollision(const assets::Pack& pack,
-                                                                        std::string_view scene_path) {
+std::expected<std::vector<physics::CollisionMesh>, MapError> LoadCollision(const assets::Pack& pack,
+                                                                           std::string_view scene_path) {
   const auto scene = pack.ResolveScene(scene_path);
   if (!scene) {
     return std::unexpected(MapError{
@@ -35,7 +35,7 @@ std::expected<std::vector<physics::StaticMesh>, MapError> LoadCollision(const as
   }
 
   const std::vector<math::Mat4> world = assets::ComputeWorldTransforms(*scene);
-  std::vector<physics::StaticMesh> meshes;
+  std::vector<physics::CollisionMesh> meshes;
   for (std::size_t i = 0; i < scene->nodes.size(); ++i) {
     const assets::SceneNode& node = scene->nodes[i];
     if (!node.collider_path) {
@@ -48,16 +48,16 @@ std::expected<std::vector<physics::StaticMesh>, MapError> LoadCollision(const as
                                       .subject = *node.collider_path,
                                       .resolve_error = collision.error()});
     }
-    physics::StaticMesh mesh{.indices = std::move(collision->indices)};
+    physics::CollisionMesh mesh{.indices = std::move(collision->indices)};
     mesh.points.reserve(collision->points.size());
     for (const math::Vec3& point : collision->points) {
       mesh.points.push_back(math::TransformPoint(world[i], point));
     }
-    if (const auto valid = physics::ValidateStaticMesh(mesh); !valid) {
+    if (const auto valid = physics::ValidateCollisionMesh(mesh); !valid) {
       return std::unexpected(MapError{.code = MapErrorCode::kInvalidCollider,
                                       .node = node.name,
                                       .subject = *node.collider_path,
-                                      .static_mesh_error = valid.error()});
+                                      .collision_mesh_error = valid.error()});
     }
     meshes.push_back(std::move(mesh));
   }

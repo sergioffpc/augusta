@@ -22,7 +22,7 @@
 // PxScene::simulate()/fetchResults(). CCT movement is sweep-based and
 // self-contained; nothing here needs the rigid-body dynamics loop, since
 // every body is player-controlled and the only other geometry is the
-// map's static meshes (AddStaticMesh), which never move.
+// map's collision meshes (AddCollisionMesh), which never move.
 //
 // Engine convention (not yet pinned down project-wide - see
 // augusta::input::Command's yaw/pitch comment): Y is up, matching both
@@ -289,8 +289,8 @@ struct World::Impl {
   PxScene* scene = nullptr;
   PxControllerManager* controller_manager = nullptr;
   PxMaterial* material = nullptr;
-  // Static map geometry added by AddStaticMesh; released with the World.
-  std::vector<PxTriangleMesh*> static_meshes;
+  // Static map geometry added by AddCollisionMesh; released with the World.
+  std::vector<PxTriangleMesh*> collision_meshes;
   std::vector<PxRigidStatic*> static_actors;
   StaminaConfig stamina_config;
   std::unordered_map<BodyHandle, BodyRecord> bodies;
@@ -360,7 +360,7 @@ struct World::Impl {
     for (PxRigidStatic* actor : static_actors) {
       actor->release();
     }
-    for (PxTriangleMesh* mesh : static_meshes) {
+    for (PxTriangleMesh* mesh : collision_meshes) {
       mesh->release();
     }
     if (material != nullptr) {
@@ -389,33 +389,33 @@ World::~World() = default;
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
-std::string_view DescribeStaticMeshError(StaticMeshError error) {
+std::string_view DescribeCollisionMeshError(CollisionMeshError error) {
   switch (error) {
-    case StaticMeshError::kEmpty:
+    case CollisionMeshError::kEmpty:
       return "the mesh has no triangles";
-    case StaticMeshError::kInvalidIndex:
+    case CollisionMeshError::kInvalidIndex:
       return "the mesh's indices are not whole triangles inside its points";
-    case StaticMeshError::kCookingFailed:
+    case CollisionMeshError::kCookingFailed:
       return "PhysX could not build a collision mesh from it";
   }
-  return "unknown static mesh error";
+  return "unknown collision mesh error";
 }
 
-std::expected<void, StaticMeshError> ValidateStaticMesh(const StaticMesh& mesh) {
+std::expected<void, CollisionMeshError> ValidateCollisionMesh(const CollisionMesh& mesh) {
   if (mesh.points.empty() || mesh.indices.empty()) {
-    return std::unexpected(StaticMeshError::kEmpty);
+    return std::unexpected(CollisionMeshError::kEmpty);
   }
   const bool whole_triangles = mesh.indices.size() % 3 == 0;
   const bool in_range =
       std::ranges::all_of(mesh.indices, [&](std::uint32_t index) { return index < mesh.points.size(); });
   if (!whole_triangles || !in_range) {
-    return std::unexpected(StaticMeshError::kInvalidIndex);
+    return std::unexpected(CollisionMeshError::kInvalidIndex);
   }
   return {};
 }
 
-std::expected<void, StaticMeshError> World::AddStaticMesh(const StaticMesh& mesh) {
-  if (const auto valid = ValidateStaticMesh(mesh); !valid) {
+std::expected<void, CollisionMeshError> World::AddCollisionMesh(const CollisionMesh& mesh) {
+  if (const auto valid = ValidateCollisionMesh(mesh); !valid) {
     return valid;
   }
   const std::vector<std::uint32_t> both_windings = WithBothWindings(mesh.indices);
@@ -431,14 +431,14 @@ std::expected<void, StaticMeshError> World::AddStaticMesh(const StaticMesh& mesh
   const PxCookingParams params(impl_->physics->getTolerancesScale());
   PxTriangleMesh* cooked = PxCreateTriangleMesh(params, desc, impl_->physics->getPhysicsInsertionCallback());
   if (cooked == nullptr) {
-    return std::unexpected(StaticMeshError::kCookingFailed);
+    return std::unexpected(CollisionMeshError::kCookingFailed);
   }
   PxRigidStatic* actor = impl_->physics->createRigidStatic(PxTransform(PxIdentity));
   PxRigidActorExt::createExclusiveShape(*actor, PxTriangleMeshGeometry(cooked), *impl_->material);
   impl_->scene->addActor(*actor);
-  impl_->static_meshes.push_back(cooked);
+  impl_->collision_meshes.push_back(cooked);
   impl_->static_actors.push_back(actor);
-  LD("subsystem=physics event=static_mesh_added triangles={}", mesh.indices.size() / 3);
+  LD("subsystem=physics event=collision_mesh_added triangles={}", mesh.indices.size() / 3);
   return {};
 }
 

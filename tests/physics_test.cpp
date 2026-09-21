@@ -11,12 +11,12 @@ namespace {
 using augusta::math::Length;
 using augusta::math::Vec3;
 using augusta::physics::BodyState;
+using augusta::physics::CollisionMesh;
+using augusta::physics::CollisionMeshError;
 using augusta::physics::MovementInput;
 using augusta::physics::RaycastHit;
 using augusta::physics::StaminaConfig;
 using augusta::physics::Stance;
-using augusta::physics::StaticMesh;
-using augusta::physics::StaticMeshError;
 using augusta::physics::World;
 
 constexpr float kFixedTick = 1.0F / 60.0F;
@@ -150,23 +150,23 @@ TEST(PhysicsWorldTest, RaycastHitsACreatedBody) {
 
 // A flat rectangle as two triangles, corners in counter-clockwise order seen
 // from the side the normal points to.
-StaticMesh Quad(const Vec3& a, const Vec3& b, const Vec3& c, const Vec3& d) {
-  return StaticMesh{.points = {a, b, c, d}, .indices = {0, 1, 2, 0, 2, 3}};
+CollisionMesh Quad(const Vec3& a, const Vec3& b, const Vec3& c, const Vec3& d) {
+  return CollisionMesh{.points = {a, b, c, d}, .indices = {0, 1, 2, 0, 2, 3}};
 }
 
 // A horizontal slab from (x_min, z_min) to (x_max, z_max) at height y, normal up.
-StaticMesh Floor(float y, float x_min, float x_max, float z_min, float z_max) {
+CollisionMesh Floor(float y, float x_min, float x_max, float z_min, float z_max) {
   return Quad(Vec3(x_min, y, z_min), Vec3(x_min, y, z_max), Vec3(x_max, y, z_max), Vec3(x_max, y, z_min));
 }
 
 // The same slab seen from below, normal down.
-StaticMesh Ceiling(float y, float x_min, float x_max, float z_min, float z_max) {
+CollisionMesh Ceiling(float y, float x_min, float x_max, float z_min, float z_max) {
   return Quad(Vec3(x_min, y, z_min), Vec3(x_max, y, z_min), Vec3(x_max, y, z_max), Vec3(x_min, y, z_max));
 }
 
 // A vertical wall across the x axis at x, from y = 0 up to height, its triangles
 // facing +x (away from a body approaching from -x) or -x.
-StaticMesh Wall(float x, float height, float z_min, float z_max, bool faces_positive_x) {
+CollisionMesh Wall(float x, float height, float z_min, float z_max, bool faces_positive_x) {
   const Vec3 bottom_near(x, 0.0F, z_min);
   const Vec3 top_near(x, height, z_min);
   const Vec3 top_far(x, height, z_max);
@@ -179,7 +179,7 @@ constexpr float kHalfExtent = 50.0F;
 
 World WorldWithFloor() {
   World world{StaminaConfig{}};
-  EXPECT_TRUE(world.AddStaticMesh(Floor(0.0F, -kHalfExtent, kHalfExtent, -kHalfExtent, kHalfExtent)).has_value());
+  EXPECT_TRUE(world.AddCollisionMesh(Floor(0.0F, -kHalfExtent, kHalfExtent, -kHalfExtent, kHalfExtent)).has_value());
   return world;
 }
 
@@ -220,7 +220,7 @@ class WallTest : public ::testing::TestWithParam<bool> {};
 // whichever side its triangles face.
 TEST_P(WallTest, AWallStopsAWalkingBody) {
   World world = WorldWithFloor();
-  ASSERT_TRUE(world.AddStaticMesh(Wall(5.0F, 5.0F, -kHalfExtent, kHalfExtent, GetParam())).has_value());
+  ASSERT_TRUE(world.AddCollisionMesh(Wall(5.0F, 5.0F, -kHalfExtent, kHalfExtent, GetParam())).has_value());
   const auto body = world.CreateBody(Vec3(0.0F, 1.2F, 0.0F));
   MovementInput walk{};
   walk.direction = Vec3(1.0F, 0.0F, 0.0F);
@@ -238,7 +238,7 @@ TEST(StaticGeometryTest, ACrouchedBodyCannotStandUpUnderALowCeiling) {
   World world = WorldWithFloor();
   // A tunnel from x = 3 onward: 1.7 m of headroom fits a crouch (1.3 m, plus the
   // controller's contact skin) but not standing (2.1 m).
-  ASSERT_TRUE(world.AddStaticMesh(Ceiling(1.7F, 3.0F, kHalfExtent, -kHalfExtent, kHalfExtent)).has_value());
+  ASSERT_TRUE(world.AddCollisionMesh(Ceiling(1.7F, 3.0F, kHalfExtent, -kHalfExtent, kHalfExtent)).has_value());
   const auto body = world.CreateBody(Vec3(0.0F, 1.2F, 0.0F));
   MovementInput crouch_in{};
   crouch_in.direction = Vec3(1.0F, 0.0F, 0.0F);
@@ -256,7 +256,7 @@ TEST(StaticGeometryTest, ACrouchedBodyCannotStandUpUnderALowCeiling) {
 
 TEST(StaticGeometryTest, AProneBodyCannotStandUpUnderALowCeiling) {
   World world = WorldWithFloor();
-  ASSERT_TRUE(world.AddStaticMesh(Ceiling(1.7F, 3.0F, kHalfExtent, -kHalfExtent, kHalfExtent)).has_value());
+  ASSERT_TRUE(world.AddCollisionMesh(Ceiling(1.7F, 3.0F, kHalfExtent, -kHalfExtent, kHalfExtent)).has_value());
   const auto body = world.CreateBody(Vec3(0.0F, 1.2F, 0.0F));
   MovementInput crawl_in{};
   crawl_in.direction = Vec3(1.0F, 0.0F, 0.0F);
@@ -274,7 +274,7 @@ TEST(StaticGeometryTest, AProneBodyCannotStandUpUnderALowCeiling) {
 TEST(StaticGeometryTest, ACeilingJustAboveStandingHeightStillBlocksStandingUp) {
   World world = WorldWithFloor();
   // Standing is 2.1 m tall; the controller also keeps a contact skin around it.
-  ASSERT_TRUE(world.AddStaticMesh(Ceiling(2.05F, -kHalfExtent, kHalfExtent, -kHalfExtent, kHalfExtent)).has_value());
+  ASSERT_TRUE(world.AddCollisionMesh(Ceiling(2.05F, -kHalfExtent, kHalfExtent, -kHalfExtent, kHalfExtent)).has_value());
   const auto body = world.CreateBody(Vec3(0.0F, 1.0F, 0.0F));
   MovementInput crouch{};
   crouch.desired_stance = Stance::kCrouching;
@@ -299,38 +299,38 @@ TEST(StaticGeometryTest, ABodyCanStandUpWhereThereIsHeadroom) {
   EXPECT_EQ(Settle(world, body, stand, 30).stance, Stance::kStanding);
 }
 
-TEST(StaticGeometryTest, ValidateStaticMeshAgreesWithAddStaticMesh) {
-  EXPECT_EQ(augusta::physics::ValidateStaticMesh(StaticMesh{}).error(), StaticMeshError::kEmpty);
-  EXPECT_TRUE(augusta::physics::ValidateStaticMesh(Floor(0.0F, -1.0F, 1.0F, -1.0F, 1.0F)).has_value());
+TEST(StaticGeometryTest, ValidateCollisionMeshAgreesWithAddCollisionMesh) {
+  EXPECT_EQ(augusta::physics::ValidateCollisionMesh(CollisionMesh{}).error(), CollisionMeshError::kEmpty);
+  EXPECT_TRUE(augusta::physics::ValidateCollisionMesh(Floor(0.0F, -1.0F, 1.0F, -1.0F, 1.0F)).has_value());
 }
 
 TEST(StaticGeometryTest, AMeshWithNoTrianglesIsRejected) {
   World world{StaminaConfig{}};
 
-  const auto result = world.AddStaticMesh(StaticMesh{});
+  const auto result = world.AddCollisionMesh(CollisionMesh{});
 
   ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error(), StaticMeshError::kEmpty);
+  EXPECT_EQ(result.error(), CollisionMeshError::kEmpty);
 }
 
 TEST(StaticGeometryTest, AnIndexOutsideThePointsIsRejected) {
   World world{StaminaConfig{}};
 
-  const auto result = world.AddStaticMesh(StaticMesh{
+  const auto result = world.AddCollisionMesh(CollisionMesh{
       .points = {Vec3(0.0F, 0.0F, 0.0F), Vec3(1.0F, 0.0F, 0.0F), Vec3(0.0F, 0.0F, 1.0F)}, .indices = {0, 1, 7}});
 
   ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error(), StaticMeshError::kInvalidIndex);
+  EXPECT_EQ(result.error(), CollisionMeshError::kInvalidIndex);
 }
 
 TEST(StaticGeometryTest, AnIndexCountThatIsNotWholeTrianglesIsRejected) {
   World world{StaminaConfig{}};
 
-  const auto result = world.AddStaticMesh(StaticMesh{
+  const auto result = world.AddCollisionMesh(CollisionMesh{
       .points = {Vec3(0.0F, 0.0F, 0.0F), Vec3(1.0F, 0.0F, 0.0F), Vec3(0.0F, 0.0F, 1.0F)}, .indices = {0, 1}});
 
   ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error(), StaticMeshError::kInvalidIndex);
+  EXPECT_EQ(result.error(), CollisionMeshError::kInvalidIndex);
 }
 
 }  // namespace
