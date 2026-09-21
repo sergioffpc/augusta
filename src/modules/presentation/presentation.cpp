@@ -6,6 +6,7 @@
 #include <nvtx3/nvtx3.hpp>
 
 #include "augusta/animation.h"
+#include "augusta/correction.h"
 #include "augusta/logging.h"
 
 namespace augusta::presentation {
@@ -36,6 +37,15 @@ struct World::Impl {
   prediction::State previous_state;
   bool has_previous_state = false;
 
+  // Staged by RunFrame() immediately before ecs.progress(), read by the phase
+  // systems below; not meaningful outside of a RunFrame call.
+  prediction::State latest_state;
+  // Hides the jumps reconciliation makes to the predicted body (ADR-0004), as
+  // an offset from the predicted position that fades.
+  Correction correction;
+  math::Vec3 local_offset{};
+  State frame_state;
+
   explicit Impl(audio::Engine& engine) : audio_engine(engine) {
     // Chain the five phases in Phase's declared order (ADR-0024): each
     // depends_on the previous one, and the first depends on Flecs's
@@ -55,16 +65,19 @@ struct World::Impl {
     // those shapes exist, and until RunFrame's per-call latest argument
     // has somewhere to flow into the ECS (a singleton, presumably, once
     // one is designed).
-    ecs.system("InterpolationSystem").kind(phases[kInterpolation]).run([this](flecs::iter&) { OnInterpolation(); });
+    ecs.system("InterpolationSystem").kind(phases[kInterpolation]).run([this](flecs::iter& sys_iter) {
+      OnInterpolation(sys_iter.delta_time());
+    });
     ecs.system("CameraSystem").kind(phases[kCamera]).run([this](flecs::iter&) { OnCamera(); });
     ecs.system("AnimationSystem").kind(phases[kAnimation]).run([this](flecs::iter&) { OnAnimation(); });
     ecs.system("AudioCuesSystem").kind(phases[kAudioCues]).run([this](flecs::iter&) { OnAudioCues(); });
     ecs.system("CommitSystem").kind(phases[kCommit]).run([this](flecs::iter&) { OnCommit(); });
   }
 
-  void OnInterpolation() {
+  void OnInterpolation(float delta_time) {
     const nvtx3::scoped_range range{"Interpolation"};
     LT("subsystem=presentationworld event=interpolation");
+    local_offset = correction.Update(latest_state.total_correction, delta_time);
     // TODO(sergioffpc): blend the last two prediction::State values.
   }
 
@@ -99,7 +112,8 @@ struct World::Impl {
   void OnCommit() {
     const nvtx3::scoped_range range{"Commit"};
     LT("subsystem=presentationworld event=commit");
-    // TODO(sergioffpc): package the frame's presentation data into State.
+    frame_state.local_position = latest_state.local_body.position + local_offset;
+    // TODO(sergioffpc): package the rest of the frame's presentation data into State.
   }
 };
 
@@ -110,10 +124,11 @@ World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
 State World::RunFrame(const prediction::State& latest) {
+  impl_->latest_state = latest;
   impl_->ecs.progress();
   impl_->previous_state = latest;
   impl_->has_previous_state = true;
-  return State{};
+  return impl_->frame_state;
 }
 
 }  // namespace augusta::presentation

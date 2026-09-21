@@ -530,23 +530,32 @@ void World::SetState(BodyHandle handle, const BodyState& state) {
   record.grounded = false;
 }
 
-BodyState World::Correct(BodyHandle handle, const BodyState& corrected) {
+FallState World::Fall(BodyHandle handle) const {
   const auto body_it = impl_->bodies.find(handle);
   if (body_it == impl_->bodies.end()) {
-    return corrected;
+    return {};
+  }
+  return FallState{.vertical_speed = body_it->second.vertical_speed, .grounded = body_it->second.grounded};
+}
+
+BodyState World::Restore(BodyHandle handle, const BodyState& state, const FallState& fall) {
+  const auto body_it = impl_->bodies.find(handle);
+  if (body_it == impl_->bodies.end()) {
+    return state;
   }
   BodyRecord& record = body_it->second;
 
   // Applied directly against the controller (not via SetState): SetState
-  // also resets fall/ground tracking, which is correct for an intentional
-  // teleport (spawn/respawn) but would spuriously interrupt gravity
-  // continuity for what is a small in-place correction.
-  if (corrected.stance != record.state.stance) {
-    record.controller->resize(HeightForStance(corrected.stance));
+  // resets fall/ground tracking, which is right for an intentional teleport
+  // (spawn/respawn) but not for putting the body back where it was.
+  if (state.stance != record.state.stance) {
+    record.controller->resize(HeightForStance(state.stance));
   }
-  record.controller->setFootPosition(PxExtendedVec3(corrected.position.x, corrected.position.y, corrected.position.z));
-  record.state = corrected;
-  return corrected;
+  record.controller->setFootPosition(PxExtendedVec3(state.position.x, state.position.y, state.position.z));
+  record.state = state;
+  record.vertical_speed = fall.vertical_speed;
+  record.grounded = fall.grounded;
+  return state;
 }
 
 RaycastHit World::Raycast(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const {

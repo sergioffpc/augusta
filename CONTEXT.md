@@ -23,7 +23,7 @@ The client simulating its own actions locally, immediately, before the server co
 _Avoid_: Client simulation
 
 **Reconciliation**:
-The process of correcting a client's predicted state against the server's authoritative state via smooth snap/blend, never by exact replay or resimulation.
+The process of correcting a client's predicted state against the server's authoritative state: the client restores the server's state and replays the commands the server has not yet acknowledged from it, and presentation smooths the resulting jump.
 _Avoid_: Resync, rollback
 
 **RTT (Round-Trip Time)**:

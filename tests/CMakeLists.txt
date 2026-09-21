@@ -59,6 +59,11 @@ target_link_libraries(augusta_reconciliation_tests PRIVATE augusta_prediction GT
 # Links augusta_physics publicly, so the same PhysX DLL launch cost applies.
 gtest_discover_tests(augusta_reconciliation_tests DISCOVERY_TIMEOUT 30)
 
+add_executable(augusta_correction_tests correction_test.cpp)
+target_link_libraries(augusta_correction_tests PRIVATE augusta_presentation GTest::gtest GTest::gtest_main)
+# Links augusta_prediction publicly (so PhysX), same first-launch cost as above.
+gtest_discover_tests(augusta_correction_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_prediction_tests prediction_test.cpp)
 target_link_libraries(augusta_prediction_tests PRIVATE augusta_prediction GTest::gtest GTest::gtest_main)
 # Links augusta_physics publicly, so the same PhysX DLL launch cost applies.

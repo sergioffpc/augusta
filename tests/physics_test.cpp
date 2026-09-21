@@ -5,7 +5,7 @@
 // M1 spike (ADR-0002/ADR-0004): the "standalone" proof issue #32 asks
 // for - a real PhysX-backed physics::World, driven the same way both
 // PredictionWorld and SimulationWorld drive it, demonstrating movement
-// and snap/blend reconciliation with no wild jitter.
+// and restoring a body to an earlier state so a replay can start from it.
 namespace {
 
 using augusta::math::Length;
@@ -13,6 +13,7 @@ using augusta::math::Vec3;
 using augusta::physics::BodyState;
 using augusta::physics::CollisionMesh;
 using augusta::physics::CollisionMeshError;
+using augusta::physics::FallState;
 using augusta::physics::MovementInput;
 using augusta::physics::RaycastHit;
 using augusta::physics::StaminaConfig;
@@ -87,30 +88,30 @@ TEST(PhysicsWorldTest, SprintDepletesStaminaAndForcesWalkBelowThreshold) {
   EXPECT_LT(state.stamina, 1.0F);
 }
 
-TEST(PhysicsWorldTest, CorrectMovesTheBodyAndTheNextStepStartsFromThere) {
+TEST(PhysicsWorldTest, RestoreMovesTheBodyAndTheNextStepStartsFromThere) {
   World world{StaminaConfig{}};
   const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
 
-  BodyState corrected{};
-  corrected.position = Vec3(5.0F, 10.0F, -3.0F);
-  corrected.stamina = 0.5F;
-  const BodyState returned = world.Correct(body, corrected);
+  BodyState restored{};
+  restored.position = Vec3(5.0F, 10.0F, -3.0F);
+  restored.stamina = 0.5F;
+  const BodyState returned = world.Restore(body, restored, FallState{});
   const BodyState stepped = world.Step(body, MovementInput{}, 1.0F / 60.0F);
 
-  EXPECT_EQ(returned.position, corrected.position);
+  EXPECT_EQ(returned.position, restored.position);
   EXPECT_NEAR(stepped.position.x, 5.0F, 1e-3F);
   EXPECT_NEAR(stepped.position.z, -3.0F, 1e-3F);
   EXPECT_NEAR(stepped.position.y, 10.0F, 0.2F);
   EXPECT_NEAR(stepped.stamina, 0.5F, 0.05F);
 }
 
-TEST(PhysicsWorldTest, CorrectChangesTheStance) {
+TEST(PhysicsWorldTest, RestoreChangesTheStance) {
   World world{StaminaConfig{}};
   const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
 
-  BodyState corrected{};
-  corrected.stance = Stance::kProne;
-  world.Correct(body, corrected);
+  BodyState restored{};
+  restored.stance = Stance::kProne;
+  world.Restore(body, restored, FallState{});
   MovementInput input{};
   input.desired_stance = Stance::kProne;
   const BodyState stepped = world.Step(body, input, 1.0F / 60.0F);
@@ -118,7 +119,25 @@ TEST(PhysicsWorldTest, CorrectChangesTheStance) {
   EXPECT_EQ(stepped.stance, Stance::kProne);
 }
 
-TEST(PhysicsWorldTest, CorrectKeepsGravityGoingInsteadOfRestartingTheFall) {
+TEST(PhysicsWorldTest, RestoringAStateAndItsFallMakesTheNextStepTheSameAsBefore) {
+  World world{StaminaConfig{}};
+  const auto body = world.CreateBody(Vec3(0.0F, 100.0F, 0.0F));
+  BodyState state{};
+  for (int i = 0; i < 30; ++i) {
+    state = world.Step(body, MovementInput{}, 1.0F / 60.0F);
+  }
+  const FallState fall = world.Fall(body);
+  const BodyState first = world.Step(body, MovementInput{}, 1.0F / 60.0F);
+
+  world.Restore(body, state, fall);
+  const BodyState again = world.Step(body, MovementInput{}, 1.0F / 60.0F);
+
+  // Not bit for bit: the state holds floats, the controller doubles.
+  EXPECT_NEAR(again.position.y, first.position.y, 1e-4F);
+  EXPECT_NEAR(again.velocity.y, first.velocity.y, 1e-2F);
+}
+
+TEST(PhysicsWorldTest, RestoreKeepsTheFallItIsGivenInsteadOfRestartingIt) {
   World world{StaminaConfig{}};
   const auto body = world.CreateBody(Vec3(0.0F, 100.0F, 0.0F));
   BodyState state{};
@@ -128,7 +147,7 @@ TEST(PhysicsWorldTest, CorrectKeepsGravityGoingInsteadOfRestartingTheFall) {
   const float fall_speed_before = -state.velocity.y;
 
   state.position.x += 1.0F;
-  world.Correct(body, state);
+  world.Restore(body, state, world.Fall(body));
   const BodyState after = world.Step(body, MovementInput{}, 1.0F / 60.0F);
 
   EXPECT_GE(-after.velocity.y, fall_speed_before);

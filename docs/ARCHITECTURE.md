@@ -54,8 +54,9 @@ No matchmaking, master server, or third-party platform integration in v1.
   physics (the project's core learning focus)
 - Server-authoritative model: server is the single source of truth for all
   gameplay-affecting state
-- Client-side prediction for responsiveness, reconciled via smooth correction
-  against authoritative server snapshots (not exact replay — see ADR-0004)
+- Client-side prediction for responsiveness, reconciled by restoring the
+  authoritative server state and replaying the unacknowledged commands from
+  it, with the visible jump smoothed in presentation (see ADR-0004)
 - Multithreaded from v1: dedicated Main/Render, Simulation, and Network I/O threads
 - Custom lightweight binary protocol for game-state messages
 - Mechanism vs. policy vs. data separation: engine mechanism (movement,
@@ -169,7 +170,7 @@ WeaponHandling → Commit)
 | Phase | Category | Responsibility |
 |---|---|---|
 | CommandIngestion | Mechanism | Applies this tick's local input commands |
-| Reconciliation | Mechanism | Ingests any newly arrived authoritative state; applies smooth snap/blend correction (ADR-0004) — no rollback/resimulate |
+| Reconciliation | Mechanism | Ingests any newly arrived authoritative state; restores it and replays the unacknowledged commands from it (ADR-0004) |
 | Movement | Mechanism | Predicted PhysX movement, stamina |
 | WeaponHandling | Mechanism | Predicts local fire feedback only (muzzle flash, sound cue, recoil, ammo count) — no bullet trajectory; hit/damage stays server-authoritative |
 | Commit | Mechanism | Packages the tick's predicted state into the immutable Prediction State |
@@ -286,8 +287,9 @@ Damage → Scripts/Behaviours → Commit)
 2. Client sends input to server
 3. Server simulates authoritative movement (PhysX)
 4. Server broadcasts authoritative position/state
-5. Client compares against its predicted state; if divergent, smoothly
-   corrects (snap/blend) — no exact-replay assumption (see ADR-0004)
+5. Client compares against its predicted state after that same command; it
+   restores the server's state and replays the commands sent since, and
+   presentation smooths the jump (see ADR-0004)
 
 **Scenario: Round End**
 1. Server evaluates win condition each tick (e.g., one side eliminated)
@@ -317,9 +319,10 @@ now.
   since it's headless (see ADR-0005).
 - **Determinism strategy:** PhysX does not guarantee cross-platform bit-exact
   determinism (confirmed: NVIDIA docs state cross-platform determinism is
-  unsupported). Client prediction is therefore treated as approximate/visual
-  only; authoritative correction is applied via smooth snap/blend, never
-  exact replay-and-diff.
+  unsupported). Client prediction is therefore treated as approximate: the
+  client restores the server's state and replays its own commands from it,
+  never assuming the replay matches what the server did, and the next
+  acknowledgement corrects what is left.
 - **Serialization:** custom lightweight binary format for game-state messages
 - **Security:** server validates all client input (US-15); encryption
   deliberately deferred past v1 (trusted LAN testing only)
@@ -403,8 +406,9 @@ See [REQUIREMENTS.md](./REQUIREMENTS.md) — Non-Functional Requirements
 
 ## 11. Risks and Technical Debt
 - **PhysX cross-platform determinism gap:** client/server divergence is
-  expected; mitigated by correction-based reconciliation, but may produce
-  visible corrections ("rubber-banding") if divergence grows too fast.
+  expected; mitigated by restore-and-replay reconciliation with the jump
+  smoothed in presentation, but may produce visible corrections
+  ("rubber-banding") if divergence grows too fast.
 - **Scope ambition vs. solo-dev bandwidth:** ECS + custom physics/ballistics +
   client prediction + multithreading + a new networking library is a lot of
   new surface area to learn and integrate simultaneously for v1.

@@ -51,7 +51,7 @@ No gameplay yet.
 - Falcor renders a textured, rotating primitive on the Windows target
 - Minimal GameNetworkingSockets round-trip: Windows client ↔ Linux
   dedicated server
-- Minimal PhysX prediction/reconciliation test: one entity, snap/blend
+- Minimal PhysX prediction/reconciliation test: one entity, restore-and-replay
   correction (ADR-0004) visibly acceptable (no wild jitter)
 
 **Exercises:** ADR-0002, ADR-0003, ADR-0004, ADR-0009, ADR-0011 (C++23), ADR-0012

@@ -45,8 +45,8 @@ struct World::Impl {
   std::optional<Acknowledgement> tick_acknowledgement;
   State tick_state;
 
-  // What was predicted after each command sent, for Reconciliation to compare
-  // the server's answer with.
+  // The commands sent and what was predicted after each, for Reconciliation to
+  // compare the server's answer with and to replay from it.
   History history;
 
   explicit Impl(const physics::StaminaConfig& stamina_config)
@@ -75,7 +75,9 @@ struct World::Impl {
     ecs.system("CommandIngestionSystem").kind(phases[kCommandIngestion]).run([this](flecs::iter&) {
       OnCommandIngestion();
     });
-    ecs.system("ReconciliationSystem").kind(phases[kReconciliation]).run([this](flecs::iter&) { OnReconciliation(); });
+    ecs.system("ReconciliationSystem").kind(phases[kReconciliation]).run([this](flecs::iter& sys_iter) {
+      OnReconciliation(sys_iter.delta_time());
+    });
     ecs.system("MovementSystem").kind(phases[kMovement]).run([this](flecs::iter& sys_iter) {
       OnMovement(sys_iter.delta_time());
     });
@@ -90,22 +92,30 @@ struct World::Impl {
     // ingest yet without an entity/component to apply it to.
   }
 
-  // Moves the current state, and the history after it, by the error between
-  // the server's state and what was predicted after the same command.
-  void OnReconciliation() {
+  // Puts the body at the server's state and steps it through the commands sent
+  // since, so the present is the server's past with the client's own commands
+  // carried forward. Every step, here and in Movement, is a fixed tick long.
+  void OnReconciliation(float delta_time) {
     const nvtx3::scoped_range range{"Reconciliation"};
     if (!tick_acknowledgement.has_value()) {
       return;
     }
-    const std::optional<physics::BodyState> predicted = history.Acknowledge(tick_acknowledgement->sequence);
+    const std::optional<Predicted> predicted = history.Acknowledge(tick_acknowledgement->sequence);
     if (!predicted.has_value()) {
       return;
     }
-    const Correction correction = ResolveCorrection(*predicted, tick_acknowledgement->body);
-    LD("subsystem=predictionworld event={} sequence={} error={:.3f}",
-       correction.snapped ? "reconcile_snap" : "reconcile_blend", tick_acknowledgement->sequence, correction.error);
-    tick_state.local_body = physics.Correct(local_body, Apply(tick_state.local_body, correction));
-    history.Shift(correction);
+    const physics::BodyState& authoritative = tick_acknowledgement->body;
+    physics::BodyState replayed = physics.Restore(local_body, authoritative, predicted->fall);
+    history.Replay([&](const physics::MovementInput& command) {
+      replayed = physics.Step(local_body, command, delta_time);
+      return Predicted{.body = replayed, .fall = physics.Fall(local_body)};
+    });
+
+    const math::Vec3 jump = replayed.position - tick_state.local_body.position;
+    LD("subsystem=predictionworld event=reconcile sequence={} error={:.3f} jump={:.3f}", tick_acknowledgement->sequence,
+       math::Length(authoritative.position - predicted->body.position), math::Length(jump));
+    tick_state.total_correction += jump;
+    tick_state.local_body = replayed;
   }
 
   void OnMovement(float delta_time) {
@@ -126,7 +136,8 @@ struct World::Impl {
     // tick_state.local_body is already set by OnMovement; what is left
     // is remembering it for the server's answer to this command.
     if (tick_sequence != 0) {
-      history.Record(tick_sequence, tick_state.local_body);
+      history.Record(tick_sequence, tick_command.movement,
+                     Predicted{.body = tick_state.local_body, .fall = physics.Fall(local_body)});
     }
   }
 };

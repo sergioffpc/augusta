@@ -1,142 +1,52 @@
 #include "augusta/reconciliation.h"
 
 #include <cstdint>
+#include <vector>
 
 #include <gtest/gtest.h>
 
-// The reconciliation decision and the history of predicted states are pure:
-// no physics is stepped here.
+// The history of commands and predicted states is pure: no physics is stepped
+// here, the replay is handed a step of its own.
 namespace {
 
-using augusta::math::Length;
 using augusta::math::Vec3;
 using augusta::physics::BodyState;
-using augusta::physics::Stance;
-using augusta::prediction::Apply;
-using augusta::prediction::Correction;
+using augusta::physics::FallState;
+using augusta::physics::MovementInput;
 using augusta::prediction::History;
-using augusta::prediction::kBlendFactor;
 using augusta::prediction::kMaxHistory;
-using augusta::prediction::kSnapDistance;
-using augusta::prediction::ResolveCorrection;
+using augusta::prediction::Predicted;
 
-BodyState At(float x, float y = 0.0F, float z = 0.0F) {
-  BodyState state{};
-  state.position = Vec3(x, y, z);
-  return state;
+Predicted At(float x, float vertical_speed = 0.0F) {
+  BodyState body{};
+  body.position = Vec3(x, 0.0F, 0.0F);
+  return Predicted{.body = body, .fall = FallState{.vertical_speed = vertical_speed, .grounded = false}};
 }
 
-TEST(ResolveCorrectionTest, NoErrorMeansNoCorrection) {
-  const Correction correction = ResolveCorrection(At(1.0F), At(1.0F));
-
-  EXPECT_EQ(correction.position, Vec3(0.0F, 0.0F, 0.0F));
-  EXPECT_EQ(correction.error, 0.0F);
-  EXPECT_FALSE(correction.snapped);
-  EXPECT_FALSE(correction.stance.has_value());
-}
-
-TEST(ResolveCorrectionTest, AnErrorBelowTheSnapDistanceIsBlendedIn) {
-  const Correction correction = ResolveCorrection(At(0.0F), At(1.0F));
-
-  EXPECT_FALSE(correction.snapped);
-  EXPECT_NEAR(correction.error, 1.0F, 1e-6F);
-  EXPECT_NEAR(correction.position.x, kBlendFactor, 1e-6F);
-}
-
-TEST(ResolveCorrectionTest, AnErrorJustBelowTheSnapDistanceIsStillBlended) {
-  EXPECT_FALSE(ResolveCorrection(At(0.0F), At(kSnapDistance - 0.01F)).snapped);
-}
-
-TEST(ResolveCorrectionTest, AnErrorAtOrAboveTheSnapDistanceSnapsToTheWholeError) {
-  for (const float distance : {kSnapDistance, kSnapDistance + 5.0F, 1000.0F}) {
-    const Correction correction = ResolveCorrection(At(0.0F), At(distance));
-
-    EXPECT_TRUE(correction.snapped) << distance;
-    EXPECT_NEAR(correction.position.x, distance, 1e-3F) << distance;
-  }
-}
-
-TEST(ResolveCorrectionTest, TheErrorIsMeasuredInThreeDimensions) {
-  const Correction correction = ResolveCorrection(At(0.0F), At(1.0F, 2.0F, 2.0F));
-
-  EXPECT_NEAR(correction.error, 3.0F, 1e-5F);
-  EXPECT_TRUE(correction.snapped);
-}
-
-TEST(ResolveCorrectionTest, VelocityAndStaminaAreCorrectedByTheSameShare) {
-  BodyState predicted = At(0.0F);
-  BodyState authoritative = At(1.0F);
-  authoritative.velocity = Vec3(2.0F, 0.0F, 0.0F);
-  authoritative.stamina = 0.5F;
-
-  const Correction correction = ResolveCorrection(predicted, authoritative);
-
-  EXPECT_NEAR(correction.velocity.x, 2.0F * kBlendFactor, 1e-6F);
-  EXPECT_NEAR(correction.stamina, -0.5F * kBlendFactor, 1e-6F);
-}
-
-TEST(ResolveCorrectionTest, AStanceTheServerRefusedIsTaken) {
-  BodyState predicted = At(0.0F);
-  predicted.stance = Stance::kStanding;
-  BodyState authoritative = At(0.0F);
-  authoritative.stance = Stance::kCrouching;
-
-  const Correction correction = ResolveCorrection(predicted, authoritative);
-
-  ASSERT_TRUE(correction.stance.has_value());
-  EXPECT_EQ(*correction.stance, Stance::kCrouching);
-}
-
-TEST(ResolveCorrectionTest, RepeatedBlendsConvergeWithoutOvershootWithinTheNfr02Budget) {
-  constexpr int kBudgetTicks = 9;  // 150 ms at 60 Hz.
-  const BodyState authoritative = At(1.0F);
-  BodyState predicted = At(0.0F);
-
-  float previous_error = 1.0F;
-  for (int i = 0; i < kBudgetTicks; ++i) {
-    predicted = Apply(predicted, ResolveCorrection(predicted, authoritative));
-    const float error = Length(authoritative.position - predicted.position);
-    EXPECT_LT(error, previous_error) << i;
-    EXPECT_LE(predicted.position.x, authoritative.position.x) << "overshoot at " << i;
-    previous_error = error;
-  }
-
-  EXPECT_LT(previous_error, 0.05F);
-}
-
-TEST(ApplyTest, MovesPositionVelocityAndStaminaAndTakesTheStance) {
-  BodyState state = At(1.0F);
-  state.stamina = 1.0F;
-  Correction correction;
-  correction.position = Vec3(0.5F, 0.0F, 0.0F);
-  correction.velocity = Vec3(0.0F, 1.0F, 0.0F);
-  correction.stamina = -0.25F;
-  correction.stance = Stance::kProne;
-
-  const BodyState corrected = Apply(state, correction);
-
-  EXPECT_EQ(corrected.position, Vec3(1.5F, 0.0F, 0.0F));
-  EXPECT_EQ(corrected.velocity, Vec3(0.0F, 1.0F, 0.0F));
-  EXPECT_EQ(corrected.stamina, 0.75F);
-  EXPECT_EQ(corrected.stance, Stance::kProne);
+// A command that can be told from another by its direction.
+MovementInput Command(float x) {
+  MovementInput command{};
+  command.direction = Vec3(x, 0.0F, 0.0F);
+  return command;
 }
 
 TEST(HistoryTest, AcknowledgeReturnsTheStatePredictedAfterThatCommand) {
   History history;
-  history.Record(1, At(1.0F));
-  history.Record(2, At(2.0F));
-  history.Record(3, At(3.0F));
+  history.Record(1, Command(1.0F), At(1.0F));
+  history.Record(2, Command(2.0F), At(2.0F, -3.0F));
+  history.Record(3, Command(3.0F), At(3.0F));
 
   const auto predicted = history.Acknowledge(2);
 
   ASSERT_TRUE(predicted.has_value());
-  EXPECT_EQ(predicted->position.x, 2.0F);
+  EXPECT_EQ(predicted->body.position.x, 2.0F);
+  EXPECT_EQ(predicted->fall.vertical_speed, -3.0F);
 }
 
 TEST(HistoryTest, AcknowledgingDiscardsWhatIsOlderAndTheStateItself) {
   History history;
   for (std::uint32_t sequence = 1; sequence <= 5; ++sequence) {
-    history.Record(sequence, At(static_cast<float>(sequence)));
+    history.Record(sequence, Command(1.0F), At(static_cast<float>(sequence)));
   }
 
   ASSERT_TRUE(history.Acknowledge(3).has_value());
@@ -149,8 +59,8 @@ TEST(HistoryTest, AcknowledgingDiscardsWhatIsOlderAndTheStateItself) {
 
 TEST(HistoryTest, ARepeatedAcknowledgementIsStaleAndFindsNothing) {
   History history;
-  history.Record(1, At(1.0F));
-  history.Record(2, At(2.0F));
+  history.Record(1, Command(1.0F), At(1.0F));
+  history.Record(2, Command(2.0F), At(2.0F));
   ASSERT_TRUE(history.Acknowledge(1).has_value());
 
   EXPECT_FALSE(history.Acknowledge(1).has_value());
@@ -159,8 +69,8 @@ TEST(HistoryTest, ARepeatedAcknowledgementIsStaleAndFindsNothing) {
 
 TEST(HistoryTest, AnAcknowledgementOlderThanEverythingHeldChangesNothing) {
   History history;
-  history.Record(10, At(1.0F));
-  history.Record(11, At(2.0F));
+  history.Record(10, Command(1.0F), At(1.0F));
+  history.Record(11, Command(2.0F), At(2.0F));
 
   EXPECT_FALSE(history.Acknowledge(4).has_value());
 
@@ -169,38 +79,61 @@ TEST(HistoryTest, AnAcknowledgementOlderThanEverythingHeldChangesNothing) {
 
 TEST(HistoryTest, AnAcknowledgementOfACommandNeverRecordedFindsNothing) {
   History history;
-  history.Record(1, At(1.0F));
-  history.Record(3, At(3.0F));
+  history.Record(1, Command(1.0F), At(1.0F));
+  history.Record(3, Command(3.0F), At(3.0F));
 
   EXPECT_FALSE(history.Acknowledge(2).has_value());
   EXPECT_TRUE(history.Acknowledge(3).has_value());
 }
 
-TEST(HistoryTest, ShiftMovesEveryHeldStateButNotTheirStance) {
+TEST(HistoryTest, ReplayRunsTheStepForEveryCommandHeldOldestFirst) {
   History history;
-  BodyState crouched = At(1.0F);
-  crouched.stance = Stance::kCrouching;
-  history.Record(1, crouched);
-  history.Record(2, At(2.0F));
-  Correction correction;
-  correction.position = Vec3(0.5F, 0.0F, 0.0F);
-  correction.stance = Stance::kProne;
+  history.Record(1, Command(1.0F), At(1.0F));
+  history.Record(2, Command(2.0F), At(2.0F));
+  history.Record(3, Command(3.0F), At(3.0F));
+  ASSERT_TRUE(history.Acknowledge(1).has_value());
 
-  history.Shift(correction);
+  std::vector<float> seen;
+  history.Replay([&seen](const MovementInput& command) {
+    seen.push_back(command.direction.x);
+    return At(command.direction.x * 10.0F);
+  });
+
+  EXPECT_EQ(seen, (std::vector<float>{2.0F, 3.0F}));
+}
+
+TEST(HistoryTest, ReplayReplacesThePredictedStatesWithWhatTheStepReturned) {
+  History history;
+  history.Record(1, Command(1.0F), At(1.0F));
+  history.Record(2, Command(2.0F), At(2.0F));
+
+  history.Replay([](const MovementInput& command) { return At(command.direction.x * 10.0F, -1.0F); });
 
   const auto first = history.Acknowledge(1);
   const auto second = history.Acknowledge(2);
   ASSERT_TRUE(first.has_value() && second.has_value());
-  EXPECT_EQ(first->position.x, 1.5F);
-  EXPECT_EQ(first->stance, Stance::kCrouching);
-  EXPECT_EQ(second->position.x, 2.5F);
+  EXPECT_EQ(first->body.position.x, 10.0F);
+  EXPECT_EQ(second->body.position.x, 20.0F);
+  EXPECT_EQ(second->fall.vertical_speed, -1.0F);
+}
+
+TEST(HistoryTest, ReplayOfAnEmptyHistoryNeverRunsTheStep) {
+  History history;
+  int steps = 0;
+
+  history.Replay([&steps](const MovementInput&) {
+    ++steps;
+    return Predicted{};
+  });
+
+  EXPECT_EQ(steps, 0);
 }
 
 TEST(HistoryTest, OnlyTheMostRecentStatesAreKept) {
   History history;
   const auto total = static_cast<std::uint32_t>(kMaxHistory + 10);
   for (std::uint32_t sequence = 1; sequence <= total; ++sequence) {
-    history.Record(sequence, At(0.0F));
+    history.Record(sequence, Command(1.0F), At(0.0F));
   }
 
   EXPECT_EQ(history.Size(), kMaxHistory);
