@@ -22,16 +22,30 @@ std::string DescribeMapError(const MapError& error) {
                          physics::DescribeCollisionMeshError(error.collision_mesh_error));
     case MapErrorCode::kNoCollision:
       return "the scene has no collider, so the map would have no floor or walls";
+    case MapErrorCode::kNoSpawnPoints:
+      return "the scene has no spawn point, so there would be nowhere to put a player";
   }
   return "unknown map error";
 }
 
-std::expected<std::vector<physics::CollisionMesh>, MapError> LoadCollision(const assets::Pack& pack,
-                                                                           std::string_view scene_path) {
-  const auto scene = pack.ResolveScene(scene_path);
+namespace {
+
+std::expected<assets::SceneData, MapError> ResolveScene(const assets::Pack& pack, std::string_view scene_path) {
+  auto scene = pack.ResolveScene(scene_path);
   if (!scene) {
     return std::unexpected(MapError{
         .code = MapErrorCode::kSceneUnresolved, .subject = std::string(scene_path), .resolve_error = scene.error()});
+  }
+  return *std::move(scene);
+}
+
+}  // namespace
+
+std::expected<std::vector<physics::CollisionMesh>, MapError> LoadCollision(const assets::Pack& pack,
+                                                                           std::string_view scene_path) {
+  const auto scene = ResolveScene(pack, scene_path);
+  if (!scene) {
+    return std::unexpected(scene.error());
   }
 
   const std::vector<math::Mat4> world = assets::ComputeWorldTransforms(*scene);
@@ -65,6 +79,26 @@ std::expected<std::vector<physics::CollisionMesh>, MapError> LoadCollision(const
     return std::unexpected(MapError{.code = MapErrorCode::kNoCollision});
   }
   return meshes;
+}
+
+std::expected<std::vector<math::Vec3>, MapError> LoadSpawnPoints(const assets::Pack& pack,
+                                                                 std::string_view scene_path) {
+  const auto scene = ResolveScene(pack, scene_path);
+  if (!scene) {
+    return std::unexpected(scene.error());
+  }
+
+  const std::vector<math::Mat4> world = assets::ComputeWorldTransforms(*scene);
+  std::vector<math::Vec3> spawn_points;
+  for (std::size_t i = 0; i < scene->nodes.size(); ++i) {
+    if (scene->nodes[i].is_spawn_point) {
+      spawn_points.push_back(math::TranslationOf(world[i]));
+    }
+  }
+  if (spawn_points.empty()) {
+    return std::unexpected(MapError{.code = MapErrorCode::kNoSpawnPoints});
+  }
+  return spawn_points;
 }
 
 }  // namespace augusta::map

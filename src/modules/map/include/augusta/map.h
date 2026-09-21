@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/math.h"
 #include "augusta/physics.h"
 
 // augusta::map turns a verified Pack (ADR-0018) into what a physics::World
@@ -26,6 +27,8 @@ enum class MapErrorCode {
   kInvalidCollider,
   /// The scene has no collider at all, so the map would have no floor or walls.
   kNoCollision,
+  /// The scene has no spawn point, so there would be nowhere to put a player.
+  kNoSpawnPoints,
 };
 
 /// A failure to build a map's collision: what went wrong (code) and what it is about.
@@ -46,6 +49,12 @@ std::string DescribeMapError(const MapError& error);
 /// one per node that references a collider.
 std::expected<std::vector<physics::CollisionMesh>, MapError> LoadCollision(
     const assets::Pack& pack, std::string_view scene_path = assets::kScenePath);
+
+/// The world-space position of every spawn point (a scene node authored with
+/// augusta:spawnPoint, ADR-0032) of the scene graph at scene_path in pack, in
+/// scene order. The position is the point's origin, where a player's feet go.
+std::expected<std::vector<math::Vec3>, MapError> LoadSpawnPoints(const assets::Pack& pack,
+                                                                 std::string_view scene_path = assets::kScenePath);
 
 }  // namespace augusta::map
 
