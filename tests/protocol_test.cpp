@@ -84,10 +84,11 @@ PlayerState PlayerAt(std::uint32_t session, float x) {
 }
 
 TEST(ProtocolTest, JoinAcceptedRoundTrips) {
-  JoinAccepted sent{.session = static_cast<SessionId>(0xA1B2C3D4U),
-                    .spawn = augusta::math::Vec3(4.0F, 0.5F, -8.0F),
-                    .stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F},
-                    .roster = {PlayerAt(1, 10.0F), PlayerAt(2, -3.0F)}};
+  JoinAccepted sent{
+      .session = static_cast<SessionId>(0xA1B2C3D4U),
+      .spawn = augusta::math::Vec3(4.0F, 0.5F, -8.0F),
+      .parameters = {.stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F}},
+      .roster = {PlayerAt(1, 10.0F), PlayerAt(2, -3.0F)}};
 
   const auto decoded = RoundTrip(sent);
 
@@ -95,9 +96,9 @@ TEST(ProtocolTest, JoinAcceptedRoundTrips) {
   const auto& received = std::get<JoinAccepted>(decoded);
   EXPECT_EQ(received.session, sent.session);
   EXPECT_EQ(received.spawn, sent.spawn);
-  EXPECT_EQ(received.stamina.deplete_per_second, sent.stamina.deplete_per_second);
-  EXPECT_EQ(received.stamina.regen_per_second, sent.stamina.regen_per_second);
-  EXPECT_EQ(received.stamina.forced_walk_below, sent.stamina.forced_walk_below);
+  EXPECT_EQ(received.parameters.stamina.deplete_per_second, sent.parameters.stamina.deplete_per_second);
+  EXPECT_EQ(received.parameters.stamina.regen_per_second, sent.parameters.stamina.regen_per_second);
+  EXPECT_EQ(received.parameters.stamina.forced_walk_below, sent.parameters.stamina.forced_walk_below);
   ASSERT_EQ(received.roster.size(), sent.roster.size());
   for (std::size_t i = 0; i < sent.roster.size(); ++i) {
     EXPECT_EQ(received.roster[i].session, sent.roster[i].session);
@@ -122,7 +123,7 @@ TEST(ProtocolTest, JoinAcceptedWithAFullRosterRoundTrips) {
 }
 
 TEST(ProtocolTest, MorePlayersInARosterThanAMatchHoldsIsTooLong) {
-  // type, session (4), spawn (12), stamina rules (12), then the count.
+  // type, session (4), spawn (12), parameters (12: the stamina rules), then the count.
   Bytes payload = BytesOf({kJoinAcceptedType});
   payload.resize(1 + 4 + 12 + 12, std::byte{0});
   payload.push_back(static_cast<std::byte>(kMaxPlayers + 1));
@@ -140,7 +141,7 @@ TEST(ProtocolTest, JoinRefusedRoundTripsEveryReason) {
 }
 
 TEST(ProtocolTest, FieldsAreFixedWidthLittleEndian) {
-  // The session, then spawn, stamina rules and roster count, all zero here.
+  // The session, then spawn, parameters and roster count, all zero here.
   Bytes accepted = BytesOf({kJoinAcceptedType, 0x01, 0x02, 0x03, 0x04});
   accepted.resize(accepted.size() + 12 + 12 + 1, std::byte{0});
   EXPECT_EQ(Encode(JoinAccepted{.session = static_cast<SessionId>(0x04030201U)}), accepted);

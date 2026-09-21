@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "augusta/input.h"
+#include "augusta/parameters.h"
 #include "augusta/physics.h"
 
 // augusta::protocol is the Networking Protocol (ADR-0007, ADR-0038): the
@@ -82,8 +83,9 @@ struct JoinAccepted {
   SessionId session{};
   /// Where the server spawned this client's player.
   math::Vec3 spawn{};
-  /// The stamina rules the client must predict with, so its forced walk is the server's.
-  physics::StaminaConfig stamina{};
+  /// The parameters the client must predict with, so its numbers (the stamina
+  /// rules among them) are the server's.
+  parameters::Parameters parameters{};
   /// The players already in the match, at most kMaxPlayers, each where the
   /// server last had it. Not the joining client's own.
   std::vector<PlayerState> roster{};

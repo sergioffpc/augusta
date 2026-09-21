@@ -7,6 +7,7 @@
 
 #include "augusta/math.h"
 #include "augusta/networking.h"
+#include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/simulation.h"
 
@@ -22,9 +23,9 @@ namespace augusta::server {
 
 /// Everything a Host needs to construct SimulationWorld and start listening.
 struct HostConfig {
-  /// Every player body's stamina rules (physics::World, shared with
-  /// PredictionWorld: each client is told these when it joins).
-  physics::StaminaConfig stamina{};
+  /// What the simulation runs on and what each client is told when it joins:
+  /// the stamina rules of every player body, shared with PredictionWorld.
+  parameters::Parameters parameters{};
   /// Lua game-policy script for SimulationWorld's Scripts/Behaviours phase.
   std::string script_path{};
   /// Local address to listen on (US-01).

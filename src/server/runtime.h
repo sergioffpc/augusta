@@ -7,6 +7,7 @@
 
 #include "augusta/math.h"
 #include "augusta/networking.h"
+#include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/simulation.h"
 
@@ -38,9 +39,10 @@ namespace augusta::runtime {
 // Everything ServerRuntime needs to construct SimulationWorld and start
 // listening.
 struct Config {
-  // Every player body's stamina rules (physics::World, shared with
-  // PredictionWorld client-side).
-  physics::StaminaConfig stamina;
+  // What the simulation runs on and each client is told when it joins: every
+  // player body's stamina rules (physics::World, shared with PredictionWorld
+  // client-side).
+  parameters::Parameters parameters;
   // Lua game-policy script to load (scripting::Engine, inside
   // SimulationWorld's Scripts/Behaviours phase).
   std::string script_path;

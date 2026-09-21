@@ -25,6 +25,7 @@
 #include "augusta/input.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
+#include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
@@ -47,6 +48,7 @@ using augusta::input::Command;
 using augusta::math::Vec3;
 using augusta::networking::ConnectionState;
 using augusta::networking::Endpoint;
+using augusta::parameters::Parameters;
 using augusta::physics::CollisionMesh;
 using augusta::physics::Stance;
 using augusta::protocol::JoinRefusal;
@@ -692,9 +694,9 @@ class LoopbackMatch : public ::testing::Test {
 
   explicit LoopbackMatch(const HostConfig& config) : host_(config) {}
 
-  // A host config for the floor with spawn_points and the stamina rules.
-  static HostConfig OnTheFloor(std::vector<Vec3> spawn_points, const augusta::physics::StaminaConfig& stamina = {}) {
-    return HostConfig{.stamina = stamina,
+  // A host config for the floor with spawn_points and the parameters.
+  static HostConfig OnTheFloor(std::vector<Vec3> spawn_points, const Parameters& parameters = {}) {
+    return HostConfig{.parameters = parameters,
                       .script_path = "scripts/round.lua",
                       .listen = Endpoint{.address = LoopbackAddress()},
                       .collision = {FloorAt(kFloorY)},
@@ -860,7 +862,8 @@ class StaminaTest : public LoopbackMatch {
 
   StaminaTest()
       : LoopbackMatch(OnTheFloor(
-            {}, {.deplete_per_second = 1.0F, .regen_per_second = 0.25F, .forced_walk_below = kForcedWalkBelow})) {}
+            {}, {.stamina = {
+                     .deplete_per_second = 1.0F, .regen_per_second = 0.25F, .forced_walk_below = kForcedWalkBelow}})) {}
 
   void SetUp() override {
     client_ = &Join();

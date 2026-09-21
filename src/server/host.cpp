@@ -28,7 +28,7 @@ namespace {
 // before the socket exists, so a map that is rejected never leaves a bound
 // port behind.
 simulation::World BuildSimulation(const HostConfig& config) {
-  simulation::World simulation(config.stamina, config.script_path);
+  simulation::World simulation(config.parameters.stamina, config.script_path);
   for (const physics::CollisionMesh& mesh : config.collision) {
     if (const auto added = simulation.AddCollisionMesh(mesh); !added) {
       throw std::runtime_error(
@@ -68,7 +68,7 @@ struct Host::Impl {
   networking::Server network;
 
   // What every client is told when it joins, besides who is already there.
-  physics::StaminaConfig stamina;
+  parameters::Parameters parameters;
 
   // Guards everything below: written by the Network I/O thread as clients
   // join, leave and send commands, read once per Simulation tick.
@@ -80,7 +80,7 @@ struct Host::Impl {
   explicit Impl(const HostConfig& config)
       : simulation(BuildSimulation(config)),
         network(config.listen),
-        stamina(config.stamina),
+        parameters(config.parameters),
         match(std::string(EngineVersion()), protocol::kMaxPlayers, config.spawn_points) {}
 
   void Reply(networking::PeerId peer, const protocol::Message& message) {
@@ -102,7 +102,7 @@ struct Host::Impl {
     protocol::JoinAccepted accepted;
     accepted.session = admission->session;
     accepted.spawn = admission->spawn;
-    accepted.stamina = stamina;
+    accepted.parameters = parameters;
     accepted.roster = admission->roster;
     Reply(peer, accepted);
   }

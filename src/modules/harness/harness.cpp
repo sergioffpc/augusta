@@ -223,7 +223,7 @@ prediction::State Session::Tick(const input::Command& command, float delta_time)
   // Nobody to send to until the server has admitted this client, and until
   // then the prediction has neither its spawn point nor the server's rules.
   if (server_view->accepted.has_value() && !impl.started) {
-    impl.prediction.Start(server_view->accepted->spawn, server_view->accepted->stamina);
+    impl.prediction.Start(server_view->accepted->spawn, server_view->accepted->parameters);
     impl.started = true;
   }
   const std::uint32_t sequence = impl.started ? impl.next_sequence++ : 0;

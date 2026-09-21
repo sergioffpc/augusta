@@ -7,6 +7,7 @@
 #include <optional>
 
 #include "augusta/input.h"
+#include "augusta/parameters.h"
 #include "augusta/physics.h"
 
 // augusta::prediction orchestrates PredictionWorld (ADR-0024): the
@@ -116,10 +117,10 @@ class World {
   std::expected<void, physics::CollisionMeshError> AddCollisionMesh(const physics::CollisionMesh& mesh);
 
   /// Starts the local player over at spawn, standing and at full stamina, under
-  /// stamina_rules: what the server told this client when it admitted it, so
-  /// the client never predicts with rules of its own. Call before the first
-  /// command is sent; nothing predicted earlier is kept.
-  void Start(const math::Vec3& spawn, const physics::StaminaConfig& stamina_rules);
+  /// the stamina rules of parameters: what the server told this client when it
+  /// admitted it, so the client never predicts with rules of its own. Call
+  /// before the first command is sent; nothing predicted earlier is kept.
+  void Start(const math::Vec3& spawn, const parameters::Parameters& parameters);
 
   World(const World&) = delete;
   World& operator=(const World&) = delete;

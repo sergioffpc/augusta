@@ -40,7 +40,7 @@ struct ServerRuntime::Impl {
   explicit Impl(const Config& cfg)
       : config(cfg),
         host(server::HostConfig{
-            .stamina = cfg.stamina,
+            .parameters = cfg.parameters,
             .script_path = cfg.script_path,
             .listen = cfg.listen,
             .collision = cfg.collision,

@@ -75,7 +75,7 @@ augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ServerConfig&
   config.spawn_points = std::move(map.spawn_points);
   // Every client is sent these when it joins and predicts with them, so
   // tuning lives here alone.
-  config.stamina = {
+  config.parameters.stamina = {
       .deplete_per_second = file_config.stamina_deplete_per_second,
       .regen_per_second = file_config.stamina_regen_per_second,
       .forced_walk_below = file_config.stamina_forced_walk_below,

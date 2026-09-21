@@ -171,9 +171,9 @@ std::expected<void, physics::CollisionMeshError> World::AddCollisionMesh(const p
   return impl_->physics.AddCollisionMesh(mesh);
 }
 
-void World::Start(const math::Vec3& spawn, const physics::StaminaConfig& stamina_rules) {
+void World::Start(const math::Vec3& spawn, const parameters::Parameters& parameters) {
   Impl& impl = *impl_;
-  impl.physics.SetStaminaConfig(stamina_rules);
+  impl.physics.SetStaminaConfig(parameters.stamina);
   physics::BodyState start{};
   start.position = spawn;
   impl.physics.SetState(impl.local_body, start);
