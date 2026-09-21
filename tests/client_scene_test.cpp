@@ -5,7 +5,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/math.h"
-#include "loader.h"
+#include "scene_loader.h"
 
 // Unit tests for the cooked-scene -> renderer::Scene conversion. Links no
 // Falcor or window: the loader only uses renderer.h's plain scene types.

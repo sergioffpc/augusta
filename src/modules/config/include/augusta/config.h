@@ -29,13 +29,6 @@ inline constexpr std::string_view kDefaultServerAddress = "127.0.0.1:27015";
 /// Default address the server listens on.
 inline constexpr std::string_view kDefaultListenAddress = "0.0.0.0:27015";
 
-/// Default stamina tuning (US-05): a full bar lasts 5 seconds of sprinting...
-inline constexpr float kDefaultStaminaDepletePerSecond = 0.2F;
-/// ...and refills in 10 of rest...
-inline constexpr float kDefaultStaminaRegenPerSecond = 0.1F;
-/// ...and a body at or below a tenth of it is forced to walk.
-inline constexpr float kDefaultStaminaForcedWalkBelow = 0.1F;
-
 /// What augustac.yaml holds. Its required key `base_dir` is where the relative
 /// paths below start from; it is applied, not kept.
 struct ClientConfig {
@@ -54,17 +47,11 @@ struct ServerConfig {
   std::filesystem::path pack_path;
   /// Key `public_key` (required): the Ed25519 public key the pack is signed with.
   std::filesystem::path public_key_path;
+  /// Key `parameters` (required): the Lua script holding the simulation's
+  /// Parameters (ADR-0039). Where it is, not what is in it.
+  std::filesystem::path parameters_path;
   /// Key `listen_address`: the local address to listen on.
   std::string listen_address{kDefaultListenAddress};
-  /// Key `stamina_deplete_per_second`: the fraction of stamina sprinting costs
-  /// per second; a finite number, 0 or more. Sent to every client when it joins.
-  float stamina_deplete_per_second = kDefaultStaminaDepletePerSecond;
-  /// Key `stamina_regen_per_second`: the fraction of stamina regained per
-  /// second while not sprinting; a finite number, 0 or more.
-  float stamina_regen_per_second = kDefaultStaminaRegenPerSecond;
-  /// Key `stamina_forced_walk_below`: at or below this fraction of stamina a
-  /// player is forced to walk; 0 or more, and below 1.
-  float stamina_forced_walk_below = kDefaultStaminaForcedWalkBelow;
 };
 
 /// Why reading the command line or a config file failed.
@@ -92,8 +79,6 @@ enum class ConfigErrorCode {
   kMissingKey,
   /// A required key's value is empty; subject is the key.
   kEmptyValue,
-  /// A key's value is not one it can take (not a number, or out of range); subject is the key.
-  kInvalidValue,
 };
 
 /// A failure to read the command line or a config file: what went wrong (code)

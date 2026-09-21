@@ -194,9 +194,10 @@ pipeline).
   same scope as CI's own check) so most formatting issues never reach
   a push; CI's `format` job stays as the actual gate, since the hook
   can be skipped (`--no-verify`), missing, or running a different
-  local `clang-format` version than CI's. `clang-tidy` stays CI-only —
-  slower, and needs a full `compile_commands.json`, a poor fit for a
-  commit-time hook.
+  local `clang-format` version than CI's. `clang-tidy` stays out of the
+  hook — slower, and needs a full `compile_commands.json`, a poor fit for
+  a commit-time hook — but `make lint` runs both checks as CI does, and
+  `make tidy` alone runs `clang-tidy`.
 - Strict warnings-as-errors in CI (see CI/CD above).
 - ASan/UBSan in CI; TSan run manually/periodically given multithreading
   (ADR-0005).

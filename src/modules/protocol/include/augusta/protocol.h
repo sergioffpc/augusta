@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "augusta/input.h"
+#include "augusta/parameters.h"
 #include "augusta/physics.h"
 
 // augusta::protocol is the Networking Protocol (ADR-0007, ADR-0038): the
@@ -40,6 +41,8 @@ enum class MessageType : std::uint8_t {
   kCommands = 4,
   /// Server to client: every player's body as of one tick.
   kAuthoritativeState = 5,
+  /// Server to client: the server reloaded its parameters.
+  kParametersUpdate = 6,
 };
 
 /// Longest engine version string a JoinRequest may carry, in bytes.
@@ -82,8 +85,11 @@ struct JoinAccepted {
   SessionId session{};
   /// Where the server spawned this client's player.
   math::Vec3 spawn{};
-  /// The stamina rules the client must predict with, so its forced walk is the server's.
-  physics::StaminaConfig stamina{};
+  /// The generation of the parameters below, from 1: the newest the server has.
+  std::uint32_t generation = 0;
+  /// The parameters the client must predict with, so its numbers (the stamina
+  /// rules among them) are the server's.
+  parameters::Parameters parameters{};
   /// The players already in the match, at most kMaxPlayers, each where the
   /// server last had it. Not the joining client's own.
   std::vector<PlayerState> roster{};
@@ -118,8 +124,18 @@ struct AuthoritativeState {
   std::vector<PlayerState> players{};
 };
 
+/// Server to client: the server reloaded its parameters, and these are the new
+/// ones. Reliable, since a lost one would leave the client predicting with
+/// numbers the server no longer uses until the next reload. The tick rate
+/// never differs from the one the client was told when it joined.
+struct ParametersUpdate {
+  /// The generation of parameters; a client keeps only a newer one than it holds.
+  std::uint32_t generation = 0;
+  parameters::Parameters parameters{};
+};
+
 /// Any message of the protocol.
-using Message = std::variant<JoinRequest, JoinAccepted, JoinRefused, Commands, AuthoritativeState>;
+using Message = std::variant<JoinRequest, JoinAccepted, JoinRefused, Commands, AuthoritativeState, ParametersUpdate>;
 
 /// A payload is this many bytes, the same type networking::Payload names.
 using Bytes = std::vector<std::byte>;

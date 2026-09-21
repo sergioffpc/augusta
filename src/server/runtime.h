@@ -1,12 +1,14 @@
 #ifndef AUGUSTA_RUNTIME_H_
 #define AUGUSTA_RUNTIME_H_
 
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "augusta/math.h"
 #include "augusta/networking.h"
+#include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/simulation.h"
 
@@ -38,9 +40,13 @@ namespace augusta::runtime {
 // Everything ServerRuntime needs to construct SimulationWorld and start
 // listening.
 struct Config {
-  // Every player body's stamina rules (physics::World, shared with
-  // PredictionWorld client-side).
-  physics::StaminaConfig stamina;
+  // What the simulation runs on and each client is told when it joins: the
+  // Simulation thread's fixed tick rate (NFR-01 asks it to sustain 60 Hz, no
+  // missed ticks) and every player body's stamina rules (physics::World,
+  // shared with PredictionWorld client-side).
+  parameters::Parameters parameters;
+  // The script those Parameters were read from, which a reload reads again.
+  std::filesystem::path parameters_path;
   // Lua game-policy script to load (scripting::Engine, inside
   // SimulationWorld's Scripts/Behaviours phase).
   std::string script_path;
@@ -51,9 +57,6 @@ struct Config {
   std::vector<physics::CollisionMesh> collision;
   // Where joining players spawn, in the order they take them, from the same pack.
   std::vector<math::Vec3> spawn_points;
-  // Simulation thread's fixed tick rate, in Hz. NFR-01 requires >= 60 Hz
-  // sustained, no missed ticks.
-  float tick_rate_hz = 60.0F;
 };
 
 // Owns the one authoritative SimulationWorld and the two fixed threads

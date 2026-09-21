@@ -192,6 +192,8 @@ void World::RemovePlayer(PlayerId player) {
   impl.players.erase(slot);
 }
 
+void World::SetStaminaConfig(const physics::StaminaConfig& stamina) { impl_->physics.SetStaminaConfig(stamina); }
+
 State World::Tick(const std::vector<PlayerCommand>& commands, float delta_time) {
   Impl& impl = *impl_;
   impl.tick_commands.clear();

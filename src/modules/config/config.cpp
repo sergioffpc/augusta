@@ -2,11 +2,8 @@
 
 #include <algorithm>
 #include <array>
-#include <charconv>
-#include <cmath>
 #include <format>
 #include <fstream>
-#include <limits>
 #include <map>
 #include <optional>
 #include <span>
@@ -94,24 +91,6 @@ std::string OptionalString(const ScalarMap& values, std::string_view key, std::s
   return found == values.end() ? std::string(fallback) : found->second;
 }
 
-// The number under key, or fallback if the key is absent. The whole value must
-// be a finite number in [min, max), so a typo never becomes a silent default.
-std::expected<float, ConfigError> OptionalNumber(const ScalarMap& values, std::string_view key, float fallback,
-                                                 float min, float max) {
-  const auto found = values.find(key);
-  if (found == values.end()) {
-    return fallback;
-  }
-  const std::string& text = found->second;
-  float number = 0.0F;
-  const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), number);
-  const bool whole = error == std::errc{} && end == text.data() + text.size();
-  if (!whole || !std::isfinite(number) || number < min || number >= max) {
-    return std::unexpected(ConfigError{.code = ConfigErrorCode::kInvalidValue, .subject = std::string(key)});
-  }
-  return number;
-}
-
 std::expected<std::string, ConfigError> ReadFile(const std::filesystem::path& file) {
   std::ifstream stream(file, std::ios::binary);
   if (!stream) {
@@ -160,8 +139,6 @@ std::string Phrase(const ConfigError& error) {
       return std::format("missing required key '{}'", error.subject);
     case ConfigErrorCode::kEmptyValue:
       return std::format("'{}' must not be empty", error.subject);
-    case ConfigErrorCode::kInvalidValue:
-      return std::format("'{}' is not a valid value", error.subject);
   }
   return "unknown config error";
 }
@@ -244,15 +221,8 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
 
 std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 7> kKeys{
-      "base_dir",
-      "pack",
-      "public_key",
-      "listen_address",
-      "stamina_deplete_per_second",
-      "stamina_regen_per_second",
-      "stamina_forced_walk_below",
-  };
+  static constexpr std::array<std::string_view, 5> kKeys{"base_dir", "pack", "public_key", "parameters",
+                                                         "listen_address"};
   const auto values = ReadScalarMap(yaml_text, kKeys);
   if (!values) {
     return std::unexpected(values.error());
@@ -271,28 +241,15 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!public_key_path) {
     return std::unexpected(public_key_path.error());
   }
-  constexpr float kNoLimit = std::numeric_limits<float>::max();
-  const auto deplete =
-      OptionalNumber(*values, "stamina_deplete_per_second", kDefaultStaminaDepletePerSecond, 0.0F, kNoLimit);
-  if (!deplete) {
-    return std::unexpected(deplete.error());
-  }
-  const auto regen = OptionalNumber(*values, "stamina_regen_per_second", kDefaultStaminaRegenPerSecond, 0.0F, kNoLimit);
-  if (!regen) {
-    return std::unexpected(regen.error());
-  }
-  const auto forced_walk_below =
-      OptionalNumber(*values, "stamina_forced_walk_below", kDefaultStaminaForcedWalkBelow, 0.0F, 1.0F);
-  if (!forced_walk_below) {
-    return std::unexpected(forced_walk_below.error());
+  auto parameters_path = RequirePath(*values, "parameters", *root);
+  if (!parameters_path) {
+    return std::unexpected(parameters_path.error());
   }
   return ServerConfig{
       .pack_path = *std::move(pack_path),
       .public_key_path = *std::move(public_key_path),
+      .parameters_path = *std::move(parameters_path),
       .listen_address = OptionalString(*values, "listen_address", kDefaultListenAddress),
-      .stamina_deplete_per_second = *deplete,
-      .stamina_regen_per_second = *regen,
-      .stamina_forced_walk_below = *forced_walk_below,
   };
 }
 

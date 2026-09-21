@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_HARNESS_H_
 #define AUGUSTA_HARNESS_H_
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -8,6 +9,7 @@
 
 #include "augusta/input.h"
 #include "augusta/networking.h"
+#include "augusta/parameters.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
 #include "augusta/version.h"
@@ -110,6 +112,13 @@ class Session {
   /// Set by ExchangeMessages; safe to read from any thread. Who is in the match
   /// after that is in the Authoritative State.
   [[nodiscard]] std::vector<protocol::PlayerState> GetRoster() const;
+
+  /// The newest parameters the server has sent, the tick rate among them, or
+  /// nullopt until it admits this client: what it joined with, replaced by each
+  /// newer generation the server has reloaded since. What this client ticks and
+  /// predicts with; it has none of its own. Set by ExchangeMessages; safe to
+  /// read from any thread.
+  [[nodiscard]] std::optional<parameters::NumberedParameters> GetParameters() const;
 
   /// Why the server refused this client, or nullopt if it has not. Set by
   /// ExchangeMessages; safe to read from any thread.

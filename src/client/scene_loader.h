@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_CLIENT_LOADER_H_
-#define AUGUSTA_CLIENT_LOADER_H_
+#ifndef AUGUSTA_CLIENT_SCENE_LOADER_H_
+#define AUGUSTA_CLIENT_SCENE_LOADER_H_
 
 #include <expected>
 #include <functional>
@@ -57,4 +57,4 @@ std::expected<renderer::Scene, SceneError> LoadRenderScene(const assets::Pack& p
 
 }  // namespace augusta::client
 
-#endif  // AUGUSTA_CLIENT_LOADER_H_
+#endif  // AUGUSTA_CLIENT_SCENE_LOADER_H_

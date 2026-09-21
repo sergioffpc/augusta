@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/math.h"
+#include "augusta/parameters.h"
 
 // Exercises PredictionWorld's public Tick() surface end-to-end - the local
 // entity, its sequenced commands and its reconciliation against what the
@@ -16,9 +17,9 @@ namespace {
 
 using augusta::input::Command;
 using augusta::math::Vec3;
+using augusta::parameters::Parameters;
 using augusta::physics::BodyState;
 using augusta::physics::CollisionMesh;
-using augusta::physics::StaminaConfig;
 using augusta::prediction::Acknowledgement;
 using augusta::prediction::State;
 using augusta::prediction::World;
@@ -41,7 +42,7 @@ Command Walking() {
 }
 
 TEST(PredictionWorldTest, TicksTheLocalEntityForwardEachCall) {
-  World world{StaminaConfig{}};
+  World world;
 
   State state;
   for (int i = 0; i < 30; ++i) {
@@ -52,10 +53,10 @@ TEST(PredictionWorldTest, TicksTheLocalEntityForwardEachCall) {
 }
 
 TEST(PredictionWorldTest, StartPutsTheLocalPlayerAtTheSpawnPointOnTheFloor) {
-  World world{StaminaConfig{}};
+  World world;
   ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
 
-  world.Start(Vec3(5.0F, 0.0F, 7.0F), StaminaConfig{});
+  world.Start(Vec3(5.0F, 0.0F, 7.0F), Parameters{});
   State state;
   for (int i = 0; i < kSettleTicks; ++i) {
     state = world.Tick(Command{}, 0, std::nullopt, kFixedTick);
@@ -67,20 +68,43 @@ TEST(PredictionWorldTest, StartPutsTheLocalPlayerAtTheSpawnPointOnTheFloor) {
 }
 
 TEST(PredictionWorldTest, StartReplacesTheStaminaRulesTheWorldWasBuiltWith) {
-  World world{StaminaConfig{}};
+  World world;
   Command sprint = Walking();
   sprint.movement.sprint = true;
   EXPECT_FLOAT_EQ(world.Tick(sprint, 0, std::nullopt, kFixedTick).local_body.stamina, 1.0F);
 
-  world.Start(Vec3{}, StaminaConfig{.deplete_per_second = 1.0F, .regen_per_second = 0.0F, .forced_walk_below = 0.0F});
+  world.Start(Vec3{},
+              Parameters{.stamina = {.deplete_per_second = 1.0F, .regen_per_second = 0.0F, .forced_walk_below = 0.0F}});
 
   EXPECT_LT(world.Tick(sprint, 0, std::nullopt, kFixedTick).local_body.stamina, 1.0F);
+}
+
+TEST(PredictionWorldTest, SetParametersChangesTheStaminaRulesWithoutMovingThePlayer) {
+  World world;
+  ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
+  world.Start(Vec3(5.0F, 0.0F, 7.0F), Parameters{});
+  Command sprint = Walking();
+  sprint.movement.sprint = true;
+  State before;
+  for (int i = 0; i < kSettleTicks; ++i) {
+    before = world.Tick(sprint, 0, std::nullopt, kFixedTick);
+  }
+  ASSERT_FLOAT_EQ(before.local_body.stamina, 1.0F);
+
+  world.SetParameters(
+      Parameters{.stamina = {.deplete_per_second = 1.0F, .regen_per_second = 0.0F, .forced_walk_below = 0.0F}});
+  const State after = world.Tick(sprint, 0, std::nullopt, kFixedTick);
+
+  EXPECT_LT(after.local_body.stamina, 1.0F);
+  // Where it was, and still walking on: not started over at the spawn point.
+  EXPECT_GT(after.local_body.position.x, before.local_body.position.x);
+  EXPECT_NEAR(after.local_body.position.z, 7.0F, 0.05F);
 }
 
 // A resting player on a floor, ticked with sequences 1, 2, ... and no input.
 class ReconciliationTest : public ::testing::Test {
  protected:
-  ReconciliationTest() : world_{StaminaConfig{}} {
+  ReconciliationTest() {
     EXPECT_TRUE(world_.AddCollisionMesh(Floor()).has_value());
     for (int i = 0; i < kSettleTicks; ++i) {
       Tick(std::nullopt);

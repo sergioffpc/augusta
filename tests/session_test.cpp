@@ -1,6 +1,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <map>
 #include <memory>
@@ -25,13 +27,16 @@
 #include "augusta/input.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
+#include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
 #include "augusta/simulation.h"
 #include "augusta/version.h"
+#include "file_watch.h"
 #include "host.h"
 #include "match.h"
+#include "parameters_loader.h"
 
 // The seam the M3 tickets test through (issue #73): a real server host and a
 // real client session, both without a window, a GPU or a wall-clock loop, in
@@ -47,9 +52,11 @@ using augusta::input::Command;
 using augusta::math::Vec3;
 using augusta::networking::ConnectionState;
 using augusta::networking::Endpoint;
+using augusta::parameters::Parameters;
 using augusta::physics::CollisionMesh;
 using augusta::physics::Stance;
 using augusta::protocol::JoinRefusal;
+using augusta::protocol::ParametersUpdate;
 using augusta::server::Host;
 using augusta::server::HostConfig;
 
@@ -57,8 +64,17 @@ constexpr auto kPollInterval = std::chrono::milliseconds(10);
 constexpr auto kPollDeadline = std::chrono::seconds(5);
 constexpr float kFixedTick = 1.0F / 60.0F;
 
-// A PredictionWorld with no map, on default stamina rules.
-augusta::prediction::World EmptyWorld() { return augusta::prediction::World(augusta::physics::StaminaConfig{}); }
+// The generation of the parameters session holds, or nullopt while it holds none.
+std::optional<std::uint32_t> GenerationOf(const Session& session) {
+  const auto held = session.GetParameters();
+  return held.has_value() ? std::optional<std::uint32_t>(held->generation) : std::nullopt;
+}
+
+// The Parameters a test's server runs on: NFR-01's 60 Hz and stamina rules that never drain.
+constexpr Parameters kTestParameters{.tick_rate_hz = 60.0F};
+
+// A PredictionWorld with no map, and nothing decided yet: a server decides it on the client's join.
+augusta::prediction::World EmptyWorld() { return augusta::prediction::World(); }
 
 // ctest runs every test case in its own process, possibly in parallel, so a
 // fixed port would collide; derive one from the process id instead.
@@ -90,7 +106,9 @@ class SessionTest : public ::testing::Test {
   // The script path is the server's own placeholder (scripting::Engine ignores
   // it until Lua is embedded, ADR-0022); point it at a real script then.
   SessionTest()
-      : host_(HostConfig{.script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}}),
+      : host_(HostConfig{.parameters = kTestParameters,
+                         .script_path = "scripts/round.lua",
+                         .listen = Endpoint{.address = LoopbackAddress()}}),
         session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld()) {}
 
   // Runs both sides' network work until the session reports connected, or
@@ -151,7 +169,9 @@ TEST_F(SessionTest, StaysConnectedWhileTheTestAlternatesTicksAndNetworkWork) {
 class JoinTest : public ::testing::Test {
  protected:
   JoinTest()
-      : host_(HostConfig{.script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}}) {}
+      : host_(HostConfig{.parameters = kTestParameters,
+                         .script_path = "scripts/round.lua",
+                         .listen = Endpoint{.address = LoopbackAddress()}}) {}
 
   // Starts connecting a new client that presents engine_version.
   Session& AddClient(const std::string& engine_version = std::string(augusta::EngineVersion())) {
@@ -307,7 +327,8 @@ TEST(MapSessionTest, APredictionWorldRefusesAMapMeshPhysicsRejects) {
 }
 
 TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
-  Host host(HostConfig{.script_path = "scripts/round.lua",
+  Host host(HostConfig{.parameters = kTestParameters,
+                       .script_path = "scripts/round.lua",
                        .listen = Endpoint{.address = LoopbackAddress()},
                        .collision = {FloorAt(0.0F)}});
 
@@ -318,7 +339,8 @@ TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
 }
 
 TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
-  EXPECT_THROW(Host(HostConfig{.script_path = "scripts/round.lua",
+  EXPECT_THROW(Host(HostConfig{.parameters = kTestParameters,
+                               .script_path = "scripts/round.lua",
                                .listen = Endpoint{.address = LoopbackAddress()},
                                .collision = {CollisionMesh{}}}),
                std::runtime_error);
@@ -340,7 +362,8 @@ class MovementTest : public ::testing::Test {
   // The client always knows the floor; the host knows server_map, which a test
   // may make differ from it to give the two something to disagree about.
   explicit MovementTest(std::vector<CollisionMesh> server_map)
-      : host_(HostConfig{.script_path = "scripts/round.lua",
+      : host_(HostConfig{.parameters = kTestParameters,
+                         .script_path = "scripts/round.lua",
                          .listen = Endpoint{.address = LoopbackAddress()},
                          .collision = std::move(server_map)}),
         session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, WorldWithFloorAt(kGroundHeight)) {}
@@ -692,9 +715,9 @@ class LoopbackMatch : public ::testing::Test {
 
   explicit LoopbackMatch(const HostConfig& config) : host_(config) {}
 
-  // A host config for the floor with spawn_points and the stamina rules.
-  static HostConfig OnTheFloor(std::vector<Vec3> spawn_points, const augusta::physics::StaminaConfig& stamina = {}) {
-    return HostConfig{.stamina = stamina,
+  // A host config for the floor with spawn_points and the parameters.
+  static HostConfig OnTheFloor(std::vector<Vec3> spawn_points, const Parameters& parameters = kTestParameters) {
+    return HostConfig{.parameters = parameters,
                       .script_path = "scripts/round.lua",
                       .listen = Endpoint{.address = LoopbackAddress()},
                       .collision = {FloorAt(kFloorY)},
@@ -860,7 +883,9 @@ class StaminaTest : public LoopbackMatch {
 
   StaminaTest()
       : LoopbackMatch(OnTheFloor(
-            {}, {.deplete_per_second = 1.0F, .regen_per_second = 0.25F, .forced_walk_below = kForcedWalkBelow})) {}
+            {}, {.tick_rate_hz = 60.0F,
+                 .stamina = {
+                     .deplete_per_second = 1.0F, .regen_per_second = 0.25F, .forced_walk_below = kForcedWalkBelow}})) {}
 
   void SetUp() override {
     client_ = &Join();
@@ -932,6 +957,469 @@ TEST_F(StaminaTest, AClientPredictsItsStaminaWithTheServersRulesNotItsOwn) {
   EXPECT_NEAR(predicted, Authoritative().stamina, 0.1F);
 }
 
+// The server's Parameters come from a script on disk (ADR-0039), read the way
+// augustad reads it. A bar that empties in a second of sprinting and never refills.
+class ScriptedParametersTest : public LoopbackMatch {
+ protected:
+  static augusta::parameters::Parameters LoadScript() {
+    const auto file = std::filesystem::temp_directory_path() / ("augusta_session_" + LoopbackAddress() + ".lua");
+    std::ofstream(file, std::ios::binary) << "local sprint_seconds = 1\n"
+                                             "return {\n"
+                                             "  tick_rate_hz = 60,\n"
+                                             "  stamina = {\n"
+                                             "  deplete_per_second = 1 / sprint_seconds,\n"
+                                             "  regen_per_second = 0,\n"
+                                             "  forced_walk_below = 0.2,\n"
+                                             "} }";
+    const auto loaded = augusta::parameters::LoadFile(file);
+    std::filesystem::remove(file);
+    return loaded.value();
+  }
+
+  ScriptedParametersTest() : LoopbackMatch(OnTheFloor({}, LoadScript())) {}
+};
+
+TEST_F(ScriptedParametersTest, AClientPredictsItsStaminaWithTheRulesOfTheServersScript) {
+  Session& client = Join();
+  Run(kSettleTicks);
+  Command sprint;
+  sprint.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+  sprint.movement.sprint = true;
+
+  Run(45, sprint);
+
+  // Nothing else depletes a bar this fast and nothing refills it: the client is following the script.
+  EXPECT_LT(states_.at(&client).local_body.stamina, 0.7F);
+  EXPECT_NEAR(states_.at(&client).local_body.stamina, BodySeenBy(client, *client.GetSessionId())->stamina, 0.1F);
+}
+
+// The server reloads its Parameters script while it runs (ADR-0039). The script
+// starts as a bar that never drains, and each test rewrites it.
+class ReloadTest : public LoopbackMatch {
+ protected:
+  static std::filesystem::path ScriptPath() {
+    return std::filesystem::temp_directory_path() / ("augusta_reload_" + LoopbackAddress() + ".lua");
+  }
+
+  // A complete script at tick_rate_hz whose bar empties at deplete_per_second and never refills.
+  static std::string Script(float tick_rate_hz, float deplete_per_second) {
+    return "return { tick_rate_hz = " + std::to_string(tick_rate_hz) +
+           ", stamina = { deplete_per_second = " + std::to_string(deplete_per_second) +
+           ", regen_per_second = 0, forced_walk_below = 0 } }";
+  }
+
+  static void WriteScript(std::string_view contents) { std::ofstream(ScriptPath(), std::ios::binary) << contents; }
+
+  static HostConfig Config() {
+    WriteScript(Script(60.0F, 0.0F));
+    HostConfig config = OnTheFloor({}, augusta::parameters::LoadFile(ScriptPath()).value());
+    config.parameters_path = ScriptPath();
+    return config;
+  }
+
+  ReloadTest() : LoopbackMatch(Config()) {}
+
+  void SetUp() override {
+    client_ = &Join();
+    Run(kSettleTicks);
+  }
+
+  void TearDown() override { std::filesystem::remove(ScriptPath()); }
+
+  // The stamina the server has the player at after sprinting for ticks ticks.
+  float StaminaAfterSprinting(int ticks) {
+    Command sprint;
+    sprint.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+    sprint.movement.sprint = true;
+    Run(ticks, sprint);
+    return BodySeenBy(*client_, *client_->GetSessionId())->stamina;
+  }
+
+  Session* client_ = nullptr;
+};
+
+TEST_F(ReloadTest, TheServerStartsAtGenerationOne) { EXPECT_EQ(host_.Generation(), 1U); }
+
+TEST_F(ReloadTest, AGoodScriptBecomesTheNextGenerationAndTheSimulationUsesItFromTheNextTick) {
+  ASSERT_GT(StaminaAfterSprinting(30), 0.99F);
+  WriteScript(Script(60.0F, 1.0F));
+
+  const auto reloaded = host_.Reload();
+
+  ASSERT_TRUE(reloaded.has_value());
+  EXPECT_EQ(*reloaded, 2U);
+  // A bar that empties in a second, sprinted on for 30 ticks: half of it.
+  EXPECT_NEAR(StaminaAfterSprinting(30), 0.5F, 0.1F);
+  EXPECT_EQ(host_.Generation(), 2U);
+}
+
+TEST_F(ReloadTest, AReloadIsNotAppliedUntilTheNextTickBegins) {
+  WriteScript(Script(60.0F, 1.0F));
+
+  ASSERT_TRUE(host_.Reload().has_value());
+
+  EXPECT_EQ(host_.Generation(), 1U);
+  host_.Tick(kFixedTick);
+  EXPECT_EQ(host_.Generation(), 2U);
+}
+
+TEST_F(ReloadTest, TwoReloadsBeforeATickApplyTheNewestAndEachIsNumbered) {
+  WriteScript(Script(60.0F, 0.5F));
+  ASSERT_EQ(host_.Reload().value(), 2U);
+  WriteScript(Script(60.0F, 1.0F));
+  ASSERT_EQ(host_.Reload().value(), 3U);
+
+  host_.Tick(kFixedTick);
+
+  EXPECT_EQ(host_.Generation(), 3U);
+}
+
+TEST_F(ReloadTest, AScriptWithAnErrorIsRefusedAndTheRunningParametersStay) {
+  for (const char* bad : {"return {", "return { tick_rate_hz = 60, recoil = 1 }", "error('typo')"}) {
+    WriteScript(bad);
+
+    const auto reloaded = host_.Reload();
+
+    ASSERT_FALSE(reloaded.has_value()) << bad;
+    EXPECT_EQ(reloaded.error().reason, augusta::server::ReloadRefusal::kLoadFailed) << bad;
+  }
+  EXPECT_GT(StaminaAfterSprinting(60), 0.99F);
+  EXPECT_EQ(host_.Generation(), 1U);
+}
+
+TEST_F(ReloadTest, AScriptThatCannotBeReadIsRefused) {
+  std::filesystem::remove(ScriptPath());
+
+  const auto reloaded = host_.Reload();
+
+  ASSERT_FALSE(reloaded.has_value());
+  EXPECT_EQ(reloaded.error().reason, augusta::server::ReloadRefusal::kLoadFailed);
+  EXPECT_EQ(reloaded.error().load.code, augusta::parameters::LoadErrorCode::kCannotOpenFile);
+}
+
+TEST_F(ReloadTest, AScriptThatChangesTheTickRateIsRefusedAsNeedingARestart) {
+  WriteScript(Script(30.0F, 1.0F));
+
+  const auto reloaded = host_.Reload();
+
+  ASSERT_FALSE(reloaded.has_value());
+  EXPECT_EQ(reloaded.error().reason, augusta::server::ReloadRefusal::kTickRateChanged);
+  // Refused as a whole: the new stamina rules in the same script did not slip in.
+  EXPECT_GT(StaminaAfterSprinting(60), 0.99F);
+  EXPECT_EQ(host_.Generation(), 1U);
+}
+
+TEST_F(ReloadTest, ARefusalDoesNotUseUpAGenerationNumber) {
+  WriteScript("return {");
+  ASSERT_FALSE(host_.Reload().has_value());
+  WriteScript(Script(60.0F, 1.0F));
+
+  EXPECT_EQ(host_.Reload().value(), 2U);
+}
+
+// The same, with the watcher the server runs: saving the script is all it takes.
+class WatchedReloadTest : public ReloadTest {
+ protected:
+  void SetUp() override {
+    ReloadTest::SetUp();
+    watcher_.emplace(ScriptPath(),
+                     augusta::server::WatchOptions{.poll_interval = std::chrono::milliseconds(5),
+                                                   .debounce = std::chrono::milliseconds(40)},
+                     [this] { static_cast<void>(host_.Reload()); });
+  }
+
+  void TearDown() override {
+    watcher_.reset();
+    ReloadTest::TearDown();
+  }
+
+  std::optional<augusta::server::FileWatcher> watcher_;
+};
+
+TEST_F(WatchedReloadTest, SavingTheScriptChangesTheRunningSimulationWithNoOtherStep) {
+  ASSERT_GT(StaminaAfterSprinting(30), 0.99F);
+
+  WriteScript(Script(60.0F, 1.0F));
+  const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+  while (host_.Generation() < 2 && std::chrono::steady_clock::now() < deadline) {
+    Step();
+  }
+
+  ASSERT_EQ(host_.Generation(), 2U);
+  EXPECT_NEAR(StaminaAfterSprinting(30), 0.5F, 0.1F);
+}
+
+TEST_F(ReloadTest, EveryConnectedClientIsSentTheNewGenerationWhenItBegins) {
+  Session& second = Join();
+  WriteScript(Script(60.0F, 1.0F));
+
+  ASSERT_TRUE(host_.Reload().has_value());
+
+  // Reloaded, not begun: nobody is told before the tick that runs on it.
+  EXPECT_EQ(GenerationOf(*client_), 1U);
+  const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+  while ((GenerationOf(*client_) != 2U || GenerationOf(second) != 2U) && std::chrono::steady_clock::now() < deadline) {
+    Step();
+  }
+  for (const Session* client : {client_, &second}) {
+    EXPECT_EQ(GenerationOf(*client), 2U);
+    EXPECT_FLOAT_EQ(client->GetParameters()->parameters.stamina.deplete_per_second, 1.0F);
+  }
+}
+
+TEST_F(ReloadTest, AClientThatJoinsAfterAReloadIsToldTheCurrentGenerationWhenItJoins) {
+  WriteScript(Script(60.0F, 1.0F));
+  ASSERT_TRUE(host_.Reload().has_value());
+  Run(3);
+
+  Session& late = Join();
+
+  EXPECT_EQ(GenerationOf(late), 2U);
+  EXPECT_FLOAT_EQ(late.GetParameters()->parameters.stamina.deplete_per_second, 1.0F);
+}
+
+TEST_F(ReloadTest, ARefusedReloadSendsNothing) {
+  WriteScript("return {");
+  ASSERT_FALSE(host_.Reload().has_value());
+
+  Run(5);
+
+  EXPECT_EQ(GenerationOf(*client_), 1U);
+  EXPECT_FLOAT_EQ(client_->GetParameters()->parameters.stamina.deplete_per_second, 0.0F);
+}
+
+// A server speaking the protocol by hand to one client, to send what a real
+// one would not: a generation that is old or repeated, values that fail the
+// checks, or bytes that are no message.
+class ScriptedServer {
+ public:
+  explicit ScriptedServer(const Endpoint& listen) : server_(listen) {}
+
+  // Connects session and answers its join with generation and parameters.
+  bool Admit(Session& session, std::uint32_t generation, const Parameters& parameters) {
+    generation_ = generation;
+    parameters_ = parameters;
+    session.Connect();
+    const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+    while (!session.GetSessionId().has_value() && std::chrono::steady_clock::now() < deadline) {
+      Pump();
+      session.PumpEvents();
+      session.ExchangeMessages();
+      std::this_thread::sleep_for(kPollInterval);
+    }
+    return session.GetSessionId().has_value();
+  }
+
+  // Serves the connection and the join, and takes in whatever the client sent.
+  void Pump() {
+    for (const auto& event : server_.PumpEvents()) {
+      if (event.type == augusta::networking::PeerEventType::kConnectRequested) {
+        server_.Accept(event.peer);
+      }
+    }
+    for (const auto& message : server_.ReceiveMessages()) {
+      peer_ = message.from;
+      const auto decoded = augusta::protocol::Decode(message.payload);
+      if (decoded.has_value() && std::holds_alternative<augusta::protocol::JoinRequest>(*decoded)) {
+        Send(augusta::protocol::JoinAccepted{
+            .session = augusta::protocol::SessionId{1}, .generation = generation_, .parameters = parameters_});
+      }
+    }
+  }
+
+  void Send(const augusta::protocol::Message& message) { SendPayload(augusta::protocol::Encode(message)); }
+
+  // Sends bytes as they are, whether or not they are a message.
+  void SendPayload(const augusta::protocol::Bytes& payload) {
+    server_.Send(*peer_, payload, augusta::networking::Reliability::kReliable);
+  }
+
+ private:
+  augusta::networking::Server server_;
+  std::optional<augusta::networking::PeerId> peer_;
+  std::uint32_t generation_ = 0;
+  Parameters parameters_;
+};
+
+// A client admitted by a server that then sends it parameters by hand.
+class ParametersUpdateTest : public ::testing::Test {
+ protected:
+  // 60 Hz unless said otherwise, and a bar that empties at deplete_per_second and never refills.
+  static Parameters WithDeplete(float deplete_per_second, float tick_rate_hz = 60.0F) {
+    return Parameters{
+        .tick_rate_hz = tick_rate_hz,
+        .stamina = {.deplete_per_second = deplete_per_second, .regen_per_second = 0.0F, .forced_walk_below = 0.0F}};
+  }
+
+  ParametersUpdateTest()
+      : server_(Endpoint{.address = LoopbackAddress()}),
+        session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, WorldWithFloorAt(0.0F)) {}
+
+  void SetUp() override { ASSERT_TRUE(server_.Admit(session_, 1, WithDeplete(0.0F))); }
+
+  // Lets the client take in, or refuse, whatever was sent: long enough that a
+  // message that was going to arrive has.
+  void Settle() {
+    const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+    while (std::chrono::steady_clock::now() < until) {
+      server_.Pump();
+      session_.PumpEvents();
+      session_.ExchangeMessages();
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+  }
+
+  void Deliver(const augusta::protocol::Message& message) {
+    server_.Send(message);
+    Settle();
+  }
+
+  // The stamina the client predicts after sprinting on for ticks more ticks.
+  float PredictedStaminaAfterSprinting(int ticks) {
+    Command sprint;
+    sprint.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+    sprint.movement.sprint = true;
+    augusta::prediction::State state;
+    for (int i = 0; i < ticks; ++i) {
+      state = session_.Tick(sprint, kFixedTick);
+    }
+    return state.local_body.stamina;
+  }
+
+  ScriptedServer server_;
+  Session session_;
+};
+
+TEST_F(ParametersUpdateTest, AClientAdoptsANewerGenerationAndItsPredictionUsesIt) {
+  ASSERT_GT(PredictedStaminaAfterSprinting(30), 0.99F);
+
+  Deliver(ParametersUpdate{.generation = 2, .parameters = WithDeplete(1.0F)});
+
+  EXPECT_EQ(GenerationOf(session_), 2U);
+  EXPECT_FLOAT_EQ(session_.GetParameters()->parameters.stamina.deplete_per_second, 1.0F);
+  // A bar that empties in a second, sprinted on for 30 more ticks: half of what was left.
+  EXPECT_NEAR(PredictedStaminaAfterSprinting(30), 0.5F, 0.1F);
+}
+
+TEST_F(ParametersUpdateTest, AClientIgnoresAGenerationThatIsNotNewer) {
+  Deliver(ParametersUpdate{.generation = 5, .parameters = WithDeplete(0.5F)});
+  ASSERT_EQ(GenerationOf(session_), 5U);
+
+  for (const std::uint32_t stale : {5U, 4U, 1U}) {
+    Deliver(ParametersUpdate{.generation = stale, .parameters = WithDeplete(1.0F)});
+  }
+
+  EXPECT_EQ(GenerationOf(session_), 5U);
+  EXPECT_FLOAT_EQ(session_.GetParameters()->parameters.stamina.deplete_per_second, 0.5F);
+}
+
+TEST_F(ParametersUpdateTest, AClientDropsAnUpdateWhoseValuesFailTheRangeChecks) {
+  for (const float bad : {-1.0F, std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity()}) {
+    Deliver(ParametersUpdate{.generation = 2, .parameters = WithDeplete(bad)});
+
+    EXPECT_EQ(GenerationOf(session_), 1U) << bad;
+  }
+  Parameters threshold = WithDeplete(0.0F);
+  threshold.stamina.forced_walk_below = 1.0F;
+  Deliver(ParametersUpdate{.generation = 2, .parameters = threshold});
+  EXPECT_EQ(GenerationOf(session_), 1U);
+}
+
+TEST_F(ParametersUpdateTest, AClientDropsAnUpdateWithAnotherTickRateThanItJoinedWith) {
+  Deliver(ParametersUpdate{.generation = 2, .parameters = WithDeplete(1.0F, 30.0F)});
+
+  EXPECT_EQ(GenerationOf(session_), 1U);
+  EXPECT_FLOAT_EQ(session_.GetParameters()->parameters.tick_rate_hz, 60.0F);
+}
+
+TEST_F(ParametersUpdateTest, AMalformedUpdateChangesNothingAndTheNextGoodOneIsStillTaken) {
+  // The message type, then a generation cut short.
+  server_.SendPayload(augusta::protocol::Bytes{std::byte{6}, std::byte{2}});
+  Settle();
+  ASSERT_EQ(GenerationOf(session_), 1U);
+
+  Deliver(ParametersUpdate{.generation = 2, .parameters = WithDeplete(1.0F)});
+
+  EXPECT_EQ(GenerationOf(session_), 2U);
+}
+
+// A server at 30 Hz: everything a client does with time it must take from what it is told.
+class TickRateTest : public LoopbackMatch {
+ protected:
+  static constexpr float kServerRate = 30.0F;
+
+  TickRateTest() : LoopbackMatch(OnTheFloor({}, {.tick_rate_hz = kServerRate})) {}
+};
+
+TEST_F(TickRateTest, AClientLearnsTheServersTickRateWhenItJoins) {
+  Session& client = Join();
+
+  ASSERT_TRUE(client.GetParameters().has_value());
+  EXPECT_FLOAT_EQ(client.GetParameters()->parameters.tick_rate_hz, kServerRate);
+}
+
+TEST_F(TickRateTest, AClientTickingAtTheRateItWasToldAgreesWithTheServerWithoutCorrection) {
+  Session& client = Join();
+  const float client_delta = 1.0F / client.GetParameters()->parameters.tick_rate_hz;
+  const float server_delta = 1.0F / kServerRate;
+  Command walk;
+  walk.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+
+  augusta::prediction::State state;
+  for (int i = 0; i < 90; ++i) {
+    state = client.Tick(walk, client_delta);
+    std::this_thread::sleep_for(kNetworkDelay);
+    Exchange();
+    host_.Tick(server_delta);
+    std::this_thread::sleep_for(kNetworkDelay);
+    Exchange();
+  }
+
+  // Walking 3 s at 3 m/s: what the client covered is what the server did, so
+  // reconciliation never had a jump to make.
+  EXPECT_GT(state.local_body.position.x, 6.0F);
+  EXPECT_NEAR(state.local_body.position.x, BodySeenBy(client, *client.GetSessionId())->position.x, 0.5F);
+  EXPECT_NEAR(state.total_correction.x, 0.0F, 0.01F);
+  EXPECT_NEAR(state.total_correction.z, 0.0F, 0.01F);
+}
+
+// A client that has not joined holds nothing a server decides.
+TEST_F(SessionTest, AClientHoldsNoParametersUntilTheServerAdmitsIt) {
+  EXPECT_FALSE(session_.GetParameters().has_value());
+  ASSERT_TRUE(ConnectSession());
+  const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+  while (!session_.GetSessionId().has_value() && std::chrono::steady_clock::now() < deadline) {
+    host_.PumpNetwork();
+    session_.PumpEvents();
+    session_.ExchangeMessages();
+    std::this_thread::sleep_for(kPollInterval);
+  }
+
+  ASSERT_TRUE(session_.GetSessionId().has_value());
+  ASSERT_TRUE(session_.GetParameters().has_value());
+  EXPECT_FLOAT_EQ(session_.GetParameters()->parameters.tick_rate_hz, kTestParameters.tick_rate_hz);
+}
+
+// A server whose parameters are unusable (a tick rate of zero): the client
+// drops the Join accepted rather than divide by it.
+TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseParametersFailTheChecks) {
+  Host host(HostConfig{
+      .parameters = {}, .script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}});
+  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
+  session.Connect();
+
+  const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+  while (std::chrono::steady_clock::now() < until) {
+    host.PumpNetwork();
+    session.PumpEvents();
+    session.ExchangeMessages();
+    std::this_thread::sleep_for(kPollInterval);
+  }
+
+  EXPECT_FALSE(session.GetSessionId().has_value());
+  EXPECT_FALSE(session.GetParameters().has_value());
+}
+
 // What a client is told when its session ends on its own.
 TEST(SessionFailureTest, ASessionThatNeverConnectedHasNoFailure) {
   Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
@@ -960,8 +1448,9 @@ TEST(SessionFailureTest, AServerNobodyIsListeningAtIsUnreachable) {
 }
 
 TEST(SessionFailureTest, AServerThatGoesAwayAfterAdmittingTheClientIsAConnectionLost) {
-  auto host = std::make_unique<Host>(
-      HostConfig{.script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}});
+  auto host = std::make_unique<Host>(HostConfig{.parameters = kTestParameters,
+                                                .script_path = "scripts/round.lua",
+                                                .listen = Endpoint{.address = LoopbackAddress()}});
   Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
   session.Connect();
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
@@ -989,7 +1478,9 @@ TEST(SessionFailureTest, AServerThatGoesAwayAfterAdmittingTheClientIsAConnection
 }
 
 TEST(SessionFailureTest, EndingTheSessionOneselfIsNotAFailure) {
-  Host host(HostConfig{.script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}});
+  Host host(HostConfig{.parameters = kTestParameters,
+                       .script_path = "scripts/round.lua",
+                       .listen = Endpoint{.address = LoopbackAddress()}});
   Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
   session.Connect();
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
