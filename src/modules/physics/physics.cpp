@@ -442,11 +442,12 @@ std::expected<void, CollisionMeshError> World::AddCollisionMesh(const CollisionM
   return {};
 }
 
+void World::SetStaminaConfig(const StaminaConfig& config) { impl_->stamina_config = config; }
+
 BodyHandle World::CreateBody(const math::Vec3& initial_position) {
   PxCapsuleControllerDesc desc;
   desc.radius = kCapsuleRadius;
   desc.height = kStandingHeight;
-  desc.position = PxExtendedVec3(initial_position.x, initial_position.y, initial_position.z);
   desc.material = impl_->material;
   desc.stepOffset = kStepOffset;
   desc.upDirection = PxVec3(0.0F, 1.0F, 0.0F);
@@ -454,6 +455,8 @@ BodyHandle World::CreateBody(const math::Vec3& initial_position) {
   if (controller == nullptr) {
     throw std::runtime_error("physics::World::CreateBody: createController failed");
   }
+  // The descriptor's position is the capsule's center; BodyState's is the feet.
+  controller->setFootPosition(PxExtendedVec3(initial_position.x, initial_position.y, initial_position.z));
 
   const auto handle = static_cast<BodyHandle>(impl_->next_handle++);
   BodyRecord record;

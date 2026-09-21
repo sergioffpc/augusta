@@ -171,7 +171,12 @@ class World {
   World(World&&) noexcept;
   World& operator=(World&&) noexcept;
 
-  // Creates a new body at initial_position, with default BodyState
+  /// Replaces the stamina rules every body's next Step follows, e.g. with the
+  /// server's once a client has joined; stamina already in bodies is kept.
+  void SetStaminaConfig(const StaminaConfig& config);
+
+  // Creates a new body with its feet at initial_position (the same position
+  // BodyState carries), with default BodyState
   // otherwise (standing, zero velocity, full stamina). Returns a handle
   // valid for the lifetime of this World or until DestroyBody is called
   // with it.

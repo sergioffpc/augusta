@@ -88,6 +88,20 @@ TEST(PhysicsWorldTest, SprintDepletesStaminaAndForcesWalkBelowThreshold) {
   EXPECT_LT(state.stamina, 1.0F);
 }
 
+TEST(PhysicsWorldTest, TheStaminaRulesCanBeReplacedAndTheNextStepFollowsThem) {
+  World world{StaminaConfig{}};
+  const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
+  MovementInput sprint{};
+  sprint.direction = Vec3(1.0F, 0.0F, 0.0F);
+  sprint.sprint = true;
+  EXPECT_FLOAT_EQ(world.Step(body, sprint, 0.1F).stamina, 1.0F);
+
+  world.SetStaminaConfig(
+      StaminaConfig{.deplete_per_second = 1.0F, .regen_per_second = 0.0F, .forced_walk_below = 0.0F});
+
+  EXPECT_LT(world.Step(body, sprint, 0.1F).stamina, 1.0F);
+}
+
 TEST(PhysicsWorldTest, RestoreMovesTheBodyAndTheNextStepStartsFromThere) {
   World world{StaminaConfig{}};
   const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
@@ -222,6 +236,16 @@ TEST(StaticGeometryTest, AFloorHoldsAWalkingBodyAtGroundHeight) {
   EXPECT_NEAR(landed.position.y, 0.0F, 0.1F);
   EXPECT_NEAR(walking.position.y, 0.0F, 0.1F);
   EXPECT_GT(walking.position.x, landed.position.x);
+}
+
+TEST(StaticGeometryTest, ABodyIsCreatedWithItsFeetAtThePositionGiven) {
+  World world = WorldWithFloor();
+  const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
+
+  const BodyState state = Settle(world, body, MovementInput{}, 60);
+
+  // Were the position the capsule's center, the feet would start under the floor.
+  EXPECT_NEAR(state.position.y, 0.0F, 0.05F);
 }
 
 TEST(StaticGeometryTest, WithoutAFloorABodyKeepsFalling) {
