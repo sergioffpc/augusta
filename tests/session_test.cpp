@@ -241,7 +241,8 @@ constexpr int kFallTicks = 120;
 
 TEST(MapSessionTest, ThePredictedBodyRestsOnTheMapsFloor) {
   const Endpoint address{.address = LoopbackAddress()};
-  Session session(SessionConfig{.server = address, .collision = {FloorAt(kFloorHeight)}});
+  Session session(SessionConfig{.server = address});
+  ASSERT_TRUE(session.AddStaticMesh(FloorAt(kFloorHeight)).has_value());
 
   augusta::prediction::State state;
   for (int i = 0; i < kFallTicks; ++i) {
@@ -263,8 +264,12 @@ TEST(MapSessionTest, WithoutAMapThePredictedBodyKeepsFalling) {
 }
 
 TEST(MapSessionTest, ASessionRefusesAMapMeshPhysicsRejects) {
-  EXPECT_THROW(Session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .collision = {StaticMesh{}}}),
-               std::runtime_error);
+  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}});
+
+  const auto added = session.AddStaticMesh(StaticMesh{});
+
+  ASSERT_FALSE(added.has_value());
+  EXPECT_EQ(added.error(), augusta::physics::StaticMeshError::kEmpty);
 }
 
 TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
@@ -304,8 +309,9 @@ class MovementTest : public ::testing::Test {
       : host_(HostConfig{.script_path = "scripts/round.lua",
                          .listen = Endpoint{.address = LoopbackAddress()},
                          .collision = std::move(server_map)}),
-        session_(
-            SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .collision = {FloorAt(kGroundHeight)}}) {}
+        session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}) {
+    EXPECT_TRUE(session_.AddStaticMesh(FloorAt(kGroundHeight)).has_value());
+  }
 
   void TearDown() override { augusta::networking::SimulateNetworkConditions({}); }
 

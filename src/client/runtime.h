@@ -50,6 +50,7 @@ struct Config {
   networking::Endpoint server;
   // The map's collision, built by augusta::map from the client pack by the
   // caller, like the scene: where content comes from is the executable's business.
+  // The constructor throws std::runtime_error if physics rejects a mesh.
   std::vector<physics::StaticMesh> collision;
   // Simulation thread's fixed tick rate, in Hz. Defaults to NFR-01's
   // server tick rate (>= 60 Hz, REQUIREMENTS.md) - PredictionWorld

@@ -3,10 +3,8 @@
 #include <cstdint>
 #include <deque>
 #include <expected>
-#include <format>
 #include <memory>
 #include <mutex>
-#include <stdexcept>
 #include <string>
 #include <variant>
 
@@ -34,14 +32,7 @@ struct Session::Impl {
   std::uint32_t next_sequence = 1;
 
   explicit Impl(const SessionConfig& config)
-      : server(config.server), engine_version(config.engine_version), prediction(config.stamina) {
-    for (const physics::StaticMesh& mesh : config.collision) {
-      if (const auto added = prediction.AddStaticMesh(mesh); !added) {
-        throw std::runtime_error(std::format("harness::Session: map collision rejected: {}",
-                                             physics::DescribeStaticMeshError(added.error())));
-      }
-    }
-  }
+      : server(config.server), engine_version(config.engine_version), prediction(config.stamina) {}
 
   void HandleMessage(const networking::Payload& payload) {
     const std::expected<protocol::Message, protocol::DecodeError> decoded = protocol::Decode(payload);
@@ -115,6 +106,10 @@ struct Session::Impl {
 Session::Session(const SessionConfig& config) : impl_(std::make_unique<Impl>(config)) {}
 
 Session::~Session() = default;
+
+std::expected<void, physics::StaticMeshError> Session::AddStaticMesh(const physics::StaticMesh& mesh) {
+  return impl_->prediction.AddStaticMesh(mesh);
+}
 
 void Session::Connect() { impl_->network.Connect(impl_->server); }
 

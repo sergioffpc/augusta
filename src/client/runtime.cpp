@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <format>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <thread>
 
 #include <nvtx3/nvtx3.hpp>
@@ -161,9 +163,16 @@ struct ClientRuntime::Impl {
   explicit Impl(const Config& cfg)
       : config(cfg),
         input(cfg.input),
-        session(harness::SessionConfig{.stamina = cfg.stamina, .server = cfg.server, .collision = cfg.collision}),
+        session(harness::SessionConfig{.stamina = cfg.stamina, .server = cfg.server}),
         presentation(audio),
-        renderer(cfg.renderer, input) {}
+        renderer(cfg.renderer, input) {
+    for (const physics::StaticMesh& mesh : cfg.collision) {
+      if (const auto added = session.AddStaticMesh(mesh); !added) {
+        throw std::runtime_error(
+            std::format("ClientRuntime: map collision rejected: {}", physics::DescribeStaticMeshError(added.error())));
+      }
+    }
+  }
 
   // Prediction thread body (ADR-0005): fixed-rate loop sampling local
   // input and ticking PredictionWorld. Runs until running is cleared by

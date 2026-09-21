@@ -1,10 +1,10 @@
 #ifndef AUGUSTA_HARNESS_H_
 #define AUGUSTA_HARNESS_H_
 
+#include <expected>
 #include <memory>
 #include <optional>
 #include <string>
-#include <vector>
 
 #include "augusta/input.h"
 #include "augusta/networking.h"
@@ -38,15 +38,13 @@ struct SessionConfig {
   networking::Endpoint server{};
   /// The engine version to present when joining; the server admits only its own.
   std::string engine_version = std::string(EngineVersion());
-  /// The map's collision, as built by augusta::map from the client pack.
-  std::vector<physics::StaticMesh> collision{};
 };
 
 /// The client's network connection and PredictionWorld, without a window or a GPU.
 class Session {
  public:
-  /// Constructs the connection and the PredictionWorld with the map's collision;
-  /// connects to nothing yet. Throws std::runtime_error if a map mesh is rejected.
+  /// Constructs the connection and an empty PredictionWorld; connects to nothing
+  /// yet. Load the map with AddStaticMesh before the first Tick.
   explicit Session(const SessionConfig& config);
   ~Session();
 
@@ -55,6 +53,12 @@ class Session {
   Session& operator=(const Session&) = delete;
   Session(Session&&) = delete;
   Session& operator=(Session&&) = delete;
+
+  /// Adds a piece of the map's collision (as built by augusta::map from the
+  /// client pack) to the PredictionWorld's physics. Call before the first Tick,
+  /// from the thread that will Tick: a body that has already ticked has been
+  /// predicted without it, and reconciliation cannot account for that.
+  std::expected<void, physics::StaticMeshError> AddStaticMesh(const physics::StaticMesh& mesh);
 
   /// Begins connecting to the configured server; returns immediately.
   void Connect();
