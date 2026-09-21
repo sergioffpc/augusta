@@ -149,6 +149,10 @@ class World {
   /// Takes player and its body out of the world; a no-op if it is not in it.
   void RemovePlayer(PlayerId player);
 
+  /// Puts every player body under stamina from the next Tick on. Call between
+  /// ticks, so no phase of one tick sees two sets of rules.
+  void SetStaminaConfig(const physics::StaminaConfig& stamina);
+
   // Runs all eight Phase values above, in their declared order, for one
   // fixed tick of duration delta_time seconds (internally, one
   // flecs::world::progress(delta_time) call). commands holds this tick's

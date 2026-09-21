@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_RUNTIME_H_
 #define AUGUSTA_RUNTIME_H_
 
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
@@ -44,6 +45,8 @@ struct Config {
   // missed ticks) and every player body's stamina rules (physics::World,
   // shared with PredictionWorld client-side).
   parameters::Parameters parameters;
+  // The script those Parameters were read from, which a reload reads again.
+  std::filesystem::path parameters_path;
   // Lua game-policy script to load (scripting::Engine, inside
   // SimulationWorld's Scripts/Behaviours phase).
   std::string script_path;

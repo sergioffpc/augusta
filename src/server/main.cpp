@@ -94,6 +94,7 @@ augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ServerConfig&
   // Every client is sent these when it joins and predicts with them, so the
   // script is the only place they are set.
   config.parameters = parameters;
+  config.parameters_path = file_config.parameters_path;
   return config;
 }
 

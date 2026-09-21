@@ -985,6 +985,130 @@ TEST_F(ScriptedParametersTest, AClientPredictsItsStaminaWithTheRulesOfTheServers
   EXPECT_NEAR(states_.at(&client).local_body.stamina, BodySeenBy(client, *client.GetSessionId())->stamina, 0.1F);
 }
 
+// The server reloads its Parameters script while it runs (ADR-0039). The script
+// starts as a bar that never drains, and each test rewrites it.
+class ReloadTest : public LoopbackMatch {
+ protected:
+  static std::filesystem::path ScriptPath() {
+    return std::filesystem::temp_directory_path() / ("augusta_reload_" + LoopbackAddress() + ".lua");
+  }
+
+  // A complete script at tick_rate_hz whose bar empties at deplete_per_second and never refills.
+  static std::string Script(float tick_rate_hz, float deplete_per_second) {
+    return "return { tick_rate_hz = " + std::to_string(tick_rate_hz) +
+           ", stamina = { deplete_per_second = " + std::to_string(deplete_per_second) +
+           ", regen_per_second = 0, forced_walk_below = 0 } }";
+  }
+
+  static void WriteScript(std::string_view contents) { std::ofstream(ScriptPath(), std::ios::binary) << contents; }
+
+  static HostConfig Config() {
+    WriteScript(Script(60.0F, 0.0F));
+    HostConfig config = OnTheFloor({}, augusta::parameters::LoadFile(ScriptPath()).value());
+    config.parameters_path = ScriptPath();
+    return config;
+  }
+
+  ReloadTest() : LoopbackMatch(Config()) {}
+
+  void SetUp() override {
+    client_ = &Join();
+    Run(kSettleTicks);
+  }
+
+  void TearDown() override { std::filesystem::remove(ScriptPath()); }
+
+  // The stamina the server has the player at after sprinting for ticks ticks.
+  float StaminaAfterSprinting(int ticks) {
+    Command sprint;
+    sprint.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+    sprint.movement.sprint = true;
+    Run(ticks, sprint);
+    return BodySeenBy(*client_, *client_->GetSessionId())->stamina;
+  }
+
+  Session* client_ = nullptr;
+};
+
+TEST_F(ReloadTest, TheServerStartsAtGenerationOne) { EXPECT_EQ(host_.Generation(), 1U); }
+
+TEST_F(ReloadTest, AGoodScriptBecomesTheNextGenerationAndTheSimulationUsesItFromTheNextTick) {
+  ASSERT_GT(StaminaAfterSprinting(30), 0.99F);
+  WriteScript(Script(60.0F, 1.0F));
+
+  const auto reloaded = host_.Reload();
+
+  ASSERT_TRUE(reloaded.has_value());
+  EXPECT_EQ(*reloaded, 2U);
+  // A bar that empties in a second, sprinted on for 30 ticks: half of it.
+  EXPECT_NEAR(StaminaAfterSprinting(30), 0.5F, 0.1F);
+  EXPECT_EQ(host_.Generation(), 2U);
+}
+
+TEST_F(ReloadTest, AReloadIsNotAppliedUntilTheNextTickBegins) {
+  WriteScript(Script(60.0F, 1.0F));
+
+  ASSERT_TRUE(host_.Reload().has_value());
+
+  EXPECT_EQ(host_.Generation(), 1U);
+  host_.Tick(kFixedTick);
+  EXPECT_EQ(host_.Generation(), 2U);
+}
+
+TEST_F(ReloadTest, TwoReloadsBeforeATickApplyTheNewestAndEachIsNumbered) {
+  WriteScript(Script(60.0F, 0.5F));
+  ASSERT_EQ(host_.Reload().value(), 2U);
+  WriteScript(Script(60.0F, 1.0F));
+  ASSERT_EQ(host_.Reload().value(), 3U);
+
+  host_.Tick(kFixedTick);
+
+  EXPECT_EQ(host_.Generation(), 3U);
+}
+
+TEST_F(ReloadTest, AScriptWithAnErrorIsRefusedAndTheRunningParametersStay) {
+  for (const char* bad : {"return {", "return { tick_rate_hz = 60, recoil = 1 }", "error('typo')"}) {
+    WriteScript(bad);
+
+    const auto reloaded = host_.Reload();
+
+    ASSERT_FALSE(reloaded.has_value()) << bad;
+    EXPECT_EQ(reloaded.error().reason, augusta::server::ReloadRefusal::kLoadFailed) << bad;
+  }
+  EXPECT_GT(StaminaAfterSprinting(60), 0.99F);
+  EXPECT_EQ(host_.Generation(), 1U);
+}
+
+TEST_F(ReloadTest, AScriptThatCannotBeReadIsRefused) {
+  std::filesystem::remove(ScriptPath());
+
+  const auto reloaded = host_.Reload();
+
+  ASSERT_FALSE(reloaded.has_value());
+  EXPECT_EQ(reloaded.error().reason, augusta::server::ReloadRefusal::kLoadFailed);
+  EXPECT_EQ(reloaded.error().load.code, augusta::parameters::LoadErrorCode::kCannotOpenFile);
+}
+
+TEST_F(ReloadTest, AScriptThatChangesTheTickRateIsRefusedAsNeedingARestart) {
+  WriteScript(Script(30.0F, 1.0F));
+
+  const auto reloaded = host_.Reload();
+
+  ASSERT_FALSE(reloaded.has_value());
+  EXPECT_EQ(reloaded.error().reason, augusta::server::ReloadRefusal::kTickRateChanged);
+  // Refused as a whole: the new stamina rules in the same script did not slip in.
+  EXPECT_GT(StaminaAfterSprinting(60), 0.99F);
+  EXPECT_EQ(host_.Generation(), 1U);
+}
+
+TEST_F(ReloadTest, ARefusalDoesNotUseUpAGenerationNumber) {
+  WriteScript("return {");
+  ASSERT_FALSE(host_.Reload().has_value());
+  WriteScript(Script(60.0F, 1.0F));
+
+  EXPECT_EQ(host_.Reload().value(), 2U);
+}
+
 // A server at 30 Hz: everything a client does with time it must take from what it is told.
 class TickRateTest : public LoopbackMatch {
  protected:

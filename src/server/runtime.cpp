@@ -41,6 +41,7 @@ struct ServerRuntime::Impl {
       : config(cfg),
         host(server::HostConfig{
             .parameters = cfg.parameters,
+            .parameters_path = cfg.parameters_path,
             .script_path = cfg.script_path,
             .listen = cfg.listen,
             .collision = cfg.collision,

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <format>
 #include <mutex>
 #include <optional>
@@ -43,6 +44,16 @@ std::uint32_t PeerNumber(networking::PeerId peer) { return static_cast<std::uint
 
 }  // namespace
 
+std::string DescribeReloadError(const ReloadError& error) {
+  switch (error.reason) {
+    case ReloadRefusal::kLoadFailed:
+      return parameters::DescribeLoadError(error.load);
+    case ReloadRefusal::kTickRateChanged:
+      return "the tick rate is fixed while the server runs; restart it to change it";
+  }
+  return "the parameters could not be reloaded";
+}
+
 struct Host::Impl {
   // A player joining or leaving, for the Simulation thread to apply at the start of its next tick.
   struct Change {
@@ -51,6 +62,12 @@ struct Host::Impl {
     protocol::SessionId session;
     // Where a joining player is put; unused for a leave.
     math::Vec3 spawn{};
+  };
+
+  // A reloaded generation that has not begun yet.
+  struct PendingParameters {
+    parameters::Parameters parameters;
+    std::uint32_t generation;
   };
 
   // What the server keeps per joined client.
@@ -67,12 +84,21 @@ struct Host::Impl {
   // Thread-safe by the transport's contract, used from both threads.
   networking::Server network;
 
-  // What every client is told when it joins, besides who is already there.
-  parameters::Parameters parameters;
+  // Where Reload reads the script from.
+  std::filesystem::path parameters_path;
 
   // Guards everything below: written by the Network I/O thread as clients
-  // join, leave and send commands, read once per Simulation tick.
+  // join, leave and send commands, read once per Simulation tick; and by
+  // whichever thread calls Reload.
   std::mutex mutex;
+  // What the simulation runs on, and every client is told when it joins,
+  // besides who is already there, and the number of this generation of it.
+  parameters::Parameters parameters;
+  std::uint32_t generation = 1;
+  // A reloaded generation waiting for the next tick to begin, with its number,
+  // and the number the next accepted reload takes.
+  std::optional<PendingParameters> pending;
+  std::uint32_t last_generation = 1;
   Match match;
   std::unordered_map<protocol::SessionId, Player> players;
   std::vector<Change> changes;
@@ -80,6 +106,7 @@ struct Host::Impl {
   explicit Impl(const HostConfig& config)
       : simulation(BuildSimulation(config)),
         network(config.listen),
+        parameters_path(config.parameters_path),
         parameters(config.parameters),
         match(std::string(EngineVersion()), protocol::kMaxPlayers, config.spawn_points) {}
 
@@ -175,6 +202,7 @@ struct Host::Impl {
 
   TickInput BeginTick() {
     const std::lock_guard<std::mutex> lock(mutex);
+    ApplyPendingParameters();
     for (const Change& change : changes) {
       const simulation::PlayerId player = replication::PlayerOf(change.session);
       if (change.kind == Change::Kind::kJoin) {
@@ -195,6 +223,19 @@ struct Host::Impl {
       input.peers.emplace(session, player.peer);
     }
     return input;
+  }
+
+  // Puts the reloaded generation, if there is one, in force before this tick's
+  // phases run, so none of them sees two generations. Called with mutex held.
+  void ApplyPendingParameters() {
+    if (!pending.has_value()) {
+      return;
+    }
+    parameters = pending->parameters;
+    generation = pending->generation;
+    pending.reset();
+    simulation.SetStaminaConfig(parameters.stamina);
+    LI("subsystem=serverruntime event=parameters_applied generation={}", generation);
   }
 
   // Tells the match where everyone is, for the roster of whoever joins next.
@@ -241,6 +282,35 @@ void Host::PumpNetwork() {
     const std::lock_guard<std::mutex> lock(impl.mutex);
     impl.HandleMessage(message);
   }
+}
+
+std::expected<std::uint32_t, ReloadError> Host::Reload() {
+  Impl& impl = *impl_;
+  // The file and the interpreter are not touched under the lock: a slow disk
+  // or script must not stall the Network I/O thread or a tick.
+  const auto loaded = parameters::LoadFile(impl.parameters_path);
+  const std::lock_guard<std::mutex> lock(impl.mutex);
+  if (!loaded.has_value()) {
+    const ReloadError error{.reason = ReloadRefusal::kLoadFailed, .load = loaded.error()};
+    LW("subsystem=serverruntime event=parameters_refused generation={} reason=\"{}\"", impl.generation,
+       DescribeReloadError(error));
+    return std::unexpected(error);
+  }
+  if (loaded->tick_rate_hz != impl.parameters.tick_rate_hz) {
+    const ReloadError error{.reason = ReloadRefusal::kTickRateChanged};
+    LW("subsystem=serverruntime event=parameters_refused generation={} reason=\"{}\"", impl.generation,
+       DescribeReloadError(error));
+    return std::unexpected(error);
+  }
+  const std::uint32_t generation = ++impl.last_generation;
+  impl.pending = Impl::PendingParameters{.parameters = *loaded, .generation = generation};
+  LI("subsystem=serverruntime event=parameters_reloaded generation={}", generation);
+  return generation;
+}
+
+std::uint32_t Host::Generation() const {
+  const std::lock_guard<std::mutex> lock(impl_->mutex);
+  return impl_->generation;
 }
 
 simulation::State Host::Tick(float delta_time) {
