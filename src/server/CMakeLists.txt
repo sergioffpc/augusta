@@ -39,4 +39,4 @@ target_link_libraries(augustad_runtime
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)
 
 add_executable(augustad main.cpp)
-target_link_libraries(augustad PRIVATE augusta_assets augusta_config augusta_map augusta_version augusta_logging augusta_networking augustad_runtime)
+target_link_libraries(augustad PRIVATE augusta_assets augusta_config augusta_map augusta_parameters_loader augusta_version augusta_logging augusta_networking augustad_runtime)

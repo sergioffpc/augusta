@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
 #include <limits>
 #include <optional>
 #include <span>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -127,6 +129,8 @@ sol::state MakeSandbox() {
 
 std::string DescribeLoadError(const LoadError& error) {
   switch (error.code) {
+    case LoadErrorCode::kCannotOpenFile:
+      return "cannot open the parameters script " + error.subject;
     case LoadErrorCode::kScriptError:
       return "the parameters script failed: " + error.subject;
     case LoadErrorCode::kNotATable:
@@ -165,6 +169,16 @@ std::expected<Parameters, LoadError> Load(std::string_view script) {
     return std::unexpected(stamina.error());
   }
   return Parameters{.stamina = *stamina};
+}
+
+std::expected<Parameters, LoadError> LoadFile(const std::filesystem::path& file) {
+  std::ifstream stream(file, std::ios::binary);
+  if (!stream) {
+    return Fail(LoadErrorCode::kCannotOpenFile, file.string());
+  }
+  std::ostringstream contents;
+  contents << stream.rdbuf();
+  return Load(contents.str());
 }
 
 }  // namespace augusta::parameters

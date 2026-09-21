@@ -2,6 +2,7 @@
 #define AUGUSTA_PARAMETERS_LOADER_H_
 
 #include <expected>
+#include <filesystem>
 #include <string>
 #include <string_view>
 
@@ -10,12 +11,14 @@
 // augusta::parameters::Load turns the server's Parameters script (ADR-0039)
 // into the validated, immutable Parameters struct. It is a pure function of
 // the script text: no file, socket or clock, so it is tested with scripts as
-// strings. Server-only, since a client never reads the script: it is sent the
-// result (ADR-0038).
+// strings; LoadFile only adds reading the text from a file. Server-only, since
+// a client never reads the script: it is sent the result (ADR-0038).
 namespace augusta::parameters {
 
 /// Why a script is not a Parameters.
 enum class LoadErrorCode {
+  /// The script file can't be opened; subject is its path.
+  kCannotOpenFile,
   /// The script does not compile or raises an error; subject is Lua's message.
   kScriptError,
   /// The script does not return a table.
@@ -46,6 +49,9 @@ std::string DescribeLoadError(const LoadError& error);
 /// error naming its path: nothing falls back to a default, so a misspelled key
 /// is never silent.
 std::expected<Parameters, LoadError> Load(std::string_view script);
+
+/// Reads the script at file and loads it as Load does.
+std::expected<Parameters, LoadError> LoadFile(const std::filesystem::path& file);
 
 }  // namespace augusta::parameters
 

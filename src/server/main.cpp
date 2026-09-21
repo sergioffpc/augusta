@@ -12,6 +12,8 @@
 #include "augusta/map.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
+#include "augusta/parameters.h"
+#include "augusta/parameters_loader.h"
 #include "augusta/version.h"
 #include "runtime.h"
 
@@ -64,8 +66,24 @@ std::optional<Map> LoadMap(const augusta::assets::Pack& pack, const std::filesys
   return Map{.collision = *std::move(collision), .spawn_points = *std::move(spawn_points)};
 }
 
-// What ServerRuntime is built from: the file's settings and what the pack supplied.
-augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ServerConfig& file_config, Map map) {
+// The Parameters script the config names, read before any socket or thread
+// starts so a missing or invalid one exits like a bad pack does. Reports what
+// is wrong and returns nullopt.
+std::optional<augusta::parameters::Parameters> LoadParameters(const std::filesystem::path& script_path) {
+  auto parameters = augusta::parameters::LoadFile(script_path);
+  if (!parameters) {
+    std::println(stderr, "{}", augusta::parameters::DescribeLoadError(parameters.error()));
+    return std::nullopt;
+  }
+  // The first generation of Parameters; each reload will number the next.
+  LI("subsystem=server event=parameters_loaded generation=1 path={}", script_path.string());
+  return *std::move(parameters);
+}
+
+// What ServerRuntime is built from: the file's settings and what the pack and
+// the Parameters script supplied.
+augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ServerConfig& file_config,
+                                            const augusta::parameters::Parameters& parameters, Map map) {
   augusta::runtime::Config config;
   // TODO(sergioffpc): hardcoded placeholder - script_path assumes an asset
   // pack layout the asset pipeline (ROADMAP.md M2) hasn't built yet.
@@ -73,13 +91,9 @@ augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ServerConfig&
   config.listen.address = file_config.listen_address;
   config.collision = std::move(map.collision);
   config.spawn_points = std::move(map.spawn_points);
-  // Every client is sent these when it joins and predicts with them, so
-  // tuning lives here alone.
-  config.parameters.stamina = {
-      .deplete_per_second = file_config.stamina_deplete_per_second,
-      .regen_per_second = file_config.stamina_regen_per_second,
-      .forced_walk_below = file_config.stamina_forced_walk_below,
-  };
+  // Every client is sent these when it joins and predicts with them, so the
+  // script is the only place they are set.
+  config.parameters = parameters;
   return config;
 }
 
@@ -119,11 +133,16 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  const auto parameters = LoadParameters(file_config->parameters_path);
+  if (!parameters) {
+    return 1;
+  }
+
   // augusta::networking::Init() must run once, process-wide, before any
   // Client/Server is constructed - see networking.h.
   augusta::networking::Init();
 
-  const augusta::runtime::Config config = BuildRuntimeConfig(*file_config, *std::move(map));
+  const augusta::runtime::Config config = BuildRuntimeConfig(*file_config, *parameters, *std::move(map));
   augusta::runtime::ServerRuntime runtime(config);
   g_runtime = &runtime;
   std::signal(SIGINT, HandleShutdownSignal);

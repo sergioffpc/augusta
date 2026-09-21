@@ -200,91 +200,59 @@ TEST(ParseServerConfigTest, ReadsEveryKey) {
       "base_dir: content\n"
       "pack: packs/level.server.pack\n"
       "public_key: keys/augusta.pub\n"
+      "parameters: scripts/parameters.lua\n"
       "listen_address: 0.0.0.0:27016\n",
       kFileDir);
 
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->pack_path, kRoot / "packs" / "level.server.pack");
   EXPECT_EQ(config->public_key_path, kRoot / "keys" / "augusta.pub");
+  EXPECT_EQ(config->parameters_path, kRoot / "scripts" / "parameters.lua");
   EXPECT_EQ(config->listen_address, "0.0.0.0:27016");
 }
 
+constexpr std::string_view kMinimalServerConfig =
+    "base_dir: content\npack: a.pack\npublic_key: k.pub\nparameters: p.lua\n";
+
+std::string ServerConfigWith(std::string_view extra) { return std::string(kMinimalServerConfig) + std::string(extra); }
+
 TEST(ParseServerConfigTest, DefaultsTheListenAddress) {
-  const auto config = ParseServerConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\n", kFileDir);
+  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->listen_address, augusta::config::kDefaultListenAddress);
 }
 
-constexpr std::string_view kMinimalServerConfig = "base_dir: content\npack: a.pack\npublic_key: k.pub\n";
+TEST(ParseServerConfigTest, RejectsAMissingParametersKey) {
+  const auto config = ParseServerConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\n", kFileDir);
 
-std::string ServerConfigWith(std::string_view extra) { return std::string(kMinimalServerConfig) + std::string(extra); }
-
-TEST(ParseServerConfigTest, DefaultsTheStaminaTuningToRealNonZeroRules) {
-  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_GT(config->stamina_deplete_per_second, 0.0F);
-  EXPECT_GT(config->stamina_regen_per_second, 0.0F);
-  EXPECT_GT(config->stamina_forced_walk_below, 0.0F);
-  EXPECT_LT(config->stamina_forced_walk_below, 1.0F);
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kMissingKey);
+  EXPECT_EQ(config.error().subject, "parameters");
 }
 
-TEST(ParseServerConfigTest, ReadsTheStaminaTuning) {
-  const auto config = ParseServerConfig(ServerConfigWith("stamina_deplete_per_second: 0.5\n"
-                                                         "stamina_regen_per_second: 0.25\n"
-                                                         "stamina_forced_walk_below: 0.15\n"),
-                                        kFileDir);
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_FLOAT_EQ(config->stamina_deplete_per_second, 0.5F);
-  EXPECT_FLOAT_EQ(config->stamina_regen_per_second, 0.25F);
-  EXPECT_FLOAT_EQ(config->stamina_forced_walk_below, 0.15F);
-}
-
-TEST(ParseServerConfigTest, AStaminaValueThatIsNotANumberIsAnInvalidValueNamingTheKey) {
-  for (const char* bad : {"fast", "", "0.5x", "0,5", "nan", "inf", "-inf"}) {
-    const auto config =
-        ParseServerConfig(ServerConfigWith(std::string("stamina_deplete_per_second: \"") + bad + "\"\n"), kFileDir);
-
-    ASSERT_FALSE(config.has_value()) << bad;
-    EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidValue) << bad;
-    EXPECT_EQ(config.error().subject, "stamina_deplete_per_second") << bad;
-  }
-}
-
-TEST(ParseServerConfigTest, ANegativeStaminaRateIsInvalid) {
-  for (const char* key : {"stamina_deplete_per_second", "stamina_regen_per_second"}) {
-    const auto config = ParseServerConfig(ServerConfigWith(std::string(key) + ": -0.1\n"), kFileDir);
+TEST(ParseServerConfigTest, RejectsAStaminaKeyLeftInTheFileAsUnknown) {
+  // The stamina rules live in the Parameters script (ADR-0039), not here.
+  for (const char* key : {"stamina_deplete_per_second", "stamina_regen_per_second", "stamina_forced_walk_below"}) {
+    const auto config = ParseServerConfig(ServerConfigWith(std::string(key) + ": 0.1\n"), kFileDir);
 
     ASSERT_FALSE(config.has_value()) << key;
-    EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidValue) << key;
+    EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownKey) << key;
     EXPECT_EQ(config.error().subject, key);
   }
 }
 
-TEST(ParseServerConfigTest, TheForcedWalkThresholdMustBeAtLeastZeroAndBelowOne) {
-  for (const char* bad : {"-0.1", "1", "1.5"}) {
-    const auto config =
-        ParseServerConfig(ServerConfigWith(std::string("stamina_forced_walk_below: ") + bad + "\n"), kFileDir);
-
-    ASSERT_FALSE(config.has_value()) << bad;
-    EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidValue) << bad;
-    EXPECT_EQ(config.error().subject, "stamina_forced_walk_below") << bad;
-  }
-  EXPECT_TRUE(ParseServerConfig(ServerConfigWith("stamina_forced_walk_below: 0\n"), kFileDir).has_value());
-}
-
-TEST(ParseClientConfigTest, StaminaTuningIsNotAClientKey) {
-  const auto config = ParseClientConfig(
-      "base_dir: content\npack: a.pack\npublic_key: k.pub\nstamina_deplete_per_second: 0.2\n", kFileDir);
+TEST(ParseClientConfigTest, ParametersAreNotAClientKey) {
+  const auto config =
+      ParseClientConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\nparameters: p.lua\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownKey);
+  EXPECT_EQ(config.error().subject, "parameters");
 }
 
 TEST(ParseServerConfigTest, RejectsAMissingBaseDir) {
-  const auto config = ParseServerConfig("pack: a.pack\npublic_key: k.pub\n", kFileDir);
+  const auto config = ParseServerConfig("pack: a.pack\npublic_key: k.pub\nparameters: p.lua\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kMissingKey);
@@ -292,8 +260,7 @@ TEST(ParseServerConfigTest, RejectsAMissingBaseDir) {
 }
 
 TEST(ParseServerConfigTest, RejectsAKeyThatBelongsToTheClient) {
-  const auto config =
-      ParseServerConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\nserver_address: x\n", kFileDir);
+  const auto config = ParseServerConfig(ServerConfigWith("server_address: x\n"), kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownKey);
@@ -360,13 +327,6 @@ TEST(DescribeConfigErrorTest, NamesTheKeyAndTheFile) {
   EXPECT_TRUE(Contains(message, std::filesystem::path("dir/augustac.yaml").string())) << message;
 }
 
-TEST(DescribeConfigErrorTest, AnInvalidValueNamesTheKey) {
-  const auto message =
-      DescribeConfigError({.code = ConfigErrorCode::kInvalidValue, .subject = "stamina_regen_per_second"});
-
-  EXPECT_TRUE(Contains(message, "stamina_regen_per_second")) << message;
-}
-
 TEST(DescribeConfigErrorTest, OmitsTheFileWhenThereIsNone) {
   const auto message = DescribeConfigError({.code = ConfigErrorCode::kUnknownKey, .subject = "typo"});
 
@@ -404,12 +364,14 @@ TEST_F(LoadConfigTest, ResolvesBaseDirAgainstTheFilesDirectory) {
 
 TEST_F(LoadConfigTest, LoadsAServerConfig) {
   const auto file =
-      Write("augustad.yaml", "base_dir: .\npack: level.pack\npublic_key: k.pub\nlisten_address: 0.0.0.0:1\n");
+      Write("augustad.yaml",
+            "base_dir: .\npack: level.pack\npublic_key: k.pub\nparameters: p.lua\nlisten_address: 0.0.0.0:1\n");
 
   const auto config = LoadServerConfig(file);
 
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->pack_path, directory_ / "level.pack");
+  EXPECT_EQ(config->parameters_path, directory_ / "p.lua");
   EXPECT_EQ(config->listen_address, "0.0.0.0:1");
 }
 

@@ -1,6 +1,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <map>
 #include <memory>
@@ -26,6 +28,7 @@
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
+#include "augusta/parameters_loader.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
@@ -933,6 +936,40 @@ TEST_F(StaminaTest, AClientPredictsItsStaminaWithTheServersRulesNotItsOwn) {
 
   EXPECT_LT(predicted, 0.7F);
   EXPECT_NEAR(predicted, Authoritative().stamina, 0.1F);
+}
+
+// The server's Parameters come from a script on disk (ADR-0039), read the way
+// augustad reads it. A bar that empties in a second of sprinting and never refills.
+class ScriptedParametersTest : public LoopbackMatch {
+ protected:
+  static augusta::parameters::Parameters LoadScript() {
+    const auto file = std::filesystem::temp_directory_path() / ("augusta_session_" + LoopbackAddress() + ".lua");
+    std::ofstream(file, std::ios::binary) << "local sprint_seconds = 1\n"
+                                             "return { stamina = {\n"
+                                             "  deplete_per_second = 1 / sprint_seconds,\n"
+                                             "  regen_per_second = 0,\n"
+                                             "  forced_walk_below = 0.2,\n"
+                                             "} }";
+    const auto loaded = augusta::parameters::LoadFile(file);
+    std::filesystem::remove(file);
+    return loaded.value();
+  }
+
+  ScriptedParametersTest() : LoopbackMatch(OnTheFloor({}, LoadScript())) {}
+};
+
+TEST_F(ScriptedParametersTest, AClientPredictsItsStaminaWithTheRulesOfTheServersScript) {
+  Session& client = Join();
+  Run(kSettleTicks);
+  Command sprint;
+  sprint.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+  sprint.movement.sprint = true;
+
+  Run(45, sprint);
+
+  // Nothing else depletes a bar this fast and nothing refills it: the client is following the script.
+  EXPECT_LT(states_.at(&client).local_body.stamina, 0.7F);
+  EXPECT_NEAR(states_.at(&client).local_body.stamina, BodySeenBy(client, *client.GetSessionId())->stamina, 0.1F);
 }
 
 // What a client is told when its session ends on its own.
