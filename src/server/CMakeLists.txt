@@ -28,13 +28,22 @@ target_link_libraries(augustad_host
 )
 augusta_set_module_scope(augustad_host SERVER_ONLY)
 
+# Watches the Parameters script for changes; the decision is pure, so tested
+# without a file or a clock (see file_watch.h).
+add_library(augustad_watch STATIC
+  file_watch.cpp
+)
+target_include_directories(augustad_watch PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(augustad_watch PRIVATE augusta_logging)
+augusta_set_module_scope(augustad_watch SERVER_ONLY)
+
 add_library(augustad_runtime STATIC
   runtime.cpp
 )
 target_include_directories(augustad_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_runtime
   PUBLIC augustad_host augusta_networking augusta_parameters augusta_physics augusta_simulation
-  PRIVATE augusta_assets augusta_input augusta_logging
+  PRIVATE augusta_assets augusta_input augusta_logging augustad_watch
 )
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)
 

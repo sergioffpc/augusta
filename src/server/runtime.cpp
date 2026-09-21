@@ -2,9 +2,11 @@
 
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <thread>
 
 #include "augusta/logging.h"
+#include "file_watch.h"
 #include "host.h"
 
 namespace augusta::runtime {
@@ -33,6 +35,9 @@ struct ThreadJoiner {
 struct ServerRuntime::Impl {
   Config config;
   server::Host host;
+  // Reloads the Parameters script when it is saved. Declared after host, which
+  // its callback uses, so it is stopped first.
+  std::unique_ptr<server::FileWatcher> watcher;
 
   std::atomic<bool> running{false};
   std::thread network_thread;
@@ -65,6 +70,10 @@ void ServerRuntime::Run() {
   impl_->running.store(true, std::memory_order_relaxed);
   impl_->network_thread = std::thread([this] { impl_->NetworkThreadMain(); });
   ThreadJoiner joiner{.running = impl_->running, .network_thread = impl_->network_thread};
+  if (!impl_->config.parameters_path.empty()) {
+    impl_->watcher = std::make_unique<server::FileWatcher>(impl_->config.parameters_path, server::WatchOptions{},
+                                                           [this] { static_cast<void>(impl_->host.Reload()); });
+  }
 
   const auto tick_duration = std::chrono::duration<float>(1.0F / impl_->config.parameters.tick_rate_hz);
   LI("subsystem=serverruntime event=loop_starting loop=simulation");
@@ -76,6 +85,7 @@ void ServerRuntime::Run() {
     std::this_thread::sleep_until(tick_start +
                                   std::chrono::duration_cast<std::chrono::steady_clock::duration>(tick_duration));
   }
+  impl_->watcher.reset();
   LI("subsystem=serverruntime event=loop_stopping loop=simulation");
 }
 

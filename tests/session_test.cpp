@@ -34,6 +34,7 @@
 #include "augusta/protocol.h"
 #include "augusta/simulation.h"
 #include "augusta/version.h"
+#include "file_watch.h"
 #include "host.h"
 #include "match.h"
 
@@ -1107,6 +1108,38 @@ TEST_F(ReloadTest, ARefusalDoesNotUseUpAGenerationNumber) {
   WriteScript(Script(60.0F, 1.0F));
 
   EXPECT_EQ(host_.Reload().value(), 2U);
+}
+
+// The same, with the watcher the server runs: saving the script is all it takes.
+class WatchedReloadTest : public ReloadTest {
+ protected:
+  void SetUp() override {
+    ReloadTest::SetUp();
+    watcher_.emplace(ScriptPath(),
+                     augusta::server::WatchOptions{.poll_interval = std::chrono::milliseconds(5),
+                                                   .debounce = std::chrono::milliseconds(40)},
+                     [this] { static_cast<void>(host_.Reload()); });
+  }
+
+  void TearDown() override {
+    watcher_.reset();
+    ReloadTest::TearDown();
+  }
+
+  std::optional<augusta::server::FileWatcher> watcher_;
+};
+
+TEST_F(WatchedReloadTest, SavingTheScriptChangesTheRunningSimulationWithNoOtherStep) {
+  ASSERT_GT(StaminaAfterSprinting(30), 0.99F);
+
+  WriteScript(Script(60.0F, 1.0F));
+  const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+  while (host_.Generation() < 2 && std::chrono::steady_clock::now() < deadline) {
+    Step();
+  }
+
+  ASSERT_EQ(host_.Generation(), 2U);
+  EXPECT_NEAR(StaminaAfterSprinting(30), 0.5F, 0.1F);
 }
 
 // A server at 30 Hz: everything a client does with time it must take from what it is told.
