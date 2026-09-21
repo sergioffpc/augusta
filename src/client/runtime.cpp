@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <format>
 #include <mutex>
 #include <optional>
@@ -14,6 +15,7 @@
 
 #include "augusta/harness.h"
 #include "augusta/logging.h"
+#include "augusta/math.h"
 
 namespace augusta::runtime {
 
@@ -192,6 +194,40 @@ struct ClientRuntime::Impl {
     return std::nullopt;
   }
 
+  // What the prediction did since its last heartbeat line: once a second, one
+  // line of it, where a line per tick would bury the one that matters.
+  // Prediction thread only.
+  class PredictionActivity {
+   public:
+    void Record(const prediction::State& state, std::chrono::steady_clock::time_point now) {
+      ++ticks_;
+      // Reconciliation makes at most one jump per tick, so the change in the
+      // running total is that tick's jump.
+      const float jump = math::Length(state.total_correction - last_total_correction_);
+      last_total_correction_ = state.total_correction;
+      if (jump > 0.0F) {
+        ++corrections_;
+        correction_m_ += jump;
+      }
+      if (now - since_ >= kInterval) {
+        LD("subsystem=clientruntime event=heartbeat ticks={} corrections={} correction_m={:.3f}", ticks_, corrections_,
+           correction_m_);
+        ticks_ = 0;
+        corrections_ = 0;
+        correction_m_ = 0.0F;
+        since_ = now;
+      }
+    }
+
+   private:
+    static constexpr std::chrono::seconds kInterval{1};
+    std::chrono::steady_clock::time_point since_ = std::chrono::steady_clock::now();
+    math::Vec3 last_total_correction_{};
+    std::uint32_t ticks_ = 0;
+    std::uint32_t corrections_ = 0;
+    float correction_m_ = 0.0F;
+  };
+
   // Prediction thread body (ADR-0005): fixed-rate loop sampling local
   // input and ticking PredictionWorld, at the server's tick rate once it has
   // joined. Runs until running is cleared by ThreadJoiner.
@@ -201,12 +237,14 @@ struct ClientRuntime::Impl {
       return;
     }
     const auto tick_duration = std::chrono::duration<float>(1.0F / parameters->tick_rate_hz);
+    PredictionActivity activity;
     while (running.load(std::memory_order_relaxed)) {
       const nvtx3::scoped_range range{"Prediction Tick"};
       const auto tick_start = std::chrono::steady_clock::now();
 
       input::Command command = input.Sample();
       prediction::State state = session->Tick(command, tick_duration.count());
+      activity.Record(state, tick_start);
 
       {
         std::lock_guard<std::mutex> lock(prediction_state_mutex);

@@ -2,10 +2,11 @@
 
 Building on ADR-0027 (console-only, level tied to build type), this
 defines what each level is for and how a log line is written, for both
-client and server. `TRACE` is the highest-frequency tier: per-tick ECS
-phase transitions (SimulationWorld/PredictionWorld/PresentationWorld) and
-per-packet network I/O. `DEBUG` is for internal decisions worth seeing
-while diagnosing a problem but too noisy for routine reading. `INFO` is
+client and server. `TRACE` is the highest-frequency tier: per-packet
+network I/O, and per-tick lines that say something (a decision, a change),
+never a marker that a phase ran. `DEBUG` is for internal decisions worth
+seeing while diagnosing a problem but too noisy for routine reading, and
+carries the once-a-second heartbeat below. `INFO` is
 for what matters to someone tailing stdout in production: process/loop
 startup and shutdown, connection state changes - never per-packet
 traffic. `WARN` is an anomalous but recoverable condition needing no
@@ -30,6 +31,20 @@ applies unconditionally, including `TRACE`. Peer IPs are fine to log
 ARCHITECTURE.md §3, so the server already sees them) - it matters most
 for `augusta::networking`, which is taking on GameNetworkingSockets
 (Steam) session tickets.
+
+## Volume
+
+A line written every tick or every packet is read by nobody and, on the console
+sink, delays the thread that writes it. Two rules keep the volume down:
+
+- **Heartbeat.** The server's Simulation thread and the client's Prediction
+  thread each write one `DEBUG` line a second, `event=heartbeat`, with counters
+  for that second (ticks, messages, drops, corrections). The trend is in that
+  line; per-phase timing is the profiler's job (the NVTX ranges), not the log's.
+- **Peer-provoked warnings are limited.** A `WARN` a peer can cause as often as it
+  likes (a malformed or out-of-turn message) goes through `LW_LIMITED` and a
+  `logging::Throttle`: one line a second, ending `suppressed=<n>` when it stands
+  for more. The heartbeat still counts every one.
 
 ## Consequences
 

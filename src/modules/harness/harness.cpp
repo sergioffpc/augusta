@@ -1,6 +1,7 @@
 #include "augusta/harness.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <expected>
@@ -54,6 +55,9 @@ struct Session::Impl {
   // one goes under. Sequences start at 1; 0 means none.
   std::deque<protocol::SequencedCommand> unacknowledged;
   std::uint32_t next_sequence = 1;
+  // Network I/O thread only: a server can send messages that are refused as fast
+  // as it likes, so their warnings are limited.
+  logging::Throttle drop_warnings{std::chrono::seconds{1}};
 
   Impl(const SessionConfig& config, prediction::World world)
       : server(config.server), engine_version(config.engine_version), prediction(std::move(world)) {}
@@ -61,8 +65,8 @@ struct Session::Impl {
   void HandleMessage(const networking::Payload& payload) {
     const std::expected<protocol::Message, protocol::DecodeError> decoded = protocol::Decode(payload);
     if (!decoded.has_value()) {
-      LW("subsystem=clientruntime event=dropped bytes={} reason=\"{}\"", payload.size(),
-         protocol::DescribeDecodeError(decoded.error()));
+      LW_LIMITED(drop_warnings, "subsystem=clientruntime event=dropped bytes={} reason=\"{}\"", payload.size(),
+                 protocol::DescribeDecodeError(decoded.error()));
       return;
     }
     if (const auto* accepted = std::get_if<protocol::JoinAccepted>(&*decoded)) {
@@ -74,7 +78,8 @@ struct Session::Impl {
     } else if (const auto* update = std::get_if<protocol::ParametersUpdate>(&*decoded)) {
       OnParametersUpdate(*update);
     } else {
-      LW("subsystem=clientruntime event=dropped bytes={} reason=\"not a server message\"", payload.size());
+      LW_LIMITED(drop_warnings, "subsystem=clientruntime event=dropped bytes={} reason=\"not a server message\"",
+                 payload.size());
     }
   }
 
@@ -83,7 +88,8 @@ struct Session::Impl {
   // malformed one is, and the client stays unadmitted.
   void OnJoinAccepted(const protocol::JoinAccepted& accepted) {
     if (const auto valid = parameters::Validate(accepted.parameters); !valid) {
-      LW("subsystem=clientruntime event=dropped reason=\"invalid parameters\" parameter={}", valid.error().path);
+      LW_LIMITED(drop_warnings, "subsystem=clientruntime event=dropped reason=\"invalid parameters\" parameter={}",
+                 valid.error().path);
       return;
     }
     Publish([&](ServerView& next) {
@@ -97,18 +103,21 @@ struct Session::Impl {
   // Logs why update was not taken: a late or repeated one is routine, since
   // nothing is ordered across a reload, and only traced; the rest are dropped
   // as a malformed message is.
-  static void LogRefused(const protocol::ParametersUpdate& update, const parameters::ReplacementError& error) {
+  void LogRefused(const protocol::ParametersUpdate& update, const parameters::ReplacementError& error) {
     switch (error.reason) {
       case parameters::ReplacementRefusal::kNotNewer:
         LT("subsystem=clientruntime event=dropped generation={} reason=\"not newer\"", update.generation);
         break;
       case parameters::ReplacementRefusal::kInvalid:
-        LW("subsystem=clientruntime event=dropped generation={} reason=\"invalid parameters\" parameter={}",
-           update.generation, error.parameter);
+        LW_LIMITED(drop_warnings,
+                   "subsystem=clientruntime event=dropped generation={} reason=\"invalid parameters\" parameter={}",
+                   update.generation, error.parameter);
         break;
       case parameters::ReplacementRefusal::kTickRateChanged:
-        LW("subsystem=clientruntime event=dropped generation={} reason=\"tick rate differs from the one joined with\"",
-           update.generation);
+        LW_LIMITED(drop_warnings,
+                   "subsystem=clientruntime event=dropped generation={} reason=\"tick rate differs from the one joined "
+                   "with\"",
+                   update.generation);
         break;
     }
   }
@@ -117,7 +126,7 @@ struct Session::Impl {
   void OnParametersUpdate(const protocol::ParametersUpdate& update) {
     const std::optional<parameters::NumberedParameters> held = view.load()->current_parameters;
     if (!held.has_value()) {
-      LW("subsystem=clientruntime event=dropped reason=\"parameters before joining\"");
+      LW_LIMITED(drop_warnings, "subsystem=clientruntime event=dropped reason=\"parameters before joining\"");
       return;
     }
     const parameters::NumberedParameters candidate{.generation = update.generation, .parameters = update.parameters};
