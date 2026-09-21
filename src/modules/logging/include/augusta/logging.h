@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <format>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -37,6 +38,27 @@ void Init();
 /// Writes message at level to the console sink. Use the macros below instead:
 /// they also drop calls under the compile-time level.
 void Write(Severity level, std::string_view message);
+
+/// Lets one event through per interval and counts those it turned away, so a line
+/// that can repeat every tick or every packet is written once an interval with
+/// how many it stood for. Takes the time as an argument, so it needs no clock to
+/// test. Not thread-safe: use one from one thread, or under the caller's lock.
+class Throttle {
+ public:
+  explicit Throttle(std::chrono::steady_clock::duration interval) : interval_(interval) {}
+
+  /// Whether the event at now is let through: if so, how many were turned away
+  /// since the last one that was. The first event is always let through.
+  std::optional<std::uint32_t> Admit(std::chrono::steady_clock::time_point now);
+
+ private:
+  std::chrono::steady_clock::duration interval_;
+  std::optional<std::chrono::steady_clock::time_point> last_admitted_;
+  std::uint32_t suppressed_ = 0;
+};
+
+/// message with ` suppressed=<count>` appended when count is not zero.
+std::string WithSuppressed(std::string message, std::uint32_t count);
 
 }  // namespace augusta::logging
 
@@ -85,6 +107,21 @@ void Write(Severity level, std::string_view message);
 #define LW(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kWarn, __VA_ARGS__)
 #else
 #define LW(...) static_cast<void>(0)
+#endif
+
+// LW_LIMITED(throttle, ...) is LW behind a logging::Throttle: for a warning a peer
+// can provoke as often as it likes, so it cannot flood the log. A line that
+// follows suppressed ones ends in suppressed=<count>.
+#if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_WARN
+#define LW_LIMITED(throttle, ...)                                                                                     \
+  do {                                                                                                                \
+    if (const auto augusta_suppressed = (throttle).Admit(::std::chrono::steady_clock::now())) {                       \
+      ::augusta::logging::Write(::augusta::logging::Severity::kWarn,                                                  \
+                                ::augusta::logging::WithSuppressed(::std::format(__VA_ARGS__), *augusta_suppressed)); \
+    }                                                                                                                 \
+  } while (false)
+#else
+#define LW_LIMITED(throttle, ...) static_cast<void>(0)
 #endif
 
 #if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_ERROR

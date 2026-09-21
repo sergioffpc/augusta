@@ -7,8 +7,6 @@
 
 #include <flecs.h>
 
-#include "augusta/logging.h"
-
 namespace augusta::simulation {
 
 namespace {
@@ -124,30 +122,25 @@ struct World::Impl {
   }
 
   void OnWeaponHandling() {
-    LT("subsystem=simulationworld event=weapon_handling");
     // TODO(sergioffpc): not yet a module of its own - see simulation.h.
   }
 
   void OnBallistics() {
-    LT("subsystem=simulationworld event=ballistics");
     // TODO(sergioffpc): ballistics::World::Step per in-flight bullet.
   }
 
   void OnHitDetection() {
-    LT("subsystem=simulationworld event=hit_detection");
     // Already folded into OnBallistics's ballistics::World::Step
     // call - see simulation.h's Phase::kHitDetection doc comment.
     // Kept as its own phase/system for pipeline ordering.
   }
 
   void OnDamage() {
-    LT("subsystem=simulationworld event=damage");
     // TODO(sergioffpc): apply damage from each bullet's resolved
     // ballistics::BodyPart.
   }
 
   void OnScriptsBehaviours() {
-    LT("subsystem=simulationworld event=scripts_behaviours");
     // TODO(sergioffpc): scripting::Engine::RunHook per relevant hook.
   }
 
