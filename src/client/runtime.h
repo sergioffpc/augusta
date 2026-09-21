@@ -79,7 +79,7 @@ class ClientRuntime {
   // process concern, not a per-instance one.
   //
   // scene is what the Renderer draws every frame - loaded from the client
-  // pack by the caller (see scene_loader.h), since where content comes from
+  // pack by the caller (see loader.h), since where content comes from
   // is the executable's business, not the orchestrator's.
   ClientRuntime(const Config& config, const renderer::Scene& scene);
 
