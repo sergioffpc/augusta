@@ -52,7 +52,7 @@ using StatusHandler = std::function<void(SteamNetConnectionStatusChangedCallback
 // dropped, and ids are never reused, so a new owner allocated at the same
 // address cannot receive them. The lock is held while a handler runs, so an
 // owner cannot finish unregistering (and be destroyed) mid-callback.
-class LiveHandlers {
+class StatusHandlerRegistry {
  public:
   std::int64_t Add(StatusHandler handler) {
     const std::lock_guard<std::mutex> lock(mutex_);
@@ -80,20 +80,20 @@ class LiveHandlers {
   std::unordered_map<std::int64_t, StatusHandler> handlers_;
 };
 
-LiveHandlers& LiveNetworkingHandlers() {
-  static LiveHandlers live;
-  return live;
+StatusHandlerRegistry& StatusHandlers() {
+  static StatusHandlerRegistry registry;
+  return registry;
 }
 
 // Registers a handler for as long as it lives. An owner declares it as its
 // last member, so it unregisters first - before the members the handler
 // reads are destroyed.
-class LiveRegistration {
+class StatusHandlerRegistration {
  public:
-  explicit LiveRegistration(StatusHandler handler) : id_(LiveNetworkingHandlers().Add(std::move(handler))) {}
-  ~LiveRegistration() { LiveNetworkingHandlers().Remove(id_); }
-  LiveRegistration(const LiveRegistration&) = delete;
-  LiveRegistration& operator=(const LiveRegistration&) = delete;
+  explicit StatusHandlerRegistration(StatusHandler handler) : id_(StatusHandlers().Add(std::move(handler))) {}
+  ~StatusHandlerRegistration() { StatusHandlers().Remove(id_); }
+  StatusHandlerRegistration(const StatusHandlerRegistration&) = delete;
+  StatusHandlerRegistration& operator=(const StatusHandlerRegistration&) = delete;
 
   // What to set as the connection's user data so its events reach the handler.
   [[nodiscard]] std::int64_t Id() const { return id_; }
@@ -104,7 +104,7 @@ class LiveRegistration {
 
 // The status-changed callback both roles register with GameNetworkingSockets.
 void OnStatusChanged(SteamNetConnectionStatusChangedCallback_t* info) {
-  LiveNetworkingHandlers().Dispatch(info->m_info.m_nUserData, info);
+  StatusHandlers().Dispatch(info->m_info.m_nUserData, info);
 }
 
 int SendFlags(Reliability reliability) {
@@ -171,7 +171,8 @@ struct Client::Impl {
   }
 
   // Last, so it unregisters before the members HandleStatusChanged reads go.
-  LiveRegistration registration{[this](SteamNetConnectionStatusChangedCallback_t* info) { HandleStatusChanged(info); }};
+  StatusHandlerRegistration registration{
+      [this](SteamNetConnectionStatusChangedCallback_t* info) { HandleStatusChanged(info); }};
 };
 
 Client::Client() : impl_(std::make_unique<Impl>()) {}
@@ -335,7 +336,8 @@ struct Server::Impl {
   }
 
   // Last, so it unregisters before the members HandleStatusChanged reads go.
-  LiveRegistration registration{[this](SteamNetConnectionStatusChangedCallback_t* info) { HandleStatusChanged(info); }};
+  StatusHandlerRegistration registration{
+      [this](SteamNetConnectionStatusChangedCallback_t* info) { HandleStatusChanged(info); }};
 };
 
 Server::Server(const Endpoint& local_endpoint) : impl_(std::make_unique<Impl>()) {
