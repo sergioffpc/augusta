@@ -20,8 +20,9 @@ code reads that struct and never calls Lua, so an expression costs nothing per
 tick and cannot see simulation state: the script runs outside the tick, with
 nothing of the world in reach. Beyond ADR-0022's sandbox, the environment has no
 `os.time`, `os.clock` or `math.random`, and an instruction limit ends a script
-that does not return. The loader reads named fields and never iterates the
-table, so its order cannot change the result.
+that does not return. The loader reads named fields and, to refuse an unknown
+key, reports the first one in name order, so the table's own order cannot change
+the result.
 
 **Validated like untrusted input.** Unknown keys, missing keys, a value of the
 wrong type and a number out of range are errors, as in ADR-0034: a misspelled

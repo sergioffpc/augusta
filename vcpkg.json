@@ -13,7 +13,9 @@
     "glm",
     "gtest",
     "libsodium",
+    "lua",
     "physx",
+    "sol2",
     "yaml-cpp"
   ]
 }

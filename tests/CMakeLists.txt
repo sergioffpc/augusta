@@ -15,6 +15,10 @@ add_executable(augusta_config_tests config_test.cpp)
 target_link_libraries(augusta_config_tests PRIVATE augusta_config GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_config_tests)
 
+add_executable(augusta_parameters_loader_tests parameters_loader_test.cpp)
+target_link_libraries(augusta_parameters_loader_tests PRIVATE augusta_parameters_loader GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_parameters_loader_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_protocol_tests protocol_test.cpp)
 target_link_libraries(augusta_protocol_tests PRIVATE augusta_protocol GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
