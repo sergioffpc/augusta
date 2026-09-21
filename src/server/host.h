@@ -11,9 +11,9 @@
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
-#include "augusta/parameters_loader.h"
 #include "augusta/physics.h"
 #include "augusta/simulation.h"
+#include "parameters_loader.h"
 
 // augusta::server::Host is the server's network boundary and the
 // authoritative SimulationWorld (ADR-0023) without the threads and the clock:

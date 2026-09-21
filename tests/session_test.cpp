@@ -28,7 +28,6 @@
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
-#include "augusta/parameters_loader.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
@@ -37,6 +36,7 @@
 #include "file_watch.h"
 #include "host.h"
 #include "match.h"
+#include "parameters_loader.h"
 
 // The seam the M3 tickets test through (issue #73): a real server host and a
 // real client session, both without a window, a GPU or a wall-clock loop, in

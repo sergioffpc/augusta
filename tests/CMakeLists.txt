@@ -21,7 +21,7 @@ target_link_libraries(augusta_parameters_tests PRIVATE augusta_parameters GTest:
 gtest_discover_tests(augusta_parameters_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_parameters_loader_tests parameters_loader_test.cpp)
-target_link_libraries(augusta_parameters_loader_tests PRIVATE augusta_parameters_loader GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_parameters_loader_tests PRIVATE augustad_parameters_loader GTest::gtest GTest::gtest_main)
 # The example script is what operators copy, so a test keeps it loading.
 target_compile_definitions(augusta_parameters_loader_tests PRIVATE
   AUGUSTA_EXAMPLE_PARAMETERS="${CMAKE_SOURCE_DIR}/config/parameters.example.lua")
@@ -93,7 +93,7 @@ target_include_directories(augusta_map_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/mod
 gtest_discover_tests(augusta_map_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_session_tests session_test.cpp)
-target_link_libraries(augusta_session_tests PRIVATE augusta_harness augustad_host augustad_watch augusta_parameters_loader GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_session_tests PRIVATE augusta_harness augustad_host augustad_watch augustad_parameters_loader GTest::gtest GTest::gtest_main)
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_session_tests DISCOVERY_TIMEOUT 30)
 

@@ -1,3 +1,21 @@
+# Reads the Parameters script through Lua (ADR-0022, ADR-0039) into the shared
+# Parameters; pure, so tested with scripts as strings (see parameters_loader.h).
+# Server-only: a client never reads the script, it is sent the result, so it
+# never links the interpreter.
+find_package(Lua REQUIRED)
+find_package(sol2 CONFIG REQUIRED)
+
+add_library(augustad_parameters_loader STATIC
+  parameters_loader.cpp
+)
+target_include_directories(augustad_parameters_loader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(augustad_parameters_loader SYSTEM PRIVATE ${LUA_INCLUDE_DIR})
+target_link_libraries(augustad_parameters_loader
+  PUBLIC augusta_parameters
+  PRIVATE sol2::sol2 ${LUA_LIBRARIES}
+)
+augusta_set_module_scope(augustad_parameters_loader SERVER_ONLY)
+
 # Who is in the match and whether a join is admitted; pure, so tested without a
 # network (see match.h).
 add_library(augustad_match STATIC
@@ -23,7 +41,7 @@ add_library(augustad_host STATIC
 )
 target_include_directories(augustad_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_host
-  PUBLIC augusta_networking augusta_parameters augusta_parameters_loader augusta_physics augusta_simulation
+  PUBLIC augusta_networking augusta_parameters augusta_physics augusta_simulation augustad_parameters_loader
   PRIVATE augustad_commands augustad_match augusta_logging augusta_protocol augusta_replication augusta_version
 )
 augusta_set_module_scope(augustad_host SERVER_ONLY)
@@ -48,4 +66,4 @@ target_link_libraries(augustad_runtime
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)
 
 add_executable(augustad main.cpp)
-target_link_libraries(augustad PRIVATE augusta_assets augusta_config augusta_map augusta_parameters_loader augusta_version augusta_logging augusta_networking augustad_runtime)
+target_link_libraries(augustad PRIVATE augusta_assets augusta_config augusta_map augustad_parameters_loader augusta_version augusta_logging augusta_networking augustad_runtime)
