@@ -1,6 +1,7 @@
 #include "augusta/parameters_loader.h"
 
 #include <algorithm>
+#include <array>
 #include <fstream>
 #include <optional>
 #include <span>
@@ -16,7 +17,7 @@ namespace {
 
 constexpr std::string_view kTickRateKey = "tick_rate_hz";
 constexpr std::string_view kStaminaKey = "stamina";
-constexpr std::string_view kStaminaKeys[] = {"deplete_per_second", "regen_per_second", "forced_walk_below"};
+constexpr std::array<std::string_view, 3> kStaminaKeys{"deplete_per_second", "regen_per_second", "forced_walk_below"};
 
 std::unexpected<LoadError> Fail(LoadErrorCode code, std::string subject = {}) {
   return std::unexpected(LoadError{.code = code, .subject = std::move(subject)});
@@ -155,7 +156,7 @@ std::expected<Parameters, LoadError> Load(std::string_view script) {
   }
   const sol::table root = result.get<sol::table>();
 
-  constexpr std::string_view kRootKeys[] = {kTickRateKey, kStaminaKey};
+  constexpr std::array<std::string_view, 2> kRootKeys{kTickRateKey, kStaminaKey};
   if (const auto unknown = FirstUnknownKey(root, {}, kRootKeys)) {
     return std::unexpected(*unknown);
   }
