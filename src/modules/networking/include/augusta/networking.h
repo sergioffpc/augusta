@@ -65,6 +65,12 @@ struct SimulatedConditions {
   int latency_ms = 0;
   /// Share of packets this process sends that are dropped, 0..100.
   float loss_percent = 0.0F;
+  /// How long a connection may hear nothing from its peer before it counts as
+  /// lost (or, while connecting, as unreachable), in milliseconds; 0 keeps the
+  /// transport's own default (about 10 seconds), which is too long for a test
+  /// to wait. Unlike the other conditions it only reaches connections made
+  /// after it is set, so set it before connecting.
+  int timeout_ms = 0;
 };
 
 /// Applies conditions to every connection in the process from now on; a default-constructed one restores the real
@@ -204,9 +210,20 @@ enum class PeerEventType {
   kDisconnected,
 };
 
+/// Why a peer's connection ended.
+enum class DisconnectReason {
+  /// The peer closed the connection itself.
+  kClosedByPeer,
+  /// The transport gave up on the connection: nothing was heard from the peer
+  /// for too long, or the network failed.
+  kConnectionLost,
+};
+
 struct PeerEvent {
   PeerId peer;
   PeerEventType type;
+  /// Why the connection ended; only meaningful for kDisconnected.
+  DisconnectReason reason = DisconnectReason::kClosedByPeer;
 };
 
 // One received message plus which peer sent it.

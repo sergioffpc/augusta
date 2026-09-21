@@ -49,9 +49,9 @@ enum class Phase {
   kCommandIngestion,
   // Mechanism. Ingests any authoritative physics::BodyState newly
   // arrived from the server since the last tick, compares it with what was
-  // predicted after the same command (History, see reconciliation.h) and
-  // applies the error as smooth snap/blend correction (ADR-0004) via
-  // physics::World::Correct - no rollback/resimulate. A no-op on ticks where
+  // predicted after the same command (History, see reconciliation.h), then
+  // puts the body at the server's state and replays the commands sent since
+  // (ADR-0004) via physics::World::Restore and Step. A no-op on ticks where
   // nothing new arrived.
   kReconciliation,
   // Mechanism. Predicted PhysX movement, stamina -
@@ -79,6 +79,12 @@ struct State {
   // "one entity under prediction" the spike proves out, ahead of real
   // ECS component shapes).
   physics::BodyState local_body;
+  /// Every jump Reconciliation has made to local_body since the world began,
+  /// summed: how far each replay moved the body from where the previous tick
+  /// left it. A reader that sees only some of the ticks (presentation, one
+  /// frame at a time) gets the jumps between two states it saw, every one and
+  /// none twice, from the difference of their totals.
+  math::Vec3 total_correction{};
 };
 
 /// What the server has told this client about its own player: its body after
@@ -107,7 +113,13 @@ class World {
   ~World();
 
   /// Adds immovable level geometry to this world's physics, the same way SimulationWorld does.
-  std::expected<void, physics::StaticMeshError> AddStaticMesh(const physics::StaticMesh& mesh);
+  std::expected<void, physics::CollisionMeshError> AddCollisionMesh(const physics::CollisionMesh& mesh);
+
+  /// Starts the local player over at spawn, standing and at full stamina, under
+  /// stamina_rules: what the server told this client when it admitted it, so
+  /// the client never predicts with rules of its own. Call before the first
+  /// command is sent; nothing predicted earlier is kept.
+  void Start(const math::Vec3& spawn, const physics::StaminaConfig& stamina_rules);
 
   World(const World&) = delete;
   World& operator=(const World&) = delete;

@@ -3,9 +3,12 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <format>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <thread>
+#include <utility>
 
 #include <nvtx3/nvtx3.hpp>
 
@@ -43,7 +46,8 @@ struct ClientRuntime::Impl {
   Config config;
   input::Input input;
   audio::Engine audio;
-  harness::Session session;
+  // Emplaced by the constructor once the map is loaded into its PredictionWorld.
+  std::optional<harness::Session> session;
   presentation::World presentation;
   renderer::Renderer renderer;
 
@@ -137,7 +141,7 @@ struct ClientRuntime::Impl {
   }
 
   void SampleNetworkStats() {
-    const std::optional<networking::ConnectionStats> stats = session.GetStats();
+    const std::optional<networking::ConnectionStats> stats = session->GetStats();
     PublishHudNetStats(stats);
     if (!stats.has_value()) {
       net_ping_ms.sample_no_value(nvtx3::no_value_reason::unavailable);
@@ -158,12 +162,21 @@ struct ClientRuntime::Impl {
     net_pending_bytes.sample(static_cast<double>(stats->pending_bytes));
   }
 
-  explicit Impl(const Config& cfg)
-      : config(cfg),
-        input(cfg.input),
-        session(harness::SessionConfig{.stamina = cfg.stamina, .server = cfg.server, .collision = cfg.collision}),
-        presentation(audio),
-        renderer(cfg.renderer, input) {}
+  explicit Impl(const Config& cfg) : config(cfg), input(cfg.input), presentation(audio), renderer(cfg.renderer, input) {
+    // The map goes in before the Session takes the world over: a body that has
+    // already ticked has been predicted without it, and reconciliation cannot
+    // account for that.
+    // No stamina rules of its own: the Session starts the prediction under the
+    // server's once it has joined, so the two cannot drift.
+    prediction::World world{physics::StaminaConfig{}};
+    for (const physics::CollisionMesh& mesh : cfg.collision) {
+      if (const auto added = world.AddCollisionMesh(mesh); !added) {
+        throw std::runtime_error(std::format("ClientRuntime: map collision rejected: {}",
+                                             physics::DescribeCollisionMeshError(added.error())));
+      }
+    }
+    session.emplace(harness::SessionConfig{.server = cfg.server}, std::move(world));
+  }
 
   // Prediction thread body (ADR-0005): fixed-rate loop sampling local
   // input and ticking PredictionWorld. Runs until running is cleared by
@@ -175,7 +188,7 @@ struct ClientRuntime::Impl {
       const auto tick_start = std::chrono::steady_clock::now();
 
       input::Command command = input.Sample();
-      prediction::State state = session.Tick(command, tick_duration.count());
+      prediction::State state = session->Tick(command, tick_duration.count());
 
       {
         std::lock_guard<std::mutex> lock(prediction_state_mutex);
@@ -190,14 +203,14 @@ struct ClientRuntime::Impl {
   // Network I/O thread body (ADR-0005): connects once, then pumps the
   // connection until running is cleared by ThreadJoiner.
   void NetworkThreadMain() {
-    session.Connect();
+    session->Connect();
     while (running.load(std::memory_order_relaxed)) {
       const nvtx3::scoped_range range{"Network PumpEvents"};
-      session.PumpEvents();
+      session->PumpEvents();
       SampleNetworkStats();
-      session.ExchangeMessages();
+      session->ExchangeMessages();
     }
-    session.Disconnect();
+    session->Disconnect();
   }
 
   prediction::State GetLatestPredictionState() {
@@ -213,7 +226,7 @@ ClientRuntime::ClientRuntime(const Config& config, const renderer::Scene& scene)
 
 ClientRuntime::~ClientRuntime() = default;
 
-void ClientRuntime::Run() {
+std::optional<harness::Failure> ClientRuntime::Run() {
   impl_->running.store(true, std::memory_order_relaxed);
   impl_->prediction_thread = std::thread([this] { impl_->PredictionThreadMain(); });
   impl_->network_thread = std::thread([this] { impl_->NetworkThreadMain(); });
@@ -222,7 +235,13 @@ void ClientRuntime::Run() {
                       .network_thread = impl_->network_thread};
 
   LI("subsystem=clientruntime event=loop_starting loop=render");
+  std::optional<harness::Failure> failure;
   while (!impl_->renderer.ShouldClose()) {
+    failure = impl_->session->GetFailure();
+    if (failure.has_value()) {
+      LE("subsystem=clientruntime event=session_failed reason=\"{}\"", harness::DescribeFailure(*failure));
+      break;
+    }
     const nvtx3::scoped_range range{"Main/Render Frame"};
     impl_->renderer.PumpEvents();
     impl_->renderer.SetDebugHudStats({.net = impl_->GetLatestHudNet()});
@@ -233,6 +252,7 @@ void ClientRuntime::Run() {
     impl_->renderer.RenderFrame();
   }
   LI("subsystem=clientruntime event=loop_stopping loop=render");
+  return failure;
 }
 
 }  // namespace augusta::runtime

@@ -11,8 +11,8 @@ namespace {
 
 using augusta::input::Command;
 using augusta::math::Vec3;
+using augusta::physics::CollisionMesh;
 using augusta::physics::Stance;
-using augusta::physics::StaticMesh;
 using augusta::simulation::PlayerCommand;
 using augusta::simulation::PlayerId;
 using augusta::simulation::State;
@@ -25,11 +25,11 @@ constexpr int kWalkTicks = 60;
 constexpr PlayerId kAlice = static_cast<PlayerId>(1);
 constexpr PlayerId kBob = static_cast<PlayerId>(2);
 
-StaticMesh Floor() {
+CollisionMesh Floor() {
   constexpr float kExtent = 100.0F;
-  return StaticMesh{.points = {Vec3(-kExtent, 0.0F, -kExtent), Vec3(-kExtent, 0.0F, kExtent),
-                               Vec3(kExtent, 0.0F, kExtent), Vec3(kExtent, 0.0F, -kExtent)},
-                    .indices = {0, 1, 2, 0, 2, 3}};
+  return CollisionMesh{.points = {Vec3(-kExtent, 0.0F, -kExtent), Vec3(-kExtent, 0.0F, kExtent),
+                                  Vec3(kExtent, 0.0F, kExtent), Vec3(kExtent, 0.0F, -kExtent)},
+                       .indices = {0, 1, 2, 0, 2, 3}};
 }
 
 Command Walking(Vec3 direction, Stance stance = Stance::kStanding) {
@@ -42,7 +42,7 @@ Command Walking(Vec3 direction, Stance stance = Stance::kStanding) {
 class SimulationTest : public ::testing::Test {
  protected:
   SimulationTest() : world_(augusta::physics::StaminaConfig{}, "scripts/round.lua") {
-    EXPECT_TRUE(world_.AddStaticMesh(Floor()).has_value());
+    EXPECT_TRUE(world_.AddCollisionMesh(Floor()).has_value());
   }
 
   // Ticks n times with the same commands and returns the last state.
@@ -76,12 +76,12 @@ TEST_F(SimulationTest, AWallStopsAWalkingPlayer) {
   constexpr float kHalfWidth = 20.0F;
   constexpr float kHeight = 5.0F;
   constexpr float kBottom = 0.0F;
-  ASSERT_TRUE(
-      world_
-          .AddStaticMesh(StaticMesh{.points = {Vec3(kWallX, kBottom, -kHalfWidth), Vec3(kWallX, kHeight, -kHalfWidth),
+  ASSERT_TRUE(world_
+                  .AddCollisionMesh(
+                      CollisionMesh{.points = {Vec3(kWallX, kBottom, -kHalfWidth), Vec3(kWallX, kHeight, -kHalfWidth),
                                                Vec3(kWallX, kHeight, kHalfWidth), Vec3(kWallX, kBottom, kHalfWidth)},
                                     .indices = {0, 1, 2, 0, 2, 3}})
-          .has_value());
+                  .has_value());
   // Dropped a little above the floor: a body placed exactly on it starts overlapping it.
   world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F));
   Run(kSettleTicks, {});

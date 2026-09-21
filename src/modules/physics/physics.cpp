@@ -22,7 +22,7 @@
 // PxScene::simulate()/fetchResults(). CCT movement is sweep-based and
 // self-contained; nothing here needs the rigid-body dynamics loop, since
 // every body is player-controlled and the only other geometry is the
-// map's static meshes (AddStaticMesh), which never move.
+// map's collision meshes (AddCollisionMesh), which never move.
 //
 // Engine convention (not yet pinned down project-wide - see
 // augusta::input::Command's yaw/pitch comment): Y is up, matching both
@@ -289,8 +289,8 @@ struct World::Impl {
   PxScene* scene = nullptr;
   PxControllerManager* controller_manager = nullptr;
   PxMaterial* material = nullptr;
-  // Static map geometry added by AddStaticMesh; released with the World.
-  std::vector<PxTriangleMesh*> static_meshes;
+  // Static map geometry added by AddCollisionMesh; released with the World.
+  std::vector<PxTriangleMesh*> collision_meshes;
   std::vector<PxRigidStatic*> static_actors;
   StaminaConfig stamina_config;
   std::unordered_map<BodyHandle, BodyRecord> bodies;
@@ -335,7 +335,7 @@ struct World::Impl {
   // one only if it does not overlap static geometry (e.g. standing up under a
   // low ceiling). A static-only scene query never sees the body's own
   // controller, which is dynamic.
-  bool CanChangeStance(const BodyRecord& record, Stance current, Stance target) const {
+  [[nodiscard]] bool CanChangeStance(const BodyRecord& record, Stance current, Stance target) const {
     if (HeightForStance(target) <= HeightForStance(current)) {
       return true;
     }
@@ -360,7 +360,7 @@ struct World::Impl {
     for (PxRigidStatic* actor : static_actors) {
       actor->release();
     }
-    for (PxTriangleMesh* mesh : static_meshes) {
+    for (PxTriangleMesh* mesh : collision_meshes) {
       mesh->release();
     }
     if (material != nullptr) {
@@ -389,33 +389,33 @@ World::~World() = default;
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
-std::string_view DescribeStaticMeshError(StaticMeshError error) {
+std::string_view DescribeCollisionMeshError(CollisionMeshError error) {
   switch (error) {
-    case StaticMeshError::kEmpty:
+    case CollisionMeshError::kEmpty:
       return "the mesh has no triangles";
-    case StaticMeshError::kInvalidIndex:
+    case CollisionMeshError::kInvalidIndex:
       return "the mesh's indices are not whole triangles inside its points";
-    case StaticMeshError::kCookingFailed:
+    case CollisionMeshError::kCookingFailed:
       return "PhysX could not build a collision mesh from it";
   }
-  return "unknown static mesh error";
+  return "unknown collision mesh error";
 }
 
-std::expected<void, StaticMeshError> ValidateStaticMesh(const StaticMesh& mesh) {
+std::expected<void, CollisionMeshError> ValidateCollisionMesh(const CollisionMesh& mesh) {
   if (mesh.points.empty() || mesh.indices.empty()) {
-    return std::unexpected(StaticMeshError::kEmpty);
+    return std::unexpected(CollisionMeshError::kEmpty);
   }
   const bool whole_triangles = mesh.indices.size() % 3 == 0;
   const bool in_range =
       std::ranges::all_of(mesh.indices, [&](std::uint32_t index) { return index < mesh.points.size(); });
   if (!whole_triangles || !in_range) {
-    return std::unexpected(StaticMeshError::kInvalidIndex);
+    return std::unexpected(CollisionMeshError::kInvalidIndex);
   }
   return {};
 }
 
-std::expected<void, StaticMeshError> World::AddStaticMesh(const StaticMesh& mesh) {
-  if (const auto valid = ValidateStaticMesh(mesh); !valid) {
+std::expected<void, CollisionMeshError> World::AddCollisionMesh(const CollisionMesh& mesh) {
+  if (const auto valid = ValidateCollisionMesh(mesh); !valid) {
     return valid;
   }
   const std::vector<std::uint32_t> both_windings = WithBothWindings(mesh.indices);
@@ -431,22 +431,23 @@ std::expected<void, StaticMeshError> World::AddStaticMesh(const StaticMesh& mesh
   const PxCookingParams params(impl_->physics->getTolerancesScale());
   PxTriangleMesh* cooked = PxCreateTriangleMesh(params, desc, impl_->physics->getPhysicsInsertionCallback());
   if (cooked == nullptr) {
-    return std::unexpected(StaticMeshError::kCookingFailed);
+    return std::unexpected(CollisionMeshError::kCookingFailed);
   }
   PxRigidStatic* actor = impl_->physics->createRigidStatic(PxTransform(PxIdentity));
   PxRigidActorExt::createExclusiveShape(*actor, PxTriangleMeshGeometry(cooked), *impl_->material);
   impl_->scene->addActor(*actor);
-  impl_->static_meshes.push_back(cooked);
+  impl_->collision_meshes.push_back(cooked);
   impl_->static_actors.push_back(actor);
-  LD("subsystem=physics event=static_mesh_added triangles={}", mesh.indices.size() / 3);
+  LD("subsystem=physics event=collision_mesh_added triangles={}", mesh.indices.size() / 3);
   return {};
 }
+
+void World::SetStaminaConfig(const StaminaConfig& config) { impl_->stamina_config = config; }
 
 BodyHandle World::CreateBody(const math::Vec3& initial_position) {
   PxCapsuleControllerDesc desc;
   desc.radius = kCapsuleRadius;
   desc.height = kStandingHeight;
-  desc.position = PxExtendedVec3(initial_position.x, initial_position.y, initial_position.z);
   desc.material = impl_->material;
   desc.stepOffset = kStepOffset;
   desc.upDirection = PxVec3(0.0F, 1.0F, 0.0F);
@@ -454,6 +455,8 @@ BodyHandle World::CreateBody(const math::Vec3& initial_position) {
   if (controller == nullptr) {
     throw std::runtime_error("physics::World::CreateBody: createController failed");
   }
+  // The descriptor's position is the capsule's center; BodyState's is the feet.
+  controller->setFootPosition(PxExtendedVec3(initial_position.x, initial_position.y, initial_position.z));
 
   const auto handle = static_cast<BodyHandle>(impl_->next_handle++);
   BodyRecord record;
@@ -530,23 +533,32 @@ void World::SetState(BodyHandle handle, const BodyState& state) {
   record.grounded = false;
 }
 
-BodyState World::Correct(BodyHandle handle, const BodyState& corrected) {
+FallState World::Fall(BodyHandle handle) const {
   const auto body_it = impl_->bodies.find(handle);
   if (body_it == impl_->bodies.end()) {
-    return corrected;
+    return {};
+  }
+  return FallState{.vertical_speed = body_it->second.vertical_speed, .grounded = body_it->second.grounded};
+}
+
+BodyState World::Restore(BodyHandle handle, const BodyState& state, const FallState& fall) {
+  const auto body_it = impl_->bodies.find(handle);
+  if (body_it == impl_->bodies.end()) {
+    return state;
   }
   BodyRecord& record = body_it->second;
 
   // Applied directly against the controller (not via SetState): SetState
-  // also resets fall/ground tracking, which is correct for an intentional
-  // teleport (spawn/respawn) but would spuriously interrupt gravity
-  // continuity for what is a small in-place correction.
-  if (corrected.stance != record.state.stance) {
-    record.controller->resize(HeightForStance(corrected.stance));
+  // resets fall/ground tracking, which is right for an intentional teleport
+  // (spawn/respawn) but not for putting the body back where it was.
+  if (state.stance != record.state.stance) {
+    record.controller->resize(HeightForStance(state.stance));
   }
-  record.controller->setFootPosition(PxExtendedVec3(corrected.position.x, corrected.position.y, corrected.position.z));
-  record.state = corrected;
-  return corrected;
+  record.controller->setFootPosition(PxExtendedVec3(state.position.x, state.position.y, state.position.z));
+  record.state = state;
+  record.vertical_speed = fall.vertical_speed;
+  record.grounded = fall.grounded;
+  return state;
 }
 
 RaycastHit World::Raycast(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const {

@@ -10,6 +10,12 @@
 #include <thread>
 #include <vector>
 
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
+
 #include <gtest/gtest.h>
 
 // M1 spike (ADR-0003): this is the "standalone round-trip" issue #31
@@ -23,6 +29,7 @@ namespace {
 
 using augusta::networking::Client;
 using augusta::networking::ConnectionState;
+using augusta::networking::DisconnectReason;
 using augusta::networking::Endpoint;
 using augusta::networking::Payload;
 using augusta::networking::PeerEventType;
@@ -36,6 +43,20 @@ using augusta::networking::SimulateNetworkConditions;
 // meaningful latency to the test, long enough not to busy-spin.
 constexpr auto kPollInterval = std::chrono::milliseconds(10);
 constexpr auto kPollDeadline = std::chrono::seconds(5);
+
+// ctest runs every test case in its own process, possibly in parallel, so a
+// fixed port would collide; derive one from the process id instead. The span is
+// prime because Windows process ids are all multiples of 4.
+std::string LoopbackAddress() {
+#ifdef _WIN32
+  const int pid = _getpid();
+#else
+  const int pid = getpid();
+#endif
+  constexpr int kFirstPort = 31000;
+  constexpr int kPortSpan = 2999;
+  return "127.0.0.1:" + std::to_string(kFirstPort + (pid % kPortSpan));
+}
 
 Payload MakePayload(const std::string& text) {
   const auto* bytes = reinterpret_cast<const std::byte*>(text.data());
@@ -145,9 +166,9 @@ class NetworkingEnvironment : public ::testing::Environment {
 class NetworkingTest : public ::testing::Test {};
 
 TEST_F(NetworkingTest, RoundTripsAMessageBothWays) {
-  Server server(Endpoint{.address = "127.0.0.1:27016"});
+  Server server(Endpoint{.address = LoopbackAddress()});
   Client client;
-  client.Connect(Endpoint{.address = "127.0.0.1:27016"});
+  client.Connect(Endpoint{.address = LoopbackAddress()});
 
   RoundTripResult result;
   ASSERT_TRUE(PerformRoundTrip(server, client, result));
@@ -161,9 +182,9 @@ TEST_F(NetworkingTest, RoundTripsAMessageBothWays) {
 class ConnectedNetworkingTest : public NetworkingTest {
  protected:
   void SetUp() override {
-    server_ = std::make_unique<Server>(Endpoint{.address = "127.0.0.1:27017"});
+    server_ = std::make_unique<Server>(Endpoint{.address = LoopbackAddress()});
     client_ = std::make_unique<Client>();
-    client_->Connect(Endpoint{.address = "127.0.0.1:27017"});
+    client_->Connect(Endpoint{.address = LoopbackAddress()});
     ASSERT_TRUE(PollUntil([&] { PollBoth(); }, [&] { return client_->GetState() == ConnectionState::kConnected; }));
     ASSERT_TRUE(PollUntil([&] { PollBoth(); }, [&] { return peer_.has_value(); }));
   }
@@ -218,6 +239,21 @@ class ConnectedNetworkingTest : public NetworkingTest {
                 return received.size() >= count;
               });
     return received;
+  }
+
+  // Polls both sides until the server reports its peer disconnected, and says why.
+  std::optional<DisconnectReason> WaitForServerToLosePeer() {
+    std::optional<DisconnectReason> reason;
+    PollUntil([&] { client_->PumpEvents(); },
+              [&] {
+                for (const auto& event : server_->PumpEvents()) {
+                  if (event.type == PeerEventType::kDisconnected) {
+                    reason = event.reason;
+                  }
+                }
+                return reason.has_value();
+              });
+    return reason;
   }
 
   std::unique_ptr<Server> server_;
@@ -304,4 +340,70 @@ TEST_F(ConnectedNetworkingTest, InjectedLatencyDelaysDelivery) {
   // upper bound so a busy CI machine does not flake it.
   EXPECT_GE(elapsed, std::chrono::milliseconds(kLatencyMs - 20));
   EXPECT_LT(elapsed, std::chrono::milliseconds(kLatencyMs + 400));
+}
+
+TEST_F(ConnectedNetworkingTest, AClientThatClosesItsConnectionIsReportedAsClosedByPeer) {
+  client_->Disconnect();
+
+  const std::optional<DisconnectReason> reason = WaitForServerToLosePeer();
+
+  EXPECT_EQ(reason, DisconnectReason::kClosedByPeer);
+}
+
+TEST_F(NetworkingTest, APeerThatGoesSilentIsReportedAsALostConnectionOnceTheTimeoutPasses) {
+  constexpr int kTimeoutMs = 500;
+  // Set before the connection exists: the timeout only reaches new connections.
+  SimulateNetworkConditions({.timeout_ms = kTimeoutMs});
+  Server server(Endpoint{.address = LoopbackAddress()});
+  Client client;
+  client.Connect(Endpoint{.address = LoopbackAddress()});
+  std::optional<PeerId> peer;
+  const auto poll_both = [&] {
+    client.PumpEvents();
+    AcceptFirstPeer(server, peer);
+  };
+  ASSERT_TRUE(PollUntil(poll_both, [&] { return client.GetState() == ConnectionState::kConnected; }));
+
+  SimulateNetworkConditions({.loss_percent = 100.0F, .timeout_ms = kTimeoutMs});
+  std::optional<DisconnectReason> reason;
+  // The transport notices a silent peer by the replies it stops getting, so
+  // each side keeps sending the other something to answer, as a match does.
+  PollUntil(
+      [&] {
+        client.PumpEvents();
+        client.Send(MakePayload("anyone there?"), Reliability::kReliable);
+        server.Send(*peer, MakePayload("anyone there?"), Reliability::kReliable);
+      },
+      [&] {
+        for (const auto& event : server.PumpEvents()) {
+          if (event.type == PeerEventType::kDisconnected) {
+            reason = event.reason;
+          }
+        }
+        return reason.has_value();
+      });
+  SimulateNetworkConditions({});
+
+  EXPECT_EQ(reason, DisconnectReason::kConnectionLost);
+  EXPECT_EQ(client.GetState(), ConnectionState::kDisconnected);
+}
+
+TEST_F(NetworkingTest, TheDefaultTimeoutIsBackOnceTheConditionsAreReset) {
+  SimulateNetworkConditions({.timeout_ms = 200});
+  SimulateNetworkConditions({});
+  Server server(Endpoint{.address = LoopbackAddress()});
+  Client client;
+  client.Connect(Endpoint{.address = LoopbackAddress()});
+  std::optional<PeerId> peer;
+  const auto poll_both = [&] {
+    client.PumpEvents();
+    AcceptFirstPeer(server, peer);
+  };
+  ASSERT_TRUE(PollUntil(poll_both, [&] { return client.GetState() == ConnectionState::kConnected; }));
+
+  // Were the timeout left at 200 ms or cleared to 0, a quiet moment would end the connection.
+  std::this_thread::sleep_for(std::chrono::milliseconds(600));
+  poll_both();
+
+  EXPECT_EQ(client.GetState(), ConnectionState::kConnected);
 }

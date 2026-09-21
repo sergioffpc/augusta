@@ -18,8 +18,8 @@ the decisions already made in ARCHITECTURE.md:
   device input, networking, rendering, and audio live at the boundaries.
 - **Determinism is not assumed, it's engineered around.** PhysX doesn't
   guarantee cross-platform determinism (ADR-0004) — the architecture
-  corrects for reality (smooth reconciliation) instead of pretending
-  otherwise.
+  corrects for reality (restoring the server's state and replaying from it)
+  instead of pretending otherwise.
 - **The server is the only source of truth.** Nothing from a client is
   trusted until validated (US-15).
 - **Content is signed and verified, not just loaded.** Integrity is

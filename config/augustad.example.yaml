@@ -14,3 +14,12 @@ public_key: keys/augusta.pub
 
 # Local address to listen on (optional, default 0.0.0.0:27015).
 listen_address: 0.0.0.0:27015
+
+# Stamina tuning (optional). Every client is sent these when it joins and
+# predicts with them, so this is the only place they are set.
+# Fraction of stamina sprinting costs per second (default 0.2: 5 s of sprint).
+stamina_deplete_per_second: 0.2
+# Fraction of stamina regained per second while not sprinting (default 0.1).
+stamina_regen_per_second: 0.1
+# At or below this fraction of stamina a player is forced to walk (default 0.1).
+stamina_forced_walk_below: 0.1

@@ -74,11 +74,60 @@ TEST(ProtocolTest, JoinRequestWithAnEmptyVersionRoundTrips) {
   EXPECT_EQ(std::get<JoinRequest>(decoded).engine_version, "");
 }
 
+PlayerState PlayerAt(std::uint32_t session, float x) {
+  PlayerState player{.session = static_cast<SessionId>(session)};
+  player.body.position = augusta::math::Vec3(x, 1.0F, -2.5F);
+  player.body.velocity = augusta::math::Vec3(0.5F, 0.0F, 3.0F);
+  player.body.stance = augusta::physics::Stance::kCrouching;
+  player.body.stamina = 0.75F;
+  return player;
+}
+
 TEST(ProtocolTest, JoinAcceptedRoundTrips) {
-  const auto decoded = RoundTrip(JoinAccepted{.session = static_cast<SessionId>(0xA1B2C3D4U)});
+  JoinAccepted sent{.session = static_cast<SessionId>(0xA1B2C3D4U),
+                    .spawn = augusta::math::Vec3(4.0F, 0.5F, -8.0F),
+                    .stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F},
+                    .roster = {PlayerAt(1, 10.0F), PlayerAt(2, -3.0F)}};
+
+  const auto decoded = RoundTrip(sent);
 
   ASSERT_TRUE(std::holds_alternative<JoinAccepted>(decoded));
-  EXPECT_EQ(std::get<JoinAccepted>(decoded).session, static_cast<SessionId>(0xA1B2C3D4U));
+  const auto& received = std::get<JoinAccepted>(decoded);
+  EXPECT_EQ(received.session, sent.session);
+  EXPECT_EQ(received.spawn, sent.spawn);
+  EXPECT_EQ(received.stamina.deplete_per_second, sent.stamina.deplete_per_second);
+  EXPECT_EQ(received.stamina.regen_per_second, sent.stamina.regen_per_second);
+  EXPECT_EQ(received.stamina.forced_walk_below, sent.stamina.forced_walk_below);
+  ASSERT_EQ(received.roster.size(), sent.roster.size());
+  for (std::size_t i = 0; i < sent.roster.size(); ++i) {
+    EXPECT_EQ(received.roster[i].session, sent.roster[i].session);
+    EXPECT_EQ(received.roster[i].body.position, sent.roster[i].body.position);
+    EXPECT_EQ(received.roster[i].body.velocity, sent.roster[i].body.velocity);
+    EXPECT_EQ(received.roster[i].body.stance, sent.roster[i].body.stance);
+    EXPECT_EQ(received.roster[i].body.stamina, sent.roster[i].body.stamina);
+  }
+}
+
+TEST(ProtocolTest, JoinAcceptedWithAnEmptyRosterRoundTrips) {
+  const auto decoded = RoundTrip(JoinAccepted{.session = static_cast<SessionId>(1)});
+
+  EXPECT_TRUE(std::get<JoinAccepted>(decoded).roster.empty());
+}
+
+TEST(ProtocolTest, JoinAcceptedWithAFullRosterRoundTrips) {
+  JoinAccepted sent;
+  sent.roster.resize(kMaxPlayers);
+
+  EXPECT_EQ(std::get<JoinAccepted>(RoundTrip(sent)).roster.size(), kMaxPlayers);
+}
+
+TEST(ProtocolTest, MorePlayersInARosterThanAMatchHoldsIsTooLong) {
+  // type, session (4), spawn (12), stamina rules (12), then the count.
+  Bytes payload = BytesOf({kJoinAcceptedType});
+  payload.resize(1 + 4 + 12 + 12, std::byte{0});
+  payload.push_back(static_cast<std::byte>(kMaxPlayers + 1));
+
+  EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
 }
 
 TEST(ProtocolTest, JoinRefusedRoundTripsEveryReason) {
@@ -91,8 +140,10 @@ TEST(ProtocolTest, JoinRefusedRoundTripsEveryReason) {
 }
 
 TEST(ProtocolTest, FieldsAreFixedWidthLittleEndian) {
-  EXPECT_EQ(Encode(JoinAccepted{.session = static_cast<SessionId>(0x04030201U)}),
-            BytesOf({kJoinAcceptedType, 0x01, 0x02, 0x03, 0x04}));
+  // The session, then spawn, stamina rules and roster count, all zero here.
+  Bytes accepted = BytesOf({kJoinAcceptedType, 0x01, 0x02, 0x03, 0x04});
+  accepted.resize(accepted.size() + 12 + 12 + 1, std::byte{0});
+  EXPECT_EQ(Encode(JoinAccepted{.session = static_cast<SessionId>(0x04030201U)}), accepted);
   EXPECT_EQ(Encode(JoinRefused{.reason = JoinRefusal::kMatchFull}), BytesOf({kJoinRefusedType, 2}));
   EXPECT_EQ(Encode(JoinRequest{.engine_version = "ab"}), BytesOf({kJoinRequestType, 2, 'a', 'b'}));
 }
@@ -106,11 +157,12 @@ TEST(ProtocolTest, AnUnknownTypeIsRejected) {
 }
 
 TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
-  const std::array<Message, 5> messages = {JoinRequest{.engine_version = "0.1.0"},
-                                           JoinAccepted{.session = static_cast<SessionId>(7)},
-                                           JoinRefused{.reason = JoinRefusal::kMatchFull},
-                                           Commands{.commands = {SequencedCommand{.sequence = 1}, {.sequence = 2}}},
-                                           AuthoritativeState{.tick = 3, .players = {PlayerState{}, {}}}};
+  const std::array<Message, 5> messages = {
+      JoinRequest{.engine_version = "0.1.0"},
+      JoinAccepted{.session = static_cast<SessionId>(7), .roster = {PlayerState{}}},
+      JoinRefused{.reason = JoinRefusal::kMatchFull},
+      Commands{.commands = {SequencedCommand{.sequence = 1}, {.sequence = 2}}},
+      AuthoritativeState{.tick = 3, .players = {PlayerState{}, {}}}};
   for (const Message& message : messages) {
     const Bytes whole = Encode(message);
     for (std::size_t length = 1; length < whole.size(); ++length) {
@@ -145,7 +197,9 @@ TEST(ProtocolTest, ARefusalReasonOutsideTheEnumerationIsInvalid) {
 
 TEST(ProtocolTest, BytesAfterAMessageAreTrailing) {
   EXPECT_EQ(Decode(BytesOf({kJoinRequestType, 0, 0})).error(), DecodeError::kTrailingBytes);
-  EXPECT_EQ(Decode(BytesOf({kJoinAcceptedType, 1, 0, 0, 0, 0})).error(), DecodeError::kTrailingBytes);
+  Bytes accepted = Encode(JoinAccepted{});
+  accepted.push_back(std::byte{0});
+  EXPECT_EQ(Decode(accepted).error(), DecodeError::kTrailingBytes);
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 1, 1})).error(), DecodeError::kTrailingBytes);
 }
 

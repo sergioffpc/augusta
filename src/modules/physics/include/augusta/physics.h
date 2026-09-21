@@ -20,8 +20,8 @@
 // same interface, called from two different orchestrators. PhysX does not
 // guarantee cross-platform bit-exact determinism, so callers must not
 // assume the client and server ever produce identical results from the
-// same inputs; client-side divergence is corrected via Correct, not
-// avoided.
+// same inputs; client-side divergence is corrected by restoring the server's
+// state and stepping again (Restore), not avoided.
 namespace augusta::physics {
 
 // A player's movement stance. Affects collision shape (capsule height/
@@ -58,8 +58,16 @@ struct MovementInput {
   Stance desired_stance = Stance::kStanding;
 };
 
+/// What World::Step carries from one tick to the next besides BodyState: the fall
+/// and ground tracking. Putting a body back at an earlier state (World::Restore)
+/// puts this back too, or the fall would carry on from the wrong speed.
+struct FallState {
+  float vertical_speed = 0.0F;
+  bool grounded = false;
+};
+
 // A body's full movement-relevant state at a point in time: what
-// World::Step returns, what World::SetState and World::Correct consume,
+// World::Step returns, what World::SetState and World::Restore consume,
 // and what the caller packages into its own Prediction/Authoritative State
 // each tick.
 struct BodyState {
@@ -94,14 +102,14 @@ struct StaminaConfig {
 };
 
 /// A triangle mesh of immovable map geometry, already in world space.
-struct StaticMesh {
+struct CollisionMesh {
   std::vector<math::Vec3> points{};
   /// Three indices into points per triangle.
   std::vector<std::uint32_t> indices{};
 };
 
-/// Why a StaticMesh could not be added to a World.
-enum class StaticMeshError {
+/// Why a CollisionMesh could not be added to a World.
+enum class CollisionMeshError {
   /// No points or no triangles.
   kEmpty,
   /// The indices are not whole triangles, or one points outside points.
@@ -110,11 +118,11 @@ enum class StaticMeshError {
   kCookingFailed,
 };
 
-/// Whether mesh is a whole, in-range triangle list World::AddStaticMesh can take.
-std::expected<void, StaticMeshError> ValidateStaticMesh(const StaticMesh& mesh);
+/// Whether mesh is a whole, in-range triangle list World::AddCollisionMesh can take.
+std::expected<void, CollisionMeshError> ValidateCollisionMesh(const CollisionMesh& mesh);
 
 /// A phrase for error, for a startup failure to report.
-std::string_view DescribeStaticMeshError(StaticMeshError error);
+std::string_view DescribeCollisionMeshError(CollisionMeshError error);
 
 // The result of one World::Raycast query.
 struct RaycastHit {
@@ -163,7 +171,12 @@ class World {
   World(World&&) noexcept;
   World& operator=(World&&) noexcept;
 
-  // Creates a new body at initial_position, with default BodyState
+  /// Replaces the stamina rules every body's next Step follows, e.g. with the
+  /// server's once a client has joined; stamina already in bodies is kept.
+  void SetStaminaConfig(const StaminaConfig& config);
+
+  // Creates a new body with its feet at initial_position (the same position
+  // BodyState carries), with default BodyState
   // otherwise (standing, zero velocity, full stamina). Returns a handle
   // valid for the lifetime of this World or until DestroyBody is called
   // with it.
@@ -171,7 +184,7 @@ class World {
 
   /// Adds mesh as immovable geometry that bodies collide with and stand on.
   /// Meant to be called while loading a map, before bodies are stepped.
-  std::expected<void, StaticMeshError> AddStaticMesh(const StaticMesh& mesh);
+  std::expected<void, CollisionMeshError> AddCollisionMesh(const CollisionMesh& mesh);
 
   // Removes a body from this World and invalidates its handle. Calling
   // any other method with a handle after it has been destroyed is
@@ -183,25 +196,29 @@ class World {
   // input, applies stance transitions, and applies stamina depletion/
   // recovery (StaminaConfig). Returns the resulting state, which is also
   // the new internally-held state for handle (visible to a subsequent
-  // Step, SetState, or Correct call).
+  // Step, SetState, or Restore call).
   BodyState Step(BodyHandle handle, const MovementInput& input, float delta_time);
 
-  // Overwrites handle's state immediately, with no blending - e.g. for
-  // spawning or respawning a player at a fixed point (US-03). Unlike
-  // Correct, the change is instantaneous and visually discontinuous;
-  // do not use this to correct client-side prediction drift.
+  // Overwrites handle's state immediately - e.g. for spawning or
+  // respawning a player at a fixed point (US-03). Unlike Restore, the
+  // fall starts over (a teleport is not a fall); do not use this to put a
+  // body back where it was.
   void SetState(BodyHandle handle, const BodyState& state);
 
-  /// Moves handle's body to corrected (position, stance and the rest of the
-  /// state) in place, keeping its fall and ground tracking, and returns it.
-  /// This is only the mechanism of a client-side correction: deciding how far
-  /// to move toward the server's state (ADR-0004 snap/blend) is
-  /// augusta::prediction's job, which then applies the result here. Unlike
-  /// SetState, a correction is not a teleport, so gravity continues across it.
-  BodyState Correct(BodyHandle handle, const BodyState& corrected);
+  /// handle's fall and ground tracking as of now: what Restore takes to put the
+  /// body back at the state it has now.
+  [[nodiscard]] FallState Fall(BodyHandle handle) const;
+
+  /// Puts handle's body back at state (position, stance and the rest) with fall
+  /// as its fall tracking, and returns state. This is the mechanism of a
+  /// client-side replay (ADR-0004): augusta::prediction restores the server's
+  /// state, with the fall it had itself predicted at that command, and steps the
+  /// commands sent since. Unlike SetState, the fall carries on instead of
+  /// starting over.
+  BodyState Restore(BodyHandle handle, const BodyState& state, const FallState& fall);
 
   // Casts a ray from origin in direction (need not be pre-normalized) up
-  // to max_distance, against every body and static mesh currently in this
+  // to max_distance, against every body and collision mesh currently in this
   // World, and returns the closest intersection. Used by augusta::ballistics
   // for player hit detection (US-11): PhysX's cross-platform
   // non-determinism (see the header comment above) isn't a correctness

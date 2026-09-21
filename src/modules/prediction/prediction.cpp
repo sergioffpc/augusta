@@ -1,6 +1,7 @@
 #include "augusta/prediction.h"
 
 #include <array>
+#include <cmath>
 
 #include <flecs.h>
 #include <nvtx3/nvtx3.hpp>
@@ -15,6 +16,22 @@ namespace {
 
 constexpr std::size_t kPhaseCount = 5;
 using PhaseEntities = std::array<flecs::entity, kPhaseCount>;
+
+// How far the server's state may be from the client's own prediction of the
+// same command and still count as agreeing with it. Below this nothing is
+// restored or replayed: the error is not worth a jump, and it cannot pile up,
+// since the next acknowledgement is compared with the server's state again,
+// not with this one.
+constexpr float kPositionTolerance = 0.001F;  // 1 mm.
+constexpr float kStaminaTolerance = 0.001F;
+
+// Position is what the player sees, but a stance or a stamina that differs
+// changes what the next commands do, so those count as well.
+bool NeedsCorrection(const physics::BodyState& authoritative, const physics::BodyState& predicted) {
+  return math::Length(authoritative.position - predicted.position) >= kPositionTolerance ||
+         authoritative.stance != predicted.stance ||
+         std::abs(authoritative.stamina - predicted.stamina) >= kStaminaTolerance;
+}
 
 enum PhaseIndex : std::size_t {
   kCommandIngestion = 0,
@@ -45,8 +62,8 @@ struct World::Impl {
   std::optional<Acknowledgement> tick_acknowledgement;
   State tick_state;
 
-  // What was predicted after each command sent, for Reconciliation to compare
-  // the server's answer with.
+  // The commands sent and what was predicted after each, for Reconciliation to
+  // compare the server's answer with and to replay from it.
   History history;
 
   explicit Impl(const physics::StaminaConfig& stamina_config)
@@ -72,52 +89,77 @@ struct World::Impl {
     // matched entities, since ECS component shapes aren't designed yet
     // (see prediction.h's header comment) - local_body is a single
     // hardcoded handle rather than something discovered by a query.
-    ecs.system("CommandIngestionSystem").kind(phases[kCommandIngestion]).run([](flecs::iter&) {
-      const nvtx3::scoped_range range{"CommandIngestion"};
-      LT("subsystem=predictionworld event=command_ingestion");
-      // tick_command is already staged by Tick() - nothing else to
-      // ingest yet without an entity/component to apply it to.
+    ecs.system("CommandIngestionSystem").kind(phases[kCommandIngestion]).run([this](flecs::iter&) {
+      OnCommandIngestion();
     });
-    ecs.system("ReconciliationSystem").kind(phases[kReconciliation]).run([this](flecs::iter&) {
-      const nvtx3::scoped_range range{"Reconciliation"};
-      Reconcile();
+    ecs.system("ReconciliationSystem").kind(phases[kReconciliation]).run([this](flecs::iter& sys_iter) {
+      OnReconciliation(sys_iter.delta_time());
     });
     ecs.system("MovementSystem").kind(phases[kMovement]).run([this](flecs::iter& sys_iter) {
-      const nvtx3::scoped_range range{"Movement"};
-      LT("subsystem=predictionworld event=movement");
-      tick_state.local_body = physics.Step(local_body, tick_command.movement, sys_iter.delta_time());
+      OnMovement(sys_iter.delta_time());
     });
-    ecs.system("WeaponHandlingSystem").kind(phases[kWeaponHandling]).run([](flecs::iter&) {
-      const nvtx3::scoped_range range{"WeaponHandling"};
-      LT("subsystem=predictionworld event=weapon_handling");
-      // TODO(sergioffpc): not yet a module of its own - see prediction.h.
-    });
-    ecs.system("CommitSystem").kind(phases[kCommit]).run([this](flecs::iter&) {
-      const nvtx3::scoped_range range{"Commit"};
-      LT("subsystem=predictionworld event=commit");
-      // tick_state.local_body is already set by MovementSystem; what is left
-      // is remembering it for the server's answer to this command.
-      if (tick_sequence != 0) {
-        history.Record(tick_sequence, tick_state.local_body);
-      }
-    });
+    ecs.system("WeaponHandlingSystem").kind(phases[kWeaponHandling]).run([this](flecs::iter&) { OnWeaponHandling(); });
+    ecs.system("CommitSystem").kind(phases[kCommit]).run([this](flecs::iter&) { OnCommit(); });
   }
 
-  // Moves the current state, and the history after it, by the error between
-  // the server's state and what was predicted after the same command.
-  void Reconcile() {
+  void OnCommandIngestion() {
+    const nvtx3::scoped_range range{"CommandIngestion"};
+    LT("subsystem=predictionworld event=command_ingestion");
+    // tick_command is already staged by Tick() - nothing else to
+    // ingest yet without an entity/component to apply it to.
+  }
+
+  // Puts the body at the server's state and steps it through the commands sent
+  // since, so the present is the server's past with the client's own commands
+  // carried forward. Every step, here and in Movement, is a fixed tick long.
+  void OnReconciliation(float delta_time) {
+    const nvtx3::scoped_range range{"Reconciliation"};
     if (!tick_acknowledgement.has_value()) {
       return;
     }
-    const std::optional<physics::BodyState> predicted = history.Acknowledge(tick_acknowledgement->sequence);
+    const std::optional<Predicted> predicted = history.Acknowledge(tick_acknowledgement->sequence);
     if (!predicted.has_value()) {
       return;
     }
-    const Correction correction = ResolveCorrection(*predicted, tick_acknowledgement->body);
-    LD("subsystem=predictionworld event={} sequence={} error={:.3f}",
-       correction.snapped ? "reconcile_snap" : "reconcile_blend", tick_acknowledgement->sequence, correction.error);
-    tick_state.local_body = physics.Correct(local_body, Apply(tick_state.local_body, correction));
-    history.Shift(correction);
+    const physics::BodyState& authoritative = tick_acknowledgement->body;
+    if (!NeedsCorrection(authoritative, predicted->body)) {
+      LT("subsystem=predictionworld event=reconcile_skipped sequence={}", tick_acknowledgement->sequence);
+      return;
+    }
+    physics::BodyState replayed = physics.Restore(local_body, authoritative, predicted->fall);
+    history.Replay([&](const physics::MovementInput& command) {
+      replayed = physics.Step(local_body, command, delta_time);
+      return Predicted{.body = replayed, .fall = physics.Fall(local_body)};
+    });
+
+    const math::Vec3 jump = replayed.position - tick_state.local_body.position;
+    LD("subsystem=predictionworld event=reconcile sequence={} error={:.3f} jump={:.3f}", tick_acknowledgement->sequence,
+       math::Length(authoritative.position - predicted->body.position), math::Length(jump));
+    tick_state.total_correction += jump;
+    tick_state.local_body = replayed;
+  }
+
+  void OnMovement(float delta_time) {
+    const nvtx3::scoped_range range{"Movement"};
+    LT("subsystem=predictionworld event=movement");
+    tick_state.local_body = physics.Step(local_body, tick_command.movement, delta_time);
+  }
+
+  void OnWeaponHandling() {
+    const nvtx3::scoped_range range{"WeaponHandling"};
+    LT("subsystem=predictionworld event=weapon_handling");
+    // TODO(sergioffpc): not yet a module of its own - see prediction.h.
+  }
+
+  void OnCommit() {
+    const nvtx3::scoped_range range{"Commit"};
+    LT("subsystem=predictionworld event=commit");
+    // tick_state.local_body is already set by OnMovement; what is left
+    // is remembering it for the server's answer to this command.
+    if (tick_sequence != 0) {
+      history.Record(tick_sequence, tick_command.movement,
+                     Predicted{.body = tick_state.local_body, .fall = physics.Fall(local_body)});
+    }
   }
 };
 
@@ -125,8 +167,18 @@ World::World(const physics::StaminaConfig& stamina_config) : impl_(std::make_uni
 
 World::~World() = default;
 
-std::expected<void, physics::StaticMeshError> World::AddStaticMesh(const physics::StaticMesh& mesh) {
-  return impl_->physics.AddStaticMesh(mesh);
+std::expected<void, physics::CollisionMeshError> World::AddCollisionMesh(const physics::CollisionMesh& mesh) {
+  return impl_->physics.AddCollisionMesh(mesh);
+}
+
+void World::Start(const math::Vec3& spawn, const physics::StaminaConfig& stamina_rules) {
+  Impl& impl = *impl_;
+  impl.physics.SetStaminaConfig(stamina_rules);
+  physics::BodyState start{};
+  start.position = spawn;
+  impl.physics.SetState(impl.local_body, start);
+  impl.history = History{};
+  impl.tick_state = State{.local_body = start};
 }
 
 World::World(World&&) noexcept = default;

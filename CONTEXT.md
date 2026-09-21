@@ -23,8 +23,16 @@ The client simulating its own actions locally, immediately, before the server co
 _Avoid_: Client simulation
 
 **Reconciliation**:
-The process of correcting a client's predicted state against the server's authoritative state via smooth snap/blend, never by exact replay or resimulation.
+The process of correcting a client's predicted state against the server's authoritative state: the client restores the server's state and replays the commands the server has not yet acknowledged from it, and presentation smooths the resulting jump.
 _Avoid_: Resync, rollback
+
+**Spawn point**:
+A place in the Map where a player's feet are put when it joins, authored as a scene node in the pack (ADR-0032). The server takes them in order, starting over after the last, and tells the client which one it got; which player gets which is Game policy once round rules exist.
+_Avoid_: Spawn location, start position
+
+**Roster**:
+Who is already in the match, each with its last known body, as told to a client when the server admits it. After that the Authoritative State lists everyone every tick.
+_Avoid_: Player list, lobby
 
 **RTT (Round-Trip Time)**:
 The measured network latency between a client and the server for a single request/response cycle.
@@ -41,8 +49,12 @@ Gameplay-specific rules (round lifecycle, win conditions, spawn rules) that deci
 _Avoid_: Game logic, gameplay code (too broad — conflates policy with mechanism)
 
 **Data-driven configuration**:
-Tunable values (e.g. weapon/ammo damage) read from data files rather than expressed as mechanism code or policy scripts — a third category alongside mechanism and policy.
-_Avoid_: Config, settings (too generic — this specifically means gameplay-tunable values, not engine/app configuration)
+Tunable values (e.g. weapon/ammo damage, stamina rules) written as a Lua table script rather than expressed as mechanism code or policy scripts — a third category alongside mechanism and policy. A value may be an expression of other values; the script is evaluated at load into a plain immutable struct (**Parameters**), reloaded live by the server and sent to clients (ADR-0039).
+_Avoid_: Config, settings (too generic — this specifically means simulation-tunable values, not startup settings, which the YAML files of ADR-0034 hold in place of command-line arguments)
+
+**Parameters**:
+The result of loading the data-driven configuration script (`parameters.lua`): a plain immutable struct of the simulation's tunable values, numbered by a generation that grows with each reload. Whatever client and server must agree on (the tick rate first of all) is a parameter: the server alone decides it and sends it to every client, which ticks and predicts with the server's numbers and never its own (ADR-0039).
+_Avoid_: Tuning, settings; not a function's parameters
 
 **Map**:
 The static space a match is played in - its collision, spawn points and hitboxes - authored in OpenUSD (ADR-0015) and cooked into the signed pack. The shared `map` module builds its collision into the physics of both the client's PredictionWorld and the server's SimulationWorld.

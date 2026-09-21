@@ -52,7 +52,7 @@ using StatusHandler = std::function<void(SteamNetConnectionStatusChangedCallback
 // dropped, and ids are never reused, so a new owner allocated at the same
 // address cannot receive them. The lock is held while a handler runs, so an
 // owner cannot finish unregistering (and be destroyed) mid-callback.
-class LiveHandlers {
+class StatusHandlerRegistry {
  public:
   std::int64_t Add(StatusHandler handler) {
     const std::lock_guard<std::mutex> lock(mutex_);
@@ -80,20 +80,20 @@ class LiveHandlers {
   std::unordered_map<std::int64_t, StatusHandler> handlers_;
 };
 
-LiveHandlers& LiveNetworkingHandlers() {
-  static LiveHandlers live;
-  return live;
+StatusHandlerRegistry& StatusHandlers() {
+  static StatusHandlerRegistry registry;
+  return registry;
 }
 
 // Registers a handler for as long as it lives. An owner declares it as its
 // last member, so it unregisters first - before the members the handler
 // reads are destroyed.
-class LiveRegistration {
+class StatusHandlerRegistration {
  public:
-  explicit LiveRegistration(StatusHandler handler) : id_(LiveNetworkingHandlers().Add(std::move(handler))) {}
-  ~LiveRegistration() { LiveNetworkingHandlers().Remove(id_); }
-  LiveRegistration(const LiveRegistration&) = delete;
-  LiveRegistration& operator=(const LiveRegistration&) = delete;
+  explicit StatusHandlerRegistration(StatusHandler handler) : id_(StatusHandlers().Add(std::move(handler))) {}
+  ~StatusHandlerRegistration() { StatusHandlers().Remove(id_); }
+  StatusHandlerRegistration(const StatusHandlerRegistration&) = delete;
+  StatusHandlerRegistration& operator=(const StatusHandlerRegistration&) = delete;
 
   // What to set as the connection's user data so its events reach the handler.
   [[nodiscard]] std::int64_t Id() const { return id_; }
@@ -104,7 +104,7 @@ class LiveRegistration {
 
 // The status-changed callback both roles register with GameNetworkingSockets.
 void OnStatusChanged(SteamNetConnectionStatusChangedCallback_t* info) {
-  LiveNetworkingHandlers().Dispatch(info->m_info.m_nUserData, info);
+  StatusHandlers().Dispatch(info->m_info.m_nUserData, info);
 }
 
 int SendFlags(Reliability reliability) {
@@ -131,6 +131,15 @@ void SimulateNetworkConditions(const SimulatedConditions& conditions) {
   ISteamNetworkingUtils* utils = SteamNetworkingUtils();
   utils->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_FakePacketLag_Send, conditions.latency_ms);
   utils->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketLoss_Send, conditions.loss_percent);
+  for (const ESteamNetworkingConfigValue timeout :
+       {k_ESteamNetworkingConfig_TimeoutInitial, k_ESteamNetworkingConfig_TimeoutConnected}) {
+    if (conditions.timeout_ms > 0) {
+      utils->SetGlobalConfigValueInt32(timeout, conditions.timeout_ms);
+    } else {
+      // A null value clears the override, back to the library's default.
+      utils->SetConfigValue(timeout, k_ESteamNetworkingConfig_Global, 0, k_ESteamNetworkingConfig_Int32, nullptr);
+    }
+  }
   LI("subsystem=networking event=simulated_conditions latency_ms={} loss_percent={}", conditions.latency_ms,
      conditions.loss_percent);
 }
@@ -171,7 +180,8 @@ struct Client::Impl {
   }
 
   // Last, so it unregisters before the members HandleStatusChanged reads go.
-  LiveRegistration registration{[this](SteamNetConnectionStatusChangedCallback_t* info) { HandleStatusChanged(info); }};
+  StatusHandlerRegistration registration{
+      [this](SteamNetConnectionStatusChangedCallback_t* info) { HandleStatusChanged(info); }};
 };
 
 Client::Client() : impl_(std::make_unique<Impl>()) {}
@@ -314,12 +324,17 @@ struct Server::Impl {
            peer_addr);
         break;
       case k_ESteamNetworkingConnectionState_ClosedByPeer:
-      case k_ESteamNetworkingConnectionState_ProblemDetectedLocally:
+      case k_ESteamNetworkingConnectionState_ProblemDetectedLocally: {
         SteamNetworkingSockets()->CloseConnection(info->m_hConn, 0, nullptr, false);
         pending_peers.erase(info->m_hConn);
         connected_peers.erase(info->m_hConn);
-        queued_events.push_back(PeerEvent{.peer = peer, .type = PeerEventType::kDisconnected});
-        if (info->m_info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally) {
+        const bool lost = info->m_info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally;
+        queued_events.push_back(PeerEvent{
+            .peer = peer,
+            .type = PeerEventType::kDisconnected,
+            .reason = lost ? DisconnectReason::kConnectionLost : DisconnectReason::kClosedByPeer,
+        });
+        if (lost) {
           LW("subsystem=networking event=state_changed role=server state=disconnected peer={} peer_addr={} "
              "reason=problem_detected_locally",
              peer_id, peer_addr);
@@ -329,13 +344,15 @@ struct Server::Impl {
              peer_id, peer_addr);
         }
         break;
+      }
       default:
         break;
     }
   }
 
   // Last, so it unregisters before the members HandleStatusChanged reads go.
-  LiveRegistration registration{[this](SteamNetConnectionStatusChangedCallback_t* info) { HandleStatusChanged(info); }};
+  StatusHandlerRegistration registration{
+      [this](SteamNetConnectionStatusChangedCallback_t* info) { HandleStatusChanged(info); }};
 };
 
 Server::Server(const Endpoint& local_endpoint) : impl_(std::make_unique<Impl>()) {

@@ -41,7 +41,9 @@ namespace augusta::presentation {
 enum class Phase {
   // Mechanism. Interpolates between the last two Prediction States for
   // smooth motion at render frame rate - World::RunFrame's latest
-  // parameter and the previous call's, internally retained.
+  // parameter and the previous call's, internally retained - and slides
+  // the local player out of the jumps a reconciliation replay makes
+  // (Correction, ADR-0004).
   kInterpolation,
   // Mechanism. View camera - position/orientation, ADS zoom transition,
   // recoil kick decay, view bob. Not yet a module of its own - see the
@@ -65,11 +67,15 @@ enum class Phase {
 };
 
 // PresentationWorld's per-frame output - ADR-0024/ARCHITECTURE.md's
-// "Presentation State". Deliberately empty for now - same
-// deferred-design posture as augusta::renderer's "what gets drawn"
+// "Presentation State". Beyond local_position, deliberately empty for now -
+// same deferred-design posture as augusta::renderer's "what gets drawn"
 // (renderer.h) and augusta::prediction::State; its real shape depends on
 // ECS component shapes not yet designed.
-struct State {};
+struct State {
+  /// Where the local player is shown: its predicted position, plus the offset
+  /// that hides a reconciliation jump and fades (see correction.h).
+  math::Vec3 local_position{};
+};
 
 // The client's single PresentationWorld. The client constructs exactly
 // one, on the Main/Render thread (ADR-0005). Owns the Flecs world it

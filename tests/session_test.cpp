@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -27,6 +28,7 @@
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
+#include "augusta/simulation.h"
 #include "augusta/version.h"
 #include "host.h"
 #include "match.h"
@@ -37,14 +39,16 @@
 // their ticks by hand.
 namespace {
 
+using augusta::harness::Failure;
+using augusta::harness::FailureKind;
 using augusta::harness::Session;
 using augusta::harness::SessionConfig;
 using augusta::input::Command;
 using augusta::math::Vec3;
 using augusta::networking::ConnectionState;
 using augusta::networking::Endpoint;
+using augusta::physics::CollisionMesh;
 using augusta::physics::Stance;
-using augusta::physics::StaticMesh;
 using augusta::protocol::JoinRefusal;
 using augusta::server::Host;
 using augusta::server::HostConfig;
@@ -52,6 +56,9 @@ using augusta::server::HostConfig;
 constexpr auto kPollInterval = std::chrono::milliseconds(10);
 constexpr auto kPollDeadline = std::chrono::seconds(5);
 constexpr float kFixedTick = 1.0F / 60.0F;
+
+// A PredictionWorld with no map, on default stamina rules.
+augusta::prediction::World EmptyWorld() { return augusta::prediction::World(augusta::physics::StaminaConfig{}); }
 
 // ctest runs every test case in its own process, possibly in parallel, so a
 // fixed port would collide; derive one from the process id instead.
@@ -62,7 +69,9 @@ std::string LoopbackAddress() {
   const int pid = getpid();
 #endif
   constexpr int kFirstPort = 27100;
-  constexpr int kPortSpan = 800;
+  // Prime, since Windows process ids are all multiples of 4 and a span sharing
+  // that factor would leave only a quarter of its ports in use.
+  constexpr int kPortSpan = 2999;
   return "127.0.0.1:" + std::to_string(kFirstPort + (pid % kPortSpan));
 }
 
@@ -82,7 +91,7 @@ class SessionTest : public ::testing::Test {
   // it until Lua is embedded, ADR-0022); point it at a real script then.
   SessionTest()
       : host_(HostConfig{.script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}}),
-        session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}) {}
+        session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld()) {}
 
   // Runs both sides' network work until the session reports connected, or
   // the deadline passes.
@@ -147,7 +156,8 @@ class JoinTest : public ::testing::Test {
   // Starts connecting a new client that presents engine_version.
   Session& AddClient(const std::string& engine_version = std::string(augusta::EngineVersion())) {
     sessions_.push_back(std::make_unique<Session>(
-        SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .engine_version = engine_version}));
+        SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .engine_version = engine_version},
+        EmptyWorld()));
     sessions_.back()->Connect();
     return *sessions_.back();
   }
@@ -210,6 +220,25 @@ TEST_F(JoinTest, AClientWithAnotherEngineVersionIsRefusedForTheVersion) {
   EXPECT_FALSE(client.GetSessionId().has_value());
 }
 
+TEST_F(JoinTest, ARefusedClientReportsTheRefusalAsItsFailure) {
+  Session& client = AddClient("0.0.0-not-the-servers");
+
+  ASSERT_TRUE(WaitForAnswers());
+
+  const auto failure = client.GetFailure();
+  ASSERT_TRUE(failure.has_value());
+  EXPECT_EQ(failure->kind, FailureKind::kRefused);
+  EXPECT_EQ(failure->refusal, JoinRefusal::kVersionMismatch);
+}
+
+TEST_F(JoinTest, AnAdmittedClientHasNoFailure) {
+  Session& client = AddClient();
+
+  ASSERT_TRUE(WaitForAnswers());
+
+  EXPECT_FALSE(client.GetFailure().has_value());
+}
+
 TEST_F(JoinTest, TheNinthClientIsRefusedBecauseTheMatchIsFull) {
   for (std::size_t i = 0; i < augusta::protocol::kMaxPlayers; ++i) {
     AddClient();
@@ -227,11 +256,18 @@ TEST_F(JoinTest, TheNinthClientIsRefusedBecauseTheMatchIsFull) {
 }
 
 // A large horizontal slab at height y, its triangles facing up.
-StaticMesh FloorAt(float y) {
+CollisionMesh FloorAt(float y) {
   constexpr float kExtent = 100.0F;
-  return StaticMesh{.points = {Vec3(-kExtent, y, -kExtent), Vec3(-kExtent, y, kExtent), Vec3(kExtent, y, kExtent),
-                               Vec3(kExtent, y, -kExtent)},
-                    .indices = {0, 1, 2, 0, 2, 3}};
+  return CollisionMesh{.points = {Vec3(-kExtent, y, -kExtent), Vec3(-kExtent, y, kExtent), Vec3(kExtent, y, kExtent),
+                                  Vec3(kExtent, y, -kExtent)},
+                       .indices = {0, 1, 2, 0, 2, 3}};
+}
+
+// A PredictionWorld whose map is a floor at height y.
+augusta::prediction::World WorldWithFloorAt(float y) {
+  augusta::prediction::World world = EmptyWorld();
+  EXPECT_TRUE(world.AddCollisionMesh(FloorAt(y)).has_value());
+  return world;
 }
 
 // The client spawns its predicted body at the origin, so a floor two meters
@@ -240,8 +276,7 @@ constexpr float kFloorHeight = -2.0F;
 constexpr int kFallTicks = 120;
 
 TEST(MapSessionTest, ThePredictedBodyRestsOnTheMapsFloor) {
-  const Endpoint address{.address = LoopbackAddress()};
-  Session session(SessionConfig{.server = address, .collision = {FloorAt(kFloorHeight)}});
+  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, WorldWithFloorAt(kFloorHeight));
 
   augusta::prediction::State state;
   for (int i = 0; i < kFallTicks; ++i) {
@@ -252,7 +287,7 @@ TEST(MapSessionTest, ThePredictedBodyRestsOnTheMapsFloor) {
 }
 
 TEST(MapSessionTest, WithoutAMapThePredictedBodyKeepsFalling) {
-  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}});
+  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
 
   augusta::prediction::State state;
   for (int i = 0; i < kFallTicks; ++i) {
@@ -262,9 +297,13 @@ TEST(MapSessionTest, WithoutAMapThePredictedBodyKeepsFalling) {
   EXPECT_LT(state.local_body.position.y, kFloorHeight - 5.0F);
 }
 
-TEST(MapSessionTest, ASessionRefusesAMapMeshPhysicsRejects) {
-  EXPECT_THROW(Session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .collision = {StaticMesh{}}}),
-               std::runtime_error);
+TEST(MapSessionTest, APredictionWorldRefusesAMapMeshPhysicsRejects) {
+  augusta::prediction::World world = EmptyWorld();
+
+  const auto added = world.AddCollisionMesh(CollisionMesh{});
+
+  ASSERT_FALSE(added.has_value());
+  EXPECT_EQ(added.error(), augusta::physics::CollisionMeshError::kEmpty);
 }
 
 TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
@@ -281,7 +320,7 @@ TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
 TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
   EXPECT_THROW(Host(HostConfig{.script_path = "scripts/round.lua",
                                .listen = Endpoint{.address = LoopbackAddress()},
-                               .collision = {StaticMesh{}}}),
+                               .collision = {CollisionMesh{}}}),
                std::runtime_error);
 }
 
@@ -300,12 +339,11 @@ class MovementTest : public ::testing::Test {
 
   // The client always knows the floor; the host knows server_map, which a test
   // may make differ from it to give the two something to disagree about.
-  explicit MovementTest(std::vector<StaticMesh> server_map)
+  explicit MovementTest(std::vector<CollisionMesh> server_map)
       : host_(HostConfig{.script_path = "scripts/round.lua",
                          .listen = Endpoint{.address = LoopbackAddress()},
                          .collision = std::move(server_map)}),
-        session_(
-            SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .collision = {FloorAt(kGroundHeight)}}) {}
+        session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, WorldWithFloorAt(kGroundHeight)) {}
 
   void TearDown() override { augusta::networking::SimulateNetworkConditions({}); }
 
@@ -539,8 +577,11 @@ class RawClient {
     return false;
   }
 
-  void Send(const augusta::protocol::Message& message) {
-    client_.Send(augusta::protocol::Encode(message), augusta::networking::Reliability::kReliable);
+  void Send(const augusta::protocol::Message& message) { SendPayload(augusta::protocol::Encode(message)); }
+
+  // Sends bytes as they are, whether or not they are a message.
+  void SendPayload(const augusta::protocol::Bytes& payload) {
+    client_.Send(payload, augusta::networking::Reliability::kReliable);
   }
 
   // The Authoritative State updates received since the last call.
@@ -604,13 +645,13 @@ TEST_F(MovementTest, CommandsThatAreOutOfOrderNonFiniteOrOutOfRangeAreDroppedWit
 }
 
 // A vertical wall across the walking path, at x, that only the server knows.
-StaticMesh WallAt(float x) {
+CollisionMesh WallAt(float x) {
   constexpr float kHalfWidth = 20.0F;
   constexpr float kHeight = 5.0F;
   constexpr float kBottom = -1.0F;
-  return StaticMesh{.points = {Vec3(x, kBottom, -kHalfWidth), Vec3(x, kHeight, -kHalfWidth),
-                               Vec3(x, kHeight, kHalfWidth), Vec3(x, kBottom, kHalfWidth)},
-                    .indices = {0, 1, 2, 0, 2, 3}};
+  return CollisionMesh{.points = {Vec3(x, kBottom, -kHalfWidth), Vec3(x, kHeight, -kHalfWidth),
+                                  Vec3(x, kHeight, kHalfWidth), Vec3(x, kBottom, kHalfWidth)},
+                       .indices = {0, 1, 2, 0, 2, 3}};
 }
 
 class DivergedMovementTest : public MovementTest {
@@ -640,6 +681,465 @@ TEST_F(DivergedMovementTest, ADivergenceAtAHundredMillisecondsOfLatencyIsCorrect
 
   EXPECT_LE(steps_to_agree, kBudgetSteps);
   EXPECT_LT(Self().position.x, kWallX);
+}
+
+// A host on a floor and however many clients a test joins to it, driven tick by tick.
+class LoopbackMatch : public ::testing::Test {
+ protected:
+  static constexpr float kFloorY = 0.0F;
+  static constexpr int kSettleTicks = 30;
+  static constexpr auto kNetworkDelay = std::chrono::milliseconds(8);
+
+  explicit LoopbackMatch(const HostConfig& config) : host_(config) {}
+
+  // A host config for the floor with spawn_points and the stamina rules.
+  static HostConfig OnTheFloor(std::vector<Vec3> spawn_points, const augusta::physics::StaminaConfig& stamina = {}) {
+    return HostConfig{.stamina = stamina,
+                      .script_path = "scripts/round.lua",
+                      .listen = Endpoint{.address = LoopbackAddress()},
+                      .collision = {FloorAt(kFloorY)},
+                      .spawn_points = std::move(spawn_points)};
+  }
+
+  // Connects a new client and runs the network until the server has answered it.
+  // The client's own stamina rules are none: any it uses came from the server.
+  Session& Join() {
+    sessions_.push_back(std::make_unique<Session>(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}},
+                                                  WorldWithFloorAt(kFloorY)));
+    Session& client = *sessions_.back();
+    client.Connect();
+    const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+    while (!client.GetSessionId().has_value() && std::chrono::steady_clock::now() < deadline) {
+      Exchange();
+      std::this_thread::sleep_for(kPollInterval);
+    }
+    EXPECT_TRUE(client.GetSessionId().has_value());
+    return client;
+  }
+
+  void Exchange() {
+    host_.PumpNetwork();
+    for (const auto& session : sessions_) {
+      session->PumpEvents();
+      session->ExchangeMessages();
+    }
+  }
+
+  // One tick of the whole match: every client predicts and sends command, the
+  // server ticks, the states come back.
+  void Step(const Command& command = Command{}) {
+    for (const auto& session : sessions_) {
+      states_[session.get()] = session->Tick(command, kFixedTick);
+    }
+    std::this_thread::sleep_for(kNetworkDelay);
+    Exchange();
+    host_.Tick(kFixedTick);
+    std::this_thread::sleep_for(kNetworkDelay);
+    Exchange();
+  }
+
+  void Run(int steps, const Command& command = Command{}) {
+    for (int i = 0; i < steps; ++i) {
+      Step(command);
+    }
+  }
+
+  // Where the newest state client received puts session, or nullopt if it lists no such player.
+  static std::optional<augusta::physics::BodyState> BodySeenBy(const Session& client,
+                                                               augusta::protocol::SessionId session) {
+    const auto state = client.GetAuthoritativeState();
+    if (state.has_value()) {
+      for (const auto& player : state->players) {
+        if (player.session == session) {
+          return player.body;
+        }
+      }
+    }
+    return std::nullopt;
+  }
+
+  static std::optional<Vec3> PositionSeenBy(const Session& client, augusta::protocol::SessionId session) {
+    const auto body = BodySeenBy(client, session);
+    return body.has_value() ? std::optional<Vec3>(body->position) : std::nullopt;
+  }
+
+  Host host_;
+  std::vector<std::unique_ptr<Session>> sessions_;
+  std::map<const Session*, augusta::prediction::State> states_;
+};
+
+class SpawnTest : public LoopbackMatch {
+ protected:
+  static std::vector<Vec3> SpawnPoints() {
+    return {Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F), Vec3(30.0F, kFloorY, -5.0F)};
+  }
+
+  SpawnTest() : LoopbackMatch(OnTheFloor(SpawnPoints())) {}
+};
+
+TEST_F(SpawnTest, TwoClientsThatJoinBackToBackSpawnAtDifferentSpawnPoints) {
+  Session& first = Join();
+  Session& second = Join();
+
+  Run(kSettleTicks);
+
+  const auto first_position = PositionSeenBy(first, *first.GetSessionId());
+  const auto second_position = PositionSeenBy(first, *second.GetSessionId());
+  ASSERT_TRUE(first_position.has_value() && second_position.has_value());
+  EXPECT_NEAR(first_position->x, SpawnPoints()[0].x, 0.1F);
+  EXPECT_NEAR(first_position->z, SpawnPoints()[0].z, 0.1F);
+  EXPECT_NEAR(second_position->x, SpawnPoints()[1].x, 0.1F);
+  EXPECT_NEAR(second_position->z, SpawnPoints()[1].z, 0.1F);
+}
+
+TEST_F(SpawnTest, AClientsPredictionStartsAtItsSpawnPoint) {
+  Join();
+  Session& second = Join();
+
+  Run(1);
+
+  const augusta::physics::BodyState& body = states_.at(&second).local_body;
+  EXPECT_NEAR(body.position.x, SpawnPoints()[1].x, 0.1F);
+  EXPECT_NEAR(body.position.z, SpawnPoints()[1].z, 0.1F);
+}
+
+TEST_F(SpawnTest, AJoiningClientIsToldWhoIsAlreadyThereAndWhereTheyAreNow) {
+  Session& first = Join();
+  Run(kSettleTicks);
+  // The first player walks away from its spawn point (3 m/s for half a second or more).
+  Command walk;
+  walk.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+  Run(kSettleTicks, walk);
+
+  Session& second = Join();
+
+  const auto roster = second.GetRoster();
+  ASSERT_EQ(roster.size(), 1U);
+  EXPECT_EQ(roster[0].session, *first.GetSessionId());
+  EXPECT_GT(roster[0].body.position.x, SpawnPoints()[0].x + 1.0F);
+  EXPECT_NEAR(roster[0].body.position.z, SpawnPoints()[0].z, 0.1F);
+}
+
+TEST_F(SpawnTest, TheFirstClientAloneInTheMatchHasAnEmptyRoster) { EXPECT_TRUE(Join().GetRoster().empty()); }
+
+TEST_F(SpawnTest, ThePlayersAlreadyThereSeeTheNewcomerAppearInTheirState) {
+  Session& first = Join();
+  Run(kSettleTicks);
+  ASSERT_EQ(first.GetAuthoritativeState()->players.size(), 1U);
+
+  Session& second = Join();
+  Run(kSettleTicks);
+
+  EXPECT_EQ(first.GetAuthoritativeState()->players.size(), 2U);
+  EXPECT_TRUE(PositionSeenBy(first, *second.GetSessionId()).has_value());
+}
+
+TEST_F(SpawnTest, MoreJoinsThanSpawnPointsWrapInsteadOfFailing) {
+  const std::size_t joins = SpawnPoints().size() + 1;
+  for (std::size_t i = 0; i < joins; ++i) {
+    Join();
+  }
+
+  Run(kSettleTicks);
+
+  Session& last = *sessions_.back();
+  EXPECT_EQ(last.GetAuthoritativeState()->players.size(), joins);
+  const auto position = PositionSeenBy(last, *last.GetSessionId());
+  ASSERT_TRUE(position.has_value());
+  EXPECT_NEAR(position->x, SpawnPoints()[0].x, 0.1F);
+}
+
+// One client on a floor, on the server's stamina rules: a bar that empties in
+// a second of sprinting and refills in four of rest, and a walk forced at or
+// below a fifth of it.
+class StaminaTest : public LoopbackMatch {
+ protected:
+  static constexpr float kForcedWalkBelow = 0.2F;
+  static constexpr float kWalkSpeed = 3.0F;
+  static constexpr float kSprintSpeed = 4.8F;
+
+  StaminaTest()
+      : LoopbackMatch(OnTheFloor(
+            {}, {.deplete_per_second = 1.0F, .regen_per_second = 0.25F, .forced_walk_below = kForcedWalkBelow})) {}
+
+  void SetUp() override {
+    client_ = &Join();
+    Run(kSettleTicks);
+  }
+
+  static Command Moving(bool sprint) {
+    Command command;
+    command.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+    command.movement.sprint = sprint;
+    return command;
+  }
+
+  [[nodiscard]] augusta::physics::BodyState Authoritative() const {
+    return BodySeenBy(*client_, *client_->GetSessionId()).value();
+  }
+
+  static float Speed(const augusta::physics::BodyState& body) { return std::hypot(body.velocity.x, body.velocity.z); }
+
+  // The player's mean authoritative speed over ticks ticks of command.
+  float MeanSpeedOver(int ticks, const Command& command) {
+    float total = 0.0F;
+    for (int i = 0; i < ticks; ++i) {
+      Step(command);
+      total += Speed(Authoritative());
+    }
+    return total / static_cast<float>(ticks);
+  }
+
+  Session* client_ = nullptr;
+};
+
+TEST_F(StaminaTest, SustainedSprintDrainsStaminaToTheThresholdAndSpeedDropsToWalking) {
+  const float fresh_speed = MeanSpeedOver(10, Moving(/*sprint=*/true));
+
+  Run(90, Moving(/*sprint=*/true));
+  const float worn_out_speed = MeanSpeedOver(30, Moving(/*sprint=*/true));
+
+  EXPECT_NEAR(fresh_speed, kSprintSpeed, 0.3F);
+  EXPECT_LE(Authoritative().stamina, kForcedWalkBelow + 0.05F);
+  // Not always exactly walking speed: the rule is memoryless, so a player
+  // holding sprint at the threshold gets the odd sprinting tick back.
+  EXPECT_LT(worn_out_speed, (kWalkSpeed + kSprintSpeed) / 2.0F);
+}
+
+TEST_F(StaminaTest, StaminaRecoversWhileNotSprintingAndSprintIsAllowedAgainOnlyAboveTheThreshold) {
+  Run(100, Moving(/*sprint=*/true));
+  const float drained = Authoritative().stamina;
+  ASSERT_LE(drained, kForcedWalkBelow + 0.05F);
+
+  // Walking is not sprinting, so stamina comes back.
+  Run(30, Moving(/*sprint=*/false));
+  EXPECT_GT(Authoritative().stamina, drained);
+
+  // Well above the threshold, sprint is honored again.
+  Run(70, Moving(/*sprint=*/false));
+  ASSERT_GT(Authoritative().stamina, kForcedWalkBelow + 0.3F);
+  Run(5, Moving(/*sprint=*/true));
+  EXPECT_GT(Speed(Authoritative()), kWalkSpeed + 1.0F);
+}
+
+TEST_F(StaminaTest, AClientPredictsItsStaminaWithTheServersRulesNotItsOwn) {
+  // The client was built with rules that never drain: it can only be following the server's.
+  Run(45, Moving(/*sprint=*/true));
+
+  const float predicted = states_.at(client_).local_body.stamina;
+
+  EXPECT_LT(predicted, 0.7F);
+  EXPECT_NEAR(predicted, Authoritative().stamina, 0.1F);
+}
+
+// What a client is told when its session ends on its own.
+TEST(SessionFailureTest, ASessionThatNeverConnectedHasNoFailure) {
+  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
+
+  EXPECT_FALSE(session.GetFailure().has_value());
+}
+
+TEST(SessionFailureTest, AServerNobodyIsListeningAtIsUnreachable) {
+  // Set before connecting: the timeout only reaches new connections.
+  augusta::networking::SimulateNetworkConditions({.timeout_ms = 500});
+  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
+  session.Connect();
+
+  std::optional<Failure> failure;
+  const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+  while (!failure.has_value() && std::chrono::steady_clock::now() < deadline) {
+    session.PumpEvents();
+    session.ExchangeMessages();
+    failure = session.GetFailure();
+    std::this_thread::sleep_for(kPollInterval);
+  }
+  augusta::networking::SimulateNetworkConditions({});
+
+  ASSERT_TRUE(failure.has_value());
+  EXPECT_EQ(failure->kind, FailureKind::kServerUnreachable);
+}
+
+TEST(SessionFailureTest, AServerThatGoesAwayAfterAdmittingTheClientIsAConnectionLost) {
+  auto host = std::make_unique<Host>(
+      HostConfig{.script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}});
+  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
+  session.Connect();
+  const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+  while (!session.GetSessionId().has_value() && std::chrono::steady_clock::now() < deadline) {
+    host->PumpNetwork();
+    session.PumpEvents();
+    session.ExchangeMessages();
+    std::this_thread::sleep_for(kPollInterval);
+  }
+  ASSERT_TRUE(session.GetSessionId().has_value());
+  ASSERT_FALSE(session.GetFailure().has_value());
+
+  host.reset();
+  std::optional<Failure> failure;
+  const auto end = std::chrono::steady_clock::now() + kPollDeadline;
+  while (!failure.has_value() && std::chrono::steady_clock::now() < end) {
+    session.PumpEvents();
+    session.ExchangeMessages();
+    failure = session.GetFailure();
+    std::this_thread::sleep_for(kPollInterval);
+  }
+
+  ASSERT_TRUE(failure.has_value());
+  EXPECT_EQ(failure->kind, FailureKind::kConnectionLost);
+}
+
+TEST(SessionFailureTest, EndingTheSessionOneselfIsNotAFailure) {
+  Host host(HostConfig{.script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}});
+  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
+  session.Connect();
+  const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+  while (session.GetState() != ConnectionState::kConnected && std::chrono::steady_clock::now() < deadline) {
+    host.PumpNetwork();
+    session.PumpEvents();
+    std::this_thread::sleep_for(kPollInterval);
+  }
+  ASSERT_EQ(session.GetState(), ConnectionState::kConnected);
+
+  session.Disconnect();
+  session.PumpEvents();
+
+  EXPECT_FALSE(session.GetFailure().has_value());
+}
+
+TEST(SessionFailureTest, EveryFailureIsDescribedForThePlayerAndARefusalSaysWhy) {
+  const std::string unreachable = augusta::harness::DescribeFailure({.kind = FailureKind::kServerUnreachable});
+  const std::string lost = augusta::harness::DescribeFailure({.kind = FailureKind::kConnectionLost});
+  const std::string full =
+      augusta::harness::DescribeFailure({.kind = FailureKind::kRefused, .refusal = JoinRefusal::kMatchFull});
+  const std::string version =
+      augusta::harness::DescribeFailure({.kind = FailureKind::kRefused, .refusal = JoinRefusal::kVersionMismatch});
+
+  EXPECT_FALSE(unreachable.empty());
+  EXPECT_FALSE(lost.empty());
+  EXPECT_NE(unreachable, lost);
+  EXPECT_NE(full, version);
+  EXPECT_NE(full.find(std::string(augusta::protocol::DescribeJoinRefusal(JoinRefusal::kMatchFull))), std::string::npos)
+      << full;
+}
+
+// The server against peers that misbehave or leave.
+class RobustnessTest : public LoopbackMatch {
+ protected:
+  static constexpr auto kSilentPeerDeadline = std::chrono::seconds(20);
+
+  RobustnessTest() : LoopbackMatch(OnTheFloor({})) {}
+
+  void TearDown() override { augusta::networking::SimulateNetworkConditions({}); }
+
+  // Ticks the server once, with the network work around it.
+  augusta::simulation::State ServerTick() {
+    std::this_thread::sleep_for(kNetworkDelay);
+    Exchange();
+    auto state = host_.Tick(kFixedTick);
+    std::this_thread::sleep_for(kNetworkDelay);
+    Exchange();
+    return state;
+  }
+
+  static Command Forward() {
+    Command command;
+    command.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+    return command;
+  }
+};
+
+TEST_F(RobustnessTest, GarbageFromAPeerIsDroppedAndTheMatchAndTheOtherClientsAreUnaffected) {
+  Session& bystander = Join();
+  Run(kSettleTicks);
+  RawClient raw(Endpoint{.address = LoopbackAddress()});
+  ASSERT_TRUE(raw.Join(host_));
+
+  using augusta::protocol::Bytes;
+  Bytes truncated_state = augusta::protocol::Encode(augusta::protocol::AuthoritativeState{.players = {{}}});
+  truncated_state.resize(truncated_state.size() / 2);
+  Bytes not_for_the_server = augusta::protocol::Encode(augusta::protocol::AuthoritativeState{});
+  Bytes commands_with_trailing_bytes = augusta::protocol::Encode(augusta::protocol::Commands{});
+  commands_with_trailing_bytes.push_back(std::byte{7});
+  const Bytes garbage[] = {
+      Bytes{},
+      Bytes{std::byte{0}},
+      Bytes{std::byte{0xFF}, std::byte{1}, std::byte{2}},
+      truncated_state,
+      not_for_the_server,
+      commands_with_trailing_bytes,
+      Bytes(64 * 1024, std::byte{0xAB}),
+      Bytes(1000, std::byte{static_cast<unsigned char>(augusta::protocol::MessageType::kCommands)}),
+  };
+  for (const Bytes& payload : garbage) {
+    raw.SendPayload(payload);
+  }
+  const auto before = bystander.GetAuthoritativeState();
+  ASSERT_TRUE(before.has_value());
+
+  // The match goes on: the server ticks, and the bystander keeps predicting and being reconciled.
+  Run(kSettleTicks, Forward());
+
+  const auto after = bystander.GetAuthoritativeState();
+  ASSERT_TRUE(after.has_value());
+  EXPECT_GT(after->tick, before->tick);
+  EXPECT_EQ(after->players.size(), 2U);  // The bystander, and the raw peer that only joined.
+  EXPECT_GT(BodySeenBy(bystander, *bystander.GetSessionId())->position.x, 1.0F);
+  for (const auto& player : after->players) {
+    EXPECT_TRUE(std::isfinite(player.body.position.x) && std::isfinite(player.body.position.y));
+  }
+  EXPECT_EQ(bystander.GetState(), ConnectionState::kConnected);
+}
+
+TEST_F(RobustnessTest, AfterAClientDisconnectsItsPlayerIsAbsentFromOthersStateAndANinthClientCanJoin) {
+  for (std::size_t i = 0; i < augusta::protocol::kMaxPlayers; ++i) {
+    Join();
+  }
+  Run(kSettleTicks);
+  Session& watcher = *sessions_.front();
+  ASSERT_EQ(watcher.GetAuthoritativeState()->players.size(), augusta::protocol::kMaxPlayers);
+  const auto leaver = *sessions_.back()->GetSessionId();
+
+  sessions_.back()->Disconnect();
+  Run(kSettleTicks);
+
+  EXPECT_EQ(watcher.GetAuthoritativeState()->players.size(), augusta::protocol::kMaxPlayers - 1);
+  EXPECT_FALSE(PositionSeenBy(watcher, leaver).has_value());
+
+  Session& ninth = Join();
+  Run(kSettleTicks);
+
+  EXPECT_TRUE(ninth.GetSessionId().has_value());
+  EXPECT_FALSE(ninth.GetRefusal().has_value());
+  EXPECT_EQ(watcher.GetAuthoritativeState()->players.size(), augusta::protocol::kMaxPlayers);
+}
+
+TEST_F(RobustnessTest, AClientThatDropsWithoutClosingKeepsTheServerTickingAndIsRemovedOnceItTimesOut) {
+  // Set before the connection exists: the timeout only reaches new connections.
+  augusta::networking::SimulateNetworkConditions({.timeout_ms = 500});
+  Join();
+  Run(kSettleTicks);
+
+  // Every packet is lost from here on, so the client is gone without a word.
+  augusta::networking::SimulateNetworkConditions({.loss_percent = 100.0F, .timeout_ms = 500});
+  std::size_t players = 1;
+  std::uint32_t ticks_run = 0;
+  // The transport only notices a silent peer when it asks for a reply and gets none, which
+  // on state updates alone (unreliable, so never acknowledged) takes several seconds.
+  const auto deadline = std::chrono::steady_clock::now() + kSilentPeerDeadline;
+  while (players > 0 && std::chrono::steady_clock::now() < deadline) {
+    Step(Forward());
+    players = ServerTick().players.size();
+    ++ticks_run;
+  }
+  augusta::networking::SimulateNetworkConditions({});
+
+  EXPECT_EQ(players, 0U);
+  EXPECT_GT(ticks_run, 0U);
+  // And the server still takes players.
+  Session& next = Join();
+  Run(kSettleTicks);
+  EXPECT_TRUE(next.GetAuthoritativeState().has_value());
+  EXPECT_EQ(next.GetAuthoritativeState()->players.size(), 1U);
 }
 
 }  // namespace

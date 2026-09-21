@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/physics.h"
 #include "augusta/simulation.h"
@@ -47,7 +48,9 @@ struct Config {
   networking::Endpoint listen;
   // The map's collision, built by augusta::map from the server pack by the
   // caller: where content comes from is the executable's business.
-  std::vector<physics::StaticMesh> collision;
+  std::vector<physics::CollisionMesh> collision;
+  // Where joining players spawn, in the order they take them, from the same pack.
+  std::vector<math::Vec3> spawn_points;
   // Simulation thread's fixed tick rate, in Hz. NFR-01 requires >= 60 Hz
   // sustained, no missed ticks.
   float tick_rate_hz = 60.0F;

@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/physics.h"
 #include "augusta/simulation.h"
@@ -21,14 +22,18 @@ namespace augusta::server {
 
 /// Everything a Host needs to construct SimulationWorld and start listening.
 struct HostConfig {
-  /// Every player body's stamina rules (physics::World, shared with PredictionWorld).
+  /// Every player body's stamina rules (physics::World, shared with
+  /// PredictionWorld: each client is told these when it joins).
   physics::StaminaConfig stamina{};
   /// Lua game-policy script for SimulationWorld's Scripts/Behaviours phase.
   std::string script_path{};
   /// Local address to listen on (US-01).
   networking::Endpoint listen{};
   /// The map's collision, as built by augusta::map from the server pack.
-  std::vector<physics::StaticMesh> collision{};
+  std::vector<physics::CollisionMesh> collision{};
+  /// Where joining players spawn, in the order they take them, from the same
+  /// pack; empty spawns everyone at the origin.
+  std::vector<math::Vec3> spawn_points{};
 };
 
 /// The server's listening socket and its SimulationWorld, without threads or a clock.

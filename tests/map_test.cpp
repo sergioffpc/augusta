@@ -24,6 +24,7 @@ using augusta::assets::ResolveError;
 using augusta::assets::SceneData;
 using augusta::assets::SceneNode;
 using augusta::map::LoadCollision;
+using augusta::map::LoadSpawnPoints;
 using augusta::map::MapErrorCode;
 using augusta::math::Vec3;
 
@@ -144,7 +145,7 @@ TEST_F(MapTest, AnEmptyColliderIsAnErrorNamingIt) {
   EXPECT_EQ(collision.error().code, MapErrorCode::kInvalidCollider);
   EXPECT_EQ(collision.error().node, "Ground");
   EXPECT_EQ(collision.error().subject, "Empty");
-  EXPECT_EQ(collision.error().static_mesh_error, augusta::physics::StaticMeshError::kEmpty);
+  EXPECT_EQ(collision.error().collision_mesh_error, augusta::physics::CollisionMeshError::kEmpty);
 }
 
 TEST_F(MapTest, APackWithoutASceneIsAnError) {
@@ -155,6 +156,69 @@ TEST_F(MapTest, APackWithoutASceneIsAnError) {
   ASSERT_FALSE(collision.has_value());
   EXPECT_EQ(collision.error().code, MapErrorCode::kSceneUnresolved);
   EXPECT_EQ(collision.error().subject, std::string(augusta::assets::kScenePath));
+}
+
+SceneNode SpawnPoint(const std::string& name, std::uint32_t parent_index, const Vec3& translation) {
+  SceneNode node = Node(name, parent_index);
+  node.translation = translation;
+  node.is_spawn_point = true;
+  return node;
+}
+
+TEST_F(MapTest, SpawnPointsAreInSceneOrderAndInWorldSpaceThroughTheirParents) {
+  SceneNode area = Node("Area", augusta::assets::kSceneNodeNoParent);
+  area.translation = Vec3(100.0F, 0.0F, 0.0F);
+  const Pack pack =
+      MakePack("spawn_points",
+               {AssetEntry{AssetType::kScene, "Scene",
+                           SceneBlob({SpawnPoint("First", augusta::assets::kSceneNodeNoParent, Vec3(1.0F, 0.0F, 2.0F)),
+                                      area, SpawnPoint("Area/Second", 1, Vec3(0.0F, 0.0F, 5.0F))})}});
+
+  const auto spawn_points = LoadSpawnPoints(pack);
+
+  ASSERT_TRUE(spawn_points.has_value());
+  ASSERT_EQ(spawn_points->size(), 2U);
+  EXPECT_NEAR((*spawn_points)[0].x, 1.0F, 1e-5F);
+  EXPECT_NEAR((*spawn_points)[0].z, 2.0F, 1e-5F);
+  EXPECT_NEAR((*spawn_points)[1].x, 100.0F, 1e-5F);
+  EXPECT_NEAR((*spawn_points)[1].z, 5.0F, 1e-5F);
+}
+
+TEST_F(MapTest, NodesThatAreNotSpawnPointsAreNotListed) {
+  SceneNode ground = Node("Ground", augusta::assets::kSceneNodeNoParent);
+  ground.collider_path = "Ground";
+  const Pack pack =
+      MakePack("spawn_points_among_others",
+               {AssetEntry{AssetType::kCollision, "Ground", SquareBlob()},
+                AssetEntry{AssetType::kScene, "Scene",
+                           SceneBlob({ground, SpawnPoint("Spawn", augusta::assets::kSceneNodeNoParent, Vec3{})})}});
+
+  const auto spawn_points = LoadSpawnPoints(pack);
+
+  ASSERT_TRUE(spawn_points.has_value());
+  EXPECT_EQ(spawn_points->size(), 1U);
+}
+
+TEST_F(MapTest, APackWithNoSpawnPointIsAnError) {
+  SceneNode ground = Node("Ground", augusta::assets::kSceneNodeNoParent);
+  ground.collider_path = "Ground";
+  const Pack pack = MakePack("no_spawn_points", {AssetEntry{AssetType::kCollision, "Ground", SquareBlob()},
+                                                 AssetEntry{AssetType::kScene, "Scene", SceneBlob({ground})}});
+
+  const auto spawn_points = LoadSpawnPoints(pack);
+
+  ASSERT_FALSE(spawn_points.has_value());
+  EXPECT_EQ(spawn_points.error().code, MapErrorCode::kNoSpawnPoints);
+  EXPECT_FALSE(augusta::map::DescribeMapError(spawn_points.error()).empty());
+}
+
+TEST_F(MapTest, SpawnPointsOfAPackWithoutASceneNameTheScene) {
+  const Pack pack = MakePack("spawn_points_no_scene", {AssetEntry{AssetType::kCollision, "Ground", SquareBlob()}});
+
+  const auto spawn_points = LoadSpawnPoints(pack);
+
+  ASSERT_FALSE(spawn_points.has_value());
+  EXPECT_EQ(spawn_points.error().code, MapErrorCode::kSceneUnresolved);
 }
 
 TEST(DescribeMapErrorTest, ASceneOfTheWrongTypeIsNotDescribedAsCollisionGeometry) {

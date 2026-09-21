@@ -9,12 +9,13 @@
 
 #include "augusta/assets.h"
 #include "augusta/config.h"
+#include "augusta/harness.h"
 #include "augusta/logging.h"
 #include "augusta/map.h"
 #include "augusta/networking.h"
 #include "augusta/version.h"
+#include "loader.h"
 #include "runtime.h"
-#include "scene_loader.h"
 
 namespace {
 
@@ -68,8 +69,8 @@ std::expected<augusta::config::ClientConfig, augusta::config::ConfigError> LoadC
 // The same collision the server builds from its own pack, so the client's
 // prediction and the server's simulation agree on where the walls are. Reports
 // what is wrong and returns nullopt.
-std::optional<std::vector<augusta::physics::StaticMesh>> LoadMap(const augusta::assets::Pack& pack,
-                                                                 const std::filesystem::path& pack_path) {
+std::optional<std::vector<augusta::physics::CollisionMesh>> LoadMap(const augusta::assets::Pack& pack,
+                                                                    const std::filesystem::path& pack_path) {
   auto collision = augusta::map::LoadCollision(pack);
   if (!collision) {
     std::println(stderr, "client pack {}: {}", pack_path.string(), augusta::map::DescribeMapError(collision.error()));
@@ -131,7 +132,11 @@ int main(int argc, char** argv) {
   config.collision = *std::move(collision);
 
   augusta::runtime::ClientRuntime runtime(config, *scene);
-  runtime.Run();
+  if (const auto failure = runtime.Run(); failure.has_value()) {
+    // No reconnecting and no connection screen: say what happened and exit.
+    std::println(stderr, "{}", augusta::harness::DescribeFailure(*failure));
+    return 1;
+  }
 
   return 0;
 }
