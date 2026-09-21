@@ -1,6 +1,7 @@
 #include "augusta/prediction.h"
 
 #include <array>
+#include <cmath>
 
 #include <flecs.h>
 #include <nvtx3/nvtx3.hpp>
@@ -15,6 +16,22 @@ namespace {
 
 constexpr std::size_t kPhaseCount = 5;
 using PhaseEntities = std::array<flecs::entity, kPhaseCount>;
+
+// How far the server's state may be from the client's own prediction of the
+// same command and still count as agreeing with it. Below this nothing is
+// restored or replayed: the error is not worth a jump, and it cannot pile up,
+// since the next acknowledgement is compared with the server's state again,
+// not with this one.
+constexpr float kPositionTolerance = 0.001F;  // 1 mm.
+constexpr float kStaminaTolerance = 0.001F;
+
+// Position is what the player sees, but a stance or a stamina that differs
+// changes what the next commands do, so those count as well.
+bool NeedsCorrection(const physics::BodyState& authoritative, const physics::BodyState& predicted) {
+  return math::Length(authoritative.position - predicted.position) >= kPositionTolerance ||
+         authoritative.stance != predicted.stance ||
+         std::abs(authoritative.stamina - predicted.stamina) >= kStaminaTolerance;
+}
 
 enum PhaseIndex : std::size_t {
   kCommandIngestion = 0,
@@ -105,6 +122,10 @@ struct World::Impl {
       return;
     }
     const physics::BodyState& authoritative = tick_acknowledgement->body;
+    if (!NeedsCorrection(authoritative, predicted->body)) {
+      LT("subsystem=predictionworld event=reconcile_skipped sequence={}", tick_acknowledgement->sequence);
+      return;
+    }
     physics::BodyState replayed = physics.Restore(local_body, authoritative, predicted->fall);
     history.Replay([&](const physics::MovementInput& command) {
       replayed = physics.Step(local_body, command, delta_time);

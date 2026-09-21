@@ -111,6 +111,31 @@ TEST_F(ReconciliationTest, ADivergenceOfAnySizeIsAdoptedAtOnce) {
   }
 }
 
+TEST_F(ReconciliationTest, ADivergenceUnderAMillimetreIsNotCorrected) {
+  const float before = states_.back().position.x;
+
+  const State state = Tick(ServerSays(sequence_, Vec3(0.0005F, 0.0F, 0.0F)));
+
+  EXPECT_EQ(state.total_correction, Vec3(0.0F, 0.0F, 0.0F));
+  EXPECT_NEAR(state.local_body.position.x, before, 0.0001F);
+}
+
+TEST_F(ReconciliationTest, ADivergenceOverAMillimetreIsCorrected) {
+  const State state = Tick(ServerSays(sequence_, Vec3(0.002F, 0.0F, 0.0F)));
+
+  EXPECT_NEAR(state.total_correction.x, 0.002F, 0.0005F);
+}
+
+TEST_F(ReconciliationTest, AStaminaThatDiffersIsCorrectedEvenWhereThePositionAgrees) {
+  constexpr float kServerStamina = 0.5F;
+  Acknowledgement ack = ServerSays(sequence_, Vec3(0.0F, 0.0F, 0.0F));
+  ack.body.stamina = kServerStamina;
+
+  const State state = Tick(ack);
+
+  EXPECT_NEAR(state.local_body.stamina, kServerStamina, 0.01F);
+}
+
 TEST_F(ReconciliationTest, TheJumpTheReplayMadeIsTheTotalCorrection) {
   constexpr float kDivergence = 0.5F;
   EXPECT_EQ(latest_.total_correction, Vec3(0.0F, 0.0F, 0.0F));
