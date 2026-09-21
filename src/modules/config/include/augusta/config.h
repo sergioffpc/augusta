@@ -50,6 +50,10 @@ struct ServerConfig {
   /// Key `parameters` (required): the Lua script holding the simulation's
   /// Parameters (ADR-0039). Where it is, not what is in it.
   std::filesystem::path parameters_path;
+  /// Key `tick_rate_hz` (required): the rate, in Hz, at which the server
+  /// simulates and every client predicts. Any finite rate above zero; fixed for
+  /// the life of the process, and told to each client when it joins (ADR-0039).
+  float tick_rate_hz = 0.0F;
   /// Key `listen_address`: the local address to listen on.
   std::string listen_address{kDefaultListenAddress};
 };
@@ -79,6 +83,8 @@ enum class ConfigErrorCode {
   kMissingKey,
   /// A required key's value is empty; subject is the key.
   kEmptyValue,
+  /// A key's value is not a finite number above zero; subject is the key.
+  kInvalidNumber,
 };
 
 /// A failure to read the command line or a config file: what went wrong (code)

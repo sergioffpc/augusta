@@ -27,6 +27,9 @@ namespace augusta::server {
 
 /// Everything a Host needs to construct SimulationWorld and start listening.
 struct HostConfig {
+  /// The rate, in Hz, at which the simulation ticks and every client predicts;
+  /// told to each client when it joins. Fixed for the life of the server process.
+  float tick_rate_hz = 0.0F;
   /// What the simulation runs on and what each client is told when it joins:
   /// the stamina rules of every player body, shared with PredictionWorld.
   parameters::Parameters parameters{};
@@ -43,25 +46,6 @@ struct HostConfig {
   /// pack; empty spawns everyone at the origin.
   std::vector<math::Vec3> spawn_points{};
 };
-
-/// Why a reload of the Parameters script was refused.
-enum class ReloadRefusal {
-  /// The script could not be read or did not load; see ReloadError::load.
-  kLoadFailed,
-  /// The script gives a tick rate other than the running one, which is fixed
-  /// for the life of the server process: restart the server to change it.
-  kTickRateChanged,
-};
-
-/// A reload that changed nothing, and why.
-struct ReloadError {
-  ReloadRefusal reason{};
-  /// Why the script did not load; only for kLoadFailed.
-  parameters::LoadError load{};
-};
-
-/// A message for error fit to log, so no caller words it on its own.
-std::string DescribeReloadError(const ReloadError& error);
 
 /// The server's listening socket and its SimulationWorld, without threads or a clock.
 class Host {
@@ -82,13 +66,13 @@ class Host {
   /// Does one round of the Network I/O thread's work: connection events and received messages.
   void PumpNetwork();
 
-  /// Reads the Parameters script again and, if it loads and keeps the tick rate,
-  /// makes it the next generation: the simulation runs on it from the start of
-  /// the next Tick, never partway through one, and the generation is numbered
-  /// from the last accepted one. Returns that number. A script that fails to
-  /// load, or changes the tick rate, is refused as a whole: nothing changes,
-  /// the reason is logged and no number is used. Safe to call from any thread.
-  std::expected<std::uint32_t, ReloadError> Reload();
+  /// Reads the Parameters script again and, if it loads, makes it the next
+  /// generation: the simulation runs on it from the start of the next Tick,
+  /// never partway through one, and the generation is numbered from the last
+  /// accepted one. Returns that number. A script that fails to load is refused
+  /// as a whole: nothing changes, the reason is logged and no number is used.
+  /// Safe to call from any thread.
+  std::expected<std::uint32_t, parameters::LoadError> Reload();
 
   /// The generation of the Parameters the simulation runs on: 1 at startup, and
   /// the reloaded one once a Tick has begun since. Safe to call from any thread.

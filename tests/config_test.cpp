@@ -201,6 +201,7 @@ TEST(ParseServerConfigTest, ReadsEveryKey) {
       "pack: packs/level.server.pack\n"
       "public_key: keys/augusta.pub\n"
       "parameters: scripts/parameters.lua\n"
+      "tick_rate_hz: 30\n"
       "listen_address: 0.0.0.0:27016\n",
       kFileDir);
 
@@ -208,11 +209,16 @@ TEST(ParseServerConfigTest, ReadsEveryKey) {
   EXPECT_EQ(config->pack_path, kRoot / "packs" / "level.server.pack");
   EXPECT_EQ(config->public_key_path, kRoot / "keys" / "augusta.pub");
   EXPECT_EQ(config->parameters_path, kRoot / "scripts" / "parameters.lua");
+  EXPECT_FLOAT_EQ(config->tick_rate_hz, 30.0F);
   EXPECT_EQ(config->listen_address, "0.0.0.0:27016");
 }
 
-constexpr std::string_view kMinimalServerConfig =
+// Everything a server config needs but the tick rate, so a test can set that itself.
+constexpr std::string_view kServerConfigWithoutTickRate =
     "base_dir: content\npack: a.pack\npublic_key: k.pub\nparameters: p.lua\n";
+
+constexpr std::string_view kMinimalServerConfig =
+    "base_dir: content\npack: a.pack\npublic_key: k.pub\nparameters: p.lua\ntick_rate_hz: 60\n";
 
 std::string ServerConfigWith(std::string_view extra) { return std::string(kMinimalServerConfig) + std::string(extra); }
 
@@ -231,6 +237,35 @@ TEST(ParseServerConfigTest, RejectsAMissingParametersKey) {
   EXPECT_EQ(config.error().subject, "parameters");
 }
 
+TEST(ParseServerConfigTest, RejectsAMissingTickRate) {
+  const auto config = ParseServerConfig(kServerConfigWithoutTickRate, kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kMissingKey);
+  EXPECT_EQ(config.error().subject, "tick_rate_hz");
+}
+
+TEST(ParseServerConfigTest, AcceptsAnyFiniteTickRateAboveZero) {
+  for (const char* rate : {"60", "30", "59.94", "240", "0.5", "1e2"}) {
+    const auto config = ParseServerConfig(
+        std::string(kServerConfigWithoutTickRate) + "tick_rate_hz: " + std::string(rate) + "\n", kFileDir);
+
+    ASSERT_TRUE(config.has_value()) << rate;
+    EXPECT_FLOAT_EQ(config->tick_rate_hz, std::stof(rate)) << rate;
+  }
+}
+
+TEST(ParseServerConfigTest, RejectsATickRateThatIsNotAFiniteNumberAboveZero) {
+  for (const char* rate : {"0", "-60", "abc", "60hz", "6 0", ".inf", "-.inf", ".nan", "1e999", "0x10"}) {
+    const auto config = ParseServerConfig(
+        std::string(kServerConfigWithoutTickRate) + "tick_rate_hz: '" + std::string(rate) + "'\n", kFileDir);
+
+    ASSERT_FALSE(config.has_value()) << rate;
+    EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidNumber) << rate;
+    EXPECT_EQ(config.error().subject, "tick_rate_hz") << rate;
+  }
+}
+
 TEST(ParseServerConfigTest, RejectsAStaminaKeyLeftInTheFileAsUnknown) {
   // The stamina rules live in the Parameters script (ADR-0039), not here.
   for (const char* key : {"stamina_deplete_per_second", "stamina_regen_per_second", "stamina_forced_walk_below"}) {
@@ -240,6 +275,16 @@ TEST(ParseServerConfigTest, RejectsAStaminaKeyLeftInTheFileAsUnknown) {
     EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownKey) << key;
     EXPECT_EQ(config.error().subject, key);
   }
+}
+
+TEST(ParseClientConfigTest, TheTickRateIsNotAClientKey) {
+  // The server decides it and tells each client when it joins (ADR-0039).
+  const auto config =
+      ParseClientConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\ntick_rate_hz: 60\n", kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownKey);
+  EXPECT_EQ(config.error().subject, "tick_rate_hz");
 }
 
 TEST(ParseClientConfigTest, ParametersAreNotAClientKey) {
@@ -327,6 +372,12 @@ TEST(DescribeConfigErrorTest, NamesTheKeyAndTheFile) {
   EXPECT_TRUE(Contains(message, std::filesystem::path("dir/augustac.yaml").string())) << message;
 }
 
+TEST(DescribeConfigErrorTest, SaysWhatANumberMustBe) {
+  const auto message = DescribeConfigError({.code = ConfigErrorCode::kInvalidNumber, .subject = "tick_rate_hz"});
+
+  EXPECT_EQ(message, "'tick_rate_hz' must be a finite number above zero");
+}
+
 TEST(DescribeConfigErrorTest, OmitsTheFileWhenThereIsNone) {
   const auto message = DescribeConfigError({.code = ConfigErrorCode::kUnknownKey, .subject = "typo"});
 
@@ -363,9 +414,9 @@ TEST_F(LoadConfigTest, ResolvesBaseDirAgainstTheFilesDirectory) {
 }
 
 TEST_F(LoadConfigTest, LoadsAServerConfig) {
-  const auto file =
-      Write("augustad.yaml",
-            "base_dir: .\npack: level.pack\npublic_key: k.pub\nparameters: p.lua\nlisten_address: 0.0.0.0:1\n");
+  const auto file = Write("augustad.yaml",
+                          "base_dir: .\npack: level.pack\npublic_key: k.pub\nparameters: p.lua\ntick_rate_hz: 60\n"
+                          "listen_address: 0.0.0.0:1\n");
 
   const auto config = LoadServerConfig(file);
 

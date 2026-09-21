@@ -89,10 +89,11 @@ augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ServerConfig&
   // pack layout the asset pipeline (ROADMAP.md M2) hasn't built yet.
   config.script_path = "scripts/round.lua";
   config.listen.address = file_config.listen_address;
+  config.tick_rate_hz = file_config.tick_rate_hz;
   config.collision = std::move(map.collision);
   config.spawn_points = std::move(map.spawn_points);
-  // Every client is sent these when it joins and predicts with them, so the
-  // script is the only place they are set.
+  // Every client is sent the rate and these when it joins and predicts with
+  // them, so the config file and the script are the only places they are set.
   config.parameters = parameters;
   config.parameters_path = file_config.parameters_path;
   return config;

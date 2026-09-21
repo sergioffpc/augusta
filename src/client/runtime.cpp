@@ -178,14 +178,14 @@ struct ClientRuntime::Impl {
     session.emplace(harness::SessionConfig{.server = cfg.server}, std::move(world));
   }
 
-  // The parameters the server sent when it admitted this client, or nullopt if
+  // The tick rate the server sent when it admitted this client, or nullopt if
   // running was cleared first. The tick rate is the server's (ADR-0039), so
   // nothing is predicted before it is known.
-  std::optional<parameters::Parameters> WaitForParameters() {
+  std::optional<float> WaitForTickRate() {
     constexpr auto kPollInterval = std::chrono::milliseconds(10);
     while (running.load(std::memory_order_relaxed)) {
-      if (const auto held = session->GetParameters()) {
-        return held->parameters;
+      if (const auto rate = session->GetTickRate()) {
+        return rate;
       }
       std::this_thread::sleep_for(kPollInterval);
     }
@@ -196,11 +196,11 @@ struct ClientRuntime::Impl {
   // input and ticking PredictionWorld, at the server's tick rate once it has
   // joined. Runs until running is cleared by ThreadJoiner.
   void PredictionThreadMain() {
-    const auto parameters = WaitForParameters();
-    if (!parameters.has_value()) {
+    const auto tick_rate_hz = WaitForTickRate();
+    if (!tick_rate_hz.has_value()) {
       return;
     }
-    const auto tick_duration = std::chrono::duration<float>(1.0F / parameters->tick_rate_hz);
+    const auto tick_duration = std::chrono::duration<float>(1.0F / *tick_rate_hz);
     while (running.load(std::memory_order_relaxed)) {
       const nvtx3::scoped_range range{"Prediction Tick"};
       const auto tick_start = std::chrono::steady_clock::now();

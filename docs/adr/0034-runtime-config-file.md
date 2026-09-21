@@ -10,6 +10,8 @@ other argument, including an old-style `augustac <pack> <key>`, fails with the
 usage message instead of being half-honored. The format is a flat mapping of
 keys to strings; unknown keys, missing required keys and non-string values are
 errors, so a misspelled optional key never silently falls back to its default.
+A value that is a number (the server's tick rate) is read from its string, and
+one that is not a finite number in range is an error like any other.
 Relative paths start from a required `base_dir` key (itself relative to the
 config file's directory, so `.` means the file's own), never from the working
 directory: the process starts the same from anywhere, and where its content

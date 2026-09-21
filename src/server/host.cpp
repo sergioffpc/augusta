@@ -44,16 +44,6 @@ std::uint32_t PeerNumber(networking::PeerId peer) { return static_cast<std::uint
 
 }  // namespace
 
-std::string DescribeReloadError(const ReloadError& error) {
-  switch (error.reason) {
-    case ReloadRefusal::kLoadFailed:
-      return parameters::DescribeLoadError(error.load);
-    case ReloadRefusal::kTickRateChanged:
-      return "the tick rate is fixed while the server runs; restart it to change it";
-  }
-  return "the parameters could not be reloaded";
-}
-
 struct Host::Impl {
   // A player joining or leaving, for the Simulation thread to apply at the start of its next tick.
   struct Change {
@@ -74,6 +64,8 @@ struct Host::Impl {
   // Simulation thread only.
   simulation::World simulation;
   std::uint32_t tick = 0;
+  // Told to each client that joins; never changes.
+  const float tick_rate_hz;
 
   // Thread-safe by the transport's contract, used from both threads.
   networking::Server network;
@@ -101,6 +93,7 @@ struct Host::Impl {
 
   explicit Impl(const HostConfig& config)
       : simulation(BuildSimulation(config)),
+        tick_rate_hz(config.tick_rate_hz),
         network(config.listen),
         parameters_path(config.parameters_path),
         running{.generation = parameters::kFirstGeneration, .parameters = config.parameters},
@@ -125,6 +118,7 @@ struct Host::Impl {
     protocol::JoinAccepted accepted;
     accepted.session = admission->session;
     accepted.spawn = admission->spawn;
+    accepted.tick_rate_hz = tick_rate_hz;
     accepted.generation = running.generation;
     accepted.parameters = running.parameters;
     accepted.roster = admission->roster;
@@ -295,7 +289,7 @@ void Host::PumpNetwork() {
   }
 }
 
-std::expected<std::uint32_t, ReloadError> Host::Reload() {
+std::expected<std::uint32_t, parameters::LoadError> Host::Reload() {
   Impl& impl = *impl_;
   const std::lock_guard<std::mutex> reloading(impl.reload_mutex);
   // The file and the interpreter are not touched under the state lock: a slow
@@ -303,16 +297,9 @@ std::expected<std::uint32_t, ReloadError> Host::Reload() {
   const auto loaded = parameters::LoadFile(impl.parameters_path);
   const std::lock_guard<std::mutex> lock(impl.mutex);
   if (!loaded.has_value()) {
-    const ReloadError error{.reason = ReloadRefusal::kLoadFailed, .load = loaded.error()};
     LW("subsystem=serverruntime event=parameters_refused generation={} reason=\"{}\"", impl.running.generation,
-       DescribeReloadError(error));
-    return std::unexpected(error);
-  }
-  if (!parameters::KeepsTickRate(impl.running.parameters, *loaded)) {
-    const ReloadError error{.reason = ReloadRefusal::kTickRateChanged};
-    LW("subsystem=serverruntime event=parameters_refused generation={} reason=\"{}\"", impl.running.generation,
-       DescribeReloadError(error));
-    return std::unexpected(error);
+       parameters::DescribeLoadError(loaded.error()));
+    return std::unexpected(loaded.error());
   }
   const std::uint32_t generation = ++impl.last_generation;
   impl.pending = parameters::NumberedParameters{.generation = generation, .parameters = *loaded};

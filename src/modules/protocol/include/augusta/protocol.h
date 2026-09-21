@@ -85,6 +85,10 @@ struct JoinAccepted {
   SessionId session{};
   /// Where the server spawned this client's player.
   math::Vec3 spawn{};
+  /// The rate, in Hz, at which the server simulates and this client must predict:
+  /// the server's startup setting, fixed for the life of the server process and
+  /// so sent here once and never again.
+  float tick_rate_hz = 0.0F;
   /// The generation of the parameters below, from 1: the newest the server has.
   std::uint32_t generation = 0;
   /// The parameters the client must predict with, so its numbers (the stamina
@@ -126,8 +130,7 @@ struct AuthoritativeState {
 
 /// Server to client: the server reloaded its parameters, and these are the new
 /// ones. Reliable, since a lost one would leave the client predicting with
-/// numbers the server no longer uses until the next reload. The tick rate
-/// never differs from the one the client was told when it joined.
+/// numbers the server no longer uses until the next reload.
 struct ParametersUpdate {
   /// The generation of parameters; a client keeps only a newer one than it holds.
   std::uint32_t generation = 0;

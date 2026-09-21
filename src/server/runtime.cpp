@@ -45,6 +45,7 @@ struct ServerRuntime::Impl {
   explicit Impl(const Config& cfg)
       : config(cfg),
         host(server::HostConfig{
+            .tick_rate_hz = cfg.tick_rate_hz,
             .parameters = cfg.parameters,
             .parameters_path = cfg.parameters_path,
             .script_path = cfg.script_path,
@@ -73,7 +74,7 @@ void ServerRuntime::Run() {
   impl_->watcher = std::make_unique<server::FileWatcher>(impl_->config.parameters_path, server::WatchOptions{},
                                                          [this] { static_cast<void>(impl_->host.Reload()); });
 
-  const auto tick_duration = std::chrono::duration<float>(1.0F / impl_->config.parameters.tick_rate_hz);
+  const auto tick_duration = std::chrono::duration<float>(1.0F / impl_->config.tick_rate_hz);
   LI("subsystem=serverruntime event=loop_starting loop=simulation");
   while (impl_->running.load(std::memory_order_relaxed)) {
     const auto tick_start = std::chrono::steady_clock::now();

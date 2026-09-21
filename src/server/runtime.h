@@ -40,10 +40,12 @@ namespace augusta::runtime {
 // Everything ServerRuntime needs to construct SimulationWorld and start
 // listening.
 struct Config {
-  // What the simulation runs on and each client is told when it joins: the
-  // Simulation thread's fixed tick rate (NFR-01 asks it to sustain 60 Hz, no
-  // missed ticks) and every player body's stamina rules (physics::World,
-  // shared with PredictionWorld client-side).
+  // The Simulation thread's fixed tick rate in Hz (NFR-01 asks it to sustain
+  // 60 Hz, no missed ticks), which each client is told when it joins.
+  float tick_rate_hz = 0.0F;
+  // What the simulation runs on and each client is told when it joins: every
+  // player body's stamina rules (physics::World, shared with PredictionWorld
+  // client-side).
   parameters::Parameters parameters;
   // The script those Parameters were read from, which a reload reads again.
   std::filesystem::path parameters_path;

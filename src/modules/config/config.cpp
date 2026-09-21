@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
+#include <cmath>
 #include <format>
 #include <fstream>
 #include <map>
@@ -86,6 +88,21 @@ std::expected<std::filesystem::path, ConfigError> RequirePath(const ScalarMap& v
   return (path.is_absolute() ? path : base_dir / path).lexically_normal();
 }
 
+// A finite number above zero, in plain decimal or exponent notation.
+std::expected<float, ConfigError> RequirePositiveNumber(const ScalarMap& values, std::string_view key) {
+  const auto text = RequireString(values, key);
+  if (!text) {
+    return std::unexpected(text.error());
+  }
+  float number = 0.0F;
+  const char* const end = text->data() + text->size();
+  const auto parsed = std::from_chars(text->data(), end, number);
+  if (parsed.ec != std::errc{} || parsed.ptr != end || !std::isfinite(number) || number <= 0.0F) {
+    return std::unexpected(ConfigError{.code = ConfigErrorCode::kInvalidNumber, .subject = std::string(key)});
+  }
+  return number;
+}
+
 std::string OptionalString(const ScalarMap& values, std::string_view key, std::string_view fallback) {
   const auto found = values.find(key);
   return found == values.end() ? std::string(fallback) : found->second;
@@ -139,6 +156,8 @@ std::string Phrase(const ConfigError& error) {
       return std::format("missing required key '{}'", error.subject);
     case ConfigErrorCode::kEmptyValue:
       return std::format("'{}' must not be empty", error.subject);
+    case ConfigErrorCode::kInvalidNumber:
+      return std::format("'{}' must be a finite number above zero", error.subject);
   }
   return "unknown config error";
 }
@@ -221,8 +240,8 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
 
 std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 5> kKeys{"base_dir", "pack", "public_key", "parameters",
-                                                         "listen_address"};
+  static constexpr std::array<std::string_view, 6> kKeys{"base_dir",   "pack",         "public_key",
+                                                         "parameters", "tick_rate_hz", "listen_address"};
   const auto values = ReadScalarMap(yaml_text, kKeys);
   if (!values) {
     return std::unexpected(values.error());
@@ -245,10 +264,15 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!parameters_path) {
     return std::unexpected(parameters_path.error());
   }
+  const auto tick_rate_hz = RequirePositiveNumber(*values, "tick_rate_hz");
+  if (!tick_rate_hz) {
+    return std::unexpected(tick_rate_hz.error());
+  }
   return ServerConfig{
       .pack_path = *std::move(pack_path),
       .public_key_path = *std::move(public_key_path),
       .parameters_path = *std::move(parameters_path),
+      .tick_rate_hz = *tick_rate_hz,
       .listen_address = OptionalString(*values, "listen_address", kDefaultListenAddress),
   };
 }

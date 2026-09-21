@@ -70,8 +70,9 @@ std::optional<std::uint32_t> GenerationOf(const Session& session) {
   return held.has_value() ? std::optional<std::uint32_t>(held->generation) : std::nullopt;
 }
 
-// The Parameters a test's server runs on: NFR-01's 60 Hz and stamina rules that never drain.
-constexpr Parameters kTestParameters{.tick_rate_hz = 60.0F};
+// What a test's server runs on: NFR-01's 60 Hz and stamina rules that never drain.
+constexpr float kTestTickRate = 60.0F;
+constexpr Parameters kTestParameters{};
 
 // A PredictionWorld with no map, and nothing decided yet: a server decides it on the client's join.
 augusta::prediction::World EmptyWorld() { return augusta::prediction::World(); }
@@ -106,7 +107,8 @@ class SessionTest : public ::testing::Test {
   // The script path is the server's own placeholder (scripting::Engine ignores
   // it until Lua is embedded, ADR-0022); point it at a real script then.
   SessionTest()
-      : host_(HostConfig{.parameters = kTestParameters,
+      : host_(HostConfig{.tick_rate_hz = kTestTickRate,
+                         .parameters = kTestParameters,
                          .script_path = "scripts/round.lua",
                          .listen = Endpoint{.address = LoopbackAddress()}}),
         session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld()) {}
@@ -169,7 +171,8 @@ TEST_F(SessionTest, StaysConnectedWhileTheTestAlternatesTicksAndNetworkWork) {
 class JoinTest : public ::testing::Test {
  protected:
   JoinTest()
-      : host_(HostConfig{.parameters = kTestParameters,
+      : host_(HostConfig{.tick_rate_hz = kTestTickRate,
+                         .parameters = kTestParameters,
                          .script_path = "scripts/round.lua",
                          .listen = Endpoint{.address = LoopbackAddress()}}) {}
 
@@ -327,7 +330,8 @@ TEST(MapSessionTest, APredictionWorldRefusesAMapMeshPhysicsRejects) {
 }
 
 TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
-  Host host(HostConfig{.parameters = kTestParameters,
+  Host host(HostConfig{.tick_rate_hz = kTestTickRate,
+                       .parameters = kTestParameters,
                        .script_path = "scripts/round.lua",
                        .listen = Endpoint{.address = LoopbackAddress()},
                        .collision = {FloorAt(0.0F)}});
@@ -339,7 +343,8 @@ TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
 }
 
 TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
-  EXPECT_THROW(Host(HostConfig{.parameters = kTestParameters,
+  EXPECT_THROW(Host(HostConfig{.tick_rate_hz = kTestTickRate,
+                               .parameters = kTestParameters,
                                .script_path = "scripts/round.lua",
                                .listen = Endpoint{.address = LoopbackAddress()},
                                .collision = {CollisionMesh{}}}),
@@ -362,7 +367,8 @@ class MovementTest : public ::testing::Test {
   // The client always knows the floor; the host knows server_map, which a test
   // may make differ from it to give the two something to disagree about.
   explicit MovementTest(std::vector<CollisionMesh> server_map)
-      : host_(HostConfig{.parameters = kTestParameters,
+      : host_(HostConfig{.tick_rate_hz = kTestTickRate,
+                         .parameters = kTestParameters,
                          .script_path = "scripts/round.lua",
                          .listen = Endpoint{.address = LoopbackAddress()},
                          .collision = std::move(server_map)}),
@@ -715,9 +721,11 @@ class LoopbackMatch : public ::testing::Test {
 
   explicit LoopbackMatch(const HostConfig& config) : host_(config) {}
 
-  // A host config for the floor with spawn_points and the parameters.
-  static HostConfig OnTheFloor(std::vector<Vec3> spawn_points, const Parameters& parameters = kTestParameters) {
-    return HostConfig{.parameters = parameters,
+  // A host config for the floor with spawn_points, the parameters and the tick rate.
+  static HostConfig OnTheFloor(std::vector<Vec3> spawn_points, const Parameters& parameters = kTestParameters,
+                               float tick_rate_hz = kTestTickRate) {
+    return HostConfig{.tick_rate_hz = tick_rate_hz,
+                      .parameters = parameters,
                       .script_path = "scripts/round.lua",
                       .listen = Endpoint{.address = LoopbackAddress()},
                       .collision = {FloorAt(kFloorY)},
@@ -883,8 +891,7 @@ class StaminaTest : public LoopbackMatch {
 
   StaminaTest()
       : LoopbackMatch(OnTheFloor(
-            {}, {.tick_rate_hz = 60.0F,
-                 .stamina = {
+            {}, {.stamina = {
                      .deplete_per_second = 1.0F, .regen_per_second = 0.25F, .forced_walk_below = kForcedWalkBelow}})) {}
 
   void SetUp() override {
@@ -965,7 +972,6 @@ class ScriptedParametersTest : public LoopbackMatch {
     const auto file = std::filesystem::temp_directory_path() / ("augusta_session_" + LoopbackAddress() + ".lua");
     std::ofstream(file, std::ios::binary) << "local sprint_seconds = 1\n"
                                              "return {\n"
-                                             "  tick_rate_hz = 60,\n"
                                              "  stamina = {\n"
                                              "  deplete_per_second = 1 / sprint_seconds,\n"
                                              "  regen_per_second = 0,\n"
@@ -1001,17 +1007,16 @@ class ReloadTest : public LoopbackMatch {
     return std::filesystem::temp_directory_path() / ("augusta_reload_" + LoopbackAddress() + ".lua");
   }
 
-  // A complete script at tick_rate_hz whose bar empties at deplete_per_second and never refills.
-  static std::string Script(float tick_rate_hz, float deplete_per_second) {
-    return "return { tick_rate_hz = " + std::to_string(tick_rate_hz) +
-           ", stamina = { deplete_per_second = " + std::to_string(deplete_per_second) +
+  // A complete script whose bar empties at deplete_per_second and never refills.
+  static std::string Script(float deplete_per_second) {
+    return "return { stamina = { deplete_per_second = " + std::to_string(deplete_per_second) +
            ", regen_per_second = 0, forced_walk_below = 0 } }";
   }
 
   static void WriteScript(std::string_view contents) { std::ofstream(ScriptPath(), std::ios::binary) << contents; }
 
   static HostConfig Config() {
-    WriteScript(Script(60.0F, 0.0F));
+    WriteScript(Script(0.0F));
     HostConfig config = OnTheFloor({}, augusta::parameters::LoadFile(ScriptPath()).value());
     config.parameters_path = ScriptPath();
     return config;
@@ -1042,7 +1047,7 @@ TEST_F(ReloadTest, TheServerStartsAtGenerationOne) { EXPECT_EQ(host_.Generation(
 
 TEST_F(ReloadTest, AGoodScriptBecomesTheNextGenerationAndTheSimulationUsesItFromTheNextTick) {
   ASSERT_GT(StaminaAfterSprinting(30), 0.99F);
-  WriteScript(Script(60.0F, 1.0F));
+  WriteScript(Script(1.0F));
 
   const auto reloaded = host_.Reload();
 
@@ -1054,7 +1059,7 @@ TEST_F(ReloadTest, AGoodScriptBecomesTheNextGenerationAndTheSimulationUsesItFrom
 }
 
 TEST_F(ReloadTest, AReloadIsNotAppliedUntilTheNextTickBegins) {
-  WriteScript(Script(60.0F, 1.0F));
+  WriteScript(Script(1.0F));
 
   ASSERT_TRUE(host_.Reload().has_value());
 
@@ -1064,9 +1069,9 @@ TEST_F(ReloadTest, AReloadIsNotAppliedUntilTheNextTickBegins) {
 }
 
 TEST_F(ReloadTest, TwoReloadsBeforeATickApplyTheNewestAndEachIsNumbered) {
-  WriteScript(Script(60.0F, 0.5F));
+  WriteScript(Script(0.5F));
   ASSERT_EQ(host_.Reload().value(), 2U);
-  WriteScript(Script(60.0F, 1.0F));
+  WriteScript(Script(1.0F));
   ASSERT_EQ(host_.Reload().value(), 3U);
 
   host_.Tick(kFixedTick);
@@ -1075,13 +1080,12 @@ TEST_F(ReloadTest, TwoReloadsBeforeATickApplyTheNewestAndEachIsNumbered) {
 }
 
 TEST_F(ReloadTest, AScriptWithAnErrorIsRefusedAndTheRunningParametersStay) {
-  for (const char* bad : {"return {", "return { tick_rate_hz = 60, recoil = 1 }", "error('typo')"}) {
+  for (const char* bad : {"return {", "return { stamina = {}, recoil = 1 }", "error('typo')"}) {
     WriteScript(bad);
 
     const auto reloaded = host_.Reload();
 
     ASSERT_FALSE(reloaded.has_value()) << bad;
-    EXPECT_EQ(reloaded.error().reason, augusta::server::ReloadRefusal::kLoadFailed) << bad;
   }
   EXPECT_GT(StaminaAfterSprinting(60), 0.99F);
   EXPECT_EQ(host_.Generation(), 1U);
@@ -1093,26 +1097,13 @@ TEST_F(ReloadTest, AScriptThatCannotBeReadIsRefused) {
   const auto reloaded = host_.Reload();
 
   ASSERT_FALSE(reloaded.has_value());
-  EXPECT_EQ(reloaded.error().reason, augusta::server::ReloadRefusal::kLoadFailed);
-  EXPECT_EQ(reloaded.error().load.code, augusta::parameters::LoadErrorCode::kCannotOpenFile);
-}
-
-TEST_F(ReloadTest, AScriptThatChangesTheTickRateIsRefusedAsNeedingARestart) {
-  WriteScript(Script(30.0F, 1.0F));
-
-  const auto reloaded = host_.Reload();
-
-  ASSERT_FALSE(reloaded.has_value());
-  EXPECT_EQ(reloaded.error().reason, augusta::server::ReloadRefusal::kTickRateChanged);
-  // Refused as a whole: the new stamina rules in the same script did not slip in.
-  EXPECT_GT(StaminaAfterSprinting(60), 0.99F);
-  EXPECT_EQ(host_.Generation(), 1U);
+  EXPECT_EQ(reloaded.error().code, augusta::parameters::LoadErrorCode::kCannotOpenFile);
 }
 
 TEST_F(ReloadTest, ARefusalDoesNotUseUpAGenerationNumber) {
   WriteScript("return {");
   ASSERT_FALSE(host_.Reload().has_value());
-  WriteScript(Script(60.0F, 1.0F));
+  WriteScript(Script(1.0F));
 
   EXPECT_EQ(host_.Reload().value(), 2U);
 }
@@ -1139,7 +1130,7 @@ class WatchedReloadTest : public ReloadTest {
 TEST_F(WatchedReloadTest, SavingTheScriptChangesTheRunningSimulationWithNoOtherStep) {
   ASSERT_GT(StaminaAfterSprinting(30), 0.99F);
 
-  WriteScript(Script(60.0F, 1.0F));
+  WriteScript(Script(1.0F));
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
   while (host_.Generation() < 2 && std::chrono::steady_clock::now() < deadline) {
     Step();
@@ -1151,7 +1142,7 @@ TEST_F(WatchedReloadTest, SavingTheScriptChangesTheRunningSimulationWithNoOtherS
 
 TEST_F(ReloadTest, EveryConnectedClientIsSentTheNewGenerationWhenItBegins) {
   Session& second = Join();
-  WriteScript(Script(60.0F, 1.0F));
+  WriteScript(Script(1.0F));
 
   ASSERT_TRUE(host_.Reload().has_value());
 
@@ -1168,7 +1159,7 @@ TEST_F(ReloadTest, EveryConnectedClientIsSentTheNewGenerationWhenItBegins) {
 }
 
 TEST_F(ReloadTest, AClientThatJoinsAfterAReloadIsToldTheCurrentGenerationWhenItJoins) {
-  WriteScript(Script(60.0F, 1.0F));
+  WriteScript(Script(1.0F));
   ASSERT_TRUE(host_.Reload().has_value());
   Run(3);
 
@@ -1221,8 +1212,10 @@ class ScriptedServer {
       peer_ = message.from;
       const auto decoded = augusta::protocol::Decode(message.payload);
       if (decoded.has_value() && std::holds_alternative<augusta::protocol::JoinRequest>(*decoded)) {
-        Send(augusta::protocol::JoinAccepted{
-            .session = augusta::protocol::SessionId{1}, .generation = generation_, .parameters = parameters_});
+        Send(augusta::protocol::JoinAccepted{.session = augusta::protocol::SessionId{1},
+                                             .tick_rate_hz = kTestTickRate,
+                                             .generation = generation_,
+                                             .parameters = parameters_});
       }
     }
   }
@@ -1244,10 +1237,9 @@ class ScriptedServer {
 // A client admitted by a server that then sends it parameters by hand.
 class ParametersUpdateTest : public ::testing::Test {
  protected:
-  // 60 Hz unless said otherwise, and a bar that empties at deplete_per_second and never refills.
-  static Parameters WithDeplete(float deplete_per_second, float tick_rate_hz = 60.0F) {
+  // A bar that empties at deplete_per_second and never refills.
+  static Parameters WithDeplete(float deplete_per_second) {
     return Parameters{
-        .tick_rate_hz = tick_rate_hz,
         .stamina = {.deplete_per_second = deplete_per_second, .regen_per_second = 0.0F, .forced_walk_below = 0.0F}};
   }
 
@@ -1325,13 +1317,6 @@ TEST_F(ParametersUpdateTest, AClientDropsAnUpdateWhoseValuesFailTheRangeChecks) 
   EXPECT_EQ(GenerationOf(session_), 1U);
 }
 
-TEST_F(ParametersUpdateTest, AClientDropsAnUpdateWithAnotherTickRateThanItJoinedWith) {
-  Deliver(ParametersUpdate{.generation = 2, .parameters = WithDeplete(1.0F, 30.0F)});
-
-  EXPECT_EQ(GenerationOf(session_), 1U);
-  EXPECT_FLOAT_EQ(session_.GetParameters()->parameters.tick_rate_hz, 60.0F);
-}
-
 TEST_F(ParametersUpdateTest, AMalformedUpdateChangesNothingAndTheNextGoodOneIsStillTaken) {
   // The message type, then a generation cut short.
   server_.SendPayload(augusta::protocol::Bytes{std::byte{6}, std::byte{2}});
@@ -1348,19 +1333,19 @@ class TickRateTest : public LoopbackMatch {
  protected:
   static constexpr float kServerRate = 30.0F;
 
-  TickRateTest() : LoopbackMatch(OnTheFloor({}, {.tick_rate_hz = kServerRate})) {}
+  TickRateTest() : LoopbackMatch(OnTheFloor({}, kTestParameters, kServerRate)) {}
 };
 
 TEST_F(TickRateTest, AClientLearnsTheServersTickRateWhenItJoins) {
   Session& client = Join();
 
-  ASSERT_TRUE(client.GetParameters().has_value());
-  EXPECT_FLOAT_EQ(client.GetParameters()->parameters.tick_rate_hz, kServerRate);
+  ASSERT_TRUE(client.GetTickRate().has_value());
+  EXPECT_FLOAT_EQ(*client.GetTickRate(), kServerRate);
 }
 
 TEST_F(TickRateTest, AClientTickingAtTheRateItWasToldAgreesWithTheServerWithoutCorrection) {
   Session& client = Join();
-  const float client_delta = 1.0F / client.GetParameters()->parameters.tick_rate_hz;
+  const float client_delta = 1.0F / *client.GetTickRate();
   const float server_delta = 1.0F / kServerRate;
   Command walk;
   walk.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
@@ -1386,6 +1371,7 @@ TEST_F(TickRateTest, AClientTickingAtTheRateItWasToldAgreesWithTheServerWithoutC
 // A client that has not joined holds nothing a server decides.
 TEST_F(SessionTest, AClientHoldsNoParametersUntilTheServerAdmitsIt) {
   EXPECT_FALSE(session_.GetParameters().has_value());
+  EXPECT_FALSE(session_.GetTickRate().has_value());
   ASSERT_TRUE(ConnectSession());
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
   while (!session_.GetSessionId().has_value() && std::chrono::steady_clock::now() < deadline) {
@@ -1397,14 +1383,15 @@ TEST_F(SessionTest, AClientHoldsNoParametersUntilTheServerAdmitsIt) {
 
   ASSERT_TRUE(session_.GetSessionId().has_value());
   ASSERT_TRUE(session_.GetParameters().has_value());
-  EXPECT_FLOAT_EQ(session_.GetParameters()->parameters.tick_rate_hz, kTestParameters.tick_rate_hz);
+  ASSERT_TRUE(session_.GetTickRate().has_value());
+  EXPECT_FLOAT_EQ(*session_.GetTickRate(), kTestTickRate);
 }
 
-// A server whose parameters are unusable (a tick rate of zero): the client
-// drops the Join accepted rather than divide by it.
-TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseParametersFailTheChecks) {
+// A server whose tick rate is unusable (zero): the client drops the Join
+// accepted rather than divide by it.
+TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseTickRateFailsTheChecks) {
   Host host(HostConfig{
-      .parameters = {}, .script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}});
+      .tick_rate_hz = 0.0F, .script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}});
   Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
   session.Connect();
 
@@ -1417,6 +1404,7 @@ TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseParametersFailTheCheck
   }
 
   EXPECT_FALSE(session.GetSessionId().has_value());
+  EXPECT_FALSE(session.GetTickRate().has_value());
   EXPECT_FALSE(session.GetParameters().has_value());
 }
 
@@ -1448,7 +1436,8 @@ TEST(SessionFailureTest, AServerNobodyIsListeningAtIsUnreachable) {
 }
 
 TEST(SessionFailureTest, AServerThatGoesAwayAfterAdmittingTheClientIsAConnectionLost) {
-  auto host = std::make_unique<Host>(HostConfig{.parameters = kTestParameters,
+  auto host = std::make_unique<Host>(HostConfig{.tick_rate_hz = kTestTickRate,
+                                                .parameters = kTestParameters,
                                                 .script_path = "scripts/round.lua",
                                                 .listen = Endpoint{.address = LoopbackAddress()}});
   Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
@@ -1478,7 +1467,8 @@ TEST(SessionFailureTest, AServerThatGoesAwayAfterAdmittingTheClientIsAConnection
 }
 
 TEST(SessionFailureTest, EndingTheSessionOneselfIsNotAFailure) {
-  Host host(HostConfig{.parameters = kTestParameters,
+  Host host(HostConfig{.tick_rate_hz = kTestTickRate,
+                       .parameters = kTestParameters,
                        .script_path = "scripts/round.lua",
                        .listen = Endpoint{.address = LoopbackAddress()}});
   Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
