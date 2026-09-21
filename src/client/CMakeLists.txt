@@ -2,7 +2,7 @@
 # tests need neither Falcor nor a window: it only uses renderer.h's plain
 # scene types, so it takes that header's directory rather than linking
 # augusta_renderer.
-add_library(augustac_scene STATIC loader.cpp)
+add_library(augustac_scene STATIC scene_loader.cpp)
 target_include_directories(augustac_scene PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_SOURCE_DIR}/src/modules/renderer/include

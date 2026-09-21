@@ -14,8 +14,8 @@
 #include "augusta/map.h"
 #include "augusta/networking.h"
 #include "augusta/version.h"
-#include "loader.h"
 #include "runtime.h"
+#include "scene_loader.h"
 
 namespace {
 
