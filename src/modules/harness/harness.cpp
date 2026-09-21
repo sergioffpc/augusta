@@ -61,9 +61,6 @@ struct Session::Impl {
     }
   }
 
-  // The OnXxx handlers below each take in one kind of server message, and run on
-  // the Network I/O thread.
-
   void OnJoinAccepted(const protocol::JoinAccepted& accepted) {
     Publish([&](ServerView& next) { next.session_id = accepted.session; });
     LI("subsystem=clientruntime event=joined");
