@@ -86,6 +86,9 @@ struct Host::Impl {
 
   // Where Reload reads the script from.
   std::filesystem::path parameters_path;
+  // Held for the whole of a Reload, so two calls at once are numbered in the
+  // order their scripts were read and an older read never replaces a newer one.
+  std::mutex reload_mutex;
 
   // Guards everything below: written by the Network I/O thread as clients
   // join, leave and send commands, read once per Simulation tick; and by
@@ -294,8 +297,9 @@ void Host::PumpNetwork() {
 
 std::expected<std::uint32_t, ReloadError> Host::Reload() {
   Impl& impl = *impl_;
-  // The file and the interpreter are not touched under the lock: a slow disk
-  // or script must not stall the Network I/O thread or a tick.
+  const std::lock_guard<std::mutex> reloading(impl.reload_mutex);
+  // The file and the interpreter are not touched under the state lock: a slow
+  // disk or script must not stall the Network I/O thread or a tick.
   const auto loaded = parameters::LoadFile(impl.parameters_path);
   const std::lock_guard<std::mutex> lock(impl.mutex);
   if (!loaded.has_value()) {

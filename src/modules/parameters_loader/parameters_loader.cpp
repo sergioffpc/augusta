@@ -105,10 +105,12 @@ void StopAtTheInstructionLimit(lua_State* state, lua_Debug* /*debug*/) {
 // functions that read files or compile more code and math's randomness are
 // taken out, so loading the same script always gives the same result; and a
 // script that runs on past the instruction limit is stopped with an error.
+// pcall and xpcall are taken out too: the stop is an error, and a script that
+// could catch it would loop on for ever.
 sol::state MakeSandbox() {
   sol::state lua;
   lua.open_libraries(sol::lib::base, sol::lib::math, sol::lib::string, sol::lib::table);
-  for (const char* name : {"dofile", "loadfile", "load", "print", "collectgarbage"}) {
+  for (const char* name : {"dofile", "loadfile", "load", "print", "collectgarbage", "pcall", "xpcall"}) {
     lua[name] = sol::lua_nil;
   }
   for (const char* name : {"random", "randomseed"}) {

@@ -167,8 +167,8 @@ TEST(ParametersLoaderTest, TheForcedWalkThresholdIsAtLeastZeroAndBelowOne) {
 // Every name below is something the sandbox does not give a script (ADR-0039):
 // the filesystem, the process, the clock, randomness, and loading more code.
 constexpr std::string_view kUnavailable[] = {
-    "io",     "os",   "package", "debug",    "coroutine",   "require",
-    "dofile", "load", "print",   "loadfile", "math.random", "math.randomseed",
+    "io",   "os",    "package",  "debug",       "coroutine",       "require", "dofile",
+    "load", "print", "loadfile", "math.random", "math.randomseed", "pcall",   "xpcall",
 };
 
 TEST(ParametersLoaderSandboxTest, NothingThatReachesOutsideTheScriptIsVisible) {
@@ -196,6 +196,17 @@ TEST(ParametersLoaderSandboxTest, AScriptThatNeverReturnsIsStoppedByTheInstructi
     ASSERT_FALSE(loaded.has_value()) << loop;
     EXPECT_EQ(loaded.error().code, LoadErrorCode::kScriptError) << loop;
     EXPECT_NE(loaded.error().subject.find("instruction limit"), std::string::npos) << loaded.error().subject;
+  }
+}
+
+TEST(ParametersLoaderSandboxTest, AScriptCannotCatchTheInstructionLimitAndRunOn) {
+  // Were pcall there, each stop would be caught and the loop would go on for ever.
+  for (const std::string_view loop : {"while true do pcall(function() while true do end end) end",
+                                      "while true do xpcall(function() while true do end end, print) end"}) {
+    const auto loaded = Load(loop);
+
+    ASSERT_FALSE(loaded.has_value()) << loop;
+    EXPECT_EQ(loaded.error().code, LoadErrorCode::kScriptError) << loop;
   }
 }
 
