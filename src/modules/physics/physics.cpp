@@ -335,7 +335,7 @@ struct World::Impl {
   // one only if it does not overlap static geometry (e.g. standing up under a
   // low ceiling). A static-only scene query never sees the body's own
   // controller, which is dynamic.
-  bool CanChangeStance(const BodyRecord& record, Stance current, Stance target) const {
+  [[nodiscard]] bool CanChangeStance(const BodyRecord& record, Stance current, Stance target) const {
     if (HeightForStance(target) <= HeightForStance(current)) {
       return true;
     }
