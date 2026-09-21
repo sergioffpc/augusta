@@ -90,44 +90,26 @@ struct World::Impl {
     // each system's place in the pipeline.
     ecs.system<const Player, Intent>("CommandIngestionSystem")
         .kind(phases[kCommandIngestion])
-        .each([this](const Player& player, Intent& intent) { IngestCommand(player, intent); });
+        .each([this](const Player& player, Intent& intent) { OnCommandIngestion(player, intent); });
     ecs.system<Body, const Intent>("MovementSystem")
         .kind(phases[kMovement])
         .each([this](flecs::iter& it, std::size_t /*row*/, Body& body, const Intent& intent) {
-          body.state = physics.Step(body.handle, intent.input, it.delta_time());
+          OnMovement(it.delta_time(), body, intent);
         });
-    ecs.system("WeaponHandlingSystem").kind(phases[kWeaponHandling]).run([](flecs::iter&) {
-      LT("subsystem=simulationworld event=weapon_handling");
-      // TODO(sergioffpc): not yet a module of its own - see simulation.h.
-    });
-    ecs.system("BallisticsSystem").kind(phases[kBallistics]).run([](flecs::iter&) {
-      LT("subsystem=simulationworld event=ballistics");
-      // TODO(sergioffpc): ballistics::World::Step per in-flight bullet.
-    });
-    ecs.system("HitDetectionSystem").kind(phases[kHitDetection]).run([](flecs::iter&) {
-      LT("subsystem=simulationworld event=hit_detection");
-      // Already folded into BallisticsSystem's ballistics::World::Step
-      // call - see simulation.h's Phase::kHitDetection doc comment.
-      // Kept as its own phase/system for pipeline ordering.
-    });
-    ecs.system("DamageSystem").kind(phases[kDamage]).run([](flecs::iter&) {
-      LT("subsystem=simulationworld event=damage");
-      // TODO(sergioffpc): apply damage from each bullet's resolved
-      // ballistics::BodyPart.
-    });
-    ecs.system("ScriptsBehavioursSystem").kind(phases[kScriptsBehaviours]).run([](flecs::iter&) {
-      LT("subsystem=simulationworld event=scripts_behaviours");
-      // TODO(sergioffpc): scripting::Engine::RunHook per relevant hook.
+    ecs.system("WeaponHandlingSystem").kind(phases[kWeaponHandling]).run([this](flecs::iter&) { OnWeaponHandling(); });
+    ecs.system("BallisticsSystem").kind(phases[kBallistics]).run([this](flecs::iter&) { OnBallistics(); });
+    ecs.system("HitDetectionSystem").kind(phases[kHitDetection]).run([this](flecs::iter&) { OnHitDetection(); });
+    ecs.system("DamageSystem").kind(phases[kDamage]).run([this](flecs::iter&) { OnDamage(); });
+    ecs.system("ScriptsBehavioursSystem").kind(phases[kScriptsBehaviours]).run([this](flecs::iter&) {
+      OnScriptsBehaviours();
     });
     ecs.system<const Player, const Body>("CommitSystem")
         .kind(phases[kCommit])
-        .each([this](const Player& player, const Body& body) {
-          committed.players.push_back(PlayerState{.player = player.id, .body = body.state});
-        });
+        .each([this](const Player& player, const Body& body) { OnCommit(player, body); });
   }
 
   // A player with no command this tick stops and keeps the stance it asked for.
-  void IngestCommand(const Player& player, Intent& intent) {
+  void OnCommandIngestion(const Player& player, Intent& intent) {
     const auto command = tick_commands.find(player.id);
     if (command == tick_commands.end()) {
       intent.input.direction = math::Vec3{};
@@ -135,6 +117,42 @@ struct World::Impl {
       return;
     }
     intent.input = command->second.movement;
+  }
+
+  void OnMovement(float delta_time, Body& body, const Intent& intent) {
+    body.state = physics.Step(body.handle, intent.input, delta_time);
+  }
+
+  void OnWeaponHandling() {
+    LT("subsystem=simulationworld event=weapon_handling");
+    // TODO(sergioffpc): not yet a module of its own - see simulation.h.
+  }
+
+  void OnBallistics() {
+    LT("subsystem=simulationworld event=ballistics");
+    // TODO(sergioffpc): ballistics::World::Step per in-flight bullet.
+  }
+
+  void OnHitDetection() {
+    LT("subsystem=simulationworld event=hit_detection");
+    // Already folded into OnBallistics's ballistics::World::Step
+    // call - see simulation.h's Phase::kHitDetection doc comment.
+    // Kept as its own phase/system for pipeline ordering.
+  }
+
+  void OnDamage() {
+    LT("subsystem=simulationworld event=damage");
+    // TODO(sergioffpc): apply damage from each bullet's resolved
+    // ballistics::BodyPart.
+  }
+
+  void OnScriptsBehaviours() {
+    LT("subsystem=simulationworld event=scripts_behaviours");
+    // TODO(sergioffpc): scripting::Engine::RunHook per relevant hook.
+  }
+
+  void OnCommit(const Player& player, const Body& body) {
+    committed.players.push_back(PlayerState{.player = player.id, .body = body.state});
   }
 };
 

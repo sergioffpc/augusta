@@ -55,41 +55,51 @@ struct World::Impl {
     // those shapes exist, and until RunFrame's per-call latest argument
     // has somewhere to flow into the ECS (a singleton, presumably, once
     // one is designed).
-    ecs.system("InterpolationSystem").kind(phases[kInterpolation]).run([](flecs::iter&) {
-      const nvtx3::scoped_range range{"Interpolation"};
-      LT("subsystem=presentationworld event=interpolation");
-      // TODO(sergioffpc): blend the last two prediction::State values.
-    });
-    ecs.system("CameraSystem").kind(phases[kCamera]).run([](flecs::iter&) {
-      const nvtx3::scoped_range range{"Camera"};
-      LT("subsystem=presentationworld event=camera");
-      // TODO(sergioffpc): not yet a module of its own - see presentation.h.
-    });
-    ecs.system("AnimationSystem").kind(phases[kAnimation]).run([this](flecs::iter&) {
-      const nvtx3::scoped_range range{"Animation"};
-      LT("subsystem=presentationworld event=animation");
-      // TODO(sergioffpc): animation.Update per visible player character,
-      // once there's a per-character handle to iterate and a
-      // animation::LocomotionInput to build from interpolated movement -
-      // see presentation.h's Phase::kAnimation doc comment. The capture
-      // only proves animation is reachable from here; no call is made
-      // yet.
-      (void)animation;
-    });
-    ecs.system("AudioCuesSystem").kind(phases[kAudioCues]).run([this](flecs::iter&) {
-      const nvtx3::scoped_range range{"AudioCues"};
-      LT("subsystem=presentationworld event=audio_cues");
-      // TODO(sergioffpc): audio_engine.SetListener then PlaySound per
-      // this frame's cues - see presentation.h's Phase::kAudioCues doc
-      // comment. The capture only proves audio_engine is reachable from
-      // here; no call is made yet.
-      (void)audio_engine;
-    });
-    ecs.system("CommitSystem").kind(phases[kCommit]).run([](flecs::iter&) {
-      const nvtx3::scoped_range range{"Commit"};
-      LT("subsystem=presentationworld event=commit");
-      // TODO(sergioffpc): package the frame's presentation data into State.
-    });
+    ecs.system("InterpolationSystem").kind(phases[kInterpolation]).run([this](flecs::iter&) { OnInterpolation(); });
+    ecs.system("CameraSystem").kind(phases[kCamera]).run([this](flecs::iter&) { OnCamera(); });
+    ecs.system("AnimationSystem").kind(phases[kAnimation]).run([this](flecs::iter&) { OnAnimation(); });
+    ecs.system("AudioCuesSystem").kind(phases[kAudioCues]).run([this](flecs::iter&) { OnAudioCues(); });
+    ecs.system("CommitSystem").kind(phases[kCommit]).run([this](flecs::iter&) { OnCommit(); });
+  }
+
+  void OnInterpolation() {
+    const nvtx3::scoped_range range{"Interpolation"};
+    LT("subsystem=presentationworld event=interpolation");
+    // TODO(sergioffpc): blend the last two prediction::State values.
+  }
+
+  void OnCamera() {
+    const nvtx3::scoped_range range{"Camera"};
+    LT("subsystem=presentationworld event=camera");
+    // TODO(sergioffpc): not yet a module of its own - see presentation.h.
+  }
+
+  void OnAnimation() {
+    const nvtx3::scoped_range range{"Animation"};
+    LT("subsystem=presentationworld event=animation");
+    // TODO(sergioffpc): animation.Update per visible player character,
+    // once there's a per-character handle to iterate and a
+    // animation::LocomotionInput to build from interpolated movement -
+    // see presentation.h's Phase::kAnimation doc comment. The capture
+    // only proves animation is reachable from here; no call is made
+    // yet.
+    (void)animation;
+  }
+
+  void OnAudioCues() {
+    const nvtx3::scoped_range range{"AudioCues"};
+    LT("subsystem=presentationworld event=audio_cues");
+    // TODO(sergioffpc): audio_engine.SetListener then PlaySound per
+    // this frame's cues - see presentation.h's Phase::kAudioCues doc
+    // comment. The capture only proves audio_engine is reachable from
+    // here; no call is made yet.
+    (void)audio_engine;
+  }
+
+  void OnCommit() {
+    const nvtx3::scoped_range range{"Commit"};
+    LT("subsystem=presentationworld event=commit");
+    // TODO(sergioffpc): package the frame's presentation data into State.
   }
 };
 

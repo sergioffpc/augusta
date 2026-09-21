@@ -110,12 +110,14 @@ struct Session::Impl {
 
   // Sends command under sequence with the commands server_view does not yet acknowledge.
   void SendCommand(const ServerView& server_view, std::uint32_t sequence, const input::Command& command) {
+    // Commands the server has already processed need not go again.
     if (server_view.authoritative.has_value()) {
       while (!unacknowledged.empty() &&
              unacknowledged.front().sequence <= server_view.authoritative->acknowledged_sequence) {
         unacknowledged.pop_front();
       }
     }
+    // Keeps at most the newest kMaxCommandsPerMessage, all a message can carry.
     unacknowledged.push_back(protocol::SequencedCommand{.sequence = sequence, .command = command});
     if (unacknowledged.size() > protocol::kMaxCommandsPerMessage) {
       unacknowledged.pop_front();

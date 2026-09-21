@@ -72,40 +72,28 @@ struct World::Impl {
     // matched entities, since ECS component shapes aren't designed yet
     // (see prediction.h's header comment) - local_body is a single
     // hardcoded handle rather than something discovered by a query.
-    ecs.system("CommandIngestionSystem").kind(phases[kCommandIngestion]).run([](flecs::iter&) {
-      const nvtx3::scoped_range range{"CommandIngestion"};
-      LT("subsystem=predictionworld event=command_ingestion");
-      // tick_command is already staged by Tick() - nothing else to
-      // ingest yet without an entity/component to apply it to.
+    ecs.system("CommandIngestionSystem").kind(phases[kCommandIngestion]).run([this](flecs::iter&) {
+      OnCommandIngestion();
     });
-    ecs.system("ReconciliationSystem").kind(phases[kReconciliation]).run([this](flecs::iter&) {
-      const nvtx3::scoped_range range{"Reconciliation"};
-      Reconcile();
-    });
+    ecs.system("ReconciliationSystem").kind(phases[kReconciliation]).run([this](flecs::iter&) { OnReconciliation(); });
     ecs.system("MovementSystem").kind(phases[kMovement]).run([this](flecs::iter& sys_iter) {
-      const nvtx3::scoped_range range{"Movement"};
-      LT("subsystem=predictionworld event=movement");
-      tick_state.local_body = physics.Step(local_body, tick_command.movement, sys_iter.delta_time());
+      OnMovement(sys_iter.delta_time());
     });
-    ecs.system("WeaponHandlingSystem").kind(phases[kWeaponHandling]).run([](flecs::iter&) {
-      const nvtx3::scoped_range range{"WeaponHandling"};
-      LT("subsystem=predictionworld event=weapon_handling");
-      // TODO(sergioffpc): not yet a module of its own - see prediction.h.
-    });
-    ecs.system("CommitSystem").kind(phases[kCommit]).run([this](flecs::iter&) {
-      const nvtx3::scoped_range range{"Commit"};
-      LT("subsystem=predictionworld event=commit");
-      // tick_state.local_body is already set by MovementSystem; what is left
-      // is remembering it for the server's answer to this command.
-      if (tick_sequence != 0) {
-        history.Record(tick_sequence, tick_state.local_body);
-      }
-    });
+    ecs.system("WeaponHandlingSystem").kind(phases[kWeaponHandling]).run([this](flecs::iter&) { OnWeaponHandling(); });
+    ecs.system("CommitSystem").kind(phases[kCommit]).run([this](flecs::iter&) { OnCommit(); });
+  }
+
+  void OnCommandIngestion() {
+    const nvtx3::scoped_range range{"CommandIngestion"};
+    LT("subsystem=predictionworld event=command_ingestion");
+    // tick_command is already staged by Tick() - nothing else to
+    // ingest yet without an entity/component to apply it to.
   }
 
   // Moves the current state, and the history after it, by the error between
   // the server's state and what was predicted after the same command.
-  void Reconcile() {
+  void OnReconciliation() {
+    const nvtx3::scoped_range range{"Reconciliation"};
     if (!tick_acknowledgement.has_value()) {
       return;
     }
@@ -118,6 +106,28 @@ struct World::Impl {
        correction.snapped ? "reconcile_snap" : "reconcile_blend", tick_acknowledgement->sequence, correction.error);
     tick_state.local_body = physics.Correct(local_body, Apply(tick_state.local_body, correction));
     history.Shift(correction);
+  }
+
+  void OnMovement(float delta_time) {
+    const nvtx3::scoped_range range{"Movement"};
+    LT("subsystem=predictionworld event=movement");
+    tick_state.local_body = physics.Step(local_body, tick_command.movement, delta_time);
+  }
+
+  void OnWeaponHandling() {
+    const nvtx3::scoped_range range{"WeaponHandling"};
+    LT("subsystem=predictionworld event=weapon_handling");
+    // TODO(sergioffpc): not yet a module of its own - see prediction.h.
+  }
+
+  void OnCommit() {
+    const nvtx3::scoped_range range{"Commit"};
+    LT("subsystem=predictionworld event=commit");
+    // tick_state.local_body is already set by OnMovement; what is left
+    // is remembering it for the server's answer to this command.
+    if (tick_sequence != 0) {
+      history.Record(tick_sequence, tick_state.local_body);
+    }
   }
 };
 
