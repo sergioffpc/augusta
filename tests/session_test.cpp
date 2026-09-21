@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -287,15 +288,26 @@ TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
 // A joined client and a host with flat ground, driven tick by tick.
 class MovementTest : public ::testing::Test {
  protected:
+  // Every player spawns at the origin, so the ground is a little below it:
+  // a body placed exactly on a floor starts overlapping it, which PhysX does not resolve well.
+  static constexpr float kGroundHeight = -0.5F;
+
   static constexpr auto kNetworkDelay = std::chrono::milliseconds(8);
   // The ticks SetUp runs, each with one command sent.
   static constexpr int kSettleTicks = 30;
 
-  MovementTest()
+  MovementTest() : MovementTest({FloorAt(kGroundHeight)}) {}
+
+  // The client always knows the floor; the host knows server_map, which a test
+  // may make differ from it to give the two something to disagree about.
+  explicit MovementTest(std::vector<StaticMesh> server_map)
       : host_(HostConfig{.script_path = "scripts/round.lua",
                          .listen = Endpoint{.address = LoopbackAddress()},
-                         .collision = {FloorAt(0.0F)}}),
-        session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}) {}
+                         .collision = std::move(server_map)}),
+        session_(
+            SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .collision = {FloorAt(kGroundHeight)}}) {}
+
+  void TearDown() override { augusta::networking::SimulateNetworkConditions({}); }
 
   void SetUp() override {
     session_.Connect();
@@ -323,10 +335,42 @@ class MovementTest : public ::testing::Test {
     session_.ExchangeMessages();
   }
 
-  // One tick of the whole match: the client predicts and sends command, then the server ticks.
-  void Step(const Command& command) {
-    session_.Tick(command, kFixedTick);
+  // One tick of the whole match: the client predicts and sends command, then
+  // the server ticks. Returns what the client predicted.
+  augusta::prediction::State Step(const Command& command) {
+    const augusta::prediction::State predicted = session_.Tick(command, kFixedTick);
     ServerTickAndDeliver();
+    return predicted;
+  }
+
+  // Ticks the whole match with command for the given number of steps.
+  augusta::prediction::State Run(int steps, const Command& command) {
+    augusta::prediction::State predicted;
+    for (int i = 0; i < steps; ++i) {
+      predicted = Step(command);
+    }
+    return predicted;
+  }
+
+  // Ticks the server, without the client sending anything more, until it has
+  // processed the command with this sequence or a generous number of ticks has
+  // passed; returns the sequence it has processed.
+  std::uint32_t DrainServer(int last_sequence) {
+    constexpr int kMaxTicks = 120;
+    std::uint32_t acknowledged = session_.GetAuthoritativeState()->acknowledged_sequence;
+    for (int i = 0; i < kMaxTicks && acknowledged < static_cast<std::uint32_t>(last_sequence); ++i) {
+      ServerTickAndDeliver();
+      acknowledged = session_.GetAuthoritativeState()->acknowledged_sequence;
+    }
+    return acknowledged;
+  }
+
+  // How far apart, on the ground plane, the client's prediction and the newest
+  // authoritative state of its player are.
+  [[nodiscard]] float PredictionError(const augusta::prediction::State& predicted) const {
+    const Vec3 authoritative = Self().position;
+    return std::hypot(predicted.local_body.position.x - authoritative.x,
+                      predicted.local_body.position.z - authoritative.z);
   }
 
   [[nodiscard]] augusta::physics::BodyState Self() const {
@@ -429,6 +473,43 @@ TEST_F(MovementTest, ALostDatagramDoesNotLoseAMovementCommand) {
   EXPECT_EQ(acknowledged, last_sent);
 }
 
+TEST_F(MovementTest, AtAHundredMillisecondsOfLatencyNoCommandIsLostAndThePredictionSettlesOnTheServer) {
+  constexpr int kOneWayLatencyMs = 50;
+  constexpr int kWalkSteps = 60;
+  constexpr int kSettleSteps = 60;
+  augusta::networking::SimulateNetworkConditions({.latency_ms = kOneWayLatencyMs});
+
+  Run(kWalkSteps, Walking());
+  Run(kSettleSteps, Command{});
+
+  // Every command reached the server and was processed, and what the client predicts is where the server has the
+  // player.
+  EXPECT_EQ(DrainServer(kSettleTicks + kWalkSteps + kSettleSteps),
+            static_cast<std::uint32_t>(kSettleTicks + kWalkSteps + kSettleSteps));
+  EXPECT_LT(PredictionError(Run(kSettleSteps, Command{})), 0.05F);
+}
+
+TEST_F(MovementTest, WithPacketLossEveryCommandIsStillProcessedAndThePredictionStaysConsistent) {
+  constexpr float kLossPercent = 20.0F;
+  constexpr int kWalkSteps = 60;
+  constexpr int kSettleSteps = 60;
+  augusta::networking::SimulateNetworkConditions({.loss_percent = kLossPercent});
+
+  Run(kWalkSteps, Walking());
+  Run(kSettleSteps, Command{});
+
+  // The last commands sent under loss may have been lost for good, since the
+  // client has nothing newer to repeat them with; a few more sent over a clean
+  // network carry whatever the server is still missing.
+  augusta::networking::SimulateNetworkConditions({});
+  constexpr int kRecoverySteps = 10;
+  Run(kRecoverySteps, Command{});
+
+  const auto sent = static_cast<std::uint32_t>(kSettleTicks + kWalkSteps + kSettleSteps + kRecoverySteps);
+  EXPECT_EQ(DrainServer(sent), sent);
+  EXPECT_LT(PredictionError(Run(kSettleSteps, Command{})), 0.05F);
+}
+
 // A client speaking the protocol by hand, to send what a real one would not.
 class RawClient {
  public:
@@ -520,6 +601,45 @@ TEST_F(MovementTest, CommandsThatAreOutOfOrderNonFiniteOrOutOfRangeAreDroppedWit
     EXPECT_TRUE(ack == 0 || ack == 1 || ack == 4 || ack == 6)
         << "processed a command that should have been dropped: " << ack;
   }
+}
+
+// A vertical wall across the walking path, at x, that only the server knows.
+StaticMesh WallAt(float x) {
+  constexpr float kHalfWidth = 20.0F;
+  constexpr float kHeight = 5.0F;
+  constexpr float kBottom = -1.0F;
+  return StaticMesh{.points = {Vec3(x, kBottom, -kHalfWidth), Vec3(x, kHeight, -kHalfWidth),
+                               Vec3(x, kHeight, kHalfWidth), Vec3(x, kBottom, kHalfWidth)},
+                    .indices = {0, 1, 2, 0, 2, 3}};
+}
+
+class DivergedMovementTest : public MovementTest {
+ protected:
+  static constexpr float kWallX = 3.0F;
+
+  DivergedMovementTest() : MovementTest({FloorAt(kGroundHeight), WallAt(kWallX)}) {}
+};
+
+TEST_F(DivergedMovementTest, ADivergenceAtAHundredMillisecondsOfLatencyIsCorrectedWithinTheBudget) {
+  constexpr int kOneWayLatencyMs = 50;
+  constexpr int kWalkSteps = 90;
+  // The round trip plus NFR-02's 150 ms, in 16 ms steps of this test.
+  constexpr int kBudgetSteps = 16;
+  augusta::networking::SimulateNetworkConditions({.latency_ms = kOneWayLatencyMs});
+
+  // The client walks through a wall only the server has; the server stops the player at it.
+  const auto walked = Run(kWalkSteps, Walking());
+  ASSERT_GT(PredictionError(walked), 0.05F) << "the client and the server never disagreed";
+
+  augusta::prediction::State predicted = walked;
+  int steps_to_agree = 0;
+  while (PredictionError(predicted) > 0.1F && steps_to_agree < 4 * kBudgetSteps) {
+    predicted = Step(Command{});
+    ++steps_to_agree;
+  }
+
+  EXPECT_LE(steps_to_agree, kBudgetSteps);
+  EXPECT_LT(Self().position.x, kWallX);
 }
 
 }  // namespace

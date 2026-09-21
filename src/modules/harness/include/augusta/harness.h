@@ -88,8 +88,10 @@ class Session {
   [[nodiscard]] std::optional<protocol::AuthoritativeState> GetAuthoritativeState() const;
 
   /// Runs one fixed tick of PredictionWorld for command and returns its state.
-  /// Once the server has admitted this client, also sends command to it,
-  /// together with the recent commands the server has not yet acknowledged.
+  /// Once the server has admitted this client, the command goes to it under the
+  /// next sequence, together with the recent commands the server has not yet
+  /// acknowledged, and the prediction is reconciled against what the server
+  /// last said about this client's player.
   prediction::State Tick(const input::Command& command, float delta_time);
 
  private:

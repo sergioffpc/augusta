@@ -98,15 +98,6 @@ constexpr int kWorkerThreadCount = 1;
 // shrunk by this much, so touching the floor or a wall is not "overlapping".
 constexpr float kStanceCheckSkin = 0.02F;
 
-// ADR-0004 snap/blend correction: an error at or beyond kSnapDistance
-// teleports the predicted body directly to the authoritative state (too
-// far for a blend to look acceptable - most plausibly a respawn/teleport
-// the client hasn't caught up to yet); anything closer blends by
-// kBlendFactor of the remaining error per Reconcile call, so repeated
-// corrections converge smoothly without overshoot.
-constexpr float kSnapDistance = 2.0F;
-constexpr float kBlendFactor = 0.25F;
-
 float HeightForStance(Stance stance) {
   switch (stance) {
     case Stance::kStanding:
@@ -162,33 +153,6 @@ float ResolveSpeed(Stance stance, bool sprinting) {
     speed *= kSprintMultiplier;
   }
   return speed;
-}
-
-// Decision half of Reconcile (ADR-0004 snap/blend correction): computes the
-// corrected BodyState from the predicted and authoritative states, and
-// whether this correction snapped rather than blended. Pure - no
-// PxController calls - so it stays unit-testable independent of PhysX;
-// Reconcile (mechanism half) just applies the result to the controller.
-struct ReconciliationResult {
-  BodyState state;
-  bool snapped = false;
-  float error = 0.0F;
-};
-
-ReconciliationResult ResolveReconciliation(const BodyState& predicted, const BodyState& authoritative) {
-  ReconciliationResult result;
-  result.error = math::Length(authoritative.position - predicted.position);
-  if (result.error >= kSnapDistance) {
-    result.state = authoritative;
-    result.snapped = true;
-    return result;
-  }
-  result.state = predicted;
-  result.state.position = predicted.position + ((authoritative.position - predicted.position) * kBlendFactor);
-  result.state.velocity = predicted.velocity + ((authoritative.velocity - predicted.velocity) * kBlendFactor);
-  result.state.stance = authoritative.stance;
-  result.state.stamina = authoritative.stamina;
-  return result;
 }
 
 // Every triangle twice, once per winding: a cooked map's triangles can face
@@ -566,28 +530,23 @@ void World::SetState(BodyHandle handle, const BodyState& state) {
   record.grounded = false;
 }
 
-BodyState World::Reconcile(BodyHandle handle, const BodyState& authoritative) {
+BodyState World::Correct(BodyHandle handle, const BodyState& corrected) {
   const auto body_it = impl_->bodies.find(handle);
   if (body_it == impl_->bodies.end()) {
-    return authoritative;
+    return corrected;
   }
   BodyRecord& record = body_it->second;
-  const ReconciliationResult result = ResolveReconciliation(record.state, authoritative);
-  LD("subsystem=physics event={} handle={} error={:.3f}", result.snapped ? "reconcile_snap" : "reconcile_blend",
-     static_cast<std::uint32_t>(handle), result.error);
 
   // Applied directly against the controller (not via SetState): SetState
   // also resets fall/ground tracking, which is correct for an intentional
   // teleport (spawn/respawn) but would spuriously interrupt gravity
-  // continuity for what is, outside of the kSnapDistance case above, a
-  // small in-place correction.
-  if (result.state.stance != record.state.stance) {
-    record.controller->resize(HeightForStance(result.state.stance));
+  // continuity for what is a small in-place correction.
+  if (corrected.stance != record.state.stance) {
+    record.controller->resize(HeightForStance(corrected.stance));
   }
-  record.controller->setFootPosition(
-      PxExtendedVec3(result.state.position.x, result.state.position.y, result.state.position.z));
-  record.state = result.state;
-  return result.state;
+  record.controller->setFootPosition(PxExtendedVec3(corrected.position.x, corrected.position.y, corrected.position.z));
+  record.state = corrected;
+  return corrected;
 }
 
 RaycastHit World::Raycast(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const {

@@ -7,6 +7,7 @@
 
 #include "augusta/logging.h"
 #include "augusta/math.h"
+#include "augusta/reconciliation.h"
 
 namespace augusta::prediction {
 
@@ -40,8 +41,13 @@ struct World::Impl {
   // entity (rather than the systems closing over it directly) is what
   // replaces this.
   input::Command tick_command;
-  std::optional<physics::BodyState> tick_authoritative_state;
+  std::uint32_t tick_sequence = 0;
+  std::optional<Acknowledgement> tick_acknowledgement;
   State tick_state;
+
+  // What was predicted after each command sent, for Reconciliation to compare
+  // the server's answer with.
+  History history;
 
   explicit Impl(const physics::StaminaConfig& stamina_config)
       // enable_gpu=true: PredictionWorld is exclusively client-side (see
@@ -74,11 +80,7 @@ struct World::Impl {
     });
     ecs.system("ReconciliationSystem").kind(phases[kReconciliation]).run([this](flecs::iter&) {
       const nvtx3::scoped_range range{"Reconciliation"};
-      if (!tick_authoritative_state.has_value()) {
-        return;
-      }
-      LT("subsystem=predictionworld event=reconciliation");
-      physics.Reconcile(local_body, *tick_authoritative_state);
+      Reconcile();
     });
     ecs.system("MovementSystem").kind(phases[kMovement]).run([this](flecs::iter& sys_iter) {
       const nvtx3::scoped_range range{"Movement"};
@@ -90,12 +92,32 @@ struct World::Impl {
       LT("subsystem=predictionworld event=weapon_handling");
       // TODO(sergioffpc): not yet a module of its own - see prediction.h.
     });
-    ecs.system("CommitSystem").kind(phases[kCommit]).run([](flecs::iter&) {
+    ecs.system("CommitSystem").kind(phases[kCommit]).run([this](flecs::iter&) {
       const nvtx3::scoped_range range{"Commit"};
       LT("subsystem=predictionworld event=commit");
-      // tick_state.local_body is already committed by MovementSystem -
-      // nothing else in State to package yet.
+      // tick_state.local_body is already set by MovementSystem; what is left
+      // is remembering it for the server's answer to this command.
+      if (tick_sequence != 0) {
+        history.Record(tick_sequence, tick_state.local_body);
+      }
     });
+  }
+
+  // Moves the current state, and the history after it, by the error between
+  // the server's state and what was predicted after the same command.
+  void Reconcile() {
+    if (!tick_acknowledgement.has_value()) {
+      return;
+    }
+    const std::optional<physics::BodyState> predicted = history.Acknowledge(tick_acknowledgement->sequence);
+    if (!predicted.has_value()) {
+      return;
+    }
+    const Correction correction = ResolveCorrection(*predicted, tick_acknowledgement->body);
+    LD("subsystem=predictionworld event={} sequence={} error={:.3f}",
+       correction.snapped ? "reconcile_snap" : "reconcile_blend", tick_acknowledgement->sequence, correction.error);
+    tick_state.local_body = physics.Correct(local_body, Apply(tick_state.local_body, correction));
+    history.Shift(correction);
   }
 };
 
@@ -110,10 +132,11 @@ std::expected<void, physics::StaticMeshError> World::AddStaticMesh(const physics
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
-State World::Tick(const input::Command& command, const std::optional<physics::BodyState>& authoritative_state,
-                  float delta_time) {
+State World::Tick(const input::Command& command, std::uint32_t sequence,
+                  const std::optional<Acknowledgement>& acknowledgement, float delta_time) {
   impl_->tick_command = command;
-  impl_->tick_authoritative_state = authoritative_state;
+  impl_->tick_sequence = sequence;
+  impl_->tick_acknowledgement = acknowledgement;
   impl_->ecs.progress(delta_time);
   return impl_->tick_state;
 }

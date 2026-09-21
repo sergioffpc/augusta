@@ -1,6 +1,5 @@
 #include "augusta/harness.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <deque>
 #include <expected>
@@ -22,8 +21,6 @@ struct Session::Impl {
   prediction::World prediction;
   // Network I/O thread only.
   bool sent_join_request = false;
-  // Prediction thread only. Sequences start at 1; 0 means none.
-  std::uint32_t next_sequence = 1;
 
   // What the server has told this client, written by the Network I/O thread as
   // it answers and read from any; also the commands the Prediction thread
@@ -33,6 +30,8 @@ struct Session::Impl {
   std::optional<protocol::JoinRefusal> refusal;
   std::optional<protocol::AuthoritativeState> authoritative;
   std::deque<protocol::SequencedCommand> unacknowledged;
+  // Sequences start at 1; 0 means none.
+  std::uint32_t next_sequence = 1;
 
   explicit Impl(const SessionConfig& config)
       : server(config.server), engine_version(config.engine_version), prediction(config.stamina) {
@@ -77,16 +76,33 @@ struct Session::Impl {
     }
   }
 
-  // Queues command under the next sequence and sends it with the commands
-  // still unacknowledged: not before the server has admitted this client.
-  void SendCommand(const input::Command& command) {
+  // The number the next command goes to the server under, or 0 while the
+  // server has not admitted this client and there is nobody to send to.
+  std::uint32_t TakeSequence() {
+    const std::lock_guard<std::mutex> lock(mutex);
+    return session_id.has_value() ? next_sequence++ : 0;
+  }
+
+  // What the newest state from the server says about this client's own player.
+  std::optional<prediction::Acknowledgement> OwnAcknowledgement() {
+    const std::lock_guard<std::mutex> lock(mutex);
+    if (!session_id.has_value() || !authoritative.has_value()) {
+      return std::nullopt;
+    }
+    for (const protocol::PlayerState& player : authoritative->players) {
+      if (player.session == *session_id) {
+        return prediction::Acknowledgement{.sequence = authoritative->acknowledged_sequence, .body = player.body};
+      }
+    }
+    return std::nullopt;
+  }
+
+  // Sends command under sequence with the commands still unacknowledged.
+  void SendCommand(std::uint32_t sequence, const input::Command& command) {
     protocol::Commands message;
     {
       const std::lock_guard<std::mutex> lock(mutex);
-      if (!session_id.has_value()) {
-        return;
-      }
-      unacknowledged.push_back(protocol::SequencedCommand{.sequence = next_sequence++, .command = command});
+      unacknowledged.push_back(protocol::SequencedCommand{.sequence = sequence, .command = command});
       if (unacknowledged.size() > protocol::kMaxCommandsPerMessage) {
         unacknowledged.pop_front();
       }
@@ -139,9 +155,12 @@ std::optional<protocol::AuthoritativeState> Session::GetAuthoritativeState() con
 }
 
 prediction::State Session::Tick(const input::Command& command, float delta_time) {
-  // TODO(sergioffpc): reconcile against the authoritative state (#79).
-  prediction::State state = impl_->prediction.Tick(command, std::nullopt, delta_time);
-  impl_->SendCommand(command);
+  Impl& impl = *impl_;
+  const std::uint32_t sequence = impl.TakeSequence();
+  const prediction::State state = impl.prediction.Tick(command, sequence, impl.OwnAcknowledgement(), delta_time);
+  if (sequence != 0) {
+    impl.SendCommand(sequence, command);
+  }
   return state;
 }
 
