@@ -64,10 +64,12 @@ __pycache__/
 tools/pack/src/pack/*.pyd
 tools/pack/src/pack/*.dll
 
-# Local runtime config (ADR-0034): machine-specific paths, so never committed.
-# The templates in config/ are named *.example.yaml and stay tracked.
+# Local runtime config (ADR-0034, ADR-0039): machine-specific paths and tuning,
+# so never committed. The templates in config/ are named *.example.yaml and
+# parameters.example.lua, and stay tracked.
 augustac.yaml
 augustad.yaml
+parameters.lua
 
 # OS
 .DS_Store
