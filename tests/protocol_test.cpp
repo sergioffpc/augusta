@@ -47,7 +47,7 @@ constexpr auto kJoinAcceptedType = static_cast<std::uint8_t>(MessageType::kJoinA
 constexpr auto kJoinRefusedType = static_cast<std::uint8_t>(MessageType::kJoinRefused);
 constexpr auto kCommandsType = static_cast<std::uint8_t>(MessageType::kCommands);
 constexpr auto kAuthoritativeStateType = static_cast<std::uint8_t>(MessageType::kAuthoritativeState);
-constexpr auto kParametersType = static_cast<std::uint8_t>(MessageType::kParameters);
+constexpr auto kParametersUpdateType = static_cast<std::uint8_t>(MessageType::kParametersUpdate);
 
 Message RoundTrip(const Message& message) {
   const auto decoded = Decode(Encode(message));
@@ -157,7 +157,7 @@ TEST(ProtocolTest, ParametersUpdateRoundTrips) {
 
 TEST(ProtocolTest, AParametersUpdateIsTheTypeByteThenGenerationTickRateAndStaminaRules) {
   // type, generation (4), tick rate (4), stamina rules (12), all zero but the generation.
-  Bytes expected = BytesOf({kParametersType, 0x03, 0x00, 0x00, 0x00});
+  Bytes expected = BytesOf({kParametersUpdateType, 0x03, 0x00, 0x00, 0x00});
   expected.resize(expected.size() + 4 + 12, std::byte{0});
 
   EXPECT_EQ(Encode(ParametersUpdate{.generation = 3}), expected);

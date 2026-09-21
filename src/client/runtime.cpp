@@ -184,8 +184,8 @@ struct ClientRuntime::Impl {
   std::optional<parameters::Parameters> WaitForParameters() {
     constexpr auto kPollInterval = std::chrono::milliseconds(10);
     while (running.load(std::memory_order_relaxed)) {
-      if (auto parameters = session->GetParameters()) {
-        return parameters;
+      if (const auto held = session->GetParameters()) {
+        return held->parameters;
       }
       std::this_thread::sleep_for(kPollInterval);
     }

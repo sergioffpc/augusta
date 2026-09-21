@@ -20,17 +20,11 @@ namespace augusta::harness {
 // I/O thread makes a new one for each message that changes it, and the
 // Prediction thread reads whichever is current.
 struct ServerView {
-  // The newest parameters the server has sent, and their generation.
-  struct CurrentParameters {
-    std::uint32_t generation;
-    parameters::Parameters parameters;
-  };
-
   // The whole answer to the join request: the session, the spawn point, the
   // parameters then and who was already there.
   std::optional<protocol::JoinAccepted> accepted;
   // What the join carried at first, and what each reload since has replaced it with.
-  std::optional<CurrentParameters> current_parameters;
+  std::optional<parameters::NumberedParameters> current_parameters;
   std::optional<protocol::JoinRefusal> refusal;
   std::optional<protocol::AuthoritativeState> authoritative;
 };
@@ -95,41 +89,43 @@ struct Session::Impl {
     Publish([&](ServerView& next) {
       next.accepted = accepted;
       next.current_parameters =
-          ServerView::CurrentParameters{.generation = accepted.generation, .parameters = accepted.parameters};
+          parameters::NumberedParameters{.generation = accepted.generation, .parameters = accepted.parameters};
     });
     LI("subsystem=clientruntime event=joined roster={} generation={}", accepted.roster.size(), accepted.generation);
   }
 
-  // Adopts update if it is the next word of the server: a generation newer than
-  // the one held, on values the simulation can run on, at the tick rate this
-  // client was told when it joined (fixed for the server's run, so another is a
-  // damaged message and not a reload). Anything else is dropped and logged, as a
-  // malformed message is.
+  // Logs why update was not taken: a late or repeated one is routine, since
+  // nothing is ordered across a reload, and only traced; the rest are dropped
+  // as a malformed message is.
+  static void LogRefused(const protocol::ParametersUpdate& update, const parameters::ReplacementError& error) {
+    switch (error.reason) {
+      case parameters::ReplacementRefusal::kNotNewer:
+        LT("subsystem=clientruntime event=dropped generation={} reason=\"not newer\"", update.generation);
+        break;
+      case parameters::ReplacementRefusal::kInvalid:
+        LW("subsystem=clientruntime event=dropped generation={} reason=\"invalid parameters\" parameter={}",
+           update.generation, error.parameter);
+        break;
+      case parameters::ReplacementRefusal::kTickRateChanged:
+        LW("subsystem=clientruntime event=dropped generation={} reason=\"tick rate differs from the one joined with\"",
+           update.generation);
+        break;
+    }
+  }
+
+  // Adopts update if parameters::CheckReplacement allows it; anything else is dropped and logged.
   void OnParametersUpdate(const protocol::ParametersUpdate& update) {
-    const std::optional<ServerView::CurrentParameters> current = view.load()->current_parameters;
-    if (!current.has_value()) {
+    const std::optional<parameters::NumberedParameters> held = view.load()->current_parameters;
+    if (!held.has_value()) {
       LW("subsystem=clientruntime event=dropped reason=\"parameters before joining\"");
       return;
     }
-    if (update.generation <= current->generation) {
-      LT("subsystem=clientruntime event=dropped generation={} held={} reason=\"not newer\"", update.generation,
-         current->generation);
+    const parameters::NumberedParameters candidate{.generation = update.generation, .parameters = update.parameters};
+    if (const auto allowed = parameters::CheckReplacement(*held, candidate); !allowed) {
+      LogRefused(update, allowed.error());
       return;
     }
-    if (const auto valid = parameters::Validate(update.parameters); !valid) {
-      LW("subsystem=clientruntime event=dropped generation={} reason=\"invalid parameters\" parameter={}",
-         update.generation, valid.error().path);
-      return;
-    }
-    if (update.parameters.tick_rate_hz != current->parameters.tick_rate_hz) {
-      LW("subsystem=clientruntime event=dropped generation={} reason=\"tick rate differs from the one joined with\"",
-         update.generation);
-      return;
-    }
-    Publish([&](ServerView& next) {
-      next.current_parameters =
-          ServerView::CurrentParameters{.generation = update.generation, .parameters = update.parameters};
-    });
+    Publish([&](ServerView& next) { next.current_parameters = candidate; });
     LI("subsystem=clientruntime event=parameters_adopted generation={}", update.generation);
   }
 
@@ -265,20 +261,8 @@ std::vector<protocol::PlayerState> Session::GetRoster() const {
   return server_view->accepted.has_value() ? server_view->accepted->roster : std::vector<protocol::PlayerState>{};
 }
 
-std::optional<parameters::Parameters> Session::GetParameters() const {
-  const std::shared_ptr<const ServerView> server_view = impl_->view.load();
-  if (!server_view->current_parameters.has_value()) {
-    return std::nullopt;
-  }
-  return server_view->current_parameters->parameters;
-}
-
-std::optional<std::uint32_t> Session::GetParametersGeneration() const {
-  const std::shared_ptr<const ServerView> server_view = impl_->view.load();
-  if (!server_view->current_parameters.has_value()) {
-    return std::nullopt;
-  }
-  return server_view->current_parameters->generation;
+std::optional<parameters::NumberedParameters> Session::GetParameters() const {
+  return impl_->view.load()->current_parameters;
 }
 
 std::optional<protocol::JoinRefusal> Session::GetRefusal() const { return impl_->view.load()->refusal; }

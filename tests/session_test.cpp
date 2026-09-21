@@ -64,6 +64,12 @@ constexpr auto kPollInterval = std::chrono::milliseconds(10);
 constexpr auto kPollDeadline = std::chrono::seconds(5);
 constexpr float kFixedTick = 1.0F / 60.0F;
 
+// The generation of the parameters session holds, or nullopt while it holds none.
+std::optional<std::uint32_t> GenerationOf(const Session& session) {
+  const auto held = session.GetParameters();
+  return held.has_value() ? std::optional<std::uint32_t>(held->generation) : std::nullopt;
+}
+
 // The Parameters a test's server runs on: NFR-01's 60 Hz and stamina rules that never drain.
 constexpr Parameters kTestParameters{.tick_rate_hz = 60.0F};
 
@@ -1150,15 +1156,14 @@ TEST_F(ReloadTest, EveryConnectedClientIsSentTheNewGenerationWhenItBegins) {
   ASSERT_TRUE(host_.Reload().has_value());
 
   // Reloaded, not begun: nobody is told before the tick that runs on it.
-  EXPECT_EQ(client_->GetParametersGeneration(), 1U);
+  EXPECT_EQ(GenerationOf(*client_), 1U);
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
-  while ((client_->GetParametersGeneration() != 2U || second.GetParametersGeneration() != 2U) &&
-         std::chrono::steady_clock::now() < deadline) {
+  while ((GenerationOf(*client_) != 2U || GenerationOf(second) != 2U) && std::chrono::steady_clock::now() < deadline) {
     Step();
   }
   for (const Session* client : {client_, &second}) {
-    EXPECT_EQ(client->GetParametersGeneration(), 2U);
-    EXPECT_FLOAT_EQ(client->GetParameters()->stamina.deplete_per_second, 1.0F);
+    EXPECT_EQ(GenerationOf(*client), 2U);
+    EXPECT_FLOAT_EQ(client->GetParameters()->parameters.stamina.deplete_per_second, 1.0F);
   }
 }
 
@@ -1169,8 +1174,8 @@ TEST_F(ReloadTest, AClientThatJoinsAfterAReloadIsToldTheCurrentGenerationWhenItJ
 
   Session& late = Join();
 
-  EXPECT_EQ(late.GetParametersGeneration(), 2U);
-  EXPECT_FLOAT_EQ(late.GetParameters()->stamina.deplete_per_second, 1.0F);
+  EXPECT_EQ(GenerationOf(late), 2U);
+  EXPECT_FLOAT_EQ(late.GetParameters()->parameters.stamina.deplete_per_second, 1.0F);
 }
 
 TEST_F(ReloadTest, ARefusedReloadSendsNothing) {
@@ -1179,8 +1184,8 @@ TEST_F(ReloadTest, ARefusedReloadSendsNothing) {
 
   Run(5);
 
-  EXPECT_EQ(client_->GetParametersGeneration(), 1U);
-  EXPECT_FLOAT_EQ(client_->GetParameters()->stamina.deplete_per_second, 0.0F);
+  EXPECT_EQ(GenerationOf(*client_), 1U);
+  EXPECT_FLOAT_EQ(client_->GetParameters()->parameters.stamina.deplete_per_second, 0.0F);
 }
 
 // A server speaking the protocol by hand to one client, to send what a real
@@ -1290,52 +1295,52 @@ TEST_F(ParametersUpdateTest, AClientAdoptsANewerGenerationAndItsPredictionUsesIt
 
   Deliver(ParametersUpdate{.generation = 2, .parameters = WithDeplete(1.0F)});
 
-  EXPECT_EQ(session_.GetParametersGeneration(), 2U);
-  EXPECT_FLOAT_EQ(session_.GetParameters()->stamina.deplete_per_second, 1.0F);
+  EXPECT_EQ(GenerationOf(session_), 2U);
+  EXPECT_FLOAT_EQ(session_.GetParameters()->parameters.stamina.deplete_per_second, 1.0F);
   // A bar that empties in a second, sprinted on for 30 more ticks: half of what was left.
   EXPECT_NEAR(PredictedStaminaAfterSprinting(30), 0.5F, 0.1F);
 }
 
 TEST_F(ParametersUpdateTest, AClientIgnoresAGenerationThatIsNotNewer) {
   Deliver(ParametersUpdate{.generation = 5, .parameters = WithDeplete(0.5F)});
-  ASSERT_EQ(session_.GetParametersGeneration(), 5U);
+  ASSERT_EQ(GenerationOf(session_), 5U);
 
   for (const std::uint32_t stale : {5U, 4U, 1U}) {
     Deliver(ParametersUpdate{.generation = stale, .parameters = WithDeplete(1.0F)});
   }
 
-  EXPECT_EQ(session_.GetParametersGeneration(), 5U);
-  EXPECT_FLOAT_EQ(session_.GetParameters()->stamina.deplete_per_second, 0.5F);
+  EXPECT_EQ(GenerationOf(session_), 5U);
+  EXPECT_FLOAT_EQ(session_.GetParameters()->parameters.stamina.deplete_per_second, 0.5F);
 }
 
 TEST_F(ParametersUpdateTest, AClientDropsAnUpdateWhoseValuesFailTheRangeChecks) {
   for (const float bad : {-1.0F, std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity()}) {
     Deliver(ParametersUpdate{.generation = 2, .parameters = WithDeplete(bad)});
 
-    EXPECT_EQ(session_.GetParametersGeneration(), 1U) << bad;
+    EXPECT_EQ(GenerationOf(session_), 1U) << bad;
   }
   Parameters threshold = WithDeplete(0.0F);
   threshold.stamina.forced_walk_below = 1.0F;
   Deliver(ParametersUpdate{.generation = 2, .parameters = threshold});
-  EXPECT_EQ(session_.GetParametersGeneration(), 1U);
+  EXPECT_EQ(GenerationOf(session_), 1U);
 }
 
 TEST_F(ParametersUpdateTest, AClientDropsAnUpdateWithAnotherTickRateThanItJoinedWith) {
   Deliver(ParametersUpdate{.generation = 2, .parameters = WithDeplete(1.0F, 30.0F)});
 
-  EXPECT_EQ(session_.GetParametersGeneration(), 1U);
-  EXPECT_FLOAT_EQ(session_.GetParameters()->tick_rate_hz, 60.0F);
+  EXPECT_EQ(GenerationOf(session_), 1U);
+  EXPECT_FLOAT_EQ(session_.GetParameters()->parameters.tick_rate_hz, 60.0F);
 }
 
 TEST_F(ParametersUpdateTest, AMalformedUpdateChangesNothingAndTheNextGoodOneIsStillTaken) {
   // The message type, then a generation cut short.
   server_.SendPayload(augusta::protocol::Bytes{std::byte{6}, std::byte{2}});
   Settle();
-  ASSERT_EQ(session_.GetParametersGeneration(), 1U);
+  ASSERT_EQ(GenerationOf(session_), 1U);
 
   Deliver(ParametersUpdate{.generation = 2, .parameters = WithDeplete(1.0F)});
 
-  EXPECT_EQ(session_.GetParametersGeneration(), 2U);
+  EXPECT_EQ(GenerationOf(session_), 2U);
 }
 
 // A server at 30 Hz: everything a client does with time it must take from what it is told.
@@ -1350,12 +1355,12 @@ TEST_F(TickRateTest, AClientLearnsTheServersTickRateWhenItJoins) {
   Session& client = Join();
 
   ASSERT_TRUE(client.GetParameters().has_value());
-  EXPECT_FLOAT_EQ(client.GetParameters()->tick_rate_hz, kServerRate);
+  EXPECT_FLOAT_EQ(client.GetParameters()->parameters.tick_rate_hz, kServerRate);
 }
 
 TEST_F(TickRateTest, AClientTickingAtTheRateItWasToldAgreesWithTheServerWithoutCorrection) {
   Session& client = Join();
-  const float client_delta = 1.0F / client.GetParameters()->tick_rate_hz;
+  const float client_delta = 1.0F / client.GetParameters()->parameters.tick_rate_hz;
   const float server_delta = 1.0F / kServerRate;
   Command walk;
   walk.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
@@ -1392,7 +1397,7 @@ TEST_F(SessionTest, AClientHoldsNoParametersUntilTheServerAdmitsIt) {
 
   ASSERT_TRUE(session_.GetSessionId().has_value());
   ASSERT_TRUE(session_.GetParameters().has_value());
-  EXPECT_FLOAT_EQ(session_.GetParameters()->tick_rate_hz, kTestParameters.tick_rate_hz);
+  EXPECT_FLOAT_EQ(session_.GetParameters()->parameters.tick_rate_hz, kTestParameters.tick_rate_hz);
 }
 
 // A server whose parameters are unusable (a tick rate of zero): the client

@@ -118,10 +118,7 @@ class Session {
   /// newer generation the server has reloaded since. What this client ticks and
   /// predicts with; it has none of its own. Set by ExchangeMessages; safe to
   /// read from any thread.
-  [[nodiscard]] std::optional<parameters::Parameters> GetParameters() const;
-
-  /// The generation of GetParameters, or nullopt while there are none.
-  [[nodiscard]] std::optional<std::uint32_t> GetParametersGeneration() const;
+  [[nodiscard]] std::optional<parameters::NumberedParameters> GetParameters() const;
 
   /// Why the server refused this client, or nullopt if it has not. Set by
   /// ExchangeMessages; safe to read from any thread.

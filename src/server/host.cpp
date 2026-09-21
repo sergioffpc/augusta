@@ -64,12 +64,6 @@ struct Host::Impl {
     math::Vec3 spawn{};
   };
 
-  // A reloaded generation that has not begun yet.
-  struct PendingParameters {
-    parameters::Parameters parameters;
-    std::uint32_t generation;
-  };
-
   // What the server keeps per joined client.
   struct Player {
     networking::PeerId peer;
@@ -95,13 +89,12 @@ struct Host::Impl {
   // whichever thread calls Reload.
   std::mutex mutex;
   // What the simulation runs on, and every client is told when it joins,
-  // besides who is already there, and the number of this generation of it.
-  parameters::Parameters parameters;
-  std::uint32_t generation = 1;
-  // A reloaded generation waiting for the next tick to begin, with its number,
-  // and the number the next accepted reload takes.
-  std::optional<PendingParameters> pending;
-  std::uint32_t last_generation = 1;
+  // besides who is already there.
+  parameters::NumberedParameters running;
+  // A reloaded generation waiting for the next tick to begin, and the number
+  // the last accepted reload took.
+  std::optional<parameters::NumberedParameters> pending;
+  std::uint32_t last_generation = parameters::kFirstGeneration;
   Match match;
   std::unordered_map<protocol::SessionId, Player> players;
   std::vector<Change> changes;
@@ -110,7 +103,7 @@ struct Host::Impl {
       : simulation(BuildSimulation(config)),
         network(config.listen),
         parameters_path(config.parameters_path),
-        parameters(config.parameters),
+        running{.generation = parameters::kFirstGeneration, .parameters = config.parameters},
         match(std::string(EngineVersion()), protocol::kMaxPlayers, config.spawn_points) {}
 
   void Reply(networking::PeerId peer, const protocol::Message& message) {
@@ -132,8 +125,8 @@ struct Host::Impl {
     protocol::JoinAccepted accepted;
     accepted.session = admission->session;
     accepted.spawn = admission->spawn;
-    accepted.generation = generation;
-    accepted.parameters = parameters;
+    accepted.generation = running.generation;
+    accepted.parameters = running.parameters;
     accepted.roster = admission->roster;
     Reply(peer, accepted);
   }
@@ -206,7 +199,9 @@ struct Host::Impl {
 
   TickInput BeginTick() {
     const std::lock_guard<std::mutex> lock(mutex);
-    ApplyPendingParameters();
+    if (ApplyPendingParameters()) {
+      AnnounceParameters();
+    }
     for (const Change& change : changes) {
       const simulation::PlayerId player = replication::PlayerOf(change.session);
       if (change.kind == Change::Kind::kJoin) {
@@ -231,19 +226,24 @@ struct Host::Impl {
 
   // Puts the reloaded generation, if there is one, in force before this tick's
   // phases run, so none of them sees two generations. Called with mutex held.
-  void ApplyPendingParameters() {
+  // Returns whether there was one, for the caller to announce.
+  bool ApplyPendingParameters() {
     if (!pending.has_value()) {
-      return;
+      return false;
     }
-    parameters = pending->parameters;
-    generation = pending->generation;
+    running = *pending;
     pending.reset();
-    simulation.SetStaminaConfig(parameters.stamina);
-    LI("subsystem=serverruntime event=parameters_applied generation={} players={}", generation, players.size());
-    // A client that joins from now on is told this generation in its Join accepted,
-    // and every one already in is sent it here: the join and this run under the same lock.
-    const protocol::Bytes update =
-        protocol::Encode(protocol::ParametersUpdate{.generation = generation, .parameters = parameters});
+    simulation.SetStaminaConfig(running.parameters.stamina);
+    LI("subsystem=serverruntime event=parameters_applied generation={} players={}", running.generation, players.size());
+    return true;
+  }
+
+  // Sends the running generation to every client already in. A client that
+  // joins from now on is told it in its Join accepted; the join and this run
+  // under the same lock, so none misses a generation. Called with mutex held.
+  void AnnounceParameters() {
+    const protocol::Bytes update = protocol::Encode(
+        protocol::ParametersUpdate{.generation = running.generation, .parameters = running.parameters});
     for (const auto& [session, player] : players) {
       network.Send(player.peer, update, networking::Reliability::kReliable);
     }
@@ -304,25 +304,25 @@ std::expected<std::uint32_t, ReloadError> Host::Reload() {
   const std::lock_guard<std::mutex> lock(impl.mutex);
   if (!loaded.has_value()) {
     const ReloadError error{.reason = ReloadRefusal::kLoadFailed, .load = loaded.error()};
-    LW("subsystem=serverruntime event=parameters_refused generation={} reason=\"{}\"", impl.generation,
+    LW("subsystem=serverruntime event=parameters_refused generation={} reason=\"{}\"", impl.running.generation,
        DescribeReloadError(error));
     return std::unexpected(error);
   }
-  if (loaded->tick_rate_hz != impl.parameters.tick_rate_hz) {
+  if (!parameters::KeepsTickRate(impl.running.parameters, *loaded)) {
     const ReloadError error{.reason = ReloadRefusal::kTickRateChanged};
-    LW("subsystem=serverruntime event=parameters_refused generation={} reason=\"{}\"", impl.generation,
+    LW("subsystem=serverruntime event=parameters_refused generation={} reason=\"{}\"", impl.running.generation,
        DescribeReloadError(error));
     return std::unexpected(error);
   }
   const std::uint32_t generation = ++impl.last_generation;
-  impl.pending = Impl::PendingParameters{.parameters = *loaded, .generation = generation};
+  impl.pending = parameters::NumberedParameters{.generation = generation, .parameters = *loaded};
   LI("subsystem=serverruntime event=parameters_reloaded generation={}", generation);
   return generation;
 }
 
 std::uint32_t Host::Generation() const {
   const std::lock_guard<std::mutex> lock(impl_->mutex);
-  return impl_->generation;
+  return impl_->running.generation;
 }
 
 simulation::State Host::Tick(float delta_time) {

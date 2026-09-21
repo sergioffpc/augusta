@@ -70,10 +70,8 @@ void ServerRuntime::Run() {
   impl_->running.store(true, std::memory_order_relaxed);
   impl_->network_thread = std::thread([this] { impl_->NetworkThreadMain(); });
   ThreadJoiner joiner{.running = impl_->running, .network_thread = impl_->network_thread};
-  if (!impl_->config.parameters_path.empty()) {
-    impl_->watcher = std::make_unique<server::FileWatcher>(impl_->config.parameters_path, server::WatchOptions{},
-                                                           [this] { static_cast<void>(impl_->host.Reload()); });
-  }
+  impl_->watcher = std::make_unique<server::FileWatcher>(impl_->config.parameters_path, server::WatchOptions{},
+                                                         [this] { static_cast<void>(impl_->host.Reload()); });
 
   const auto tick_duration = std::chrono::duration<float>(1.0F / impl_->config.parameters.tick_rate_hz);
   LI("subsystem=serverruntime event=loop_starting loop=simulation");

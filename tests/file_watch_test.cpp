@@ -18,7 +18,7 @@ namespace {
 using augusta::server::ChangeDetector;
 using augusta::server::FileSignature;
 using augusta::server::FileWatcher;
-using augusta::server::Look;
+using augusta::server::SignatureOf;
 using augusta::server::WatchEvent;
 using augusta::server::WatchOptions;
 using namespace std::chrono_literals;
@@ -245,8 +245,8 @@ TEST_F(FileWatcherTest, TheWatcherStopsPromptlyEvenWithALongPollInterval) {
   EXPECT_LT(std::chrono::steady_clock::now() - begun, 5s);
 }
 
-TEST(LookTest, AMissingFileCannotBeObserved) {
-  EXPECT_FALSE(Look(std::filesystem::temp_directory_path() / "augusta_watch_no_such_file.lua").has_value());
+TEST(SignatureOfTest, AMissingFileCannotBeObserved) {
+  EXPECT_FALSE(SignatureOf(std::filesystem::temp_directory_path() / "augusta_watch_no_such_file.lua").has_value());
 }
 
 }  // namespace

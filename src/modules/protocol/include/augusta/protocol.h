@@ -42,7 +42,7 @@ enum class MessageType : std::uint8_t {
   /// Server to client: every player's body as of one tick.
   kAuthoritativeState = 5,
   /// Server to client: the server reloaded its parameters.
-  kParameters = 6,
+  kParametersUpdate = 6,
 };
 
 /// Longest engine version string a JoinRequest may carry, in bytes.

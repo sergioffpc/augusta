@@ -261,7 +261,7 @@ std::optional<Message> ReadBody(MessageType type, Reader& reader) {
       return ReadCommands(reader);
     case MessageType::kAuthoritativeState:
       return ReadAuthoritativeState(reader);
-    case MessageType::kParameters:
+    case MessageType::kParametersUpdate:
       return ReadParametersUpdate(reader);
   }
   return std::nullopt;
@@ -319,7 +319,7 @@ struct Encoder {
   }
 
   void operator()(const ParametersUpdate& message) const {
-    WriteU8(out, static_cast<std::uint8_t>(MessageType::kParameters));
+    WriteU8(out, static_cast<std::uint8_t>(MessageType::kParametersUpdate));
     WriteU32(out, message.generation);
     WriteParameters(out, message.parameters);
   }

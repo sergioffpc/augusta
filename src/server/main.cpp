@@ -75,8 +75,8 @@ std::optional<augusta::parameters::Parameters> LoadParameters(const std::filesys
     std::println(stderr, "{}", augusta::parameters::DescribeLoadError(parameters.error()));
     return std::nullopt;
   }
-  // The first generation of Parameters; each reload will number the next.
-  LI("subsystem=server event=parameters_loaded generation=1 path={}", script_path.string());
+  LI("subsystem=server event=parameters_loaded generation={} path={}", augusta::parameters::kFirstGeneration,
+     script_path.string());
   return *std::move(parameters);
 }
 

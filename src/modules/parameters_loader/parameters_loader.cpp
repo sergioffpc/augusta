@@ -22,7 +22,7 @@ std::unexpected<LoadError> Fail(LoadErrorCode code, std::string subject = {}) {
   return std::unexpected(LoadError{.code = code, .subject = std::move(subject)});
 }
 
-std::string Path(std::string_view parent, std::string_view key) {
+std::string KeyPath(std::string_view parent, std::string_view key) {
   return parent.empty() ? std::string(key) : std::string(parent) + "." + std::string(key);
 }
 
@@ -48,17 +48,17 @@ std::optional<LoadError> FirstUnknownKey(const sol::table& table, std::string_vi
   if (unknown.empty()) {
     return std::nullopt;
   }
-  return LoadError{.code = LoadErrorCode::kUnknownKey, .subject = Path(parent, *std::ranges::min_element(unknown))};
+  return LoadError{.code = LoadErrorCode::kUnknownKey, .subject = KeyPath(parent, *std::ranges::min_element(unknown))};
 }
 
 // The number at key; whether it is one the simulation can run on is for Validate.
 std::expected<float, LoadError> ReadNumber(const sol::table& table, std::string_view parent, std::string_view key) {
   const sol::object value = table.raw_get<sol::object>(key);
   if (value.get_type() == sol::type::lua_nil) {
-    return Fail(LoadErrorCode::kMissingKey, Path(parent, key));
+    return Fail(LoadErrorCode::kMissingKey, KeyPath(parent, key));
   }
   if (value.get_type() != sol::type::number) {
-    return Fail(LoadErrorCode::kWrongType, Path(parent, key));
+    return Fail(LoadErrorCode::kWrongType, KeyPath(parent, key));
   }
   return static_cast<float>(value.as<double>());
 }

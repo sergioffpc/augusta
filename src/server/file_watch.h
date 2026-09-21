@@ -26,14 +26,16 @@ struct FileSignature {
   /// Where the path resolves to now, so a link swapped to another file differs
   /// even when the file it now reaches looks just like the old one.
   std::filesystem::path target;
+  /// When the file it resolves to was last written.
   std::filesystem::file_time_type modified;
+  /// How long that file is, in bytes.
   std::uintmax_t size = 0;
 
   bool operator==(const FileSignature&) const = default;
 };
 
-/// Looks at file, or returns nullopt if it can't be observed (it is missing, or unreadable).
-std::optional<FileSignature> Look(const std::filesystem::path& file);
+/// The signature of file as it is now, or nullopt if it can't be observed (it is missing, or unreadable).
+std::optional<FileSignature> SignatureOf(const std::filesystem::path& file);
 
 /// What to do about one poll.
 enum class WatchEvent {
@@ -68,7 +70,9 @@ class ChangeDetector {
 
 /// How often FileWatcher looks and how long the file must be still first.
 struct WatchOptions {
+  /// How long to wait between looks at the file.
   std::chrono::milliseconds poll_interval{250};
+  /// How long the file must look the same before a change to it is acted on.
   std::chrono::milliseconds debounce{300};
 };
 
@@ -78,6 +82,7 @@ struct WatchOptions {
 /// returns. The file as it is at construction is the baseline, not a change.
 class FileWatcher {
  public:
+  /// Starts watching file, and calls on_change from the watcher's thread; on_change must be safe to call from it.
   FileWatcher(std::filesystem::path file, const WatchOptions& options, std::function<void()> on_change);
 
   /// Stops the thread and waits for a callback in progress to end.

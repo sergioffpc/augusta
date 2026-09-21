@@ -11,7 +11,7 @@
 
 namespace augusta::server {
 
-std::optional<FileSignature> Look(const std::filesystem::path& file) {
+std::optional<FileSignature> SignatureOf(const std::filesystem::path& file) {
   std::error_code error;
   std::filesystem::path target = std::filesystem::canonical(file, error);
   if (error) {
@@ -57,10 +57,10 @@ struct FileWatcher::Impl {
       : file(std::move(watched)),
         options(watch_options),
         on_change(std::move(callback)),
-        detector(Look(file), watch_options.debounce) {}
+        detector(SignatureOf(file), watch_options.debounce) {}
 
   void Poll() {
-    switch (detector.Feed(Look(file), std::chrono::steady_clock::now())) {
+    switch (detector.Feed(SignatureOf(file), std::chrono::steady_clock::now())) {
       case WatchEvent::kNone:
         break;
       case WatchEvent::kChanged:
