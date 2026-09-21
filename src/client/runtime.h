@@ -2,9 +2,11 @@
 #define AUGUSTA_RUNTIME_H_
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "augusta/audio.h"
+#include "augusta/harness.h"
 #include "augusta/input.h"
 #include "augusta/networking.h"
 #include "augusta/physics.h"
@@ -43,9 +45,6 @@ namespace augusta::runtime {
 struct Config {
   renderer::Config renderer;
   input::Config input;
-  // Every player body's stamina rules (physics::World, shared by
-  // PredictionWorld here and SimulationWorld server-side).
-  physics::StaminaConfig stamina;
   // The dedicated server to connect to (US-01).
   networking::Endpoint server;
   // The map's collision, built by augusta::map from the client pack by the
@@ -103,13 +102,16 @@ class ClientRuntime {
   // Spawns the Simulation and Network I/O threads (ADR-0005), then runs
   // the Main/Render loop on the calling thread - PumpEvents, read the
   // latest committed Prediction State, PresentationWorld::RunFrame,
-  // Renderer::RenderFrame - until Renderer::ShouldClose() returns true.
+  // Renderer::RenderFrame - until Renderer::ShouldClose() returns true or the
+  // session fails (refused, server unreachable, connection lost), which is
+  // what it returns: the caller reports it and exits, since there is no
+  // reconnecting. nullopt if the player closed the window.
   // Always stops and joins both spawned threads before returning or
   // propagating an exception (see ~ClientRuntime). Must be called from
   // the same thread that constructed this ClientRuntime (ADR-0009's
   // window-thread-affinity requirement, inherited from Renderer) and
   // must not be called more than once.
-  void Run();
+  [[nodiscard]] std::optional<harness::Failure> Run();
 
  private:
   struct Impl;

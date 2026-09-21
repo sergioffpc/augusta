@@ -10,6 +10,7 @@
 #include "augusta/config.h"
 #include "augusta/logging.h"
 #include "augusta/map.h"
+#include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/version.h"
 #include "runtime.h"
@@ -38,19 +39,48 @@ std::expected<augusta::config::ServerConfig, augusta::config::ConfigError> LoadC
   return augusta::config::LoadServerConfig(*config_file);
 }
 
-// Only the map's collision is consumed so far; spawn points and hitboxes wait
-// for the gameplay code that will use them. Built before any socket or thread
-// starts, so a pack without a usable map exits like a bad pack does. Reports
-// what is wrong and returns nullopt.
-std::optional<std::vector<augusta::physics::CollisionMesh>> LoadMap(const augusta::assets::Pack& pack,
-                                                                    const std::filesystem::path& pack_path) {
+// What the pack's map gives the server: its collision and where players spawn.
+// Hitboxes wait for the gameplay code that will use them.
+struct Map {
+  std::vector<augusta::physics::CollisionMesh> collision;
+  std::vector<augusta::math::Vec3> spawn_points;
+};
+
+// Built before any socket or thread starts, so a pack without a usable map
+// exits like a bad pack does. Reports what is wrong and returns nullopt.
+std::optional<Map> LoadMap(const augusta::assets::Pack& pack, const std::filesystem::path& pack_path) {
   auto collision = augusta::map::LoadCollision(pack);
   if (!collision) {
     std::println(stderr, "server pack {}: {}", pack_path.string(), augusta::map::DescribeMapError(collision.error()));
     return std::nullopt;
   }
-  LI("subsystem=server event=map_loaded colliders={}", collision->size());
-  return *std::move(collision);
+  auto spawn_points = augusta::map::LoadSpawnPoints(pack);
+  if (!spawn_points) {
+    std::println(stderr, "server pack {}: {}", pack_path.string(),
+                 augusta::map::DescribeMapError(spawn_points.error()));
+    return std::nullopt;
+  }
+  LI("subsystem=server event=map_loaded colliders={} spawn_points={}", collision->size(), spawn_points->size());
+  return Map{.collision = *std::move(collision), .spawn_points = *std::move(spawn_points)};
+}
+
+// What ServerRuntime is built from: the file's settings and what the pack supplied.
+augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ServerConfig& file_config, Map map) {
+  augusta::runtime::Config config;
+  // TODO(sergioffpc): hardcoded placeholder - script_path assumes an asset
+  // pack layout the asset pipeline (ROADMAP.md M2) hasn't built yet.
+  config.script_path = "scripts/round.lua";
+  config.listen.address = file_config.listen_address;
+  config.collision = std::move(map.collision);
+  config.spawn_points = std::move(map.spawn_points);
+  // Every client is sent these when it joins and predicts with them, so
+  // tuning lives here alone.
+  config.stamina = {
+      .deplete_per_second = file_config.stamina_deplete_per_second,
+      .regen_per_second = file_config.stamina_regen_per_second,
+      .forced_walk_below = file_config.stamina_forced_walk_below,
+  };
+  return config;
 }
 
 }  // namespace
@@ -84,8 +114,8 @@ int main(int argc, char** argv) {
   }
   LI("subsystem=server event=pack_verified path={}", pack_path.string());
 
-  auto collision = LoadMap(*pack, pack_path);
-  if (!collision) {
+  auto map = LoadMap(*pack, pack_path);
+  if (!map) {
     return 1;
   }
 
@@ -93,13 +123,7 @@ int main(int argc, char** argv) {
   // Client/Server is constructed - see networking.h.
   augusta::networking::Init();
 
-  augusta::runtime::Config config;
-  // TODO(sergioffpc): hardcoded placeholder - script_path assumes an asset
-  // pack layout the asset pipeline (ROADMAP.md M2) hasn't built yet.
-  config.script_path = "scripts/round.lua";
-  config.listen.address = file_config->listen_address;
-  config.collision = *std::move(collision);
-
+  const augusta::runtime::Config config = BuildRuntimeConfig(*file_config, *std::move(map));
   augusta::runtime::ServerRuntime runtime(config);
   g_runtime = &runtime;
   std::signal(SIGINT, HandleShutdownSignal);

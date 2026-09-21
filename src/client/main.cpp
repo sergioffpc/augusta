@@ -9,6 +9,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/config.h"
+#include "augusta/harness.h"
 #include "augusta/logging.h"
 #include "augusta/map.h"
 #include "augusta/networking.h"
@@ -131,7 +132,11 @@ int main(int argc, char** argv) {
   config.collision = *std::move(collision);
 
   augusta::runtime::ClientRuntime runtime(config, *scene);
-  runtime.Run();
+  if (const auto failure = runtime.Run(); failure.has_value()) {
+    // No reconnecting and no connection screen: say what happened and exit.
+    std::println(stderr, "{}", augusta::harness::DescribeFailure(*failure));
+    return 1;
+  }
 
   return 0;
 }

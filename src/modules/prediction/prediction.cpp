@@ -171,6 +171,16 @@ std::expected<void, physics::CollisionMeshError> World::AddCollisionMesh(const p
   return impl_->physics.AddCollisionMesh(mesh);
 }
 
+void World::Start(const math::Vec3& spawn, const physics::StaminaConfig& stamina_rules) {
+  Impl& impl = *impl_;
+  impl.physics.SetStaminaConfig(stamina_rules);
+  physics::BodyState start{};
+  start.position = spawn;
+  impl.physics.SetState(impl.local_body, start);
+  impl.history = History{};
+  impl.tick_state = State{.local_body = start};
+}
+
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 

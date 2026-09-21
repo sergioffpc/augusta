@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "augusta/input.h"
 #include "augusta/networking.h"
@@ -27,6 +28,29 @@
 // ExchangeMessages, GetState and GetStats from the Network I/O thread, and Tick
 // from the Prediction thread (the transport is safe to send from both).
 namespace augusta::harness {
+
+/// Why a Session ended without the player asking it to.
+enum class FailureKind {
+  /// The server answered the join with a refusal; see Failure::refusal.
+  kRefused,
+  /// The connection ended before the server admitted this client: nothing
+  /// answered at that address, or what did was not a compatible server.
+  kServerUnreachable,
+  /// The server admitted this client, and the connection has since ended.
+  kConnectionLost,
+};
+
+/// How a Session failed. There is no reconnecting: the caller reports it and exits.
+struct Failure {
+  /// What ended the session.
+  FailureKind kind{};
+  /// Why the server refused; only meaningful for kRefused.
+  protocol::JoinRefusal refusal{};
+};
+
+/// A sentence for the player saying what happened and, where the client can
+/// tell, what to fix; the same wording wherever it is shown.
+[[nodiscard]] std::string DescribeFailure(const Failure& failure);
 
 /// What a Session needs to connect.
 struct SessionConfig {
@@ -69,12 +93,23 @@ class Session {
   /// Whether the connection is still connecting, connected or disconnected.
   [[nodiscard]] networking::ConnectionState GetState() const;
 
+  /// Why this session has ended on its own, or nullopt while it has not: before
+  /// Connect, while connecting or connected, and after Disconnect (which the
+  /// caller asked for, so it is not a failure). Safe to read from any thread.
+  [[nodiscard]] std::optional<Failure> GetFailure() const;
+
   /// The connection's quality numbers, or nullopt if not connected.
   [[nodiscard]] std::optional<networking::ConnectionStats> GetStats() const;
 
   /// The session the server assigned once it admitted this client, or nullopt
   /// until then. Set by ExchangeMessages; safe to read from any thread.
   [[nodiscard]] std::optional<protocol::SessionId> GetSessionId() const;
+
+  /// The players that were in the match when the server admitted this client,
+  /// each where it was then; empty until it does, and if the client is alone.
+  /// Set by ExchangeMessages; safe to read from any thread. Who is in the match
+  /// after that is in the Authoritative State.
+  [[nodiscard]] std::vector<protocol::PlayerState> GetRoster() const;
 
   /// Why the server refused this client, or nullopt if it has not. Set by
   /// ExchangeMessages; safe to read from any thread.
@@ -85,8 +120,10 @@ class Session {
   [[nodiscard]] std::optional<protocol::AuthoritativeState> GetAuthoritativeState() const;
 
   /// Runs one fixed tick of PredictionWorld for command and returns its state.
-  /// Once the server has admitted this client, the command goes to it under the
-  /// next sequence, together with the recent commands the server has not yet
+  /// The first tick after the server has admitted this client starts the
+  /// prediction over at the spawn point the server chose, under the stamina
+  /// rules it sent. From then on the command goes to the server under the next
+  /// sequence, together with the recent commands the server has not yet
   /// acknowledged, and the prediction is reconciled against what the server
   /// last said about this client's player.
   prediction::State Tick(const input::Command& command, float delta_time);

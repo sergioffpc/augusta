@@ -49,6 +49,16 @@ void WriteBodyState(Bytes& out, const physics::BodyState& body) {
   WriteF32(out, body.stamina);
 }
 
+// The players of a roster or an update: a count, then each one.
+void WritePlayers(Bytes& out, const std::vector<PlayerState>& players) {
+  assert(players.size() <= kMaxPlayers);
+  WriteU8(out, static_cast<std::uint8_t>(players.size()));
+  for (const PlayerState& player : players) {
+    WriteU32(out, static_cast<std::uint32_t>(player.session));
+    WriteBodyState(out, player.body);
+  }
+}
+
 // Walks a payload front to back. The first problem it meets is remembered and
 // every read after it returns a zero value, so a decoder can read all of a
 // message's fields and ask once at the end whether they were all there.
@@ -173,8 +183,31 @@ JoinRequest ReadJoinRequest(Reader& reader) {
   return JoinRequest{.engine_version = reader.ReadString(kMaxEngineVersionLength)};
 }
 
+PlayerState ReadPlayerState(Reader& reader) {
+  const auto session = static_cast<SessionId>(reader.ReadU32());
+  return PlayerState{.session = session, .body = ReadBodyState(reader)};
+}
+
+// The players of a roster or an update, at most kMaxPlayers.
+std::vector<PlayerState> ReadPlayers(Reader& reader) {
+  const std::size_t count = reader.ReadCount(kMaxPlayers);
+  std::vector<PlayerState> players;
+  players.reserve(count);
+  for (std::size_t i = 0; i < count; ++i) {
+    players.push_back(ReadPlayerState(reader));
+  }
+  return players;
+}
+
 JoinAccepted ReadJoinAccepted(Reader& reader) {
-  return JoinAccepted{.session = static_cast<SessionId>(reader.ReadU32())};
+  JoinAccepted accepted;
+  accepted.session = static_cast<SessionId>(reader.ReadU32());
+  accepted.spawn = reader.ReadVec3();
+  accepted.stamina.deplete_per_second = reader.ReadF32();
+  accepted.stamina.regen_per_second = reader.ReadF32();
+  accepted.stamina.forced_walk_below = reader.ReadF32();
+  accepted.roster = ReadPlayers(reader);
+  return accepted;
 }
 
 JoinRefused ReadJoinRefused(Reader& reader) {
@@ -196,12 +229,7 @@ AuthoritativeState ReadAuthoritativeState(Reader& reader) {
   AuthoritativeState state;
   state.tick = reader.ReadU32();
   state.acknowledged_sequence = reader.ReadU32();
-  const std::size_t count = reader.ReadCount(kMaxPlayers);
-  state.players.reserve(count);
-  for (std::size_t i = 0; i < count; ++i) {
-    const auto session = static_cast<SessionId>(reader.ReadU32());
-    state.players.push_back(PlayerState{.session = session, .body = ReadBodyState(reader)});
-  }
+  state.players = ReadPlayers(reader);
   return state;
 }
 
@@ -238,6 +266,11 @@ struct Encoder {
   void operator()(const JoinAccepted& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageType::kJoinAccepted));
     WriteU32(out, static_cast<std::uint32_t>(message.session));
+    WriteVec3(out, message.spawn);
+    WriteF32(out, message.stamina.deplete_per_second);
+    WriteF32(out, message.stamina.regen_per_second);
+    WriteF32(out, message.stamina.forced_walk_below);
+    WritePlayers(out, message.roster);
   }
 
   void operator()(const JoinRefused& message) const {
@@ -256,15 +289,10 @@ struct Encoder {
   }
 
   void operator()(const AuthoritativeState& message) const {
-    assert(message.players.size() <= kMaxPlayers);
     WriteU8(out, static_cast<std::uint8_t>(MessageType::kAuthoritativeState));
     WriteU32(out, message.tick);
     WriteU32(out, message.acknowledged_sequence);
-    WriteU8(out, static_cast<std::uint8_t>(message.players.size()));
-    for (const PlayerState& player : message.players) {
-      WriteU32(out, static_cast<std::uint32_t>(player.session));
-      WriteBodyState(out, player.body);
-    }
+    WritePlayers(out, message.players);
   }
 };
 

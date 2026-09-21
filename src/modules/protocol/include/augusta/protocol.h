@@ -70,10 +70,23 @@ struct JoinRequest {
   std::string engine_version{};
 };
 
+/// One player's body inside an Authoritative State update or a roster.
+struct PlayerState {
+  SessionId session{};
+  physics::BodyState body{};
+};
+
 /// Server to client: the join succeeded.
 struct JoinAccepted {
   /// The session the server assigned to this client.
   SessionId session{};
+  /// Where the server spawned this client's player.
+  math::Vec3 spawn{};
+  /// The stamina rules the client must predict with, so its forced walk is the server's.
+  physics::StaminaConfig stamina{};
+  /// The players already in the match, at most kMaxPlayers, each where the
+  /// server last had it. Not the joining client's own.
+  std::vector<PlayerState> roster{};
 };
 
 /// Server to client: the join failed and the connection will not be used.
@@ -93,12 +106,6 @@ struct SequencedCommand {
 /// the newest), so one lost datagram does not drop input.
 struct Commands {
   std::vector<SequencedCommand> commands{};
-};
-
-/// One player's body inside an Authoritative State update.
-struct PlayerState {
-  SessionId session{};
-  physics::BodyState body{};
 };
 
 /// Server to client: the Authoritative State of one server tick.

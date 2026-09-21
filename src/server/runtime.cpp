@@ -44,6 +44,7 @@ struct ServerRuntime::Impl {
             .script_path = cfg.script_path,
             .listen = cfg.listen,
             .collision = cfg.collision,
+            .spawn_points = cfg.spawn_points,
         }) {}
 
   // Network I/O thread body (ADR-0005): pumps the connection until running is

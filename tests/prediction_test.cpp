@@ -51,6 +51,32 @@ TEST(PredictionWorldTest, TicksTheLocalEntityForwardEachCall) {
   EXPECT_GT(state.local_body.position.x, 0.0F);
 }
 
+TEST(PredictionWorldTest, StartPutsTheLocalPlayerAtTheSpawnPointOnTheFloor) {
+  World world{StaminaConfig{}};
+  ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
+
+  world.Start(Vec3(5.0F, 0.0F, 7.0F), StaminaConfig{});
+  State state;
+  for (int i = 0; i < kSettleTicks; ++i) {
+    state = world.Tick(Command{}, 0, std::nullopt, kFixedTick);
+  }
+
+  EXPECT_NEAR(state.local_body.position.x, 5.0F, 0.05F);
+  EXPECT_NEAR(state.local_body.position.y, 0.0F, 0.05F);
+  EXPECT_NEAR(state.local_body.position.z, 7.0F, 0.05F);
+}
+
+TEST(PredictionWorldTest, StartReplacesTheStaminaRulesTheWorldWasBuiltWith) {
+  World world{StaminaConfig{}};
+  Command sprint = Walking();
+  sprint.movement.sprint = true;
+  EXPECT_FLOAT_EQ(world.Tick(sprint, 0, std::nullopt, kFixedTick).local_body.stamina, 1.0F);
+
+  world.Start(Vec3{}, StaminaConfig{.deplete_per_second = 1.0F, .regen_per_second = 0.0F, .forced_walk_below = 0.0F});
+
+  EXPECT_LT(world.Tick(sprint, 0, std::nullopt, kFixedTick).local_body.stamina, 1.0F);
+}
+
 // A resting player on a floor, ticked with sequences 1, 2, ... and no input.
 class ReconciliationTest : public ::testing::Test {
  protected:

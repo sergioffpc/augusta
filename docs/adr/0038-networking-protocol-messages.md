@@ -27,7 +27,7 @@ supersedes is unreliable.
 | Message | Direction | Reliability | Fields |
 | --- | --- | --- | --- |
 | Join request | client → server | reliable | engine version |
-| Join accepted | server → client | reliable | session ID |
+| Join accepted | server → client | reliable | session ID, the player's spawn position, the stamina rules to predict with, and the roster: every player already in the match (at most 8) with session ID and body |
 | Join refused | server → client | reliable | reason: version mismatch, match full |
 | Commands | client → server | unreliable | up to 8 commands, oldest first: sequence, movement direction, sprint, desired stance, yaw, pitch, ADS, fire, reload |
 | Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, and per player (at most 8): session ID, position, velocity, stance, stamina |
@@ -60,6 +60,30 @@ first message is a Join request carrying its engine version; the server admits i
 only on an exact match with its own and while the match holds fewer than 8
 players, checking the version first so a client that can never play here is not
 told "full". After a refusal the client closes the connection.
+
+**What a join carries.** Join accepted tells the client everything it must know
+before its first tick, so nothing is learned by guessing. The **spawn position**
+is where the server put the player: the next spawn point of the map's pack in
+order, starting over after the last, a mechanism until spawn rules become Game
+policy. The client starts its prediction there, not at the origin. The **stamina
+rules** are the server's configuration, sent so the client predicts its forced
+walk with the server's numbers and never with values of its own; the two cannot
+drift. The **roster** is who was already in the match and where, so a joining
+client sees the world as it is and not an empty one; the joining player itself is
+not in it. The server keeps each player's last reported body (a joiner is at its
+spawn point until the first tick reports it), so back-to-back joins see each
+other. From then on the Authoritative State lists everyone.
+
+**Failure paths.** The server drops what does not decode, is not a client message
+or fails the command gate (a non-finite or out-of-range number), and logs it as
+`dropped_malformed`; a peer's garbage never reaches the world or another client.
+A stale command is routine, since commands repeat, and only traced. A connection that ends frees its slot at once and
+removes the player at the start of the next tick; the log tells `left` (the peer
+closed it) from `timeout` (the transport gave up on it). The client has no
+reconnecting and no connection screen: it ends the session with one of three
+failures, refused (with the reason), server unreachable (the connection ended
+before the server admitted it) or connection lost (after), reports it, and exits
+non-zero.
 
 **Session ID.** The server names each admitted player with a session ID it
 generates itself: a counter that is never reused, deliberately unrelated to the

@@ -4,11 +4,13 @@
 #include <cstdint>
 #include <deque>
 #include <expected>
+#include <format>
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include "augusta/logging.h"
 
@@ -18,7 +20,9 @@ namespace augusta::harness {
 // I/O thread makes a new one for each message that changes it, and the
 // Prediction thread reads whichever is current.
 struct ServerView {
-  std::optional<protocol::SessionId> session_id;
+  // The whole answer to the join request: the session, the spawn point, the
+  // stamina rules and who was already there.
+  std::optional<protocol::JoinAccepted> accepted;
   std::optional<protocol::JoinRefusal> refusal;
   std::optional<protocol::AuthoritativeState> authoritative;
 };
@@ -32,11 +36,18 @@ struct Session::Impl {
   // Network I/O thread only.
   bool sent_join_request = false;
 
+  // Whether the caller has asked for a connection and not since asked to end it:
+  // an ended connection is only a failure while this is set.
+  std::atomic<bool> wanted{false};
+
   // Written by the Network I/O thread alone, read from any.
   std::atomic<std::shared_ptr<const ServerView>> view{std::make_shared<const ServerView>()};
 
-  // Prediction thread only: the commands still waiting to be acknowledged, and
-  // the sequence the next one goes under. Sequences start at 1; 0 means none.
+  // Prediction thread only: whether the prediction has been started at the
+  // spawn point, under the server's stamina rules, once the server admitted this client.
+  bool started = false;
+  // The commands still waiting to be acknowledged, and the sequence the next
+  // one goes under. Sequences start at 1; 0 means none.
   std::deque<protocol::SequencedCommand> unacknowledged;
   std::uint32_t next_sequence = 1;
 
@@ -62,8 +73,8 @@ struct Session::Impl {
   }
 
   void OnJoinAccepted(const protocol::JoinAccepted& accepted) {
-    Publish([&](ServerView& next) { next.session_id = accepted.session; });
-    LI("subsystem=clientruntime event=joined");
+    Publish([&](ServerView& next) { next.accepted = accepted; });
+    LI("subsystem=clientruntime event=joined roster={}", accepted.roster.size());
   }
 
   void OnJoinRefused(const protocol::JoinRefused& refused) {
@@ -91,11 +102,11 @@ struct Session::Impl {
 
   // What the server's state says about this client's own player.
   static std::optional<prediction::Acknowledgement> OwnAcknowledgement(const ServerView& server_view) {
-    if (!server_view.session_id.has_value() || !server_view.authoritative.has_value()) {
+    if (!server_view.accepted.has_value() || !server_view.authoritative.has_value()) {
       return std::nullopt;
     }
     for (const protocol::PlayerState& player : server_view.authoritative->players) {
-      if (player.session == *server_view.session_id) {
+      if (player.session == server_view.accepted->session) {
         return prediction::Acknowledgement{
             .sequence = server_view.authoritative->acknowledged_sequence,
             .body = player.body,
@@ -125,14 +136,34 @@ struct Session::Impl {
   }
 };
 
+std::string DescribeFailure(const Failure& failure) {
+  switch (failure.kind) {
+    case FailureKind::kRefused:
+      return std::format("the server refused this client: {}", protocol::DescribeJoinRefusal(failure.refusal));
+    case FailureKind::kServerUnreachable:
+      return "could not connect to the server: check its address, and that it is running";
+    case FailureKind::kConnectionLost:
+      return "lost the connection to the server";
+  }
+  return "the session ended for an unknown reason";
+}
+
 Session::Session(const SessionConfig& config, prediction::World prediction)
     : impl_(std::make_unique<Impl>(config, std::move(prediction))) {}
 
 Session::~Session() = default;
 
-void Session::Connect() { impl_->network.Connect(impl_->server); }
+void Session::Connect() {
+  impl_->network.Connect(impl_->server);
+  // After, not before: until the transport is connecting its state is still
+  // the disconnected one it starts in, which would read as a failure.
+  impl_->wanted.store(true);
+}
 
-void Session::Disconnect() { impl_->network.Disconnect(); }
+void Session::Disconnect() {
+  impl_->wanted.store(false);
+  impl_->network.Disconnect();
+}
 
 void Session::PumpEvents() { impl_->network.PumpEvents(); }
 
@@ -151,9 +182,32 @@ void Session::ExchangeMessages() {
 
 networking::ConnectionState Session::GetState() const { return impl_->network.GetState(); }
 
+std::optional<Failure> Session::GetFailure() const {
+  const std::shared_ptr<const ServerView> server_view = impl_->view.load();
+  if (server_view->refusal.has_value()) {
+    return Failure{.kind = FailureKind::kRefused, .refusal = *server_view->refusal};
+  }
+  if (!impl_->wanted.load() || impl_->network.GetState() != networking::ConnectionState::kDisconnected) {
+    return std::nullopt;
+  }
+  const bool was_admitted = server_view->accepted.has_value();
+  return Failure{.kind = was_admitted ? FailureKind::kConnectionLost : FailureKind::kServerUnreachable};
+}
+
 std::optional<networking::ConnectionStats> Session::GetStats() const { return impl_->network.GetStats(); }
 
-std::optional<protocol::SessionId> Session::GetSessionId() const { return impl_->view.load()->session_id; }
+std::optional<protocol::SessionId> Session::GetSessionId() const {
+  const std::shared_ptr<const ServerView> server_view = impl_->view.load();
+  if (!server_view->accepted.has_value()) {
+    return std::nullopt;
+  }
+  return server_view->accepted->session;
+}
+
+std::vector<protocol::PlayerState> Session::GetRoster() const {
+  const std::shared_ptr<const ServerView> server_view = impl_->view.load();
+  return server_view->accepted.has_value() ? server_view->accepted->roster : std::vector<protocol::PlayerState>{};
+}
 
 std::optional<protocol::JoinRefusal> Session::GetRefusal() const { return impl_->view.load()->refusal; }
 
@@ -166,8 +220,13 @@ prediction::State Session::Tick(const input::Command& command, float delta_time)
   // One view for the whole tick, so the sequence, the reconciliation and the
   // commands sent all agree on what the server had said.
   const std::shared_ptr<const ServerView> server_view = impl.view.load();
-  // Nobody to send to until the server has admitted this client.
-  const std::uint32_t sequence = server_view->session_id.has_value() ? impl.next_sequence++ : 0;
+  // Nobody to send to until the server has admitted this client, and until
+  // then the prediction has neither its spawn point nor the server's rules.
+  if (server_view->accepted.has_value() && !impl.started) {
+    impl.prediction.Start(server_view->accepted->spawn, server_view->accepted->stamina);
+    impl.started = true;
+  }
+  const std::uint32_t sequence = impl.started ? impl.next_sequence++ : 0;
   const prediction::State state =
       impl.prediction.Tick(command, sequence, Impl::OwnAcknowledgement(*server_view), delta_time);
   if (sequence != 0) {

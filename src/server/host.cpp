@@ -41,9 +41,6 @@ simulation::World BuildSimulation(const HostConfig& config) {
 // The transport's handle as a number, for log lines.
 std::uint32_t PeerNumber(networking::PeerId peer) { return static_cast<std::uint32_t>(peer); }
 
-// Every player spawns here until spawn points come from the map.
-const math::Vec3 kSpawn{};
-
 }  // namespace
 
 struct Host::Impl {
@@ -52,6 +49,8 @@ struct Host::Impl {
     enum class Kind : std::uint8_t { kJoin, kLeave };
     Kind kind;
     protocol::SessionId session;
+    // Where a joining player is put; unused for a leave.
+    math::Vec3 spawn{};
   };
 
   // What the server keeps per joined client.
@@ -68,32 +67,44 @@ struct Host::Impl {
   // Thread-safe by the transport's contract, used from both threads.
   networking::Server network;
 
+  // What every client is told when it joins, besides who is already there.
+  physics::StaminaConfig stamina;
+
   // Guards everything below: written by the Network I/O thread as clients
   // join, leave and send commands, read once per Simulation tick.
   std::mutex mutex;
-  Match match{std::string(EngineVersion())};
+  Match match;
   std::unordered_map<protocol::SessionId, Player> players;
   std::vector<Change> changes;
 
-  explicit Impl(const HostConfig& config) : simulation(BuildSimulation(config)), network(config.listen) {}
+  explicit Impl(const HostConfig& config)
+      : simulation(BuildSimulation(config)),
+        network(config.listen),
+        stamina(config.stamina),
+        match(std::string(EngineVersion()), protocol::kMaxPlayers, config.spawn_points) {}
 
   void Reply(networking::PeerId peer, const protocol::Message& message) {
     network.Send(peer, protocol::Encode(message), networking::Reliability::kReliable);
   }
 
   void HandleJoinRequest(networking::PeerId peer, const protocol::JoinRequest& request) {
-    const auto session = match.Join(peer, request.engine_version);
-    if (!session.has_value()) {
+    const auto admission = match.Join(peer, request.engine_version);
+    if (!admission.has_value()) {
       LI("subsystem=serverruntime event=join_refused peer={} reason=\"{}\"", PeerNumber(peer),
-         protocol::DescribeJoinRefusal(session.error()));
-      Reply(peer, protocol::JoinRefused{.reason = session.error()});
+         protocol::DescribeJoinRefusal(admission.error()));
+      Reply(peer, protocol::JoinRefused{.reason = admission.error()});
       return;
     }
-    if (players.try_emplace(*session, Player{.peer = peer, .commands = {}}).second) {
-      changes.push_back(Change{.kind = Change::Kind::kJoin, .session = *session});
+    if (players.try_emplace(admission->session, Player{.peer = peer, .commands = {}}).second) {
+      changes.push_back(Change{.kind = Change::Kind::kJoin, .session = admission->session, .spawn = admission->spawn});
       LI("subsystem=serverruntime event=joined peer={} players={}", PeerNumber(peer), match.PlayerCount());
     }
-    Reply(peer, protocol::JoinAccepted{.session = *session});
+    protocol::JoinAccepted accepted;
+    accepted.session = admission->session;
+    accepted.spawn = admission->spawn;
+    accepted.stamina = stamina;
+    accepted.roster = admission->roster;
+    Reply(peer, accepted);
   }
 
   void HandleCommands(networking::PeerId peer, const protocol::Commands& message) {
@@ -113,7 +124,7 @@ struct Host::Impl {
         LT("subsystem=serverruntime event=dropped peer={} sequence={} reason=\"{}\"", PeerNumber(peer),
            command.sequence, DescribeRejection(offered.error()));
       } else {
-        LW("subsystem=serverruntime event=dropped peer={} sequence={} reason=\"{}\"", PeerNumber(peer),
+        LW("subsystem=serverruntime event=dropped_malformed peer={} sequence={} reason=\"{}\"", PeerNumber(peer),
            command.sequence, DescribeRejection(offered.error()));
       }
     }
@@ -122,7 +133,7 @@ struct Host::Impl {
   void HandleMessage(const networking::PeerMessage& message) {
     const std::expected<protocol::Message, protocol::DecodeError> decoded = protocol::Decode(message.payload);
     if (!decoded.has_value()) {
-      LW("subsystem=serverruntime event=dropped peer={} bytes={} reason=\"{}\"", PeerNumber(message.from),
+      LW("subsystem=serverruntime event=dropped_malformed peer={} bytes={} reason=\"{}\"", PeerNumber(message.from),
          message.payload.size(), protocol::DescribeDecodeError(decoded.error()));
       return;
     }
@@ -131,12 +142,14 @@ struct Host::Impl {
     } else if (const auto* commands = std::get_if<protocol::Commands>(&*decoded)) {
       HandleCommands(message.from, *commands);
     } else {
-      LW("subsystem=serverruntime event=dropped peer={} bytes={} reason=\"not a client message\"",
+      LW("subsystem=serverruntime event=dropped_malformed peer={} bytes={} reason=\"not a client message\"",
          PeerNumber(message.from), message.payload.size());
     }
   }
 
-  void HandleDisconnect(networking::PeerId peer) {
+  // A player whose connection ended leaves at the start of the next tick; the
+  // slot is free at once. reason only decides which event is logged.
+  void HandleDisconnect(networking::PeerId peer, networking::DisconnectReason reason) {
     const std::optional<protocol::SessionId> session = match.SessionOf(peer);
     if (!session.has_value()) {
       return;
@@ -144,7 +157,11 @@ struct Host::Impl {
     match.Leave(peer);
     players.erase(*session);
     changes.push_back(Change{.kind = Change::Kind::kLeave, .session = *session});
-    LI("subsystem=serverruntime event=left peer={} players={}", PeerNumber(peer), match.PlayerCount());
+    if (reason == networking::DisconnectReason::kConnectionLost) {
+      LW("subsystem=serverruntime event=timeout peer={} players={}", PeerNumber(peer), match.PlayerCount());
+    } else {
+      LI("subsystem=serverruntime event=left peer={} players={}", PeerNumber(peer), match.PlayerCount());
+    }
   }
 
   // Applies the joins and leaves since the last tick to the simulation, then
@@ -161,7 +178,7 @@ struct Host::Impl {
     for (const Change& change : changes) {
       const simulation::PlayerId player = replication::PlayerOf(change.session);
       if (change.kind == Change::Kind::kJoin) {
-        simulation.AddPlayer(player, kSpawn);
+        simulation.AddPlayer(player, change.spawn);
       } else {
         simulation.RemovePlayer(player);
       }
@@ -178,6 +195,14 @@ struct Host::Impl {
       input.peers.emplace(session, player.peer);
     }
     return input;
+  }
+
+  // Tells the match where everyone is, for the roster of whoever joins next.
+  void RememberBodies(const simulation::State& state) {
+    const std::lock_guard<std::mutex> lock(mutex);
+    for (const simulation::PlayerState& player : state.players) {
+      match.UpdateBody(replication::SessionOf(player.player), player.body);
+    }
   }
 
   void Send(const simulation::State& state, const TickInput& input) {
@@ -206,7 +231,7 @@ void Host::PumpNetwork() {
         break;
       case networking::PeerEventType::kDisconnected: {
         const std::lock_guard<std::mutex> lock(impl.mutex);
-        impl.HandleDisconnect(event.peer);
+        impl.HandleDisconnect(event.peer, event.reason);
         break;
       }
     }
@@ -223,6 +248,7 @@ simulation::State Host::Tick(float delta_time) {
   const Impl::TickInput input = impl.BeginTick();
   simulation::State state = impl.simulation.Tick(input.commands, delta_time);
   ++impl.tick;
+  impl.RememberBodies(state);
   impl.Send(state, input);
   return state;
 }

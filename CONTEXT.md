@@ -26,6 +26,14 @@ _Avoid_: Client simulation
 The process of correcting a client's predicted state against the server's authoritative state: the client restores the server's state and replays the commands the server has not yet acknowledged from it, and presentation smooths the resulting jump.
 _Avoid_: Resync, rollback
 
+**Spawn point**:
+A place in the Map where a player's feet are put when it joins, authored as a scene node in the pack (ADR-0032). The server takes them in order, starting over after the last, and tells the client which one it got; which player gets which is Game policy once round rules exist.
+_Avoid_: Spawn location, start position
+
+**Roster**:
+Who is already in the match, each with its last known body, as told to a client when the server admits it. After that the Authoritative State lists everyone every tick.
+_Avoid_: Player list, lobby
+
 **RTT (Round-Trip Time)**:
 The measured network latency between a client and the server for a single request/response cycle.
 _Avoid_: Ping, lag

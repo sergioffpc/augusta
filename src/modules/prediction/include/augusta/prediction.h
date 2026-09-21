@@ -115,6 +115,12 @@ class World {
   /// Adds immovable level geometry to this world's physics, the same way SimulationWorld does.
   std::expected<void, physics::CollisionMeshError> AddCollisionMesh(const physics::CollisionMesh& mesh);
 
+  /// Starts the local player over at spawn, standing and at full stamina, under
+  /// stamina_rules: what the server told this client when it admitted it, so
+  /// the client never predicts with rules of its own. Call before the first
+  /// command is sent; nothing predicted earlier is kept.
+  void Start(const math::Vec3& spawn, const physics::StaminaConfig& stamina_rules);
+
   World(const World&) = delete;
   World& operator=(const World&) = delete;
   World(World&&) noexcept;
