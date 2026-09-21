@@ -7,7 +7,6 @@
 
 #include "augusta/animation.h"
 #include "augusta/correction.h"
-#include "augusta/logging.h"
 
 namespace augusta::presentation {
 
@@ -76,20 +75,17 @@ struct World::Impl {
 
   void OnInterpolation(float delta_time) {
     const nvtx3::scoped_range range{"Interpolation"};
-    LT("subsystem=presentationworld event=interpolation");
     local_offset = correction.Update(latest_state.total_correction, delta_time);
     // TODO(sergioffpc): blend the last two prediction::State values.
   }
 
   void OnCamera() {
     const nvtx3::scoped_range range{"Camera"};
-    LT("subsystem=presentationworld event=camera");
     // TODO(sergioffpc): not yet a module of its own - see presentation.h.
   }
 
   void OnAnimation() {
     const nvtx3::scoped_range range{"Animation"};
-    LT("subsystem=presentationworld event=animation");
     // TODO(sergioffpc): animation.Update per visible player character,
     // once there's a per-character handle to iterate and a
     // animation::LocomotionInput to build from interpolated movement -
@@ -101,7 +97,6 @@ struct World::Impl {
 
   void OnAudioCues() {
     const nvtx3::scoped_range range{"AudioCues"};
-    LT("subsystem=presentationworld event=audio_cues");
     // TODO(sergioffpc): audio_engine.SetListener then PlaySound per
     // this frame's cues - see presentation.h's Phase::kAudioCues doc
     // comment. The capture only proves audio_engine is reachable from
@@ -111,7 +106,6 @@ struct World::Impl {
 
   void OnCommit() {
     const nvtx3::scoped_range range{"Commit"};
-    LT("subsystem=presentationworld event=commit");
     frame_state.local_position = latest_state.local_body.position + local_offset;
     // TODO(sergioffpc): package the rest of the frame's presentation data into State.
   }

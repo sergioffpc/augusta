@@ -1,5 +1,6 @@
 #include "host.h"
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -99,6 +100,22 @@ struct Host::Impl {
   std::unordered_map<protocol::SessionId, Player> players;
   std::vector<Change> changes;
 
+  // What Network I/O and the ticks did since the last heartbeat. Guarded by mutex.
+  struct Activity {
+    std::uint32_t ticks = 0;
+    std::uint32_t messages = 0;
+    // Commands the queue turned away as already handled; routine, since commands repeat.
+    std::uint32_t stale = 0;
+    // Messages and commands refused for being malformed, or sent out of turn.
+    std::uint32_t dropped = 0;
+  };
+  static constexpr std::chrono::seconds kHeartbeatInterval{1};
+  Activity activity;
+  std::chrono::steady_clock::time_point activity_since = std::chrono::steady_clock::now();
+  // A peer can send malformed messages as fast as it likes, so their warnings
+  // are limited; the heartbeat still counts every one. Guarded by mutex.
+  logging::Throttle drop_warnings{std::chrono::seconds{1}};
+
   explicit Impl(const HostConfig& config)
       : simulation(BuildSimulation(config)),
         network(config.listen),
@@ -134,7 +151,9 @@ struct Host::Impl {
   void HandleCommands(networking::PeerId peer, const protocol::Commands& message) {
     const std::optional<protocol::SessionId> session = match.SessionOf(peer);
     if (!session.has_value()) {
-      LW("subsystem=serverruntime event=dropped peer={} reason=\"commands before joining\"", PeerNumber(peer));
+      ++activity.dropped;
+      LW_LIMITED(drop_warnings, "subsystem=serverruntime event=dropped peer={} reason=\"commands before joining\"",
+                 PeerNumber(peer));
       return;
     }
     CommandQueue& queue = players.at(*session).commands;
@@ -145,11 +164,13 @@ struct Host::Impl {
       }
       // Commands are repeated until acknowledged, so a stale one is routine.
       if (offered.error() == Rejection::kStale) {
+        ++activity.stale;
         LT("subsystem=serverruntime event=dropped peer={} sequence={} reason=\"{}\"", PeerNumber(peer),
            command.sequence, DescribeRejection(offered.error()));
       } else {
-        LW("subsystem=serverruntime event=dropped_malformed peer={} sequence={} reason=\"{}\"", PeerNumber(peer),
-           command.sequence, DescribeRejection(offered.error()));
+        ++activity.dropped;
+        LW_LIMITED(drop_warnings, "subsystem=serverruntime event=dropped_malformed peer={} sequence={} reason=\"{}\"",
+                   PeerNumber(peer), command.sequence, DescribeRejection(offered.error()));
       }
     }
   }
@@ -157,8 +178,9 @@ struct Host::Impl {
   void HandleMessage(const networking::PeerMessage& message) {
     const std::expected<protocol::Message, protocol::DecodeError> decoded = protocol::Decode(message.payload);
     if (!decoded.has_value()) {
-      LW("subsystem=serverruntime event=dropped_malformed peer={} bytes={} reason=\"{}\"", PeerNumber(message.from),
-         message.payload.size(), protocol::DescribeDecodeError(decoded.error()));
+      ++activity.dropped;
+      LW_LIMITED(drop_warnings, "subsystem=serverruntime event=dropped_malformed peer={} bytes={} reason=\"{}\"",
+                 PeerNumber(message.from), message.payload.size(), protocol::DescribeDecodeError(decoded.error()));
       return;
     }
     if (const auto* request = std::get_if<protocol::JoinRequest>(&*decoded)) {
@@ -166,8 +188,10 @@ struct Host::Impl {
     } else if (const auto* commands = std::get_if<protocol::Commands>(&*decoded)) {
       HandleCommands(message.from, *commands);
     } else {
-      LW("subsystem=serverruntime event=dropped_malformed peer={} bytes={} reason=\"not a client message\"",
-         PeerNumber(message.from), message.payload.size());
+      ++activity.dropped;
+      LW_LIMITED(drop_warnings,
+                 "subsystem=serverruntime event=dropped_malformed peer={} bytes={} reason=\"not a client message\"",
+                 PeerNumber(message.from), message.payload.size());
     }
   }
 
@@ -257,6 +281,22 @@ struct Host::Impl {
     }
   }
 
+  // Once a second, one line of what the last second held: a line per tick or
+  // per packet would bury the one that matters. Simulation thread only.
+  void Heartbeat() {
+    const auto now = std::chrono::steady_clock::now();
+    const std::lock_guard<std::mutex> lock(mutex);
+    ++activity.ticks;
+    if (now - activity_since < kHeartbeatInterval) {
+      return;
+    }
+    LD("subsystem=serverruntime event=heartbeat tick={} generation={} players={} ticks={} messages={} stale={} "
+       "dropped={}",
+       tick, running.generation, players.size(), activity.ticks, activity.messages, activity.stale, activity.dropped);
+    activity = Activity{};
+    activity_since = now;
+  }
+
   void Send(const simulation::State& state, const TickInput& input) {
     for (const replication::Update& update : replication::PlanUpdates(state, tick, input.recipients)) {
       network.Send(input.peers.at(update.recipient), protocol::Encode(update.state),
@@ -291,6 +331,7 @@ void Host::PumpNetwork() {
   for (const networking::PeerMessage& message : impl.network.ReceiveMessages()) {
     LT("subsystem=serverruntime event=received peer={} bytes={}", PeerNumber(message.from), message.payload.size());
     const std::lock_guard<std::mutex> lock(impl.mutex);
+    ++impl.activity.messages;
     impl.HandleMessage(message);
   }
 }
@@ -332,6 +373,7 @@ simulation::State Host::Tick(float delta_time) {
   ++impl.tick;
   impl.RememberBodies(state);
   impl.Send(state, input);
+  impl.Heartbeat();
   return state;
 }
 

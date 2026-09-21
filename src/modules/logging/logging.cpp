@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <mutex>
+#include <utility>
 
 #include <boost/log/attributes/attribute_name.hpp>
 #include <boost/log/attributes/value_extraction.hpp>
@@ -116,6 +117,22 @@ void Write(Severity level, std::string_view message) {
   static boost::log::sources::severity_logger_mt<Severity> logger;
   BOOST_LOG_SEV(logger, level) << boost::log::add_value(kTimeAttribute, std::chrono::system_clock::now())
                                << std::string(message);
+}
+
+std::optional<std::uint32_t> Throttle::Admit(std::chrono::steady_clock::time_point now) {
+  if (last_admitted_.has_value() && now - *last_admitted_ < interval_) {
+    ++suppressed_;
+    return std::nullopt;
+  }
+  last_admitted_ = now;
+  return std::exchange(suppressed_, 0U);
+}
+
+std::string WithSuppressed(std::string message, std::uint32_t count) {
+  if (count > 0) {
+    message += std::format(" suppressed={}", count);
+  }
+  return message;
 }
 
 }  // namespace augusta::logging

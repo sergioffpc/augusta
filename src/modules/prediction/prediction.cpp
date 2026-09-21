@@ -106,7 +106,6 @@ struct World::Impl {
 
   void OnCommandIngestion() {
     const nvtx3::scoped_range range{"CommandIngestion"};
-    LT("subsystem=predictionworld event=command_ingestion");
     // tick_command is already staged by Tick() - nothing else to
     // ingest yet without an entity/component to apply it to.
   }
@@ -125,7 +124,6 @@ struct World::Impl {
     }
     const physics::BodyState& authoritative = tick_acknowledgement->body;
     if (!NeedsCorrection(authoritative, predicted->body)) {
-      LT("subsystem=predictionworld event=reconcile_skipped sequence={}", tick_acknowledgement->sequence);
       return;
     }
     physics::BodyState replayed = physics.Restore(local_body, authoritative, predicted->fall);
@@ -143,19 +141,16 @@ struct World::Impl {
 
   void OnMovement(float delta_time) {
     const nvtx3::scoped_range range{"Movement"};
-    LT("subsystem=predictionworld event=movement");
     tick_state.local_body = physics.Step(local_body, tick_command.movement, delta_time);
   }
 
   void OnWeaponHandling() {
     const nvtx3::scoped_range range{"WeaponHandling"};
-    LT("subsystem=predictionworld event=weapon_handling");
     // TODO(sergioffpc): not yet a module of its own - see prediction.h.
   }
 
   void OnCommit() {
     const nvtx3::scoped_range range{"Commit"};
-    LT("subsystem=predictionworld event=commit");
     // tick_state.local_body is already set by OnMovement; what is left
     // is remembering it for the server's answer to this command.
     if (tick_sequence != 0) {
