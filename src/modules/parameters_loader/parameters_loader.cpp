@@ -1,9 +1,7 @@
 #include "augusta/parameters_loader.h"
 
 #include <algorithm>
-#include <cmath>
 #include <fstream>
-#include <limits>
 #include <optional>
 #include <span>
 #include <sstream>
@@ -16,6 +14,7 @@
 namespace augusta::parameters {
 namespace {
 
+constexpr std::string_view kTickRateKey = "tick_rate_hz";
 constexpr std::string_view kStaminaKey = "stamina";
 constexpr std::string_view kStaminaKeys[] = {"deplete_per_second", "regen_per_second", "forced_walk_below"};
 
@@ -52,9 +51,8 @@ std::optional<LoadError> FirstUnknownKey(const sol::table& table, std::string_vi
   return LoadError{.code = LoadErrorCode::kUnknownKey, .subject = Path(parent, *std::ranges::min_element(unknown))};
 }
 
-// A finite number at key that is at least min and below max.
-std::expected<float, LoadError> ReadNumber(const sol::table& table, std::string_view parent, std::string_view key,
-                                           double min, double max) {
+// The number at key; whether it is one the simulation can run on is for Validate.
+std::expected<float, LoadError> ReadNumber(const sol::table& table, std::string_view parent, std::string_view key) {
   const sol::object value = table.raw_get<sol::object>(key);
   if (value.get_type() == sol::type::lua_nil) {
     return Fail(LoadErrorCode::kMissingKey, Path(parent, key));
@@ -62,11 +60,7 @@ std::expected<float, LoadError> ReadNumber(const sol::table& table, std::string_
   if (value.get_type() != sol::type::number) {
     return Fail(LoadErrorCode::kWrongType, Path(parent, key));
   }
-  const double number = value.as<double>();
-  if (!std::isfinite(number) || number < min || number >= max) {
-    return Fail(LoadErrorCode::kOutOfRange, Path(parent, key));
-  }
-  return static_cast<float>(number);
+  return static_cast<float>(value.as<double>());
 }
 
 std::expected<physics::StaminaConfig, LoadError> ReadStamina(const sol::table& root) {
@@ -81,16 +75,15 @@ std::expected<physics::StaminaConfig, LoadError> ReadStamina(const sol::table& r
   if (const auto unknown = FirstUnknownKey(table, kStaminaKey, kStaminaKeys)) {
     return std::unexpected(*unknown);
   }
-  constexpr double kNoMaximum = std::numeric_limits<double>::infinity();
-  const auto deplete = ReadNumber(table, kStaminaKey, "deplete_per_second", 0.0, kNoMaximum);
+  const auto deplete = ReadNumber(table, kStaminaKey, "deplete_per_second");
   if (!deplete) {
     return std::unexpected(deplete.error());
   }
-  const auto regen = ReadNumber(table, kStaminaKey, "regen_per_second", 0.0, kNoMaximum);
+  const auto regen = ReadNumber(table, kStaminaKey, "regen_per_second");
   if (!regen) {
     return std::unexpected(regen.error());
   }
-  const auto forced_walk_below = ReadNumber(table, kStaminaKey, "forced_walk_below", 0.0, 1.0);
+  const auto forced_walk_below = ReadNumber(table, kStaminaKey, "forced_walk_below");
   if (!forced_walk_below) {
     return std::unexpected(forced_walk_below.error());
   }
@@ -160,15 +153,23 @@ std::expected<Parameters, LoadError> Load(std::string_view script) {
   }
   const sol::table root = result.get<sol::table>();
 
-  constexpr std::string_view kRootKeys[] = {kStaminaKey};
+  constexpr std::string_view kRootKeys[] = {kTickRateKey, kStaminaKey};
   if (const auto unknown = FirstUnknownKey(root, {}, kRootKeys)) {
     return std::unexpected(*unknown);
+  }
+  const auto tick_rate_hz = ReadNumber(root, {}, kTickRateKey);
+  if (!tick_rate_hz) {
+    return std::unexpected(tick_rate_hz.error());
   }
   const auto stamina = ReadStamina(root);
   if (!stamina) {
     return std::unexpected(stamina.error());
   }
-  return Parameters{.stamina = *stamina};
+  const Parameters parameters{.tick_rate_hz = *tick_rate_hz, .stamina = *stamina};
+  if (const auto valid = Validate(parameters); !valid) {
+    return Fail(LoadErrorCode::kOutOfRange, std::string(valid.error().path));
+  }
+  return parameters;
 }
 
 std::expected<Parameters, LoadError> LoadFile(const std::filesystem::path& file) {

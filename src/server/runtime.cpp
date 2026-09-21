@@ -65,7 +65,7 @@ void ServerRuntime::Run() {
   impl_->network_thread = std::thread([this] { impl_->NetworkThreadMain(); });
   ThreadJoiner joiner{.running = impl_->running, .network_thread = impl_->network_thread};
 
-  const auto tick_duration = std::chrono::duration<float>(1.0F / impl_->config.tick_rate_hz);
+  const auto tick_duration = std::chrono::duration<float>(1.0F / impl_->config.parameters.tick_rate_hz);
   LI("subsystem=serverruntime event=loop_starting loop=simulation");
   while (impl_->running.load(std::memory_order_relaxed)) {
     const auto tick_start = std::chrono::steady_clock::now();

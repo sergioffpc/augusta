@@ -62,8 +62,11 @@ constexpr auto kPollInterval = std::chrono::milliseconds(10);
 constexpr auto kPollDeadline = std::chrono::seconds(5);
 constexpr float kFixedTick = 1.0F / 60.0F;
 
-// A PredictionWorld with no map, on default stamina rules.
-augusta::prediction::World EmptyWorld() { return augusta::prediction::World(augusta::physics::StaminaConfig{}); }
+// The Parameters a test's server runs on: NFR-01's 60 Hz and stamina rules that never drain.
+constexpr Parameters kTestParameters{.tick_rate_hz = 60.0F};
+
+// A PredictionWorld with no map, and nothing decided yet: a server decides it on the client's join.
+augusta::prediction::World EmptyWorld() { return augusta::prediction::World(); }
 
 // ctest runs every test case in its own process, possibly in parallel, so a
 // fixed port would collide; derive one from the process id instead.
@@ -95,7 +98,9 @@ class SessionTest : public ::testing::Test {
   // The script path is the server's own placeholder (scripting::Engine ignores
   // it until Lua is embedded, ADR-0022); point it at a real script then.
   SessionTest()
-      : host_(HostConfig{.script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}}),
+      : host_(HostConfig{.parameters = kTestParameters,
+                         .script_path = "scripts/round.lua",
+                         .listen = Endpoint{.address = LoopbackAddress()}}),
         session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld()) {}
 
   // Runs both sides' network work until the session reports connected, or
@@ -156,7 +161,9 @@ TEST_F(SessionTest, StaysConnectedWhileTheTestAlternatesTicksAndNetworkWork) {
 class JoinTest : public ::testing::Test {
  protected:
   JoinTest()
-      : host_(HostConfig{.script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}}) {}
+      : host_(HostConfig{.parameters = kTestParameters,
+                         .script_path = "scripts/round.lua",
+                         .listen = Endpoint{.address = LoopbackAddress()}}) {}
 
   // Starts connecting a new client that presents engine_version.
   Session& AddClient(const std::string& engine_version = std::string(augusta::EngineVersion())) {
@@ -312,7 +319,8 @@ TEST(MapSessionTest, APredictionWorldRefusesAMapMeshPhysicsRejects) {
 }
 
 TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
-  Host host(HostConfig{.script_path = "scripts/round.lua",
+  Host host(HostConfig{.parameters = kTestParameters,
+                       .script_path = "scripts/round.lua",
                        .listen = Endpoint{.address = LoopbackAddress()},
                        .collision = {FloorAt(0.0F)}});
 
@@ -323,7 +331,8 @@ TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
 }
 
 TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
-  EXPECT_THROW(Host(HostConfig{.script_path = "scripts/round.lua",
+  EXPECT_THROW(Host(HostConfig{.parameters = kTestParameters,
+                               .script_path = "scripts/round.lua",
                                .listen = Endpoint{.address = LoopbackAddress()},
                                .collision = {CollisionMesh{}}}),
                std::runtime_error);
@@ -345,7 +354,8 @@ class MovementTest : public ::testing::Test {
   // The client always knows the floor; the host knows server_map, which a test
   // may make differ from it to give the two something to disagree about.
   explicit MovementTest(std::vector<CollisionMesh> server_map)
-      : host_(HostConfig{.script_path = "scripts/round.lua",
+      : host_(HostConfig{.parameters = kTestParameters,
+                         .script_path = "scripts/round.lua",
                          .listen = Endpoint{.address = LoopbackAddress()},
                          .collision = std::move(server_map)}),
         session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, WorldWithFloorAt(kGroundHeight)) {}
@@ -698,7 +708,7 @@ class LoopbackMatch : public ::testing::Test {
   explicit LoopbackMatch(const HostConfig& config) : host_(config) {}
 
   // A host config for the floor with spawn_points and the parameters.
-  static HostConfig OnTheFloor(std::vector<Vec3> spawn_points, const Parameters& parameters = {}) {
+  static HostConfig OnTheFloor(std::vector<Vec3> spawn_points, const Parameters& parameters = kTestParameters) {
     return HostConfig{.parameters = parameters,
                       .script_path = "scripts/round.lua",
                       .listen = Endpoint{.address = LoopbackAddress()},
@@ -865,7 +875,8 @@ class StaminaTest : public LoopbackMatch {
 
   StaminaTest()
       : LoopbackMatch(OnTheFloor(
-            {}, {.stamina = {
+            {}, {.tick_rate_hz = 60.0F,
+                 .stamina = {
                      .deplete_per_second = 1.0F, .regen_per_second = 0.25F, .forced_walk_below = kForcedWalkBelow}})) {}
 
   void SetUp() override {
@@ -945,7 +956,9 @@ class ScriptedParametersTest : public LoopbackMatch {
   static augusta::parameters::Parameters LoadScript() {
     const auto file = std::filesystem::temp_directory_path() / ("augusta_session_" + LoopbackAddress() + ".lua");
     std::ofstream(file, std::ios::binary) << "local sprint_seconds = 1\n"
-                                             "return { stamina = {\n"
+                                             "return {\n"
+                                             "  tick_rate_hz = 60,\n"
+                                             "  stamina = {\n"
                                              "  deplete_per_second = 1 / sprint_seconds,\n"
                                              "  regen_per_second = 0,\n"
                                              "  forced_walk_below = 0.2,\n"
@@ -970,6 +983,83 @@ TEST_F(ScriptedParametersTest, AClientPredictsItsStaminaWithTheRulesOfTheServers
   // Nothing else depletes a bar this fast and nothing refills it: the client is following the script.
   EXPECT_LT(states_.at(&client).local_body.stamina, 0.7F);
   EXPECT_NEAR(states_.at(&client).local_body.stamina, BodySeenBy(client, *client.GetSessionId())->stamina, 0.1F);
+}
+
+// A server at 30 Hz: everything a client does with time it must take from what it is told.
+class TickRateTest : public LoopbackMatch {
+ protected:
+  static constexpr float kServerRate = 30.0F;
+
+  TickRateTest() : LoopbackMatch(OnTheFloor({}, {.tick_rate_hz = kServerRate})) {}
+};
+
+TEST_F(TickRateTest, AClientLearnsTheServersTickRateWhenItJoins) {
+  Session& client = Join();
+
+  ASSERT_TRUE(client.GetParameters().has_value());
+  EXPECT_FLOAT_EQ(client.GetParameters()->tick_rate_hz, kServerRate);
+}
+
+TEST_F(TickRateTest, AClientTickingAtTheRateItWasToldAgreesWithTheServerWithoutCorrection) {
+  Session& client = Join();
+  const float client_delta = 1.0F / client.GetParameters()->tick_rate_hz;
+  const float server_delta = 1.0F / kServerRate;
+  Command walk;
+  walk.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+
+  augusta::prediction::State state;
+  for (int i = 0; i < 90; ++i) {
+    state = client.Tick(walk, client_delta);
+    std::this_thread::sleep_for(kNetworkDelay);
+    Exchange();
+    host_.Tick(server_delta);
+    std::this_thread::sleep_for(kNetworkDelay);
+    Exchange();
+  }
+
+  // Walking 3 s at 3 m/s: what the client covered is what the server did, so
+  // reconciliation never had a jump to make.
+  EXPECT_GT(state.local_body.position.x, 6.0F);
+  EXPECT_NEAR(state.local_body.position.x, BodySeenBy(client, *client.GetSessionId())->position.x, 0.5F);
+  EXPECT_NEAR(state.total_correction.x, 0.0F, 0.01F);
+  EXPECT_NEAR(state.total_correction.z, 0.0F, 0.01F);
+}
+
+// A client that has not joined holds nothing a server decides.
+TEST_F(SessionTest, AClientHoldsNoParametersUntilTheServerAdmitsIt) {
+  EXPECT_FALSE(session_.GetParameters().has_value());
+  ASSERT_TRUE(ConnectSession());
+  const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+  while (!session_.GetSessionId().has_value() && std::chrono::steady_clock::now() < deadline) {
+    host_.PumpNetwork();
+    session_.PumpEvents();
+    session_.ExchangeMessages();
+    std::this_thread::sleep_for(kPollInterval);
+  }
+
+  ASSERT_TRUE(session_.GetSessionId().has_value());
+  ASSERT_TRUE(session_.GetParameters().has_value());
+  EXPECT_FLOAT_EQ(session_.GetParameters()->tick_rate_hz, kTestParameters.tick_rate_hz);
+}
+
+// A server whose parameters are unusable (a tick rate of zero): the client
+// drops the Join accepted rather than divide by it.
+TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseParametersFailTheChecks) {
+  Host host(HostConfig{
+      .parameters = {}, .script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}});
+  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
+  session.Connect();
+
+  const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+  while (std::chrono::steady_clock::now() < until) {
+    host.PumpNetwork();
+    session.PumpEvents();
+    session.ExchangeMessages();
+    std::this_thread::sleep_for(kPollInterval);
+  }
+
+  EXPECT_FALSE(session.GetSessionId().has_value());
+  EXPECT_FALSE(session.GetParameters().has_value());
 }
 
 // What a client is told when its session ends on its own.
@@ -1000,8 +1090,9 @@ TEST(SessionFailureTest, AServerNobodyIsListeningAtIsUnreachable) {
 }
 
 TEST(SessionFailureTest, AServerThatGoesAwayAfterAdmittingTheClientIsAConnectionLost) {
-  auto host = std::make_unique<Host>(
-      HostConfig{.script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}});
+  auto host = std::make_unique<Host>(HostConfig{.parameters = kTestParameters,
+                                                .script_path = "scripts/round.lua",
+                                                .listen = Endpoint{.address = LoopbackAddress()}});
   Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
   session.Connect();
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
@@ -1029,7 +1120,9 @@ TEST(SessionFailureTest, AServerThatGoesAwayAfterAdmittingTheClientIsAConnection
 }
 
 TEST(SessionFailureTest, EndingTheSessionOneselfIsNotAFailure) {
-  Host host(HostConfig{.script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}});
+  Host host(HostConfig{.parameters = kTestParameters,
+                       .script_path = "scripts/round.lua",
+                       .listen = Endpoint{.address = LoopbackAddress()}});
   Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
   session.Connect();
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;

@@ -20,7 +20,6 @@ using augusta::math::Vec3;
 using augusta::parameters::Parameters;
 using augusta::physics::BodyState;
 using augusta::physics::CollisionMesh;
-using augusta::physics::StaminaConfig;
 using augusta::prediction::Acknowledgement;
 using augusta::prediction::State;
 using augusta::prediction::World;
@@ -43,7 +42,7 @@ Command Walking() {
 }
 
 TEST(PredictionWorldTest, TicksTheLocalEntityForwardEachCall) {
-  World world{StaminaConfig{}};
+  World world;
 
   State state;
   for (int i = 0; i < 30; ++i) {
@@ -54,7 +53,7 @@ TEST(PredictionWorldTest, TicksTheLocalEntityForwardEachCall) {
 }
 
 TEST(PredictionWorldTest, StartPutsTheLocalPlayerAtTheSpawnPointOnTheFloor) {
-  World world{StaminaConfig{}};
+  World world;
   ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
 
   world.Start(Vec3(5.0F, 0.0F, 7.0F), Parameters{});
@@ -69,7 +68,7 @@ TEST(PredictionWorldTest, StartPutsTheLocalPlayerAtTheSpawnPointOnTheFloor) {
 }
 
 TEST(PredictionWorldTest, StartReplacesTheStaminaRulesTheWorldWasBuiltWith) {
-  World world{StaminaConfig{}};
+  World world;
   Command sprint = Walking();
   sprint.movement.sprint = true;
   EXPECT_FLOAT_EQ(world.Tick(sprint, 0, std::nullopt, kFixedTick).local_body.stamina, 1.0F);
@@ -83,7 +82,7 @@ TEST(PredictionWorldTest, StartReplacesTheStaminaRulesTheWorldWasBuiltWith) {
 // A resting player on a floor, ticked with sequences 1, 2, ... and no input.
 class ReconciliationTest : public ::testing::Test {
  protected:
-  ReconciliationTest() : world_{StaminaConfig{}} {
+  ReconciliationTest() {
     EXPECT_TRUE(world_.AddCollisionMesh(Floor()).has_value());
     for (int i = 0; i < kSettleTicks; ++i) {
       Tick(std::nullopt);

@@ -203,6 +203,7 @@ JoinAccepted ReadJoinAccepted(Reader& reader) {
   JoinAccepted accepted;
   accepted.session = static_cast<SessionId>(reader.ReadU32());
   accepted.spawn = reader.ReadVec3();
+  accepted.parameters.tick_rate_hz = reader.ReadF32();
   accepted.parameters.stamina.deplete_per_second = reader.ReadF32();
   accepted.parameters.stamina.regen_per_second = reader.ReadF32();
   accepted.parameters.stamina.forced_walk_below = reader.ReadF32();
@@ -267,6 +268,7 @@ struct Encoder {
     WriteU8(out, static_cast<std::uint8_t>(MessageType::kJoinAccepted));
     WriteU32(out, static_cast<std::uint32_t>(message.session));
     WriteVec3(out, message.spawn);
+    WriteF32(out, message.parameters.tick_rate_hz);
     WriteF32(out, message.parameters.stamina.deplete_per_second);
     WriteF32(out, message.parameters.stamina.regen_per_second);
     WriteF32(out, message.parameters.stamina.forced_walk_below);

@@ -66,13 +66,15 @@ struct World::Impl {
   // compare the server's answer with and to replay from it.
   History history;
 
-  explicit Impl(const physics::StaminaConfig& stamina_config)
+  Impl()
+      // No stamina rules of its own: Start gives the world the server's.
       // enable_gpu=true: PredictionWorld is exclusively client-side (see
       // this class's own header comment) - the server's SimulationWorld
       // never passes this, so GPU is requested here only, not threaded
       // through as a Config field. See physics::World's own header
       // comment for why this currently has no observable effect.
-      : physics(stamina_config, /*enable_gpu=*/true), local_body(physics.CreateBody(math::Vec3(0.0F, 0.0F, 0.0F))) {
+      : physics(physics::StaminaConfig{}, /*enable_gpu=*/true),
+        local_body(physics.CreateBody(math::Vec3(0.0F, 0.0F, 0.0F))) {
     // Chain the five phases in Phase's declared order (ADR-0024): each
     // depends_on the previous one, and the first depends on Flecs's
     // built-in OnUpdate phase, so a single ecs.progress() call runs them
@@ -163,7 +165,7 @@ struct World::Impl {
   }
 };
 
-World::World(const physics::StaminaConfig& stamina_config) : impl_(std::make_unique<Impl>(stamina_config)) {}
+World::World() : impl_(std::make_unique<Impl>()) {}
 
 World::~World() = default;
 

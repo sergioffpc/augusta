@@ -106,11 +106,12 @@ struct Acknowledgement {
 // world, neither of which is meaningful.
 class World {
  public:
-  // Constructs an empty World: a physics::World (using stamina_config)
-  // holding the one local-player body this spike predicts (M1, issue
-  // #32), spawned at the world origin, plus the Flecs world with Phase's
-  // five phases and their systems registered (see header comment).
-  explicit World(const physics::StaminaConfig& stamina_config);
+  // Constructs an empty World: a physics::World holding the one local-player
+  // body this spike predicts (M1, issue #32), spawned at the world origin,
+  // plus the Flecs world with Phase's five phases and their systems
+  // registered (see header comment). It holds no rules of the server's until
+  // Start gives it them, so nothing is predicted with rules of its own.
+  World();
   ~World();
 
   /// Adds immovable level geometry to this world's physics, the same way SimulationWorld does.

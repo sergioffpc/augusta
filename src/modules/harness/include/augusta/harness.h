@@ -8,6 +8,7 @@
 
 #include "augusta/input.h"
 #include "augusta/networking.h"
+#include "augusta/parameters.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
 #include "augusta/version.h"
@@ -110,6 +111,12 @@ class Session {
   /// Set by ExchangeMessages; safe to read from any thread. Who is in the match
   /// after that is in the Authoritative State.
   [[nodiscard]] std::vector<protocol::PlayerState> GetRoster() const;
+
+  /// The parameters the server sent when it admitted this client, the tick rate
+  /// among them, or nullopt until it does. What this client ticks and predicts
+  /// with; it has none of its own. Set by ExchangeMessages; safe to read from
+  /// any thread.
+  [[nodiscard]] std::optional<parameters::Parameters> GetParameters() const;
 
   /// Why the server refused this client, or nullopt if it has not. Set by
   /// ExchangeMessages; safe to read from any thread.

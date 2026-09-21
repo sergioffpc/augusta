@@ -166,9 +166,9 @@ struct ClientRuntime::Impl {
     // The map goes in before the Session takes the world over: a body that has
     // already ticked has been predicted without it, and reconciliation cannot
     // account for that.
-    // No stamina rules of its own: the Session starts the prediction under the
+    // No rules of its own: the Session starts the prediction under the
     // server's once it has joined, so the two cannot drift.
-    prediction::World world{physics::StaminaConfig{}};
+    prediction::World world;
     for (const physics::CollisionMesh& mesh : cfg.collision) {
       if (const auto added = world.AddCollisionMesh(mesh); !added) {
         throw std::runtime_error(std::format("ClientRuntime: map collision rejected: {}",
@@ -178,11 +178,29 @@ struct ClientRuntime::Impl {
     session.emplace(harness::SessionConfig{.server = cfg.server}, std::move(world));
   }
 
+  // The parameters the server sent when it admitted this client, or nullopt if
+  // running was cleared first. The tick rate is the server's (ADR-0039), so
+  // nothing is predicted before it is known.
+  std::optional<parameters::Parameters> WaitForParameters() {
+    constexpr auto kPollInterval = std::chrono::milliseconds(10);
+    while (running.load(std::memory_order_relaxed)) {
+      if (auto parameters = session->GetParameters()) {
+        return parameters;
+      }
+      std::this_thread::sleep_for(kPollInterval);
+    }
+    return std::nullopt;
+  }
+
   // Prediction thread body (ADR-0005): fixed-rate loop sampling local
-  // input and ticking PredictionWorld. Runs until running is cleared by
-  // ThreadJoiner.
+  // input and ticking PredictionWorld, at the server's tick rate once it has
+  // joined. Runs until running is cleared by ThreadJoiner.
   void PredictionThreadMain() {
-    const auto tick_duration = std::chrono::duration<float>(1.0F / config.tick_rate_hz);
+    const auto parameters = WaitForParameters();
+    if (!parameters.has_value()) {
+      return;
+    }
+    const auto tick_duration = std::chrono::duration<float>(1.0F / parameters->tick_rate_hz);
     while (running.load(std::memory_order_relaxed)) {
       const nvtx3::scoped_range range{"Prediction Tick"};
       const auto tick_start = std::chrono::steady_clock::now();

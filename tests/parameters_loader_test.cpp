@@ -20,6 +20,7 @@ using augusta::parameters::LoadFile;
 
 constexpr std::string_view kValid = R"(
 return {
+  tick_rate_hz = 60,
   stamina = {
     deplete_per_second = 0.2,
     regen_per_second = 0.1,
@@ -30,9 +31,15 @@ return {
 
 // A complete script whose three stamina values are the given Lua expressions.
 std::string WithStamina(std::string_view deplete, std::string_view regen, std::string_view forced_walk_below) {
-  return "return { stamina = { deplete_per_second = " + std::string(deplete) +
+  return "return { tick_rate_hz = 60, stamina = { deplete_per_second = " + std::string(deplete) +
          ", regen_per_second = " + std::string(regen) + ", forced_walk_below = " + std::string(forced_walk_below) +
          " } }";
+}
+
+// A complete script whose tick rate is the given Lua expression.
+std::string WithTickRate(std::string_view rate) {
+  return "return { tick_rate_hz = " + std::string(rate) +
+         ", stamina = { deplete_per_second = 0, regen_per_second = 0, forced_walk_below = 0 } }";
 }
 
 void ExpectError(std::string_view script, LoadErrorCode code, std::string_view subject) {
@@ -46,6 +53,7 @@ TEST(ParametersLoaderTest, ReadsEveryValueOfACompleteScript) {
   const auto loaded = Load(kValid);
 
   ASSERT_TRUE(loaded.has_value());
+  EXPECT_FLOAT_EQ(loaded->tick_rate_hz, 60.0F);
   EXPECT_FLOAT_EQ(loaded->stamina.deplete_per_second, 0.2F);
   EXPECT_FLOAT_EQ(loaded->stamina.regen_per_second, 0.1F);
   EXPECT_FLOAT_EQ(loaded->stamina.forced_walk_below, 0.05F);
@@ -81,28 +89,34 @@ TEST(ParametersLoaderTest, AScriptThatDoesNotReturnATableIsNotATable) {
 }
 
 TEST(ParametersLoaderTest, AMissingKeyIsAnErrorNamingItsPath) {
-  ExpectError("return {}", LoadErrorCode::kMissingKey, "stamina");
-  ExpectError("return { stamina = { regen_per_second = 0, forced_walk_below = 0 } }", LoadErrorCode::kMissingKey,
-              "stamina.deplete_per_second");
-  ExpectError("return { stamina = { deplete_per_second = 0, forced_walk_below = 0 } }", LoadErrorCode::kMissingKey,
-              "stamina.regen_per_second");
-  ExpectError("return { stamina = { deplete_per_second = 0, regen_per_second = 0 } }", LoadErrorCode::kMissingKey,
-              "stamina.forced_walk_below");
+  ExpectError("return {}", LoadErrorCode::kMissingKey, "tick_rate_hz");
+  ExpectError("return { tick_rate_hz = 60 }", LoadErrorCode::kMissingKey, "stamina");
+  ExpectError("return { stamina = { deplete_per_second = 0, regen_per_second = 0, forced_walk_below = 0 } }",
+              LoadErrorCode::kMissingKey, "tick_rate_hz");
+  ExpectError("return { tick_rate_hz = 60, stamina = { regen_per_second = 0, forced_walk_below = 0 } }",
+              LoadErrorCode::kMissingKey, "stamina.deplete_per_second");
+  ExpectError("return { tick_rate_hz = 60, stamina = { deplete_per_second = 0, forced_walk_below = 0 } }",
+              LoadErrorCode::kMissingKey, "stamina.regen_per_second");
+  ExpectError("return { tick_rate_hz = 60, stamina = { deplete_per_second = 0, regen_per_second = 0 } }",
+              LoadErrorCode::kMissingKey, "stamina.forced_walk_below");
 }
 
 TEST(ParametersLoaderTest, AnUnknownKeyIsAnErrorNamingItsPath) {
   ExpectError(
-      "return { stamina = { deplete_per_second = 0, regen_per_second = 0, forced_walk_below = 0 }, recoil = 1 }",
+      "return { tick_rate_hz = 60, stamina = { deplete_per_second = 0, regen_per_second = 0, forced_walk_below = 0 }, "
+      "recoil = 1 }",
       LoadErrorCode::kUnknownKey, "recoil");
   ExpectError(
-      "return { stamina = { deplete_per_second = 0, regen_per_second = 0, forced_walk_below = 0, regen_per_sec = 1 } }",
+      "return { tick_rate_hz = 60, stamina = { deplete_per_second = 0, regen_per_second = 0, forced_walk_below = 0, "
+      "regen_per_sec = 1 } }",
       LoadErrorCode::kUnknownKey, "stamina.regen_per_sec");
 }
 
 TEST(ParametersLoaderTest, AMisspelledKeyIsNeverReadAsAMissingOneOrADefault) {
   // The misspelling is the cause, so it is what is reported, not the key it left absent.
-  ExpectError("return { stamina = { deplete_per_second = 0, regen_per_secnd = 0, forced_walk_below = 0 } }",
-              LoadErrorCode::kUnknownKey, "stamina.regen_per_secnd");
+  ExpectError(
+      "return { tick_rate_hz = 60, stamina = { deplete_per_second = 0, regen_per_secnd = 0, forced_walk_below = 0 } }",
+      LoadErrorCode::kUnknownKey, "stamina.regen_per_secnd");
 }
 
 TEST(ParametersLoaderTest, WhenSeveralKeysAreUnknownTheFirstInNameOrderIsReported) {
@@ -113,7 +127,24 @@ TEST(ParametersLoaderTest, AValueOfTheWrongTypeIsAnErrorNamingItsPath) {
   ExpectError(WithStamina("'0.5'", "0", "0"), LoadErrorCode::kWrongType, "stamina.deplete_per_second");
   ExpectError(WithStamina("0", "true", "0"), LoadErrorCode::kWrongType, "stamina.regen_per_second");
   ExpectError(WithStamina("0", "0", "{}"), LoadErrorCode::kWrongType, "stamina.forced_walk_below");
-  ExpectError("return { stamina = 3 }", LoadErrorCode::kWrongType, "stamina");
+  ExpectError("return { tick_rate_hz = 60, stamina = 3 }", LoadErrorCode::kWrongType, "stamina");
+  ExpectError(WithTickRate("'60'"), LoadErrorCode::kWrongType, "tick_rate_hz");
+  ExpectError(WithTickRate("{}"), LoadErrorCode::kWrongType, "tick_rate_hz");
+}
+
+TEST(ParametersLoaderTest, TheTickRateIsAnyPositiveFiniteNumber) {
+  for (const char* rate : {"60", "30", "59.94", "240", "0.5"}) {
+    const auto loaded = Load(WithTickRate(rate));
+
+    ASSERT_TRUE(loaded.has_value()) << rate;
+    EXPECT_FLOAT_EQ(loaded->tick_rate_hz, std::stof(rate)) << rate;
+  }
+}
+
+TEST(ParametersLoaderTest, ATickRateThatIsNotPositiveAndFiniteIsOutOfRange) {
+  for (const char* rate : {"0", "-60", "math.huge", "-math.huge", "0/0"}) {
+    ExpectError(WithTickRate(rate), LoadErrorCode::kOutOfRange, "tick_rate_hz");
+  }
 }
 
 TEST(ParametersLoaderTest, ANegativeRateIsOutOfRange) {
@@ -172,7 +203,8 @@ TEST(ParametersLoaderSandboxTest, AScriptThatDoesRealWorkWithinTheLimitStillLoad
   const auto loaded = Load(
       "local sum = 0\n"
       "for i = 1, 10000 do sum = sum + i end\n"
-      "return { stamina = { deplete_per_second = sum / 50005000, regen_per_second = 0, forced_walk_below = 0 } }");
+      "return { tick_rate_hz = 60, stamina = { deplete_per_second = sum / 50005000, regen_per_second = 0, "
+      "forced_walk_below = 0 } }");
 
   ASSERT_TRUE(loaded.has_value());
   EXPECT_FLOAT_EQ(loaded->stamina.deplete_per_second, 1.0F);
@@ -188,7 +220,7 @@ TEST(ParametersLoaderExpressionTest, AValueMayBeAnExpressionOfOtherValuesInTheSc
   const auto loaded = Load(
       "local sprint_seconds = 5\n"
       "local rest_seconds = 10\n"
-      "return { stamina = {\n"
+      "return { tick_rate_hz = 60, stamina = {\n"
       "  deplete_per_second = 1 / sprint_seconds,\n"
       "  regen_per_second = 1 / rest_seconds,\n"
       "  forced_walk_below = 0.5 / sprint_seconds,\n"
@@ -203,7 +235,8 @@ TEST(ParametersLoaderExpressionTest, AValueMayBeAnExpressionOfOtherValuesInTheSc
 TEST(ParametersLoaderExpressionTest, AnExpressionCanUseAFunctionOfTheScript) {
   const auto loaded = Load(
       "local function per_second(seconds) return 1 / seconds end\n"
-      "return { stamina = { deplete_per_second = per_second(4), regen_per_second = math.sqrt(0.25),\n"
+      "return { tick_rate_hz = 60, stamina = { deplete_per_second = per_second(4), regen_per_second = "
+      "math.sqrt(0.25),\n"
       "  forced_walk_below = 0 } }");
 
   ASSERT_TRUE(loaded.has_value());
@@ -259,6 +292,7 @@ TEST(ParametersExampleTest, TheExampleScriptLoadsToTheDocumentedDefaults) {
   const auto loaded = LoadFile(AUGUSTA_EXAMPLE_PARAMETERS);
 
   ASSERT_TRUE(loaded.has_value()) << DescribeLoadError(loaded.error());
+  EXPECT_FLOAT_EQ(loaded->tick_rate_hz, 60.0F);
   EXPECT_FLOAT_EQ(loaded->stamina.deplete_per_second, 0.2F);
   EXPECT_FLOAT_EQ(loaded->stamina.regen_per_second, 0.1F);
   EXPECT_FLOAT_EQ(loaded->stamina.forced_walk_below, 0.1F);

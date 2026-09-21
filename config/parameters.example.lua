@@ -7,12 +7,19 @@
 -- once per load, in a sandbox with no io, os or randomness, and every key must
 -- be spelled exactly: an unknown or missing key stops the server loading it.
 
+-- The rate, in Hz, at which the server simulates and every client predicts,
+-- fixed for as long as the server runs. NFR-01 asks the server to sustain 60 Hz;
+-- a slower rate is accepted so a run can be debugged.
+local tick_rate_hz = 60
+
 -- Stamina (US-05): a full bar lasts 5 seconds of sprinting and refills in 10
 -- of rest.
 local sprint_seconds = 5
 local rest_seconds = 10
 
 return {
+  tick_rate_hz = tick_rate_hz,
+
   stamina = {
     -- Fraction of stamina sprinting costs per second (0 or more).
     deplete_per_second = 1 / sprint_seconds,

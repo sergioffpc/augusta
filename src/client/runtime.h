@@ -51,11 +51,6 @@ struct Config {
   // caller, like the scene: where content comes from is the executable's business.
   // The constructor throws std::runtime_error if physics rejects a mesh.
   std::vector<physics::CollisionMesh> collision;
-  // Simulation thread's fixed tick rate, in Hz. Defaults to NFR-01's
-  // server tick rate (>= 60 Hz, REQUIREMENTS.md) - PredictionWorld
-  // ticking at a different rate than the server it predicts against
-  // would only make reconciliation (ADR-0004) harder to reason about.
-  float tick_rate_hz = 60.0F;
 };
 
 // Owns one of every client-only module/World and the three fixed

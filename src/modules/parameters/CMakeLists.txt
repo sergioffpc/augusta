@@ -1,4 +1,4 @@
-add_library(augusta_parameters INTERFACE)
-target_include_directories(augusta_parameters INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(augusta_parameters INTERFACE augusta_physics)
+add_library(augusta_parameters STATIC parameters.cpp)
+target_include_directories(augusta_parameters PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(augusta_parameters PUBLIC augusta_physics)
 augusta_set_module_scope(augusta_parameters SHARED)

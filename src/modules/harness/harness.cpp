@@ -72,7 +72,14 @@ struct Session::Impl {
     }
   }
 
+  // A server whose parameters the simulation cannot run on (a tick rate of zero
+  // would be divided by) is not a usable one: the message is dropped, as a
+  // malformed one is, and the client stays unadmitted.
   void OnJoinAccepted(const protocol::JoinAccepted& accepted) {
+    if (const auto valid = parameters::Validate(accepted.parameters); !valid) {
+      LW("subsystem=clientruntime event=dropped reason=\"invalid parameters\" parameter={}", valid.error().path);
+      return;
+    }
     Publish([&](ServerView& next) { next.accepted = accepted; });
     LI("subsystem=clientruntime event=joined roster={}", accepted.roster.size());
   }
@@ -207,6 +214,14 @@ std::optional<protocol::SessionId> Session::GetSessionId() const {
 std::vector<protocol::PlayerState> Session::GetRoster() const {
   const std::shared_ptr<const ServerView> server_view = impl_->view.load();
   return server_view->accepted.has_value() ? server_view->accepted->roster : std::vector<protocol::PlayerState>{};
+}
+
+std::optional<parameters::Parameters> Session::GetParameters() const {
+  const std::shared_ptr<const ServerView> server_view = impl_->view.load();
+  if (!server_view->accepted.has_value()) {
+    return std::nullopt;
+  }
+  return server_view->accepted->parameters;
 }
 
 std::optional<protocol::JoinRefusal> Session::GetRefusal() const { return impl_->view.load()->refusal; }
