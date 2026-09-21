@@ -498,8 +498,15 @@ TEST_F(MovementTest, WithPacketLossEveryCommandIsStillProcessedAndThePredictionS
   Run(kWalkSteps, Walking());
   Run(kSettleSteps, Command{});
 
-  EXPECT_EQ(DrainServer(kSettleTicks + kWalkSteps + kSettleSteps),
-            static_cast<std::uint32_t>(kSettleTicks + kWalkSteps + kSettleSteps));
+  // The last commands sent under loss may have been lost for good, since the
+  // client has nothing newer to repeat them with; a few more sent over a clean
+  // network carry whatever the server is still missing.
+  augusta::networking::SimulateNetworkConditions({});
+  constexpr int kRecoverySteps = 10;
+  Run(kRecoverySteps, Command{});
+
+  const auto sent = static_cast<std::uint32_t>(kSettleTicks + kWalkSteps + kSettleSteps + kRecoverySteps);
+  EXPECT_EQ(DrainServer(sent), sent);
   EXPECT_LT(PredictionError(Run(kSettleSteps, Command{})), 0.05F);
 }
 
