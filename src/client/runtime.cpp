@@ -8,6 +8,7 @@
 #include <optional>
 #include <stdexcept>
 #include <thread>
+#include <utility>
 
 #include <nvtx3/nvtx3.hpp>
 
@@ -39,27 +40,14 @@ struct ThreadJoiner {
   }
 };
 
-// The PredictionWorld a Session predicts in, with the map's collision loaded:
-// a body that has already ticked has been predicted without it, and
-// reconciliation cannot account for that.
-prediction::World MakePredictionWorld(const Config& cfg) {
-  prediction::World world(cfg.stamina);
-  for (const physics::CollisionMesh& mesh : cfg.collision) {
-    if (const auto added = world.AddCollisionMesh(mesh); !added) {
-      throw std::runtime_error(
-          std::format("ClientRuntime: map collision rejected: {}", physics::DescribeCollisionMeshError(added.error())));
-    }
-  }
-  return world;
-}
-
 }  // namespace
 
 struct ClientRuntime::Impl {
   Config config;
   input::Input input;
   audio::Engine audio;
-  harness::Session session;
+  // Emplaced by the constructor once the map is loaded into its PredictionWorld.
+  std::optional<harness::Session> session;
   presentation::World presentation;
   renderer::Renderer renderer;
 
@@ -153,7 +141,7 @@ struct ClientRuntime::Impl {
   }
 
   void SampleNetworkStats() {
-    const std::optional<networking::ConnectionStats> stats = session.GetStats();
+    const std::optional<networking::ConnectionStats> stats = session->GetStats();
     PublishHudNetStats(stats);
     if (!stats.has_value()) {
       net_ping_ms.sample_no_value(nvtx3::no_value_reason::unavailable);
@@ -174,12 +162,19 @@ struct ClientRuntime::Impl {
     net_pending_bytes.sample(static_cast<double>(stats->pending_bytes));
   }
 
-  explicit Impl(const Config& cfg)
-      : config(cfg),
-        input(cfg.input),
-        session(harness::SessionConfig{.server = cfg.server}, MakePredictionWorld(cfg)),
-        presentation(audio),
-        renderer(cfg.renderer, input) {}
+  explicit Impl(const Config& cfg) : config(cfg), input(cfg.input), presentation(audio), renderer(cfg.renderer, input) {
+    // The map goes in before the Session takes the world over: a body that has
+    // already ticked has been predicted without it, and reconciliation cannot
+    // account for that.
+    prediction::World world(cfg.stamina);
+    for (const physics::CollisionMesh& mesh : cfg.collision) {
+      if (const auto added = world.AddCollisionMesh(mesh); !added) {
+        throw std::runtime_error(std::format("ClientRuntime: map collision rejected: {}",
+                                             physics::DescribeCollisionMeshError(added.error())));
+      }
+    }
+    session.emplace(harness::SessionConfig{.server = cfg.server}, std::move(world));
+  }
 
   // Prediction thread body (ADR-0005): fixed-rate loop sampling local
   // input and ticking PredictionWorld. Runs until running is cleared by
@@ -191,7 +186,7 @@ struct ClientRuntime::Impl {
       const auto tick_start = std::chrono::steady_clock::now();
 
       input::Command command = input.Sample();
-      prediction::State state = session.Tick(command, tick_duration.count());
+      prediction::State state = session->Tick(command, tick_duration.count());
 
       {
         std::lock_guard<std::mutex> lock(prediction_state_mutex);
@@ -206,14 +201,14 @@ struct ClientRuntime::Impl {
   // Network I/O thread body (ADR-0005): connects once, then pumps the
   // connection until running is cleared by ThreadJoiner.
   void NetworkThreadMain() {
-    session.Connect();
+    session->Connect();
     while (running.load(std::memory_order_relaxed)) {
       const nvtx3::scoped_range range{"Network PumpEvents"};
-      session.PumpEvents();
+      session->PumpEvents();
       SampleNetworkStats();
-      session.ExchangeMessages();
+      session->ExchangeMessages();
     }
-    session.Disconnect();
+    session->Disconnect();
   }
 
   prediction::State GetLatestPredictionState() {
