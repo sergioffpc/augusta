@@ -56,6 +56,7 @@ using augusta::parameters::Parameters;
 using augusta::physics::CollisionMesh;
 using augusta::physics::Stance;
 using augusta::protocol::JoinRefusal;
+using augusta::protocol::ParametersUpdate;
 using augusta::server::Host;
 using augusta::server::HostConfig;
 
@@ -1140,6 +1141,201 @@ TEST_F(WatchedReloadTest, SavingTheScriptChangesTheRunningSimulationWithNoOtherS
 
   ASSERT_EQ(host_.Generation(), 2U);
   EXPECT_NEAR(StaminaAfterSprinting(30), 0.5F, 0.1F);
+}
+
+TEST_F(ReloadTest, EveryConnectedClientIsSentTheNewGenerationWhenItBegins) {
+  Session& second = Join();
+  WriteScript(Script(60.0F, 1.0F));
+
+  ASSERT_TRUE(host_.Reload().has_value());
+
+  // Reloaded, not begun: nobody is told before the tick that runs on it.
+  EXPECT_EQ(client_->GetParametersGeneration(), 1U);
+  const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+  while ((client_->GetParametersGeneration() != 2U || second.GetParametersGeneration() != 2U) &&
+         std::chrono::steady_clock::now() < deadline) {
+    Step();
+  }
+  for (const Session* client : {client_, &second}) {
+    EXPECT_EQ(client->GetParametersGeneration(), 2U);
+    EXPECT_FLOAT_EQ(client->GetParameters()->stamina.deplete_per_second, 1.0F);
+  }
+}
+
+TEST_F(ReloadTest, AClientThatJoinsAfterAReloadIsToldTheCurrentGenerationWhenItJoins) {
+  WriteScript(Script(60.0F, 1.0F));
+  ASSERT_TRUE(host_.Reload().has_value());
+  Run(3);
+
+  Session& late = Join();
+
+  EXPECT_EQ(late.GetParametersGeneration(), 2U);
+  EXPECT_FLOAT_EQ(late.GetParameters()->stamina.deplete_per_second, 1.0F);
+}
+
+TEST_F(ReloadTest, ARefusedReloadSendsNothing) {
+  WriteScript("return {");
+  ASSERT_FALSE(host_.Reload().has_value());
+
+  Run(5);
+
+  EXPECT_EQ(client_->GetParametersGeneration(), 1U);
+  EXPECT_FLOAT_EQ(client_->GetParameters()->stamina.deplete_per_second, 0.0F);
+}
+
+// A server speaking the protocol by hand to one client, to send what a real
+// one would not: a generation that is old or repeated, values that fail the
+// checks, or bytes that are no message.
+class ScriptedServer {
+ public:
+  explicit ScriptedServer(const Endpoint& listen) : server_(listen) {}
+
+  // Connects session and answers its join with generation and parameters.
+  bool Admit(Session& session, std::uint32_t generation, const Parameters& parameters) {
+    generation_ = generation;
+    parameters_ = parameters;
+    session.Connect();
+    const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+    while (!session.GetSessionId().has_value() && std::chrono::steady_clock::now() < deadline) {
+      Pump();
+      session.PumpEvents();
+      session.ExchangeMessages();
+      std::this_thread::sleep_for(kPollInterval);
+    }
+    return session.GetSessionId().has_value();
+  }
+
+  // Serves the connection and the join, and takes in whatever the client sent.
+  void Pump() {
+    for (const auto& event : server_.PumpEvents()) {
+      if (event.type == augusta::networking::PeerEventType::kConnectRequested) {
+        server_.Accept(event.peer);
+      }
+    }
+    for (const auto& message : server_.ReceiveMessages()) {
+      peer_ = message.from;
+      const auto decoded = augusta::protocol::Decode(message.payload);
+      if (decoded.has_value() && std::holds_alternative<augusta::protocol::JoinRequest>(*decoded)) {
+        Send(augusta::protocol::JoinAccepted{
+            .session = augusta::protocol::SessionId{1}, .generation = generation_, .parameters = parameters_});
+      }
+    }
+  }
+
+  void Send(const augusta::protocol::Message& message) { SendPayload(augusta::protocol::Encode(message)); }
+
+  // Sends bytes as they are, whether or not they are a message.
+  void SendPayload(const augusta::protocol::Bytes& payload) {
+    server_.Send(*peer_, payload, augusta::networking::Reliability::kReliable);
+  }
+
+ private:
+  augusta::networking::Server server_;
+  std::optional<augusta::networking::PeerId> peer_;
+  std::uint32_t generation_ = 0;
+  Parameters parameters_;
+};
+
+// A client admitted by a server that then sends it parameters by hand.
+class ParametersUpdateTest : public ::testing::Test {
+ protected:
+  // 60 Hz unless said otherwise, and a bar that empties at deplete_per_second and never refills.
+  static Parameters WithDeplete(float deplete_per_second, float tick_rate_hz = 60.0F) {
+    return Parameters{
+        .tick_rate_hz = tick_rate_hz,
+        .stamina = {.deplete_per_second = deplete_per_second, .regen_per_second = 0.0F, .forced_walk_below = 0.0F}};
+  }
+
+  ParametersUpdateTest()
+      : server_(Endpoint{.address = LoopbackAddress()}),
+        session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, WorldWithFloorAt(0.0F)) {}
+
+  void SetUp() override { ASSERT_TRUE(server_.Admit(session_, 1, WithDeplete(0.0F))); }
+
+  // Lets the client take in, or refuse, whatever was sent: long enough that a
+  // message that was going to arrive has.
+  void Settle() {
+    const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+    while (std::chrono::steady_clock::now() < until) {
+      server_.Pump();
+      session_.PumpEvents();
+      session_.ExchangeMessages();
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+  }
+
+  void Deliver(const augusta::protocol::Message& message) {
+    server_.Send(message);
+    Settle();
+  }
+
+  // The stamina the client predicts after sprinting on for ticks more ticks.
+  float PredictedStaminaAfterSprinting(int ticks) {
+    Command sprint;
+    sprint.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+    sprint.movement.sprint = true;
+    augusta::prediction::State state;
+    for (int i = 0; i < ticks; ++i) {
+      state = session_.Tick(sprint, kFixedTick);
+    }
+    return state.local_body.stamina;
+  }
+
+  ScriptedServer server_;
+  Session session_;
+};
+
+TEST_F(ParametersUpdateTest, AClientAdoptsANewerGenerationAndItsPredictionUsesIt) {
+  ASSERT_GT(PredictedStaminaAfterSprinting(30), 0.99F);
+
+  Deliver(ParametersUpdate{.generation = 2, .parameters = WithDeplete(1.0F)});
+
+  EXPECT_EQ(session_.GetParametersGeneration(), 2U);
+  EXPECT_FLOAT_EQ(session_.GetParameters()->stamina.deplete_per_second, 1.0F);
+  // A bar that empties in a second, sprinted on for 30 more ticks: half of what was left.
+  EXPECT_NEAR(PredictedStaminaAfterSprinting(30), 0.5F, 0.1F);
+}
+
+TEST_F(ParametersUpdateTest, AClientIgnoresAGenerationThatIsNotNewer) {
+  Deliver(ParametersUpdate{.generation = 5, .parameters = WithDeplete(0.5F)});
+  ASSERT_EQ(session_.GetParametersGeneration(), 5U);
+
+  for (const std::uint32_t stale : {5U, 4U, 1U}) {
+    Deliver(ParametersUpdate{.generation = stale, .parameters = WithDeplete(1.0F)});
+  }
+
+  EXPECT_EQ(session_.GetParametersGeneration(), 5U);
+  EXPECT_FLOAT_EQ(session_.GetParameters()->stamina.deplete_per_second, 0.5F);
+}
+
+TEST_F(ParametersUpdateTest, AClientDropsAnUpdateWhoseValuesFailTheRangeChecks) {
+  for (const float bad : {-1.0F, std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity()}) {
+    Deliver(ParametersUpdate{.generation = 2, .parameters = WithDeplete(bad)});
+
+    EXPECT_EQ(session_.GetParametersGeneration(), 1U) << bad;
+  }
+  Parameters threshold = WithDeplete(0.0F);
+  threshold.stamina.forced_walk_below = 1.0F;
+  Deliver(ParametersUpdate{.generation = 2, .parameters = threshold});
+  EXPECT_EQ(session_.GetParametersGeneration(), 1U);
+}
+
+TEST_F(ParametersUpdateTest, AClientDropsAnUpdateWithAnotherTickRateThanItJoinedWith) {
+  Deliver(ParametersUpdate{.generation = 2, .parameters = WithDeplete(1.0F, 30.0F)});
+
+  EXPECT_EQ(session_.GetParametersGeneration(), 1U);
+  EXPECT_FLOAT_EQ(session_.GetParameters()->tick_rate_hz, 60.0F);
+}
+
+TEST_F(ParametersUpdateTest, AMalformedUpdateChangesNothingAndTheNextGoodOneIsStillTaken) {
+  // The message type, then a generation cut short.
+  server_.SendPayload(augusta::protocol::Bytes{std::byte{6}, std::byte{2}});
+  Settle();
+  ASSERT_EQ(session_.GetParametersGeneration(), 1U);
+
+  Deliver(ParametersUpdate{.generation = 2, .parameters = WithDeplete(1.0F)});
+
+  EXPECT_EQ(session_.GetParametersGeneration(), 2U);
 }
 
 // A server at 30 Hz: everything a client does with time it must take from what it is told.

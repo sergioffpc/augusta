@@ -129,6 +129,7 @@ struct Host::Impl {
     protocol::JoinAccepted accepted;
     accepted.session = admission->session;
     accepted.spawn = admission->spawn;
+    accepted.generation = generation;
     accepted.parameters = parameters;
     accepted.roster = admission->roster;
     Reply(peer, accepted);
@@ -235,7 +236,14 @@ struct Host::Impl {
     generation = pending->generation;
     pending.reset();
     simulation.SetStaminaConfig(parameters.stamina);
-    LI("subsystem=serverruntime event=parameters_applied generation={}", generation);
+    LI("subsystem=serverruntime event=parameters_applied generation={} players={}", generation, players.size());
+    // A client that joins from now on is told this generation in its Join accepted,
+    // and every one already in is sent it here: the join and this run under the same lock.
+    const protocol::Bytes update =
+        protocol::Encode(protocol::ParametersUpdate{.generation = generation, .parameters = parameters});
+    for (const auto& [session, player] : players) {
+      network.Send(player.peer, update, networking::Reliability::kReliable);
+    }
   }
 
   // Tells the match where everyone is, for the roster of whoever joins next.

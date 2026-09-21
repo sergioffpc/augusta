@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_HARNESS_H_
 #define AUGUSTA_HARNESS_H_
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -112,11 +113,15 @@ class Session {
   /// after that is in the Authoritative State.
   [[nodiscard]] std::vector<protocol::PlayerState> GetRoster() const;
 
-  /// The parameters the server sent when it admitted this client, the tick rate
-  /// among them, or nullopt until it does. What this client ticks and predicts
-  /// with; it has none of its own. Set by ExchangeMessages; safe to read from
-  /// any thread.
+  /// The newest parameters the server has sent, the tick rate among them, or
+  /// nullopt until it admits this client: what it joined with, replaced by each
+  /// newer generation the server has reloaded since. What this client ticks and
+  /// predicts with; it has none of its own. Set by ExchangeMessages; safe to
+  /// read from any thread.
   [[nodiscard]] std::optional<parameters::Parameters> GetParameters() const;
+
+  /// The generation of GetParameters, or nullopt while there are none.
+  [[nodiscard]] std::optional<std::uint32_t> GetParametersGeneration() const;
 
   /// Why the server refused this client, or nullopt if it has not. Set by
   /// ExchangeMessages; safe to read from any thread.

@@ -29,6 +29,7 @@ using augusta::protocol::kMaxEngineVersionLength;
 using augusta::protocol::kMaxPlayers;
 using augusta::protocol::Message;
 using augusta::protocol::MessageType;
+using augusta::protocol::ParametersUpdate;
 using augusta::protocol::PlayerState;
 using augusta::protocol::SequencedCommand;
 using augusta::protocol::SessionId;
@@ -46,6 +47,7 @@ constexpr auto kJoinAcceptedType = static_cast<std::uint8_t>(MessageType::kJoinA
 constexpr auto kJoinRefusedType = static_cast<std::uint8_t>(MessageType::kJoinRefused);
 constexpr auto kCommandsType = static_cast<std::uint8_t>(MessageType::kCommands);
 constexpr auto kAuthoritativeStateType = static_cast<std::uint8_t>(MessageType::kAuthoritativeState);
+constexpr auto kParametersType = static_cast<std::uint8_t>(MessageType::kParameters);
 
 Message RoundTrip(const Message& message) {
   const auto decoded = Decode(Encode(message));
@@ -87,6 +89,7 @@ TEST(ProtocolTest, JoinAcceptedRoundTrips) {
   JoinAccepted sent{
       .session = static_cast<SessionId>(0xA1B2C3D4U),
       .spawn = augusta::math::Vec3(4.0F, 0.5F, -8.0F),
+      .generation = 7,
       .parameters = {.tick_rate_hz = 30.0F,
                      .stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F}},
       .roster = {PlayerAt(1, 10.0F), PlayerAt(2, -3.0F)}};
@@ -97,6 +100,7 @@ TEST(ProtocolTest, JoinAcceptedRoundTrips) {
   const auto& received = std::get<JoinAccepted>(decoded);
   EXPECT_EQ(received.session, sent.session);
   EXPECT_EQ(received.spawn, sent.spawn);
+  EXPECT_EQ(received.generation, sent.generation);
   EXPECT_EQ(received.parameters.tick_rate_hz, sent.parameters.tick_rate_hz);
   EXPECT_EQ(received.parameters.stamina.deplete_per_second, sent.parameters.stamina.deplete_per_second);
   EXPECT_EQ(received.parameters.stamina.regen_per_second, sent.parameters.stamina.regen_per_second);
@@ -125,12 +129,49 @@ TEST(ProtocolTest, JoinAcceptedWithAFullRosterRoundTrips) {
 }
 
 TEST(ProtocolTest, MorePlayersInARosterThanAMatchHoldsIsTooLong) {
-  // type, session (4), spawn (12), parameters (16: the tick rate, then the stamina rules), then the count.
+  // type, session (4), spawn (12), generation (4), parameters (16: the tick rate, then the stamina rules),
+  // then the count.
   Bytes payload = BytesOf({kJoinAcceptedType});
-  payload.resize(1 + 4 + 12 + 16, std::byte{0});
+  payload.resize(1 + 4 + 12 + 4 + 16, std::byte{0});
   payload.push_back(static_cast<std::byte>(kMaxPlayers + 1));
 
   EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
+}
+
+TEST(ProtocolTest, ParametersUpdateRoundTrips) {
+  const ParametersUpdate sent{
+      .generation = 3,
+      .parameters = {.tick_rate_hz = 30.0F,
+                     .stamina = {.deplete_per_second = 0.5F, .regen_per_second = 0.25F, .forced_walk_below = 0.15F}}};
+
+  const auto decoded = RoundTrip(sent);
+
+  ASSERT_TRUE(std::holds_alternative<ParametersUpdate>(decoded));
+  const auto& received = std::get<ParametersUpdate>(decoded);
+  EXPECT_EQ(received.generation, sent.generation);
+  EXPECT_EQ(received.parameters.tick_rate_hz, sent.parameters.tick_rate_hz);
+  EXPECT_EQ(received.parameters.stamina.deplete_per_second, sent.parameters.stamina.deplete_per_second);
+  EXPECT_EQ(received.parameters.stamina.regen_per_second, sent.parameters.stamina.regen_per_second);
+  EXPECT_EQ(received.parameters.stamina.forced_walk_below, sent.parameters.stamina.forced_walk_below);
+}
+
+TEST(ProtocolTest, AParametersUpdateIsTheTypeByteThenGenerationTickRateAndStaminaRules) {
+  // type, generation (4), tick rate (4), stamina rules (12), all zero but the generation.
+  Bytes expected = BytesOf({kParametersType, 0x03, 0x00, 0x00, 0x00});
+  expected.resize(expected.size() + 4 + 12, std::byte{0});
+
+  EXPECT_EQ(Encode(ParametersUpdate{.generation = 3}), expected);
+}
+
+TEST(ProtocolTest, AParametersUpdateThatEndsEarlyOrRunsOnIsRefused) {
+  Bytes whole = Encode(ParametersUpdate{.generation = 1});
+
+  Bytes truncated = whole;
+  truncated.pop_back();
+  EXPECT_EQ(Decode(truncated).error(), DecodeError::kTruncated);
+  Bytes trailing = whole;
+  trailing.push_back(std::byte{0});
+  EXPECT_EQ(Decode(trailing).error(), DecodeError::kTrailingBytes);
 }
 
 TEST(ProtocolTest, JoinRefusedRoundTripsEveryReason) {
@@ -143,9 +184,9 @@ TEST(ProtocolTest, JoinRefusedRoundTripsEveryReason) {
 }
 
 TEST(ProtocolTest, FieldsAreFixedWidthLittleEndian) {
-  // The session, then spawn, parameters and roster count, all zero here.
+  // The session, then spawn, generation, parameters and roster count, all zero here.
   Bytes accepted = BytesOf({kJoinAcceptedType, 0x01, 0x02, 0x03, 0x04});
-  accepted.resize(accepted.size() + 12 + 16 + 1, std::byte{0});
+  accepted.resize(accepted.size() + 12 + 4 + 16 + 1, std::byte{0});
   EXPECT_EQ(Encode(JoinAccepted{.session = static_cast<SessionId>(0x04030201U)}), accepted);
   EXPECT_EQ(Encode(JoinRefused{.reason = JoinRefusal::kMatchFull}), BytesOf({kJoinRefusedType, 2}));
   EXPECT_EQ(Encode(JoinRequest{.engine_version = "ab"}), BytesOf({kJoinRequestType, 2, 'a', 'b'}));
@@ -155,17 +196,18 @@ TEST(ProtocolTest, AnEmptyPayloadIsEmpty) { EXPECT_EQ(Decode(Bytes{}).error(), D
 
 TEST(ProtocolTest, AnUnknownTypeIsRejected) {
   EXPECT_EQ(Decode(BytesOf({0})).error(), DecodeError::kUnknownType);
-  EXPECT_EQ(Decode(BytesOf({6, 0, 0, 0, 0})).error(), DecodeError::kUnknownType);
+  EXPECT_EQ(Decode(BytesOf({7, 0, 0, 0, 0})).error(), DecodeError::kUnknownType);
   EXPECT_EQ(Decode(BytesOf({0xFF})).error(), DecodeError::kUnknownType);
 }
 
 TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
-  const std::array<Message, 5> messages = {
+  const std::array<Message, 6> messages = {
       JoinRequest{.engine_version = "0.1.0"},
       JoinAccepted{.session = static_cast<SessionId>(7), .roster = {PlayerState{}}},
       JoinRefused{.reason = JoinRefusal::kMatchFull},
       Commands{.commands = {SequencedCommand{.sequence = 1}, {.sequence = 2}}},
-      AuthoritativeState{.tick = 3, .players = {PlayerState{}, {}}}};
+      AuthoritativeState{.tick = 3, .players = {PlayerState{}, {}}},
+      ParametersUpdate{.generation = 2}};
   for (const Message& message : messages) {
     const Bytes whole = Encode(message);
     for (std::size_t length = 1; length < whole.size(); ++length) {

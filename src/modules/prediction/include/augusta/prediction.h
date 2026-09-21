@@ -123,6 +123,11 @@ class World {
   /// before the first command is sent; nothing predicted earlier is kept.
   void Start(const math::Vec3& spawn, const parameters::Parameters& parameters);
 
+  /// Puts the local player under the stamina rules of parameters from the next
+  /// Tick on, where it is: the server reloaded them. The commands the server has
+  /// not yet acknowledged are replayed under them at the next reconciliation.
+  void SetParameters(const parameters::Parameters& parameters);
+
   World(const World&) = delete;
   World& operator=(const World&) = delete;
   World(World&&) noexcept;

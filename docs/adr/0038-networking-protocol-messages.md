@@ -27,8 +27,8 @@ supersedes is unreliable.
 | Message | Direction | Reliability | Fields |
 | --- | --- | --- | --- |
 | Join request | client → server | reliable | engine version |
-| Join accepted | server → client | reliable | session ID, the player's spawn position, the current parameters to predict with, and the roster: every player already in the match (at most 8) with session ID and body |
-| Parameters | server → client | reliable | generation, and the parameter values (ADR-0039) |
+| Join accepted | server → client | reliable | session ID, the player's spawn position, the current parameters to predict with and their generation, and the roster: every player already in the match (at most 8) with session ID and body |
+| Parameters | server → client | reliable | generation, and the parameter values: tick rate, then the stamina rules (ADR-0039) |
 | Join refused | server → client | reliable | reason: version mismatch, match full |
 | Commands | client → server | unreliable | up to 8 commands, oldest first: sequence, movement direction, sprint, desired stance, yaw, pitch, ADS, fire, reload |
 | Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, and per player (at most 8): session ID, position, velocity, stance, stamina |
