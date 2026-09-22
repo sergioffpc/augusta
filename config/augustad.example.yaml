@@ -25,3 +25,11 @@ tick_rate_hz: 60
 
 # Local address to listen on (optional, default 0.0.0.0:27015).
 listen_address: 0.0.0.0:27015
+
+# Console sink's runtime floor (optional, default debug): one of trace, debug,
+# info, warn, error, critical. Only lowers what the build already compiles in -
+# a Debug build compiles trace and up, a Release build info and up, so this
+# can't raise a Release build back to trace or debug. debug is the heartbeat
+# (once a second: ticks, messages, drops, corrections) without the per-packet
+# trace firehose; set trace when debugging the network layer itself.
+log_level: debug

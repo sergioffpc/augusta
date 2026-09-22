@@ -53,6 +53,30 @@ TEST(ParseClientConfigTest, DefaultsTheServerAddress) {
   EXPECT_EQ(config->server_address, augusta::config::kDefaultServerAddress);
 }
 
+TEST(ParseClientConfigTest, DefaultsTheLogLevel) {
+  const auto config = ParseClientConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\n", kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->log_level, augusta::config::kDefaultLogLevel);
+}
+
+TEST(ParseClientConfigTest, ReadsALogLevel) {
+  const auto config =
+      ParseClientConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\nlog_level: trace\n", kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->log_level, "trace");
+}
+
+TEST(ParseClientConfigTest, RejectsAnInvalidLogLevel) {
+  const auto config =
+      ParseClientConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\nlog_level: verbose\n", kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidLogLevel);
+  EXPECT_EQ(config.error().subject, "log_level");
+}
+
 TEST(ParseClientConfigTest, ResolvesRelativePathsAgainstAnAbsoluteBaseDir) {
   const auto config =
       ParseClientConfig("base_dir: '" + Absolute("content") + "'\npack: packs/a.pack\npublic_key: k.pub\n", kFileDir);
@@ -226,6 +250,28 @@ TEST(ParseServerConfigTest, DefaultsTheListenAddress) {
   EXPECT_EQ(config->listen_address, augusta::config::kDefaultListenAddress);
 }
 
+TEST(ParseServerConfigTest, DefaultsTheLogLevel) {
+  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->log_level, augusta::config::kDefaultLogLevel);
+}
+
+TEST(ParseServerConfigTest, ReadsALogLevel) {
+  const auto config = ParseServerConfig(ServerConfigWith("log_level: trace\n"), kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->log_level, "trace");
+}
+
+TEST(ParseServerConfigTest, RejectsAnInvalidLogLevel) {
+  const auto config = ParseServerConfig(ServerConfigWith("log_level: verbose\n"), kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidLogLevel);
+  EXPECT_EQ(config.error().subject, "log_level");
+}
+
 TEST(ParseServerConfigTest, RejectsAMissingTickRate) {
   const auto config = ParseServerConfig(kServerConfigWithoutTickRate, kFileDir);
 
@@ -366,6 +412,12 @@ TEST(DescribeConfigErrorTest, SaysWhatANumberMustBe) {
   const auto message = DescribeConfigError({.code = ConfigErrorCode::kInvalidNumber, .subject = "tick_rate_hz"});
 
   EXPECT_EQ(message, "'tick_rate_hz' must be a finite number above zero");
+}
+
+TEST(DescribeConfigErrorTest, SaysWhatALogLevelMustBe) {
+  const auto message = DescribeConfigError({.code = ConfigErrorCode::kInvalidLogLevel, .subject = "log_level"});
+
+  EXPECT_EQ(message, "'log_level' must be one of trace, debug, info, warn, error, critical");
 }
 
 TEST(DescribeConfigErrorTest, OmitsTheFileWhenThereIsNone) {

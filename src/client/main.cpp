@@ -90,6 +90,8 @@ int main(int argc, char** argv) {
     std::println(stderr, "{}", augusta::config::DescribeConfigError(file_config.error()));
     return 1;
   }
+  // ParseClientConfig already validated log_level, so this is never nullopt.
+  augusta::logging::SetMinSeverity(*augusta::logging::ParseSeverity(file_config->log_level));
   LI("subsystem=client event=starting version={}", augusta::EngineVersion());
 
   // Verified before anything else starts (no renderer/audio device,

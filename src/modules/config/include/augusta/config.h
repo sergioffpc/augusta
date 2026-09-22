@@ -28,6 +28,9 @@ inline constexpr std::string_view kServerConfigFileName = "augustad.yaml";
 inline constexpr std::string_view kDefaultServerAddress = "127.0.0.1:27015";
 /// Default address the server listens on.
 inline constexpr std::string_view kDefaultListenAddress = "0.0.0.0:27015";
+/// Default runtime floor for the console sink (ADR-0029, ADR-0036): a Debug
+/// build's DEBUG heartbeat, not its per-packet TRACE.
+inline constexpr std::string_view kDefaultLogLevel = "debug";
 
 /// What augustac.yaml holds. Its required key `base_dir` is where the relative
 /// paths below start from; it is applied, not kept.
@@ -38,6 +41,11 @@ struct ClientConfig {
   std::filesystem::path public_key_path;
   /// Key `server_address`: the server to connect to.
   std::string server_address{kDefaultServerAddress};
+  /// Key `log_level`: one of "trace", "debug", "info", "warn", "error",
+  /// "critical" - the console sink's runtime floor (augusta::logging::SetMinSeverity).
+  /// Only lowers what the build already compiles in (AUGUSTA_LOG_ACTIVE_LEVEL);
+  /// a Release build has no TRACE/DEBUG to raise it back to.
+  std::string log_level{kDefaultLogLevel};
 };
 
 /// What augustad.yaml holds. Its required key `base_dir` is where the relative
@@ -53,6 +61,11 @@ struct ServerConfig {
   float tick_rate_hz = 0.0F;
   /// Key `listen_address`: the local address to listen on.
   std::string listen_address{kDefaultListenAddress};
+  /// Key `log_level`: one of "trace", "debug", "info", "warn", "error",
+  /// "critical" - the console sink's runtime floor (augusta::logging::SetMinSeverity).
+  /// Only lowers what the build already compiles in (AUGUSTA_LOG_ACTIVE_LEVEL);
+  /// a Release build has no TRACE/DEBUG to raise it back to.
+  std::string log_level{kDefaultLogLevel};
 };
 
 /// Why reading the command line or a config file failed.
@@ -82,6 +95,9 @@ enum class ConfigErrorCode {
   kEmptyValue,
   /// A key's value is not a finite number above zero; subject is the key.
   kInvalidNumber,
+  /// A `log_level` value is not one augusta::logging::ParseSeverity accepts;
+  /// subject is the key.
+  kInvalidLogLevel,
 };
 
 /// A failure to read the command line or a config file: what went wrong (code)
