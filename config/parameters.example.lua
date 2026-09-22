@@ -1,8 +1,10 @@
 -- The simulation's Parameters (ADR-0039): the tunable values that client and
--- server must agree on. Only the server reads this file; each client is sent
--- the result when it joins, and again after each reload. The tick rate is not
--- here: it is fixed while the server runs, so it is `tick_rate_hz` in
--- augustad.yaml. Copy it next to augustad.yaml and name it there with
+-- server must agree on. Copy this file into a scenario's folder, next to its
+-- stage, as parameters.lua (authoring/<scenario>/parameters.lua): the cooker
+-- packs it into the scenario's server pack, so it is signed with the map and
+-- fixed for the run. Only the server reads it; each client is sent the result
+-- when it joins. The tick rate is not here: it is fixed while the server runs,
+-- so it is `tick_rate_hz` in augustad.yaml. Copy it next to augustad.yaml and name it there with
 -- the `parameters` key.
 --
 -- A value may be an expression of other values in this script. The script runs

@@ -27,8 +27,7 @@ supersedes is unreliable.
 | Message | Direction | Reliability | Fields |
 | --- | --- | --- | --- |
 | Join request | client → server | reliable | engine version |
-| Join accepted | server → client | reliable | session ID, the player's spawn position, the server's tick rate, the current parameters to predict with and their generation, and the roster: every player already in the match (at most 8) with session ID and body |
-| Parameters update | server → client | reliable | generation, and the parameter values: the stamina rules (ADR-0039) |
+| Join accepted | server → client | reliable | session ID, the player's spawn position, the server's tick rate, the parameters to predict with, and the roster: every player already in the match (at most 8) with session ID and body |
 | Join refused | server → client | reliable | reason: version mismatch, match full |
 | Commands | client → server | unreliable | up to 8 commands, oldest first: sequence, movement direction, sprint, desired stance, yaw, pitch, ADS, fire, reload |
 | Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, and per player (at most 8): session ID, position, velocity, stance, stamina |
@@ -71,12 +70,10 @@ rate** is the server's startup setting (ADR-0034, ADR-0039), fixed for the life 
 the server process, so it is told here once and never again; the client ticks at
 it and starts no tick before it has it, and drops a Join accepted whose rate is not
 finite and above zero. The **parameters** are the server's data-driven
-configuration (ADR-0039), the stamina rules among them, sent so the client
-predicts with the server's numbers and never with values of its own; the two
-cannot drift. When the server reloads its parameters it sends every client a
-Parameters update with the new generation; a client ignores one whose generation
-is not newer than the parameters it holds, and drops one that fails the range
-checks of ADR-0039, as it drops any message that does not decode.
+configuration (ADR-0039), the stamina rules among them, fixed for the run and
+sent so the client predicts with the server's numbers and never with values of
+its own; the two cannot drift. A client drops a Join accepted whose parameters
+fail the range checks of ADR-0039, as it drops any message that does not decode.
 The **roster** is who was already in the match and where, so a joining
 client sees the world as it is and not an empty one; the joining player itself is
 not in it. The server keeps each player's last reported body (a joiner is at its

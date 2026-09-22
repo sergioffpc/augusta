@@ -1,8 +1,6 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
-#include <filesystem>
-#include <fstream>
 #include <limits>
 #include <map>
 #include <memory>
@@ -33,7 +31,6 @@
 #include "augusta/protocol.h"
 #include "augusta/simulation.h"
 #include "augusta/version.h"
-#include "file_watch.h"
 #include "host.h"
 #include "match.h"
 #include "parameters_loader.h"
@@ -56,19 +53,12 @@ using augusta::parameters::Parameters;
 using augusta::physics::CollisionMesh;
 using augusta::physics::Stance;
 using augusta::protocol::JoinRefusal;
-using augusta::protocol::ParametersUpdate;
 using augusta::server::Host;
 using augusta::server::HostConfig;
 
 constexpr auto kPollInterval = std::chrono::milliseconds(10);
 constexpr auto kPollDeadline = std::chrono::seconds(5);
 constexpr float kFixedTick = 1.0F / 60.0F;
-
-// The generation of the parameters session holds, or nullopt while it holds none.
-std::optional<std::uint32_t> GenerationOf(const Session& session) {
-  const auto held = session.GetParameters();
-  return held.has_value() ? std::optional<std::uint32_t>(held->generation) : std::nullopt;
-}
 
 // What a test's server runs on: NFR-01's 60 Hz and stamina rules that never drain.
 constexpr float kTestTickRate = 60.0F;
@@ -964,21 +954,19 @@ TEST_F(StaminaTest, AClientPredictsItsStaminaWithTheServersRulesNotItsOwn) {
   EXPECT_NEAR(predicted, Authoritative().stamina, 0.1F);
 }
 
-// The server's Parameters come from a script on disk (ADR-0039), read the way
-// augustad reads it. A bar that empties in a second of sprinting and never refills.
+// The server's Parameters come from a script (ADR-0039), loaded the way augustad
+// loads the one in its pack. A bar that empties in a second of sprinting and never refills.
 class ScriptedParametersTest : public LoopbackMatch {
  protected:
   static augusta::parameters::Parameters LoadScript() {
-    const auto file = std::filesystem::temp_directory_path() / ("augusta_session_" + LoopbackAddress() + ".lua");
-    std::ofstream(file, std::ios::binary) << "local sprint_seconds = 1\n"
-                                             "return {\n"
-                                             "  stamina = {\n"
-                                             "  deplete_per_second = 1 / sprint_seconds,\n"
-                                             "  regen_per_second = 0,\n"
-                                             "  forced_walk_below = 0.2,\n"
-                                             "} }";
-    const auto loaded = augusta::parameters::LoadFile(file);
-    std::filesystem::remove(file);
+    const auto loaded = augusta::parameters::Load(
+        "local sprint_seconds = 1\n"
+        "return {\n"
+        "  stamina = {\n"
+        "  deplete_per_second = 1 / sprint_seconds,\n"
+        "  regen_per_second = 0,\n"
+        "  forced_walk_below = 0.2,\n"
+        "} }");
     return loaded.value();
   }
 
@@ -999,199 +987,18 @@ TEST_F(ScriptedParametersTest, AClientPredictsItsStaminaWithTheRulesOfTheServers
   EXPECT_NEAR(states_.at(&client).local_body.stamina, BodySeenBy(client, *client.GetSessionId())->stamina, 0.1F);
 }
 
-// The server reloads its Parameters script while it runs (ADR-0039). The script
-// starts as a bar that never drains, and each test rewrites it.
-class ReloadTest : public LoopbackMatch {
- protected:
-  static std::filesystem::path ScriptPath() {
-    return std::filesystem::temp_directory_path() / ("augusta_reload_" + LoopbackAddress() + ".lua");
-  }
-
-  // A complete script whose bar empties at deplete_per_second and never refills.
-  static std::string Script(float deplete_per_second) {
-    return "return { stamina = { deplete_per_second = " + std::to_string(deplete_per_second) +
-           ", regen_per_second = 0, forced_walk_below = 0 } }";
-  }
-
-  static void WriteScript(std::string_view contents) { std::ofstream(ScriptPath(), std::ios::binary) << contents; }
-
-  static HostConfig Config() {
-    WriteScript(Script(0.0F));
-    HostConfig config = OnTheFloor({}, augusta::parameters::LoadFile(ScriptPath()).value());
-    config.parameters_path = ScriptPath();
-    return config;
-  }
-
-  ReloadTest() : LoopbackMatch(Config()) {}
-
-  void SetUp() override {
-    client_ = &Join();
-    Run(kSettleTicks);
-  }
-
-  void TearDown() override { std::filesystem::remove(ScriptPath()); }
-
-  // The stamina the server has the player at after sprinting for ticks ticks.
-  float StaminaAfterSprinting(int ticks) {
-    Command sprint;
-    sprint.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
-    sprint.movement.sprint = true;
-    Run(ticks, sprint);
-    return BodySeenBy(*client_, *client_->GetSessionId())->stamina;
-  }
-
-  Session* client_ = nullptr;
-};
-
-TEST_F(ReloadTest, TheServerStartsAtGenerationOne) { EXPECT_EQ(host_.Generation(), 1U); }
-
-TEST_F(ReloadTest, AGoodScriptBecomesTheNextGenerationAndTheSimulationUsesItFromTheNextTick) {
-  ASSERT_GT(StaminaAfterSprinting(30), 0.99F);
-  WriteScript(Script(1.0F));
-
-  const auto reloaded = host_.Reload();
-
-  ASSERT_TRUE(reloaded.has_value());
-  EXPECT_EQ(*reloaded, 2U);
-  // A bar that empties in a second, sprinted on for 30 ticks: half of it.
-  EXPECT_NEAR(StaminaAfterSprinting(30), 0.5F, 0.1F);
-  EXPECT_EQ(host_.Generation(), 2U);
-}
-
-TEST_F(ReloadTest, AReloadIsNotAppliedUntilTheNextTickBegins) {
-  WriteScript(Script(1.0F));
-
-  ASSERT_TRUE(host_.Reload().has_value());
-
-  EXPECT_EQ(host_.Generation(), 1U);
-  host_.Tick(kFixedTick);
-  EXPECT_EQ(host_.Generation(), 2U);
-}
-
-TEST_F(ReloadTest, TwoReloadsBeforeATickApplyTheNewestAndEachIsNumbered) {
-  WriteScript(Script(0.5F));
-  ASSERT_EQ(host_.Reload().value(), 2U);
-  WriteScript(Script(1.0F));
-  ASSERT_EQ(host_.Reload().value(), 3U);
-
-  host_.Tick(kFixedTick);
-
-  EXPECT_EQ(host_.Generation(), 3U);
-}
-
-TEST_F(ReloadTest, AScriptWithAnErrorIsRefusedAndTheRunningParametersStay) {
-  for (const char* bad : {"return {", "return { stamina = {}, recoil = 1 }", "error('typo')"}) {
-    WriteScript(bad);
-
-    const auto reloaded = host_.Reload();
-
-    ASSERT_FALSE(reloaded.has_value()) << bad;
-  }
-  EXPECT_GT(StaminaAfterSprinting(60), 0.99F);
-  EXPECT_EQ(host_.Generation(), 1U);
-}
-
-TEST_F(ReloadTest, AScriptThatCannotBeReadIsRefused) {
-  std::filesystem::remove(ScriptPath());
-
-  const auto reloaded = host_.Reload();
-
-  ASSERT_FALSE(reloaded.has_value());
-  EXPECT_EQ(reloaded.error().code, augusta::parameters::LoadErrorCode::kCannotOpenFile);
-}
-
-TEST_F(ReloadTest, ARefusalDoesNotUseUpAGenerationNumber) {
-  WriteScript("return {");
-  ASSERT_FALSE(host_.Reload().has_value());
-  WriteScript(Script(1.0F));
-
-  EXPECT_EQ(host_.Reload().value(), 2U);
-}
-
-// The same, with the watcher the server runs: saving the script is all it takes.
-class WatchedReloadTest : public ReloadTest {
- protected:
-  void SetUp() override {
-    ReloadTest::SetUp();
-    watcher_.emplace(ScriptPath(),
-                     augusta::server::WatchOptions{.poll_interval = std::chrono::milliseconds(5),
-                                                   .debounce = std::chrono::milliseconds(40)},
-                     [this] { static_cast<void>(host_.Reload()); });
-  }
-
-  void TearDown() override {
-    watcher_.reset();
-    ReloadTest::TearDown();
-  }
-
-  std::optional<augusta::server::FileWatcher> watcher_;
-};
-
-TEST_F(WatchedReloadTest, SavingTheScriptChangesTheRunningSimulationWithNoOtherStep) {
-  ASSERT_GT(StaminaAfterSprinting(30), 0.99F);
-
-  WriteScript(Script(1.0F));
-  const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
-  while (host_.Generation() < 2 && std::chrono::steady_clock::now() < deadline) {
-    Step();
-  }
-
-  ASSERT_EQ(host_.Generation(), 2U);
-  EXPECT_NEAR(StaminaAfterSprinting(30), 0.5F, 0.1F);
-}
-
-TEST_F(ReloadTest, EveryConnectedClientIsSentTheNewGenerationWhenItBegins) {
-  Session& second = Join();
-  WriteScript(Script(1.0F));
-
-  ASSERT_TRUE(host_.Reload().has_value());
-
-  // Reloaded, not begun: nobody is told before the tick that runs on it.
-  EXPECT_EQ(GenerationOf(*client_), 1U);
-  const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
-  while ((GenerationOf(*client_) != 2U || GenerationOf(second) != 2U) && std::chrono::steady_clock::now() < deadline) {
-    Step();
-  }
-  for (const Session* client : {client_, &second}) {
-    EXPECT_EQ(GenerationOf(*client), 2U);
-    EXPECT_FLOAT_EQ(client->GetParameters()->parameters.stamina.deplete_per_second, 1.0F);
-  }
-}
-
-TEST_F(ReloadTest, AClientThatJoinsAfterAReloadIsToldTheCurrentGenerationWhenItJoins) {
-  WriteScript(Script(1.0F));
-  ASSERT_TRUE(host_.Reload().has_value());
-  Run(3);
-
-  Session& late = Join();
-
-  EXPECT_EQ(GenerationOf(late), 2U);
-  EXPECT_FLOAT_EQ(late.GetParameters()->parameters.stamina.deplete_per_second, 1.0F);
-}
-
-TEST_F(ReloadTest, ARefusedReloadSendsNothing) {
-  WriteScript("return {");
-  ASSERT_FALSE(host_.Reload().has_value());
-
-  Run(5);
-
-  EXPECT_EQ(GenerationOf(*client_), 1U);
-  EXPECT_FLOAT_EQ(client_->GetParameters()->parameters.stamina.deplete_per_second, 0.0F);
-}
-
 // A server speaking the protocol by hand to one client, to send what a real
-// one would not: a generation that is old or repeated, values that fail the
-// checks, or bytes that are no message.
+// one would not: values that fail the checks, or bytes that are no message.
 class ScriptedServer {
  public:
   explicit ScriptedServer(const Endpoint& listen) : server_(listen) {}
 
-  // Connects session and answers its join with generation and parameters.
-  bool Admit(Session& session, std::uint32_t generation, const Parameters& parameters) {
-    generation_ = generation;
+  // Connects session and answers its join with parameters, and reports whether
+  // the session was admitted within wait.
+  bool Admit(Session& session, const Parameters& parameters, std::chrono::milliseconds wait = kPollDeadline) {
     parameters_ = parameters;
     session.Connect();
-    const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+    const auto deadline = std::chrono::steady_clock::now() + wait;
     while (!session.GetSessionId().has_value() && std::chrono::steady_clock::now() < deadline) {
       Pump();
       session.PumpEvents();
@@ -1212,10 +1019,8 @@ class ScriptedServer {
       peer_ = message.from;
       const auto decoded = augusta::protocol::Decode(message.payload);
       if (decoded.has_value() && std::holds_alternative<augusta::protocol::JoinRequest>(*decoded)) {
-        Send(augusta::protocol::JoinAccepted{.session = augusta::protocol::SessionId{1},
-                                             .tick_rate_hz = kTestTickRate,
-                                             .generation = generation_,
-                                             .parameters = parameters_});
+        Send(augusta::protocol::JoinAccepted{
+            .session = augusta::protocol::SessionId{1}, .tick_rate_hz = kTestTickRate, .parameters = parameters_});
       }
     }
   }
@@ -1230,12 +1035,11 @@ class ScriptedServer {
  private:
   augusta::networking::Server server_;
   std::optional<augusta::networking::PeerId> peer_;
-  std::uint32_t generation_ = 0;
   Parameters parameters_;
 };
 
-// A client admitted by a server that then sends it parameters by hand.
-class ParametersUpdateTest : public ::testing::Test {
+// A client admitted by a server that then sends it what a real one would not.
+class ScriptedServerTest : public ::testing::Test {
  protected:
   // A bar that empties at deplete_per_second and never refills.
   static Parameters WithDeplete(float deplete_per_second) {
@@ -1243,11 +1047,11 @@ class ParametersUpdateTest : public ::testing::Test {
         .stamina = {.deplete_per_second = deplete_per_second, .regen_per_second = 0.0F, .forced_walk_below = 0.0F}};
   }
 
-  ParametersUpdateTest()
+  ScriptedServerTest()
       : server_(Endpoint{.address = LoopbackAddress()}),
         session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, WorldWithFloorAt(0.0F)) {}
 
-  void SetUp() override { ASSERT_TRUE(server_.Admit(session_, 1, WithDeplete(0.0F))); }
+  void SetUp() override { ASSERT_TRUE(server_.Admit(session_, WithDeplete(0.0F))); }
 
   // Lets the client take in, or refuse, whatever was sent: long enough that a
   // message that was going to arrive has.
@@ -1261,12 +1065,7 @@ class ParametersUpdateTest : public ::testing::Test {
     }
   }
 
-  void Deliver(const augusta::protocol::Message& message) {
-    server_.Send(message);
-    Settle();
-  }
-
-  // The stamina the client predicts after sprinting on for ticks more ticks.
+  // The stamina the client predicts after sprinting for ticks ticks.
   float PredictedStaminaAfterSprinting(int ticks) {
     Command sprint;
     sprint.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
@@ -1282,50 +1081,38 @@ class ParametersUpdateTest : public ::testing::Test {
   Session session_;
 };
 
-TEST_F(ParametersUpdateTest, AClientAdoptsANewerGenerationAndItsPredictionUsesIt) {
-  ASSERT_GT(PredictedStaminaAfterSprinting(30), 0.99F);
-
-  Deliver(ParametersUpdate{.generation = 2, .parameters = WithDeplete(1.0F)});
-
-  EXPECT_EQ(GenerationOf(session_), 2U);
-  EXPECT_FLOAT_EQ(session_.GetParameters()->parameters.stamina.deplete_per_second, 1.0F);
-  // A bar that empties in a second, sprinted on for 30 more ticks: half of what was left.
-  EXPECT_NEAR(PredictedStaminaAfterSprinting(30), 0.5F, 0.1F);
+TEST_F(ScriptedServerTest, AClientPredictsWithTheParametersItWasAdmittedWith) {
+  ASSERT_TRUE(session_.GetParameters().has_value());
+  EXPECT_FLOAT_EQ(session_.GetParameters()->stamina.deplete_per_second, 0.0F);
+  EXPECT_GT(PredictedStaminaAfterSprinting(60), 0.99F);
 }
 
-TEST_F(ParametersUpdateTest, AClientIgnoresAGenerationThatIsNotNewer) {
-  Deliver(ParametersUpdate{.generation = 5, .parameters = WithDeplete(0.5F)});
-  ASSERT_EQ(GenerationOf(session_), 5U);
-
-  for (const std::uint32_t stale : {5U, 4U, 1U}) {
-    Deliver(ParametersUpdate{.generation = stale, .parameters = WithDeplete(1.0F)});
+TEST_F(ScriptedServerTest, BytesThatAreNoMessageChangeNothingAndTheClientKeepsRunning) {
+  // What used to be a Parameters update, a type that is gone, and a type nobody has.
+  for (const auto& payload :
+       {augusta::protocol::Bytes{std::byte{6}, std::byte{2}}, augusta::protocol::Bytes{std::byte{0xFF}}}) {
+    server_.SendPayload(payload);
+    Settle();
   }
 
-  EXPECT_EQ(GenerationOf(session_), 5U);
-  EXPECT_FLOAT_EQ(session_.GetParameters()->parameters.stamina.deplete_per_second, 0.5F);
+  EXPECT_FLOAT_EQ(session_.GetParameters()->stamina.deplete_per_second, 0.0F);
+  EXPECT_GT(PredictedStaminaAfterSprinting(60), 0.99F);
 }
 
-TEST_F(ParametersUpdateTest, AClientDropsAnUpdateWhoseValuesFailTheRangeChecks) {
-  for (const float bad : {-1.0F, std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity()}) {
-    Deliver(ParametersUpdate{.generation = 2, .parameters = WithDeplete(bad)});
+// A client takes the parameters it joins with as the server's, so values that
+// fail the range checks make it drop the Join accepted rather than predict on them.
+TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseParametersFailTheRangeChecks) {
+  Parameters threshold_of_one;
+  threshold_of_one.stamina.forced_walk_below = 1.0F;
+  for (const Parameters& bad :
+       {Parameters{.stamina = {.deplete_per_second = -1.0F}},
+        Parameters{.stamina = {.regen_per_second = std::numeric_limits<float>::quiet_NaN()}}, threshold_of_one}) {
+    ScriptedServer server(Endpoint{.address = LoopbackAddress()});
+    Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
 
-    EXPECT_EQ(GenerationOf(session_), 1U) << bad;
+    EXPECT_FALSE(server.Admit(session, bad, std::chrono::milliseconds(500)));
+    EXPECT_FALSE(session.GetParameters().has_value());
   }
-  Parameters threshold = WithDeplete(0.0F);
-  threshold.stamina.forced_walk_below = 1.0F;
-  Deliver(ParametersUpdate{.generation = 2, .parameters = threshold});
-  EXPECT_EQ(GenerationOf(session_), 1U);
-}
-
-TEST_F(ParametersUpdateTest, AMalformedUpdateChangesNothingAndTheNextGoodOneIsStillTaken) {
-  // The message type, then a generation cut short.
-  server_.SendPayload(augusta::protocol::Bytes{std::byte{6}, std::byte{2}});
-  Settle();
-  ASSERT_EQ(GenerationOf(session_), 1U);
-
-  Deliver(ParametersUpdate{.generation = 2, .parameters = WithDeplete(1.0F)});
-
-  EXPECT_EQ(GenerationOf(session_), 2U);
 }
 
 // A server at 30 Hz: everything a client does with time it must take from what it is told.

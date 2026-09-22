@@ -37,10 +37,6 @@ target_link_libraries(augusta_match_tests PRIVATE augustad_match GTest::gtest GT
 # Links networking (for PeerId), so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_match_tests DISCOVERY_TIMEOUT 30)
 
-add_executable(augusta_file_watch_tests file_watch_test.cpp)
-target_link_libraries(augusta_file_watch_tests PRIVATE augustad_watch GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_file_watch_tests DISCOVERY_TIMEOUT 30)
-
 add_executable(augusta_command_queue_tests command_queue_test.cpp)
 target_link_libraries(augusta_command_queue_tests PRIVATE augustad_commands GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_input, so the same first-launch cost applies as below.
@@ -93,7 +89,7 @@ target_include_directories(augusta_map_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/mod
 gtest_discover_tests(augusta_map_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_session_tests session_test.cpp)
-target_link_libraries(augusta_session_tests PRIVATE augusta_harness augustad_host augustad_watch augustad_parameters_loader GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_session_tests PRIVATE augusta_harness augustad_host augustad_parameters_loader GTest::gtest GTest::gtest_main)
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_session_tests DISCOVERY_TIMEOUT 30)
 

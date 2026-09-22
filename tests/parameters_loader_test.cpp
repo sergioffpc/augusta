@@ -1,9 +1,8 @@
 #include "parameters_loader.h"
 
 #include <expected>
-#include <filesystem>
 #include <fstream>
-#include <random>
+#include <sstream>
 #include <string>
 #include <string_view>
 
@@ -16,7 +15,6 @@ namespace {
 using augusta::parameters::DescribeLoadError;
 using augusta::parameters::Load;
 using augusta::parameters::LoadErrorCode;
-using augusta::parameters::LoadFile;
 
 constexpr std::string_view kValid = R"(
 return {
@@ -257,58 +255,20 @@ TEST(ParametersLoaderTest, ADescriptionNamesTheKeyItIsAbout) {
   EXPECT_NE(message.find("stamina.regen_per_second"), std::string::npos) << message;
 }
 
-// A directory of its own per test, so tests run in parallel never share a file.
-class LoadFileTest : public ::testing::Test {
- protected:
-  void SetUp() override {
-    directory_ =
-        std::filesystem::temp_directory_path() / ("augusta_parameters_" + std::to_string(std::random_device{}()));
-    std::filesystem::create_directories(directory_);
-  }
-
-  void TearDown() override { std::filesystem::remove_all(directory_); }
-
-  std::filesystem::path Write(std::string_view name, std::string_view contents) const {
-    const auto path = directory_ / name;
-    std::ofstream(path, std::ios::binary) << contents;
-    return path;
-  }
-
-  std::filesystem::path directory_;
-};
-
+// The example script is what an author copies next to a scenario's stage, so it
+// must stay a script the loader accepts.
 TEST(ParametersExampleTest, TheExampleScriptLoadsToTheDocumentedDefaults) {
-  const auto loaded = LoadFile(AUGUSTA_EXAMPLE_PARAMETERS);
+  std::ifstream stream(AUGUSTA_EXAMPLE_PARAMETERS, std::ios::binary);
+  ASSERT_TRUE(stream.is_open()) << AUGUSTA_EXAMPLE_PARAMETERS;
+  std::ostringstream script;
+  script << stream.rdbuf();
+
+  const auto loaded = Load(script.str());
 
   ASSERT_TRUE(loaded.has_value()) << DescribeLoadError(loaded.error());
   EXPECT_FLOAT_EQ(loaded->stamina.deplete_per_second, 0.2F);
   EXPECT_FLOAT_EQ(loaded->stamina.regen_per_second, 0.1F);
   EXPECT_FLOAT_EQ(loaded->stamina.forced_walk_below, 0.1F);
-}
-
-TEST_F(LoadFileTest, LoadsTheScriptAtThePath) {
-  const auto loaded = LoadFile(Write("parameters.lua", kValid));
-
-  ASSERT_TRUE(loaded.has_value());
-  EXPECT_FLOAT_EQ(loaded->stamina.deplete_per_second, 0.2F);
-}
-
-TEST_F(LoadFileTest, AFileThatCannotBeOpenedIsAnErrorNamingThePath) {
-  const auto file = directory_ / "missing.lua";
-
-  const auto loaded = LoadFile(file);
-
-  ASSERT_FALSE(loaded.has_value());
-  EXPECT_EQ(loaded.error().code, LoadErrorCode::kCannotOpenFile);
-  EXPECT_EQ(loaded.error().subject, file.string());
-}
-
-TEST_F(LoadFileTest, AnInvalidScriptInAFileIsTheErrorTheScriptAloneGives) {
-  const auto loaded = LoadFile(Write("parameters.lua", "return { recoil = 1 }"));
-
-  ASSERT_FALSE(loaded.has_value());
-  EXPECT_EQ(loaded.error().code, LoadErrorCode::kUnknownKey);
-  EXPECT_EQ(loaded.error().subject, "recoil");
 }
 
 }  // namespace

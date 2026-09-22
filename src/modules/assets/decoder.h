@@ -3,6 +3,7 @@
 
 #include <optional>
 #include <span>
+#include <string>
 
 #include "augusta/assets.h"
 
@@ -19,6 +20,7 @@ std::optional<MeshData> DecodeMeshBlob(std::span<const std::byte> blob);
 std::optional<SceneData> DecodeSceneBlob(std::span<const std::byte> blob);
 std::optional<TextureData> DecodeTextureBlob(std::span<const std::byte> blob);
 std::optional<SpawnPointData> DecodeSpawnPointBlob(std::span<const std::byte> blob);
+std::optional<std::string> DecodeScriptBlob(std::span<const std::byte> blob);
 
 }  // namespace augusta::assets
 

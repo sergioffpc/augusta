@@ -212,7 +212,6 @@ JoinAccepted ReadJoinAccepted(Reader& reader) {
   accepted.session = static_cast<SessionId>(reader.ReadU32());
   accepted.spawn = reader.ReadVec3();
   accepted.tick_rate_hz = reader.ReadF32();
-  accepted.generation = reader.ReadU32();
   accepted.parameters = ReadParameters(reader);
   accepted.roster = ReadPlayers(reader);
   return accepted;
@@ -241,13 +240,6 @@ AuthoritativeState ReadAuthoritativeState(Reader& reader) {
   return state;
 }
 
-ParametersUpdate ReadParametersUpdate(Reader& reader) {
-  ParametersUpdate update;
-  update.generation = reader.ReadU32();
-  update.parameters = ReadParameters(reader);
-  return update;
-}
-
 // nullopt when type is not a message of this protocol.
 std::optional<Message> ReadBody(MessageType type, Reader& reader) {
   switch (type) {
@@ -261,8 +253,6 @@ std::optional<Message> ReadBody(MessageType type, Reader& reader) {
       return ReadCommands(reader);
     case MessageType::kAuthoritativeState:
       return ReadAuthoritativeState(reader);
-    case MessageType::kParametersUpdate:
-      return ReadParametersUpdate(reader);
   }
   return std::nullopt;
 }
@@ -291,7 +281,6 @@ struct Encoder {
     WriteU32(out, static_cast<std::uint32_t>(message.session));
     WriteVec3(out, message.spawn);
     WriteF32(out, message.tick_rate_hz);
-    WriteU32(out, message.generation);
     WriteParameters(out, message.parameters);
     WritePlayers(out, message.roster);
   }
@@ -316,12 +305,6 @@ struct Encoder {
     WriteU32(out, message.tick);
     WriteU32(out, message.acknowledged_sequence);
     WritePlayers(out, message.players);
-  }
-
-  void operator()(const ParametersUpdate& message) const {
-    WriteU8(out, static_cast<std::uint8_t>(MessageType::kParametersUpdate));
-    WriteU32(out, message.generation);
-    WriteParameters(out, message.parameters);
   }
 };
 

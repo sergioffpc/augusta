@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -177,6 +178,79 @@ TEST_F(PackTest, EncodesAndResolvesTextureBlob) {
   ASSERT_TRUE(resolved.has_value());
   EXPECT_EQ(resolved->format, augusta::assets::TextureFormat::kBC5);
   EXPECT_EQ(resolved->dds_bytes, dds_bytes);
+}
+
+// A scenario's Lua scripts ride in its server pack (ADR-0031, ADR-0039) as text,
+// addressed by their path relative to the scenario's folder.
+TEST_F(PackTest, EncodesAndResolvesAScriptBlob) {
+  const auto pack_path = MakePackPath("augusta_assets_test_script_blob.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::string script = "return { stamina = {} }\n-- utf-8: \xC3\xA7\xC3\xA3o\n";
+
+  const auto blob = augusta::assets::EncodeScriptBlob(script);
+  ASSERT_TRUE(blob.has_value());
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kScript, .path = "parameters.lua", .data = *blob},
+      augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kScript, .path = "rules/round.lua", .data = *blob},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveScript(augusta::assets::kParametersScriptPath).value(), script);
+  EXPECT_EQ(pack->ResolveScript("rules/round.lua").value(), script);
+}
+
+TEST_F(PackTest, AnEmptyScriptResolvesToEmptyText) {
+  const auto pack_path = MakePackPath("augusta_assets_test_empty_script.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kScript, .path = "empty.lua", .data = {}},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveScript("empty.lua").value(), "");
+}
+
+TEST_F(PackTest, AScriptThatIsNotThereOrIsSomethingElseIsAResolveError) {
+  const auto pack_path = MakePackPath("augusta_assets_test_script_errors.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kMesh, .path = "parameters.lua", .data = MakeTriangleMeshBlob()},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveScript("missing.lua").error(), augusta::assets::ResolveError::kNotFound);
+  EXPECT_EQ(pack->ResolveScript("parameters.lua").error(), augusta::assets::ResolveError::kTypeMismatch);
+}
+
+TEST_F(PackTest, AScriptLargerThanTheLimitIsTooLargeToEncodeAndCorruptToResolve) {
+  const std::string huge(2U * 1024 * 1024, 'x');
+  const auto blob = augusta::assets::EncodeScriptBlob(huge);
+  ASSERT_FALSE(blob.has_value());
+  EXPECT_EQ(blob.error(), augusta::assets::EncodeError::kTooLarge);
+
+  // A hostile pack can still carry one: the reader refuses it too.
+  const auto pack_path = MakePackPath("augusta_assets_test_huge_script.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kScript,
+                                  .path = "huge.lua",
+                                  .data = std::vector<std::byte>(huge.size(), std::byte{'x'})},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveScript("huge.lua").error(), augusta::assets::ResolveError::kCorruptBlob);
 }
 
 // The remaining tests exercise Pack::Load's fail-closed parsing directly,

@@ -1,6 +1,5 @@
 #include "augusta/parameters.h"
 
-#include <cstdint>
 #include <limits>
 
 #include <gtest/gtest.h>
@@ -9,11 +8,8 @@
 // are pure: values in, a verdict out.
 namespace {
 
-using augusta::parameters::CheckReplacement;
 using augusta::parameters::IsValidTickRate;
-using augusta::parameters::NumberedParameters;
 using augusta::parameters::Parameters;
-using augusta::parameters::ReplacementRefusal;
 using augusta::parameters::Validate;
 
 constexpr Parameters kUsable{
@@ -45,45 +41,6 @@ TEST(IsValidTickRateTest, ZeroNegativeAndNonFiniteRatesAreNot) {
                            -std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()}) {
     EXPECT_FALSE(IsValidTickRate(rate)) << rate;
   }
-}
-
-NumberedParameters Numbered(std::uint32_t generation, const Parameters& parameters = kUsable) {
-  return NumberedParameters{.generation = generation, .parameters = parameters};
-}
-
-TEST(CheckReplacementTest, ANewerUsableGenerationMayReplace) {
-  EXPECT_TRUE(CheckReplacement(Numbered(1), Numbered(2)).has_value());
-  EXPECT_TRUE(CheckReplacement(Numbered(1), Numbered(9)).has_value());
-}
-
-TEST(CheckReplacementTest, AGenerationThatIsNotNewerMayNot) {
-  for (const std::uint32_t generation : {0U, 1U, 4U, 5U}) {
-    const auto checked = CheckReplacement(Numbered(5), Numbered(generation));
-
-    ASSERT_FALSE(checked.has_value()) << generation;
-    EXPECT_EQ(checked.error().reason, ReplacementRefusal::kNotNewer) << generation;
-  }
-}
-
-TEST(CheckReplacementTest, ValuesTheSimulationCannotRunOnMayNotAndTheParameterIsNamed) {
-  Parameters bad = kUsable;
-  bad.stamina.regen_per_second = -1.0F;
-
-  const auto checked = CheckReplacement(Numbered(1), Numbered(2, bad));
-
-  ASSERT_FALSE(checked.has_value());
-  EXPECT_EQ(checked.error().reason, ReplacementRefusal::kInvalid);
-  EXPECT_EQ(checked.error().parameter, "stamina.regen_per_second");
-}
-
-TEST(CheckReplacementTest, AGenerationThatIsNotNewerIsRefusedBeforeItsValuesAreLookedAt) {
-  Parameters bad = kUsable;
-  bad.stamina.regen_per_second = -1.0F;
-
-  const auto checked = CheckReplacement(Numbered(3), Numbered(2, bad));
-
-  ASSERT_FALSE(checked.has_value());
-  EXPECT_EQ(checked.error().reason, ReplacementRefusal::kNotNewer);
 }
 
 }  // namespace

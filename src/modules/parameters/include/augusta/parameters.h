@@ -1,7 +1,6 @@
 #ifndef AUGUSTA_PARAMETERS_H_
 #define AUGUSTA_PARAMETERS_H_
 
-#include <cstdint>
 #include <expected>
 #include <string_view>
 
@@ -23,16 +22,6 @@ struct Parameters {
   physics::StaminaConfig stamina{};
 };
 
-/// The number of the parameters a server starts on; each accepted reload takes the next.
-inline constexpr std::uint32_t kFirstGeneration = 1;
-
-/// Parameters and the generation they are: what a reload replaces, and what a
-/// client holds and is sent.
-struct NumberedParameters {
-  std::uint32_t generation = 0;
-  Parameters parameters{};
-};
-
 /// The parameter a Parameters gets wrong.
 struct InvalidParameter {
   /// Its path, as the Parameters script spells it, e.g. `stamina.regen_per_second`.
@@ -50,25 +39,6 @@ struct InvalidParameter {
 /// zero. Any such rate is accepted, since NFR-01's 60 Hz is what the server must
 /// sustain and not a floor on the value, so a run may go slower to be debugged.
 [[nodiscard]] bool IsValidTickRate(float tick_rate_hz);
-
-/// Why a client may not replace the parameters it holds with those it was sent.
-enum class ReplacementRefusal {
-  /// The generation is not newer than the one held (a late or repeated message).
-  kNotNewer,
-  /// A value fails Validate; see ReplacementError::parameter.
-  kInvalid,
-};
-
-/// A refusal and, for kInvalid, the parameter that is wrong.
-struct ReplacementError {
-  ReplacementRefusal reason{};
-  std::string_view parameter{};
-};
-
-/// Whether a client holding held may take candidate: a newer generation, on
-/// values that pass Validate. Checked in that order.
-[[nodiscard]] std::expected<void, ReplacementError> CheckReplacement(const NumberedParameters& held,
-                                                                     const NumberedParameters& candidate);
 
 }  // namespace augusta::parameters
 

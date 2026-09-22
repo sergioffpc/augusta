@@ -257,4 +257,12 @@ std::optional<SpawnPointData> DecodeSpawnPointBlob(std::span<const std::byte> bl
   };
 }
 
+// Script blob: the script's text as it is, with no framing and no terminator.
+std::optional<std::string> DecodeScriptBlob(std::span<const std::byte> blob) {
+  if (blob.size() > kMaxScriptBytes) {
+    return std::nullopt;
+  }
+  return std::string(reinterpret_cast<const char*>(blob.data()), blob.size());
+}
+
 }  // namespace augusta::assets

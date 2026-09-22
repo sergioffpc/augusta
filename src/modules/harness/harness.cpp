@@ -22,10 +22,9 @@ namespace augusta::harness {
 // Prediction thread reads whichever is current.
 struct ServerView {
   // The whole answer to the join request: the session, the spawn point, the
-  // parameters then and who was already there.
+  // tick rate, the parameters and who was already there. The rate and the
+  // parameters are the server's for the whole run.
   std::optional<protocol::JoinAccepted> accepted;
-  // What the join carried at first, and what each reload since has replaced it with.
-  std::optional<parameters::NumberedParameters> current_parameters;
   std::optional<protocol::JoinRefusal> refusal;
   std::optional<protocol::AuthoritativeState> authoritative;
 };
@@ -49,8 +48,6 @@ struct Session::Impl {
   // Prediction thread only: whether the prediction has been started at the
   // spawn point, under the server's stamina rules, once the server admitted this client.
   bool started = false;
-  // Prediction thread only: the generation of the parameters the prediction runs on.
-  std::uint32_t applied_generation = 0;
   // The commands still waiting to be acknowledged, and the sequence the next
   // one goes under. Sequences start at 1; 0 means none.
   std::deque<protocol::SequencedCommand> unacknowledged;
@@ -75,8 +72,6 @@ struct Session::Impl {
       OnJoinRefused(*refused);
     } else if (const auto* state = std::get_if<protocol::AuthoritativeState>(&*decoded)) {
       OnAuthoritativeState(*state);
-    } else if (const auto* update = std::get_if<protocol::ParametersUpdate>(&*decoded)) {
-      OnParametersUpdate(*update);
     } else {
       LW_LIMITED(drop_warnings, "subsystem=clientruntime event=dropped bytes={} reason=\"not a server message\"",
                  payload.size());
@@ -97,44 +92,8 @@ struct Session::Impl {
                  valid.error().path);
       return;
     }
-    Publish([&](ServerView& next) {
-      next.accepted = accepted;
-      next.current_parameters =
-          parameters::NumberedParameters{.generation = accepted.generation, .parameters = accepted.parameters};
-    });
-    LI("subsystem=clientruntime event=joined roster={} generation={}", accepted.roster.size(), accepted.generation);
-  }
-
-  // Logs why update was not taken: a late or repeated one is routine, since
-  // nothing is ordered across a reload, and only traced; the rest are dropped
-  // as a malformed message is.
-  void LogRefused(const protocol::ParametersUpdate& update, const parameters::ReplacementError& error) {
-    switch (error.reason) {
-      case parameters::ReplacementRefusal::kNotNewer:
-        LT("subsystem=clientruntime event=dropped generation={} reason=\"not newer\"", update.generation);
-        break;
-      case parameters::ReplacementRefusal::kInvalid:
-        LW_LIMITED(drop_warnings,
-                   "subsystem=clientruntime event=dropped generation={} reason=\"invalid parameters\" parameter={}",
-                   update.generation, error.parameter);
-        break;
-    }
-  }
-
-  // Adopts update if parameters::CheckReplacement allows it; anything else is dropped and logged.
-  void OnParametersUpdate(const protocol::ParametersUpdate& update) {
-    const std::optional<parameters::NumberedParameters> held = view.load()->current_parameters;
-    if (!held.has_value()) {
-      LW_LIMITED(drop_warnings, "subsystem=clientruntime event=dropped reason=\"parameters before joining\"");
-      return;
-    }
-    const parameters::NumberedParameters candidate{.generation = update.generation, .parameters = update.parameters};
-    if (const auto allowed = parameters::CheckReplacement(*held, candidate); !allowed) {
-      LogRefused(update, allowed.error());
-      return;
-    }
-    Publish([&](ServerView& next) { next.current_parameters = candidate; });
-    LI("subsystem=clientruntime event=parameters_adopted generation={}", update.generation);
+    Publish([&](ServerView& next) { next.accepted = accepted; });
+    LI("subsystem=clientruntime event=joined roster={} tick_rate_hz={}", accepted.roster.size(), accepted.tick_rate_hz);
   }
 
   void OnJoinRefused(const protocol::JoinRefused& refused) {
@@ -277,8 +236,12 @@ std::optional<float> Session::GetTickRate() const {
   return server_view->accepted->tick_rate_hz;
 }
 
-std::optional<parameters::NumberedParameters> Session::GetParameters() const {
-  return impl_->view.load()->current_parameters;
+std::optional<parameters::Parameters> Session::GetParameters() const {
+  const std::shared_ptr<const ServerView> server_view = impl_->view.load();
+  if (!server_view->accepted.has_value()) {
+    return std::nullopt;
+  }
+  return server_view->accepted->parameters;
 }
 
 std::optional<protocol::JoinRefusal> Session::GetRefusal() const { return impl_->view.load()->refusal; }
@@ -295,13 +258,8 @@ prediction::State Session::Tick(const input::Command& command, float delta_time)
   // Nobody to send to until the server has admitted this client, and until
   // then the prediction has neither its spawn point nor the server's rules.
   if (server_view->accepted.has_value() && !impl.started) {
-    impl.prediction.Start(server_view->accepted->spawn, server_view->current_parameters->parameters);
+    impl.prediction.Start(server_view->accepted->spawn, server_view->accepted->parameters);
     impl.started = true;
-    impl.applied_generation = server_view->current_parameters->generation;
-  } else if (impl.started && server_view->current_parameters->generation > impl.applied_generation) {
-    // The server reloaded: the prediction goes on where it is, under the new rules.
-    impl.prediction.SetParameters(server_view->current_parameters->parameters);
-    impl.applied_generation = server_view->current_parameters->generation;
   }
   const std::uint32_t sequence = impl.started ? impl.next_sequence++ : 0;
   const prediction::State state =

@@ -26,15 +26,4 @@ std::expected<void, InvalidParameter> Validate(const Parameters& parameters) {
 
 bool IsValidTickRate(float tick_rate_hz) { return std::isfinite(tick_rate_hz) && tick_rate_hz > 0.0F; }
 
-std::expected<void, ReplacementError> CheckReplacement(const NumberedParameters& held,
-                                                       const NumberedParameters& candidate) {
-  if (candidate.generation <= held.generation) {
-    return std::unexpected(ReplacementError{.reason = ReplacementRefusal::kNotNewer});
-  }
-  if (const auto valid = Validate(candidate.parameters); !valid) {
-    return std::unexpected(ReplacementError{.reason = ReplacementRefusal::kInvalid, .parameter = valid.error().path});
-  }
-  return {};
-}
-
 }  // namespace augusta::parameters

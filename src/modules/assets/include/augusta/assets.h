@@ -42,6 +42,7 @@ enum class AssetType : std::uint8_t {
   kSpawnPoint,
   kHitbox,
   kScene,
+  kScript,
 };
 
 // True if value is one of AssetType's defined enumerators - an index
@@ -130,6 +131,10 @@ struct TextureData {
   std::vector<std::byte> dds_bytes;
   TextureFormat format = TextureFormat::kBC7;
 };
+
+/// Pack-relative path of the Parameters script (ADR-0039) in a scenario's
+/// server pack: `parameters.lua` at the root of the scenario's folder.
+inline constexpr std::string_view kParametersScriptPath = "parameters.lua";
 
 // A cooked spawn-point marker (ADR-0032): the point's own local
 // translation/rotation, as recorded on the authoring prim's SceneNode.
@@ -282,6 +287,11 @@ class Pack {
   // Resolves a spawn-point marker by its pack-relative path (ADR-0019/
   // ADR-0032). Present in both client and server packs.
   [[nodiscard]] std::expected<SpawnPointData, ResolveError> ResolveSpawnPoint(std::string_view path) const;
+
+  /// Resolves a Lua script's text by its path relative to the scenario's
+  /// folder, e.g. kParametersScriptPath (ADR-0031). Present in the server pack
+  /// only: a client is sent the values a script decides, never the script.
+  [[nodiscard]] std::expected<std::string, ResolveError> ResolveScript(std::string_view path) const;
 
  private:
   Pack();

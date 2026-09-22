@@ -200,7 +200,6 @@ TEST(ParseServerConfigTest, ReadsEveryKey) {
       "base_dir: content\n"
       "pack: packs/level.server.pack\n"
       "public_key: keys/augusta.pub\n"
-      "parameters: scripts/parameters.lua\n"
       "tick_rate_hz: 30\n"
       "listen_address: 0.0.0.0:27016\n",
       kFileDir);
@@ -208,17 +207,15 @@ TEST(ParseServerConfigTest, ReadsEveryKey) {
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->pack_path, kRoot / "packs" / "level.server.pack");
   EXPECT_EQ(config->public_key_path, kRoot / "keys" / "augusta.pub");
-  EXPECT_EQ(config->parameters_path, kRoot / "scripts" / "parameters.lua");
   EXPECT_FLOAT_EQ(config->tick_rate_hz, 30.0F);
   EXPECT_EQ(config->listen_address, "0.0.0.0:27016");
 }
 
 // Everything a server config needs but the tick rate, so a test can set that itself.
-constexpr std::string_view kServerConfigWithoutTickRate =
-    "base_dir: content\npack: a.pack\npublic_key: k.pub\nparameters: p.lua\n";
+constexpr std::string_view kServerConfigWithoutTickRate = "base_dir: content\npack: a.pack\npublic_key: k.pub\n";
 
 constexpr std::string_view kMinimalServerConfig =
-    "base_dir: content\npack: a.pack\npublic_key: k.pub\nparameters: p.lua\ntick_rate_hz: 60\n";
+    "base_dir: content\npack: a.pack\npublic_key: k.pub\ntick_rate_hz: 60\n";
 
 std::string ServerConfigWith(std::string_view extra) { return std::string(kMinimalServerConfig) + std::string(extra); }
 
@@ -227,14 +224,6 @@ TEST(ParseServerConfigTest, DefaultsTheListenAddress) {
 
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->listen_address, augusta::config::kDefaultListenAddress);
-}
-
-TEST(ParseServerConfigTest, RejectsAMissingParametersKey) {
-  const auto config = ParseServerConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\n", kFileDir);
-
-  ASSERT_FALSE(config.has_value());
-  EXPECT_EQ(config.error().code, ConfigErrorCode::kMissingKey);
-  EXPECT_EQ(config.error().subject, "parameters");
 }
 
 TEST(ParseServerConfigTest, RejectsAMissingTickRate) {
@@ -287,9 +276,10 @@ TEST(ParseClientConfigTest, TheTickRateIsNotAClientKey) {
   EXPECT_EQ(config.error().subject, "tick_rate_hz");
 }
 
-TEST(ParseClientConfigTest, ParametersAreNotAClientKey) {
-  const auto config =
-      ParseClientConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\nparameters: p.lua\n", kFileDir);
+TEST(ParseServerConfigTest, AParametersKeyLeftInTheFileIsUnknown) {
+  // The Parameters script is the scenario's, cooked into its server pack (ADR-0039),
+  // so the config no longer names one.
+  const auto config = ParseServerConfig(ServerConfigWith("parameters: p.lua\n"), kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownKey);
@@ -297,7 +287,7 @@ TEST(ParseClientConfigTest, ParametersAreNotAClientKey) {
 }
 
 TEST(ParseServerConfigTest, RejectsAMissingBaseDir) {
-  const auto config = ParseServerConfig("pack: a.pack\npublic_key: k.pub\nparameters: p.lua\n", kFileDir);
+  const auto config = ParseServerConfig("pack: a.pack\npublic_key: k.pub\ntick_rate_hz: 60\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kMissingKey);
@@ -415,14 +405,13 @@ TEST_F(LoadConfigTest, ResolvesBaseDirAgainstTheFilesDirectory) {
 
 TEST_F(LoadConfigTest, LoadsAServerConfig) {
   const auto file = Write("augustad.yaml",
-                          "base_dir: .\npack: level.pack\npublic_key: k.pub\nparameters: p.lua\ntick_rate_hz: 60\n"
+                          "base_dir: .\npack: level.pack\npublic_key: k.pub\ntick_rate_hz: 60\n"
                           "listen_address: 0.0.0.0:1\n");
 
   const auto config = LoadServerConfig(file);
 
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->pack_path, directory_ / "level.pack");
-  EXPECT_EQ(config->parameters_path, directory_ / "p.lua");
   EXPECT_EQ(config->listen_address, "0.0.0.0:1");
 }
 

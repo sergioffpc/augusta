@@ -407,6 +407,7 @@ bool IsValidAssetType(std::uint8_t value) {
     case AssetType::kSpawnPoint:
     case AssetType::kHitbox:
     case AssetType::kScene:
+    case AssetType::kScript:
       return true;
   }
   return false;
@@ -593,6 +594,10 @@ std::expected<MeshData, ResolveError> Pack::ResolveHitbox(std::string_view path)
 
 std::expected<SpawnPointData, ResolveError> Pack::ResolveSpawnPoint(std::string_view path) const {
   return ResolveAsset<SpawnPointData>(impl_->index, impl_->mapping, path, AssetType::kSpawnPoint, DecodeSpawnPointBlob);
+}
+
+std::expected<std::string, ResolveError> Pack::ResolveScript(std::string_view path) const {
+  return ResolveAsset<std::string>(impl_->index, impl_->mapping, path, AssetType::kScript, DecodeScriptBlob);
 }
 
 }  // namespace augusta::assets

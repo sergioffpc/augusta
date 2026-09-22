@@ -6,16 +6,15 @@
 # relative to this file's directory, so "." means the directory of this file.
 base_dir: .
 
-# Server pack to load (required).
+# Server pack to load (required). It holds the scenario's map and its Lua
+# scripts, among them the parameters.lua the simulation's tunable values (the
+# stamina rules) come from; every client is sent the values when it joins
+# (ADR-0039). See parameters.example.lua.
+# Cook it with `augustap <scenario>` (tools/pack).
 pack: packs/level.server.pack
 
 # Ed25519 public key the pack is signed with (required).
 public_key: keys/augusta.pub
-
-# The Lua script holding the simulation's Parameters (required), such as the
-# stamina rules. Only the server reads it; every client is sent the values when
-# it joins (ADR-0039). See parameters.example.lua.
-parameters: parameters.lua
 
 # The rate, in Hz, at which the server simulates and every client predicts
 # (required): any number above zero. It is fixed for as long as the server runs
