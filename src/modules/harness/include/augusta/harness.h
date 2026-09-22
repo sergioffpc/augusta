@@ -119,10 +119,10 @@ class Session {
   /// has no rate of its own. Set by ExchangeMessages; safe to read from any thread.
   [[nodiscard]] std::optional<float> GetTickRate() const;
 
-  /// The newest parameters the server has sent, or nullopt until it admits this
-  /// client: what it joined with, replaced by each newer generation the server has reloaded since. What this client
-  /// ticks and predicts with; it has none of its own. Set by ExchangeMessages; safe to read from any thread.
-  [[nodiscard]] std::optional<parameters::NumberedParameters> GetParameters() const;
+  /// The parameters the server sent when it admitted this client, or nullopt
+  /// until it does. What this client predicts with, for the whole run; it has
+  /// none of its own. Set by ExchangeMessages; safe to read from any thread.
+  [[nodiscard]] std::optional<parameters::Parameters> GetParameters() const;
 
   /// Why the server refused this client, or nullopt if it has not. Set by
   /// ExchangeMessages; safe to read from any thread.

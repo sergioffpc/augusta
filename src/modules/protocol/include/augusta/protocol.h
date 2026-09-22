@@ -41,8 +41,6 @@ enum class MessageType : std::uint8_t {
   kCommands = 4,
   /// Server to client: every player's body as of one tick.
   kAuthoritativeState = 5,
-  /// Server to client: the server reloaded its parameters.
-  kParametersUpdate = 6,
 };
 
 /// Longest engine version string a JoinRequest may carry, in bytes.
@@ -89,8 +87,6 @@ struct JoinAccepted {
   /// the server's startup setting, fixed for the life of the server process and
   /// so sent here once and never again.
   float tick_rate_hz = 0.0F;
-  /// The generation of the parameters below, from 1: the newest the server has.
-  std::uint32_t generation = 0;
   /// The parameters the client must predict with, so its numbers (the stamina
   /// rules among them) are the server's.
   parameters::Parameters parameters{};
@@ -128,17 +124,8 @@ struct AuthoritativeState {
   std::vector<PlayerState> players{};
 };
 
-/// Server to client: the server reloaded its parameters, and these are the new
-/// ones. Reliable, since a lost one would leave the client predicting with
-/// numbers the server no longer uses until the next reload.
-struct ParametersUpdate {
-  /// The generation of parameters; a client keeps only a newer one than it holds.
-  std::uint32_t generation = 0;
-  parameters::Parameters parameters{};
-};
-
 /// Any message of the protocol.
-using Message = std::variant<JoinRequest, JoinAccepted, JoinRefused, Commands, AuthoritativeState, ParametersUpdate>;
+using Message = std::variant<JoinRequest, JoinAccepted, JoinRefused, Commands, AuthoritativeState>;
 
 /// A payload is this many bytes, the same type networking::Payload names.
 using Bytes = std::vector<std::byte>;

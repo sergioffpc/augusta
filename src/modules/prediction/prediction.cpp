@@ -168,10 +168,6 @@ std::expected<void, physics::CollisionMeshError> World::AddCollisionMesh(const p
   return impl_->physics.AddCollisionMesh(mesh);
 }
 
-void World::SetParameters(const parameters::Parameters& parameters) {
-  impl_->physics.SetStaminaConfig(parameters.stamina);
-}
-
 void World::Start(const math::Vec3& spawn, const parameters::Parameters& parameters) {
   Impl& impl = *impl_;
   impl.physics.SetStaminaConfig(parameters.stamina);

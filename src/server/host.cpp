@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <filesystem>
 #include <format>
 #include <mutex>
 #include <optional>
@@ -65,29 +64,17 @@ struct Host::Impl {
   // Simulation thread only.
   simulation::World simulation;
   std::uint32_t tick = 0;
-  // Told to each client that joins; never changes.
+  // What every client is told when it joins, with the tick rate; neither ever
+  // changes, so neither needs the lock.
   const float tick_rate_hz;
+  const parameters::Parameters parameters;
 
   // Thread-safe by the transport's contract, used from both threads.
   networking::Server network;
 
-  // Where Reload reads the script from.
-  std::filesystem::path parameters_path;
-  // Held for the whole of a Reload, so two calls at once are numbered in the
-  // order their scripts were read and an older read never replaces a newer one.
-  std::mutex reload_mutex;
-
   // Guards everything below: written by the Network I/O thread as clients
-  // join, leave and send commands, read once per Simulation tick; and by
-  // whichever thread calls Reload.
+  // join, leave and send commands, and read once per Simulation tick.
   std::mutex mutex;
-  // What the simulation runs on, and every client is told when it joins,
-  // besides who is already there.
-  parameters::NumberedParameters running;
-  // A reloaded generation waiting for the next tick to begin, and the number
-  // the last accepted reload took.
-  std::optional<parameters::NumberedParameters> pending;
-  std::uint32_t last_generation = parameters::kFirstGeneration;
   Match match;
   std::unordered_map<protocol::SessionId, Player> players;
   std::vector<Change> changes;
@@ -111,9 +98,8 @@ struct Host::Impl {
   explicit Impl(const HostConfig& config)
       : simulation(BuildSimulation(config)),
         tick_rate_hz(config.tick_rate_hz),
+        parameters(config.parameters),
         network(config.listen),
-        parameters_path(config.parameters_path),
-        running{.generation = parameters::kFirstGeneration, .parameters = config.parameters},
         match(std::string(EngineVersion()), protocol::kMaxPlayers, config.spawn_points) {}
 
   void Reply(networking::PeerId peer, const protocol::Message& message) {
@@ -136,8 +122,7 @@ struct Host::Impl {
     accepted.session = admission->session;
     accepted.spawn = admission->spawn;
     accepted.tick_rate_hz = tick_rate_hz;
-    accepted.generation = running.generation;
-    accepted.parameters = running.parameters;
+    accepted.parameters = parameters;
     accepted.roster = admission->roster;
     Reply(peer, accepted);
   }
@@ -217,9 +202,6 @@ struct Host::Impl {
 
   TickInput BeginTick() {
     const std::lock_guard<std::mutex> lock(mutex);
-    if (ApplyPendingParameters()) {
-      AnnounceParameters();
-    }
     for (const Change& change : changes) {
       const simulation::PlayerId player = replication::PlayerOf(change.session);
       if (change.kind == Change::Kind::kJoin) {
@@ -242,31 +224,6 @@ struct Host::Impl {
     return input;
   }
 
-  // Puts the reloaded generation, if there is one, in force before this tick's
-  // phases run, so none of them sees two generations. Called with mutex held.
-  // Returns whether there was one, for the caller to announce.
-  bool ApplyPendingParameters() {
-    if (!pending.has_value()) {
-      return false;
-    }
-    running = *pending;
-    pending.reset();
-    simulation.SetStaminaConfig(running.parameters.stamina);
-    LI("subsystem=serverruntime event=parameters_applied generation={} players={}", running.generation, players.size());
-    return true;
-  }
-
-  // Sends the running generation to every client already in. A client that
-  // joins from now on is told it in its Join accepted; the join and this run
-  // under the same lock, so none misses a generation. Called with mutex held.
-  void AnnounceParameters() {
-    const protocol::Bytes update = protocol::Encode(
-        protocol::ParametersUpdate{.generation = running.generation, .parameters = running.parameters});
-    for (const auto& [session, player] : players) {
-      network.Send(player.peer, update, networking::Reliability::kReliable);
-    }
-  }
-
   // Tells the match where everyone is, for the roster of whoever joins next.
   void RememberBodies(const simulation::State& state) {
     const std::lock_guard<std::mutex> lock(mutex);
@@ -284,9 +241,8 @@ struct Host::Impl {
     if (now - activity_since < kHeartbeatInterval) {
       return;
     }
-    LD("subsystem=serverruntime event=heartbeat tick={} generation={} players={} ticks={} messages={} stale={} "
-       "dropped={}",
-       tick, running.generation, players.size(), activity.ticks, activity.messages, activity.stale, activity.dropped);
+    LD("subsystem=serverruntime event=heartbeat tick={} players={} ticks={} messages={} stale={} dropped={}", tick,
+       players.size(), activity.ticks, activity.messages, activity.stale, activity.dropped);
     activity = Activity{};
     activity_since = now;
   }
@@ -328,29 +284,6 @@ void Host::PumpNetwork() {
     ++impl.activity.messages;
     impl.HandleMessage(message);
   }
-}
-
-std::expected<std::uint32_t, parameters::LoadError> Host::Reload() {
-  Impl& impl = *impl_;
-  const std::lock_guard<std::mutex> reloading(impl.reload_mutex);
-  // The file and the interpreter are not touched under the state lock: a slow
-  // disk or script must not stall the Network I/O thread or a tick.
-  const auto loaded = parameters::LoadFile(impl.parameters_path);
-  const std::lock_guard<std::mutex> lock(impl.mutex);
-  if (!loaded.has_value()) {
-    LW("subsystem=serverruntime event=parameters_refused generation={} reason=\"{}\"", impl.running.generation,
-       parameters::DescribeLoadError(loaded.error()));
-    return std::unexpected(loaded.error());
-  }
-  const std::uint32_t generation = ++impl.last_generation;
-  impl.pending = parameters::NumberedParameters{.generation = generation, .parameters = *loaded};
-  LI("subsystem=serverruntime event=parameters_reloaded generation={}", generation);
-  return generation;
-}
-
-std::uint32_t Host::Generation() const {
-  const std::lock_guard<std::mutex> lock(impl_->mutex);
-  return impl_->running.generation;
 }
 
 simulation::State Host::Tick(float delta_time) {

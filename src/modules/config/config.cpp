@@ -240,8 +240,8 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
 
 std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 6> kKeys{"base_dir",   "pack",         "public_key",
-                                                         "parameters", "tick_rate_hz", "listen_address"};
+  static constexpr std::array<std::string_view, 5> kKeys{"base_dir", "pack", "public_key", "tick_rate_hz",
+                                                         "listen_address"};
   const auto values = ReadScalarMap(yaml_text, kKeys);
   if (!values) {
     return std::unexpected(values.error());
@@ -260,10 +260,6 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!public_key_path) {
     return std::unexpected(public_key_path.error());
   }
-  auto parameters_path = RequirePath(*values, "parameters", *root);
-  if (!parameters_path) {
-    return std::unexpected(parameters_path.error());
-  }
   const auto tick_rate_hz = RequirePositiveNumber(*values, "tick_rate_hz");
   if (!tick_rate_hz) {
     return std::unexpected(tick_rate_hz.error());
@@ -271,7 +267,6 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   return ServerConfig{
       .pack_path = *std::move(pack_path),
       .public_key_path = *std::move(public_key_path),
-      .parameters_path = *std::move(parameters_path),
       .tick_rate_hz = *tick_rate_hz,
       .listen_address = OptionalString(*values, "listen_address", kDefaultListenAddress),
   };

@@ -47,9 +47,6 @@ struct ServerConfig {
   std::filesystem::path pack_path;
   /// Key `public_key` (required): the Ed25519 public key the pack is signed with.
   std::filesystem::path public_key_path;
-  /// Key `parameters` (required): the Lua script holding the simulation's
-  /// Parameters (ADR-0039). Where it is, not what is in it.
-  std::filesystem::path parameters_path;
   /// Key `tick_rate_hz` (required): the rate, in Hz, at which the server
   /// simulates and every client predicts. Any finite rate above zero; fixed for
   /// the life of the process, and told to each client when it joins (ADR-0039).

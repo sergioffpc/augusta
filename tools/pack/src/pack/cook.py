@@ -10,7 +10,7 @@ compression).
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,6 +23,7 @@ from pack.pack import (
     SceneNode,
     encode_mesh_blob,
     encode_scene_blob,
+    encode_script_blob,
     encode_spawn_point_blob,
     encode_texture_blob,
 )
@@ -30,6 +31,7 @@ from pack.pack import ASSET_TYPE_COLLISION as _TYPE_COLLISION
 from pack.pack import ASSET_TYPE_HITBOX as _TYPE_HITBOX
 from pack.pack import ASSET_TYPE_MESH as _TYPE_MESH
 from pack.pack import ASSET_TYPE_SCENE as _TYPE_SCENE
+from pack.pack import ASSET_TYPE_SCRIPT as _TYPE_SCRIPT
 from pack.pack import ASSET_TYPE_SPAWN_POINT as _TYPE_SPAWN_POINT
 from pack.pack import ASSET_TYPE_TEXTURE as _TYPE_TEXTURE
 from pack.pack import NO_PARENT, TEXTURE_FORMAT_BC4, TEXTURE_FORMAT_BC5, TEXTURE_FORMAT_BC7, write_pack
@@ -72,6 +74,7 @@ class CookReport:
     mesh_count: int
     texture_count: int
     node_count: int
+    script_count: int
 
 
 def _sanitize_prim_path(usd_prim_path: str) -> str:
@@ -390,9 +393,14 @@ def cook_stage(
     client_output_path: Path,
     server_output_path: Path,
     signing_key: bytes,
+    scripts: Sequence[tuple[str, bytes]] = (),
     on_prim: Callable[[int, int, str], None] | None = None,
 ) -> CookReport:
     """Bakes stage_path into signed client/server packs.
+
+    scripts are a scenario's Lua files as (path relative to its folder, bytes):
+    they go into the server pack only, as script assets (ADR-0031, ADR-0039). A
+    client is sent the values a script decides, never the script.
 
     on_prim(done, total, prim_path), if given, is called after each prim is
     cooked - the only part of cooking that scales with the stage's size.
@@ -458,6 +466,13 @@ def cook_stage(
     server_entries = [entry for entry in entries if entry.type in _SERVER_PACK_ASSET_TYPES]
     server_entries.append(AssetEntry(type=_TYPE_SCENE, path="Scene", data=server_scene_blob))
     try:
+        server_entries.extend(
+            AssetEntry(type=_TYPE_SCRIPT, path=script_path, data=encode_script_blob(script))
+            for script_path, script in scripts
+        )
+    except Exception as error:  # noqa: BLE001 - re-raised as CookError below
+        raise CookError("script_encode_failed", "", str(error)) from error
+    try:
         write_pack(server_output_path, server_entries, signing_key)
     except Exception as error:  # noqa: BLE001 - re-raised as CookError below
         raise CookError("pack_write_failed", "", f"server pack: {error}") from error
@@ -469,4 +484,6 @@ def cook_stage(
     except Exception as error:  # noqa: BLE001 - re-raised as CookError below
         raise CookError("pack_write_failed", "", f"client pack: {error}") from error
 
-    return CookReport(mesh_count=mesh_count, texture_count=texture_count, node_count=node_count)
+    return CookReport(
+        mesh_count=mesh_count, texture_count=texture_count, node_count=node_count, script_count=len(scripts)
+    )

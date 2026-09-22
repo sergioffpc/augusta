@@ -3,7 +3,6 @@
 
 #include <cstdint>
 #include <expected>
-#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
@@ -33,9 +32,6 @@ struct HostConfig {
   /// What the simulation runs on and what each client is told when it joins:
   /// the stamina rules of every player body, shared with PredictionWorld.
   parameters::Parameters parameters{};
-  /// The Parameters script Host::Reload reads again (ADR-0039); the Parameters
-  /// above are what it held when the server started.
-  std::filesystem::path parameters_path{};
   /// Lua game-policy script for SimulationWorld's Scripts/Behaviours phase.
   std::string script_path{};
   /// Local address to listen on (US-01).
@@ -65,18 +61,6 @@ class Host {
 
   /// Does one round of the Network I/O thread's work: connection events and received messages.
   void PumpNetwork();
-
-  /// Reads the Parameters script again and, if it loads, makes it the next
-  /// generation: the simulation runs on it from the start of the next Tick,
-  /// never partway through one, and the generation is numbered from the last
-  /// accepted one. Returns that number. A script that fails to load is refused
-  /// as a whole: nothing changes, the reason is logged and no number is used.
-  /// Safe to call from any thread.
-  std::expected<std::uint32_t, parameters::LoadError> Reload();
-
-  /// The generation of the Parameters the simulation runs on: 1 at startup, and
-  /// the reloaded one once a Tick has begun since. Safe to call from any thread.
-  [[nodiscard]] std::uint32_t Generation() const;
 
   /// Runs one fixed tick of SimulationWorld on one command per player, sends each client its update, and returns the
   /// state.

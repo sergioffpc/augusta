@@ -1,4 +1,6 @@
-"""Augusta asset-cooking pipeline CLI (ADR-0030): usd-optimize (ADR-0015,
+"""Augusta asset-cooking pipeline CLI (ADR-0030), run on a scenario: a folder
+under <assets-root>/authoring holding a stage and its Lua scripts (see
+scenario.py). usd-optimize (ADR-0015,
 Python API - see optimize.py) -> usd-validation-nvidia (ADR-0015, also
 called via its own Python API - see validate.py) -> cook_stage (bake to
 signed client/server packs, ADR-0031/ADR-0032 - see cook.py). cook_stage is
@@ -7,14 +9,16 @@ small native _meshoptimizer/_textconv bindings only for the two pieces with
 no Python equivalent - no subprocess/CLI binary anywhere in this pipeline.
 A validation failure aborts before cooking, so no pack is written for a
 stage that didn't pass cleanup/validation, unless --skip-validation is given.
+Every *.lua file under the scenario folder goes into the server pack (ADR-0031,
+ADR-0039).
 
 This project is installed into the hermetic environment tools/asset-
 pipeline/scripts/bootstrap-windows.ps1 builds (--assets-root/python),
 so --assets-root defaults to the root of the venv this interpreter is
-already running from. The stage argument is always a path relative to
---assets-root/authoring, and its packs are written to the same relative
-location under --assets-root/packs; the signing key is expected at
---assets-root/keys.
+already running from. The scenario argument is always a folder relative to
+--assets-root/authoring, and its packs are written next to the same relative
+location under --assets-root/packs (authoring/test_map -> packs/test_map.*.pack);
+the signing key is expected at --assets-root/keys.
 """
 
 import argparse
@@ -29,49 +33,18 @@ from pack.cook import CookError, cook_stage
 from pack.keys import read_private_key
 from pack.optimize import OptimizeError, optimize_stage
 from pack.progress import Progress
+from pack.scenario import ScenarioError, resolve_scenario
 from pack.validate import ValidationError, validate_stage
-
-
-_USD_EXTENSIONS = (".usd", ".usda", ".usdc", ".usdz")
-
-
-class StageNotFoundError(Exception):
-    """Raised when stage doesn't resolve to exactly one authored USD file."""
-
-
-def _resolve_stage(authoring_dir: Path, stage: Path) -> Path | None:
-    """Returns authoring_dir/stage, or None if stage isn't a plain relative
-    path staying inside authoring_dir (absolute, or escaping via '..').
-
-    The USD extension is optional: a stage without one is looked up as
-    <stage>.usd/.usda/.usdc/.usdz. Raises StageNotFoundError if none or more
-    than one of those exists.
-    """
-    if stage.is_absolute() or ".." in stage.parts:
-        return None
-
-    path = authoring_dir / stage
-    if path.suffix.lower() in _USD_EXTENSIONS:
-        return path
-
-    candidates = [path.with_name(path.name + extension) for extension in _USD_EXTENSIONS]
-    found = [candidate for candidate in candidates if candidate.is_file()]
-    if not found:
-        tried = ", ".join(_USD_EXTENSIONS)
-        raise StageNotFoundError(f"Stage not found: {path} (tried extensions {tried})")
-    if len(found) > 1:
-        names = ", ".join(candidate.name for candidate in found)
-        raise StageNotFoundError(f"Stage name is ambiguous, several files match: {names} - pass the extension explicitly.")
-    return found[0]
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
-        "stage",
+        "scenario",
         type=Path,
-        help="Raw authored USD stage (e.g. exported from USD Composer), relative to <assets-root>/authoring. "
-        "The extension is optional: 'Stage' finds Stage.usd, .usda, .usdc or .usdz.",
+        help="Scenario folder, relative to <assets-root>/authoring: <scenario>/<name>.usd* is the raw authored "
+        "stage (e.g. exported from USD Composer) and every *.lua under the folder is packed into the server pack. "
+        "It needs a parameters.lua. 'test_map' cooks authoring/test_map/test_map.usda.",
     )
     parser.add_argument(
         "--assets-root",
@@ -79,8 +52,8 @@ def main(argv: list[str] | None = None) -> int:
         default=default_assets_root(),
         help="Hermetic environment root (default: inferred from this interpreter's own venv).",
     )
-    parser.add_argument("--client-output-pack", type=Path, default=None, help="Default: <assets-root>/packs/<stage>.client.pack")
-    parser.add_argument("--server-output-pack", type=Path, default=None, help="Default: <assets-root>/packs/<stage>.server.pack")
+    parser.add_argument("--client-output-pack", type=Path, default=None, help="Default: <assets-root>/packs/<scenario>.client.pack")
+    parser.add_argument("--server-output-pack", type=Path, default=None, help="Default: <assets-root>/packs/<scenario>.server.pack")
     parser.add_argument("--signing-key", type=Path, default=None, help="Default: <assets-root>/keys/augusta.key")
     parser.add_argument(
         "--skip-validation",
@@ -94,15 +67,13 @@ def main(argv: list[str] | None = None) -> int:
     packs_dir = assets_root / "packs"
 
     try:
-        stage_path = _resolve_stage(authoring_dir, args.stage)
-    except StageNotFoundError as error:
+        scenario = resolve_scenario(authoring_dir, args.scenario)
+    except ScenarioError as error:
         print(error, file=sys.stderr)
         return 1
-    if stage_path is None:
-        print(f"Stage must be a path relative to {authoring_dir} (no absolute paths or '..'): {args.stage}", file=sys.stderr)
-        return 1
-    stage_name = stage_path.stem
-    pack_dir = packs_dir / args.stage.parent
+    stage_path = scenario.stage_path
+    stage_name = scenario.name
+    pack_dir = packs_dir / args.scenario.parent
 
     signing_key_path = args.signing_key or assets_root / "keys" / "augusta.key"
     client_output_pack = args.client_output_pack or pack_dir / f"{stage_name}.client.pack"
@@ -161,7 +132,12 @@ def main(argv: list[str] | None = None) -> int:
 
         try:
             report = cook_stage(
-                cleaned_stage, client_output_pack, server_output_pack, signing_key, on_prim=report_prim
+                cleaned_stage,
+                client_output_pack,
+                server_output_pack,
+                signing_key,
+                scripts=scenario.scripts,
+                on_prim=report_prim,
             )
         except CookError as error:
             if progress is not None:
@@ -170,7 +146,10 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         if progress is not None:
             progress.finish()
-        print(f"      cooked {report.mesh_count} mesh(es), {report.texture_count} texture(s), {report.node_count} node(s)")
+        print(
+            f"      cooked {report.mesh_count} mesh(es), {report.texture_count} texture(s), "
+            f"{report.node_count} node(s), {report.script_count} script(s) (server pack)"
+        )
         print(f"[3/3] done in {time.monotonic() - step_start:.1f}s")
 
     print(f"Pipeline complete in {time.monotonic() - pipeline_start:.1f}s: client pack {client_output_pack}, server pack {server_output_pack}")

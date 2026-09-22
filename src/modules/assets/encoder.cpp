@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <string_view>
 #include <vector>
 
 #include "wire_format.h"
@@ -126,6 +127,14 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeSpawnPointBlob(const Sp
   AppendF32(blob, spawn_point.rotation.z);
   AppendF32(blob, spawn_point.rotation.w);
   return blob;
+}
+
+std::expected<std::vector<std::byte>, EncodeError> EncodeScriptBlob(std::string_view script) {
+  if (script.size() > kMaxScriptBytes) {
+    return std::unexpected(EncodeError::kTooLarge);
+  }
+  const auto* first = reinterpret_cast<const std::byte*>(script.data());
+  return std::vector<std::byte>(first, first + script.size());
 }
 
 }  // namespace augusta::assets

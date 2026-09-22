@@ -34,6 +34,8 @@ MAX_MESH_INDICES = 48_000_000
 MAX_SCENE_NODES = 1_000_000
 MAX_PROPERTIES = 256
 MAX_TEXTURE_BYTES = 256 * 1024 * 1024
+# A Lua script is hand-written text; a megabyte is far beyond any real one.
+MAX_SCRIPT_BYTES = 1024 * 1024
 MAX_ENTRIES = 1 << 20
 MAX_PACK_SIZE = 8 * 1024 * 1024 * 1024
 
@@ -53,6 +55,7 @@ ASSET_TYPE_COLLISION = 3
 ASSET_TYPE_SPAWN_POINT = 4
 ASSET_TYPE_HITBOX = 5
 ASSET_TYPE_SCENE = 6
+ASSET_TYPE_SCRIPT = 7
 
 # TextureFormat (assets.h `enum class TextureFormat : uint8_t`).
 TEXTURE_FORMAT_BC7 = 0
@@ -171,6 +174,13 @@ def encode_texture_blob(dds_bytes: bytes, texture_format: int) -> bytes:
     writer.u32(len(dds_bytes))
     writer.raw(dds_bytes)
     return writer.bytes()
+
+
+def encode_script_blob(script: bytes) -> bytes:
+    """A script blob is the script's text as it is: no framing, no terminator."""
+    if len(script) > MAX_SCRIPT_BYTES:
+        raise EncodeError("script exceeds pack size limits")
+    return bytes(script)
 
 
 def encode_spawn_point_blob(

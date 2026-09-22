@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <optional>
 #include <print>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -66,22 +67,32 @@ std::optional<Map> LoadMap(const augusta::assets::Pack& pack, const std::filesys
   return Map{.collision = *std::move(collision), .spawn_points = *std::move(spawn_points)};
 }
 
-// The Parameters script the config names, read before any socket or thread
-// starts so a missing or invalid one exits like a bad pack does. Reports what
-// is wrong and returns nullopt.
-std::optional<augusta::parameters::Parameters> LoadParameters(const std::filesystem::path& script_path) {
-  auto parameters = augusta::parameters::LoadFile(script_path);
-  if (!parameters) {
-    std::println(stderr, "{}", augusta::parameters::DescribeLoadError(parameters.error()));
+// The scenario's Parameters script, out of the pack the server was given (it was
+// cooked into the server pack with the map and is signed with it), evaluated
+// once before any socket or thread starts, so a pack without one, or with one
+// that does not load, exits like a bad pack does. The Parameters are the same
+// for the whole run. Reports what is wrong and returns nullopt.
+std::optional<augusta::parameters::Parameters> LoadParameters(const augusta::assets::Pack& pack,
+                                                              const std::filesystem::path& pack_path) {
+  const std::string_view script_path = augusta::assets::kParametersScriptPath;
+  const auto script = pack.ResolveScript(script_path);
+  if (!script) {
+    std::println(stderr, "server pack {}: {} {}", pack_path.string(), script_path,
+                 augusta::assets::DescribeResolveError(script.error(), "script"));
     return std::nullopt;
   }
-  LI("subsystem=server event=parameters_loaded generation={} path={}", augusta::parameters::kFirstGeneration,
-     script_path.string());
+  auto parameters = augusta::parameters::Load(*script);
+  if (!parameters) {
+    std::println(stderr, "server pack {}: {}: {}", pack_path.string(), script_path,
+                 augusta::parameters::DescribeLoadError(parameters.error()));
+    return std::nullopt;
+  }
+  LI("subsystem=server event=parameters_loaded script={}", script_path);
   return *std::move(parameters);
 }
 
-// What ServerRuntime is built from: the file's settings and what the pack and
-// the Parameters script supplied.
+// What ServerRuntime is built from: the file's settings and what the pack (its
+// map and its Parameters script) supplied.
 augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ServerConfig& file_config,
                                             const augusta::parameters::Parameters& parameters, Map map) {
   augusta::runtime::Config config;
@@ -93,9 +104,9 @@ augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ServerConfig&
   config.collision = std::move(map.collision);
   config.spawn_points = std::move(map.spawn_points);
   // Every client is sent the rate and these when it joins and predicts with
-  // them, so the config file and the script are the only places they are set.
+  // them, so the config file and the scenario's script are the only places they
+  // are set.
   config.parameters = parameters;
-  config.parameters_path = file_config.parameters_path;
   return config;
 }
 
@@ -135,7 +146,7 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  const auto parameters = LoadParameters(file_config->parameters_path);
+  const auto parameters = LoadParameters(*pack, pack_path);
   if (!parameters) {
     return 1;
   }

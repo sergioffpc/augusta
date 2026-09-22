@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <expected>
 #include <filesystem>
+#include <string_view>
 #include <vector>
 
 #include "augusta/assets.h"
@@ -42,6 +43,10 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeTextureBlob(const Textu
 // EncodeCollisionBlob/EncodeHitboxBlob - they reuse EncodeMeshBlob
 // directly (see MeshData's own comment).
 std::expected<std::vector<std::byte>, EncodeError> EncodeSpawnPointBlob(const SpawnPointData& spawn_point);
+
+// Encodes script, a Lua script's text, into the pack's script-blob byte layout
+// (ADR-0031): the text itself, with no framing.
+std::expected<std::vector<std::byte>, EncodeError> EncodeScriptBlob(std::string_view script);
 
 enum class WriteError {
   // output_path (or its temporary file) could not be created, written,

@@ -41,6 +41,9 @@ constexpr std::uint32_t kMaxProperties = 256;
 // any real v1 texture while still rejecting a hostile/corrupt blob long
 // before an oversized allocation.
 constexpr std::uint32_t kMaxTextureBytes = 256U * 1024 * 1024;
+// A Lua script is text an author wrote by hand; a megabyte is far beyond any
+// real one and rejects a hostile blob before an oversized allocation.
+constexpr std::uint32_t kMaxScriptBytes = 1U * 1024 * 1024;
 
 // Bit flags for a scene node's optional references (encoder.cpp's
 // EncodeSceneNode / decoder.cpp's DecodeSceneNode - see ADR-0032). Shared

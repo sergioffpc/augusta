@@ -6,8 +6,8 @@ tooling-time project only - nothing here is linked into the shipped client or
 server.
 
 ```
-<stage>.usda -> usd-optimize -> usd-validation-nvidia -> cook -> <stage>.client.pack
-                                                              -> <stage>.server.pack
+<scenario>/<scenario>.usda -> usd-optimize -> usd-validation-nvidia -> cook -> <scenario>.client.pack
+<scenario>/*.lua                                                                 -> <scenario>.server.pack
 ```
 
 1. **usd-optimize** cleans the stage (triangulate, dedupe, flatten, drop small
@@ -42,7 +42,7 @@ The assets root looks like this:
 
 | Path | Contents |
 |---|---|
-| `authoring/` | Raw USD stages, the cooker's input root |
+| `authoring/` | Scenario folders (a USD stage and its Lua scripts each), the cooker's input root |
 | `packs/` | Cooked, signed packs |
 | `keys/` | `augusta.key` / `augusta.pub` (Ed25519). Never commit these. |
 | `bin/` | `augustap.exe`, `augustap-keygen.exe`, `augustap-inspect.exe`, `augustap-verify.exe` (installed here by `uv tool install`) |
@@ -70,23 +70,38 @@ augustap --help
 
 The examples below assume `bin` is on `PATH`.
 
-## Cooking a stage
+## Cooking a scenario
+
+A scenario is a folder under `<assets-root>/authoring` holding one USD stage,
+named like the folder, and the Lua scripts that go with it (ADR-0015, ADR-0039):
+
+```
+authoring\test_map\test_map.usda      # the stage (.usd, .usda, .usdc or .usdz)
+authoring\test_map\parameters.lua     # required: the scenario's Parameters
+authoring\test_map\rules\round.lua    # any other *.lua, in any subfolder
+```
 
 ```powershell
-augustap <stage>                    # authoring\<stage>.usd/.usda/.usdc/.usdz
-augustap <dir>\<stage>              # authoring\<dir>\<stage>.* -> packs\<dir>\<stage>.*.pack
-augustap <stage> --skip-validation  # skip usd-validation-nvidia only
+augustap <scenario>                    # authoring\<scenario>\ -> packs\<scenario>.{client,server}.pack
+augustap <dir>\<scenario>              # authoring\<dir>\<scenario>\ -> packs\<dir>\<scenario>.*.pack
+augustap <scenario> --skip-validation  # skip usd-validation-nvidia only
 ```
 
 A successful run ends with the paths of the client and server packs it wrote.
 
-The stage is a path relative to `<assets-root>/authoring`. The extension is
-optional: `<stage>` finds `<stage>.usd`, `.usda`, `.usdc` or `.usdz`, and it is an
-error if none or several match (pass the extension to disambiguate). Absolute
-paths and `..` are rejected.
+The cooker packs everything under the folder: the stage into both packs, and
+every `*.lua` file into the **server** pack only, as a script asset addressed by
+its path relative to the folder (`parameters.lua`, `rules/round.lua`; ADR-0031).
+A client is sent the values a script decides and never receives the script
+(ADR-0019). It is an error if the folder is missing, if the stage
+`<scenario>/<scenario>.*` is missing or ambiguous, or if there is no
+`parameters.lua`: the server reads its Parameters out of its pack at startup, so
+that is found here rather than when a server starts on the pack. Absolute paths
+and `..` are rejected. Start a `parameters.lua` from `config/parameters.example.lua`.
 
-Packs are written to the same relative location under `<assets-root>/packs`, as
-`<stage>.client.pack` and `<stage>.server.pack`.
+Packs are written under `<assets-root>/packs` at the scenario's own relative
+location, as `<scenario>.client.pack` and `<scenario>.server.pack`. Scripts are
+part of the signed pack: to change a value, edit the file and cook again.
 
 ### `augustap` reference
 
@@ -95,16 +110,16 @@ augustap [-h] [--assets-root ASSETS_ROOT]
          [--client-output-pack CLIENT_OUTPUT_PACK]
          [--server-output-pack SERVER_OUTPUT_PACK]
          [--signing-key SIGNING_KEY] [--skip-validation]
-         stage
+         scenario
 ```
 
 | Argument | Default | Description |
 |---|---|---|
-| `stage` (required) | | Raw authored USD stage, relative to `<assets-root>/authoring`. The extension is optional (see above). |
+| `scenario` (required) | | Scenario folder, relative to `<assets-root>/authoring`: its stage and its `*.lua` scripts (see above). |
 | `-h`, `--help` | | Print the usage and option list, then exit. |
 | `--assets-root ASSETS_ROOT` | the root of the venv the command runs from (`<assets-root>/python/...`) | Assets root holding `authoring/`, `packs/` and `keys/`. |
-| `--client-output-pack CLIENT_OUTPUT_PACK` | `<assets-root>/packs/<stage>.client.pack` | Where to write the client pack. Missing parent directories are created. |
-| `--server-output-pack SERVER_OUTPUT_PACK` | `<assets-root>/packs/<stage>.server.pack` | Where to write the server pack. Missing parent directories are created. |
+| `--client-output-pack CLIENT_OUTPUT_PACK` | `<assets-root>/packs/<scenario>.client.pack` | Where to write the client pack. Missing parent directories are created. |
+| `--server-output-pack SERVER_OUTPUT_PACK` | `<assets-root>/packs/<scenario>.server.pack` | Where to write the server pack. Missing parent directories are created. |
 | `--signing-key SIGNING_KEY` | `<assets-root>/keys/augusta.key` | Ed25519 private key (64 bytes) the packs are signed with. |
 | `--skip-validation` | off | Skip usd-validation-nvidia (step 2) for stages that fail its checks. usd-optimize and the cook still run. |
 
@@ -117,7 +132,7 @@ need `augustap-keygen` to create an additional keypair:
 
 ```powershell
 augustap-keygen <key-prefix>   # writes <key-prefix>.key and <key-prefix>.pub
-augustap <stage> --signing-key <key-prefix>.key
+augustap <scenario> --signing-key <key-prefix>.key
 ```
 
 ### `augustap-keygen` reference
@@ -203,7 +218,7 @@ failure it prints the reason to stderr and exits `1`:
 
 | Path | Role |
 |---|---|
-| `src/pack/cli.py` | `augustap` entry point and stage resolution |
+| `src/pack/cli.py` | `augustap` entry point |
 | `src/pack/optimize.py` | usd-optimize step |
 | `src/pack/validate.py` | usd-validation-nvidia step |
 | `src/pack/cook.py` | Stage walk and asset conversion |
