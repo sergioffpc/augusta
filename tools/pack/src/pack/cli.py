@@ -42,9 +42,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "scenario",
         type=Path,
-        help="Scenario folder, relative to <assets-root>/authoring: <scenario>/<name>.usd* is the raw authored "
+        help="Scenario folder, relative to <assets-root>/authoring: <scenario>/map.usd* is the raw authored "
         "stage (e.g. exported from USD Composer) and every *.lua under the folder is packed into the server pack. "
-        "It needs a parameters.lua. 'test_map' cooks authoring/test_map/test_map.usda.",
+        "It needs a parameters.lua. 'test_map' cooks authoring/test_map/map.usda.",
     )
     parser.add_argument(
         "--assets-root",

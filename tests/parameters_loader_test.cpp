@@ -255,8 +255,8 @@ TEST(ParametersLoaderTest, ADescriptionNamesTheKeyItIsAbout) {
   EXPECT_NE(message.find("stamina.regen_per_second"), std::string::npos) << message;
 }
 
-// The example script is what an author copies next to a scenario's stage, so it
-// must stay a script the loader accepts.
+// The example scenario's script (tools/pack/examples/augusta) is what an author
+// copies to start a new one, so it must stay a script the loader accepts.
 TEST(ParametersExampleTest, TheExampleScriptLoadsToTheDocumentedDefaults) {
   std::ifstream stream(AUGUSTA_EXAMPLE_PARAMETERS, std::ios::binary);
   ASSERT_TRUE(stream.is_open()) << AUGUSTA_EXAMPLE_PARAMETERS;

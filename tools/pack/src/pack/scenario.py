@@ -1,19 +1,26 @@
 """A scenario is a folder under <assets-root>/authoring holding one USD stage and
 the Lua scripts that go with it:
 
-    authoring/test_map/test_map.usda
+    authoring/test_map/map.usda
     authoring/test_map/parameters.lua
 
 The cooker is told the folder (`augustap test_map`) and packs everything under
 it: the stage into the client and server packs, and every `*.lua` file into the
 server pack, addressed by its path relative to the folder (ADR-0031, ADR-0039).
-The scripts are signed with the map and cannot change during a run.
+The scripts are signed with the map and cannot change during a run. The stage
+and the Parameters script have fixed names (map.usd*, parameters.lua) rather
+than names derived from the folder, so renaming a scenario never means
+renaming the files inside it.
 """
 
 from dataclasses import dataclass
 from pathlib import Path
 
 USD_EXTENSIONS = (".usd", ".usda", ".usdc", ".usdz")
+
+# The stage every scenario needs, named the same regardless of the folder's own
+# name (ADR-0015).
+STAGE_NAME = "map"
 
 # The Parameters script (ADR-0039) every scenario needs: the server reads it out
 # of its pack at startup, so a scenario without one is refused here, when it is
@@ -28,7 +35,7 @@ class ScenarioError(Exception):
 @dataclass(frozen=True)
 class Scenario:
     folder: Path
-    # <folder>/<folder name>.usd*, the stage the cooker walks.
+    # <folder>/map.usd*, the stage the cooker walks.
     stage_path: Path
     # Each script's path relative to the folder ('/' separated, as it is addressed
     # in the pack), with its bytes, in path order so a cook is reproducible.
@@ -60,18 +67,18 @@ def resolve_scenario(authoring_dir: Path, scenario: Path) -> Scenario:
     if PARAMETERS_SCRIPT not in (path for path, _ in scripts):
         raise ScenarioError(
             f"Scenario {folder} has no {PARAMETERS_SCRIPT}: the server reads its Parameters from its pack "
-            f"(see config/parameters.example.lua)."
+            f"(see examples/augusta/parameters.lua)."
         )
     return Scenario(folder=folder, stage_path=stage_path, scripts=scripts)
 
 
 def _find_stage(folder: Path) -> Path:
-    """The folder's stage: <folder>/<folder name>.usd, .usda, .usdc or .usdz."""
-    candidates = [folder / f"{folder.name}{extension}" for extension in USD_EXTENSIONS]
+    """The folder's stage: <folder>/map.usd, .usda, .usdc or .usdz."""
+    candidates = [folder / f"{STAGE_NAME}{extension}" for extension in USD_EXTENSIONS]
     found = [candidate for candidate in candidates if candidate.is_file()]
     if not found:
         tried = ", ".join(USD_EXTENSIONS)
-        raise ScenarioError(f"Stage not found: {folder / folder.name} (tried extensions {tried})")
+        raise ScenarioError(f"Stage not found: {folder / STAGE_NAME} (tried extensions {tried})")
     if len(found) > 1:
         names = ", ".join(candidate.name for candidate in found)
         raise ScenarioError(f"Stage name is ambiguous, several files match in {folder}: {names}")

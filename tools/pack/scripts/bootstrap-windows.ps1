@@ -89,6 +89,22 @@ if (-not $SkipAuthoring) {
   New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
 }
 
+# A small worked scenario (tools/pack/examples/augusta - committed, unlike
+# everything else under $AssetsRoot) so a fresh environment has something to
+# cook straight away: a stage, its required parameters.lua (ADR-0039), and
+# placeholder objectives.lua/behaviours.lua for game policy (ADR-0022) once
+# that lands. Left alone on a re-run, like the signing key below, so local
+# edits to it survive.
+$exampleSource = Join-Path $packProject "examples\augusta"
+$exampleDest = Join-Path $authoringDir "examples\augusta"
+if (Test-Path $exampleDest) {
+  Write-Host "Example scenario already exists at $exampleDest - leaving it as is."
+} else {
+  Write-Host "Seeding the example scenario at $exampleDest..."
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $exampleDest) | Out-Null
+  Copy-Item -Recurse $exampleSource $exampleDest
+}
+
 function Sync-GitRepo {
   param([string]$Url, [string]$Path, [string]$Ref)
   if (Test-Path $Path) {
@@ -238,7 +254,7 @@ if (Test-Path $signingKeyPath) {
 
 Write-Host ""
 Write-Host "Hermetic environment ready at $AssetsRoot (never commit any of it, especially $keysDir):"
-Write-Host "  - $authoringDir  : raw USD stages - the cooker's input root"
+Write-Host "  - $authoringDir  : scenario folders (a stage and its Lua scripts each) - the cooker's input root"
 Write-Host "  - $packsDir      : signed packs cooked via the cooker"
 Write-Host "  - $keysDir       : Ed25519 signing keypair (augusta.key/augusta.pub)"
 Write-Host "  - $binDir        : the augustap, augustap-keygen, augustap-inspect and augustap-verify commands"
@@ -250,4 +266,4 @@ if (-not $SkipAuthoring) {
 }
 Write-Host ""
 $augustapExe = Join-Path $binDir "augustap.exe"
-Write-Host "Cook a stage saved under $authoringDir, e.g.: $augustapExe Example"
+Write-Host "Cook the example scenario: $augustapExe examples\augusta"

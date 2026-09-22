@@ -7,7 +7,7 @@
 base_dir: .
 
 # Client pack to load (required).
-pack: packs/level.client.pack
+pack: packs/examples/augusta.client.pack
 
 # Ed25519 public key the pack is signed with (required).
 public_key: keys/augusta.pub

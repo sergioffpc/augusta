@@ -6,8 +6,8 @@ tooling-time project only - nothing here is linked into the shipped client or
 server.
 
 ```
-<scenario>/<scenario>.usda -> usd-optimize -> usd-validation-nvidia -> cook -> <scenario>.client.pack
-<scenario>/*.lua                                                                 -> <scenario>.server.pack
+<scenario>/map.usda -> usd-optimize -> usd-validation-nvidia -> cook -> <scenario>.client.pack
+<scenario>/*.lua                                                          -> <scenario>.server.pack
 ```
 
 1. **usd-optimize** cleans the stage (triangulate, dedupe, flatten, drop small
@@ -36,7 +36,18 @@ installed globally. From an elevated PowerShell, after the repository's own
 Pass `-SkipAuthoring` on a machine that only cooks stages someone else authored;
 otherwise NVIDIA Omniverse USD Composer and Adobe's USD-Fileformat-plugins are
 set up as well. The script is safe to re-run. It never regenerates an existing
-signing key, since that would invalidate every pack already signed with it.
+signing key, since that would invalidate every pack already signed with it, and
+it never overwrites the example scenario below once one exists at its path.
+
+The script also seeds `authoring/examples/augusta` from
+[examples/augusta/](examples/augusta/) - a small worked scenario (a floor, a
+prop, a spawn point, its `parameters.lua`, and placeholder `objectives.lua`/
+`behaviours.lua` for when game policy, ADR-0022, is wired up) committed to this
+repo so a fresh environment has something to cook straight away:
+
+```powershell
+augustap examples\augusta
+```
 
 The assets root looks like this:
 
@@ -73,10 +84,10 @@ The examples below assume `bin` is on `PATH`.
 ## Cooking a scenario
 
 A scenario is a folder under `<assets-root>/authoring` holding one USD stage,
-named like the folder, and the Lua scripts that go with it (ADR-0015, ADR-0039):
+always named `map`, and the Lua scripts that go with it (ADR-0015, ADR-0039):
 
 ```
-authoring\test_map\test_map.usda      # the stage (.usd, .usda, .usdc or .usdz)
+authoring\test_map\map.usda           # the stage (.usd, .usda, .usdc or .usdz)
 authoring\test_map\parameters.lua     # required: the scenario's Parameters
 authoring\test_map\rules\round.lua    # any other *.lua, in any subfolder
 ```
@@ -94,10 +105,11 @@ every `*.lua` file into the **server** pack only, as a script asset addressed by
 its path relative to the folder (`parameters.lua`, `rules/round.lua`; ADR-0031).
 A client is sent the values a script decides and never receives the script
 (ADR-0019). It is an error if the folder is missing, if the stage
-`<scenario>/<scenario>.*` is missing or ambiguous, or if there is no
-`parameters.lua`: the server reads its Parameters out of its pack at startup, so
-that is found here rather than when a server starts on the pack. Absolute paths
-and `..` are rejected. Start a `parameters.lua` from `config/parameters.example.lua`.
+`<scenario>/map.*` is missing or ambiguous, or if there is no `parameters.lua`:
+the server reads its Parameters out of its pack at startup, so that is found
+here rather than when a server starts on the pack. Absolute paths and `..` are
+rejected. [`examples/augusta/`](examples/augusta/) is a full worked scenario to
+copy from, seeded into a fresh assets root by the bootstrap (see Setup above).
 
 Packs are written under `<assets-root>/packs` at the scenario's own relative
 location, as `<scenario>.client.pack` and `<scenario>.server.pack`. Scripts are
@@ -181,8 +193,8 @@ offset and size in bytes:
 - **Header:** magic, format version, data offset, index offset and index count.
 - **Data:** only its offset and size. The blobs themselves are not read.
 - **Index:** one line per entry with its type (`mesh`, `texture`, `audio`,
-  `collision`, `spawn-point`, `hitbox` or `scene`), its offset and size within
-  the pack, and its pack-relative path.
+  `collision`, `spawn-point`, `hitbox`, `scene` or `script`), its offset and
+  size within the pack, and its pack-relative path.
 - **Trailer:** the stored BLAKE3 hash and Ed25519 signature, in hex.
 
 Only the header, index and trailer are read, so it is fast on large packs. It
@@ -219,6 +231,7 @@ failure it prints the reason to stderr and exits `1`:
 | Path | Role |
 |---|---|
 | `src/pack/cli.py` | `augustap` entry point |
+| `src/pack/scenario.py` | Scenario folder resolution (stage, `*.lua` scripts) |
 | `src/pack/optimize.py` | usd-optimize step |
 | `src/pack/validate.py` | usd-validation-nvidia step |
 | `src/pack/cook.py` | Stage walk and asset conversion |
@@ -229,6 +242,7 @@ failure it prints the reason to stderr and exits `1`:
 | `src/pack/assets_root.py` | Assets-root inference shared by the entry points |
 | `cpp/` | Standalone CMake/vcpkg project for the two native modules. It builds straight into `src/pack/`. |
 | `composer/` | Playback file that scaffolds the Augusta USD Composer app |
+| `examples/augusta/` | The example scenario the bootstrap seeds into a fresh assets root |
 | `scripts/bootstrap-windows.ps1` | Builds the assets root |
 
 ## Rebuilding the native modules

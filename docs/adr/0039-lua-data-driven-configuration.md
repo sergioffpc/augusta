@@ -8,7 +8,7 @@ Lua state of its own: the parameters script and a policy script share no globals
 
 **A scenario's scripts live with its stage.** The values change from scenario to
 scenario, so the script is authored in the scenario's folder next to its stage
-(`authoring/test_map/test_map.usda`, `authoring/test_map/parameters.lua`,
+(`authoring/test_map/map.usda`, `authoring/test_map/parameters.lua`,
 ADR-0015). The cooker is told the folder and packs every `*.lua` file under it
 into the scenario's **server** pack (ADR-0030, ADR-0031), addressed by its path
 relative to the folder. The scripts are therefore signed with the map (ADR-0018)
