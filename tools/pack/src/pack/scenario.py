@@ -1,16 +1,17 @@
-"""A scenario is a folder under <assets-root>/authoring holding one USD stage and
-the Lua scripts that go with it:
+"""A scenario is a folder holding one USD stage and the Lua scripts that go
+with it:
 
-    authoring/test_map/map.usda
-    authoring/test_map/parameters.lua
+    test_map/map.usda
+    test_map/parameters.lua
 
-The cooker is told the folder (`augustap test_map`) and packs everything under
-it: the stage into the client and server packs, and every `*.lua` file into the
-server pack, addressed by its path relative to the folder (ADR-0031, ADR-0039).
-The scripts are signed with the map and cannot change during a run. The stage
-and the Parameters script have fixed names (map.usd*, parameters.lua) rather
-than names derived from the folder, so renaming a scenario never means
-renaming the files inside it.
+The cooker is told the folder directly - relative to the current directory or
+absolute, like any other path, not resolved against an assets root - and packs
+everything under it: the stage into the client and server packs, and every
+`*.lua` file into the server pack, addressed by its path relative to the folder
+(ADR-0031, ADR-0039). The scripts are signed with the map and cannot change
+during a run. The stage and the Parameters script have fixed names (map.usd*,
+parameters.lua) rather than names derived from the folder, so renaming a
+scenario never means renaming the files inside it.
 """
 
 from dataclasses import dataclass
@@ -46,19 +47,15 @@ class Scenario:
         return self.folder.name
 
 
-def resolve_scenario(authoring_dir: Path, scenario: Path) -> Scenario:
-    """Finds the scenario folder authoring_dir/scenario, its stage and its scripts.
+def resolve_scenario(folder: Path) -> Scenario:
+    """Finds folder's stage and scripts.
 
-    scenario must be a plain relative path staying inside authoring_dir. Raises
-    ScenarioError if it is not, if the folder or its stage is missing (or
-    ambiguous), or if the folder has no parameters.lua.
+    folder is an ordinary path - relative to the current directory or absolute,
+    like any file argument - naming the scenario's own directory directly, not
+    a name looked up under some other root. Raises ScenarioError if it isn't a
+    directory, if its stage is missing or ambiguous, or if it has no
+    parameters.lua.
     """
-    if scenario.is_absolute() or ".." in scenario.parts or not scenario.parts:
-        raise ScenarioError(
-            f"A scenario must be a folder relative to {authoring_dir} (no absolute paths or '..'): {scenario}"
-        )
-
-    folder = authoring_dir / scenario
     if not folder.is_dir():
         raise ScenarioError(f"Scenario folder not found: {folder}")
 
@@ -67,7 +64,7 @@ def resolve_scenario(authoring_dir: Path, scenario: Path) -> Scenario:
     if PARAMETERS_SCRIPT not in (path for path, _ in scripts):
         raise ScenarioError(
             f"Scenario {folder} has no {PARAMETERS_SCRIPT}: the server reads its Parameters from its pack "
-            f"(see examples/augusta/parameters.lua)."
+            f"(see tools/pack/examples/augusta/parameters.lua)."
         )
     return Scenario(folder=folder, stage_path=stage_path, scripts=scripts)
 

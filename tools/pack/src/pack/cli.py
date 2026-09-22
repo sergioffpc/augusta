@@ -1,6 +1,5 @@
 """Augusta asset-cooking pipeline CLI (ADR-0030), run on a scenario: a folder
-under <assets-root>/authoring holding a stage and its Lua scripts (see
-scenario.py). usd-optimize (ADR-0015,
+holding a stage and its Lua scripts (see scenario.py). usd-optimize (ADR-0015,
 Python API - see optimize.py) -> usd-validation-nvidia (ADR-0015, also
 called via its own Python API - see validate.py) -> cook_stage (bake to
 signed client/server packs, ADR-0031/ADR-0032 - see cook.py). cook_stage is
@@ -12,13 +11,15 @@ stage that didn't pass cleanup/validation, unless --skip-validation is given.
 Every *.lua file under the scenario folder goes into the server pack (ADR-0031,
 ADR-0039).
 
-This project is installed into the hermetic environment tools/asset-
-pipeline/scripts/bootstrap-windows.ps1 builds (--assets-root/python),
-so --assets-root defaults to the root of the venv this interpreter is
-already running from. The scenario argument is always a folder relative to
---assets-root/authoring, and its packs are written next to the same relative
-location under --assets-root/packs (authoring/test_map -> packs/test_map.*.pack);
-the signing key is expected at --assets-root/keys.
+The scenario argument is an ordinary path - relative to the current directory
+or absolute - naming the scenario's own folder directly; it is never resolved
+against an assets root. This project is installed into the hermetic
+environment tools/pack/scripts/bootstrap-windows.ps1 builds
+(--assets-root/python), so --assets-root defaults to the root of the venv this
+interpreter is already running from and is used only for the defaults below,
+never to locate the scenario itself: packs default to
+--assets-root/packs/<scenario folder name>.*.pack, and the signing key to
+--assets-root/keys/augusta.key.
 """
 
 import argparse
@@ -42,18 +43,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "scenario",
         type=Path,
-        help="Scenario folder, relative to <assets-root>/authoring: <scenario>/map.usd* is the raw authored "
-        "stage (e.g. exported from USD Composer) and every *.lua under the folder is packed into the server pack. "
-        "It needs a parameters.lua. 'test_map' cooks authoring/test_map/map.usda.",
+        help="Scenario folder - relative to the current directory or absolute: <scenario>/map.usd* is the raw "
+        "authored stage (e.g. exported from USD Composer) and every *.lua under the folder is packed into the "
+        "server pack. It needs a parameters.lua. tools\\pack\\examples\\augusta is a worked example.",
     )
     parser.add_argument(
         "--assets-root",
         type=Path,
         default=default_assets_root(),
-        help="Hermetic environment root (default: inferred from this interpreter's own venv).",
+        help="Hermetic environment root, for the --client-output-pack/--server-output-pack/--signing-key defaults "
+        "below only (default: inferred from this interpreter's own venv).",
     )
-    parser.add_argument("--client-output-pack", type=Path, default=None, help="Default: <assets-root>/packs/<scenario>.client.pack")
-    parser.add_argument("--server-output-pack", type=Path, default=None, help="Default: <assets-root>/packs/<scenario>.server.pack")
+    parser.add_argument(
+        "--client-output-pack", type=Path, default=None, help="Default: <assets-root>/packs/<scenario folder name>.client.pack"
+    )
+    parser.add_argument(
+        "--server-output-pack", type=Path, default=None, help="Default: <assets-root>/packs/<scenario folder name>.server.pack"
+    )
     parser.add_argument("--signing-key", type=Path, default=None, help="Default: <assets-root>/keys/augusta.key")
     parser.add_argument(
         "--skip-validation",
@@ -63,29 +69,29 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     assets_root: Path = args.assets_root
-    authoring_dir = assets_root / "authoring"
     packs_dir = assets_root / "packs"
 
     try:
-        scenario = resolve_scenario(authoring_dir, args.scenario)
+        scenario = resolve_scenario(args.scenario)
     except ScenarioError as error:
         print(error, file=sys.stderr)
         return 1
     stage_path = scenario.stage_path
     stage_name = scenario.name
-    pack_dir = packs_dir / args.scenario.parent
 
     signing_key_path = args.signing_key or assets_root / "keys" / "augusta.key"
-    client_output_pack = args.client_output_pack or pack_dir / f"{stage_name}.client.pack"
-    server_output_pack = args.server_output_pack or pack_dir / f"{stage_name}.server.pack"
+    client_output_pack = args.client_output_pack or packs_dir / f"{stage_name}.client.pack"
+    server_output_pack = args.server_output_pack or packs_dir / f"{stage_name}.server.pack"
 
-    for label, path in (
-        ("Stage", stage_path),
-        ("Signing key", signing_key_path),
-    ):
-        if not path.exists():
-            print(f"{label} not found: {path} - run tools\\pack\\scripts\\bootstrap-windows.ps1 {assets_root} first.", file=sys.stderr)
-            return 1
+    # The stage itself was already confirmed by resolve_scenario; only the
+    # assets-root-derived signing key can still be missing here.
+    if not signing_key_path.exists():
+        print(
+            f"Signing key not found: {signing_key_path} - pass --signing-key, or run "
+            f"tools\\pack\\scripts\\bootstrap-windows.ps1 {assets_root} first.",
+            file=sys.stderr,
+        )
+        return 1
 
     signing_key = read_private_key(signing_key_path)
     for pack in (client_output_pack, server_output_pack):

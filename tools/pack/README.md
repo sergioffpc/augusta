@@ -46,17 +46,22 @@ prop, a spawn point, its `parameters.lua`, and placeholder `objectives.lua`/
 repo so a fresh environment has something to cook straight away:
 
 ```powershell
-augustap examples\augusta
+augustap <assets-root>\authoring\examples\augusta
 ```
+
+`augustap` takes the scenario folder as an ordinary path - relative to the
+current directory or absolute, never resolved against an assets root - so this
+works from anywhere; from inside `authoring`, `augustap examples\augusta` is
+enough.
 
 The assets root looks like this:
 
 | Path | Contents |
 |---|---|
-| `authoring/` | Scenario folders (a USD stage and its Lua scripts each), the cooker's input root |
+| `authoring/` | Scenario folders (a USD stage and its Lua scripts each) - a convenient place to keep them, not a boundary the cooker enforces |
 | `packs/` | Cooked, signed packs |
 | `keys/` | `augusta.key` / `augusta.pub` (Ed25519). Never commit these. |
-| `bin/` | `augustap.exe`, `augustap-keygen.exe`, `augustap-inspect.exe`, `augustap-verify.exe` (installed here by `uv tool install`) |
+| `bin/` | `augustap.exe`, `augustap-keygen.exe`, `augustap-inspect.exe`, `augustap-verify.exe` (installed here by `uv tool install`), plus `augustap-composer.ps1` unless `-SkipAuthoring` |
 | `python/` | The uv tool venv (`python/pack`), with this project installed editable |
 | `tools/` | Composer and the Adobe plugins (unless `-SkipAuthoring`) |
 
@@ -70,6 +75,7 @@ from any directory and any shell, by full path:
 <assets-root>\bin\augustap-keygen.exe --help
 <assets-root>\bin\augustap-inspect.exe --help
 <assets-root>\bin\augustap-verify.exe --help
+<assets-root>\bin\augustap-composer.ps1
 ```
 
 To type just `augustap`, add the directory to `PATH` for the current session:
@@ -81,21 +87,41 @@ augustap --help
 
 The examples below assume `bin` is on `PATH`.
 
-## Cooking a scenario
-
-A scenario is a folder under `<assets-root>/authoring` holding one USD stage,
-always named `map`, and the Lua scripts that go with it (ADR-0015, ADR-0039):
-
-```
-authoring\test_map\map.usda           # the stage (.usd, .usda, .usdc or .usdz)
-authoring\test_map\parameters.lua     # required: the scenario's Parameters
-authoring\test_map\rules\round.lua    # any other *.lua, in any subfolder
-```
+## Launching Composer
 
 ```powershell
-augustap <scenario>                    # authoring\<scenario>\ -> packs\<scenario>.{client,server}.pack
-augustap <dir>\<scenario>              # authoring\<dir>\<scenario>\ -> packs\<dir>\<scenario>.*.pack
-augustap <scenario> --skip-validation  # skip usd-validation-nvidia only
+augustap-composer.ps1
+```
+
+A PowerShell script rather than an `.exe`, so its extension has to be typed
+(PowerShell doesn't resolve a bare name to a `.ps1` on `PATH` the way it does
+for `.exe`). Only installed when the bootstrap ran without `-SkipAuthoring`. A
+thin wrapper (`composer/augustap-composer.ps1`, committed here and copied into
+`bin/`) around kit-app-template's own `repo.bat launch`, run from
+`<assets-root>/tools/kit-app-template` (it locates that directory relative to
+its own path via `$PSScriptRoot`, so it works wherever the assets root lives) -
+the same app the bootstrap scaffolds and builds
+(`composer/augusta.playback.toml`). Arguments are forwarded as-is, e.g.
+`augustap-composer.ps1 --name augusta.kit` if
+`repo.bat launch` asks which app when more than one is registered.
+
+## Cooking a scenario
+
+A scenario is a folder holding one USD stage, always named `map`, and the Lua
+scripts that go with it (ADR-0015, ADR-0039):
+
+```
+test_map\map.usda           # the stage (.usd, .usda, .usdc or .usdz)
+test_map\parameters.lua     # required: the scenario's Parameters
+test_map\rules\round.lua    # any other *.lua, in any subfolder
+```
+
+`augustap` takes that folder as an ordinary path - relative to the current
+directory or absolute - not a name looked up under some fixed root:
+
+```powershell
+augustap <path\to\scenario>                    # -> <assets-root>\packs\<scenario folder name>.{client,server}.pack
+augustap <path\to\scenario> --skip-validation  # skip usd-validation-nvidia only
 ```
 
 A successful run ends with the paths of the client and server packs it wrote.
@@ -104,16 +130,19 @@ The cooker packs everything under the folder: the stage into both packs, and
 every `*.lua` file into the **server** pack only, as a script asset addressed by
 its path relative to the folder (`parameters.lua`, `rules/round.lua`; ADR-0031).
 A client is sent the values a script decides and never receives the script
-(ADR-0019). It is an error if the folder is missing, if the stage
-`<scenario>/map.*` is missing or ambiguous, or if there is no `parameters.lua`:
-the server reads its Parameters out of its pack at startup, so that is found
-here rather than when a server starts on the pack. Absolute paths and `..` are
-rejected. [`examples/augusta/`](examples/augusta/) is a full worked scenario to
-copy from, seeded into a fresh assets root by the bootstrap (see Setup above).
+(ADR-0019). It is an error if the folder is missing, if its stage `map.*` is
+missing or ambiguous, or if there is no `parameters.lua`: the server reads its
+Parameters out of its pack at startup, so that is found here rather than when a
+server starts on the pack. [`examples/augusta/`](examples/augusta/) is a full
+worked scenario to copy from, seeded into a fresh assets root by the bootstrap
+(see Setup above).
 
-Packs are written under `<assets-root>/packs` at the scenario's own relative
-location, as `<scenario>.client.pack` and `<scenario>.server.pack`. Scripts are
-part of the signed pack: to change a value, edit the file and cook again.
+By default, packs are written flat under `<assets-root>/packs`, named after the
+scenario folder itself (`test_map` -> `test_map.client.pack`,
+`test_map.server.pack`), wherever that folder actually lives; pass
+`--client-output-pack`/`--server-output-pack` to put them somewhere else.
+Scripts are part of the signed pack: to change a value, edit the file and cook
+again.
 
 ### `augustap` reference
 
@@ -127,11 +156,11 @@ augustap [-h] [--assets-root ASSETS_ROOT]
 
 | Argument | Default | Description |
 |---|---|---|
-| `scenario` (required) | | Scenario folder, relative to `<assets-root>/authoring`: its stage and its `*.lua` scripts (see above). |
+| `scenario` (required) | | Scenario folder - relative to the current directory or absolute, never resolved against `--assets-root` (see above). |
 | `-h`, `--help` | | Print the usage and option list, then exit. |
-| `--assets-root ASSETS_ROOT` | the root of the venv the command runs from (`<assets-root>/python/...`) | Assets root holding `authoring/`, `packs/` and `keys/`. |
-| `--client-output-pack CLIENT_OUTPUT_PACK` | `<assets-root>/packs/<scenario>.client.pack` | Where to write the client pack. Missing parent directories are created. |
-| `--server-output-pack SERVER_OUTPUT_PACK` | `<assets-root>/packs/<scenario>.server.pack` | Where to write the server pack. Missing parent directories are created. |
+| `--assets-root ASSETS_ROOT` | the root of the venv the command runs from (`<assets-root>/python/...`) | Assets root holding `packs/` and `keys/`, used only for the three defaults below. |
+| `--client-output-pack CLIENT_OUTPUT_PACK` | `<assets-root>/packs/<scenario folder name>.client.pack` | Where to write the client pack. Missing parent directories are created. |
+| `--server-output-pack SERVER_OUTPUT_PACK` | `<assets-root>/packs/<scenario folder name>.server.pack` | Where to write the server pack. Missing parent directories are created. |
 | `--signing-key SIGNING_KEY` | `<assets-root>/keys/augusta.key` | Ed25519 private key (64 bytes) the packs are signed with. |
 | `--skip-validation` | off | Skip usd-validation-nvidia (step 2) for stages that fail its checks. usd-optimize and the cook still run. |
 
@@ -172,20 +201,20 @@ augustap-inspect <pack>   # what does the pack contain?
 augustap-verify <pack>    # is it intact, and signed by the key I expect?
 ```
 
-`<pack>` is an absolute path, or relative to `<assets-root>/packs`. The `.pack`
-extension is optional, so `<stage>.client` finds `<stage>.client.pack`.
+`<pack>` is an ordinary path - relative to the current directory or absolute,
+never resolved against an assets root. The `.pack` extension is optional, so
+`<stage>.client` finds `<stage>.client.pack`.
 
 ### `augustap-inspect` reference
 
 ```
-augustap-inspect [-h] [--assets-root ASSETS_ROOT] pack
+augustap-inspect [-h] pack
 ```
 
-| Argument | Default | Description |
-|---|---|---|
-| `pack` (required) | | Pack file (see above). |
-| `-h`, `--help` | | Print the usage and option list, then exit. |
-| `--assets-root ASSETS_ROOT` | the root of the venv the command runs from | Assets root whose `packs/` a relative `pack` is resolved against. |
+| Argument | Description |
+|---|---|
+| `pack` (required) | Pack file (see above). |
+| `-h`, `--help` | Print the usage and option list, then exit. |
 
 The output follows the file's own layout (ADR-0031), each section with its
 offset and size in bytes:
@@ -211,7 +240,7 @@ augustap-verify [-h] [--assets-root ASSETS_ROOT] [--public-key PUBLIC_KEY] pack
 |---|---|---|
 | `pack` (required) | | Pack file (see above). |
 | `-h`, `--help` | | Print the usage and option list, then exit. |
-| `--assets-root ASSETS_ROOT` | the root of the venv the command runs from | Assets root whose `packs/` and `keys/` are used for the defaults. |
+| `--assets-root ASSETS_ROOT` | the root of the venv the command runs from | Assets root, for the `--public-key` default only. |
 | `--public-key PUBLIC_KEY` | `<assets-root>/keys/augusta.pub` | Ed25519 public key (32 bytes) the signature must verify against. |
 
 It recomputes the BLAKE3 hash of everything but the trailer, compares it with
@@ -241,7 +270,7 @@ failure it prints the reason to stderr and exits `1`:
 | `src/pack/reader.py` | Pack container parsing and verification (the read side of `pack.py`) |
 | `src/pack/assets_root.py` | Assets-root inference shared by the entry points |
 | `cpp/` | Standalone CMake/vcpkg project for the two native modules. It builds straight into `src/pack/`. |
-| `composer/` | Playback file that scaffolds the Augusta USD Composer app |
+| `composer/` | Playback file that scaffolds the Augusta USD Composer app, and `augustap-composer.ps1` (launches it) |
 | `examples/augusta/` | The example scenario the bootstrap seeds into a fresh assets root |
 | `scripts/bootstrap-windows.ps1` | Builds the assets root |
 
