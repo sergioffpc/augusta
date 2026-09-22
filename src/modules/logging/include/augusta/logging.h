@@ -33,7 +33,7 @@ std::string FormatLine(std::chrono::system_clock::time_point time, Severity leve
 /// Configures the process-wide console sink. Colors are used only when stdout
 /// is a terminal. Call once at process startup, before using the macros below;
 /// a second call does nothing. Installs the runtime floor below at kDebug (see
-/// SetMinSeverity): a Debug build is informed - the heartbeat and above - not
+/// SetLogLevel): a Debug build is informed - the heartbeat and above - not
 /// flooded by per-packet TRACE, unless a caller asks for it afterward.
 void Init();
 
@@ -47,7 +47,7 @@ void Write(Severity level, std::string_view message);
 /// drives - the compile-time gate alone can't tell a Debug build's TRACE
 /// firehose apart from its DEBUG heartbeat, since both compile in together.
 /// Thread-safe; takes effect for calls made after it returns.
-void SetMinSeverity(Severity level);
+void SetLogLevel(Severity level);
 
 /// Parses one of "trace", "debug", "info", "warn", "error", "critical"
 /// (case-sensitive, matching the logfmt message bodies); anything else is

@@ -164,14 +164,15 @@ struct ClientRuntime::Impl {
     net_pending_bytes.sample(static_cast<double>(stats->pending_bytes));
   }
 
-  explicit Impl(const Config& cfg) : config(cfg), input(cfg.input), presentation(audio), renderer(cfg.renderer, input) {
+  Impl(const Config& cfg, const std::vector<physics::CollisionMesh>& collision)
+      : config(cfg), input(cfg.input), presentation(audio), renderer(cfg.renderer, input) {
     // The map goes in before the Session takes the world over: a body that has
     // already ticked has been predicted without it, and reconciliation cannot
     // account for that.
     // No rules of its own: the Session starts the prediction under the
     // server's once it has joined, so the two cannot drift.
     prediction::World world;
-    for (const physics::CollisionMesh& mesh : cfg.collision) {
+    for (const physics::CollisionMesh& mesh : collision) {
       if (const auto added = world.AddCollisionMesh(mesh); !added) {
         throw std::runtime_error(std::format("ClientRuntime: map collision rejected: {}",
                                              physics::DescribeCollisionMeshError(added.error())));
@@ -275,8 +276,9 @@ struct ClientRuntime::Impl {
   }
 };
 
-ClientRuntime::ClientRuntime(const Config& config, const renderer::Scene& scene)
-    : impl_(std::make_unique<Impl>(config)) {
+ClientRuntime::ClientRuntime(const Config& config, const renderer::Scene& scene,
+                             std::vector<physics::CollisionMesh> collision)
+    : impl_(std::make_unique<Impl>(config, collision)) {
   impl_->renderer.SetScene(scene);
 }
 
