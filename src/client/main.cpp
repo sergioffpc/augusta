@@ -66,18 +66,25 @@ std::expected<augusta::config::ClientConfig, augusta::config::ConfigError> LoadC
   return augusta::config::LoadClientConfig(*config_file);
 }
 
+// What the pack's map gives the client: its collision, so prediction agrees
+// with the server's simulation on where the walls are. More fields land here
+// as the client comes to need them (spawn points, hitboxes, ...), mirroring
+// server/main.cpp's own Map.
+struct Map {
+  std::vector<augusta::physics::CollisionMesh> collision;
+};
+
 // The same collision the server builds from its own pack, so the client's
 // prediction and the server's simulation agree on where the walls are. Reports
 // what is wrong and returns nullopt.
-std::optional<std::vector<augusta::physics::CollisionMesh>> LoadCollisionMap(const augusta::assets::Pack& pack,
-                                                                             const std::filesystem::path& pack_path) {
+std::optional<Map> LoadMap(const augusta::assets::Pack& pack, const std::filesystem::path& pack_path) {
   auto collision = augusta::map::LoadCollision(pack);
   if (!collision) {
     std::println(stderr, "client pack {}: {}", pack_path.string(), augusta::map::DescribeMapError(collision.error()));
     return std::nullopt;
   }
   LI("subsystem=client event=map_loaded colliders={}", collision->size());
-  return *std::move(collision);
+  return Map{.collision = *std::move(collision)};
 }
 
 }  // namespace
@@ -118,8 +125,8 @@ int main(int argc, char** argv) {
   }
   LI("subsystem=client event=scene_loaded meshes={}", scene->meshes.size());
 
-  auto collision = LoadCollisionMap(*pack, pack_path);
-  if (!collision) {
+  auto map = LoadMap(*pack, pack_path);
+  if (!map) {
     return 1;
   }
 
@@ -132,7 +139,7 @@ int main(int argc, char** argv) {
   // Direct IP:port only, no server discovery (ARCHITECTURE.md §3).
   config.server.address = file_config->server_address;
 
-  augusta::runtime::ClientRuntime runtime(config, *scene, *std::move(collision));
+  augusta::runtime::ClientRuntime runtime(config, *scene, std::move(map->collision));
   if (const auto failure = runtime.Run(); failure.has_value()) {
     // No reconnecting and no connection screen: say what happened and exit.
     std::println(stderr, "{}", augusta::harness::DescribeFailure(*failure));
