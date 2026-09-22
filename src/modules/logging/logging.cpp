@@ -133,6 +133,9 @@ std::optional<Severity> ParseSeverity(std::string_view name) {
       std::pair{"info", Severity::kInfo},   std::pair{"warn", Severity::kWarn},
       std::pair{"error", Severity::kError}, std::pair{"critical", Severity::kCritical},
   };
+  // std::array's iterator is a raw pointer under libstdc++ (where clang-tidy wants
+  // auto*) but MSVC's checked iterator is a class, so auto* fails to compile there.
+  // NOLINTNEXTLINE(readability-qualified-auto)
   const auto found = std::ranges::find(kNames, name, &std::pair<std::string_view, Severity>::first);
   if (found == kNames.end()) {
     return std::nullopt;
