@@ -113,11 +113,15 @@ class Session {
   /// after that is in the Authoritative State.
   [[nodiscard]] std::vector<protocol::PlayerState> GetRoster() const;
 
-  /// The newest parameters the server has sent, the tick rate among them, or
-  /// nullopt until it admits this client: what it joined with, replaced by each
-  /// newer generation the server has reloaded since. What this client ticks and
-  /// predicts with; it has none of its own. Set by ExchangeMessages; safe to
-  /// read from any thread.
+  /// The rate, in Hz, at which the server ticks and this client must: nullopt
+  /// until the server admits this client. The server's startup setting, fixed for
+  /// the life of its process, so it is told once, in Join accepted. This client
+  /// has no rate of its own. Set by ExchangeMessages; safe to read from any thread.
+  [[nodiscard]] std::optional<float> GetTickRate() const;
+
+  /// The newest parameters the server has sent, or nullopt until it admits this
+  /// client: what it joined with, replaced by each newer generation the server has reloaded since. What this client
+  /// ticks and predicts with; it has none of its own. Set by ExchangeMessages; safe to read from any thread.
   [[nodiscard]] std::optional<parameters::NumberedParameters> GetParameters() const;
 
   /// Why the server refused this client, or nullopt if it has not. Set by

@@ -201,7 +201,6 @@ std::vector<PlayerState> ReadPlayers(Reader& reader) {
 
 parameters::Parameters ReadParameters(Reader& reader) {
   parameters::Parameters parameters;
-  parameters.tick_rate_hz = reader.ReadF32();
   parameters.stamina.deplete_per_second = reader.ReadF32();
   parameters.stamina.regen_per_second = reader.ReadF32();
   parameters.stamina.forced_walk_below = reader.ReadF32();
@@ -212,6 +211,7 @@ JoinAccepted ReadJoinAccepted(Reader& reader) {
   JoinAccepted accepted;
   accepted.session = static_cast<SessionId>(reader.ReadU32());
   accepted.spawn = reader.ReadVec3();
+  accepted.tick_rate_hz = reader.ReadF32();
   accepted.generation = reader.ReadU32();
   accepted.parameters = ReadParameters(reader);
   accepted.roster = ReadPlayers(reader);
@@ -268,7 +268,6 @@ std::optional<Message> ReadBody(MessageType type, Reader& reader) {
 }
 
 void WriteParameters(Bytes& out, const parameters::Parameters& parameters) {
-  WriteF32(out, parameters.tick_rate_hz);
   WriteF32(out, parameters.stamina.deplete_per_second);
   WriteF32(out, parameters.stamina.regen_per_second);
   WriteF32(out, parameters.stamina.forced_walk_below);
@@ -291,6 +290,7 @@ struct Encoder {
     WriteU8(out, static_cast<std::uint8_t>(MessageType::kJoinAccepted));
     WriteU32(out, static_cast<std::uint32_t>(message.session));
     WriteVec3(out, message.spawn);
+    WriteF32(out, message.tick_rate_hz);
     WriteU32(out, message.generation);
     WriteParameters(out, message.parameters);
     WritePlayers(out, message.roster);

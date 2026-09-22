@@ -27,8 +27,8 @@ supersedes is unreliable.
 | Message | Direction | Reliability | Fields |
 | --- | --- | --- | --- |
 | Join request | client → server | reliable | engine version |
-| Join accepted | server → client | reliable | session ID, the player's spawn position, the current parameters to predict with and their generation, and the roster: every player already in the match (at most 8) with session ID and body |
-| Parameters update | server → client | reliable | generation, and the parameter values: tick rate, then the stamina rules (ADR-0039) |
+| Join accepted | server → client | reliable | session ID, the player's spawn position, the server's tick rate, the current parameters to predict with and their generation, and the roster: every player already in the match (at most 8) with session ID and body |
+| Parameters update | server → client | reliable | generation, and the parameter values: the stamina rules (ADR-0039) |
 | Join refused | server → client | reliable | reason: version mismatch, match full |
 | Commands | client → server | unreliable | up to 8 commands, oldest first: sequence, movement direction, sprint, desired stance, yaw, pitch, ADS, fire, reload |
 | Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, and per player (at most 8): session ID, position, velocity, stance, stamina |
@@ -66,15 +66,17 @@ told "full". After a refusal the client closes the connection.
 before its first tick, so nothing is learned by guessing. The **spawn position**
 is where the server put the player: the next spawn point of the map's pack in
 order, starting over after the last, a mechanism until spawn rules become Game
-policy. The client starts its prediction there, not at the origin. The
-**parameters** are the server's data-driven configuration (ADR-0039), the tick
-rate and the stamina rules among them, sent so the client ticks and predicts with
-the server's numbers and never with values of its own; the two cannot drift. When
-the server reloads its parameters it sends every client a Parameters update with
-the new generation; a client ignores one whose generation is not newer than the
-parameters it holds, and drops one that fails the range checks of ADR-0039 or
-carries a tick rate other than the one it holds (the rate is fixed for a run), as
-it drops any message that does not decode.
+policy. The client starts its prediction there, not at the origin. The **tick
+rate** is the server's startup setting (ADR-0034, ADR-0039), fixed for the life of
+the server process, so it is told here once and never again; the client ticks at
+it and starts no tick before it has it, and drops a Join accepted whose rate is not
+finite and above zero. The **parameters** are the server's data-driven
+configuration (ADR-0039), the stamina rules among them, sent so the client
+predicts with the server's numbers and never with values of its own; the two
+cannot drift. When the server reloads its parameters it sends every client a
+Parameters update with the new generation; a client ignores one whose generation
+is not newer than the parameters it holds, and drops one that fails the range
+checks of ADR-0039, as it drops any message that does not decode.
 The **roster** is who was already in the match and where, so a joining
 client sees the world as it is and not an empty one; the joining player itself is
 not in it. The server keeps each player's last reported body (a joiner is at its

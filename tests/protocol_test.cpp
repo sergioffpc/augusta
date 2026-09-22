@@ -89,9 +89,9 @@ TEST(ProtocolTest, JoinAcceptedRoundTrips) {
   JoinAccepted sent{
       .session = static_cast<SessionId>(0xA1B2C3D4U),
       .spawn = augusta::math::Vec3(4.0F, 0.5F, -8.0F),
+      .tick_rate_hz = 30.0F,
       .generation = 7,
-      .parameters = {.tick_rate_hz = 30.0F,
-                     .stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F}},
+      .parameters = {.stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F}},
       .roster = {PlayerAt(1, 10.0F), PlayerAt(2, -3.0F)}};
 
   const auto decoded = RoundTrip(sent);
@@ -100,8 +100,8 @@ TEST(ProtocolTest, JoinAcceptedRoundTrips) {
   const auto& received = std::get<JoinAccepted>(decoded);
   EXPECT_EQ(received.session, sent.session);
   EXPECT_EQ(received.spawn, sent.spawn);
+  EXPECT_EQ(received.tick_rate_hz, sent.tick_rate_hz);
   EXPECT_EQ(received.generation, sent.generation);
-  EXPECT_EQ(received.parameters.tick_rate_hz, sent.parameters.tick_rate_hz);
   EXPECT_EQ(received.parameters.stamina.deplete_per_second, sent.parameters.stamina.deplete_per_second);
   EXPECT_EQ(received.parameters.stamina.regen_per_second, sent.parameters.stamina.regen_per_second);
   EXPECT_EQ(received.parameters.stamina.forced_walk_below, sent.parameters.stamina.forced_walk_below);
@@ -141,24 +141,23 @@ TEST(ProtocolTest, MorePlayersInARosterThanAMatchHoldsIsTooLong) {
 TEST(ProtocolTest, ParametersUpdateRoundTrips) {
   const ParametersUpdate sent{
       .generation = 3,
-      .parameters = {.tick_rate_hz = 30.0F,
-                     .stamina = {.deplete_per_second = 0.5F, .regen_per_second = 0.25F, .forced_walk_below = 0.15F}}};
+      .parameters = {.stamina = {.deplete_per_second = 0.5F, .regen_per_second = 0.25F, .forced_walk_below = 0.15F}}};
 
   const auto decoded = RoundTrip(sent);
 
   ASSERT_TRUE(std::holds_alternative<ParametersUpdate>(decoded));
   const auto& received = std::get<ParametersUpdate>(decoded);
   EXPECT_EQ(received.generation, sent.generation);
-  EXPECT_EQ(received.parameters.tick_rate_hz, sent.parameters.tick_rate_hz);
   EXPECT_EQ(received.parameters.stamina.deplete_per_second, sent.parameters.stamina.deplete_per_second);
   EXPECT_EQ(received.parameters.stamina.regen_per_second, sent.parameters.stamina.regen_per_second);
   EXPECT_EQ(received.parameters.stamina.forced_walk_below, sent.parameters.stamina.forced_walk_below);
 }
 
-TEST(ProtocolTest, AParametersUpdateIsTheTypeByteThenGenerationTickRateAndStaminaRules) {
-  // type, generation (4), tick rate (4), stamina rules (12), all zero but the generation.
+TEST(ProtocolTest, AParametersUpdateIsTheTypeByteThenGenerationAndStaminaRules) {
+  // type, generation (4), stamina rules (12), all zero but the generation. No tick rate: it is told once, in Join
+  // accepted.
   Bytes expected = BytesOf({kParametersUpdateType, 0x03, 0x00, 0x00, 0x00});
-  expected.resize(expected.size() + 4 + 12, std::byte{0});
+  expected.resize(expected.size() + 12, std::byte{0});
 
   EXPECT_EQ(Encode(ParametersUpdate{.generation = 3}), expected);
 }
@@ -184,9 +183,9 @@ TEST(ProtocolTest, JoinRefusedRoundTripsEveryReason) {
 }
 
 TEST(ProtocolTest, FieldsAreFixedWidthLittleEndian) {
-  // The session, then spawn, generation, parameters and roster count, all zero here.
+  // The session, then spawn, tick rate, generation, parameters and roster count, all zero here.
   Bytes accepted = BytesOf({kJoinAcceptedType, 0x01, 0x02, 0x03, 0x04});
-  accepted.resize(accepted.size() + 12 + 4 + 16 + 1, std::byte{0});
+  accepted.resize(accepted.size() + 12 + 4 + 4 + 12 + 1, std::byte{0});
   EXPECT_EQ(Encode(JoinAccepted{.session = static_cast<SessionId>(0x04030201U)}), accepted);
   EXPECT_EQ(Encode(JoinRefused{.reason = JoinRefusal::kMatchFull}), BytesOf({kJoinRefusedType, 2}));
   EXPECT_EQ(Encode(JoinRequest{.engine_version = "ab"}), BytesOf({kJoinRequestType, 2, 'a', 'b'}));

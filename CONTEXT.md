@@ -53,7 +53,7 @@ Tunable values (e.g. weapon/ammo damage, stamina rules) written as a Lua table s
 _Avoid_: Config, settings (too generic — this specifically means simulation-tunable values, not startup settings, which the YAML files of ADR-0034 hold in place of command-line arguments)
 
 **Parameters**:
-The result of loading the data-driven configuration script (`parameters.lua`): a plain immutable struct of the simulation's tunable values, numbered by a generation that grows with each reload. Whatever client and server must agree on (the tick rate first of all) is a parameter: the server alone decides it and sends it to every client, which ticks and predicts with the server's numbers and never its own (ADR-0039).
+The result of loading the data-driven configuration script (`parameters.lua`): a plain immutable struct of the simulation's tunable values, numbered by a generation that grows with each reload. Whatever tunable value client and server must agree on is a parameter: the server alone decides it and sends it to every client, which predicts with the server's numbers and never its own. The tick rate is not one: it is fixed for the life of the server process, so it is a startup setting in `augustad.yaml` that the server tells each client when it joins (ADR-0039).
 _Avoid_: Tuning, settings; not a function's parameters
 
 **Map**:

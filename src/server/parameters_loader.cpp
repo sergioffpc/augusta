@@ -15,7 +15,6 @@
 namespace augusta::parameters {
 namespace {
 
-constexpr std::string_view kTickRateKey = "tick_rate_hz";
 constexpr std::string_view kStaminaKey = "stamina";
 constexpr std::array<std::string_view, 3> kStaminaKeys{"deplete_per_second", "regen_per_second", "forced_walk_below"};
 
@@ -156,19 +155,15 @@ std::expected<Parameters, LoadError> Load(std::string_view script) {
   }
   const sol::table root = result.get<sol::table>();
 
-  constexpr std::array<std::string_view, 2> kRootKeys{kTickRateKey, kStaminaKey};
+  constexpr std::array<std::string_view, 1> kRootKeys{kStaminaKey};
   if (const auto unknown = FirstUnknownKey(root, {}, kRootKeys)) {
     return std::unexpected(*unknown);
-  }
-  const auto tick_rate_hz = ReadNumber(root, {}, kTickRateKey);
-  if (!tick_rate_hz) {
-    return std::unexpected(tick_rate_hz.error());
   }
   const auto stamina = ReadStamina(root);
   if (!stamina) {
     return std::unexpected(stamina.error());
   }
-  const Parameters parameters{.tick_rate_hz = *tick_rate_hz, .stamina = *stamina};
+  const Parameters parameters{.stamina = *stamina};
   if (const auto valid = Validate(parameters); !valid) {
     return Fail(LoadErrorCode::kOutOfRange, std::string(valid.error().path));
   }
