@@ -17,10 +17,10 @@
 // authoritative ECS pipeline, run once per tick on the server's
 // Simulation thread (ADR-0005). It composes the mechanism modules that
 // already exist (physics, ballistics, scripting) into the eight ordered
-// phases ADR-0023 defines (see Phase below), and will hand its per-tick
-// output to augusta::replication - not yet implemented - to reach
-// clients (ARCHITECTURE.md §5's "SimulationWorld... emits authoritative
-// state each tick").
+// phases ADR-0023 defines (see Phase below); server::Host hands its
+// per-tick output to augusta::replication to reach clients
+// (ARCHITECTURE.md §5's "SimulationWorld... emits authoritative state
+// each tick").
 //
 // World owns one Flecs world (ADR-0001) internally, entirely
 // encapsulated behind Impl (simulation.cpp) - Flecs is this module's

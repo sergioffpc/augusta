@@ -18,13 +18,33 @@ _Avoid_: Frame (a frame is a client-side render step, a separate concept from a 
 The dedicated server, which holds the single source of truth for all gameplay-affecting state. Nothing a client reports is treated as fact until the server validates it.
 _Avoid_: Trusted server, master client
 
+**Match**:
+The one shared game the Authoritative server runs: who it has admitted (at most 8 players) and the Authoritative State of their bodies every tick. Ends when the server process does — there is no round loop yet (M5).
+_Avoid_: Lobby (a match already has players moving in it; a lobby is a pre-match waiting state this engine doesn't have)
+
+**Session**:
+One player's presence in a Match, from being admitted until it disconnects, named by its Session ID. The client's own connection and PredictionWorld pairing (augusta::harness::Session) is the client-side implementation of one.
+_Avoid_: Connection (a session is the gameplay identity kept for the life of the player's presence in the Match; the transport connection beneath it, augusta::networking's own peer handle, can in principle outlive or be distinct from it)
+
+**Session ID**:
+The Authoritative server's name for one connected player (protocol::SessionId), assigned when it admits the join. Distinct from the transport's own handle for the connection, and not a credential — the server tells senders apart by connection, not by this ID.
+_Avoid_: Player ID, connection ID
+
 **Client-side prediction**:
 The client simulating its own actions locally, immediately, before the server confirms them — used purely for responsiveness.
 _Avoid_: Client simulation
 
+**Command**:
+One tick's local input (input::Command) a client sends the Authoritative server under a growing sequence number, so the server can tell what it has already seen and the client can tell what it has not yet acknowledged. What Client-side prediction applies locally and Reconciliation replays.
+_Avoid_: Input (Command is the sequenced payload sent to the server each tick; augusta::input::Input is the per-frame local sampler that produces one)
+
 **Reconciliation**:
 The process of correcting a client's predicted state against the server's authoritative state: the client restores the server's state and replays the commands the server has not yet acknowledged from it, and presentation smooths the resulting jump.
 _Avoid_: Resync, rollback
+
+**Authoritative State update**:
+One server tick's Authoritative State as sent to one client (protocol::AuthoritativeState): every player's body as of that tick, plus the recipient's own newest acknowledged Command sequence. augusta::replication decides who gets what.
+_Avoid_: Snapshot, state sync
 
 **Spawn point**:
 A place in the Map where a player's feet are put when it joins, authored as a scene node in the pack (ADR-0032). The server takes them in order, starting over after the last, and tells the client which one it got; which player gets which is Game policy once round rules exist.

@@ -2,9 +2,13 @@
 #define AUGUSTA_PRESENTATION_H_
 
 #include <memory>
+#include <optional>
+#include <vector>
 
 #include "augusta/audio.h"
+#include "augusta/interpolation.h"
 #include "augusta/prediction.h"
+#include "augusta/protocol.h"
 
 // augusta::presentation orchestrates PresentationWorld (ADR-0024): the
 // client-side ECS pipeline, run once per render frame on the Main/Render
@@ -39,11 +43,14 @@ namespace augusta::presentation {
 // contains a Scripts/Behaviours phase - game policy is exclusively
 // server-authoritative (ADR-0024).
 enum class Phase {
-  // Mechanism. Interpolates between the last two Prediction States for
-  // smooth motion at render frame rate - World::RunFrame's latest
-  // parameter and the previous call's, internally retained - and slides
-  // the local player out of the jumps a reconciliation replay makes
-  // (Correction, ADR-0004).
+  // Mechanism. Slides the local player out of the jumps a reconciliation
+  // replay makes (Correction, ADR-0004). For every other player, buffers the
+  // newest Authoritative State (World::RunFrame's authoritative parameter)
+  // per remote session and renders each kInterpolationDelay behind the
+  // newest update, interpolated between the two surrounding updates
+  // (RemoteInterpolator, interpolation.h) - smooth motion independent of
+  // render frame rate. A session no longer in authoritative's player list is
+  // no longer shown.
   kInterpolation,
   // Mechanism. View camera - position/orientation, ADS zoom transition,
   // recoil kick decay, view bob. Not yet a module of its own - see the
@@ -67,14 +74,20 @@ enum class Phase {
 };
 
 // PresentationWorld's per-frame output - ADR-0024/ARCHITECTURE.md's
-// "Presentation State". Beyond local_position, deliberately empty for now -
-// same deferred-design posture as augusta::renderer's "what gets drawn"
-// (renderer.h) and augusta::prediction::State; its real shape depends on
-// ECS component shapes not yet designed.
+// "Presentation State". Beyond local_position and remote_players,
+// deliberately empty for now - same deferred-design posture as
+// augusta::renderer's "what gets drawn" (renderer.h) and
+// augusta::prediction::State; its real shape depends on ECS component
+// shapes not yet designed.
 struct State {
   /// Where the local player is shown: its predicted position, plus the offset
   /// that hides a reconciliation jump and fades (see correction.h).
   math::Vec3 local_position{};
+  /// Every other player in the match, at its interpolated position and stance
+  /// this frame (RemoteInterpolator::Sample, interpolation.h). Empty before
+  /// the client has received an Authoritative State, or once alone in the
+  /// match.
+  std::vector<RemotePlayer> remote_players;
 };
 
 // The client's single PresentationWorld. The client constructs exactly
@@ -90,10 +103,10 @@ struct State {
 class World {
  public:
   // audio_engine must outlive this World - the same reference-not-owned
-  // pattern as augusta::renderer::Renderer's input_sink parameter, since
-  // ClientRuntime (not yet designed) is expected to construct the
-  // client's one audio::Engine and wire it to both Renderer's window and
-  // this World's AudioCues phase. Also registers Phase's five phases and
+  // pattern as augusta::renderer::Renderer's input_sink parameter:
+  // ClientRuntime (src/client/runtime.h) constructs the client's one
+  // audio::Engine and wires it to both Renderer's window and this
+  // World's AudioCues phase. Also registers Phase's five phases and
   // their systems on the owned Flecs world (see header comment).
   explicit World(audio::Engine& audio_engine);
   ~World();
@@ -108,9 +121,16 @@ class World {
   // is the most recently committed prediction::State; Interpolation
   // blends it against the previous call's latest, internally retained -
   // the first call after construction has no previous state to blend
-  // from and uses latest directly. Returns the frame's Presentation
-  // State.
-  State RunFrame(const prediction::State& latest);
+  // from and uses latest directly. local_session is this client's own
+  // session, or nullopt before the server has admitted it; authoritative is
+  // the newest Authoritative State the connection has received, or nullopt
+  // before the first one arrives - both harness::Session getters
+  // (GetSessionId, GetAuthoritativeState). Every player in authoritative
+  // other than local_session is fed to this World's RemoteInterpolator (see
+  // interpolation.h); a repeated authoritative (same tick as the previous
+  // call) is not recorded again. Returns the frame's Presentation State.
+  State RunFrame(const prediction::State& latest, std::optional<protocol::SessionId> local_session,
+                 const std::optional<protocol::AuthoritativeState>& authoritative);
 
  private:
   struct Impl;

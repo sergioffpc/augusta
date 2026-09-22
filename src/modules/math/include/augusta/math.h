@@ -60,6 +60,11 @@ inline float Length(const Vec3& vec) { return glm::length(vec); }
 // a fallback direction must check for this case themselves.
 inline Vec3 Normalize(const Vec3& vec) { return Length(vec) > 0.0F ? glm::normalize(vec) : vec; }
 
+// Linear interpolation: from at t = 0, to at t = 1. t is not clamped to
+// [0, 1] - a caller that has already clamped or intends to extrapolate
+// does not pay for a redundant clamp.
+inline Vec3 Lerp(const Vec3& from, const Vec3& to, float t) { return glm::mix(from, to, t); }
+
 // The inverse of transform: maps back what transform mapped. transform must
 // be invertible (no zero scale) - GLM does not check.
 inline Mat4 Inverse(const Mat4& transform) { return glm::inverse(transform); }
