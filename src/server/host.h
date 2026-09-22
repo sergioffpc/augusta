@@ -36,21 +36,26 @@ struct HostConfig {
   std::string script_path{};
   /// Local address to listen on (US-01).
   networking::Endpoint listen{};
-  /// The map's collision, as built by augusta::map from the server pack.
+};
+
+/// The map's collision and where joining players spawn, as built by
+/// augusta::map from the server pack by the caller: where content comes from
+/// is the executable's business, not the config file's - so it travels
+/// alongside HostConfig rather than inside it.
+struct Map {
   std::vector<physics::CollisionMesh> collision{};
-  /// Where joining players spawn, in the order they take them, from the same
-  /// pack; empty spawns everyone at the origin.
+  /// In the order joining players take them; empty spawns everyone at the origin.
   std::vector<math::Vec3> spawn_points{};
 };
 
 /// The server's listening socket and its SimulationWorld, without threads or a clock.
 class Host {
  public:
-  /// Constructs SimulationWorld with the map's collision (throws what its
+  /// Constructs SimulationWorld with map's collision (throws what its
   /// scripting engine throws if script_path fails to load, and
   /// std::runtime_error if a map mesh is rejected) and starts listening
   /// (throws std::runtime_error if the address can't be bound).
-  explicit Host(const HostConfig& config);
+  Host(const HostConfig& config, Map map);
   ~Host();
 
   // Not copyable or movable: owns the listening socket.

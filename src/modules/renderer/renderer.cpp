@@ -1,10 +1,12 @@
 #include "augusta/renderer.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <vector>
 
@@ -44,6 +46,10 @@ struct Vertex {
   Falcor::float3 color;
 };
 
+// A box has 6 faces of 2 triangles of 3 unshared vertices each - see
+// BuildBoxVertices.
+constexpr std::size_t kVerticesPerBox = 6 * 2 * 3;
+
 // Expands every mesh's indexed triangles into 3 unshared vertices each,
 // carrying the triangle's own face normal and its mesh's color: cooked meshes have positions and
 // indices only (no normals - see assets::MeshData), so flat shading is the
@@ -70,6 +76,76 @@ std::vector<Vertex> BuildFlatShadedVertices(const Scene& scene) {
                             .color = {mesh.color.x, mesh.color.y, mesh.color.z}});
       }
     }
+  }
+  return vertices;
+}
+
+// One RemotePlayer's box, as kVerticesPerBox flat-shaded, unshared vertices -
+// same technique as BuildFlatShadedVertices, generated rather than indexed
+// since a box's 12 triangles are fixed. box.position is its base (renderer.h)
+// so the box stands from y=0 to y=2*half_extents.y above it; x/z are
+// centered on it.
+std::vector<Vertex> BuildBoxVertices(const RemotePlayer& box) {
+  const math::Vec3& p = box.position;
+  const math::Vec3& h = box.half_extents;
+  const Falcor::float3 color{box.color.x, box.color.y, box.color.z};
+
+  // Corners 0-3 are the base (y=0), 4-7 the top (y=2*h.y), both in the same
+  // -x-z, +x-z, +x+z, -x+z winding order around the vertical axis.
+  const std::array<math::Vec3, 8> corners{
+      p + math::Vec3(-h.x, 0.0F, -h.z),       p + math::Vec3(h.x, 0.0F, -h.z),
+      p + math::Vec3(h.x, 0.0F, h.z),         p + math::Vec3(-h.x, 0.0F, h.z),
+      p + math::Vec3(-h.x, 2.0F * h.y, -h.z), p + math::Vec3(h.x, 2.0F * h.y, -h.z),
+      p + math::Vec3(h.x, 2.0F * h.y, h.z),   p + math::Vec3(-h.x, 2.0F * h.y, h.z),
+  };
+  // Each face as 2 triangles of corner indices, counter-clockwise seen from
+  // outside the box (matches SceneMesh's own winding convention, though
+  // cull_mode is None so it isn't load-bearing for visibility - see
+  // BuildRasterPass).
+  constexpr std::array<std::array<std::uint8_t, 3>, 12> kFaces{
+      {
+          {0, 2, 1},
+          {0, 3, 2},  // bottom
+          {4, 5, 6},
+          {4, 6, 7},  // top
+          {0, 1, 5},
+          {0, 5, 4},  // -z side
+          {1, 2, 6},
+          {1, 6, 5},  // +x side
+          {2, 3, 7},
+          {2, 7, 6},  // +z side
+          {3, 0, 4},
+          {3, 4, 7},  // -x side
+      },
+  };
+
+  std::vector<Vertex> vertices;
+  vertices.reserve(kVerticesPerBox);
+  for (const auto& face : kFaces) {
+    // NOLINTBEGIN(readability-identifier-length) - a/b/c are the triangle's own corner notation.
+    const math::Vec3& a = corners[face[0]];
+    const math::Vec3& b = corners[face[1]];
+    const math::Vec3& c = corners[face[2]];
+    // NOLINTEND(readability-identifier-length)
+    const math::Vec3 normal = math::Normalize(math::Cross(b - a, c - a));
+    for (const math::Vec3* corner : {&a, &b, &c}) {
+      vertices.push_back({
+          .position = {corner->x, corner->y, corner->z},
+          .normal = {normal.x, normal.y, normal.z},
+          .color = color,
+      });
+    }
+  }
+  return vertices;
+}
+
+// Every RemotePlayer's box, concatenated - what SetRemotePlayers uploads.
+std::vector<Vertex> BuildRemoteVertices(std::span<const RemotePlayer> remote_players) {
+  std::vector<Vertex> vertices;
+  vertices.reserve(remote_players.size() * kVerticesPerBox);
+  for (const RemotePlayer& box : remote_players) {
+    const std::vector<Vertex> box_vertices = BuildBoxVertices(box);
+    vertices.insert(vertices.end(), box_vertices.begin(), box_vertices.end());
   }
   return vertices;
 }
@@ -138,6 +214,15 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   std::uint32_t vertex_count = 0;
   Camera camera;
 
+  // Remote-player placeholder boxes (issue #82). Unlike vao/vertex_count
+  // above, this buffer is created once, sized for kMaxRemotePlayers boxes,
+  // and kept as MemoryType::Upload - a persistently-mappable heap
+  // SetRemotePlayers can memcpy into every frame via Buffer::setBlob with no
+  // GPU wait, unlike UploadScene's DeviceLocal buffer (see that method).
+  Falcor::ref<Falcor::Buffer> remote_vertex_buffer;
+  Falcor::ref<Falcor::Vao> remote_vao;
+  std::uint32_t remote_vertex_count = 0;
+
   // Debug HUD (FPS, RTT) - see debug_hud.h. frame_rate is ticked once
   // per RenderFrame; hud_stats carries what the caller supplies.
   std::unique_ptr<DebugHud> debug_hud;
@@ -187,6 +272,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     CreateTargetFbo(size.x, size.y);
     debug_hud = std::make_unique<DebugHud>(device, Falcor::uint2(size.x, size.y));
     BuildRasterPass();
+    CreateRemoteBuffer();
   }
 
   ~Impl() {
@@ -263,8 +349,45 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     auto layout = Falcor::VertexLayout::create();
     layout->addBufferLayout(0, buffer_layout);
 
+    // Draw() sets the active Vao itself before every draw call (it now
+    // alternates between this one and remote_vao), so there's nothing more
+    // to bind here.
     vao = Falcor::Vao::create(Falcor::Vao::Topology::TriangleList, layout, {vertex_buffer});
-    raster_pass->getState()->setVao(vao);
+  }
+
+  // Creates the fixed-size, persistently-mappable upload-heap buffer and Vao
+  // SetRemotePlayers writes into every frame - see the Impl member comment
+  // on remote_vertex_buffer. Called once, from the constructor; the buffer
+  // is always sized for the worst case (kMaxRemotePlayers) and never
+  // recreated afterward.
+  void CreateRemoteBuffer() {
+    remote_vertex_buffer = device->createBuffer(kMaxRemotePlayers * kVerticesPerBox * sizeof(Vertex),
+                                                Falcor::ResourceBindFlags::Vertex, Falcor::MemoryType::Upload);
+
+    auto buffer_layout = Falcor::VertexBufferLayout::create();
+    buffer_layout->addElement("POSITION", offsetof(Vertex, position), Falcor::ResourceFormat::RGB32Float, 1, 0);
+    buffer_layout->addElement("NORMAL", offsetof(Vertex, normal), Falcor::ResourceFormat::RGB32Float, 1, 1);
+    buffer_layout->addElement("COLOR", offsetof(Vertex, color), Falcor::ResourceFormat::RGB32Float, 1, 2);
+    auto layout = Falcor::VertexLayout::create();
+    layout->addBufferLayout(0, buffer_layout);
+
+    remote_vao = Falcor::Vao::create(Falcor::Vao::Topology::TriangleList, layout, {remote_vertex_buffer});
+  }
+
+  // Rewrites the remote-player boxes' vertex data in place via
+  // Buffer::setBlob - a map+memcpy into the upload heap, no GPU wait (unlike
+  // UploadScene). Throws std::runtime_error if remote_players has more boxes
+  // than the buffer was sized for.
+  void UpdateRemotePlayers(std::span<const RemotePlayer> remote_players) {
+    if (remote_players.size() > kMaxRemotePlayers) {
+      throw std::runtime_error("more remote players than the renderer can draw");
+    }
+    const std::vector<Vertex> vertices = BuildRemoteVertices(remote_players);
+    remote_vertex_count = static_cast<std::uint32_t>(vertices.size());
+    if (vertices.empty()) {
+      return;
+    }
+    remote_vertex_buffer->setBlob(vertices.data(), 0, vertices.size() * sizeof(Vertex));
   }
 
   // World-to-clip transform of the current camera: the inverse of the
@@ -304,15 +427,28 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
         render_context->clearFbo(target_fbo.get(), clear_color, 1.0F, 0, Falcor::FboAttachmentType::All);
       }
 
+      if (vertex_count > 0 || remote_vertex_count > 0) {
+        // Shared by both draws below - same raster_pass/shader, same
+        // camera for the whole frame.
+        auto root_var = raster_pass->getRootVar();
+        root_var["PerFrameCB"]["gViewProj"] = ViewProjection();
+        raster_pass->getState()->setFbo(target_fbo);
+      }
+
       if (vertex_count > 0) {
         const nvtx3::scoped_range scene_range{"Scene"};
         FALCOR_PROFILE(render_context, "Scene");
 
-        auto root_var = raster_pass->getRootVar();
-        root_var["PerFrameCB"]["gViewProj"] = ViewProjection();
-
-        raster_pass->getState()->setFbo(target_fbo);
+        raster_pass->getState()->setVao(vao);
         raster_pass->draw(render_context, vertex_count, 0);
+      }
+
+      if (remote_vertex_count > 0) {
+        const nvtx3::scoped_range remote_range{"RemotePlayers"};
+        FALCOR_PROFILE(render_context, "RemotePlayers");
+
+        raster_pass->getState()->setVao(remote_vao);
+        raster_pass->draw(render_context, remote_vertex_count, 0);
       }
     }
 
@@ -416,6 +552,10 @@ void Renderer::RenderFrame() {
 }
 
 void Renderer::SetScene(const Scene& scene) { impl_->UploadScene(scene); }
+
+void Renderer::SetRemotePlayers(std::span<const RemotePlayer> remote_players) {
+  impl_->UpdateRemotePlayers(remote_players);
+}
 
 void Renderer::SetDebugHudStats(const DebugHudStats& stats) { impl_->hud_stats = stats; }
 

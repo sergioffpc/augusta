@@ -32,7 +32,7 @@ std::string_view DescribeRejection(Rejection rejection) {
   return "unknown rejection";
 }
 
-std::expected<void, Rejection> Screen(const protocol::SequencedCommand& command, std::uint32_t last_sequence) {
+std::expected<void, Rejection> Validate(const protocol::SequencedCommand& command, std::uint32_t last_sequence) {
   if (command.sequence <= last_sequence) {
     return std::unexpected(Rejection::kStale);
   }
@@ -47,9 +47,9 @@ std::expected<void, Rejection> Screen(const protocol::SequencedCommand& command,
   return {};
 }
 
-std::expected<void, Rejection> CommandQueue::Offer(const protocol::SequencedCommand& command) {
-  if (const auto screened = Screen(command, last_offered_); !screened.has_value()) {
-    return screened;
+std::expected<void, Rejection> CommandQueue::TryEnqueue(const protocol::SequencedCommand& command) {
+  if (const auto validated = Validate(command, last_offered_); !validated.has_value()) {
+    return validated;
   }
   last_offered_ = command.sequence;
   queued_.push_back(command);

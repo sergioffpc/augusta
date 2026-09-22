@@ -49,6 +49,13 @@ struct Config {
   networking::Endpoint server;
 };
 
+// The map's collision, built by augusta::map from the client pack by the
+// caller: where content comes from is the executable's business, not the
+// config file's - so it travels alongside Config rather than inside it.
+struct Map {
+  std::vector<physics::CollisionMesh> collision;
+};
+
 // Owns one of every client-only module/World and the three fixed
 // threads ADR-0005 assigns them to. The client process constructs
 // exactly one, on what becomes the Main/Render thread (see Run()).
@@ -68,12 +75,12 @@ class ClientRuntime {
   // ClientRuntime doesn't call it itself since Init() is a one-time
   // process concern, not a per-instance one.
   //
-  // scene is what the Renderer draws every frame, and collision is the map's
-  // collision physics ticks against - both loaded from the client pack by the
-  // caller (see scene_loader.h and map.h), since where content comes from is
-  // the executable's business, not the orchestrator's. Throws
+  // scene is what the Renderer draws every frame, and map is what physics
+  // ticks against - both loaded from the client pack by the caller (see
+  // scene_loader.h and map.h), since where content comes from is the
+  // executable's business, not the orchestrator's. Throws
   // std::runtime_error if physics rejects a collision mesh.
-  ClientRuntime(const Config& config, const renderer::Scene& scene, std::vector<physics::CollisionMesh> collision);
+  ClientRuntime(const Config& config, Map map, const renderer::Scene& scene);
 
   // Run() always stops and joins the Simulation and Network I/O
   // threads it spawned before returning, including if the Main/Render

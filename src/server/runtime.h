@@ -3,13 +3,11 @@
 
 #include <memory>
 #include <string>
-#include <vector>
 
-#include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
-#include "augusta/physics.h"
 #include "augusta/simulation.h"
+#include "host.h"
 
 // augusta::runtime is ServerRuntime (ARCHITECTURE.md §5): the augustad
 // executable's own orchestrator, owning the single authoritative
@@ -51,11 +49,6 @@ struct Config {
   std::string script_path;
   // Local address to listen on (US-01).
   networking::Endpoint listen;
-  // The map's collision, built by augusta::map from the server pack by the
-  // caller: where content comes from is the executable's business.
-  std::vector<physics::CollisionMesh> collision;
-  // Where joining players spawn, in the order they take them, from the same pack.
-  std::vector<math::Vec3> spawn_points;
 };
 
 // Owns the one authoritative SimulationWorld and the two fixed threads
@@ -63,13 +56,13 @@ struct Config {
 // on what becomes the Simulation thread (see Run()).
 class ServerRuntime {
  public:
-  // Constructs SimulationWorld (throws whatever scripting::Engine's
-  // constructor throws if script_path fails to load - see
-  // simulation.h) and starts networking::Server listening on
-  // config.listen (throws std::runtime_error if the address can't be
-  // bound - see networking.h). Does not yet spawn any thread; see
-  // Run().
-  explicit ServerRuntime(const Config& config);
+  // Constructs SimulationWorld with map's collision (throws whatever
+  // scripting::Engine's constructor throws if script_path fails to load,
+  // or std::runtime_error if a map mesh is rejected - see simulation.h)
+  // and starts networking::Server listening on config.listen (throws
+  // std::runtime_error if the address can't be bound - see
+  // networking.h). Does not yet spawn any thread; see Run().
+  ServerRuntime(const Config& config, server::Map map);
 
   // Run() always stops and joins the Network I/O thread it spawned
   // before returning, including if the Simulation loop exits via an

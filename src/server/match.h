@@ -34,14 +34,20 @@ struct Admission {
   std::vector<protocol::PlayerState> roster{};
 };
 
+/// What a match admits players by, fixed for its lifetime.
+struct MatchConfig {
+  /// Only clients whose engine version is this are admitted.
+  std::string engine_version;
+  /// The most players the match holds at once.
+  std::size_t capacity = protocol::kMaxPlayers;
+};
+
 /// The players in one match, keyed by the transport's handle for each.
 class Match {
  public:
-  /// A match that admits only clients whose engine version is engine_version,
-  /// up to capacity of them, spawning them at spawn_points in order and
+  /// A match built from config, spawning players at spawn_points in order and
   /// starting over after the last (at the origin if there are none).
-  explicit Match(std::string engine_version, std::size_t capacity = protocol::kMaxPlayers,
-                 std::vector<math::Vec3> spawn_points = {});
+  explicit Match(MatchConfig config, std::vector<math::Vec3> spawn_points = {});
 
   /// Admits peer, or says why not. A peer that is already in the match gets
   /// the session and spawn point it already has.

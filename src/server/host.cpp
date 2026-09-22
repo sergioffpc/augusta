@@ -28,9 +28,9 @@ namespace {
 // The authoritative world with the map's collision already in it. Built
 // before the socket exists, so a map that is rejected never leaves a bound
 // port behind.
-simulation::World BuildSimulation(const HostConfig& config) {
+simulation::World BuildSimulation(const HostConfig& config, const Map& map) {
   simulation::World simulation(config.parameters.stamina, config.script_path);
-  for (const physics::CollisionMesh& mesh : config.collision) {
+  for (const physics::CollisionMesh& mesh : map.collision) {
     if (const auto added = simulation.AddCollisionMesh(mesh); !added) {
       throw std::runtime_error(
           std::format("server::Host: map collision rejected: {}", physics::DescribeCollisionMeshError(added.error())));
@@ -95,12 +95,12 @@ struct Host::Impl {
   // are limited; the heartbeat still counts every one. Guarded by mutex.
   logging::Throttle drop_warnings{std::chrono::seconds{1}};
 
-  explicit Impl(const HostConfig& config)
-      : simulation(BuildSimulation(config)),
+  Impl(const HostConfig& config, Map map)
+      : simulation(BuildSimulation(config, map)),
         tick_rate_hz(config.tick_rate_hz),
         parameters(config.parameters),
         network(config.listen),
-        match(std::string(EngineVersion()), protocol::kMaxPlayers, config.spawn_points) {}
+        match(MatchConfig{.engine_version = std::string(EngineVersion())}, std::move(map.spawn_points)) {}
 
   void Reply(networking::PeerId peer, const protocol::Message& message) {
     network.Send(peer, protocol::Encode(message), networking::Reliability::kReliable);
@@ -137,19 +137,19 @@ struct Host::Impl {
     }
     CommandQueue& queue = players.at(*session).commands;
     for (const protocol::SequencedCommand& command : message.commands) {
-      const auto offered = queue.Offer(command);
-      if (offered.has_value()) {
+      const auto enqueued = queue.TryEnqueue(command);
+      if (enqueued.has_value()) {
         continue;
       }
       // Commands are repeated until acknowledged, so a stale one is routine.
-      if (offered.error() == Rejection::kStale) {
+      if (enqueued.error() == Rejection::kStale) {
         ++activity.stale;
         LT("subsystem=serverruntime event=dropped peer={} sequence={} reason=\"{}\"", PeerNumber(peer),
-           command.sequence, DescribeRejection(offered.error()));
+           command.sequence, DescribeRejection(enqueued.error()));
       } else {
         ++activity.dropped;
         LW_LIMITED(drop_warnings, "subsystem=serverruntime event=dropped_malformed peer={} sequence={} reason=\"{}\"",
-                   PeerNumber(peer), command.sequence, DescribeRejection(offered.error()));
+                   PeerNumber(peer), command.sequence, DescribeRejection(enqueued.error()));
       }
     }
   }
@@ -200,7 +200,7 @@ struct Host::Impl {
     std::unordered_map<protocol::SessionId, networking::PeerId> peers;
   };
 
-  TickInput BeginTick() {
+  TickInput PrepareTick() {
     const std::lock_guard<std::mutex> lock(mutex);
     for (const Change& change : changes) {
       const simulation::PlayerId player = replication::PlayerOf(change.session);
@@ -255,7 +255,7 @@ struct Host::Impl {
   }
 };
 
-Host::Host(const HostConfig& config) : impl_(std::make_unique<Impl>(config)) {}
+Host::Host(const HostConfig& config, Map map) : impl_(std::make_unique<Impl>(config, std::move(map))) {}
 
 Host::~Host() = default;
 
@@ -288,7 +288,7 @@ void Host::PumpNetwork() {
 
 simulation::State Host::Tick(float delta_time) {
   Impl& impl = *impl_;
-  const Impl::TickInput input = impl.BeginTick();
+  const Impl::TickInput input = impl.PrepareTick();
   simulation::State state = impl.simulation.Tick(input.commands, delta_time);
   ++impl.tick;
   impl.RememberBodies(state);

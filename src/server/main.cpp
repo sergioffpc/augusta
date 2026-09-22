@@ -5,16 +5,15 @@
 #include <print>
 #include <string_view>
 #include <utility>
-#include <vector>
 
 #include "augusta/assets.h"
 #include "augusta/config.h"
 #include "augusta/logging.h"
 #include "augusta/map.h"
-#include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/version.h"
+#include "host.h"
 #include "parameters_loader.h"
 #include "runtime.h"
 
@@ -42,16 +41,9 @@ std::expected<augusta::config::ServerConfig, augusta::config::ConfigError> LoadC
   return augusta::config::LoadServerConfig(*config_file);
 }
 
-// What the pack's map gives the server: its collision and where players spawn.
-// Hitboxes wait for the gameplay code that will use them.
-struct Map {
-  std::vector<augusta::physics::CollisionMesh> collision;
-  std::vector<augusta::math::Vec3> spawn_points;
-};
-
 // Built before any socket or thread starts, so a pack without a usable map
 // exits like a bad pack does. Reports what is wrong and returns nullopt.
-std::optional<Map> LoadMap(const augusta::assets::Pack& pack, const std::filesystem::path& pack_path) {
+std::optional<augusta::server::Map> LoadMap(const augusta::assets::Pack& pack, const std::filesystem::path& pack_path) {
   auto collision = augusta::map::LoadCollision(pack);
   if (!collision) {
     std::println(stderr, "server pack {}: {}", pack_path.string(), augusta::map::DescribeMapError(collision.error()));
@@ -64,7 +56,7 @@ std::optional<Map> LoadMap(const augusta::assets::Pack& pack, const std::filesys
     return std::nullopt;
   }
   LI("subsystem=server event=map_loaded colliders={} spawn_points={}", collision->size(), spawn_points->size());
-  return Map{.collision = *std::move(collision), .spawn_points = *std::move(spawn_points)};
+  return augusta::server::Map{.collision = *std::move(collision), .spawn_points = *std::move(spawn_points)};
 }
 
 // The scenario's Parameters script, out of the pack the server was given (it was
@@ -91,18 +83,17 @@ std::optional<augusta::parameters::Parameters> LoadParameters(const augusta::ass
   return *std::move(parameters);
 }
 
-// What ServerRuntime is built from: the file's settings and what the pack (its
-// map and its Parameters script) supplied.
+// What ServerRuntime's Config is built from: the file's settings and the
+// pack's Parameters script. The pack's map travels to ServerRuntime
+// separately (see main()), not through Config.
 augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ServerConfig& file_config,
-                                            const augusta::parameters::Parameters& parameters, Map map) {
+                                            const augusta::parameters::Parameters& parameters) {
   augusta::runtime::Config config;
   // TODO(sergioffpc): hardcoded placeholder - script_path assumes an asset
   // pack layout the asset pipeline (ROADMAP.md M2) hasn't built yet.
   config.script_path = "scripts/round.lua";
   config.listen.address = file_config.listen_address;
   config.tick_rate_hz = file_config.tick_rate_hz;
-  config.collision = std::move(map.collision);
-  config.spawn_points = std::move(map.spawn_points);
   // Every client is sent the rate and these when it joins and predicts with
   // them, so the config file and the scenario's script are the only places they
   // are set.
@@ -157,8 +148,8 @@ int main(int argc, char** argv) {
   // Client/Server is constructed - see networking.h.
   augusta::networking::Init();
 
-  const augusta::runtime::Config config = BuildRuntimeConfig(*file_config, *parameters, *std::move(map));
-  augusta::runtime::ServerRuntime runtime(config);
+  const augusta::runtime::Config config = BuildRuntimeConfig(*file_config, *parameters);
+  augusta::runtime::ServerRuntime runtime(config, *std::move(map));
   g_runtime = &runtime;
   std::signal(SIGINT, HandleShutdownSignal);
   std::signal(SIGTERM, HandleShutdownSignal);

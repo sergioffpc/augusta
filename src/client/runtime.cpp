@@ -16,10 +16,49 @@
 #include "augusta/harness.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
+#include "augusta/protocol.h"
 
 namespace augusta::runtime {
 
 namespace {
+
+// renderer doesn't depend on augusta_protocol (see renderer.h's own
+// comment on kMaxRemotePlayers) - this is the one place both are visible to
+// check the two haven't drifted apart.
+static_assert(renderer::kMaxRemotePlayers >= protocol::kMaxPlayers,
+              "the renderer must be able to draw every possible player");
+
+// Maps one interpolated remote player into a renderer-drawable placeholder
+// box (issue #82). Box dimensions mirror physics.cpp's own capsule constants
+// (kCapsuleRadius/kStandingHeight/kCrouchingHeight/kProneHeight, physics.cpp
+// lines 82-85) rather than reusing them: those are physics.cpp-internal by
+// design, and this geometry is explicitly placeholder-only (no skeletal
+// animation yet) - not worth exporting a public physics API for.
+renderer::RemotePlayer ToRenderer(const presentation::RemotePlayer& remote) {
+  constexpr float kCapsuleRadius = 0.3F;
+  constexpr float kStandingHeight = 1.5F;
+  constexpr float kCrouchingHeight = 0.7F;
+  constexpr float kProneHeight = 0.1F;
+  constexpr float kHalfHeightFraction = 0.5F;
+
+  float cylinder_height = kStandingHeight;
+  switch (remote.body.stance) {
+    case physics::Stance::kStanding:
+      cylinder_height = kStandingHeight;
+      break;
+    case physics::Stance::kCrouching:
+      cylinder_height = kCrouchingHeight;
+      break;
+    case physics::Stance::kProne:
+      cylinder_height = kProneHeight;
+      break;
+  }
+  const float total_height = cylinder_height + (2.0F * kCapsuleRadius);
+  return {
+      .position = remote.body.position,
+      .half_extents = math::Vec3(kCapsuleRadius, total_height * kHalfHeightFraction, kCapsuleRadius),
+  };
+}
 
 // Stops Impl's background threads and joins both, on scope exit -
 // including when unwinding past Run() due to an exception from the
@@ -164,7 +203,7 @@ struct ClientRuntime::Impl {
     net_pending_bytes.sample(static_cast<double>(stats->pending_bytes));
   }
 
-  Impl(const Config& cfg, const std::vector<physics::CollisionMesh>& collision)
+  Impl(const Config& cfg, const Map& map)
       : config(cfg), input(cfg.input), presentation(audio), renderer(cfg.renderer, input) {
     // The map goes in before the Session takes the world over: a body that has
     // already ticked has been predicted without it, and reconciliation cannot
@@ -172,7 +211,7 @@ struct ClientRuntime::Impl {
     // No rules of its own: the Session starts the prediction under the
     // server's once it has joined, so the two cannot drift.
     prediction::World world;
-    for (const physics::CollisionMesh& mesh : collision) {
+    for (const physics::CollisionMesh& mesh : map.collision) {
       if (const auto added = world.AddCollisionMesh(mesh); !added) {
         throw std::runtime_error(std::format("ClientRuntime: map collision rejected: {}",
                                              physics::DescribeCollisionMeshError(added.error())));
@@ -276,9 +315,8 @@ struct ClientRuntime::Impl {
   }
 };
 
-ClientRuntime::ClientRuntime(const Config& config, const renderer::Scene& scene,
-                             std::vector<physics::CollisionMesh> collision)
-    : impl_(std::make_unique<Impl>(config, collision)) {
+ClientRuntime::ClientRuntime(const Config& config, Map map, const renderer::Scene& scene)
+    : impl_(std::make_unique<Impl>(config, map)) {
   impl_->renderer.SetScene(scene);
 }
 
@@ -311,9 +349,14 @@ std::optional<harness::Failure> ClientRuntime::Run() {
     // never race ahead of a GetSessionId() that is still nullopt.
     presentation::State frame_state = impl_->presentation.RunFrame(
         impl_->GetLatestPredictionState(), impl_->session->GetSessionId(), impl_->session->GetAuthoritativeState());
-    // TODO(sergioffpc): renderer.RenderFrame() doesn't consume
-    // Presentation State yet - see renderer.h's own note on this.
-    static_cast<void>(frame_state);
+    // The local player's own position isn't drawn yet (renderer.h) - only
+    // remote players, as placeholder boxes (issue #82).
+    std::vector<renderer::RemotePlayer> remote_boxes;
+    remote_boxes.reserve(frame_state.remote_players.size());
+    for (const auto& remote : frame_state.remote_players) {
+      remote_boxes.push_back(ToRenderer(remote));
+    }
+    impl_->renderer.SetRemotePlayers(remote_boxes);
     impl_->renderer.RenderFrame();
   }
   LI("subsystem=clientruntime event=loop_stopping loop=render");
