@@ -1,5 +1,7 @@
 #include "augusta/logging.h"
 
+#include <algorithm>
+#include <array>
 #include <iostream>
 #include <mutex>
 #include <utility>
@@ -7,6 +9,7 @@
 #include <boost/log/attributes/attribute_name.hpp>
 #include <boost/log/attributes/value_extraction.hpp>
 #include <boost/log/core.hpp>
+#include <boost/log/expressions/attr.hpp>
 #include <boost/log/sources/record_ostream.hpp>
 #include <boost/log/sources/severity_logger.hpp>
 #include <boost/log/utility/manipulators/add_value.hpp>
@@ -110,6 +113,7 @@ void Init() {
     sink->set_formatter([colored](const boost::log::record_view& record, boost::log::formatting_ostream& out) {
       FormatRecord(record, out, colored);
     });
+    SetMinSeverity(Severity::kDebug);
   });
 }
 
@@ -117,6 +121,23 @@ void Write(Severity level, std::string_view message) {
   static boost::log::sources::severity_logger_mt<Severity> logger;
   BOOST_LOG_SEV(logger, level) << boost::log::add_value(kTimeAttribute, std::chrono::system_clock::now())
                                << std::string(message);
+}
+
+void SetMinSeverity(Severity level) {
+  boost::log::core::get()->set_filter(boost::log::expressions::attr<Severity>("Severity") >= level);
+}
+
+std::optional<Severity> ParseSeverity(std::string_view name) {
+  static constexpr std::array<std::pair<std::string_view, Severity>, 6> kNames{
+      std::pair{"trace", Severity::kTrace}, std::pair{"debug", Severity::kDebug},
+      std::pair{"info", Severity::kInfo},   std::pair{"warn", Severity::kWarn},
+      std::pair{"error", Severity::kError}, std::pair{"critical", Severity::kCritical},
+  };
+  const auto found = std::ranges::find(kNames, name, &std::pair<std::string_view, Severity>::first);
+  if (found == kNames.end()) {
+    return std::nullopt;
+  }
+  return found->second;
 }
 
 std::optional<std::uint32_t> Throttle::Admit(std::chrono::steady_clock::time_point now) {

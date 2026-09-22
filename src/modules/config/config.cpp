@@ -16,6 +16,8 @@
 #include <boost/program_options.hpp>
 #include <yaml-cpp/yaml.h>
 
+#include "augusta/logging.h"
+
 namespace augusta::config {
 
 namespace {
@@ -108,6 +110,17 @@ std::string OptionalString(const ScalarMap& values, std::string_view key, std::s
   return found == values.end() ? std::string(fallback) : found->second;
 }
 
+// fallback when key is absent; when present, its value must be one
+// augusta::logging::ParseSeverity accepts.
+std::expected<std::string, ConfigError> OptionalLogLevel(const ScalarMap& values, std::string_view key,
+                                                         std::string_view fallback) {
+  auto value = OptionalString(values, key, fallback);
+  if (!logging::ParseSeverity(value)) {
+    return std::unexpected(ConfigError{.code = ConfigErrorCode::kInvalidLogLevel, .subject = std::string(key)});
+  }
+  return value;
+}
+
 std::expected<std::string, ConfigError> ReadFile(const std::filesystem::path& file) {
   std::ifstream stream(file, std::ios::binary);
   if (!stream) {
@@ -158,6 +171,8 @@ std::string Phrase(const ConfigError& error) {
       return std::format("'{}' must not be empty", error.subject);
     case ConfigErrorCode::kInvalidNumber:
       return std::format("'{}' must be a finite number above zero", error.subject);
+    case ConfigErrorCode::kInvalidLogLevel:
+      return std::format("'{}' must be one of trace, debug, info, warn, error, critical", error.subject);
   }
   return "unknown config error";
 }
@@ -206,15 +221,19 @@ std::expected<std::filesystem::path, ConfigError> ResolveConfigFile(int argc, co
   }
   const auto& file = arguments["config"].as<std::string>();
   if (file.empty()) {
-    return std::unexpected(ConfigError{.code = ConfigErrorCode::kInvalidArguments,
-                                       .subject = std::format("--config needs a file name\n{}", usage)});
+    return std::unexpected(ConfigError{
+        .code = ConfigErrorCode::kInvalidArguments,
+        .subject = std::format("--config needs a file name\n{}", usage),
+    });
   }
   return std::filesystem::path(file);
 }
 
 std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 4> kKeys{"base_dir", "pack", "public_key", "server_address"};
+  static constexpr std::array<std::string_view, 5> kKeys{
+      "base_dir", "pack", "public_key", "server_address", "log_level",
+  };
   const auto values = ReadScalarMap(yaml_text, kKeys);
   if (!values) {
     return std::unexpected(values.error());
@@ -233,15 +252,23 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
   if (!public_key_path) {
     return std::unexpected(public_key_path.error());
   }
-  return ClientConfig{.pack_path = *std::move(pack_path),
-                      .public_key_path = *std::move(public_key_path),
-                      .server_address = OptionalString(*values, "server_address", kDefaultServerAddress)};
+  auto log_level = OptionalLogLevel(*values, "log_level", kDefaultLogLevel);
+  if (!log_level) {
+    return std::unexpected(log_level.error());
+  }
+  return ClientConfig{
+      .pack_path = *std::move(pack_path),
+      .public_key_path = *std::move(public_key_path),
+      .server_address = OptionalString(*values, "server_address", kDefaultServerAddress),
+      .log_level = *std::move(log_level),
+  };
 }
 
 std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 5> kKeys{"base_dir", "pack", "public_key", "tick_rate_hz",
-                                                         "listen_address"};
+  static constexpr std::array<std::string_view, 6> kKeys{
+      "base_dir", "pack", "public_key", "tick_rate_hz", "listen_address", "log_level",
+  };
   const auto values = ReadScalarMap(yaml_text, kKeys);
   if (!values) {
     return std::unexpected(values.error());
@@ -264,11 +291,16 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!tick_rate_hz) {
     return std::unexpected(tick_rate_hz.error());
   }
+  auto log_level = OptionalLogLevel(*values, "log_level", kDefaultLogLevel);
+  if (!log_level) {
+    return std::unexpected(log_level.error());
+  }
   return ServerConfig{
       .pack_path = *std::move(pack_path),
       .public_key_path = *std::move(public_key_path),
       .tick_rate_hz = *tick_rate_hz,
       .listen_address = OptionalString(*values, "listen_address", kDefaultListenAddress),
+      .log_level = *std::move(log_level),
   };
 }
 

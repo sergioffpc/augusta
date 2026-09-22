@@ -9,6 +9,7 @@
 namespace {
 
 using augusta::logging::FormatLine;
+using augusta::logging::ParseSeverity;
 using augusta::logging::Severity;
 using augusta::logging::Throttle;
 using augusta::logging::WithSuppressed;
@@ -47,6 +48,21 @@ TEST(LoggingInit, CanBeCalledTwiceAndLoggedThrough) {
 
   LI("subsystem=test event=logged value={}", 42);
   SUCCEED();
+}
+
+TEST(LoggingParseSeverity, ParsesEachName) {
+  EXPECT_EQ(ParseSeverity("trace"), Severity::kTrace);
+  EXPECT_EQ(ParseSeverity("debug"), Severity::kDebug);
+  EXPECT_EQ(ParseSeverity("info"), Severity::kInfo);
+  EXPECT_EQ(ParseSeverity("warn"), Severity::kWarn);
+  EXPECT_EQ(ParseSeverity("error"), Severity::kError);
+  EXPECT_EQ(ParseSeverity("critical"), Severity::kCritical);
+}
+
+TEST(LoggingParseSeverity, RejectsAnythingElse) {
+  EXPECT_EQ(ParseSeverity("TRACE"), std::nullopt);
+  EXPECT_EQ(ParseSeverity("verbose"), std::nullopt);
+  EXPECT_EQ(ParseSeverity(""), std::nullopt);
 }
 
 TEST(LoggingThrottle, FirstEventIsLetThroughWithNothingSuppressed) {
