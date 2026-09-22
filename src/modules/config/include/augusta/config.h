@@ -42,7 +42,7 @@ struct ClientConfig {
   /// Key `server_address`: the server to connect to.
   std::string server_address{kDefaultServerAddress};
   /// Key `log_level`: one of "trace", "debug", "info", "warn", "error",
-  /// "critical" - the console sink's runtime floor (augusta::logging::SetMinSeverity).
+  /// "critical" - the console sink's runtime floor (augusta::logging::SetLogLevel).
   /// Only lowers what the build already compiles in (AUGUSTA_LOG_ACTIVE_LEVEL);
   /// a Release build has no TRACE/DEBUG to raise it back to.
   std::string log_level{kDefaultLogLevel};
@@ -62,7 +62,7 @@ struct ServerConfig {
   /// Key `listen_address`: the local address to listen on.
   std::string listen_address{kDefaultListenAddress};
   /// Key `log_level`: one of "trace", "debug", "info", "warn", "error",
-  /// "critical" - the console sink's runtime floor (augusta::logging::SetMinSeverity).
+  /// "critical" - the console sink's runtime floor (augusta::logging::SetLogLevel).
   /// Only lowers what the build already compiles in (AUGUSTA_LOG_ACTIVE_LEVEL);
   /// a Release build has no TRACE/DEBUG to raise it back to.
   std::string log_level{kDefaultLogLevel};

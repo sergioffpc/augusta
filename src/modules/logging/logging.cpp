@@ -113,7 +113,7 @@ void Init() {
     sink->set_formatter([colored](const boost::log::record_view& record, boost::log::formatting_ostream& out) {
       FormatRecord(record, out, colored);
     });
-    SetMinSeverity(Severity::kDebug);
+    SetLogLevel(Severity::kDebug);
   });
 }
 
@@ -123,7 +123,7 @@ void Write(Severity level, std::string_view message) {
                                << std::string(message);
 }
 
-void SetMinSeverity(Severity level) {
+void SetLogLevel(Severity level) {
   boost::log::core::get()->set_filter(boost::log::expressions::attr<Severity>("Severity") >= level);
 }
 
