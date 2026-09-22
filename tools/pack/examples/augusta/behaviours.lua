@@ -1,0 +1,11 @@
+-- Other game policy for this scenario (ADR-0022): spawn rules and anything
+-- else that decides what happens next from simulation state, as opposed to a
+-- tunable value (parameters.lua, ADR-0039) or mechanism (C++). Runs in
+-- SimulationWorld's Scripts/Behaviours phase, same as objectives.lua.
+--
+-- Not wired up yet - see objectives.lua's own note: this file is cooked into
+-- the scenario's server pack (ADR-0031) so it's ready once scripting::Engine
+-- (ADR-0022) resolves game-policy scripts from the pack, but nothing reads
+-- it yet.
+--
+-- Placeholder: no behaviour defined.

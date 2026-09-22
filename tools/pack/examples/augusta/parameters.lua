@@ -4,8 +4,7 @@
 -- packs it into the scenario's server pack, so it is signed with the map and
 -- fixed for the run. Only the server reads it; each client is sent the result
 -- when it joins. The tick rate is not here: it is fixed while the server runs,
--- so it is `tick_rate_hz` in augustad.yaml. Copy it next to augustad.yaml and name it there with
--- the `parameters` key.
+-- so it is `tick_rate_hz` in augustad.yaml.
 --
 -- A value may be an expression of other values in this script. The script runs
 -- once per load, in a sandbox with no io, os or randomness, and every key must
