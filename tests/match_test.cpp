@@ -18,13 +18,14 @@ using augusta::networking::PeerId;
 using augusta::protocol::JoinRefusal;
 using augusta::protocol::kMaxPlayers;
 using augusta::server::Match;
+using augusta::server::MatchConfig;
 
 constexpr const char* kVersion = "1.2.3";
 
 PeerId Peer(std::uint32_t number) { return static_cast<PeerId>(number); }
 
 TEST(MatchTest, AdmitsAClientWithTheMatchingVersion) {
-  Match match(kVersion);
+  Match match(MatchConfig{.engine_version = kVersion});
 
   const auto admission = match.Join(Peer(10), kVersion);
 
@@ -34,7 +35,7 @@ TEST(MatchTest, AdmitsAClientWithTheMatchingVersion) {
 }
 
 TEST(MatchTest, RefusesAnyOtherVersion) {
-  Match match(kVersion);
+  Match match(MatchConfig{.engine_version = kVersion});
 
   for (const char* other : {"", "1.2.4", "1.2", "1.2.3 ", "0.1.0"}) {
     EXPECT_EQ(match.Join(Peer(10), other).error(), JoinRefusal::kVersionMismatch) << other;
@@ -44,7 +45,7 @@ TEST(MatchTest, RefusesAnyOtherVersion) {
 }
 
 TEST(MatchTest, SessionIdsAreUniqueAndIndependentOfTheTransportHandle) {
-  Match match(kVersion);
+  Match match(MatchConfig{.engine_version = kVersion});
 
   const auto first = match.Join(Peer(500), kVersion);
   const auto second = match.Join(Peer(501), kVersion);
@@ -55,7 +56,7 @@ TEST(MatchTest, SessionIdsAreUniqueAndIndependentOfTheTransportHandle) {
 }
 
 TEST(MatchTest, AdmitsUpToCapacityAndRefusesTheNextAsFull) {
-  Match match(kVersion);
+  Match match(MatchConfig{.engine_version = kVersion});
   for (std::uint32_t i = 0; i < kMaxPlayers; ++i) {
     ASSERT_TRUE(match.Join(Peer(i), kVersion).has_value()) << i;
   }
@@ -65,14 +66,14 @@ TEST(MatchTest, AdmitsUpToCapacityAndRefusesTheNextAsFull) {
 }
 
 TEST(MatchTest, AVersionMismatchIsReportedEvenWhenTheMatchIsFull) {
-  Match match(kVersion, 1);
+  Match match(MatchConfig{.engine_version = kVersion, .capacity = 1});
   ASSERT_TRUE(match.Join(Peer(1), kVersion).has_value());
 
   EXPECT_EQ(match.Join(Peer(2), "other").error(), JoinRefusal::kVersionMismatch);
 }
 
 TEST(MatchTest, LeavingFreesTheSlotAndNeverReusesTheSessionId) {
-  Match match(kVersion, 1);
+  Match match(MatchConfig{.engine_version = kVersion, .capacity = 1});
   const auto first = match.Join(Peer(1), kVersion);
   ASSERT_TRUE(first.has_value());
 
@@ -85,7 +86,7 @@ TEST(MatchTest, LeavingFreesTheSlotAndNeverReusesTheSessionId) {
 }
 
 TEST(MatchTest, LeavingWithoutHavingJoinedChangesNothing) {
-  Match match(kVersion);
+  Match match(MatchConfig{.engine_version = kVersion});
 
   match.Leave(Peer(99));
 
@@ -93,7 +94,7 @@ TEST(MatchTest, LeavingWithoutHavingJoinedChangesNothing) {
 }
 
 TEST(MatchTest, JoiningAgainReturnsTheSameSessionWithoutTakingAnotherSlot) {
-  Match match(kVersion);
+  Match match(MatchConfig{.engine_version = kVersion});
   const auto first = match.Join(Peer(1), kVersion);
 
   const auto again = match.Join(Peer(1), kVersion);
@@ -107,7 +108,7 @@ TEST(MatchTest, JoiningAgainReturnsTheSameSessionWithoutTakingAnotherSlot) {
 std::vector<Vec3> SpawnPoints() { return {Vec3(1.0F, 0.0F, 0.0F), Vec3(2.0F, 0.0F, 0.0F), Vec3(3.0F, 0.0F, 0.0F)}; }
 
 TEST(MatchTest, PlayersTakeTheSpawnPointsInOrder) {
-  Match match(kVersion, kMaxPlayers, SpawnPoints());
+  Match match(MatchConfig{.engine_version = kVersion}, SpawnPoints());
 
   EXPECT_EQ(match.Join(Peer(1), kVersion)->spawn, Vec3(1.0F, 0.0F, 0.0F));
   EXPECT_EQ(match.Join(Peer(2), kVersion)->spawn, Vec3(2.0F, 0.0F, 0.0F));
@@ -115,7 +116,7 @@ TEST(MatchTest, PlayersTakeTheSpawnPointsInOrder) {
 }
 
 TEST(MatchTest, MoreJoinsThanSpawnPointsWrapAround) {
-  Match match(kVersion, kMaxPlayers, SpawnPoints());
+  Match match(MatchConfig{.engine_version = kVersion}, SpawnPoints());
   for (std::uint32_t i = 0; i < 3; ++i) {
     ASSERT_TRUE(match.Join(Peer(i), kVersion).has_value());
   }
@@ -127,26 +128,26 @@ TEST(MatchTest, MoreJoinsThanSpawnPointsWrapAround) {
 }
 
 TEST(MatchTest, ARefusedJoinDoesNotUseUpASpawnPoint) {
-  Match match(kVersion, kMaxPlayers, SpawnPoints());
+  Match match(MatchConfig{.engine_version = kVersion}, SpawnPoints());
   ASSERT_FALSE(match.Join(Peer(1), "other").has_value());
 
   EXPECT_EQ(match.Join(Peer(2), kVersion)->spawn, Vec3(1.0F, 0.0F, 0.0F));
 }
 
 TEST(MatchTest, WithoutSpawnPointsPlayersSpawnAtTheOrigin) {
-  Match match(kVersion);
+  Match match(MatchConfig{.engine_version = kVersion});
 
   EXPECT_EQ(match.Join(Peer(1), kVersion)->spawn, Vec3{});
 }
 
 TEST(MatchTest, ThePlayerAloneInTheMatchHasAnEmptyRoster) {
-  Match match(kVersion, kMaxPlayers, SpawnPoints());
+  Match match(MatchConfig{.engine_version = kVersion}, SpawnPoints());
 
   EXPECT_TRUE(match.Join(Peer(1), kVersion)->roster.empty());
 }
 
 TEST(MatchTest, TheRosterListsThePlayersAlreadyThereAtTheirSpawnPointsBeforeAnyTick) {
-  Match match(kVersion, kMaxPlayers, SpawnPoints());
+  Match match(MatchConfig{.engine_version = kVersion}, SpawnPoints());
   const auto first = match.Join(Peer(1), kVersion);
   const auto second = match.Join(Peer(2), kVersion);
 
@@ -161,7 +162,7 @@ TEST(MatchTest, TheRosterListsThePlayersAlreadyThereAtTheirSpawnPointsBeforeAnyT
 }
 
 TEST(MatchTest, TheRosterHoldsWhereThePlayersWereLastReported) {
-  Match match(kVersion, kMaxPlayers, SpawnPoints());
+  Match match(MatchConfig{.engine_version = kVersion}, SpawnPoints());
   const auto first = match.Join(Peer(1), kVersion);
   augusta::physics::BodyState moved;
   moved.position = Vec3(9.0F, 0.0F, 9.0F);
@@ -176,7 +177,7 @@ TEST(MatchTest, TheRosterHoldsWhereThePlayersWereLastReported) {
 }
 
 TEST(MatchTest, APlayerWhoLeftIsNotInTheRoster) {
-  Match match(kVersion);
+  Match match(MatchConfig{.engine_version = kVersion});
   ASSERT_TRUE(match.Join(Peer(1), kVersion).has_value());
   ASSERT_TRUE(match.Join(Peer(2), kVersion).has_value());
 
@@ -188,7 +189,7 @@ TEST(MatchTest, APlayerWhoLeftIsNotInTheRoster) {
 }
 
 TEST(MatchTest, ReportingABodyForAnUnknownSessionChangesNothing) {
-  Match match(kVersion);
+  Match match(MatchConfig{.engine_version = kVersion});
 
   match.UpdateBody(static_cast<augusta::protocol::SessionId>(77), augusta::physics::BodyState{});
 

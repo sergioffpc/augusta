@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -46,6 +48,7 @@ using augusta::harness::FailureKind;
 using augusta::harness::Session;
 using augusta::harness::SessionConfig;
 using augusta::input::Command;
+using augusta::math::Length;
 using augusta::math::Vec3;
 using augusta::networking::ConnectionState;
 using augusta::networking::Endpoint;
@@ -55,6 +58,7 @@ using augusta::physics::Stance;
 using augusta::protocol::JoinRefusal;
 using augusta::server::Host;
 using augusta::server::HostConfig;
+using augusta::server::Map;
 
 constexpr auto kPollInterval = std::chrono::milliseconds(10);
 constexpr auto kPollDeadline = std::chrono::seconds(5);
@@ -100,7 +104,8 @@ class SessionTest : public ::testing::Test {
       : host_(HostConfig{.tick_rate_hz = kTestTickRate,
                          .parameters = kTestParameters,
                          .script_path = "scripts/round.lua",
-                         .listen = Endpoint{.address = LoopbackAddress()}}),
+                         .listen = Endpoint{.address = LoopbackAddress()}},
+              Map{}),
         session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld()) {}
 
   // Runs both sides' network work until the session reports connected, or
@@ -164,7 +169,8 @@ class JoinTest : public ::testing::Test {
       : host_(HostConfig{.tick_rate_hz = kTestTickRate,
                          .parameters = kTestParameters,
                          .script_path = "scripts/round.lua",
-                         .listen = Endpoint{.address = LoopbackAddress()}}) {}
+                         .listen = Endpoint{.address = LoopbackAddress()}},
+              Map{}) {}
 
   // Starts connecting a new client that presents engine_version.
   Session& AddClient(const std::string& engine_version = std::string(augusta::EngineVersion())) {
@@ -268,6 +274,75 @@ TEST_F(JoinTest, TheNinthClientIsRefusedBecauseTheMatchIsFull) {
   EXPECT_FALSE(ninth.GetSessionId().has_value());
 }
 
+// M3 exit criteria (issue #84): 8 clients moving, sprinting and changing
+// stance stay connected and keep up with the server for a full round's
+// worth of ticks. "A full simulated round length" isn't a defined quantity
+// yet (the round lifecycle is M5) - kRoundTicks stands in for it.
+//
+// This harness ticks by hand, not a real wall clock (see the file header
+// comment), so "no missed ticks" here means the server's acknowledged
+// sequence for every client keeps pace with the ticks actually sent, not a
+// literal timing measurement - the wall-clock 60 Hz cadence is
+// ServerRuntime::Run()'s own job (src/server/runtime.cpp), only exercised
+// for real by the manual multi-machine check #84 also asks for.
+TEST_F(JoinTest, EightClientsMoveSprintAndChangeStanceForARoundWithNoMissedTicks) {
+  constexpr int kRoundTicks = 600;            // 10 simulated seconds at kTestTickRate.
+  constexpr std::uint32_t kAckTolerance = 5;  // Ticks still in flight when the loop ends.
+  constexpr std::array<Stance, 3> kStanceCycle = {Stance::kStanding, Stance::kCrouching, Stance::kProne};
+  constexpr int kStanceCycleTicks = 150;
+  constexpr int kSprintBlockTicks = 100;
+
+  for (std::size_t i = 0; i < augusta::protocol::kMaxPlayers; ++i) {
+    AddClient();
+  }
+  ASSERT_TRUE(WaitForAnswers());
+  for (const auto& session : sessions_) {
+    ASSERT_TRUE(session->GetSessionId().has_value());
+  }
+
+  std::vector<Vec3> first_position(sessions_.size());
+  std::vector<Vec3> last_position(sessions_.size());
+  std::vector<std::uint32_t> max_acknowledged(sessions_.size(), 0);
+
+  for (int tick = 0; tick < kRoundTicks; ++tick) {
+    host_.Tick(kFixedTick);
+    for (std::size_t i = 0; i < sessions_.size(); ++i) {
+      // A per-client phase offset so 8 players don't all walk in lockstep.
+      const float angle = (static_cast<float>(tick) * 0.05F) + static_cast<float>(i);
+      Command command{};
+      command.movement.direction = Vec3(std::cos(angle), 0.0F, std::sin(angle));
+      command.movement.sprint = (tick / kSprintBlockTicks) % 2 == 0;
+      command.movement.desired_stance = kStanceCycle.at((tick / kStanceCycleTicks) % kStanceCycle.size());
+
+      const auto state = sessions_[i]->Tick(command, kFixedTick);
+      if (tick == 0) {
+        first_position[i] = state.local_body.position;
+      }
+      last_position[i] = state.local_body.position;
+    }
+
+    host_.PumpNetwork();
+    for (std::size_t i = 0; i < sessions_.size(); ++i) {
+      sessions_[i]->PumpEvents();
+      sessions_[i]->ExchangeMessages();
+
+      ASSERT_FALSE(sessions_[i]->GetFailure().has_value()) << "client " << i << " failed at tick " << tick;
+      EXPECT_EQ(sessions_[i]->GetState(), ConnectionState::kConnected) << "client " << i << " dropped at tick " << tick;
+
+      if (const auto authoritative = sessions_[i]->GetAuthoritativeState()) {
+        max_acknowledged[i] = std::max(max_acknowledged[i], authoritative->acknowledged_sequence);
+      }
+    }
+  }
+
+  for (std::size_t i = 0; i < sessions_.size(); ++i) {
+    EXPECT_GE(max_acknowledged[i] + kAckTolerance, static_cast<std::uint32_t>(kRoundTicks))
+        << "client " << i << " fell behind: server acknowledged only " << max_acknowledged[i] << " of " << kRoundTicks
+        << " ticks";
+    EXPECT_GT(Length(last_position[i] - first_position[i]), 0.5F) << "client " << i << " did not move over the round";
+  }
+}
+
 // A large horizontal slab at height y, its triangles facing up.
 CollisionMesh FloorAt(float y) {
   constexpr float kExtent = 100.0F;
@@ -323,8 +398,8 @@ TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
   Host host(HostConfig{.tick_rate_hz = kTestTickRate,
                        .parameters = kTestParameters,
                        .script_path = "scripts/round.lua",
-                       .listen = Endpoint{.address = LoopbackAddress()},
-                       .collision = {FloorAt(0.0F)}});
+                       .listen = Endpoint{.address = LoopbackAddress()}},
+            Map{.collision = {FloorAt(0.0F)}});
 
   for (int i = 0; i < 10; ++i) {
     host.Tick(kFixedTick);
@@ -336,8 +411,8 @@ TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
   EXPECT_THROW(Host(HostConfig{.tick_rate_hz = kTestTickRate,
                                .parameters = kTestParameters,
                                .script_path = "scripts/round.lua",
-                               .listen = Endpoint{.address = LoopbackAddress()},
-                               .collision = {CollisionMesh{}}}),
+                               .listen = Endpoint{.address = LoopbackAddress()}},
+                    Map{.collision = {CollisionMesh{}}}),
                std::runtime_error);
 }
 
@@ -360,8 +435,8 @@ class MovementTest : public ::testing::Test {
       : host_(HostConfig{.tick_rate_hz = kTestTickRate,
                          .parameters = kTestParameters,
                          .script_path = "scripts/round.lua",
-                         .listen = Endpoint{.address = LoopbackAddress()},
-                         .collision = std::move(server_map)}),
+                         .listen = Endpoint{.address = LoopbackAddress()}},
+              Map{.collision = std::move(server_map)}),
         session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, WorldWithFloorAt(kGroundHeight)) {}
 
   void TearDown() override { augusta::networking::SimulateNetworkConditions({}); }
@@ -709,17 +784,23 @@ class LoopbackMatch : public ::testing::Test {
   static constexpr int kSettleTicks = 30;
   static constexpr auto kNetworkDelay = std::chrono::milliseconds(8);
 
-  explicit LoopbackMatch(const HostConfig& config) : host_(config) {}
+  // What a host needs, split the way Host's own constructor wants it: config
+  // file/script settings, and the map, separately.
+  struct HostSetup {
+    HostConfig config;
+    Map map;
+  };
 
-  // A host config for the floor with spawn_points, the parameters and the tick rate.
-  static HostConfig OnTheFloor(std::vector<Vec3> spawn_points, const Parameters& parameters = kTestParameters,
-                               float tick_rate_hz = kTestTickRate) {
-    return HostConfig{.tick_rate_hz = tick_rate_hz,
-                      .parameters = parameters,
-                      .script_path = "scripts/round.lua",
-                      .listen = Endpoint{.address = LoopbackAddress()},
-                      .collision = {FloorAt(kFloorY)},
-                      .spawn_points = std::move(spawn_points)};
+  explicit LoopbackMatch(HostSetup setup) : host_(setup.config, std::move(setup.map)) {}
+
+  // A host setup for the floor with spawn_points, the parameters and the tick rate.
+  static HostSetup OnTheFloor(std::vector<Vec3> spawn_points, const Parameters& parameters = kTestParameters,
+                              float tick_rate_hz = kTestTickRate) {
+    return HostSetup{.config = HostConfig{.tick_rate_hz = tick_rate_hz,
+                                          .parameters = parameters,
+                                          .script_path = "scripts/round.lua",
+                                          .listen = Endpoint{.address = LoopbackAddress()}},
+                     .map = Map{.collision = {FloorAt(kFloorY)}, .spawn_points = std::move(spawn_points)}};
   }
 
   // Connects a new client and runs the network until the server has answered it.
@@ -1177,8 +1258,10 @@ TEST_F(SessionTest, AClientHoldsNoParametersUntilTheServerAdmitsIt) {
 // A server whose tick rate is unusable (zero): the client drops the Join
 // accepted rather than divide by it.
 TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseTickRateFailsTheChecks) {
-  Host host(HostConfig{
-      .tick_rate_hz = 0.0F, .script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}});
+  Host host(
+      HostConfig{
+          .tick_rate_hz = 0.0F, .script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}},
+      Map{});
   Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
   session.Connect();
 
@@ -1226,7 +1309,8 @@ TEST(SessionFailureTest, AServerThatGoesAwayAfterAdmittingTheClientIsAConnection
   auto host = std::make_unique<Host>(HostConfig{.tick_rate_hz = kTestTickRate,
                                                 .parameters = kTestParameters,
                                                 .script_path = "scripts/round.lua",
-                                                .listen = Endpoint{.address = LoopbackAddress()}});
+                                                .listen = Endpoint{.address = LoopbackAddress()}},
+                                     Map{});
   Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
   session.Connect();
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
@@ -1257,7 +1341,8 @@ TEST(SessionFailureTest, EndingTheSessionOneselfIsNotAFailure) {
   Host host(HostConfig{.tick_rate_hz = kTestTickRate,
                        .parameters = kTestParameters,
                        .script_path = "scripts/round.lua",
-                       .listen = Endpoint{.address = LoopbackAddress()}});
+                       .listen = Endpoint{.address = LoopbackAddress()}},
+            Map{});
   Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
   session.Connect();
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;

@@ -45,8 +45,8 @@ inline constexpr float kMaxYaw = 1.0e6F;
 
 /// Whether command is well formed and newer than last_sequence, the newest
 /// sequence already taken in from this client.
-[[nodiscard]] std::expected<void, Rejection> Screen(const protocol::SequencedCommand& command,
-                                                    std::uint32_t last_sequence);
+[[nodiscard]] std::expected<void, Rejection> Validate(const protocol::SequencedCommand& command,
+                                                      std::uint32_t last_sequence);
 
 /// The most commands a queue holds; when a client runs ahead of the server, the oldest go.
 inline constexpr std::size_t kMaxQueuedCommands = 16;
@@ -64,8 +64,8 @@ struct TickCommand {
 /// One player's incoming commands.
 class CommandQueue {
  public:
-  /// Screens command and, if it passes, queues it.
-  [[nodiscard]] std::expected<void, Rejection> Offer(const protocol::SequencedCommand& command);
+  /// Validates command and, if it passes, queues it.
+  [[nodiscard]] std::expected<void, Rejection> TryEnqueue(const protocol::SequencedCommand& command);
 
   /// The command for this tick: the oldest queued one; else the last movement
   /// held for up to kMaxHeldTicks ticks; else no movement. Held and idle ticks

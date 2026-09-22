@@ -5,8 +5,10 @@
 
 namespace augusta::server {
 
-Match::Match(std::string engine_version, std::size_t capacity, std::vector<math::Vec3> spawn_points)
-    : engine_version_(std::move(engine_version)), capacity_(capacity), spawn_points_(std::move(spawn_points)) {
+Match::Match(MatchConfig config, std::vector<math::Vec3> spawn_points)
+    : engine_version_(std::move(config.engine_version)),
+      capacity_(config.capacity),
+      spawn_points_(std::move(spawn_points)) {
   if (spawn_points_.empty()) {
     spawn_points_.emplace_back();
   }

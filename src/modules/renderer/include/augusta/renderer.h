@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -31,12 +32,13 @@
 // called at the app's presentation rate instead. ClientRuntime's Run()
 // loop decides that split; this module just exposes the two primitives.
 //
-// Interface scope, for now: enough to draw one static Scene (a list of
-// world-space triangle meshes seen from one camera) and to establish the
-// seam PresentationWorld will render through. Consuming Presentation State
-// is deliberately not designed yet: that type doesn't exist until the ECS
-// (ADR-0001) and PresentationWorld (ADR-0021, ADR-0024) are. Revisit this
-// header once those land.
+// Interface scope: draws one static Scene (a list of world-space triangle
+// meshes seen from one camera), plus, per frame, however many RemotePlayer
+// placeholder boxes PresentationWorld's Interpolation phase produces
+// (SetRemotePlayers, below) - the first slice of Presentation State this
+// module actually consumes (ADR-0024). The local player's own position,
+// weapon visuals, skeletal animation and audio cues are still undesigned;
+// revisit this header again once those land.
 namespace augusta::renderer {
 
 // Default initial client-area size, in pixels (see Config::width/height).
@@ -84,6 +86,29 @@ struct Scene {
   std::vector<SceneMesh> meshes;
   Camera camera;
 };
+
+/// Default box color for RemotePlayer - a muted red, distinct from
+/// SceneMesh's default grey.
+inline constexpr math::Vec3 kDefaultRemotePlayerColor{0.85F, 0.25F, 0.25F};
+
+/// One other player, drawn as a placeholder box (issue #82 - no skeletal
+/// animation yet). position is the box's base (matches
+/// physics::BodyState::position, which is a player's feet); half_extents is
+/// the box's half-size. The renderer doesn't know whose player this is, or
+/// why it's that size - it just draws a box where it's told to; ClientRuntime
+/// maps presentation::RemotePlayer into this, keeping this module's only
+/// dependency augusta_input (no presentation/physics/protocol header here).
+struct RemotePlayer {
+  math::Vec3 position{};
+  math::Vec3 half_extents{};
+  math::Vec3 color = kDefaultRemotePlayerColor;
+};
+
+/// Upper bound on how many RemotePlayer boxes SetRemotePlayers can draw at
+/// once. Must stay >= protocol::kMaxPlayers - this module can't depend on
+/// augusta_protocol to check that itself, so ClientRuntime (which links
+/// both) enforces it with a static_assert.
+inline constexpr std::size_t kMaxRemotePlayers = 8;
 
 // Connection numbers for the debug HUD. The renderer only formats them: how
 // they are sourced from the transport is the caller's business.
@@ -161,6 +186,14 @@ class Renderer {
   /// Main/Render thread. Throws std::runtime_error if a mesh index is out
   /// of range for its positions or the scene has too many vertices to draw.
   void SetScene(const Scene& scene);
+
+  /// Replaces the drawn remote-player boxes via a persistently-mapped
+  /// upload-heap buffer - unlike SetScene, cheap enough to call once every
+  /// RenderFrame (no GPU wait, no fresh allocation). From the Main/Render
+  /// thread. Throws std::runtime_error if remote_players.size() exceeds
+  /// kMaxRemotePlayers. An empty span draws nothing - how a player who left
+  /// disappears.
+  void SetRemotePlayers(std::span<const RemotePlayer> remote_players);
 
   // Hides the OS cursor and confines/relocks it to this window each
   // frame, for continuous mouselook (as opposed to the free OS cursor a

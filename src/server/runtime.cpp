@@ -37,16 +37,16 @@ struct ServerRuntime::Impl {
   std::atomic<bool> running{false};
   std::thread network_thread;
 
-  explicit Impl(const Config& cfg)
+  Impl(const Config& cfg, server::Map map)
       : config(cfg),
-        host(server::HostConfig{
-            .tick_rate_hz = cfg.tick_rate_hz,
-            .parameters = cfg.parameters,
-            .script_path = cfg.script_path,
-            .listen = cfg.listen,
-            .collision = cfg.collision,
-            .spawn_points = cfg.spawn_points,
-        }) {}
+        host(
+            server::HostConfig{
+                .tick_rate_hz = cfg.tick_rate_hz,
+                .parameters = cfg.parameters,
+                .script_path = cfg.script_path,
+                .listen = cfg.listen,
+            },
+            std::move(map)) {}
 
   // Network I/O thread body (ADR-0005): pumps the connection until running is
   // cleared by ThreadJoiner or Stop().
@@ -57,7 +57,8 @@ struct ServerRuntime::Impl {
   }
 };
 
-ServerRuntime::ServerRuntime(const Config& config) : impl_(std::make_unique<Impl>(config)) {}
+ServerRuntime::ServerRuntime(const Config& config, server::Map map)
+    : impl_(std::make_unique<Impl>(config, std::move(map))) {}
 
 ServerRuntime::~ServerRuntime() = default;
 
