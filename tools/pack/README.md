@@ -6,8 +6,8 @@ tooling-time project only - nothing here is linked into the shipped client or
 server.
 
 ```
-<scenario>/map.usda -> usd-optimize -> usd-validation-nvidia -> cook -> <scenario>.client.pack
-<scenario>/*.lua                                                          -> <scenario>.server.pack
+<scenario>/map.usda -> usd-optimize -> usd-validation-nvidia -> cook -> <scenario>/client.pack
+<scenario>/*.lua                                                          -> <scenario>/server.pack
 ```
 
 1. **usd-optimize** cleans the stage (triangulate, dedupe, flatten, drop small
@@ -117,10 +117,12 @@ test_map\rules\round.lua    # any other *.lua, in any subfolder
 ```
 
 `augustap` takes that folder as an ordinary path - relative to the current
-directory or absolute - not a name looked up under some fixed root:
+directory or absolute - not a name looked up under some fixed root, but it must
+sit under `<assets-root>/authoring`: the cook refuses a scenario outside it,
+since the pack path defaulted below mirrors where it sits under `authoring/`.
 
 ```powershell
-augustap <path\to\scenario>                    # -> <assets-root>\packs\<scenario folder name>.{client,server}.pack
+augustap <path\to\scenario>                    # -> <assets-root>\packs\<scenario's path under authoring>\{client,server}.pack
 augustap <path\to\scenario> --skip-validation  # skip usd-validation-nvidia only
 ```
 
@@ -137,10 +139,10 @@ server starts on the pack. [`examples/augusta/`](examples/augusta/) is a full
 worked scenario to copy from, seeded into a fresh assets root by the bootstrap
 (see Setup above).
 
-By default, packs are written flat under `<assets-root>/packs`, named after the
-scenario folder itself (`test_map` -> `test_map.client.pack`,
-`test_map.server.pack`), wherever that folder actually lives; pass
-`--client-output-pack`/`--server-output-pack` to put them somewhere else.
+By default, packs are written under `<assets-root>/packs`, mirroring the
+scenario's own path under `<assets-root>/authoring` (`authoring/examples/augusta`
+-> `packs/examples/augusta/client.pack`, `packs/examples/augusta/server.pack`).
+Pass `--client-output-pack`/`--server-output-pack` to put them somewhere else.
 Scripts are part of the signed pack: to change a value, edit the file and cook
 again.
 
@@ -156,11 +158,11 @@ augustap [-h] [--assets-root ASSETS_ROOT]
 
 | Argument | Default | Description |
 |---|---|---|
-| `scenario` (required) | | Scenario folder - relative to the current directory or absolute, never resolved against `--assets-root` (see above). |
+| `scenario` (required) | | Scenario folder - relative to the current directory or absolute, but must be under `<assets-root>/authoring` (see above). |
 | `-h`, `--help` | | Print the usage and option list, then exit. |
-| `--assets-root ASSETS_ROOT` | the root of the venv the command runs from (`<assets-root>/python/...`) | Assets root holding `packs/` and `keys/`, used only for the three defaults below. |
-| `--client-output-pack CLIENT_OUTPUT_PACK` | `<assets-root>/packs/<scenario folder name>.client.pack` | Where to write the client pack. Missing parent directories are created. |
-| `--server-output-pack SERVER_OUTPUT_PACK` | `<assets-root>/packs/<scenario folder name>.server.pack` | Where to write the server pack. Missing parent directories are created. |
+| `--assets-root ASSETS_ROOT` | the root of the venv the command runs from (`<assets-root>/python/...`) | Assets root holding `authoring/`, `packs/` and `keys/`: `scenario` must sit under its `authoring/`, and it's used for the three defaults below. |
+| `--client-output-pack CLIENT_OUTPUT_PACK` | `<assets-root>/packs/<scenario's path under authoring>/client.pack` | Where to write the client pack. Missing parent directories are created. |
+| `--server-output-pack SERVER_OUTPUT_PACK` | `<assets-root>/packs/<scenario's path under authoring>/server.pack` | Where to write the server pack. Missing parent directories are created. |
 | `--signing-key SIGNING_KEY` | `<assets-root>/keys/augusta.key` | Ed25519 private key (64 bytes) the packs are signed with. |
 | `--skip-validation` | off | Skip usd-validation-nvidia (step 2) for stages that fail its checks. usd-optimize and the cook still run. |
 

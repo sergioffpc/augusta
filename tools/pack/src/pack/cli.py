@@ -12,14 +12,17 @@ Every *.lua file under the scenario folder goes into the server pack (ADR-0031,
 ADR-0039).
 
 The scenario argument is an ordinary path - relative to the current directory
-or absolute - naming the scenario's own folder directly; it is never resolved
-against an assets root. This project is installed into the hermetic
-environment tools/pack/scripts/bootstrap-windows.ps1 builds
+or absolute - naming the scenario's own folder directly, not a name looked up
+under some fixed root. It must still sit under --assets-root/authoring,
+though: the cook refuses a scenario outside it. This project is installed
+into the hermetic environment tools/pack/scripts/bootstrap-windows.ps1 builds
 (--assets-root/python), so --assets-root defaults to the root of the venv this
-interpreter is already running from and is used only for the defaults below,
-never to locate the scenario itself: packs default to
---assets-root/packs/<scenario folder name>.*.pack, and the signing key to
---assets-root/keys/augusta.key.
+interpreter is already running from, and is used for: the signing key,
+--assets-root/keys/augusta.key; the authoring-containment check above; and
+packs, which default to
+--assets-root/packs/<scenario's path relative to --assets-root/authoring>/{client,server}.pack
+- mirroring where the scenario sits under authoring/ (e.g. authoring/examples/augusta
+cooks to packs/examples/augusta/{client,server}.pack).
 """
 
 import argparse
@@ -43,22 +46,30 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "scenario",
         type=Path,
-        help="Scenario folder - relative to the current directory or absolute: <scenario>/map.usd* is the raw "
-        "authored stage (e.g. exported from USD Composer) and every *.lua under the folder is packed into the "
-        "server pack. It needs a parameters.lua. tools\\pack\\examples\\augusta is a worked example.",
+        help="Scenario folder - relative to the current directory or absolute, but must be under "
+        "<assets-root>/authoring: <scenario>/map.usd* is the raw authored stage (e.g. exported from USD Composer) "
+        "and every *.lua under the folder is packed into the server pack. It needs a parameters.lua. "
+        "tools\\pack\\examples\\augusta is a worked example.",
     )
     parser.add_argument(
         "--assets-root",
         type=Path,
         default=default_assets_root(),
-        help="Hermetic environment root, for the --client-output-pack/--server-output-pack/--signing-key defaults "
-        "below only (default: inferred from this interpreter's own venv).",
+        help="Hermetic environment root: scenario must be under its authoring/, and it's used for the "
+        "--client-output-pack/--server-output-pack/--signing-key defaults below (default: inferred from this "
+        "interpreter's own venv).",
     )
     parser.add_argument(
-        "--client-output-pack", type=Path, default=None, help="Default: <assets-root>/packs/<scenario folder name>.client.pack"
+        "--client-output-pack",
+        type=Path,
+        default=None,
+        help="Default: <assets-root>/packs/<scenario's path under <assets-root>/authoring>/client.pack",
     )
     parser.add_argument(
-        "--server-output-pack", type=Path, default=None, help="Default: <assets-root>/packs/<scenario folder name>.server.pack"
+        "--server-output-pack",
+        type=Path,
+        default=None,
+        help="Default: <assets-root>/packs/<scenario's path under <assets-root>/authoring>/server.pack",
     )
     parser.add_argument("--signing-key", type=Path, default=None, help="Default: <assets-root>/keys/augusta.key")
     parser.add_argument(
@@ -70,6 +81,7 @@ def main(argv: list[str] | None = None) -> int:
 
     assets_root: Path = args.assets_root
     packs_dir = assets_root / "packs"
+    authoring_dir = assets_root / "authoring"
 
     try:
         scenario = resolve_scenario(args.scenario)
@@ -79,9 +91,19 @@ def main(argv: list[str] | None = None) -> int:
     stage_path = scenario.stage_path
     stage_name = scenario.name
 
+    try:
+        pack_subdir = scenario.folder.resolve().relative_to(authoring_dir.resolve())
+    except ValueError:
+        print(
+            f"Scenario {scenario.folder} is not under {authoring_dir} - pass --assets-root pointing at the "
+            "assets root whose authoring/ it lives under, or move it there first.",
+            file=sys.stderr,
+        )
+        return 1
+
     signing_key_path = args.signing_key or assets_root / "keys" / "augusta.key"
-    client_output_pack = args.client_output_pack or packs_dir / f"{stage_name}.client.pack"
-    server_output_pack = args.server_output_pack or packs_dir / f"{stage_name}.server.pack"
+    client_output_pack = args.client_output_pack or packs_dir / pack_subdir / "client.pack"
+    server_output_pack = args.server_output_pack or packs_dir / pack_subdir / "server.pack"
 
     # The stage itself was already confirmed by resolve_scenario; only the
     # assets-root-derived signing key can still be missing here.

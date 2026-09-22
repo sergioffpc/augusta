@@ -11,7 +11,7 @@ base_dir: .
 # stamina rules) come from; every client is sent the values when it joins
 # (ADR-0039). See tools/pack/examples/augusta/parameters.lua.
 # Cook it with `augustap <scenario>` (tools/pack).
-pack: packs/examples/augusta.server.pack
+pack: packs/examples/augusta/server.pack
 
 # Ed25519 public key the pack is signed with (required).
 public_key: keys/augusta.pub
