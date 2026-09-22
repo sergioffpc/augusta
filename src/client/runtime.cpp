@@ -303,7 +303,14 @@ std::optional<harness::Failure> ClientRuntime::Run() {
     const nvtx3::scoped_range range{"Main/Render Frame"};
     impl_->renderer.PumpEvents();
     impl_->renderer.SetDebugHudStats({.net = impl_->GetLatestHudNet()});
-    presentation::State frame_state = impl_->presentation.RunFrame(impl_->GetLatestPredictionState());
+    // Two independent Session getters, not one snapshot - safe here because
+    // the server always sends JoinAccepted before this client's player can
+    // appear in any Authoritative State (harness::Session publishes the two
+    // as separate, ordered updates - see harness.cpp's ServerView), so a
+    // GetAuthoritativeState() that already has this session's player can
+    // never race ahead of a GetSessionId() that is still nullopt.
+    presentation::State frame_state = impl_->presentation.RunFrame(
+        impl_->GetLatestPredictionState(), impl_->session->GetSessionId(), impl_->session->GetAuthoritativeState());
     // TODO(sergioffpc): renderer.RenderFrame() doesn't consume
     // Presentation State yet - see renderer.h's own note on this.
     static_cast<void>(frame_state);

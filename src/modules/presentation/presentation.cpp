@@ -1,12 +1,17 @@
 #include "augusta/presentation.h"
 
 #include <array>
+#include <cstdint>
+#include <optional>
+#include <vector>
 
 #include <flecs.h>
 #include <nvtx3/nvtx3.hpp>
 
 #include "augusta/animation.h"
 #include "augusta/correction.h"
+#include "augusta/interpolation.h"
+#include "augusta/protocol.h"
 
 namespace augusta::presentation {
 
@@ -39,10 +44,26 @@ struct World::Impl {
   // Staged by RunFrame() immediately before ecs.progress(), read by the phase
   // systems below; not meaningful outside of a RunFrame call.
   prediction::State latest_state;
+  std::optional<protocol::SessionId> local_session;
+  std::optional<protocol::AuthoritativeState> authoritative_state;
+
   // Hides the jumps reconciliation makes to the predicted body (ADR-0004), as
   // an offset from the predicted position that fades.
   Correction correction;
   math::Vec3 local_offset{};
+
+  // Every other player's buffered updates (see interpolation.h), and the
+  // running clock RunFrame's render frame deltas advance - independent of the
+  // server's own tick clock, since a render frame's delta_time is what this
+  // phase actually has. The tick of the last authoritative_state recorded
+  // into remote_interpolator, so a repeated Authoritative State (the network
+  // thread hasn't received a new tick since the last RunFrame call) is not
+  // recorded again.
+  RemoteInterpolator remote_interpolator;
+  float render_clock = 0.0F;
+  std::optional<std::uint32_t> last_recorded_tick;
+  std::vector<RemotePlayer> remote_players;
+
   State frame_state;
 
   explicit Impl(audio::Engine& engine) : audio_engine(engine) {
@@ -77,6 +98,23 @@ struct World::Impl {
     const nvtx3::scoped_range range{"Interpolation"};
     local_offset = correction.Update(latest_state.total_correction, delta_time);
     // TODO(sergioffpc): blend the last two prediction::State values.
+
+    render_clock += delta_time;
+    if (authoritative_state.has_value() &&
+        (!last_recorded_tick.has_value() || *last_recorded_tick != authoritative_state->tick)) {
+      std::vector<protocol::SessionId> present;
+      present.reserve(authoritative_state->players.size());
+      for (const protocol::PlayerState& player : authoritative_state->players) {
+        if (local_session.has_value() && player.session == *local_session) {
+          continue;
+        }
+        present.push_back(player.session);
+        remote_interpolator.Record(player.session, render_clock, player.body);
+      }
+      remote_interpolator.Sync(present);
+      last_recorded_tick = authoritative_state->tick;
+    }
+    remote_players = remote_interpolator.Sample(render_clock - kInterpolationDelay);
   }
 
   void OnCamera() {
@@ -107,7 +145,7 @@ struct World::Impl {
   void OnCommit() {
     const nvtx3::scoped_range range{"Commit"};
     frame_state.local_position = latest_state.local_body.position + local_offset;
-    // TODO(sergioffpc): package the rest of the frame's presentation data into State.
+    frame_state.remote_players = remote_players;
   }
 };
 
@@ -117,8 +155,11 @@ World::~World() = default;
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
-State World::RunFrame(const prediction::State& latest) {
+State World::RunFrame(const prediction::State& latest, std::optional<protocol::SessionId> local_session,
+                      const std::optional<protocol::AuthoritativeState>& authoritative) {
   impl_->latest_state = latest;
+  impl_->local_session = local_session;
+  impl_->authoritative_state = authoritative;
   impl_->ecs.progress();
   impl_->previous_state = latest;
   impl_->has_previous_state = true;
