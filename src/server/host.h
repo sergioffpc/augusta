@@ -43,9 +43,9 @@ struct HostConfig {
 /// is the executable's business, not the config file's - so it travels
 /// alongside HostConfig rather than inside it.
 struct Map {
-  std::vector<physics::CollisionMesh> collision;
+  std::vector<physics::CollisionMesh> collision{};
   /// In the order joining players take them; empty spawns everyone at the origin.
-  std::vector<math::Vec3> spawn_points;
+  std::vector<math::Vec3> spawn_points{};
 };
 
 /// The server's listening socket and its SimulationWorld, without threads or a clock.
