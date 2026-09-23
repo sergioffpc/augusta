@@ -199,7 +199,7 @@ void Session::ExchangeMessages() {
   }
 }
 
-networking::ConnectionState Session::GetState() const { return impl_->network.GetState(); }
+networking::ConnectionState Session::GetConnectionState() const { return impl_->network.GetState(); }
 
 std::optional<Failure> Session::GetFailure() const {
   const std::shared_ptr<const ServerView> server_view = impl_->view.load();
@@ -213,7 +213,7 @@ std::optional<Failure> Session::GetFailure() const {
   return Failure{.kind = was_admitted ? FailureKind::kConnectionLost : FailureKind::kServerUnreachable};
 }
 
-std::optional<networking::ConnectionStats> Session::GetStats() const { return impl_->network.GetStats(); }
+std::optional<networking::ConnectionStats> Session::GetConnectionStats() const { return impl_->network.GetStats(); }
 
 std::optional<protocol::SessionId> Session::GetSessionId() const {
   const std::shared_ptr<const ServerView> server_view = impl_->view.load();
