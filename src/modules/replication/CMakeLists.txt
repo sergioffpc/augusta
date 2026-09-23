@@ -2,5 +2,5 @@ add_library(augusta_replication STATIC
   replication.cpp
 )
 target_include_directories(augusta_replication PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(augusta_replication PUBLIC augusta_protocol augusta_simulation)
+target_link_libraries(augusta_replication PUBLIC augusta_physics augusta_protocol augusta_simulation)
 augusta_set_module_scope(augusta_replication SERVER_ONLY)

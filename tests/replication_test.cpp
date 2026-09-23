@@ -37,12 +37,12 @@ TEST(ReplicationTest, EveryRecipientGetsEveryPlayerUnderTheNamesClientsKnow) {
 
   ASSERT_EQ(updates.size(), 2U);
   for (const auto& update : updates) {
-    EXPECT_EQ(update.state.tick, 42U);
-    ASSERT_EQ(update.state.players.size(), 2U);
-    EXPECT_EQ(update.state.players[0].session, static_cast<SessionId>(1));
-    EXPECT_EQ(update.state.players[0].body.position.x, 10.0F);
-    EXPECT_EQ(update.state.players[1].session, static_cast<SessionId>(2));
-    EXPECT_EQ(update.state.players[1].body.position.x, 20.0F);
+    EXPECT_EQ(update.tick, 42U);
+    ASSERT_EQ(update.players.size(), 2U);
+    EXPECT_EQ(update.players[0].session, static_cast<SessionId>(1));
+    EXPECT_EQ(update.players[0].body.position.x, 10.0F);
+    EXPECT_EQ(update.players[1].session, static_cast<SessionId>(2));
+    EXPECT_EQ(update.players[1].body.position.x, 20.0F);
   }
 }
 
@@ -55,9 +55,9 @@ TEST(ReplicationTest, EachRecipientGetsItsOwnAcknowledgedSequence) {
   const auto updates = PlanUpdates(state, 1, recipients);
 
   EXPECT_EQ(updates[0].recipient, static_cast<SessionId>(1));
-  EXPECT_EQ(updates[0].state.acknowledged_sequence, 100U);
+  EXPECT_EQ(updates[0].acknowledged_sequence, 100U);
   EXPECT_EQ(updates[1].recipient, static_cast<SessionId>(2));
-  EXPECT_EQ(updates[1].state.acknowledged_sequence, 7U);
+  EXPECT_EQ(updates[1].acknowledged_sequence, 7U);
 }
 
 TEST(ReplicationTest, NobodyToSendToMeansNothingIsPlanned) {
@@ -73,8 +73,8 @@ TEST(ReplicationTest, ARecipientWithNoBodyYetStillSeesTheOthers) {
   const auto updates = PlanUpdates(state, 1, recipients);
 
   ASSERT_EQ(updates.size(), 1U);
-  ASSERT_EQ(updates[0].state.players.size(), 1U);
-  EXPECT_EQ(updates[0].state.players[0].session, static_cast<SessionId>(1));
+  ASSERT_EQ(updates[0].players.size(), 1U);
+  EXPECT_EQ(updates[0].players[0].session, static_cast<SessionId>(1));
 }
 
 }  // namespace

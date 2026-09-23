@@ -9,7 +9,6 @@
 #include <string_view>
 
 #include "augusta/input.h"
-#include "augusta/protocol.h"
 
 // The server's boundary for what a client sends to move its player: a
 // structural sanity gate, and a per-player queue that hands SimulationWorld
@@ -17,6 +16,13 @@
 // without a network. The gate is the seam the anti-cheat baseline (US-15) grows
 // into: it checks that a command is well formed, not that it is fair play.
 namespace augusta::server {
+
+/// One tick's command and the number its client gave it. Numbers start at 1 and
+/// grow by one per command, so the queue can tell what it has already seen.
+struct SequencedCommand {
+  std::uint32_t sequence = 0;
+  input::Command command{};
+};
 
 /// Why a command was not taken in.
 enum class Rejection : std::uint8_t {
@@ -45,8 +51,7 @@ inline constexpr float kMaxYaw = 3.2F;
 
 /// Whether command is well formed and newer than last_sequence, the newest
 /// sequence already taken in from this client.
-[[nodiscard]] std::expected<void, Rejection> Validate(const protocol::SequencedCommand& command,
-                                                      std::uint32_t last_sequence);
+[[nodiscard]] std::expected<void, Rejection> Validate(const SequencedCommand& command, std::uint32_t last_sequence);
 
 /// The most commands a queue holds; when a client runs ahead of the server, the oldest go.
 inline constexpr std::size_t kMaxQueuedCommands = 16;
@@ -65,7 +70,7 @@ struct TickCommand {
 class CommandQueue {
  public:
   /// Validates command and, if it passes, queues it.
-  [[nodiscard]] std::expected<void, Rejection> TryEnqueue(const protocol::SequencedCommand& command);
+  [[nodiscard]] std::expected<void, Rejection> TryEnqueue(const SequencedCommand& command);
 
   /// The command for this tick: the oldest queued one; else the last movement
   /// held for up to kMaxHeldTicks ticks; else no movement. Held and idle ticks
@@ -73,7 +78,7 @@ class CommandQueue {
   [[nodiscard]] TickCommand Next();
 
  private:
-  std::deque<protocol::SequencedCommand> queued_;
+  std::deque<SequencedCommand> queued_;
   std::optional<input::Command> last_;
   int held_ticks_ = 0;
   std::uint32_t last_offered_ = 0;

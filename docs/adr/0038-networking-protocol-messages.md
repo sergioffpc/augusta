@@ -5,6 +5,14 @@ shape of a message and which messages the transport delivers reliably. The
 protocol is the shared `augusta_protocol` module: a pure codec with no socket,
 clock or state, used by both client and server (ADR-0006).
 
+**Its own types.** A message holds only types the protocol defines itself (its
+body state, command, stance and parameters, as plain fields) and the math types
+(`math::Vec3`); never another module's structs. So `augusta_protocol` depends on
+nothing but `augusta_math`, and a module changing its own structs never changes
+what travels. Each peer converts between the protocol's types and its own at its
+edge and nowhere else: the server in `server::Host` and the client in
+`harness::Session`. Inside each peer, modules pass the engine's types.
+
 **Extended by ADR-0042**: Join request also carries the chosen character's path,
 Join refused gains the *unknown character* reason, and Join accepted, each Roster
 entry and each player in Authoritative State carry a character index.
@@ -16,9 +24,11 @@ bound each match. The per-player character index leaves Authoritative State.
 
 **Wire shape.** One message is one transport payload: a one-byte `MessageType`
 followed by that type's fields, fixed-width and little-endian; a string is a
-one-byte length and its bytes. Enumerated fields start at 1, so a zeroed byte is
-never a valid value. There is no length prefix on the payload itself, since the
-transport already frames messages.
+one-byte length and its bytes. Every field takes the smallest type that holds
+what it says: flags travel as bits of one byte, which a small enumeration shares
+where it fits, and the bits no field uses are 0. Message types and refusal
+reasons start at 1, so a zeroed byte is never one. There is no length prefix on
+the payload itself, since the transport already frames messages.
 
 **Untrusted input.** `Decode` never throws: it returns
 `std::expected<Message, DecodeError>` (ADR-0033) where the error is `kEmpty`,
@@ -38,7 +48,7 @@ supersedes is unreliable.
 | Join request | client → server | reliable | engine version |
 | Join accepted | server → client | reliable | session ID, the player's spawn position, the server's tick rate, the parameters to predict with, and the roster: every player already in the match (at most 8) with session ID and body |
 | Join refused | server → client | reliable | reason: version mismatch, match full |
-| Commands | client → server | unreliable | up to 8 commands, oldest first: sequence, movement direction, sprint, desired stance, yaw, pitch, ADS, fire, reload |
+| Commands | client → server | unreliable | up to 8 commands, oldest first: sequence, movement direction, yaw, pitch, and one byte holding the sprint, ADS, fire and reload flags (bits 0-3) and the desired stance (bits 4-5) |
 | Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, and per player (at most 8): session ID, position, velocity, stance, stamina |
 
 Per-tick traffic is unreliable because a newer message supersedes an older one,

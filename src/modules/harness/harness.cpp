@@ -13,20 +13,48 @@
 #include <variant>
 #include <vector>
 
+#include "augusta/harness_wire.h"
 #include "augusta/logging.h"
 
 namespace augusta::harness {
+
+namespace {
+
+// The whole answer to a join request: the session, the spawn point, the tick
+// rate, the parameters and who was already there. The rate and the parameters
+// are the server's for the whole run.
+struct Admission {
+  protocol::SessionId session{};
+  math::Vec3 spawn{};
+  float tick_rate_hz = 0.0F;
+  parameters::Parameters parameters{};
+  std::vector<PlayerBody> roster;
+};
+
+Admission ToAdmission(const protocol::JoinAccepted& accepted) {
+  Admission admission{
+      .session = accepted.session,
+      .spawn = accepted.spawn,
+      .tick_rate_hz = accepted.tick_rate_hz,
+      .parameters = FromWire(accepted.parameters),
+      .roster = {},
+  };
+  admission.roster.reserve(accepted.roster.size());
+  for (const protocol::PlayerState& player : accepted.roster) {
+    admission.roster.push_back(FromWire(player));
+  }
+  return admission;
+}
+
+}  // namespace
 
 // What the server has told this client. Immutable once published: the Network
 // I/O thread makes a new one for each message that changes it, and the
 // Prediction thread reads whichever is current.
 struct ServerView {
-  // The whole answer to the join request: the session, the spawn point, the
-  // tick rate, the parameters and who was already there. The rate and the
-  // parameters are the server's for the whole run.
-  std::optional<protocol::JoinAccepted> accepted;
+  std::optional<Admission> accepted;
   std::optional<protocol::JoinRefusal> refusal;
-  std::optional<protocol::AuthoritativeState> authoritative;
+  std::optional<AuthoritativeState> authoritative;
 };
 
 struct Session::Impl {
@@ -85,7 +113,8 @@ struct Session::Impl {
   // A server whose tick rate or parameters the simulation cannot run on (a rate
   // of zero would be divided by) is not a usable one: the message is dropped, as
   // a malformed one is, and the client stays unadmitted.
-  void OnJoinAccepted(const protocol::JoinAccepted& accepted) {
+  void OnJoinAccepted(const protocol::JoinAccepted& message) {
+    const Admission accepted = ToAdmission(message);
     if (!parameters::IsValidTickRate(accepted.tick_rate_hz)) {
       LW_LIMITED(drop_warnings, "subsystem=clientruntime event=dropped reason=\"invalid tick rate\" tick_rate_hz={}",
                  accepted.tick_rate_hz);
@@ -111,7 +140,7 @@ struct Session::Impl {
     if (current->authoritative.has_value() && state.tick <= current->authoritative->tick) {
       return;
     }
-    Publish([&](ServerView& next) { next.authoritative = state; });
+    Publish([&](ServerView& next) { next.authoritative = FromWire(state); });
   }
 
   // Makes the next view from the current one changed by mutate, and publishes it.
@@ -128,7 +157,7 @@ struct Session::Impl {
     if (!server_view.accepted.has_value() || !server_view.authoritative.has_value()) {
       return std::nullopt;
     }
-    for (const protocol::PlayerState& player : server_view.authoritative->players) {
+    for (const PlayerBody& player : server_view.authoritative->players) {
       if (player.session == server_view.accepted->session) {
         return prediction::Acknowledgement{
             .sequence = server_view.authoritative->acknowledged_sequence,
@@ -149,7 +178,7 @@ struct Session::Impl {
       }
     }
     // Keeps at most the newest kMaxCommandsPerMessage, all a message can carry.
-    unacknowledged.push_back(protocol::SequencedCommand{.sequence = sequence, .command = command});
+    unacknowledged.push_back(protocol::SequencedCommand{.sequence = sequence, .command = ToWire(command)});
     if (unacknowledged.size() > protocol::kMaxCommandsPerMessage) {
       unacknowledged.pop_front();
     }
@@ -228,9 +257,9 @@ std::optional<protocol::SessionId> Session::GetSessionId() const {
   return server_view->accepted->session;
 }
 
-std::vector<protocol::PlayerState> Session::GetRoster() const {
+std::vector<PlayerBody> Session::GetRoster() const {
   const std::shared_ptr<const ServerView> server_view = impl_->view.load();
-  return server_view->accepted.has_value() ? server_view->accepted->roster : std::vector<protocol::PlayerState>{};
+  return server_view->accepted.has_value() ? server_view->accepted->roster : std::vector<PlayerBody>{};
 }
 
 std::optional<float> Session::GetTickRate() const {
@@ -251,9 +280,7 @@ std::optional<parameters::Parameters> Session::GetParameters() const {
 
 std::optional<protocol::JoinRefusal> Session::GetRefusal() const { return impl_->view.load()->refusal; }
 
-std::optional<protocol::AuthoritativeState> Session::GetAuthoritativeState() const {
-  return impl_->view.load()->authoritative;
-}
+std::optional<AuthoritativeState> Session::GetAuthoritativeState() const { return impl_->view.load()->authoritative; }
 
 prediction::State Session::Tick(const input::Command& command, float delta_time) {
   Impl& impl = *impl_;

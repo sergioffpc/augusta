@@ -10,13 +10,13 @@ namespace {
 
 using augusta::input::Command;
 using augusta::math::Vec3;
-using augusta::protocol::SequencedCommand;
 using augusta::server::CommandQueue;
 using augusta::server::kMaxHeldTicks;
 using augusta::server::kMaxMovementMagnitude;
 using augusta::server::kMaxPitch;
 using augusta::server::kMaxQueuedCommands;
 using augusta::server::Rejection;
+using augusta::server::SequencedCommand;
 using augusta::server::Validate;
 
 constexpr float kInfinity = std::numeric_limits<float>::infinity();

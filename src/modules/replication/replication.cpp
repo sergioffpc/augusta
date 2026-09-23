@@ -1,7 +1,6 @@
 #include "augusta/replication.h"
 
 #include <cstddef>
-#include <utility>
 
 namespace augusta::replication {
 
@@ -15,19 +14,21 @@ protocol::SessionId SessionOf(simulation::PlayerId player) {
 
 std::vector<Update> PlanUpdates(const simulation::State& state, std::uint32_t tick,
                                 std::span<const Recipient> recipients) {
-  protocol::AuthoritativeState everyone;
-  everyone.tick = tick;
-  everyone.players.reserve(state.players.size());
+  std::vector<PlayerBody> everyone;
+  everyone.reserve(state.players.size());
   for (const simulation::PlayerState& player : state.players) {
-    everyone.players.push_back(protocol::PlayerState{.session = SessionOf(player.player), .body = player.body});
+    everyone.push_back(PlayerBody{.session = SessionOf(player.player), .body = player.body});
   }
 
   std::vector<Update> updates;
   updates.reserve(recipients.size());
   for (const Recipient& recipient : recipients) {
-    Update update{.recipient = recipient.session, .state = everyone};
-    update.state.acknowledged_sequence = recipient.acknowledged_sequence;
-    updates.push_back(std::move(update));
+    updates.push_back(Update{
+        .recipient = recipient.session,
+        .tick = tick,
+        .acknowledged_sequence = recipient.acknowledged_sequence,
+        .players = everyone,
+    });
   }
   return updates;
 }

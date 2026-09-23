@@ -22,7 +22,7 @@ add_library(augustad_match STATIC
   match.cpp
 )
 target_include_directories(augustad_match PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_match PUBLIC augusta_networking augusta_protocol)
+target_link_libraries(augustad_match PUBLIC augusta_math augusta_networking augusta_physics augusta_protocol)
 augusta_set_module_scope(augustad_match SERVER_ONLY)
 
 # The sanity gate and per-player queue for what clients send to move; pure, so
@@ -31,18 +31,21 @@ add_library(augustad_commands STATIC
   command_queue.cpp
 )
 target_include_directories(augustad_commands PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_commands PUBLIC augusta_input augusta_protocol)
+target_link_libraries(augustad_commands PUBLIC augusta_input)
 augusta_set_module_scope(augustad_commands SERVER_ONLY)
 
 # The server's socket and SimulationWorld without threads or a clock, so a test
-# can drive a match by hand (see host.h).
+# can drive a match by hand (see host.h), and the conversions between the
+# protocol's plain types and the engine's that Host makes at the edge (see wire.h).
 add_library(augustad_host STATIC
   host.cpp
+  wire.cpp
 )
 target_include_directories(augustad_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_host
   PUBLIC augusta_networking augusta_parameters augusta_physics augusta_simulation augustad_parameters_loader
-  PRIVATE augustad_commands augustad_match augusta_logging augusta_protocol augusta_replication augusta_version
+         augustad_commands augustad_match augusta_protocol augusta_replication
+  PRIVATE augusta_logging augusta_version
 )
 augusta_set_module_scope(augustad_host SERVER_ONLY)
 

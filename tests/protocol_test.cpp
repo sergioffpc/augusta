@@ -14,8 +14,10 @@
 // The codec is pure: every case here is bytes in, message or error out.
 namespace {
 
+using augusta::math::Vec3;
 using augusta::protocol::AuthoritativeState;
 using augusta::protocol::Bytes;
+using augusta::protocol::Command;
 using augusta::protocol::Commands;
 using augusta::protocol::Decode;
 using augusta::protocol::DecodeError;
@@ -98,9 +100,9 @@ TEST(ProtocolTest, JoinRequestWithAnEmptyVersionRoundTrips) {
 
 PlayerState PlayerAt(std::uint32_t session, float x) {
   PlayerState player{.session = static_cast<SessionId>(session)};
-  player.body.position = augusta::math::Vec3(x, 1.0F, -2.5F);
-  player.body.velocity = augusta::math::Vec3(0.5F, 0.0F, 3.0F);
-  player.body.stance = augusta::physics::Stance::kCrouching;
+  player.body.position = Vec3(x, 1.0F, -2.5F);
+  player.body.velocity = Vec3(0.5F, 0.0F, 3.0F);
+  player.body.stance = augusta::protocol::Stance::kCrouching;
   player.body.stamina = 0.75F;
   return player;
 }
@@ -108,7 +110,7 @@ PlayerState PlayerAt(std::uint32_t session, float x) {
 TEST(ProtocolTest, JoinAcceptedRoundTrips) {
   JoinAccepted sent{
       .session = static_cast<SessionId>(0xA1B2C3D4U),
-      .spawn = augusta::math::Vec3(4.0F, 0.5F, -8.0F),
+      .spawn = Vec3(4.0F, 0.5F, -8.0F),
       .tick_rate_hz = 30.0F,
       .parameters = {.stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F}},
       .roster = {PlayerAt(1, 10.0F), PlayerAt(2, -3.0F)}};
@@ -234,27 +236,21 @@ TEST(ProtocolTest, BytesAfterAMessageAreTrailing) {
 // A command with every field set to something other than its default.
 SequencedCommand BusyCommand(std::uint32_t sequence) {
   SequencedCommand sequenced{.sequence = sequence};
-  sequenced.command.movement.direction = augusta::math::Vec3(0.5F, -0.25F, 1.0F);
-  sequenced.command.movement.sprint = true;
-  sequenced.command.movement.desired_stance = augusta::physics::Stance::kProne;
+  sequenced.command.direction = Vec3(0.5F, -0.25F, 1.0F);
   sequenced.command.yaw = 3.5F;
   sequenced.command.pitch = -1.25F;
-  sequenced.command.ads = true;
-  sequenced.command.fire = true;
-  sequenced.command.reload = true;
+  sequenced.command.flags = Command::kSprint | Command::kAds | Command::kFire | Command::kReload;
+  sequenced.command.desired_stance = augusta::protocol::Stance::kProne;
   return sequenced;
 }
 
 void ExpectSameCommand(const SequencedCommand& actual, const SequencedCommand& expected) {
   EXPECT_EQ(actual.sequence, expected.sequence);
-  EXPECT_EQ(actual.command.movement.direction, expected.command.movement.direction);
-  EXPECT_EQ(actual.command.movement.sprint, expected.command.movement.sprint);
-  EXPECT_EQ(actual.command.movement.desired_stance, expected.command.movement.desired_stance);
+  EXPECT_EQ(actual.command.direction, expected.command.direction);
   EXPECT_EQ(actual.command.yaw, expected.command.yaw);
   EXPECT_EQ(actual.command.pitch, expected.command.pitch);
-  EXPECT_EQ(actual.command.ads, expected.command.ads);
-  EXPECT_EQ(actual.command.fire, expected.command.fire);
-  EXPECT_EQ(actual.command.reload, expected.command.reload);
+  EXPECT_EQ(actual.command.flags, expected.command.flags);
+  EXPECT_EQ(actual.command.desired_stance, expected.command.desired_stance);
 }
 
 TEST(ProtocolTest, CommandsRoundTripWithEveryField) {
@@ -293,36 +289,47 @@ TEST(ProtocolTest, MoreCommandsThanAMessageAllowsIsTooLong) {
 TEST(ProtocolTest, ANonFiniteFloatSurvivesTheCodecForTheServerToJudge) {
   SequencedCommand sequenced = BusyCommand(1);
   sequenced.command.yaw = std::numeric_limits<float>::quiet_NaN();
-  sequenced.command.movement.direction.x = std::numeric_limits<float>::infinity();
+  sequenced.command.direction.x = std::numeric_limits<float>::infinity();
 
   const auto decoded = std::get<Commands>(RoundTrip(Commands{.commands = {sequenced}}));
 
   EXPECT_TRUE(std::isnan(decoded.commands[0].command.yaw));
-  EXPECT_TRUE(std::isinf(decoded.commands[0].command.movement.direction.x));
+  EXPECT_TRUE(std::isinf(decoded.commands[0].command.direction.x));
 }
 
-TEST(ProtocolTest, ACommandsStanceOrFlagOutsideItsRangeIsInvalid) {
+// type, count, then per command: sequence (4), direction (12), yaw (4), pitch
+// (4) and one byte for the flags and the stance.
+constexpr std::size_t kCommandFlagsOffset = 2 + 4 + 12 + 4 + 4;
+
+TEST(ProtocolTest, ACommandsFlagsAndStanceShareItsLastByte) {
+  SequencedCommand sequenced{.sequence = 1};
+  sequenced.command.flags = Command::kSprint | Command::kReload;
+  sequenced.command.desired_stance = augusta::protocol::Stance::kProne;
+
+  const Bytes payload = Encode(Commands{.commands = {sequenced}});
+
+  ASSERT_EQ(payload.size(), kCommandFlagsOffset + 1);
+  // The flags in the low four bits, the stance in the two above them.
+  EXPECT_EQ(payload[kCommandFlagsOffset], std::byte{0b0010'1001});
+}
+
+TEST(ProtocolTest, ACommandsStanceOrUnusedBitsOutsideTheirRangeAreInvalid) {
   const Bytes payload = Encode(Commands{.commands = {BusyCommand(1)}});
-  // type, count, sequence (4), direction (12), then sprint and stance.
-  constexpr std::size_t kSprintOffset = 2 + 4 + 12;
-  constexpr std::size_t kStanceOffset = kSprintOffset + 1;
+  for (const std::uint8_t bad : {std::uint8_t{0b0011'0000}, std::uint8_t{0b0100'0000}, std::uint8_t{0b1000'0000}}) {
+    Bytes altered = payload;
+    altered[kCommandFlagsOffset] = static_cast<std::byte>(bad);
 
-  Bytes bad_flag = payload;
-  bad_flag[kSprintOffset] = static_cast<std::byte>(2);
-  EXPECT_EQ(Decode(bad_flag).error(), DecodeError::kInvalidEnum);
-
-  Bytes bad_stance = payload;
-  bad_stance[kStanceOffset] = static_cast<std::byte>(3);
-  EXPECT_EQ(Decode(bad_stance).error(), DecodeError::kInvalidEnum);
+    EXPECT_EQ(Decode(altered).error(), DecodeError::kInvalidEnum) << static_cast<int>(bad);
+  }
 }
 
 TEST(ProtocolTest, AuthoritativeStateRoundTrips) {
   AuthoritativeState sent{.tick = 900, .acknowledged_sequence = 875};
   for (std::uint32_t i = 0; i < 3; ++i) {
     PlayerState player{.session = static_cast<SessionId>(10 + i)};
-    player.body.position = augusta::math::Vec3(1.0F + static_cast<float>(i), 2.0F, -3.5F);
-    player.body.velocity = augusta::math::Vec3(0.0F, -9.81F, 3.0F);
-    player.body.stance = static_cast<augusta::physics::Stance>(i);
+    player.body.position = Vec3(1.0F + static_cast<float>(i), 2.0F, -3.5F);
+    player.body.velocity = Vec3(0.0F, -9.81F, 3.0F);
+    player.body.stance = static_cast<augusta::protocol::Stance>(i);
     player.body.stamina = 0.25F * static_cast<float>(i);
     sent.players.push_back(player);
   }

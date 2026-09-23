@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "augusta/audio.h"
+#include "augusta/harness.h"
 #include "augusta/interpolation.h"
 #include "augusta/math.h"
 #include "augusta/prediction.h"
@@ -151,7 +152,7 @@ class World {
   // call) is not recorded again. Returns the frame's Presentation State.
   State RunFrame(const prediction::State& latest, const math::Quat& view_rotation,
                  std::optional<protocol::SessionId> local_session,
-                 const std::optional<protocol::AuthoritativeState>& authoritative);
+                 const std::optional<harness::AuthoritativeState>& authoritative);
 
  private:
   struct Impl;

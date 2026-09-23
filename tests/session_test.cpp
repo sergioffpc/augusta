@@ -36,6 +36,7 @@
 #include "host.h"
 #include "match.h"
 #include "parameters_loader.h"
+#include "wire.h"
 
 // The seam the M3 tickets test through (issue #73): a real server host and a
 // real client session, both without a window, a GPU or a wall-clock loop, in
@@ -748,7 +749,7 @@ TEST_F(MovementTest, CommandsThatAreOutOfOrderNonFiniteOrOutOfRangeAreDroppedWit
 
   const auto command = [](std::uint32_t sequence, float yaw = 0.0F, float pitch = 0.0F) {
     augusta::protocol::SequencedCommand sequenced{.sequence = sequence};
-    sequenced.command.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+    sequenced.command.direction = Vec3(1.0F, 0.0F, 0.0F);
     sequenced.command.yaw = yaw;
     sequenced.command.pitch = pitch;
     return sequenced;
@@ -1148,8 +1149,9 @@ class ScriptedServer {
       peer_ = message.from;
       const auto decoded = augusta::protocol::Decode(message.payload);
       if (decoded.has_value() && std::holds_alternative<augusta::protocol::JoinRequest>(*decoded)) {
-        Send(augusta::protocol::JoinAccepted{
-            .session = augusta::protocol::SessionId{1}, .tick_rate_hz = kTestTickRate, .parameters = parameters_});
+        Send(augusta::protocol::JoinAccepted{.session = augusta::protocol::SessionId{1},
+                                             .tick_rate_hz = kTestTickRate,
+                                             .parameters = augusta::server::ToWire(parameters_)});
       }
     }
   }
