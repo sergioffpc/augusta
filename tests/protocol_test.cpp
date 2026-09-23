@@ -56,7 +56,7 @@ Message RoundTrip(const Message& message) {
 }
 
 TEST(ProtocolTest, JoinRequestRoundTrips) {
-  const auto decoded = RoundTrip(JoinRequest{.engine_version = "0.1.0"});
+  const auto decoded = RoundTrip(JoinRequest{.engine_version = "0.1.0", .character = ""});
 
   ASSERT_TRUE(std::holds_alternative<JoinRequest>(decoded));
   EXPECT_EQ(std::get<JoinRequest>(decoded).engine_version, "0.1.0");
@@ -65,7 +65,7 @@ TEST(ProtocolTest, JoinRequestRoundTrips) {
 TEST(ProtocolTest, JoinRequestWithTheLongestVersionRoundTrips) {
   const std::string longest(kMaxEngineVersionLength, 'v');
 
-  const auto decoded = RoundTrip(JoinRequest{.engine_version = longest});
+  const auto decoded = RoundTrip(JoinRequest{.engine_version = longest, .character = ""});
 
   EXPECT_EQ(std::get<JoinRequest>(decoded).engine_version, longest);
 }
@@ -138,7 +138,7 @@ TEST(ProtocolTest, JoinAcceptedRoundTrips) {
 }
 
 TEST(ProtocolTest, JoinAcceptedWithAnEmptyRosterRoundTrips) {
-  const auto decoded = RoundTrip(JoinAccepted{.session = static_cast<SessionId>(1)});
+  const auto decoded = RoundTrip(JoinAccepted{.session = static_cast<SessionId>(1), .roster = {}});
 
   EXPECT_TRUE(std::get<JoinAccepted>(decoded).roster.empty());
 }
@@ -178,7 +178,8 @@ TEST(ProtocolTest, FieldsAreFixedWidthLittleEndian) {
   accepted.push_back(std::byte{0x03});
   accepted.resize(accepted.size() + 12 + 1, std::byte{0});
   EXPECT_EQ(Encode(JoinAccepted{.session = static_cast<SessionId>(0x04030201U),
-                                .parameters = {.stamina = {}, .player_count = 3}}),
+                                .parameters = {.stamina = {}, .player_count = 3},
+                                .roster = {}}),
             accepted);
   EXPECT_EQ(Encode(JoinRefused{.reason = JoinRefusal::kMatchFull}), BytesOf({kJoinRefusedType, 2}));
   EXPECT_EQ(Encode(JoinRequest{.engine_version = "ab", .character = "c"}),
@@ -332,7 +333,7 @@ TEST(ProtocolTest, ACommandsStanceOrUnusedBitsOutsideTheirRangeAreInvalid) {
 }
 
 TEST(ProtocolTest, AuthoritativeStateRoundTrips) {
-  AuthoritativeStateWire sent{.tick = 900, .acknowledged_sequence = 875};
+  AuthoritativeStateWire sent{.tick = 900, .acknowledged_sequence = 875, .players = {}};
   for (std::uint32_t i = 0; i < 3; ++i) {
     PlayerStateWire player{.session = static_cast<SessionId>(10 + i)};
     player.body.position = Vec3(1.0F + static_cast<float>(i), 2.0F, -3.5F);

@@ -132,10 +132,10 @@ enum class JoinRefusal : std::uint8_t {
 /// Client to server: the first message on a new connection.
 struct JoinRequest {
   /// The client's engine version (augusta::EngineVersion); at most kMaxEngineVersionLength bytes.
-  std::string engine_version{};
+  std::string engine_version;
   /// The character the player chose, by its path relative to `authoring/`
   /// (e.g. "characters/player", ADR-0042); at most kMaxCharacterPathLength bytes.
-  std::string character{};
+  std::string character;
 };
 
 /// One player's body inside an Authoritative State update or a roster.
@@ -159,7 +159,7 @@ struct JoinAccepted {
   ParametersWire parameters{};
   /// The players already in the match, at most kMaxPlayers, each where the
   /// server last had it. Not the joining client's own.
-  std::vector<PlayerStateWire> roster{};
+  std::vector<PlayerStateWire> roster;
 };
 
 /// Server to client: the join failed and the connection will not be used.
@@ -178,7 +178,7 @@ struct SequencedCommandWire {
 /// ones the client has not seen acknowledged (at most kMaxCommandsPerMessage,
 /// the newest), so one lost datagram does not drop input.
 struct Commands {
-  std::vector<SequencedCommandWire> commands{};
+  std::vector<SequencedCommandWire> commands;
 };
 
 /// Server to client: the Authoritative State of one server tick.
@@ -188,7 +188,7 @@ struct AuthoritativeStateWire {
   /// The highest command sequence of the recipient that the server has processed, 0 if none.
   std::uint32_t acknowledged_sequence = 0;
   /// Every player in the match, at most kMaxPlayers.
-  std::vector<PlayerStateWire> players{};
+  std::vector<PlayerStateWire> players;
 };
 
 /// Any message of the protocol.

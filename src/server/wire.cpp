@@ -47,7 +47,11 @@ protocol::PlayerStateWire ToWire(const RosterEntry& entry) {
 }
 
 protocol::AuthoritativeStateWire ToWire(const replication::Update& update) {
-  protocol::AuthoritativeStateWire state{.tick = update.tick, .acknowledged_sequence = update.acknowledged_sequence};
+  protocol::AuthoritativeStateWire state{
+      .tick = update.tick,
+      .acknowledged_sequence = update.acknowledged_sequence,
+      .players = {},
+  };
   state.players.reserve(update.players.size());
   for (const replication::PlayerBody& player : update.players) {
     state.players.push_back(protocol::PlayerStateWire{.session = player.session, .body = ToWire(player.body)});

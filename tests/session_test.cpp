@@ -1152,7 +1152,8 @@ class ScriptedServer {
       if (decoded.has_value() && std::holds_alternative<augusta::protocol::JoinRequest>(*decoded)) {
         Send(augusta::protocol::JoinAccepted{.session = augusta::protocol::SessionId{1},
                                              .tick_rate_hz = kTestTickRate,
-                                             .parameters = augusta::server::ToWire(parameters_)});
+                                             .parameters = augusta::server::ToWire(parameters_),
+                                             .roster = {}});
       }
     }
   }
