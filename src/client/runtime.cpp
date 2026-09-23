@@ -232,7 +232,7 @@ struct ClientRuntime::Impl {
                                              physics::DescribeCollisionMeshError(added.error())));
       }
     }
-    session.emplace(harness::SessionConfig{.server = cfg.server}, std::move(world));
+    session.emplace(harness::SessionConfig{.server = cfg.server, .character = cfg.character}, std::move(world));
   }
 
   // The tick rate the server sent when it admitted this client, or nullopt if

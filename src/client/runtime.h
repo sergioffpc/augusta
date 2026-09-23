@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "augusta/audio.h"
@@ -47,6 +48,8 @@ struct Config {
   input::Config input;
   // The dedicated server to connect to (US-01).
   networking::Endpoint server;
+  // The character to ask to play, by its path relative to `authoring/` (ADR-0042).
+  std::string character;
 };
 
 // The map's collision, built by augusta::map from the client pack by the

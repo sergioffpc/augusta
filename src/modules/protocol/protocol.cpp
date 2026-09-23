@@ -5,6 +5,7 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace augusta::protocol {
@@ -24,6 +25,14 @@ void WriteU32(Bytes& out, std::uint32_t value) {
 void WriteF32(Bytes& out, float value) { WriteU32(out, std::bit_cast<std::uint32_t>(value)); }
 
 void WriteBool(Bytes& out, bool value) { WriteU8(out, value ? 1 : 0); }
+
+// A one-byte length and the bytes: the write side of Reader::ReadString.
+void WriteString(Bytes& out, std::string_view text) {
+  WriteU8(out, static_cast<std::uint8_t>(text.size()));
+  for (const char letter : text) {
+    WriteU8(out, static_cast<std::uint8_t>(letter));
+  }
+}
 
 void WriteVec3(Bytes& out, const math::Vec3& value) {
   WriteF32(out, value.x);
@@ -180,7 +189,11 @@ physics::BodyState ReadBodyState(Reader& reader) {
 }
 
 JoinRequest ReadJoinRequest(Reader& reader) {
-  return JoinRequest{.engine_version = reader.ReadString(kMaxEngineVersionLength)};
+  // Braced initializers evaluate in order: the version is read before the character.
+  return JoinRequest{
+      .engine_version = reader.ReadString(kMaxEngineVersionLength),
+      .character = reader.ReadString(kMaxCharacterPathLength),
+  };
 }
 
 PlayerState ReadPlayerState(Reader& reader) {
@@ -218,7 +231,7 @@ JoinAccepted ReadJoinAccepted(Reader& reader) {
 }
 
 JoinRefused ReadJoinRefused(Reader& reader) {
-  return JoinRefused{.reason = reader.ReadEnum(JoinRefusal::kVersionMismatch, JoinRefusal::kMatchFull)};
+  return JoinRefused{.reason = reader.ReadEnum(JoinRefusal::kVersionMismatch, JoinRefusal::kUnknownCharacter)};
 }
 
 Commands ReadCommands(Reader& reader) {
@@ -269,11 +282,10 @@ struct Encoder {
 
   void operator()(const JoinRequest& message) const {
     assert(message.engine_version.size() <= kMaxEngineVersionLength);
+    assert(message.character.size() <= kMaxCharacterPathLength);
     WriteU8(out, static_cast<std::uint8_t>(MessageType::kJoinRequest));
-    WriteU8(out, static_cast<std::uint8_t>(message.engine_version.size()));
-    for (const char character : message.engine_version) {
-      WriteU8(out, static_cast<std::uint8_t>(character));
-    }
+    WriteString(out, message.engine_version);
+    WriteString(out, message.character);
   }
 
   void operator()(const JoinAccepted& message) const {
@@ -358,6 +370,8 @@ std::string_view DescribeJoinRefusal(JoinRefusal reason) {
       return "client version does not match the server";
     case JoinRefusal::kMatchFull:
       return "match is full";
+    case JoinRefusal::kUnknownCharacter:
+      return "the server's scenario has no such character";
   }
   return "unknown refusal";
 }

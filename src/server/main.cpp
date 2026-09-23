@@ -55,8 +55,20 @@ std::optional<augusta::server::Map> LoadMap(const augusta::assets::Pack& pack, c
                  augusta::map::DescribeMapError(spawn_points.error()));
     return std::nullopt;
   }
-  LI("subsystem=server event=map_loaded colliders={} spawn_points={}", collision->size(), spawn_points->size());
-  return augusta::server::Map{.collision = *std::move(collision), .spawn_points = *std::move(spawn_points)};
+  // The scenario's characters, the only ones a player may join as (ADR-0042).
+  auto characters = pack.ResolveCharacters();
+  if (!characters) {
+    std::println(stderr, "server pack {}: {} {}", pack_path.string(), augusta::assets::kCharactersPath,
+                 augusta::assets::DescribeResolveError(characters.error(), "character list"));
+    return std::nullopt;
+  }
+  LI("subsystem=server event=map_loaded colliders={} spawn_points={} characters={}", collision->size(),
+     spawn_points->size(), characters->size());
+  return augusta::server::Map{
+      .collision = *std::move(collision),
+      .spawn_points = *std::move(spawn_points),
+      .characters = *std::move(characters),
+  };
 }
 
 // The scenario's Parameters script, out of the pack the server was given (it was

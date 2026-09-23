@@ -38,6 +38,8 @@ struct Admission {
 struct MatchConfig {
   /// Only clients whose engine version is this are admitted.
   std::string engine_version;
+  /// The characters a client may ask to play: the scenario's, by path (ADR-0042).
+  std::vector<std::string> characters{};
   /// The most players the match holds at once.
   std::size_t capacity = protocol::kMaxPlayers;
 };
@@ -49,10 +51,12 @@ class Match {
   /// starting over after the last (at the origin if there are none).
   explicit Match(MatchConfig config, std::vector<math::Vec3> spawn_points = {});
 
-  /// Admits peer, or says why not. A peer that is already in the match gets
-  /// the session and spawn point it already has.
+  /// Admits peer to play character, or says why not: its version first, then
+  /// its character, then whether the match is full. A peer that is already in
+  /// the match gets the session and spawn point it already has.
   [[nodiscard]] std::expected<Admission, protocol::JoinRefusal> Join(networking::PeerId peer,
-                                                                     std::string_view engine_version);
+                                                                     std::string_view engine_version,
+                                                                     std::string_view character);
 
   /// Records where the player of session now is, for the roster of whoever joins next.
   /// A no-op if no such player is in the match.
@@ -77,6 +81,7 @@ class Match {
   [[nodiscard]] std::vector<protocol::PlayerState> RosterExcluding(protocol::SessionId session) const;
 
   std::string engine_version_;
+  std::vector<std::string> characters_;
   std::size_t capacity_;
   std::vector<math::Vec3> spawn_points_;
   // Counts every admission, so spawn points are taken in turn across the life of the server.

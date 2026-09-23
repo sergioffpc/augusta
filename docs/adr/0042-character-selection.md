@@ -15,9 +15,9 @@ config), validated (at join) and addressed (by index into the pack's list) is
 unchanged.
 
 **The choice comes from the client config.** `augustac.yaml` (ADR-0034) gains a
-required `character` key naming a character by its path relative to
+required `player.character` key naming a character by its path relative to
 `authoring/`, the same address the manifest's `characters` list uses (ADR-0041),
-e.g. `character: characters/player`. There is no lobby and no selection screen
+e.g. `characters/player`. There is no lobby and no selection screen
 (CONTEXT.md: a Match has no pre-match waiting state), so the config is the only
 place a player can state a choice today. A future UI only changes who fills in
 the value, not the protocol beneath it.

@@ -7,6 +7,7 @@ namespace augusta::server {
 
 Match::Match(MatchConfig config, std::vector<math::Vec3> spawn_points)
     : engine_version_(std::move(config.engine_version)),
+      characters_(std::move(config.characters)),
       capacity_(config.capacity),
       spawn_points_(std::move(spawn_points)) {
   if (spawn_points_.empty()) {
@@ -14,15 +15,19 @@ Match::Match(MatchConfig config, std::vector<math::Vec3> spawn_points)
   }
 }
 
-std::expected<Admission, protocol::JoinRefusal> Match::Join(networking::PeerId peer, std::string_view engine_version) {
+std::expected<Admission, protocol::JoinRefusal> Match::Join(networking::PeerId peer, std::string_view engine_version,
+                                                            std::string_view character) {
   if (const auto existing = members_.find(peer); existing != members_.end()) {
     const Member& member = existing->second;
     return Admission{.session = member.session, .spawn = member.spawn, .roster = RosterExcluding(member.session)};
   }
-  // The version comes first: a client that can never play here should hear
-  // that, not "full".
+  // The version comes first, then the character: a client that can never play
+  // here should hear that, not "full".
   if (engine_version != engine_version_) {
     return std::unexpected(protocol::JoinRefusal::kVersionMismatch);
+  }
+  if (std::ranges::find(characters_, character) == characters_.end()) {
+    return std::unexpected(protocol::JoinRefusal::kUnknownCharacter);
   }
   if (members_.size() >= capacity_) {
     return std::unexpected(protocol::JoinRefusal::kMatchFull);
