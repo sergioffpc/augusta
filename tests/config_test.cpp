@@ -1,5 +1,6 @@
 #include "augusta/config.h"
 
+#include <cstddef>
 #include <expected>
 #include <filesystem>
 #include <fstream>
@@ -8,6 +9,8 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+
+#include "augusta/input.h"
 
 // Unit tests for augusta_config's YAML schema and file loading (ADR-0034).
 namespace {
@@ -34,9 +37,7 @@ std::string Absolute(std::string_view name) { return (std::filesystem::absolute(
 
 TEST(ParseClientConfigTest, ReadsEveryKey) {
   const auto config = ParseClientConfig(
-      "base_dir: content\n"
-      "pack: packs/level.client.pack\n"
-      "public_key: keys/augusta.pub\n"
+      "base_dir: content\ncontent:\n  pack: packs/level.client.pack\n  public_key: keys/augusta.pub\nnetwork:\n  "
       "server_address: 10.0.0.5:27016\n",
       kFileDir);
 
@@ -47,39 +48,39 @@ TEST(ParseClientConfigTest, ReadsEveryKey) {
 }
 
 TEST(ParseClientConfigTest, DefaultsTheServerAddress) {
-  const auto config = ParseClientConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\n", kFileDir);
+  const auto config = ParseClientConfig("base_dir: content\ncontent:\n  pack: a.pack\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->server_address, augusta::config::kDefaultServerAddress);
 }
 
 TEST(ParseClientConfigTest, DefaultsTheLogLevel) {
-  const auto config = ParseClientConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\n", kFileDir);
+  const auto config = ParseClientConfig("base_dir: content\ncontent:\n  pack: a.pack\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->log_level, augusta::config::kDefaultLogLevel);
 }
 
 TEST(ParseClientConfigTest, ReadsALogLevel) {
-  const auto config =
-      ParseClientConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\nlog_level: trace\n", kFileDir);
+  const auto config = ParseClientConfig(
+      "base_dir: content\ncontent:\n  pack: a.pack\n  public_key: k.pub\nlogging:\n  level: trace\n", kFileDir);
 
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->log_level, "trace");
 }
 
 TEST(ParseClientConfigTest, RejectsAnInvalidLogLevel) {
-  const auto config =
-      ParseClientConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\nlog_level: verbose\n", kFileDir);
+  const auto config = ParseClientConfig(
+      "base_dir: content\ncontent:\n  pack: a.pack\n  public_key: k.pub\nlogging:\n  level: verbose\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidLogLevel);
-  EXPECT_EQ(config.error().subject, "log_level");
+  EXPECT_EQ(config.error().subject, "logging.level");
 }
 
 TEST(ParseClientConfigTest, ResolvesRelativePathsAgainstAnAbsoluteBaseDir) {
-  const auto config =
-      ParseClientConfig("base_dir: '" + Absolute("content") + "'\npack: packs/a.pack\npublic_key: k.pub\n", kFileDir);
+  const auto config = ParseClientConfig(
+      "base_dir: '" + Absolute("content") + "'\ncontent:\n  pack: packs/a.pack\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->pack_path, std::filesystem::absolute("content").lexically_normal() / "packs" / "a.pack");
@@ -87,7 +88,8 @@ TEST(ParseClientConfigTest, ResolvesRelativePathsAgainstAnAbsoluteBaseDir) {
 }
 
 TEST(ParseClientConfigTest, ResolvesARelativeBaseDirAgainstTheFilesDirectory) {
-  const auto config = ParseClientConfig("base_dir: ../content\npack: a.pack\npublic_key: k.pub\n", kFileDir);
+  const auto config =
+      ParseClientConfig("base_dir: ../content\ncontent:\n  pack: a.pack\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->pack_path, std::filesystem::path("file") / "content" / "a.pack");
@@ -98,15 +100,15 @@ TEST(ParseClientConfigTest, ReadsNonAsciiPathsAsUtf8) {
   // "\xC3\xA7\xC3\xA3" is c-cedilla and a-tilde in UTF-8, as YAML text carries
   // them. Escapes rather than the letters themselves: without /utf-8, MSVC
   // reads this file's literals in the system codepage.
-  const auto config =
-      ParseClientConfig("base_dir: pacotes_\xC3\xA7\xC3\xA3o\npack: a.pack\npublic_key: k.pub\n", kFileDir);
+  const auto config = ParseClientConfig(
+      "base_dir: pacotes_\xC3\xA7\xC3\xA3o\ncontent:\n  pack: a.pack\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->pack_path, kFileDir / std::filesystem::path(u8"pacotes_\u00e7\u00e3o") / "a.pack");
 }
 
 TEST(ParseClientConfigTest, ADotBaseDirMeansTheFilesDirectory) {
-  const auto config = ParseClientConfig("base_dir: .\npack: a.pack\npublic_key: k.pub\n", kFileDir);
+  const auto config = ParseClientConfig("base_dir: .\ncontent:\n  pack: a.pack\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->pack_path, kFileDir / "a.pack");
@@ -114,7 +116,7 @@ TEST(ParseClientConfigTest, ADotBaseDirMeansTheFilesDirectory) {
 
 TEST(ParseClientConfigTest, KeepsAnAbsolutePathAsIs) {
   const auto config = ParseClientConfig(
-      "base_dir: content\npack: '" + Absolute("elsewhere/a.pack") + "'\npublic_key: k.pub\n", kFileDir);
+      "base_dir: content\ncontent:\n  pack: '" + Absolute("elsewhere/a.pack") + "'\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->pack_path, std::filesystem::absolute("elsewhere/a.pack").lexically_normal());
@@ -122,14 +124,15 @@ TEST(ParseClientConfigTest, KeepsAnAbsolutePathAsIs) {
 }
 
 TEST(ParseClientConfigTest, NormalizesDotSegments) {
-  const auto config = ParseClientConfig("base_dir: content\npack: ./a/../b.pack\npublic_key: k.pub\n", kFileDir);
+  const auto config =
+      ParseClientConfig("base_dir: content\ncontent:\n  pack: ./a/../b.pack\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->pack_path, kRoot / "b.pack");
 }
 
 TEST(ParseClientConfigTest, RejectsAMissingBaseDir) {
-  const auto config = ParseClientConfig("pack: a.pack\npublic_key: k.pub\n", kFileDir);
+  const auto config = ParseClientConfig("content:\n  pack: a.pack\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kMissingKey);
@@ -137,7 +140,7 @@ TEST(ParseClientConfigTest, RejectsAMissingBaseDir) {
 }
 
 TEST(ParseClientConfigTest, RejectsAnEmptyBaseDir) {
-  const auto config = ParseClientConfig("base_dir: ''\npack: a.pack\npublic_key: k.pub\n", kFileDir);
+  const auto config = ParseClientConfig("base_dir: ''\ncontent:\n  pack: a.pack\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kEmptyValue);
@@ -145,25 +148,25 @@ TEST(ParseClientConfigTest, RejectsAnEmptyBaseDir) {
 }
 
 TEST(ParseClientConfigTest, RejectsAMissingRequiredKey) {
-  const auto config = ParseClientConfig("base_dir: content\npublic_key: k.pub\n", kFileDir);
+  const auto config = ParseClientConfig("base_dir: content\ncontent:\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kMissingKey);
-  EXPECT_EQ(config.error().subject, "pack");
+  EXPECT_EQ(config.error().subject, "content.pack");
 }
 
 TEST(ParseClientConfigTest, RejectsAnEmptyRequiredValue) {
-  const auto config = ParseClientConfig("base_dir: content\npack: ''\npublic_key: k.pub\n", kFileDir);
+  const auto config = ParseClientConfig("base_dir: content\ncontent:\n  pack: ''\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kEmptyValue);
-  EXPECT_EQ(config.error().subject, "pack");
+  EXPECT_EQ(config.error().subject, "content.pack");
 }
 
 TEST(ParseClientConfigTest, RejectsAnUnknownKey) {
   // A typo must not silently fall back to the default it was meant to set.
-  const auto config =
-      ParseClientConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\nserver_adress: x\n", kFileDir);
+  const auto config = ParseClientConfig(
+      "base_dir: content\ncontent:\n  pack: a.pack\n  public_key: k.pub\nserver_adress: x\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownKey);
@@ -171,36 +174,38 @@ TEST(ParseClientConfigTest, RejectsAnUnknownKey) {
 }
 
 TEST(ParseClientConfigTest, RejectsAKeyThatBelongsToTheServer) {
-  const auto config =
-      ParseClientConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\nlisten_address: x\n", kFileDir);
+  const auto config = ParseClientConfig(
+      "base_dir: content\ncontent:\n  pack: a.pack\n  public_key: k.pub\nnetwork:\n  listen_address: x\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownKey);
-  EXPECT_EQ(config.error().subject, "listen_address");
+  EXPECT_EQ(config.error().subject, "network.listen_address");
 }
 
 TEST(ParseClientConfigTest, RejectsADuplicateKey) {
-  const auto config = ParseClientConfig("base_dir: content\npack: a.pack\npack: b.pack\npublic_key: k.pub\n", kFileDir);
+  const auto config =
+      ParseClientConfig("base_dir: content\ncontent:\n  pack: a.pack\n  pack: b.pack\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kDuplicateKey);
-  EXPECT_EQ(config.error().subject, "pack");
+  EXPECT_EQ(config.error().subject, "content.pack");
 }
 
 TEST(ParseClientConfigTest, RejectsANonScalarValue) {
-  const auto config = ParseClientConfig("base_dir: content\npack: [a.pack, b.pack]\npublic_key: k.pub\n", kFileDir);
+  const auto config =
+      ParseClientConfig("base_dir: content\ncontent:\n  pack: [a.pack, b.pack]\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kNonStringValue);
-  EXPECT_EQ(config.error().subject, "pack");
+  EXPECT_EQ(config.error().subject, "content.pack");
 }
 
 TEST(ParseClientConfigTest, RejectsAKeyWithNoValue) {
-  const auto config = ParseClientConfig("base_dir: content\npack:\npublic_key: k.pub\n", kFileDir);
+  const auto config = ParseClientConfig("base_dir: content\ncontent:\n  pack:\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kNonStringValue);
-  EXPECT_EQ(config.error().subject, "pack");
+  EXPECT_EQ(config.error().subject, "content.pack");
 }
 
 TEST(ParseClientConfigTest, RejectsATopLevelThatIsNotAMapping) {
@@ -213,19 +218,237 @@ TEST(ParseClientConfigTest, RejectsATopLevelThatIsNotAMapping) {
 }
 
 TEST(ParseClientConfigTest, RejectsInvalidYaml) {
-  const auto config = ParseClientConfig("pack: [unterminated\n", kFileDir);
+  const auto config = ParseClientConfig("content:\n  pack: [unterminated\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidYaml);
 }
 
+// The keys every client config needs, to append a keymap test's lines to.
+constexpr std::string_view kClientBase = "base_dir: content\ncontent:\n  pack: a.pack\n  public_key: k.pub\n";
+
+std::expected<augusta::config::ClientConfig, ConfigError> ParseClient(std::string_view extra) {
+  return ParseClientConfig(std::string(kClientBase) + std::string(extra), kFileDir);
+}
+
+augusta::input::Key BoundTo(const augusta::config::ClientConfig& config, augusta::input::Control control) {
+  return config.input.keymap.at(static_cast<std::size_t>(control));
+}
+
+TEST(ParseClientConfigTest, WithoutKeysOrSensitivityTheInputDefaultsApply) {
+  const auto config = ParseClient("");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->input.keymap, augusta::input::kDefaultKeymap);
+  EXPECT_FLOAT_EQ(config->input.mouse_sensitivity, augusta::input::kDefaultMouseSensitivity);
+}
+
+TEST(ParseClientConfigTest, ReadsTheMouseSensitivity) {
+  const auto config = ParseClient("input:\n  mouse_sensitivity: 0.004\n");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_FLOAT_EQ(config->input.mouse_sensitivity, 0.004F);
+}
+
+TEST(ParseClientConfigTest, RejectsASensitivityThatIsNotAFiniteNumberAboveZero) {
+  for (const auto value : {"0", "-1", "fast", "inf"}) {
+    const auto config = ParseClient(std::string("input:\n  mouse_sensitivity: ") + value + "\n");
+
+    ASSERT_FALSE(config.has_value()) << value;
+    EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidNumber) << value;
+    EXPECT_EQ(config.error().subject, "input.mouse_sensitivity") << value;
+  }
+}
+
+TEST(ParseClientConfigTest, AKeysSectionRebindsOnlyTheControlsItNames) {
+  const auto config = ParseClient("input:\n  keys:\n    move_forward: Up\n    prone: MouseMiddle\n");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kMoveForward), augusta::input::Key::kUp);
+  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kProne), augusta::input::Key::kMouseMiddle);
+  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kMoveBack), augusta::input::Key::kS);
+  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kSprint), augusta::input::Key::kLeftShift);
+}
+
+TEST(ParseClientConfigTest, AControlMayMoveToAKeyItsOwnDefaultFreesUp) {
+  // Swapping W and S is two rebinds whose keys only clash with each other's defaults.
+  const auto config = ParseClient("input:\n  keys:\n    move_forward: S\n    move_back: W\n");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kMoveForward), augusta::input::Key::kS);
+  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kMoveBack), augusta::input::Key::kW);
+}
+
+TEST(ParseClientConfigTest, RejectsAnUnknownControl) {
+  const auto config = ParseClient("input:\n  keys:\n    jump: Space\n");
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownControl);
+  EXPECT_EQ(config.error().subject, "input.keys.jump");
+  EXPECT_TRUE(Contains(DescribeConfigError(config.error()), "move_forward, move_back"));
+}
+
+TEST(ParseClientConfigTest, RejectsAnUnknownKeyName) {
+  const auto config = ParseClient("input:\n  keys:\n    sprint: Shift\n");
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidKeyName);
+  EXPECT_EQ(config.error().subject, "input.keys.sprint");
+}
+
+TEST(ParseClientConfigTest, RejectsAKeyBoundToTwoControls) {
+  // Sprint moves onto W, which move_forward still has by default.
+  const auto config = ParseClient("input:\n  keys:\n    sprint: W\n");
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kKeyBoundTwice);
+  EXPECT_EQ(config.error().subject, "input.keys.sprint");
+}
+
+TEST(ParseClientConfigTest, RejectsBindingTheKeyThatReleasesTheCursor) {
+  const auto config = ParseClient("input:\n  keys:\n    crouch: Escape\n");
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kReservedKey);
+  EXPECT_EQ(config.error().subject, "input.keys.crouch");
+}
+
+TEST(ParseClientConfigTest, RejectsAControlNamedTwice) {
+  const auto config = ParseClient("input:\n  keys:\n    sprint: Space\n    sprint: Tab\n");
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kDuplicateKey);
+  EXPECT_EQ(config.error().subject, "input.keys.sprint");
+}
+
+TEST(ParseClientConfigTest, RejectsAKeysValueThatIsNotAMapping) {
+  for (const auto value : {"input:\n  keys: W\n", "input:\n  keys: [W, S]\n"}) {
+    const auto config = ParseClient(value);
+
+    ASSERT_FALSE(config.has_value()) << value;
+    EXPECT_EQ(config.error().code, ConfigErrorCode::kNotASection) << value;
+    EXPECT_EQ(config.error().subject, "input.keys") << value;
+  }
+}
+
+TEST(ParseClientConfigTest, FireMayMoveToAnotherMouseButton) {
+  const auto config = ParseClient("input:\n  keys:\n    fire: MouseMiddle\n");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kFire), augusta::input::Key::kMouseMiddle);
+  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kAds), augusta::input::Key::kMouseRight);
+}
+
+TEST(ParseClientConfigTest, FireOnTheButtonAdsStillHasIsBoundTwice) {
+  const auto config = ParseClient("input:\n  keys:\n    fire: MouseRight\n");
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kKeyBoundTwice);
+  EXPECT_EQ(config.error().subject, "input.keys.fire");
+}
+
+TEST(ParseClientConfigTest, AnEmptySectionSetsNothing) {
+  // A section written with every entry left out or commented out.
+  for (const auto value : {"input:\n", "input:\n  keys:\n", "network:\nlogging:\n"}) {
+    const auto config = ParseClient(value);
+
+    ASSERT_TRUE(config.has_value()) << value;
+    EXPECT_EQ(config->input.keymap, augusta::input::kDefaultKeymap) << value;
+    EXPECT_EQ(config->server_address, augusta::config::kDefaultServerAddress) << value;
+  }
+}
+
+TEST(ParseClientConfigTest, RejectsADottedNameInPlaceOfASection) {
+  // Otherwise `content.pack: b` would stand in for (or silently shadow) `content: {pack: b}`.
+  for (const auto value : {"network.server_address: x\n", "input:\n  keys.sprint: Space\n"}) {
+    const auto config = ParseClient(value);
+
+    ASSERT_FALSE(config.has_value()) << value;
+    EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownKey) << value;
+  }
+}
+
+TEST(ParseClientConfigTest, RejectsABindingThatIsNotAString) {
+  const auto config = ParseClient("input:\n  keys:\n    sprint: [Space, Tab]\n");
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kNonStringValue);
+  EXPECT_EQ(config.error().subject, "input.keys.sprint");
+}
+
+TEST(ParseServerConfigTest, InputIsNotAServerSection) {
+  const auto config = ParseServerConfig(
+      "base_dir: content\ncontent:\n  pack: a.pack\n  public_key: k.pub\nsimulation:\n  tick_rate_hz: 60\ninput:\n  "
+      "keys:\n    sprint: Space\n",
+      kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownKey);
+  EXPECT_EQ(config.error().subject, "input");
+}
+
+TEST(ParseClientConfigTest, RejectsASectionWrittenAsAPlainValue) {
+  const auto config = ParseClient("network: 127.0.0.1:27015\n");
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kNotASection);
+  EXPECT_EQ(config.error().subject, "network");
+}
+
+TEST(ParseClientConfigTest, RejectsAnUnknownKeyInsideAKnownSection) {
+  const auto config = ParseClient("network:\n  server_adress: x\n");
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownKey);
+  EXPECT_EQ(config.error().subject, "network.server_adress");
+}
+
+TEST(ParseClientConfigTest, RejectsASectionWrittenTwice) {
+  const auto config = ParseClient("logging:\n  level: info\nlogging:\n  level: warn\n");
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kDuplicateKey);
+  EXPECT_EQ(config.error().subject, "logging");
+}
+
+TEST(ParseClientConfigTest, AKeyMovedOutOfItsSectionIsUnknown) {
+  // The flat layout from before sections: every key now lives in one.
+  const auto config = ParseClientConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\n", kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownKey);
+  EXPECT_EQ(config.error().subject, "pack");
+}
+
+TEST(DescribeConfigErrorTest, SaysWhatIsWrongWithABinding) {
+  EXPECT_TRUE(Contains(DescribeConfigError({.code = ConfigErrorCode::kInvalidKeyName, .subject = "keys.sprint"}),
+                       "keys.sprint"));
+  EXPECT_TRUE(Contains(DescribeConfigError({.code = ConfigErrorCode::kKeyBoundTwice, .subject = "keys.sprint"}),
+                       "another control"));
+  EXPECT_TRUE(
+      Contains(DescribeConfigError({.code = ConfigErrorCode::kReservedKey, .subject = "keys.crouch"}), "Escape"));
+  EXPECT_TRUE(Contains(DescribeConfigError({.code = ConfigErrorCode::kNotASection, .subject = "keys"}), "mapping"));
+}
+
+TEST(ExampleConfigTest, TheExampleClientConfigLoadsWithTheDefaultControls) {
+  const auto config = LoadClientConfig(AUGUSTA_EXAMPLE_CLIENT_CONFIG);
+
+  ASSERT_TRUE(config.has_value()) << DescribeConfigError(config.error());
+  EXPECT_EQ(config->input.keymap, augusta::input::kDefaultKeymap);
+  EXPECT_FLOAT_EQ(config->input.mouse_sensitivity, augusta::input::kDefaultMouseSensitivity);
+}
+
+TEST(ExampleConfigTest, TheExampleServerConfigLoads) {
+  const auto config = LoadServerConfig(AUGUSTA_EXAMPLE_SERVER_CONFIG);
+
+  ASSERT_TRUE(config.has_value()) << DescribeConfigError(config.error());
+  EXPECT_FLOAT_EQ(config->tick_rate_hz, 60.0F);
+}
+
 TEST(ParseServerConfigTest, ReadsEveryKey) {
   const auto config = ParseServerConfig(
-      "base_dir: content\n"
-      "pack: packs/level.server.pack\n"
-      "public_key: keys/augusta.pub\n"
-      "tick_rate_hz: 30\n"
-      "listen_address: 0.0.0.0:27016\n",
+      "base_dir: content\ncontent:\n  pack: packs/level.server.pack\n  public_key: keys/augusta.pub\nsimulation:\n  "
+      "tick_rate_hz: 30\nnetwork:\n  listen_address: 0.0.0.0:27016\n",
       kFileDir);
 
   ASSERT_TRUE(config.has_value());
@@ -236,10 +459,11 @@ TEST(ParseServerConfigTest, ReadsEveryKey) {
 }
 
 // Everything a server config needs but the tick rate, so a test can set that itself.
-constexpr std::string_view kServerConfigWithoutTickRate = "base_dir: content\npack: a.pack\npublic_key: k.pub\n";
+constexpr std::string_view kServerConfigWithoutTickRate =
+    "base_dir: content\ncontent:\n  pack: a.pack\n  public_key: k.pub\n";
 
 constexpr std::string_view kMinimalServerConfig =
-    "base_dir: content\npack: a.pack\npublic_key: k.pub\ntick_rate_hz: 60\n";
+    "base_dir: content\ncontent:\n  pack: a.pack\n  public_key: k.pub\nsimulation:\n  tick_rate_hz: 60\n";
 
 std::string ServerConfigWith(std::string_view extra) { return std::string(kMinimalServerConfig) + std::string(extra); }
 
@@ -258,18 +482,18 @@ TEST(ParseServerConfigTest, DefaultsTheLogLevel) {
 }
 
 TEST(ParseServerConfigTest, ReadsALogLevel) {
-  const auto config = ParseServerConfig(ServerConfigWith("log_level: trace\n"), kFileDir);
+  const auto config = ParseServerConfig(ServerConfigWith("logging:\n  level: trace\n"), kFileDir);
 
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->log_level, "trace");
 }
 
 TEST(ParseServerConfigTest, RejectsAnInvalidLogLevel) {
-  const auto config = ParseServerConfig(ServerConfigWith("log_level: verbose\n"), kFileDir);
+  const auto config = ParseServerConfig(ServerConfigWith("logging:\n  level: verbose\n"), kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidLogLevel);
-  EXPECT_EQ(config.error().subject, "log_level");
+  EXPECT_EQ(config.error().subject, "logging.level");
 }
 
 TEST(ParseServerConfigTest, RejectsAMissingTickRate) {
@@ -277,13 +501,14 @@ TEST(ParseServerConfigTest, RejectsAMissingTickRate) {
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kMissingKey);
-  EXPECT_EQ(config.error().subject, "tick_rate_hz");
+  EXPECT_EQ(config.error().subject, "simulation.tick_rate_hz");
 }
 
 TEST(ParseServerConfigTest, AcceptsAnyFiniteTickRateAboveZero) {
   for (const char* rate : {"60", "30", "59.94", "240", "0.5", "1e2"}) {
     const auto config = ParseServerConfig(
-        std::string(kServerConfigWithoutTickRate) + "tick_rate_hz: " + std::string(rate) + "\n", kFileDir);
+        std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: " + std::string(rate) + "\n",
+        kFileDir);
 
     ASSERT_TRUE(config.has_value()) << rate;
     EXPECT_FLOAT_EQ(config->tick_rate_hz, std::stof(rate)) << rate;
@@ -293,11 +518,12 @@ TEST(ParseServerConfigTest, AcceptsAnyFiniteTickRateAboveZero) {
 TEST(ParseServerConfigTest, RejectsATickRateThatIsNotAFiniteNumberAboveZero) {
   for (const char* rate : {"0", "-60", "abc", "60hz", "6 0", ".inf", "-.inf", ".nan", "1e999", "0x10"}) {
     const auto config = ParseServerConfig(
-        std::string(kServerConfigWithoutTickRate) + "tick_rate_hz: '" + std::string(rate) + "'\n", kFileDir);
+        std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: '" + std::string(rate) + "'\n",
+        kFileDir);
 
     ASSERT_FALSE(config.has_value()) << rate;
     EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidNumber) << rate;
-    EXPECT_EQ(config.error().subject, "tick_rate_hz") << rate;
+    EXPECT_EQ(config.error().subject, "simulation.tick_rate_hz") << rate;
   }
 }
 
@@ -313,13 +539,14 @@ TEST(ParseServerConfigTest, RejectsAStaminaKeyLeftInTheFileAsUnknown) {
 }
 
 TEST(ParseClientConfigTest, TheTickRateIsNotAClientKey) {
-  // The server decides it and tells each client when it joins (ADR-0039).
-  const auto config =
-      ParseClientConfig("base_dir: content\npack: a.pack\npublic_key: k.pub\ntick_rate_hz: 60\n", kFileDir);
+  // The server decides it and tells each client when it joins (ADR-0039), so
+  // the client has no simulation section at all.
+  const auto config = ParseClientConfig(
+      "base_dir: content\ncontent:\n  pack: a.pack\n  public_key: k.pub\nsimulation:\n  tick_rate_hz: 60\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownKey);
-  EXPECT_EQ(config.error().subject, "tick_rate_hz");
+  EXPECT_EQ(config.error().subject, "simulation");
 }
 
 TEST(ParseServerConfigTest, AParametersKeyLeftInTheFileIsUnknown) {
@@ -333,7 +560,8 @@ TEST(ParseServerConfigTest, AParametersKeyLeftInTheFileIsUnknown) {
 }
 
 TEST(ParseServerConfigTest, RejectsAMissingBaseDir) {
-  const auto config = ParseServerConfig("pack: a.pack\npublic_key: k.pub\ntick_rate_hz: 60\n", kFileDir);
+  const auto config =
+      ParseServerConfig("content:\n  pack: a.pack\n  public_key: k.pub\nsimulation:\n  tick_rate_hz: 60\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kMissingKey);
@@ -341,11 +569,11 @@ TEST(ParseServerConfigTest, RejectsAMissingBaseDir) {
 }
 
 TEST(ParseServerConfigTest, RejectsAKeyThatBelongsToTheClient) {
-  const auto config = ParseServerConfig(ServerConfigWith("server_address: x\n"), kFileDir);
+  const auto config = ParseServerConfig(ServerConfigWith("network:\n  server_address: x\n"), kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownKey);
-  EXPECT_EQ(config.error().subject, "server_address");
+  EXPECT_EQ(config.error().subject, "network.server_address");
 }
 
 std::expected<std::filesystem::path, ConfigError> Resolve(std::vector<const char*> args) {
@@ -446,7 +674,8 @@ class LoadConfigTest : public ::testing::Test {
 };
 
 TEST_F(LoadConfigTest, ResolvesBaseDirAgainstTheFilesDirectory) {
-  const auto file = Write("augustac.yaml", "base_dir: content\npack: level.pack\npublic_key: keys/k.pub\n");
+  const auto file =
+      Write("augustac.yaml", "base_dir: content\ncontent:\n  pack: level.pack\n  public_key: keys/k.pub\n");
 
   const auto config = LoadClientConfig(file);
 
@@ -457,8 +686,8 @@ TEST_F(LoadConfigTest, ResolvesBaseDirAgainstTheFilesDirectory) {
 
 TEST_F(LoadConfigTest, LoadsAServerConfig) {
   const auto file = Write("augustad.yaml",
-                          "base_dir: .\npack: level.pack\npublic_key: k.pub\ntick_rate_hz: 60\n"
-                          "listen_address: 0.0.0.0:1\n");
+                          "base_dir: .\ncontent:\n  pack: level.pack\n  public_key: k.pub\nsimulation:\n  "
+                          "tick_rate_hz: 60\nnetwork:\n  listen_address: 0.0.0.0:1\n");
 
   const auto config = LoadServerConfig(file);
 
@@ -478,14 +707,14 @@ TEST_F(LoadConfigTest, NamesTheFileWhenItCannotBeOpened) {
 }
 
 TEST_F(LoadConfigTest, NamesTheFileWhenItsContentsAreInvalid) {
-  const auto file = Write("augustac.yaml", "base_dir: .\npublic_key: k.pub\n");
+  const auto file = Write("augustac.yaml", "base_dir: .\ncontent:\n  public_key: k.pub\n");
 
   const auto config = LoadClientConfig(file);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().file, file);
   EXPECT_EQ(config.error().code, ConfigErrorCode::kMissingKey);
-  EXPECT_EQ(config.error().subject, "pack");
+  EXPECT_EQ(config.error().subject, "content.pack");
 }
 
 }  // namespace

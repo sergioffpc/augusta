@@ -4,10 +4,13 @@
 #include <array>
 #include <charconv>
 #include <cmath>
+#include <cstddef>
 #include <format>
 #include <fstream>
 #include <map>
 #include <optional>
+#include <ranges>
+#include <set>
 #include <span>
 #include <sstream>
 #include <string>
@@ -16,6 +19,7 @@
 #include <boost/program_options.hpp>
 #include <yaml-cpp/yaml.h>
 
+#include "augusta/input.h"
 #include "augusta/logging.h"
 
 namespace augusta::config {
@@ -34,10 +38,86 @@ std::optional<std::filesystem::path> ExecutableDirectory() {
   return std::filesystem::path(executable.native()).parent_path();
 }
 
-// Mechanism: reads text as a flat YAML mapping of scalars. Which keys exist,
-// and which are required, is the schema's business (the Parse* functions).
-std::expected<ScalarMap, ConfigError> ReadScalarMap(std::string_view text,
-                                                    std::span<const std::string_view> allowed_keys) {
+// What a config file may hold, as dotted paths ("network.server_address"):
+// its scalar keys, and its open sections - sections whose entries the schema
+// names itself ("input.keys", whose entries are control names).
+struct Schema {
+  std::span<const std::string_view> keys;
+  std::span<const std::string_view> open_sections;
+};
+
+std::string Child(std::string_view parent, std::string_view name) {
+  return parent.empty() ? std::string(name) : std::format("{}.{}", parent, name);
+}
+
+bool IsKey(const Schema& schema, std::string_view path) {
+  return std::ranges::find(schema.keys, path) != schema.keys.end();
+}
+
+// Whether path is a section: an open section, or a prefix of a key or of an open section.
+bool IsSection(const Schema& schema, std::string_view path) {
+  // member is path itself or lies under it.
+  const auto opens = [&](std::string_view member) {
+    return member == path || (member.starts_with(path) && member.size() > path.size() && member[path.size()] == '.');
+  };
+  return std::ranges::any_of(schema.open_sections, opens) ||
+         std::ranges::any_of(schema.keys, [&](std::string_view key) { return key != path && opens(key); });
+}
+
+// Whether path is an entry of an open section, which the schema checks by name itself.
+bool InOpenSection(const Schema& schema, std::string_view path) {
+  const auto dot = path.rfind('.');
+  return dot != std::string_view::npos &&
+         std::ranges::find(schema.open_sections, path.substr(0, dot)) != schema.open_sections.end();
+}
+
+// Mechanism: reads node, the mapping at section (empty at the top), into
+// values under dotted paths. Every scalar must be a key or open-section entry
+// of schema and every mapping one of its sections; errors name the path.
+std::expected<void, ConfigError> Flatten(const YAML::Node& node, const std::string& section, const Schema& schema,
+                                         ScalarMap& values) {
+  std::set<std::string, std::less<>> seen;
+  for (const auto& entry : node) {
+    if (!entry.first.IsScalar()) {
+      return std::unexpected(ConfigError{.code = ConfigErrorCode::kNonStringKey});
+    }
+    const std::string& name = entry.first.Scalar();
+    const std::string path = Child(section, name);
+    // A dot is how paths join, never part of a name: `content.pack: x` is not `content: {pack: x}`.
+    if (name.contains('.')) {
+      return std::unexpected(ConfigError{.code = ConfigErrorCode::kUnknownKey, .subject = path});
+    }
+    if (!seen.insert(path).second) {
+      return std::unexpected(ConfigError{.code = ConfigErrorCode::kDuplicateKey, .subject = path});
+    }
+    if (IsSection(schema, path)) {
+      // A section with every entry left out (or commented out) sets nothing.
+      if (entry.second.IsNull()) {
+        continue;
+      }
+      if (!entry.second.IsMap()) {
+        return std::unexpected(ConfigError{.code = ConfigErrorCode::kNotASection, .subject = path});
+      }
+      if (auto nested = Flatten(entry.second, path, schema, values); !nested) {
+        return nested;
+      }
+      continue;
+    }
+    if (!IsKey(schema, path) && !InOpenSection(schema, path)) {
+      return std::unexpected(ConfigError{.code = ConfigErrorCode::kUnknownKey, .subject = path});
+    }
+    if (!entry.second.IsScalar()) {
+      return std::unexpected(ConfigError{.code = ConfigErrorCode::kNonStringValue, .subject = path});
+    }
+    values.emplace(path, entry.second.Scalar());
+  }
+  return {};
+}
+
+// Mechanism: reads text as a YAML mapping, its sections flattened into dotted
+// paths. Which keys exist, and which are required, is the schema's business
+// (the Parse* functions).
+std::expected<ScalarMap, ConfigError> ReadMapping(std::string_view text, const Schema& schema) {
   YAML::Node root;
   try {
     root = YAML::Load(std::string(text));
@@ -47,22 +127,9 @@ std::expected<ScalarMap, ConfigError> ReadScalarMap(std::string_view text,
   if (!root.IsMap()) {
     return std::unexpected(ConfigError{.code = ConfigErrorCode::kNotAMapping});
   }
-
   ScalarMap values;
-  for (const auto& entry : root) {
-    if (!entry.first.IsScalar()) {
-      return std::unexpected(ConfigError{.code = ConfigErrorCode::kNonStringKey});
-    }
-    const std::string key = entry.first.Scalar();
-    if (std::ranges::find(allowed_keys, key) == allowed_keys.end()) {
-      return std::unexpected(ConfigError{.code = ConfigErrorCode::kUnknownKey, .subject = key});
-    }
-    if (!entry.second.IsScalar()) {
-      return std::unexpected(ConfigError{.code = ConfigErrorCode::kNonStringValue, .subject = key});
-    }
-    if (!values.emplace(key, entry.second.Scalar()).second) {
-      return std::unexpected(ConfigError{.code = ConfigErrorCode::kDuplicateKey, .subject = key});
-    }
+  if (auto read = Flatten(root, "", schema, values); !read) {
+    return std::unexpected(read.error());
   }
   return values;
 }
@@ -105,6 +172,61 @@ std::expected<float, ConfigError> RequirePositiveNumber(const ScalarMap& values,
   return number;
 }
 
+// The fallback when key is absent; when present, a finite number above zero.
+std::expected<float, ConfigError> OptionalPositiveNumber(const ScalarMap& values, std::string_view key,
+                                                         float fallback) {
+  return values.contains(key) ? RequirePositiveNumber(values, key) : fallback;
+}
+
+// The client's open section binding each control it names to a key, on top of
+// the defaults for the controls it leaves out.
+constexpr std::string_view kKeysSection = "input.keys";
+
+// Decision: the keymap the `input.keys` entries of values (control name -> key
+// name) make of the defaults. Each control keeps a key of its own, never the
+// one that releases the cursor; errors name the entry ("input.keys.<control>").
+std::expected<input::Keymap, ConfigError> ParseKeymap(const ScalarMap& values) {
+  const std::string prefix = std::format("{}.", kKeysSection);
+  auto bindings = values | std::views::filter([&](const auto& value) { return value.first.starts_with(prefix); });
+  const auto error = [](ConfigErrorCode code, const std::string& path) {
+    return std::unexpected(ConfigError{.code = code, .subject = path});
+  };
+  input::Keymap keymap = input::kDefaultKeymap;
+  for (const auto& [path, key_name] : bindings) {
+    const auto control = input::ControlNamed(std::string_view(path).substr(prefix.size()));
+    if (!control) {
+      return error(ConfigErrorCode::kUnknownControl, path);
+    }
+    const auto key = input::KeyNamed(key_name);
+    if (!key) {
+      return error(ConfigErrorCode::kInvalidKeyName, path);
+    }
+    if (*key == input::kReleaseCursorKey) {
+      return error(ConfigErrorCode::kReservedKey, path);
+    }
+    keymap.at(static_cast<std::size_t>(*control)) = *key;
+  }
+  // The defaults never share a key, so any clash involves a control the section rebound.
+  for (const auto& [path, key_name] : bindings) {
+    if (std::ranges::count(keymap, *input::KeyNamed(key_name)) > 1) {
+      return error(ConfigErrorCode::kKeyBoundTwice, path);
+    }
+  }
+  return keymap;
+}
+
+std::expected<input::Config, ConfigError> ParseInputConfig(const ScalarMap& values) {
+  const auto sensitivity = OptionalPositiveNumber(values, "input.mouse_sensitivity", input::kDefaultMouseSensitivity);
+  if (!sensitivity) {
+    return std::unexpected(sensitivity.error());
+  }
+  const auto keymap = ParseKeymap(values);
+  if (!keymap) {
+    return std::unexpected(keymap.error());
+  }
+  return input::Config{.mouse_sensitivity = *sensitivity, .keymap = *keymap};
+}
+
 std::string OptionalString(const ScalarMap& values, std::string_view key, std::string_view fallback) {
   const auto found = values.find(key);
   return found == values.end() ? std::string(fallback) : found->second;
@@ -144,6 +266,15 @@ std::expected<Config, ConfigError> LoadFile(const std::filesystem::path& file, P
   return config;
 }
 
+// Every control's name, comma-separated, for an error that names none of them.
+std::string ControlNames() {
+  std::string names;
+  for (std::size_t i = 0; i < input::kControlCount; ++i) {
+    names += std::format("{}{}", i == 0 ? "" : ", ", input::NameOf(static_cast<input::Control>(i)));
+  }
+  return names;
+}
+
 // The phrase for a code alone, before its subject and file are added.
 std::string Phrase(const ConfigError& error) {
   switch (error.code) {
@@ -173,6 +304,17 @@ std::string Phrase(const ConfigError& error) {
       return std::format("'{}' must be a finite number above zero", error.subject);
     case ConfigErrorCode::kInvalidLogLevel:
       return std::format("'{}' must be one of trace, debug, info, warn, error, critical", error.subject);
+    case ConfigErrorCode::kNotASection:
+      return std::format("'{}' must be a mapping of names to values", error.subject);
+    case ConfigErrorCode::kUnknownControl:
+      return std::format("'{}' names no control; the controls are {}", error.subject, ControlNames());
+    case ConfigErrorCode::kInvalidKeyName:
+      return std::format("'{}' must name a key, e.g. W, LeftShift, Space, F1 or MouseRight", error.subject);
+    case ConfigErrorCode::kKeyBoundTwice:
+      return std::format("'{}' is bound to a key another control already uses", error.subject);
+    case ConfigErrorCode::kReservedKey:
+      return std::format("'{}' can't use {}: it releases the cursor", error.subject,
+                         input::NameOf(input::kReleaseCursorKey));
   }
   return "unknown config error";
 }
@@ -231,10 +373,13 @@ std::expected<std::filesystem::path, ConfigError> ResolveConfigFile(int argc, co
 
 std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 5> kKeys{
-      "base_dir", "pack", "public_key", "server_address", "log_level",
+  static constexpr std::array<std::string_view, 6> kKeys{
+      "base_dir",           "content.pack",
+      "content.public_key", "network.server_address",
+      "logging.level",      "input.mouse_sensitivity",
   };
-  const auto values = ReadScalarMap(yaml_text, kKeys);
+  static constexpr std::array<std::string_view, 1> kOpenSections{kKeysSection};
+  const auto values = ReadMapping(yaml_text, Schema{.keys = kKeys, .open_sections = kOpenSections});
   if (!values) {
     return std::unexpected(values.error());
   }
@@ -244,32 +389,38 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
   if (!root) {
     return std::unexpected(root.error());
   }
-  auto pack_path = RequirePath(*values, "pack", *root);
+  auto pack_path = RequirePath(*values, "content.pack", *root);
   if (!pack_path) {
     return std::unexpected(pack_path.error());
   }
-  auto public_key_path = RequirePath(*values, "public_key", *root);
+  auto public_key_path = RequirePath(*values, "content.public_key", *root);
   if (!public_key_path) {
     return std::unexpected(public_key_path.error());
   }
-  auto log_level = OptionalLogLevel(*values, "log_level", kDefaultLogLevel);
+  auto log_level = OptionalLogLevel(*values, "logging.level", kDefaultLogLevel);
   if (!log_level) {
     return std::unexpected(log_level.error());
+  }
+  const auto input = ParseInputConfig(*values);
+  if (!input) {
+    return std::unexpected(input.error());
   }
   return ClientConfig{
       .pack_path = *std::move(pack_path),
       .public_key_path = *std::move(public_key_path),
-      .server_address = OptionalString(*values, "server_address", kDefaultServerAddress),
+      .server_address = OptionalString(*values, "network.server_address", kDefaultServerAddress),
       .log_level = *std::move(log_level),
+      .input = *input,
   };
 }
 
 std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
   static constexpr std::array<std::string_view, 6> kKeys{
-      "base_dir", "pack", "public_key", "tick_rate_hz", "listen_address", "log_level",
+      "base_dir",      "content.pack", "content.public_key", "simulation.tick_rate_hz", "network.listen_address",
+      "logging.level",
   };
-  const auto values = ReadScalarMap(yaml_text, kKeys);
+  const auto values = ReadMapping(yaml_text, Schema{.keys = kKeys, .open_sections = {}});
   if (!values) {
     return std::unexpected(values.error());
   }
@@ -279,19 +430,19 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!root) {
     return std::unexpected(root.error());
   }
-  auto pack_path = RequirePath(*values, "pack", *root);
+  auto pack_path = RequirePath(*values, "content.pack", *root);
   if (!pack_path) {
     return std::unexpected(pack_path.error());
   }
-  auto public_key_path = RequirePath(*values, "public_key", *root);
+  auto public_key_path = RequirePath(*values, "content.public_key", *root);
   if (!public_key_path) {
     return std::unexpected(public_key_path.error());
   }
-  const auto tick_rate_hz = RequirePositiveNumber(*values, "tick_rate_hz");
+  const auto tick_rate_hz = RequirePositiveNumber(*values, "simulation.tick_rate_hz");
   if (!tick_rate_hz) {
     return std::unexpected(tick_rate_hz.error());
   }
-  auto log_level = OptionalLogLevel(*values, "log_level", kDefaultLogLevel);
+  auto log_level = OptionalLogLevel(*values, "logging.level", kDefaultLogLevel);
   if (!log_level) {
     return std::unexpected(log_level.error());
   }
@@ -299,7 +450,7 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
       .pack_path = *std::move(pack_path),
       .public_key_path = *std::move(public_key_path),
       .tick_rate_hz = *tick_rate_hz,
-      .listen_address = OptionalString(*values, "listen_address", kDefaultListenAddress),
+      .listen_address = OptionalString(*values, "network.listen_address", kDefaultListenAddress),
       .log_level = *std::move(log_level),
   };
 }

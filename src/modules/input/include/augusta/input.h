@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <mutex>
 #include <optional>
+#include <string_view>
 
 #include "augusta/math.h"
 #include "augusta/physics.h"
@@ -14,7 +15,7 @@
 // latter (ARCHITECTURE.md §7's "Input handling - reads device input,
 // hands commands to PredictionWorld").
 //
-// The raw device-event shapes (KeyEvent, MouseButtonEvent, MouseMoveEvent)
+// The raw device-event shapes (KeyEvent, MouseMoveEvent)
 // and the EventSink that receives them live here rather than in
 // augusta::renderer, even though Renderer is the one calling EventSink:
 // Renderer needs this module (to know what to push and who to push it
@@ -39,50 +40,142 @@
 // networking's own interface is designed, this is Command's home too.
 namespace augusta::input {
 
-// A physical key this engine's gameplay currently binds to something.
-// Deliberately not a full keyboard enumeration (contrast Falcor's own
-// ~100-entry Key) - extend as new gameplay needs a new key, same
-// restraint as physics::Stance only naming the stances US-04 needs.
+/// A physical key or mouse button: what a keymap binds a Control to, named in
+// augustac.yaml by NameOf/KeyNamed. Mouse buttons are keys here so a control
+// can be bound to either. The engine's own names, not Falcor's: the Renderer
+// maps Falcor's keys onto these (ADR-0009).
 enum class Key {
-  kW,
   kA,
-  kS,
+  kB,
+  kC,
   kD,
-  kLeftShift,    // Sprint (US-04/US-05).
-  kLeftControl,  // Crouch (US-04).
-  kZ,            // Prone (US-04).
-  kEscape,       // Releases the captured cursor.
-  kR,            // Reload (US-08). Keep last: kKeyCount counts from it.
+  kE,
+  kF,
+  kG,
+  kH,
+  kI,
+  kJ,
+  kK,
+  kL,
+  kM,
+  kN,
+  kO,
+  kP,
+  kQ,
+  kR,
+  kS,
+  kT,
+  kU,
+  kV,
+  kW,
+  kX,
+  kY,
+  kZ,
+  k0,
+  k1,
+  k2,
+  k3,
+  k4,
+  k5,
+  k6,
+  k7,
+  k8,
+  k9,
+  kSpace,
+  kTab,
+  kEnter,
+  kBackspace,
+  kEscape,  // Releases the captured cursor (kReleaseCursorKey); bound to no control.
+  kLeftShift,
+  kRightShift,
+  kLeftControl,
+  kRightControl,
+  kLeftAlt,
+  kRightAlt,
+  kUp,
+  kDown,
+  kLeft,
+  kRight,
+  kF1,
+  kF2,
+  kF3,
+  kF4,
+  kF5,
+  kF6,
+  kF7,
+  kF8,
+  kF9,
+  kF10,
+  kF11,
+  kF12,
+  kMouseLeft,
+  kMouseRight,
+  kMouseMiddle,  // Keep last: kKeyCount counts from it.
 };
 
 /// How many keys Key names.
-inline constexpr std::size_t kKeyCount = static_cast<std::size_t>(Key::kR) + 1;
+inline constexpr std::size_t kKeyCount = static_cast<std::size_t>(Key::kMouseMiddle) + 1;
 
-// A physical mouse button this engine's gameplay currently binds to
-// something.
-enum class MouseButton {
-  kLeft,   // Fire (US-07).
-  kRight,  // Toggle ADS (US-06).
+/// The key that releases the captured cursor. Reserved: no control may be bound to it.
+inline constexpr Key kReleaseCursorKey = Key::kEscape;
+
+/// Whether key is a mouse button.
+[[nodiscard]] bool IsMouseButton(Key key);
+
+/// key's name as augustac.yaml spells it: "W", "7", "LeftShift", "Space", "F12", "MouseRight".
+[[nodiscard]] std::string_view NameOf(Key key);
+
+/// The key with this name (NameOf), or nullopt if none has it. Case-sensitive.
+[[nodiscard]] std::optional<Key> KeyNamed(std::string_view name);
+
+/// What a player does, as opposed to which key does it: Input::Sample reads
+/// controls, and a Keymap says which key triggers each.
+enum class Control {
+  kMoveForward,
+  kMoveBack,
+  kMoveLeft,
+  kMoveRight,
+  kSprint,
+  kCrouch,
+  kProne,
+  kFire,    // Held: WeaponHandling turns it into shots at the weapon's rate (US-07).
+  kAds,     // Held: aim down sights (US-06).
+  kReload,  // Pressed: one reload per press, however long it is held (US-08). Keep last: kControlCount counts from it.
 };
 
-// Whether a key or button transitioned to pressed or released this
-// event. Held-down state is not reported here - Input derives it itself
-// by tracking Pressed/Released pairs.
-enum class Action {
+/// How many controls Control names.
+inline constexpr std::size_t kControlCount = static_cast<std::size_t>(Control::kReload) + 1;
+
+/// control's name as augustac.yaml's `keys` section spells it: "move_forward", "sprint", ...
+[[nodiscard]] std::string_view NameOf(Control control);
+
+/// The control with this name (NameOf), or nullopt if none has it.
+[[nodiscard]] std::optional<Control> ControlNamed(std::string_view name);
+
+/// Which key triggers each control, indexed by Control. Each control has its
+/// own key, never kReleaseCursorKey; augusta::config checks both.
+using Keymap = std::array<Key, kControlCount>;
+
+/// The bindings a player gets without a `keys` section: WASD, LeftShift sprints,
+/// LeftControl crouches, Z goes prone, the left mouse button fires, the right
+/// one aims down sights and R reloads.
+inline constexpr Keymap kDefaultKeymap = {
+    Key::kW,           Key::kS, Key::kA,         Key::kD,          Key::kLeftShift,
+    Key::kLeftControl, Key::kZ, Key::kMouseLeft, Key::kMouseRight, Key::kR,
+};
+
+/// Whether a key transitioned to pressed or released this event. Held-down
+/// state is not reported here - Input derives it itself by tracking
+/// Pressed/Released pairs.
+enum class KeyState {
   kPressed,
   kReleased,
 };
 
-// One key's press/release transition.
+// One key's (or mouse button's) press/release transition.
 struct KeyEvent {
   Key key;
-  Action action;
-};
-
-// One mouse button's press/release transition.
-struct MouseButtonEvent {
-  MouseButton button;
-  Action action;
+  KeyState state;
 };
 
 // The cursor's position within the client area, in pixels, at the time
@@ -104,7 +197,6 @@ class EventSink {
   virtual ~EventSink() = default;
 
   virtual void OnKeyEvent(const KeyEvent& event) = 0;
-  virtual void OnMouseButtonEvent(const MouseButtonEvent& event) = 0;
   virtual void OnMouseMoveEvent(const MouseMoveEvent& event) = 0;
 };
 
@@ -117,6 +209,8 @@ constexpr float kDefaultMouseSensitivity = 0.0022F;
 struct Config {
   // View rotation, in radians, per pixel of mouse movement.
   float mouse_sensitivity = kDefaultMouseSensitivity;
+  /// Which key triggers each control.
+  Keymap keymap = kDefaultKeymap;
 };
 
 /// The steepest pitch, up or down, Input lets the view reach, in radians: just
@@ -166,19 +260,21 @@ class Input : public EventSink {
  public:
   explicit Input(const Config& config);
 
-  // Builds this tick's Command from the keys held and the view accumulated
-  // so far. WASD move forward/back/left/right of where the view faces across
-  // the ground (opposite keys cancel, a diagonal is no faster), Shift held
-  // sprints, Ctrl held crouches and Z held goes prone, winning over Ctrl.
-  // Fire, ADS and reload are not sampled yet (M4). Call once per Simulation
+  // Builds this tick's Command from the controls held (through the keymap)
+  // and the view accumulated so far. The move controls go forward/back/left/
+  // right of where the view faces across the ground (opposite controls cancel,
+  // a diagonal is no faster); sprint, crouch, prone, fire and ADS are held, and
+  // prone wins over crouch; reload is true on the one Sample after its key was
+  // pressed, even if it was already released again. Call once per Simulation
   // tick, from the Simulation thread (ARCHITECTURE.md §8) - safe to call
   // concurrently with the OnXxx methods below, which arrive from
   // Renderer::PumpEvents on the Main/Render thread.
   [[nodiscard]] Command Sample();
 
   // Whether the cursor should be captured for mouselook: true at first, false
-  // once Escape is pressed, and true again on the next mouse click (which is
-  // taken by the capture, not passed on as a control). While released, the
+  // once kReleaseCursorKey is pressed, and true again on the next click of any
+  // mouse button (which is taken by the capture, not passed on as a control).
+  // While released, the
   // game has neither mouse nor keyboard: the view does not turn, every held
   // key is let go, and keys pressed meanwhile are ignored. The caller
   // applies it (Renderer::SetCursorLocked), from the Main/Render thread.
@@ -187,24 +283,26 @@ class Input : public EventSink {
   // EventSink - see there for when/why these are called. Not meant to
   // be called directly by anything other than Renderer (and tests).
   void OnKeyEvent(const KeyEvent& event) override;
-  void OnMouseButtonEvent(const MouseButtonEvent& event) override;
   // Turns the view by how far the cursor moved since the previous event; the
   // first event only sets where the cursor starts.
   void OnMouseMoveEvent(const MouseMoveEvent& event) override;
 
  private:
-  // Whether key is held down; callers hold mutex_.
-  [[nodiscard]] bool Held(Key key) const;
+  // Whether control's key is held down; callers hold mutex_.
+  [[nodiscard]] bool Held(Control control) const;
   // Captures or releases the cursor; callers hold mutex_.
   void SetCursorCaptured(bool captured);
 
   float mouse_sensitivity_;
+  Keymap keymap_;
   mutable std::mutex mutex_;
   std::array<bool, kKeyCount> held_{};
   std::optional<MouseMoveEvent> last_cursor_;
   float yaw_ = 0.0F;
   float pitch_ = 0.0F;
   bool cursor_captured_ = true;
+  // The reload key was pressed since the last Sample.
+  bool reload_pressed_ = false;
 };
 
 }  // namespace augusta::input

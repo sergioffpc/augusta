@@ -120,37 +120,79 @@ Falcor::float4x4 ToFalcor(const math::Mat4& matrix) {
   return result;
 }
 
-std::optional<input::Key> MapKey(Falcor::Input::Key key) {
+// Falcor's key in the run [falcor_first, falcor_first + count) as the key at
+// the same offset from first, if it is in the run. Both enums keep letters,
+// digits and F1-F12 contiguous and in the same order.
+std::optional<input::Key> MapRun(Falcor::Input::Key key, Falcor::Input::Key falcor_first, input::Key first, int count) {
+  const int offset = static_cast<int>(key) - static_cast<int>(falcor_first);
+  if (offset < 0 || offset >= count) {
+    return std::nullopt;
+  }
+  return static_cast<input::Key>(static_cast<int>(first) + offset);
+}
+
+constexpr int kLetterCount = 26;
+constexpr int kDigitCount = 10;
+constexpr int kFunctionKeyCount = 12;
+
+std::optional<input::Key> MapNamedKey(Falcor::Input::Key key) {
   switch (key) {
-    case Falcor::Input::Key::W:
-      return input::Key::kW;
-    case Falcor::Input::Key::A:
-      return input::Key::kA;
-    case Falcor::Input::Key::S:
-      return input::Key::kS;
-    case Falcor::Input::Key::D:
-      return input::Key::kD;
-    case Falcor::Input::Key::LeftShift:
-      return input::Key::kLeftShift;
-    case Falcor::Input::Key::LeftControl:
-      return input::Key::kLeftControl;
+    case Falcor::Input::Key::Space:
+      return input::Key::kSpace;
+    case Falcor::Input::Key::Tab:
+      return input::Key::kTab;
+    case Falcor::Input::Key::Enter:
+      return input::Key::kEnter;
+    case Falcor::Input::Key::Backspace:
+      return input::Key::kBackspace;
     case Falcor::Input::Key::Escape:
       return input::Key::kEscape;
-    case Falcor::Input::Key::Z:
-      return input::Key::kZ;
-    case Falcor::Input::Key::R:
-      return input::Key::kR;
+    case Falcor::Input::Key::LeftShift:
+      return input::Key::kLeftShift;
+    case Falcor::Input::Key::RightShift:
+      return input::Key::kRightShift;
+    case Falcor::Input::Key::LeftControl:
+      return input::Key::kLeftControl;
+    case Falcor::Input::Key::RightControl:
+      return input::Key::kRightControl;
+    case Falcor::Input::Key::LeftAlt:
+      return input::Key::kLeftAlt;
+    case Falcor::Input::Key::RightAlt:
+      return input::Key::kRightAlt;
+    case Falcor::Input::Key::Up:
+      return input::Key::kUp;
+    case Falcor::Input::Key::Down:
+      return input::Key::kDown;
+    case Falcor::Input::Key::Left:
+      return input::Key::kLeft;
+    case Falcor::Input::Key::Right:
+      return input::Key::kRight;
     default:
       return std::nullopt;
   }
 }
 
-std::optional<input::MouseButton> MapMouseButton(Falcor::Input::MouseButton button) {
+std::optional<input::Key> MapKey(Falcor::Input::Key key) {
+  if (const auto letter = MapRun(key, Falcor::Input::Key::A, input::Key::kA, kLetterCount)) {
+    return letter;
+  }
+  if (const auto digit = MapRun(key, Falcor::Input::Key::Key0, input::Key::k0, kDigitCount)) {
+    return digit;
+  }
+  if (const auto function_key = MapRun(key, Falcor::Input::Key::F1, input::Key::kF1, kFunctionKeyCount)) {
+    return function_key;
+  }
+  return MapNamedKey(key);
+}
+
+std::optional<input::Key> MapMouseButton(Falcor::Input::MouseButton button) {
   switch (button) {
     case Falcor::Input::MouseButton::Left:
-      return input::MouseButton::kLeft;
+      return input::Key::kMouseLeft;
     case Falcor::Input::MouseButton::Right:
-      return input::MouseButton::kRight;
+      return input::Key::kMouseRight;
+    case Falcor::Input::MouseButton::Middle:
+      return input::Key::kMouseMiddle;
     default:
       return std::nullopt;
   }
@@ -467,16 +509,16 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   }
 
   void handleKeyboardEvent(const Falcor::KeyboardEvent& event) override {
-    input::Action action;
+    input::KeyState state;
     if (event.type == Falcor::KeyboardEvent::Type::KeyPressed) {
-      action = input::Action::kPressed;
+      state = input::KeyState::kPressed;
     } else if (event.type == Falcor::KeyboardEvent::Type::KeyReleased) {
-      action = input::Action::kReleased;
+      state = input::KeyState::kReleased;
     } else {
       return;
     }
     if (const auto key = MapKey(event.key)) {
-      input_sink.OnKeyEvent({.key = *key, .action = action});
+      input_sink.OnKeyEvent({.key = *key, .state = state});
     }
   }
 
@@ -491,9 +533,9 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
         if (!button) {
           return;
         }
-        const auto action =
-            event.type == Falcor::MouseEvent::Type::ButtonDown ? input::Action::kPressed : input::Action::kReleased;
-        input_sink.OnMouseButtonEvent({.button = *button, .action = action});
+        const auto state =
+            event.type == Falcor::MouseEvent::Type::ButtonDown ? input::KeyState::kPressed : input::KeyState::kReleased;
+        input_sink.OnKeyEvent({.key = *button, .state = state});
         return;
       }
       default:

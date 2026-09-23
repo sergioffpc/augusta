@@ -43,7 +43,7 @@ void Write(Severity level, std::string_view message);
 
 /// Raises or lowers the runtime floor: below level, a call that still passes
 /// the compile-time gate (AUGUSTA_LOG_ACTIVE_LEVEL) is now dropped before it
-/// reaches the console sink. This is what a config file's `log_level` (ADR-0034)
+/// reaches the console sink. This is what a config file's `logging.level` (ADR-0034)
 /// drives - the compile-time gate alone can't tell a Debug build's TRACE
 /// firehose apart from its DEBUG heartbeat, since both compile in together.
 /// Thread-safe; takes effect for calls made after it returns.
