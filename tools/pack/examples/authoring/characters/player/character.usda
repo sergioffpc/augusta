@@ -1,0 +1,38 @@
+#usda 1.0
+(
+    defaultPrim = "Player"
+    upAxis = "Y"
+    metersPerUnit = 1
+)
+
+def Xform "Player"
+{
+    # This Xform's own origin is the character's feet (physics::BodyState::
+    # position convention, src/client/runtime.cpp's ToRenderer) - placing this
+    # asset elsewhere only ever moves this prim, never the geometry below,
+    # whose own translate positions it relative to that anchor.
+
+    def Capsule "Visual"
+    {
+        uniform token axis = "Y"
+        double height = 1.5
+        double radius = 0.3
+        float3[] extent = [(-0.3, -1.05, -0.3), (0.3, 1.05, 0.3)]
+        color3f[] primvars:displayColor = [(0.25, 0.45, 0.7)]
+        double3 xformOp:translate = (0, 1.05, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Capsule "Collider" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        uniform token axis = "Y"
+        double height = 1.5
+        double radius = 0.3
+        float3[] extent = [(-0.3, -1.05, -0.3), (0.3, 1.05, 0.3)]
+        uniform token purpose = "guide"
+        double3 xformOp:translate = (0, 1.05, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+}

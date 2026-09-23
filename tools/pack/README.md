@@ -37,28 +37,29 @@ Pass `-SkipAuthoring` on a machine that only cooks stages someone else authored;
 otherwise NVIDIA Omniverse USD Composer and Adobe's USD-Fileformat-plugins are
 set up as well. The script is safe to re-run. It never regenerates an existing
 signing key, since that would invalidate every pack already signed with it, and
-it never overwrites the example scenario below once one exists at its path.
+it never overwrites a seeded piece below once it exists at its path.
 
-The script also seeds `authoring/examples/augusta` from
-[examples/augusta/](examples/augusta/) - a small worked scenario (a floor, a
-prop, a spawn point, its `parameters.lua`, and placeholder `objectives.lua`/
-`behaviours.lua` for when game policy, ADR-0022, is wired up) committed to this
-repo so a fresh environment has something to cook straight away:
+The script also seeds a small worked example from
+[examples/authoring/](examples/authoring/), piece by piece: `authoring/maps/augusta`
+(a floor, a prop, a spawn point), `authoring/characters/player` (ADR-0040), and
+`authoring/scenarios/augusta` (its `manifest.yaml`, ADR-0041, composing
+the other two, plus `parameters.lua` and placeholder `objectives.lua`/
+`behaviours.lua` for when game policy, ADR-0022, is wired up) - committed to
+this repo so a fresh environment has something to cook straight away:
 
 ```powershell
-augustap <assets-root>\authoring\examples\augusta
+augustap augusta
 ```
 
-`augustap` takes the scenario folder as an ordinary path - relative to the
-current directory or absolute, never resolved against an assets root - so this
-works from anywhere; from inside `authoring`, `augustap examples\augusta` is
-enough.
+`augustap` takes the scenario's bare name (ADR-0041), always resolved as
+`<assets-root>\authoring\scenarios\<name>` - never a path, and never
+resolved from the current directory.
 
 The assets root looks like this:
 
 | Path | Contents |
 |---|---|
-| `authoring/` | Scenario folders (a USD stage and its Lua scripts each) - a convenient place to keep them, not a boundary the cooker enforces |
+| `authoring/` | `maps/<name>/` (ADR-0015), `characters/<name>/` (ADR-0040), `scenarios/<name>/` (`manifest.yaml` + Lua scripts, ADR-0041) - the only one of the three `augustap` resolves a name against |
 | `packs/` | Cooked, signed packs |
 | `keys/` | `augusta.key` / `augusta.pub` (Ed25519). Never commit these. |
 | `bin/` | `augustap.exe`, `augustap-keygen.exe`, `augustap-inspect.exe`, `augustap-verify.exe` (installed here by `uv tool install`), plus `augustap-composer.ps1` unless `-SkipAuthoring` |
@@ -107,44 +108,56 @@ the same app the bootstrap scaffolds and builds
 
 ## Cooking a scenario
 
-A scenario is a folder holding one USD stage, always named `map`, and the Lua
-scripts that go with it (ADR-0015, ADR-0039):
+A scenario is named, not pathed (ADR-0041): `augustap` resolves the bare name
+you give it to `<assets-root>\authoring\scenarios\<name>`, which holds a
+`manifest.yaml` naming the one map and every character that scenario
+composes, plus the Lua scripts that go with it:
 
 ```
-test_map\map.usda           # the stage (.usd, .usda, .usdc or .usdz)
-test_map\parameters.lua     # required: the scenario's Parameters
-test_map\rules\round.lua    # any other *.lua, in any subfolder
+scenarios\test_map\manifest.yaml     # map: maps/test_map, characters: [...]
+scenarios\test_map\parameters.lua    # required: the scenario's Parameters
+scenarios\test_map\rules\round.lua   # any other *.lua, in any subfolder
+maps\test_map\map.usda               # the stage (.usd, .usda, .usdc or .usdz)
+characters\marine\character.usda     # a character the manifest can name (ADR-0040)
 ```
 
-`augustap` takes that folder as an ordinary path - relative to the current
-directory or absolute - not a name looked up under some fixed root, but it must
-sit under `<assets-root>/authoring`: the cook refuses a scenario outside it,
-since the pack path defaulted below mirrors where it sits under `authoring/`.
+```yaml
+# scenarios\test_map\manifest.yaml
+map: maps/test_map
+characters:
+  - characters/marine
+```
 
 ```powershell
-augustap <path\to\scenario>                    # -> <assets-root>\packs\<scenario's path under authoring>\{client,server}.pack
-augustap <path\to\scenario> --skip-validation  # skip usd-validation-nvidia only
+augustap <name>                    # -> <assets-root>\packs\<name>\{client,server}.pack
+augustap <name> --skip-validation  # skip usd-validation-nvidia only
 ```
 
 A successful run ends with the paths of the client and server packs it wrote.
 
-The cooker packs everything under the folder: the stage into both packs, and
-every `*.lua` file into the **server** pack only, as a script asset addressed by
-its path relative to the folder (`parameters.lua`, `rules/round.lua`; ADR-0031).
-A client is sent the values a script decides and never receives the script
-(ADR-0019). It is an error if the folder is missing, if its stage `map.*` is
-missing or ambiguous, or if there is no `parameters.lua`: the server reads its
-Parameters out of its pack at startup, so that is found here rather than when a
-server starts on the pack. [`examples/augusta/`](examples/augusta/) is a full
-worked scenario to copy from, seeded into a fresh assets root by the bootstrap
-(see Setup above).
+The cooker packs everything the manifest names: the map's stage and every
+named character's stage into both packs (a character's own prims addressed
+`<manifest path>/<prim path>`, e.g. `characters/marine/Visual` - ADR-0040),
+and every `*.lua` file under the scenario folder into the **server** pack
+only, as a script asset addressed by its path relative to that folder
+(`parameters.lua`, `rules/round.lua`; ADR-0031). A client is sent the values a
+script decides and never receives the script (ADR-0019). It is an error if
+the scenario folder or its `manifest.yaml` is missing, if the map or a named
+character doesn't resolve to a stage, or if there is no `parameters.lua`: the
+server reads its Parameters out of its pack at startup, so that is found here
+rather than when a server starts on the pack.
 
-By default, packs are written under `<assets-root>/packs`, mirroring the
-scenario's own path under `<assets-root>/authoring` (`authoring/examples/augusta`
--> `packs/examples/augusta/client.pack`, `packs/examples/augusta/server.pack`).
+By default, packs are written under `<assets-root>/packs`, keyed by the
+scenario's name alone, not its `authoring/scenarios/` position (`augusta` ->
+`packs/augusta/client.pack`, `packs/augusta/server.pack`).
 Pass `--client-output-pack`/`--server-output-pack` to put them somewhere else.
 Scripts are part of the signed pack: to change a value, edit the file and cook
 again.
+
+The cooker's geometry reader classifies `UsdGeomMesh`, `UsdGeomCube`, and
+`UsdGeomCapsule` (ADR-0032/ADR-0041) - a character authored as any of the
+three, like `examples/authoring/characters/player/`, cooks into real
+mesh/collision entries.
 
 ### `augustap` reference
 
@@ -273,7 +286,7 @@ failure it prints the reason to stderr and exits `1`:
 | `src/pack/assets_root.py` | Assets-root inference shared by the entry points |
 | `cpp/` | Standalone CMake/vcpkg project for the two native modules. It builds straight into `src/pack/`. |
 | `composer/` | Playback file that scaffolds the Augusta USD Composer app, and `augustap-composer.ps1` (launches it) |
-| `examples/augusta/` | The example scenario the bootstrap seeds into a fresh assets root |
+| `examples/authoring/` | A committed `<assets-root>/authoring/` sample the bootstrap seeds into a fresh assets root: `maps/augusta/` (ADR-0015), `characters/player/` (ADR-0040), `scenarios/augusta/` composing both (ADR-0041) |
 | `scripts/bootstrap-windows.ps1` | Builds the assets root |
 
 ## Rebuilding the native modules
