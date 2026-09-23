@@ -117,7 +117,7 @@ class SessionTest : public ::testing::Test {
       host_.PumpNetwork();
       session_.PumpEvents();
       session_.ExchangeMessages();
-      if (session_.GetState() == ConnectionState::kConnected) {
+      if (session_.GetConnectionState() == ConnectionState::kConnected) {
         return true;
       }
       std::this_thread::sleep_for(kPollInterval);
@@ -159,7 +159,7 @@ TEST_F(SessionTest, StaysConnectedWhileTheTestAlternatesTicksAndNetworkWork) {
     session_.ExchangeMessages();
   }
 
-  EXPECT_EQ(session_.GetState(), ConnectionState::kConnected);
+  EXPECT_EQ(session_.GetConnectionState(), ConnectionState::kConnected);
 }
 
 // A host and however many clients a test starts, all driven by hand.
@@ -336,7 +336,8 @@ TEST_F(JoinTest, EightClientsMoveSprintAndChangeStanceForARoundWithNoMissedTicks
       sessions_[i]->ExchangeMessages();
 
       ASSERT_FALSE(sessions_[i]->GetFailure().has_value()) << "client " << i << " failed at tick " << tick;
-      EXPECT_EQ(sessions_[i]->GetState(), ConnectionState::kConnected) << "client " << i << " dropped at tick " << tick;
+      EXPECT_EQ(sessions_[i]->GetConnectionState(), ConnectionState::kConnected)
+          << "client " << i << " dropped at tick " << tick;
 
       if (const auto authoritative = sessions_[i]->GetAuthoritativeState()) {
         max_acknowledged[i] = std::max(max_acknowledged[i], authoritative->acknowledged_sequence);
@@ -1358,12 +1359,12 @@ TEST(SessionFailureTest, EndingTheSessionOneselfIsNotAFailure) {
   Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}}, EmptyWorld());
   session.Connect();
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
-  while (session.GetState() != ConnectionState::kConnected && std::chrono::steady_clock::now() < deadline) {
+  while (session.GetConnectionState() != ConnectionState::kConnected && std::chrono::steady_clock::now() < deadline) {
     host.PumpNetwork();
     session.PumpEvents();
     std::this_thread::sleep_for(kPollInterval);
   }
-  ASSERT_EQ(session.GetState(), ConnectionState::kConnected);
+  ASSERT_EQ(session.GetConnectionState(), ConnectionState::kConnected);
 
   session.Disconnect();
   session.PumpEvents();
@@ -1452,7 +1453,7 @@ TEST_F(RobustnessTest, GarbageFromAPeerIsDroppedAndTheMatchAndTheOtherClientsAre
   for (const auto& player : after->players) {
     EXPECT_TRUE(std::isfinite(player.body.position.x) && std::isfinite(player.body.position.y));
   }
-  EXPECT_EQ(bystander.GetState(), ConnectionState::kConnected);
+  EXPECT_EQ(bystander.GetConnectionState(), ConnectionState::kConnected);
 }
 
 TEST_F(RobustnessTest, AfterAClientDisconnectsItsPlayerIsAbsentFromOthersStateAndANinthClientCanJoin) {

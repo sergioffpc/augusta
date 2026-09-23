@@ -7,6 +7,13 @@ decides where a player's choice comes from, who has the final word on it, and
 how every client learns every other player's character. It extends the message
 catalogue of ADR-0038.
 
+**Changed by ADR-0043**: a Lobby now comes before every match and no one joins
+mid-match. The character index therefore rides in the Lobby updates and the
+Match start message instead of every Authoritative State, and the Join checks
+gain *match in progress* before *lobby full*. How the choice is made (the client
+config), validated (at join) and addressed (by index into the pack's list) is
+unchanged.
+
 **The choice comes from the client config.** `augustac.yaml` (ADR-0034) gains a
 required `character` key naming a character by its path relative to
 `authoring/`, the same address the manifest's `characters` list uses (ADR-0041),

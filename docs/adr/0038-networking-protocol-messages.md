@@ -9,6 +9,11 @@ clock or state, used by both client and server (ADR-0006).
 Join refused gains the *unknown character* reason, and Join accepted, each Roster
 entry and each player in Authoritative State carry a character index.
 
+**Extended by ADR-0043**: Join refused gains *match in progress*, a reliable Lobby
+update replaces the Roster in Join accepted, the client sends Ready naming the
+Lobby version it loaded for, and reliable Match start and Match end messages
+bound each match. The per-player character index leaves Authoritative State.
+
 **Wire shape.** One message is one transport payload: a one-byte `MessageType`
 followed by that type's fields, fixed-width and little-endian; a string is a
 one-byte length and its bytes. Enumerated fields start at 1, so a zeroed byte is

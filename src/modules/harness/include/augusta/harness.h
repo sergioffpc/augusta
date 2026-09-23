@@ -27,8 +27,9 @@
 // network is serviced (PumpEvents, ExchangeMessages) and when a tick happens
 // (Tick), and hands in the input for that tick. The two are meant for two
 // different threads, as in ClientRuntime: Connect, Disconnect, PumpEvents,
-// ExchangeMessages, GetState and GetStats from the Network I/O thread, and Tick
-// from the Prediction thread (the transport is safe to send from both).
+// ExchangeMessages, GetConnectionState and GetConnectionStats from the Network
+// I/O thread, and Tick from the Prediction thread (the transport is safe to
+// send from both).
 namespace augusta::harness {
 
 /// Why a Session ended without the player asking it to.
@@ -93,7 +94,7 @@ class Session {
   void ExchangeMessages();
 
   /// Whether the connection is still connecting, connected or disconnected.
-  [[nodiscard]] networking::ConnectionState GetState() const;
+  [[nodiscard]] networking::ConnectionState GetConnectionState() const;
 
   /// Why this session has ended on its own, or nullopt while it has not: before
   /// Connect, while connecting or connected, and after Disconnect (which the
@@ -101,7 +102,7 @@ class Session {
   [[nodiscard]] std::optional<Failure> GetFailure() const;
 
   /// The connection's quality numbers, or nullopt if not connected.
-  [[nodiscard]] std::optional<networking::ConnectionStats> GetStats() const;
+  [[nodiscard]] std::optional<networking::ConnectionStats> GetConnectionStats() const;
 
   /// The session the server assigned once it admitted this client, or nullopt
   /// until then. Set by ExchangeMessages; safe to read from any thread.

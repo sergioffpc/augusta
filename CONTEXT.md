@@ -19,12 +19,28 @@ The dedicated server, which holds the single source of truth for all gameplay-af
 _Avoid_: Trusted server, master client
 
 **Match**:
-The one shared game the Authoritative server runs: who it has admitted (at most 8 players) and the Authoritative State of their bodies every tick. Ends when the server process does — there is no round loop yet (M5).
-_Avoid_: Lobby (a match already has players moving in it; a lobby is a pre-match waiting state this engine doesn't have)
+One game played by the scenario's Player count, from Match start until Game policy ends it. Its players are fixed when it starts: no one joins, and a player who disconnects leaves it and its body is removed. When it ends, everyone still connected returns to the Lobby (ADR-0043).
+_Avoid_: Game (too broad: the product is a game)
+
+**Lobby**:
+Where admitted players wait for the next Match, up to the Player count. Players come and go freely; it closes when a Match starts and reopens when it ends, and the next Match waits at least 5 seconds after that (ADR-0043).
+_Avoid_: Waiting room, pre-game
+
+**Player count**:
+How many players a Match needs to start, fixed by the scenario's Parameters.
+_Avoid_: Max players (the protocol's upper bound on any scenario's player count, not a scenario's own number)
+
+**Ready**:
+A player whose client has loaded what it needs to draw everyone currently in the Lobby. The client decides it on its own; the player never presses anything.
+_Avoid_: Loaded, prepared
+
+**Match start**:
+The moment the Lobby is full and every player is Ready, at least 5 seconds after the previous Match ended: the server closes the Lobby and tells every client who is in the Match, with each player's Character and Spawn point.
+_Avoid_: Spawn (a player's body is placed at Match start, but "spawn" names the placement, not the start of the match)
 
 **Session**:
-One player's presence in a Match, from being admitted until it disconnects, named by its Session ID. The client's own connection and PredictionWorld pairing (augusta::harness::Session) is the client-side implementation of one.
-_Avoid_: Connection (a session is the gameplay identity kept for the life of the player's presence in the Match; the transport connection beneath it, augusta::networking's own peer handle, can in principle outlive or be distinct from it)
+One player's presence on the server, from being admitted to the Lobby until it disconnects, named by its Session ID. It spans the Lobby and every Match the player plays in between. The client's own connection and PredictionWorld pairing (augusta::harness::Session) is the client-side implementation of one.
+_Avoid_: Connection (a session is the gameplay identity kept for the life of the player's presence on the server; the transport connection beneath it, augusta::networking's own peer handle, can in principle outlive or be distinct from it)
 
 **Session ID**:
 The Authoritative server's name for one connected player (protocol::SessionId), assigned when it admits the join. Distinct from the transport's own handle for the connection, and not a credential — the server tells senders apart by connection, not by this ID.
@@ -47,15 +63,15 @@ One server tick's Authoritative State as sent to one client (protocol::Authorita
 _Avoid_: Snapshot, state sync
 
 **Spawn point**:
-A place in the Map where a player's feet are put when it joins, authored as a scene node in the pack (ADR-0032). The server takes them in order, starting over after the last, and tells the client which one it got; which player gets which is Game policy once round rules exist.
+A place in the Map where a player's feet are put at Match start, authored as a scene node in the pack (ADR-0032). The server takes them in order, starting over after the last, and tells the client which one it got; which player gets which is Game policy once round rules exist.
 _Avoid_: Spawn location, start position
 
 **Roster**:
-Who is already in the match, each with its last known body, as told to a client when the server admits it. After that the Authoritative State lists everyone every tick.
-_Avoid_: Player list, lobby
+Who is in the Lobby, each with its Character, as the server tells every client in it whenever it changes. The version a client loaded for is what its Ready names.
+_Avoid_: Player list
 
 **Character**:
-What a player plays as, meaning its body's look and its collider, chosen from the characters the scenario's manifest names. The player picks one before joining, the server admits the join only if the scenario has it, and it stays fixed for the whole Session (ADR-0042).
+What a player plays as, meaning its body's look and its collider, chosen from the characters the scenario's manifest names. The player picks one before joining, the server admits the join only if the scenario has it, and it stays fixed for the whole Session, across every Match in it (ADR-0042).
 _Avoid_: Skin, model, avatar (a character is not only appearance: its collider is gameplay)
 
 **RTT (Round-Trip Time)**:

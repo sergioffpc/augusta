@@ -118,7 +118,7 @@ struct ClientRuntime::Impl {
   std::mutex hud_net_mutex;
   std::optional<renderer::DebugHudNetStats> latest_hud_net;
 
-  // Network I/O thread only. GetStats() reports jitter as a high-water mark
+  // Network I/O thread only. GetConnectionStats() reports jitter as a high-water mark
   // cleared by every read, and that thread reads it far faster than anyone
   // can read a HUD, so the HUD shows the peak over the last kJitterWindow.
   static constexpr std::chrono::seconds kJitterWindow{1};
@@ -130,7 +130,7 @@ struct ClientRuntime::Impl {
   // networking::ConnectionStats field-for-field - plotted on the Nsight
   // Systems timeline alongside the Simulation/Network/Render ranges below,
   // sampled once per NetworkThreadMain loop iteration. sample_no_value()
-  // is used instead of skipping the sample while GetStats() returns
+  // is used instead of skipping the sample while GetConnectionStats() returns
   // std::nullopt (not yet kConnected), so the timeline shows an explicit
   // gap rather than a misleading flat line at whatever value came before.
   nvtx3::counter<double> net_ping_ms{"network.ping_ms", "Round-trip time to server"};
@@ -138,7 +138,8 @@ struct ClientRuntime::Impl {
   nvtx3::counter<double> net_quality_remote{"network.quality_remote", "Remote-reported packet delivery quality (0-1)"};
   nvtx3::counter<double> net_in_bytes_per_sec{"network.in_bytes_per_sec", "Inbound throughput"};
   nvtx3::counter<double> net_out_bytes_per_sec{"network.out_bytes_per_sec", "Outbound throughput"};
-  nvtx3::counter<double> net_max_jitter_us{"network.max_jitter_us", "Worst jitter since last GetStats() call"};
+  nvtx3::counter<double> net_max_jitter_us{"network.max_jitter_us",
+                                           "Worst jitter since last GetConnectionStats() call"};
   nvtx3::counter<double> net_pending_bytes{"network.pending_bytes", "Bytes queued or in flight"};
 
   // Packet loss in percent, from the worse of the two directions. Qualities
@@ -189,7 +190,7 @@ struct ClientRuntime::Impl {
   }
 
   void SampleNetworkStats() {
-    const std::optional<networking::ConnectionStats> stats = session->GetStats();
+    const std::optional<networking::ConnectionStats> stats = session->GetConnectionStats();
     PublishHudNetStats(stats);
     if (!stats.has_value()) {
       net_ping_ms.sample_no_value(nvtx3::no_value_reason::unavailable);
