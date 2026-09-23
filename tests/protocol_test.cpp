@@ -16,6 +16,7 @@ namespace {
 
 using augusta::math::Vec3;
 using augusta::protocol::AuthoritativeStateWire;
+using augusta::protocol::BodyStateWire;
 using augusta::protocol::Bytes;
 using augusta::protocol::Commands;
 using augusta::protocol::CommandWire;
@@ -34,6 +35,11 @@ using augusta::protocol::MessageType;
 using augusta::protocol::PlayerStateWire;
 using augusta::protocol::SequencedCommandWire;
 using augusta::protocol::SessionId;
+using augusta::protocol::SnapAngle;
+using augusta::protocol::SnapDirection;
+using augusta::protocol::SnapPosition;
+using augusta::protocol::SnapStamina;
+using augusta::protocol::SnapVelocity;
 
 Bytes BytesOf(std::initializer_list<std::uint8_t> values) {
   Bytes bytes;
@@ -98,6 +104,14 @@ TEST(ProtocolTest, JoinRequestWithAnEmptyVersionRoundTrips) {
   EXPECT_EQ(std::get<JoinRequest>(decoded).engine_version, "");
 }
 
+// actual is what Decode gave back for expected: its numbers on their grids.
+void ExpectSnappedBody(const BodyStateWire& actual, const BodyStateWire& expected) {
+  EXPECT_EQ(actual.position, SnapPosition(expected.position));
+  EXPECT_EQ(actual.velocity, SnapVelocity(expected.velocity));
+  EXPECT_EQ(actual.stance, expected.stance);
+  EXPECT_EQ(actual.stamina, SnapStamina(expected.stamina));
+}
+
 PlayerStateWire PlayerAt(std::uint32_t session, float x) {
   PlayerStateWire player{.session = static_cast<SessionId>(session)};
   player.body.position = Vec3(x, 1.0F, -2.5F);
@@ -121,7 +135,7 @@ TEST(ProtocolTest, JoinAcceptedRoundTrips) {
   ASSERT_TRUE(std::holds_alternative<JoinAccepted>(decoded));
   const auto& received = std::get<JoinAccepted>(decoded);
   EXPECT_EQ(received.session, sent.session);
-  EXPECT_EQ(received.spawn, sent.spawn);
+  EXPECT_EQ(received.spawn, SnapPosition(sent.spawn));
   EXPECT_EQ(received.tick_rate_hz, sent.tick_rate_hz);
   EXPECT_EQ(received.parameters.player_count, sent.parameters.player_count);
   EXPECT_EQ(received.parameters.stamina.deplete_per_second, sent.parameters.stamina.deplete_per_second);
@@ -130,10 +144,7 @@ TEST(ProtocolTest, JoinAcceptedRoundTrips) {
   ASSERT_EQ(received.roster.size(), sent.roster.size());
   for (std::size_t i = 0; i < sent.roster.size(); ++i) {
     EXPECT_EQ(received.roster[i].session, sent.roster[i].session);
-    EXPECT_EQ(received.roster[i].body.position, sent.roster[i].body.position);
-    EXPECT_EQ(received.roster[i].body.velocity, sent.roster[i].body.velocity);
-    EXPECT_EQ(received.roster[i].body.stance, sent.roster[i].body.stance);
-    EXPECT_EQ(received.roster[i].body.stamina, sent.roster[i].body.stamina);
+    ExpectSnappedBody(received.roster[i].body, sent.roster[i].body);
   }
 }
 
@@ -151,10 +162,10 @@ TEST(ProtocolTest, JoinAcceptedWithAFullRosterRoundTrips) {
 }
 
 TEST(ProtocolTest, MorePlayersInARosterThanAMatchHoldsIsTooLong) {
-  // type, session (4), spawn (12), tick rate (4), parameters (13: the player
+  // type, session (4), spawn (9), tick rate (4), parameters (13: the player
   // count, then the stamina rules), then the count.
   Bytes payload = BytesOf({kJoinAcceptedType});
-  payload.resize(1 + 4 + 12 + 4 + 13, std::byte{0});
+  payload.resize(1 + 4 + 9 + 4 + 13, std::byte{0});
   payload.push_back(static_cast<std::byte>(kMaxPlayers + 1));
 
   EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
@@ -174,7 +185,7 @@ TEST(ProtocolTest, FieldsAreFixedWidthLittleEndian) {
   // The session, then spawn, tick rate, parameters and roster count: all zero
   // here but the player count, which leads the parameters.
   Bytes accepted = BytesOf({kJoinAcceptedType, 0x01, 0x02, 0x03, 0x04});
-  accepted.resize(accepted.size() + 12 + 4, std::byte{0});
+  accepted.resize(accepted.size() + 9 + 4, std::byte{0});
   accepted.push_back(std::byte{0x03});
   accepted.resize(accepted.size() + 12 + 1, std::byte{0});
   EXPECT_EQ(Encode(JoinAccepted{.session = static_cast<SessionId>(0x04030201U),
@@ -253,11 +264,12 @@ SequencedCommandWire BusyCommand(std::uint32_t sequence) {
   return sequenced;
 }
 
+// actual is what Decode gave back for expected: its numbers on their grids.
 void ExpectSameCommand(const SequencedCommandWire& actual, const SequencedCommandWire& expected) {
   EXPECT_EQ(actual.sequence, expected.sequence);
-  EXPECT_EQ(actual.command.direction, expected.command.direction);
-  EXPECT_EQ(actual.command.yaw, expected.command.yaw);
-  EXPECT_EQ(actual.command.pitch, expected.command.pitch);
+  EXPECT_EQ(actual.command.direction, SnapDirection(expected.command.direction));
+  EXPECT_EQ(actual.command.yaw, SnapAngle(expected.command.yaw));
+  EXPECT_EQ(actual.command.pitch, SnapAngle(expected.command.pitch));
   EXPECT_EQ(actual.command.flags, expected.command.flags);
   EXPECT_EQ(actual.command.desired_stance, expected.command.desired_stance);
 }
@@ -295,20 +307,22 @@ TEST(ProtocolTest, MoreCommandsThanAMessageAllowsIsTooLong) {
             DecodeError::kFieldTooLong);
 }
 
-TEST(ProtocolTest, ANonFiniteFloatSurvivesTheCodecForTheServerToJudge) {
+TEST(ProtocolTest, ANonFiniteNumberIsSentAsZeroOrItsNearestBound) {
   SequencedCommandWire sequenced = BusyCommand(1);
   sequenced.command.yaw = std::numeric_limits<float>::quiet_NaN();
   sequenced.command.direction.x = std::numeric_limits<float>::infinity();
+  sequenced.command.direction.y = -std::numeric_limits<float>::infinity();
 
   const auto decoded = std::get<Commands>(RoundTrip(Commands{.commands = {sequenced}}));
 
-  EXPECT_TRUE(std::isnan(decoded.commands[0].command.yaw));
-  EXPECT_TRUE(std::isinf(decoded.commands[0].command.direction.x));
+  EXPECT_EQ(decoded.commands[0].command.yaw, 0.0F);
+  EXPECT_EQ(decoded.commands[0].command.direction.x, SnapDirection(Vec3(1000.0F, 0.0F, 0.0F)).x);
+  EXPECT_EQ(decoded.commands[0].command.direction.y, SnapDirection(Vec3(0.0F, -1000.0F, 0.0F)).y);
 }
 
-// type, count, then per command: sequence (4), direction (12), yaw (4), pitch
-// (4) and one byte for the flags and the stance.
-constexpr std::size_t kCommandFlagsOffset = 2 + 4 + 12 + 4 + 4;
+// type, count, then per command: sequence (4), direction (6), yaw (2), pitch
+// (2) and one byte for the flags and the stance.
+constexpr std::size_t kCommandFlagsOffset = 2 + 4 + 6 + 2 + 2;
 
 TEST(ProtocolTest, ACommandsFlagsAndStanceShareItsLastByte) {
   SequencedCommandWire sequenced{.sequence = 1};
@@ -352,10 +366,7 @@ TEST(ProtocolTest, AuthoritativeStateRoundTrips) {
   ASSERT_EQ(received.players.size(), sent.players.size());
   for (std::size_t i = 0; i < sent.players.size(); ++i) {
     EXPECT_EQ(received.players[i].session, sent.players[i].session);
-    EXPECT_EQ(received.players[i].body.position, sent.players[i].body.position);
-    EXPECT_EQ(received.players[i].body.velocity, sent.players[i].body.velocity);
-    EXPECT_EQ(received.players[i].body.stance, sent.players[i].body.stance);
-    EXPECT_EQ(received.players[i].body.stamina, sent.players[i].body.stamina);
+    ExpectSnappedBody(received.players[i].body, sent.players[i].body);
   }
 }
 
@@ -376,11 +387,56 @@ TEST(ProtocolTest, MorePlayersThanAMatchHoldsIsTooLong) {
 
 TEST(ProtocolTest, APlayersStanceOutsideItsRangeIsInvalid) {
   Bytes payload = Encode(AuthoritativeStateWire{.players = {PlayerStateWire{}}});
-  // type, tick, acknowledged sequence, count, session, position (12), velocity (12), then stance.
-  constexpr std::size_t kStanceOffset = 1 + 4 + 4 + 1 + 4 + 12 + 12;
+  // type, tick, acknowledged sequence, count, session, position (9), velocity (6), then stance.
+  constexpr std::size_t kStanceOffset = 1 + 4 + 4 + 1 + 4 + 9 + 6;
   payload[kStanceOffset] = static_cast<std::byte>(3);
 
   EXPECT_EQ(Decode(payload).error(), DecodeError::kInvalidEnum);
+}
+
+// Every number of a body or a command travels as a whole count of its grid's
+// step (ADR-0038), in the fewest bytes its range needs.
+TEST(ProtocolTest, ABodyTravelsInEighteenBytesAndACommandInEleven) {
+  EXPECT_EQ(Encode(AuthoritativeStateWire{.players = {PlayerStateWire{}}}).size(), 1 + 4 + 4 + 1 + 4 + 18);
+  EXPECT_EQ(Encode(Commands{.commands = {SequencedCommandWire{}}}).size(), 2 + 4 + 11);
+}
+
+TEST(ProtocolTest, APositionTravelsAsThreeBytesPerAxisInMillimeterSteps) {
+  PlayerStateWire player;
+  player.body.position = Vec3(1.0F, -1.0F / 1024.0F, 0.0F);
+  const Bytes payload = Encode(AuthoritativeStateWire{.players = {player}});
+  // type, tick, acknowledged sequence, count, session, then x, y and z.
+  constexpr std::ptrdiff_t kPositionOffset = 1 + 4 + 4 + 1 + 4;
+
+  const Bytes position(payload.begin() + kPositionOffset, payload.begin() + kPositionOffset + 9);
+  EXPECT_EQ(position, BytesOf({0x00, 0x04, 0x00, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00}));
+}
+
+TEST(ProtocolTest, ASnappedValueIsOnItsGridAndSnapsToItself) {
+  for (const float value : {0.0F, 0.3F, -0.3F, 1.0F / 3.0F, 12.345F, -7.77F, 1000.001F}) {
+    const Vec3 vector(value, -value, value * 0.5F);
+    EXPECT_EQ(SnapPosition(SnapPosition(vector)), SnapPosition(vector)) << value;
+    EXPECT_EQ(SnapVelocity(SnapVelocity(vector)), SnapVelocity(vector)) << value;
+    EXPECT_EQ(SnapDirection(SnapDirection(vector)), SnapDirection(vector)) << value;
+    EXPECT_EQ(SnapAngle(SnapAngle(value)), SnapAngle(value)) << value;
+    EXPECT_EQ(SnapStamina(SnapStamina(value)), SnapStamina(value)) << value;
+    EXPECT_NEAR(SnapPosition(vector).x, vector.x, 0.5F / 1024.0F) << value;
+  }
+}
+
+TEST(ProtocolTest, AValueBeyondItsRangeIsSentAsTheBound) {
+  EXPECT_EQ(SnapPosition(Vec3(1.0e6F, -1.0e6F, 0.0F)), Vec3(8192.0F - (1.0F / 1024.0F), -8192.0F, 0.0F));
+  EXPECT_EQ(SnapVelocity(Vec3(100.0F, -100.0F, 0.0F)), Vec3(64.0F - (1.0F / 512.0F), -64.0F, 0.0F));
+  EXPECT_EQ(SnapStamina(-0.5F), 0.0F);
+}
+
+TEST(ProtocolTest, DecodingAndEncodingAgainGivesTheSameBytes) {
+  const AuthoritativeStateWire state{.tick = 1, .acknowledged_sequence = 1, .players = {PlayerAt(1, 3.14159F)}};
+  const Bytes first = Encode(state);
+  EXPECT_EQ(Encode(std::get<AuthoritativeStateWire>(Decode(first).value())), first);
+
+  const Bytes commands = Encode(Commands{.commands = {BusyCommand(1)}});
+  EXPECT_EQ(Encode(std::get<Commands>(Decode(commands).value())), commands);
 }
 
 TEST(ProtocolTest, BytesAfterCommandsAndStateAreTrailing) {

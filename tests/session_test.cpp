@@ -743,7 +743,7 @@ class RawClient {
   augusta::networking::Client client_;
 };
 
-TEST_F(MovementTest, CommandsThatAreOutOfOrderNonFiniteOrOutOfRangeAreDroppedWithoutAffectingTheWorld) {
+TEST_F(MovementTest, CommandsThatAreOutOfOrderOrOutOfRangeAreDroppedWithoutAffectingTheWorld) {
   RawClient raw(Endpoint{.address = LoopbackAddress()});
   ASSERT_TRUE(raw.Join(host_));
 
@@ -754,11 +754,13 @@ TEST_F(MovementTest, CommandsThatAreOutOfOrderNonFiniteOrOutOfRangeAreDroppedWit
     sequenced.command.pitch = pitch;
     return sequenced;
   };
-  constexpr float kNaN = std::numeric_limits<float>::quiet_NaN();
-  constexpr float kImpossiblePitch = 5.0F;
+  // Numbers the wire can carry and no client produces (a NaN cannot travel:
+  // the codec sends it as 0).
+  constexpr float kImpossibleYaw = 3.9F;
+  constexpr float kImpossiblePitch = 3.0F;
   // 1 and 4 are good; 2 and 3 are numbers no client produces; 6 arrives before 5.
   raw.Send(augusta::protocol::Commands{
-      .commands = {command(1), command(2, kNaN), command(3, 0.0F, kImpossiblePitch), command(4)}});
+      .commands = {command(1), command(2, kImpossibleYaw), command(3, 0.0F, kImpossiblePitch), command(4)}});
   raw.Send(augusta::protocol::Commands{.commands = {command(6)}});
   raw.Send(augusta::protocol::Commands{.commands = {command(5)}});
 
@@ -1082,6 +1084,22 @@ TEST_F(StaminaTest, AClientPredictsItsStaminaWithTheServersRulesNotItsOwn) {
 
   EXPECT_LT(predicted, 0.7F);
   EXPECT_NEAR(predicted, Authoritative().stamina, 0.1F);
+}
+
+// A body and a command travel on grids (ADR-0038), and every number here is
+// off them: the direction, the view, and the stamina the rules drain and
+// refill. A client that predicts correctly rounds as the server did, so
+// reconciliation never has a jump to make for rounding.
+TEST_F(StaminaTest, AClientThatPredictsCorrectlyNeverCorrectsForTheRoundingOnTheWire) {
+  Command command = Moving(/*sprint=*/true);
+  command.movement.direction = Vec3(0.3F, 0.0F, 0.7F);
+  command.yaw = 0.123456F;
+  command.pitch = -0.0654321F;
+  const Vec3 before = states_.at(client_).total_correction;
+
+  Run(120, command);
+
+  EXPECT_EQ(states_.at(client_).total_correction, before);
 }
 
 // The server's Parameters come from a script (ADR-0039), loaded the way augustad

@@ -143,6 +143,12 @@ struct RaycastHit {
 // Owns every body's PhysX state for one side (client or server) of the
 // engine. One World instance is created per process; see
 // ARCHITECTURE.md §8 (Threading) for which thread owns it on each side.
+//
+// Every body lives on the grids the Networking Protocol sends it on
+// (protocol::SnapPosition and the rest, ADR-0038): CreateBody, Step, SetState
+// and Restore round what they hold and return to them. So a server's body is
+// exactly what its clients are told, and a client that predicts correctly
+// rounds as the server did and never corrects for rounding.
 class World {
  public:
   // Constructs an empty World (no bodies yet), using config for every

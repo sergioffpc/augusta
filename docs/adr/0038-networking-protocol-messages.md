@@ -34,6 +34,31 @@ where it fits, and the bits no field uses are 0. Message types and refusal
 reasons start at 1, so a zeroed byte is never one. There is no length prefix on
 the payload itself, since the transport already frames messages.
 
+**Quantized numbers.** A body's and a command's numbers travel as a whole count
+of a grid's step, not as floats. The step is a power of two, so a count times
+its step is an exact float, and a value read back encodes to the same bytes:
+
+| Number | Bytes per value | Step | Range |
+| --- | --- | --- | --- |
+| position (a body's, the spawn point), per axis | 3 (signed) | 1/1024 m | ±8192 m |
+| velocity, per axis | 2 (signed) | 1/512 m/s | ±64 m/s |
+| movement direction, per axis | 2 (signed) | 1/16384 | ±2 |
+| yaw, pitch | 2 (signed) | 1/8192 rad | ±4 rad |
+| stamina | 2 (unsigned) | 1/32768 | 0 to 2 |
+
+A value beyond its range travels as the bound, and a NaN travels as 0. The tick
+rate and the parameters stay 32-bit floats: they are sent once, and must arrive
+exactly. So a body is 18 bytes and a command 11. The protocol exposes each grid
+as a `Snap` function (`protocol::SnapPosition` and the rest), which gives what
+`Decode` would give back.
+
+**Bodies live on the grid.** `physics::World` rounds every body to these grids
+in `CreateBody`, `Step`, `SetState` and `Restore`. So a server's body is exactly
+what its clients are told, spawn point included, and a client's prediction rounds
+the same way the server does, in replays too. One step (about 0.98 mm) is within
+the 1 mm reconciliation tolerance (ADR-0004), so a client that predicts correctly
+never corrects for rounding.
+
 **Untrusted input.** `Decode` never throws: it returns
 `std::expected<Message, DecodeError>` (ADR-0033) where the error is `kEmpty`,
 `kUnknownType`, `kTruncated`, `kTrailingBytes`, `kInvalidEnum` or `kFieldTooLong`.
@@ -66,9 +91,10 @@ and it is made loss-tolerant without retransmission:
   commands up to it.
 - **The server takes each command in once.** A sequence not newer than the last
   taken in from that client is dropped (routine, since commands repeat), and so is
-  a command with a non-finite or out-of-range number. The codec still decodes
-  such numbers faithfully; judging them is the server's sanity gate, kept apart so
-  the anti-cheat baseline (US-15) grows in one place.
+  a command with a number beyond what a client produces (a pitch past straight up,
+  say). The codec cannot carry a non-finite number, and it clamps to each grid's
+  range. Judging what is left within those ranges is the server's sanity gate,
+  kept apart so the anti-cheat baseline (US-15) grows in one place.
 - **One command per tick.** The server consumes one queued command per tick per
   player. If none is queued it repeats the last movement for about 100 ms and then
   reduces the player to no movement; a repeated tick never repeats a one-shot
@@ -104,7 +130,7 @@ spawn point until the first tick reports it), so back-to-back joins see each
 other. From then on the Authoritative State lists everyone.
 
 **Failure paths.** The server drops what does not decode, is not a client message
-or fails the command gate (a non-finite or out-of-range number), and logs it as
+or fails the command gate (a number beyond what a client produces), and logs it as
 `dropped_malformed`; a peer's garbage never reaches the world or another client.
 A stale command is routine, since commands repeat, and only traced. A connection that ends frees its slot at once and
 removes the player at the start of the next tick; the log tells `left` (the peer
