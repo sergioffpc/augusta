@@ -24,6 +24,12 @@
 // answer - reply, log, disconnect - is Host's mechanism.
 namespace augusta::server {
 
+/// A player in the match and where it last was.
+struct RosterEntry {
+  protocol::SessionId session{};
+  physics::BodyState body{};
+};
+
 /// What a peer is told when it is admitted.
 struct Admission {
   /// The name the server gave the peer's player.
@@ -31,7 +37,7 @@ struct Admission {
   /// Where its player spawns.
   math::Vec3 spawn{};
   /// The players already in the match, ordered by session, each where it last was.
-  std::vector<protocol::PlayerState> roster{};
+  std::vector<RosterEntry> roster;
 };
 
 /// What a match admits players by, fixed for its lifetime.
@@ -39,7 +45,7 @@ struct MatchConfig {
   /// Only clients whose engine version is this are admitted.
   std::string engine_version;
   /// The characters a client may ask to play: the scenario's, by path (ADR-0042).
-  std::vector<std::string> characters{};
+  std::vector<std::string> characters;
   /// The most players the match holds at once.
   std::size_t capacity = protocol::kMaxPlayers;
 };
@@ -78,7 +84,7 @@ class Match {
     physics::BodyState body;
   };
 
-  [[nodiscard]] std::vector<protocol::PlayerState> RosterExcluding(protocol::SessionId session) const;
+  [[nodiscard]] std::vector<RosterEntry> RosterExcluding(protocol::SessionId session) const;
 
   std::string engine_version_;
   std::vector<std::string> characters_;

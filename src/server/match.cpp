@@ -59,14 +59,14 @@ std::optional<protocol::SessionId> Match::SessionOf(networking::PeerId peer) con
 
 std::size_t Match::PlayerCount() const { return members_.size(); }
 
-std::vector<protocol::PlayerState> Match::RosterExcluding(protocol::SessionId session) const {
-  std::vector<protocol::PlayerState> roster;
+std::vector<RosterEntry> Match::RosterExcluding(protocol::SessionId session) const {
+  std::vector<RosterEntry> roster;
   for (const auto& [peer, member] : members_) {
     if (member.session != session) {
-      roster.push_back(protocol::PlayerState{.session = member.session, .body = member.body});
+      roster.push_back(RosterEntry{.session = member.session, .body = member.body});
     }
   }
-  std::ranges::sort(roster, {}, &protocol::PlayerState::session);
+  std::ranges::sort(roster, {}, &RosterEntry::session);
   return roster;
 }
 

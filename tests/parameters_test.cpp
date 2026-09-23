@@ -10,7 +10,6 @@
 namespace {
 
 using augusta::parameters::IsValidTickRate;
-using augusta::parameters::kMaxPlayerCount;
 using augusta::parameters::Parameters;
 using augusta::parameters::Validate;
 
@@ -33,7 +32,7 @@ TEST(ValidateTest, EachValueOutsideItsRangeIsNamedByItsPath) {
 }
 
 TEST(ValidateTest, APlayerCountFromOneToTheMostAMatchHoldsPasses) {
-  for (const std::uint8_t count : {std::uint8_t{1}, std::uint8_t{kMaxPlayerCount}}) {
+  for (const std::uint8_t count : {std::uint8_t{1}, std::uint8_t{augusta::protocol::kMaxPlayers}}) {
     Parameters parameters = kUsable;
     parameters.player_count = count;
 
@@ -43,7 +42,7 @@ TEST(ValidateTest, APlayerCountFromOneToTheMostAMatchHoldsPasses) {
 
 TEST(ValidateTest, APlayerCountOfZeroOrAboveTheMostAMatchHoldsIsNamed) {
   for (const std::uint8_t count :
-       {std::uint8_t{0}, std::uint8_t{kMaxPlayerCount + 1}, std::numeric_limits<std::uint8_t>::max()}) {
+       {std::uint8_t{0}, std::uint8_t{augusta::protocol::kMaxPlayers + 1}, std::numeric_limits<std::uint8_t>::max()}) {
     Parameters parameters = kUsable;
     parameters.player_count = count;
 

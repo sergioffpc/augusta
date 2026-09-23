@@ -36,6 +36,7 @@
 #include "host.h"
 #include "match.h"
 #include "parameters_loader.h"
+#include "wire.h"
 
 // The seam the M3 tickets test through (issue #73): a real server host and a
 // real client session, both without a window, a GPU or a wall-clock loop, in
@@ -109,7 +110,7 @@ class SessionTest : public ::testing::Test {
                          .parameters = kTestParameters,
                          .script_path = "scripts/round.lua",
                          .listen = Endpoint{.address = LoopbackAddress()}},
-              Map{.characters = {kCharacter}}),
+              Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}}),
         session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
                  EmptyWorld()) {}
 
@@ -175,7 +176,7 @@ class JoinTest : public ::testing::Test {
                          .parameters = kTestParameters,
                          .script_path = "scripts/round.lua",
                          .listen = Endpoint{.address = LoopbackAddress()}},
-              Map{.characters = {kCharacter}}) {}
+              Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}}) {}
 
   // Starts connecting a new client that presents engine_version and asks to play character.
   Session& AddClient(const std::string& engine_version = std::string(augusta::EngineVersion()),
@@ -442,7 +443,7 @@ TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
                        .parameters = kTestParameters,
                        .script_path = "scripts/round.lua",
                        .listen = Endpoint{.address = LoopbackAddress()}},
-            Map{.collision = {FloorAt(0.0F)}, .characters = {kCharacter}});
+            Map{.collision = {FloorAt(0.0F)}, .spawn_points = {}, .characters = {kCharacter}});
 
   for (int i = 0; i < 10; ++i) {
     host.Tick(kFixedTick);
@@ -455,7 +456,7 @@ TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
                                .parameters = kTestParameters,
                                .script_path = "scripts/round.lua",
                                .listen = Endpoint{.address = LoopbackAddress()}},
-                    Map{.collision = {CollisionMesh{}}, .characters = {kCharacter}}),
+                    Map{.collision = {CollisionMesh{}}, .spawn_points = {}, .characters = {kCharacter}}),
                std::runtime_error);
 }
 
@@ -479,7 +480,7 @@ class MovementTest : public ::testing::Test {
                          .parameters = kTestParameters,
                          .script_path = "scripts/round.lua",
                          .listen = Endpoint{.address = LoopbackAddress()}},
-              Map{.collision = std::move(server_map), .characters = {kCharacter}}),
+              Map{.collision = std::move(server_map), .spawn_points = {}, .characters = {kCharacter}}),
         session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
                  WorldWithFloorAt(kGroundHeight)) {}
 
@@ -724,13 +725,13 @@ class RawClient {
   }
 
   // The Authoritative State updates received since the last call.
-  std::vector<augusta::protocol::AuthoritativeState> Receive() {
+  std::vector<augusta::protocol::AuthoritativeStateWire> Receive() {
     client_.PumpEvents();
-    std::vector<augusta::protocol::AuthoritativeState> states;
+    std::vector<augusta::protocol::AuthoritativeStateWire> states;
     for (const auto& payload : client_.ReceiveMessages()) {
       const auto message = augusta::protocol::Decode(payload);
       if (message.has_value()) {
-        if (const auto* state = std::get_if<augusta::protocol::AuthoritativeState>(&*message)) {
+        if (const auto* state = std::get_if<augusta::protocol::AuthoritativeStateWire>(&*message)) {
           states.push_back(*state);
         }
       }
@@ -747,8 +748,8 @@ TEST_F(MovementTest, CommandsThatAreOutOfOrderNonFiniteOrOutOfRangeAreDroppedWit
   ASSERT_TRUE(raw.Join(host_));
 
   const auto command = [](std::uint32_t sequence, float yaw = 0.0F, float pitch = 0.0F) {
-    augusta::protocol::SequencedCommand sequenced{.sequence = sequence};
-    sequenced.command.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+    augusta::protocol::SequencedCommandWire sequenced{.sequence = sequence};
+    sequenced.command.direction = Vec3(1.0F, 0.0F, 0.0F);
     sequenced.command.yaw = yaw;
     sequenced.command.pitch = pitch;
     return sequenced;
@@ -1149,8 +1150,10 @@ class ScriptedServer {
       peer_ = message.from;
       const auto decoded = augusta::protocol::Decode(message.payload);
       if (decoded.has_value() && std::holds_alternative<augusta::protocol::JoinRequest>(*decoded)) {
-        Send(augusta::protocol::JoinAccepted{
-            .session = augusta::protocol::SessionId{1}, .tick_rate_hz = kTestTickRate, .parameters = parameters_});
+        Send(augusta::protocol::JoinAccepted{.session = augusta::protocol::SessionId{1},
+                                             .tick_rate_hz = kTestTickRate,
+                                             .parameters = augusta::server::ToWire(parameters_),
+                                             .roster = {}});
       }
     }
   }
@@ -1239,7 +1242,7 @@ TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseParametersFailTheRange
   for (const Parameters& bad :
        {Parameters{.stamina = {.deplete_per_second = -1.0F}},
         Parameters{.stamina = {.regen_per_second = std::numeric_limits<float>::quiet_NaN()}}, threshold_of_one,
-        Parameters{.player_count = 0}, Parameters{.player_count = augusta::parameters::kMaxPlayerCount + 1}}) {
+        Parameters{.player_count = 0}, Parameters{.player_count = augusta::protocol::kMaxPlayers + 1}}) {
     // One server for every case: it answers whichever session sent last, and a
     // server bound anew each time would find the port not yet released.
     Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
@@ -1315,7 +1318,7 @@ TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseTickRateFailsTheChecks
   Host host(
       HostConfig{
           .tick_rate_hz = 0.0F, .script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}},
-      Map{.characters = {kCharacter}});
+      Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}});
   Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
                   EmptyWorld());
   session.Connect();
@@ -1367,7 +1370,7 @@ TEST(SessionFailureTest, AServerThatGoesAwayAfterAdmittingTheClientIsAConnection
                                                 .parameters = kTestParameters,
                                                 .script_path = "scripts/round.lua",
                                                 .listen = Endpoint{.address = LoopbackAddress()}},
-                                     Map{.characters = {kCharacter}});
+                                     Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}});
   Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
                   EmptyWorld());
   session.Connect();
@@ -1400,7 +1403,7 @@ TEST(SessionFailureTest, EndingTheSessionOneselfIsNotAFailure) {
                        .parameters = kTestParameters,
                        .script_path = "scripts/round.lua",
                        .listen = Endpoint{.address = LoopbackAddress()}},
-            Map{.characters = {kCharacter}});
+            Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}});
   Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
                   EmptyWorld());
   session.Connect();
@@ -1467,9 +1470,9 @@ TEST_F(RobustnessTest, GarbageFromAPeerIsDroppedAndTheMatchAndTheOtherClientsAre
   ASSERT_TRUE(raw.Join(host_));
 
   using augusta::protocol::Bytes;
-  Bytes truncated_state = augusta::protocol::Encode(augusta::protocol::AuthoritativeState{.players = {{}}});
+  Bytes truncated_state = augusta::protocol::Encode(augusta::protocol::AuthoritativeStateWire{.players = {{}}});
   truncated_state.resize(truncated_state.size() / 2);
-  Bytes not_for_the_server = augusta::protocol::Encode(augusta::protocol::AuthoritativeState{});
+  Bytes not_for_the_server = augusta::protocol::Encode(augusta::protocol::AuthoritativeStateWire{});
   Bytes commands_with_trailing_bytes = augusta::protocol::Encode(augusta::protocol::Commands{});
   commands_with_trailing_bytes.push_back(std::byte{7});
   const Bytes garbage[] = {

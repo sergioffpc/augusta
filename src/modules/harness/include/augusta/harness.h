@@ -10,6 +10,7 @@
 #include "augusta/input.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
+#include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
 #include "augusta/version.h"
@@ -31,6 +32,23 @@
 // I/O thread, and Tick from the Prediction thread (the transport is safe to
 // send from both).
 namespace augusta::harness {
+
+/// One player's body, under the session the server knows it by.
+struct PlayerBody {
+  protocol::SessionId session{};
+  physics::BodyState body{};
+};
+
+/// What the server said about every player as of one of its ticks: its
+/// Authoritative State, as this client receives it.
+struct AuthoritativeState {
+  /// The server tick this state is from; a client keeps only the newest it has seen.
+  std::uint32_t tick = 0;
+  /// The highest command sequence of this client that the server has processed, 0 if none.
+  std::uint32_t acknowledged_sequence = 0;
+  /// Every player in the match.
+  std::vector<PlayerBody> players;
+};
 
 /// Why a Session ended without the player asking it to.
 enum class FailureKind {
@@ -63,7 +81,7 @@ struct SessionConfig {
   std::string engine_version = std::string(EngineVersion());
   /// The character to ask to play, by its path relative to `authoring/` (e.g.
   /// "characters/player"): the server admits only one of its scenario's (ADR-0042).
-  std::string character{};
+  std::string character;
 };
 
 /// The client's network connection and PredictionWorld, without a window or a GPU.
@@ -115,7 +133,7 @@ class Session {
   /// each where it was then; empty until it does, and if the client is alone.
   /// Set by ExchangeMessages; safe to read from any thread. Who is in the match
   /// after that is in the Authoritative State.
-  [[nodiscard]] std::vector<protocol::PlayerState> GetRoster() const;
+  [[nodiscard]] std::vector<PlayerBody> GetRoster() const;
 
   /// The rate, in Hz, at which the server ticks and this client must: nullopt
   /// until the server admits this client. The server's startup setting, fixed for
@@ -134,7 +152,7 @@ class Session {
 
   /// The newest Authoritative State received from the server, or nullopt until
   /// one arrives. Set by ExchangeMessages; safe to read from any thread.
-  [[nodiscard]] std::optional<protocol::AuthoritativeState> GetAuthoritativeState() const;
+  [[nodiscard]] std::optional<AuthoritativeState> GetAuthoritativeState() const;
 
   /// Runs one fixed tick of PredictionWorld for command and returns its state.
   /// The first tick after the server has admitted this client starts the

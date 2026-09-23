@@ -24,8 +24,6 @@ void WriteU32(Bytes& out, std::uint32_t value) {
 
 void WriteF32(Bytes& out, float value) { WriteU32(out, std::bit_cast<std::uint32_t>(value)); }
 
-void WriteBool(Bytes& out, bool value) { WriteU8(out, value ? 1 : 0); }
-
 // A one-byte length and the bytes: the write side of Reader::ReadString.
 void WriteString(Bytes& out, std::string_view text) {
   WriteU8(out, static_cast<std::uint8_t>(text.size()));
@@ -40,18 +38,21 @@ void WriteVec3(Bytes& out, const math::Vec3& value) {
   WriteF32(out, value.z);
 }
 
-void WriteCommand(Bytes& out, const input::Command& command) {
-  WriteVec3(out, command.movement.direction);
-  WriteBool(out, command.movement.sprint);
-  WriteU8(out, static_cast<std::uint8_t>(command.movement.desired_stance));
+// A command's flags take the low four bits of its last byte and its stance the
+// two above them; the top two are always 0.
+constexpr std::uint8_t kCommandFlagsMask = 0x0FU;
+constexpr unsigned kCommandStanceShift = 4U;
+
+void WriteCommand(Bytes& out, const CommandWire& command) {
+  assert((command.flags & ~kCommandFlagsMask) == 0);
+  WriteVec3(out, command.direction);
   WriteF32(out, command.yaw);
   WriteF32(out, command.pitch);
-  WriteBool(out, command.ads);
-  WriteBool(out, command.fire);
-  WriteBool(out, command.reload);
+  WriteU8(out, static_cast<std::uint8_t>(command.flags |
+                                         (static_cast<std::uint8_t>(command.desired_stance) << kCommandStanceShift)));
 }
 
-void WriteBodyState(Bytes& out, const physics::BodyState& body) {
+void WriteBodyState(Bytes& out, const BodyStateWire& body) {
   WriteVec3(out, body.position);
   WriteVec3(out, body.velocity);
   WriteU8(out, static_cast<std::uint8_t>(body.stance));
@@ -59,10 +60,10 @@ void WriteBodyState(Bytes& out, const physics::BodyState& body) {
 }
 
 // The players of a roster or an update: a count, then each one.
-void WritePlayers(Bytes& out, const std::vector<PlayerState>& players) {
+void WritePlayers(Bytes& out, const std::vector<PlayerStateWire>& players) {
   assert(players.size() <= kMaxPlayers);
   WriteU8(out, static_cast<std::uint8_t>(players.size()));
-  for (const PlayerState& player : players) {
+  for (const PlayerStateWire& player : players) {
     WriteU32(out, static_cast<std::uint32_t>(player.session));
     WriteBodyState(out, player.body);
   }
@@ -101,18 +102,15 @@ class Reader {
 
   float ReadF32() { return std::bit_cast<float>(ReadU32()); }
 
-  bool ReadBool() {
-    const std::uint8_t value = ReadU8();
-    if (value > 1) {
-      Fail(DecodeError::kInvalidEnum);
-    }
-    return value == 1;
-  }
-
   // An enumerator between first and last, which must be consecutive.
   template <typename Enum>
   Enum ReadEnum(Enum first, Enum last) {
-    const std::uint8_t value = ReadU8();
+    return ToEnum(ReadU8(), first, last);
+  }
+
+  // value as an enumerator between first and last, which must be consecutive.
+  template <typename Enum>
+  Enum ToEnum(std::uint8_t value, Enum first, Enum last) {
     if (value < static_cast<std::uint8_t>(first) || value > static_cast<std::uint8_t>(last)) {
       Fail(DecodeError::kInvalidEnum);
       return first;
@@ -166,24 +164,23 @@ class Reader {
   std::optional<DecodeError> error_;
 };
 
-input::Command ReadCommand(Reader& reader) {
-  input::Command command;
-  command.movement.direction = reader.ReadVec3();
-  command.movement.sprint = reader.ReadBool();
-  command.movement.desired_stance = reader.ReadEnum(physics::Stance::kStanding, physics::Stance::kProne);
+CommandWire ReadCommand(Reader& reader) {
+  CommandWire command;
+  command.direction = reader.ReadVec3();
   command.yaw = reader.ReadF32();
   command.pitch = reader.ReadF32();
-  command.ads = reader.ReadBool();
-  command.fire = reader.ReadBool();
-  command.reload = reader.ReadBool();
+  const std::uint8_t packed = reader.ReadU8();
+  command.flags = packed & kCommandFlagsMask;
+  command.desired_stance = reader.ToEnum(static_cast<std::uint8_t>(packed >> kCommandStanceShift),
+                                         StanceWire::kStanding, StanceWire::kProne);
   return command;
 }
 
-physics::BodyState ReadBodyState(Reader& reader) {
-  physics::BodyState body;
+BodyStateWire ReadBodyState(Reader& reader) {
+  BodyStateWire body;
   body.position = reader.ReadVec3();
   body.velocity = reader.ReadVec3();
-  body.stance = reader.ReadEnum(physics::Stance::kStanding, physics::Stance::kProne);
+  body.stance = reader.ReadEnum(StanceWire::kStanding, StanceWire::kProne);
   body.stamina = reader.ReadF32();
   return body;
 }
@@ -196,15 +193,15 @@ JoinRequest ReadJoinRequest(Reader& reader) {
   };
 }
 
-PlayerState ReadPlayerState(Reader& reader) {
+PlayerStateWire ReadPlayerState(Reader& reader) {
   const auto session = static_cast<SessionId>(reader.ReadU32());
-  return PlayerState{.session = session, .body = ReadBodyState(reader)};
+  return PlayerStateWire{.session = session, .body = ReadBodyState(reader)};
 }
 
 // The players of a roster or an update, at most kMaxPlayers.
-std::vector<PlayerState> ReadPlayers(Reader& reader) {
+std::vector<PlayerStateWire> ReadPlayers(Reader& reader) {
   const std::size_t count = reader.ReadCount(kMaxPlayers);
-  std::vector<PlayerState> players;
+  std::vector<PlayerStateWire> players;
   players.reserve(count);
   for (std::size_t i = 0; i < count; ++i) {
     players.push_back(ReadPlayerState(reader));
@@ -212,8 +209,8 @@ std::vector<PlayerState> ReadPlayers(Reader& reader) {
   return players;
 }
 
-parameters::Parameters ReadParameters(Reader& reader) {
-  parameters::Parameters parameters;
+ParametersWire ReadParameters(Reader& reader) {
+  ParametersWire parameters;
   parameters.player_count = reader.ReadU8();
   parameters.stamina.deplete_per_second = reader.ReadF32();
   parameters.stamina.regen_per_second = reader.ReadF32();
@@ -241,13 +238,13 @@ Commands ReadCommands(Reader& reader) {
   message.commands.reserve(count);
   for (std::size_t i = 0; i < count; ++i) {
     const std::uint32_t sequence = reader.ReadU32();
-    message.commands.push_back(SequencedCommand{.sequence = sequence, .command = ReadCommand(reader)});
+    message.commands.push_back(SequencedCommandWire{.sequence = sequence, .command = ReadCommand(reader)});
   }
   return message;
 }
 
-AuthoritativeState ReadAuthoritativeState(Reader& reader) {
-  AuthoritativeState state;
+AuthoritativeStateWire ReadAuthoritativeState(Reader& reader) {
+  AuthoritativeStateWire state;
   state.tick = reader.ReadU32();
   state.acknowledged_sequence = reader.ReadU32();
   state.players = ReadPlayers(reader);
@@ -271,7 +268,7 @@ std::optional<Message> ReadBody(MessageType type, Reader& reader) {
   return std::nullopt;
 }
 
-void WriteParameters(Bytes& out, const parameters::Parameters& parameters) {
+void WriteParameters(Bytes& out, const ParametersWire& parameters) {
   WriteU8(out, parameters.player_count);
   WriteF32(out, parameters.stamina.deplete_per_second);
   WriteF32(out, parameters.stamina.regen_per_second);
@@ -308,13 +305,13 @@ struct Encoder {
     assert(message.commands.size() <= kMaxCommandsPerMessage);
     WriteU8(out, static_cast<std::uint8_t>(MessageType::kCommands));
     WriteU8(out, static_cast<std::uint8_t>(message.commands.size()));
-    for (const SequencedCommand& sequenced : message.commands) {
+    for (const SequencedCommandWire& sequenced : message.commands) {
       WriteU32(out, sequenced.sequence);
       WriteCommand(out, sequenced.command);
     }
   }
 
-  void operator()(const AuthoritativeState& message) const {
+  void operator()(const AuthoritativeStateWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageType::kAuthoritativeState));
     WriteU32(out, message.tick);
     WriteU32(out, message.acknowledged_sequence);

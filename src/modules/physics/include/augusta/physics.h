@@ -103,9 +103,9 @@ struct StaminaConfig {
 
 /// A triangle mesh of immovable map geometry, already in world space.
 struct CollisionMesh {
-  std::vector<math::Vec3> points{};
+  std::vector<math::Vec3> points;
   /// Three indices into points per triangle.
-  std::vector<std::uint32_t> indices{};
+  std::vector<std::uint32_t> indices;
 };
 
 /// Why a CollisionMesh could not be added to a World.

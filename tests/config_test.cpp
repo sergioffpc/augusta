@@ -457,13 +457,16 @@ TEST(ParseClientConfigTest, AKeyMovedOutOfItsSectionIsUnknown) {
 }
 
 TEST(DescribeConfigErrorTest, SaysWhatIsWrongWithABinding) {
-  EXPECT_TRUE(Contains(DescribeConfigError({.code = ConfigErrorCode::kInvalidKeyName, .subject = "keys.sprint"}),
-                       "keys.sprint"));
-  EXPECT_TRUE(Contains(DescribeConfigError({.code = ConfigErrorCode::kKeyBoundTwice, .subject = "keys.sprint"}),
-                       "another control"));
   EXPECT_TRUE(
-      Contains(DescribeConfigError({.code = ConfigErrorCode::kReservedKey, .subject = "keys.crouch"}), "Escape"));
-  EXPECT_TRUE(Contains(DescribeConfigError({.code = ConfigErrorCode::kNotASection, .subject = "keys"}), "mapping"));
+      Contains(DescribeConfigError({.code = ConfigErrorCode::kInvalidKeyName, .subject = "keys.sprint", .file = {}}),
+               "keys.sprint"));
+  EXPECT_TRUE(
+      Contains(DescribeConfigError({.code = ConfigErrorCode::kKeyBoundTwice, .subject = "keys.sprint", .file = {}}),
+               "another control"));
+  EXPECT_TRUE(Contains(
+      DescribeConfigError({.code = ConfigErrorCode::kReservedKey, .subject = "keys.crouch", .file = {}}), "Escape"));
+  EXPECT_TRUE(
+      Contains(DescribeConfigError({.code = ConfigErrorCode::kNotASection, .subject = "keys", .file = {}}), "mapping"));
 }
 
 TEST(ExampleConfigTest, TheExampleClientConfigLoadsWithTheDefaultControls) {
@@ -702,19 +705,21 @@ TEST(DescribeConfigErrorTest, NamesTheKeyAndTheFile) {
 }
 
 TEST(DescribeConfigErrorTest, SaysWhatANumberMustBe) {
-  const auto message = DescribeConfigError({.code = ConfigErrorCode::kInvalidNumber, .subject = "tick_rate_hz"});
+  const auto message =
+      DescribeConfigError({.code = ConfigErrorCode::kInvalidNumber, .subject = "tick_rate_hz", .file = {}});
 
   EXPECT_EQ(message, "'tick_rate_hz' must be a finite number above zero");
 }
 
 TEST(DescribeConfigErrorTest, SaysWhatALogLevelMustBe) {
-  const auto message = DescribeConfigError({.code = ConfigErrorCode::kInvalidLogLevel, .subject = "log_level"});
+  const auto message =
+      DescribeConfigError({.code = ConfigErrorCode::kInvalidLogLevel, .subject = "log_level", .file = {}});
 
   EXPECT_EQ(message, "'log_level' must be one of trace, debug, info, warn, error, critical");
 }
 
 TEST(DescribeConfigErrorTest, OmitsTheFileWhenThereIsNone) {
-  const auto message = DescribeConfigError({.code = ConfigErrorCode::kUnknownKey, .subject = "typo"});
+  const auto message = DescribeConfigError({.code = ConfigErrorCode::kUnknownKey, .subject = "typo", .file = {}});
 
   EXPECT_EQ(message, "unknown key 'typo'");
 }

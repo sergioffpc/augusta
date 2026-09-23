@@ -180,10 +180,14 @@ struct AssetEntry {
   std::vector<std::byte> data;
 };
 
-// A 32-byte Ed25519 public key.
-using Ed25519PublicKey = std::array<std::byte, 32>;
-// A 64-byte Ed25519 private (secret) key.
-using Ed25519PrivateKey = std::array<std::byte, 64>;
+// The sizes of an Ed25519 key, in bytes.
+inline constexpr std::size_t kEd25519PublicKeySize = 32;
+inline constexpr std::size_t kEd25519PrivateKeySize = 64;
+
+// An Ed25519 public key.
+using Ed25519PublicKey = std::array<std::byte, kEd25519PublicKeySize>;
+// An Ed25519 private (secret) key.
+using Ed25519PrivateKey = std::array<std::byte, kEd25519PrivateKeySize>;
 
 struct Ed25519KeyPair {
   Ed25519PublicKey public_key;

@@ -109,6 +109,11 @@ target_link_libraries(augusta_session_tests PRIVATE augusta_harness augustad_hos
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_session_tests DISCOVERY_TIMEOUT 30)
 
+add_executable(augusta_wire_tests wire_test.cpp)
+target_link_libraries(augusta_wire_tests PRIVATE augusta_harness augustad_host GTest::gtest GTest::gtest_main)
+# Links PhysX through augusta_physics, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_wire_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_assets_tests assets_test.cpp)
 target_link_libraries(augusta_assets_tests PRIVATE augusta_assets GTest::gtest GTest::gtest_main)
 # WritePack/Encode*/Pack::Load round-trip coverage (below) exercises

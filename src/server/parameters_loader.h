@@ -37,7 +37,7 @@ enum class LoadErrorCode {
 struct LoadError {
   LoadErrorCode code;
   /// The key path or message the code's documentation names.
-  std::string subject{};
+  std::string subject;
 };
 
 /// A message for error fit to log or print, so no caller words it on its own.

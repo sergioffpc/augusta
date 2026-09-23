@@ -28,7 +28,7 @@ _Avoid_: Waiting room, pre-game
 
 **Player count**:
 How many players a Match needs to start, fixed by the scenario's Parameters.
-_Avoid_: Max players (the upper bound on any scenario's player count, which the protocol's messages are sized for, not a scenario's own number)
+_Avoid_: Max players (the protocol's upper bound on any scenario's player count, not a scenario's own number)
 
 **Ready**:
 A player whose client has loaded what it needs to draw everyone currently in the Lobby. The client decides it on its own; the player never presses anything.
@@ -59,7 +59,7 @@ The process of correcting a client's predicted state against the server's author
 _Avoid_: Resync, rollback
 
 **Authoritative State update**:
-One server tick's Authoritative State as sent to one client (protocol::AuthoritativeState): every player's body as of that tick, plus the recipient's own newest acknowledged Command sequence. augusta::replication decides who gets what.
+One server tick's Authoritative State as sent to one client (protocol::AuthoritativeStateWire): every player's body as of that tick, plus the recipient's own newest acknowledged Command sequence. augusta::replication decides who gets what.
 _Avoid_: Snapshot, state sync
 
 **Spawn point**:

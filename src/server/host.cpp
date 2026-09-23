@@ -20,6 +20,7 @@
 #include "augusta/version.h"
 #include "command_queue.h"
 #include "match.h"
+#include "wire.h"
 
 namespace augusta::server {
 
@@ -123,8 +124,11 @@ struct Host::Impl {
     accepted.session = admission->session;
     accepted.spawn = admission->spawn;
     accepted.tick_rate_hz = tick_rate_hz;
-    accepted.parameters = parameters;
-    accepted.roster = admission->roster;
+    accepted.parameters = ToWire(parameters);
+    accepted.roster.reserve(admission->roster.size());
+    for (const RosterEntry& entry : admission->roster) {
+      accepted.roster.push_back(ToWire(entry));
+    }
     Reply(peer, accepted);
   }
 
@@ -137,8 +141,8 @@ struct Host::Impl {
       return;
     }
     CommandQueue& queue = players.at(*session).commands;
-    for (const protocol::SequencedCommand& command : message.commands) {
-      const auto enqueued = queue.TryEnqueue(command);
+    for (const protocol::SequencedCommandWire& command : message.commands) {
+      const auto enqueued = queue.TryEnqueue(FromWire(command));
       if (enqueued.has_value()) {
         continue;
       }
@@ -250,7 +254,7 @@ struct Host::Impl {
 
   void Send(const simulation::State& state, const TickInput& input) {
     for (const replication::Update& update : replication::PlanUpdates(state, tick, input.recipients)) {
-      network.Send(input.peers.at(update.recipient), protocol::Encode(update.state),
+      network.Send(input.peers.at(update.recipient), protocol::Encode(ToWire(update)),
                    networking::Reliability::kUnreliable);
     }
   }

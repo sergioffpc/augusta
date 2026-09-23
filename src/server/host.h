@@ -33,7 +33,7 @@ struct HostConfig {
   /// the stamina rules of every player body, shared with PredictionWorld.
   parameters::Parameters parameters{};
   /// Lua game-policy script for SimulationWorld's Scripts/Behaviours phase.
-  std::string script_path{};
+  std::string script_path;
   /// Local address to listen on (US-01).
   networking::Endpoint listen{};
 };
@@ -43,12 +43,12 @@ struct HostConfig {
 /// is the executable's business, not the config file's - so it travels
 /// alongside HostConfig rather than inside it.
 struct Map {
-  std::vector<physics::CollisionMesh> collision{};
+  std::vector<physics::CollisionMesh> collision;
   /// In the order joining players take them; empty spawns everyone at the origin.
-  std::vector<math::Vec3> spawn_points{};
+  std::vector<math::Vec3> spawn_points;
   /// The scenario's characters, by path: the only ones a player may join as
   /// (ADR-0042). Empty admits no one.
-  std::vector<std::string> characters{};
+  std::vector<std::string> characters;
 };
 
 /// The server's listening socket and its SimulationWorld, without threads or a clock.

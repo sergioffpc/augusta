@@ -52,7 +52,7 @@ struct World::Impl {
   prediction::State latest_state;
   math::Quat view_rotation{1.0F, 0.0F, 0.0F, 0.0F};
   std::optional<protocol::SessionId> local_session;
-  std::optional<protocol::AuthoritativeState> authoritative_state;
+  std::optional<harness::AuthoritativeState> authoritative_state;
 
   // Hides the jumps reconciliation makes to the predicted body (ADR-0004), as
   // an offset from the predicted position that fades.
@@ -115,7 +115,7 @@ struct World::Impl {
         (!last_recorded_tick.has_value() || *last_recorded_tick != authoritative_state->tick)) {
       std::vector<protocol::SessionId> present;
       present.reserve(authoritative_state->players.size());
-      for (const protocol::PlayerState& player : authoritative_state->players) {
+      for (const harness::PlayerBody& player : authoritative_state->players) {
         if (local_session.has_value() && player.session == *local_session) {
           continue;
         }
@@ -173,7 +173,7 @@ World& World::operator=(World&&) noexcept = default;
 
 State World::RunFrame(const prediction::State& latest, const math::Quat& view_rotation,
                       std::optional<protocol::SessionId> local_session,
-                      const std::optional<protocol::AuthoritativeState>& authoritative) {
+                      const std::optional<harness::AuthoritativeState>& authoritative) {
   impl_->latest_state = latest;
   impl_->view_rotation = view_rotation;
   impl_->local_session = local_session;

@@ -14,6 +14,7 @@
 #include <span>
 #include <sstream>
 #include <string>
+#include <utility>
 
 #include <boost/dll/runtime_symbol_info.hpp>
 #include <boost/program_options.hpp>
@@ -25,6 +26,12 @@
 namespace augusta::config {
 
 namespace {
+
+// An error about subject, not yet tied to a config file: the Load* functions
+// set that once they know it.
+std::unexpected<ConfigError> Fail(ConfigErrorCode code, std::string subject = {}) {
+  return std::unexpected(ConfigError{.code = code, .subject = std::move(subject), .file = {}});
+}
 
 using ScalarMap = std::map<std::string, std::string, std::less<>>;
 
@@ -79,16 +86,16 @@ std::expected<void, ConfigError> Flatten(const YAML::Node& node, const std::stri
   std::set<std::string, std::less<>> seen;
   for (const auto& entry : node) {
     if (!entry.first.IsScalar()) {
-      return std::unexpected(ConfigError{.code = ConfigErrorCode::kNonStringKey});
+      return Fail(ConfigErrorCode::kNonStringKey);
     }
     const std::string& name = entry.first.Scalar();
     const std::string path = Child(section, name);
     // A dot is how paths join, never part of a name: `content.pack: x` is not `content: {pack: x}`.
     if (name.contains('.')) {
-      return std::unexpected(ConfigError{.code = ConfigErrorCode::kUnknownKey, .subject = path});
+      return Fail(ConfigErrorCode::kUnknownKey, path);
     }
     if (!seen.insert(path).second) {
-      return std::unexpected(ConfigError{.code = ConfigErrorCode::kDuplicateKey, .subject = path});
+      return Fail(ConfigErrorCode::kDuplicateKey, path);
     }
     if (IsSection(schema, path)) {
       // A section with every entry left out (or commented out) sets nothing.
@@ -96,7 +103,7 @@ std::expected<void, ConfigError> Flatten(const YAML::Node& node, const std::stri
         continue;
       }
       if (!entry.second.IsMap()) {
-        return std::unexpected(ConfigError{.code = ConfigErrorCode::kNotASection, .subject = path});
+        return Fail(ConfigErrorCode::kNotASection, path);
       }
       if (auto nested = Flatten(entry.second, path, schema, values); !nested) {
         return nested;
@@ -104,10 +111,10 @@ std::expected<void, ConfigError> Flatten(const YAML::Node& node, const std::stri
       continue;
     }
     if (!IsKey(schema, path) && !InOpenSection(schema, path)) {
-      return std::unexpected(ConfigError{.code = ConfigErrorCode::kUnknownKey, .subject = path});
+      return Fail(ConfigErrorCode::kUnknownKey, path);
     }
     if (!entry.second.IsScalar()) {
-      return std::unexpected(ConfigError{.code = ConfigErrorCode::kNonStringValue, .subject = path});
+      return Fail(ConfigErrorCode::kNonStringValue, path);
     }
     values.emplace(path, entry.second.Scalar());
   }
@@ -122,10 +129,10 @@ std::expected<ScalarMap, ConfigError> ReadMapping(std::string_view text, const S
   try {
     root = YAML::Load(std::string(text));
   } catch (const YAML::Exception& error) {
-    return std::unexpected(ConfigError{.code = ConfigErrorCode::kInvalidYaml, .subject = error.what()});
+    return Fail(ConfigErrorCode::kInvalidYaml, error.what());
   }
   if (!root.IsMap()) {
-    return std::unexpected(ConfigError{.code = ConfigErrorCode::kNotAMapping});
+    return Fail(ConfigErrorCode::kNotAMapping);
   }
   ScalarMap values;
   if (auto read = Flatten(root, "", schema, values); !read) {
@@ -137,10 +144,10 @@ std::expected<ScalarMap, ConfigError> ReadMapping(std::string_view text, const S
 std::expected<std::string, ConfigError> RequireString(const ScalarMap& values, std::string_view key) {
   const auto found = values.find(key);
   if (found == values.end()) {
-    return std::unexpected(ConfigError{.code = ConfigErrorCode::kMissingKey, .subject = std::string(key)});
+    return Fail(ConfigErrorCode::kMissingKey, std::string(key));
   }
   if (found->second.empty()) {
-    return std::unexpected(ConfigError{.code = ConfigErrorCode::kEmptyValue, .subject = std::string(key)});
+    return Fail(ConfigErrorCode::kEmptyValue, std::string(key));
   }
   return found->second;
 }
@@ -167,7 +174,7 @@ std::expected<float, ConfigError> RequirePositiveNumber(const ScalarMap& values,
   const char* const end = text->data() + text->size();
   const auto parsed = std::from_chars(text->data(), end, number);
   if (parsed.ec != std::errc{} || parsed.ptr != end || !std::isfinite(number) || number <= 0.0F) {
-    return std::unexpected(ConfigError{.code = ConfigErrorCode::kInvalidNumber, .subject = std::string(key)});
+    return Fail(ConfigErrorCode::kInvalidNumber, std::string(key));
   }
   return number;
 }
@@ -188,9 +195,7 @@ constexpr std::string_view kKeysSection = "input.keys";
 std::expected<input::Keymap, ConfigError> ParseKeymap(const ScalarMap& values) {
   const std::string prefix = std::format("{}.", kKeysSection);
   auto bindings = values | std::views::filter([&](const auto& value) { return value.first.starts_with(prefix); });
-  const auto error = [](ConfigErrorCode code, const std::string& path) {
-    return std::unexpected(ConfigError{.code = code, .subject = path});
-  };
+  const auto error = [](ConfigErrorCode code, const std::string& path) { return Fail(code, path); };
   input::Keymap keymap = input::kDefaultKeymap;
   for (const auto& [path, key_name] : bindings) {
     const auto control = input::ControlNamed(std::string_view(path).substr(prefix.size()));
@@ -238,7 +243,7 @@ std::expected<std::string, ConfigError> OptionalLogLevel(const ScalarMap& values
                                                          std::string_view fallback) {
   auto value = OptionalString(values, key, fallback);
   if (!logging::ParseSeverity(value)) {
-    return std::unexpected(ConfigError{.code = ConfigErrorCode::kInvalidLogLevel, .subject = std::string(key)});
+    return Fail(ConfigErrorCode::kInvalidLogLevel, std::string(key));
   }
   return value;
 }
@@ -246,7 +251,7 @@ std::expected<std::string, ConfigError> OptionalLogLevel(const ScalarMap& values
 std::expected<std::string, ConfigError> ReadFile(const std::filesystem::path& file) {
   std::ifstream stream(file, std::ios::binary);
   if (!stream) {
-    return std::unexpected(ConfigError{.code = ConfigErrorCode::kCannotOpenFile, .file = file});
+    return std::unexpected(ConfigError{.code = ConfigErrorCode::kCannotOpenFile, .subject = {}, .file = file});
   }
   std::ostringstream contents;
   contents << stream.rdbuf();
@@ -349,24 +354,19 @@ std::expected<std::filesystem::path, ConfigError> ResolveConfigFile(int argc, co
               arguments);
     po::notify(arguments);
   } catch (const po::error& error) {
-    return std::unexpected(
-        ConfigError{.code = ConfigErrorCode::kInvalidArguments, .subject = std::format("{}\n{}", error.what(), usage)});
+    return Fail(ConfigErrorCode::kInvalidArguments, std::format("{}\n{}", error.what(), usage));
   }
 
   if (arguments.empty()) {
     const auto directory = ExecutableDirectory();
     if (!directory) {
-      return std::unexpected(
-          ConfigError{.code = ConfigErrorCode::kExecutableDirectoryUnknown, .subject = std::string(default_file_name)});
+      return Fail(ConfigErrorCode::kExecutableDirectoryUnknown, std::string(default_file_name));
     }
     return *directory / default_file_name;
   }
   const auto& file = arguments["config"].as<std::string>();
   if (file.empty()) {
-    return std::unexpected(ConfigError{
-        .code = ConfigErrorCode::kInvalidArguments,
-        .subject = std::format("--config needs a file name\n{}", usage),
-    });
+    return Fail(ConfigErrorCode::kInvalidArguments, std::format("--config needs a file name\n{}", usage));
   }
   return std::filesystem::path(file);
 }
