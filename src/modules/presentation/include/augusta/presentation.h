@@ -7,6 +7,7 @@
 
 #include "augusta/audio.h"
 #include "augusta/interpolation.h"
+#include "augusta/math.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
 
@@ -27,15 +28,13 @@
 // aren't designed, so a system's body is presently a stub; what each one
 // will eventually do is documented on its Phase enumerator below.
 //
-// Camera has no C++ home of its own yet - ARCHITECTURE.md doesn't list
-// it as a separate Shared Core/client-only module the way WeaponHandling
-// is; it's expected to stay a system inside this module. Animation does
-// have one now: augusta::animation::Engine (see that header) - this
-// module owns the one Engine instance and calls Update from its
-// Animation phase. What augusta::renderer::Renderer::RenderFrame
-// actually draws from the resulting Presentation State is still
-// deliberately undesigned (see renderer.h) - revisit both headers
-// together once that lands.
+// Camera has no C++ home of its own - ARCHITECTURE.md doesn't list it as
+// a separate Shared Core/client-only module the way WeaponHandling is; it
+// stays a system inside this module (see Phase::kCamera below), exposed
+// through State::camera for augusta::renderer::Renderer::SetCamera to
+// consume once per render frame. Animation does have its own home:
+// augusta::animation::Engine (see that header) - this module owns the one
+// Engine instance and calls Update from its Animation phase.
 namespace augusta::presentation {
 
 // PresentationWorld's five phases (ADR-0024), executed in this exact
@@ -52,9 +51,16 @@ enum class Phase {
   // render frame rate. A session no longer in authoritative's player list is
   // no longer shown.
   kInterpolation,
-  // Mechanism. View camera - position/orientation, ADS zoom transition,
-  // recoil kick decay, view bob. Not yet a module of its own - see the
-  // header comment above.
+  // Mechanism. View camera position: local_body's predicted position (same
+  // one kInterpolation just offset for local_position, above) plus a fixed
+  // eye-height offset, recomputed every frame - so the camera tracks
+  // wherever the local player's body actually is, instead of the one-shot
+  // placement scene_loader.cpp used to freeze it at. Rotation stays
+  // identity for now: no aim/look-direction data flows anywhere yet
+  // (input::Command's yaw/pitch is sampled but unused past that struct) -
+  // ADS zoom transition, recoil kick decay, and view bob are equally still
+  // future work once it does. Not yet a module of its own - see the header
+  // comment above.
   kCamera,
   // Mechanism. Drives skeletal/procedural animation from interpolated
   // movement and weapon state - augusta::animation::Engine::Update, once
@@ -73,8 +79,19 @@ enum class Phase {
   kCommit,
 };
 
+// The local player's view camera for one frame - Phase::kCamera's output.
+// A plain position/rotation pair, not augusta::renderer::Camera itself: this
+// module stays decoupled from augusta_renderer the same way
+// presentation::RemotePlayer does (see renderer::RemotePlayer's doc comment)
+// - ClientRuntime's ToRenderer maps both into their renderer-side
+// equivalents.
+struct Camera {
+  math::Vec3 position{};
+  math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};
+};
+
 // PresentationWorld's per-frame output - ADR-0024/ARCHITECTURE.md's
-// "Presentation State". Beyond local_position and remote_players,
+// "Presentation State". Beyond local_position, camera, and remote_players,
 // deliberately empty for now - same deferred-design posture as
 // augusta::renderer's "what gets drawn" (renderer.h) and
 // augusta::prediction::State; its real shape depends on ECS component
@@ -83,6 +100,9 @@ struct State {
   /// Where the local player is shown: its predicted position, plus the offset
   /// that hides a reconciliation jump and fades (see correction.h).
   math::Vec3 local_position{};
+  /// The local player's view camera this frame (Phase::kCamera) - tracks
+  /// local_position at eye height, every frame.
+  Camera camera{};
   /// Every other player in the match, at its interpolated position and stance
   /// this frame (RemoteInterpolator::Sample, interpolation.h). Empty before
   /// the client has received an Authoritative State, or once alone in the
