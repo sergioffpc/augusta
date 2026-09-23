@@ -253,6 +253,97 @@ TEST_F(PackTest, AScriptLargerThanTheLimitIsTooLargeToEncodeAndCorruptToResolve)
   EXPECT_EQ(pack->ResolveScript("huge.lua").error(), augusta::assets::ResolveError::kCorruptBlob);
 }
 
+// A scenario's character list rides in both packs (ADR-0042): the character
+// index N names element N-1, so the order the cooker wrote is the order resolved.
+TEST_F(PackTest, EncodesAndResolvesTheCharacterListInOrder) {
+  const auto pack_path = MakePackPath("augusta_assets_test_characters.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::vector<std::string> characters = {"characters/sniper", "characters/player", "characters/medic"};
+
+  const auto blob = augusta::assets::EncodeCharactersBlob(characters);
+  ASSERT_TRUE(blob.has_value());
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kCharacters,
+                                  .path = std::string(augusta::assets::kCharactersPath),
+                                  .data = *blob},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveCharacters().value(), characters);
+}
+
+TEST_F(PackTest, AnEmptyCharacterListResolvesAsEmpty) {
+  const auto pack_path = MakePackPath("augusta_assets_test_no_characters.pack");
+  const auto keys = GenerateEd25519KeyPair();
+
+  const auto blob = augusta::assets::EncodeCharactersBlob({});
+  ASSERT_TRUE(blob.has_value());
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kCharacters,
+                                  .path = std::string(augusta::assets::kCharactersPath),
+                                  .data = *blob},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  const auto resolved = pack->ResolveCharacters();
+  ASSERT_TRUE(resolved.has_value());
+  EXPECT_TRUE(resolved->empty());
+}
+
+TEST_F(PackTest, APackWithoutTheCharacterListIsAResolveError) {
+  const auto pack_path = MakePackPath("augusta_assets_test_missing_characters.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = MakeTriangleMeshBlob()},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveCharacters().error(), augusta::assets::ResolveError::kNotFound);
+}
+
+// A character index is one byte with zero never valid (ADR-0042), so a list
+// longer than kMaxCharacters could name a character no index can reach.
+TEST_F(PackTest, ACharacterListLongerThanTheLimitIsTooLargeToEncodeAndCorruptToResolve) {
+  const std::vector<std::string> too_many(augusta::assets::kMaxCharacters + 1, "characters/player");
+  const auto blob = augusta::assets::EncodeCharactersBlob(too_many);
+  ASSERT_FALSE(blob.has_value());
+  EXPECT_EQ(blob.error(), augusta::assets::EncodeError::kTooLarge);
+
+  // A hostile pack can still carry one: the reader refuses it too. Built from a
+  // one-character blob: its u32 count patched to kMaxCharacters + 1, then its one
+  // encoded string repeated that many times.
+  const auto one = augusta::assets::EncodeCharactersBlob(std::vector<std::string>{"characters/player"});
+  ASSERT_TRUE(one.has_value());
+  const std::span<const std::byte> count_prefix = std::span(*one).first(sizeof(std::uint32_t));
+  const std::span<const std::byte> encoded_string = std::span(*one).subspan(sizeof(std::uint32_t));
+  std::vector<std::byte> hostile(count_prefix.begin(), count_prefix.end());
+  static_assert(augusta::assets::kMaxCharacters + 1 == 0x100);
+  hostile[0] = std::byte{0};  // Little-endian 0x100.
+  hostile[1] = std::byte{1};
+  for (std::size_t i = 0; i < too_many.size(); ++i) {
+    hostile.insert(hostile.end(), encoded_string.begin(), encoded_string.end());
+  }
+  const auto pack_path = MakePackPath("augusta_assets_test_too_many_characters.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kCharacters,
+                                  .path = std::string(augusta::assets::kCharactersPath),
+                                  .data = hostile},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveCharacters().error(), augusta::assets::ResolveError::kCorruptBlob);
+}
+
 // The remaining tests exercise Pack::Load's fail-closed parsing directly,
 // by mutating the bytes of an otherwise validly written and signed pack -
 // every case here is one ParsePackHeader (or the top-level size check)

@@ -5,6 +5,10 @@ shape of a message and which messages the transport delivers reliably. The
 protocol is the shared `augusta_protocol` module: a pure codec with no socket,
 clock or state, used by both client and server (ADR-0006).
 
+**Extended by ADR-0042**: Join request also carries the chosen character's path,
+Join refused gains the *unknown character* reason, and Join accepted, each Roster
+entry and each player in Authoritative State carry a character index.
+
 **Wire shape.** One message is one transport payload: a one-byte `MessageType`
 followed by that type's fields, fixed-width and little-endian; a string is a
 one-byte length and its bytes. Enumerated fields start at 1, so a zeroed byte is

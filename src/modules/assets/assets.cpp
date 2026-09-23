@@ -408,6 +408,7 @@ bool IsValidAssetType(std::uint8_t value) {
     case AssetType::kHitbox:
     case AssetType::kScene:
     case AssetType::kScript:
+    case AssetType::kCharacters:
       return true;
   }
   return false;
@@ -598,6 +599,11 @@ std::expected<SpawnPointData, ResolveError> Pack::ResolveSpawnPoint(std::string_
 
 std::expected<std::string, ResolveError> Pack::ResolveScript(std::string_view path) const {
   return ResolveAsset<std::string>(impl_->index, impl_->mapping, path, AssetType::kScript, DecodeScriptBlob);
+}
+
+std::expected<std::vector<std::string>, ResolveError> Pack::ResolveCharacters() const {
+  return ResolveAsset<std::vector<std::string>>(impl_->index, impl_->mapping, kCharactersPath, AssetType::kCharacters,
+                                                DecodeCharactersBlob);
 }
 
 }  // namespace augusta::assets

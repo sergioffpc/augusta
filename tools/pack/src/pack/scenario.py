@@ -25,6 +25,8 @@ from pathlib import Path
 
 import yaml
 
+from pack.pack import MAX_CHARACTERS
+
 USD_EXTENSIONS = (".usd", ".usda", ".usdc", ".usdz")
 
 # The stage every map needs, named the same regardless of its folder's own
@@ -95,6 +97,13 @@ def resolve_scenario(assets_root: Path, name: str) -> Scenario:
     characters_rel = manifest.get("characters", [])
     if not isinstance(characters_rel, list) or not all(isinstance(entry, str) and entry for entry in characters_rel):
         raise ScenarioError(f"{folder / MANIFEST_NAME}: 'characters' must be a list of character paths")
+    # Checked here rather than left to the cook, so usd-optimize and validation
+    # never run on every stage of a scenario that can't be packed.
+    if len(characters_rel) > MAX_CHARACTERS:
+        raise ScenarioError(
+            f"{folder / MANIFEST_NAME}: a scenario composes at most {MAX_CHARACTERS} characters (ADR-0042), "
+            f"this one names {len(characters_rel)}"
+        )
     characters = [
         Character(manifest_path=char_rel, stage_path=_find_stage(authoring_dir / char_rel, CHARACTER_STAGE_NAME))
         for char_rel in characters_rel

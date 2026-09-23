@@ -54,6 +54,10 @@ _Avoid_: Spawn location, start position
 Who is already in the match, each with its last known body, as told to a client when the server admits it. After that the Authoritative State lists everyone every tick.
 _Avoid_: Player list, lobby
 
+**Character**:
+What a player plays as, meaning its body's look and its collider, chosen from the characters the scenario's manifest names. The player picks one before joining, the server admits the join only if the scenario has it, and it stays fixed for the whole Session (ADR-0042).
+_Avoid_: Skin, model, avatar (a character is not only appearance: its collider is gameplay)
+
 **RTT (Round-Trip Time)**:
 The measured network latency between a client and the server for a single request/response cycle.
 _Avoid_: Ping, lag

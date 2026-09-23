@@ -43,6 +43,7 @@ enum class AssetType : std::uint8_t {
   kHitbox,
   kScene,
   kScript,
+  kCharacters,
 };
 
 // True if value is one of AssetType's defined enumerators - an index
@@ -135,6 +136,14 @@ struct TextureData {
 /// Pack-relative path of the Parameters script (ADR-0039) in a scenario's
 /// server pack: `parameters.lua` at the root of the scenario's folder.
 inline constexpr std::string_view kParametersScriptPath = "parameters.lua";
+
+/// Pack-relative path of a scenario's character list (ADR-0042), in both of its
+/// packs.
+inline constexpr std::string_view kCharactersPath = "Characters";
+
+/// Most characters a scenario can compose: a character index is one byte and
+/// zero is never valid (ADR-0042).
+inline constexpr std::size_t kMaxCharacters = 255;
 
 // A cooked spawn-point marker (ADR-0032): the point's own local
 // translation/rotation, as recorded on the authoring prim's SceneNode.
@@ -292,6 +301,11 @@ class Pack {
   /// folder, e.g. kParametersScriptPath (ADR-0031). Present in the server pack
   /// only: a client is sent the values a script decides, never the script.
   [[nodiscard]] std::expected<std::string, ResolveError> ResolveScript(std::string_view path) const;
+
+  /// Resolves the scenario's character list at kCharactersPath: each character's
+  /// path relative to `authoring/`, in manifest order, so character index N is
+  /// element N-1 (ADR-0042). Present in both client and server packs.
+  [[nodiscard]] std::expected<std::vector<std::string>, ResolveError> ResolveCharacters() const;
 
  private:
   Pack();
