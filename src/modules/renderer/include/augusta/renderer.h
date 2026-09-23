@@ -220,12 +220,14 @@ class Renderer {
   /// been called at least once.
   void SetRemotePlayers(std::span<const RemotePlayer> remote_players);
 
-  // Hides the OS cursor and confines/relocks it to this window each
-  // frame, for continuous mouselook (as opposed to the free OS cursor a
-  // menu/UI would need - no such UI exists yet, so v1 callers enable
-  // this once and leave it on). Idempotent. Falcor exposes no such hook
-  // itself (ADR-0009's vendored-fork note); this is expected to require
-  // a small patch to the vendored copy.
+  // Hides the OS cursor and captures it for continuous mouselook: mouse
+  // move events keep reporting a position that never stops at the window
+  // edge (as opposed to the free OS cursor a menu/UI would need - no such
+  // UI exists yet, so v1 callers enable this once and leave it on).
+  // Idempotent. Falcor exposes no such hook itself (ADR-0009);
+  // cmake/patches/falcor.patch adds Window::setCursorLocked, which puts
+  // GLFW's cursor in its disabled mode - GLFW itself releases the capture
+  // while the window is out of focus and takes it again when it regains it.
   void SetCursorLocked(bool locked);
 
   // Updates the values the debug HUD shows, from the Main/Render

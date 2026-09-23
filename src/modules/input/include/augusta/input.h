@@ -1,6 +1,12 @@
 #ifndef AUGUSTA_INPUT_H_
 #define AUGUSTA_INPUT_H_
 
+#include <array>
+#include <cstddef>
+#include <mutex>
+#include <optional>
+
+#include "augusta/math.h"
 #include "augusta/physics.h"
 
 // augusta::input owns the vocabulary of player input, from raw device
@@ -45,8 +51,12 @@ enum class Key {
   kLeftShift,    // Sprint (US-04/US-05).
   kLeftControl,  // Crouch (US-04).
   kZ,            // Prone (US-04).
-  kR,            // Reload (US-08).
+  kEscape,       // Releases the captured cursor.
+  kR,            // Reload (US-08). Keep last: kKeyCount counts from it.
 };
+
+/// How many keys Key names.
+inline constexpr std::size_t kKeyCount = static_cast<std::size_t>(Key::kR) + 1;
 
 // A physical mouse button this engine's gameplay currently binds to
 // something.
@@ -109,6 +119,15 @@ struct Config {
   float mouse_sensitivity = kDefaultMouseSensitivity;
 };
 
+/// The steepest pitch, up or down, Input lets the view reach, in radians: just
+/// short of straight up/down.
+inline constexpr float kMaxLookPitch = 1.55F;
+
+/// The rotation of a view with this yaw and pitch (see Command): yaw about +Y,
+/// then pitch about the view's own +X. Applied to -Z, it gives where the view
+/// looks.
+[[nodiscard]] math::Quat ViewRotation(float yaw, float pitch);
+
 // One tick's worth of player intent. Built by Input::Sample on the
 // client; deserialized off the wire on the server (see above).
 struct Command {
@@ -116,11 +135,13 @@ struct Command {
   // passed straight through to physics::World::Step's MovementInput.
   physics::MovementInput movement;
   // View orientation for this tick, in radians, accumulated from mouse
-  // movement and clamped so pitch cannot pass straight up/down (no
-  // gimbal flip). Determines aim direction for WeaponHandling (bullet
-  // origin/direction, US-07) as well as view for Camera (US-06). The
-  // axis/zero convention is shared with Renderer's camera and not yet
-  // pinned down.
+  // movement. Yaw 0 looks down -Z, the renderer camera's forward, and a
+  // positive yaw turns left (counter-clockwise seen from above, right-handed
+  // about +Y); Input keeps it within one turn. A positive pitch looks up;
+  // Input clamps it to kMaxLookPitch either way, short of straight up/down
+  // (no gimbal flip). ViewRotation turns the pair into a rotation. Determines
+  // aim direction for WeaponHandling (bullet origin/direction, US-07) as well
+  // as view for Camera (US-06).
   float yaw = 0.0F;
   float pitch = 0.0F;
   // True while the aim-down-sights control is held (US-06). Hip-fire is
@@ -145,19 +166,45 @@ class Input : public EventSink {
  public:
   explicit Input(const Config& config);
 
-  // Builds this tick's Command from state accumulated since the
-  // previous call, then resets whatever is per-tick rather than
-  // held (the reload edge, the yaw/pitch delta baseline). Call once per
-  // Simulation tick, from the Simulation thread (ARCHITECTURE.md §8) -
-  // safe to call concurrently with the OnXxx methods below, which
-  // arrive from Renderer::PumpEvents on the Main/Render thread.
+  // Builds this tick's Command from the keys held and the view accumulated
+  // so far. WASD move forward/back/left/right of where the view faces across
+  // the ground (opposite keys cancel, a diagonal is no faster), Shift held
+  // sprints, Ctrl held crouches and Z held goes prone, winning over Ctrl.
+  // Fire, ADS and reload are not sampled yet (M4). Call once per Simulation
+  // tick, from the Simulation thread (ARCHITECTURE.md §8) - safe to call
+  // concurrently with the OnXxx methods below, which arrive from
+  // Renderer::PumpEvents on the Main/Render thread.
   [[nodiscard]] Command Sample();
 
+  // Whether the cursor should be captured for mouselook: true at first, false
+  // once Escape is pressed, and true again on the next mouse click (which is
+  // taken by the capture, not passed on as a control). While released, the
+  // game has neither mouse nor keyboard: the view does not turn, every held
+  // key is let go, and keys pressed meanwhile are ignored. The caller
+  // applies it (Renderer::SetCursorLocked), from the Main/Render thread.
+  [[nodiscard]] bool CursorCaptured() const;
+
   // EventSink - see there for when/why these are called. Not meant to
-  // be called directly by anything other than Renderer.
+  // be called directly by anything other than Renderer (and tests).
   void OnKeyEvent(const KeyEvent& event) override;
   void OnMouseButtonEvent(const MouseButtonEvent& event) override;
+  // Turns the view by how far the cursor moved since the previous event; the
+  // first event only sets where the cursor starts.
   void OnMouseMoveEvent(const MouseMoveEvent& event) override;
+
+ private:
+  // Whether key is held down; callers hold mutex_.
+  [[nodiscard]] bool Held(Key key) const;
+  // Captures or releases the cursor; callers hold mutex_.
+  void SetCursorCaptured(bool captured);
+
+  float mouse_sensitivity_;
+  mutable std::mutex mutex_;
+  std::array<bool, kKeyCount> held_{};
+  std::optional<MouseMoveEvent> last_cursor_;
+  float yaw_ = 0.0F;
+  float pitch_ = 0.0F;
+  bool cursor_captured_ = true;
 };
 
 }  // namespace augusta::input

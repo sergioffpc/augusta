@@ -107,6 +107,7 @@ if (WIN32)
     # untracked from the previous run.
     COMMAND ${CMAKE_COMMAND} -E rm -f ${FALCOR_DIR}/tools-dependencies.xml
     COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} checkout -- CMakeLists.txt CMakePresets.json
+            Source/Falcor/Core/Window.h Source/Falcor/Core/Window.cpp
     COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} apply ${CMAKE_SOURCE_DIR}/cmake/patches/falcor.patch
     # windows-ninja-msvc-base's CMAKE_MAKE_PROGRAM points at
     # tools/.packman/ninja/ninja.exe, needed immediately by project() - but

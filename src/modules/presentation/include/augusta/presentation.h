@@ -55,12 +55,10 @@ enum class Phase {
   // one kInterpolation just offset for local_position, above) plus a fixed
   // eye-height offset, recomputed every frame - so the camera tracks
   // wherever the local player's body actually is, instead of the one-shot
-  // placement scene_loader.cpp used to freeze it at. Rotation stays
-  // identity for now: no aim/look-direction data flows anywhere yet
-  // (input::Command's yaw/pitch is sampled but unused past that struct) -
-  // ADS zoom transition, recoil kick decay, and view bob are equally still
-  // future work once it does. Not yet a module of its own - see the header
-  // comment above.
+  // placement scene_loader.cpp used to freeze it at. Rotation is the local
+  // player's view (World::RunFrame's view_rotation). ADS zoom transition,
+  // recoil kick decay, and view bob are still future work. Not yet a module
+  // of its own - see the header comment above.
   kCamera,
   // Mechanism. Drives skeletal/procedural animation from interpolated
   // movement and weapon state - augusta::animation::Engine::Update, once
@@ -101,7 +99,7 @@ struct State {
   /// that hides a reconciliation jump and fades (see correction.h).
   math::Vec3 local_position{};
   /// The local player's view camera this frame (Phase::kCamera) - tracks
-  /// local_position at eye height, every frame.
+  /// local_position at eye height, every frame, turned where the player looks.
   Camera camera{};
   /// Every other player in the match, at its interpolated position and stance
   /// this frame (RemoteInterpolator::Sample, interpolation.h). Empty before
@@ -141,7 +139,9 @@ class World {
   // is the most recently committed prediction::State; Interpolation
   // blends it against the previous call's latest, internally retained -
   // the first call after construction has no previous state to blend
-  // from and uses latest directly. local_session is this client's own
+  // from and uses latest directly. view_rotation is where the local player
+  // looks (input::ViewRotation of its latest Command), which the camera
+  // takes as its rotation. local_session is this client's own
   // session, or nullopt before the server has admitted it; authoritative is
   // the newest Authoritative State the connection has received, or nullopt
   // before the first one arrives - both harness::Session getters
@@ -149,7 +149,8 @@ class World {
   // other than local_session is fed to this World's RemoteInterpolator (see
   // interpolation.h); a repeated authoritative (same tick as the previous
   // call) is not recorded again. Returns the frame's Presentation State.
-  State RunFrame(const prediction::State& latest, std::optional<protocol::SessionId> local_session,
+  State RunFrame(const prediction::State& latest, const math::Quat& view_rotation,
+                 std::optional<protocol::SessionId> local_session,
                  const std::optional<protocol::AuthoritativeState>& authoritative);
 
  private:

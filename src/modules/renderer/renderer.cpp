@@ -134,6 +134,8 @@ std::optional<input::Key> MapKey(Falcor::Input::Key key) {
       return input::Key::kLeftShift;
     case Falcor::Input::Key::LeftControl:
       return input::Key::kLeftControl;
+    case Falcor::Input::Key::Escape:
+      return input::Key::kEscape;
     case Falcor::Input::Key::Z:
       return input::Key::kZ;
     case Falcor::Input::Key::R:
@@ -199,8 +201,6 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   Falcor::RasterizerState::CullMode cull_mode = Falcor::RasterizerState::CullMode::None;
   bool wireframe_enabled = false;
   bool vsync_enabled = false;
-
-  bool cursor_locked = false;
 
   Impl(const Config& config, input::EventSink& sink) : input_sink(sink) {
     // Falcor::OSServices::start()/stop() are SampleApp-internal (not
@@ -550,11 +550,6 @@ void Renderer::SetRemotePlayers(std::span<const RemotePlayer> remote_players) {
 
 void Renderer::SetDebugHudStats(const DebugHudStats& stats) { impl_->hud_stats = stats; }
 
-void Renderer::SetCursorLocked([[maybe_unused]] bool locked) {
-  // TODO(sergioffpc): Falcor exposes no cursor-lock/hide hook (ADR-0009) -
-  // needs a small patch to the vendored submodule (cmake/patches/falcor-
-  // augusta.patch). Deferred: no input consumer calls this yet (mouselook
-  // lands with gameplay input handling, M3+).
-}
+void Renderer::SetCursorLocked(bool locked) { impl_->window->setCursorLocked(locked); }
 
 }  // namespace augusta::renderer
