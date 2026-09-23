@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <cstdint>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string>
@@ -13,6 +16,7 @@
 namespace augusta::parameters {
 namespace {
 
+constexpr std::string_view kPlayerCountKey = "player_count";
 constexpr std::string_view kStaminaKey = "stamina";
 constexpr std::array<std::string_view, 3> kStaminaKeys{"deplete_per_second", "regen_per_second", "forced_walk_below"};
 
@@ -50,7 +54,7 @@ std::optional<LoadError> FirstUnknownKey(const sol::table& table, std::string_vi
 }
 
 // The number at key; whether it is one the simulation can run on is for Validate.
-std::expected<float, LoadError> ReadNumber(const sol::table& table, std::string_view parent, std::string_view key) {
+std::expected<double, LoadError> ReadNumber(const sol::table& table, std::string_view parent, std::string_view key) {
   const sol::object value = table.raw_get<sol::object>(key);
   if (value.get_type() == sol::type::lua_nil) {
     return Fail(LoadErrorCode::kMissingKey, KeyPath(parent, key));
@@ -58,7 +62,24 @@ std::expected<float, LoadError> ReadNumber(const sol::table& table, std::string_
   if (value.get_type() != sol::type::number) {
     return Fail(LoadErrorCode::kWrongType, KeyPath(parent, key));
   }
-  return static_cast<float>(value.as<double>());
+  return value.as<double>();
+}
+
+// The player count, a whole number; one the type cannot hold is out of range
+// here, and whether it is a count a match can have is for Validate. A whole
+// number with a fraction part (8 / 4 is 2.0 in Lua) is still whole.
+std::expected<std::uint32_t, LoadError> ReadPlayerCount(const sol::table& root) {
+  const auto count = ReadNumber(root, {}, kPlayerCountKey);
+  if (!count) {
+    return std::unexpected(count.error());
+  }
+  if (!std::isfinite(*count) || *count < 0.0 || *count > std::numeric_limits<std::uint32_t>::max()) {
+    return Fail(LoadErrorCode::kOutOfRange, std::string(kPlayerCountKey));
+  }
+  if (*count != std::floor(*count)) {
+    return Fail(LoadErrorCode::kWrongType, std::string(kPlayerCountKey));
+  }
+  return static_cast<std::uint32_t>(*count);
 }
 
 std::expected<physics::StaminaConfig, LoadError> ReadStamina(const sol::table& root) {
@@ -86,7 +107,10 @@ std::expected<physics::StaminaConfig, LoadError> ReadStamina(const sol::table& r
     return std::unexpected(forced_walk_below.error());
   }
   return physics::StaminaConfig{
-      .deplete_per_second = *deplete, .regen_per_second = *regen, .forced_walk_below = *forced_walk_below};
+      .deplete_per_second = static_cast<float>(*deplete),
+      .regen_per_second = static_cast<float>(*regen),
+      .forced_walk_below = static_cast<float>(*forced_walk_below),
+  };
 }
 
 // Long enough for any script that only states values and computes a few from
@@ -151,15 +175,19 @@ std::expected<Parameters, LoadError> Load(std::string_view script) {
   }
   const sol::table root = result.get<sol::table>();
 
-  constexpr std::array<std::string_view, 1> kRootKeys{kStaminaKey};
+  constexpr std::array<std::string_view, 2> kRootKeys{kPlayerCountKey, kStaminaKey};
   if (const auto unknown = FirstUnknownKey(root, {}, kRootKeys)) {
     return std::unexpected(*unknown);
+  }
+  const auto player_count = ReadPlayerCount(root);
+  if (!player_count) {
+    return std::unexpected(player_count.error());
   }
   const auto stamina = ReadStamina(root);
   if (!stamina) {
     return std::unexpected(stamina.error());
   }
-  const Parameters parameters{.stamina = *stamina};
+  const Parameters parameters{.player_count = *player_count, .stamina = *stamina};
   if (const auto valid = Validate(parameters); !valid) {
     return Fail(LoadErrorCode::kOutOfRange, std::string(valid.error().path));
   }

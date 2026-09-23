@@ -18,6 +18,7 @@ using augusta::parameters::LoadErrorCode;
 
 constexpr std::string_view kValid = R"(
 return {
+  player_count = 4,
   stamina = {
     deplete_per_second = 0.2,
     regen_per_second = 0.1,
@@ -26,9 +27,15 @@ return {
 }
 )";
 
+// A complete script whose player count is the given Lua expression.
+std::string WithPlayerCount(std::string_view player_count) {
+  return "return { player_count = " + std::string(player_count) +
+         ", stamina = { deplete_per_second = 0, regen_per_second = 0, forced_walk_below = 0 } }";
+}
+
 // A complete script whose three stamina values are the given Lua expressions.
 std::string WithStamina(std::string_view deplete, std::string_view regen, std::string_view forced_walk_below) {
-  return "return { stamina = { deplete_per_second = " + std::string(deplete) +
+  return "return { player_count = 1, stamina = { deplete_per_second = " + std::string(deplete) +
          ", regen_per_second = " + std::string(regen) + ", forced_walk_below = " + std::string(forced_walk_below) +
          " } }";
 }
@@ -44,9 +51,28 @@ TEST(ParametersLoaderTest, ReadsEveryValueOfACompleteScript) {
   const auto loaded = Load(kValid);
 
   ASSERT_TRUE(loaded.has_value());
+  EXPECT_EQ(loaded->player_count, 4U);
   EXPECT_FLOAT_EQ(loaded->stamina.deplete_per_second, 0.2F);
   EXPECT_FLOAT_EQ(loaded->stamina.regen_per_second, 0.1F);
   EXPECT_FLOAT_EQ(loaded->stamina.forced_walk_below, 0.05F);
+}
+
+TEST(ParametersLoaderTest, APlayerCountMayBeAnyWholeNumberFromOneToTheMostAMatchHolds) {
+  for (const std::string_view count : {"1", "8", "16 / 2"}) {
+    EXPECT_TRUE(Load(WithPlayerCount(count)).has_value()) << count;
+  }
+}
+
+TEST(ParametersLoaderTest, APlayerCountOutsideItsRangeIsOutOfRange) {
+  for (const std::string_view count : {"0", "9", "-1", "2^40", "math.huge", "0/0"}) {
+    ExpectError(WithPlayerCount(count), LoadErrorCode::kOutOfRange, "player_count");
+  }
+}
+
+TEST(ParametersLoaderTest, APlayerCountThatIsNotAWholeNumberIsTheWrongType) {
+  for (const std::string_view count : {"1.5", "'2'", "true"}) {
+    ExpectError(WithPlayerCount(count), LoadErrorCode::kWrongType, "player_count");
+  }
 }
 
 TEST(ParametersLoaderTest, AcceptsAWholeNumberWrittenWithoutADecimalPoint) {
@@ -79,13 +105,16 @@ TEST(ParametersLoaderTest, AScriptThatDoesNotReturnATableIsNotATable) {
 }
 
 TEST(ParametersLoaderTest, AMissingKeyIsAnErrorNamingItsPath) {
-  ExpectError("return {}", LoadErrorCode::kMissingKey, "stamina");
-  ExpectError("return { stamina = { regen_per_second = 0, forced_walk_below = 0 } }", LoadErrorCode::kMissingKey,
-              "stamina.deplete_per_second");
-  ExpectError("return { stamina = { deplete_per_second = 0, forced_walk_below = 0 } }", LoadErrorCode::kMissingKey,
-              "stamina.regen_per_second");
-  ExpectError("return { stamina = { deplete_per_second = 0, regen_per_second = 0 } }", LoadErrorCode::kMissingKey,
-              "stamina.forced_walk_below");
+  ExpectError("return {}", LoadErrorCode::kMissingKey, "player_count");
+  ExpectError("return { stamina = { deplete_per_second = 0, regen_per_second = 0, forced_walk_below = 0 } }",
+              LoadErrorCode::kMissingKey, "player_count");
+  ExpectError("return { player_count = 1 }", LoadErrorCode::kMissingKey, "stamina");
+  ExpectError("return { player_count = 1, stamina = { regen_per_second = 0, forced_walk_below = 0 } }",
+              LoadErrorCode::kMissingKey, "stamina.deplete_per_second");
+  ExpectError("return { player_count = 1, stamina = { deplete_per_second = 0, forced_walk_below = 0 } }",
+              LoadErrorCode::kMissingKey, "stamina.regen_per_second");
+  ExpectError("return { player_count = 1, stamina = { deplete_per_second = 0, regen_per_second = 0 } }",
+              LoadErrorCode::kMissingKey, "stamina.forced_walk_below");
 }
 
 TEST(ParametersLoaderTest, AnUnknownKeyIsAnErrorNamingItsPath) {
@@ -94,7 +123,7 @@ TEST(ParametersLoaderTest, AnUnknownKeyIsAnErrorNamingItsPath) {
       "recoil = 1 }",
       LoadErrorCode::kUnknownKey, "recoil");
   ExpectError(
-      "return { stamina = { deplete_per_second = 0, regen_per_second = 0, forced_walk_below = 0, "
+      "return { player_count = 1, stamina = { deplete_per_second = 0, regen_per_second = 0, forced_walk_below = 0, "
       "regen_per_sec = 1 } }",
       LoadErrorCode::kUnknownKey, "stamina.regen_per_sec");
 }
@@ -108,8 +137,9 @@ TEST(ParametersLoaderTest, TheTickRateIsNotAParameterAndIsAnUnknownKey) {
 
 TEST(ParametersLoaderTest, AMisspelledKeyIsNeverReadAsAMissingOneOrADefault) {
   // The misspelling is the cause, so it is what is reported, not the key it left absent.
-  ExpectError("return { stamina = { deplete_per_second = 0, regen_per_secnd = 0, forced_walk_below = 0 } }",
-              LoadErrorCode::kUnknownKey, "stamina.regen_per_secnd");
+  ExpectError(
+      "return { player_count = 1, stamina = { deplete_per_second = 0, regen_per_secnd = 0, forced_walk_below = 0 } }",
+      LoadErrorCode::kUnknownKey, "stamina.regen_per_secnd");
 }
 
 TEST(ParametersLoaderTest, WhenSeveralKeysAreUnknownTheFirstInNameOrderIsReported) {
@@ -120,7 +150,7 @@ TEST(ParametersLoaderTest, AValueOfTheWrongTypeIsAnErrorNamingItsPath) {
   ExpectError(WithStamina("'0.5'", "0", "0"), LoadErrorCode::kWrongType, "stamina.deplete_per_second");
   ExpectError(WithStamina("0", "true", "0"), LoadErrorCode::kWrongType, "stamina.regen_per_second");
   ExpectError(WithStamina("0", "0", "{}"), LoadErrorCode::kWrongType, "stamina.forced_walk_below");
-  ExpectError("return { stamina = 3 }", LoadErrorCode::kWrongType, "stamina");
+  ExpectError("return { player_count = 1, stamina = 3 }", LoadErrorCode::kWrongType, "stamina");
 }
 
 TEST(ParametersLoaderTest, ANegativeRateIsOutOfRange) {
@@ -190,7 +220,7 @@ TEST(ParametersLoaderSandboxTest, AScriptThatDoesRealWorkWithinTheLimitStillLoad
   const auto loaded = Load(
       "local sum = 0\n"
       "for i = 1, 10000 do sum = sum + i end\n"
-      "return { stamina = { deplete_per_second = sum / 50005000, regen_per_second = 0, "
+      "return { player_count = 1, stamina = { deplete_per_second = sum / 50005000, regen_per_second = 0, "
       "forced_walk_below = 0 } }");
 
   ASSERT_TRUE(loaded.has_value());
@@ -207,7 +237,7 @@ TEST(ParametersLoaderExpressionTest, AValueMayBeAnExpressionOfOtherValuesInTheSc
   const auto loaded = Load(
       "local sprint_seconds = 5\n"
       "local rest_seconds = 10\n"
-      "return { stamina = {\n"
+      "return { player_count = 1, stamina = {\n"
       "  deplete_per_second = 1 / sprint_seconds,\n"
       "  regen_per_second = 1 / rest_seconds,\n"
       "  forced_walk_below = 0.5 / sprint_seconds,\n"
@@ -222,7 +252,7 @@ TEST(ParametersLoaderExpressionTest, AValueMayBeAnExpressionOfOtherValuesInTheSc
 TEST(ParametersLoaderExpressionTest, AnExpressionCanUseAFunctionOfTheScript) {
   const auto loaded = Load(
       "local function per_second(seconds) return 1 / seconds end\n"
-      "return { stamina = { deplete_per_second = per_second(4), regen_per_second = "
+      "return { player_count = 1, stamina = { deplete_per_second = per_second(4), regen_per_second = "
       "math.sqrt(0.25),\n"
       "  forced_walk_below = 0 } }");
 
@@ -243,6 +273,7 @@ TEST(ParametersLoaderExpressionTest, TheSameScriptLoadedTwiceGivesEqualParameter
 
   ASSERT_TRUE(first.has_value());
   ASSERT_TRUE(second.has_value());
+  EXPECT_EQ(first->player_count, second->player_count);
   EXPECT_EQ(first->stamina.deplete_per_second, second->stamina.deplete_per_second);
   EXPECT_EQ(first->stamina.regen_per_second, second->stamina.regen_per_second);
   EXPECT_EQ(first->stamina.forced_walk_below, second->stamina.forced_walk_below);
@@ -267,6 +298,7 @@ TEST(ParametersExampleTest, TheExampleScriptLoadsToTheDocumentedDefaults) {
   const auto loaded = Load(script.str());
 
   ASSERT_TRUE(loaded.has_value()) << DescribeLoadError(loaded.error());
+  EXPECT_EQ(loaded->player_count, 1U);
   EXPECT_FLOAT_EQ(loaded->stamina.deplete_per_second, 0.2F);
   EXPECT_FLOAT_EQ(loaded->stamina.regen_per_second, 0.1F);
   EXPECT_FLOAT_EQ(loaded->stamina.forced_walk_below, 0.1F);

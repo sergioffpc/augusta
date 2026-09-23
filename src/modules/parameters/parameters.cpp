@@ -11,6 +11,9 @@ bool FiniteAndAtLeast(float value, float min) { return std::isfinite(value) && v
 }  // namespace
 
 std::expected<void, InvalidParameter> Validate(const Parameters& parameters) {
+  if (parameters.player_count < 1 || parameters.player_count > kMaxPlayerCount) {
+    return std::unexpected(InvalidParameter{.path = "player_count"});
+  }
   const physics::StaminaConfig& stamina = parameters.stamina;
   if (!FiniteAndAtLeast(stamina.deplete_per_second, 0.0F)) {
     return std::unexpected(InvalidParameter{.path = "stamina.deplete_per_second"});

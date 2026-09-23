@@ -1,5 +1,6 @@
 #include "augusta/parameters.h"
 
+#include <cstdint>
 #include <limits>
 
 #include <gtest/gtest.h>
@@ -9,11 +10,12 @@
 namespace {
 
 using augusta::parameters::IsValidTickRate;
+using augusta::parameters::kMaxPlayerCount;
 using augusta::parameters::Parameters;
 using augusta::parameters::Validate;
 
 constexpr Parameters kUsable{
-    .stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.1F}};
+    .player_count = 1, .stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.1F}};
 
 TEST(ValidateTest, UsableParametersPass) { EXPECT_TRUE(Validate(kUsable).has_value()); }
 
@@ -28,6 +30,25 @@ TEST(ValidateTest, EachValueOutsideItsRangeIsNamedByItsPath) {
   EXPECT_EQ(Validate(negative_deplete).error().path, "stamina.deplete_per_second");
   EXPECT_EQ(Validate(infinite_regen).error().path, "stamina.regen_per_second");
   EXPECT_EQ(Validate(threshold_of_one).error().path, "stamina.forced_walk_below");
+}
+
+TEST(ValidateTest, APlayerCountFromOneToTheMostAMatchHoldsPasses) {
+  for (const std::uint32_t count : {std::uint32_t{1}, std::uint32_t{kMaxPlayerCount}}) {
+    Parameters parameters = kUsable;
+    parameters.player_count = count;
+
+    EXPECT_TRUE(Validate(parameters).has_value()) << count;
+  }
+}
+
+TEST(ValidateTest, APlayerCountOfZeroOrAboveTheMostAMatchHoldsIsNamed) {
+  for (const std::uint32_t count :
+       {std::uint32_t{0}, std::uint32_t{kMaxPlayerCount + 1}, std::numeric_limits<std::uint32_t>::max()}) {
+    Parameters parameters = kUsable;
+    parameters.player_count = count;
+
+    EXPECT_EQ(Validate(parameters).error().path, "player_count") << count;
+  }
 }
 
 TEST(IsValidTickRateTest, AnyFiniteRateAboveZeroIsValid) {

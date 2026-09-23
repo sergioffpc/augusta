@@ -50,7 +50,7 @@ inline constexpr std::size_t kMaxEngineVersionLength = 32;
 inline constexpr std::size_t kMaxCharacterPathLength = 64;
 
 /// The players a match holds, and so the most an Authoritative State update lists.
-inline constexpr std::size_t kMaxPlayers = 8;
+inline constexpr std::size_t kMaxPlayers = parameters::kMaxPlayerCount;
 
 /// The most commands one Commands message carries.
 inline constexpr std::size_t kMaxCommandsPerMessage = 8;

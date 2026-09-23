@@ -25,7 +25,8 @@ enum class LoadErrorCode {
   kUnknownKey,
   /// A required key is absent; subject is its path.
   kMissingKey,
-  /// A value is not of the type its key takes; subject is its path.
+  /// A value is not of the type its key takes (a number, or a whole number for a
+  /// count); subject is its path.
   kWrongType,
   /// A number is not finite or is outside the range its key takes; subject is its path.
   kOutOfRange,

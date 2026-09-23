@@ -28,7 +28,7 @@ _Avoid_: Waiting room, pre-game
 
 **Player count**:
 How many players a Match needs to start, fixed by the scenario's Parameters.
-_Avoid_: Max players (the protocol's upper bound on any scenario's player count, not a scenario's own number)
+_Avoid_: Max players (the upper bound on any scenario's player count, which the protocol's messages are sized for, not a scenario's own number)
 
 **Ready**:
 A player whose client has loaded what it needs to draw everyone currently in the Lobby. The client decides it on its own; the player never presses anything.
