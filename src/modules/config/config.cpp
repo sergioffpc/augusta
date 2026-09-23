@@ -79,7 +79,7 @@ std::expected<void, ConfigError> Flatten(const YAML::Node& node, const std::stri
   std::set<std::string, std::less<>> seen;
   for (const auto& entry : node) {
     if (!entry.first.IsScalar()) {
-      return std::unexpected(ConfigError{.code = ConfigErrorCode::kNonStringKey});
+      return std::unexpected(ConfigError{.code = ConfigErrorCode::kNonStringKey, .subject = {}});
     }
     const std::string& name = entry.first.Scalar();
     const std::string path = Child(section, name);
@@ -125,7 +125,7 @@ std::expected<ScalarMap, ConfigError> ReadMapping(std::string_view text, const S
     return std::unexpected(ConfigError{.code = ConfigErrorCode::kInvalidYaml, .subject = error.what()});
   }
   if (!root.IsMap()) {
-    return std::unexpected(ConfigError{.code = ConfigErrorCode::kNotAMapping});
+    return std::unexpected(ConfigError{.code = ConfigErrorCode::kNotAMapping, .subject = {}});
   }
   ScalarMap values;
   if (auto read = Flatten(root, "", schema, values); !read) {
@@ -246,7 +246,7 @@ std::expected<std::string, ConfigError> OptionalLogLevel(const ScalarMap& values
 std::expected<std::string, ConfigError> ReadFile(const std::filesystem::path& file) {
   std::ifstream stream(file, std::ios::binary);
   if (!stream) {
-    return std::unexpected(ConfigError{.code = ConfigErrorCode::kCannotOpenFile, .file = file});
+    return std::unexpected(ConfigError{.code = ConfigErrorCode::kCannotOpenFile, .subject = {}, .file = file});
   }
   std::ostringstream contents;
   contents << stream.rdbuf();

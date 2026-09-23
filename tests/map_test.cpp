@@ -222,8 +222,10 @@ TEST_F(MapTest, SpawnPointsOfAPackWithoutASceneNameTheScene) {
 }
 
 TEST(DescribeMapErrorTest, ASceneOfTheWrongTypeIsNotDescribedAsCollisionGeometry) {
-  const std::string message = augusta::map::DescribeMapError(
-      {.code = MapErrorCode::kSceneUnresolved, .subject = "Scene", .resolve_error = ResolveError::kTypeMismatch});
+  const std::string message = augusta::map::DescribeMapError({.code = MapErrorCode::kSceneUnresolved,
+                                                              .node = {},
+                                                              .subject = "Scene",
+                                                              .resolve_error = ResolveError::kTypeMismatch});
 
   EXPECT_EQ(message, "scene Scene is not a scene");
 }

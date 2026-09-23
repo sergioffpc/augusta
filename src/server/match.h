@@ -37,7 +37,7 @@ struct Admission {
   /// Where its player spawns.
   math::Vec3 spawn{};
   /// The players already in the match, ordered by session, each where it last was.
-  std::vector<RosterEntry> roster{};
+  std::vector<RosterEntry> roster;
 };
 
 /// What a match admits players by, fixed for its lifetime.
@@ -45,7 +45,7 @@ struct MatchConfig {
   /// Only clients whose engine version is this are admitted.
   std::string engine_version;
   /// The characters a client may ask to play: the scenario's, by path (ADR-0042).
-  std::vector<std::string> characters{};
+  std::vector<std::string> characters;
   /// The most players the match holds at once.
   std::size_t capacity = protocol::kMaxPlayers;
 };

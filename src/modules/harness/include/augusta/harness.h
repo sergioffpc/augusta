@@ -47,7 +47,7 @@ struct AuthoritativeState {
   /// The highest command sequence of this client that the server has processed, 0 if none.
   std::uint32_t acknowledged_sequence = 0;
   /// Every player in the match.
-  std::vector<PlayerBody> players{};
+  std::vector<PlayerBody> players;
 };
 
 /// Why a Session ended without the player asking it to.
@@ -81,7 +81,7 @@ struct SessionConfig {
   std::string engine_version = std::string(EngineVersion());
   /// The character to ask to play, by its path relative to `authoring/` (e.g.
   /// "characters/player"): the server admits only one of its scenario's (ADR-0042).
-  std::string character{};
+  std::string character;
 };
 
 /// The client's network connection and PredictionWorld, without a window or a GPU.

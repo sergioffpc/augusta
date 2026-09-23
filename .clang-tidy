@@ -50,7 +50,13 @@ Checks: >
 
 WarningsAsErrors: "*"
 
-HeaderFilterRegex: '^(src|tests)/.*\.h$'
+# clang-tidy matches these against a header's full path as the compile
+# commands give it, which is absolute (/home/runner/work/augusta/augusta/src/...
+# on CI, C:\...\augusta\src\... on Windows), so the pattern must allow a
+# prefix and either separator. third_party is excluded: its vendored sources
+# have src/ directories of their own.
+HeaderFilterRegex: '.*[/\\](src|tests)[/\\].*\.h$'
+ExcludeHeaderFilterRegex: '.*[/\\]third_party[/\\].*'
 
 CheckOptions:
   - { key: readability-identifier-naming.NamespaceCase,          value: lower_case }
@@ -79,4 +85,7 @@ CheckOptions:
   - { key: readability-identifier-naming.EnumConstantCase,        value: CamelCase }
   - { key: readability-identifier-naming.EnumConstantPrefix,      value: k         }
   - { key: readability-identifier-naming.MacroDefinitionCase,     value: UPPER_CASE }
+  # Include guards end in an underscore (Google style, <PATH>_<FILE>_H_),
+  # which UPPER_CASE alone refuses.
+  - { key: readability-identifier-naming.MacroDefinitionIgnoredRegexp, value: '^AUGUSTA_[A-Z0-9_]+_H_$' }
   - { key: readability-function-size.LineThreshold,               value: 60         }

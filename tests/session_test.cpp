@@ -110,7 +110,7 @@ class SessionTest : public ::testing::Test {
                          .parameters = kTestParameters,
                          .script_path = "scripts/round.lua",
                          .listen = Endpoint{.address = LoopbackAddress()}},
-              Map{.characters = {kCharacter}}),
+              Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}}),
         session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
                  EmptyWorld()) {}
 
@@ -176,7 +176,7 @@ class JoinTest : public ::testing::Test {
                          .parameters = kTestParameters,
                          .script_path = "scripts/round.lua",
                          .listen = Endpoint{.address = LoopbackAddress()}},
-              Map{.characters = {kCharacter}}) {}
+              Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}}) {}
 
   // Starts connecting a new client that presents engine_version and asks to play character.
   Session& AddClient(const std::string& engine_version = std::string(augusta::EngineVersion()),
@@ -443,7 +443,7 @@ TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
                        .parameters = kTestParameters,
                        .script_path = "scripts/round.lua",
                        .listen = Endpoint{.address = LoopbackAddress()}},
-            Map{.collision = {FloorAt(0.0F)}, .characters = {kCharacter}});
+            Map{.collision = {FloorAt(0.0F)}, .spawn_points = {}, .characters = {kCharacter}});
 
   for (int i = 0; i < 10; ++i) {
     host.Tick(kFixedTick);
@@ -456,7 +456,7 @@ TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
                                .parameters = kTestParameters,
                                .script_path = "scripts/round.lua",
                                .listen = Endpoint{.address = LoopbackAddress()}},
-                    Map{.collision = {CollisionMesh{}}, .characters = {kCharacter}}),
+                    Map{.collision = {CollisionMesh{}}, .spawn_points = {}, .characters = {kCharacter}}),
                std::runtime_error);
 }
 
@@ -480,7 +480,7 @@ class MovementTest : public ::testing::Test {
                          .parameters = kTestParameters,
                          .script_path = "scripts/round.lua",
                          .listen = Endpoint{.address = LoopbackAddress()}},
-              Map{.collision = std::move(server_map), .characters = {kCharacter}}),
+              Map{.collision = std::move(server_map), .spawn_points = {}, .characters = {kCharacter}}),
         session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
                  WorldWithFloorAt(kGroundHeight)) {}
 
@@ -1318,7 +1318,7 @@ TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseTickRateFailsTheChecks
   Host host(
       HostConfig{
           .tick_rate_hz = 0.0F, .script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}},
-      Map{.characters = {kCharacter}});
+      Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}});
   Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
                   EmptyWorld());
   session.Connect();
@@ -1370,7 +1370,7 @@ TEST(SessionFailureTest, AServerThatGoesAwayAfterAdmittingTheClientIsAConnection
                                                 .parameters = kTestParameters,
                                                 .script_path = "scripts/round.lua",
                                                 .listen = Endpoint{.address = LoopbackAddress()}},
-                                     Map{.characters = {kCharacter}});
+                                     Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}});
   Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
                   EmptyWorld());
   session.Connect();
@@ -1403,7 +1403,7 @@ TEST(SessionFailureTest, EndingTheSessionOneselfIsNotAFailure) {
                        .parameters = kTestParameters,
                        .script_path = "scripts/round.lua",
                        .listen = Endpoint{.address = LoopbackAddress()}},
-            Map{.characters = {kCharacter}});
+            Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}});
   Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
                   EmptyWorld());
   session.Connect();

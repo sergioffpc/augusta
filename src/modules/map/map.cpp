@@ -33,8 +33,10 @@ namespace {
 std::expected<assets::SceneData, MapError> ResolveScene(const assets::Pack& pack, std::string_view scene_path) {
   auto scene = pack.ResolveScene(scene_path);
   if (!scene) {
-    return std::unexpected(MapError{
-        .code = MapErrorCode::kSceneUnresolved, .subject = std::string(scene_path), .resolve_error = scene.error()});
+    return std::unexpected(MapError{.code = MapErrorCode::kSceneUnresolved,
+                                    .node = {},
+                                    .subject = std::string(scene_path),
+                                    .resolve_error = scene.error()});
   }
   return *std::move(scene);
 }
@@ -62,7 +64,7 @@ std::expected<std::vector<physics::CollisionMesh>, MapError> LoadCollision(const
                                       .subject = *node.collider_path,
                                       .resolve_error = collision.error()});
     }
-    physics::CollisionMesh mesh{.indices = std::move(collision->indices)};
+    physics::CollisionMesh mesh{.points = {}, .indices = std::move(collision->indices)};
     mesh.points.reserve(collision->points.size());
     for (const math::Vec3& point : collision->points) {
       mesh.points.push_back(math::TransformPoint(world[i], point));
@@ -76,7 +78,7 @@ std::expected<std::vector<physics::CollisionMesh>, MapError> LoadCollision(const
     meshes.push_back(std::move(mesh));
   }
   if (meshes.empty()) {
-    return std::unexpected(MapError{.code = MapErrorCode::kNoCollision});
+    return std::unexpected(MapError{.code = MapErrorCode::kNoCollision, .node = {}, .subject = {}});
   }
   return meshes;
 }
@@ -96,7 +98,7 @@ std::expected<std::vector<math::Vec3>, MapError> LoadSpawnPoints(const assets::P
     }
   }
   if (spawn_points.empty()) {
-    return std::unexpected(MapError{.code = MapErrorCode::kNoSpawnPoints});
+    return std::unexpected(MapError{.code = MapErrorCode::kNoSpawnPoints, .node = {}, .subject = {}});
   }
   return spawn_points;
 }

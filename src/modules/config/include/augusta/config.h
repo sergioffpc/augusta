@@ -48,7 +48,7 @@ struct ClientConfig {
   /// Key `player.character` (required): the character to play, by its path
   /// relative to `authoring/` (e.g. "characters/player"). The server admits
   /// only one of its scenario's (ADR-0042).
-  std::string character{};
+  std::string character;
   /// Key `network.server_address`: the server to connect to.
   std::string server_address{kDefaultServerAddress};
   /// Key `logging.level`: one of "trace", "debug", "info", "warn", "error",
@@ -134,7 +134,7 @@ enum class ConfigErrorCode {
 struct ConfigError {
   ConfigErrorCode code;
   /// The key, message or usage text the code's documentation names.
-  std::string subject{};
+  std::string subject;
   /// The config file being read, set by the Load* functions; empty from
   /// ParseClientConfig, ParseServerConfig and ResolveConfigFile.
   std::filesystem::path file{};

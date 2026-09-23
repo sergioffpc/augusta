@@ -34,8 +34,8 @@ enum class MapErrorCode {
 /// A failure to build a map's collision: what went wrong (code) and what it is about.
 struct MapError {
   MapErrorCode code;
-  std::string node{};
-  std::string subject{};
+  std::string node;
+  std::string subject;
   /// Why the pack could not resolve it, for the two kUnresolved codes.
   assets::ResolveError resolve_error{};
   /// What is wrong with the mesh, for kInvalidCollider.

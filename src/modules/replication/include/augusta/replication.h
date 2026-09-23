@@ -45,7 +45,7 @@ struct Update {
   /// The highest command sequence of the recipient that the tick processed, 0 if none.
   std::uint32_t acknowledged_sequence = 0;
   /// Every player in the match.
-  std::vector<PlayerBody> players{};
+  std::vector<PlayerBody> players;
 };
 
 /// What each recipient is sent for tick: every player's body, and its own

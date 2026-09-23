@@ -44,7 +44,11 @@ PlayerBody FromWire(const protocol::PlayerStateWire& player) {
 }
 
 AuthoritativeState FromWire(const protocol::AuthoritativeStateWire& state) {
-  AuthoritativeState result{.tick = state.tick, .acknowledged_sequence = state.acknowledged_sequence};
+  AuthoritativeState result{
+      .tick = state.tick,
+      .acknowledged_sequence = state.acknowledged_sequence,
+      .players = {},
+  };
   result.players.reserve(state.players.size());
   for (const protocol::PlayerStateWire& player : state.players) {
     result.players.push_back(FromWire(player));
