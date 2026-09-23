@@ -1091,6 +1091,7 @@ class ScriptedParametersTest : public LoopbackMatch {
     const auto loaded = augusta::parameters::Load(
         "local sprint_seconds = 1\n"
         "return {\n"
+        "  player_count = 1,\n"
         "  stamina = {\n"
         "  deplete_per_second = 1 / sprint_seconds,\n"
         "  regen_per_second = 0,\n"
@@ -1232,12 +1233,15 @@ TEST_F(ScriptedServerTest, BytesThatAreNoMessageChangeNothingAndTheClientKeepsRu
 // A client takes the parameters it joins with as the server's, so values that
 // fail the range checks make it drop the Join accepted rather than predict on them.
 TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseParametersFailTheRangeChecks) {
+  ScriptedServer server(Endpoint{.address = LoopbackAddress()});
   Parameters threshold_of_one;
   threshold_of_one.stamina.forced_walk_below = 1.0F;
   for (const Parameters& bad :
        {Parameters{.stamina = {.deplete_per_second = -1.0F}},
-        Parameters{.stamina = {.regen_per_second = std::numeric_limits<float>::quiet_NaN()}}, threshold_of_one}) {
-    ScriptedServer server(Endpoint{.address = LoopbackAddress()});
+        Parameters{.stamina = {.regen_per_second = std::numeric_limits<float>::quiet_NaN()}}, threshold_of_one,
+        Parameters{.player_count = 0}, Parameters{.player_count = augusta::parameters::kMaxPlayerCount + 1}}) {
+    // One server for every case: it answers whichever session sent last, and a
+    // server bound anew each time would find the port not yet released.
     Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
                     EmptyWorld());
 
