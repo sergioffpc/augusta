@@ -24,10 +24,11 @@ inline constexpr std::size_t kMaxPlayerCount = 8;
 /// one: it is fixed for the life of the server process, so it is the server's
 /// startup setting (ADR-0034) and is sent to a client once, when it joins.
 struct Parameters {
-  /// How many players a match needs to start (ADR-0043), 1 to kMaxPlayerCount.
-  std::uint32_t player_count{1};
   /// The stamina rules every player body follows (US-05).
   physics::StaminaConfig stamina{};
+  /// How many players a match needs to start (ADR-0043), 1 to kMaxPlayerCount.
+  /// Last, so the struct is not padded between fields.
+  std::uint8_t player_count{1};
 };
 
 /// The parameter a Parameters gets wrong.

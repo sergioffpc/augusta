@@ -68,18 +68,18 @@ std::expected<double, LoadError> ReadNumber(const sol::table& table, std::string
 // The player count, a whole number; one the type cannot hold is out of range
 // here, and whether it is a count a match can have is for Validate. A whole
 // number with a fraction part (8 / 4 is 2.0 in Lua) is still whole.
-std::expected<std::uint32_t, LoadError> ReadPlayerCount(const sol::table& root) {
+std::expected<std::uint8_t, LoadError> ReadPlayerCount(const sol::table& root) {
   const auto count = ReadNumber(root, {}, kPlayerCountKey);
   if (!count) {
     return std::unexpected(count.error());
   }
-  if (!std::isfinite(*count) || *count < 0.0 || *count > std::numeric_limits<std::uint32_t>::max()) {
+  if (!std::isfinite(*count) || *count < 0.0 || *count > std::numeric_limits<std::uint8_t>::max()) {
     return Fail(LoadErrorCode::kOutOfRange, std::string(kPlayerCountKey));
   }
   if (*count != std::floor(*count)) {
     return Fail(LoadErrorCode::kWrongType, std::string(kPlayerCountKey));
   }
-  return static_cast<std::uint32_t>(*count);
+  return static_cast<std::uint8_t>(*count);
 }
 
 std::expected<physics::StaminaConfig, LoadError> ReadStamina(const sol::table& root) {
@@ -187,7 +187,7 @@ std::expected<Parameters, LoadError> Load(std::string_view script) {
   if (!stamina) {
     return std::unexpected(stamina.error());
   }
-  const Parameters parameters{.player_count = *player_count, .stamina = *stamina};
+  const Parameters parameters{.stamina = *stamina, .player_count = *player_count};
   if (const auto valid = Validate(parameters); !valid) {
     return Fail(LoadErrorCode::kOutOfRange, std::string(valid.error().path));
   }

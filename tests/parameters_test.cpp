@@ -15,7 +15,7 @@ using augusta::parameters::Parameters;
 using augusta::parameters::Validate;
 
 constexpr Parameters kUsable{
-    .player_count = 1, .stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.1F}};
+    .stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.1F}, .player_count = 1};
 
 TEST(ValidateTest, UsableParametersPass) { EXPECT_TRUE(Validate(kUsable).has_value()); }
 
@@ -33,21 +33,21 @@ TEST(ValidateTest, EachValueOutsideItsRangeIsNamedByItsPath) {
 }
 
 TEST(ValidateTest, APlayerCountFromOneToTheMostAMatchHoldsPasses) {
-  for (const std::uint32_t count : {std::uint32_t{1}, std::uint32_t{kMaxPlayerCount}}) {
+  for (const std::uint8_t count : {std::uint8_t{1}, std::uint8_t{kMaxPlayerCount}}) {
     Parameters parameters = kUsable;
     parameters.player_count = count;
 
-    EXPECT_TRUE(Validate(parameters).has_value()) << count;
+    EXPECT_TRUE(Validate(parameters).has_value()) << static_cast<int>(count);
   }
 }
 
 TEST(ValidateTest, APlayerCountOfZeroOrAboveTheMostAMatchHoldsIsNamed) {
-  for (const std::uint32_t count :
-       {std::uint32_t{0}, std::uint32_t{kMaxPlayerCount + 1}, std::numeric_limits<std::uint32_t>::max()}) {
+  for (const std::uint8_t count :
+       {std::uint8_t{0}, std::uint8_t{kMaxPlayerCount + 1}, std::numeric_limits<std::uint8_t>::max()}) {
     Parameters parameters = kUsable;
     parameters.player_count = count;
 
-    EXPECT_EQ(Validate(parameters).error().path, "player_count") << count;
+    EXPECT_EQ(Validate(parameters).error().path, "player_count") << static_cast<int>(count);
   }
 }
 

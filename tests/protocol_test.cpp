@@ -110,8 +110,8 @@ TEST(ProtocolTest, JoinAcceptedRoundTrips) {
       .session = static_cast<SessionId>(0xA1B2C3D4U),
       .spawn = augusta::math::Vec3(4.0F, 0.5F, -8.0F),
       .tick_rate_hz = 30.0F,
-      .parameters = {.player_count = 5,
-                     .stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F}},
+      .parameters = {.stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F},
+                     .player_count = 5},
       .roster = {PlayerAt(1, 10.0F), PlayerAt(2, -3.0F)}};
 
   const auto decoded = RoundTrip(sent);
@@ -149,10 +149,10 @@ TEST(ProtocolTest, JoinAcceptedWithAFullRosterRoundTrips) {
 }
 
 TEST(ProtocolTest, MorePlayersInARosterThanAMatchHoldsIsTooLong) {
-  // type, session (4), spawn (12), tick rate (4), parameters (16: the player
+  // type, session (4), spawn (12), tick rate (4), parameters (13: the player
   // count, then the stamina rules), then the count.
   Bytes payload = BytesOf({kJoinAcceptedType});
-  payload.resize(1 + 4 + 12 + 4 + 16, std::byte{0});
+  payload.resize(1 + 4 + 12 + 4 + 13, std::byte{0});
   payload.push_back(static_cast<std::byte>(kMaxPlayers + 1));
 
   EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
@@ -173,11 +173,10 @@ TEST(ProtocolTest, FieldsAreFixedWidthLittleEndian) {
   // here but the player count, which leads the parameters.
   Bytes accepted = BytesOf({kJoinAcceptedType, 0x01, 0x02, 0x03, 0x04});
   accepted.resize(accepted.size() + 12 + 4, std::byte{0});
-  const Bytes player_count = BytesOf({0x03, 0x00, 0x00, 0x00});
-  accepted.insert(accepted.end(), player_count.begin(), player_count.end());
+  accepted.push_back(std::byte{0x03});
   accepted.resize(accepted.size() + 12 + 1, std::byte{0});
   EXPECT_EQ(Encode(JoinAccepted{.session = static_cast<SessionId>(0x04030201U),
-                                .parameters = {.player_count = 3, .stamina = {}}}),
+                                .parameters = {.stamina = {}, .player_count = 3}}),
             accepted);
   EXPECT_EQ(Encode(JoinRefused{.reason = JoinRefusal::kMatchFull}), BytesOf({kJoinRefusedType, 2}));
   EXPECT_EQ(Encode(JoinRequest{.engine_version = "ab", .character = "c"}),

@@ -64,7 +64,7 @@ TEST(ParametersLoaderTest, APlayerCountMayBeAnyWholeNumberFromOneToTheMostAMatch
 }
 
 TEST(ParametersLoaderTest, APlayerCountOutsideItsRangeIsOutOfRange) {
-  for (const std::string_view count : {"0", "9", "-1", "2^40", "math.huge", "0/0"}) {
+  for (const std::string_view count : {"0", "9", "256", "-1", "2^40", "math.huge", "0/0"}) {
     ExpectError(WithPlayerCount(count), LoadErrorCode::kOutOfRange, "player_count");
   }
 }
