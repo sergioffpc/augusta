@@ -29,7 +29,10 @@
 //
 // Every message is one payload: a one-byte MessageType followed by that
 // type's fields, fixed-width and little-endian, with a string or a list as a
-// one-byte length and its elements. Floats travel as their IEEE-754 bits.
+// one-byte length and its elements. A position, a velocity, a direction, an
+// angle or a stamina travels as a whole count of its grid's step, in the fewest
+// bytes its range needs (see the Snap functions); the other floats travel as
+// their IEEE-754 bits.
 // Every field takes the smallest type that holds what it says: flags are bits
 // of one byte, shared with a small enumeration where one fits. Decode treats
 // its input as untrusted: it never throws, never reads past the end, and never
@@ -217,6 +220,25 @@ enum class DecodeError : std::uint8_t {
 /// over kMaxEngineVersionLength, more than kMaxCommandsPerMessage commands,
 /// more than kMaxPlayers players) is a caller bug, not an input.
 [[nodiscard]] Bytes Encode(const Message& message);
+
+/// position as Decode gives it back once Encode has sent it: on a grid of
+/// 1/1024 m (about a millimeter), within 8192 m of the origin on each axis. A
+/// value beyond the range is the bound and a NaN is 0, here and in the Snap
+/// functions below. A body lives on these grids (physics::World), so what a peer
+/// is told is exactly what the sender has.
+[[nodiscard]] math::Vec3 SnapPosition(const math::Vec3& position);
+
+/// velocity as Decode gives it back: on a grid of 1/512 m/s, within 64 m/s on each axis.
+[[nodiscard]] math::Vec3 SnapVelocity(const math::Vec3& velocity);
+
+/// A movement direction as Decode gives it back: on a grid of 1/16384, within 2 on each axis.
+[[nodiscard]] math::Vec3 SnapDirection(const math::Vec3& direction);
+
+/// An angle (a yaw or a pitch) as Decode gives it back: on a grid of 1/8192 rad, within 4 rad.
+[[nodiscard]] float SnapAngle(float radians);
+
+/// A stamina as Decode gives it back: on a grid of 1/32768, from 0 to 2.
+[[nodiscard]] float SnapStamina(float stamina);
 
 /// Decodes one payload, or reports what is wrong with it.
 [[nodiscard]] std::expected<Message, DecodeError> Decode(std::span<const std::byte> payload);

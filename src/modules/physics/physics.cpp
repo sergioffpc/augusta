@@ -10,6 +10,7 @@
 #include <PxPhysicsAPI.h>
 
 #include "augusta/logging.h"
+#include "augusta/protocol.h"
 
 // M1 spike (ADR-0002): the first real (non-stub) body for this module,
 // backed by PhysX's character controller (CCT) rather than a raw rigid
@@ -258,6 +259,16 @@ class PhysxLease {
   PhysxHandles handles_;
 };
 
+// state on the grids the Networking Protocol sends a body on (ADR-0038).
+BodyState OnWireGrid(BodyState state) {
+  state.position = protocol::SnapPosition(state.position);
+  state.velocity = protocol::SnapVelocity(state.velocity);
+  state.stamina = protocol::SnapStamina(state.stamina);
+  return state;
+}
+
+PxExtendedVec3 ToFootPosition(const math::Vec3& position) { return {position.x, position.y, position.z}; }
+
 }  // namespace
 
 // Per-body bookkeeping PhysX's controller doesn't itself track: a CCT has
@@ -456,12 +467,13 @@ BodyHandle World::CreateBody(const math::Vec3& initial_position) {
     throw std::runtime_error("physics::World::CreateBody: createController failed");
   }
   // The descriptor's position is the capsule's center; BodyState's is the feet.
-  controller->setFootPosition(PxExtendedVec3(initial_position.x, initial_position.y, initial_position.z));
+  const math::Vec3 position = protocol::SnapPosition(initial_position);
+  controller->setFootPosition(ToFootPosition(position));
 
   const auto handle = static_cast<BodyHandle>(impl_->next_handle++);
   BodyRecord record;
   record.controller = controller;
-  record.state.position = initial_position;
+  record.state.position = position;
   impl_->bodies.emplace(handle, std::move(record));
   LD("subsystem=physics event=body_created handle={}", static_cast<std::uint32_t>(handle));
   return handle;
@@ -511,9 +523,13 @@ BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta
   const PxControllerCollisionFlags flags = record.controller->move(displacement, kMinMoveDistance, delta_time, filters);
   record.grounded = flags.isSet(PxControllerCollisionFlag::eCOLLISION_DOWN);
 
-  const math::Vec3 new_position = FromPx(record.controller->getFootPosition());
+  // The controller is put back on the grid too, so the next Step starts from
+  // exactly the position this one reports.
+  const math::Vec3 new_position = protocol::SnapPosition(FromPx(record.controller->getFootPosition()));
+  record.controller->setFootPosition(ToFootPosition(new_position));
   state.velocity = delta_time > 0.0F ? (new_position - state.position) / delta_time : math::Vec3{};
   state.position = new_position;
+  state = OnWireGrid(state);
 
   return state;
 }
@@ -524,11 +540,12 @@ void World::SetState(BodyHandle handle, const BodyState& state) {
     return;
   }
   BodyRecord& record = body_it->second;
-  if (state.stance != record.state.stance) {
-    record.controller->resize(HeightForStance(state.stance));
+  const BodyState on_grid = OnWireGrid(state);
+  if (on_grid.stance != record.state.stance) {
+    record.controller->resize(HeightForStance(on_grid.stance));
   }
-  record.controller->setFootPosition(PxExtendedVec3(state.position.x, state.position.y, state.position.z));
-  record.state = state;
+  record.controller->setFootPosition(ToFootPosition(on_grid.position));
+  record.state = on_grid;
   record.vertical_speed = 0.0F;
   record.grounded = false;
 }
@@ -542,23 +559,24 @@ FallState World::Fall(BodyHandle handle) const {
 }
 
 BodyState World::Restore(BodyHandle handle, const BodyState& state, const FallState& fall) {
+  const BodyState on_grid = OnWireGrid(state);
   const auto body_it = impl_->bodies.find(handle);
   if (body_it == impl_->bodies.end()) {
-    return state;
+    return on_grid;
   }
   BodyRecord& record = body_it->second;
 
   // Applied directly against the controller (not via SetState): SetState
   // resets fall/ground tracking, which is right for an intentional teleport
   // (spawn/respawn) but not for putting the body back where it was.
-  if (state.stance != record.state.stance) {
-    record.controller->resize(HeightForStance(state.stance));
+  if (on_grid.stance != record.state.stance) {
+    record.controller->resize(HeightForStance(on_grid.stance));
   }
-  record.controller->setFootPosition(PxExtendedVec3(state.position.x, state.position.y, state.position.z));
-  record.state = state;
+  record.controller->setFootPosition(ToFootPosition(on_grid.position));
+  record.state = on_grid;
   record.vertical_speed = fall.vertical_speed;
   record.grounded = fall.grounded;
-  return state;
+  return on_grid;
 }
 
 RaycastHit World::Raycast(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const {
