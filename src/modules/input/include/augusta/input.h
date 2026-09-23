@@ -51,6 +51,7 @@ enum class Key {
   kLeftShift,    // Sprint (US-04/US-05).
   kLeftControl,  // Crouch (US-04).
   kZ,            // Prone (US-04).
+  kEscape,       // Releases the captured cursor.
   kR,            // Reload (US-08). Keep last: kKeyCount counts from it.
 };
 
@@ -175,6 +176,14 @@ class Input : public EventSink {
   // Renderer::PumpEvents on the Main/Render thread.
   [[nodiscard]] Command Sample();
 
+  // Whether the cursor should be captured for mouselook: true at first, false
+  // once Escape is pressed, and true again on the next mouse click (which is
+  // taken by the capture, not passed on as a control). While released, the
+  // game has neither mouse nor keyboard: the view does not turn, every held
+  // key is let go, and keys pressed meanwhile are ignored. The caller
+  // applies it (Renderer::SetCursorLocked), from the Main/Render thread.
+  [[nodiscard]] bool CursorCaptured() const;
+
   // EventSink - see there for when/why these are called. Not meant to
   // be called directly by anything other than Renderer (and tests).
   void OnKeyEvent(const KeyEvent& event) override;
@@ -186,13 +195,16 @@ class Input : public EventSink {
  private:
   // Whether key is held down; callers hold mutex_.
   [[nodiscard]] bool Held(Key key) const;
+  // Captures or releases the cursor; callers hold mutex_.
+  void SetCursorCaptured(bool captured);
 
   float mouse_sensitivity_;
-  std::mutex mutex_;
+  mutable std::mutex mutex_;
   std::array<bool, kKeyCount> held_{};
   std::optional<MouseMoveEvent> last_cursor_;
   float yaw_ = 0.0F;
   float pitch_ = 0.0F;
+  bool cursor_captured_ = true;
 };
 
 }  // namespace augusta::input

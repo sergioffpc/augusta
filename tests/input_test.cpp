@@ -16,6 +16,7 @@ using augusta::input::Command;
 using augusta::input::Config;
 using augusta::input::Input;
 using augusta::input::Key;
+using augusta::input::MouseButton;
 using augusta::input::MouseMoveEvent;
 using augusta::math::Vec3;
 using augusta::physics::Stance;
@@ -33,6 +34,10 @@ class InputTest : public ::testing::Test {
  protected:
   void Press(Key key) { input_.OnKeyEvent({.key = key, .action = Action::kPressed}); }
   void Release(Key key) { input_.OnKeyEvent({.key = key, .action = Action::kReleased}); }
+  void Click() {
+    input_.OnMouseButtonEvent({.button = MouseButton::kLeft, .action = Action::kPressed});
+    input_.OnMouseButtonEvent({.button = MouseButton::kLeft, .action = Action::kReleased});
+  }
   // Moves the cursor by (dx, dy) pixels from where the previous move left it.
   void MoveMouse(float dx, float dy) {
     cursor_x_ += dx;
@@ -174,6 +179,73 @@ TEST_F(InputTest, YawWrapsSoTurningForeverStaysWithinOneTurn) {
   EXPECT_GT(yaw, -std::numbers::pi_v<float>);
   EXPECT_LE(yaw, std::numbers::pi_v<float>);
   EXPECT_NEAR(yaw, std::remainder(1000.0F, 2 * std::numbers::pi_v<float>), 1e-3F);
+}
+
+TEST_F(InputTest, TheCursorStartsCaptured) { EXPECT_TRUE(input_.CursorCaptured()); }
+
+TEST_F(InputTest, EscapeReleasesTheCursor) {
+  Press(Key::kEscape);
+  EXPECT_FALSE(input_.CursorCaptured());
+  Release(Key::kEscape);
+  EXPECT_FALSE(input_.CursorCaptured());
+}
+
+TEST_F(InputTest, WhileTheCursorIsReleasedTheMouseDoesNotTurnTheView) {
+  MoveMouse(0.0F, 0.0F);
+  Press(Key::kEscape);
+  MoveMouse(300.0F, -200.0F);
+  const Command command = input_.Sample();
+  EXPECT_FLOAT_EQ(command.yaw, 0.0F);
+  EXPECT_FLOAT_EQ(command.pitch, 0.0F);
+}
+
+TEST_F(InputTest, AClickWhileReleasedCapturesTheCursorAgain) {
+  Press(Key::kEscape);
+  Click();
+  EXPECT_TRUE(input_.CursorCaptured());
+}
+
+TEST_F(InputTest, AClickWhileCapturedChangesNothing) {
+  Click();
+  EXPECT_TRUE(input_.CursorCaptured());
+}
+
+TEST_F(InputTest, RecapturingDoesNotTurnTheViewByWhereTheCursorWasLeft) {
+  MoveMouse(0.0F, 0.0F);
+  Press(Key::kEscape);
+  MoveMouse(500.0F, 500.0F);
+  Click();
+  MoveMouse(1000.0F, 0.0F);  // Where the recaptured cursor first reports: only a baseline.
+  MoveMouse(10.0F, 0.0F);
+  EXPECT_NEAR(input_.Sample().yaw, -10.0F * kSensitivity, kTolerance);
+}
+
+TEST_F(InputTest, ReleasingTheCursorLetsGoOfEveryHeldKey) {
+  Press(Key::kW);
+  Press(Key::kLeftShift);
+  Press(Key::kEscape);
+  const Command command = input_.Sample();
+  ExpectNear(command.movement.direction, Vec3(0.0F, 0.0F, 0.0F));
+  EXPECT_FALSE(command.movement.sprint);
+}
+
+TEST_F(InputTest, WhileTheCursorIsReleasedKeysDoNothing) {
+  Press(Key::kEscape);
+  Press(Key::kW);
+  Press(Key::kZ);
+  const Command command = input_.Sample();
+  ExpectNear(command.movement.direction, Vec3(0.0F, 0.0F, 0.0F));
+  EXPECT_EQ(command.movement.desired_stance, Stance::kStanding);
+}
+
+TEST_F(InputTest, AfterRecapturingKeysCountOnceThePlayerPressesThemAgain) {
+  Press(Key::kEscape);
+  Press(Key::kW);  // Ignored: pressed while released.
+  Click();
+  ExpectNear(input_.Sample().movement.direction, Vec3(0.0F, 0.0F, 0.0F));
+  Release(Key::kW);
+  Press(Key::kW);
+  ExpectNear(input_.Sample().movement.direction, Vec3(0.0F, 0.0F, -1.0F));
 }
 
 TEST(ViewRotationTest, AnUnturnedViewLooksDownMinusZ) {

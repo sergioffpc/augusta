@@ -134,6 +134,8 @@ std::optional<input::Key> MapKey(Falcor::Input::Key key) {
       return input::Key::kLeftShift;
     case Falcor::Input::Key::LeftControl:
       return input::Key::kLeftControl;
+    case Falcor::Input::Key::Escape:
+      return input::Key::kEscape;
     case Falcor::Input::Key::Z:
       return input::Key::kZ;
     case Falcor::Input::Key::R:

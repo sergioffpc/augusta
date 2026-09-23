@@ -347,7 +347,8 @@ std::optional<harness::Failure> ClientRuntime::Run() {
                       .prediction_thread = impl_->prediction_thread,
                       .network_thread = impl_->network_thread};
 
-  impl_->renderer.SetCursorLocked(true);
+  bool cursor_locked = impl_->input.CursorCaptured();
+  impl_->renderer.SetCursorLocked(cursor_locked);
   LI("subsystem=clientruntime event=loop_starting loop=render");
   std::optional<harness::Failure> failure;
   while (!impl_->renderer.ShouldClose()) {
@@ -358,6 +359,11 @@ std::optional<harness::Failure> ClientRuntime::Run() {
     }
     const nvtx3::scoped_range range{"Main/Render Frame"};
     impl_->renderer.PumpEvents();
+    // Escape releases the cursor and a click captures it again (Input decides).
+    if (const bool captured = impl_->input.CursorCaptured(); captured != cursor_locked) {
+      impl_->renderer.SetCursorLocked(captured);
+      cursor_locked = captured;
+    }
     impl_->renderer.SetDebugHudStats({.net = impl_->GetLatestHudNet()});
     // Two independent Session getters, not one snapshot - safe here because
     // the server always sends JoinAccepted before this client's player can

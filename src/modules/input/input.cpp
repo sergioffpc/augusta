@@ -56,17 +56,35 @@ Command Input::Sample() {
   return command;
 }
 
-void Input::OnKeyEvent(const KeyEvent& event) {
+bool Input::CursorCaptured() const {
   const std::lock_guard<std::mutex> lock(mutex_);
-  held_.at(static_cast<std::size_t>(event.key)) = event.action == Action::kPressed;
+  return cursor_captured_;
 }
 
-void Input::OnMouseButtonEvent([[maybe_unused]] const MouseButtonEvent& event) {
+void Input::OnKeyEvent(const KeyEvent& event) {
+  const std::lock_guard<std::mutex> lock(mutex_);
+  if (!cursor_captured_) {
+    return;
+  }
+  held_.at(static_cast<std::size_t>(event.key)) = event.action == Action::kPressed;
+  if (event.key == Key::kEscape && event.action == Action::kPressed) {
+    SetCursorCaptured(false);
+  }
+}
+
+void Input::OnMouseButtonEvent(const MouseButtonEvent& event) {
+  const std::lock_guard<std::mutex> lock(mutex_);
+  if (!cursor_captured_ && event.action == Action::kPressed) {
+    SetCursorCaptured(true);
+  }
   // Fire and ADS arrive with combat (US-06, US-07, M4).
 }
 
 void Input::OnMouseMoveEvent(const MouseMoveEvent& event) {
   const std::lock_guard<std::mutex> lock(mutex_);
+  if (!cursor_captured_) {
+    return;
+  }
   if (last_cursor_.has_value()) {
     // Screen x grows rightward and a rightward turn is a negative yaw; screen
     // y grows downward and looking up is a positive pitch.
@@ -74,6 +92,16 @@ void Input::OnMouseMoveEvent(const MouseMoveEvent& event) {
     pitch_ = std::clamp(pitch_ - ((event.y - last_cursor_->y) * mouse_sensitivity_), -kMaxLookPitch, kMaxLookPitch);
   }
   last_cursor_ = event;
+}
+
+void Input::SetCursorCaptured(bool captured) {
+  cursor_captured_ = captured;
+  // Released, the game has no keyboard: nothing stays held, and a key only
+  // counts again once pressed after the capture returns.
+  held_.fill(false);
+  // Capturing or releasing moves the cursor, so the next position it reports
+  // starts a new baseline instead of turning the view.
+  last_cursor_.reset();
 }
 
 bool Input::Held(Key key) const { return held_.at(static_cast<std::size_t>(key)); }
