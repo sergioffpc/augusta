@@ -23,12 +23,14 @@ from pack.pack import (
     AssetEntry,
     MeshData,
     SceneNode,
+    encode_characters_blob,
     encode_mesh_blob,
     encode_scene_blob,
     encode_script_blob,
     encode_spawn_point_blob,
     encode_texture_blob,
 )
+from pack.pack import ASSET_TYPE_CHARACTERS as _TYPE_CHARACTERS
 from pack.pack import ASSET_TYPE_COLLISION as _TYPE_COLLISION
 from pack.pack import ASSET_TYPE_HITBOX as _TYPE_HITBOX
 from pack.pack import ASSET_TYPE_MESH as _TYPE_MESH
@@ -36,7 +38,7 @@ from pack.pack import ASSET_TYPE_SCENE as _TYPE_SCENE
 from pack.pack import ASSET_TYPE_SCRIPT as _TYPE_SCRIPT
 from pack.pack import ASSET_TYPE_SPAWN_POINT as _TYPE_SPAWN_POINT
 from pack.pack import ASSET_TYPE_TEXTURE as _TYPE_TEXTURE
-from pack.pack import NO_PARENT, TEXTURE_FORMAT_BC4, TEXTURE_FORMAT_BC5, TEXTURE_FORMAT_BC7, write_pack
+from pack.pack import CHARACTERS_PATH, NO_PARENT, TEXTURE_FORMAT_BC4, TEXTURE_FORMAT_BC5, TEXTURE_FORMAT_BC7, write_pack
 
 # augusta:spawnPoint / augusta:hitbox: custom bool attributes (ADR-0032's
 # authoring convention) rather than a native USD prim type. A hitbox is
@@ -537,9 +539,23 @@ def cook_scenario(
     they go into the server pack only, as script assets (ADR-0031, ADR-0039). A
     client is sent the values a script decides, never the script.
 
+    The manifest paths, in character_stages' order, are also recorded as the
+    character list both packs carry (ADR-0042).
+
     on_prim(done, total, prim_path), if given, is called after each prim (the
     map's and every character's) is cooked.
     """
+    # Encoded first so a list the wire can't carry fails before any stage is
+    # walked.
+    try:
+        characters_entry = AssetEntry(
+            type=_TYPE_CHARACTERS,
+            path=CHARACTERS_PATH,
+            data=encode_characters_blob([manifest_path for manifest_path, _ in character_stages]),
+        )
+    except ValueError as error:
+        raise CookError("characters_encode_failed", "", str(error)) from error
+
     map_stage = Usd.Stage.Open(str(map_stage_path))
     if not map_stage:
         raise CookError("stage_open_failed", "", str(map_stage_path))
@@ -625,6 +641,7 @@ def cook_scenario(
     # stripped scene.
     server_entries = [entry for entry in entries if entry.type in _SERVER_PACK_ASSET_TYPES]
     server_entries.append(AssetEntry(type=_TYPE_SCENE, path="Scene", data=server_scene_blob))
+    server_entries.append(characters_entry)
     try:
         server_entries.extend(
             AssetEntry(type=_TYPE_SCRIPT, path=script_path, data=encode_script_blob(script))
@@ -638,7 +655,7 @@ def cook_scenario(
         raise CookError("pack_write_failed", "", f"server pack: {error}") from error
 
     # Client pack: everything cooked from this stage, plus the full scene.
-    client_entries = [*entries, AssetEntry(type=_TYPE_SCENE, path="Scene", data=client_scene_blob)]
+    client_entries = [*entries, AssetEntry(type=_TYPE_SCENE, path="Scene", data=client_scene_blob), characters_entry]
     try:
         write_pack(client_output_path, client_entries, signing_key)
     except Exception as error:  # noqa: BLE001 - re-raised as CookError below

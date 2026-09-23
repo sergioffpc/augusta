@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <expected>
+#include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -135,6 +137,22 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeScriptBlob(std::string_
   }
   const auto* first = reinterpret_cast<const std::byte*>(script.data());
   return std::vector<std::byte>(first, first + script.size());
+}
+
+// Character-list blob wire format: a u32 count, then that many length-prefixed
+// strings, in manifest order.
+std::expected<std::vector<std::byte>, EncodeError> EncodeCharactersBlob(std::span<const std::string> characters) {
+  if (characters.size() > kMaxCharacters) {
+    return std::unexpected(EncodeError::kTooLarge);
+  }
+  std::vector<std::byte> blob;
+  AppendU32(blob, static_cast<std::uint32_t>(characters.size()));
+  for (const auto& character : characters) {
+    if (!AppendString(blob, character)) {
+      return std::unexpected(EncodeError::kTooLarge);
+    }
+  }
+  return blob;
 }
 
 }  // namespace augusta::assets

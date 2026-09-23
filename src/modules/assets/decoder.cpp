@@ -4,6 +4,7 @@
 #include <optional>
 #include <span>
 #include <utility>
+#include <vector>
 
 #include "augusta/assets.h"
 #include "wire_format.h"
@@ -263,6 +264,27 @@ std::optional<std::string> DecodeScriptBlob(std::span<const std::byte> blob) {
     return std::nullopt;
   }
   return std::string(reinterpret_cast<const char*>(blob.data()), blob.size());
+}
+
+// Character-list blob wire format: see EncodeCharactersBlob.
+std::optional<std::vector<std::string>> DecodeCharactersBlob(std::span<const std::byte> blob) {
+  ByteReader reader(blob);
+  const auto count = reader.ReadU32();
+  if (!count || *count > kMaxCharacters) {
+    return std::nullopt;
+  }
+  // Unlike DecodeMeshBlob's counts, this one is already capped at a few hundred,
+  // so reserving on its word can't cause an oversized allocation.
+  std::vector<std::string> characters;
+  characters.reserve(*count);
+  for (std::uint32_t i = 0; i < *count; ++i) {
+    auto character = reader.ReadString();
+    if (!character) {
+      return std::nullopt;
+    }
+    characters.push_back(std::move(*character));
+  }
+  return characters;
 }
 
 }  // namespace augusta::assets

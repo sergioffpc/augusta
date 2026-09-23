@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <expected>
 #include <filesystem>
+#include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -47,6 +49,11 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeSpawnPointBlob(const Sp
 // Encodes script, a Lua script's text, into the pack's script-blob byte layout
 // (ADR-0031): the text itself, with no framing.
 std::expected<std::vector<std::byte>, EncodeError> EncodeScriptBlob(std::string_view script);
+
+// Encodes characters, a scenario's character paths in manifest order, into the
+// pack's character-list blob byte layout (ADR-0042): kTooLarge past
+// kMaxCharacters.
+std::expected<std::vector<std::byte>, EncodeError> EncodeCharactersBlob(std::span<const std::string> characters);
 
 enum class WriteError {
   // output_path (or its temporary file) could not be created, written,

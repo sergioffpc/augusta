@@ -36,6 +36,8 @@ MAX_PROPERTIES = 256
 MAX_TEXTURE_BYTES = 256 * 1024 * 1024
 # A Lua script is hand-written text; a megabyte is far beyond any real one.
 MAX_SCRIPT_BYTES = 1024 * 1024
+# A character index is one byte and zero is never valid (ADR-0042).
+MAX_CHARACTERS = 255
 MAX_ENTRIES = 1 << 20
 MAX_PACK_SIZE = 8 * 1024 * 1024 * 1024
 
@@ -56,6 +58,11 @@ ASSET_TYPE_SPAWN_POINT = 4
 ASSET_TYPE_HITBOX = 5
 ASSET_TYPE_SCENE = 6
 ASSET_TYPE_SCRIPT = 7
+ASSET_TYPE_CHARACTERS = 8
+
+# Pack-relative path of a scenario's character list (assets.h's
+# kCharactersPath), in both of its packs.
+CHARACTERS_PATH = "Characters"
 
 # TextureFormat (assets.h `enum class TextureFormat : uint8_t`).
 TEXTURE_FORMAT_BC7 = 0
@@ -181,6 +188,20 @@ def encode_script_blob(script: bytes) -> bytes:
     if len(script) > MAX_SCRIPT_BYTES:
         raise EncodeError("script exceeds pack size limits")
     return bytes(script)
+
+
+def encode_characters_blob(characters: list[str]) -> bytes:
+    """A u32 count, then each character's path relative to authoring/ as a
+    length-prefixed string, in manifest order: character index N is element
+    N-1 (ADR-0042).
+    """
+    if len(characters) > MAX_CHARACTERS:
+        raise EncodeError(f"a scenario composes at most {MAX_CHARACTERS} characters, this one names {len(characters)}")
+    writer = ByteWriter()
+    writer.u32(len(characters))
+    for character in characters:
+        writer.string(character, MAX_PATH_LENGTH)
+    return writer.bytes()
 
 
 def encode_spawn_point_blob(

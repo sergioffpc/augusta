@@ -141,7 +141,10 @@ named character's stage into both packs (a character's own prims addressed
 and every `*.lua` file under the scenario folder into the **server** pack
 only, as a script asset addressed by its path relative to that folder
 (`parameters.lua`, `rules/round.lua`; ADR-0031). A client is sent the values a
-script decides and never receives the script (ADR-0019). It is an error if
+script decides and never receives the script (ADR-0019). The manifest's
+`characters` list itself, in manifest order, goes into both packs as the
+`Characters` entry, the table a character index resolves against (ADR-0042);
+a manifest naming more than 255 characters fails the cook. It is an error if
 the scenario folder or its `manifest.yaml` is missing, if the map or a named
 character doesn't resolve to a stage, or if there is no `parameters.lua`: the
 server reads its Parameters out of its pack at startup, so that is found here
