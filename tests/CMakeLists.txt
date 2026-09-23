@@ -13,7 +13,12 @@ target_link_libraries(augusta_version_benchmarks PRIVATE augusta_version benchma
 
 add_executable(augusta_config_tests config_test.cpp)
 target_link_libraries(augusta_config_tests PRIVATE augusta_config GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_config_tests)
+# The example configs are what a new install is copied from, so a test keeps them loading.
+target_compile_definitions(augusta_config_tests PRIVATE
+  AUGUSTA_EXAMPLE_CLIENT_CONFIG="${CMAKE_SOURCE_DIR}/config/augustac.example.yaml"
+  AUGUSTA_EXAMPLE_SERVER_CONFIG="${CMAKE_SOURCE_DIR}/config/augustad.example.yaml")
+# Links PhysX through augusta_input, so the same first-launch cost applies as below.
+gtest_discover_tests(augusta_config_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_parameters_tests parameters_test.cpp)
 target_link_libraries(augusta_parameters_tests PRIVATE augusta_parameters GTest::gtest GTest::gtest_main)

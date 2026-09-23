@@ -7,12 +7,17 @@ executable reads a fixed-name file from its own directory: `augustac.yaml` and
 `augustad.yaml`. The one argument they accept is `--config <file>`, which points
 them at another file (taken as given, relative to the working directory); any
 other argument, including an old-style `augustac <pack> <key>`, fails with the
-usage message instead of being half-honored. The format is a flat mapping of
-keys to strings; unknown keys, missing required keys and non-string values are
+usage message instead of being half-honored. Keys are grouped into sections
+by what they are about - `content` (pack, public key), `network`, `logging`,
+`simulation` (server), `input` (client) - and a key is named by its dotted
+path (`network.server_address`), which is what an error names too. A section
+may hold another (`input.keys`, the client's keymap, whose entries are the
+controls it rebinds). Values are strings; unknown keys and sections, missing
+required keys, non-string values and a section that is not a mapping are
 errors, so a misspelled optional key never silently falls back to its default.
 A value that is a number (the server's tick rate) is read from its string, and
 one that is not a finite number in range is an error like any other.
-Relative paths start from a required `base_dir` key (itself relative to the
+Relative paths start from a required top-level `base_dir` key (itself relative to the
 config file's directory, so `.` means the file's own), never from the working
 directory: the process starts the same from anywhere, and where its content
 lives is always written down rather than implied by where the executable sits.
@@ -29,6 +34,9 @@ tool.
 
 - **TOML** (toml++): the nicer format to write by hand, but it would be a third
   configuration format in the repo for no capability the flat mapping needs.
+- **A flat mapping of keys**: simplest to parse, but the file reads as one
+  undifferentiated list, and a keymap - naturally a table - becomes one
+  prefixed key per control. Sections say what each key is about.
 - **JSON**: no comments, so a config can't explain its own keys.
 - **A hand-rolled INI/key=value parser**: no new dependency, but it is parsing
   code to write, test and maintain, for a format nothing else in the repo uses.

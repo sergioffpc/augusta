@@ -1,35 +1,40 @@
 # The server's startup settings (ADR-0034). Copy this next to augustad(.exe) as
 # augustad.yaml and edit it, or keep it anywhere and run
-# `augustad --config <this file>`.
+# `augustad --config <this file>`. Keys are grouped into sections; an error
+# names a key by its path, e.g. simulation.tick_rate_hz.
 
 # Where the relative paths below start from (required). A relative value is
 # relative to this file's directory, so "." means the directory of this file.
 base_dir: .
 
-# Server pack to load (required). It holds the scenario's map and its Lua
-# scripts, among them the parameters.lua the simulation's tunable values (the
-# stamina rules) come from; every client is sent the values when it joins
-# (ADR-0039). See tools/pack/examples/authoring/scenarios/augusta/parameters.lua.
-# Cook it with `augustap <scenario>` (tools/pack).
-pack: packs/augusta/server.pack
+content:
+  # Server pack to load (required). It holds the scenario's map and its Lua
+  # scripts, among them the parameters.lua the simulation's tunable values (the
+  # stamina rules) come from; every client is sent the values when it joins
+  # (ADR-0039). See tools/pack/examples/authoring/scenarios/augusta/parameters.lua.
+  # Cook it with `augustap <scenario>` (tools/pack).
+  pack: packs/augusta/server.pack
 
-# Ed25519 public key the pack is signed with (required).
-public_key: keys/augusta.pub
+  # Ed25519 public key the pack is signed with (required).
+  public_key: keys/augusta.pub
 
-# The rate, in Hz, at which the server simulates and every client predicts
-# (required): any number above zero. It is fixed for as long as the server runs
-# and every client is told it when it joins, so no client has a setting for it.
-# NFR-01 asks the server to sustain 60 Hz; a slower rate is accepted so a run
-# can be debugged.
-tick_rate_hz: 60
+simulation:
+  # The rate, in Hz, at which the server simulates and every client predicts
+  # (required): any number above zero. It is fixed for as long as the server
+  # runs and every client is told it when it joins, so no client has a setting
+  # for it. NFR-01 asks the server to sustain 60 Hz; a slower rate is accepted
+  # so a run can be debugged.
+  tick_rate_hz: 60
 
-# Local address to listen on (optional, default 0.0.0.0:27015).
-listen_address: 0.0.0.0:27015
+network:
+  # Local address to listen on (optional, default 0.0.0.0:27015).
+  listen_address: 0.0.0.0:27015
 
-# Console sink's runtime floor (optional, default debug): one of trace, debug,
-# info, warn, error, critical. Only lowers what the build already compiles in -
-# a Debug build compiles trace and up, a Release build info and up, so this
-# can't raise a Release build back to trace or debug. debug is the heartbeat
-# (once a second: ticks, messages, drops, corrections) without the per-packet
-# trace firehose; set trace when debugging the network layer itself.
-log_level: debug
+logging:
+  # Console sink's runtime floor (optional, default debug): one of trace, debug,
+  # info, warn, error, critical. Only lowers what the build already compiles in
+  # - a Debug build compiles trace and up, a Release build info and up, so this
+  # can't raise a Release build back to trace or debug. debug is the heartbeat
+  # (once a second: ticks, messages, drops, corrections) without the per-packet
+  # trace firehose; set trace when debugging the network layer itself.
+  level: debug

@@ -47,7 +47,7 @@ the pack is made rather than when a server starts on it.
 process: every command, acknowledgement and stretch of history is counted in
 ticks, so a rate changed under them would put both sides out of step. It is
 engine configuration the server needs before it loads the map, like the pack and
-the address it listens on. It is the `tick_rate_hz` key of `augustad.yaml`
+the address it listens on. It is the `simulation.tick_rate_hz` key of `augustad.yaml`
 (ADR-0034), required and any finite number above zero: NFR-01's 60 Hz is what the
 server must sustain, measured, not a floor on the value, so a run may go slower to
 be debugged. A `tick_rate_hz` left in the script is an unknown key.
@@ -102,7 +102,7 @@ say how a running simulation and its clients adopt a new value).
   the `stamina_*` keys leave the YAML files and the `augusta_config` module, and
   a `stamina_*` key left in a file is an unknown key, an error (ADR-0034). The
   Join accepted message carries them as part of `Parameters`.
-- `tick_rate_hz` is a required key of `augustad.yaml` and is not in `Parameters`
+- `simulation.tick_rate_hz` is a required key of `augustad.yaml` and is not in `Parameters`
   or the client's runtime `Config`. The client ticks at the rate it was sent in
   Join accepted, so its prediction thread waits for it instead of starting at a
   rate of its own.
