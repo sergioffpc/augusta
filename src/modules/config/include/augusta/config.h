@@ -137,7 +137,7 @@ struct ConfigError {
   std::string subject;
   /// The config file being read, set by the Load* functions; empty from
   /// ParseClientConfig, ParseServerConfig and ResolveConfigFile.
-  std::filesystem::path file{};
+  std::filesystem::path file;
 };
 
 /// A message for error fit to print to whoever runs the process, so neither
