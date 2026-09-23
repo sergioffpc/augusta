@@ -211,6 +211,7 @@ std::vector<PlayerState> ReadPlayers(Reader& reader) {
 
 Parameters ReadParameters(Reader& reader) {
   Parameters parameters;
+  parameters.player_count = reader.ReadU8();
   parameters.stamina.deplete_per_second = reader.ReadF32();
   parameters.stamina.regen_per_second = reader.ReadF32();
   parameters.stamina.forced_walk_below = reader.ReadF32();
@@ -268,6 +269,7 @@ std::optional<Message> ReadBody(MessageType type, Reader& reader) {
 }
 
 void WriteParameters(Bytes& out, const Parameters& parameters) {
+  WriteU8(out, parameters.player_count);
   WriteF32(out, parameters.stamina.deplete_per_second);
   WriteF32(out, parameters.stamina.regen_per_second);
   WriteF32(out, parameters.stamina.forced_walk_below);

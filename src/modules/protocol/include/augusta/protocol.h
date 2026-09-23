@@ -108,6 +108,8 @@ struct Stamina {
 /// The Parameters (ADR-0039) a client predicts with.
 struct Parameters {
   Stamina stamina{};
+  /// How many players a match needs to start (ADR-0043).
+  std::uint8_t player_count = 1;
 };
 
 /// The server's name for one connected player, distinct from the transport's

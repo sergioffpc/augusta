@@ -1,10 +1,12 @@
 #ifndef AUGUSTA_PARAMETERS_H_
 #define AUGUSTA_PARAMETERS_H_
 
+#include <cstdint>
 #include <expected>
 #include <string_view>
 
 #include "augusta/physics.h"
+#include "augusta/protocol.h"
 
 // augusta::parameters is the type of the simulation's data-driven
 // configuration (ADR-0039, CONTEXT.md's Parameters). It is shared because the
@@ -20,6 +22,9 @@ namespace augusta::parameters {
 struct Parameters {
   /// The stamina rules every player body follows (US-05).
   physics::StaminaConfig stamina{};
+  /// How many players a match needs to start (ADR-0043), 1 to protocol::kMaxPlayers.
+  /// Last, so the struct is not padded between fields.
+  std::uint8_t player_count{1};
 };
 
 /// The parameter a Parameters gets wrong.
@@ -28,10 +33,10 @@ struct InvalidParameter {
   std::string_view path;
 };
 
-/// Whether every value of parameters is one the simulation can run on: numbers
-/// finite, the stamina rates 0 or more and the forced walk threshold 0 or more
-/// and below 1. The first that is not, in the order
-/// the struct declares them, is the error. The server checks what its script
+/// Whether every value of parameters is one the simulation can run on: the
+/// player count 1 to protocol::kMaxPlayers, numbers finite, the stamina rates 0 or
+/// more and the forced walk threshold 0 or more and below 1. The first that is
+/// not, in the order the struct declares them, is the error. The server checks what its script
 /// gives and a client what its server sends, with these same rules.
 [[nodiscard]] std::expected<void, InvalidParameter> Validate(const Parameters& parameters);
 

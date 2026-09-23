@@ -38,6 +38,7 @@ protocol::Parameters ToWire(const parameters::Parameters& parameters) {
               .regen_per_second = parameters.stamina.regen_per_second,
               .forced_walk_below = parameters.stamina.forced_walk_below,
           },
+      .player_count = parameters.player_count,
   };
 }
 

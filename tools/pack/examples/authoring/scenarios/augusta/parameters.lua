@@ -17,6 +17,9 @@ local sprint_seconds = 5
 local rest_seconds = 10
 
 return {
+  -- How many players a match needs to start (ADR-0043): a whole number from 1
+  -- to 8. 1 lets a single player run the example alone.
+  player_count = 1,
   stamina = {
     -- Fraction of stamina sprinting costs per second (0 or more).
     deplete_per_second = 1 / sprint_seconds,

@@ -35,6 +35,7 @@ parameters::Parameters FromWire(const protocol::Parameters& parameters) {
   result.stamina.deplete_per_second = parameters.stamina.deplete_per_second;
   result.stamina.regen_per_second = parameters.stamina.regen_per_second;
   result.stamina.forced_walk_below = parameters.stamina.forced_walk_below;
+  result.player_count = parameters.player_count;
   return result;
 }
 

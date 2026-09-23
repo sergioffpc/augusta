@@ -122,6 +122,7 @@ TEST(WireTest, WhatAJoinAcceptedCarriesReachesTheClientUnchanged) {
   const augusta::server::RosterEntry entry{.session = SessionId{5}, .body = Body(6.0F, Stance::kCrouching)};
   augusta::parameters::Parameters parameters;
   parameters.stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F};
+  parameters.player_count = 4;
 
   const augusta::protocol::JoinAccepted received = ThroughTheWire(augusta::protocol::JoinAccepted{
       .session = SessionId{1},
@@ -135,6 +136,7 @@ TEST(WireTest, WhatAJoinAcceptedCarriesReachesTheClientUnchanged) {
   EXPECT_EQ(received_parameters.stamina.deplete_per_second, parameters.stamina.deplete_per_second);
   EXPECT_EQ(received_parameters.stamina.regen_per_second, parameters.stamina.regen_per_second);
   EXPECT_EQ(received_parameters.stamina.forced_walk_below, parameters.stamina.forced_walk_below);
+  EXPECT_EQ(received_parameters.player_count, parameters.player_count);
   ASSERT_EQ(received.roster.size(), 1U);
   const augusta::harness::PlayerBody player = augusta::harness::FromWire(received.roster[0]);
   EXPECT_EQ(player.session, entry.session);
