@@ -1,6 +1,5 @@
 #include "augusta/renderer.h"
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -46,10 +45,6 @@ struct Vertex {
   Falcor::float3 color;
 };
 
-// A box has 6 faces of 2 triangles of 3 unshared vertices each - see
-// BuildBoxVertices.
-constexpr std::size_t kVerticesPerBox = 6 * 2 * 3;
-
 // Expands every mesh's indexed triangles into 3 unshared vertices each,
 // carrying the triangle's own face normal and its mesh's color: cooked meshes have positions and
 // indices only (no normals - see assets::MeshData), so flat shading is the
@@ -80,72 +75,35 @@ std::vector<Vertex> BuildFlatShadedVertices(const Scene& scene) {
   return vertices;
 }
 
-// One RemotePlayer's box, as kVerticesPerBox flat-shaded, unshared vertices -
-// same technique as BuildFlatShadedVertices, generated rather than indexed
-// since a box's 12 triangles are fixed. box.position is its base (renderer.h)
-// so the box stands from y=0 to y=2*half_extents.y above it; x/z are
-// centered on it.
-std::vector<Vertex> BuildBoxVertices(const RemotePlayer& box) {
-  const math::Vec3& p = box.position;
-  const math::Vec3& h = box.half_extents;
-  const Falcor::float3 color{box.color.x, box.color.y, box.color.z};
-
-  // Corners 0-3 are the base (y=0), 4-7 the top (y=2*h.y), both in the same
-  // -x-z, +x-z, +x+z, -x+z winding order around the vertical axis.
-  const std::array<math::Vec3, 8> corners{
-      p + math::Vec3(-h.x, 0.0F, -h.z),       p + math::Vec3(h.x, 0.0F, -h.z),
-      p + math::Vec3(h.x, 0.0F, h.z),         p + math::Vec3(-h.x, 0.0F, h.z),
-      p + math::Vec3(-h.x, 2.0F * h.y, -h.z), p + math::Vec3(h.x, 2.0F * h.y, -h.z),
-      p + math::Vec3(h.x, 2.0F * h.y, h.z),   p + math::Vec3(-h.x, 2.0F * h.y, h.z),
-  };
-  // Each face as 2 triangles of corner indices, counter-clockwise seen from
-  // outside the box (matches SceneMesh's own winding convention, though
-  // cull_mode is None so it isn't load-bearing for visibility - see
-  // BuildRasterPass).
-  constexpr std::array<std::array<std::uint8_t, 3>, 12> kFaces{
-      {
-          {0, 2, 1},
-          {0, 3, 2},  // bottom
-          {4, 5, 6},
-          {4, 6, 7},  // top
-          {0, 1, 5},
-          {0, 5, 4},  // -z side
-          {1, 2, 6},
-          {1, 6, 5},  // +x side
-          {2, 3, 7},
-          {2, 7, 6},  // +z side
-          {3, 0, 4},
-          {3, 4, 7},  // -x side
-      },
-  };
-
+// Every RemotePlayer as an instance of local_vertices (SetRemotePlayerMesh's
+// own flat-shaded vertices, in the character's local space - ADR-0040/ADR-
+// 0041): height-scaled around y=0 (remote.height_scale - issue #82's "right
+// stance" criterion, renderer.h), then translated to that instance's own
+// position and given its own color. remote.position is where local_vertices'
+// own origin (y=0) lands - the same convention the character's mesh was
+// cooked around, so no further placement is needed. A non-uniform (y-only)
+// scale needs its normals scaled by the inverse instead, then renormalized,
+// to stay correct - a uniform scale (height_scale == 1, the common case)
+// leaves them unchanged.
+std::vector<Vertex> BuildRemoteVertices(std::span<const RemotePlayer> remote_players,
+                                        std::span<const Vertex> local_vertices) {
   std::vector<Vertex> vertices;
-  vertices.reserve(kVerticesPerBox);
-  for (const auto& face : kFaces) {
-    // NOLINTBEGIN(readability-identifier-length) - a/b/c are the triangle's own corner notation.
-    const math::Vec3& a = corners[face[0]];
-    const math::Vec3& b = corners[face[1]];
-    const math::Vec3& c = corners[face[2]];
-    // NOLINTEND(readability-identifier-length)
-    const math::Vec3 normal = math::Normalize(math::Cross(b - a, c - a));
-    for (const math::Vec3* corner : {&a, &b, &c}) {
+  vertices.reserve(remote_players.size() * local_vertices.size());
+  for (const RemotePlayer& remote : remote_players) {
+    const math::Vec3& p = remote.position;
+    const float height_scale = remote.height_scale;
+    const Falcor::float3 color{remote.color.x, remote.color.y, remote.color.z};
+    for (const Vertex& local_vertex : local_vertices) {
+      const math::Vec3 position(local_vertex.position.x, local_vertex.position.y * height_scale,
+                                local_vertex.position.z);
+      const math::Vec3 normal = math::Normalize(
+          math::Vec3(local_vertex.normal.x, local_vertex.normal.y / height_scale, local_vertex.normal.z));
       vertices.push_back({
-          .position = {corner->x, corner->y, corner->z},
+          .position = {position.x + p.x, position.y + p.y, position.z + p.z},
           .normal = {normal.x, normal.y, normal.z},
           .color = color,
       });
     }
-  }
-  return vertices;
-}
-
-// Every RemotePlayer's box, concatenated - what SetRemotePlayers uploads.
-std::vector<Vertex> BuildRemoteVertices(std::span<const RemotePlayer> remote_players) {
-  std::vector<Vertex> vertices;
-  vertices.reserve(remote_players.size() * kVerticesPerBox);
-  for (const RemotePlayer& box : remote_players) {
-    const std::vector<Vertex> box_vertices = BuildBoxVertices(box);
-    vertices.insert(vertices.end(), box_vertices.begin(), box_vertices.end());
   }
   return vertices;
 }
@@ -214,11 +172,17 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   std::uint32_t vertex_count = 0;
   Camera camera;
 
-  // Remote-player placeholder boxes (issue #82). Unlike vao/vertex_count
-  // above, this buffer is created once, sized for kMaxRemotePlayers boxes,
-  // and kept as MemoryType::Upload - a persistently-mappable heap
-  // SetRemotePlayers can memcpy into every frame via Buffer::setBlob with no
-  // GPU wait, unlike UploadScene's DeviceLocal buffer (see that method).
+  // The shared character mesh every RemotePlayer is drawn as (issue #82/
+  // ADR-0040/ADR-0041), flat-shaded in its own local space - set by
+  // SetRemotePlayerMesh, which (re)creates remote_vertex_buffer/remote_vao
+  // below sized for it; empty (and those null) until the first call.
+  std::vector<Vertex> remote_player_local_vertices;
+
+  // Unlike vao/vertex_count above, this buffer is sized for kMaxRemotePlayers
+  // instances of remote_player_local_vertices and kept as MemoryType::Upload
+  // - a persistently-mappable heap SetRemotePlayers can memcpy into every
+  // frame via Buffer::setBlob with no GPU wait, unlike UploadScene's
+  // DeviceLocal buffer (see that method).
   Falcor::ref<Falcor::Buffer> remote_vertex_buffer;
   Falcor::ref<Falcor::Vao> remote_vao;
   std::uint32_t remote_vertex_count = 0;
@@ -272,7 +236,8 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     CreateTargetFbo(size.x, size.y);
     debug_hud = std::make_unique<DebugHud>(device, Falcor::uint2(size.x, size.y));
     BuildRasterPass();
-    CreateRemoteBuffer();
+    // remote_vertex_buffer/remote_vao are created lazily by SetRemotePlayerMesh
+    // instead, once the per-instance vertex count they're sized from is known.
   }
 
   ~Impl() {
@@ -330,6 +295,8 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     if (vertices.size() > std::numeric_limits<std::uint32_t>::max()) {
       throw std::runtime_error("scene has too many vertices to draw");
     }
+    // Only the initial camera - a real caller overwrites this via SetCamera
+    // every frame from then on (see that method's doc comment).
     camera = scene.camera;
     vertex_count = static_cast<std::uint32_t>(vertices.size());
     if (vertices.empty()) {
@@ -355,14 +322,15 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     vao = Falcor::Vao::create(Falcor::Vao::Topology::TriangleList, layout, {vertex_buffer});
   }
 
-  // Creates the fixed-size, persistently-mappable upload-heap buffer and Vao
+  // Creates the persistently-mappable upload-heap buffer and Vao
   // SetRemotePlayers writes into every frame - see the Impl member comment
-  // on remote_vertex_buffer. Called once, from the constructor; the buffer
-  // is always sized for the worst case (kMaxRemotePlayers) and never
-  // recreated afterward.
+  // on remote_vertex_buffer. Called by UploadRemotePlayerMesh, sized for
+  // kMaxRemotePlayers instances of remote_player_local_vertices (must
+  // already be set) - replaces any previous buffer/Vao.
   void CreateRemoteBuffer() {
-    remote_vertex_buffer = device->createBuffer(kMaxRemotePlayers * kVerticesPerBox * sizeof(Vertex),
-                                                Falcor::ResourceBindFlags::Vertex, Falcor::MemoryType::Upload);
+    const std::size_t vertex_capacity = kMaxRemotePlayers * remote_player_local_vertices.size();
+    remote_vertex_buffer = device->createBuffer(vertex_capacity * sizeof(Vertex), Falcor::ResourceBindFlags::Vertex,
+                                                Falcor::MemoryType::Upload);
 
     auto buffer_layout = Falcor::VertexBufferLayout::create();
     buffer_layout->addElement("POSITION", offsetof(Vertex, position), Falcor::ResourceFormat::RGB32Float, 1, 0);
@@ -374,15 +342,34 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     remote_vao = Falcor::Vao::create(Falcor::Vao::Topology::TriangleList, layout, {remote_vertex_buffer});
   }
 
-  // Rewrites the remote-player boxes' vertex data in place via
+  // Builds remote_player_local_vertices from mesh - the same
+  // BuildFlatShadedVertices triangle expansion UploadScene uses, reused via
+  // a one-mesh Scene rather than duplicated - and (re)creates the buffer/Vao
+  // CreateRemoteBuffer sizes from it. Nothing is touched if mesh is invalid
+  // (the throw comes before any member is assigned, same as UploadScene).
+  void UploadRemotePlayerMesh(const SceneMesh& mesh) {
+    remote_player_local_vertices = BuildFlatShadedVertices(Scene{.meshes = {mesh}, .camera = {}});
+    // The previous buffer may still be in flight on the GPU - see UploadScene's own comment.
+    device->wait();
+    CreateRemoteBuffer();
+    remote_vertex_count = 0;
+  }
+
+  // Rewrites the remote-player instances' vertex data in place via
   // Buffer::setBlob - a map+memcpy into the upload heap, no GPU wait (unlike
-  // UploadScene). Throws std::runtime_error if remote_players has more boxes
-  // than the buffer was sized for.
+  // UploadScene/UploadRemotePlayerMesh). Throws std::runtime_error if
+  // remote_players has more instances than the buffer was sized for. A call
+  // before UploadRemotePlayerMesh (remote_vao still null) draws nothing,
+  // same as an empty span.
   void UpdateRemotePlayers(std::span<const RemotePlayer> remote_players) {
     if (remote_players.size() > kMaxRemotePlayers) {
       throw std::runtime_error("more remote players than the renderer can draw");
     }
-    const std::vector<Vertex> vertices = BuildRemoteVertices(remote_players);
+    if (remote_vao == nullptr) {
+      remote_vertex_count = 0;
+      return;
+    }
+    const std::vector<Vertex> vertices = BuildRemoteVertices(remote_players, remote_player_local_vertices);
     remote_vertex_count = static_cast<std::uint32_t>(vertices.size());
     if (vertices.empty()) {
       return;
@@ -552,6 +539,10 @@ void Renderer::RenderFrame() {
 }
 
 void Renderer::SetScene(const Scene& scene) { impl_->UploadScene(scene); }
+
+void Renderer::SetCamera(const Camera& camera) { impl_->camera = camera; }
+
+void Renderer::SetRemotePlayerMesh(const SceneMesh& mesh) { impl_->UploadRemotePlayerMesh(mesh); }
 
 void Renderer::SetRemotePlayers(std::span<const RemotePlayer> remote_players) {
   impl_->UpdateRemotePlayers(remote_players);

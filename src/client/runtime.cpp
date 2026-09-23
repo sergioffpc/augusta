@@ -28,18 +28,22 @@ namespace {
 static_assert(renderer::kMaxRemotePlayers >= protocol::kMaxPlayers,
               "the renderer must be able to draw every possible player");
 
-// Maps one interpolated remote player into a renderer-drawable placeholder
-// box (issue #82). Box dimensions mirror physics.cpp's own capsule constants
-// (kCapsuleRadius/kStandingHeight/kCrouchingHeight/kProneHeight, physics.cpp
-// lines 82-85) rather than reusing them: those are physics.cpp-internal by
-// design, and this geometry is explicitly placeholder-only (no skeletal
-// animation yet) - not worth exporting a public physics API for.
+// Maps one interpolated remote player into a renderer-drawable instance of
+// the shared character mesh ClientRuntime uploads via SetRemotePlayerMesh
+// (issue #82/ADR-0040/ADR-0041). height_scale reflects stance the same way
+// the procedural placeholder box this replaced did (issue #82's "in the
+// right stance" acceptance criterion): the capsule's own authored height is
+// the standing height, so a lower stance scales it down by the ratio of
+// physics.cpp's own capsule constants (kCapsuleRadius/kStandingHeight/
+// kCrouchingHeight/kProneHeight, physics.cpp lines 82-85) rather than
+// reusing them - those are physics.cpp-internal by design, and this mapping
+// is still placeholder-only (no skeletal animation yet).
 renderer::RemotePlayer ToRenderer(const presentation::RemotePlayer& remote) {
   constexpr float kCapsuleRadius = 0.3F;
   constexpr float kStandingHeight = 1.5F;
   constexpr float kCrouchingHeight = 0.7F;
   constexpr float kProneHeight = 0.1F;
-  constexpr float kHalfHeightFraction = 0.5F;
+  constexpr float kStandingTotalHeight = kStandingHeight + (2.0F * kCapsuleRadius);
 
   float cylinder_height = kStandingHeight;
   switch (remote.body.stance) {
@@ -54,10 +58,13 @@ renderer::RemotePlayer ToRenderer(const presentation::RemotePlayer& remote) {
       break;
   }
   const float total_height = cylinder_height + (2.0F * kCapsuleRadius);
-  return {
-      .position = remote.body.position,
-      .half_extents = math::Vec3(kCapsuleRadius, total_height * kHalfHeightFraction, kCapsuleRadius),
-  };
+  return {.position = remote.body.position, .height_scale = total_height / kStandingTotalHeight};
+}
+
+// Maps this frame's presentation::Camera into what Renderer::SetCamera
+// takes - same decoupling reason as the RemotePlayer overload above.
+renderer::Camera ToRenderer(const presentation::Camera& camera) {
+  return {.position = camera.position, .rotation = camera.rotation};
 }
 
 // Stops Impl's background threads and joins both, on scope exit -
@@ -315,9 +322,11 @@ struct ClientRuntime::Impl {
   }
 };
 
-ClientRuntime::ClientRuntime(const Config& config, Map map, const renderer::Scene& scene)
+ClientRuntime::ClientRuntime(const Config& config, Map map, const renderer::Scene& scene,
+                             const renderer::SceneMesh& remote_player_mesh)
     : impl_(std::make_unique<Impl>(config, map)) {
   impl_->renderer.SetScene(scene);
+  impl_->renderer.SetRemotePlayerMesh(remote_player_mesh);
 }
 
 ClientRuntime::~ClientRuntime() = default;
@@ -349,6 +358,7 @@ std::optional<harness::Failure> ClientRuntime::Run() {
     // never race ahead of a GetSessionId() that is still nullopt.
     presentation::State frame_state = impl_->presentation.RunFrame(
         impl_->GetLatestPredictionState(), impl_->session->GetSessionId(), impl_->session->GetAuthoritativeState());
+    impl_->renderer.SetCamera(ToRenderer(frame_state.camera));
     // The local player's own position isn't drawn yet (renderer.h) - only
     // remote players, as placeholder boxes (issue #82).
     std::vector<renderer::RemotePlayer> remote_boxes;

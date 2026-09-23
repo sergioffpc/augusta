@@ -17,6 +17,12 @@ namespace augusta::presentation {
 
 namespace {
 
+// How far above the local player's body position (physics::BodyState's feet)
+// the camera sits - same value as scene_loader.cpp's own kEyeHeight, which
+// still places the one-shot initial camera SetScene uploads before the
+// first RunFrame call overwrites it via SetCamera (renderer.h).
+constexpr float kEyeHeight = 1.7F;
+
 constexpr std::size_t kPhaseCount = 5;
 using PhaseEntities = std::array<flecs::entity, kPhaseCount>;
 
@@ -51,6 +57,10 @@ struct World::Impl {
   // an offset from the predicted position that fades.
   Correction correction;
   math::Vec3 local_offset{};
+
+  // This frame's view camera (Phase::kCamera), copied into frame_state by
+  // OnCommit the same way local_offset feeds frame_state.local_position.
+  Camera camera{};
 
   // Every other player's buffered updates (see interpolation.h), and the
   // running clock RunFrame's render frame deltas advance - independent of the
@@ -119,7 +129,12 @@ struct World::Impl {
 
   void OnCamera() {
     const nvtx3::scoped_range range{"Camera"};
-    // TODO(sergioffpc): not yet a module of its own - see presentation.h.
+    // local_offset is already this frame's value - OnInterpolation (the
+    // previous phase) just updated it. Same base position as OnCommit's
+    // local_position, plus eye height; rotation has nothing to derive from
+    // yet (see presentation.h's Phase::kCamera doc comment).
+    camera.position = latest_state.local_body.position + local_offset + math::Vec3(0.0F, kEyeHeight, 0.0F);
+    camera.rotation = math::Quat(1.0F, 0.0F, 0.0F, 0.0F);
   }
 
   void OnAnimation() {
@@ -145,6 +160,7 @@ struct World::Impl {
   void OnCommit() {
     const nvtx3::scoped_range range{"Commit"};
     frame_state.local_position = latest_state.local_body.position + local_offset;
+    frame_state.camera = camera;
     frame_state.remote_players = remote_players;
   }
 };

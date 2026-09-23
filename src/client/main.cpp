@@ -65,6 +65,34 @@ std::expected<augusta::config::ClientConfig, augusta::config::ConfigError> LoadC
   return augusta::config::LoadClientConfig(*config_file);
 }
 
+// Only the scene graph and its meshes are consumed so far (what the renderer
+// draws); collision/hitbox/texture/audio resolution waits for the ECS
+// component shapes and gameplay code that will use them. Reports what is
+// wrong and returns nullopt.
+std::optional<augusta::renderer::Scene> LoadRenderScene(const augusta::assets::Pack& pack,
+                                                        const std::filesystem::path& pack_path) {
+  auto scene = augusta::client::LoadRenderScene(pack);
+  if (!scene) {
+    std::println(stderr, "client pack {}: {}", pack_path.string(), augusta::client::DescribeSceneError(scene.error()));
+    return std::nullopt;
+  }
+  LI("subsystem=client event=scene_loaded meshes={}", scene->meshes.size());
+  return *std::move(scene);
+}
+
+// The one character every RemotePlayer is drawn as (issue #82 - no per-player
+// character selection yet, ADR-0040/ADR-0041). Reports what is wrong and
+// returns nullopt.
+std::optional<augusta::renderer::SceneMesh> LoadRemotePlayerMesh(const augusta::assets::Pack& pack,
+                                                                 const std::filesystem::path& pack_path) {
+  auto mesh = augusta::client::LoadRemotePlayerMesh(pack);
+  if (!mesh) {
+    std::println(stderr, "client pack {}: {}", pack_path.string(), augusta::client::DescribeSceneError(mesh.error()));
+    return std::nullopt;
+  }
+  return *std::move(mesh);
+}
+
 // The same collision the server builds from its own pack, so the client's
 // prediction and the server's simulation agree on where the walls are. Reports
 // what is wrong and returns nullopt.
@@ -105,17 +133,15 @@ int main(int argc, char** argv) {
   }
   LI("subsystem=client event=pack_verified path={}", pack_path.string());
 
-  // Only the scene graph and its meshes are consumed so far (what the
-  // renderer draws); collision/hitbox/texture/audio resolution waits for
-  // the ECS component shapes and gameplay code that will use them. Built
-  // here, before the window opens, so a pack without a usable scene exits
-  // like a bad pack does.
-  const auto scene = augusta::client::LoadRenderScene(*pack);
+  auto scene = LoadRenderScene(*pack, pack_path);
   if (!scene) {
-    std::println(stderr, "client pack {}: {}", pack_path.string(), augusta::client::DescribeSceneError(scene.error()));
     return 1;
   }
-  LI("subsystem=client event=scene_loaded meshes={}", scene->meshes.size());
+
+  auto remote_player_mesh = LoadRemotePlayerMesh(*pack, pack_path);
+  if (!remote_player_mesh) {
+    return 1;
+  }
 
   auto map = LoadMap(*pack, pack_path);
   if (!map) {
@@ -131,7 +157,7 @@ int main(int argc, char** argv) {
   // Direct IP:port only, no server discovery (ARCHITECTURE.md §3).
   config.server.address = file_config->server_address;
 
-  augusta::runtime::ClientRuntime runtime(config, *std::move(map), *scene);
+  augusta::runtime::ClientRuntime runtime(config, *std::move(map), *scene, *remote_player_mesh);
   if (const auto failure = runtime.Run(); failure.has_value()) {
     // No reconnecting and no connection screen: say what happened and exit.
     std::println(stderr, "{}", augusta::harness::DescribeFailure(*failure));

@@ -89,20 +89,25 @@ if (-not $SkipAuthoring) {
   New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
 }
 
-# A small worked scenario (tools/pack/examples/augusta - committed, unlike
-# everything else under $AssetsRoot) so a fresh environment has something to
-# cook straight away: a stage, its required parameters.lua (ADR-0039), and
-# placeholder objectives.lua/behaviours.lua for game policy (ADR-0022) once
-# that lands. Left alone on a re-run, like the signing key below, so local
-# edits to it survive.
-$exampleSource = Join-Path $packProject "examples\augusta"
-$exampleDest = Join-Path $authoringDir "examples\augusta"
-if (Test-Path $exampleDest) {
-  Write-Host "Example scenario already exists at $exampleDest - leaving it as is."
-} else {
-  Write-Host "Seeding the example scenario at $exampleDest..."
-  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $exampleDest) | Out-Null
-  Copy-Item -Recurse $exampleSource $exampleDest
+# A small worked authoring/ tree (tools/pack/examples/authoring - committed,
+# unlike everything else under $AssetsRoot) so a fresh environment has
+# something to cook straight away (`augustap augusta`): one map, its required
+# parameters.lua (ADR-0039) and placeholder objectives.lua/behaviours.lua for
+# game policy (ADR-0022), one character (ADR-0040), and the manifest.yaml
+# (ADR-0041) composing them. Seeded piece by piece rather than as one tree,
+# so each survives local edits independently - left alone once it exists,
+# like the signing key below.
+$exampleRoot = Join-Path $packProject "examples\authoring"
+foreach ($piece in "maps\augusta", "characters\player", "scenarios\augusta") {
+  $source = Join-Path $exampleRoot $piece
+  $dest = Join-Path $authoringDir $piece
+  if (Test-Path $dest) {
+    Write-Host "Example $piece already exists at $dest - leaving it as is."
+  } else {
+    Write-Host "Seeding example $piece at $dest..."
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest) | Out-Null
+    Copy-Item -Recurse $source $dest
+  }
 }
 
 function Sync-GitRepo {

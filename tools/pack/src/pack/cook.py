@@ -1,15 +1,17 @@
-"""The asset cooker itself (ADR-0030): walks an authored OpenUSD stage and
-bakes it into signed client/server packs (ADR-0031/ADR-0032). Walks the
-stage through pxr directly (the same pip-installed usd-optimize build
-optimize.py already uses, rather than linking a second, independently-
-built OpenUSD - see ADR-0030 for why those can't coexist in one process),
-and calls the small native _meshoptimizer/_textconv bindings only for the
-two pieces with no Python equivalent (mesh optimization, texture
-compression).
+"""The asset cooker itself (ADR-0030): walks the authored OpenUSD stages a
+scenario's manifest.yaml composes - one map, zero or more characters
+(ADR-0041) - and bakes them into one signed client/server pack pair
+(ADR-0031/ADR-0032). Walks each stage through pxr directly (the same
+pip-installed usd-optimize build optimize.py already uses, rather than
+linking a second, independently-built OpenUSD - see ADR-0030 for why those
+can't coexist in one process), and calls the small native
+_meshoptimizer/_textconv bindings only for the two pieces with no Python
+equivalent (mesh optimization, texture compression).
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -257,14 +259,110 @@ def _read_cube_geometry(cube: UsdGeom.Cube, prim_path: str) -> MeshData:
     return MeshData(points=points, indices=list(_CUBE_INDICES))
 
 
+# Longitude segments and latitude rings-per-hemisphere for _read_capsule_geometry
+# - a fixed tessellation density, not authorable: a capsule is a placeholder
+# collision-derived shape (ADR-0040), not an art asset needing LOD control.
+_CAPSULE_LONGITUDE_SEGMENTS = 12
+_CAPSULE_LATITUDE_RINGS = 4
+
+# axis token -> (up, right, forward) unit-vector basis: up is the axis the
+# cylinder/hemispheres extend along, right/forward span each latitude ring's
+# own circle.
+_CAPSULE_BASIS = {
+    UsdGeom.Tokens.x: ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
+    UsdGeom.Tokens.y: ((0.0, 1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+    UsdGeom.Tokens.z: ((0.0, 0.0, 1.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)),
+}
+
+
+def _read_capsule_geometry(capsule: UsdGeom.Capsule, prim_path: str) -> MeshData:
+    """Tessellates a UsdGeomCapsule - a cylinder of `height` (excluding caps)
+    and `radius`, capped by two hemispheres of the same radius, centered on
+    its own origin and extended along `axis` - into a triangle buffer, the
+    same "cook a primitive shape like a mesh from here on" treatment
+    _read_cube_geometry gives UsdGeomCube. Built as rings of
+    _CAPSULE_LONGITUDE_SEGMENTS vertices each, pole to pole: a bottom pole, a
+    fan of hemisphere rings, the two equator rings the cylinder spans between,
+    a mirrored fan of hemisphere rings, and a top pole.
+    """
+    height = capsule.GetHeightAttr().Get()
+    radius = capsule.GetRadiusAttr().Get()
+    axis = capsule.GetAxisAttr().Get()
+    if height is None or radius is None or radius <= 0 or height < 0:
+        raise CookError(
+            "invalid_capsule_size", prim_path, f"capsule height {height} / radius {radius} must be non-negative/positive"
+        )
+    up, right, forward = _CAPSULE_BASIS.get(axis, _CAPSULE_BASIS[UsdGeom.Tokens.z])
+
+    half_height = height / 2.0
+    segments = _CAPSULE_LONGITUDE_SEGMENTS
+    rings = _CAPSULE_LATITUDE_RINGS
+    points: list[tuple[float, float, float]] = []
+
+    def add_ring(ring_radius: float, axis_offset: float) -> int:
+        start = len(points)
+        for segment in range(segments):
+            phi = 2.0 * math.pi * segment / segments
+            points.append(
+                tuple(
+                    up[i] * axis_offset + right[i] * (ring_radius * math.cos(phi)) + forward[i] * (ring_radius * math.sin(phi))
+                    for i in range(3)
+                )
+            )
+        return start
+
+    def hemisphere_ring(latitude_index: int, pole_sign: float) -> tuple[float, float]:
+        theta = (math.pi / 2.0) * (latitude_index / rings)
+        return radius * math.cos(theta), pole_sign * (half_height + radius * math.sin(theta))
+
+    bottom_pole_index = len(points)
+    points.append(tuple(component * -(half_height + radius) for component in up))
+    bottom_ring_starts = [add_ring(*hemisphere_ring(latitude, -1.0)) for latitude in range(rings - 1, 0, -1)]
+    bottom_equator_start = add_ring(radius, -half_height)
+    top_equator_start = add_ring(radius, half_height)
+    top_ring_starts = [add_ring(*hemisphere_ring(latitude, 1.0)) for latitude in range(1, rings)]
+    top_pole_index = len(points)
+    points.append(tuple(component * (half_height + radius) for component in up))
+
+    indices: list[int] = []
+
+    def add_fan(pole_index: int, ring_start: int, flip: bool) -> None:
+        for segment in range(segments):
+            a, b = ring_start + segment, ring_start + (segment + 1) % segments
+            indices.extend([pole_index, b, a] if flip else [pole_index, a, b])
+
+    def add_band(lower_start: int, upper_start: int) -> None:
+        for segment in range(segments):
+            a0, a1 = lower_start + segment, lower_start + (segment + 1) % segments
+            b0, b1 = upper_start + segment, upper_start + (segment + 1) % segments
+            indices.extend([a0, a1, b1, a0, b1, b0])
+
+    # rings, pole to pole: bottom pole -> hemisphere rings -> equator -> equator
+    # -> hemisphere rings -> top pole. flip=True on the top fan mirrors the
+    # bottom fan's winding, since the top pole is approached from the
+    # opposite direction.
+    add_fan(bottom_pole_index, bottom_ring_starts[0], flip=False)
+    for lower, upper in zip(bottom_ring_starts, bottom_ring_starts[1:]):
+        add_band(lower, upper)
+    add_band(bottom_ring_starts[-1], bottom_equator_start)
+    add_band(bottom_equator_start, top_equator_start)
+    for lower, upper in zip(top_ring_starts, top_ring_starts[1:]):
+        add_band(lower, upper)
+    add_fan(top_pole_index, top_ring_starts[-1], flip=True)
+
+    return MeshData(points=points, indices=indices)
+
+
 def _read_raw_geometry(prim: Usd.Prim, prim_path: str) -> MeshData | None:
-    """Reads prim's triangle geometry as authored if it is a UsdGeomMesh
-    or UsdGeomCube, or None for any other prim type.
+    """Reads prim's triangle geometry as authored if it is a UsdGeomMesh,
+    UsdGeomCube or UsdGeomCapsule, or None for any other prim type.
     """
     if prim.IsA(UsdGeom.Mesh):
         return _read_raw_mesh_geometry(UsdGeom.Mesh(prim), prim_path)
     if prim.IsA(UsdGeom.Cube):
         return _read_cube_geometry(UsdGeom.Cube(prim), prim_path)
+    if prim.IsA(UsdGeom.Capsule):
+        return _read_capsule_geometry(UsdGeom.Capsule(prim), prim_path)
     return None
 
 
@@ -299,7 +397,7 @@ def _build_node(
     most one geometry AssetEntry: kHitbox if augusta:hitbox is set, else
     kCollision if a PhysX collider is applied, else kMesh. node_index_of
     must already contain every ancestor of prim - guaranteed by pre-order
-    traversal (see cook_stage's own comment on its Traverse() call).
+    traversal (see cook_scenario's own comment on its Traverse() call).
     """
     prim_path = _sanitize_prim_path(str(prim.GetPath()))
     node = SceneNode(name=prim_path)
@@ -388,48 +486,110 @@ def _maybe_cook_texture_prim(prim: Usd.Prim, prim_path: str, stage_path: Path, e
 _SERVER_PACK_ASSET_TYPES = frozenset({_TYPE_COLLISION, _TYPE_HITBOX, _TYPE_SPAWN_POINT})
 
 
-def cook_stage(
-    stage_path: Path,
+def _transform_mesh(mesh: MeshData, matrix: Gf.Matrix4d) -> MeshData:
+    """Applies matrix to mesh's points, leaving indices untouched - used for
+    character geometry (_cook_character_prim), which carries no SceneNode
+    transform of its own to place it at runtime (cook_scenario's Scene blob
+    is map-only): the prim's own local-to-character-root placement and its
+    stage's up-axis/metersPerUnit correction are baked into the points
+    directly instead, the same two corrections a map's top-level nodes carry
+    in their own SceneNode transform (_build_node) rather than in their
+    points.
+    """
+    return MeshData(points=[tuple(matrix.Transform(Gf.Vec3d(*point))) for point in mesh.points], indices=mesh.indices)
+
+
+def _cook_character_prim(prim: Usd.Prim, prim_path: str, matrix: Gf.Matrix4d, entries: list[AssetEntry]) -> None:
+    """The geometry half of _build_node's classification (mesh vs. collision
+    vs. hitbox - ADR-0040/ADR-0041), for one prim of a character stage:
+    appends at most one AssetEntry, its points already transformed into the
+    character's own root space by matrix. Builds no SceneNode - see
+    _transform_mesh.
+    """
+    geometry = _read_raw_geometry(prim, prim_path)
+    if geometry is None:
+        return
+    transformed = _transform_mesh(geometry, matrix)
+    if _read_bool_attr(prim, _HITBOX_ATTR):
+        entries.append(AssetEntry(type=_TYPE_HITBOX, path=prim_path, data=encode_mesh_blob(transformed)))
+    elif _has_collision_enabled(prim):
+        entries.append(AssetEntry(type=_TYPE_COLLISION, path=prim_path, data=encode_mesh_blob(transformed)))
+    elif not _is_guide(prim):
+        entries.append(AssetEntry(type=_TYPE_MESH, path=prim_path, data=encode_mesh_blob(_optimize_mesh(transformed))))
+
+
+def cook_scenario(
+    map_stage_path: Path,
+    character_stages: Sequence[tuple[str, Path]],
     client_output_path: Path,
     server_output_path: Path,
     signing_key: bytes,
     scripts: Sequence[tuple[str, bytes]] = (),
     on_prim: Callable[[int, int, str], None] | None = None,
 ) -> CookReport:
-    """Bakes stage_path into signed client/server packs.
+    """Bakes map_stage_path and every (manifest_path, stage_path) in
+    character_stages into one signed client/server pack pair (ADR-0041) -
+    manifest_path is a character's own path as the scenario's manifest.yaml
+    named it (e.g. "characters/player"), also the prefix its blobs are
+    addressed under (ADR-0040).
 
     scripts are a scenario's Lua files as (path relative to its folder, bytes):
     they go into the server pack only, as script assets (ADR-0031, ADR-0039). A
     client is sent the values a script decides, never the script.
 
-    on_prim(done, total, prim_path), if given, is called after each prim is
-    cooked - the only part of cooking that scales with the stage's size.
+    on_prim(done, total, prim_path), if given, is called after each prim (the
+    map's and every character's) is cooked.
     """
-    stage = Usd.Stage.Open(str(stage_path))
-    if not stage:
-        raise CookError("stage_open_failed", "", str(stage_path))
-
-    correction = _stage_correction_matrix(stage)
-
-    entries: list[AssetEntry] = []
-    nodes: list[SceneNode] = []
-    node_index_of: dict[str, int] = {}
-
+    map_stage = Usd.Stage.Open(str(map_stage_path))
+    if not map_stage:
+        raise CookError("stage_open_failed", "", str(map_stage_path))
     # TraverseInstanceProxies: expands instanceable prototypes into
     # per-instance proxy prims instead of skipping them - each instance
     # becomes its own node subtree, de-instanced at cook time. Traverse()
     # visits prims pre-order (a parent always before its children), which
     # _build_node relies on.
-    prims = list(stage.Traverse(Usd.TraverseInstanceProxies(Usd.PrimDefaultPredicate)))
-    for done, prim in enumerate(prims, start=1):
+    map_prims = list(map_stage.Traverse(Usd.TraverseInstanceProxies(Usd.PrimDefaultPredicate)))
+
+    opened_characters = []
+    for manifest_path, stage_path in character_stages:
+        character_stage = Usd.Stage.Open(str(stage_path))
+        if not character_stage:
+            raise CookError("stage_open_failed", "", str(stage_path))
+        character_prims = list(character_stage.Traverse(Usd.TraverseInstanceProxies(Usd.PrimDefaultPredicate)))
+        opened_characters.append((manifest_path, stage_path, character_stage, character_prims))
+
+    total_prims = len(map_prims) + sum(len(prims) for _, _, _, prims in opened_characters)
+    done = 0
+
+    correction = _stage_correction_matrix(map_stage)
+    entries: list[AssetEntry] = []
+    nodes: list[SceneNode] = []
+    node_index_of: dict[str, int] = {}
+
+    for prim in map_prims:
         node = _build_node(prim, correction, node_index_of, entries)
         prim_path = node.name
         node_index_of[str(prim.GetPath())] = len(nodes)
         nodes.append(node)
 
-        _maybe_cook_texture_prim(prim, prim_path, stage_path, entries)
+        _maybe_cook_texture_prim(prim, prim_path, map_stage_path, entries)
+        done += 1
         if on_prim is not None:
-            on_prim(done, len(prims), prim_path)
+            on_prim(done, total_prims, prim_path)
+
+    for manifest_path, stage_path, character_stage, character_prims in opened_characters:
+        character_correction = _stage_correction_matrix(character_stage)
+        for prim in character_prims:
+            prim_path = f"{manifest_path}/{_sanitize_prim_path(str(prim.GetPath()))}"
+            xformable = UsdGeom.Xformable(prim)
+            local_to_root = (
+                xformable.ComputeLocalToWorldTransform(Usd.TimeCode.Default()) if xformable else Gf.Matrix4d(1.0)
+            )
+            _cook_character_prim(prim, prim_path, local_to_root * character_correction, entries)
+            _maybe_cook_texture_prim(prim, prim_path, stage_path, entries)
+            done += 1
+            if on_prim is not None:
+                on_prim(done, total_prims, prim_path)
 
     mesh_count = sum(1 for entry in entries if entry.type == _TYPE_MESH)
     texture_count = sum(1 for entry in entries if entry.type == _TYPE_TEXTURE)

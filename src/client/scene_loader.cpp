@@ -107,4 +107,18 @@ std::expected<renderer::Scene, SceneError> LoadRenderScene(const assets::Pack& p
   return BuildRenderScene(*scene, [&pack](std::string_view path) { return pack.ResolveMesh(path); });
 }
 
+std::expected<renderer::SceneMesh, SceneError> LoadRemotePlayerMesh(const assets::Pack& pack,
+                                                                    std::string_view mesh_path) {
+  const auto mesh = pack.ResolveMesh(mesh_path);
+  if (!mesh) {
+    return std::unexpected(SceneError{.code = SceneErrorCode::kMeshUnresolved,
+                                      .node = "RemotePlayer",
+                                      .subject = std::string(mesh_path),
+                                      .resolve_error = mesh.error()});
+  }
+  // color is unused here - BuildRemoteVertices (renderer.cpp) replaces it
+  // with each RemotePlayer's own color; left at SceneMesh's own default.
+  return renderer::SceneMesh{.positions = mesh->points, .indices = mesh->indices};
+}
+
 }  // namespace augusta::client

@@ -34,11 +34,11 @@
 //
 // Interface scope: draws one static Scene (a list of world-space triangle
 // meshes seen from one camera), plus, per frame, however many RemotePlayer
-// placeholder boxes PresentationWorld's Interpolation phase produces
-// (SetRemotePlayers, below) - the first slice of Presentation State this
-// module actually consumes (ADR-0024). The local player's own position,
-// weapon visuals, skeletal animation and audio cues are still undesigned;
-// revisit this header again once those land.
+// instances of one shared character mesh (SetRemotePlayerMesh) PresentationWorld's
+// Interpolation phase produces positions for (SetRemotePlayers, below) - the
+// first slice of Presentation State this module actually consumes (ADR-0024).
+// The local player's own position, weapon visuals, skeletal animation and
+// audio cues are still undesigned; revisit this header again once those land.
 namespace augusta::renderer {
 
 // Default initial client-area size, in pixels (see Config::width/height).
@@ -87,25 +87,33 @@ struct Scene {
   Camera camera;
 };
 
-/// Default box color for RemotePlayer - a muted red, distinct from
-/// SceneMesh's default grey.
+/// Default color for RemotePlayer, until every prim contributes its own
+/// (character content builds no SceneNode/base_color today, ADR-0041) - a
+/// muted red, distinct from SceneMesh's default grey.
 inline constexpr math::Vec3 kDefaultRemotePlayerColor{0.85F, 0.25F, 0.25F};
 
-/// One other player, drawn as a placeholder box (issue #82 - no skeletal
-/// animation yet). position is the box's base (matches
-/// physics::BodyState::position, which is a player's feet); half_extents is
-/// the box's half-size. The renderer doesn't know whose player this is, or
-/// why it's that size - it just draws a box where it's told to; ClientRuntime
-/// maps presentation::RemotePlayer into this, keeping this module's only
-/// dependency augusta_input (no presentation/physics/protocol header here).
+/// One other player, drawn as an instance of the shared mesh SetRemotePlayerMesh
+/// last uploaded (issue #82's placeholder box, replaced by a real character
+/// mesh - ADR-0040/ADR-0041; still one shared mesh for every RemotePlayer,
+/// no per-player character selection yet). position is where that mesh's own
+/// local origin lands (matches physics::BodyState::position, a player's
+/// feet - the same convention the character's mesh was cooked around, ADR-
+/// 0041). height_scale scales the mesh's height (y) around that same base,
+/// 1 for the mesh's own authored (standing) height and less for a lower
+/// stance - issue #82's "in the right stance" acceptance criterion, which a
+/// fixed mesh can't otherwise show; the renderer doesn't know what a
+/// "stance" is, only this ratio. The renderer doesn't know whose player this
+/// is either; ClientRuntime maps presentation::RemotePlayer into this,
+/// keeping this module's only dependency augusta_input (no presentation/
+/// physics/protocol header here).
 struct RemotePlayer {
   math::Vec3 position{};
-  math::Vec3 half_extents{};
+  float height_scale = 1.0F;
   math::Vec3 color = kDefaultRemotePlayerColor;
 };
 
-/// Upper bound on how many RemotePlayer boxes SetRemotePlayers can draw at
-/// once. Must stay >= protocol::kMaxPlayers - this module can't depend on
+/// Upper bound on how many RemotePlayer instances SetRemotePlayers can draw
+/// at once. Must stay >= protocol::kMaxPlayers - this module can't depend on
 /// augusta_protocol to check that itself, so ClientRuntime (which links
 /// both) enforces it with a static_assert.
 inline constexpr std::size_t kMaxRemotePlayers = 8;
@@ -187,12 +195,29 @@ class Renderer {
   /// of range for its positions or the scene has too many vertices to draw.
   void SetScene(const Scene& scene);
 
-  /// Replaces the drawn remote-player boxes via a persistently-mapped
-  /// upload-heap buffer - unlike SetScene, cheap enough to call once every
-  /// RenderFrame (no GPU wait, no fresh allocation). From the Main/Render
-  /// thread. Throws std::runtime_error if remote_players.size() exceeds
-  /// kMaxRemotePlayers. An empty span draws nothing - how a player who left
-  /// disappears.
+  /// Replaces the camera the next RenderFrame draws from, leaving scene
+  /// geometry untouched. Unlike SetScene, this touches no GPU resource -
+  /// cheap enough to call once every RenderFrame, the same shape as
+  /// SetRemotePlayers. From the Main/Render thread.
+  void SetCamera(const Camera& camera);
+
+  /// Replaces the shared mesh every RemotePlayer is subsequently drawn as
+  /// (issue #82/ADR-0040/ADR-0041) - SetRemotePlayers only ever positions/
+  /// colors instances of this one mesh, so it must be called before the
+  /// first SetRemotePlayers with a non-empty span. Uploads GPU resources
+  /// sized for it (kMaxRemotePlayers instances' worth), so - like SetScene,
+  /// unlike SetRemotePlayers - not meant to be called every frame. From the
+  /// Main/Render thread. Throws std::runtime_error if a mesh index is out of
+  /// range for its positions.
+  void SetRemotePlayerMesh(const SceneMesh& mesh);
+
+  /// Replaces the drawn remote-player instances via a persistently-mapped
+  /// upload-heap buffer - unlike SetScene/SetRemotePlayerMesh, cheap enough
+  /// to call once every RenderFrame (no GPU wait, no fresh allocation). From
+  /// the Main/Render thread. Throws std::runtime_error if remote_players.size()
+  /// exceeds kMaxRemotePlayers. An empty span draws nothing - how a player
+  /// who left disappears; so does every span before SetRemotePlayerMesh has
+  /// been called at least once.
   void SetRemotePlayers(std::span<const RemotePlayer> remote_players);
 
   // Hides the OS cursor and confines/relocks it to this window each
