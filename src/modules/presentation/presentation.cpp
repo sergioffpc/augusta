@@ -50,6 +50,7 @@ struct World::Impl {
   // Staged by RunFrame() immediately before ecs.progress(), read by the phase
   // systems below; not meaningful outside of a RunFrame call.
   prediction::State latest_state;
+  math::Quat view_rotation{1.0F, 0.0F, 0.0F, 0.0F};
   std::optional<protocol::SessionId> local_session;
   std::optional<protocol::AuthoritativeState> authoritative_state;
 
@@ -131,10 +132,9 @@ struct World::Impl {
     const nvtx3::scoped_range range{"Camera"};
     // local_offset is already this frame's value - OnInterpolation (the
     // previous phase) just updated it. Same base position as OnCommit's
-    // local_position, plus eye height; rotation has nothing to derive from
-    // yet (see presentation.h's Phase::kCamera doc comment).
+    // local_position, plus eye height, turned where the local player looks.
     camera.position = latest_state.local_body.position + local_offset + math::Vec3(0.0F, kEyeHeight, 0.0F);
-    camera.rotation = math::Quat(1.0F, 0.0F, 0.0F, 0.0F);
+    camera.rotation = view_rotation;
   }
 
   void OnAnimation() {
@@ -171,9 +171,11 @@ World::~World() = default;
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
-State World::RunFrame(const prediction::State& latest, std::optional<protocol::SessionId> local_session,
+State World::RunFrame(const prediction::State& latest, const math::Quat& view_rotation,
+                      std::optional<protocol::SessionId> local_session,
                       const std::optional<protocol::AuthoritativeState>& authoritative) {
   impl_->latest_state = latest;
+  impl_->view_rotation = view_rotation;
   impl_->local_session = local_session;
   impl_->authoritative_state = authoritative;
   impl_->ecs.progress();

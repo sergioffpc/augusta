@@ -200,8 +200,6 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   bool wireframe_enabled = false;
   bool vsync_enabled = false;
 
-  bool cursor_locked = false;
-
   Impl(const Config& config, input::EventSink& sink) : input_sink(sink) {
     // Falcor::OSServices::start()/stop() are SampleApp-internal (not
     // FALCOR_API-exported, so not linkable from outside Falcor.dll) -
@@ -550,11 +548,6 @@ void Renderer::SetRemotePlayers(std::span<const RemotePlayer> remote_players) {
 
 void Renderer::SetDebugHudStats(const DebugHudStats& stats) { impl_->hud_stats = stats; }
 
-void Renderer::SetCursorLocked([[maybe_unused]] bool locked) {
-  // TODO(sergioffpc): Falcor exposes no cursor-lock/hide hook (ADR-0009) -
-  // needs a small patch to the vendored submodule (cmake/patches/falcor-
-  // augusta.patch). Deferred: no input consumer calls this yet (mouselook
-  // lands with gameplay input handling, M3+).
-}
+void Renderer::SetCursorLocked(bool locked) { impl_->window->setCursorLocked(locked); }
 
 }  // namespace augusta::renderer

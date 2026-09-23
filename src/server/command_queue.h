@@ -39,9 +39,9 @@ inline constexpr float kMaxMovementMagnitude = 2.0F;
 /// The largest view pitch, in radians: straight up or down, with a little slack.
 inline constexpr float kMaxPitch = 1.6F;
 
-/// The largest view yaw, in radians. Yaw accumulates from mouse movement and is
-/// not wrapped, so the bound only keeps it sane.
-inline constexpr float kMaxYaw = 1.0e6F;
+/// The largest view yaw, in radians: half a turn either way, with a little
+/// slack, since a client keeps its yaw within one turn (input::Command).
+inline constexpr float kMaxYaw = 3.2F;
 
 /// Whether command is well formed and newer than last_sequence, the newest
 /// sequence already taken in from this client.

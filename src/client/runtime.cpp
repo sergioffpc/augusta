@@ -103,18 +103,25 @@ struct ClientRuntime::Impl {
   std::thread prediction_thread;
   std::thread network_thread;
 
-  // Guards latest_prediction_state: written once per Prediction tick,
+  // What the Prediction thread's last tick left: the predicted state and where
+  // the player looked for that tick's command, which the camera turns by.
+  struct LatestTick {
+    prediction::State state;
+    math::Quat view_rotation{1.0F, 0.0F, 0.0F, 0.0F};
+  };
+
+  // Guards latest_tick: written once per Prediction tick,
   // read once per Main/Render frame. prediction::State is empty today
   // (see prediction.h) - a plain mutex-guarded copy is more than fast
   // enough; revisit (e.g. double-buffering) only if profiling says
   // otherwise once it holds real payload.
-  std::mutex prediction_state_mutex;
-  prediction::State latest_prediction_state;
+  std::mutex latest_tick_mutex;
+  LatestTick latest_tick;
 
   // Connection numbers for the renderer's debug HUD: written by the Network
   // I/O thread (PublishHudNetStats), read by the Main/Render thread once per
   // frame. They should be consistent with each other, so - like
-  // latest_prediction_state above - a mutex-guarded copy.
+  // latest_tick above - a mutex-guarded copy.
   std::mutex hud_net_mutex;
   std::optional<renderer::DebugHudNetStats> latest_hud_net;
 
@@ -295,8 +302,8 @@ struct ClientRuntime::Impl {
       activity.Record(state, tick_start);
 
       {
-        std::lock_guard<std::mutex> lock(prediction_state_mutex);
-        latest_prediction_state = state;
+        std::lock_guard<std::mutex> lock(latest_tick_mutex);
+        latest_tick = {.state = state, .view_rotation = input::ViewRotation(command.yaw, command.pitch)};
       }
 
       std::this_thread::sleep_until(tick_start +
@@ -317,9 +324,9 @@ struct ClientRuntime::Impl {
     session->Disconnect();
   }
 
-  prediction::State GetLatestPredictionState() {
-    std::lock_guard<std::mutex> lock(prediction_state_mutex);
-    return latest_prediction_state;
+  LatestTick GetLatestTick() {
+    std::lock_guard<std::mutex> lock(latest_tick_mutex);
+    return latest_tick;
   }
 };
 
@@ -340,6 +347,7 @@ std::optional<harness::Failure> ClientRuntime::Run() {
                       .prediction_thread = impl_->prediction_thread,
                       .network_thread = impl_->network_thread};
 
+  impl_->renderer.SetCursorLocked(true);
   LI("subsystem=clientruntime event=loop_starting loop=render");
   std::optional<harness::Failure> failure;
   while (!impl_->renderer.ShouldClose()) {
@@ -357,8 +365,9 @@ std::optional<harness::Failure> ClientRuntime::Run() {
     // as separate, ordered updates - see harness.cpp's ServerView), so a
     // GetAuthoritativeState() that already has this session's player can
     // never race ahead of a GetSessionId() that is still nullopt.
+    const Impl::LatestTick latest = impl_->GetLatestTick();
     presentation::State frame_state = impl_->presentation.RunFrame(
-        impl_->GetLatestPredictionState(), impl_->session->GetSessionId(), impl_->session->GetAuthoritativeState());
+        latest.state, latest.view_rotation, impl_->session->GetSessionId(), impl_->session->GetAuthoritativeState());
     impl_->renderer.SetCamera(ToRenderer(frame_state.camera));
     // The local player's own position isn't drawn yet (renderer.h) - only
     // remote players, as placeholder boxes (issue #82).
