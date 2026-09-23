@@ -46,6 +46,9 @@ struct Map {
   std::vector<physics::CollisionMesh> collision{};
   /// In the order joining players take them; empty spawns everyone at the origin.
   std::vector<math::Vec3> spawn_points{};
+  /// The scenario's characters, by path: the only ones a player may join as
+  /// (ADR-0042). Empty admits no one.
+  std::vector<std::string> characters{};
 };
 
 /// The server's listening socket and its SimulationWorld, without threads or a clock.

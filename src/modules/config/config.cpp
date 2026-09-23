@@ -373,10 +373,14 @@ std::expected<std::filesystem::path, ConfigError> ResolveConfigFile(int argc, co
 
 std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 6> kKeys{
-      "base_dir",           "content.pack",
-      "content.public_key", "network.server_address",
-      "logging.level",      "input.mouse_sensitivity",
+  static constexpr std::array<std::string_view, 7> kKeys{
+      "base_dir",
+      "content.pack",
+      "content.public_key",
+      "player.character",
+      "network.server_address",
+      "logging.level",
+      "input.mouse_sensitivity",
   };
   static constexpr std::array<std::string_view, 1> kOpenSections{kKeysSection};
   const auto values = ReadMapping(yaml_text, Schema{.keys = kKeys, .open_sections = kOpenSections});
@@ -397,6 +401,10 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
   if (!public_key_path) {
     return std::unexpected(public_key_path.error());
   }
+  auto character = RequireString(*values, "player.character");
+  if (!character) {
+    return std::unexpected(character.error());
+  }
   auto log_level = OptionalLogLevel(*values, "logging.level", kDefaultLogLevel);
   if (!log_level) {
     return std::unexpected(log_level.error());
@@ -408,6 +416,7 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
   return ClientConfig{
       .pack_path = *std::move(pack_path),
       .public_key_path = *std::move(public_key_path),
+      .character = *std::move(character),
       .server_address = OptionalString(*values, "network.server_address", kDefaultServerAddress),
       .log_level = *std::move(log_level),
       .input = *input,

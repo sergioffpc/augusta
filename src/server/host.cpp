@@ -100,14 +100,15 @@ struct Host::Impl {
         tick_rate_hz(config.tick_rate_hz),
         parameters(config.parameters),
         network(config.listen),
-        match(MatchConfig{.engine_version = std::string(EngineVersion())}, std::move(map.spawn_points)) {}
+        match(MatchConfig{.engine_version = std::string(EngineVersion()), .characters = std::move(map.characters)},
+              std::move(map.spawn_points)) {}
 
   void Reply(networking::PeerId peer, const protocol::Message& message) {
     network.Send(peer, protocol::Encode(message), networking::Reliability::kReliable);
   }
 
   void HandleJoinRequest(networking::PeerId peer, const protocol::JoinRequest& request) {
-    const auto admission = match.Join(peer, request.engine_version);
+    const auto admission = match.Join(peer, request.engine_version, request.character);
     if (!admission.has_value()) {
       LI("subsystem=serverruntime event=join_refused peer={} reason=\"{}\"", PeerNumber(peer),
          protocol::DescribeJoinRefusal(admission.error()));

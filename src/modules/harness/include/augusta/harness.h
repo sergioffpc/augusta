@@ -61,6 +61,9 @@ struct SessionConfig {
   networking::Endpoint server{};
   /// The engine version to present when joining; the server admits only its own.
   std::string engine_version = std::string(EngineVersion());
+  /// The character to ask to play, by its path relative to `authoring/` (e.g.
+  /// "characters/player"): the server admits only one of its scenario's (ADR-0042).
+  std::string character{};
 };
 
 /// The client's network connection and PredictionWorld, without a window or a GPU.

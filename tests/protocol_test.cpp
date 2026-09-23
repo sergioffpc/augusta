@@ -68,6 +68,28 @@ TEST(ProtocolTest, JoinRequestWithTheLongestVersionRoundTrips) {
   EXPECT_EQ(std::get<JoinRequest>(decoded).engine_version, longest);
 }
 
+TEST(ProtocolTest, JoinRequestCarriesTheChosenCharacter) {
+  const auto decoded = RoundTrip(JoinRequest{.engine_version = "0.1.0", .character = "characters/player"});
+
+  EXPECT_EQ(std::get<JoinRequest>(decoded).character, "characters/player");
+}
+
+TEST(ProtocolTest, JoinRequestWithTheLongestCharacterRoundTrips) {
+  const std::string longest(augusta::protocol::kMaxCharacterPathLength, 'c');
+
+  const auto decoded = RoundTrip(JoinRequest{.engine_version = "0.1.0", .character = longest});
+
+  EXPECT_EQ(std::get<JoinRequest>(decoded).character, longest);
+}
+
+TEST(ProtocolTest, ACharacterLongerThanAllowedIsTooLong) {
+  Bytes payload =
+      BytesOf({kJoinRequestType, 0, static_cast<std::uint8_t>(augusta::protocol::kMaxCharacterPathLength + 1)});
+  payload.resize(payload.size() + augusta::protocol::kMaxCharacterPathLength + 1, static_cast<std::byte>('c'));
+
+  EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
+}
+
 TEST(ProtocolTest, JoinRequestWithAnEmptyVersionRoundTrips) {
   const auto decoded = RoundTrip(JoinRequest{});
 
@@ -134,7 +156,8 @@ TEST(ProtocolTest, MorePlayersInARosterThanAMatchHoldsIsTooLong) {
 }
 
 TEST(ProtocolTest, JoinRefusedRoundTripsEveryReason) {
-  for (const JoinRefusal reason : {JoinRefusal::kVersionMismatch, JoinRefusal::kMatchFull}) {
+  for (const JoinRefusal reason :
+       {JoinRefusal::kVersionMismatch, JoinRefusal::kMatchFull, JoinRefusal::kUnknownCharacter}) {
     const auto decoded = RoundTrip(JoinRefused{.reason = reason});
 
     ASSERT_TRUE(std::holds_alternative<JoinRefused>(decoded));
@@ -148,7 +171,8 @@ TEST(ProtocolTest, FieldsAreFixedWidthLittleEndian) {
   accepted.resize(accepted.size() + 12 + 4 + 12 + 1, std::byte{0});
   EXPECT_EQ(Encode(JoinAccepted{.session = static_cast<SessionId>(0x04030201U)}), accepted);
   EXPECT_EQ(Encode(JoinRefused{.reason = JoinRefusal::kMatchFull}), BytesOf({kJoinRefusedType, 2}));
-  EXPECT_EQ(Encode(JoinRequest{.engine_version = "ab"}), BytesOf({kJoinRequestType, 2, 'a', 'b'}));
+  EXPECT_EQ(Encode(JoinRequest{.engine_version = "ab", .character = "c"}),
+            BytesOf({kJoinRequestType, 2, 'a', 'b', 1, 'c'}));
 }
 
 TEST(ProtocolTest, AnEmptyPayloadIsEmpty) { EXPECT_EQ(Decode(Bytes{}).error(), DecodeError::kEmpty); }
@@ -162,7 +186,7 @@ TEST(ProtocolTest, AnUnknownTypeIsRejected) {
 
 TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
   const std::array<Message, 5> messages = {
-      JoinRequest{.engine_version = "0.1.0"},
+      JoinRequest{.engine_version = "0.1.0", .character = "characters/player"},
       JoinAccepted{.session = static_cast<SessionId>(7), .roster = {PlayerState{}}},
       JoinRefused{.reason = JoinRefusal::kMatchFull},
       Commands{.commands = {SequencedCommand{.sequence = 1}, {.sequence = 2}}},
@@ -195,12 +219,12 @@ TEST(ProtocolTest, ALengthOf255IsRejectedBeforeAnythingIsAllocatedForIt) {
 
 TEST(ProtocolTest, ARefusalReasonOutsideTheEnumerationIsInvalid) {
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 0})).error(), DecodeError::kInvalidEnum);
-  EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 3})).error(), DecodeError::kInvalidEnum);
+  EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 4})).error(), DecodeError::kInvalidEnum);
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 0xFF})).error(), DecodeError::kInvalidEnum);
 }
 
 TEST(ProtocolTest, BytesAfterAMessageAreTrailing) {
-  EXPECT_EQ(Decode(BytesOf({kJoinRequestType, 0, 0})).error(), DecodeError::kTrailingBytes);
+  EXPECT_EQ(Decode(BytesOf({kJoinRequestType, 0, 0, 0})).error(), DecodeError::kTrailingBytes);
   Bytes accepted = Encode(JoinAccepted{});
   accepted.push_back(std::byte{0});
   EXPECT_EQ(Decode(accepted).error(), DecodeError::kTrailingBytes);
@@ -358,7 +382,8 @@ TEST(ProtocolTest, EveryErrorAndRefusalHasADescription) {
                                   DecodeError::kTrailingBytes, DecodeError::kInvalidEnum, DecodeError::kFieldTooLong}) {
     EXPECT_FALSE(augusta::protocol::DescribeDecodeError(error).empty());
   }
-  for (const JoinRefusal reason : {JoinRefusal::kVersionMismatch, JoinRefusal::kMatchFull}) {
+  for (const JoinRefusal reason :
+       {JoinRefusal::kVersionMismatch, JoinRefusal::kMatchFull, JoinRefusal::kUnknownCharacter}) {
     EXPECT_FALSE(augusta::protocol::DescribeJoinRefusal(reason).empty());
   }
 }

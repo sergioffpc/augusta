@@ -32,6 +32,7 @@ struct ServerView {
 struct Session::Impl {
   networking::Endpoint server;
   std::string engine_version;
+  std::string character;
   networking::Client network;
   prediction::World prediction;
 
@@ -57,7 +58,10 @@ struct Session::Impl {
   logging::Throttle drop_warnings{std::chrono::seconds{1}};
 
   Impl(const SessionConfig& config, prediction::World world)
-      : server(config.server), engine_version(config.engine_version), prediction(std::move(world)) {}
+      : server(config.server),
+        engine_version(config.engine_version),
+        character(config.character),
+        prediction(std::move(world)) {}
 
   void HandleMessage(const networking::Payload& payload) {
     const std::expected<protocol::Message, protocol::DecodeError> decoded = protocol::Decode(payload);
@@ -189,8 +193,9 @@ void Session::PumpEvents() { impl_->network.PumpEvents(); }
 void Session::ExchangeMessages() {
   Impl& impl = *impl_;
   if (!impl.sent_join_request && impl.network.GetState() == networking::ConnectionState::kConnected) {
-    impl.network.Send(protocol::Encode(protocol::JoinRequest{.engine_version = impl.engine_version}),
-                      networking::Reliability::kReliable);
+    impl.network.Send(
+        protocol::Encode(protocol::JoinRequest{.engine_version = impl.engine_version, .character = impl.character}),
+        networking::Reliability::kReliable);
     impl.sent_join_request = true;
   }
   for (const networking::Payload& payload : impl.network.ReceiveMessages()) {

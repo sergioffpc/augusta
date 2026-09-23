@@ -46,6 +46,9 @@ enum class MessageType : std::uint8_t {
 /// Longest engine version string a JoinRequest may carry, in bytes.
 inline constexpr std::size_t kMaxEngineVersionLength = 32;
 
+/// Longest character path a JoinRequest may carry, in bytes.
+inline constexpr std::size_t kMaxCharacterPathLength = 64;
+
 /// The players a match holds, and so the most an Authoritative State update lists.
 inline constexpr std::size_t kMaxPlayers = 8;
 
@@ -63,12 +66,17 @@ enum class JoinRefusal : std::uint8_t {
   kVersionMismatch = 1,
   /// The match already holds as many players as it supports.
   kMatchFull = 2,
+  /// The character the client asked to play is not one of the scenario's (ADR-0042).
+  kUnknownCharacter = 3,
 };
 
 /// Client to server: the first message on a new connection.
 struct JoinRequest {
   /// The client's engine version (augusta::EngineVersion); at most kMaxEngineVersionLength bytes.
   std::string engine_version{};
+  /// The character the player chose, by its path relative to `authoring/`
+  /// (e.g. "characters/player", ADR-0042); at most kMaxCharacterPathLength bytes.
+  std::string character{};
 };
 
 /// One player's body inside an Authoritative State update or a roster.
