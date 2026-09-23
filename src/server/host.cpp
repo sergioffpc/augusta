@@ -141,7 +141,7 @@ struct Host::Impl {
       return;
     }
     CommandQueue& queue = players.at(*session).commands;
-    for (const protocol::SequencedCommand& command : message.commands) {
+    for (const protocol::SequencedCommandWire& command : message.commands) {
       const auto enqueued = queue.TryEnqueue(FromWire(command));
       if (enqueued.has_value()) {
         continue;

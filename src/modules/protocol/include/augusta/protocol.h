@@ -21,9 +21,11 @@
 //
 // Its messages hold only plain types of its own and the math types, never
 // another module's structs: a module changing its structs never changes what
-// travels, and the protocol depends on nothing but augusta_math. Each peer
-// converts at its edge, the server in server::Host and the client in
-// harness::Session.
+// travels, and the protocol depends on nothing but augusta_math. A type that
+// mirrors one of the engine's carries the suffix Wire (BodyStateWire for
+// physics::BodyState, AuthoritativeStateWire for harness::AuthoritativeState),
+// so the two never read alike where they meet: each peer converts at its edge,
+// the server in server::Host and the client in harness::Session.
 //
 // Every message is one payload: a one-byte MessageType followed by that
 // type's fields, fixed-width and little-endian, with a string or a list as a
@@ -64,23 +66,23 @@ inline constexpr std::size_t kMaxPlayers = 8;
 inline constexpr std::size_t kMaxCommandsPerMessage = 8;
 
 /// A body's stance.
-enum class Stance : std::uint8_t {
+enum class StanceWire : std::uint8_t {
   kStanding = 0,
   kCrouching = 1,
   kProne = 2,
 };
 
 /// One player's body as the server simulated it.
-struct BodyState {
+struct BodyStateWire {
   math::Vec3 position{};
   math::Vec3 velocity{};
   /// Remaining stamina, 0 to 1.
   float stamina = 1.0F;
-  Stance stance = Stance::kStanding;
+  StanceWire stance = StanceWire::kStanding;
 };
 
 /// What a player asked to do for one tick.
-struct Command {
+struct CommandWire {
   /// The bits of flags: sprint, aim down sights and fire held this tick, and
   /// reload pressed on it.
   static constexpr std::uint8_t kSprint = 1U << 0U;
@@ -95,19 +97,19 @@ struct Command {
   float pitch = 0.0F;
   /// Any of kSprint, kAds, kFire and kReload; no other bit.
   std::uint8_t flags = 0;
-  Stance desired_stance = Stance::kStanding;
+  StanceWire desired_stance = StanceWire::kStanding;
 };
 
 /// The stamina rules every player body follows.
-struct Stamina {
+struct StaminaWire {
   float deplete_per_second = 0.0F;
   float regen_per_second = 0.0F;
   float forced_walk_below = 0.0F;
 };
 
 /// The Parameters (ADR-0039) a client predicts with.
-struct Parameters {
-  Stamina stamina{};
+struct ParametersWire {
+  StaminaWire stamina{};
   /// How many players a match needs to start (ADR-0043).
   std::uint8_t player_count = 1;
 };
@@ -137,9 +139,9 @@ struct JoinRequest {
 };
 
 /// One player's body inside an Authoritative State update or a roster.
-struct PlayerState {
+struct PlayerStateWire {
   SessionId session{};
-  BodyState body{};
+  BodyStateWire body{};
 };
 
 /// Server to client: the join succeeded.
@@ -154,10 +156,10 @@ struct JoinAccepted {
   float tick_rate_hz = 0.0F;
   /// The parameters the client must predict with, so its numbers (the stamina
   /// rules among them) are the server's.
-  Parameters parameters{};
+  ParametersWire parameters{};
   /// The players already in the match, at most kMaxPlayers, each where the
   /// server last had it. Not the joining client's own.
-  std::vector<PlayerState> roster{};
+  std::vector<PlayerStateWire> roster{};
 };
 
 /// Server to client: the join failed and the connection will not be used.
@@ -167,30 +169,30 @@ struct JoinRefused {
 
 /// One tick's command and the number the client gave it. Numbers start at 1 and
 /// grow by one per command, so the server can tell what it has already seen.
-struct SequencedCommand {
+struct SequencedCommandWire {
   std::uint32_t sequence = 0;
-  Command command{};
+  CommandWire command{};
 };
 
 /// Client to server: recent commands, oldest first. Each message repeats the
 /// ones the client has not seen acknowledged (at most kMaxCommandsPerMessage,
 /// the newest), so one lost datagram does not drop input.
 struct Commands {
-  std::vector<SequencedCommand> commands{};
+  std::vector<SequencedCommandWire> commands{};
 };
 
 /// Server to client: the Authoritative State of one server tick.
-struct AuthoritativeState {
+struct AuthoritativeStateWire {
   /// The server tick this state is from; a client keeps only the newest it has seen.
   std::uint32_t tick = 0;
   /// The highest command sequence of the recipient that the server has processed, 0 if none.
   std::uint32_t acknowledged_sequence = 0;
   /// Every player in the match, at most kMaxPlayers.
-  std::vector<PlayerState> players{};
+  std::vector<PlayerStateWire> players{};
 };
 
 /// Any message of the protocol.
-using Message = std::variant<JoinRequest, JoinAccepted, JoinRefused, Commands, AuthoritativeState>;
+using Message = std::variant<JoinRequest, JoinAccepted, JoinRefused, Commands, AuthoritativeStateWire>;
 
 /// A payload is this many bytes, the same type networking::Payload names.
 using Bytes = std::vector<std::byte>;

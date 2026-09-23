@@ -14,19 +14,19 @@
 namespace augusta::harness {
 
 /// body in the engine's terms.
-[[nodiscard]] physics::BodyState FromWire(const protocol::BodyState& body);
+[[nodiscard]] physics::BodyState FromWire(const protocol::BodyStateWire& body);
 
 /// parameters in the engine's terms.
-[[nodiscard]] parameters::Parameters FromWire(const protocol::Parameters& parameters);
+[[nodiscard]] parameters::Parameters FromWire(const protocol::ParametersWire& parameters);
 
 /// A player the server named, in the engine's terms.
-[[nodiscard]] PlayerBody FromWire(const protocol::PlayerState& player);
+[[nodiscard]] PlayerBody FromWire(const protocol::PlayerStateWire& player);
 
 /// An Authoritative State the server sent, in the engine's terms.
-[[nodiscard]] AuthoritativeState FromWire(const protocol::AuthoritativeState& state);
+[[nodiscard]] AuthoritativeState FromWire(const protocol::AuthoritativeStateWire& state);
 
 /// command as the protocol carries it.
-[[nodiscard]] protocol::Command ToWire(const input::Command& command);
+[[nodiscard]] protocol::CommandWire ToWire(const input::Command& command);
 
 }  // namespace augusta::harness
 

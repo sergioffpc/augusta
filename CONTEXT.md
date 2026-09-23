@@ -59,7 +59,7 @@ The process of correcting a client's predicted state against the server's author
 _Avoid_: Resync, rollback
 
 **Authoritative State update**:
-One server tick's Authoritative State as sent to one client (protocol::AuthoritativeState): every player's body as of that tick, plus the recipient's own newest acknowledged Command sequence. augusta::replication decides who gets what.
+One server tick's Authoritative State as sent to one client (protocol::AuthoritativeStateWire): every player's body as of that tick, plus the recipient's own newest acknowledged Command sequence. augusta::replication decides who gets what.
 _Avoid_: Snapshot, state sync
 
 **Spawn point**:

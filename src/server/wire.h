@@ -16,22 +16,22 @@
 namespace augusta::server {
 
 /// body as the protocol carries it.
-[[nodiscard]] protocol::BodyState ToWire(const physics::BodyState& body);
+[[nodiscard]] protocol::BodyStateWire ToWire(const physics::BodyState& body);
 
 /// parameters as the protocol carries them.
-[[nodiscard]] protocol::Parameters ToWire(const parameters::Parameters& parameters);
+[[nodiscard]] protocol::ParametersWire ToWire(const parameters::Parameters& parameters);
 
 /// A roster entry as the protocol carries it.
-[[nodiscard]] protocol::PlayerState ToWire(const RosterEntry& entry);
+[[nodiscard]] protocol::PlayerStateWire ToWire(const RosterEntry& entry);
 
 /// What replication planned for one recipient, as the message it is sent.
-[[nodiscard]] protocol::AuthoritativeState ToWire(const replication::Update& update);
+[[nodiscard]] protocol::AuthoritativeStateWire ToWire(const replication::Update& update);
 
 /// A command a client sent, in the engine's terms.
-[[nodiscard]] input::Command FromWire(const protocol::Command& command);
+[[nodiscard]] input::Command FromWire(const protocol::CommandWire& command);
 
 /// A sequenced command a client sent, in the engine's terms.
-[[nodiscard]] SequencedCommand FromWire(const protocol::SequencedCommand& command);
+[[nodiscard]] SequencedCommand FromWire(const protocol::SequencedCommandWire& command);
 
 }  // namespace augusta::server
 

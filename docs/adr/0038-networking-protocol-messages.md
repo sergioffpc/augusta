@@ -9,7 +9,11 @@ clock or state, used by both client and server (ADR-0006).
 body state, command, stance and parameters, as plain fields) and the math types
 (`math::Vec3`); never another module's structs. So `augusta_protocol` depends on
 nothing but `augusta_math`, and a module changing its own structs never changes
-what travels. Each peer converts between the protocol's types and its own at its
+what travels. A protocol type that mirrors one of the engine's carries the
+suffix `Wire`: `BodyStateWire` for `physics::BodyState`, and the Authoritative
+State message is `AuthoritativeStateWire`, for the client's
+`harness::AuthoritativeState`. The other messages have no engine counterpart and
+keep the names of the table below. Each peer converts between the protocol's types and its own at its
 edge and nowhere else: the server in `server::Host` and the client in
 `harness::Session`. Inside each peer, modules pass the engine's types.
 

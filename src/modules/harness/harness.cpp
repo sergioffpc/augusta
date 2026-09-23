@@ -40,7 +40,7 @@ Admission ToAdmission(const protocol::JoinAccepted& accepted) {
       .roster = {},
   };
   admission.roster.reserve(accepted.roster.size());
-  for (const protocol::PlayerState& player : accepted.roster) {
+  for (const protocol::PlayerStateWire& player : accepted.roster) {
     admission.roster.push_back(FromWire(player));
   }
   return admission;
@@ -79,7 +79,7 @@ struct Session::Impl {
   bool started = false;
   // The commands still waiting to be acknowledged, and the sequence the next
   // one goes under. Sequences start at 1; 0 means none.
-  std::deque<protocol::SequencedCommand> unacknowledged;
+  std::deque<protocol::SequencedCommandWire> unacknowledged;
   std::uint32_t next_sequence = 1;
   // Network I/O thread only: a server can send messages that are refused as fast
   // as it likes, so their warnings are limited.
@@ -102,7 +102,7 @@ struct Session::Impl {
       OnJoinAccepted(*accepted);
     } else if (const auto* refused = std::get_if<protocol::JoinRefused>(&*decoded)) {
       OnJoinRefused(*refused);
-    } else if (const auto* state = std::get_if<protocol::AuthoritativeState>(&*decoded)) {
+    } else if (const auto* state = std::get_if<protocol::AuthoritativeStateWire>(&*decoded)) {
       OnAuthoritativeState(*state);
     } else {
       LW_LIMITED(drop_warnings, "subsystem=clientruntime event=dropped bytes={} reason=\"not a server message\"",
@@ -135,7 +135,7 @@ struct Session::Impl {
   }
 
   // Keeps state if it is newer than the one held (unreliable delivery can reorder).
-  void OnAuthoritativeState(const protocol::AuthoritativeState& state) {
+  void OnAuthoritativeState(const protocol::AuthoritativeStateWire& state) {
     const std::shared_ptr<const ServerView> current = view.load();
     if (current->authoritative.has_value() && state.tick <= current->authoritative->tick) {
       return;
@@ -178,7 +178,7 @@ struct Session::Impl {
       }
     }
     // Keeps at most the newest kMaxCommandsPerMessage, all a message can carry.
-    unacknowledged.push_back(protocol::SequencedCommand{.sequence = sequence, .command = ToWire(command)});
+    unacknowledged.push_back(protocol::SequencedCommandWire{.sequence = sequence, .command = ToWire(command)});
     if (unacknowledged.size() > protocol::kMaxCommandsPerMessage) {
       unacknowledged.pop_front();
     }

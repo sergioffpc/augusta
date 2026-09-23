@@ -725,13 +725,13 @@ class RawClient {
   }
 
   // The Authoritative State updates received since the last call.
-  std::vector<augusta::protocol::AuthoritativeState> Receive() {
+  std::vector<augusta::protocol::AuthoritativeStateWire> Receive() {
     client_.PumpEvents();
-    std::vector<augusta::protocol::AuthoritativeState> states;
+    std::vector<augusta::protocol::AuthoritativeStateWire> states;
     for (const auto& payload : client_.ReceiveMessages()) {
       const auto message = augusta::protocol::Decode(payload);
       if (message.has_value()) {
-        if (const auto* state = std::get_if<augusta::protocol::AuthoritativeState>(&*message)) {
+        if (const auto* state = std::get_if<augusta::protocol::AuthoritativeStateWire>(&*message)) {
           states.push_back(*state);
         }
       }
@@ -748,7 +748,7 @@ TEST_F(MovementTest, CommandsThatAreOutOfOrderNonFiniteOrOutOfRangeAreDroppedWit
   ASSERT_TRUE(raw.Join(host_));
 
   const auto command = [](std::uint32_t sequence, float yaw = 0.0F, float pitch = 0.0F) {
-    augusta::protocol::SequencedCommand sequenced{.sequence = sequence};
+    augusta::protocol::SequencedCommandWire sequenced{.sequence = sequence};
     sequenced.command.direction = Vec3(1.0F, 0.0F, 0.0F);
     sequenced.command.yaw = yaw;
     sequenced.command.pitch = pitch;
@@ -1469,9 +1469,9 @@ TEST_F(RobustnessTest, GarbageFromAPeerIsDroppedAndTheMatchAndTheOtherClientsAre
   ASSERT_TRUE(raw.Join(host_));
 
   using augusta::protocol::Bytes;
-  Bytes truncated_state = augusta::protocol::Encode(augusta::protocol::AuthoritativeState{.players = {{}}});
+  Bytes truncated_state = augusta::protocol::Encode(augusta::protocol::AuthoritativeStateWire{.players = {{}}});
   truncated_state.resize(truncated_state.size() / 2);
-  Bytes not_for_the_server = augusta::protocol::Encode(augusta::protocol::AuthoritativeState{});
+  Bytes not_for_the_server = augusta::protocol::Encode(augusta::protocol::AuthoritativeStateWire{});
   Bytes commands_with_trailing_bytes = augusta::protocol::Encode(augusta::protocol::Commands{});
   commands_with_trailing_bytes.push_back(std::byte{7});
   const Bytes garbage[] = {
