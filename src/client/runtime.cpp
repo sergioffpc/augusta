@@ -24,6 +24,9 @@ namespace augusta::runtime {
 
 namespace {
 
+// TODO(sergioffpc): O Renderer nao deve impor limites no numero maximo de jogadores remotos, isso deve ser
+// responsabilidade do protocolo. O renderer deve apenas desenhar o que recebe.
+
 // renderer doesn't depend on augusta_protocol (see renderer.h's own
 // comment on kMaxRemotePlayers) - this is the one place both are visible to
 // check the two haven't drifted apart.
@@ -41,6 +44,8 @@ static_assert(renderer::kMaxRemotePlayers >= protocol::kMaxPlayers,
 // reusing them - those are physics.cpp-internal by design, and this mapping
 // is still placeholder-only (no skeletal animation yet).
 renderer::RemotePlayer ToRenderer(const presentation::RemotePlayer& remote) {
+  // TODO(sergioffpc): Estes parametros devem variar de modelo para modelo nao devem ser fixos.
+  // Devem estar na definicao do modelo 3D.
   constexpr float kCapsuleRadius = 0.3F;
   constexpr float kStandingHeight = 1.5F;
   constexpr float kCrouchingHeight = 0.7F;

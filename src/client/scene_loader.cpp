@@ -14,6 +14,9 @@ namespace augusta::client {
 
 namespace {
 
+// TODO(sergioffpc): kEyeHeight nao pode ser uma constante fixa, deve ser parte da definicao do modelo 3D do personagem,
+// a camara deve estar atrelada ao modelo.
+
 // How far above a spawn point's origin (its feet) the camera sits.
 constexpr float kEyeHeight = 1.7F;
 
