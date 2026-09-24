@@ -108,7 +108,8 @@ TEST(ProtocolTest, JoinRequestWithTheLongestVersionRoundTrips) {
 }
 
 TEST(ProtocolTest, JoinRequestCarriesTheClientPackHash) {
-  const auto decoded = RoundTrip(JoinRequest{.engine_version = "0.1.0", .client_pack = CountingPackHash()});
+  const auto decoded =
+      RoundTrip(JoinRequest{.engine_version = "0.1.0", .client_pack = CountingPackHash(), .character = ""});
 
   EXPECT_EQ(std::get<JoinRequest>(decoded).client_pack, CountingPackHash());
 }
