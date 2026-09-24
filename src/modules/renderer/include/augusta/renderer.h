@@ -114,12 +114,6 @@ struct RemotePlayer {
   std::uint8_t character = 0;
 };
 
-/// Upper bound on how many RemotePlayer instances SetRemotePlayers can draw
-/// at once. Must stay >= protocol::kMaxPlayers - this module can't depend on
-/// augusta_protocol to check that itself, so ClientRuntime (which links
-/// both) enforces it with a static_assert.
-inline constexpr std::size_t kMaxRemotePlayers = 8;
-
 // Connection numbers for the debug HUD. The renderer only formats them: how
 // they are sourced from the transport is the caller's business.
 struct DebugHudNetStats {
@@ -205,19 +199,20 @@ class Renderer {
 
   /// Sets the mesh every RemotePlayer of character is drawn with from then on,
   /// in the character's own root space (ADR-0041); meshes stay for the life of
-  /// the Renderer. May grow the GPU buffer SetRemotePlayers writes into, so -
-  /// like SetScene, unlike SetRemotePlayers - not meant to be called every
-  /// frame: the client calls it in the Lobby, never during a match (ADR-0043).
+  /// the Renderer. Not meant to be called every frame: the client calls it in
+  /// the Lobby, never during a match (ADR-0043).
   /// From the Main/Render thread. Throws std::runtime_error if a mesh index is
   /// out of range for its positions.
   void SetCharacterMesh(std::uint8_t character, const SceneMesh& mesh);
 
   /// Replaces the drawn remote-player instances via a persistently-mapped
   /// upload-heap buffer - unlike SetScene/SetCharacterMesh, cheap enough to
-  /// call once every RenderFrame (no GPU wait, no fresh allocation). From the
-  /// Main/Render thread. Throws std::runtime_error if remote_players.size()
-  /// exceeds kMaxRemotePlayers. An empty span draws nothing - how a player
-  /// who left disappears; a player whose character has no mesh is skipped.
+  /// call once every RenderFrame. Draws every instance it is given: how many
+  /// players there can be is the protocol's business, not the renderer's. The
+  /// buffer grows (with one GPU wait) only when a call needs more room than
+  /// any before it, so a steady player count never waits or allocates. From
+  /// the Main/Render thread. An empty span draws nothing - how a player who
+  /// left disappears; a player whose character has no mesh is skipped.
   void SetRemotePlayers(std::span<const RemotePlayer> remote_players);
 
   // Hides the OS cursor and captures it for continuous mouselook: mouse

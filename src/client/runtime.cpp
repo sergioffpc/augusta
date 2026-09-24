@@ -18,20 +18,10 @@
 #include "augusta/harness.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
-#include "augusta/protocol.h"
 
 namespace augusta::runtime {
 
 namespace {
-
-// TODO(sergioffpc): O Renderer nao deve impor limites no numero maximo de jogadores remotos, isso deve ser
-// responsabilidade do protocolo. O renderer deve apenas desenhar o que recebe.
-
-// renderer doesn't depend on augusta_protocol (see renderer.h's own
-// comment on kMaxRemotePlayers) - this is the one place both are visible to
-// check the two haven't drifted apart.
-static_assert(renderer::kMaxRemotePlayers >= protocol::kMaxPlayers,
-              "the renderer must be able to draw every possible player");
 
 // Maps one interpolated remote player into a renderer-drawable instance of
 // its character's mesh, which ClientRuntime uploads via SetCharacterMesh in
