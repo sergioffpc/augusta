@@ -36,6 +36,7 @@ using augusta::protocol::MatchPlayerWire;
 using augusta::protocol::MatchStartWire;
 using augusta::protocol::Message;
 using augusta::protocol::MessageType;
+using augusta::protocol::PackHash;
 using augusta::protocol::PlayerStateWire;
 using augusta::protocol::Ready;
 using augusta::protocol::RosterEntryWire;
@@ -66,8 +67,24 @@ constexpr auto kMatchStartType = static_cast<std::uint8_t>(MessageType::kMatchSt
 constexpr auto kMatchEndType = static_cast<std::uint8_t>(MessageType::kMatchEnd);
 
 // Every refusal the protocol has.
-constexpr std::array<JoinRefusal, 4> kEveryRefusal = {JoinRefusal::kVersionMismatch, JoinRefusal::kLobbyFull,
-                                                      JoinRefusal::kUnknownCharacter, JoinRefusal::kMatchInProgress};
+constexpr std::array<JoinRefusal, 5> kEveryRefusal = {JoinRefusal::kVersionMismatch, JoinRefusal::kLobbyFull,
+                                                      JoinRefusal::kUnknownCharacter, JoinRefusal::kMatchInProgress,
+                                                      JoinRefusal::kPackMismatch};
+
+// A client pack hash of 1, 2, 3 ... 32, so its bytes are told apart on the wire.
+PackHash CountingPackHash() {
+  PackHash hash{};
+  for (std::size_t i = 0; i < hash.size(); ++i) {
+    hash[i] = static_cast<std::byte>(i + 1);
+  }
+  return hash;
+}
+
+// payload followed by the bytes of hash.
+Bytes WithPackHash(Bytes payload, const PackHash& hash) {
+  payload.insert(payload.end(), hash.begin(), hash.end());
+  return payload;
+}
 
 Message RoundTrip(const Message& message) {
   const auto decoded = Decode(Encode(message));
@@ -90,6 +107,13 @@ TEST(ProtocolTest, JoinRequestWithTheLongestVersionRoundTrips) {
   EXPECT_EQ(std::get<JoinRequest>(decoded).engine_version, longest);
 }
 
+TEST(ProtocolTest, JoinRequestCarriesTheClientPackHash) {
+  const auto decoded =
+      RoundTrip(JoinRequest{.engine_version = "0.1.0", .client_pack = CountingPackHash(), .character = ""});
+
+  EXPECT_EQ(std::get<JoinRequest>(decoded).client_pack, CountingPackHash());
+}
+
 TEST(ProtocolTest, JoinRequestCarriesTheChosenCharacter) {
   const auto decoded = RoundTrip(JoinRequest{.engine_version = "0.1.0", .character = "characters/player"});
 
@@ -105,8 +129,8 @@ TEST(ProtocolTest, JoinRequestWithTheLongestCharacterRoundTrips) {
 }
 
 TEST(ProtocolTest, ACharacterLongerThanAllowedIsTooLong) {
-  Bytes payload =
-      BytesOf({kJoinRequestType, 0, static_cast<std::uint8_t>(augusta::protocol::kMaxCharacterPathLength + 1)});
+  Bytes payload = WithPackHash(BytesOf({kJoinRequestType, 0}), PackHash{});
+  payload.push_back(static_cast<std::byte>(augusta::protocol::kMaxCharacterPathLength + 1));
   payload.resize(payload.size() + augusta::protocol::kMaxCharacterPathLength + 1, static_cast<std::byte>('c'));
 
   EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
@@ -196,8 +220,10 @@ TEST(ProtocolTest, FieldsAreFixedWidthLittleEndian) {
                                 .parameters = {.stamina = {}, .player_count = 3},
                                 .character = 2}),
             accepted);
-  EXPECT_EQ(Encode(JoinRequest{.engine_version = "ab", .character = "c"}),
-            BytesOf({kJoinRequestType, 2, 'a', 'b', 1, 'c'}));
+  Bytes request = WithPackHash(BytesOf({kJoinRequestType, 2, 'a', 'b'}), CountingPackHash());
+  request.push_back(std::byte{1});
+  request.push_back(static_cast<std::byte>('c'));
+  EXPECT_EQ(Encode(JoinRequest{.engine_version = "ab", .client_pack = CountingPackHash(), .character = "c"}), request);
   EXPECT_EQ(
       Encode(LobbyWire{.version = 0x0A0B0C0DU,
                        .roster = {RosterEntryWire{.session = static_cast<SessionId>(0x01020304U), .character = 5}}}),
@@ -340,12 +366,15 @@ TEST(ProtocolTest, ALengthOf255IsRejectedBeforeAnythingIsAllocatedForIt) {
 
 TEST(ProtocolTest, ARefusalReasonOutsideTheEnumerationIsInvalid) {
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 0})).error(), DecodeError::kInvalidEnum);
-  EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 5})).error(), DecodeError::kInvalidEnum);
+  EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 6})).error(), DecodeError::kInvalidEnum);
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 0xFF})).error(), DecodeError::kInvalidEnum);
 }
 
 TEST(ProtocolTest, BytesAfterAMessageAreTrailing) {
-  EXPECT_EQ(Decode(BytesOf({kJoinRequestType, 0, 0, 0})).error(), DecodeError::kTrailingBytes);
+  Bytes request = WithPackHash(BytesOf({kJoinRequestType, 0}), PackHash{});
+  request.push_back(std::byte{0});
+  request.push_back(std::byte{0});
+  EXPECT_EQ(Decode(request).error(), DecodeError::kTrailingBytes);
   Bytes accepted = Encode(JoinAccepted{});
   accepted.push_back(std::byte{0});
   EXPECT_EQ(Decode(accepted).error(), DecodeError::kTrailingBytes);

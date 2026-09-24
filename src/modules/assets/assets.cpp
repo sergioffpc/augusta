@@ -28,10 +28,9 @@ constexpr std::uint32_t kFormatVersion = 1;
 // per ADR-0031's header field list.
 constexpr std::uint64_t kHeaderSize =
     kMagic.size() + sizeof(std::uint32_t) + sizeof(std::uint64_t) + sizeof(std::uint64_t) + sizeof(std::uint32_t);
-constexpr std::size_t kBlake3HashSize = 32;
 constexpr std::size_t kEd25519SignatureSize = 64;
 // BLAKE3 hash + Ed25519 signature of that hash, ADR-0031's trailer.
-constexpr std::uint64_t kTrailerSize = kBlake3HashSize + kEd25519SignatureSize;
+constexpr std::uint64_t kTrailerSize = kPackHashSize + kEd25519SignatureSize;
 
 // Pragmatic v1 sanity limits - see wire_format.h's own comment on
 // kMaxPathLength for the rest of this module's limits (shared with
@@ -274,7 +273,7 @@ std::expected<PackSections, WriteError> BuildPackSections(const std::vector<Asse
 // the write side (SignPack, freshly computed) and the read side
 // (ReadTrailer, read back off disk to verify against).
 struct PackTrailer {
-  std::array<std::byte, kBlake3HashSize> hash;
+  PackHash hash;
   std::array<std::byte, kEd25519SignatureSize> signature;
 };
 
@@ -380,7 +379,7 @@ std::expected<Mapping, LoadError> OpenValidatedMapping(const std::filesystem::pa
 // already validated to fit within it (see Pack::Load), so there's no I/O
 // left to go wrong here - just pointer arithmetic and a hash.
 struct HashAndTrailer {
-  std::array<std::byte, kBlake3HashSize> hash;
+  PackHash hash;
   PackTrailer trailer;
 };
 
@@ -391,8 +390,8 @@ HashAndTrailer HashAndReadTrailer(std::span<const std::byte> mapped, std::uint64
   blake3_hasher_update(&hasher, mapped.data(), hashed_length);
   blake3_hasher_finalize(&hasher, reinterpret_cast<std::uint8_t*>(result.hash.data()), result.hash.size());
 
-  std::memcpy(result.trailer.hash.data(), mapped.data() + hashed_length, kBlake3HashSize);
-  std::memcpy(result.trailer.signature.data(), mapped.data() + hashed_length + kBlake3HashSize, kEd25519SignatureSize);
+  std::memcpy(result.trailer.hash.data(), mapped.data() + hashed_length, kPackHashSize);
+  std::memcpy(result.trailer.signature.data(), mapped.data() + hashed_length + kPackHashSize, kEd25519SignatureSize);
   return result;
 }
 
@@ -409,6 +408,7 @@ bool IsValidAssetType(std::uint8_t value) {
     case AssetType::kScene:
     case AssetType::kScript:
     case AssetType::kCharacters:
+    case AssetType::kClientPack:
       return true;
   }
   return false;
@@ -505,6 +505,7 @@ std::expected<void, WriteError> WritePack(const std::filesystem::path& output_pa
 struct Pack::Impl {
   Mapping mapping;
   std::vector<IndexEntry> index;
+  PackHash hash;
 };
 
 std::string_view DescribeLoadError(LoadError error) {
@@ -569,7 +570,8 @@ std::expected<Pack, LoadError> Pack::Load(const std::filesystem::path& path, con
   }
 
   Pack pack;
-  pack.impl_ = std::make_unique<Impl>(Impl{.mapping = std::move(*mapping), .index = std::move(*index)});
+  pack.impl_ = std::make_unique<Impl>(
+      Impl{.mapping = std::move(*mapping), .index = std::move(*index), .hash = hashed.trailer.hash});
   return pack;
 }
 
@@ -605,5 +607,12 @@ std::expected<std::vector<std::string>, ResolveError> Pack::ResolveCharacters() 
   return ResolveAsset<std::vector<std::string>>(impl_->index, impl_->mapping, kCharactersPath, AssetType::kCharacters,
                                                 DecodeCharactersBlob);
 }
+
+std::expected<PackHash, ResolveError> Pack::ResolveClientPackHash() const {
+  return ResolveAsset<PackHash>(impl_->index, impl_->mapping, kClientPackPath, AssetType::kClientPack,
+                                DecodeClientPackBlob);
+}
+
+const PackHash& Pack::Hash() const { return impl_->hash; }
 
 }  // namespace augusta::assets

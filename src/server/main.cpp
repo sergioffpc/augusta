@@ -62,12 +62,20 @@ std::optional<augusta::server::Map> LoadMap(const augusta::assets::Pack& pack, c
                  augusta::assets::DescribeResolveError(characters.error(), "character list"));
     return std::nullopt;
   }
+  // The client pack cooked with this one, the only one a player may join with.
+  const auto client_pack = pack.ResolveClientPackHash();
+  if (!client_pack) {
+    std::println(stderr, "server pack {}: {} {}", pack_path.string(), augusta::assets::kClientPackPath,
+                 augusta::assets::DescribeResolveError(client_pack.error(), "client pack hash"));
+    return std::nullopt;
+  }
   LI("subsystem=server event=map_loaded colliders={} spawn_points={} characters={}", collision->size(),
      spawn_points->size(), characters->size());
   return augusta::server::Map{
       .collision = *std::move(collision),
       .spawn_points = *std::move(spawn_points),
       .characters = *std::move(characters),
+      .client_pack = *client_pack,
   };
 }
 

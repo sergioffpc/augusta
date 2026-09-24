@@ -23,6 +23,7 @@ std::optional<TextureData> DecodeTextureBlob(std::span<const std::byte> blob);
 std::optional<SpawnPointData> DecodeSpawnPointBlob(std::span<const std::byte> blob);
 std::optional<std::string> DecodeScriptBlob(std::span<const std::byte> blob);
 std::optional<std::vector<std::string>> DecodeCharactersBlob(std::span<const std::byte> blob);
+std::optional<PackHash> DecodeClientPackBlob(std::span<const std::byte> blob);
 
 }  // namespace augusta::assets
 

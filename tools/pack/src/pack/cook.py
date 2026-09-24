@@ -31,6 +31,7 @@ from pack.pack import (
     encode_texture_blob,
 )
 from pack.pack import ASSET_TYPE_CHARACTERS as _TYPE_CHARACTERS
+from pack.pack import ASSET_TYPE_CLIENT_PACK as _TYPE_CLIENT_PACK
 from pack.pack import ASSET_TYPE_COLLISION as _TYPE_COLLISION
 from pack.pack import ASSET_TYPE_HITBOX as _TYPE_HITBOX
 from pack.pack import ASSET_TYPE_MESH as _TYPE_MESH
@@ -38,7 +39,7 @@ from pack.pack import ASSET_TYPE_SCENE as _TYPE_SCENE
 from pack.pack import ASSET_TYPE_SCRIPT as _TYPE_SCRIPT
 from pack.pack import ASSET_TYPE_SPAWN_POINT as _TYPE_SPAWN_POINT
 from pack.pack import ASSET_TYPE_TEXTURE as _TYPE_TEXTURE
-from pack.pack import CHARACTERS_PATH, NO_PARENT, TEXTURE_FORMAT_BC4, TEXTURE_FORMAT_BC5, TEXTURE_FORMAT_BC7, write_pack
+from pack.pack import CHARACTERS_PATH, CLIENT_PACK_PATH, NO_PARENT, TEXTURE_FORMAT_BC4, TEXTURE_FORMAT_BC5, TEXTURE_FORMAT_BC7, write_pack
 
 # augusta:spawnPoint / augusta:hitbox: custom bool attributes (ADR-0032's
 # authoring convention) rather than a native USD prim type. A hitbox is
@@ -546,6 +547,9 @@ def cook_scenario(
     The manifest paths, in character_stages' order, are also recorded as the
     character list both packs carry (ADR-0042).
 
+    The client pack is written first, so the server pack can carry its hash: the
+    server admits only clients that loaded that pack.
+
     on_prim(done, total, prim_path), if given, is called after each prim (the
     map's and every character's) is cooked.
     """
@@ -649,29 +653,34 @@ def cook_scenario(
     ]
     server_scene_blob = encode_scene_blob(server_nodes)
 
-    # Server pack: only the collision/hitbox/spawn-point entries, plus the
-    # stripped scene.
-    server_entries = [entry for entry in entries if entry.type in _SERVER_PACK_ASSET_TYPES]
-    server_entries.append(AssetEntry(type=_TYPE_SCENE, path="Scene", data=server_scene_blob))
-    server_entries.append(characters_entry)
+    # Encoded before either pack is written, so a script the wire can't carry
+    # leaves neither behind.
     try:
-        server_entries.extend(
+        script_entries = [
             AssetEntry(type=_TYPE_SCRIPT, path=script_path, data=encode_script_blob(script))
             for script_path, script in scripts
-        )
+        ]
     except Exception as error:  # noqa: BLE001 - re-raised as CookError below
         raise CookError("script_encode_failed", "", str(error)) from error
-    try:
-        write_pack(server_output_path, server_entries, signing_key)
-    except Exception as error:  # noqa: BLE001 - re-raised as CookError below
-        raise CookError("pack_write_failed", "", f"server pack: {error}") from error
 
     # Client pack: everything cooked from this stage, plus the full scene.
     client_entries = [*entries, AssetEntry(type=_TYPE_SCENE, path="Scene", data=client_scene_blob), characters_entry]
     try:
-        write_pack(client_output_path, client_entries, signing_key)
+        client_pack_hash = write_pack(client_output_path, client_entries, signing_key)
     except Exception as error:  # noqa: BLE001 - re-raised as CookError below
         raise CookError("pack_write_failed", "", f"client pack: {error}") from error
+
+    # Server pack: only the collision/hitbox/spawn-point entries, plus the
+    # stripped scene, the client pack's hash and the scripts.
+    server_entries = [entry for entry in entries if entry.type in _SERVER_PACK_ASSET_TYPES]
+    server_entries.append(AssetEntry(type=_TYPE_SCENE, path="Scene", data=server_scene_blob))
+    server_entries.append(characters_entry)
+    server_entries.append(AssetEntry(type=_TYPE_CLIENT_PACK, path=CLIENT_PACK_PATH, data=client_pack_hash))
+    server_entries.extend(script_entries)
+    try:
+        write_pack(server_output_path, server_entries, signing_key)
+    except Exception as error:  # noqa: BLE001 - re-raised as CookError below
+        raise CookError("pack_write_failed", "", f"server pack: {error}") from error
 
     return CookReport(
         mesh_count=mesh_count, texture_count=texture_count, node_count=node_count, script_count=len(scripts)

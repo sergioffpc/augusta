@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_PROTOCOL_H_
 #define AUGUSTA_PROTOCOL_H_
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -69,6 +70,12 @@ inline constexpr std::size_t kMaxEngineVersionLength = 32;
 
 /// Longest character path a JoinRequest may carry, in bytes.
 inline constexpr std::size_t kMaxCharacterPathLength = 64;
+
+/// The size of a pack's BLAKE3 hash, in bytes.
+inline constexpr std::size_t kPackHashSize = 32;
+
+/// A pack's BLAKE3 hash, the one its trailer signs (ADR-0031): names one cook of it.
+using PackHash = std::array<std::byte, kPackHashSize>;
 
 /// The players a Lobby or a match holds, and so the most a Lobby, a Match start
 /// or an Authoritative State update lists.
@@ -141,12 +148,16 @@ enum class JoinRefusal : std::uint8_t {
   kUnknownCharacter = 3,
   /// A match is under way, and no one joins one in progress (ADR-0043).
   kMatchInProgress = 4,
+  /// The client's pack is not the one cooked with the server's.
+  kPackMismatch = 5,
 };
 
 /// Client to server: the first message on a new connection.
 struct JoinRequest {
   /// The client's engine version (augusta::EngineVersion); at most kMaxEngineVersionLength bytes.
   std::string engine_version;
+  /// The hash of the client pack the client loaded.
+  PackHash client_pack{};
   /// The character the player chose, by its path relative to `authoring/`
   /// (e.g. "characters/player", ADR-0042); at most kMaxCharacterPathLength bytes.
   std::string character;

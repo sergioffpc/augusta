@@ -1,5 +1,6 @@
 #include "augusta/assets.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -342,6 +343,80 @@ TEST_F(PackTest, ACharacterListLongerThanTheLimitIsTooLargeToEncodeAndCorruptToR
   ASSERT_TRUE(pack.has_value());
 
   EXPECT_EQ(pack->ResolveCharacters().error(), augusta::assets::ResolveError::kCorruptBlob);
+}
+
+// A pack's hash names one cook of it: the trailer's BLAKE3 hash, which the
+// server pack carries for the client pack cooked with it.
+TEST_F(PackTest, APacksHashIsItsTrailersHash) {
+  const auto pack_path = MakePackPath("augusta_assets_test_hash.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = MakeTriangleMeshBlob()},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  // The trailer is the hash, then its 64-byte Ed25519 signature, at the end of the file.
+  constexpr std::size_t kSignatureSize = 64;
+  const auto bytes = ReadFileBytes(pack_path);
+  const auto trailer_hash =
+      std::span(bytes).last(augusta::assets::kPackHashSize + kSignatureSize).first(augusta::assets::kPackHashSize);
+  EXPECT_TRUE(std::ranges::equal(pack->Hash(), trailer_hash));
+}
+
+TEST_F(PackTest, AServerPackResolvesTheHashOfItsClientPack) {
+  const auto keys = GenerateEd25519KeyPair();
+  const auto client_path = MakePackPath("augusta_assets_test_client.pack");
+  ASSERT_TRUE(augusta::assets::WritePack(
+                  client_path,
+                  {augusta::assets::AssetEntry{
+                      .type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = MakeTriangleMeshBlob()}},
+                  keys.private_key)
+                  .has_value());
+  const auto client = augusta::assets::Pack::Load(client_path, keys.public_key);
+  ASSERT_TRUE(client.has_value());
+
+  const auto server_path = MakePackPath("augusta_assets_test_server.pack");
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kClientPack,
+                                  .path = std::string(augusta::assets::kClientPackPath),
+                                  .data = std::vector<std::byte>(client->Hash().begin(), client->Hash().end())},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(server_path, entries, keys.private_key).has_value());
+  const auto server = augusta::assets::Pack::Load(server_path, keys.public_key);
+  ASSERT_TRUE(server.has_value());
+
+  EXPECT_EQ(server->ResolveClientPackHash().value(), client->Hash());
+}
+
+TEST_F(PackTest, AClientPackHashThatIsMissingOrOfAnotherSizeIsAResolveError) {
+  const auto keys = GenerateEd25519KeyPair();
+  const auto missing_path = MakePackPath("augusta_assets_test_no_client_pack.pack");
+  ASSERT_TRUE(augusta::assets::WritePack(
+                  missing_path,
+                  {augusta::assets::AssetEntry{
+                      .type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = MakeTriangleMeshBlob()}},
+                  keys.private_key)
+                  .has_value());
+  const auto missing = augusta::assets::Pack::Load(missing_path, keys.public_key);
+  ASSERT_TRUE(missing.has_value());
+  EXPECT_EQ(missing->ResolveClientPackHash().error(), augusta::assets::ResolveError::kNotFound);
+
+  for (const std::size_t size : {augusta::assets::kPackHashSize - 1, augusta::assets::kPackHashSize + 1}) {
+    const auto path = MakePackPath("augusta_assets_test_short_client_pack.pack");
+    ASSERT_TRUE(
+        augusta::assets::WritePack(path,
+                                   {augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kClientPack,
+                                                                .path = std::string(augusta::assets::kClientPackPath),
+                                                                .data = std::vector<std::byte>(size)}},
+                                   keys.private_key)
+            .has_value());
+    const auto pack = augusta::assets::Pack::Load(path, keys.public_key);
+    ASSERT_TRUE(pack.has_value());
+    EXPECT_EQ(pack->ResolveClientPackHash().error(), augusta::assets::ResolveError::kCorruptBlob) << size;
+  }
 }
 
 // The remaining tests exercise Pack::Load's fail-closed parsing directly,

@@ -11,6 +11,7 @@
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
+#include "augusta/protocol.h"
 #include "augusta/simulation.h"
 #include "parameters_loader.h"
 
@@ -56,6 +57,9 @@ struct Map {
   /// The scenario's characters, by path: the only ones a player may join as
   /// (ADR-0042). Empty admits no one.
   std::vector<std::string> characters;
+  /// The hash of the client pack cooked with the server's: the only one a
+  /// player may join with.
+  protocol::PackHash client_pack{};
 };
 
 /// The server's listening socket and its SimulationWorld, without threads or a clock.

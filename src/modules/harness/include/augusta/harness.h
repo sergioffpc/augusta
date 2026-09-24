@@ -117,6 +117,9 @@ struct SessionConfig {
   networking::Endpoint server{};
   /// The engine version to present when joining; the server admits only its own.
   std::string engine_version = std::string(EngineVersion());
+  /// The hash of the client pack loaded (assets::Pack::Hash); the server admits
+  /// only the one cooked with its own pack.
+  protocol::PackHash client_pack{};
   /// The character to ask to play, by its path relative to `authoring/` (e.g.
   /// "characters/player"): the server admits only one of its scenario's (ADR-0042).
   std::string character;

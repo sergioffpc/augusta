@@ -210,6 +210,17 @@ class Reader {
     return count;
   }
 
+  PackHash ReadPackHash() {
+    PackHash hash{};
+    if (bytes_.size() < hash.size()) {
+      Fail(DecodeError::kTruncated);
+      return hash;
+    }
+    std::ranges::copy(bytes_.first(hash.size()), hash.begin());
+    bytes_ = bytes_.subspan(hash.size());
+    return hash;
+  }
+
   std::string ReadString(std::size_t max_length) {
     const std::size_t length = ReadCount(max_length);
     if (bytes_.size() < length) {
@@ -260,9 +271,10 @@ BodyStateWire ReadBodyState(Reader& reader) {
 }
 
 JoinRequest ReadJoinRequest(Reader& reader) {
-  // Braced initializers evaluate in order: the version is read before the character.
+  // Braced initializers evaluate in order: the version, the pack, then the character.
   return JoinRequest{
       .engine_version = reader.ReadString(kMaxEngineVersionLength),
+      .client_pack = reader.ReadPackHash(),
       .character = reader.ReadString(kMaxCharacterPathLength),
   };
 }
@@ -302,7 +314,7 @@ JoinAccepted ReadJoinAccepted(Reader& reader) {
 }
 
 JoinRefused ReadJoinRefused(Reader& reader) {
-  return JoinRefused{.reason = reader.ReadEnum(JoinRefusal::kVersionMismatch, JoinRefusal::kMatchInProgress)};
+  return JoinRefused{.reason = reader.ReadEnum(JoinRefusal::kVersionMismatch, JoinRefusal::kPackMismatch)};
 }
 
 Commands ReadCommands(Reader& reader) {
@@ -391,6 +403,7 @@ struct Encoder {
     assert(message.character.size() <= kMaxCharacterPathLength);
     WriteU8(out, static_cast<std::uint8_t>(MessageType::kJoinRequest));
     WriteString(out, message.engine_version);
+    out.insert(out.end(), message.client_pack.begin(), message.client_pack.end());
     WriteString(out, message.character);
   }
 
@@ -523,6 +536,8 @@ std::string_view DescribeJoinRefusal(JoinRefusal reason) {
       return "the server's scenario has no such character";
     case JoinRefusal::kMatchInProgress:
       return "a match is in progress: try again once it ends";
+    case JoinRefusal::kPackMismatch:
+      return "client pack does not match the server's";
   }
   return "unknown refusal";
 }

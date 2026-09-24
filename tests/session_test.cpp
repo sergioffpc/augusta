@@ -2,6 +2,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <map>
@@ -343,15 +344,25 @@ class JoinTest : public ::testing::Test {
  protected:
   JoinTest()
       : host_(TestHostConfig(WithPlayerCount(augusta::protocol::kMaxPlayers)),
-              Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}}) {}
+              Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}, .client_pack = ClientPack(1)}) {}
 
-  // Starts connecting a new client that presents engine_version and asks to play character.
+  // A client pack hash told apart by its last byte.
+  static augusta::protocol::PackHash ClientPack(std::uint8_t last) {
+    augusta::protocol::PackHash hash{};
+    hash.back() = std::byte{last};
+    return hash;
+  }
+
+  // Starts connecting a new client that presents engine_version, asks to play
+  // character and has loaded client_pack (by default the one the host's was cooked with).
   Session& AddClient(const std::string& engine_version = std::string(augusta::EngineVersion()),
-                     const std::string& character = kCharacter) {
-    sessions_.push_back(std::make_unique<Session>(
-        SessionConfig{
-            .server = Endpoint{.address = LoopbackAddress()}, .engine_version = engine_version, .character = character},
-        EmptyWorld()));
+                     const std::string& character = kCharacter,
+                     const augusta::protocol::PackHash& client_pack = ClientPack(1)) {
+    sessions_.push_back(std::make_unique<Session>(SessionConfig{.server = Endpoint{.address = LoopbackAddress()},
+                                                                .engine_version = engine_version,
+                                                                .client_pack = client_pack,
+                                                                .character = character},
+                                                  EmptyWorld()));
     sessions_.back()->Connect();
     return *sessions_.back();
   }
@@ -424,6 +435,15 @@ TEST_F(JoinTest, ARefusedClientReportsTheRefusalAsItsFailure) {
   ASSERT_TRUE(failure.has_value());
   EXPECT_EQ(failure->kind, FailureKind::kRefused);
   EXPECT_EQ(failure->refusal, JoinRefusal::kVersionMismatch);
+}
+
+TEST_F(JoinTest, AClientWithAnotherClientPackIsRefusedForThePack) {
+  Session& client = AddClient(std::string(augusta::EngineVersion()), kCharacter, ClientPack(2));
+
+  ASSERT_TRUE(WaitForAnswers());
+
+  EXPECT_EQ(client.GetRefusal(), JoinRefusal::kPackMismatch);
+  EXPECT_FALSE(client.GetSessionId().has_value());
 }
 
 TEST_F(JoinTest, AClientThatPicksACharacterTheScenarioLacksIsRefusedForIt) {

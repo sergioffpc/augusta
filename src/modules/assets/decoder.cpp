@@ -1,5 +1,6 @@
 #include "decoder.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -285,6 +286,16 @@ std::optional<std::vector<std::string>> DecodeCharactersBlob(std::span<const std
     characters.push_back(std::move(*character));
   }
   return characters;
+}
+
+// Client-pack blob: the client pack's hash, its kPackHashSize bytes and nothing else.
+std::optional<PackHash> DecodeClientPackBlob(std::span<const std::byte> blob) {
+  if (blob.size() != kPackHashSize) {
+    return std::nullopt;
+  }
+  PackHash hash;
+  std::ranges::copy(blob, hash.begin());
+  return hash;
 }
 
 }  // namespace augusta::assets
