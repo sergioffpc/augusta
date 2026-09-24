@@ -3,7 +3,6 @@
 #include <filesystem>
 #include <format>
 #include <optional>
-#include <print>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -77,7 +76,8 @@ std::optional<augusta::renderer::Scene> LoadRenderScene(const augusta::assets::P
                                                         const std::filesystem::path& pack_path) {
   auto scene = augusta::client::LoadRenderScene(pack);
   if (!scene) {
-    std::println(stderr, "client pack {}: {}", pack_path.string(), augusta::client::DescribeSceneError(scene.error()));
+    LE("subsystem=client event=scene_loading_failed path={} error={}", pack_path.string(),
+       augusta::client::DescribeSceneError(scene.error()));
     return std::nullopt;
   }
   LI("subsystem=client event=scene_loaded meshes={}", scene->meshes.size());
@@ -91,8 +91,9 @@ std::optional<augusta::runtime::CharacterMeshLoader> CharacterMeshLoaderFor(cons
                                                                             const std::filesystem::path& pack_path) {
   auto characters = pack.ResolveCharacters();
   if (!characters) {
-    std::println(stderr, "client pack {}: {} {}", pack_path.string(), augusta::assets::kCharactersPath,
-                 augusta::assets::DescribeResolveError(characters.error(), "character list"));
+    LE("subsystem=client event=character_mesh_loading_failed path={} error={}", pack_path.string(),
+       std::format("{} {}", augusta::assets::kCharactersPath,
+                   augusta::assets::DescribeResolveError(characters.error(), "character list")));
     return std::nullopt;
   }
   return [&pack, characters = *std::move(characters)](std::uint8_t character) {
@@ -117,11 +118,89 @@ std::optional<augusta::runtime::Map> LoadMap(const augusta::assets::Pack& pack,
                                              const std::filesystem::path& pack_path) {
   auto collision = augusta::map::LoadCollision(pack);
   if (!collision) {
-    std::println(stderr, "client pack {}: {}", pack_path.string(), augusta::map::DescribeMapError(collision.error()));
+    LE("subsystem=client event=map_loading_failed path={} error={}", pack_path.string(),
+       augusta::map::DescribeMapError(collision.error()));
     return std::nullopt;
   }
   LI("subsystem=client event=map_loaded colliders={}", collision->size());
   return augusta::runtime::Map{.collision = *std::move(collision)};
+}
+
+struct Content {
+  augusta::renderer::Scene scene;
+  augusta::runtime::Map map;
+  augusta::runtime::CharacterMeshLoader load_character_mesh;
+};
+
+enum class ContentError {
+  kSceneLoading,
+  kCharacterMeshLoading,
+  kMapLoading,
+};
+
+std::string_view DescribeContentError(ContentError error) {
+  switch (error) {
+    case ContentError::kSceneLoading:
+      return "scene loading failed";
+    case ContentError::kCharacterMeshLoading:
+      return "character mesh loading failed";
+    case ContentError::kMapLoading:
+      return "map loading failed";
+  }
+  return "unknown content error";
+}
+
+std::expected<Content, ContentError> LoadClientContent(const augusta::assets::Pack& pack,
+                                                       const std::filesystem::path& pack_path) {
+  auto scene = LoadRenderScene(pack, pack_path);
+  if (!scene) {
+    return std::unexpected(ContentError::kSceneLoading);
+  }
+
+  // A character's mesh is loaded only once another player in the Lobby brings it (ADR-0043).
+  auto load_character_mesh = CharacterMeshLoaderFor(pack, pack_path);
+  if (!load_character_mesh) {
+    return std::unexpected(ContentError::kCharacterMeshLoading);
+  }
+
+  auto map = LoadMap(pack, pack_path);
+  if (!map) {
+    return std::unexpected(ContentError::kMapLoading);
+  }
+
+  return Content{
+      .scene = *std::move(scene), .map = *std::move(map), .load_character_mesh = *std::move(load_character_mesh)};
+}
+
+augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ClientConfig& file_config,
+                                            const augusta::assets::Pack& pack) {
+  augusta::runtime::Config config;
+  config.renderer.title = "augusta";
+  // Direct IP:port only, no server discovery (ARCHITECTURE.md §3).
+  config.server.address = file_config.server_address;
+  config.input = file_config.input;
+  config.character = file_config.character;
+  config.client_pack = pack.Hash();
+  return config;
+}
+
+int Run(const augusta::config::ClientConfig& file_config, const augusta::assets::Pack& pack,
+        const std::filesystem::path& pack_path, Content content) {
+  // augusta::networking::Init() must run once, process-wide, before any
+  // Client/Server is constructed - see networking.h.
+  augusta::networking::Init();
+
+  const augusta::runtime::Config config = BuildRuntimeConfig(file_config, pack);
+  augusta::runtime::ClientRuntime runtime(config, std::move(content.map), content.scene,
+                                          std::move(content.load_character_mesh));
+  if (const auto failure = runtime.Run(); failure.has_value()) {
+    // No reconnecting and no connection screen: say what happened and exit.
+    LE("subsystem=client event=run_failed path={} error={}", pack_path.string(),
+       DescribeRunFailure(*failure, pack_path));
+    return 1;
+  }
+
+  return 0;
 }
 
 }  // namespace
@@ -131,7 +210,8 @@ int main(int argc, char** argv) {
 
   const auto file_config = LoadConfig(argc, argv);
   if (!file_config) {
-    std::println(stderr, "{}", augusta::config::DescribeConfigError(file_config.error()));
+    LE("subsystem=client event=config_loading_failed error={}",
+       augusta::config::DescribeConfigError(file_config.error()));
     return 1;
   }
   // ParseClientConfig already validated log_level, so this is never nullopt.
@@ -145,45 +225,18 @@ int main(int argc, char** argv) {
   const std::filesystem::path& pack_path = file_config->pack_path;
   const auto pack = LoadVerifiedPack(pack_path, file_config->public_key_path);
   if (!pack) {
-    std::println(stderr, "{}", DescribePackError(pack.error(), pack_path, file_config->public_key_path));
+    LE("subsystem=client event=pack_verification_failed path={} error={}", pack_path.string(),
+       DescribePackError(pack.error(), pack_path, file_config->public_key_path));
     return 1;
   }
   LI("subsystem=client event=pack_verified path={}", pack_path.string());
 
-  auto scene = LoadRenderScene(*pack, pack_path);
-  if (!scene) {
+  auto content = LoadClientContent(*pack, pack_path);
+  if (!content) {
+    LE("subsystem=client event=content_loading_failed path={} error={}", pack_path.string(),
+       DescribeContentError(content.error()));
     return 1;
   }
 
-  // A character's mesh is loaded only once another player in the Lobby brings it (ADR-0043).
-  auto load_character_mesh = CharacterMeshLoaderFor(*pack, pack_path);
-  if (!load_character_mesh) {
-    return 1;
-  }
-
-  auto map = LoadMap(*pack, pack_path);
-  if (!map) {
-    return 1;
-  }
-
-  // augusta::networking::Init() must run once, process-wide, before any
-  // Client/Server is constructed - see networking.h.
-  augusta::networking::Init();
-
-  augusta::runtime::Config config;
-  config.renderer.title = "augusta";
-  // Direct IP:port only, no server discovery (ARCHITECTURE.md §3).
-  config.server.address = file_config->server_address;
-  config.input = file_config->input;
-  config.character = file_config->character;
-  config.client_pack = pack->Hash();
-
-  augusta::runtime::ClientRuntime runtime(config, *std::move(map), *scene, *std::move(load_character_mesh));
-  if (const auto failure = runtime.Run(); failure.has_value()) {
-    // No reconnecting and no connection screen: say what happened and exit.
-    std::println(stderr, "{}", DescribeRunFailure(*failure, pack_path));
-    return 1;
-  }
-
-  return 0;
+  return Run(*file_config, *pack, pack_path, *std::move(content));
 }
