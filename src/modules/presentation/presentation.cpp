@@ -1,7 +1,9 @@
 #include "augusta/presentation.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -9,8 +11,12 @@
 #include <nvtx3/nvtx3.hpp>
 
 #include "augusta/animation.h"
+#include "augusta/audio.h"
 #include "augusta/correction.h"
+#include "augusta/harness.h"
 #include "augusta/interpolation.h"
+#include "augusta/math.h"
+#include "augusta/prediction.h"
 
 namespace augusta::presentation {
 

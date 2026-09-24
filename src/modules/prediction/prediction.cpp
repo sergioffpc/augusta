@@ -2,12 +2,20 @@
 
 #include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
+#include <memory>
+#include <optional>
 
 #include <flecs.h>
 #include <nvtx3/nvtx3.hpp>
 
+#include "augusta/input.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
+#include "augusta/parameters.h"
+#include "augusta/physics.h"
 #include "augusta/reconciliation.h"
 
 namespace augusta::prediction {

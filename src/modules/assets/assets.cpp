@@ -2,18 +2,30 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <expected>
+#include <filesystem>
+#include <format>
 #include <fstream>
+#include <ios>
+#include <memory>
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <system_error>
+#include <utility>
+#include <vector>
 
 #include <blake3.h>
 #include <boost/interprocess/file_mapping.hpp>
 #include <boost/interprocess/mapped_region.hpp>
 #include <sodium.h>
 
+#include "augusta/math.h"
 #include "decoder.h"
 #include "encoder.h"
 #include "wire_format.h"

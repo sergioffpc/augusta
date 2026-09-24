@@ -3,9 +3,18 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <expected>
+#include <memory>
+#include <string>
 #include <unordered_map>
+#include <vector>
 
 #include <flecs.h>
+
+#include "augusta/ballistics.h"
+#include "augusta/input.h"
+#include "augusta/physics.h"
+#include "augusta/scripting.h"
 
 namespace augusta::simulation {
 
