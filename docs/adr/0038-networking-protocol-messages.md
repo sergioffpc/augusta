@@ -57,8 +57,8 @@ its step is an exact float, and a value read back encodes to the same bytes:
 | stamina | 2 (unsigned) | 1/32768 | 0 to 2 |
 
 A value beyond its range travels as the bound, and a NaN travels as 0. The tick
-rate and the parameters stay 32-bit floats: they are sent once, and must arrive
-exactly. So a body is 18 bytes and a command 13.
+rate travels as one byte of whole Hz, and the parameters stay 32-bit floats:
+they are sent once, and must arrive exactly. So a body is 18 bytes and a command 13.
 
 **Aim is not the network's to blur.** The server fires with the angle it was
 sent, so the angle grid decides how far a shot lands from where the player

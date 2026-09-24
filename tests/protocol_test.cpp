@@ -209,10 +209,11 @@ TEST(ProtocolTest, ALobbyFullRefusalKeepsTheWireValueOfAFullMatch) {
 }
 
 TEST(ProtocolTest, FieldsAreFixedWidthLittleEndian) {
-  // The session, then tick rate, parameters and character: all zero here but
-  // the player count, which leads the parameters, and the character.
+  // The session, then tick rate (one byte of whole Hz), parameters and
+  // character: all zero here but the player count, which leads the
+  // parameters, and the character.
   BytesWire accepted = BytesOf({kJoinAcceptedType, 0x01, 0x02, 0x03, 0x04});
-  accepted.resize(accepted.size() + 4, std::byte{0});
+  accepted.resize(accepted.size() + 1, std::byte{0});
   accepted.push_back(std::byte{0x03});
   accepted.resize(accepted.size() + 12, std::byte{0});
   accepted.push_back(std::byte{0x02});
