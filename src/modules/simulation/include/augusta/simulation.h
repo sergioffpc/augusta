@@ -84,8 +84,8 @@ enum class Phase {
   // once per relevant hook. The only phase not implemented in C++.
   kScriptsBehaviours,
   // Mechanism. Packages the tick's resolved state into Authoritative
-  // State (State, below), for augusta::replication (not yet
-  // implemented) to send to clients.
+  // State (State, below), which augusta::replication plans into each
+  // client's update and server::Host sends.
   kCommit,
 };
 

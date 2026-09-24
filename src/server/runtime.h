@@ -26,12 +26,11 @@
 // Stop() is this runtime's own explicit lifecycle control instead, e.g.
 // called from a SIGINT/SIGTERM handler main() installs.
 //
-// Like its client-side counterpart, this currently only compiles - it
-// isn't yet called from main.cpp. networking::Server (ADR-0003) and
+// Constructed and run from main.cpp. networking::Server (ADR-0003) and
 // physics::World (ADR-0002, constructed inside simulation::World) are
-// both real now (see networking.cpp, physics.cpp); ballistics::World and
+// real (see networking.cpp, physics.cpp); ballistics::World and
 // scripting::Engine (also constructed inside simulation::World) are
-// still placeholder stubs. Revisit main.cpp once those land too.
+// still placeholder stubs.
 namespace augusta::runtime {
 
 // Everything ServerRuntime needs to construct SimulationWorld and start
