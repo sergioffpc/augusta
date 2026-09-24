@@ -120,7 +120,9 @@ pipeline).
   instances/versions. Stored on a shared `hostPath` persistent volume on
   the k3s node, populated manually after signing, mounted read-only into
   every server pod. Each environment's Helm values specify which
-  `packVersion` to load.
+  `packVersion` to load: the folder `<hostPath>/<packVersion>/` holding
+  that environment's `server.pack` and the `augusta.pub` key it is signed
+  with. The chart writes the server's `augustad.yaml` from its values.
 
 ## Developer Environment
 
