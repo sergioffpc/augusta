@@ -41,19 +41,3 @@ add_custom_command(TARGET augustac POST_BUILD
     "$<TARGET_FILE_DIR:augustac>/shaders/Augusta/Renderer/Renderer.3d.slang"
   COMMENT "Deploying Falcor's runtime (ADR-0009) and shaders next to augustac"
 )
-
-# PhysX's GPU acceleration module (PhysXGpu_64.dll/PhysXDevice64.dll) is
-# late-bound - PxCreateCudaContextManager (physics.cpp) LoadLibrary()s it
-# by name at runtime rather than linking against it, so without this copy
-# augusta_physics::World's own GPU request (client only - see
-# augusta::prediction::World's constructor) always silently falls back to
-# CPU, even on a machine with a capable GPU/driver. Client-only
-# (src/client is only added under the WIN32 guard above; the server never
-# requests GPU physics, see physics::World's own header comment).
-add_custom_command(TARGET augustac POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    "$<TARGET_FILE:unofficial::omniverse-physx-sdk::gpu-library>"
-    "$<TARGET_FILE:unofficial::omniverse-physx-sdk::gpu-device-library>"
-    "$<TARGET_FILE_DIR:augustac>"
-  COMMENT "Deploying PhysX's GPU acceleration runtime next to augustac"
-)
