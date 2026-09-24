@@ -19,3 +19,16 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | 
 app.kubernetes.io/name: {{ include "augustad.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
+
+{{/* The image tag to run: image.tag if set; else, for a chart Flux versioned
+     <version>+<commit>, the sha-<commit> tag CI pushed for that same commit;
+     else the chart's appVersion. */}}
+{{- define "augustad.imageTag" -}}
+{{- if .Values.image.tag -}}
+{{- .Values.image.tag -}}
+{{- else if contains "+" .Chart.Version -}}
+{{- printf "sha-%s" (splitList "+" .Chart.Version | last) -}}
+{{- else -}}
+{{- .Chart.AppVersion -}}
+{{- end -}}
+{{- end -}}
