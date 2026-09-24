@@ -32,6 +32,27 @@ bool ReadOptionalPath(ByteReader& reader, std::uint8_t flags, std::uint8_t bit, 
   return true;
 }
 
+std::optional<math::Vec3> ReadVec3(ByteReader& reader) {
+  const auto x = reader.ReadF32();
+  const auto y = reader.ReadF32();
+  const auto z = reader.ReadF32();
+  if (!x || !y || !z) {
+    return std::nullopt;
+  }
+  return math::Vec3(*x, *y, *z);
+}
+
+std::optional<math::Quat> ReadQuat(ByteReader& reader) {
+  const auto x = reader.ReadF32();
+  const auto y = reader.ReadF32();
+  const auto z = reader.ReadF32();
+  const auto w = reader.ReadF32();
+  if (!x || !y || !z || !w) {
+    return std::nullopt;
+  }
+  return math::Quat(*w, *x, *y, *z);
+}
+
 // A node's translation/rotation/scale, read as ten consecutive f32
 // fields - factored out of DecodeSceneNode purely to keep that function
 // under this codebase's function-size guideline (ADR-0012).
@@ -42,24 +63,16 @@ struct DecodedTransform {
 };
 
 std::optional<DecodedTransform> ReadTransform(ByteReader& reader) {
-  const auto translation_x = reader.ReadF32();
-  const auto translation_y = reader.ReadF32();
-  const auto translation_z = reader.ReadF32();
-  const auto rotation_x = reader.ReadF32();
-  const auto rotation_y = reader.ReadF32();
-  const auto rotation_z = reader.ReadF32();
-  const auto rotation_w = reader.ReadF32();
-  const auto scale_x = reader.ReadF32();
-  const auto scale_y = reader.ReadF32();
-  const auto scale_z = reader.ReadF32();
-  if (!translation_x || !translation_y || !translation_z || !rotation_x || !rotation_y || !rotation_z || !rotation_w ||
-      !scale_x || !scale_y || !scale_z) {
+  const auto translation = ReadVec3(reader);
+  const auto rotation = ReadQuat(reader);
+  const auto scale = ReadVec3(reader);
+  if (!translation || !rotation || !scale) {
     return std::nullopt;
   }
   return DecodedTransform{
-      .translation = math::Vec3(*translation_x, *translation_y, *translation_z),
-      .rotation = math::Quat(*rotation_w, *rotation_x, *rotation_y, *rotation_z),
-      .scale = math::Vec3(*scale_x, *scale_y, *scale_z),
+      .translation = *translation,
+      .rotation = *rotation,
+      .scale = *scale,
   };
 }
 
@@ -153,13 +166,11 @@ std::optional<MeshData> DecodeMeshBlob(std::span<const std::byte> blob) {
   // cap.
   MeshData mesh;
   for (std::uint32_t i = 0; i < *point_count; ++i) {
-    const auto pos_x = reader.ReadF32();
-    const auto pos_y = reader.ReadF32();
-    const auto pos_z = reader.ReadF32();
-    if (!pos_x || !pos_y || !pos_z) {
+    const auto point = ReadVec3(reader);
+    if (!point) {
       return std::nullopt;
     }
-    mesh.points.emplace_back(*pos_x, *pos_y, *pos_z);
+    mesh.points.push_back(*point);
   }
 
   const auto index_count = reader.ReadU32();
@@ -243,19 +254,14 @@ std::optional<TextureData> DecodeTextureBlob(std::span<const std::byte> blob) {
 // Spawn-point blob wire format: see EncodeSpawnPointBlob.
 std::optional<SpawnPointData> DecodeSpawnPointBlob(std::span<const std::byte> blob) {
   ByteReader reader(blob);
-  const auto translation_x = reader.ReadF32();
-  const auto translation_y = reader.ReadF32();
-  const auto translation_z = reader.ReadF32();
-  const auto rotation_x = reader.ReadF32();
-  const auto rotation_y = reader.ReadF32();
-  const auto rotation_z = reader.ReadF32();
-  const auto rotation_w = reader.ReadF32();
-  if (!translation_x || !translation_y || !translation_z || !rotation_x || !rotation_y || !rotation_z || !rotation_w) {
+  const auto translation = ReadVec3(reader);
+  const auto rotation = ReadQuat(reader);
+  if (!translation || !rotation) {
     return std::nullopt;
   }
   return SpawnPointData{
-      .translation = math::Vec3(*translation_x, *translation_y, *translation_z),
-      .rotation = math::Quat(*rotation_w, *rotation_x, *rotation_y, *rotation_z),
+      .translation = *translation,
+      .rotation = *rotation,
   };
 }
 
