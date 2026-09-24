@@ -1,6 +1,12 @@
 #include "command_queue.h"
 
 #include <cmath>
+#include <cstdint>
+#include <expected>
+#include <string_view>
+
+#include "augusta/input.h"
+#include "augusta/math.h"
 
 namespace augusta::server {
 

@@ -24,6 +24,7 @@ from pack.pack import (
     MeshData,
     SceneNode,
     encode_characters_blob,
+    encode_eye_blob,
     encode_mesh_blob,
     encode_scene_blob,
     encode_script_blob,
@@ -33,6 +34,7 @@ from pack.pack import (
 from pack.pack import ASSET_TYPE_CHARACTERS as _TYPE_CHARACTERS
 from pack.pack import ASSET_TYPE_CLIENT_PACK as _TYPE_CLIENT_PACK
 from pack.pack import ASSET_TYPE_COLLISION as _TYPE_COLLISION
+from pack.pack import ASSET_TYPE_EYE as _TYPE_EYE
 from pack.pack import ASSET_TYPE_HITBOX as _TYPE_HITBOX
 from pack.pack import ASSET_TYPE_MESH as _TYPE_MESH
 from pack.pack import ASSET_TYPE_SCENE as _TYPE_SCENE
@@ -54,6 +56,10 @@ BASE_COLOR_PROPERTY = "base_color"
 # character's folder (ADR-0040), so the client finds its visual mesh at
 # <manifest path>/Character/Visual.
 CHARACTER_ROOT_PRIM = "Character"
+# The child of CHARACTER_ROOT_PRIM every character stage has, whose origin is
+# where the local player's camera sits (ADR-0040): the client reads it at
+# <manifest path>/Character/Eye.
+CHARACTER_EYE_PRIM = "Eye"
 # augusta:textureFormat: selects which BC format a UsdUVTexture prim
 # compresses to (ADR-0017/issue #49). Defaults to BC7 when absent/
 # unrecognized.
@@ -487,7 +493,7 @@ def _maybe_cook_texture_prim(prim: Usd.Prim, prim_path: str, stage_path: Path, e
 
 
 # True for the AssetType values ADR-0019 puts in the server pack: collision
-# geometry, hitboxes, and spawn points. Mesh/texture/scene are client-only
+# geometry, hitboxes, and spawn points. Mesh/texture/eye/scene are client-only
 # (scene is handled separately, since it needs its mesh/material
 # references stripped rather than being dropped outright).
 _SERVER_PACK_ASSET_TYPES = frozenset({_TYPE_COLLISION, _TYPE_HITBOX, _TYPE_SPAWN_POINT})
@@ -587,10 +593,18 @@ def cook_scenario(
                 "",
                 f"{stage_path}: a character's default prim must be named {CHARACTER_ROOT_PRIM!r}",
             )
+        # The client puts its camera at <manifest path>/Character/Eye (ADR-0040).
+        eye_prim = default_prim.GetChild(CHARACTER_EYE_PRIM)
+        if not eye_prim:
+            raise CookError(
+                "character_eye_missing",
+                "",
+                f"{stage_path}: a character's {CHARACTER_ROOT_PRIM!r} prim must have an {CHARACTER_EYE_PRIM!r} child",
+            )
         character_prims = list(character_stage.Traverse(Usd.TraverseInstanceProxies(Usd.PrimDefaultPredicate)))
-        opened_characters.append((manifest_path, stage_path, character_stage, character_prims))
+        opened_characters.append((manifest_path, stage_path, character_stage, character_prims, eye_prim.GetPath()))
 
-    total_prims = len(map_prims) + sum(len(prims) for _, _, _, prims in opened_characters)
+    total_prims = len(map_prims) + sum(len(prims) for _, _, _, prims, _ in opened_characters)
     done = 0
 
     correction = _stage_correction_matrix(map_stage)
@@ -609,7 +623,7 @@ def cook_scenario(
         if on_prim is not None:
             on_prim(done, total_prims, prim_path)
 
-    for manifest_path, stage_path, character_stage, character_prims in opened_characters:
+    for manifest_path, stage_path, character_stage, character_prims, eye_path in opened_characters:
         character_correction = _stage_correction_matrix(character_stage)
         for prim in character_prims:
             prim_path = f"{manifest_path}/{_sanitize_prim_path(str(prim.GetPath()))}"
@@ -617,6 +631,9 @@ def cook_scenario(
             local_to_root = (
                 xformable.ComputeLocalToWorldTransform(Usd.TimeCode.Default()) if xformable else Gf.Matrix4d(1.0)
             )
+            if prim.GetPath() == eye_path:
+                eye = (local_to_root * character_correction).Transform(Gf.Vec3d(0.0, 0.0, 0.0))
+                entries.append(AssetEntry(type=_TYPE_EYE, path=prim_path, data=encode_eye_blob(tuple(eye))))
             _cook_character_prim(prim, prim_path, local_to_root * character_correction, entries)
             _maybe_cook_texture_prim(prim, prim_path, stage_path, entries)
             done += 1

@@ -1,13 +1,16 @@
 #include "decoder.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/math.h"
 #include "wire_format.h"
 
 // The Decode* half of augusta_assets' blob (de)serialization (ADR-0031/
@@ -263,6 +266,16 @@ std::optional<SpawnPointData> DecodeSpawnPointBlob(std::span<const std::byte> bl
       .translation = *translation,
       .rotation = *rotation,
   };
+}
+
+// Eye blob wire format: see EncodeEyeBlob.
+std::optional<EyeData> DecodeEyeBlob(std::span<const std::byte> blob) {
+  ByteReader reader(blob);
+  const auto position = ReadVec3(reader);
+  if (!position) {
+    return std::nullopt;
+  }
+  return EyeData{.position = *position};
 }
 
 // Script blob: the script's text as it is, with no framing and no terminator.

@@ -4,11 +4,19 @@
 #include <bit>
 #include <cassert>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
 #include <limits>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
+#include <vector>
+
+#include "augusta/math.h"
 
 namespace augusta::protocol {
 

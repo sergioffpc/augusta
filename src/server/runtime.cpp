@@ -2,7 +2,9 @@
 
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <thread>
+#include <utility>
 
 #include "augusta/logging.h"
 #include "host.h"

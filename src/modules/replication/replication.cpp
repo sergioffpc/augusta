@@ -1,6 +1,10 @@
 #include "augusta/replication.h"
 
-#include <cstddef>
+#include <cstdint>
+#include <span>
+#include <vector>
+
+#include "augusta/simulation.h"
 
 namespace augusta::replication {
 

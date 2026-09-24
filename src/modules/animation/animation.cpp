@@ -1,5 +1,7 @@
 #include "augusta/animation.h"
 
+#include <vector>
+
 namespace augusta::animation {
 
 // TODO(sergioffpc): every method below is a placeholder - there is no

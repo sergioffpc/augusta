@@ -1,12 +1,15 @@
 #include "augusta/map.h"
 
 #include <cstddef>
+#include <expected>
 #include <format>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "augusta/assets.h"
 #include "augusta/math.h"
+#include "augusta/physics.h"
 
 namespace augusta::map {
 

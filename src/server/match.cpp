@@ -1,8 +1,17 @@
 #include "match.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
 #include <iterator>
+#include <optional>
+#include <string_view>
 #include <utility>
+#include <vector>
+
+#include "augusta/math.h"
+#include "augusta/networking.h"
 
 namespace augusta::server {
 

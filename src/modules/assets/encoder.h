@@ -46,6 +46,9 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeTextureBlob(const Textu
 // directly (see MeshData's own comment).
 std::expected<std::vector<std::byte>, EncodeError> EncodeSpawnPointBlob(const SpawnPointData& spawn_point);
 
+// Encodes eye into the pack's eye-blob byte layout (ADR-0040).
+std::expected<std::vector<std::byte>, EncodeError> EncodeEyeBlob(const EyeData& eye);
+
 // Encodes script, a Lua script's text, into the pack's script-blob byte layout
 // (ADR-0031): the text itself, with no framing.
 std::expected<std::vector<std::byte>, EncodeError> EncodeScriptBlob(std::string_view script);

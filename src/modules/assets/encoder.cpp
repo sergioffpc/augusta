@@ -1,5 +1,6 @@
 #include "encoder.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <span>
@@ -7,6 +8,7 @@
 #include <string_view>
 #include <vector>
 
+#include "augusta/assets.h"
 #include "wire_format.h"
 
 // The Encode* half of augusta_assets' blob (de)serialization (ADR-0031/
@@ -118,6 +120,14 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeSpawnPointBlob(const Sp
   ByteWriter writer(blob);
   writer.WriteVec3(spawn_point.translation);
   writer.WriteQuat(spawn_point.rotation);
+  return blob;
+}
+
+// Eye blob wire format: position (3x f32), nothing else.
+std::expected<std::vector<std::byte>, EncodeError> EncodeEyeBlob(const EyeData& eye) {
+  std::vector<std::byte> blob;
+  ByteWriter writer(blob);
+  writer.WriteVec3(eye.position);
   return blob;
 }
 

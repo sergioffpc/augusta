@@ -4,14 +4,19 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <expected>
 #include <limits>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <sol/sol.hpp>
+
+#include "augusta/parameters.h"
+#include "augusta/physics.h"
 
 namespace augusta::parameters {
 namespace {

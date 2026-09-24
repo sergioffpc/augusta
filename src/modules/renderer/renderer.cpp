@@ -1,6 +1,5 @@
 #include "augusta/renderer.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -80,12 +79,11 @@ std::vector<Vertex> BuildFlatShadedVertices(const Scene& scene) {
 
 // Every RemotePlayer as an instance of its character's local vertices
 // (SetCharacterMesh's own flat-shaded vertices, in the character's local space
-// - ADR-0040/ADR-0041), skipping one whose character has none: height-scaled around y=0 (remote.height_scale - issue
-// #82's "right stance" criterion, renderer.h), then translated to that instance's own position and given its own color.
-// remote.position is where the mesh's own origin (y=0) lands - the same convention the character's mesh was cooked
-// around, so no further placement is needed. A non-uniform (y-only) scale needs its normals scaled by the inverse
-// instead, then renormalized, to stay correct - a uniform scale (height_scale == 1, the common case) leaves them
-// unchanged.
+// - ADR-0040/ADR-0041), skipping one whose character has none: translated to
+// that instance's own position and given its own color. remote.position is
+// where the mesh's own origin (y=0) lands - the same convention the
+// character's mesh was cooked around, so no further placement is needed, and
+// a translation leaves the normals as they are.
 std::vector<Vertex> BuildRemoteVertices(
     std::span<const RemotePlayer> remote_players,
     const std::unordered_map<std::uint8_t, std::vector<Vertex>>& character_vertices) {
@@ -97,16 +95,11 @@ std::vector<Vertex> BuildRemoteVertices(
     }
     const std::vector<Vertex>& local_vertices = found->second;
     const math::Vec3& p = remote.position;
-    const float height_scale = remote.height_scale;
     const Falcor::float3 color{remote.color.x, remote.color.y, remote.color.z};
     for (const Vertex& local_vertex : local_vertices) {
-      const math::Vec3 position(local_vertex.position.x, local_vertex.position.y * height_scale,
-                                local_vertex.position.z);
-      const math::Vec3 normal = math::Normalize(
-          math::Vec3(local_vertex.normal.x, local_vertex.normal.y / height_scale, local_vertex.normal.z));
       vertices.push_back({
-          .position = {position.x + p.x, position.y + p.y, position.z + p.z},
-          .normal = {normal.x, normal.y, normal.z},
+          .position = {local_vertex.position.x + p.x, local_vertex.position.y + p.y, local_vertex.position.z + p.z},
+          .normal = local_vertex.normal,
           .color = color,
       });
     }
@@ -223,16 +216,16 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   Camera camera;
 
   // Each character's mesh (ADR-0042), flat-shaded in its own local space and
-  // keyed by character index - set by SetCharacterMesh, which (re)creates
-  // remote_vertex_buffer/remote_vao below when a mesh outgrows them; empty
-  // (and those null) until the first call.
+  // keyed by character index - set by SetCharacterMesh; empty until the first
+  // call.
   std::unordered_map<std::uint8_t, std::vector<Vertex>> character_vertices;
 
-  // Unlike vao/vertex_count above, this buffer is sized for kMaxRemotePlayers
-  // instances of the largest mesh in character_vertices and kept as MemoryType::Upload
-  // - a persistently-mappable heap SetRemotePlayers can memcpy into every
-  // frame via Buffer::setBlob with no GPU wait, unlike UploadScene's
-  // DeviceLocal buffer (see that method).
+  // Unlike vao/vertex_count above, this buffer is sized by what
+  // SetRemotePlayers has needed so far (the most instance vertices any call
+  // produced) and kept as MemoryType::Upload - a persistently-mappable heap
+  // SetRemotePlayers can memcpy into every frame via Buffer::setBlob with no
+  // GPU wait, unlike UploadScene's DeviceLocal buffer (see that method). Null
+  // until the first call with something to draw.
   Falcor::ref<Falcor::Buffer> remote_vertex_buffer;
   Falcor::ref<Falcor::Vao> remote_vao;
   std::uint32_t remote_vertex_count = 0;
@@ -284,8 +277,8 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     CreateTargetFbo(size.x, size.y);
     debug_hud = std::make_unique<DebugHud>(device, Falcor::uint2(size.x, size.y));
     BuildRasterPass();
-    // remote_vertex_buffer/remote_vao are created lazily by SetCharacterMesh
-    // instead, once the per-instance vertex count they're sized from is known.
+    // remote_vertex_buffer/remote_vao are created lazily by SetRemotePlayers
+    // instead, once the vertex count they're sized from is known.
   }
 
   ~Impl() {
@@ -372,11 +365,9 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
 
   // Creates the persistently-mappable upload-heap buffer and Vao
   // SetRemotePlayers writes into every frame - see the Impl member comment
-  // on remote_vertex_buffer. Called by UploadCharacterMesh, sized for
-  // kMaxRemotePlayers instances of vertices_per_player - replaces any
+  // on remote_vertex_buffer. Sized for vertex_capacity vertices - replaces any
   // previous buffer/Vao.
-  void CreateRemoteBuffer(std::size_t vertices_per_player) {
-    const std::size_t vertex_capacity = kMaxRemotePlayers * vertices_per_player;
+  void CreateRemoteBuffer(std::size_t vertex_capacity) {
     remote_vertex_buffer = device->createBuffer(vertex_capacity * sizeof(Vertex), Falcor::ResourceBindFlags::Vertex,
                                                 Falcor::MemoryType::Upload);
 
@@ -392,47 +383,34 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
 
   // Builds character's local vertices from mesh - the same
   // BuildFlatShadedVertices triangle expansion UploadScene uses, reused via
-  // a one-mesh Scene rather than duplicated - and (re)creates the buffer/Vao
-  // once kMaxRemotePlayers instances of the largest mesh no longer fit.
-  // Nothing is touched if mesh is invalid (the throw comes before any member
-  // is assigned, same as UploadScene).
+  // a one-mesh Scene rather than duplicated. Nothing is touched if mesh is
+  // invalid (the throw comes before any member is assigned, same as
+  // UploadScene).
   void UploadCharacterMesh(std::uint8_t character, const SceneMesh& mesh) {
     std::vector<Vertex> vertices = BuildFlatShadedVertices(Scene{.meshes = {mesh}, .camera = {}});
-    const std::size_t needed_bytes = kMaxRemotePlayers * vertices.size() * sizeof(Vertex);
     character_vertices.insert_or_assign(character, std::move(vertices));
-    if (remote_vertex_buffer != nullptr && needed_bytes <= remote_vertex_buffer->getSize()) {
-      return;
-    }
-    std::size_t largest = 0;
-    for (const auto& [index, local_vertices] : character_vertices) {
-      largest = std::max(largest, local_vertices.size());
-    }
-    // The previous buffer may still be in flight on the GPU - see UploadScene's own comment.
-    device->wait();
-    CreateRemoteBuffer(largest);
-    remote_vertex_count = 0;
   }
 
   // Rewrites the remote-player instances' vertex data in place via
   // Buffer::setBlob - a map+memcpy into the upload heap, no GPU wait (unlike
-  // UploadScene/UploadCharacterMesh). Throws std::runtime_error if
-  // remote_players has more instances than the buffer was sized for. A call
-  // before UploadCharacterMesh (remote_vao still null) draws nothing,
-  // same as an empty span.
+  // UploadScene/UploadCharacterMesh) unless these instances need more room
+  // than the buffer has, which then grows to fit them. Draws every instance
+  // given; nothing if none has a mesh.
   void UpdateRemotePlayers(std::span<const RemotePlayer> remote_players) {
-    if (remote_players.size() > kMaxRemotePlayers) {
-      throw std::runtime_error("more remote players than the renderer can draw");
-    }
-    if (remote_vao == nullptr) {
-      remote_vertex_count = 0;
-      return;
-    }
     const std::vector<Vertex> vertices = BuildRemoteVertices(remote_players, character_vertices);
     remote_vertex_count = static_cast<std::uint32_t>(vertices.size());
     if (vertices.empty()) {
       return;
     }
-    remote_vertex_buffer->setBlob(vertices.data(), 0, vertices.size() * sizeof(Vertex));
+    const std::size_t needed_bytes = vertices.size() * sizeof(Vertex);
+    if (remote_vertex_buffer == nullptr || needed_bytes > remote_vertex_buffer->getSize()) {
+      if (remote_vertex_buffer != nullptr) {
+        // The previous buffer may still be in flight on the GPU - see UploadScene's own comment.
+        device->wait();
+      }
+      CreateRemoteBuffer(vertices.size());
+    }
+    remote_vertex_buffer->setBlob(vertices.data(), 0, needed_bytes);
   }
 
   // World-to-clip transform of the current camera: the inverse of the

@@ -1,7 +1,10 @@
 #include "augusta/parameters.h"
 
 #include <cmath>
+#include <cstdint>
+#include <expected>
 
+#include "augusta/physics.h"
 #include "augusta/protocol.h"
 
 namespace augusta::parameters {

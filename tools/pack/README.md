@@ -144,10 +144,12 @@ only, as a script asset addressed by its path relative to that folder
 script decides and never receives the script (ADR-0019). The manifest's
 `characters` list itself, in manifest order, goes into both packs as the
 `Characters` entry, the table a character index resolves against (ADR-0042);
-a manifest naming more than 255 characters fails the cook. It is an error if
-the scenario folder or its `manifest.yaml` is missing, if the map or a named
-character doesn't resolve to a stage, or if there is no `parameters.lua`: the
-server reads its Parameters out of its pack at startup, so that is found here
+a manifest naming more than 255 characters fails the cook. Each character's
+`Character/Eye` prim, where its player's camera sits, goes into the client pack
+as that point alone (ADR-0040). It is an error if the scenario folder or its
+`manifest.yaml` is missing, if the map or a named character doesn't resolve to
+a stage, if a character has no `Character/Eye`, or if there is no
+`parameters.lua`: the server reads its Parameters out of its pack at startup, so that is found here
 rather than when a server starts on the pack.
 
 By default, packs are written under `<assets-root>/packs`, keyed by the

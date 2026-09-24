@@ -1,15 +1,21 @@
 #include "augusta/physics.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <expected>
+#include <memory>
 #include <mutex>
 #include <stdexcept>
+#include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <PxPhysicsAPI.h>
 
 #include "augusta/logging.h"
+#include "augusta/math.h"
 #include "augusta/protocol.h"
 
 // M1 spike (ADR-0002): the first real (non-stub) body for this module,

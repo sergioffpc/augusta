@@ -2,7 +2,15 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <span>
 #include <utility>
+
+#include "augusta/assets.h"
+#include "augusta/harness.h"
+#include "augusta/input.h"
+#include "augusta/parameters.h"
+#include "augusta/physics.h"
+#include "augusta/protocol.h"
 
 namespace augusta::harness {
 

@@ -1,5 +1,8 @@
 #include "augusta/ballistics.h"
 
+#include "augusta/math.h"
+#include "augusta/physics.h"
+
 namespace augusta::ballistics {
 
 // TODO(sergioffpc): every method below is a placeholder - none of them

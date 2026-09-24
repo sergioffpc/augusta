@@ -11,17 +11,13 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/audio.h"
 #include "augusta/harness.h"
 #include "augusta/input.h"
+#include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/physics.h"
-#include "augusta/prediction.h"
-#include "augusta/presentation.h"
 #include "augusta/renderer.h"
 #include "scene_loader.h"
-
-// TODO(sergioffpc): Overall devemos remover os includes que nao sao usados.
 
 // augusta::runtime is ClientRuntime (ARCHITECTURE.md §5): the augustac
 // executable's own orchestrator, owning one of every client module and
@@ -101,11 +97,14 @@ class ClientRuntime {
   // ticks against, both loaded from the client pack by the caller (see
   // scene_loader.h and map.h), since where content comes from is the
   // executable's business, not the orchestrator's. For the same reason the
-  // caller hands in load_character_mesh, which Run() calls in the Lobby for
+  // caller hands in eye, the local player's character's eye (scene_loader.h's
+  // LoadCharacterEye) that the camera follows the body at, and
+  // load_character_mesh, which Run() calls in the Lobby for
   // each character another player brings (ADR-0043); it must stay callable
   // until Run() returns. Throws std::runtime_error if physics rejects a
   // collision mesh.
-  ClientRuntime(const Config& config, Map map, const renderer::Scene& scene, CharacterMeshLoader load_character_mesh);
+  ClientRuntime(const Config& config, Map map, const renderer::Scene& scene, const math::Vec3& eye,
+                CharacterMeshLoader load_character_mesh);
 
   // Run() always stops and joins the Simulation and Network I/O
   // threads it spawned before returning, including if the Main/Render
