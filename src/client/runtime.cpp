@@ -7,9 +7,11 @@
 #include <format>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include <nvtx3/nvtx3.hpp>
 
@@ -29,8 +31,8 @@ static_assert(renderer::kMaxRemotePlayers >= protocol::kMaxPlayers,
               "the renderer must be able to draw every possible player");
 
 // Maps one interpolated remote player into a renderer-drawable instance of
-// the shared character mesh ClientRuntime uploads via SetRemotePlayerMesh
-// (issue #82/ADR-0040/ADR-0041). height_scale reflects stance the same way
+// its character's mesh, which ClientRuntime uploads via SetCharacterMesh in
+// the Lobby (ADR-0042/ADR-0043). height_scale reflects stance the same way
 // the procedural placeholder box this replaced did (issue #82's "in the
 // right stance" acceptance criterion): the capsule's own authored height is
 // the standing height, so a lower stance scales it down by the ratio of
@@ -58,7 +60,9 @@ renderer::RemotePlayer ToRenderer(const presentation::RemotePlayer& remote) {
       break;
   }
   const float total_height = cylinder_height + (2.0F * kCapsuleRadius);
-  return {.position = remote.body.position, .height_scale = total_height / kStandingTotalHeight};
+  return {.position = remote.body.position,
+          .height_scale = total_height / kStandingTotalHeight,
+          .character = remote.character};
 }
 
 // Maps this frame's presentation::Camera into what Renderer::SetCamera
@@ -92,6 +96,12 @@ struct ThreadJoiner {
 
 struct ClientRuntime::Impl {
   Config config;
+  // Main/Render thread only: loads a character's mesh, which characters'
+  // meshes the renderer has (for the life of the process), and the newest
+  // Roster version Ready was reported for.
+  CharacterMeshLoader load_character_mesh;
+  std::set<std::uint8_t> loaded_characters;
+  std::optional<std::uint32_t> ready_version;
   input::Input input;
   audio::Engine audio;
   // Emplaced by the constructor once the map is loaded into its PredictionWorld.
@@ -218,8 +228,12 @@ struct ClientRuntime::Impl {
     net_pending_bytes.sample(static_cast<double>(stats->pending_bytes));
   }
 
-  Impl(const Config& cfg, const Map& map)
-      : config(cfg), input(cfg.input), presentation(audio), renderer(cfg.renderer, input) {
+  Impl(const Config& cfg, const Map& map, CharacterMeshLoader loader)
+      : config(cfg),
+        load_character_mesh(std::move(loader)),
+        input(cfg.input),
+        presentation(audio),
+        renderer(cfg.renderer, input) {
     // The map goes in before the Session takes the world over: a body that has
     // already ticked has been predicted without it, and reconciliation cannot
     // account for that.
@@ -324,6 +338,35 @@ struct ClientRuntime::Impl {
     session->Disconnect();
   }
 
+  // In the Lobby, once per Roster version: uploads the mesh of every other
+  // player's character not loaded yet, then reports Ready for that Roster
+  // (ADR-0043). Nothing is loaded during a match. Main/Render thread only, as
+  // the upload is. Returns why a mesh could not be loaded, if one could not.
+  std::optional<client::SceneError> GetReadyForLobby() {
+    const std::optional<harness::Lobby> lobby = session->GetLobby();
+    if (session->GetPhase() != harness::Phase::kLobby || !lobby.has_value() || lobby->version == ready_version) {
+      return std::nullopt;
+    }
+    std::vector<std::uint8_t> others;
+    for (const harness::RosterEntry& entry : lobby->roster) {
+      if (entry.session != session->GetSessionId()) {
+        others.push_back(entry.character);
+      }
+    }
+    for (const std::uint8_t character : client::CharactersToLoad(others, loaded_characters)) {
+      auto mesh = load_character_mesh(character);
+      if (!mesh.has_value()) {
+        return mesh.error();
+      }
+      renderer.SetCharacterMesh(character, *mesh);
+      loaded_characters.insert(character);
+      LI("subsystem=clientruntime event=character_loaded character={}", character);
+    }
+    session->ReportReady(lobby->version);
+    ready_version = lobby->version;
+    return std::nullopt;
+  }
+
   LatestTick GetLatestTick() {
     std::lock_guard<std::mutex> lock(latest_tick_mutex);
     return latest_tick;
@@ -331,15 +374,14 @@ struct ClientRuntime::Impl {
 };
 
 ClientRuntime::ClientRuntime(const Config& config, Map map, const renderer::Scene& scene,
-                             const renderer::SceneMesh& remote_player_mesh)
-    : impl_(std::make_unique<Impl>(config, map)) {
+                             CharacterMeshLoader load_character_mesh)
+    : impl_(std::make_unique<Impl>(config, map, std::move(load_character_mesh))) {
   impl_->renderer.SetScene(scene);
-  impl_->renderer.SetRemotePlayerMesh(remote_player_mesh);
 }
 
 ClientRuntime::~ClientRuntime() = default;
 
-std::optional<harness::Failure> ClientRuntime::Run() {
+std::optional<Failure> ClientRuntime::Run() {
   impl_->running.store(true, std::memory_order_relaxed);
   impl_->prediction_thread = std::thread([this] { impl_->PredictionThreadMain(); });
   impl_->network_thread = std::thread([this] { impl_->NetworkThreadMain(); });
@@ -350,11 +392,17 @@ std::optional<harness::Failure> ClientRuntime::Run() {
   bool cursor_locked = impl_->input.CursorCaptured();
   impl_->renderer.SetCursorLocked(cursor_locked);
   LI("subsystem=clientruntime event=loop_starting loop=render");
-  std::optional<harness::Failure> failure;
+  std::optional<Failure> failure;
   while (!impl_->renderer.ShouldClose()) {
-    failure = impl_->session->GetFailure();
-    if (failure.has_value()) {
-      LE("subsystem=clientruntime event=session_failed reason=\"{}\"", harness::DescribeFailure(*failure));
+    if (const auto session_failure = impl_->session->GetFailure(); session_failure.has_value()) {
+      LE("subsystem=clientruntime event=session_failed reason=\"{}\"", harness::DescribeFailure(*session_failure));
+      failure = *session_failure;
+      break;
+    }
+    if (const auto load_failure = impl_->GetReadyForLobby(); load_failure.has_value()) {
+      LE("subsystem=clientruntime event=character_load_failed reason=\"{}\"",
+         client::DescribeSceneError(*load_failure));
+      failure = *load_failure;
       break;
     }
     const nvtx3::scoped_range range{"Main/Render Frame"};
@@ -372,11 +420,13 @@ std::optional<harness::Failure> ClientRuntime::Run() {
     // GetAuthoritativeState() that already has this session's player can
     // never race ahead of a GetSessionId() that is still nullopt.
     const Impl::LatestTick latest = impl_->GetLatestTick();
-    presentation::State frame_state = impl_->presentation.RunFrame(
-        latest.state, latest.view_rotation, impl_->session->GetSessionId(), impl_->session->GetAuthoritativeState());
+    presentation::State frame_state =
+        impl_->presentation.RunFrame(latest.state, latest.view_rotation, impl_->session->GetSessionId(),
+                                     impl_->session->GetAuthoritativeState(), impl_->session->GetMatchStart());
     impl_->renderer.SetCamera(ToRenderer(frame_state.camera));
     // The local player's own position isn't drawn yet (renderer.h) - only
-    // remote players, as placeholder boxes (issue #82).
+    // remote players, each as its character. In the Lobby there are none, so
+    // the map is drawn empty.
     std::vector<renderer::RemotePlayer> remote_boxes;
     remote_boxes.reserve(frame_state.remote_players.size());
     for (const auto& remote : frame_state.remote_players) {

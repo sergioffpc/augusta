@@ -50,10 +50,10 @@ and no ordering between a reliable and an unreliable channel has to be handled.
 The cost is at most 8 bytes per tick.
 
 **The client draws each player as its character.** The client loads the visual
-mesh of every character in its pack's list at startup, keyed by index, and the
-renderer draws each remote player with the mesh its index names. This replaces
-the single fixed `characters/player/Player/Visual` mesh drawn for everyone,
-which stood in only while no selection existed.
+mesh of each character it meets in the Lobby (ADR-0043), keyed by index and
+found at `<character path>/Character/Visual` (ADR-0040), and the renderer draws
+each remote player with the mesh its index names. This replaces the single fixed
+mesh drawn for everyone, which stood in only while no selection existed.
 
 ## Considered Options
 

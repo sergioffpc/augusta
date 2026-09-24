@@ -1,9 +1,11 @@
 #include "scene_loader.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <format>
 #include <optional>
 #include <sstream>
+#include <string>
 #include <vector>
 
 #include "augusta/math.h"
@@ -60,6 +62,11 @@ std::string DescribeSceneError(const SceneError& error) {
                          assets::DescribeResolveError(error.resolve_error, "mesh"));
     case SceneErrorCode::kMalformedBaseColor:
       return std::format("node {} has a malformed {} \"{}\"", error.node, kBaseColorProperty, error.subject);
+    case SceneErrorCode::kUnknownCharacter:
+      return std::format("character index {} is not in the pack's character list", error.subject);
+    case SceneErrorCode::kCharacterMeshUnresolved:
+      return std::format("visual mesh {} of character {} {}", error.subject, error.node,
+                         assets::DescribeResolveError(error.resolve_error, "mesh"));
   }
   return "unknown scene error";
 }
@@ -107,13 +114,32 @@ std::expected<renderer::Scene, SceneError> LoadRenderScene(const assets::Pack& p
   return BuildRenderScene(*scene, [&pack](std::string_view path) { return pack.ResolveMesh(path); });
 }
 
-std::expected<renderer::SceneMesh, SceneError> LoadRemotePlayerMesh(const assets::Pack& pack,
-                                                                    std::string_view mesh_path) {
-  const auto mesh = pack.ResolveMesh(mesh_path);
+std::vector<std::uint8_t> CharactersToLoad(std::span<const std::uint8_t> others, const std::set<std::uint8_t>& loaded) {
+  std::vector<std::uint8_t> to_load;
+  for (const std::uint8_t character : others) {
+    if (!loaded.contains(character) && std::ranges::find(to_load, character) == to_load.end()) {
+      to_load.push_back(character);
+    }
+  }
+  return to_load;
+}
+
+std::string CharacterMeshPath(std::string_view character) { return std::format("{}/Character/Visual", character); }
+
+std::expected<renderer::SceneMesh, SceneError> LoadCharacterMesh(std::span<const std::string> characters,
+                                                                 std::uint8_t character_index,
+                                                                 const MeshResolver& resolve_mesh) {
+  if (character_index == 0 || character_index > characters.size()) {
+    return std::unexpected(
+        SceneError{.code = SceneErrorCode::kUnknownCharacter, .subject = std::to_string(character_index)});
+  }
+  const std::string& character = characters[character_index - 1];
+  const std::string path = CharacterMeshPath(character);
+  const auto mesh = resolve_mesh(path);
   if (!mesh) {
-    return std::unexpected(SceneError{.code = SceneErrorCode::kMeshUnresolved,
-                                      .node = "RemotePlayer",
-                                      .subject = std::string(mesh_path),
+    return std::unexpected(SceneError{.code = SceneErrorCode::kCharacterMeshUnresolved,
+                                      .node = character,
+                                      .subject = path,
                                       .resolve_error = mesh.error()});
   }
   // color is unused here - BuildRemoteVertices (renderer.cpp) replaces it

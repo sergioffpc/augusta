@@ -1,5 +1,8 @@
+#include <cstdint>
+#include <expected>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -16,7 +19,9 @@ using augusta::assets::ResolveError;
 using augusta::assets::SceneData;
 using augusta::assets::SceneNode;
 using augusta::client::BuildRenderScene;
+using augusta::client::CharactersToLoad;
 using augusta::client::DescribeSceneError;
+using augusta::client::LoadCharacterMesh;
 using augusta::client::SceneErrorCode;
 using augusta::math::Quat;
 using augusta::math::Vec3;
@@ -178,6 +183,55 @@ TEST(DescribeSceneErrorTest, NamesTheAssetThatFailedToResolve) {
 
   EXPECT_EQ(scene, "scene Scene is not a scene");
   EXPECT_EQ(mesh, "mesh Root/Missing of node Root not found");
+}
+
+// A scenario's characters, in manifest order: index 1 is the sniper, 2 the medic.
+const std::vector<std::string> kCharacters = {"characters/sniper", "characters/medic"};
+
+TEST(CharactersToLoadTest, AreTheOtherPlayersCharactersNotLoadedYetEachOnce) {
+  const std::vector<std::uint8_t> others = {3, 1, 3, 2};
+
+  EXPECT_EQ(CharactersToLoad(others, {}), (std::vector<std::uint8_t>{3, 1, 2}));
+  EXPECT_EQ(CharactersToLoad(others, {1}), (std::vector<std::uint8_t>{3, 2}));
+  EXPECT_TRUE(CharactersToLoad(others, {1, 2, 3}).empty());
+  EXPECT_TRUE(CharactersToLoad({}, {}).empty());
+}
+
+TEST(LoadCharacterMeshTest, ResolvesTheVisualMeshOfTheCharacterAnIndexNames) {
+  std::string resolved;
+  const auto mesh = LoadCharacterMesh(kCharacters, 2, [&](std::string_view path) {
+    resolved = path;
+    return std::expected<MeshData, ResolveError>(Triangle());
+  });
+
+  ASSERT_TRUE(mesh.has_value());
+  EXPECT_EQ(resolved, "characters/medic/Character/Visual");
+  // In the character's own root space: the renderer places it per player.
+  ASSERT_EQ(mesh->positions.size(), 3U);
+  ExpectNear(mesh->positions[1], {1.0F, 0.0F, 0.0F});
+  EXPECT_EQ(mesh->indices, (std::vector<std::uint32_t>{0, 1, 2}));
+}
+
+TEST(LoadCharacterMeshTest, AMissingVisualMeshIsASceneErrorNamingTheCharacter) {
+  const auto mesh = LoadCharacterMesh(kCharacters, 1, ResolveTriangle());
+
+  ASSERT_FALSE(mesh.has_value());
+  EXPECT_EQ(mesh.error().code, SceneErrorCode::kCharacterMeshUnresolved);
+  EXPECT_EQ(mesh.error().node, "characters/sniper");
+  EXPECT_EQ(mesh.error().subject, "characters/sniper/Character/Visual");
+  EXPECT_EQ(mesh.error().resolve_error, ResolveError::kNotFound);
+  EXPECT_NE(DescribeSceneError(mesh.error()).find("characters/sniper"), std::string::npos);
+}
+
+TEST(LoadCharacterMeshTest, AnIndexOutsideThePacksCharacterListIsASceneError) {
+  for (const std::uint8_t index : {std::uint8_t{0}, std::uint8_t{3}, std::uint8_t{255}}) {
+    const auto mesh = LoadCharacterMesh(kCharacters, index, ResolveTriangle());
+
+    ASSERT_FALSE(mesh.has_value()) << static_cast<int>(index);
+    EXPECT_EQ(mesh.error().code, SceneErrorCode::kUnknownCharacter);
+    EXPECT_EQ(mesh.error().subject, std::to_string(index));
+    EXPECT_FALSE(DescribeSceneError(mesh.error()).empty());
+  }
 }
 
 }  // namespace

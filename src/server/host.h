@@ -20,8 +20,13 @@
 // Tick on the Simulation thread at a fixed rate (ADR-0005), while a test calls
 // both by hand, so a match can be driven tick by tick with no sleeping.
 //
+// Admitted players wait in the Lobby, and a match starts on the tick the Lobby
+// is full and everyone is Ready (ADR-0043): only then are bodies simulated and
+// Authoritative States sent, and only to the players in the match.
+//
 // The Network I/O thread's PumpNetwork and the Simulation thread's Tick may
-// run concurrently: what they share (the joined players and their commands) is guarded inside.
+// run concurrently: what they share (the Lobby, the match and the players'
+// commands) is guarded inside.
 namespace augusta::server {
 
 /// Everything a Host needs to construct SimulationWorld and start listening.
@@ -30,7 +35,8 @@ struct HostConfig {
   /// told to each client when it joins. Fixed for the life of the server process.
   float tick_rate_hz = 0.0F;
   /// What the simulation runs on and what each client is told when it joins:
-  /// the stamina rules of every player body, shared with PredictionWorld.
+  /// the stamina rules of every player body, shared with PredictionWorld, and
+  /// the Player count a match starts with.
   parameters::Parameters parameters{};
   /// Lua game-policy script for SimulationWorld's Scripts/Behaviours phase.
   std::string script_path;
@@ -44,7 +50,8 @@ struct HostConfig {
 /// alongside HostConfig rather than inside it.
 struct Map {
   std::vector<physics::CollisionMesh> collision;
-  /// In the order joining players take them; empty spawns everyone at the origin.
+  /// In the order players take them at each match start, continuing across
+  /// matches; empty spawns everyone at the origin.
   std::vector<math::Vec3> spawn_points;
   /// The scenario's characters, by path: the only ones a player may join as
   /// (ADR-0042). Empty admits no one.
@@ -70,9 +77,17 @@ class Host {
   /// Does one round of the Network I/O thread's work: connection events and received messages.
   void PumpNetwork();
 
-  /// Runs one fixed tick of SimulationWorld on one command per player, sends each client its update, and returns the
-  /// state.
+  /// Runs one fixed tick of SimulationWorld on one command per player in the
+  /// match, sends each of them its update, and returns the state. Starts a
+  /// match first if the Lobby is full and Ready and the pause after the last
+  /// one (server::kMatchPause, counted in these ticks) has passed.
   simulation::State Tick(float delta_time);
+
+  /// Ends the match in progress, if any: its players are sent Match end and are
+  /// back in the Lobby, and their bodies leave the simulation on the next Tick.
+  /// Game policy's way to end a match (and a test's). From the Simulation
+  /// thread, between Ticks.
+  void EndMatch();
 
  private:
   struct Impl;

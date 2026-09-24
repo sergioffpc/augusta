@@ -21,10 +21,12 @@ edge and nowhere else: the server in `server::Host` and the client in
 Join refused gains the *unknown character* reason, and Join accepted, each Roster
 entry and each player in Authoritative State carry a character index.
 
-**Extended by ADR-0043**: Join refused gains *match in progress*, a reliable Lobby
-update replaces the Roster in Join accepted, the client sends Ready naming the
-Lobby version it loaded for, and reliable Match start and Match end messages
-bound each match. The per-player character index leaves Authoritative State.
+**Extended by ADR-0043**: Join refused gains *match in progress* (and *match
+full* is renamed *lobby full*, same value), a reliable Lobby update replaces the
+Roster in Join accepted, the client sends Ready naming the Lobby version it
+loaded for, and reliable Match start and Match end messages bound each match.
+The spawn position moves from Join accepted to Match start, which gives every
+player's. The per-player character index leaves Authoritative State.
 
 **Wire shape.** One message is one transport payload: a one-byte `MessageType`
 followed by that type's fields, fixed-width and little-endian; a string is a

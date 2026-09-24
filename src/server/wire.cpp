@@ -42,8 +42,23 @@ protocol::ParametersWire ToWire(const parameters::Parameters& parameters) {
   };
 }
 
-protocol::PlayerStateWire ToWire(const RosterEntry& entry) {
-  return protocol::PlayerStateWire{.session = entry.session, .body = ToWire(entry.body)};
+protocol::LobbyWire ToWire(const Roster& roster) {
+  protocol::LobbyWire lobby{.version = roster.version, .roster = {}};
+  lobby.roster.reserve(roster.players.size());
+  for (const RosterEntry& entry : roster.players) {
+    lobby.roster.push_back(protocol::RosterEntryWire{.session = entry.session, .character = entry.character});
+  }
+  return lobby;
+}
+
+protocol::MatchStartWire ToWire(const MatchStart& start) {
+  protocol::MatchStartWire message;
+  message.players.reserve(start.players.size());
+  for (const MatchPlayer& player : start.players) {
+    message.players.push_back(
+        protocol::MatchPlayerWire{.spawn = player.spawn, .session = player.session, .character = player.character});
+  }
+  return message;
 }
 
 protocol::AuthoritativeStateWire ToWire(const replication::Update& update) {

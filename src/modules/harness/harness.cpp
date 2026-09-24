@@ -1,5 +1,6 @@
 #include "augusta/harness.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -20,30 +21,25 @@ namespace augusta::harness {
 
 namespace {
 
-// The whole answer to a join request: the session, the spawn point, the tick
-// rate, the parameters and who was already there. The rate and the parameters
-// are the server's for the whole run.
+// The whole answer to a join request: the session, the tick rate and the
+// parameters, all the server's for the whole run.
 struct Admission {
   protocol::SessionId session{};
-  math::Vec3 spawn{};
   float tick_rate_hz = 0.0F;
   parameters::Parameters parameters{};
-  std::vector<PlayerBody> roster;
 };
 
 Admission ToAdmission(const protocol::JoinAccepted& accepted) {
-  Admission admission{
+  return Admission{
       .session = accepted.session,
-      .spawn = accepted.spawn,
       .tick_rate_hz = accepted.tick_rate_hz,
       .parameters = FromWire(accepted.parameters),
-      .roster = {},
   };
-  admission.roster.reserve(accepted.roster.size());
-  for (const protocol::PlayerStateWire& player : accepted.roster) {
-    admission.roster.push_back(FromWire(player));
-  }
-  return admission;
+}
+
+// Whether session is one of start's players.
+bool IsInMatch(const MatchStart& start, protocol::SessionId session) {
+  return std::ranges::any_of(start.players, [&](const MatchPlayer& player) { return player.session == session; });
 }
 
 }  // namespace
@@ -54,6 +50,13 @@ Admission ToAdmission(const protocol::JoinAccepted& accepted) {
 struct ServerView {
   std::optional<Admission> accepted;
   std::optional<protocol::JoinRefusal> refusal;
+  std::optional<Lobby> lobby;
+  // The last match's start, and how many have started: a new count is a new
+  // match for the prediction to start over in.
+  std::optional<MatchStart> match_start;
+  std::uint32_t matches_started = 0;
+  bool in_match = false;
+  // Only while in_match.
   std::optional<AuthoritativeState> authoritative;
 };
 
@@ -74,9 +77,10 @@ struct Session::Impl {
   // Written by the Network I/O thread alone, read from any.
   std::atomic<std::shared_ptr<const ServerView>> view{std::make_shared<const ServerView>()};
 
-  // Prediction thread only: whether the prediction has been started at the
-  // spawn point, under the server's stamina rules, once the server admitted this client.
-  bool started = false;
+  // Prediction thread only: which match the prediction was last started over
+  // in (ServerView::matches_started), 0 for none, and what it last predicted.
+  std::uint32_t started_match = 0;
+  prediction::State last_state{};
   // The commands still waiting to be acknowledged, and the sequence the next
   // one goes under. Sequences start at 1; 0 means none.
   std::deque<protocol::SequencedCommandWire> unacknowledged;
@@ -104,6 +108,12 @@ struct Session::Impl {
       OnJoinRefused(*refused);
     } else if (const auto* state = std::get_if<protocol::AuthoritativeStateWire>(&*decoded)) {
       OnAuthoritativeState(*state);
+    } else if (const auto* lobby = std::get_if<protocol::LobbyWire>(&*decoded)) {
+      OnLobby(*lobby);
+    } else if (const auto* start = std::get_if<protocol::MatchStartWire>(&*decoded)) {
+      OnMatchStart(*start);
+    } else if (std::holds_alternative<protocol::MatchEnd>(*decoded)) {
+      OnMatchEnd();
     } else {
       LW_LIMITED(drop_warnings, "subsystem=clientruntime event=dropped bytes={} reason=\"not a server message\"",
                  payload.size());
@@ -126,7 +136,39 @@ struct Session::Impl {
       return;
     }
     Publish([&](ServerView& next) { next.accepted = accepted; });
-    LI("subsystem=clientruntime event=joined roster={} tick_rate_hz={}", accepted.roster.size(), accepted.tick_rate_hz);
+    LI("subsystem=clientruntime event=joined session={} character={} tick_rate_hz={}",
+       static_cast<std::uint32_t>(accepted.session), message.character, accepted.tick_rate_hz);
+  }
+
+  void OnLobby(const protocol::LobbyWire& message) {
+    Publish([&](ServerView& next) { next.lobby = FromWire(message); });
+    LI("subsystem=clientruntime event=lobby version={} players={}", message.version, message.roster.size());
+  }
+
+  // A Match start that leaves this client out is not one it can play: dropped,
+  // as a malformed message is.
+  void OnMatchStart(const protocol::MatchStartWire& message) {
+    const std::shared_ptr<const ServerView> current = view.load();
+    MatchStart start = FromWire(message);
+    if (!current->accepted.has_value() || !IsInMatch(start, current->accepted->session)) {
+      LW_LIMITED(drop_warnings, "subsystem=clientruntime event=dropped reason=\"match start without this client\"");
+      return;
+    }
+    Publish([&](ServerView& next) {
+      next.match_start = std::move(start);
+      ++next.matches_started;
+      next.in_match = true;
+      next.authoritative.reset();
+    });
+    LI("subsystem=clientruntime event=match_started players={}", message.players.size());
+  }
+
+  void OnMatchEnd() {
+    Publish([&](ServerView& next) {
+      next.in_match = false;
+      next.authoritative.reset();
+    });
+    LI("subsystem=clientruntime event=match_ended");
   }
 
   void OnJoinRefused(const protocol::JoinRefused& refused) {
@@ -134,9 +176,24 @@ struct Session::Impl {
     LI("subsystem=clientruntime event=join_refused reason=\"{}\"", protocol::DescribeJoinRefusal(refused.reason));
   }
 
-  // Keeps state if it is newer than the one held (unreliable delivery can reorder).
+  // Keeps state if it is newer than the one held (unreliable delivery can
+  // reorder) and belongs to the match in progress: unreliable, it can arrive
+  // before Match start or after Match end.
   void OnAuthoritativeState(const protocol::AuthoritativeStateWire& state) {
     const std::shared_ptr<const ServerView> current = view.load();
+    if (!current->in_match) {
+      LT("subsystem=clientruntime event=dropped tick={} reason=\"state outside a match\"", state.tick);
+      return;
+    }
+    const auto in_match = [&](const protocol::PlayerStateWire& player) {
+      return IsInMatch(*current->match_start, player.session);
+    };
+    if (!std::ranges::all_of(state.players, in_match)) {
+      LW_LIMITED(drop_warnings,
+                 "subsystem=clientruntime event=dropped tick={} reason=\"state names a player not in the match\"",
+                 state.tick);
+      return;
+    }
     if (current->authoritative.has_value() && state.tick <= current->authoritative->tick) {
       return;
     }
@@ -150,6 +207,17 @@ struct Session::Impl {
     auto next = std::make_shared<ServerView>(*view.load());
     mutate(*next);
     view.store(std::move(next));
+  }
+
+  // Where Match start put this client's own player. The view is in a match,
+  // whose start names this client (OnMatchStart).
+  static math::Vec3 OwnSpawn(const ServerView& server_view) {
+    for (const MatchPlayer& player : server_view.match_start->players) {
+      if (player.session == server_view.accepted->session) {
+        return player.spawn;
+      }
+    }
+    return {};
   }
 
   // What the server's state says about this client's own player.
@@ -257,9 +325,25 @@ std::optional<protocol::SessionId> Session::GetSessionId() const {
   return server_view->accepted->session;
 }
 
-std::vector<PlayerBody> Session::GetRoster() const {
+Phase Session::GetPhase() const {
   const std::shared_ptr<const ServerView> server_view = impl_->view.load();
-  return server_view->accepted.has_value() ? server_view->accepted->roster : std::vector<PlayerBody>{};
+  if (server_view->in_match) {
+    return Phase::kMatch;
+  }
+  return server_view->accepted.has_value() ? Phase::kLobby : Phase::kNotAdmitted;
+}
+
+std::optional<Lobby> Session::GetLobby() const { return impl_->view.load()->lobby; }
+
+std::optional<MatchStart> Session::GetMatchStart() const { return impl_->view.load()->match_start; }
+
+void Session::ReportReady(std::uint32_t version) {
+  const std::shared_ptr<const ServerView> server_view = impl_->view.load();
+  if (!server_view->lobby.has_value() || server_view->lobby->version != version) {
+    return;
+  }
+  impl_->network.Send(protocol::Encode(protocol::Ready{.version = version}), networking::Reliability::kReliable);
+  LD("subsystem=clientruntime event=ready version={}", version);
 }
 
 std::optional<float> Session::GetTickRate() const {
@@ -287,19 +371,21 @@ prediction::State Session::Tick(const input::Command& command, float delta_time)
   // One view for the whole tick, so the sequence, the reconciliation and the
   // commands sent all agree on what the server had said.
   const std::shared_ptr<const ServerView> server_view = impl.view.load();
-  // Nobody to send to until the server has admitted this client, and until
-  // then the prediction has neither its spawn point nor the server's rules.
-  if (server_view->accepted.has_value() && !impl.started) {
-    impl.prediction.Start(server_view->accepted->spawn, server_view->accepted->parameters);
-    impl.started = true;
+  // Outside a match nothing the player presses affects one.
+  if (!server_view->in_match) {
+    return impl.last_state;
   }
-  const std::uint32_t sequence = impl.started ? impl.next_sequence++ : 0;
-  const prediction::State state =
-      impl.prediction.Tick(command, sequence, Impl::OwnAcknowledgement(*server_view), delta_time);
-  if (sequence != 0) {
-    impl.SendCommand(*server_view, sequence, command);
+  // Each match starts its player over where Match start put it. Sequences keep
+  // growing across matches, so nothing of the last one is mistaken for this one's.
+  if (impl.started_match != server_view->matches_started) {
+    impl.prediction.Start(Impl::OwnSpawn(*server_view), server_view->accepted->parameters);
+    impl.unacknowledged.clear();
+    impl.started_match = server_view->matches_started;
   }
-  return state;
+  const std::uint32_t sequence = impl.next_sequence++;
+  impl.last_state = impl.prediction.Tick(command, sequence, Impl::OwnAcknowledgement(*server_view), delta_time);
+  impl.SendCommand(*server_view, sequence, command);
+  return impl.last_state;
 }
 
 }  // namespace augusta::harness

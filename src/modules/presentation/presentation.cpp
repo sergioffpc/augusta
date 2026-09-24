@@ -53,6 +53,7 @@ struct World::Impl {
   math::Quat view_rotation{1.0F, 0.0F, 0.0F, 0.0F};
   std::optional<protocol::SessionId> local_session;
   std::optional<harness::AuthoritativeState> authoritative_state;
+  std::optional<harness::MatchStart> match_start;
 
   // Hides the jumps reconciliation makes to the predicted body (ADR-0004), as
   // an offset from the predicted position that fades.
@@ -111,8 +112,11 @@ struct World::Impl {
     // TODO(sergioffpc): blend the last two prediction::State values.
 
     render_clock += delta_time;
-    if (authoritative_state.has_value() &&
-        (!last_recorded_tick.has_value() || *last_recorded_tick != authoritative_state->tick)) {
+    // Outside a match there is no one to show (ADR-0043).
+    if (!authoritative_state.has_value()) {
+      remote_interpolator.Sync({});
+      last_recorded_tick.reset();
+    } else if (!last_recorded_tick.has_value() || *last_recorded_tick != authoritative_state->tick) {
       std::vector<protocol::SessionId> present;
       present.reserve(authoritative_state->players.size());
       for (const harness::PlayerBody& player : authoritative_state->players) {
@@ -126,6 +130,21 @@ struct World::Impl {
       last_recorded_tick = authoritative_state->tick;
     }
     remote_players = remote_interpolator.Sample(render_clock - kInterpolationDelay);
+    for (RemotePlayer& remote : remote_players) {
+      remote.character = CharacterOf(remote.session);
+    }
+  }
+
+  // The character Match start gave session, or 0 if it names no such player.
+  [[nodiscard]] std::uint8_t CharacterOf(protocol::SessionId session) const {
+    if (match_start.has_value()) {
+      for (const harness::MatchPlayer& player : match_start->players) {
+        if (player.session == session) {
+          return player.character;
+        }
+      }
+    }
+    return 0;
   }
 
   void OnCamera() {
@@ -173,11 +192,13 @@ World& World::operator=(World&&) noexcept = default;
 
 State World::RunFrame(const prediction::State& latest, const math::Quat& view_rotation,
                       std::optional<protocol::SessionId> local_session,
-                      const std::optional<harness::AuthoritativeState>& authoritative) {
+                      const std::optional<harness::AuthoritativeState>& authoritative,
+                      const std::optional<harness::MatchStart>& match_start) {
   impl_->latest_state = latest;
   impl_->view_rotation = view_rotation;
   impl_->local_session = local_session;
   impl_->authoritative_state = authoritative;
+  impl_->match_start = match_start;
   impl_->ecs.progress();
   impl_->previous_state = latest;
   impl_->has_previous_state = true;

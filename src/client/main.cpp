@@ -1,10 +1,14 @@
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <format>
 #include <optional>
 #include <print>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <variant>
+#include <vector>
 
 #include "augusta/assets.h"
 #include "augusta/config.h"
@@ -80,17 +84,30 @@ std::optional<augusta::renderer::Scene> LoadRenderScene(const augusta::assets::P
   return *std::move(scene);
 }
 
-// The one character every RemotePlayer is drawn as (issue #82 - no per-player
-// character selection yet, ADR-0040/ADR-0041). Reports what is wrong and
-// returns nullopt.
-std::optional<augusta::renderer::SceneMesh> LoadRemotePlayerMesh(const augusta::assets::Pack& pack,
-                                                                 const std::filesystem::path& pack_path) {
-  auto mesh = augusta::client::LoadRemotePlayerMesh(pack);
-  if (!mesh) {
-    std::println(stderr, "client pack {}: {}", pack_path.string(), augusta::client::DescribeSceneError(mesh.error()));
+// Loads a character's mesh from pack by its index into the scenario's
+// characters (ADR-0042), which pack must outlive. Reports what is wrong with the
+// character list and returns nullopt.
+std::optional<augusta::runtime::CharacterMeshLoader> CharacterMeshLoaderFor(const augusta::assets::Pack& pack,
+                                                                            const std::filesystem::path& pack_path) {
+  auto characters = pack.ResolveCharacters();
+  if (!characters) {
+    std::println(stderr, "client pack {}: {} {}", pack_path.string(), augusta::assets::kCharactersPath,
+                 augusta::assets::DescribeResolveError(characters.error(), "character list"));
     return std::nullopt;
   }
-  return *std::move(mesh);
+  return [&pack, characters = *std::move(characters)](std::uint8_t character) {
+    return augusta::client::LoadCharacterMesh(characters, character,
+                                              [&pack](std::string_view path) { return pack.ResolveMesh(path); });
+  };
+}
+
+// What to tell whoever runs the process about why the client stopped.
+std::string DescribeRunFailure(const augusta::runtime::Failure& failure, const std::filesystem::path& pack_path) {
+  if (const auto* session = std::get_if<augusta::harness::Failure>(&failure)) {
+    return augusta::harness::DescribeFailure(*session);
+  }
+  return std::format("client pack {}: {}", pack_path.string(),
+                     augusta::client::DescribeSceneError(std::get<augusta::client::SceneError>(failure)));
 }
 
 // The same collision the server builds from its own pack, so the client's
@@ -138,8 +155,9 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  auto remote_player_mesh = LoadRemotePlayerMesh(*pack, pack_path);
-  if (!remote_player_mesh) {
+  // A character's mesh is loaded only once another player in the Lobby brings it (ADR-0043).
+  auto load_character_mesh = CharacterMeshLoaderFor(*pack, pack_path);
+  if (!load_character_mesh) {
     return 1;
   }
 
@@ -159,10 +177,10 @@ int main(int argc, char** argv) {
   config.input = file_config->input;
   config.character = file_config->character;
 
-  augusta::runtime::ClientRuntime runtime(config, *std::move(map), *scene, *remote_player_mesh);
+  augusta::runtime::ClientRuntime runtime(config, *std::move(map), *scene, *std::move(load_character_mesh));
   if (const auto failure = runtime.Run(); failure.has_value()) {
     // No reconnecting and no connection screen: say what happened and exit.
-    std::println(stderr, "{}", augusta::harness::DescribeFailure(*failure));
+    std::println(stderr, "{}", DescribeRunFailure(*failure, pack_path));
     return 1;
   }
 

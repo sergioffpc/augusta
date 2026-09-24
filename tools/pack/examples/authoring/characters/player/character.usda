@@ -1,11 +1,11 @@
 #usda 1.0
 (
-    defaultPrim = "Player"
+    defaultPrim = "Character"
     upAxis = "Y"
     metersPerUnit = 1
 )
 
-def Xform "Player"
+def Xform "Character"
 {
     # This Xform's own origin is the character's feet (physics::BodyState::
     # position convention, src/client/runtime.cpp's ToRenderer) - placing this

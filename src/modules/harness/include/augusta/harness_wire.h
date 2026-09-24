@@ -25,6 +25,12 @@ namespace augusta::harness {
 /// An Authoritative State the server sent, in the engine's terms.
 [[nodiscard]] AuthoritativeState FromWire(const protocol::AuthoritativeStateWire& state);
 
+/// The Lobby's Roster the server sent, in the engine's terms.
+[[nodiscard]] Lobby FromWire(const protocol::LobbyWire& lobby);
+
+/// A match's start the server sent, in the engine's terms.
+[[nodiscard]] MatchStart FromWire(const protocol::MatchStartWire& start);
+
 /// command as the protocol carries it.
 [[nodiscard]] protocol::CommandWire ToWire(const input::Command& command);
 
