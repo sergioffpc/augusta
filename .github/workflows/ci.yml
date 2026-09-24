@@ -248,9 +248,13 @@ jobs:
     # build-server only runs when run_build is true (see changes above), so
     # a skipped result there is fine - only an actual failure should block
     # the image build.
+    # A push to main/develop always builds and publishes, since the deployed
+    # chart runs the image of its own commit (charts/augustad/values.yaml): a
+    # commit with no image would never start. PRs build only when the image or
+    # chart changed.
     if: |
       always() &&
-      needs.changes.outputs.run_container == 'true' &&
+      (github.event_name == 'push' || needs.changes.outputs.run_container == 'true') &&
       (needs.build-server.result == 'success' || needs.build-server.result == 'skipped')
     runs-on: ubuntu-26.04
     steps:
@@ -276,12 +280,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - id: short-sha
+        run: echo "value=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
       - name: Build server image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           push: ${{ github.event_name == 'push' }}
-          # github.ref_name is only a plain branch name (safe as a Docker
-          # tag) on push - for pull_request it's "<pr-number>/merge", which
-          # contains a "/" and Docker rejects as a tag.
-          tags: ghcr.io/${{ github.repository_owner }}/augustad:${{ github.event_name == 'push' && github.ref_name || github.sha }}
+          # sha-<first 12 characters of the commit> is the tag the chart runs:
+          # Flux versions a Git-sourced chart <version>+<the same 12
+          # characters>. The branch name tag is for people. github.ref_name is
+          # only a plain branch name (safe as a Docker tag) on push - for
+          # pull_request it's "<pr-number>/merge", which Docker rejects.
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.short-sha.outputs.value }}
+            ${{ github.event_name == 'push' && format('ghcr.io/{0}/augustad:{1}', github.repository_owner, github.ref_name) || '' }}
+          # A commit that leaves src/ alone reuses the cached build.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

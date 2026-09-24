@@ -28,11 +28,11 @@
 // that thread specifically the way window/device events required the
 // Main/Render thread.
 //
-// Interface scope, for now: raw framed payloads only. What the bytes
-// mean - message types, fields, how input::Command or a future
-// authoritative-state snapshot get encoded - is Networking Protocol's
-// concern (ADR-0007, custom binary format) and isn't designed yet. Which
-// messages are reliable is that catalogue's call too, so every send names
+// Interface scope: raw framed payloads only. What the bytes mean -
+// message types, fields, how a Command or an Authoritative State update
+// is encoded - is the Networking Protocol's concern (augusta::protocol,
+// ADR-0007, ADR-0038). Which messages are reliable is that catalogue's
+// call too (ADR-0038's reliability split), so every send names
 // its Reliability explicitly rather than this module picking a default:
 // unreliable suits real-time state updates where a newer message
 // supersedes an older one, reliable suits a handshake that must arrive.
