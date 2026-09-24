@@ -706,9 +706,16 @@ TEST(DescribeConfigErrorTest, NamesTheKeyAndTheFile) {
 
 TEST(DescribeConfigErrorTest, SaysWhatANumberMustBe) {
   const auto message =
-      DescribeConfigError({.code = ConfigErrorCode::kInvalidNumber, .subject = "tick_rate_hz", .file = {}});
+      DescribeConfigError({.code = ConfigErrorCode::kInvalidNumber, .subject = "input.mouse_sensitivity", .file = {}});
 
-  EXPECT_EQ(message, "'tick_rate_hz' must be an integer from 1 to 255");
+  EXPECT_EQ(message, "'input.mouse_sensitivity' must be a finite number above zero");
+}
+
+TEST(DescribeConfigErrorTest, SaysWhatATickRateMustBe) {
+  const auto message =
+      DescribeConfigError({.code = ConfigErrorCode::kInvalidNumber, .subject = "simulation.tick_rate_hz", .file = {}});
+
+  EXPECT_EQ(message, "'simulation.tick_rate_hz' must be an integer from 1 to 255");
 }
 
 TEST(DescribeConfigErrorTest, SaysWhatALogLevelMustBe) {
