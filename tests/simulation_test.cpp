@@ -41,7 +41,7 @@ Command Walking(Vec3 direction, Stance stance = Stance::kStanding) {
 
 class SimulationTest : public ::testing::Test {
  protected:
-  SimulationTest() : world_(augusta::physics::StaminaConfig{}, "scripts/round.lua") {
+  SimulationTest() : world_(augusta::physics::StaminaConfig{}) {
     EXPECT_TRUE(world_.AddCollisionMesh(Floor()).has_value());
   }
 

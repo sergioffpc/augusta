@@ -3,7 +3,6 @@
 
 #include <cstdint>
 #include <memory>
-#include <string>
 
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
@@ -44,9 +43,6 @@ struct Config {
   // player body's stamina rules (physics::World, shared with PredictionWorld
   // client-side).
   parameters::Parameters parameters;
-  // Lua game-policy script to load (scripting::Engine, inside
-  // SimulationWorld's Scripts/Behaviours phase).
-  std::string script_path;
   // Local address to listen on (US-01).
   networking::Endpoint listen;
 };
@@ -56,9 +52,8 @@ struct Config {
 // on what becomes the Simulation thread (see Run()).
 class ServerRuntime {
  public:
-  // Constructs SimulationWorld with map's collision (throws whatever
-  // scripting::Engine's constructor throws if script_path fails to load,
-  // or std::runtime_error if a map mesh is rejected - see simulation.h)
+  // Constructs SimulationWorld with map's collision (throws
+  // std::runtime_error if a map mesh is rejected - see host.h)
   // and starts networking::Server listening on config.listen (throws
   // std::runtime_error if the address can't be bound - see
   // networking.h). Does not yet spawn any thread; see Run().

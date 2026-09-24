@@ -40,8 +40,6 @@ struct HostConfig {
   /// the stamina rules of every player body, shared with PredictionWorld, and
   /// the Player count a match starts with.
   parameters::Parameters parameters{};
-  /// Lua game-policy script for SimulationWorld's Scripts/Behaviours phase.
-  std::string script_path;
   /// Local address to listen on (US-01).
   networking::Endpoint listen{};
 };
@@ -73,8 +71,7 @@ struct Map {
 /// The server's listening socket and its SimulationWorld, without threads or a clock.
 class Host {
  public:
-  /// Constructs SimulationWorld with map's collision (throws what its
-  /// scripting engine throws if script_path fails to load, and
+  /// Constructs SimulationWorld with map's collision (throws
   /// std::runtime_error if a map mesh is rejected) and starts listening
   /// (throws std::runtime_error if the address can't be bound).
   Host(const HostConfig& config, Map map);

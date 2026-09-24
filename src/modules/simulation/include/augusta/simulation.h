@@ -4,7 +4,6 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
-#include <string>
 #include <vector>
 
 #include "augusta/ballistics.h"
@@ -128,11 +127,10 @@ class World {
  public:
   // Constructs an empty World: an empty physics::World (using
   // stamina_config for every player body) and an empty ballistics::World
-  // (no bullets in flight yet), a scripting::Engine loaded from
-  // script_path, and the Flecs world with Phase's eight phases and their
-  // systems registered (see header comment). Throws whatever
-  // scripting::Engine's constructor throws if script_path fails to load.
-  World(const physics::StaminaConfig& stamina_config, const std::string& script_path);
+  // (no bullets in flight yet), a scripting::Engine with no script
+  // loaded yet, and the Flecs world with Phase's eight phases and their
+  // systems registered (see header comment).
+  explicit World(const physics::StaminaConfig& stamina_config);
   ~World();
 
   /// Adds immovable level geometry to this world's physics, the same way PredictionWorld does.

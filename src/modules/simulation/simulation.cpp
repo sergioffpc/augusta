@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <expected>
 #include <memory>
-#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -72,8 +71,7 @@ struct World::Impl {
   std::unordered_map<PlayerId, command::Command> tick_commands;
   State committed;
 
-  Impl(const physics::StaminaConfig& stamina_config, const std::string& script_path)
-      : physics(stamina_config), scripting(script_path) {
+  explicit Impl(const physics::StaminaConfig& stamina_config) : physics(stamina_config) {
     // Chain the eight phases in Phase's declared order (ADR-0023): each
     // depends_on the previous one, and the first depends on Flecs's
     // built-in OnUpdate phase, so a single ecs.progress() call runs them
@@ -158,8 +156,7 @@ struct World::Impl {
   }
 };
 
-World::World(const physics::StaminaConfig& stamina_config, const std::string& script_path)
-    : impl_(std::make_unique<Impl>(stamina_config, script_path)) {}
+World::World(const physics::StaminaConfig& stamina_config) : impl_(std::make_unique<Impl>(stamina_config)) {}
 
 World::~World() = default;
 

@@ -106,12 +106,8 @@ std::string LoopbackAddress() {
 
 // A test server's settings: the test tick rate unless a test says otherwise.
 HostConfig TestHostConfig(const Parameters& parameters = kTestParameters, std::uint8_t tick_rate_hz = kTestTickRate) {
-  // The script path is the server's own placeholder (scripting::Engine ignores
-  // it until Lua is embedded, ADR-0022); point it at a real script then.
-  return HostConfig{.tick_rate_hz = tick_rate_hz,
-                    .parameters = parameters,
-                    .script_path = "scripts/round.lua",
-                    .listen = Endpoint{.address = LoopbackAddress()}};
+  return HostConfig{
+      .tick_rate_hz = tick_rate_hz, .parameters = parameters, .listen = Endpoint{.address = LoopbackAddress()}};
 }
 
 // A client of the test server playing character.

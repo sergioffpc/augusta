@@ -45,7 +45,6 @@ struct ServerRuntime::Impl {
             server::HostConfig{
                 .tick_rate_hz = cfg.tick_rate_hz,
                 .parameters = cfg.parameters,
-                .script_path = cfg.script_path,
                 .listen = cfg.listen,
             },
             std::move(map)) {}

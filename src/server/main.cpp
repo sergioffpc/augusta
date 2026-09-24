@@ -110,9 +110,6 @@ std::optional<augusta::parameters::Parameters> LoadParameters(const augusta::ass
 augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ServerConfig& file_config,
                                             const augusta::parameters::Parameters& parameters) {
   augusta::runtime::Config config;
-  // TODO(sergioffpc): hardcoded placeholder - script_path assumes an asset
-  // pack layout the asset pipeline (ROADMAP.md M2) hasn't built yet.
-  config.script_path = "scripts/round.lua";
   config.listen.address = file_config.listen_address;
   config.tick_rate_hz = file_config.tick_rate_hz;
   // Every client is sent the rate and these when it joins and predicts with
