@@ -37,17 +37,23 @@ std::string FormatLine(std::chrono::system_clock::time_point time, Severity leve
 /// flooded by per-packet TRACE, unless a caller asks for it afterward.
 void Init();
 
-/// Writes message at level to the console sink. Use the macros below instead:
-/// they also drop calls under the compile-time level.
+/// Writes message at level to the console sink, whatever the runtime floor. Use
+/// the macros below instead: they drop calls under the compile-time level, and
+/// under the runtime floor before formatting their message.
 void Write(Severity level, std::string_view message);
 
 /// Raises or lowers the runtime floor: below level, a call that still passes
-/// the compile-time gate (AUGUSTA_LOG_ACTIVE_LEVEL) is now dropped before it
-/// reaches the console sink. This is what a config file's `logging.level` (ADR-0034)
+/// the compile-time gate (AUGUSTA_LOG_ACTIVE_LEVEL) is now dropped before its
+/// arguments are evaluated. This is what a config file's `logging.level` (ADR-0034)
 /// drives - the compile-time gate alone can't tell a Debug build's TRACE
 /// firehose apart from its DEBUG heartbeat, since both compile in together.
-/// Thread-safe; takes effect for calls made after it returns.
+/// Thread-safe; takes effect for calls made after it returns. Until Init or a
+/// first call, the floor is kTrace.
 void SetLogLevel(Severity level);
+
+/// Whether a call at level clears the runtime floor (SetLogLevel). One atomic
+/// read, so the macros below can ask it on every call, hot paths included.
+bool IsEnabled(Severity level);
 
 /// Parses one of "trace", "debug", "info", "warn", "error", "critical"
 /// (case-sensitive, matching the logfmt message bodies); anything else is
@@ -92,7 +98,11 @@ std::string WithSuppressed(std::string message, std::uint32_t count);
 #define AUGUSTA_LOG_ACTIVE_LEVEL AUGUSTA_LOG_LEVEL_INFO
 #endif
 
-#define AUGUSTA_LOG_AT(level, ...) ::augusta::logging::Write(level, ::std::format(__VA_ARGS__))
+// The runtime floor is checked first, so a call under it never runs std::format
+// or evaluates its arguments: a per-packet TRACE line costs one atomic read.
+#define AUGUSTA_LOG_AT(level, ...)                                                                     \
+  (::augusta::logging::IsEnabled(level) ? ::augusta::logging::Write(level, ::std::format(__VA_ARGS__)) \
+                                        : static_cast<void>(0))
 
 // L-prefixed rather than bare T/D/I/W/E/C: those collide with the T(...)
 // functional-cast idiom GLM's templates use internally (glm/detail/_vectorize.hpp),
@@ -126,10 +136,15 @@ std::string WithSuppressed(std::string message, std::uint32_t count);
 
 // LW_LIMITED(throttle, ...) is LW behind a logging::Throttle: for a warning a peer
 // can provoke as often as it likes, so it cannot flood the log. A line that
-// follows suppressed ones ends in suppressed=<count>.
+// follows suppressed ones ends in suppressed=<count>. Under the runtime floor it
+// does not ask the throttle, so a filtered warning takes no slot and counts as
+// no suppressed line.
 #if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_WARN
 #define LW_LIMITED(throttle, ...)                                                                                     \
   do {                                                                                                                \
+    if (!::augusta::logging::IsEnabled(::augusta::logging::Severity::kWarn)) {                                        \
+      break;                                                                                                          \
+    }                                                                                                                 \
     if (const auto augusta_suppressed = (throttle).Admit(::std::chrono::steady_clock::now())) {                       \
       ::augusta::logging::Write(::augusta::logging::Severity::kWarn,                                                  \
                                 ::augusta::logging::WithSuppressed(::std::format(__VA_ARGS__), *augusta_suppressed)); \
