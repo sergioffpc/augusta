@@ -33,6 +33,7 @@ ASSET_TYPE_NAMES = {
     pack.ASSET_TYPE_SCRIPT: "script",
     pack.ASSET_TYPE_CHARACTERS: "characters",
     pack.ASSET_TYPE_CLIENT_PACK: "client-pack",
+    pack.ASSET_TYPE_EYE: "eye",
 }
 
 

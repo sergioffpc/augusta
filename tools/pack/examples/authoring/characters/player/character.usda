@@ -12,6 +12,14 @@ def Xform "Character"
     # asset elsewhere only ever moves this prim, never the geometry below,
     # whose own translate positions it relative to that anchor.
 
+    def Xform "Eye"
+    {
+        # Where the local player's camera sits, relative to the feet above:
+        # the client reads this prim's origin, nothing else (ADR-0040).
+        double3 xformOp:translate = (0, 1.7, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
     def Capsule "Visual"
     {
         uniform token axis = "Y"

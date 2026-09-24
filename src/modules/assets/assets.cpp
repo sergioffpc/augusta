@@ -412,6 +412,7 @@ bool IsValidAssetType(std::uint8_t value) {
     case AssetType::kScript:
     case AssetType::kCharacters:
     case AssetType::kClientPack:
+    case AssetType::kEye:
       return true;
   }
   return false;
@@ -600,6 +601,10 @@ std::expected<MeshData, ResolveError> Pack::ResolveHitbox(std::string_view path)
 
 std::expected<SpawnPointData, ResolveError> Pack::ResolveSpawnPoint(std::string_view path) const {
   return ResolveAsset<SpawnPointData>(impl_->index, impl_->mapping, path, AssetType::kSpawnPoint, DecodeSpawnPointBlob);
+}
+
+std::expected<EyeData, ResolveError> Pack::ResolveEye(std::string_view path) const {
+  return ResolveAsset<EyeData>(impl_->index, impl_->mapping, path, AssetType::kEye, DecodeEyeBlob);
 }
 
 std::expected<std::string, ResolveError> Pack::ResolveScript(std::string_view path) const {

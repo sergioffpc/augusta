@@ -45,6 +45,7 @@ enum class AssetType : std::uint8_t {
   kScript,
   kCharacters,
   kClientPack,
+  kEye,
 };
 
 // True if value is one of AssetType's defined enumerators - an index
@@ -164,6 +165,13 @@ inline constexpr std::size_t kMaxCharacters = 255;
 struct SpawnPointData {
   math::Vec3 translation{0.0F, 0.0F, 0.0F};
   math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};
+};
+
+/// A character's eye (ADR-0040): the point the local player's camera sits at, in
+/// the character's own root space - its feet at the origin, the same space its
+/// visual mesh is cooked into.
+struct EyeData {
+  math::Vec3 position{0.0F, 0.0F, 0.0F};
 };
 
 // Sanitizes a USD prim path (e.g. "/Geom/Cube") into the pack-relative
@@ -311,6 +319,10 @@ class Pack {
   // Resolves a spawn-point marker by its pack-relative path (ADR-0019/
   // ADR-0032). Present in both client and server packs.
   [[nodiscard]] std::expected<SpawnPointData, ResolveError> ResolveSpawnPoint(std::string_view path) const;
+
+  /// Resolves a character's eye by its pack-relative path (ADR-0040). Present
+  /// in the client pack only.
+  [[nodiscard]] std::expected<EyeData, ResolveError> ResolveEye(std::string_view path) const;
 
   /// Resolves a Lua script's text by its path relative to the scenario's
   /// folder, e.g. kParametersScriptPath (ADR-0031). Present in the server pack

@@ -53,8 +53,9 @@ enum class Phase {
   // State (outside a match). Each is drawn as its character from Match start.
   kInterpolation,
   // Mechanism. View camera position: local_body's predicted position (same
-  // one kInterpolation just offset for local_position, above) plus a fixed
-  // eye-height offset, recomputed every frame - so the camera tracks
+  // one kInterpolation just offset for local_position, above) plus the local
+  // player's character's eye (World's constructor, ADR-0040), recomputed every
+  // frame - so the camera is attached to the character and tracks
   // wherever the local player's body actually is, instead of the one-shot
   // placement scene_loader.cpp used to freeze it at. Rotation is the local
   // player's view (World::RunFrame's view_rotation). ADS zoom transition,
@@ -100,7 +101,8 @@ struct State {
   /// that hides a reconciliation jump and fades (see correction.h).
   math::Vec3 local_position{};
   /// The local player's view camera this frame (Phase::kCamera) - tracks
-  /// local_position at eye height, every frame, turned where the player looks.
+  /// local_position at its character's eye, every frame, turned where the
+  /// player looks.
   Camera camera{};
   /// Every other player in the match, at its interpolated position and stance
   /// this frame (RemoteInterpolator::Sample, interpolation.h), with its
@@ -125,9 +127,12 @@ class World {
   // pattern as augusta::renderer::Renderer's input_sink parameter:
   // ClientRuntime (src/client/runtime.h) constructs the client's one
   // audio::Engine and wires it to both Renderer's window and this
-  // World's AudioCues phase. Also registers Phase's five phases and
-  // their systems on the owned Flecs world (see header comment).
-  explicit World(audio::Engine& audio_engine);
+  // World's AudioCues phase. eye is the local player's character's eye, in
+  // that character's root space (its feet at the origin, ADR-0040): where
+  // Phase::kCamera puts the camera relative to the predicted body. Also
+  // registers Phase's five phases and their systems on the owned Flecs world
+  // (see header comment).
+  World(audio::Engine& audio_engine, const math::Vec3& eye);
   ~World();
 
   World(const World&) = delete;

@@ -16,12 +16,6 @@ namespace augusta::presentation {
 
 namespace {
 
-// How far above the local player's body position (physics::BodyState's feet)
-// the camera sits - same value as scene_loader.cpp's own kEyeHeight, which
-// still places the one-shot initial camera SetScene uploads before the
-// first RunFrame call overwrites it via SetCamera (renderer.h).
-constexpr float kEyeHeight = 1.7F;
-
 constexpr std::size_t kPhaseCount = 5;
 using PhaseEntities = std::array<flecs::entity, kPhaseCount>;
 
@@ -38,6 +32,9 @@ enum PhaseIndex : std::size_t {
 struct World::Impl {
   flecs::world ecs;
   audio::Engine& audio_engine;
+  // Where the camera sits relative to the local player's body position
+  // (physics::BodyState's feet): its character's eye (World's constructor).
+  math::Vec3 eye;
   animation::Engine animation;
   PhaseEntities phases;
   // The previous call's latest, for kInterpolation to blend against (see
@@ -77,7 +74,7 @@ struct World::Impl {
 
   State frame_state;
 
-  explicit Impl(audio::Engine& engine) : audio_engine(engine) {
+  Impl(audio::Engine& engine, const math::Vec3& local_eye) : audio_engine(engine), eye(local_eye) {
     // Chain the five phases in Phase's declared order (ADR-0024): each
     // depends_on the previous one, and the first depends on Flecs's
     // built-in OnUpdate phase, so a single ecs.progress() call runs them
@@ -150,8 +147,9 @@ struct World::Impl {
     const nvtx3::scoped_range range{"Camera"};
     // local_offset is already this frame's value - OnInterpolation (the
     // previous phase) just updated it. Same base position as OnCommit's
-    // local_position, plus eye height, turned where the local player looks.
-    camera.position = latest_state.local_body.position + local_offset + math::Vec3(0.0F, kEyeHeight, 0.0F);
+    // local_position, plus the character's eye - added as authored, since the
+    // character is drawn unrotated - turned where the local player looks.
+    camera.position = latest_state.local_body.position + local_offset + eye;
     camera.rotation = view_rotation;
   }
 
@@ -183,7 +181,7 @@ struct World::Impl {
   }
 };
 
-World::World(audio::Engine& audio_engine) : impl_(std::make_unique<Impl>(audio_engine)) {}
+World::World(audio::Engine& audio_engine, const math::Vec3& eye) : impl_(std::make_unique<Impl>(audio_engine, eye)) {}
 
 World::~World() = default;
 World::World(World&&) noexcept = default;
