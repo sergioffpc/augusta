@@ -6,7 +6,6 @@
 #include <span>
 #include <vector>
 
-#include "augusta/harness.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
 
@@ -27,6 +26,12 @@
 // newest Authoritative State (see presentation.cpp).
 namespace augusta::presentation {
 
+/// The server's name for one connected player (CONTEXT.md, "Session ID"), as
+/// presentation knows it: ClientRuntime converts the harness's own at its edge
+/// (see World::RunFrame in presentation.h), so this module does not depend on
+/// the network session.
+enum class SessionId : std::uint32_t {};
+
 /// How far behind the newest recorded update remote players are shown, in
 /// seconds - enough that the two updates surrounding the render point are
 /// normally both already buffered rather than the newest one still being
@@ -45,7 +50,7 @@ struct RemoteBody {
 
 /// One session's interpolated body, as Sample returns it.
 struct RemotePlayer {
-  harness::SessionId session{};
+  SessionId session{};
   RemoteBody body{};
   /// The character index it is drawn as, from Match start; 0 if unknown.
   /// PresentationWorld fills it in: the interpolator knows only bodies.
@@ -63,12 +68,12 @@ class RemoteInterpolator {
   /// previous newest becomes the one behind it. A timestamp at or before the
   /// session's current newest is ignored: out-of-order or repeated
   /// Authoritative State cannot move interpolation backward.
-  void Record(harness::SessionId session, float timestamp, const physics::BodyState& body);
+  void Record(SessionId session, float timestamp, const physics::BodyState& body);
 
   /// Forgets every buffered session not present in current - the disconnect
   /// case, driven by each Authoritative State's full player list rather than
   /// a separate leave message.
-  void Sync(std::span<const harness::SessionId> current);
+  void Sync(std::span<const SessionId> current);
 
   /// Every buffered session's body at render_time: interpolated between the
   /// two updates surrounding it if both are buffered, held at the nearer end
@@ -84,7 +89,7 @@ class RemoteInterpolator {
     physics::BodyState body{};
   };
   struct Buffered {
-    harness::SessionId session{};
+    SessionId session{};
     std::optional<Update> previous;
     Update latest;
   };

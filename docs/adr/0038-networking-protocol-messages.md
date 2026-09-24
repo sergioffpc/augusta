@@ -18,12 +18,14 @@ edge and nowhere else: the server in `server/wire.h` (used by `server::Host`
 right after Decode and right before Encode) and the client in
 `augusta/harness_wire.h` (used the same way by `harness::Session`). Inside each
 peer, modules pass the engine's types, never a `Wire` one: each peer names a
-player by its own Session ID type (`harness::SessionId` for the harness's API,
-`presentation` and ClientRuntime; `server::SessionId` for `server::Match` and
+player by its own Session ID type (`harness::SessionId` for the harness's API
+and ClientRuntime, which converts it at its own edge into `presentation`'s
+`presentation::SessionId`, so `presentation` does not depend on the harness;
+`server::SessionId` for `server::Match` and
 `server::Host`, which hands `replication` the SimulationWorld's
 `simulation::PlayerId` of the same number), a pack by `assets::PackHash`, and a
 refusal by its own `JoinRefusal`; `tests/protocol_boundary.cmake` fails the build's tests if one of their
-headers names the protocol.
+headers names the protocol, or a `presentation` header the harness.
 
 **Extended by ADR-0042**: Join request also carries the chosen character's path,
 Join refused gains the *unknown character* reason, and Join accepted, each Roster
