@@ -45,12 +45,19 @@ its step is an exact float, and a value read back encodes to the same bytes:
 | position (a body's, the spawn point), per axis | 3 (signed) | 1/1024 m | ±8192 m |
 | velocity, per axis | 2 (signed) | 1/512 m/s | ±64 m/s |
 | movement direction, per axis | 2 (signed) | 1/16384 | ±2 |
-| yaw, pitch | 2 (signed) | 1/8192 rad | ±4 rad |
+| yaw, pitch | 3 (signed) | 2⁻²¹ rad (about 0.5 µrad) | ±4 rad |
 | stamina | 2 (unsigned) | 1/32768 | 0 to 2 |
 
 A value beyond its range travels as the bound, and a NaN travels as 0. The tick
 rate and the parameters stay 32-bit floats: they are sent once, and must arrive
-exactly. So a body is 18 bytes and a command 11. The protocol exposes each grid
+exactly. So a body is 18 bytes and a command 13.
+
+**Aim is not the network's to blur.** The server fires with the angle it was
+sent, so the angle grid decides how far a shot lands from where the player
+aimed: at most half a step, 2⁻²² rad, under 0.2 mm at 800 m. That leaves
+precision to the weapon's own spread (a good rifle is about 0.3 mrad), which is
+a design choice, and not to the codec. The two extra bytes per angle cost 4 per
+command, about 1 KB/s more upload per client at 60 Hz with 8 commands a message. The protocol exposes each grid
 as a `Snap` function (`protocol::SnapPosition` and the rest), which gives what
 `Decode` would give back.
 
@@ -160,6 +167,13 @@ nothing, and it is kept out of logs per ADR-0029 regardless.
 - **Refuse at the transport instead of with a message**: rejected — the transport
   gives the client only "connection closed", so the player could not be told why
   (US-01 asks for the reason).
+- **Angles as int16 counts of 1/8192 rad**: rejected — a shot could land about
+  5 cm off at 800 m, an error the network adds and no weapon has.
+- **The client aiming with the rounded angle**: rejected — a scoped view would
+  move in visible steps of about 0.1 mrad.
+- **Leaving the angle error for the weapon's spread to hide**: rejected — spread
+  is a per-weapon design choice, and the network's error would add to it on
+  every weapon alike.
 - **Version as a number or hash instead of the engine version string**: rejected
   for now — the string is what `augusta::EngineVersion()` already is, exact
   equality is the rule, and 32 bytes at join time cost nothing.

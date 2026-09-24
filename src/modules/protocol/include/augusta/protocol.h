@@ -294,7 +294,8 @@ enum class DecodeError : std::uint8_t {
 /// A movement direction as Decode gives it back: on a grid of 1/16384, within 2 on each axis.
 [[nodiscard]] math::Vec3 SnapDirection(const math::Vec3& direction);
 
-/// An angle (a yaw or a pitch) as Decode gives it back: on a grid of 1/8192 rad, within 4 rad.
+/// An angle (a yaw or a pitch) as Decode gives it back: on a grid of 2^-21 rad
+/// (about 0.5 microradians, 0.4 mm at 800 m), within 4 rad.
 [[nodiscard]] float SnapAngle(float radians);
 
 /// A stamina as Decode gives it back: on a grid of 1/32768, from 0 to 2.

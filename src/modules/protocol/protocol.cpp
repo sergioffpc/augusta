@@ -45,7 +45,7 @@ constexpr std::int32_t kInt24Max = (1 << 23) - 1;
 constexpr Grid kPositionGrid{.step = 1.0F / 1024.0F, .bytes = 3, .min = kInt24Min, .max = kInt24Max};
 constexpr Grid kVelocityGrid{.step = 1.0F / 512.0F, .bytes = 2, .min = kInt16Min, .max = kInt16Max};
 constexpr Grid kDirectionGrid{.step = 1.0F / 16384.0F, .bytes = 2, .min = kInt16Min, .max = kInt16Max};
-constexpr Grid kAngleGrid{.step = 1.0F / 8192.0F, .bytes = 2, .min = kInt16Min, .max = kInt16Max};
+constexpr Grid kAngleGrid{.step = 1.0F / 2097152.0F, .bytes = 3, .min = kInt24Min, .max = kInt24Max};
 constexpr Grid kStaminaGrid{
     .step = 1.0F / 32768.0F, .bytes = 2, .min = 0, .max = std::numeric_limits<std::uint16_t>::max()};
 

@@ -456,9 +456,41 @@ TEST(ProtocolTest, ANonFiniteNumberIsSentAsZeroOrItsNearestBound) {
   EXPECT_EQ(decoded.commands[0].command.direction.y, SnapDirection(Vec3(0.0F, -1000.0F, 0.0F)).y);
 }
 
-// type, count, then per command: sequence (4), direction (6), yaw (2), pitch
-// (2) and one byte for the flags and the stance.
-constexpr std::size_t kCommandFlagsOffset = 2 + 4 + 6 + 2 + 2;
+// type, count, then per command: sequence (4), direction (6), yaw (3), pitch
+// (3) and one byte for the flags and the stance: a command is 13 bytes.
+constexpr std::size_t kCommandYawOffset = 2 + 4 + 6;
+constexpr std::size_t kCommandFlagsOffset = kCommandYawOffset + 3 + 3;
+
+// The angle grid's step, 2^-21 rad.
+constexpr float kAngleStep = 1.0F / 2097152.0F;
+
+TEST(ProtocolTest, YawAndPitchTravelAsThreeBytesEachInStepsOfTwoToTheMinus21Radians) {
+  SequencedCommandWire sequenced{.sequence = 1};
+  sequenced.command.yaw = kAngleStep;
+  sequenced.command.pitch = -kAngleStep;
+
+  const Bytes payload = Encode(Commands{.commands = {sequenced}});
+
+  const auto yaw_offset = static_cast<std::ptrdiff_t>(kCommandYawOffset);
+  const Bytes angles(payload.begin() + yaw_offset, payload.begin() + yaw_offset + 6);
+  EXPECT_EQ(angles, BytesOf({0x01, 0x00, 0x00, 0xFF, 0xFF, 0xFF}));
+}
+
+TEST(ProtocolTest, AnAngleIsClampedWithinFourRadiansAndANaNIsZero) {
+  EXPECT_EQ(SnapAngle(100.0F), 4.0F - kAngleStep);
+  EXPECT_EQ(SnapAngle(-100.0F), -4.0F);
+  EXPECT_EQ(SnapAngle(std::numeric_limits<float>::quiet_NaN()), 0.0F);
+}
+
+// Half a step: under 0.2 mm at 800 m, so the network adds no aim error a
+// weapon's spread would notice.
+TEST(ProtocolTest, AnAnglesRoundingErrorIsAtMostHalfAStep) {
+  constexpr float kMaxError = kAngleStep / 2.0F;
+  static_assert(kMaxError * 800.0F < 0.0002F);
+  for (const float value : {0.1F, -0.1F, 1.0F / 3.0F, 1.2345678F, -2.7182817F, 3.1415927F, -3.9999F}) {
+    EXPECT_LE(std::abs(SnapAngle(value) - value), kMaxError) << value;
+  }
+}
 
 TEST(ProtocolTest, ACommandsFlagsAndStanceShareItsLastByte) {
   SequencedCommandWire sequenced{.sequence = 1};
@@ -532,9 +564,9 @@ TEST(ProtocolTest, APlayersStanceOutsideItsRangeIsInvalid) {
 
 // Every number of a body or a command travels as a whole count of its grid's
 // step (ADR-0038), in the fewest bytes its range needs.
-TEST(ProtocolTest, ABodyTravelsInEighteenBytesAndACommandInEleven) {
+TEST(ProtocolTest, ABodyTravelsInEighteenBytesAndACommandInThirteen) {
   EXPECT_EQ(Encode(AuthoritativeStateWire{.players = {PlayerStateWire{}}}).size(), 1 + 4 + 4 + 1 + 4 + 18);
-  EXPECT_EQ(Encode(Commands{.commands = {SequencedCommandWire{}}}).size(), 2 + 4 + 11);
+  EXPECT_EQ(Encode(Commands{.commands = {SequencedCommandWire{}}}).size(), 2 + 4 + 13);
 }
 
 TEST(ProtocolTest, APositionTravelsAsThreeBytesPerAxisInMillimeterSteps) {
