@@ -119,6 +119,12 @@ gtest_discover_tests(augusta_wire_tests DISCOVERY_TIMEOUT 30)
 add_test(NAME augusta_protocol_boundary
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/protocol_boundary.cmake)
 
+# Neither physics nor SimulationWorld names the protocol or the client's input
+# sampler in its public headers: the grids and the Command they need are shared
+# core modules of their own. A source scan, so it builds nothing.
+add_test(NAME augusta_core_boundary
+  COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/core_boundary.cmake)
+
 add_executable(augusta_assets_tests assets_test.cpp)
 target_link_libraries(augusta_assets_tests PRIVATE augusta_assets GTest::gtest GTest::gtest_main)
 # WritePack/Encode*/Pack::Load round-trip coverage (below) exercises
