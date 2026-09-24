@@ -50,7 +50,8 @@ enum class Phase {
   // newest update, interpolated between the two surrounding updates
   // (RemoteInterpolator, interpolation.h) - smooth motion independent of
   // render frame rate. A session no longer in authoritative's player list is
-  // no longer shown.
+  // no longer shown, and neither is anyone while there is no Authoritative
+  // State (outside a match). Each is drawn as its character from Match start.
   kInterpolation,
   // Mechanism. View camera position: local_body's predicted position (same
   // one kInterpolation just offset for local_position, above) plus a fixed
@@ -103,9 +104,9 @@ struct State {
   /// local_position at eye height, every frame, turned where the player looks.
   Camera camera{};
   /// Every other player in the match, at its interpolated position and stance
-  /// this frame (RemoteInterpolator::Sample, interpolation.h). Empty before
-  /// the client has received an Authoritative State, or once alone in the
-  /// match.
+  /// this frame (RemoteInterpolator::Sample, interpolation.h), with its
+  /// character. Empty before the client has received an Authoritative State,
+  /// outside a match, or once alone in the match.
   std::vector<RemotePlayer> remote_players;
 };
 
@@ -144,15 +145,18 @@ class World {
   // looks (input::ViewRotation of its latest Command), which the camera
   // takes as its rotation. local_session is this client's own
   // session, or nullopt before the server has admitted it; authoritative is
-  // the newest Authoritative State the connection has received, or nullopt
-  // before the first one arrives - both harness::Session getters
-  // (GetSessionId, GetAuthoritativeState). Every player in authoritative
-  // other than local_session is fed to this World's RemoteInterpolator (see
-  // interpolation.h); a repeated authoritative (same tick as the previous
-  // call) is not recorded again. Returns the frame's Presentation State.
+  // the newest Authoritative State of the match in progress, or nullopt
+  // outside one, and match_start what the server said when it started, which
+  // names each player's character - all harness::Session getters
+  // (GetSessionId, GetAuthoritativeState, GetMatchStart). Every player in
+  // authoritative other than local_session is fed to this World's
+  // RemoteInterpolator (see interpolation.h); a repeated authoritative (same
+  // tick as the previous call) is not recorded again. Returns the frame's
+  // Presentation State.
   State RunFrame(const prediction::State& latest, const math::Quat& view_rotation,
                  std::optional<protocol::SessionId> local_session,
-                 const std::optional<harness::AuthoritativeState>& authoritative);
+                 const std::optional<harness::AuthoritativeState>& authoritative,
+                 const std::optional<harness::MatchStart>& match_start);
 
  private:
   struct Impl;

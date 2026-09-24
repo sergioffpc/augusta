@@ -56,6 +56,25 @@ AuthoritativeState FromWire(const protocol::AuthoritativeStateWire& state) {
   return result;
 }
 
+Lobby FromWire(const protocol::LobbyWire& lobby) {
+  Lobby result{.version = lobby.version, .roster = {}};
+  result.roster.reserve(lobby.roster.size());
+  for (const protocol::RosterEntryWire& entry : lobby.roster) {
+    result.roster.push_back(RosterEntry{.session = entry.session, .character = entry.character});
+  }
+  return result;
+}
+
+MatchStart FromWire(const protocol::MatchStartWire& start) {
+  MatchStart result;
+  result.players.reserve(start.players.size());
+  for (const protocol::MatchPlayerWire& player : start.players) {
+    result.players.push_back(
+        MatchPlayer{.session = player.session, .character = player.character, .spawn = player.spawn});
+  }
+  return result;
+}
+
 protocol::CommandWire ToWire(const input::Command& command) {
   std::uint8_t flags = 0;
   if (command.movement.sprint) {

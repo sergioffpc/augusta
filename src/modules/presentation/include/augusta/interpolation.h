@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_INTERPOLATION_H_
 #define AUGUSTA_INTERPOLATION_H_
 
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <vector>
@@ -46,6 +47,9 @@ struct RemoteBody {
 struct RemotePlayer {
   protocol::SessionId session{};
   RemoteBody body{};
+  /// The character index it is drawn as, from Match start; 0 if unknown.
+  /// PresentationWorld fills it in: the interpolator knows only bodies.
+  std::uint8_t character = 0;
 };
 
 /// Buffers the Authoritative State's per-session updates for every player

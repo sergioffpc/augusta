@@ -46,6 +46,7 @@ namespace {
 
 using augusta::harness::Failure;
 using augusta::harness::FailureKind;
+using augusta::harness::Phase;
 using augusta::harness::Session;
 using augusta::harness::SessionConfig;
 using augusta::input::Command;
@@ -57,6 +58,7 @@ using augusta::parameters::Parameters;
 using augusta::physics::CollisionMesh;
 using augusta::physics::Stance;
 using augusta::protocol::JoinRefusal;
+using augusta::protocol::SessionId;
 using augusta::server::Host;
 using augusta::server::HostConfig;
 using augusta::server::Map;
@@ -65,13 +67,21 @@ constexpr auto kPollInterval = std::chrono::milliseconds(10);
 constexpr auto kPollDeadline = std::chrono::seconds(5);
 constexpr float kFixedTick = 1.0F / 60.0F;
 
-// What a test's server runs on: NFR-01's 60 Hz and stamina rules that never drain.
+// What a test's server runs on: NFR-01's 60 Hz and stamina rules that never
+// drain, for a match of one player.
 constexpr float kTestTickRate = 60.0F;
 constexpr Parameters kTestParameters{};
 
 // The one character every test's server offers and every test's client picks,
 // unless a test says otherwise.
 constexpr const char* kCharacter = "characters/player";
+
+// The test parameters, for a match of count players.
+Parameters WithPlayerCount(std::uint8_t count) {
+  Parameters parameters = kTestParameters;
+  parameters.player_count = count;
+  return parameters;
+}
 
 // A PredictionWorld with no map, and nothing decided yet: a server decides it on the client's join.
 augusta::prediction::World EmptyWorld() { return augusta::prediction::World(); }
@@ -91,6 +101,21 @@ std::string LoopbackAddress() {
   return "127.0.0.1:" + std::to_string(kFirstPort + (pid % kPortSpan));
 }
 
+// A test server's settings: the test tick rate unless a test says otherwise.
+HostConfig TestHostConfig(const Parameters& parameters = kTestParameters, float tick_rate_hz = kTestTickRate) {
+  // The script path is the server's own placeholder (scripting::Engine ignores
+  // it until Lua is embedded, ADR-0022); point it at a real script then.
+  return HostConfig{.tick_rate_hz = tick_rate_hz,
+                    .parameters = parameters,
+                    .script_path = "scripts/round.lua",
+                    .listen = Endpoint{.address = LoopbackAddress()}};
+}
+
+// A client of the test server playing character.
+SessionConfig TestSessionConfig(const std::string& character = kCharacter) {
+  return SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = character};
+}
+
 // Init and Shutdown once for the whole process, as in networking_test.cpp.
 class SessionEnvironment : public ::testing::Environment {
  public:
@@ -101,18 +126,161 @@ class SessionEnvironment : public ::testing::Environment {
 [[maybe_unused]] ::testing::Environment* const kSessionEnvironment =
     ::testing::AddGlobalTestEnvironment(new SessionEnvironment);
 
+// A client speaking the protocol by hand, to send what a real one would not.
+class RawClient {
+ public:
+  explicit RawClient(const Endpoint& server) { client_.Connect(server); }
+
+  ~RawClient() { client_.Disconnect(); }
+
+  RawClient(const RawClient&) = delete;
+  RawClient& operator=(const RawClient&) = delete;
+  RawClient(RawClient&&) = delete;
+  RawClient& operator=(RawClient&&) = delete;
+
+  // Runs host and client until the server has admitted this one to the Lobby.
+  bool Join(Host& host) {
+    const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+    while (!accepted_ && std::chrono::steady_clock::now() < deadline) {
+      host.PumpNetwork();
+      Serve();
+      std::this_thread::sleep_for(kPollInterval);
+    }
+    return accepted_;
+  }
+
+  // One round of this client's own network work: asks to join once connected,
+  // takes in what has arrived, and reports Ready for each Roster it is sent,
+  // as a client that has loaded everyone does.
+  void Serve() {
+    client_.PumpEvents();
+    if (!requested_ && client_.GetState() == ConnectionState::kConnected) {
+      Send(augusta::protocol::JoinRequest{.engine_version = std::string(augusta::EngineVersion()),
+                                          .character = kCharacter});
+      requested_ = true;
+    }
+    Drain();
+  }
+
+  [[nodiscard]] bool InMatch() const { return in_match_; }
+
+  void Send(const augusta::protocol::Message& message) { SendPayload(augusta::protocol::Encode(message)); }
+
+  // Sends bytes as they are, whether or not they are a message.
+  void SendPayload(const augusta::protocol::Bytes& payload) {
+    client_.Send(payload, augusta::networking::Reliability::kReliable);
+  }
+
+  // The Authoritative State updates received since the last call.
+  std::vector<augusta::protocol::AuthoritativeStateWire> Receive() {
+    client_.PumpEvents();
+    return Drain();
+  }
+
+ private:
+  // Takes in what has arrived, answering each Roster with a Ready, and returns
+  // the Authoritative States among it.
+  std::vector<augusta::protocol::AuthoritativeStateWire> Drain() {
+    std::vector<augusta::protocol::AuthoritativeStateWire> states;
+    for (const auto& payload : client_.ReceiveMessages()) {
+      const auto message = augusta::protocol::Decode(payload);
+      if (!message.has_value()) {
+        continue;
+      }
+      if (std::holds_alternative<augusta::protocol::JoinAccepted>(*message)) {
+        accepted_ = true;
+      } else if (const auto* lobby = std::get_if<augusta::protocol::LobbyWire>(&*message)) {
+        Send(augusta::protocol::Ready{.version = lobby->version});
+      } else if (std::holds_alternative<augusta::protocol::MatchStartWire>(*message)) {
+        in_match_ = true;
+      } else if (const auto* state = std::get_if<augusta::protocol::AuthoritativeStateWire>(&*message)) {
+        states.push_back(*state);
+      }
+    }
+    return states;
+  }
+
+  augusta::networking::Client client_;
+  bool requested_ = false;
+  bool accepted_ = false;
+  bool in_match_ = false;
+};
+
+// Runs host and every one of sessions (and raw, if any) - each reporting it
+// has loaded every Roster it is sent, as a client does once it has - and ticks
+// host, until all of them are in a match or the deadline passes. Returns
+// whether they all are. Ticks as fast as the network allows, so the pause after
+// a match (hundreds of ticks) passes in no more than a few seconds.
+bool DriveIntoMatch(Host& host, const std::vector<Session*>& sessions, RawClient* raw = nullptr) {
+  constexpr auto kTickInterval = std::chrono::milliseconds(1);
+  constexpr auto kDeadline = std::chrono::seconds(15);
+  std::map<const Session*, std::uint32_t> reported;
+  const auto deadline = std::chrono::steady_clock::now() + kDeadline;
+  while (std::chrono::steady_clock::now() < deadline) {
+    host.PumpNetwork();
+    bool all_in_match = raw == nullptr || raw->InMatch();
+    if (raw != nullptr) {
+      raw->Serve();
+    }
+    for (Session* session : sessions) {
+      session->PumpEvents();
+      session->ExchangeMessages();
+      const auto lobby = session->GetLobby();
+      if (lobby.has_value() && session->GetPhase() == Phase::kLobby && reported[session] != lobby->version) {
+        session->ReportReady(lobby->version);
+        reported[session] = lobby->version;
+      }
+      all_in_match = all_in_match && session->GetPhase() == Phase::kMatch;
+    }
+    if (all_in_match) {
+      return true;
+    }
+    host.Tick(kFixedTick);
+    std::this_thread::sleep_for(kTickInterval);
+  }
+  return false;
+}
+
+// Runs host's and sessions' network work, without ticking host, until until()
+// holds or the deadline passes; returns whether it held.
+template <typename Condition>
+bool ExchangeUntil(Host& host, const std::vector<Session*>& sessions, Condition until) {
+  const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+  while (std::chrono::steady_clock::now() < deadline) {
+    host.PumpNetwork();
+    for (Session* session : sessions) {
+      session->PumpEvents();
+      session->ExchangeMessages();
+    }
+    if (until()) {
+      return true;
+    }
+    std::this_thread::sleep_for(kPollInterval);
+  }
+  return false;
+}
+
+// Runs host's and sessions' network work, without ticking host, for long
+// enough that a message that was going to arrive has.
+void Settle(Host& host, const std::vector<Session*>& sessions) {
+  const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+  ExchangeUntil(host, sessions, [&] { return std::chrono::steady_clock::now() >= until; });
+}
+
+std::vector<Session*> Pointers(const std::vector<std::unique_ptr<Session>>& sessions) {
+  std::vector<Session*> pointers;
+  pointers.reserve(sessions.size());
+  for (const auto& session : sessions) {
+    pointers.push_back(session.get());
+  }
+  return pointers;
+}
+
 class SessionTest : public ::testing::Test {
  protected:
-  // The script path is the server's own placeholder (scripting::Engine ignores
-  // it until Lua is embedded, ADR-0022); point it at a real script then.
   SessionTest()
-      : host_(HostConfig{.tick_rate_hz = kTestTickRate,
-                         .parameters = kTestParameters,
-                         .script_path = "scripts/round.lua",
-                         .listen = Endpoint{.address = LoopbackAddress()}},
-              Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}}),
-        session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
-                 EmptyWorld()) {}
+      : host_(TestHostConfig(), Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}}),
+        session_(TestSessionConfig(), EmptyWorld()) {}
 
   // Runs both sides' network work until the session reports connected, or
   // the deadline passes.
@@ -139,6 +307,7 @@ TEST_F(SessionTest, ConnectsToAHostDrivenByHand) { EXPECT_TRUE(ConnectSession())
 
 TEST_F(SessionTest, PredictionMovesOnlyByTheCommandEachTickIsGiven) {
   ASSERT_TRUE(ConnectSession());
+  ASSERT_TRUE(DriveIntoMatch(host_, {&session_}));
   Command walk{};
   walk.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
 
@@ -168,14 +337,12 @@ TEST_F(SessionTest, StaysConnectedWhileTheTestAlternatesTicksAndNetworkWork) {
   EXPECT_EQ(session_.GetConnectionState(), ConnectionState::kConnected);
 }
 
-// A host and however many clients a test starts, all driven by hand.
+// A host whose matches take every player the protocol allows, and however many
+// clients a test starts, all driven by hand.
 class JoinTest : public ::testing::Test {
  protected:
   JoinTest()
-      : host_(HostConfig{.tick_rate_hz = kTestTickRate,
-                         .parameters = kTestParameters,
-                         .script_path = "scripts/round.lua",
-                         .listen = Endpoint{.address = LoopbackAddress()}},
+      : host_(TestHostConfig(WithPlayerCount(augusta::protocol::kMaxPlayers)),
               Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}}) {}
 
   // Starts connecting a new client that presents engine_version and asks to play character.
@@ -192,21 +359,20 @@ class JoinTest : public ::testing::Test {
   // Runs both sides' network work until every client has been answered, or the
   // deadline passes.
   bool WaitForAnswers() {
-    const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
-    while (std::chrono::steady_clock::now() < deadline) {
-      host_.PumpNetwork();
-      bool all_answered = true;
-      for (const auto& session : sessions_) {
-        session->PumpEvents();
-        session->ExchangeMessages();
-        all_answered = all_answered && (session->GetSessionId().has_value() || session->GetRefusal().has_value());
-      }
-      if (all_answered) {
-        return true;
-      }
-      std::this_thread::sleep_for(kPollInterval);
+    return ExchangeUntil(host_, Pointers(sessions_), [&] {
+      return std::ranges::all_of(sessions_, [](const auto& session) {
+        return session->GetSessionId().has_value() || session->GetRefusal().has_value();
+      });
+    });
+  }
+
+  // Fills the Lobby with kMaxPlayers clients and starts their match.
+  void StartAFullMatch() {
+    for (std::size_t i = 0; i < augusta::protocol::kMaxPlayers; ++i) {
+      AddClient();
     }
-    return false;
+    ASSERT_TRUE(WaitForAnswers());
+    ASSERT_TRUE(DriveIntoMatch(host_, Pointers(sessions_)));
   }
 
   Host host_;
@@ -220,6 +386,7 @@ TEST_F(JoinTest, AClientWithTheMatchingVersionIsAdmittedWithASessionId) {
 
   EXPECT_TRUE(client.GetSessionId().has_value());
   EXPECT_FALSE(client.GetRefusal().has_value());
+  EXPECT_EQ(client.GetPhase(), Phase::kLobby);
 }
 
 TEST_F(JoinTest, SessionIdsAreUniqueAmongConnectedClients) {
@@ -230,7 +397,7 @@ TEST_F(JoinTest, SessionIdsAreUniqueAmongConnectedClients) {
 
   ASSERT_TRUE(WaitForAnswers());
 
-  std::set<augusta::protocol::SessionId> ids;
+  std::set<SessionId> ids;
   for (const auto& session : sessions_) {
     ASSERT_TRUE(session->GetSessionId().has_value());
     ids.insert(*session->GetSessionId());
@@ -245,6 +412,7 @@ TEST_F(JoinTest, AClientWithAnotherEngineVersionIsRefusedForTheVersion) {
 
   EXPECT_EQ(client.GetRefusal(), JoinRefusal::kVersionMismatch);
   EXPECT_FALSE(client.GetSessionId().has_value());
+  EXPECT_EQ(client.GetPhase(), Phase::kNotAdmitted);
 }
 
 TEST_F(JoinTest, ARefusedClientReportsTheRefusalAsItsFailure) {
@@ -287,7 +455,7 @@ TEST_F(JoinTest, AnAdmittedClientHasNoFailure) {
   EXPECT_FALSE(client.GetFailure().has_value());
 }
 
-TEST_F(JoinTest, TheNinthClientIsRefusedBecauseTheMatchIsFull) {
+TEST_F(JoinTest, TheNinthClientIsRefusedBecauseTheLobbyIsFull) {
   for (std::size_t i = 0; i < augusta::protocol::kMaxPlayers; ++i) {
     AddClient();
   }
@@ -299,14 +467,40 @@ TEST_F(JoinTest, TheNinthClientIsRefusedBecauseTheMatchIsFull) {
   Session& ninth = AddClient();
   ASSERT_TRUE(WaitForAnswers());
 
-  EXPECT_EQ(ninth.GetRefusal(), JoinRefusal::kMatchFull);
+  EXPECT_EQ(ninth.GetRefusal(), JoinRefusal::kLobbyFull);
   EXPECT_FALSE(ninth.GetSessionId().has_value());
+}
+
+TEST_F(JoinTest, AClientThatConnectsDuringAMatchIsRefusedBecauseOneIsInProgress) {
+  StartAFullMatch();
+
+  Session& late = AddClient();
+  ASSERT_TRUE(WaitForAnswers());
+
+  EXPECT_EQ(late.GetRefusal(), JoinRefusal::kMatchInProgress);
+  const auto failure = late.GetFailure();
+  ASSERT_TRUE(failure.has_value());
+  EXPECT_EQ(failure->kind, FailureKind::kRefused);
+  EXPECT_NE(augusta::harness::DescribeFailure(*failure).find("in progress"), std::string::npos);
+}
+
+// Waiting for the match to end is no use to a client that can never play here.
+TEST_F(JoinTest, DuringAMatchAWrongVersionOrCharacterIsStillWhatAClientIsTold) {
+  StartAFullMatch();
+
+  Session& wrong_version = AddClient("0.0.0-not-the-servers");
+  Session& unknown_character = AddClient(std::string(augusta::EngineVersion()), "characters/nobody");
+  ASSERT_TRUE(WaitForAnswers());
+
+  EXPECT_EQ(wrong_version.GetRefusal(), JoinRefusal::kVersionMismatch);
+  EXPECT_EQ(unknown_character.GetRefusal(), JoinRefusal::kUnknownCharacter);
 }
 
 // M3 exit criteria (issue #84): 8 clients moving, sprinting and changing
 // stance stay connected and keep up with the server for a full round's
 // worth of ticks. "A full simulated round length" isn't a defined quantity
-// yet (the round lifecycle is M5) - kRoundTicks stands in for it.
+// yet (the round lifecycle is M5) - kRoundTicks stands in for it. The round
+// is a match of eight, started once the Lobby is full (ADR-0043).
 //
 // Unlike this file's other tests, the loop below is paced to the real 60 Hz
 // tick duration (sleep_until, the same pattern ServerRuntime::Run() and
@@ -327,13 +521,7 @@ TEST_F(JoinTest, EightClientsMoveSprintAndChangeStanceForARoundWithNoMissedTicks
   constexpr int kStanceCycleTicks = 150;
   constexpr int kSprintBlockTicks = 100;
 
-  for (std::size_t i = 0; i < augusta::protocol::kMaxPlayers; ++i) {
-    AddClient();
-  }
-  ASSERT_TRUE(WaitForAnswers());
-  for (const auto& session : sessions_) {
-    ASSERT_TRUE(session->GetSessionId().has_value());
-  }
+  StartAFullMatch();
 
   std::vector<Vec3> first_position(sessions_.size());
   std::vector<Vec3> last_position(sessions_.size());
@@ -405,28 +593,31 @@ augusta::prediction::World WorldWithFloorAt(float y) {
 constexpr float kFloorHeight = -2.0F;
 constexpr int kFallTicks = 120;
 
-TEST(MapSessionTest, ThePredictedBodyRestsOnTheMapsFloor) {
-  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
-                  WorldWithFloorAt(kFloorHeight));
+// The body a client in a match of its own predicts after kFallTicks idle
+// ticks, with collision as the map on both sides.
+augusta::prediction::State FallenBody(const std::vector<CollisionMesh>& collision) {
+  Host host(TestHostConfig(), Map{.collision = collision, .spawn_points = {}, .characters = {kCharacter}});
+  augusta::prediction::World world = EmptyWorld();
+  for (const CollisionMesh& mesh : collision) {
+    EXPECT_TRUE(world.AddCollisionMesh(mesh).has_value());
+  }
+  Session session(TestSessionConfig(), std::move(world));
+  session.Connect();
+  EXPECT_TRUE(DriveIntoMatch(host, {&session}));
 
   augusta::prediction::State state;
   for (int i = 0; i < kFallTicks; ++i) {
     state = session.Tick(Command{}, kFixedTick);
   }
+  return state;
+}
 
-  EXPECT_NEAR(state.local_body.position.y, kFloorHeight, 0.2F);
+TEST(MapSessionTest, ThePredictedBodyRestsOnTheMapsFloor) {
+  EXPECT_NEAR(FallenBody({FloorAt(kFloorHeight)}).local_body.position.y, kFloorHeight, 0.2F);
 }
 
 TEST(MapSessionTest, WithoutAMapThePredictedBodyKeepsFalling) {
-  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
-                  EmptyWorld());
-
-  augusta::prediction::State state;
-  for (int i = 0; i < kFallTicks; ++i) {
-    state = session.Tick(Command{}, kFixedTick);
-  }
-
-  EXPECT_LT(state.local_body.position.y, kFloorHeight - 5.0F);
+  EXPECT_LT(FallenBody({}).local_body.position.y, kFloorHeight - 5.0F);
 }
 
 TEST(MapSessionTest, APredictionWorldRefusesAMapMeshPhysicsRejects) {
@@ -439,11 +630,7 @@ TEST(MapSessionTest, APredictionWorldRefusesAMapMeshPhysicsRejects) {
 }
 
 TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
-  Host host(HostConfig{.tick_rate_hz = kTestTickRate,
-                       .parameters = kTestParameters,
-                       .script_path = "scripts/round.lua",
-                       .listen = Endpoint{.address = LoopbackAddress()}},
-            Map{.collision = {FloorAt(0.0F)}, .spawn_points = {}, .characters = {kCharacter}});
+  Host host(TestHostConfig(), Map{.collision = {FloorAt(0.0F)}, .spawn_points = {}, .characters = {kCharacter}});
 
   for (int i = 0; i < 10; ++i) {
     host.Tick(kFixedTick);
@@ -452,15 +639,12 @@ TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
 }
 
 TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
-  EXPECT_THROW(Host(HostConfig{.tick_rate_hz = kTestTickRate,
-                               .parameters = kTestParameters,
-                               .script_path = "scripts/round.lua",
-                               .listen = Endpoint{.address = LoopbackAddress()}},
-                    Map{.collision = {CollisionMesh{}}, .spawn_points = {}, .characters = {kCharacter}}),
-               std::runtime_error);
+  EXPECT_THROW(
+      Host(TestHostConfig(), Map{.collision = {CollisionMesh{}}, .spawn_points = {}, .characters = {kCharacter}}),
+      std::runtime_error);
 }
 
-// A joined client and a host with flat ground, driven tick by tick.
+// A client in a match of its own on a host with flat ground, driven tick by tick.
 class MovementTest : public ::testing::Test {
  protected:
   // Every player spawns at the origin, so the ground is a little below it:
@@ -476,27 +660,16 @@ class MovementTest : public ::testing::Test {
   // The client always knows the floor; the host knows server_map, which a test
   // may make differ from it to give the two something to disagree about.
   explicit MovementTest(std::vector<CollisionMesh> server_map)
-      : host_(HostConfig{.tick_rate_hz = kTestTickRate,
-                         .parameters = kTestParameters,
-                         .script_path = "scripts/round.lua",
-                         .listen = Endpoint{.address = LoopbackAddress()}},
+      : host_(TestHostConfig(),
               Map{.collision = std::move(server_map), .spawn_points = {}, .characters = {kCharacter}}),
-        session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
-                 WorldWithFloorAt(kGroundHeight)) {}
+        session_(TestSessionConfig(), WorldWithFloorAt(kGroundHeight)) {}
 
   void TearDown() override { augusta::networking::SimulateNetworkConditions({}); }
 
   void SetUp() override {
     session_.Connect();
-    const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
-    while (!session_.GetSessionId().has_value() && std::chrono::steady_clock::now() < deadline) {
-      host_.PumpNetwork();
-      session_.PumpEvents();
-      session_.ExchangeMessages();
-      std::this_thread::sleep_for(kPollInterval);
-    }
-    ASSERT_TRUE(session_.GetSessionId().has_value());
-    // The first server tick puts the new player in the world; let it settle on the floor.
+    ASSERT_TRUE(DriveIntoMatch(host_, {&session_}));
+    // Match start puts the player in the world; let it settle on the floor.
     for (int i = 0; i < kSettleTicks; ++i) {
       Step(Command{});
     }
@@ -687,65 +860,12 @@ TEST_F(MovementTest, WithPacketLossEveryCommandIsStillProcessedAndThePredictionS
   EXPECT_LT(PredictionError(Run(kSettleSteps, Command{})), 0.05F);
 }
 
-// A client speaking the protocol by hand, to send what a real one would not.
-class RawClient {
- public:
-  explicit RawClient(const Endpoint& server) { client_.Connect(server); }
-
-  ~RawClient() { client_.Disconnect(); }
-
-  // Runs host and client until the server has admitted this one.
-  bool Join(Host& host) {
-    const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
-    bool requested = false;
-    while (std::chrono::steady_clock::now() < deadline) {
-      client_.PumpEvents();
-      host.PumpNetwork();
-      if (!requested && client_.GetState() == ConnectionState::kConnected) {
-        Send(augusta::protocol::JoinRequest{.engine_version = std::string(augusta::EngineVersion()),
-                                            .character = kCharacter});
-        requested = true;
-      }
-      for (const auto& payload : client_.ReceiveMessages()) {
-        const auto message = augusta::protocol::Decode(payload);
-        if (message.has_value() && std::holds_alternative<augusta::protocol::JoinAccepted>(*message)) {
-          return true;
-        }
-      }
-      std::this_thread::sleep_for(kPollInterval);
-    }
-    return false;
-  }
-
-  void Send(const augusta::protocol::Message& message) { SendPayload(augusta::protocol::Encode(message)); }
-
-  // Sends bytes as they are, whether or not they are a message.
-  void SendPayload(const augusta::protocol::Bytes& payload) {
-    client_.Send(payload, augusta::networking::Reliability::kReliable);
-  }
-
-  // The Authoritative State updates received since the last call.
-  std::vector<augusta::protocol::AuthoritativeStateWire> Receive() {
-    client_.PumpEvents();
-    std::vector<augusta::protocol::AuthoritativeStateWire> states;
-    for (const auto& payload : client_.ReceiveMessages()) {
-      const auto message = augusta::protocol::Decode(payload);
-      if (message.has_value()) {
-        if (const auto* state = std::get_if<augusta::protocol::AuthoritativeStateWire>(&*message)) {
-          states.push_back(*state);
-        }
-      }
-    }
-    return states;
-  }
-
- private:
-  augusta::networking::Client client_;
-};
-
-TEST_F(MovementTest, CommandsThatAreOutOfOrderOrOutOfRangeAreDroppedWithoutAffectingTheWorld) {
+TEST(RawCommandsTest, CommandsThatAreOutOfOrderOrOutOfRangeAreDroppedWithoutAffectingTheWorld) {
+  constexpr auto kNetworkDelay = std::chrono::milliseconds(8);
+  Host host(TestHostConfig(), Map{.collision = {FloorAt(-0.5F)}, .spawn_points = {}, .characters = {kCharacter}});
   RawClient raw(Endpoint{.address = LoopbackAddress()});
-  ASSERT_TRUE(raw.Join(host_));
+  ASSERT_TRUE(raw.Join(host));
+  ASSERT_TRUE(DriveIntoMatch(host, {}, &raw));
 
   const auto command = [](std::uint32_t sequence, float yaw = 0.0F, float pitch = 0.0F) {
     augusta::protocol::SequencedCommandWire sequenced{.sequence = sequence};
@@ -767,8 +887,8 @@ TEST_F(MovementTest, CommandsThatAreOutOfOrderOrOutOfRangeAreDroppedWithoutAffec
   std::vector<std::uint32_t> acknowledged;
   for (int i = 0; i < 12; ++i) {
     std::this_thread::sleep_for(kNetworkDelay);
-    host_.PumpNetwork();
-    host_.Tick(kFixedTick);
+    host.PumpNetwork();
+    host.Tick(kFixedTick);
     std::this_thread::sleep_for(kNetworkDelay);
     for (const auto& state : raw.Receive()) {
       acknowledged.push_back(state.acknowledged_sequence);
@@ -845,30 +965,33 @@ class LoopbackMatch : public ::testing::Test {
   static HostSetup OnTheFloor(std::vector<Vec3> spawn_points, const Parameters& parameters = kTestParameters,
                               float tick_rate_hz = kTestTickRate) {
     return HostSetup{
-        .config = HostConfig{.tick_rate_hz = tick_rate_hz,
-                             .parameters = parameters,
-                             .script_path = "scripts/round.lua",
-                             .listen = Endpoint{.address = LoopbackAddress()}},
+        .config = TestHostConfig(parameters, tick_rate_hz),
         .map =
             Map{.collision = {FloorAt(kFloorY)}, .spawn_points = std::move(spawn_points), .characters = {kCharacter}}};
   }
 
-  // Connects a new client and runs the network until the server has answered it.
-  // The client's own stamina rules are none: any it uses came from the server.
-  Session& Join() {
-    sessions_.push_back(std::make_unique<Session>(
-        SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
-        WorldWithFloorAt(kFloorY)));
+  // Connects a new client and runs the network until the server has answered
+  // it, admitted or not. The client's own stamina rules are none: any it uses
+  // came from the server.
+  Session& Connect() {
+    sessions_.push_back(std::make_unique<Session>(TestSessionConfig(), WorldWithFloorAt(kFloorY)));
     Session& client = *sessions_.back();
     client.Connect();
-    const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
-    while (!client.GetSessionId().has_value() && std::chrono::steady_clock::now() < deadline) {
-      Exchange();
-      std::this_thread::sleep_for(kPollInterval);
-    }
+    ExchangeUntil(host_, Pointers(sessions_),
+                  [&] { return client.GetSessionId().has_value() || client.GetRefusal().has_value(); });
+    return client;
+  }
+
+  // Connects a new client that the server must admit to the Lobby.
+  Session& Join() {
+    Session& client = Connect();
     EXPECT_TRUE(client.GetSessionId().has_value());
     return client;
   }
+
+  // Has every client report it has loaded each Roster it is sent, and ticks
+  // until they are all in a match.
+  bool StartMatch() { return DriveIntoMatch(host_, Pointers(sessions_)); }
 
   void Exchange() {
     host_.PumpNetwork();
@@ -897,9 +1020,18 @@ class LoopbackMatch : public ::testing::Test {
     }
   }
 
+  // Ticks the server once, with the network work around it.
+  augusta::simulation::State ServerTick() {
+    std::this_thread::sleep_for(kNetworkDelay);
+    Exchange();
+    auto state = host_.Tick(kFixedTick);
+    std::this_thread::sleep_for(kNetworkDelay);
+    Exchange();
+    return state;
+  }
+
   // Where the newest state client received puts session, or nullopt if it lists no such player.
-  static std::optional<augusta::physics::BodyState> BodySeenBy(const Session& client,
-                                                               augusta::protocol::SessionId session) {
+  static std::optional<augusta::physics::BodyState> BodySeenBy(const Session& client, SessionId session) {
     const auto state = client.GetAuthoritativeState();
     if (state.has_value()) {
       for (const auto& player : state->players) {
@@ -911,9 +1043,26 @@ class LoopbackMatch : public ::testing::Test {
     return std::nullopt;
   }
 
-  static std::optional<Vec3> PositionSeenBy(const Session& client, augusta::protocol::SessionId session) {
+  static std::optional<Vec3> PositionSeenBy(const Session& client, SessionId session) {
     const auto body = BodySeenBy(client, session);
     return body.has_value() ? std::optional<Vec3>(body->position) : std::nullopt;
+  }
+
+  // Where client's own player spawned at the start of its last match.
+  static Vec3 OwnSpawn(const Session& client) {
+    for (const auto& player : client.GetMatchStart().value().players) {
+      if (player.session == client.GetSessionId()) {
+        return player.spawn;
+      }
+    }
+    ADD_FAILURE() << "this client is not in its own match start";
+    return {};
+  }
+
+  static Command Forward() {
+    Command command;
+    command.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+    return command;
   }
 
   Host host_;
@@ -921,18 +1070,26 @@ class LoopbackMatch : public ::testing::Test {
   std::map<const Session*, augusta::prediction::State> states_;
 };
 
-class SpawnTest : public LoopbackMatch {
+// A host on the floor, with three spawn points, whose matches start with kPlayers players.
+template <std::uint8_t kPlayers>
+class MatchOf : public LoopbackMatch {
  protected:
   static std::vector<Vec3> SpawnPoints() {
     return {Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F), Vec3(30.0F, kFloorY, -5.0F)};
   }
 
-  SpawnTest() : LoopbackMatch(OnTheFloor(SpawnPoints())) {}
+  MatchOf() : LoopbackMatch(OnTheFloor(SpawnPoints(), WithPlayerCount(kPlayers))) {}
+
+  // Every Session pointer of sessions_, for the free helpers.
+  std::vector<Session*> All() { return Pointers(sessions_); }
 };
 
-TEST_F(SpawnTest, TwoClientsThatJoinBackToBackSpawnAtDifferentSpawnPoints) {
+using SpawnTest = MatchOf<2>;
+
+TEST_F(SpawnTest, TwoClientsInAMatchSpawnAtDifferentSpawnPoints) {
   Session& first = Join();
   Session& second = Join();
+  ASSERT_TRUE(StartMatch());
 
   Run(kSettleTicks);
 
@@ -945,9 +1102,10 @@ TEST_F(SpawnTest, TwoClientsThatJoinBackToBackSpawnAtDifferentSpawnPoints) {
   EXPECT_NEAR(second_position->z, SpawnPoints()[1].z, 0.1F);
 }
 
-TEST_F(SpawnTest, AClientsPredictionStartsAtItsSpawnPoint) {
+TEST_F(SpawnTest, AClientsPredictionStartsAtTheSpawnPointMatchStartGaveIt) {
   Join();
   Session& second = Join();
+  ASSERT_TRUE(StartMatch());
 
   Run(1);
 
@@ -956,50 +1114,298 @@ TEST_F(SpawnTest, AClientsPredictionStartsAtItsSpawnPoint) {
   EXPECT_NEAR(body.position.z, SpawnPoints()[1].z, 0.1F);
 }
 
-TEST_F(SpawnTest, AJoiningClientIsToldWhoIsAlreadyThereAndWhereTheyAreNow) {
+TEST_F(SpawnTest, EveryClientIsToldEveryPlayersCharacterAndSpawnPointAtMatchStart) {
   Session& first = Join();
-  Run(kSettleTicks);
-  // The first player walks away from its spawn point (3 m/s for half a second or more).
-  Command walk;
-  walk.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
-  Run(kSettleTicks, walk);
-
   Session& second = Join();
 
-  const auto roster = second.GetRoster();
-  ASSERT_EQ(roster.size(), 1U);
-  EXPECT_EQ(roster[0].session, *first.GetSessionId());
-  EXPECT_GT(roster[0].body.position.x, SpawnPoints()[0].x + 1.0F);
-  EXPECT_NEAR(roster[0].body.position.z, SpawnPoints()[0].z, 0.1F);
+  ASSERT_TRUE(StartMatch());
+
+  for (const Session* client : {&first, &second}) {
+    const auto start = client->GetMatchStart();
+    ASSERT_TRUE(start.has_value());
+    ASSERT_EQ(start->players.size(), 2U);
+    EXPECT_EQ(start->players[0].session, *first.GetSessionId());
+    EXPECT_EQ(start->players[0].character, 1U);
+    EXPECT_EQ(start->players[0].spawn, SpawnPoints()[0]);
+    EXPECT_EQ(start->players[1].session, *second.GetSessionId());
+    EXPECT_EQ(start->players[1].character, 1U);
+    EXPECT_EQ(start->players[1].spawn, SpawnPoints()[1]);
+  }
 }
 
-TEST_F(SpawnTest, TheFirstClientAloneInTheMatchHasAnEmptyRoster) { EXPECT_TRUE(Join().GetRoster().empty()); }
+using SpawnWrapTest = MatchOf<4>;
 
-TEST_F(SpawnTest, ThePlayersAlreadyThereSeeTheNewcomerAppearInTheirState) {
-  Session& first = Join();
-  Run(kSettleTicks);
-  ASSERT_EQ(first.GetAuthoritativeState()->players.size(), 1U);
-
-  Session& second = Join();
-  Run(kSettleTicks);
-
-  EXPECT_EQ(first.GetAuthoritativeState()->players.size(), 2U);
-  EXPECT_TRUE(PositionSeenBy(first, *second.GetSessionId()).has_value());
-}
-
-TEST_F(SpawnTest, MoreJoinsThanSpawnPointsWrapInsteadOfFailing) {
-  const std::size_t joins = SpawnPoints().size() + 1;
-  for (std::size_t i = 0; i < joins; ++i) {
+TEST_F(SpawnWrapTest, MorePlayersThanSpawnPointsWrapInsteadOfFailing) {
+  for (int i = 0; i < 4; ++i) {
     Join();
   }
+  ASSERT_TRUE(StartMatch());
 
   Run(kSettleTicks);
 
   Session& last = *sessions_.back();
-  EXPECT_EQ(last.GetAuthoritativeState()->players.size(), joins);
+  EXPECT_EQ(last.GetAuthoritativeState()->players.size(), 4U);
   const auto position = PositionSeenBy(last, *last.GetSessionId());
   ASSERT_TRUE(position.has_value());
   EXPECT_NEAR(position->x, SpawnPoints()[0].x, 0.1F);
+}
+
+// A Lobby of three, which a test fills or not (ADR-0043).
+using LobbyTest = MatchOf<3>;
+
+TEST_F(LobbyTest, AdmittedClientsAreToldWhoIsInTheLobbyAndWithWhichCharacter) {
+  Session& first = Join();
+  Session& second = Join();
+
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
+    return first.GetLobby().has_value() && first.GetLobby()->roster.size() == 2 && second.GetLobby().has_value();
+  }));
+
+  for (const Session* client : {&first, &second}) {
+    const auto lobby = client->GetLobby();
+    ASSERT_TRUE(lobby.has_value());
+    ASSERT_EQ(lobby->roster.size(), 2U);
+    EXPECT_EQ(lobby->roster[0].session, *first.GetSessionId());
+    EXPECT_EQ(lobby->roster[0].character, 1U);
+    EXPECT_EQ(lobby->roster[1].session, *second.GetSessionId());
+    EXPECT_EQ(lobby->roster[1].character, 1U);
+    EXPECT_EQ(client->GetPhase(), Phase::kLobby);
+  }
+  EXPECT_EQ(first.GetLobby()->version, second.GetLobby()->version);
+}
+
+TEST_F(LobbyTest, TheRosterVersionGrowsOnEveryJoinAndLeave) {
+  Session& first = Join();
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return first.GetLobby().has_value(); }));
+  const auto alone = first.GetLobby()->version;
+
+  Session& second = Join();
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return first.GetLobby()->roster.size() == 2; }));
+  const auto joined = first.GetLobby()->version;
+  const SessionId leaver = *second.GetSessionId();
+  second.Disconnect();
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return first.GetLobby()->roster.size() == 1; }));
+
+  EXPECT_GT(joined, alone);
+  EXPECT_GT(first.GetLobby()->version, joined);
+  EXPECT_NE(first.GetLobby()->roster[0].session, leaver);
+}
+
+TEST_F(LobbyTest, NoMatchStartsBeforeTheLobbyHoldsThePlayerCountEvenWithEveryoneReady) {
+  Join();
+  Join();
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
+    return std::ranges::all_of(sessions_,
+                               [](const auto& s) { return s->GetLobby() && s->GetLobby()->roster.size() == 2; });
+  }));
+  for (const auto& session : sessions_) {
+    session->ReportReady(session->GetLobby()->version);
+  }
+  Settle(host_, All());
+
+  for (int i = 0; i < kSettleTicks; ++i) {
+    EXPECT_TRUE(ServerTick().players.empty()) << "a body at tick " << i;
+  }
+  for (const auto& session : sessions_) {
+    EXPECT_EQ(session->GetPhase(), Phase::kLobby);
+    EXPECT_FALSE(session->GetAuthoritativeState().has_value());
+  }
+}
+
+TEST_F(LobbyTest, AMatchStartsOnTheTickTheLastClientOfAFullLobbyIsReady) {
+  for (int i = 0; i < 3; ++i) {
+    Join();
+  }
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
+    return std::ranges::all_of(sessions_,
+                               [](const auto& s) { return s->GetLobby() && s->GetLobby()->roster.size() == 3; });
+  }));
+  sessions_[0]->ReportReady(sessions_[0]->GetLobby()->version);
+  sessions_[1]->ReportReady(sessions_[1]->GetLobby()->version);
+  Settle(host_, All());
+  EXPECT_TRUE(host_.Tick(kFixedTick).players.empty()) << "started with a client not Ready";
+
+  sessions_[2]->ReportReady(sessions_[2]->GetLobby()->version);
+  Settle(host_, All());
+
+  EXPECT_EQ(host_.Tick(kFixedTick).players.size(), 3U);
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
+    return std::ranges::all_of(sessions_, [](const auto& s) { return s->GetPhase() == Phase::kMatch; });
+  }));
+}
+
+using ReadyTest = MatchOf<2>;
+
+TEST_F(ReadyTest, ANewcomerMakesTheClientsAlreadyThereNotReadyUntilTheyReportTheNewRoster) {
+  Session& first = Join();
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return first.GetLobby().has_value(); }));
+  const auto before = first.GetLobby()->version;
+  first.ReportReady(before);
+  Settle(host_, All());
+
+  Session& second = Join();
+  ASSERT_TRUE(ExchangeUntil(host_, All(),
+                            [&] { return first.GetLobby()->roster.size() == 2 && second.GetLobby().has_value(); }));
+  second.ReportReady(second.GetLobby()->version);
+  // The harness sends nothing for a Roster older than its newest.
+  first.ReportReady(before);
+  Settle(host_, All());
+  EXPECT_TRUE(host_.Tick(kFixedTick).players.empty()) << "started on a Ready for an older Roster";
+
+  first.ReportReady(first.GetLobby()->version);
+  Settle(host_, All());
+
+  EXPECT_EQ(host_.Tick(kFixedTick).players.size(), 2U);
+}
+
+TEST_F(ReadyTest, AClientInTheLobbyNeitherPredictsNorSendsCommands) {
+  Session& first = Join();
+  const augusta::prediction::State idle = first.Tick(Command{}, kFixedTick);
+  Run(kSettleTicks, Forward());
+
+  EXPECT_EQ(states_.at(&first).local_body.position, idle.local_body.position);
+  EXPECT_FALSE(first.GetAuthoritativeState().has_value());
+
+  Join();
+  ASSERT_TRUE(StartMatch());
+  constexpr int kSteps = 10;
+  Run(kSteps, Forward());
+  // Sequences start with the match: nothing was sent from the Lobby.
+  EXPECT_LE(first.GetAuthoritativeState()->acknowledged_sequence, static_cast<std::uint32_t>(kSteps));
+  EXPECT_GT(states_.at(&first).local_body.position.x, OwnSpawn(first).x);
+}
+
+using MidMatchTest = MatchOf<3>;
+
+TEST_F(MidMatchTest, APlayerWhoDisconnectsLeavesTheOthersStateAndTheSimulationAndTheMatchGoesOn) {
+  for (int i = 0; i < 3; ++i) {
+    Join();
+  }
+  ASSERT_TRUE(StartMatch());
+  Run(kSettleTicks);
+  Session& watcher = *sessions_.front();
+  ASSERT_EQ(watcher.GetAuthoritativeState()->players.size(), 3U);
+  const SessionId leaver = *sessions_.back()->GetSessionId();
+
+  sessions_.back()->Disconnect();
+  Run(kSettleTicks);
+
+  EXPECT_EQ(watcher.GetAuthoritativeState()->players.size(), 2U);
+  EXPECT_FALSE(PositionSeenBy(watcher, leaver).has_value());
+  EXPECT_EQ(ServerTick().players.size(), 2U);
+  EXPECT_EQ(watcher.GetPhase(), Phase::kMatch);
+}
+
+// Two players through a match, back to the Lobby and into the next (ADR-0043).
+using MatchCycleTest = MatchOf<2>;
+
+// The ticks of the pause after a match at the test tick rate.
+std::uint32_t PauseTicks() {
+  return static_cast<std::uint32_t>(
+      std::ceil(std::chrono::duration<float>(augusta::server::kMatchPause).count() * kTestTickRate));
+}
+
+TEST_F(MatchCycleTest, EndingTheMatchSendsEveryoneBackToTheLobbyUnderANewRoster) {
+  Join();
+  Join();
+  ASSERT_TRUE(StartMatch());
+  Run(kSettleTicks);
+  const auto version = sessions_[0]->GetLobby()->version;
+
+  host_.EndMatch();
+
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
+    return std::ranges::all_of(sessions_, [](const auto& s) { return s->GetPhase() == Phase::kLobby; });
+  }));
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
+    return std::ranges::all_of(sessions_, [&](const auto& s) { return s->GetLobby()->version > version; });
+  }));
+  for (const auto& session : sessions_) {
+    EXPECT_EQ(session->GetLobby()->roster.size(), 2U);
+  }
+}
+
+TEST_F(MatchCycleTest, AfterMatchEndNoBodyIsSimulatedAndNoStateReachesAClient) {
+  Join();
+  Join();
+  ASSERT_TRUE(StartMatch());
+  Run(kSettleTicks, Forward());
+
+  host_.EndMatch();
+
+  EXPECT_TRUE(ServerTick().players.empty());
+  Run(kSettleTicks, Forward());
+  for (const auto& session : sessions_) {
+    EXPECT_EQ(session->GetPhase(), Phase::kLobby);
+    EXPECT_FALSE(session->GetAuthoritativeState().has_value());
+  }
+}
+
+TEST_F(MatchCycleTest, TheNextMatchStartsExactlyThePauseAfterTheLastEndedAndNotOneTickEarlier) {
+  Join();
+  Join();
+  ASSERT_TRUE(StartMatch());
+  const auto version = sessions_[0]->GetLobby()->version;
+  host_.EndMatch();
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
+    return std::ranges::all_of(sessions_, [&](const auto& s) { return s->GetLobby()->version > version; });
+  }));
+  for (const auto& session : sessions_) {
+    session->ReportReady(session->GetLobby()->version);
+  }
+  Settle(host_, All());
+
+  for (std::uint32_t i = 1; i < PauseTicks(); ++i) {
+    ASSERT_TRUE(host_.Tick(kFixedTick).players.empty()) << "started " << PauseTicks() - i << " ticks early";
+  }
+
+  EXPECT_EQ(host_.Tick(kFixedTick).players.size(), 2U);
+}
+
+TEST_F(MatchCycleTest, PlayersKeepTheirSessionAndCharacterAndTheNextMatchTakesTheNextSpawnPoints) {
+  Session& first = Join();
+  Session& second = Join();
+  ASSERT_TRUE(StartMatch());
+  const SessionId first_session = *first.GetSessionId();
+  const SessionId second_session = *second.GetSessionId();
+  host_.EndMatch();
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
+    return std::ranges::all_of(sessions_, [](const auto& s) { return s->GetPhase() == Phase::kLobby; });
+  }));
+
+  ASSERT_TRUE(StartMatch());
+  Run(1);
+
+  EXPECT_EQ(first.GetSessionId(), first_session);
+  EXPECT_EQ(second.GetSessionId(), second_session);
+  const auto start = first.GetMatchStart();
+  ASSERT_EQ(start->players.size(), 2U);
+  EXPECT_EQ(start->players[0].session, first_session);
+  EXPECT_EQ(start->players[0].character, 1U);
+  EXPECT_EQ(start->players[0].spawn, SpawnPoints()[2]);
+  EXPECT_EQ(start->players[1].session, second_session);
+  EXPECT_EQ(start->players[1].spawn, SpawnPoints()[0]);
+  // Each client's prediction starts over where the new match put it.
+  EXPECT_NEAR(states_.at(&first).local_body.position.x, SpawnPoints()[2].x, 0.1F);
+  EXPECT_NEAR(states_.at(&second).local_body.position.x, SpawnPoints()[0].x, 0.1F);
+}
+
+TEST_F(MatchCycleTest, AMatchWhoseLastPlayerLeavesEndsOnItsOwnAndTheLobbyTakesPlayersAgain) {
+  Join();
+  Join();
+  ASSERT_TRUE(StartMatch());
+  Run(kSettleTicks);
+
+  for (const auto& session : sessions_) {
+    session->Disconnect();
+  }
+  Run(kSettleTicks);
+
+  EXPECT_TRUE(ServerTick().players.empty());
+  Session& next = Connect();
+  EXPECT_TRUE(next.GetSessionId().has_value())
+      << "refused: "
+      << augusta::protocol::DescribeJoinRefusal(next.GetRefusal().value_or(JoinRefusal::kVersionMismatch));
 }
 
 // One client on a floor, on the server's stamina rules: a bar that empties in
@@ -1018,6 +1424,7 @@ class StaminaTest : public LoopbackMatch {
 
   void SetUp() override {
     client_ = &Join();
+    ASSERT_TRUE(StartMatch());
     Run(kSettleTicks);
   }
 
@@ -1124,6 +1531,7 @@ class ScriptedParametersTest : public LoopbackMatch {
 
 TEST_F(ScriptedParametersTest, AClientPredictsItsStaminaWithTheRulesOfTheServersScript) {
   Session& client = Join();
+  ASSERT_TRUE(StartMatch());
   Run(kSettleTicks);
   Command sprint;
   sprint.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
@@ -1136,16 +1544,23 @@ TEST_F(ScriptedParametersTest, AClientPredictsItsStaminaWithTheRulesOfTheServers
   EXPECT_NEAR(states_.at(&client).local_body.stamina, BodySeenBy(client, *client.GetSessionId())->stamina, 0.1F);
 }
 
+// The session a ScriptedServer admits its client under.
+constexpr SessionId kScriptedSession{1};
+
 // A server speaking the protocol by hand to one client, to send what a real
-// one would not: values that fail the checks, or bytes that are no message.
+// one would not: values that fail the checks, messages out of turn, or bytes
+// that are no message.
 class ScriptedServer {
  public:
   explicit ScriptedServer(const Endpoint& listen) : server_(listen) {}
 
-  // Connects session and answers its join with parameters, and reports whether
-  // the session was admitted within wait.
-  bool Admit(Session& session, const Parameters& parameters, std::chrono::milliseconds wait = kPollDeadline) {
+  // Connects session and answers its join with parameters, then with a Match
+  // start of it alone if start_match, and reports whether the session was
+  // admitted within wait.
+  bool Admit(Session& session, const Parameters& parameters, std::chrono::milliseconds wait = kPollDeadline,
+             bool start_match = true) {
     parameters_ = parameters;
+    start_match_ = start_match;
     session.Connect();
     const auto deadline = std::chrono::steady_clock::now() + wait;
     while (!session.GetSessionId().has_value() && std::chrono::steady_clock::now() < deadline) {
@@ -1167,13 +1582,37 @@ class ScriptedServer {
     for (const auto& message : server_.ReceiveMessages()) {
       peer_ = message.from;
       const auto decoded = augusta::protocol::Decode(message.payload);
-      if (decoded.has_value() && std::holds_alternative<augusta::protocol::JoinRequest>(*decoded)) {
-        Send(augusta::protocol::JoinAccepted{.session = augusta::protocol::SessionId{1},
+      if (!decoded.has_value()) {
+        continue;
+      }
+      if (std::holds_alternative<augusta::protocol::JoinRequest>(*decoded)) {
+        Send(augusta::protocol::JoinAccepted{.session = kScriptedSession,
                                              .tick_rate_hz = kTestTickRate,
                                              .parameters = augusta::server::ToWire(parameters_),
-                                             .roster = {}});
+                                             .character = 1});
+        if (start_match_) {
+          Send(StartOfAlone());
+        }
+      } else if (std::holds_alternative<augusta::protocol::Commands>(*decoded)) {
+        ++commands_received_;
+      } else if (const auto* ready = std::get_if<augusta::protocol::Ready>(&*decoded)) {
+        readies_.push_back(ready->version);
       }
     }
+  }
+
+  // A Match start of the admitted client alone, at the origin.
+  static augusta::protocol::MatchStartWire StartOfAlone() {
+    return augusta::protocol::MatchStartWire{.players = {{.spawn = {}, .session = kScriptedSession, .character = 1}}};
+  }
+
+  // An Authoritative State of tick listing sessions, each at the origin.
+  static augusta::protocol::AuthoritativeStateWire StateOf(std::uint32_t tick, const std::vector<SessionId>& sessions) {
+    augusta::protocol::AuthoritativeStateWire state{.tick = tick, .acknowledged_sequence = 0, .players = {}};
+    for (const SessionId session : sessions) {
+      state.players.push_back({.session = session, .body = {}});
+    }
+    return state;
   }
 
   void Send(const augusta::protocol::Message& message) { SendPayload(augusta::protocol::Encode(message)); }
@@ -1183,10 +1622,19 @@ class ScriptedServer {
     server_.Send(*peer_, payload, augusta::networking::Reliability::kReliable);
   }
 
+  // How many Commands messages the client has sent.
+  [[nodiscard]] int CommandsReceived() const { return commands_received_; }
+
+  // The Roster versions the client has reported Ready for, in order.
+  [[nodiscard]] const std::vector<std::uint32_t>& Readies() const { return readies_; }
+
  private:
   augusta::networking::Server server_;
   std::optional<augusta::networking::PeerId> peer_;
   Parameters parameters_;
+  bool start_match_ = true;
+  int commands_received_ = 0;
+  std::vector<std::uint32_t> readies_;
 };
 
 // A client admitted by a server that then sends it what a real one would not.
@@ -1199,9 +1647,7 @@ class ScriptedServerTest : public ::testing::Test {
   }
 
   ScriptedServerTest()
-      : server_(Endpoint{.address = LoopbackAddress()}),
-        session_(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
-                 WorldWithFloorAt(0.0F)) {}
+      : server_(Endpoint{.address = LoopbackAddress()}), session_(TestSessionConfig(), WorldWithFloorAt(0.0F)) {}
 
   void SetUp() override { ASSERT_TRUE(server_.Admit(session_, WithDeplete(0.0F))); }
 
@@ -1236,11 +1682,13 @@ class ScriptedServerTest : public ::testing::Test {
 TEST_F(ScriptedServerTest, AClientPredictsWithTheParametersItWasAdmittedWith) {
   ASSERT_TRUE(session_.GetParameters().has_value());
   EXPECT_FLOAT_EQ(session_.GetParameters()->stamina.deplete_per_second, 0.0F);
+  Settle();
+  ASSERT_EQ(session_.GetPhase(), Phase::kMatch);
   EXPECT_GT(PredictedStaminaAfterSprinting(60), 0.99F);
 }
 
 TEST_F(ScriptedServerTest, BytesThatAreNoMessageChangeNothingAndTheClientKeepsRunning) {
-  // What used to be a Parameters update, a type that is gone, and a type nobody has.
+  // A Lobby cut short, and a type nobody has.
   for (const auto& payload :
        {augusta::protocol::Bytes{std::byte{6}, std::byte{2}}, augusta::protocol::Bytes{std::byte{0xFF}}}) {
     server_.SendPayload(payload);
@@ -1248,7 +1696,117 @@ TEST_F(ScriptedServerTest, BytesThatAreNoMessageChangeNothingAndTheClientKeepsRu
   }
 
   EXPECT_FLOAT_EQ(session_.GetParameters()->stamina.deplete_per_second, 0.0F);
+  EXPECT_EQ(session_.GetPhase(), Phase::kMatch);
   EXPECT_GT(PredictedStaminaAfterSprinting(60), 0.99F);
+}
+
+TEST_F(ScriptedServerTest, AStateNamingAPlayerNotInTheMatchIsDropped) {
+  Settle();
+
+  server_.Send(ScriptedServer::StateOf(1, {kScriptedSession, SessionId{99}}));
+  Settle();
+  EXPECT_FALSE(session_.GetAuthoritativeState().has_value());
+
+  server_.Send(ScriptedServer::StateOf(2, {kScriptedSession}));
+  Settle();
+  EXPECT_TRUE(session_.GetAuthoritativeState().has_value());
+}
+
+TEST_F(ScriptedServerTest, AStateThatArrivesAfterMatchEndIsDroppedAndTheClientIsBackInTheLobby) {
+  server_.Send(ScriptedServer::StateOf(1, {kScriptedSession}));
+  Settle();
+  ASSERT_TRUE(session_.GetAuthoritativeState().has_value());
+
+  server_.Send(augusta::protocol::MatchEnd{});
+  server_.Send(ScriptedServer::StateOf(2, {kScriptedSession}));
+  Settle();
+
+  EXPECT_EQ(session_.GetPhase(), Phase::kLobby);
+  EXPECT_FALSE(session_.GetAuthoritativeState().has_value());
+}
+
+TEST_F(ScriptedServerTest, AfterMatchEndTheClientStopsPredictingAndSendingCommands) {
+  Settle();
+  PredictedStaminaAfterSprinting(10);
+  server_.Send(augusta::protocol::MatchEnd{});
+  Settle();
+  const int sent_in_the_match = server_.CommandsReceived();
+  ASSERT_GT(sent_in_the_match, 0);
+  const augusta::prediction::State last = session_.Tick(Command{}, kFixedTick);
+
+  Command sprint;
+  sprint.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+  const augusta::prediction::State after = session_.Tick(sprint, kFixedTick);
+  Settle();
+
+  EXPECT_EQ(after.local_body.position, last.local_body.position);
+  EXPECT_EQ(server_.CommandsReceived(), sent_in_the_match);
+}
+
+// A client the scripted server admits to the Lobby and starts no match for.
+class ScriptedLobbyTest : public ScriptedServerTest {
+ protected:
+  void SetUp() override {
+    ASSERT_TRUE(server_.Admit(session_, WithDeplete(0.0F), kPollDeadline, /*start_match=*/false));
+  }
+};
+
+TEST_F(ScriptedLobbyTest, AStateThatArrivesBeforeMatchStartIsDropped) {
+  server_.Send(ScriptedServer::StateOf(1, {kScriptedSession}));
+  Settle();
+  EXPECT_EQ(session_.GetPhase(), Phase::kLobby);
+  EXPECT_FALSE(session_.GetAuthoritativeState().has_value());
+
+  server_.Send(ScriptedServer::StartOfAlone());
+  server_.Send(ScriptedServer::StateOf(2, {kScriptedSession}));
+  Settle();
+  EXPECT_EQ(session_.GetPhase(), Phase::kMatch);
+  EXPECT_TRUE(session_.GetAuthoritativeState().has_value());
+}
+
+TEST_F(ScriptedLobbyTest, AMatchStartThatLeavesThisClientOutIsDropped) {
+  server_.Send(augusta::protocol::MatchStartWire{.players = {{.spawn = {}, .session = SessionId{2}, .character = 1}}});
+  Settle();
+
+  EXPECT_EQ(session_.GetPhase(), Phase::kLobby);
+  EXPECT_FALSE(session_.GetMatchStart().has_value());
+}
+
+TEST_F(ScriptedLobbyTest, NothingIsSentBeforeMatchStartAndTheFirstTickInAMatchStartsAtItsSpawnPoint) {
+  Command walk;
+  walk.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+  for (int i = 0; i < 10; ++i) {
+    session_.Tick(walk, kFixedTick);
+  }
+  Settle();
+  EXPECT_EQ(server_.CommandsReceived(), 0);
+
+  const Vec3 spawn(5.0F, 0.0F, -3.0F);
+  server_.Send(
+      augusta::protocol::MatchStartWire{.players = {{.spawn = spawn, .session = kScriptedSession, .character = 1}}});
+  Settle();
+  const augusta::prediction::State first = session_.Tick(Command{}, kFixedTick);
+  Settle();
+
+  EXPECT_NEAR(first.local_body.position.x, spawn.x, 0.1F);
+  EXPECT_NEAR(first.local_body.position.z, spawn.z, 0.1F);
+  EXPECT_GT(server_.CommandsReceived(), 0);
+}
+
+TEST_F(ScriptedLobbyTest, ReadyIsSentOnlyWhenToldAndOnlyForTheNewestRoster) {
+  server_.Send(augusta::protocol::LobbyWire{.version = 1, .roster = {{.session = kScriptedSession, .character = 1}}});
+  server_.Send(augusta::protocol::LobbyWire{
+      .version = 2,
+      .roster = {{.session = kScriptedSession, .character = 1}, {.session = SessionId{2}, .character = 1}}});
+  Settle();
+  ASSERT_EQ(session_.GetLobby()->version, 2U);
+  EXPECT_TRUE(server_.Readies().empty()) << "sent Ready on its own";
+
+  session_.ReportReady(1);
+  session_.ReportReady(2);
+  Settle();
+
+  EXPECT_EQ(server_.Readies(), std::vector<std::uint32_t>{2});
 }
 
 // A client takes the parameters it joins with as the server's, so values that
@@ -1263,8 +1821,7 @@ TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseParametersFailTheRange
         Parameters{.player_count = 0}, Parameters{.player_count = augusta::protocol::kMaxPlayers + 1}}) {
     // One server for every case: it answers whichever session sent last, and a
     // server bound anew each time would find the port not yet released.
-    Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
-                    EmptyWorld());
+    Session session(TestSessionConfig(), EmptyWorld());
 
     EXPECT_FALSE(server.Admit(session, bad, std::chrono::milliseconds(500)));
     EXPECT_FALSE(session.GetParameters().has_value());
@@ -1288,6 +1845,7 @@ TEST_F(TickRateTest, AClientLearnsTheServersTickRateWhenItJoins) {
 
 TEST_F(TickRateTest, AClientTickingAtTheRateItWasToldAgreesWithTheServerWithoutCorrection) {
   Session& client = Join();
+  ASSERT_TRUE(StartMatch());
   const float client_delta = 1.0F / *client.GetTickRate();
   const float server_delta = 1.0F / kServerRate;
   Command walk;
@@ -1316,15 +1874,8 @@ TEST_F(SessionTest, AClientHoldsNoParametersUntilTheServerAdmitsIt) {
   EXPECT_FALSE(session_.GetParameters().has_value());
   EXPECT_FALSE(session_.GetTickRate().has_value());
   ASSERT_TRUE(ConnectSession());
-  const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
-  while (!session_.GetSessionId().has_value() && std::chrono::steady_clock::now() < deadline) {
-    host_.PumpNetwork();
-    session_.PumpEvents();
-    session_.ExchangeMessages();
-    std::this_thread::sleep_for(kPollInterval);
-  }
+  ASSERT_TRUE(ExchangeUntil(host_, {&session_}, [&] { return session_.GetSessionId().has_value(); }));
 
-  ASSERT_TRUE(session_.GetSessionId().has_value());
   ASSERT_TRUE(session_.GetParameters().has_value());
   ASSERT_TRUE(session_.GetTickRate().has_value());
   EXPECT_FLOAT_EQ(*session_.GetTickRate(), kTestTickRate);
@@ -1333,21 +1884,13 @@ TEST_F(SessionTest, AClientHoldsNoParametersUntilTheServerAdmitsIt) {
 // A server whose tick rate is unusable (zero): the client drops the Join
 // accepted rather than divide by it.
 TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseTickRateFailsTheChecks) {
-  Host host(
-      HostConfig{
-          .tick_rate_hz = 0.0F, .script_path = "scripts/round.lua", .listen = Endpoint{.address = LoopbackAddress()}},
-      Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}});
-  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
-                  EmptyWorld());
+  Host host(TestHostConfig(kTestParameters, 0.0F),
+            Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}});
+  Session session(TestSessionConfig(), EmptyWorld());
   session.Connect();
 
   const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
-  while (std::chrono::steady_clock::now() < until) {
-    host.PumpNetwork();
-    session.PumpEvents();
-    session.ExchangeMessages();
-    std::this_thread::sleep_for(kPollInterval);
-  }
+  ExchangeUntil(host, {&session}, [&] { return std::chrono::steady_clock::now() >= until; });
 
   EXPECT_FALSE(session.GetSessionId().has_value());
   EXPECT_FALSE(session.GetTickRate().has_value());
@@ -1356,8 +1899,7 @@ TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseTickRateFailsTheChecks
 
 // What a client is told when its session ends on its own.
 TEST(SessionFailureTest, ASessionThatNeverConnectedHasNoFailure) {
-  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
-                  EmptyWorld());
+  Session session(TestSessionConfig(), EmptyWorld());
 
   EXPECT_FALSE(session.GetFailure().has_value());
 }
@@ -1365,8 +1907,7 @@ TEST(SessionFailureTest, ASessionThatNeverConnectedHasNoFailure) {
 TEST(SessionFailureTest, AServerNobodyIsListeningAtIsUnreachable) {
   // Set before connecting: the timeout only reaches new connections.
   augusta::networking::SimulateNetworkConditions({.timeout_ms = 500});
-  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
-                  EmptyWorld());
+  Session session(TestSessionConfig(), EmptyWorld());
   session.Connect();
 
   std::optional<Failure> failure;
@@ -1383,23 +1924,12 @@ TEST(SessionFailureTest, AServerNobodyIsListeningAtIsUnreachable) {
   EXPECT_EQ(failure->kind, FailureKind::kServerUnreachable);
 }
 
-TEST(SessionFailureTest, AServerThatGoesAwayAfterAdmittingTheClientIsAConnectionLost) {
-  auto host = std::make_unique<Host>(HostConfig{.tick_rate_hz = kTestTickRate,
-                                                .parameters = kTestParameters,
-                                                .script_path = "scripts/round.lua",
-                                                .listen = Endpoint{.address = LoopbackAddress()}},
-                                     Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}});
-  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
-                  EmptyWorld());
+TEST(SessionFailureTest, AServerThatGoesAwayDuringAMatchIsAConnectionLost) {
+  auto host =
+      std::make_unique<Host>(TestHostConfig(), Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}});
+  Session session(TestSessionConfig(), EmptyWorld());
   session.Connect();
-  const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
-  while (!session.GetSessionId().has_value() && std::chrono::steady_clock::now() < deadline) {
-    host->PumpNetwork();
-    session.PumpEvents();
-    session.ExchangeMessages();
-    std::this_thread::sleep_for(kPollInterval);
-  }
-  ASSERT_TRUE(session.GetSessionId().has_value());
+  ASSERT_TRUE(DriveIntoMatch(*host, {&session}));
   ASSERT_FALSE(session.GetFailure().has_value());
 
   host.reset();
@@ -1417,13 +1947,8 @@ TEST(SessionFailureTest, AServerThatGoesAwayAfterAdmittingTheClientIsAConnection
 }
 
 TEST(SessionFailureTest, EndingTheSessionOneselfIsNotAFailure) {
-  Host host(HostConfig{.tick_rate_hz = kTestTickRate,
-                       .parameters = kTestParameters,
-                       .script_path = "scripts/round.lua",
-                       .listen = Endpoint{.address = LoopbackAddress()}},
-            Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}});
-  Session session(SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = kCharacter},
-                  EmptyWorld());
+  Host host(TestHostConfig(), Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}});
+  Session session(TestSessionConfig(), EmptyWorld());
   session.Connect();
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
   while (session.GetConnectionState() != ConnectionState::kConnected && std::chrono::steady_clock::now() < deadline) {
@@ -1443,49 +1968,40 @@ TEST(SessionFailureTest, EveryFailureIsDescribedForThePlayerAndARefusalSaysWhy) 
   const std::string unreachable = augusta::harness::DescribeFailure({.kind = FailureKind::kServerUnreachable});
   const std::string lost = augusta::harness::DescribeFailure({.kind = FailureKind::kConnectionLost});
   const std::string full =
-      augusta::harness::DescribeFailure({.kind = FailureKind::kRefused, .refusal = JoinRefusal::kMatchFull});
+      augusta::harness::DescribeFailure({.kind = FailureKind::kRefused, .refusal = JoinRefusal::kLobbyFull});
   const std::string version =
       augusta::harness::DescribeFailure({.kind = FailureKind::kRefused, .refusal = JoinRefusal::kVersionMismatch});
+  const std::string in_progress =
+      augusta::harness::DescribeFailure({.kind = FailureKind::kRefused, .refusal = JoinRefusal::kMatchInProgress});
 
   EXPECT_FALSE(unreachable.empty());
   EXPECT_FALSE(lost.empty());
   EXPECT_NE(unreachable, lost);
   EXPECT_NE(full, version);
-  EXPECT_NE(full.find(std::string(augusta::protocol::DescribeJoinRefusal(JoinRefusal::kMatchFull))), std::string::npos)
+  EXPECT_NE(full, in_progress);
+  EXPECT_NE(full.find(std::string(augusta::protocol::DescribeJoinRefusal(JoinRefusal::kLobbyFull))), std::string::npos)
       << full;
 }
 
 // The server against peers that misbehave or leave.
-class RobustnessTest : public LoopbackMatch {
+template <std::uint8_t kPlayers>
+class RobustnessOf : public MatchOf<kPlayers> {
  protected:
   static constexpr auto kSilentPeerDeadline = std::chrono::seconds(20);
 
-  RobustnessTest() : LoopbackMatch(OnTheFloor({})) {}
-
   void TearDown() override { augusta::networking::SimulateNetworkConditions({}); }
-
-  // Ticks the server once, with the network work around it.
-  augusta::simulation::State ServerTick() {
-    std::this_thread::sleep_for(kNetworkDelay);
-    Exchange();
-    auto state = host_.Tick(kFixedTick);
-    std::this_thread::sleep_for(kNetworkDelay);
-    Exchange();
-    return state;
-  }
-
-  static Command Forward() {
-    Command command;
-    command.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
-    return command;
-  }
 };
 
-TEST_F(RobustnessTest, GarbageFromAPeerIsDroppedAndTheMatchAndTheOtherClientsAreUnaffected) {
+using RobustnessTest = RobustnessOf<1>;
+using GarbageTest = RobustnessOf<2>;
+using FullMatchRobustnessTest = RobustnessOf<augusta::protocol::kMaxPlayers>;
+
+TEST_F(GarbageTest, GarbageFromAPeerIsDroppedAndTheMatchAndTheOtherClientsAreUnaffected) {
   Session& bystander = Join();
-  Run(kSettleTicks);
   RawClient raw(Endpoint{.address = LoopbackAddress()});
   ASSERT_TRUE(raw.Join(host_));
+  ASSERT_TRUE(DriveIntoMatch(host_, All(), &raw));
+  Run(kSettleTicks);
 
   using augusta::protocol::Bytes;
   Bytes truncated_state = augusta::protocol::Encode(augusta::protocol::AuthoritativeStateWire{.players = {{}}});
@@ -1500,6 +2016,7 @@ TEST_F(RobustnessTest, GarbageFromAPeerIsDroppedAndTheMatchAndTheOtherClientsAre
       truncated_state,
       not_for_the_server,
       commands_with_trailing_bytes,
+      augusta::protocol::Encode(augusta::protocol::Ready{.version = 12345}),
       Bytes(64 * 1024, std::byte{0xAB}),
       Bytes(1000, std::byte{static_cast<unsigned char>(augusta::protocol::MessageType::kCommands)}),
   };
@@ -1516,17 +2033,18 @@ TEST_F(RobustnessTest, GarbageFromAPeerIsDroppedAndTheMatchAndTheOtherClientsAre
   ASSERT_TRUE(after.has_value());
   EXPECT_GT(after->tick, before->tick);
   EXPECT_EQ(after->players.size(), 2U);  // The bystander, and the raw peer that only joined.
-  EXPECT_GT(BodySeenBy(bystander, *bystander.GetSessionId())->position.x, 1.0F);
+  EXPECT_GT(BodySeenBy(bystander, *bystander.GetSessionId())->position.x, SpawnPoints()[0].x + 1.0F);
   for (const auto& player : after->players) {
     EXPECT_TRUE(std::isfinite(player.body.position.x) && std::isfinite(player.body.position.y));
   }
   EXPECT_EQ(bystander.GetConnectionState(), ConnectionState::kConnected);
 }
 
-TEST_F(RobustnessTest, AfterAClientDisconnectsItsPlayerIsAbsentFromOthersStateAndANinthClientCanJoin) {
+TEST_F(FullMatchRobustnessTest, AfterAClientDisconnectsItsPlayerIsAbsentFromOthersStateAndNoOneTakesItsPlace) {
   for (std::size_t i = 0; i < augusta::protocol::kMaxPlayers; ++i) {
     Join();
   }
+  ASSERT_TRUE(StartMatch());
   Run(kSettleTicks);
   Session& watcher = *sessions_.front();
   ASSERT_EQ(watcher.GetAuthoritativeState()->players.size(), augusta::protocol::kMaxPlayers);
@@ -1538,18 +2056,18 @@ TEST_F(RobustnessTest, AfterAClientDisconnectsItsPlayerIsAbsentFromOthersStateAn
   EXPECT_EQ(watcher.GetAuthoritativeState()->players.size(), augusta::protocol::kMaxPlayers - 1);
   EXPECT_FALSE(PositionSeenBy(watcher, leaver).has_value());
 
-  Session& ninth = Join();
+  Session& ninth = Connect();
   Run(kSettleTicks);
 
-  EXPECT_TRUE(ninth.GetSessionId().has_value());
-  EXPECT_FALSE(ninth.GetRefusal().has_value());
-  EXPECT_EQ(watcher.GetAuthoritativeState()->players.size(), augusta::protocol::kMaxPlayers);
+  EXPECT_EQ(ninth.GetRefusal(), JoinRefusal::kMatchInProgress);
+  EXPECT_EQ(watcher.GetAuthoritativeState()->players.size(), augusta::protocol::kMaxPlayers - 1);
 }
 
 TEST_F(RobustnessTest, AClientThatDropsWithoutClosingKeepsTheServerTickingAndIsRemovedOnceItTimesOut) {
   // Set before the connection exists: the timeout only reaches new connections.
   augusta::networking::SimulateNetworkConditions({.timeout_ms = 500});
   Join();
+  ASSERT_TRUE(StartMatch());
   Run(kSettleTicks);
 
   // Every packet is lost from here on, so the client is gone without a word.
@@ -1568,8 +2086,9 @@ TEST_F(RobustnessTest, AClientThatDropsWithoutClosingKeepsTheServerTickingAndIsR
 
   EXPECT_EQ(players, 0U);
   EXPECT_GT(ticks_run, 0U);
-  // And the server still takes players.
+  // Its match ended with it, and the next starts with whoever comes.
   Session& next = Join();
+  ASSERT_TRUE(DriveIntoMatch(host_, {&next}));
   Run(kSettleTicks);
   EXPECT_TRUE(next.GetAuthoritativeState().has_value());
   EXPECT_EQ(next.GetAuthoritativeState()->players.size(), 1U);

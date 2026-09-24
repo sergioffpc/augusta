@@ -109,7 +109,7 @@ void WriteBodyState(Bytes& out, const BodyStateWire& body) {
   WriteSteps(out, body.stamina, kStaminaGrid);
 }
 
-// The players of a roster or an update: a count, then each one.
+// The players of an update: a count, then each one.
 void WritePlayers(Bytes& out, const std::vector<PlayerStateWire>& players) {
   assert(players.size() <= kMaxPlayers);
   WriteU8(out, static_cast<std::uint8_t>(players.size()));
@@ -156,6 +156,15 @@ class Reader {
   template <typename Enum>
   Enum ReadEnum(Enum first, Enum last) {
     return ToEnum(ReadU8(), first, last);
+  }
+
+  // A character index: 1-based, so a zeroed byte is never one (ADR-0042).
+  std::uint8_t ReadCharacter() {
+    const std::uint8_t character = ReadU8();
+    if (character == 0) {
+      Fail(DecodeError::kInvalidEnum);
+    }
+    return character;
   }
 
   // value as an enumerator between first and last, which must be consecutive.
@@ -263,7 +272,7 @@ PlayerStateWire ReadPlayerState(Reader& reader) {
   return PlayerStateWire{.session = session, .body = ReadBodyState(reader)};
 }
 
-// The players of a roster or an update, at most kMaxPlayers.
+// The players of an update, at most kMaxPlayers.
 std::vector<PlayerStateWire> ReadPlayers(Reader& reader) {
   const std::size_t count = reader.ReadCount(kMaxPlayers);
   std::vector<PlayerStateWire> players;
@@ -286,15 +295,14 @@ ParametersWire ReadParameters(Reader& reader) {
 JoinAccepted ReadJoinAccepted(Reader& reader) {
   JoinAccepted accepted;
   accepted.session = static_cast<SessionId>(reader.ReadU32());
-  accepted.spawn = reader.ReadVec3(kPositionGrid);
   accepted.tick_rate_hz = reader.ReadF32();
   accepted.parameters = ReadParameters(reader);
-  accepted.roster = ReadPlayers(reader);
+  accepted.character = reader.ReadCharacter();
   return accepted;
 }
 
 JoinRefused ReadJoinRefused(Reader& reader) {
-  return JoinRefused{.reason = reader.ReadEnum(JoinRefusal::kVersionMismatch, JoinRefusal::kUnknownCharacter)};
+  return JoinRefused{.reason = reader.ReadEnum(JoinRefusal::kVersionMismatch, JoinRefusal::kMatchInProgress)};
 }
 
 Commands ReadCommands(Reader& reader) {
@@ -316,6 +324,32 @@ AuthoritativeStateWire ReadAuthoritativeState(Reader& reader) {
   return state;
 }
 
+LobbyWire ReadLobby(Reader& reader) {
+  LobbyWire lobby;
+  lobby.version = reader.ReadU32();
+  const std::size_t count = reader.ReadCount(kMaxPlayers);
+  lobby.roster.reserve(count);
+  for (std::size_t i = 0; i < count; ++i) {
+    const auto session = static_cast<SessionId>(reader.ReadU32());
+    lobby.roster.push_back(RosterEntryWire{.session = session, .character = reader.ReadCharacter()});
+  }
+  return lobby;
+}
+
+MatchStartWire ReadMatchStart(Reader& reader) {
+  MatchStartWire start;
+  const std::size_t count = reader.ReadCount(kMaxPlayers);
+  start.players.reserve(count);
+  for (std::size_t i = 0; i < count; ++i) {
+    MatchPlayerWire player;
+    player.session = static_cast<SessionId>(reader.ReadU32());
+    player.character = reader.ReadCharacter();
+    player.spawn = reader.ReadVec3(kPositionGrid);
+    start.players.push_back(player);
+  }
+  return start;
+}
+
 // nullopt when type is not a message of this protocol.
 std::optional<Message> ReadBody(MessageType type, Reader& reader) {
   switch (type) {
@@ -329,6 +363,14 @@ std::optional<Message> ReadBody(MessageType type, Reader& reader) {
       return ReadCommands(reader);
     case MessageType::kAuthoritativeState:
       return ReadAuthoritativeState(reader);
+    case MessageType::kLobby:
+      return ReadLobby(reader);
+    case MessageType::kReady:
+      return Ready{.version = reader.ReadU32()};
+    case MessageType::kMatchStart:
+      return ReadMatchStart(reader);
+    case MessageType::kMatchEnd:
+      return MatchEnd{};
   }
   return std::nullopt;
 }
@@ -353,12 +395,12 @@ struct Encoder {
   }
 
   void operator()(const JoinAccepted& message) const {
+    assert(message.character != 0);
     WriteU8(out, static_cast<std::uint8_t>(MessageType::kJoinAccepted));
     WriteU32(out, static_cast<std::uint32_t>(message.session));
-    WriteVec3(out, message.spawn, kPositionGrid);
     WriteF32(out, message.tick_rate_hz);
     WriteParameters(out, message.parameters);
-    WritePlayers(out, message.roster);
+    WriteU8(out, message.character);
   }
 
   void operator()(const JoinRefused& message) const {
@@ -381,6 +423,39 @@ struct Encoder {
     WriteU32(out, message.tick);
     WriteU32(out, message.acknowledged_sequence);
     WritePlayers(out, message.players);
+  }
+
+  void operator()(const LobbyWire& message) const {
+    assert(message.roster.size() <= kMaxPlayers);
+    WriteU8(out, static_cast<std::uint8_t>(MessageType::kLobby));
+    WriteU32(out, message.version);
+    WriteU8(out, static_cast<std::uint8_t>(message.roster.size()));
+    for (const RosterEntryWire& entry : message.roster) {
+      assert(entry.character != 0);
+      WriteU32(out, static_cast<std::uint32_t>(entry.session));
+      WriteU8(out, entry.character);
+    }
+  }
+
+  void operator()(const Ready& message) const {
+    WriteU8(out, static_cast<std::uint8_t>(MessageType::kReady));
+    WriteU32(out, message.version);
+  }
+
+  void operator()(const MatchStartWire& message) const {
+    assert(message.players.size() <= kMaxPlayers);
+    WriteU8(out, static_cast<std::uint8_t>(MessageType::kMatchStart));
+    WriteU8(out, static_cast<std::uint8_t>(message.players.size()));
+    for (const MatchPlayerWire& player : message.players) {
+      assert(player.character != 0);
+      WriteU32(out, static_cast<std::uint32_t>(player.session));
+      WriteU8(out, player.character);
+      WriteVec3(out, player.spawn, kPositionGrid);
+    }
+  }
+
+  void operator()(const MatchEnd& /*message*/) const {
+    WriteU8(out, static_cast<std::uint8_t>(MessageType::kMatchEnd));
   }
 };
 
@@ -442,10 +517,12 @@ std::string_view DescribeJoinRefusal(JoinRefusal reason) {
   switch (reason) {
     case JoinRefusal::kVersionMismatch:
       return "client version does not match the server";
-    case JoinRefusal::kMatchFull:
-      return "match is full";
+    case JoinRefusal::kLobbyFull:
+      return "the lobby is full";
     case JoinRefusal::kUnknownCharacter:
       return "the server's scenario has no such character";
+    case JoinRefusal::kMatchInProgress:
+      return "a match is in progress: try again once it ends";
   }
   return "unknown refusal";
 }

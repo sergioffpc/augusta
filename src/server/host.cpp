@@ -1,6 +1,7 @@
 #include "host.h"
 
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -10,6 +11,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -40,21 +42,19 @@ simulation::World BuildSimulation(const HostConfig& config, const Map& map) {
   return simulation;
 }
 
+// The ticks of kMatchPause at tick_rate_hz, rounded up so the pause is never shorter.
+std::uint32_t PauseTicks(float tick_rate_hz) {
+  return static_cast<std::uint32_t>(std::ceil(std::chrono::duration<float>(kMatchPause).count() * tick_rate_hz));
+}
+
 // The transport's handle as a number, for log lines.
 std::uint32_t PeerNumber(networking::PeerId peer) { return static_cast<std::uint32_t>(peer); }
+
+std::uint32_t SessionNumber(protocol::SessionId session) { return static_cast<std::uint32_t>(session); }
 
 }  // namespace
 
 struct Host::Impl {
-  // A player joining or leaving, for the Simulation thread to apply at the start of its next tick.
-  struct Change {
-    enum class Kind : std::uint8_t { kJoin, kLeave };
-    Kind kind;
-    protocol::SessionId session;
-    // Where a joining player is put; unused for a leave.
-    math::Vec3 spawn{};
-  };
-
   // What the server keeps per joined client.
   struct Player {
     networking::PeerId peer;
@@ -62,8 +62,9 @@ struct Host::Impl {
   };
 
   // Declared before the socket so it is constructed first; see BuildSimulation.
-  // Simulation thread only.
+  // Simulation thread only, with the sessions whose bodies are in it.
   simulation::World simulation;
+  std::unordered_set<protocol::SessionId> bodies;
   std::uint32_t tick = 0;
   // What every client is told when it joins, with the tick rate; neither ever
   // changes, so neither needs the lock.
@@ -74,17 +75,18 @@ struct Host::Impl {
   networking::Server network;
 
   // Guards everything below: written by the Network I/O thread as clients
-  // join, leave and send commands, and read once per Simulation tick.
+  // join, leave and send commands, and by the Simulation thread as matches
+  // start and end.
   std::mutex mutex;
   Match match;
   std::unordered_map<protocol::SessionId, Player> players;
-  std::vector<Change> changes;
 
   // What Network I/O and the ticks did since the last heartbeat. Guarded by mutex.
   struct Activity {
     std::uint32_t ticks = 0;
     std::uint32_t messages = 0;
-    // Commands the queue turned away as already handled; routine, since commands repeat.
+    // Commands turned away as already handled, or as sent outside a match:
+    // routine, since commands repeat and some are in flight when a match ends.
     std::uint32_t stale = 0;
     // Messages and commands refused for being malformed, or sent out of turn.
     std::uint32_t dropped = 0;
@@ -101,11 +103,33 @@ struct Host::Impl {
         tick_rate_hz(config.tick_rate_hz),
         parameters(config.parameters),
         network(config.listen),
-        match(MatchConfig{.engine_version = std::string(EngineVersion()), .characters = std::move(map.characters)},
+        match(MatchConfig{.engine_version = std::string(EngineVersion()),
+                          .characters = std::move(map.characters),
+                          .player_count = config.parameters.player_count,
+                          .pause_ticks = PauseTicks(config.tick_rate_hz)},
               std::move(map.spawn_points)) {}
 
   void Reply(networking::PeerId peer, const protocol::Message& message) {
     network.Send(peer, protocol::Encode(message), networking::Reliability::kReliable);
+  }
+
+  // Sends message reliably to the player of each of sessions.
+  void SendTo(const std::vector<protocol::SessionId>& sessions, const protocol::Message& message) {
+    const protocol::Bytes payload = protocol::Encode(message);
+    for (const protocol::SessionId session : sessions) {
+      network.Send(players.at(session).peer, payload, networking::Reliability::kReliable);
+    }
+  }
+
+  // Tells everyone in the Lobby who is in it, after it changed.
+  void SendRoster() {
+    const Roster roster = match.GetRoster();
+    std::vector<protocol::SessionId> sessions;
+    sessions.reserve(roster.players.size());
+    for (const RosterEntry& entry : roster.players) {
+      sessions.push_back(entry.session);
+    }
+    SendTo(sessions, ToWire(roster));
   }
 
   void HandleJoinRequest(networking::PeerId peer, const protocol::JoinRequest& request) {
@@ -116,20 +140,26 @@ struct Host::Impl {
       Reply(peer, protocol::JoinRefused{.reason = admission.error()});
       return;
     }
+    Reply(peer, protocol::JoinAccepted{.session = admission->session,
+                                       .tick_rate_hz = tick_rate_hz,
+                                       .parameters = ToWire(parameters),
+                                       .character = admission->character});
     if (players.try_emplace(admission->session, Player{.peer = peer, .commands = {}}).second) {
-      changes.push_back(Change{.kind = Change::Kind::kJoin, .session = admission->session, .spawn = admission->spawn});
-      LI("subsystem=serverruntime event=joined peer={} players={}", PeerNumber(peer), match.PlayerCount());
+      LI("subsystem=serverruntime event=lobby_joined peer={} session={} character={} players={} version={}",
+         PeerNumber(peer), SessionNumber(admission->session), admission->character, match.PlayerCount(),
+         match.GetRoster().version);
+      SendRoster();
     }
-    protocol::JoinAccepted accepted;
-    accepted.session = admission->session;
-    accepted.spawn = admission->spawn;
-    accepted.tick_rate_hz = tick_rate_hz;
-    accepted.parameters = ToWire(parameters);
-    accepted.roster.reserve(admission->roster.size());
-    for (const RosterEntry& entry : admission->roster) {
-      accepted.roster.push_back(ToWire(entry));
+  }
+
+  void HandleReady(networking::PeerId peer, const protocol::Ready& ready) {
+    if (match.Ready(peer, ready.version)) {
+      LI("subsystem=serverruntime event=ready peer={} version={}", PeerNumber(peer), ready.version);
+    } else {
+      // The Roster can change while a Ready is in flight; the client sends another for the new one.
+      LD("subsystem=serverruntime event=ready_ignored peer={} version={} current={}", PeerNumber(peer), ready.version,
+         match.GetRoster().version);
     }
-    Reply(peer, accepted);
   }
 
   void HandleCommands(networking::PeerId peer, const protocol::Commands& message) {
@@ -138,6 +168,11 @@ struct Host::Impl {
       ++activity.dropped;
       LW_LIMITED(drop_warnings, "subsystem=serverruntime event=dropped peer={} reason=\"commands before joining\"",
                  PeerNumber(peer));
+      return;
+    }
+    if (!match.IsPlaying(*session)) {
+      ++activity.stale;
+      LT("subsystem=serverruntime event=dropped peer={} reason=\"commands outside a match\"", PeerNumber(peer));
       return;
     }
     CommandQueue& queue = players.at(*session).commands;
@@ -171,6 +206,8 @@ struct Host::Impl {
       HandleJoinRequest(message.from, *request);
     } else if (const auto* commands = std::get_if<protocol::Commands>(&*decoded)) {
       HandleCommands(message.from, *commands);
+    } else if (const auto* ready = std::get_if<protocol::Ready>(&*decoded)) {
+      HandleReady(message.from, *ready);
     } else {
       ++activity.dropped;
       LW_LIMITED(drop_warnings,
@@ -179,46 +216,91 @@ struct Host::Impl {
     }
   }
 
-  // A player whose connection ended leaves at the start of the next tick; the
-  // slot is free at once. reason only decides which event is logged.
+  // A player whose connection ended leaves at once; a body it had leaves the
+  // simulation at the start of the next tick. reason only decides which event is logged.
   void HandleDisconnect(networking::PeerId peer, networking::DisconnectReason reason) {
     const std::optional<protocol::SessionId> session = match.SessionOf(peer);
     if (!session.has_value()) {
       return;
     }
-    match.Leave(peer);
+    const Departure departure = match.Leave(peer);
     players.erase(*session);
-    changes.push_back(Change{.kind = Change::Kind::kLeave, .session = *session});
-    if (reason == networking::DisconnectReason::kConnectionLost) {
-      LW("subsystem=serverruntime event=timeout peer={} players={}", PeerNumber(peer), match.PlayerCount());
-    } else {
-      LI("subsystem=serverruntime event=left peer={} players={}", PeerNumber(peer), match.PlayerCount());
+    const bool lost = reason == networking::DisconnectReason::kConnectionLost;
+    switch (departure) {
+      case Departure::kNone:
+        break;
+      case Departure::kFromLobby:
+        LI("subsystem=serverruntime event=lobby_left peer={} session={} lost={} players={} version={}",
+           PeerNumber(peer), SessionNumber(*session), lost, match.PlayerCount(), match.GetRoster().version);
+        SendRoster();
+        break;
+      case Departure::kFromMatch:
+        LI("subsystem=serverruntime event=match_left peer={} session={} lost={} playing={}", PeerNumber(peer),
+           SessionNumber(*session), lost, match.Playing().size());
+        break;
+      case Departure::kEndedMatch:
+        LI("subsystem=serverruntime event=match_left peer={} session={} lost={} playing=0", PeerNumber(peer),
+           SessionNumber(*session), lost);
+        LI("subsystem=serverruntime event=match_ended reason=\"no players left\"");
+        break;
     }
   }
 
-  // Applies the joins and leaves since the last tick to the simulation, then
-  // takes one command per player for this tick. Also returns who to send the
-  // tick's state to.
+  // Ends the match in progress, if any: its players are told, and are back in
+  // the Lobby; their bodies leave the simulation at the start of the next tick.
+  void EndMatch() {
+    const std::vector<protocol::SessionId> ended = match.End();
+    if (ended.empty()) {
+      return;
+    }
+    SendTo(ended, protocol::MatchEnd{});
+    LI("subsystem=serverruntime event=match_ended players={} version={}", ended.size(), match.GetRoster().version);
+    SendRoster();
+  }
+
+  // Starts a match if one can start: its players' bodies enter the simulation
+  // at their spawn points, their commands start afresh, and they are told.
+  void StartMatchIfReady() {
+    const std::optional<MatchStart> start = match.TryStart();
+    if (!start.has_value()) {
+      return;
+    }
+    std::vector<protocol::SessionId> sessions;
+    for (const MatchPlayer& player : start->players) {
+      simulation.AddPlayer(replication::PlayerOf(player.session), player.spawn);
+      bodies.insert(player.session);
+      players.at(player.session).commands = CommandQueue{};
+      sessions.push_back(player.session);
+    }
+    SendTo(sessions, ToWire(*start));
+    LI("subsystem=serverruntime event=match_started tick={} players={}", tick, sessions.size());
+  }
+
+  // What a tick runs on: one command per player in the match, and who to send
+  // the tick's state to.
   struct TickInput {
     std::vector<simulation::PlayerCommand> commands;
     std::vector<replication::Recipient> recipients;
     std::unordered_map<protocol::SessionId, networking::PeerId> peers;
   };
 
+  // Removes the bodies of players no longer in a match, starts a match if one
+  // can start, then takes one command per player in it for this tick.
   TickInput PrepareTick() {
     const std::lock_guard<std::mutex> lock(mutex);
-    for (const Change& change : changes) {
-      const simulation::PlayerId player = replication::PlayerOf(change.session);
-      if (change.kind == Change::Kind::kJoin) {
-        simulation.AddPlayer(player, change.spawn);
-      } else {
-        simulation.RemovePlayer(player);
+    std::erase_if(bodies, [&](protocol::SessionId session) {
+      if (match.IsPlaying(session)) {
+        return false;
       }
-    }
-    changes.clear();
+      simulation.RemovePlayer(replication::PlayerOf(session));
+      return true;
+    });
+    match.Tick();
+    StartMatchIfReady();
 
     TickInput input;
-    for (auto& [session, player] : players) {
+    for (const protocol::SessionId session : match.Playing()) {
+      Player& player = players.at(session);
       const TickCommand next = player.commands.Next();
       input.commands.push_back(
           simulation::PlayerCommand{.player = replication::PlayerOf(session), .command = next.command});
@@ -227,14 +309,6 @@ struct Host::Impl {
       input.peers.emplace(session, player.peer);
     }
     return input;
-  }
-
-  // Tells the match where everyone is, for the roster of whoever joins next.
-  void RememberBodies(const simulation::State& state) {
-    const std::lock_guard<std::mutex> lock(mutex);
-    for (const simulation::PlayerState& player : state.players) {
-      match.UpdateBody(replication::SessionOf(player.player), player.body);
-    }
   }
 
   // Once a second, one line of what the last second held: a line per tick or
@@ -246,8 +320,9 @@ struct Host::Impl {
     if (now - activity_since < kHeartbeatInterval) {
       return;
     }
-    LD("subsystem=serverruntime event=heartbeat tick={} players={} ticks={} messages={} stale={} dropped={}", tick,
-       players.size(), activity.ticks, activity.messages, activity.stale, activity.dropped);
+    LD("subsystem=serverruntime event=heartbeat tick={} players={} in_match={} ticks={} messages={} stale={} "
+       "dropped={}",
+       tick, players.size(), match.InMatch(), activity.ticks, activity.messages, activity.stale, activity.dropped);
     activity = Activity{};
     activity_since = now;
   }
@@ -270,7 +345,7 @@ void Host::PumpNetwork() {
     switch (event.type) {
       case networking::PeerEventType::kConnectRequested:
         // Every connection is accepted, since a refusal is a message and needs
-        // the connection to travel on; whether the peer joins the match is
+        // the connection to travel on; whether the peer joins the Lobby is
         // decided by its JoinRequest.
         impl.network.Accept(event.peer);
         break;
@@ -296,10 +371,14 @@ simulation::State Host::Tick(float delta_time) {
   const Impl::TickInput input = impl.PrepareTick();
   simulation::State state = impl.simulation.Tick(input.commands, delta_time);
   ++impl.tick;
-  impl.RememberBodies(state);
   impl.Send(state, input);
   impl.Heartbeat();
   return state;
+}
+
+void Host::EndMatch() {
+  const std::lock_guard<std::mutex> lock(impl_->mutex);
+  impl_->EndMatch();
 }
 
 }  // namespace augusta::server

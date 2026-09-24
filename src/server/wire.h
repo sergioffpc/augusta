@@ -21,8 +21,11 @@ namespace augusta::server {
 /// parameters as the protocol carries them.
 [[nodiscard]] protocol::ParametersWire ToWire(const parameters::Parameters& parameters);
 
-/// A roster entry as the protocol carries it.
-[[nodiscard]] protocol::PlayerStateWire ToWire(const RosterEntry& entry);
+/// The Lobby's Roster as the protocol carries it.
+[[nodiscard]] protocol::LobbyWire ToWire(const Roster& roster);
+
+/// A match's start as the protocol carries it.
+[[nodiscard]] protocol::MatchStartWire ToWire(const MatchStart& start);
 
 /// What replication planned for one recipient, as the message it is sent.
 [[nodiscard]] protocol::AuthoritativeStateWire ToWire(const replication::Update& update);

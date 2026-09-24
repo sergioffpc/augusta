@@ -44,9 +44,9 @@ namespace augusta::protocol {
 
 /// The first byte of every payload; which message the rest of it is.
 enum class MessageType : std::uint8_t {
-  /// Client to server: asks to join the match.
+  /// Client to server: asks to join the Lobby.
   kJoinRequest = 1,
-  /// Server to client: the join succeeded.
+  /// Server to client: the join succeeded and the client is in the Lobby.
   kJoinAccepted = 2,
   /// Server to client: the join failed.
   kJoinRefused = 3,
@@ -54,6 +54,14 @@ enum class MessageType : std::uint8_t {
   kCommands = 4,
   /// Server to client: every player's body as of one tick.
   kAuthoritativeState = 5,
+  /// Server to client: who is in the Lobby, each with their character (ADR-0043).
+  kLobby = 6,
+  /// Client to server: it has loaded everything it needs for one version of the Lobby's Roster.
+  kReady = 7,
+  /// Server to client: the match has started, with who is in it and where each spawns.
+  kMatchStart = 8,
+  /// Server to client: the match is over and its players are back in the Lobby.
+  kMatchEnd = 9,
 };
 
 /// Longest engine version string a JoinRequest may carry, in bytes.
@@ -62,7 +70,8 @@ inline constexpr std::size_t kMaxEngineVersionLength = 32;
 /// Longest character path a JoinRequest may carry, in bytes.
 inline constexpr std::size_t kMaxCharacterPathLength = 64;
 
-/// The players a match holds, and so the most an Authoritative State update lists.
+/// The players a Lobby or a match holds, and so the most a Lobby, a Match start
+/// or an Authoritative State update lists.
 inline constexpr std::size_t kMaxPlayers = 8;
 
 /// The most commands one Commands message carries.
@@ -126,10 +135,12 @@ enum class SessionId : std::uint32_t {};
 enum class JoinRefusal : std::uint8_t {
   /// The client's engine version is not the server's.
   kVersionMismatch = 1,
-  /// The match already holds as many players as it supports.
-  kMatchFull = 2,
+  /// The Lobby already holds the scenario's Player count.
+  kLobbyFull = 2,
   /// The character the client asked to play is not one of the scenario's (ADR-0042).
   kUnknownCharacter = 3,
+  /// A match is under way, and no one joins one in progress (ADR-0043).
+  kMatchInProgress = 4,
 };
 
 /// Client to server: the first message on a new connection.
@@ -141,18 +152,16 @@ struct JoinRequest {
   std::string character;
 };
 
-/// One player's body inside an Authoritative State update or a roster.
+/// One player's body inside an Authoritative State update.
 struct PlayerStateWire {
   SessionId session{};
   BodyStateWire body{};
 };
 
-/// Server to client: the join succeeded.
+/// Server to client: the join succeeded, and the client waits in the Lobby.
 struct JoinAccepted {
   /// The session the server assigned to this client.
   SessionId session{};
-  /// Where the server spawned this client's player.
-  math::Vec3 spawn{};
   /// The rate, in Hz, at which the server simulates and this client must predict:
   /// the server's startup setting, fixed for the life of the server process and
   /// so sent here once and never again.
@@ -160,9 +169,9 @@ struct JoinAccepted {
   /// The parameters the client must predict with, so its numbers (the stamina
   /// rules among them) are the server's.
   ParametersWire parameters{};
-  /// The players already in the match, at most kMaxPlayers, each where the
-  /// server last had it. Not the joining client's own.
-  std::vector<PlayerStateWire> roster;
+  /// The joining player's own character index: its 1-based position in the
+  /// scenario's character list (ADR-0042). Never 0.
+  std::uint8_t character = 1;
 };
 
 /// Server to client: the join failed and the connection will not be used.
@@ -194,8 +203,48 @@ struct AuthoritativeStateWire {
   std::vector<PlayerStateWire> players;
 };
 
+/// One player in the Lobby.
+struct RosterEntryWire {
+  SessionId session{};
+  /// The player's character index (see JoinAccepted::character). Never 0.
+  std::uint8_t character = 1;
+};
+
+/// Server to client: who is in the Lobby, sent to everyone in it whenever that changes.
+struct LobbyWire {
+  /// Numbers this Roster: it grows on every join and leave, so a client can say which one it loaded for.
+  std::uint32_t version = 0;
+  /// Every player in the Lobby, the recipient included, at most kMaxPlayers.
+  std::vector<RosterEntryWire> roster;
+};
+
+/// Client to server: the client has loaded what it needs to draw everyone in
+/// one version of the Lobby's Roster (ADR-0043). The player presses nothing.
+struct Ready {
+  /// The LobbyWire::version the client loaded for; only the current one counts.
+  std::uint32_t version = 0;
+};
+
+/// One player in a match, and where the server spawns it.
+struct MatchPlayerWire {
+  math::Vec3 spawn{};
+  SessionId session{};
+  /// The player's character index (see JoinAccepted::character). Never 0.
+  std::uint8_t character = 1;
+};
+
+/// Server to client: the match has started. From here on its players can only leave.
+struct MatchStartWire {
+  /// Every player in the match, the recipient included, at most kMaxPlayers.
+  std::vector<MatchPlayerWire> players;
+};
+
+/// Server to client: the match is over, and everyone still connected is back in the Lobby.
+struct MatchEnd {};
+
 /// Any message of the protocol.
-using Message = std::variant<JoinRequest, JoinAccepted, JoinRefused, Commands, AuthoritativeStateWire>;
+using Message = std::variant<JoinRequest, JoinAccepted, JoinRefused, Commands, AuthoritativeStateWire, LobbyWire, Ready,
+                             MatchStartWire, MatchEnd>;
 
 /// A payload is this many bytes, the same type networking::Payload names.
 using Bytes = std::vector<std::byte>;

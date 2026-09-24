@@ -1,5 +1,6 @@
 #include "augusta/renderer.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -7,6 +8,8 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <Core/API/Swapchain.h>
@@ -75,21 +78,24 @@ std::vector<Vertex> BuildFlatShadedVertices(const Scene& scene) {
   return vertices;
 }
 
-// Every RemotePlayer as an instance of local_vertices (SetRemotePlayerMesh's
-// own flat-shaded vertices, in the character's local space - ADR-0040/ADR-
-// 0041): height-scaled around y=0 (remote.height_scale - issue #82's "right
-// stance" criterion, renderer.h), then translated to that instance's own
-// position and given its own color. remote.position is where local_vertices'
-// own origin (y=0) lands - the same convention the character's mesh was
-// cooked around, so no further placement is needed. A non-uniform (y-only)
-// scale needs its normals scaled by the inverse instead, then renormalized,
-// to stay correct - a uniform scale (height_scale == 1, the common case)
-// leaves them unchanged.
-std::vector<Vertex> BuildRemoteVertices(std::span<const RemotePlayer> remote_players,
-                                        std::span<const Vertex> local_vertices) {
+// Every RemotePlayer as an instance of its character's local vertices
+// (SetCharacterMesh's own flat-shaded vertices, in the character's local space
+// - ADR-0040/ADR-0041), skipping one whose character has none: height-scaled around y=0 (remote.height_scale - issue
+// #82's "right stance" criterion, renderer.h), then translated to that instance's own position and given its own color.
+// remote.position is where the mesh's own origin (y=0) lands - the same convention the character's mesh was cooked
+// around, so no further placement is needed. A non-uniform (y-only) scale needs its normals scaled by the inverse
+// instead, then renormalized, to stay correct - a uniform scale (height_scale == 1, the common case) leaves them
+// unchanged.
+std::vector<Vertex> BuildRemoteVertices(
+    std::span<const RemotePlayer> remote_players,
+    const std::unordered_map<std::uint8_t, std::vector<Vertex>>& character_vertices) {
   std::vector<Vertex> vertices;
-  vertices.reserve(remote_players.size() * local_vertices.size());
   for (const RemotePlayer& remote : remote_players) {
+    const auto found = character_vertices.find(remote.character);
+    if (found == character_vertices.end()) {
+      continue;
+    }
+    const std::vector<Vertex>& local_vertices = found->second;
     const math::Vec3& p = remote.position;
     const float height_scale = remote.height_scale;
     const Falcor::float3 color{remote.color.x, remote.color.y, remote.color.z};
@@ -216,14 +222,14 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   std::uint32_t vertex_count = 0;
   Camera camera;
 
-  // The shared character mesh every RemotePlayer is drawn as (issue #82/
-  // ADR-0040/ADR-0041), flat-shaded in its own local space - set by
-  // SetRemotePlayerMesh, which (re)creates remote_vertex_buffer/remote_vao
-  // below sized for it; empty (and those null) until the first call.
-  std::vector<Vertex> remote_player_local_vertices;
+  // Each character's mesh (ADR-0042), flat-shaded in its own local space and
+  // keyed by character index - set by SetCharacterMesh, which (re)creates
+  // remote_vertex_buffer/remote_vao below when a mesh outgrows them; empty
+  // (and those null) until the first call.
+  std::unordered_map<std::uint8_t, std::vector<Vertex>> character_vertices;
 
   // Unlike vao/vertex_count above, this buffer is sized for kMaxRemotePlayers
-  // instances of remote_player_local_vertices and kept as MemoryType::Upload
+  // instances of the largest mesh in character_vertices and kept as MemoryType::Upload
   // - a persistently-mappable heap SetRemotePlayers can memcpy into every
   // frame via Buffer::setBlob with no GPU wait, unlike UploadScene's
   // DeviceLocal buffer (see that method).
@@ -278,7 +284,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     CreateTargetFbo(size.x, size.y);
     debug_hud = std::make_unique<DebugHud>(device, Falcor::uint2(size.x, size.y));
     BuildRasterPass();
-    // remote_vertex_buffer/remote_vao are created lazily by SetRemotePlayerMesh
+    // remote_vertex_buffer/remote_vao are created lazily by SetCharacterMesh
     // instead, once the per-instance vertex count they're sized from is known.
   }
 
@@ -366,11 +372,11 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
 
   // Creates the persistently-mappable upload-heap buffer and Vao
   // SetRemotePlayers writes into every frame - see the Impl member comment
-  // on remote_vertex_buffer. Called by UploadRemotePlayerMesh, sized for
-  // kMaxRemotePlayers instances of remote_player_local_vertices (must
-  // already be set) - replaces any previous buffer/Vao.
-  void CreateRemoteBuffer() {
-    const std::size_t vertex_capacity = kMaxRemotePlayers * remote_player_local_vertices.size();
+  // on remote_vertex_buffer. Called by UploadCharacterMesh, sized for
+  // kMaxRemotePlayers instances of vertices_per_player - replaces any
+  // previous buffer/Vao.
+  void CreateRemoteBuffer(std::size_t vertices_per_player) {
+    const std::size_t vertex_capacity = kMaxRemotePlayers * vertices_per_player;
     remote_vertex_buffer = device->createBuffer(vertex_capacity * sizeof(Vertex), Falcor::ResourceBindFlags::Vertex,
                                                 Falcor::MemoryType::Upload);
 
@@ -384,24 +390,34 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     remote_vao = Falcor::Vao::create(Falcor::Vao::Topology::TriangleList, layout, {remote_vertex_buffer});
   }
 
-  // Builds remote_player_local_vertices from mesh - the same
+  // Builds character's local vertices from mesh - the same
   // BuildFlatShadedVertices triangle expansion UploadScene uses, reused via
   // a one-mesh Scene rather than duplicated - and (re)creates the buffer/Vao
-  // CreateRemoteBuffer sizes from it. Nothing is touched if mesh is invalid
-  // (the throw comes before any member is assigned, same as UploadScene).
-  void UploadRemotePlayerMesh(const SceneMesh& mesh) {
-    remote_player_local_vertices = BuildFlatShadedVertices(Scene{.meshes = {mesh}, .camera = {}});
+  // once kMaxRemotePlayers instances of the largest mesh no longer fit.
+  // Nothing is touched if mesh is invalid (the throw comes before any member
+  // is assigned, same as UploadScene).
+  void UploadCharacterMesh(std::uint8_t character, const SceneMesh& mesh) {
+    std::vector<Vertex> vertices = BuildFlatShadedVertices(Scene{.meshes = {mesh}, .camera = {}});
+    const std::size_t needed_bytes = kMaxRemotePlayers * vertices.size() * sizeof(Vertex);
+    character_vertices.insert_or_assign(character, std::move(vertices));
+    if (remote_vertex_buffer != nullptr && needed_bytes <= remote_vertex_buffer->getSize()) {
+      return;
+    }
+    std::size_t largest = 0;
+    for (const auto& [index, local_vertices] : character_vertices) {
+      largest = std::max(largest, local_vertices.size());
+    }
     // The previous buffer may still be in flight on the GPU - see UploadScene's own comment.
     device->wait();
-    CreateRemoteBuffer();
+    CreateRemoteBuffer(largest);
     remote_vertex_count = 0;
   }
 
   // Rewrites the remote-player instances' vertex data in place via
   // Buffer::setBlob - a map+memcpy into the upload heap, no GPU wait (unlike
-  // UploadScene/UploadRemotePlayerMesh). Throws std::runtime_error if
+  // UploadScene/UploadCharacterMesh). Throws std::runtime_error if
   // remote_players has more instances than the buffer was sized for. A call
-  // before UploadRemotePlayerMesh (remote_vao still null) draws nothing,
+  // before UploadCharacterMesh (remote_vao still null) draws nothing,
   // same as an empty span.
   void UpdateRemotePlayers(std::span<const RemotePlayer> remote_players) {
     if (remote_players.size() > kMaxRemotePlayers) {
@@ -411,7 +427,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
       remote_vertex_count = 0;
       return;
     }
-    const std::vector<Vertex> vertices = BuildRemoteVertices(remote_players, remote_player_local_vertices);
+    const std::vector<Vertex> vertices = BuildRemoteVertices(remote_players, character_vertices);
     remote_vertex_count = static_cast<std::uint32_t>(vertices.size());
     if (vertices.empty()) {
       return;
@@ -584,7 +600,9 @@ void Renderer::SetScene(const Scene& scene) { impl_->UploadScene(scene); }
 
 void Renderer::SetCamera(const Camera& camera) { impl_->camera = camera; }
 
-void Renderer::SetRemotePlayerMesh(const SceneMesh& mesh) { impl_->UploadRemotePlayerMesh(mesh); }
+void Renderer::SetCharacterMesh(std::uint8_t character, const SceneMesh& mesh) {
+  impl_->UploadCharacterMesh(character, mesh);
+}
 
 void Renderer::SetRemotePlayers(std::span<const RemotePlayer> remote_players) {
   impl_->UpdateRemotePlayers(remote_players);

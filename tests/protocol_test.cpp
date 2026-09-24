@@ -30,9 +30,15 @@ using augusta::protocol::JoinRequest;
 using augusta::protocol::kMaxCommandsPerMessage;
 using augusta::protocol::kMaxEngineVersionLength;
 using augusta::protocol::kMaxPlayers;
+using augusta::protocol::LobbyWire;
+using augusta::protocol::MatchEnd;
+using augusta::protocol::MatchPlayerWire;
+using augusta::protocol::MatchStartWire;
 using augusta::protocol::Message;
 using augusta::protocol::MessageType;
 using augusta::protocol::PlayerStateWire;
+using augusta::protocol::Ready;
+using augusta::protocol::RosterEntryWire;
 using augusta::protocol::SequencedCommandWire;
 using augusta::protocol::SessionId;
 using augusta::protocol::SnapAngle;
@@ -54,6 +60,14 @@ constexpr auto kJoinAcceptedType = static_cast<std::uint8_t>(MessageType::kJoinA
 constexpr auto kJoinRefusedType = static_cast<std::uint8_t>(MessageType::kJoinRefused);
 constexpr auto kCommandsType = static_cast<std::uint8_t>(MessageType::kCommands);
 constexpr auto kAuthoritativeStateType = static_cast<std::uint8_t>(MessageType::kAuthoritativeState);
+constexpr auto kLobbyType = static_cast<std::uint8_t>(MessageType::kLobby);
+constexpr auto kReadyType = static_cast<std::uint8_t>(MessageType::kReady);
+constexpr auto kMatchStartType = static_cast<std::uint8_t>(MessageType::kMatchStart);
+constexpr auto kMatchEndType = static_cast<std::uint8_t>(MessageType::kMatchEnd);
+
+// Every refusal the protocol has.
+constexpr std::array<JoinRefusal, 4> kEveryRefusal = {JoinRefusal::kVersionMismatch, JoinRefusal::kLobbyFull,
+                                                      JoinRefusal::kUnknownCharacter, JoinRefusal::kMatchInProgress};
 
 Message RoundTrip(const Message& message) {
   const auto decoded = Decode(Encode(message));
@@ -124,56 +138,39 @@ PlayerStateWire PlayerAt(std::uint32_t session, float x) {
 TEST(ProtocolTest, JoinAcceptedRoundTrips) {
   JoinAccepted sent{
       .session = static_cast<SessionId>(0xA1B2C3D4U),
-      .spawn = Vec3(4.0F, 0.5F, -8.0F),
       .tick_rate_hz = 30.0F,
       .parameters = {.stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F},
                      .player_count = 5},
-      .roster = {PlayerAt(1, 10.0F), PlayerAt(2, -3.0F)}};
+      .character = 3};
 
   const auto decoded = RoundTrip(sent);
 
   ASSERT_TRUE(std::holds_alternative<JoinAccepted>(decoded));
   const auto& received = std::get<JoinAccepted>(decoded);
   EXPECT_EQ(received.session, sent.session);
-  EXPECT_EQ(received.spawn, SnapPosition(sent.spawn));
   EXPECT_EQ(received.tick_rate_hz, sent.tick_rate_hz);
   EXPECT_EQ(received.parameters.player_count, sent.parameters.player_count);
   EXPECT_EQ(received.parameters.stamina.deplete_per_second, sent.parameters.stamina.deplete_per_second);
   EXPECT_EQ(received.parameters.stamina.regen_per_second, sent.parameters.stamina.regen_per_second);
   EXPECT_EQ(received.parameters.stamina.forced_walk_below, sent.parameters.stamina.forced_walk_below);
-  ASSERT_EQ(received.roster.size(), sent.roster.size());
-  for (std::size_t i = 0; i < sent.roster.size(); ++i) {
-    EXPECT_EQ(received.roster[i].session, sent.roster[i].session);
-    ExpectSnappedBody(received.roster[i].body, sent.roster[i].body);
-  }
+  EXPECT_EQ(received.character, sent.character);
 }
 
-TEST(ProtocolTest, JoinAcceptedWithAnEmptyRosterRoundTrips) {
-  const auto decoded = RoundTrip(JoinAccepted{.session = static_cast<SessionId>(1), .roster = {}});
-
-  EXPECT_TRUE(std::get<JoinAccepted>(decoded).roster.empty());
+// The Lobby, not Join accepted, says who else is there (ADR-0043).
+TEST(ProtocolTest, JoinAcceptedCarriesNoRosterAndNoSpawnPoint) {
+  // type, session (4), tick rate (4), parameters (13), character (1).
+  EXPECT_EQ(Encode(JoinAccepted{}).size(), 1 + 4 + 4 + 13 + 1);
 }
 
-TEST(ProtocolTest, JoinAcceptedWithAFullRosterRoundTrips) {
-  JoinAccepted sent;
-  sent.roster.resize(kMaxPlayers);
+TEST(ProtocolTest, CharacterIndexZeroInJoinAcceptedIsInvalid) {
+  Bytes payload = Encode(JoinAccepted{.character = 1});
+  payload.back() = std::byte{0};
 
-  EXPECT_EQ(std::get<JoinAccepted>(RoundTrip(sent)).roster.size(), kMaxPlayers);
-}
-
-TEST(ProtocolTest, MorePlayersInARosterThanAMatchHoldsIsTooLong) {
-  // type, session (4), spawn (9), tick rate (4), parameters (13: the player
-  // count, then the stamina rules), then the count.
-  Bytes payload = BytesOf({kJoinAcceptedType});
-  payload.resize(1 + 4 + 9 + 4 + 13, std::byte{0});
-  payload.push_back(static_cast<std::byte>(kMaxPlayers + 1));
-
-  EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
+  EXPECT_EQ(Decode(payload).error(), DecodeError::kInvalidEnum);
 }
 
 TEST(ProtocolTest, JoinRefusedRoundTripsEveryReason) {
-  for (const JoinRefusal reason :
-       {JoinRefusal::kVersionMismatch, JoinRefusal::kMatchFull, JoinRefusal::kUnknownCharacter}) {
+  for (const JoinRefusal reason : kEveryRefusal) {
     const auto decoded = RoundTrip(JoinRefused{.reason = reason});
 
     ASSERT_TRUE(std::holds_alternative<JoinRefused>(decoded));
@@ -181,38 +178,140 @@ TEST(ProtocolTest, JoinRefusedRoundTripsEveryReason) {
   }
 }
 
+// A full Lobby is refused with the value a full match was, under its new name.
+TEST(ProtocolTest, ALobbyFullRefusalKeepsTheWireValueOfAFullMatch) {
+  EXPECT_EQ(Encode(JoinRefused{.reason = JoinRefusal::kLobbyFull}), BytesOf({kJoinRefusedType, 2}));
+  EXPECT_EQ(Encode(JoinRefused{.reason = JoinRefusal::kMatchInProgress}), BytesOf({kJoinRefusedType, 4}));
+}
+
 TEST(ProtocolTest, FieldsAreFixedWidthLittleEndian) {
-  // The session, then spawn, tick rate, parameters and roster count: all zero
-  // here but the player count, which leads the parameters.
+  // The session, then tick rate, parameters and character: all zero here but
+  // the player count, which leads the parameters, and the character.
   Bytes accepted = BytesOf({kJoinAcceptedType, 0x01, 0x02, 0x03, 0x04});
-  accepted.resize(accepted.size() + 9 + 4, std::byte{0});
+  accepted.resize(accepted.size() + 4, std::byte{0});
   accepted.push_back(std::byte{0x03});
-  accepted.resize(accepted.size() + 12 + 1, std::byte{0});
+  accepted.resize(accepted.size() + 12, std::byte{0});
+  accepted.push_back(std::byte{0x02});
   EXPECT_EQ(Encode(JoinAccepted{.session = static_cast<SessionId>(0x04030201U),
                                 .parameters = {.stamina = {}, .player_count = 3},
-                                .roster = {}}),
+                                .character = 2}),
             accepted);
-  EXPECT_EQ(Encode(JoinRefused{.reason = JoinRefusal::kMatchFull}), BytesOf({kJoinRefusedType, 2}));
   EXPECT_EQ(Encode(JoinRequest{.engine_version = "ab", .character = "c"}),
             BytesOf({kJoinRequestType, 2, 'a', 'b', 1, 'c'}));
+  EXPECT_EQ(
+      Encode(LobbyWire{.version = 0x0A0B0C0DU,
+                       .roster = {RosterEntryWire{.session = static_cast<SessionId>(0x01020304U), .character = 5}}}),
+      BytesOf({kLobbyType, 0x0D, 0x0C, 0x0B, 0x0A, 1, 0x04, 0x03, 0x02, 0x01, 5}));
+}
+
+TEST(ProtocolTest, LobbyRoundTrips) {
+  const LobbyWire sent{.version = 42,
+                       .roster = {RosterEntryWire{.session = static_cast<SessionId>(7), .character = 1},
+                                  RosterEntryWire{.session = static_cast<SessionId>(9), .character = 255}}};
+
+  const auto decoded = RoundTrip(sent);
+
+  ASSERT_TRUE(std::holds_alternative<LobbyWire>(decoded));
+  const auto& received = std::get<LobbyWire>(decoded);
+  EXPECT_EQ(received.version, sent.version);
+  ASSERT_EQ(received.roster.size(), sent.roster.size());
+  for (std::size_t i = 0; i < sent.roster.size(); ++i) {
+    EXPECT_EQ(received.roster[i].session, sent.roster[i].session);
+    EXPECT_EQ(received.roster[i].character, sent.roster[i].character);
+  }
+}
+
+TEST(ProtocolTest, AnEmptyLobbyAndAFullOneRoundTrip) {
+  EXPECT_TRUE(std::get<LobbyWire>(RoundTrip(LobbyWire{.version = 1, .roster = {}})).roster.empty());
+
+  LobbyWire full{.version = 1, .roster = {}};
+  full.roster.resize(kMaxPlayers);
+  EXPECT_EQ(std::get<LobbyWire>(RoundTrip(full)).roster.size(), kMaxPlayers);
+}
+
+TEST(ProtocolTest, MorePlayersInALobbyThanItHoldsIsTooLong) {
+  // type, version (4), then the count.
+  EXPECT_EQ(Decode(BytesOf({kLobbyType, 1, 0, 0, 0, static_cast<std::uint8_t>(kMaxPlayers + 1)})).error(),
+            DecodeError::kFieldTooLong);
+}
+
+TEST(ProtocolTest, CharacterIndexZeroInALobbyIsInvalid) {
+  // type, version, count, session, then the character.
+  EXPECT_EQ(Decode(BytesOf({kLobbyType, 1, 0, 0, 0, 1, 7, 0, 0, 0, 0})).error(), DecodeError::kInvalidEnum);
+}
+
+MatchPlayerWire MatchPlayer(std::uint32_t session, std::uint8_t character, float x) {
+  return MatchPlayerWire{
+      .spawn = Vec3(x, 0.5F, -8.0F), .session = static_cast<SessionId>(session), .character = character};
+}
+
+TEST(ProtocolTest, MatchStartRoundTripsWithEveryPlayersCharacterAndSpawnPoint) {
+  const MatchStartWire sent{.players = {MatchPlayer(3, 1, 4.0F), MatchPlayer(4, 2, -12.345F)}};
+
+  const auto decoded = RoundTrip(sent);
+
+  ASSERT_TRUE(std::holds_alternative<MatchStartWire>(decoded));
+  const auto& received = std::get<MatchStartWire>(decoded);
+  ASSERT_EQ(received.players.size(), sent.players.size());
+  for (std::size_t i = 0; i < sent.players.size(); ++i) {
+    EXPECT_EQ(received.players[i].session, sent.players[i].session);
+    EXPECT_EQ(received.players[i].character, sent.players[i].character);
+    EXPECT_EQ(received.players[i].spawn, SnapPosition(sent.players[i].spawn));
+  }
+}
+
+TEST(ProtocolTest, AMatchStartOfAFullMatchRoundTrips) {
+  MatchStartWire sent;
+  sent.players.assign(kMaxPlayers, MatchPlayer(1, 1, 0.0F));
+
+  EXPECT_EQ(std::get<MatchStartWire>(RoundTrip(sent)).players.size(), kMaxPlayers);
+}
+
+TEST(ProtocolTest, MorePlayersInAMatchStartThanAMatchHoldsIsTooLong) {
+  EXPECT_EQ(Decode(BytesOf({kMatchStartType, static_cast<std::uint8_t>(kMaxPlayers + 1)})).error(),
+            DecodeError::kFieldTooLong);
+}
+
+TEST(ProtocolTest, ReadyRoundTripsTheVersionItWasLoadedFor) {
+  const auto decoded = RoundTrip(Ready{.version = 0xA1B2C3D4U});
+
+  ASSERT_TRUE(std::holds_alternative<Ready>(decoded));
+  EXPECT_EQ(std::get<Ready>(decoded).version, 0xA1B2C3D4U);
+  EXPECT_EQ(Encode(Ready{.version = 0x01020304U}), BytesOf({kReadyType, 0x04, 0x03, 0x02, 0x01}));
+}
+
+TEST(ProtocolTest, MatchEndIsItsTypeAlone) {
+  EXPECT_EQ(Encode(MatchEnd{}), BytesOf({kMatchEndType}));
+  EXPECT_TRUE(std::holds_alternative<MatchEnd>(RoundTrip(MatchEnd{})));
+}
+
+TEST(ProtocolTest, CharacterIndexZeroInAMatchStartIsInvalid) {
+  Bytes payload = Encode(MatchStartWire{.players = {MatchPlayer(1, 1, 0.0F)}});
+  // type, count, session, then the character.
+  constexpr std::size_t kCharacterOffset = 1 + 1 + 4;
+  payload[kCharacterOffset] = std::byte{0};
+
+  EXPECT_EQ(Decode(payload).error(), DecodeError::kInvalidEnum);
 }
 
 TEST(ProtocolTest, AnEmptyPayloadIsEmpty) { EXPECT_EQ(Decode(Bytes{}).error(), DecodeError::kEmpty); }
 
 TEST(ProtocolTest, AnUnknownTypeIsRejected) {
   EXPECT_EQ(Decode(BytesOf({0})).error(), DecodeError::kUnknownType);
-  EXPECT_EQ(Decode(BytesOf({6, 0, 0, 0, 0})).error(), DecodeError::kUnknownType);
-  EXPECT_EQ(Decode(BytesOf({7, 0, 0, 0, 0})).error(), DecodeError::kUnknownType);
+  EXPECT_EQ(Decode(BytesOf({10, 0, 0, 0, 0})).error(), DecodeError::kUnknownType);
   EXPECT_EQ(Decode(BytesOf({0xFF})).error(), DecodeError::kUnknownType);
 }
 
 TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
-  const std::array<Message, 5> messages = {
+  const std::array<Message, 8> messages = {
       JoinRequest{.engine_version = "0.1.0", .character = "characters/player"},
-      JoinAccepted{.session = static_cast<SessionId>(7), .roster = {PlayerStateWire{}}},
-      JoinRefused{.reason = JoinRefusal::kMatchFull},
+      JoinAccepted{.session = static_cast<SessionId>(7), .character = 1},
+      JoinRefused{.reason = JoinRefusal::kMatchInProgress},
       Commands{.commands = {SequencedCommandWire{.sequence = 1}, {.sequence = 2}}},
-      AuthoritativeStateWire{.tick = 3, .players = {PlayerStateWire{}, {}}}};
+      AuthoritativeStateWire{.tick = 3, .players = {PlayerStateWire{}, {}}},
+      LobbyWire{.version = 2, .roster = {RosterEntryWire{}, {}}},
+      MatchStartWire{.players = {MatchPlayer(1, 1, 0.0F), MatchPlayer(2, 2, 1.0F)}},
+      Ready{.version = 0x01020304U}};
   for (const Message& message : messages) {
     const Bytes whole = Encode(message);
     for (std::size_t length = 1; length < whole.size(); ++length) {
@@ -241,7 +340,7 @@ TEST(ProtocolTest, ALengthOf255IsRejectedBeforeAnythingIsAllocatedForIt) {
 
 TEST(ProtocolTest, ARefusalReasonOutsideTheEnumerationIsInvalid) {
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 0})).error(), DecodeError::kInvalidEnum);
-  EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 4})).error(), DecodeError::kInvalidEnum);
+  EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 5})).error(), DecodeError::kInvalidEnum);
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 0xFF})).error(), DecodeError::kInvalidEnum);
 }
 
@@ -250,6 +349,14 @@ TEST(ProtocolTest, BytesAfterAMessageAreTrailing) {
   Bytes accepted = Encode(JoinAccepted{});
   accepted.push_back(std::byte{0});
   EXPECT_EQ(Decode(accepted).error(), DecodeError::kTrailingBytes);
+  Bytes lobby = Encode(LobbyWire{});
+  lobby.push_back(std::byte{0});
+  EXPECT_EQ(Decode(lobby).error(), DecodeError::kTrailingBytes);
+  Bytes start = Encode(MatchStartWire{});
+  start.push_back(std::byte{0});
+  EXPECT_EQ(Decode(start).error(), DecodeError::kTrailingBytes);
+  EXPECT_EQ(Decode(BytesOf({kReadyType, 1, 0, 0, 0, 0})).error(), DecodeError::kTrailingBytes);
+  EXPECT_EQ(Decode(BytesOf({kMatchEndType, 0})).error(), DecodeError::kTrailingBytes);
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 1, 1})).error(), DecodeError::kTrailingBytes);
 }
 
@@ -454,8 +561,7 @@ TEST(ProtocolTest, EveryErrorAndRefusalHasADescription) {
                                   DecodeError::kTrailingBytes, DecodeError::kInvalidEnum, DecodeError::kFieldTooLong}) {
     EXPECT_FALSE(augusta::protocol::DescribeDecodeError(error).empty());
   }
-  for (const JoinRefusal reason :
-       {JoinRefusal::kVersionMismatch, JoinRefusal::kMatchFull, JoinRefusal::kUnknownCharacter}) {
+  for (const JoinRefusal reason : kEveryRefusal) {
     EXPECT_FALSE(augusta::protocol::DescribeJoinRefusal(reason).empty());
   }
 }

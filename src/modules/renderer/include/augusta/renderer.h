@@ -34,9 +34,10 @@
 //
 // Interface scope: draws one static Scene (a list of world-space triangle
 // meshes seen from one camera), plus, per frame, however many RemotePlayer
-// instances of one shared character mesh (SetRemotePlayerMesh) PresentationWorld's
-// Interpolation phase produces positions for (SetRemotePlayers, below) - the
-// first slice of Presentation State this module actually consumes (ADR-0024).
+// instances PresentationWorld's Interpolation phase produces positions for
+// (SetRemotePlayers, below), each drawn with the mesh of its character
+// (SetCharacterMesh) - the first slice of Presentation State this module
+// actually consumes (ADR-0024).
 // The local player's own position, weapon visuals, skeletal animation and
 // audio cues are still undesigned; revisit this header again once those land.
 namespace augusta::renderer {
@@ -92,10 +93,8 @@ struct Scene {
 /// muted red, distinct from SceneMesh's default grey.
 inline constexpr math::Vec3 kDefaultRemotePlayerColor{0.85F, 0.25F, 0.25F};
 
-/// One other player, drawn as an instance of the shared mesh SetRemotePlayerMesh
-/// last uploaded (issue #82's placeholder box, replaced by a real character
-/// mesh - ADR-0040/ADR-0041; still one shared mesh for every RemotePlayer,
-/// no per-player character selection yet). position is where that mesh's own
+/// One other player, drawn as an instance of the mesh SetCharacterMesh
+/// uploaded for its character (ADR-0042). position is where that mesh's own
 /// local origin lands (matches physics::BodyState::position, a player's
 /// feet - the same convention the character's mesh was cooked around, ADR-
 /// 0041). height_scale scales the mesh's height (y) around that same base,
@@ -110,6 +109,9 @@ struct RemotePlayer {
   math::Vec3 position{};
   float height_scale = 1.0F;
   math::Vec3 color = kDefaultRemotePlayerColor;
+  /// The character index whose mesh this player is drawn with; a player whose
+  /// index has no mesh is not drawn.
+  std::uint8_t character = 0;
 };
 
 /// Upper bound on how many RemotePlayer instances SetRemotePlayers can draw
@@ -201,23 +203,21 @@ class Renderer {
   /// SetRemotePlayers. From the Main/Render thread.
   void SetCamera(const Camera& camera);
 
-  /// Replaces the shared mesh every RemotePlayer is subsequently drawn as
-  /// (issue #82/ADR-0040/ADR-0041) - SetRemotePlayers only ever positions/
-  /// colors instances of this one mesh, so it must be called before the
-  /// first SetRemotePlayers with a non-empty span. Uploads GPU resources
-  /// sized for it (kMaxRemotePlayers instances' worth), so - like SetScene,
-  /// unlike SetRemotePlayers - not meant to be called every frame. From the
-  /// Main/Render thread. Throws std::runtime_error if a mesh index is out of
-  /// range for its positions.
-  void SetRemotePlayerMesh(const SceneMesh& mesh);
+  /// Sets the mesh every RemotePlayer of character is drawn with from then on,
+  /// in the character's own root space (ADR-0041); meshes stay for the life of
+  /// the Renderer. May grow the GPU buffer SetRemotePlayers writes into, so -
+  /// like SetScene, unlike SetRemotePlayers - not meant to be called every
+  /// frame: the client calls it in the Lobby, never during a match (ADR-0043).
+  /// From the Main/Render thread. Throws std::runtime_error if a mesh index is
+  /// out of range for its positions.
+  void SetCharacterMesh(std::uint8_t character, const SceneMesh& mesh);
 
   /// Replaces the drawn remote-player instances via a persistently-mapped
-  /// upload-heap buffer - unlike SetScene/SetRemotePlayerMesh, cheap enough
-  /// to call once every RenderFrame (no GPU wait, no fresh allocation). From
-  /// the Main/Render thread. Throws std::runtime_error if remote_players.size()
+  /// upload-heap buffer - unlike SetScene/SetCharacterMesh, cheap enough to
+  /// call once every RenderFrame (no GPU wait, no fresh allocation). From the
+  /// Main/Render thread. Throws std::runtime_error if remote_players.size()
   /// exceeds kMaxRemotePlayers. An empty span draws nothing - how a player
-  /// who left disappears; so does every span before SetRemotePlayerMesh has
-  /// been called at least once.
+  /// who left disappears; a player whose character has no mesh is skipped.
   void SetRemotePlayers(std::span<const RemotePlayer> remote_players);
 
   // Hides the OS cursor and captures it for continuous mouselook: mouse

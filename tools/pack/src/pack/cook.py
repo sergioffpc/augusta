@@ -49,6 +49,10 @@ _HITBOX_ATTR = "augusta:hitbox"
 # Node property (ADR-0032) carrying a visual mesh's constant displayColor as
 # "r g b" linear floats; the client reads it as the mesh's base color.
 BASE_COLOR_PROPERTY = "base_color"
+# The default prim every character stage has, named the same regardless of the
+# character's folder (ADR-0040), so the client finds its visual mesh at
+# <manifest path>/Character/Visual.
+CHARACTER_ROOT_PRIM = "Character"
 # augusta:textureFormat: selects which BC format a UsdUVTexture prim
 # compresses to (ADR-0017/issue #49). Defaults to BC7 when absent/
 # unrecognized.
@@ -571,6 +575,14 @@ def cook_scenario(
         character_stage = Usd.Stage.Open(str(stage_path))
         if not character_stage:
             raise CookError("stage_open_failed", "", str(stage_path))
+        # The client finds a character's visual mesh at <manifest path>/Character/Visual (ADR-0040).
+        default_prim = character_stage.GetDefaultPrim()
+        if not default_prim or default_prim.GetName() != CHARACTER_ROOT_PRIM:
+            raise CookError(
+                "character_root_misnamed",
+                "",
+                f"{stage_path}: a character's default prim must be named {CHARACTER_ROOT_PRIM!r}",
+            )
         character_prims = list(character_stage.Traverse(Usd.TraverseInstanceProxies(Usd.PrimDefaultPredicate)))
         opened_characters.append((manifest_path, stage_path, character_stage, character_prims))
 

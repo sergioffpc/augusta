@@ -1,9 +1,13 @@
 #ifndef AUGUSTA_RUNTIME_H_
 #define AUGUSTA_RUNTIME_H_
 
+#include <cstdint>
+#include <expected>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "augusta/audio.h"
@@ -14,6 +18,7 @@
 #include "augusta/prediction.h"
 #include "augusta/presentation.h"
 #include "augusta/renderer.h"
+#include "scene_loader.h"
 
 // augusta::runtime is ClientRuntime (ARCHITECTURE.md §5): the augustac
 // executable's own orchestrator, owning one of every client module and
@@ -59,6 +64,14 @@ struct Map {
   std::vector<physics::CollisionMesh> collision;
 };
 
+// Loads the visual mesh of the character with the given index from the client
+// pack (client::LoadCharacterMesh), or says why it could not.
+using CharacterMeshLoader = std::function<std::expected<renderer::SceneMesh, client::SceneError>(std::uint8_t)>;
+
+// Why Run() stopped without the player closing the window: the session ended
+// on its own, or a character's mesh could not be loaded.
+using Failure = std::variant<harness::Failure, client::SceneError>;
+
 // Owns one of every client-only module/World and the three fixed
 // threads ADR-0005 assigns them to. The client process constructs
 // exactly one, on what becomes the Main/Render thread (see Run()).
@@ -78,15 +91,15 @@ class ClientRuntime {
   // ClientRuntime doesn't call it itself since Init() is a one-time
   // process concern, not a per-instance one.
   //
-  // scene is what the Renderer draws every frame, map is what physics ticks
-  // against, and remote_player_mesh is the shared character mesh every other
-  // player is drawn as (issue #82/ADR-0040/ADR-0041, Renderer::
-  // SetRemotePlayerMesh) - all three loaded from the client pack by the
-  // caller (see scene_loader.h and map.h), since where content comes from is
-  // the executable's business, not the orchestrator's. Throws
-  // std::runtime_error if physics rejects a collision mesh.
-  ClientRuntime(const Config& config, Map map, const renderer::Scene& scene,
-                const renderer::SceneMesh& remote_player_mesh);
+  // scene is what the Renderer draws every frame and map is what physics
+  // ticks against, both loaded from the client pack by the caller (see
+  // scene_loader.h and map.h), since where content comes from is the
+  // executable's business, not the orchestrator's. For the same reason the
+  // caller hands in load_character_mesh, which Run() calls in the Lobby for
+  // each character another player brings (ADR-0043); it must stay callable
+  // until Run() returns. Throws std::runtime_error if physics rejects a
+  // collision mesh.
+  ClientRuntime(const Config& config, Map map, const renderer::Scene& scene, CharacterMeshLoader load_character_mesh);
 
   // Run() always stops and joins the Simulation and Network I/O
   // threads it spawned before returning, including if the Main/Render
@@ -106,18 +119,20 @@ class ClientRuntime {
   ClientRuntime& operator=(ClientRuntime&&) = delete;
 
   // Spawns the Simulation and Network I/O threads (ADR-0005), then runs
-  // the Main/Render loop on the calling thread - PumpEvents, read the
-  // latest committed Prediction State, PresentationWorld::RunFrame,
-  // Renderer::RenderFrame - until Renderer::ShouldClose() returns true or the
-  // session fails (refused, server unreachable, connection lost), which is
-  // what it returns: the caller reports it and exits, since there is no
-  // reconnecting. nullopt if the player closed the window.
+  // the Main/Render loop on the calling thread - PumpEvents, in the Lobby load
+  // every other player's character and report Ready, read the latest
+  // committed Prediction State, PresentationWorld::RunFrame,
+  // Renderer::RenderFrame - until Renderer::ShouldClose() returns true, the
+  // session fails (refused, server unreachable, connection lost) or a
+  // character's mesh cannot be loaded, which is what it returns: the caller
+  // reports it and exits, since there is no reconnecting. nullopt if the
+  // player closed the window.
   // Always stops and joins both spawned threads before returning or
   // propagating an exception (see ~ClientRuntime). Must be called from
   // the same thread that constructed this ClientRuntime (ADR-0009's
   // window-thread-affinity requirement, inherited from Renderer) and
   // must not be called more than once.
-  [[nodiscard]] std::optional<harness::Failure> Run();
+  [[nodiscard]] std::optional<Failure> Run();
 
  private:
   struct Impl;

@@ -118,30 +118,49 @@ TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
   }
 }
 
-TEST(WireTest, WhatAJoinAcceptedCarriesReachesTheClientUnchanged) {
-  const Vec3 spawn(4.0F, 0.5F, -8.0F);
-  const augusta::server::RosterEntry entry{.session = SessionId{5}, .body = Body(6.0F, Stance::kCrouching)};
+TEST(WireTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged) {
   augusta::parameters::Parameters parameters;
   parameters.stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F};
   parameters.player_count = 4;
 
   const augusta::protocol::JoinAccepted received = ThroughTheWire(augusta::protocol::JoinAccepted{
-      .session = SessionId{1},
-      .spawn = spawn,
-      .parameters = augusta::server::ToWire(parameters),
-      .roster = {augusta::server::ToWire(entry)},
-  });
+      .session = SessionId{1}, .parameters = augusta::server::ToWire(parameters), .character = 1});
 
-  EXPECT_EQ(received.spawn, spawn);
   const augusta::parameters::Parameters received_parameters = augusta::harness::FromWire(received.parameters);
   EXPECT_EQ(received_parameters.stamina.deplete_per_second, parameters.stamina.deplete_per_second);
   EXPECT_EQ(received_parameters.stamina.regen_per_second, parameters.stamina.regen_per_second);
   EXPECT_EQ(received_parameters.stamina.forced_walk_below, parameters.stamina.forced_walk_below);
   EXPECT_EQ(received_parameters.player_count, parameters.player_count);
-  ASSERT_EQ(received.roster.size(), 1U);
-  const augusta::harness::PlayerBody player = augusta::harness::FromWire(received.roster[0]);
-  EXPECT_EQ(player.session, entry.session);
-  ExpectSameBody(player.body, entry.body);
+}
+
+TEST(WireTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
+  const augusta::server::Roster sent{
+      .version = 7, .players = {{.session = SessionId{3}, .character = 2}, {.session = SessionId{5}, .character = 1}}};
+
+  const augusta::harness::Lobby received = augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+
+  EXPECT_EQ(received.version, sent.version);
+  ASSERT_EQ(received.roster.size(), sent.players.size());
+  for (std::size_t i = 0; i < sent.players.size(); ++i) {
+    EXPECT_EQ(received.roster[i].session, sent.players[i].session);
+    EXPECT_EQ(received.roster[i].character, sent.players[i].character);
+  }
+}
+
+TEST(WireTest, AMatchStartTheServerSendsReachesTheClientUnchanged) {
+  const augusta::server::MatchStart sent{
+      .players = {{.session = SessionId{3}, .character = 2, .spawn = Vec3(4.0F, 0.5F, -8.0F)},
+                  {.session = SessionId{5}, .character = 1, .spawn = Vec3(-1.0F, 0.0F, 2.0F)}}};
+
+  const augusta::harness::MatchStart received =
+      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+
+  ASSERT_EQ(received.players.size(), sent.players.size());
+  for (std::size_t i = 0; i < sent.players.size(); ++i) {
+    EXPECT_EQ(received.players[i].session, sent.players[i].session);
+    EXPECT_EQ(received.players[i].character, sent.players[i].character);
+    EXPECT_EQ(received.players[i].spawn, sent.players[i].spawn);
+  }
 }
 
 }  // namespace
