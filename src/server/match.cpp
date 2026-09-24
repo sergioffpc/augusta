@@ -19,8 +19,8 @@ Match::Match(MatchConfig config, std::vector<math::Vec3> spawn_points)
   }
 }
 
-std::expected<Admission, protocol::JoinRefusal> Match::Join(networking::PeerId peer,
-                                                            const protocol::JoinRequest& request) {
+std::expected<Admission, protocol::JoinRefusalWire> Match::Join(networking::PeerId peer,
+                                                                const protocol::JoinRequestWire& request) {
   if (const auto existing = members_.find(peer); existing != members_.end()) {
     return Admission{.session = existing->second.session, .character = existing->second.character};
   }
@@ -28,25 +28,25 @@ std::expected<Admission, protocol::JoinRefusal> Match::Join(networking::PeerId p
   // the version, then the pack its characters come from, then the character,
   // then whether it could join later.
   if (request.engine_version != engine_version_) {
-    return std::unexpected(protocol::JoinRefusal::kVersionMismatch);
+    return std::unexpected(protocol::JoinRefusalWire::kVersionMismatch);
   }
   if (request.client_pack != client_pack_) {
-    return std::unexpected(protocol::JoinRefusal::kPackMismatch);
+    return std::unexpected(protocol::JoinRefusalWire::kPackMismatch);
   }
   const auto found = std::ranges::find(characters_, request.character);
   if (found == characters_.end()) {
-    return std::unexpected(protocol::JoinRefusal::kUnknownCharacter);
+    return std::unexpected(protocol::JoinRefusalWire::kUnknownCharacter);
   }
   if (in_match_) {
-    return std::unexpected(protocol::JoinRefusal::kMatchInProgress);
+    return std::unexpected(protocol::JoinRefusalWire::kMatchInProgress);
   }
   if (members_.size() >= player_count_) {
-    return std::unexpected(protocol::JoinRefusal::kLobbyFull);
+    return std::unexpected(protocol::JoinRefusalWire::kLobbyFull);
   }
   // The scenario composes at most assets::kMaxCharacters, so an index fits in a byte.
   const auto index = static_cast<std::uint8_t>(std::distance(characters_.begin(), found) + 1);
   // A newcomer bumps the version, so no one is Ready until they have loaded its character.
-  const Member member{.session = static_cast<protocol::SessionId>(next_session_++), .character = index};
+  const Member member{.session = static_cast<protocol::SessionIdWire>(next_session_++), .character = index};
   members_.emplace(peer, member);
   ++roster_version_;
   return Admission{.session = member.session, .character = member.character};
@@ -111,8 +111,8 @@ std::optional<MatchStart> Match::TryStart() {
   return start;
 }
 
-std::vector<protocol::SessionId> Match::End() {
-  std::vector<protocol::SessionId> ended = Playing();
+std::vector<protocol::SessionIdWire> Match::End() {
+  std::vector<protocol::SessionIdWire> ended = Playing();
   if (!in_match_) {
     return ended;
   }
@@ -124,12 +124,12 @@ std::vector<protocol::SessionId> Match::End() {
 
 bool Match::InMatch() const { return in_match_; }
 
-bool Match::IsPlaying(protocol::SessionId session) const {
+bool Match::IsPlaying(protocol::SessionIdWire session) const {
   return in_match_ && std::ranges::any_of(members_, [&](const auto& entry) { return entry.second.session == session; });
 }
 
-std::vector<protocol::SessionId> Match::Playing() const {
-  std::vector<protocol::SessionId> playing;
+std::vector<protocol::SessionIdWire> Match::Playing() const {
+  std::vector<protocol::SessionIdWire> playing;
   if (in_match_) {
     for (const Member& member : MembersBySession()) {
       playing.push_back(member.session);
@@ -148,7 +148,7 @@ Roster Match::GetRoster() const {
   return roster;
 }
 
-std::optional<protocol::SessionId> Match::SessionOf(networking::PeerId peer) const {
+std::optional<protocol::SessionIdWire> Match::SessionOf(networking::PeerId peer) const {
   const auto found = members_.find(peer);
   return found == members_.end() ? std::nullopt : std::optional(found->second.session);
 }

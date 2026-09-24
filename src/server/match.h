@@ -31,7 +31,7 @@ inline constexpr std::chrono::seconds kMatchPause{5};
 
 /// One player in the Lobby.
 struct RosterEntry {
-  protocol::SessionId session{};
+  protocol::SessionIdWire session{};
   /// Its character index: 1-based position in the scenario's character list (ADR-0042).
   std::uint8_t character = 1;
 };
@@ -46,7 +46,7 @@ struct Roster {
 
 /// One player in a match, and where it spawns.
 struct MatchPlayer {
-  protocol::SessionId session{};
+  protocol::SessionIdWire session{};
   std::uint8_t character = 1;
   math::Vec3 spawn{};
 };
@@ -60,7 +60,7 @@ struct MatchStart {
 /// What a peer is told when it is admitted to the Lobby.
 struct Admission {
   /// The name the server gave the peer's player.
-  protocol::SessionId session{};
+  protocol::SessionIdWire session{};
   /// The character it plays.
   std::uint8_t character = 1;
 };
@@ -83,7 +83,7 @@ struct MatchConfig {
   std::string engine_version;
   /// Only clients that loaded the client pack of this hash are admitted: the
   /// one cooked with the server's pack.
-  protocol::PackHash client_pack{};
+  protocol::PackHashWire client_pack{};
   /// The characters a client may ask to play: the scenario's, by path, in the
   /// order that gives each its index (ADR-0042).
   std::vector<std::string> characters;
@@ -104,8 +104,8 @@ class Match {
   /// first, then its pack, then its character, then whether a match is in
   /// progress, then whether the Lobby is full. A peer that has already joined
   /// gets the admission it already has.
-  [[nodiscard]] std::expected<Admission, protocol::JoinRefusal> Join(networking::PeerId peer,
-                                                                     const protocol::JoinRequest& request);
+  [[nodiscard]] std::expected<Admission, protocol::JoinRefusalWire> Join(networking::PeerId peer,
+                                                                         const protocol::JoinRequestWire& request);
 
   /// Removes peer from the Lobby or the match it is in, and says which. A
   /// departure from the Lobby leaves whoever was Ready still Ready.
@@ -132,29 +132,29 @@ class Match {
   /// Ends the match in progress: its players return to the Lobby, under a new
   /// Roster version none of them is Ready for yet, and the pause begins. Returns
   /// who was in it; empty, changing nothing, if no match is in progress.
-  std::vector<protocol::SessionId> End();
+  std::vector<protocol::SessionIdWire> End();
 
   /// Whether a match is in progress.
   [[nodiscard]] bool InMatch() const;
 
   /// Whether the player of session is in the match in progress.
-  [[nodiscard]] bool IsPlaying(protocol::SessionId session) const;
+  [[nodiscard]] bool IsPlaying(protocol::SessionIdWire session) const;
 
   /// Who is in the match in progress, ordered by session; empty in the Lobby.
-  [[nodiscard]] std::vector<protocol::SessionId> Playing() const;
+  [[nodiscard]] std::vector<protocol::SessionIdWire> Playing() const;
 
   /// Who is in the Lobby; empty, under the last version, while a match is in progress.
   [[nodiscard]] Roster GetRoster() const;
 
   /// The session of peer, or nullopt if it has not joined.
-  [[nodiscard]] std::optional<protocol::SessionId> SessionOf(networking::PeerId peer) const;
+  [[nodiscard]] std::optional<protocol::SessionIdWire> SessionOf(networking::PeerId peer) const;
 
   /// How many players have joined and not left, in the Lobby or the match.
   [[nodiscard]] std::size_t PlayerCount() const;
 
  private:
   struct Member {
-    protocol::SessionId session;
+    protocol::SessionIdWire session;
     std::uint8_t character;
     // The Roster version this player's client last loaded for; 0 for none.
     std::uint32_t ready_version = 0;
@@ -164,7 +164,7 @@ class Match {
   [[nodiscard]] std::vector<Member> MembersBySession() const;
 
   std::string engine_version_;
-  protocol::PackHash client_pack_;
+  protocol::PackHashWire client_pack_;
   std::vector<std::string> characters_;
   std::size_t player_count_;
   std::uint32_t pause_ticks_;

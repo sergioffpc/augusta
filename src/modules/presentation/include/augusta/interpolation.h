@@ -45,7 +45,7 @@ struct RemoteBody {
 
 /// One session's interpolated body, as Sample returns it.
 struct RemotePlayer {
-  protocol::SessionId session{};
+  protocol::SessionIdWire session{};
   RemoteBody body{};
   /// The character index it is drawn as, from Match start; 0 if unknown.
   /// PresentationWorld fills it in: the interpolator knows only bodies.
@@ -63,12 +63,12 @@ class RemoteInterpolator {
   /// previous newest becomes the one behind it. A timestamp at or before the
   /// session's current newest is ignored: out-of-order or repeated
   /// Authoritative State cannot move interpolation backward.
-  void Record(protocol::SessionId session, float timestamp, const physics::BodyState& body);
+  void Record(protocol::SessionIdWire session, float timestamp, const physics::BodyState& body);
 
   /// Forgets every buffered session not present in current - the disconnect
   /// case, driven by each Authoritative State's full player list rather than
   /// a separate leave message.
-  void Sync(std::span<const protocol::SessionId> current);
+  void Sync(std::span<const protocol::SessionIdWire> current);
 
   /// Every buffered session's body at render_time: interpolated between the
   /// two updates surrounding it if both are buffered, held at the nearer end
@@ -84,7 +84,7 @@ class RemoteInterpolator {
     physics::BodyState body{};
   };
   struct Buffered {
-    protocol::SessionId session{};
+    protocol::SessionIdWire session{};
     std::optional<Update> previous;
     Update latest;
   };

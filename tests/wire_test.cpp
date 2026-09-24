@@ -25,12 +25,12 @@ namespace {
 using augusta::math::Vec3;
 using augusta::physics::BodyState;
 using augusta::physics::Stance;
-using augusta::protocol::SessionId;
+using augusta::protocol::SessionIdWire;
 
 // message as the other peer decodes it.
-template <typename Message>
-Message ThroughTheWire(const Message& message) {
-  return std::get<Message>(augusta::protocol::Decode(augusta::protocol::Encode(message)).value());
+template <typename MessageWire>
+MessageWire ThroughTheWire(const MessageWire& message) {
+  return std::get<MessageWire>(augusta::protocol::Decode(augusta::protocol::Encode(message)).value());
 }
 
 BodyState Body(float x, Stance stance) {
@@ -62,7 +62,8 @@ TEST(WireTest, ACommandTheClientSendsReachesTheServerUnchanged) {
     sent.fire = true;
     sent.reload = true;
 
-    const augusta::protocol::Commands message{.commands = {{.sequence = 9, .command = augusta::harness::ToWire(sent)}}};
+    const augusta::protocol::CommandsWire message{
+        .commands = {{.sequence = 9, .command = augusta::harness::ToWire(sent)}}};
     const augusta::server::SequencedCommand received =
         augusta::server::FromWire(ThroughTheWire(message).commands.at(0));
 
@@ -86,7 +87,8 @@ TEST(WireTest, EachFlagOfACommandReachesTheServerAsItselfAlone) {
     sent.fire = flag == 2;
     sent.reload = flag == 3;
 
-    const augusta::protocol::Commands message{.commands = {{.sequence = 1, .command = augusta::harness::ToWire(sent)}}};
+    const augusta::protocol::CommandsWire message{
+        .commands = {{.sequence = 1, .command = augusta::harness::ToWire(sent)}}};
     const augusta::input::Command received = augusta::server::FromWire(ThroughTheWire(message).commands.at(0)).command;
 
     EXPECT_EQ(received.movement.sprint, sent.movement.sprint) << flag;
@@ -98,12 +100,12 @@ TEST(WireTest, EachFlagOfACommandReachesTheServerAsItselfAlone) {
 
 TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
   const augusta::replication::Update sent{
-      .recipient = SessionId{2},
+      .recipient = SessionIdWire{2},
       .tick = 42,
       .acknowledged_sequence = 17,
-      .players = {{.session = SessionId{1}, .body = Body(1.0F, Stance::kStanding)},
-                  {.session = SessionId{2}, .body = Body(2.0F, Stance::kCrouching)},
-                  {.session = SessionId{3}, .body = Body(3.0F, Stance::kProne)}},
+      .players = {{.session = SessionIdWire{1}, .body = Body(1.0F, Stance::kStanding)},
+                  {.session = SessionIdWire{2}, .body = Body(2.0F, Stance::kCrouching)},
+                  {.session = SessionIdWire{3}, .body = Body(3.0F, Stance::kProne)}},
   };
 
   const augusta::harness::AuthoritativeState received =
@@ -123,8 +125,8 @@ TEST(WireTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged) {
   parameters.stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F};
   parameters.player_count = 4;
 
-  const augusta::protocol::JoinAccepted received = ThroughTheWire(augusta::protocol::JoinAccepted{
-      .session = SessionId{1}, .parameters = augusta::server::ToWire(parameters), .character = 1});
+  const augusta::protocol::JoinAcceptedWire received = ThroughTheWire(augusta::protocol::JoinAcceptedWire{
+      .session = SessionIdWire{1}, .parameters = augusta::server::ToWire(parameters), .character = 1});
 
   const augusta::parameters::Parameters received_parameters = augusta::harness::FromWire(received.parameters);
   EXPECT_EQ(received_parameters.stamina.deplete_per_second, parameters.stamina.deplete_per_second);
@@ -135,7 +137,8 @@ TEST(WireTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged) {
 
 TEST(WireTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
   const augusta::server::Roster sent{
-      .version = 7, .players = {{.session = SessionId{3}, .character = 2}, {.session = SessionId{5}, .character = 1}}};
+      .version = 7,
+      .players = {{.session = SessionIdWire{3}, .character = 2}, {.session = SessionIdWire{5}, .character = 1}}};
 
   const augusta::harness::Lobby received = augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
 
@@ -149,8 +152,8 @@ TEST(WireTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
 
 TEST(WireTest, AMatchStartTheServerSendsReachesTheClientUnchanged) {
   const augusta::server::MatchStart sent{
-      .players = {{.session = SessionId{3}, .character = 2, .spawn = Vec3(4.0F, 0.5F, -8.0F)},
-                  {.session = SessionId{5}, .character = 1, .spawn = Vec3(-1.0F, 0.0F, 2.0F)}}};
+      .players = {{.session = SessionIdWire{3}, .character = 2, .spawn = Vec3(4.0F, 0.5F, -8.0F)},
+                  {.session = SessionIdWire{5}, .character = 1, .spawn = Vec3(-1.0F, 0.0F, 2.0F)}}};
 
   const augusta::harness::MatchStart received =
       augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));

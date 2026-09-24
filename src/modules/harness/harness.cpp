@@ -24,12 +24,12 @@ namespace {
 // The whole answer to a join request: the session, the tick rate and the
 // parameters, all the server's for the whole run.
 struct Admission {
-  protocol::SessionId session{};
-  float tick_rate_hz = 0.0F;
+  protocol::SessionIdWire session{};
+  std::uint8_t tick_rate_hz = 0;
   parameters::Parameters parameters{};
 };
 
-Admission ToAdmission(const protocol::JoinAccepted& accepted) {
+Admission ToAdmission(const protocol::JoinAcceptedWire& accepted) {
   return Admission{
       .session = accepted.session,
       .tick_rate_hz = accepted.tick_rate_hz,
@@ -38,7 +38,7 @@ Admission ToAdmission(const protocol::JoinAccepted& accepted) {
 }
 
 // Whether session is one of start's players.
-bool IsInMatch(const MatchStart& start, protocol::SessionId session) {
+bool IsInMatch(const MatchStart& start, protocol::SessionIdWire session) {
   return std::ranges::any_of(start.players, [&](const MatchPlayer& player) { return player.session == session; });
 }
 
@@ -49,7 +49,7 @@ bool IsInMatch(const MatchStart& start, protocol::SessionId session) {
 // Prediction thread reads whichever is current.
 struct ServerView {
   std::optional<Admission> accepted;
-  std::optional<protocol::JoinRefusal> refusal;
+  std::optional<protocol::JoinRefusalWire> refusal;
   std::optional<Lobby> lobby;
   // The last match's start, and how many have started: a new count is a new
   // match for the prediction to start over in.
@@ -63,7 +63,7 @@ struct ServerView {
 struct Session::Impl {
   networking::Endpoint server;
   std::string engine_version;
-  protocol::PackHash client_pack;
+  protocol::PackHashWire client_pack;
   std::string character;
   networking::Client network;
   prediction::World prediction;
@@ -98,15 +98,15 @@ struct Session::Impl {
         prediction(std::move(world)) {}
 
   void HandleMessage(const networking::Payload& payload) {
-    const std::expected<protocol::Message, protocol::DecodeError> decoded = protocol::Decode(payload);
+    const std::expected<protocol::MessageWire, protocol::DecodeError> decoded = protocol::Decode(payload);
     if (!decoded.has_value()) {
-      LW_LIMITED(drop_warnings, "subsystem=clientruntime event=dropped bytes={} reason=\"{}\"", payload.size(),
+      LW_LIMITED(drop_warnings, "subsystem=harness event=dropped bytes={} reason=\"{}\"", payload.size(),
                  protocol::DescribeDecodeError(decoded.error()));
       return;
     }
-    if (const auto* accepted = std::get_if<protocol::JoinAccepted>(&*decoded)) {
+    if (const auto* accepted = std::get_if<protocol::JoinAcceptedWire>(&*decoded)) {
       OnJoinAccepted(*accepted);
-    } else if (const auto* refused = std::get_if<protocol::JoinRefused>(&*decoded)) {
+    } else if (const auto* refused = std::get_if<protocol::JoinRefusedWire>(&*decoded)) {
       OnJoinRefused(*refused);
     } else if (const auto* state = std::get_if<protocol::AuthoritativeStateWire>(&*decoded)) {
       OnAuthoritativeState(*state);
@@ -114,10 +114,10 @@ struct Session::Impl {
       OnLobby(*lobby);
     } else if (const auto* start = std::get_if<protocol::MatchStartWire>(&*decoded)) {
       OnMatchStart(*start);
-    } else if (std::holds_alternative<protocol::MatchEnd>(*decoded)) {
+    } else if (std::holds_alternative<protocol::MatchEndWire>(*decoded)) {
       OnMatchEnd();
     } else {
-      LW_LIMITED(drop_warnings, "subsystem=clientruntime event=dropped bytes={} reason=\"not a server message\"",
+      LW_LIMITED(drop_warnings, "subsystem=harness event=dropped bytes={} reason=\"not a server message\"",
                  payload.size());
     }
   }
@@ -125,26 +125,26 @@ struct Session::Impl {
   // A server whose tick rate or parameters the simulation cannot run on (a rate
   // of zero would be divided by) is not a usable one: the message is dropped, as
   // a malformed one is, and the client stays unadmitted.
-  void OnJoinAccepted(const protocol::JoinAccepted& message) {
+  void OnJoinAccepted(const protocol::JoinAcceptedWire& message) {
     const Admission accepted = ToAdmission(message);
     if (!parameters::IsValidTickRate(accepted.tick_rate_hz)) {
-      LW_LIMITED(drop_warnings, "subsystem=clientruntime event=dropped reason=\"invalid tick rate\" tick_rate_hz={}",
+      LW_LIMITED(drop_warnings, "subsystem=harness event=dropped reason=\"invalid tick rate\" tick_rate_hz={}",
                  accepted.tick_rate_hz);
       return;
     }
     if (const auto valid = parameters::Validate(accepted.parameters); !valid) {
-      LW_LIMITED(drop_warnings, "subsystem=clientruntime event=dropped reason=\"invalid parameters\" parameter={}",
+      LW_LIMITED(drop_warnings, "subsystem=harness event=dropped reason=\"invalid parameters\" parameter={}",
                  valid.error().path);
       return;
     }
     Publish([&](ServerView& next) { next.accepted = accepted; });
-    LI("subsystem=clientruntime event=joined session={} character={} tick_rate_hz={}",
+    LI("subsystem=harness event=joined session={} character={} tick_rate_hz={}",
        static_cast<std::uint32_t>(accepted.session), message.character, accepted.tick_rate_hz);
   }
 
   void OnLobby(const protocol::LobbyWire& message) {
     Publish([&](ServerView& next) { next.lobby = FromWire(message); });
-    LI("subsystem=clientruntime event=lobby version={} players={}", message.version, message.roster.size());
+    LI("subsystem=harness event=lobby version={} players={}", message.version, message.roster.size());
   }
 
   // A Match start that leaves this client out is not one it can play: dropped,
@@ -153,7 +153,7 @@ struct Session::Impl {
     const std::shared_ptr<const ServerView> current = view.load();
     MatchStart start = FromWire(message);
     if (!current->accepted.has_value() || !IsInMatch(start, current->accepted->session)) {
-      LW_LIMITED(drop_warnings, "subsystem=clientruntime event=dropped reason=\"match start without this client\"");
+      LW_LIMITED(drop_warnings, "subsystem=harness event=dropped reason=\"match start without this client\"");
       return;
     }
     Publish([&](ServerView& next) {
@@ -162,7 +162,7 @@ struct Session::Impl {
       next.in_match = true;
       next.authoritative.reset();
     });
-    LI("subsystem=clientruntime event=match_started players={}", message.players.size());
+    LI("subsystem=harness event=match_started players={}", message.players.size());
   }
 
   void OnMatchEnd() {
@@ -170,12 +170,12 @@ struct Session::Impl {
       next.in_match = false;
       next.authoritative.reset();
     });
-    LI("subsystem=clientruntime event=match_ended");
+    LI("subsystem=harness event=match_ended");
   }
 
-  void OnJoinRefused(const protocol::JoinRefused& refused) {
+  void OnJoinRefused(const protocol::JoinRefusedWire& refused) {
     Publish([&](ServerView& next) { next.refusal = refused.reason; });
-    LI("subsystem=clientruntime event=join_refused reason=\"{}\"", protocol::DescribeJoinRefusal(refused.reason));
+    LI("subsystem=harness event=join_refused reason=\"{}\"", protocol::DescribeJoinRefusal(refused.reason));
   }
 
   // Keeps state if it is newer than the one held (unreliable delivery can
@@ -184,7 +184,7 @@ struct Session::Impl {
   void OnAuthoritativeState(const protocol::AuthoritativeStateWire& state) {
     const std::shared_ptr<const ServerView> current = view.load();
     if (!current->in_match) {
-      LT("subsystem=clientruntime event=dropped tick={} reason=\"state outside a match\"", state.tick);
+      LT("subsystem=harness event=dropped tick={} reason=\"state outside a match\"", state.tick);
       return;
     }
     const auto in_match = [&](const protocol::PlayerStateWire& player) {
@@ -192,7 +192,7 @@ struct Session::Impl {
     };
     if (!std::ranges::all_of(state.players, in_match)) {
       LW_LIMITED(drop_warnings,
-                 "subsystem=clientruntime event=dropped tick={} reason=\"state names a player not in the match\"",
+                 "subsystem=harness event=dropped tick={} reason=\"state names a player not in the match\"",
                  state.tick);
       return;
     }
@@ -252,7 +252,7 @@ struct Session::Impl {
     if (unacknowledged.size() > protocol::kMaxCommandsPerMessage) {
       unacknowledged.pop_front();
     }
-    protocol::Commands message;
+    protocol::CommandsWire message;
     message.commands.assign(unacknowledged.begin(), unacknowledged.end());
     network.Send(protocol::Encode(message), networking::Reliability::kUnreliable);
   }
@@ -293,13 +293,13 @@ void Session::ExchangeMessages() {
   Impl& impl = *impl_;
   if (!impl.sent_join_request && impl.network.GetState() == networking::ConnectionState::kConnected) {
     impl.network.Send(
-        protocol::Encode(protocol::JoinRequest{
+        protocol::Encode(protocol::JoinRequestWire{
             .engine_version = impl.engine_version, .client_pack = impl.client_pack, .character = impl.character}),
         networking::Reliability::kReliable);
     impl.sent_join_request = true;
   }
   for (const networking::Payload& payload : impl.network.ReceiveMessages()) {
-    LT("subsystem=clientruntime event=received bytes={}", payload.size());
+    LT("subsystem=harness event=received bytes={}", payload.size());
     impl.HandleMessage(payload);
   }
 }
@@ -320,7 +320,7 @@ std::optional<Failure> Session::GetFailure() const {
 
 std::optional<networking::ConnectionStats> Session::GetConnectionStats() const { return impl_->network.GetStats(); }
 
-std::optional<protocol::SessionId> Session::GetSessionId() const {
+std::optional<protocol::SessionIdWire> Session::GetSessionId() const {
   const std::shared_ptr<const ServerView> server_view = impl_->view.load();
   if (!server_view->accepted.has_value()) {
     return std::nullopt;
@@ -345,11 +345,11 @@ void Session::ReportReady(std::uint32_t version) {
   if (!server_view->lobby.has_value() || server_view->lobby->version != version) {
     return;
   }
-  impl_->network.Send(protocol::Encode(protocol::Ready{.version = version}), networking::Reliability::kReliable);
-  LD("subsystem=clientruntime event=ready version={}", version);
+  impl_->network.Send(protocol::Encode(protocol::ReadyWire{.version = version}), networking::Reliability::kReliable);
+  LD("subsystem=harness event=ready version={}", version);
 }
 
-std::optional<float> Session::GetTickRate() const {
+std::optional<std::uint8_t> Session::GetTickRate() const {
   const std::shared_ptr<const ServerView> server_view = impl_->view.load();
   if (!server_view->accepted.has_value()) {
     return std::nullopt;
@@ -365,7 +365,7 @@ std::optional<parameters::Parameters> Session::GetParameters() const {
   return server_view->accepted->parameters;
 }
 
-std::optional<protocol::JoinRefusal> Session::GetRefusal() const { return impl_->view.load()->refusal; }
+std::optional<protocol::JoinRefusalWire> Session::GetRefusal() const { return impl_->view.load()->refusal; }
 
 std::optional<AuthoritativeState> Session::GetAuthoritativeState() const { return impl_->view.load()->authoritative; }
 

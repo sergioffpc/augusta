@@ -21,6 +21,8 @@
 #include "augusta/renderer.h"
 #include "scene_loader.h"
 
+// TODO(sergioffpc): Overall devemos remover os includes que nao sao usados.
+
 // augusta::runtime is ClientRuntime (ARCHITECTURE.md §5): the augustac
 // executable's own orchestrator, owning one of every client module and
 // tying them into the three-thread model ADR-0005 mandates - Main/
@@ -58,7 +60,7 @@ struct Config {
   std::string character;
   // The hash of the client pack loaded, which the server checks is the one
   // cooked with its own.
-  protocol::PackHash client_pack{};
+  protocol::PackHashWire client_pack{};
 };
 
 // The map's collision, built by augusta::map from the client pack by the

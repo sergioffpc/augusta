@@ -99,10 +99,10 @@ void AcceptFirstPeer(Server& server, std::optional<PeerId>& peer) {
 // Polls until receive() has yielded at least one message, appending
 // every batch into received as it goes. Also factored out of TestBody
 // to keep its cognitive complexity down.
-template <typename PollBoth, typename ReceiveFn, typename Message>
-bool ReceiveAtLeastOne(PollBoth poll_both, ReceiveFn receive, std::vector<Message>& received) {
+template <typename PollBoth, typename ReceiveFn, typename MessageWire>
+bool ReceiveAtLeastOne(PollBoth poll_both, ReceiveFn receive, std::vector<MessageWire>& received) {
   return PollUntil(poll_both, [&] {
-    std::vector<Message> messages = receive();
+    std::vector<MessageWire> messages = receive();
     received.insert(received.end(), messages.begin(), messages.end());
     return !received.empty();
   });

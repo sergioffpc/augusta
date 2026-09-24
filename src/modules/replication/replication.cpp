@@ -4,12 +4,12 @@
 
 namespace augusta::replication {
 
-simulation::PlayerId PlayerOf(protocol::SessionId session) {
+simulation::PlayerId PlayerOf(protocol::SessionIdWire session) {
   return static_cast<simulation::PlayerId>(static_cast<std::uint32_t>(session));
 }
 
-protocol::SessionId SessionOf(simulation::PlayerId player) {
-  return static_cast<protocol::SessionId>(static_cast<std::uint32_t>(player));
+protocol::SessionIdWire SessionOf(simulation::PlayerId player) {
+  return static_cast<protocol::SessionIdWire>(static_cast<std::uint32_t>(player));
 }
 
 std::vector<Update> PlanUpdates(const simulation::State& state, std::uint32_t tick,

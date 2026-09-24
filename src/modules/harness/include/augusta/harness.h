@@ -36,7 +36,7 @@ namespace augusta::harness {
 
 /// One player's body, under the session the server knows it by.
 struct PlayerBody {
-  protocol::SessionId session{};
+  protocol::SessionIdWire session{};
   physics::BodyState body{};
 };
 
@@ -53,7 +53,7 @@ struct AuthoritativeState {
 
 /// One player in the Lobby.
 struct RosterEntry {
-  protocol::SessionId session{};
+  protocol::SessionIdWire session{};
   /// Its character index: 1-based position in the scenario's character list (ADR-0042).
   std::uint8_t character = 1;
 };
@@ -68,7 +68,7 @@ struct Lobby {
 
 /// One player in a match, and where the server spawned it.
 struct MatchPlayer {
-  protocol::SessionId session{};
+  protocol::SessionIdWire session{};
   std::uint8_t character = 1;
   math::Vec3 spawn{};
 };
@@ -104,7 +104,7 @@ struct Failure {
   /// What ended the session.
   FailureKind kind{};
   /// Why the server refused; only meaningful for kRefused.
-  protocol::JoinRefusal refusal{};
+  protocol::JoinRefusalWire refusal{};
 };
 
 /// A sentence for the player saying what happened and, where the client can
@@ -119,7 +119,7 @@ struct SessionConfig {
   std::string engine_version = std::string(EngineVersion());
   /// The hash of the client pack loaded (assets::Pack::Hash); the server admits
   /// only the one cooked with its own pack.
-  protocol::PackHash client_pack{};
+  protocol::PackHashWire client_pack{};
   /// The character to ask to play, by its path relative to `authoring/` (e.g.
   /// "characters/player"): the server admits only one of its scenario's (ADR-0042).
   std::string character;
@@ -168,7 +168,7 @@ class Session {
 
   /// The session the server assigned once it admitted this client, or nullopt
   /// until then. Set by ExchangeMessages; safe to read from any thread.
-  [[nodiscard]] std::optional<protocol::SessionId> GetSessionId() const;
+  [[nodiscard]] std::optional<protocol::SessionIdWire> GetSessionId() const;
 
   /// Whether this client is waiting to be admitted, in the Lobby, or in a
   /// match. Set by ExchangeMessages; safe to read from any thread.
@@ -194,7 +194,7 @@ class Session {
   /// until the server admits this client. The server's startup setting, fixed for
   /// the life of its process, so it is told once, in Join accepted. This client
   /// has no rate of its own. Set by ExchangeMessages; safe to read from any thread.
-  [[nodiscard]] std::optional<float> GetTickRate() const;
+  [[nodiscard]] std::optional<std::uint8_t> GetTickRate() const;
 
   /// The parameters the server sent when it admitted this client, or nullopt
   /// until it does. What this client predicts with, for the whole run; it has
@@ -203,7 +203,7 @@ class Session {
 
   /// Why the server refused this client, or nullopt if it has not. Set by
   /// ExchangeMessages; safe to read from any thread.
-  [[nodiscard]] std::optional<protocol::JoinRefusal> GetRefusal() const;
+  [[nodiscard]] std::optional<protocol::JoinRefusalWire> GetRefusal() const;
 
   /// The newest Authoritative State of the match in progress, or nullopt until
   /// one arrives and again once the match ends. One that arrives outside a match

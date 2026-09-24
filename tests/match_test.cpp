@@ -18,11 +18,11 @@ namespace {
 
 using augusta::math::Vec3;
 using augusta::networking::PeerId;
-using augusta::protocol::JoinRefusal;
-using augusta::protocol::JoinRequest;
+using augusta::protocol::JoinRefusalWire;
+using augusta::protocol::JoinRequestWire;
 using augusta::protocol::kMaxPlayers;
-using augusta::protocol::PackHash;
-using augusta::protocol::SessionId;
+using augusta::protocol::PackHashWire;
+using augusta::protocol::SessionIdWire;
 using augusta::server::Departure;
 using augusta::server::Match;
 using augusta::server::MatchConfig;
@@ -36,14 +36,14 @@ PeerId Peer(std::uint32_t number) { return static_cast<PeerId>(number); }
 
 // A request to join with version and character, having loaded client_pack: by
 // default the one every match below is cooked with, unless a test says otherwise.
-JoinRequest Request(std::string version, std::string character, const PackHash& client_pack = {}) {
-  return JoinRequest{
+JoinRequestWire Request(std::string version, std::string character, const PackHashWire& client_pack = {}) {
+  return JoinRequestWire{
       .engine_version = std::move(version), .client_pack = client_pack, .character = std::move(character)};
 }
 
 // A client pack other than the one the matches below are cooked with.
-PackHash OtherClientPack() {
-  PackHash hash{};
+PackHashWire OtherClientPack() {
+  PackHashWire hash{};
   hash.back() = std::byte{1};
   return hash;
 }
@@ -93,7 +93,7 @@ TEST(MatchTest, RefusesAnyOtherVersion) {
   Match match(Config());
 
   for (const char* other : {"", "1.2.4", "1.2", "1.2.3 ", "0.1.0"}) {
-    EXPECT_EQ(match.Join(Peer(10), Request(other, kCharacter)).error(), JoinRefusal::kVersionMismatch) << other;
+    EXPECT_EQ(match.Join(Peer(10), Request(other, kCharacter)).error(), JoinRefusalWire::kVersionMismatch) << other;
   }
   EXPECT_EQ(match.PlayerCount(), 0U);
   EXPECT_FALSE(match.SessionOf(Peer(10)).has_value());
@@ -104,7 +104,7 @@ TEST(MatchTest, AdmitsOnlyTheClientPackCookedWithTheServers) {
   config.client_pack = OtherClientPack();
   Match match(config);
 
-  EXPECT_EQ(match.Join(Peer(1), Request(kVersion, kCharacter)).error(), JoinRefusal::kPackMismatch);
+  EXPECT_EQ(match.Join(Peer(1), Request(kVersion, kCharacter)).error(), JoinRefusalWire::kPackMismatch);
   EXPECT_TRUE(match.Join(Peer(2), Request(kVersion, kCharacter, OtherClientPack())).has_value());
   EXPECT_EQ(match.PlayerCount(), 1U);
 }
@@ -113,9 +113,9 @@ TEST(MatchTest, ChecksTheClientPackAfterTheVersionAndBeforeTheCharacter) {
   Match match(Config());
 
   EXPECT_EQ(match.Join(Peer(1), Request("other", kCharacter, OtherClientPack())).error(),
-            JoinRefusal::kVersionMismatch);
+            JoinRefusalWire::kVersionMismatch);
   EXPECT_EQ(match.Join(Peer(2), Request(kVersion, "characters/nobody", OtherClientPack())).error(),
-            JoinRefusal::kPackMismatch);
+            JoinRefusalWire::kPackMismatch);
 }
 
 TEST(MatchTest, SessionIdsAreUniqueAndIndependentOfTheTransportHandle) {
@@ -133,7 +133,7 @@ TEST(MatchTest, AdmitsUpToThePlayerCountAndRefusesTheNextAsLobbyFull) {
   Match match(Config(3));
   JoinPeers(match, 0, 3);
 
-  EXPECT_EQ(match.Join(Peer(3), Request(kVersion, kCharacter)).error(), JoinRefusal::kLobbyFull);
+  EXPECT_EQ(match.Join(Peer(3), Request(kVersion, kCharacter)).error(), JoinRefusalWire::kLobbyFull);
   EXPECT_EQ(match.PlayerCount(), 3U);
 }
 
@@ -149,7 +149,7 @@ TEST(MatchTest, RefusesACharacterTheScenarioDoesNotOffer) {
   Match match(Config());
 
   for (const char* other : {"", "characters/sniper", "characters/player/", "Characters/Player"}) {
-    EXPECT_EQ(match.Join(Peer(10), Request(kVersion, other)).error(), JoinRefusal::kUnknownCharacter) << other;
+    EXPECT_EQ(match.Join(Peer(10), Request(kVersion, other)).error(), JoinRefusalWire::kUnknownCharacter) << other;
   }
   EXPECT_EQ(match.PlayerCount(), 0U);
 }
@@ -157,27 +157,27 @@ TEST(MatchTest, RefusesACharacterTheScenarioDoesNotOffer) {
 TEST(MatchTest, AScenarioWithNoCharactersAdmitsNoOne) {
   Match match(MatchConfig{.engine_version = kVersion, .characters = {}});
 
-  EXPECT_EQ(match.Join(Peer(1), Request(kVersion, kCharacter)).error(), JoinRefusal::kUnknownCharacter);
+  EXPECT_EQ(match.Join(Peer(1), Request(kVersion, kCharacter)).error(), JoinRefusalWire::kUnknownCharacter);
 }
 
 TEST(MatchTest, AVersionMismatchOutranksAnUnknownCharacter) {
   Match match(Config());
 
-  EXPECT_EQ(match.Join(Peer(1), Request("other", "characters/nobody")).error(), JoinRefusal::kVersionMismatch);
+  EXPECT_EQ(match.Join(Peer(1), Request("other", "characters/nobody")).error(), JoinRefusalWire::kVersionMismatch);
 }
 
 TEST(MatchTest, AnUnknownCharacterOutranksAFullLobby) {
   Match match(Config(1));
   JoinPeers(match, 1, 1);
 
-  EXPECT_EQ(match.Join(Peer(2), Request(kVersion, "characters/nobody")).error(), JoinRefusal::kUnknownCharacter);
+  EXPECT_EQ(match.Join(Peer(2), Request(kVersion, "characters/nobody")).error(), JoinRefusalWire::kUnknownCharacter);
 }
 
 TEST(MatchTest, AVersionMismatchIsReportedEvenWhenTheLobbyIsFull) {
   Match match(Config(1));
   JoinPeers(match, 1, 1);
 
-  EXPECT_EQ(match.Join(Peer(2), Request("other", kCharacter)).error(), JoinRefusal::kVersionMismatch);
+  EXPECT_EQ(match.Join(Peer(2), Request("other", kCharacter)).error(), JoinRefusalWire::kVersionMismatch);
 }
 
 TEST(MatchTest, AJoinDuringAMatchIsRefusedAsMatchInProgress) {
@@ -185,7 +185,7 @@ TEST(MatchTest, AJoinDuringAMatchIsRefusedAsMatchInProgress) {
   JoinPeers(match, 1, 2);
   ASSERT_TRUE(ReadyAndStart(match).has_value());
 
-  EXPECT_EQ(match.Join(Peer(3), Request(kVersion, kCharacter)).error(), JoinRefusal::kMatchInProgress);
+  EXPECT_EQ(match.Join(Peer(3), Request(kVersion, kCharacter)).error(), JoinRefusalWire::kMatchInProgress);
 }
 
 // Joining later is no use to a client that can never play here.
@@ -194,8 +194,8 @@ TEST(MatchTest, AVersionOrCharacterOutranksAMatchInProgress) {
   JoinPeers(match, 1, 1);
   ASSERT_TRUE(ReadyAndStart(match).has_value());
 
-  EXPECT_EQ(match.Join(Peer(2), Request("other", kCharacter)).error(), JoinRefusal::kVersionMismatch);
-  EXPECT_EQ(match.Join(Peer(3), Request(kVersion, "characters/nobody")).error(), JoinRefusal::kUnknownCharacter);
+  EXPECT_EQ(match.Join(Peer(2), Request("other", kCharacter)).error(), JoinRefusalWire::kVersionMismatch);
+  EXPECT_EQ(match.Join(Peer(3), Request(kVersion, "characters/nobody")).error(), JoinRefusalWire::kUnknownCharacter);
 }
 
 // A match in progress holds the Player count, so it is full as well: the
@@ -205,7 +205,7 @@ TEST(MatchTest, AMatchInProgressOutranksAFullLobby) {
   JoinPeers(match, 1, 1);
   ASSERT_TRUE(ReadyAndStart(match).has_value());
 
-  EXPECT_EQ(match.Join(Peer(2), Request(kVersion, kCharacter)).error(), JoinRefusal::kMatchInProgress);
+  EXPECT_EQ(match.Join(Peer(2), Request(kVersion, kCharacter)).error(), JoinRefusalWire::kMatchInProgress);
 }
 
 TEST(MatchTest, LeavingFreesTheSlotAndNeverReusesTheSessionId) {
@@ -306,7 +306,7 @@ TEST(MatchTest, AMatchStartsOnceTheLobbyHoldsThePlayerCount) {
   ASSERT_EQ(start->players.size(), 2U);
   EXPECT_EQ(start->players[0].session, *match.SessionOf(Peer(1)));
   EXPECT_EQ(start->players[1].session, *match.SessionOf(Peer(2)));
-  EXPECT_EQ(match.Playing(), (std::vector<SessionId>{*match.SessionOf(Peer(1)), *match.SessionOf(Peer(2))}));
+  EXPECT_EQ(match.Playing(), (std::vector<SessionIdWire>{*match.SessionOf(Peer(1)), *match.SessionOf(Peer(2))}));
 }
 
 TEST(MatchTest, AMatchInProgressDoesNotStartAgain) {
@@ -393,7 +393,7 @@ TEST(MatchTest, APlayerWhoLeavesAMatchIsNoLongerInIt) {
   Match match(Config(2));
   JoinPeers(match, 1, 2);
   ASSERT_TRUE(ReadyAndStart(match).has_value());
-  const SessionId leaver = *match.SessionOf(Peer(1));
+  const SessionIdWire leaver = *match.SessionOf(Peer(1));
 
   EXPECT_EQ(match.Leave(Peer(1)), Departure::kFromMatch);
 
@@ -487,7 +487,7 @@ TEST(MatchTest, EndingAMatchReturnsItsPlayersToTheLobbyUnderANewRoster) {
 
   const auto ended = match.End();
 
-  EXPECT_EQ(ended, (std::vector<SessionId>{*match.SessionOf(Peer(1)), *match.SessionOf(Peer(2))}));
+  EXPECT_EQ(ended, (std::vector<SessionIdWire>{*match.SessionOf(Peer(1)), *match.SessionOf(Peer(2))}));
   EXPECT_FALSE(match.InMatch());
   EXPECT_TRUE(match.Playing().empty());
   const auto roster = match.GetRoster();

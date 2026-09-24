@@ -481,7 +481,7 @@ TEST(ExampleConfigTest, TheExampleServerConfigLoads) {
   const auto config = LoadServerConfig(AUGUSTA_EXAMPLE_SERVER_CONFIG);
 
   ASSERT_TRUE(config.has_value()) << DescribeConfigError(config.error());
-  EXPECT_FLOAT_EQ(config->tick_rate_hz, 60.0F);
+  EXPECT_EQ(config->tick_rate_hz, 60);
 }
 
 TEST(ParseClientConfigTest, ReadsTheChosenCharacter) {
@@ -520,7 +520,7 @@ TEST(ParseServerConfigTest, ReadsEveryKey) {
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->pack_path, kRoot / "packs" / "level.server.pack");
   EXPECT_EQ(config->public_key_path, kRoot / "keys" / "augusta.pub");
-  EXPECT_FLOAT_EQ(config->tick_rate_hz, 30.0F);
+  EXPECT_EQ(config->tick_rate_hz, 30);
   EXPECT_EQ(config->listen_address, "0.0.0.0:27016");
 }
 
@@ -570,19 +570,19 @@ TEST(ParseServerConfigTest, RejectsAMissingTickRate) {
   EXPECT_EQ(config.error().subject, "simulation.tick_rate_hz");
 }
 
-TEST(ParseServerConfigTest, AcceptsAnyFiniteTickRateAboveZero) {
-  for (const char* rate : {"60", "30", "59.94", "240", "0.5", "1e2"}) {
+TEST(ParseServerConfigTest, AcceptsIntegerTickRatesFromOneTo255) {
+  for (const char* rate : {"1", "30", "60", "240", "255"}) {
     const auto config = ParseServerConfig(
         std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: " + std::string(rate) + "\n",
         kFileDir);
 
     ASSERT_TRUE(config.has_value()) << rate;
-    EXPECT_FLOAT_EQ(config->tick_rate_hz, std::stof(rate)) << rate;
+    EXPECT_EQ(config->tick_rate_hz, std::stoi(rate)) << rate;
   }
 }
 
-TEST(ParseServerConfigTest, RejectsATickRateThatIsNotAFiniteNumberAboveZero) {
-  for (const char* rate : {"0", "-60", "abc", "60hz", "6 0", ".inf", "-.inf", ".nan", "1e999", "0x10"}) {
+TEST(ParseServerConfigTest, RejectsATickRateThatIsNotAnIntegerFromOneTo255) {
+  for (const char* rate : {"0", "-60", "256", "59.94", "0.5", "1e2", "abc", "60hz", "6 0", ".inf", ".nan", "0x10"}) {
     const auto config = ParseServerConfig(
         std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: '" + std::string(rate) + "'\n",
         kFileDir);
@@ -708,7 +708,7 @@ TEST(DescribeConfigErrorTest, SaysWhatANumberMustBe) {
   const auto message =
       DescribeConfigError({.code = ConfigErrorCode::kInvalidNumber, .subject = "tick_rate_hz", .file = {}});
 
-  EXPECT_EQ(message, "'tick_rate_hz' must be a finite number above zero");
+  EXPECT_EQ(message, "'tick_rate_hz' must be an integer from 1 to 255");
 }
 
 TEST(DescribeConfigErrorTest, SaysWhatALogLevelMustBe) {

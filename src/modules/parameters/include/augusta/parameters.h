@@ -40,10 +40,8 @@ struct InvalidParameter {
 /// gives and a client what its server sends, with these same rules.
 [[nodiscard]] std::expected<void, InvalidParameter> Validate(const Parameters& parameters);
 
-/// Whether tick_rate_hz is a rate the simulation can run at: finite and above
-/// zero. Any such rate is accepted, since NFR-01's 60 Hz is what the server must
-/// sustain and not a floor on the value, so a run may go slower to be debugged.
-[[nodiscard]] bool IsValidTickRate(float tick_rate_hz);
+/// Whether tick_rate_hz is a rate the simulation can run at: 1..255 Hz.
+[[nodiscard]] bool IsValidTickRate(std::uint8_t tick_rate_hz);
 
 }  // namespace augusta::parameters
 
