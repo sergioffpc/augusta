@@ -1,13 +1,16 @@
 #include "decoder.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/math.h"
 #include "wire_format.h"
 
 // The Decode* half of augusta_assets' blob (de)serialization (ADR-0031/

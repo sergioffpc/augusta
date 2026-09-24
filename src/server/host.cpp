@@ -2,10 +2,10 @@
 
 #include <chrono>
 #include <cmath>
-#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <format>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
@@ -17,8 +17,11 @@
 #include <vector>
 
 #include "augusta/logging.h"
+#include "augusta/networking.h"
+#include "augusta/physics.h"
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
+#include "augusta/simulation.h"
 #include "augusta/version.h"
 #include "command_queue.h"
 #include "match.h"

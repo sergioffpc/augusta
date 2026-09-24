@@ -17,7 +17,12 @@
 #include <vector>
 
 #include "augusta/harness_wire.h"
+#include "augusta/input.h"
 #include "augusta/logging.h"
+#include "augusta/math.h"
+#include "augusta/networking.h"
+#include "augusta/parameters.h"
+#include "augusta/prediction.h"
 #include "augusta/protocol.h"
 
 namespace augusta::harness {

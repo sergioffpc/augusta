@@ -9,6 +9,9 @@
 #include <optional>
 #include <string_view>
 
+#include "augusta/math.h"
+#include "augusta/physics.h"
+
 namespace augusta::input {
 
 namespace {

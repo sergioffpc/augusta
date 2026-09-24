@@ -1,5 +1,10 @@
 #include "augusta/reconciliation.h"
 
+#include <cstdint>
+#include <optional>
+
+#include "augusta/physics.h"
+
 namespace augusta::prediction {
 
 void History::Record(std::uint32_t sequence, const physics::MovementInput& command, const Predicted& predicted) {

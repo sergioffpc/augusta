@@ -5,8 +5,13 @@
 #include <charconv>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <expected>
+#include <filesystem>
 #include <format>
 #include <fstream>
+#include <functional>
+#include <ios>
 #include <limits>
 #include <map>
 #include <optional>
@@ -15,6 +20,8 @@
 #include <span>
 #include <sstream>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <utility>
 
 #include <boost/dll/runtime_symbol_info.hpp>

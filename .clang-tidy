@@ -8,12 +8,20 @@ Checks: >
   google-*,
   readability-*,
   modernize-*,
+  misc-include-cleaner,
   -modernize-use-trailing-return-type,
   -clang-analyzer-core.StackAddressEscape,
   -readability-convert-member-functions-to-static,
   -readability-identifier-length,
   -modernize-use-scoped-lock
 
+# misc-include-cleaner enforces ADR-0037's "include what you use": every
+# symbol a file names comes from a header it includes itself, and no include
+# goes unused. It leaves third-party headers alone (IgnoreHeaders, below):
+# those libraries are meant to be used through their umbrella headers
+# (<boost/log/core.hpp>, <yaml-cpp/yaml.h>, <PxPhysicsAPI.h>, <flecs.h>),
+# not the internal ones the check would otherwise ask for.
+#
 # Trailing return type is a stylistic alternative the guide doesn't mandate
 # either way, so it's the one thing above we don't turn into a hard rule.
 #
@@ -89,3 +97,4 @@ CheckOptions:
   # which UPPER_CASE alone refuses.
   - { key: readability-identifier-naming.MacroDefinitionIgnoredRegexp, value: '^AUGUSTA_[A-Z0-9_]+_H_$' }
   - { key: readability-function-size.LineThreshold,               value: 60         }
+  - { key: misc-include-cleaner.IgnoreHeaders, value: 'boost/.*;yaml-cpp/.*;glm/.*;spdlog/.*;fmt/.*;flecs.*;Px.*;foundation/.*;extensions/.*;characterkinematic/.*;steam/.*;sol/.*;lua.*;lauxlib.h;lualib.h;blake3.h;sodium.*;nvtx3/.*;gtest/.*;gmock/.*;benchmark/.*;Falcor.*;Core/.*;Utils/.*;RenderGraph/.*' }

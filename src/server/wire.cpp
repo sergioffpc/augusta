@@ -3,8 +3,17 @@
 #include <algorithm>
 #include <cstdint>
 #include <utility>
+#include <vector>
 
+#include "augusta/assets.h"
+#include "augusta/input.h"
+#include "augusta/parameters.h"
+#include "augusta/physics.h"
+#include "augusta/protocol.h"
+#include "augusta/replication.h"
+#include "command_queue.h"
 #include "host.h"
+#include "match.h"
 
 namespace augusta::server {
 

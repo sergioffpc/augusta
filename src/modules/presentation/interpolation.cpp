@@ -1,6 +1,13 @@
 #include "augusta/interpolation.h"
 
 #include <algorithm>
+#include <optional>
+#include <span>
+#include <vector>
+
+#include "augusta/harness.h"
+#include "augusta/math.h"
+#include "augusta/physics.h"
 
 namespace augusta::presentation {
 

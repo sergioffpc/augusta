@@ -1,5 +1,6 @@
 #include "encoder.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <span>
@@ -7,6 +8,7 @@
 #include <string_view>
 #include <vector>
 
+#include "augusta/assets.h"
 #include "wire_format.h"
 
 // The Encode* half of augusta_assets' blob (de)serialization (ADR-0031/

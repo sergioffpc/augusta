@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include "augusta/math.h"
+
 namespace augusta::presentation {
 
 math::Vec3 Correction::Update(const math::Vec3& total_correction, float delta_time) {

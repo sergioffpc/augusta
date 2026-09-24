@@ -1,5 +1,7 @@
 #include "augusta/scripting.h"
 
+#include <string>
+
 namespace augusta::scripting {
 
 // TODO(sergioffpc): every method below is a placeholder - neither Lua
