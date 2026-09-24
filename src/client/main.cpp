@@ -176,6 +176,7 @@ int main(int argc, char** argv) {
   config.server.address = file_config->server_address;
   config.input = file_config->input;
   config.character = file_config->character;
+  config.client_pack = pack->Hash();
 
   augusta::runtime::ClientRuntime runtime(config, *std::move(map), *scene, *std::move(load_character_mesh));
   if (const auto failure = runtime.Run(); failure.has_value()) {

@@ -17,6 +17,7 @@
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/presentation.h"
+#include "augusta/protocol.h"
 #include "augusta/renderer.h"
 #include "scene_loader.h"
 
@@ -55,6 +56,9 @@ struct Config {
   networking::Endpoint server;
   // The character to ask to play, by its path relative to `authoring/` (ADR-0042).
   std::string character;
+  // The hash of the client pack loaded, which the server checks is the one
+  // cooked with its own.
+  protocol::PackHash client_pack{};
 };
 
 // The map's collision, built by augusta::map from the client pack by the

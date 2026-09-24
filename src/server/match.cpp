@@ -8,6 +8,7 @@ namespace augusta::server {
 
 Match::Match(MatchConfig config, std::vector<math::Vec3> spawn_points)
     : engine_version_(std::move(config.engine_version)),
+      client_pack_(config.client_pack),
       characters_(std::move(config.characters)),
       player_count_(config.player_count),
       pause_ticks_(config.pause_ticks),
@@ -18,17 +19,21 @@ Match::Match(MatchConfig config, std::vector<math::Vec3> spawn_points)
   }
 }
 
-std::expected<Admission, protocol::JoinRefusal> Match::Join(networking::PeerId peer, std::string_view engine_version,
-                                                            std::string_view character) {
+std::expected<Admission, protocol::JoinRefusal> Match::Join(networking::PeerId peer,
+                                                            const protocol::JoinRequest& request) {
   if (const auto existing = members_.find(peer); existing != members_.end()) {
     return Admission{.session = existing->second.session, .character = existing->second.character};
   }
   // A client that can never play here should hear that before it hears "wait":
-  // the version, then the character, then whether it could join later.
-  if (engine_version != engine_version_) {
+  // the version, then the pack its characters come from, then the character,
+  // then whether it could join later.
+  if (request.engine_version != engine_version_) {
     return std::unexpected(protocol::JoinRefusal::kVersionMismatch);
   }
-  const auto found = std::ranges::find(characters_, character);
+  if (request.client_pack != client_pack_) {
+    return std::unexpected(protocol::JoinRefusal::kPackMismatch);
+  }
+  const auto found = std::ranges::find(characters_, request.character);
   if (found == characters_.end()) {
     return std::unexpected(protocol::JoinRefusal::kUnknownCharacter);
   }

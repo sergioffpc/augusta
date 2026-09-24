@@ -59,10 +59,16 @@ ASSET_TYPE_HITBOX = 5
 ASSET_TYPE_SCENE = 6
 ASSET_TYPE_SCRIPT = 7
 ASSET_TYPE_CHARACTERS = 8
+ASSET_TYPE_CLIENT_PACK = 9
 
 # Pack-relative path of a scenario's character list (assets.h's
 # kCharactersPath), in both of its packs.
 CHARACTERS_PATH = "Characters"
+
+# Pack-relative path, in a scenario's server pack, of the hash of the client
+# pack cooked with it (assets.h's kClientPackPath). The blob is the hash's
+# BLAKE3_HASH_SIZE bytes and nothing else.
+CLIENT_PACK_PATH = "ClientPack"
 
 # TextureFormat (assets.h `enum class TextureFormat : uint8_t`).
 TEXTURE_FORMAT_BC7 = 0
@@ -230,12 +236,14 @@ def _validate_entries(entries: list[AssetEntry]) -> None:
         raise WriteError("duplicate entry path")
 
 
-def write_pack(output_path: Path, entries: list[AssetEntry], signing_key: bytes) -> None:
+def write_pack(output_path: Path, entries: list[AssetEntry], signing_key: bytes) -> bytes:
     """Writes entries into a new pack file at output_path, in ADR-0031's
     header/data/index/trailer order, signing the trailer with signing_key
     (the raw 64-byte Ed25519 secret key, libsodium's own seed+pubkey
     layout - e.g. from keys.py's generate_keypair). Atomic: assembled into
     a temporary file first, renamed into place only once fully written.
+
+    Returns the pack's BLAKE3 hash, the one its trailer signs.
     """
     _validate_entries(entries)
     if len(signing_key) != 64:
@@ -288,3 +296,4 @@ def write_pack(output_path: Path, entries: list[AssetEntry], signing_key: bytes)
         f.write(pack_hash)
         f.write(signature)
     tmp_path.replace(output_path)
+    return pack_hash

@@ -76,9 +76,9 @@ supersedes is unreliable.
 
 | Message | Direction | Reliability | Fields |
 | --- | --- | --- | --- |
-| Join request | client → server | reliable | engine version |
+| Join request | client → server | reliable | engine version, client pack hash |
 | Join accepted | server → client | reliable | session ID, the player's spawn position, the server's tick rate, the parameters to predict with, and the roster: every player already in the match (at most 8) with session ID and body |
-| Join refused | server → client | reliable | reason: version mismatch, match full |
+| Join refused | server → client | reliable | reason: version mismatch, match full, pack mismatch |
 | Commands | client → server | unreliable | up to 8 commands, oldest first: sequence, movement direction, yaw, pitch, and one byte holding the sprint, ADS, fire and reload flags (bits 0-3) and the desired stance (bits 4-5) |
 | Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, and per player (at most 8): session ID, position, velocity, stance, stamina |
 
@@ -107,10 +107,16 @@ and it is made loss-tolerant without retransmission:
 
 **Joining.** A connection is accepted at the transport unconditionally, because a
 refusal is itself a message and needs a connection to travel on. The client's
-first message is a Join request carrying its engine version; the server admits it
-only on an exact match with its own and while the match holds fewer than 8
-players, checking the version first so a client that can never play here is not
-told "full". After a refusal the client closes the connection.
+first message is a Join request carrying its engine version and the hash of the
+client pack it loaded (the 32-byte BLAKE3 hash its trailer signs, ADR-0031); the
+server admits it only on an exact match of the version with its own, of the hash
+with the one its server pack carries for the client pack cooked with it, and
+while the match holds fewer than 8 players. Both packs being signed by the same
+key proves only that each is genuine, not that they are the same cook: a client
+on another cook could hold different collision or characters and mispredict every
+tick. The version is checked first and the pack second, so a client that can
+never play here is not told "full", and one on the wrong pack is not told its
+character is unknown. After a refusal the client closes the connection.
 
 **What a join carries.** Join accepted tells the client everything it must know
 before its first tick, so nothing is learned by guessing. The **spawn position**

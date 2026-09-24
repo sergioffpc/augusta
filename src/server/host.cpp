@@ -104,6 +104,7 @@ struct Host::Impl {
         parameters(config.parameters),
         network(config.listen),
         match(MatchConfig{.engine_version = std::string(EngineVersion()),
+                          .client_pack = map.client_pack,
                           .characters = std::move(map.characters),
                           .player_count = config.parameters.player_count,
                           .pause_ticks = PauseTicks(config.tick_rate_hz)},
@@ -133,7 +134,7 @@ struct Host::Impl {
   }
 
   void HandleJoinRequest(networking::PeerId peer, const protocol::JoinRequest& request) {
-    const auto admission = match.Join(peer, request.engine_version, request.character);
+    const auto admission = match.Join(peer, request);
     if (!admission.has_value()) {
       LI("subsystem=serverruntime event=join_refused peer={} reason=\"{}\"", PeerNumber(peer),
          protocol::DescribeJoinRefusal(admission.error()));

@@ -44,6 +44,7 @@ enum class AssetType : std::uint8_t {
   kScene,
   kScript,
   kCharacters,
+  kClientPack,
 };
 
 // True if value is one of AssetType's defined enumerators - an index
@@ -140,6 +141,16 @@ inline constexpr std::string_view kParametersScriptPath = "parameters.lua";
 /// Pack-relative path of a scenario's character list (ADR-0042), in both of its
 /// packs.
 inline constexpr std::string_view kCharactersPath = "Characters";
+
+/// Pack-relative path, in a scenario's server pack, of the hash of the client
+/// pack cooked with it.
+inline constexpr std::string_view kClientPackPath = "ClientPack";
+
+/// The size of a pack's BLAKE3 hash, in bytes.
+inline constexpr std::size_t kPackHashSize = 32;
+
+/// A pack's BLAKE3 hash, the one its trailer signs (ADR-0031): names one cook of it.
+using PackHash = std::array<std::byte, kPackHashSize>;
 
 /// Most characters a scenario can compose: a character index is one byte and
 /// zero is never valid (ADR-0042).
@@ -310,6 +321,14 @@ class Pack {
   /// path relative to `authoring/`, in manifest order, so character index N is
   /// element N-1 (ADR-0042). Present in both client and server packs.
   [[nodiscard]] std::expected<std::vector<std::string>, ResolveError> ResolveCharacters() const;
+
+  /// Resolves, at kClientPackPath, the Hash() of the client pack cooked with
+  /// this one. Present in the server pack only: the server admits only clients
+  /// that loaded that pack.
+  [[nodiscard]] std::expected<PackHash, ResolveError> ResolveClientPackHash() const;
+
+  /// This pack's hash, as its trailer holds it and Load verified it.
+  [[nodiscard]] const PackHash& Hash() const;
 
  private:
   Pack();

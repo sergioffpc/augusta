@@ -7,7 +7,6 @@
 #include <expected>
 #include <optional>
 #include <string>
-#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -82,6 +81,9 @@ enum class Departure : std::uint8_t {
 struct MatchConfig {
   /// Only clients whose engine version is this are admitted.
   std::string engine_version;
+  /// Only clients that loaded the client pack of this hash are admitted: the
+  /// one cooked with the server's pack.
+  protocol::PackHash client_pack{};
   /// The characters a client may ask to play: the scenario's, by path, in the
   /// order that gives each its index (ADR-0042).
   std::vector<std::string> characters;
@@ -98,13 +100,12 @@ class Match {
   /// starting over after the last (at the origin if there are none).
   explicit Match(MatchConfig config, std::vector<math::Vec3> spawn_points = {});
 
-  /// Admits peer to the Lobby to play character, or says why not: its version
-  /// first, then its character, then whether a match is in progress, then
-  /// whether the Lobby is full. A peer that has already joined gets the
-  /// admission it already has.
+  /// Admits peer to the Lobby as request asks, or says why not: its version
+  /// first, then its pack, then its character, then whether a match is in
+  /// progress, then whether the Lobby is full. A peer that has already joined
+  /// gets the admission it already has.
   [[nodiscard]] std::expected<Admission, protocol::JoinRefusal> Join(networking::PeerId peer,
-                                                                     std::string_view engine_version,
-                                                                     std::string_view character);
+                                                                     const protocol::JoinRequest& request);
 
   /// Removes peer from the Lobby or the match it is in, and says which. A
   /// departure from the Lobby leaves whoever was Ready still Ready.
@@ -163,6 +164,7 @@ class Match {
   [[nodiscard]] std::vector<Member> MembersBySession() const;
 
   std::string engine_version_;
+  protocol::PackHash client_pack_;
   std::vector<std::string> characters_;
   std::size_t player_count_;
   std::uint32_t pause_ticks_;

@@ -63,6 +63,7 @@ struct ServerView {
 struct Session::Impl {
   networking::Endpoint server;
   std::string engine_version;
+  protocol::PackHash client_pack;
   std::string character;
   networking::Client network;
   prediction::World prediction;
@@ -92,6 +93,7 @@ struct Session::Impl {
   Impl(const SessionConfig& config, prediction::World world)
       : server(config.server),
         engine_version(config.engine_version),
+        client_pack(config.client_pack),
         character(config.character),
         prediction(std::move(world)) {}
 
@@ -291,7 +293,8 @@ void Session::ExchangeMessages() {
   Impl& impl = *impl_;
   if (!impl.sent_join_request && impl.network.GetState() == networking::ConnectionState::kConnected) {
     impl.network.Send(
-        protocol::Encode(protocol::JoinRequest{.engine_version = impl.engine_version, .character = impl.character}),
+        protocol::Encode(protocol::JoinRequest{
+            .engine_version = impl.engine_version, .client_pack = impl.client_pack, .character = impl.character}),
         networking::Reliability::kReliable);
     impl.sent_join_request = true;
   }
