@@ -16,8 +16,8 @@
 #include <variant>
 #include <vector>
 
+#include "augusta/command.h"
 #include "augusta/harness_wire.h"
-#include "augusta/input.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
@@ -227,7 +227,7 @@ struct Session::Impl {
   }
 
   // Sends command under sequence with the commands server_view does not yet acknowledge.
-  void SendCommand(const ServerView& server_view, std::uint32_t sequence, const input::Command& command) {
+  void SendCommand(const ServerView& server_view, std::uint32_t sequence, const command::Command& command) {
     // Commands the server has already processed need not go again.
     if (server_view.authoritative.has_value()) {
       while (!unacknowledged.empty() &&
@@ -369,7 +369,7 @@ std::optional<JoinRefusal> Session::GetRefusal() const { return impl_->view.load
 
 std::optional<AuthoritativeState> Session::GetAuthoritativeState() const { return impl_->view.load()->authoritative; }
 
-prediction::State Session::Tick(const input::Command& command, float delta_time) {
+prediction::State Session::Tick(const command::Command& command, float delta_time) {
   Impl& impl = *impl_;
   // One view for the whole tick, so the sequence, the reconciliation and the
   // commands sent all agree on what the server had said.

@@ -7,13 +7,13 @@
 #include <optional>
 #include <string_view>
 
+#include "augusta/command.h"
 #include "augusta/math.h"
-#include "augusta/physics.h"
 
-// augusta::input owns the vocabulary of player input, from raw device
-// events up to one tick's worth of intent, and turns the former into the
-// latter (ARCHITECTURE.md §7's "Input handling - reads device input,
-// hands commands to PredictionWorld").
+// augusta::input owns the client's device-facing vocabulary of player input,
+// from raw device events up to the keymap, and samples it into one tick's
+// worth of intent, a command::Command (ARCHITECTURE.md §7's "Input handling -
+// reads device input, hands commands to PredictionWorld").
 //
 // The raw device-event shapes (KeyEvent, MouseMoveEvent)
 // and the EventSink that receives them live here rather than in
@@ -31,13 +31,9 @@
 // until the Simulation thread - a different thread, a different fixed
 // tick rate (ADR-0005) - samples it.
 //
-// Command is deliberately also usable without a live Input instance: the
-// server links no Falcor/GLFW code and never constructs augusta::input::
-// Input, but still needs the same struct's layout to deserialize what a
-// client sent, before Input Validation (US-15) checks it and
-// SimulationWorld's own CommandIngestion phase consumes it - see
-// ARCHITECTURE.md's Shared Core / Networking Protocol. Until augusta::
-// networking's own interface is designed, this is Command's home too.
+// The Command it samples lives in the shared core (augusta::command), not
+// here: the server screens, queues and simulates Commands but never samples
+// a device, so it does not link this module.
 namespace augusta::input {
 
 /// A physical key or mouse button: what a keymap binds a Control to, named in
@@ -217,43 +213,14 @@ struct Config {
 /// short of straight up/down.
 inline constexpr float kMaxLookPitch = 1.55F;
 
-/// The rotation of a view with this yaw and pitch (see Command): yaw about +Y,
-/// then pitch about the view's own +X. Applied to -Z, it gives where the view
-/// looks.
+/// The rotation of a view with this yaw and pitch (see command::Command): yaw
+/// about +Y, then pitch about the view's own +X. Applied to -Z, it gives where
+/// the view looks.
 [[nodiscard]] math::Quat ViewRotation(float yaw, float pitch);
 
-// One tick's worth of player intent. Built by Input::Sample on the
-// client; deserialized off the wire on the server (see above).
-struct Command {
-  // Movement direction, sprint, and desired stance for this tick -
-  // passed straight through to physics::World::Step's MovementInput.
-  physics::MovementInput movement;
-  // View orientation for this tick, in radians, accumulated from mouse
-  // movement. Yaw 0 looks down -Z, the renderer camera's forward, and a
-  // positive yaw turns left (counter-clockwise seen from above, right-handed
-  // about +Y); Input keeps it within one turn. A positive pitch looks up;
-  // Input clamps it to kMaxLookPitch either way, short of straight up/down
-  // (no gimbal flip). ViewRotation turns the pair into a rotation. Determines
-  // aim direction for WeaponHandling (bullet origin/direction, US-07) as well
-  // as view for Camera (US-06).
-  float yaw = 0.0F;
-  float pitch = 0.0F;
-  // True while the aim-down-sights control is held (US-06). Hip-fire is
-  // the default (false).
-  bool ads = false;
-  // True while the fire control is held (US-07). WeaponHandling, not
-  // Input, turns a held fire control into discrete shots at the
-  // weapon's fire rate - Input only reports raw intent.
-  bool fire = false;
-  // True on exactly the one tick the reload control was pressed
-  // (US-08) - a rising edge, not a held state, regardless of how long
-  // the control is actually held.
-  bool reload = false;
-};
-
 // Accumulates device state pushed via EventSink and samples it into a
-// Command once per Simulation tick. The client constructs exactly one,
-// alongside the one Renderer, and wires the two together (Renderer
+// command::Command once per Simulation tick. The client constructs exactly
+// one, alongside the one Renderer, and wires the two together (Renderer
 // needs this as its EventSink; this needs nothing from Renderer in
 // return - the coupling is one-directional).
 class Input : public EventSink {
@@ -269,7 +236,7 @@ class Input : public EventSink {
   // tick, from the Simulation thread (ARCHITECTURE.md §8) - safe to call
   // concurrently with the OnXxx methods below, which arrive from
   // Renderer::PumpEvents on the Main/Render thread.
-  [[nodiscard]] Command Sample();
+  [[nodiscard]] command::Command Sample();
 
   // Whether the cursor should be captured for mouselook: true at first, false
   // once kReleaseCursorKey is pressed, and true again on the next click of any

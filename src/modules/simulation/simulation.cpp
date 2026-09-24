@@ -12,7 +12,7 @@
 #include <flecs.h>
 
 #include "augusta/ballistics.h"
-#include "augusta/input.h"
+#include "augusta/command.h"
 #include "augusta/physics.h"
 #include "augusta/scripting.h"
 
@@ -69,7 +69,7 @@ struct World::Impl {
   PhaseEntities phases;
   std::unordered_map<PlayerId, Slot> players;
   // Set by Tick for CommandIngestion to read, and filled by Commit for Tick to return.
-  std::unordered_map<PlayerId, input::Command> tick_commands;
+  std::unordered_map<PlayerId, command::Command> tick_commands;
   State committed;
 
   Impl(const physics::StaminaConfig& stamina_config, const std::string& script_path)

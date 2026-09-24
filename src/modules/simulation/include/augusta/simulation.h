@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "augusta/ballistics.h"
-#include "augusta/input.h"
+#include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/scripting.h"
@@ -47,7 +47,7 @@ namespace augusta::simulation {
 // round transitions) for the next tick.
 enum class Phase {
   // Mechanism. Applies this tick's already-validated client commands
-  // (augusta::input::Command; Input Validation - US-15 - is a boundary
+  // (augusta::command::Command; Input Validation - US-15 - is a boundary
   // component outside this World, per ARCHITECTURE.md §8, and has
   // already run by the time World::Tick sees them) to their entities.
   kCommandIngestion,
@@ -97,7 +97,7 @@ enum class PlayerId : std::uint32_t {};
 /// One player's validated command for one tick.
 struct PlayerCommand {
   PlayerId player{};
-  input::Command command{};
+  command::Command command{};
 };
 
 /// One player's body as of the end of a tick.

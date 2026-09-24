@@ -6,7 +6,7 @@
 #include <memory>
 #include <optional>
 
-#include "augusta/input.h"
+#include "augusta/command.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 
@@ -22,7 +22,7 @@
 // Unlike SimulationWorld, PredictionWorld only ever predicts the local
 // player - never a bullet's trajectory or outcome (ADR-0024: Ballistics/
 // HitDetection/Damage stay exclusively server-side) - so World::Tick
-// takes a single input::Command, not a per-player list the way
+// takes a single command::Command, not a per-player list the way
 // augusta::simulation::World::Tick does.
 //
 // Like augusta::simulation, World owns one Flecs world (ADR-0001)
@@ -45,7 +45,7 @@ namespace augusta::prediction {
 // never a bullet's outcome or game policy.
 enum class Phase {
   // Mechanism. Applies this tick's local input command
-  // (augusta::input::Command, from Input::Sample) to the local player's
+  // (augusta::command::Command, from Input::Sample) to the local player's
   // entity.
   kCommandIngestion,
   // Mechanism. Ingests any authoritative physics::BodyState newly
@@ -138,7 +138,7 @@ class World {
   // while it waits for input, so passing the same one again is harmless -
   // Reconciliation acts on each acknowledged sequence once. Returns the
   // tick's Prediction State.
-  State Tick(const input::Command& command, std::uint32_t sequence,
+  State Tick(const command::Command& command, std::uint32_t sequence,
              const std::optional<Acknowledgement>& acknowledgement, float delta_time);
 
  private:

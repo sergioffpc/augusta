@@ -45,7 +45,7 @@ gtest_discover_tests(augusta_match_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_command_queue_tests command_queue_test.cpp)
 target_link_libraries(augusta_command_queue_tests PRIVATE augustad_commands GTest::gtest GTest::gtest_main)
-# Links PhysX through augusta_input, so the same first-launch cost applies as below.
+# Links PhysX through augusta_command, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_command_queue_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_replication_tests replication_test.cpp)

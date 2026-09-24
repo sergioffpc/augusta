@@ -32,7 +32,7 @@
 // map's collision meshes (AddCollisionMesh), which never move.
 //
 // Engine convention (not yet pinned down project-wide - see
-// augusta::input::Command's yaw/pitch comment): Y is up, matching both
+// augusta::command::Command's yaw/pitch comment): Y is up, matching both
 // GLM's and PhysX's own default.
 namespace augusta::physics {
 

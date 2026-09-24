@@ -25,8 +25,8 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
+#include "augusta/command.h"
 #include "augusta/harness.h"
-#include "augusta/input.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
@@ -46,6 +46,7 @@
 // their ticks by hand.
 namespace {
 
+using augusta::command::Command;
 using augusta::harness::Failure;
 using augusta::harness::FailureKind;
 using augusta::harness::JoinRefusal;
@@ -53,7 +54,6 @@ using augusta::harness::Phase;
 using augusta::harness::Session;
 using augusta::harness::SessionConfig;
 using augusta::harness::SessionId;
-using augusta::input::Command;
 using augusta::math::Length;
 using augusta::math::Vec3;
 using augusta::networking::ConnectionState;

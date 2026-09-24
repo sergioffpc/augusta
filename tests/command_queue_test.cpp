@@ -8,7 +8,7 @@
 // The sanity gate and the per-player queue are pure: no socket is opened here.
 namespace {
 
-using augusta::input::Command;
+using augusta::command::Command;
 using augusta::math::Vec3;
 using augusta::server::CommandQueue;
 using augusta::server::kMaxHeldTicks;

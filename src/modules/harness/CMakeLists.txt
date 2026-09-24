@@ -4,7 +4,7 @@ add_library(augusta_harness STATIC
 )
 target_include_directories(augusta_harness PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(augusta_harness
-  PUBLIC augusta_assets augusta_math augusta_networking augusta_parameters augusta_prediction augusta_input
+  PUBLIC augusta_assets augusta_math augusta_networking augusta_parameters augusta_prediction augusta_command
          augusta_physics augusta_protocol augusta_version
   PRIVATE augusta_logging
 )

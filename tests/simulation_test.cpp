@@ -9,7 +9,7 @@
 // the commands of each tick.
 namespace {
 
-using augusta::input::Command;
+using augusta::command::Command;
 using augusta::math::Vec3;
 using augusta::physics::CollisionMesh;
 using augusta::physics::Stance;

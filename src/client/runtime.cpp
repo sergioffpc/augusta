@@ -16,6 +16,7 @@
 #include <nvtx3/nvtx3.hpp>
 
 #include "augusta/audio.h"
+#include "augusta/command.h"
 #include "augusta/harness.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
@@ -282,7 +283,7 @@ struct ClientRuntime::Impl {
       const nvtx3::scoped_range range{"Prediction Tick"};
       const auto tick_start = std::chrono::steady_clock::now();
 
-      input::Command command = input.Sample();
+      command::Command command = input.Sample();
       prediction::State state = session->Tick(command, tick_duration.count());
       activity.Record(state, tick_start);
 

@@ -105,6 +105,9 @@ No matchmaking, master server, or third-party platform integration in v1.
   feeds Ballistics, the client uses it only for local predicted
   feedback pending reconciliation - same split as Physics.
 - Networking Protocol — message definitions + custom binary serialization
+- Command — one tick's player intent (augusta_command): what the client's
+  Input handling samples and the server screens and simulates, so the
+  server links no client input code
 - Match/Round State — round lifecycle, win conditions
 - Level Data — lightweight custom runtime format, baked offline from
   OpenUSD source. Its collision geometry is built into a physics::World's static
