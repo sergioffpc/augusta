@@ -618,13 +618,10 @@ TEST(ProtocolTest, BytesAfterCommandsAndStateAreTrailing) {
   EXPECT_EQ(Decode(state).error(), DecodeError::kTrailingBytes);
 }
 
-TEST(ProtocolTest, EveryErrorAndRefusalHasADescription) {
+TEST(ProtocolTest, EveryErrorHasADescription) {
   for (const DecodeError error : {DecodeError::kEmpty, DecodeError::kUnknownType, DecodeError::kTruncated,
                                   DecodeError::kTrailingBytes, DecodeError::kInvalidEnum, DecodeError::kFieldTooLong}) {
     EXPECT_FALSE(augusta::protocol::DescribeDecodeError(error).empty());
-  }
-  for (const JoinRefusalWire reason : kEveryRefusal) {
-    EXPECT_FALSE(augusta::protocol::DescribeJoinRefusal(reason).empty());
   }
 }
 

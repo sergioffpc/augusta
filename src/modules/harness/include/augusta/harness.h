@@ -5,15 +5,17 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
+#include "augusta/assets.h"
+#include "augusta/identity.h"
 #include "augusta/input.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
-#include "augusta/protocol.h"
 #include "augusta/version.h"
 
 // augusta::harness is where anything that plays talks to the server: the
@@ -36,7 +38,7 @@ namespace augusta::harness {
 
 /// One player's body, under the session the server knows it by.
 struct PlayerBody {
-  protocol::SessionIdWire session{};
+  identity::SessionId session{};
   physics::BodyState body{};
 };
 
@@ -53,7 +55,7 @@ struct AuthoritativeState {
 
 /// One player in the Lobby.
 struct RosterEntry {
-  protocol::SessionIdWire session{};
+  identity::SessionId session{};
   /// Its character index: 1-based position in the scenario's character list (ADR-0042).
   std::uint8_t character = 1;
 };
@@ -68,7 +70,7 @@ struct Lobby {
 
 /// One player in a match, and where the server spawned it.
 struct MatchPlayer {
-  protocol::SessionIdWire session{};
+  identity::SessionId session{};
   std::uint8_t character = 1;
   math::Vec3 spawn{};
 };
@@ -88,6 +90,23 @@ enum class Phase : std::uint8_t {
   kMatch,
 };
 
+/// Why the server refused this client's join.
+enum class JoinRefusal : std::uint8_t {
+  /// This client's engine version is not the server's.
+  kVersionMismatch,
+  /// The Lobby already holds the scenario's Player count.
+  kLobbyFull,
+  /// The character this client asked to play is not one of the scenario's (ADR-0042).
+  kUnknownCharacter,
+  /// A match is under way, and no one joins one in progress (ADR-0043).
+  kMatchInProgress,
+  /// This client's pack is not the one cooked with the server's.
+  kPackMismatch,
+};
+
+/// A short lowercase description of reason, for logs and for the player.
+[[nodiscard]] std::string_view DescribeJoinRefusal(JoinRefusal reason);
+
 /// Why a Session ended without the player asking it to.
 enum class FailureKind {
   /// The server answered the join with a refusal; see Failure::refusal.
@@ -104,7 +123,7 @@ struct Failure {
   /// What ended the session.
   FailureKind kind{};
   /// Why the server refused; only meaningful for kRefused.
-  protocol::JoinRefusalWire refusal{};
+  JoinRefusal refusal{};
 };
 
 /// A sentence for the player saying what happened and, where the client can
@@ -119,7 +138,7 @@ struct SessionConfig {
   std::string engine_version = std::string(EngineVersion());
   /// The hash of the client pack loaded (assets::Pack::Hash); the server admits
   /// only the one cooked with its own pack.
-  protocol::PackHashWire client_pack{};
+  assets::PackHash client_pack{};
   /// The character to ask to play, by its path relative to `authoring/` (e.g.
   /// "characters/player"): the server admits only one of its scenario's (ADR-0042).
   std::string character;
@@ -168,7 +187,7 @@ class Session {
 
   /// The session the server assigned once it admitted this client, or nullopt
   /// until then. Set by ExchangeMessages; safe to read from any thread.
-  [[nodiscard]] std::optional<protocol::SessionIdWire> GetSessionId() const;
+  [[nodiscard]] std::optional<identity::SessionId> GetSessionId() const;
 
   /// Whether this client is waiting to be admitted, in the Lobby, or in a
   /// match. Set by ExchangeMessages; safe to read from any thread.
@@ -203,7 +222,7 @@ class Session {
 
   /// Why the server refused this client, or nullopt if it has not. Set by
   /// ExchangeMessages; safe to read from any thread.
-  [[nodiscard]] std::optional<protocol::JoinRefusalWire> GetRefusal() const;
+  [[nodiscard]] std::optional<JoinRefusal> GetRefusal() const;
 
   /// The newest Authoritative State of the match in progress, or nullopt until
   /// one arrives and again once the match ends. One that arrives outside a match

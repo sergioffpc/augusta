@@ -526,20 +526,4 @@ std::string_view DescribeDecodeError(DecodeError error) {
   return "unknown decode error";
 }
 
-std::string_view DescribeJoinRefusal(JoinRefusalWire reason) {
-  switch (reason) {
-    case JoinRefusalWire::kVersionMismatch:
-      return "client version does not match the server";
-    case JoinRefusalWire::kLobbyFull:
-      return "the lobby is full";
-    case JoinRefusalWire::kUnknownCharacter:
-      return "the server's scenario has no such character";
-    case JoinRefusalWire::kMatchInProgress:
-      return "a match is in progress: try again once it ends";
-    case JoinRefusalWire::kPackMismatch:
-      return "client pack does not match the server's";
-  }
-  return "unknown refusal";
-}
-
 }  // namespace augusta::protocol

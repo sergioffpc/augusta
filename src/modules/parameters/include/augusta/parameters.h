@@ -6,7 +6,6 @@
 #include <string_view>
 
 #include "augusta/physics.h"
-#include "augusta/protocol.h"
 
 // augusta::parameters is the type of the simulation's data-driven
 // configuration (ADR-0039, CONTEXT.md's Parameters). It is shared because the

@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/protocol.h"
+
 // The decisions about Parameters that the server and every client share (ADR-0039)
 // are pure: values in, a verdict out.
 namespace {

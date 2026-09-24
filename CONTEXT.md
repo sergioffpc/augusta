@@ -43,7 +43,7 @@ One player's presence on the server, from being admitted to the Lobby until it d
 _Avoid_: Connection (a session is the gameplay identity kept for the life of the player's presence on the server; the transport connection beneath it, augusta::networking's own peer handle, can in principle outlive or be distinct from it)
 
 **Session ID**:
-The Authoritative server's name for one connected player (protocol::SessionIdWire), assigned when it admits the join. Distinct from the transport's own handle for the connection, and not a credential — the server tells senders apart by connection, not by this ID.
+The Authoritative server's name for one connected player (identity::SessionId; protocol::SessionIdWire on the wire), assigned when it admits the join. Distinct from the transport's own handle for the connection, and not a credential — the server tells senders apart by connection, not by this ID.
 _Avoid_: Player ID, connection ID
 
 **Client-side prediction**:

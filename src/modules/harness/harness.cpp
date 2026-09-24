@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <expected>
@@ -10,35 +11,21 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
 
 #include "augusta/harness_wire.h"
 #include "augusta/logging.h"
+#include "augusta/protocol.h"
 
 namespace augusta::harness {
 
 namespace {
 
-// The whole answer to a join request: the session, the tick rate and the
-// parameters, all the server's for the whole run.
-struct Admission {
-  protocol::SessionIdWire session{};
-  std::uint8_t tick_rate_hz = 0;
-  parameters::Parameters parameters{};
-};
-
-Admission ToAdmission(const protocol::JoinAcceptedWire& accepted) {
-  return Admission{
-      .session = accepted.session,
-      .tick_rate_hz = accepted.tick_rate_hz,
-      .parameters = FromWire(accepted.parameters),
-  };
-}
-
 // Whether session is one of start's players.
-bool IsInMatch(const MatchStart& start, protocol::SessionIdWire session) {
+bool IsInMatch(const MatchStart& start, identity::SessionId session) {
   return std::ranges::any_of(start.players, [&](const MatchPlayer& player) { return player.session == session; });
 }
 
@@ -48,8 +35,10 @@ bool IsInMatch(const MatchStart& start, protocol::SessionIdWire session) {
 // I/O thread makes a new one for each message that changes it, and the
 // Prediction thread reads whichever is current.
 struct ServerView {
+  // The whole answer to a join request: the session, the tick rate and the
+  // parameters, all the server's for the whole run.
   std::optional<Admission> accepted;
-  std::optional<protocol::JoinRefusalWire> refusal;
+  std::optional<JoinRefusal> refusal;
   std::optional<Lobby> lobby;
   // The last match's start, and how many have started: a new count is a new
   // match for the prediction to start over in.
@@ -62,9 +51,7 @@ struct ServerView {
 
 struct Session::Impl {
   networking::Endpoint server;
-  std::string engine_version;
-  protocol::PackHashWire client_pack;
-  std::string character;
+  JoinRequest join_request;
   networking::Client network;
   prediction::World prediction;
 
@@ -84,7 +71,7 @@ struct Session::Impl {
   prediction::State last_state{};
   // The commands still waiting to be acknowledged, and the sequence the next
   // one goes under. Sequences start at 1; 0 means none.
-  std::deque<protocol::SequencedCommandWire> unacknowledged;
+  std::deque<SequencedCommand> unacknowledged;
   std::uint32_t next_sequence = 1;
   // Network I/O thread only: a server can send messages that are refused as fast
   // as it likes, so their warnings are limited.
@@ -92,9 +79,8 @@ struct Session::Impl {
 
   Impl(const SessionConfig& config, prediction::World world)
       : server(config.server),
-        engine_version(config.engine_version),
-        client_pack(config.client_pack),
-        character(config.character),
+        join_request{
+            .engine_version = config.engine_version, .client_pack = config.client_pack, .character = config.character},
         prediction(std::move(world)) {}
 
   void HandleMessage(const networking::Payload& payload) {
@@ -105,15 +91,15 @@ struct Session::Impl {
       return;
     }
     if (const auto* accepted = std::get_if<protocol::JoinAcceptedWire>(&*decoded)) {
-      OnJoinAccepted(*accepted);
+      OnJoinAccepted(FromWire(*accepted));
     } else if (const auto* refused = std::get_if<protocol::JoinRefusedWire>(&*decoded)) {
-      OnJoinRefused(*refused);
+      OnJoinRefused(FromWire(refused->reason));
     } else if (const auto* state = std::get_if<protocol::AuthoritativeStateWire>(&*decoded)) {
-      OnAuthoritativeState(*state);
+      OnAuthoritativeState(FromWire(*state));
     } else if (const auto* lobby = std::get_if<protocol::LobbyWire>(&*decoded)) {
-      OnLobby(*lobby);
+      OnLobby(FromWire(*lobby));
     } else if (const auto* start = std::get_if<protocol::MatchStartWire>(&*decoded)) {
-      OnMatchStart(*start);
+      OnMatchStart(FromWire(*start));
     } else if (std::holds_alternative<protocol::MatchEndWire>(*decoded)) {
       OnMatchEnd();
     } else {
@@ -125,8 +111,7 @@ struct Session::Impl {
   // A server whose tick rate or parameters the simulation cannot run on (a rate
   // of zero would be divided by) is not a usable one: the message is dropped, as
   // a malformed one is, and the client stays unadmitted.
-  void OnJoinAccepted(const protocol::JoinAcceptedWire& message) {
-    const Admission accepted = ToAdmission(message);
+  void OnJoinAccepted(const Admission& accepted) {
     if (!parameters::IsValidTickRate(accepted.tick_rate_hz)) {
       LW_LIMITED(drop_warnings, "subsystem=harness event=dropped reason=\"invalid tick rate\" tick_rate_hz={}",
                  accepted.tick_rate_hz);
@@ -139,30 +124,30 @@ struct Session::Impl {
     }
     Publish([&](ServerView& next) { next.accepted = accepted; });
     LI("subsystem=harness event=joined session={} character={} tick_rate_hz={}",
-       static_cast<std::uint32_t>(accepted.session), message.character, accepted.tick_rate_hz);
+       static_cast<std::uint32_t>(accepted.session), accepted.character, accepted.tick_rate_hz);
   }
 
-  void OnLobby(const protocol::LobbyWire& message) {
-    Publish([&](ServerView& next) { next.lobby = FromWire(message); });
-    LI("subsystem=harness event=lobby version={} players={}", message.version, message.roster.size());
+  void OnLobby(Lobby lobby) {
+    LI("subsystem=harness event=lobby version={} players={}", lobby.version, lobby.roster.size());
+    Publish([&](ServerView& next) { next.lobby = std::move(lobby); });
   }
 
   // A Match start that leaves this client out is not one it can play: dropped,
   // as a malformed message is.
-  void OnMatchStart(const protocol::MatchStartWire& message) {
+  void OnMatchStart(MatchStart start) {
     const std::shared_ptr<const ServerView> current = view.load();
-    MatchStart start = FromWire(message);
     if (!current->accepted.has_value() || !IsInMatch(start, current->accepted->session)) {
       LW_LIMITED(drop_warnings, "subsystem=harness event=dropped reason=\"match start without this client\"");
       return;
     }
+    const std::size_t players = start.players.size();
     Publish([&](ServerView& next) {
       next.match_start = std::move(start);
       ++next.matches_started;
       next.in_match = true;
       next.authoritative.reset();
     });
-    LI("subsystem=harness event=match_started players={}", message.players.size());
+    LI("subsystem=harness event=match_started players={}", players);
   }
 
   void OnMatchEnd() {
@@ -173,23 +158,21 @@ struct Session::Impl {
     LI("subsystem=harness event=match_ended");
   }
 
-  void OnJoinRefused(const protocol::JoinRefusedWire& refused) {
-    Publish([&](ServerView& next) { next.refusal = refused.reason; });
-    LI("subsystem=harness event=join_refused reason=\"{}\"", protocol::DescribeJoinRefusal(refused.reason));
+  void OnJoinRefused(JoinRefusal reason) {
+    Publish([&](ServerView& next) { next.refusal = reason; });
+    LI("subsystem=harness event=join_refused reason=\"{}\"", DescribeJoinRefusal(reason));
   }
 
   // Keeps state if it is newer than the one held (unreliable delivery can
   // reorder) and belongs to the match in progress: unreliable, it can arrive
   // before Match start or after Match end.
-  void OnAuthoritativeState(const protocol::AuthoritativeStateWire& state) {
+  void OnAuthoritativeState(AuthoritativeState state) {
     const std::shared_ptr<const ServerView> current = view.load();
     if (!current->in_match) {
       LT("subsystem=harness event=dropped tick={} reason=\"state outside a match\"", state.tick);
       return;
     }
-    const auto in_match = [&](const protocol::PlayerStateWire& player) {
-      return IsInMatch(*current->match_start, player.session);
-    };
+    const auto in_match = [&](const PlayerBody& player) { return IsInMatch(*current->match_start, player.session); };
     if (!std::ranges::all_of(state.players, in_match)) {
       LW_LIMITED(drop_warnings,
                  "subsystem=harness event=dropped tick={} reason=\"state names a player not in the match\"",
@@ -199,7 +182,7 @@ struct Session::Impl {
     if (current->authoritative.has_value() && state.tick <= current->authoritative->tick) {
       return;
     }
-    Publish([&](ServerView& next) { next.authoritative = FromWire(state); });
+    Publish([&](ServerView& next) { next.authoritative = std::move(state); });
   }
 
   // Makes the next view from the current one changed by mutate, and publishes it.
@@ -248,20 +231,35 @@ struct Session::Impl {
       }
     }
     // Keeps at most the newest kMaxCommandsPerMessage, all a message can carry.
-    unacknowledged.push_back(protocol::SequencedCommandWire{.sequence = sequence, .command = ToWire(command)});
+    unacknowledged.push_back(SequencedCommand{.sequence = sequence, .command = command});
     if (unacknowledged.size() > protocol::kMaxCommandsPerMessage) {
       unacknowledged.pop_front();
     }
-    protocol::CommandsWire message;
-    message.commands.assign(unacknowledged.begin(), unacknowledged.end());
-    network.Send(protocol::Encode(message), networking::Reliability::kUnreliable);
+    const std::vector<SequencedCommand> pending(unacknowledged.begin(), unacknowledged.end());
+    network.Send(protocol::Encode(ToWire(pending)), networking::Reliability::kUnreliable);
   }
 };
+
+std::string_view DescribeJoinRefusal(JoinRefusal reason) {
+  switch (reason) {
+    case JoinRefusal::kVersionMismatch:
+      return "client version does not match the server";
+    case JoinRefusal::kLobbyFull:
+      return "the lobby is full";
+    case JoinRefusal::kUnknownCharacter:
+      return "the server's scenario has no such character";
+    case JoinRefusal::kMatchInProgress:
+      return "a match is in progress: try again once it ends";
+    case JoinRefusal::kPackMismatch:
+      return "client pack does not match the server's";
+  }
+  return "unknown refusal";
+}
 
 std::string DescribeFailure(const Failure& failure) {
   switch (failure.kind) {
     case FailureKind::kRefused:
-      return std::format("the server refused this client: {}", protocol::DescribeJoinRefusal(failure.refusal));
+      return std::format("the server refused this client: {}", DescribeJoinRefusal(failure.refusal));
     case FailureKind::kServerUnreachable:
       return "could not connect to the server: check its address, and that it is running";
     case FailureKind::kConnectionLost:
@@ -292,10 +290,7 @@ void Session::PumpEvents() { impl_->network.PumpEvents(); }
 void Session::ExchangeMessages() {
   Impl& impl = *impl_;
   if (!impl.sent_join_request && impl.network.GetState() == networking::ConnectionState::kConnected) {
-    impl.network.Send(
-        protocol::Encode(protocol::JoinRequestWire{
-            .engine_version = impl.engine_version, .client_pack = impl.client_pack, .character = impl.character}),
-        networking::Reliability::kReliable);
+    impl.network.Send(protocol::Encode(ToWire(impl.join_request)), networking::Reliability::kReliable);
     impl.sent_join_request = true;
   }
   for (const networking::Payload& payload : impl.network.ReceiveMessages()) {
@@ -320,7 +315,7 @@ std::optional<Failure> Session::GetFailure() const {
 
 std::optional<networking::ConnectionStats> Session::GetConnectionStats() const { return impl_->network.GetStats(); }
 
-std::optional<protocol::SessionIdWire> Session::GetSessionId() const {
+std::optional<identity::SessionId> Session::GetSessionId() const {
   const std::shared_ptr<const ServerView> server_view = impl_->view.load();
   if (!server_view->accepted.has_value()) {
     return std::nullopt;
@@ -365,7 +360,7 @@ std::optional<parameters::Parameters> Session::GetParameters() const {
   return server_view->accepted->parameters;
 }
 
-std::optional<protocol::JoinRefusalWire> Session::GetRefusal() const { return impl_->view.load()->refusal; }
+std::optional<JoinRefusal> Session::GetRefusal() const { return impl_->view.load()->refusal; }
 
 std::optional<AuthoritativeState> Session::GetAuthoritativeState() const { return impl_->view.load()->authoritative; }
 

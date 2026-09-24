@@ -6,9 +6,9 @@
 #include <span>
 #include <vector>
 
+#include "augusta/identity.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
-#include "augusta/protocol.h"
 
 // Remote-player interpolation (ADR-0024's Interpolation phase): what
 // PresentationWorld shows for every player but the local one. Neither
@@ -45,7 +45,7 @@ struct RemoteBody {
 
 /// One session's interpolated body, as Sample returns it.
 struct RemotePlayer {
-  protocol::SessionIdWire session{};
+  identity::SessionId session{};
   RemoteBody body{};
   /// The character index it is drawn as, from Match start; 0 if unknown.
   /// PresentationWorld fills it in: the interpolator knows only bodies.
@@ -63,12 +63,12 @@ class RemoteInterpolator {
   /// previous newest becomes the one behind it. A timestamp at or before the
   /// session's current newest is ignored: out-of-order or repeated
   /// Authoritative State cannot move interpolation backward.
-  void Record(protocol::SessionIdWire session, float timestamp, const physics::BodyState& body);
+  void Record(identity::SessionId session, float timestamp, const physics::BodyState& body);
 
   /// Forgets every buffered session not present in current - the disconnect
   /// case, driven by each Authoritative State's full player list rather than
   /// a separate leave message.
-  void Sync(std::span<const protocol::SessionIdWire> current);
+  void Sync(std::span<const identity::SessionId> current);
 
   /// Every buffered session's body at render_time: interpolated between the
   /// two updates surrounding it if both are buffered, held at the nearer end
@@ -84,7 +84,7 @@ class RemoteInterpolator {
     physics::BodyState body{};
   };
   struct Buffered {
-    protocol::SessionIdWire session{};
+    identity::SessionId session{};
     std::optional<Update> previous;
     Update latest;
   };

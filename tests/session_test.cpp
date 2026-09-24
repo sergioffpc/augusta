@@ -24,7 +24,9 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/assets.h"
 #include "augusta/harness.h"
+#include "augusta/identity.h"
 #include "augusta/input.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
@@ -47,9 +49,11 @@ namespace {
 
 using augusta::harness::Failure;
 using augusta::harness::FailureKind;
+using augusta::harness::JoinRefusal;
 using augusta::harness::Phase;
 using augusta::harness::Session;
 using augusta::harness::SessionConfig;
+using augusta::identity::SessionId;
 using augusta::input::Command;
 using augusta::math::Length;
 using augusta::math::Vec3;
@@ -58,7 +62,6 @@ using augusta::networking::Endpoint;
 using augusta::parameters::Parameters;
 using augusta::physics::CollisionMesh;
 using augusta::physics::Stance;
-using augusta::protocol::JoinRefusalWire;
 using augusta::protocol::SessionIdWire;
 using augusta::server::Host;
 using augusta::server::HostConfig;
@@ -347,8 +350,8 @@ class JoinTest : public ::testing::Test {
               Map{.collision = {}, .spawn_points = {}, .characters = {kCharacter}, .client_pack = ClientPack(1)}) {}
 
   // A client pack hash told apart by its last byte.
-  static augusta::protocol::PackHashWire ClientPack(std::uint8_t last) {
-    augusta::protocol::PackHashWire hash{};
+  static augusta::assets::PackHash ClientPack(std::uint8_t last) {
+    augusta::assets::PackHash hash{};
     hash.back() = std::byte{last};
     return hash;
   }
@@ -357,7 +360,7 @@ class JoinTest : public ::testing::Test {
   // character and has loaded client_pack (by default the one the host's was cooked with).
   Session& AddClient(const std::string& engine_version = std::string(augusta::EngineVersion()),
                      const std::string& character = kCharacter,
-                     const augusta::protocol::PackHashWire& client_pack = ClientPack(1)) {
+                     const augusta::assets::PackHash& client_pack = ClientPack(1)) {
     sessions_.push_back(std::make_unique<Session>(SessionConfig{.server = Endpoint{.address = LoopbackAddress()},
                                                                 .engine_version = engine_version,
                                                                 .client_pack = client_pack,
@@ -408,7 +411,7 @@ TEST_F(JoinTest, SessionIdsAreUniqueAmongConnectedClients) {
 
   ASSERT_TRUE(WaitForAnswers());
 
-  std::set<SessionIdWire> ids;
+  std::set<SessionId> ids;
   for (const auto& session : sessions_) {
     ASSERT_TRUE(session->GetSessionId().has_value());
     ids.insert(*session->GetSessionId());
@@ -421,7 +424,7 @@ TEST_F(JoinTest, AClientWithAnotherEngineVersionIsRefusedForTheVersion) {
 
   ASSERT_TRUE(WaitForAnswers());
 
-  EXPECT_EQ(client.GetRefusal(), JoinRefusalWire::kVersionMismatch);
+  EXPECT_EQ(client.GetRefusal(), JoinRefusal::kVersionMismatch);
   EXPECT_FALSE(client.GetSessionId().has_value());
   EXPECT_EQ(client.GetPhase(), Phase::kNotAdmitted);
 }
@@ -434,7 +437,7 @@ TEST_F(JoinTest, ARefusedClientReportsTheRefusalAsItsFailure) {
   const auto failure = client.GetFailure();
   ASSERT_TRUE(failure.has_value());
   EXPECT_EQ(failure->kind, FailureKind::kRefused);
-  EXPECT_EQ(failure->refusal, JoinRefusalWire::kVersionMismatch);
+  EXPECT_EQ(failure->refusal, JoinRefusal::kVersionMismatch);
 }
 
 TEST_F(JoinTest, AClientWithAnotherClientPackIsRefusedForThePack) {
@@ -442,7 +445,7 @@ TEST_F(JoinTest, AClientWithAnotherClientPackIsRefusedForThePack) {
 
   ASSERT_TRUE(WaitForAnswers());
 
-  EXPECT_EQ(client.GetRefusal(), JoinRefusalWire::kPackMismatch);
+  EXPECT_EQ(client.GetRefusal(), JoinRefusal::kPackMismatch);
   EXPECT_FALSE(client.GetSessionId().has_value());
 }
 
@@ -451,12 +454,12 @@ TEST_F(JoinTest, AClientThatPicksACharacterTheScenarioLacksIsRefusedForIt) {
 
   ASSERT_TRUE(WaitForAnswers());
 
-  EXPECT_EQ(client.GetRefusal(), JoinRefusalWire::kUnknownCharacter);
+  EXPECT_EQ(client.GetRefusal(), JoinRefusal::kUnknownCharacter);
   EXPECT_FALSE(client.GetSessionId().has_value());
   const auto failure = client.GetFailure();
   ASSERT_TRUE(failure.has_value());
   EXPECT_EQ(failure->kind, FailureKind::kRefused);
-  EXPECT_EQ(failure->refusal, JoinRefusalWire::kUnknownCharacter);
+  EXPECT_EQ(failure->refusal, JoinRefusal::kUnknownCharacter);
 }
 
 TEST_F(JoinTest, AWrongVersionIsReportedBeforeAnUnknownCharacter) {
@@ -464,7 +467,7 @@ TEST_F(JoinTest, AWrongVersionIsReportedBeforeAnUnknownCharacter) {
 
   ASSERT_TRUE(WaitForAnswers());
 
-  EXPECT_EQ(client.GetRefusal(), JoinRefusalWire::kVersionMismatch);
+  EXPECT_EQ(client.GetRefusal(), JoinRefusal::kVersionMismatch);
 }
 
 TEST_F(JoinTest, AnAdmittedClientHasNoFailure) {
@@ -487,7 +490,7 @@ TEST_F(JoinTest, TheNinthClientIsRefusedBecauseTheLobbyIsFull) {
   Session& ninth = AddClient();
   ASSERT_TRUE(WaitForAnswers());
 
-  EXPECT_EQ(ninth.GetRefusal(), JoinRefusalWire::kLobbyFull);
+  EXPECT_EQ(ninth.GetRefusal(), JoinRefusal::kLobbyFull);
   EXPECT_FALSE(ninth.GetSessionId().has_value());
 }
 
@@ -497,7 +500,7 @@ TEST_F(JoinTest, AClientThatConnectsDuringAMatchIsRefusedBecauseOneIsInProgress)
   Session& late = AddClient();
   ASSERT_TRUE(WaitForAnswers());
 
-  EXPECT_EQ(late.GetRefusal(), JoinRefusalWire::kMatchInProgress);
+  EXPECT_EQ(late.GetRefusal(), JoinRefusal::kMatchInProgress);
   const auto failure = late.GetFailure();
   ASSERT_TRUE(failure.has_value());
   EXPECT_EQ(failure->kind, FailureKind::kRefused);
@@ -512,8 +515,8 @@ TEST_F(JoinTest, DuringAMatchAWrongVersionOrCharacterIsStillWhatAClientIsTold) {
   Session& unknown_character = AddClient(std::string(augusta::EngineVersion()), "characters/nobody");
   ASSERT_TRUE(WaitForAnswers());
 
-  EXPECT_EQ(wrong_version.GetRefusal(), JoinRefusalWire::kVersionMismatch);
-  EXPECT_EQ(unknown_character.GetRefusal(), JoinRefusalWire::kUnknownCharacter);
+  EXPECT_EQ(wrong_version.GetRefusal(), JoinRefusal::kVersionMismatch);
+  EXPECT_EQ(unknown_character.GetRefusal(), JoinRefusal::kUnknownCharacter);
 }
 
 // M3 exit criteria (issue #84): 8 clients moving, sprinting and changing
@@ -1051,7 +1054,7 @@ class LoopbackMatch : public ::testing::Test {
   }
 
   // Where the newest state client received puts session, or nullopt if it lists no such player.
-  static std::optional<augusta::physics::BodyState> BodySeenBy(const Session& client, SessionIdWire session) {
+  static std::optional<augusta::physics::BodyState> BodySeenBy(const Session& client, SessionId session) {
     const auto state = client.GetAuthoritativeState();
     if (state.has_value()) {
       for (const auto& player : state->players) {
@@ -1063,7 +1066,7 @@ class LoopbackMatch : public ::testing::Test {
     return std::nullopt;
   }
 
-  static std::optional<Vec3> PositionSeenBy(const Session& client, SessionIdWire session) {
+  static std::optional<Vec3> PositionSeenBy(const Session& client, SessionId session) {
     const auto body = BodySeenBy(client, session);
     return body.has_value() ? std::optional<Vec3>(body->position) : std::nullopt;
   }
@@ -1202,7 +1205,7 @@ TEST_F(LobbyTest, TheRosterVersionGrowsOnEveryJoinAndLeave) {
   Session& second = Join();
   ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return first.GetLobby()->roster.size() == 2; }));
   const auto joined = first.GetLobby()->version;
-  const SessionIdWire leaver = *second.GetSessionId();
+  const SessionId leaver = *second.GetSessionId();
   second.Disconnect();
   ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return first.GetLobby()->roster.size() == 1; }));
 
@@ -1305,7 +1308,7 @@ TEST_F(MidMatchTest, APlayerWhoDisconnectsLeavesTheOthersStateAndTheSimulationAn
   Run(kSettleTicks);
   Session& watcher = *sessions_.front();
   ASSERT_EQ(watcher.GetAuthoritativeState()->players.size(), 3U);
-  const SessionIdWire leaver = *sessions_.back()->GetSessionId();
+  const SessionId leaver = *sessions_.back()->GetSessionId();
 
   sessions_.back()->Disconnect();
   Run(kSettleTicks);
@@ -1386,8 +1389,8 @@ TEST_F(MatchCycleTest, PlayersKeepTheirSessionAndCharacterAndTheNextMatchTakesTh
   Session& first = Join();
   Session& second = Join();
   ASSERT_TRUE(StartMatch());
-  const SessionIdWire first_session = *first.GetSessionId();
-  const SessionIdWire second_session = *second.GetSessionId();
+  const SessionId first_session = *first.GetSessionId();
+  const SessionId second_session = *second.GetSessionId();
   host_.EndMatch();
   ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
     return std::ranges::all_of(sessions_, [](const auto& s) { return s->GetPhase() == Phase::kLobby; });
@@ -1425,7 +1428,7 @@ TEST_F(MatchCycleTest, AMatchWhoseLastPlayerLeavesEndsOnItsOwnAndTheLobbyTakesPl
   Session& next = Connect();
   EXPECT_TRUE(next.GetSessionId().has_value())
       << "refused: "
-      << augusta::protocol::DescribeJoinRefusal(next.GetRefusal().value_or(JoinRefusalWire::kVersionMismatch));
+      << augusta::harness::DescribeJoinRefusal(next.GetRefusal().value_or(JoinRefusal::kVersionMismatch));
 }
 
 // One client on a floor, on the server's stamina rules: a bar that empties in
@@ -1989,19 +1992,18 @@ TEST(SessionFailureTest, EveryFailureIsDescribedForThePlayerAndARefusalSaysWhy) 
   const std::string unreachable = augusta::harness::DescribeFailure({.kind = FailureKind::kServerUnreachable});
   const std::string lost = augusta::harness::DescribeFailure({.kind = FailureKind::kConnectionLost});
   const std::string full =
-      augusta::harness::DescribeFailure({.kind = FailureKind::kRefused, .refusal = JoinRefusalWire::kLobbyFull});
+      augusta::harness::DescribeFailure({.kind = FailureKind::kRefused, .refusal = JoinRefusal::kLobbyFull});
   const std::string version =
-      augusta::harness::DescribeFailure({.kind = FailureKind::kRefused, .refusal = JoinRefusalWire::kVersionMismatch});
+      augusta::harness::DescribeFailure({.kind = FailureKind::kRefused, .refusal = JoinRefusal::kVersionMismatch});
   const std::string in_progress =
-      augusta::harness::DescribeFailure({.kind = FailureKind::kRefused, .refusal = JoinRefusalWire::kMatchInProgress});
+      augusta::harness::DescribeFailure({.kind = FailureKind::kRefused, .refusal = JoinRefusal::kMatchInProgress});
 
   EXPECT_FALSE(unreachable.empty());
   EXPECT_FALSE(lost.empty());
   EXPECT_NE(unreachable, lost);
   EXPECT_NE(full, version);
   EXPECT_NE(full, in_progress);
-  EXPECT_NE(full.find(std::string(augusta::protocol::DescribeJoinRefusal(JoinRefusalWire::kLobbyFull))),
-            std::string::npos)
+  EXPECT_NE(full.find(std::string(augusta::harness::DescribeJoinRefusal(JoinRefusal::kLobbyFull))), std::string::npos)
       << full;
 }
 
@@ -2081,7 +2083,7 @@ TEST_F(FullMatchRobustnessTest, AfterAClientDisconnectsItsPlayerIsAbsentFromOthe
   Session& ninth = Connect();
   Run(kSettleTicks);
 
-  EXPECT_EQ(ninth.GetRefusal(), JoinRefusalWire::kMatchInProgress);
+  EXPECT_EQ(ninth.GetRefusal(), JoinRefusal::kMatchInProgress);
   EXPECT_EQ(watcher.GetAuthoritativeState()->players.size(), augusta::protocol::kMaxPlayers - 1);
 }
 

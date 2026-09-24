@@ -21,7 +21,7 @@ target_compile_definitions(augusta_config_tests PRIVATE
 gtest_discover_tests(augusta_config_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_parameters_tests parameters_test.cpp)
-target_link_libraries(augusta_parameters_tests PRIVATE augusta_parameters GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_parameters_tests PRIVATE augusta_parameters augusta_protocol GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_parameters_tests DISCOVERY_TIMEOUT 30)
 
@@ -113,6 +113,11 @@ add_executable(augusta_wire_tests wire_test.cpp)
 target_link_libraries(augusta_wire_tests PRIVATE augusta_harness augustad_host GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_wire_tests DISCOVERY_TIMEOUT 30)
+
+# No header past the protocol's edge names a protocol type (ADR-0038): only
+# harness_wire.h and server/wire.h convert. A source scan, so it builds nothing.
+add_test(NAME augusta_protocol_boundary
+  COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/protocol_boundary.cmake)
 
 add_executable(augusta_assets_tests assets_test.cpp)
 target_link_libraries(augusta_assets_tests PRIVATE augusta_assets GTest::gtest GTest::gtest_main)

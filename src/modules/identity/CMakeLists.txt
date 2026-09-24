@@ -1,0 +1,3 @@
+add_library(augusta_identity INTERFACE)
+target_include_directories(augusta_identity INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+augusta_set_module_scope(augusta_identity SHARED)

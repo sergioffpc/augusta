@@ -10,8 +10,8 @@
 
 #include "augusta/animation.h"
 #include "augusta/correction.h"
+#include "augusta/identity.h"
 #include "augusta/interpolation.h"
-#include "augusta/protocol.h"
 
 namespace augusta::presentation {
 
@@ -51,7 +51,7 @@ struct World::Impl {
   // systems below; not meaningful outside of a RunFrame call.
   prediction::State latest_state;
   math::Quat view_rotation{1.0F, 0.0F, 0.0F, 0.0F};
-  std::optional<protocol::SessionIdWire> local_session;
+  std::optional<identity::SessionId> local_session;
   std::optional<harness::AuthoritativeState> authoritative_state;
   std::optional<harness::MatchStart> match_start;
 
@@ -117,7 +117,7 @@ struct World::Impl {
       remote_interpolator.Sync({});
       last_recorded_tick.reset();
     } else if (!last_recorded_tick.has_value() || *last_recorded_tick != authoritative_state->tick) {
-      std::vector<protocol::SessionIdWire> present;
+      std::vector<identity::SessionId> present;
       present.reserve(authoritative_state->players.size());
       for (const harness::PlayerBody& player : authoritative_state->players) {
         if (local_session.has_value() && player.session == *local_session) {
@@ -136,7 +136,7 @@ struct World::Impl {
   }
 
   // The character Match start gave session, or 0 if it names no such player.
-  [[nodiscard]] std::uint8_t CharacterOf(protocol::SessionIdWire session) const {
+  [[nodiscard]] std::uint8_t CharacterOf(identity::SessionId session) const {
     if (match_start.has_value()) {
       for (const harness::MatchPlayer& player : match_start->players) {
         if (player.session == session) {
@@ -191,7 +191,7 @@ World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
 State World::RunFrame(const prediction::State& latest, const math::Quat& view_rotation,
-                      std::optional<protocol::SessionIdWire> local_session,
+                      std::optional<identity::SessionId> local_session,
                       const std::optional<harness::AuthoritativeState>& authoritative,
                       const std::optional<harness::MatchStart>& match_start) {
   impl_->latest_state = latest;

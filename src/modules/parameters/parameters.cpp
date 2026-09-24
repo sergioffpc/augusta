@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include "augusta/protocol.h"
+
 namespace augusta::parameters {
 namespace {
 

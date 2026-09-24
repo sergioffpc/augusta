@@ -12,10 +12,17 @@ nothing but `augusta_math`, and a module changing its own structs never changes
 what travels. A protocol type that mirrors one of the engine's carries the
 suffix `Wire`: `BodyStateWire` for `physics::BodyState`, and the Authoritative
 State message is `AuthoritativeStateWire`, for the client's
-`harness::AuthoritativeState`. The other messages have no engine counterpart and
-keep the names of the table below. Each peer converts between the protocol's types and its own at its
-edge and nowhere else: the server in `server::Host` and the client in
-`harness::Session`. Inside each peer, modules pass the engine's types.
+`harness::AuthoritativeState`. Every protocol type carries the suffix, so none
+reads like an engine type. Each peer converts between the protocol's types and its own at its
+edge and nowhere else: the server in `server/wire.h` (used by `server::Host`
+right after Decode and right before Encode) and the client in
+`augusta/harness_wire.h` (used the same way by `harness::Session`). Inside each
+peer, modules pass the engine's types: `harness`'s API, `server::Match`,
+`replication`, `presentation` and ClientRuntime name a player by
+`identity::SessionId` (the shared `augusta_identity` module), a pack by
+`assets::PackHash`, and a refusal by their own `JoinRefusal`, never by a `Wire`
+type; `tests/protocol_boundary.cmake` fails the build's tests if one of their
+headers names the protocol.
 
 **Extended by ADR-0042**: Join request also carries the chosen character's path,
 Join refused gains the *unknown character* reason, and Join accepted, each Roster

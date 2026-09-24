@@ -10,6 +10,7 @@
 #include <variant>
 #include <vector>
 
+#include "augusta/assets.h"
 #include "augusta/audio.h"
 #include "augusta/harness.h"
 #include "augusta/input.h"
@@ -17,7 +18,6 @@
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/presentation.h"
-#include "augusta/protocol.h"
 #include "augusta/renderer.h"
 #include "scene_loader.h"
 
@@ -60,7 +60,7 @@ struct Config {
   std::string character;
   // The hash of the client pack loaded, which the server checks is the one
   // cooked with its own.
-  protocol::PackHashWire client_pack{};
+  assets::PackHash client_pack{};
 };
 
 // The map's collision, built by augusta::map from the client pack by the
