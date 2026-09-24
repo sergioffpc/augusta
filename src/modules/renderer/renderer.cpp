@@ -79,12 +79,11 @@ std::vector<Vertex> BuildFlatShadedVertices(const Scene& scene) {
 
 // Every RemotePlayer as an instance of its character's local vertices
 // (SetCharacterMesh's own flat-shaded vertices, in the character's local space
-// - ADR-0040/ADR-0041), skipping one whose character has none: height-scaled around y=0 (remote.height_scale - issue
-// #82's "right stance" criterion, renderer.h), then translated to that instance's own position and given its own color.
-// remote.position is where the mesh's own origin (y=0) lands - the same convention the character's mesh was cooked
-// around, so no further placement is needed. A non-uniform (y-only) scale needs its normals scaled by the inverse
-// instead, then renormalized, to stay correct - a uniform scale (height_scale == 1, the common case) leaves them
-// unchanged.
+// - ADR-0040/ADR-0041), skipping one whose character has none: translated to
+// that instance's own position and given its own color. remote.position is
+// where the mesh's own origin (y=0) lands - the same convention the
+// character's mesh was cooked around, so no further placement is needed, and
+// a translation leaves the normals as they are.
 std::vector<Vertex> BuildRemoteVertices(
     std::span<const RemotePlayer> remote_players,
     const std::unordered_map<std::uint8_t, std::vector<Vertex>>& character_vertices) {
@@ -96,16 +95,11 @@ std::vector<Vertex> BuildRemoteVertices(
     }
     const std::vector<Vertex>& local_vertices = found->second;
     const math::Vec3& p = remote.position;
-    const float height_scale = remote.height_scale;
     const Falcor::float3 color{remote.color.x, remote.color.y, remote.color.z};
     for (const Vertex& local_vertex : local_vertices) {
-      const math::Vec3 position(local_vertex.position.x, local_vertex.position.y * height_scale,
-                                local_vertex.position.z);
-      const math::Vec3 normal = math::Normalize(
-          math::Vec3(local_vertex.normal.x, local_vertex.normal.y / height_scale, local_vertex.normal.z));
       vertices.push_back({
-          .position = {position.x + p.x, position.y + p.y, position.z + p.z},
-          .normal = {normal.x, normal.y, normal.z},
+          .position = {local_vertex.position.x + p.x, local_vertex.position.y + p.y, local_vertex.position.z + p.z},
+          .normal = local_vertex.normal,
           .color = color,
       });
     }

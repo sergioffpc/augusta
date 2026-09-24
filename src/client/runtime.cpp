@@ -25,39 +25,10 @@ namespace {
 
 // Maps one interpolated remote player into a renderer-drawable instance of
 // its character's mesh, which ClientRuntime uploads via SetCharacterMesh in
-// the Lobby (ADR-0042/ADR-0043). height_scale reflects stance the same way
-// the procedural placeholder box this replaced did (issue #82's "in the
-// right stance" acceptance criterion): the capsule's own authored height is
-// the standing height, so a lower stance scales it down by the ratio of
-// physics.cpp's own capsule constants (kCapsuleRadius/kStandingHeight/
-// kCrouchingHeight/kProneHeight, physics.cpp lines 82-85) rather than
-// reusing them - those are physics.cpp-internal by design, and this mapping
-// is still placeholder-only (no skeletal animation yet).
+// the Lobby (ADR-0042/ADR-0043). The mesh is drawn as authored, standing:
+// its stance shows once animation poses it.
 renderer::RemotePlayer ToRenderer(const presentation::RemotePlayer& remote) {
-  // TODO(sergioffpc): Estes parametros devem variar de modelo para modelo nao devem ser fixos.
-  // Devem estar na definicao do modelo 3D.
-  constexpr float kCapsuleRadius = 0.3F;
-  constexpr float kStandingHeight = 1.5F;
-  constexpr float kCrouchingHeight = 0.7F;
-  constexpr float kProneHeight = 0.1F;
-  constexpr float kStandingTotalHeight = kStandingHeight + (2.0F * kCapsuleRadius);
-
-  float cylinder_height = kStandingHeight;
-  switch (remote.body.stance) {
-    case physics::Stance::kStanding:
-      cylinder_height = kStandingHeight;
-      break;
-    case physics::Stance::kCrouching:
-      cylinder_height = kCrouchingHeight;
-      break;
-    case physics::Stance::kProne:
-      cylinder_height = kProneHeight;
-      break;
-  }
-  const float total_height = cylinder_height + (2.0F * kCapsuleRadius);
-  return {.position = remote.body.position,
-          .height_scale = total_height / kStandingTotalHeight,
-          .character = remote.character};
+  return {.position = remote.body.position, .character = remote.character};
 }
 
 // Maps this frame's presentation::Camera into what Renderer::SetCamera

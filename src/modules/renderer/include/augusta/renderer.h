@@ -97,17 +97,13 @@ inline constexpr math::Vec3 kDefaultRemotePlayerColor{0.85F, 0.25F, 0.25F};
 /// uploaded for its character (ADR-0042). position is where that mesh's own
 /// local origin lands (matches physics::BodyState::position, a player's
 /// feet - the same convention the character's mesh was cooked around, ADR-
-/// 0041). height_scale scales the mesh's height (y) around that same base,
-/// 1 for the mesh's own authored (standing) height and less for a lower
-/// stance - issue #82's "in the right stance" acceptance criterion, which a
-/// fixed mesh can't otherwise show; the renderer doesn't know what a
-/// "stance" is, only this ratio. The renderer doesn't know whose player this
-/// is either; ClientRuntime maps presentation::RemotePlayer into this,
-/// keeping this module's only dependency augusta_input (no presentation/
-/// physics/protocol header here).
+/// 0041), drawn as authored: a stance shows once animation poses the mesh,
+/// not before. The renderer doesn't know whose player this is;
+/// ClientRuntime maps presentation::RemotePlayer into this, keeping this
+/// module's only dependency augusta_input (no presentation/physics/protocol
+/// header here).
 struct RemotePlayer {
   math::Vec3 position{};
-  float height_scale = 1.0F;
   math::Vec3 color = kDefaultRemotePlayerColor;
   /// The character index whose mesh this player is drawn with; a player whose
   /// index has no mesh is not drawn.
