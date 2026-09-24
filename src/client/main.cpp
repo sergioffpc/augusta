@@ -7,7 +7,6 @@
 #include <string_view>
 #include <utility>
 #include <variant>
-#include <vector>
 
 #include "augusta/assets.h"
 #include "augusta/config.h"
@@ -15,6 +14,7 @@
 #include "augusta/logging.h"
 #include "augusta/map.h"
 #include "augusta/networking.h"
+#include "augusta/renderer.h"
 #include "augusta/version.h"
 #include "runtime.h"
 #include "scene_loader.h"

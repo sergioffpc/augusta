@@ -15,9 +15,12 @@
 
 #include <nvtx3/nvtx3.hpp>
 
+#include "augusta/audio.h"
 #include "augusta/harness.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
+#include "augusta/prediction.h"
+#include "augusta/presentation.h"
 
 namespace augusta::runtime {
 

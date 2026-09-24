@@ -11,17 +11,12 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/audio.h"
 #include "augusta/harness.h"
 #include "augusta/input.h"
 #include "augusta/networking.h"
 #include "augusta/physics.h"
-#include "augusta/prediction.h"
-#include "augusta/presentation.h"
 #include "augusta/renderer.h"
 #include "scene_loader.h"
-
-// TODO(sergioffpc): Overall devemos remover os includes que nao sao usados.
 
 // augusta::runtime is ClientRuntime (ARCHITECTURE.md §5): the augustac
 // executable's own orchestrator, owning one of every client module and
