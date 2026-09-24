@@ -60,6 +60,7 @@ ASSET_TYPE_SCENE = 6
 ASSET_TYPE_SCRIPT = 7
 ASSET_TYPE_CHARACTERS = 8
 ASSET_TYPE_CLIENT_PACK = 9
+ASSET_TYPE_EYE = 10
 
 # Pack-relative path of a scenario's character list (assets.h's
 # kCharactersPath), in both of its packs.
@@ -217,6 +218,16 @@ def encode_spawn_point_blob(
     for component in translation:
         writer.f32(component)
     for component in rotation:
+        writer.f32(component)
+    return writer.bytes()
+
+
+def encode_eye_blob(position: tuple[float, float, float]) -> bytes:
+    """A character's eye (ADR-0040): its position in the character's own root
+    space, as three f32 and nothing else.
+    """
+    writer = ByteWriter()
+    for component in position:
         writer.f32(component)
     return writer.bytes()
 

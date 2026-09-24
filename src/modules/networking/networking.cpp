@@ -1,13 +1,17 @@
 #include "augusta/networking.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <steam/isteamnetworkingsockets.h>

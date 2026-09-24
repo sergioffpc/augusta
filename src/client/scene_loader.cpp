@@ -14,12 +14,6 @@ namespace augusta::client {
 
 namespace {
 
-// TODO(sergioffpc): kEyeHeight nao pode ser uma constante fixa, deve ser parte da definicao do modelo 3D do personagem,
-// a camara deve estar atrelada ao modelo.
-
-// How far above a spawn point's origin (its feet) the camera sits.
-constexpr float kEyeHeight = 1.7F;
-
 renderer::SceneMesh ToWorldSpace(const assets::MeshData& mesh, const math::Mat4& world) {
   renderer::SceneMesh result{.indices = mesh.indices};
   result.positions.reserve(mesh.points.size());
@@ -47,9 +41,12 @@ std::expected<std::optional<math::Vec3>, SceneError> ParseBaseColor(const assets
   return std::nullopt;
 }
 
-renderer::Camera CameraAtSpawnPoint(const math::Mat4& spawn_world) {
+// The camera of a character standing at the spawn point: its feet at the
+// point's origin, drawn unrotated like every character (renderer.h), so its eye
+// is added as authored.
+renderer::Camera CameraAtSpawnPoint(const math::Mat4& spawn_world, const math::Vec3& eye) {
   renderer::Camera camera;
-  camera.position = math::TranslationOf(spawn_world) + math::Vec3(0.0F, kEyeHeight, 0.0F);
+  camera.position = math::TranslationOf(spawn_world) + eye;
   camera.rotation = math::RotationOf(spawn_world);
   return camera;
 }
@@ -70,12 +67,15 @@ std::string DescribeSceneError(const SceneError& error) {
     case SceneErrorCode::kCharacterMeshUnresolved:
       return std::format("visual mesh {} of character {} {}", error.subject, error.node,
                          assets::DescribeResolveError(error.resolve_error, "mesh"));
+    case SceneErrorCode::kCharacterEyeUnresolved:
+      return std::format("eye {} of character {} {}", error.subject, error.node,
+                         assets::DescribeResolveError(error.resolve_error, "eye"));
   }
   return "unknown scene error";
 }
 
 std::expected<renderer::Scene, SceneError> BuildRenderScene(const assets::SceneData& scene,
-                                                            const MeshResolver& resolve_mesh) {
+                                                            const MeshResolver& resolve_mesh, const math::Vec3& eye) {
   const std::vector<math::Mat4> world = assets::ComputeWorldTransforms(scene);
 
   renderer::Scene result;
@@ -83,7 +83,7 @@ std::expected<renderer::Scene, SceneError> BuildRenderScene(const assets::SceneD
   for (std::size_t i = 0; i < scene.nodes.size(); ++i) {
     const assets::SceneNode& node = scene.nodes[i];
     if (node.is_spawn_point && !has_spawn_point) {
-      result.camera = CameraAtSpawnPoint(world[i]);
+      result.camera = CameraAtSpawnPoint(world[i], eye);
       has_spawn_point = true;
     }
     if (!node.mesh_path) {
@@ -108,13 +108,14 @@ std::expected<renderer::Scene, SceneError> BuildRenderScene(const assets::SceneD
   return result;
 }
 
-std::expected<renderer::Scene, SceneError> LoadRenderScene(const assets::Pack& pack, std::string_view scene_path) {
+std::expected<renderer::Scene, SceneError> LoadRenderScene(const assets::Pack& pack, const math::Vec3& eye,
+                                                           std::string_view scene_path) {
   const auto scene = pack.ResolveScene(scene_path);
   if (!scene) {
     return std::unexpected(SceneError{
         .code = SceneErrorCode::kSceneUnresolved, .subject = std::string(scene_path), .resolve_error = scene.error()});
   }
-  return BuildRenderScene(*scene, [&pack](std::string_view path) { return pack.ResolveMesh(path); });
+  return BuildRenderScene(*scene, [&pack](std::string_view path) { return pack.ResolveMesh(path); }, eye);
 }
 
 std::vector<std::uint8_t> CharactersToLoad(std::span<const std::uint8_t> others, const std::set<std::uint8_t>& loaded) {
@@ -148,6 +149,20 @@ std::expected<renderer::SceneMesh, SceneError> LoadCharacterMesh(std::span<const
   // color is unused here - BuildRemoteVertices (renderer.cpp) replaces it
   // with each RemotePlayer's own color; left at SceneMesh's own default.
   return renderer::SceneMesh{.positions = mesh->points, .indices = mesh->indices};
+}
+
+std::string CharacterEyePath(std::string_view character) { return std::format("{}/Character/Eye", character); }
+
+std::expected<math::Vec3, SceneError> LoadCharacterEye(std::string_view character, const EyeResolver& resolve_eye) {
+  const std::string path = CharacterEyePath(character);
+  const auto eye = resolve_eye(path);
+  if (!eye) {
+    return std::unexpected(SceneError{.code = SceneErrorCode::kCharacterEyeUnresolved,
+                                      .node = std::string(character),
+                                      .subject = path,
+                                      .resolve_error = eye.error()});
+  }
+  return eye->position;
 }
 
 }  // namespace augusta::client

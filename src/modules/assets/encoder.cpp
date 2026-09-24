@@ -123,6 +123,14 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeSpawnPointBlob(const Sp
   return blob;
 }
 
+// Eye blob wire format: position (3x f32), nothing else.
+std::expected<std::vector<std::byte>, EncodeError> EncodeEyeBlob(const EyeData& eye) {
+  std::vector<std::byte> blob;
+  ByteWriter writer(blob);
+  writer.WriteVec3(eye.position);
+  return blob;
+}
+
 std::expected<std::vector<std::byte>, EncodeError> EncodeScriptBlob(std::string_view script) {
   if (script.size() > kMaxScriptBytes) {
     return std::unexpected(EncodeError::kTooLarge);

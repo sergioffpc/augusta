@@ -14,6 +14,7 @@
 // Falcor or window: the loader only uses renderer.h's plain scene types.
 namespace {
 
+using augusta::assets::EyeData;
 using augusta::assets::MeshData;
 using augusta::assets::ResolveError;
 using augusta::assets::SceneData;
@@ -21,6 +22,7 @@ using augusta::assets::SceneNode;
 using augusta::client::BuildRenderScene;
 using augusta::client::CharactersToLoad;
 using augusta::client::DescribeSceneError;
+using augusta::client::LoadCharacterEye;
 using augusta::client::LoadCharacterMesh;
 using augusta::client::SceneErrorCode;
 using augusta::math::Quat;
@@ -28,6 +30,8 @@ using augusta::math::Vec3;
 
 constexpr float kTolerance = 1e-5F;
 constexpr float kQuarterTurn = 1.5707963F;
+// The local player's eye, in its character's root space (LoadCharacterEye).
+const Vec3 kEye{0.0F, 1.6F, 0.2F};
 
 MeshData Triangle() { return {.points = {{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}, .indices = {0, 1, 2}}; }
 
@@ -61,7 +65,7 @@ TEST(BuildRenderSceneTest, PlacesMeshGeometryInWorldSpaceThroughTheParentChain) 
   scene.nodes.back().translation = {0.0F, 2.0F, 0.0F};
   scene.nodes.back().mesh_path = "Root/Tri";
 
-  const auto result = BuildRenderScene(scene, ResolveTriangle());
+  const auto result = BuildRenderScene(scene, ResolveTriangle(), kEye);
 
   ASSERT_TRUE(result.has_value());
   ASSERT_EQ(result->meshes.size(), 1U);
@@ -78,7 +82,7 @@ TEST(BuildRenderSceneTest, ReadsAMeshsBaseColorFromItsNodeProperty) {
   scene.nodes.back().mesh_path = "Root/Tri";
   scene.nodes.back().properties.emplace_back("base_color", "0.25 0.5 1");
 
-  const auto result = BuildRenderScene(scene, ResolveTriangle());
+  const auto result = BuildRenderScene(scene, ResolveTriangle(), kEye);
 
   ASSERT_TRUE(result.has_value());
   ExpectNear(result->meshes[0].color, {0.25F, 0.5F, 1.0F});
@@ -89,7 +93,7 @@ TEST(BuildRenderSceneTest, KeepsTheDefaultColorWhenANodeHasNoBaseColor) {
   scene.nodes.push_back(Node("Root/Tri", augusta::assets::kSceneNodeNoParent));
   scene.nodes.back().mesh_path = "Root/Tri";
 
-  const auto result = BuildRenderScene(scene, ResolveTriangle());
+  const auto result = BuildRenderScene(scene, ResolveTriangle(), kEye);
 
   ASSERT_TRUE(result.has_value());
   ExpectNear(result->meshes[0].color, augusta::renderer::SceneMesh{}.color);
@@ -102,7 +106,7 @@ TEST(BuildRenderSceneTest, RejectsAMalformedBaseColorNamingTheNode) {
     scene.nodes.back().mesh_path = "Root/Tri";
     scene.nodes.back().properties.emplace_back("base_color", value);
 
-    const auto result = BuildRenderScene(scene, ResolveTriangle());
+    const auto result = BuildRenderScene(scene, ResolveTriangle(), kEye);
 
     ASSERT_FALSE(result.has_value()) << value;
     EXPECT_EQ(result.error().code, SceneErrorCode::kMalformedBaseColor) << value;
@@ -118,7 +122,7 @@ TEST(BuildRenderSceneTest, AppliesAParentsRotationToItsChildren) {
   scene.nodes.push_back(Node("Root/Tri", 0));
   scene.nodes.back().mesh_path = "Root/Tri";
 
-  const auto result = BuildRenderScene(scene, ResolveTriangle());
+  const auto result = BuildRenderScene(scene, ResolveTriangle(), kEye);
 
   ASSERT_TRUE(result.has_value());
   // A quarter turn about +Y takes +X to -Z and +Z to +X.
@@ -126,7 +130,7 @@ TEST(BuildRenderSceneTest, AppliesAParentsRotationToItsChildren) {
   ExpectNear(result->meshes[0].positions[2], {1.0F, 0.0F, 0.0F});
 }
 
-TEST(BuildRenderSceneTest, PutsTheCameraAtTheFirstSpawnPointAtEyeHeight) {
+TEST(BuildRenderSceneTest, PutsTheCameraAtTheLocalPlayersEyeAboveTheFirstSpawnPoint) {
   SceneData scene;
   scene.nodes.push_back(Node("Root", augusta::assets::kSceneNodeNoParent));
   scene.nodes.push_back(Node("Root/SpawnA", 0));
@@ -137,12 +141,10 @@ TEST(BuildRenderSceneTest, PutsTheCameraAtTheFirstSpawnPointAtEyeHeight) {
   scene.nodes.back().is_spawn_point = true;
   scene.nodes.back().translation = {9.0F, 0.0F, 9.0F};
 
-  const auto result = BuildRenderScene(scene, ResolveTriangle());
+  const auto result = BuildRenderScene(scene, ResolveTriangle(), kEye);
 
   ASSERT_TRUE(result.has_value());
-  EXPECT_NEAR(result->camera.position.x, 1.0F, kTolerance);
-  EXPECT_NEAR(result->camera.position.y, 1.7F, kTolerance);
-  EXPECT_NEAR(result->camera.position.z, 5.0F, kTolerance);
+  ExpectNear(result->camera.position, Vec3(1.0F, 0.0F, 5.0F) + kEye);
   const Quat expected = glm::angleAxis(kQuarterTurn, Vec3(0.0F, 1.0F, 0.0F));
   EXPECT_NEAR(result->camera.rotation.w, expected.w, kTolerance);
   EXPECT_NEAR(result->camera.rotation.y, expected.y, kTolerance);
@@ -152,7 +154,7 @@ TEST(BuildRenderSceneTest, KeepsTheDefaultCameraWithoutASpawnPoint) {
   SceneData scene;
   scene.nodes.push_back(Node("Root", augusta::assets::kSceneNodeNoParent));
 
-  const auto result = BuildRenderScene(scene, ResolveTriangle());
+  const auto result = BuildRenderScene(scene, ResolveTriangle(), kEye);
 
   ASSERT_TRUE(result.has_value());
   const augusta::renderer::Camera default_camera;
@@ -164,7 +166,7 @@ TEST(BuildRenderSceneTest, ReportsTheMeshItCouldNotResolve) {
   scene.nodes.push_back(Node("Root", augusta::assets::kSceneNodeNoParent));
   scene.nodes.back().mesh_path = "Root/Missing";
 
-  const auto result = BuildRenderScene(scene, ResolveTriangle());
+  const auto result = BuildRenderScene(scene, ResolveTriangle(), kEye);
 
   ASSERT_FALSE(result.has_value());
   EXPECT_EQ(result.error().code, SceneErrorCode::kMeshUnresolved);
@@ -232,6 +234,32 @@ TEST(LoadCharacterMeshTest, AnIndexOutsideThePacksCharacterListIsASceneError) {
     EXPECT_EQ(mesh.error().subject, std::to_string(index));
     EXPECT_FALSE(DescribeSceneError(mesh.error()).empty());
   }
+}
+
+TEST(LoadCharacterEyeTest, ResolvesTheEyeOfTheCharacterAPathNames) {
+  std::string resolved;
+  const auto eye = LoadCharacterEye("characters/medic", [&](std::string_view path) {
+    resolved = path;
+    return std::expected<EyeData, ResolveError>(EyeData{.position = kEye});
+  });
+
+  ASSERT_TRUE(eye.has_value());
+  EXPECT_EQ(resolved, "characters/medic/Character/Eye");
+  ExpectNear(*eye, kEye);
+}
+
+TEST(LoadCharacterEyeTest, AMissingEyeIsASceneErrorNamingTheCharacter) {
+  const auto eye = LoadCharacterEye("characters/sniper", [](std::string_view) {
+    return std::expected<EyeData, ResolveError>(std::unexpected(ResolveError::kNotFound));
+  });
+
+  ASSERT_FALSE(eye.has_value());
+  EXPECT_EQ(eye.error().code, SceneErrorCode::kCharacterEyeUnresolved);
+  EXPECT_EQ(eye.error().node, "characters/sniper");
+  EXPECT_EQ(eye.error().subject, "characters/sniper/Character/Eye");
+  EXPECT_EQ(eye.error().resolve_error, ResolveError::kNotFound);
+  EXPECT_EQ(DescribeSceneError(eye.error()),
+            "eye characters/sniper/Character/Eye of character characters/sniper not found");
 }
 
 }  // namespace

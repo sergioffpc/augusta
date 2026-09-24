@@ -268,6 +268,16 @@ std::optional<SpawnPointData> DecodeSpawnPointBlob(std::span<const std::byte> bl
   };
 }
 
+// Eye blob wire format: see EncodeEyeBlob.
+std::optional<EyeData> DecodeEyeBlob(std::span<const std::byte> blob) {
+  ByteReader reader(blob);
+  const auto position = ReadVec3(reader);
+  if (!position) {
+    return std::nullopt;
+  }
+  return EyeData{.position = *position};
+}
+
 // Script blob: the script's text as it is, with no framing and no terminator.
 std::optional<std::string> DecodeScriptBlob(std::span<const std::byte> blob) {
   if (blob.size() > kMaxScriptBytes) {

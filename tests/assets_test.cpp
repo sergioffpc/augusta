@@ -275,6 +275,29 @@ TEST_F(PackTest, EncodesAndResolvesTheCharacterListInOrder) {
   EXPECT_EQ(pack->ResolveCharacters().value(), characters);
 }
 
+// A character's eye is where the local player's camera sits (ADR-0040): a bare
+// point, resolved by path, and only as an eye.
+TEST_F(PackTest, EncodesAndResolvesACharactersEye) {
+  const auto pack_path = MakePackPath("augusta_assets_test_eye.pack");
+  const auto keys = GenerateEd25519KeyPair();
+
+  const auto blob = augusta::assets::EncodeEyeBlob({.position = Vec3(0.0F, 1.6F, 0.1F)});
+  ASSERT_TRUE(blob.has_value());
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kEye, .path = "characters/player/Character/Eye", .data = *blob},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  const auto eye = pack->ResolveEye("characters/player/Character/Eye");
+  ASSERT_TRUE(eye.has_value());
+  EXPECT_EQ(eye->position, Vec3(0.0F, 1.6F, 0.1F));
+  EXPECT_EQ(pack->ResolveMesh("characters/player/Character/Eye").error(), augusta::assets::ResolveError::kTypeMismatch);
+  EXPECT_EQ(pack->ResolveEye("characters/medic/Character/Eye").error(), augusta::assets::ResolveError::kNotFound);
+}
+
 TEST_F(PackTest, AnEmptyCharacterListResolvesAsEmpty) {
   const auto pack_path = MakePackPath("augusta_assets_test_no_characters.pack");
   const auto keys = GenerateEd25519KeyPair();

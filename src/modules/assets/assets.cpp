@@ -2,18 +2,30 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <expected>
+#include <filesystem>
+#include <format>
 #include <fstream>
+#include <ios>
+#include <memory>
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <system_error>
+#include <utility>
+#include <vector>
 
 #include <blake3.h>
 #include <boost/interprocess/file_mapping.hpp>
 #include <boost/interprocess/mapped_region.hpp>
 #include <sodium.h>
 
+#include "augusta/math.h"
 #include "decoder.h"
 #include "encoder.h"
 #include "wire_format.h"
@@ -412,6 +424,7 @@ bool IsValidAssetType(std::uint8_t value) {
     case AssetType::kScript:
     case AssetType::kCharacters:
     case AssetType::kClientPack:
+    case AssetType::kEye:
       return true;
   }
   return false;
@@ -600,6 +613,10 @@ std::expected<MeshData, ResolveError> Pack::ResolveHitbox(std::string_view path)
 
 std::expected<SpawnPointData, ResolveError> Pack::ResolveSpawnPoint(std::string_view path) const {
   return ResolveAsset<SpawnPointData>(impl_->index, impl_->mapping, path, AssetType::kSpawnPoint, DecodeSpawnPointBlob);
+}
+
+std::expected<EyeData, ResolveError> Pack::ResolveEye(std::string_view path) const {
+  return ResolveAsset<EyeData>(impl_->index, impl_->mapping, path, AssetType::kEye, DecodeEyeBlob);
 }
 
 std::expected<std::string, ResolveError> Pack::ResolveScript(std::string_view path) const {
