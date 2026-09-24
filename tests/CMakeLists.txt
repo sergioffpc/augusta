@@ -34,7 +34,7 @@ target_compile_definitions(augusta_parameters_loader_tests PRIVATE
 gtest_discover_tests(augusta_parameters_loader_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_protocol_tests protocol_test.cpp)
-target_link_libraries(augusta_protocol_tests PRIVATE augusta_protocol GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_protocol_tests PRIVATE augusta_grid augusta_protocol GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_protocol_tests DISCOVERY_TIMEOUT 30)
 
@@ -110,7 +110,7 @@ target_link_libraries(augusta_session_tests PRIVATE augusta_harness augustad_hos
 gtest_discover_tests(augusta_session_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_wire_tests wire_test.cpp)
-target_link_libraries(augusta_wire_tests PRIVATE augusta_harness augustad_host GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_wire_tests PRIVATE augusta_grid augusta_harness augustad_host GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_wire_tests DISCOVERY_TIMEOUT 30)
 

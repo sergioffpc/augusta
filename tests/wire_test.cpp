@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
+#include "augusta/grid.h"
 #include "augusta/harness.h"
 #include "augusta/harness_wire.h"
 #include "augusta/input.h"
@@ -57,10 +58,10 @@ BodyState Body(float x, Stance stance) {
 
 // actual is expected as it arrives: its numbers on the grids they travel on.
 void ExpectSameBody(const BodyState& actual, const BodyState& expected) {
-  EXPECT_EQ(actual.position, augusta::protocol::SnapPosition(expected.position));
-  EXPECT_EQ(actual.velocity, augusta::protocol::SnapVelocity(expected.velocity));
+  EXPECT_EQ(actual.position, augusta::grid::SnapPosition(expected.position));
+  EXPECT_EQ(actual.velocity, augusta::grid::SnapVelocity(expected.velocity));
   EXPECT_EQ(actual.stance, expected.stance);
-  EXPECT_EQ(actual.stamina, augusta::protocol::SnapStamina(expected.stamina));
+  EXPECT_EQ(actual.stamina, augusta::grid::SnapStamina(expected.stamina));
 }
 
 TEST(WireTest, ACommandTheClientSendsReachesTheServerUnchanged) {

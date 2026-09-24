@@ -14,9 +14,9 @@
 
 #include <PxPhysicsAPI.h>
 
+#include "augusta/grid.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
-#include "augusta/protocol.h"
 
 // M1 spike (ADR-0002): the first real (non-stub) body for this module,
 // backed by PhysX's character controller (CCT) rather than a raw rigid
@@ -265,11 +265,11 @@ class PhysxLease {
   PhysxHandles handles_;
 };
 
-// state on the grids the Networking Protocol sends a body on (ADR-0038).
+// state on the grids the Networking Protocol sends a body on (augusta::grid, ADR-0038).
 BodyState OnWireGrid(BodyState state) {
-  state.position = protocol::SnapPosition(state.position);
-  state.velocity = protocol::SnapVelocity(state.velocity);
-  state.stamina = protocol::SnapStamina(state.stamina);
+  state.position = grid::SnapPosition(state.position);
+  state.velocity = grid::SnapVelocity(state.velocity);
+  state.stamina = grid::SnapStamina(state.stamina);
   return state;
 }
 
@@ -473,7 +473,7 @@ BodyHandle World::CreateBody(const math::Vec3& initial_position) {
     throw std::runtime_error("physics::World::CreateBody: createController failed");
   }
   // The descriptor's position is the capsule's center; BodyState's is the feet.
-  const math::Vec3 position = protocol::SnapPosition(initial_position);
+  const math::Vec3 position = grid::SnapPosition(initial_position);
   controller->setFootPosition(ToFootPosition(position));
 
   const auto handle = static_cast<BodyHandle>(impl_->next_handle++);
@@ -531,7 +531,7 @@ BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta
 
   // The controller is put back on the grid too, so the next Step starts from
   // exactly the position this one reports.
-  const math::Vec3 new_position = protocol::SnapPosition(FromPx(record.controller->getFootPosition()));
+  const math::Vec3 new_position = grid::SnapPosition(FromPx(record.controller->getFootPosition()));
   record.controller->setFootPosition(ToFootPosition(new_position));
   state.velocity = delta_time > 0.0F ? (new_position - state.position) / delta_time : math::Vec3{};
   state.position = new_position;

@@ -11,9 +11,16 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/grid.h"
+
 // The codec is pure: every case here is bytes in, message or error out.
 namespace {
 
+using augusta::grid::SnapAngle;
+using augusta::grid::SnapDirection;
+using augusta::grid::SnapPosition;
+using augusta::grid::SnapStamina;
+using augusta::grid::SnapVelocity;
 using augusta::math::Vec3;
 using augusta::protocol::AuthoritativeStateWire;
 using augusta::protocol::BodyStateWire;
@@ -42,11 +49,6 @@ using augusta::protocol::ReadyWire;
 using augusta::protocol::RosterEntryWire;
 using augusta::protocol::SequencedCommandWire;
 using augusta::protocol::SessionIdWire;
-using augusta::protocol::SnapAngle;
-using augusta::protocol::SnapDirection;
-using augusta::protocol::SnapPosition;
-using augusta::protocol::SnapStamina;
-using augusta::protocol::SnapVelocity;
 
 BytesWire BytesOf(std::initializer_list<std::uint8_t> values) {
   BytesWire bytes;

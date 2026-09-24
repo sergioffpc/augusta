@@ -4,7 +4,7 @@ add_library(augusta_physics STATIC
 target_include_directories(augusta_physics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(augusta_physics
   PUBLIC augusta_math
-  PRIVATE augusta_logging augusta_protocol
+  PRIVATE augusta_grid augusta_logging
 )
 
 if (MSVC)
