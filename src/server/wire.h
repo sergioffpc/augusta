@@ -5,7 +5,6 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/identity.h"
 #include "augusta/input.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -24,7 +23,7 @@
 namespace augusta::server {
 
 /// session as the protocol carries it.
-[[nodiscard]] protocol::SessionIdWire ToWire(identity::SessionId session);
+[[nodiscard]] protocol::SessionIdWire ToWire(SessionId session);
 
 /// reason as the protocol carries it.
 [[nodiscard]] protocol::JoinRefusalWire ToWire(JoinRefusal reason);

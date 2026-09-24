@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/identity.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 
@@ -31,9 +30,14 @@ namespace augusta::server {
 /// that stays full leaves anyone who is done the time to leave (ADR-0043).
 inline constexpr std::chrono::seconds kMatchPause{5};
 
+/// The server's name for one connected player (CONTEXT.md, "Session ID"),
+/// which Match makes when it admits a join. Distinct from the transport's
+/// handle for the connection, and not a credential.
+enum class SessionId : std::uint32_t {};
+
 /// One player in the Lobby.
 struct RosterEntry {
-  identity::SessionId session{};
+  SessionId session{};
   /// Its character index: 1-based position in the scenario's character list (ADR-0042).
   std::uint8_t character = 1;
 };
@@ -48,7 +52,7 @@ struct Roster {
 
 /// One player in a match, and where it spawns.
 struct MatchPlayer {
-  identity::SessionId session{};
+  SessionId session{};
   std::uint8_t character = 1;
   math::Vec3 spawn{};
 };
@@ -62,7 +66,7 @@ struct MatchStart {
 /// What a peer is told when it is admitted to the Lobby.
 struct Admission {
   /// The name the server gave the peer's player.
-  identity::SessionId session{};
+  SessionId session{};
   /// The character it plays.
   std::uint8_t character = 1;
 };
@@ -161,29 +165,29 @@ class Match {
   /// Ends the match in progress: its players return to the Lobby, under a new
   /// Roster version none of them is Ready for yet, and the pause begins. Returns
   /// who was in it; empty, changing nothing, if no match is in progress.
-  std::vector<identity::SessionId> End();
+  std::vector<SessionId> End();
 
   /// Whether a match is in progress.
   [[nodiscard]] bool InMatch() const;
 
   /// Whether the player of session is in the match in progress.
-  [[nodiscard]] bool IsPlaying(identity::SessionId session) const;
+  [[nodiscard]] bool IsPlaying(SessionId session) const;
 
   /// Who is in the match in progress, ordered by session; empty in the Lobby.
-  [[nodiscard]] std::vector<identity::SessionId> Playing() const;
+  [[nodiscard]] std::vector<SessionId> Playing() const;
 
   /// Who is in the Lobby; empty, under the last version, while a match is in progress.
   [[nodiscard]] Roster GetRoster() const;
 
   /// The session of peer, or nullopt if it has not joined.
-  [[nodiscard]] std::optional<identity::SessionId> SessionOf(networking::PeerId peer) const;
+  [[nodiscard]] std::optional<SessionId> SessionOf(networking::PeerId peer) const;
 
   /// How many players have joined and not left, in the Lobby or the match.
   [[nodiscard]] std::size_t PlayerCount() const;
 
  private:
   struct Member {
-    identity::SessionId session;
+    SessionId session;
     std::uint8_t character;
     // The Roster version this player's client last loaded for; 0 for none.
     std::uint32_t ready_version = 0;

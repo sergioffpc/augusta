@@ -7,7 +7,6 @@
 
 #include "augusta/assets.h"
 #include "augusta/harness.h"
-#include "augusta/identity.h"
 #include "augusta/input.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -24,7 +23,7 @@ namespace augusta::harness {
 /// What the server said when it admitted this client, in the engine's terms.
 struct Admission {
   /// The session the server assigned to this client.
-  identity::SessionId session{};
+  SessionId session{};
   /// The rate, in Hz, at which the server ticks and this client must.
   std::uint8_t tick_rate_hz = 0;
   /// The parameters this client must predict with.
@@ -50,7 +49,7 @@ struct SequencedCommand {
 };
 
 /// session in the engine's terms.
-[[nodiscard]] identity::SessionId FromWire(protocol::SessionIdWire session);
+[[nodiscard]] SessionId FromWire(protocol::SessionIdWire session);
 
 /// reason in the engine's terms.
 [[nodiscard]] JoinRefusal FromWire(protocol::JoinRefusalWire reason);

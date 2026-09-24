@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <utility>
 
+#include "host.h"
+
 namespace augusta::server {
 
 namespace {
@@ -26,7 +28,7 @@ static_assert(protocol::kPackHashSize == assets::kPackHashSize);
 
 }  // namespace
 
-protocol::SessionIdWire ToWire(identity::SessionId session) {
+protocol::SessionIdWire ToWire(SessionId session) {
   return static_cast<protocol::SessionIdWire>(static_cast<std::uint32_t>(session));
 }
 
@@ -104,7 +106,8 @@ protocol::AuthoritativeStateWire ToWire(const replication::Update& update) {
   };
   state.players.reserve(update.players.size());
   for (const replication::PlayerBody& player : update.players) {
-    state.players.push_back(protocol::PlayerStateWire{.session = ToWire(player.session), .body = ToWire(player.body)});
+    state.players.push_back(
+        protocol::PlayerStateWire{.session = ToWire(SessionOf(player.player)), .body = ToWire(player.body)});
   }
   return state;
 }

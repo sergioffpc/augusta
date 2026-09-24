@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/identity.h"
 #include "augusta/input.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
@@ -36,9 +35,14 @@
 // send from both).
 namespace augusta::harness {
 
+/// The server's name for one connected player (CONTEXT.md, "Session ID"), as
+/// this client knows it: assigned when the server admits the join. Distinct
+/// from the transport's handle for the connection, and not a credential.
+enum class SessionId : std::uint32_t {};
+
 /// One player's body, under the session the server knows it by.
 struct PlayerBody {
-  identity::SessionId session{};
+  SessionId session{};
   physics::BodyState body{};
 };
 
@@ -55,7 +59,7 @@ struct AuthoritativeState {
 
 /// One player in the Lobby.
 struct RosterEntry {
-  identity::SessionId session{};
+  SessionId session{};
   /// Its character index: 1-based position in the scenario's character list (ADR-0042).
   std::uint8_t character = 1;
 };
@@ -70,7 +74,7 @@ struct Lobby {
 
 /// One player in a match, and where the server spawned it.
 struct MatchPlayer {
-  identity::SessionId session{};
+  SessionId session{};
   std::uint8_t character = 1;
   math::Vec3 spawn{};
 };
@@ -187,7 +191,7 @@ class Session {
 
   /// The session the server assigned once it admitted this client, or nullopt
   /// until then. Set by ExchangeMessages; safe to read from any thread.
-  [[nodiscard]] std::optional<identity::SessionId> GetSessionId() const;
+  [[nodiscard]] std::optional<SessionId> GetSessionId() const;
 
   /// Whether this client is waiting to be admitted, in the Lobby, or in a
   /// match. Set by ExchangeMessages; safe to read from any thread.

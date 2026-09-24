@@ -22,7 +22,7 @@ add_library(augustad_match STATIC
   match.cpp
 )
 target_include_directories(augustad_match PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_match PUBLIC augusta_assets augusta_identity augusta_math augusta_networking augusta_physics)
+target_link_libraries(augustad_match PUBLIC augusta_assets augusta_math augusta_networking augusta_physics)
 augusta_set_module_scope(augustad_match SERVER_ONLY)
 
 # The sanity gate and per-player queue for what clients send to move; pure, so
@@ -44,7 +44,7 @@ add_library(augustad_host STATIC
 target_include_directories(augustad_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_host
   PUBLIC augusta_networking augusta_parameters augusta_physics augusta_simulation augustad_parameters_loader
-         augustad_commands augustad_match augusta_assets augusta_identity augusta_protocol augusta_replication
+         augustad_commands augustad_match augusta_assets augusta_protocol augusta_replication
   PRIVATE augusta_logging augusta_version
 )
 augusta_set_module_scope(augustad_host SERVER_ONLY)

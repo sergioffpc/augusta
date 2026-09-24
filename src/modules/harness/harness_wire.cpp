@@ -26,8 +26,8 @@ static_assert(protocol::kPackHashSize == assets::kPackHashSize);
 
 }  // namespace
 
-identity::SessionId FromWire(protocol::SessionIdWire session) {
-  return static_cast<identity::SessionId>(static_cast<std::uint32_t>(session));
+SessionId FromWire(protocol::SessionIdWire session) {
+  return static_cast<SessionId>(static_cast<std::uint32_t>(session));
 }
 
 JoinRefusal FromWire(protocol::JoinRefusalWire reason) {

@@ -10,7 +10,6 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
-#include "augusta/identity.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 
@@ -18,7 +17,6 @@
 namespace {
 
 using augusta::assets::PackHash;
-using augusta::identity::SessionId;
 using augusta::math::Vec3;
 using augusta::networking::PeerId;
 using augusta::server::Departure;
@@ -27,6 +25,7 @@ using augusta::server::JoinRequest;
 using augusta::server::Match;
 using augusta::server::MatchConfig;
 using augusta::server::MatchStart;
+using augusta::server::SessionId;
 
 constexpr const char* kVersion = "1.2.3";
 // The Player count of the matches below, unless a test says otherwise: as many

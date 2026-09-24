@@ -25,7 +25,7 @@ namespace augusta::harness {
 namespace {
 
 // Whether session is one of start's players.
-bool IsInMatch(const MatchStart& start, identity::SessionId session) {
+bool IsInMatch(const MatchStart& start, SessionId session) {
   return std::ranges::any_of(start.players, [&](const MatchPlayer& player) { return player.session == session; });
 }
 
@@ -315,7 +315,7 @@ std::optional<Failure> Session::GetFailure() const {
 
 std::optional<networking::ConnectionStats> Session::GetConnectionStats() const { return impl_->network.GetStats(); }
 
-std::optional<identity::SessionId> Session::GetSessionId() const {
+std::optional<SessionId> Session::GetSessionId() const {
   const std::shared_ptr<const ServerView> server_view = impl_->view.load();
   if (!server_view->accepted.has_value()) {
     return std::nullopt;

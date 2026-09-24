@@ -13,6 +13,7 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/simulation.h"
+#include "match.h"
 #include "parameters_loader.h"
 
 // augusta::server::Host is the server's network boundary and the
@@ -61,6 +62,13 @@ struct Map {
   /// player may join with.
   assets::PackHash client_pack{};
 };
+
+/// The SimulationWorld player of session: SimulationWorld names a player by the
+/// number of its session, so a state can be sent back under the names clients know.
+[[nodiscard]] simulation::PlayerId PlayerOf(SessionId session);
+
+/// The session a SimulationWorld player belongs to; the inverse of PlayerOf.
+[[nodiscard]] SessionId SessionOf(simulation::PlayerId player);
 
 /// The server's listening socket and its SimulationWorld, without threads or a clock.
 class Host {

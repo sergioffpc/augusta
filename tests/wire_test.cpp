@@ -11,14 +11,15 @@
 #include "augusta/assets.h"
 #include "augusta/harness.h"
 #include "augusta/harness_wire.h"
-#include "augusta/identity.h"
 #include "augusta/input.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
+#include "augusta/simulation.h"
 #include "command_queue.h"
+#include "host.h"
 #include "match.h"
 
 // Each peer converts between the engine's types and the protocol's plain ones
@@ -27,15 +28,22 @@
 // types unchanged, bytes and all.
 namespace {
 
-using augusta::identity::SessionId;
 using augusta::math::Vec3;
 using augusta::physics::BodyState;
 using augusta::physics::Stance;
+using augusta::server::SessionId;
+using augusta::simulation::PlayerId;
 
 // message as the other peer decodes it.
 template <typename MessageWire>
 MessageWire ThroughTheWire(const MessageWire& message) {
   return std::get<MessageWire>(augusta::protocol::Decode(augusta::protocol::Encode(message)).value());
+}
+
+// The number a Session ID carries, on either side: each peer has its own type for it.
+template <typename Id>
+std::uint32_t Number(Id id) {
+  return static_cast<std::uint32_t>(id);
 }
 
 BodyState Body(float x, Stance stance) {
@@ -105,12 +113,12 @@ TEST(WireTest, EachFlagOfACommandReachesTheServerAsItselfAlone) {
 
 TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
   const augusta::replication::Update sent{
-      .recipient = SessionId{2},
+      .recipient = PlayerId{2},
       .tick = 42,
       .acknowledged_sequence = 17,
-      .players = {{.session = SessionId{1}, .body = Body(1.0F, Stance::kStanding)},
-                  {.session = SessionId{2}, .body = Body(2.0F, Stance::kCrouching)},
-                  {.session = SessionId{3}, .body = Body(3.0F, Stance::kProne)}},
+      .players = {{.player = PlayerId{1}, .body = Body(1.0F, Stance::kStanding)},
+                  {.player = PlayerId{2}, .body = Body(2.0F, Stance::kCrouching)},
+                  {.player = PlayerId{3}, .body = Body(3.0F, Stance::kProne)}},
   };
 
   const augusta::harness::AuthoritativeState received =
@@ -120,7 +128,7 @@ TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
   EXPECT_EQ(received.acknowledged_sequence, sent.acknowledged_sequence);
   ASSERT_EQ(received.players.size(), sent.players.size());
   for (std::size_t i = 0; i < sent.players.size(); ++i) {
-    EXPECT_EQ(received.players[i].session, sent.players[i].session);
+    EXPECT_EQ(Number(received.players[i].session), Number(augusta::server::SessionOf(sent.players[i].player)));
     ExpectSameBody(received.players[i].body, sent.players[i].body);
   }
 }
@@ -151,7 +159,7 @@ TEST(WireTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
   EXPECT_EQ(received.version, sent.version);
   ASSERT_EQ(received.roster.size(), sent.players.size());
   for (std::size_t i = 0; i < sent.players.size(); ++i) {
-    EXPECT_EQ(received.roster[i].session, sent.players[i].session);
+    EXPECT_EQ(Number(received.roster[i].session), Number(sent.players[i].session));
     EXPECT_EQ(received.roster[i].character, sent.players[i].character);
   }
 }
@@ -166,7 +174,7 @@ TEST(WireTest, AMatchStartTheServerSendsReachesTheClientUnchanged) {
 
   ASSERT_EQ(received.players.size(), sent.players.size());
   for (std::size_t i = 0; i < sent.players.size(); ++i) {
-    EXPECT_EQ(received.players[i].session, sent.players[i].session);
+    EXPECT_EQ(Number(received.players[i].session), Number(sent.players[i].session));
     EXPECT_EQ(received.players[i].character, sent.players[i].character);
     EXPECT_EQ(received.players[i].spawn, sent.players[i].spawn);
   }
@@ -195,7 +203,7 @@ TEST(WireTest, TheAdmissionTheServerSendsReachesTheClientUnchanged) {
   const augusta::harness::Admission received =
       augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent, 30, parameters)));
 
-  EXPECT_EQ(received.session, sent.session);
+  EXPECT_EQ(Number(received.session), Number(sent.session));
   EXPECT_EQ(received.character, sent.character);
   EXPECT_EQ(received.tick_rate_hz, 30);
   EXPECT_EQ(received.parameters.player_count, parameters.player_count);
@@ -234,6 +242,12 @@ TEST(WireTest, TheCommandsTheClientSendsReachTheServerInOrder) {
     EXPECT_EQ(received[i].sequence, sent[i].sequence);
     EXPECT_EQ(received[i].command.yaw, sent[i].command.yaw);
   }
+}
+
+TEST(WireTest, APlayerAndItsSessionNameEachOther) {
+  EXPECT_EQ(augusta::server::SessionOf(augusta::server::PlayerOf(SessionId{77})), SessionId{77});
+  EXPECT_EQ(augusta::server::PlayerOf(augusta::server::SessionOf(PlayerId{9})), PlayerId{9});
+  EXPECT_EQ(Number(augusta::server::PlayerOf(SessionId{77})), 77U);
 }
 
 }  // namespace

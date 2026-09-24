@@ -17,11 +17,12 @@ reads like an engine type. Each peer converts between the protocol's types and i
 edge and nowhere else: the server in `server/wire.h` (used by `server::Host`
 right after Decode and right before Encode) and the client in
 `augusta/harness_wire.h` (used the same way by `harness::Session`). Inside each
-peer, modules pass the engine's types: `harness`'s API, `server::Match`,
-`replication`, `presentation` and ClientRuntime name a player by
-`identity::SessionId` (the shared `augusta_identity` module), a pack by
-`assets::PackHash`, and a refusal by their own `JoinRefusal`, never by a `Wire`
-type; `tests/protocol_boundary.cmake` fails the build's tests if one of their
+peer, modules pass the engine's types, never a `Wire` one: each peer names a
+player by its own Session ID type (`harness::SessionId` for the harness's API,
+`presentation` and ClientRuntime; `server::SessionId` for `server::Match` and
+`server::Host`, which hands `replication` the SimulationWorld's
+`simulation::PlayerId` of the same number), a pack by `assets::PackHash`, and a
+refusal by its own `JoinRefusal`; `tests/protocol_boundary.cmake` fails the build's tests if one of their
 headers names the protocol.
 
 **Extended by ADR-0042**: Join request also carries the chosen character's path,

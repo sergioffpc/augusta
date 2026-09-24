@@ -61,7 +61,7 @@ std::expected<Admission, JoinRefusal> Match::Join(networking::PeerId peer, const
   // The scenario composes at most assets::kMaxCharacters, so an index fits in a byte.
   const auto index = static_cast<std::uint8_t>(std::distance(characters_.begin(), found) + 1);
   // A newcomer bumps the version, so no one is Ready until they have loaded its character.
-  const Member member{.session = static_cast<identity::SessionId>(next_session_++), .character = index};
+  const Member member{.session = static_cast<SessionId>(next_session_++), .character = index};
   members_.emplace(peer, member);
   ++roster_version_;
   return Admission{.session = member.session, .character = member.character};
@@ -126,8 +126,8 @@ std::optional<MatchStart> Match::TryStart() {
   return start;
 }
 
-std::vector<identity::SessionId> Match::End() {
-  std::vector<identity::SessionId> ended = Playing();
+std::vector<SessionId> Match::End() {
+  std::vector<SessionId> ended = Playing();
   if (!in_match_) {
     return ended;
   }
@@ -139,12 +139,12 @@ std::vector<identity::SessionId> Match::End() {
 
 bool Match::InMatch() const { return in_match_; }
 
-bool Match::IsPlaying(identity::SessionId session) const {
+bool Match::IsPlaying(SessionId session) const {
   return in_match_ && std::ranges::any_of(members_, [&](const auto& entry) { return entry.second.session == session; });
 }
 
-std::vector<identity::SessionId> Match::Playing() const {
-  std::vector<identity::SessionId> playing;
+std::vector<SessionId> Match::Playing() const {
+  std::vector<SessionId> playing;
   if (in_match_) {
     for (const Member& member : MembersBySession()) {
       playing.push_back(member.session);
@@ -163,7 +163,7 @@ Roster Match::GetRoster() const {
   return roster;
 }
 
-std::optional<identity::SessionId> Match::SessionOf(networking::PeerId peer) const {
+std::optional<SessionId> Match::SessionOf(networking::PeerId peer) const {
   const auto found = members_.find(peer);
   return found == members_.end() ? std::nullopt : std::optional(found->second.session);
 }

@@ -26,7 +26,6 @@
 
 #include "augusta/assets.h"
 #include "augusta/harness.h"
-#include "augusta/identity.h"
 #include "augusta/input.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
@@ -53,7 +52,7 @@ using augusta::harness::JoinRefusal;
 using augusta::harness::Phase;
 using augusta::harness::Session;
 using augusta::harness::SessionConfig;
-using augusta::identity::SessionId;
+using augusta::harness::SessionId;
 using augusta::input::Command;
 using augusta::math::Length;
 using augusta::math::Vec3;

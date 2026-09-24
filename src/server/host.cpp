@@ -16,7 +16,6 @@
 #include <variant>
 #include <vector>
 
-#include "augusta/identity.h"
 #include "augusta/logging.h"
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
@@ -51,9 +50,15 @@ std::uint32_t PauseTicks(std::uint8_t tick_rate_hz) {
 // The transport's handle as a number, for log lines.
 std::uint32_t PeerNumber(networking::PeerId peer) { return static_cast<std::uint32_t>(peer); }
 
-std::uint32_t SessionNumber(identity::SessionId session) { return static_cast<std::uint32_t>(session); }
+std::uint32_t SessionNumber(SessionId session) { return static_cast<std::uint32_t>(session); }
 
 }  // namespace
+
+simulation::PlayerId PlayerOf(SessionId session) {
+  return static_cast<simulation::PlayerId>(static_cast<std::uint32_t>(session));
+}
+
+SessionId SessionOf(simulation::PlayerId player) { return static_cast<SessionId>(static_cast<std::uint32_t>(player)); }
 
 struct Host::Impl {
   // What the server keeps per joined client.
@@ -65,7 +70,7 @@ struct Host::Impl {
   // Declared before the socket so it is constructed first; see BuildSimulation.
   // Simulation thread only, with the sessions whose bodies are in it.
   simulation::World simulation;
-  std::unordered_set<identity::SessionId> bodies;
+  std::unordered_set<SessionId> bodies;
   std::uint32_t tick = 0;
   // What every client is told when it joins, with the tick rate; neither ever
   // changes, so neither needs the lock.
@@ -80,7 +85,7 @@ struct Host::Impl {
   // start and end.
   std::mutex mutex;
   Match match;
-  std::unordered_map<identity::SessionId, Player> players;
+  std::unordered_map<SessionId, Player> players;
 
   // What Network I/O and the ticks did since the last heartbeat. Guarded by mutex.
   struct Activity {
@@ -116,9 +121,9 @@ struct Host::Impl {
   }
 
   // Sends message reliably to the player of each of sessions.
-  void SendTo(const std::vector<identity::SessionId>& sessions, const protocol::MessageWire& message) {
+  void SendTo(const std::vector<SessionId>& sessions, const protocol::MessageWire& message) {
     const protocol::BytesWire payload = protocol::Encode(message);
-    for (const identity::SessionId session : sessions) {
+    for (const SessionId session : sessions) {
       network.Send(players.at(session).peer, payload, networking::Reliability::kReliable);
     }
   }
@@ -126,7 +131,7 @@ struct Host::Impl {
   // Tells everyone in the Lobby who is in it, after it changed.
   void SendRoster() {
     const Roster roster = match.GetRoster();
-    std::vector<identity::SessionId> sessions;
+    std::vector<SessionId> sessions;
     sessions.reserve(roster.players.size());
     for (const RosterEntry& entry : roster.players) {
       sessions.push_back(entry.session);
@@ -162,7 +167,7 @@ struct Host::Impl {
   }
 
   void HandleCommands(networking::PeerId peer, const std::vector<SequencedCommand>& commands) {
-    const std::optional<identity::SessionId> session = match.SessionOf(peer);
+    const std::optional<SessionId> session = match.SessionOf(peer);
     if (!session.has_value()) {
       ++activity.dropped;
       LW_LIMITED(drop_warnings, "subsystem=serverruntime event=dropped peer={} reason=\"commands before joining\"",
@@ -218,7 +223,7 @@ struct Host::Impl {
   // A player whose connection ended leaves at once; a body it had leaves the
   // simulation at the start of the next tick. reason only decides which event is logged.
   void HandleDisconnect(networking::PeerId peer, networking::DisconnectReason reason) {
-    const std::optional<identity::SessionId> session = match.SessionOf(peer);
+    const std::optional<SessionId> session = match.SessionOf(peer);
     if (!session.has_value()) {
       return;
     }
@@ -248,7 +253,7 @@ struct Host::Impl {
   // Ends the match in progress, if any: its players are told, and are back in
   // the Lobby; their bodies leave the simulation at the start of the next tick.
   void EndMatch() {
-    const std::vector<identity::SessionId> ended = match.End();
+    const std::vector<SessionId> ended = match.End();
     if (ended.empty()) {
       return;
     }
@@ -264,9 +269,9 @@ struct Host::Impl {
     if (!start.has_value()) {
       return;
     }
-    std::vector<identity::SessionId> sessions;
+    std::vector<SessionId> sessions;
     for (const MatchPlayer& player : start->players) {
-      simulation.AddPlayer(replication::PlayerOf(player.session), player.spawn);
+      simulation.AddPlayer(PlayerOf(player.session), player.spawn);
       bodies.insert(player.session);
       players.at(player.session).commands = CommandQueue{};
       sessions.push_back(player.session);
@@ -280,31 +285,30 @@ struct Host::Impl {
   struct TickInput {
     std::vector<simulation::PlayerCommand> commands;
     std::vector<replication::Recipient> recipients;
-    std::unordered_map<identity::SessionId, networking::PeerId> peers;
+    std::unordered_map<SessionId, networking::PeerId> peers;
   };
 
   // Removes the bodies of players no longer in a match, starts a match if one
   // can start, then takes one command per player in it for this tick.
   TickInput PrepareTick() {
     const std::lock_guard<std::mutex> lock(mutex);
-    std::erase_if(bodies, [&](identity::SessionId session) {
+    std::erase_if(bodies, [&](SessionId session) {
       if (match.IsPlaying(session)) {
         return false;
       }
-      simulation.RemovePlayer(replication::PlayerOf(session));
+      simulation.RemovePlayer(PlayerOf(session));
       return true;
     });
     match.Tick();
     StartMatchIfReady();
 
     TickInput input;
-    for (const identity::SessionId session : match.Playing()) {
+    for (const SessionId session : match.Playing()) {
       Player& player = players.at(session);
       const TickCommand next = player.commands.Next();
-      input.commands.push_back(
-          simulation::PlayerCommand{.player = replication::PlayerOf(session), .command = next.command});
+      input.commands.push_back(simulation::PlayerCommand{.player = PlayerOf(session), .command = next.command});
       input.recipients.push_back(
-          replication::Recipient{.session = session, .acknowledged_sequence = next.acknowledged_sequence});
+          replication::Recipient{.player = PlayerOf(session), .acknowledged_sequence = next.acknowledged_sequence});
       input.peers.emplace(session, player.peer);
     }
     return input;
@@ -328,7 +332,7 @@ struct Host::Impl {
 
   void Send(const simulation::State& state, const TickInput& input) {
     for (const replication::Update& update : replication::PlanUpdates(state, tick, input.recipients)) {
-      network.Send(input.peers.at(update.recipient), protocol::Encode(ToWire(update)),
+      network.Send(input.peers.at(SessionOf(update.recipient)), protocol::Encode(ToWire(update)),
                    networking::Reliability::kUnreliable);
     }
   }
