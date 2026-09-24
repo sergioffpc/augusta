@@ -25,10 +25,12 @@
 // travels, and the protocol depends on nothing but augusta_math. A type that
 // mirrors one of the engine's carries the suffix Wire (BodyStateWire for
 // physics::BodyState, AuthoritativeStateWire for harness::AuthoritativeState),
-// so the two never read alike where they meet: each peer converts at its edge,
-// the server in server::Host and the client in harness::Session.
+// so the two never read alike where they meet: each peer converts at its edge
+// and nowhere else, the server in server/wire.h and the client in
+// augusta/harness_wire.h, so no module past that edge (Match, replication,
+// harness::Session's API, presentation) names a Wire type.
 //
-// Every message is one payload: a one-byte MessageType followed by that
+// Every message is one payload: a one-byte MessageTypeWire followed by that
 // type's fields, fixed-width and little-endian, with a string or a list as a
 // one-byte length and its elements. A position, a velocity, a direction, an
 // angle or a stamina travels as a whole count of its grid's step, in the fewest
@@ -44,7 +46,7 @@
 namespace augusta::protocol {
 
 /// The first byte of every payload; which message the rest of it is.
-enum class MessageType : std::uint8_t {
+enum class MessageTypeWire : std::uint8_t {
   /// Client to server: asks to join the Lobby.
   kJoinRequest = 1,
   /// Server to client: the join succeeded and the client is in the Lobby.
@@ -65,23 +67,23 @@ enum class MessageType : std::uint8_t {
   kMatchEnd = 9,
 };
 
-/// Longest engine version string a JoinRequest may carry, in bytes.
+/// Longest engine version string a JoinRequestWire may carry, in bytes.
 inline constexpr std::size_t kMaxEngineVersionLength = 32;
 
-/// Longest character path a JoinRequest may carry, in bytes.
+/// Longest character path a JoinRequestWire may carry, in bytes.
 inline constexpr std::size_t kMaxCharacterPathLength = 64;
 
 /// The size of a pack's BLAKE3 hash, in bytes.
 inline constexpr std::size_t kPackHashSize = 32;
 
 /// A pack's BLAKE3 hash, the one its trailer signs (ADR-0031): names one cook of it.
-using PackHash = std::array<std::byte, kPackHashSize>;
+using PackHashWire = std::array<std::byte, kPackHashSize>;
 
 /// The players a Lobby or a match holds, and so the most a Lobby, a Match start
 /// or an Authoritative State update lists.
 inline constexpr std::size_t kMaxPlayers = 8;
 
-/// The most commands one Commands message carries.
+/// The most commands one CommandsWire message carries.
 inline constexpr std::size_t kMaxCommandsPerMessage = 8;
 
 /// A body's stance.
@@ -136,10 +138,10 @@ struct ParametersWire {
 /// The server's name for one connected player, distinct from the transport's
 /// handle for the connection. Identifies a player inside messages; it is not a
 /// credential, since the server tells senders apart by connection.
-enum class SessionId : std::uint32_t {};
+enum class SessionIdWire : std::uint32_t {};
 
 /// Why the server refused a join.
-enum class JoinRefusal : std::uint8_t {
+enum class JoinRefusalWire : std::uint8_t {
   /// The client's engine version is not the server's.
   kVersionMismatch = 1,
   /// The Lobby already holds the scenario's Player count.
@@ -153,11 +155,11 @@ enum class JoinRefusal : std::uint8_t {
 };
 
 /// Client to server: the first message on a new connection.
-struct JoinRequest {
+struct JoinRequestWire {
   /// The client's engine version (augusta::EngineVersion); at most kMaxEngineVersionLength bytes.
   std::string engine_version;
   /// The hash of the client pack the client loaded.
-  PackHash client_pack{};
+  PackHashWire client_pack{};
   /// The character the player chose, by its path relative to `authoring/`
   /// (e.g. "characters/player", ADR-0042); at most kMaxCharacterPathLength bytes.
   std::string character;
@@ -165,18 +167,18 @@ struct JoinRequest {
 
 /// One player's body inside an Authoritative State update.
 struct PlayerStateWire {
-  SessionId session{};
+  SessionIdWire session{};
   BodyStateWire body{};
 };
 
 /// Server to client: the join succeeded, and the client waits in the Lobby.
-struct JoinAccepted {
+struct JoinAcceptedWire {
   /// The session the server assigned to this client.
-  SessionId session{};
+  SessionIdWire session{};
   /// The rate, in Hz, at which the server simulates and this client must predict:
   /// the server's startup setting, fixed for the life of the server process and
   /// so sent here once and never again.
-  float tick_rate_hz = 0.0F;
+  std::uint8_t tick_rate_hz = 0;
   /// The parameters the client must predict with, so its numbers (the stamina
   /// rules among them) are the server's.
   ParametersWire parameters{};
@@ -186,8 +188,8 @@ struct JoinAccepted {
 };
 
 /// Server to client: the join failed and the connection will not be used.
-struct JoinRefused {
-  JoinRefusal reason{};
+struct JoinRefusedWire {
+  JoinRefusalWire reason{};
 };
 
 /// One tick's command and the number the client gave it. Numbers start at 1 and
@@ -200,7 +202,7 @@ struct SequencedCommandWire {
 /// Client to server: recent commands, oldest first. Each message repeats the
 /// ones the client has not seen acknowledged (at most kMaxCommandsPerMessage,
 /// the newest), so one lost datagram does not drop input.
-struct Commands {
+struct CommandsWire {
   std::vector<SequencedCommandWire> commands;
 };
 
@@ -216,8 +218,8 @@ struct AuthoritativeStateWire {
 
 /// One player in the Lobby.
 struct RosterEntryWire {
-  SessionId session{};
-  /// The player's character index (see JoinAccepted::character). Never 0.
+  SessionIdWire session{};
+  /// The player's character index (see JoinAcceptedWire::character). Never 0.
   std::uint8_t character = 1;
 };
 
@@ -231,7 +233,7 @@ struct LobbyWire {
 
 /// Client to server: the client has loaded what it needs to draw everyone in
 /// one version of the Lobby's Roster (ADR-0043). The player presses nothing.
-struct Ready {
+struct ReadyWire {
   /// The LobbyWire::version the client loaded for; only the current one counts.
   std::uint32_t version = 0;
 };
@@ -239,8 +241,8 @@ struct Ready {
 /// One player in a match, and where the server spawns it.
 struct MatchPlayerWire {
   math::Vec3 spawn{};
-  SessionId session{};
-  /// The player's character index (see JoinAccepted::character). Never 0.
+  SessionIdWire session{};
+  /// The player's character index (see JoinAcceptedWire::character). Never 0.
   std::uint8_t character = 1;
 };
 
@@ -251,20 +253,20 @@ struct MatchStartWire {
 };
 
 /// Server to client: the match is over, and everyone still connected is back in the Lobby.
-struct MatchEnd {};
+struct MatchEndWire {};
 
 /// Any message of the protocol.
-using Message = std::variant<JoinRequest, JoinAccepted, JoinRefused, Commands, AuthoritativeStateWire, LobbyWire, Ready,
-                             MatchStartWire, MatchEnd>;
+using MessageWire = std::variant<JoinRequestWire, JoinAcceptedWire, JoinRefusedWire, CommandsWire,
+                                 AuthoritativeStateWire, LobbyWire, ReadyWire, MatchStartWire, MatchEndWire>;
 
 /// A payload is this many bytes, the same type networking::Payload names.
-using Bytes = std::vector<std::byte>;
+using BytesWire = std::vector<std::byte>;
 
 /// Why a payload is not a message.
 enum class DecodeError : std::uint8_t {
   /// The payload has no bytes, not even a message type.
   kEmpty,
-  /// The first byte is not a MessageType of this protocol.
+  /// The first byte is not a MessageTypeWire of this protocol.
   kUnknownType,
   /// The payload ends before the message's fields do.
   kTruncated,
@@ -279,7 +281,7 @@ enum class DecodeError : std::uint8_t {
 /// Encodes message as one payload. A field beyond its limit (an engine version
 /// over kMaxEngineVersionLength, more than kMaxCommandsPerMessage commands,
 /// more than kMaxPlayers players) is a caller bug, not an input.
-[[nodiscard]] Bytes Encode(const Message& message);
+[[nodiscard]] BytesWire Encode(const MessageWire& message);
 
 /// position as Decode gives it back once Encode has sent it: on a grid of
 /// 1/1024 m (about a millimeter), within 8192 m of the origin on each axis. A
@@ -294,20 +296,18 @@ enum class DecodeError : std::uint8_t {
 /// A movement direction as Decode gives it back: on a grid of 1/16384, within 2 on each axis.
 [[nodiscard]] math::Vec3 SnapDirection(const math::Vec3& direction);
 
-/// An angle (a yaw or a pitch) as Decode gives it back: on a grid of 1/8192 rad, within 4 rad.
+/// An angle (a yaw or a pitch) as Decode gives it back: on a grid of 2^-21 rad
+/// (about 0.5 microradians, 0.4 mm at 800 m), within 4 rad.
 [[nodiscard]] float SnapAngle(float radians);
 
 /// A stamina as Decode gives it back: on a grid of 1/32768, from 0 to 2.
 [[nodiscard]] float SnapStamina(float stamina);
 
 /// Decodes one payload, or reports what is wrong with it.
-[[nodiscard]] std::expected<Message, DecodeError> Decode(std::span<const std::byte> payload);
+[[nodiscard]] std::expected<MessageWire, DecodeError> Decode(std::span<const std::byte> payload);
 
 /// A short lowercase description of error, for logs.
 [[nodiscard]] std::string_view DescribeDecodeError(DecodeError error);
-
-/// A short lowercase description of reason, for logs and for the player.
-[[nodiscard]] std::string_view DescribeJoinRefusal(JoinRefusal reason);
 
 }  // namespace augusta::protocol
 

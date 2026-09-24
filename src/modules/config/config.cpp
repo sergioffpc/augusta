@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <format>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <optional>
 #include <ranges>
@@ -179,6 +180,21 @@ std::expected<float, ConfigError> RequirePositiveNumber(const ScalarMap& values,
   return number;
 }
 
+std::expected<std::uint8_t, ConfigError> RequireTickRate(const ScalarMap& values, std::string_view key) {
+  const auto text = RequireString(values, key);
+  if (!text) {
+    return std::unexpected(text.error());
+  }
+  std::uint32_t number = 0;
+  const char* const end = text->data() + text->size();
+  const auto parsed = std::from_chars(text->data(), end, number);
+  if (parsed.ec != std::errc{} || parsed.ptr != end || number == 0 ||
+      number > std::numeric_limits<std::uint8_t>::max()) {
+    return Fail(ConfigErrorCode::kInvalidNumber, std::string(key));
+  }
+  return static_cast<std::uint8_t>(number);
+}
+
 // The fallback when key is absent; when present, a finite number above zero.
 std::expected<float, ConfigError> OptionalPositiveNumber(const ScalarMap& values, std::string_view key,
                                                          float fallback) {
@@ -306,6 +322,9 @@ std::string Phrase(const ConfigError& error) {
     case ConfigErrorCode::kEmptyValue:
       return std::format("'{}' must not be empty", error.subject);
     case ConfigErrorCode::kInvalidNumber:
+      if (error.subject == "simulation.tick_rate_hz") {
+        return std::format("'{}' must be an integer from 1 to 255", error.subject);
+      }
       return std::format("'{}' must be a finite number above zero", error.subject);
     case ConfigErrorCode::kInvalidLogLevel:
       return std::format("'{}' must be one of trace, debug, info, warn, error, critical", error.subject);
@@ -447,7 +466,7 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!public_key_path) {
     return std::unexpected(public_key_path.error());
   }
-  const auto tick_rate_hz = RequirePositiveNumber(*values, "simulation.tick_rate_hz");
+  const auto tick_rate_hz = RequireTickRate(*values, "simulation.tick_rate_hz");
   if (!tick_rate_hz) {
     return std::unexpected(tick_rate_hz.error());
   }

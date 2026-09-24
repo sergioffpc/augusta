@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include "augusta/protocol.h"
+
 namespace augusta::parameters {
 namespace {
 
@@ -27,6 +29,6 @@ std::expected<void, InvalidParameter> Validate(const Parameters& parameters) {
   return {};
 }
 
-bool IsValidTickRate(float tick_rate_hz) { return std::isfinite(tick_rate_hz) && tick_rate_hz > 0.0F; }
+bool IsValidTickRate(std::uint8_t tick_rate_hz) { return tick_rate_hz > 0; }
 
 }  // namespace augusta::parameters

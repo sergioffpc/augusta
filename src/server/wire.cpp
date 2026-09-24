@@ -1,6 +1,10 @@
 #include "wire.h"
 
+#include <algorithm>
 #include <cstdint>
+#include <utility>
+
+#include "host.h"
 
 namespace augusta::server {
 
@@ -19,7 +23,40 @@ protocol::StanceWire ToWire(physics::Stance stance) { return static_cast<protoco
 
 physics::Stance FromWire(protocol::StanceWire stance) { return static_cast<physics::Stance>(stance); }
 
+// The protocol carries a pack's hash as the assets module computes it.
+static_assert(protocol::kPackHashSize == assets::kPackHashSize);
+
 }  // namespace
+
+protocol::SessionIdWire ToWire(SessionId session) {
+  return static_cast<protocol::SessionIdWire>(static_cast<std::uint32_t>(session));
+}
+
+protocol::JoinRefusalWire ToWire(JoinRefusal reason) {
+  switch (reason) {
+    case JoinRefusal::kVersionMismatch:
+      return protocol::JoinRefusalWire::kVersionMismatch;
+    case JoinRefusal::kLobbyFull:
+      return protocol::JoinRefusalWire::kLobbyFull;
+    case JoinRefusal::kUnknownCharacter:
+      return protocol::JoinRefusalWire::kUnknownCharacter;
+    case JoinRefusal::kMatchInProgress:
+      return protocol::JoinRefusalWire::kMatchInProgress;
+    case JoinRefusal::kPackMismatch:
+      return protocol::JoinRefusalWire::kPackMismatch;
+  }
+  std::unreachable();
+}
+
+protocol::JoinAcceptedWire ToWire(const Admission& admission, std::uint8_t tick_rate_hz,
+                                  const parameters::Parameters& parameters) {
+  return protocol::JoinAcceptedWire{
+      .session = ToWire(admission.session),
+      .tick_rate_hz = tick_rate_hz,
+      .parameters = ToWire(parameters),
+      .character = admission.character,
+  };
+}
 
 protocol::BodyStateWire ToWire(const physics::BodyState& body) {
   return protocol::BodyStateWire{
@@ -46,7 +83,7 @@ protocol::LobbyWire ToWire(const Roster& roster) {
   protocol::LobbyWire lobby{.version = roster.version, .roster = {}};
   lobby.roster.reserve(roster.players.size());
   for (const RosterEntry& entry : roster.players) {
-    lobby.roster.push_back(protocol::RosterEntryWire{.session = entry.session, .character = entry.character});
+    lobby.roster.push_back(protocol::RosterEntryWire{.session = ToWire(entry.session), .character = entry.character});
   }
   return lobby;
 }
@@ -55,8 +92,8 @@ protocol::MatchStartWire ToWire(const MatchStart& start) {
   protocol::MatchStartWire message;
   message.players.reserve(start.players.size());
   for (const MatchPlayer& player : start.players) {
-    message.players.push_back(
-        protocol::MatchPlayerWire{.spawn = player.spawn, .session = player.session, .character = player.character});
+    message.players.push_back(protocol::MatchPlayerWire{
+        .spawn = player.spawn, .session = ToWire(player.session), .character = player.character});
   }
   return message;
 }
@@ -69,9 +106,24 @@ protocol::AuthoritativeStateWire ToWire(const replication::Update& update) {
   };
   state.players.reserve(update.players.size());
   for (const replication::PlayerBody& player : update.players) {
-    state.players.push_back(protocol::PlayerStateWire{.session = player.session, .body = ToWire(player.body)});
+    state.players.push_back(
+        protocol::PlayerStateWire{.session = ToWire(SessionOf(player.player)), .body = ToWire(player.body)});
   }
   return state;
+}
+
+assets::PackHash FromWire(const protocol::PackHashWire& hash) {
+  assets::PackHash result{};
+  std::ranges::copy(hash, result.begin());
+  return result;
+}
+
+JoinRequest FromWire(const protocol::JoinRequestWire& request) {
+  return JoinRequest{
+      .engine_version = request.engine_version,
+      .client_pack = FromWire(request.client_pack),
+      .character = request.character,
+  };
 }
 
 input::Command FromWire(const protocol::CommandWire& command) {
@@ -89,6 +141,15 @@ input::Command FromWire(const protocol::CommandWire& command) {
 
 SequencedCommand FromWire(const protocol::SequencedCommandWire& command) {
   return SequencedCommand{.sequence = command.sequence, .command = FromWire(command.command)};
+}
+
+std::vector<SequencedCommand> FromWire(const protocol::CommandsWire& message) {
+  std::vector<SequencedCommand> commands;
+  commands.reserve(message.commands.size());
+  for (const protocol::SequencedCommandWire& command : message.commands) {
+    commands.push_back(FromWire(command));
+  }
+  return commands;
 }
 
 }  // namespace augusta::server

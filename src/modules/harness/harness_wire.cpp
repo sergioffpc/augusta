@@ -1,6 +1,8 @@
 #include "augusta/harness_wire.h"
 
+#include <algorithm>
 #include <cstdint>
+#include <utility>
 
 namespace augusta::harness {
 
@@ -19,7 +21,31 @@ physics::Stance FromWire(protocol::StanceWire stance) { return static_cast<physi
 
 protocol::StanceWire ToWire(physics::Stance stance) { return static_cast<protocol::StanceWire>(stance); }
 
+// The protocol carries a pack's hash as the assets module computes it.
+static_assert(protocol::kPackHashSize == assets::kPackHashSize);
+
 }  // namespace
+
+SessionId FromWire(protocol::SessionIdWire session) {
+  return static_cast<SessionId>(static_cast<std::uint32_t>(session));
+}
+
+JoinRefusal FromWire(protocol::JoinRefusalWire reason) {
+  switch (reason) {
+    case protocol::JoinRefusalWire::kVersionMismatch:
+      return JoinRefusal::kVersionMismatch;
+    case protocol::JoinRefusalWire::kLobbyFull:
+      return JoinRefusal::kLobbyFull;
+    case protocol::JoinRefusalWire::kUnknownCharacter:
+      return JoinRefusal::kUnknownCharacter;
+    case protocol::JoinRefusalWire::kMatchInProgress:
+      return JoinRefusal::kMatchInProgress;
+    case protocol::JoinRefusalWire::kPackMismatch:
+      return JoinRefusal::kPackMismatch;
+  }
+  // Decode admits only the reasons above.
+  std::unreachable();
+}
 
 physics::BodyState FromWire(const protocol::BodyStateWire& body) {
   physics::BodyState result;
@@ -39,8 +65,17 @@ parameters::Parameters FromWire(const protocol::ParametersWire& parameters) {
   return result;
 }
 
+Admission FromWire(const protocol::JoinAcceptedWire& accepted) {
+  return Admission{
+      .session = FromWire(accepted.session),
+      .tick_rate_hz = accepted.tick_rate_hz,
+      .parameters = FromWire(accepted.parameters),
+      .character = accepted.character,
+  };
+}
+
 PlayerBody FromWire(const protocol::PlayerStateWire& player) {
-  return PlayerBody{.session = player.session, .body = FromWire(player.body)};
+  return PlayerBody{.session = FromWire(player.session), .body = FromWire(player.body)};
 }
 
 AuthoritativeState FromWire(const protocol::AuthoritativeStateWire& state) {
@@ -60,7 +95,7 @@ Lobby FromWire(const protocol::LobbyWire& lobby) {
   Lobby result{.version = lobby.version, .roster = {}};
   result.roster.reserve(lobby.roster.size());
   for (const protocol::RosterEntryWire& entry : lobby.roster) {
-    result.roster.push_back(RosterEntry{.session = entry.session, .character = entry.character});
+    result.roster.push_back(RosterEntry{.session = FromWire(entry.session), .character = entry.character});
   }
   return result;
 }
@@ -70,9 +105,23 @@ MatchStart FromWire(const protocol::MatchStartWire& start) {
   result.players.reserve(start.players.size());
   for (const protocol::MatchPlayerWire& player : start.players) {
     result.players.push_back(
-        MatchPlayer{.session = player.session, .character = player.character, .spawn = player.spawn});
+        MatchPlayer{.session = FromWire(player.session), .character = player.character, .spawn = player.spawn});
   }
   return result;
+}
+
+protocol::PackHashWire ToWire(const assets::PackHash& hash) {
+  protocol::PackHashWire result{};
+  std::ranges::copy(hash, result.begin());
+  return result;
+}
+
+protocol::JoinRequestWire ToWire(const JoinRequest& request) {
+  return protocol::JoinRequestWire{
+      .engine_version = request.engine_version,
+      .client_pack = ToWire(request.client_pack),
+      .character = request.character,
+  };
 }
 
 protocol::CommandWire ToWire(const input::Command& command) {
@@ -96,6 +145,16 @@ protocol::CommandWire ToWire(const input::Command& command) {
       .flags = flags,
       .desired_stance = ToWire(command.movement.desired_stance),
   };
+}
+
+protocol::CommandsWire ToWire(std::span<const SequencedCommand> commands) {
+  protocol::CommandsWire message;
+  message.commands.reserve(commands.size());
+  for (const SequencedCommand& command : commands) {
+    message.commands.push_back(
+        protocol::SequencedCommandWire{.sequence = command.sequence, .command = ToWire(command.command)});
+  }
+  return message;
 }
 
 }  // namespace augusta::harness

@@ -6,7 +6,6 @@
 #include <vector>
 
 #include "augusta/physics.h"
-#include "augusta/protocol.h"
 #include "augusta/simulation.h"
 
 // augusta::replication decides what SimulationWorld's per-tick Authoritative
@@ -15,31 +14,26 @@
 // engine's own types; turning that into a message, encoding it and putting it
 // on the wire is the caller's mechanism (server::Host), so the decision is a
 // pure function tested without a network (docs/agents/coding-standards.md).
+// It names every player as SimulationWorld does (simulation::PlayerId); which
+// session that is, is the caller's to say.
 namespace augusta::replication {
 
-/// SimulationWorld names a player by the number of its session, so a state can
-/// be sent back under the names clients know.
-[[nodiscard]] simulation::PlayerId PlayerOf(protocol::SessionId session);
-
-/// The session a SimulationWorld player belongs to; the inverse of PlayerOf.
-[[nodiscard]] protocol::SessionId SessionOf(simulation::PlayerId player);
-
-/// One connected client a tick's state is for.
+/// One connected client a tick's state is for, by its player in SimulationWorld.
 struct Recipient {
-  protocol::SessionId session{};
+  simulation::PlayerId player{};
   /// The highest command sequence of this client that the tick processed, 0 if none.
   std::uint32_t acknowledged_sequence = 0;
 };
 
-/// One player's body, under the session clients know it by.
+/// One player's body.
 struct PlayerBody {
-  protocol::SessionId session{};
+  simulation::PlayerId player{};
   physics::BodyState body{};
 };
 
 /// What one recipient is sent for a tick.
 struct Update {
-  protocol::SessionId recipient{};
+  simulation::PlayerId recipient{};
   /// The server tick the bodies are from.
   std::uint32_t tick = 0;
   /// The highest command sequence of the recipient that the tick processed, 0 if none.

@@ -10,7 +10,6 @@
 #include "augusta/interpolation.h"
 #include "augusta/math.h"
 #include "augusta/prediction.h"
-#include "augusta/protocol.h"
 
 // augusta::presentation orchestrates PresentationWorld (ADR-0024): the
 // client-side ECS pipeline, run once per render frame on the Main/Render
@@ -154,7 +153,7 @@ class World {
   // tick as the previous call) is not recorded again. Returns the frame's
   // Presentation State.
   State RunFrame(const prediction::State& latest, const math::Quat& view_rotation,
-                 std::optional<protocol::SessionId> local_session,
+                 std::optional<harness::SessionId> local_session,
                  const std::optional<harness::AuthoritativeState>& authoritative,
                  const std::optional<harness::MatchStart>& match_start);
 

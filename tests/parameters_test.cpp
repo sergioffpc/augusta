@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/protocol.h"
+
 // The decisions about Parameters that the server and every client share (ADR-0039)
 // are pure: values in, a verdict out.
 namespace {
@@ -50,15 +52,15 @@ TEST(ValidateTest, APlayerCountOfZeroOrAboveTheMostAMatchHoldsIsNamed) {
   }
 }
 
-TEST(IsValidTickRateTest, AnyFiniteRateAboveZeroIsValid) {
-  for (const float rate : {60.0F, 30.0F, 1.0F, 0.5F, 240.0F}) {
+TEST(IsValidTickRateTest, IntegerRatesFromOneTo255AreValid) {
+  for (const std::uint8_t rate :
+       {std::uint8_t{1}, std::uint8_t{30}, std::uint8_t{60}, std::uint8_t{240}, std::uint8_t{255}}) {
     EXPECT_TRUE(IsValidTickRate(rate)) << rate;
   }
 }
 
-TEST(IsValidTickRateTest, ZeroNegativeAndNonFiniteRatesAreNot) {
-  for (const float rate : {0.0F, -60.0F, std::numeric_limits<float>::infinity(),
-                           -std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()}) {
+TEST(IsValidTickRateTest, ZeroIsNotValid) {
+  for (const std::uint8_t rate : {std::uint8_t{0}}) {
     EXPECT_FALSE(IsValidTickRate(rate)) << rate;
   }
 }

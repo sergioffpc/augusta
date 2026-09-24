@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_CONFIG_H_
 #define AUGUSTA_CONFIG_H_
 
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <string>
@@ -71,10 +72,10 @@ struct ServerConfig {
   std::filesystem::path pack_path;
   /// Key `content.public_key` (required): the Ed25519 public key the pack is signed with.
   std::filesystem::path public_key_path;
-  /// Key `simulation.tick_rate_hz` (required): the rate, in Hz, at which the server
-  /// simulates and every client predicts. Any finite rate above zero; fixed for
+  /// Key `simulation.tick_rate_hz` (required): the integer rate, in Hz, at which
+  /// the server simulates and every client predicts. Must be 1..255; fixed for
   /// the life of the process, and told to each client when it joins (ADR-0039).
-  float tick_rate_hz = 0.0F;
+  std::uint8_t tick_rate_hz = 0;
   /// Key `network.listen_address`: the local address to listen on.
   std::string listen_address{kDefaultListenAddress};
   /// Key `logging.level`: one of "trace", "debug", "info", "warn", "error",

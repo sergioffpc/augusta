@@ -7,12 +7,13 @@
 #include <string>
 #include <vector>
 
+#include "augusta/assets.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
-#include "augusta/protocol.h"
 #include "augusta/simulation.h"
+#include "match.h"
 #include "parameters_loader.h"
 
 // augusta::server::Host is the server's network boundary and the
@@ -34,7 +35,7 @@ namespace augusta::server {
 struct HostConfig {
   /// The rate, in Hz, at which the simulation ticks and every client predicts;
   /// told to each client when it joins. Fixed for the life of the server process.
-  float tick_rate_hz = 0.0F;
+  std::uint8_t tick_rate_hz = 0;
   /// What the simulation runs on and what each client is told when it joins:
   /// the stamina rules of every player body, shared with PredictionWorld, and
   /// the Player count a match starts with.
@@ -59,8 +60,15 @@ struct Map {
   std::vector<std::string> characters;
   /// The hash of the client pack cooked with the server's: the only one a
   /// player may join with.
-  protocol::PackHash client_pack{};
+  assets::PackHash client_pack{};
 };
+
+/// The SimulationWorld player of session: SimulationWorld names a player by the
+/// number of its session, so a state can be sent back under the names clients know.
+[[nodiscard]] simulation::PlayerId PlayerOf(SessionId session);
+
+/// The session a SimulationWorld player belongs to; the inverse of PlayerOf.
+[[nodiscard]] SessionId SessionOf(simulation::PlayerId player);
 
 /// The server's listening socket and its SimulationWorld, without threads or a clock.
 class Host {

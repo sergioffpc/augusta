@@ -9,26 +9,28 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/assets.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
-#include "augusta/protocol.h"
 
 // The Lobby and the match are pure bookkeeping: no socket is opened here.
 namespace {
 
+using augusta::assets::PackHash;
 using augusta::math::Vec3;
 using augusta::networking::PeerId;
-using augusta::protocol::JoinRefusal;
-using augusta::protocol::JoinRequest;
-using augusta::protocol::kMaxPlayers;
-using augusta::protocol::PackHash;
-using augusta::protocol::SessionId;
 using augusta::server::Departure;
+using augusta::server::JoinRefusal;
+using augusta::server::JoinRequest;
 using augusta::server::Match;
 using augusta::server::MatchConfig;
 using augusta::server::MatchStart;
+using augusta::server::SessionId;
 
 constexpr const char* kVersion = "1.2.3";
+// The Player count of the matches below, unless a test says otherwise: as many
+// as a Lobby can hold.
+constexpr std::size_t kPlayerCount = 8;
 // The one character the matches below offer, unless a test says otherwise.
 constexpr const char* kCharacter = "characters/player";
 
@@ -49,7 +51,7 @@ PackHash OtherClientPack() {
 }
 
 // A match of player_count offering kCharacter alone, pausing pause_ticks after each match.
-MatchConfig Config(std::size_t player_count = kMaxPlayers, std::uint32_t pause_ticks = 0) {
+MatchConfig Config(std::size_t player_count = kPlayerCount, std::uint32_t pause_ticks = 0) {
   return MatchConfig{
       .engine_version = kVersion, .characters = {kCharacter}, .player_count = player_count, .pause_ticks = pause_ticks};
 }

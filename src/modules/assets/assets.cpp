@@ -233,6 +233,9 @@ struct PackSections {
 
 std::expected<PackSections, WriteError> BuildPackSections(const std::vector<AssetEntry>& entries) {
   PackSections sections;
+  ByteWriter data_writer(sections.data_section);
+  ByteWriter index_writer(sections.index_section);
+  ByteWriter header_writer(sections.header);
 
   std::vector<std::uint64_t> offsets(entries.size());
   std::vector<std::uint64_t> sizes(entries.size());
@@ -240,25 +243,25 @@ std::expected<PackSections, WriteError> BuildPackSections(const std::vector<Asse
   for (std::size_t i = 0; i < entries.size(); ++i) {
     offsets[i] = cursor;
     sizes[i] = entries[i].data.size();
-    AppendBytes(sections.data_section, entries[i].data);
+    data_writer.WriteBytes(entries[i].data);
     cursor += entries[i].data.size();
   }
 
   for (std::size_t i = 0; i < entries.size(); ++i) {
-    AppendU8(sections.index_section, static_cast<std::uint8_t>(entries[i].type));
-    if (!AppendString(sections.index_section, entries[i].path)) {
+    index_writer.WriteU8(static_cast<std::uint8_t>(entries[i].type));
+    if (!index_writer.WriteString(entries[i].path)) {
       return std::unexpected(WriteError::kTooLarge);
     }
-    AppendU64(sections.index_section, offsets[i]);
-    AppendU64(sections.index_section, sizes[i]);
+    index_writer.WriteU64(offsets[i]);
+    index_writer.WriteU64(sizes[i]);
   }
   const std::uint64_t index_offset = cursor;
 
-  AppendChars(sections.header, std::string_view(kMagic.data(), kMagic.size()));
-  AppendU32(sections.header, kFormatVersion);
-  AppendU64(sections.header, kHeaderSize);
-  AppendU64(sections.header, index_offset);
-  AppendU32(sections.header, static_cast<std::uint32_t>(entries.size()));
+  header_writer.WriteChars(std::string_view(kMagic.data(), kMagic.size()));
+  header_writer.WriteU32(kFormatVersion);
+  header_writer.WriteU64(kHeaderSize);
+  header_writer.WriteU64(index_offset);
+  header_writer.WriteU32(static_cast<std::uint32_t>(entries.size()));
 
   const std::uint64_t total_size =
       sections.header.size() + sections.data_section.size() + sections.index_section.size() + kTrailerSize;
@@ -378,13 +381,13 @@ std::expected<Mapping, LoadError> OpenValidatedMapping(const std::filesystem::pa
 // (memory-mapped, backed by the OS page cache) and hashed_length/kTrailerSize are
 // already validated to fit within it (see Pack::Load), so there's no I/O
 // left to go wrong here - just pointer arithmetic and a hash.
-struct HashAndTrailer {
+struct PackVerificationData {
   PackHash hash;
   PackTrailer trailer;
 };
 
-HashAndTrailer HashAndReadTrailer(std::span<const std::byte> mapped, std::uint64_t hashed_length) {
-  HashAndTrailer result;
+PackVerificationData ComputePackHashAndReadTrailer(std::span<const std::byte> mapped, std::uint64_t hashed_length) {
+  PackVerificationData result;
   blake3_hasher hasher;
   blake3_hasher_init(&hasher);
   blake3_hasher_update(&hasher, mapped.data(), hashed_length);
@@ -548,7 +551,7 @@ std::expected<Pack, LoadError> Pack::Load(const std::filesystem::path& path, con
     return std::unexpected(header.error());
   }
 
-  const HashAndTrailer hashed = HashAndReadTrailer(mapped, hashed_length);
+  const PackVerificationData hashed = ComputePackHashAndReadTrailer(mapped, hashed_length);
 
   // Verified in this order (integrity, then authenticity) purely for a
   // clearer error to the caller - both checks are on untrusted data

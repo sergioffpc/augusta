@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_RUNTIME_H_
 #define AUGUSTA_RUNTIME_H_
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -38,7 +39,7 @@ namespace augusta::runtime {
 struct Config {
   // The Simulation thread's fixed tick rate in Hz (NFR-01 asks it to sustain
   // 60 Hz, no missed ticks), which each client is told when it joins.
-  float tick_rate_hz = 0.0F;
+  std::uint8_t tick_rate_hz = 0;
   // What the simulation runs on and each client is told when it joins: every
   // player body's stamina rules (physics::World, shared with PredictionWorld
   // client-side).

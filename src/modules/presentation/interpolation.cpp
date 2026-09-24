@@ -13,7 +13,7 @@ constexpr float kMidpointFraction = 0.5F;
 
 }  // namespace
 
-void RemoteInterpolator::Record(protocol::SessionId session, float timestamp, const physics::BodyState& body) {
+void RemoteInterpolator::Record(harness::SessionId session, float timestamp, const physics::BodyState& body) {
   const auto found = std::ranges::find_if(sessions_, [session](const Buffered& b) { return b.session == session; });
   if (found == sessions_.end()) {
     sessions_.push_back(
@@ -27,7 +27,7 @@ void RemoteInterpolator::Record(protocol::SessionId session, float timestamp, co
   found->latest = Update{.timestamp = timestamp, .body = body};
 }
 
-void RemoteInterpolator::Sync(std::span<const protocol::SessionId> current) {
+void RemoteInterpolator::Sync(std::span<const harness::SessionId> current) {
   std::erase_if(sessions_,
                 [current](const Buffered& b) { return std::ranges::find(current, b.session) == current.end(); });
 }

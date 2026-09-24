@@ -2,7 +2,6 @@
 #include <expected>
 #include <filesystem>
 #include <optional>
-#include <print>
 #include <string_view>
 #include <utility>
 
@@ -46,27 +45,29 @@ std::expected<augusta::config::ServerConfig, augusta::config::ConfigError> LoadC
 std::optional<augusta::server::Map> LoadMap(const augusta::assets::Pack& pack, const std::filesystem::path& pack_path) {
   auto collision = augusta::map::LoadCollision(pack);
   if (!collision) {
-    std::println(stderr, "server pack {}: {}", pack_path.string(), augusta::map::DescribeMapError(collision.error()));
+    LE("subsystem=server event=collision_loading_failed path={} error={}", pack_path.string(),
+       augusta::map::DescribeMapError(collision.error()));
     return std::nullopt;
   }
   auto spawn_points = augusta::map::LoadSpawnPoints(pack);
   if (!spawn_points) {
-    std::println(stderr, "server pack {}: {}", pack_path.string(),
-                 augusta::map::DescribeMapError(spawn_points.error()));
+    LE("subsystem=server event=spawn_points_loading_failed path={} error={}", pack_path.string(),
+       augusta::map::DescribeMapError(spawn_points.error()));
     return std::nullopt;
   }
   // The scenario's characters, the only ones a player may join as (ADR-0042).
   auto characters = pack.ResolveCharacters();
   if (!characters) {
-    std::println(stderr, "server pack {}: {} {}", pack_path.string(), augusta::assets::kCharactersPath,
-                 augusta::assets::DescribeResolveError(characters.error(), "character list"));
+    LE("subsystem=server event=characters_loading_failed path={} asset={} error={}", pack_path.string(),
+       augusta::assets::kCharactersPath, augusta::assets::DescribeResolveError(characters.error(), "character list"));
     return std::nullopt;
   }
   // The client pack cooked with this one, the only one a player may join with.
   const auto client_pack = pack.ResolveClientPackHash();
   if (!client_pack) {
-    std::println(stderr, "server pack {}: {} {}", pack_path.string(), augusta::assets::kClientPackPath,
-                 augusta::assets::DescribeResolveError(client_pack.error(), "client pack hash"));
+    LE("subsystem=server event=client_pack_hash_loading_failed path={} asset={} error={}", pack_path.string(),
+       augusta::assets::kClientPackPath,
+       augusta::assets::DescribeResolveError(client_pack.error(), "client pack hash"));
     return std::nullopt;
   }
   LI("subsystem=server event=map_loaded colliders={} spawn_points={} characters={}", collision->size(),
@@ -89,14 +90,14 @@ std::optional<augusta::parameters::Parameters> LoadParameters(const augusta::ass
   const std::string_view script_path = augusta::assets::kParametersScriptPath;
   const auto script = pack.ResolveScript(script_path);
   if (!script) {
-    std::println(stderr, "server pack {}: {} {}", pack_path.string(), script_path,
-                 augusta::assets::DescribeResolveError(script.error(), "script"));
+    LE("subsystem=server event=parameters_script_loading_failed path={} script={} error={}", pack_path.string(),
+       script_path, augusta::assets::DescribeResolveError(script.error(), "script"));
     return std::nullopt;
   }
   auto parameters = augusta::parameters::Load(*script);
   if (!parameters) {
-    std::println(stderr, "server pack {}: {}: {}", pack_path.string(), script_path,
-                 augusta::parameters::DescribeLoadError(parameters.error()));
+    LE("subsystem=server event=parameters_loading_failed path={} script={} error={}", pack_path.string(), script_path,
+       augusta::parameters::DescribeLoadError(parameters.error()));
     return std::nullopt;
   }
   LI("subsystem=server event=parameters_loaded script={}", script_path);
@@ -128,7 +129,8 @@ int main(int argc, char** argv) {
 
   const auto file_config = LoadConfig(argc, argv);
   if (!file_config) {
-    std::println(stderr, "{}", augusta::config::DescribeConfigError(file_config.error()));
+    LE("subsystem=server event=config_loading_failed error={}",
+       augusta::config::DescribeConfigError(file_config.error()));
     return 1;
   }
   // ParseServerConfig already validated log_level, so this is never nullopt.
@@ -144,12 +146,14 @@ int main(int argc, char** argv) {
 
   const auto public_key = augusta::assets::ReadEd25519PublicKeyFile(public_key_path);
   if (!public_key) {
-    std::println(stderr, "could not read Ed25519 public key from {}", public_key_path.string());
+    LE("subsystem=server event=public_key_loading_failed path={} error=public_key_unreadable",
+       public_key_path.string());
     return 1;
   }
   const auto pack = augusta::assets::Pack::Load(pack_path, *public_key);
   if (!pack) {
-    std::println(stderr, "server pack {} {}", pack_path.string(), augusta::assets::DescribeLoadError(pack.error()));
+    LE("subsystem=server event=pack_verification_failed path={} error={}", pack_path.string(),
+       augusta::assets::DescribeLoadError(pack.error()));
     return 1;
   }
   LI("subsystem=server event=pack_verified path={}", pack_path.string());

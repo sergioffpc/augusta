@@ -4,6 +4,8 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/harness.h"
+
 // Pure: buffered by timestamp and session, no clock or ECS.
 namespace {
 
@@ -14,8 +16,8 @@ using augusta::presentation::RemoteBody;
 using augusta::presentation::RemoteInterpolator;
 using augusta::presentation::RemotePlayer;
 
-constexpr auto kSessionA = static_cast<augusta::protocol::SessionId>(1);
-constexpr auto kSessionB = static_cast<augusta::protocol::SessionId>(2);
+constexpr auto kSessionA = static_cast<augusta::harness::SessionId>(1);
+constexpr auto kSessionB = static_cast<augusta::harness::SessionId>(2);
 
 BodyState At(float x, Stance stance = Stance::kStanding) {
   return BodyState{.position = Vec3(x, 0.0F, 0.0F), .velocity = Vec3(), .stance = stance};
@@ -130,7 +132,7 @@ TEST(RemoteInterpolatorTest, ASessionNoLongerInSyncsCurrentListIsNoLongerSampled
   interpolator.Record(kSessionA, 0.0F, At(0.0F));
   interpolator.Record(kSessionB, 0.0F, At(0.0F));
 
-  const std::array<augusta::protocol::SessionId, 1> still_here{kSessionA};
+  const std::array<augusta::harness::SessionId, 1> still_here{kSessionA};
   interpolator.Sync(still_here);
 
   const std::vector<RemotePlayer> sampled = interpolator.Sample(0.0F);
@@ -143,7 +145,7 @@ TEST(RemoteInterpolatorTest, SyncWithEveryoneStillPresentKeepsBufferedHistory) {
   interpolator.Record(kSessionA, 0.0F, At(0.0F));
   interpolator.Record(kSessionA, 1.0F, At(10.0F));
 
-  const std::array<augusta::protocol::SessionId, 1> still_here{kSessionA};
+  const std::array<augusta::harness::SessionId, 1> still_here{kSessionA};
   interpolator.Sync(still_here);
 
   // The two updates recorded before Sync are still both buffered, so this still
