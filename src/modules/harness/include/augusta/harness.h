@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/input.h"
+#include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
@@ -255,7 +255,7 @@ class Session {
   /// sequence, together with the recent commands the server has not yet
   /// acknowledged, and the prediction is reconciled against what the server
   /// last said about this client's player.
-  prediction::State Tick(const input::Command& command, float delta_time);
+  prediction::State Tick(const command::Command& command, float delta_time);
 
  private:
   struct Impl;

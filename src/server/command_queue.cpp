@@ -5,7 +5,7 @@
 #include <expected>
 #include <string_view>
 
-#include "augusta/input.h"
+#include "augusta/command.h"
 #include "augusta/math.h"
 
 namespace augusta::server {
@@ -18,7 +18,7 @@ bool IsFinite(const math::Vec3& value) {
 
 // The command as a tick that repeats or idles would run it: nothing one-shot
 // fires again.
-input::Command WithoutActions(input::Command command) {
+command::Command WithoutActions(command::Command command) {
   command.fire = false;
   command.reload = false;
   return command;
@@ -42,7 +42,7 @@ std::expected<void, Rejection> Validate(const SequencedCommand& command, std::ui
   if (command.sequence <= last_sequence) {
     return std::unexpected(Rejection::kStale);
   }
-  const input::Command& input = command.command;
+  const command::Command& input = command.command;
   if (!IsFinite(input.movement.direction) || !std::isfinite(input.yaw) || !std::isfinite(input.pitch)) {
     return std::unexpected(Rejection::kNonFinite);
   }
@@ -79,7 +79,7 @@ TickCommand CommandQueue::Next() {
     idle.acknowledged_sequence = acknowledged_;
     return idle;
   }
-  input::Command command = WithoutActions(*last_);
+  command::Command command = WithoutActions(*last_);
   if (held_ticks_ < kMaxHeldTicks) {
     ++held_ticks_;
   } else {

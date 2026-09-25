@@ -4,11 +4,10 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
-#include <string>
 #include <vector>
 
 #include "augusta/ballistics.h"
-#include "augusta/input.h"
+#include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/scripting.h"
@@ -47,7 +46,7 @@ namespace augusta::simulation {
 // round transitions) for the next tick.
 enum class Phase {
   // Mechanism. Applies this tick's already-validated client commands
-  // (augusta::input::Command; Input Validation - US-15 - is a boundary
+  // (augusta::command::Command; Input Validation - US-15 - is a boundary
   // component outside this World, per ARCHITECTURE.md §8, and has
   // already run by the time World::Tick sees them) to their entities.
   kCommandIngestion,
@@ -99,7 +98,7 @@ enum class EntityId : std::uint32_t {};
 /// The validated command for one tick of the player who controls entity.
 struct PlayerCommand {
   EntityId entity{};
-  input::Command command{};
+  command::Command command{};
 };
 
 /// One dynamic body as of the end of a tick.
@@ -130,11 +129,10 @@ class World {
  public:
   // Constructs an empty World: an empty physics::World (using
   // stamina_config for every player body) and an empty ballistics::World
-  // (no bullets in flight yet), a scripting::Engine loaded from
-  // script_path, and the Flecs world with Phase's eight phases and their
-  // systems registered (see header comment). Throws whatever
-  // scripting::Engine's constructor throws if script_path fails to load.
-  World(const physics::StaminaConfig& stamina_config, const std::string& script_path);
+  // (no bullets in flight yet), a scripting::Engine with no script
+  // loaded yet, and the Flecs world with Phase's eight phases and their
+  // systems registered (see header comment).
+  explicit World(const physics::StaminaConfig& stamina_config);
   ~World();
 
   /// Adds immovable level geometry to this world's physics, the same way PredictionWorld does.

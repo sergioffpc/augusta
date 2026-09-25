@@ -15,7 +15,7 @@
 // that) or the pure history (see reconciliation_test.cpp).
 namespace {
 
-using augusta::input::Command;
+using augusta::command::Command;
 using augusta::math::Vec3;
 using augusta::parameters::Parameters;
 using augusta::physics::BodyState;

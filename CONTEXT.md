@@ -55,7 +55,7 @@ The client simulating its own actions locally, immediately, before the server co
 _Avoid_: Client simulation
 
 **Command**:
-One tick's local input (input::Command) a client sends the Authoritative server under a growing sequence number, so the server can tell what it has already seen and the client can tell what it has not yet acknowledged. What Client-side prediction applies locally and Reconciliation replays.
+One tick's local input (command::Command, in the shared core) a client sends the Authoritative server under a growing sequence number, so the server can tell what it has already seen and the client can tell what it has not yet acknowledged. What Client-side prediction applies locally and Reconciliation replays.
 _Avoid_: Input (Command is the sequenced payload sent to the server each tick; augusta::input::Input is the per-frame local sampler that produces one)
 
 **Reconciliation**:

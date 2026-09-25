@@ -8,7 +8,7 @@
 #include <optional>
 #include <string_view>
 
-#include "augusta/input.h"
+#include "augusta/command.h"
 
 // The server's boundary for what a client sends to move its player: a
 // structural sanity gate, and a per-player queue that hands SimulationWorld
@@ -21,7 +21,7 @@ namespace augusta::server {
 /// grow by one per command, so the queue can tell what it has already seen.
 struct SequencedCommand {
   std::uint32_t sequence = 0;
-  input::Command command{};
+  command::Command command{};
 };
 
 /// Why a command was not taken in.
@@ -46,7 +46,7 @@ inline constexpr float kMaxMovementMagnitude = 2.0F;
 inline constexpr float kMaxPitch = 1.6F;
 
 /// The largest view yaw, in radians: half a turn either way, with a little
-/// slack, since a client keeps its yaw within one turn (input::Command).
+/// slack, since a client keeps its yaw within one turn (command::Command).
 inline constexpr float kMaxYaw = 3.2F;
 
 /// Whether command is well formed and newer than last_sequence, the newest
@@ -61,7 +61,7 @@ inline constexpr int kMaxHeldTicks = 6;
 
 /// What the queue hands a tick.
 struct TickCommand {
-  input::Command command;
+  command::Command command;
   /// The highest sequence the queue has handed out so far, 0 if none.
   std::uint32_t acknowledged_sequence = 0;
 };
@@ -82,7 +82,7 @@ class CommandQueue {
 
  private:
   std::deque<SequencedCommand> queued_;
-  std::optional<input::Command> last_;
+  std::optional<command::Command> last_;
   int held_ticks_ = 0;
   std::uint32_t last_offered_ = 0;
   std::uint32_t acknowledged_ = 0;

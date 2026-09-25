@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/input.h"
+#include "augusta/command.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
@@ -141,8 +141,8 @@ JoinRequest FromWire(const protocol::JoinRequestWire& request) {
   };
 }
 
-input::Command FromWire(const protocol::CommandWire& command) {
-  input::Command result;
+command::Command FromWire(const protocol::CommandWire& command) {
+  command::Command result;
   result.movement.direction = command.direction;
   result.movement.sprint = (command.flags & protocol::CommandWire::kSprint) != 0;
   result.movement.desired_stance = FromWire(command.desired_stance);

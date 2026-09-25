@@ -6,8 +6,8 @@
 #include <utility>
 
 #include "augusta/assets.h"
+#include "augusta/command.h"
 #include "augusta/harness.h"
-#include "augusta/input.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
@@ -136,7 +136,7 @@ protocol::JoinRequestWire ToWire(const JoinRequest& request) {
   };
 }
 
-protocol::CommandWire ToWire(const input::Command& command) {
+protocol::CommandWire ToWire(const command::Command& command) {
   std::uint8_t flags = 0;
   if (command.movement.sprint) {
     flags |= protocol::CommandWire::kSprint;

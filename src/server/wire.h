@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/input.h"
+#include "augusta/command.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
@@ -58,7 +58,7 @@ namespace augusta::server {
 [[nodiscard]] JoinRequest FromWire(const protocol::JoinRequestWire& request);
 
 /// A command a client sent, in the engine's terms.
-[[nodiscard]] input::Command FromWire(const protocol::CommandWire& command);
+[[nodiscard]] command::Command FromWire(const protocol::CommandWire& command);
 
 /// A sequenced command a client sent, in the engine's terms.
 [[nodiscard]] SequencedCommand FromWire(const protocol::SequencedCommandWire& command);

@@ -11,7 +11,7 @@
 #include <flecs.h>
 #include <nvtx3/nvtx3.hpp>
 
-#include "augusta/input.h"
+#include "augusta/command.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
@@ -65,7 +65,7 @@ struct World::Impl {
   // real ECS component shapes exist, CommandIngestion applying this to an
   // entity (rather than the systems closing over it directly) is what
   // replaces this.
-  input::Command tick_command;
+  command::Command tick_command;
   std::uint32_t tick_sequence = 0;
   std::optional<Acknowledgement> tick_acknowledgement;
   State tick_state;
@@ -183,7 +183,7 @@ void World::Start(const math::Vec3& spawn, const parameters::Parameters& paramet
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
-State World::Tick(const input::Command& command, std::uint32_t sequence,
+State World::Tick(const command::Command& command, std::uint32_t sequence,
                   const std::optional<Acknowledgement>& acknowledgement, float delta_time) {
   impl_->tick_command = command;
   impl_->tick_sequence = sequence;

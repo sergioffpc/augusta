@@ -40,12 +40,10 @@ namespace augusta::scripting {
 // script. SimulationWorld constructs exactly one.
 class Engine {
  public:
-  // Loads and runs script_path's Lua source (a path relative to the
-  // signed asset pack's root, per ARCHITECTURE.md §8 - same convention
-  // as augusta::audio::Engine::LoadSound) inside the sandbox described
-  // above. Throws std::runtime_error if the script fails to load or
-  // error out at the top level (e.g. a syntax error).
-  explicit Engine(const std::string& script_path);
+  // Starts with no script loaded, so every RunHook is a no-op until
+  // game policy (ROADMAP.md M5) gives it the match's script from the
+  // server pack.
+  Engine() = default;
 
   // Invokes the Lua function registered for hook_name, if the script
   // defines one - a no-op otherwise (a script that doesn't react to a

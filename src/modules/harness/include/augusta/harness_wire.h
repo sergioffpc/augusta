@@ -6,8 +6,8 @@
 #include <string>
 
 #include "augusta/assets.h"
+#include "augusta/command.h"
 #include "augusta/harness.h"
-#include "augusta/input.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
@@ -45,7 +45,7 @@ struct JoinRequest {
 /// One tick's command under the sequence this client gave it.
 struct SequencedCommand {
   std::uint32_t sequence = 0;
-  input::Command command{};
+  command::Command command{};
 };
 
 /// session in the engine's terms.
@@ -85,7 +85,7 @@ struct SequencedCommand {
 [[nodiscard]] protocol::JoinRequestWire ToWire(const JoinRequest& request);
 
 /// command as the protocol carries it.
-[[nodiscard]] protocol::CommandWire ToWire(const input::Command& command);
+[[nodiscard]] protocol::CommandWire ToWire(const command::Command& command);
 
 /// commands, oldest first, as the one message that carries them.
 [[nodiscard]] protocol::CommandsWire ToWire(std::span<const SequencedCommand> commands);

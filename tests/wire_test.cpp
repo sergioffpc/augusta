@@ -9,9 +9,10 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
+#include "augusta/command.h"
+#include "augusta/grid.h"
 #include "augusta/harness.h"
 #include "augusta/harness_wire.h"
-#include "augusta/input.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -57,15 +58,15 @@ BodyState Body(float x, Stance stance) {
 
 // actual is expected as it arrives: its numbers on the grids they travel on.
 void ExpectSameBody(const BodyState& actual, const BodyState& expected) {
-  EXPECT_EQ(actual.position, augusta::protocol::SnapPosition(expected.position));
-  EXPECT_EQ(actual.velocity, augusta::protocol::SnapVelocity(expected.velocity));
+  EXPECT_EQ(actual.position, augusta::math::SnapPosition(expected.position));
+  EXPECT_EQ(actual.velocity, augusta::math::SnapVelocity(expected.velocity));
   EXPECT_EQ(actual.stance, expected.stance);
-  EXPECT_EQ(actual.stamina, augusta::protocol::SnapStamina(expected.stamina));
+  EXPECT_EQ(actual.stamina, augusta::math::SnapStamina(expected.stamina));
 }
 
 TEST(WireTest, ACommandTheClientSendsReachesTheServerUnchanged) {
   for (const Stance stance : {Stance::kStanding, Stance::kCrouching, Stance::kProne}) {
-    augusta::input::Command sent;
+    augusta::command::Command sent;
     sent.movement.direction = Vec3(0.5F, 0.0F, -1.0F);
     sent.movement.sprint = true;
     sent.movement.desired_stance = stance;
@@ -94,7 +95,7 @@ TEST(WireTest, ACommandTheClientSendsReachesTheServerUnchanged) {
 
 TEST(WireTest, EachFlagOfACommandReachesTheServerAsItselfAlone) {
   for (int flag = 0; flag < 4; ++flag) {
-    augusta::input::Command sent;
+    augusta::command::Command sent;
     sent.movement.sprint = flag == 0;
     sent.ads = flag == 1;
     sent.fire = flag == 2;
@@ -102,7 +103,8 @@ TEST(WireTest, EachFlagOfACommandReachesTheServerAsItselfAlone) {
 
     const augusta::protocol::CommandsWire message{
         .commands = {{.sequence = 1, .command = augusta::harness::ToWire(sent)}}};
-    const augusta::input::Command received = augusta::server::FromWire(ThroughTheWire(message).commands.at(0)).command;
+    const augusta::command::Command received =
+        augusta::server::FromWire(ThroughTheWire(message).commands.at(0)).command;
 
     EXPECT_EQ(received.movement.sprint, sent.movement.sprint) << flag;
     EXPECT_EQ(received.ads, sent.ads) << flag;

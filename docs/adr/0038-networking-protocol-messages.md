@@ -8,7 +8,7 @@ clock or state, used by both client and server (ADR-0006).
 **Its own types.** A message holds only types the protocol defines itself (its
 body state, command, stance and parameters, as plain fields) and the math types
 (`math::Vec3`); never another module's structs. So `augusta_protocol` depends on
-nothing but `augusta_math`, and a module changing its own structs never changes
+nothing but `augusta_math`, which also holds the grids its numbers travel on, and a module changing its own structs never changes
 what travels. A protocol type that mirrors one of the engine's carries the
 suffix `Wire`: `BodyStateWire` for `physics::BodyState`, and the Authoritative
 State message is `AuthoritativeStateWire`, for the client's
@@ -68,9 +68,11 @@ sent, so the angle grid decides how far a shot lands from where the player
 aimed: at most half a step, 2⁻²² rad, under 0.2 mm at 800 m. That leaves
 precision to the weapon's own spread (a good rifle is about 0.3 mrad), which is
 a design choice, and not to the codec. The two extra bytes per angle cost 4 per
-command, about 1 KB/s more upload per client at 60 Hz with 8 commands a message. The protocol exposes each grid
-as a `Snap` function (`protocol::SnapPosition` and the rest), which gives what
-`Decode` would give back.
+command, about 1 KB/s more upload per client at 60 Hz with 8 commands a message. The grids live in the shared
+`augusta_math` module (`augusta/grid.h`), which the protocol's encoder and
+decoder and `augusta_physics` both use, so neither depends on the other and the two cannot
+diverge. Each grid has a `Snap` function (`math::SnapPosition` and the rest),
+which gives what `Decode` would give back.
 
 **Bodies live on the grid.** `physics::World` rounds every body to these grids
 in `CreateBody`, `Step`, `SetState` and `Restore`. So a server's body is exactly

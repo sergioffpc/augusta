@@ -7,13 +7,14 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
 
 // Pure: device events in, one tick's Command out, with no window or GPU.
 namespace {
 
-using augusta::input::Command;
+using augusta::command::Command;
 using augusta::input::Config;
 using augusta::input::Control;
 using augusta::input::Input;

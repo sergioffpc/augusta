@@ -9,6 +9,7 @@
 #include <optional>
 #include <string_view>
 
+#include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
 
@@ -98,9 +99,9 @@ math::Quat ViewRotation(float yaw, float pitch) {
 
 Input::Input(const Config& config) : mouse_sensitivity_(config.mouse_sensitivity), keymap_(config.keymap) {}
 
-Command Input::Sample() {
+command::Command Input::Sample() {
   const std::lock_guard<std::mutex> lock(mutex_);
-  Command command;
+  command::Command command;
   const float forward = Axis(Held(Control::kMoveForward), Held(Control::kMoveBack));
   const float right = Axis(Held(Control::kMoveRight), Held(Control::kMoveLeft));
   command.movement.direction = MovementDirection(forward, right, yaw_);

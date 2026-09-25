@@ -35,7 +35,7 @@ namespace {
 // before the socket exists, so a map that is rejected never leaves a bound
 // port behind.
 simulation::World BuildSimulation(const HostConfig& config, const Map& map) {
-  simulation::World simulation(config.parameters.stamina, config.script_path);
+  simulation::World simulation(config.parameters.stamina);
   for (const physics::CollisionMesh& mesh : map.collision) {
     if (const auto added = simulation.AddCollisionMesh(mesh); !added) {
       throw std::runtime_error(
