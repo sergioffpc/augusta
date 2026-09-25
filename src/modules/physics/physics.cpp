@@ -40,7 +40,6 @@ namespace {
 
 // Individual using-declarations rather than `using namespace physx` -
 // Google style (ADR-0012) forbids using-directives.
-using physx::PxBroadPhaseType;
 using physx::PxCapsuleControllerDesc;
 using physx::PxCapsuleGeometry;
 using physx::PxController;
@@ -49,8 +48,6 @@ using physx::PxControllerCollisionFlags;
 using physx::PxControllerFilters;
 using physx::PxControllerManager;
 using physx::PxCookingParams;
-using physx::PxCudaContextManager;
-using physx::PxCudaContextManagerDesc;
 using physx::PxDefaultAllocator;
 using physx::PxDefaultCpuDispatcher;
 using physx::PxDefaultCpuDispatcherCreate;
@@ -71,7 +68,6 @@ using physx::PxRigidActorExt;
 using physx::PxRigidStatic;
 using physx::PxScene;
 using physx::PxSceneDesc;
-using physx::PxSceneFlag;
 using physx::PxTolerancesScale;
 using physx::PxTransform;
 using physx::PxTriangleMesh;
@@ -99,7 +95,9 @@ constexpr float kStaticFriction = 0.5F;
 constexpr float kDynamicFriction = 0.5F;
 constexpr float kRestitution = 0.1F;
 constexpr float kMinMoveDistance = 0.001F;  // PxController::move's own minDist parameter.
-constexpr int kWorkerThreadCount = 1;
+// PxSceneDesc rejects a scene without a CPU dispatcher, but nothing here ever
+// calls PxScene::simulate() (see the header comment), so it needs no threads.
+constexpr int kWorkerThreadCount = 0;
 
 // A stance change that grows the capsule is tested for headroom with a capsule
 // shrunk by this much, so touching the floor or a wall is not "overlapping".
@@ -258,7 +256,6 @@ class PhysxLease {
   PhysxLease(const PhysxLease&) = delete;
   PhysxLease& operator=(const PhysxLease&) = delete;
 
-  [[nodiscard]] PxFoundation* Foundation() const { return handles_.foundation; }
   [[nodiscard]] PxPhysics* Physics() const { return handles_.physics; }
 
  private:
@@ -295,14 +292,8 @@ struct World::Impl {
   // Declared first so it is released last: everything below that PhysX
   // created must be released before the shared foundation can go.
   PhysxLease lease;
-  PxFoundation* foundation = lease.Foundation();
   PxPhysics* physics = lease.Physics();
   PxDefaultCpuDispatcher* dispatcher = nullptr;
-  // Non-null only when enable_gpu was requested AND a CUDA-capable
-  // GPU/driver was actually found - see the constructor. Currently has
-  // no observable effect on Step's own output; see World's own header
-  // comment for why it's wired in ahead of need.
-  PxCudaContextManager* cuda_context_manager = nullptr;
   PxScene* scene = nullptr;
   PxControllerManager* controller_manager = nullptr;
   PxMaterial* material = nullptr;
@@ -313,39 +304,17 @@ struct World::Impl {
   std::unordered_map<BodyHandle, BodyRecord> bodies;
   std::uint32_t next_handle = 1;
 
-  Impl(const StaminaConfig& config, bool enable_gpu) : stamina_config(config) {
+  explicit Impl(const StaminaConfig& config) : stamina_config(config) {
     PxSceneDesc scene_desc(physics->getTolerancesScale());
     scene_desc.gravity = PxVec3(0.0F, kGravity, 0.0F);
     dispatcher = PxDefaultCpuDispatcherCreate(kWorkerThreadCount);
     scene_desc.cpuDispatcher = dispatcher;
     scene_desc.filterShader = PxDefaultSimulationFilterShader;
 
-    if (enable_gpu) {
-      const PxCudaContextManagerDesc cuda_desc;
-      // Unqualified, not physx::PxCreateCudaContextManager: gpu/PxGpu.h
-      // declares it PX_C_EXPORT (extern "C") at global scope, only its
-      // parameter/return types live in namespace physx.
-      cuda_context_manager = ::PxCreateCudaContextManager(*foundation, cuda_desc);
-      if (cuda_context_manager != nullptr && cuda_context_manager->contextIsValid()) {
-        scene_desc.cudaContextManager = cuda_context_manager;
-        scene_desc.flags |= PxSceneFlag::eENABLE_GPU_DYNAMICS;
-        scene_desc.broadPhaseType = PxBroadPhaseType::eGPU;
-        LI("subsystem=physics event=gpu_context_created device=\"{}\"", cuda_context_manager->getDeviceName());
-      } else {
-        // No CUDA-capable GPU/driver on this machine - fall back to CPU
-        // rather than fail World construction over it.
-        LW("subsystem=physics event=gpu_unavailable fallback=cpu");
-        if (cuda_context_manager != nullptr) {
-          cuda_context_manager->release();
-          cuda_context_manager = nullptr;
-        }
-      }
-    }
-
     scene = physics->createScene(scene_desc);
     controller_manager = PxCreateControllerManager(*scene);
     material = physics->createMaterial(kStaticFriction, kDynamicFriction, kRestitution);
-    LD("subsystem=physics event=world_created gpu={}", cuda_context_manager != nullptr);
+    LD("subsystem=physics event=world_created");
   }
 
   // Decision half of a stance change: a smaller capsule always fits, a taller
@@ -389,19 +358,13 @@ struct World::Impl {
     if (scene != nullptr) {
       scene->release();
     }
-    // Released after the scene (which references it), matching
-    // PxCudaContextManager::release()'s own documented ordering
-    // requirement - never released while a scene is still using it.
-    if (cuda_context_manager != nullptr) {
-      cuda_context_manager->release();
-    }
     if (dispatcher != nullptr) {
       dispatcher->release();
     }
   }
 };
 
-World::World(const StaminaConfig& config, bool enable_gpu) : impl_(std::make_unique<Impl>(config, enable_gpu)) {}
+World::World(const StaminaConfig& config) : impl_(std::make_unique<Impl>(config)) {}
 World::~World() = default;
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
