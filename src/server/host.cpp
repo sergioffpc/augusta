@@ -21,6 +21,7 @@
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
+#include "augusta/tick.h"
 #include "augusta/version.h"
 #include "command_queue.h"
 #include "match.h"
@@ -94,6 +95,10 @@ struct Host::Impl {
   // What Network I/O and the ticks did since the last heartbeat. Guarded by mutex.
   struct Activity {
     std::uint32_t ticks = 0;
+    // Ticks that started after their deadline, and ticks whose work took
+    // longer than a tick (NFR-01).
+    std::uint32_t late = 0;
+    std::uint32_t overrun = 0;
     std::uint32_t messages = 0;
     // Commands turned away as already handled, or as sent outside a match:
     // routine, since commands repeat and some are in flight when a match ends.
@@ -323,16 +328,19 @@ struct Host::Impl {
 
   // Once a second, one line of what the last second held: a line per tick or
   // per packet would bury the one that matters. Simulation thread only.
-  void Heartbeat() {
+  void Heartbeat(const tick::Timing& timing) {
     const auto now = std::chrono::steady_clock::now();
     const std::lock_guard<std::mutex> lock(mutex);
     ++activity.ticks;
+    activity.late += timing.late ? 1U : 0U;
+    activity.overrun += timing.overrun ? 1U : 0U;
     if (now - activity_since < kHeartbeatInterval) {
       return;
     }
-    LD("subsystem=serverruntime event=heartbeat tick={} players={} in_match={} ticks={} messages={} stale={} "
-       "dropped={}",
-       tick, players.size(), match.InMatch(), activity.ticks, activity.messages, activity.stale, activity.dropped);
+    LD("subsystem=serverruntime event=heartbeat tick={} players={} in_match={} ticks={} late={} overrun={} "
+       "messages={} stale={} dropped={}",
+       tick, players.size(), match.InMatch(), activity.ticks, activity.late, activity.overrun, activity.messages,
+       activity.stale, activity.dropped);
     activity = Activity{};
     activity_since = now;
   }
@@ -382,9 +390,10 @@ simulation::State Host::Tick(float delta_time) {
   simulation::State state = impl.simulation.Tick(input.commands, delta_time);
   ++impl.tick;
   impl.Send(state, input);
-  impl.Heartbeat();
   return state;
 }
+
+void Host::RecordTiming(const tick::Timing& timing) { impl_->Heartbeat(timing); }
 
 void Host::EndMatch() {
   const std::lock_guard<std::mutex> lock(impl_->mutex);
