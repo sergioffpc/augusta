@@ -13,14 +13,16 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/simulation.h"
+#include "augusta/tick.h"
 #include "match.h"
 #include "parameters_loader.h"
 
 // augusta::server::Host is the server's network boundary and the
 // authoritative SimulationWorld (ADR-0023) without the threads and the clock:
 // ServerRuntime (src/server) runs PumpNetwork on the Network I/O thread and
-// Tick on the Simulation thread at a fixed rate (ADR-0005), while a test calls
-// both by hand, so a match can be driven tick by tick with no sleeping.
+// Tick on the Simulation thread at a fixed rate (ADR-0005), reporting how each
+// Tick kept to its schedule to RecordTiming, while a test calls PumpNetwork and
+// Tick by hand, so a match can be driven tick by tick with no sleeping.
 //
 // Admitted players wait in the Lobby, and a match starts on the tick the Lobby
 // is full and everyone is Ready (ADR-0043): only then are bodies simulated and
@@ -91,6 +93,12 @@ class Host {
   /// match first if the Lobby is full and Ready and the pause after the last
   /// one (server::kMatchPause, counted in these ticks) has passed.
   simulation::State Tick(float delta_time);
+
+  /// Counts the Tick just run, with how it kept to the Simulation loop's
+  /// schedule, toward the once-a-second heartbeat line (ADR-0029), and writes
+  /// that line when it is due. From the Simulation thread, after each Tick; a
+  /// test that has no schedule need not call it.
+  void RecordTiming(const tick::Timing& timing);
 
   /// Ends the match in progress, if any: its players are sent Match end and are
   /// back in the Lobby, and their bodies leave the simulation on the next Tick.

@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "augusta/logging.h"
+#include "augusta/tick.h"
 #include "host.h"
 
 namespace augusta::runtime {
@@ -68,15 +69,19 @@ void ServerRuntime::Run() {
   impl_->network_thread = std::thread([this] { impl_->NetworkThreadMain(); });
   ThreadJoiner joiner{.running = impl_->running, .network_thread = impl_->network_thread};
 
-  const auto tick_duration = std::chrono::duration<float>(1.0F / impl_->config.tick_rate_hz);
+  const auto delta_time = std::chrono::duration<float>(1.0F / impl_->config.tick_rate_hz);
+  const auto tick_duration = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
   LI("subsystem=serverruntime event=loop_starting loop=simulation");
+  tick::Clock::time_point deadline = tick::Clock::now();
   while (impl_->running.load(std::memory_order_relaxed)) {
-    const auto tick_start = std::chrono::steady_clock::now();
+    const tick::Clock::time_point tick_start = tick::Clock::now();
 
-    impl_->host.Tick(tick_duration.count());
+    impl_->host.Tick(delta_time.count());
 
-    std::this_thread::sleep_until(tick_start +
-                                  std::chrono::duration_cast<std::chrono::steady_clock::duration>(tick_duration));
+    const tick::Clock::time_point tick_end = tick::Clock::now();
+    impl_->host.RecordTiming(tick::Measure(deadline, tick_duration, tick_start, tick_end));
+    deadline = tick::NextDeadline(deadline, tick_duration, tick_end);
+    std::this_thread::sleep_until(deadline);
   }
   LI("subsystem=serverruntime event=loop_stopping loop=simulation");
 }
