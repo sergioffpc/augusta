@@ -20,7 +20,42 @@
 #include "runtime.h"
 #include "scene_loader.h"
 
+#ifdef _WIN32
+#include <windows.h>
+// timeapi.h needs the types windows.h declares, so it comes after it, unsorted.
+#include <timeapi.h>
+#endif
+
 namespace {
+
+#ifdef _WIN32
+// Raises the system timer resolution to 1 ms for as long as it lives, and
+// restores it after. Windows otherwise wakes a sleeping thread only every
+// 15.6 ms, so the Prediction thread could not keep a 60 Hz schedule (16.7 ms
+// a tick) and would run well below the server's rate.
+class TimerResolution {
+ public:
+  TimerResolution() : raised_(timeBeginPeriod(kPeriodMs) == TIMERR_NOERROR) {
+    if (!raised_) {
+      LW("subsystem=client event=timer_resolution_unchanged period_ms={}", kPeriodMs);
+    }
+  }
+  ~TimerResolution() {
+    if (raised_) {
+      timeEndPeriod(kPeriodMs);
+    }
+  }
+
+  TimerResolution(const TimerResolution&) = delete;
+  TimerResolution& operator=(const TimerResolution&) = delete;
+  TimerResolution(TimerResolution&&) = delete;
+  TimerResolution& operator=(TimerResolution&&) = delete;
+
+ private:
+  static constexpr UINT kPeriodMs = 1;
+  bool raised_;
+};
+#endif
 
 enum class PackFailure {
   kPublicKeyUnreadable,
@@ -236,6 +271,9 @@ int Run(const augusta::config::ClientConfig& file_config, const augusta::assets:
 
 int main(int argc, char** argv) {
   augusta::logging::Init();
+#ifdef _WIN32
+  const TimerResolution timer_resolution;
+#endif
 
   const auto file_config = LoadConfig(argc, argv);
   if (!file_config) {

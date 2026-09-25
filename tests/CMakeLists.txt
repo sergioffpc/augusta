@@ -11,6 +11,10 @@ gtest_discover_tests(augusta_logging_tests)
 add_executable(augusta_version_benchmarks version_benchmark.cpp)
 target_link_libraries(augusta_version_benchmarks PRIVATE augusta_version benchmark::benchmark benchmark::benchmark_main)
 
+add_executable(augusta_tick_tests tick_test.cpp)
+target_link_libraries(augusta_tick_tests PRIVATE augusta_tick GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_tick_tests)
+
 add_executable(augusta_config_tests config_test.cpp)
 target_link_libraries(augusta_config_tests PRIVATE augusta_config GTest::gtest GTest::gtest_main)
 # The example configs are what a new install is copied from, so a test keeps them loading.
@@ -129,6 +133,14 @@ target_link_libraries(augusta_assets_tests PRIVATE augusta_assets GTest::gtest G
 # target gets a private include path to see them; nothing else needs to.
 target_include_directories(augusta_assets_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
 gtest_discover_tests(augusta_assets_tests)
+
+# The renderer is Windows-only (Falcor, ADR-0009), but which region of its
+# per-frame upload buffers a frame uses is a Falcor-free header, private to the
+# module, so it is tested everywhere through a private include path.
+add_executable(augusta_frame_regions_tests frame_regions_test.cpp)
+target_include_directories(augusta_frame_regions_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
+target_link_libraries(augusta_frame_regions_tests PRIVATE GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_frame_regions_tests)
 
 if (WIN32)
   # The client is Windows-only (Falcor, ADR-0009), and so is the scene
