@@ -226,6 +226,11 @@ class World {
   // non-determinism (see the header comment above) isn't a correctness
   // concern there, since ballistics runs exclusively server-side - there
   // is no second, client-side computation to diverge from.
+  //
+  // A body is not yet hit where it is: the ray sees it where its PhysX
+  // controller was made (centered on the world origin), however far
+  // CreateBody, Step, SetState or Restore have put it since. Player hit
+  // detection must fix that first (ADR-0002).
   [[nodiscard]] RaycastHit Raycast(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const;
 
  private:
