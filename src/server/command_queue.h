@@ -77,6 +77,9 @@ class CommandQueue {
   /// never repeat a one-shot action (reload) or keep firing.
   [[nodiscard]] TickCommand Next();
 
+  /// Whether a command is queued, so the next Next hands out a new one rather than holding or idling.
+  [[nodiscard]] bool HasQueued() const { return !queued_.empty(); }
+
  private:
   std::deque<SequencedCommand> queued_;
   std::optional<input::Command> last_;
