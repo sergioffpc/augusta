@@ -973,6 +973,9 @@ class LoopbackMatch : public ::testing::Test {
   static constexpr float kFloorY = 0.0F;
   static constexpr int kSettleTicks = 30;
   static constexpr auto kNetworkDelay = std::chrono::milliseconds(8);
+  // How long Step waits for the commands it sent to reach the server: far more
+  // than loopback delivery takes, even under the sanitizers.
+  static constexpr auto kStepPatience = std::chrono::milliseconds(250);
 
   // What a host needs, split the way Host's own constructor wants it: config
   // file/script settings, and the map, separately.
@@ -1024,13 +1027,28 @@ class LoopbackMatch : public ::testing::Test {
   }
 
   // One tick of the whole match: every client predicts and sends command, the
-  // server ticks, the states come back.
+  // server ticks once every command a connected client in the match sent has
+  // reached it (or that client has since heard its match end, or kStepPatience
+  // has passed), the states come back. Waiting for them rather than for a fixed
+  // time keeps a slow run (the sanitizers build) from ticking the server before
+  // a command arrives, which would hold that player's last movement (ADR-0038)
+  // and turn into a correction no real mismatch caused. The patience bounds a
+  // test that loses commands on purpose.
   void Step(const Command& command = Command{}) {
+    std::vector<std::pair<const Session*, augusta::server::SessionId>> sending;
     for (const auto& session : sessions_) {
+      if (session->GetPhase() == Phase::kMatch && session->GetConnectionState() == ConnectionState::kConnected) {
+        sending.emplace_back(session.get(),
+                             static_cast<augusta::server::SessionId>(std::to_underlying(*session->GetSessionId())));
+      }
       states_[session.get()] = session->Tick(command, kFixedTick);
     }
-    std::this_thread::sleep_for(kNetworkDelay);
-    Exchange();
+    const auto give_up = std::chrono::steady_clock::now() + kStepPatience;
+    ExchangeUntil(host_, Pointers(sessions_), [&] {
+      return std::chrono::steady_clock::now() >= give_up || std::ranges::all_of(sending, [&](const auto& sent) {
+               return host_.HasQueuedCommand(sent.second) || sent.first->GetPhase() != Phase::kMatch;
+             });
+    });
     host_.Tick(kFixedTick);
     std::this_thread::sleep_for(kNetworkDelay);
     Exchange();
