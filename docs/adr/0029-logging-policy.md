@@ -39,8 +39,11 @@ sink, delays the thread that writes it. Two rules keep the volume down:
 
 - **Heartbeat.** The server's Simulation thread and the client's Prediction
   thread each write one `DEBUG` line a second, `event=heartbeat`, with counters
-  for that second (ticks, messages, drops, corrections). The trend is in that
-  line; per-phase timing is the profiler's job (the NVTX ranges), not the log's.
+  for that second (ticks, messages, drops, corrections). The server's also counts
+  `late=` (ticks that started more than 1 ms after their deadline) and
+  `overrun=` (ticks whose work took longer than a tick), so NFR-01's "no missed
+  ticks" is measured. The trend is in that line; per-phase timing is the
+  profiler's job (the NVTX ranges), not the log's.
 - **Peer-provoked warnings are limited.** A `WARN` a peer can cause as often as it
   likes (a malformed or out-of-turn message) goes through `LW_LIMITED` and a
   `logging::Throttle`: one line a second, ending `suppressed=<n>` when it stands

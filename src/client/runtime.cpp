@@ -21,6 +21,7 @@
 #include "augusta/math.h"
 #include "augusta/prediction.h"
 #include "augusta/presentation.h"
+#include "augusta/tick.h"
 
 namespace augusta::runtime {
 
@@ -301,22 +302,24 @@ struct ClientRuntime::Impl {
     float correction_m_ = 0.0F;
   };
 
-  // Prediction thread body (ADR-0005): fixed-rate loop sampling local
-  // input and ticking PredictionWorld, at the server's tick rate once it has
-  // joined. Runs until running is cleared by ThreadJoiner.
+  // Prediction thread body (ADR-0005): loop sampling local input and ticking
+  // PredictionWorld on a fixed schedule (tick.h), at the server's tick rate
+  // once it has joined. Runs until running is cleared by ThreadJoiner.
   void PredictionThreadMain() {
     const auto tick_rate_hz = WaitForTickRate();
     if (!tick_rate_hz.has_value()) {
       return;
     }
-    const auto tick_duration = std::chrono::duration<float>(1.0F / *tick_rate_hz);
+    const auto delta_time = std::chrono::duration<float>(1.0F / *tick_rate_hz);
+    const auto tick_duration = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
     PredictionActivity activity;
+    tick::Clock::time_point deadline = tick::Clock::now();
     while (running.load(std::memory_order_relaxed)) {
       const nvtx3::scoped_range range{"Prediction Tick"};
-      const auto tick_start = std::chrono::steady_clock::now();
+      const tick::Clock::time_point tick_start = tick::Clock::now();
 
       input::Command command = input.Sample();
-      prediction::State state = session->Tick(command, tick_duration.count());
+      prediction::State state = session->Tick(command, delta_time.count());
       activity.Record(state, tick_start);
 
       {
@@ -324,8 +327,8 @@ struct ClientRuntime::Impl {
         latest_tick = {.state = state, .view_rotation = input::ViewRotation(command.yaw, command.pitch)};
       }
 
-      std::this_thread::sleep_until(tick_start +
-                                    std::chrono::duration_cast<std::chrono::steady_clock::duration>(tick_duration));
+      deadline = tick::NextDeadline(deadline, tick_duration, tick::Clock::now());
+      std::this_thread::sleep_until(deadline);
     }
   }
 
