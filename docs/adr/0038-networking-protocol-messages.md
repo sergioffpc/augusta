@@ -168,7 +168,10 @@ generates itself: a counter that is never reused, deliberately unrelated to the
 transport's connection handle, so identifying a player inside a message does not
 depend on how the connection is represented. It identifies; it does not
 authenticate. The server tells senders apart by connection, so a guessed ID grants
-nothing, and it is kept out of logs per ADR-0029 regardless.
+nothing. Not being a credential, it may be logged (`session=`), and is: without it
+the log cannot tell one player's lines from another's to reconstruct a Match.
+ADR-0029's rule stands for what is a credential - no session/auth token or ticket
+is ever logged.
 
 ## Considered Options
 

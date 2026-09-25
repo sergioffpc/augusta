@@ -3,6 +3,7 @@
 #include <chrono>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include <gtest/gtest.h>
 
@@ -10,6 +11,7 @@ namespace {
 
 using augusta::logging::FormatLine;
 using augusta::logging::ParseSeverity;
+using augusta::logging::SetLogLevel;
 using augusta::logging::Severity;
 using augusta::logging::Throttle;
 using augusta::logging::WithSuppressed;
@@ -48,6 +50,88 @@ TEST(LoggingInit, CanBeCalledTwiceAndLoggedThrough) {
 
   LI("subsystem=test event=logged value={}", 42);
   SUCCEED();
+}
+
+// Whether written is the one console line FormatLine gives message at kInfo, at a
+// time from before to after (whole seconds, so either end), colored or not -
+// Init chose that by whether stdout was a terminal.
+bool IsInfoLineWrittenBetween(const std::string& written, std::string_view message,
+                              std::chrono::system_clock::time_point before,
+                              std::chrono::system_clock::time_point after) {
+  for (const auto time : {before, after}) {
+    for (const bool colored : {false, true}) {
+      if (written == FormatLine(time, Severity::kInfo, message, colored) + "\n") {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+TEST(LoggingRuntimeLevel, CallsUnderItDoNotEvaluateTheirArguments) {
+  SetLogLevel(Severity::kInfo);
+  int evaluated = 0;
+  [[maybe_unused]] const auto side_effect = [&evaluated] { return ++evaluated; };
+
+  LT("subsystem=test event=dropped value={}", side_effect());
+  LD("subsystem=test event=dropped value={}", side_effect());
+
+  EXPECT_EQ(evaluated, 0);
+}
+
+TEST(LoggingRuntimeLevel, CallsAtOrAboveItAreWrittenInTheLineFormat) {
+  augusta::logging::Init();
+  SetLogLevel(Severity::kInfo);
+
+  const auto before = std::chrono::system_clock::now();
+  testing::internal::CaptureStdout();
+  LI("subsystem=test event=written value={}", 7);
+  const std::string written = testing::internal::GetCapturedStdout();
+  const auto after = std::chrono::system_clock::now();
+
+  EXPECT_TRUE(IsInfoLineWrittenBetween(written, "subsystem=test event=written value=7", before, after)) << written;
+}
+
+TEST(LoggingRuntimeLevel, LimitedWarningUnderItTakesNoThrottleSlot) {
+  SetLogLevel(Severity::kError);
+  Throttle throttle{std::chrono::hours{1}};
+  int evaluated = 0;
+
+  LW_LIMITED(throttle, "subsystem=test event=dropped value={}", ++evaluated);
+
+  EXPECT_EQ(evaluated, 0);
+  EXPECT_EQ(throttle.Admit(std::chrono::steady_clock::now()), 0U);
+}
+
+TEST(LoggingRuntimeLevel, EveryLevelsLimitedVariantUnderItTakesNoThrottleSlot) {
+  SetLogLevel(Severity::kCritical);
+  Throttle throttle{std::chrono::hours{1}};
+  int evaluated = 0;
+
+  LT_LIMITED(throttle, "subsystem=test event=dropped value={}", ++evaluated);
+  LD_LIMITED(throttle, "subsystem=test event=dropped value={}", ++evaluated);
+  LI_LIMITED(throttle, "subsystem=test event=dropped value={}", ++evaluated);
+  LE_LIMITED(throttle, "subsystem=test event=dropped value={}", ++evaluated);
+
+  EXPECT_EQ(evaluated, 0);
+  EXPECT_EQ(throttle.Admit(std::chrono::steady_clock::now()), 0U);
+}
+
+TEST(LoggingRuntimeLevel, ALimitedLineIsWrittenOnceAnInterval) {
+  augusta::logging::Init();
+  SetLogLevel(Severity::kInfo);
+  Throttle throttle{std::chrono::hours{1}};
+
+  const auto before = std::chrono::system_clock::now();
+  testing::internal::CaptureStdout();
+  for (int i = 0; i < 3; ++i) {
+    LI_LIMITED(throttle, "subsystem=test event=limited value={}", i);
+  }
+  const std::string written = testing::internal::GetCapturedStdout();
+  const auto after = std::chrono::system_clock::now();
+
+  EXPECT_TRUE(IsInfoLineWrittenBetween(written, "subsystem=test event=limited value=0", before, after)) << written;
+  EXPECT_EQ(throttle.Admit(std::chrono::steady_clock::now()), std::nullopt);
 }
 
 TEST(LoggingParseSeverity, ParsesEachName) {

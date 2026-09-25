@@ -47,7 +47,9 @@ sink, delays the thread that writes it. Two rules keep the volume down:
 - **Peer-provoked warnings are limited.** A `WARN` a peer can cause as often as it
   likes (a malformed or out-of-turn message) goes through `LW_LIMITED` and a
   `logging::Throttle`: one line a second, ending `suppressed=<n>` when it stands
-  for more. The heartbeat still counts every one.
+  for more. The heartbeat still counts every one. Every level has such a
+  variant (`LT_LIMITED` through `LC_LIMITED`), for a line of any level a peer
+  can provoke at will.
 
 ## Consequences
 
