@@ -37,6 +37,10 @@ static_assert(protocol::kPackHashSize == assets::kPackHashSize);
 
 }  // namespace
 
+protocol::EntityIdWire ToWire(EntityId entity) {
+  return static_cast<protocol::EntityIdWire>(static_cast<std::uint32_t>(entity));
+}
+
 protocol::SessionIdWire ToWire(SessionId session) {
   return static_cast<protocol::SessionIdWire>(static_cast<std::uint32_t>(session));
 }
@@ -101,8 +105,10 @@ protocol::MatchStartWire ToWire(const MatchStart& start) {
   protocol::MatchStartWire message;
   message.players.reserve(start.players.size());
   for (const MatchPlayer& player : start.players) {
-    message.players.push_back(protocol::MatchPlayerWire{
-        .spawn = player.spawn, .session = ToWire(player.session), .character = player.character});
+    message.players.push_back(protocol::MatchPlayerWire{.spawn = player.spawn,
+                                                        .session = ToWire(player.session),
+                                                        .entity = ToWire(player.entity),
+                                                        .character = player.character});
   }
   return message;
 }
@@ -111,12 +117,12 @@ protocol::AuthoritativeStateWire ToWire(const replication::Update& update) {
   protocol::AuthoritativeStateWire state{
       .tick = update.tick,
       .acknowledged_sequence = update.acknowledged_sequence,
-      .players = {},
+      .bodies = {},
   };
-  state.players.reserve(update.players.size());
-  for (const replication::PlayerBody& player : update.players) {
-    state.players.push_back(
-        protocol::PlayerStateWire{.session = ToWire(SessionOf(player.player)), .body = ToWire(player.body)});
+  state.bodies.reserve(update.bodies.size());
+  for (const replication::EntityBody& body : update.bodies) {
+    state.bodies.push_back(
+        protocol::EntityStateWire{.entity = ToWire(FromSimulation(body.entity)), .body = ToWire(body.body)});
   }
   return state;
 }

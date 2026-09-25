@@ -82,19 +82,21 @@ Admission FromWire(const protocol::JoinAcceptedWire& accepted) {
   };
 }
 
-PlayerBody FromWire(const protocol::PlayerStateWire& player) {
-  return PlayerBody{.session = FromWire(player.session), .body = FromWire(player.body)};
+EntityId FromWire(protocol::EntityIdWire entity) { return static_cast<EntityId>(static_cast<std::uint32_t>(entity)); }
+
+EntityBody FromWire(const protocol::EntityStateWire& body) {
+  return EntityBody{.entity = FromWire(body.entity), .body = FromWire(body.body)};
 }
 
 AuthoritativeState FromWire(const protocol::AuthoritativeStateWire& state) {
   AuthoritativeState result{
       .tick = state.tick,
       .acknowledged_sequence = state.acknowledged_sequence,
-      .players = {},
+      .bodies = {},
   };
-  result.players.reserve(state.players.size());
-  for (const protocol::PlayerStateWire& player : state.players) {
-    result.players.push_back(FromWire(player));
+  result.bodies.reserve(state.bodies.size());
+  for (const protocol::EntityStateWire& body : state.bodies) {
+    result.bodies.push_back(FromWire(body));
   }
   return result;
 }
@@ -112,8 +114,10 @@ MatchStart FromWire(const protocol::MatchStartWire& start) {
   MatchStart result;
   result.players.reserve(start.players.size());
   for (const protocol::MatchPlayerWire& player : start.players) {
-    result.players.push_back(
-        MatchPlayer{.session = FromWire(player.session), .character = player.character, .spawn = player.spawn});
+    result.players.push_back(MatchPlayer{.session = FromWire(player.session),
+                                         .entity = FromWire(player.entity),
+                                         .character = player.character,
+                                         .spawn = player.spawn});
   }
   return result;
 }

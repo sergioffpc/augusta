@@ -119,7 +119,8 @@ target_link_libraries(augusta_wire_tests PRIVATE augusta_harness augustad_host G
 gtest_discover_tests(augusta_wire_tests DISCOVERY_TIMEOUT 30)
 
 # No header past the protocol's edge names a protocol type (ADR-0038): only
-# harness_wire.h and server/wire.h convert. A source scan, so it builds nothing.
+# harness_wire.h and server/wire.h convert. Nor does a presentation header name
+# the harness: ClientRuntime converts. A source scan, so it builds nothing.
 add_test(NAME augusta_protocol_boundary
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/protocol_boundary.cmake)
 

@@ -11,7 +11,6 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -58,11 +57,13 @@ std::uint32_t SessionNumber(SessionId session) { return static_cast<std::uint32_
 
 }  // namespace
 
-simulation::PlayerId PlayerOf(SessionId session) {
-  return static_cast<simulation::PlayerId>(static_cast<std::uint32_t>(session));
+simulation::EntityId ToSimulation(EntityId entity) {
+  return static_cast<simulation::EntityId>(static_cast<std::uint32_t>(entity));
 }
 
-SessionId SessionOf(simulation::PlayerId player) { return static_cast<SessionId>(static_cast<std::uint32_t>(player)); }
+EntityId FromSimulation(simulation::EntityId entity) {
+  return static_cast<EntityId>(static_cast<std::uint32_t>(entity));
+}
 
 struct Host::Impl {
   // What the server keeps per joined client.
@@ -72,9 +73,9 @@ struct Host::Impl {
   };
 
   // Declared before the socket so it is constructed first; see BuildSimulation.
-  // Simulation thread only, with the sessions whose bodies are in it.
+  // Simulation thread only, with the body each player in it controls.
   simulation::World simulation;
-  std::unordered_set<SessionId> bodies;
+  std::unordered_map<SessionId, EntityId> bodies;
   std::uint32_t tick = 0;
   // What every client is told when it joins, with the tick rate; neither ever
   // changes, so neither needs the lock.
@@ -282,8 +283,8 @@ struct Host::Impl {
     }
     std::vector<SessionId> sessions;
     for (const MatchPlayer& player : start->players) {
-      simulation.AddPlayer(PlayerOf(player.session), player.spawn);
-      bodies.insert(player.session);
+      simulation.AddPlayer(ToSimulation(player.entity), player.spawn);
+      bodies.emplace(player.session, player.entity);
       players.at(player.session).commands = CommandQueue{};
       sessions.push_back(player.session);
     }
@@ -296,18 +297,20 @@ struct Host::Impl {
   struct TickInput {
     std::vector<simulation::PlayerCommand> commands;
     std::vector<replication::Recipient> recipients;
-    std::unordered_map<SessionId, networking::PeerId> peers;
+    // The connection of each recipient, by the entity its player controls.
+    std::unordered_map<EntityId, networking::PeerId> peers;
   };
 
   // Removes the bodies of players no longer in a match, starts a match if one
   // can start, then takes one command per player in it for this tick.
   TickInput PrepareTick() {
     const std::lock_guard<std::mutex> lock(mutex);
-    std::erase_if(bodies, [&](SessionId session) {
+    std::erase_if(bodies, [&](const auto& body) {
+      const auto& [session, entity] = body;
       if (match.IsPlaying(session)) {
         return false;
       }
-      simulation.RemovePlayer(PlayerOf(session));
+      simulation.RemovePlayer(ToSimulation(entity));
       return true;
     });
     match.Tick();
@@ -316,11 +319,12 @@ struct Host::Impl {
     TickInput input;
     for (const SessionId session : match.Playing()) {
       Player& player = players.at(session);
+      const EntityId entity = bodies.at(session);
       const TickCommand next = player.commands.Next();
-      input.commands.push_back(simulation::PlayerCommand{.player = PlayerOf(session), .command = next.command});
+      input.commands.push_back(simulation::PlayerCommand{.entity = ToSimulation(entity), .command = next.command});
       input.recipients.push_back(
-          replication::Recipient{.player = PlayerOf(session), .acknowledged_sequence = next.acknowledged_sequence});
-      input.peers.emplace(session, player.peer);
+          replication::Recipient{.entity = ToSimulation(entity), .acknowledged_sequence = next.acknowledged_sequence});
+      input.peers.emplace(entity, player.peer);
     }
     return input;
   }
@@ -346,7 +350,7 @@ struct Host::Impl {
 
   void Send(const simulation::State& state, const TickInput& input) {
     for (const replication::Update& update : replication::PlanUpdates(state, tick, input.recipients)) {
-      network.Send(input.peers.at(SessionOf(update.recipient)), protocol::Encode(ToWire(update)),
+      network.Send(input.peers.at(FromSimulation(update.recipient)), protocol::Encode(ToWire(update)),
                    networking::Reliability::kUnreliable);
     }
   }

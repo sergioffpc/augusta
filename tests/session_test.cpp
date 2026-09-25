@@ -47,6 +47,7 @@
 namespace {
 
 using augusta::command::Command;
+using augusta::harness::EntityId;
 using augusta::harness::Failure;
 using augusta::harness::FailureKind;
 using augusta::harness::JoinRefusal;
@@ -61,6 +62,7 @@ using augusta::networking::Endpoint;
 using augusta::parameters::Parameters;
 using augusta::physics::CollisionMesh;
 using augusta::physics::Stance;
+using augusta::protocol::EntityIdWire;
 using augusta::protocol::SessionIdWire;
 using augusta::server::Host;
 using augusta::server::HostConfig;
@@ -745,9 +747,9 @@ class MovementTest : public ::testing::Test {
     const auto state = session_.GetAuthoritativeState();
     EXPECT_TRUE(state.has_value());
     if (state.has_value()) {
-      for (const auto& player : state->players) {
-        if (player.session == *session_.GetSessionId()) {
-          return player.body;
+      for (const auto& body : state->bodies) {
+        if (body.entity == *session_.GetEntityId()) {
+          return body.body;
         }
       }
     }
@@ -910,8 +912,8 @@ TEST(RawCommandsTest, CommandsThatAreOutOfOrderOrOutOfRangeAreDroppedWithoutAffe
     std::this_thread::sleep_for(kNetworkDelay);
     for (const auto& state : raw.Receive()) {
       acknowledged.push_back(state.acknowledged_sequence);
-      for (const auto& player : state.players) {
-        EXPECT_TRUE(std::isfinite(player.body.position.x) && std::isfinite(player.body.position.y));
+      for (const auto& body : state.bodies) {
+        EXPECT_TRUE(std::isfinite(body.body.position.x) && std::isfinite(body.body.position.y));
       }
     }
   }
@@ -1066,21 +1068,21 @@ class LoopbackMatch : public ::testing::Test {
     return state;
   }
 
-  // Where the newest state client received puts session, or nullopt if it lists no such player.
-  static std::optional<augusta::physics::BodyState> BodySeenBy(const Session& client, SessionId session) {
+  // Where the newest state client received puts entity, or nullopt if it lists no such body.
+  static std::optional<augusta::physics::BodyState> BodySeenBy(const Session& client, EntityId entity) {
     const auto state = client.GetAuthoritativeState();
     if (state.has_value()) {
-      for (const auto& player : state->players) {
-        if (player.session == session) {
-          return player.body;
+      for (const auto& body : state->bodies) {
+        if (body.entity == entity) {
+          return body.body;
         }
       }
     }
     return std::nullopt;
   }
 
-  static std::optional<Vec3> PositionSeenBy(const Session& client, SessionId session) {
-    const auto body = BodySeenBy(client, session);
+  static std::optional<Vec3> PositionSeenBy(const Session& client, EntityId entity) {
+    const auto body = BodySeenBy(client, entity);
     return body.has_value() ? std::optional<Vec3>(body->position) : std::nullopt;
   }
 
@@ -1122,6 +1124,19 @@ class MatchOf : public LoopbackMatch {
 
 using SpawnTest = MatchOf<2>;
 
+TEST_F(SpawnTest, EachClientIsToldTheBodyItControlsAndSeesEveryBodyByIt) {
+  Session& first = Join();
+  Session& second = Join();
+  ASSERT_TRUE(StartMatch());
+
+  Run(kSettleTicks);
+
+  ASSERT_TRUE(first.GetEntityId().has_value() && second.GetEntityId().has_value());
+  EXPECT_NE(*first.GetEntityId(), *second.GetEntityId());
+  EXPECT_TRUE(PositionSeenBy(first, *second.GetEntityId()).has_value());
+  EXPECT_TRUE(PositionSeenBy(second, *first.GetEntityId()).has_value());
+}
+
 TEST_F(SpawnTest, TwoClientsInAMatchSpawnAtDifferentSpawnPoints) {
   Session& first = Join();
   Session& second = Join();
@@ -1129,8 +1144,8 @@ TEST_F(SpawnTest, TwoClientsInAMatchSpawnAtDifferentSpawnPoints) {
 
   Run(kSettleTicks);
 
-  const auto first_position = PositionSeenBy(first, *first.GetSessionId());
-  const auto second_position = PositionSeenBy(first, *second.GetSessionId());
+  const auto first_position = PositionSeenBy(first, *first.GetEntityId());
+  const auto second_position = PositionSeenBy(first, *second.GetEntityId());
   ASSERT_TRUE(first_position.has_value() && second_position.has_value());
   EXPECT_NEAR(first_position->x, SpawnPoints()[0].x, 0.1F);
   EXPECT_NEAR(first_position->z, SpawnPoints()[0].z, 0.1F);
@@ -1180,8 +1195,8 @@ TEST_F(SpawnWrapTest, MorePlayersThanSpawnPointsWrapInsteadOfFailing) {
   Run(kSettleTicks);
 
   Session& last = *sessions_.back();
-  EXPECT_EQ(last.GetAuthoritativeState()->players.size(), 4U);
-  const auto position = PositionSeenBy(last, *last.GetSessionId());
+  EXPECT_EQ(last.GetAuthoritativeState()->bodies.size(), 4U);
+  const auto position = PositionSeenBy(last, *last.GetEntityId());
   ASSERT_TRUE(position.has_value());
   EXPECT_NEAR(position->x, SpawnPoints()[0].x, 0.1F);
 }
@@ -1240,7 +1255,7 @@ TEST_F(LobbyTest, NoMatchStartsBeforeTheLobbyHoldsThePlayerCountEvenWithEveryone
   Settle(host_, All());
 
   for (int i = 0; i < kSettleTicks; ++i) {
-    EXPECT_TRUE(ServerTick().players.empty()) << "a body at tick " << i;
+    EXPECT_TRUE(ServerTick().bodies.empty()) << "a body at tick " << i;
   }
   for (const auto& session : sessions_) {
     EXPECT_EQ(session->GetPhase(), Phase::kLobby);
@@ -1259,12 +1274,12 @@ TEST_F(LobbyTest, AMatchStartsOnTheTickTheLastClientOfAFullLobbyIsReady) {
   sessions_[0]->ReportReady(sessions_[0]->GetLobby()->version);
   sessions_[1]->ReportReady(sessions_[1]->GetLobby()->version);
   Settle(host_, All());
-  EXPECT_TRUE(host_.Tick(kFixedTick).players.empty()) << "started with a client not ReadyWire";
+  EXPECT_TRUE(host_.Tick(kFixedTick).bodies.empty()) << "started with a client not ReadyWire";
 
   sessions_[2]->ReportReady(sessions_[2]->GetLobby()->version);
   Settle(host_, All());
 
-  EXPECT_EQ(host_.Tick(kFixedTick).players.size(), 3U);
+  EXPECT_EQ(host_.Tick(kFixedTick).bodies.size(), 3U);
   ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
     return std::ranges::all_of(sessions_, [](const auto& s) { return s->GetPhase() == Phase::kMatch; });
   }));
@@ -1286,12 +1301,12 @@ TEST_F(ReadyTest, ANewcomerMakesTheClientsAlreadyThereNotReadyUntilTheyReportThe
   // The harness sends nothing for a Roster older than its newest.
   first.ReportReady(before);
   Settle(host_, All());
-  EXPECT_TRUE(host_.Tick(kFixedTick).players.empty()) << "started on a ReadyWire for an older Roster";
+  EXPECT_TRUE(host_.Tick(kFixedTick).bodies.empty()) << "started on a ReadyWire for an older Roster";
 
   first.ReportReady(first.GetLobby()->version);
   Settle(host_, All());
 
-  EXPECT_EQ(host_.Tick(kFixedTick).players.size(), 2U);
+  EXPECT_EQ(host_.Tick(kFixedTick).bodies.size(), 2U);
 }
 
 TEST_F(ReadyTest, AClientInTheLobbyNeitherPredictsNorSendsCommands) {
@@ -1320,15 +1335,15 @@ TEST_F(MidMatchTest, APlayerWhoDisconnectsLeavesTheOthersStateAndTheSimulationAn
   ASSERT_TRUE(StartMatch());
   Run(kSettleTicks);
   Session& watcher = *sessions_.front();
-  ASSERT_EQ(watcher.GetAuthoritativeState()->players.size(), 3U);
-  const SessionId leaver = *sessions_.back()->GetSessionId();
+  ASSERT_EQ(watcher.GetAuthoritativeState()->bodies.size(), 3U);
+  const EntityId leaver = *sessions_.back()->GetEntityId();
 
   sessions_.back()->Disconnect();
   Run(kSettleTicks);
 
-  EXPECT_EQ(watcher.GetAuthoritativeState()->players.size(), 2U);
+  EXPECT_EQ(watcher.GetAuthoritativeState()->bodies.size(), 2U);
   EXPECT_FALSE(PositionSeenBy(watcher, leaver).has_value());
-  EXPECT_EQ(ServerTick().players.size(), 2U);
+  EXPECT_EQ(ServerTick().bodies.size(), 2U);
   EXPECT_EQ(watcher.GetPhase(), Phase::kMatch);
 }
 
@@ -1369,7 +1384,7 @@ TEST_F(MatchCycleTest, AfterMatchEndNoBodyIsSimulatedAndNoStateReachesAClient) {
 
   host_.EndMatch();
 
-  EXPECT_TRUE(ServerTick().players.empty());
+  EXPECT_TRUE(ServerTick().bodies.empty());
   Run(kSettleTicks, Forward());
   for (const auto& session : sessions_) {
     EXPECT_EQ(session->GetPhase(), Phase::kLobby);
@@ -1392,10 +1407,10 @@ TEST_F(MatchCycleTest, TheNextMatchStartsExactlyThePauseAfterTheLastEndedAndNotO
   Settle(host_, All());
 
   for (std::uint32_t i = 1; i < PauseTicks(); ++i) {
-    ASSERT_TRUE(host_.Tick(kFixedTick).players.empty()) << "started " << PauseTicks() - i << " ticks early";
+    ASSERT_TRUE(host_.Tick(kFixedTick).bodies.empty()) << "started " << PauseTicks() - i << " ticks early";
   }
 
-  EXPECT_EQ(host_.Tick(kFixedTick).players.size(), 2U);
+  EXPECT_EQ(host_.Tick(kFixedTick).bodies.size(), 2U);
 }
 
 TEST_F(MatchCycleTest, PlayersKeepTheirSessionAndCharacterAndTheNextMatchTakesTheNextSpawnPoints) {
@@ -1437,7 +1452,7 @@ TEST_F(MatchCycleTest, AMatchWhoseLastPlayerLeavesEndsOnItsOwnAndTheLobbyTakesPl
   }
   Run(kSettleTicks);
 
-  EXPECT_TRUE(ServerTick().players.empty());
+  EXPECT_TRUE(ServerTick().bodies.empty());
   Session& next = Connect();
   EXPECT_TRUE(next.GetSessionId().has_value())
       << "refused: "
@@ -1472,7 +1487,7 @@ class StaminaTest : public LoopbackMatch {
   }
 
   [[nodiscard]] augusta::physics::BodyState Authoritative() const {
-    return BodySeenBy(*client_, *client_->GetSessionId()).value();
+    return BodySeenBy(*client_, *client_->GetEntityId()).value();
   }
 
   static float Speed(const augusta::physics::BodyState& body) { return std::hypot(body.velocity.x, body.velocity.z); }
@@ -1577,11 +1592,14 @@ TEST_F(ScriptedParametersTest, AClientPredictsItsStaminaWithTheRulesOfTheServers
 
   // Nothing else depletes a bar this fast and nothing refills it: the client is following the script.
   EXPECT_LT(states_.at(&client).local_body.stamina, 0.7F);
-  EXPECT_NEAR(states_.at(&client).local_body.stamina, BodySeenBy(client, *client.GetSessionId())->stamina, 0.1F);
+  EXPECT_NEAR(states_.at(&client).local_body.stamina, BodySeenBy(client, *client.GetEntityId())->stamina, 0.1F);
 }
 
 // The session a ScriptedServer admits its client under.
 constexpr SessionIdWire kScriptedSession{1};
+
+// The body a ScriptedServer gives its client in Match start: not its session's number.
+constexpr EntityIdWire kScriptedEntity{101};
 
 // A server speaking the protocol by hand to one client, to send what a real
 // one would not: values that fail the checks, messages out of turn, or bytes
@@ -1639,15 +1657,16 @@ class ScriptedServer {
 
   // A Match start of the admitted client alone, at the origin.
   static augusta::protocol::MatchStartWire StartOfAlone() {
-    return augusta::protocol::MatchStartWire{.players = {{.spawn = {}, .session = kScriptedSession, .character = 1}}};
+    return augusta::protocol::MatchStartWire{
+        .players = {{.spawn = {}, .session = kScriptedSession, .entity = kScriptedEntity, .character = 1}}};
   }
 
-  // An Authoritative State of tick listing sessions, each at the origin.
+  // An Authoritative State of tick listing entities, each at the origin.
   static augusta::protocol::AuthoritativeStateWire StateOf(std::uint32_t tick,
-                                                           const std::vector<SessionIdWire>& sessions) {
-    augusta::protocol::AuthoritativeStateWire state{.tick = tick, .acknowledged_sequence = 0, .players = {}};
-    for (const SessionIdWire session : sessions) {
-      state.players.push_back({.session = session, .body = {}});
+                                                           const std::vector<EntityIdWire>& entities) {
+    augusta::protocol::AuthoritativeStateWire state{.tick = tick, .acknowledged_sequence = 0, .bodies = {}};
+    for (const EntityIdWire entity : entities) {
+      state.bodies.push_back({.entity = entity, .body = {}});
     }
     return state;
   }
@@ -1737,25 +1756,25 @@ TEST_F(ScriptedServerTest, BytesThatAreNoMessageChangeNothingAndTheClientKeepsRu
   EXPECT_GT(PredictedStaminaAfterSprinting(60), 0.99F);
 }
 
-TEST_F(ScriptedServerTest, AStateNamingAPlayerNotInTheMatchIsDropped) {
+TEST_F(ScriptedServerTest, AStateNamingABodyNotInTheMatchIsDropped) {
   Settle();
 
-  server_.Send(ScriptedServer::StateOf(1, {kScriptedSession, SessionIdWire{99}}));
+  server_.Send(ScriptedServer::StateOf(1, {kScriptedEntity, EntityIdWire{99}}));
   Settle();
   EXPECT_FALSE(session_.GetAuthoritativeState().has_value());
 
-  server_.Send(ScriptedServer::StateOf(2, {kScriptedSession}));
+  server_.Send(ScriptedServer::StateOf(2, {kScriptedEntity}));
   Settle();
   EXPECT_TRUE(session_.GetAuthoritativeState().has_value());
 }
 
 TEST_F(ScriptedServerTest, AStateThatArrivesAfterMatchEndIsDroppedAndTheClientIsBackInTheLobby) {
-  server_.Send(ScriptedServer::StateOf(1, {kScriptedSession}));
+  server_.Send(ScriptedServer::StateOf(1, {kScriptedEntity}));
   Settle();
   ASSERT_TRUE(session_.GetAuthoritativeState().has_value());
 
   server_.Send(augusta::protocol::MatchEndWire{});
-  server_.Send(ScriptedServer::StateOf(2, {kScriptedSession}));
+  server_.Send(ScriptedServer::StateOf(2, {kScriptedEntity}));
   Settle();
 
   EXPECT_EQ(session_.GetPhase(), Phase::kLobby);
@@ -1789,21 +1808,21 @@ class ScriptedLobbyTest : public ScriptedServerTest {
 };
 
 TEST_F(ScriptedLobbyTest, AStateThatArrivesBeforeMatchStartIsDropped) {
-  server_.Send(ScriptedServer::StateOf(1, {kScriptedSession}));
+  server_.Send(ScriptedServer::StateOf(1, {kScriptedEntity}));
   Settle();
   EXPECT_EQ(session_.GetPhase(), Phase::kLobby);
   EXPECT_FALSE(session_.GetAuthoritativeState().has_value());
 
   server_.Send(ScriptedServer::StartOfAlone());
-  server_.Send(ScriptedServer::StateOf(2, {kScriptedSession}));
+  server_.Send(ScriptedServer::StateOf(2, {kScriptedEntity}));
   Settle();
   EXPECT_EQ(session_.GetPhase(), Phase::kMatch);
   EXPECT_TRUE(session_.GetAuthoritativeState().has_value());
 }
 
 TEST_F(ScriptedLobbyTest, AMatchStartThatLeavesThisClientOutIsDropped) {
-  server_.Send(
-      augusta::protocol::MatchStartWire{.players = {{.spawn = {}, .session = SessionIdWire{2}, .character = 1}}});
+  server_.Send(augusta::protocol::MatchStartWire{
+      .players = {{.spawn = {}, .session = SessionIdWire{2}, .entity = EntityIdWire{102}, .character = 1}}});
   Settle();
 
   EXPECT_EQ(session_.GetPhase(), Phase::kLobby);
@@ -1820,8 +1839,8 @@ TEST_F(ScriptedLobbyTest, NothingIsSentBeforeMatchStartAndTheFirstTickInAMatchSt
   EXPECT_EQ(server_.CommandsReceived(), 0);
 
   const Vec3 spawn(5.0F, 0.0F, -3.0F);
-  server_.Send(
-      augusta::protocol::MatchStartWire{.players = {{.spawn = spawn, .session = kScriptedSession, .character = 1}}});
+  server_.Send(augusta::protocol::MatchStartWire{
+      .players = {{.spawn = spawn, .session = kScriptedSession, .entity = kScriptedEntity, .character = 1}}});
   Settle();
   const augusta::prediction::State first = session_.Tick(Command{}, kFixedTick);
   Settle();
@@ -1902,7 +1921,7 @@ TEST_F(TickRateTest, AClientTickingAtTheRateItWasToldAgreesWithTheServerWithoutC
   // Walking 3 s at 3 m/s: what the client covered is what the server did, so
   // reconciliation never had a jump to make.
   EXPECT_GT(state.local_body.position.x, 6.0F);
-  EXPECT_NEAR(state.local_body.position.x, BodySeenBy(client, *client.GetSessionId())->position.x, 0.5F);
+  EXPECT_NEAR(state.local_body.position.x, BodySeenBy(client, *client.GetEntityId())->position.x, 0.5F);
   EXPECT_NEAR(state.total_correction.x, 0.0F, 0.01F);
   EXPECT_NEAR(state.total_correction.z, 0.0F, 0.01F);
 }
@@ -2041,7 +2060,7 @@ TEST_F(GarbageTest, GarbageFromAPeerIsDroppedAndTheMatchAndTheOtherClientsAreUna
   Run(kSettleTicks);
 
   using augusta::protocol::BytesWire;
-  BytesWire truncated_state = augusta::protocol::Encode(augusta::protocol::AuthoritativeStateWire{.players = {{}}});
+  BytesWire truncated_state = augusta::protocol::Encode(augusta::protocol::AuthoritativeStateWire{.bodies = {{}}});
   truncated_state.resize(truncated_state.size() / 2);
   BytesWire not_for_the_server = augusta::protocol::Encode(augusta::protocol::AuthoritativeStateWire{});
   BytesWire commands_with_trailing_bytes = augusta::protocol::Encode(augusta::protocol::CommandsWire{});
@@ -2069,10 +2088,10 @@ TEST_F(GarbageTest, GarbageFromAPeerIsDroppedAndTheMatchAndTheOtherClientsAreUna
   const auto after = bystander.GetAuthoritativeState();
   ASSERT_TRUE(after.has_value());
   EXPECT_GT(after->tick, before->tick);
-  EXPECT_EQ(after->players.size(), 2U);  // The bystander, and the raw peer that only joined.
-  EXPECT_GT(BodySeenBy(bystander, *bystander.GetSessionId())->position.x, SpawnPoints()[0].x + 1.0F);
-  for (const auto& player : after->players) {
-    EXPECT_TRUE(std::isfinite(player.body.position.x) && std::isfinite(player.body.position.y));
+  EXPECT_EQ(after->bodies.size(), 2U);  // The bystander, and the raw peer that only joined.
+  EXPECT_GT(BodySeenBy(bystander, *bystander.GetEntityId())->position.x, SpawnPoints()[0].x + 1.0F);
+  for (const auto& body : after->bodies) {
+    EXPECT_TRUE(std::isfinite(body.body.position.x) && std::isfinite(body.body.position.y));
   }
   EXPECT_EQ(bystander.GetConnectionState(), ConnectionState::kConnected);
 }
@@ -2084,20 +2103,20 @@ TEST_F(FullMatchRobustnessTest, AfterAClientDisconnectsItsPlayerIsAbsentFromOthe
   ASSERT_TRUE(StartMatch());
   Run(kSettleTicks);
   Session& watcher = *sessions_.front();
-  ASSERT_EQ(watcher.GetAuthoritativeState()->players.size(), augusta::protocol::kMaxPlayers);
-  const auto leaver = *sessions_.back()->GetSessionId();
+  ASSERT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::protocol::kMaxPlayers);
+  const auto leaver = *sessions_.back()->GetEntityId();
 
   sessions_.back()->Disconnect();
   Run(kSettleTicks);
 
-  EXPECT_EQ(watcher.GetAuthoritativeState()->players.size(), augusta::protocol::kMaxPlayers - 1);
+  EXPECT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::protocol::kMaxPlayers - 1);
   EXPECT_FALSE(PositionSeenBy(watcher, leaver).has_value());
 
   Session& ninth = Connect();
   Run(kSettleTicks);
 
   EXPECT_EQ(ninth.GetRefusal(), JoinRefusal::kMatchInProgress);
-  EXPECT_EQ(watcher.GetAuthoritativeState()->players.size(), augusta::protocol::kMaxPlayers - 1);
+  EXPECT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::protocol::kMaxPlayers - 1);
 }
 
 TEST_F(RobustnessTest, AClientThatDropsWithoutClosingKeepsTheServerTickingAndIsRemovedOnceItTimesOut) {
@@ -2116,7 +2135,7 @@ TEST_F(RobustnessTest, AClientThatDropsWithoutClosingKeepsTheServerTickingAndIsR
   const auto deadline = std::chrono::steady_clock::now() + kSilentPeerDeadline;
   while (players > 0 && std::chrono::steady_clock::now() < deadline) {
     Step(Forward());
-    players = ServerTick().players.size();
+    players = ServerTick().bodies.size();
     ++ticks_run;
   }
   augusta::networking::SimulateNetworkConditions({});
@@ -2128,7 +2147,7 @@ TEST_F(RobustnessTest, AClientThatDropsWithoutClosingKeepsTheServerTickingAndIsR
   ASSERT_TRUE(DriveIntoMatch(host_, {&next}));
   Run(kSettleTicks);
   EXPECT_TRUE(next.GetAuthoritativeState().has_value());
-  EXPECT_EQ(next.GetAuthoritativeState()->players.size(), 1U);
+  EXPECT_EQ(next.GetAuthoritativeState()->bodies.size(), 1U);
 }
 
 }  // namespace

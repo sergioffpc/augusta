@@ -141,6 +141,11 @@ struct ParametersWire {
 /// credential, since the server tells senders apart by connection.
 enum class SessionIdWire : std::uint32_t {};
 
+/// The server's name for one dynamic body - today a player's, later any that
+/// moves (a crate, a door). Distinct from the session of the player who
+/// controls it, if any: a body is named by what it is, not by who moves it.
+enum class EntityIdWire : std::uint32_t {};
+
 /// Why the server refused a join.
 enum class JoinRefusalWire : std::uint8_t {
   /// The client's engine version is not the server's.
@@ -166,9 +171,9 @@ struct JoinRequestWire {
   std::string character;
 };
 
-/// One player's body inside an Authoritative State update.
-struct PlayerStateWire {
-  SessionIdWire session{};
+/// One dynamic body inside an Authoritative State update.
+struct EntityStateWire {
+  EntityIdWire entity{};
   BodyStateWire body{};
 };
 
@@ -213,8 +218,8 @@ struct AuthoritativeStateWire {
   std::uint32_t tick = 0;
   /// The highest command sequence of the recipient that the server has processed, 0 if none.
   std::uint32_t acknowledged_sequence = 0;
-  /// Every player in the match, at most kMaxPlayers.
-  std::vector<PlayerStateWire> players;
+  /// Every dynamic body in the match, at most kMaxPlayers (only players have one so far).
+  std::vector<EntityStateWire> bodies;
 };
 
 /// One player in the Lobby.
@@ -239,10 +244,12 @@ struct ReadyWire {
   std::uint32_t version = 0;
 };
 
-/// One player in a match, and where the server spawns it.
+/// One player in a match, the body it controls, and where the server spawns it.
 struct MatchPlayerWire {
   math::Vec3 spawn{};
   SessionIdWire session{};
+  /// The body this player's commands move for the whole match.
+  EntityIdWire entity{};
   /// The player's character index (see JoinAcceptedWire::character). Never 0.
   std::uint8_t character = 1;
 };

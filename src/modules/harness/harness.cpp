@@ -34,6 +34,21 @@ bool IsInMatch(const MatchStart& start, SessionId session) {
   return std::ranges::any_of(start.players, [&](const MatchPlayer& player) { return player.session == session; });
 }
 
+// Whether entity is the body of one of start's players.
+bool IsInMatch(const MatchStart& start, EntityId entity) {
+  return std::ranges::any_of(start.players, [&](const MatchPlayer& player) { return player.entity == entity; });
+}
+
+// The body session's player controls in start, if it is in it.
+std::optional<EntityId> EntityOf(const MatchStart& start, SessionId session) {
+  for (const MatchPlayer& player : start.players) {
+    if (player.session == session) {
+      return player.entity;
+    }
+  }
+  return std::nullopt;
+}
+
 }  // namespace
 
 // What the server has told this client. Immutable once published: the Network
@@ -177,11 +192,10 @@ struct Session::Impl {
       LT("subsystem=harness event=dropped tick={} reason=\"state outside a match\"", state.tick);
       return;
     }
-    const auto in_match = [&](const PlayerBody& player) { return IsInMatch(*current->match_start, player.session); };
-    if (!std::ranges::all_of(state.players, in_match)) {
+    const auto in_match = [&](const EntityBody& body) { return IsInMatch(*current->match_start, body.entity); };
+    if (!std::ranges::all_of(state.bodies, in_match)) {
       LW_LIMITED(drop_warnings,
-                 "subsystem=harness event=dropped tick={} reason=\"state names a player not in the match\"",
-                 state.tick);
+                 "subsystem=harness event=dropped tick={} reason=\"state names a body not in the match\"", state.tick);
       return;
     }
     if (current->authoritative.has_value() && state.tick <= current->authoritative->tick) {
@@ -210,16 +224,25 @@ struct Session::Impl {
     return {};
   }
 
-  // What the server's state says about this client's own player.
-  static std::optional<prediction::Acknowledgement> OwnAcknowledgement(const ServerView& server_view) {
-    if (!server_view.accepted.has_value() || !server_view.authoritative.has_value()) {
+  // The body this client's own player controls, as the last Match start named it.
+  static std::optional<EntityId> OwnEntity(const ServerView& server_view) {
+    if (!server_view.accepted.has_value() || !server_view.match_start.has_value()) {
       return std::nullopt;
     }
-    for (const PlayerBody& player : server_view.authoritative->players) {
-      if (player.session == server_view.accepted->session) {
+    return EntityOf(*server_view.match_start, server_view.accepted->session);
+  }
+
+  // What the server's state says about this client's own player's body.
+  static std::optional<prediction::Acknowledgement> OwnAcknowledgement(const ServerView& server_view) {
+    const std::optional<EntityId> own = OwnEntity(server_view);
+    if (!own.has_value() || !server_view.authoritative.has_value()) {
+      return std::nullopt;
+    }
+    for (const EntityBody& body : server_view.authoritative->bodies) {
+      if (body.entity == *own) {
         return prediction::Acknowledgement{
             .sequence = server_view.authoritative->acknowledged_sequence,
-            .body = player.body,
+            .body = body.body,
         };
       }
     }
@@ -368,6 +391,8 @@ std::optional<parameters::Parameters> Session::GetParameters() const {
 std::optional<JoinRefusal> Session::GetRefusal() const { return impl_->view.load()->refusal; }
 
 std::optional<AuthoritativeState> Session::GetAuthoritativeState() const { return impl_->view.load()->authoritative; }
+
+std::optional<EntityId> Session::GetEntityId() const { return Impl::OwnEntity(*impl_->view.load()); }
 
 prediction::State Session::Tick(const command::Command& command, float delta_time) {
   Impl& impl = *impl_;

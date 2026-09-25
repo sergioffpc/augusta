@@ -88,20 +88,22 @@ enum class Phase {
   kCommit,
 };
 
-/// The server's name for one player inside SimulationWorld. The caller picks
-/// it (server::Host uses the player's session, see augusta::replication) and
-/// it is unique among the players currently in the world.
-enum class PlayerId : std::uint32_t {};
+/// The server's name for one dynamic body inside SimulationWorld - today a
+/// player's, later any that moves. The caller picks it (server::Match hands one
+/// to each player at match start) and it is unique among the bodies currently
+/// in the world. It names the body, not whoever controls it: a player's
+/// session is a different number.
+enum class EntityId : std::uint32_t {};
 
-/// One player's validated command for one tick.
+/// The validated command for one tick of the player who controls entity.
 struct PlayerCommand {
-  PlayerId player{};
+  EntityId entity{};
   command::Command command{};
 };
 
-/// One player's body as of the end of a tick.
-struct PlayerState {
-  PlayerId player{};
+/// One dynamic body as of the end of a tick.
+struct EntityState {
+  EntityId entity{};
   physics::BodyState body{};
 };
 
@@ -110,8 +112,8 @@ struct PlayerState {
 // Today it holds every player's body; later phases add what they resolve
 // (bullets, damage).
 struct State {
-  /// Every player in the world, ordered by PlayerId.
-  std::vector<PlayerState> players;
+  /// Every dynamic body in the world, ordered by EntityId.
+  std::vector<EntityState> bodies;
 };
 
 // The single authoritative SimulationWorld. The server constructs
@@ -141,11 +143,12 @@ class World {
   World(World&&) noexcept;
   World& operator=(World&&) noexcept;
 
-  /// Puts a new player, standing and at full stamina, at spawn. player must not already be in the world.
-  void AddPlayer(PlayerId player, const math::Vec3& spawn);
+  /// Puts a new player-controlled body entity, standing and at full stamina, at
+  /// spawn. entity must not already be in the world.
+  void AddPlayer(EntityId entity, const math::Vec3& spawn);
 
-  /// Takes player and its body out of the world; a no-op if it is not in it.
-  void RemovePlayer(PlayerId player);
+  /// Takes entity's body out of the world; a no-op if it is not in it.
+  void RemovePlayer(EntityId entity);
 
   // Runs all eight Phase values above, in their declared order, for one
   // fixed tick of duration delta_time seconds (internally, one

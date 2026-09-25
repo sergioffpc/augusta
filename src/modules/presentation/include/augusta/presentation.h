@@ -1,14 +1,16 @@
 #ifndef AUGUSTA_PRESENTATION_H_
 #define AUGUSTA_PRESENTATION_H_
 
+#include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "augusta/audio.h"
-#include "augusta/harness.h"
 #include "augusta/interpolation.h"
 #include "augusta/math.h"
+#include "augusta/physics.h"
 #include "augusta/prediction.h"
 
 // augusta::presentation orchestrates PresentationWorld (ADR-0024): the
@@ -44,13 +46,13 @@ namespace augusta::presentation {
 enum class Phase {
   // Mechanism. Slides the local player out of the jumps a reconciliation
   // replay makes (Correction, ADR-0004). For every other player, buffers the
-  // newest Authoritative State (World::RunFrame's authoritative parameter)
-  // per remote session and renders each kInterpolationDelay behind the
-  // newest update, interpolated between the two surrounding updates
-  // (RemoteInterpolator, interpolation.h) - smooth motion independent of
-  // render frame rate. A session no longer in authoritative's player list is
-  // no longer shown, and neither is anyone while there is no Authoritative
-  // State (outside a match). Each is drawn as its character from Match start.
+  // newest reported body (World::RunFrame's snapshot parameter) per remote
+  // entity and renders each kInterpolationDelay behind the newest update,
+  // interpolated between the two surrounding updates (RemoteInterpolator,
+  // interpolation.h) - smooth motion independent of render frame rate. An
+  // entity no longer in the snapshot is no longer shown, and neither is anyone
+  // while there is no snapshot (outside a match). Each is drawn as its character
+  // (World::RunFrame's characters parameter).
   kInterpolation,
   // Mechanism. View camera position: local_body's predicted position (same
   // one kInterpolation just offset for local_position, above) plus the local
@@ -88,6 +90,29 @@ enum class Phase {
 struct Camera {
   math::Vec3 position{};
   math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};
+};
+
+/// One dynamic body as the server last reported it, named by its entity - not
+/// by the session of the player who controls it, if any.
+struct DynamicBody {
+  EntityId entity{};
+  physics::BodyState state{};
+};
+
+/// Every dynamic body as of one server tick: an Authoritative State update, in
+/// presentation's own terms - World::RunFrame's input (see there).
+struct WorldSnapshot {
+  /// The server tick the bodies are from.
+  std::uint32_t tick = 0;
+  std::vector<DynamicBody> bodies;
+};
+
+/// The body of one player in the match and that player's character index
+/// (ADR-0042), as Match start named them - World::RunFrame's input, in
+/// presentation's own terms (see there).
+struct PlayerCharacter {
+  EntityId entity{};
+  std::uint8_t character = 1;
 };
 
 // PresentationWorld's per-frame output - ADR-0024/ARCHITECTURE.md's
@@ -147,20 +172,20 @@ class World {
   // the first call after construction has no previous state to blend
   // from and uses latest directly. view_rotation is where the local player
   // looks (input::ViewRotation of its latest Command), which the camera
-  // takes as its rotation. local_session is this client's own
-  // session, or nullopt before the server has admitted it; authoritative is
-  // the newest Authoritative State of the match in progress, or nullopt
-  // outside one, and match_start what the server said when it started, which
-  // names each player's character - all harness::Session getters
-  // (GetSessionId, GetAuthoritativeState, GetMatchStart). Every player in
-  // authoritative other than local_session is fed to this World's
-  // RemoteInterpolator (see interpolation.h); a repeated authoritative (same
-  // tick as the previous call) is not recorded again. Returns the frame's
-  // Presentation State.
-  State RunFrame(const prediction::State& latest, const math::Quat& view_rotation,
-                 std::optional<harness::SessionId> local_session,
-                 const std::optional<harness::AuthoritativeState>& authoritative,
-                 const std::optional<harness::MatchStart>& match_start);
+  // takes as its rotation. local_entity is the body this client's
+  // player controls, or nullopt before its first match; snapshot is the
+  // newest Authoritative State update of the match in progress, or nullopt
+  // outside one; and characters is every player's character, as the server
+  // named them when the match started, or empty before the first. All three
+  // are presentation's own types: ClientRuntime converts them from the
+  // harness's at its edge, the way each peer converts the protocol at its own
+  // (ADR-0038), so this module does not depend on the network session. Every
+  // body in snapshot other than local_entity's is fed to this World's
+  // RemoteInterpolator (see interpolation.h); a repeated snapshot (from no
+  // newer a tick than the previous call's) is not recorded again. Returns the
+  // frame's Presentation State.
+  State RunFrame(const prediction::State& latest, const math::Quat& view_rotation, std::optional<EntityId> local_entity,
+                 const std::optional<WorldSnapshot>& snapshot, std::span<const PlayerCharacter> characters);
 
  private:
   struct Impl;
