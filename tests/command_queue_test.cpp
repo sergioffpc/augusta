@@ -99,6 +99,17 @@ TEST(CommandQueueTest, HandsOutOneCommandPerTickOldestFirst) {
   EXPECT_EQ(second.acknowledged_sequence, 2U);
 }
 
+TEST(CommandQueueTest, SaysWhetherACommandIsQueuedForTheNextTick) {
+  CommandQueue queue;
+  EXPECT_FALSE(queue.HasQueued());
+
+  ASSERT_TRUE(queue.TryEnqueue(Walk(1)).has_value());
+  EXPECT_TRUE(queue.HasQueued());
+
+  static_cast<void>(queue.Next());
+  EXPECT_FALSE(queue.HasQueued());
+}
+
 TEST(CommandQueueTest, ARepeatedCommandIsTakenInOnce) {
   CommandQueue queue;
   ASSERT_TRUE(queue.TryEnqueue(Walk(1)).has_value());
