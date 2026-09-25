@@ -23,6 +23,8 @@ using augusta::protocol::CommandWire;
 using augusta::protocol::Decode;
 using augusta::protocol::DecodeError;
 using augusta::protocol::Encode;
+using augusta::protocol::EntityIdWire;
+using augusta::protocol::EntityStateWire;
 using augusta::protocol::JoinAcceptedWire;
 using augusta::protocol::JoinRefusalWire;
 using augusta::protocol::JoinRefusedWire;
@@ -37,7 +39,6 @@ using augusta::protocol::MatchStartWire;
 using augusta::protocol::MessageTypeWire;
 using augusta::protocol::MessageWire;
 using augusta::protocol::PackHashWire;
-using augusta::protocol::PlayerStateWire;
 using augusta::protocol::ReadyWire;
 using augusta::protocol::RosterEntryWire;
 using augusta::protocol::SequencedCommandWire;
@@ -150,13 +151,13 @@ void ExpectSnappedBody(const BodyStateWire& actual, const BodyStateWire& expecte
   EXPECT_EQ(actual.stamina, SnapStamina(expected.stamina));
 }
 
-PlayerStateWire PlayerAt(std::uint32_t session, float x) {
-  PlayerStateWire player{.session = static_cast<SessionIdWire>(session)};
-  player.body.position = Vec3(x, 1.0F, -2.5F);
-  player.body.velocity = Vec3(0.5F, 0.0F, 3.0F);
-  player.body.stance = augusta::protocol::StanceWire::kCrouching;
-  player.body.stamina = 0.75F;
-  return player;
+EntityStateWire BodyAt(std::uint32_t entity, float x) {
+  EntityStateWire body{.entity = static_cast<EntityIdWire>(entity)};
+  body.body.position = Vec3(x, 1.0F, -2.5F);
+  body.body.velocity = Vec3(0.5F, 0.0F, 3.0F);
+  body.body.stance = augusta::protocol::StanceWire::kCrouching;
+  body.body.stamina = 0.75F;
+  return body;
 }
 
 TEST(ProtocolTest, JoinAcceptedRoundTrips) {
@@ -268,9 +269,12 @@ TEST(ProtocolTest, CharacterIndexZeroInALobbyIsInvalid) {
   EXPECT_EQ(Decode(BytesOf({kLobbyType, 1, 0, 0, 0, 1, 7, 0, 0, 0, 0})).error(), DecodeError::kInvalidEnum);
 }
 
+// A player whose body is entity 100 more than its session, so the two never pass for each other.
 MatchPlayerWire MatchPlayer(std::uint32_t session, std::uint8_t character, float x) {
-  return MatchPlayerWire{
-      .spawn = Vec3(x, 0.5F, -8.0F), .session = static_cast<SessionIdWire>(session), .character = character};
+  return MatchPlayerWire{.spawn = Vec3(x, 0.5F, -8.0F),
+                         .session = static_cast<SessionIdWire>(session),
+                         .entity = static_cast<EntityIdWire>(session + 100),
+                         .character = character};
 }
 
 TEST(ProtocolTest, MatchStartRoundTripsWithEveryPlayersCharacterAndSpawnPoint) {
@@ -283,6 +287,7 @@ TEST(ProtocolTest, MatchStartRoundTripsWithEveryPlayersCharacterAndSpawnPoint) {
   ASSERT_EQ(received.players.size(), sent.players.size());
   for (std::size_t i = 0; i < sent.players.size(); ++i) {
     EXPECT_EQ(received.players[i].session, sent.players[i].session);
+    EXPECT_EQ(received.players[i].entity, sent.players[i].entity);
     EXPECT_EQ(received.players[i].character, sent.players[i].character);
     EXPECT_EQ(received.players[i].spawn, SnapPosition(sent.players[i].spawn));
   }
@@ -315,8 +320,8 @@ TEST(ProtocolTest, MatchEndIsItsTypeAlone) {
 
 TEST(ProtocolTest, CharacterIndexZeroInAMatchStartIsInvalid) {
   BytesWire payload = Encode(MatchStartWire{.players = {MatchPlayer(1, 1, 0.0F)}});
-  // type, count, session, then the character.
-  constexpr std::size_t kCharacterOffset = 1 + 1 + 4;
+  // type, count, session, entity, then the character.
+  constexpr std::size_t kCharacterOffset = 1 + 1 + 4 + 4;
   payload[kCharacterOffset] = std::byte{0};
 
   EXPECT_EQ(Decode(payload).error(), DecodeError::kInvalidEnum);
@@ -336,7 +341,7 @@ TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
       JoinAcceptedWire{.session = static_cast<SessionIdWire>(7), .character = 1},
       JoinRefusedWire{.reason = JoinRefusalWire::kMatchInProgress},
       CommandsWire{.commands = {SequencedCommandWire{.sequence = 1}, {.sequence = 2}}},
-      AuthoritativeStateWire{.tick = 3, .players = {PlayerStateWire{}, {}}},
+      AuthoritativeStateWire{.tick = 3, .bodies = {EntityStateWire{}, {}}},
       LobbyWire{.version = 2, .roster = {RosterEntryWire{}, {}}},
       MatchStartWire{.players = {MatchPlayer(1, 1, 0.0F), MatchPlayer(2, 2, 1.0F)}},
       ReadyWire{.version = 0x01020304U}};
@@ -517,14 +522,14 @@ TEST(ProtocolTest, ACommandsStanceOrUnusedBitsOutsideTheirRangeAreInvalid) {
 }
 
 TEST(ProtocolTest, AuthoritativeStateRoundTrips) {
-  AuthoritativeStateWire sent{.tick = 900, .acknowledged_sequence = 875, .players = {}};
+  AuthoritativeStateWire sent{.tick = 900, .acknowledged_sequence = 875, .bodies = {}};
   for (std::uint32_t i = 0; i < 3; ++i) {
-    PlayerStateWire player{.session = static_cast<SessionIdWire>(10 + i)};
-    player.body.position = Vec3(1.0F + static_cast<float>(i), 2.0F, -3.5F);
-    player.body.velocity = Vec3(0.0F, -9.81F, 3.0F);
-    player.body.stance = static_cast<augusta::protocol::StanceWire>(i);
-    player.body.stamina = 0.25F * static_cast<float>(i);
-    sent.players.push_back(player);
+    EntityStateWire body{.entity = static_cast<EntityIdWire>(10 + i)};
+    body.body.position = Vec3(1.0F + static_cast<float>(i), 2.0F, -3.5F);
+    body.body.velocity = Vec3(0.0F, -9.81F, 3.0F);
+    body.body.stance = static_cast<augusta::protocol::StanceWire>(i);
+    body.body.stamina = 0.25F * static_cast<float>(i);
+    sent.bodies.push_back(body);
   }
 
   const auto decoded = RoundTrip(sent);
@@ -533,18 +538,18 @@ TEST(ProtocolTest, AuthoritativeStateRoundTrips) {
   const auto& received = std::get<AuthoritativeStateWire>(decoded);
   EXPECT_EQ(received.tick, sent.tick);
   EXPECT_EQ(received.acknowledged_sequence, sent.acknowledged_sequence);
-  ASSERT_EQ(received.players.size(), sent.players.size());
-  for (std::size_t i = 0; i < sent.players.size(); ++i) {
-    EXPECT_EQ(received.players[i].session, sent.players[i].session);
-    ExpectSnappedBody(received.players[i].body, sent.players[i].body);
+  ASSERT_EQ(received.bodies.size(), sent.bodies.size());
+  for (std::size_t i = 0; i < sent.bodies.size(); ++i) {
+    EXPECT_EQ(received.bodies[i].entity, sent.bodies[i].entity);
+    ExpectSnappedBody(received.bodies[i].body, sent.bodies[i].body);
   }
 }
 
 TEST(ProtocolTest, AuthoritativeStateWithAFullMatchRoundTrips) {
   AuthoritativeStateWire sent;
-  sent.players.resize(kMaxPlayers);
+  sent.bodies.resize(kMaxPlayers);
 
-  EXPECT_EQ(std::get<AuthoritativeStateWire>(RoundTrip(sent)).players.size(), kMaxPlayers);
+  EXPECT_EQ(std::get<AuthoritativeStateWire>(RoundTrip(sent)).bodies.size(), kMaxPlayers);
 }
 
 TEST(ProtocolTest, MorePlayersThanAMatchHoldsIsTooLong) {
@@ -556,8 +561,8 @@ TEST(ProtocolTest, MorePlayersThanAMatchHoldsIsTooLong) {
 }
 
 TEST(ProtocolTest, APlayersStanceOutsideItsRangeIsInvalid) {
-  BytesWire payload = Encode(AuthoritativeStateWire{.players = {PlayerStateWire{}}});
-  // type, tick, acknowledged sequence, count, session, position (9), velocity (6), then stance.
+  BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}});
+  // type, tick, acknowledged sequence, count, entity, position (9), velocity (6), then stance.
   constexpr std::size_t kStanceOffset = 1 + 4 + 4 + 1 + 4 + 9 + 6;
   payload[kStanceOffset] = static_cast<std::byte>(3);
 
@@ -567,15 +572,15 @@ TEST(ProtocolTest, APlayersStanceOutsideItsRangeIsInvalid) {
 // Every number of a body or a command travels as a whole count of its grid's
 // step (ADR-0038), in the fewest bytes its range needs.
 TEST(ProtocolTest, ABodyTravelsInEighteenBytesAndACommandInThirteen) {
-  EXPECT_EQ(Encode(AuthoritativeStateWire{.players = {PlayerStateWire{}}}).size(), 1 + 4 + 4 + 1 + 4 + 18);
+  EXPECT_EQ(Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}}).size(), 1 + 4 + 4 + 1 + 4 + 18);
   EXPECT_EQ(Encode(CommandsWire{.commands = {SequencedCommandWire{}}}).size(), 2 + 4 + 13);
 }
 
 TEST(ProtocolTest, APositionTravelsAsThreeBytesPerAxisInMillimeterSteps) {
-  PlayerStateWire player;
-  player.body.position = Vec3(1.0F, -1.0F / 1024.0F, 0.0F);
-  const BytesWire payload = Encode(AuthoritativeStateWire{.players = {player}});
-  // type, tick, acknowledged sequence, count, session, then x, y and z.
+  EntityStateWire body;
+  body.body.position = Vec3(1.0F, -1.0F / 1024.0F, 0.0F);
+  const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {body}});
+  // type, tick, acknowledged sequence, count, entity, then x, y and z.
   constexpr std::ptrdiff_t kPositionOffset = 1 + 4 + 4 + 1 + 4;
 
   const BytesWire position(payload.begin() + kPositionOffset, payload.begin() + kPositionOffset + 9);
@@ -601,7 +606,7 @@ TEST(ProtocolTest, AValueBeyondItsRangeIsSentAsTheBound) {
 }
 
 TEST(ProtocolTest, DecodingAndEncodingAgainGivesTheSameBytes) {
-  const AuthoritativeStateWire state{.tick = 1, .acknowledged_sequence = 1, .players = {PlayerAt(1, 3.14159F)}};
+  const AuthoritativeStateWire state{.tick = 1, .acknowledged_sequence = 1, .bodies = {BodyAt(1, 3.14159F)}};
   const BytesWire first = Encode(state);
   EXPECT_EQ(Encode(std::get<AuthoritativeStateWire>(Decode(first).value())), first);
 

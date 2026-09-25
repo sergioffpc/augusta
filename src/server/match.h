@@ -35,6 +35,13 @@ inline constexpr std::chrono::seconds kMatchPause{5};
 /// handle for the connection, and not a credential.
 enum class SessionId : std::uint32_t {};
 
+/// The server's name for one dynamic body (CONTEXT.md, "Entity ID"), which
+/// Match makes for each player's body when a match starts. The body is named by
+/// what it is, not by who moves it: a player's entity is not its session, and a
+/// body no player controls will have one too. SimulationWorld names the body by
+/// the same number (simulation::EntityId).
+enum class EntityId : std::uint32_t {};
+
 /// One player in the Lobby.
 struct RosterEntry {
   SessionId session{};
@@ -50,9 +57,11 @@ struct Roster {
   std::vector<RosterEntry> players;
 };
 
-/// One player in a match, and where it spawns.
+/// One player in a match, the body it controls, and where that spawns.
 struct MatchPlayer {
   SessionId session{};
+  /// The body the player's commands move for the whole match.
+  EntityId entity{};
   std::uint8_t character = 1;
   math::Vec3 spawn{};
 };
@@ -212,6 +221,8 @@ class Match {
   // IDs count up and are never reused, so a session ID never names two
   // players over the life of the server.
   std::uint32_t next_session_ = 1;
+  // Entity IDs likewise: a body of one match is never mistaken for one of another.
+  std::uint32_t next_entity_ = 1;
   std::unordered_map<networking::PeerId, Member> members_;
 };
 

@@ -38,9 +38,9 @@ enum PhaseIndex : std::size_t {
   kCommit,
 };
 
-// A player entity's components.
+// A player-controlled entity's components: the entity it is, which commands name.
 struct Player {
-  PlayerId id{};
+  EntityId entity{};
 };
 
 struct Body {
@@ -67,9 +67,9 @@ struct World::Impl {
   ballistics::World ballistics;
   scripting::Engine scripting;
   PhaseEntities phases;
-  std::unordered_map<PlayerId, Slot> players;
+  std::unordered_map<EntityId, Slot> players;
   // Set by Tick for CommandIngestion to read, and filled by Commit for Tick to return.
-  std::unordered_map<PlayerId, input::Command> tick_commands;
+  std::unordered_map<EntityId, input::Command> tick_commands;
   State committed;
 
   Impl(const physics::StaminaConfig& stamina_config, const std::string& script_path)
@@ -117,7 +117,7 @@ struct World::Impl {
 
   // A player with no command this tick stops and keeps the stance it asked for.
   void OnCommandIngestion(const Player& player, Intent& intent) {
-    const auto command = tick_commands.find(player.id);
+    const auto command = tick_commands.find(player.entity);
     if (command == tick_commands.end()) {
       intent.input.direction = math::Vec3{};
       intent.input.sprint = false;
@@ -154,7 +154,7 @@ struct World::Impl {
   }
 
   void OnCommit(const Player& player, const Body& body) {
-    committed.players.push_back(PlayerState{.player = player.id, .body = body.state});
+    committed.bodies.push_back(EntityState{.entity = player.entity, .body = body.state});
   }
 };
 
@@ -170,22 +170,22 @@ std::expected<void, physics::CollisionMeshError> World::AddCollisionMesh(const p
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
-void World::AddPlayer(PlayerId player, const math::Vec3& spawn) {
+void World::AddPlayer(EntityId entity, const math::Vec3& spawn) {
   Impl& impl = *impl_;
-  if (impl.players.contains(player)) {
+  if (impl.players.contains(entity)) {
     return;
   }
   const physics::BodyHandle body = impl.physics.CreateBody(spawn);
   physics::BodyState initial{};
   initial.position = spawn;
-  const flecs::entity entity =
-      impl.ecs.entity().set<Player>({.id = player}).set<Body>({.handle = body, .state = initial}).set<Intent>({});
-  impl.players.emplace(player, Impl::Slot{.entity = entity, .body = body});
+  const flecs::entity ecs_entity =
+      impl.ecs.entity().set<Player>({.entity = entity}).set<Body>({.handle = body, .state = initial}).set<Intent>({});
+  impl.players.emplace(entity, Impl::Slot{.entity = ecs_entity, .body = body});
 }
 
-void World::RemovePlayer(PlayerId player) {
+void World::RemovePlayer(EntityId entity) {
   Impl& impl = *impl_;
-  const auto slot = impl.players.find(player);
+  const auto slot = impl.players.find(entity);
   if (slot == impl.players.end()) {
     return;
   }
@@ -198,13 +198,13 @@ State World::Tick(const std::vector<PlayerCommand>& commands, float delta_time) 
   Impl& impl = *impl_;
   impl.tick_commands.clear();
   for (const PlayerCommand& entry : commands) {
-    impl.tick_commands[entry.player] = entry.command;
+    impl.tick_commands[entry.entity] = entry.command;
   }
-  impl.committed.players.clear();
+  impl.committed.bodies.clear();
   impl.ecs.progress(delta_time);
-  // The ECS visits players in storage order; the state is ordered by id.
-  std::ranges::sort(impl.committed.players,
-                    [](const PlayerState& a, const PlayerState& b) { return a.player < b.player; });
+  // The ECS visits bodies in storage order; the state is ordered by id.
+  std::ranges::sort(impl.committed.bodies,
+                    [](const EntityState& a, const EntityState& b) { return a.entity < b.entity; });
   return impl.committed;
 }
 

@@ -53,7 +53,7 @@ struct World::Impl {
   // systems below; not meaningful outside of a RunFrame call.
   prediction::State latest_state;
   math::Quat view_rotation{1.0F, 0.0F, 0.0F, 0.0F};
-  std::optional<SessionId> local_session;
+  std::optional<EntityId> local_entity;
   std::optional<WorldSnapshot> snapshot;
   std::vector<PlayerCharacter> characters;
 
@@ -118,28 +118,28 @@ struct World::Impl {
       remote_interpolator.Sync({});
       last_recorded_tick.reset();
     } else if (!last_recorded_tick.has_value() || snapshot->tick > *last_recorded_tick) {
-      std::vector<SessionId> present;
+      std::vector<EntityId> present;
       present.reserve(snapshot->bodies.size());
       for (const DynamicBody& body : snapshot->bodies) {
-        if (local_session.has_value() && body.session == *local_session) {
+        if (local_entity.has_value() && body.entity == *local_entity) {
           continue;
         }
-        present.push_back(body.session);
-        remote_interpolator.Record(body.session, render_clock, body.state);
+        present.push_back(body.entity);
+        remote_interpolator.Record(body.entity, render_clock, body.state);
       }
       remote_interpolator.Sync(present);
       last_recorded_tick = snapshot->tick;
     }
     remote_players = remote_interpolator.Sample(render_clock - kInterpolationDelay);
     for (RemotePlayer& remote : remote_players) {
-      remote.character = CharacterOf(remote.session);
+      remote.character = CharacterOf(remote.entity);
     }
   }
 
-  // The character characters gives session, or 0 if it names no such player.
-  [[nodiscard]] std::uint8_t CharacterOf(SessionId session) const {
+  // The character of the player whose body entity is, or 0 if none is.
+  [[nodiscard]] std::uint8_t CharacterOf(EntityId entity) const {
     for (const PlayerCharacter& player : characters) {
-      if (player.session == session) {
+      if (player.entity == entity) {
         return player.character;
       }
     }
@@ -191,11 +191,11 @@ World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
 State World::RunFrame(const prediction::State& latest, const math::Quat& view_rotation,
-                      std::optional<SessionId> local_session, const std::optional<WorldSnapshot>& snapshot,
+                      std::optional<EntityId> local_entity, const std::optional<WorldSnapshot>& snapshot,
                       std::span<const PlayerCharacter> characters) {
   impl_->latest_state = latest;
   impl_->view_rotation = view_rotation;
-  impl_->local_session = local_session;
+  impl_->local_entity = local_entity;
   impl_->snapshot = snapshot;
   impl_->characters.assign(characters.begin(), characters.end());
   impl_->ecs.progress();

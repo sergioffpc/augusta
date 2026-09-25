@@ -31,8 +31,8 @@ namespace {
 using augusta::math::Vec3;
 using augusta::physics::BodyState;
 using augusta::physics::Stance;
+using augusta::server::EntityId;
 using augusta::server::SessionId;
-using augusta::simulation::PlayerId;
 
 // message as the other peer decodes it.
 template <typename MessageWire>
@@ -113,12 +113,12 @@ TEST(WireTest, EachFlagOfACommandReachesTheServerAsItselfAlone) {
 
 TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
   const augusta::replication::Update sent{
-      .recipient = PlayerId{2},
+      .recipient = augusta::simulation::EntityId{2},
       .tick = 42,
       .acknowledged_sequence = 17,
-      .players = {{.player = PlayerId{1}, .body = Body(1.0F, Stance::kStanding)},
-                  {.player = PlayerId{2}, .body = Body(2.0F, Stance::kCrouching)},
-                  {.player = PlayerId{3}, .body = Body(3.0F, Stance::kProne)}},
+      .bodies = {{.entity = augusta::simulation::EntityId{1}, .body = Body(1.0F, Stance::kStanding)},
+                 {.entity = augusta::simulation::EntityId{2}, .body = Body(2.0F, Stance::kCrouching)},
+                 {.entity = augusta::simulation::EntityId{3}, .body = Body(3.0F, Stance::kProne)}},
   };
 
   const augusta::harness::AuthoritativeState received =
@@ -126,10 +126,10 @@ TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
 
   EXPECT_EQ(received.tick, sent.tick);
   EXPECT_EQ(received.acknowledged_sequence, sent.acknowledged_sequence);
-  ASSERT_EQ(received.players.size(), sent.players.size());
-  for (std::size_t i = 0; i < sent.players.size(); ++i) {
-    EXPECT_EQ(Number(received.players[i].session), Number(augusta::server::SessionOf(sent.players[i].player)));
-    ExpectSameBody(received.players[i].body, sent.players[i].body);
+  ASSERT_EQ(received.bodies.size(), sent.bodies.size());
+  for (std::size_t i = 0; i < sent.bodies.size(); ++i) {
+    EXPECT_EQ(Number(received.bodies[i].entity), Number(sent.bodies[i].entity));
+    ExpectSameBody(received.bodies[i].body, sent.bodies[i].body);
   }
 }
 
@@ -166,8 +166,8 @@ TEST(WireTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
 
 TEST(WireTest, AMatchStartTheServerSendsReachesTheClientUnchanged) {
   const augusta::server::MatchStart sent{
-      .players = {{.session = SessionId{3}, .character = 2, .spawn = Vec3(4.0F, 0.5F, -8.0F)},
-                  {.session = SessionId{5}, .character = 1, .spawn = Vec3(-1.0F, 0.0F, 2.0F)}}};
+      .players = {{.session = SessionId{3}, .entity = EntityId{11}, .character = 2, .spawn = Vec3(4.0F, 0.5F, -8.0F)},
+                  {.session = SessionId{5}, .entity = EntityId{12}, .character = 1, .spawn = Vec3(-1.0F, 0.0F, 2.0F)}}};
 
   const augusta::harness::MatchStart received =
       augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
@@ -175,6 +175,7 @@ TEST(WireTest, AMatchStartTheServerSendsReachesTheClientUnchanged) {
   ASSERT_EQ(received.players.size(), sent.players.size());
   for (std::size_t i = 0; i < sent.players.size(); ++i) {
     EXPECT_EQ(Number(received.players[i].session), Number(sent.players[i].session));
+    EXPECT_EQ(Number(received.players[i].entity), Number(sent.players[i].entity));
     EXPECT_EQ(received.players[i].character, sent.players[i].character);
     EXPECT_EQ(received.players[i].spawn, sent.players[i].spawn);
   }
@@ -244,10 +245,9 @@ TEST(WireTest, TheCommandsTheClientSendsReachTheServerInOrder) {
   }
 }
 
-TEST(WireTest, APlayerAndItsSessionNameEachOther) {
-  EXPECT_EQ(augusta::server::SessionOf(augusta::server::PlayerOf(SessionId{77})), SessionId{77});
-  EXPECT_EQ(augusta::server::PlayerOf(augusta::server::SessionOf(PlayerId{9})), PlayerId{9});
-  EXPECT_EQ(Number(augusta::server::PlayerOf(SessionId{77})), 77U);
+TEST(WireTest, MatchAndSimulationWorldNameABodyByTheSameEntity) {
+  EXPECT_EQ(augusta::server::FromSimulation(augusta::server::ToSimulation(EntityId{77})), EntityId{77});
+  EXPECT_EQ(Number(augusta::server::ToSimulation(EntityId{77})), 77U);
 }
 
 }  // namespace

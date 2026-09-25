@@ -598,4 +598,32 @@ TEST(MatchTest, SpawnPointsContinueTheirRotationAcrossMatches) {
   EXPECT_EQ(second->players[1].spawn, Vec3(1.0F, 0.0F, 0.0F));
 }
 
+TEST(MatchTest, EachPlayerInAMatchControlsABodyOfItsOwn) {
+  Match match(Config(2));
+  JoinPeers(match, 1, 2);
+
+  const auto start = ReadyAndStart(match);
+
+  ASSERT_TRUE(start.has_value());
+  ASSERT_EQ(start->players.size(), 2U);
+  EXPECT_NE(start->players[0].entity, start->players[1].entity);
+}
+
+TEST(MatchTest, EntityIdsAreNeverReusedAcrossMatches) {
+  Match match(Config(2));
+  JoinPeers(match, 1, 2);
+  const auto first = ReadyAndStart(match);
+  ASSERT_TRUE(first.has_value());
+  match.End();
+
+  const auto second = ReadyAndStart(match);
+
+  ASSERT_TRUE(second.has_value());
+  for (const auto& earlier : first->players) {
+    for (const auto& later : second->players) {
+      EXPECT_NE(earlier.entity, later.entity);
+    }
+  }
+}
+
 }  // namespace

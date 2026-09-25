@@ -19,11 +19,12 @@ right after Decode and right before Encode) and the client in
 `augusta/harness_wire.h` (used the same way by `harness::Session`). Inside each
 peer, modules pass the engine's types, never a `Wire` one: each peer names a
 player by its own Session ID type (`harness::SessionId` for the harness's API
-and ClientRuntime, which converts it at its own edge into `presentation`'s
-`presentation::SessionId`, so `presentation` does not depend on the harness;
-`server::SessionId` for `server::Match` and
-`server::Host`, which hands `replication` the SimulationWorld's
-`simulation::PlayerId` of the same number), a pack by `assets::PackHash`, and a
+and ClientRuntime; `server::SessionId` for `server::Match` and `server::Host`),
+a body by its own Entity ID type (`harness::EntityId`, which ClientRuntime
+converts at its own edge into `presentation::EntityId`, so `presentation` does
+not depend on the harness; `server::EntityId`, which `server::Host` hands
+SimulationWorld and `replication` as the `simulation::EntityId` of the same
+number), a pack by `assets::PackHash`, and a
 refusal by its own `JoinRefusal`; `tests/protocol_boundary.cmake` fails the build's tests if one of their
 headers names the protocol, or a `presentation` header the harness.
 
@@ -97,7 +98,7 @@ supersedes is unreliable.
 | Join accepted | server → client | reliable | session ID, the player's spawn position, the server's tick rate, the parameters to predict with, and the roster: every player already in the match (at most 8) with session ID and body |
 | Join refused | server → client | reliable | reason: version mismatch, match full, pack mismatch |
 | Commands | client → server | unreliable | up to 8 commands, oldest first: sequence, movement direction, yaw, pitch, and one byte holding the sprint, ADS, fire and reload flags (bits 0-3) and the desired stance (bits 4-5) |
-| Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, and per player (at most 8): session ID, position, velocity, stance, stamina |
+| Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, and per body (at most 8): entity ID, position, velocity, stance, stamina |
 
 Per-tick traffic is unreliable because a newer message supersedes an older one,
 and it is made loss-tolerant without retransmission:
@@ -171,6 +172,16 @@ transport's connection handle, so identifying a player inside a message does not
 depend on how the connection is represented. It identifies; it does not
 authenticate. The server tells senders apart by connection, so a guessed ID grants
 nothing, and it is kept out of logs per ADR-0029 regardless.
+
+**Entity ID.** A body is named by an entity ID, not by the session of the player
+who moves it: the two answer different questions (which body is this; whose
+commands move it), and a body no player moves (a crate, a door) has no session
+at all. The server makes one for each player's body at Match start from a
+counter of its own, never reused across matches, and Match start pairs each
+player's session with it; the Authoritative State then names every body by its
+entity ID alone. A client finds its own body through that pairing, and
+presentation draws every body by it. On the wire it is 4 bytes, in each Match
+start entry and in place of the session ID in each Authoritative State body.
 
 ## Considered Options
 

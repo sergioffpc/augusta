@@ -63,8 +63,11 @@ struct SequencedCommand {
 /// The server's admission of this client, in the engine's terms.
 [[nodiscard]] Admission FromWire(const protocol::JoinAcceptedWire& accepted);
 
-/// A player the server named, in the engine's terms.
-[[nodiscard]] PlayerBody FromWire(const protocol::PlayerStateWire& player);
+/// entity in the engine's terms.
+[[nodiscard]] EntityId FromWire(protocol::EntityIdWire entity);
+
+/// A body the server named, in the engine's terms.
+[[nodiscard]] EntityBody FromWire(const protocol::EntityStateWire& body);
 
 /// An Authoritative State the server sent, in the engine's terms.
 [[nodiscard]] AuthoritativeState FromWire(const protocol::AuthoritativeStateWire& state);

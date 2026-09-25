@@ -14,35 +14,37 @@
 // engine's own types; turning that into a message, encoding it and putting it
 // on the wire is the caller's mechanism (server::Host), so the decision is a
 // pure function tested without a network (docs/agents/coding-standards.md).
-// It names every player as SimulationWorld does (simulation::PlayerId); which
-// session that is, is the caller's to say.
+// It names every body as SimulationWorld does (simulation::EntityId), and each
+// recipient by the entity its player controls; which session and connection
+// that is, is the caller's to say.
 namespace augusta::replication {
 
-/// One connected client a tick's state is for, by its player in SimulationWorld.
+/// One connected client a tick's state is for, by the entity its player controls.
 struct Recipient {
-  simulation::PlayerId player{};
+  simulation::EntityId entity{};
   /// The highest command sequence of this client that the tick processed, 0 if none.
   std::uint32_t acknowledged_sequence = 0;
 };
 
-/// One player's body.
-struct PlayerBody {
-  simulation::PlayerId player{};
+/// One dynamic body.
+struct EntityBody {
+  simulation::EntityId entity{};
   physics::BodyState body{};
 };
 
 /// What one recipient is sent for a tick.
 struct Update {
-  simulation::PlayerId recipient{};
+  /// The entity the recipient's player controls.
+  simulation::EntityId recipient{};
   /// The server tick the bodies are from.
   std::uint32_t tick = 0;
   /// The highest command sequence of the recipient that the tick processed, 0 if none.
   std::uint32_t acknowledged_sequence = 0;
-  /// Every player in the match.
-  std::vector<PlayerBody> players;
+  /// Every dynamic body in the match.
+  std::vector<EntityBody> bodies;
 };
 
-/// What each recipient is sent for tick: every player's body, and its own
+/// What each recipient is sent for tick: every body, and its own
 /// acknowledged sequence (which is why each update is its own message).
 [[nodiscard]] std::vector<Update> PlanUpdates(const simulation::State& state, std::uint32_t tick,
                                               std::span<const Recipient> recipients);

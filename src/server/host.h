@@ -63,12 +63,11 @@ struct Map {
   assets::PackHash client_pack{};
 };
 
-/// The SimulationWorld player of session: SimulationWorld names a player by the
-/// number of its session, so a state can be sent back under the names clients know.
-[[nodiscard]] simulation::PlayerId PlayerOf(SessionId session);
+/// entity as SimulationWorld names the same body.
+[[nodiscard]] simulation::EntityId ToSimulation(EntityId entity);
 
-/// The session a SimulationWorld player belongs to; the inverse of PlayerOf.
-[[nodiscard]] SessionId SessionOf(simulation::PlayerId player);
+/// A SimulationWorld body's entity as Match named it; the inverse of ToSimulation.
+[[nodiscard]] EntityId FromSimulation(simulation::EntityId entity);
 
 /// The server's listening socket and its SimulationWorld, without threads or a clock.
 class Host {
