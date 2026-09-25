@@ -35,8 +35,8 @@ void WriteU32(BytesWire& out, std::uint32_t value) {
 void WriteF32(BytesWire& out, float value) { WriteU32(out, std::bit_cast<std::uint32_t>(value)); }
 
 // value as a whole count of grid's step (ADR-0038), in the grid's bytes.
-void WriteSteps(BytesWire& out, float value, const grid::Grid& grid) {
-  const auto bits = static_cast<std::uint32_t>(grid::ToSteps(value, grid));
+void WriteSteps(BytesWire& out, float value, const math::Grid& grid) {
+  const auto bits = static_cast<std::uint32_t>(math::ToSteps(value, grid));
   for (int i = 0; i < grid.bytes; ++i) {
     WriteU8(out, static_cast<std::uint8_t>(bits >> (kBitsPerByte * i)));
   }
@@ -50,7 +50,7 @@ void WriteString(BytesWire& out, std::string_view text) {
   }
 }
 
-void WriteVec3(BytesWire& out, const math::Vec3& value, const grid::Grid& grid) {
+void WriteVec3(BytesWire& out, const math::Vec3& value, const math::Grid& grid) {
   WriteSteps(out, value.x, grid);
   WriteSteps(out, value.y, grid);
   WriteSteps(out, value.z, grid);
@@ -63,18 +63,18 @@ constexpr unsigned kCommandStanceShift = 4U;
 
 void WriteCommand(BytesWire& out, const CommandWire& command) {
   assert((command.flags & ~kCommandFlagsMask) == 0);
-  WriteVec3(out, command.direction, grid::kDirection);
-  WriteSteps(out, command.yaw, grid::kAngle);
-  WriteSteps(out, command.pitch, grid::kAngle);
+  WriteVec3(out, command.direction, math::kDirectionGrid);
+  WriteSteps(out, command.yaw, math::kAngleGrid);
+  WriteSteps(out, command.pitch, math::kAngleGrid);
   WriteU8(out, static_cast<std::uint8_t>(command.flags |
                                          (static_cast<std::uint8_t>(command.desired_stance) << kCommandStanceShift)));
 }
 
 void WriteBodyState(BytesWire& out, const BodyStateWire& body) {
-  WriteVec3(out, body.position, grid::kPosition);
-  WriteVec3(out, body.velocity, grid::kVelocity);
+  WriteVec3(out, body.position, math::kPositionGrid);
+  WriteVec3(out, body.velocity, math::kVelocityGrid);
   WriteU8(out, static_cast<std::uint8_t>(body.stance));
-  WriteSteps(out, body.stamina, grid::kStamina);
+  WriteSteps(out, body.stamina, math::kStaminaGrid);
 }
 
 // The players of an update: a count, then each one.
@@ -147,7 +147,7 @@ class Reader {
 
   // A count of grid's step, as the value it stands for. Every count a grid's
   // bytes can hold is in its range, so there is nothing to refuse.
-  float ReadSteps(const grid::Grid& grid) {
+  float ReadSteps(const math::Grid& grid) {
     std::uint32_t bits = 0;
     for (int i = 0; i < grid.bytes; ++i) {
       bits |= static_cast<std::uint32_t>(ReadU8()) << (kBitsPerByte * i);
@@ -157,10 +157,10 @@ class Reader {
       const std::uint32_t sign = 1U << (width - 1);
       bits = (bits ^ sign) - sign;
     }
-    return grid::FromSteps(static_cast<std::int32_t>(bits), grid);
+    return math::FromSteps(static_cast<std::int32_t>(bits), grid);
   }
 
-  math::Vec3 ReadVec3(const grid::Grid& grid) {
+  math::Vec3 ReadVec3(const math::Grid& grid) {
     const float x = ReadSteps(grid);
     const float y = ReadSteps(grid);
     const float z = ReadSteps(grid);
@@ -219,9 +219,9 @@ class Reader {
 
 CommandWire ReadCommand(Reader& reader) {
   CommandWire command;
-  command.direction = reader.ReadVec3(grid::kDirection);
-  command.yaw = reader.ReadSteps(grid::kAngle);
-  command.pitch = reader.ReadSteps(grid::kAngle);
+  command.direction = reader.ReadVec3(math::kDirectionGrid);
+  command.yaw = reader.ReadSteps(math::kAngleGrid);
+  command.pitch = reader.ReadSteps(math::kAngleGrid);
   const std::uint8_t packed = reader.ReadU8();
   command.flags = packed & kCommandFlagsMask;
   command.desired_stance = reader.ToEnum(static_cast<std::uint8_t>(packed >> kCommandStanceShift),
@@ -231,10 +231,10 @@ CommandWire ReadCommand(Reader& reader) {
 
 BodyStateWire ReadBodyState(Reader& reader) {
   BodyStateWire body;
-  body.position = reader.ReadVec3(grid::kPosition);
-  body.velocity = reader.ReadVec3(grid::kVelocity);
+  body.position = reader.ReadVec3(math::kPositionGrid);
+  body.velocity = reader.ReadVec3(math::kVelocityGrid);
   body.stance = reader.ReadEnum(StanceWire::kStanding, StanceWire::kProne);
-  body.stamina = reader.ReadSteps(grid::kStamina);
+  body.stamina = reader.ReadSteps(math::kStaminaGrid);
   return body;
 }
 
@@ -324,7 +324,7 @@ MatchStartWire ReadMatchStart(Reader& reader) {
     MatchPlayerWire player;
     player.session = static_cast<SessionIdWire>(reader.ReadU32());
     player.character = reader.ReadCharacter();
-    player.spawn = reader.ReadVec3(grid::kPosition);
+    player.spawn = reader.ReadVec3(math::kPositionGrid);
     start.players.push_back(player);
   }
   return start;
@@ -431,7 +431,7 @@ struct Encoder {
       assert(player.character != 0);
       WriteU32(out, static_cast<std::uint32_t>(player.session));
       WriteU8(out, player.character);
-      WriteVec3(out, player.spawn, grid::kPosition);
+      WriteVec3(out, player.spawn, math::kPositionGrid);
     }
   }
 

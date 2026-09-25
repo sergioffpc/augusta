@@ -1,7 +1,7 @@
 # Keeps the shared core's base below the network layer and the client's device
 # input: no public header of physics or SimulationWorld may name a protocol type
 # or the input sampler's module, or include either's header. The grids a body
-# lives on are augusta::grid's and the Command SimulationWorld consumes is
+# lives on are augusta::math's (augusta/grid.h) and the Command SimulationWorld consumes is
 # augusta::command's, so neither needs them.
 #
 # Run by ctest as `cmake -DSOURCE_DIR=<repo root> -P core_boundary.cmake`.
@@ -34,7 +34,7 @@ endforeach()
 if (violations)
   list(JOIN violations "\n" report)
   message(FATAL_ERROR
-    "physics or SimulationWorld names the protocol or the input sampler - use augusta::grid or augusta::command instead:\n${report}")
+    "physics or SimulationWorld names the protocol or the input sampler - use augusta/grid.h or augusta::command instead:\n${report}")
 endif()
 list(LENGTH headers count)
 message(STATUS "core_boundary: ${count} headers free of protocol and input types")

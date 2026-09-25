@@ -58,10 +58,10 @@ BodyState Body(float x, Stance stance) {
 
 // actual is expected as it arrives: its numbers on the grids they travel on.
 void ExpectSameBody(const BodyState& actual, const BodyState& expected) {
-  EXPECT_EQ(actual.position, augusta::grid::SnapPosition(expected.position));
-  EXPECT_EQ(actual.velocity, augusta::grid::SnapVelocity(expected.velocity));
+  EXPECT_EQ(actual.position, augusta::math::SnapPosition(expected.position));
+  EXPECT_EQ(actual.velocity, augusta::math::SnapVelocity(expected.velocity));
   EXPECT_EQ(actual.stance, expected.stance);
-  EXPECT_EQ(actual.stamina, augusta::grid::SnapStamina(expected.stamina));
+  EXPECT_EQ(actual.stamina, augusta::math::SnapStamina(expected.stamina));
 }
 
 TEST(WireTest, ACommandTheClientSendsReachesTheServerUnchanged) {

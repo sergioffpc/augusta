@@ -22,8 +22,8 @@
 //
 // Its messages hold only plain types of its own and the math types, never
 // another module's structs: a module changing its structs never changes what
-// travels, and the protocol depends on nothing but augusta_math and the grids
-// its numbers travel on (augusta_grid). A type that mirrors one of the engine's
+// travels, and the protocol depends on nothing but augusta_math, which also
+// holds the grids its numbers travel on (augusta/grid.h). A type that mirrors one of the engine's
 // carries the suffix Wire (BodyStateWire for physics::BodyState,
 // AuthoritativeStateWire for harness::AuthoritativeState), so the two never
 // read alike where they meet: each peer converts at its edge
@@ -35,7 +35,7 @@
 // type's fields, fixed-width and little-endian, with a string or a list as a
 // one-byte length and its elements. A position, a velocity, a direction, an
 // angle or a stamina travels as a whole count of its grid's step, in the fewest
-// bytes its range needs (augusta::grid, which physics::World keeps every body
+// bytes its range needs (augusta/grid.h, which physics::World keeps every body
 // on); the other floats travel as their IEEE-754 bits.
 // Every field takes the smallest type that holds what it says: flags are bits
 // of one byte, shared with a small enumeration where one fits. Decode treats

@@ -16,11 +16,11 @@
 // The codec is pure: every case here is bytes in, message or error out.
 namespace {
 
-using augusta::grid::SnapAngle;
-using augusta::grid::SnapDirection;
-using augusta::grid::SnapPosition;
-using augusta::grid::SnapStamina;
-using augusta::grid::SnapVelocity;
+using augusta::math::SnapAngle;
+using augusta::math::SnapDirection;
+using augusta::math::SnapPosition;
+using augusta::math::SnapStamina;
+using augusta::math::SnapVelocity;
 using augusta::math::Vec3;
 using augusta::protocol::AuthoritativeStateWire;
 using augusta::protocol::BodyStateWire;
