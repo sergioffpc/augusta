@@ -92,13 +92,20 @@ struct Camera {
   math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};
 };
 
-/// One player's body as the server's Authoritative State last reported it, and
-/// the server tick it is from - World::RunFrame's input, in presentation's own
-/// terms (see there).
-struct PlayerBody {
+/// One dynamic body as the server last reported it. Only players have one so
+/// far, so it is named by its player's session; a body that is not a player's
+/// will need an id of its own.
+struct DynamicBody {
   SessionId session{};
+  physics::BodyState state{};
+};
+
+/// Every dynamic body as of one server tick: an Authoritative State update, in
+/// presentation's own terms - World::RunFrame's input (see there).
+struct WorldSnapshot {
+  /// The server tick the bodies are from.
   std::uint32_t tick = 0;
-  physics::BodyState body{};
+  std::vector<DynamicBody> bodies;
 };
 
 /// One player in the match and its character index (ADR-0042), as Match start
@@ -166,19 +173,19 @@ class World {
   // from and uses latest directly. view_rotation is where the local player
   // looks (input::ViewRotation of its latest Command), which the camera
   // takes as its rotation. local_session is this client's own
-  // session, or nullopt before the server has admitted it; bodies is every
-  // player's body in the newest Authoritative State of the match in progress,
-  // each with the server tick it is from, or empty outside one; and characters
-  // is every player's character, as the server named them when the match
-  // started, or empty before the first. All three are presentation's own
-  // types: ClientRuntime converts them from the harness's at its edge, the way
-  // each peer converts the protocol at its own (ADR-0038), so this module does
-  // not depend on the network session. Every body in bodies other than
-  // local_session's is fed to this World's RemoteInterpolator (see
-  // interpolation.h); a repeated one (from no newer a tick than the previous
-  // call's) is not recorded again. Returns the frame's Presentation State.
+  // session, or nullopt before the server has admitted it; snapshot is the
+  // newest Authoritative State update of the match in progress, or nullopt
+  // outside one; and characters is every player's character, as the server
+  // named them when the match started, or empty before the first. All three
+  // are presentation's own types: ClientRuntime converts them from the
+  // harness's at its edge, the way each peer converts the protocol at its own
+  // (ADR-0038), so this module does not depend on the network session. Every
+  // body in snapshot other than local_session's is fed to this World's
+  // RemoteInterpolator (see interpolation.h); a repeated snapshot (from no
+  // newer a tick than the previous call's) is not recorded again. Returns the
+  // frame's Presentation State.
   State RunFrame(const prediction::State& latest, const math::Quat& view_rotation,
-                 std::optional<SessionId> local_session, std::span<const PlayerBody> bodies,
+                 std::optional<SessionId> local_session, const std::optional<WorldSnapshot>& snapshot,
                  std::span<const PlayerCharacter> characters);
 
  private:

@@ -1,6 +1,5 @@
 #include "augusta/presentation.h"
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -55,7 +54,7 @@ struct World::Impl {
   prediction::State latest_state;
   math::Quat view_rotation{1.0F, 0.0F, 0.0F, 0.0F};
   std::optional<SessionId> local_session;
-  std::vector<PlayerBody> bodies;
+  std::optional<WorldSnapshot> snapshot;
   std::vector<PlayerCharacter> characters;
 
   // Hides the jumps reconciliation makes to the predicted body (ADR-0004), as
@@ -70,8 +69,8 @@ struct World::Impl {
   // Every other player's buffered updates (see interpolation.h), and the
   // running clock RunFrame's render frame deltas advance - independent of the
   // server's own tick clock, since a render frame's delta_time is what this
-  // phase actually has. The newest tick of the bodies recorded into
-  // remote_interpolator, so a repeated body (the network thread hasn't
+  // phase actually has. The tick of the last snapshot recorded into
+  // remote_interpolator, so a repeated snapshot (the network thread hasn't
   // received a new tick since the last RunFrame call) is not recorded again.
   RemoteInterpolator remote_interpolator;
   float render_clock = 0.0F;
@@ -115,23 +114,21 @@ struct World::Impl {
 
     render_clock += delta_time;
     // Outside a match there is no one to show (ADR-0043).
-    if (bodies.empty()) {
+    if (!snapshot.has_value()) {
       remote_interpolator.Sync({});
       last_recorded_tick.reset();
-    } else {
+    } else if (!last_recorded_tick.has_value() || snapshot->tick > *last_recorded_tick) {
       std::vector<SessionId> present;
-      present.reserve(bodies.size());
-      for (const PlayerBody& player : bodies) {
-        if (local_session.has_value() && player.session == *local_session) {
+      present.reserve(snapshot->bodies.size());
+      for (const DynamicBody& body : snapshot->bodies) {
+        if (local_session.has_value() && body.session == *local_session) {
           continue;
         }
-        present.push_back(player.session);
-        if (!last_recorded_tick.has_value() || player.tick > *last_recorded_tick) {
-          remote_interpolator.Record(player.session, render_clock, player.body);
-        }
+        present.push_back(body.session);
+        remote_interpolator.Record(body.session, render_clock, body.state);
       }
       remote_interpolator.Sync(present);
-      last_recorded_tick = std::ranges::max(bodies, {}, &PlayerBody::tick).tick;
+      last_recorded_tick = snapshot->tick;
     }
     remote_players = remote_interpolator.Sample(render_clock - kInterpolationDelay);
     for (RemotePlayer& remote : remote_players) {
@@ -194,12 +191,12 @@ World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
 State World::RunFrame(const prediction::State& latest, const math::Quat& view_rotation,
-                      std::optional<SessionId> local_session, std::span<const PlayerBody> bodies,
+                      std::optional<SessionId> local_session, const std::optional<WorldSnapshot>& snapshot,
                       std::span<const PlayerCharacter> characters) {
   impl_->latest_state = latest;
   impl_->view_rotation = view_rotation;
   impl_->local_session = local_session;
-  impl_->bodies.assign(bodies.begin(), bodies.end());
+  impl_->snapshot = snapshot;
   impl_->characters.assign(characters.begin(), characters.end());
   impl_->ecs.progress();
   impl_->previous_state = latest;

@@ -48,22 +48,21 @@ presentation::SessionId ToPresentation(harness::SessionId session) {
   return static_cast<presentation::SessionId>(std::to_underlying(session));
 }
 
-// Every player's body in the newest Authoritative State, each with the server
-// tick it is from, for PresentationWorld::RunFrame; empty outside a match.
-std::vector<presentation::PlayerBody> ToPresentation(const std::optional<harness::AuthoritativeState>& state) {
-  std::vector<presentation::PlayerBody> bodies;
-  if (state.has_value()) {
-    bodies.reserve(state->players.size());
-    for (const harness::PlayerBody& player : state->players) {
-      bodies.push_back({.session = ToPresentation(player.session), .tick = state->tick, .body = player.body});
-    }
+// An Authoritative State update as presentation's WorldSnapshot: the same tick
+// and every player's body.
+presentation::WorldSnapshot ToPresentation(const harness::AuthoritativeState& state) {
+  presentation::WorldSnapshot snapshot{.tick = state.tick, .bodies = {}};
+  snapshot.bodies.reserve(state.players.size());
+  for (const harness::PlayerBody& player : state.players) {
+    snapshot.bodies.push_back({.session = ToPresentation(player.session), .state = player.body});
   }
-  return bodies;
+  return snapshot;
 }
 
 // Every player's character as Match start named it, for
-// PresentationWorld::RunFrame; empty before the first match.
-std::vector<presentation::PlayerCharacter> ToPresentation(const std::optional<harness::MatchStart>& match_start) {
+// PresentationWorld::RunFrame; empty before the first match. Only the
+// characters: presentation needs nothing else of Match start.
+std::vector<presentation::PlayerCharacter> CharactersOf(const std::optional<harness::MatchStart>& match_start) {
   std::vector<presentation::PlayerCharacter> characters;
   if (match_start.has_value()) {
     characters.reserve(match_start->players.size());
@@ -425,14 +424,15 @@ std::optional<Failure> ClientRuntime::Run() {
     // GetAuthoritativeState() that already has this session's player, read
     // before GetSessionId() as below, can never race ahead of a GetSessionId()
     // that is still nullopt. Each is converted into presentation's own types
-    // here, at ClientRuntime's edge (see ToPresentation above).
+    // here, at ClientRuntime's edge (see ToPresentation and CharactersOf above).
     const Impl::LatestTick latest = impl_->GetLatestTick();
-    const std::vector<presentation::PlayerBody> bodies = ToPresentation(impl_->session->GetAuthoritativeState());
+    const std::optional<presentation::WorldSnapshot> snapshot = impl_->session->GetAuthoritativeState().transform(
+        [](const harness::AuthoritativeState& state) { return ToPresentation(state); });
     const std::optional<presentation::SessionId> local_session =
         impl_->session->GetSessionId().transform([](harness::SessionId session) { return ToPresentation(session); });
-    const std::vector<presentation::PlayerCharacter> characters = ToPresentation(impl_->session->GetMatchStart());
+    const std::vector<presentation::PlayerCharacter> characters = CharactersOf(impl_->session->GetMatchStart());
     presentation::State frame_state =
-        impl_->presentation.RunFrame(latest.state, latest.view_rotation, local_session, bodies, characters);
+        impl_->presentation.RunFrame(latest.state, latest.view_rotation, local_session, snapshot, characters);
     impl_->renderer.SetCamera(ToRenderer(frame_state.camera));
     // The local player's own position isn't drawn yet (renderer.h) - only
     // remote players, each as its character. In the Lobby there are none, so
