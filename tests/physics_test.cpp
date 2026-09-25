@@ -342,6 +342,38 @@ TEST(StaticGeometryTest, ABodyCanStandUpWhereThereIsHeadroom) {
   EXPECT_EQ(Settle(world, body, stand, 30).stance, Stance::kStanding);
 }
 
+// ---- Raycasting a moved body (issue #163) ----
+
+// Documents a known gap, not a wanted behaviour (ADR-0002): a body's controller
+// moves its query actor with a kinematic target, which takes effect only when
+// the scene simulates, and a World never does. Worked out from PhysX 5.5's
+// source, not yet seen run: if CI finds the ray does hit the body where it is,
+// swap the two blocks of expectations, rename this to
+// ARaycastHitsAMovedBodyWhereItIs and drop ADR-0002's "Raycasting a moved body".
+TEST(StaticGeometryTest, ARaycastHitsAMovedBodyWhereItWasCreatedNotWhereItIs) {
+  World world = WorldWithFloor();
+  const Vec3 spawn(0.0F, 0.0F, 0.0F);
+  const auto body = world.CreateBody(spawn);
+  MovementInput walk{};
+  walk.direction = Vec3(1.0F, 0.0F, 0.0F);
+  // At 3 m/s, 300 ticks is 15 m: far clear of the spawn.
+  const BodyState walked = Settle(world, body, walk, 300);
+  ASSERT_GT(walked.position.x, 10.0F);
+  const Vec3 down(0.0F, -1.0F, 0.0F);
+
+  const RaycastHit where_it_is = world.Raycast(Vec3(walked.position.x, 10.0F, walked.position.z), down, 20.0F);
+  const RaycastHit where_it_was = world.Raycast(Vec3(spawn.x, 10.0F, spawn.z), down, 20.0F);
+
+  // Where the body is, the ray goes on down to the floor.
+  ASSERT_TRUE(where_it_is.has_hit);
+  EXPECT_NE(where_it_is.body, body);
+  EXPECT_NEAR(where_it_is.point.y, 0.0F, 0.01F);
+  // Where it was created, the ray still hits it.
+  ASSERT_TRUE(where_it_was.has_hit);
+  EXPECT_EQ(where_it_was.body, body);
+  EXPECT_GT(where_it_was.point.y, 0.5F);
+}
+
 TEST(StaticGeometryTest, ValidateCollisionMeshAgreesWithAddCollisionMesh) {
   EXPECT_EQ(augusta::physics::ValidateCollisionMesh(CollisionMesh{}).error(), CollisionMeshError::kEmpty);
   EXPECT_TRUE(augusta::physics::ValidateCollisionMesh(Floor(0.0F, -1.0F, 1.0F, -1.0F, 1.0F)).has_value());
