@@ -382,10 +382,14 @@ TEST_F(NetworkingTest, APeerThatGoesSilentIsReportedAsALostConnectionOnceTheTime
         }
         return reason.has_value();
       });
+  // Each side times out on its own clock, so the client can learn of it a poll
+  // or two after the server did: keep pumping it until it does.
+  const bool client_disconnected =
+      PollUntil([&] { client.PumpEvents(); }, [&] { return client.GetState() == ConnectionState::kDisconnected; });
   SimulateNetworkConditions({});
 
   EXPECT_EQ(reason, DisconnectReason::kConnectionLost);
-  EXPECT_EQ(client.GetState(), ConnectionState::kDisconnected);
+  EXPECT_TRUE(client_disconnected);
 }
 
 TEST_F(NetworkingTest, TheDefaultTimeoutIsBackOnceTheConditionsAreReset) {
