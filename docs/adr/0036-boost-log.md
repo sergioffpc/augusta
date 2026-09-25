@@ -18,8 +18,9 @@ What changes underneath:
 - The runtime floor (`augusta::logging::SetLogLevel`, driven by the config
   file's `logging.level`, ADR-0034) is one atomic inside `logging.cpp`, read
   before formatting rather than kept as a Boost.Log core filter, so a call under
-  it never evaluates its arguments. `LW_LIMITED` checks it before its throttle,
-  so a filtered warning takes no throttle slot.
+  it never evaluates its arguments. Each level's `_LIMITED` variant
+  (`LT_LIMITED` through `LC_LIMITED`) checks it before its throttle, so a
+  filtered line takes no throttle slot.
 - Boost.Log has no compile-time level stripping of its own, so
   `AUGUSTA_LOG_ACTIVE_LEVEL` (0 in Debug, 2 otherwise, set publicly by the
   `augusta_logging` target) makes each macro expand to nothing under that level,
