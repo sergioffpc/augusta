@@ -25,6 +25,9 @@ namespace augusta::server {
 /// session as the protocol carries it.
 [[nodiscard]] protocol::SessionIdWire ToWire(SessionId session);
 
+/// entity as the protocol carries it.
+[[nodiscard]] protocol::EntityIdWire ToWire(EntityId entity);
+
 /// reason as the protocol carries it.
 [[nodiscard]] protocol::JoinRefusalWire ToWire(JoinRefusal reason);
 

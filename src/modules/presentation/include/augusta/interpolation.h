@@ -6,7 +6,6 @@
 #include <span>
 #include <vector>
 
-#include "augusta/harness.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
 
@@ -17,7 +16,7 @@
 // Authoritative State reports of them, at most once per server tick and
 // possibly irregular over the network relative to the render frame rate.
 // Showing the newest report directly would make a remote player jump between
-// updates. Instead, this buffers each remote session's last two distinct
+// updates. Instead, this buffers each remote entity's last two distinct
 // updates and renders a point kInterpolationDelay behind the newest one it
 // has seen, interpolated between the two updates surrounding it - smooth
 // motion, independent of how often the caller happens to sample it.
@@ -26,6 +25,12 @@
 // PresentationWorld feeds it each frame with its own running clock and the
 // newest Authoritative State (see presentation.cpp).
 namespace augusta::presentation {
+
+/// The server's name for one dynamic body (CONTEXT.md, "Entity ID"), as
+/// presentation knows it: ClientRuntime converts the harness's own at its edge
+/// (see World::RunFrame in presentation.h), so this module does not depend on
+/// the network session.
+enum class EntityId : std::uint32_t {};
 
 /// How far behind the newest recorded update remote players are shown, in
 /// seconds - enough that the two updates surrounding the render point are
@@ -43,39 +48,39 @@ struct RemoteBody {
   physics::Stance stance = physics::Stance::kStanding;
 };
 
-/// One session's interpolated body, as Sample returns it.
+/// One entity's interpolated body, as Sample returns it.
 struct RemotePlayer {
-  harness::SessionId session{};
+  EntityId entity{};
   RemoteBody body{};
   /// The character index it is drawn as, from Match start; 0 if unknown.
   /// PresentationWorld fills it in: the interpolator knows only bodies.
   std::uint8_t character = 0;
 };
 
-/// Buffers the Authoritative State's per-session updates for every player
+/// Buffers the Authoritative State's per-entity updates for every player
 /// but the local one and interpolates between them. One instance covers the
-/// whole match; sessions come and go as players join and leave.
+/// whole match; bodies come and go as players leave.
 class RemoteInterpolator {
  public:
-  /// Records session's body as of timestamp, on the caller's own clock (not
+  /// Records entity's body as of timestamp, on the caller's own clock (not
   /// the server's tick number - PresentationWorld converts, see
-  /// presentation.cpp). Becomes this session's newest buffered update; the
+  /// presentation.cpp). Becomes this entity's newest buffered update; the
   /// previous newest becomes the one behind it. A timestamp at or before the
-  /// session's current newest is ignored: out-of-order or repeated
+  /// entity's current newest is ignored: out-of-order or repeated
   /// Authoritative State cannot move interpolation backward.
-  void Record(harness::SessionId session, float timestamp, const physics::BodyState& body);
+  void Record(EntityId entity, float timestamp, const physics::BodyState& body);
 
-  /// Forgets every buffered session not present in current - the disconnect
+  /// Forgets every buffered entity not present in current - the disconnect
   /// case, driven by each Authoritative State's full player list rather than
   /// a separate leave message.
-  void Sync(std::span<const harness::SessionId> current);
+  void Sync(std::span<const EntityId> current);
 
-  /// Every buffered session's body at render_time: interpolated between the
+  /// Every buffered entity's body at render_time: interpolated between the
   /// two updates surrounding it if both are buffered, held at the nearer end
   /// if render_time falls outside the buffered range (before the first
   /// update, or a gap past the newest one while nothing new has arrived), or
   /// shown as recorded if only one update has ever been buffered for that
-  /// session.
+  /// entity.
   [[nodiscard]] std::vector<RemotePlayer> Sample(float render_time) const;
 
  private:
@@ -84,12 +89,12 @@ class RemoteInterpolator {
     physics::BodyState body{};
   };
   struct Buffered {
-    harness::SessionId session{};
+    EntityId entity{};
     std::optional<Update> previous;
     Update latest;
   };
 
-  std::vector<Buffered> sessions_;
+  std::vector<Buffered> bodies_;
 };
 
 }  // namespace augusta::presentation

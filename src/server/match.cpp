@@ -129,6 +129,7 @@ std::optional<MatchStart> Match::TryStart() {
   MatchStart start;
   for (const Member& member : MembersBySession()) {
     start.players.push_back(MatchPlayer{.session = member.session,
+                                        .entity = static_cast<EntityId>(next_entity_++),
                                         .character = member.character,
                                         .spawn = spawn_points_[next_spawn_++ % spawn_points_.size()]});
   }

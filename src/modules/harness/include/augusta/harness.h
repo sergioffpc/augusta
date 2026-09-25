@@ -40,21 +40,26 @@ namespace augusta::harness {
 /// from the transport's handle for the connection, and not a credential.
 enum class SessionId : std::uint32_t {};
 
-/// One player's body, under the session the server knows it by.
-struct PlayerBody {
-  SessionId session{};
+/// The server's name for one dynamic body (CONTEXT.md, "Entity ID"), as this
+/// client knows it: a player's is given in Match start. It names the body, not
+/// who moves it, so it is never a session.
+enum class EntityId : std::uint32_t {};
+
+/// One dynamic body, under the entity the server names it by.
+struct EntityBody {
+  EntityId entity{};
   physics::BodyState body{};
 };
 
-/// What the server said about every player as of one of its ticks: its
+/// What the server said about every body as of one of its ticks: its
 /// Authoritative State, as this client receives it.
 struct AuthoritativeState {
   /// The server tick this state is from; a client keeps only the newest it has seen.
   std::uint32_t tick = 0;
   /// The highest command sequence of this client that the server has processed, 0 if none.
   std::uint32_t acknowledged_sequence = 0;
-  /// Every player in the match.
-  std::vector<PlayerBody> players;
+  /// Every dynamic body in the match.
+  std::vector<EntityBody> bodies;
 };
 
 /// One player in the Lobby.
@@ -72,9 +77,11 @@ struct Lobby {
   std::vector<RosterEntry> roster;
 };
 
-/// One player in a match, and where the server spawned it.
+/// One player in a match, the body it controls, and where the server spawned it.
 struct MatchPlayer {
   SessionId session{};
+  /// The body this player's commands move for the whole match.
+  EntityId entity{};
   std::uint8_t character = 1;
   math::Vec3 spawn{};
 };
@@ -231,9 +238,14 @@ class Session {
   /// The newest Authoritative State of the match in progress, or nullopt until
   /// one arrives and again once the match ends. One that arrives outside a match
   /// (unreliable, it can overtake Match start or Match end) or that names a
-  /// player not in the match is dropped. Set by ExchangeMessages; safe to read
+  /// body not in the match is dropped. Set by ExchangeMessages; safe to read
   /// from any thread.
   [[nodiscard]] std::optional<AuthoritativeState> GetAuthoritativeState() const;
+
+  /// The body this client's player controls, as Match start named it: in the
+  /// match in progress, or the last one if back in the Lobby; nullopt before
+  /// the first. Set by ExchangeMessages; safe to read from any thread.
+  [[nodiscard]] std::optional<EntityId> GetEntityId() const;
 
   /// Runs one fixed tick of PredictionWorld for command and returns its state.
   /// Outside a match nothing is predicted or sent, and the state is the last

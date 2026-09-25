@@ -117,13 +117,13 @@ void WriteBodyState(BytesWire& out, const BodyStateWire& body) {
   WriteSteps(out, body.stamina, kStaminaGrid);
 }
 
-// The players of an update: a count, then each one.
-void WritePlayers(BytesWire& out, const std::vector<PlayerStateWire>& players) {
-  assert(players.size() <= kMaxPlayers);
-  WriteU8(out, static_cast<std::uint8_t>(players.size()));
-  for (const PlayerStateWire& player : players) {
-    WriteU32(out, static_cast<std::uint32_t>(player.session));
-    WriteBodyState(out, player.body);
+// The bodies of an update: a count, then each one.
+void WriteBodies(BytesWire& out, const std::vector<EntityStateWire>& bodies) {
+  assert(bodies.size() <= kMaxPlayers);
+  WriteU8(out, static_cast<std::uint8_t>(bodies.size()));
+  for (const EntityStateWire& body : bodies) {
+    WriteU32(out, static_cast<std::uint32_t>(body.entity));
+    WriteBodyState(out, body.body);
   }
 }
 
@@ -287,20 +287,20 @@ JoinRequestWire ReadJoinRequest(Reader& reader) {
   };
 }
 
-PlayerStateWire ReadPlayerState(Reader& reader) {
-  const auto session = static_cast<SessionIdWire>(reader.ReadU32());
-  return PlayerStateWire{.session = session, .body = ReadBodyState(reader)};
+EntityStateWire ReadEntityState(Reader& reader) {
+  const auto entity = static_cast<EntityIdWire>(reader.ReadU32());
+  return EntityStateWire{.entity = entity, .body = ReadBodyState(reader)};
 }
 
-// The players of an update, at most kMaxPlayers.
-std::vector<PlayerStateWire> ReadPlayers(Reader& reader) {
+// The bodies of an update, at most kMaxPlayers.
+std::vector<EntityStateWire> ReadBodies(Reader& reader) {
   const std::size_t count = reader.ReadCount(kMaxPlayers);
-  std::vector<PlayerStateWire> players;
-  players.reserve(count);
+  std::vector<EntityStateWire> bodies;
+  bodies.reserve(count);
   for (std::size_t i = 0; i < count; ++i) {
-    players.push_back(ReadPlayerState(reader));
+    bodies.push_back(ReadEntityState(reader));
   }
-  return players;
+  return bodies;
 }
 
 ParametersWire ReadParameters(Reader& reader) {
@@ -340,7 +340,7 @@ AuthoritativeStateWire ReadAuthoritativeState(Reader& reader) {
   AuthoritativeStateWire state;
   state.tick = reader.ReadU32();
   state.acknowledged_sequence = reader.ReadU32();
-  state.players = ReadPlayers(reader);
+  state.bodies = ReadBodies(reader);
   return state;
 }
 
@@ -363,6 +363,7 @@ MatchStartWire ReadMatchStart(Reader& reader) {
   for (std::size_t i = 0; i < count; ++i) {
     MatchPlayerWire player;
     player.session = static_cast<SessionIdWire>(reader.ReadU32());
+    player.entity = static_cast<EntityIdWire>(reader.ReadU32());
     player.character = reader.ReadCharacter();
     player.spawn = reader.ReadVec3(kPositionGrid);
     start.players.push_back(player);
@@ -443,7 +444,7 @@ struct Encoder {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kAuthoritativeState));
     WriteU32(out, message.tick);
     WriteU32(out, message.acknowledged_sequence);
-    WritePlayers(out, message.players);
+    WriteBodies(out, message.bodies);
   }
 
   void operator()(const LobbyWire& message) const {
@@ -470,6 +471,7 @@ struct Encoder {
     for (const MatchPlayerWire& player : message.players) {
       assert(player.character != 0);
       WriteU32(out, static_cast<std::uint32_t>(player.session));
+      WriteU32(out, static_cast<std::uint32_t>(player.entity));
       WriteU8(out, player.character);
       WriteVec3(out, player.spawn, kPositionGrid);
     }

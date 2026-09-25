@@ -35,7 +35,7 @@ A player whose client has loaded what it needs to draw everyone currently in the
 _Avoid_: Loaded, prepared
 
 **Match start**:
-The moment the Lobby is full and every player is Ready, at least 5 seconds after the previous Match ended: the server closes the Lobby and tells every client who is in the Match, with each player's Character and Spawn point.
+The moment the Lobby is full and every player is Ready, at least 5 seconds after the previous Match ended: the server closes the Lobby and tells every client who is in the Match, with each player's Character, the Entity ID of the body it controls, and Spawn point.
 _Avoid_: Spawn (a player's body is placed at Match start, but "spawn" names the placement, not the start of the match)
 
 **Session**:
@@ -45,6 +45,10 @@ _Avoid_: Connection (a session is the gameplay identity kept for the life of the
 **Session ID**:
 The Authoritative server's name for one connected player (harness::SessionId on the client, server::SessionId on the server, protocol::SessionIdWire on the wire), assigned when it admits the join. Distinct from the transport's own handle for the connection, and not a credential — the server tells senders apart by connection, not by this ID.
 _Avoid_: Player ID, connection ID
+
+**Entity ID**:
+The Authoritative server's name for one dynamic body (server::EntityId and simulation::EntityId on the server, harness::EntityId and presentation::EntityId on the client, protocol::EntityIdWire on the wire): a player's body today, later anything that moves. It names which body, not who moves it: a player's body gets one at Match start, which pairs it with that player's Session ID, and a body no player controls has one and no Session. Never reused.
+_Avoid_: Player ID (a body is not a player), using a Session ID to name a body
 
 **Client-side prediction**:
 The client simulating its own actions locally, immediately, before the server confirms them — used purely for responsiveness.
@@ -59,7 +63,7 @@ The process of correcting a client's predicted state against the server's author
 _Avoid_: Resync, rollback
 
 **Authoritative State update**:
-One server tick's Authoritative State as sent to one client (protocol::AuthoritativeStateWire): every player's body as of that tick, plus the recipient's own newest acknowledged Command sequence. augusta::replication decides who gets what.
+One server tick's Authoritative State as sent to one client (protocol::AuthoritativeStateWire): every body as of that tick, by its Entity ID, plus the recipient's own newest acknowledged Command sequence. augusta::replication decides who gets what.
 _Avoid_: Snapshot, state sync
 
 **Spawn point**:

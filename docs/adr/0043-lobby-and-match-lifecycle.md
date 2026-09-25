@@ -28,7 +28,8 @@ it catches up. A departure never does.
 
 **The match starts when the Lobby is full and everyone is Ready.** At that point
 the server closes the Lobby and sends one reliable Match start message. It lists
-every player in the match with their character index and Spawn point. After
+every player in the match with their character index, the Entity ID of the
+body they control (ADR-0038) and its Spawn point. After
 that, the set of players can only shrink.
 
 **No one joins a match in progress.** A join that arrives while a match runs is

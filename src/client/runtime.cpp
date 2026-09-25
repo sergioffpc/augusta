@@ -41,6 +41,39 @@ renderer::Camera ToRenderer(const presentation::Camera& camera) {
   return {.position = camera.position, .rotation = camera.rotation};
 }
 
+// Maps the harness's Entity ID into presentation's own - the same number,
+// converted here at ClientRuntime's edge the way each peer converts the
+// protocol at its own (ADR-0038), so presentation does not depend on the
+// harness.
+presentation::EntityId ToPresentation(harness::EntityId entity) {
+  return static_cast<presentation::EntityId>(std::to_underlying(entity));
+}
+
+// An Authoritative State update as presentation's WorldSnapshot: the same tick
+// and every body.
+presentation::WorldSnapshot ToPresentation(const harness::AuthoritativeState& state) {
+  presentation::WorldSnapshot snapshot{.tick = state.tick, .bodies = {}};
+  snapshot.bodies.reserve(state.bodies.size());
+  for (const harness::EntityBody& body : state.bodies) {
+    snapshot.bodies.push_back({.entity = ToPresentation(body.entity), .state = body.body});
+  }
+  return snapshot;
+}
+
+// Every player's character as Match start named it, for
+// PresentationWorld::RunFrame; empty before the first match. Only the
+// characters: presentation needs nothing else of Match start.
+std::vector<presentation::PlayerCharacter> CharactersOf(const std::optional<harness::MatchStart>& match_start) {
+  std::vector<presentation::PlayerCharacter> characters;
+  if (match_start.has_value()) {
+    characters.reserve(match_start->players.size());
+    for (const harness::MatchPlayer& player : match_start->players) {
+      characters.push_back({.entity = ToPresentation(player.entity), .character = player.character});
+    }
+  }
+  return characters;
+}
+
 // Stops Impl's background threads and joins both, on scope exit -
 // including when unwinding past Run() due to an exception from the
 // Main/Render loop body. This is the only place thread cleanup happens;
@@ -387,16 +420,21 @@ std::optional<Failure> ClientRuntime::Run() {
       cursor_locked = captured;
     }
     impl_->renderer.SetDebugHudStats({.net = impl_->GetLatestHudNet()});
-    // Two independent Session getters, not one snapshot - safe here because
-    // the server always sends JoinAccepted before this client's player can
-    // appear in any Authoritative State (harness::Session publishes the two
-    // as separate, ordered updates - see harness.cpp's ServerView), so a
-    // GetAuthoritativeState() that already has this session's player can
-    // never race ahead of a GetSessionId() that is still nullopt.
+    // Two independent Session getters, not one view - safe here because
+    // harness::Session keeps an Authoritative State only once the Match start
+    // that names this client's body has been published (see harness.cpp's
+    // ServerView), so a GetAuthoritativeState() read before GetEntityId(), as
+    // below, can never race ahead of a GetEntityId() that is still nullopt.
+    // Each is converted into presentation's own types here, at ClientRuntime's
+    // edge (see ToPresentation and CharactersOf above).
     const Impl::LatestTick latest = impl_->GetLatestTick();
+    const std::optional<presentation::WorldSnapshot> snapshot = impl_->session->GetAuthoritativeState().transform(
+        [](const harness::AuthoritativeState& state) { return ToPresentation(state); });
+    const std::optional<presentation::EntityId> local_entity =
+        impl_->session->GetEntityId().transform([](harness::EntityId entity) { return ToPresentation(entity); });
+    const std::vector<presentation::PlayerCharacter> characters = CharactersOf(impl_->session->GetMatchStart());
     presentation::State frame_state =
-        impl_->presentation.RunFrame(latest.state, latest.view_rotation, impl_->session->GetSessionId(),
-                                     impl_->session->GetAuthoritativeState(), impl_->session->GetMatchStart());
+        impl_->presentation.RunFrame(latest.state, latest.view_rotation, local_entity, snapshot, characters);
     impl_->renderer.SetCamera(ToRenderer(frame_state.camera));
     // The local player's own position isn't drawn yet (renderer.h) - only
     // remote players, each as its character. In the Lobby there are none, so

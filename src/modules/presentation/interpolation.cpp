@@ -5,7 +5,6 @@
 #include <span>
 #include <vector>
 
-#include "augusta/harness.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
 
@@ -20,11 +19,11 @@ constexpr float kMidpointFraction = 0.5F;
 
 }  // namespace
 
-void RemoteInterpolator::Record(harness::SessionId session, float timestamp, const physics::BodyState& body) {
-  const auto found = std::ranges::find_if(sessions_, [session](const Buffered& b) { return b.session == session; });
-  if (found == sessions_.end()) {
-    sessions_.push_back(
-        Buffered{.session = session, .previous = std::nullopt, .latest = Update{.timestamp = timestamp, .body = body}});
+void RemoteInterpolator::Record(EntityId entity, float timestamp, const physics::BodyState& body) {
+  const auto found = std::ranges::find_if(bodies_, [entity](const Buffered& b) { return b.entity == entity; });
+  if (found == bodies_.end()) {
+    bodies_.push_back(
+        Buffered{.entity = entity, .previous = std::nullopt, .latest = Update{.timestamp = timestamp, .body = body}});
     return;
   }
   if (timestamp <= found->latest.timestamp) {
@@ -34,15 +33,15 @@ void RemoteInterpolator::Record(harness::SessionId session, float timestamp, con
   found->latest = Update{.timestamp = timestamp, .body = body};
 }
 
-void RemoteInterpolator::Sync(std::span<const harness::SessionId> current) {
-  std::erase_if(sessions_,
-                [current](const Buffered& b) { return std::ranges::find(current, b.session) == current.end(); });
+void RemoteInterpolator::Sync(std::span<const EntityId> current) {
+  std::erase_if(bodies_,
+                [current](const Buffered& b) { return std::ranges::find(current, b.entity) == current.end(); });
 }
 
 std::vector<RemotePlayer> RemoteInterpolator::Sample(float render_time) const {
   std::vector<RemotePlayer> result;
-  result.reserve(sessions_.size());
-  for (const Buffered& buffered : sessions_) {
+  result.reserve(bodies_.size());
+  for (const Buffered& buffered : bodies_) {
     RemoteBody body;
     if (!buffered.previous.has_value()) {
       body = RemoteBody{.position = buffered.latest.body.position,
@@ -65,7 +64,7 @@ std::vector<RemotePlayer> RemoteInterpolator::Sample(float render_time) const {
                           .stance = t < kMidpointFraction ? previous.body.stance : latest.body.stance};
       }
     }
-    result.push_back(RemotePlayer{.session = buffered.session, .body = body});
+    result.push_back(RemotePlayer{.entity = buffered.entity, .body = body});
   }
   return result;
 }
