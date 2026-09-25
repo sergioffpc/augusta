@@ -19,7 +19,7 @@ target_link_libraries(augustac_runtime
   # nvtx3-cpp (third_party/nvtx, see the root CMakeLists.txt) is
   # header-only - runtime.cpp uses it to name the Main/Render,
   # Simulation, and Network I/O thread loops for Nsight Systems.
-  PRIVATE augusta_logging nvtx3-cpp
+  PRIVATE augusta_logging augusta_tick nvtx3-cpp
 )
 # NOMINMAX: something in this TU's includes pulls in <windows.h>, whose
 # min/max macros would break std::min/std::max in runtime.cpp.
@@ -28,6 +28,11 @@ augusta_set_module_scope(augustac_runtime CLIENT_ONLY)
 
 add_executable(augustac main.cpp)
 target_link_libraries(augustac PRIVATE augusta_assets augusta_config augusta_map augusta_version augusta_logging augusta_networking augustac_runtime augustac_scene)
+# winmm: main.cpp raises the system timer resolution (timeBeginPeriod) for the
+# life of the process, so the Prediction thread's sleeps keep its tick schedule.
+# NOMINMAX: the <windows.h> it includes for that would otherwise define min/max.
+target_link_libraries(augustac PRIVATE winmm)
+target_compile_definitions(augustac PRIVATE NOMINMAX)
 
 # Falcor.dll (ADR-0009) and its own runtime dependencies (D3D12 Agility SDK,
 # dxcompiler, ...) and shader library need to sit next to augustac.exe -
