@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <format>
@@ -14,8 +15,6 @@
 
 #include <boost/log/attributes/attribute_name.hpp>
 #include <boost/log/attributes/value_extraction.hpp>
-#include <boost/log/core.hpp>
-#include <boost/log/expressions/attr.hpp>
 #include <boost/log/sources/record_ostream.hpp>
 #include <boost/log/sources/severity_logger.hpp>
 #include <boost/log/utility/manipulators/add_value.hpp>
@@ -34,6 +33,11 @@ namespace {
 // The per-record attribute carrying when the message was written (the
 // severity travels as Boost.Log's own "Severity" attribute).
 constexpr const char* kTimeAttribute = "AugustaTime";
+
+// The runtime floor (SetLogLevel). The macros read it on every call, so it is a
+// lone atomic rather than a Boost.Log core filter: relaxed, since it guards no
+// other data - a thread just sees a new floor a moment later.
+std::atomic<Severity> runtime_floor{Severity::kTrace};
 
 std::string_view LevelName(Severity level) {
   switch (level) {
@@ -129,9 +133,9 @@ void Write(Severity level, std::string_view message) {
                                << std::string(message);
 }
 
-void SetLogLevel(Severity level) {
-  boost::log::core::get()->set_filter(boost::log::expressions::attr<Severity>("Severity") >= level);
-}
+void SetLogLevel(Severity level) { runtime_floor.store(level, std::memory_order_relaxed); }
+
+bool IsEnabled(Severity level) { return level >= runtime_floor.load(std::memory_order_relaxed); }
 
 std::optional<Severity> ParseSeverity(std::string_view name) {
   static constexpr std::array<std::pair<std::string_view, Severity>, 6> kNames{
