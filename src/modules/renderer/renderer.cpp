@@ -1,5 +1,6 @@
 #include "augusta/renderer.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -11,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include <Core/API/Fence.h>
 #include <Core/API/Swapchain.h>
 #include <Core/Pass/RasterPass.h>
 #include <Core/Window.h>
@@ -22,6 +24,7 @@
 
 #include "augusta/math.h"
 #include "debug_hud.h"
+#include "frame_regions.h"
 
 // ADR-0009: the first real (non-stub) body for this module.
 // Bypasses Falcor::SampleApp entirely - per ADR-0009, SampleApp fuses
@@ -39,6 +42,10 @@ namespace {
 
 // Default clear color - near-black, close to this editor's own chrome.
 constexpr float kDefaultClearColorChannel = 0.016F;
+
+// How many frames the GPU may be working on at once, and so how many
+// swapchain images there are: Device::endFrame keeps the CPU no further ahead.
+constexpr std::uint32_t kFramesInFlight = Falcor::Device::kInFlightFrameCount;
 
 // One vertex of the flat-shaded scene geometry - see BuildFlatShadedVertices.
 struct Vertex {
@@ -226,9 +233,23 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   // SetRemotePlayers can memcpy into every frame via Buffer::setBlob with no
   // GPU wait, unlike UploadScene's DeviceLocal buffer (see that method). Null
   // until the first call with something to draw.
+  //
+  // It holds kFramesInFlight regions of remote_region_capacity vertices each,
+  // and a frame writes and draws only the region FrameRegion gives it: with
+  // vsync off several frames are in flight, and rewriting the one region a
+  // previous frame is still drawing from tears that frame's remote players.
+  // remote_fence is signaled after every frame's submit, and
+  // remote_region_fence_values holds, per region, the value signaled after the
+  // last frame drawn from it: UpdateRemotePlayers waits for that before writing
+  // there - normally already reached, since that frame is kFramesInFlight back.
   Falcor::ref<Falcor::Buffer> remote_vertex_buffer;
   Falcor::ref<Falcor::Vao> remote_vao;
+  std::uint32_t remote_region_capacity = 0;
   std::uint32_t remote_vertex_count = 0;
+  std::uint32_t remote_region = 0;
+  Falcor::ref<Falcor::Fence> remote_fence;
+  std::array<std::uint64_t, kFramesInFlight> remote_region_fence_values{};
+  std::uint64_t frame_index = 0;
 
   // Debug HUD (FPS, RTT) - see debug_hud.h. frame_rate is ticked once
   // per RenderFrame; hud_stats carries what the caller supplies.
@@ -279,6 +300,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     BuildRasterPass();
     // remote_vertex_buffer/remote_vao are created lazily by SetRemotePlayers
     // instead, once the vertex count they're sized from is known.
+    remote_fence = device->createFence();
   }
 
   ~Impl() {
@@ -317,7 +339,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     desc.format = Falcor::ResourceFormat::BGRA8UnormSrgb;
     desc.width = size.x;
     desc.height = size.y;
-    desc.imageCount = 3;
+    desc.imageCount = kFramesInFlight;
     desc.enableVSync = vsync_enabled;
     swapchain = Falcor::make_ref<Falcor::Swapchain>(device, desc, window->getApiHandle());
   }
@@ -365,11 +387,12 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
 
   // Creates the persistently-mappable upload-heap buffer and Vao
   // SetRemotePlayers writes into every frame - see the Impl member comment
-  // on remote_vertex_buffer. Sized for vertex_capacity vertices - replaces any
-  // previous buffer/Vao.
-  void CreateRemoteBuffer(std::size_t vertex_capacity) {
-    remote_vertex_buffer = device->createBuffer(vertex_capacity * sizeof(Vertex), Falcor::ResourceBindFlags::Vertex,
-                                                Falcor::MemoryType::Upload);
+  // on remote_vertex_buffer. Sized for region_capacity vertices in each of its
+  // kFramesInFlight regions - replaces any previous buffer/Vao.
+  void CreateRemoteBuffer(std::uint32_t region_capacity) {
+    remote_vertex_buffer = device->createBuffer(std::size_t{region_capacity} * kFramesInFlight * sizeof(Vertex),
+                                                Falcor::ResourceBindFlags::Vertex, Falcor::MemoryType::Upload);
+    remote_region_capacity = region_capacity;
 
     auto buffer_layout = Falcor::VertexBufferLayout::create();
     buffer_layout->addElement("POSITION", offsetof(Vertex, position), Falcor::ResourceFormat::RGB32Float, 1, 0);
@@ -391,26 +414,40 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     character_vertices.insert_or_assign(character, std::move(vertices));
   }
 
-  // Rewrites the remote-player instances' vertex data in place via
-  // Buffer::setBlob - a map+memcpy into the upload heap, no GPU wait (unlike
-  // UploadScene/UploadCharacterMesh) unless these instances need more room
-  // than the buffer has, which then grows to fit them. Draws every instance
-  // given; nothing if none has a mesh.
+  // Rewrites the remote-player instances' vertex data into this frame's
+  // region via Buffer::setBlob - a map+memcpy into the upload heap, no GPU
+  // wait (unlike UploadScene/UploadCharacterMesh) unless the GPU has not yet
+  // finished the last frame drawn from that region, or these instances need
+  // more room than a region has, which then grows to fit them. Draws every
+  // instance given; nothing if none has a mesh.
   void UpdateRemotePlayers(std::span<const RemotePlayer> remote_players) {
     const std::vector<Vertex> vertices = BuildRemoteVertices(remote_players, character_vertices);
     remote_vertex_count = static_cast<std::uint32_t>(vertices.size());
     if (vertices.empty()) {
       return;
     }
-    const std::size_t needed_bytes = vertices.size() * sizeof(Vertex);
-    if (remote_vertex_buffer == nullptr || needed_bytes > remote_vertex_buffer->getSize()) {
+    if (remote_vertex_count > remote_region_capacity) {
       if (remote_vertex_buffer != nullptr) {
         // The previous buffer may still be in flight on the GPU - see UploadScene's own comment.
         device->wait();
       }
-      CreateRemoteBuffer(vertices.size());
+      CreateRemoteBuffer(remote_vertex_count);
     }
-    remote_vertex_buffer->setBlob(vertices.data(), 0, needed_bytes);
+    remote_region = FrameRegion(frame_index, kFramesInFlight);
+    remote_fence->wait(remote_region_fence_values[remote_region]);
+    remote_vertex_buffer->setBlob(vertices.data(), RemoteRegionFirstVertex() * sizeof(Vertex),
+                                  vertices.size() * sizeof(Vertex));
+  }
+
+  // Where remote_region starts in remote_vertex_buffer, in vertices.
+  [[nodiscard]] std::uint32_t RemoteRegionFirstVertex() const { return remote_region * remote_region_capacity; }
+
+  // Records that the frame just submitted draws from remote_region, so the
+  // next write there waits for the GPU to finish it, and moves on to the next
+  // frame.
+  void EndRemoteFrame(Falcor::RenderContext* render_context) {
+    remote_region_fence_values[remote_region] = render_context->signal(remote_fence.get());
+    ++frame_index;
   }
 
   // World-to-clip transform of the current camera: the inverse of the
@@ -471,7 +508,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
         FALCOR_PROFILE(render_context, "RemotePlayers");
 
         raster_pass->getState()->setVao(remote_vao);
-        raster_pass->draw(render_context, remote_vertex_count, 0);
+        raster_pass->draw(render_context, remote_vertex_count, RemoteRegionFirstVertex());
       }
     }
 
@@ -561,14 +598,19 @@ void Renderer::RenderFrame() {
 
   auto* render_context = impl_->device->getRenderContext();
   const int image_index = impl_->swapchain->acquireNextImage();
+  if (image_index >= 0) {
+    const Falcor::Texture* swapchain_image = impl_->swapchain->getImage(image_index).get();
+    render_context->copyResource(swapchain_image, impl_->target_fbo->getColorTexture(0).get());
+    render_context->resourceBarrier(swapchain_image, Falcor::Resource::State::Present);
+  }
+  // Submitted even when not presenting, so the fence EndRemoteFrame signals
+  // comes after this frame's draws.
+  render_context->submit();
+  impl_->EndRemoteFrame(render_context);
   if (image_index < 0) {
     // Swapchain out of date (e.g. mid-resize) - skip presenting this frame.
     return;
   }
-  const Falcor::Texture* swapchain_image = impl_->swapchain->getImage(image_index).get();
-  render_context->copyResource(swapchain_image, impl_->target_fbo->getColorTexture(0).get());
-  render_context->resourceBarrier(swapchain_image, Falcor::Resource::State::Present);
-  render_context->submit();
 
   impl_->swapchain->present();
   impl_->device->endFrame();
