@@ -400,4 +400,10 @@ void Host::EndMatch() {
   impl_->EndMatch();
 }
 
+bool Host::HasQueuedCommand(SessionId session) const {
+  const std::lock_guard<std::mutex> lock(impl_->mutex);
+  const auto player = impl_->players.find(session);
+  return impl_->match.IsPlaying(session) && player != impl_->players.end() && player->second.commands.HasQueued();
+}
+
 }  // namespace augusta::server

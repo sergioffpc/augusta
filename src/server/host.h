@@ -108,6 +108,12 @@ class Host {
   /// thread, between Ticks.
   void EndMatch();
 
+  /// Whether the player of session is in the match and has a command queued for
+  /// the next Tick, so that Tick moves it by a command it sent rather than
+  /// holding its last movement. A test's way to tick only once what it sent has
+  /// arrived. From any thread.
+  [[nodiscard]] bool HasQueuedCommand(SessionId session) const;
+
  private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
