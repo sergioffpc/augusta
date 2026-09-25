@@ -190,20 +190,23 @@ struct Host::Impl {
     }
     CommandQueue& queue = players.at(*session).commands;
     for (const SequencedCommand& command : commands) {
-      const auto enqueued = queue.TryEnqueue(command);
-      if (enqueued.has_value()) {
-        continue;
+      if (const auto enqueued = queue.TryEnqueue(command); !enqueued.has_value()) {
+        RecordRejection(peer, command, enqueued.error());
       }
-      // Commands are repeated until acknowledged, so a stale one is routine.
-      if (enqueued.error() == Rejection::kStale) {
-        ++activity.stale;
-        LT("subsystem=serverruntime event=dropped peer={} sequence={} reason=\"{}\"", PeerNumber(peer),
-           command.sequence, DescribeRejection(enqueued.error()));
-      } else {
-        ++activity.dropped;
-        LW_LIMITED(drop_warnings, "subsystem=serverruntime event=dropped_malformed peer={} sequence={} reason=\"{}\"",
-                   PeerNumber(peer), command.sequence, DescribeRejection(enqueued.error()));
-      }
+    }
+  }
+
+  // Counts and logs a command the queue turned away.
+  void RecordRejection(networking::PeerId peer, const SequencedCommand& command, Rejection rejection) {
+    // Commands are repeated until acknowledged, so a stale one is routine.
+    if (rejection == Rejection::kStale) {
+      ++activity.stale;
+      LT("subsystem=serverruntime event=dropped peer={} sequence={} reason=\"{}\"", PeerNumber(peer), command.sequence,
+         DescribeRejection(rejection));
+    } else {
+      ++activity.dropped;
+      LW_LIMITED(drop_warnings, "subsystem=serverruntime event=dropped_malformed peer={} sequence={} reason=\"{}\"",
+                 PeerNumber(peer), command.sequence, DescribeRejection(rejection));
     }
   }
 
