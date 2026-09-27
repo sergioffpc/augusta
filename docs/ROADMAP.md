@@ -98,7 +98,8 @@ other with prediction + reconciliation working
   US-12 Apply Damage by Hit Location
 
 **Exercises:** ADR-0002, ADR-0023 (through Damage phase), ADR-0024
-(WeaponHandling), ADR-0014 (Slang shaders exercised by weapon-related
+(WeaponHandling), ADR-0044 (lag compensation, Shot and Hit confirmation
+messages), ADR-0014 (Slang shaders exercised by weapon-related
 rendering, e.g. muzzle flash/tracer effects)
 **Exit criteria:** players aim/fire/reload a rifle; bullets follow a real
 server-computed physics trajectory; hits resolve by body part with damage
