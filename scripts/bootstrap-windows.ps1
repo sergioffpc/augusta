@@ -26,9 +26,8 @@ Install-WingetPackage -Id "Ninja-build.Ninja"
 Install-WingetPackage -Id "ezwinports.make"
 Install-WingetPackage -Id "Git.Git"
 Install-WingetPackage -Id "Mozilla.sccache"
-# clang-format only - clang-tidy stays CI-only (Linux/WSL), see
-# docs/ENGINEERING.md, Code Quality. Backs the .githooks/pre-commit hook
-# below.
+# clang-format and clang-tidy, see docs/ENGINEERING.md, Code Quality. Back
+# the .githooks/pre-commit and .githooks/pre-push hooks below.
 Install-WingetPackage -Id "LLVM.LLVM"
 
 # Unlike the other packages here, LLVM's installer doesn't add itself to
@@ -54,7 +53,7 @@ $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";
 # clang-format's absence only shows up as ".githooks/pre-commit: not
 # found on PATH - skipping" at commit time, which is easy to miss and
 # leaves every local commit unformatted. Check now, once, instead.
-$requiredCommands = @("cmake", "ninja", "make", "git", "sccache", "clang-format")
+$requiredCommands = @("cmake", "ninja", "make", "git", "sccache", "clang-format", "clang-tidy")
 $missing = $requiredCommands | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) }
 if ($missing) {
   throw "Bootstrap installed packages but these commands still aren't on PATH: $($missing -join ', '). " +

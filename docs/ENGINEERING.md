@@ -166,8 +166,8 @@ pipeline).
   Studio Build Tools system-wide (default install location) — simpler
   than pinning a project-specific path, at the cost of not being able to
   side-by-side independent Build Tools versions per project — plus the
-  Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, and clang-format (for the
-  `pre-commit` hook below).
+  Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, and LLVM's clang-format
+  and clang-tidy (for the `pre-commit` and `pre-push` hooks below).
   (A fully hermetic, registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was
   considered and rejected: Falcor's CMake presets only test/support
   MSVC on Windows, and stacking an unsupported compiler on top of an
@@ -208,8 +208,13 @@ pipeline).
   local `clang-format` version than CI's. `clang-tidy` stays out of the
   commit hook — slower, and needs a full `compile_commands.json`, a poor
   fit for a commit-time hook — and runs instead as a `pre-push` hook on
-  the changed `src/*.cpp` files, since it catches what MSVC doesn't and CI
-  would; `make lint` runs both checks as CI does, and `make tidy` alone
+  the `src/*.cpp` files touched by the commits the remote doesn't have yet
+  (the same files `make tidy` covers on that platform), since it catches
+  what MSVC doesn't and CI would. It reads the debug build's
+  `compile_commands.json` (`windows-debug` / `linux-debug` preset), blocks
+  the push on any warning, refuses the push with a message naming the
+  preset when that database is missing, and runs nothing when no such file
+  changed; `make lint` runs both checks as CI does, and `make tidy` alone
   runs `clang-tidy`.
 - Strict warnings-as-errors in CI (see CI/CD above).
 - ASan/UBSan and fuzzing in CI; TSan nightly given multithreading
