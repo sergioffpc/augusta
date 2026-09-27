@@ -88,6 +88,21 @@ target_link_libraries(augusta_physics_tests PRIVATE augusta_physics GTest::gtest
 # above: the PhysX DLLs make a fresh build's first launch slow under Windows Defender.
 gtest_discover_tests(augusta_physics_tests DISCOVERY_TIMEOUT 30)
 
+add_executable(augusta_ballistics_tests ballistics_test.cpp)
+target_link_libraries(augusta_ballistics_tests PRIVATE augusta_ballistics GTest::gtest GTest::gtest_main)
+# NFR-03's golden trajectories (ADR-0013). When the ballistics model changes on
+# purpose, one step rewrites them for review and commit:
+#   cmake --build --preset <preset> --target augusta_golden_trajectories
+target_compile_definitions(augusta_ballistics_tests PRIVATE
+  AUGUSTA_GOLDEN_TRAJECTORIES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/golden_trajectories.txt")
+# Links PhysX through augusta_physics, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_ballistics_tests DISCOVERY_TIMEOUT 30)
+add_custom_target(augusta_golden_trajectories
+  COMMAND augusta_ballistics_tests --gtest_also_run_disabled_tests
+    --gtest_filter=BallisticsGoldenTest.DISABLED_RegenerateGoldenFile
+  COMMENT "Rewriting tests/fixtures/golden_trajectories.txt"
+  VERBATIM)
+
 add_executable(augusta_reconciliation_tests reconciliation_test.cpp)
 target_link_libraries(augusta_reconciliation_tests PRIVATE augusta_prediction GTest::gtest GTest::gtest_main)
 # Links augusta_physics publicly, so the same PhysX DLL launch cost applies.

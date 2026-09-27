@@ -56,7 +56,9 @@ how noisy its result is.
   repository, and the test, on both the Windows (MSVC) and Linux (clang)
   runners, compares what it computes against them within a tolerance defined
   in the test itself. If the two compilers disagree, at least one runner
-  fails, without either job needing the other's output.
+  fails, without either job needing the other's output. A deliberate change
+  to the ballistics model regenerates the file with one build target, and
+  the diff is reviewed like code.
 - **Asset pipeline check.** Builds the cooker, generates a throwaway Ed25519
   keypair for the run, cooks and signs the test assets with it, and loads the
   signed pack in C++. It is the contract test between the Python writer and
