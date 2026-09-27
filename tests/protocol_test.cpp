@@ -151,6 +151,7 @@ void ExpectSnappedBody(const BodyStateWire& actual, const BodyStateWire& expecte
   EXPECT_EQ(actual.velocity, SnapVelocity(expected.velocity));
   EXPECT_EQ(actual.stance, expected.stance);
   EXPECT_EQ(actual.stamina, SnapStamina(expected.stamina));
+  EXPECT_EQ(actual.flags, expected.flags);
 }
 
 EntityStateWire BodyAt(std::uint32_t entity, float x) {
@@ -569,6 +570,51 @@ TEST(ProtocolTest, APlayersStanceOutsideItsRangeIsInvalid) {
   payload[kStanceOffset] = static_cast<std::byte>(3);
 
   EXPECT_EQ(Decode(payload).error(), DecodeError::kInvalidEnum);
+}
+
+// type, tick, acknowledged sequence, count, entity, position (9), velocity (6), then the stance byte.
+constexpr std::size_t kBodyStanceOffset = 1 + 4 + 4 + 1 + 4 + 9 + 6;
+
+TEST(ProtocolTest, AnExhaustedBodyRoundTripsInEveryStance) {
+  AuthoritativeStateWire sent;
+  for (std::uint8_t stance = 0; stance < 3; ++stance) {
+    EntityStateWire body = BodyAt(stance, 1.0F);
+    body.body.stance = static_cast<augusta::protocol::StanceWire>(stance);
+    body.body.flags = BodyStateWire::kExhausted;
+    sent.bodies.push_back(body);
+  }
+
+  const auto received = std::get<AuthoritativeStateWire>(RoundTrip(sent));
+
+  ASSERT_EQ(received.bodies.size(), sent.bodies.size());
+  for (std::size_t i = 0; i < sent.bodies.size(); ++i) {
+    ExpectSnappedBody(received.bodies[i].body, sent.bodies[i].body);
+  }
+}
+
+TEST(ProtocolTest, ABodysExhaustedFlagSharesTheStanceByte) {
+  EntityStateWire body{};
+  body.body.stance = augusta::protocol::StanceWire::kProne;
+  body.body.flags = BodyStateWire::kExhausted;
+
+  const BytesWire exhausted = Encode(AuthoritativeStateWire{.bodies = {body}});
+  body.body.flags = 0;
+  const BytesWire rested = Encode(AuthoritativeStateWire{.bodies = {body}});
+
+  // The stance in the low two bits, the flag in the one above them, the rest 0.
+  EXPECT_EQ(exhausted[kBodyStanceOffset], std::byte{0b0000'0110});
+  EXPECT_EQ(rested[kBodyStanceOffset], std::byte{0b0000'0010});
+  EXPECT_EQ(exhausted.size(), rested.size());
+}
+
+TEST(ProtocolTest, ABodysUnusedStanceByteBitsSetAreInvalid) {
+  const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}});
+  for (unsigned bit = 3; bit < 8; ++bit) {
+    BytesWire altered = payload;
+    altered[kBodyStanceOffset] = static_cast<std::byte>(1U << bit);
+
+    EXPECT_EQ(Decode(altered).error(), DecodeError::kInvalidEnum) << bit;
+  }
 }
 
 // Every number of a body or a command travels as a whole count of its grid's

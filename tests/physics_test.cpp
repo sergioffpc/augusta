@@ -88,6 +88,125 @@ TEST(PhysicsWorldTest, SprintDepletesStaminaAndForcesWalkBelowThreshold) {
   EXPECT_LT(state.stamina, 1.0F);
 }
 
+// US-05's stamina rules at 60 Hz: a bar that empties in a second of sprinting
+// and refills in four of rest, and exhaustion lasting until it is back above a
+// fifth of it.
+constexpr StaminaConfig kExhaustingRules{
+    .deplete_per_second = 1.0F, .regen_per_second = 0.25F, .forced_walk_below = 0.2F};
+constexpr float kWalkSpeed = 3.0F;
+constexpr float kSprintSpeed = 4.8F;
+// A body's velocity is worked out from positions on a 1/1024 m grid.
+constexpr float kSpeedTolerance = 0.15F;
+
+MovementInput SprintingForward() {
+  MovementInput input{};
+  input.direction = Vec3(1.0F, 0.0F, 0.0F);
+  input.sprint = true;
+  return input;
+}
+
+TEST(PhysicsStaminaTest, SustainedSprintRunsStaminaOutThenWalksEveryTickUntilItRecoversAboveTheThreshold) {
+  World world{kExhaustingRules};
+  const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
+
+  // Sprinting, through the threshold and on until the bar is empty.
+  BodyState state{};
+  int ticks = 0;
+  for (; ticks < 120 && !state.exhausted; ++ticks) {
+    state = world.Step(body, SprintingForward(), kFixedTick);
+    if (!state.exhausted) {
+      ASSERT_NEAR(state.velocity.x, kSprintSpeed, kSpeedTolerance) << "tick " << ticks;
+    }
+  }
+  ASSERT_TRUE(state.exhausted);
+  EXPECT_EQ(state.stamina, 0.0F);
+
+  // Exhausted: every tick walks, however long sprint is held, until the bar is
+  // back above the threshold.
+  int walked = 0;
+  while (state.exhausted && walked < 600) {
+    state = world.Step(body, SprintingForward(), kFixedTick);
+    ++walked;
+    ASSERT_NEAR(state.velocity.x, kWalkSpeed, kSpeedTolerance) << "tick " << walked << " of the walk";
+    ASSERT_EQ(state.exhausted, state.stamina <= kExhaustingRules.forced_walk_below) << "tick " << walked;
+  }
+  // 0.2 of the bar at 0.25 a second: 48 ticks.
+  EXPECT_NEAR(walked, 48, 1);
+
+  // Recovered: sprint is honoured again.
+  state = world.Step(body, SprintingForward(), kFixedTick);
+  EXPECT_FALSE(state.exhausted);
+  EXPECT_NEAR(state.velocity.x, kSprintSpeed, kSpeedTolerance);
+}
+
+TEST(PhysicsStaminaTest, HoldingSprintWhileStillDoesNotDrainStamina) {
+  World world{StaminaConfig{.deplete_per_second = 1.0F, .regen_per_second = 0.0F, .forced_walk_below = 0.2F}};
+  const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
+  MovementInput still{};
+  still.sprint = true;
+
+  BodyState state{};
+  for (int i = 0; i < 30; ++i) {
+    state = world.Step(body, still, kFixedTick);
+  }
+
+  EXPECT_EQ(state.stamina, 1.0F);
+}
+
+class PhysicsStaminaStanceTest : public ::testing::TestWithParam<Stance> {};
+
+TEST_P(PhysicsStaminaStanceTest, HoldingSprintWhileMovingOutOfStandingDoesNotDrainStamina) {
+  World world{StaminaConfig{.deplete_per_second = 1.0F, .regen_per_second = 0.0F, .forced_walk_below = 0.2F}};
+  const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
+  MovementInput input = SprintingForward();
+  input.desired_stance = GetParam();
+
+  BodyState state{};
+  for (int i = 0; i < 30; ++i) {
+    state = world.Step(body, input, kFixedTick);
+  }
+
+  ASSERT_EQ(state.stance, GetParam());
+  EXPECT_EQ(state.stamina, 1.0F);
+}
+
+INSTANTIATE_TEST_SUITE_P(CrouchedAndProne, PhysicsStaminaStanceTest,
+                         ::testing::Values(Stance::kCrouching, Stance::kProne));
+
+TEST(PhysicsStaminaTest, RestoreKeepsTheExhaustedFlagAndTheNextStepWalks) {
+  World world{kExhaustingRules};
+  const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
+
+  BodyState restored{};
+  restored.stamina = 0.1F;
+  restored.exhausted = true;
+  const BodyState returned = world.Restore(body, restored, FallState{});
+  const BodyState stepped = world.Step(body, SprintingForward(), kFixedTick);
+
+  EXPECT_TRUE(returned.exhausted);
+  EXPECT_TRUE(stepped.exhausted);
+  EXPECT_NEAR(stepped.velocity.x, kWalkSpeed, kSpeedTolerance);
+}
+
+TEST(PhysicsStaminaTest, RestoreClearsTheExhaustedFlagOfAStateWithoutIt) {
+  World world{kExhaustingRules};
+  const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
+  BodyState exhausted{};
+  exhausted.stamina = 0.1F;
+  exhausted.exhausted = true;
+  world.Restore(body, exhausted, FallState{});
+
+  // The same stamina, not run out: below the threshold, but sprint is honoured.
+  BodyState rested = exhausted;
+  rested.exhausted = false;
+  const BodyState returned = world.Restore(body, rested, FallState{});
+  const BodyState stepped = world.Step(body, SprintingForward(), kFixedTick);
+
+  EXPECT_FALSE(returned.exhausted);
+  EXPECT_FALSE(stepped.exhausted);
+  EXPECT_NEAR(stepped.velocity.x, kSprintSpeed, kSpeedTolerance);
+}
+
 TEST(PhysicsWorldTest, TheStaminaRulesCanBeReplacedAndTheNextStepFollowsThem) {
   World world{StaminaConfig{}};
   const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));

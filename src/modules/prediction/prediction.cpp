@@ -33,11 +33,11 @@ using PhaseEntities = std::array<flecs::entity, kPhaseCount>;
 constexpr float kPositionTolerance = 0.001F;  // 1 mm.
 constexpr float kStaminaTolerance = 0.001F;
 
-// Position is what the player sees, but a stance or a stamina that differs
-// changes what the next commands do, so those count as well.
+// Position is what the player sees, but a stance, an exhaustion or a stamina
+// that differs changes what the next commands do, so those count as well.
 bool NeedsCorrection(const physics::BodyState& authoritative, const physics::BodyState& predicted) {
   return math::Length(authoritative.position - predicted.position) >= kPositionTolerance ||
-         authoritative.stance != predicted.stance ||
+         authoritative.stance != predicted.stance || authoritative.exhausted != predicted.exhausted ||
          std::abs(authoritative.stamina - predicted.stamina) >= kStaminaTolerance;
 }
 
