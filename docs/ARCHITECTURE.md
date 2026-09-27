@@ -104,6 +104,13 @@ No matchmaking, master server, or third-party platform integration in v1.
   does with the result: the server treats it as authoritative and
   feeds Ballistics, the client uses it only for local predicted
   feedback pending reconciliation - same split as Physics.
+- Ballistics — custom bullet trajectory simulation (gravity, travel
+  time), hand-rolled instead of PhysX's generic projectile handling
+  (ADR-0002). Its trajectory math is shared: the server advances every
+  bullet with it, and each client's PresentationWorld draws every
+  announced Shot's tracer and Map impact with it, a visual only.
+  Deciding a bullet's outcome (hit detection, damage) stays server-side
+  (ADR-0024, ADR-0044).
 - Networking Protocol — message definitions + custom binary serialization
 - Command — one tick's player intent (augusta_command): what the client's
   Input handling samples and the server screens and simulates, so the
@@ -199,11 +206,6 @@ exclusively server-authoritative.
 - Input Validation — anti-cheat baseline (US-15); rejects/filters invalid
   commands before they reach the world (does not apply to outbound
   authoritative state)
-- Ballistics — custom bullet trajectory simulation (gravity, travel
-  time), hand-rolled instead of PhysX's generic projectile handling
-  (ADR-0002). Exclusively server-side (ADR-0024): the client never
-  simulates a bullet's outcome, only predicts local fire feedback, so
-  this isn't part of Shared Core despite being physics-adjacent.
 - Scripting (Lua) — sandboxed script hooks for game policy (round
   lifecycle, win conditions, spawn rules); small interface (e.g. a
   RunHook call) hiding the Lua embedding and the restricted-environment
@@ -254,7 +256,7 @@ Damage → Scripts/Behaviours → Commit)
 | Movement | Mechanism | PhysX integration, stamina, collision resolution (US-04, US-05) |
 | WeaponHandling | Mechanism | Aim/ADS, fire, reload, recoil (US-06–US-09) |
 | Ballistics | Mechanism | Advances in-flight bullet trajectories (US-10) |
-| HitDetection | Mechanism | Resolves impact point + body part (US-11) |
+| HitDetection | Mechanism | Resolves impact point + body part against hitboxes as they were the Shooter's delay ago (US-11, ADR-0044) |
 | Damage | Mechanism (reads Data/Config) | Applies damage, marks death/spectator (US-12, US-13) |
 | Scripts/Behaviours | Policy (Lua, sandboxed) | Win condition, round transitions, spawn logic (US-14, US-03) |
 | Commit | Mechanism | Packages tick state into Authoritative State for Networking |
@@ -279,11 +281,20 @@ Damage → Scripts/Behaviours → Commit)
 
 **Scenario: Fire Rifle**
 1. Client predicts local fire feedback (muzzle flash, sound, recoil) immediately
-2. Client sends fire input to server via GameNetworkingSockets
-3. Server simulates bullet trajectory (custom ballistics: gravity, travel time)
-4. Server resolves hit location against player hitboxes
-5. Server applies damage by hit location, broadcasts authoritative result
-6. Client reconciles: confirms/corrects predicted outcome (hit marker, damage state)
+2. Client sends the fire command to server via GameNetworkingSockets, with
+   the Authoritative State tick it was showing and the interpolation fraction
+3. Server fixes the Shooter's delay (capped at 250 ms) and announces the Shot
+   (shooter, server tick, origin, direction) reliably to every client
+4. Server simulates bullet trajectory (custom ballistics: gravity, travel
+   time), testing each tick's segment against the Map and against player
+   hitboxes as they were the Shooter's delay ago (lag compensation)
+5. Server applies damage by hit location and sends the shooter a Hit
+   confirmation (target, body part, damage)
+6. Shooter's client shows the hit marker and sound only when the Hit
+   confirmation arrives; it never predicts a hit
+7. Every client draws each announced Shot's tracer and Map impact from its
+   own computation of the same trajectory, a visual only; hits on players
+   are drawn only from the server's hit messages (see ADR-0044)
 
 **Scenario: Player Movement with Reconciliation**
 1. Client applies input locally (predicted movement)
@@ -370,6 +381,7 @@ aid only and do not affect numbering.
 - [ADR-0006 — Shared client/server codebase](./adr/0006-shared-client-server-codebase.md)
 - [ADR-0007 — Serialization format](./adr/0007-serialization-format.md)
 - [ADR-0038 — Networking Protocol: message catalogue and reliability split](./adr/0038-networking-protocol-messages.md)
+- [ADR-0044 — Shot lag compensation and replication](./adr/0044-shot-lag-compensation-and-replication.md)
 
 ### Tooling & Build
 - [ADR-0008 — Build tooling](./adr/0008-build-tooling.md)
