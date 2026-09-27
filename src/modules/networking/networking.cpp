@@ -19,6 +19,7 @@
 #include <steam/steamnetworkingsockets.h>
 
 #include "augusta/logging.h"
+#include "send_flags.h"
 
 // M1 spike (ADR-0003): the first real (non-stub) body for this module.
 // Both Client and Server route GameNetworkingSockets' single global
@@ -109,10 +110,6 @@ class StatusHandlerRegistration {
 // The status-changed callback both roles register with GameNetworkingSockets.
 void OnStatusChanged(SteamNetConnectionStatusChangedCallback_t* info) {
   StatusHandlers().Dispatch(info->m_info.m_nUserData, info);
-}
-
-int SendFlags(Reliability reliability) {
-  return reliability == Reliability::kReliable ? k_nSteamNetworkingSend_Reliable : k_nSteamNetworkingSend_Unreliable;
 }
 
 }  // namespace

@@ -334,14 +334,21 @@ struct ClientRuntime::Impl {
   }
 
   // Network I/O thread body (ADR-0005): connects once, then pumps the
-  // connection until running is cleared by ThreadJoiner.
+  // connection until running is cleared by ThreadJoiner, waiting
+  // kNetworkRoundWait between rounds rather than spinning a core. The
+  // transport has no wait on incoming work, so that wait bounds how late a
+  // received message is handled, and how long stopping takes.
   void NetworkThreadMain() {
+    constexpr auto kNetworkRoundWait = std::chrono::milliseconds(1);
     session->Connect();
     while (running.load(std::memory_order_relaxed)) {
-      const nvtx3::scoped_range range{"Network PumpEvents"};
-      session->PumpEvents();
-      SampleNetworkStats();
-      session->ExchangeMessages();
+      {
+        const nvtx3::scoped_range range{"Network PumpEvents"};
+        session->PumpEvents();
+        SampleNetworkStats();
+        session->ExchangeMessages();
+      }
+      std::this_thread::sleep_for(kNetworkRoundWait);
     }
     session->Disconnect();
   }
