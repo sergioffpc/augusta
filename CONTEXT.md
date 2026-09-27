@@ -78,6 +78,10 @@ _Avoid_: Player list
 What a player plays as, meaning its body's look and its collider, chosen from the characters the scenario's manifest names. The player picks one before joining, the server admits the join only if the scenario has it, and it stays fixed for the whole Session, across every Match in it (ADR-0042).
 _Avoid_: Skin, model, avatar (a character is not only appearance: its collider is gameplay)
 
+**Interpolation delay**:
+How far in the past, about 100 ms, a client shows other players, so it always has two Authoritative State updates to interpolate between.
+_Avoid_: Lerp delay, buffer time, lag
+
 **RTT (Round-Trip Time)**:
 The measured network latency between a client and the server for a single request/response cycle.
 _Avoid_: Ping, lag
@@ -113,6 +117,22 @@ _Avoid_: Client session, bot
 **Hitbox**:
 The collision volume attached to a player, used server-side to resolve where a bullet impacts.
 _Avoid_: Collider (a collider is the general physics term; a hitbox is specifically the damage-resolution volume)
+
+**Shot**:
+One bullet fired, as the Authoritative server announces it to every client: who fired it, at which tick, from where and in which direction. Clients draw its trajectory; only the server decides what it hits (ADR-0044).
+_Avoid_: Bullet (the bullet is what flies; the Shot is the firing that every client is told of), fire event, gunshot
+
+**Shooter's delay**:
+How far in the past the shooter saw other players when it fired: from the view its fire Command reports to the tick the server takes that Command in, capped at 250 ms. Fixed when the Shot is fired, it holds for the bullet's whole flight (ADR-0044).
+_Avoid_: Ping, lag, latency, rewind time (the RTT is only part of it, next to the Interpolation delay)
+
+**Lag compensation**:
+Judging a bullet against the hitboxes as they were the Shooter's delay ago, so a shot that hit on the shooter's screen hits on the server.
+_Avoid_: Rewind, backward reconciliation, favor-the-shooter (Reconciliation is the client's own prediction correction, a different concept)
+
+**Hit confirmation**:
+The Authoritative server telling a shooter that its Shot hit a player: the target, the body part and the damage. The only source of the shooter's hit marker; a client never predicts a hit.
+_Avoid_: Hit marker (the marker is how the client shows a Hit confirmation), hit prediction, hit registration
 
 **ADS (Aim Down Sights)**:
 The player action of aiming through a weapon's sights, trading movement/hip-fire speed for accuracy.
