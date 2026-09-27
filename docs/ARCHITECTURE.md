@@ -375,7 +375,7 @@ aid only and do not affect numbering.
 - [ADR-0008 — Build tooling](./adr/0008-build-tooling.md)
 - [ADR-0011 — Language standard: C++23](./adr/0011-language-standard.md)
 - [ADR-0012 — Coding style](./adr/0012-coding-style.md)
-- [ADR-0013 — Testing & benchmarking](./adr/0013-testing-and-benchmarking.md)
+- [ADR-0013 — Testing strategy](./adr/0013-testing-and-benchmarking.md)
 - [ADR-0025 — Dependency manager: vcpkg](./adr/0025-dependency-manager.md)
 
 ### Rendering & Audio
