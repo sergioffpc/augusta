@@ -1,10 +1,16 @@
 name: CodeQL
 
+# Documentation can't change what the C++ analysis finds, so a docs-only
+# change skips it. Safe only because analyze is not a required check: a
+# required check filtered out here would never report and block the merge.
+# The weekly schedule still analyzes everything.
 on:
   push:
     branches: [main, develop]
+    paths-ignore: ["docs/**", "**.md"]
   pull_request:
     branches: [main, develop]
+    paths-ignore: ["docs/**", "**.md"]
   schedule:
     - cron: "0 6 * * 1"
 

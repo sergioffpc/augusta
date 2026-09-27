@@ -46,7 +46,7 @@ jobs:
           changed="$(git diff --name-only "$base" "${{ github.sha }}")"
 
           if echo "$changed" \
-              | grep -qE '^(src/|tests/|tools/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$)'; then
+              | grep -qE '^(src/|tests/|tools/pack/examples/|tools/pack/cpp/|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$)'; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
