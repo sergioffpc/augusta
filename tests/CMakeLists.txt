@@ -42,6 +42,13 @@ target_link_libraries(augusta_protocol_tests PRIVATE augusta_protocol GTest::gte
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_protocol_tests DISCOVERY_TIMEOUT 30)
 
+add_executable(augusta_protocol_property_tests protocol_property_test.cpp)
+target_link_libraries(augusta_protocol_property_tests PRIVATE augusta_protocol rapidcheck_gtest GTest::gtest GTest::gtest_main)
+# RapidCheck's generator templates, one per message field, outgrow MSVC's
+# default section count for one object file.
+target_compile_options(augusta_protocol_property_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj>)
+gtest_discover_tests(augusta_protocol_property_tests)
+
 add_executable(augusta_match_tests match_test.cpp)
 target_link_libraries(augusta_match_tests PRIVATE augustad_match GTest::gtest GTest::gtest_main)
 # Links networking (for PeerId), so the same first-launch cost applies as below.
