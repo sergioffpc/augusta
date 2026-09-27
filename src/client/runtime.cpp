@@ -50,15 +50,29 @@ presentation::EntityId ToPresentation(harness::EntityId entity) {
   return static_cast<presentation::EntityId>(std::to_underlying(entity));
 }
 
-// An Authoritative State update as presentation's WorldSnapshot: the same tick
-// and every body.
-presentation::WorldSnapshot ToPresentation(const harness::AuthoritativeState& state) {
-  presentation::WorldSnapshot snapshot{.tick = state.tick, .bodies = {}};
+// An Authoritative State update as presentation's WorldSnapshot: the same tick,
+// the duration of a tick at the server's tick_rate_hz, and every body.
+presentation::WorldSnapshot ToPresentation(const harness::AuthoritativeState& state, std::uint8_t tick_rate_hz) {
+  presentation::WorldSnapshot snapshot{
+      .tick = state.tick,
+      .tick_duration = 1.0 / static_cast<double>(tick_rate_hz),
+      .bodies = {},
+  };
   snapshot.bodies.reserve(state.bodies.size());
   for (const harness::EntityBody& body : state.bodies) {
     snapshot.bodies.push_back({.entity = ToPresentation(body.entity), .state = body.body});
   }
   return snapshot;
+}
+
+// session's newest Authoritative State update as presentation's
+// WorldSnapshot, or nullopt outside a match. An Authoritative State only
+// follows Join accepted, which told the tick rate.
+std::optional<presentation::WorldSnapshot> SnapshotOf(const harness::Session& session) {
+  const std::optional<std::uint8_t> tick_rate_hz = session.GetTickRate();
+  return session.GetAuthoritativeState().and_then([tick_rate_hz](const harness::AuthoritativeState& state) {
+    return tick_rate_hz.transform([&state](std::uint8_t rate) { return ToPresentation(state, rate); });
+  });
 }
 
 // Every player's character as Match start named it, for
@@ -427,10 +441,9 @@ std::optional<Failure> ClientRuntime::Run() {
     // ServerView), so a GetAuthoritativeState() read before GetEntityId(), as
     // below, can never race ahead of a GetEntityId() that is still nullopt.
     // Each is converted into presentation's own types here, at ClientRuntime's
-    // edge (see ToPresentation and CharactersOf above).
+    // edge (see SnapshotOf and CharactersOf above).
     const Impl::LatestTick latest = impl_->GetLatestTick();
-    const std::optional<presentation::WorldSnapshot> snapshot = impl_->session->GetAuthoritativeState().transform(
-        [](const harness::AuthoritativeState& state) { return ToPresentation(state); });
+    const std::optional<presentation::WorldSnapshot> snapshot = SnapshotOf(*impl_->session);
     const std::optional<presentation::EntityId> local_entity =
         impl_->session->GetEntityId().transform([](harness::EntityId entity) { return ToPresentation(entity); });
     const std::vector<presentation::PlayerCharacter> characters = CharactersOf(impl_->session->GetMatchStart());
