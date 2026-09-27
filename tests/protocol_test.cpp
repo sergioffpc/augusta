@@ -344,7 +344,7 @@ TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
       JoinAcceptedWire{.session = static_cast<SessionIdWire>(7), .character = 1},
       JoinRefusedWire{.reason = JoinRefusalWire::kMatchInProgress},
       CommandsWire{.commands = {SequencedCommandWire{.sequence = 1}, {.sequence = 2}}},
-      AuthoritativeStateWire{.tick = 3, .bodies = {EntityStateWire{}, {}}},
+      AuthoritativeStateWire{.tick = 3, .bodies = {EntityStateWire{}, {}}, .queued_commands = 2},
       LobbyWire{.version = 2, .roster = {RosterEntryWire{}, {}}},
       MatchStartWire{.players = {MatchPlayer(1, 1, 0.0F), MatchPlayer(2, 2, 1.0F)}},
       ReadyWire{.version = 0x01020304U}};
@@ -555,6 +555,17 @@ TEST(ProtocolTest, AuthoritativeStateWithAFullMatchRoundTrips) {
   EXPECT_EQ(std::get<AuthoritativeStateWire>(RoundTrip(sent)).bodies.size(), kMaxPlayers);
 }
 
+TEST(ProtocolTest, AnUpdateTellsItsRecipientHowManyOfItsCommandsTheServerHolds) {
+  for (const std::uint8_t queued : {std::uint8_t{0}, std::uint8_t{2}, std::uint8_t{255}}) {
+    const auto received = std::get<AuthoritativeStateWire>(
+        RoundTrip(AuthoritativeStateWire{.tick = 9, .bodies = {BodyAt(1, 1.0F)}, .queued_commands = queued}));
+
+    EXPECT_EQ(received.queued_commands, queued);
+    EXPECT_EQ(received.tick, 9U);
+    EXPECT_EQ(received.bodies.size(), 1U);
+  }
+}
+
 TEST(ProtocolTest, MorePlayersThanAMatchHoldsIsTooLong) {
   // type, tick (4), acknowledged sequence (4), then the count.
   const BytesWire payload =
@@ -620,7 +631,8 @@ TEST(ProtocolTest, ABodysUnusedStanceByteBitsSetAreInvalid) {
 // Every number of a body or a command travels as a whole count of its grid's
 // step (ADR-0038), in the fewest bytes its range needs.
 TEST(ProtocolTest, ABodyTravelsInEighteenBytesAndACommandInThirteen) {
-  EXPECT_EQ(Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}}).size(), 1 + 4 + 4 + 1 + 4 + 18);
+  // type, tick, acknowledged sequence, count, entity, the body, then the queued commands.
+  EXPECT_EQ(Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}}).size(), 1 + 4 + 4 + 1 + 4 + 18 + 1);
   EXPECT_EQ(Encode(CommandsWire{.commands = {SequencedCommandWire{}}}).size(), 2 + 4 + 13);
 }
 

@@ -225,6 +225,9 @@ struct AuthoritativeStateWire {
   std::uint32_t acknowledged_sequence = 0;
   /// Every dynamic body in the match, at most kMaxPlayers (only players have one so far).
   std::vector<EntityStateWire> bodies;
+  /// How many of the recipient's commands the server still holds queued after
+  /// this tick: what the client paces its own ticks by (ADR-0038).
+  std::uint8_t queued_commands = 0;
 };
 
 /// One player in the Lobby.

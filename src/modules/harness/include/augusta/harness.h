@@ -60,6 +60,9 @@ struct AuthoritativeState {
   std::uint32_t acknowledged_sequence = 0;
   /// Every dynamic body in the match.
   std::vector<EntityBody> bodies;
+  /// How many of this client's commands the server still held queued after
+  /// that tick: what the client paces its own ticks by (tick::PacedTickDuration).
+  std::uint8_t queued_commands = 0;
 };
 
 /// One player in the Lobby.

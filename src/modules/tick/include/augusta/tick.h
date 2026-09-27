@@ -2,6 +2,7 @@
 #define AUGUSTA_TICK_H_
 
 #include <chrono>
+#include <cstdint>
 
 // The fixed schedule both tick loops keep - the server's Simulation thread and
 // the client's Prediction thread (ADR-0005): each Tick is due one tick after the
@@ -42,6 +43,28 @@ struct Timing {
 /// schedule of Ticks tick_duration long.
 [[nodiscard]] Timing Measure(Clock::time_point deadline, Clock::duration tick_duration, Clock::time_point start,
                              Clock::time_point end);
+
+/// How many of a client's commands the server should hold queued after each of
+/// its Ticks: one or two, so a command that arrives a little late still finds
+/// one ahead of it, without adding more than a tick or two of input latency.
+inline constexpr float kTargetQueuedCommands = 1.5F;
+
+/// How much a client lengthens (or shortens) its Tick per command the server
+/// holds above (or below) kTargetQueuedCommands.
+inline constexpr float kPacingPerCommand = 0.04F;
+
+/// The most a client's Tick may be lengthened or shortened, as a fraction of
+/// its nominal duration. It must exceed the drift between a client's clock and
+/// the server's that pacing is to absorb.
+inline constexpr float kMaxPacing = 0.05F;
+
+/// How long a client's next Tick lasts, nominal being the server's tick
+/// duration, when the server last said it held queued_commands of its commands
+/// (ADR-0038): longer when there are more than kTargetQueuedCommands (the client
+/// runs ahead), shorter when there are fewer, and never more than kMaxPacing off
+/// nominal. Only when the client's Ticks happen changes: each still simulates a
+/// nominal tick, and the server still consumes one command per Tick.
+[[nodiscard]] Clock::duration PacedTickDuration(Clock::duration nominal, std::uint8_t queued_commands);
 
 }  // namespace augusta::tick
 

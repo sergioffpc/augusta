@@ -94,6 +94,7 @@ AuthoritativeState FromWire(const protocol::AuthoritativeStateWire& state) {
       .tick = state.tick,
       .acknowledged_sequence = state.acknowledged_sequence,
       .bodies = {},
+      .queued_commands = state.queued_commands,
   };
   result.bodies.reserve(state.bodies.size());
   for (const protocol::EntityStateWire& body : state.bodies) {

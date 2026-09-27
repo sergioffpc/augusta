@@ -24,6 +24,7 @@ std::vector<Update> PlanUpdates(const simulation::State& state, std::uint32_t ti
         .tick = tick,
         .acknowledged_sequence = recipient.acknowledged_sequence,
         .bodies = everyone,
+        .queued_commands = recipient.queued_commands,
     });
   }
   return updates;

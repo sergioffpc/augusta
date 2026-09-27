@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_SERVER_HOST_H_
 #define AUGUSTA_SERVER_HOST_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <memory>
@@ -105,11 +106,11 @@ class Host {
   /// thread, between Ticks.
   void EndMatch();
 
-  /// Whether the player of session is in the match and has a command queued for
-  /// the next Tick, so that Tick moves it by a command it sent rather than
-  /// holding its last movement. A test's way to tick only once what it sent has
-  /// arrived. From any thread.
-  [[nodiscard]] bool HasQueuedCommand(SessionId session) const;
+  /// How many commands the player of session has queued for the coming Ticks, 0
+  /// if it is not in the match. With one queued, the next Tick moves it by a
+  /// command it sent rather than holding its last movement: a test's way to
+  /// tick only once what it sent has arrived. From any thread.
+  [[nodiscard]] std::size_t QueuedCommands(SessionId session) const;
 
  private:
   struct Impl;

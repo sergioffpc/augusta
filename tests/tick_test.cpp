@@ -1,6 +1,8 @@
 #include "augusta/tick.h"
 
 #include <chrono>
+#include <cmath>
+#include <cstdint>
 
 #include <gtest/gtest.h>
 
@@ -9,9 +11,11 @@ namespace {
 
 using augusta::tick::Clock;
 using augusta::tick::kLateTolerance;
+using augusta::tick::kMaxPacing;
 using augusta::tick::kMaxTicksBehind;
 using augusta::tick::Measure;
 using augusta::tick::NextDeadline;
+using augusta::tick::PacedTickDuration;
 
 constexpr Clock::duration kTick = std::chrono::microseconds{16'667};  // 60 Hz.
 constexpr Clock::duration kWork = std::chrono::milliseconds{2};
@@ -76,6 +80,33 @@ TEST(TickTest, ATickWhoseWorkTakesLongerThanATickOverruns) {
 
   EXPECT_FALSE(timing.late);
   EXPECT_TRUE(timing.overrun);
+}
+
+// A client whose Ticks are paced, told how many of its commands the server holds.
+TEST(TickPacingTest, AClientTheServerHoldsMoreCommandsOfLengthensItsTick) {
+  EXPECT_GT(PacedTickDuration(kTick, 2), kTick);
+  EXPECT_GT(PacedTickDuration(kTick, 3), PacedTickDuration(kTick, 2));
+}
+
+TEST(TickPacingTest, AClientTheServerHoldsFewerCommandsOfShortensItsTick) {
+  EXPECT_LT(PacedTickDuration(kTick, 1), kTick);
+  EXPECT_LT(PacedTickDuration(kTick, 0), PacedTickDuration(kTick, 1));
+}
+
+TEST(TickPacingTest, OneAndTwoCommandsHeldAreEquallyFarOnEitherSideOfNominal) {
+  const auto longer = PacedTickDuration(kTick, 2) - kTick;
+  const auto shorter = kTick - PacedTickDuration(kTick, 1);
+
+  EXPECT_LE(std::chrono::abs(longer - shorter), std::chrono::nanoseconds{1});
+}
+
+TEST(TickPacingTest, ATickIsNeverPacedFurtherThanItsBound) {
+  const std::chrono::duration<double> nominal = kTick;
+  for (int queued = 0; queued <= 255; ++queued) {
+    const std::chrono::duration<double> paced = PacedTickDuration(kTick, static_cast<std::uint8_t>(queued));
+
+    EXPECT_LE(std::abs(paced / nominal - 1.0), kMaxPacing + 1e-6) << queued;
+  }
 }
 
 }  // namespace

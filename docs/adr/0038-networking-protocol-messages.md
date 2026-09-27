@@ -100,7 +100,7 @@ supersedes is unreliable.
 | Join accepted | server → client | reliable | session ID, the player's spawn position, the server's tick rate, the parameters to predict with, and the roster: every player already in the match (at most 8) with session ID and body |
 | Join refused | server → client | reliable | reason: version mismatch, match full, pack mismatch |
 | Commands | client → server | unreliable | up to 8 commands, oldest first: sequence, movement direction, yaw, pitch, and one byte holding the sprint, ADS, fire and reload flags (bits 0-3) and the desired stance (bits 4-5) |
-| Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, and per body (at most 8): entity ID, position, velocity, one byte holding the stance (bits 0-1) and the exhausted flag (bit 2), stamina |
+| Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, per body (at most 8): entity ID, position, velocity, one byte holding the stance (bits 0-1) and the exhausted flag (bit 2), stamina; then one byte: how many of the recipient's commands the server still holds queued after the tick |
 
 Per-tick traffic is unreliable because a newer message supersedes an older one,
 and it is made loss-tolerant without retransmission:
@@ -118,9 +118,23 @@ and it is made loss-tolerant without retransmission:
   range. Judging what is left within those ranges is the server's sanity gate,
   kept apart so the anti-cheat baseline (US-15) grows in one place.
 - **One command per tick.** The server consumes one queued command per tick per
-  player. If none is queued it repeats the last movement for about 100 ms and then
-  reduces the player to no movement; a repeated tick never repeats a one-shot
-  action. The acknowledged sequence is the last command actually consumed.
+  player. If none is queued it repeats the last movement for 100 ms (a duration,
+  converted to ticks at the server's tick rate and rounded up, as the Match pause
+  is) and then reduces the player to no movement; a repeated tick never repeats a
+  one-shot action. The acknowledged sequence is the last command actually
+  consumed. A queue holds at most 16 commands; when a client runs further ahead
+  the oldest go, and the server's heartbeat counts each as `overflow=`.
+- **Clients pace their ticks to the server's.** Nothing else keeps a client's
+  rate of commands equal to the server's rate of consuming them: a client whose
+  clock runs slightly fast fills its queue (adding input latency, then drops),
+  one slightly slow empties it (and the server holds its last movement, which
+  the client then corrects). So each Authoritative State update tells its
+  recipient how many of its commands are still queued, and the client lengthens
+  its next tick when that is above 1.5 and shortens it when below, by 4% per
+  command and never more than 5% either way, which keeps one or two queued
+  against a clock up to about 2% off. Only when the client's ticks happen
+  changes: each still simulates the nominal tick of the rate told in Join
+  accepted (ADR-0039), and the server still consumes one command per tick.
 - **State is newest-wins.** An update carries the server tick, and a client
   ignores one not newer than the update it holds. Every recipient is sent every
   player.

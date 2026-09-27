@@ -1,5 +1,6 @@
 #include "command_queue.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <expected>
@@ -53,16 +54,21 @@ std::expected<void, Rejection> Validate(const SequencedCommand& command, std::ui
   return {};
 }
 
-std::expected<void, Rejection> CommandQueue::TryEnqueue(const SequencedCommand& command) {
+int HeldTicks(std::uint8_t tick_rate_hz) {
+  return static_cast<int>(std::chrono::ceil<std::chrono::seconds>(kMaxHeldTime * tick_rate_hz).count());
+}
+
+std::expected<Enqueued, Rejection> CommandQueue::TryEnqueue(const SequencedCommand& command) {
   if (const auto validated = Validate(command, last_offered_); !validated.has_value()) {
-    return validated;
+    return std::unexpected(validated.error());
   }
   last_offered_ = command.sequence;
   queued_.push_back(command);
   if (queued_.size() > kMaxQueuedCommands) {
     queued_.pop_front();
+    return Enqueued::kDroppedOldest;
   }
-  return {};
+  return Enqueued::kQueued;
 }
 
 TickCommand CommandQueue::Next() {
@@ -80,7 +86,7 @@ TickCommand CommandQueue::Next() {
     return idle;
   }
   command::Command command = WithoutActions(*last_);
-  if (held_ticks_ < kMaxHeldTicks) {
+  if (held_ticks_ < max_held_ticks_) {
     ++held_ticks_;
   } else {
     command.movement.direction = math::Vec3{};
