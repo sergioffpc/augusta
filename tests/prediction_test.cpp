@@ -164,6 +164,36 @@ TEST_F(ReconciliationTest, AStaminaThatDiffersIsCorrectedEvenWhereThePositionAgr
   EXPECT_NEAR(state.local_body.stamina, kServerStamina, 0.01F);
 }
 
+// Sprinting forward: the rules the fixture's world runs on never drain, so
+// only an exhausted flag can turn this into a walk.
+Command SprintingForward() {
+  Command sprint = Walking();
+  sprint.movement.sprint = true;
+  return sprint;
+}
+
+constexpr float kSprintStep = 4.8F * kFixedTick;  // Metres per tick at sprinting speed (4.8 m/s).
+
+TEST_F(ReconciliationTest, AnExhaustedFlagThatDiffersIsCorrectedEvenWhereEverythingElseAgrees) {
+  Acknowledgement ack = ServerAgreesWithTheClientExcept(sequence_, Vec3(0.0F, 0.0F, 0.0F));
+  ASSERT_FALSE(ack.body.exhausted);
+  ack.body.exhausted = true;
+
+  const State state = Tick(ack, SprintingForward());
+
+  // Put back at the server's exhausted body, the tick's sprint is walked.
+  EXPECT_NEAR(state.local_body.position.x - ack.body.position.x, kWalkStep, 0.01F);
+}
+
+TEST_F(ReconciliationTest, AnExhaustedFlagThatAgreesChangesNothing) {
+  const Acknowledgement ack = ServerAgreesWithTheClientExcept(sequence_, Vec3(0.0F, 0.0F, 0.0F));
+
+  const State state = Tick(ack, SprintingForward());
+
+  EXPECT_EQ(state.total_correction, Vec3(0.0F, 0.0F, 0.0F));
+  EXPECT_NEAR(state.local_body.position.x - ack.body.position.x, kSprintStep, 0.01F);
+}
+
 TEST_F(ReconciliationTest, TheJumpTheReplayMadeIsTheTotalCorrection) {
   constexpr float kDivergence = 0.5F;
   EXPECT_EQ(latest_.total_correction, Vec3(0.0F, 0.0F, 0.0F));

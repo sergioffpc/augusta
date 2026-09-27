@@ -47,9 +47,10 @@ struct MovementInput {
   // pre-normalized; World::Step normalizes it internally. The zero vector
   // means "no movement input this tick".
   math::Vec3 direction;
-  // True if the player is holding the sprint control this tick. Sprinting
-  // depletes stamina (see StaminaConfig) and is ignored (treated as false)
-  // once stamina has depleted below the forced-walk threshold.
+  // True if the player is holding the sprint control this tick. Sprint is
+  // honored only while the body is standing, moving and not exhausted (see
+  // BodyState::exhausted), and only then depletes stamina (see StaminaConfig);
+  // otherwise it is ignored (treated as false).
   bool sprint = false;
   // The stance the player is attempting to be in this tick (e.g. the
   // player pressed the crouch key). World::Step resolves whether the
@@ -77,9 +78,13 @@ struct BodyState {
   math::Vec3 velocity;
   // The body's current stance, after any transition resolved this tick.
   Stance stance = Stance::kStanding;
-  // Remaining stamina, normalized to [0, 1]. 0 means fully depleted (see
-  // StaminaConfig::forced_walk_below); 1 means fully recovered.
+  // Remaining stamina, normalized to [0, 1]. 0 means fully depleted; 1 means
+  // fully recovered.
   float stamina = 1.0F;
+  /// Whether the body ran its stamina out and has not yet recovered above
+  /// StaminaConfig::forced_walk_below: while set, sprint is ignored. It changes
+  /// what the next commands do, so it travels and is restored with the rest.
+  bool exhausted = false;
 };
 
 // Tunable balance values governing stamina depletion/recovery (US-05).
@@ -90,14 +95,14 @@ struct BodyState {
 // loaded from external configuration rather than hardcoded, so gameplay
 // tuning doesn't require touching this module's implementation.
 struct StaminaConfig {
-  // Stamina fraction lost per second while sprinting, e.g. 0.2 means a
-  // full stamina bar depletes after 5 seconds of continuous sprinting.
+  // Stamina fraction lost per second while sprint is honored, e.g. 0.2 means
+  // a full stamina bar depletes after 5 seconds of continuous sprinting.
   float deplete_per_second = 0.0F;
-  // Stamina fraction regained per second while not sprinting.
+  // Stamina fraction regained per second while sprint is not honored.
   float regen_per_second = 0.0F;
-  // When a body's stamina drops at or below this fraction, World::Step
-  // ignores MovementInput::sprint (forcing walk speed) until stamina
-  // recovers above this threshold again.
+  // Once a body runs its stamina out it is exhausted (BodyState::exhausted):
+  // World::Step ignores MovementInput::sprint (forcing walk speed) until
+  // stamina recovers above this fraction again.
   float forced_walk_below = 0.0F;
 };
 

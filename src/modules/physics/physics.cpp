@@ -128,23 +128,35 @@ float SpeedMultiplierForStance(Stance stance) {
 }
 
 // Decision half of Step's stamina rule (US-05): given this tick's sprint
-// request and the current stamina, resolves whether sprint is actually
-// honored (forced_walk_below can override it) and the resulting stamina.
-// Pure - no PxController calls - so it stays unit-testable independent of
-// PhysX; Step (mechanism half) just applies the result.
+// request, whether the body is standing and moving, and its stamina and
+// exhaustion, resolves whether sprint is actually honored and the resulting
+// stamina and exhaustion. Pure - no PxController calls - so it stays
+// unit-testable independent of PhysX; Step (mechanism half) just applies the
+// result.
 struct StaminaResult {
   bool sprinting = false;
   float stamina = 1.0F;
+  bool exhausted = false;
 };
 
-StaminaResult ResolveStamina(bool sprint_requested, float current_stamina, const StaminaConfig& config,
-                             float delta_time) {
+// Sprint is honored only standing, moving and not exhausted, and only then
+// drains; otherwise stamina regenerates. Running stamina out exhausts the
+// body, and it stays exhausted, walking, until stamina is back above
+// forced_walk_below, so a body held at the threshold does not flicker between
+// sprinting and walking.
+StaminaResult ResolveStamina(bool sprint_requested, bool standing_and_moving, float current_stamina,
+                             bool currently_exhausted, const StaminaConfig& config, float delta_time) {
   StaminaResult result;
-  result.sprinting = sprint_requested && current_stamina > config.forced_walk_below;
+  result.sprinting = sprint_requested && standing_and_moving && !currently_exhausted;
   if (result.sprinting) {
     result.stamina = std::max(0.0F, current_stamina - (config.deplete_per_second * delta_time));
   } else {
     result.stamina = std::min(1.0F, current_stamina + (config.regen_per_second * delta_time));
+  }
+  if (currently_exhausted) {
+    result.exhausted = result.stamina <= config.forced_walk_below;
+  } else {
+    result.exhausted = result.stamina <= 0.0F;
   }
   return result;
 }
@@ -471,10 +483,13 @@ BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta
     state.stance = input.desired_stance;
   }
 
-  const StaminaResult stamina = ResolveStamina(input.sprint, state.stamina, impl_->stamina_config, delta_time);
-  state.stamina = stamina.stamina;
-
   const math::Vec3 direction = math::Normalize(input.direction);
+  const bool standing_and_moving = state.stance == Stance::kStanding && math::Length(direction) > 0.0F;
+  const StaminaResult stamina = ResolveStamina(input.sprint, standing_and_moving, state.stamina, state.exhausted,
+                                               impl_->stamina_config, delta_time);
+  state.stamina = stamina.stamina;
+  state.exhausted = stamina.exhausted;
+
   const float speed = ResolveSpeed(state.stance, stamina.sprinting);
 
   // Simple constant-acceleration gravity: reset the accumulated vertical

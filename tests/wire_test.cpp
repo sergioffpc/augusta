@@ -62,6 +62,7 @@ void ExpectSameBody(const BodyState& actual, const BodyState& expected) {
   EXPECT_EQ(actual.velocity, augusta::math::SnapVelocity(expected.velocity));
   EXPECT_EQ(actual.stance, expected.stance);
   EXPECT_EQ(actual.stamina, augusta::math::SnapStamina(expected.stamina));
+  EXPECT_EQ(actual.exhausted, expected.exhausted);
 }
 
 TEST(WireTest, ACommandTheClientSendsReachesTheServerUnchanged) {
@@ -111,6 +112,26 @@ TEST(WireTest, EachFlagOfACommandReachesTheServerAsItselfAlone) {
     EXPECT_EQ(received.fire, sent.fire) << flag;
     EXPECT_EQ(received.reload, sent.reload) << flag;
   }
+}
+
+TEST(WireTest, AnExhaustedBodyReachesTheClientStillExhausted) {
+  BodyState exhausted = Body(1.0F, Stance::kStanding);
+  exhausted.stamina = 0.1F;
+  exhausted.exhausted = true;
+  const augusta::replication::Update sent{
+      .recipient = augusta::simulation::EntityId{1},
+      .tick = 7,
+      .acknowledged_sequence = 3,
+      .bodies = {{.entity = augusta::simulation::EntityId{1}, .body = exhausted},
+                 {.entity = augusta::simulation::EntityId{2}, .body = Body(2.0F, Stance::kProne)}},
+  };
+
+  const augusta::harness::AuthoritativeState received =
+      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+
+  ASSERT_EQ(received.bodies.size(), 2U);
+  EXPECT_TRUE(received.bodies[0].body.exhausted);
+  EXPECT_FALSE(received.bodies[1].body.exhausted);
 }
 
 TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {

@@ -61,6 +61,7 @@ physics::BodyState FromWire(const protocol::BodyStateWire& body) {
   result.velocity = body.velocity;
   result.stance = FromWire(body.stance);
   result.stamina = body.stamina;
+  result.exhausted = (body.flags & protocol::BodyStateWire::kExhausted) != 0;
   return result;
 }
 

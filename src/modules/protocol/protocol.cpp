@@ -70,10 +70,17 @@ void WriteCommand(BytesWire& out, const CommandWire& command) {
                                          (static_cast<std::uint8_t>(command.desired_stance) << kCommandStanceShift)));
 }
 
+// A body's stance takes the low two bits of its stance byte and its flags the
+// one above them; the top five are always 0.
+constexpr std::uint8_t kBodyStanceMask = 0x03U;
+constexpr std::uint8_t kBodyFlagsMask = BodyStateWire::kExhausted;
+constexpr unsigned kBodyFlagsShift = 2U;
+
 void WriteBodyState(BytesWire& out, const BodyStateWire& body) {
+  assert((body.flags & ~kBodyFlagsMask) == 0);
   WriteVec3(out, body.position, math::kPositionGrid);
   WriteVec3(out, body.velocity, math::kVelocityGrid);
-  WriteU8(out, static_cast<std::uint8_t>(body.stance));
+  WriteU8(out, static_cast<std::uint8_t>(static_cast<std::uint8_t>(body.stance) | (body.flags << kBodyFlagsShift)));
   WriteSteps(out, body.stamina, math::kStaminaGrid);
 }
 
@@ -143,6 +150,15 @@ class Reader {
       return first;
     }
     return static_cast<Enum>(value);
+  }
+
+  // value as flags of which only the bits of mask may be set.
+  std::uint8_t ToFlags(std::uint8_t value, std::uint8_t mask) {
+    if ((value & ~mask) != 0) {
+      Fail(DecodeError::kInvalidEnum);
+      return 0;
+    }
+    return value;
   }
 
   // A count of grid's step, as the value it stands for. Every count a grid's
@@ -233,7 +249,10 @@ BodyStateWire ReadBodyState(Reader& reader) {
   BodyStateWire body;
   body.position = reader.ReadVec3(math::kPositionGrid);
   body.velocity = reader.ReadVec3(math::kVelocityGrid);
-  body.stance = reader.ReadEnum(StanceWire::kStanding, StanceWire::kProne);
+  const std::uint8_t packed = reader.ReadU8();
+  body.stance =
+      reader.ToEnum(static_cast<std::uint8_t>(packed & kBodyStanceMask), StanceWire::kStanding, StanceWire::kProne);
+  body.flags = reader.ToFlags(static_cast<std::uint8_t>(packed >> kBodyFlagsShift), kBodyFlagsMask);
   body.stamina = reader.ReadSteps(math::kStaminaGrid);
   return body;
 }

@@ -12,7 +12,7 @@ The server's state always describes an earlier moment than the client's current 
 
 - **Sequence numbers tie the two together.** Every command the client sends carries a sequence number (ADR-0038), and every state the server sends carries the highest sequence of the recipient's that the server has processed. That state is the server's body *after* that command.
 - **The client keeps a short history** (`prediction::History`) of each command it sent and the body it predicted after it, keyed by sequence. On an update it looks up the entry for the acknowledged sequence, which is what the server's state is compared with (the same command on both sides), and discards it and everything older.
-- **An acknowledgement that agrees with the prediction changes nothing.** If the server's body is within 1 mm of the one predicted after the same command, with the same stance and a stamina within 0.001, no restore or replay happens: an error that small is not worth a jump. It cannot pile up, since the next acknowledgement is compared with the server's state again, not with this one, and the first to be off by more than the tolerance is corrected in full.
+- **An acknowledgement that agrees with the prediction changes nothing.** If the server's body is within 1 mm of the one predicted after the same command, with the same stance, the same exhausted flag and a stamina within 0.001, no restore or replay happens: an error that small is not worth a jump. It cannot pile up, since the next acknowledgement is compared with the server's state again, not with this one, and the first to be off by more than the tolerance is corrected in full.
 - **An acknowledgement is acted on once.** The server repeats the same acknowledged sequence while it waits for input, with a state that has moved on; that entry is already gone from the history, so nothing is restored or replayed. An acknowledgement for a command the history no longer holds is ignored the same way.
 
 ## The replay
@@ -23,6 +23,8 @@ The server's state always describes an earlier moment than the client's current 
 - The cost is one `Step` per unacknowledged command per acknowledgement: 6 to 10 at the round trip NFR-02 assumes.
 
 Stance, sprint and stamina come out of the replay like everything else: a stance the server refused stays refused, and a sprint stamina no longer allows is walked.
+
+Stance and the exhausted flag are compared exactly, not within a tolerance, because each changes what the next commands do. An exhausted body walks whatever sprint its commands hold until its stamina is back above the forced-walk threshold (US-05), and that is not something the stamina alone tells: two bodies with the same stamina below the threshold, one exhausted and one not, differ in that the first walks and the second sprints. So the flag is part of the body the server sends (ADR-0038) and of what `physics::World::Restore` puts back.
 
 ## Hiding the jump
 
