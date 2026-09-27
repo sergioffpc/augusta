@@ -12,9 +12,13 @@
 // external solver). A semi-implicit Euler integrator is enough for v1;
 // nothing in REQUIREMENTS.md asks for aerodynamic drag/wind modeling.
 //
-// Exclusively server-side (ADR-0024): the client never simulates a
-// bullet's outcome, only predicts local fire feedback (WeaponHandling),
-// so this isn't part of Shared Core despite being physics-adjacent.
+// The trajectory math is shared (ADR-0024, ADR-0044): the server
+// advances every bullet with it, and each client's presentation draws
+// every announced Shot's tracer and Map impact with it, a visual only.
+// Deciding a bullet's outcome (which player it hits, where, for what
+// damage) stays server-side: the client never simulates it, only
+// predicts local fire feedback (WeaponHandling) and shows hits the
+// server confirms.
 //
 // World::Step follows the same per-handle, called-once-per-tick shape as
 // physics::World::Step, since bullets are ECS entities too
