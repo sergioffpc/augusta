@@ -291,6 +291,7 @@ failure it prints the reason to stderr and exits `1`:
 | `src/pack/assets_root.py` | Assets-root inference shared by the entry points |
 | `cpp/` | Standalone CMake/vcpkg project for the two native modules. It builds straight into `src/pack/`. |
 | `composer/` | Playback file that scaffolds the Augusta USD Composer app, and `augustap-composer.ps1` (launches it) |
+| `tests/` | pytest suite and the USD fixtures it cooks (see Running the tests) |
 | `examples/authoring/` | A committed `<assets-root>/authoring/` sample the bootstrap seeds into a fresh assets root: `maps/augusta/` (ADR-0015), `characters/player/` (ADR-0040), `scenarios/augusta/` composing both (ADR-0041) |
 | `scripts/bootstrap-windows.ps1` | Builds the assets root |
 
@@ -307,3 +308,22 @@ cmake --build tools\pack\cpp\build\x64-windows
 
 `PYTHON_EXECUTABLE` must point at the venv so the extension's ABI matches the
 interpreter that imports it.
+
+## Running the tests
+
+The tests live in [tests/](tests/) and run with pytest in a separate
+environment `uv` creates at `tools/pack/.venv`, not the assets root's venv.
+They need the native modules built into `src/pack/` (above) against that
+environment's interpreter:
+
+```powershell
+cd tools\pack
+uv sync
+cmake --preset windows -S cpp "-DPYTHON_EXECUTABLE=$PWD\.venv\Scripts\python.exe"
+cmake --build cpp\build\x64-windows
+uv run pytest
+```
+
+The USD stages the cook tests read, including the malformed ones, are in
+[tests/fixtures/](tests/fixtures/); the end-to-end test cooks
+[examples/authoring/](examples/authoring/) with a throwaway key.
