@@ -40,7 +40,7 @@ the decisions already made in ARCHITECTURE.md:
 - **Provider:** GitHub Actions — native Windows and Linux runners match
   the client/server platform split exactly.
 - **Trigger:** `push` to `main`/`develop`, and `pull_request` targeting
-  either. A `changes` job diffs against the base commit first and skips
+  either; a separate nightly workflow runs on `develop` (ADR-0013). A `changes` job diffs against the base commit first and skips
   build/test/lint entirely when nothing under `src/`, `tests/`,
   `tools/pack/examples/` (the example scenario a test loads),
   `tools/pack/cpp/` (formatted by the `format` job, though CI doesn't
@@ -54,12 +54,13 @@ the decisions already made in ARCHITECTURE.md:
   1. `clang-format` check, alone in its own fast job — gates everything
      below (`needs:`), so a formatting slip fails in seconds instead of
      after a full Windows + Linux + sanitizers build
-  2. Build + unit test the client on a Windows runner
-  3. Build + unit test the server on a Linux runner, plus `clang-tidy`
-     (Google style checks profile)
-  4. ASan + UBSan test build, Linux only, and only for `pull_request`
-     runs — skipped on the `push` that lands after merge, since the PR
-     already validated it
+  2. Build + test the client on a Windows runner (MSVC)
+  3. Build + test the server on a Linux runner (clang, ADR-0008), plus
+     `clang-tidy` (Google style checks profile) and pytest for the asset
+     cooker
+  4. ASan + UBSan test build and a short fuzzing run per target (both
+     Linux only), only for `pull_request` runs — skipped on the `push`
+     that lands after merge, since the PR already validated it
   - Dependency restore: `vcpkg install` (manifest mode) before the build
     step, both runners. Binary cache via a GitHub Packages NuGet feed
     (vcpkg's native GitHub-Actions-cache backend was removed upstream in
@@ -69,12 +70,17 @@ the decisions already made in ARCHITECTURE.md:
      throwaway Ed25519 keypair for this run, cook the test assets, sign
      with the ephemeral key, and verify the signed pack loads correctly
      end to end — the real release private key never touches CI
-- **Not in CI:** TSan (expensive/noisy — run manually/periodically
-  instead) and Tracy (interactive profiling tool, not a CI check).
+- **Nightly** (on `develop`): long fuzzing runs, TSan, property-based
+  tests at a high case count, and a `llvm-cov` coverage report; a
+  failure opens or updates a `nightly-failure` issue (ADR-0013).
+- **Not in CI:** Tracy (interactive profiling tool, not a CI check),
+  micro-benchmarks (run by hand), and NFR-01's tick rate under load
+  (checked by hand on the cluster before a release, ADR-0013).
 - **Releases:** a separate workflow, triggered only on `v*` tags, builds
-  Release-config client/server binaries and attaches them to a GitHub
-  Release — not run on every push, so cutting a release is a deliberate
-  tag rather than automatic.
+  Release-config client/server binaries, runs the tests and the asset
+  pipeline check against them, and attaches them to a GitHub Release —
+  not run on every push, so cutting a release is a deliberate tag rather
+  than automatic.
 - **Artifacts/releases:** out of scope for now — CI validates
   build+test+lint only. A publishing pipeline gets built when there's an
   actual release to make.
@@ -200,18 +206,21 @@ pipeline).
   a push; CI's `format` job stays as the actual gate, since the hook
   can be skipped (`--no-verify`), missing, or running a different
   local `clang-format` version than CI's. `clang-tidy` stays out of the
-  hook — slower, and needs a full `compile_commands.json`, a poor fit for
-  a commit-time hook — but `make lint` runs both checks as CI does, and
-  `make tidy` alone runs `clang-tidy`.
+  commit hook — slower, and needs a full `compile_commands.json`, a poor
+  fit for a commit-time hook — and runs instead as a `pre-push` hook on
+  the changed `src/*.cpp` files, since it catches what MSVC doesn't and CI
+  would; `make lint` runs both checks as CI does, and `make tidy` alone
+  runs `clang-tidy`.
 - Strict warnings-as-errors in CI (see CI/CD above).
-- ASan/UBSan in CI; TSan run manually/periodically given multithreading
-  (ADR-0005).
+- ASan/UBSan and fuzzing in CI; TSan nightly given multithreading
+  (ADR-0005, ADR-0013).
 - **Commit messages:** Conventional Commits format, enforced locally via
   a custom `commit-msg` git hook (a small regex-matching script) — no
   Node.js/`commitlint` dependency, consistent with keeping the toolchain
   to what the project already uses (C++, Lua, Python for asset tooling).
-- Testing: GoogleTest (unit) + Google Benchmark (micro-benchmarks),
-  per ADR-0013.
+- Testing: GoogleTest, RapidCheck (property-based), libFuzzer, pytest
+  (asset cooker), and Google Benchmark (micro-benchmarks); which kind runs
+  at which stage is ADR-0013.
 - No formal code review process — solo project; CI's build, test, lint,
   and sanitizer gates are the primary quality gate.
 
