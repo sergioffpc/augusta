@@ -24,6 +24,7 @@ jobs:
     outputs:
       run_build: ${{ steps.filter.outputs.run_build }}
       run_container: ${{ steps.filter.outputs.run_container }}
+      run_pack: ${{ steps.filter.outputs.run_pack }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -40,6 +41,7 @@ jobs:
           if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
             echo "run_container=true" >> "$GITHUB_OUTPUT"
+            echo "run_pack=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -57,6 +59,16 @@ jobs:
             echo "run_container=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_container=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # The asset cooker (tools/pack): its own tests, and the contract
+          # check below, which also runs on run_build since the C++ side of
+          # the pack format lives there.
+          if echo "$changed" \
+              | grep -qE '^(tools/pack/|\.github/workflows/ci\.yml$)'; then
+            echo "run_pack=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_pack=false" >> "$GITHUB_OUTPUT"
           fi
 
   format:
@@ -201,6 +213,129 @@ jobs:
 
       - name: Test
         run: ctest --preset linux
+
+  pack:
+    needs: changes
+    if: needs.changes.outputs.run_pack == 'true' || needs.changes.outputs.run_build == 'true'
+    # Windows: the cooker's native modules wrap DirectXTex (ADR-0017), and
+    # the cooker only ever runs on Windows (tools/pack/README.md).
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Fetch vcpkg
+        # Only vcpkg: the native modules build against no other submodule,
+        # and third_party/falcor is large.
+        run: git submodule update --init --depth 1 third_party/vcpkg
+
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+
+      - name: Install Ninja
+        run: choco install ninja -y
+        shell: pwsh
+
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Configure vcpkg NuGet cache
+        shell: pwsh
+        run: |
+          $nugetPath = & ".\third_party\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
+          & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
+          & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: tools/pack/uv.lock
+
+      - name: Install the cooker
+        working-directory: tools/pack
+        run: uv sync --locked
+
+      - name: Build the native modules
+        # Into tools/pack/src/pack, against the venv's own interpreter, as
+        # tools/pack/scripts/bootstrap-windows.ps1 does.
+        shell: pwsh
+        run: |
+          cmake --preset windows -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$PWD/tools/pack/.venv/Scripts/python.exe"
+          cmake --build tools/pack/cpp/build/x64-windows
+
+      - name: Test (pytest)
+        working-directory: tools/pack
+        run: uv run pytest
+
+      - name: Cook the example scenario
+        # With a throwaway key: the release key never reaches CI. Its
+        # private half is deleted before the packs are handed on.
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP "cooked-packs"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Push-Location tools\pack
+          uv run augustap-keygen (Join-Path $out "augusta")
+          uv run augustap augusta --assets-root examples --signing-key (Join-Path $out "augusta.key") --client-output-pack (Join-Path $out "client.pack") --server-output-pack (Join-Path $out "server.pack")
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+          Remove-Item (Join-Path $out "augusta.key")
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cooked-packs
+          path: ${{ runner.temp }}/cooked-packs
+          retention-days: 1
+
+  pack-contract:
+    # The C++ half of the pack format's contract (ADR-0013): loads the packs
+    # the Python cooker wrote in the pack job. Linux, since only
+    # augusta_assets is needed and a Windows configure pulls in Falcor.
+    needs: [changes, pack]
+    runs-on: ubuntu-26.04
+    # See build-server for why this is a files-based cache.
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      - name: Install build tools
+        # See build-server: vcpkg's libsodium port needs the autotools.
+        run: sudo apt-get update && sudo apt-get install -y ninja-build autoconf autoconf-archive automake libtool
+
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .vcpkg-bincache
+          key: vcpkg-bincache-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-bincache-
+
+      - name: Bootstrap vcpkg
+        run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: Configure
+        run: cmake --preset linux
+
+      - name: Build
+        run: cmake --build --preset linux --target augusta_cooked_pack_tests
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: cooked-packs
+          path: cooked-packs
+
+      - name: Load the cooked packs
+        # The test skips itself without AUGUSTA_COOKED_PACKS; here a skip
+        # would mean the check silently didn't run, so it fails instead.
+        run: |
+          AUGUSTA_COOKED_PACKS="$PWD/cooked-packs" ./build/x64-linux/tests/augusta_cooked_pack_tests | tee cooked-pack-tests.log
+          ! grep -q SKIPPED cooked-pack-tests.log
 
   sanitizers:
     needs: [changes, format]

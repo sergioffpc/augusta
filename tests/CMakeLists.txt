@@ -141,6 +141,13 @@ target_link_libraries(augusta_assets_tests PRIVATE augusta_assets GTest::gtest G
 target_include_directories(augusta_assets_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
 gtest_discover_tests(augusta_assets_tests)
 
+# Loads the packs the Python cooker wrote, when CI points AUGUSTA_COOKED_PACKS
+# at them (ADR-0013); skipped otherwise. Its own target so CI's contract job
+# builds nothing else.
+add_executable(augusta_cooked_pack_tests cooked_pack_test.cpp)
+target_link_libraries(augusta_cooked_pack_tests PRIVATE augusta_assets GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_cooked_pack_tests)
+
 # The renderer is Windows-only (Falcor, ADR-0009), but which region of its
 # per-frame upload buffers a frame uses is a Falcor-free header, private to the
 # module, so it is tested everywhere through a private include path.

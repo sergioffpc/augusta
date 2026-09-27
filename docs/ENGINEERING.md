@@ -65,10 +65,13 @@ the decisions already made in ARCHITECTURE.md:
     (vcpkg's native GitHub-Actions-cache backend was removed upstream in
     2026 — a NuGet feed is now the supported caching path).
   5. Compile with a strict warning set, treated as errors
-  6. Asset pipeline check: build the asset cooker, generate a fresh
-     throwaway Ed25519 keypair for this run, cook the test assets, sign
-     with the ephemeral key, and verify the signed pack loads correctly
-     end to end — the real release private key never touches CI
+  6. Asset pipeline check, when the cooker (`tools/pack/`) or the build
+     changed: on a Windows runner, build the cooker's native modules, run
+     its pytest suite, generate a fresh throwaway Ed25519 keypair for this
+     run, and cook and sign the example scenario with it; then, on a Linux
+     runner, load both packs through `augusta_assets` — the contract between
+     the Python writer and the C++ reader of the pack format. The real
+     release private key never touches CI
 - **Not in CI:** TSan (expensive/noisy — run manually/periodically
   instead) and Tracy (interactive profiling tool, not a CI check).
 - **Releases:** a separate workflow, triggered only on `v*` tags, builds
