@@ -189,6 +189,8 @@ Artifact:    Ballistics module
 Response:    Trajectory computation produces identical results
 Measure:     Client and server compute matching trajectories within a defined tolerance
 ```
+The tolerance is the one the golden-trajectory test defines, on the Windows
+and Linux runners both (ADR-0013).
 
 ### NFR-04: Platform Targeting
 ```
