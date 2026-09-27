@@ -9,6 +9,7 @@ sudo rm -f /etc/apt/sources.list.d/*llvm*.list
 sudo apt-get update
 sudo apt-get install -y \
   build-essential \
+  clang \
   make \
   cmake \
   ninja-build \

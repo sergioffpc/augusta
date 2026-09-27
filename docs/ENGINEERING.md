@@ -154,7 +154,7 @@ pipeline).
   Windows 11 + WSL2 version; confirm with `wsl --version`.
 - **Server / shared core (Linux, via WSL2):** develop and build directly
   inside WSL2, accessing the repo via `/mnt/c/...`. No Docker container —
-  a `scripts/bootstrap-wsl.sh` setup script installs CMake, Ninja,
+  a `scripts/bootstrap-wsl.sh` setup script installs clang (ADR-0008), CMake, Ninja,
   vcpkg, clang-tidy, clang-format, gdb, GitHub CLI, kubectl, and helm
   directly into the WSL environment. The cross-filesystem access cost
   (`/mnt/c`) is accepted here, since this side has the lighter build

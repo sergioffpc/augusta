@@ -29,11 +29,13 @@
     },
     {
       "name": "linux",
-      "displayName": "Linux (Ninja)",
+      "displayName": "Linux (Ninja + clang)",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/x64-linux",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "VCPKG_INSTALL_OPTIONS": "--x-packages-root=$env{HOME}/.cache/augusta-vcpkg/packages;--x-buildtrees-root=$env{HOME}/.cache/augusta-vcpkg/buildtrees;--downloads-root=$env{HOME}/.cache/augusta-vcpkg/downloads"
       },
@@ -45,7 +47,7 @@
     },
     {
       "name": "linux-debug",
-      "displayName": "Linux Debug (Ninja)",
+      "displayName": "Linux Debug (Ninja + clang)",
       "inherits": "linux",
       "binaryDir": "${sourceDir}/build/x64-linux-debug",
       "cacheVariables": {
@@ -54,7 +56,7 @@
     },
     {
       "name": "linux-san",
-      "displayName": "Linux (ASan + UBSan)",
+      "displayName": "Linux (clang, ASan + UBSan)",
       "inherits": "linux",
       "binaryDir": "${sourceDir}/build/x64-linux-san",
       "cacheVariables": {
