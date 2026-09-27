@@ -43,10 +43,11 @@ how noisy its result is.
 ## Kinds
 
 - **Non-functional requirements as integration tests.** NFR-02, NFR-05, and
-  NFR-06 are deterministic: the Harness lets a test drive a real server Host
-  and real client sessions, ticking both by hand in one process, so latency
-  is simulated in ticks and delayed packets, and a full round with 8 players
-  needs no wall clock. They run wherever `ctest` does. NFR-01 alone is about
+  NFR-06 need no dedicated hardware: the Harness lets a test drive a real
+  server Host and real client sessions in one process, ticking both by hand,
+  with the transport's own simulated latency and loss, so a full round with
+  8 players and a correction under 100 ms of latency run on any machine.
+  They run wherever `ctest` does. NFR-01 alone is about
   wall-clock time and cannot be measured on a shared CI runner, so it is
   checked by hand on the r630 cluster before each release; once Flux runs the
   `develop` release (ADR-0026), it becomes a CronJob of 8 Harness clients in
