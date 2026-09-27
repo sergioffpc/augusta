@@ -51,10 +51,15 @@ struct ServerRuntime::Impl {
             std::move(map)) {}
 
   // Network I/O thread body (ADR-0005): pumps the connection until running is
-  // cleared by ThreadJoiner or Stop().
+  // cleared by ThreadJoiner or Stop(), waiting kNetworkRoundWait between
+  // rounds rather than spinning a core. The transport has no wait on incoming
+  // work, so that wait bounds how late a received message is handled, and how
+  // long stopping takes.
   void NetworkThreadMain() {
+    constexpr auto kNetworkRoundWait = std::chrono::milliseconds(1);
     while (running.load(std::memory_order_relaxed)) {
       host.PumpNetwork();
+      std::this_thread::sleep_for(kNetworkRoundWait);
     }
   }
 };
