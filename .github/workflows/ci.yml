@@ -61,10 +61,10 @@ jobs:
             echo "run_container=false" >> "$GITHUB_OUTPUT"
           fi
 
-          # The offline tools (tools/): build-tools, and build-server, which
-          # loads what they write (the C++ side of that lives there).
+          # The offline tools (tools/), and the golden output of theirs the
+          # runtime's tests load, which build-tools checks they still write.
           if echo "$changed" \
-              | grep -qE '^(tools/|\.github/workflows/ci\.yml$)'; then
+              | grep -qE '^(tools/|tests/fixtures/example-packs/|\.github/workflows/ci\.yml$)'; then
             echo "run_tools=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_tools=false" >> "$GITHUB_OUTPUT"
@@ -148,14 +148,8 @@ jobs:
         run: ctest --preset windows
 
   build-server:
-    needs: [changes, format, build-tools]
-    # Also on a tools-only change: it loads what build-tools had each tool
-    # write, the C++ half of each tool's contract (ADR-0013). always() so
-    # the format job a tools-only change skips doesn't skip this one too.
-    if: |
-      always() &&
-      (needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_tools == 'true') &&
-      needs.format.result != 'failure' && needs.format.result != 'cancelled'
+    needs: [changes, format]
+    if: needs.changes.outputs.run_build == 'true'
     # Pinned rather than ubuntu-latest - see build-client. This also makes
     # clang-tidy's version stable without needing to pull it from
     # apt.llvm.org (a stable runner image already gives a stable distro
@@ -174,14 +168,6 @@ jobs:
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
-      - name: Require build-tools
-        # Fails rather than skips: a skipped required check counts as
-        # passed, and build-tools itself is not one.
-        if: needs.build-tools.result != 'success'
-        run: |
-          echo "build-tools ended with '${{ needs.build-tools.result }}': nothing for the contract check to load."
-          exit 1
-
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
@@ -224,34 +210,17 @@ jobs:
       - name: Build
         run: cmake --build --preset linux
 
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: cooked-packs
-          path: cooked-packs
-
       - name: Test
-        env:
-          AUGUSTA_COOKED_PACKS: ${{ github.workspace }}/cooked-packs
         run: ctest --preset linux
-
-      - name: Check the cooked packs were loaded
-        # The cooked pack tests skip themselves without AUGUSTA_COOKED_PACKS,
-        # and ctest counts a skip as a pass; here a skip would mean the
-        # contract check silently didn't run.
-        env:
-          AUGUSTA_COOKED_PACKS: ${{ github.workspace }}/cooked-packs
-        run: |
-          ./build/x64-linux/tests/augusta_cooked_pack_tests | tee cooked-pack-tests.log
-          ! grep -q SKIPPED cooked-pack-tests.log
 
   build-tools:
     needs: changes
-    if: needs.changes.outputs.run_tools == 'true' || needs.changes.outputs.run_build == 'true'
-    # Builds and tests the offline tools (tools/), and has each produce what
-    # build-server checks the runtime can read. A new tool adds steps
-    # here, not a job. Windows: the asset cooker's native modules wrap
-    # DirectXTex (ADR-0017), and the cooker only ever runs on Windows
-    # (tools/pack/README.md).
+    if: needs.changes.outputs.run_tools == 'true'
+    # Builds and tests the offline tools (tools/), including that each still
+    # writes the golden output the runtime's tests load (ADR-0013). A new
+    # tool adds steps here, not a job. Windows: the asset cooker's native
+    # modules wrap DirectXTex (ADR-0017), and the cooker only ever runs on
+    # Windows (tools/pack/README.md).
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -300,26 +269,6 @@ jobs:
       - name: Test (pytest)
         working-directory: tools/pack
         run: uv run pytest
-
-      - name: Cook the example scenario
-        # With a throwaway key: the release key never reaches CI. Its
-        # private half is deleted before the packs are handed on.
-        shell: pwsh
-        run: |
-          $out = Join-Path $env:RUNNER_TEMP "cooked-packs"
-          New-Item -ItemType Directory -Force $out | Out-Null
-          Push-Location tools\pack
-          uv run augustap-keygen (Join-Path $out "augusta")
-          uv run augustap augusta --assets-root examples --signing-key (Join-Path $out "augusta.key") --client-output-pack (Join-Path $out "client.pack") --server-output-pack (Join-Path $out "server.pack")
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Pop-Location
-          Remove-Item (Join-Path $out "augusta.key")
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: cooked-packs
-          path: ${{ runner.temp }}/cooked-packs
-          retention-days: 1
 
   sanitizers:
     needs: [changes, format]

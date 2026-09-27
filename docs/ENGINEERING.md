@@ -65,13 +65,14 @@ the decisions already made in ARCHITECTURE.md:
     (vcpkg's native GitHub-Actions-cache backend was removed upstream in
     2026 — a NuGet feed is now the supported caching path).
   5. Compile with a strict warning set, treated as errors
-  6. Asset pipeline check, when the cooker (`tools/pack/`) or the build
-     changed: on a Windows runner, build the cooker's native modules, run
-     its pytest suite, generate a fresh throwaway Ed25519 keypair for this
-     run, and cook and sign the example scenario with it; then, on a Linux
-     runner, load both packs through `augusta_assets` — the contract between
-     the Python writer and the C++ reader of the pack format. The real
-     release private key never touches CI
+  6. `build-tools`, when `tools/` changed: on a Windows runner, build the
+     asset cooker's native modules and run its pytest suite, which also
+     requires that cooking the example scenario still gives the golden
+     packs in `tests/fixtures/example-packs/` byte for byte; the C++ tests
+     in 2 and 3 load those same packs — the contract between the Python
+     writer and the C++ reader of the pack format (ADR-0013). The golden
+     packs are signed with a committed test key; the real release private
+     key never touches CI
 - **Nightly** (on `develop`): long fuzzing runs, TSan, property-based
   tests at a high case count, and a `llvm-cov` coverage report; a
   failure opens or updates a `nightly-failure` issue (ADR-0013).
