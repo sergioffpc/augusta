@@ -47,9 +47,11 @@ enum class Phase {
   // Mechanism. Slides the local player out of the jumps a reconciliation
   // replay makes (Correction, ADR-0004). For every other player, buffers the
   // newest reported body (World::RunFrame's snapshot parameter) per remote
-  // entity and renders each kInterpolationDelay behind the newest update,
-  // interpolated between the two surrounding updates (RemoteInterpolator,
-  // interpolation.h) - smooth motion independent of render frame rate. An
+  // entity, placed on the server's timeline by its tick, and renders each
+  // kInterpolationDelay behind a render-side clock aligned to that timeline,
+  // interpolated between the two surrounding updates (ServerClock and
+  // RemoteInterpolator, interpolation.h) - smooth motion independent of render
+  // frame rate and of when updates arrive. An
   // entity no longer in the snapshot is no longer shown, and neither is anyone
   // while there is no snapshot (outside a match). Each is drawn as its character
   // (World::RunFrame's characters parameter).
@@ -104,6 +106,10 @@ struct DynamicBody {
 struct WorldSnapshot {
   /// The server tick the bodies are from.
   std::uint32_t tick = 0;
+  /// The server's tick duration, in seconds (its tick rate's inverse,
+  /// ADR-0039): tick × tick_duration is when the bodies are from on the
+  /// server's timeline.
+  double tick_duration = 0.0;
   std::vector<DynamicBody> bodies;
 };
 
