@@ -142,8 +142,7 @@ target_include_directories(augusta_assets_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/
 gtest_discover_tests(augusta_assets_tests)
 
 # Loads the packs the Python cooker wrote, when CI points AUGUSTA_COOKED_PACKS
-# at them (ADR-0013); skipped otherwise. Its own target so CI's contract job
-# builds nothing else.
+# at them (ADR-0013); skipped otherwise.
 add_executable(augusta_cooked_pack_tests cooked_pack_test.cpp)
 target_link_libraries(augusta_cooked_pack_tests PRIVATE augusta_assets GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_cooked_pack_tests)

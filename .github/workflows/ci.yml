@@ -24,7 +24,7 @@ jobs:
     outputs:
       run_build: ${{ steps.filter.outputs.run_build }}
       run_container: ${{ steps.filter.outputs.run_container }}
-      run_pack: ${{ steps.filter.outputs.run_pack }}
+      run_tools: ${{ steps.filter.outputs.run_tools }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -41,7 +41,7 @@ jobs:
           if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
             echo "run_container=true" >> "$GITHUB_OUTPUT"
-            echo "run_pack=true" >> "$GITHUB_OUTPUT"
+            echo "run_tools=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -61,14 +61,13 @@ jobs:
             echo "run_container=false" >> "$GITHUB_OUTPUT"
           fi
 
-          # The asset cooker (tools/pack): its own tests, and the contract
-          # check below, which also runs on run_build since the C++ side of
-          # the pack format lives there.
+          # The offline tools (tools/): build-tools, and build-server, which
+          # loads what they write (the C++ side of that lives there).
           if echo "$changed" \
-              | grep -qE '^(tools/pack/|\.github/workflows/ci\.yml$)'; then
-            echo "run_pack=true" >> "$GITHUB_OUTPUT"
+              | grep -qE '^(tools/|\.github/workflows/ci\.yml$)'; then
+            echo "run_tools=true" >> "$GITHUB_OUTPUT"
           else
-            echo "run_pack=false" >> "$GITHUB_OUTPUT"
+            echo "run_tools=false" >> "$GITHUB_OUTPUT"
           fi
 
   format:
@@ -149,8 +148,14 @@ jobs:
         run: ctest --preset windows
 
   build-server:
-    needs: [changes, format]
-    if: needs.changes.outputs.run_build == 'true'
+    needs: [changes, format, build-tools]
+    # Also on a tools-only change: it loads what build-tools had each tool
+    # write, the C++ half of each tool's contract (ADR-0013). always() so
+    # the format job a tools-only change skips doesn't skip this one too.
+    if: |
+      always() &&
+      (needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_tools == 'true') &&
+      needs.format.result != 'failure' && needs.format.result != 'cancelled'
     # Pinned rather than ubuntu-latest - see build-client. This also makes
     # clang-tidy's version stable without needing to pull it from
     # apt.llvm.org (a stable runner image already gives a stable distro
@@ -169,6 +174,14 @@ jobs:
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
+      - name: Require build-tools
+        # Fails rather than skips: a skipped required check counts as
+        # passed, and build-tools itself is not one.
+        if: needs.build-tools.result != 'success'
+        run: |
+          echo "build-tools ended with '${{ needs.build-tools.result }}': nothing for the contract check to load."
+          exit 1
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
@@ -211,14 +224,34 @@ jobs:
       - name: Build
         run: cmake --build --preset linux
 
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: cooked-packs
+          path: cooked-packs
+
       - name: Test
+        env:
+          AUGUSTA_COOKED_PACKS: ${{ github.workspace }}/cooked-packs
         run: ctest --preset linux
 
-  pack:
+      - name: Check the cooked packs were loaded
+        # The cooked pack tests skip themselves without AUGUSTA_COOKED_PACKS,
+        # and ctest counts a skip as a pass; here a skip would mean the
+        # contract check silently didn't run.
+        env:
+          AUGUSTA_COOKED_PACKS: ${{ github.workspace }}/cooked-packs
+        run: |
+          ./build/x64-linux/tests/augusta_cooked_pack_tests | tee cooked-pack-tests.log
+          ! grep -q SKIPPED cooked-pack-tests.log
+
+  build-tools:
     needs: changes
-    if: needs.changes.outputs.run_pack == 'true' || needs.changes.outputs.run_build == 'true'
-    # Windows: the cooker's native modules wrap DirectXTex (ADR-0017), and
-    # the cooker only ever runs on Windows (tools/pack/README.md).
+    if: needs.changes.outputs.run_tools == 'true' || needs.changes.outputs.run_build == 'true'
+    # Builds and tests the offline tools (tools/), and has each produce what
+    # build-server checks the runtime can read. A new tool adds steps
+    # here, not a job. Windows: the asset cooker's native modules wrap
+    # DirectXTex (ADR-0017), and the cooker only ever runs on Windows
+    # (tools/pack/README.md).
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -287,55 +320,6 @@ jobs:
           name: cooked-packs
           path: ${{ runner.temp }}/cooked-packs
           retention-days: 1
-
-  pack-contract:
-    # The C++ half of the pack format's contract (ADR-0013): loads the packs
-    # the Python cooker wrote in the pack job. Linux, since only
-    # augusta_assets is needed and a Windows configure pulls in Falcor.
-    needs: [changes, pack]
-    runs-on: ubuntu-26.04
-    # See build-server for why this is a files-based cache.
-    env:
-      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
-
-      - name: Install build tools
-        # See build-server: vcpkg's libsodium port needs the autotools.
-        run: sudo apt-get update && sudo apt-get install -y ninja-build autoconf autoconf-archive automake libtool
-
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-
-      - name: Cache vcpkg binaries
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .vcpkg-bincache
-          key: vcpkg-bincache-${{ hashFiles('vcpkg.json') }}
-          restore-keys: |
-            vcpkg-bincache-
-
-      - name: Bootstrap vcpkg
-        run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-
-      - name: Configure
-        run: cmake --preset linux
-
-      - name: Build
-        run: cmake --build --preset linux --target augusta_cooked_pack_tests
-
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: cooked-packs
-          path: cooked-packs
-
-      - name: Load the cooked packs
-        # The test skips itself without AUGUSTA_COOKED_PACKS; here a skip
-        # would mean the check silently didn't run, so it fails instead.
-        run: |
-          AUGUSTA_COOKED_PACKS="$PWD/cooked-packs" ./build/x64-linux/tests/augusta_cooked_pack_tests | tee cooked-pack-tests.log
-          ! grep -q SKIPPED cooked-pack-tests.log
 
   sanitizers:
     needs: [changes, format]
