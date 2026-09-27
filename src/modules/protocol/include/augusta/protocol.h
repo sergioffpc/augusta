@@ -96,10 +96,15 @@ enum class StanceWire : std::uint8_t {
 
 /// One player's body as the server simulated it.
 struct BodyStateWire {
+  /// The bits of flags: the body ran its stamina out and has not yet recovered.
+  static constexpr std::uint8_t kExhausted = 1U << 0U;
+
   math::Vec3 position{};
   math::Vec3 velocity{};
   /// Remaining stamina, 0 to 1.
   float stamina = 1.0F;
+  /// Any of kExhausted; no other bit.
+  std::uint8_t flags = 0;
   StanceWire stance = StanceWire::kStanding;
 };
 

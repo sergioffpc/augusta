@@ -76,6 +76,7 @@ protocol::BodyStateWire ToWire(const physics::BodyState& body) {
       .position = body.position,
       .velocity = body.velocity,
       .stamina = body.stamina,
+      .flags = body.exhausted ? protocol::BodyStateWire::kExhausted : std::uint8_t{0},
       .stance = ToWire(body.stance),
   };
 }

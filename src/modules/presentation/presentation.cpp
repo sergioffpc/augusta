@@ -66,14 +66,14 @@ struct World::Impl {
   // OnCommit the same way local_offset feeds frame_state.local_position.
   Camera camera{};
 
-  // Every other player's buffered updates (see interpolation.h), and the
-  // running clock RunFrame's render frame deltas advance - independent of the
-  // server's own tick clock, since a render frame's delta_time is what this
-  // phase actually has. The tick of the last snapshot recorded into
-  // remote_interpolator, so a repeated snapshot (the network thread hasn't
-  // received a new tick since the last RunFrame call) is not recorded again.
+  // Every other player's buffered updates, on the server's timeline, and the
+  // render side's estimate of that timeline's current time, which render frame
+  // deltas advance (see interpolation.h). The tick of the last snapshot
+  // recorded into remote_interpolator, so a repeated snapshot (the network
+  // thread hasn't received a new tick since the last RunFrame call) is not
+  // recorded again.
   RemoteInterpolator remote_interpolator;
-  float render_clock = 0.0F;
+  ServerClock server_clock;
   std::optional<std::uint32_t> last_recorded_tick;
   std::vector<RemotePlayer> remote_players;
 
@@ -112,28 +112,40 @@ struct World::Impl {
     local_offset = correction.Update(latest_state.total_correction, delta_time);
     // TODO(sergioffpc): blend the last two prediction::State values.
 
-    render_clock += delta_time;
+    server_clock.Advance(delta_time);
     // Outside a match there is no one to show (ADR-0043).
     if (!snapshot.has_value()) {
       remote_interpolator.Sync({});
+      server_clock.Reset();
       last_recorded_tick.reset();
     } else if (!last_recorded_tick.has_value() || snapshot->tick > *last_recorded_tick) {
-      std::vector<EntityId> present;
-      present.reserve(snapshot->bodies.size());
-      for (const DynamicBody& body : snapshot->bodies) {
-        if (local_entity.has_value() && body.entity == *local_entity) {
-          continue;
-        }
-        present.push_back(body.entity);
-        remote_interpolator.Record(body.entity, render_clock, body.state);
-      }
-      remote_interpolator.Sync(present);
-      last_recorded_tick = snapshot->tick;
+      RecordSnapshot(*snapshot);
     }
-    remote_players = remote_interpolator.Sample(render_clock - kInterpolationDelay);
+    remote_players.clear();
+    if (const std::optional<double> now = server_clock.Now()) {
+      remote_players = remote_interpolator.Sample(*now - kInterpolationDelay);
+    }
     for (RemotePlayer& remote : remote_players) {
       remote.character = CharacterOf(remote.entity);
     }
+  }
+
+  // Records every body in world but the local player's at world's time on the
+  // server's timeline, and forgets whoever it no longer holds.
+  void RecordSnapshot(const WorldSnapshot& world) {
+    const double server_time = static_cast<double>(world.tick) * world.tick_duration;
+    server_clock.Observe(server_time);
+    std::vector<EntityId> present;
+    present.reserve(world.bodies.size());
+    for (const DynamicBody& body : world.bodies) {
+      if (local_entity.has_value() && body.entity == *local_entity) {
+        continue;
+      }
+      present.push_back(body.entity);
+      remote_interpolator.Record(body.entity, server_time, body.state);
+    }
+    remote_interpolator.Sync(present);
+    last_recorded_tick = world.tick;
   }
 
   // The character of the player whose body entity is, or 0 if none is.

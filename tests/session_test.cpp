@@ -1505,17 +1505,42 @@ class StaminaTest : public LoopbackMatch {
   Session* client_ = nullptr;
 };
 
-TEST_F(StaminaTest, SustainedSprintDrainsStaminaToTheThresholdAndSpeedDropsToWalking) {
+TEST_F(StaminaTest, SustainedSprintRunsStaminaOutAndTheServerForcesAWalkUntilItRecoversAboveTheThreshold) {
   const float fresh_speed = MeanSpeedOver(10, Moving(/*sprint=*/true));
+  // A second of sprinting runs the bar out.
+  Run(55, Moving(/*sprint=*/true));
+  ASSERT_TRUE(Authoritative().exhausted);
 
-  Run(90, Moving(/*sprint=*/true));
-  const float worn_out_speed = MeanSpeedOver(30, Moving(/*sprint=*/true));
+  // Every tick of the exhaustion is walked, sprint held or not, until the bar
+  // is back above the threshold: 0.2 of it at 0.25 a second is 48 ticks.
+  int walked = 0;
+  for (; walked < 120 && Authoritative().exhausted; ++walked) {
+    Step(Moving(/*sprint=*/true));
+    EXPECT_NEAR(Speed(Authoritative()), kWalkSpeed, 0.2F) << "tick " << walked << " of the walk";
+  }
+  EXPECT_GT(walked, 40);
+  EXPECT_GT(Authoritative().stamina, kForcedWalkBelow);
 
   EXPECT_NEAR(fresh_speed, kSprintSpeed, 0.3F);
-  EXPECT_LE(Authoritative().stamina, kForcedWalkBelow + 0.05F);
-  // Not always exactly walking speed: the rule is memoryless, so a player
-  // holding sprint at the threshold gets the odd sprinting tick back.
-  EXPECT_LT(worn_out_speed, (kWalkSpeed + kSprintSpeed) / 2.0F);
+  EXPECT_NEAR(MeanSpeedOver(5, Moving(/*sprint=*/true)), kSprintSpeed, 0.3F);
+}
+
+// US-05: the client predicts the forced walk exactly as the server applies it.
+TEST_F(StaminaTest, AClientThatSprintsToExhaustionAndOnThroughRecoveryNeverCorrects) {
+  const Vec3 before = states_.at(client_).total_correction;
+  bool was_exhausted = false;
+  bool recovered = false;
+
+  for (int i = 0; i < 180; ++i) {
+    Step(Moving(/*sprint=*/true));
+    const bool exhausted = states_.at(client_).local_body.exhausted;
+    recovered = recovered || (was_exhausted && !exhausted);
+    was_exhausted = was_exhausted || exhausted;
+  }
+
+  ASSERT_TRUE(was_exhausted);
+  ASSERT_TRUE(recovered);
+  EXPECT_EQ(states_.at(client_).total_correction, before);
 }
 
 TEST_F(StaminaTest, StaminaRecoversWhileNotSprintingAndSprintIsAllowedAgainOnlyAboveTheThreshold) {

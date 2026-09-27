@@ -1,6 +1,8 @@
 #include "augusta/interpolation.h"
 
 #include <algorithm>
+#include <cmath>
+#include <iterator>
 #include <optional>
 #include <span>
 #include <vector>
@@ -12,25 +14,58 @@ namespace augusta::presentation {
 
 namespace {
 
-// Below this fraction of the way from the previous update to the latest, the
-// nearer (previous) stance is shown; at or beyond it, the latest is - see
-// Sample's use below.
+// Below this fraction of the way from the earlier update to the later, the
+// earlier stance is shown; at or beyond it, the later one is - see Sample's
+// use below.
 constexpr float kMidpointFraction = 0.5F;
+
+RemoteBody AsRemote(const physics::BodyState& body) {
+  return RemoteBody{.position = body.position, .velocity = body.velocity, .stance = body.stance};
+}
 
 }  // namespace
 
-void RemoteInterpolator::Record(EntityId entity, float timestamp, const physics::BodyState& body) {
+void ServerClock::Advance(double elapsed) {
+  if (!now_.has_value()) {
+    return;
+  }
+  const double limit = kMaxSlew * elapsed;
+  const double catch_up = std::clamp(behind_, -limit, limit);
+  *now_ += elapsed + catch_up;
+  behind_ -= catch_up;
+}
+
+void ServerClock::Observe(double server_time) {
+  if (!now_.has_value() || std::abs(server_time - *now_) > kResyncThreshold) {
+    now_ = server_time;
+    behind_ = 0.0;
+    return;
+  }
+  behind_ = server_time - *now_;
+}
+
+void ServerClock::Reset() {
+  now_.reset();
+  behind_ = 0.0;
+}
+
+std::optional<double> ServerClock::Now() const { return now_; }
+
+void RemoteInterpolator::Record(EntityId entity, double server_time, const physics::BodyState& body) {
+  const Update update{.server_time = server_time, .body = body};
   const auto found = std::ranges::find_if(bodies_, [entity](const Buffered& b) { return b.entity == entity; });
   if (found == bodies_.end()) {
-    bodies_.push_back(
-        Buffered{.entity = entity, .previous = std::nullopt, .latest = Update{.timestamp = timestamp, .body = body}});
+    bodies_.push_back(Buffered{.entity = entity, .updates = {update}});
     return;
   }
-  if (timestamp <= found->latest.timestamp) {
+  std::vector<Update>& updates = found->updates;
+  if (server_time <= updates.back().server_time) {
     return;
   }
-  found->previous = found->latest;
-  found->latest = Update{.timestamp = timestamp, .body = body};
+  updates.push_back(update);
+  if (updates.size() > kUpdatesKept) {
+    updates.erase(updates.begin());
+  }
 }
 
 void RemoteInterpolator::Sync(std::span<const EntityId> current) {
@@ -38,31 +73,27 @@ void RemoteInterpolator::Sync(std::span<const EntityId> current) {
                 [current](const Buffered& b) { return std::ranges::find(current, b.entity) == current.end(); });
 }
 
-std::vector<RemotePlayer> RemoteInterpolator::Sample(float render_time) const {
+std::vector<RemotePlayer> RemoteInterpolator::Sample(double sample_time) const {
   std::vector<RemotePlayer> result;
   result.reserve(bodies_.size());
   for (const Buffered& buffered : bodies_) {
+    const std::vector<Update>& updates = buffered.updates;
+    // The first update after sample_time; the one before it is the other end.
+    const auto later = std::ranges::upper_bound(updates, sample_time, {}, &Update::server_time);
     RemoteBody body;
-    if (!buffered.previous.has_value()) {
-      body = RemoteBody{.position = buffered.latest.body.position,
-                        .velocity = buffered.latest.body.velocity,
-                        .stance = buffered.latest.body.stance};
+    if (later == updates.begin()) {
+      body = AsRemote(updates.front().body);
+    } else if (later == updates.end()) {
+      body = AsRemote(updates.back().body);
     } else {
-      const Update& previous = *buffered.previous;
-      const Update& latest = buffered.latest;
-      if (render_time <= previous.timestamp) {
-        body = RemoteBody{
-            .position = previous.body.position, .velocity = previous.body.velocity, .stance = previous.body.stance};
-      } else if (render_time >= latest.timestamp) {
-        body = RemoteBody{
-            .position = latest.body.position, .velocity = latest.body.velocity, .stance = latest.body.stance};
-      } else {
-        const float span = latest.timestamp - previous.timestamp;
-        const float t = (render_time - previous.timestamp) / span;
-        body = RemoteBody{.position = math::Lerp(previous.body.position, latest.body.position, t),
-                          .velocity = math::Lerp(previous.body.velocity, latest.body.velocity, t),
-                          .stance = t < kMidpointFraction ? previous.body.stance : latest.body.stance};
-      }
+      const Update& earlier = *std::prev(later);
+      const auto t =
+          static_cast<float>((sample_time - earlier.server_time) / (later->server_time - earlier.server_time));
+      body = RemoteBody{
+          .position = math::Lerp(earlier.body.position, later->body.position, t),
+          .velocity = math::Lerp(earlier.body.velocity, later->body.velocity, t),
+          .stance = t < kMidpointFraction ? earlier.body.stance : later->body.stance,
+      };
     }
     result.push_back(RemotePlayer{.entity = buffered.entity, .body = body});
   }

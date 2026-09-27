@@ -25,8 +25,8 @@ return {
     deplete_per_second = 1 / sprint_seconds,
     -- Fraction of stamina regained per second while not sprinting (0 or more).
     regen_per_second = 1 / rest_seconds,
-    -- At or below this fraction of stamina a player is forced to walk
-    -- (0 or more, and below 1).
+    -- A player who runs stamina out is forced to walk until it is back above
+    -- this fraction (0 or more, and below 1).
     forced_walk_below = 0.1,
   },
 }

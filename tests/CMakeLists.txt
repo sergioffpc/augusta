@@ -70,6 +70,18 @@ target_link_libraries(augusta_networking_tests PRIVATE augusta_networking GTest:
 # binaries - CTest's discovery run then times out even though the test itself is fine.
 gtest_discover_tests(augusta_networking_tests DISCOVERY_TIMEOUT 30)
 
+# Which flags a send goes out with is a header private to the networking
+# module, so it is tested apart from a live connection through a private
+# include path; GameNetworkingSockets is linked only for its flag constants.
+add_executable(augusta_send_flags_tests send_flags_test.cpp)
+target_include_directories(augusta_send_flags_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/networking)
+target_link_libraries(augusta_send_flags_tests PRIVATE
+  augusta_networking
+  $<IF:$<TARGET_EXISTS:GameNetworkingSockets::GameNetworkingSockets>,GameNetworkingSockets::GameNetworkingSockets,GameNetworkingSockets::GameNetworkingSockets_s>
+  GTest::gtest GTest::gtest_main)
+# Links GameNetworkingSockets, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_send_flags_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_physics_tests physics_test.cpp)
 target_link_libraries(augusta_physics_tests PRIVATE augusta_physics GTest::gtest GTest::gtest_main)
 # DISCOVERY_TIMEOUT above the 5s default, same reason as the networking tests

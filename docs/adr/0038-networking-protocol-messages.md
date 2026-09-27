@@ -100,7 +100,7 @@ supersedes is unreliable.
 | Join accepted | server → client | reliable | session ID, the player's spawn position, the server's tick rate, the parameters to predict with, and the roster: every player already in the match (at most 8) with session ID and body |
 | Join refused | server → client | reliable | reason: version mismatch, match full, pack mismatch |
 | Commands | client → server | unreliable | up to 8 commands, oldest first: sequence, movement direction, yaw, pitch, and one byte holding the sprint, ADS, fire and reload flags (bits 0-3) and the desired stance (bits 4-5) |
-| Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, and per body (at most 8): entity ID, position, velocity, stance, stamina |
+| Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, and per body (at most 8): entity ID, position, velocity, one byte holding the stance (bits 0-1) and the exhausted flag (bit 2), stamina |
 
 Per-tick traffic is unreliable because a newer message supersedes an older one,
 and it is made loss-tolerant without retransmission:
