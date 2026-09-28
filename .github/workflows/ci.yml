@@ -305,6 +305,8 @@ jobs:
       - name: Configure (libFuzzer + ASan)
         run: cmake --preset linux-fuzz
 
+      - uses: ./.github/actions/save-vcpkg-cache
+
       - name: Build
         run: cmake --build --preset linux-fuzz
 

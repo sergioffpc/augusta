@@ -40,6 +40,8 @@ jobs:
       - name: Configure
         run: cmake --preset linux
 
+      - uses: ./.github/actions/save-vcpkg-cache
+
       - name: Build
         run: cmake --build --preset linux
 
@@ -72,6 +74,8 @@ jobs:
 
       - name: Configure (libFuzzer + ASan)
         run: cmake --preset linux-fuzz
+
+      - uses: ./.github/actions/save-vcpkg-cache
 
       - name: Build
         run: cmake --build --preset linux-fuzz
@@ -143,6 +147,8 @@ jobs:
       - name: Configure (TSan)
         run: cmake --preset linux-tsan
 
+      - uses: ./.github/actions/save-vcpkg-cache
+
       - name: Build
         run: cmake --build --preset linux-tsan
 
@@ -169,6 +175,8 @@ jobs:
 
       - name: Configure (coverage)
         run: cmake --preset linux-coverage
+
+      - uses: ./.github/actions/save-vcpkg-cache
 
       - name: Build
         run: cmake --build --preset linux-coverage
