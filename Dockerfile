@@ -5,8 +5,11 @@
 # validates the server against.
 FROM ubuntu:26.04 AS build
 
+# clang compiles (the linux preset selects it, ADR-0008); build-essential
+# still provides libstdc++ and binutils.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential \
+      clang \
       cmake \
       ninja-build \
       git \
