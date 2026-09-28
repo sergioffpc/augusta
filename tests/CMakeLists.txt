@@ -42,6 +42,13 @@ target_link_libraries(augusta_protocol_tests PRIVATE augusta_protocol GTest::gte
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_protocol_tests DISCOVERY_TIMEOUT 30)
 
+add_executable(augusta_protocol_property_tests protocol_property_test.cpp)
+target_link_libraries(augusta_protocol_property_tests PRIVATE augusta_protocol rapidcheck_gtest GTest::gtest GTest::gtest_main)
+# RapidCheck's generator templates, one per message field, outgrow MSVC's
+# default section count for one object file.
+target_compile_options(augusta_protocol_property_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj>)
+gtest_discover_tests(augusta_protocol_property_tests)
+
 add_executable(augusta_match_tests match_test.cpp)
 target_link_libraries(augusta_match_tests PRIVATE augustad_match GTest::gtest GTest::gtest_main)
 # Links networking (for PeerId), so the same first-launch cost applies as below.
@@ -167,6 +174,14 @@ target_link_libraries(augusta_assets_tests PRIVATE augusta_assets GTest::gtest G
 # target gets a private include path to see them; nothing else needs to.
 target_include_directories(augusta_assets_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
 gtest_discover_tests(augusta_assets_tests)
+
+# Loads the golden packs the Python cooker wrote from its example scenario
+# (ADR-0013); the cooker's own tests keep it writing them byte for byte.
+add_executable(augusta_cooked_pack_tests cooked_pack_test.cpp)
+target_link_libraries(augusta_cooked_pack_tests PRIVATE augusta_assets GTest::gtest GTest::gtest_main)
+target_compile_definitions(augusta_cooked_pack_tests PRIVATE
+  AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs")
+gtest_discover_tests(augusta_cooked_pack_tests)
 
 # The renderer is Windows-only (Falcor, ADR-0009), but which region of its
 # per-frame upload buffers a frame uses is a Falcor-free header, private to the

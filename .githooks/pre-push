@@ -1,0 +1,60 @@
+#!/bin/sh
+# Runs clang-tidy on the src/*.cpp files the push brings to the remote
+# (ADR-0013, Pre-push; docs/ENGINEERING.md, Code Quality), and blocks the push
+# on any warning: .clang-tidy makes every check an error. Lints what CI's
+# clang-tidy step lints, minus what the Makefile's tidy target also leaves out
+# on this platform, against the debug build's compilation database.
+
+remote="$1"
+
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*) windows=1 build_dir=build/x64-windows-debug ;;
+  *) windows=0 build_dir=build/x64-linux-debug ;;
+esac
+
+# The files touched by the pushed commits the remote does not have yet: for a
+# new branch, its commits off develop/main; for an existing one, the new ones.
+files=""
+zero=0000000000000000000000000000000000000000
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue # deleting a remote branch
+  files="$files
+$(git log --format= --name-only --diff-filter=ACMR "$local_sha" --not --remotes="$remote")"
+done
+
+# src/client and src/modules/renderer are Windows-only, so CI's Linux run has
+# no compile commands for them; PhysX's SSE headers break clang-tidy under
+# MSVC's flags, so physics.cpp is linted by CI's Linux run alone.
+files=$(echo "$files" | grep -E '^src/.*\.cpp$' |
+  grep -vE '^src/(client|modules/renderer)/' |
+  { if [ "$windows" = 1 ]; then grep -vx 'src/modules/physics/physics.cpp'; else cat; fi; } |
+  sort -u |
+  while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)
+
+if [ -z "$files" ]; then
+  exit 0
+fi
+
+if [ ! -f "$build_dir/compile_commands.json" ]; then
+  echo "pre-push: $build_dir/compile_commands.json not found - configure the debug build first (make configure PRESET=$(basename "$build_dir" | sed 's/^x64-//')), or push with --no-verify to skip clang-tidy." >&2
+  exit 1
+fi
+
+echo "pre-push: clang-tidy on $(echo "$files" | wc -l | tr -d ' ') changed file(s)..." >&2
+
+# -p=<dir>, never -p <dir>: through vcenv.ps1, PowerShell reads a bare -p as
+# its own parameter and clang-tidy would run without the compile commands
+# (see the Makefile's tidy target).
+if [ "$windows" = 1 ]; then
+  # shellcheck disable=SC2086 # one argument per file; src/ paths have no spaces
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts/vcenv.ps1 clang-tidy --quiet -p="$build_dir" $files
+else
+  # shellcheck disable=SC2086
+  clang-tidy --quiet -p="$build_dir" $files
+fi
+status=$?
+
+if [ "$status" -ne 0 ]; then
+  echo "pre-push: clang-tidy failed - fix the warnings above, or push with --no-verify to skip." >&2
+  exit 1
+fi

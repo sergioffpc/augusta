@@ -57,9 +57,9 @@ def Xform "Root"
         }
     }
 
-    def Cube "Spawn"
+    def Sphere "Spawn"
     {
-        double size = 0.2
+        double radius = 0.1
         float3[] extent = [(-0.1, -0.1, -0.1), (0.1, 0.1, 0.1)]
         uniform token purpose = "guide"
         custom bool augusta:spawnPoint = true
@@ -67,9 +67,9 @@ def Xform "Root"
         uniform token[] xformOpOrder = ["xformOp:translate"]
     }
 
-    def Cube "Spawn2"
+    def Sphere "Spawn2"
     {
-        double size = 0.2
+        double radius = 0.1
         float3[] extent = [(-0.1, -0.1, -0.1), (0.1, 0.1, 0.1)]
         uniform token purpose = "guide"
         custom bool augusta:spawnPoint = true
@@ -77,9 +77,9 @@ def Xform "Root"
         uniform token[] xformOpOrder = ["xformOp:translate"]
     }
 
-    def Cube "Spawn3"
+    def Sphere "Spawn3"
     {
-        double size = 0.2
+        double radius = 0.1
         float3[] extent = [(-0.1, -0.1, -0.1), (0.1, 0.1, 0.1)]
         uniform token purpose = "guide"
         custom bool augusta:spawnPoint = true
@@ -87,9 +87,9 @@ def Xform "Root"
         uniform token[] xformOpOrder = ["xformOp:translate"]
     }
 
-    def Cube "Spawn4"
+    def Sphere "Spawn4"
     {
-        double size = 0.2
+        double radius = 0.1
         float3[] extent = [(-0.1, -0.1, -0.1), (0.1, 0.1, 0.1)]
         uniform token purpose = "guide"
         custom bool augusta:spawnPoint = true
