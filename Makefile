@@ -36,17 +36,20 @@ TIDY_SOURCES := $(shell git ls-files -- "src/*.cpp" $(TIDY_EXCLUDES))
 .DEFAULT_GOAL := help
 .PHONY: help configure build test clean distclean format format-check tidy lint
 
+# $(info), not echo: make prints it itself, so the parentheses reach neither
+# cmd.exe nor /bin/sh, which would read them as syntax.
 help:
-	@echo Targets (PRESET=$(PRESET), override with PRESET=windows-debug, linux-san, ...):
-	@echo   configure     cmake --preset
-	@echo   build         configure, then compile
-	@echo   test          build, then run ctest
-	@echo   clean         remove build outputs, keep the configuration
-	@echo   distclean     delete $(BUILD_DIR)
-	@echo   format        clang-format -i on src, tests and tools
-	@echo   format-check  the same check CI runs (no changes written)
-	@echo   tidy          clang-tidy on src, as CI runs it (configures first)
-	@echo   lint          format-check, then tidy: everything CI lints
+	$(info Targets (PRESET=$(PRESET), override with PRESET=windows-debug, linux-san, ...):)
+	$(info $()  configure     cmake --preset)
+	$(info $()  build         configure, then compile)
+	$(info $()  test          build, then run ctest)
+	$(info $()  clean         remove build outputs, keep the configuration)
+	$(info $()  distclean     delete $(BUILD_DIR))
+	$(info $()  format        clang-format -i on src, tests and tools)
+	$(info $()  format-check  the same check CI runs (no changes written))
+	$(info $()  tidy          clang-tidy on src, as CI runs it (configures first))
+	$(info $()  lint          format-check, then tidy: everything CI lints)
+	@:
 
 configure:
 	$(RUN) cmake --preset $(PRESET)
