@@ -80,7 +80,10 @@ cmake --build --preset linux-san
 ctest --preset linux-san
 ```
 
-The three presets (`windows`, `linux`, `linux-san`) are defined in
+**Fuzzing (Linux, libFuzzer + ASan):** the `linux-fuzz` preset builds the fuzz
+targets; [tests/fuzz/README.md](tests/fuzz/README.md) has how to run one.
+
+The presets (`windows`, `linux`, `linux-san`, `linux-fuzz`) are defined in
 [CMakePresets.json](CMakePresets.json) and are what CI builds with too.
 
 ## Documentation

@@ -64,6 +64,18 @@
         "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
         "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
       }
+    },
+    {
+      "name": "linux-fuzz",
+      "displayName": "Linux (clang, libFuzzer + ASan)",
+      "inherits": "linux",
+      "binaryDir": "${sourceDir}/build/x64-linux-fuzz",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,fuzzer-no-link -fno-omit-frame-pointer -O1",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address",
+        "AUGUSTA_FUZZ": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -71,7 +83,12 @@
     { "name": "windows-debug", "configurePreset": "windows-debug" },
     { "name": "linux", "configurePreset": "linux" },
     { "name": "linux-debug", "configurePreset": "linux-debug" },
-    { "name": "linux-san", "configurePreset": "linux-san" }
+    { "name": "linux-san", "configurePreset": "linux-san" },
+    {
+      "name": "linux-fuzz",
+      "configurePreset": "linux-fuzz",
+      "targets": ["augusta_protocol_decode_fuzz"]
+    }
   ],
   "testPresets": [
     {

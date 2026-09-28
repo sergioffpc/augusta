@@ -74,8 +74,10 @@ how noisy its result is.
   `linux-fuzz` preset (clang, libFuzzer, ASan). Seeds live in the repository
   under `tests/fuzz/corpus/<target>/`; the corpus the nightly grows lives in
   the Actions cache, being large and disposable. Every crash found is
-  minimized into a fixture and a regression test that `ctest` runs without
-  the fuzzer, in the pull request that fixes it.
+  minimized into a fixture under `tests/fuzz/regressions/<target>/`, in the
+  pull request that fixes it: each target also builds without libFuzzer on
+  every preset, and `ctest` replays its seeds and fixtures through it, so the
+  fixture is the regression test (`tests/fuzz/README.md`).
 - **Property-based tests** check an invariant over a whole input domain:
   serialization round-trips, stamina never going negative, reconciliation
   converging on the server's state. They are a tool, not a requirement:
