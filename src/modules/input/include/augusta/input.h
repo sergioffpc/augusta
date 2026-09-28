@@ -238,6 +238,12 @@ class Input : public EventSink {
   // Renderer::PumpEvents on the Main/Render thread.
   [[nodiscard]] command::Command Sample();
 
+  /// Where the view looks now: ViewRotation of the yaw and pitch accumulated
+  /// so far, mouse movement since the last Sample included. The camera turns
+  /// by it every render frame, from the Main/Render thread, rather than by the
+  /// Command's view, which is only as new as the last tick.
+  [[nodiscard]] math::Quat CurrentView() const;
+
   // Whether the cursor should be captured for mouselook: true at first, false
   // once kReleaseCursorKey is pressed, and true again on the next click of any
   // mouse button (which is taken by the capture, not passed on as a control).

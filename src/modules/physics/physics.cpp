@@ -286,6 +286,8 @@ PxExtendedVec3 ToFootPosition(const math::Vec3& position) { return {position.x, 
 
 }  // namespace
 
+float StanceHeight(Stance stance) { return HeightForStance(stance) + (2.0F * kCapsuleRadius); }
+
 // Per-body bookkeeping PhysX's controller doesn't itself track: a CCT has
 // no notion of "velocity" the way a rigid dynamic does, so World derives
 // and caches it each Step from positional delta / delta_time; stance and

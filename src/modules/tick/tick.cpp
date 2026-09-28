@@ -25,4 +25,13 @@ Clock::duration PacedTickDuration(Clock::duration nominal, std::uint8_t queued_c
   return std::chrono::duration_cast<Clock::duration>(nominal * (1.0 + pacing));
 }
 
+float FractionElapsed(Clock::time_point tick_start, Clock::duration tick_duration, Clock::time_point now) {
+  if (tick_duration <= Clock::duration::zero()) {
+    return 1.0F;
+  }
+  const std::chrono::duration<float> elapsed = now - tick_start;
+  const std::chrono::duration<float> duration = tick_duration;
+  return std::clamp(elapsed / duration, 0.0F, 1.0F);
+}
+
 }  // namespace augusta::tick

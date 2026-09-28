@@ -22,6 +22,8 @@ using augusta::input::Key;
 using augusta::input::Keymap;
 using augusta::input::KeyState;
 using augusta::input::MouseMoveEvent;
+using augusta::input::ViewRotation;
+using augusta::math::Quat;
 using augusta::math::Vec3;
 using augusta::physics::Stance;
 
@@ -29,6 +31,13 @@ constexpr float kSensitivity = 0.01F;
 constexpr float kTolerance = 1e-5F;
 
 void ExpectNear(const Vec3& actual, const Vec3& expected) {
+  EXPECT_NEAR(actual.x, expected.x, kTolerance);
+  EXPECT_NEAR(actual.y, expected.y, kTolerance);
+  EXPECT_NEAR(actual.z, expected.z, kTolerance);
+}
+
+void ExpectNear(const Quat& actual, const Quat& expected) {
+  EXPECT_NEAR(actual.w, expected.w, kTolerance);
   EXPECT_NEAR(actual.x, expected.x, kTolerance);
   EXPECT_NEAR(actual.y, expected.y, kTolerance);
   EXPECT_NEAR(actual.z, expected.z, kTolerance);
@@ -162,6 +171,24 @@ TEST_F(InputTest, TheViewIsKeptAcrossSamples) {
   MoveMouse(-30.0F, 0.0F);
   EXPECT_NEAR(input_.Sample().yaw, 30.0F * kSensitivity, kTolerance);
   EXPECT_NEAR(input_.Sample().yaw, 30.0F * kSensitivity, kTolerance);
+}
+
+TEST_F(InputTest, TheCurrentViewIsTheCommandsViewUntilTheMouseMovesAgain) {
+  MoveMouse(0.0F, 0.0F);
+  MoveMouse(-30.0F, 10.0F);
+  const Command command = input_.Sample();
+
+  ExpectNear(input_.CurrentView(), ViewRotation(command.yaw, command.pitch));
+}
+
+TEST_F(InputTest, TheCurrentViewTurnsWithTheMouseBetweenSamples) {
+  MoveMouse(0.0F, 0.0F);
+  const Command command = input_.Sample();
+  MoveMouse(-30.0F, 10.0F);
+
+  // A frame drawn after the tick turns by the mouse movement since; the tick's Command does not.
+  ExpectNear(input_.CurrentView(), ViewRotation(30.0F * kSensitivity, -10.0F * kSensitivity));
+  EXPECT_FLOAT_EQ(command.yaw, 0.0F);
 }
 
 TEST_F(InputTest, PitchStopsShortOfStraightUpAndStraightDown) {

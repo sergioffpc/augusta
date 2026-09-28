@@ -15,6 +15,7 @@
 #include "augusta/audio.h"
 #include "augusta/correction.h"
 #include "augusta/interpolation.h"
+#include "augusta/local_view.h"
 #include "augusta/math.h"
 #include "augusta/prediction.h"
 
@@ -39,23 +40,23 @@ struct World::Impl {
   flecs::world ecs;
   audio::Engine& audio_engine;
   // Where the camera sits relative to the local player's body position
-  // (physics::BodyState's feet): its character's eye (World's constructor).
+  // (physics::BodyState's feet) standing: its character's eye (World's
+  // constructor).
   math::Vec3 eye;
   animation::Engine animation;
   PhaseEntities phases;
-  // The previous call's latest, for kInterpolation to blend against (see
-  // RunFrame's doc comment in presentation.h). Unset until the first
-  // RunFrame call completes.
-  prediction::State previous_state;
-  bool has_previous_state = false;
 
   // Staged by RunFrame() immediately before ecs.progress(), read by the phase
   // systems below; not meaningful outside of a RunFrame call.
-  prediction::State latest_state;
+  PredictedTicks ticks;
   math::Quat view_rotation{1.0F, 0.0F, 0.0F, 0.0F};
   std::optional<EntityId> local_entity;
   std::optional<WorldSnapshot> snapshot;
   std::vector<PlayerCharacter> characters;
+
+  // The local player's Prediction State blended for this frame
+  // (OnInterpolation), which the later phases read.
+  prediction::State shown;
 
   // Hides the jumps reconciliation makes to the predicted body (ADR-0004), as
   // an offset from the predicted position that fades.
@@ -109,8 +110,8 @@ struct World::Impl {
 
   void OnInterpolation(float delta_time) {
     const nvtx3::scoped_range range{"Interpolation"};
-    local_offset = correction.Update(latest_state.total_correction, delta_time);
-    // TODO(sergioffpc): blend the last two prediction::State values.
+    shown = BlendTicks(ticks.previous, ticks.latest, ticks.fraction);
+    local_offset = correction.Update(shown.total_correction, delta_time);
 
     server_clock.Advance(delta_time);
     // Outside a match there is no one to show (ADR-0043).
@@ -160,12 +161,10 @@ struct World::Impl {
 
   void OnCamera() {
     const nvtx3::scoped_range range{"Camera"};
-    // local_offset is already this frame's value - OnInterpolation (the
-    // previous phase) just updated it. Same base position as OnCommit's
-    // local_position, plus the character's eye - added as authored, since the
-    // character is drawn unrotated - turned where the local player looks.
-    camera.position = latest_state.local_body.position + local_offset + eye;
-    camera.rotation = view_rotation;
+    // shown and local_offset are already this frame's - OnInterpolation (the
+    // previous phase) just updated them. Same base position as OnCommit's
+    // local_position.
+    camera = LocalCamera(shown.local_body.position + local_offset, shown.local_body.stance, eye, view_rotation);
   }
 
   void OnAnimation() {
@@ -190,7 +189,7 @@ struct World::Impl {
 
   void OnCommit() {
     const nvtx3::scoped_range range{"Commit"};
-    frame_state.local_position = latest_state.local_body.position + local_offset;
+    frame_state.local_position = shown.local_body.position + local_offset;
     frame_state.camera = camera;
     frame_state.remote_players = remote_players;
   }
@@ -202,17 +201,15 @@ World::~World() = default;
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
-State World::RunFrame(const prediction::State& latest, const math::Quat& view_rotation,
+State World::RunFrame(const PredictedTicks& ticks, const math::Quat& view_rotation,
                       std::optional<EntityId> local_entity, const std::optional<WorldSnapshot>& snapshot,
                       std::span<const PlayerCharacter> characters) {
-  impl_->latest_state = latest;
+  impl_->ticks = ticks;
   impl_->view_rotation = view_rotation;
   impl_->local_entity = local_entity;
   impl_->snapshot = snapshot;
   impl_->characters.assign(characters.begin(), characters.end());
   impl_->ecs.progress();
-  impl_->previous_state = latest;
-  impl_->has_previous_state = true;
   return impl_->frame_state;
 }
 

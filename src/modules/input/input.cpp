@@ -116,6 +116,11 @@ command::Command Input::Sample() {
   return command;
 }
 
+math::Quat Input::CurrentView() const {
+  const std::lock_guard<std::mutex> lock(mutex_);
+  return ViewRotation(yaw_, pitch_);
+}
+
 bool Input::CursorCaptured() const {
   const std::lock_guard<std::mutex> lock(mutex_);
   return cursor_captured_;
