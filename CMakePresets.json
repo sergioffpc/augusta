@@ -87,7 +87,7 @@
     {
       "name": "linux-fuzz",
       "configurePreset": "linux-fuzz",
-      "targets": ["augusta_protocol_decode_fuzz"]
+      "targets": ["augusta_protocol_decode_fuzz", "augusta_pack_load_fuzz"]
     }
   ],
   "testPresets": [
