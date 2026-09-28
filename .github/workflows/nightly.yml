@@ -119,10 +119,40 @@ jobs:
           path: fuzz-crashes/
           if-no-files-found: ignore
 
+  tsan:
+    # ctest under ThreadSanitizer, for data races across the threading model's
+    # threads (ADR-0005). A report fails the test it came from; known false
+    # positives are suppressed in tests/tsan.supp, each with its reason.
+    runs-on: ubuntu-26.04
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+          submodules: true
+
+      - uses: ./.github/actions/setup-linux-build
+
+      - name: Lower ASLR entropy
+        # TSan's shadow memory layout doesn't fit the kernel's default
+        # mmap_rnd_bits on current runner images, and aborts every binary with
+        # "unexpected memory mapping" before a test runs.
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Configure (TSan)
+        run: cmake --preset linux-tsan
+
+      - name: Build
+        run: cmake --build --preset linux-tsan
+
+      - name: Test
+        run: ctest --preset linux-tsan
+
   # A new nightly job adds itself to `needs` here, and nothing else: this job
   # reports on every job it waits for.
   report-failure:
-    needs: [property-tests, fuzz]
+    needs: [property-tests, fuzz, tsan]
     if: always() && contains(needs.*.result, 'failure')
     runs-on: ubuntu-26.04
     permissions:

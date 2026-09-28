@@ -1,0 +1,15 @@
+# ThreadSanitizer suppressions for the nightly's ctest run (the linux-tsan test
+# preset points TSAN_OPTIONS at this file; ADR-0013). Only known false
+# positives belong here, never a race in our own code: fix that instead. Every
+# entry says why it is here, above it.
+#
+# Format: https://github.com/google/sanitizers/wiki/ThreadSanitizerSuppressions
+
+# GameNetworkingSockets (ADR-0003) takes its global lock second, against its
+# own lock order, only through a timed try-lock that backs off on timeout
+# (SteamNetworkingGlobalLock::TryLock in its socket thread and Poll): that can't
+# deadlock. TSan records the timed acquisition (pthread_mutex_clocklock) like a
+# blocking one and reports a lock-order inversion. Only GameNetworkingSockets
+# uses std::recursive_timed_mutex, and only timed acquisitions go through
+# _M_clocklock, so nothing of ours matches.
+deadlock:std::recursive_timed_mutex::_M_clocklock
