@@ -17,7 +17,7 @@ and systems programming — deliberately not using Unreal/Unity/Godot.
 - Server: Linux-only, headless (no rendering dependency)
 - Multiplayer only, dedicated authoritative server — no singleplayer, no enemy AI
 - Physics-based ballistics (real bullet drop and travel time, not hitscan)
-- Round-based gameplay, no respawn until round end (tactical/milsim style)
+- Match-based gameplay, no respawn until the match ends (tactical/milsim style)
 - Movement: walk/run/crouch/prone + basic stamina + simple recoil
   (weapon sway and breath control deferred post-v1)
 - Realistic, hit-location-based damage — no regenerating health
@@ -25,8 +25,8 @@ and systems programming — deliberately not using Unreal/Unity/Godot.
 
 ## Business Goals
 v1 is done when: 2-8 players connect to a dedicated authoritative server, complete
-at least one full round (no respawn) on the test map, fire a rifle whose bullet
-follows real client-server-synced ballistic physics, and take damage determined
+at least one full match (no respawn) on the test map, fire a rifle whose bullet
+follows real ballistic physics simulated by the server, and take damage determined
 by hit location (no regenerating health).
 
 ---

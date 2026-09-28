@@ -24,7 +24,7 @@ the decisions already made in ARCHITECTURE.md:
   trusted until validated (US-15).
 - **Content is signed and verified, not just loaded.** Integrity is
   structural (ADR-0018), not an afterthought.
-- **No premature optimization.** Profile first (Tracy), then optimize;
+- **No premature optimization.** Profile first (NVTX ranges in Nsight Systems), then optimize;
   don't build custom allocators or job systems speculatively (ADR-0005,
   ADR-0007 risk notes).
 - **Recoverable failures are values, not control flow.** `std::expected`
@@ -76,7 +76,7 @@ the decisions already made in ARCHITECTURE.md:
 - **Nightly** (on `develop`): long fuzzing runs, TSan, property-based
   tests at a high case count, and a `llvm-cov` coverage report; a
   failure opens or updates a `nightly-failure` issue (ADR-0013).
-- **Not in CI:** Tracy (interactive profiling tool, not a CI check),
+- **Not in CI:** profiling (NVTX with Nsight Systems/Graphics, interactive tools, not CI checks),
   micro-benchmarks (run by hand), and NFR-01's tick rate under load
   (checked by hand on the cluster before a release, ADR-0013).
 - **Releases:** a separate workflow, triggered only on `v*` tags, builds
@@ -93,7 +93,7 @@ the decisions already made in ARCHITECTURE.md:
 - **Branching model:** Git Flow — `main` (production/release) + `develop`
   (integration), with `feature/*`, `release/*`, `hotfix/*` branches.
 - **Tags/releases:** created only when there's an actual release to make
-  (e.g., reaching v1) — ROADMAP.md milestones (M0–M5) are internal
+  (e.g., reaching v1) — ROADMAP.md milestones (M0–M6) are internal
   checkpoints, not tagged releases.
 - **Pull requests:** used even solo — `feature/*` → `develop` and
   `develop`/`hotfix/*` → `main` go through a PR so CI gates the merge;
@@ -236,10 +236,11 @@ pipeline).
 
 - **Logging:** Boost.Log (ADR-0036) — mature, no reason to hand-roll one
   given the project's learning focus is elsewhere (ballistics, networking, ECS).
-- **Profiling:** Tracy — purpose-built for real-time, multithreaded frame
-  profiling; the primary tool for inspecting client and server
+- **Profiling:** NVTX ranges in the code, read with NVIDIA Nsight
+  Systems (CPU threads, timeline) and Nsight Graphics (GPU frames,
+  D3D12 capture) — the primary tools for inspecting client and server
   performance during development.
-- No metrics/telemetry pipeline beyond Tracy for v1.
+- No metrics/telemetry pipeline beyond profiling for v1.
 - No server watchdog/health-check for v1 — LAN-only, solo-tested; a
   hang is immediately visible. Revisit if the server is ever deployed
   unattended (see ROADMAP.md, Beyond v1).
@@ -252,7 +253,7 @@ pipeline).
   an NFR — frame rate is judged subjectively while playing/testing, not
   automated or gated in CI.
 - **Memory strategy:** rely on Flecs' and PhysX's built-in allocators for
-  v1; no custom arena/pool allocators until Tracy profiling shows a
+  v1; no custom arena/pool allocators until profiling shows a
   concrete need.
 - Google Benchmark is used for targeted micro-benchmarks of hot-path code
   (e.g., ballistics math, serialization) as needed — not a blanket

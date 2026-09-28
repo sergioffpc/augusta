@@ -9,9 +9,11 @@ of each match. It changes parts of ADR-0042 and extends the message catalogue
 of ADR-0038.
 
 **A match has a fixed player count.** The scenario's Parameters (ADR-0039) set
-how many players a match needs, at most `protocol::kMaxPlayers`. The server
+how many players a match needs, from 1 to `protocol::kMaxPlayers`. The server
 decides this number and tells each client, as it does for every other
-parameter.
+parameter. A Player count of 1 is allowed for development and tests, so one
+client can exercise a whole match; a scenario meant to be played asks for 2 to
+8, as US-02 and NFR-06 do.
 
 **A lobby comes before every match.** An admitted player enters the Lobby, not
 the match. Players can join and leave the Lobby freely until the match starts.
@@ -33,8 +35,13 @@ body they control (ADR-0038) and its Spawn point. After
 that, the set of players can only shrink.
 
 **No one joins a match in progress.** A join that arrives while a match runs is
-refused with a new Join refused reason, *match in progress*. The order of checks
-is version, then character, then match in progress, then lobby full.
+refused with a new Join refused reason, *match in progress*.
+
+**The order of the Join checks** is stated here and nowhere else: engine
+version, then client pack (ADR-0038), then character (ADR-0042), then match in
+progress, then lobby full. The first that fails is the reason given, so a
+client that can never play on this server is not told "full", and one on the
+wrong pack is not told its character is unknown.
 
 **A player who disconnects mid-match leaves it.** The server removes their body
 from the simulation, and they stop appearing in the Authoritative State. Clients

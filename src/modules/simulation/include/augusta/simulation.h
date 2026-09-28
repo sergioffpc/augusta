@@ -43,7 +43,7 @@ namespace augusta::simulation {
 // order every tick. Scripts/Behaviours runs last, after Damage has
 // resolved the tick's deaths, so a hook can react to what just happened
 // (e.g. evaluate a win condition) and schedule what follows (spawns,
-// round transitions) for the next tick.
+// Match end) for the next tick.
 enum class Phase {
   // Mechanism. Applies this tick's already-validated client commands
   // (augusta::command::Command; Input Validation - US-15 - is a boundary

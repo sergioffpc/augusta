@@ -20,7 +20,7 @@ _Avoid_: Trusted server, master client
 
 **Match**:
 One game played by the scenario's Player count, from Match start until Game policy ends it. Its players are fixed when it starts: no one joins, and a player who disconnects leaves it and its body is removed. When it ends, everyone still connected returns to the Lobby (ADR-0043).
-_Avoid_: Game (too broad: the product is a game)
+_Avoid_: Game (too broad: the product is a game), Round (a synonym; a Match is the one unit of play, with no respawn until it ends)
 
 **Lobby**:
 Where admitted players wait for the next Match, up to the Player count. Players come and go freely; it closes when a Match starts and reopens when it ends, and the next Match waits at least 5 seconds after that (ADR-0043).
@@ -67,7 +67,7 @@ One server tick's Authoritative State as sent to one client (protocol::Authorita
 _Avoid_: Snapshot, state sync
 
 **Spawn point**:
-A place in the Map where a player's feet are put at Match start, authored as a scene node in the pack (ADR-0032). The server takes them in order, starting over after the last, and tells the client which one it got; which player gets which is Game policy once round rules exist.
+A place in the Map where a player's feet are put at Match start, authored as a scene node in the pack (ADR-0032). The server takes them in order, starting over after the last, and tells the client which one it got; which player gets which is Game policy once Match rules exist.
 _Avoid_: Spawn location, start position
 
 **Roster**:
@@ -93,7 +93,7 @@ Engine-side C++ code that provides a capability without deciding when or how it'
 _Avoid_: Engine code, core logic
 
 **Game policy**:
-Gameplay-specific rules (round lifecycle, win conditions, spawn rules) that decide how mechanism is used, implemented as sandboxed Lua in SimulationWorld's Scripts/Behaviours phase, kept out of C++ so it can change without touching mechanism code.
+Gameplay-specific rules (Match lifecycle, win conditions, spawn rules) that decide how mechanism is used, implemented as sandboxed Lua in SimulationWorld's Scripts/Behaviours phase, kept out of C++ so it can change without touching mechanism code.
 _Avoid_: Game logic, gameplay code (too broad — conflates policy with mechanism)
 
 **Data-driven configuration**:

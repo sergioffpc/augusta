@@ -18,7 +18,7 @@
 // Steam Audio, then hands the result to miniaudio.
 //
 // Scope, for now: one-shot spatialized SFX only (the fire/footstep/
-// death/round-end stingers ARCHITECTURE.md's AudioCues phase describes -
+// death/match-end stingers ARCHITECTURE.md's AudioCues phase describes -
 // ROADMAP.md doesn't meaningfully exercise this module before M4). No
 // looping ambience/music - add it if a future milestone needs it.
 //

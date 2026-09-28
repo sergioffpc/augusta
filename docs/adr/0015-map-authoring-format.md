@@ -2,7 +2,7 @@
 
 Maps are authored in OpenUSD, used purely as an offline authoring/interchange format, then baked at build time into the engine's own lightweight runtime level format. OpenUSD, Hydra, and their toolchain are never linked into shipped client or server binaries.
 
-A map is authored as its own folder under `<assets-root>/authoring/maps/`, always named `map.usda` regardless of the folder's own name. The fixed name means renaming a map never means renaming the file inside it. The cooker is told a **scenario** folder directly, as an ordinary path (ADR-0030); it refuses a scenario outside `authoring/`.
+A map is authored as its own folder under `<assets-root>/authoring/maps/`, always named `map.usda` regardless of the folder's own name. The fixed name means renaming a map never means renaming the file inside it. The cooker is told a **scenario** by its name, which always resolves to `authoring/scenarios/<name>/` (ADR-0030, ADR-0041).
 
 (Superseded by ADR-0041: a scenario is no longer this same folder holding both the stage and its Lua scripts together - it's its own `authoring/scenarios/<name>/` folder with a `manifest.yaml` naming which map, among others, it composes. What's below about the stage itself - `map.usda`'s fixed name, the Composer/optimize/validate toolchain - is unaffected.)
 

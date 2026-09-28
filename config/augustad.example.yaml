@@ -20,7 +20,7 @@ content:
 
 simulation:
   # The rate, in Hz, at which the server simulates and every client predicts
-  # (required): any number above zero. It is fixed for as long as the server
+  # (required): a whole number from 1 to 255. It is fixed for as long as the server
   # runs and every client is told it when it joins, so no client has a setting
   # for it. NFR-01 asks the server to sustain 60 Hz; a slower rate is accepted
   # so a run can be debugged.
