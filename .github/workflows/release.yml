@@ -7,6 +7,8 @@ on:
 permissions:
   contents: write
   packages: write
+  # Deleting superseded cache entries (.github/actions/prune-cache).
+  actions: write
 
 env:
   VCPKG_BINARY_SOURCES: "clear;nuget,GitHubPackages,readwrite"

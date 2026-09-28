@@ -17,6 +17,8 @@ concurrency:
 
 permissions:
   contents: read
+  # Deleting superseded cache entries (.github/actions/prune-cache).
+  actions: write
 
 env:
   SCCACHE_GHA_ENABLED: "true"
@@ -114,6 +116,14 @@ jobs:
         with:
           path: ${{ env.CORPUS }}
           key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+
+      # Each night's corpus holds the one before, minimized: the older entries
+      # are superseded.
+      - if: success()
+        uses: ./.github/actions/prune-cache
+        with:
+          prefix: fuzz-corpus-${{ matrix.target }}-
+          keep: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
 
       - name: Upload crashing inputs
         if: failure()

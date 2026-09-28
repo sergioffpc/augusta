@@ -13,6 +13,8 @@ concurrency:
 permissions:
   contents: read
   packages: write
+  # Deleting superseded cache entries (.github/actions/prune-cache).
+  actions: write
 
 env:
   VCPKG_BINARY_SOURCES: "clear;nuget,GitHubPackages,readwrite"
@@ -116,7 +118,9 @@ jobs:
           $sha = git -C third_party/falcor rev-parse HEAD
           "sha=$sha" >> $env:GITHUB_OUTPUT
 
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore the Falcor build
+        id: falcor-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # C:\packman-repo is packman's own machine-wide download cache
           # (outside the workspace - see third_party/falcor/setup.bat);
@@ -143,6 +147,25 @@ jobs:
 
       - name: Build
         run: cmake --build --preset windows
+
+      # Saved right after the Build that produced it (Falcor builds there, not
+      # in Configure), so a failing test can't keep it from saving; only a new
+      # Falcor commit misses, so only then is there anything to save.
+      - name: Save the Falcor build
+        if: steps.falcor-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            C:\packman-repo
+            third_party/falcor/build
+          key: falcor-${{ steps.falcor-commit.outputs.sha }}
+
+      # The previous Falcor commit's build, 1 GB nothing restores any more.
+      - if: steps.falcor-cache.outputs.cache-hit != 'true'
+        uses: ./.github/actions/prune-cache
+        with:
+          prefix: falcor-
+          keep: falcor-${{ steps.falcor-commit.outputs.sha }}
 
       - name: Test
         run: ctest --preset windows

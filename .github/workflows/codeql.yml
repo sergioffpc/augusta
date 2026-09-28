@@ -18,6 +18,8 @@ permissions:
   contents: read
   security-events: write
   packages: read
+  # Deleting superseded cache entries (.github/actions/prune-cache).
+  actions: write
 
 jobs:
   analyze:
