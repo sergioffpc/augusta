@@ -95,6 +95,17 @@ if (WIN32)
     set(FALCOR_HAS_AFTERMATH_VALUE 0)
   endif()
 
+  # The Falcor features augusta_renderer compiles Falcor's headers with. They
+  # must equal what Falcor.dll was built with, or the two disagree on the
+  # layout of Falcor's classes; the build checks this once Falcor is built
+  # (cmake/CheckFalcorFeatures.cmake). NVAPI is on because Falcor 9 fetches it
+  # on every Windows D3D12 build.
+  set(AUGUSTA_FALCOR_FEATURES
+    FALCOR_HAS_D3D12=1 FALCOR_HAS_VULKAN=0
+    FALCOR_HAS_AFTERMATH=${FALCOR_HAS_AFTERMATH_VALUE} FALCOR_HAS_NVAPI=1 FALCOR_HAS_CUDA=0
+    FALCOR_HAS_D3D12_AGILITY_SDK=1 FALCOR_HAS_RTXDI=1
+  )
+
   set(FALCOR_STAMP ${CMAKE_CURRENT_BINARY_DIR}/falcor.stamp)
   add_custom_command(
     OUTPUT ${FALCOR_STAMP}
@@ -144,6 +155,8 @@ if (WIN32)
     COMMAND ${CMAKE_COMMAND} -S ${FALCOR_DIR} --preset ${FALCOR_PRESET} -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     COMMAND ${CMAKE_COMMAND} --build ${FALCOR_BUILD_DIR} --config ${CMAKE_BUILD_TYPE} --target Falcor
     ${FALCOR_AFTERMATH_DEPLOY_COMMAND}
+    COMMAND ${CMAKE_COMMAND} "-DCOMPILE_COMMANDS=${FALCOR_BUILD_DIR}/compile_commands.json"
+            "-DEXPECTED=${AUGUSTA_FALCOR_FEATURES}" -P ${CMAKE_SOURCE_DIR}/cmake/CheckFalcorFeatures.cmake
     COMMAND ${CMAKE_COMMAND} -E touch ${FALCOR_STAMP}
     WORKING_DIRECTORY ${FALCOR_DIR}
     COMMENT "Patching and building vendored Falcor (ADR-0009) - slow on a clean checkout"
@@ -204,9 +217,7 @@ if (WIN32)
   target_compile_definitions(augusta_renderer PRIVATE
     NOMINMAX UNICODE _USE_MATH_DEFINES
     FALCOR_ENABLE_ASSERTS=$<IF:$<CONFIG:Debug>,1,0>
-    FALCOR_ENABLE_PROFILER=1 FALCOR_HAS_D3D12=1 FALCOR_HAS_VULKAN=0
-    FALCOR_HAS_AFTERMATH=${FALCOR_HAS_AFTERMATH_VALUE} FALCOR_HAS_NVAPI=0 FALCOR_HAS_CUDA=0
-    FALCOR_HAS_D3D12_AGILITY_SDK=1 FALCOR_HAS_RTXDI=1
+    FALCOR_ENABLE_PROFILER=1 ${AUGUSTA_FALCOR_FEATURES}
     IMGUI_USER_CONFIG="Utils/UI/ImGuiConfig.h"
     # Source/Falcor/Utils/Math/Float16.h uses std::float_denorm_style /
     # numeric_limits::has_denorm, deprecated as of C++23 - not our header
