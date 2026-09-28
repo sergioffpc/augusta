@@ -56,8 +56,7 @@ the decisions already made in ARCHITECTURE.md:
      after a full Windows + Linux + sanitizers build
   2. Build + test the client on a Windows runner (MSVC)
   3. Build + test the server on a Linux runner (clang, ADR-0008), plus
-     `clang-tidy` (Google style checks profile) and pytest for the asset
-     cooker
+     `clang-tidy` (Google style checks profile)
   4. ASan + UBSan test build and a short fuzzing run per target (both
      Linux only), only for `pull_request` runs — skipped on the `push`
      that lands after merge, since the PR already validated it
@@ -66,10 +65,14 @@ the decisions already made in ARCHITECTURE.md:
     (vcpkg's native GitHub-Actions-cache backend was removed upstream in
     2026 — a NuGet feed is now the supported caching path).
   5. Compile with a strict warning set, treated as errors
-  6. Asset pipeline check: build the asset cooker, generate a fresh
-     throwaway Ed25519 keypair for this run, cook the test assets, sign
-     with the ephemeral key, and verify the signed pack loads correctly
-     end to end — the real release private key never touches CI
+  6. `build-tools`, when `tools/` changed: on a Windows runner, build the
+     asset cooker's native modules and run its pytest suite, which also
+     requires that cooking the example scenario still gives the golden
+     packs in `tests/fixtures/example-packs/` byte for byte; the C++ tests
+     in 2 and 3 load those same packs — the contract between the Python
+     writer and the C++ reader of the pack format (ADR-0013). The golden
+     packs are signed with a committed test key; the real release private
+     key never touches CI
 - **Nightly** (on `develop`): long fuzzing runs, TSan, property-based
   tests at a high case count, and a `llvm-cov` coverage report; a
   failure opens or updates a `nightly-failure` issue (ADR-0013).

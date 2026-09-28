@@ -24,6 +24,7 @@ jobs:
     outputs:
       run_build: ${{ steps.filter.outputs.run_build }}
       run_container: ${{ steps.filter.outputs.run_container }}
+      run_tools: ${{ steps.filter.outputs.run_tools }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -40,6 +41,7 @@ jobs:
           if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
             echo "run_container=true" >> "$GITHUB_OUTPUT"
+            echo "run_tools=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -57,6 +59,15 @@ jobs:
             echo "run_container=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_container=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # The offline tools (tools/), and the golden output of theirs the
+          # runtime's tests load, which build-tools checks they still write.
+          if echo "$changed" \
+              | grep -qE '^(tools/|tests/fixtures/example-packs/|\.github/workflows/ci\.yml$)'; then
+            echo "run_tools=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_tools=false" >> "$GITHUB_OUTPUT"
           fi
 
   format:
@@ -201,6 +212,63 @@ jobs:
 
       - name: Test
         run: ctest --preset linux
+
+  build-tools:
+    needs: changes
+    if: needs.changes.outputs.run_tools == 'true'
+    # Builds and tests the offline tools (tools/), including that each still
+    # writes the golden output the runtime's tests load (ADR-0013). A new
+    # tool adds steps here, not a job. Windows: the asset cooker's native
+    # modules wrap DirectXTex (ADR-0017), and the cooker only ever runs on
+    # Windows (tools/pack/README.md).
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Fetch vcpkg
+        # Only vcpkg: the native modules build against no other submodule,
+        # and third_party/falcor is large.
+        run: git submodule update --init --depth 1 third_party/vcpkg
+
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+
+      - name: Install Ninja
+        run: choco install ninja -y
+        shell: pwsh
+
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Configure vcpkg NuGet cache
+        shell: pwsh
+        run: |
+          $nugetPath = & ".\third_party\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
+          & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
+          & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: tools/pack/uv.lock
+
+      - name: Install the cooker
+        working-directory: tools/pack
+        run: uv sync --locked
+
+      - name: Build the native modules
+        # Into tools/pack/src/pack, against the venv's own interpreter, as
+        # tools/pack/scripts/bootstrap-windows.ps1 does.
+        shell: pwsh
+        run: |
+          cmake --preset windows -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$PWD/tools/pack/.venv/Scripts/python.exe"
+          cmake --build tools/pack/cpp/build/x64-windows
+
+      - name: Test (pytest)
+        working-directory: tools/pack
+        run: uv run pytest
 
   sanitizers:
     needs: [changes, format]
