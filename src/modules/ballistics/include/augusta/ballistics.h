@@ -2,8 +2,10 @@
 #define AUGUSTA_BALLISTICS_H_
 
 #include <cstdint>
+#include <span>
 #include <unordered_map>
 
+#include "augusta/math.h"
 #include "augusta/physics.h"
 
 // augusta::ballistics simulates bullet trajectories (gravity-induced
@@ -13,32 +15,28 @@
 // external solver). A semi-implicit Euler integrator is enough for v1;
 // nothing in REQUIREMENTS.md asks for aerodynamic drag/wind modeling.
 //
-// The trajectory math is shared (ADR-0024, ADR-0044): the server
-// advances every bullet with it, and each client's presentation draws
-// every announced Shot's tracer and Map impact with it, a visual only.
-// Deciding a bullet's outcome (which player it hits, where, for what
-// damage) stays server-side: the client never simulates it, only
-// predicts local fire feedback (WeaponHandling) and shows hits the
-// server confirms.
+// The module is shared (ADR-0024, ADR-0044): the server advances every
+// bullet with it and decides what each one hits, and each client's
+// presentation draws every announced Shot's tracer and Map impact with
+// the same World, handing it no hitboxes - a visual only. Deciding
+// which player a bullet hits, where and for what damage stays the
+// server's: only the server has the hitboxes to hand in.
 //
 // World::Step follows the same per-handle, called-once-per-tick shape as
 // physics::World::Step, since bullets are ECS entities too
 // (ARCHITECTURE.md §5's Shared Core ECS list) advanced by a system that
-// iterates them the same way player bodies are. Player hit detection
-// reuses physics::World::Raycast rather than maintaining independent
-// hitbox geometry - see that method's own doc comment for why PhysX's
-// cross-platform non-determinism isn't a concern for a server-only
-// query. Body part (US-11) is a coarse zone (head/torso/limb) derived
-// from where along the hit body's single collision capsule the ray
-// landed - there is no per-body-part hitbox geometry to test against
-// yet (that would need character/skeleton data this project hasn't
-// designed).
+// iterates them the same way player bodies are. Each tick's segment is
+// tested against the Map through physics::World::RaycastMap, which never
+// reports a player's controller (ADR-0002), and against the Hitboxes the
+// caller hands in, already posed where the caller judges the players to
+// be: for the server, as they were the Shooter's delay ago (ADR-0044).
+// Hitboxes are tested here, triangle by triangle, not through PhysX,
+// since they are posed anew for every test.
 namespace augusta::ballistics {
 
-// Where on a hit player's body a bullet struck (US-11). Coarse zones,
-// matching what REQUIREMENTS.md's "e.g., head, torso, limb" actually
-// asks for - not per-limb detail.
-enum class BodyPart {
+/// Where on a hit player's body a bullet struck (US-11): the coarse zones
+/// REQUIREMENTS.md's "e.g., head, torso, limb" asks for.
+enum class BodyPart : std::uint8_t {
   kHead,
   kTorso,
   kLimb,
@@ -60,6 +58,25 @@ struct BulletConfig {
   float max_range = 0.0F;
 };
 
+/// One triangle of a posed Hitbox, in world space.
+struct Triangle {
+  math::Vec3 a;
+  math::Vec3 b;
+  math::Vec3 c;
+};
+
+/// The caller's name for the player a Hitbox belongs to: the server hands in
+/// its Entity ID, so a hit names the body it struck.
+enum class TargetId : std::uint32_t {};
+
+/// One body part of one player, posed in world space for one Step. Views its
+/// triangles, which must outlive the Step it is handed to.
+struct Hitbox {
+  TargetId target{};
+  BodyPart part = BodyPart::kTorso;
+  std::span<const Triangle> triangles;
+};
+
 // Opaque handle to an in-flight bullet created by World::Fire. Valid
 // only for the World instance that created it, and only until Step
 // returns a resolved (non-kInFlight) result for it - see Step.
@@ -75,7 +92,9 @@ struct BulletState {
 enum class Outcome {
   // Still travelling; Step must be called again next tick.
   kInFlight,
-  // Struck a player's body this tick (see StepResult::target/part/point).
+  // Struck the Map this tick (see StepResult::impact_point).
+  kHitMap,
+  // Struck a player's Hitbox this tick (see StepResult::target/part/impact_point).
   kHitPlayer,
   // Exceeded BulletConfig::max_range without hitting anything - a miss.
   kExpired,
@@ -84,21 +103,21 @@ enum class Outcome {
 // The result of one World::Step call.
 struct StepResult {
   Outcome outcome = Outcome::kInFlight;
-  // The bullet's position/velocity as of this call, regardless of
-  // outcome.
+  // The bullet's position/velocity at the end of the tick's movement,
+  // regardless of outcome: past the impact point on a hit.
   BulletState state;
-  // The body that was hit. Only meaningful if outcome is kHitPlayer.
-  physics::BodyHandle target{};
+  // The player that was hit. Only meaningful if outcome is kHitPlayer.
+  TargetId target{};
   // Which part of target was hit. Only meaningful if outcome is
   // kHitPlayer.
   BodyPart part = BodyPart::kTorso;
-  // World-space point of impact. Only meaningful if outcome is
-  // kHitPlayer.
+  // World-space point of impact. Only meaningful if outcome is kHitMap
+  // or kHitPlayer.
   math::Vec3 impact_point;
 };
 
-// Owns every in-flight bullet for one SimulationWorld. The server
-// constructs exactly one.
+// Owns every in-flight bullet of one world: the server's SimulationWorld,
+// or a client's presentation drawing the Shots it is told of.
 class World {
  public:
   World();
@@ -114,11 +133,13 @@ class World {
 
   // Advances handle's bullet by one fixed tick of delta_time seconds:
   // integrates gravity, then tests the tick's movement segment against
-  // physics_world's bodies (physics::World::Raycast) for a player hit.
-  // Once this returns a non-kInFlight outcome for handle, the bullet no
-  // longer exists - calling Step again with the same handle is
+  // map's collision meshes and against hitboxes. The nearest intersection
+  // along the segment is the outcome, so nothing is hit through a wall or
+  // through another player; with none, a bullet past its max range
+  // expires. Once this returns a non-kInFlight outcome for handle, the
+  // bullet no longer exists - calling Step again with the same handle is
   // undefined behavior.
-  StepResult Step(BulletHandle handle, float delta_time, const physics::World& physics_world);
+  StepResult Step(BulletHandle handle, float delta_time, const physics::World& map, std::span<const Hitbox> hitboxes);
 
  private:
   struct Bullet {

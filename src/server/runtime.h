@@ -28,9 +28,9 @@
 //
 // Constructed and run from main.cpp. networking::Server (ADR-0003) and
 // physics::World (ADR-0002, constructed inside simulation::World) are
-// real (see networking.cpp, physics.cpp); ballistics::World and
-// scripting::Engine (also constructed inside simulation::World) are
-// still placeholder stubs.
+// real (see networking.cpp, physics.cpp), as is ballistics::World (also
+// constructed inside simulation::World), though no phase fires a bullet
+// into it yet; scripting::Engine is still a placeholder stub.
 namespace augusta::runtime {
 
 // Everything ServerRuntime needs to construct SimulationWorld and start
