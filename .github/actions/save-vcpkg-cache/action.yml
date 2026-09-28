@@ -1,0 +1,60 @@
+name: Save the vcpkg binary cache
+description: >
+  Saves .vcpkg-bincache for later Linux jobs to restore (setup-linux-build's
+  "Restore vcpkg binaries"), holding only the packages this job's build
+  installed, and only when that differs from what it restored: an unchanged
+  cache is already saved, and saving it again would only push other caches out
+  of the repository's 10 GB. The entry it replaces on this ref is deleted. Run
+  it right after the step that configures the build, so a failing test later
+  can't keep it from saving.
+
+runs:
+  using: composite
+  steps:
+    - name: Drop the packages the build didn't install
+      # vcpkg names each archive <abi>.zip, in a directory named by the ABI's
+      # first two characters, and the install root's status file lists the ABI
+      # of every package it installed. An archive it doesn't list is a package
+      # an older manifest or baseline needed: kept, it would be saved forever,
+      # since every save starts from the one before. Every Linux job installs
+      # the same manifest, so none drops a package another needs.
+      shell: bash
+      run: |
+        status="$(find build -path '*/vcpkg_installed/vcpkg/status' | head -n 1)"
+        if [ -z "$status" ]; then
+          echo "::warning::No vcpkg status file under build/; nothing dropped."
+          exit 0
+        fi
+        grep '^Abi: ' "$status" | cut -d' ' -f2 | sort -u > "$RUNNER_TEMP/vcpkg-abis"
+        find .vcpkg-bincache -type f -name '*.zip' | while read -r archive; do
+          abi="$(basename "$archive" .zip)"
+          grep -qxF "$abi" "$RUNNER_TEMP/vcpkg-abis" || { echo "dropping $abi"; rm -f "$archive"; }
+        done
+
+    - name: List the vcpkg binaries
+      id: listing
+      shell: bash
+      run: |
+        listing="$(find .vcpkg-bincache -type f | sort | sha256sum | cut -c1-64)"
+        echo "hash=$listing" >> "$GITHUB_OUTPUT"
+        if [ "$listing" = "$VCPKG_BINCACHE_RESTORED" ]; then
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Save vcpkg binaries
+      # Keyed by the listing, so jobs of one run that installed the same
+      # packages save one entry: the first reserves the key, the rest skip with
+      # a warning.
+      if: steps.listing.outputs.changed == 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .vcpkg-bincache
+        key: vcpkg-bincache-linux-clang-${{ steps.listing.outputs.hash }}
+
+    - if: steps.listing.outputs.changed == 'true'
+      uses: ./.github/actions/prune-cache
+      with:
+        prefix: vcpkg-bincache-linux-clang-
+        keep: vcpkg-bincache-linux-clang-${{ steps.listing.outputs.hash }}

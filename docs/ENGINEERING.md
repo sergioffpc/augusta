@@ -62,9 +62,18 @@ the decisions already made in ARCHITECTURE.md:
      Linux only), only for `pull_request` runs — skipped on the `push`
      that lands after merge, since the PR already validated it
   - Dependency restore: `vcpkg install` (manifest mode) before the build
-    step, both runners. Binary cache via a GitHub Packages NuGet feed
-    (vcpkg's native GitHub-Actions-cache backend was removed upstream in
-    2026 — a NuGet feed is now the supported caching path).
+    step, both runners. Binary cache via a GitHub Packages NuGet feed on
+    Windows (vcpkg's native GitHub-Actions-cache backend was removed
+    upstream in 2026). On Linux, where nuget.exe runs under Mono and fails
+    certificate checks, it is a files cache in the Actions cache, one entry
+    for every Linux job (all clang), saved only when a job built a package
+    it didn't restore.
+  - The Actions cache (10 GB per repository, least recently used evicted
+    first) holds only what a pull request restores from `develop`: the
+    vcpkg binaries, the Falcor build, sccache objects. The server image's
+    Docker layers live in GHCR (`augustad:buildcache`) instead: at several
+    GB they would evict the rest, and every pull request would rebuild its
+    dependencies from source.
   5. Compile with a strict warning set, treated as errors
   6. `build-tools`, when `tools/` changed: on a Windows runner, build the
      asset cooker's native modules and run its pytest suite, which also
