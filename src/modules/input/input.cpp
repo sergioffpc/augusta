@@ -9,6 +9,8 @@
 #include <optional>
 #include <string_view>
 
+#include <glm/ext/quaternion_trigonometric.hpp>
+
 #include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
