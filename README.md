@@ -63,7 +63,7 @@ make format-check               # the clang-format check CI runs
 
 **WSL2 (server / shared core):**
 ```bash
-./scripts/bootstrap-wsl.sh        # build-essential, clang, make, CMake, Ninja, clang-format/clang-tidy, vcpkg, sccache
+./scripts/bootstrap-wsl.sh        # build-essential, clang, autotools, make, CMake, Ninja, clang-format/clang-tidy, vcpkg, sccache
 cmake --preset linux
 cmake --build --preset linux
 ctest --preset linux

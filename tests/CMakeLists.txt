@@ -47,6 +47,11 @@ target_link_libraries(augusta_protocol_property_tests PRIVATE augusta_protocol r
 # RapidCheck's generator templates, one per message field, outgrow MSVC's
 # default section count for one object file.
 target_compile_options(augusta_protocol_property_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj>)
+# RapidCheck's Maybe uses std::aligned_storage, deprecated since C++23. Clang
+# reports it where our code instantiates the template, so its system include
+# path does not silence it; nothing of ours is deprecated in this target.
+target_compile_options(augusta_protocol_property_tests PRIVATE
+  $<$<CXX_COMPILER_ID:Clang>:-Wno-deprecated-declarations>)
 gtest_discover_tests(augusta_protocol_property_tests)
 
 add_executable(augusta_match_tests match_test.cpp)
