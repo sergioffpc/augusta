@@ -40,8 +40,11 @@ cmake --build --preset linux --target augusta_pack_load_seeds
 ## Running
 
 A pull request runs each target for about 60 seconds (CI's `fuzz` job), and a
-crash fails it with the crashing input uploaded as a run artifact. Locally,
-under WSL:
+crash fails it with the crashing input uploaded as a run artifact. The nightly
+(`nightly.yml`'s `fuzz` job) runs each for about 30 minutes, starting from the
+corpus earlier nights grew: it lives in the Actions cache, minimized after each
+run, and never in the repository. A crash there fails the nightly, uploads the
+input, and reaches the `nightly-failure` issue. Locally, under WSL:
 
 ```bash
 cmake --preset linux-fuzz
