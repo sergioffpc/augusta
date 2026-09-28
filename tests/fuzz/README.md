@@ -9,6 +9,7 @@ libFuzzer targets for what arrives from outside (ADR-0013). Each target is one
 | Target | Input | Seeds |
 |---|---|---|
 | `protocol_decode` | one payload for `protocol::Decode` | one message of each kind |
+| `pack_load` | a pack without its trailer, which the target signs with the golden packs' test key and loads through `assets::Pack::Load` | the golden client and server packs |
 
 ## Layout
 
@@ -26,11 +27,24 @@ when they drift from it. After a deliberate change to the wire, rewrite them:
 cmake --build --preset linux --target augusta_protocol_decode_seeds
 ```
 
+The `pack_load` seeds are the golden packs in `tests/fixtures/example-packs`
+without their trailer: a trailer the fuzzer mutated would fail verification
+before `Load` parses anything, so the target writes a valid one itself.
+[pack_load_seeds_test.cpp](pack_load_seeds_test.cpp) fails when they drift from
+the golden packs; after regenerating those, rewrite the seeds:
+
+```bash
+cmake --build --preset linux --target augusta_pack_load_seeds
+```
+
 ## Running
 
 A pull request runs each target for about 60 seconds (CI's `fuzz` job), and a
-crash fails it with the crashing input uploaded as a run artifact. Locally,
-under WSL:
+crash fails it with the crashing input uploaded as a run artifact. The nightly
+(`nightly.yml`'s `fuzz` job) runs each for about 30 minutes, starting from the
+corpus earlier nights grew: it lives in the Actions cache, minimized after each
+run, and never in the repository. A crash there fails the nightly, uploads the
+input, and reaches the `nightly-failure` issue. Locally, under WSL:
 
 ```bash
 cmake --preset linux-fuzz

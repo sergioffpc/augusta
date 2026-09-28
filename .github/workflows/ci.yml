@@ -295,22 +295,8 @@ jobs:
         with:
           submodules: true
 
-      - name: Install build tools
-        # Same as the sanitizers job: libFuzzer ships with the clang package.
-        run: sudo apt-get update && sudo apt-get install -y clang ninja-build autoconf autoconf-archive automake libtool
-
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-
-      - name: Cache vcpkg binaries
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .vcpkg-bincache
-          key: vcpkg-bincache-${{ hashFiles('vcpkg.json') }}
-          restore-keys: |
-            vcpkg-bincache-
-
-      - name: Bootstrap vcpkg
-        run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+      # libFuzzer ships with the clang package this installs.
+      - uses: ./.github/actions/setup-linux-build
 
       - name: Configure (libFuzzer + ASan)
         run: cmake --preset linux-fuzz
@@ -318,14 +304,20 @@ jobs:
       - name: Build
         run: cmake --build --preset linux-fuzz
 
-      - name: Fuzz protocol_decode
-        # New inputs go to a scratch directory, never into the committed seeds;
-        # a crash lands in fuzz-crashes/ and fails the step.
+      - name: Fuzz
+        # Each target in turn (tests/fuzz/README.md). New inputs go to a scratch
+        # directory, never into the committed seeds; a crash lands in
+        # fuzz-crashes/ and fails the step, after the other targets have run.
         run: |
-          mkdir -p fuzz-corpus/protocol_decode fuzz-crashes
-          build/x64-linux-fuzz/tests/fuzz/augusta_protocol_decode_fuzz \
-            -max_total_time=60 -timeout=5 -artifact_prefix=fuzz-crashes/protocol_decode- \
-            fuzz-corpus/protocol_decode tests/fuzz/corpus/protocol_decode
+          mkdir -p fuzz-crashes
+          status=0
+          for target in protocol_decode pack_load; do
+            mkdir -p "fuzz-corpus/$target"
+            "build/x64-linux-fuzz/tests/fuzz/augusta_${target}_fuzz" \
+              -max_total_time=60 -timeout=5 -artifact_prefix="fuzz-crashes/$target-" \
+              "fuzz-corpus/$target" "tests/fuzz/corpus/$target" || status=1
+          done
+          exit "$status"
 
       - name: Upload crashing inputs
         if: failure()

@@ -56,6 +56,15 @@ target_compile_options(augusta_protocol_property_tests PRIVATE
 # a high case count (ADR-0013).
 gtest_discover_tests(augusta_protocol_property_tests PROPERTIES LABELS property)
 
+add_executable(augusta_simulation_property_tests simulation_property_test.cpp)
+target_link_libraries(augusta_simulation_property_tests PRIVATE
+  augusta_simulation augusta_prediction augusta_input augusta_logging rapidcheck_gtest GTest::gtest GTest::gtest_main)
+# The same RapidCheck deprecation as augusta_protocol_property_tests above.
+target_compile_options(augusta_simulation_property_tests PRIVATE
+  $<$<CXX_COMPILER_ID:Clang>:-Wno-deprecated-declarations>)
+# Links PhysX, so the same first-launch cost applies as below.
+gtest_discover_tests(augusta_simulation_property_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS property)
+
 add_executable(augusta_match_tests match_test.cpp)
 target_link_libraries(augusta_match_tests PRIVATE augustad_match GTest::gtest GTest::gtest_main)
 # Links networking (for PeerId), so the same first-launch cost applies as below.
