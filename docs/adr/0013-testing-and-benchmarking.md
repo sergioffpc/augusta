@@ -56,7 +56,9 @@ how noisy its result is.
   repository, and the test, on both the Windows (MSVC) and Linux (clang)
   runners, compares what it computes against them within a tolerance defined
   in the test itself. If the two compilers disagree, at least one runner
-  fails, without either job needing the other's output.
+  fails, without either job needing the other's output. A deliberate change
+  to the ballistics model regenerates the file with one build target, and
+  the diff is reviewed like code.
 - **Pack contract through golden packs.** The pack format has two
   implementations, the Python cooker writing it and `augusta_assets` reading
   it, so both are held to the same committed files: the example scenario's

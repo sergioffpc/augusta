@@ -2,6 +2,7 @@
 #define AUGUSTA_BALLISTICS_H_
 
 #include <cstdint>
+#include <unordered_map>
 
 #include "augusta/physics.h"
 
@@ -118,6 +119,16 @@ class World {
   // longer exists - calling Step again with the same handle is
   // undefined behavior.
   StepResult Step(BulletHandle handle, float delta_time, const physics::World& physics_world);
+
+ private:
+  struct Bullet {
+    math::Vec3 origin;
+    BulletState state;
+    BulletConfig config;
+  };
+
+  std::unordered_map<BulletHandle, Bullet> bullets_;
+  std::uint32_t next_handle_ = 0;
 };
 
 }  // namespace augusta::ballistics
