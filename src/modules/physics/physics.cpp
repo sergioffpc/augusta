@@ -86,6 +86,8 @@ constexpr float kCapsuleRadius = 0.3F;
 constexpr float kStandingHeight = 1.5F;  // Capsule cylinder height, excludes hemispherical caps.
 constexpr float kCrouchingHeight = 0.7F;
 constexpr float kProneHeight = 0.1F;
+// The capsule's two hemispherical caps together add its diameter to its height.
+constexpr float kCapsuleDiameter = 2.0F * kCapsuleRadius;
 constexpr float kStepOffset = 0.3F;
 constexpr float kWalkSpeed = 3.0F;  // m/s, standing baseline.
 constexpr float kSprintMultiplier = 1.6F;
@@ -285,6 +287,8 @@ BodyState OnWireGrid(BodyState state) {
 PxExtendedVec3 ToFootPosition(const math::Vec3& position) { return {position.x, position.y, position.z}; }
 
 }  // namespace
+
+float StanceHeight(Stance stance) { return HeightForStance(stance) + kCapsuleDiameter; }
 
 // Per-body bookkeeping PhysX's controller doesn't itself track: a CCT has
 // no notion of "velocity" the way a rigid dynamic does, so World derives

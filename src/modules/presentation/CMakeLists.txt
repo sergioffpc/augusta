@@ -1,6 +1,7 @@
 add_library(augusta_presentation STATIC
   correction.cpp
   interpolation.cpp
+  local_view.cpp
   presentation.cpp
 )
 target_include_directories(augusta_presentation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

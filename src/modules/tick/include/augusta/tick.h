@@ -66,6 +66,12 @@ inline constexpr float kMaxPacing = 0.05F;
 /// nominal tick, and the server still consumes one command per Tick.
 [[nodiscard]] Clock::duration PacedTickDuration(Clock::duration nominal, std::uint8_t queued_commands);
 
+/// How far through a Tick tick_duration long, due at tick_start, now is: 0 at
+/// its start, 1 at its end, and held there before and after it (a Tick of no
+/// duration is already over) - the fraction the client's render frame blends
+/// the Tick's two Prediction States by.
+[[nodiscard]] float FractionElapsed(Clock::time_point tick_start, Clock::duration tick_duration, Clock::time_point now);
+
 }  // namespace augusta::tick
 
 #endif  // AUGUSTA_TICK_H_

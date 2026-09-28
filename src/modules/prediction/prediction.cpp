@@ -177,7 +177,9 @@ void World::Start(const math::Vec3& spawn, const parameters::Parameters& paramet
   start.position = spawn;
   impl.physics.SetState(impl.local_body, start);
   impl.history = History{};
-  impl.tick_state = State{.local_body = start};
+  // Starting over is not a correction: the running total is kept, so a reader
+  // sees no jump in it (see State::total_correction).
+  impl.tick_state = State{.local_body = start, .total_correction = impl.tick_state.total_correction};
 }
 
 World::World(World&&) noexcept = default;

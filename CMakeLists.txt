@@ -39,9 +39,11 @@ find_package(unofficial-omniverse-physx-sdk CONFIG REQUIRED)
 # added via add_subdirectory: its own CMakeLists.txt pulls in a compiled
 # loader lib, tests, and install rules this repo has no use for - a plain
 # INTERFACE target for the header path is all the nvtx3::scoped_range API
-# actually needs.
+# actually needs. SYSTEM, like every other third-party include: its
+# headers' own diagnostics are not this repo's to fix, for the compiler or
+# for clang-tidy.
 add_library(nvtx3-cpp INTERFACE)
-target_include_directories(nvtx3-cpp INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/nvtx/c/include")
+target_include_directories(nvtx3-cpp SYSTEM INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/nvtx/c/include")
 
 include(cmake/AugustaModule.cmake)
 

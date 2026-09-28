@@ -120,7 +120,8 @@ class World {
   /// Starts the local player over at spawn, standing and at full stamina, under
   /// the stamina rules of parameters: what the server told this client when it
   /// admitted it, so the client never predicts with rules of its own. Call
-  /// before the first command is sent; nothing predicted earlier is kept.
+  /// before the first command is sent; nothing predicted earlier is kept but
+  /// State::total_correction, which moving to spawn does not add to.
   void Start(const math::Vec3& spawn, const parameters::Parameters& parameters);
 
   World(const World&) = delete;

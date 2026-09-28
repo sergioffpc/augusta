@@ -35,6 +35,10 @@ enum class Stance {
   kProne,
 };
 
+/// How tall a body is in stance, feet to the top of its collision capsule, in
+/// meters - lower crouching than standing, and lower prone than crouching.
+[[nodiscard]] float StanceHeight(Stance stance);
+
 // Opaque handle to a body created by World::CreateBody. Valid only for the
 // World instance that created it; passing a handle from one World to
 // another is undefined behavior.

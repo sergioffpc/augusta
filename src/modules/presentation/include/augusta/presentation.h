@@ -9,6 +9,7 @@
 
 #include "augusta/audio.h"
 #include "augusta/interpolation.h"
+#include "augusta/local_view.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
@@ -44,27 +45,29 @@ namespace augusta::presentation {
 // contains a Scripts/Behaviours phase - game policy is exclusively
 // server-authoritative (ADR-0024).
 enum class Phase {
-  // Mechanism. Slides the local player out of the jumps a reconciliation
-  // replay makes (Correction, ADR-0004). For every other player, buffers the
-  // newest reported body (World::RunFrame's snapshot parameter) per remote
-  // entity, placed on the server's timeline by its tick, and renders each
-  // kInterpolationDelay behind a render-side clock aligned to that timeline,
-  // interpolated between the two surrounding updates (ServerClock and
-  // RemoteInterpolator, interpolation.h) - smooth motion independent of render
-  // frame rate and of when updates arrive. An
+  // Mechanism. Shows the local player's predicted body the fraction of the
+  // tick elapsed at render time of the way from the previous Prediction State
+  // to the newest (BlendTicks, local_view.h), and slides it out of the jumps
+  // a reconciliation replay makes (Correction, ADR-0004). For every other
+  // player, buffers the newest reported body (World::RunFrame's snapshot
+  // parameter) per remote entity, placed on the server's timeline by its
+  // tick, and renders each kInterpolationDelay behind a render-side clock
+  // aligned to that timeline, interpolated between the two surrounding
+  // updates (ServerClock and RemoteInterpolator, interpolation.h) - smooth
+  // motion independent of render frame rate and of when updates arrive. An
   // entity no longer in the snapshot is no longer shown, and neither is anyone
   // while there is no snapshot (outside a match). Each is drawn as its character
   // (World::RunFrame's characters parameter).
   kInterpolation,
-  // Mechanism. View camera position: local_body's predicted position (same
-  // one kInterpolation just offset for local_position, above) plus the local
-  // player's character's eye (World's constructor, ADR-0040), recomputed every
-  // frame - so the camera is attached to the character and tracks
-  // wherever the local player's body actually is, instead of the one-shot
-  // placement scene_loader.cpp used to freeze it at. Rotation is the local
-  // player's view (World::RunFrame's view_rotation). ADS zoom transition,
-  // recoil kick decay, and view bob are still future work. Not yet a module
-  // of its own - see the header comment above.
+  // Mechanism. View camera position: the local player's body where
+  // kInterpolation just showed it (local_position, above) plus its
+  // character's eye (World's constructor, ADR-0040) for the body's stance
+  // (EyeAt, local_view.h), recomputed every frame - so the camera is attached
+  // to the character and tracks wherever, and however low, the local
+  // player's body actually is. Rotation is where the local player looks as of
+  // this frame (World::RunFrame's view_rotation), not as of the last tick.
+  // ADS zoom transition, recoil kick decay, and view bob are still future
+  // work. Not yet a module of its own - see the header comment above.
   kCamera,
   // Mechanism. Drives skeletal/procedural animation from interpolated
   // movement and weapon state - augusta::animation::Engine::Update, once
@@ -81,17 +84,6 @@ enum class Phase {
   // State (State, below), for augusta::renderer::Renderer::RenderFrame
   // and augusta::audio to consume.
   kCommit,
-};
-
-// The local player's view camera for one frame - Phase::kCamera's output.
-// A plain position/rotation pair, not augusta::renderer::Camera itself: this
-// module stays decoupled from augusta_renderer the same way
-// presentation::RemotePlayer does (see renderer::RemotePlayer's doc comment)
-// - ClientRuntime's ToRenderer maps both into their renderer-side
-// equivalents.
-struct Camera {
-  math::Vec3 position{};
-  math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};
 };
 
 /// One dynamic body as the server last reported it, named by its entity - not
@@ -128,12 +120,13 @@ struct PlayerCharacter {
 // augusta::prediction::State; its real shape depends on ECS component
 // shapes not yet designed.
 struct State {
-  /// Where the local player is shown: its predicted position, plus the offset
-  /// that hides a reconciliation jump and fades (see correction.h).
+  /// Where the local player is shown: its predicted position blended between
+  /// the two newest ticks, plus the offset that hides a reconciliation jump
+  /// and fades (see correction.h).
   math::Vec3 local_position{};
   /// The local player's view camera this frame (Phase::kCamera) - tracks
-  /// local_position at its character's eye, every frame, turned where the
-  /// player looks.
+  /// local_position at its character's eye for its stance, every frame, turned
+  /// where the player looks.
   Camera camera{};
   /// Every other player in the match, at its interpolated position and stance
   /// this frame (RemoteInterpolator::Sample, interpolation.h), with its
@@ -158,9 +151,10 @@ class World {
   // pattern as augusta::renderer::Renderer's input_sink parameter:
   // ClientRuntime (src/client/runtime.h) constructs the client's one
   // audio::Engine and wires it to both Renderer's window and this
-  // World's AudioCues phase. eye is the local player's character's eye, in
-  // that character's root space (its feet at the origin, ADR-0040): where
-  // Phase::kCamera puts the camera relative to the predicted body. Also
+  // World's AudioCues phase. eye is the local player's character's eye
+  // standing, in that character's root space (its feet at the origin,
+  // ADR-0040): where Phase::kCamera puts the camera relative to the predicted
+  // body, lowered for the body's stance (EyeAt, local_view.h). Also
   // registers Phase's five phases and their systems on the owned Flecs world
   // (see header comment).
   World(audio::Engine& audio_engine, const math::Vec3& eye);
@@ -172,13 +166,12 @@ class World {
   World& operator=(World&&) noexcept;
 
   // Runs all five Phase values above, in their declared order, for one
-  // render frame (internally, one flecs::world::progress() call). latest
-  // is the most recently committed prediction::State; Interpolation
-  // blends it against the previous call's latest, internally retained -
-  // the first call after construction has no previous state to blend
-  // from and uses latest directly. view_rotation is where the local player
-  // looks (input::ViewRotation of its latest Command), which the camera
-  // takes as its rotation. local_entity is the body this client's
+  // render frame (internally, one flecs::world::progress() call). ticks
+  // are the two most recently committed prediction::State values and how
+  // far between them the frame is, which Interpolation blends by.
+  // view_rotation is where the local player looks as of this frame
+  // (input::Input::CurrentView - newer than its latest Command's), which the
+  // camera takes as its rotation. local_entity is the body this client's
   // player controls, or nullopt before its first match; snapshot is the
   // newest Authoritative State update of the match in progress, or nullopt
   // outside one; and characters is every player's character, as the server
@@ -190,7 +183,7 @@ class World {
   // RemoteInterpolator (see interpolation.h); a repeated snapshot (from no
   // newer a tick than the previous call's) is not recorded again. Returns the
   // frame's Presentation State.
-  State RunFrame(const prediction::State& latest, const math::Quat& view_rotation, std::optional<EntityId> local_entity,
+  State RunFrame(const PredictedTicks& ticks, const math::Quat& view_rotation, std::optional<EntityId> local_entity,
                  const std::optional<WorldSnapshot>& snapshot, std::span<const PlayerCharacter> characters);
 
  private:

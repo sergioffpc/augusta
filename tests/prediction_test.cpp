@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/correction.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 
@@ -23,6 +24,7 @@ using augusta::physics::CollisionMesh;
 using augusta::prediction::Acknowledgement;
 using augusta::prediction::State;
 using augusta::prediction::World;
+using augusta::presentation::Correction;
 
 constexpr float kFixedTick = 1.0F / 60.0F;
 constexpr int kSettleTicks = 30;
@@ -201,6 +203,36 @@ TEST_F(ReconciliationTest, TheJumpTheReplayMadeIsTheTotalCorrection) {
   const State state = Tick(ServerSays(sequence_ - 2, Vec3(kDivergence, 0.0F, 0.0F)));
 
   EXPECT_NEAR(state.total_correction.x, kDivergence, 0.02F);
+}
+
+TEST_F(ReconciliationTest, StartingOverKeepsTheTotalCorrection) {
+  const State corrected = Tick(ServerSays(sequence_, Vec3(0.5F, 0.0F, 0.0F)));
+  ASSERT_GT(corrected.total_correction.x, 0.4F);
+
+  world_.Start(Vec3(5.0F, 0.0F, 7.0F), Parameters{});
+  const State restarted = Tick(std::nullopt);
+
+  EXPECT_EQ(restarted.total_correction, corrected.total_correction);
+}
+
+TEST_F(ReconciliationTest, TheFirstFrameOfTheNextMatchHasNoOffset) {
+  constexpr float kFrame = 1.0F / 60.0F;
+  constexpr int kFadeFrames = 60;
+  Correction smoothing;
+  static_cast<void>(smoothing.Update(latest_.total_correction, kFrame));
+  // A Match ends with a correction made and long since faded from view.
+  const State corrected = Tick(ServerSays(sequence_, Vec3(0.5F, 0.0F, 0.0F)));
+  ASSERT_GT(corrected.total_correction.x, 0.4F);
+  for (int i = 0; i < kFadeFrames; ++i) {
+    static_cast<void>(smoothing.Update(corrected.total_correction, kFrame));
+  }
+
+  world_.Start(Vec3(5.0F, 0.0F, 7.0F), Parameters{});
+  const Vec3 offset = smoothing.Update(Tick(std::nullopt).total_correction, kFrame);
+
+  EXPECT_NEAR(offset.x, 0.0F, 1e-6F);
+  EXPECT_NEAR(offset.y, 0.0F, 1e-6F);
+  EXPECT_NEAR(offset.z, 0.0F, 1e-6F);
 }
 
 TEST_F(ReconciliationTest, TheSameAcknowledgementRepeatedIsActedOnOnce) {

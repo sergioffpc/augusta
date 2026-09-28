@@ -131,11 +131,14 @@ struct ClientRuntime::Impl {
   std::thread prediction_thread;
   std::thread network_thread;
 
-  // What the Prediction thread's last tick left: the predicted state and where
-  // the player looked for that tick's command, which the camera turns by.
+  // What the Prediction thread's last tick left: the predicted states before
+  // and after it, and when it was due and for how long, so a render frame
+  // blends the two by how far through the tick it is.
   struct LatestTick {
-    prediction::State state;
-    math::Quat view_rotation{1.0F, 0.0F, 0.0F, 0.0F};
+    prediction::State previous;
+    prediction::State latest;
+    tick::Clock::time_point start;
+    tick::Clock::duration duration{};
   };
 
   // Guards latest_tick: written once per Prediction tick,
@@ -338,20 +341,25 @@ struct ClientRuntime::Impl {
     const auto nominal_tick = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
     PredictionActivity activity;
     tick::Clock::time_point deadline = tick::Clock::now();
+    // The first tick has none before it to blend from.
+    std::optional<prediction::State> previous;
     while (running.load(std::memory_order_relaxed)) {
       const nvtx3::scoped_range range{"Prediction Tick"};
       const tick::Clock::time_point tick_start = tick::Clock::now();
 
-      command::Command command = input.Sample();
-      prediction::State state = session->Tick(command, delta_time.count());
+      const command::Command command = input.Sample();
+      const prediction::State state = session->Tick(command, delta_time.count());
       activity.Record(state, tick_start);
 
+      // The tick spans its schedule, not its wake-ups, so frames blend evenly.
+      const tick::Clock::time_point due = deadline;
+      deadline = tick::NextDeadline(deadline, NextTickDuration(nominal_tick), tick::Clock::now());
       {
         std::lock_guard<std::mutex> lock(latest_tick_mutex);
-        latest_tick = {.state = state, .view_rotation = input::ViewRotation(command.yaw, command.pitch)};
+        latest_tick = {.previous = previous.value_or(state), .latest = state, .start = due, .duration = deadline - due};
       }
+      previous = state;
 
-      deadline = tick::NextDeadline(deadline, NextTickDuration(nominal_tick), tick::Clock::now());
       std::this_thread::sleep_until(deadline);
     }
   }
@@ -459,12 +467,17 @@ std::optional<Failure> ClientRuntime::Run() {
     // Each is converted into presentation's own types here, at ClientRuntime's
     // edge (see SnapshotOf and CharactersOf above).
     const Impl::LatestTick latest = impl_->GetLatestTick();
+    const presentation::PredictedTicks ticks{
+        .previous = latest.previous,
+        .latest = latest.latest,
+        .fraction = tick::FractionElapsed(latest.start, latest.duration, tick::Clock::now()),
+    };
     const std::optional<presentation::WorldSnapshot> snapshot = SnapshotOf(*impl_->session);
     const std::optional<presentation::EntityId> local_entity =
         impl_->session->GetEntityId().transform([](harness::EntityId entity) { return ToPresentation(entity); });
     const std::vector<presentation::PlayerCharacter> characters = CharactersOf(impl_->session->GetMatchStart());
     presentation::State frame_state =
-        impl_->presentation.RunFrame(latest.state, latest.view_rotation, local_entity, snapshot, characters);
+        impl_->presentation.RunFrame(ticks, impl_->input.CurrentView(), local_entity, snapshot, characters);
     impl_->renderer.SetCamera(ToRenderer(frame_state.camera));
     // The local player's own position isn't drawn yet (renderer.h) - only
     // remote players, each as its character. In the Lobby there are none, so

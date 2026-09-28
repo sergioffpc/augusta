@@ -9,6 +9,8 @@
 #include <optional>
 #include <string_view>
 
+#include <glm/ext/quaternion_trigonometric.hpp>
+
 #include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
@@ -114,6 +116,11 @@ command::Command Input::Sample() {
   command.yaw = yaw_;
   command.pitch = pitch_;
   return command;
+}
+
+math::Quat Input::CurrentView() const {
+  const std::lock_guard<std::mutex> lock(mutex_);
+  return ViewRotation(yaw_, pitch_);
 }
 
 bool Input::CursorCaptured() const {

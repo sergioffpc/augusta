@@ -190,8 +190,8 @@ Commit)
 
 | Phase | Category | Responsibility |
 |---|---|---|
-| Interpolation | Mechanism | Interpolates between the last two Prediction States for smooth motion at render frame rate |
-| Camera | Mechanism | View camera — position/orientation, ADS zoom transition, recoil kick decay, view bob |
+| Interpolation | Mechanism | Interpolates between the last two Prediction States, by the fraction of the tick elapsed at render time, for smooth motion at render frame rate |
+| Camera | Mechanism | View camera — position at the character's eye for the body's stance, orientation from the newest mouse-look every frame (not the tick's), ADS zoom transition, recoil kick decay, view bob |
 | Animation | Mechanism | Drives skeletal/procedural animation from interpolated movement and weapon state |
 | AudioCues | Mechanism | Translates events carried in the Prediction State (e.g., fire, footstep) into spatialized audio cues |
 | Commit | Mechanism | Packages the frame's presentation data into Presentation State |

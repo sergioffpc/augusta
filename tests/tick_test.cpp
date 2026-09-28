@@ -10,6 +10,7 @@
 namespace {
 
 using augusta::tick::Clock;
+using augusta::tick::FractionElapsed;
 using augusta::tick::kLateTolerance;
 using augusta::tick::kMaxPacing;
 using augusta::tick::kMaxTicksBehind;
@@ -107,6 +108,21 @@ TEST(TickPacingTest, ATickIsNeverPacedFurtherThanItsBound) {
 
     EXPECT_LE(std::abs(paced / nominal - 1.0), kMaxPacing + 1e-6) << queued;
   }
+}
+
+TEST(TickTest, TheFractionElapsedRunsFromZeroAtATicksStartToOneAtItsEnd) {
+  EXPECT_FLOAT_EQ(FractionElapsed(kStart, kTick, kStart), 0.0F);
+  EXPECT_NEAR(FractionElapsed(kStart, kTick, kStart + (kTick / 4)), 0.25F, 1e-4F);
+  EXPECT_FLOAT_EQ(FractionElapsed(kStart, kTick, kStart + kTick), 1.0F);
+}
+
+TEST(TickTest, TheFractionElapsedIsHeldBeforeATickStartsAndAfterItEnds) {
+  EXPECT_FLOAT_EQ(FractionElapsed(kStart, kTick, kStart - kWork), 0.0F);
+  EXPECT_FLOAT_EQ(FractionElapsed(kStart, kTick, kStart + (3 * kTick)), 1.0F);
+}
+
+TEST(TickTest, ATickOfNoDurationIsAlreadyOver) {
+  EXPECT_FLOAT_EQ(FractionElapsed(kStart, Clock::duration::zero(), kStart), 1.0F);
 }
 
 }  // namespace
