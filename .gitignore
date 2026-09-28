@@ -48,11 +48,13 @@ packages/
 .vcpkg-bincache/
 
 # Python (tools/pack) build/install artifacts - the hermetic venv
-# itself lives under -AssetsRoot (see above), never inside the checkout.
+# itself lives under -AssetsRoot (see above), never inside the checkout;
+# .venv/ is the test environment `uv run pytest` creates.
 __pycache__/
 *.pyc
 *.egg-info/
 .venv/
+.pytest_cache/
 
 # Native _meshoptimizer/_textconv extension modules (tools/pack/
 # cpp/*_bindings.cpp) and any runtime DLLs they need alongside them

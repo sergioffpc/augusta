@@ -48,6 +48,7 @@ include(cmake/AugustaModule.cmake)
 enable_testing()
 find_package(GTest CONFIG REQUIRED)
 find_package(benchmark CONFIG REQUIRED)
+find_package(rapidcheck CONFIG REQUIRED)
 
 add_subdirectory(src/modules/version)
 add_subdirectory(src/modules/logging)

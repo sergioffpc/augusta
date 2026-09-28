@@ -56,8 +56,7 @@ the decisions already made in ARCHITECTURE.md:
      after a full Windows + Linux + sanitizers build
   2. Build + test the client on a Windows runner (MSVC)
   3. Build + test the server on a Linux runner (clang, ADR-0008), plus
-     `clang-tidy` (Google style checks profile) and pytest for the asset
-     cooker
+     `clang-tidy` (Google style checks profile)
   4. ASan + UBSan test build and a short fuzzing run per target (both
      Linux only), only for `pull_request` runs — skipped on the `push`
      that lands after merge, since the PR already validated it
@@ -66,10 +65,14 @@ the decisions already made in ARCHITECTURE.md:
     (vcpkg's native GitHub-Actions-cache backend was removed upstream in
     2026 — a NuGet feed is now the supported caching path).
   5. Compile with a strict warning set, treated as errors
-  6. Asset pipeline check: build the asset cooker, generate a fresh
-     throwaway Ed25519 keypair for this run, cook the test assets, sign
-     with the ephemeral key, and verify the signed pack loads correctly
-     end to end — the real release private key never touches CI
+  6. `build-tools`, when `tools/` changed: on a Windows runner, build the
+     asset cooker's native modules and run its pytest suite, which also
+     requires that cooking the example scenario still gives the golden
+     packs in `tests/fixtures/example-packs/` byte for byte; the C++ tests
+     in 2 and 3 load those same packs — the contract between the Python
+     writer and the C++ reader of the pack format (ADR-0013). The golden
+     packs are signed with a committed test key; the real release private
+     key never touches CI
 - **Nightly** (on `develop`): long fuzzing runs, TSan, property-based
   tests at a high case count, and a `llvm-cov` coverage report; a
   failure opens or updates a `nightly-failure` issue (ADR-0013).
@@ -154,7 +157,7 @@ pipeline).
   Windows 11 + WSL2 version; confirm with `wsl --version`.
 - **Server / shared core (Linux, via WSL2):** develop and build directly
   inside WSL2, accessing the repo via `/mnt/c/...`. No Docker container —
-  a `scripts/bootstrap-wsl.sh` setup script installs CMake, Ninja,
+  a `scripts/bootstrap-wsl.sh` setup script installs clang (ADR-0008), CMake, Ninja,
   vcpkg, clang-tidy, clang-format, gdb, GitHub CLI, kubectl, and helm
   directly into the WSL environment. The cross-filesystem access cost
   (`/mnt/c`) is accepted here, since this side has the lighter build
@@ -166,8 +169,8 @@ pipeline).
   Studio Build Tools system-wide (default install location) — simpler
   than pinning a project-specific path, at the cost of not being able to
   side-by-side independent Build Tools versions per project — plus the
-  Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, and clang-format (for the
-  `pre-commit` hook below).
+  Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, and LLVM's clang-format
+  and clang-tidy (for the `pre-commit` and `pre-push` hooks below).
   (A fully hermetic, registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was
   considered and rejected: Falcor's CMake presets only test/support
   MSVC on Windows, and stacking an unsupported compiler on top of an
@@ -208,8 +211,13 @@ pipeline).
   local `clang-format` version than CI's. `clang-tidy` stays out of the
   commit hook — slower, and needs a full `compile_commands.json`, a poor
   fit for a commit-time hook — and runs instead as a `pre-push` hook on
-  the changed `src/*.cpp` files, since it catches what MSVC doesn't and CI
-  would; `make lint` runs both checks as CI does, and `make tidy` alone
+  the `src/*.cpp` files touched by the commits the remote doesn't have yet
+  (the same files `make tidy` covers on that platform), since it catches
+  what MSVC doesn't and CI would. It reads the debug build's
+  `compile_commands.json` (`windows-debug` / `linux-debug` preset), blocks
+  the push on any warning, refuses the push with a message naming the
+  preset when that database is missing, and runs nothing when no such file
+  changed; `make lint` runs both checks as CI does, and `make tidy` alone
   runs `clang-tidy`.
 - Strict warnings-as-errors in CI (see CI/CD above).
 - ASan/UBSan and fuzzing in CI; TSan nightly given multithreading

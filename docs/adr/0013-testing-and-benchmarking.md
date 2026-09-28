@@ -16,7 +16,7 @@ how noisy its result is.
 | Unit, integration, and boundary tests (`ctest`) | | ✅ Windows + Linux | | ✅ |
 | Property-based tests (RapidCheck) | | ✅ 100 cases | ✅ ~10 000 cases | |
 | pytest (`tools/pack`) | | ✅ | | |
-| Asset pipeline check | | ✅ | | ✅ |
+| Pack contract (golden packs) | | ✅ | | ✅ |
 | ASan + UBSan | | ✅ | | |
 | Fuzzing | | ✅ ~60 s per target | ✅ ~30 min per target | |
 | TSan | | | ✅ | |
@@ -57,12 +57,16 @@ how noisy its result is.
   runners, compares what it computes against them within a tolerance defined
   in the test itself. If the two compilers disagree, at least one runner
   fails, without either job needing the other's output.
-- **Asset pipeline check.** Builds the cooker, generates a throwaway Ed25519
-  keypair for the run, cooks and signs the test assets with it, and loads the
-  signed pack in C++. It is the contract test between the Python writer and
-  the C++ reader of the pack format; the C++ tests round-trip through the C++
-  encoder only, and pytest covers the cooker's own logic (validation,
-  optimization, signing). The release private key never reaches CI.
+- **Pack contract through golden packs.** The pack format has two
+  implementations, the Python cooker writing it and `augusta_assets` reading
+  it, so both are held to the same committed files: the example scenario's
+  client and server packs, cooked with a committed test key (never the release
+  key). The cooker's pytest suite cooks the example and requires those packs
+  byte for byte, which works because a cook is deterministic; the C++ tests
+  load and resolve them, wherever `ctest` runs. Neither job needs the other's
+  output. A deliberate change to the format or the example regenerates the
+  golden packs with one command. pytest also covers the cooker's own logic
+  (validation, optimization, signing).
 - **Fuzzing** targets what arrives from outside: the protocol's message
   decoding (the NFR-05 attack surface) and `Pack::Load`. It builds with the
   `linux-fuzz` preset (clang, libFuzzer, ASan). Seeds live in the repository
@@ -99,5 +103,8 @@ how noisy its result is.
 - **Exchanging trajectories between the Windows and Linux jobs** for
   NFR-03, instead of a golden file: rejected, it chains the jobs for no
   more coverage than both comparing against the same file.
+- **Handing freshly cooked packs from the cooker's job to the C++ job** as
+  an artifact, instead of golden packs: rejected, it makes the C++ build wait
+  on the cooker's for no more coverage than both checking the same files.
 - **AFL++**, which builds with any compiler: not needed once Linux builds
   with clang (ADR-0008).
