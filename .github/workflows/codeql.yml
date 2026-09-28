@@ -28,28 +28,10 @@ jobs:
         with:
           submodules: true
 
-      - name: Install build tools
-        # autoconf/autoconf-archive/automake/libtool: see ci.yml's
-        # build-server - vcpkg's libsodium port needs these to build via
-        # autotools on Linux.
-        run: sudo apt-get update && sudo apt-get install -y ninja-build autoconf autoconf-archive automake libtool
-
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-
-      # See ci.yml's build-server for why this is a files-based cache
-      # rather than the NuGet/GitHubPackages default: nuget.exe runs
-      # under Mono here, and Mono's untrusted-by-default cert store
-      # fails every restore/push with CERTIFICATE_VERIFY_FAILED.
-      - name: Cache vcpkg binaries
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .vcpkg-bincache
-          key: vcpkg-bincache-${{ hashFiles('vcpkg.json') }}
-          restore-keys: |
-            vcpkg-bincache-
-
-      - name: Bootstrap vcpkg
-        run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+      # The same toolchain and vcpkg binary cache as ci.yml's Linux jobs: the
+      # clang the linux preset compiles with (ADR-0008), so the packages they
+      # built are the ones this job needs.
+      - uses: ./.github/actions/setup-linux-build
 
       - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4
         with:
@@ -62,6 +44,8 @@ jobs:
         run: cmake --preset linux
         env:
           VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+
+      - uses: ./.github/actions/save-vcpkg-cache
 
       - name: Build
         run: cmake --build --preset linux

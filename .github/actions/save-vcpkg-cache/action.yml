@@ -1,0 +1,31 @@
+name: Save the vcpkg binary cache
+description: >
+  Saves .vcpkg-bincache for later Linux jobs to restore (setup-linux-build's
+  "Restore vcpkg binaries"), but only when this job built a package it didn't
+  restore: an unchanged cache is already saved, and saving it again would only
+  push other caches out of the repository's 10 GB. Run it right after the step
+  that configures the build, so a failing test later can't keep it from saving.
+
+runs:
+  using: composite
+  steps:
+    - name: List the vcpkg binaries
+      id: listing
+      shell: bash
+      run: |
+        listing="$(find .vcpkg-bincache -type f | sort | sha256sum | cut -c1-64)"
+        echo "hash=$listing" >> "$GITHUB_OUTPUT"
+        if [ "$listing" = "$VCPKG_BINCACHE_RESTORED" ]; then
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Save vcpkg binaries
+      # Keyed by the listing, so jobs of one run that built the same packages
+      # save one entry: the first reserves the key, the rest skip with a warning.
+      if: steps.listing.outputs.changed == 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .vcpkg-bincache
+        key: vcpkg-bincache-linux-clang-${{ steps.listing.outputs.hash }}
