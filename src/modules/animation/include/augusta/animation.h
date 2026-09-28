@@ -20,8 +20,7 @@
 // ballistics's own header comment notes the same gap for per-body-part
 // hitboxes), so there is nothing yet to evaluate a pose against.
 // Engine::Update's return type (Pose) is a deliberately empty
-// placeholder - same deferred-design posture as
-// augusta::presentation::State - revisit once a skeleton/rig format
+// placeholder - revisit once a skeleton/rig format
 // exists (mesh import is ADR-0016; skinning/rigging isn't decided there
 // yet).
 namespace augusta::animation {

@@ -62,8 +62,7 @@ class Engine {
 
   // Loads the mono PCM sound at asset_path (a path relative to the
   // signed asset pack's root, per ARCHITECTURE.md §8 - not a filesystem
-  // path; pack loading itself is M2/ADR-0018 work, not yet designed, so
-  // this module's implementation will depend on that once it exists).
+  // path; the pack is augusta::assets's, ADR-0018).
   // Throws std::runtime_error if the asset is missing or isn't mono PCM
   // (ADR-0020).
   [[nodiscard]] SoundHandle LoadSound(const std::string& asset_path);
