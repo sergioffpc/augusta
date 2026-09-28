@@ -15,6 +15,7 @@
     "libsodium",
     "lua",
     "physx",
+    "rapidcheck",
     "sol2",
     "yaml-cpp"
   ]

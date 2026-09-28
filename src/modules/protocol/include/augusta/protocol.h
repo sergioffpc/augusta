@@ -44,6 +44,8 @@
 //
 // The structs order their fields widest first, so none carries padding between
 // fields; the order on the wire is the codec's and need not follow it.
+// They compare equal field by field, so a message that survives Encode and
+// Decode compares equal to itself, whatever fields it gains.
 namespace augusta::protocol {
 
 /// The first byte of every payload; which message the rest of it is.
@@ -106,6 +108,8 @@ struct BodyStateWire {
   /// Any of kExhausted; no other bit.
   std::uint8_t flags = 0;
   StanceWire stance = StanceWire::kStanding;
+
+  bool operator==(const BodyStateWire&) const = default;
 };
 
 /// What a player asked to do for one tick.
@@ -125,6 +129,8 @@ struct CommandWire {
   /// Any of kSprint, kAds, kFire and kReload; no other bit.
   std::uint8_t flags = 0;
   StanceWire desired_stance = StanceWire::kStanding;
+
+  bool operator==(const CommandWire&) const = default;
 };
 
 /// The stamina rules every player body follows.
@@ -132,6 +138,8 @@ struct StaminaWire {
   float deplete_per_second = 0.0F;
   float regen_per_second = 0.0F;
   float forced_walk_below = 0.0F;
+
+  bool operator==(const StaminaWire&) const = default;
 };
 
 /// The Parameters (ADR-0039) a client predicts with.
@@ -139,6 +147,8 @@ struct ParametersWire {
   StaminaWire stamina{};
   /// How many players a match needs to start (ADR-0043).
   std::uint8_t player_count = 1;
+
+  bool operator==(const ParametersWire&) const = default;
 };
 
 /// The server's name for one connected player, distinct from the transport's
@@ -174,12 +184,16 @@ struct JoinRequestWire {
   /// The character the player chose, by its path relative to `authoring/`
   /// (e.g. "characters/player", ADR-0042); at most kMaxCharacterPathLength bytes.
   std::string character;
+
+  bool operator==(const JoinRequestWire&) const = default;
 };
 
 /// One dynamic body inside an Authoritative State update.
 struct EntityStateWire {
   EntityIdWire entity{};
   BodyStateWire body{};
+
+  bool operator==(const EntityStateWire&) const = default;
 };
 
 /// Server to client: the join succeeded, and the client waits in the Lobby.
@@ -196,11 +210,15 @@ struct JoinAcceptedWire {
   /// The joining player's own character index: its 1-based position in the
   /// scenario's character list (ADR-0042). Never 0.
   std::uint8_t character = 1;
+
+  bool operator==(const JoinAcceptedWire&) const = default;
 };
 
 /// Server to client: the join failed and the connection will not be used.
 struct JoinRefusedWire {
   JoinRefusalWire reason{};
+
+  bool operator==(const JoinRefusedWire&) const = default;
 };
 
 /// One tick's command and the number the client gave it. Numbers start at 1 and
@@ -208,6 +226,8 @@ struct JoinRefusedWire {
 struct SequencedCommandWire {
   std::uint32_t sequence = 0;
   CommandWire command{};
+
+  bool operator==(const SequencedCommandWire&) const = default;
 };
 
 /// Client to server: recent commands, oldest first. Each message repeats the
@@ -215,6 +235,8 @@ struct SequencedCommandWire {
 /// the newest), so one lost datagram does not drop input.
 struct CommandsWire {
   std::vector<SequencedCommandWire> commands;
+
+  bool operator==(const CommandsWire&) const = default;
 };
 
 /// Server to client: the Authoritative State of one server tick.
@@ -225,6 +247,8 @@ struct AuthoritativeStateWire {
   std::uint32_t acknowledged_sequence = 0;
   /// Every dynamic body in the match, at most kMaxPlayers (only players have one so far).
   std::vector<EntityStateWire> bodies;
+
+  bool operator==(const AuthoritativeStateWire&) const = default;
 };
 
 /// One player in the Lobby.
@@ -232,6 +256,8 @@ struct RosterEntryWire {
   SessionIdWire session{};
   /// The player's character index (see JoinAcceptedWire::character). Never 0.
   std::uint8_t character = 1;
+
+  bool operator==(const RosterEntryWire&) const = default;
 };
 
 /// Server to client: who is in the Lobby, sent to everyone in it whenever that changes.
@@ -240,6 +266,8 @@ struct LobbyWire {
   std::uint32_t version = 0;
   /// Every player in the Lobby, the recipient included, at most kMaxPlayers.
   std::vector<RosterEntryWire> roster;
+
+  bool operator==(const LobbyWire&) const = default;
 };
 
 /// Client to server: the client has loaded what it needs to draw everyone in
@@ -247,6 +275,8 @@ struct LobbyWire {
 struct ReadyWire {
   /// The LobbyWire::version the client loaded for; only the current one counts.
   std::uint32_t version = 0;
+
+  bool operator==(const ReadyWire&) const = default;
 };
 
 /// One player in a match, the body it controls, and where the server spawns it.
@@ -257,16 +287,22 @@ struct MatchPlayerWire {
   EntityIdWire entity{};
   /// The player's character index (see JoinAcceptedWire::character). Never 0.
   std::uint8_t character = 1;
+
+  bool operator==(const MatchPlayerWire&) const = default;
 };
 
 /// Server to client: the match has started. From here on its players can only leave.
 struct MatchStartWire {
   /// Every player in the match, the recipient included, at most kMaxPlayers.
   std::vector<MatchPlayerWire> players;
+
+  bool operator==(const MatchStartWire&) const = default;
 };
 
 /// Server to client: the match is over, and everyone still connected is back in the Lobby.
-struct MatchEndWire {};
+struct MatchEndWire {
+  bool operator==(const MatchEndWire&) const = default;
+};
 
 /// Any message of the protocol.
 using MessageWire = std::variant<JoinRequestWire, JoinAcceptedWire, JoinRefusedWire, CommandsWire,
