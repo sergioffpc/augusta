@@ -6,8 +6,14 @@ set -euo pipefail
 # Clean up any stray apt.llvm.org source from a previous run of this script.
 sudo rm -f /etc/apt/sources.list.d/*llvm*.list
 
+# autoconf/autoconf-archive/automake/libtool: vcpkg's libsodium port builds
+# via autotools on Linux (vcpkg_run_autoreconf), as in CI and the Dockerfile.
 sudo apt-get update
 sudo apt-get install -y \
+  autoconf \
+  autoconf-archive \
+  automake \
+  libtool \
   build-essential \
   clang \
   make \
