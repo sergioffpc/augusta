@@ -48,7 +48,7 @@ jobs:
           changed="$(git diff --name-only "$base" "${{ github.sha }}")"
 
           if echo "$changed" \
-              | grep -qE '^(src/|tests/|tools/pack/examples/|tools/pack/cpp/|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$)'; then
+              | grep -qE '^(src/|tests/|tools/pack/examples/|tools/pack/cpp/|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/)'; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
@@ -172,26 +172,10 @@ jobs:
         with:
           submodules: true
 
-      - name: Install clang and clang-tidy
-        # clang: the Linux presets compile with it (ADR-0008), the same
-        # distro version as clang-tidy. autoconf/autoconf-archive/automake/
-        # libtool: vcpkg's libsodium port builds via autotools on Linux
-        # (vcpkg_run_autoreconf) and needs these from the system package
-        # manager - not bundled with vcpkg itself.
-        run: sudo apt-get update && sudo apt-get install -y clang clang-tidy ninja-build autoconf autoconf-archive automake libtool
-
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-
-      - name: Cache vcpkg binaries
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: ./.github/actions/setup-linux-build
         with:
-          path: .vcpkg-bincache
-          key: vcpkg-bincache-${{ hashFiles('vcpkg.json') }}
-          restore-keys: |
-            vcpkg-bincache-
-
-      - name: Bootstrap vcpkg
-        run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+          # The same distro version as the clang the presets compile with.
+          extra-packages: clang-tidy
 
       - name: Configure
         run: cmake --preset linux
@@ -284,25 +268,7 @@ jobs:
         with:
           submodules: true
 
-      - name: Install build tools
-        # Same reasoning as build-server: the linux-san preset also compiles
-        # with clang through the Ninja generator, and vcpkg's libsodium port
-        # needs the autotools toolchain from the system package manager to
-        # build from source.
-        run: sudo apt-get update && sudo apt-get install -y clang ninja-build autoconf autoconf-archive automake libtool
-
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-
-      - name: Cache vcpkg binaries
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .vcpkg-bincache
-          key: vcpkg-bincache-${{ hashFiles('vcpkg.json') }}
-          restore-keys: |
-            vcpkg-bincache-
-
-      - name: Bootstrap vcpkg
-        run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+      - uses: ./.github/actions/setup-linux-build
 
       - name: Configure (ASan + UBSan)
         run: cmake --preset linux-san

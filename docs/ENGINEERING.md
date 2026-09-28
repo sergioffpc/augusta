@@ -47,7 +47,8 @@ the decisions already made in ARCHITECTURE.md:
   build it), `cmake/`, `config/` (the example configs a test loads),
   `CMakeLists.txt`, `CMakePresets.json`, `vcpkg.json`, the `third_party`
   submodule pointer, `.clang-format`/`.clang-tidy`, or the workflow file
-  itself changed (a docs-only PR shouldn't pay for a full build).
+  itself or the composite actions it shares (`.github/actions/`) changed
+  (a docs-only PR shouldn't pay for a full build).
   `concurrency` cancels a still-running run for the same branch/PR when
   a new push arrives, so superseded runs don't keep burning minutes.
 - **Pipeline stages:**

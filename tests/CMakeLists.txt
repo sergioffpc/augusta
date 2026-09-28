@@ -52,7 +52,9 @@ target_compile_options(augusta_protocol_property_tests PRIVATE $<$<CXX_COMPILER_
 # path does not silence it; nothing of ours is deprecated in this target.
 target_compile_options(augusta_protocol_property_tests PRIVATE
   $<$<CXX_COMPILER_ID:Clang>:-Wno-deprecated-declarations>)
-gtest_discover_tests(augusta_protocol_property_tests)
+# The property label is how the nightly selects the property tests to run at
+# a high case count (ADR-0013).
+gtest_discover_tests(augusta_protocol_property_tests PROPERTIES LABELS property)
 
 add_executable(augusta_match_tests match_test.cpp)
 target_link_libraries(augusta_match_tests PRIVATE augustad_match GTest::gtest GTest::gtest_main)

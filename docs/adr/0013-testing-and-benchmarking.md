@@ -31,9 +31,10 @@ how noisy its result is.
 - **The push** that lands a merged pull request on `develop`/`main` repeats
   the pull request's build and tests, without the sanitizers; it adds no
   kind of its own.
-- **Nightly** runs on `develop`. A failure opens a GitHub issue labelled
-  `nightly-failure` with a link to the run, or updates the one already open,
-  since no pull request is waiting on it for anyone to notice.
+- **Nightly** runs on `develop`, on a schedule or started by hand. A failure
+  opens a GitHub issue labelled `nightly-failure` with a link to the run, or
+  updates the one already open, since no pull request is waiting on it for
+  anyone to notice.
 - **The release tag** runs `ctest` and the asset pipeline check again on the
   binaries it publishes: they come from a fresh build, not the one the
   commit's push tested.
@@ -81,8 +82,9 @@ how noisy its result is.
   converging on the server's state. They are a tool, not a requirement:
   example-based tests stay the default. The case count comes from
   `RC_PARAMS`, so the same binary runs 100 cases per pull request and
-  ~10 000 nightly. A failing case the runner shrinks is kept as an
-  example-based regression test.
+  ~10 000 nightly; every property test carries the `ctest` label `property`,
+  which is how the nightly selects them. A failing case the runner shrinks
+  is kept as an example-based regression test.
 - **Coverage** is a report for finding untested deterministic logic, not a
   gate: a minimum percentage pushes toward tests written for the number.
 - **Micro-benchmarks** are run by hand when Tracy points at a hot spot. A
