@@ -17,9 +17,11 @@ unchanged.
 **The choice comes from the client config.** `augustac.yaml` (ADR-0034) gains a
 required `player.character` key naming a character by its path relative to
 `authoring/`, the same address the manifest's `characters` list uses (ADR-0041),
-e.g. `characters/player`. There is no lobby and no selection screen
-(CONTEXT.md: a Match has no pre-match waiting state), so the config is the only
-place a player can state a choice today. A future UI only changes who fills in
+e.g. `characters/player`. There is no selection screen, so the config is the
+only place a player can state a choice today. (_Superseded by ADR-0043:_ this
+used to say there is no lobby either, since a Match then had no pre-match
+waiting state; a Lobby now comes before every Match, still without a selection
+screen.) A future UI only changes who fills in
 the value, not the protocol beneath it.
 
 **The server validates it at join and has the final word.** The Join request
@@ -27,27 +29,28 @@ carries the character path next to the engine version, as a string: it is sent
 once per session, so its size doesn't matter, and it keeps the client from
 depending on the manifest's order to name its own choice. The server admits the
 player only if the path is one of its scenario's characters, and otherwise
-refuses with a new Join refused reason, *unknown character*. The order of checks
-becomes version, then character, then match full, so a client that can never
-play here is not told "full". The character is fixed for the life of the
-session: no message changes it after admission.
+refuses with a new Join refused reason, *unknown character*. Where this check
+falls among the others is stated in ADR-0043. The character is fixed for the
+life of the session: no message changes it after admission.
 
 **Every other message names a character by index.** Both packs of a scenario are
 cooked from the same manifest, so the cooker records its `characters` list, in
 manifest order, in both the client and the server pack. A character's
 **character index** is its 1-based position in that list, so a zeroed byte is
 never valid, following ADR-0038's enum rule. That caps a scenario at 255
-characters. Join accepted tells the joining player its own index, each Roster
-entry carries one, and so does every player in the Authoritative State.
-A client drops an update whose index is outside its own pack's list, as it drops
+characters. Join accepted tells the joining player its own index, and each
+player in a Lobby update and in Match start carries one (ADR-0043).
+A client drops a message whose index is outside its own pack's list, as it drops
 any message that does not decode.
 
-**The index rides in every Authoritative State, not in a join event.** Players
-who join mid-match first reach a client through the Authoritative State, which
-is unreliable (ADR-0038). Putting the index in that update makes each update
-self-sufficient: a client never sees a player whose character it doesn't know,
-and no ordering between a reliable and an unreliable channel has to be handled.
-The cost is at most 8 bytes per tick.
+**_Superseded by ADR-0043:_ the index rode in every Authoritative State, not in
+a join event.** Now that no one joins a Match in progress, the Lobby updates and
+Match start carry it reliably and the per-tick byte is gone. The reasoning held
+while players could join mid-match: such a player first reached a client
+through the Authoritative State, which is unreliable (ADR-0038). Putting the
+index in that update made each update self-sufficient: a client never saw a
+player whose character it didn't know, and no ordering between a reliable and
+an unreliable channel had to be handled. The cost was at most 8 bytes per tick.
 
 **The client draws each player as its character.** The client loads the visual
 mesh of each character it meets in the Lobby (ADR-0043), keyed by index and

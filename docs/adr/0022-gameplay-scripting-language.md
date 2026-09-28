@@ -1,6 +1,6 @@
 # Gameplay Scripting Language: Lua
 
-Game policy (round lifecycle, win conditions, spawn rules) runs as Lua (MIT, lua.org reference implementation), embedded via sol2 (MIT, header-only C++ binding), in a sandboxed environment (no `io`, `os.execute`, `package.loadlib`) inside SimulationWorld's Scripts/Behaviours phase. This keeps game policy separate from mechanism code.
+Game policy (Match lifecycle, win conditions, spawn rules) runs as Lua (MIT, lua.org reference implementation), embedded via sol2 (MIT, header-only C++ binding), in a sandboxed environment (no `io`, `os.execute`, `package.loadlib`) inside SimulationWorld's Scripts/Behaviours phase. This keeps game policy separate from mechanism code.
 
 ## Considered Options
 

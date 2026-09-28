@@ -13,7 +13,7 @@ Unreal/Unity/Godot.
   reconciles against authoritative snapshots (no exact replay).
 - **Physics-based ballistics** — real bullet drop and travel time, not
   hitscan; hit location and body part determine damage (no regenerating health).
-- **Round-based, tactical** — no respawn until round end; movement includes
+- **Match-based, tactical** — no respawn until the match ends; movement includes
   walk/run/crouch/prone, stamina, and recoil.
 - **ECS core** (Flecs) shared between client and server, with PhysX for
   collision/movement and a custom ballistics module.

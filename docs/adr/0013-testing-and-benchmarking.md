@@ -46,7 +46,7 @@ how noisy its result is.
 - **Non-functional requirements as integration tests.** NFR-02, NFR-05, and
   NFR-06 need no dedicated hardware: the Harness lets a test drive a real
   server Host and real client sessions in one process, ticking both by hand,
-  with the transport's own simulated latency and loss, so a full round with
+  with the transport's own simulated latency and loss, so a full Match with
   8 players and a correction under 100 ms of latency run on any machine.
   They run wherever `ctest` does. NFR-01 alone is about
   wall-clock time and cannot be measured on a shared CI runner, so it is
@@ -89,9 +89,9 @@ how noisy its result is.
   is kept as an example-based regression test.
 - **Coverage** is a report for finding untested deterministic logic, not a
   gate: a minimum percentage pushes toward tests written for the number.
-- **Micro-benchmarks** are run by hand when Tracy points at a hot spot. A
-  shared runner is too noisy to gate on a percentage, and NFR-01 is the only
-  formal performance target.
+- **Micro-benchmarks** are run by hand when a profile (NVTX in Nsight
+  Systems) points at a hot spot. A shared runner is too noisy to gate on a
+  percentage, and NFR-01 is the only formal performance target.
 
 ## Out of scope
 

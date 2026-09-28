@@ -96,11 +96,15 @@ supersedes is unreliable.
 
 | Message | Direction | Reliability | Fields |
 | --- | --- | --- | --- |
-| Join request | client → server | reliable | engine version, client pack hash |
-| Join accepted | server → client | reliable | session ID, the player's spawn position, the server's tick rate, the parameters to predict with, and the roster: every player already in the match (at most 8) with session ID and body |
-| Join refused | server → client | reliable | reason: version mismatch, match full, pack mismatch |
+| Join request | client → server | reliable | engine version, client pack hash, the chosen character's path (ADR-0042) |
+| Join accepted | server → client | reliable | session ID, the server's tick rate, the parameters to predict with (the Player count among them), the player's own character index |
+| Join refused | server → client | reliable | reason: version mismatch, pack mismatch, unknown character, match in progress, lobby full |
 | Commands | client → server | unreliable | up to 8 commands, oldest first: sequence, movement direction, yaw, pitch, and one byte holding the sprint, ADS, fire and reload flags (bits 0-3) and the desired stance (bits 4-5) |
 | Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, per body (at most 8): entity ID, position, velocity, one byte holding the stance (bits 0-1) and the exhausted flag (bit 2), stamina; then one byte: how many of the recipient's commands the server still holds queued after the tick |
+| Lobby | server → client | reliable | the Roster's version, and every player in the Lobby (at most 8, the recipient included) with session ID and character index (ADR-0043) |
+| Ready | client → server | reliable | the Lobby version the client loaded for (ADR-0043) |
+| Match start | server → client | reliable | every player in the Match (at most 8, the recipient included): session ID, the entity ID of its body, character index, spawn position (ADR-0043) |
+| Match end | server → client | reliable | nothing: the Match is over and its players are back in the Lobby (ADR-0043) |
 
 Per-tick traffic is unreliable because a newer message supersedes an older one,
 and it is made loss-tolerant without retransmission:
@@ -143,33 +147,27 @@ and it is made loss-tolerant without retransmission:
 refusal is itself a message and needs a connection to travel on. The client's
 first message is a Join request carrying its engine version and the hash of the
 client pack it loaded (the 32-byte BLAKE3 hash its trailer signs, ADR-0031); the
-server admits it only on an exact match of the version with its own, of the hash
-with the one its server pack carries for the client pack cooked with it, and
-while the match holds fewer than 8 players. Both packs being signed by the same
-key proves only that each is genuine, not that they are the same cook: a client
-on another cook could hold different collision or characters and mispredict every
-tick. The version is checked first and the pack second, so a client that can
-never play here is not told "full", and one on the wrong pack is not told its
-character is unknown. After a refusal the client closes the connection.
+server admits it only on an exact match of the version with its own, and of the
+hash with the one its server pack carries for the client pack cooked with it;
+ADR-0042 and ADR-0043 add the character and the Lobby's checks, and ADR-0043
+gives the order of them all. Both packs being signed by the same key proves only
+that each is genuine, not that they are the same cook: a client on another cook
+could hold different collision or characters and mispredict every tick. After a
+refusal the client closes the connection.
 
 **What a join carries.** Join accepted tells the client everything it must know
-before its first tick, so nothing is learned by guessing. The **spawn position**
-is where the server put the player: the next spawn point of the map's pack in
-order, starting over after the last, a mechanism until spawn rules become Game
-policy. The client starts its prediction there, not at the origin. The **tick
+before its first tick, so nothing is learned by guessing. Who else is playing,
+and where each player's body starts, is not in it: the Lobby update tells the
+first and Match start the second (ADR-0043). The client starts its prediction at
+the Spawn point Match start gives it, not at the origin. The **tick
 rate** is the server's startup setting (ADR-0034, ADR-0039), fixed for the life of
 the server process, so it is told here once and never again; the client ticks at
-it and starts no tick before it has it, and drops a Join accepted whose rate is not
-finite and above zero. The **parameters** are the server's data-driven
+it and starts no tick before it has it, and drops a Join accepted whose rate is
+0 (a whole number of Hz, 1 to 255, as `augustad.yaml` takes it). The **parameters** are the server's data-driven
 configuration (ADR-0039), the stamina rules among them, fixed for the run and
 sent so the client predicts with the server's numbers and never with values of
 its own; the two cannot drift. A client drops a Join accepted whose parameters
 fail the range checks of ADR-0039, as it drops any message that does not decode.
-The **roster** is who was already in the match and where, so a joining
-client sees the world as it is and not an empty one; the joining player itself is
-not in it. The server keeps each player's last reported body (a joiner is at its
-spawn point until the first tick reports it), so back-to-back joins see each
-other. From then on the Authoritative State lists everyone.
 
 **Failure paths.** The server drops what does not decode, is not a client message
 or fails the command gate (a number beyond what a client produces), and logs it as

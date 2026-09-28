@@ -16,7 +16,8 @@ controls it rebinds). Values are strings; unknown keys and sections, missing
 required keys, non-string values and a section that is not a mapping are
 errors, so a misspelled optional key never silently falls back to its default.
 A value that is a number (the server's tick rate) is read from its string, and
-one that is not a finite number in range is an error like any other.
+one that is not a number in its range (for the tick rate, a whole number of Hz
+from 1 to 255) is an error like any other.
 Relative paths start from a required top-level `base_dir` key (itself relative to the
 config file's directory, so `.` means the file's own), never from the working
 directory: the process starts the same from anywhere, and where its content

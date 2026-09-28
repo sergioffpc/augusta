@@ -6,12 +6,12 @@ a Lua script, `parameters.lua`, so a value may be an expression of other values.
 It uses the same embedded Lua (sol2) and sandbox as game policy (ADR-0022), in a
 Lua state of its own: the parameters script and a policy script share no globals.
 
-**A scenario's scripts live with its stage.** The values change from scenario to
-scenario, so the script is authored in the scenario's folder next to its stage
-(`authoring/test_map/map.usda`, `authoring/test_map/parameters.lua`,
-ADR-0015). The cooker is told the folder and packs every `*.lua` file under it
-into the scenario's **server** pack (ADR-0030, ADR-0031), addressed by its path
-relative to the folder. The scripts are therefore signed with the map (ADR-0018)
+**A scenario's scripts live with its scenario.** The values change from scenario
+to scenario, so the script is authored in the scenario's own folder
+(`authoring/scenarios/<name>/parameters.lua`, next to its `manifest.yaml`,
+ADR-0041). The cooker is told the scenario's name (ADR-0030) and packs every
+`*.lua` file under that folder into the scenario's **server** pack (ADR-0030,
+ADR-0031), addressed by its path relative to the folder. The scripts are therefore signed with the map (ADR-0018)
 and cannot change during a run. A client never receives a script (ADR-0019): it
 is sent the values.
 
@@ -40,7 +40,7 @@ wrong type and a number out of range are errors, as in ADR-0034: a misspelled
 field never falls back to a default, which a Lua table would otherwise allow in
 silence. A server whose pack has no `parameters.lua`, or one that does not load,
 exits at startup naming the script and the field, as it does for a bad pack. The
-cooker refuses a scenario folder without a `parameters.lua`, so that is found when
+cooker refuses a scenario without a `parameters.lua`, so that is found when
 the pack is made rather than when a server starts on it.
 
 **The tick rate is not a parameter.** It is fixed for the life of the server
@@ -48,7 +48,8 @@ process: every command, acknowledgement and stretch of history is counted in
 ticks, so a rate changed under them would put both sides out of step. It is
 engine configuration the server needs before it loads the map, like the pack and
 the address it listens on. It is the `simulation.tick_rate_hz` key of `augustad.yaml`
-(ADR-0034), required and any finite number above zero: NFR-01's 60 Hz is what the
+(ADR-0034), required and a whole number of Hz from 1 to 255, the one byte it
+travels as in Join accepted (ADR-0038): NFR-01's 60 Hz is what the
 server must sustain, measured, not a floor on the value, so a run may go slower to
 be debugged. A `tick_rate_hz` left in the script is an unknown key.
 
@@ -59,7 +60,7 @@ agree with it, so the server sends the tick rate, and the `Parameters`, in Join
 accepted (ADR-0038), once. The client has no copy of a shared value, no default
 and no key for it in `augustac.yaml`; it does not start ticking its prediction
 until it holds the server's tick rate and parameters, and it drops a Join accepted
-whose rate is not finite or whose parameters fail the same range checks.
+whose rate is 0 or whose parameters fail the same range checks.
 
 **No hot reload, for now.** The scripts are inside a signed pack, so tuning a
 value means editing the file, cooking the scenario and restarting the server.
@@ -114,7 +115,7 @@ say how a running simulation and its clients adopt a new value).
   commands. They are part of the server pack, so the pack a server ran from names
   them: any log or record of a run that names its pack is reproducible.
 - ADR-0031 gains a script asset type, and ADR-0030's cooker takes a scenario
-  folder instead of a single stage.
+  (by name, ADR-0041) instead of a single stage.
 - Whether a release build bakes the evaluated `Parameters` into the pack instead
   of the script is not decided here. The loader being a pure function keeps both
   possible.

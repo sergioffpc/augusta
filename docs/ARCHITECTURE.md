@@ -60,7 +60,7 @@ No matchmaking, master server, or third-party platform integration in v1.
 - Multithreaded from v1: dedicated Main/Render, Simulation, and Network I/O threads
 - Custom lightweight binary protocol for game-state messages
 - Mechanism vs. policy vs. data separation: engine mechanism (movement,
-  physics, ballistics, hit detection) is C++; game policy (round
+  physics, ballistics, hit detection) is C++; game policy (Match
   lifecycle, win conditions, spawn rules) is encapsulated in sandboxed
   Lua scripts run in a dedicated Scripts/Behaviours phase; tunable
   balance values are data-driven configuration — a third category (see
@@ -92,8 +92,8 @@ No matchmaking, master server, or third-party platform integration in v1.
 ```
 
 **Shared Core** (compiled into both client and server)
-- ECS (Flecs) — shared entity/component data: players, bullets, round
-  state. Each World below is its own Flecs world instance built
+- ECS (Flecs) — shared entity/component data: players, bullets. Each
+  World below is its own Flecs world instance built
   directly on the library; not a separate wrapped module in its own
   right.
 - Physics — PhysX wrapper (collision, movement); one interface used
@@ -115,7 +115,6 @@ No matchmaking, master server, or third-party platform integration in v1.
 - Command — one tick's player intent (augusta_command): what the client's
   Input handling samples and the server screens and simulates, so the
   server links no client input code
-- Match/Round State — round lifecycle, win conditions
 - Level Data — lightweight custom runtime format, baked offline from
   OpenUSD source. Its collision geometry is built into a physics::World's static
   meshes by one shared module (augusta_map), so PredictionWorld and
@@ -206,7 +205,10 @@ exclusively server-authoritative.
 - Input Validation — anti-cheat baseline (US-15); rejects/filters invalid
   commands before they reach the world (does not apply to outbound
   authoritative state)
-- Scripting (Lua) — sandboxed script hooks for game policy (round
+- Match State — the Lobby, who is in each Match and its lifecycle (Join
+  checks, Ready, Match start, Match end; ADR-0043); when a Match is won
+  and over is game policy
+- Scripting (Lua) — sandboxed script hooks for game policy (Match
   lifecycle, win conditions, spawn rules); small interface (e.g. a
   RunHook call) hiding the Lua embedding and the restricted-environment
   sandbox (§8) that upholds "no I/O inside ECS worlds" structurally.
@@ -216,7 +218,7 @@ exclusively server-authoritative.
   - SimulationWorld (ECS) — the single authoritative world (no prediction,
     no presentation needed). Runs mechanism systems in C++ (movement via
     PhysX, ballistics, hit detection, damage) and policy via a
-    Scripts/Behaviours phase (Lua, sandboxed — round lifecycle, win
+    Scripts/Behaviours phase (Lua, sandboxed — Match lifecycle, win
     conditions, spawn rules); emits authoritative state each tick
 
 ```
@@ -258,7 +260,7 @@ Damage → Scripts/Behaviours → Commit)
 | Ballistics | Mechanism | Advances in-flight bullet trajectories (US-10) |
 | HitDetection | Mechanism | Resolves impact point + body part against hitboxes as they were the Shooter's delay ago (US-11, ADR-0044) |
 | Damage | Mechanism (reads Data/Config) | Applies damage, marks death/spectator (US-12, US-13) |
-| Scripts/Behaviours | Policy (Lua, sandboxed) | Win condition, round transitions, spawn logic (US-14, US-03) |
+| Scripts/Behaviours | Policy (Lua, sandboxed) | Win condition, Match end, spawn logic (US-14, US-03) |
 | Commit | Mechanism | Packages tick state into Authoritative State for Networking |
 
 **Tooling** (offline, not shipped)
@@ -305,10 +307,13 @@ Damage → Scripts/Behaviours → Commit)
    restores the server's state and replays the commands sent since, and
    presentation smooths the jump (see ADR-0004)
 
-**Scenario: Round End**
-1. Server evaluates win condition each tick (e.g., one side eliminated)
-2. On match, server ends round, declares winner, broadcasts result
-3. Server schedules next round start after a fixed delay
+**Scenario: Match End**
+1. Server evaluates the win condition each tick (game policy, e.g. one side
+   eliminated)
+2. When it is met, the server ends the Match, declares the winner and sends
+   Match end reliably; everyone still connected returns to the Lobby
+3. The next Match starts once the Lobby is full and Ready again, never less
+   than 5 seconds after the previous one ended (ADR-0043)
 
 ## 7. Deployment View
 v1 gameplay: a Linux dedicated server process and up to 8 Windows client
@@ -346,7 +351,7 @@ now.
   between the outside world and the data worlds consume/emit.
 - **Mechanism vs. policy vs. data:** engine mechanism (movement, physics,
   ballistics, hit detection) is C++ code inside SimulationWorld's core
-  phases; game policy (round lifecycle, win conditions, spawn rules) is
+  phases; game policy (Match lifecycle, win conditions, spawn rules) is
   encapsulated in sandboxed Lua scripts run in a dedicated
   Scripts/Behaviours phase; tunable balance values (e.g., damage by hit
   location/ammo type) are a third category — data-driven configuration,
@@ -380,7 +385,9 @@ aid only and do not affect numbering.
 - [ADR-0005 — Threading model](./adr/0005-threading-model.md)
 - [ADR-0006 — Shared client/server codebase](./adr/0006-shared-client-server-codebase.md)
 - [ADR-0007 — Serialization format](./adr/0007-serialization-format.md)
+- [ADR-0033 — Error handling: std::expected, exceptions and assertions by layer](./adr/0033-error-handling.md)
 - [ADR-0038 — Networking Protocol: message catalogue and reliability split](./adr/0038-networking-protocol-messages.md)
+- [ADR-0042 — Character selection: chosen in the client config, validated at join, replicated as an index](./adr/0042-character-selection.md)
 - [ADR-0044 — Shot lag compensation and replication](./adr/0044-shot-lag-compensation-and-replication.md)
 
 ### Tooling & Build
@@ -389,6 +396,12 @@ aid only and do not affect numbering.
 - [ADR-0012 — Coding style](./adr/0012-coding-style.md)
 - [ADR-0013 — Testing strategy](./adr/0013-testing-and-benchmarking.md)
 - [ADR-0025 — Dependency manager: vcpkg](./adr/0025-dependency-manager.md)
+- [ADR-0027 — Logging: `augusta::logging`, console-only](./adr/0027-logging.md)
+- [ADR-0029 — Logging policy: level semantics and structured message format](./adr/0029-logging-policy.md)
+- [ADR-0034 — Runtime configuration: a YAML file next to the executable](./adr/0034-runtime-config-file.md)
+- [ADR-0035 — Boost: individual libraries where the standard library stops](./adr/0035-boost-libraries.md)
+- [ADR-0036 — Logging library: Boost.Log replaces spdlog](./adr/0036-boost-log.md)
+- [ADR-0037 — Include order: main header, standard library, third-party, project](./adr/0037-include-order.md)
 
 ### Rendering & Audio
 - [ADR-0009 — Renderer: NVIDIA Falcor](./adr/0009-renderer.md)
@@ -403,6 +416,11 @@ aid only and do not affect numbering.
 - [ADR-0018 — Runtime asset format](./adr/0018-runtime-asset-format.md)
 - [ADR-0019 — Client/server pack split](./adr/0019-client-server-pack-split.md)
 - [ADR-0020 — Audio asset format](./adr/0020-audio-asset-format.md)
+- [ADR-0030 — Asset cooking pipeline](./adr/0030-asset-cooking-pipeline.md)
+- [ADR-0031 — Pack container format](./adr/0031-pack-container-format.md)
+- [ADR-0032 — Runtime scene graph format](./adr/0032-scene-graph-format.md)
+- [ADR-0040 — Character authoring format & packing](./adr/0040-character-authoring-format.md)
+- [ADR-0041 — Scenario composition manifest](./adr/0041-scenario-composition-manifest.md)
 
 ### Client Runtime
 - [ADR-0021 — Client runtime decomposition](./adr/0021-client-runtime-decomposition.md)
@@ -411,9 +429,11 @@ aid only and do not affect numbering.
 ### Server Runtime
 - [ADR-0022 — Gameplay scripting language: Lua](./adr/0022-gameplay-scripting-language.md)
 - [ADR-0023 — SimulationWorld phase pipeline](./adr/0023-simulationworld-phase-pipeline.md)
+- [ADR-0039 — Data-driven configuration in Lua, shipped in the scenario's server pack](./adr/0039-lua-data-driven-configuration.md)
+- [ADR-0043 — Lobby and Match lifecycle: fixed player count, automatic Ready, no mid-match joins](./adr/0043-lobby-and-match-lifecycle.md)
 
 ### Infrastructure & CD
-- [ADR-0026 — CD strategy: Flux for main/develop, push-based for ephemeral environments](./adr/0026-cd-strategy.md)
+- [ADR-0026 — CD strategy: Flux for `main`/`develop`; no k3s deploy for ephemeral branches](./adr/0026-cd-strategy.md)
 
 ## 10. Quality Requirements
 See [REQUIREMENTS.md](./REQUIREMENTS.md) — Non-Functional Requirements
@@ -431,9 +451,6 @@ See [REQUIREMENTS.md](./REQUIREMENTS.md) — Non-Functional Requirements
   (protobuf, OpenSSL) that add cross-platform build maintenance overhead.
 - **No encryption in v1:** acceptable only under the stated trusted-LAN
   assumption; must be revisited before any non-trusted deployment.
-- **No automated test strategy defined yet** for physics/networking
-  determinism-sensitive code — worth addressing early given the reconciliation
-  risk above.
 - **Falcor dependency** (see ADR-0009): a fork/vendor of the source is
   recommended to insulate against upstream abandonment.
 - **Cross-OS local development:** building and testing requires both a

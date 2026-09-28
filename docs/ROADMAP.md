@@ -105,16 +105,16 @@ rendering, e.g. muzzle flash/tracer effects)
 server-computed physics trajectory; hits resolve by body part with damage
 applied (debug HUD/log is enough, no scoring yet)
 
-## M5 — Full Round Loop (M)
-- US-03 Spawn into a Round, US-13 Player Death (No Respawn),
-  US-14 Determine Round End / Win Condition
+## M5 — Full Match Loop (M)
+- US-03 Spawn into a Match, US-13 Player Death (No Respawn),
+  US-14 Determine Match End / Win Condition
 
 **Exercises:** ADR-0022 (Lua), ADR-0023 (Scripts/Behaviours phase), ADR-0010
 (Steam Audio — first point in the roadmap where audio cues, e.g. death/
-round-end stingers, become meaningful to exercise)
-**Exit criteria:** a complete round is playable start to finish — spawn,
-fight, permanent death for the round, win condition ends the round, next
-round starts automatically
+match-end stingers, become meaningful to exercise)
+**Exit criteria:** a complete match is playable start to finish — spawn,
+fight, permanent death for the match, win condition ends the match, next
+match starts automatically
 
 ## M6 — Hardening & v1 Release (S)
 - US-15 Server-Side Validation (Anti-Cheat Baseline)
