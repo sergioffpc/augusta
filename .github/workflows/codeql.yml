@@ -32,20 +32,25 @@ jobs:
       # clang the linux preset compiles with (ADR-0008), so the packages they
       # built are the ones this job needs.
       - uses: ./.github/actions/setup-linux-build
-
-      - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4
         with:
-          languages: cpp
-          build-mode: manual
+          sccache: "false"
 
       # Real CMake/vcpkg build rather than CodeQL's autobuild, which
       # doesn't know how to init the vcpkg submodule or pick our preset.
+      # Configured before init, so CodeQL traces only our Build below: under
+      # its tracer, building the vcpkg dependencies took over an hour, for
+      # third-party code nothing here analyzes.
       - name: Configure
         run: cmake --preset linux
         env:
           VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
 
       - uses: ./.github/actions/save-vcpkg-cache
+
+      - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4
+        with:
+          languages: cpp
+          build-mode: manual
 
       - name: Build
         run: cmake --build --preset linux
