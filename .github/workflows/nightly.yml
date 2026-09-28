@@ -149,10 +149,51 @@ jobs:
       - name: Test
         run: ctest --preset linux-tsan
 
+  coverage:
+    # An llvm-cov report of the Linux ctest run, uploaded as a run artifact:
+    # a report for finding untested deterministic logic, never a gate
+    # (ADR-0013), so no percentage fails anything.
+    runs-on: ubuntu-26.04
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+          submodules: true
+
+      - uses: ./.github/actions/setup-linux-build
+        with:
+          # llvm-profdata and llvm-cov, the same version as the clang.
+          extra-packages: llvm
+
+      - name: Configure (coverage)
+        run: cmake --preset linux-coverage
+
+      - name: Build
+        run: cmake --build --preset linux-coverage
+
+      - name: Test
+        run: ctest --preset linux-coverage
+
+      - name: Report
+        # Also after a failing test: what ran still counts, and the failure
+        # itself is reported by the step above.
+        if: success() || failure()
+        run: scripts/coverage-report.sh coverage-report
+
+      - name: Upload the report
+        if: success() || failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-report
+          path: coverage-report/
+          if-no-files-found: ignore
+
   # A new nightly job adds itself to `needs` here, and nothing else: this job
   # reports on every job it waits for.
   report-failure:
-    needs: [property-tests, fuzz, tsan]
+    needs: [property-tests, fuzz, tsan, coverage]
     if: always() && contains(needs.*.result, 'failure')
     runs-on: ubuntu-26.04
     permissions:

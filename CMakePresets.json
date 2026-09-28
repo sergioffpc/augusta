@@ -87,6 +87,17 @@
         "CMAKE_CXX_FLAGS": "-fsanitize=thread -fno-omit-frame-pointer -O1",
         "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=thread"
       }
+    },
+    {
+      "name": "linux-coverage",
+      "displayName": "Linux (clang, source-based coverage)",
+      "inherits": "linux",
+      "binaryDir": "${sourceDir}/build/x64-linux-coverage",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS": "-fprofile-instr-generate -fcoverage-mapping",
+        "CMAKE_EXE_LINKER_FLAGS": "-fprofile-instr-generate"
+      }
     }
   ],
   "buildPresets": [
@@ -100,7 +111,8 @@
       "configurePreset": "linux-fuzz",
       "targets": ["augusta_protocol_decode_fuzz", "augusta_pack_load_fuzz"]
     },
-    { "name": "linux-tsan", "configurePreset": "linux-tsan" }
+    { "name": "linux-tsan", "configurePreset": "linux-tsan" },
+    { "name": "linux-coverage", "configurePreset": "linux-coverage" }
   ],
   "testPresets": [
     {
@@ -134,6 +146,14 @@
       "output": { "outputOnFailure": true },
       "environment": {
         "TSAN_OPTIONS": "suppressions=${sourceDir}/tests/tsan.supp second_deadlock_stack=1"
+      }
+    },
+    {
+      "name": "linux-coverage",
+      "configurePreset": "linux-coverage",
+      "output": { "outputOnFailure": true },
+      "environment": {
+        "LLVM_PROFILE_FILE": "${sourceDir}/build/x64-linux-coverage/profiles/%p-%m.profraw"
       }
     }
   ]
