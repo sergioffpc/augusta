@@ -71,9 +71,9 @@ enum class Phase {
 
 // PredictionWorld's per-tick output - ADR-0024/ARCHITECTURE.md's
 // "Prediction State", consumed by augusta::presentation::World::RunFrame.
-// Beyond local_body, deliberately empty for now - same deferred-design
-// posture as augusta::simulation::State; its real shape depends on ECS
-// component shapes not yet designed.
+// Today it holds the local player's body, the one entity a client predicts;
+// later phases add what they predict (weapon state), as
+// augusta::simulation::State grows with what the server resolves.
 struct State {
   // The local player's predicted body state as of this tick, after
   // Movement and any Reconciliation (M1 spike, issue #32: this is the

@@ -114,11 +114,9 @@ struct PlayerCharacter {
 };
 
 // PresentationWorld's per-frame output - ADR-0024/ARCHITECTURE.md's
-// "Presentation State". Beyond local_position, camera, and remote_players,
-// deliberately empty for now - same deferred-design posture as
-// augusta::renderer's "what gets drawn" (renderer.h) and
-// augusta::prediction::State; its real shape depends on ECS component
-// shapes not yet designed.
+// "Presentation State". Today it holds where the local player is shown, the
+// camera, and every remote player; later phases add what they present
+// (animation poses, audio cues).
 struct State {
   /// Where the local player is shown: its predicted position blended between
   /// the two newest ticks, plus the offset that hides a reconciliation jump
