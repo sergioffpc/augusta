@@ -320,6 +320,7 @@ AuthoritativeStateWire ReadAuthoritativeState(Reader& reader) {
   state.tick = reader.ReadU32();
   state.acknowledged_sequence = reader.ReadU32();
   state.bodies = ReadBodies(reader);
+  state.queued_commands = reader.ReadU8();
   return state;
 }
 
@@ -424,6 +425,7 @@ struct Encoder {
     WriteU32(out, message.tick);
     WriteU32(out, message.acknowledged_sequence);
     WriteBodies(out, message.bodies);
+    WriteU8(out, message.queued_commands);
   }
 
   void operator()(const LobbyWire& message) const {

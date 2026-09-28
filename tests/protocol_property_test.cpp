@@ -79,7 +79,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
         showValue(body.body, out);
         out << "; ";
       }
-      out << "}";
+      out << "queued_commands " << +state.queued_commands << "}";
     }
     void operator()(const LobbyWire& lobby) const {
       out << "Lobby{version " << lobby.version << ", ";
@@ -261,7 +261,8 @@ rc::Gen<AuthoritativeStateWire> AuthoritativeState() {
   return rc::gen::build<AuthoritativeStateWire>(
       rc::gen::set(&AuthoritativeStateWire::tick, rc::gen::arbitrary<std::uint32_t>()),
       rc::gen::set(&AuthoritativeStateWire::acknowledged_sequence, rc::gen::arbitrary<std::uint32_t>()),
-      rc::gen::set(&AuthoritativeStateWire::bodies, UpTo<std::vector<EntityStateWire>>(kMaxPlayers, entity)));
+      rc::gen::set(&AuthoritativeStateWire::bodies, UpTo<std::vector<EntityStateWire>>(kMaxPlayers, entity)),
+      rc::gen::set(&AuthoritativeStateWire::queued_commands, rc::gen::arbitrary<std::uint8_t>()));
 }
 
 rc::Gen<LobbyWire> Lobby() {

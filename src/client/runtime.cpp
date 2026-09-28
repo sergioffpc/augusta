@@ -317,16 +317,25 @@ struct ClientRuntime::Impl {
     float correction_m_ = 0.0F;
   };
 
+  // How long the next Prediction tick lasts: the server's tick, paced by how
+  // many of this client's commands the server last said it held (tick.h), so
+  // the client sends them at the rate the server consumes them.
+  tick::Clock::duration NextTickDuration(tick::Clock::duration nominal) const {
+    const std::optional<harness::AuthoritativeState> state = session->GetAuthoritativeState();
+    return state.has_value() ? tick::PacedTickDuration(nominal, state->queued_commands) : nominal;
+  }
+
   // Prediction thread body (ADR-0005): loop sampling local input and ticking
   // PredictionWorld on a fixed schedule (tick.h), at the server's tick rate
-  // once it has joined. Runs until running is cleared by ThreadJoiner.
+  // once it has joined, each tick paced to keep the server's queue of this
+  // client's commands short. Runs until running is cleared by ThreadJoiner.
   void PredictionThreadMain() {
     const auto tick_rate_hz = WaitForTickRate();
     if (!tick_rate_hz.has_value()) {
       return;
     }
     const auto delta_time = std::chrono::duration<float>(1.0F / *tick_rate_hz);
-    const auto tick_duration = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
+    const auto nominal_tick = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
     PredictionActivity activity;
     tick::Clock::time_point deadline = tick::Clock::now();
     while (running.load(std::memory_order_relaxed)) {
@@ -342,7 +351,7 @@ struct ClientRuntime::Impl {
         latest_tick = {.state = state, .view_rotation = input::ViewRotation(command.yaw, command.pitch)};
       }
 
-      deadline = tick::NextDeadline(deadline, tick_duration, tick::Clock::now());
+      deadline = tick::NextDeadline(deadline, NextTickDuration(nominal_tick), tick::Clock::now());
       std::this_thread::sleep_until(deadline);
     }
   }

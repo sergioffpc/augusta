@@ -1,5 +1,6 @@
 #include "command_queue.h"
 
+#include <chrono>
 #include <cstdint>
 #include <limits>
 
@@ -11,7 +12,9 @@ namespace {
 using augusta::command::Command;
 using augusta::math::Vec3;
 using augusta::server::CommandQueue;
-using augusta::server::kMaxHeldTicks;
+using augusta::server::Enqueued;
+using augusta::server::HeldTicks;
+using augusta::server::kMaxHeldTime;
 using augusta::server::kMaxMovementMagnitude;
 using augusta::server::kMaxPitch;
 using augusta::server::kMaxQueuedCommands;
@@ -21,6 +24,10 @@ using augusta::server::Validate;
 
 constexpr float kInfinity = std::numeric_limits<float>::infinity();
 constexpr float kNaN = std::numeric_limits<float>::quiet_NaN();
+
+// The server's tick rate a test's queue is for, unless the test says otherwise.
+constexpr std::uint8_t kTickRate = 60;
+const int kMaxHeldTicks = HeldTicks(kTickRate);
 
 SequencedCommand Walk(std::uint32_t sequence, float x = 1.0F) {
   SequencedCommand sequenced{.sequence = sequence};
@@ -86,7 +93,7 @@ TEST(ValidateTest, EveryRejectionHasADescription) {
 }
 
 TEST(CommandQueueTest, HandsOutOneCommandPerTickOldestFirst) {
-  CommandQueue queue;
+  CommandQueue queue{kTickRate};
   ASSERT_TRUE(queue.TryEnqueue(Walk(1, 1.0F)).has_value());
   ASSERT_TRUE(queue.TryEnqueue(Walk(2, 0.5F)).has_value());
 
@@ -99,19 +106,20 @@ TEST(CommandQueueTest, HandsOutOneCommandPerTickOldestFirst) {
   EXPECT_EQ(second.acknowledged_sequence, 2U);
 }
 
-TEST(CommandQueueTest, SaysWhetherACommandIsQueuedForTheNextTick) {
-  CommandQueue queue;
-  EXPECT_FALSE(queue.HasQueued());
+TEST(CommandQueueTest, SaysHowManyCommandsAreQueuedForTheNextTicks) {
+  CommandQueue queue{kTickRate};
+  EXPECT_EQ(queue.Queued(), 0U);
 
   ASSERT_TRUE(queue.TryEnqueue(Walk(1)).has_value());
-  EXPECT_TRUE(queue.HasQueued());
+  ASSERT_TRUE(queue.TryEnqueue(Walk(2)).has_value());
+  EXPECT_EQ(queue.Queued(), 2U);
 
   static_cast<void>(queue.Next());
-  EXPECT_FALSE(queue.HasQueued());
+  EXPECT_EQ(queue.Queued(), 1U);
 }
 
 TEST(CommandQueueTest, ARepeatedCommandIsTakenInOnce) {
-  CommandQueue queue;
+  CommandQueue queue{kTickRate};
   ASSERT_TRUE(queue.TryEnqueue(Walk(1)).has_value());
 
   EXPECT_EQ(queue.TryEnqueue(Walk(1)).error(), Rejection::kStale);
@@ -121,14 +129,14 @@ TEST(CommandQueueTest, ARepeatedCommandIsTakenInOnce) {
 }
 
 TEST(CommandQueueTest, ACommandOlderThanOneAlreadyTakenInIsDropped) {
-  CommandQueue queue;
+  CommandQueue queue{kTickRate};
   ASSERT_TRUE(queue.TryEnqueue(Walk(5)).has_value());
 
   EXPECT_EQ(queue.TryEnqueue(Walk(3)).error(), Rejection::kStale);
 }
 
 TEST(CommandQueueTest, ADroppedCommandDoesNotAdvanceTheSequenceOrTheAcknowledgement) {
-  CommandQueue queue;
+  CommandQueue queue{kTickRate};
   ASSERT_TRUE(queue.TryEnqueue(Walk(1)).has_value());
   SequencedCommand bad = Walk(2);
   bad.command.yaw = kNaN;
@@ -140,7 +148,7 @@ TEST(CommandQueueTest, ADroppedCommandDoesNotAdvanceTheSequenceOrTheAcknowledgem
 }
 
 TEST(CommandQueueTest, HoldsTheLastMovementForABoundThenStopsAndKeepsTheStance) {
-  CommandQueue queue;
+  CommandQueue queue{kTickRate};
   SequencedCommand crouch = Walk(1);
   crouch.command.movement.sprint = true;
   crouch.command.movement.desired_stance = augusta::physics::Stance::kCrouching;
@@ -162,7 +170,7 @@ TEST(CommandQueueTest, HoldsTheLastMovementForABoundThenStopsAndKeepsTheStance) 
 }
 
 TEST(CommandQueueTest, ANewCommandRestartsTheHold) {
-  CommandQueue queue;
+  CommandQueue queue{kTickRate};
   ASSERT_TRUE(queue.TryEnqueue(Walk(1)).has_value());
   for (int i = 0; i < kMaxHeldTicks + 2; ++i) {
     static_cast<void>(queue.Next());
@@ -174,7 +182,7 @@ TEST(CommandQueueTest, ANewCommandRestartsTheHold) {
 }
 
 TEST(CommandQueueTest, HeldAndIdleTicksNeverRepeatAOneShotAction) {
-  CommandQueue queue;
+  CommandQueue queue{kTickRate};
   SequencedCommand shoot = Walk(1);
   shoot.command.reload = true;
   shoot.command.fire = true;
@@ -190,7 +198,7 @@ TEST(CommandQueueTest, HeldAndIdleTicksNeverRepeatAOneShotAction) {
 }
 
 TEST(CommandQueueTest, WithNothingEverReceivedAPlayerStandsStill) {
-  CommandQueue queue;
+  CommandQueue queue{kTickRate};
 
   const auto idle = queue.Next();
 
@@ -199,13 +207,47 @@ TEST(CommandQueueTest, WithNothingEverReceivedAPlayerStandsStill) {
 }
 
 TEST(CommandQueueTest, WhenAClientRunsAheadTheOldestCommandsGo) {
-  CommandQueue queue;
+  CommandQueue queue{kTickRate};
   const auto total = static_cast<std::uint32_t>(kMaxQueuedCommands + 4);
   for (std::uint32_t sequence = 1; sequence <= total; ++sequence) {
     ASSERT_TRUE(queue.TryEnqueue(Walk(sequence)).has_value());
   }
 
   EXPECT_EQ(queue.Next().acknowledged_sequence, 5U);
+}
+
+TEST(CommandQueueTest, EnqueuingIntoAFullQueueSaysItDroppedTheOldest) {
+  CommandQueue queue{kTickRate};
+  const auto full = static_cast<std::uint32_t>(kMaxQueuedCommands);
+  for (std::uint32_t sequence = 1; sequence <= full; ++sequence) {
+    ASSERT_EQ(queue.TryEnqueue(Walk(sequence)), Enqueued::kQueued) << sequence;
+  }
+
+  EXPECT_EQ(queue.TryEnqueue(Walk(full + 1)), Enqueued::kDroppedOldest);
+  EXPECT_EQ(queue.Queued(), kMaxQueuedCommands);
+}
+
+// How long a queue for a server ticking at tick_rate_hz holds a client's last
+// movement once its commands stop.
+std::chrono::duration<double> HeldFor(std::uint8_t tick_rate_hz) {
+  CommandQueue queue{tick_rate_hz};
+  static_cast<void>(queue.TryEnqueue(Walk(1)));
+  static_cast<void>(queue.Next());
+  int held = 0;
+  while (queue.Next().command.movement.direction.x != 0.0F && held < tick_rate_hz) {
+    ++held;
+  }
+  return std::chrono::duration<double>(held / static_cast<double>(tick_rate_hz));
+}
+
+TEST(CommandQueueTest, TheLastMovementIsHeldForAboutAHundredMillisecondsAtAnyTickRate) {
+  constexpr std::chrono::duration<double> kOneTickAt30Hz{1.0 / 30.0};
+  for (const std::uint8_t rate : {std::uint8_t{30}, std::uint8_t{60}}) {
+    const std::chrono::duration<double> held = HeldFor(rate);
+
+    EXPECT_GE(held, kMaxHeldTime) << +rate;
+    EXPECT_LT(held, kMaxHeldTime + kOneTickAt30Hz) << +rate;
+  }
 }
 
 }  // namespace

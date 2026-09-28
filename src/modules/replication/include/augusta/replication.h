@@ -24,6 +24,8 @@ struct Recipient {
   simulation::EntityId entity{};
   /// The highest command sequence of this client that the tick processed, 0 if none.
   std::uint32_t acknowledged_sequence = 0;
+  /// How many of this client's commands the server still holds queued after the tick.
+  std::uint8_t queued_commands = 0;
 };
 
 /// One dynamic body.
@@ -42,10 +44,12 @@ struct Update {
   std::uint32_t acknowledged_sequence = 0;
   /// Every dynamic body in the match.
   std::vector<EntityBody> bodies;
+  /// How many of the recipient's commands the server still holds queued after the tick.
+  std::uint8_t queued_commands = 0;
 };
 
-/// What each recipient is sent for tick: every body, and its own
-/// acknowledged sequence (which is why each update is its own message).
+/// What each recipient is sent for tick: every body, and its own acknowledged
+/// sequence and queued commands (which is why each update is its own message).
 [[nodiscard]] std::vector<Update> PlanUpdates(const simulation::State& state, std::uint32_t tick,
                                               std::span<const Recipient> recipients);
 

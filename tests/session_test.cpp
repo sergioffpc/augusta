@@ -34,6 +34,7 @@
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
 #include "augusta/simulation.h"
+#include "augusta/tick.h"
 #include "augusta/version.h"
 #include "host.h"
 #include "match.h"
@@ -880,6 +881,87 @@ TEST_F(MovementTest, WithPacketLossEveryCommandIsStillProcessedAndThePredictionS
   EXPECT_LT(PredictionError(Run(kSettleSteps, Command{})), 0.05F);
 }
 
+// A client whose clock runs at another rate than the server's, pacing its ticks
+// by the queue depth each Authoritative State update tells it (ADR-0038). Time is
+// simulated: the server ticks every kFixedTick, the client every paced tick of
+// its own clock, and every message is delivered before the next tick of either.
+class PacingTest : public MovementTest {
+ protected:
+  // What the client learned from one server tick.
+  struct Told {
+    std::uint8_t queued_commands = 0;
+    std::uint32_t acknowledged_sequence = 0;
+  };
+
+  // Runs the match for ticks server ticks with a client whose clock runs
+  // clock_rate times as fast as the server's; returns what each tick told it.
+  std::vector<Told> RunPaced(double clock_rate, int ticks) {
+    const auto nominal =
+        std::chrono::duration_cast<augusta::tick::Clock::duration>(std::chrono::duration<double>(kFixedTick));
+    const auto self = static_cast<augusta::server::SessionId>(std::to_underlying(*session_.GetSessionId()));
+    std::chrono::duration<double> server_next = nominal;
+    std::chrono::duration<double> client_next{};
+    std::vector<Told> told;
+    while (std::cmp_less(told.size(), ticks)) {
+      if (client_next <= server_next) {
+        const std::size_t queued = host_.QueuedCommands(self);
+        session_.Tick(Walking(), kFixedTick);
+        DeliverUntil(
+            [&] { return host_.QueuedCommands(self) > queued || queued == augusta::server::kMaxQueuedCommands; });
+        client_next +=
+            augusta::tick::PacedTickDuration(nominal, session_.GetAuthoritativeState()->queued_commands) / clock_rate;
+      } else {
+        const std::uint32_t last_tick = session_.GetAuthoritativeState()->tick;
+        host_.Tick(kFixedTick);
+        DeliverUntil([&] { return session_.GetAuthoritativeState()->tick > last_tick; });
+        const auto state = session_.GetAuthoritativeState();
+        told.push_back(
+            {.queued_commands = state->queued_commands, .acknowledged_sequence = state->acknowledged_sequence});
+        server_next += nominal;
+      }
+    }
+    return told;
+  }
+
+  // Runs both sides' network work until delivered() holds: what was just sent has
+  // arrived. Polls often, since the run waits on it twice a tick.
+  template <typename Condition>
+  void DeliverUntil(Condition delivered) {
+    const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+    while (std::chrono::steady_clock::now() < deadline) {
+      host_.PumpNetwork();
+      session_.PumpEvents();
+      session_.ExchangeMessages();
+      if (delivered()) {
+        return;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ADD_FAILURE() << "a message was not delivered";
+  }
+
+  // Past a second of settling, the server holds one or two of the client's
+  // commands after every tick, and consumes exactly one per tick.
+  static void ExpectPacedOnTarget(const std::vector<Told>& told) {
+    constexpr std::size_t kSettling = 60;
+    for (std::size_t i = kSettling; i < told.size(); ++i) {
+      EXPECT_GE(told[i].queued_commands, 1U) << "tick " << i;
+      EXPECT_LE(told[i].queued_commands, 2U) << "tick " << i;
+      EXPECT_EQ(told[i].acknowledged_sequence, told[i - 1].acknowledged_sequence + 1) << "tick " << i;
+    }
+  }
+
+  static constexpr int kPacedTicks = 240;  // Four seconds at 60 Hz.
+};
+
+TEST_F(PacingTest, AClientWhoseClockRunsTwoPercentFastKeepsTheServersQueueOfItsCommandsShort) {
+  ExpectPacedOnTarget(RunPaced(1.02, kPacedTicks));
+}
+
+TEST_F(PacingTest, AClientWhoseClockRunsTwoPercentSlowKeepsTheServerFromRunningOutOfItsCommands) {
+  ExpectPacedOnTarget(RunPaced(0.98, kPacedTicks));
+}
+
 TEST(RawCommandsTest, CommandsThatAreOutOfOrderOrOutOfRangeAreDroppedWithoutAffectingTheWorld) {
   constexpr auto kNetworkDelay = std::chrono::milliseconds(8);
   Host host(TestHostConfig(), Map{.collision = {FloorAt(-0.5F)}, .spawn_points = {}, .characters = {kCharacter}});
@@ -1044,7 +1126,7 @@ class LoopbackMatch : public ::testing::Test {
     const auto give_up = std::chrono::steady_clock::now() + kStepPatience;
     ExchangeUntil(host_, Pointers(sessions_), [&] {
       return std::chrono::steady_clock::now() >= give_up || std::ranges::all_of(sending, [&](const auto& sent) {
-               return host_.HasQueuedCommand(sent.second) || sent.first->GetPhase() != Phase::kMatch;
+               return host_.QueuedCommands(sent.second) > 0 || sent.first->GetPhase() != Phase::kMatch;
              });
     });
     host_.Tick(kFixedTick);

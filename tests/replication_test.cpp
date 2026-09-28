@@ -52,6 +52,17 @@ TEST(ReplicationTest, EachRecipientGetsItsOwnAcknowledgedSequence) {
   EXPECT_EQ(updates[1].acknowledged_sequence, 7U);
 }
 
+TEST(ReplicationTest, EachRecipientIsToldHowManyOfItsOwnCommandsAreQueued) {
+  const State state{.bodies = {PlayerAt(1, 0.0F), PlayerAt(2, 0.0F)}};
+  const std::array<Recipient, 2> recipients = {Recipient{.entity = static_cast<EntityId>(1), .queued_commands = 3},
+                                               Recipient{.entity = static_cast<EntityId>(2), .queued_commands = 0}};
+
+  const auto updates = PlanUpdates(state, 1, recipients);
+
+  EXPECT_EQ(updates[0].queued_commands, 3U);
+  EXPECT_EQ(updates[1].queued_commands, 0U);
+}
+
 TEST(ReplicationTest, NobodyToSendToMeansNothingIsPlanned) {
   const State state{.bodies = {PlayerAt(1, 0.0F)}};
 

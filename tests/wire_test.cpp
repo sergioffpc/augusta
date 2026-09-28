@@ -142,6 +142,7 @@ TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
       .bodies = {{.entity = augusta::simulation::EntityId{1}, .body = Body(1.0F, Stance::kStanding)},
                  {.entity = augusta::simulation::EntityId{2}, .body = Body(2.0F, Stance::kCrouching)},
                  {.entity = augusta::simulation::EntityId{3}, .body = Body(3.0F, Stance::kProne)}},
+      .queued_commands = 2,
   };
 
   const augusta::harness::AuthoritativeState received =
@@ -149,6 +150,7 @@ TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
 
   EXPECT_EQ(received.tick, sent.tick);
   EXPECT_EQ(received.acknowledged_sequence, sent.acknowledged_sequence);
+  EXPECT_EQ(received.queued_commands, sent.queued_commands);
   ASSERT_EQ(received.bodies.size(), sent.bodies.size());
   for (std::size_t i = 0; i < sent.bodies.size(); ++i) {
     EXPECT_EQ(Number(received.bodies[i].entity), Number(sent.bodies[i].entity));

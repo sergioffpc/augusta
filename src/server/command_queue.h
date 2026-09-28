@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_SERVER_COMMAND_QUEUE_H_
 #define AUGUSTA_SERVER_COMMAND_QUEUE_H_
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -53,11 +54,23 @@ inline constexpr float kMaxYaw = 3.2F;
 /// sequence already taken in from this client.
 [[nodiscard]] std::expected<void, Rejection> Validate(const SequencedCommand& command, std::uint32_t last_sequence);
 
-/// The most commands a queue holds; when a client runs ahead of the server, the oldest go.
+/// The most commands a queue holds; when a client runs ahead of the server, the
+/// oldest go. The last resort only: a client paces its ticks to keep far fewer
+/// queued (tick::PacedTickDuration).
 inline constexpr std::size_t kMaxQueuedCommands = 16;
 
-/// How many ticks in a row the last movement is repeated when nothing new arrived (about 100 ms at 60 Hz).
-inline constexpr int kMaxHeldTicks = 6;
+/// How long the last movement is repeated when nothing new arrived.
+inline constexpr std::chrono::milliseconds kMaxHeldTime{100};
+
+/// kMaxHeldTime in ticks at tick_rate_hz, rounded up so the hold is never shorter.
+[[nodiscard]] int HeldTicks(std::uint8_t tick_rate_hz);
+
+/// How a command that passed validation was queued.
+enum class Enqueued : std::uint8_t {
+  kQueued,
+  /// The queue was full, so its oldest command went to make room.
+  kDroppedOldest,
+};
 
 /// What the queue hands a tick.
 struct TickCommand {
@@ -69,20 +82,25 @@ struct TickCommand {
 /// One player's incoming commands.
 class CommandQueue {
  public:
+  /// A queue for a server ticking at tick_rate_hz, which sets how many ticks
+  /// kMaxHeldTime lasts.
+  explicit CommandQueue(std::uint8_t tick_rate_hz) : max_held_ticks_(HeldTicks(tick_rate_hz)) {}
+
   /// Validates command and, if it passes, queues it.
-  [[nodiscard]] std::expected<void, Rejection> TryEnqueue(const SequencedCommand& command);
+  [[nodiscard]] std::expected<Enqueued, Rejection> TryEnqueue(const SequencedCommand& command);
 
   /// The command for this tick: the oldest queued one; else the last movement
-  /// held for up to kMaxHeldTicks ticks; else no movement. Held and idle ticks
-  /// never repeat a one-shot action (reload) or keep firing.
+  /// held for up to kMaxHeldTime; else no movement. Held and idle ticks never
+  /// repeat a one-shot action (reload) or keep firing.
   [[nodiscard]] TickCommand Next();
 
-  /// Whether a command is queued, so the next Next hands out a new one rather than holding or idling.
-  [[nodiscard]] bool HasQueued() const { return !queued_.empty(); }
+  /// How many commands are queued: the next Next hands out a new one rather than holding or idling if any.
+  [[nodiscard]] std::size_t Queued() const { return queued_.size(); }
 
  private:
   std::deque<SequencedCommand> queued_;
   std::optional<command::Command> last_;
+  int max_held_ticks_;
   int held_ticks_ = 0;
   std::uint32_t last_offered_ = 0;
   std::uint32_t acknowledged_ = 0;

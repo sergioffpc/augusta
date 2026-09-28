@@ -2,9 +2,11 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <format>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -49,6 +51,9 @@ simulation::World BuildSimulation(const HostConfig& config, const Map& map) {
 std::uint32_t PauseTicks(std::uint8_t tick_rate_hz) {
   return static_cast<std::uint32_t>(std::ceil(std::chrono::duration<float>(kMatchPause).count() * tick_rate_hz));
 }
+
+// Every queue length fits the byte an Authoritative State update tells it in.
+static_assert(kMaxQueuedCommands <= std::numeric_limits<std::uint8_t>::max());
 
 // The transport's handle as a number, for log lines.
 std::uint32_t PeerNumber(networking::PeerId peer) { return static_cast<std::uint32_t>(peer); }
@@ -105,6 +110,9 @@ struct Host::Impl {
     std::uint32_t stale = 0;
     // Messages and commands refused for being malformed, or sent out of turn.
     std::uint32_t dropped = 0;
+    // Queued commands dropped because a client ran further ahead than
+    // kMaxQueuedCommands: its pacing is not keeping up.
+    std::uint32_t overflow = 0;
   };
   static constexpr std::chrono::seconds kHeartbeatInterval{1};
   Activity activity;
@@ -157,7 +165,7 @@ struct Host::Impl {
       return;
     }
     Reply(peer, ToWire(*admission, tick_rate_hz, parameters));
-    if (players.try_emplace(admission->session, Player{.peer = peer, .commands = {}}).second) {
+    if (players.try_emplace(admission->session, Player{.peer = peer, .commands = CommandQueue{tick_rate_hz}}).second) {
       LI("subsystem=serverruntime event=lobby_joined peer={} session={} character={} players={} version={}",
          PeerNumber(peer), SessionNumber(admission->session), admission->character, match.PlayerCount(),
          match.GetRoster().version);
@@ -190,8 +198,11 @@ struct Host::Impl {
     }
     CommandQueue& queue = players.at(*session).commands;
     for (const SequencedCommand& command : commands) {
-      if (const auto enqueued = queue.TryEnqueue(command); !enqueued.has_value()) {
+      const auto enqueued = queue.TryEnqueue(command);
+      if (!enqueued.has_value()) {
         RecordRejection(peer, command, enqueued.error());
+      } else if (*enqueued == Enqueued::kDroppedOldest) {
+        ++activity.overflow;
       }
     }
   }
@@ -285,7 +296,7 @@ struct Host::Impl {
     for (const MatchPlayer& player : start->players) {
       simulation.AddPlayer(ToSimulation(player.entity), player.spawn);
       bodies.emplace(player.session, player.entity);
-      players.at(player.session).commands = CommandQueue{};
+      players.at(player.session).commands = CommandQueue{tick_rate_hz};
       sessions.push_back(player.session);
     }
     SendTo(sessions, ToWire(*start));
@@ -322,8 +333,11 @@ struct Host::Impl {
       const EntityId entity = bodies.at(session);
       const TickCommand next = player.commands.Next();
       input.commands.push_back(simulation::PlayerCommand{.entity = ToSimulation(entity), .command = next.command});
-      input.recipients.push_back(
-          replication::Recipient{.entity = ToSimulation(entity), .acknowledged_sequence = next.acknowledged_sequence});
+      input.recipients.push_back(replication::Recipient{
+          .entity = ToSimulation(entity),
+          .acknowledged_sequence = next.acknowledged_sequence,
+          .queued_commands = static_cast<std::uint8_t>(player.commands.Queued()),
+      });
       input.peers.emplace(entity, player.peer);
     }
     return input;
@@ -341,9 +355,9 @@ struct Host::Impl {
       return;
     }
     LD("subsystem=serverruntime event=heartbeat tick={} players={} in_match={} ticks={} late={} overrun={} "
-       "messages={} stale={} dropped={}",
+       "messages={} stale={} dropped={} overflow={}",
        tick, players.size(), match.InMatch(), activity.ticks, activity.late, activity.overrun, activity.messages,
-       activity.stale, activity.dropped);
+       activity.stale, activity.dropped, activity.overflow);
     activity = Activity{};
     activity_since = now;
   }
@@ -403,10 +417,13 @@ void Host::EndMatch() {
   impl_->EndMatch();
 }
 
-bool Host::HasQueuedCommand(SessionId session) const {
+std::size_t Host::QueuedCommands(SessionId session) const {
   const std::lock_guard<std::mutex> lock(impl_->mutex);
   const auto player = impl_->players.find(session);
-  return impl_->match.IsPlaying(session) && player != impl_->players.end() && player->second.commands.HasQueued();
+  if (!impl_->match.IsPlaying(session) || player == impl_->players.end()) {
+    return 0;
+  }
+  return player->second.commands.Queued();
 }
 
 }  // namespace augusta::server
