@@ -12,3 +12,8 @@
 *.pack binary
 *.key binary
 *.pub binary
+
+# Fuzz seeds and crash fixtures are raw payloads, with no extension to go by
+# (tests/fuzz/README.md).
+tests/fuzz/corpus/** binary
+tests/fuzz/regressions/** binary

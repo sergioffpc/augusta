@@ -205,3 +205,5 @@ if (WIN32)
   target_link_libraries(augusta_client_scene_tests PRIVATE augustac_scene GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_client_scene_tests)
 endif()
+
+add_subdirectory(fuzz)
