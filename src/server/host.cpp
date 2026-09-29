@@ -136,12 +136,15 @@ struct Host::Impl {
         tick_rate_hz(config.tick_rate_hz),
         parameters(config.parameters),
         network(config.listen),
-        match(MatchConfig{.engine_version = std::string(EngineVersion()),
-                          .client_pack = map.client_pack,
-                          .characters = CharacterPaths(map.characters),
-                          .player_count = config.parameters.player_count,
-                          .pause_ticks = PauseTicks(config.tick_rate_hz)},
-              std::move(map.spawn_points)) {}
+        match(
+            MatchConfig{
+                .engine_version = std::string(EngineVersion()),
+                .client_pack = map.client_pack,
+                .characters = CharacterPaths(map.characters),
+                .player_count = config.parameters.player_count,
+                .pause_ticks = PauseTicks(config.tick_rate_hz),
+            },
+            std::move(map.spawn_points)) {}
 
   void Reply(networking::PeerId peer, const protocol::MessageWire& message) {
     network.Send(peer, protocol::Encode(message), networking::Reliability::kReliable);
