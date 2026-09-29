@@ -26,7 +26,8 @@ after reaching cover).
 bullet takes several ticks to reach its target. The server fixes the Shooter's
 delay once, when the shot is fired. Every tick it advances the bullet (ADR-0002)
 and tests that tick's segment against the hitboxes as they were that fixed delay
-ago; the Map is static, so it needs no history. A lead the shooter gave a moving
+ago; the Map is static and Props are judged where they are now (ADR-0045), so
+neither needs a history. A lead the shooter gave a moving
 target, judged on its own screen, then hits. Because the delay is fixed and
 capped, every tick of a flight finds the hitboxes it needs within the same
 bounded history.
@@ -67,7 +68,7 @@ gains them when they land.
 
 - **Player hits are not tested against the physics scene's current bodies.**
   A shot is tested against the hitbox history at the Shooter's delay, and
-  against the Map through physics. ADR-0002's note on raycasting a moved body
+  against the Map and Props through physics. ADR-0002's note on raycasting a moved body
   therefore does not decide player hit detection.
 - **`augusta_ballistics` leaves the server-only modules.** Its trajectory
   integration is used by the client's presentation as well; its hit testing
