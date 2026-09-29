@@ -97,7 +97,7 @@ supersedes is unreliable.
 | Message | Direction | Reliability | Fields |
 | --- | --- | --- | --- |
 | Join request | client → server | reliable | engine version, client pack hash, the chosen character's path (ADR-0042) |
-| Join accepted | server → client | reliable | session ID, the server's tick rate, the parameters to predict with (the Player count among them), the player's own character index |
+| Join accepted | server → client | reliable | session ID, the server's tick rate, the parameters to predict with (the Player count, the stamina rules, the rifle with its recoil pattern of at most 64 kicks, its ammo with damage by body part, and the starting health), the player's own character index |
 | Join refused | server → client | reliable | reason: version mismatch, pack mismatch, unknown character, match in progress, lobby full |
 | Commands | client → server | unreliable | up to 8 commands, oldest first: sequence, movement direction, yaw, pitch, and one byte holding the sprint, ADS, fire and reload flags (bits 0-3) and the desired stance (bits 4-5) |
 | Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, per body (at most 8): entity ID, position, velocity, one byte holding the stance (bits 0-1) and the exhausted flag (bit 2), stamina; then one byte: how many of the recipient's commands the server still holds queued after the tick |
@@ -164,7 +164,8 @@ rate** is the server's startup setting (ADR-0034, ADR-0039), fixed for the life 
 the server process, so it is told here once and never again; the client ticks at
 it and starts no tick before it has it, and drops a Join accepted whose rate is
 0 (a whole number of Hz, 1 to 255, as `augustad.yaml` takes it). The **parameters** are the server's data-driven
-configuration (ADR-0039), the stamina rules among them, fixed for the run and
+configuration (ADR-0039), the stamina rules, the rifle, its ammo and the
+starting health among them, fixed for the run and
 sent so the client predicts with the server's numbers and never with values of
 its own; the two cannot drift. A client drops a Join accepted whose parameters
 fail the range checks of ADR-0039, as it drops any message that does not decode.

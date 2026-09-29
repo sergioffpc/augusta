@@ -82,6 +82,22 @@ protocol::BodyStateWire ToWire(const physics::BodyState& body) {
 }
 
 protocol::ParametersWire ToWire(const parameters::Parameters& parameters) {
+  const parameters::Rifle& rifle = parameters.rifle;
+  protocol::RifleWire rifle_wire{
+      .rounds_per_minute = rifle.rounds_per_minute,
+      .muzzle_velocity = rifle.muzzle_velocity,
+      .reload_seconds = rifle.reload_seconds,
+      .recoil_recovery_per_second = rifle.recoil_recovery_per_second,
+      .ads_recoil_scale = rifle.ads_recoil_scale,
+      .ads_field_of_view = rifle.ads_field_of_view,
+      .recoil_pattern = {},
+      .magazine_capacity = rifle.magazine_capacity,
+  };
+  rifle_wire.recoil_pattern.reserve(rifle.recoil_pattern.size());
+  for (const parameters::RecoilKick& kick : rifle.recoil_pattern) {
+    rifle_wire.recoil_pattern.push_back(protocol::RecoilKickWire{.pitch = kick.pitch, .yaw = kick.yaw});
+  }
+  const parameters::Ammo& ammo = parameters.ammo;
   return protocol::ParametersWire{
       .stamina =
           {
@@ -89,6 +105,16 @@ protocol::ParametersWire ToWire(const parameters::Parameters& parameters) {
               .regen_per_second = parameters.stamina.regen_per_second,
               .forced_walk_below = parameters.stamina.forced_walk_below,
           },
+      .rifle = std::move(rifle_wire),
+      .ammo =
+          {
+              .gravity = ammo.gravity,
+              .max_range = ammo.max_range,
+              .head_damage = ammo.damage.head,
+              .torso_damage = ammo.damage.torso,
+              .limb_damage = ammo.damage.limb,
+          },
+      .starting_health = parameters.starting_health,
       .player_count = parameters.player_count,
   };
 }

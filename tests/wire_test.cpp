@@ -161,6 +161,16 @@ TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
 TEST(WireTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged) {
   augusta::parameters::Parameters parameters;
   parameters.stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F};
+  parameters.rifle = {.rounds_per_minute = 650.0F,
+                      .muzzle_velocity = 820.0F,
+                      .reload_seconds = 2.25F,
+                      .recoil_recovery_per_second = 0.15F,
+                      .ads_recoil_scale = 0.6F,
+                      .ads_field_of_view = 0.65F,
+                      .recoil_pattern = {{.pitch = 0.01F, .yaw = 0.002F}, {.pitch = 0.007F, .yaw = -0.003F}},
+                      .magazine_capacity = 25};
+  parameters.ammo = {.gravity = 9.81F, .max_range = 900.0F, .damage = {.head = 100.0F, .torso = 34.0F, .limb = 22.5F}};
+  parameters.starting_health = 120.0F;
   parameters.player_count = 4;
 
   const augusta::protocol::JoinAcceptedWire received =
@@ -168,10 +178,14 @@ TEST(WireTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged) {
                                                          .parameters = augusta::server::ToWire(parameters),
                                                          .character = 1});
 
+  // Every parameter travels as its exact bits, so nothing is rounded on the way.
   const augusta::parameters::Parameters received_parameters = augusta::harness::FromWire(received.parameters);
   EXPECT_EQ(received_parameters.stamina.deplete_per_second, parameters.stamina.deplete_per_second);
   EXPECT_EQ(received_parameters.stamina.regen_per_second, parameters.stamina.regen_per_second);
   EXPECT_EQ(received_parameters.stamina.forced_walk_below, parameters.stamina.forced_walk_below);
+  EXPECT_EQ(received_parameters.rifle, parameters.rifle);
+  EXPECT_EQ(received_parameters.ammo, parameters.ammo);
+  EXPECT_EQ(received_parameters.starting_health, parameters.starting_health);
   EXPECT_EQ(received_parameters.player_count, parameters.player_count);
 }
 

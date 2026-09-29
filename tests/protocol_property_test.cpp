@@ -57,8 +57,19 @@ void showValue(const MessageWire& message, std::ostream& out) {
       out << "JoinAccepted{session " << static_cast<std::uint32_t>(accepted.session) << ", tick_rate_hz "
           << +accepted.tick_rate_hz << ", deplete " << accepted.parameters.stamina.deplete_per_second << ", regen "
           << accepted.parameters.stamina.regen_per_second << ", forced_walk_below "
-          << accepted.parameters.stamina.forced_walk_below << ", player_count " << +accepted.parameters.player_count
-          << ", character " << +accepted.character << "}";
+          << accepted.parameters.stamina.forced_walk_below << ", player_count " << +accepted.parameters.player_count;
+      const RifleWire& rifle = accepted.parameters.rifle;
+      out << ", rifle{capacity " << +rifle.magazine_capacity << ", rpm " << rifle.rounds_per_minute << ", velocity "
+          << rifle.muzzle_velocity << ", reload " << rifle.reload_seconds << ", recovery "
+          << rifle.recoil_recovery_per_second << ", ads_scale " << rifle.ads_recoil_scale << ", ads_fov "
+          << rifle.ads_field_of_view << ", kicks";
+      for (const RecoilKickWire& kick : rifle.recoil_pattern) {
+        out << " (" << kick.pitch << " " << kick.yaw << ")";
+      }
+      const AmmoWire& ammo = accepted.parameters.ammo;
+      out << "}, ammo{gravity " << ammo.gravity << ", range " << ammo.max_range << ", damage " << ammo.head_damage
+          << " " << ammo.torso_damage << " " << ammo.limb_damage << "}, starting_health "
+          << accepted.parameters.starting_health << ", character " << +accepted.character << "}";
     }
     void operator()(const JoinRefusedWire& refused) const {
       out << "JoinRefused{reason " << +static_cast<std::uint8_t>(refused.reason) << "}";
@@ -116,6 +127,7 @@ using augusta::math::kPositionGrid;
 using augusta::math::kStaminaGrid;
 using augusta::math::kVelocityGrid;
 using augusta::math::Vec3;
+using augusta::protocol::AmmoWire;
 using augusta::protocol::AuthoritativeStateWire;
 using augusta::protocol::BodyStateWire;
 using augusta::protocol::CommandsWire;
@@ -132,6 +144,7 @@ using augusta::protocol::kMaxCharacterPathLength;
 using augusta::protocol::kMaxCommandsPerMessage;
 using augusta::protocol::kMaxEngineVersionLength;
 using augusta::protocol::kMaxPlayers;
+using augusta::protocol::kMaxRecoilKicks;
 using augusta::protocol::kPackHashSize;
 using augusta::protocol::LobbyWire;
 using augusta::protocol::MatchEndWire;
@@ -141,6 +154,8 @@ using augusta::protocol::MessageWire;
 using augusta::protocol::PackHashWire;
 using augusta::protocol::ParametersWire;
 using augusta::protocol::ReadyWire;
+using augusta::protocol::RecoilKickWire;
+using augusta::protocol::RifleWire;
 using augusta::protocol::RosterEntryWire;
 using augusta::protocol::SequencedCommandWire;
 using augusta::protocol::SessionIdWire;
@@ -231,9 +246,24 @@ rc::Gen<JoinAcceptedWire> JoinAccepted() {
   const auto stamina = rc::gen::build<StaminaWire>(rc::gen::set(&StaminaWire::deplete_per_second, FiniteFloat()),
                                                    rc::gen::set(&StaminaWire::regen_per_second, FiniteFloat()),
                                                    rc::gen::set(&StaminaWire::forced_walk_below, FiniteFloat()));
-  const auto parameters =
-      rc::gen::build<ParametersWire>(rc::gen::set(&ParametersWire::stamina, stamina),
-                                     rc::gen::set(&ParametersWire::player_count, rc::gen::arbitrary<std::uint8_t>()));
+  const auto kick = rc::gen::build<RecoilKickWire>(rc::gen::set(&RecoilKickWire::pitch, FiniteFloat()),
+                                                   rc::gen::set(&RecoilKickWire::yaw, FiniteFloat()));
+  const auto rifle = rc::gen::build<RifleWire>(
+      rc::gen::set(&RifleWire::rounds_per_minute, FiniteFloat()),
+      rc::gen::set(&RifleWire::muzzle_velocity, FiniteFloat()), rc::gen::set(&RifleWire::reload_seconds, FiniteFloat()),
+      rc::gen::set(&RifleWire::recoil_recovery_per_second, FiniteFloat()),
+      rc::gen::set(&RifleWire::ads_recoil_scale, FiniteFloat()),
+      rc::gen::set(&RifleWire::ads_field_of_view, FiniteFloat()),
+      rc::gen::set(&RifleWire::recoil_pattern, UpTo<std::vector<RecoilKickWire>>(kMaxRecoilKicks, kick)),
+      rc::gen::set(&RifleWire::magazine_capacity, rc::gen::arbitrary<std::uint8_t>()));
+  const auto ammo = rc::gen::build<AmmoWire>(
+      rc::gen::set(&AmmoWire::gravity, FiniteFloat()), rc::gen::set(&AmmoWire::max_range, FiniteFloat()),
+      rc::gen::set(&AmmoWire::head_damage, FiniteFloat()), rc::gen::set(&AmmoWire::torso_damage, FiniteFloat()),
+      rc::gen::set(&AmmoWire::limb_damage, FiniteFloat()));
+  const auto parameters = rc::gen::build<ParametersWire>(
+      rc::gen::set(&ParametersWire::stamina, stamina), rc::gen::set(&ParametersWire::rifle, rifle),
+      rc::gen::set(&ParametersWire::ammo, ammo), rc::gen::set(&ParametersWire::starting_health, FiniteFloat()),
+      rc::gen::set(&ParametersWire::player_count, rc::gen::arbitrary<std::uint8_t>()));
   return rc::gen::build<JoinAcceptedWire>(
       rc::gen::set(&JoinAcceptedWire::session, AnyId<SessionIdWire>()),
       rc::gen::set(&JoinAcceptedWire::tick_rate_hz, rc::gen::arbitrary<std::uint8_t>()),
