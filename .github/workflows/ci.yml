@@ -64,7 +64,7 @@ jobs:
           fi
 
           # The offline tools (tools/), and the golden output of theirs the
-          # runtime's tests load, which build-tools checks they still write.
+          # runtime's tests load, which the tools job checks they still write.
           if echo "$changed" \
               | grep -qE '^(tools/|tests/fixtures/example-packs/|\.github/workflows/ci\.yml$)'; then
             echo "run_tools=true" >> "$GITHUB_OUTPUT"
@@ -85,7 +85,7 @@ jobs:
       - name: Check formatting
         run: find src tests tools \( -name '*.cpp' -o -name '*.h' \) | xargs clang-format --dry-run --Werror
 
-  build-client:
+  client:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true'
     # Pinned rather than windows-latest, so the toolchain doesn't shift
@@ -170,16 +170,16 @@ jobs:
       - name: Test
         run: ctest --preset windows
 
-  build-server:
+  server:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true'
-    # Pinned rather than ubuntu-latest - see build-client. This also makes
+    # Pinned rather than ubuntu-latest - see the client job. This also makes
     # clang-tidy's version stable without needing to pull it from
     # apt.llvm.org (a stable runner image already gives a stable distro
     # package version).
     runs-on: ubuntu-26.04
     # Overrides the workflow-level NuGet/GitHubPackages default (Windows-
-    # only, see build-client): that path runs nuget.exe under Mono here,
+    # only, see the client job): that path runs nuget.exe under Mono here,
     # and Mono's own bundled cert store is untrusted-by-default on a
     # fresh runner image, failing every restore/push with
     # CERTIFICATE_VERIFY_FAILED (silently - vcpkg just rebuilds from
@@ -223,7 +223,7 @@ jobs:
       - name: Test
         run: ctest --preset linux
 
-  build-tools:
+  tools:
     needs: changes
     if: needs.changes.outputs.run_tools == 'true'
     # Builds and tests the offline tools (tools/), including that each still
@@ -284,7 +284,7 @@ jobs:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true' && github.event_name == 'pull_request'
     runs-on: ubuntu-26.04
-    # See build-server's env override for why this isn't the workflow-
+    # See the server job's env override for why this isn't the workflow-
     # level NuGet default.
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
@@ -313,7 +313,7 @@ jobs:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true' && github.event_name == 'pull_request'
     runs-on: ubuntu-26.04
-    # See build-server's env override for why this isn't the workflow-
+    # See the server job's env override for why this isn't the workflow-
     # level NuGet default.
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
@@ -357,8 +357,8 @@ jobs:
           if-no-files-found: ignore
 
   container:
-    needs: [changes, build-server]
-    # build-server only runs when run_build is true (see changes above), so
+    needs: [changes, server]
+    # The server job only runs when run_build is true (see changes above), so
     # a skipped result there is fine - only an actual failure should block
     # the image build.
     # A push to main/develop always builds and publishes, since the deployed
@@ -368,7 +368,7 @@ jobs:
     if: |
       always() &&
       (github.event_name == 'push' || needs.changes.outputs.run_container == 'true') &&
-      (needs.build-server.result == 'success' || needs.build-server.result == 'skipped')
+      (needs.server.result == 'success' || needs.server.result == 'skipped')
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

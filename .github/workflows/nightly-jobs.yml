@@ -19,7 +19,7 @@ env:
 jobs:
   property-tests:
     runs-on: ubuntu-26.04
-    # See ci.yml's build-server for why this isn't the NuGet feed.
+    # See ci.yml's server job for why this isn't the NuGet feed.
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
