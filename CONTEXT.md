@@ -50,6 +50,14 @@ _Avoid_: Player ID, connection ID
 The Authoritative server's name for one dynamic body (server::EntityId and simulation::EntityId on the server, harness::EntityId and presentation::EntityId on the client, protocol::EntityIdWire on the wire): a player's body today, later anything that moves. It names which body, not who moves it: a player's body gets one at Match start, which pairs it with that player's Session ID, and a body no player controls has one and no Session. Never reused.
 _Avoid_: Player ID (a body is not a player), using a Session ID to name a body
 
+**Prop**:
+A dynamic body that affects gameplay (it blocks players and bullets, can hurt a player, and is moved by players, bullets and explosions), simulated only by the Authoritative server and named by an Entity ID. Placed in the Map or created during a Match, like a thrown grenade (ADR-0045).
+_Avoid_: Object, physics object, dynamic object, item
+
+**Cosmetic body**:
+A dynamic body that exists on one client only and never affects gameplay, such as a ragdoll or debris. It is never sent and may differ between clients (ADR-0045).
+_Avoid_: Prop (a Prop is gameplay), effect, particle (particles are the renderer's, not physics)
+
 **Client-side prediction**:
 The client simulating its own actions locally, immediately, before the server confirms them — used purely for responsiveness.
 _Avoid_: Client simulation

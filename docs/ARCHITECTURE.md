@@ -96,8 +96,11 @@ No matchmaking, master server, or third-party platform integration in v1.
   World below is its own Flecs world instance built
   directly on the library; not a separate wrapped module in its own
   right.
-- Physics — PhysX wrapper (collision, movement); one interface used
-  identically by PredictionWorld and SimulationWorld
+- Physics — PhysX wrapper (collision, movement, rigid-body dynamics);
+  one interface used identically by PredictionWorld and SimulationWorld.
+  Props are simulated only by the server and moved kinematically on the
+  client; Cosmetic bodies (ragdolls, debris) only on the client
+  (ADR-0045). Particles are the renderer's, not physics'
 - WeaponHandling — aim/ADS, fire, reload, recoil, ammo rules; one
   interface used identically by both Worlds. The client/server
   difference isn't in this module's logic, it's in what each World
@@ -185,12 +188,13 @@ WeaponHandling → Commit)
 | Commit | Mechanism | Packages the tick's predicted state into the immutable Prediction State |
 
 **PresentationWorld phases** (Main/Render thread, per render frame, in
-execution order: Interpolation → Camera → Animation → AudioCues →
-Commit)
+execution order: Interpolation → Dynamics → Camera → Animation →
+AudioCues → Commit)
 
 | Phase | Category | Responsibility |
 |---|---|---|
 | Interpolation | Mechanism | Interpolates between the last two Prediction States, by the fraction of the tick elapsed at render time, for smooth motion at render frame rate |
+| Dynamics | Mechanism | Moves Props to their interpolated poses and advances Cosmetic bodies: one fixed-step `simulate()` per tick Prediction advanced since the last frame, capped per frame (ADR-0045) |
 | Camera | Mechanism | View camera — position at the character's eye for the body's stance, orientation from the newest mouse-look every frame (not the tick's), ADS zoom transition, recoil kick decay, view bob |
 | Animation | Mechanism | Drives skeletal/procedural animation from interpolated movement and weapon state |
 | AudioCues | Mechanism | Translates events carried in the Prediction State (e.g., fire, footstep) into spatialized audio cues |
@@ -249,13 +253,14 @@ Cmds|     | State
 inbound commands)*
 
 **SimulationWorld phases** (executed in order, once per tick: Command
-Ingestion → Movement → WeaponHandling → Ballistics → HitDetection →
+Ingestion → Movement → Dynamics → WeaponHandling → Ballistics → HitDetection →
 Damage → Scripts/Behaviours → Commit)
 
 | Phase | Category | Responsibility |
 |---|---|---|
 | CommandIngestion | Mechanism | Applies validated client commands to this tick's entities |
 | Movement | Mechanism | PhysX integration, stamina, collision resolution (US-04, US-05) |
+| Dynamics | Mechanism | One fixed-step PhysX `simulate()`: Props, grenades, explosion impulses; reports Prop contacts for Damage (ADR-0045) |
 | WeaponHandling | Mechanism | Aim/ADS, fire, reload, recoil (US-06–US-09) |
 | Ballistics | Mechanism | Advances in-flight bullet trajectories (US-10) |
 | HitDetection | Mechanism | Resolves impact point + body part against hitboxes as they were the Shooter's delay ago (US-11, ADR-0044) |
@@ -389,6 +394,7 @@ aid only and do not affect numbering.
 - [ADR-0038 — Networking Protocol: message catalogue and reliability split](./adr/0038-networking-protocol-messages.md)
 - [ADR-0042 — Character selection: chosen in the client config, validated at join, replicated as an index](./adr/0042-character-selection.md)
 - [ADR-0044 — Shot lag compensation and replication](./adr/0044-shot-lag-compensation-and-replication.md)
+- [ADR-0045 — Dynamic bodies: server-authoritative Props, client-only cosmetics, fixed-step simulate](./adr/0045-dynamic-bodies.md)
 
 ### Tooling & Build
 - [ADR-0008 — Build tooling](./adr/0008-build-tooling.md)
