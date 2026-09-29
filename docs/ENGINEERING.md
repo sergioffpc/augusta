@@ -75,7 +75,7 @@ the decisions already made in ARCHITECTURE.md:
     GB they would evict the rest, and every pull request would rebuild its
     dependencies from source.
   5. Compile with a strict warning set, treated as errors
-  6. `build-tools`, when `tools/` changed: on a Windows runner, build the
+  6. the `tools` job, when `tools/` changed: on a Windows runner, build the
      asset cooker's native modules and run its pytest suite, which also
      requires that cooking the example scenario still gives the golden
      packs in `tests/fixtures/example-packs/` byte for byte; the C++ tests

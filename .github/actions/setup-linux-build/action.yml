@@ -4,7 +4,7 @@ description: >
   not to), restores the vcpkg binary cache, and bootstraps vcpkg - everything a
   Linux job needs before `cmake --preset`. Assumes the repository is checked
   out with its submodules and the job sets VCPKG_BINARY_SOURCES to the
-  .vcpkg-bincache files provider (see ci.yml's build-server for why not the
+  .vcpkg-bincache files provider (see ci.yml's server job for why not the
   NuGet feed). A job saves the cache with save-vcpkg-cache after it configures.
 
 inputs:
