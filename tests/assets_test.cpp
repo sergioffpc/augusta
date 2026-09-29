@@ -5,9 +5,11 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -296,6 +298,91 @@ TEST_F(PackTest, EncodesAndResolvesACharactersEye) {
   EXPECT_EQ(eye->position, Vec3(0.0F, 1.6F, 0.1F));
   EXPECT_EQ(pack->ResolveMesh("characters/player/Character/Eye").error(), augusta::assets::ResolveError::kTypeMismatch);
   EXPECT_EQ(pack->ResolveEye("characters/medic/Character/Eye").error(), augusta::assets::ResolveError::kNotFound);
+}
+
+// A character's hitboxes (ADR-0040): each a body part and its geometry, found
+// together under the character's path, in path order.
+class HitboxPackTest : public PackTest {
+ protected:
+  static augusta::assets::AssetEntry Hitbox(std::string path, augusta::assets::BodyPart part, float height) {
+    const augusta::assets::HitboxData hitbox{
+        .part = part,
+        .mesh = {.points = {Vec3(0.0F, height, 0.0F), Vec3(1.0F, height, 0.0F), Vec3(0.0F, height, 1.0F)},
+                 .indices = {0, 1, 2}},
+    };
+    const auto blob = augusta::assets::EncodeHitboxBlob(hitbox);
+    EXPECT_TRUE(blob.has_value());
+    return {.type = augusta::assets::AssetType::kHitbox, .path = std::move(path), .data = blob.value_or({})};
+  }
+
+  augusta::assets::Pack Write(const std::vector<augusta::assets::AssetEntry>& entries) {
+    // One file per test: ctest runs each in its own process, possibly at once.
+    const auto pack_path = MakePackPath(std::string("augusta_assets_test_hitboxes_") +
+                                        ::testing::UnitTest::GetInstance()->current_test_info()->name() + ".pack");
+    const auto keys = GenerateEd25519KeyPair();
+    EXPECT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+    auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+    EXPECT_TRUE(pack.has_value());
+    return *std::move(pack);
+  }
+};
+
+TEST_F(HitboxPackTest, AHitboxResolvesToItsBodyPartAndGeometry) {
+  const auto pack = Write({Hitbox("characters/player/Character/Head", augusta::assets::BodyPart::kHead, 1.8F)});
+
+  const auto hitbox = pack.ResolveHitbox("characters/player/Character/Head");
+
+  ASSERT_TRUE(hitbox.has_value());
+  EXPECT_EQ(hitbox->part, augusta::assets::BodyPart::kHead);
+  EXPECT_EQ(hitbox->mesh.points.size(), 3U);
+  EXPECT_EQ(hitbox->mesh.points[0], Vec3(0.0F, 1.8F, 0.0F));
+  EXPECT_EQ(hitbox->mesh.indices, (std::vector<std::uint32_t>{0, 1, 2}));
+}
+
+TEST_F(HitboxPackTest, ACharactersHitboxesResolveTogetherInPathOrderAndNoOtherCharacters) {
+  const auto pack = Write({
+      Hitbox("characters/player/Character/Torso", augusta::assets::BodyPart::kTorso, 1.3F),
+      Hitbox("characters/medic/Character/Head", augusta::assets::BodyPart::kHead, 1.7F),
+      Hitbox("characters/player/Character/Head", augusta::assets::BodyPart::kHead, 1.8F),
+      Hitbox("characters/player/Character/Leg", augusta::assets::BodyPart::kLimb, 0.5F),
+      // A character whose path the other's is a prefix of is another character.
+      Hitbox("characters/player2/Character/Head", augusta::assets::BodyPart::kHead, 1.9F),
+  });
+
+  const auto hitboxes = pack.ResolveHitboxes("characters/player");
+
+  ASSERT_TRUE(hitboxes.has_value());
+  ASSERT_EQ(hitboxes->size(), 3U);
+  // Head, Leg, Torso: the order of their paths.
+  EXPECT_EQ((*hitboxes)[0].part, augusta::assets::BodyPart::kHead);
+  EXPECT_EQ((*hitboxes)[0].mesh.points[0].y, 1.8F);
+  EXPECT_EQ((*hitboxes)[1].part, augusta::assets::BodyPart::kLimb);
+  EXPECT_EQ((*hitboxes)[2].part, augusta::assets::BodyPart::kTorso);
+  EXPECT_TRUE(pack.ResolveHitboxes("characters/sniper").value().empty());
+}
+
+TEST_F(HitboxPackTest, AHitboxOfAnUnknownBodyPartIsCorrupt) {
+  auto entry = Hitbox("characters/player/Character/Tail", augusta::assets::BodyPart::kLimb, 0.9F);
+  entry.data.front() = std::byte{3};
+  const auto pack = Write({entry});
+
+  EXPECT_EQ(pack.ResolveHitbox("characters/player/Character/Tail").error(),
+            augusta::assets::ResolveError::kCorruptBlob);
+  EXPECT_EQ(pack.ResolveHitboxes("characters/player").error(), augusta::assets::ResolveError::kCorruptBlob);
+}
+
+TEST(FirstMissingBodyPartTest, NamesTheFirstBodyPartNoHitboxStandsFor) {
+  using augusta::assets::BodyPart;
+  using augusta::assets::FirstMissingBodyPart;
+  using augusta::assets::HitboxData;
+  const std::vector<HitboxData> every{{.part = BodyPart::kLimb}, {.part = BodyPart::kHead}, {.part = BodyPart::kTorso}};
+  const std::vector<HitboxData> no_torso{{.part = BodyPart::kLimb}, {.part = BodyPart::kHead}};
+  const std::vector<HitboxData> only_limbs{{.part = BodyPart::kLimb}, {.part = BodyPart::kLimb}};
+
+  EXPECT_EQ(FirstMissingBodyPart(every), std::nullopt);
+  EXPECT_EQ(FirstMissingBodyPart(no_torso), BodyPart::kTorso);
+  EXPECT_EQ(FirstMissingBodyPart(only_limbs), BodyPart::kHead);
+  EXPECT_EQ(FirstMissingBodyPart({}), BodyPart::kHead);
 }
 
 TEST_F(PackTest, AnEmptyCharacterListResolvesAsEmpty) {

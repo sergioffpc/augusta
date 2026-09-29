@@ -268,6 +268,22 @@ std::optional<SpawnPointData> DecodeSpawnPointBlob(std::span<const std::byte> bl
   };
 }
 
+// Hitbox blob wire format: see EncodeHitboxBlob.
+std::optional<HitboxData> DecodeHitboxBlob(std::span<const std::byte> blob) {
+  if (blob.empty()) {
+    return std::nullopt;
+  }
+  const auto part = static_cast<std::uint8_t>(blob.front());
+  if (part > static_cast<std::uint8_t>(BodyPart::kLimb)) {
+    return std::nullopt;
+  }
+  auto mesh = DecodeMeshBlob(blob.subspan(1));
+  if (!mesh) {
+    return std::nullopt;
+  }
+  return HitboxData{.part = static_cast<BodyPart>(part), .mesh = *std::move(mesh)};
+}
+
 // Eye blob wire format: see EncodeEyeBlob.
 std::optional<EyeData> DecodeEyeBlob(std::span<const std::byte> blob) {
   ByteReader reader(blob);

@@ -123,7 +123,7 @@ _Avoid_: Client session, bot
 ### Combat
 
 **Hitbox**:
-The collision volume attached to a player, used server-side to resolve where a bullet impacts.
+A volume of a player's body that stands for one body part (head, torso or limb), used server-side to resolve where a bullet impacts. Authored with the Character, one or more per body part (ADR-0040).
 _Avoid_: Collider (a collider is the general physics term; a hitbox is specifically the damage-resolution volume)
 
 **Shot**:

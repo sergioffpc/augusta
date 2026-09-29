@@ -62,6 +62,13 @@ ASSET_TYPE_CHARACTERS = 8
 ASSET_TYPE_CLIENT_PACK = 9
 ASSET_TYPE_EYE = 10
 
+# The body part a hitbox blob stands for (assets::BodyPart): where on a player a
+# bullet struck, which decides its damage (US-11, US-12).
+BODY_PART_HEAD = 0
+BODY_PART_TORSO = 1
+BODY_PART_LIMB = 2
+BODY_PARTS = (BODY_PART_HEAD, BODY_PART_TORSO, BODY_PART_LIMB)
+
 # Pack-relative path of a scenario's character list (assets.h's
 # kCharactersPath), in both of its packs.
 CHARACTERS_PATH = "Characters"
@@ -219,6 +226,18 @@ def encode_spawn_point_blob(
         writer.f32(component)
     for component in rotation:
         writer.f32(component)
+    return writer.bytes()
+
+
+def encode_hitbox_blob(body_part: int, mesh: MeshData) -> bytes:
+    """A hitbox (US-11): the body part it stands for as a u8 (BODY_PART_*),
+    then its geometry as a mesh blob.
+    """
+    if body_part not in BODY_PARTS:
+        raise EncodeError(f"{body_part} is not a body part")
+    writer = ByteWriter()
+    writer.u8(body_part)
+    writer.raw(encode_mesh_blob(mesh))
     return writer.bytes()
 
 

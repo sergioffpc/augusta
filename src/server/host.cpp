@@ -60,6 +60,16 @@ std::uint32_t PeerNumber(networking::PeerId peer) { return static_cast<std::uint
 
 std::uint32_t SessionNumber(SessionId session) { return static_cast<std::uint32_t>(session); }
 
+// The path of each of characters, in the same order: all Match needs of them.
+std::vector<std::string> CharacterPaths(const std::vector<Character>& characters) {
+  std::vector<std::string> paths;
+  paths.reserve(characters.size());
+  for (const Character& character : characters) {
+    paths.push_back(character.path);
+  }
+  return paths;
+}
+
 }  // namespace
 
 simulation::EntityId ToSimulation(EntityId entity) {
@@ -126,12 +136,15 @@ struct Host::Impl {
         tick_rate_hz(config.tick_rate_hz),
         parameters(config.parameters),
         network(config.listen),
-        match(MatchConfig{.engine_version = std::string(EngineVersion()),
-                          .client_pack = map.client_pack,
-                          .characters = std::move(map.characters),
-                          .player_count = config.parameters.player_count,
-                          .pause_ticks = PauseTicks(config.tick_rate_hz)},
-              std::move(map.spawn_points)) {}
+        match(
+            MatchConfig{
+                .engine_version = std::string(EngineVersion()),
+                .client_pack = map.client_pack,
+                .characters = CharacterPaths(map.characters),
+                .player_count = config.parameters.player_count,
+                .pause_ticks = PauseTicks(config.tick_rate_hz),
+            },
+            std::move(map.spawn_points)) {}
 
   void Reply(networking::PeerId peer, const protocol::MessageWire& message) {
     network.Send(peer, protocol::Encode(message), networking::Reliability::kReliable);

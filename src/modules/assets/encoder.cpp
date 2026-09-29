@@ -124,6 +124,18 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeSpawnPointBlob(const Sp
 }
 
 // Eye blob wire format: position (3x f32), nothing else.
+std::expected<std::vector<std::byte>, EncodeError> EncodeHitboxBlob(const HitboxData& hitbox) {
+  auto mesh = EncodeMeshBlob(hitbox.mesh);
+  if (!mesh) {
+    return std::unexpected(mesh.error());
+  }
+  std::vector<std::byte> blob;
+  blob.reserve(1 + mesh->size());
+  blob.push_back(static_cast<std::byte>(hitbox.part));
+  blob.insert(blob.end(), mesh->begin(), mesh->end());
+  return blob;
+}
+
 std::expected<std::vector<std::byte>, EncodeError> EncodeEyeBlob(const EyeData& eye) {
   std::vector<std::byte> blob;
   ByteWriter writer(blob);
