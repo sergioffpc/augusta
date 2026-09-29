@@ -27,8 +27,9 @@ constexpr std::string_view kStaminaKey = "stamina";
 constexpr std::string_view kRifleKey = "rifle";
 constexpr std::string_view kAmmoKey = "ammo";
 constexpr std::string_view kStartingHealthKey = "starting_health";
-constexpr std::array<std::string_view, 5> kRootKeys{kPlayerCountKey, kStaminaKey, kRifleKey, kAmmoKey,
-                                                    kStartingHealthKey};
+constexpr std::array<std::string_view, 5> kRootKeys{
+    kPlayerCountKey, kStaminaKey, kRifleKey, kAmmoKey, kStartingHealthKey,
+};
 constexpr std::array<std::string_view, 3> kStaminaKeys{"deplete_per_second", "regen_per_second", "forced_walk_below"};
 constexpr std::string_view kRecoilPatternKey = "recoil_pattern";
 constexpr std::array<std::string_view, 8> kRifleKeys{
@@ -157,11 +158,11 @@ std::expected<physics::StaminaConfig, LoadError> ReadStamina(const sol::table& r
   if (!table) {
     return std::unexpected(table.error());
   }
-  constexpr std::array<FloatKey<physics::StaminaConfig>, 3> kFields{{
+  constexpr auto kFields = std::to_array<FloatKey<physics::StaminaConfig>>({
       {.key = "deplete_per_second", .field = &physics::StaminaConfig::deplete_per_second},
       {.key = "regen_per_second", .field = &physics::StaminaConfig::regen_per_second},
       {.key = "forced_walk_below", .field = &physics::StaminaConfig::forced_walk_below},
-  }};
+  });
   physics::StaminaConfig stamina;
   if (const auto read = ReadFloats(*table, kStaminaKey, kFields, stamina); !read) {
     return std::unexpected(read.error());
@@ -198,10 +199,10 @@ std::expected<std::vector<RecoilKick>, LoadError> ReadRecoilPattern(const sol::t
     return Fail(LoadErrorCode::kWrongType, path);
   }
   const sol::table list = value.as<sol::table>();
-  constexpr std::array<FloatKey<RecoilKick>, 2> kFields{{
+  constexpr auto kFields = std::to_array<FloatKey<RecoilKick>>({
       {.key = "pitch", .field = &RecoilKick::pitch},
       {.key = "yaw", .field = &RecoilKick::yaw},
-  }};
+  });
   std::vector<RecoilKick> pattern;
   for (std::size_t i = 1; i <= list.size(); ++i) {
     const std::string kick_path = path + "[" + std::to_string(i) + "]";
@@ -233,12 +234,12 @@ std::expected<Rifle, LoadError> ReadRifle(const sol::table& root) {
     return std::unexpected(capacity.error());
   }
   rifle.magazine_capacity = *capacity;
-  constexpr std::array<FloatKey<Rifle>, 4> kFiring{{
+  constexpr auto kFiring = std::to_array<FloatKey<Rifle>>({
       {.key = "rounds_per_minute", .field = &Rifle::rounds_per_minute},
       {.key = "muzzle_velocity", .field = &Rifle::muzzle_velocity},
       {.key = "reload_seconds", .field = &Rifle::reload_seconds},
       {.key = "recoil_recovery_per_second", .field = &Rifle::recoil_recovery_per_second},
-  }};
+  });
   if (const auto read = ReadFloats(*table, kRifleKey, kFiring, rifle); !read) {
     return std::unexpected(read.error());
   }
@@ -247,10 +248,10 @@ std::expected<Rifle, LoadError> ReadRifle(const sol::table& root) {
     return std::unexpected(pattern.error());
   }
   rifle.recoil_pattern = *std::move(pattern);
-  constexpr std::array<FloatKey<Rifle>, 2> kAiming{{
+  constexpr auto kAiming = std::to_array<FloatKey<Rifle>>({
       {.key = "ads_recoil_scale", .field = &Rifle::ads_recoil_scale},
       {.key = "ads_field_of_view", .field = &Rifle::ads_field_of_view},
-  }};
+  });
   if (const auto read = ReadFloats(*table, kRifleKey, kAiming, rifle); !read) {
     return std::unexpected(read.error());
   }
@@ -263,10 +264,10 @@ std::expected<Ammo, LoadError> ReadAmmo(const sol::table& root) {
     return std::unexpected(table.error());
   }
   Ammo ammo;
-  constexpr std::array<FloatKey<Ammo>, 2> kFlight{{
+  constexpr auto kFlight = std::to_array<FloatKey<Ammo>>({
       {.key = "gravity", .field = &Ammo::gravity},
       {.key = "max_range", .field = &Ammo::max_range},
-  }};
+  });
   if (const auto read = ReadFloats(*table, kAmmoKey, kFlight, ammo); !read) {
     return std::unexpected(read.error());
   }
@@ -275,11 +276,11 @@ std::expected<Ammo, LoadError> ReadAmmo(const sol::table& root) {
   if (!damage) {
     return std::unexpected(damage.error());
   }
-  constexpr std::array<FloatKey<Damage>, 3> kDamage{{
+  constexpr auto kDamage = std::to_array<FloatKey<Damage>>({
       {.key = "head", .field = &Damage::head},
       {.key = "torso", .field = &Damage::torso},
       {.key = "limb", .field = &Damage::limb},
-  }};
+  });
   if (const auto read = ReadFloats(*damage, damage_path, kDamage, ammo.damage); !read) {
     return std::unexpected(read.error());
   }
