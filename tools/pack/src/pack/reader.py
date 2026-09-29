@@ -30,6 +30,10 @@ ASSET_TYPE_NAMES = {
     pack.ASSET_TYPE_SPAWN_POINT: "spawn-point",
     pack.ASSET_TYPE_HITBOX: "hitbox",
     pack.ASSET_TYPE_SCENE: "scene",
+    pack.ASSET_TYPE_SCRIPT: "script",
+    pack.ASSET_TYPE_CHARACTERS: "characters",
+    pack.ASSET_TYPE_CLIENT_PACK: "client-pack",
+    pack.ASSET_TYPE_EYE: "eye",
 }
 
 

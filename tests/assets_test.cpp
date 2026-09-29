@@ -1,14 +1,16 @@
 #include "augusta/assets.h"
 
-#include <gtest/gtest.h>
-
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "augusta/math.h"
 #include "encoder.h"
@@ -179,6 +181,267 @@ TEST_F(PackTest, EncodesAndResolvesTextureBlob) {
   EXPECT_EQ(resolved->dds_bytes, dds_bytes);
 }
 
+// A scenario's Lua scripts ride in its server pack (ADR-0031, ADR-0039) as text,
+// addressed by their path relative to the scenario's folder.
+TEST_F(PackTest, EncodesAndResolvesAScriptBlob) {
+  const auto pack_path = MakePackPath("augusta_assets_test_script_blob.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::string script = "return { stamina = {} }\n-- utf-8: \xC3\xA7\xC3\xA3o\n";
+
+  const auto blob = augusta::assets::EncodeScriptBlob(script);
+  ASSERT_TRUE(blob.has_value());
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kScript, .path = "parameters.lua", .data = *blob},
+      augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kScript, .path = "rules/round.lua", .data = *blob},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveScript(augusta::assets::kParametersScriptPath).value(), script);
+  EXPECT_EQ(pack->ResolveScript("rules/round.lua").value(), script);
+}
+
+TEST_F(PackTest, AnEmptyScriptResolvesToEmptyText) {
+  const auto pack_path = MakePackPath("augusta_assets_test_empty_script.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kScript, .path = "empty.lua", .data = {}},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveScript("empty.lua").value(), "");
+}
+
+TEST_F(PackTest, AScriptThatIsNotThereOrIsSomethingElseIsAResolveError) {
+  const auto pack_path = MakePackPath("augusta_assets_test_script_errors.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kMesh, .path = "parameters.lua", .data = MakeTriangleMeshBlob()},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveScript("missing.lua").error(), augusta::assets::ResolveError::kNotFound);
+  EXPECT_EQ(pack->ResolveScript("parameters.lua").error(), augusta::assets::ResolveError::kTypeMismatch);
+}
+
+TEST_F(PackTest, AScriptLargerThanTheLimitIsTooLargeToEncodeAndCorruptToResolve) {
+  const std::string huge(2U * 1024 * 1024, 'x');
+  const auto blob = augusta::assets::EncodeScriptBlob(huge);
+  ASSERT_FALSE(blob.has_value());
+  EXPECT_EQ(blob.error(), augusta::assets::EncodeError::kTooLarge);
+
+  // A hostile pack can still carry one: the reader refuses it too.
+  const auto pack_path = MakePackPath("augusta_assets_test_huge_script.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kScript,
+                                  .path = "huge.lua",
+                                  .data = std::vector<std::byte>(huge.size(), std::byte{'x'})},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveScript("huge.lua").error(), augusta::assets::ResolveError::kCorruptBlob);
+}
+
+// A scenario's character list rides in both packs (ADR-0042): the character
+// index N names element N-1, so the order the cooker wrote is the order resolved.
+TEST_F(PackTest, EncodesAndResolvesTheCharacterListInOrder) {
+  const auto pack_path = MakePackPath("augusta_assets_test_characters.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::vector<std::string> characters = {"characters/sniper", "characters/player", "characters/medic"};
+
+  const auto blob = augusta::assets::EncodeCharactersBlob(characters);
+  ASSERT_TRUE(blob.has_value());
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kCharacters,
+                                  .path = std::string(augusta::assets::kCharactersPath),
+                                  .data = *blob},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveCharacters().value(), characters);
+}
+
+// A character's eye is where the local player's camera sits (ADR-0040): a bare
+// point, resolved by path, and only as an eye.
+TEST_F(PackTest, EncodesAndResolvesACharactersEye) {
+  const auto pack_path = MakePackPath("augusta_assets_test_eye.pack");
+  const auto keys = GenerateEd25519KeyPair();
+
+  const auto blob = augusta::assets::EncodeEyeBlob({.position = Vec3(0.0F, 1.6F, 0.1F)});
+  ASSERT_TRUE(blob.has_value());
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kEye, .path = "characters/player/Character/Eye", .data = *blob},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  const auto eye = pack->ResolveEye("characters/player/Character/Eye");
+  ASSERT_TRUE(eye.has_value());
+  EXPECT_EQ(eye->position, Vec3(0.0F, 1.6F, 0.1F));
+  EXPECT_EQ(pack->ResolveMesh("characters/player/Character/Eye").error(), augusta::assets::ResolveError::kTypeMismatch);
+  EXPECT_EQ(pack->ResolveEye("characters/medic/Character/Eye").error(), augusta::assets::ResolveError::kNotFound);
+}
+
+TEST_F(PackTest, AnEmptyCharacterListResolvesAsEmpty) {
+  const auto pack_path = MakePackPath("augusta_assets_test_no_characters.pack");
+  const auto keys = GenerateEd25519KeyPair();
+
+  const auto blob = augusta::assets::EncodeCharactersBlob({});
+  ASSERT_TRUE(blob.has_value());
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kCharacters,
+                                  .path = std::string(augusta::assets::kCharactersPath),
+                                  .data = *blob},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  const auto resolved = pack->ResolveCharacters();
+  ASSERT_TRUE(resolved.has_value());
+  EXPECT_TRUE(resolved->empty());
+}
+
+TEST_F(PackTest, APackWithoutTheCharacterListIsAResolveError) {
+  const auto pack_path = MakePackPath("augusta_assets_test_missing_characters.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = MakeTriangleMeshBlob()},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveCharacters().error(), augusta::assets::ResolveError::kNotFound);
+}
+
+// A character index is one byte with zero never valid (ADR-0042), so a list
+// longer than kMaxCharacters could name a character no index can reach.
+TEST_F(PackTest, ACharacterListLongerThanTheLimitIsTooLargeToEncodeAndCorruptToResolve) {
+  const std::vector<std::string> too_many(augusta::assets::kMaxCharacters + 1, "characters/player");
+  const auto blob = augusta::assets::EncodeCharactersBlob(too_many);
+  ASSERT_FALSE(blob.has_value());
+  EXPECT_EQ(blob.error(), augusta::assets::EncodeError::kTooLarge);
+
+  // A hostile pack can still carry one: the reader refuses it too. Built from a
+  // one-character blob: its u32 count patched to kMaxCharacters + 1, then its one
+  // encoded string repeated that many times.
+  const auto one = augusta::assets::EncodeCharactersBlob(std::vector<std::string>{"characters/player"});
+  ASSERT_TRUE(one.has_value());
+  const std::span<const std::byte> count_prefix = std::span(*one).first(sizeof(std::uint32_t));
+  const std::span<const std::byte> encoded_string = std::span(*one).subspan(sizeof(std::uint32_t));
+  std::vector<std::byte> hostile(count_prefix.begin(), count_prefix.end());
+  static_assert(augusta::assets::kMaxCharacters + 1 == 0x100);
+  hostile[0] = std::byte{0};  // Little-endian 0x100.
+  hostile[1] = std::byte{1};
+  for (std::size_t i = 0; i < too_many.size(); ++i) {
+    hostile.insert(hostile.end(), encoded_string.begin(), encoded_string.end());
+  }
+  const auto pack_path = MakePackPath("augusta_assets_test_too_many_characters.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kCharacters,
+                                  .path = std::string(augusta::assets::kCharactersPath),
+                                  .data = hostile},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveCharacters().error(), augusta::assets::ResolveError::kCorruptBlob);
+}
+
+// A pack's hash names one cook of it: the trailer's BLAKE3 hash, which the
+// server pack carries for the client pack cooked with it.
+TEST_F(PackTest, APacksHashIsItsTrailersHash) {
+  const auto pack_path = MakePackPath("augusta_assets_test_hash.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = MakeTriangleMeshBlob()},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  // The trailer is the hash, then its 64-byte Ed25519 signature, at the end of the file.
+  constexpr std::size_t kSignatureSize = 64;
+  const auto bytes = ReadFileBytes(pack_path);
+  const auto trailer_hash =
+      std::span(bytes).last(augusta::assets::kPackHashSize + kSignatureSize).first(augusta::assets::kPackHashSize);
+  EXPECT_TRUE(std::ranges::equal(pack->Hash(), trailer_hash));
+}
+
+TEST_F(PackTest, AServerPackResolvesTheHashOfItsClientPack) {
+  const auto keys = GenerateEd25519KeyPair();
+  const auto client_path = MakePackPath("augusta_assets_test_client.pack");
+  ASSERT_TRUE(augusta::assets::WritePack(
+                  client_path,
+                  {augusta::assets::AssetEntry{
+                      .type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = MakeTriangleMeshBlob()}},
+                  keys.private_key)
+                  .has_value());
+  const auto client = augusta::assets::Pack::Load(client_path, keys.public_key);
+  ASSERT_TRUE(client.has_value());
+
+  const auto server_path = MakePackPath("augusta_assets_test_server.pack");
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kClientPack,
+                                  .path = std::string(augusta::assets::kClientPackPath),
+                                  .data = std::vector<std::byte>(client->Hash().begin(), client->Hash().end())},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(server_path, entries, keys.private_key).has_value());
+  const auto server = augusta::assets::Pack::Load(server_path, keys.public_key);
+  ASSERT_TRUE(server.has_value());
+
+  EXPECT_EQ(server->ResolveClientPackHash().value(), client->Hash());
+}
+
+TEST_F(PackTest, AClientPackHashThatIsMissingOrOfAnotherSizeIsAResolveError) {
+  const auto keys = GenerateEd25519KeyPair();
+  const auto missing_path = MakePackPath("augusta_assets_test_no_client_pack.pack");
+  ASSERT_TRUE(augusta::assets::WritePack(
+                  missing_path,
+                  {augusta::assets::AssetEntry{
+                      .type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = MakeTriangleMeshBlob()}},
+                  keys.private_key)
+                  .has_value());
+  const auto missing = augusta::assets::Pack::Load(missing_path, keys.public_key);
+  ASSERT_TRUE(missing.has_value());
+  EXPECT_EQ(missing->ResolveClientPackHash().error(), augusta::assets::ResolveError::kNotFound);
+
+  for (const std::size_t size : {augusta::assets::kPackHashSize - 1, augusta::assets::kPackHashSize + 1}) {
+    const auto path = MakePackPath("augusta_assets_test_short_client_pack.pack");
+    ASSERT_TRUE(
+        augusta::assets::WritePack(path,
+                                   {augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kClientPack,
+                                                                .path = std::string(augusta::assets::kClientPackPath),
+                                                                .data = std::vector<std::byte>(size)}},
+                                   keys.private_key)
+            .has_value());
+    const auto pack = augusta::assets::Pack::Load(path, keys.public_key);
+    ASSERT_TRUE(pack.has_value());
+    EXPECT_EQ(pack->ResolveClientPackHash().error(), augusta::assets::ResolveError::kCorruptBlob) << size;
+  }
+}
+
 // The remaining tests exercise Pack::Load's fail-closed parsing directly,
 // by mutating the bytes of an otherwise validly written and signed pack -
 // every case here is one ParsePackHeader (or the top-level size check)
@@ -270,6 +533,48 @@ TEST_F(PackLoadNegativeTest, RejectsWrongPublicKeyAsSignatureInvalid) {
   const auto pack = augusta::assets::Pack::Load(path, other_keys.public_key);
   ASSERT_FALSE(pack.has_value());
   EXPECT_EQ(pack.error(), augusta::assets::LoadError::kSignatureInvalid);
+}
+
+TEST(ComputeWorldTransformsTest, ChainsEachNodeThroughItsParents) {
+  augusta::assets::SceneData scene;
+  augusta::assets::SceneNode root;
+  root.name = "Root";
+  root.translation = augusta::math::Vec3(1.0F, 0.0F, 0.0F);
+  augusta::assets::SceneNode child;
+  child.name = "Root/Child";
+  child.parent_index = 0;
+  child.translation = augusta::math::Vec3(0.0F, 2.0F, 0.0F);
+  augusta::assets::SceneNode grandchild;
+  grandchild.name = "Root/Child/Grandchild";
+  grandchild.parent_index = 1;
+  grandchild.scale = augusta::math::Vec3(2.0F, 2.0F, 2.0F);
+  scene.nodes = {root, child, grandchild};
+
+  const auto world = augusta::assets::ComputeWorldTransforms(scene);
+
+  ASSERT_EQ(world.size(), 3U);
+  const augusta::math::Vec3 origin(0.0F, 0.0F, 0.0F);
+  const augusta::math::Vec3 one(1.0F, 1.0F, 1.0F);
+  EXPECT_NEAR(augusta::math::Length(augusta::math::TransformPoint(world[0], origin) - augusta::math::Vec3(1, 0, 0)),
+              0.0F, 1e-5F);
+  EXPECT_NEAR(augusta::math::Length(augusta::math::TransformPoint(world[1], origin) - augusta::math::Vec3(1, 2, 0)),
+              0.0F, 1e-5F);
+  // The grandchild's own scale applies to its points, on top of its parents' offsets.
+  EXPECT_NEAR(augusta::math::Length(augusta::math::TransformPoint(world[2], one) - augusta::math::Vec3(3, 4, 2)), 0.0F,
+              1e-5F);
+}
+
+TEST(ComputeWorldTransformsTest, ANodeWithNoParentIsItsOwnRoot) {
+  augusta::assets::SceneData scene;
+  augusta::assets::SceneNode node;
+  node.name = "Only";
+  node.translation = augusta::math::Vec3(0.0F, 5.0F, 0.0F);
+  scene.nodes = {node};
+
+  const auto world = augusta::assets::ComputeWorldTransforms(scene);
+
+  ASSERT_EQ(world.size(), 1U);
+  EXPECT_NEAR(augusta::math::TranslationOf(world[0]).y, 5.0F, 1e-5F);
 }
 
 }  // namespace

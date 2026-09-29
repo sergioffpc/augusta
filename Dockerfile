@@ -5,8 +5,11 @@
 # validates the server against.
 FROM ubuntu:26.04 AS build
 
+# clang compiles (the linux preset selects it, ADR-0008); build-essential
+# still provides libstdc++ and binutils.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential \
+      clang \
       cmake \
       ninja-build \
       git \
@@ -31,6 +34,15 @@ COPY third_party/vcpkg third_party/vcpkg
 COPY cmake cmake
 COPY vcpkg.json CMakeLists.txt CMakePresets.json ./
 RUN ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+# The dependencies too, into the install root the linux preset's configure
+# uses (manifest mode, <binaryDir>/vcpkg_installed): that configure then finds
+# them installed and builds none. Built after COPY src instead, a change to
+# any source rebuilt all of them. The scratch trees go in the same layer, so
+# the registry cache doesn't carry them.
+RUN ./third_party/vcpkg/vcpkg install --x-install-root=build/x64-linux/vcpkg_installed \
+    && rm -rf third_party/vcpkg/buildtrees third_party/vcpkg/packages third_party/vcpkg/downloads \
+      /root/.cache/vcpkg
 
 COPY src src
 COPY tests tests

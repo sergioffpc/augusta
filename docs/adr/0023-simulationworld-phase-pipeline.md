@@ -1,6 +1,6 @@
 # SimulationWorld Phase Pipeline
 
-SimulationWorld runs eight ordered phases per tick: CommandIngestion, Movement, WeaponHandling, Ballistics, HitDetection, Damage, Scripts/Behaviours, Commit. Scripts/Behaviours runs last, after Damage resolves the tick's deaths, so it can evaluate win conditions and schedule round transitions/spawns for the next tick.
+SimulationWorld runs eight ordered phases per tick: CommandIngestion, Movement, WeaponHandling, Ballistics, HitDetection, Damage, Scripts/Behaviours, Commit. Scripts/Behaviours runs last, after Damage resolves the tick's deaths, so it can evaluate win conditions and schedule Match end and spawns for the next tick.
 
 ## Consequences
 

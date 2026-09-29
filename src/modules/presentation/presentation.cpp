@@ -1,12 +1,23 @@
 #include "augusta/presentation.h"
 
-#include <flecs.h>
-
 #include <array>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <optional>
+#include <span>
+#include <vector>
+
+#include <flecs.h>
 #include <nvtx3/nvtx3.hpp>
 
 #include "augusta/animation.h"
-#include "augusta/logging.h"
+#include "augusta/audio.h"
+#include "augusta/correction.h"
+#include "augusta/interpolation.h"
+#include "augusta/local_view.h"
+#include "augusta/math.h"
+#include "augusta/prediction.h"
 
 namespace augusta::presentation {
 
@@ -28,15 +39,48 @@ enum PhaseIndex : std::size_t {
 struct World::Impl {
   flecs::world ecs;
   audio::Engine& audio_engine;
+  // Where the camera sits relative to the local player's body position
+  // (physics::BodyState's feet) standing: its character's eye (World's
+  // constructor).
+  math::Vec3 eye;
   animation::Engine animation;
   PhaseEntities phases;
-  // The previous call's latest, for kInterpolation to blend against (see
-  // RunFrame's doc comment in presentation.h). Unset until the first
-  // RunFrame call completes.
-  prediction::State previous_state;
-  bool has_previous_state = false;
 
-  explicit Impl(audio::Engine& engine) : audio_engine(engine) {
+  // Staged by RunFrame() immediately before ecs.progress(), read by the phase
+  // systems below; not meaningful outside of a RunFrame call.
+  PredictedTicks ticks;
+  math::Quat view_rotation{1.0F, 0.0F, 0.0F, 0.0F};
+  std::optional<EntityId> local_entity;
+  std::optional<WorldSnapshot> snapshot;
+  std::vector<PlayerCharacter> characters;
+
+  // The local player's Prediction State blended for this frame
+  // (OnInterpolation), which the later phases read.
+  prediction::State shown;
+
+  // Hides the jumps reconciliation makes to the predicted body (ADR-0004), as
+  // an offset from the predicted position that fades.
+  Correction correction;
+  math::Vec3 local_offset{};
+
+  // This frame's view camera (Phase::kCamera), copied into frame_state by
+  // OnCommit the same way local_offset feeds frame_state.local_position.
+  Camera camera{};
+
+  // Every other player's buffered updates, on the server's timeline, and the
+  // render side's estimate of that timeline's current time, which render frame
+  // deltas advance (see interpolation.h). The tick of the last snapshot
+  // recorded into remote_interpolator, so a repeated snapshot (the network
+  // thread hasn't received a new tick since the last RunFrame call) is not
+  // recorded again.
+  RemoteInterpolator remote_interpolator;
+  ServerClock server_clock;
+  std::optional<std::uint32_t> last_recorded_tick;
+  std::vector<RemotePlayer> remote_players;
+
+  State frame_state;
+
+  Impl(audio::Engine& engine, const math::Vec3& local_eye) : audio_engine(engine), eye(local_eye) {
     // Chain the five phases in Phase's declared order (ADR-0024): each
     // depends_on the previous one, and the first depends on Flecs's
     // built-in OnUpdate phase, so a single ecs.progress() call runs them
@@ -55,55 +99,118 @@ struct World::Impl {
     // those shapes exist, and until RunFrame's per-call latest argument
     // has somewhere to flow into the ECS (a singleton, presumably, once
     // one is designed).
-    ecs.system("InterpolationSystem").kind(phases[kInterpolation]).run([](flecs::iter&) {
-      const nvtx3::scoped_range range{"Interpolation"};
-      LT("subsystem=presentationworld event=interpolation");
-      // TODO(sergioffpc): blend the last two prediction::State values.
+    ecs.system("InterpolationSystem").kind(phases[kInterpolation]).run([this](flecs::iter& sys_iter) {
+      OnInterpolation(sys_iter.delta_time());
     });
-    ecs.system("CameraSystem").kind(phases[kCamera]).run([](flecs::iter&) {
-      const nvtx3::scoped_range range{"Camera"};
-      LT("subsystem=presentationworld event=camera");
-      // TODO(sergioffpc): not yet a module of its own - see presentation.h.
-    });
-    ecs.system("AnimationSystem").kind(phases[kAnimation]).run([this](flecs::iter&) {
-      const nvtx3::scoped_range range{"Animation"};
-      LT("subsystem=presentationworld event=animation");
-      // TODO(sergioffpc): animation.Update per visible player character,
-      // once there's a per-character handle to iterate and a
-      // animation::LocomotionInput to build from interpolated movement -
-      // see presentation.h's Phase::kAnimation doc comment. The capture
-      // only proves animation is reachable from here; no call is made
-      // yet.
-      (void)animation;
-    });
-    ecs.system("AudioCuesSystem").kind(phases[kAudioCues]).run([this](flecs::iter&) {
-      const nvtx3::scoped_range range{"AudioCues"};
-      LT("subsystem=presentationworld event=audio_cues");
-      // TODO(sergioffpc): audio_engine.SetListener then PlaySound per
-      // this frame's cues - see presentation.h's Phase::kAudioCues doc
-      // comment. The capture only proves audio_engine is reachable from
-      // here; no call is made yet.
-      (void)audio_engine;
-    });
-    ecs.system("CommitSystem").kind(phases[kCommit]).run([](flecs::iter&) {
-      const nvtx3::scoped_range range{"Commit"};
-      LT("subsystem=presentationworld event=commit");
-      // TODO(sergioffpc): package the frame's presentation data into State.
-    });
+    ecs.system("CameraSystem").kind(phases[kCamera]).run([this](flecs::iter&) { OnCamera(); });
+    ecs.system("AnimationSystem").kind(phases[kAnimation]).run([this](flecs::iter&) { OnAnimation(); });
+    ecs.system("AudioCuesSystem").kind(phases[kAudioCues]).run([this](flecs::iter&) { OnAudioCues(); });
+    ecs.system("CommitSystem").kind(phases[kCommit]).run([this](flecs::iter&) { OnCommit(); });
+  }
+
+  void OnInterpolation(float delta_time) {
+    const nvtx3::scoped_range range{"Interpolation"};
+    shown = BlendTicks(ticks.previous, ticks.latest, ticks.fraction);
+    local_offset = correction.Update(shown.total_correction, delta_time);
+
+    server_clock.Advance(delta_time);
+    // Outside a match there is no one to show (ADR-0043).
+    if (!snapshot.has_value()) {
+      remote_interpolator.Sync({});
+      server_clock.Reset();
+      last_recorded_tick.reset();
+    } else if (!last_recorded_tick.has_value() || snapshot->tick > *last_recorded_tick) {
+      RecordSnapshot(*snapshot);
+    }
+    remote_players.clear();
+    if (const std::optional<double> now = server_clock.Now()) {
+      remote_players = remote_interpolator.Sample(*now - kInterpolationDelay);
+    }
+    for (RemotePlayer& remote : remote_players) {
+      remote.character = CharacterOf(remote.entity);
+    }
+  }
+
+  // Records every body in world but the local player's at world's time on the
+  // server's timeline, and forgets whoever it no longer holds.
+  void RecordSnapshot(const WorldSnapshot& world) {
+    const double server_time = static_cast<double>(world.tick) * world.tick_duration;
+    server_clock.Observe(server_time);
+    std::vector<EntityId> present;
+    present.reserve(world.bodies.size());
+    for (const DynamicBody& body : world.bodies) {
+      if (local_entity.has_value() && body.entity == *local_entity) {
+        continue;
+      }
+      present.push_back(body.entity);
+      remote_interpolator.Record(body.entity, server_time, body.state);
+    }
+    remote_interpolator.Sync(present);
+    last_recorded_tick = world.tick;
+  }
+
+  // The character of the player whose body entity is, or 0 if none is.
+  [[nodiscard]] std::uint8_t CharacterOf(EntityId entity) const {
+    for (const PlayerCharacter& player : characters) {
+      if (player.entity == entity) {
+        return player.character;
+      }
+    }
+    return 0;
+  }
+
+  void OnCamera() {
+    const nvtx3::scoped_range range{"Camera"};
+    // shown and local_offset are already this frame's - OnInterpolation (the
+    // previous phase) just updated them. Same base position as OnCommit's
+    // local_position.
+    camera = LocalCamera(shown.local_body.position + local_offset, shown.local_body.stance, eye, view_rotation);
+  }
+
+  void OnAnimation() {
+    const nvtx3::scoped_range range{"Animation"};
+    // TODO(sergioffpc): animation.Update per visible player character,
+    // once there's a per-character handle to iterate and a
+    // animation::LocomotionInput to build from interpolated movement -
+    // see presentation.h's Phase::kAnimation doc comment. The capture
+    // only proves animation is reachable from here; no call is made
+    // yet.
+    (void)animation;
+  }
+
+  void OnAudioCues() {
+    const nvtx3::scoped_range range{"AudioCues"};
+    // TODO(sergioffpc): audio_engine.SetListener then PlaySound per
+    // this frame's cues - see presentation.h's Phase::kAudioCues doc
+    // comment. The capture only proves audio_engine is reachable from
+    // here; no call is made yet.
+    (void)audio_engine;
+  }
+
+  void OnCommit() {
+    const nvtx3::scoped_range range{"Commit"};
+    frame_state.local_position = shown.local_body.position + local_offset;
+    frame_state.camera = camera;
+    frame_state.remote_players = remote_players;
   }
 };
 
-World::World(audio::Engine& audio_engine) : impl_(std::make_unique<Impl>(audio_engine)) {}
+World::World(audio::Engine& audio_engine, const math::Vec3& eye) : impl_(std::make_unique<Impl>(audio_engine, eye)) {}
 
 World::~World() = default;
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
-State World::RunFrame(const prediction::State& latest) {
+State World::RunFrame(const PredictedTicks& ticks, const math::Quat& view_rotation,
+                      std::optional<EntityId> local_entity, const std::optional<WorldSnapshot>& snapshot,
+                      std::span<const PlayerCharacter> characters) {
+  impl_->ticks = ticks;
+  impl_->view_rotation = view_rotation;
+  impl_->local_entity = local_entity;
+  impl_->snapshot = snapshot;
+  impl_->characters.assign(characters.begin(), characters.end());
   impl_->ecs.progress();
-  impl_->previous_state = latest;
-  impl_->has_previous_state = true;
-  return State{};
+  return impl_->frame_state;
 }
 
 }  // namespace augusta::presentation

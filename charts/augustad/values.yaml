@@ -1,5 +1,10 @@
 image:
   repository: ghcr.io/sergioffpc/augustad
+  # Left empty to run the image CI built from this chart's own commit: Flux
+  # versions a Git-sourced chart <version>+<first 12 characters of the commit>
+  # and CI tags every main/develop image sha-<the same 12 characters> (see
+  # _helpers.tpl). Both tags are immutable, so IfNotPresent never runs a stale
+  # image.
   tag: ""
   pullPolicy: IfNotPresent
 
@@ -9,18 +14,26 @@ service:
   type: NodePort
   # Left unset by default so Kubernetes assigns the node port, per
   # ADR-0026/ENGINEERING.md; set per-environment (see clusters/onprem/apps)
-  # where a stable address is needed. UDP matches GameNetworkingSockets (see
-  # ROADMAP.md M1) once the server actually listens - it doesn't yet, see
-  # deployment.yaml.
+  # where a stable address is needed. UDP, as GameNetworkingSockets speaks.
+  # The server listens on port.
   port: 7777
   nodePort: ""
 
+# What the server runs with besides its pack (config/augustad.example.yaml).
+server:
+  tickRateHz: 60
+  logLevel: info
+
 # Shared hostPath volume on the k3s node holding signed asset packs
-# (ENGINEERING.md's Deployment & CD section). Populated manually after
-# signing, mounted read-only into every server pod. Not read by the server
-# binary yet - lands with the M2 asset pipeline.
+# (ENGINEERING.md's Deployment & CD section), populated manually after
+# signing and mounted read-only into every server pod. Each environment's
+# packVersion names its folder on the volume, which holds pack and the
+# public key it is signed with.
 assetPacks:
   hostPath: /srv/augusta/asset-packs
+  mountPath: /srv/augusta/asset-packs
   packVersion: ""
+  pack: server.pack
+  publicKey: augusta.pub
 
 resources: {}

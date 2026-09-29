@@ -1,7 +1,8 @@
 """Pack inspection commands: `augustap-inspect` (header, index and trailer) and
 `augustap-verify` (hash + signature check), both ADR-0031 container-level
-and independent of the USD stack. A pack argument is an absolute path, or
-relative to <assets-root>/packs; the `.pack` extension is optional.
+and independent of the USD stack. A pack argument is an ordinary path -
+relative to the current directory or absolute, like any file argument, never
+resolved against an assets root; the `.pack` extension is optional.
 """
 
 import argparse
@@ -16,28 +17,21 @@ from pack.reader import TRAILER_SIZE, PackError, read_pack, verify_pack
 _PACK_EXTENSION = ".pack"
 
 
-def _resolve_pack(packs_dir: Path, pack_arg: Path) -> Path:
-    """Returns pack_arg (absolute) or packs_dir/pack_arg (relative), with the
-    .pack extension appended if that's what exists. Raises FileNotFoundError.
+def _resolve_pack(pack_arg: Path) -> Path:
+    """Returns pack_arg as given, or with the .pack extension appended if
+    that's what exists. Raises FileNotFoundError.
     """
-    path = pack_arg if pack_arg.is_absolute() else packs_dir / pack_arg
-    for candidate in (path, path.with_name(path.name + _PACK_EXTENSION)):
+    for candidate in (pack_arg, pack_arg.with_name(pack_arg.name + _PACK_EXTENSION)):
         if candidate.is_file():
             return candidate
-    raise FileNotFoundError(f"Pack not found: {path} (also tried with {_PACK_EXTENSION})")
+    raise FileNotFoundError(f"Pack not found: {pack_arg} (also tried with {_PACK_EXTENSION})")
 
 
-def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
+def _add_pack_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "pack",
         type=Path,
-        help="Pack file: an absolute path, or relative to <assets-root>/packs. The .pack extension is optional.",
-    )
-    parser.add_argument(
-        "--assets-root",
-        type=Path,
-        default=default_assets_root(),
-        help="Hermetic environment root (default: inferred from this interpreter's own venv).",
+        help="Pack file - relative to the current directory or absolute. The .pack extension is optional.",
     )
 
 
@@ -55,11 +49,11 @@ def inspect_main(argv: list[str] | None = None) -> int:
         "size in bytes, path) and the trailer (BLAKE3 hash and Ed25519 signature). Reads only those sections; "
         "it does not verify the hash or signature (see augustap-verify)."
     )
-    _add_common_arguments(parser)
+    _add_pack_argument(parser)
     args = parser.parse_args(argv)
 
     try:
-        pack_path = _resolve_pack(args.assets_root / "packs", args.pack)
+        pack_path = _resolve_pack(args.pack)
         info = read_pack(pack_path)
     except (FileNotFoundError, PackError) as error:
         print(error, file=sys.stderr)
@@ -104,13 +98,20 @@ def verify_main(argv: list[str] | None = None) -> int:
         "against a public key, then checks the header and index are well-formed. "
         "Exit status is 0 if the pack verifies, 1 otherwise."
     )
-    _add_common_arguments(parser)
+    _add_pack_argument(parser)
+    parser.add_argument(
+        "--assets-root",
+        type=Path,
+        default=default_assets_root(),
+        help="Hermetic environment root, for the --public-key default only (default: inferred from this "
+        "interpreter's own venv).",
+    )
     parser.add_argument("--public-key", type=Path, default=None, help="Default: <assets-root>/keys/augusta.pub")
     args = parser.parse_args(argv)
 
     public_key_path = args.public_key or args.assets_root / "keys" / "augusta.pub"
     try:
-        pack_path = _resolve_pack(args.assets_root / "packs", args.pack)
+        pack_path = _resolve_pack(args.pack)
         public_key = read_public_key(public_key_path)
         info = verify_pack(pack_path, public_key)
     except (FileNotFoundError, ValueError) as error:

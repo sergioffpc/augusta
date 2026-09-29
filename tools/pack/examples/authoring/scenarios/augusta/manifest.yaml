@@ -1,0 +1,18 @@
+# This scenario's composition manifest (ADR-0041): what the cooker packs
+# together into one client/server pack pair. A scenario is this folder
+# (authoring/scenarios/<name>/manifest.yaml, fixed name regardless of the
+# folder's own name, same convention as map.usda/parameters.lua, ADR-0015) -
+# it is not the map itself. map and every entry in characters are paths
+# relative to <assets-root>/authoring/, the same convention ADR-0040 already
+# uses for a character's own pack addressing.
+
+# The one map this scenario cooks (authoring/maps/<name>, ADR-0015). A
+# scenario always composes exactly one.
+map: maps/augusta
+
+# Every character this scenario's pack includes (authoring/characters/<name>,
+# ADR-0040) - explicit, not "every character that exists": this is what
+# replaced packing the whole character library into every scenario
+# unconditionally.
+characters:
+  - characters/player

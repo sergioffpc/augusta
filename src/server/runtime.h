@@ -1,12 +1,13 @@
 #ifndef AUGUSTA_RUNTIME_H_
 #define AUGUSTA_RUNTIME_H_
 
+#include <cstdint>
 #include <memory>
-#include <string>
 
 #include "augusta/networking.h"
-#include "augusta/physics.h"
+#include "augusta/parameters.h"
 #include "augusta/simulation.h"
+#include "host.h"
 
 // augusta::runtime is ServerRuntime (ARCHITECTURE.md §5): the augustad
 // executable's own orchestrator, owning the single authoritative
@@ -16,42 +17,34 @@
 // validated commands in from augusta::networking::Server and
 // SimulationWorld's Authoritative State back out to it each tick.
 //
-// What ServerRuntime does NOT yet do: decode a received client Payload
-// into an input::Command, or encode SimulationWorld's returned
-// simulation::State back into a Payload to Broadcast - the Networking
-// Protocol (ADR-0007) isn't designed yet, the same gap src/client/
-// runtime.h documents for its own side. Nor does it run Input
-// Validation (US-15, ARCHITECTURE.md's anti-cheat baseline) - that's
-// not yet a module of its own. Nor does it hand Authoritative State to
-// augusta::replication - scaffolded (src/modules/replication) but not
-// implemented yet.
+// Decoding what clients send, admitting them, screening their commands,
+// and encoding and sending each tick's Authoritative State (via
+// augusta::replication) is server::Host's work (host.h); this class only
+// runs Host on the two threads.
 //
 // Unlike the client, there's no window to signal shutdown (headless) -
 // Stop() is this runtime's own explicit lifecycle control instead, e.g.
 // called from a SIGINT/SIGTERM handler main() installs.
 //
-// Like its client-side counterpart, this currently only compiles - it
-// isn't yet called from main.cpp. networking::Server (ADR-0003) and
+// Constructed and run from main.cpp. networking::Server (ADR-0003) and
 // physics::World (ADR-0002, constructed inside simulation::World) are
-// both real now (see networking.cpp, physics.cpp); ballistics::World and
+// real (see networking.cpp, physics.cpp); ballistics::World and
 // scripting::Engine (also constructed inside simulation::World) are
-// still placeholder stubs. Revisit main.cpp once those land too.
+// still placeholder stubs.
 namespace augusta::runtime {
 
 // Everything ServerRuntime needs to construct SimulationWorld and start
 // listening.
 struct Config {
-  // Every player body's stamina rules (physics::World, shared with
-  // PredictionWorld client-side).
-  physics::StaminaConfig stamina;
-  // Lua game-policy script to load (scripting::Engine, inside
-  // SimulationWorld's Scripts/Behaviours phase).
-  std::string script_path;
+  // The Simulation thread's fixed tick rate in Hz (NFR-01 asks it to sustain
+  // 60 Hz, no missed ticks), which each client is told when it joins.
+  std::uint8_t tick_rate_hz = 0;
+  // What the simulation runs on and each client is told when it joins: every
+  // player body's stamina rules (physics::World, shared with PredictionWorld
+  // client-side).
+  parameters::Parameters parameters;
   // Local address to listen on (US-01).
   networking::Endpoint listen;
-  // Simulation thread's fixed tick rate, in Hz. NFR-01 requires >= 60 Hz
-  // sustained, no missed ticks.
-  float tick_rate_hz = 60.0F;
 };
 
 // Owns the one authoritative SimulationWorld and the two fixed threads
@@ -59,13 +52,12 @@ struct Config {
 // on what becomes the Simulation thread (see Run()).
 class ServerRuntime {
  public:
-  // Constructs SimulationWorld (throws whatever scripting::Engine's
-  // constructor throws if script_path fails to load - see
-  // simulation.h) and starts networking::Server listening on
-  // config.listen (throws std::runtime_error if the address can't be
-  // bound - see networking.h). Does not yet spawn any thread; see
-  // Run().
-  explicit ServerRuntime(const Config& config);
+  // Constructs SimulationWorld with map's collision (throws
+  // std::runtime_error if a map mesh is rejected - see host.h)
+  // and starts networking::Server listening on config.listen (throws
+  // std::runtime_error if the address can't be bound - see
+  // networking.h). Does not yet spawn any thread; see Run().
+  ServerRuntime(const Config& config, server::Map map);
 
   // Run() always stops and joins the Network I/O thread it spawned
   // before returning, including if the Simulation loop exits via an

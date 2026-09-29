@@ -13,25 +13,32 @@ spec:
     metadata:
       labels:
         {{- include "augustad.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Restarts the server when its settings change.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
       containers:
         - name: augustad
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          image: "{{ .Values.image.repository }}:{{ include "augustad.imageTag" . }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["--config", "/etc/augusta/augustad.yaml"]
           ports:
             - name: game
               containerPort: {{ .Values.service.port }}
               protocol: UDP
-          env:
-            - name: AUGUSTA_PACK_VERSION
-              value: {{ .Values.assetPacks.packVersion | quote }}
           volumeMounts:
+            - name: config
+              mountPath: /etc/augusta
+              readOnly: true
             - name: asset-packs
-              mountPath: /srv/augusta/asset-packs
+              mountPath: {{ .Values.assetPacks.mountPath }}
               readOnly: true
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
+        - name: config
+          configMap:
+            name: {{ include "augustad.fullname" . }}
         - name: asset-packs
           hostPath:
             path: {{ .Values.assetPacks.hostPath }}

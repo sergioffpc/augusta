@@ -51,7 +51,7 @@ No gameplay yet.
 - Falcor renders a textured, rotating primitive on the Windows target
 - Minimal GameNetworkingSockets round-trip: Windows client ↔ Linux
   dedicated server
-- Minimal PhysX prediction/reconciliation test: one entity, snap/blend
+- Minimal PhysX prediction/reconciliation test: one entity, restore-and-replay
   correction (ADR-0004) visibly acceptable (no wild jitter)
 
 **Exercises:** ADR-0002, ADR-0003, ADR-0004, ADR-0009, ADR-0011 (C++23), ADR-0012
@@ -98,22 +98,23 @@ other with prediction + reconciliation working
   US-12 Apply Damage by Hit Location
 
 **Exercises:** ADR-0002, ADR-0023 (through Damage phase), ADR-0024
-(WeaponHandling), ADR-0014 (Slang shaders exercised by weapon-related
+(WeaponHandling), ADR-0044 (lag compensation, Shot and Hit confirmation
+messages), ADR-0014 (Slang shaders exercised by weapon-related
 rendering, e.g. muzzle flash/tracer effects)
 **Exit criteria:** players aim/fire/reload a rifle; bullets follow a real
 server-computed physics trajectory; hits resolve by body part with damage
 applied (debug HUD/log is enough, no scoring yet)
 
-## M5 — Full Round Loop (M)
-- US-03 Spawn into a Round, US-13 Player Death (No Respawn),
-  US-14 Determine Round End / Win Condition
+## M5 — Full Match Loop (M)
+- US-03 Spawn into a Match, US-13 Player Death (No Respawn),
+  US-14 Determine Match End / Win Condition
 
 **Exercises:** ADR-0022 (Lua), ADR-0023 (Scripts/Behaviours phase), ADR-0010
 (Steam Audio — first point in the roadmap where audio cues, e.g. death/
-round-end stingers, become meaningful to exercise)
-**Exit criteria:** a complete round is playable start to finish — spawn,
-fight, permanent death for the round, win condition ends the round, next
-round starts automatically
+match-end stingers, become meaningful to exercise)
+**Exit criteria:** a complete match is playable start to finish — spawn,
+fight, permanent death for the match, win condition ends the match, next
+match starts automatically
 
 ## M6 — Hardening & v1 Release (S)
 - US-15 Server-Side Validation (Anti-Cheat Baseline)

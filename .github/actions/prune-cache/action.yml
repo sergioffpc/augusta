@@ -1,0 +1,40 @@
+name: Prune superseded cache entries
+description: >
+  Deletes this ref's other Actions cache entries whose key starts with prefix,
+  once the entry keep is saved on this ref: a newer entry supersedes them, and
+  left in place they only push useful caches out of the repository's 10 GB
+  until they expire unused. Does nothing when keep isn't on this ref (another
+  job's save won the key, or the save failed), so a ref never loses its last
+  entry. Needs `actions: write`; without it (a fork's pull request) it reports
+  and skips.
+
+inputs:
+  prefix:
+    description: The key prefix every entry of this cache shares.
+    required: true
+  keep:
+    description: The key just saved, which stays.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Delete superseded entries
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+        PREFIX: ${{ inputs.prefix }}
+        KEEP: ${{ inputs.keep }}
+      run: |
+        entries="$(gh cache list --ref "$GITHUB_REF" --key "$PREFIX" --limit 100 --json id,key)" || {
+          echo "::warning::Could not list the $PREFIX caches; nothing pruned."
+          exit 0
+        }
+        if ! jq -e --arg keep "$KEEP" 'any(.[]; .key == $keep)' <<< "$entries" > /dev/null; then
+          echo "$KEEP is not saved on $GITHUB_REF; nothing pruned."
+          exit 0
+        fi
+        jq -r --arg keep "$KEEP" '.[] | select(.key != $keep) | .id' <<< "$entries" | while read -r id; do
+          gh cache delete "$id" || echo "::warning::Could not delete cache $id."
+        done

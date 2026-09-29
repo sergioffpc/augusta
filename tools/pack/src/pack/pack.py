@@ -34,6 +34,10 @@ MAX_MESH_INDICES = 48_000_000
 MAX_SCENE_NODES = 1_000_000
 MAX_PROPERTIES = 256
 MAX_TEXTURE_BYTES = 256 * 1024 * 1024
+# A Lua script is hand-written text; a megabyte is far beyond any real one.
+MAX_SCRIPT_BYTES = 1024 * 1024
+# A character index is one byte and zero is never valid (ADR-0042).
+MAX_CHARACTERS = 255
 MAX_ENTRIES = 1 << 20
 MAX_PACK_SIZE = 8 * 1024 * 1024 * 1024
 
@@ -53,6 +57,19 @@ ASSET_TYPE_COLLISION = 3
 ASSET_TYPE_SPAWN_POINT = 4
 ASSET_TYPE_HITBOX = 5
 ASSET_TYPE_SCENE = 6
+ASSET_TYPE_SCRIPT = 7
+ASSET_TYPE_CHARACTERS = 8
+ASSET_TYPE_CLIENT_PACK = 9
+ASSET_TYPE_EYE = 10
+
+# Pack-relative path of a scenario's character list (assets.h's
+# kCharactersPath), in both of its packs.
+CHARACTERS_PATH = "Characters"
+
+# Pack-relative path, in a scenario's server pack, of the hash of the client
+# pack cooked with it (assets.h's kClientPackPath). The blob is the hash's
+# BLAKE3_HASH_SIZE bytes and nothing else.
+CLIENT_PACK_PATH = "ClientPack"
 
 # TextureFormat (assets.h `enum class TextureFormat : uint8_t`).
 TEXTURE_FORMAT_BC7 = 0
@@ -173,6 +190,27 @@ def encode_texture_blob(dds_bytes: bytes, texture_format: int) -> bytes:
     return writer.bytes()
 
 
+def encode_script_blob(script: bytes) -> bytes:
+    """A script blob is the script's text as it is: no framing, no terminator."""
+    if len(script) > MAX_SCRIPT_BYTES:
+        raise EncodeError("script exceeds pack size limits")
+    return bytes(script)
+
+
+def encode_characters_blob(characters: list[str]) -> bytes:
+    """A u32 count, then each character's path relative to authoring/ as a
+    length-prefixed string, in manifest order: character index N is element
+    N-1 (ADR-0042).
+    """
+    if len(characters) > MAX_CHARACTERS:
+        raise EncodeError(f"a scenario composes at most {MAX_CHARACTERS} characters, this one names {len(characters)}")
+    writer = ByteWriter()
+    writer.u32(len(characters))
+    for character in characters:
+        writer.string(character, MAX_PATH_LENGTH)
+    return writer.bytes()
+
+
 def encode_spawn_point_blob(
     translation: tuple[float, float, float], rotation: tuple[float, float, float, float]
 ) -> bytes:
@@ -180,6 +218,16 @@ def encode_spawn_point_blob(
     for component in translation:
         writer.f32(component)
     for component in rotation:
+        writer.f32(component)
+    return writer.bytes()
+
+
+def encode_eye_blob(position: tuple[float, float, float]) -> bytes:
+    """A character's eye (ADR-0040): its position in the character's own root
+    space, as three f32 and nothing else.
+    """
+    writer = ByteWriter()
+    for component in position:
         writer.f32(component)
     return writer.bytes()
 
@@ -199,12 +247,14 @@ def _validate_entries(entries: list[AssetEntry]) -> None:
         raise WriteError("duplicate entry path")
 
 
-def write_pack(output_path: Path, entries: list[AssetEntry], signing_key: bytes) -> None:
+def write_pack(output_path: Path, entries: list[AssetEntry], signing_key: bytes) -> bytes:
     """Writes entries into a new pack file at output_path, in ADR-0031's
     header/data/index/trailer order, signing the trailer with signing_key
     (the raw 64-byte Ed25519 secret key, libsodium's own seed+pubkey
     layout - e.g. from keys.py's generate_keypair). Atomic: assembled into
     a temporary file first, renamed into place only once fully written.
+
+    Returns the pack's BLAKE3 hash, the one its trailer signs.
     """
     _validate_entries(entries)
     if len(signing_key) != 64:
@@ -257,3 +307,4 @@ def write_pack(output_path: Path, entries: list[AssetEntry], signing_key: bytes)
         f.write(pack_hash)
         f.write(signature)
     tmp_path.replace(output_path)
+    return pack_hash

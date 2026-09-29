@@ -15,3 +15,8 @@ updates:
     target-branch: "develop"
     schedule:
       interval: "weekly"
+    ignore:
+      # Pinned to the v3.6.0 tag, which sits on no NVTX branch: dependabot
+      # tracks the default branch and would "bump" it back to 3.5.0, which
+      # lacks the nvtx3::counter API the client uses.
+      - dependency-name: "third_party/nvtx"

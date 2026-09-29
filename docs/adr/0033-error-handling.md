@@ -10,6 +10,14 @@ internal invariants (bugs, not external failures) use `assert`/abort in debug
 builds; in release, they escalate to a `CRIT` log line (ADR-0029) followed by
 controlled shutdown, never silent continuation.
 
+An error is always a type, never a string: a function that reports failure
+returns a dedicated error type (an `enum class`, or a struct or class when the
+failure also needs context such as the offending key or file), never a
+`std::string` or `const char*` message. Callers branch on the type's values,
+tests assert on them, and wording lives in one `Describe…` function per module,
+so a message change never breaks a caller. This applies to every
+`std::expected<T, E>`; `E` is not a string.
+
 ## Considered Options
 
 - **Exceptions everywhere**: rejected — throwing on the simulation tick's hot path

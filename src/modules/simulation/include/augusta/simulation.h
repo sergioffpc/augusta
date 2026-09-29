@@ -1,12 +1,14 @@
 #ifndef AUGUSTA_SIMULATION_H_
 #define AUGUSTA_SIMULATION_H_
 
+#include <cstdint>
+#include <expected>
 #include <memory>
-#include <string>
 #include <vector>
 
 #include "augusta/ballistics.h"
-#include "augusta/input.h"
+#include "augusta/command.h"
+#include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/scripting.h"
 
@@ -14,21 +16,21 @@
 // authoritative ECS pipeline, run once per tick on the server's
 // Simulation thread (ADR-0005). It composes the mechanism modules that
 // already exist (physics, ballistics, scripting) into the eight ordered
-// phases ADR-0023 defines (see Phase below), and will hand its per-tick
-// output to augusta::replication - not yet implemented - to reach
-// clients (ARCHITECTURE.md §5's "SimulationWorld... emits authoritative
-// state each tick").
+// phases ADR-0023 defines (see Phase below); server::Host hands its
+// per-tick output to augusta::replication to reach clients
+// (ARCHITECTURE.md §5's "SimulationWorld... emits authoritative state
+// each tick").
 //
 // World owns one Flecs world (ADR-0001) internally, entirely
 // encapsulated behind Impl (simulation.cpp) - Flecs is this module's
 // implementation detail, not part of its public interface, so no flecs
 // header leaks in here. Phase's eight values become, in the same order,
 // eight dependency-chained flecs::Phase entities, each with one
-// registered flecs::system (named "<Phase>System") that runs once per
-// Tick regardless of matched entities - see simulation.cpp. Entity/
-// component shapes still aren't designed, so a system's body is
-// presently a stub; what each one will eventually do is documented on
-// its Phase enumerator below.
+// registered flecs::system (named "<Phase>System") - see simulation.cpp.
+// A player is one entity with a physics body; CommandIngestion, Movement
+// and Commit act on players today, and the other phases' bodies are stubs
+// until what they need (bullets, damage) is designed; what each one will
+// eventually do is documented on its Phase enumerator below.
 //
 // WeaponHandling has no C++ home yet either: ARCHITECTURE.md's Shared
 // Core lists it as its own module (one interface used identically by
@@ -41,10 +43,10 @@ namespace augusta::simulation {
 // order every tick. Scripts/Behaviours runs last, after Damage has
 // resolved the tick's deaths, so a hook can react to what just happened
 // (e.g. evaluate a win condition) and schedule what follows (spawns,
-// round transitions) for the next tick.
+// Match end) for the next tick.
 enum class Phase {
   // Mechanism. Applies this tick's already-validated client commands
-  // (augusta::input::Command; Input Validation - US-15 - is a boundary
+  // (augusta::command::Command; Input Validation - US-15 - is a boundary
   // component outside this World, per ARCHITECTURE.md §8, and has
   // already run by the time World::Tick sees them) to their entities.
   kCommandIngestion,
@@ -81,18 +83,38 @@ enum class Phase {
   // once per relevant hook. The only phase not implemented in C++.
   kScriptsBehaviours,
   // Mechanism. Packages the tick's resolved state into Authoritative
-  // State (State, below), for augusta::replication (not yet
-  // implemented) to send to clients.
+  // State (State, below), which augusta::replication plans into each
+  // client's update and server::Host sends.
   kCommit,
 };
 
+/// The server's name for one dynamic body inside SimulationWorld - today a
+/// player's, later any that moves. The caller picks it (server::Match hands one
+/// to each player at match start) and it is unique among the bodies currently
+/// in the world. It names the body, not whoever controls it: a player's
+/// session is a different number.
+enum class EntityId : std::uint32_t {};
+
+/// The validated command for one tick of the player who controls entity.
+struct PlayerCommand {
+  EntityId entity{};
+  command::Command command{};
+};
+
+/// One dynamic body as of the end of a tick.
+struct EntityState {
+  EntityId entity{};
+  physics::BodyState body{};
+};
+
 // SimulationWorld's per-tick output - ADR-0023/ARCHITECTURE.md's
-// "Authoritative State". Deliberately empty for now: its real shape
-// depends on ECS component shapes (see header comment) and on what
-// augusta::replication ends up needing to send, neither of which exist
-// yet - same deferred-design posture as augusta::renderer's "what gets
-// drawn".
-struct State {};
+// "Authoritative State", for augusta::replication to send to clients.
+// Today it holds every player's body; later phases add what they resolve
+// (bullets, damage).
+struct State {
+  /// Every dynamic body in the world, ordered by EntityId.
+  std::vector<EntityState> bodies;
+};
 
 // The single authoritative SimulationWorld. The server constructs
 // exactly one, on the Simulation thread (ADR-0005). Owns the mechanism
@@ -107,26 +129,36 @@ class World {
  public:
   // Constructs an empty World: an empty physics::World (using
   // stamina_config for every player body) and an empty ballistics::World
-  // (no bullets in flight yet), a scripting::Engine loaded from
-  // script_path, and the Flecs world with Phase's eight phases and their
-  // systems registered (see header comment). Throws whatever
-  // scripting::Engine's constructor throws if script_path fails to load.
-  World(const physics::StaminaConfig& stamina_config, const std::string& script_path);
+  // (no bullets in flight yet), a scripting::Engine with no script
+  // loaded yet, and the Flecs world with Phase's eight phases and their
+  // systems registered (see header comment).
+  explicit World(const physics::StaminaConfig& stamina_config);
   ~World();
+
+  /// Adds immovable level geometry to this world's physics, the same way PredictionWorld does.
+  std::expected<void, physics::CollisionMeshError> AddCollisionMesh(const physics::CollisionMesh& mesh);
 
   World(const World&) = delete;
   World& operator=(const World&) = delete;
   World(World&&) noexcept;
   World& operator=(World&&) noexcept;
 
+  /// Puts a new player-controlled body entity, standing and at full stamina, at
+  /// spawn. entity must not already be in the world.
+  void AddPlayer(EntityId entity, const math::Vec3& spawn);
+
+  /// Takes entity's body out of the world; a no-op if it is not in it.
+  void RemovePlayer(EntityId entity);
+
   // Runs all eight Phase values above, in their declared order, for one
   // fixed tick of duration delta_time seconds (internally, one
   // flecs::world::progress(delta_time) call). commands holds this tick's
-  // validated input from every connected player (US-02, 2-8 players) -
-  // unlike PredictionWorld, which only ever ticks the local player (see
-  // augusta::prediction::World::Tick). Returns the tick's Authoritative
+  // validated input, at most one per player (US-02, 2-8 players) - unlike
+  // PredictionWorld, which only ever ticks the local player (see
+  // augusta::prediction::World::Tick). A player with no command this tick
+  // stops moving and keeps its stance. Returns the tick's Authoritative
   // State.
-  State Tick(const std::vector<input::Command>& commands, float delta_time);
+  State Tick(const std::vector<PlayerCommand>& commands, float delta_time);
 
  private:
   struct Impl;

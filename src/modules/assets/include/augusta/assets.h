@@ -25,7 +25,7 @@
 //
 // Every pack is BLAKE3-hashed and Ed25519-signed (ADR-0030/ADR-0031's
 // trailer step): Load() verifies the signature before trusting anything
-// else in the file. Load() memory-maps the pack file once (mio) rather
+// else in the file. Load() memory-maps the pack file once (Boost.Interprocess) rather
 // than copying it into a buffer; the BLAKE3 hash is computed directly off
 // that mapping, and every Resolve* call decodes straight out of it too -
 // the file's bytes are never read from disk more than once for a Pack's
@@ -42,6 +42,10 @@ enum class AssetType : std::uint8_t {
   kSpawnPoint,
   kHitbox,
   kScene,
+  kScript,
+  kCharacters,
+  kClientPack,
+  kEye,
 };
 
 // True if value is one of AssetType's defined enumerators - an index
@@ -98,6 +102,14 @@ struct SceneData {
   std::vector<SceneNode> nodes;
 };
 
+/// Pack-relative path the cooker files a stage's scene graph under.
+inline constexpr std::string_view kScenePath = "Scene";
+
+/// The world transform of every node, index for index with scene.nodes
+/// (ADR-0032 stores only local transforms). Relies on ADR-0032's ordering, with
+/// every parent listed before its children, which Pack::ResolveScene guarantees.
+std::vector<math::Mat4> ComputeWorldTransforms(const SceneData& scene);
+
 // The DirectXTex block-compression format a texture blob was compressed
 // to (ADR-0017), one-to-one with DXGI_FORMAT_BC7_UNORM/BC5_UNORM/
 // BC4_UNORM. Its own enum rather than depending on DXGI_FORMAT directly:
@@ -123,6 +135,28 @@ struct TextureData {
   TextureFormat format = TextureFormat::kBC7;
 };
 
+/// Pack-relative path of the Parameters script (ADR-0039) in a scenario's
+/// server pack: `parameters.lua` at the root of the scenario's folder.
+inline constexpr std::string_view kParametersScriptPath = "parameters.lua";
+
+/// Pack-relative path of a scenario's character list (ADR-0042), in both of its
+/// packs.
+inline constexpr std::string_view kCharactersPath = "Characters";
+
+/// Pack-relative path, in a scenario's server pack, of the hash of the client
+/// pack cooked with it.
+inline constexpr std::string_view kClientPackPath = "ClientPack";
+
+/// The size of a pack's BLAKE3 hash, in bytes.
+inline constexpr std::size_t kPackHashSize = 32;
+
+/// A pack's BLAKE3 hash, the one its trailer signs (ADR-0031): names one cook of it.
+using PackHash = std::array<std::byte, kPackHashSize>;
+
+/// Most characters a scenario can compose: a character index is one byte and
+/// zero is never valid (ADR-0042).
+inline constexpr std::size_t kMaxCharacters = 255;
+
 // A cooked spawn-point marker (ADR-0032): the point's own local
 // translation/rotation, as recorded on the authoring prim's SceneNode.
 // Unlike MeshData-shaped blobs, a spawn point has no geometry - it's a
@@ -131,6 +165,13 @@ struct TextureData {
 struct SpawnPointData {
   math::Vec3 translation{0.0F, 0.0F, 0.0F};
   math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};
+};
+
+/// A character's eye (ADR-0040): the point the local player's camera sits at, in
+/// the character's own root space - its feet at the origin, the same space its
+/// visual mesh is cooked into.
+struct EyeData {
+  math::Vec3 position{0.0F, 0.0F, 0.0F};
 };
 
 // Sanitizes a USD prim path (e.g. "/Geom/Cube") into the pack-relative
@@ -158,10 +199,14 @@ struct AssetEntry {
   std::vector<std::byte> data;
 };
 
-// A 32-byte Ed25519 public key.
-using Ed25519PublicKey = std::array<std::byte, 32>;
-// A 64-byte Ed25519 private (secret) key.
-using Ed25519PrivateKey = std::array<std::byte, 64>;
+// The sizes of an Ed25519 key, in bytes.
+inline constexpr std::size_t kEd25519PublicKeySize = 32;
+inline constexpr std::size_t kEd25519PrivateKeySize = 64;
+
+// An Ed25519 public key.
+using Ed25519PublicKey = std::array<std::byte, kEd25519PublicKeySize>;
+// An Ed25519 private (secret) key.
+using Ed25519PrivateKey = std::array<std::byte, kEd25519PrivateKeySize>;
 
 struct Ed25519KeyPair {
   Ed25519PublicKey public_key;
@@ -228,6 +273,10 @@ enum class ResolveError {
   kCorruptBlob,
 };
 
+/// A phrase for error that follows the asset's name; expected_type is what the
+/// asset should have been ("mesh", "scene", "collision geometry").
+std::string DescribeResolveError(ResolveError error, std::string_view expected_type);
+
 // A loaded pack file (ADR-0031's header/index/trailer). Load() verifies
 // the BLAKE3 hash and Ed25519 signature before parsing the index, and
 // only the parsed index is kept in memory afterward - blob bytes
@@ -270,6 +319,28 @@ class Pack {
   // Resolves a spawn-point marker by its pack-relative path (ADR-0019/
   // ADR-0032). Present in both client and server packs.
   [[nodiscard]] std::expected<SpawnPointData, ResolveError> ResolveSpawnPoint(std::string_view path) const;
+
+  /// Resolves a character's eye by its pack-relative path (ADR-0040). Present
+  /// in the client pack only.
+  [[nodiscard]] std::expected<EyeData, ResolveError> ResolveEye(std::string_view path) const;
+
+  /// Resolves a Lua script's text by its path relative to the scenario's
+  /// folder, e.g. kParametersScriptPath (ADR-0031). Present in the server pack
+  /// only: a client is sent the values a script decides, never the script.
+  [[nodiscard]] std::expected<std::string, ResolveError> ResolveScript(std::string_view path) const;
+
+  /// Resolves the scenario's character list at kCharactersPath: each character's
+  /// path relative to `authoring/`, in manifest order, so character index N is
+  /// element N-1 (ADR-0042). Present in both client and server packs.
+  [[nodiscard]] std::expected<std::vector<std::string>, ResolveError> ResolveCharacters() const;
+
+  /// Resolves, at kClientPackPath, the Hash() of the client pack cooked with
+  /// this one. Present in the server pack only: the server admits only clients
+  /// that loaded that pack.
+  [[nodiscard]] std::expected<PackHash, ResolveError> ResolveClientPackHash() const;
+
+  /// This pack's hash, as its trailer holds it and Load verified it.
+  [[nodiscard]] const PackHash& Hash() const;
 
  private:
   Pack();

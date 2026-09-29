@@ -17,19 +17,19 @@ Then the server accepts the connection and assigns me a session ID
 ```
 
 ### US-02: Join a Match (2–8 Players)
-As a player, I want to join an active match with 2 to 8 players, so that I can play a round.
+As a player, I want to join a match with 2 to 8 players, so that I can play.
 
 ```
-Given a match with fewer than 8 connected players
+Given a Lobby holding fewer than the scenario's Player count, and no match in progress
 When I request to join
-Then I am added to the match and notified of the current match state
+Then I am admitted to the Lobby, and play in the next match once the Lobby is full
 ```
 
-### US-03: Spawn into a Round
-As a player, I want to spawn at the start of a round, so that I can participate.
+### US-03: Spawn into a Match
+As a player, I want to spawn at the start of a match, so that I can participate.
 
 ```
-Given a new round has started
+Given a new match has started
 When spawning is processed
 Then I am placed at a valid spawn point with full health and default loadout
 ```
@@ -125,23 +125,24 @@ Then the resulting damage matches the configured lethality for that body part an
 ```
 
 ### US-13: Player Death (No Respawn)
-As a player, I want to die permanently for the rest of the round when my health reaches
-zero, so that rounds carry real stakes.
+As a player, I want to die permanently for the rest of the match when my health reaches
+zero, so that matches carry real stakes.
 
 ```
 Given my health reaches zero
 When death is processed
-Then I enter spectator mode for the remainder of the round with no respawn
+Then I enter spectator mode for the remainder of the match with no respawn
 ```
 
-### US-14: Determine Round End / Win Condition
-As the system, I want to detect when a round's win condition is met, so that the round
+### US-14: Determine Match End / Win Condition
+As the system, I want to detect when a match's win condition is met, so that the match
 can conclude and a new one can begin.
 
 ```
 Given all players on one side are eliminated (or another defined win condition is met)
 When the condition is evaluated server-side
-Then the round ends, a winner is declared, and a new round starts after a defined delay
+Then the match ends, a winner is declared, everyone returns to the Lobby, and a new match
+     starts after a defined delay
 ```
 
 ### US-15: Server-Side Validation of Client Input (Anti-Cheat Baseline)
@@ -187,8 +188,13 @@ Stimulus:    Identical fire event (position, direction, velocity, ammo type)
 Environment: Any supported platform
 Artifact:    Ballistics module
 Response:    Trajectory computation produces identical results
-Measure:     Client and server compute matching trajectories within a defined tolerance
+Measure:     The server's trajectory is reproducible across runs and platforms
+             within a defined tolerance
 ```
+The tolerance is the one the golden-trajectory test defines, on the Windows
+and Linux runners both (ADR-0013). Only the server decides where a bullet goes
+and what it hits (ADR-0024); a client computes the same trajectory with the
+same math only to draw it (ADR-0044), so the same check covers that drawing.
 
 ### NFR-04: Platform Targeting
 ```
@@ -222,5 +228,5 @@ Stimulus:    Players joining a match
 Environment: v1 milestone
 Artifact:    Server session management
 Response:    Server supports the target concurrent player count without degradation
-Measure:     Stable operation with 2–8 concurrent players for at least one full round
+Measure:     Stable operation with 2–8 concurrent players for at least one full match
 ```

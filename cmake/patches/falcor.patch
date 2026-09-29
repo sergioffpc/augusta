@@ -59,6 +59,41 @@ index 8d52e7b1..14273cae 100644
          {
              "name": "windows-ninja-msvc-ci-release",
              "displayName": "Release",
+diff --git a/Source/Falcor/Core/Window.cpp b/Source/Falcor/Core/Window.cpp
+index 61b4f9c7..9152dae0 100644
+--- a/Source/Falcor/Core/Window.cpp
++++ b/Source/Falcor/Core/Window.cpp
+@@ -533,6 +533,13 @@ void Window::setWindowTitle(const std::string& title)
+     glfwSetWindowTitle(mpGLFWWindow, title.c_str());
+ }
+ 
++void Window::setCursorLocked(bool locked)
++{
++    glfwSetInputMode(mpGLFWWindow, GLFW_CURSOR, locked ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
++    if (glfwRawMouseMotionSupported())
++        glfwSetInputMode(mpGLFWWindow, GLFW_RAW_MOUSE_MOTION, locked ? GLFW_TRUE : GLFW_FALSE);
++}
++
+ void Window::setWindowIcon(const std::filesystem::path& path)
+ {
+ #if FALCOR_WINDOWS
+diff --git a/Source/Falcor/Core/Window.h b/Source/Falcor/Core/Window.h
+index 1540b6b3..00f28911 100644
+--- a/Source/Falcor/Core/Window.h
++++ b/Source/Falcor/Core/Window.h
+@@ -149,6 +149,12 @@ public:
+      */
+     void setWindowIcon(const std::filesystem::path& path);
+ 
++    /**
++     * Hide the cursor and capture it for unbounded mouse movement (GLFW_CURSOR_DISABLED), or release it.
++     * While captured, mouse move events report a virtual position that never stops at the window edge.
++     */
++    void setCursorLocked(bool locked);
++
+     /**
+      * Get the native window handle
+      */
 diff --git a/tools-dependencies.xml b/tools-dependencies.xml
 new file mode 100644
 index 00000000..f205f049

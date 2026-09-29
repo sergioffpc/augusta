@@ -1,47 +1,178 @@
 #ifndef AUGUSTA_LOGGING_H_
 #define AUGUSTA_LOGGING_H_
 
-#include <spdlog/sinks/stdout_color_sinks.h>
-#include <spdlog/spdlog.h>
+#include <chrono>
+#include <cstdint>
+#include <format>
+#include <optional>
+#include <string>
+#include <string_view>
 
+// augusta::logging writes the process's log lines (ADR-0027, ADR-0029, ADR-0036):
+// one process-wide, thread-safe console sink, no file sink. Boost.Log does the
+// work behind logging.cpp; nothing here includes it, so no other translation
+// unit pays for its headers.
 namespace augusta::logging {
 
-// Configures the process-wide default logger: a single thread-safe, colored
-// console sink (ADR-0027 — no file sink, the platform captures stdout).
-// Flushes immediately on warnings and above; lower levels stay buffered.
-// Call once at process startup, before using the macros below.
-inline void Init() {
-  // Idempotent: a second call (e.g. from a future test binary linking this
-  // module) reuses the already-registered logger instead of crashing —
-  // spdlog::stdout_color_mt() throws if "augusta" is already registered.
-  auto logger = spdlog::get("augusta");
-  if (!logger) {
-    logger = spdlog::stdout_color_mt("augusta");
-  }
-  // Keep the runtime filter in lockstep with the compile-time one: a call
-  // below SPDLOG_ACTIVE_LEVEL doesn't exist in the binary, but one at or
-  // above it still needs the logger's own level raised to let it through
-  // (spdlog defaults new loggers to `info`).
-  logger->set_level(static_cast<spdlog::level::level_enum>(SPDLOG_ACTIVE_LEVEL));
-  logger->flush_on(spdlog::level::warn);
-  spdlog::set_default_logger(logger);
-}
+/// A log line's severity, lowest to highest.
+enum class Severity : std::uint8_t {
+  kTrace,
+  kDebug,
+  kInfo,
+  kWarn,
+  kError,
+  kCritical,
+};
+
+/// One console line (ADR-0029): `<UTC ISO-8601 time> <LEVEL> <message>`, e.g.
+/// `2024-02-01T12:00:00Z INFO subsystem=client event=starting`, without its line
+/// ending. With colored, the level name is wrapped in ANSI color codes.
+std::string FormatLine(std::chrono::system_clock::time_point time, Severity level, std::string_view message,
+                       bool colored);
+
+/// Configures the process-wide console sink. Colors are used only when stdout
+/// is a terminal. Call once at process startup, before using the macros below;
+/// a second call does nothing. Installs the runtime floor below at kDebug (see
+/// SetLogLevel): a Debug build is informed - the heartbeat and above - not
+/// flooded by per-packet TRACE, unless a caller asks for it afterward.
+void Init();
+
+/// Writes message at level to the console sink, whatever the runtime floor. Use
+/// the macros below instead: they drop calls under the compile-time level, and
+/// under the runtime floor before formatting their message.
+void Write(Severity level, std::string_view message);
+
+/// Raises or lowers the runtime floor: below level, a call that still passes
+/// the compile-time gate (AUGUSTA_LOG_ACTIVE_LEVEL) is now dropped before its
+/// arguments are evaluated. This is what a config file's `logging.level` (ADR-0034)
+/// drives - the compile-time gate alone can't tell a Debug build's TRACE
+/// firehose apart from its DEBUG heartbeat, since both compile in together.
+/// Thread-safe; takes effect for calls made after it returns. Until Init or a
+/// first call, the floor is kTrace.
+void SetLogLevel(Severity level);
+
+/// Whether a call at level clears the runtime floor (SetLogLevel). One atomic
+/// read, so the macros below can ask it on every call, hot paths included.
+bool IsEnabled(Severity level);
+
+/// Parses one of "trace", "debug", "info", "warn", "error", "critical"
+/// (case-sensitive, matching the logfmt message bodies); anything else is
+/// nullopt.
+std::optional<Severity> ParseSeverity(std::string_view name);
+
+/// Lets one event through per interval and counts those it turned away, so a line
+/// that can repeat every tick or every packet is written once an interval with
+/// how many it stood for. Takes the time as an argument, so it needs no clock to
+/// test. Not thread-safe: use one from one thread, or under the caller's lock.
+class Throttle {
+ public:
+  explicit Throttle(std::chrono::steady_clock::duration interval) : interval_(interval) {}
+
+  /// Whether the event at now is let through: if so, how many were turned away
+  /// since the last one that was. The first event is always let through.
+  std::optional<std::uint32_t> Admit(std::chrono::steady_clock::time_point now);
+
+ private:
+  std::chrono::steady_clock::duration interval_;
+  std::optional<std::chrono::steady_clock::time_point> last_admitted_;
+  std::uint32_t suppressed_ = 0;
+};
+
+/// message with ` suppressed=<count>` appended when count is not zero.
+std::string WithSuppressed(std::string message, std::uint32_t count);
 
 }  // namespace augusta::logging
 
-// SPDLOG_ACTIVE_LEVEL (set per build type by the augusta_logging CMake
-// target) decides at compile time which of these expand to real calls and
-// which compile away entirely.
+// AUGUSTA_LOG_ACTIVE_LEVEL (set per build type by the augusta_logging CMake
+// target) decides at compile time which of the macros below expand to real
+// calls and which compile away entirely: Debug keeps everything from trace
+// up, other builds strip everything under info.
+#define AUGUSTA_LOG_LEVEL_TRACE 0
+#define AUGUSTA_LOG_LEVEL_DEBUG 1
+#define AUGUSTA_LOG_LEVEL_INFO 2
+#define AUGUSTA_LOG_LEVEL_WARN 3
+#define AUGUSTA_LOG_LEVEL_ERROR 4
+#define AUGUSTA_LOG_LEVEL_CRITICAL 5
+
+#ifndef AUGUSTA_LOG_ACTIVE_LEVEL
+#define AUGUSTA_LOG_ACTIVE_LEVEL AUGUSTA_LOG_LEVEL_INFO
+#endif
+
+// The runtime floor is checked first, so a call under it never runs std::format
+// or evaluates its arguments: a per-packet TRACE line costs one atomic read.
+#define AUGUSTA_LOG_AT(level, ...)                                                                     \
+  (::augusta::logging::IsEnabled(level) ? ::augusta::logging::Write(level, ::std::format(__VA_ARGS__)) \
+                                        : static_cast<void>(0))
+
+// AUGUSTA_LOG_AT behind a logging::Throttle, for a line a peer can provoke as
+// often as it likes, so it cannot flood the log: a line that follows suppressed
+// ones ends in suppressed=<count>. Under the runtime floor it does not ask the
+// throttle, so a filtered line takes no slot and counts as no suppressed line.
+#define AUGUSTA_LOG_LIMITED_AT(level, throttle, ...)                                                                  \
+  do {                                                                                                                \
+    if (!::augusta::logging::IsEnabled(level)) {                                                                      \
+      break;                                                                                                          \
+    }                                                                                                                 \
+    if (const auto augusta_suppressed = (throttle).Admit(::std::chrono::steady_clock::now())) {                       \
+      ::augusta::logging::Write(level,                                                                                \
+                                ::augusta::logging::WithSuppressed(::std::format(__VA_ARGS__), *augusta_suppressed)); \
+    }                                                                                                                 \
+  } while (false)
+
 // L-prefixed rather than bare T/D/I/W/E/C: those collide with the T(...)
 // functional-cast idiom GLM's templates use internally (glm/detail/_vectorize.hpp),
 // which breaks compilation wherever a translation unit includes this header
 // before something that pulls in <glm/...> (e.g. client/main.cpp -> runtime.h
 // -> audio.h/physics.h -> math.h).
-#define LT(...) SPDLOG_TRACE(__VA_ARGS__)
-#define LD(...) SPDLOG_DEBUG(__VA_ARGS__)
-#define LI(...) SPDLOG_INFO(__VA_ARGS__)
-#define LW(...) SPDLOG_WARN(__VA_ARGS__)
-#define LE(...) SPDLOG_ERROR(__VA_ARGS__)
-#define LC(...) SPDLOG_CRITICAL(__VA_ARGS__)
+// The arguments are a std::format string and its values: LI("event={}", 1).
+// Each level's _LIMITED variant takes a logging::Throttle first:
+// LW_LIMITED(throttle, "event={}", 1) (see AUGUSTA_LOG_LIMITED_AT).
+#if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_TRACE
+#define LT(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kTrace, __VA_ARGS__)
+#define LT_LIMITED(throttle, ...) AUGUSTA_LOG_LIMITED_AT(::augusta::logging::Severity::kTrace, throttle, __VA_ARGS__)
+#else
+#define LT(...) static_cast<void>(0)
+#define LT_LIMITED(throttle, ...) static_cast<void>(0)
+#endif
+
+#if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_DEBUG
+#define LD(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kDebug, __VA_ARGS__)
+#define LD_LIMITED(throttle, ...) AUGUSTA_LOG_LIMITED_AT(::augusta::logging::Severity::kDebug, throttle, __VA_ARGS__)
+#else
+#define LD(...) static_cast<void>(0)
+#define LD_LIMITED(throttle, ...) static_cast<void>(0)
+#endif
+
+#if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_INFO
+#define LI(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kInfo, __VA_ARGS__)
+#define LI_LIMITED(throttle, ...) AUGUSTA_LOG_LIMITED_AT(::augusta::logging::Severity::kInfo, throttle, __VA_ARGS__)
+#else
+#define LI(...) static_cast<void>(0)
+#define LI_LIMITED(throttle, ...) static_cast<void>(0)
+#endif
+
+#if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_WARN
+#define LW(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kWarn, __VA_ARGS__)
+#define LW_LIMITED(throttle, ...) AUGUSTA_LOG_LIMITED_AT(::augusta::logging::Severity::kWarn, throttle, __VA_ARGS__)
+#else
+#define LW(...) static_cast<void>(0)
+#define LW_LIMITED(throttle, ...) static_cast<void>(0)
+#endif
+
+#if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_ERROR
+#define LE(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kError, __VA_ARGS__)
+#define LE_LIMITED(throttle, ...) AUGUSTA_LOG_LIMITED_AT(::augusta::logging::Severity::kError, throttle, __VA_ARGS__)
+#else
+#define LE(...) static_cast<void>(0)
+#define LE_LIMITED(throttle, ...) static_cast<void>(0)
+#endif
+
+#if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_CRITICAL
+#define LC(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kCritical, __VA_ARGS__)
+#define LC_LIMITED(throttle, ...) AUGUSTA_LOG_LIMITED_AT(::augusta::logging::Severity::kCritical, throttle, __VA_ARGS__)
+#else
+#define LC(...) static_cast<void>(0)
+#define LC_LIMITED(throttle, ...) static_cast<void>(0)
+#endif
 
 #endif  // AUGUSTA_LOGGING_H_

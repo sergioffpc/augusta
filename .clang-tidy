@@ -8,11 +8,20 @@ Checks: >
   google-*,
   readability-*,
   modernize-*,
+  misc-include-cleaner,
   -modernize-use-trailing-return-type,
   -clang-analyzer-core.StackAddressEscape,
   -readability-convert-member-functions-to-static,
+  -readability-identifier-length,
   -modernize-use-scoped-lock
 
+# misc-include-cleaner enforces ADR-0037's "include what you use": every
+# symbol a file names comes from a header it includes itself, and no include
+# goes unused. It leaves third-party headers alone (IgnoreHeaders, below):
+# those libraries are meant to be used through their umbrella headers
+# (<boost/log/core.hpp>, <yaml-cpp/yaml.h>, <PxPhysicsAPI.h>, <flecs.h>),
+# not the internal ones the check would otherwise ask for.
+#
 # Trailing return type is a stylistic alternative the guide doesn't mandate
 # either way, so it's the one thing above we don't turn into a hard rule.
 #
@@ -35,6 +44,11 @@ Checks: >
 # (renderer::Renderer is real as of M1's Falcor spike, ADR-0009 - but it's
 # Windows-only and this clang-tidy run is Linux-only, so it's moot there.)
 #
+# readability-identifier-length is disabled because the Google style guide sets
+# no minimum name length, and a short name is the natural one in a small scope
+# (a `to` beside a `from`, an `id` next to the map it indexes). The check's
+# default of three characters was rejecting ordinary code.
+#
 # modernize-use-scoped-lock is disabled because this clang-tidy build
 # (LLVM 21.1 on the Linux CI runner) segfaults analyzing it against a
 # plain `std::lock_guard<std::mutex> lock(...)` declaration (crashes
@@ -44,7 +58,13 @@ Checks: >
 
 WarningsAsErrors: "*"
 
-HeaderFilterRegex: '^(src|tests)/.*\.h$'
+# clang-tidy matches these against a header's full path as the compile
+# commands give it, which is absolute (/home/runner/work/augusta/augusta/src/...
+# on CI, C:\...\augusta\src\... on Windows), so the pattern must allow a
+# prefix and either separator. third_party is excluded: its vendored sources
+# have src/ directories of their own.
+HeaderFilterRegex: '.*[/\\](src|tests)[/\\].*\.h$'
+ExcludeHeaderFilterRegex: '.*[/\\]third_party[/\\].*'
 
 CheckOptions:
   - { key: readability-identifier-naming.NamespaceCase,          value: lower_case }
@@ -73,4 +93,8 @@ CheckOptions:
   - { key: readability-identifier-naming.EnumConstantCase,        value: CamelCase }
   - { key: readability-identifier-naming.EnumConstantPrefix,      value: k         }
   - { key: readability-identifier-naming.MacroDefinitionCase,     value: UPPER_CASE }
+  # Include guards end in an underscore (Google style, <PATH>_<FILE>_H_),
+  # which UPPER_CASE alone refuses.
+  - { key: readability-identifier-naming.MacroDefinitionIgnoredRegexp, value: '^AUGUSTA_[A-Z0-9_]+_H_$' }
   - { key: readability-function-size.LineThreshold,               value: 60         }
+  - { key: misc-include-cleaner.IgnoreHeaders, value: 'boost/.*;yaml-cpp/.*;glm/.*;spdlog/.*;fmt/.*;flecs.*;Px.*;foundation/.*;extensions/.*;characterkinematic/.*;steam/.*;sol/.*;lua.*;lauxlib.h;lualib.h;blake3.h;sodium.*;nvtx3/.*;gtest/.*;gmock/.*;benchmark/.*;Falcor.*;Core/.*;Utils/.*;RenderGraph/.*' }

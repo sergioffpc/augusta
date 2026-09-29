@@ -39,6 +39,10 @@ applied on a prim alongside PhysX Collision API schemas (colliders/joints
 authored in Composer, ADR-0015). The cooker reads these attributes directly
 rather than inferring intent from geometry shape or prim naming.
 
+**Geometry prims:** the cooker reads `UsdGeomMesh`, `UsdGeomCube`, and `UsdGeomCapsule` alike. A cube is expanded to the same 12-triangle box a mesh would give, so it takes the same hitbox/collider/visual path; its scale lives in the node's local transform. usd-validation-nvidia's primitive-fit rule rejects box-shaped meshes, so authored boxes must be cubes. A capsule is tessellated into a triangle buffer the same way (ADR-0041's character content is the first user of this - a placeholder collision-derived shape, not an authored mesh). Geometry with `purpose = "guide"` that is neither a collider nor a hitbox (e.g. a spawn-point marker) produces no visual mesh.
+
+**Markers:** a prim that stands for a point rather than geometry - a spawn point, a character's eye (ADR-0040) - is authored as a small `UsdGeomSphere` with `purpose = "guide"`, so it shows in Composer and is never rendered. The cooker reads no geometry from a sphere, so a marker never becomes a mesh even if its guide purpose is dropped. An empty `Xform` would be the plain choice, but usd-validation-nvidia warns on an empty leaf prim and the cooker aborts on any warning (ADR-0015); a one-point `UsdGeomPoints` passes validation but usd-optimize's small-geometry removal deletes it.
+
 ## Considered Options
 
 - **Storing world transforms instead of local:** rejected — doubles the

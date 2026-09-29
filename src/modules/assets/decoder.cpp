@@ -1,11 +1,16 @@
 #include "decoder.h"
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/math.h"
 #include "wire_format.h"
 
 // The Decode* half of augusta_assets' blob (de)serialization (ADR-0031/
@@ -30,6 +35,27 @@ bool ReadOptionalPath(ByteReader& reader, std::uint8_t flags, std::uint8_t bit, 
   return true;
 }
 
+std::optional<math::Vec3> ReadVec3(ByteReader& reader) {
+  const auto x = reader.ReadF32();
+  const auto y = reader.ReadF32();
+  const auto z = reader.ReadF32();
+  if (!x || !y || !z) {
+    return std::nullopt;
+  }
+  return math::Vec3(*x, *y, *z);
+}
+
+std::optional<math::Quat> ReadQuat(ByteReader& reader) {
+  const auto x = reader.ReadF32();
+  const auto y = reader.ReadF32();
+  const auto z = reader.ReadF32();
+  const auto w = reader.ReadF32();
+  if (!x || !y || !z || !w) {
+    return std::nullopt;
+  }
+  return math::Quat(*w, *x, *y, *z);
+}
+
 // A node's translation/rotation/scale, read as ten consecutive f32
 // fields - factored out of DecodeSceneNode purely to keep that function
 // under this codebase's function-size guideline (ADR-0012).
@@ -40,24 +66,16 @@ struct DecodedTransform {
 };
 
 std::optional<DecodedTransform> ReadTransform(ByteReader& reader) {
-  const auto translation_x = reader.ReadF32();
-  const auto translation_y = reader.ReadF32();
-  const auto translation_z = reader.ReadF32();
-  const auto rotation_x = reader.ReadF32();
-  const auto rotation_y = reader.ReadF32();
-  const auto rotation_z = reader.ReadF32();
-  const auto rotation_w = reader.ReadF32();
-  const auto scale_x = reader.ReadF32();
-  const auto scale_y = reader.ReadF32();
-  const auto scale_z = reader.ReadF32();
-  if (!translation_x || !translation_y || !translation_z || !rotation_x || !rotation_y || !rotation_z || !rotation_w ||
-      !scale_x || !scale_y || !scale_z) {
+  const auto translation = ReadVec3(reader);
+  const auto rotation = ReadQuat(reader);
+  const auto scale = ReadVec3(reader);
+  if (!translation || !rotation || !scale) {
     return std::nullopt;
   }
   return DecodedTransform{
-      .translation = math::Vec3(*translation_x, *translation_y, *translation_z),
-      .rotation = math::Quat(*rotation_w, *rotation_x, *rotation_y, *rotation_z),
-      .scale = math::Vec3(*scale_x, *scale_y, *scale_z),
+      .translation = *translation,
+      .rotation = *rotation,
+      .scale = *scale,
   };
 }
 
@@ -151,13 +169,11 @@ std::optional<MeshData> DecodeMeshBlob(std::span<const std::byte> blob) {
   // cap.
   MeshData mesh;
   for (std::uint32_t i = 0; i < *point_count; ++i) {
-    const auto pos_x = reader.ReadF32();
-    const auto pos_y = reader.ReadF32();
-    const auto pos_z = reader.ReadF32();
-    if (!pos_x || !pos_y || !pos_z) {
+    const auto point = ReadVec3(reader);
+    if (!point) {
       return std::nullopt;
     }
-    mesh.points.emplace_back(*pos_x, *pos_y, *pos_z);
+    mesh.points.push_back(*point);
   }
 
   const auto index_count = reader.ReadU32();
@@ -241,20 +257,64 @@ std::optional<TextureData> DecodeTextureBlob(std::span<const std::byte> blob) {
 // Spawn-point blob wire format: see EncodeSpawnPointBlob.
 std::optional<SpawnPointData> DecodeSpawnPointBlob(std::span<const std::byte> blob) {
   ByteReader reader(blob);
-  const auto translation_x = reader.ReadF32();
-  const auto translation_y = reader.ReadF32();
-  const auto translation_z = reader.ReadF32();
-  const auto rotation_x = reader.ReadF32();
-  const auto rotation_y = reader.ReadF32();
-  const auto rotation_z = reader.ReadF32();
-  const auto rotation_w = reader.ReadF32();
-  if (!translation_x || !translation_y || !translation_z || !rotation_x || !rotation_y || !rotation_z || !rotation_w) {
+  const auto translation = ReadVec3(reader);
+  const auto rotation = ReadQuat(reader);
+  if (!translation || !rotation) {
     return std::nullopt;
   }
   return SpawnPointData{
-      .translation = math::Vec3(*translation_x, *translation_y, *translation_z),
-      .rotation = math::Quat(*rotation_w, *rotation_x, *rotation_y, *rotation_z),
+      .translation = *translation,
+      .rotation = *rotation,
   };
+}
+
+// Eye blob wire format: see EncodeEyeBlob.
+std::optional<EyeData> DecodeEyeBlob(std::span<const std::byte> blob) {
+  ByteReader reader(blob);
+  const auto position = ReadVec3(reader);
+  if (!position) {
+    return std::nullopt;
+  }
+  return EyeData{.position = *position};
+}
+
+// Script blob: the script's text as it is, with no framing and no terminator.
+std::optional<std::string> DecodeScriptBlob(std::span<const std::byte> blob) {
+  if (blob.size() > kMaxScriptBytes) {
+    return std::nullopt;
+  }
+  return std::string(reinterpret_cast<const char*>(blob.data()), blob.size());
+}
+
+// Character-list blob wire format: see EncodeCharactersBlob.
+std::optional<std::vector<std::string>> DecodeCharactersBlob(std::span<const std::byte> blob) {
+  ByteReader reader(blob);
+  const auto count = reader.ReadU32();
+  if (!count || *count > kMaxCharacters) {
+    return std::nullopt;
+  }
+  // Unlike DecodeMeshBlob's counts, this one is already capped at a few hundred,
+  // so reserving on its word can't cause an oversized allocation.
+  std::vector<std::string> characters;
+  characters.reserve(*count);
+  for (std::uint32_t i = 0; i < *count; ++i) {
+    auto character = reader.ReadString();
+    if (!character) {
+      return std::nullopt;
+    }
+    characters.push_back(std::move(*character));
+  }
+  return characters;
+}
+
+// Client-pack blob: the client pack's hash, its kPackHashSize bytes and nothing else.
+std::optional<PackHash> DecodeClientPackBlob(std::span<const std::byte> blob) {
+  if (blob.size() != kPackHashSize) {
+    return std::nullopt;
+  }
+  PackHash hash;
+  std::ranges::copy(blob, hash.begin());
+  return hash;
 }
 
 }  // namespace augusta::assets

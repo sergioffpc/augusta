@@ -21,9 +21,11 @@ spec:
       sourceRef:
         kind: GitRepository
         name: augusta-main
-  # image.tag assumes CI tags GHCR images by branch name (main/develop) - that
-  # push step doesn't exist yet (see ROADMAP.md M0b), so this HelmRelease
-  # reconciles but the pod can't pull an image until it does.
+  # main's chart still predates running the image of its own commit, so it is
+  # pointed at the branch tag. Drop image.tag once main carries develop's
+  # chart (and add timeout: 30m, as in develop.yaml).
   values:
     image:
       tag: main
+    assetPacks:
+      packVersion: augusta

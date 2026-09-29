@@ -29,11 +29,13 @@
     },
     {
       "name": "linux",
-      "displayName": "Linux (Ninja)",
+      "displayName": "Linux (Ninja + clang)",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/x64-linux",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "VCPKG_INSTALL_OPTIONS": "--x-packages-root=$env{HOME}/.cache/augusta-vcpkg/packages;--x-buildtrees-root=$env{HOME}/.cache/augusta-vcpkg/buildtrees;--downloads-root=$env{HOME}/.cache/augusta-vcpkg/downloads"
       },
@@ -45,7 +47,7 @@
     },
     {
       "name": "linux-debug",
-      "displayName": "Linux Debug (Ninja)",
+      "displayName": "Linux Debug (Ninja + clang)",
       "inherits": "linux",
       "binaryDir": "${sourceDir}/build/x64-linux-debug",
       "cacheVariables": {
@@ -54,13 +56,47 @@
     },
     {
       "name": "linux-san",
-      "displayName": "Linux (ASan + UBSan)",
+      "displayName": "Linux (clang, ASan + UBSan)",
       "inherits": "linux",
       "binaryDir": "${sourceDir}/build/x64-linux-san",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
         "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+      }
+    },
+    {
+      "name": "linux-fuzz",
+      "displayName": "Linux (clang, libFuzzer + ASan)",
+      "inherits": "linux",
+      "binaryDir": "${sourceDir}/build/x64-linux-fuzz",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,fuzzer-no-link -fno-omit-frame-pointer -O1",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address",
+        "AUGUSTA_FUZZ": "ON"
+      }
+    },
+    {
+      "name": "linux-tsan",
+      "displayName": "Linux (clang, TSan)",
+      "inherits": "linux",
+      "binaryDir": "${sourceDir}/build/x64-linux-tsan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS": "-fsanitize=thread -fno-omit-frame-pointer -O1",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=thread"
+      }
+    },
+    {
+      "name": "linux-coverage",
+      "displayName": "Linux (clang, source-based coverage)",
+      "inherits": "linux",
+      "binaryDir": "${sourceDir}/build/x64-linux-coverage",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS": "-fprofile-instr-generate -fcoverage-mapping",
+        "CMAKE_EXE_LINKER_FLAGS": "-fprofile-instr-generate"
       }
     }
   ],
@@ -69,7 +105,14 @@
     { "name": "windows-debug", "configurePreset": "windows-debug" },
     { "name": "linux", "configurePreset": "linux" },
     { "name": "linux-debug", "configurePreset": "linux-debug" },
-    { "name": "linux-san", "configurePreset": "linux-san" }
+    { "name": "linux-san", "configurePreset": "linux-san" },
+    {
+      "name": "linux-fuzz",
+      "configurePreset": "linux-fuzz",
+      "targets": ["augusta_protocol_decode_fuzz", "augusta_pack_load_fuzz"]
+    },
+    { "name": "linux-tsan", "configurePreset": "linux-tsan" },
+    { "name": "linux-coverage", "configurePreset": "linux-coverage" }
   ],
   "testPresets": [
     {
@@ -96,6 +139,22 @@
       "name": "linux-san",
       "configurePreset": "linux-san",
       "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "linux-tsan",
+      "configurePreset": "linux-tsan",
+      "output": { "outputOnFailure": true },
+      "environment": {
+        "TSAN_OPTIONS": "suppressions=${sourceDir}/tests/tsan.supp second_deadlock_stack=1"
+      }
+    },
+    {
+      "name": "linux-coverage",
+      "configurePreset": "linux-coverage",
+      "output": { "outputOnFailure": true },
+      "environment": {
+        "LLVM_PROFILE_FILE": "${sourceDir}/build/x64-linux-coverage/profiles/%p-%m.profraw"
+      }
     }
   ]
 }

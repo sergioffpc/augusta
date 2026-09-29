@@ -28,15 +28,14 @@
 // that thread specifically the way window/device events required the
 // Main/Render thread.
 //
-// Interface scope, for now: raw framed payloads only. What the bytes
-// mean - message types, fields, how input::Command or a future
-// authoritative-state snapshot get encoded - is Networking Protocol's
-// concern (ADR-0007, custom binary format) and isn't designed yet; nor
-// is per-message reliability (GameNetworkingSockets supports both
-// reliable and unreliable sends, but which v1 message types need which
-// isn't decided until the message catalogue exists). Send here is
-// unreliable, matching real-time state updates where a newer message
-// supersedes an older one; revisit once Networking Protocol exists.
+// Interface scope: raw framed payloads only. What the bytes mean -
+// message types, fields, how a Command or an Authoritative State update
+// is encoded - is the Networking Protocol's concern (augusta::protocol,
+// ADR-0007, ADR-0038). Which messages are reliable is that catalogue's
+// call too (ADR-0038's reliability split), so every send names
+// its Reliability explicitly rather than this module picking a default:
+// unreliable suits real-time state updates where a newer message
+// supersedes an older one, reliable suits a handshake that must arrive.
 namespace augusta::networking {
 
 // One-time process-wide setup for the underlying transport library. Call
@@ -51,6 +50,39 @@ void Init();
 // instances before exiting (e.g. a test) needs it, or GameNetworkingSockets'
 // still-referenced OpenSSL state reads as a leak under ASan.
 void Shutdown();
+
+/// How one message is delivered.
+enum class Reliability {
+  /// Delivered exactly once and in order among reliable messages, retransmitted as needed.
+  kReliable,
+  /// Sent once, best effort: may be lost, is never delivered twice, may arrive out of order.
+  kUnreliable,
+};
+
+/// Network conditions to impose on the real transport, for tests (e.g. NFR-02's 100 ms).
+struct SimulatedConditions {
+  /// Extra delay on every packet this process sends, in milliseconds.
+  int latency_ms = 0;
+  /// Share of packets this process sends that are dropped, 0..100.
+  float loss_percent = 0.0F;
+  /// How long a connection may hear nothing from its peer before it counts as
+  /// lost (or, while connecting, as unreachable), in milliseconds; 0 keeps the
+  /// transport's own default (about 10 seconds), which is too long for a test
+  /// to wait. Unlike the other conditions it only reaches connections made
+  /// after it is set, so set it before connecting.
+  int timeout_ms = 0;
+};
+
+/// Applies conditions to every connection in the process from now on; a default-constructed one restores the real
+/// network.
+// Process-wide, not per Client/Server, and applied at the packet level: the
+// latency is one-way, so two peers in the same process see a round trip of
+// about twice latency_ms, and loss drops whole packets (several small
+// messages can share one), which reliable messages survive by retransmission
+// and unreliable ones do not. Needs Init() to have run. Meant for tests: call
+// it after the connection is established (the handshake is subject to it
+// too) and reset it before the next test.
+void SimulateNetworkConditions(const SimulatedConditions& conditions);
 
 // A server address in "host:port" form (e.g. "192.168.1.10:27015"). A
 // numeric IP, not a hostname - no DNS resolution in v1, matching the
@@ -145,10 +177,8 @@ class Client {
   // its own rolling window; this doesn't block or perform I/O.
   [[nodiscard]] std::optional<ConnectionStats> GetStats() const;
 
-  // Sends payload to the server. A no-op if GetState() isn't
-  // kConnected - mirrors UDP's own best-effort semantics; there is no
-  // synchronous failure to report.
-  void Send(const Payload& payload);
+  /// Sends payload to the server as reliability says; a no-op if GetState() isn't kConnected.
+  void Send(const Payload& payload, Reliability reliability);
 
   // Returns every message received since the last call, in arrival
   // order. Empty once drained.
@@ -180,9 +210,20 @@ enum class PeerEventType {
   kDisconnected,
 };
 
+/// Why a peer's connection ended.
+enum class DisconnectReason {
+  /// The peer closed the connection itself.
+  kClosedByPeer,
+  /// The transport gave up on the connection: nothing was heard from the peer
+  /// for too long, or the network failed.
+  kConnectionLost,
+};
+
 struct PeerEvent {
   PeerId peer;
   PeerEventType type;
+  /// Why the connection ended; only meaningful for kDisconnected.
+  DisconnectReason reason = DisconnectReason::kClosedByPeer;
 };
 
 // One received message plus which peer sent it.
@@ -230,12 +271,11 @@ class Server {
   // disconnected).
   void Disconnect(PeerId peer);
 
-  // Sends payload to one connected peer. A no-op if peer isn't
-  // currently connected (see Client::Send).
-  void Send(PeerId peer, const Payload& payload);
+  /// Sends payload to one connected peer as reliability says; a no-op if peer isn't connected.
+  void Send(PeerId peer, const Payload& payload, Reliability reliability);
 
-  // Sends payload to every currently connected peer.
-  void Broadcast(const Payload& payload);
+  /// Sends payload to every currently connected peer as reliability says.
+  void Broadcast(const Payload& payload, Reliability reliability);
 
   // Returns every message received from any peer since the last call,
   // in arrival order. Empty once drained.

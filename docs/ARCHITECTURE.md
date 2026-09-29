@@ -54,12 +54,13 @@ No matchmaking, master server, or third-party platform integration in v1.
   physics (the project's core learning focus)
 - Server-authoritative model: server is the single source of truth for all
   gameplay-affecting state
-- Client-side prediction for responsiveness, reconciled via smooth correction
-  against authoritative server snapshots (not exact replay — see ADR-0004)
+- Client-side prediction for responsiveness, reconciled by restoring the
+  authoritative server state and replaying the unacknowledged commands from
+  it, with the visible jump smoothed in presentation (see ADR-0004)
 - Multithreaded from v1: dedicated Main/Render, Simulation, and Network I/O threads
 - Custom lightweight binary protocol for game-state messages
 - Mechanism vs. policy vs. data separation: engine mechanism (movement,
-  physics, ballistics, hit detection) is C++; game policy (round
+  physics, ballistics, hit detection) is C++; game policy (Match
   lifecycle, win conditions, spawn rules) is encapsulated in sandboxed
   Lua scripts run in a dedicated Scripts/Behaviours phase; tunable
   balance values are data-driven configuration — a third category (see
@@ -91,8 +92,8 @@ No matchmaking, master server, or third-party platform integration in v1.
 ```
 
 **Shared Core** (compiled into both client and server)
-- ECS (Flecs) — shared entity/component data: players, bullets, round
-  state. Each World below is its own Flecs world instance built
+- ECS (Flecs) — shared entity/component data: players, bullets. Each
+  World below is its own Flecs world instance built
   directly on the library; not a separate wrapped module in its own
   right.
 - Physics — PhysX wrapper (collision, movement); one interface used
@@ -103,10 +104,21 @@ No matchmaking, master server, or third-party platform integration in v1.
   does with the result: the server treats it as authoritative and
   feeds Ballistics, the client uses it only for local predicted
   feedback pending reconciliation - same split as Physics.
+- Ballistics — custom bullet trajectory simulation (gravity, travel
+  time), hand-rolled instead of PhysX's generic projectile handling
+  (ADR-0002). Its trajectory math is shared: the server advances every
+  bullet with it, and each client's PresentationWorld draws every
+  announced Shot's tracer and Map impact with it, a visual only.
+  Deciding a bullet's outcome (hit detection, damage) stays server-side
+  (ADR-0024, ADR-0044).
 - Networking Protocol — message definitions + custom binary serialization
-- Match/Round State — round lifecycle, win conditions
+- Command — one tick's player intent (augusta_command): what the client's
+  Input handling samples and the server screens and simulates, so the
+  server links no client input code
 - Level Data — lightweight custom runtime format, baked offline from
-  OpenUSD source
+  OpenUSD source. Its collision geometry is built into a physics::World's static
+  meshes by one shared module (augusta_map), so PredictionWorld and
+  SimulationWorld collide against the same map
 
 **Client-only** (Windows-only)
 - Input handling — turns keyboard/mouse events pushed by Renderer into
@@ -167,7 +179,7 @@ WeaponHandling → Commit)
 | Phase | Category | Responsibility |
 |---|---|---|
 | CommandIngestion | Mechanism | Applies this tick's local input commands |
-| Reconciliation | Mechanism | Ingests any newly arrived authoritative state; applies smooth snap/blend correction (ADR-0004) — no rollback/resimulate |
+| Reconciliation | Mechanism | Ingests any newly arrived authoritative state; restores it and replays the unacknowledged commands from it (ADR-0004) |
 | Movement | Mechanism | Predicted PhysX movement, stamina |
 | WeaponHandling | Mechanism | Predicts local fire feedback only (muzzle flash, sound cue, recoil, ammo count) — no bullet trajectory; hit/damage stays server-authoritative |
 | Commit | Mechanism | Packages the tick's predicted state into the immutable Prediction State |
@@ -178,8 +190,8 @@ Commit)
 
 | Phase | Category | Responsibility |
 |---|---|---|
-| Interpolation | Mechanism | Interpolates between the last two Prediction States for smooth motion at render frame rate |
-| Camera | Mechanism | View camera — position/orientation, ADS zoom transition, recoil kick decay, view bob |
+| Interpolation | Mechanism | Interpolates between the last two Prediction States, by the fraction of the tick elapsed at render time, for smooth motion at render frame rate |
+| Camera | Mechanism | View camera — position at the character's eye for the body's stance, orientation from the newest mouse-look every frame (not the tick's), ADS zoom transition, recoil kick decay, view bob |
 | Animation | Mechanism | Drives skeletal/procedural animation from interpolated movement and weapon state |
 | AudioCues | Mechanism | Translates events carried in the Prediction State (e.g., fire, footstep) into spatialized audio cues |
 | Commit | Mechanism | Packages the frame's presentation data into Presentation State |
@@ -193,12 +205,10 @@ exclusively server-authoritative.
 - Input Validation — anti-cheat baseline (US-15); rejects/filters invalid
   commands before they reach the world (does not apply to outbound
   authoritative state)
-- Ballistics — custom bullet trajectory simulation (gravity, travel
-  time), hand-rolled instead of PhysX's generic projectile handling
-  (ADR-0002). Exclusively server-side (ADR-0024): the client never
-  simulates a bullet's outcome, only predicts local fire feedback, so
-  this isn't part of Shared Core despite being physics-adjacent.
-- Scripting (Lua) — sandboxed script hooks for game policy (round
+- Match State — the Lobby, who is in each Match and its lifecycle (Join
+  checks, Ready, Match start, Match end; ADR-0043); when a Match is won
+  and over is game policy
+- Scripting (Lua) — sandboxed script hooks for game policy (Match
   lifecycle, win conditions, spawn rules); small interface (e.g. a
   RunHook call) hiding the Lua embedding and the restricted-environment
   sandbox (§8) that upholds "no I/O inside ECS worlds" structurally.
@@ -208,7 +218,7 @@ exclusively server-authoritative.
   - SimulationWorld (ECS) — the single authoritative world (no prediction,
     no presentation needed). Runs mechanism systems in C++ (movement via
     PhysX, ballistics, hit detection, damage) and policy via a
-    Scripts/Behaviours phase (Lua, sandboxed — round lifecycle, win
+    Scripts/Behaviours phase (Lua, sandboxed — Match lifecycle, win
     conditions, spawn rules); emits authoritative state each tick
 
 ```
@@ -248,9 +258,9 @@ Damage → Scripts/Behaviours → Commit)
 | Movement | Mechanism | PhysX integration, stamina, collision resolution (US-04, US-05) |
 | WeaponHandling | Mechanism | Aim/ADS, fire, reload, recoil (US-06–US-09) |
 | Ballistics | Mechanism | Advances in-flight bullet trajectories (US-10) |
-| HitDetection | Mechanism | Resolves impact point + body part (US-11) |
+| HitDetection | Mechanism | Resolves impact point + body part against hitboxes as they were the Shooter's delay ago (US-11, ADR-0044) |
 | Damage | Mechanism (reads Data/Config) | Applies damage, marks death/spectator (US-12, US-13) |
-| Scripts/Behaviours | Policy (Lua, sandboxed) | Win condition, round transitions, spawn logic (US-14, US-03) |
+| Scripts/Behaviours | Policy (Lua, sandboxed) | Win condition, Match end, spawn logic (US-14, US-03) |
 | Commit | Mechanism | Packages tick state into Authoritative State for Networking |
 
 **Tooling** (offline, not shipped)
@@ -273,24 +283,37 @@ Damage → Scripts/Behaviours → Commit)
 
 **Scenario: Fire Rifle**
 1. Client predicts local fire feedback (muzzle flash, sound, recoil) immediately
-2. Client sends fire input to server via GameNetworkingSockets
-3. Server simulates bullet trajectory (custom ballistics: gravity, travel time)
-4. Server resolves hit location against player hitboxes
-5. Server applies damage by hit location, broadcasts authoritative result
-6. Client reconciles: confirms/corrects predicted outcome (hit marker, damage state)
+2. Client sends the fire command to server via GameNetworkingSockets, with
+   the Authoritative State tick it was showing and the interpolation fraction
+3. Server fixes the Shooter's delay (capped at 250 ms) and announces the Shot
+   (shooter, server tick, origin, direction) reliably to every client
+4. Server simulates bullet trajectory (custom ballistics: gravity, travel
+   time), testing each tick's segment against the Map and against player
+   hitboxes as they were the Shooter's delay ago (lag compensation)
+5. Server applies damage by hit location and sends the shooter a Hit
+   confirmation (target, body part, damage)
+6. Shooter's client shows the hit marker and sound only when the Hit
+   confirmation arrives; it never predicts a hit
+7. Every client draws each announced Shot's tracer and Map impact from its
+   own computation of the same trajectory, a visual only; hits on players
+   are drawn only from the server's hit messages (see ADR-0044)
 
 **Scenario: Player Movement with Reconciliation**
 1. Client applies input locally (predicted movement)
 2. Client sends input to server
 3. Server simulates authoritative movement (PhysX)
 4. Server broadcasts authoritative position/state
-5. Client compares against its predicted state; if divergent, smoothly
-   corrects (snap/blend) — no exact-replay assumption (see ADR-0004)
+5. Client compares against its predicted state after that same command; it
+   restores the server's state and replays the commands sent since, and
+   presentation smooths the jump (see ADR-0004)
 
-**Scenario: Round End**
-1. Server evaluates win condition each tick (e.g., one side eliminated)
-2. On match, server ends round, declares winner, broadcasts result
-3. Server schedules next round start after a fixed delay
+**Scenario: Match End**
+1. Server evaluates the win condition each tick (game policy, e.g. one side
+   eliminated)
+2. When it is met, the server ends the Match, declares the winner and sends
+   Match end reliably; everyone still connected returns to the Lobby
+3. The next Match starts once the Lobby is full and Ready again, never less
+   than 5 seconds after the previous one ended (ADR-0043)
 
 ## 7. Deployment View
 v1 gameplay: a Linux dedicated server process and up to 8 Windows client
@@ -315,9 +338,10 @@ now.
   since it's headless (see ADR-0005).
 - **Determinism strategy:** PhysX does not guarantee cross-platform bit-exact
   determinism (confirmed: NVIDIA docs state cross-platform determinism is
-  unsupported). Client prediction is therefore treated as approximate/visual
-  only; authoritative correction is applied via smooth snap/blend, never
-  exact replay-and-diff.
+  unsupported). Client prediction is therefore treated as approximate: the
+  client restores the server's state and replays its own commands from it,
+  never assuming the replay matches what the server did, and the next
+  acknowledgement corrects what is left.
 - **Serialization:** custom lightweight binary format for game-state messages
 - **Security:** server validates all client input (US-15); encryption
   deliberately deferred past v1 (trusted LAN testing only)
@@ -327,7 +351,7 @@ now.
   between the outside world and the data worlds consume/emit.
 - **Mechanism vs. policy vs. data:** engine mechanism (movement, physics,
   ballistics, hit detection) is C++ code inside SimulationWorld's core
-  phases; game policy (round lifecycle, win conditions, spawn rules) is
+  phases; game policy (Match lifecycle, win conditions, spawn rules) is
   encapsulated in sandboxed Lua scripts run in a dedicated
   Scripts/Behaviours phase; tunable balance values (e.g., damage by hit
   location/ammo type) are a third category — data-driven configuration,
@@ -341,9 +365,9 @@ now.
 - **Asset packaging & integrity:** runtime assets ship as a single signed
   pack file per target (client/server), never as loose files. Content is
   hashed with BLAKE3 and signed with Ed25519; both the client and server
-  take the pack path and the expected public key as external inputs
-  (CLI arguments, issue #60) rather than embedding the public key in the
-  binary, the private key never leaves the developer's machine. A failed
+  take the pack path and the expected public key as external inputs (from
+  their YAML config file, ADR-0034) rather than embedding the public key
+  in the binary, the private key never leaves the developer's machine. A failed
   verification refuses to load and exits with an error. Assets are
   addressed by relative path within the pack.
 
@@ -361,13 +385,23 @@ aid only and do not affect numbering.
 - [ADR-0005 — Threading model](./adr/0005-threading-model.md)
 - [ADR-0006 — Shared client/server codebase](./adr/0006-shared-client-server-codebase.md)
 - [ADR-0007 — Serialization format](./adr/0007-serialization-format.md)
+- [ADR-0033 — Error handling: std::expected, exceptions and assertions by layer](./adr/0033-error-handling.md)
+- [ADR-0038 — Networking Protocol: message catalogue and reliability split](./adr/0038-networking-protocol-messages.md)
+- [ADR-0042 — Character selection: chosen in the client config, validated at join, replicated as an index](./adr/0042-character-selection.md)
+- [ADR-0044 — Shot lag compensation and replication](./adr/0044-shot-lag-compensation-and-replication.md)
 
 ### Tooling & Build
 - [ADR-0008 — Build tooling](./adr/0008-build-tooling.md)
 - [ADR-0011 — Language standard: C++23](./adr/0011-language-standard.md)
 - [ADR-0012 — Coding style](./adr/0012-coding-style.md)
-- [ADR-0013 — Testing & benchmarking](./adr/0013-testing-and-benchmarking.md)
+- [ADR-0013 — Testing strategy](./adr/0013-testing-and-benchmarking.md)
 - [ADR-0025 — Dependency manager: vcpkg](./adr/0025-dependency-manager.md)
+- [ADR-0027 — Logging: `augusta::logging`, console-only](./adr/0027-logging.md)
+- [ADR-0029 — Logging policy: level semantics and structured message format](./adr/0029-logging-policy.md)
+- [ADR-0034 — Runtime configuration: a YAML file next to the executable](./adr/0034-runtime-config-file.md)
+- [ADR-0035 — Boost: individual libraries where the standard library stops](./adr/0035-boost-libraries.md)
+- [ADR-0036 — Logging library: Boost.Log replaces spdlog](./adr/0036-boost-log.md)
+- [ADR-0037 — Include order: main header, standard library, third-party, project](./adr/0037-include-order.md)
 
 ### Rendering & Audio
 - [ADR-0009 — Renderer: NVIDIA Falcor](./adr/0009-renderer.md)
@@ -382,6 +416,11 @@ aid only and do not affect numbering.
 - [ADR-0018 — Runtime asset format](./adr/0018-runtime-asset-format.md)
 - [ADR-0019 — Client/server pack split](./adr/0019-client-server-pack-split.md)
 - [ADR-0020 — Audio asset format](./adr/0020-audio-asset-format.md)
+- [ADR-0030 — Asset cooking pipeline](./adr/0030-asset-cooking-pipeline.md)
+- [ADR-0031 — Pack container format](./adr/0031-pack-container-format.md)
+- [ADR-0032 — Runtime scene graph format](./adr/0032-scene-graph-format.md)
+- [ADR-0040 — Character authoring format & packing](./adr/0040-character-authoring-format.md)
+- [ADR-0041 — Scenario composition manifest](./adr/0041-scenario-composition-manifest.md)
 
 ### Client Runtime
 - [ADR-0021 — Client runtime decomposition](./adr/0021-client-runtime-decomposition.md)
@@ -390,9 +429,11 @@ aid only and do not affect numbering.
 ### Server Runtime
 - [ADR-0022 — Gameplay scripting language: Lua](./adr/0022-gameplay-scripting-language.md)
 - [ADR-0023 — SimulationWorld phase pipeline](./adr/0023-simulationworld-phase-pipeline.md)
+- [ADR-0039 — Data-driven configuration in Lua, shipped in the scenario's server pack](./adr/0039-lua-data-driven-configuration.md)
+- [ADR-0043 — Lobby and Match lifecycle: fixed player count, automatic Ready, no mid-match joins](./adr/0043-lobby-and-match-lifecycle.md)
 
 ### Infrastructure & CD
-- [ADR-0026 — CD strategy: Flux for main/develop, push-based for ephemeral environments](./adr/0026-cd-strategy.md)
+- [ADR-0026 — CD strategy: Flux for `main`/`develop`; no k3s deploy for ephemeral branches](./adr/0026-cd-strategy.md)
 
 ## 10. Quality Requirements
 See [REQUIREMENTS.md](./REQUIREMENTS.md) — Non-Functional Requirements
@@ -400,8 +441,9 @@ See [REQUIREMENTS.md](./REQUIREMENTS.md) — Non-Functional Requirements
 
 ## 11. Risks and Technical Debt
 - **PhysX cross-platform determinism gap:** client/server divergence is
-  expected; mitigated by correction-based reconciliation, but may produce
-  visible corrections ("rubber-banding") if divergence grows too fast.
+  expected; mitigated by restore-and-replay reconciliation with the jump
+  smoothed in presentation, but may produce visible corrections
+  ("rubber-banding") if divergence grows too fast.
 - **Scope ambition vs. solo-dev bandwidth:** ECS + custom physics/ballistics +
   client prediction + multithreading + a new networking library is a lot of
   new surface area to learn and integrate simultaneously for v1.
@@ -409,9 +451,6 @@ See [REQUIREMENTS.md](./REQUIREMENTS.md) — Non-Functional Requirements
   (protobuf, OpenSSL) that add cross-platform build maintenance overhead.
 - **No encryption in v1:** acceptable only under the stated trusted-LAN
   assumption; must be revisited before any non-trusted deployment.
-- **No automated test strategy defined yet** for physics/networking
-  determinism-sensitive code — worth addressing early given the reconciliation
-  risk above.
 - **Falcor dependency** (see ADR-0009): a fork/vendor of the source is
   recommended to insulate against upstream abandonment.
 - **Cross-OS local development:** building and testing requires both a

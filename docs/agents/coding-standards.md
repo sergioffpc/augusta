@@ -66,8 +66,21 @@ and aurally, not through assertions. When decision logic is mixed with
 rendering/audio execution in the same module, extract the decision (see above) so
 it's covered even though the execution around it isn't.
 
-Out of scope for now: Lua gameplay scripts (ADR-0022) — a separate testing
-question, not covered by this doc.
+A non-functional requirement with a measure a test can check (NFR-02,
+NFR-03, NFR-05, NFR-06) gets one, through the Harness, ticked by hand rather
+than by a clock (ADR-0013).
+
+Reach for a property-based test (RapidCheck) when an invariant holds over a
+whole input domain — a serialization round-trip, a value that must never go
+negative, a state that must converge — not in place of example-based tests,
+which stay the default.
+
+A bug found by the fuzzer or by a shrunk RapidCheck case gets a
+regression test in the pull request that fixes it: the minimized input as a
+fixture, the case as an example-based test.
+
+Out of scope for now: Lua gameplay scripts (ADR-0022) — decided when M5
+starts.
 
 ## Naming
 
@@ -83,7 +96,8 @@ ambiguous — not as a default way to avoid thinking about ownership.
 
 ## Error handling
 
-See [ADR-0033](../adr/0033-error-handling.md).
+See [ADR-0033](../adr/0033-error-handling.md). Never return an error as a string —
+always as a type.
 
 ## Enforcement
 

@@ -89,6 +89,27 @@ if (-not $SkipAuthoring) {
   New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
 }
 
+# A small worked authoring/ tree (tools/pack/examples/authoring - committed,
+# unlike everything else under $AssetsRoot) so a fresh environment has
+# something to cook straight away (`augustap augusta`): one map, its required
+# parameters.lua (ADR-0039) and placeholder objectives.lua/behaviours.lua for
+# game policy (ADR-0022), one character (ADR-0040), and the manifest.yaml
+# (ADR-0041) composing them. Seeded piece by piece rather than as one tree,
+# so each survives local edits independently - left alone once it exists,
+# like the signing key below.
+$exampleRoot = Join-Path $packProject "examples\authoring"
+foreach ($piece in "maps\augusta", "characters\player", "scenarios\augusta") {
+  $source = Join-Path $exampleRoot $piece
+  $dest = Join-Path $authoringDir $piece
+  if (Test-Path $dest) {
+    Write-Host "Example $piece already exists at $dest - leaving it as is."
+  } else {
+    Write-Host "Seeding example $piece at $dest..."
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest) | Out-Null
+    Copy-Item -Recurse $source $dest
+  }
+}
+
 function Sync-GitRepo {
   param([string]$Url, [string]$Path, [string]$Ref)
   if (Test-Path $Path) {
@@ -158,6 +179,14 @@ if (-not $SkipAuthoring) {
     Pop-Location
   }
 
+  # A thin `repo.bat launch` wrapper (composer\augustap-composer.ps1, committed
+  # static - it locates kit-app-template relative to its own path via
+  # $PSScriptRoot, so no templating needed) copied alongside augustap.exe et
+  # al., so launching Composer is one more command on the same PATH entry -
+  # run as `augustap-composer.ps1` (a .ps1 needs its extension typed; it is
+  # not resolved by bare name the way the .exe commands are).
+  Copy-Item -Force (Join-Path $packProject "composer\augustap-composer.ps1") (Join-Path $binDir "augustap-composer.ps1")
+
   # glTF/FBX/OBJ ingestion (ADR-0016). Cloned, not built here - it's a CMake
   # project (own README covers the build), and augusta's cooker doesn't
   # consume it yet.
@@ -169,7 +198,9 @@ if (-not $SkipAuthoring) {
 # an isolated, uv-managed venv per tool (no system Python involved) plus the
 # tool's own console scripts placed in a bin directory. Both are redirected
 # under $AssetsRoot - the venv to $pythonDir\pack, the commands
-# (augustap, augustap-keygen, augustap-inspect, augustap-verify) to $binDir. tools/pack (this repo's
+# (augustap, augustap-keygen, augustap-inspect, augustap-verify; plus
+# augustap-composer, copied separately above, unless -SkipAuthoring) to
+# $binDir. tools/pack (this repo's
 # own Python project - see its pyproject.toml) is installed editable, pulling
 # in usd-optimize (Python API only, no CLI) and usd-validation-nvidia (CLI) as
 # its dependencies, so local edits to it take effect without rerunning this
@@ -238,10 +269,10 @@ if (Test-Path $signingKeyPath) {
 
 Write-Host ""
 Write-Host "Hermetic environment ready at $AssetsRoot (never commit any of it, especially $keysDir):"
-Write-Host "  - $authoringDir  : raw USD stages - the cooker's input root"
+Write-Host "  - $authoringDir  : scenario folders (a stage and its Lua scripts each) - a convenient place to keep them, not a boundary the cooker enforces"
 Write-Host "  - $packsDir      : signed packs cooked via the cooker"
 Write-Host "  - $keysDir       : Ed25519 signing keypair (augusta.key/augusta.pub)"
-Write-Host "  - $binDir        : the augustap, augustap-keygen, augustap-inspect and augustap-verify commands"
+Write-Host "  - $binDir        : augustap, augustap-keygen, augustap-inspect, augustap-verify$(if (-not $SkipAuthoring) { ', augustap-composer.ps1' })"
 Write-Host "  - $pythonDir     : hermetic Python venv (uv tool), pack installed editable from tools\pack"
 Write-Host "                     (includes the native _meshoptimizer/_textconv modules - $packPackageDir)"
 if (-not $SkipAuthoring) {
@@ -250,4 +281,4 @@ if (-not $SkipAuthoring) {
 }
 Write-Host ""
 $augustapExe = Join-Path $binDir "augustap.exe"
-Write-Host "Cook a stage saved under $authoringDir, e.g.: $augustapExe Example"
+Write-Host "Cook the example scenario: $augustapExe $exampleDest"

@@ -1,10 +1,13 @@
 #ifndef AUGUSTA_PREDICTION_H_
 #define AUGUSTA_PREDICTION_H_
 
+#include <cstdint>
+#include <expected>
 #include <memory>
 #include <optional>
 
-#include "augusta/input.h"
+#include "augusta/command.h"
+#include "augusta/parameters.h"
 #include "augusta/physics.h"
 
 // augusta::prediction orchestrates PredictionWorld (ADR-0024): the
@@ -19,7 +22,7 @@
 // Unlike SimulationWorld, PredictionWorld only ever predicts the local
 // player - never a bullet's trajectory or outcome (ADR-0024: Ballistics/
 // HitDetection/Damage stay exclusively server-side) - so World::Tick
-// takes a single input::Command, not a per-player list the way
+// takes a single command::Command, not a per-player list the way
 // augusta::simulation::World::Tick does.
 //
 // Like augusta::simulation, World owns one Flecs world (ADR-0001)
@@ -42,13 +45,15 @@ namespace augusta::prediction {
 // never a bullet's outcome or game policy.
 enum class Phase {
   // Mechanism. Applies this tick's local input command
-  // (augusta::input::Command, from Input::Sample) to the local player's
+  // (augusta::command::Command, from Input::Sample) to the local player's
   // entity.
   kCommandIngestion,
   // Mechanism. Ingests any authoritative physics::BodyState newly
-  // arrived from the server since the last tick and applies smooth
-  // snap/blend correction (ADR-0004) via physics::World::Reconcile - no
-  // rollback/resimulate. A no-op on ticks where nothing new arrived.
+  // arrived from the server since the last tick, compares it with what was
+  // predicted after the same command (History, see reconciliation.h), then
+  // puts the body at the server's state and replays the commands sent since
+  // (ADR-0004) via physics::World::Restore and Step. A no-op on ticks where
+  // nothing new arrived.
   kReconciliation,
   // Mechanism. Predicted PhysX movement, stamina -
   // augusta::physics::World::Step, same interface SimulationWorld's
@@ -66,15 +71,28 @@ enum class Phase {
 
 // PredictionWorld's per-tick output - ADR-0024/ARCHITECTURE.md's
 // "Prediction State", consumed by augusta::presentation::World::RunFrame.
-// Beyond local_body, deliberately empty for now - same deferred-design
-// posture as augusta::simulation::State; its real shape depends on ECS
-// component shapes not yet designed.
+// Today it holds the local player's body, the one entity a client predicts;
+// later phases add what they predict (weapon state), as
+// augusta::simulation::State grows with what the server resolves.
 struct State {
   // The local player's predicted body state as of this tick, after
   // Movement and any Reconciliation (M1 spike, issue #32: this is the
   // "one entity under prediction" the spike proves out, ahead of real
   // ECS component shapes).
   physics::BodyState local_body;
+  /// Every jump Reconciliation has made to local_body since the world began,
+  /// summed: how far each replay moved the body from where the previous tick
+  /// left it. A reader that sees only some of the ticks (presentation, one
+  /// frame at a time) gets the jumps between two states it saw, every one and
+  /// none twice, from the difference of their totals.
+  math::Vec3 total_correction{};
+};
+
+/// What the server has told this client about its own player: its body after
+/// the command with this sequence, the newest of ours it has processed.
+struct Acknowledgement {
+  std::uint32_t sequence = 0;
+  physics::BodyState body{};
 };
 
 // The client's single PredictionWorld. The client constructs exactly
@@ -88,12 +106,23 @@ struct State {
 // world, neither of which is meaningful.
 class World {
  public:
-  // Constructs an empty World: a physics::World (using stamina_config)
-  // holding the one local-player body this spike predicts (M1, issue
-  // #32), spawned at the world origin, plus the Flecs world with Phase's
-  // five phases and their systems registered (see header comment).
-  explicit World(const physics::StaminaConfig& stamina_config);
+  // Constructs an empty World: a physics::World holding the one local-player
+  // body this spike predicts (M1, issue #32), spawned at the world origin,
+  // plus the Flecs world with Phase's five phases and their systems
+  // registered (see header comment). It holds no rules of the server's until
+  // Start gives it them, so nothing is predicted with rules of its own.
+  World();
   ~World();
+
+  /// Adds immovable level geometry to this world's physics, the same way SimulationWorld does.
+  std::expected<void, physics::CollisionMeshError> AddCollisionMesh(const physics::CollisionMesh& mesh);
+
+  /// Starts the local player over at spawn, standing and at full stamina, under
+  /// the stamina rules of parameters: what the server told this client when it
+  /// admitted it, so the client never predicts with rules of its own. Call
+  /// before the first command is sent; nothing predicted earlier is kept but
+  /// State::total_correction, which moving to spawn does not add to.
+  void Start(const math::Vec3& spawn, const parameters::Parameters& parameters);
 
   World(const World&) = delete;
   World& operator=(const World&) = delete;
@@ -103,13 +132,15 @@ class World {
   // Runs all five Phase values above, in their declared order, for one
   // fixed tick of duration delta_time seconds (internally, one
   // flecs::world::progress(delta_time) call), for the local player only.
-  // command is this tick's local input. authoritative_state is the
-  // newest physics::BodyState received from the server since the last
-  // Tick call, if any - std::nullopt on ticks where nothing new arrived,
-  // in which case Reconciliation is a no-op. Returns the tick's
-  // Prediction State.
-  State Tick(const input::Command& command, const std::optional<physics::BodyState>& authoritative_state,
-             float delta_time);
+  // command is this tick's local input, and sequence the number it is sent
+  // to the server under (0 if it is not sent, e.g. before joining; such a
+  // tick cannot be reconciled against). acknowledgement is the newest state
+  // received from the server for this player, if any: the server repeats it
+  // while it waits for input, so passing the same one again is harmless -
+  // Reconciliation acts on each acknowledged sequence once. Returns the
+  // tick's Prediction State.
+  State Tick(const command::Command& command, std::uint32_t sequence,
+             const std::optional<Acknowledgement>& acknowledgement, float delta_time);
 
  private:
   struct Impl;

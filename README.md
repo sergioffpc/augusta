@@ -13,7 +13,7 @@ Unreal/Unity/Godot.
   reconciles against authoritative snapshots (no exact replay).
 - **Physics-based ballistics** — real bullet drop and travel time, not
   hitscan; hit location and body part determine damage (no regenerating health).
-- **Round-based, tactical** — no respawn until round end; movement includes
+- **Match-based, tactical** — no respawn until the match ends; movement includes
   walk/run/crouch/prone, stamina, and recoil.
 - **ECS core** (Flecs) shared between client and server, with PhysX for
   collision/movement and a custom ballistics module.
@@ -49,13 +49,26 @@ the Ninja generator needs and a Build Tools-only install has no Start Menu
 shortcut to get for you — CMake Tools finds and loads it automatically,
 which a raw `cmake --preset windows` in a terminal won't.
 
+**From a terminal, with `make`:** the [Makefile](Makefile) wraps the presets, and
+on Windows runs each command through [scripts/vcenv.ps1](scripts/vcenv.ps1),
+which loads the Build Tools environment for you. `bootstrap-windows.ps1`
+installs GNU make (`ezwinports.make`) along with the rest, so from a new terminal:
+```
+make help                       # list the targets
+make build                      # configure + compile (PRESET defaults to windows / linux)
+make test PRESET=windows-debug  # build + ctest with another preset
+make clean                      # remove build outputs (distclean deletes the build dir)
+make format-check               # the clang-format check CI runs
+```
+
 **WSL2 (server / shared core):**
 ```bash
-./scripts/bootstrap-wsl.sh        # build-essential, CMake, Ninja, clang-format/clang-tidy, vcpkg, sccache
+./scripts/bootstrap-wsl.sh        # build-essential, clang, autotools, make, CMake, Ninja, clang-format/clang-tidy, vcpkg, sccache
 cmake --preset linux
 cmake --build --preset linux
 ctest --preset linux
 ```
+or, with the [Makefile](Makefile), just `make test`.
 
 Both bootstrap scripts also `git submodule update --init` the vendored vcpkg
 (`third_party/vcpkg`) and wire up the Conventional Commits `commit-msg` hook.
@@ -67,7 +80,10 @@ cmake --build --preset linux-san
 ctest --preset linux-san
 ```
 
-The three presets (`windows`, `linux`, `linux-san`) are defined in
+**Fuzzing (Linux, libFuzzer + ASan):** the `linux-fuzz` preset builds the fuzz
+targets; [tests/fuzz/README.md](tests/fuzz/README.md) has how to run one.
+
+The presets (`windows`, `linux`, `linux-san`, `linux-fuzz`) are defined in
 [CMakePresets.json](CMakePresets.json) and are what CI builds with too.
 
 ## Documentation

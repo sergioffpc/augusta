@@ -12,6 +12,10 @@ spec:
   # environment gets its own Helm release storage instead of colliding on
   # the same (flux-system, augustad) release record.
   storageNamespace: develop
+  # The chart runs the image CI builds from the same commit (charts/augustad
+  # values.yaml), which can still be building when Flux picks the commit up:
+  # wait for it rather than fail the upgrade.
+  timeout: 30m
   install:
     createNamespace: true
   chart:
@@ -21,10 +25,11 @@ spec:
       sourceRef:
         kind: GitRepository
         name: augusta-develop
-  # See staging.yaml - same caveat on image.tag pending the GHCR push step.
   values:
-    image:
-      tag: develop
+    assetPacks:
+      # The folder of /srv/augusta/asset-packs on the node holding server.pack
+      # and augusta.pub.
+      packVersion: augusta
     service:
       # Pinned (rather than left to Kubernetes to assign) so this
       # environment has a stable address for LAN clients to connect to.

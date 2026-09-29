@@ -1,10 +1,19 @@
 #include "augusta/simulation.h"
 
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <expected>
+#include <memory>
+#include <unordered_map>
+#include <vector>
+
 #include <flecs.h>
 
-#include <array>
-
-#include "augusta/logging.h"
+#include "augusta/ballistics.h"
+#include "augusta/command.h"
+#include "augusta/physics.h"
+#include "augusta/scripting.h"
 
 namespace augusta::simulation {
 
@@ -28,17 +37,41 @@ enum PhaseIndex : std::size_t {
   kCommit,
 };
 
+// A player-controlled entity's components: the entity it is, which commands name.
+struct Player {
+  EntityId entity{};
+};
+
+struct Body {
+  physics::BodyHandle handle{};
+  physics::BodyState state{};
+};
+
+// What CommandIngestion last decided the player is trying to do; Movement acts on it.
+struct Intent {
+  physics::MovementInput input{};
+};
+
 }  // namespace
 
 struct World::Impl {
+  // Where a player lives, for RemovePlayer.
+  struct Slot {
+    flecs::entity entity;
+    physics::BodyHandle body{};
+  };
+
   flecs::world ecs;
   physics::World physics;
   ballistics::World ballistics;
   scripting::Engine scripting;
   PhaseEntities phases;
+  std::unordered_map<EntityId, Slot> players;
+  // Set by Tick for CommandIngestion to read, and filled by Commit for Tick to return.
+  std::unordered_map<EntityId, command::Command> tick_commands;
+  State committed;
 
-  Impl(const physics::StaminaConfig& stamina_config, const std::string& script_path)
-      : physics(stamina_config), scripting(script_path) {
+  explicit Impl(const physics::StaminaConfig& stamina_config) : physics(stamina_config) {
     // Chain the eight phases in Phase's declared order (ADR-0023): each
     // depends_on the previous one, and the first depends on Flecs's
     // built-in OnUpdate phase, so a single ecs.progress() call runs them
@@ -60,59 +93,116 @@ struct World::Impl {
     // (see simulation.h's header comment) - there is nothing to iterate.
     // Bodies are stubs until those shapes exist; this only establishes
     // each system's place in the pipeline.
-    ecs.system("CommandIngestionSystem").kind(phases[kCommandIngestion]).run([](flecs::iter&) {
-      LT("subsystem=simulationworld event=command_ingestion");
-      // TODO(sergioffpc): apply each connected player's this-tick
-      // input::Command to their entity.
+    ecs.system<const Player, Intent>("CommandIngestionSystem")
+        .kind(phases[kCommandIngestion])
+        .each([this](const Player& player, Intent& intent) { OnCommandIngestion(player, intent); });
+    ecs.system<Body, const Intent>("MovementSystem")
+        .kind(phases[kMovement])
+        .each([this](flecs::iter& it, std::size_t /*row*/, Body& body, const Intent& intent) {
+          OnMovement(it.delta_time(), body, intent);
+        });
+    ecs.system("WeaponHandlingSystem").kind(phases[kWeaponHandling]).run([this](flecs::iter&) { OnWeaponHandling(); });
+    ecs.system("BallisticsSystem").kind(phases[kBallistics]).run([this](flecs::iter&) { OnBallistics(); });
+    ecs.system("HitDetectionSystem").kind(phases[kHitDetection]).run([this](flecs::iter&) { OnHitDetection(); });
+    ecs.system("DamageSystem").kind(phases[kDamage]).run([this](flecs::iter&) { OnDamage(); });
+    ecs.system("ScriptsBehavioursSystem").kind(phases[kScriptsBehaviours]).run([this](flecs::iter&) {
+      OnScriptsBehaviours();
     });
-    ecs.system("MovementSystem").kind(phases[kMovement]).run([](flecs::iter&) {
-      LT("subsystem=simulationworld event=movement");
-      // TODO(sergioffpc): physics::World::Step per player body.
-    });
-    ecs.system("WeaponHandlingSystem").kind(phases[kWeaponHandling]).run([](flecs::iter&) {
-      LT("subsystem=simulationworld event=weapon_handling");
-      // TODO(sergioffpc): not yet a module of its own - see simulation.h.
-    });
-    ecs.system("BallisticsSystem").kind(phases[kBallistics]).run([](flecs::iter&) {
-      LT("subsystem=simulationworld event=ballistics");
-      // TODO(sergioffpc): ballistics::World::Step per in-flight bullet.
-    });
-    ecs.system("HitDetectionSystem").kind(phases[kHitDetection]).run([](flecs::iter&) {
-      LT("subsystem=simulationworld event=hit_detection");
-      // Already folded into BallisticsSystem's ballistics::World::Step
-      // call - see simulation.h's Phase::kHitDetection doc comment.
-      // Kept as its own phase/system for pipeline ordering.
-    });
-    ecs.system("DamageSystem").kind(phases[kDamage]).run([](flecs::iter&) {
-      LT("subsystem=simulationworld event=damage");
-      // TODO(sergioffpc): apply damage from each bullet's resolved
-      // ballistics::BodyPart.
-    });
-    ecs.system("ScriptsBehavioursSystem").kind(phases[kScriptsBehaviours]).run([](flecs::iter&) {
-      LT("subsystem=simulationworld event=scripts_behaviours");
-      // TODO(sergioffpc): scripting::Engine::RunHook per relevant hook.
-    });
-    ecs.system("CommitSystem").kind(phases[kCommit]).run([](flecs::iter&) {
-      LT("subsystem=simulationworld event=commit");
-      // TODO(sergioffpc): package the tick's resolved state into State.
-    });
+    ecs.system<const Player, const Body>("CommitSystem")
+        .kind(phases[kCommit])
+        .each([this](const Player& player, const Body& body) { OnCommit(player, body); });
+  }
+
+  // A player with no command this tick stops and keeps the stance it asked for.
+  void OnCommandIngestion(const Player& player, Intent& intent) {
+    const auto command = tick_commands.find(player.entity);
+    if (command == tick_commands.end()) {
+      intent.input.direction = math::Vec3{};
+      intent.input.sprint = false;
+      return;
+    }
+    intent.input = command->second.movement;
+  }
+
+  void OnMovement(float delta_time, Body& body, const Intent& intent) {
+    body.state = physics.Step(body.handle, intent.input, delta_time);
+  }
+
+  void OnWeaponHandling() {
+    // TODO(sergioffpc): not yet a module of its own - see simulation.h.
+  }
+
+  void OnBallistics() {
+    // TODO(sergioffpc): ballistics::World::Step per in-flight bullet.
+  }
+
+  void OnHitDetection() {
+    // Already folded into OnBallistics's ballistics::World::Step
+    // call - see simulation.h's Phase::kHitDetection doc comment.
+    // Kept as its own phase/system for pipeline ordering.
+  }
+
+  void OnDamage() {
+    // TODO(sergioffpc): apply damage from each bullet's resolved
+    // ballistics::BodyPart.
+  }
+
+  void OnScriptsBehaviours() {
+    // TODO(sergioffpc): scripting::Engine::RunHook per relevant hook.
+  }
+
+  void OnCommit(const Player& player, const Body& body) {
+    committed.bodies.push_back(EntityState{.entity = player.entity, .body = body.state});
   }
 };
 
-World::World(const physics::StaminaConfig& stamina_config, const std::string& script_path)
-    : impl_(std::make_unique<Impl>(stamina_config, script_path)) {}
+World::World(const physics::StaminaConfig& stamina_config) : impl_(std::make_unique<Impl>(stamina_config)) {}
 
 World::~World() = default;
+
+std::expected<void, physics::CollisionMeshError> World::AddCollisionMesh(const physics::CollisionMesh& mesh) {
+  return impl_->physics.AddCollisionMesh(mesh);
+}
+
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
-State World::Tick(const std::vector<input::Command>& commands, float delta_time) {
-  // TODO(sergioffpc): not yet consumed - see Tick's own doc comment in
-  // simulation.h: per-entity command association isn't designed until
-  // ECS component shapes are.
-  (void)commands;
-  impl_->ecs.progress(delta_time);
-  return State{};
+void World::AddPlayer(EntityId entity, const math::Vec3& spawn) {
+  Impl& impl = *impl_;
+  if (impl.players.contains(entity)) {
+    return;
+  }
+  const physics::BodyHandle body = impl.physics.CreateBody(spawn);
+  physics::BodyState initial{};
+  initial.position = spawn;
+  const flecs::entity ecs_entity =
+      impl.ecs.entity().set<Player>({.entity = entity}).set<Body>({.handle = body, .state = initial}).set<Intent>({});
+  impl.players.emplace(entity, Impl::Slot{.entity = ecs_entity, .body = body});
+}
+
+void World::RemovePlayer(EntityId entity) {
+  Impl& impl = *impl_;
+  const auto slot = impl.players.find(entity);
+  if (slot == impl.players.end()) {
+    return;
+  }
+  impl.physics.DestroyBody(slot->second.body);
+  slot->second.entity.destruct();
+  impl.players.erase(slot);
+}
+
+State World::Tick(const std::vector<PlayerCommand>& commands, float delta_time) {
+  Impl& impl = *impl_;
+  impl.tick_commands.clear();
+  for (const PlayerCommand& entry : commands) {
+    impl.tick_commands[entry.entity] = entry.command;
+  }
+  impl.committed.bodies.clear();
+  impl.ecs.progress(delta_time);
+  // The ECS visits bodies in storage order; the state is ordered by id.
+  std::ranges::sort(impl.committed.bodies,
+                    [](const EntityState& a, const EntityState& b) { return a.entity < b.entity; });
+  return impl.committed;
 }
 
 }  // namespace augusta::simulation

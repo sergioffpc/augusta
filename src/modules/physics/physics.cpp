@@ -1,13 +1,22 @@
 #include "augusta/physics.h"
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
+#include <memory>
+#include <mutex>
+#include <stdexcept>
+#include <string_view>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
 #include <PxPhysicsAPI.h>
 
-#include <algorithm>
-#include <cstdint>
-#include <stdexcept>
-#include <unordered_map>
-
+#include "augusta/grid.h"
 #include "augusta/logging.h"
+#include "augusta/math.h"
 
 // M1 spike (ADR-0002): the first real (non-stub) body for this module,
 // backed by PhysX's character controller (CCT) rather than a raw rigid
@@ -19,12 +28,11 @@
 // A World only ever runs PxController::move() - it never calls
 // PxScene::simulate()/fetchResults(). CCT movement is sweep-based and
 // self-contained; nothing here needs the rigid-body dynamics loop, since
-// every body is player-controlled and there is no other dynamic geometry
-// yet (see Raycast's own doc comment on the absence of static Level
-// Data).
+// every body is player-controlled and the only other geometry is the
+// map's collision meshes (AddCollisionMesh), which never move.
 //
 // Engine convention (not yet pinned down project-wide - see
-// augusta::input::Command's yaw/pitch comment): Y is up, matching both
+// augusta::command::Command's yaw/pitch comment): Y is up, matching both
 // GLM's and PhysX's own default.
 namespace augusta::physics {
 
@@ -32,15 +40,14 @@ namespace {
 
 // Individual using-declarations rather than `using namespace physx` -
 // Google style (ADR-0012) forbids using-directives.
-using physx::PxBroadPhaseType;
 using physx::PxCapsuleControllerDesc;
+using physx::PxCapsuleGeometry;
 using physx::PxController;
 using physx::PxControllerCollisionFlag;
 using physx::PxControllerCollisionFlags;
 using physx::PxControllerFilters;
 using physx::PxControllerManager;
-using physx::PxCudaContextManager;
-using physx::PxCudaContextManagerDesc;
+using physx::PxCookingParams;
 using physx::PxDefaultAllocator;
 using physx::PxDefaultCpuDispatcher;
 using physx::PxDefaultCpuDispatcherCreate;
@@ -49,13 +56,24 @@ using physx::PxErrorCallback;
 using physx::PxErrorCode;
 using physx::PxExtendedVec3;
 using physx::PxFoundation;
+using physx::PxIdentity;
 using physx::PxMaterial;
+using physx::PxOverlapBuffer;
 using physx::PxPhysics;
+using physx::PxQuat;
+using physx::PxQueryFilterData;
+using physx::PxQueryFlag;
 using physx::PxRaycastBuffer;
+using physx::PxRigidActorExt;
+using physx::PxRigidStatic;
 using physx::PxScene;
 using physx::PxSceneDesc;
-using physx::PxSceneFlag;
 using physx::PxTolerancesScale;
+using physx::PxTransform;
+using physx::PxTriangleMesh;
+using physx::PxTriangleMeshDesc;
+using physx::PxTriangleMeshGeometry;
+using physx::PxU32;
 using physx::PxVec3;
 
 // ---- Tuning constants ----
@@ -68,6 +86,8 @@ constexpr float kCapsuleRadius = 0.3F;
 constexpr float kStandingHeight = 1.5F;  // Capsule cylinder height, excludes hemispherical caps.
 constexpr float kCrouchingHeight = 0.7F;
 constexpr float kProneHeight = 0.1F;
+// The capsule's two hemispherical caps together add its diameter to its height.
+constexpr float kCapsuleDiameter = 2.0F * kCapsuleRadius;
 constexpr float kStepOffset = 0.3F;
 constexpr float kWalkSpeed = 3.0F;  // m/s, standing baseline.
 constexpr float kSprintMultiplier = 1.6F;
@@ -77,16 +97,13 @@ constexpr float kStaticFriction = 0.5F;
 constexpr float kDynamicFriction = 0.5F;
 constexpr float kRestitution = 0.1F;
 constexpr float kMinMoveDistance = 0.001F;  // PxController::move's own minDist parameter.
-constexpr int kWorkerThreadCount = 1;
+// PxSceneDesc rejects a scene without a CPU dispatcher, but nothing here ever
+// calls PxScene::simulate() (see the header comment), so it needs no threads.
+constexpr int kWorkerThreadCount = 0;
 
-// ADR-0004 snap/blend correction: an error at or beyond kSnapDistance
-// teleports the predicted body directly to the authoritative state (too
-// far for a blend to look acceptable - most plausibly a respawn/teleport
-// the client hasn't caught up to yet); anything closer blends by
-// kBlendFactor of the remaining error per Reconcile call, so repeated
-// corrections converge smoothly without overshoot.
-constexpr float kSnapDistance = 2.0F;
-constexpr float kBlendFactor = 0.25F;
+// A stance change that grows the capsule is tested for headroom with a capsule
+// shrunk by this much, so touching the floor or a wall is not "overlapping".
+constexpr float kStanceCheckSkin = 0.02F;
 
 float HeightForStance(Stance stance) {
   switch (stance) {
@@ -113,23 +130,35 @@ float SpeedMultiplierForStance(Stance stance) {
 }
 
 // Decision half of Step's stamina rule (US-05): given this tick's sprint
-// request and the current stamina, resolves whether sprint is actually
-// honored (forced_walk_below can override it) and the resulting stamina.
-// Pure - no PxController calls - so it stays unit-testable independent of
-// PhysX; Step (mechanism half) just applies the result.
+// request, whether the body is standing and moving, and its stamina and
+// exhaustion, resolves whether sprint is actually honored and the resulting
+// stamina and exhaustion. Pure - no PxController calls - so it stays
+// unit-testable independent of PhysX; Step (mechanism half) just applies the
+// result.
 struct StaminaResult {
   bool sprinting = false;
   float stamina = 1.0F;
+  bool exhausted = false;
 };
 
-StaminaResult ResolveStamina(bool sprint_requested, float current_stamina, const StaminaConfig& config,
-                             float delta_time) {
+// Sprint is honored only standing, moving and not exhausted, and only then
+// drains; otherwise stamina regenerates. Running stamina out exhausts the
+// body, and it stays exhausted, walking, until stamina is back above
+// forced_walk_below, so a body held at the threshold does not flicker between
+// sprinting and walking.
+StaminaResult ResolveStamina(bool sprint_requested, bool standing_and_moving, float current_stamina,
+                             bool currently_exhausted, const StaminaConfig& config, float delta_time) {
   StaminaResult result;
-  result.sprinting = sprint_requested && current_stamina > config.forced_walk_below;
+  result.sprinting = sprint_requested && standing_and_moving && !currently_exhausted;
   if (result.sprinting) {
     result.stamina = std::max(0.0F, current_stamina - (config.deplete_per_second * delta_time));
   } else {
     result.stamina = std::min(1.0F, current_stamina + (config.regen_per_second * delta_time));
+  }
+  if (currently_exhausted) {
+    result.exhausted = result.stamina <= config.forced_walk_below;
+  } else {
+    result.exhausted = result.stamina <= 0.0F;
   }
   return result;
 }
@@ -145,31 +174,18 @@ float ResolveSpeed(Stance stance, bool sprinting) {
   return speed;
 }
 
-// Decision half of Reconcile (ADR-0004 snap/blend correction): computes the
-// corrected BodyState from the predicted and authoritative states, and
-// whether this correction snapped rather than blended. Pure - no
-// PxController calls - so it stays unit-testable independent of PhysX;
-// Reconcile (mechanism half) just applies the result to the controller.
-struct ReconciliationResult {
-  BodyState state;
-  bool snapped = false;
-  float error = 0.0F;
-};
-
-ReconciliationResult ResolveReconciliation(const BodyState& predicted, const BodyState& authoritative) {
-  ReconciliationResult result;
-  result.error = math::Length(authoritative.position - predicted.position);
-  if (result.error >= kSnapDistance) {
-    result.state = authoritative;
-    result.snapped = true;
-    return result;
+// Every triangle twice, once per winding: a cooked map's triangles can face
+// either way, and the character controller only collides with the side a
+// triangle faces (PxMeshGeometryFlag::eDOUBLE_SIDED does not change that), so a
+// body would otherwise fall through a floor or walk through a wall authored the
+// "wrong" way round.
+std::vector<std::uint32_t> WithBothWindings(const std::vector<std::uint32_t>& indices) {
+  std::vector<std::uint32_t> both = indices;
+  both.reserve(indices.size() * 2);
+  for (std::size_t i = 0; i + 2 < indices.size(); i += 3) {
+    both.insert(both.end(), {indices[i], indices[i + 2], indices[i + 1]});
   }
-  result.state = predicted;
-  result.state.position = predicted.position + ((authoritative.position - predicted.position) * kBlendFactor);
-  result.state.velocity = predicted.velocity + ((authoritative.velocity - predicted.velocity) * kBlendFactor);
-  result.state.stance = authoritative.stance;
-  result.state.stamina = authoritative.stamina;
-  return result;
+  return both;
 }
 
 PxVec3 ToPx(const math::Vec3& vec) { return {vec.x, vec.y, vec.z}; }
@@ -189,7 +205,90 @@ class LogErrorCallback : public PxErrorCallback {
   }
 };
 
+// PhysX allows one PxFoundation per process, and creating PxPhysics on it is
+// costly, so every World shares one of each, created by the first World and
+// released with the last - a server and several clients in one test process
+// each own a World.
+struct PhysxProcessState {
+  std::mutex mutex;
+  int users = 0;
+  // Must outlive the foundation, so they live here rather than in each World.
+  LogErrorCallback error_callback;
+  PxDefaultAllocator allocator;
+  PxFoundation* foundation = nullptr;
+  PxPhysics* physics = nullptr;
+};
+
+PhysxProcessState& ProcessState() {
+  static PhysxProcessState state;
+  return state;
+}
+
+struct PhysxHandles {
+  PxFoundation* foundation;
+  PxPhysics* physics;
+};
+
+PhysxHandles AcquirePhysx() {
+  PhysxProcessState& state = ProcessState();
+  const std::lock_guard<std::mutex> lock(state.mutex);
+  if (state.users == 0) {
+    state.foundation = PxCreateFoundation(PX_PHYSICS_VERSION, state.allocator, state.error_callback);
+    if (state.foundation == nullptr) {
+      throw std::runtime_error("physics::World: PxCreateFoundation failed");
+    }
+    const PxTolerancesScale scale;
+    state.physics = PxCreatePhysics(PX_PHYSICS_VERSION, *state.foundation, scale, true);
+    if (state.physics == nullptr) {
+      state.foundation->release();
+      state.foundation = nullptr;
+      throw std::runtime_error("physics::World: PxCreatePhysics failed");
+    }
+  }
+  ++state.users;
+  return {.foundation = state.foundation, .physics = state.physics};
+}
+
+void ReleasePhysx() {
+  PhysxProcessState& state = ProcessState();
+  const std::lock_guard<std::mutex> lock(state.mutex);
+  if (--state.users == 0) {
+    state.physics->release();
+    state.foundation->release();
+    state.physics = nullptr;
+    state.foundation = nullptr;
+  }
+}
+
+// Holds one use of the shared PhysX state for as long as it lives. Being a
+// member, it is released even if the owning World's constructor throws after
+// it was acquired, when the World's destructor would not run.
+class PhysxLease {
+ public:
+  PhysxLease() : handles_(AcquirePhysx()) {}
+  ~PhysxLease() { ReleasePhysx(); }
+  PhysxLease(const PhysxLease&) = delete;
+  PhysxLease& operator=(const PhysxLease&) = delete;
+
+  [[nodiscard]] PxPhysics* Physics() const { return handles_.physics; }
+
+ private:
+  PhysxHandles handles_;
+};
+
+// state on the grids the Networking Protocol sends a body on (augusta/grid.h, ADR-0038).
+BodyState OnWireGrid(BodyState state) {
+  state.position = math::SnapPosition(state.position);
+  state.velocity = math::SnapVelocity(state.velocity);
+  state.stamina = math::SnapStamina(state.stamina);
+  return state;
+}
+
+PxExtendedVec3 ToFootPosition(const math::Vec3& position) { return {position.x, position.y, position.z}; }
+
 }  // namespace
+
+float StanceHeight(Stance stance) { return HeightForStance(stance) + kCapsuleDiameter; }
 
 // Per-body bookkeeping PhysX's controller doesn't itself track: a CCT has
 // no notion of "velocity" the way a rigid dynamic does, so World derives
@@ -206,66 +305,52 @@ struct BodyRecord {
 };
 
 struct World::Impl {
-  LogErrorCallback error_callback;
-  PxDefaultAllocator allocator;
-  PxFoundation* foundation = nullptr;
-  PxPhysics* physics = nullptr;
+  // Declared first so it is released last: everything below that PhysX
+  // created must be released before the shared foundation can go.
+  PhysxLease lease;
+  PxPhysics* physics = lease.Physics();
   PxDefaultCpuDispatcher* dispatcher = nullptr;
-  // Non-null only when enable_gpu was requested AND a CUDA-capable
-  // GPU/driver was actually found - see the constructor. Currently has
-  // no observable effect on Step's own output; see World's own header
-  // comment for why it's wired in ahead of need.
-  PxCudaContextManager* cuda_context_manager = nullptr;
   PxScene* scene = nullptr;
   PxControllerManager* controller_manager = nullptr;
   PxMaterial* material = nullptr;
+  // Static map geometry added by AddCollisionMesh; released with the World.
+  std::vector<PxTriangleMesh*> collision_meshes;
+  std::vector<PxRigidStatic*> static_actors;
   StaminaConfig stamina_config;
   std::unordered_map<BodyHandle, BodyRecord> bodies;
   std::uint32_t next_handle = 1;
 
-  Impl(const StaminaConfig& config, bool enable_gpu) : stamina_config(config) {
-    foundation = PxCreateFoundation(PX_PHYSICS_VERSION, allocator, error_callback);
-    if (foundation == nullptr) {
-      throw std::runtime_error("physics::World: PxCreateFoundation failed");
-    }
-
-    const PxTolerancesScale scale;
-    physics = PxCreatePhysics(PX_PHYSICS_VERSION, *foundation, scale, true);
-    if (physics == nullptr) {
-      throw std::runtime_error("physics::World: PxCreatePhysics failed");
-    }
+  explicit Impl(const StaminaConfig& config) : stamina_config(config) {
     PxSceneDesc scene_desc(physics->getTolerancesScale());
     scene_desc.gravity = PxVec3(0.0F, kGravity, 0.0F);
     dispatcher = PxDefaultCpuDispatcherCreate(kWorkerThreadCount);
     scene_desc.cpuDispatcher = dispatcher;
     scene_desc.filterShader = PxDefaultSimulationFilterShader;
 
-    if (enable_gpu) {
-      const PxCudaContextManagerDesc cuda_desc;
-      // Unqualified, not physx::PxCreateCudaContextManager: gpu/PxGpu.h
-      // declares it PX_C_EXPORT (extern "C") at global scope, only its
-      // parameter/return types live in namespace physx.
-      cuda_context_manager = ::PxCreateCudaContextManager(*foundation, cuda_desc);
-      if (cuda_context_manager != nullptr && cuda_context_manager->contextIsValid()) {
-        scene_desc.cudaContextManager = cuda_context_manager;
-        scene_desc.flags |= PxSceneFlag::eENABLE_GPU_DYNAMICS;
-        scene_desc.broadPhaseType = PxBroadPhaseType::eGPU;
-        LI("subsystem=physics event=gpu_context_created device=\"{}\"", cuda_context_manager->getDeviceName());
-      } else {
-        // No CUDA-capable GPU/driver on this machine - fall back to CPU
-        // rather than fail World construction over it.
-        LW("subsystem=physics event=gpu_unavailable fallback=cpu");
-        if (cuda_context_manager != nullptr) {
-          cuda_context_manager->release();
-          cuda_context_manager = nullptr;
-        }
-      }
-    }
-
     scene = physics->createScene(scene_desc);
     controller_manager = PxCreateControllerManager(*scene);
     material = physics->createMaterial(kStaticFriction, kDynamicFriction, kRestitution);
-    LD("subsystem=physics event=world_created gpu={}", cuda_context_manager != nullptr);
+    LD("subsystem=physics event=world_created");
+  }
+
+  // Decision half of a stance change: a smaller capsule always fits, a taller
+  // one only if it does not overlap static geometry (e.g. standing up under a
+  // low ceiling). A static-only scene query never sees the body's own
+  // controller, which is dynamic.
+  [[nodiscard]] bool CanChangeStance(const BodyRecord& record, Stance current, Stance target) const {
+    if (HeightForStance(target) <= HeightForStance(current)) {
+      return true;
+    }
+    const float height = HeightForStance(target);
+    const PxExtendedVec3 foot = record.controller->getFootPosition();
+    const float center_y = static_cast<float>(foot.y) + kCapsuleRadius + (height * 0.5F);
+    // A PxCapsuleGeometry lies along x; the rotation stands it up along y.
+    const PxTransform pose(PxVec3(static_cast<float>(foot.x), center_y, static_cast<float>(foot.z)),
+                           PxQuat(physx::PxHalfPi, PxVec3(0.0F, 0.0F, 1.0F)));
+    const PxCapsuleGeometry capsule(kCapsuleRadius - kStanceCheckSkin, height * 0.5F);
+    PxOverlapBuffer hit;
+    const PxQueryFilterData filter(PxQueryFlag::eSTATIC | PxQueryFlag::eANY_HIT);
+    return !scene->overlap(capsule, pose, hit, filter);
   }
 
   ~Impl() {
@@ -273,6 +358,12 @@ struct World::Impl {
       if (record.controller != nullptr) {
         record.controller->release();
       }
+    }
+    for (PxRigidStatic* actor : static_actors) {
+      actor->release();
+    }
+    for (PxTriangleMesh* mesh : collision_meshes) {
+      mesh->release();
     }
     if (material != nullptr) {
       material->release();
@@ -283,34 +374,76 @@ struct World::Impl {
     if (scene != nullptr) {
       scene->release();
     }
-    // Released after the scene (which references it), matching
-    // PxCudaContextManager::release()'s own documented ordering
-    // requirement - never released while a scene is still using it.
-    if (cuda_context_manager != nullptr) {
-      cuda_context_manager->release();
-    }
     if (dispatcher != nullptr) {
       dispatcher->release();
-    }
-    if (physics != nullptr) {
-      physics->release();
-    }
-    if (foundation != nullptr) {
-      foundation->release();
     }
   }
 };
 
-World::World(const StaminaConfig& config, bool enable_gpu) : impl_(std::make_unique<Impl>(config, enable_gpu)) {}
+World::World(const StaminaConfig& config) : impl_(std::make_unique<Impl>(config)) {}
 World::~World() = default;
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
+
+std::string_view DescribeCollisionMeshError(CollisionMeshError error) {
+  switch (error) {
+    case CollisionMeshError::kEmpty:
+      return "the mesh has no triangles";
+    case CollisionMeshError::kInvalidIndex:
+      return "the mesh's indices are not whole triangles inside its points";
+    case CollisionMeshError::kCookingFailed:
+      return "PhysX could not build a collision mesh from it";
+  }
+  return "unknown collision mesh error";
+}
+
+std::expected<void, CollisionMeshError> ValidateCollisionMesh(const CollisionMesh& mesh) {
+  if (mesh.points.empty() || mesh.indices.empty()) {
+    return std::unexpected(CollisionMeshError::kEmpty);
+  }
+  const bool whole_triangles = mesh.indices.size() % 3 == 0;
+  const bool in_range =
+      std::ranges::all_of(mesh.indices, [&](std::uint32_t index) { return index < mesh.points.size(); });
+  if (!whole_triangles || !in_range) {
+    return std::unexpected(CollisionMeshError::kInvalidIndex);
+  }
+  return {};
+}
+
+std::expected<void, CollisionMeshError> World::AddCollisionMesh(const CollisionMesh& mesh) {
+  if (const auto valid = ValidateCollisionMesh(mesh); !valid) {
+    return valid;
+  }
+  const std::vector<std::uint32_t> both_windings = WithBothWindings(mesh.indices);
+
+  PxTriangleMeshDesc desc;
+  desc.points.count = static_cast<PxU32>(mesh.points.size());
+  desc.points.stride = sizeof(math::Vec3);
+  desc.points.data = mesh.points.data();
+  desc.triangles.count = static_cast<PxU32>(both_windings.size() / 3);
+  desc.triangles.stride = 3 * sizeof(std::uint32_t);
+  desc.triangles.data = both_windings.data();
+
+  const PxCookingParams params(impl_->physics->getTolerancesScale());
+  PxTriangleMesh* cooked = PxCreateTriangleMesh(params, desc, impl_->physics->getPhysicsInsertionCallback());
+  if (cooked == nullptr) {
+    return std::unexpected(CollisionMeshError::kCookingFailed);
+  }
+  PxRigidStatic* actor = impl_->physics->createRigidStatic(PxTransform(PxIdentity));
+  PxRigidActorExt::createExclusiveShape(*actor, PxTriangleMeshGeometry(cooked), *impl_->material);
+  impl_->scene->addActor(*actor);
+  impl_->collision_meshes.push_back(cooked);
+  impl_->static_actors.push_back(actor);
+  LD("subsystem=physics event=collision_mesh_added triangles={}", mesh.indices.size() / 3);
+  return {};
+}
+
+void World::SetStaminaConfig(const StaminaConfig& config) { impl_->stamina_config = config; }
 
 BodyHandle World::CreateBody(const math::Vec3& initial_position) {
   PxCapsuleControllerDesc desc;
   desc.radius = kCapsuleRadius;
   desc.height = kStandingHeight;
-  desc.position = PxExtendedVec3(initial_position.x, initial_position.y, initial_position.z);
   desc.material = impl_->material;
   desc.stepOffset = kStepOffset;
   desc.upDirection = PxVec3(0.0F, 1.0F, 0.0F);
@@ -318,11 +451,14 @@ BodyHandle World::CreateBody(const math::Vec3& initial_position) {
   if (controller == nullptr) {
     throw std::runtime_error("physics::World::CreateBody: createController failed");
   }
+  // The descriptor's position is the capsule's center; BodyState's is the feet.
+  const math::Vec3 position = math::SnapPosition(initial_position);
+  controller->setFootPosition(ToFootPosition(position));
 
   const auto handle = static_cast<BodyHandle>(impl_->next_handle++);
   BodyRecord record;
   record.controller = controller;
-  record.state.position = initial_position;
+  record.state.position = position;
   impl_->bodies.emplace(handle, std::move(record));
   LD("subsystem=physics event=body_created handle={}", static_cast<std::uint32_t>(handle));
   return handle;
@@ -346,20 +482,18 @@ BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta
   BodyRecord& record = body_it->second;
   BodyState& state = record.state;
 
-  if (input.desired_stance != state.stance) {
-    // TODO(sergioffpc): reject the transition when the target capsule
-    // would overlap static geometry (e.g. standing up under a low
-    // ceiling) - there is no static Level Data to collide against yet
-    // (see Raycast's own doc comment above), so every transition
-    // currently succeeds.
+  if (input.desired_stance != state.stance && impl_->CanChangeStance(record, state.stance, input.desired_stance)) {
     record.controller->resize(HeightForStance(input.desired_stance));
     state.stance = input.desired_stance;
   }
 
-  const StaminaResult stamina = ResolveStamina(input.sprint, state.stamina, impl_->stamina_config, delta_time);
-  state.stamina = stamina.stamina;
-
   const math::Vec3 direction = math::Normalize(input.direction);
+  const bool standing_and_moving = state.stance == Stance::kStanding && math::Length(direction) > 0.0F;
+  const StaminaResult stamina = ResolveStamina(input.sprint, standing_and_moving, state.stamina, state.exhausted,
+                                               impl_->stamina_config, delta_time);
+  state.stamina = stamina.stamina;
+  state.exhausted = stamina.exhausted;
+
   const float speed = ResolveSpeed(state.stance, stamina.sprinting);
 
   // Simple constant-acceleration gravity: reset the accumulated vertical
@@ -377,9 +511,13 @@ BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta
   const PxControllerCollisionFlags flags = record.controller->move(displacement, kMinMoveDistance, delta_time, filters);
   record.grounded = flags.isSet(PxControllerCollisionFlag::eCOLLISION_DOWN);
 
-  const math::Vec3 new_position = FromPx(record.controller->getFootPosition());
+  // The controller is put back on the grid too, so the next Step starts from
+  // exactly the position this one reports.
+  const math::Vec3 new_position = math::SnapPosition(FromPx(record.controller->getFootPosition()));
+  record.controller->setFootPosition(ToFootPosition(new_position));
   state.velocity = delta_time > 0.0F ? (new_position - state.position) / delta_time : math::Vec3{};
   state.position = new_position;
+  state = OnWireGrid(state);
 
   return state;
 }
@@ -390,37 +528,43 @@ void World::SetState(BodyHandle handle, const BodyState& state) {
     return;
   }
   BodyRecord& record = body_it->second;
-  if (state.stance != record.state.stance) {
-    record.controller->resize(HeightForStance(state.stance));
+  const BodyState on_grid = OnWireGrid(state);
+  if (on_grid.stance != record.state.stance) {
+    record.controller->resize(HeightForStance(on_grid.stance));
   }
-  record.controller->setFootPosition(PxExtendedVec3(state.position.x, state.position.y, state.position.z));
-  record.state = state;
+  record.controller->setFootPosition(ToFootPosition(on_grid.position));
+  record.state = on_grid;
   record.vertical_speed = 0.0F;
   record.grounded = false;
 }
 
-BodyState World::Reconcile(BodyHandle handle, const BodyState& authoritative) {
+FallState World::Fall(BodyHandle handle) const {
   const auto body_it = impl_->bodies.find(handle);
   if (body_it == impl_->bodies.end()) {
-    return authoritative;
+    return {};
+  }
+  return FallState{.vertical_speed = body_it->second.vertical_speed, .grounded = body_it->second.grounded};
+}
+
+BodyState World::Restore(BodyHandle handle, const BodyState& state, const FallState& fall) {
+  const BodyState on_grid = OnWireGrid(state);
+  const auto body_it = impl_->bodies.find(handle);
+  if (body_it == impl_->bodies.end()) {
+    return on_grid;
   }
   BodyRecord& record = body_it->second;
-  const ReconciliationResult result = ResolveReconciliation(record.state, authoritative);
-  LD("subsystem=physics event={} handle={} error={:.3f}", result.snapped ? "reconcile_snap" : "reconcile_blend",
-     static_cast<std::uint32_t>(handle), result.error);
 
   // Applied directly against the controller (not via SetState): SetState
-  // also resets fall/ground tracking, which is correct for an intentional
-  // teleport (spawn/respawn) but would spuriously interrupt gravity
-  // continuity for what is, outside of the kSnapDistance case above, a
-  // small in-place correction.
-  if (result.state.stance != record.state.stance) {
-    record.controller->resize(HeightForStance(result.state.stance));
+  // resets fall/ground tracking, which is right for an intentional teleport
+  // (spawn/respawn) but not for putting the body back where it was.
+  if (on_grid.stance != record.state.stance) {
+    record.controller->resize(HeightForStance(on_grid.stance));
   }
-  record.controller->setFootPosition(
-      PxExtendedVec3(result.state.position.x, result.state.position.y, result.state.position.z));
-  record.state = result.state;
-  return result.state;
+  record.controller->setFootPosition(ToFootPosition(on_grid.position));
+  record.state = on_grid;
+  record.vertical_speed = fall.vertical_speed;
+  record.grounded = fall.grounded;
+  return on_grid;
 }
 
 RaycastHit World::Raycast(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const {

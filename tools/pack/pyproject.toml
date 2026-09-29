@@ -8,6 +8,7 @@ dependencies = [
   "usd-validation-nvidia>=1.21.0",
   "pynacl>=1.5.0",
   "blake3>=0.4.1",
+  "pyyaml>=6.0",
 ]
 
 [project.scripts]
@@ -15,6 +16,12 @@ augustap = "pack.cli:main"
 augustap-keygen = "pack.keys:main"
 augustap-inspect = "pack.pack_cli:inspect_main"
 augustap-verify = "pack.pack_cli:verify_main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [build-system]
 requires = ["hatchling"]

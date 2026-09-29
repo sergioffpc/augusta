@@ -1,5 +1,9 @@
 #include "augusta/audio.h"
 
+#include <string>
+
+#include "augusta/math.h"
+
 namespace augusta::audio {
 
 // TODO(sergioffpc): every method below is a placeholder - neither Steam

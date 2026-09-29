@@ -1,20 +1,32 @@
 #include "augusta/renderer.h"
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <memory>
+#include <optional>
+#include <span>
+#include <stdexcept>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+#include <Core/API/Fence.h>
 #include <Core/API/Swapchain.h>
 #include <Core/Pass/RasterPass.h>
 #include <Core/Window.h>
 #include <Falcor.h>
 #include <Utils/Math/Matrix.h>
 #include <Utils/Threading.h>
-
-#include <chrono>
-#include <cstdint>
-#include <memory>
+#include <Utils/Timing/FrameRate.h>
 #include <nvtx3/nvtx3.hpp>
-#include <optional>
-#include <vector>
 
-// M1 spike (ADR-0009): the first real (non-stub) body for this module.
+#include "augusta/math.h"
+#include "debug_hud.h"
+#include "frame_regions.h"
+
+// ADR-0009: the first real (non-stub) body for this module.
 // Bypasses Falcor::SampleApp entirely - per ADR-0009, SampleApp fuses
 // window/device/swapchain/main-loop into one blocking run() call, which
 // can't give PumpEvents()/RenderFrame() the independent cadences
@@ -31,42 +43,162 @@ namespace {
 // Default clear color - near-black, close to this editor's own chrome.
 constexpr float kDefaultClearColorChannel = 0.016F;
 
-// One cube vertex - see BuildCubeGeometry. 4 unique vertices per face
-// (not 8 shared corners) so every face gets its own straight UV mapping.
+// How many frames the GPU may be working on at once, and so how many
+// swapchain images there are: Device::endFrame keeps the CPU no further ahead.
+constexpr std::uint32_t kFramesInFlight = Falcor::Device::kInFlightFrameCount;
+
+// One vertex of the flat-shaded scene geometry - see BuildFlatShadedVertices.
 struct Vertex {
   Falcor::float3 position;
-  Falcor::float2 uv;
+  Falcor::float3 normal;
+  Falcor::float3 color;
 };
 
-std::optional<input::Key> MapKey(Falcor::Input::Key key) {
+// Expands every mesh's indexed triangles into 3 unshared vertices each,
+// carrying the triangle's own face normal and its mesh's color: cooked meshes have positions and
+// indices only (no normals - see assets::MeshData), so flat shading is the
+// one lighting model the data supports. Throws std::runtime_error on an
+// index at or past its mesh's position count.
+std::vector<Vertex> BuildFlatShadedVertices(const Scene& scene) {
+  std::vector<Vertex> vertices;
+  for (const SceneMesh& mesh : scene.meshes) {
+    for (const std::uint32_t index : mesh.indices) {
+      if (index >= mesh.positions.size()) {
+        throw std::runtime_error("scene mesh index out of range for its positions");
+      }
+    }
+    for (std::size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
+      // NOLINTBEGIN(readability-identifier-length) - a/b/c are the triangle's own corner notation.
+      const math::Vec3& a = mesh.positions[mesh.indices[i]];
+      const math::Vec3& b = mesh.positions[mesh.indices[i + 1]];
+      const math::Vec3& c = mesh.positions[mesh.indices[i + 2]];
+      // NOLINTEND(readability-identifier-length)
+      const math::Vec3 normal = math::Normalize(math::Cross(b - a, c - a));
+      for (const math::Vec3* corner : {&a, &b, &c}) {
+        vertices.push_back({.position = {corner->x, corner->y, corner->z},
+                            .normal = {normal.x, normal.y, normal.z},
+                            .color = {mesh.color.x, mesh.color.y, mesh.color.z}});
+      }
+    }
+  }
+  return vertices;
+}
+
+// Every RemotePlayer as an instance of its character's local vertices
+// (SetCharacterMesh's own flat-shaded vertices, in the character's local space
+// - ADR-0040/ADR-0041), skipping one whose character has none: translated to
+// that instance's own position and given its own color. remote.position is
+// where the mesh's own origin (y=0) lands - the same convention the
+// character's mesh was cooked around, so no further placement is needed, and
+// a translation leaves the normals as they are.
+std::vector<Vertex> BuildRemoteVertices(
+    std::span<const RemotePlayer> remote_players,
+    const std::unordered_map<std::uint8_t, std::vector<Vertex>>& character_vertices) {
+  std::vector<Vertex> vertices;
+  for (const RemotePlayer& remote : remote_players) {
+    const auto found = character_vertices.find(remote.character);
+    if (found == character_vertices.end()) {
+      continue;
+    }
+    const std::vector<Vertex>& local_vertices = found->second;
+    const math::Vec3& p = remote.position;
+    const Falcor::float3 color{remote.color.x, remote.color.y, remote.color.z};
+    for (const Vertex& local_vertex : local_vertices) {
+      vertices.push_back({
+          .position = {local_vertex.position.x + p.x, local_vertex.position.y + p.y, local_vertex.position.z + p.z},
+          .normal = local_vertex.normal,
+          .color = color,
+      });
+    }
+  }
+  return vertices;
+}
+
+// GLM matrices are column-major (m[column][row]); Falcor's are row-major
+// (m[row][column]) - same math, transposed storage.
+Falcor::float4x4 ToFalcor(const math::Mat4& matrix) {
+  auto result = Falcor::float4x4::zeros();
+  for (int row = 0; row < 4; ++row) {
+    for (int column = 0; column < 4; ++column) {
+      result[row][column] = matrix[column][row];
+    }
+  }
+  return result;
+}
+
+// Falcor's key in the run [falcor_first, falcor_first + count) as the key at
+// the same offset from first, if it is in the run. Both enums keep letters,
+// digits and F1-F12 contiguous and in the same order.
+std::optional<input::Key> MapRun(Falcor::Input::Key key, Falcor::Input::Key falcor_first, input::Key first, int count) {
+  const int offset = static_cast<int>(key) - static_cast<int>(falcor_first);
+  if (offset < 0 || offset >= count) {
+    return std::nullopt;
+  }
+  return static_cast<input::Key>(static_cast<int>(first) + offset);
+}
+
+constexpr int kLetterCount = 26;
+constexpr int kDigitCount = 10;
+constexpr int kFunctionKeyCount = 12;
+
+std::optional<input::Key> MapNamedKey(Falcor::Input::Key key) {
   switch (key) {
-    case Falcor::Input::Key::W:
-      return input::Key::kW;
-    case Falcor::Input::Key::A:
-      return input::Key::kA;
-    case Falcor::Input::Key::S:
-      return input::Key::kS;
-    case Falcor::Input::Key::D:
-      return input::Key::kD;
+    case Falcor::Input::Key::Space:
+      return input::Key::kSpace;
+    case Falcor::Input::Key::Tab:
+      return input::Key::kTab;
+    case Falcor::Input::Key::Enter:
+      return input::Key::kEnter;
+    case Falcor::Input::Key::Backspace:
+      return input::Key::kBackspace;
+    case Falcor::Input::Key::Escape:
+      return input::Key::kEscape;
     case Falcor::Input::Key::LeftShift:
       return input::Key::kLeftShift;
+    case Falcor::Input::Key::RightShift:
+      return input::Key::kRightShift;
     case Falcor::Input::Key::LeftControl:
       return input::Key::kLeftControl;
-    case Falcor::Input::Key::Z:
-      return input::Key::kZ;
-    case Falcor::Input::Key::R:
-      return input::Key::kR;
+    case Falcor::Input::Key::RightControl:
+      return input::Key::kRightControl;
+    case Falcor::Input::Key::LeftAlt:
+      return input::Key::kLeftAlt;
+    case Falcor::Input::Key::RightAlt:
+      return input::Key::kRightAlt;
+    case Falcor::Input::Key::Up:
+      return input::Key::kUp;
+    case Falcor::Input::Key::Down:
+      return input::Key::kDown;
+    case Falcor::Input::Key::Left:
+      return input::Key::kLeft;
+    case Falcor::Input::Key::Right:
+      return input::Key::kRight;
     default:
       return std::nullopt;
   }
 }
 
-std::optional<input::MouseButton> MapMouseButton(Falcor::Input::MouseButton button) {
+std::optional<input::Key> MapKey(Falcor::Input::Key key) {
+  if (const auto letter = MapRun(key, Falcor::Input::Key::A, input::Key::kA, kLetterCount)) {
+    return letter;
+  }
+  if (const auto digit = MapRun(key, Falcor::Input::Key::Key0, input::Key::k0, kDigitCount)) {
+    return digit;
+  }
+  if (const auto function_key = MapRun(key, Falcor::Input::Key::F1, input::Key::kF1, kFunctionKeyCount)) {
+    return function_key;
+  }
+  return MapNamedKey(key);
+}
+
+std::optional<input::Key> MapMouseButton(Falcor::Input::MouseButton button) {
   switch (button) {
     case Falcor::Input::MouseButton::Left:
-      return input::MouseButton::kLeft;
+      return input::Key::kMouseLeft;
     case Falcor::Input::MouseButton::Right:
-      return input::MouseButton::kRight;
+      return input::Key::kMouseRight;
+    case Falcor::Input::MouseButton::Middle:
+      return input::Key::kMouseMiddle;
     default:
       return std::nullopt;
   }
@@ -87,9 +219,43 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   Falcor::ref<Falcor::Fbo> target_fbo;
   Falcor::ref<Falcor::RasterPass> raster_pass;
   Falcor::ref<Falcor::Vao> vao;
-  Falcor::ref<Falcor::Texture> texture;
-  Falcor::ref<Falcor::Sampler> sampler;
-  std::uint32_t index_count = 0;
+  std::uint32_t vertex_count = 0;
+  Camera camera;
+
+  // Each character's mesh (ADR-0042), flat-shaded in its own local space and
+  // keyed by character index - set by SetCharacterMesh; empty until the first
+  // call.
+  std::unordered_map<std::uint8_t, std::vector<Vertex>> character_vertices;
+
+  // Unlike vao/vertex_count above, this buffer is sized by what
+  // SetRemotePlayers has needed so far (the most instance vertices any call
+  // produced) and kept as MemoryType::Upload - a persistently-mappable heap
+  // SetRemotePlayers can memcpy into every frame via Buffer::setBlob with no
+  // GPU wait, unlike UploadScene's DeviceLocal buffer (see that method). Null
+  // until the first call with something to draw.
+  //
+  // It holds kFramesInFlight regions of remote_region_capacity vertices each,
+  // and a frame writes and draws only the region FrameRegion gives it: with
+  // vsync off several frames are in flight, and rewriting the one region a
+  // previous frame is still drawing from tears that frame's remote players.
+  // remote_fence is signaled after every frame's submit, and
+  // remote_region_fence_values holds, per region, the value signaled after the
+  // last frame drawn from it: UpdateRemotePlayers waits for that before writing
+  // there - normally already reached, since that frame is kFramesInFlight back.
+  Falcor::ref<Falcor::Buffer> remote_vertex_buffer;
+  Falcor::ref<Falcor::Vao> remote_vao;
+  std::uint32_t remote_region_capacity = 0;
+  std::uint32_t remote_vertex_count = 0;
+  std::uint32_t remote_region = 0;
+  Falcor::ref<Falcor::Fence> remote_fence;
+  std::array<std::uint64_t, kFramesInFlight> remote_region_fence_values{};
+  std::uint64_t frame_index = 0;
+
+  // Debug HUD (FPS, RTT) - see debug_hud.h. frame_rate is ticked once
+  // per RenderFrame; hud_stats carries what the caller supplies.
+  std::unique_ptr<DebugHud> debug_hud;
+  Falcor::FrameRate frame_rate;
+  DebugHudStats hud_stats;
 
   // Render settings - fixed defaults for now (no in-app editor; use
   // NVIDIA Nsight/Tracy for profiling instead).
@@ -97,11 +263,6 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   Falcor::RasterizerState::CullMode cull_mode = Falcor::RasterizerState::CullMode::None;
   bool wireframe_enabled = false;
   bool vsync_enabled = false;
-  float rotation_angle = 0.0F;
-
-  std::chrono::steady_clock::time_point start_time;
-  std::chrono::steady_clock::time_point last_frame_time;
-  bool cursor_locked = false;
 
   Impl(const Config& config, input::EventSink& sink) : input_sink(sink) {
     // Falcor::OSServices::start()/stop() are SampleApp-internal (not
@@ -135,12 +296,11 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     RecreateSwapchain();
     const auto size = window->getClientAreaSize();
     CreateTargetFbo(size.x, size.y);
-    BuildCubeGeometry();
-    BuildCheckerboardTexture();
+    debug_hud = std::make_unique<DebugHud>(device, Falcor::uint2(size.x, size.y));
     BuildRasterPass();
-
-    start_time = std::chrono::steady_clock::now();
-    last_frame_time = start_time;
+    // remote_vertex_buffer/remote_vao are created lazily by SetRemotePlayers
+    // instead, once the vertex count they're sized from is known.
+    remote_fence = device->createFence();
   }
 
   ~Impl() {
@@ -179,7 +339,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     desc.format = Falcor::ResourceFormat::BGRA8UnormSrgb;
     desc.width = size.x;
     desc.height = size.y;
-    desc.imageCount = 3;
+    desc.imageCount = kFramesInFlight;
     desc.enableVSync = vsync_enabled;
     swapchain = Falcor::make_ref<Falcor::Swapchain>(device, desc, window->getApiHandle());
   }
@@ -190,101 +350,128 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     raster_pass->getState()->setRasterizerState(Falcor::RasterizerState::create(rasterizer_desc));
   }
 
-  // A unit cube (half-extent 0.5, centered on the model origin), 4
-  // vertices per face so each face gets its own [0,1] UV rectangle.
-  void BuildCubeGeometry() {
-    constexpr float kHalf = 0.5F;
-    const std::vector<Vertex> vertices = {
-        // +X
-        {{kHalf, -kHalf, -kHalf}, {0, 1}},
-        {{kHalf, -kHalf, kHalf}, {1, 1}},
-        {{kHalf, kHalf, kHalf}, {1, 0}},
-        {{kHalf, kHalf, -kHalf}, {0, 0}},
-        // -X
-        {{-kHalf, -kHalf, kHalf}, {0, 1}},
-        {{-kHalf, -kHalf, -kHalf}, {1, 1}},
-        {{-kHalf, kHalf, -kHalf}, {1, 0}},
-        {{-kHalf, kHalf, kHalf}, {0, 0}},
-        // +Y
-        {{-kHalf, kHalf, -kHalf}, {0, 1}},
-        {{kHalf, kHalf, -kHalf}, {1, 1}},
-        {{kHalf, kHalf, kHalf}, {1, 0}},
-        {{-kHalf, kHalf, kHalf}, {0, 0}},
-        // -Y
-        {{-kHalf, -kHalf, kHalf}, {0, 1}},
-        {{kHalf, -kHalf, kHalf}, {1, 1}},
-        {{kHalf, -kHalf, -kHalf}, {1, 0}},
-        {{-kHalf, -kHalf, -kHalf}, {0, 0}},
-        // +Z
-        {{kHalf, -kHalf, kHalf}, {0, 1}},
-        {{-kHalf, -kHalf, kHalf}, {1, 1}},
-        {{-kHalf, kHalf, kHalf}, {1, 0}},
-        {{kHalf, kHalf, kHalf}, {0, 0}},
-        // -Z
-        {{-kHalf, -kHalf, -kHalf}, {0, 1}},
-        {{kHalf, -kHalf, -kHalf}, {1, 1}},
-        {{kHalf, kHalf, -kHalf}, {1, 0}},
-        {{-kHalf, kHalf, -kHalf}, {0, 0}},
-    };
-
-    std::vector<std::uint16_t> indices;
-    indices.reserve(6 * 6);
-    for (std::uint16_t face = 0; face < 6; ++face) {
-      const std::uint16_t base = face * 4;
-      indices.insert(indices.end(), {base, static_cast<std::uint16_t>(base + 1), static_cast<std::uint16_t>(base + 2),
-                                     base, static_cast<std::uint16_t>(base + 2), static_cast<std::uint16_t>(base + 3)});
+  // Replaces the drawn geometry with scene's, as one vertex buffer drawn in
+  // a single call. Nothing is touched if scene is invalid (the throw comes
+  // before any member is assigned).
+  void UploadScene(const Scene& scene) {
+    const std::vector<Vertex> vertices = BuildFlatShadedVertices(scene);
+    if (vertices.size() > std::numeric_limits<std::uint32_t>::max()) {
+      throw std::runtime_error("scene has too many vertices to draw");
     }
-    index_count = static_cast<std::uint32_t>(indices.size());
+    // Only the initial camera - a real caller overwrites this via SetCamera
+    // every frame from then on (see that method's doc comment).
+    camera = scene.camera;
+    vertex_count = static_cast<std::uint32_t>(vertices.size());
+    if (vertices.empty()) {
+      vao = nullptr;
+      return;
+    }
 
+    // The previous scene's buffers may still be in flight on the GPU.
+    device->wait();
     auto vertex_buffer = device->createBuffer(vertices.size() * sizeof(Vertex), Falcor::ResourceBindFlags::Vertex,
                                               Falcor::MemoryType::DeviceLocal, vertices.data());
-    auto index_buffer = device->createBuffer(indices.size() * sizeof(std::uint16_t), Falcor::ResourceBindFlags::Index,
-                                             Falcor::MemoryType::DeviceLocal, indices.data());
 
     auto buffer_layout = Falcor::VertexBufferLayout::create();
     buffer_layout->addElement("POSITION", offsetof(Vertex, position), Falcor::ResourceFormat::RGB32Float, 1, 0);
-    buffer_layout->addElement("TEXCOORD", offsetof(Vertex, uv), Falcor::ResourceFormat::RG32Float, 1, 1);
+    buffer_layout->addElement("NORMAL", offsetof(Vertex, normal), Falcor::ResourceFormat::RGB32Float, 1, 1);
+    buffer_layout->addElement("COLOR", offsetof(Vertex, color), Falcor::ResourceFormat::RGB32Float, 1, 2);
     auto layout = Falcor::VertexLayout::create();
     layout->addBufferLayout(0, buffer_layout);
 
-    vao = Falcor::Vao::create(Falcor::Vao::Topology::TriangleList, layout, {vertex_buffer}, index_buffer,
-                              Falcor::ResourceFormat::R16Uint);
+    // Draw() sets the active Vao itself before every draw call (it now
+    // alternates between this one and remote_vao), so there's nothing more
+    // to bind here.
+    vao = Falcor::Vao::create(Falcor::Vao::Topology::TriangleList, layout, {vertex_buffer});
   }
 
-  // A small procedural checkerboard - the asset pipeline (ADR-0015 -
-  // ADR-0020, M2) doesn't exist yet, and this spike only needs to prove
-  // Falcor samples *some* texture onto the primitive.
-  void BuildCheckerboardTexture() {
-    constexpr std::uint32_t kSize = 64;
-    constexpr std::uint32_t kCheckSize = 8;
-    std::vector<std::uint32_t> pixels(static_cast<std::size_t>(kSize) * kSize);
-    for (std::uint32_t y = 0; y < kSize; ++y) {
-      for (std::uint32_t x = 0; x < kSize; ++x) {
-        const bool light = ((x / kCheckSize) + (y / kCheckSize)) % 2 == 0;
-        pixels[(y * kSize) + x] = light ? 0xFFE0E0E0u : 0xFF303030u;
-      }
+  // Creates the persistently-mappable upload-heap buffer and Vao
+  // SetRemotePlayers writes into every frame - see the Impl member comment
+  // on remote_vertex_buffer. Sized for region_capacity vertices in each of its
+  // kFramesInFlight regions - replaces any previous buffer/Vao.
+  void CreateRemoteBuffer(std::uint32_t region_capacity) {
+    remote_vertex_buffer = device->createBuffer(std::size_t{region_capacity} * kFramesInFlight * sizeof(Vertex),
+                                                Falcor::ResourceBindFlags::Vertex, Falcor::MemoryType::Upload);
+    remote_region_capacity = region_capacity;
+
+    auto buffer_layout = Falcor::VertexBufferLayout::create();
+    buffer_layout->addElement("POSITION", offsetof(Vertex, position), Falcor::ResourceFormat::RGB32Float, 1, 0);
+    buffer_layout->addElement("NORMAL", offsetof(Vertex, normal), Falcor::ResourceFormat::RGB32Float, 1, 1);
+    buffer_layout->addElement("COLOR", offsetof(Vertex, color), Falcor::ResourceFormat::RGB32Float, 1, 2);
+    auto layout = Falcor::VertexLayout::create();
+    layout->addBufferLayout(0, buffer_layout);
+
+    remote_vao = Falcor::Vao::create(Falcor::Vao::Topology::TriangleList, layout, {remote_vertex_buffer});
+  }
+
+  // Builds character's local vertices from mesh - the same
+  // BuildFlatShadedVertices triangle expansion UploadScene uses, reused via
+  // a one-mesh Scene rather than duplicated. Nothing is touched if mesh is
+  // invalid (the throw comes before any member is assigned, same as
+  // UploadScene).
+  void UploadCharacterMesh(std::uint8_t character, const SceneMesh& mesh) {
+    std::vector<Vertex> vertices = BuildFlatShadedVertices(Scene{.meshes = {mesh}, .camera = {}});
+    character_vertices.insert_or_assign(character, std::move(vertices));
+  }
+
+  // Rewrites the remote-player instances' vertex data into this frame's
+  // region via Buffer::setBlob - a map+memcpy into the upload heap, no GPU
+  // wait (unlike UploadScene/UploadCharacterMesh) unless the GPU has not yet
+  // finished the last frame drawn from that region, or these instances need
+  // more room than a region has, which then grows to fit them. Draws every
+  // instance given; nothing if none has a mesh.
+  void UpdateRemotePlayers(std::span<const RemotePlayer> remote_players) {
+    const std::vector<Vertex> vertices = BuildRemoteVertices(remote_players, character_vertices);
+    remote_vertex_count = static_cast<std::uint32_t>(vertices.size());
+    if (vertices.empty()) {
+      return;
     }
-    texture = device->createTexture2D(kSize, kSize, Falcor::ResourceFormat::RGBA8Unorm, 1, 1, pixels.data());
-    sampler = device->createSampler(Falcor::Sampler::Desc{});
+    if (remote_vertex_count > remote_region_capacity) {
+      if (remote_vertex_buffer != nullptr) {
+        // The previous buffer may still be in flight on the GPU - see UploadScene's own comment.
+        device->wait();
+      }
+      CreateRemoteBuffer(remote_vertex_count);
+    }
+    remote_region = FrameRegion(frame_index, kFramesInFlight);
+    remote_fence->wait(remote_region_fence_values[remote_region]);
+    remote_vertex_buffer->setBlob(vertices.data(), RemoteRegionFirstVertex() * sizeof(Vertex),
+                                  vertices.size() * sizeof(Vertex));
+  }
+
+  // Where remote_region starts in remote_vertex_buffer, in vertices.
+  [[nodiscard]] std::uint32_t RemoteRegionFirstVertex() const { return remote_region * remote_region_capacity; }
+
+  // Records that the frame just submitted draws from remote_region, so the
+  // next write there waits for the GPU to finish it, and moves on to the next
+  // frame.
+  void EndRemoteFrame(Falcor::RenderContext* render_context) {
+    remote_region_fence_values[remote_region] = render_context->signal(remote_fence.get());
+    ++frame_index;
+  }
+
+  // World-to-clip transform of the current camera: the inverse of the
+  // camera's own placement, then a right-handed perspective projection.
+  [[nodiscard]] Falcor::float4x4 ViewProjection() const {
+    const math::Mat4 camera_to_world = math::ToMat4(camera.position, camera.rotation, math::Vec3(1.0F));
+    const Falcor::float4x4 view = ToFalcor(math::Inverse(camera_to_world));
+    const float aspect = static_cast<float>(target_fbo->getWidth()) / static_cast<float>(target_fbo->getHeight());
+    const Falcor::float4x4 projection = Falcor::math::perspective(camera.vertical_fov, aspect, 0.1F, 1000.0F);
+    return Falcor::math::mul(projection, view);
   }
 
   void BuildRasterPass() {
     raster_pass = Falcor::RasterPass::create(device, "Augusta/Renderer/Renderer.3d.slang", "vsMain", "psMain");
-    raster_pass->getState()->setVao(vao);
 
-    // Winding order isn't pinned down yet (no camera/coordinate-system
-    // ADR exists for it), so cull_mode defaults to None rather than risk
-    // the cube rendering as invisible from every angle.
+    // Cooked meshes carry their authored winding through the cooker's
+    // handedness fix (ADR-0032), but nothing has verified it end to end
+    // yet, so cull_mode defaults to None rather than risk a scene
+    // rendering as invisible from every angle.
     RebuildRasterizerState();
   }
 
   void Draw() {
     auto* render_context = device->getRenderContext();
-
-    const auto now = std::chrono::steady_clock::now();
-    const float delta_time = std::chrono::duration<float>(now - last_frame_time).count();
-    last_frame_time = now;
-    rotation_angle += delta_time;
 
     {
       // Named to match the FALCOR_PROFILE scopes below (GPU-side, read by
@@ -300,28 +487,38 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
         render_context->clearFbo(target_fbo.get(), clear_color, 1.0F, 0, Falcor::FboAttachmentType::All);
       }
 
-      {
-        const nvtx3::scoped_range cube_range{"Cube"};
-        FALCOR_PROFILE(render_context, "Cube");
-
-        const Falcor::float4x4 model =
-            Falcor::math::matrixFromRotation(rotation_angle, Falcor::float3(0.3F, 1.0F, 0.0F));
-        const Falcor::float4x4 view = Falcor::math::matrixFromTranslation(Falcor::float3(0.0F, 0.0F, -3.0F));
-        const float aspect = static_cast<float>(target_fbo->getWidth()) / static_cast<float>(target_fbo->getHeight());
-        const Falcor::float4x4 projection = Falcor::math::perspective(0.9F, aspect, 0.1F, 100.0F);
-        const Falcor::float4x4 mvp = Falcor::math::mul(projection, Falcor::math::mul(view, model));
-
+      if (vertex_count > 0 || remote_vertex_count > 0) {
+        // Shared by both draws below - same raster_pass/shader, same
+        // camera for the whole frame.
         auto root_var = raster_pass->getRootVar();
-        root_var["PerFrameCB"]["gMvp"] = mvp;
-        root_var["gTexture"] = texture;
-        root_var["gSampler"] = sampler;
-
+        root_var["PerFrameCB"]["gViewProj"] = ViewProjection();
         raster_pass->getState()->setFbo(target_fbo);
-        raster_pass->drawIndexed(render_context, index_count, 0, 0);
+      }
+
+      if (vertex_count > 0) {
+        const nvtx3::scoped_range scene_range{"Scene"};
+        FALCOR_PROFILE(render_context, "Scene");
+
+        raster_pass->getState()->setVao(vao);
+        raster_pass->draw(render_context, vertex_count, 0);
+      }
+
+      if (remote_vertex_count > 0) {
+        const nvtx3::scoped_range remote_range{"RemotePlayers"};
+        FALCOR_PROFILE(render_context, "RemotePlayers");
+
+        raster_pass->getState()->setVao(remote_vao);
+        raster_pass->draw(render_context, remote_vertex_count, RemoteRegionFirstVertex());
       }
     }
 
     device->getProfiler()->endFrame(render_context);
+
+    frame_rate.newFrame();
+    debug_hud->Render(render_context, target_fbo,
+                      {.average_frame_time_s = frame_rate.getAverageFrameTime(),
+                       .net = hud_stats.net,
+                       .delta_time_s = static_cast<float>(frame_rate.getLastFrameTime())});
   }
 
   void handleWindowSizeChange() override {
@@ -333,6 +530,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     device->wait();
     swapchain->resize(size.x, size.y);
     CreateTargetFbo(size.x, size.y);
+    debug_hud->OnWindowResize(size.x, size.y);
   }
 
   void handleRenderFrame() override {
@@ -342,16 +540,16 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   }
 
   void handleKeyboardEvent(const Falcor::KeyboardEvent& event) override {
-    input::Action action;
+    input::KeyState state;
     if (event.type == Falcor::KeyboardEvent::Type::KeyPressed) {
-      action = input::Action::kPressed;
+      state = input::KeyState::kPressed;
     } else if (event.type == Falcor::KeyboardEvent::Type::KeyReleased) {
-      action = input::Action::kReleased;
+      state = input::KeyState::kReleased;
     } else {
       return;
     }
     if (const auto key = MapKey(event.key)) {
-      input_sink.OnKeyEvent({.key = *key, .action = action});
+      input_sink.OnKeyEvent({.key = *key, .state = state});
     }
   }
 
@@ -366,9 +564,9 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
         if (!button) {
           return;
         }
-        const auto action =
-            event.type == Falcor::MouseEvent::Type::ButtonDown ? input::Action::kPressed : input::Action::kReleased;
-        input_sink.OnMouseButtonEvent({.button = *button, .action = action});
+        const auto state =
+            event.type == Falcor::MouseEvent::Type::ButtonDown ? input::KeyState::kPressed : input::KeyState::kReleased;
+        input_sink.OnKeyEvent({.key = *button, .state = state});
         return;
       }
       default:
@@ -400,24 +598,38 @@ void Renderer::RenderFrame() {
 
   auto* render_context = impl_->device->getRenderContext();
   const int image_index = impl_->swapchain->acquireNextImage();
+  if (image_index >= 0) {
+    const Falcor::Texture* swapchain_image = impl_->swapchain->getImage(image_index).get();
+    render_context->copyResource(swapchain_image, impl_->target_fbo->getColorTexture(0).get());
+    render_context->resourceBarrier(swapchain_image, Falcor::Resource::State::Present);
+  }
+  // Submitted even when not presenting, so the fence EndRemoteFrame signals
+  // comes after this frame's draws.
+  render_context->submit();
+  impl_->EndRemoteFrame(render_context);
   if (image_index < 0) {
     // Swapchain out of date (e.g. mid-resize) - skip presenting this frame.
     return;
   }
-  const Falcor::Texture* swapchain_image = impl_->swapchain->getImage(image_index).get();
-  render_context->copyResource(swapchain_image, impl_->target_fbo->getColorTexture(0).get());
-  render_context->resourceBarrier(swapchain_image, Falcor::Resource::State::Present);
-  render_context->submit();
 
   impl_->swapchain->present();
   impl_->device->endFrame();
 }
 
-void Renderer::SetCursorLocked([[maybe_unused]] bool locked) {
-  // TODO(sergioffpc): Falcor exposes no cursor-lock/hide hook (ADR-0009) -
-  // needs a small patch to the vendored submodule (cmake/patches/falcor-
-  // augusta.patch). Deferred: no input consumer calls this yet (mouselook
-  // lands with gameplay input handling, M3+).
+void Renderer::SetScene(const Scene& scene) { impl_->UploadScene(scene); }
+
+void Renderer::SetCamera(const Camera& camera) { impl_->camera = camera; }
+
+void Renderer::SetCharacterMesh(std::uint8_t character, const SceneMesh& mesh) {
+  impl_->UploadCharacterMesh(character, mesh);
 }
+
+void Renderer::SetRemotePlayers(std::span<const RemotePlayer> remote_players) {
+  impl_->UpdateRemotePlayers(remote_players);
+}
+
+void Renderer::SetDebugHudStats(const DebugHudStats& stats) { impl_->hud_stats = stats; }
+
+void Renderer::SetCursorLocked(bool locked) { impl_->window->setCursorLocked(locked); }
 
 }  // namespace augusta::renderer

@@ -2,14 +2,13 @@
 
 #include <atomic>
 #include <chrono>
-#include <cstddef>
-#include <mutex>
-#include <string_view>
+#include <memory>
 #include <thread>
-#include <vector>
+#include <utility>
 
-#include "augusta/input.h"
 #include "augusta/logging.h"
+#include "augusta/tick.h"
+#include "host.h"
 
 namespace augusta::runtime {
 
@@ -36,54 +35,37 @@ struct ThreadJoiner {
 
 struct ServerRuntime::Impl {
   Config config;
-  networking::Server network;
-  simulation::World simulation;
+  server::Host host;
 
   std::atomic<bool> running{false};
   std::thread network_thread;
 
-  // Guards latest_commands: written by the Network I/O thread as client
-  // commands arrive, read once per Simulation tick. Always empty today
-  // - see this module's header comment on the Networking Protocol gap.
-  std::mutex commands_mutex;
-  std::vector<input::Command> latest_commands;
+  Impl(const Config& cfg, server::Map map)
+      : config(cfg),
+        host(
+            server::HostConfig{
+                .tick_rate_hz = cfg.tick_rate_hz,
+                .parameters = cfg.parameters,
+                .listen = cfg.listen,
+            },
+            std::move(map)) {}
 
-  explicit Impl(const Config& cfg) : config(cfg), network(cfg.listen), simulation(cfg.stamina, cfg.script_path) {}
-
-  // Network I/O thread body (ADR-0005): accepts connecting peers and
-  // pumps the connection until running is cleared by ThreadJoiner or
-  // Stop().
+  // Network I/O thread body (ADR-0005): pumps the connection until running is
+  // cleared by ThreadJoiner or Stop(), waiting kNetworkRoundWait between
+  // rounds rather than spinning a core. The transport has no wait on incoming
+  // work, so that wait bounds how late a received message is handled, and how
+  // long stopping takes.
   void NetworkThreadMain() {
+    constexpr auto kNetworkRoundWait = std::chrono::milliseconds(1);
     while (running.load(std::memory_order_relaxed)) {
-      for (const networking::PeerEvent& event : network.PumpEvents()) {
-        if (event.type == networking::PeerEventType::kConnectRequested) {
-          // TODO(sergioffpc): run Input Validation/any join policy
-          // (US-15) before accepting - not yet a module of its own, see
-          // this module's header comment. Accepts unconditionally for
-          // now.
-          network.Accept(event.peer);
-        }
-      }
-      // TODO(sergioffpc): M1 spike only (issue #31) - decode each
-      // received PeerMessage's Payload into an input::Command and store
-      // it into latest_commands instead of just echoing a literal hello
-      // back, once the Networking Protocol (ADR-0007) exists.
-      for (const networking::PeerMessage& message : network.ReceiveMessages()) {
-        LT("subsystem=serverruntime event=received bytes={}", message.payload.size());
-        constexpr std::string_view kHello = "hello from augustad";
-        const auto* bytes = reinterpret_cast<const std::byte*>(kHello.data());
-        network.Send(message.from, networking::Payload(bytes, bytes + kHello.size()));
-      }
+      host.PumpNetwork();
+      std::this_thread::sleep_for(kNetworkRoundWait);
     }
-  }
-
-  std::vector<input::Command> GetLatestCommands() {
-    std::lock_guard<std::mutex> lock(commands_mutex);
-    return latest_commands;
   }
 };
 
-ServerRuntime::ServerRuntime(const Config& config) : impl_(std::make_unique<Impl>(config)) {}
+ServerRuntime::ServerRuntime(const Config& config, server::Map map)
+    : impl_(std::make_unique<Impl>(config, std::move(map))) {}
 
 ServerRuntime::~ServerRuntime() = default;
 
@@ -92,20 +74,19 @@ void ServerRuntime::Run() {
   impl_->network_thread = std::thread([this] { impl_->NetworkThreadMain(); });
   ThreadJoiner joiner{.running = impl_->running, .network_thread = impl_->network_thread};
 
-  const auto tick_duration = std::chrono::duration<float>(1.0F / impl_->config.tick_rate_hz);
+  const auto delta_time = std::chrono::duration<float>(1.0F / impl_->config.tick_rate_hz);
+  const auto tick_duration = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
   LI("subsystem=serverruntime event=loop_starting loop=simulation");
+  tick::Clock::time_point deadline = tick::Clock::now();
   while (impl_->running.load(std::memory_order_relaxed)) {
-    const auto tick_start = std::chrono::steady_clock::now();
+    const tick::Clock::time_point tick_start = tick::Clock::now();
 
-    std::vector<input::Command> commands = impl_->GetLatestCommands();
-    simulation::State state = impl_->simulation.Tick(commands, tick_duration.count());
-    // TODO(sergioffpc): hand state to augusta::replication (scaffolded,
-    // not implemented) to encode and network.Broadcast - see this
-    // module's header comment.
-    static_cast<void>(state);
+    impl_->host.Tick(delta_time.count());
 
-    std::this_thread::sleep_until(tick_start +
-                                  std::chrono::duration_cast<std::chrono::steady_clock::duration>(tick_duration));
+    const tick::Clock::time_point tick_end = tick::Clock::now();
+    impl_->host.RecordTiming(tick::Measure(deadline, tick_duration, tick_start, tick_end));
+    deadline = tick::NextDeadline(deadline, tick_duration, tick_end);
+    std::this_thread::sleep_until(deadline);
   }
   LI("subsystem=serverruntime event=loop_stopping loop=simulation");
 }

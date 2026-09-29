@@ -1,3 +1,14 @@
+# Include order is ADR-0037: main header, C++ standard library, third-party,
+# project. The regexes below are that policy; Google's stock ones sort by the
+# `.h` suffix, which lands Boost's `.hpp` headers among the standard library.
 BasedOnStyle: Google
 Standard: Latest
 ColumnLimit: 120
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^<[a-z0-9_]+>$'
+    Priority: 1
+  - Regex: '^<'
+    Priority: 2
+  - Regex: '^"'
+    Priority: 3

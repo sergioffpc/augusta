@@ -1,0 +1,63 @@
+name: Set up a Linux build
+description: >
+  Installs the Linux toolchain the presets expect, starts sccache (unless told
+  not to), restores the vcpkg binary cache, and bootstraps vcpkg - everything a
+  Linux job needs before `cmake --preset`. Assumes the repository is checked
+  out with its submodules and the job sets VCPKG_BINARY_SOURCES to the
+  .vcpkg-bincache files provider (see ci.yml's build-server for why not the
+  NuGet feed). A job saves the cache with save-vcpkg-cache after it configures.
+
+inputs:
+  extra-packages:
+    description: Additional apt packages a job needs on top of the build toolchain (e.g. clang-tidy).
+    required: false
+    default: ""
+  sccache:
+    description: >
+      Whether to put sccache on PATH, where the root CMakeLists.txt picks it
+      up as the compiler launcher. "false" for CodeQL: a cache hit never runs
+      the compiler, so CodeQL's tracer would see nothing to extract.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Install build tools
+      # clang: the Linux presets compile with it (ADR-0008), through the Ninja
+      # generator. autoconf/autoconf-archive/automake/libtool: vcpkg's
+      # libsodium port builds via autotools on Linux (vcpkg_run_autoreconf) and
+      # needs these from the system package manager - not bundled with vcpkg
+      # itself.
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y clang ninja-build autoconf autoconf-archive automake libtool ${{ inputs.extra-packages }}
+
+    - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      if: inputs.sccache == 'true'
+
+    # The newest vcpkg binary cache any Linux job saved (see save-vcpkg-cache):
+    # the key never matches, so the prefix picks the newest entry, this
+    # branch's first and then the base branch's. vcpkg names each archive by its
+    # package's ABI hash, so an entry holding packages this job doesn't need
+    # costs nothing but the download. Every job that restores it installs the
+    # toolchain above, so none restores archives another toolchain built; the
+    # key says which one, for when that changes.
+    - name: Restore vcpkg binaries
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .vcpkg-bincache
+        key: vcpkg-bincache-linux-clang-restore-${{ github.run_id }}
+        restore-keys: |
+          vcpkg-bincache-linux-clang-
+
+    - name: Record the restored vcpkg binaries
+      # What save-vcpkg-cache compares against, to save only when this job
+      # added a package.
+      shell: bash
+      run: |
+        mkdir -p .vcpkg-bincache
+        echo "VCPKG_BINCACHE_RESTORED=$(find .vcpkg-bincache -type f | sort | sha256sum | cut -c1-64)" >> "$GITHUB_ENV"
+
+    - name: Bootstrap vcpkg
+      shell: bash
+      run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics

@@ -1,0 +1,12 @@
+-- Match objectives: win conditions and round transitions for this scenario
+-- (ADR-0022, ADR-0023). Runs in SimulationWorld's Scripts/Behaviours phase,
+-- last in the tick, after Damage resolves the tick's deaths, so it can react
+-- to who died this tick and schedule the next round or spawn.
+--
+-- Not wired up yet: scripting::Engine (ADR-0022) is still a placeholder, and
+-- the server loads a single fixed script path rather than resolving one from
+-- the pack (see server/main.cpp's TODO). This file is cooked into the
+-- scenario's server pack today (ADR-0031, ADR-0039) so it's ready once that
+-- lands, but nothing reads it yet.
+--
+-- Placeholder: no win condition defined.

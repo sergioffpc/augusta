@@ -13,6 +13,8 @@ concurrency:
 permissions:
   contents: read
   packages: write
+  # Deleting superseded cache entries (.github/actions/prune-cache).
+  actions: write
 
 env:
   VCPKG_BINARY_SOURCES: "clear;nuget,GitHubPackages,readwrite"
@@ -24,6 +26,7 @@ jobs:
     outputs:
       run_build: ${{ steps.filter.outputs.run_build }}
       run_container: ${{ steps.filter.outputs.run_container }}
+      run_tools: ${{ steps.filter.outputs.run_tools }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -40,13 +43,14 @@ jobs:
           if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
             echo "run_container=true" >> "$GITHUB_OUTPUT"
+            echo "run_tools=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           changed="$(git diff --name-only "$base" "${{ github.sha }}")"
 
           if echo "$changed" \
-              | grep -qE '^(src/|tests/|tools/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party$|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$)'; then
+              | grep -qE '^(src/|tests/|tools/pack/examples/|tools/pack/cpp/|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/)'; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
@@ -57,6 +61,15 @@ jobs:
             echo "run_container=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_container=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # The offline tools (tools/), and the golden output of theirs the
+          # runtime's tests load, which build-tools checks they still write.
+          if echo "$changed" \
+              | grep -qE '^(tools/|tests/fixtures/example-packs/|\.github/workflows/ci\.yml$)'; then
+            echo "run_tools=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_tools=false" >> "$GITHUB_OUTPUT"
           fi
 
   format:
@@ -105,7 +118,9 @@ jobs:
           $sha = git -C third_party/falcor rev-parse HEAD
           "sha=$sha" >> $env:GITHUB_OUTPUT
 
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore the Falcor build
+        id: falcor-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # C:\packman-repo is packman's own machine-wide download cache
           # (outside the workspace - see third_party/falcor/setup.bat);
@@ -132,6 +147,25 @@ jobs:
 
       - name: Build
         run: cmake --build --preset windows
+
+      # Saved right after the Build that produced it (Falcor builds there, not
+      # in Configure), so a failing test can't keep it from saving; only a new
+      # Falcor commit misses, so only then is there anything to save.
+      - name: Save the Falcor build
+        if: steps.falcor-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            C:\packman-repo
+            third_party/falcor/build
+          key: falcor-${{ steps.falcor-commit.outputs.sha }}
+
+      # The previous Falcor commit's build, 1 GB nothing restores any more.
+      - if: steps.falcor-cache.outputs.cache-hit != 'true'
+        uses: ./.github/actions/prune-cache
+        with:
+          prefix: falcor-
+          keep: falcor-${{ steps.falcor-commit.outputs.sha }}
 
       - name: Test
         run: ctest --preset windows
@@ -161,28 +195,15 @@ jobs:
         with:
           submodules: true
 
-      - name: Install clang-tidy
-        # autoconf/autoconf-archive/automake/libtool: vcpkg's libsodium port
-        # builds via autotools on Linux (vcpkg_run_autoreconf) and needs
-        # these from the system package manager - not bundled with vcpkg
-        # itself.
-        run: sudo apt-get update && sudo apt-get install -y clang-tidy ninja-build autoconf autoconf-archive automake libtool
-
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-
-      - name: Cache vcpkg binaries
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: ./.github/actions/setup-linux-build
         with:
-          path: .vcpkg-bincache
-          key: vcpkg-bincache-${{ hashFiles('vcpkg.json') }}
-          restore-keys: |
-            vcpkg-bincache-
-
-      - name: Bootstrap vcpkg
-        run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+          # The same distro version as the clang the presets compile with.
+          extra-packages: clang-tidy
 
       - name: Configure
         run: cmake --preset linux
+
+      - uses: ./.github/actions/save-vcpkg-cache
 
       - name: Lint (clang-tidy)
         # src/client and src/modules/renderer are Windows-only (CMakeLists.txt
@@ -202,6 +223,63 @@ jobs:
       - name: Test
         run: ctest --preset linux
 
+  build-tools:
+    needs: changes
+    if: needs.changes.outputs.run_tools == 'true'
+    # Builds and tests the offline tools (tools/), including that each still
+    # writes the golden output the runtime's tests load (ADR-0013). A new
+    # tool adds steps here, not a job. Windows: the asset cooker's native
+    # modules wrap DirectXTex (ADR-0017), and the cooker only ever runs on
+    # Windows (tools/pack/README.md).
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Fetch vcpkg
+        # Only vcpkg: the native modules build against no other submodule,
+        # and third_party/falcor is large.
+        run: git submodule update --init --depth 1 third_party/vcpkg
+
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+
+      - name: Install Ninja
+        run: choco install ninja -y
+        shell: pwsh
+
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Configure vcpkg NuGet cache
+        shell: pwsh
+        run: |
+          $nugetPath = & ".\third_party\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
+          & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
+          & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: tools/pack/uv.lock
+
+      - name: Install the cooker
+        working-directory: tools/pack
+        run: uv sync --locked
+
+      - name: Build the native modules
+        # Into tools/pack/src/pack, against the venv's own interpreter, as
+        # tools/pack/scripts/bootstrap-windows.ps1 does.
+        shell: pwsh
+        run: |
+          cmake --preset windows -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$PWD/tools/pack/.venv/Scripts/python.exe"
+          cmake --build tools/pack/cpp/build/x64-windows
+
+      - name: Test (pytest)
+        working-directory: tools/pack
+        run: uv run pytest
+
   sanitizers:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true' && github.event_name == 'pull_request'
@@ -215,27 +293,12 @@ jobs:
         with:
           submodules: true
 
-      - name: Install build tools
-        # Same reasoning as build-server: the linux-san preset also uses the
-        # Ninja generator, and vcpkg's libsodium port needs the autotools
-        # toolchain from the system package manager to build from source.
-        run: sudo apt-get update && sudo apt-get install -y ninja-build autoconf autoconf-archive automake libtool
-
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-
-      - name: Cache vcpkg binaries
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .vcpkg-bincache
-          key: vcpkg-bincache-${{ hashFiles('vcpkg.json') }}
-          restore-keys: |
-            vcpkg-bincache-
-
-      - name: Bootstrap vcpkg
-        run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+      - uses: ./.github/actions/setup-linux-build
 
       - name: Configure (ASan + UBSan)
         run: cmake --preset linux-san
+
+      - uses: ./.github/actions/save-vcpkg-cache
 
       - name: Build
         run: cmake --build --preset linux-san
@@ -243,14 +306,68 @@ jobs:
       - name: Test
         run: ctest --preset linux-san
 
+  fuzz:
+    # A short run per fuzz target (ADR-0013): long enough to catch an obvious
+    # crash before merge. The long runs, over a corpus kept between them, are
+    # the nightly's. tests/fuzz/README.md has what a crash becomes.
+    needs: [changes, format]
+    if: needs.changes.outputs.run_build == 'true' && github.event_name == 'pull_request'
+    runs-on: ubuntu-26.04
+    # See build-server's env override for why this isn't the workflow-
+    # level NuGet default.
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      # libFuzzer ships with the clang package this installs.
+      - uses: ./.github/actions/setup-linux-build
+
+      - name: Configure (libFuzzer + ASan)
+        run: cmake --preset linux-fuzz
+
+      - uses: ./.github/actions/save-vcpkg-cache
+
+      - name: Build
+        run: cmake --build --preset linux-fuzz
+
+      - name: Fuzz
+        # Each target in turn (tests/fuzz/README.md). New inputs go to a scratch
+        # directory, never into the committed seeds; a crash lands in
+        # fuzz-crashes/ and fails the step, after the other targets have run.
+        run: |
+          mkdir -p fuzz-crashes
+          status=0
+          for target in protocol_decode pack_load; do
+            mkdir -p "fuzz-corpus/$target"
+            "build/x64-linux-fuzz/tests/fuzz/augusta_${target}_fuzz" \
+              -max_total_time=60 -timeout=5 -artifact_prefix="fuzz-crashes/$target-" \
+              "fuzz-corpus/$target" "tests/fuzz/corpus/$target" || status=1
+          done
+          exit "$status"
+
+      - name: Upload crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-crashes
+          path: fuzz-crashes/
+          if-no-files-found: ignore
+
   container:
     needs: [changes, build-server]
     # build-server only runs when run_build is true (see changes above), so
     # a skipped result there is fine - only an actual failure should block
     # the image build.
+    # A push to main/develop always builds and publishes, since the deployed
+    # chart runs the image of its own commit (charts/augustad/values.yaml): a
+    # commit with no image would never start. PRs build only when the image or
+    # chart changed.
     if: |
       always() &&
-      needs.changes.outputs.run_container == 'true' &&
+      (github.event_name == 'push' || needs.changes.outputs.run_container == 'true') &&
       (needs.build-server.result == 'success' || needs.build-server.result == 'skipped')
     runs-on: ubuntu-26.04
     steps:
@@ -263,25 +380,40 @@ jobs:
       - name: Lint Helm chart
         run: helm lint charts/augustad
 
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       # Only main/develop pushes publish - PRs (including from forks) just
       # validate that the image builds, same reasoning as ADR-0026's decision
-      # to keep this pipeline off a self-hosted runner.
+      # to keep this pipeline off a self-hosted runner. A PR from this
+      # repository logs in too, only to read the layer cache below.
       - name: Log in to GHCR
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - id: short-sha
+        run: echo "value=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
       - name: Build server image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           push: ${{ github.event_name == 'push' }}
-          # github.ref_name is only a plain branch name (safe as a Docker
-          # tag) on push - for pull_request it's "<pr-number>/merge", which
-          # contains a "/" and Docker rejects as a tag.
-          tags: ghcr.io/${{ github.repository_owner }}/augustad:${{ github.event_name == 'push' && github.ref_name || github.sha }}
+          # sha-<first 12 characters of the commit> is the tag the chart runs:
+          # Flux versions a Git-sourced chart <version>+<the same 12
+          # characters>. The branch name tag is for people. github.ref_name is
+          # only a plain branch name (safe as a Docker tag) on push - for
+          # pull_request it's "<pr-number>/merge", which Docker rejects.
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.short-sha.outputs.value }}
+            ${{ github.event_name == 'push' && format('ghcr.io/{0}/augustad:{1}', github.repository_owner, github.ref_name) || '' }}
+          # A commit that leaves src/ alone reuses the cached build. The layers
+          # live in GHCR, next to the image, not in the Actions cache: at
+          # several GB they took most of its 10 GB, and GitHub evicted the
+          # vcpkg and Falcor caches every pull request restores from develop.
+          # Only a push writes them, as only a push publishes.
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/augustad:buildcache
+          cache-to: ${{ github.event_name == 'push' && format('type=registry,ref=ghcr.io/{0}/augustad:buildcache,mode=max', github.repository_owner) || '' }}

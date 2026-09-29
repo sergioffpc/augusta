@@ -6,3 +6,14 @@
 *.ps1 text eol=crlf
 *.bat text eol=crlf
 *.cmd text eol=crlf
+
+# Cooked packs and raw Ed25519 key files are bytes, whatever they happen to
+# contain (tests/fixtures/example-packs).
+*.pack binary
+*.key binary
+*.pub binary
+
+# Fuzz seeds and crash fixtures are raw payloads, with no extension to go by
+# (tests/fuzz/README.md).
+tests/fuzz/corpus/** binary
+tests/fuzz/regressions/** binary

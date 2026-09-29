@@ -3,9 +3,13 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <span>
 #include <string>
+#include <vector>
 
 #include "augusta/input.h"
+#include "augusta/math.h"
 
 // augusta::renderer wraps NVIDIA Falcor/D3D12 (ADR-0009), used exclusively
 // by the Windows client. It also owns the client's single OS window:
@@ -28,12 +32,14 @@
 // called at the app's presentation rate instead. ClientRuntime's Run()
 // loop decides that split; this module just exposes the two primitives.
 //
-// Interface scope, for now: enough to drive M1's Falcor spike (a
-// textured, rotating primitive on screen) and to establish the seam
-// PresentationWorld will render through. What RenderFrame actually draws
-// - consuming Presentation State - is deliberately not designed yet: that
-// type doesn't exist until the ECS (ADR-0001) and PresentationWorld
-// (ADR-0021, ADR-0024) are. Revisit this header once those land.
+// Interface scope: draws one static Scene (a list of world-space triangle
+// meshes seen from one camera), plus, per frame, however many RemotePlayer
+// instances PresentationWorld's Interpolation phase produces positions for
+// (SetRemotePlayers, below), each drawn with the mesh of its character
+// (SetCharacterMesh) - the first slice of Presentation State this module
+// actually consumes (ADR-0024).
+// The local player's own position, weapon visuals, skeletal animation and
+// audio cues are still undesigned; revisit this header again once those land.
 namespace augusta::renderer {
 
 // Default initial client-area size, in pixels (see Config::width/height).
@@ -54,6 +60,77 @@ struct Config {
 struct Size {
   std::uint32_t width = 0;
   std::uint32_t height = 0;
+};
+
+/// One triangle-list mesh with its positions already in world space (Y-up,
+/// right-handed, 1 unit = 1 m - ADR-0032). Winding is counter-clockwise seen
+/// from the front face.
+struct SceneMesh {
+  std::vector<math::Vec3> positions;
+  std::vector<std::uint32_t> indices;
+  /// Base color, linear RGB in [0, 1].
+  math::Vec3 color{0.8F, 0.8F, 0.8F};
+};
+
+/// The viewpoint a Scene is drawn from. The camera looks down its local -Z
+/// axis with +Y up, before rotation is applied.
+struct Camera {
+  math::Vec3 position{0.0F, 1.7F, 5.0F};
+  math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};
+  /// Vertical field of view, in radians.
+  float vertical_fov = 0.9F;
+};
+
+/// Everything the renderer draws: static geometry plus the camera it is
+/// seen from.
+struct Scene {
+  std::vector<SceneMesh> meshes;
+  Camera camera;
+};
+
+/// Default color for RemotePlayer, until every prim contributes its own
+/// (character content builds no SceneNode/base_color today, ADR-0041) - a
+/// muted red, distinct from SceneMesh's default grey.
+inline constexpr math::Vec3 kDefaultRemotePlayerColor{0.85F, 0.25F, 0.25F};
+
+/// One other player, drawn as an instance of the mesh SetCharacterMesh
+/// uploaded for its character (ADR-0042). position is where that mesh's own
+/// local origin lands (matches physics::BodyState::position, a player's
+/// feet - the same convention the character's mesh was cooked around, ADR-
+/// 0041), drawn as authored: a stance shows once animation poses the mesh,
+/// not before. The renderer doesn't know whose player this is;
+/// ClientRuntime maps presentation::RemotePlayer into this, keeping this
+/// module's only dependency augusta_input (no presentation/physics/protocol
+/// header here).
+struct RemotePlayer {
+  math::Vec3 position{};
+  math::Vec3 color = kDefaultRemotePlayerColor;
+  /// The character index whose mesh this player is drawn with; a player whose
+  /// index has no mesh is not drawn.
+  std::uint8_t character = 0;
+};
+
+// Connection numbers for the debug HUD. The renderer only formats them: how
+// they are sourced from the transport is the caller's business.
+struct DebugHudNetStats {
+  // Round-trip time to the server, in milliseconds.
+  int rtt_ms = 0;
+  // Recent worst jitter in milliseconds; nullopt if not measured yet.
+  std::optional<float> jitter_ms;
+  // Packet loss in percent (worst of the two directions); nullopt if not
+  // measured yet.
+  std::optional<float> loss_percent;
+  // Actual throughput over the connection, in bytes per second.
+  float in_bytes_per_sec = 0.0F;
+  float out_bytes_per_sec = 0.0F;
+};
+
+// What the debug HUD (a green one-line readout over the frame, e.g.
+// `FPS: 120 (8.3ms) | RTT: 10ms | ...`) shows besides the frame time the
+// renderer measures itself.
+struct DebugHudStats {
+  // nullopt while not connected (drawn as `RTT: --`).
+  std::optional<DebugHudNetStats> net;
 };
 
 // Owns the client's single OS window, GPU device, and swapchain. The
@@ -101,18 +178,53 @@ class Renderer {
   // independently of how often PumpEvents is called. From the
   // Main/Render thread.
   //
-  // What gets drawn is not yet part of this interface (see the header
-  // comment) - today this only proves Falcor renders M1's test
-  // primitive into the window.
+  // Draws the scene last passed to SetScene (just the cleared frame and the
+  // debug HUD until then).
   void RenderFrame();
 
-  // Hides the OS cursor and confines/relocks it to this window each
-  // frame, for continuous mouselook (as opposed to the free OS cursor a
-  // menu/UI would need - no such UI exists yet, so v1 callers enable
-  // this once and leave it on). Idempotent. Falcor exposes no such hook
-  // itself (ADR-0009's vendored-fork note); this is expected to require
-  // a small patch to the vendored copy.
+  /// Replaces the drawn scene, uploading its geometry to the GPU. From the
+  /// Main/Render thread. Throws std::runtime_error if a mesh index is out
+  /// of range for its positions or the scene has too many vertices to draw.
+  void SetScene(const Scene& scene);
+
+  /// Replaces the camera the next RenderFrame draws from, leaving scene
+  /// geometry untouched. Unlike SetScene, this touches no GPU resource -
+  /// cheap enough to call once every RenderFrame, the same shape as
+  /// SetRemotePlayers. From the Main/Render thread.
+  void SetCamera(const Camera& camera);
+
+  /// Sets the mesh every RemotePlayer of character is drawn with from then on,
+  /// in the character's own root space (ADR-0041); meshes stay for the life of
+  /// the Renderer. Not meant to be called every frame: the client calls it in
+  /// the Lobby, never during a match (ADR-0043).
+  /// From the Main/Render thread. Throws std::runtime_error if a mesh index is
+  /// out of range for its positions.
+  void SetCharacterMesh(std::uint8_t character, const SceneMesh& mesh);
+
+  /// Replaces the drawn remote-player instances via a persistently-mapped
+  /// upload-heap buffer - unlike SetScene/SetCharacterMesh, cheap enough to
+  /// call once every RenderFrame. Draws every instance it is given: how many
+  /// players there can be is the protocol's business, not the renderer's. The
+  /// buffer grows (with one GPU wait) only when a call needs more room than
+  /// any before it, so a steady player count never waits or allocates. From
+  /// the Main/Render thread. An empty span draws nothing - how a player who
+  /// left disappears; a player whose character has no mesh is skipped.
+  void SetRemotePlayers(std::span<const RemotePlayer> remote_players);
+
+  // Hides the OS cursor and captures it for continuous mouselook: mouse
+  // move events keep reporting a position that never stops at the window
+  // edge (as opposed to the free OS cursor a menu/UI would need - no such
+  // UI exists yet, so v1 callers enable this once and leave it on).
+  // Idempotent. Falcor exposes no such hook itself (ADR-0009);
+  // cmake/patches/falcor.patch adds Window::setCursorLocked, which puts
+  // GLFW's cursor in its disabled mode - GLFW itself releases the capture
+  // while the window is out of focus and takes it again when it regains it.
   void SetCursorLocked(bool locked);
+
+  // Updates the values the debug HUD shows, from the Main/Render
+  // thread. Call as often as they change; the HUD is drawn by every
+  // RenderFrame.
+  void SetDebugHudStats(const DebugHudStats& stats);
 
  private:
   struct Impl;

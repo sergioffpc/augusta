@@ -18,13 +18,13 @@ the decisions already made in ARCHITECTURE.md:
   device input, networking, rendering, and audio live at the boundaries.
 - **Determinism is not assumed, it's engineered around.** PhysX doesn't
   guarantee cross-platform determinism (ADR-0004) — the architecture
-  corrects for reality (smooth reconciliation) instead of pretending
-  otherwise.
+  corrects for reality (restoring the server's state and replaying from it)
+  instead of pretending otherwise.
 - **The server is the only source of truth.** Nothing from a client is
   trusted until validated (US-15).
 - **Content is signed and verified, not just loaded.** Integrity is
   structural (ADR-0018), not an afterthought.
-- **No premature optimization.** Profile first (Tracy), then optimize;
+- **No premature optimization.** Profile first (NVTX ranges in Nsight Systems), then optimize;
   don't build custom allocators or job systems speculatively (ADR-0005,
   ADR-0007 risk notes).
 - **Recoverable failures are values, not control flow.** `std::expected`
@@ -40,38 +40,60 @@ the decisions already made in ARCHITECTURE.md:
 - **Provider:** GitHub Actions — native Windows and Linux runners match
   the client/server platform split exactly.
 - **Trigger:** `push` to `main`/`develop`, and `pull_request` targeting
-  either. A `changes` job diffs against the base commit first and skips
+  either; a separate nightly workflow runs on `develop` (ADR-0013). A `changes` job diffs against the base commit first and skips
   build/test/lint entirely when nothing under `src/`, `tests/`,
+  `tools/pack/examples/` (the example scenario a test loads),
+  `tools/pack/cpp/` (formatted by the `format` job, though CI doesn't
+  build it), `cmake/`, `config/` (the example configs a test loads),
   `CMakeLists.txt`, `CMakePresets.json`, `vcpkg.json`, the `third_party`
   submodule pointer, `.clang-format`/`.clang-tidy`, or the workflow file
-  itself changed (a docs-only PR shouldn't pay for a full build).
+  itself or the composite actions it shares (`.github/actions/`) changed
+  (a docs-only PR shouldn't pay for a full build).
   `concurrency` cancels a still-running run for the same branch/PR when
   a new push arrives, so superseded runs don't keep burning minutes.
 - **Pipeline stages:**
   1. `clang-format` check, alone in its own fast job — gates everything
      below (`needs:`), so a formatting slip fails in seconds instead of
      after a full Windows + Linux + sanitizers build
-  2. Build + unit test the client on a Windows runner
-  3. Build + unit test the server on a Linux runner, plus `clang-tidy`
-     (Google style checks profile)
-  4. ASan + UBSan test build, Linux only, and only for `pull_request`
-     runs — skipped on the `push` that lands after merge, since the PR
-     already validated it
+  2. Build + test the client on a Windows runner (MSVC)
+  3. Build + test the server on a Linux runner (clang, ADR-0008), plus
+     `clang-tidy` (Google style checks profile)
+  4. ASan + UBSan test build and a short fuzzing run per target (both
+     Linux only), only for `pull_request` runs — skipped on the `push`
+     that lands after merge, since the PR already validated it
   - Dependency restore: `vcpkg install` (manifest mode) before the build
-    step, both runners. Binary cache via a GitHub Packages NuGet feed
-    (vcpkg's native GitHub-Actions-cache backend was removed upstream in
-    2026 — a NuGet feed is now the supported caching path).
+    step, both runners. Binary cache via a GitHub Packages NuGet feed on
+    Windows (vcpkg's native GitHub-Actions-cache backend was removed
+    upstream in 2026). On Linux, where nuget.exe runs under Mono and fails
+    certificate checks, it is a files cache in the Actions cache, one entry
+    for every Linux job (all clang), saved only when a job built a package
+    it didn't restore.
+  - The Actions cache (10 GB per repository, least recently used evicted
+    first) holds only what a pull request restores from `develop`: the
+    vcpkg binaries, the Falcor build, sccache objects. The server image's
+    Docker layers live in GHCR (`augustad:buildcache`) instead: at several
+    GB they would evict the rest, and every pull request would rebuild its
+    dependencies from source.
   5. Compile with a strict warning set, treated as errors
-  6. Asset pipeline check: build the asset cooker, generate a fresh
-     throwaway Ed25519 keypair for this run, cook the test assets, sign
-     with the ephemeral key, and verify the signed pack loads correctly
-     end to end — the real release private key never touches CI
-- **Not in CI:** TSan (expensive/noisy — run manually/periodically
-  instead) and Tracy (interactive profiling tool, not a CI check).
+  6. `build-tools`, when `tools/` changed: on a Windows runner, build the
+     asset cooker's native modules and run its pytest suite, which also
+     requires that cooking the example scenario still gives the golden
+     packs in `tests/fixtures/example-packs/` byte for byte; the C++ tests
+     in 2 and 3 load those same packs — the contract between the Python
+     writer and the C++ reader of the pack format (ADR-0013). The golden
+     packs are signed with a committed test key; the real release private
+     key never touches CI
+- **Nightly** (on `develop`): long fuzzing runs, TSan, property-based
+  tests at a high case count, and a `llvm-cov` coverage report; a
+  failure opens or updates a `nightly-failure` issue (ADR-0013).
+- **Not in CI:** profiling (NVTX with Nsight Systems/Graphics, interactive tools, not CI checks),
+  micro-benchmarks (run by hand), and NFR-01's tick rate under load
+  (checked by hand on the cluster before a release, ADR-0013).
 - **Releases:** a separate workflow, triggered only on `v*` tags, builds
-  Release-config client/server binaries and attaches them to a GitHub
-  Release — not run on every push, so cutting a release is a deliberate
-  tag rather than automatic.
+  Release-config client/server binaries, runs the tests and the asset
+  pipeline check against them, and attaches them to a GitHub Release —
+  not run on every push, so cutting a release is a deliberate tag rather
+  than automatic.
 - **Artifacts/releases:** out of scope for now — CI validates
   build+test+lint only. A publishing pipeline gets built when there's an
   actual release to make.
@@ -81,7 +103,7 @@ the decisions already made in ARCHITECTURE.md:
 - **Branching model:** Git Flow — `main` (production/release) + `develop`
   (integration), with `feature/*`, `release/*`, `hotfix/*` branches.
 - **Tags/releases:** created only when there's an actual release to make
-  (e.g., reaching v1) — ROADMAP.md milestones (M0–M5) are internal
+  (e.g., reaching v1) — ROADMAP.md milestones (M0–M6) are internal
   checkpoints, not tagged releases.
 - **Pull requests:** used even solo — `feature/*` → `develop` and
   `develop`/`hotfix/*` → `main` go through a PR so CI gates the merge;
@@ -120,7 +142,9 @@ pipeline).
   instances/versions. Stored on a shared `hostPath` persistent volume on
   the k3s node, populated manually after signing, mounted read-only into
   every server pod. Each environment's Helm values specify which
-  `packVersion` to load.
+  `packVersion` to load: the folder `<hostPath>/<packVersion>/` holding
+  that environment's `server.pack` and the `augusta.pub` key it is signed
+  with. The chart writes the server's `augustad.yaml` from its values.
 
 ## Developer Environment
 
@@ -143,7 +167,7 @@ pipeline).
   Windows 11 + WSL2 version; confirm with `wsl --version`.
 - **Server / shared core (Linux, via WSL2):** develop and build directly
   inside WSL2, accessing the repo via `/mnt/c/...`. No Docker container —
-  a `scripts/bootstrap-wsl.sh` setup script installs CMake, Ninja,
+  a `scripts/bootstrap-wsl.sh` setup script installs clang (ADR-0008), CMake, Ninja,
   vcpkg, clang-tidy, clang-format, gdb, GitHub CLI, kubectl, and helm
   directly into the WSL environment. The cross-filesystem access cost
   (`/mnt/c`) is accepted here, since this side has the lighter build
@@ -155,8 +179,8 @@ pipeline).
   Studio Build Tools system-wide (default install location) — simpler
   than pinning a project-specific path, at the cost of not being able to
   side-by-side independent Build Tools versions per project — plus the
-  Windows SDK, CMake, Ninja, vcpkg, Git, and clang-format (for the
-  `pre-commit` hook below).
+  Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, and LLVM's clang-format
+  and clang-tidy (for the `pre-commit` and `pre-push` hooks below).
   (A fully hermetic, registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was
   considered and rejected: Falcor's CMake presets only test/support
   MSVC on Windows, and stacking an unsupported compiler on top of an
@@ -194,29 +218,39 @@ pipeline).
   same scope as CI's own check) so most formatting issues never reach
   a push; CI's `format` job stays as the actual gate, since the hook
   can be skipped (`--no-verify`), missing, or running a different
-  local `clang-format` version than CI's. `clang-tidy` stays CI-only —
-  slower, and needs a full `compile_commands.json`, a poor fit for a
-  commit-time hook.
+  local `clang-format` version than CI's. `clang-tidy` stays out of the
+  commit hook — slower, and needs a full `compile_commands.json`, a poor
+  fit for a commit-time hook — and runs instead as a `pre-push` hook on
+  the `src/*.cpp` files touched by the commits the remote doesn't have yet
+  (the same files `make tidy` covers on that platform), since it catches
+  what MSVC doesn't and CI would. It reads the debug build's
+  `compile_commands.json` (`windows-debug` / `linux-debug` preset), blocks
+  the push on any warning, refuses the push with a message naming the
+  preset when that database is missing, and runs nothing when no such file
+  changed; `make lint` runs both checks as CI does, and `make tidy` alone
+  runs `clang-tidy`.
 - Strict warnings-as-errors in CI (see CI/CD above).
-- ASan/UBSan in CI; TSan run manually/periodically given multithreading
-  (ADR-0005).
+- ASan/UBSan and fuzzing in CI; TSan nightly given multithreading
+  (ADR-0005, ADR-0013).
 - **Commit messages:** Conventional Commits format, enforced locally via
   a custom `commit-msg` git hook (a small regex-matching script) — no
   Node.js/`commitlint` dependency, consistent with keeping the toolchain
   to what the project already uses (C++, Lua, Python for asset tooling).
-- Testing: GoogleTest (unit) + Google Benchmark (micro-benchmarks),
-  per ADR-0013.
+- Testing: GoogleTest, RapidCheck (property-based), libFuzzer, pytest
+  (asset cooker), and Google Benchmark (micro-benchmarks); which kind runs
+  at which stage is ADR-0013.
 - No formal code review process — solo project; CI's build, test, lint,
   and sanitizer gates are the primary quality gate.
 
 ## Observability
 
-- **Logging:** spdlog — mature, fast, no reason to hand-roll one given
-  the project's learning focus is elsewhere (ballistics, networking, ECS).
-- **Profiling:** Tracy — purpose-built for real-time, multithreaded frame
-  profiling; the primary tool for inspecting client and server
+- **Logging:** Boost.Log (ADR-0036) — mature, no reason to hand-roll one
+  given the project's learning focus is elsewhere (ballistics, networking, ECS).
+- **Profiling:** NVTX ranges in the code, read with NVIDIA Nsight
+  Systems (CPU threads, timeline) and Nsight Graphics (GPU frames,
+  D3D12 capture) — the primary tools for inspecting client and server
   performance during development.
-- No metrics/telemetry pipeline beyond Tracy for v1.
+- No metrics/telemetry pipeline beyond profiling for v1.
 - No server watchdog/health-check for v1 — LAN-only, solo-tested; a
   hang is immediately visible. Revisit if the server is ever deployed
   unattended (see ROADMAP.md, Beyond v1).
@@ -229,7 +263,7 @@ pipeline).
   an NFR — frame rate is judged subjectively while playing/testing, not
   automated or gated in CI.
 - **Memory strategy:** rely on Flecs' and PhysX's built-in allocators for
-  v1; no custom arena/pool allocators until Tracy profiling shows a
+  v1; no custom arena/pool allocators until profiling shows a
   concrete need.
 - Google Benchmark is used for targeted micro-benchmarks of hot-path code
   (e.g., ballistics math, serialization) as needed — not a blanket

@@ -2,6 +2,7 @@
 #define AUGUSTA_BALLISTICS_H_
 
 #include <cstdint>
+#include <unordered_map>
 
 #include "augusta/physics.h"
 
@@ -12,9 +13,13 @@
 // external solver). A semi-implicit Euler integrator is enough for v1;
 // nothing in REQUIREMENTS.md asks for aerodynamic drag/wind modeling.
 //
-// Exclusively server-side (ADR-0024): the client never simulates a
-// bullet's outcome, only predicts local fire feedback (WeaponHandling),
-// so this isn't part of Shared Core despite being physics-adjacent.
+// The trajectory math is shared (ADR-0024, ADR-0044): the server
+// advances every bullet with it, and each client's presentation draws
+// every announced Shot's tracer and Map impact with it, a visual only.
+// Deciding a bullet's outcome (which player it hits, where, for what
+// damage) stays server-side: the client never simulates it, only
+// predicts local fire feedback (WeaponHandling) and shows hits the
+// server confirms.
 //
 // World::Step follows the same per-handle, called-once-per-tick shape as
 // physics::World::Step, since bullets are ECS entities too
@@ -114,6 +119,16 @@ class World {
   // longer exists - calling Step again with the same handle is
   // undefined behavior.
   StepResult Step(BulletHandle handle, float delta_time, const physics::World& physics_world);
+
+ private:
+  struct Bullet {
+    math::Vec3 origin;
+    BulletState state;
+    BulletConfig config;
+  };
+
+  std::unordered_map<BulletHandle, Bullet> bullets_;
+  std::uint32_t next_handle_ = 0;
 };
 
 }  // namespace augusta::ballistics

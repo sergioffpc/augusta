@@ -1,19 +1,93 @@
 #include "runtime.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <cstddef>
+#include <cstdint>
+#include <format>
 #include <mutex>
-#include <nvtx3/nvtx3.hpp>
 #include <optional>
-#include <string_view>
+#include <set>
+#include <stdexcept>
 #include <thread>
+#include <utility>
+#include <vector>
 
+#include <nvtx3/nvtx3.hpp>
+
+#include "augusta/audio.h"
+#include "augusta/command.h"
+#include "augusta/harness.h"
 #include "augusta/logging.h"
+#include "augusta/math.h"
+#include "augusta/prediction.h"
+#include "augusta/presentation.h"
+#include "augusta/tick.h"
 
 namespace augusta::runtime {
 
 namespace {
+
+// Maps one interpolated remote player into a renderer-drawable instance of
+// its character's mesh, which ClientRuntime uploads via SetCharacterMesh in
+// the Lobby (ADR-0042/ADR-0043). The mesh is drawn as authored, standing:
+// its stance shows once animation poses it.
+renderer::RemotePlayer ToRenderer(const presentation::RemotePlayer& remote) {
+  return {.position = remote.body.position, .character = remote.character};
+}
+
+// Maps this frame's presentation::Camera into what Renderer::SetCamera
+// takes - same decoupling reason as the RemotePlayer overload above.
+renderer::Camera ToRenderer(const presentation::Camera& camera) {
+  return {.position = camera.position, .rotation = camera.rotation};
+}
+
+// Maps the harness's Entity ID into presentation's own - the same number,
+// converted here at ClientRuntime's edge the way each peer converts the
+// protocol at its own (ADR-0038), so presentation does not depend on the
+// harness.
+presentation::EntityId ToPresentation(harness::EntityId entity) {
+  return static_cast<presentation::EntityId>(std::to_underlying(entity));
+}
+
+// An Authoritative State update as presentation's WorldSnapshot: the same tick,
+// the duration of a tick at the server's tick_rate_hz, and every body.
+presentation::WorldSnapshot ToPresentation(const harness::AuthoritativeState& state, std::uint8_t tick_rate_hz) {
+  presentation::WorldSnapshot snapshot{
+      .tick = state.tick,
+      .tick_duration = 1.0 / static_cast<double>(tick_rate_hz),
+      .bodies = {},
+  };
+  snapshot.bodies.reserve(state.bodies.size());
+  for (const harness::EntityBody& body : state.bodies) {
+    snapshot.bodies.push_back({.entity = ToPresentation(body.entity), .state = body.body});
+  }
+  return snapshot;
+}
+
+// session's newest Authoritative State update as presentation's
+// WorldSnapshot, or nullopt outside a match. An Authoritative State only
+// follows Join accepted, which told the tick rate.
+std::optional<presentation::WorldSnapshot> SnapshotOf(const harness::Session& session) {
+  const std::optional<std::uint8_t> tick_rate_hz = session.GetTickRate();
+  return session.GetAuthoritativeState().and_then([tick_rate_hz](const harness::AuthoritativeState& state) {
+    return tick_rate_hz.transform([&state](std::uint8_t rate) { return ToPresentation(state, rate); });
+  });
+}
+
+// Every player's character as Match start named it, for
+// PresentationWorld::RunFrame; empty before the first match. Only the
+// characters: presentation needs nothing else of Match start.
+std::vector<presentation::PlayerCharacter> CharactersOf(const std::optional<harness::MatchStart>& match_start) {
+  std::vector<presentation::PlayerCharacter> characters;
+  if (match_start.has_value()) {
+    characters.reserve(match_start->players.size());
+    for (const harness::MatchPlayer& player : match_start->players) {
+      characters.push_back({.entity = ToPresentation(player.entity), .character = player.character});
+    }
+  }
+  return characters;
+}
 
 // Stops Impl's background threads and joins both, on scope exit -
 // including when unwinding past Run() due to an exception from the
@@ -22,13 +96,13 @@ namespace {
 // destructor's own doc comment in runtime.h).
 struct ThreadJoiner {
   std::atomic<bool>& running;
-  std::thread& simulation_thread;
+  std::thread& prediction_thread;
   std::thread& network_thread;
 
   ~ThreadJoiner() {
     running.store(false, std::memory_order_relaxed);
-    if (simulation_thread.joinable()) {
-      simulation_thread.join();
+    if (prediction_thread.joinable()) {
+      prediction_thread.join();
     }
     if (network_thread.joinable()) {
       network_thread.join();
@@ -40,30 +114,61 @@ struct ThreadJoiner {
 
 struct ClientRuntime::Impl {
   Config config;
+  // Main/Render thread only: loads a character's mesh, which characters'
+  // meshes the renderer has (for the life of the process), and the newest
+  // Roster version Ready was reported for.
+  CharacterMeshLoader load_character_mesh;
+  std::set<std::uint8_t> loaded_characters;
+  std::optional<std::uint32_t> ready_version;
   input::Input input;
   audio::Engine audio;
-  networking::Client network;
-  prediction::World prediction;
+  // Emplaced by the constructor once the map is loaded into its PredictionWorld.
+  std::optional<harness::Session> session;
   presentation::World presentation;
   renderer::Renderer renderer;
 
   std::atomic<bool> running{false};
-  std::thread simulation_thread;
+  std::thread prediction_thread;
   std::thread network_thread;
 
-  // Guards latest_prediction_state: written once per Simulation tick,
+  // What the Prediction thread's last tick left: the predicted states before
+  // and after it, and when it was due and for how long, so a render frame
+  // blends the two by how far through the tick it is.
+  struct LatestTick {
+    prediction::State previous;
+    prediction::State latest;
+    tick::Clock::time_point start;
+    tick::Clock::duration duration{};
+  };
+
+  // Guards latest_tick: written once per Prediction tick,
   // read once per Main/Render frame. prediction::State is empty today
   // (see prediction.h) - a plain mutex-guarded copy is more than fast
   // enough; revisit (e.g. double-buffering) only if profiling says
   // otherwise once it holds real payload.
-  std::mutex prediction_state_mutex;
-  prediction::State latest_prediction_state;
+  std::mutex latest_tick_mutex;
+  LatestTick latest_tick;
+
+  // Connection numbers for the renderer's debug HUD: written by the Network
+  // I/O thread (PublishHudNetStats), read by the Main/Render thread once per
+  // frame. They should be consistent with each other, so - like
+  // latest_tick above - a mutex-guarded copy.
+  std::mutex hud_net_mutex;
+  std::optional<renderer::DebugHudNetStats> latest_hud_net;
+
+  // Network I/O thread only. GetConnectionStats() reports jitter as a high-water mark
+  // cleared by every read, and that thread reads it far faster than anyone
+  // can read a HUD, so the HUD shows the peak over the last kJitterWindow.
+  static constexpr std::chrono::seconds kJitterWindow{1};
+  std::chrono::steady_clock::time_point jitter_window_start = std::chrono::steady_clock::now();
+  std::int32_t jitter_window_max_us = -1;
+  std::optional<float> hud_jitter_ms;
 
   // NVTX counters (nvtx3::counter, third_party/nvtx) mirroring
   // networking::ConnectionStats field-for-field - plotted on the Nsight
   // Systems timeline alongside the Simulation/Network/Render ranges below,
   // sampled once per NetworkThreadMain loop iteration. sample_no_value()
-  // is used instead of skipping the sample while GetStats() returns
+  // is used instead of skipping the sample while GetConnectionStats() returns
   // std::nullopt (not yet kConnected), so the timeline shows an explicit
   // gap rather than a misleading flat line at whatever value came before.
   nvtx3::counter<double> net_ping_ms{"network.ping_ms", "Round-trip time to server"};
@@ -71,11 +176,60 @@ struct ClientRuntime::Impl {
   nvtx3::counter<double> net_quality_remote{"network.quality_remote", "Remote-reported packet delivery quality (0-1)"};
   nvtx3::counter<double> net_in_bytes_per_sec{"network.in_bytes_per_sec", "Inbound throughput"};
   nvtx3::counter<double> net_out_bytes_per_sec{"network.out_bytes_per_sec", "Outbound throughput"};
-  nvtx3::counter<double> net_max_jitter_us{"network.max_jitter_us", "Worst jitter since last GetStats() call"};
+  nvtx3::counter<double> net_max_jitter_us{"network.max_jitter_us",
+                                           "Worst jitter since last GetConnectionStats() call"};
   nvtx3::counter<double> net_pending_bytes{"network.pending_bytes", "Bytes queued or in flight"};
 
+  // Packet loss in percent, from the worse of the two directions. Qualities
+  // are 0..1 (1 = no loss); negative means not measured yet.
+  static std::optional<float> PacketLossPercent(const networking::ConnectionStats& stats) {
+    std::optional<float> worst_quality;
+    for (const float quality : {stats.quality_local, stats.quality_remote}) {
+      if (quality >= 0.0F) {
+        worst_quality = worst_quality.has_value() ? std::min(*worst_quality, quality) : quality;
+      }
+    }
+    if (!worst_quality.has_value()) {
+      return std::nullopt;
+    }
+    return (1.0F - std::min(*worst_quality, 1.0F)) * 100.0F;
+  }
+
+  void PublishHudNetStats(const std::optional<networking::ConnectionStats>& stats) {
+    std::optional<renderer::DebugHudNetStats> net;
+    if (stats.has_value()) {
+      const auto now = std::chrono::steady_clock::now();
+      jitter_window_max_us = std::max(jitter_window_max_us, stats->max_jitter_us);
+      if (now - jitter_window_start >= kJitterWindow) {
+        constexpr float kMicrosecondsPerMillisecond = 1000.0F;
+        hud_jitter_ms =
+            jitter_window_max_us >= 0
+                ? std::optional<float>(static_cast<float>(jitter_window_max_us) / kMicrosecondsPerMillisecond)
+                : std::nullopt;
+        jitter_window_max_us = -1;
+        jitter_window_start = now;
+      }
+      net = renderer::DebugHudNetStats{.rtt_ms = stats->ping_ms,
+                                       .jitter_ms = hud_jitter_ms,
+                                       .loss_percent = PacketLossPercent(*stats),
+                                       .in_bytes_per_sec = stats->in_bytes_per_sec,
+                                       .out_bytes_per_sec = stats->out_bytes_per_sec};
+    } else {
+      jitter_window_max_us = -1;
+      hud_jitter_ms.reset();
+    }
+    const std::lock_guard<std::mutex> lock(hud_net_mutex);
+    latest_hud_net = net;
+  }
+
+  std::optional<renderer::DebugHudNetStats> GetLatestHudNet() {
+    const std::lock_guard<std::mutex> lock(hud_net_mutex);
+    return latest_hud_net;
+  }
+
   void SampleNetworkStats() {
-    const std::optional<networking::ConnectionStats> stats = network.GetStats();
+    const std::optional<networking::ConnectionStats> stats = session->GetConnectionStats();
+    PublishHudNetStats(stats);
     if (!stats.has_value()) {
       net_ping_ms.sample_no_value(nvtx3::no_value_reason::unavailable);
       net_quality_local.sample_no_value(nvtx3::no_value_reason::unavailable);
@@ -95,94 +249,249 @@ struct ClientRuntime::Impl {
     net_pending_bytes.sample(static_cast<double>(stats->pending_bytes));
   }
 
-  explicit Impl(const Config& cfg)
-      : config(cfg), input(cfg.input), prediction(cfg.stamina), presentation(audio), renderer(cfg.renderer, input) {}
-
-  // Simulation thread body (ADR-0005): fixed-rate loop sampling local
-  // input and ticking PredictionWorld. Runs until running is cleared by
-  // ThreadJoiner.
-  void SimulationThreadMain() {
-    const auto tick_duration = std::chrono::duration<float>(1.0F / config.tick_rate_hz);
-    while (running.load(std::memory_order_relaxed)) {
-      const nvtx3::scoped_range range{"Simulation Tick"};
-      const auto tick_start = std::chrono::steady_clock::now();
-
-      input::Command command = input.Sample();
-      // TODO(sergioffpc): no authoritative state to reconcile against
-      // yet - deserializing one from network.ReceiveMessages() needs
-      // the Networking Protocol (ADR-0007), not designed yet. See this
-      // module's header comment.
-      prediction::State state = prediction.Tick(command, std::nullopt, tick_duration.count());
-
-      {
-        std::lock_guard<std::mutex> lock(prediction_state_mutex);
-        latest_prediction_state = state;
+  Impl(const Config& cfg, const Map& map, const math::Vec3& eye, CharacterMeshLoader loader)
+      : config(cfg),
+        load_character_mesh(std::move(loader)),
+        input(cfg.input),
+        presentation(audio, eye),
+        renderer(cfg.renderer, input) {
+    // The map goes in before the Session takes the world over: a body that has
+    // already ticked has been predicted without it, and reconciliation cannot
+    // account for that.
+    // No rules of its own: the Session starts the prediction under the
+    // server's once it has joined, so the two cannot drift.
+    prediction::World world;
+    for (const physics::CollisionMesh& mesh : map.collision) {
+      if (const auto added = world.AddCollisionMesh(mesh); !added) {
+        throw std::runtime_error(std::format("ClientRuntime: map collision rejected: {}",
+                                             physics::DescribeCollisionMeshError(added.error())));
       }
+    }
+    session.emplace(
+        harness::SessionConfig{.server = cfg.server, .client_pack = cfg.client_pack, .character = cfg.character},
+        std::move(world));
+  }
 
-      // TODO(sergioffpc): serialize command and network.Send(...) it -
-      // same Networking Protocol gap as above.
+  // The tick rate the server sent when it admitted this client, or nullopt if
+  // running was cleared first. The tick rate is the server's (ADR-0039), so
+  // nothing is predicted before it is known.
+  std::optional<float> WaitForTickRate() {
+    constexpr auto kPollInterval = std::chrono::milliseconds(10);
+    while (running.load(std::memory_order_relaxed)) {
+      if (const auto rate = session->GetTickRate()) {
+        return rate;
+      }
+      std::this_thread::sleep_for(kPollInterval);
+    }
+    return std::nullopt;
+  }
 
-      std::this_thread::sleep_until(tick_start +
-                                    std::chrono::duration_cast<std::chrono::steady_clock::duration>(tick_duration));
+  // What the prediction did since its last heartbeat line: once a second, one
+  // line of it, where a line per tick would bury the one that matters.
+  // Prediction thread only.
+  class PredictionActivity {
+   public:
+    void Record(const prediction::State& state, std::chrono::steady_clock::time_point now) {
+      ++ticks_;
+      // Reconciliation makes at most one jump per tick, so the change in the
+      // running total is that tick's jump.
+      const float jump = math::Length(state.total_correction - last_total_correction_);
+      last_total_correction_ = state.total_correction;
+      if (jump > 0.0F) {
+        ++corrections_;
+        correction_m_ += jump;
+      }
+      if (now - since_ >= kInterval) {
+        LD("subsystem=clientruntime event=heartbeat ticks={} corrections={} correction_m={:.3f}", ticks_, corrections_,
+           correction_m_);
+        ticks_ = 0;
+        corrections_ = 0;
+        correction_m_ = 0.0F;
+        since_ = now;
+      }
+    }
+
+   private:
+    static constexpr std::chrono::seconds kInterval{1};
+    std::chrono::steady_clock::time_point since_ = std::chrono::steady_clock::now();
+    math::Vec3 last_total_correction_{};
+    std::uint32_t ticks_ = 0;
+    std::uint32_t corrections_ = 0;
+    float correction_m_ = 0.0F;
+  };
+
+  // How long the next Prediction tick lasts: the server's tick, paced by how
+  // many of this client's commands the server last said it held (tick.h), so
+  // the client sends them at the rate the server consumes them.
+  tick::Clock::duration NextTickDuration(tick::Clock::duration nominal) const {
+    const std::optional<harness::AuthoritativeState> state = session->GetAuthoritativeState();
+    return state.has_value() ? tick::PacedTickDuration(nominal, state->queued_commands) : nominal;
+  }
+
+  // Prediction thread body (ADR-0005): loop sampling local input and ticking
+  // PredictionWorld on a fixed schedule (tick.h), at the server's tick rate
+  // once it has joined, each tick paced to keep the server's queue of this
+  // client's commands short. Runs until running is cleared by ThreadJoiner.
+  void PredictionThreadMain() {
+    const auto tick_rate_hz = WaitForTickRate();
+    if (!tick_rate_hz.has_value()) {
+      return;
+    }
+    const auto delta_time = std::chrono::duration<float>(1.0F / *tick_rate_hz);
+    const auto nominal_tick = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
+    PredictionActivity activity;
+    tick::Clock::time_point deadline = tick::Clock::now();
+    // The first tick has none before it to blend from.
+    std::optional<prediction::State> previous;
+    while (running.load(std::memory_order_relaxed)) {
+      const nvtx3::scoped_range range{"Prediction Tick"};
+      const tick::Clock::time_point tick_start = tick::Clock::now();
+
+      const command::Command command = input.Sample();
+      const prediction::State state = session->Tick(command, delta_time.count());
+      activity.Record(state, tick_start);
+
+      // The tick spans its schedule, not its wake-ups, so frames blend evenly.
+      const tick::Clock::time_point due = deadline;
+      deadline = tick::NextDeadline(deadline, NextTickDuration(nominal_tick), tick::Clock::now());
+      {
+        std::lock_guard<std::mutex> lock(latest_tick_mutex);
+        latest_tick = {.previous = previous.value_or(state), .latest = state, .start = due, .duration = deadline - due};
+      }
+      previous = state;
+
+      std::this_thread::sleep_until(deadline);
     }
   }
 
   // Network I/O thread body (ADR-0005): connects once, then pumps the
-  // connection until running is cleared by ThreadJoiner.
+  // connection until running is cleared by ThreadJoiner, waiting
+  // kNetworkRoundWait between rounds rather than spinning a core. The
+  // transport has no wait on incoming work, so that wait bounds how late a
+  // received message is handled, and how long stopping takes.
   void NetworkThreadMain() {
-    network.Connect(config.server);
-    bool sent_hello = false;
+    constexpr auto kNetworkRoundWait = std::chrono::milliseconds(1);
+    session->Connect();
     while (running.load(std::memory_order_relaxed)) {
-      const nvtx3::scoped_range range{"Network PumpEvents"};
-      network.PumpEvents();
-      SampleNetworkStats();
-
-      // TODO(sergioffpc): M1 spike only (issue #31) - a literal hello
-      // proving the transport round-trips a message at all. Replace
-      // with real Command encoding once the Networking Protocol
-      // (ADR-0007) exists; see this module's header comment.
-      if (!sent_hello && network.GetState() == networking::ConnectionState::kConnected) {
-        constexpr std::string_view kHello = "hello from augustac";
-        const auto* bytes = reinterpret_cast<const std::byte*>(kHello.data());
-        network.Send(networking::Payload(bytes, bytes + kHello.size()));
-        sent_hello = true;
+      {
+        const nvtx3::scoped_range range{"Network PumpEvents"};
+        session->PumpEvents();
+        SampleNetworkStats();
+        session->ExchangeMessages();
       }
-      for ([[maybe_unused]] const networking::Payload& payload : network.ReceiveMessages()) {
-        LT("subsystem=clientruntime event=received bytes={}", payload.size());
-      }
+      std::this_thread::sleep_for(kNetworkRoundWait);
     }
-    network.Disconnect();
+    session->Disconnect();
   }
 
-  prediction::State GetLatestPredictionState() {
-    std::lock_guard<std::mutex> lock(prediction_state_mutex);
-    return latest_prediction_state;
+  // In the Lobby, once per Roster version: uploads the mesh of every other
+  // player's character not loaded yet, then reports Ready for that Roster
+  // (ADR-0043). Nothing is loaded during a match. Main/Render thread only, as
+  // the upload is. Returns why a mesh could not be loaded, if one could not.
+  std::optional<client::SceneError> GetReadyForLobby() {
+    const std::optional<harness::Lobby> lobby = session->GetLobby();
+    if (session->GetPhase() != harness::Phase::kLobby || !lobby.has_value() || lobby->version == ready_version) {
+      return std::nullopt;
+    }
+    std::vector<std::uint8_t> others;
+    for (const harness::RosterEntry& entry : lobby->roster) {
+      if (entry.session != session->GetSessionId()) {
+        others.push_back(entry.character);
+      }
+    }
+    for (const std::uint8_t character : client::CharactersToLoad(others, loaded_characters)) {
+      auto mesh = load_character_mesh(character);
+      if (!mesh.has_value()) {
+        return mesh.error();
+      }
+      renderer.SetCharacterMesh(character, *mesh);
+      loaded_characters.insert(character);
+      LI("subsystem=clientruntime event=character_loaded character={}", character);
+    }
+    session->ReportReady(lobby->version);
+    ready_version = lobby->version;
+    return std::nullopt;
+  }
+
+  LatestTick GetLatestTick() {
+    std::lock_guard<std::mutex> lock(latest_tick_mutex);
+    return latest_tick;
   }
 };
 
-ClientRuntime::ClientRuntime(const Config& config) : impl_(std::make_unique<Impl>(config)) {}
+ClientRuntime::ClientRuntime(const Config& config, Map map, const renderer::Scene& scene, const math::Vec3& eye,
+                             CharacterMeshLoader load_character_mesh)
+    : impl_(std::make_unique<Impl>(config, map, eye, std::move(load_character_mesh))) {
+  impl_->renderer.SetScene(scene);
+}
 
 ClientRuntime::~ClientRuntime() = default;
 
-void ClientRuntime::Run() {
+std::optional<Failure> ClientRuntime::Run() {
   impl_->running.store(true, std::memory_order_relaxed);
-  impl_->simulation_thread = std::thread([this] { impl_->SimulationThreadMain(); });
+  impl_->prediction_thread = std::thread([this] { impl_->PredictionThreadMain(); });
   impl_->network_thread = std::thread([this] { impl_->NetworkThreadMain(); });
   ThreadJoiner joiner{.running = impl_->running,
-                      .simulation_thread = impl_->simulation_thread,
+                      .prediction_thread = impl_->prediction_thread,
                       .network_thread = impl_->network_thread};
 
+  bool cursor_locked = impl_->input.CursorCaptured();
+  impl_->renderer.SetCursorLocked(cursor_locked);
   LI("subsystem=clientruntime event=loop_starting loop=render");
+  std::optional<Failure> failure;
   while (!impl_->renderer.ShouldClose()) {
+    if (const auto session_failure = impl_->session->GetFailure(); session_failure.has_value()) {
+      LE("subsystem=clientruntime event=session_failed reason=\"{}\"", harness::DescribeFailure(*session_failure));
+      failure = *session_failure;
+      break;
+    }
+    if (const auto load_failure = impl_->GetReadyForLobby(); load_failure.has_value()) {
+      LE("subsystem=clientruntime event=character_load_failed reason=\"{}\"",
+         client::DescribeSceneError(*load_failure));
+      failure = *load_failure;
+      break;
+    }
     const nvtx3::scoped_range range{"Main/Render Frame"};
     impl_->renderer.PumpEvents();
-    presentation::State frame_state = impl_->presentation.RunFrame(impl_->GetLatestPredictionState());
-    // TODO(sergioffpc): renderer.RenderFrame() doesn't consume
-    // Presentation State yet - see renderer.h's own note on this.
-    static_cast<void>(frame_state);
+    // Escape releases the cursor and a click captures it again (Input decides).
+    if (const bool captured = impl_->input.CursorCaptured(); captured != cursor_locked) {
+      impl_->renderer.SetCursorLocked(captured);
+      cursor_locked = captured;
+    }
+    impl_->renderer.SetDebugHudStats({.net = impl_->GetLatestHudNet()});
+    // Two independent Session getters, not one view - safe here because
+    // harness::Session keeps an Authoritative State only once the Match start
+    // that names this client's body has been published (see harness.cpp's
+    // ServerView), so a GetAuthoritativeState() read before GetEntityId(), as
+    // below, can never race ahead of a GetEntityId() that is still nullopt.
+    // Each is converted into presentation's own types here, at ClientRuntime's
+    // edge (see SnapshotOf and CharactersOf above).
+    const Impl::LatestTick latest = impl_->GetLatestTick();
+    const presentation::PredictedTicks ticks{
+        .previous = latest.previous,
+        .latest = latest.latest,
+        .fraction = tick::FractionElapsed(latest.start, latest.duration, tick::Clock::now()),
+    };
+    const std::optional<presentation::WorldSnapshot> snapshot = SnapshotOf(*impl_->session);
+    const std::optional<presentation::EntityId> local_entity =
+        impl_->session->GetEntityId().transform([](harness::EntityId entity) { return ToPresentation(entity); });
+    const std::vector<presentation::PlayerCharacter> characters = CharactersOf(impl_->session->GetMatchStart());
+    presentation::State frame_state =
+        impl_->presentation.RunFrame(ticks, impl_->input.CurrentView(), local_entity, snapshot, characters);
+    impl_->renderer.SetCamera(ToRenderer(frame_state.camera));
+    // The local player's own position isn't drawn yet (renderer.h) - only
+    // remote players, each as its character. In the Lobby there are none, so
+    // the map is drawn empty.
+    std::vector<renderer::RemotePlayer> remote_boxes;
+    remote_boxes.reserve(frame_state.remote_players.size());
+    for (const auto& remote : frame_state.remote_players) {
+      remote_boxes.push_back(ToRenderer(remote));
+    }
+    impl_->renderer.SetRemotePlayers(remote_boxes);
     impl_->renderer.RenderFrame();
   }
   LI("subsystem=clientruntime event=loop_stopping loop=render");
+  return failure;
 }
 
 }  // namespace augusta::runtime

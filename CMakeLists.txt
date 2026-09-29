@@ -28,8 +28,6 @@ else()
   add_compile_options(-Wall -Wextra -Werror)
 endif()
 
-find_package(spdlog CONFIG REQUIRED)
-
 # flecs/GameNetworkingSockets/PhysX back the client/server shared runtime
 # (ECS worlds, networking transport, physics - ADR-0001/0002/0003).
 find_package(flecs CONFIG REQUIRED)
@@ -41,22 +39,31 @@ find_package(unofficial-omniverse-physx-sdk CONFIG REQUIRED)
 # added via add_subdirectory: its own CMakeLists.txt pulls in a compiled
 # loader lib, tests, and install rules this repo has no use for - a plain
 # INTERFACE target for the header path is all the nvtx3::scoped_range API
-# actually needs.
+# actually needs. SYSTEM, like every other third-party include: its
+# headers' own diagnostics are not this repo's to fix, for the compiler or
+# for clang-tidy.
 add_library(nvtx3-cpp INTERFACE)
-target_include_directories(nvtx3-cpp INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/nvtx/c/include")
+target_include_directories(nvtx3-cpp SYSTEM INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/nvtx/c/include")
 
 include(cmake/AugustaModule.cmake)
 
 enable_testing()
 find_package(GTest CONFIG REQUIRED)
 find_package(benchmark CONFIG REQUIRED)
+find_package(rapidcheck CONFIG REQUIRED)
 
 add_subdirectory(src/modules/version)
 add_subdirectory(src/modules/logging)
+add_subdirectory(src/modules/config)
 add_subdirectory(src/modules/math)
+add_subdirectory(src/modules/tick)
 add_subdirectory(src/modules/assets)
 add_subdirectory(src/modules/physics)
+add_subdirectory(src/modules/command)
+add_subdirectory(src/modules/parameters)
+add_subdirectory(src/modules/map)
 add_subdirectory(src/modules/ballistics)
+add_subdirectory(src/modules/protocol)
 add_subdirectory(src/modules/networking)
 add_subdirectory(src/modules/scripting)
 add_subdirectory(src/modules/audio)
@@ -64,6 +71,7 @@ add_subdirectory(src/modules/input)
 add_subdirectory(src/modules/animation)
 add_subdirectory(src/modules/simulation)
 add_subdirectory(src/modules/prediction)
+add_subdirectory(src/modules/harness)
 add_subdirectory(src/modules/presentation)
 add_subdirectory(src/modules/replication)
 add_subdirectory(src/server)

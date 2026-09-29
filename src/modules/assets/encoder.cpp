@@ -1,9 +1,14 @@
 #include "encoder.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <span>
+#include <string>
+#include <string_view>
 #include <vector>
 
+#include "augusta/assets.h"
 #include "wire_format.h"
 
 // The Encode* half of augusta_assets' blob (de)serialization (ADR-0031/
@@ -14,21 +19,14 @@ namespace augusta::assets {
 
 namespace {
 
-std::expected<void, EncodeError> EncodeSceneNode(std::vector<std::byte>& blob, const SceneNode& node) {
-  if (!AppendString(blob, node.name)) {
+std::expected<void, EncodeError> EncodeSceneNode(ByteWriter& writer, const SceneNode& node) {
+  if (!writer.WriteString(node.name)) {
     return std::unexpected(EncodeError::kTooLarge);
   }
-  AppendU32(blob, node.parent_index);
-  AppendF32(blob, node.translation.x);
-  AppendF32(blob, node.translation.y);
-  AppendF32(blob, node.translation.z);
-  AppendF32(blob, node.rotation.x);
-  AppendF32(blob, node.rotation.y);
-  AppendF32(blob, node.rotation.z);
-  AppendF32(blob, node.rotation.w);
-  AppendF32(blob, node.scale.x);
-  AppendF32(blob, node.scale.y);
-  AppendF32(blob, node.scale.z);
+  writer.WriteU32(node.parent_index);
+  writer.WriteVec3(node.translation);
+  writer.WriteQuat(node.rotation);
+  writer.WriteVec3(node.scale);
 
   std::uint8_t flags = 0;
   if (node.mesh_path) {
@@ -46,19 +44,19 @@ std::expected<void, EncodeError> EncodeSceneNode(std::vector<std::byte>& blob, c
   if (node.is_spawn_point) {
     flags |= kNodeIsSpawnPoint;
   }
-  AppendU8(blob, flags);
+  writer.WriteU8(flags);
 
-  if (!AppendOptionalPath(blob, node.mesh_path) || !AppendOptionalPath(blob, node.material_path) ||
-      !AppendOptionalPath(blob, node.collider_path) || !AppendOptionalPath(blob, node.hitbox_path)) {
+  if (!writer.WriteOptionalPath(node.mesh_path) || !writer.WriteOptionalPath(node.material_path) ||
+      !writer.WriteOptionalPath(node.collider_path) || !writer.WriteOptionalPath(node.hitbox_path)) {
     return std::unexpected(EncodeError::kTooLarge);
   }
 
   if (node.properties.size() > kMaxProperties) {
     return std::unexpected(EncodeError::kTooLarge);
   }
-  AppendU32(blob, static_cast<std::uint32_t>(node.properties.size()));
+  writer.WriteU32(static_cast<std::uint32_t>(node.properties.size()));
   for (const auto& [key, value] : node.properties) {
-    if (!AppendString(blob, key) || !AppendString(blob, value)) {
+    if (!writer.WriteString(key) || !writer.WriteString(value)) {
       return std::unexpected(EncodeError::kTooLarge);
     }
   }
@@ -73,15 +71,14 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeMeshBlob(const MeshData
   }
 
   std::vector<std::byte> blob;
-  AppendU32(blob, static_cast<std::uint32_t>(mesh.points.size()));
+  ByteWriter writer(blob);
+  writer.WriteU32(static_cast<std::uint32_t>(mesh.points.size()));
   for (const auto& point : mesh.points) {
-    AppendF32(blob, point.x);
-    AppendF32(blob, point.y);
-    AppendF32(blob, point.z);
+    writer.WriteVec3(point);
   }
-  AppendU32(blob, static_cast<std::uint32_t>(mesh.indices.size()));
+  writer.WriteU32(static_cast<std::uint32_t>(mesh.indices.size()));
   for (auto index : mesh.indices) {
-    AppendU32(blob, index);
+    writer.WriteU32(index);
   }
   return blob;
 }
@@ -92,9 +89,10 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeSceneBlob(const SceneDa
   }
 
   std::vector<std::byte> blob;
-  AppendU32(blob, static_cast<std::uint32_t>(scene.nodes.size()));
+  ByteWriter writer(blob);
+  writer.WriteU32(static_cast<std::uint32_t>(scene.nodes.size()));
   for (const auto& node : scene.nodes) {
-    if (auto encoded = EncodeSceneNode(blob, node); !encoded) {
+    if (auto encoded = EncodeSceneNode(writer, node); !encoded) {
       return std::unexpected(encoded.error());
     }
   }
@@ -107,9 +105,10 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeTextureBlob(const Textu
   }
 
   std::vector<std::byte> blob;
-  AppendU8(blob, static_cast<std::uint8_t>(texture.format));
-  AppendU32(blob, static_cast<std::uint32_t>(texture.dds_bytes.size()));
-  AppendBytes(blob, texture.dds_bytes);
+  ByteWriter writer(blob);
+  writer.WriteU8(static_cast<std::uint8_t>(texture.format));
+  writer.WriteU32(static_cast<std::uint32_t>(texture.dds_bytes.size()));
+  writer.WriteBytes(texture.dds_bytes);
   return blob;
 }
 
@@ -118,13 +117,42 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeTextureBlob(const Textu
 // one consistent on-disk quaternion layout across this module.
 std::expected<std::vector<std::byte>, EncodeError> EncodeSpawnPointBlob(const SpawnPointData& spawn_point) {
   std::vector<std::byte> blob;
-  AppendF32(blob, spawn_point.translation.x);
-  AppendF32(blob, spawn_point.translation.y);
-  AppendF32(blob, spawn_point.translation.z);
-  AppendF32(blob, spawn_point.rotation.x);
-  AppendF32(blob, spawn_point.rotation.y);
-  AppendF32(blob, spawn_point.rotation.z);
-  AppendF32(blob, spawn_point.rotation.w);
+  ByteWriter writer(blob);
+  writer.WriteVec3(spawn_point.translation);
+  writer.WriteQuat(spawn_point.rotation);
+  return blob;
+}
+
+// Eye blob wire format: position (3x f32), nothing else.
+std::expected<std::vector<std::byte>, EncodeError> EncodeEyeBlob(const EyeData& eye) {
+  std::vector<std::byte> blob;
+  ByteWriter writer(blob);
+  writer.WriteVec3(eye.position);
+  return blob;
+}
+
+std::expected<std::vector<std::byte>, EncodeError> EncodeScriptBlob(std::string_view script) {
+  if (script.size() > kMaxScriptBytes) {
+    return std::unexpected(EncodeError::kTooLarge);
+  }
+  const auto* first = reinterpret_cast<const std::byte*>(script.data());
+  return std::vector<std::byte>(first, first + script.size());
+}
+
+// Character-list blob wire format: a u32 count, then that many length-prefixed
+// strings, in manifest order.
+std::expected<std::vector<std::byte>, EncodeError> EncodeCharactersBlob(std::span<const std::string> characters) {
+  if (characters.size() > kMaxCharacters) {
+    return std::unexpected(EncodeError::kTooLarge);
+  }
+  std::vector<std::byte> blob;
+  ByteWriter writer(blob);
+  writer.WriteU32(static_cast<std::uint32_t>(characters.size()));
+  for (const auto& character : characters) {
+    if (!writer.WriteString(character)) {
+      return std::unexpected(EncodeError::kTooLarge);
+    }
+  }
   return blob;
 }
 

@@ -1,18 +1,31 @@
 #include "augusta/assets.h"
 
-#include <blake3.h>
-#include <sodium.h>
-
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <expected>
+#include <filesystem>
+#include <format>
 #include <fstream>
-#include <mio/mmap.hpp>
+#include <ios>
+#include <memory>
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <system_error>
+#include <utility>
+#include <vector>
 
+#include <blake3.h>
+#include <boost/interprocess/file_mapping.hpp>
+#include <boost/interprocess/mapped_region.hpp>
+#include <sodium.h>
+
+#include "augusta/math.h"
 #include "decoder.h"
 #include "encoder.h"
 #include "wire_format.h"
@@ -27,16 +40,22 @@ constexpr std::uint32_t kFormatVersion = 1;
 // per ADR-0031's header field list.
 constexpr std::uint64_t kHeaderSize =
     kMagic.size() + sizeof(std::uint32_t) + sizeof(std::uint64_t) + sizeof(std::uint64_t) + sizeof(std::uint32_t);
-constexpr std::size_t kBlake3HashSize = 32;
 constexpr std::size_t kEd25519SignatureSize = 64;
 // BLAKE3 hash + Ed25519 signature of that hash, ADR-0031's trailer.
-constexpr std::uint64_t kTrailerSize = kBlake3HashSize + kEd25519SignatureSize;
+constexpr std::uint64_t kTrailerSize = kPackHashSize + kEd25519SignatureSize;
 
 // Pragmatic v1 sanity limits - see wire_format.h's own comment on
 // kMaxPathLength for the rest of this module's limits (shared with
 // encoder.cpp/decoder.cpp); these two are pack-container-only.
 constexpr std::uint32_t kMaxEntries = 1U << 20;
 constexpr std::uint64_t kMaxPackSize = 8ULL * 1024 * 1024 * 1024;
+
+// A read-only view of a whole pack file, kept mapped for a Pack's lifetime.
+using Mapping = boost::interprocess::mapped_region;
+
+std::span<const std::byte> MappedBytes(const Mapping& mapping) {
+  return {static_cast<const std::byte*>(mapping.get_address()), mapping.get_size()};
+}
 
 void EnsureSodiumInitialized() {
   static const bool kInitialized = [] {
@@ -151,8 +170,8 @@ std::expected<std::vector<IndexEntry>, LoadError> ParsePackIndex(std::span<const
 // construction: ParsePackIndex already validated entry's own
 // [offset, offset+size) falls entirely within the pack's data section
 // (see its own comment), so this can never read outside mapping.
-std::span<const std::byte> BlobBytes(const mio::mmap_source& mapping, const IndexEntry& entry) {
-  return {reinterpret_cast<const std::byte*>(mapping.data()) + entry.offset, entry.size};
+std::span<const std::byte> BlobBytes(const Mapping& mapping, const IndexEntry& entry) {
+  return MappedBytes(mapping).subspan(entry.offset, entry.size);
 }
 
 // The path-lookup-plus-type-check every Pack::Resolve* method starts
@@ -177,7 +196,7 @@ std::expected<const IndexEntry*, ResolveError> FindIndexEntry(const std::vector<
 // Resolve* methods turned out to be this same sequence with nothing but
 // the target type/AssetType/decoder differing.
 template <typename T>
-std::expected<T, ResolveError> ResolveAsset(const std::vector<IndexEntry>& index, const mio::mmap_source& mapping,
+std::expected<T, ResolveError> ResolveAsset(const std::vector<IndexEntry>& index, const Mapping& mapping,
                                             std::string_view path, AssetType expected_type,
                                             std::optional<T> (*decode)(std::span<const std::byte>)) {
   const auto match = FindIndexEntry(index, path, expected_type);
@@ -226,6 +245,9 @@ struct PackSections {
 
 std::expected<PackSections, WriteError> BuildPackSections(const std::vector<AssetEntry>& entries) {
   PackSections sections;
+  ByteWriter data_writer(sections.data_section);
+  ByteWriter index_writer(sections.index_section);
+  ByteWriter header_writer(sections.header);
 
   std::vector<std::uint64_t> offsets(entries.size());
   std::vector<std::uint64_t> sizes(entries.size());
@@ -233,25 +255,25 @@ std::expected<PackSections, WriteError> BuildPackSections(const std::vector<Asse
   for (std::size_t i = 0; i < entries.size(); ++i) {
     offsets[i] = cursor;
     sizes[i] = entries[i].data.size();
-    AppendBytes(sections.data_section, entries[i].data);
+    data_writer.WriteBytes(entries[i].data);
     cursor += entries[i].data.size();
   }
 
   for (std::size_t i = 0; i < entries.size(); ++i) {
-    AppendU8(sections.index_section, static_cast<std::uint8_t>(entries[i].type));
-    if (!AppendString(sections.index_section, entries[i].path)) {
+    index_writer.WriteU8(static_cast<std::uint8_t>(entries[i].type));
+    if (!index_writer.WriteString(entries[i].path)) {
       return std::unexpected(WriteError::kTooLarge);
     }
-    AppendU64(sections.index_section, offsets[i]);
-    AppendU64(sections.index_section, sizes[i]);
+    index_writer.WriteU64(offsets[i]);
+    index_writer.WriteU64(sizes[i]);
   }
   const std::uint64_t index_offset = cursor;
 
-  AppendChars(sections.header, std::string_view(kMagic.data(), kMagic.size()));
-  AppendU32(sections.header, kFormatVersion);
-  AppendU64(sections.header, kHeaderSize);
-  AppendU64(sections.header, index_offset);
-  AppendU32(sections.header, static_cast<std::uint32_t>(entries.size()));
+  header_writer.WriteChars(std::string_view(kMagic.data(), kMagic.size()));
+  header_writer.WriteU32(kFormatVersion);
+  header_writer.WriteU64(kHeaderSize);
+  header_writer.WriteU64(index_offset);
+  header_writer.WriteU32(static_cast<std::uint32_t>(entries.size()));
 
   const std::uint64_t total_size =
       sections.header.size() + sections.data_section.size() + sections.index_section.size() + kTrailerSize;
@@ -266,7 +288,7 @@ std::expected<PackSections, WriteError> BuildPackSections(const std::vector<Asse
 // the write side (SignPack, freshly computed) and the read side
 // (ReadTrailer, read back off disk to verify against).
 struct PackTrailer {
-  std::array<std::byte, kBlake3HashSize> hash;
+  PackHash hash;
   std::array<std::byte, kEd25519SignatureSize> signature;
 };
 
@@ -329,16 +351,15 @@ std::expected<void, WriteError> WritePackFile(const std::filesystem::path& outpu
 
 // Memory-maps path and validates its size is within [kHeaderSize +
 // kTrailerSize, kMaxPackSize] - every subsequent offset/length Pack::Load
-// computes is relative to the returned mapping's own size(), not any
+// computes is relative to the returned mapping's own size, not any
 // size queried before mapping.
-std::expected<mio::mmap_source, LoadError> OpenValidatedMapping(const std::filesystem::path& path) {
-  // Checked before mapping anything, same as before mio existed here:
-  // keeps mio from ever being asked to map an empty/absent file (its own
-  // behavior for that case isn't relied upon). This is deliberately not
-  // the source of truth for the bounds re-check below - path could be
-  // replaced between this check and make_mmap_source() (e.g. a
-  // concurrent redeploy), so the real bounds check is against the
-  // mapping's own size(), the size actually mapped.
+std::expected<Mapping, LoadError> OpenValidatedMapping(const std::filesystem::path& path) {
+  // Checked before mapping anything: keeps Boost.Interprocess from ever
+  // being asked to map an empty/absent file (its own behavior for that
+  // case isn't relied upon). This is deliberately not the source of truth
+  // for the bounds re-check below - path could be replaced between this
+  // check and the mapping (e.g. a concurrent redeploy), so the real bounds
+  // check is against the mapping's own size, the size actually mapped.
   std::error_code size_error;
   const auto file_size = std::filesystem::file_size(path, size_error);
   if (size_error) {
@@ -348,45 +369,44 @@ std::expected<mio::mmap_source, LoadError> OpenValidatedMapping(const std::files
     return std::unexpected(LoadError::kTruncated);
   }
 
-  std::error_code map_error;
-  // path.native() (std::wstring on Windows), not path.string(): mio's
-  // narrow-string overload assumes UTF-8 and converts via
-  // MultiByteToWideChar(CP_UTF8, ...) before calling CreateFileW, but
-  // path.string() re-encodes to the system ANSI codepage instead - a
-  // pack path with non-ASCII characters would silently fail to open.
-  // The wide overload passes straight to CreateFileW with no conversion.
-  mio::mmap_source mapping = mio::make_mmap_source(path.native(), map_error);
-  if (map_error) {
+  try {
+    // path.c_str() (const wchar_t* on Windows), not path.string(): the
+    // narrow overload takes the system ANSI codepage there, so a pack path
+    // with non-ASCII characters would silently fail to open. The wide
+    // overload goes straight to CreateFileW. The file_mapping can go
+    // out of scope once the region exists: the mapping stays valid without it.
+    const boost::interprocess::file_mapping file(path.c_str(), boost::interprocess::read_only);
+    Mapping mapping(file, boost::interprocess::read_only);
+    if (mapping.get_size() < kHeaderSize + kTrailerSize || mapping.get_size() > kMaxPackSize) {
+      return std::unexpected(LoadError::kTruncated);
+    }
+    return mapping;
+  } catch (const boost::interprocess::interprocess_exception&) {
     return std::unexpected(LoadError::kIoError);
   }
-
-  if (mapping.size() < kHeaderSize + kTrailerSize || mapping.size() > kMaxPackSize) {
-    return std::unexpected(LoadError::kTruncated);
-  }
-  return mapping;
 }
 
 // The BLAKE3 hash of mapped's [0, hashed_length) range, and the trailer
 // (also BLAKE3 hash + Ed25519 signature, see PackTrailer) immediately
 // following it. Unlike the old chunked-ifstream-read version this
 // replaced, this can't fail: mapped is already the whole file resident
-// (mio, backed by the OS page cache) and hashed_length/kTrailerSize are
+// (memory-mapped, backed by the OS page cache) and hashed_length/kTrailerSize are
 // already validated to fit within it (see Pack::Load), so there's no I/O
 // left to go wrong here - just pointer arithmetic and a hash.
-struct HashAndTrailer {
-  std::array<std::byte, kBlake3HashSize> hash;
+struct PackVerificationData {
+  PackHash hash;
   PackTrailer trailer;
 };
 
-HashAndTrailer HashAndReadTrailer(std::span<const std::byte> mapped, std::uint64_t hashed_length) {
-  HashAndTrailer result;
+PackVerificationData ComputePackHashAndReadTrailer(std::span<const std::byte> mapped, std::uint64_t hashed_length) {
+  PackVerificationData result;
   blake3_hasher hasher;
   blake3_hasher_init(&hasher);
   blake3_hasher_update(&hasher, mapped.data(), hashed_length);
   blake3_hasher_finalize(&hasher, reinterpret_cast<std::uint8_t*>(result.hash.data()), result.hash.size());
 
-  std::memcpy(result.trailer.hash.data(), mapped.data() + hashed_length, kBlake3HashSize);
-  std::memcpy(result.trailer.signature.data(), mapped.data() + hashed_length + kBlake3HashSize, kEd25519SignatureSize);
+  std::memcpy(result.trailer.hash.data(), mapped.data() + hashed_length, kPackHashSize);
+  std::memcpy(result.trailer.signature.data(), mapped.data() + hashed_length + kPackHashSize, kEd25519SignatureSize);
   return result;
 }
 
@@ -401,6 +421,10 @@ bool IsValidAssetType(std::uint8_t value) {
     case AssetType::kSpawnPoint:
     case AssetType::kHitbox:
     case AssetType::kScene:
+    case AssetType::kScript:
+    case AssetType::kCharacters:
+    case AssetType::kClientPack:
+    case AssetType::kEye:
       return true;
   }
   return false;
@@ -429,6 +453,30 @@ Ed25519KeyPair GenerateEd25519KeyPair() {
   crypto_sign_keypair(reinterpret_cast<unsigned char*>(pair.public_key.data()),
                       reinterpret_cast<unsigned char*>(pair.private_key.data()));
   return pair;
+}
+
+std::string DescribeResolveError(ResolveError error, std::string_view expected_type) {
+  switch (error) {
+    case ResolveError::kNotFound:
+      return "not found";
+    case ResolveError::kTypeMismatch:
+      return std::format("is not a {}", expected_type);
+    case ResolveError::kCorruptBlob:
+      return "is corrupt";
+  }
+  return "unknown error";
+}
+
+// SceneData lists parents before children (ADR-0032), so one forward pass sees
+// each parent's transform already done.
+std::vector<math::Mat4> ComputeWorldTransforms(const SceneData& scene) {
+  std::vector<math::Mat4> world;
+  world.reserve(scene.nodes.size());
+  for (const SceneNode& node : scene.nodes) {
+    const math::Mat4 local = math::ToMat4(node.translation, node.rotation, node.scale);
+    world.push_back(node.parent_index == kSceneNodeNoParent ? local : world[node.parent_index] * local);
+  }
+  return world;
 }
 
 std::expected<Ed25519PublicKey, ReadKeyFileError> ReadEd25519PublicKeyFile(const std::filesystem::path& path) {
@@ -471,8 +519,9 @@ std::expected<void, WriteError> WritePack(const std::filesystem::path& output_pa
 }
 
 struct Pack::Impl {
-  mio::mmap_source mapping;
+  Mapping mapping;
   std::vector<IndexEntry> index;
+  PackHash hash;
 };
 
 std::string_view DescribeLoadError(LoadError error) {
@@ -507,15 +556,15 @@ std::expected<Pack, LoadError> Pack::Load(const std::filesystem::path& path, con
   if (!mapping) {
     return std::unexpected(mapping.error());
   }
-  const std::uint64_t hashed_length = mapping->size() - kTrailerSize;
-  const std::span<const std::byte> mapped(reinterpret_cast<const std::byte*>(mapping->data()), mapping->size());
+  const std::span<const std::byte> mapped = MappedBytes(*mapping);
+  const std::uint64_t hashed_length = mapped.size() - kTrailerSize;
 
   auto header = ParsePackHeader(mapped.first(kHeaderSize), hashed_length);
   if (!header) {
     return std::unexpected(header.error());
   }
 
-  const HashAndTrailer hashed = HashAndReadTrailer(mapped, hashed_length);
+  const PackVerificationData hashed = ComputePackHashAndReadTrailer(mapped, hashed_length);
 
   // Verified in this order (integrity, then authenticity) purely for a
   // clearer error to the caller - both checks are on untrusted data
@@ -537,7 +586,8 @@ std::expected<Pack, LoadError> Pack::Load(const std::filesystem::path& path, con
   }
 
   Pack pack;
-  pack.impl_ = std::make_unique<Impl>(Impl{.mapping = std::move(*mapping), .index = std::move(*index)});
+  pack.impl_ = std::make_unique<Impl>(
+      Impl{.mapping = std::move(*mapping), .index = std::move(*index), .hash = hashed.trailer.hash});
   return pack;
 }
 
@@ -564,5 +614,25 @@ std::expected<MeshData, ResolveError> Pack::ResolveHitbox(std::string_view path)
 std::expected<SpawnPointData, ResolveError> Pack::ResolveSpawnPoint(std::string_view path) const {
   return ResolveAsset<SpawnPointData>(impl_->index, impl_->mapping, path, AssetType::kSpawnPoint, DecodeSpawnPointBlob);
 }
+
+std::expected<EyeData, ResolveError> Pack::ResolveEye(std::string_view path) const {
+  return ResolveAsset<EyeData>(impl_->index, impl_->mapping, path, AssetType::kEye, DecodeEyeBlob);
+}
+
+std::expected<std::string, ResolveError> Pack::ResolveScript(std::string_view path) const {
+  return ResolveAsset<std::string>(impl_->index, impl_->mapping, path, AssetType::kScript, DecodeScriptBlob);
+}
+
+std::expected<std::vector<std::string>, ResolveError> Pack::ResolveCharacters() const {
+  return ResolveAsset<std::vector<std::string>>(impl_->index, impl_->mapping, kCharactersPath, AssetType::kCharacters,
+                                                DecodeCharactersBlob);
+}
+
+std::expected<PackHash, ResolveError> Pack::ResolveClientPackHash() const {
+  return ResolveAsset<PackHash>(impl_->index, impl_->mapping, kClientPackPath, AssetType::kClientPack,
+                                DecodeClientPackBlob);
+}
+
+const PackHash& Pack::Hash() const { return impl_->hash; }
 
 }  // namespace augusta::assets
