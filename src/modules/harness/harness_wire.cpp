@@ -70,6 +70,26 @@ parameters::Parameters FromWire(const protocol::ParametersWire& parameters) {
   result.stamina.deplete_per_second = parameters.stamina.deplete_per_second;
   result.stamina.regen_per_second = parameters.stamina.regen_per_second;
   result.stamina.forced_walk_below = parameters.stamina.forced_walk_below;
+  const protocol::RifleWire& rifle = parameters.rifle;
+  result.rifle.rounds_per_minute = rifle.rounds_per_minute;
+  result.rifle.muzzle_velocity = rifle.muzzle_velocity;
+  result.rifle.reload_seconds = rifle.reload_seconds;
+  result.rifle.recoil_recovery_per_second = rifle.recoil_recovery_per_second;
+  result.rifle.ads_recoil_scale = rifle.ads_recoil_scale;
+  result.rifle.ads_field_of_view = rifle.ads_field_of_view;
+  result.rifle.recoil_pattern.reserve(rifle.recoil_pattern.size());
+  for (const protocol::RecoilKickWire& kick : rifle.recoil_pattern) {
+    result.rifle.recoil_pattern.push_back(parameters::RecoilKick{.pitch = kick.pitch, .yaw = kick.yaw});
+  }
+  result.rifle.magazine_capacity = rifle.magazine_capacity;
+  result.ammo.gravity = parameters.ammo.gravity;
+  result.ammo.max_range = parameters.ammo.max_range;
+  result.ammo.damage = {
+      .head = parameters.ammo.head_damage,
+      .torso = parameters.ammo.torso_damage,
+      .limb = parameters.ammo.limb_damage,
+  };
+  result.starting_health = parameters.starting_health;
   result.player_count = parameters.player_count;
   return result;
 }

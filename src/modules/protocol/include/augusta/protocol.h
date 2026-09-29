@@ -89,6 +89,9 @@ inline constexpr std::size_t kMaxPlayers = 8;
 /// The most commands one CommandsWire message carries.
 inline constexpr std::size_t kMaxCommandsPerMessage = 8;
 
+/// The most kicks a rifle's recoil pattern holds (RifleWire::recoil_pattern).
+inline constexpr std::size_t kMaxRecoilKicks = 64;
+
 /// A body's stance.
 enum class StanceWire : std::uint8_t {
   kStanding = 0,
@@ -142,9 +145,46 @@ struct StaminaWire {
   bool operator==(const StaminaWire&) const = default;
 };
 
+/// How far one round of a burst turns the aim, in radians.
+struct RecoilKickWire {
+  float pitch = 0.0F;
+  float yaw = 0.0F;
+
+  bool operator==(const RecoilKickWire&) const = default;
+};
+
+/// The rifle every player carries.
+struct RifleWire {
+  float rounds_per_minute = 0.0F;
+  float muzzle_velocity = 0.0F;
+  float reload_seconds = 0.0F;
+  float recoil_recovery_per_second = 0.0F;
+  float ads_recoil_scale = 0.0F;
+  float ads_field_of_view = 0.0F;
+  /// At most kMaxRecoilKicks.
+  std::vector<RecoilKickWire> recoil_pattern;
+  std::uint8_t magazine_capacity = 0;
+
+  bool operator==(const RifleWire&) const = default;
+};
+
+/// The rifle's ammunition, with its damage by body part.
+struct AmmoWire {
+  float gravity = 0.0F;
+  float max_range = 0.0F;
+  float head_damage = 0.0F;
+  float torso_damage = 0.0F;
+  float limb_damage = 0.0F;
+
+  bool operator==(const AmmoWire&) const = default;
+};
+
 /// The Parameters (ADR-0039) a client predicts with.
 struct ParametersWire {
   StaminaWire stamina{};
+  RifleWire rifle{};
+  AmmoWire ammo{};
+  float starting_health = 0.0F;
   /// How many players a match needs to start (ADR-0043).
   std::uint8_t player_count = 1;
 

@@ -168,6 +168,20 @@ TEST(ProtocolTest, JoinAcceptedRoundTrips) {
       .session = static_cast<SessionIdWire>(0xA1B2C3D4U),
       .tick_rate_hz = 30,
       .parameters = {.stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F},
+                     .rifle = {.rounds_per_minute = 600.0F,
+                               .muzzle_velocity = 800.0F,
+                               .reload_seconds = 2.5F,
+                               .recoil_recovery_per_second = 0.2F,
+                               .ads_recoil_scale = 0.5F,
+                               .ads_field_of_view = 0.7F,
+                               .recoil_pattern = {{.pitch = 0.01F, .yaw = 0.002F}, {.pitch = 0.008F, .yaw = -0.002F}},
+                               .magazine_capacity = 30},
+                     .ammo = {.gravity = 9.81F,
+                              .max_range = 1000.0F,
+                              .head_damage = 100.0F,
+                              .torso_damage = 34.0F,
+                              .limb_damage = 25.0F},
+                     .starting_health = 100.0F,
                      .player_count = 5},
       .character = 3};
 
@@ -177,17 +191,15 @@ TEST(ProtocolTest, JoinAcceptedRoundTrips) {
   const auto& received = std::get<JoinAcceptedWire>(decoded);
   EXPECT_EQ(received.session, sent.session);
   EXPECT_EQ(received.tick_rate_hz, sent.tick_rate_hz);
-  EXPECT_EQ(received.parameters.player_count, sent.parameters.player_count);
-  EXPECT_EQ(received.parameters.stamina.deplete_per_second, sent.parameters.stamina.deplete_per_second);
-  EXPECT_EQ(received.parameters.stamina.regen_per_second, sent.parameters.stamina.regen_per_second);
-  EXPECT_EQ(received.parameters.stamina.forced_walk_below, sent.parameters.stamina.forced_walk_below);
+  EXPECT_EQ(received.parameters, sent.parameters);
   EXPECT_EQ(received.character, sent.character);
 }
 
 // The Lobby, not Join accepted, says who else is there (ADR-0043).
 TEST(ProtocolTest, JoinAcceptedCarriesNoRosterAndNoSpawnPoint) {
-  // type, session (4), tick rate (1), parameters (13), character (1).
-  EXPECT_EQ(Encode(JoinAcceptedWire{}).size(), 1 + 4 + 1 + 13 + 1);
+  // type, session (4), tick rate (1), parameters (63: the player count, stamina 12,
+  // a rifle of 26 with no recoil kick, ammo 20, starting health 4), character (1).
+  EXPECT_EQ(Encode(JoinAcceptedWire{}).size(), 1 + 4 + 1 + 63 + 1);
 }
 
 TEST(ProtocolTest, CharacterIndexZeroInJoinAcceptedIsInvalid) {
@@ -219,7 +231,7 @@ TEST(ProtocolTest, FieldsAreFixedWidthLittleEndian) {
   BytesWire accepted = BytesOf({kJoinAcceptedType, 0x01, 0x02, 0x03, 0x04});
   accepted.resize(accepted.size() + 1, std::byte{0});
   accepted.push_back(std::byte{0x03});
-  accepted.resize(accepted.size() + 12, std::byte{0});
+  accepted.resize(accepted.size() + 62, std::byte{0});
   accepted.push_back(std::byte{0x02});
   EXPECT_EQ(Encode(JoinAcceptedWire{.session = static_cast<SessionIdWire>(0x04030201U),
                                     .parameters = {.stamina = {}, .player_count = 3},

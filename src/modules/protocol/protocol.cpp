@@ -282,12 +282,45 @@ std::vector<EntityStateWire> ReadBodies(Reader& reader) {
   return bodies;
 }
 
+RifleWire ReadRifle(Reader& reader) {
+  RifleWire rifle;
+  rifle.magazine_capacity = reader.ReadU8();
+  rifle.rounds_per_minute = reader.ReadF32();
+  rifle.muzzle_velocity = reader.ReadF32();
+  rifle.reload_seconds = reader.ReadF32();
+  rifle.recoil_recovery_per_second = reader.ReadF32();
+  rifle.ads_recoil_scale = reader.ReadF32();
+  rifle.ads_field_of_view = reader.ReadF32();
+  const std::size_t kicks = reader.ReadCount(kMaxRecoilKicks);
+  // Stops at the first missing byte, so a short payload never grows the list.
+  for (std::size_t i = 0; i < kicks && !reader.Error(); ++i) {
+    RecoilKickWire kick;
+    kick.pitch = reader.ReadF32();
+    kick.yaw = reader.ReadF32();
+    rifle.recoil_pattern.push_back(kick);
+  }
+  return rifle;
+}
+
+AmmoWire ReadAmmo(Reader& reader) {
+  AmmoWire ammo;
+  ammo.gravity = reader.ReadF32();
+  ammo.max_range = reader.ReadF32();
+  ammo.head_damage = reader.ReadF32();
+  ammo.torso_damage = reader.ReadF32();
+  ammo.limb_damage = reader.ReadF32();
+  return ammo;
+}
+
 ParametersWire ReadParameters(Reader& reader) {
   ParametersWire parameters;
   parameters.player_count = reader.ReadU8();
   parameters.stamina.deplete_per_second = reader.ReadF32();
   parameters.stamina.regen_per_second = reader.ReadF32();
   parameters.stamina.forced_walk_below = reader.ReadF32();
+  parameters.rifle = ReadRifle(reader);
+  parameters.ammo = ReadAmmo(reader);
+  parameters.starting_health = reader.ReadF32();
   return parameters;
 }
 
@@ -376,11 +409,38 @@ std::optional<MessageWire> ReadBody(MessageTypeWire type, Reader& reader) {
   return std::nullopt;
 }
 
+void WriteRifle(BytesWire& out, const RifleWire& rifle) {
+  assert(rifle.recoil_pattern.size() <= kMaxRecoilKicks);
+  WriteU8(out, rifle.magazine_capacity);
+  WriteF32(out, rifle.rounds_per_minute);
+  WriteF32(out, rifle.muzzle_velocity);
+  WriteF32(out, rifle.reload_seconds);
+  WriteF32(out, rifle.recoil_recovery_per_second);
+  WriteF32(out, rifle.ads_recoil_scale);
+  WriteF32(out, rifle.ads_field_of_view);
+  WriteU8(out, static_cast<std::uint8_t>(rifle.recoil_pattern.size()));
+  for (const RecoilKickWire& kick : rifle.recoil_pattern) {
+    WriteF32(out, kick.pitch);
+    WriteF32(out, kick.yaw);
+  }
+}
+
+void WriteAmmo(BytesWire& out, const AmmoWire& ammo) {
+  WriteF32(out, ammo.gravity);
+  WriteF32(out, ammo.max_range);
+  WriteF32(out, ammo.head_damage);
+  WriteF32(out, ammo.torso_damage);
+  WriteF32(out, ammo.limb_damage);
+}
+
 void WriteParameters(BytesWire& out, const ParametersWire& parameters) {
   WriteU8(out, parameters.player_count);
   WriteF32(out, parameters.stamina.deplete_per_second);
   WriteF32(out, parameters.stamina.regen_per_second);
   WriteF32(out, parameters.stamina.forced_walk_below);
+  WriteRifle(out, parameters.rifle);
+  WriteAmmo(out, parameters.ammo);
+  WriteF32(out, parameters.starting_health);
 }
 
 // One overload per message: the type tag, then the fields.

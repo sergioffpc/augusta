@@ -1,4 +1,5 @@
 #include <csignal>
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <optional>
@@ -104,6 +105,15 @@ std::optional<augusta::parameters::Parameters> LoadParameters(const augusta::ass
   return *std::move(parameters);
 }
 
+// At most one round fires a tick, so a scenario whose rifle asks for more fires
+// slower than its script says: worth a warning, not a refusal.
+void WarnIfTheRifleOutpacesTheTick(const augusta::parameters::Rifle& rifle, std::uint8_t tick_rate_hz) {
+  if (augusta::parameters::FiresFasterThanTheTickRate(rifle, tick_rate_hz)) {
+    LW("subsystem=server event=rifle_fire_rate_capped rounds_per_minute={} tick_rate_hz={}", rifle.rounds_per_minute,
+       tick_rate_hz);
+  }
+}
+
 // What ServerRuntime's Config is built from: the file's settings and the
 // pack's Parameters script. The pack's map travels to ServerRuntime
 // separately (see main()), not through Config.
@@ -164,6 +174,7 @@ int main(int argc, char** argv) {
   if (!parameters) {
     return 1;
   }
+  WarnIfTheRifleOutpacesTheTick(parameters->rifle, file_config->tick_rate_hz);
 
   // augusta::networking::Init() must run once, process-wide, before any
   // Client/Server is constructed - see networking.h.
