@@ -67,4 +67,15 @@ TEST_F(CookedPackTest, TheServerPackHoldsNoVisualContentAndNamesItsClientPack) {
   EXPECT_FALSE(parameters->empty());
 }
 
+// The server judges hits against them and the client draws where a Shot lands,
+// so both packs hold the example character's hitboxes, one or more per body part.
+TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersHitboxesForEveryBodyPart) {
+  for (const Pack* pack : {&*client_, &*server_}) {
+    const auto hitboxes = pack->ResolveHitboxes("characters/player");
+    ASSERT_TRUE(hitboxes.has_value());
+    EXPECT_EQ(hitboxes->size(), 6U);
+    EXPECT_EQ(augusta::assets::FirstMissingBodyPart(*hitboxes), std::nullopt);
+  }
+}
+
 }  // namespace

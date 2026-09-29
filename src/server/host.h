@@ -59,6 +59,9 @@ struct Map {
   /// The scenario's characters, by path: the only ones a player may join as
   /// (ADR-0042). Empty admits no one.
   std::vector<std::string> characters;
+  /// Each of characters' hitboxes, in the same order: what a bullet that
+  /// reaches a body of that character is judged against (US-11, ADR-0040).
+  std::vector<std::vector<assets::HitboxData>> hitboxes;
   /// The hash of the client pack cooked with the server's: the only one a
   /// player may join with.
   assets::PackHash client_pack{};

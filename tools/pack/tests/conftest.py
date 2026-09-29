@@ -61,6 +61,12 @@ def decode_mesh(blob: bytes) -> tuple[list[tuple[float, float, float]], list[int
     return points, indices
 
 
+def decode_hitbox(blob: bytes) -> tuple[int, list[tuple[float, float, float]], list[int]]:
+    """A hitbox blob: u8 body part, then a mesh blob."""
+    points, indices = decode_mesh(blob[1:])
+    return blob[0], points, indices
+
+
 def decode_spawn_point(blob: bytes) -> tuple[tuple[float, ...], tuple[float, ...]]:
     """A spawn point blob: translation xyz, then rotation xyzw, all f32."""
     values = struct.unpack("<7f", blob)

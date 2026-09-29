@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -69,6 +70,29 @@ struct MeshData {
   std::vector<math::Vec3> points;
   std::vector<std::uint32_t> indices;
 };
+
+/// Where on a player a hitbox is (US-11): what a bullet that crosses it hits,
+/// which decides its damage (US-12). Numbered as the hitbox blob carries it.
+enum class BodyPart : std::uint8_t {
+  kHead = 0,
+  kTorso = 1,
+  kLimb = 2,
+};
+
+/// One hitbox (ADR-0040): its geometry and the body part it stands for. A
+/// character's is in its own root space, its feet at the origin, standing.
+struct HitboxData {
+  BodyPart part = BodyPart::kTorso;
+  MeshData mesh{};
+};
+
+/// part's name as a character stage spells it in augusta:bodyPart: "head",
+/// "torso" or "limb".
+[[nodiscard]] std::string_view BodyPartName(BodyPart part);
+
+/// The first body part, in BodyPart's order, that none of hitboxes stands for,
+/// or nullopt if each has one: a character must be hittable in every part.
+[[nodiscard]] std::optional<BodyPart> FirstMissingBodyPart(std::span<const HitboxData> hitboxes);
 
 // Sentinel parent_index for a SceneNode with no parent (a root node).
 inline constexpr std::uint32_t kSceneNodeNoParent = 0xFFFFFFFFU;
@@ -312,9 +336,16 @@ class Pack {
   // (ADR-0019/ADR-0031). Present in both client and server packs.
   [[nodiscard]] std::expected<MeshData, ResolveError> ResolveCollision(std::string_view path) const;
 
-  // Resolves a hitbox shape by its pack-relative path (ADR-0019/ADR-0031).
+  // Resolves a hitbox by its pack-relative path (ADR-0019/ADR-0031).
   // Present in both client and server packs.
-  [[nodiscard]] std::expected<MeshData, ResolveError> ResolveHitbox(std::string_view path) const;
+  [[nodiscard]] std::expected<HitboxData, ResolveError> ResolveHitbox(std::string_view path) const;
+
+  /// Resolves every hitbox of the character at character_path (its path
+  /// relative to `authoring/`, e.g. "characters/player", ADR-0040): each one
+  /// addressed under it, in path order. Empty if it has none. Present in both
+  /// client and server packs.
+  [[nodiscard]] std::expected<std::vector<HitboxData>, ResolveError> ResolveHitboxes(
+      std::string_view character_path) const;
 
   // Resolves a spawn-point marker by its pack-relative path (ADR-0019/
   // ADR-0032). Present in both client and server packs.

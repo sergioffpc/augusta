@@ -3,8 +3,10 @@
 #include <expected>
 #include <filesystem>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "augusta/assets.h"
 #include "augusta/config.h"
@@ -41,6 +43,31 @@ std::expected<augusta::config::ServerConfig, augusta::config::ConfigError> LoadC
   return augusta::config::LoadServerConfig(*config_file);
 }
 
+// Each of characters' hitboxes, in the same order, or nullopt after reporting
+// the first character that has none for a body part: every hit on a player
+// resolves to one (US-11), so the server runs only on characters it can judge.
+std::optional<std::vector<std::vector<augusta::assets::HitboxData>>> LoadHitboxes(
+    const augusta::assets::Pack& pack, const std::vector<std::string>& characters,
+    const std::filesystem::path& pack_path) {
+  std::vector<std::vector<augusta::assets::HitboxData>> hitboxes;
+  hitboxes.reserve(characters.size());
+  for (const std::string& character : characters) {
+    auto character_hitboxes = pack.ResolveHitboxes(character);
+    if (!character_hitboxes) {
+      LE("subsystem=server event=hitboxes_loading_failed path={} character={} error={}", pack_path.string(), character,
+         augusta::assets::DescribeResolveError(character_hitboxes.error(), "hitbox"));
+      return std::nullopt;
+    }
+    if (const auto missing = augusta::assets::FirstMissingBodyPart(*character_hitboxes)) {
+      LE("subsystem=server event=hitboxes_loading_failed path={} character={} error=\"no hitbox for the {}\"",
+         pack_path.string(), character, augusta::assets::BodyPartName(*missing));
+      return std::nullopt;
+    }
+    hitboxes.push_back(*std::move(character_hitboxes));
+  }
+  return hitboxes;
+}
+
 // Built before any socket or thread starts, so a pack without a usable map
 // exits like a bad pack does. Reports what is wrong and returns nullopt.
 std::optional<augusta::server::Map> LoadMap(const augusta::assets::Pack& pack, const std::filesystem::path& pack_path) {
@@ -63,6 +90,10 @@ std::optional<augusta::server::Map> LoadMap(const augusta::assets::Pack& pack, c
        augusta::assets::kCharactersPath, augusta::assets::DescribeResolveError(characters.error(), "character list"));
     return std::nullopt;
   }
+  auto hitboxes = LoadHitboxes(pack, *characters, pack_path);
+  if (!hitboxes) {
+    return std::nullopt;
+  }
   // The client pack cooked with this one, the only one a player may join with.
   const auto client_pack = pack.ResolveClientPackHash();
   if (!client_pack) {
@@ -77,6 +108,7 @@ std::optional<augusta::server::Map> LoadMap(const augusta::assets::Pack& pack, c
       .collision = *std::move(collision),
       .spawn_points = *std::move(spawn_points),
       .characters = *std::move(characters),
+      .hitboxes = *std::move(hitboxes),
       .client_pack = *client_pack,
   };
 }
