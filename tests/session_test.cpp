@@ -281,7 +281,8 @@ std::vector<Session*> Pointers(const std::vector<std::unique_ptr<Session>>& sess
 class SessionTest : public ::testing::Test {
  protected:
   SessionTest()
-      : host_(TestHostConfig(), Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter}}}),
+      : host_(TestHostConfig(),
+              Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}}),
         session_(TestSessionConfig(), EmptyWorld()) {}
 
   // Runs both sides' network work until the session reports connected, or
@@ -344,10 +345,11 @@ TEST_F(SessionTest, StaysConnectedWhileTheTestAlternatesTicksAndNetworkWork) {
 class JoinTest : public ::testing::Test {
  protected:
   JoinTest()
-      : host_(TestHostConfig(WithPlayerCount(augusta::protocol::kMaxPlayers)), Map{.collision = {},
-                                                                                   .spawn_points = {},
-                                                                                   .characters = {{.path = kCharacter}},
-                                                                                   .client_pack = ClientPack(1)}) {}
+      : host_(TestHostConfig(WithPlayerCount(augusta::protocol::kMaxPlayers)),
+              Map{.collision = {},
+                  .spawn_points = {},
+                  .characters = {{.path = kCharacter, .hitboxes = {}}},
+                  .client_pack = ClientPack(1)}) {}
 
   // A client pack hash told apart by its last byte.
   static augusta::assets::PackHash ClientPack(std::uint8_t last) {
@@ -619,7 +621,8 @@ constexpr int kFallTicks = 120;
 // The body a client in a match of its own predicts after kFallTicks idle
 // ticks, with collision as the map on both sides.
 augusta::prediction::State FallenBody(const std::vector<CollisionMesh>& collision) {
-  Host host(TestHostConfig(), Map{.collision = collision, .spawn_points = {}, .characters = {{.path = kCharacter}}});
+  Host host(TestHostConfig(),
+            Map{.collision = collision, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
   augusta::prediction::World world = EmptyWorld();
   for (const CollisionMesh& mesh : collision) {
     EXPECT_TRUE(world.AddCollisionMesh(mesh).has_value());
@@ -653,8 +656,9 @@ TEST(MapSessionTest, APredictionWorldRefusesAMapMeshPhysicsRejects) {
 }
 
 TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
-  Host host(TestHostConfig(),
-            Map{.collision = {FloorAt(0.0F)}, .spawn_points = {}, .characters = {{.path = kCharacter}}});
+  Host host(
+      TestHostConfig(),
+      Map{.collision = {FloorAt(0.0F)}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
 
   for (int i = 0; i < 10; ++i) {
     host.Tick(kFixedTick);
@@ -663,8 +667,9 @@ TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
 }
 
 TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
-  EXPECT_THROW(Host(TestHostConfig(),
-                    Map{.collision = {CollisionMesh{}}, .spawn_points = {}, .characters = {{.path = kCharacter}}}),
+  EXPECT_THROW(Host(TestHostConfig(), Map{.collision = {CollisionMesh{}},
+                                          .spawn_points = {},
+                                          .characters = {{.path = kCharacter, .hitboxes = {}}}}),
                std::runtime_error);
 }
 
@@ -684,8 +689,9 @@ class MovementTest : public ::testing::Test {
   // The client always knows the floor; the host knows server_map, which a test
   // may make differ from it to give the two something to disagree about.
   explicit MovementTest(std::vector<CollisionMesh> server_map)
-      : host_(TestHostConfig(),
-              Map{.collision = std::move(server_map), .spawn_points = {}, .characters = {{.path = kCharacter}}}),
+      : host_(TestHostConfig(), Map{.collision = std::move(server_map),
+                                    .spawn_points = {},
+                                    .characters = {{.path = kCharacter, .hitboxes = {}}}}),
         session_(TestSessionConfig(), WorldWithFloorAt(kGroundHeight)) {}
 
   void TearDown() override { augusta::networking::SimulateNetworkConditions({}); }
@@ -967,8 +973,9 @@ TEST_F(PacingTest, AClientWhoseClockRunsTwoPercentSlowKeepsTheServerFromRunningO
 
 TEST(RawCommandsTest, CommandsThatAreOutOfOrderOrOutOfRangeAreDroppedWithoutAffectingTheWorld) {
   constexpr auto kNetworkDelay = std::chrono::milliseconds(8);
-  Host host(TestHostConfig(),
-            Map{.collision = {FloorAt(-0.5F)}, .spawn_points = {}, .characters = {{.path = kCharacter}}});
+  Host host(
+      TestHostConfig(),
+      Map{.collision = {FloorAt(-0.5F)}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
   RawClient raw(Endpoint{.address = LoopbackAddress()});
   ASSERT_TRUE(raw.Join(host));
   ASSERT_TRUE(DriveIntoMatch(host, {}, &raw));
@@ -1076,7 +1083,7 @@ class LoopbackMatch : public ::testing::Test {
     return HostSetup{.config = TestHostConfig(parameters, tick_rate_hz),
                      .map = Map{.collision = {FloorAt(kFloorY)},
                                 .spawn_points = std::move(spawn_points),
-                                .characters = {{.path = kCharacter}}}};
+                                .characters = {{.path = kCharacter, .hitboxes = {}}}}};
   }
 
   // Connects a new client and runs the network until the server has answered
@@ -2058,7 +2065,7 @@ TEST_F(SessionTest, AClientHoldsNoParametersUntilTheServerAdmitsIt) {
 // accepted rather than divide by it.
 TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseTickRateFailsTheChecks) {
   Host host(TestHostConfig(kTestParameters, 0),
-            Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter}}});
+            Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
   Session session(TestSessionConfig(), EmptyWorld());
   session.Connect();
 
@@ -2098,8 +2105,8 @@ TEST(SessionFailureTest, AServerNobodyIsListeningAtIsUnreachable) {
 }
 
 TEST(SessionFailureTest, AServerThatGoesAwayDuringAMatchIsAConnectionLost) {
-  auto host = std::make_unique<Host>(TestHostConfig(),
-                                     Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter}}});
+  auto host = std::make_unique<Host>(
+      TestHostConfig(), Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
   Session session(TestSessionConfig(), EmptyWorld());
   session.Connect();
   ASSERT_TRUE(DriveIntoMatch(*host, {&session}));
@@ -2120,7 +2127,8 @@ TEST(SessionFailureTest, AServerThatGoesAwayDuringAMatchIsAConnectionLost) {
 }
 
 TEST(SessionFailureTest, EndingTheSessionOneselfIsNotAFailure) {
-  Host host(TestHostConfig(), Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter}}});
+  Host host(TestHostConfig(),
+            Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
   Session session(TestSessionConfig(), EmptyWorld());
   session.Connect();
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
