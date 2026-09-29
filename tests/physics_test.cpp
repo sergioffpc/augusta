@@ -493,6 +493,21 @@ TEST(StaticGeometryTest, ARaycastHitsAMovedBodyWhereItWasCreatedNotWhereItIs) {
   EXPECT_GT(where_it_was.point.y, 0.5F);
 }
 
+TEST(StaticGeometryTest, ARaycastOfTheMapSeesTheMapButNoBody) {
+  World world = WorldWithFloor();
+  world.CreateBody(Vec3(0.0F));
+  const Vec3 above(0.0F, 10.0F, 0.0F);
+  const Vec3 down(0.0F, -1.0F, 0.0F);
+  ASSERT_TRUE(world.Raycast(above, down, 20.0F).has_hit);
+  ASSERT_GT(world.Raycast(above, down, 20.0F).point.y, 0.5F);
+
+  const RaycastHit hit = world.RaycastMap(above, down, 20.0F);
+
+  ASSERT_TRUE(hit.has_hit);
+  EXPECT_NEAR(hit.point.y, 0.0F, 0.01F);
+  EXPECT_NEAR(hit.distance, 10.0F, 0.01F);
+}
+
 TEST(StaticGeometryTest, ValidateCollisionMeshAgreesWithAddCollisionMesh) {
   EXPECT_EQ(augusta::physics::ValidateCollisionMesh(CollisionMesh{}).error(), CollisionMeshError::kEmpty);
   EXPECT_TRUE(augusta::physics::ValidateCollisionMesh(Floor(0.0F, -1.0F, 1.0F, -1.0F, 1.0F)).has_value());

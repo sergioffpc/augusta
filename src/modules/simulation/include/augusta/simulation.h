@@ -63,13 +63,13 @@ enum class Phase {
   // Mechanism. Advances in-flight bullet trajectories (US-10) -
   // augusta::ballistics::World::Step, one call per in-flight bullet.
   kBallistics,
-  // Mechanism. Resolves impact point + body part (US-11). Already
-  // folded into the same ballistics::World::Step call as kBallistics -
-  // see ballistics.h: one Step call returns Outcome::kHitPlayer
-  // together with BodyPart and impact_point, using
-  // physics::World::Raycast internally. Kept as its own named phase per
-  // ADR-0023 for pipeline ordering/extensibility, not a second system
-  // call today.
+  // Mechanism. Resolves impact point + body part (US-11) against the
+  // hitboxes as they were the Shooter's delay ago (ADR-0044). The test
+  // itself is folded into the same ballistics::World::Step call as
+  // kBallistics - see ballistics.h: this phase poses the hitboxes it is
+  // handed, and one Step call returns the Map or player hit with its
+  // BodyPart and impact_point. Kept as its own named phase per ADR-0023
+  // for pipeline ordering/extensibility, not a second system call.
   kHitDetection,
   // Mechanism, reads Data/Config. Applies damage and marks
   // death/spectator (US-12, US-13), from each bullet's resolved
