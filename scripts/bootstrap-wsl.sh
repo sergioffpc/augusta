@@ -3,6 +3,17 @@
 # (docs/ENGINEERING.md, Developer Environment).
 set -euo pipefail
 
+# The clang/clang-format/clang-tidy below are the distro's packages, whose
+# LLVM major is fixed per Ubuntu release: only the release CI's runner and the
+# Dockerfile use (26.04) gives the same one, so the hooks agree with CI's gates.
+# Bump it together with the runner image.
+required_ubuntu="26.04"
+. /etc/os-release
+if [[ "${ID:-}" != "ubuntu" || "${VERSION_ID:-}" != "$required_ubuntu" ]]; then
+  echo "error: requires Ubuntu $required_ubuntu, found ${PRETTY_NAME:-unknown}" >&2
+  exit 1
+fi
+
 # Clean up any stray apt.llvm.org source from a previous run of this script.
 sudo rm -f /etc/apt/sources.list.d/*llvm*.list
 
