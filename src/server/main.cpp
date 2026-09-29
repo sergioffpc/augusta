@@ -43,29 +43,30 @@ std::expected<augusta::config::ServerConfig, augusta::config::ConfigError> LoadC
   return augusta::config::LoadServerConfig(*config_file);
 }
 
-// Each of characters' hitboxes, in the same order, or nullopt after reporting
-// the first character that has none for a body part: every hit on a player
-// resolves to one (US-11), so the server runs only on characters it can judge.
-std::optional<std::vector<std::vector<augusta::assets::HitboxData>>> LoadHitboxes(
-    const augusta::assets::Pack& pack, const std::vector<std::string>& characters,
-    const std::filesystem::path& pack_path) {
-  std::vector<std::vector<augusta::assets::HitboxData>> hitboxes;
-  hitboxes.reserve(characters.size());
-  for (const std::string& character : characters) {
-    auto character_hitboxes = pack.ResolveHitboxes(character);
-    if (!character_hitboxes) {
-      LE("subsystem=server event=hitboxes_loading_failed path={} character={} error={}", pack_path.string(), character,
-         augusta::assets::DescribeResolveError(character_hitboxes.error(), "hitbox"));
+// Each of paths as a Character with its hitboxes, in the same order, or
+// nullopt after reporting the first that has none for a body part: every hit
+// on a player resolves to one (US-11), so the server runs only on characters
+// it can judge.
+std::optional<std::vector<augusta::server::Character>> LoadCharacters(const augusta::assets::Pack& pack,
+                                                                      std::vector<std::string> paths,
+                                                                      const std::filesystem::path& pack_path) {
+  std::vector<augusta::server::Character> characters;
+  characters.reserve(paths.size());
+  for (std::string& path : paths) {
+    auto hitboxes = pack.ResolveHitboxes(path);
+    if (!hitboxes) {
+      LE("subsystem=server event=hitboxes_loading_failed path={} character={} error={}", pack_path.string(), path,
+         augusta::assets::DescribeResolveError(hitboxes.error(), "hitbox"));
       return std::nullopt;
     }
-    if (const auto missing = augusta::assets::FirstMissingBodyPart(*character_hitboxes)) {
+    if (const auto missing = augusta::assets::FirstMissingBodyPart(*hitboxes)) {
       LE("subsystem=server event=hitboxes_loading_failed path={} character={} error=\"no hitbox for the {}\"",
-         pack_path.string(), character, augusta::assets::BodyPartName(*missing));
+         pack_path.string(), path, augusta::assets::BodyPartName(*missing));
       return std::nullopt;
     }
-    hitboxes.push_back(*std::move(character_hitboxes));
+    characters.push_back({.path = std::move(path), .hitboxes = *std::move(hitboxes)});
   }
-  return hitboxes;
+  return characters;
 }
 
 // Built before any socket or thread starts, so a pack without a usable map
@@ -84,14 +85,15 @@ std::optional<augusta::server::Map> LoadMap(const augusta::assets::Pack& pack, c
     return std::nullopt;
   }
   // The scenario's characters, the only ones a player may join as (ADR-0042).
-  auto characters = pack.ResolveCharacters();
-  if (!characters) {
+  auto character_paths = pack.ResolveCharacters();
+  if (!character_paths) {
     LE("subsystem=server event=characters_loading_failed path={} asset={} error={}", pack_path.string(),
-       augusta::assets::kCharactersPath, augusta::assets::DescribeResolveError(characters.error(), "character list"));
+       augusta::assets::kCharactersPath,
+       augusta::assets::DescribeResolveError(character_paths.error(), "character list"));
     return std::nullopt;
   }
-  auto hitboxes = LoadHitboxes(pack, *characters, pack_path);
-  if (!hitboxes) {
+  auto characters = LoadCharacters(pack, *std::move(character_paths), pack_path);
+  if (!characters) {
     return std::nullopt;
   }
   // The client pack cooked with this one, the only one a player may join with.
@@ -108,7 +110,6 @@ std::optional<augusta::server::Map> LoadMap(const augusta::assets::Pack& pack, c
       .collision = *std::move(collision),
       .spawn_points = *std::move(spawn_points),
       .characters = *std::move(characters),
-      .hitboxes = *std::move(hitboxes),
       .client_pack = *client_pack,
   };
 }

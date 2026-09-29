@@ -47,6 +47,14 @@ struct HostConfig {
   networking::Endpoint listen{};
 };
 
+/// A character a player may join as (ADR-0042), with the hitboxes a bullet
+/// that reaches a body of that character is judged against (US-11, ADR-0040).
+struct Character {
+  /// Its path in the pack, as the scenario's character list names it.
+  std::string path;
+  std::vector<assets::HitboxData> hitboxes;
+};
+
 /// The map's collision and where joining players spawn, as built by
 /// augusta::map from the server pack by the caller: where content comes from
 /// is the executable's business, not the config file's - so it travels
@@ -56,12 +64,9 @@ struct Map {
   /// In the order players take them at each match start, continuing across
   /// matches; empty spawns everyone at the origin.
   std::vector<math::Vec3> spawn_points;
-  /// The scenario's characters, by path: the only ones a player may join as
+  /// The scenario's characters: the only ones a player may join as
   /// (ADR-0042). Empty admits no one.
-  std::vector<std::string> characters;
-  /// Each of characters' hitboxes, in the same order: what a bullet that
-  /// reaches a body of that character is judged against (US-11, ADR-0040).
-  std::vector<std::vector<assets::HitboxData>> hitboxes;
+  std::vector<Character> characters;
   /// The hash of the client pack cooked with the server's: the only one a
   /// player may join with.
   assets::PackHash client_pack{};
