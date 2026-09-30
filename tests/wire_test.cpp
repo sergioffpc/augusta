@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
+#include "augusta/ballistics.h"
 #include "augusta/command.h"
 #include "augusta/grid.h"
 #include "augusta/harness.h"
@@ -140,8 +141,10 @@ TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
       .tick = 42,
       .acknowledged_sequence = 17,
       .bodies = {{.entity = augusta::simulation::EntityId{1}, .body = Body(1.0F, Stance::kStanding)},
-                 {.entity = augusta::simulation::EntityId{2}, .body = Body(2.0F, Stance::kCrouching)},
-                 {.entity = augusta::simulation::EntityId{3}, .body = Body(3.0F, Stance::kProne)}},
+                 {.entity = augusta::simulation::EntityId{2},
+                  .body = Body(2.0F, Stance::kCrouching),
+                  .yaw = augusta::math::SnapAngle(-2.345678F)},
+                 {.entity = augusta::simulation::EntityId{3}, .body = Body(3.0F, Stance::kProne), .yaw = 1.5F}},
       .queued_commands = 2,
   };
 
@@ -155,6 +158,7 @@ TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
   for (std::size_t i = 0; i < sent.bodies.size(); ++i) {
     EXPECT_EQ(Number(received.bodies[i].entity), Number(sent.bodies[i].entity));
     ExpectSameBody(received.bodies[i].body, sent.bodies[i].body);
+    EXPECT_EQ(received.bodies[i].yaw, sent.bodies[i].yaw);
   }
 }
 
@@ -301,6 +305,25 @@ TEST(WireTest, AShotTheServerAnnouncesReachesTheClientUnchanged) {
   EXPECT_EQ(received.origin, sent.origin);
   EXPECT_EQ(received.yaw, sent.yaw);
   EXPECT_EQ(received.pitch, sent.pitch);
+}
+
+TEST(WireTest, AHitConfirmationTheServerSendsReachesTheClientUnchanged) {
+  using augusta::ballistics::BodyPart;
+  for (const BodyPart part : {BodyPart::kHead, BodyPart::kTorso, BodyPart::kLimb}) {
+    const augusta::replication::HitConfirmation sent{
+        .recipient = augusta::simulation::EntityId{3},
+        .target = augusta::simulation::EntityId{5},
+        .damage = 37.5F,
+        .part = part,
+    };
+
+    const augusta::harness::HitConfirmation received =
+        augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+
+    EXPECT_EQ(Number(received.target), Number(sent.target));
+    EXPECT_EQ(received.part, part);
+    EXPECT_EQ(received.damage, sent.damage);
+  }
 }
 
 TEST(WireTest, MatchAndSimulationWorldNameABodyByTheSameEntity) {

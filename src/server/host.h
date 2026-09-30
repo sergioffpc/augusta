@@ -85,8 +85,9 @@ struct Map {
 class Host {
  public:
   /// Constructs SimulationWorld with map's collision (throws
-  /// std::runtime_error if a map mesh is rejected) and starts listening
-  /// (throws std::runtime_error if the address can't be bound).
+  /// std::runtime_error if a map mesh, or a character's hitbox, is not a whole
+  /// triangle list) and starts listening (throws std::runtime_error if the
+  /// address can't be bound).
   Host(const HostConfig& config, Map map);
   ~Host();
 
@@ -100,10 +101,11 @@ class Host {
   void PumpNetwork();
 
   /// Runs one fixed tick of SimulationWorld on one command per player in the
-  /// match, sends each of them its update and every Shot of the tick (reliably,
-  /// ADR-0044), and returns the state. Starts a
-  /// match first if the Lobby is full and Ready and the pause after the last
-  /// one (server::kMatchPause, counted in these ticks) has passed.
+  /// match, sends each of them its update and, reliably (ADR-0044), every Shot
+  /// of the tick and the Hit confirmations of its own hits, logs the tick's
+  /// hits, and returns the state. Starts a match first if the Lobby is full and
+  /// Ready and the pause after the last one (server::kMatchPause, counted in
+  /// these ticks) has passed.
   simulation::State Tick(float delta_time);
 
   /// Counts the Tick just run, with how it kept to the Simulation loop's

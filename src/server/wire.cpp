@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/ballistics.h"
 #include "augusta/command.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -34,6 +35,18 @@ physics::Stance FromWire(protocol::StanceWire stance) { return static_cast<physi
 
 // The protocol carries a pack's hash as the assets module computes it.
 static_assert(protocol::kPackHashSize == assets::kPackHashSize);
+
+protocol::BodyPartWire ToWire(ballistics::BodyPart part) {
+  switch (part) {
+    case ballistics::BodyPart::kHead:
+      return protocol::BodyPartWire::kHead;
+    case ballistics::BodyPart::kTorso:
+      return protocol::BodyPartWire::kTorso;
+    case ballistics::BodyPart::kLimb:
+      return protocol::BodyPartWire::kLimb;
+  }
+  std::unreachable();
+}
 
 }  // namespace
 
@@ -149,8 +162,8 @@ protocol::AuthoritativeStateWire ToWire(const replication::Update& update) {
   };
   state.bodies.reserve(update.bodies.size());
   for (const replication::EntityBody& body : update.bodies) {
-    state.bodies.push_back(
-        protocol::EntityStateWire{.entity = ToWire(FromSimulation(body.entity)), .body = ToWire(body.body)});
+    state.bodies.push_back(protocol::EntityStateWire{
+        .entity = ToWire(FromSimulation(body.entity)), .body = ToWire(body.body), .yaw = body.yaw});
   }
   return state;
 }
@@ -162,6 +175,14 @@ protocol::ShotWire ToWire(const replication::Shot& shot) {
       .tick = shot.tick,
       .yaw = shot.yaw,
       .pitch = shot.pitch,
+  };
+}
+
+protocol::HitConfirmationWire ToWire(const replication::HitConfirmation& hit) {
+  return protocol::HitConfirmationWire{
+      .target = ToWire(FromSimulation(hit.target)),
+      .damage = hit.damage,
+      .part = ToWire(hit.part),
   };
 }
 

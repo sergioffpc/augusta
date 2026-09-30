@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/ballistics.h"
 #include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
@@ -50,6 +51,8 @@ enum class EntityId : std::uint32_t {};
 struct EntityBody {
   EntityId entity{};
   physics::BodyState body{};
+  /// Where the body faces: the yaw of its player's view (command::Command), in radians.
+  float yaw = 0.0F;
 };
 
 /// What the server said about every body as of one of its ticks: its
@@ -85,6 +88,21 @@ struct Shot {
 /// firing, so a caller that asks every frame loses none and one that never
 /// asks holds no more than this.
 inline constexpr std::size_t kMaxPendingShots = 256;
+
+/// A round this client's player fired hit a player, as the server confirmed it
+/// (CONTEXT.md's Hit confirmation, ADR-0044).
+struct HitConfirmation {
+  /// The body that was hit.
+  EntityId target{};
+  /// The damage the hit did.
+  float damage = 0.0F;
+  /// Where on the body it struck.
+  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+};
+
+/// The most Hit confirmations a Session keeps for TakeHitConfirmations: more
+/// than one rifle lands between two frames, by far.
+inline constexpr std::size_t kMaxPendingHitConfirmations = 64;
 
 /// One player in the Lobby.
 struct RosterEntry {
@@ -272,6 +290,13 @@ class Session {
   /// match starts with none. Received by ExchangeMessages; safe to call from
   /// any thread.
   [[nodiscard]] std::vector<Shot> TakeShots();
+
+  /// The Hit confirmations of the match in progress received since the last
+  /// call, in the order they arrived; the newest kMaxPendingHitConfirmations of
+  /// them if more did. One that arrives outside a match or names a body not in
+  /// it is dropped, and a match starts with none. Received by ExchangeMessages;
+  /// safe to call from any thread.
+  [[nodiscard]] std::vector<HitConfirmation> TakeHitConfirmations();
 
   /// The body this client's player controls, as Match start named it: in the
   /// match in progress, or the last one if back in the Lobby; nullopt before

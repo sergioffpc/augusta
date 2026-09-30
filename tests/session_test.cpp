@@ -7,6 +7,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <set>
 #include <stdexcept>
@@ -25,7 +26,9 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
+#include "augusta/ballistics.h"
 #include "augusta/command.h"
+#include "augusta/grid.h"
 #include "augusta/harness.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
@@ -51,6 +54,7 @@ using augusta::command::Command;
 using augusta::harness::EntityId;
 using augusta::harness::Failure;
 using augusta::harness::FailureKind;
+using augusta::harness::HitConfirmation;
 using augusta::harness::JoinRefusal;
 using augusta::harness::Phase;
 using augusta::harness::Session;
@@ -667,6 +671,19 @@ TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
   SUCCEED();
 }
 
+TEST(MapHostTest, AHostRefusesACharacterHitboxThatIsNotAWholeTriangleList) {
+  // Three points and an index past them.
+  const augusta::assets::HitboxData hitbox{
+      .part = augusta::assets::BodyPart::kTorso,
+      .mesh = {.points = {Vec3(0.0F, 0.0F, 0.0F), Vec3(1.0F, 0.0F, 0.0F), Vec3(0.0F, 1.0F, 0.0F)},
+               .indices = {0, 1, 3}}};
+
+  EXPECT_THROW(
+      Host(TestHostConfig(),
+           Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {hitbox}}}}),
+      std::runtime_error);
+}
+
 TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
   EXPECT_THROW(Host(TestHostConfig(), Map{.collision = {CollisionMesh{}},
                                           .spawn_points = {},
@@ -1118,22 +1135,24 @@ class LoopbackMatch : public ::testing::Test {
     }
   }
 
-  // One tick of the whole match: every client predicts and sends command, the
-  // server ticks once every command a connected client in the match sent has
-  // reached it (or that client has since heard its match end, or kStepPatience
-  // has passed), the states come back. Waiting for them rather than for a fixed
-  // time keeps a slow run (the sanitizers build) from ticking the server before
-  // a command arrives, which would hold that player's last movement (ADR-0038)
-  // and turn into a correction no real mismatch caused. The patience bounds a
-  // test that loses commands on purpose.
-  void Step(const Command& command = Command{}) {
+  // One tick of the whole match: every client predicts and sends its command
+  // of commands (one per client, in the order they connected), the server ticks
+  // once every command a connected client in the match sent has reached it (or
+  // that client has since heard its match end, or kStepPatience has passed),
+  // the states come back. Returns the server's. Waiting for the commands rather
+  // than for a fixed time keeps a slow run (the sanitizers build) from ticking
+  // the server before a command arrives, which would hold that player's last
+  // movement (ADR-0038) and turn into a correction no real mismatch caused. The
+  // patience bounds a test that loses commands on purpose.
+  augusta::simulation::State StepEach(const std::vector<Command>& commands) {
     std::vector<std::pair<const Session*, augusta::server::SessionId>> sending;
-    for (const auto& session : sessions_) {
+    for (std::size_t i = 0; i < sessions_.size(); ++i) {
+      const auto& session = sessions_[i];
       if (session->GetPhase() == Phase::kMatch && session->GetConnectionState() == ConnectionState::kConnected) {
         sending.emplace_back(session.get(),
                              static_cast<augusta::server::SessionId>(std::to_underlying(*session->GetSessionId())));
       }
-      states_[session.get()] = session->Tick(command, kFixedTick);
+      states_[session.get()] = session->Tick(commands.at(i), kFixedTick);
     }
     const auto give_up = std::chrono::steady_clock::now() + kStepPatience;
     ExchangeUntil(host_, Pointers(sessions_), [&] {
@@ -1141,9 +1160,15 @@ class LoopbackMatch : public ::testing::Test {
                return host_.QueuedCommands(sent.second) > 0 || sent.first->GetPhase() != Phase::kMatch;
              });
     });
-    host_.Tick(kFixedTick);
+    augusta::simulation::State state = host_.Tick(kFixedTick);
     std::this_thread::sleep_for(kNetworkDelay);
     Exchange();
+    return state;
+  }
+
+  // A StepEach on which every client does command.
+  augusta::simulation::State Step(const Command& command = Command{}) {
+    return StepEach(std::vector<Command>(sessions_.size(), command));
   }
 
   void Run(int steps, const Command& command = Command{}) {
@@ -2277,11 +2302,13 @@ TEST_F(RobustnessTest, AClientThatDropsWithoutClosingKeepsTheServerTickingAndIsR
 }
 
 // A match of kPlayers on the floor, each with the test rifle: 600 rounds a
-// minute, a round every six ticks at the test tick rate, and a magazine of 15.
+// minute, a round every six ticks at the test tick rate, and a magazine of 15
+// that takes half a second, 30 ticks, to reload.
 template <std::uint8_t kPlayers>
 class FireMatchOf : public LoopbackMatch {
  protected:
   static constexpr std::uint8_t kMagazine = 15;
+  static constexpr int kReloadTicks = 30;
   // The test character's eye, standing, above its feet.
   static constexpr float kEyeHeight = 1.6F;
 
@@ -2289,6 +2316,7 @@ class FireMatchOf : public LoopbackMatch {
     Parameters parameters = WithPlayerCount(kPlayers);
     parameters.rifle.rounds_per_minute = 600.0F;
     parameters.rifle.magazine_capacity = kMagazine;
+    parameters.rifle.reload_seconds = 0.5F;
     parameters.rifle.muzzle_velocity = 800.0F;
     parameters.ammo.max_range = 1000.0F;
     HostSetup setup = OnTheFloor({Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F)}, parameters);
@@ -2311,6 +2339,14 @@ class FireMatchOf : public LoopbackMatch {
   static Command Firing() {
     Command command{};
     command.fire = true;
+    return command;
+  }
+
+  // Reload pressed, with fire held or not.
+  static Command Reloading(bool fire) {
+    Command command{};
+    command.reload = true;
+    command.fire = fire;
     return command;
   }
 
@@ -2371,6 +2407,50 @@ TEST_F(FireTest, NoShotIsFiredWhileFireIsNotHeld) {
   Run(30);
 
   EXPECT_TRUE(ShotsOf(client).empty());
+}
+
+TEST_F(FireTest, AfterAReloadOfAnEmptyMagazineTheShotsResumeForAFullMagazine) {
+  Session& client = *sessions_.front();
+  Run(120, Firing());
+  ASSERT_EQ(ShotsOf(client).size(), kMagazine);
+
+  // The press and the 29 ticks after it are the reload's half second.
+  Step(Reloading(/*fire=*/true));
+  Run(kReloadTicks - 1, Firing());
+  EXPECT_EQ(ShotsOf(client).size(), kMagazine);
+
+  Step(Firing());
+  EXPECT_EQ(ShotsOf(client).size(), kMagazine + 1U);
+
+  // Long enough for two magazines: only the one the reload gave is fired.
+  Run(240, Firing());
+  EXPECT_EQ(ShotsOf(client).size(), 2U * kMagazine);
+}
+
+TEST_F(FireTest, AReloadPressWithAFullMagazineStartsNothingAndFireContinues) {
+  Session& client = *sessions_.front();
+
+  // A second of fire, as without the press: ten rounds.
+  Step(Reloading(/*fire=*/true));
+  Run(59, Firing());
+
+  EXPECT_EQ(ShotsOf(client).size(), 10U);
+}
+
+// A Command's reload is a press (the sampler sets it on one tick), but the
+// server does not count on it: sent on every tick, it still starts one reload.
+TEST_F(FireTest, ReloadSentOnEveryTickStartsOneReloadNotOneEveryTick) {
+  Session& client = *sessions_.front();
+  Run(120, Firing());
+  ASSERT_EQ(ShotsOf(client).size(), kMagazine);
+
+  // Started over on every tick, the reload would not be done after its half second.
+  Run(kReloadTicks, Reloading(/*fire=*/false));
+  Step(Firing());
+  EXPECT_EQ(ShotsOf(client).size(), kMagazine + 1U);
+
+  Run(120, Firing());
+  EXPECT_EQ(ShotsOf(client).size(), 2U * kMagazine);
 }
 
 using FireDuelTest = FireMatchOf<2>;
@@ -2442,6 +2522,357 @@ TEST_F(FireDuelTest, WithPacketLossEveryClientStillReceivesEveryShot) {
       EXPECT_EQ(received[i].tick, shots_[sessions_.front().get()][i].tick) << "shot " << i;
     }
   }
+}
+
+// A hitbox for part: the box from low to high, as the twelve triangles of its faces.
+augusta::assets::HitboxData BoxHitbox(augusta::assets::BodyPart part, const Vec3& low, const Vec3& high) {
+  return augusta::assets::HitboxData{
+      .part = part,
+      .mesh = {.points = {Vec3(low.x, low.y, low.z), Vec3(high.x, low.y, low.z), Vec3(high.x, high.y, low.z),
+                          Vec3(low.x, high.y, low.z), Vec3(low.x, low.y, high.z), Vec3(high.x, low.y, high.z),
+                          Vec3(high.x, high.y, high.z), Vec3(low.x, high.y, high.z)},
+               .indices = {0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1,
+                           3, 2, 6, 3, 6, 7, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2}}};
+}
+
+// A match of kPlayers standing in a line down -Z, 10 m apart, on the floor:
+// the first, at the origin, is the shooter, and a view of yaw 0 looks from it
+// at the others. Everyone plays a character 1.8 m tall that sees from inside
+// its head, with a head, a torso and legs on its axis and a right arm (a limb)
+// beside the torso, at +X when it faces yaw 0. A round takes 50 of a player's
+// 100 of health at the head, 20 at the torso and 10 at a limb, and reaches the
+// nearest target on the tick it is fired.
+template <std::uint8_t kPlayers>
+class HitMatchOf : public LoopbackMatch {
+ protected:
+  using BodyPart = augusta::ballistics::BodyPart;
+
+  static constexpr float kEyeHeight = 1.6F;
+  static constexpr float kSpacing = 10.0F;
+  static constexpr float kWallZ = -5.0F;
+  static constexpr float kHeadDamage = 50.0F;
+  static constexpr float kTorsoDamage = 20.0F;
+  static constexpr float kLimbDamage = 10.0F;
+  // Where a shot at each part of a standing target is aimed, above its feet.
+  static constexpr float kHeadHeight = 1.65F;
+  static constexpr float kTorsoHeight = 1.2F;
+  static constexpr float kLegsHeight = 0.45F;
+
+  // walled puts a wall across the line, halfway between the shooter and the nearest target.
+  static HostSetup InALine(bool walled) {
+    Parameters parameters = WithPlayerCount(kPlayers);
+    parameters.rifle.rounds_per_minute = 600.0F;
+    parameters.rifle.magazine_capacity = 30;
+    parameters.rifle.muzzle_velocity = 800.0F;
+    parameters.ammo.max_range = 200.0F;
+    parameters.ammo.damage = {.head = kHeadDamage, .torso = kTorsoDamage, .limb = kLimbDamage};
+    parameters.starting_health = 100.0F;
+    std::vector<Vec3> spawn_points;
+    for (std::uint8_t i = 0; i < kPlayers; ++i) {
+      spawn_points.emplace_back(0.0F, kFloorY, -kSpacing * static_cast<float>(i));
+    }
+    HostSetup setup = OnTheFloor(std::move(spawn_points), parameters);
+    setup.map.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    setup.map.characters.front().hitboxes = {
+        BoxHitbox(augusta::assets::BodyPart::kHead, Vec3(-0.1F, 1.5F, -0.1F), Vec3(0.1F, 1.8F, 0.1F)),
+        BoxHitbox(augusta::assets::BodyPart::kTorso, Vec3(-0.2F, 0.9F, -0.1F), Vec3(0.2F, 1.5F, 0.1F)),
+        BoxHitbox(augusta::assets::BodyPart::kLimb, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.9F, 0.1F)),
+        BoxHitbox(augusta::assets::BodyPart::kLimb, Vec3(0.3F, 0.9F, -0.1F), Vec3(0.4F, 1.5F, 0.1F))};
+    if (walled) {
+      setup.map.collision.push_back(CollisionMesh{.points = {Vec3(-20.0F, kFloorY, kWallZ), Vec3(-20.0F, 5.0F, kWallZ),
+                                                             Vec3(20.0F, 5.0F, kWallZ), Vec3(20.0F, kFloorY, kWallZ)},
+                                                  .indices = {0, 1, 2, 0, 2, 3}});
+    }
+    return setup;
+  }
+
+  explicit HitMatchOf(bool walled = false) : LoopbackMatch(InALine(walled)) {}
+
+  void SetUp() override {
+    for (std::uint8_t i = 0; i < kPlayers; ++i) {
+      Join();
+    }
+    ASSERT_TRUE(StartMatch());
+    commands_.assign(sessions_.size(), Command{});
+    Fight(kSettleTicks);
+  }
+
+  // The client whose player stands rank places down the line: 0 is the shooter.
+  Session& Standing(int rank) {
+    for (const auto& session : sessions_) {
+      if (std::abs(OwnSpawn(*session).z + (kSpacing * static_cast<float>(rank))) < 0.5F) {
+        return *session;
+      }
+    }
+    ADD_FAILURE() << "no client spawned " << rank << " places down the line";
+    return *sessions_.front();
+  }
+
+  // What client sends on every tick from now on.
+  Command& CommandOf(const Session& client) {
+    for (std::size_t i = 0; i < sessions_.size(); ++i) {
+      if (sessions_[i].get() == &client) {
+        return commands_[i];
+      }
+    }
+    ADD_FAILURE() << "not a client of this match";
+    return commands_.front();
+  }
+
+  // Runs the match for the given number of ticks, each client on its command,
+  // keeping what the server resolved on them.
+  void Fight(int ticks) {
+    for (int i = 0; i < ticks; ++i) {
+      const augusta::simulation::State state = StepEach(commands_);
+      hits_.insert(hits_.end(), state.hits.begin(), state.hits.end());
+      map_impacts_.insert(map_impacts_.end(), state.map_impacts.begin(), state.map_impacts.end());
+    }
+  }
+
+  // The shooter taps fire once, aimed from its eye at the point offset from
+  // target's feet, and the match runs until its rifle is ready again.
+  void ShootAt(const Session& target, const Vec3& offset) {
+    Session& shooter = Standing(0);
+    const Vec3 eye = PositionSeenBy(shooter, *shooter.GetEntityId()).value() + Vec3(0.0F, kEyeHeight, 0.0F);
+    const Vec3 aim = PositionSeenBy(shooter, *target.GetEntityId()).value() + offset - eye;
+    Command& command = CommandOf(shooter);
+    command.yaw = std::atan2(-aim.x, -aim.z);
+    command.pitch = std::asin(aim.y / Length(aim));
+    command.fire = true;
+    Fight(1);
+    command.fire = false;
+    Fight(8);
+  }
+
+  // The Hit confirmations client has received in all, once the network has had
+  // the time to deliver any on its way.
+  const std::vector<HitConfirmation>& ConfirmationsOf(const Session& client) {
+    Settle(host_, Pointers(sessions_));
+    for (const auto& session : sessions_) {
+      std::vector<HitConfirmation>& confirmations = confirmations_[session.get()];
+      const std::vector<HitConfirmation> taken = session->TakeHitConfirmations();
+      confirmations.insert(confirmations.end(), taken.begin(), taken.end());
+    }
+    return confirmations_[&client];
+  }
+
+  // What each client sends on a tick, in the order of sessions_.
+  std::vector<Command> commands_;
+  // Every hit and Map impact the server has resolved.
+  std::vector<augusta::simulation::Hit> hits_;
+  std::vector<Vec3> map_impacts_;
+  std::map<const Session*, std::vector<HitConfirmation>> confirmations_;
+};
+
+using HitLineTest = HitMatchOf<3>;
+
+TEST_F(HitLineTest, ShootingAStandingTargetsHeadTorsoAndLimbConfirmsEachToTheShooterAlone) {
+  Session& shooter = Standing(0);
+  Session& target = Standing(1);
+  Session& bystander = Standing(2);
+
+  ShootAt(target, Vec3(0.0F, kHeadHeight, 0.0F));
+  ShootAt(target, Vec3(0.0F, kTorsoHeight, 0.0F));
+  ShootAt(target, Vec3(0.0F, kLegsHeight, 0.0F));
+
+  const std::vector<HitConfirmation>& confirmations = ConfirmationsOf(shooter);
+  ASSERT_EQ(confirmations.size(), 3U);
+  for (const HitConfirmation& confirmation : confirmations) {
+    EXPECT_EQ(confirmation.target, *target.GetEntityId());
+  }
+  EXPECT_EQ(confirmations[0].part, BodyPart::kHead);
+  EXPECT_EQ(confirmations[0].damage, kHeadDamage);
+  EXPECT_EQ(confirmations[1].part, BodyPart::kTorso);
+  EXPECT_EQ(confirmations[1].damage, kTorsoDamage);
+  EXPECT_EQ(confirmations[2].part, BodyPart::kLimb);
+  EXPECT_EQ(confirmations[2].damage, kLimbDamage);
+  EXPECT_TRUE(ConfirmationsOf(target).empty());
+  EXPECT_TRUE(ConfirmationsOf(bystander).empty());
+}
+
+// The third player stands behind the second, on the line the shooter fires along.
+TEST_F(HitLineTest, WithTwoTargetsInLineOnlyTheNearerIsHit) {
+  Session& near = Standing(1);
+
+  ShootAt(near, Vec3(0.0F, kTorsoHeight, 0.0F));
+
+  ASSERT_EQ(hits_.size(), 1U);
+  EXPECT_EQ(std::to_underlying(hits_[0].target), std::to_underlying(*near.GetEntityId()));
+  ASSERT_EQ(ConfirmationsOf(Standing(0)).size(), 1U);
+  EXPECT_EQ(ConfirmationsOf(Standing(0))[0].target, *near.GetEntityId());
+}
+
+using HitDuelTest = HitMatchOf<2>;
+
+// A body 2.1 m tall standing is 1.3 m tall crouched and 0.7 m prone, and its hitboxes with it.
+TEST_F(HitDuelTest, AShotWhereAStandingHeadWouldBeMissesACrouchedOrProneTargetAndOneAtItsLoweredBodyHits) {
+  Session& shooter = Standing(0);
+  Session& target = Standing(1);
+  struct Lowered {
+    Stance stance;
+    float height;
+  };
+
+  for (const Lowered& lowered : {Lowered{Stance::kCrouching, 1.3F}, Lowered{Stance::kProne, 0.7F}}) {
+    CommandOf(target).movement.desired_stance = lowered.stance;
+    Fight(kSettleTicks);
+    ASSERT_EQ(BodySeenBy(shooter, *target.GetEntityId())->stance, lowered.stance);
+
+    ShootAt(target, Vec3(0.0F, kHeadHeight, 0.0F));
+    EXPECT_TRUE(hits_.empty()) << "stance " << static_cast<int>(lowered.stance);
+
+    ShootAt(target, Vec3(0.0F, kTorsoHeight * lowered.height / 2.1F, 0.0F));
+    ASSERT_EQ(hits_.size(), 1U) << "stance " << static_cast<int>(lowered.stance);
+    EXPECT_EQ(hits_[0].part, BodyPart::kTorso);
+    hits_.clear();
+  }
+
+  const std::vector<HitConfirmation>& confirmations = ConfirmationsOf(shooter);
+  ASSERT_EQ(confirmations.size(), 2U);
+  EXPECT_EQ(confirmations[0].part, BodyPart::kTorso);
+  EXPECT_EQ(confirmations[1].part, BodyPart::kTorso);
+}
+
+// The target's right arm is at +X while it faces yaw 0, and at -X once it has
+// turned half a turn: every client is told where it faces, and its hitboxes
+// turn with it.
+TEST_F(HitDuelTest, AShotAtATargetsSideHitsAccordingToItsReplicatedFacing) {
+  Session& shooter = Standing(0);
+  Session& target = Standing(1);
+  const Vec3 right_of_it(0.35F, kTorsoHeight, 0.0F);
+  const Vec3 left_of_it(-0.35F, kTorsoHeight, 0.0F);
+  const auto yaw_seen = [&] {
+    for (const auto& body : shooter.GetAuthoritativeState().value().bodies) {
+      if (body.entity == *target.GetEntityId()) {
+        return body.yaw;
+      }
+    }
+    return std::numeric_limits<float>::quiet_NaN();
+  };
+
+  EXPECT_EQ(yaw_seen(), 0.0F);
+  ShootAt(target, left_of_it);
+  EXPECT_TRUE(hits_.empty());
+  ShootAt(target, right_of_it);
+  ASSERT_EQ(hits_.size(), 1U);
+  EXPECT_EQ(hits_[0].part, BodyPart::kLimb);
+  hits_.clear();
+
+  constexpr float kHalfATurn = std::numbers::pi_v<float>;
+  CommandOf(target).yaw = kHalfATurn;
+  Fight(kSettleTicks);
+  EXPECT_EQ(yaw_seen(), augusta::math::SnapAngle(kHalfATurn));
+
+  ShootAt(target, right_of_it);
+  EXPECT_TRUE(hits_.empty());
+  ShootAt(target, left_of_it);
+  ASSERT_EQ(hits_.size(), 1U);
+  EXPECT_EQ(hits_[0].part, BodyPart::kLimb);
+  EXPECT_EQ(ConfirmationsOf(shooter).size(), 2U);
+}
+
+// The same duel with a wall across the line, halfway to the target.
+class WalledHitTest : public HitMatchOf<2> {
+ protected:
+  WalledHitTest() : HitMatchOf<2>(/*walled=*/true) {}
+};
+
+TEST_F(WalledHitTest, ATargetBehindAWallIsNotHitAndTheWallIs) {
+  Session& shooter = Standing(0);
+
+  ShootAt(Standing(1), Vec3(0.0F, kTorsoHeight, 0.0F));
+
+  EXPECT_TRUE(hits_.empty());
+  ASSERT_EQ(map_impacts_.size(), 1U);
+  EXPECT_NEAR(map_impacts_[0].z, kWallZ, 0.01F);
+  EXPECT_TRUE(ConfirmationsOf(shooter).empty());
+}
+
+using LoneHitTest = HitMatchOf<1>;
+
+// The eye is inside the shooter's own head hitbox, which every round leaves through.
+TEST_F(LoneHitTest, AShooterFiringForwardWhileMovingNeverHitsItself) {
+  Session& shooter = Standing(0);
+  Command& command = CommandOf(shooter);
+  command.movement.direction = Vec3(0.0F, 0.0F, -1.0F);
+  command.fire = true;
+
+  Fight(60);
+
+  Settle(host_, Pointers(sessions_));
+  EXPECT_EQ(shooter.TakeShots().size(), 10U);
+  EXPECT_TRUE(hits_.empty());
+  EXPECT_TRUE(ConfirmationsOf(shooter).empty());
+}
+
+// A Hit confirmation of the scripted server's one player hitting whoever it names.
+augusta::protocol::HitConfirmationWire HitOn(EntityIdWire target) {
+  return augusta::protocol::HitConfirmationWire{
+      .target = target, .damage = 37.5F, .part = augusta::protocol::BodyPartWire::kHead};
+}
+
+TEST_F(ScriptedServerTest, AHitConfirmationOfABodyInTheMatchIsHandedOutOnceAsItWasSent) {
+  server_.Send(HitOn(kScriptedEntity));
+  Settle();
+
+  const std::vector<HitConfirmation> hits = session_.TakeHitConfirmations();
+
+  ASSERT_EQ(hits.size(), 1U);
+  EXPECT_EQ(hits[0].target, *session_.GetEntityId());
+  EXPECT_EQ(hits[0].part, augusta::ballistics::BodyPart::kHead);
+  EXPECT_EQ(hits[0].damage, 37.5F);
+  EXPECT_TRUE(session_.TakeHitConfirmations().empty());
+}
+
+TEST_F(ScriptedServerTest, AHitConfirmationNamingABodyNotInTheMatchIsDropped) {
+  server_.Send(HitOn(EntityIdWire{99}));
+  Settle();
+
+  EXPECT_TRUE(session_.TakeHitConfirmations().empty());
+}
+
+TEST_F(ScriptedServerTest, AHitConfirmationThatArrivesAfterMatchEndIsDropped) {
+  server_.Send(augusta::protocol::MatchEndWire{});
+  server_.Send(HitOn(kScriptedEntity));
+  Settle();
+
+  EXPECT_TRUE(session_.TakeHitConfirmations().empty());
+}
+
+TEST_F(ScriptedServerTest, AHitConfirmationNobodyAskedForIsNotHandedOutInTheNextMatch) {
+  server_.Send(HitOn(kScriptedEntity));
+  server_.Send(augusta::protocol::MatchEndWire{});
+  server_.Send(ScriptedServer::StartOfAlone());
+  Settle();
+  ASSERT_EQ(session_.GetPhase(), Phase::kMatch);
+
+  EXPECT_TRUE(session_.TakeHitConfirmations().empty());
+}
+
+TEST_F(ScriptedLobbyTest, AHitConfirmationThatArrivesBeforeMatchStartIsDropped) {
+  server_.Send(HitOn(kScriptedEntity));
+  Settle();
+  server_.Send(ScriptedServer::StartOfAlone());
+  Settle();
+
+  EXPECT_TRUE(session_.TakeHitConfirmations().empty());
+}
+
+// A client nobody asks keeps the newest Hit confirmations, not all of them for ever.
+TEST_F(ScriptedServerTest, AClientThatIsNeverAskedKeepsOnlyTheNewestHitConfirmations) {
+  const std::size_t sent = augusta::harness::kMaxPendingHitConfirmations + 10;
+  for (std::size_t i = 1; i <= sent; ++i) {
+    augusta::protocol::HitConfirmationWire hit = HitOn(kScriptedEntity);
+    hit.damage = static_cast<float>(i);
+    server_.Send(hit);
+  }
+  Settle();
+
+  const std::vector<HitConfirmation> hits = session_.TakeHitConfirmations();
+
+  ASSERT_EQ(hits.size(), augusta::harness::kMaxPendingHitConfirmations);
+  EXPECT_EQ(hits.front().damage, 11.0F);
+  EXPECT_EQ(hits.back().damage, static_cast<float>(sent));
 }
 
 // A Shot of the scripted server's one player, or of whoever else it names.

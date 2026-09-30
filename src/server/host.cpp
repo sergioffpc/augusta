@@ -12,11 +12,14 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include "augusta/assets.h"
+#include "augusta/ballistics.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
@@ -61,6 +64,65 @@ std::uint32_t PeerNumber(networking::PeerId peer) { return static_cast<std::uint
 
 std::uint32_t SessionNumber(SessionId session) { return static_cast<std::uint32_t>(session); }
 
+ballistics::BodyPart ToBallistics(assets::BodyPart part) {
+  switch (part) {
+    case assets::BodyPart::kHead:
+      return ballistics::BodyPart::kHead;
+    case assets::BodyPart::kTorso:
+      return ballistics::BodyPart::kTorso;
+    case assets::BodyPart::kLimb:
+      return ballistics::BodyPart::kLimb;
+  }
+  std::unreachable();
+}
+
+// hitbox, of character path, as the triangles a bullet is tested against.
+// Throws std::runtime_error if its mesh is not a whole, in-range triangle list:
+// a pack's mesh blob is not checked for that when it is decoded.
+simulation::CharacterHitbox ToSimulation(const assets::HitboxData& hitbox, const std::string& path) {
+  const assets::MeshData& mesh = hitbox.mesh;
+  if (const auto valid = physics::ValidateCollisionMesh({.points = mesh.points, .indices = mesh.indices}); !valid) {
+    throw std::runtime_error(std::format("server::Host: hitbox of character {} rejected: {}", path,
+                                         physics::DescribeCollisionMeshError(valid.error())));
+  }
+  simulation::CharacterHitbox result{.part = ToBallistics(hitbox.part), .triangles = {}};
+  result.triangles.reserve(mesh.indices.size() / 3);
+  for (std::size_t i = 0; i < mesh.indices.size(); i += 3) {
+    result.triangles.push_back(ballistics::Triangle{.a = mesh.points[mesh.indices[i]],
+                                                    .b = mesh.points[mesh.indices[i + 1]],
+                                                    .c = mesh.points[mesh.indices[i + 2]]});
+  }
+  return result;
+}
+
+// Each of characters as SimulationWorld takes it, in the same order. Built
+// with the simulation, before the socket exists, for the same reason.
+std::vector<simulation::Character> ToSimulation(const std::vector<Character>& characters) {
+  std::vector<simulation::Character> result;
+  result.reserve(characters.size());
+  for (const Character& character : characters) {
+    simulation::Character converted{.eye = character.eye, .hitboxes = {}};
+    converted.hitboxes.reserve(character.hitboxes.size());
+    for (const assets::HitboxData& hitbox : character.hitboxes) {
+      converted.hitboxes.push_back(ToSimulation(hitbox, character.path));
+    }
+    result.push_back(std::move(converted));
+  }
+  return result;
+}
+
+std::string_view BodyPartName(ballistics::BodyPart part) {
+  switch (part) {
+    case ballistics::BodyPart::kHead:
+      return "head";
+    case ballistics::BodyPart::kTorso:
+      return "torso";
+    case ballistics::BodyPart::kLimb:
+      return "limb";
+  }
+  std::unreachable();
+}
+
 // The path of each of characters, in the same order: all Match needs of them.
 std::vector<std::string> CharacterPaths(const std::vector<Character>& characters) {
   std::vector<std::string> paths;
@@ -97,8 +159,9 @@ struct Host::Impl {
   // changes, so neither needs the lock.
   const std::uint8_t tick_rate_hz;
   const parameters::Parameters parameters;
-  // The scenario's characters, by index - 1 (ADR-0042); never changes either.
-  const std::vector<Character> characters;
+  // The scenario's characters as SimulationWorld takes them, by index - 1
+  // (ADR-0042); never changes either.
+  const std::vector<simulation::Character> characters;
 
   // Thread-safe by the transport's contract, used from both threads.
   networking::Server network;
@@ -138,13 +201,13 @@ struct Host::Impl {
       : simulation(BuildSimulation(config, map)),
         tick_rate_hz(config.tick_rate_hz),
         parameters(config.parameters),
-        characters(std::move(map.characters)),
+        characters(ToSimulation(map.characters)),
         network(config.listen),
         match(
             MatchConfig{
                 .engine_version = std::string(EngineVersion()),
                 .client_pack = map.client_pack,
-                .characters = CharacterPaths(characters),
+                .characters = CharacterPaths(map.characters),
                 .player_count = config.parameters.player_count,
                 .pause_ticks = PauseTicks(config.tick_rate_hz),
             },
@@ -311,7 +374,7 @@ struct Host::Impl {
     }
     std::vector<SessionId> sessions;
     for (const MatchPlayer& player : start->players) {
-      simulation.AddPlayer(ToSimulation(player.entity), player.spawn, characters.at(player.character - 1).eye);
+      simulation.AddPlayer(ToSimulation(player.entity), player.spawn, characters.at(player.character - 1));
       bodies.emplace(player.session, player.entity);
       players.at(player.session).commands = CommandQueue{tick_rate_hz};
       sessions.push_back(player.session);
@@ -379,8 +442,24 @@ struct Host::Impl {
     activity_since = now;
   }
 
-  // Each recipient's update, which a newer one supersedes, and then every Shot
-  // of the tick to all of them, which must arrive (ADR-0044).
+  // One line per hit of the tick, and one more for the hit that took a player's
+  // health to zero. At INFO, though players provoke them: a Match's hits are
+  // what its operator reads the log for (US-12), in a Release build too.
+  void LogHits(const simulation::State& state) const {
+    for (const simulation::Hit& hit : state.hits) {
+      LI("subsystem=serverruntime event=hit tick={} shooter={} target={} part={} damage={} health={}", tick,
+         std::to_underlying(hit.shooter), std::to_underlying(hit.target), BodyPartName(hit.part), hit.damage,
+         hit.health);
+      if (hit.reached_zero) {
+        LI("subsystem=serverruntime event=health_zero tick={} entity={} shooter={}", tick,
+           std::to_underlying(hit.target), std::to_underlying(hit.shooter));
+      }
+    }
+  }
+
+  // Each recipient's update, which a newer one supersedes; then what must
+  // arrive (ADR-0044): every Shot of the tick to all of them, and each Hit
+  // confirmation to its shooter alone, if it is still in the match.
   void Send(const simulation::State& state, const TickInput& input) {
     for (const replication::Update& update : replication::PlanUpdates(state, tick, input.recipients)) {
       network.Send(input.peers.at(FromSimulation(update.recipient)), protocol::Encode(ToWire(update)),
@@ -390,6 +469,11 @@ struct Host::Impl {
       const protocol::BytesWire payload = protocol::Encode(ToWire(shot));
       for (const auto& [entity, peer] : input.peers) {
         network.Send(peer, payload, networking::Reliability::kReliable);
+      }
+    }
+    for (const replication::HitConfirmation& hit : replication::PlanHitConfirmations(state)) {
+      if (const auto shooter = input.peers.find(FromSimulation(hit.recipient)); shooter != input.peers.end()) {
+        network.Send(shooter->second, protocol::Encode(ToWire(hit)), networking::Reliability::kReliable);
       }
     }
   }
@@ -432,6 +516,7 @@ simulation::State Host::Tick(float delta_time) {
   simulation::State state = impl.simulation.Tick(input.commands, delta_time);
   ++impl.tick;
   impl.Send(state, input);
+  impl.LogHits(state);
   return state;
 }
 

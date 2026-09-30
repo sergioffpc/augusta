@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "augusta/assets.h"
+#include "augusta/ballistics.h"
 #include "augusta/command.h"
 #include "augusta/harness.h"
 #include "augusta/parameters.h"
@@ -31,6 +32,19 @@ protocol::StanceWire ToWire(physics::Stance stance) { return static_cast<protoco
 
 // The protocol carries a pack's hash as the assets module computes it.
 static_assert(protocol::kPackHashSize == assets::kPackHashSize);
+
+ballistics::BodyPart FromWire(protocol::BodyPartWire part) {
+  switch (part) {
+    case protocol::BodyPartWire::kHead:
+      return ballistics::BodyPart::kHead;
+    case protocol::BodyPartWire::kTorso:
+      return ballistics::BodyPart::kTorso;
+    case protocol::BodyPartWire::kLimb:
+      return ballistics::BodyPart::kLimb;
+  }
+  // Decode admits only the body parts above.
+  std::unreachable();
+}
 
 }  // namespace
 
@@ -106,7 +120,7 @@ Admission FromWire(const protocol::JoinAcceptedWire& accepted) {
 EntityId FromWire(protocol::EntityIdWire entity) { return static_cast<EntityId>(static_cast<std::uint32_t>(entity)); }
 
 EntityBody FromWire(const protocol::EntityStateWire& body) {
-  return EntityBody{.entity = FromWire(body.entity), .body = FromWire(body.body)};
+  return EntityBody{.entity = FromWire(body.entity), .body = FromWire(body.body), .yaw = body.yaw};
 }
 
 AuthoritativeState FromWire(const protocol::AuthoritativeStateWire& state) {
@@ -131,6 +145,10 @@ Shot FromWire(const protocol::ShotWire& shot) {
       .yaw = shot.yaw,
       .pitch = shot.pitch,
   };
+}
+
+HitConfirmation FromWire(const protocol::HitConfirmationWire& hit) {
+  return HitConfirmation{.target = FromWire(hit.target), .damage = hit.damage, .part = FromWire(hit.part)};
 }
 
 Lobby FromWire(const protocol::LobbyWire& lobby) {

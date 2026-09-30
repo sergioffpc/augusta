@@ -1,12 +1,15 @@
 #include "augusta/simulation.h"
 
+#include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <numbers>
 #include <vector>
 
 #include <gtest/gtest.h>
 
+#include "augusta/ballistics.h"
 #include "augusta/command.h"
 #include "augusta/grid.h"
 #include "augusta/math.h"
@@ -17,12 +20,16 @@
 // the commands of each tick.
 namespace {
 
+using augusta::ballistics::BodyPart;
 using augusta::command::Command;
 using augusta::math::Vec3;
 using augusta::parameters::Parameters;
 using augusta::physics::CollisionMesh;
 using augusta::physics::Stance;
+using augusta::simulation::Character;
+using augusta::simulation::CharacterHitbox;
 using augusta::simulation::EntityId;
+using augusta::simulation::Hit;
 using augusta::simulation::PlayerCommand;
 using augusta::simulation::State;
 using augusta::simulation::World;
@@ -34,8 +41,9 @@ constexpr int kWalkTicks = 60;
 constexpr EntityId kAlice = static_cast<EntityId>(1);
 constexpr EntityId kBob = static_cast<EntityId>(2);
 
-// Every test character's eye, standing, relative to its feet (ADR-0040).
-const Vec3 kEye(0.0F, 1.5F, 0.0F);
+// The character of the tests that judge no hit: its eye, standing, relative to
+// its feet (ADR-0040), and no hitbox.
+const Character kCharacter{.eye = Vec3(0.0F, 1.5F, 0.0F), .hitboxes = {}};
 
 CollisionMesh Floor() {
   constexpr float kExtent = 100.0F;
@@ -93,7 +101,7 @@ TEST_F(SimulationTest, AWallStopsAWalkingPlayer) {
                                     .indices = {0, 1, 2, 0, 2, 3}})
                   .has_value());
   // Dropped a little above the floor: a body placed exactly on it starts overlapping it.
-  world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), kEye);
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), kCharacter);
   Run(kSettleTicks, {});
 
   const State state = Run(120, {PlayerCommand{.entity = kAlice, .command = Walking(Vec3(1.0F, 0.0F, 0.0F))}});
@@ -105,8 +113,8 @@ TEST_F(SimulationTest, AWallStopsAWalkingPlayer) {
 TEST_F(SimulationTest, AnEmptyWorldHasAnEmptyState) { EXPECT_TRUE(world_.Tick({}, kTick).bodies.empty()); }
 
 TEST_F(SimulationTest, AddedPlayersAppearInTheStateOrderedById) {
-  world_.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kEye);
-  world_.AddPlayer(kAlice, Vec3(-5.0F, 0.0F, 0.0F), kEye);
+  world_.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter);
+  world_.AddPlayer(kAlice, Vec3(-5.0F, 0.0F, 0.0F), kCharacter);
 
   const State state = world_.Tick({}, kTick);
 
@@ -116,7 +124,7 @@ TEST_F(SimulationTest, AddedPlayersAppearInTheStateOrderedById) {
 }
 
 TEST_F(SimulationTest, APlayerStartsStandingWhereItSpawned) {
-  world_.AddPlayer(kAlice, Vec3(3.0F, 0.0F, -2.0F), kEye);
+  world_.AddPlayer(kAlice, Vec3(3.0F, 0.0F, -2.0F), kCharacter);
   Run(kSettleTicks, {});
 
   const State state = world_.Tick({}, kTick);
@@ -127,8 +135,8 @@ TEST_F(SimulationTest, APlayerStartsStandingWhereItSpawned) {
 }
 
 TEST_F(SimulationTest, AForwardCommandMovesThatPlayerOnly) {
-  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kEye);
-  world_.AddPlayer(kBob, Vec3(0.0F, 0.0F, 10.0F), kEye);
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
+  world_.AddPlayer(kBob, Vec3(0.0F, 0.0F, 10.0F), kCharacter);
   Run(kSettleTicks, {});
   const float start = Body(world_.Tick({}, kTick), kAlice).position.x;
   const float bob_start = Body(world_.Tick({}, kTick), kBob).position.x;
@@ -140,7 +148,7 @@ TEST_F(SimulationTest, AForwardCommandMovesThatPlayerOnly) {
 }
 
 TEST_F(SimulationTest, StanceCommandsChangeTheStanceAndTheSpeed) {
-  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kEye);
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
   Run(kSettleTicks, {});
   const auto walk_at = [&](Stance stance) {
     const State state =
@@ -159,7 +167,7 @@ TEST_F(SimulationTest, StanceCommandsChangeTheStanceAndTheSpeed) {
 }
 
 TEST_F(SimulationTest, APlayerWithNoCommandStopsAndKeepsItsStance) {
-  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kEye);
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
   Run(kSettleTicks, {});
   Run(kWalkTicks / 2,
       {PlayerCommand{.entity = kAlice, .command = Walking(Vec3(1.0F, 0.0F, 0.0F), Stance::kCrouching)}});
@@ -171,7 +179,7 @@ TEST_F(SimulationTest, APlayerWithNoCommandStopsAndKeepsItsStance) {
 }
 
 TEST_F(SimulationTest, ACommandForAPlayerNotInTheWorldIsIgnored) {
-  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kEye);
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
 
   const State state = Run(kSettleTicks, {PlayerCommand{.entity = kBob, .command = Walking(Vec3(1.0F, 0.0F, 0.0F))}});
 
@@ -180,8 +188,8 @@ TEST_F(SimulationTest, ACommandForAPlayerNotInTheWorldIsIgnored) {
 }
 
 TEST_F(SimulationTest, ARemovedPlayerLeavesTheState) {
-  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kEye);
-  world_.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kEye);
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
+  world_.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter);
   Run(kSettleTicks, {});
 
   world_.RemovePlayer(kAlice);
@@ -192,7 +200,7 @@ TEST_F(SimulationTest, ARemovedPlayerLeavesTheState) {
 }
 
 TEST_F(SimulationTest, RemovingAPlayerNotInTheWorldChangesNothing) {
-  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kEye);
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
 
   world_.RemovePlayer(kBob);
 
@@ -200,8 +208,8 @@ TEST_F(SimulationTest, RemovingAPlayerNotInTheWorldChangesNothing) {
 }
 
 TEST_F(SimulationTest, AddingAPlayerTwiceKeepsOne) {
-  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kEye);
-  world_.AddPlayer(kAlice, Vec3(9.0F, 0.0F, 0.0F), kEye);
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
+  world_.AddPlayer(kAlice, Vec3(9.0F, 0.0F, 0.0F), kCharacter);
 
   EXPECT_EQ(world_.Tick({}, kTick).bodies.size(), 1U);
 }
@@ -233,7 +241,7 @@ class FireTest : public ::testing::Test {
   }
 
   void SetUp() override {
-    world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), kEye);
+    world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), kCharacter);
     for (int i = 0; i < kSettleTicks; ++i) {
       world_.Tick({}, kTick);
     }
@@ -248,6 +256,15 @@ class FireTest : public ::testing::Test {
     const State state = Tick(command);
     EXPECT_EQ(state.shots.size(), 1U);
     return state.shots.empty() ? augusta::simulation::Shot{} : state.shots.front();
+  }
+
+  // Ticks the given number of times with no command and returns the last state.
+  State Run(int ticks) {
+    State state;
+    for (int i = 0; i < ticks; ++i) {
+      state = world_.Tick({}, kTick);
+    }
+    return state;
   }
 
   // Where Alice's feet are.
@@ -279,7 +296,7 @@ TEST_F(FireTest, ATapOfFireFiresExactlyOneRound) {
 }
 
 TEST_F(FireTest, AShotNamesThePlayerWhoFiredIt) {
-  world_.AddPlayer(kBob, Vec3(5.0F, 0.5F, 0.0F), kEye);
+  world_.AddPlayer(kBob, Vec3(5.0F, 0.5F, 0.0F), kCharacter);
 
   const State state = world_.Tick({PlayerCommand{.entity = kBob, .command = Firing()}}, kTick);
 
@@ -492,6 +509,399 @@ TEST_F(SmallMagazineFireTest, AnEmptyMagazineFiresNothingHoweverLongItRests) {
   FiringTicks(120, Command{});
 
   EXPECT_TRUE(FiringTicks(30, Firing()).empty());
+}
+
+// A magazine of three rounds that takes half a second, 30 ticks, to reload.
+class ReloadTest : public FireTest {
+ protected:
+  static constexpr int kReloadTicks = 30;
+
+  static Parameters WithThreeRoundsAndAHalfSecondReload() {
+    Parameters parameters = WithTheTestRifle();
+    parameters.rifle.magazine_capacity = 3;
+    parameters.rifle.reload_seconds = 0.5F;
+    return parameters;
+  }
+
+  ReloadTest() : FireTest(WithThreeRoundsAndAHalfSecondReload()) {}
+
+  static Command Reloading(bool fire = false) {
+    Command command{};
+    command.reload = true;
+    command.fire = fire;
+    return command;
+  }
+
+  // How many rounds Alice's magazine holds.
+  std::uint8_t Rounds() { return Tick(Command{}).bodies.front().rifle.rounds; }
+};
+
+TEST_F(ReloadTest, AReloadFiresNothingForItsDurationAndThenTheMagazineIsFull) {
+  FiringTicks(30, Firing());
+  ASSERT_EQ(Rounds(), 0);
+
+  // The press and the 29 ticks after it are the half second; a full magazine follows.
+  EXPECT_TRUE(Tick(Reloading(/*fire=*/true)).shots.empty());
+  EXPECT_TRUE(FiringTicks(kReloadTicks - 1, Firing()).empty());
+  EXPECT_EQ(FiringTicks(120, Firing()), (std::vector<int>{0, 6, 12}));
+}
+
+TEST_F(ReloadTest, AReloadOfAPartlyEmptyMagazineFillsIt) {
+  Tick(Firing());
+  ASSERT_EQ(Rounds(), 2);
+
+  Tick(Reloading());
+  FiringTicks(kReloadTicks, Command{});
+
+  EXPECT_EQ(Rounds(), 3);
+}
+
+TEST_F(ReloadTest, TheMagazineIsNotFullBeforeTheReloadEnds) {
+  Tick(Firing());
+
+  Tick(Reloading());
+  const State state = Run(kReloadTicks - 2);
+
+  EXPECT_EQ(state.bodies.front().rifle.rounds, 2);
+  EXPECT_GT(state.bodies.front().rifle.reload_remaining, 0.0F);
+}
+
+TEST_F(ReloadTest, AReloadPressWithAFullMagazineStartsNothingAndFireGoesOn) {
+  EXPECT_EQ(Tick(Reloading(/*fire=*/true)).shots.size(), 1U);
+
+  EXPECT_EQ(FiringTicks(12, Firing()), (std::vector<int>{5, 11}));
+}
+
+// A client that sends reload on every tick (the sampler sends it on one) still
+// reloads once: a reload under way is not started over.
+TEST_F(ReloadTest, HoldingReloadForManyTicksStartsOneReloadNotOneEveryTick) {
+  FiringTicks(30, Firing());
+
+  FiringTicks(kReloadTicks, Reloading());
+
+  EXPECT_EQ(Rounds(), 3);
+}
+
+TEST_F(ReloadTest, FireHeldThroughAReloadFiresOnTheFirstTickAfterIt) {
+  Tick(Firing());
+  Tick(Reloading());
+
+  EXPECT_EQ(FiringTicks(kReloadTicks + 1, Firing()), (std::vector<int>{kReloadTicks - 1}));
+}
+
+// A reload of no time at all still takes the tick it is pressed on.
+class InstantReloadTest : public FireTest {
+ protected:
+  static Parameters WithThreeRoundsAndNoReloadTime() {
+    Parameters parameters = WithTheTestRifle();
+    parameters.rifle.magazine_capacity = 3;
+    parameters.rifle.reload_seconds = 0.0F;
+    return parameters;
+  }
+
+  InstantReloadTest() : FireTest(WithThreeRoundsAndNoReloadTime()) {}
+};
+
+TEST_F(InstantReloadTest, AReloadOfNoTimeFillsTheMagazineOnTheTickItIsPressed) {
+  FiringTicks(30, Firing());
+  Command reload{};
+  reload.reload = true;
+  reload.fire = true;
+
+  const State state = Tick(reload);
+
+  EXPECT_TRUE(state.shots.empty());
+  EXPECT_EQ(state.bodies.front().rifle.rounds, 3);
+}
+
+// A hitbox for part: the box from low to high, as the twelve triangles of its faces.
+CharacterHitbox Box(BodyPart part, const Vec3& low, const Vec3& high) {
+  const std::array<Vec3, 8> corners = {Vec3(low.x, low.y, low.z),    Vec3(high.x, low.y, low.z),
+                                       Vec3(high.x, high.y, low.z),  Vec3(low.x, high.y, low.z),
+                                       Vec3(low.x, low.y, high.z),   Vec3(high.x, low.y, high.z),
+                                       Vec3(high.x, high.y, high.z), Vec3(low.x, high.y, high.z)};
+  constexpr std::array<std::array<int, 3>, 12> kFaces = {{{0, 1, 2},
+                                                          {0, 2, 3},
+                                                          {4, 6, 5},
+                                                          {4, 7, 6},
+                                                          {0, 4, 5},
+                                                          {0, 5, 1},
+                                                          {3, 2, 6},
+                                                          {3, 6, 7},
+                                                          {0, 3, 7},
+                                                          {0, 7, 4},
+                                                          {1, 5, 6},
+                                                          {1, 6, 2}}};
+  CharacterHitbox hitbox{.part = part, .triangles = {}};
+  for (const auto& face : kFaces) {
+    hitbox.triangles.push_back({.a = corners.at(face[0]), .b = corners.at(face[1]), .c = corners.at(face[2])});
+  }
+  return hitbox;
+}
+
+// Where a shot at each part of the target character is aimed, above its feet, standing.
+constexpr float kHeadHeight = 1.65F;
+constexpr float kTorsoHeight = 1.2F;
+constexpr float kLegsHeight = 0.45F;
+
+// A character 1.8 m tall that sees from inside its head: a head, a torso and
+// legs on its axis, and a right arm (a limb) beside the torso, at +X when it
+// faces yaw 0.
+Character Target() {
+  return Character{.eye = Vec3(0.0F, 1.6F, 0.0F),
+                   .hitboxes = {Box(BodyPart::kHead, Vec3(-0.1F, 1.5F, -0.1F), Vec3(0.1F, 1.8F, 0.1F)),
+                                Box(BodyPart::kTorso, Vec3(-0.2F, 0.9F, -0.1F), Vec3(0.2F, 1.5F, 0.1F)),
+                                Box(BodyPart::kLimb, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.9F, 0.1F)),
+                                Box(BodyPart::kLimb, Vec3(0.3F, 0.9F, -0.1F), Vec3(0.4F, 1.5F, 0.1F))}};
+}
+
+// Alice and Bob, 10 m apart, on the floor: Alice, at the origin, shoots at Bob,
+// down -Z where a view of yaw 0 looks. A round reaches Bob on the tick it is
+// fired. Bob starts with 100 of health, and a round takes 50 off it at the
+// head, 20 at the torso and 10 at a limb.
+class HitTest : public ::testing::Test {
+ protected:
+  static constexpr float kStartingHealth = 100.0F;
+  static constexpr float kHeadDamage = 50.0F;
+  static constexpr float kTorsoDamage = 20.0F;
+  static constexpr float kLimbDamage = 10.0F;
+
+  static Parameters WithDamage() {
+    Parameters parameters = WithTheTestRifle();
+    parameters.ammo.damage = {.head = kHeadDamage, .torso = kTorsoDamage, .limb = kLimbDamage};
+    parameters.starting_health = kStartingHealth;
+    return parameters;
+  }
+
+  HitTest() : world_(WithDamage()) { EXPECT_TRUE(world_.AddCollisionMesh(Floor()).has_value()); }
+
+  void SetUp() override {
+    world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), Target());
+    world_.AddPlayer(kBob, Vec3(0.0F, 0.5F, -10.0F), Target());
+    bob_ = Command{};
+    Wait(kSettleTicks);
+  }
+
+  // A tick on which Alice does command and Bob what he was last told.
+  State Tick(const Command& command) {
+    return world_.Tick(
+        {PlayerCommand{.entity = kAlice, .command = command}, PlayerCommand{.entity = kBob, .command = bob_}}, kTick);
+  }
+
+  // Ticks the given number of times with Alice idle, and returns every hit of them.
+  std::vector<Hit> Wait(int ticks) {
+    std::vector<Hit> hits;
+    for (int i = 0; i < ticks; ++i) {
+      const State state = Tick(Command{});
+      hits.insert(hits.end(), state.hits.begin(), state.hits.end());
+    }
+    return hits;
+  }
+
+  static const augusta::simulation::EntityState& Entity(const State& state, EntityId entity) {
+    for (const auto& entry : state.bodies) {
+      if (entry.entity == entity) {
+        return entry;
+      }
+    }
+    ADD_FAILURE() << "player not in state";
+    return state.bodies.front();
+  }
+
+  // A one-tick press of fire by Alice, aimed at the point offset from Bob's feet.
+  Command FiringAt(const Vec3& offset) {
+    const State state = Tick(Command{});
+    const Vec3 eye = Entity(state, kAlice).body.position + Target().eye;
+    const Vec3 aim = Entity(state, kBob).body.position + offset - eye;
+    Command command = Firing();
+    command.yaw = std::atan2(-aim.x, -aim.z);
+    command.pitch = std::asin(aim.y / augusta::math::Length(aim));
+    return command;
+  }
+
+  // Alice fires one round at the point offset from Bob's feet; returns the hits
+  // of that tick and of those it takes the rifle to be ready again.
+  std::vector<Hit> ShootAt(const Vec3& offset) {
+    const Command command = FiringAt(offset);
+    std::vector<Hit> hits = Tick(command).hits;
+    const std::vector<Hit> later = Wait(6);
+    hits.insert(hits.end(), later.begin(), later.end());
+    return hits;
+  }
+
+  World world_;
+  // What Bob is told to do on every tick.
+  Command bob_;
+};
+
+TEST_F(HitTest, APlayerStartsAMatchWithTheParametersStartingHealth) {
+  const State state = Tick(Command{});
+
+  EXPECT_EQ(Entity(state, kAlice).health, kStartingHealth);
+  EXPECT_EQ(Entity(state, kBob).health, kStartingHealth);
+}
+
+TEST_F(HitTest, AHitNamesItsShooterItsTargetAndTheBodyPartItCrossed) {
+  const std::vector<Hit> hits = ShootAt(Vec3(0.0F, kTorsoHeight, 0.0F));
+
+  ASSERT_EQ(hits.size(), 1U);
+  EXPECT_EQ(hits[0].shooter, kAlice);
+  EXPECT_EQ(hits[0].target, kBob);
+  EXPECT_EQ(hits[0].part, BodyPart::kTorso);
+}
+
+TEST_F(HitTest, AHitTakesTheAmmosDamageForItsBodyPartOffTheTargetsHealthAlone) {
+  const std::vector<Hit> head = ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
+  const std::vector<Hit> torso = ShootAt(Vec3(0.0F, kTorsoHeight, 0.0F));
+  const std::vector<Hit> limb = ShootAt(Vec3(0.0F, kLegsHeight, 0.0F));
+
+  ASSERT_TRUE(head.size() == 1U && torso.size() == 1U && limb.size() == 1U);
+  EXPECT_EQ(head[0].part, BodyPart::kHead);
+  EXPECT_EQ(head[0].damage, kHeadDamage);
+  EXPECT_EQ(head[0].health, kStartingHealth - kHeadDamage);
+  EXPECT_EQ(torso[0].part, BodyPart::kTorso);
+  EXPECT_EQ(torso[0].damage, kTorsoDamage);
+  EXPECT_EQ(torso[0].health, kStartingHealth - kHeadDamage - kTorsoDamage);
+  EXPECT_EQ(limb[0].part, BodyPart::kLimb);
+  EXPECT_EQ(limb[0].damage, kLimbDamage);
+  EXPECT_EQ(limb[0].health, kStartingHealth - kHeadDamage - kTorsoDamage - kLimbDamage);
+  const State state = Tick(Command{});
+  EXPECT_EQ(Entity(state, kBob).health, limb[0].health);
+  EXPECT_EQ(Entity(state, kAlice).health, kStartingHealth);
+}
+
+TEST_F(HitTest, HealthStopsAtZeroAndReachingItIsReportedOnce) {
+  // Head, torso, torso: 100, 50, 30, 10. The fourth would take it below zero.
+  ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
+  ShootAt(Vec3(0.0F, kTorsoHeight, 0.0F));
+  const std::vector<Hit> third = ShootAt(Vec3(0.0F, kTorsoHeight, 0.0F));
+  const std::vector<Hit> fourth = ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
+  const std::vector<Hit> fifth = ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
+
+  ASSERT_TRUE(third.size() == 1U && fourth.size() == 1U && fifth.size() == 1U);
+  EXPECT_EQ(third[0].health, 10.0F);
+  EXPECT_FALSE(third[0].reached_zero);
+  EXPECT_EQ(fourth[0].damage, kHeadDamage);
+  EXPECT_EQ(fourth[0].health, 0.0F);
+  EXPECT_TRUE(fourth[0].reached_zero);
+  // A player at zero plays on (death is not built yet), and is still hit.
+  EXPECT_EQ(fifth[0].health, 0.0F);
+  EXPECT_FALSE(fifth[0].reached_zero);
+  EXPECT_EQ(Entity(Tick(Command{}), kBob).health, 0.0F);
+}
+
+TEST_F(HitTest, HealthDoesNotComeBackWithTime) {
+  ShootAt(Vec3(0.0F, kTorsoHeight, 0.0F));
+
+  Wait(300);
+
+  EXPECT_EQ(Entity(Tick(Command{}), kBob).health, kStartingHealth - kTorsoDamage);
+}
+
+TEST_F(HitTest, AShotPastTheTargetHitsNoOne) {
+  EXPECT_TRUE(ShootAt(Vec3(1.0F, kTorsoHeight, 0.0F)).empty());
+  EXPECT_TRUE(ShootAt(Vec3(0.0F, 2.0F, 0.0F)).empty());
+}
+
+// Crouched, a body 2.1 m tall standing is 1.3 m tall, and its hitboxes with it.
+TEST_F(HitTest, ACrouchedTargetsHitboxesAreLoweredWithItsBody) {
+  bob_.movement.desired_stance = Stance::kCrouching;
+  Wait(kSettleTicks);
+
+  EXPECT_TRUE(ShootAt(Vec3(0.0F, kHeadHeight, 0.0F)).empty());
+  const std::vector<Hit> lowered = ShootAt(Vec3(0.0F, kHeadHeight * 1.3F / 2.1F, 0.0F));
+
+  ASSERT_EQ(lowered.size(), 1U);
+  EXPECT_EQ(lowered[0].part, BodyPart::kHead);
+}
+
+// Its right arm is at +X while it faces yaw 0, and at -X once it has turned half a turn.
+TEST_F(HitTest, ATargetsHitboxesTurnWithWhereItFaces) {
+  const Vec3 right_of_it(0.35F, kTorsoHeight, 0.0F);
+  const Vec3 left_of_it(-0.35F, kTorsoHeight, 0.0F);
+  EXPECT_EQ(ShootAt(right_of_it).size(), 1U);
+  EXPECT_TRUE(ShootAt(left_of_it).empty());
+
+  bob_.yaw = std::numbers::pi_v<float>;
+  Wait(1);
+
+  EXPECT_TRUE(ShootAt(right_of_it).empty());
+  const std::vector<Hit> turned = ShootAt(left_of_it);
+  ASSERT_EQ(turned.size(), 1U);
+  EXPECT_EQ(turned[0].part, BodyPart::kLimb);
+  EXPECT_EQ(Entity(Tick(Command{}), kBob).yaw, augusta::math::SnapAngle(std::numbers::pi_v<float>));
+}
+
+TEST_F(HitTest, APlayerWithNoCommandKeepsWhereItFaced) {
+  bob_.yaw = 1.25F;
+  Wait(1);
+
+  const State state = world_.Tick({}, kTick);
+
+  EXPECT_EQ(Entity(state, kBob).yaw, 1.25F);
+}
+
+// The eye is inside the shooter's own head hitbox, which every round leaves through.
+TEST_F(HitTest, AShooterFiringForwardWhileMovingNeverHitsItself) {
+  Command command = Firing();
+  command.movement.direction = Vec3(0.0F, 0.0F, -1.0F);
+  // Up and away from Bob, along the way Alice walks.
+  command.pitch = 0.5F;
+
+  for (int i = 0; i < 60; ++i) {
+    const State state = Tick(command);
+    EXPECT_TRUE(state.hits.empty()) << "tick " << i;
+    EXPECT_EQ(Entity(state, kAlice).health, kStartingHealth);
+  }
+}
+
+// Carol stands 5 m behind Bob, on the line Alice shoots along.
+TEST_F(HitTest, WithTwoTargetsInLineOnlyTheNearerIsHit) {
+  constexpr EntityId kCarol = static_cast<EntityId>(3);
+  world_.AddPlayer(kCarol, Vec3(0.0F, 0.5F, -15.0F), Target());
+  Wait(kSettleTicks);
+
+  const std::vector<Hit> hits = ShootAt(Vec3(0.0F, kTorsoHeight, 0.0F));
+
+  ASSERT_EQ(hits.size(), 1U);
+  EXPECT_EQ(hits[0].target, kBob);
+  EXPECT_EQ(Entity(Tick(Command{}), kCarol).health, kStartingHealth);
+}
+
+TEST_F(HitTest, ATargetBehindAWallIsNotHitAndTheWallIs) {
+  constexpr float kWallZ = -5.0F;
+  ASSERT_TRUE(world_
+                  .AddCollisionMesh(CollisionMesh{.points = {Vec3(-20.0F, 0.0F, kWallZ), Vec3(-20.0F, 5.0F, kWallZ),
+                                                             Vec3(20.0F, 5.0F, kWallZ), Vec3(20.0F, 0.0F, kWallZ)},
+                                                  .indices = {0, 1, 2, 0, 2, 3}})
+                  .has_value());
+
+  const State state = Tick(FiringAt(Vec3(0.0F, kTorsoHeight, 0.0F)));
+
+  EXPECT_TRUE(state.hits.empty());
+  ASSERT_EQ(state.map_impacts.size(), 1U);
+  EXPECT_NEAR(state.map_impacts[0].z, kWallZ, 0.01F);
+  EXPECT_EQ(Entity(state, kBob).health, kStartingHealth);
+}
+
+// A bullet flies on after its shooter has left the Match, and still does its damage.
+TEST_F(HitTest, ABulletWhoseShooterLeftStillHits) {
+  // 10 m a tick and Bob 40 m away: the round is still flying when Alice leaves.
+  world_.RemovePlayer(kBob);
+  world_.AddPlayer(kBob, Vec3(0.0F, 0.5F, -40.0F), Target());
+  Wait(kSettleTicks);
+  ASSERT_TRUE(Tick(FiringAt(Vec3(0.0F, kTorsoHeight, 0.0F))).hits.empty());
+
+  world_.RemovePlayer(kAlice);
+  std::vector<Hit> hits;
+  for (int i = 0; i < 6; ++i) {
+    const State state = world_.Tick({}, kTick);
+    hits.insert(hits.end(), state.hits.begin(), state.hits.end());
+  }
+
+  ASSERT_EQ(hits.size(), 1U);
+  EXPECT_EQ(hits[0].shooter, kAlice);
+  EXPECT_EQ(hits[0].target, kBob);
 }
 
 }  // namespace

@@ -70,6 +70,8 @@ enum class MessageTypeWire : std::uint8_t {
   kMatchEnd = 9,
   /// Server to client: a player fired a round (ADR-0044).
   kShot = 10,
+  /// Server to client: a round the recipient fired hit a player (ADR-0044).
+  kHitConfirmation = 11,
 };
 
 /// Longest engine version string a JoinRequestWire may carry, in bytes.
@@ -99,6 +101,14 @@ enum class StanceWire : std::uint8_t {
   kStanding = 0,
   kCrouching = 1,
   kProne = 2,
+};
+
+/// Where on a player's body a round struck (CONTEXT.md's Body part). Starts at
+/// 1, so a zeroed byte is never one.
+enum class BodyPartWire : std::uint8_t {
+  kHead = 1,
+  kTorso = 2,
+  kLimb = 3,
 };
 
 /// One player's body as the server simulated it.
@@ -234,6 +244,8 @@ struct JoinRequestWire {
 struct EntityStateWire {
   EntityIdWire entity{};
   BodyStateWire body{};
+  /// Where the body faces: the yaw of its player's view, in radians.
+  float yaw = 0.0F;
 
   bool operator==(const EntityStateWire&) const = default;
 };
@@ -365,9 +377,23 @@ struct ShotWire {
   bool operator==(const ShotWire&) const = default;
 };
 
+/// Server to client: a round the recipient fired hit a player (CONTEXT.md's Hit
+/// confirmation, ADR-0044), told to the shooter alone.
+struct HitConfirmationWire {
+  /// The body that was hit.
+  EntityIdWire target{};
+  /// The damage the hit did.
+  float damage = 0.0F;
+  /// Where on the body it struck.
+  BodyPartWire part = BodyPartWire::kTorso;
+
+  bool operator==(const HitConfirmationWire&) const = default;
+};
+
 /// Any message of the protocol.
-using MessageWire = std::variant<JoinRequestWire, JoinAcceptedWire, JoinRefusedWire, CommandsWire,
-                                 AuthoritativeStateWire, LobbyWire, ReadyWire, MatchStartWire, MatchEndWire, ShotWire>;
+using MessageWire =
+    std::variant<JoinRequestWire, JoinAcceptedWire, JoinRefusedWire, CommandsWire, AuthoritativeStateWire, LobbyWire,
+                 ReadyWire, MatchStartWire, MatchEndWire, ShotWire, HitConfirmationWire>;
 
 /// A payload is this many bytes, the same type networking::Payload names.
 using BytesWire = std::vector<std::byte>;

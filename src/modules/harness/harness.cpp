@@ -50,6 +50,40 @@ std::optional<EntityId> EntityOf(const MatchStart& start, SessionId session) {
   return std::nullopt;
 }
 
+// What the server sent that is handed out once, not read: kept, oldest first
+// and no more than the newest limit of it, until whoever draws it takes it.
+// Safe to use from any thread, since the Network I/O thread adds and another takes.
+template <typename Event>
+class Pending {
+ public:
+  explicit Pending(std::size_t limit) : limit_(limit) {}
+
+  void Add(const Event& event) {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    events_.push_back(event);
+    if (events_.size() > limit_) {
+      events_.pop_front();
+    }
+  }
+
+  std::vector<Event> Take() {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<Event> taken(events_.begin(), events_.end());
+    events_.clear();
+    return taken;
+  }
+
+  void Clear() {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    events_.clear();
+  }
+
+ private:
+  std::size_t limit_;
+  std::mutex mutex_;
+  std::deque<Event> events_;
+};
+
 }  // namespace
 
 // What the server has told this client. Immutable once published: the Network
@@ -98,11 +132,10 @@ struct Session::Impl {
   // as it likes, so their warnings are limited.
   logging::Throttle drop_warnings{std::chrono::seconds{1}};
 
-  // The Shots received and not yet taken, oldest first. Not part of the view:
-  // they are handed out once, not read. Guarded by shots_mutex, since the
-  // Network I/O thread adds and whoever draws them takes.
-  std::mutex shots_mutex;
-  std::deque<Shot> shots;
+  // The Shots and the Hit confirmations received and not yet taken. Not part
+  // of the view: they are handed out once, not read.
+  Pending<Shot> shots{kMaxPendingShots};
+  Pending<HitConfirmation> hit_confirmations{kMaxPendingHitConfirmations};
 
   Impl(const SessionConfig& config, prediction::World world)
       : server(config.server),
@@ -117,24 +150,34 @@ struct Session::Impl {
                  protocol::DescribeDecodeError(decoded.error()));
       return;
     }
-    if (const auto* accepted = std::get_if<protocol::JoinAcceptedWire>(&*decoded)) {
-      OnJoinAccepted(FromWire(*accepted));
-    } else if (const auto* refused = std::get_if<protocol::JoinRefusedWire>(&*decoded)) {
-      OnJoinRefused(FromWire(refused->reason));
-    } else if (const auto* state = std::get_if<protocol::AuthoritativeStateWire>(&*decoded)) {
-      OnAuthoritativeState(FromWire(*state));
-    } else if (const auto* shot = std::get_if<protocol::ShotWire>(&*decoded)) {
-      OnShot(FromWire(*shot));
-    } else if (const auto* lobby = std::get_if<protocol::LobbyWire>(&*decoded)) {
-      OnLobby(FromWire(*lobby));
-    } else if (const auto* start = std::get_if<protocol::MatchStartWire>(&*decoded)) {
-      OnMatchStart(FromWire(*start));
-    } else if (std::holds_alternative<protocol::MatchEndWire>(*decoded)) {
-      OnMatchEnd();
-    } else {
+    if (!TakeIn(*decoded)) {
       LW_LIMITED(drop_warnings, "subsystem=harness event=dropped bytes={} reason=\"not a server message\"",
                  payload.size());
     }
+  }
+
+  // Hands message to what takes in its kind; false if it is not one a server sends.
+  bool TakeIn(const protocol::MessageWire& message) {
+    if (const auto* accepted = std::get_if<protocol::JoinAcceptedWire>(&message)) {
+      OnJoinAccepted(FromWire(*accepted));
+    } else if (const auto* refused = std::get_if<protocol::JoinRefusedWire>(&message)) {
+      OnJoinRefused(FromWire(refused->reason));
+    } else if (const auto* state = std::get_if<protocol::AuthoritativeStateWire>(&message)) {
+      OnAuthoritativeState(FromWire(*state));
+    } else if (const auto* shot = std::get_if<protocol::ShotWire>(&message)) {
+      OnShot(FromWire(*shot));
+    } else if (const auto* hit = std::get_if<protocol::HitConfirmationWire>(&message)) {
+      OnHitConfirmation(FromWire(*hit));
+    } else if (const auto* lobby = std::get_if<protocol::LobbyWire>(&message)) {
+      OnLobby(FromWire(*lobby));
+    } else if (const auto* start = std::get_if<protocol::MatchStartWire>(&message)) {
+      OnMatchStart(FromWire(*start));
+    } else if (std::holds_alternative<protocol::MatchEndWire>(message)) {
+      OnMatchEnd();
+    } else {
+      return false;
+    }
+    return true;
   }
 
   // A server whose tick rate or parameters the simulation cannot run on (a rate
@@ -176,7 +219,7 @@ struct Session::Impl {
       next.in_match = true;
       next.authoritative.reset();
     });
-    ForgetShots();
+    ForgetCombat();
     LI("subsystem=harness event=match_started players={}", players);
   }
 
@@ -185,7 +228,7 @@ struct Session::Impl {
       next.in_match = false;
       next.authoritative.reset();
     });
-    ForgetShots();
+    ForgetCombat();
     LI("subsystem=harness event=match_ended");
   }
 
@@ -203,17 +246,28 @@ struct Session::Impl {
                  shot.tick);
       return;
     }
-    const std::lock_guard<std::mutex> lock(shots_mutex);
-    shots.push_back(shot);
-    if (shots.size() > kMaxPendingShots) {
-      shots.pop_front();
-    }
+    shots.Add(shot);
   }
 
-  // The Shots of one match are not the next one's to draw.
-  void ForgetShots() {
-    const std::lock_guard<std::mutex> lock(shots_mutex);
-    shots.clear();
+  // Keeps hit for TakeHitConfirmations if it is of the match in progress, as OnShot does a Shot.
+  void OnHitConfirmation(const HitConfirmation& hit) {
+    const std::shared_ptr<const ServerView> current = view.load();
+    if (!current->in_match) {
+      LT("subsystem=harness event=dropped reason=\"hit confirmation outside a match\"");
+      return;
+    }
+    if (!IsInMatch(*current->match_start, hit.target)) {
+      LW_LIMITED(drop_warnings,
+                 "subsystem=harness event=dropped reason=\"hit confirmation names a body not in the match\"");
+      return;
+    }
+    hit_confirmations.Add(hit);
+  }
+
+  // The Shots and the Hit confirmations of one match are not the next one's to draw.
+  void ForgetCombat() {
+    shots.Clear();
+    hit_confirmations.Clear();
   }
 
   void OnJoinRefused(JoinRefusal reason) {
@@ -430,12 +484,9 @@ std::optional<JoinRefusal> Session::GetRefusal() const { return impl_->view.load
 
 std::optional<AuthoritativeState> Session::GetAuthoritativeState() const { return impl_->view.load()->authoritative; }
 
-std::vector<Shot> Session::TakeShots() {
-  const std::lock_guard<std::mutex> lock(impl_->shots_mutex);
-  std::vector<Shot> taken(impl_->shots.begin(), impl_->shots.end());
-  impl_->shots.clear();
-  return taken;
-}
+std::vector<Shot> Session::TakeShots() { return impl_->shots.Take(); }
+
+std::vector<HitConfirmation> Session::TakeHitConfirmations() { return impl_->hit_confirmations.Take(); }
 
 std::optional<EntityId> Session::GetEntityId() const { return Impl::OwnEntity(*impl_->view.load()); }
 

@@ -88,7 +88,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
       for (const EntityStateWire& body : state.bodies) {
         out << static_cast<std::uint32_t>(body.entity) << ": ";
         showValue(body.body, out);
-        out << "; ";
+        out << ", yaw " << body.yaw << "; ";
       }
       out << "queued_commands " << +state.queued_commands << "}";
     }
@@ -116,6 +116,10 @@ void showValue(const MessageWire& message, std::ostream& out) {
       showValue(shot.origin, out);
       out << ", yaw " << shot.yaw << ", pitch " << shot.pitch << "}";
     }
+    void operator()(const HitConfirmationWire& hit) const {
+      out << "HitConfirmation{target " << static_cast<std::uint32_t>(hit.target) << ", part "
+          << +static_cast<std::uint8_t>(hit.part) << ", damage " << hit.damage << "}";
+    }
   };
   std::visit(Printer{.out = out}, message);
 }
@@ -134,6 +138,7 @@ using augusta::math::kVelocityGrid;
 using augusta::math::Vec3;
 using augusta::protocol::AmmoWire;
 using augusta::protocol::AuthoritativeStateWire;
+using augusta::protocol::BodyPartWire;
 using augusta::protocol::BodyStateWire;
 using augusta::protocol::CommandsWire;
 using augusta::protocol::CommandWire;
@@ -141,6 +146,7 @@ using augusta::protocol::Decode;
 using augusta::protocol::Encode;
 using augusta::protocol::EntityIdWire;
 using augusta::protocol::EntityStateWire;
+using augusta::protocol::HitConfirmationWire;
 using augusta::protocol::JoinAcceptedWire;
 using augusta::protocol::JoinRefusalWire;
 using augusta::protocol::JoinRefusedWire;
@@ -293,7 +299,8 @@ rc::Gen<CommandsWire> Commands() {
 
 rc::Gen<AuthoritativeStateWire> AuthoritativeState() {
   const auto entity = rc::gen::build<EntityStateWire>(rc::gen::set(&EntityStateWire::entity, AnyId<EntityIdWire>()),
-                                                      rc::gen::set(&EntityStateWire::body, Body()));
+                                                      rc::gen::set(&EntityStateWire::body, Body()),
+                                                      rc::gen::set(&EntityStateWire::yaw, OnGrid(kAngleGrid)));
   return rc::gen::build<AuthoritativeStateWire>(
       rc::gen::set(&AuthoritativeStateWire::tick, rc::gen::arbitrary<std::uint32_t>()),
       rc::gen::set(&AuthoritativeStateWire::acknowledged_sequence, rc::gen::arbitrary<std::uint32_t>()),
@@ -330,13 +337,22 @@ rc::Gen<ShotWire> Shot() {
                                   rc::gen::set(&ShotWire::pitch, OnGrid(kAngleGrid)));
 }
 
+rc::Gen<HitConfirmationWire> HitConfirmation() {
+  return rc::gen::build<HitConfirmationWire>(
+      rc::gen::set(&HitConfirmationWire::target, AnyId<EntityIdWire>()),
+      rc::gen::set(&HitConfirmationWire::damage, FiniteFloat()),
+      rc::gen::set(&HitConfirmationWire::part,
+                   rc::gen::element(BodyPartWire::kHead, BodyPartWire::kTorso, BodyPartWire::kLimb)));
+}
+
 // Any message of the protocol, within its limits.
 rc::Gen<MessageWire> Message() {
   return rc::gen::oneOf(rc::gen::cast<MessageWire>(JoinRequest()), rc::gen::cast<MessageWire>(JoinAccepted()),
                         rc::gen::cast<MessageWire>(JoinRefused()), rc::gen::cast<MessageWire>(Commands()),
                         rc::gen::cast<MessageWire>(AuthoritativeState()), rc::gen::cast<MessageWire>(Lobby()),
                         rc::gen::cast<MessageWire>(Ready()), rc::gen::cast<MessageWire>(MatchStart()),
-                        rc::gen::just(MessageWire{MatchEndWire{}}), rc::gen::cast<MessageWire>(Shot()));
+                        rc::gen::just(MessageWire{MatchEndWire{}}), rc::gen::cast<MessageWire>(Shot()),
+                        rc::gen::cast<MessageWire>(HitConfirmation()));
 }
 
 RC_GTEST_PROP(ProtocolPropertyTest, EveryMessageSurvivesEncodeThenDecode, ()) {

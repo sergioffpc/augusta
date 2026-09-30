@@ -20,6 +20,7 @@ namespace {
 
 using augusta::math::Vec3;
 using augusta::protocol::AuthoritativeStateWire;
+using augusta::protocol::BodyPartWire;
 using augusta::protocol::BodyStateWire;
 using augusta::protocol::BytesWire;
 using augusta::protocol::CommandsWire;
@@ -27,6 +28,7 @@ using augusta::protocol::CommandWire;
 using augusta::protocol::Encode;
 using augusta::protocol::EntityIdWire;
 using augusta::protocol::EntityStateWire;
+using augusta::protocol::HitConfirmationWire;
 using augusta::protocol::JoinAcceptedWire;
 using augusta::protocol::JoinRefusalWire;
 using augusta::protocol::JoinRefusedWire;
@@ -83,7 +85,7 @@ std::vector<Seed> Seeds() {
            AuthoritativeStateWire{
                .tick = 1200,
                .acknowledged_sequence = 42,
-               .bodies = {EntityStateWire{.entity = static_cast<EntityIdWire>(1), .body = body},
+               .bodies = {EntityStateWire{.entity = static_cast<EntityIdWire>(1), .body = body, .yaw = 1.5F},
                           EntityStateWire{.entity = static_cast<EntityIdWire>(2), .body = BodyStateWire{}}},
                .queued_commands = 2}},
       {.name = "lobby",
@@ -107,6 +109,9 @@ std::vector<Seed> Seeds() {
                            .tick = 1200,
                            .yaw = 1.5F,
                            .pitch = -0.25F}},
+      {.name = "hit_confirmation",
+       .message =
+           HitConfirmationWire{.target = static_cast<EntityIdWire>(2), .damage = 37.5F, .part = BodyPartWire::kHead}},
   };
 }
 

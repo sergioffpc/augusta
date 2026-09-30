@@ -1,15 +1,18 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <ostream>
 #include <set>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include <rapidcheck.h>
 #include <rapidcheck/gtest.h>
 
+#include "augusta/ballistics.h"
 #include "augusta/command.h"
 #include "augusta/input.h"
 #include "augusta/logging.h"
@@ -20,8 +23,9 @@
 #include "augusta/simulation.h"
 
 // Property-based tests of the simulation (ADR-0013), through the Worlds' public
-// interfaces: a player's stamina stays a fraction whatever it is commanded to
-// do, and a client whose prediction diverged from the server converges on the
+// interfaces: a player's stamina stays a fraction and its magazine within its
+// capacity whatever it is commanded to do, no rifle outpaces its fire rate,
+// health never rises nor goes below zero, and a client whose prediction diverged from the server converges on the
 // server's state once the server stops diverging. RC_PARAMS sets the case count
 // at run time; pull requests run the default 100.
 namespace augusta::command {
@@ -71,7 +75,7 @@ constexpr std::size_t kMaxCommands = 240;  // Four seconds of input.
 constexpr float kPi = 3.14159265F;
 constexpr augusta::simulation::EntityId kPlayer = static_cast<augusta::simulation::EntityId>(1);
 const Vec3 kSpawn(0.0F, 0.0F, 0.0F);
-const Vec3 kEye(0.0F, 1.7F, 0.0F);
+const augusta::simulation::Character kCharacter{.eye = Vec3(0.0F, 1.7F, 0.0F), .hitboxes = {}};
 
 CollisionMesh Floor() {
   constexpr float kExtent = 100.0F;
@@ -137,13 +141,143 @@ RC_GTEST_PROP(SimulationPropertyTest, StaminaStaysWithinTheBarWhateverThePlayerD
 
   augusta::simulation::World world(augusta::parameters::Parameters{.stamina = stamina});
   RC_ASSERT(world.AddCollisionMesh(Floor()).has_value());
-  world.AddPlayer(kPlayer, kSpawn, kEye);
+  world.AddPlayer(kPlayer, kSpawn, kCharacter);
 
   for (const Command& command : commands) {
     const auto state = world.Tick({{.entity = kPlayer, .command = command}}, kTick);
     RC_ASSERT(state.bodies.size() == 1U);
     RC_ASSERT(state.bodies.front().body.stamina >= 0.0F);
     RC_ASSERT(state.bodies.front().body.stamina <= 1.0F);
+  }
+}
+
+// A rifle a scenario could give: a magazine of 1 to 30 rounds, from one round a
+// second to more than one a tick, and a reload of no time up to a second.
+rc::Gen<augusta::parameters::Rifle> Rifle() {
+  using augusta::parameters::Rifle;
+  return rc::gen::apply(
+      [](int capacity, int rounds_per_minute, int reload_milliseconds) {
+        Rifle rifle;
+        rifle.magazine_capacity = static_cast<std::uint8_t>(capacity);
+        rifle.rounds_per_minute = static_cast<float>(rounds_per_minute);
+        rifle.reload_seconds = static_cast<float>(reload_milliseconds) / 1000.0F;
+        rifle.muzzle_velocity = 600.0F;
+        return rifle;
+      },
+      rc::gen::inRange(1, 31), rc::gen::inRange(60, 6001), rc::gen::inRange(0, 1001));
+}
+
+// Whatever a client sends, fire and reload on every tick included, the server
+// keeps the magazine and the fire rate (US-07, US-08). The rounds fired in any
+// stretch of ticks are at most what the fire interval fits in it, and one more
+// for the round that opens it.
+RC_GTEST_PROP(SimulationPropertyTest, TheMagazineStaysWithinItsCapacityAndNoWindowOutpacesTheFireRate, ()) {
+  augusta::parameters::Parameters parameters;
+  parameters.rifle = *Rifle();
+  parameters.ammo.max_range = 50.0F;
+  const std::vector<Command> commands = *Commands(1);
+
+  augusta::simulation::World world(parameters);
+  RC_ASSERT(world.AddCollisionMesh(Floor()).has_value());
+  world.AddPlayer(kPlayer, kSpawn, kCharacter);
+
+  std::vector<std::size_t> fired;  // The ticks a round was fired on.
+  for (std::size_t i = 0; i < commands.size(); ++i) {
+    const auto state = world.Tick({{.entity = kPlayer, .command = commands[i]}}, kTick);
+    RC_ASSERT(state.bodies.size() == 1U);
+    // Unsigned, so a magazine taken below zero would be far above its capacity.
+    RC_ASSERT(state.bodies.front().rifle.rounds <= parameters.rifle.magazine_capacity);
+    RC_ASSERT(state.shots.size() <= 1U);
+    if (!state.shots.empty()) {
+      fired.push_back(i);
+    }
+  }
+
+  // Rounding, and the 0.1 ms within which a round counts as ready.
+  constexpr float kTolerance = 0.05F;
+  const float rounds_per_tick = parameters.rifle.rounds_per_minute / 60.0F * kTick;
+  for (std::size_t first = 0; first < fired.size(); ++first) {
+    for (std::size_t last = first; last < fired.size(); ++last) {
+      const auto rounds = static_cast<float>(last - first + 1);
+      const auto ticks = static_cast<float>(fired[last] - fired[first] + 1);
+      RC_ASSERT(rounds <= (ticks * rounds_per_tick) + 1.0F + kTolerance);
+    }
+  }
+}
+
+// A character that is hard to miss: one torso hitbox, a wall 4 m wide and 2 m
+// tall across its feet and another along them, so it is hit from any side.
+augusta::simulation::Character WideTarget() {
+  using augusta::ballistics::Triangle;
+  const Vec3 up(0.0F, 2.0F, 0.0F);
+  std::vector<Triangle> triangles;
+  for (const Vec3& half : {Vec3(2.0F, 0.0F, 0.0F), Vec3(0.0F, 0.0F, 2.0F)}) {
+    triangles.push_back({.a = -half, .b = half, .c = half + up});
+    triangles.push_back({.a = -half, .b = half + up, .c = -half + up});
+  }
+  return augusta::simulation::Character{
+      .eye = Vec3(0.0F, 1.7F, 0.0F),
+      .hitboxes = {{.part = augusta::ballistics::BodyPart::kTorso, .triangles = std::move(triangles)}}};
+}
+
+// commands with every view brought to within a fifth of a turn of yaw toward
+// and a tenth of its pitch: whatever else its player does, it looks roughly
+// that way, so a good share of its rounds land.
+std::vector<Command> LookingRoughly(float toward, std::vector<Command> commands) {
+  for (Command& command : commands) {
+    command.yaw = toward + (command.yaw * 0.2F);
+    command.pitch *= 0.1F;
+  }
+  return commands;
+}
+
+// Two players 6 m apart and roughly facing each other, each doing whatever it
+// is commanded with a rifle that fires every tick at a target hard to miss:
+// health only ever goes down (it never regenerates in a Match), stops at zero,
+// and reaches it once.
+RC_GTEST_PROP(SimulationPropertyTest, HealthNeverRisesNeverGoesBelowZeroAndReachesZeroOnce, ()) {
+  constexpr augusta::simulation::EntityId kOther = static_cast<augusta::simulation::EntityId>(2);
+  augusta::parameters::Parameters parameters;
+  parameters.rifle.rounds_per_minute = 3600.0F;
+  parameters.rifle.magazine_capacity = 255;
+  parameters.rifle.muzzle_velocity = 600.0F;
+  parameters.ammo.max_range = 50.0F;
+  const auto damage = rc::gen::map(rc::gen::inRange(0, 41), [](int points) { return static_cast<float>(points); });
+  parameters.ammo.damage = {.head = *damage, .torso = *damage, .limb = *damage};
+  parameters.starting_health = static_cast<float>(*rc::gen::inRange(1, 201));
+  // The other player is down -Z, where yaw 0 looks; it looks back with half a turn.
+  const std::vector<Command> commands = LookingRoughly(0.0F, *Commands(1));
+  const std::vector<Command> other_commands =
+      LookingRoughly(kPi, *rc::gen::container<std::vector<Command>>(commands.size(), RealCommand()));
+
+  augusta::simulation::World world(parameters);
+  RC_ASSERT(world.AddCollisionMesh(Floor()).has_value());
+  world.AddPlayer(kPlayer, kSpawn, WideTarget());
+  world.AddPlayer(kOther, Vec3(0.0F, 0.0F, -6.0F), WideTarget());
+
+  std::map<augusta::simulation::EntityId, float> health = {{kPlayer, parameters.starting_health},
+                                                           {kOther, parameters.starting_health}};
+  std::map<augusta::simulation::EntityId, int> reached_zero = {{kPlayer, 0}, {kOther, 0}};
+  std::size_t hits = 0;
+  for (std::size_t i = 0; i < commands.size(); ++i) {
+    const auto state = world.Tick(
+        {{.entity = kPlayer, .command = commands[i]}, {.entity = kOther, .command = other_commands[i]}}, kTick);
+    for (const auto& body : state.bodies) {
+      RC_ASSERT(body.health >= 0.0F);
+      RC_ASSERT(body.health <= health.at(body.entity));
+      health.at(body.entity) = body.health;
+    }
+    for (const auto& hit : state.hits) {
+      RC_ASSERT(hit.shooter != hit.target);
+      reached_zero.at(hit.target) += hit.reached_zero ? 1 : 0;
+    }
+    hits += state.hits.size();
+  }
+  // How many cases put the property to the test, in RapidCheck's report.
+  RC_CLASSIFY(hits > 0, "players were hit");
+  RC_CLASSIFY(reached_zero.at(kPlayer) + reached_zero.at(kOther) > 0, "a player reached zero");
+  for (const auto& [entity, left] : health) {
+    RC_ASSERT(reached_zero.at(entity) == (left <= 0.0F ? 1 : 0));
   }
 }
 
@@ -167,7 +301,7 @@ RC_GTEST_PROP(SimulationPropertyTest, AClientThatDivergedConvergesOnTheServersSt
 
   augusta::simulation::World server(augusta::parameters::Parameters{.stamina = stamina});
   RC_ASSERT(server.AddCollisionMesh(Floor()).has_value());
-  server.AddPlayer(kPlayer, kSpawn, kEye);
+  server.AddPlayer(kPlayer, kSpawn, kCharacter);
 
   augusta::prediction::World client;
   RC_ASSERT(client.AddCollisionMesh(Floor()).has_value());
