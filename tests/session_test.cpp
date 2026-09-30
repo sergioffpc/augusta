@@ -2887,13 +2887,22 @@ augusta::assets::HitboxData BoxHitbox(augusta::assets::BodyPart part, const Vec3
                            3, 2, 6, 3, 6, 7, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2}}};
 }
 
+// The hitboxes of the character the hit tests play: 1.8 m tall, with a head, a
+// torso and legs on its axis and a right arm (a limb) beside the torso, at +X
+// when it faces yaw 0.
+std::vector<augusta::assets::HitboxData> HumanHitboxes() {
+  return {BoxHitbox(augusta::assets::BodyPart::kHead, Vec3(-0.1F, 1.5F, -0.1F), Vec3(0.1F, 1.8F, 0.1F)),
+          BoxHitbox(augusta::assets::BodyPart::kTorso, Vec3(-0.2F, 0.9F, -0.1F), Vec3(0.2F, 1.5F, 0.1F)),
+          BoxHitbox(augusta::assets::BodyPart::kLimb, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.9F, 0.1F)),
+          BoxHitbox(augusta::assets::BodyPart::kLimb, Vec3(0.3F, 0.9F, -0.1F), Vec3(0.4F, 1.5F, 0.1F))};
+}
+
 // A match of kPlayers standing in a line down -Z, 10 m apart, on the floor:
 // the first, at the origin, is the shooter, and a view of yaw 0 looks from it
-// at the others. Everyone plays a character 1.8 m tall that sees from inside
-// its head, with a head, a torso and legs on its axis and a right arm (a limb)
-// beside the torso, at +X when it faces yaw 0. A round takes 50 of a player's
-// 100 of health at the head, 20 at the torso and 10 at a limb, and reaches the
-// nearest target on the tick it is fired.
+// at the others. Everyone plays the character of HumanHitboxes, which sees from
+// inside its head. A round takes 50 of a player's 100 of health at the head, 20
+// at the torso and 10 at a limb, and reaches the nearest target on the tick it
+// is fired.
 template <std::uint8_t kPlayers>
 class HitMatchOf : public LoopbackMatch {
  protected:
@@ -2925,11 +2934,7 @@ class HitMatchOf : public LoopbackMatch {
     }
     HostSetup setup = OnTheFloor(std::move(spawn_points), parameters);
     setup.map.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
-    setup.map.characters.front().hitboxes = {
-        BoxHitbox(augusta::assets::BodyPart::kHead, Vec3(-0.1F, 1.5F, -0.1F), Vec3(0.1F, 1.8F, 0.1F)),
-        BoxHitbox(augusta::assets::BodyPart::kTorso, Vec3(-0.2F, 0.9F, -0.1F), Vec3(0.2F, 1.5F, 0.1F)),
-        BoxHitbox(augusta::assets::BodyPart::kLimb, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.9F, 0.1F)),
-        BoxHitbox(augusta::assets::BodyPart::kLimb, Vec3(0.3F, 0.9F, -0.1F), Vec3(0.4F, 1.5F, 0.1F))};
+    setup.map.characters.front().hitboxes = HumanHitboxes();
     if (walled) {
       setup.map.collision.push_back(CollisionMesh{.points = {Vec3(-20.0F, kFloorY, kWallZ), Vec3(-20.0F, 5.0F, kWallZ),
                                                              Vec3(20.0F, 5.0F, kWallZ), Vec3(20.0F, kFloorY, kWallZ)},
@@ -3252,6 +3257,168 @@ TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairInT
   EXPECT_EQ(confirmations[0].target, *target.GetEntityId());
   EXPECT_EQ(confirmations[0].part, BodyPart::kTorso);
   EXPECT_TRUE(ConfirmationsOf(target).empty());
+}
+
+// A full match in four pairs, 5 m apart along X: the two of a pair stand 10 m
+// apart along Z, facing each other. Everyone plays the character of
+// HumanHitboxes and carries a rifle of 600 rounds a minute whose magazine of 15
+// takes half a second to reload, and whose every round kicks the aim up by
+// 1/256 rad, about 4 cm at the partner.
+class FullAutoMatchTest : public LoopbackMatch {
+ protected:
+  static constexpr std::size_t kPlayers = augusta::protocol::kMaxPlayers;
+  static constexpr float kEyeHeight = 1.6F;
+  static constexpr float kPairSpacing = 5.0F;
+  static constexpr float kPairDistance = 10.0F;
+
+  static HostSetup InFacingPairs() {
+    Parameters parameters = WithPlayerCount(kPlayers);
+    parameters.rifle.rounds_per_minute = 600.0F;
+    parameters.rifle.magazine_capacity = 15;
+    parameters.rifle.reload_seconds = 0.5F;
+    parameters.rifle.muzzle_velocity = 800.0F;
+    parameters.rifle.recoil_pattern = {{.pitch = 1.0F / 256.0F, .yaw = 0.0F}};
+    parameters.rifle.recoil_recovery_per_second = 0.375F;
+    parameters.ammo.gravity = 9.81F;
+    parameters.ammo.max_range = 200.0F;
+    parameters.ammo.damage = {.head = 50.0F, .torso = 20.0F, .limb = 10.0F};
+    parameters.starting_health = 100.0F;
+    std::vector<Vec3> spawn_points;
+    for (std::size_t i = 0; i < kPlayers; ++i) {
+      spawn_points.emplace_back(kPairSpacing * static_cast<float>(i / 2), kFloorY, i % 2 == 0 ? 0.0F : -kPairDistance);
+    }
+    HostSetup setup = OnTheFloor(std::move(spawn_points), parameters);
+    setup.map.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    setup.map.characters.front().hitboxes = HumanHitboxes();
+    return setup;
+  }
+
+  FullAutoMatchTest() : LoopbackMatch(InFacingPairs()) {}
+
+  void SetUp() override {
+    for (std::size_t i = 0; i < kPlayers; ++i) {
+      Join();
+    }
+    ASSERT_TRUE(StartMatch());
+  }
+
+  // The yaw that looks from client's spawn point at its partner's.
+  static float FacingItsPartner(const Session& client) {
+    return OwnSpawn(client).z > -kPairDistance / 2.0F ? 0.0F : std::numbers::pi_v<float>;
+  }
+};
+
+// NFR-01 for combat (issue #228), extending the M3 soak test above and paced to
+// the real 60 Hz for the reason given there: eight clients strafe, sprint and
+// change stance, all the same way so each pair stays face to face, holding
+// fire for the whole match and reloading whenever their magazine is empty, and
+// each reports the view it was last sent, so the hits are lag compensated. The
+// server keeps up with every client's commands, tells every client of every
+// Shot, and every shooter of every one of its hits.
+TEST_F(FullAutoMatchTest, EightClientsMoveFireFullAutoReloadAndHitEachOtherForAMatchWithNoMissedTicks) {
+  constexpr int kMatchTicks = 600;             // 10 real seconds at kTestTickRate, paced.
+  constexpr std::uint32_t kAckTolerance = 20;  // A few round trips' worth still in flight.
+  constexpr std::array<Stance, 3> kStanceCycle = {Stance::kStanding, Stance::kCrouching, Stance::kProne};
+  constexpr int kStanceCycleTicks = 150;
+  constexpr int kSprintBlockTicks = 100;
+  // A block strafing one way, a block still, a block the other way, a block still.
+  constexpr int kStrafeBlockTicks = 30;
+  constexpr std::array<float, 4> kStrafeCycle = {1.0F, 0.0F, -1.0F, 0.0F};
+
+  struct Client {
+    float yaw = 0.0F;
+    // Its rifle as it last predicted it: what it decides to reload by.
+    augusta::weapon::State rifle{};
+    float first_x = 0.0F;
+    float farthest = 0.0F;
+    std::uint32_t acknowledged = 0;
+    std::size_t shots = 0;
+    std::size_t confirmations = 0;
+  };
+  std::vector<Client> clients(sessions_.size());
+  for (std::size_t i = 0; i < sessions_.size(); ++i) {
+    clients[i].yaw = FacingItsPartner(*sessions_[i]);
+  }
+  // What the server fired, and the hits it resolved by the body that fired them.
+  std::size_t fired = 0;
+  std::map<std::uint32_t, std::size_t> hits_by;
+  const auto collect = [&] {
+    for (std::size_t i = 0; i < sessions_.size(); ++i) {
+      clients[i].shots += sessions_[i]->TakeShots().size();
+      clients[i].confirmations += sessions_[i]->TakeHitConfirmations().size();
+    }
+  };
+
+  const auto tick_duration = std::chrono::duration<float>(kFixedTick);
+  for (int tick = 0; tick < kMatchTicks; ++tick) {
+    const auto tick_start = std::chrono::steady_clock::now();
+
+    const augusta::simulation::State state = host_.Tick(kFixedTick);
+    fired += state.shots.size();
+    for (const augusta::simulation::Hit& hit : state.hits) {
+      ++hits_by[std::to_underlying(hit.shooter)];
+    }
+    for (std::size_t i = 0; i < sessions_.size(); ++i) {
+      Client& client = clients[i];
+      Command command{};
+      command.movement.direction = Vec3(kStrafeCycle.at((tick / kStrafeBlockTicks) % kStrafeCycle.size()), 0.0F, 0.0F);
+      command.movement.sprint = (tick / kSprintBlockTicks) % 2 == 0;
+      command.movement.desired_stance = kStanceCycle.at((tick / kStanceCycleTicks) % kStanceCycle.size());
+      command.yaw = client.yaw;
+      command.fire = true;
+      command.reload = tick > 0 && client.rifle.rounds == 0 && client.rifle.reload_remaining <= 0.0F;
+      if (const auto shown = sessions_[i]->GetAuthoritativeState()) {
+        command.view_tick = shown->tick;
+      }
+
+      const auto predicted = sessions_[i]->Tick(command, kFixedTick);
+      client.rifle = predicted.rifle;
+      if (tick == 0) {
+        client.first_x = predicted.local_body.position.x;
+      }
+      client.farthest = std::max(client.farthest, std::abs(predicted.local_body.position.x - client.first_x));
+    }
+
+    host_.PumpNetwork();
+    for (std::size_t i = 0; i < sessions_.size(); ++i) {
+      sessions_[i]->PumpEvents();
+      sessions_[i]->ExchangeMessages();
+
+      ASSERT_FALSE(sessions_[i]->GetFailure().has_value()) << "client " << i << " failed at tick " << tick;
+      EXPECT_EQ(sessions_[i]->GetConnectionState(), ConnectionState::kConnected)
+          << "client " << i << " dropped at tick " << tick;
+
+      if (const auto authoritative = sessions_[i]->GetAuthoritativeState()) {
+        clients[i].acknowledged = std::max(clients[i].acknowledged, authoritative->acknowledged_sequence);
+      }
+    }
+    collect();
+
+    std::this_thread::sleep_until(tick_start +
+                                  std::chrono::duration_cast<std::chrono::steady_clock::duration>(tick_duration));
+  }
+
+  // A Shot and a Hit confirmation are reliable: the last of them are on their way.
+  EXPECT_TRUE(ExchangeUntil(host_, Pointers(sessions_), [&] {
+    collect();
+    return std::ranges::all_of(clients, [&](const Client& client) { return client.shots >= fired; });
+  }));
+  Settle(host_, Pointers(sessions_));
+  collect();
+
+  // Five magazines each, less the rounds the first commands' way to the server cost.
+  EXPECT_GT(fired, kPlayers * 60U);
+  for (std::size_t i = 0; i < sessions_.size(); ++i) {
+    const Client& client = clients[i];
+    EXPECT_GE(client.acknowledged + kAckTolerance, static_cast<std::uint32_t>(kMatchTicks))
+        << "client " << i << " fell behind: server acknowledged only " << client.acknowledged << " of " << kMatchTicks
+        << " ticks";
+    EXPECT_GT(client.farthest, 0.5F) << "client " << i << " did not move over the match";
+    EXPECT_EQ(client.shots, fired) << "client " << i << " was not told of every Shot";
+    EXPECT_GT(client.confirmations, 0U) << "client " << i << " never hit its partner";
+    EXPECT_EQ(client.confirmations, hits_by[std::to_underlying(*sessions_[i]->GetEntityId())])
+        << "client " << i << " was not told of every hit of its own";
+  }
 }
 
 // A Hit confirmation of the scripted server's one player hitting whoever it names.
