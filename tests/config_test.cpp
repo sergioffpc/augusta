@@ -648,7 +648,7 @@ TEST(ParseServerConfigTest, RejectsAKeyThatBelongsToTheClient) {
 
 std::expected<CommandLine, ConfigError> Parse(std::vector<const char*> args) {
   args.insert(args.begin(), "augustac");
-  return ParseCommandLine(static_cast<int>(args.size()), args.data(), "augustac", "augustac.yaml");
+  return ParseCommandLine(static_cast<int>(args.size()), args.data(), "augustac", "augustac.yaml", "1.2.3");
 }
 
 TEST(ParseCommandLineTest, WithoutArgumentsRunsWithTheDefaultFileNextToTheExecutable) {
@@ -674,9 +674,9 @@ TEST(ParseCommandLineTest, HelpAsksForTheUsage) {
 
   ASSERT_TRUE(command_line.has_value());
   EXPECT_EQ(command_line->action, CommandLineAction::kShowHelp);
-  EXPECT_TRUE(Contains(command_line->usage, "usage: augustac [--config <file>]")) << command_line->usage;
-  EXPECT_TRUE(Contains(command_line->usage, "--help")) << command_line->usage;
-  EXPECT_TRUE(Contains(command_line->usage, "--version")) << command_line->usage;
+  EXPECT_TRUE(Contains(command_line->message, "usage: augustac [--config <file>]")) << command_line->message;
+  EXPECT_TRUE(Contains(command_line->message, "--help")) << command_line->message;
+  EXPECT_TRUE(Contains(command_line->message, "--version")) << command_line->message;
 }
 
 TEST(ParseCommandLineTest, VersionAsksForTheVersion) {
@@ -684,6 +684,7 @@ TEST(ParseCommandLineTest, VersionAsksForTheVersion) {
 
   ASSERT_TRUE(command_line.has_value());
   EXPECT_EQ(command_line->action, CommandLineAction::kShowVersion);
+  EXPECT_EQ(command_line->message, "augustac 1.2.3");
 }
 
 TEST(ParseCommandLineTest, HelpWinsOverConfigAndVersion) {
@@ -732,7 +733,7 @@ TEST(ParseCommandLineTest, RejectsAnUnknownOptionAndExtraArguments) {
 
 TEST(ParseCommandLineTest, UsageNamesTheProgramAndTheDefaultFile) {
   const char* const args[] = {"augustad", "nope"};
-  const auto command_line = ParseCommandLine(2, args, "augustad", "augustad.yaml");
+  const auto command_line = ParseCommandLine(2, args, "augustad", "augustad.yaml", "1.2.3");
 
   ASSERT_FALSE(command_line.has_value());
   EXPECT_EQ(command_line.error().code, ConfigErrorCode::kInvalidArguments);

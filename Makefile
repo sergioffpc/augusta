@@ -53,7 +53,7 @@ help:
 	$(info $()  test          build, then run ctest)
 	$(info $()  check         the same as test)
 	$(info $()  install       build, then cmake --install augustad (prefix=..., DESTDIR=...))
-	$(info $()  uninstall     remove what install put in place)
+	$(info $()  uninstall     remove what install put in place (same DESTDIR))
 	$(info $()  clean         remove build outputs, keep the configuration)
 	$(info $()  distclean     delete $(BUILD_DIR))
 	$(info $()  format        clang-format -i on src, tests and tools)
@@ -80,7 +80,7 @@ install: build
 	$(RUN) cmake --install $(BUILD_DIR) $(if $(prefix),--prefix $(prefix))
 
 # CMake has no uninstall; cmake/Uninstall.cmake removes what the install
-# manifest lists.
+# manifest lists. A staged install needs the same DESTDIR here.
 uninstall:
 	$(if $(wildcard $(BUILD_DIR)/install_manifest.txt),cmake -DMANIFEST=$(BUILD_DIR)/install_manifest.txt -P cmake/Uninstall.cmake,@echo Nothing to uninstall: $(BUILD_DIR) has no install manifest.)
 

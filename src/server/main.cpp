@@ -33,6 +33,31 @@ extern "C" void HandleShutdownSignal(int /*signal*/) {
   }
 }
 
+// The pack file_config names, verified against its public key. Called before
+// anything else starts (no socket, world, or thread is spun up yet) - a bad
+// pack or key means this process exits there, never partially running against
+// untrusted content (ADR-0018, ARCHITECTURE.md §8). Reports what is wrong and
+// returns nullopt.
+std::optional<augusta::assets::Pack> LoadVerifiedPack(const augusta::config::ServerConfig& file_config) {
+  const std::filesystem::path& pack_path = file_config.pack_path;
+  const std::filesystem::path& public_key_path = file_config.public_key_path;
+
+  const auto public_key = augusta::assets::ReadEd25519PublicKeyFile(public_key_path);
+  if (!public_key) {
+    LE("subsystem=server event=public_key_loading_failed path={} error=public_key_unreadable",
+       public_key_path.string());
+    return std::nullopt;
+  }
+  auto pack = augusta::assets::Pack::Load(pack_path, *public_key);
+  if (!pack) {
+    LE("subsystem=server event=pack_verification_failed path={} error={}", pack_path.string(),
+       augusta::assets::DescribeLoadError(pack.error()));
+    return std::nullopt;
+  }
+  LI("subsystem=server event=pack_verified path={}", pack_path.string());
+  return *std::move(pack);
+}
+
 // Each of paths as a Character with its hitboxes and its eye, in the same
 // order, or nullopt after reporting the first that has no hitbox for a body
 // part or no eye: every hit on a player resolves to a body part (US-11) and
@@ -166,15 +191,11 @@ int main(int argc, char** argv) {
 
   // Settings come from a config file - augustad.yaml next to the executable
   // unless --config names another (ADR-0034) - not from the command line,
-  // which otherwise only asks for --help or --version.
-  const auto command_line =
-      augusta::config::ParseCommandLine(argc, argv, "augustad", augusta::config::kServerConfigFileName);
-  if (command_line && command_line->action == augusta::config::CommandLineAction::kShowHelp) {
-    std::println("{}", command_line->usage);
-    return 0;
-  }
-  if (command_line && command_line->action == augusta::config::CommandLineAction::kShowVersion) {
-    std::println("augustad {}", augusta::EngineVersion());
+  // which otherwise only asks for --help or --version (printed, then exit).
+  const auto command_line = augusta::config::ParseCommandLine(
+      argc, argv, "augustad", augusta::config::kServerConfigFileName, augusta::EngineVersion());
+  if (command_line && command_line->action != augusta::config::CommandLineAction::kRun) {
+    std::println("{}", command_line->message);
     return 0;
   }
   const auto file_config = command_line.and_then(
@@ -188,33 +209,17 @@ int main(int argc, char** argv) {
   augusta::logging::SetLogLevel(*augusta::logging::ParseSeverity(file_config->log_level));
   LI("subsystem=server event=starting version={}", augusta::EngineVersion());
 
-  // Verified before anything else starts (no socket, world, or thread is
-  // spun up yet) - a bad pack or key means this process exits here, never
-  // partially running against untrusted content (ADR-0018,
-  // ARCHITECTURE.md §8).
-  const std::filesystem::path& pack_path = file_config->pack_path;
-  const std::filesystem::path& public_key_path = file_config->public_key_path;
-
-  const auto public_key = augusta::assets::ReadEd25519PublicKeyFile(public_key_path);
-  if (!public_key) {
-    LE("subsystem=server event=public_key_loading_failed path={} error=public_key_unreadable",
-       public_key_path.string());
-    return 1;
-  }
-  const auto pack = augusta::assets::Pack::Load(pack_path, *public_key);
+  const auto pack = LoadVerifiedPack(*file_config);
   if (!pack) {
-    LE("subsystem=server event=pack_verification_failed path={} error={}", pack_path.string(),
-       augusta::assets::DescribeLoadError(pack.error()));
     return 1;
   }
-  LI("subsystem=server event=pack_verified path={}", pack_path.string());
 
-  auto map = LoadMap(*pack, pack_path);
+  auto map = LoadMap(*pack, file_config->pack_path);
   if (!map) {
     return 1;
   }
 
-  const auto parameters = LoadParameters(*pack, pack_path);
+  const auto parameters = LoadParameters(*pack, file_config->pack_path);
   if (!parameters) {
     return 1;
   }

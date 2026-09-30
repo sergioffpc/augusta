@@ -171,9 +171,9 @@ std::expected<ServerConfig, ConfigError> LoadServerConfig(const std::filesystem:
 enum class CommandLineAction : std::uint8_t {
   /// Start, reading config_file.
   kRun,
-  /// Print usage to stdout and exit successfully.
+  /// Print message (the usage) to stdout and exit successfully.
   kShowHelp,
-  /// Print the engine version to stdout and exit successfully.
+  /// Print message (the version) to stdout and exit successfully.
   kShowVersion,
 };
 
@@ -181,20 +181,21 @@ enum class CommandLineAction : std::uint8_t {
 struct CommandLine {
   /// Only set for kRun.
   std::filesystem::path config_file;
-  /// The usage message naming the program and its default config file.
-  std::string usage;
+  /// Only set for kShowHelp (the usage message) and kShowVersion
+  /// (`<program> <version>`).
+  std::string message;
   CommandLineAction action = CommandLineAction::kRun;
 };
 
 /// Reads the command line (argc/argv as main gets them). `--help` asks for the
-/// usage and `--version` for the version, whatever else is on it (`--help`
-/// first); otherwise the config file is the path after `--config`, taken as
-/// given (relative to the working directory), or default_file_name in the
-/// running executable's directory when there are no arguments. Any other
-/// arguments are a kInvalidArguments error whose subject is the usage message,
-/// naming program.
+/// usage and `--version` for version, whatever else is on it (`--help` first);
+/// otherwise the config file is the path after `--config`, taken as given
+/// (relative to the working directory), or default_file_name in the running
+/// executable's directory when there are no arguments. Any other arguments are
+/// a kInvalidArguments error whose subject is the usage message, naming
+/// program.
 std::expected<CommandLine, ConfigError> ParseCommandLine(int argc, const char* const* argv, std::string_view program,
-                                                         std::string_view default_file_name);
+                                                         std::string_view default_file_name, std::string_view version);
 
 }  // namespace augusta::config
 

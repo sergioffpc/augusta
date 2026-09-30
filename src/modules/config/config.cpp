@@ -370,9 +370,8 @@ std::string DescribeConfigError(const ConfigError& error) {
 }
 
 std::expected<CommandLine, ConfigError> ParseCommandLine(int argc, const char* const* argv, std::string_view program,
-                                                         std::string_view default_file_name) {
-  CommandLine command_line{
-      .config_file = {}, .usage = Usage(program, default_file_name), .action = CommandLineAction::kRun};
+                                                         std::string_view default_file_name, std::string_view version) {
+  const auto usage = Usage(program, default_file_name);
 
   namespace po = boost::program_options;
   po::options_description options;
@@ -392,33 +391,31 @@ std::expected<CommandLine, ConfigError> ParseCommandLine(int argc, const char* c
               arguments);
     po::notify(arguments);
   } catch (const po::error& error) {
-    return Fail(ConfigErrorCode::kInvalidArguments, std::format("{}\n{}", error.what(), command_line.usage));
+    return Fail(ConfigErrorCode::kInvalidArguments, std::format("{}\n{}", error.what(), usage));
   }
 
   // variables_map's own operator[] (an empty value for an absent option), not
   // std::map::contains: MSVC links that through Boost's DLL, which lacks it.
   if (!arguments["help"].empty()) {
-    command_line.action = CommandLineAction::kShowHelp;
-    return command_line;
+    return CommandLine{.config_file = {}, .message = usage, .action = CommandLineAction::kShowHelp};
   }
   if (!arguments["version"].empty()) {
-    command_line.action = CommandLineAction::kShowVersion;
-    return command_line;
+    return CommandLine{.config_file = {},
+                       .message = std::format("{} {}", program, version),
+                       .action = CommandLineAction::kShowVersion};
   }
   if (arguments["config"].empty()) {
     const auto directory = ExecutableDirectory();
     if (!directory) {
       return Fail(ConfigErrorCode::kExecutableDirectoryUnknown, std::string(default_file_name));
     }
-    command_line.config_file = *directory / default_file_name;
-    return command_line;
+    return CommandLine{.config_file = *directory / default_file_name, .message = {}, .action = CommandLineAction::kRun};
   }
   const auto& file = arguments["config"].as<std::string>();
   if (file.empty()) {
-    return Fail(ConfigErrorCode::kInvalidArguments, std::format("--config needs a file name\n{}", command_line.usage));
+    return Fail(ConfigErrorCode::kInvalidArguments, std::format("--config needs a file name\n{}", usage));
   }
-  command_line.config_file = file;
-  return command_line;
+  return CommandLine{.config_file = file, .message = {}, .action = CommandLineAction::kRun};
 }
 
 std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml_text,

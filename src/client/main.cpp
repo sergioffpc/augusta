@@ -267,15 +267,11 @@ int main(int argc, char** argv) {
 
   // Settings come from a config file - augustac.yaml next to the executable
   // unless --config names another (ADR-0034) - not from the command line,
-  // which otherwise only asks for --help or --version.
-  const auto command_line =
-      augusta::config::ParseCommandLine(argc, argv, "augustac", augusta::config::kClientConfigFileName);
-  if (command_line && command_line->action == augusta::config::CommandLineAction::kShowHelp) {
-    std::println("{}", command_line->usage);
-    return 0;
-  }
-  if (command_line && command_line->action == augusta::config::CommandLineAction::kShowVersion) {
-    std::println("augustac {}", augusta::EngineVersion());
+  // which otherwise only asks for --help or --version (printed, then exit).
+  const auto command_line = augusta::config::ParseCommandLine(
+      argc, argv, "augustac", augusta::config::kClientConfigFileName, augusta::EngineVersion());
+  if (command_line && command_line->action != augusta::config::CommandLineAction::kRun) {
+    std::println("{}", command_line->message);
     return 0;
   }
   const auto file_config = command_line.and_then(
