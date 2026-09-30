@@ -75,7 +75,7 @@ the decisions already made in ARCHITECTURE.md:
     GB they would evict the rest, and every pull request would rebuild its
     dependencies from source.
   5. Compile with a strict warning set, treated as errors
-  6. `build-tools`, when `tools/` changed: on a Windows runner, build the
+  6. the `tools` job, when `tools/` changed: on a Windows runner, build the
      asset cooker's native modules and run its pytest suite, which also
      requires that cooking the example scenario still gives the golden
      packs in `tests/fixtures/example-packs/` byte for byte; the C++ tests
@@ -169,7 +169,8 @@ pipeline).
   inside WSL2, accessing the repo via `/mnt/c/...`. No Docker container —
   a `scripts/bootstrap-wsl.sh` setup script installs clang (ADR-0008), CMake, Ninja,
   vcpkg, clang-tidy, clang-format, gdb, GitHub CLI, kubectl, and helm
-  directly into the WSL environment. The cross-filesystem access cost
+  directly into the WSL environment. It requires the Ubuntu release CI's
+  runner uses, whose distro packages fix the same LLVM major as CI's. The cross-filesystem access cost
   (`/mnt/c`) is accepted here, since this side has the lighter build
   (no Falcor, D3D12, or Steam Audio).
 - **Client (Windows, native):** built and run natively — never
@@ -180,7 +181,9 @@ pipeline).
   than pinning a project-specific path, at the cost of not being able to
   side-by-side independent Build Tools versions per project — plus the
   Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, and LLVM's clang-format
-  and clang-tidy (for the `pre-commit` and `pre-push` hooks below).
+  and clang-tidy (for the `pre-commit` and `pre-push` hooks below),
+  pinned to the LLVM major CI's Ubuntu runner ships so the hooks agree
+  with CI's gates.
   (A fully hermetic, registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was
   considered and rejected: Falcor's CMake presets only test/support
   MSVC on Windows, and stacking an unsupported compiler on top of an

@@ -8,8 +8,12 @@ install location, no --installPath) plus the rest of the client toolchain.
 $ErrorActionPreference = "Stop"
 
 function Install-WingetPackage {
-  param([string]$Id, [string[]]$Override)
+  param([string]$Id, [string[]]$Override, [string]$Version)
   $args = @("install", "--id", $Id, "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements")
+  if ($Version) {
+    # --force so a different installed version (e.g. a newer one) is replaced.
+    $args += @("--version", $Version, "--force")
+  }
   if ($Override) {
     $args += @("--override", ($Override -join " "))
   }
@@ -27,8 +31,13 @@ Install-WingetPackage -Id "ezwinports.make"
 Install-WingetPackage -Id "Git.Git"
 Install-WingetPackage -Id "Mozilla.sccache"
 # clang-format and clang-tidy, see docs/ENGINEERING.md, Code Quality. Back
-# the .githooks/pre-commit and .githooks/pre-push hooks below.
-Install-WingetPackage -Id "LLVM.LLVM"
+# the .githooks/pre-commit and .githooks/pre-push hooks below. Pinned to the
+# clang CI runs (the ubuntu-26.04 runner's distro package): another major
+# formats and lints differently, so the hooks would disagree with CI's gates.
+# Bump it together with the runner image. The pin keeps `winget upgrade` on
+# that major.
+Install-WingetPackage -Id "LLVM.LLVM" -Version "21.1.8"
+winget pin add --id LLVM.LLVM --exact --version "21.*" --force
 
 # Unlike the other packages here, LLVM's installer doesn't add itself to
 # PATH under winget's --silent flag (that's an interactive-installer
