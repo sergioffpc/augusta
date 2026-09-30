@@ -22,6 +22,10 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# The GNU install directories (CMAKE_INSTALL_BINDIR, ...) under the prefix, for
+# the targets that `cmake --install` puts in place.
+include(GNUInstallDirs)
+
 if (MSVC)
   add_compile_options(/W4 /WX /EHsc)
 else()

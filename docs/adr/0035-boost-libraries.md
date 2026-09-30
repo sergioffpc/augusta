@@ -18,7 +18,7 @@ Three libraries are adopted now:
   It is header-only, has a `wchar_t` path overload so non-ASCII pack paths open
   on Windows, and drops a dependency that only did this one job.
 - **Boost.Program_options** parses the command line of `augustac` and `augustad`
-  (the single `--config <file>` argument, ADR-0034) in `augusta_config`, in place
+  (`--config <file>`, `--help` and `--version`, ADR-0034) in `augusta_config`, in place
   of comparing `argv` by hand. It is a compiled library. Its defaults are looser
   than the config file's own strictness (prefix guessing turns `--conf` into
   `--config`; a bare argument is ignored), so the parser turns guessing off and

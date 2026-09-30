@@ -55,8 +55,9 @@ which loads the Build Tools environment for you. `bootstrap-windows.ps1`
 installs GNU make (`ezwinports.make`) along with the rest, so from a new terminal:
 ```
 make help                       # list the targets
-make build                      # configure + compile (PRESET defaults to windows / linux)
-make test PRESET=windows-debug  # build + ctest with another preset
+make                            # configure + compile (PRESET defaults to windows / linux)
+make check PRESET=windows-debug # build + ctest with another preset
+make install prefix=C:/augusta  # build + cmake --install augustad (DESTDIR honoured)
 make clean                      # remove build outputs (distclean deletes the build dir)
 make format-check               # the clang-format check CI runs
 ```

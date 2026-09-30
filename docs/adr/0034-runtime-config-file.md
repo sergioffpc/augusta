@@ -4,10 +4,13 @@
 public key to verify it against, the server address to connect to or listen on)
 from one YAML file, not from a list of command-line arguments. By default each
 executable reads a fixed-name file from its own directory: `augustac.yaml` and
-`augustad.yaml`. The one argument they accept is `--config <file>`, which points
-them at another file (taken as given, relative to the working directory); any
-other argument, including an old-style `augustac <pack> <key>`, fails with the
-usage message instead of being half-honored. Keys are grouped into sections
+`augustad.yaml`. The one setting they take from the command line is
+`--config <file>`, which points them at another file (taken as given, relative
+to the working directory). Besides it they accept only the GNU `--help` and
+`--version`, which print the usage or the engine version to stdout and exit
+successfully without reading any config (`--help` wins over the rest of the
+line). Any other argument, including an old-style `augustac <pack> <key>`,
+fails with the usage message instead of being half-honored. Keys are grouped into sections
 by what they are about - `content` (pack, public key), `network`, `logging`,
 `simulation` (server), `input` (client) - and a key is named by its dotted
 path (`network.server_address`), which is what an error names too. A section

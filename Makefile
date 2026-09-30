@@ -4,6 +4,11 @@
 # PRESET picks the CMake preset (default: the host's release preset), e.g.
 #   make test PRESET=windows-debug
 #
+# Plain `make` builds, and the targets follow the GNU names (all, check,
+# install, uninstall, clean, distclean). `install` honours the GNU `prefix`
+# (CMake's default when unset) and DESTDIR, e.g.
+#   make install prefix=/opt/augusta DESTDIR=/tmp/stage
+#
 # On Windows every command runs through scripts\vcenv.ps1, which loads the
 # Visual Studio Build Tools environment first (cl.exe needs it, see README).
 # GNU make for Windows: `winget install ezwinports.make`.
@@ -33,16 +38,22 @@ TIDY_EXCLUDES += ":(exclude)src/modules/physics/physics.cpp"
 endif
 TIDY_SOURCES := $(shell git ls-files -- "src/*.cpp" $(TIDY_EXCLUDES))
 
-.DEFAULT_GOAL := help
-.PHONY: help configure build test clean distclean format format-check tidy lint
+.DEFAULT_GOAL := all
+.PHONY: all help configure build test check install uninstall clean distclean format format-check tidy lint
+
+all: build
 
 # $(info), not echo: make prints it itself, so the parentheses reach neither
 # cmd.exe nor /bin/sh, which would read them as syntax.
 help:
 	$(info Targets (PRESET=$(PRESET), override with PRESET=windows-debug, linux-san, ...):)
+	$(info $()  all           the default: build)
 	$(info $()  configure     cmake --preset)
 	$(info $()  build         configure, then compile)
 	$(info $()  test          build, then run ctest)
+	$(info $()  check         the same as test)
+	$(info $()  install       build, then cmake --install augustad (prefix=..., DESTDIR=...))
+	$(info $()  uninstall     remove what install put in place)
 	$(info $()  clean         remove build outputs, keep the configuration)
 	$(info $()  distclean     delete $(BUILD_DIR))
 	$(info $()  format        clang-format -i on src, tests and tools)
@@ -59,6 +70,19 @@ build: configure
 
 test: build
 	$(RUN) ctest --preset $(PRESET)
+
+check: test
+
+# DESTDIR reaches cmake --install through the environment: make exports a
+# variable set on its command line. PREFIX is taken for the GNU prefix too.
+prefix ?= $(PREFIX)
+install: build
+	$(RUN) cmake --install $(BUILD_DIR) $(if $(prefix),--prefix $(prefix))
+
+# CMake has no uninstall; cmake/Uninstall.cmake removes what the install
+# manifest lists.
+uninstall:
+	$(if $(wildcard $(BUILD_DIR)/install_manifest.txt),cmake -DMANIFEST=$(BUILD_DIR)/install_manifest.txt -P cmake/Uninstall.cmake,@echo Nothing to uninstall: $(BUILD_DIR) has no install manifest.)
 
 # Nothing to clean before the first configure (or after distclean): the clean
 # target only exists inside a configured build tree.

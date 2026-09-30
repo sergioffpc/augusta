@@ -350,6 +350,18 @@ std::string Phrase(const ConfigError& error) {
   return "unknown config error";
 }
 
+// The usage message ParseCommandLine's help and errors show.
+std::string Usage(std::string_view program, std::string_view default_file_name) {
+  return std::format(
+      "usage: {0} [--config <file>]\n"
+      "       {0} --help | --version\n"
+      "  --config <file>  the config file, relative to the working directory\n"
+      "                   (without it, {1} next to the executable)\n"
+      "  --help           print this message and exit\n"
+      "  --version        print the version and exit",
+      program, default_file_name);
+}
+
 }  // namespace
 
 std::string DescribeConfigError(const ConfigError& error) {
@@ -357,15 +369,15 @@ std::string DescribeConfigError(const ConfigError& error) {
   return error.file.empty() ? phrase : std::format("{}: {}", error.file.string(), phrase);
 }
 
-std::expected<std::filesystem::path, ConfigError> ResolveConfigFile(int argc, const char* const* argv,
-                                                                    std::string_view program,
-                                                                    std::string_view default_file_name) {
-  const auto usage = std::format("usage: {} [--config <file>]\n  without --config, reads {} next to the executable",
-                                 program, default_file_name);
+std::expected<CommandLine, ConfigError> ParseCommandLine(int argc, const char* const* argv, std::string_view program,
+                                                         std::string_view default_file_name) {
+  CommandLine command_line{
+      .config_file = {}, .usage = Usage(program, default_file_name), .action = CommandLineAction::kRun};
 
   namespace po = boost::program_options;
   po::options_description options;
-  options.add_options()("config", po::value<std::string>(), "config file, relative to the working directory");
+  options.add_options()("config", po::value<std::string>(), "config file, relative to the working directory")(
+      "help", "print the usage and exit")("version", "print the version and exit");
 
   // Prefix guessing is off so `--conf` is an error, not a silent `--config`;
   // the empty positional description makes a bare argument an error too,
@@ -380,21 +392,33 @@ std::expected<std::filesystem::path, ConfigError> ResolveConfigFile(int argc, co
               arguments);
     po::notify(arguments);
   } catch (const po::error& error) {
-    return Fail(ConfigErrorCode::kInvalidArguments, std::format("{}\n{}", error.what(), usage));
+    return Fail(ConfigErrorCode::kInvalidArguments, std::format("{}\n{}", error.what(), command_line.usage));
   }
 
-  if (arguments.empty()) {
+  // variables_map's own operator[] (an empty value for an absent option), not
+  // std::map::contains: MSVC links that through Boost's DLL, which lacks it.
+  if (!arguments["help"].empty()) {
+    command_line.action = CommandLineAction::kShowHelp;
+    return command_line;
+  }
+  if (!arguments["version"].empty()) {
+    command_line.action = CommandLineAction::kShowVersion;
+    return command_line;
+  }
+  if (arguments["config"].empty()) {
     const auto directory = ExecutableDirectory();
     if (!directory) {
       return Fail(ConfigErrorCode::kExecutableDirectoryUnknown, std::string(default_file_name));
     }
-    return *directory / default_file_name;
+    command_line.config_file = *directory / default_file_name;
+    return command_line;
   }
   const auto& file = arguments["config"].as<std::string>();
   if (file.empty()) {
-    return Fail(ConfigErrorCode::kInvalidArguments, std::format("--config needs a file name\n{}", usage));
+    return Fail(ConfigErrorCode::kInvalidArguments, std::format("--config needs a file name\n{}", command_line.usage));
   }
-  return std::filesystem::path(file);
+  command_line.config_file = file;
+  return command_line;
 }
 
 std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml_text,

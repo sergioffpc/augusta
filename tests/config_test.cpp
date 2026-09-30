@@ -15,14 +15,16 @@
 // Unit tests for augusta_config's YAML schema and file loading (ADR-0034).
 namespace {
 
+using augusta::config::CommandLine;
+using augusta::config::CommandLineAction;
 using augusta::config::ConfigError;
 using augusta::config::ConfigErrorCode;
 using augusta::config::DescribeConfigError;
 using augusta::config::LoadClientConfig;
 using augusta::config::LoadServerConfig;
 using augusta::config::ParseClientConfig;
+using augusta::config::ParseCommandLine;
 using augusta::config::ParseServerConfig;
-using augusta::config::ResolveConfigFile;
 
 // The directory of the (imaginary) config file: what a relative base_dir is
 // relative to.
@@ -644,55 +646,99 @@ TEST(ParseServerConfigTest, RejectsAKeyThatBelongsToTheClient) {
   EXPECT_EQ(config.error().subject, "network.server_address");
 }
 
-std::expected<std::filesystem::path, ConfigError> Resolve(std::vector<const char*> args) {
+std::expected<CommandLine, ConfigError> Parse(std::vector<const char*> args) {
   args.insert(args.begin(), "augustac");
-  return ResolveConfigFile(static_cast<int>(args.size()), args.data(), "augustac", "augustac.yaml");
+  return ParseCommandLine(static_cast<int>(args.size()), args.data(), "augustac", "augustac.yaml");
 }
 
-TEST(ResolveConfigFileTest, WithoutArgumentsUsesTheDefaultFileNextToTheExecutable) {
-  const auto file = Resolve({});
+TEST(ParseCommandLineTest, WithoutArgumentsRunsWithTheDefaultFileNextToTheExecutable) {
+  const auto command_line = Parse({});
 
-  ASSERT_TRUE(file.has_value());
-  EXPECT_EQ(file->filename(), "augustac.yaml");
-  EXPECT_TRUE(std::filesystem::is_directory(file->parent_path())) << file->string();
+  ASSERT_TRUE(command_line.has_value());
+  EXPECT_EQ(command_line->action, CommandLineAction::kRun);
+  EXPECT_EQ(command_line->config_file.filename(), "augustac.yaml");
+  EXPECT_TRUE(std::filesystem::is_directory(command_line->config_file.parent_path()))
+      << command_line->config_file.string();
 }
 
-TEST(ResolveConfigFileTest, ConfigArgumentNamesTheFileAsGiven) {
-  const auto file = Resolve({"--config", "other/dir/my.yaml"});
+TEST(ParseCommandLineTest, ConfigArgumentNamesTheFileAsGiven) {
+  const auto command_line = Parse({"--config", "other/dir/my.yaml"});
 
-  ASSERT_TRUE(file.has_value());
-  EXPECT_EQ(*file, std::filesystem::path("other") / "dir" / "my.yaml");
+  ASSERT_TRUE(command_line.has_value());
+  EXPECT_EQ(command_line->action, CommandLineAction::kRun);
+  EXPECT_EQ(command_line->config_file, std::filesystem::path("other") / "dir" / "my.yaml");
 }
 
-TEST(ResolveConfigFileTest, RejectsConfigWithoutAFile) {
-  const auto file = Resolve({"--config"});
+TEST(ParseCommandLineTest, HelpAsksForTheUsage) {
+  const auto command_line = Parse({"--help"});
 
-  ASSERT_FALSE(file.has_value());
-  EXPECT_EQ(file.error().code, ConfigErrorCode::kInvalidArguments);
-  EXPECT_TRUE(Contains(file.error().subject, "usage: augustac [--config <file>]")) << file.error().subject;
+  ASSERT_TRUE(command_line.has_value());
+  EXPECT_EQ(command_line->action, CommandLineAction::kShowHelp);
+  EXPECT_TRUE(Contains(command_line->usage, "usage: augustac [--config <file>]")) << command_line->usage;
+  EXPECT_TRUE(Contains(command_line->usage, "--help")) << command_line->usage;
+  EXPECT_TRUE(Contains(command_line->usage, "--version")) << command_line->usage;
 }
 
-TEST(ResolveConfigFileTest, RejectsAnEmptyFileName) { ASSERT_FALSE(Resolve({"--config", ""}).has_value()); }
+TEST(ParseCommandLineTest, VersionAsksForTheVersion) {
+  const auto command_line = Parse({"--version"});
 
-TEST(ResolveConfigFileTest, RejectsAPositionalArgument) {
+  ASSERT_TRUE(command_line.has_value());
+  EXPECT_EQ(command_line->action, CommandLineAction::kShowVersion);
+}
+
+TEST(ParseCommandLineTest, HelpWinsOverConfigAndVersion) {
+  // As GNU programs do: --help answers whatever else is asked, even a --config
+  // that would be rejected on its own.
+  for (const auto& args :
+       {std::vector<const char*>{"--config", "my.yaml", "--help"}, std::vector<const char*>{"--help", "--config", ""},
+        std::vector<const char*>{"--version", "--help"}}) {
+    const auto command_line = Parse(args);
+
+    ASSERT_TRUE(command_line.has_value()) << DescribeConfigError(command_line.error());
+    EXPECT_EQ(command_line->action, CommandLineAction::kShowHelp);
+  }
+}
+
+TEST(ParseCommandLineTest, VersionWinsOverConfig) {
+  const auto command_line = Parse({"--config", "my.yaml", "--version"});
+
+  ASSERT_TRUE(command_line.has_value());
+  EXPECT_EQ(command_line->action, CommandLineAction::kShowVersion);
+}
+
+TEST(ParseCommandLineTest, RejectsConfigWithoutAFile) {
+  const auto command_line = Parse({"--config"});
+
+  ASSERT_FALSE(command_line.has_value());
+  EXPECT_EQ(command_line.error().code, ConfigErrorCode::kInvalidArguments);
+  EXPECT_TRUE(Contains(command_line.error().subject, "usage: augustac [--config <file>]"))
+      << command_line.error().subject;
+}
+
+TEST(ParseCommandLineTest, RejectsAnEmptyFileName) { ASSERT_FALSE(Parse({"--config", ""}).has_value()); }
+
+TEST(ParseCommandLineTest, RejectsAPositionalArgument) {
   // The old `augustac <pack> <key>` invocation must fail, not be half-honored.
-  ASSERT_FALSE(Resolve({"level.pack", "k.pub"}).has_value());
-  ASSERT_FALSE(Resolve({"my.yaml"}).has_value());
+  ASSERT_FALSE(Parse({"level.pack", "k.pub"}).has_value());
+  ASSERT_FALSE(Parse({"my.yaml"}).has_value());
 }
 
-TEST(ResolveConfigFileTest, RejectsAnUnknownOptionAndExtraArguments) {
-  ASSERT_FALSE(Resolve({"--conf", "my.yaml"}).has_value());
-  ASSERT_FALSE(Resolve({"--config", "a.yaml", "b.yaml"}).has_value());
+TEST(ParseCommandLineTest, RejectsAnUnknownOptionAndExtraArguments) {
+  ASSERT_FALSE(Parse({"--conf", "my.yaml"}).has_value());
+  ASSERT_FALSE(Parse({"--config", "a.yaml", "b.yaml"}).has_value());
+  ASSERT_FALSE(Parse({"--help", "extra"}).has_value());
+  ASSERT_FALSE(Parse({"--vers"}).has_value());
 }
 
-TEST(ResolveConfigFileTest, UsageNamesTheProgramAndTheDefaultFile) {
+TEST(ParseCommandLineTest, UsageNamesTheProgramAndTheDefaultFile) {
   const char* const args[] = {"augustad", "nope"};
-  const auto file = ResolveConfigFile(2, args, "augustad", "augustad.yaml");
+  const auto command_line = ParseCommandLine(2, args, "augustad", "augustad.yaml");
 
-  ASSERT_FALSE(file.has_value());
-  EXPECT_EQ(file.error().code, ConfigErrorCode::kInvalidArguments);
-  EXPECT_TRUE(Contains(file.error().subject, "usage: augustad [--config <file>]")) << file.error().subject;
-  EXPECT_TRUE(Contains(file.error().subject, "augustad.yaml")) << file.error().subject;
+  ASSERT_FALSE(command_line.has_value());
+  EXPECT_EQ(command_line.error().code, ConfigErrorCode::kInvalidArguments);
+  EXPECT_TRUE(Contains(command_line.error().subject, "usage: augustad [--config <file>]"))
+      << command_line.error().subject;
+  EXPECT_TRUE(Contains(command_line.error().subject, "augustad.yaml")) << command_line.error().subject;
 }
 
 TEST(DescribeConfigErrorTest, NamesTheKeyAndTheFile) {

@@ -3,6 +3,7 @@
 #include <expected>
 #include <filesystem>
 #include <optional>
+#include <print>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -30,17 +31,6 @@ extern "C" void HandleShutdownSignal(int /*signal*/) {
   if (g_runtime != nullptr) {
     g_runtime->Stop();
   }
-}
-
-// Settings come from a config file - augustad.yaml next to the executable
-// unless --config names another (ADR-0034) - not from the command line.
-std::expected<augusta::config::ServerConfig, augusta::config::ConfigError> LoadConfig(int argc, char** argv) {
-  const auto config_file =
-      augusta::config::ResolveConfigFile(argc, argv, "augustad", augusta::config::kServerConfigFileName);
-  if (!config_file) {
-    return std::unexpected(config_file.error());
-  }
-  return augusta::config::LoadServerConfig(*config_file);
 }
 
 // Each of paths as a Character with its hitboxes and its eye, in the same
@@ -174,7 +164,21 @@ augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ServerConfig&
 int main(int argc, char** argv) {
   augusta::logging::Init();
 
-  const auto file_config = LoadConfig(argc, argv);
+  // Settings come from a config file - augustad.yaml next to the executable
+  // unless --config names another (ADR-0034) - not from the command line,
+  // which otherwise only asks for --help or --version.
+  const auto command_line =
+      augusta::config::ParseCommandLine(argc, argv, "augustad", augusta::config::kServerConfigFileName);
+  if (command_line && command_line->action == augusta::config::CommandLineAction::kShowHelp) {
+    std::println("{}", command_line->usage);
+    return 0;
+  }
+  if (command_line && command_line->action == augusta::config::CommandLineAction::kShowVersion) {
+    std::println("augustad {}", augusta::EngineVersion());
+    return 0;
+  }
+  const auto file_config = command_line.and_then(
+      [](const augusta::config::CommandLine& read) { return augusta::config::LoadServerConfig(read.config_file); });
   if (!file_config) {
     LE("subsystem=server event=config_loading_failed error={}",
        augusta::config::DescribeConfigError(file_config.error()));
