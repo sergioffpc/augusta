@@ -39,6 +39,7 @@
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "augusta/version.h"
+#include "augusta/weapon.h"
 #include "host.h"
 #include "match.h"
 #include "parameters_loader.h"
@@ -1744,6 +1745,24 @@ TEST_F(ScriptedParametersTest, AClientPredictsItsStaminaWithTheRulesOfTheServers
   EXPECT_NEAR(states_.at(&client).local_body.stamina, BodySeenBy(client, *client.GetEntityId())->stamina, 0.1F);
 }
 
+TEST_F(ScriptedParametersTest, AClientPredictsItsRifleWithTheValuesOfTheServersScript) {
+  Session& client = Join();
+  ASSERT_TRUE(StartMatch());
+  Run(kSettleTicks);
+  Command fire{};
+  fire.fire = true;
+
+  // A second of fire.
+  Run(60, fire);
+
+  // The script's magazine of 30 at its 600 rounds a minute, ten of them gone: a
+  // client on values of its own has one round and fires it once a minute.
+  EXPECT_EQ(states_.at(&client).rifle.rounds, 20);
+  ASSERT_TRUE(client.GetAuthoritativeState().has_value());
+  EXPECT_EQ(client.GetAuthoritativeState()->rifle.rounds, 20);
+  EXPECT_EQ(states_.at(&client).rifle_corrections, 0U);
+}
+
 // The session a ScriptedServer admits its client under.
 constexpr SessionIdWire kScriptedSession{1};
 
@@ -1903,6 +1922,29 @@ TEST_F(ScriptedServerTest, BytesThatAreNoMessageChangeNothingAndTheClientKeepsRu
   EXPECT_FLOAT_EQ(session_.GetParameters()->stamina.deplete_per_second, 0.0F);
   EXPECT_EQ(session_.GetPhase(), Phase::kMatch);
   EXPECT_GT(PredictedStaminaAfterSprinting(60), 0.99F);
+}
+
+// The scripted server's rifle holds one round. The client fires it, and the
+// server says it refused that round: the rifle is still loaded and ready.
+TEST_F(ScriptedServerTest, ARifleTheServerSaysDiffersFromThePredictedOneIsPutAtTheServers) {
+  Settle();
+  Command fire{};
+  fire.fire = true;
+  const augusta::prediction::State fired = session_.Tick(fire, kFixedTick);
+  ASSERT_EQ(fired.rounds_fired, 1);
+  ASSERT_EQ(fired.rifle.rounds, 0);
+
+  augusta::protocol::AuthoritativeStateWire refused = ScriptedServer::StateOf(1, {kScriptedEntity});
+  refused.acknowledged_sequence = 1;
+  refused.rifle = {.cooldown = 0.0F, .reload_remaining = 0.0F, .rounds = 1};
+  server_.Send(refused);
+  Settle();
+
+  // With the round back in the magazine, the next tick fires it again.
+  const augusta::prediction::State corrected = session_.Tick(fire, kFixedTick);
+  EXPECT_EQ(corrected.rifle_corrections, 1U);
+  EXPECT_EQ(corrected.rounds_fired, 1);
+  EXPECT_EQ(corrected.rifle.rounds, 0);
 }
 
 TEST_F(ScriptedServerTest, AStateNamingABodyNotInTheMatchIsDropped) {
@@ -2524,6 +2566,160 @@ TEST_F(FireDuelTest, WithPacketLossEveryClientStillReceivesEveryShot) {
   }
 }
 
+// One client that predicts its own fire and reload (ADR-0024) against a server
+// running the same rifle, compared command by command: the server's update
+// tells the client the rifle it had after the newest command it took in.
+class PredictedFireTest : public FireMatchOf<1> {
+ protected:
+  void SetUp() override {
+    FireMatchOf<1>::SetUp();
+    client_ = sessions_.front().get();
+    // The settling ticks went out under sequences 1 to kSettleTicks.
+    ASSERT_TRUE(ExchangeUntil(host_, Pointers(sessions_), [&] { return Acknowledged() == sequence_; }));
+  }
+
+  // The newest of the client's commands the server has told it of.
+  [[nodiscard]] std::uint32_t Acknowledged() const {
+    const auto state = client_->GetAuthoritativeState();
+    return state.has_value() ? state->acknowledged_sequence : 0U;
+  }
+
+  // What the client predicts on its next tick, on command, kept under the
+  // sequence that command goes out with.
+  void Predict(const Command& command) {
+    states_[client_] = client_->Tick(command, kFixedTick);
+    predicted_[++sequence_] = states_[client_].rifle;
+  }
+
+  // Holds the rifle of the newest update the client has against the one it
+  // predicted after the command that update acknowledges.
+  void CompareWithTheServer() {
+    const auto state = client_->GetAuthoritativeState();
+    ASSERT_TRUE(state.has_value());
+    const auto predicted = predicted_.find(state->acknowledged_sequence);
+    if (predicted == predicted_.end()) {
+      return;
+    }
+    EXPECT_EQ(+state->rifle.rounds, +predicted->second.rounds) << "after command " << state->acknowledged_sequence;
+    compared_.insert(state->acknowledged_sequence);
+  }
+
+  // One tick of the client on command, with the server ticking once for every
+  // command that has reached it and never without one: every input is
+  // delivered to a tick of its own, however late or however many at once, as
+  // they are when the client's pacing holds (ADR-0038).
+  void PredictAndDeliver(const Command& command) {
+    Predict(command);
+    ServeDelivered();
+  }
+
+  // Ticks the server through the commands that reach it within a tick's time,
+  // then lets its answers reach the client.
+  void ServeDelivered() {
+    const auto self = static_cast<augusta::server::SessionId>(std::to_underlying(*client_->GetSessionId()));
+    std::this_thread::sleep_for(kNetworkDelay);
+    Exchange();
+    while (host_.QueuedCommands(self) > 0) {
+      host_.Tick(kFixedTick);
+    }
+    std::this_thread::sleep_for(kNetworkDelay);
+    Exchange();
+    CompareWithTheServer();
+  }
+
+  // A burst, a reload of the part-empty magazine, and a burst from the full
+  // one: seven rounds, then four.
+  template <typename Tick>
+  void FireReloadAndFire(Tick tick) {
+    for (int i = 0; i < 40; ++i) {
+      tick(Firing());
+    }
+    tick(Reloading(/*fire=*/true));
+    for (int i = 1; i < kReloadTicks; ++i) {
+      tick(Firing());
+    }
+    for (int i = 0; i < 20; ++i) {
+      tick(Firing());
+    }
+  }
+
+  // Serves the commands still on their way, until the server has answered the
+  // last one the client sent or the deadline passes; returns whether it has.
+  bool ServeUntilAnswered() {
+    const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+    while (Acknowledged() < sequence_ && std::chrono::steady_clock::now() < deadline) {
+      ServeDelivered();
+    }
+    return Acknowledged() == sequence_;
+  }
+
+  Session* client_ = nullptr;
+  std::uint32_t sequence_ = kSettleTicks;
+  // The rifle the client predicted after each command, by its sequence, and
+  // the sequences the server's answer has been compared at.
+  std::map<std::uint32_t, augusta::weapon::State> predicted_;
+  std::set<std::uint32_t> compared_;
+};
+
+// US-08: the ammo count and the reload, predicted exactly as the server applies them.
+TEST_F(PredictedFireTest, AClientThatFiresAndReloadsPredictsTheAmmoTheServerHasAfterEveryCommand) {
+  std::vector<std::uint8_t> rounds;
+  FireReloadAndFire([&](const Command& command) {
+    Step(command);
+    predicted_[++sequence_] = states_.at(client_).rifle;
+    rounds.push_back(states_.at(client_).rifle.rounds);
+    CompareWithTheServer();
+  });
+
+  // A round on the first tick and every sixth after it; the reload fills the
+  // magazine with its thirtieth tick.
+  EXPECT_EQ(rounds[0], kMagazine - 1);
+  EXPECT_EQ(rounds[39], kMagazine - 7);
+  EXPECT_EQ(rounds[40 + kReloadTicks - 2], kMagazine - 7);
+  EXPECT_EQ(rounds[40 + kReloadTicks - 1], kMagazine);
+  EXPECT_EQ(rounds.back(), kMagazine - 4);
+  ASSERT_TRUE(ServeUntilAnswered());
+  EXPECT_GT(compared_.size(), rounds.size() / 2);
+  EXPECT_TRUE(compared_.contains(sequence_));
+  EXPECT_EQ(states_.at(client_).rifle_corrections, 0U);
+}
+
+// The M3 stamina tests' "never corrects", for the rifle: the client runs a
+// round trip ahead of the server, and what comes back never takes a round or a
+// reload back.
+TEST_F(PredictedFireTest, AtAHundredMillisecondsOfLatencyAClientWhoseInputsAllArriveNeverCorrectsItsRifle) {
+  constexpr int kOneWayLatencyMs = 50;
+  augusta::networking::SimulateNetworkConditions({.latency_ms = kOneWayLatencyMs});
+
+  FireReloadAndFire([&](const Command& command) { PredictAndDeliver(command); });
+
+  ASSERT_TRUE(ServeUntilAnswered());
+  EXPECT_GT(compared_.size(), 40U);
+  EXPECT_EQ(states_.at(client_).rifle.rounds, kMagazine - 4);
+  EXPECT_EQ(states_.at(client_).rifle_corrections, 0U);
+}
+
+// A lost datagram's commands arrive with the next one (ADR-0038), late and
+// several at once, and still each on a tick of its own.
+TEST_F(PredictedFireTest, WithPacketLossAClientWhoseInputsAllArriveNeverCorrectsItsRifle) {
+  constexpr float kLossPercent = 20.0F;
+  augusta::networking::SimulateNetworkConditions({.loss_percent = kLossPercent});
+
+  FireReloadAndFire([&](const Command& command) { PredictAndDeliver(command); });
+
+  // The last commands sent under loss may be lost for good, with nothing newer
+  // to repeat them; a few more over a clean network carry them.
+  augusta::networking::SimulateNetworkConditions({});
+  constexpr int kRecoveryTicks = 10;
+  for (int i = 0; i < kRecoveryTicks; ++i) {
+    PredictAndDeliver(Command{});
+  }
+  ASSERT_TRUE(ServeUntilAnswered());
+  EXPECT_GT(compared_.size(), 40U);
+  EXPECT_EQ(states_.at(client_).rifle.rounds, kMagazine - 4);
+  EXPECT_EQ(states_.at(client_).rifle_corrections, 0U);
+}
+
 // A hitbox for part: the box from low to high, as the twelve triangles of its faces.
 augusta::assets::HitboxData BoxHitbox(augusta::assets::BodyPart part, const Vec3& low, const Vec3& high) {
   return augusta::assets::HitboxData{
@@ -2629,15 +2825,21 @@ class HitMatchOf : public LoopbackMatch {
     }
   }
 
+  // Turns command's view to look along aim: from the eye to the point aimed at.
+  static void AimAt(Command& command, const Vec3& aim) {
+    command.yaw = std::atan2(-aim.x, -aim.z);
+    command.pitch = std::asin(aim.y / Length(aim));
+  }
+
   // The shooter taps fire once, aimed from its eye at the point offset from
-  // target's feet, and the match runs until its rifle is ready again.
+  // target's feet as the newest update it has shows them, which is the view
+  // its Command reports, and the match runs until its rifle is ready again.
   void ShootAt(const Session& target, const Vec3& offset) {
     Session& shooter = Standing(0);
     const Vec3 eye = PositionSeenBy(shooter, *shooter.GetEntityId()).value() + Vec3(0.0F, kEyeHeight, 0.0F);
-    const Vec3 aim = PositionSeenBy(shooter, *target.GetEntityId()).value() + offset - eye;
     Command& command = CommandOf(shooter);
-    command.yaw = std::atan2(-aim.x, -aim.z);
-    command.pitch = std::asin(aim.y / Length(aim));
+    AimAt(command, PositionSeenBy(shooter, *target.GetEntityId()).value() + offset - eye);
+    command.view_tick = shooter.GetAuthoritativeState().value().tick;
     command.fire = true;
     Fight(1);
     command.fire = false;
@@ -2803,6 +3005,97 @@ TEST_F(LoneHitTest, AShooterFiringForwardWhileMovingNeverHitsItself) {
   EXPECT_EQ(shooter.TakeShots().size(), 10U);
   EXPECT_TRUE(hits_.empty());
   EXPECT_TRUE(ConfirmationsOf(shooter).empty());
+}
+
+// The duel at 100 ms of latency, with the target walking across the shooter's
+// view. The clients run a round trip ahead of the server, as real ones do. The
+// test stands in for the shooter's presentation: it keeps what each update it
+// is sent shows of the target, and shows it the Interpolation delay behind the
+// newest.
+class LagCompensatedHitTest : public HitMatchOf<2> {
+ protected:
+  static constexpr int kOneWayLatencyMs = 50;
+  // The Interpolation delay, about 100 ms, in ticks of kFixedTick.
+  static constexpr std::uint32_t kInterpolationTicks = 6;
+
+  void TearDown() override { augusta::networking::SimulateNetworkConditions({}); }
+
+  // Whether the server holds a command of every client for its next tick.
+  [[nodiscard]] bool EveryoneHasACommandQueued() const {
+    return std::ranges::all_of(sessions_, [&](const auto& session) {
+      return host_.QueuedCommands(
+                 static_cast<augusta::server::SessionId>(std::to_underlying(*session->GetSessionId()))) > 0;
+    });
+  }
+
+  // One tick of every client on its command, with the server ticking once for
+  // every tick's worth of commands that has reached it and never without one,
+  // keeping what it resolved and where the shooter's newest update puts the
+  // target's feet.
+  void PlayAhead(const Session& shooter, const Session& target) {
+    for (std::size_t i = 0; i < sessions_.size(); ++i) {
+      states_[sessions_[i].get()] = sessions_[i]->Tick(commands_.at(i), kFixedTick);
+    }
+    std::this_thread::sleep_for(kNetworkDelay);
+    Exchange();
+    while (EveryoneHasACommandQueued()) {
+      const augusta::simulation::State state = host_.Tick(kFixedTick);
+      hits_.insert(hits_.end(), state.hits.begin(), state.hits.end());
+    }
+    std::this_thread::sleep_for(kNetworkDelay);
+    Exchange();
+    if (const auto feet = PositionSeenBy(shooter, *target.GetEntityId()); feet.has_value()) {
+      seen_[shooter.GetAuthoritativeState()->tick] = *feet;
+    }
+  }
+
+  // Where each update the shooter was sent put the target's feet, by its tick.
+  std::map<std::uint32_t, Vec3> seen_;
+};
+
+// US-11, ADR-0044: a shot that hits on the shooter's screen hits on the server.
+TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairInTheShownViewGetsAHitConfirmation) {
+  Session& shooter = Standing(0);
+  Session& target = Standing(1);
+  CommandOf(target).movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+  augusta::networking::SimulateNetworkConditions({.latency_ms = kOneWayLatencyMs});
+  for (int i = 0; i < 60; ++i) {
+    PlayAhead(shooter, target);
+  }
+
+  // The view: the newest update kept that is the Interpolation delay or more
+  // behind the newest of all, and halfway to the next one if that is kept too.
+  ASSERT_FALSE(seen_.empty());
+  const std::uint32_t newest = seen_.rbegin()->first;
+  ASSERT_GT(newest, kInterpolationTicks);
+  auto shown = seen_.upper_bound(newest - kInterpolationTicks);
+  ASSERT_NE(shown, seen_.begin());
+  --shown;
+  const auto next = seen_.find(shown->first + 1);
+  const float fraction = next == seen_.end() ? 0.0F : 0.5F;
+  const Vec3 feet = next == seen_.end() ? shown->second : augusta::math::Lerp(shown->second, next->second, fraction);
+  // The target has since walked clear of where the view shows its torso, 0.4 m wide.
+  ASSERT_GT(seen_.rbegin()->second.x - feet.x, 0.25F);
+
+  const Vec3 eye = PositionSeenBy(shooter, *shooter.GetEntityId()).value() + Vec3(0.0F, kEyeHeight, 0.0F);
+  Command& command = CommandOf(shooter);
+  AimAt(command, feet + Vec3(0.0F, kTorsoHeight, 0.0F) - eye);
+  command.view_tick = shown->first;
+  command.view_fraction = fraction;
+  command.fire = true;
+  PlayAhead(shooter, target);
+  command.fire = false;
+  for (int i = 0; i < 30; ++i) {
+    PlayAhead(shooter, target);
+  }
+
+  ASSERT_EQ(hits_.size(), 1U);
+  EXPECT_EQ(hits_[0].part, BodyPart::kTorso);
+  const std::vector<HitConfirmation>& confirmations = ConfirmationsOf(shooter);
+  ASSERT_EQ(confirmations.size(), 1U);
+  EXPECT_EQ(confirmations[0].target, *target.GetEntityId());
+  EXPECT_EQ(confirmations[0].part, BodyPart::kTorso);
+  EXPECT_TRUE(ConfirmationsOf(target).empty());
 }
 
 // A Hit confirmation of the scripted server's one player hitting whoever it names.

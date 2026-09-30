@@ -77,11 +77,12 @@ TEST(WireTest, ACommandTheClientSendsReachesTheServerUnchanged) {
     sent.ads = true;
     sent.fire = true;
     sent.reload = true;
+    sent.view_tick = 1200;
+    sent.view_fraction = 0.75F;
 
-    const augusta::protocol::CommandsWire message{
-        .commands = {{.sequence = 9, .command = augusta::harness::ToWire(sent)}}};
+    const std::array<augusta::harness::SequencedCommand, 1> commands = {{{.sequence = 9, .command = sent}}};
     const augusta::server::SequencedCommand received =
-        augusta::server::FromWire(ThroughTheWire(message).commands.at(0));
+        augusta::server::FromWire(ThroughTheWire(augusta::harness::ToWire(commands))).at(0);
 
     EXPECT_EQ(received.sequence, 9U);
     EXPECT_EQ(received.command.movement.direction, sent.movement.direction);
@@ -92,7 +93,52 @@ TEST(WireTest, ACommandTheClientSendsReachesTheServerUnchanged) {
     EXPECT_EQ(received.command.ads, sent.ads);
     EXPECT_EQ(received.command.fire, sent.fire);
     EXPECT_EQ(received.command.reload, sent.reload);
+    EXPECT_EQ(received.command.view_tick, sent.view_tick);
+    EXPECT_EQ(received.command.view_fraction, sent.view_fraction);
   }
+}
+
+// A message's commands were sampled a tick apart, each against its own view:
+// every one reaches the server with the tick it named.
+TEST(WireTest, EachCommandOfAMessageReachesTheServerWithTheViewItWasSampledAgainst) {
+  std::vector<augusta::harness::SequencedCommand> sent(4);
+  for (std::size_t i = 0; i < sent.size(); ++i) {
+    sent[i].sequence = static_cast<std::uint32_t>(40 + i);
+    sent[i].command.view_tick = static_cast<std::uint32_t>(70000 + (2 * i));
+    sent[i].command.view_fraction = 0.25F * static_cast<float>(i);
+  }
+
+  const std::vector<augusta::server::SequencedCommand> received =
+      augusta::server::FromWire(ThroughTheWire(augusta::harness::ToWire(sent)));
+
+  ASSERT_EQ(received.size(), sent.size());
+  for (std::size_t i = 0; i < sent.size(); ++i) {
+    EXPECT_EQ(received[i].command.view_tick, sent[i].command.view_tick) << i;
+    EXPECT_EQ(received[i].command.view_fraction, sent[i].command.view_fraction) << i;
+  }
+}
+
+// A command's view travels as how far before the message's newest it is, in a
+// byte: one further back arrives as far back as a byte tells, which is already
+// beyond what the server judges a shot against.
+TEST(WireTest, AViewTooFarBeforeTheMessagesNewestReachesTheServerAsTheOldestAByteTells) {
+  std::vector<augusta::harness::SequencedCommand> sent(2);
+  sent[0].command.view_tick = 100;
+  sent[1].command.view_tick = 1000;
+
+  const std::vector<augusta::server::SequencedCommand> received =
+      augusta::server::FromWire(ThroughTheWire(augusta::harness::ToWire(sent)));
+
+  EXPECT_EQ(received.at(0).command.view_tick, 1000U - 255U);
+  EXPECT_EQ(received.at(1).command.view_tick, 1000U);
+}
+
+// An age the message's view tick cannot go back by names the first tick there is.
+TEST(WireTest, AViewAgeBeyondTheMessagesViewTickIsTheFirstTick) {
+  augusta::protocol::CommandsWire message{.commands = {{.sequence = 1}}, .view_tick = 3};
+  message.commands[0].command.view_age = 10;
+
+  EXPECT_EQ(augusta::server::FromWire(ThroughTheWire(message)).at(0).command.view_tick, 0U);
 }
 
 TEST(WireTest, EachFlagOfACommandReachesTheServerAsItselfAlone) {
@@ -103,10 +149,9 @@ TEST(WireTest, EachFlagOfACommandReachesTheServerAsItselfAlone) {
     sent.fire = flag == 2;
     sent.reload = flag == 3;
 
-    const augusta::protocol::CommandsWire message{
-        .commands = {{.sequence = 1, .command = augusta::harness::ToWire(sent)}}};
+    const std::array<augusta::harness::SequencedCommand, 1> commands = {{{.sequence = 1, .command = sent}}};
     const augusta::command::Command received =
-        augusta::server::FromWire(ThroughTheWire(message).commands.at(0)).command;
+        augusta::server::FromWire(ThroughTheWire(augusta::harness::ToWire(commands))).at(0).command;
 
     EXPECT_EQ(received.movement.sprint, sent.movement.sprint) << flag;
     EXPECT_EQ(received.ads, sent.ads) << flag;
@@ -160,6 +205,23 @@ TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
     ExpectSameBody(received.bodies[i].body, sent.bodies[i].body);
     EXPECT_EQ(received.bodies[i].yaw, sent.bodies[i].yaw);
   }
+}
+
+// The recipient's rifle is off every grid: its times reach the client as the
+// exact floats the server stepped them to.
+TEST(WireTest, TheRecipientsRifleReachesTheClientExactly) {
+  const augusta::replication::Update sent{
+      .recipient = augusta::simulation::EntityId{1},
+      .tick = 7,
+      .acknowledged_sequence = 3,
+      .bodies = {{.entity = augusta::simulation::EntityId{1}, .body = Body(1.0F, Stance::kStanding)}},
+      .rifle = {.cooldown = 0.1F - (1.0F / 60.0F), .reload_remaining = 2.4833333F, .rounds = 27},
+  };
+
+  const augusta::harness::AuthoritativeState received =
+      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+
+  EXPECT_EQ(received.rifle, sent.rifle);
 }
 
 TEST(WireTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged) {

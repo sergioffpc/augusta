@@ -324,7 +324,7 @@ struct Session::Impl {
     return EntityOf(*server_view.match_start, server_view.accepted->session);
   }
 
-  // What the server's state says about this client's own player's body.
+  // What the server's state says about this client's own player: its body and its rifle.
   static std::optional<prediction::Acknowledgement> OwnAcknowledgement(const ServerView& server_view) {
     const std::optional<EntityId> own = OwnEntity(server_view);
     if (!own.has_value() || !server_view.authoritative.has_value()) {
@@ -335,6 +335,7 @@ struct Session::Impl {
         return prediction::Acknowledgement{
             .sequence = server_view.authoritative->acknowledged_sequence,
             .body = body.body,
+            .rifle = server_view.authoritative->rifle,
         };
       }
     }

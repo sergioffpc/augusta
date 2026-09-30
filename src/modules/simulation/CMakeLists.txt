@@ -1,4 +1,5 @@
 add_library(augusta_simulation STATIC
+  hitbox_history.cpp
   simulation.cpp
 )
 target_include_directories(augusta_simulation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

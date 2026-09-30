@@ -63,15 +63,15 @@ The client simulating its own actions locally, immediately, before the server co
 _Avoid_: Client simulation
 
 **Command**:
-One tick's local input (command::Command, in the shared core) a client sends the Authoritative server under a growing sequence number, so the server can tell what it has already seen and the client can tell what it has not yet acknowledged. What Client-side prediction applies locally and Reconciliation replays.
+One tick's local input (command::Command, in the shared core), with the view of the other players it was sampled against, a client sends the Authoritative server under a growing sequence number, so the server can tell what it has already seen and the client can tell what it has not yet acknowledged. What Client-side prediction applies locally and Reconciliation replays.
 _Avoid_: Input (Command is the sequenced payload sent to the server each tick; augusta::input::Input is the per-frame local sampler that produces one)
 
 **Reconciliation**:
-The process of correcting a client's predicted state against the server's authoritative state: the client restores the server's state and replays the commands the server has not yet acknowledged from it, and presentation smooths the resulting jump.
+The process of correcting a client's predicted state against the server's authoritative state: the client restores the server's state of its body and its rifle and replays the commands the server has not yet acknowledged from it, and presentation smooths the resulting jump.
 _Avoid_: Resync, rollback
 
 **Authoritative State update**:
-One server tick's Authoritative State as sent to one client (protocol::AuthoritativeStateWire): every body as of that tick, by its Entity ID, plus the recipient's own newest acknowledged Command sequence. augusta::replication decides who gets what.
+One server tick's Authoritative State as sent to one client (protocol::AuthoritativeStateWire): every body as of that tick, by its Entity ID, plus the recipient's own newest acknowledged Command sequence and its own rifle. augusta::replication decides who gets what.
 _Avoid_: Snapshot, state sync
 
 **Spawn point**:
@@ -137,6 +137,10 @@ _Avoid_: Bullet (the bullet is what flies; the Shot is the firing that every cli
 **Shooter's delay**:
 How far in the past the shooter saw other players when it fired: from the view its fire Command reports to the tick the server takes that Command in, capped at 250 ms. Fixed when the Shot is fired, it holds for the bullet's whole flight (ADR-0044).
 _Avoid_: Ping, lag, latency, rewind time (the RTT is only part of it, next to the Interpolation delay)
+
+**Hitbox history**:
+Every player's pose (position, stance and facing) on each of the Authoritative server's recent ticks, as that tick's Authoritative State reported it: enough ticks to cover the Shooter's delay's cap, 15 at 60 Hz. What Lag compensation places a player's Hitboxes by.
+_Avoid_: Rewind buffer, position history, snapshot history
 
 **Lag compensation**:
 Judging a bullet against the hitboxes as they were the Shooter's delay ago, so a shot that hit on the shooter's screen hits on the server.

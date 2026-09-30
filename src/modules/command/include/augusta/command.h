@@ -1,6 +1,8 @@
 #ifndef AUGUSTA_COMMAND_H_
 #define AUGUSTA_COMMAND_H_
 
+#include <cstdint>
+
 #include <glm/ext/quaternion_trigonometric.hpp>
 
 #include "augusta/math.h"
@@ -8,8 +10,9 @@
 
 // augusta::command is the Command (CONTEXT.md): one tick's player intent, in
 // the shared core (ARCHITECTURE.md §5). The client's input sampler
-// (augusta::input::Input) builds one per tick, PredictionWorld applies it and
-// the harness sends it; the server gets it back off the wire, screens and
+// (augusta::input::Input) builds one per tick, ClientRuntime adds what its
+// player was being shown (the view fields below), PredictionWorld applies it
+// and the harness sends it; the server gets it back off the wire, screens and
 // queues it, and SimulationWorld's CommandIngestion phase consumes it. None of
 // those but the client's sampler links the device-facing input module.
 //
@@ -43,6 +46,14 @@ struct Command {
   // (US-08) - a rising edge, not a held state, regardless of how long
   // the control is actually held.
   bool reload = false;
+  // What the player was shown of the other players when this command was
+  // sampled (ADR-0044): the server tick of the Authoritative State update
+  // being shown, and how far from it to the next one, 0 to 1. A round this
+  // command fires is judged against the other players as they were then
+  // (CONTEXT.md's Lag compensation). Only what the client says: the server
+  // holds it within what it sent and within the Shooter's delay's cap.
+  std::uint32_t view_tick = 0;
+  float view_fraction = 0.0F;
 };
 
 /// The rotation of a view with this yaw and pitch (see Command): yaw about +Y,

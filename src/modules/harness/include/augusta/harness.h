@@ -18,6 +18,7 @@
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/version.h"
+#include "augusta/weapon.h"
 
 // augusta::harness is where anything that plays talks to the server: the
 // client's network connection and PredictionWorld (ADR-0021, ADR-0024), without
@@ -64,6 +65,9 @@ struct AuthoritativeState {
   std::uint32_t acknowledged_sequence = 0;
   /// Every dynamic body in the match.
   std::vector<EntityBody> bodies;
+  /// This client's own player's rifle as of that tick: what its predicted rifle
+  /// is reconciled against.
+  weapon::State rifle{};
   /// How many of this client's commands the server still held queued after
   /// that tick: what the client paces its own ticks by (tick::PacedTickDuration).
   std::uint8_t queued_commands = 0;
@@ -304,13 +308,16 @@ class Session {
   [[nodiscard]] std::optional<EntityId> GetEntityId() const;
 
   /// Runs one fixed tick of PredictionWorld for command and returns its state.
+  /// The view command reports (command::Command) is the caller's to fill, from
+  /// whatever it shows the other players with: a Session shows nothing.
   /// Outside a match nothing is predicted or sent, and the state is the last
   /// one predicted. The first tick of each match starts the prediction over at
-  /// the spawn point Match start gave this client, under the stamina rules the
-  /// server sent. From then on the command goes to the server under the next
-  /// sequence, together with the recent commands the server has not yet
-  /// acknowledged, and the prediction is reconciled against what the server
-  /// last said about this client's player.
+  /// the spawn point Match start gave this client, with a rifle ready to fire,
+  /// under the stamina rules and the rifle the server sent. From then on the
+  /// command goes to the server under the next sequence, together with the
+  /// recent commands the server has not yet acknowledged, and the prediction is
+  /// reconciled against what the server last said about this client's player:
+  /// its body and its rifle.
   prediction::State Tick(const command::Command& command, float delta_time);
 
  private:

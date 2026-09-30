@@ -34,9 +34,10 @@
 // Every message is one payload: a one-byte MessageTypeWire followed by that
 // type's fields, fixed-width and little-endian, with a string or a list as a
 // one-byte length and its elements. A position, a velocity, a direction, an
-// angle or a stamina travels as a whole count of its grid's step, in the fewest
-// bytes its range needs (augusta/grid.h, which physics::World keeps every body
-// on); the other floats travel as their IEEE-754 bits.
+// angle, a stamina or a view's fraction travels as a whole count of its grid's
+// step, in the fewest bytes its range needs (augusta/grid.h, which
+// physics::World keeps every body on); the other floats (the Parameters, a
+// rifle's times, a hit's damage) travel as their IEEE-754 bits.
 // Every field takes the smallest type that holds what it says: flags are bits
 // of one byte, shared with a small enumeration where one fits. Decode treats
 // its input as untrusted: it never throws, never reads past the end, and never
@@ -141,9 +142,15 @@ struct CommandWire {
   /// The view, in radians.
   float yaw = 0.0F;
   float pitch = 0.0F;
+  /// How far the player was shown the other players between two server ticks
+  /// when the command was sampled (ADR-0044), 0 to 255/256.
+  float view_fraction = 0.0F;
   /// Any of kSprint, kAds, kFire and kReload; no other bit.
   std::uint8_t flags = 0;
   StanceWire desired_stance = StanceWire::kStanding;
+  /// The first of those two ticks, as how many ticks before its message's
+  /// CommandsWire::view_tick it is.
+  std::uint8_t view_age = 0;
 
   bool operator==(const CommandWire&) const = default;
 };
@@ -275,6 +282,18 @@ struct JoinRefusedWire {
   bool operator==(const JoinRefusedWire&) const = default;
 };
 
+/// One player's rifle between two ticks.
+struct WeaponStateWire {
+  /// How long, in seconds, until the next round may fire; 0 or less when one may.
+  float cooldown = 0.0F;
+  /// How long, in seconds, the reload under way still takes; 0 when there is none.
+  float reload_remaining = 0.0F;
+  /// How many rounds are left in the magazine.
+  std::uint8_t rounds = 0;
+
+  bool operator==(const WeaponStateWire&) const = default;
+};
+
 /// One tick's command and the number the client gave it. Numbers start at 1 and
 /// grow by one per command, so the server can tell what it has already seen.
 struct SequencedCommandWire {
@@ -289,6 +308,9 @@ struct SequencedCommandWire {
 /// the newest), so one lost datagram does not drop input.
 struct CommandsWire {
   std::vector<SequencedCommandWire> commands;
+  /// The newest server tick any of the commands was sampled against
+  /// (ADR-0044): each says how far before it its own is (CommandWire::view_age).
+  std::uint32_t view_tick = 0;
 
   bool operator==(const CommandsWire&) const = default;
 };
@@ -301,6 +323,9 @@ struct AuthoritativeStateWire {
   std::uint32_t acknowledged_sequence = 0;
   /// Every dynamic body in the match, at most kMaxPlayers (only players have one so far).
   std::vector<EntityStateWire> bodies;
+  /// The recipient's own rifle as of this tick: what it reconciles its
+  /// predicted rifle against, as it does its body against its entry in bodies.
+  WeaponStateWire rifle{};
   /// How many of the recipient's commands the server still holds queued after
   /// this tick: what the client paces its own ticks by (ADR-0038).
   std::uint8_t queued_commands = 0;

@@ -91,6 +91,23 @@ class ServerClock {
   double behind_ = 0.0;
 };
 
+/// What of the server's timeline a frame shows the other players at: the tick
+/// of an Authoritative State update, and how far from it to the next one, 0 to
+/// 1. It is what a Command sampled on that frame reports to the server, which
+/// judges the Command's shots against the players as they were then (ADR-0044).
+struct ShownView {
+  std::uint32_t tick = 0;
+  float fraction = 0.0F;
+};
+
+/// The view a frame that samples at sample_time shows: sample_time, in seconds
+/// on the server's timeline, as the tick it falls on or after, of ticks
+/// tick_duration seconds long, and how far past it it is. Held within
+/// oldest_tick and newest_tick, the first and the last update there is to show:
+/// before or past them a frame shows that update itself (RemoteInterpolator::Sample).
+[[nodiscard]] ShownView ViewAt(double sample_time, double tick_duration, std::uint32_t oldest_tick,
+                               std::uint32_t newest_tick);
+
 /// One remote player's body as shown this frame: position and velocity
 /// linearly interpolated between the two surrounding updates; stance (a
 /// discrete state, not a number) taken from whichever of the two is nearer

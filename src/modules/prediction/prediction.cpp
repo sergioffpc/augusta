@@ -17,6 +17,7 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/reconciliation.h"
+#include "augusta/weapon.h"
 
 namespace augusta::prediction {
 
@@ -35,7 +36,7 @@ constexpr float kStaminaTolerance = 0.001F;
 
 // Position is what the player sees, but a stance, an exhaustion or a stamina
 // that differs changes what the next commands do, so those count as well.
-bool NeedsCorrection(const physics::BodyState& authoritative, const physics::BodyState& predicted) {
+bool BodyNeedsCorrection(const physics::BodyState& authoritative, const physics::BodyState& predicted) {
   return math::Length(authoritative.position - predicted.position) >= kPositionTolerance ||
          authoritative.stance != predicted.stance || authoritative.exhausted != predicted.exhausted ||
          std::abs(authoritative.stamina - predicted.stamina) >= kStaminaTolerance;
@@ -58,6 +59,10 @@ struct World::Impl {
   // real ECS component shapes (see prediction.h's header comment) -
   // spawned once here rather than discovered via a component query.
   physics::BodyHandle local_body;
+  // The local player's rifle and the server's values for it. Until Start gives
+  // them, a rifle with no round: it fires nothing.
+  parameters::Rifle rifle_rules;
+  weapon::State rifle;
   PhaseEntities phases;
 
   // Staged by Tick() immediately before each ecs.progress() call, read by
@@ -102,7 +107,9 @@ struct World::Impl {
     ecs.system("MovementSystem").kind(phases[kMovement]).run([this](flecs::iter& sys_iter) {
       OnMovement(sys_iter.delta_time());
     });
-    ecs.system("WeaponHandlingSystem").kind(phases[kWeaponHandling]).run([this](flecs::iter&) { OnWeaponHandling(); });
+    ecs.system("WeaponHandlingSystem").kind(phases[kWeaponHandling]).run([this](flecs::iter& sys_iter) {
+      OnWeaponHandling(sys_iter.delta_time());
+    });
     ecs.system("CommitSystem").kind(phases[kCommit]).run([this](flecs::iter&) { OnCommit(); });
   }
 
@@ -112,9 +119,12 @@ struct World::Impl {
     // ingest yet without an entity/component to apply it to.
   }
 
-  // Puts the body at the server's state and steps it through the commands sent
-  // since, so the present is the server's past with the client's own commands
-  // carried forward. Every step, here and in Movement, is a fixed tick long.
+  // Puts the body and the rifle at the server's state and steps them through
+  // the commands sent since, so the present is the server's past with the
+  // client's own commands carried forward. Every step, here and in Movement
+  // and WeaponHandling, is a fixed tick long. The rifle travels as its exact
+  // bits and the same function steps it on both sides, so one that differs at
+  // all was predicted wrong.
   void OnReconciliation(float delta_time) {
     const nvtx3::scoped_range range{"Reconciliation"};
     if (!tick_acknowledgement.has_value()) {
@@ -125,20 +135,25 @@ struct World::Impl {
       return;
     }
     const physics::BodyState& authoritative = tick_acknowledgement->body;
-    if (!NeedsCorrection(authoritative, predicted->body)) {
+    const bool rifle_differs = tick_acknowledgement->rifle != predicted->rifle;
+    if (!BodyNeedsCorrection(authoritative, predicted->body) && !rifle_differs) {
       return;
     }
     physics::BodyState replayed = physics.Restore(local_body, authoritative, predicted->fall);
-    history.Replay([&](const physics::MovementInput& command) {
-      replayed = physics.Step(local_body, command, delta_time);
-      return Predicted{.body = replayed, .fall = physics.Fall(local_body)};
+    rifle = tick_acknowledgement->rifle;
+    history.Replay([&](const command::Command& command) {
+      replayed = physics.Step(local_body, command.movement, delta_time);
+      rifle = weapon::Step(rifle_rules, rifle, command, delta_time).state;
+      return Predicted{.body = replayed, .fall = physics.Fall(local_body), .rifle = rifle};
     });
 
     const math::Vec3 jump = replayed.position - tick_state.local_body.position;
-    LD("subsystem=predictionworld event=reconcile sequence={} error={:.3f} jump={:.3f}", tick_acknowledgement->sequence,
-       math::Length(authoritative.position - predicted->body.position), math::Length(jump));
+    LD("subsystem=predictionworld event=reconcile sequence={} error={:.3f} jump={:.3f} rifle={}",
+       tick_acknowledgement->sequence, math::Length(authoritative.position - predicted->body.position),
+       math::Length(jump), rifle_differs);
     tick_state.total_correction += jump;
     tick_state.local_body = replayed;
+    tick_state.rifle_corrections += rifle_differs ? 1U : 0U;
   }
 
   void OnMovement(float delta_time) {
@@ -146,18 +161,21 @@ struct World::Impl {
     tick_state.local_body = physics.Step(local_body, tick_command.movement, delta_time);
   }
 
-  void OnWeaponHandling() {
+  void OnWeaponHandling(float delta_time) {
     const nvtx3::scoped_range range{"WeaponHandling"};
-    // TODO(sergioffpc): not yet a module of its own - see prediction.h.
+    const weapon::Result result = weapon::Step(rifle_rules, rifle, tick_command, delta_time);
+    rifle = result.state;
+    tick_state.rifle = rifle;
+    tick_state.rounds_fired = result.fired ? 1 : 0;
   }
 
   void OnCommit() {
     const nvtx3::scoped_range range{"Commit"};
-    // tick_state.local_body is already set by OnMovement; what is left
-    // is remembering it for the server's answer to this command.
+    // tick_state is already set by OnMovement and OnWeaponHandling; what is
+    // left is remembering it for the server's answer to this command.
     if (tick_sequence != 0) {
-      history.Record(tick_sequence, tick_command.movement,
-                     Predicted{.body = tick_state.local_body, .fall = physics.Fall(local_body)});
+      history.Record(tick_sequence, tick_command,
+                     Predicted{.body = tick_state.local_body, .fall = physics.Fall(local_body), .rifle = rifle});
     }
   }
 };
@@ -176,10 +194,16 @@ void World::Start(const math::Vec3& spawn, const parameters::Parameters& paramet
   physics::BodyState start{};
   start.position = spawn;
   impl.physics.SetState(impl.local_body, start);
+  impl.rifle_rules = parameters.rifle;
+  impl.rifle = weapon::Loaded(parameters.rifle);
   impl.history = History{};
-  // Starting over is not a correction: the running total is kept, so a reader
-  // sees no jump in it (see State::total_correction).
-  impl.tick_state = State{.local_body = start, .total_correction = impl.tick_state.total_correction};
+  // Starting over is not a correction: the running totals are kept, so a
+  // reader sees no jump in them (see State::total_correction).
+  impl.tick_state = State{.local_body = start,
+                          .total_correction = impl.tick_state.total_correction,
+                          .rifle = impl.rifle,
+                          .rifle_corrections = impl.tick_state.rifle_corrections,
+                          .rounds_fired = 0};
 }
 
 World::World(World&&) noexcept = default;

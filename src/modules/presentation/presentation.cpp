@@ -69,14 +69,17 @@ struct World::Impl {
 
   // Every other player's buffered updates, on the server's timeline, and the
   // render side's estimate of that timeline's current time, which render frame
-  // deltas advance (see interpolation.h). The tick of the last snapshot
-  // recorded into remote_interpolator, so a repeated snapshot (the network
-  // thread hasn't received a new tick since the last RunFrame call) is not
-  // recorded again.
+  // deltas advance (see interpolation.h). The ticks of the first and the last
+  // snapshot recorded into remote_interpolator in the match: the last, so a
+  // repeated snapshot (the network thread hasn't received a new tick since the
+  // last RunFrame call) is not recorded again, and both for the frame's view,
+  // which is of nothing outside what there is to show.
   RemoteInterpolator remote_interpolator;
   ServerClock server_clock;
+  std::optional<std::uint32_t> first_recorded_tick;
   std::optional<std::uint32_t> last_recorded_tick;
   std::vector<RemotePlayer> remote_players;
+  std::optional<ShownView> view;
 
   State frame_state;
 
@@ -118,13 +121,17 @@ struct World::Impl {
     if (!snapshot.has_value()) {
       remote_interpolator.Sync({});
       server_clock.Reset();
+      first_recorded_tick.reset();
       last_recorded_tick.reset();
     } else if (!last_recorded_tick.has_value() || snapshot->tick > *last_recorded_tick) {
       RecordSnapshot(*snapshot);
     }
     remote_players.clear();
-    if (const std::optional<double> now = server_clock.Now()) {
-      remote_players = remote_interpolator.Sample(*now - kInterpolationDelay);
+    view.reset();
+    if (const std::optional<double> now = server_clock.Now(); now.has_value() && snapshot.has_value()) {
+      const double sample_time = *now - kInterpolationDelay;
+      remote_players = remote_interpolator.Sample(sample_time);
+      view = ViewAt(sample_time, snapshot->tick_duration, *first_recorded_tick, *last_recorded_tick);
     }
     for (RemotePlayer& remote : remote_players) {
       remote.character = CharacterOf(remote.entity);
@@ -146,6 +153,9 @@ struct World::Impl {
       remote_interpolator.Record(body.entity, server_time, body.state);
     }
     remote_interpolator.Sync(present);
+    if (!first_recorded_tick.has_value()) {
+      first_recorded_tick = world.tick;
+    }
     last_recorded_tick = world.tick;
   }
 
@@ -192,6 +202,7 @@ struct World::Impl {
     frame_state.local_position = shown.local_body.position + local_offset;
     frame_state.camera = camera;
     frame_state.remote_players = remote_players;
+    frame_state.view = view;
   }
 };
 

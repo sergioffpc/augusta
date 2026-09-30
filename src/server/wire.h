@@ -63,11 +63,13 @@ namespace augusta::server {
 /// A join a client asked for, in the engine's terms.
 [[nodiscard]] JoinRequest FromWire(const protocol::JoinRequestWire& request);
 
-/// A command a client sent, in the engine's terms.
-[[nodiscard]] command::Command FromWire(const protocol::CommandWire& command);
+/// A command a client sent in a message whose view tick is view_tick, in the
+/// engine's terms: its own view tick is that many ticks before it, or 0.
+[[nodiscard]] command::Command FromWire(const protocol::CommandWire& command, std::uint32_t view_tick);
 
-/// A sequenced command a client sent, in the engine's terms.
-[[nodiscard]] SequencedCommand FromWire(const protocol::SequencedCommandWire& command);
+/// A sequenced command a client sent in a message whose view tick is view_tick,
+/// in the engine's terms.
+[[nodiscard]] SequencedCommand FromWire(const protocol::SequencedCommandWire& command, std::uint32_t view_tick);
 
 /// The commands a client sent in one message, oldest first, in the engine's terms.
 [[nodiscard]] std::vector<SequencedCommand> FromWire(const protocol::CommandsWire& message);

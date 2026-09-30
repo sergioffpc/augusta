@@ -1,6 +1,8 @@
 #ifndef AUGUSTA_SIMULATION_H_
 #define AUGUSTA_SIMULATION_H_
 
+#include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <memory>
@@ -30,7 +32,8 @@
 // eight dependency-chained flecs::Phase entities, each with one
 // registered flecs::system (named "<Phase>System") - see simulation.cpp.
 // A player is one entity with a physics body, a rifle, its Character's
-// hitboxes and its health, and a bullet in flight is one entity too.
+// hitboxes, its Hitbox history and its health, and a bullet in flight is one
+// entity too.
 // CommandIngestion, Movement, WeaponHandling, Damage and Commit act on players
 // and Ballistics and HitDetection on bullets, which end on the Map, on a
 // player or at their range; Scripts/Behaviours is a stub until what it needs is
@@ -65,15 +68,18 @@ enum class Phase {
   // augusta::ballistics::World::Step, one call per in-flight bullet.
   kBallistics,
   // Mechanism. Resolves impact point + body part (US-11) against every
-  // player's hitboxes, placed by its pose: where its body is, lowered for its
-  // stance as its eye is, and turned by its yaw. They are judged where the
-  // players are this tick: the Shooter's delay (ADR-0044) is 0 until Lag
-  // compensation lands. A bullet is never tested against its own shooter.
-  // The test itself is folded into the same ballistics::World::Step call as
-  // kBallistics - see ballistics.h - so the hitboxes are posed ahead of it,
-  // and one Step call returns the nearest of the Map and the players along
-  // the tick's segment, with its BodyPart. Kept as its own named phase per
-  // ADR-0023 for pipeline ordering/extensibility, not a second Step call.
+  // player's hitboxes, placed by its pose: where its body was, lowered for
+  // its stance as its eye is, and turned by its yaw. They are judged where
+  // the bullet's shooter saw the players (Lag compensation, ADR-0044): as
+  // they were the bullet's Shooter's delay ago, fixed when it was fired and
+  // kept for its whole flight, from the Hitbox history. The Map is judged in
+  // the present. A bullet is never tested against its own shooter. The test
+  // itself is folded into the same ballistics::World::Step call as
+  // kBallistics - see ballistics.h - so the hitboxes are posed for each
+  // bullet ahead of it, and one Step call returns the nearest of the Map and
+  // the players along the tick's segment, with its BodyPart. What this phase
+  // runs itself is the Hitbox history: it keeps the pose this tick's State
+  // reports of every player, for the bullets of the ticks to come.
   kHitDetection,
   // Mechanism, reads Data/Config. Takes the damage the Parameters give the
   // ammo for the body part hit (US-12) off the target's health, which stops
@@ -97,7 +103,19 @@ enum class Phase {
 /// session is a different number.
 enum class EntityId : std::uint32_t {};
 
-/// The validated command for one tick of the player who controls entity.
+/// The longest Shooter's delay (CONTEXT.md, ADR-0044): a round whose shooter
+/// reports an older view is judged against the players as they were this long ago.
+inline constexpr std::chrono::milliseconds kMaxShootersDelay{250};
+
+/// How many ticks of every player's poses the Hitbox history (CONTEXT.md)
+/// keeps at tick_rate_hz: kMaxShootersDelay in ticks, rounded up, which is all
+/// the cap can ask for. 15 at 60 Hz.
+[[nodiscard]] std::size_t HitboxHistoryTicks(std::uint8_t tick_rate_hz);
+
+/// The validated command for one tick of the player who controls entity. The
+/// view it reports (command::Command) is only what its client says:
+/// SimulationWorld holds it within the States it has emitted and within
+/// kMaxShootersDelay.
 struct PlayerCommand {
   EntityId entity{};
   command::Command command{};
@@ -175,6 +193,9 @@ struct Hit {
 // It holds every player's body, the rounds fired and what became of the
 // bullets in flight: the Map impacts and the hits on players.
 struct State {
+  /// Which tick of its World this is the State of, from 1: what a client names
+  /// the view its Commands were sampled against by (command::Command).
+  std::uint32_t tick = 0;
   /// Every dynamic body in the world, ordered by EntityId.
   std::vector<EntityState> bodies;
   /// Every round fired this tick, ordered by shooter: at most one a player.
@@ -201,12 +222,13 @@ struct State {
 class World {
  public:
   // Constructs an empty World running on parameters (ADR-0039), copied and
-  // fixed for its lifetime: an empty physics::World (its stamina rules for
-  // every player body) and an empty ballistics::World (no bullets in flight
-  // yet), a scripting::Engine with no script loaded yet, and the Flecs world
-  // with Phase's eight phases and their systems registered (see header
-  // comment).
-  explicit World(const parameters::Parameters& parameters);
+  // fixed for its lifetime, and ticking tick_rate_hz times a second, which
+  // sets how many ticks kMaxShootersDelay and the Hitbox history span: an
+  // empty physics::World (its stamina rules for every player body) and an
+  // empty ballistics::World (no bullets in flight yet), a scripting::Engine
+  // with no script loaded yet, and the Flecs world with Phase's eight phases
+  // and their systems registered (see header comment).
+  World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz);
   ~World();
 
   /// Adds immovable level geometry to this world's physics, the same way PredictionWorld does.
@@ -234,7 +256,11 @@ class World {
   // PredictionWorld, which only ever ticks the local player (see
   // augusta::prediction::World::Tick). A player with no command this tick
   // stops moving, keeps its stance and its facing and does not fire; a reload
-  // it had started goes on. Returns the tick's Authoritative State.
+  // it had started goes on. A round fired is judged, for its whole flight,
+  // against the other players as they were its Shooter's delay ago: from the
+  // view its Command reports, held to no newer than the last tick's State and
+  // its fraction within 0 to 1, to this tick, and no longer than
+  // kMaxShootersDelay. Returns the tick's Authoritative State.
   State Tick(const std::vector<PlayerCommand>& commands, float delta_time);
 
  private:

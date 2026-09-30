@@ -3,11 +3,11 @@
 #include <cstdint>
 #include <optional>
 
-#include "augusta/physics.h"
+#include "augusta/command.h"
 
 namespace augusta::prediction {
 
-void History::Record(std::uint32_t sequence, const physics::MovementInput& command, const Predicted& predicted) {
+void History::Record(std::uint32_t sequence, const command::Command& command, const Predicted& predicted) {
   entries_.push_back(Entry{.sequence = sequence, .command = command, .predicted = predicted});
   if (entries_.size() > kMaxHistory) {
     entries_.pop_front();

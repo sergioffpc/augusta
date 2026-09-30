@@ -56,8 +56,8 @@ void WriteVec3(BytesWire& out, const math::Vec3& value, const math::Grid& grid) 
   WriteSteps(out, value.z, grid);
 }
 
-// A command's flags take the low four bits of its last byte and its stance the
-// two above them; the top two are always 0.
+// A command's flags take the low four bits of one byte and its stance the two
+// above them; the top two are always 0.
 constexpr std::uint8_t kCommandFlagsMask = 0x0FU;
 constexpr unsigned kCommandStanceShift = 4U;
 
@@ -68,6 +68,8 @@ void WriteCommand(BytesWire& out, const CommandWire& command) {
   WriteSteps(out, command.pitch, math::kAngleGrid);
   WriteU8(out, static_cast<std::uint8_t>(command.flags |
                                          (static_cast<std::uint8_t>(command.desired_stance) << kCommandStanceShift)));
+  WriteU8(out, command.view_age);
+  WriteSteps(out, command.view_fraction, math::kFractionGrid);
 }
 
 // A body's stance takes the low two bits of its stance byte and its flags the
@@ -93,6 +95,15 @@ void WriteBodies(BytesWire& out, const std::vector<EntityStateWire>& bodies) {
     WriteBodyState(out, body.body);
     WriteSteps(out, body.yaw, math::kAngleGrid);
   }
+}
+
+// A rifle's two times travel as their bits, not on a grid: its owner replays
+// its commands from them, with the function the server stepped them with, and
+// must start from exactly what the server had.
+void WriteWeaponState(BytesWire& out, const WeaponStateWire& rifle) {
+  WriteU8(out, rifle.rounds);
+  WriteF32(out, rifle.cooldown);
+  WriteF32(out, rifle.reload_remaining);
 }
 
 // Walks a payload front to back. The first problem it meets is remembered and
@@ -243,6 +254,8 @@ CommandWire ReadCommand(Reader& reader) {
   command.flags = packed & kCommandFlagsMask;
   command.desired_stance = reader.ToEnum(static_cast<std::uint8_t>(packed >> kCommandStanceShift),
                                          StanceWire::kStanding, StanceWire::kProne);
+  command.view_age = reader.ReadU8();
+  command.view_fraction = reader.ReadSteps(math::kFractionGrid);
   return command;
 }
 
@@ -349,7 +362,16 @@ CommandsWire ReadCommands(Reader& reader) {
     const std::uint32_t sequence = reader.ReadU32();
     message.commands.push_back(SequencedCommandWire{.sequence = sequence, .command = ReadCommand(reader)});
   }
+  message.view_tick = reader.ReadU32();
   return message;
+}
+
+WeaponStateWire ReadWeaponState(Reader& reader) {
+  WeaponStateWire rifle;
+  rifle.rounds = reader.ReadU8();
+  rifle.cooldown = reader.ReadF32();
+  rifle.reload_remaining = reader.ReadF32();
+  return rifle;
 }
 
 AuthoritativeStateWire ReadAuthoritativeState(Reader& reader) {
@@ -358,6 +380,7 @@ AuthoritativeStateWire ReadAuthoritativeState(Reader& reader) {
   state.acknowledged_sequence = reader.ReadU32();
   state.bodies = ReadBodies(reader);
   state.queued_commands = reader.ReadU8();
+  state.rifle = ReadWeaponState(reader);
   return state;
 }
 
@@ -504,6 +527,7 @@ struct Encoder {
       WriteU32(out, sequenced.sequence);
       WriteCommand(out, sequenced.command);
     }
+    WriteU32(out, message.view_tick);
   }
 
   void operator()(const AuthoritativeStateWire& message) const {
@@ -512,6 +536,7 @@ struct Encoder {
     WriteU32(out, message.acknowledged_sequence);
     WriteBodies(out, message.bodies);
     WriteU8(out, message.queued_commands);
+    WriteWeaponState(out, message.rifle);
   }
 
   void operator()(const LobbyWire& message) const {

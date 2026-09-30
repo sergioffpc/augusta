@@ -46,6 +46,7 @@ using augusta::protocol::SessionIdWire;
 using augusta::protocol::ShotWire;
 using augusta::protocol::StaminaWire;
 using augusta::protocol::StanceWire;
+using augusta::protocol::WeaponStateWire;
 
 struct Seed {
   std::string name;
@@ -63,8 +64,10 @@ std::vector<Seed> Seeds() {
   const CommandWire command{.direction = Vec3(0.6F, 0.0F, -0.8F),
                             .yaw = 1.5F,
                             .pitch = -0.25F,
+                            .view_fraction = 0.75F,
                             .flags = CommandWire::kSprint | CommandWire::kFire,
-                            .desired_stance = StanceWire::kProne};
+                            .desired_stance = StanceWire::kProne,
+                            .view_age = 1};
   return {
       {.name = "join_request",
        .message = JoinRequestWire{.engine_version = "0.1.0", .client_pack = {}, .character = "characters/player"}},
@@ -79,7 +82,8 @@ std::vector<Seed> Seeds() {
       {.name = "join_refused", .message = JoinRefusedWire{.reason = JoinRefusalWire::kPackMismatch}},
       {.name = "commands",
        .message = CommandsWire{.commands = {SequencedCommandWire{.sequence = 41, .command = CommandWire{}},
-                                            SequencedCommandWire{.sequence = 42, .command = command}}}},
+                                            SequencedCommandWire{.sequence = 42, .command = command}},
+                               .view_tick = 1194}},
       {.name = "authoritative_state",
        .message =
            AuthoritativeStateWire{
@@ -87,6 +91,7 @@ std::vector<Seed> Seeds() {
                .acknowledged_sequence = 42,
                .bodies = {EntityStateWire{.entity = static_cast<EntityIdWire>(1), .body = body, .yaw = 1.5F},
                           EntityStateWire{.entity = static_cast<EntityIdWire>(2), .body = BodyStateWire{}}},
+               .rifle = WeaponStateWire{.cooldown = 0.0625F, .reload_remaining = 1.75F, .rounds = 12},
                .queued_commands = 2}},
       {.name = "lobby",
        .message = LobbyWire{.version = 3,

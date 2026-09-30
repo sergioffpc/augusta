@@ -41,7 +41,7 @@ namespace {
 // before the socket exists, so a map that is rejected never leaves a bound
 // port behind.
 simulation::World BuildSimulation(const HostConfig& config, const Map& map) {
-  simulation::World simulation(config.parameters);
+  simulation::World simulation(config.parameters, config.tick_rate_hz);
   for (const physics::CollisionMesh& mesh : map.collision) {
     if (const auto added = simulation.AddCollisionMesh(mesh); !added) {
       throw std::runtime_error(
@@ -154,6 +154,8 @@ struct Host::Impl {
   // Simulation thread only, with the body each player in it controls.
   simulation::World simulation;
   std::unordered_map<SessionId, EntityId> bodies;
+  // The last tick SimulationWorld ran, as it numbers them: what its State was
+  // sent under, and what a client names the view of its Commands by.
   std::uint32_t tick = 0;
   // What every client is told when it joins, with the tick rate; neither ever
   // changes, so neither needs the lock.
@@ -514,7 +516,7 @@ simulation::State Host::Tick(float delta_time) {
   Impl& impl = *impl_;
   const Impl::TickInput input = impl.PrepareTick();
   simulation::State state = impl.simulation.Tick(input.commands, delta_time);
-  ++impl.tick;
+  impl.tick = state.tick;
   impl.Send(state, input);
   impl.LogHits(state);
   return state;

@@ -30,7 +30,8 @@ void showValue(const CommandWire& command, std::ostream& out) {
   out << "{direction ";
   showValue(command.direction, out);
   out << ", yaw " << command.yaw << ", pitch " << command.pitch << ", flags " << +command.flags << ", stance "
-      << +static_cast<std::uint8_t>(command.desired_stance) << "}";
+      << +static_cast<std::uint8_t>(command.desired_stance) << ", view_age " << +command.view_age << ", view_fraction "
+      << command.view_fraction << "}";
 }
 
 void showValue(const BodyStateWire& body, std::ostream& out) {
@@ -75,7 +76,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
       out << "JoinRefused{reason " << +static_cast<std::uint8_t>(refused.reason) << "}";
     }
     void operator()(const CommandsWire& commands) const {
-      out << "Commands{";
+      out << "Commands{view_tick " << commands.view_tick << ", ";
       for (const SequencedCommandWire& command : commands.commands) {
         out << command.sequence << ": ";
         showValue(command.command, out);
@@ -90,7 +91,8 @@ void showValue(const MessageWire& message, std::ostream& out) {
         showValue(body.body, out);
         out << ", yaw " << body.yaw << "; ";
       }
-      out << "queued_commands " << +state.queued_commands << "}";
+      out << "rifle{cooldown " << state.rifle.cooldown << ", reload_remaining " << state.rifle.reload_remaining
+          << ", rounds " << +state.rifle.rounds << "}, queued_commands " << +state.queued_commands << "}";
     }
     void operator()(const LobbyWire& lobby) const {
       out << "Lobby{version " << lobby.version << ", ";
@@ -132,6 +134,7 @@ using augusta::math::FromSteps;
 using augusta::math::Grid;
 using augusta::math::kAngleGrid;
 using augusta::math::kDirectionGrid;
+using augusta::math::kFractionGrid;
 using augusta::math::kPositionGrid;
 using augusta::math::kStaminaGrid;
 using augusta::math::kVelocityGrid;
@@ -173,6 +176,7 @@ using augusta::protocol::SessionIdWire;
 using augusta::protocol::ShotWire;
 using augusta::protocol::StaminaWire;
 using augusta::protocol::StanceWire;
+using augusta::protocol::WeaponStateWire;
 
 // A value on grid, anywhere in its range: the only numbers a body or a command
 // holds (augusta/grid.h), so the only ones the codec must carry exactly.
@@ -233,7 +237,9 @@ rc::Gen<CommandWire> Command() {
       rc::gen::set(&CommandWire::direction, Vec3OnGrid(kDirectionGrid)),
       rc::gen::set(&CommandWire::yaw, OnGrid(kAngleGrid)), rc::gen::set(&CommandWire::pitch, OnGrid(kAngleGrid)),
       rc::gen::set(&CommandWire::flags, rc::gen::inRange<std::uint8_t>(0, CommandWire::kReload << 1U)),
-      rc::gen::set(&CommandWire::desired_stance, Stance()));
+      rc::gen::set(&CommandWire::desired_stance, Stance()),
+      rc::gen::set(&CommandWire::view_age, rc::gen::arbitrary<std::uint8_t>()),
+      rc::gen::set(&CommandWire::view_fraction, OnGrid(kFractionGrid)));
 }
 
 rc::Gen<BodyStateWire> Body() {
@@ -293,18 +299,24 @@ rc::Gen<CommandsWire> Commands() {
   const auto sequenced = rc::gen::build<SequencedCommandWire>(
       rc::gen::set(&SequencedCommandWire::sequence, rc::gen::arbitrary<std::uint32_t>()),
       rc::gen::set(&SequencedCommandWire::command, Command()));
-  return rc::gen::build<CommandsWire>(rc::gen::set(
-      &CommandsWire::commands, UpTo<std::vector<SequencedCommandWire>>(kMaxCommandsPerMessage, sequenced)));
+  return rc::gen::build<CommandsWire>(
+      rc::gen::set(&CommandsWire::commands, UpTo<std::vector<SequencedCommandWire>>(kMaxCommandsPerMessage, sequenced)),
+      rc::gen::set(&CommandsWire::view_tick, rc::gen::arbitrary<std::uint32_t>()));
 }
 
 rc::Gen<AuthoritativeStateWire> AuthoritativeState() {
   const auto entity = rc::gen::build<EntityStateWire>(rc::gen::set(&EntityStateWire::entity, AnyId<EntityIdWire>()),
                                                       rc::gen::set(&EntityStateWire::body, Body()),
                                                       rc::gen::set(&EntityStateWire::yaw, OnGrid(kAngleGrid)));
+  const auto rifle =
+      rc::gen::build<WeaponStateWire>(rc::gen::set(&WeaponStateWire::cooldown, FiniteFloat()),
+                                      rc::gen::set(&WeaponStateWire::reload_remaining, FiniteFloat()),
+                                      rc::gen::set(&WeaponStateWire::rounds, rc::gen::arbitrary<std::uint8_t>()));
   return rc::gen::build<AuthoritativeStateWire>(
       rc::gen::set(&AuthoritativeStateWire::tick, rc::gen::arbitrary<std::uint32_t>()),
       rc::gen::set(&AuthoritativeStateWire::acknowledged_sequence, rc::gen::arbitrary<std::uint32_t>()),
       rc::gen::set(&AuthoritativeStateWire::bodies, UpTo<std::vector<EntityStateWire>>(kMaxPlayers, entity)),
+      rc::gen::set(&AuthoritativeStateWire::rifle, rifle),
       rc::gen::set(&AuthoritativeStateWire::queued_commands, rc::gen::arbitrary<std::uint8_t>()));
 }
 

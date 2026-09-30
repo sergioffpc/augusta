@@ -15,12 +15,17 @@ State update being shown and the interpolation fraction between it and the next
 one (0 to 1). The server keeps, for every player, the hitboxes of each of its
 recent ticks, as that tick's Authoritative State reported them, enough ticks to
 cover the cap at its tick rate (15 at 60 Hz). It tests the shot against the
-hitboxes interpolated between those two ticks at that fraction. The time between
+hitboxes interpolated between those two ticks at that fraction: position and
+facing interpolated, the facing along the shorter arc, and the stance of the
+nearer tick, which is how a client shows a body between two updates. The time between
 that view and the tick the server takes the Command in is the Shooter's delay. A
 delay beyond 250 ms is clamped to 250 ms, not refused: the shot is judged
 against the oldest view the cap allows. The cap bounds how far into the past a
 high-latency player can hit, which is the cost the victim pays (being shot
-after reaching cover).
+after reaching cover). The view is only what a client says, so the server holds
+it within what it can have been shown: a fraction outside 0 to 1 is the nearer
+of the two, and a view newer than the last Authoritative State the server
+emitted is that State, so a delay is never less than a tick.
 
 **A bullet lives in the shooter's time for its whole flight.** At 800 m/s a
 bullet takes several ticks to reach its target. The server fixes the Shooter's
@@ -58,11 +63,13 @@ outcome without ever showing a hit that did not happen. `augusta_ballistics`'
 trajectory math is therefore shared by client and server; deciding a bullet's
 outcome (HitDetection, Damage) stays the server's alone.
 
-**On the wire.** The Shot, the Hit confirmation and the fire Command's view tick
+**On the wire.** The Shot, the Hit confirmation and the Command's view tick
 and fraction follow ADR-0038: the smallest types, quantized numbers on its
 grids, and `Wire` types converted only at `server::Host` and
-`harness::Session`. Their exact layout is M4's to define, and ADR-0038's table
-gains them when they land.
+`harness::Session`. ADR-0038's table has their layout. Every Command carries
+its view, not only one with fire pressed: whether a Command fires a round is
+the server's to decide (its WeaponHandling keeps the fire rate), not the
+client's to know.
 
 ## Consequences
 
