@@ -2,19 +2,25 @@
 # Parameters; pure, so tested with scripts as strings (see parameters_loader.h).
 # Server-only: a client never reads the script, it is sent the result, so it
 # never links the interpreter.
-find_package(Lua REQUIRED)
-find_package(sol2 CONFIG REQUIRED)
-
 add_library(augustad_parameters_loader STATIC
   parameters_loader.cpp
 )
 target_include_directories(augustad_parameters_loader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_include_directories(augustad_parameters_loader SYSTEM PRIVATE ${LUA_INCLUDE_DIR})
 target_link_libraries(augustad_parameters_loader
   PUBLIC augusta_parameters
-  PRIVATE sol2::sol2 ${LUA_LIBRARIES}
+  PRIVATE augusta_lua_sandbox
 )
 augusta_set_module_scope(augustad_parameters_loader SERVER_ONLY)
+
+# Reads the scenario's Game policy scripts out of the server pack into the
+# engine SimulationWorld runs them in (ADR-0022); tested with packs built in the
+# test (see policy_loader.h).
+add_library(augustad_policy_loader STATIC
+  policy_loader.cpp
+)
+target_include_directories(augustad_policy_loader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(augustad_policy_loader PUBLIC augusta_assets augusta_scripting)
+augusta_set_module_scope(augustad_policy_loader SERVER_ONLY)
 
 # Who is in the match and whether a join is admitted; pure, so tested without a
 # network (see match.h).
@@ -60,7 +66,7 @@ target_link_libraries(augustad_runtime
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)
 
 add_executable(augustad main.cpp)
-target_link_libraries(augustad PRIVATE augusta_assets augusta_config augusta_map augustad_parameters_loader augusta_version augusta_logging augusta_networking augustad_runtime)
+target_link_libraries(augustad PRIVATE augusta_assets augusta_config augusta_map augustad_parameters_loader augustad_policy_loader augusta_version augusta_logging augusta_networking augustad_runtime)
 
 # `cmake --install` puts augustad in the prefix's bin directory (DESTDIR
 # honoured), which is how the Dockerfile's image gets it. On Windows the vcpkg

@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
+#include "policy_loader.h"
 
 // The C++ half of the contract between the pack's two implementations: the
 // Python cooker (tools/pack, ADR-0030) writes it, augusta_assets reads it.
@@ -61,6 +62,17 @@ TEST_F(CookedPackTest, TheServerPackHoldsNoVisualContentAndNamesItsClientPack) {
   const auto parameters = server_->ResolveScript("parameters.lua");
   ASSERT_TRUE(parameters.has_value());
   EXPECT_FALSE(parameters->empty());
+}
+
+// The server loads them at startup as it does any scenario's: an example whose
+// policy did not load would stop every server run on it.
+TEST_F(CookedPackTest, TheServerPackHoldsTheExamplesPolicyScriptsAndTheyLoad) {
+  EXPECT_TRUE(server_->ResolveScript("objectives.lua").has_value());
+  EXPECT_TRUE(server_->ResolveScript("behaviours.lua").has_value());
+
+  const auto policy = augusta::server::LoadPolicy(*server_);
+
+  EXPECT_TRUE(policy.has_value()) << augusta::server::DescribePolicyLoadError(policy.error());
 }
 
 // The client puts the camera at it and the server fires Shots from it, so both

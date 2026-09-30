@@ -15,9 +15,11 @@
 #include "augusta/map.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
+#include "augusta/scripting.h"
 #include "augusta/version.h"
 #include "host.h"
 #include "parameters_loader.h"
+#include "policy_loader.h"
 #include "runtime.h"
 
 namespace {
@@ -160,6 +162,22 @@ std::optional<augusta::parameters::Parameters> LoadParameters(const augusta::ass
   return *std::move(parameters);
 }
 
+// The scenario's Game policy scripts (ADR-0022), out of the same pack and
+// loaded before any socket or thread starts, so a script that does not load
+// exits like a bad Parameters script does. A scenario may lack either script.
+// Reports what is wrong and returns nullopt.
+std::optional<augusta::scripting::Engine> LoadPolicy(const augusta::assets::Pack& pack,
+                                                     const std::filesystem::path& pack_path) {
+  auto policy = augusta::server::LoadPolicy(pack);
+  if (!policy) {
+    LE("subsystem=server event=policy_loading_failed path={} script={} error=\"{}\"", pack_path.string(),
+       augusta::scripting::ScriptPath(policy.error().script), augusta::server::DescribePolicyLoadError(policy.error()));
+    return std::nullopt;
+  }
+  LI("subsystem=server event=policy_loaded");
+  return *std::move(policy);
+}
+
 // At most one round fires a tick, so a scenario whose rifle asks for more fires
 // slower than its script says: worth a warning, not a refusal.
 void WarnIfTheRifleOutpacesTheTick(const augusta::parameters::Rifle& rifle, std::uint8_t tick_rate_hz) {
@@ -225,12 +243,17 @@ int main(int argc, char** argv) {
   }
   WarnIfTheRifleOutpacesTheTick(parameters->rifle, file_config->tick_rate_hz);
 
+  auto policy = LoadPolicy(*pack, file_config->pack_path);
+  if (!policy) {
+    return 1;
+  }
+
   // augusta::networking::Init() must run once, process-wide, before any
   // Client/Server is constructed - see networking.h.
   augusta::networking::Init();
 
   const augusta::runtime::Config config = BuildRuntimeConfig(*file_config, *parameters);
-  augusta::runtime::ServerRuntime runtime(config, *std::move(map));
+  augusta::runtime::ServerRuntime runtime(config, *std::move(map), *std::move(policy));
   g_runtime = &runtime;
   std::signal(SIGINT, HandleShutdownSignal);
   std::signal(SIGTERM, HandleShutdownSignal);

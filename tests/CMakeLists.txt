@@ -85,6 +85,16 @@ target_link_libraries(augusta_simulation_tests PRIVATE augusta_simulation GTest:
 # Links PhysX, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_simulation_tests DISCOVERY_TIMEOUT 30)
 
+# SimulationWorld with a Game policy script the test chooses (ADR-0022).
+add_executable(augusta_policy_tests policy_test.cpp)
+target_link_libraries(augusta_policy_tests PRIVATE
+  augusta_simulation augusta_scripting augustad_parameters_loader augusta_logging GTest::gtest GTest::gtest_main)
+# A policy script shares no globals with the example scenario's Parameters script.
+target_compile_definitions(augusta_policy_tests PRIVATE
+  AUGUSTA_EXAMPLE_PARAMETERS="${CMAKE_SOURCE_DIR}/tools/pack/examples/authoring/scenarios/augusta/parameters.lua")
+# Links PhysX, so the same first-launch cost applies as below.
+gtest_discover_tests(augusta_policy_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_networking_tests networking_test.cpp)
 target_link_libraries(augusta_networking_tests PRIVATE augusta_networking GTest::gtest GTest::gtest_main)
 # DISCOVERY_TIMEOUT above the 5s default: this binary pulls in GameNetworkingSockets,
@@ -174,6 +184,12 @@ target_include_directories(augusta_map_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/mod
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_map_tests DISCOVERY_TIMEOUT 30)
 
+add_executable(augusta_policy_loader_tests policy_loader_test.cpp)
+target_link_libraries(augusta_policy_loader_tests PRIVATE augustad_policy_loader GTest::gtest GTest::gtest_main)
+# Builds real packs with augusta_assets' private encoder (see augusta_assets_tests below).
+target_include_directories(augusta_policy_loader_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
+gtest_discover_tests(augusta_policy_loader_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_session_tests session_test.cpp)
 target_link_libraries(augusta_session_tests PRIVATE augusta_harness augustad_host augustad_parameters_loader GTest::gtest GTest::gtest_main)
 # Links networking and PhysX, so the same first-launch cost applies as above.
@@ -210,7 +226,8 @@ gtest_discover_tests(augusta_assets_tests)
 # Loads the golden packs the Python cooker wrote from its example scenario
 # (ADR-0013); the cooker's own tests keep it writing them byte for byte.
 add_executable(augusta_cooked_pack_tests cooked_pack_test.cpp)
-target_link_libraries(augusta_cooked_pack_tests PRIVATE augusta_assets GTest::gtest GTest::gtest_main)
+# Also loads the example's Game policy scripts as the server does (ADR-0022).
+target_link_libraries(augusta_cooked_pack_tests PRIVATE augusta_assets augustad_policy_loader GTest::gtest GTest::gtest_main)
 target_compile_definitions(augusta_cooked_pack_tests PRIVATE
   AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs")
 gtest_discover_tests(augusta_cooked_pack_tests)

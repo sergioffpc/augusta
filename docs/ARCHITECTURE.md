@@ -213,9 +213,11 @@ exclusively server-authoritative.
   checks, Ready, Match start, Match end; ADR-0043); when a Match is won
   and over is game policy
 - Scripting (Lua) — sandboxed script hooks for game policy (Match
-  lifecycle, win conditions, spawn rules); small interface (e.g. a
-  RunHook call) hiding the Lua embedding and the restricted-environment
-  sandbox (§8) that upholds "no I/O inside ECS worlds" structurally.
+  lifecycle, win conditions, spawn rules); small interface (load the
+  scenario's scripts, call a hook by name with a read-only view, get back
+  plain data C++ validates) hiding the Lua embedding and the
+  restricted-environment sandbox (§8) that upholds "no I/O inside ECS
+  worlds" structurally (ADR-0022).
   Server-only - game policy is exclusively server-authoritative, never
   run by either client world.
 - ServerRuntime
@@ -364,9 +366,9 @@ now.
   policy scripts. Keeping these separate means gameplay rules and balance
   numbers can change without touching engine internals.
 - **Scripting sandbox:** Lua scripts run with a restricted global
-  environment — no `io`, `os.execute`, `package.loadlib`, or filesystem/
-  network access — upholding "no I/O inside ECS worlds" structurally,
-  not just by convention.
+  environment — no `io`, `os`, `package`, `require`, or filesystem/
+  network access — and an instruction limit per hook call, upholding "no
+  I/O inside ECS worlds" structurally, not just by convention (ADR-0022).
 - **Asset packaging & integrity:** runtime assets ship as a single signed
   pack file per target (client/server), never as loose files. Content is
   hashed with BLAKE3 and signed with Ed25519; both the client and server
