@@ -36,8 +36,9 @@
 // one-byte length and its elements. A position, a velocity, a direction, an
 // angle, a stamina or a view's fraction travels as a whole count of its grid's
 // step, in the fewest bytes its range needs (augusta/grid.h, which
-// physics::World keeps every body on); the other floats (the Parameters, a
-// rifle's times, a hit's damage) travel as their IEEE-754 bits.
+// physics::World keeps every body on, and weapon::Step a rifle's Recoil
+// offset); the other floats (the Parameters, a rifle's times, a hit's damage)
+// travel as their IEEE-754 bits.
 // Every field takes the smallest type that holds what it says: flags are bits
 // of one byte, shared with a small enumeration where one fits. Decode treats
 // its input as untrusted: it never throws, never reads past the end, and never
@@ -288,8 +289,14 @@ struct WeaponStateWire {
   float cooldown = 0.0F;
   /// How long, in seconds, the reload under way still takes; 0 when there is none.
   float reload_remaining = 0.0F;
+  /// How far the rifle points off its player's view (CONTEXT.md's Recoil
+  /// offset), in radians.
+  float recoil_pitch = 0.0F;
+  float recoil_yaw = 0.0F;
   /// How many rounds are left in the magazine.
   std::uint8_t rounds = 0;
+  /// How many rounds the Burst under way has fired.
+  std::uint8_t burst_index = 0;
 
   bool operator==(const WeaponStateWire&) const = default;
 };

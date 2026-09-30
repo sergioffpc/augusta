@@ -122,8 +122,9 @@ struct World::Impl {
   // Puts the body and the rifle at the server's state and steps them through
   // the commands sent since, so the present is the server's past with the
   // client's own commands carried forward. Every step, here and in Movement
-  // and WeaponHandling, is a fixed tick long. The rifle travels as its exact
-  // bits and the same function steps it on both sides, so one that differs at
+  // and WeaponHandling, is a fixed tick long. The rifle travels exactly (its
+  // times as their bits, its Recoil offset on the grid weapon::Step keeps it
+  // on) and the same function steps it on both sides, so one that differs at
   // all was predicted wrong.
   void OnReconciliation(float delta_time) {
     const nvtx3::scoped_range range{"Reconciliation"};

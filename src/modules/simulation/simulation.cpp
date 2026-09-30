@@ -295,7 +295,8 @@ struct World::Impl {
   }
 
   // A player with no command this tick holds nothing: its rifle only waits.
-  // A round leaves from where Movement just put the shooter's eye.
+  // A round leaves from where Movement just put the shooter's eye, for where
+  // its rifle points.
   void OnWeaponHandling(float delta_time, const Player& player, const Body& body, const Eye& eye, Rifle& rifle) {
     const auto found = tick_commands.find(player.entity);
     const command::Command command = found == tick_commands.end() ? command::Command{} : found->second;
@@ -307,8 +308,8 @@ struct World::Impl {
     const Shot shot{
         .shooter = player.entity,
         .origin = math::SnapPosition(body.state.position + physics::LowerToStance(eye.standing, body.state.stance)),
-        .yaw = math::SnapAngle(command.yaw),
-        .pitch = math::SnapAngle(command.pitch),
+        .yaw = math::SnapAngle(result.yaw),
+        .pitch = math::SnapAngle(result.pitch),
     };
     Fire(shot, ShootersDelay(tick, command, max_shooters_delay));
   }
