@@ -213,11 +213,6 @@ struct Config {
 /// short of straight up/down.
 inline constexpr float kMaxLookPitch = 1.55F;
 
-/// The rotation of a view with this yaw and pitch (see command::Command): yaw
-/// about +Y, then pitch about the view's own +X. Applied to -Z, it gives where
-/// the view looks.
-[[nodiscard]] math::Quat ViewRotation(float yaw, float pitch);
-
 // Accumulates device state pushed via EventSink and samples it into a
 // command::Command once per Simulation tick. The client constructs exactly
 // one, alongside the one Renderer, and wires the two together (Renderer
@@ -238,7 +233,7 @@ class Input : public EventSink {
   // Renderer::PumpEvents on the Main/Render thread.
   [[nodiscard]] command::Command Sample();
 
-  /// Where the view looks now: ViewRotation of the yaw and pitch accumulated
+  /// Where the view looks now: command::ViewRotation of the yaw and pitch accumulated
   /// so far, mouse movement since the last Sample included. The camera turns
   /// by it every render frame, from the Main/Render thread, rather than by the
   /// Command's view, which is only as new as the last tick.

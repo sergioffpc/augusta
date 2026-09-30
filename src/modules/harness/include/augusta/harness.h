@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_HARNESS_H_
 #define AUGUSTA_HARNESS_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -64,6 +65,26 @@ struct AuthoritativeState {
   /// that tick: what the client paces its own ticks by (tick::PacedTickDuration).
   std::uint8_t queued_commands = 0;
 };
+
+/// One round a player fired, as the server announced it (CONTEXT.md's Shot,
+/// ADR-0044).
+struct Shot {
+  /// The body of the player who fired it.
+  EntityId shooter{};
+  /// The server tick it was fired on.
+  std::uint32_t tick = 0;
+  /// Where the round left from.
+  math::Vec3 origin{};
+  /// Where it left for, as a view's yaw and pitch in radians (command::Command;
+  /// command::ViewDirection gives the direction).
+  float yaw = 0.0F;
+  float pitch = 0.0F;
+};
+
+/// The most Shots a Session keeps for TakeShots: a few seconds of a full match
+/// firing, so a caller that asks every frame loses none and one that never
+/// asks holds no more than this.
+inline constexpr std::size_t kMaxPendingShots = 256;
 
 /// One player in the Lobby.
 struct RosterEntry {
@@ -244,6 +265,13 @@ class Session {
   /// body not in the match is dropped. Set by ExchangeMessages; safe to read
   /// from any thread.
   [[nodiscard]] std::optional<AuthoritativeState> GetAuthoritativeState() const;
+
+  /// The Shots of the match in progress received since the last call, in the
+  /// order they arrived; the newest kMaxPendingShots of them if more did. One
+  /// that arrives outside a match or names a body not in it is dropped, and a
+  /// match starts with none. Received by ExchangeMessages; safe to call from
+  /// any thread.
+  [[nodiscard]] std::vector<Shot> TakeShots();
 
   /// The body this client's player controls, as Match start named it: in the
   /// match in progress, or the last one if back in the Lobby; nullopt before

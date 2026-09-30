@@ -9,8 +9,6 @@
 #include <optional>
 #include <string_view>
 
-#include <glm/ext/quaternion_trigonometric.hpp>
-
 #include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
@@ -34,7 +32,7 @@ float WrapYaw(float yaw) {
 // view turned by yaw, unit length unless both are 0: the view looks down -Z
 // before it turns, so forward is -Z and right is +X.
 math::Vec3 MovementDirection(float forward, float right, float yaw) {
-  return math::Normalize(ViewRotation(yaw, 0.0F) * math::Vec3(right, 0.0F, -forward));
+  return math::Normalize(command::ViewRotation(yaw, 0.0F) * math::Vec3(right, 0.0F, -forward));
 }
 
 // Every key's name, in Key's order.
@@ -95,10 +93,6 @@ std::string_view NameOf(Control control) { return kControlNames.at(static_cast<s
 
 std::optional<Control> ControlNamed(std::string_view name) { return Named<Control>(kControlNames, name); }
 
-math::Quat ViewRotation(float yaw, float pitch) {
-  return glm::angleAxis(yaw, math::Vec3(0.0F, 1.0F, 0.0F)) * glm::angleAxis(pitch, math::Vec3(1.0F, 0.0F, 0.0F));
-}
-
 Input::Input(const Config& config) : mouse_sensitivity_(config.mouse_sensitivity), keymap_(config.keymap) {}
 
 command::Command Input::Sample() {
@@ -120,7 +114,7 @@ command::Command Input::Sample() {
 
 math::Quat Input::CurrentView() const {
   const std::lock_guard<std::mutex> lock(mutex_);
-  return ViewRotation(yaw_, pitch_);
+  return command::ViewRotation(yaw_, pitch_);
 }
 
 bool Input::CursorCaptured() const {

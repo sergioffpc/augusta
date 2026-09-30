@@ -9,6 +9,7 @@
 #include <expected>
 #include <format>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -97,6 +98,12 @@ struct Session::Impl {
   // as it likes, so their warnings are limited.
   logging::Throttle drop_warnings{std::chrono::seconds{1}};
 
+  // The Shots received and not yet taken, oldest first. Not part of the view:
+  // they are handed out once, not read. Guarded by shots_mutex, since the
+  // Network I/O thread adds and whoever draws them takes.
+  std::mutex shots_mutex;
+  std::deque<Shot> shots;
+
   Impl(const SessionConfig& config, prediction::World world)
       : server(config.server),
         join_request{
@@ -116,6 +123,8 @@ struct Session::Impl {
       OnJoinRefused(FromWire(refused->reason));
     } else if (const auto* state = std::get_if<protocol::AuthoritativeStateWire>(&*decoded)) {
       OnAuthoritativeState(FromWire(*state));
+    } else if (const auto* shot = std::get_if<protocol::ShotWire>(&*decoded)) {
+      OnShot(FromWire(*shot));
     } else if (const auto* lobby = std::get_if<protocol::LobbyWire>(&*decoded)) {
       OnLobby(FromWire(*lobby));
     } else if (const auto* start = std::get_if<protocol::MatchStartWire>(&*decoded)) {
@@ -167,6 +176,7 @@ struct Session::Impl {
       next.in_match = true;
       next.authoritative.reset();
     });
+    ForgetShots();
     LI("subsystem=harness event=match_started players={}", players);
   }
 
@@ -175,7 +185,35 @@ struct Session::Impl {
       next.in_match = false;
       next.authoritative.reset();
     });
+    ForgetShots();
     LI("subsystem=harness event=match_ended");
+  }
+
+  // Keeps shot for TakeShots if it is of the match in progress. One fired on
+  // the tick a match ended arrives after Match end, which is routine; one of a
+  // body not in the match is a server's mistake.
+  void OnShot(const Shot& shot) {
+    const std::shared_ptr<const ServerView> current = view.load();
+    if (!current->in_match) {
+      LT("subsystem=harness event=dropped tick={} reason=\"shot outside a match\"", shot.tick);
+      return;
+    }
+    if (!IsInMatch(*current->match_start, shot.shooter)) {
+      LW_LIMITED(drop_warnings, "subsystem=harness event=dropped tick={} reason=\"shot names a body not in the match\"",
+                 shot.tick);
+      return;
+    }
+    const std::lock_guard<std::mutex> lock(shots_mutex);
+    shots.push_back(shot);
+    if (shots.size() > kMaxPendingShots) {
+      shots.pop_front();
+    }
+  }
+
+  // The Shots of one match are not the next one's to draw.
+  void ForgetShots() {
+    const std::lock_guard<std::mutex> lock(shots_mutex);
+    shots.clear();
   }
 
   void OnJoinRefused(JoinRefusal reason) {
@@ -391,6 +429,13 @@ std::optional<parameters::Parameters> Session::GetParameters() const {
 std::optional<JoinRefusal> Session::GetRefusal() const { return impl_->view.load()->refusal; }
 
 std::optional<AuthoritativeState> Session::GetAuthoritativeState() const { return impl_->view.load()->authoritative; }
+
+std::vector<Shot> Session::TakeShots() {
+  const std::lock_guard<std::mutex> lock(impl_->shots_mutex);
+  std::vector<Shot> taken(impl_->shots.begin(), impl_->shots.end());
+  impl_->shots.clear();
+  return taken;
+}
 
 std::optional<EntityId> Session::GetEntityId() const { return Impl::OwnEntity(*impl_->view.load()); }
 

@@ -5,6 +5,7 @@
 #include <span>
 #include <vector>
 
+#include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/simulation.h"
 
@@ -52,6 +53,24 @@ struct Update {
 /// sequence and queued commands (which is why each update is its own message).
 [[nodiscard]] std::vector<Update> PlanUpdates(const simulation::State& state, std::uint32_t tick,
                                               std::span<const Recipient> recipients);
+
+/// One round fired, as every client in the match is told of it (ADR-0044).
+struct Shot {
+  /// The body of the player who fired it.
+  simulation::EntityId shooter{};
+  /// The server tick it was fired on.
+  std::uint32_t tick = 0;
+  /// Where the round left from.
+  math::Vec3 origin{};
+  /// Where it left for, as a view's yaw and pitch, in radians.
+  float yaw = 0.0F;
+  float pitch = 0.0F;
+};
+
+/// The Shots of state, the state of tick, in its order. Every recipient is
+/// sent every one of them, the shooter included, so there is one per round and
+/// not one per recipient.
+[[nodiscard]] std::vector<Shot> PlanShots(const simulation::State& state, std::uint32_t tick);
 
 }  // namespace augusta::replication
 

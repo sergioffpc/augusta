@@ -62,8 +62,8 @@ enum class Phase {
   // Mechanism. View camera position: the local player's body where
   // kInterpolation just showed it (local_position, above) plus its
   // character's eye (World's constructor, ADR-0040) for the body's stance
-  // (EyeAt, local_view.h), recomputed every frame - so the camera is attached
-  // to the character and tracks wherever, and however low, the local
+  // (LocalCamera, local_view.h), recomputed every frame - so the camera is
+  // attached to the character and tracks wherever, and however low, the local
   // player's body actually is. Rotation is where the local player looks as of
   // this frame (World::RunFrame's view_rotation), not as of the last tick.
   // ADS zoom transition, recoil kick decay, and view bob are still future
@@ -152,7 +152,7 @@ class World {
   // World's AudioCues phase. eye is the local player's character's eye
   // standing, in that character's root space (its feet at the origin,
   // ADR-0040): where Phase::kCamera puts the camera relative to the predicted
-  // body, lowered for the body's stance (EyeAt, local_view.h). Also
+  // body, lowered for the body's stance (LocalCamera, local_view.h). Also
   // registers Phase's five phases and their systems on the owned Flecs world
   // (see header comment).
   World(audio::Engine& audio_engine, const math::Vec3& eye);

@@ -279,6 +279,10 @@ TEST_F(PackTest, EncodesAndResolvesTheCharacterListInOrder) {
 
 // A character's eye is where the local player's camera sits (ADR-0040): a bare
 // point, resolved by path, and only as an eye.
+TEST(CharacterEyePathTest, ACharactersEyeIsTheEyeChildOfItsRootPrim) {
+  EXPECT_EQ(augusta::assets::CharacterEyePath("characters/player"), "characters/player/Character/Eye");
+}
+
 TEST_F(PackTest, EncodesAndResolvesACharactersEye) {
   const auto pack_path = MakePackPath("augusta_assets_test_eye.pack");
   const auto keys = GenerateEd25519KeyPair();

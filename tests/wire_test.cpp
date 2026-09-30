@@ -284,6 +284,25 @@ TEST(WireTest, TheCommandsTheClientSendsReachTheServerInOrder) {
   }
 }
 
+TEST(WireTest, AShotTheServerAnnouncesReachesTheClientUnchanged) {
+  // Numbers on their grids, as SimulationWorld fires a Shot (ADR-0038).
+  const augusta::replication::Shot sent{
+      .shooter = augusta::simulation::EntityId{3},
+      .tick = 1200,
+      .origin = augusta::math::SnapPosition(Vec3(12.345F, 1.6F, -7.77F)),
+      .yaw = augusta::math::SnapAngle(-2.345678F),
+      .pitch = augusta::math::SnapAngle(0.123456F),
+  };
+
+  const augusta::harness::Shot received = augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+
+  EXPECT_EQ(Number(received.shooter), Number(sent.shooter));
+  EXPECT_EQ(received.tick, sent.tick);
+  EXPECT_EQ(received.origin, sent.origin);
+  EXPECT_EQ(received.yaw, sent.yaw);
+  EXPECT_EQ(received.pitch, sent.pitch);
+}
+
 TEST(WireTest, MatchAndSimulationWorldNameABodyByTheSameEntity) {
   EXPECT_EQ(augusta::server::FromSimulation(augusta::server::ToSimulation(EntityId{77})), EntityId{77});
   EXPECT_EQ(Number(augusta::server::ToSimulation(EntityId{77})), 77U);

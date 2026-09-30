@@ -4,6 +4,7 @@ refused.
 """
 
 import shutil
+import struct
 
 import pytest
 from conftest import FIXTURES_DIR, decode_hitbox, decode_mesh, decode_spawn_point, read_pack_contents
@@ -234,6 +235,14 @@ def test_a_characters_hitboxes_go_into_both_packs_with_their_body_parts(tmp_path
         assert contents.paths_of_type(pack.ASSET_TYPE_HITBOX) == set(expected)
         for path, body_part in expected.items():
             assert decode_hitbox(contents.blob(path))[0] == body_part
+
+
+def test_a_characters_eye_goes_into_both_packs(tmp_path, key_pair):
+    client, server = cook_character(_EVERY_BODY_PART, tmp_path, key_pair)
+
+    for contents in (client, server):
+        assert contents.paths_of_type(pack.ASSET_TYPE_EYE) == {"characters/test/Character/Eye"}
+        assert struct.unpack("<3f", contents.blob("characters/test/Character/Eye")) == pytest.approx((0, 1.7, 0))
 
 
 def test_a_characters_hitbox_is_placed_relative_to_its_feet(tmp_path, key_pair):

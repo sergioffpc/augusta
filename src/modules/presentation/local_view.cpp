@@ -24,14 +24,9 @@ prediction::State BlendTicks(const prediction::State& previous, const prediction
   return blended;
 }
 
-math::Vec3 EyeAt(const math::Vec3& standing_eye, physics::Stance stance) {
-  const float scale = physics::StanceHeight(stance) / physics::StanceHeight(physics::Stance::kStanding);
-  return {standing_eye.x, standing_eye.y * scale, standing_eye.z};
-}
-
 Camera LocalCamera(const math::Vec3& feet, physics::Stance stance, const math::Vec3& standing_eye,
                    const math::Quat& view) {
-  return Camera{.position = feet + EyeAt(standing_eye, stance), .rotation = view};
+  return Camera{.position = feet + physics::LowerToStance(standing_eye, stance), .rotation = view};
 }
 
 }  // namespace augusta::presentation

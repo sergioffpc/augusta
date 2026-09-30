@@ -47,10 +47,6 @@ TEST_F(CookedPackTest, TheClientPackResolvesTheExampleScenariosContent) {
   const auto characters = client_->ResolveCharacters();
   ASSERT_TRUE(characters.has_value());
   EXPECT_EQ(*characters, std::vector<std::string>{"characters/player"});
-
-  const auto eye = client_->ResolveEye("characters/player/Character/Eye");
-  ASSERT_TRUE(eye.has_value());
-  EXPECT_FLOAT_EQ(eye->position.y, 1.7F);
 }
 
 TEST_F(CookedPackTest, TheServerPackHoldsNoVisualContentAndNamesItsClientPack) {
@@ -65,6 +61,16 @@ TEST_F(CookedPackTest, TheServerPackHoldsNoVisualContentAndNamesItsClientPack) {
   const auto parameters = server_->ResolveScript("parameters.lua");
   ASSERT_TRUE(parameters.has_value());
   EXPECT_FALSE(parameters->empty());
+}
+
+// The client puts the camera at it and the server fires Shots from it, so both
+// packs hold the example character's eye.
+TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersEye) {
+  for (const Pack* pack : {&*client_, &*server_}) {
+    const auto eye = pack->ResolveEye(augusta::assets::CharacterEyePath("characters/player"));
+    ASSERT_TRUE(eye.has_value());
+    EXPECT_FLOAT_EQ(eye->position.y, 1.7F);
+  }
 }
 
 // The server judges hits against them and the client draws where a Shot lands,

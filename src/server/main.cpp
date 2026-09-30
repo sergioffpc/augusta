@@ -43,10 +43,11 @@ std::expected<augusta::config::ServerConfig, augusta::config::ConfigError> LoadC
   return augusta::config::LoadServerConfig(*config_file);
 }
 
-// Each of paths as a Character with its hitboxes, in the same order, or
-// nullopt after reporting the first that has none for a body part: every hit
-// on a player resolves to one (US-11), so the server runs only on characters
-// it can judge.
+// Each of paths as a Character with its hitboxes and its eye, in the same
+// order, or nullopt after reporting the first that has no hitbox for a body
+// part or no eye: every hit on a player resolves to a body part (US-11) and
+// every Shot leaves from its shooter's eye (US-07), so the server runs only on
+// characters it can judge and fire for.
 std::optional<std::vector<augusta::server::Character>> LoadCharacters(const augusta::assets::Pack& pack,
                                                                       std::vector<std::string> paths,
                                                                       const std::filesystem::path& pack_path) {
@@ -64,7 +65,13 @@ std::optional<std::vector<augusta::server::Character>> LoadCharacters(const augu
          pack_path.string(), path, augusta::assets::BodyPartName(*missing));
       return std::nullopt;
     }
-    characters.push_back({.path = std::move(path), .hitboxes = *std::move(hitboxes)});
+    const auto eye = pack.ResolveEye(augusta::assets::CharacterEyePath(path));
+    if (!eye) {
+      LE("subsystem=server event=eye_loading_failed path={} character={} error={}", pack_path.string(), path,
+         augusta::assets::DescribeResolveError(eye.error(), "eye"));
+      return std::nullopt;
+    }
+    characters.push_back({.path = std::move(path), .hitboxes = *std::move(hitboxes), .eye = eye->position});
   }
   return characters;
 }

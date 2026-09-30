@@ -291,6 +291,11 @@ PxExtendedVec3 ToFootPosition(const math::Vec3& position) { return {position.x, 
 
 float StanceHeight(Stance stance) { return HeightForStance(stance) + kCapsuleDiameter; }
 
+math::Vec3 LowerToStance(const math::Vec3& standing_point, Stance stance) {
+  const float scale = StanceHeight(stance) / StanceHeight(Stance::kStanding);
+  return {standing_point.x, standing_point.y * scale, standing_point.z};
+}
+
 // Per-body bookkeeping PhysX's controller doesn't itself track: a CCT has
 // no notion of "velocity" the way a rigid dynamic does, so World derives
 // and caches it each Step from positional delta / delta_time; stance and

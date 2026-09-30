@@ -41,6 +41,7 @@ using augusta::protocol::ReadyWire;
 using augusta::protocol::RosterEntryWire;
 using augusta::protocol::SequencedCommandWire;
 using augusta::protocol::SessionIdWire;
+using augusta::protocol::ShotWire;
 using augusta::protocol::StaminaWire;
 using augusta::protocol::StanceWire;
 
@@ -100,6 +101,12 @@ std::vector<Seed> Seeds() {
                                                              .entity = static_cast<EntityIdWire>(2),
                                                              .character = 2}}}},
       {.name = "match_end", .message = MatchEndWire{}},
+      {.name = "shot",
+       .message = ShotWire{.origin = Vec3(12.5F, 1.75F, -40.0F),
+                           .shooter = static_cast<EntityIdWire>(2),
+                           .tick = 1200,
+                           .yaw = 1.5F,
+                           .pitch = -0.25F}},
   };
 }
 
