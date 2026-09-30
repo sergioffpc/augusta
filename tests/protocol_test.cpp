@@ -23,6 +23,7 @@ using augusta::math::SnapStamina;
 using augusta::math::SnapVelocity;
 using augusta::math::Vec3;
 using augusta::protocol::AuthoritativeStateWire;
+using augusta::protocol::BodyPartWire;
 using augusta::protocol::BodyStateWire;
 using augusta::protocol::BytesWire;
 using augusta::protocol::CommandsWire;
@@ -32,6 +33,7 @@ using augusta::protocol::DecodeError;
 using augusta::protocol::Encode;
 using augusta::protocol::EntityIdWire;
 using augusta::protocol::EntityStateWire;
+using augusta::protocol::HitConfirmationWire;
 using augusta::protocol::JoinAcceptedWire;
 using augusta::protocol::JoinRefusalWire;
 using augusta::protocol::JoinRefusedWire;
@@ -70,6 +72,7 @@ constexpr auto kReadyType = static_cast<std::uint8_t>(MessageTypeWire::kReady);
 constexpr auto kMatchStartType = static_cast<std::uint8_t>(MessageTypeWire::kMatchStart);
 constexpr auto kMatchEndType = static_cast<std::uint8_t>(MessageTypeWire::kMatchEnd);
 constexpr auto kShotType = static_cast<std::uint8_t>(MessageTypeWire::kShot);
+constexpr auto kHitConfirmationType = static_cast<std::uint8_t>(MessageTypeWire::kHitConfirmation);
 
 // Every refusal the protocol has.
 constexpr std::array<JoinRefusalWire, 5> kEveryRefusal = {
@@ -369,6 +372,43 @@ TEST(ProtocolTest, BytesAfterAShotAreTrailing) {
   EXPECT_EQ(Decode(shot).error(), DecodeError::kTrailingBytes);
 }
 
+TEST(ProtocolTest, AHitConfirmationRoundTripsWithItsTargetBodyPartAndDamage) {
+  for (const BodyPartWire part : {BodyPartWire::kHead, BodyPartWire::kTorso, BodyPartWire::kLimb}) {
+    const HitConfirmationWire hit{.target = static_cast<EntityIdWire>(0xA1B2C3D4U), .damage = 37.5F, .part = part};
+
+    const auto decoded = RoundTrip(hit);
+
+    ASSERT_TRUE(std::holds_alternative<HitConfirmationWire>(decoded));
+    EXPECT_EQ(std::get<HitConfirmationWire>(decoded), hit);
+  }
+}
+
+TEST(ProtocolTest, AHitConfirmationTravelsInTenBytes) {
+  const HitConfirmationWire hit{
+      .target = static_cast<EntityIdWire>(0x01020304U), .damage = 1.0F, .part = BodyPartWire::kLimb};
+
+  // The type, the target, the body part and the damage's bits.
+  EXPECT_EQ(Encode(hit), BytesOf({kHitConfirmationType, 0x04, 0x03, 0x02, 0x01, 0x03, 0x00, 0x00, 0x80, 0x3F}));
+}
+
+TEST(ProtocolTest, AHitConfirmationsBodyPartOutsideItsRangeIsInvalid) {
+  // type, target, then the body part.
+  constexpr std::size_t kBodyPartOffset = 1 + 4;
+  for (const std::uint8_t bad : {std::uint8_t{0}, std::uint8_t{4}, std::uint8_t{255}}) {
+    BytesWire payload = Encode(HitConfirmationWire{});
+    payload[kBodyPartOffset] = static_cast<std::byte>(bad);
+
+    EXPECT_EQ(Decode(payload).error(), DecodeError::kInvalidEnum) << static_cast<int>(bad);
+  }
+}
+
+TEST(ProtocolTest, BytesAfterAHitConfirmationAreTrailing) {
+  BytesWire hit = Encode(HitConfirmationWire{});
+  hit.push_back(std::byte{0});
+
+  EXPECT_EQ(Decode(hit).error(), DecodeError::kTrailingBytes);
+}
+
 TEST(ProtocolTest, CharacterIndexZeroInAMatchStartIsInvalid) {
   BytesWire payload = Encode(MatchStartWire{.players = {MatchPlayer(1, 1, 0.0F)}});
   // type, count, session, entity, then the character.
@@ -382,12 +422,12 @@ TEST(ProtocolTest, AnEmptyPayloadIsEmpty) { EXPECT_EQ(Decode(BytesWire{}).error(
 
 TEST(ProtocolTest, AnUnknownTypeIsRejected) {
   EXPECT_EQ(Decode(BytesOf({0})).error(), DecodeError::kUnknownType);
-  EXPECT_EQ(Decode(BytesOf({11, 0, 0, 0, 0})).error(), DecodeError::kUnknownType);
+  EXPECT_EQ(Decode(BytesOf({12, 0, 0, 0, 0})).error(), DecodeError::kUnknownType);
   EXPECT_EQ(Decode(BytesOf({0xFF})).error(), DecodeError::kUnknownType);
 }
 
 TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
-  const std::array<MessageWire, 9> messages = {
+  const std::array<MessageWire, 10> messages = {
       JoinRequestWire{.engine_version = "0.1.0", .character = "characters/player"},
       JoinAcceptedWire{.session = static_cast<SessionIdWire>(7), .character = 1},
       JoinRefusedWire{.reason = JoinRefusalWire::kMatchInProgress},
@@ -396,7 +436,8 @@ TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
       LobbyWire{.version = 2, .roster = {RosterEntryWire{}, {}}},
       MatchStartWire{.players = {MatchPlayer(1, 1, 0.0F), MatchPlayer(2, 2, 1.0F)}},
       ReadyWire{.version = 0x01020304U},
-      ShotWire{.origin = Vec3(1.0F, 2.0F, 3.0F), .shooter = static_cast<EntityIdWire>(7), .tick = 9}};
+      ShotWire{.origin = Vec3(1.0F, 2.0F, 3.0F), .shooter = static_cast<EntityIdWire>(7), .tick = 9},
+      HitConfirmationWire{.target = static_cast<EntityIdWire>(7), .damage = 20.0F, .part = BodyPartWire::kHead}};
   for (const MessageWire& message : messages) {
     const BytesWire whole = Encode(message);
     for (std::size_t length = 1; length < whole.size(); ++length) {
@@ -581,6 +622,7 @@ TEST(ProtocolTest, AuthoritativeStateRoundTrips) {
     body.body.velocity = Vec3(0.0F, -9.81F, 3.0F);
     body.body.stance = static_cast<augusta::protocol::StanceWire>(i);
     body.body.stamina = 0.25F * static_cast<float>(i);
+    body.yaw = 1.25F - static_cast<float>(i);
     sent.bodies.push_back(body);
   }
 
@@ -594,7 +636,21 @@ TEST(ProtocolTest, AuthoritativeStateRoundTrips) {
   for (std::size_t i = 0; i < sent.bodies.size(); ++i) {
     EXPECT_EQ(received.bodies[i].entity, sent.bodies[i].entity);
     ExpectSnappedBody(received.bodies[i].body, sent.bodies[i].body);
+    EXPECT_EQ(received.bodies[i].yaw, sent.bodies[i].yaw);
   }
+}
+
+// Where a body faces travels on the grid a command's view does (ADR-0038),
+// after the body: three bytes.
+TEST(ProtocolTest, ABodysYawTravelsAsThreeBytesAfterTheBody) {
+  EntityStateWire body;
+  body.yaw = 1.0F;
+  const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {body}});
+  // type, tick, acknowledged sequence, count, entity, the body (18), then the yaw.
+  constexpr std::ptrdiff_t kYawOffset = 1 + 4 + 4 + 1 + 4 + 18;
+
+  const BytesWire yaw(payload.begin() + kYawOffset, payload.begin() + kYawOffset + 3);
+  EXPECT_EQ(yaw, BytesOf({0x00, 0x00, 0x20}));
 }
 
 TEST(ProtocolTest, AuthoritativeStateWithAFullMatchRoundTrips) {
@@ -680,8 +736,8 @@ TEST(ProtocolTest, ABodysUnusedStanceByteBitsSetAreInvalid) {
 // Every number of a body or a command travels as a whole count of its grid's
 // step (ADR-0038), in the fewest bytes its range needs.
 TEST(ProtocolTest, ABodyTravelsInEighteenBytesAndACommandInThirteen) {
-  // type, tick, acknowledged sequence, count, entity, the body, then the queued commands.
-  EXPECT_EQ(Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}}).size(), 1 + 4 + 4 + 1 + 4 + 18 + 1);
+  // type, tick, acknowledged sequence, count, entity, the body, its yaw, then the queued commands.
+  EXPECT_EQ(Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}}).size(), 1 + 4 + 4 + 1 + 4 + 18 + 3 + 1);
   EXPECT_EQ(Encode(CommandsWire{.commands = {SequencedCommandWire{}}}).size(), 2 + 4 + 13);
 }
 

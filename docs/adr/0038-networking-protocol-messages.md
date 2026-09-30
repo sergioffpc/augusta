@@ -56,12 +56,14 @@ its step is an exact float, and a value read back encodes to the same bytes:
 | position (a body's, the spawn point, a Shot's origin), per axis | 3 (signed) | 1/1024 m | ±8192 m |
 | velocity, per axis | 2 (signed) | 1/512 m/s | ±64 m/s |
 | movement direction, per axis | 2 (signed) | 1/16384 | ±2 |
-| yaw, pitch (a command's view, a Shot's direction) | 3 (signed) | 2⁻²¹ rad (about 0.5 µrad) | ±4 rad |
+| yaw, pitch (a command's view, a body's facing, a Shot's direction) | 3 (signed) | 2⁻²¹ rad (about 0.5 µrad) | ±4 rad |
 | stamina | 2 (unsigned) | 1/32768 | 0 to 2 |
 
 A value beyond its range travels as the bound, and a NaN travels as 0. The tick
 rate travels as one byte of whole Hz, and the parameters stay 32-bit floats:
-they are sent once, and must arrive exactly. So a body is 18 bytes and a command 13, and a whole Shot message is 24.
+they are sent once, and must arrive exactly. So a body is 18 bytes (25 in an
+update, with its entity ID and its yaw) and a command 13, a whole Shot message
+is 24 and a whole Hit confirmation 10.
 
 **Aim is not the network's to blur.** The server fires with the angle it was
 sent, so the angle grid decides how far a shot lands from where the player
@@ -78,6 +80,12 @@ which gives what `Decode` would give back.
 direction to these grids before it fires the bullet, so the round the server
 flies and judges is exactly the one every client is told of and draws
 (ADR-0044).
+
+**A body faces where its player looks.** A body's yaw is the yaw of the last
+Command the server took in from its player, on the angle grid: the server turns
+the body's hitboxes by it (ADR-0040), and every client is told it, to turn the
+body it draws. A player's health is not sent: the server alone holds it, and
+what a player is told of its own is decided with death (M5).
 
 **Bodies live on the grid.** `physics::World` rounds every body to these grids
 in `CreateBody`, `Step`, `SetState` and `Restore`. So a server's body is exactly
@@ -105,12 +113,13 @@ supersedes is unreliable.
 | Join accepted | server → client | reliable | session ID, the server's tick rate, the parameters to predict with (the Player count, the stamina rules, the rifle with its recoil pattern of at most 64 kicks, its ammo with damage by body part, and the starting health), the player's own character index |
 | Join refused | server → client | reliable | reason: version mismatch, pack mismatch, unknown character, match in progress, lobby full |
 | Commands | client → server | unreliable | up to 8 commands, oldest first: sequence, movement direction, yaw, pitch, and one byte holding the sprint, ADS, fire and reload flags (bits 0-3) and the desired stance (bits 4-5) |
-| Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, per body (at most 8): entity ID, position, velocity, one byte holding the stance (bits 0-1) and the exhausted flag (bit 2), stamina; then one byte: how many of the recipient's commands the server still holds queued after the tick |
+| Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, per body (at most 8): entity ID, position, velocity, one byte holding the stance (bits 0-1) and the exhausted flag (bit 2), stamina, the yaw it faces; then one byte: how many of the recipient's commands the server still holds queued after the tick |
 | Lobby | server → client | reliable | the Roster's version, and every player in the Lobby (at most 8, the recipient included) with session ID and character index (ADR-0043) |
 | Ready | client → server | reliable | the Lobby version the client loaded for (ADR-0043) |
 | Match start | server → client | reliable | every player in the Match (at most 8, the recipient included): session ID, the entity ID of its body, character index, spawn position (ADR-0043) |
 | Match end | server → client | reliable | nothing: the Match is over and its players are back in the Lobby (ADR-0043) |
 | Shot | server → client | reliable | one round a player fired, sent to every player in the Match, the shooter included: the entity ID of the shooter's body, the server tick it was fired on, its origin, and its direction as a yaw and a pitch (ADR-0044) |
+| Hit confirmation | server → client | reliable | one round the recipient fired that hit a player, sent to the shooter alone: the entity ID of the body hit, one byte for the body part (head, torso or limb, from 1), and the damage as a 32-bit float, as the Parameters give it (ADR-0044) |
 
 Per-tick traffic is unreliable because a newer message supersedes an older one,
 and it is made loss-tolerant without retransmission:

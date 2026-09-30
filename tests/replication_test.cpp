@@ -10,6 +10,7 @@
 // What each recipient is sent is a pure function of the tick's state.
 namespace {
 
+using augusta::replication::PlanHitConfirmations;
 using augusta::replication::PlanShots;
 using augusta::replication::PlanUpdates;
 using augusta::replication::Recipient;
@@ -101,6 +102,50 @@ TEST(ReplicationTest, EveryShotOfATickIsPlannedOnceUnderThatTick) {
 
 TEST(ReplicationTest, ATickWithoutFireHasNoShotToPlan) {
   EXPECT_TRUE(PlanShots(StateOf({PlayerAt(1, 0.0F)}), 1).empty());
+}
+
+TEST(ReplicationTest, EveryRecipientIsToldWhereEachBodyFaces) {
+  EntityState turned = PlayerAt(1, 0.0F);
+  turned.yaw = 1.25F;
+  const State state = StateOf({turned, PlayerAt(2, 0.0F)});
+  const std::array<Recipient, 1> recipients = {Recipient{.entity = static_cast<EntityId>(2)}};
+
+  const auto updates = PlanUpdates(state, 1, recipients);
+
+  ASSERT_EQ(updates[0].bodies.size(), 2U);
+  EXPECT_EQ(updates[0].bodies[0].yaw, 1.25F);
+  EXPECT_EQ(updates[0].bodies[1].yaw, 0.0F);
+}
+
+TEST(ReplicationTest, EachHitIsConfirmedToItsShooterAloneWithItsTargetBodyPartAndDamage) {
+  State state;
+  state.hits = {{.shooter = static_cast<EntityId>(1),
+                 .target = static_cast<EntityId>(2),
+                 .damage = 50.0F,
+                 .health = 50.0F,
+                 .part = augusta::ballistics::BodyPart::kHead},
+                {.shooter = static_cast<EntityId>(3),
+                 .target = static_cast<EntityId>(1),
+                 .damage = 10.0F,
+                 .health = 0.0F,
+                 .part = augusta::ballistics::BodyPart::kLimb,
+                 .reached_zero = true}};
+
+  const auto confirmations = PlanHitConfirmations(state);
+
+  ASSERT_EQ(confirmations.size(), 2U);
+  EXPECT_EQ(confirmations[0].recipient, static_cast<EntityId>(1));
+  EXPECT_EQ(confirmations[0].target, static_cast<EntityId>(2));
+  EXPECT_EQ(confirmations[0].part, augusta::ballistics::BodyPart::kHead);
+  EXPECT_EQ(confirmations[0].damage, 50.0F);
+  EXPECT_EQ(confirmations[1].recipient, static_cast<EntityId>(3));
+  EXPECT_EQ(confirmations[1].target, static_cast<EntityId>(1));
+  EXPECT_EQ(confirmations[1].part, augusta::ballistics::BodyPart::kLimb);
+  EXPECT_EQ(confirmations[1].damage, 10.0F);
+}
+
+TEST(ReplicationTest, ATickWithoutAHitHasNoHitConfirmationToPlan) {
+  EXPECT_TRUE(PlanHitConfirmations(StateOf({PlayerAt(1, 0.0F)})).empty());
 }
 
 TEST(ReplicationTest, ARecipientWithNoBodyYetStillSeesTheOthers) {

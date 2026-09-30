@@ -54,6 +54,9 @@ namespace augusta::server {
 /// A Shot replication planned, as the message every client in the match is sent.
 [[nodiscard]] protocol::ShotWire ToWire(const replication::Shot& shot);
 
+/// A Hit confirmation replication planned, as the message its shooter is sent.
+[[nodiscard]] protocol::HitConfirmationWire ToWire(const replication::HitConfirmation& hit);
+
 /// hash in the engine's terms.
 [[nodiscard]] assets::PackHash FromWire(const protocol::PackHashWire& hash);
 

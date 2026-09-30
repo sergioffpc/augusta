@@ -91,6 +91,7 @@ void WriteBodies(BytesWire& out, const std::vector<EntityStateWire>& bodies) {
   for (const EntityStateWire& body : bodies) {
     WriteU32(out, static_cast<std::uint32_t>(body.entity));
     WriteBodyState(out, body.body);
+    WriteSteps(out, body.yaw, math::kAngleGrid);
   }
 }
 
@@ -267,8 +268,11 @@ JoinRequestWire ReadJoinRequest(Reader& reader) {
 }
 
 EntityStateWire ReadEntityState(Reader& reader) {
-  const auto entity = static_cast<EntityIdWire>(reader.ReadU32());
-  return EntityStateWire{.entity = entity, .body = ReadBodyState(reader)};
+  EntityStateWire state;
+  state.entity = static_cast<EntityIdWire>(reader.ReadU32());
+  state.body = ReadBodyState(reader);
+  state.yaw = reader.ReadSteps(math::kAngleGrid);
+  return state;
 }
 
 // The bodies of an update, at most kMaxPlayers.
@@ -394,6 +398,14 @@ ShotWire ReadShot(Reader& reader) {
   return shot;
 }
 
+HitConfirmationWire ReadHitConfirmation(Reader& reader) {
+  HitConfirmationWire hit;
+  hit.target = static_cast<EntityIdWire>(reader.ReadU32());
+  hit.part = reader.ReadEnum(BodyPartWire::kHead, BodyPartWire::kLimb);
+  hit.damage = reader.ReadF32();
+  return hit;
+}
+
 // nullopt when type is not a message of this protocol.
 std::optional<MessageWire> ReadBody(MessageTypeWire type, Reader& reader) {
   switch (type) {
@@ -417,6 +429,8 @@ std::optional<MessageWire> ReadBody(MessageTypeWire type, Reader& reader) {
       return MatchEndWire{};
     case MessageTypeWire::kShot:
       return ReadShot(reader);
+    case MessageTypeWire::kHitConfirmation:
+      return ReadHitConfirmation(reader);
   }
   return std::nullopt;
 }
@@ -541,6 +555,13 @@ struct Encoder {
     WriteVec3(out, message.origin, math::kPositionGrid);
     WriteSteps(out, message.yaw, math::kAngleGrid);
     WriteSteps(out, message.pitch, math::kAngleGrid);
+  }
+
+  void operator()(const HitConfirmationWire& message) const {
+    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kHitConfirmation));
+    WriteU32(out, static_cast<std::uint32_t>(message.target));
+    WriteU8(out, static_cast<std::uint8_t>(message.part));
+    WriteF32(out, message.damage);
   }
 };
 

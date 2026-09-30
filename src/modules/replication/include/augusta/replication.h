@@ -5,6 +5,7 @@
 #include <span>
 #include <vector>
 
+#include "augusta/ballistics.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/simulation.h"
@@ -29,10 +30,12 @@ struct Recipient {
   std::uint8_t queued_commands = 0;
 };
 
-/// One dynamic body.
+/// One dynamic body. Its health is not among what a client is told of it.
 struct EntityBody {
   simulation::EntityId entity{};
   physics::BodyState body{};
+  /// Where the body faces, as a yaw in radians.
+  float yaw = 0.0F;
 };
 
 /// What one recipient is sent for a tick.
@@ -71,6 +74,24 @@ struct Shot {
 /// sent every one of them, the shooter included, so there is one per round and
 /// not one per recipient.
 [[nodiscard]] std::vector<Shot> PlanShots(const simulation::State& state, std::uint32_t tick);
+
+/// A hit on a player, as the one client who fired the round is told of it
+/// (CONTEXT.md's Hit confirmation, ADR-0044).
+struct HitConfirmation {
+  /// The entity the recipient's player controls: the shooter's.
+  simulation::EntityId recipient{};
+  /// The body that was hit.
+  simulation::EntityId target{};
+  /// The damage the hit did.
+  float damage = 0.0F;
+  /// Where on the body it struck.
+  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+};
+
+/// The Hit confirmations of state, one per hit, in its order: each for the
+/// shooter alone, so neither the target nor anyone else is told, and what
+/// health the target has left is told to no one.
+[[nodiscard]] std::vector<HitConfirmation> PlanHitConfirmations(const simulation::State& state);
 
 }  // namespace augusta::replication
 
