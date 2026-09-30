@@ -58,6 +58,7 @@ its step is an exact float, and a value read back encodes to the same bytes:
 | movement direction, per axis | 2 (signed) | 1/16384 | ±2 |
 | yaw, pitch (a command's view, a body's facing, a Shot's direction) | 3 (signed) | 2⁻²¹ rad (about 0.5 µrad) | ±4 rad |
 | stamina | 2 (unsigned) | 1/32768 | 0 to 2 |
+| a command's view fraction | 1 (unsigned) | 1/256 | 0 to 255/256 |
 
 A value beyond its range travels as the bound, and a NaN travels as 0. The tick
 rate travels as one byte of whole Hz, and the parameters stay 32-bit floats:
@@ -65,7 +66,7 @@ they are sent once, and must arrive exactly. So do a rifle's two times: its
 owner replays its commands from them (ADR-0004) with the function the server
 stepped them with, and a rounded start would be a rifle the server never had.
 So a body is 18 bytes (25 in an update, with its entity ID and its yaw), a
-rifle 9 and a command 13, a whole Shot message is 24 and a whole Hit
+rifle 9 and a command 15, a whole Shot message is 24 and a whole Hit
 confirmation 10.
 
 **Aim is not the network's to blur.** The server fires with the angle it was
@@ -115,7 +116,7 @@ supersedes is unreliable.
 | Join request | client → server | reliable | engine version, client pack hash, the chosen character's path (ADR-0042) |
 | Join accepted | server → client | reliable | session ID, the server's tick rate, the parameters to predict with (the Player count, the stamina rules, the rifle with its recoil pattern of at most 64 kicks, its ammo with damage by body part, and the starting health), the player's own character index |
 | Join refused | server → client | reliable | reason: version mismatch, pack mismatch, unknown character, match in progress, lobby full |
-| Commands | client → server | unreliable | up to 8 commands, oldest first: sequence, movement direction, yaw, pitch, and one byte holding the sprint, ADS, fire and reload flags (bits 0-3) and the desired stance (bits 4-5) |
+| Commands | client → server | unreliable | up to 8 commands, oldest first: sequence, movement direction, yaw, pitch, one byte holding the sprint, ADS, fire and reload flags (bits 0-3) and the desired stance (bits 4-5), and the view the command was sampled against (ADR-0044) as one byte for how many ticks before the message's view tick its own is and one for its fraction; then the message's view tick, the newest server tick any of its commands was sampled against |
 | Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, per body (at most 8): entity ID, position, velocity, one byte holding the stance (bits 0-1) and the exhausted flag (bit 2), stamina, the yaw it faces; then one byte: how many of the recipient's commands the server still holds queued after the tick; then the recipient's own rifle as of the tick, to reconcile its predicted one against (ADR-0004): one byte for the rounds in its magazine, and the time until its next round may fire and the time its reload still takes, each a 32-bit float |
 | Lobby | server → client | reliable | the Roster's version, and every player in the Lobby (at most 8, the recipient included) with session ID and character index (ADR-0043) |
 | Ready | client → server | reliable | the Lobby version the client loaded for (ADR-0043) |
@@ -133,6 +134,14 @@ and it is made loss-tolerant without retransmission:
   datagram does not drop input. The Authoritative State update carries, for its
   recipient, the highest sequence the server has processed; the client forgets
   commands up to it.
+- **A command's view tick is an age.** Each command names the server tick of
+  the update its player was being shown (ADR-0044). The commands of one message
+  were sampled a tick apart, so their view ticks are a few ticks apart too: the
+  message carries the newest of them once, in full, and each command how many
+  ticks before it its own is, in a byte. A view more than 255 ticks before the
+  message's travels as 255, at least a second old at any tick rate and so
+  already past the 250 ms a shot is judged within. The fraction's last step is
+  255/256: a view a whole tick on names the next tick instead.
 - **The server takes each command in once.** A sequence not newer than the last
   taken in from that client is dropped (routine, since commands repeat), and so is
   a command with a number beyond what a client produces (a pitch past straight up,

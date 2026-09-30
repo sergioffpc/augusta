@@ -18,6 +18,7 @@ namespace {
 
 using augusta::math::SnapAngle;
 using augusta::math::SnapDirection;
+using augusta::math::SnapFraction;
 using augusta::math::SnapPosition;
 using augusta::math::SnapStamina;
 using augusta::math::SnapVelocity;
@@ -498,6 +499,8 @@ SequencedCommandWire BusyCommand(std::uint32_t sequence) {
   sequenced.command.pitch = -1.25F;
   sequenced.command.flags = CommandWire::kSprint | CommandWire::kAds | CommandWire::kFire | CommandWire::kReload;
   sequenced.command.desired_stance = augusta::protocol::StanceWire::kProne;
+  sequenced.command.view_age = static_cast<std::uint8_t>(sequence);
+  sequenced.command.view_fraction = 0.3F;
   return sequenced;
 }
 
@@ -509,15 +512,19 @@ void ExpectSameCommand(const SequencedCommandWire& actual, const SequencedComman
   EXPECT_EQ(actual.command.pitch, SnapAngle(expected.command.pitch));
   EXPECT_EQ(actual.command.flags, expected.command.flags);
   EXPECT_EQ(actual.command.desired_stance, expected.command.desired_stance);
+  EXPECT_EQ(actual.command.view_age, expected.command.view_age);
+  EXPECT_EQ(actual.command.view_fraction, SnapFraction(expected.command.view_fraction));
 }
 
 TEST(ProtocolTest, CommandsRoundTripWithEveryField) {
-  const CommandsWire sent{.commands = {BusyCommand(41), BusyCommand(42), SequencedCommandWire{.sequence = 43}}};
+  const CommandsWire sent{.commands = {BusyCommand(41), BusyCommand(42), SequencedCommandWire{.sequence = 43}},
+                          .view_tick = 123456};
 
   const auto decoded = RoundTrip(sent);
 
   ASSERT_TRUE(std::holds_alternative<CommandsWire>(decoded));
   const CommandsWire& received = std::get<CommandsWire>(decoded);
+  EXPECT_EQ(received.view_tick, sent.view_tick);
   ASSERT_EQ(received.commands.size(), sent.commands.size());
   for (std::size_t i = 0; i < sent.commands.size(); ++i) {
     ExpectSameCommand(received.commands[i], sent.commands[i]);
@@ -558,9 +565,12 @@ TEST(ProtocolTest, ANonFiniteNumberIsSentAsZeroOrItsNearestBound) {
 }
 
 // type, count, then per command: sequence (4), direction (6), yaw (3), pitch
-// (3) and one byte for the flags and the stance: a command is 13 bytes.
+// (3), one byte for the flags and the stance, and one each for the view's age
+// and its fraction: a command is 15 bytes. Then the message's view tick (4).
 constexpr std::size_t kCommandYawOffset = 2 + 4 + 6;
 constexpr std::size_t kCommandFlagsOffset = kCommandYawOffset + 3 + 3;
+constexpr std::size_t kCommandViewOffset = kCommandFlagsOffset + 1;
+constexpr std::size_t kViewTickOffset = kCommandViewOffset + 2;
 
 // The angle grid's step, 2^-21 rad.
 constexpr float kAngleStep = 1.0F / 2097152.0F;
@@ -593,16 +603,40 @@ TEST(ProtocolTest, AnAnglesRoundingErrorIsAtMostHalfAStep) {
   }
 }
 
-TEST(ProtocolTest, ACommandsFlagsAndStanceShareItsLastByte) {
+TEST(ProtocolTest, ACommandsFlagsAndStanceShareOneByte) {
   SequencedCommandWire sequenced{.sequence = 1};
   sequenced.command.flags = CommandWire::kSprint | CommandWire::kReload;
   sequenced.command.desired_stance = augusta::protocol::StanceWire::kProne;
 
   const BytesWire payload = Encode(CommandsWire{.commands = {sequenced}});
 
-  ASSERT_EQ(payload.size(), kCommandFlagsOffset + 1);
+  ASSERT_EQ(payload.size(), kViewTickOffset + 4);
   // The flags in the low four bits, the stance in the two above them.
   EXPECT_EQ(payload[kCommandFlagsOffset], std::byte{0b0010'1001});
+}
+
+// What the shooter was shown (ADR-0044): the newest tick once for the whole
+// message, and each command's own as how far before it, with its fraction in
+// 256ths.
+TEST(ProtocolTest, ACommandsViewTravelsAsItsAgeAndItsFractionInAByteEachAndTheMessagesViewTickAtTheEnd) {
+  SequencedCommandWire sequenced{.sequence = 1};
+  sequenced.command.view_age = 3;
+  sequenced.command.view_fraction = 0.75F;
+
+  const BytesWire payload = Encode(CommandsWire{.commands = {sequenced}, .view_tick = 0x01020304U});
+
+  EXPECT_EQ(payload[kCommandViewOffset], std::byte{3});
+  EXPECT_EQ(payload[kCommandViewOffset + 1], std::byte{192});
+  const auto tick_offset = static_cast<std::ptrdiff_t>(kViewTickOffset);
+  EXPECT_EQ(BytesWire(payload.begin() + tick_offset, payload.end()), BytesOf({0x04, 0x03, 0x02, 0x01}));
+}
+
+TEST(ProtocolTest, AViewsFractionIsHeldBelowOneAndANaNIsZero) {
+  EXPECT_EQ(SnapFraction(0.5F), 0.5F);
+  EXPECT_EQ(SnapFraction(1.0F), 255.0F / 256.0F);
+  EXPECT_EQ(SnapFraction(7.0F), 255.0F / 256.0F);
+  EXPECT_EQ(SnapFraction(-1.0F), 0.0F);
+  EXPECT_EQ(SnapFraction(std::numeric_limits<float>::quiet_NaN()), 0.0F);
 }
 
 TEST(ProtocolTest, ACommandsStanceOrUnusedBitsOutsideTheirRangeAreInvalid) {
@@ -759,11 +793,11 @@ TEST(ProtocolTest, ABodysUnusedStanceByteBitsSetAreInvalid) {
 
 // Every number of a body or a command travels as a whole count of its grid's
 // step (ADR-0038), in the fewest bytes its range needs.
-TEST(ProtocolTest, ABodyTravelsInEighteenBytesAndACommandInThirteen) {
+TEST(ProtocolTest, ABodyTravelsInEighteenBytesAndACommandInFifteen) {
   // type, tick, acknowledged sequence, count, entity, the body, its yaw, the
   // queued commands, then the recipient's rifle.
   EXPECT_EQ(Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}}).size(), 1 + 4 + 4 + 1 + 4 + 18 + 3 + 1 + 9);
-  EXPECT_EQ(Encode(CommandsWire{.commands = {SequencedCommandWire{}}}).size(), 2 + 4 + 13);
+  EXPECT_EQ(Encode(CommandsWire{.commands = {SequencedCommandWire{}}}).size(), 2 + 4 + 15 + 4);
 }
 
 TEST(ProtocolTest, APositionTravelsAsThreeBytesPerAxisInMillimeterSteps) {

@@ -57,7 +57,8 @@ enum class Phase {
   // motion independent of render frame rate and of when updates arrive. An
   // entity no longer in the snapshot is no longer shown, and neither is anyone
   // while there is no snapshot (outside a match). Each is drawn as its character
-  // (World::RunFrame's characters parameter).
+  // (World::RunFrame's characters parameter). Which moment of the server's
+  // timeline they are shown at is the frame's view (ViewAt, interpolation.h).
   kInterpolation,
   // Mechanism. View camera position: the local player's body where
   // kInterpolation just showed it (local_position, above) plus its
@@ -131,6 +132,10 @@ struct State {
   /// character. Empty before the client has received an Authoritative State,
   /// outside a match, or once alone in the match.
   std::vector<RemotePlayer> remote_players;
+  /// What of the server's timeline remote_players are shown at this frame, for
+  /// the Commands sampled on it to report (ADR-0044); nullopt before the client
+  /// has received an Authoritative State and outside a match.
+  std::optional<ShownView> view;
 };
 
 // The client's single PresentationWorld. The client constructs exactly

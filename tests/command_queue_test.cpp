@@ -61,6 +61,10 @@ TEST(ValidateTest, RejectsNonFiniteNumbersWhereverTheyAre) {
   command = Walk(1);
   command.command.pitch = -kInfinity;
   EXPECT_EQ(Validate(command, 0).error(), Rejection::kNonFinite);
+
+  command = Walk(1);
+  command.command.view_fraction = kNaN;
+  EXPECT_EQ(Validate(command, 0).error(), Rejection::kNonFinite);
 }
 
 TEST(ValidateTest, RejectsNumbersOutsideWhatAClientCanProduce) {

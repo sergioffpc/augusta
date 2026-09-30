@@ -89,6 +89,17 @@ std::vector<presentation::PlayerCharacter> CharactersOf(const std::optional<harn
   return characters;
 }
 
+// command as sampled against view, what the last render frame showed the other
+// players at: the view it reports to the server, which judges its shots against
+// the players as they were then (ADR-0044). With no view, it reports none.
+command::Command WithView(command::Command command, const std::optional<presentation::ShownView>& view) {
+  if (view.has_value()) {
+    command.view_tick = view->tick;
+    command.view_fraction = view->fraction;
+  }
+  return command;
+}
+
 // Stops Impl's background threads and joins both, on scope exit -
 // including when unwinding past Run() due to an exception from the
 // Main/Render loop body. This is the only place thread cleanup happens;
@@ -148,6 +159,12 @@ struct ClientRuntime::Impl {
   // otherwise once it holds real payload.
   std::mutex latest_tick_mutex;
   LatestTick latest_tick;
+
+  // What the last render frame showed the other players at, or nullopt while
+  // it showed none: written once per Main/Render frame, read once per
+  // Prediction tick, which reports it with the tick's Command (ADR-0044).
+  std::mutex shown_view_mutex;
+  std::optional<presentation::ShownView> shown_view;
 
   // Connection numbers for the renderer's debug HUD: written by the Network
   // I/O thread (PublishHudNetStats), read by the Main/Render thread once per
@@ -347,7 +364,7 @@ struct ClientRuntime::Impl {
       const nvtx3::scoped_range range{"Prediction Tick"};
       const tick::Clock::time_point tick_start = tick::Clock::now();
 
-      const command::Command command = input.Sample();
+      const command::Command command = WithView(input.Sample(), GetShownView());
       const prediction::State state = session->Tick(command, delta_time.count());
       activity.Record(state, tick_start);
 
@@ -417,6 +434,16 @@ struct ClientRuntime::Impl {
     std::lock_guard<std::mutex> lock(latest_tick_mutex);
     return latest_tick;
   }
+
+  void SetShownView(const std::optional<presentation::ShownView>& view) {
+    const std::lock_guard<std::mutex> lock(shown_view_mutex);
+    shown_view = view;
+  }
+
+  std::optional<presentation::ShownView> GetShownView() {
+    const std::lock_guard<std::mutex> lock(shown_view_mutex);
+    return shown_view;
+  }
 };
 
 ClientRuntime::ClientRuntime(const Config& config, Map map, const renderer::Scene& scene, const math::Vec3& eye,
@@ -478,6 +505,7 @@ std::optional<Failure> ClientRuntime::Run() {
     const std::vector<presentation::PlayerCharacter> characters = CharactersOf(impl_->session->GetMatchStart());
     presentation::State frame_state =
         impl_->presentation.RunFrame(ticks, impl_->input.CurrentView(), local_entity, snapshot, characters);
+    impl_->SetShownView(frame_state.view);
     impl_->renderer.SetCamera(ToRenderer(frame_state.camera));
     // The local player's own position isn't drawn yet (renderer.h) - only
     // remote players, each as its character. In the Lobby there are none, so

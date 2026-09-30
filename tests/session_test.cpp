@@ -2825,15 +2825,21 @@ class HitMatchOf : public LoopbackMatch {
     }
   }
 
+  // Turns command's view to look along aim: from the eye to the point aimed at.
+  static void AimAt(Command& command, const Vec3& aim) {
+    command.yaw = std::atan2(-aim.x, -aim.z);
+    command.pitch = std::asin(aim.y / Length(aim));
+  }
+
   // The shooter taps fire once, aimed from its eye at the point offset from
-  // target's feet, and the match runs until its rifle is ready again.
+  // target's feet as the newest update it has shows them, which is the view
+  // its Command reports, and the match runs until its rifle is ready again.
   void ShootAt(const Session& target, const Vec3& offset) {
     Session& shooter = Standing(0);
     const Vec3 eye = PositionSeenBy(shooter, *shooter.GetEntityId()).value() + Vec3(0.0F, kEyeHeight, 0.0F);
-    const Vec3 aim = PositionSeenBy(shooter, *target.GetEntityId()).value() + offset - eye;
     Command& command = CommandOf(shooter);
-    command.yaw = std::atan2(-aim.x, -aim.z);
-    command.pitch = std::asin(aim.y / Length(aim));
+    AimAt(command, PositionSeenBy(shooter, *target.GetEntityId()).value() + offset - eye);
+    command.view_tick = shooter.GetAuthoritativeState().value().tick;
     command.fire = true;
     Fight(1);
     command.fire = false;
@@ -2999,6 +3005,97 @@ TEST_F(LoneHitTest, AShooterFiringForwardWhileMovingNeverHitsItself) {
   EXPECT_EQ(shooter.TakeShots().size(), 10U);
   EXPECT_TRUE(hits_.empty());
   EXPECT_TRUE(ConfirmationsOf(shooter).empty());
+}
+
+// The duel at 100 ms of latency, with the target walking across the shooter's
+// view. The clients run a round trip ahead of the server, as real ones do. The
+// test stands in for the shooter's presentation: it keeps what each update it
+// is sent shows of the target, and shows it the Interpolation delay behind the
+// newest.
+class LagCompensatedHitTest : public HitMatchOf<2> {
+ protected:
+  static constexpr int kOneWayLatencyMs = 50;
+  // The Interpolation delay, about 100 ms, in ticks of kFixedTick.
+  static constexpr std::uint32_t kInterpolationTicks = 6;
+
+  void TearDown() override { augusta::networking::SimulateNetworkConditions({}); }
+
+  // Whether the server holds a command of every client for its next tick.
+  [[nodiscard]] bool EveryoneHasACommandQueued() const {
+    return std::ranges::all_of(sessions_, [&](const auto& session) {
+      return host_.QueuedCommands(
+                 static_cast<augusta::server::SessionId>(std::to_underlying(*session->GetSessionId()))) > 0;
+    });
+  }
+
+  // One tick of every client on its command, with the server ticking once for
+  // every tick's worth of commands that has reached it and never without one,
+  // keeping what it resolved and where the shooter's newest update puts the
+  // target's feet.
+  void PlayAhead(const Session& shooter, const Session& target) {
+    for (std::size_t i = 0; i < sessions_.size(); ++i) {
+      states_[sessions_[i].get()] = sessions_[i]->Tick(commands_.at(i), kFixedTick);
+    }
+    std::this_thread::sleep_for(kNetworkDelay);
+    Exchange();
+    while (EveryoneHasACommandQueued()) {
+      const augusta::simulation::State state = host_.Tick(kFixedTick);
+      hits_.insert(hits_.end(), state.hits.begin(), state.hits.end());
+    }
+    std::this_thread::sleep_for(kNetworkDelay);
+    Exchange();
+    if (const auto feet = PositionSeenBy(shooter, *target.GetEntityId()); feet.has_value()) {
+      seen_[shooter.GetAuthoritativeState()->tick] = *feet;
+    }
+  }
+
+  // Where each update the shooter was sent put the target's feet, by its tick.
+  std::map<std::uint32_t, Vec3> seen_;
+};
+
+// US-11, ADR-0044: a shot that hits on the shooter's screen hits on the server.
+TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairInTheShownViewGetsAHitConfirmation) {
+  Session& shooter = Standing(0);
+  Session& target = Standing(1);
+  CommandOf(target).movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+  augusta::networking::SimulateNetworkConditions({.latency_ms = kOneWayLatencyMs});
+  for (int i = 0; i < 60; ++i) {
+    PlayAhead(shooter, target);
+  }
+
+  // The view: the newest update kept that is the Interpolation delay or more
+  // behind the newest of all, and halfway to the next one if that is kept too.
+  ASSERT_FALSE(seen_.empty());
+  const std::uint32_t newest = seen_.rbegin()->first;
+  ASSERT_GT(newest, kInterpolationTicks);
+  auto shown = seen_.upper_bound(newest - kInterpolationTicks);
+  ASSERT_NE(shown, seen_.begin());
+  --shown;
+  const auto next = seen_.find(shown->first + 1);
+  const float fraction = next == seen_.end() ? 0.0F : 0.5F;
+  const Vec3 feet = next == seen_.end() ? shown->second : augusta::math::Lerp(shown->second, next->second, fraction);
+  // The target has since walked clear of where the view shows its torso, 0.4 m wide.
+  ASSERT_GT(seen_.rbegin()->second.x - feet.x, 0.25F);
+
+  const Vec3 eye = PositionSeenBy(shooter, *shooter.GetEntityId()).value() + Vec3(0.0F, kEyeHeight, 0.0F);
+  Command& command = CommandOf(shooter);
+  AimAt(command, feet + Vec3(0.0F, kTorsoHeight, 0.0F) - eye);
+  command.view_tick = shown->first;
+  command.view_fraction = fraction;
+  command.fire = true;
+  PlayAhead(shooter, target);
+  command.fire = false;
+  for (int i = 0; i < 30; ++i) {
+    PlayAhead(shooter, target);
+  }
+
+  ASSERT_EQ(hits_.size(), 1U);
+  EXPECT_EQ(hits_[0].part, BodyPart::kTorso);
+  const std::vector<HitConfirmation>& confirmations = ConfirmationsOf(shooter);
+  ASSERT_EQ(confirmations.size(), 1U);
+  EXPECT_EQ(confirmations[0].target, *target.GetEntityId());
+  EXPECT_EQ(confirmations[0].part, BodyPart::kTorso);
+  EXPECT_TRUE(ConfirmationsOf(target).empty());
 }
 
 // A Hit confirmation of the scripted server's one player hitting whoever it names.

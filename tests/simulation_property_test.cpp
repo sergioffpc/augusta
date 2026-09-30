@@ -71,7 +71,8 @@ class QuietLogs : public ::testing::Environment {
 
 [[maybe_unused]] const ::testing::Environment* const kQuietLogs = ::testing::AddGlobalTestEnvironment(new QuietLogs);
 
-constexpr float kTick = 1.0F / 60.0F;
+constexpr std::uint8_t kTickRate = 60;
+constexpr float kTick = 1.0F / kTickRate;
 constexpr std::size_t kMaxCommands = 240;  // Four seconds of input.
 constexpr float kPi = 3.14159265F;
 constexpr augusta::simulation::EntityId kPlayer = static_cast<augusta::simulation::EntityId>(1);
@@ -140,7 +141,7 @@ RC_GTEST_PROP(SimulationPropertyTest, StaminaStaysWithinTheBarWhateverThePlayerD
   const StaminaConfig stamina = *Stamina();
   const std::vector<Command> commands = *Commands(1);
 
-  augusta::simulation::World world(augusta::parameters::Parameters{.stamina = stamina});
+  augusta::simulation::World world(augusta::parameters::Parameters{.stamina = stamina}, kTickRate);
   RC_ASSERT(world.AddCollisionMesh(Floor()).has_value());
   world.AddPlayer(kPlayer, kSpawn, kCharacter);
 
@@ -178,7 +179,7 @@ RC_GTEST_PROP(SimulationPropertyTest, TheMagazineStaysWithinItsCapacityAndNoWind
   parameters.ammo.max_range = 50.0F;
   const std::vector<Command> commands = *Commands(1);
 
-  augusta::simulation::World world(parameters);
+  augusta::simulation::World world(parameters, kTickRate);
   RC_ASSERT(world.AddCollisionMesh(Floor()).has_value());
   world.AddPlayer(kPlayer, kSpawn, kCharacter);
 
@@ -251,7 +252,7 @@ RC_GTEST_PROP(SimulationPropertyTest, HealthNeverRisesNeverGoesBelowZeroAndReach
   const std::vector<Command> other_commands =
       LookingRoughly(kPi, *rc::gen::container<std::vector<Command>>(commands.size(), RealCommand()));
 
-  augusta::simulation::World world(parameters);
+  augusta::simulation::World world(parameters, kTickRate);
   RC_ASSERT(world.AddCollisionMesh(Floor()).has_value());
   world.AddPlayer(kPlayer, kSpawn, WideTarget());
   world.AddPlayer(kOther, Vec3(0.0F, 0.0F, -6.0F), WideTarget());
@@ -304,7 +305,7 @@ RC_GTEST_PROP(SimulationPropertyTest, AClientThatDivergedConvergesOnTheServersSt
   const auto lost = *rc::gen::container<std::set<std::size_t>>(rc::gen::inRange<std::size_t>(0, commands.size()));
   const std::size_t losses_end = commands.size() - delay - 1;
 
-  augusta::simulation::World server(parameters);
+  augusta::simulation::World server(parameters, kTickRate);
   RC_ASSERT(server.AddCollisionMesh(Floor()).has_value());
   server.AddPlayer(kPlayer, kSpawn, kCharacter);
 

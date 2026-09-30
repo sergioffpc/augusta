@@ -308,6 +308,8 @@ class Session {
   [[nodiscard]] std::optional<EntityId> GetEntityId() const;
 
   /// Runs one fixed tick of PredictionWorld for command and returns its state.
+  /// The view command reports (command::Command) is the caller's to fill, from
+  /// whatever it shows the other players with: a Session shows nothing.
   /// Outside a match nothing is predicted or sent, and the state is the last
   /// one predicted. The first tick of each match starts the prediction over at
   /// the spawn point Match start gave this client, with a rifle ready to fire,

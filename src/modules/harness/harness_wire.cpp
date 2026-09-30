@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <utility>
 
@@ -189,7 +190,8 @@ protocol::JoinRequestWire ToWire(const JoinRequest& request) {
   };
 }
 
-protocol::CommandWire ToWire(const command::Command& command) {
+protocol::CommandWire ToWire(const command::Command& command, std::uint32_t view_tick) {
+  const std::uint32_t age = view_tick > command.view_tick ? view_tick - command.view_tick : 0U;
   std::uint8_t flags = 0;
   if (command.movement.sprint) {
     flags |= protocol::CommandWire::kSprint;
@@ -207,17 +209,22 @@ protocol::CommandWire ToWire(const command::Command& command) {
       .direction = command.movement.direction,
       .yaw = command.yaw,
       .pitch = command.pitch,
+      .view_fraction = command.view_fraction,
       .flags = flags,
       .desired_stance = ToWire(command.movement.desired_stance),
+      .view_age = static_cast<std::uint8_t>(std::min<std::uint32_t>(age, std::numeric_limits<std::uint8_t>::max())),
   };
 }
 
 protocol::CommandsWire ToWire(std::span<const SequencedCommand> commands) {
   protocol::CommandsWire message;
+  for (const SequencedCommand& command : commands) {
+    message.view_tick = std::max(message.view_tick, command.command.view_tick);
+  }
   message.commands.reserve(commands.size());
   for (const SequencedCommand& command : commands) {
-    message.commands.push_back(
-        protocol::SequencedCommandWire{.sequence = command.sequence, .command = ToWire(command.command)});
+    message.commands.push_back(protocol::SequencedCommandWire{.sequence = command.sequence,
+                                                              .command = ToWire(command.command, message.view_tick)});
   }
   return message;
 }

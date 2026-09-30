@@ -90,10 +90,13 @@ struct SequencedCommand {
 /// request as the protocol carries it.
 [[nodiscard]] protocol::JoinRequestWire ToWire(const JoinRequest& request);
 
-/// command as the protocol carries it.
-[[nodiscard]] protocol::CommandWire ToWire(const command::Command& command);
+/// command as the protocol carries it in a message whose view tick is
+/// view_tick: its own view tick as how far before that it is, no further than a
+/// byte tells.
+[[nodiscard]] protocol::CommandWire ToWire(const command::Command& command, std::uint32_t view_tick);
 
-/// commands, oldest first, as the one message that carries them.
+/// commands, oldest first, as the one message that carries them; its view tick
+/// is the newest of theirs.
 [[nodiscard]] protocol::CommandsWire ToWire(std::span<const SequencedCommand> commands);
 
 }  // namespace augusta::harness
