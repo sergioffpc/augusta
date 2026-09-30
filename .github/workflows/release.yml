@@ -52,7 +52,7 @@ jobs:
         shell: pwsh
 
       - name: Build
-        run: cmake --build --preset windows
+        run: cmake --build --preset windows --target all augusta_tests
 
       - name: Test
         run: ctest --preset windows
@@ -91,7 +91,7 @@ jobs:
       - uses: ./.github/actions/save-vcpkg-cache
 
       - name: Build
-        run: cmake --build --preset linux
+        run: cmake --build --preset linux --target all augusta_tests
 
       - name: Test
         run: ctest --preset linux

@@ -45,7 +45,7 @@ jobs:
       - uses: ./.github/actions/save-vcpkg-cache
 
       - name: Build
-        run: cmake --build --preset linux
+        run: cmake --build --preset linux --target all augusta_tests
 
       - name: Test (property tests, ~10 000 cases)
         # The same binaries a pull request runs at RapidCheck's default 100
@@ -80,7 +80,7 @@ jobs:
       - uses: ./.github/actions/save-vcpkg-cache
 
       - name: Build
-        run: cmake --build --preset linux-fuzz
+        run: cmake --build --preset linux-fuzz --target all augusta_tests
 
       - name: Restore the corpus
         # A cache entry can't be overwritten, so each night saves under its own
@@ -160,7 +160,7 @@ jobs:
       - uses: ./.github/actions/save-vcpkg-cache
 
       - name: Build
-        run: cmake --build --preset linux-tsan
+        run: cmake --build --preset linux-tsan --target all augusta_tests
 
       - name: Test
         run: ctest --preset linux-tsan
@@ -189,7 +189,7 @@ jobs:
       - uses: ./.github/actions/save-vcpkg-cache
 
       - name: Build
-        run: cmake --build --preset linux-coverage
+        run: cmake --build --preset linux-coverage --target all augusta_tests
 
       - name: Test
         run: ctest --preset linux-coverage

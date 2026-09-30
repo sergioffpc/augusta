@@ -49,8 +49,8 @@ help:
 	$(info Targets (PRESET=$(PRESET), override with PRESET=windows-debug, linux-san, ...):)
 	$(info $()  all           the default: build)
 	$(info $()  configure     cmake --preset)
-	$(info $()  build         configure, then compile)
-	$(info $()  test          build, then run ctest)
+	$(info $()  build         configure, then compile the binaries (no tests))
+	$(info $()  test          build, then compile the tests and run ctest)
 	$(info $()  check         the same as test)
 	$(info $()  install       build, then cmake --install augustad (prefix=..., DESTDIR=...))
 	$(info $()  uninstall     remove what install put in place (same DESTDIR))
@@ -68,7 +68,9 @@ configure:
 build: configure
 	$(RUN) cmake --build --preset $(PRESET)
 
+# The tests are not part of build (ADR-0008): augusta_tests builds them.
 test: build
+	$(RUN) cmake --build --preset $(PRESET) --target augusta_tests
 	$(RUN) ctest --preset $(PRESET)
 
 check: test

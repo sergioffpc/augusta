@@ -93,4 +93,7 @@ endif()
 # graph is complete - see cmake/AugustaModule.cmake.
 augusta_check_module_scopes()
 
-add_subdirectory(tests)
+# Tests, benchmarks and fuzzers build only on request, through the
+# augusta_tests target (tests/CMakeLists.txt) that `make test` builds before
+# ctest: building the binaries never waits on them (ADR-0008).
+add_subdirectory(tests EXCLUDE_FROM_ALL)

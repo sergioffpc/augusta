@@ -55,8 +55,8 @@ which loads the Build Tools environment for you. `bootstrap-windows.ps1`
 installs GNU make (`ezwinports.make`) along with the rest, so from a new terminal:
 ```
 make help                       # list the targets
-make                            # configure + compile (PRESET defaults to windows / linux)
-make check PRESET=windows-debug # build + ctest with another preset
+make                            # configure + compile the binaries (PRESET defaults to windows / linux)
+make check PRESET=windows-debug # + compile the tests, run ctest, with another preset
 make install prefix=C:/augusta  # build + cmake --install augustad (DESTDIR honoured)
 make clean                      # remove build outputs (distclean deletes the build dir)
 make format-check               # the clang-format check CI runs
@@ -66,7 +66,7 @@ make format-check               # the clang-format check CI runs
 ```bash
 ./scripts/bootstrap-wsl.sh        # build-essential, clang, autotools, make, CMake, Ninja, clang-format/clang-tidy, vcpkg, sccache
 cmake --preset linux
-cmake --build --preset linux
+cmake --build --preset linux --target all augusta_tests
 ctest --preset linux
 ```
 or, with the [Makefile](Makefile), just `make test`.
@@ -77,7 +77,7 @@ Both bootstrap scripts also `git submodule update --init` the vendored vcpkg
 **Sanitizer build (Linux, ASan+UBSan):**
 ```bash
 cmake --preset linux-san
-cmake --build --preset linux-san
+cmake --build --preset linux-san --target all augusta_tests
 ctest --preset linux-san
 ```
 

@@ -146,7 +146,7 @@ jobs:
         shell: pwsh
 
       - name: Build
-        run: cmake --build --preset windows
+        run: cmake --build --preset windows --target all augusta_tests
 
       # Saved right after the Build that produced it (Falcor builds there, not
       # in Configure), so a failing test can't keep it from saving; only a new
@@ -218,7 +218,7 @@ jobs:
         run: find src -name '*.cpp' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' | xargs clang-tidy -p build/x64-linux
 
       - name: Build
-        run: cmake --build --preset linux
+        run: cmake --build --preset linux --target all augusta_tests
 
       - name: Test
         run: ctest --preset linux
@@ -301,7 +301,7 @@ jobs:
       - uses: ./.github/actions/save-vcpkg-cache
 
       - name: Build
-        run: cmake --build --preset linux-san
+        run: cmake --build --preset linux-san --target all augusta_tests
 
       - name: Test
         run: ctest --preset linux-san
@@ -331,7 +331,7 @@ jobs:
       - uses: ./.github/actions/save-vcpkg-cache
 
       - name: Build
-        run: cmake --build --preset linux-fuzz
+        run: cmake --build --preset linux-fuzz --target all augusta_tests
 
       - name: Fuzz
         # Each target in turn (tests/fuzz/README.md). New inputs go to a scratch
