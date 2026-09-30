@@ -2,17 +2,20 @@
 #define AUGUSTA_PRESENTATION_H_
 
 #include <cstdint>
+#include <expected>
 #include <memory>
 #include <optional>
-#include <span>
 #include <vector>
 
 #include "augusta/audio.h"
+#include "augusta/effects.h"
 #include "augusta/interpolation.h"
 #include "augusta/local_view.h"
 #include "augusta/math.h"
+#include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
+#include "augusta/tracers.h"
 
 // augusta::presentation orchestrates PresentationWorld (ADR-0024): the
 // client-side ECS pipeline, run once per render frame on the Main/Render
@@ -57,17 +60,25 @@ enum class Phase {
   // motion independent of render frame rate and of when updates arrive. An
   // entity no longer in the snapshot is no longer shown, and neither is anyone
   // while there is no snapshot (outside a match). Each is drawn as its character
-  // (World::RunFrame's characters parameter). Which moment of the server's
-  // timeline they are shown at is the frame's view (ViewAt, interpolation.h).
+  // (FrameInput::characters), turned where it faces. Which moment of the
+  // server's timeline they are shown at is the frame's view (ViewAt,
+  // interpolation.h). Moves the fight on to the frame's time too: starts a
+  // tracer for every Shot the frame is handed and moves every tracer along its
+  // trajectory (Tracers, tracers.h), and shows the muzzle flash of every other
+  // player's Shot (effects.h).
   kInterpolation,
   // Mechanism. View camera position: the local player's body where
   // kInterpolation just showed it (local_position, above) plus its
   // character's eye (World's constructor, ADR-0040) for the body's stance
   // (LocalCamera, local_view.h), recomputed every frame - so the camera is
   // attached to the character and tracks wherever, and however low, the local
-  // player's body actually is. Rotation is where the local player looks as of
-  // this frame (World::RunFrame's view_rotation), not as of the last tick.
-  // ADS zoom transition, recoil kick decay, and view bob are still future
+  // player's body actually is. Rotation is where the local player aims as of
+  // this frame (FrameInput::aim), not as of the last tick, turned by its
+  // rifle's predicted Recoil offset, so the view shows where the next round
+  // goes; the field of view zooms in and out with ADS (AdsZoom). Also what
+  // shows over the view: the crosshair from the hip, the hit marker after a Hit
+  // confirmation (HitMarker), and the local player's muzzle flash on the frame
+  // its predicted fire fires a round (FiredRounds). View bob is still future
   // work. Not yet a module of its own - see the header comment above.
   kCamera,
   // Mechanism. Drives skeletal/procedural animation from interpolated
@@ -92,6 +103,8 @@ enum class Phase {
 struct DynamicBody {
   EntityId entity{};
   physics::BodyState state{};
+  /// Where the body faces: the yaw of its player's view, in radians (command::Command).
+  float yaw = 0.0F;
 };
 
 /// Every dynamic body as of one server tick: an Authoritative State update, in
@@ -114,10 +127,50 @@ struct PlayerCharacter {
   std::uint8_t character = 1;
 };
 
+/// One round a player fired, as the server announced it (CONTEXT.md's Shot) -
+/// World::RunFrame's input, in presentation's own terms (see there).
+struct Shot {
+  /// The body of the player who fired it.
+  EntityId shooter{};
+  /// Where the round left from: the shooter's eye.
+  math::Vec3 origin{};
+  /// Where it left for, as a view's yaw in radians (command::Command).
+  float yaw = 0.0F;
+  /// Where it left for, as a view's pitch in radians (command::Command).
+  float pitch = 0.0F;
+};
+
+/// What one render frame is shown from - World::RunFrame's input. Every field is
+/// presentation's own type: ClientRuntime converts them from the harness's at
+/// its edge, the way each peer converts the protocol at its own (ADR-0038), so
+/// this module does not depend on the network session.
+struct FrameInput {
+  /// The two most recently committed Prediction States and how far between them
+  /// the frame is, which Interpolation blends by.
+  PredictedTicks ticks{};
+  /// Where the local player aims as of this frame, which the camera takes.
+  Aim aim{};
+  /// The body this client's player controls, or nullopt before its first match.
+  std::optional<EntityId> local_entity;
+  /// The newest Authoritative State update of the match in progress, or nullopt
+  /// outside one. Every body in it other than local_entity's is fed to the
+  /// RemoteInterpolator (see interpolation.h); a repeated snapshot (from no
+  /// newer a tick than the previous frame's) is not recorded again.
+  std::optional<WorldSnapshot> snapshot;
+  /// Every player's character, as the server named them when the match
+  /// started, or empty before the first.
+  std::vector<PlayerCharacter> characters;
+  /// The Shots announced since the previous frame, in the order they arrived.
+  std::vector<Shot> shots;
+  /// How many Hit confirmations arrived since the previous frame.
+  std::uint32_t hit_confirmations = 0;
+};
+
 // PresentationWorld's per-frame output - ADR-0024/ARCHITECTURE.md's
 // "Presentation State". Today it holds where the local player is shown, the
-// camera, and every remote player; later phases add what they present
-// (animation poses, audio cues).
+// camera, every remote player, the fight's tracers, impacts and muzzle flashes,
+// and what shows over the view; later phases add what they present (animation
+// poses, audio cues).
 struct State {
   /// Where the local player is shown: its predicted position blended between
   /// the two newest ticks, plus the offset that hides a reconciliation jump
@@ -136,6 +189,16 @@ struct State {
   /// the Commands sampled on it to report (ADR-0044); nullopt before the client
   /// has received an Authoritative State and outside a match.
   std::optional<ShownView> view;
+  /// Every tracer in flight, as drawn this frame (tracers.h).
+  std::vector<Tracer> tracers;
+  /// Every impact on the Map still showing.
+  std::vector<Effect> impacts;
+  /// Every muzzle flash still showing, the local player's and every other's.
+  std::vector<Effect> muzzle_flashes;
+  /// Whether the crosshair shows: from the hip, not in ADS.
+  bool crosshair = true;
+  /// Whether the hit marker shows (HitMarker).
+  bool hit_marker = false;
 };
 
 // The client's single PresentationWorld. The client constructs exactly
@@ -159,7 +222,7 @@ class World {
   // ADR-0040): where Phase::kCamera puts the camera relative to the predicted
   // body, lowered for the body's stance (LocalCamera, local_view.h). Also
   // registers Phase's five phases and their systems on the owned Flecs world
-  // (see header comment).
+  // (see header comment). Tracers meet no Map until AddCollisionMesh adds it.
   World(audio::Engine& audio_engine, const math::Vec3& eye);
   ~World();
 
@@ -168,26 +231,19 @@ class World {
   World(World&&) noexcept;
   World& operator=(World&&) noexcept;
 
-  // Runs all five Phase values above, in their declared order, for one
-  // render frame (internally, one flecs::world::progress() call). ticks
-  // are the two most recently committed prediction::State values and how
-  // far between them the frame is, which Interpolation blends by.
-  // view_rotation is where the local player looks as of this frame
-  // (input::Input::CurrentView - newer than its latest Command's), which the
-  // camera takes as its rotation. local_entity is the body this client's
-  // player controls, or nullopt before its first match; snapshot is the
-  // newest Authoritative State update of the match in progress, or nullopt
-  // outside one; and characters is every player's character, as the server
-  // named them when the match started, or empty before the first. All three
-  // are presentation's own types: ClientRuntime converts them from the
-  // harness's at its edge, the way each peer converts the protocol at its own
-  // (ADR-0038), so this module does not depend on the network session. Every
-  // body in snapshot other than local_entity's is fed to this World's
-  // RemoteInterpolator (see interpolation.h); a repeated snapshot (from no
-  // newer a tick than the previous call's) is not recorded again. Returns the
-  // frame's Presentation State.
-  State RunFrame(const PredictedTicks& ticks, const math::Quat& view_rotation, std::optional<EntityId> local_entity,
-                 const std::optional<WorldSnapshot>& snapshot, std::span<const PlayerCharacter> characters);
+  /// Adds immovable level geometry for tracers to meet, the same Map the
+  /// server's bullets meet.
+  std::expected<void, physics::CollisionMeshError> AddCollisionMesh(const physics::CollisionMesh& mesh);
+
+  /// Takes the parameters the server sent when it admitted this client and its
+  /// tick duration, in seconds: what a Shot's tracer flies by, and the ADS field
+  /// of view. Until then no tracer is drawn and ADS does not zoom.
+  void SetParameters(const parameters::Parameters& parameters, float tick_duration);
+
+  // Runs all five Phase values above, in their declared order, for one render
+  // frame (internally, one flecs::world::progress() call), shown from input.
+  // Returns the frame's Presentation State.
+  State RunFrame(const FrameInput& input);
 
  private:
   struct Impl;

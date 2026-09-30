@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <numbers>
 #include <span>
 #include <utility>
 #include <vector>
@@ -45,7 +46,7 @@ TEST(RemoteInterpolatorTest, ASessionWithNoUpdatesIsNotSampled) {
 
 TEST(RemoteInterpolatorTest, ASingleUpdateIsShownAsIs) {
   RemoteInterpolator interpolator;
-  interpolator.Record(kEntityA, 1.0F, At(5.0F, Stance::kCrouching));
+  interpolator.Record(kEntityA, 1.0F, At(5.0F, Stance::kCrouching), 0.0F);
 
   // Before, at, and long after the one update: nothing to interpolate between.
   for (const float render_time : {0.0F, 1.0F, 100.0F}) {
@@ -57,8 +58,8 @@ TEST(RemoteInterpolatorTest, ASingleUpdateIsShownAsIs) {
 
 TEST(RemoteInterpolatorTest, PositionIsLinearlyInterpolatedBetweenTheTwoSurroundingUpdates) {
   RemoteInterpolator interpolator;
-  interpolator.Record(kEntityA, 0.0F, At(0.0F));
-  interpolator.Record(kEntityA, 1.0F, At(10.0F));
+  interpolator.Record(kEntityA, 0.0F, At(0.0F), 0.0F);
+  interpolator.Record(kEntityA, 1.0F, At(10.0F), 0.0F);
 
   EXPECT_FLOAT_EQ(Only(interpolator, 0.25F).position.x, 2.5F);
   EXPECT_FLOAT_EQ(Only(interpolator, 0.5F).position.x, 5.0F);
@@ -67,25 +68,47 @@ TEST(RemoteInterpolatorTest, PositionIsLinearlyInterpolatedBetweenTheTwoSurround
 
 TEST(RemoteInterpolatorTest, StanceSwitchesAtTheMidpointBetweenTheTwoUpdates) {
   RemoteInterpolator interpolator;
-  interpolator.Record(kEntityA, 0.0F, At(0.0F, Stance::kStanding));
-  interpolator.Record(kEntityA, 1.0F, At(10.0F, Stance::kProne));
+  interpolator.Record(kEntityA, 0.0F, At(0.0F, Stance::kStanding), 0.0F);
+  interpolator.Record(kEntityA, 1.0F, At(10.0F, Stance::kProne), 0.0F);
 
   EXPECT_EQ(Only(interpolator, 0.25F).stance, Stance::kStanding);
   EXPECT_EQ(Only(interpolator, 0.75F).stance, Stance::kProne);
 }
 
+TEST(RemoteInterpolatorTest, FacingTurnsBetweenTheTwoSurroundingUpdates) {
+  RemoteInterpolator interpolator;
+  interpolator.Record(kEntityA, 0.0F, At(0.0F), 0.0F);
+  interpolator.Record(kEntityA, 1.0F, At(0.0F), 1.0F);
+
+  EXPECT_FLOAT_EQ(Only(interpolator, 0.25F).yaw, 0.25F);
+  EXPECT_FLOAT_EQ(Only(interpolator, 0.75F).yaw, 0.75F);
+}
+
+// From just short of a half turn left to just short of one right is a small
+// turn through the back, not most of a turn through the front.
+TEST(RemoteInterpolatorTest, FacingTurnsTheShorterWayRound) {
+  constexpr float kTurn = 2.0F * std::numbers::pi_v<float>;
+  RemoteInterpolator interpolator;
+  interpolator.Record(kEntityA, 0.0F, At(0.0F), 3.0F);
+  interpolator.Record(kEntityA, 1.0F, At(0.0F), -3.0F);
+
+  const float halfway = Only(interpolator, 0.5F).yaw;
+
+  EXPECT_NEAR(std::remainder(halfway - std::numbers::pi_v<float>, kTurn), 0.0F, 1e-5F);
+}
+
 TEST(RemoteInterpolatorTest, ARenderTimeBeforeTheFirstUpdateHoldsAtTheFirst) {
   RemoteInterpolator interpolator;
-  interpolator.Record(kEntityA, 1.0F, At(0.0F));
-  interpolator.Record(kEntityA, 2.0F, At(10.0F));
+  interpolator.Record(kEntityA, 1.0F, At(0.0F), 0.0F);
+  interpolator.Record(kEntityA, 2.0F, At(10.0F), 0.0F);
 
   EXPECT_FLOAT_EQ(Only(interpolator, 0.0F).position.x, 0.0F);
 }
 
 TEST(RemoteInterpolatorTest, AGapPastTheNewestUpdateHoldsAtTheNewestRatherThanExtrapolating) {
   RemoteInterpolator interpolator;
-  interpolator.Record(kEntityA, 0.0F, At(0.0F));
-  interpolator.Record(kEntityA, 1.0F, At(10.0F));
+  interpolator.Record(kEntityA, 0.0F, At(0.0F), 0.0F);
+  interpolator.Record(kEntityA, 1.0F, At(10.0F), 0.0F);
 
   // No update has arrived since t=1; render_time keeps advancing anyway.
   EXPECT_FLOAT_EQ(Only(interpolator, 1.5F).position.x, 10.0F);
@@ -94,8 +117,8 @@ TEST(RemoteInterpolatorTest, AGapPastTheNewestUpdateHoldsAtTheNewestRatherThanEx
 
 TEST(RemoteInterpolatorTest, SamplingRepeatedlyAtTheSameRenderTimeIsUnaffectedByHowManyTimesItWasSampled) {
   RemoteInterpolator interpolator;
-  interpolator.Record(kEntityA, 0.0F, At(0.0F));
-  interpolator.Record(kEntityA, 1.0F, At(10.0F));
+  interpolator.Record(kEntityA, 0.0F, At(0.0F), 0.0F);
+  interpolator.Record(kEntityA, 1.0F, At(10.0F), 0.0F);
 
   const float first = Only(interpolator, 0.5F).position.x;
   for (int i = 0; i < 10; ++i) {
@@ -105,21 +128,21 @@ TEST(RemoteInterpolatorTest, SamplingRepeatedlyAtTheSameRenderTimeIsUnaffectedBy
 
 TEST(RemoteInterpolatorTest, AnOutOfOrderOrRepeatedUpdateDoesNotMoveInterpolationBackward) {
   RemoteInterpolator interpolator;
-  interpolator.Record(kEntityA, 1.0F, At(10.0F));
+  interpolator.Record(kEntityA, 1.0F, At(10.0F), 0.0F);
 
   // Older than, and equal to, the newest recorded timestamp: both ignored.
-  interpolator.Record(kEntityA, 0.5F, At(999.0F));
-  interpolator.Record(kEntityA, 1.0F, At(999.0F));
+  interpolator.Record(kEntityA, 0.5F, At(999.0F), 0.0F);
+  interpolator.Record(kEntityA, 1.0F, At(999.0F), 0.0F);
 
   EXPECT_FLOAT_EQ(Only(interpolator, 1.0F).position.x, 10.0F);
 }
 
 TEST(RemoteInterpolatorTest, EachSessionIsBufferedAndInterpolatedIndependently) {
   RemoteInterpolator interpolator;
-  interpolator.Record(kEntityA, 0.0F, At(0.0F));
-  interpolator.Record(kEntityA, 1.0F, At(10.0F));
-  interpolator.Record(kEntityB, 0.0F, At(0.0F));
-  interpolator.Record(kEntityB, 1.0F, At(-20.0F));
+  interpolator.Record(kEntityA, 0.0F, At(0.0F), 0.0F);
+  interpolator.Record(kEntityA, 1.0F, At(10.0F), 0.0F);
+  interpolator.Record(kEntityB, 0.0F, At(0.0F), 0.0F);
+  interpolator.Record(kEntityB, 1.0F, At(-20.0F), 0.0F);
 
   const std::vector<RemotePlayer> sampled = interpolator.Sample(0.5F);
 
@@ -136,8 +159,8 @@ TEST(RemoteInterpolatorTest, EachSessionIsBufferedAndInterpolatedIndependently) 
 
 TEST(RemoteInterpolatorTest, ASessionNoLongerInSyncsCurrentListIsNoLongerSampled) {
   RemoteInterpolator interpolator;
-  interpolator.Record(kEntityA, 0.0F, At(0.0F));
-  interpolator.Record(kEntityB, 0.0F, At(0.0F));
+  interpolator.Record(kEntityA, 0.0F, At(0.0F), 0.0F);
+  interpolator.Record(kEntityB, 0.0F, At(0.0F), 0.0F);
 
   const std::array<augusta::presentation::EntityId, 1> still_here{kEntityA};
   interpolator.Sync(still_here);
@@ -196,7 +219,7 @@ std::vector<std::pair<Seconds, float>> Play(const Arrivals& arrivals, std::span<
     for (; next < arrivals.size() && arrivals[next] <= frame_time; ++next) {
       const int tick = static_cast<int>(next);
       if (std::ranges::find(lost, tick) == lost.end()) {
-        interpolator.Record(kEntityA, ServerTime(tick), At(static_cast<float>(tick)));
+        interpolator.Record(kEntityA, ServerTime(tick), At(static_cast<float>(tick)), 0.0F);
       }
     }
     if (next == arrivals.size()) {
@@ -278,7 +301,7 @@ TEST(RemoteInterpolatorTest, BeyondTheUpdatesKeptTheOldestIsDropped) {
   const int ticks = static_cast<int>(augusta::presentation::kUpdatesKept) + kDropped;
   RemoteInterpolator interpolator;
   for (int tick = 0; tick < ticks; ++tick) {
-    interpolator.Record(kEntityA, ServerTime(tick), At(static_cast<float>(tick)));
+    interpolator.Record(kEntityA, ServerTime(tick), At(static_cast<float>(tick)), 0.0F);
   }
 
   // Before the oldest kept: held there.
@@ -287,8 +310,8 @@ TEST(RemoteInterpolatorTest, BeyondTheUpdatesKeptTheOldestIsDropped) {
 
 TEST(RemoteInterpolatorTest, SyncWithEveryoneStillPresentKeepsBufferedHistory) {
   RemoteInterpolator interpolator;
-  interpolator.Record(kEntityA, 0.0F, At(0.0F));
-  interpolator.Record(kEntityA, 1.0F, At(10.0F));
+  interpolator.Record(kEntityA, 0.0F, At(0.0F), 0.0F);
+  interpolator.Record(kEntityA, 1.0F, At(10.0F), 0.0F);
 
   const std::array<augusta::presentation::EntityId, 1> still_here{kEntityA};
   interpolator.Sync(still_here);
@@ -375,7 +398,7 @@ TEST(ViewAtTest, ASampleBetweenTwoTicksIsTheEarlierTickAndHowFarPastIt) {
 TEST(ViewAtTest, TheViewIsTheMomentTheInterpolatorSamples) {
   RemoteInterpolator interpolator;
   for (int tick = 100; tick <= 102; ++tick) {
-    interpolator.Record(kEntityA, ServerTime(tick), At(static_cast<float>(tick)));
+    interpolator.Record(kEntityA, ServerTime(tick), At(static_cast<float>(tick)), 0.0F);
   }
   const Seconds sample_time = ServerTime(101) + (0.75 * kTickDuration);
 

@@ -37,8 +37,10 @@
 // instances PresentationWorld's Interpolation phase produces positions for
 // (SetRemotePlayers, below), each drawn with the mesh of its character
 // (SetCharacterMesh) - the first slice of Presentation State this module
-// actually consumes (ADR-0024).
-// The local player's own position, weapon visuals, skeletal animation and
+// actually consumes (ADR-0024) - and the fight: tracers, impacts and muzzle
+// flashes (SetCombatEffects), and the crosshair and hit marker over the frame
+// (SetOverlay), drawn with Slang shaders (ADR-0014).
+// The local player's own position, weapon model, skeletal animation and
 // audio cues are still undesigned; revisit this header again once those land.
 namespace augusta::renderer {
 
@@ -104,10 +106,40 @@ inline constexpr math::Vec3 kDefaultRemotePlayerColor{0.85F, 0.25F, 0.25F};
 /// header here).
 struct RemotePlayer {
   math::Vec3 position{};
+  /// Where it faces, in radians about +Y: 0 looks down -Z, and a positive yaw
+  /// turns left (a view's yaw). Its mesh turns with it about its origin.
+  float yaw = 0.0F;
   math::Vec3 color = kDefaultRemotePlayerColor;
   /// The character index whose mesh this player is drawn with; a player whose
   /// index has no mesh is not drawn.
   std::uint8_t character = 0;
+};
+
+/// One tracer, in world space: a streak from tail, where its bullet was a tick
+/// ago, to head, where it is now, bright at the head.
+struct Tracer {
+  math::Vec3 head{};
+  math::Vec3 tail{};
+};
+
+/// A glow at one point that fades out: an impact or a muzzle flash.
+struct Glow {
+  math::Vec3 position{};
+  /// How much of it is left: 1 when it appears, down to 0 when it is gone.
+  float fade = 1.0F;
+};
+
+/// The fight, as drawn this frame (ADR-0024's Presentation State).
+struct CombatEffects {
+  std::vector<Tracer> tracers;
+  std::vector<Glow> impacts;
+  std::vector<Glow> muzzle_flashes;
+};
+
+/// What shows over the frame, at its center: the crosshair and the hit marker.
+struct Overlay {
+  bool crosshair = false;
+  bool hit_marker = false;
 };
 
 // Connection numbers for the debug HUD. The renderer only formats them: how
@@ -210,6 +242,18 @@ class Renderer {
   /// the Main/Render thread. An empty span draws nothing - how a player who
   /// left disappears; a player whose character has no mesh is skipped.
   void SetRemotePlayers(std::span<const RemotePlayer> remote_players);
+
+  /// Replaces the drawn tracers, impacts and muzzle flashes, each turned to
+  /// face the camera last passed to SetCamera - so call it after that, once
+  /// every RenderFrame. Glows add light to what is behind them, and are hidden
+  /// by what is in front. Cheap enough to call every frame, the same way as
+  /// SetRemotePlayers. From the Main/Render thread.
+  void SetCombatEffects(const CombatEffects& effects);
+
+  /// Replaces what shows over the frame, sized in pixels whatever the window's
+  /// size, over everything else but the debug HUD. Cheap enough to call every
+  /// frame. From the Main/Render thread.
+  void SetOverlay(const Overlay& overlay);
 
   // Hides the OS cursor and captures it for continuous mouselook: mouse
   // move events keep reporting a position that never stops at the window

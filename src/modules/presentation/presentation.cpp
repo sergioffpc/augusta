@@ -3,9 +3,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <memory>
 #include <optional>
-#include <span>
 #include <vector>
 
 #include <flecs.h>
@@ -13,11 +13,16 @@
 
 #include "augusta/animation.h"
 #include "augusta/audio.h"
+#include "augusta/command.h"
 #include "augusta/correction.h"
+#include "augusta/effects.h"
 #include "augusta/interpolation.h"
 #include "augusta/local_view.h"
 #include "augusta/math.h"
+#include "augusta/parameters.h"
+#include "augusta/physics.h"
 #include "augusta/prediction.h"
+#include "augusta/tracers.h"
 
 namespace augusta::presentation {
 
@@ -48,11 +53,19 @@ struct World::Impl {
 
   // Staged by RunFrame() immediately before ecs.progress(), read by the phase
   // systems below; not meaningful outside of a RunFrame call.
-  PredictedTicks ticks;
-  math::Quat view_rotation{1.0F, 0.0F, 0.0F, 0.0F};
-  std::optional<EntityId> local_entity;
-  std::optional<WorldSnapshot> snapshot;
-  std::vector<PlayerCharacter> characters;
+  FrameInput input;
+
+  // What the server sent when it admitted this client (SetParameters): how a
+  // Shot's tracer flies, and the ADS field of view. nullopt until then.
+  std::optional<TracerRules> tracer_rules;
+  float ads_field_of_view = kHipFieldOfView;
+
+  // The Map alone, which tracers meet: a physics::World of its own, never
+  // ticked, holding no body - the prediction's is the Simulation thread's.
+  physics::World map{physics::StaminaConfig{}};
+  Tracers tracers{map};
+  std::vector<Effect> muzzle_flashes;
+  FiredRounds fired_rounds;
 
   // The local player's Prediction State blended for this frame
   // (OnInterpolation), which the later phases read.
@@ -63,9 +76,13 @@ struct World::Impl {
   Correction correction;
   math::Vec3 local_offset{};
 
-  // This frame's view camera (Phase::kCamera), copied into frame_state by
-  // OnCommit the same way local_offset feeds frame_state.local_position.
+  // This frame's view camera and what shows over it (Phase::kCamera), copied
+  // into frame_state by OnCommit the same way local_offset feeds
+  // frame_state.local_position.
   Camera camera{};
+  AdsZoom ads_zoom;
+  HitMarker hit_marker;
+  bool hit_marker_shown = false;
 
   // Every other player's buffered updates, on the server's timeline, and the
   // render side's estimate of that timeline's current time, which render frame
@@ -105,7 +122,9 @@ struct World::Impl {
     ecs.system("InterpolationSystem").kind(phases[kInterpolation]).run([this](flecs::iter& sys_iter) {
       OnInterpolation(sys_iter.delta_time());
     });
-    ecs.system("CameraSystem").kind(phases[kCamera]).run([this](flecs::iter&) { OnCamera(); });
+    ecs.system("CameraSystem").kind(phases[kCamera]).run([this](flecs::iter& sys_iter) {
+      OnCamera(sys_iter.delta_time());
+    });
     ecs.system("AnimationSystem").kind(phases[kAnimation]).run([this](flecs::iter&) { OnAnimation(); });
     ecs.system("AudioCuesSystem").kind(phases[kAudioCues]).run([this](flecs::iter&) { OnAudioCues(); });
     ecs.system("CommitSystem").kind(phases[kCommit]).run([this](flecs::iter&) { OnCommit(); });
@@ -113,10 +132,11 @@ struct World::Impl {
 
   void OnInterpolation(float delta_time) {
     const nvtx3::scoped_range range{"Interpolation"};
-    shown = BlendTicks(ticks.previous, ticks.latest, ticks.fraction);
+    shown = BlendTicks(input.ticks.previous, input.ticks.latest, input.ticks.fraction);
     local_offset = correction.Update(shown.total_correction, delta_time);
 
     server_clock.Advance(delta_time);
+    const std::optional<WorldSnapshot>& snapshot = input.snapshot;
     // Outside a match there is no one to show (ADR-0043).
     if (!snapshot.has_value()) {
       remote_interpolator.Sync({});
@@ -136,6 +156,25 @@ struct World::Impl {
     for (RemotePlayer& remote : remote_players) {
       remote.character = CharacterOf(remote.entity);
     }
+    ShowShots(delta_time);
+  }
+
+  // Moves every tracer and muzzle flash on by delta_time, then starts a tracer
+  // for each of the frame's Shots and shows the muzzle flash of each fired by
+  // another player: the local player's own come from its predicted fire
+  // (OnCamera), which is sooner.
+  void ShowShots(float delta_time) {
+    tracers.Advance(delta_time);
+    Age(muzzle_flashes, delta_time, kMuzzleFlashSeconds);
+    for (const Shot& shot : input.shots) {
+      const math::Vec3 direction = command::ViewDirection(shot.yaw, shot.pitch);
+      if (tracer_rules.has_value()) {
+        tracers.Fire(shot.origin, direction, *tracer_rules);
+      }
+      if (shot.shooter != input.local_entity) {
+        muzzle_flashes.push_back(Effect{.position = MuzzleOf(shot.origin, direction)});
+      }
+    }
   }
 
   // Records every body in world but the local player's at world's time on the
@@ -146,11 +185,11 @@ struct World::Impl {
     std::vector<EntityId> present;
     present.reserve(world.bodies.size());
     for (const DynamicBody& body : world.bodies) {
-      if (local_entity.has_value() && body.entity == *local_entity) {
+      if (body.entity == input.local_entity) {
         continue;
       }
       present.push_back(body.entity);
-      remote_interpolator.Record(body.entity, server_time, body.state);
+      remote_interpolator.Record(body.entity, server_time, body.state, body.yaw);
     }
     remote_interpolator.Sync(present);
     if (!first_recorded_tick.has_value()) {
@@ -161,7 +200,7 @@ struct World::Impl {
 
   // The character of the player whose body entity is, or 0 if none is.
   [[nodiscard]] std::uint8_t CharacterOf(EntityId entity) const {
-    for (const PlayerCharacter& player : characters) {
+    for (const PlayerCharacter& player : input.characters) {
       if (player.entity == entity) {
         return player.character;
       }
@@ -169,12 +208,20 @@ struct World::Impl {
     return 0;
   }
 
-  void OnCamera() {
+  void OnCamera(float delta_time) {
     const nvtx3::scoped_range range{"Camera"};
     // shown and local_offset are already this frame's - OnInterpolation (the
     // previous phase) just updated them. Same base position as OnCommit's
     // local_position.
-    camera = LocalCamera(shown.local_body.position + local_offset, shown.local_body.stance, eye, view_rotation);
+    camera = LocalCamera(shown.local_body.position + local_offset, shown.local_body.stance, eye, input.aim,
+                         shown.rifle.recoil);
+    camera.vertical_fov = ads_zoom.Update(input.aim.ads, ads_field_of_view, delta_time);
+    hit_marker_shown = hit_marker.Update(input.hit_confirmations, delta_time);
+    // Flashed where the camera now is, the frame the round fires.
+    if (fired_rounds.Update(shown.total_rounds_fired) > 0) {
+      const math::Vec3 forward = camera.rotation * math::Vec3(0.0F, 0.0F, -1.0F);
+      muzzle_flashes.push_back(Effect{.position = MuzzleOf(camera.position, forward)});
+    }
   }
 
   void OnAnimation() {
@@ -203,6 +250,11 @@ struct World::Impl {
     frame_state.camera = camera;
     frame_state.remote_players = remote_players;
     frame_state.view = view;
+    frame_state.tracers = tracers.Drawn();
+    frame_state.impacts.assign(tracers.Impacts().begin(), tracers.Impacts().end());
+    frame_state.muzzle_flashes = muzzle_flashes;
+    frame_state.crosshair = !input.aim.ads;
+    frame_state.hit_marker = hit_marker_shown;
   }
 };
 
@@ -212,14 +264,21 @@ World::~World() = default;
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
-State World::RunFrame(const PredictedTicks& ticks, const math::Quat& view_rotation,
-                      std::optional<EntityId> local_entity, const std::optional<WorldSnapshot>& snapshot,
-                      std::span<const PlayerCharacter> characters) {
-  impl_->ticks = ticks;
-  impl_->view_rotation = view_rotation;
-  impl_->local_entity = local_entity;
-  impl_->snapshot = snapshot;
-  impl_->characters.assign(characters.begin(), characters.end());
+std::expected<void, physics::CollisionMeshError> World::AddCollisionMesh(const physics::CollisionMesh& mesh) {
+  return impl_->map.AddCollisionMesh(mesh);
+}
+
+void World::SetParameters(const parameters::Parameters& parameters, float tick_duration) {
+  impl_->tracer_rules = TracerRules{
+      .muzzle_velocity = parameters.rifle.muzzle_velocity,
+      .bullet = {.gravity = parameters.ammo.gravity, .max_range = parameters.ammo.max_range},
+      .tick_duration = tick_duration,
+  };
+  impl_->ads_field_of_view = parameters.rifle.ads_field_of_view;
+}
+
+State World::RunFrame(const FrameInput& input) {
+  impl_->input = input;
   impl_->ecs.progress();
   return impl_->frame_state;
 }

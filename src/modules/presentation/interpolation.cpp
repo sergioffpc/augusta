@@ -20,8 +20,8 @@ namespace {
 // use below.
 constexpr float kMidpointFraction = 0.5F;
 
-RemoteBody AsRemote(const physics::BodyState& body) {
-  return RemoteBody{.position = body.position, .velocity = body.velocity, .stance = body.stance};
+RemoteBody AsRemote(const physics::BodyState& body, float yaw) {
+  return RemoteBody{.position = body.position, .velocity = body.velocity, .yaw = yaw, .stance = body.stance};
 }
 
 }  // namespace
@@ -59,8 +59,8 @@ ShownView ViewAt(double sample_time, double tick_duration, std::uint32_t oldest_
   return ShownView{.tick = static_cast<std::uint32_t>(whole), .fraction = static_cast<float>(ticks - whole)};
 }
 
-void RemoteInterpolator::Record(EntityId entity, double server_time, const physics::BodyState& body) {
-  const Update update{.server_time = server_time, .body = body};
+void RemoteInterpolator::Record(EntityId entity, double server_time, const physics::BodyState& body, float yaw) {
+  const Update update{.server_time = server_time, .body = body, .yaw = yaw};
   const auto found = std::ranges::find_if(bodies_, [entity](const Buffered& b) { return b.entity == entity; });
   if (found == bodies_.end()) {
     bodies_.push_back(Buffered{.entity = entity, .updates = {update}});
@@ -90,9 +90,9 @@ std::vector<RemotePlayer> RemoteInterpolator::Sample(double sample_time) const {
     const auto later = std::ranges::upper_bound(updates, sample_time, {}, &Update::server_time);
     RemoteBody body;
     if (later == updates.begin()) {
-      body = AsRemote(updates.front().body);
+      body = AsRemote(updates.front().body, updates.front().yaw);
     } else if (later == updates.end()) {
-      body = AsRemote(updates.back().body);
+      body = AsRemote(updates.back().body, updates.back().yaw);
     } else {
       const Update& earlier = *std::prev(later);
       const auto t =
@@ -100,6 +100,7 @@ std::vector<RemotePlayer> RemoteInterpolator::Sample(double sample_time) const {
       body = RemoteBody{
           .position = math::Lerp(earlier.body.position, later->body.position, t),
           .velocity = math::Lerp(earlier.body.velocity, later->body.velocity, t),
+          .yaw = math::LerpAngle(earlier.yaw, later->yaw, t),
           .stance = t < kMidpointFraction ? earlier.body.stance : later->body.stance,
       };
     }

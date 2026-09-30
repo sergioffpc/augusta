@@ -16,6 +16,7 @@ namespace {
 
 using augusta::command::Command;
 using augusta::command::ViewRotation;
+using augusta::input::Aim;
 using augusta::input::Config;
 using augusta::input::Control;
 using augusta::input::Input;
@@ -23,7 +24,6 @@ using augusta::input::Key;
 using augusta::input::Keymap;
 using augusta::input::KeyState;
 using augusta::input::MouseMoveEvent;
-using augusta::math::Quat;
 using augusta::math::Vec3;
 using augusta::physics::Stance;
 
@@ -31,13 +31,6 @@ constexpr float kSensitivity = 0.01F;
 constexpr float kTolerance = 1e-5F;
 
 void ExpectNear(const Vec3& actual, const Vec3& expected) {
-  EXPECT_NEAR(actual.x, expected.x, kTolerance);
-  EXPECT_NEAR(actual.y, expected.y, kTolerance);
-  EXPECT_NEAR(actual.z, expected.z, kTolerance);
-}
-
-void ExpectNear(const Quat& actual, const Quat& expected) {
-  EXPECT_NEAR(actual.w, expected.w, kTolerance);
   EXPECT_NEAR(actual.x, expected.x, kTolerance);
   EXPECT_NEAR(actual.y, expected.y, kTolerance);
   EXPECT_NEAR(actual.z, expected.z, kTolerance);
@@ -173,22 +166,38 @@ TEST_F(InputTest, TheViewIsKeptAcrossSamples) {
   EXPECT_NEAR(input_.Sample().yaw, 30.0F * kSensitivity, kTolerance);
 }
 
-TEST_F(InputTest, TheCurrentViewIsTheCommandsViewUntilTheMouseMovesAgain) {
+TEST_F(InputTest, TheCurrentAimIsTheCommandsUntilTheMouseMovesAgain) {
   MoveMouse(0.0F, 0.0F);
   MoveMouse(-30.0F, 10.0F);
+  Press(Key::kMouseRight);
   const Command command = input_.Sample();
 
-  ExpectNear(input_.CurrentView(), ViewRotation(command.yaw, command.pitch));
+  const Aim aim = input_.CurrentAim();
+
+  EXPECT_FLOAT_EQ(aim.yaw, command.yaw);
+  EXPECT_FLOAT_EQ(aim.pitch, command.pitch);
+  EXPECT_EQ(aim.ads, command.ads);
 }
 
-TEST_F(InputTest, TheCurrentViewTurnsWithTheMouseBetweenSamples) {
+TEST_F(InputTest, TheCurrentAimTurnsWithTheMouseBetweenSamples) {
   MoveMouse(0.0F, 0.0F);
   const Command command = input_.Sample();
   MoveMouse(-30.0F, 10.0F);
 
   // A frame drawn after the tick turns by the mouse movement since; the tick's Command does not.
-  ExpectNear(input_.CurrentView(), ViewRotation(30.0F * kSensitivity, -10.0F * kSensitivity));
+  const Aim aim = input_.CurrentAim();
+  EXPECT_NEAR(aim.yaw, 30.0F * kSensitivity, kTolerance);
+  EXPECT_NEAR(aim.pitch, -10.0F * kSensitivity, kTolerance);
   EXPECT_FLOAT_EQ(command.yaw, 0.0F);
+}
+
+TEST_F(InputTest, TheCurrentAimHoldsAdsWhileItsKeyIsHeldBetweenSamples) {
+  (void)input_.Sample();
+
+  Press(Key::kMouseRight);
+  EXPECT_TRUE(input_.CurrentAim().ads);
+  Release(Key::kMouseRight);
+  EXPECT_FALSE(input_.CurrentAim().ads);
 }
 
 TEST_F(InputTest, PitchStopsShortOfStraightUpAndStraightDown) {

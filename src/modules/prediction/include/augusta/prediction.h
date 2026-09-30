@@ -94,8 +94,14 @@ struct State {
   /// differed from the one predicted, since the world began: a rifle predicted
   /// right never adds to it.
   std::uint32_t rifle_corrections = 0;
-  /// How many rounds the rifle fired on this tick, at most one: what the
-  /// muzzle flash and the camera kick are drawn from. Never a bullet's outcome.
+  /// Every round the rifle has fired since the world began, summed; a replay
+  /// adds none. A reader that sees only some of the ticks (presentation, one
+  /// frame at a time) gets the rounds fired between two states it saw, every
+  /// one and none twice, from the difference of their totals: what the muzzle
+  /// flash is drawn from.
+  std::uint32_t total_rounds_fired = 0;
+  /// How many rounds the rifle fired on this tick, at most one. Never a
+  /// bullet's outcome.
   std::uint8_t rounds_fired = 0;
 };
 
@@ -135,8 +141,9 @@ class World {
   /// a rifle ready to fire, under the stamina rules and the rifle of
   /// parameters: what the server told this client when it admitted it, so the
   /// client never predicts with rules of its own. Call before the first command
-  /// is sent; nothing predicted earlier is kept but State::total_correction and
-  /// State::rifle_corrections, which starting over does not add to.
+  /// is sent; nothing predicted earlier is kept but State::total_correction,
+  /// State::rifle_corrections and State::total_rounds_fired, which starting
+  /// over does not add to.
   void Start(const math::Vec3& spawn, const parameters::Parameters& parameters);
 
   World(const World&) = delete;

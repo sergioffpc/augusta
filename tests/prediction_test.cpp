@@ -399,6 +399,18 @@ TEST_F(WeaponPredictionTest, HoldingFireFiresAtTheRiflesRate) {
   EXPECT_EQ(latest_.rifle.rounds, kMagazine - 10);
 }
 
+// A frame that sees only some ticks still learns of every round fired between
+// two it saw, which is what draws each muzzle flash.
+TEST_F(WeaponPredictionTest, TheRunningTotalOfRoundsFiredCountsEveryRoundAndOutlivesStartingOver) {
+  Run(10 * kTicksPerRound, Firing());
+  EXPECT_EQ(latest_.total_rounds_fired, 10U);
+
+  world_.Start(Vec3{}, Armed());
+
+  EXPECT_EQ(Tick(Command{}).total_rounds_fired, 10U);
+  EXPECT_EQ(Tick(Firing()).total_rounds_fired, 11U);
+}
+
 TEST_F(WeaponPredictionTest, AReloadFillsTheMagazineOnceItsTimeHasPassed) {
   Run(3 * kTicksPerRound, Firing());
   ASSERT_EQ(latest_.rifle.rounds, kMagazine - 3);
@@ -429,6 +441,16 @@ TEST_F(WeaponPredictionTest, ARifleTheServerAgreesWithIsNeverCorrected) {
 
 // A rifle with a full magazine, ready to fire.
 constexpr augusta::weapon::State kFullRifle{.cooldown = 0.0F, .reload_remaining = 0.0F, .rounds = kMagazine};
+
+TEST_F(WeaponPredictionTest, AReplayAddsNoRoundToTheRunningTotal) {
+  Run(kTicksPerRound, Firing());
+  Acknowledgement refused = ServerAgreesWithTheClient(1);
+  refused.rifle = kFullRifle;
+
+  // The replay fires the round the server refused again, but no new one is
+  // fired: nothing more is drawn.
+  EXPECT_EQ(Tick(Firing(), refused).total_rounds_fired, 1U);
+}
 
 // The server refused the round the client fired on its first command: it says
 // the rifle was still full and ready after it.
