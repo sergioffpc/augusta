@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <unordered_map>
@@ -102,6 +103,9 @@ struct Bullet {
   // Its Shooter's delay (ADR-0044), in ticks: how long before each tick of its
   // flight the players it is judged against were where it judges them.
   float shooters_delay = 0.0F;
+  // Where it was fired for, as its Shot's yaw and pitch: what a Death it deals tells.
+  float yaw = 0.0F;
+  float pitch = 0.0F;
 };
 
 // One hitbox of one player, where a bullet judges that player to be: its
@@ -117,6 +121,8 @@ struct PosedHitbox {
 struct PlayerHit {
   EntityId shooter{};
   EntityId target{};
+  float yaw = 0.0F;
+  float pitch = 0.0F;
   ballistics::BodyPart part = ballistics::BodyPart::kTorso;
 };
 
@@ -182,10 +188,10 @@ std::size_t HitboxHistoryTicks(std::uint8_t tick_rate_hz) {
 }
 
 struct World::Impl {
-  // Where a player lives, for RemovePlayer.
+  // Where a player lives, for RemovePlayer; a dead player's body has left physics.
   struct Slot {
     flecs::entity entity;
-    physics::BodyHandle body{};
+    std::optional<physics::BodyHandle> body;
   };
 
   const parameters::Parameters parameters;
@@ -275,8 +281,12 @@ struct World::Impl {
         .each([this](const Body& body, const Facing& facing, HitboxHistory& history) {
           OnHitDetection(body, facing, history);
         });
+    // Writes Body and Intent, so a player it kills is out of the State Commit
+    // packages on the same tick.
     ecs.system<const Player, Health>("DamageSystem")
         .kind(phases[kDamage])
+        .write<Body>()
+        .write<Intent>()
         .each([this](const Player& player, Health& health) { OnDamage(player, health); });
     ecs.system("ScriptsBehavioursSystem").kind(phases[kScriptsBehaviours]).run([this](flecs::iter&) {
       OnScriptsBehaviours();
@@ -331,7 +341,8 @@ struct World::Impl {
     const ballistics::BulletHandle bullet =
         ballistics.Fire(shot.origin, command::ViewDirection(shot.yaw, shot.pitch), parameters.rifle.muzzle_velocity,
                         {.gravity = parameters.ammo.gravity, .max_range = parameters.ammo.max_range});
-    ecs.entity().set<Bullet>({.handle = bullet, .shooter = shot.shooter, .shooters_delay = delay});
+    ecs.entity().set<Bullet>(
+        {.handle = bullet, .shooter = shot.shooter, .shooters_delay = delay, .yaw = shot.yaw, .pitch = shot.pitch});
   }
 
   // Places hitboxes, target's, where pose puts them.
@@ -384,8 +395,11 @@ struct World::Impl {
         committed.map_impacts.push_back(result.impact_point);
         break;
       case ballistics::Outcome::kHitPlayer:
-        player_hits.push_back(
-            PlayerHit{.shooter = bullet.shooter, .target = FromTarget(result.target), .part = result.part});
+        player_hits.push_back(PlayerHit{.shooter = bullet.shooter,
+                                        .target = FromTarget(result.target),
+                                        .yaw = bullet.yaw,
+                                        .pitch = bullet.pitch,
+                                        .part = result.part});
         break;
       case ballistics::Outcome::kExpired:
         break;
@@ -411,13 +425,30 @@ struct World::Impl {
       const float damage = DamageFor(parameters.ammo.damage, hit.part);
       const bool had_health = health.value > 0.0F;
       health.value = std::max(health.value - damage, 0.0F);
+      const bool reached_zero = had_health && health.value <= 0.0F;
       committed.hits.push_back(Hit{.shooter = hit.shooter,
                                    .target = hit.target,
                                    .damage = damage,
                                    .health = health.value,
                                    .part = hit.part,
-                                   .reached_zero = had_health && health.value <= 0.0F});
+                                   .reached_zero = reached_zero});
+      if (reached_zero) {
+        Kill(hit);
+      }
     }
+  }
+
+  // The player hit took its health to zero: it dies of it. Its body leaves
+  // physics now, and loses its Body and Intent when the phase ends: that takes
+  // it out of every system that moves it, fires its rifle, tests or records its
+  // hitboxes and commits it, and its commands are ingested no more.
+  void Kill(const PlayerHit& hit) {
+    committed.deaths.push_back(
+        Death{.victim = hit.target, .killer = hit.shooter, .yaw = hit.yaw, .pitch = hit.pitch, .part = hit.part});
+    Slot& slot = players.at(hit.target);
+    physics.DestroyBody(*slot.body);
+    slot.body.reset();
+    slot.entity.remove<Body>().remove<Intent>();
   }
 
   // Calls the objectives' on_tick with the tick. It has no decision to make yet,
@@ -444,6 +475,7 @@ struct World::Impl {
                 const Rifle& rifle) {
     committed.bodies.push_back(EntityState{
         .entity = player.entity, .body = body.state, .yaw = facing.yaw, .health = health.value, .rifle = rifle.state});
+    committed.alive.push_back(player.entity);
   }
 };
 
@@ -486,7 +518,9 @@ void World::RemovePlayer(EntityId entity) {
   if (slot == impl.players.end()) {
     return;
   }
-  impl.physics.DestroyBody(slot->second.body);
+  if (slot->second.body.has_value()) {
+    impl.physics.DestroyBody(*slot->second.body);
+  }
   slot->second.entity.destruct();
   impl.players.erase(slot);
 }
@@ -501,6 +535,8 @@ State World::Tick(const std::vector<PlayerCommand>& commands, float delta_time) 
   impl.committed.tick = impl.tick;
   // Cleared rather than replaced, so a tick reuses the last one's storage.
   impl.committed.bodies.clear();
+  impl.committed.alive.clear();
+  impl.committed.deaths.clear();
   impl.committed.shots.clear();
   impl.committed.map_impacts.clear();
   impl.committed.hits.clear();
@@ -509,6 +545,8 @@ State World::Tick(const std::vector<PlayerCommand>& commands, float delta_time) 
   impl.ecs.progress(delta_time);
   // The ECS visits players in storage order; the state is ordered by id.
   std::ranges::sort(impl.committed.bodies, {}, &EntityState::entity);
+  std::ranges::sort(impl.committed.alive);
+  std::ranges::sort(impl.committed.deaths, {}, &Death::victim);
   std::ranges::sort(impl.committed.shots, {}, &Shot::shooter);
   std::ranges::stable_sort(impl.committed.hits, {}, &Hit::target);
   return impl.committed;

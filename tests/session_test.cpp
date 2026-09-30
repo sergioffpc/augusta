@@ -52,6 +52,7 @@
 namespace {
 
 using augusta::command::Command;
+using augusta::harness::Death;
 using augusta::harness::EntityId;
 using augusta::harness::Failure;
 using augusta::harness::FailureKind;
@@ -1829,10 +1830,12 @@ class ScriptedServer {
         .players = {{.spawn = {}, .session = kScriptedSession, .entity = kScriptedEntity, .character = 1}}};
   }
 
-  // An Authoritative State of tick listing entities, each at the origin.
+  // An Authoritative State of tick listing entities, each at the origin, with
+  // the client's player unhurt.
   static augusta::protocol::AuthoritativeStateWire StateOf(std::uint32_t tick,
                                                            const std::vector<EntityIdWire>& entities) {
-    augusta::protocol::AuthoritativeStateWire state{.tick = tick, .acknowledged_sequence = 0, .bodies = {}};
+    augusta::protocol::AuthoritativeStateWire state{
+        .tick = tick, .acknowledged_sequence = 0, .bodies = {}, .rifle = {}, .health = 100.0F};
     for (const EntityIdWire entity : entities) {
       state.bodies.push_back({.entity = entity, .body = {}});
     }
@@ -2983,6 +2986,8 @@ class HitMatchOf : public LoopbackMatch {
       const augusta::simulation::State state = StepEach(commands_);
       hits_.insert(hits_.end(), state.hits.begin(), state.hits.end());
       map_impacts_.insert(map_impacts_.end(), state.map_impacts.begin(), state.map_impacts.end());
+      shots_fired_.insert(shots_fired_.end(), state.shots.begin(), state.shots.end());
+      deaths_.insert(deaths_.end(), state.deaths.begin(), state.deaths.end());
     }
   }
 
@@ -2996,10 +3001,15 @@ class HitMatchOf : public LoopbackMatch {
   // target's feet as the newest update it has shows them, which is the view
   // its Command reports, and the match runs until its rifle is ready again.
   void ShootAt(const Session& target, const Vec3& offset) {
+    ShootThrough(PositionSeenBy(Standing(0), *target.GetEntityId()).value() + offset);
+  }
+
+  // As ShootAt, aimed at point, whatever is there.
+  void ShootThrough(const Vec3& point) {
     Session& shooter = Standing(0);
     const Vec3 eye = PositionSeenBy(shooter, *shooter.GetEntityId()).value() + Vec3(0.0F, kEyeHeight, 0.0F);
     Command& command = CommandOf(shooter);
-    AimAt(command, PositionSeenBy(shooter, *target.GetEntityId()).value() + offset - eye);
+    AimAt(command, point - eye);
     command.view_tick = shooter.GetAuthoritativeState().value().tick;
     command.fire = true;
     Fight(1);
@@ -3019,12 +3029,38 @@ class HitMatchOf : public LoopbackMatch {
     return confirmations_[&client];
   }
 
+  // The Deaths client has received in all, once the network has had the time
+  // to deliver any on its way.
+  const std::vector<Death>& DeathsOf(const Session& client) {
+    Settle(host_, Pointers(sessions_));
+    CollectDeaths();
+    return deaths_received_[&client];
+  }
+
+  // Adds the Deaths each client has received since last asked to what it had.
+  void CollectDeaths() {
+    for (const auto& session : sessions_) {
+      std::vector<Death>& deaths = deaths_received_[session.get()];
+      const std::vector<Death> taken = session->TakeDeaths();
+      deaths.insert(deaths.end(), taken.begin(), taken.end());
+    }
+  }
+
+  // Two head shots: the second takes target's health of 100 to zero.
+  void Kill(const Session& target) {
+    ShootAt(target, Vec3(0.0F, kHeadHeight, 0.0F));
+    ShootAt(target, Vec3(0.0F, kHeadHeight, 0.0F));
+  }
+
   // What each client sends on a tick, in the order of sessions_.
   std::vector<Command> commands_;
-  // Every hit and Map impact the server has resolved.
+  // Every hit, Map impact, round and death the server has resolved.
   std::vector<augusta::simulation::Hit> hits_;
   std::vector<Vec3> map_impacts_;
+  std::vector<augusta::simulation::Shot> shots_fired_;
+  std::vector<augusta::simulation::Death> deaths_;
   std::map<const Session*, std::vector<HitConfirmation>> confirmations_;
+  std::map<const Session*, std::vector<Death>> deaths_received_;
 };
 
 using HitLineTest = HitMatchOf<3>;
@@ -3263,7 +3299,7 @@ TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairInT
 // apart along Z, facing each other. Everyone plays the character of
 // HumanHitboxes and carries a rifle of 600 rounds a minute whose magazine of 15
 // takes half a second to reload, and whose every round kicks the aim up by
-// 1/256 rad, about 4 cm at the partner.
+// 1/256 rad, about 4 cm at the partner. No one has health enough to die.
 class FullAutoMatchTest : public LoopbackMatch {
  protected:
   static constexpr std::size_t kPlayers = augusta::protocol::kMaxPlayers;
@@ -3282,7 +3318,8 @@ class FullAutoMatchTest : public LoopbackMatch {
     parameters.ammo.gravity = 9.81F;
     parameters.ammo.max_range = 200.0F;
     parameters.ammo.damage = {.head = 50.0F, .torso = 20.0F, .limb = 10.0F};
-    parameters.starting_health = 100.0F;
+    // So much that no one dies of ten seconds of fire, and everyone fires throughout.
+    parameters.starting_health = 100000.0F;
     std::vector<Vec3> spawn_points;
     for (std::size_t i = 0; i < kPlayers; ++i) {
       spawn_points.emplace_back(kPairSpacing * static_cast<float>(i / 2), kFloorY, i % 2 == 0 ? 0.0F : -kPairDistance);
@@ -3578,6 +3615,181 @@ TEST_F(ScriptedServerTest, AClientThatIsNeverAskedKeepsOnlyTheNewestShots) {
   ASSERT_EQ(shots.size(), augusta::harness::kMaxPendingShots);
   EXPECT_EQ(shots.front().tick, 11U);
   EXPECT_EQ(shots.back().tick, sent);
+}
+
+using DeathTest = HitMatchOf<3>;
+
+TEST_F(DeathTest, APlayerShotToZeroHealthDiesAndEveryClientIsToldWhoKilledItAndWhere) {
+  Session& shooter = Standing(0);
+  Session& victim = Standing(1);
+  Session& bystander = Standing(2);
+
+  Kill(victim);
+
+  ASSERT_EQ(deaths_.size(), 1U);
+  for (const Session* client : {&shooter, &victim, &bystander}) {
+    const std::vector<Death>& deaths = DeathsOf(*client);
+    ASSERT_EQ(deaths.size(), 1U);
+    EXPECT_EQ(deaths[0].victim, *victim.GetEntityId());
+    EXPECT_EQ(deaths[0].killer, *shooter.GetEntityId());
+    EXPECT_EQ(deaths[0].part, BodyPart::kHead);
+    EXPECT_EQ(deaths[0].yaw, deaths_[0].yaw);
+    EXPECT_EQ(deaths[0].pitch, deaths_[0].pitch);
+  }
+}
+
+TEST_F(DeathTest, TheDeadBodyIsGoneFromEveryClientsStateFromThenOn) {
+  Session& victim = Standing(1);
+
+  Kill(victim);
+  Fight(30);
+
+  for (const auto& client : sessions_) {
+    EXPECT_FALSE(BodySeenBy(*client, *victim.GetEntityId()).has_value());
+    EXPECT_TRUE(BodySeenBy(*client, *Standing(0).GetEntityId()).has_value());
+    EXPECT_TRUE(BodySeenBy(*client, *Standing(2).GetEntityId()).has_value());
+  }
+}
+
+// A Death is reliable: under the packet loss of the movement tests, every
+// client is still told of it.
+TEST_F(DeathTest, WithPacketLossEveryClientStillReceivesTheDeath) {
+  constexpr float kLossPercent = 20.0F;
+  Session& victim = Standing(1);
+  augusta::networking::SimulateNetworkConditions({.loss_percent = kLossPercent});
+
+  // A round's fire command can be lost for good: the shooter fires until the server has a death.
+  for (int attempt = 0; attempt < 10 && deaths_.empty(); ++attempt) {
+    ShootAt(victim, Vec3(0.0F, kHeadHeight, 0.0F));
+  }
+  Fight(30);
+  augusta::networking::SimulateNetworkConditions({});
+
+  ASSERT_EQ(deaths_.size(), 1U);
+  ASSERT_TRUE(ExchangeUntil(host_, Pointers(sessions_), [&] {
+    CollectDeaths();
+    return std::ranges::all_of(sessions_,
+                               [&](const auto& session) { return !deaths_received_[session.get()].empty(); });
+  }));
+  for (const auto& client : sessions_) {
+    const std::vector<Death>& deaths = DeathsOf(*client);
+    ASSERT_EQ(deaths.size(), 1U);
+    EXPECT_EQ(deaths[0].victim, *victim.GetEntityId());
+    EXPECT_EQ(deaths[0].killer, *Standing(0).GetEntityId());
+    EXPECT_EQ(deaths[0].part, BodyPart::kHead);
+  }
+}
+
+// The dead player walks at the shooter, turned to face it, firing.
+TEST_F(DeathTest, ADeadPlayersFireAndMovementChangeNothingOnTheServer) {
+  Session& shooter = Standing(0);
+  Session& victim = Standing(1);
+  Kill(victim);
+  const std::size_t rounds = shots_fired_.size();
+  Command& command = CommandOf(victim);
+  command.movement.direction = Vec3(0.0F, 0.0F, 1.0F);
+  command.yaw = std::numbers::pi_v<float>;
+  command.fire = true;
+
+  Fight(60);
+
+  EXPECT_EQ(shots_fired_.size(), rounds);
+  EXPECT_EQ(hits_.size(), 2U);
+  EXPECT_FALSE(BodySeenBy(shooter, *victim.GetEntityId()).has_value());
+  EXPECT_EQ(shooter.GetHealth(), 100.0F);
+}
+
+// The third player stands behind the second, on the line the shooter fires along.
+TEST_F(DeathTest, ABulletAimedThroughWhereTheDeadPlayerStoodHitsWhatIsBehindIt) {
+  Session& victim = Standing(1);
+  Session& behind = Standing(2);
+  const Vec3 stood = PositionSeenBy(Standing(0), *victim.GetEntityId()).value();
+  Kill(victim);
+
+  ShootThrough(stood + Vec3(0.0F, kTorsoHeight, 0.0F));
+
+  ASSERT_EQ(hits_.size(), 3U);
+  EXPECT_EQ(std::to_underlying(hits_.back().target), std::to_underlying(*behind.GetEntityId()));
+}
+
+TEST_F(DeathTest, ADeadPlayersOwnClientKnowsItIsDeadAndItsHealthAndStopsPredicting) {
+  Session& victim = Standing(1);
+  Settle(host_, Pointers(sessions_));
+  ASSERT_TRUE(victim.IsAlive());
+  ASSERT_EQ(victim.GetHealth(), 100.0F);
+
+  ShootAt(victim, Vec3(0.0F, kHeadHeight, 0.0F));
+  Settle(host_, Pointers(sessions_));
+  EXPECT_TRUE(victim.IsAlive());
+  EXPECT_EQ(victim.GetHealth(), 50.0F);
+
+  ShootAt(victim, Vec3(0.0F, kHeadHeight, 0.0F));
+  Settle(host_, Pointers(sessions_));
+  EXPECT_FALSE(victim.IsAlive());
+  EXPECT_EQ(victim.GetHealth(), 0.0F);
+
+  const augusta::prediction::State dead = states_[&victim];
+  Command& command = CommandOf(victim);
+  command.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+  command.fire = true;
+  Fight(30);
+  EXPECT_EQ(states_[&victim].local_body.position, dead.local_body.position);
+  EXPECT_EQ(states_[&victim].total_rounds_fired, dead.total_rounds_fired);
+  EXPECT_TRUE(Standing(0).IsAlive());
+}
+
+// A Death of victim, killed by killer with a round to the torso.
+augusta::protocol::DeathWire DeathOf(EntityIdWire victim, EntityIdWire killer) {
+  return augusta::protocol::DeathWire{.victim = victim,
+                                      .killer = killer,
+                                      .yaw = 0.5F,
+                                      .pitch = -0.125F,
+                                      .part = augusta::protocol::BodyPartWire::kTorso};
+}
+
+TEST_F(ScriptedServerTest, ADeathNamingABodyNotInTheMatchIsDropped) {
+  Settle();
+
+  server_.Send(DeathOf(EntityIdWire{99}, kScriptedEntity));
+  server_.Send(DeathOf(kScriptedEntity, EntityIdWire{99}));
+  Settle();
+  EXPECT_TRUE(session_.TakeDeaths().empty());
+  EXPECT_TRUE(session_.IsAlive());
+
+  server_.Send(DeathOf(kScriptedEntity, kScriptedEntity));
+  Settle();
+  EXPECT_EQ(session_.TakeDeaths().size(), 1U);
+  EXPECT_FALSE(session_.IsAlive());
+}
+
+// Told of its own death, a client predicts no more, even before an update says so.
+TEST_F(ScriptedServerTest, AClientToldOfItsOwnDeathStopsPredicting) {
+  Settle();
+  Command walk;
+  walk.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+  walk.fire = true;
+  session_.Tick(walk, kFixedTick);
+
+  server_.Send(DeathOf(kScriptedEntity, kScriptedEntity));
+  Settle();
+  const augusta::prediction::State dead = session_.Tick(walk, kFixedTick);
+  const augusta::prediction::State after = session_.Tick(walk, kFixedTick);
+
+  EXPECT_EQ(after.local_body.position, dead.local_body.position);
+  EXPECT_EQ(after.total_rounds_fired, dead.total_rounds_fired);
+}
+
+TEST_F(ScriptedLobbyTest, ADeathThatArrivesOutsideAMatchIsDropped) {
+  EXPECT_FALSE(session_.IsAlive());
+  server_.Send(DeathOf(kScriptedEntity, kScriptedEntity));
+  Settle();
+  EXPECT_TRUE(session_.TakeDeaths().empty());
+
+  server_.Send(ScriptedServer::StartOfAlone());
+  Settle();
+  EXPECT_TRUE(session_.TakeDeaths().empty());
+  EXPECT_TRUE(session_.IsAlive());
+  EXPECT_FALSE(session_.GetHealth().has_value());
 }
 
 }  // namespace

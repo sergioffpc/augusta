@@ -445,24 +445,24 @@ struct Host::Impl {
     activity_since = now;
   }
 
-  // One line per hit of the tick, and one more for the hit that took a player's
-  // health to zero. At INFO, though players provoke them: a Match's hits are
-  // what its operator reads the log for (US-12), in a Release build too.
-  void LogHits(const simulation::State& state) const {
+  // One line per hit of the tick, then one per death. At INFO, though players
+  // provoke them: a Match's hits and deaths are what its operator reads the log
+  // for (US-12, US-13), in a Release build too.
+  void LogCombat(const simulation::State& state) const {
     for (const simulation::Hit& hit : state.hits) {
       LI("subsystem=serverruntime event=hit tick={} shooter={} target={} part={} damage={} health={}", tick,
          std::to_underlying(hit.shooter), std::to_underlying(hit.target), BodyPartName(hit.part), hit.damage,
          hit.health);
-      if (hit.reached_zero) {
-        LI("subsystem=serverruntime event=health_zero tick={} entity={} shooter={}", tick,
-           std::to_underlying(hit.target), std::to_underlying(hit.shooter));
-      }
+    }
+    for (const simulation::Death& death : state.deaths) {
+      LI("subsystem=serverruntime event=death tick={} victim={} killer={} part={}", tick,
+         std::to_underlying(death.victim), std::to_underlying(death.killer), BodyPartName(death.part));
     }
   }
 
   // Each recipient's update, which a newer one supersedes; then what must
-  // arrive (ADR-0044): every Shot of the tick to all of them, and each Hit
-  // confirmation to its shooter alone, if it is still in the match.
+  // arrive (ADR-0044): every Shot and every Death of the tick to all of them,
+  // and each Hit confirmation to its shooter alone, if it is still in the match.
   void Send(const simulation::State& state, const TickInput& input) {
     for (const replication::Update& update : replication::PlanUpdates(state, tick, input.recipients)) {
       network.Send(input.peers.at(FromSimulation(update.recipient)), protocol::Encode(ToWire(update)),
@@ -477,6 +477,12 @@ struct Host::Impl {
     for (const replication::HitConfirmation& hit : replication::PlanHitConfirmations(state)) {
       if (const auto shooter = input.peers.find(FromSimulation(hit.recipient)); shooter != input.peers.end()) {
         network.Send(shooter->second, protocol::Encode(ToWire(hit)), networking::Reliability::kReliable);
+      }
+    }
+    for (const replication::Death& death : replication::PlanDeaths(state)) {
+      const protocol::BytesWire payload = protocol::Encode(ToWire(death));
+      for (const auto& [entity, peer] : input.peers) {
+        network.Send(peer, payload, networking::Reliability::kReliable);
       }
     }
   }
@@ -520,7 +526,7 @@ simulation::State Host::Tick(float delta_time) {
   simulation::State state = impl.simulation.Tick(input.commands, delta_time);
   impl.tick = state.tick;
   impl.Send(state, input);
-  impl.LogHits(state);
+  impl.LogCombat(state);
   return state;
 }
 

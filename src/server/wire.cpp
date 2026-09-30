@@ -164,6 +164,7 @@ protocol::AuthoritativeStateWire ToWire(const replication::Update& update) {
                 .recoil_yaw = update.rifle.recoil.yaw,
                 .rounds = update.rifle.rounds,
                 .burst_index = update.rifle.burst_index},
+      .health = update.health,
       .queued_commands = update.queued_commands,
   };
   state.bodies.reserve(update.bodies.size());
@@ -189,6 +190,16 @@ protocol::HitConfirmationWire ToWire(const replication::HitConfirmation& hit) {
       .target = ToWire(FromSimulation(hit.target)),
       .damage = hit.damage,
       .part = ToWire(hit.part),
+  };
+}
+
+protocol::DeathWire ToWire(const replication::Death& death) {
+  return protocol::DeathWire{
+      .victim = ToWire(FromSimulation(death.victim)),
+      .killer = ToWire(FromSimulation(death.killer)),
+      .yaw = death.yaw,
+      .pitch = death.pitch,
+      .part = ToWire(death.part),
   };
 }
 

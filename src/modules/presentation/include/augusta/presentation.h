@@ -58,8 +58,9 @@ enum class Phase {
   // aligned to that timeline, interpolated between the two surrounding
   // updates (ServerClock and RemoteInterpolator, interpolation.h) - smooth
   // motion independent of render frame rate and of when updates arrive. An
-  // entity no longer in the snapshot is no longer shown, and neither is anyone
-  // while there is no snapshot (outside a match). Each is drawn as its character
+  // entity no longer in the snapshot is no longer shown, nor for the rest of
+  // the match is one whose Death has arrived (FrameInput::deaths), and neither
+  // is anyone while there is no snapshot (outside a match). Each is drawn as its character
   // (FrameInput::characters), turned where it faces. Which moment of the
   // server's timeline they are shown at is the frame's view (ViewAt,
   // interpolation.h). Moves the fight on to the frame's time too: starts a
@@ -164,6 +165,9 @@ struct FrameInput {
   std::vector<Shot> shots;
   /// How many Hit confirmations arrived since the previous frame.
   std::uint32_t hit_confirmations = 0;
+  /// The bodies whose Death arrived since the previous frame, in the order
+  /// they arrived: each leaves presentation for the rest of the match.
+  std::vector<EntityId> deaths;
 };
 
 // PresentationWorld's per-frame output - ADR-0024/ARCHITECTURE.md's

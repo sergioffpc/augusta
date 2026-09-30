@@ -93,8 +93,8 @@ void showValue(const MessageWire& message, std::ostream& out) {
       }
       out << "rifle{cooldown " << state.rifle.cooldown << ", reload_remaining " << state.rifle.reload_remaining
           << ", recoil " << state.rifle.recoil_pitch << " " << state.rifle.recoil_yaw << ", rounds "
-          << +state.rifle.rounds << ", burst_index " << +state.rifle.burst_index << "}, queued_commands "
-          << +state.queued_commands << "}";
+          << +state.rifle.rounds << ", burst_index " << +state.rifle.burst_index << "}, health " << state.health
+          << ", queued_commands " << +state.queued_commands << "}";
     }
     void operator()(const LobbyWire& lobby) const {
       out << "Lobby{version " << lobby.version << ", ";
@@ -124,6 +124,11 @@ void showValue(const MessageWire& message, std::ostream& out) {
       out << "HitConfirmation{target " << static_cast<std::uint32_t>(hit.target) << ", part "
           << +static_cast<std::uint8_t>(hit.part) << ", damage " << hit.damage << "}";
     }
+    void operator()(const DeathWire& death) const {
+      out << "Death{victim " << static_cast<std::uint32_t>(death.victim) << ", killer "
+          << static_cast<std::uint32_t>(death.killer) << ", part " << +static_cast<std::uint8_t>(death.part) << ", yaw "
+          << death.yaw << ", pitch " << death.pitch << "}";
+    }
   };
   std::visit(Printer{.out = out}, message);
 }
@@ -147,6 +152,7 @@ using augusta::protocol::BodyPartWire;
 using augusta::protocol::BodyStateWire;
 using augusta::protocol::CommandsWire;
 using augusta::protocol::CommandWire;
+using augusta::protocol::DeathWire;
 using augusta::protocol::Decode;
 using augusta::protocol::Encode;
 using augusta::protocol::EntityIdWire;
@@ -321,7 +327,7 @@ rc::Gen<AuthoritativeStateWire> AuthoritativeState() {
       rc::gen::set(&AuthoritativeStateWire::tick, rc::gen::arbitrary<std::uint32_t>()),
       rc::gen::set(&AuthoritativeStateWire::acknowledged_sequence, rc::gen::arbitrary<std::uint32_t>()),
       rc::gen::set(&AuthoritativeStateWire::bodies, UpTo<std::vector<EntityStateWire>>(kMaxPlayers, entity)),
-      rc::gen::set(&AuthoritativeStateWire::rifle, rifle),
+      rc::gen::set(&AuthoritativeStateWire::rifle, rifle), rc::gen::set(&AuthoritativeStateWire::health, FiniteFloat()),
       rc::gen::set(&AuthoritativeStateWire::queued_commands, rc::gen::arbitrary<std::uint8_t>()));
 }
 
@@ -362,6 +368,13 @@ rc::Gen<HitConfirmationWire> HitConfirmation() {
                    rc::gen::element(BodyPartWire::kHead, BodyPartWire::kTorso, BodyPartWire::kLimb)));
 }
 
+rc::Gen<DeathWire> Death() {
+  return rc::gen::build<DeathWire>(
+      rc::gen::set(&DeathWire::victim, AnyId<EntityIdWire>()), rc::gen::set(&DeathWire::killer, AnyId<EntityIdWire>()),
+      rc::gen::set(&DeathWire::yaw, OnGrid(kAngleGrid)), rc::gen::set(&DeathWire::pitch, OnGrid(kAngleGrid)),
+      rc::gen::set(&DeathWire::part, rc::gen::element(BodyPartWire::kHead, BodyPartWire::kTorso, BodyPartWire::kLimb)));
+}
+
 // Any message of the protocol, within its limits.
 rc::Gen<MessageWire> Message() {
   return rc::gen::oneOf(rc::gen::cast<MessageWire>(JoinRequest()), rc::gen::cast<MessageWire>(JoinAccepted()),
@@ -369,7 +382,7 @@ rc::Gen<MessageWire> Message() {
                         rc::gen::cast<MessageWire>(AuthoritativeState()), rc::gen::cast<MessageWire>(Lobby()),
                         rc::gen::cast<MessageWire>(Ready()), rc::gen::cast<MessageWire>(MatchStart()),
                         rc::gen::just(MessageWire{MatchEndWire{}}), rc::gen::cast<MessageWire>(Shot()),
-                        rc::gen::cast<MessageWire>(HitConfirmation()));
+                        rc::gen::cast<MessageWire>(HitConfirmation()), rc::gen::cast<MessageWire>(Death()));
 }
 
 RC_GTEST_PROP(ProtocolPropertyTest, EveryMessageSurvivesEncodeThenDecode, ()) {
