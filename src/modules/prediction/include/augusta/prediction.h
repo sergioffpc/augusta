@@ -58,8 +58,8 @@ enum class Phase {
   // augusta::physics::World::Step, same interface SimulationWorld's
   // Movement phase uses on the authoritative body.
   kMovement,
-  // Mechanism. Predicts the local player's own fire and reload
-  // (US-07, US-08) - augusta::weapon::Step, the same function
+  // Mechanism. Predicts the local player's own fire, reload and recoil
+  // (US-07 to US-09) - augusta::weapon::Step, the same function
   // SimulationWorld's WeaponHandling phase runs on the authoritative rifle,
   // with the Parameters the server sent. Only the rifle and whether it
   // fired: no bullet, no trajectory, no hit; a bullet's outcome stays
@@ -87,7 +87,8 @@ struct State {
   /// none twice, from the difference of their totals.
   math::Vec3 total_correction{};
   /// The local player's predicted rifle as of this tick, after WeaponHandling
-  /// and any Reconciliation.
+  /// and any Reconciliation. Its Recoil offset is how far off the view of the
+  /// tick's Command the next round leaves.
   weapon::State rifle{};
   /// How many times Reconciliation has put the rifle at a server's state that
   /// differed from the one predicted, since the world began: a rifle predicted

@@ -707,9 +707,15 @@ TEST(ProtocolTest, AnUpdateTellsItsRecipientHowManyOfItsCommandsTheServerHolds) 
 }
 
 // The recipient's rifle is what it replays its commands from, so its times
-// arrive as the floats they were, off any grid.
+// arrive as the floats they were, off any grid, and its Recoil offset, which is
+// on the angle grid, as it was.
 TEST(ProtocolTest, AnUpdateTellsItsRecipientItsOwnRifleExactly) {
-  const WeaponStateWire rifle{.cooldown = 0.1F - (1.0F / 60.0F), .reload_remaining = 2.4833333F, .rounds = 27};
+  const WeaponStateWire rifle{.cooldown = 0.1F - (1.0F / 60.0F),
+                              .reload_remaining = 2.4833333F,
+                              .recoil_pitch = 0.046875F,
+                              .recoil_yaw = -0.00390625F,
+                              .rounds = 27,
+                              .burst_index = 3};
 
   const auto received = std::get<AuthoritativeStateWire>(
       RoundTrip(AuthoritativeStateWire{.tick = 9, .bodies = {BodyAt(1, 1.0F)}, .rifle = rifle, .queued_commands = 1}));
@@ -718,15 +724,22 @@ TEST(ProtocolTest, AnUpdateTellsItsRecipientItsOwnRifleExactly) {
   EXPECT_EQ(received.queued_commands, 1U);
 }
 
-TEST(ProtocolTest, ARecipientsRifleTravelsInNineBytesAtTheEndOfAnUpdate) {
-  const BytesWire payload = Encode(
-      AuthoritativeStateWire{.bodies = {}, .rifle = {.cooldown = 1.0F, .reload_remaining = -2.0F, .rounds = 30}});
+TEST(ProtocolTest, ARecipientsRifleTravelsInSixteenBytesAtTheEndOfAnUpdate) {
+  const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {},
+                                                          .rifle = {.cooldown = 1.0F,
+                                                                    .reload_remaining = -2.0F,
+                                                                    .recoil_pitch = 1.0F / 64.0F,
+                                                                    .recoil_yaw = -1.0F / 2097152.0F,
+                                                                    .rounds = 30,
+                                                                    .burst_index = 3}});
   // type, tick, acknowledged sequence, count, the queued commands, then the rifle.
   constexpr std::ptrdiff_t kRifleOffset = 1 + 4 + 4 + 1 + 1;
 
-  // The rounds, then each time as its IEEE-754 bits, little-endian.
+  // The rounds, each time as its IEEE-754 bits, little-endian, the burst index,
+  // then the Recoil offset's pitch and yaw as counts of the angle grid's step:
+  // 32768 and -1.
   EXPECT_EQ(BytesWire(payload.begin() + kRifleOffset, payload.end()),
-            BytesOf({30, 0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x00, 0xC0}));
+            BytesOf({30, 0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x00, 0xC0, 3, 0x00, 0x80, 0x00, 0xFF, 0xFF, 0xFF}));
 }
 
 TEST(ProtocolTest, MorePlayersThanAMatchHoldsIsTooLong) {
@@ -796,7 +809,7 @@ TEST(ProtocolTest, ABodysUnusedStanceByteBitsSetAreInvalid) {
 TEST(ProtocolTest, ABodyTravelsInEighteenBytesAndACommandInFifteen) {
   // type, tick, acknowledged sequence, count, entity, the body, its yaw, the
   // queued commands, then the recipient's rifle.
-  EXPECT_EQ(Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}}).size(), 1 + 4 + 4 + 1 + 4 + 18 + 3 + 1 + 9);
+  EXPECT_EQ(Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}}).size(), 1 + 4 + 4 + 1 + 4 + 18 + 3 + 1 + 16);
   EXPECT_EQ(Encode(CommandsWire{.commands = {SequencedCommandWire{}}}).size(), 2 + 4 + 15 + 4);
 }
 

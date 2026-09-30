@@ -131,7 +131,9 @@ AuthoritativeState FromWire(const protocol::AuthoritativeStateWire& state) {
       .bodies = {},
       .rifle = {.cooldown = state.rifle.cooldown,
                 .reload_remaining = state.rifle.reload_remaining,
-                .rounds = state.rifle.rounds},
+                .recoil = {.pitch = state.rifle.recoil_pitch, .yaw = state.rifle.recoil_yaw},
+                .rounds = state.rifle.rounds,
+                .burst_index = state.rifle.burst_index},
       .queued_commands = state.queued_commands,
   };
   result.bodies.reserve(state.bodies.size());

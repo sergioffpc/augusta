@@ -99,11 +99,15 @@ void WriteBodies(BytesWire& out, const std::vector<EntityStateWire>& bodies) {
 
 // A rifle's two times travel as their bits, not on a grid: its owner replays
 // its commands from them, with the function the server stepped them with, and
-// must start from exactly what the server had.
+// must start from exactly what the server had. Its Recoil offset is kept on the
+// angle grid by that function, so its counts are exactly what the server had too.
 void WriteWeaponState(BytesWire& out, const WeaponStateWire& rifle) {
   WriteU8(out, rifle.rounds);
   WriteF32(out, rifle.cooldown);
   WriteF32(out, rifle.reload_remaining);
+  WriteU8(out, rifle.burst_index);
+  WriteSteps(out, rifle.recoil_pitch, math::kAngleGrid);
+  WriteSteps(out, rifle.recoil_yaw, math::kAngleGrid);
 }
 
 // Walks a payload front to back. The first problem it meets is remembered and
@@ -371,6 +375,9 @@ WeaponStateWire ReadWeaponState(Reader& reader) {
   rifle.rounds = reader.ReadU8();
   rifle.cooldown = reader.ReadF32();
   rifle.reload_remaining = reader.ReadF32();
+  rifle.burst_index = reader.ReadU8();
+  rifle.recoil_pitch = reader.ReadSteps(math::kAngleGrid);
+  rifle.recoil_yaw = reader.ReadSteps(math::kAngleGrid);
   return rifle;
 }
 

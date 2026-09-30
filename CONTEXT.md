@@ -134,6 +134,14 @@ _Avoid_: Hit zone, hit location, hit region, body zone
 One bullet fired, as the Authoritative server announces it to every client: who fired it, at which tick, from where and in which direction. Clients draw its trajectory; only the server decides what it hits (ADR-0044).
 _Avoid_: Bullet (the bullet is what flies; the Shot is the firing that every client is told of), fire event, gunshot
 
+**Burst**:
+The rounds a rifle fires in one pull of its trigger: from the first round fired with fire held until fire is released, the magazine is empty or a reload starts. A round's place in it picks its kick from the Parameters' recoil pattern, and the next Burst starts the pattern over.
+_Avoid_: Spray, volley, salvo (a Burst is not a fire mode: the rifle is full-auto)
+
+**Recoil offset**:
+How far a rifle points off its player's view, as a pitch and a yaw: every round of a Burst adds its kick to it, scaled down in ADS, and it shrinks back to zero while the trigger is not pulled. A Shot leaves along the view turned by it. It is the rifle's, predicted and reconciled with it, and never part of a Command's view.
+_Avoid_: Spread (recoil is a fixed pattern, not random), kick (a kick is one round's addition to the offset), view punch, aim punch
+
 **Shooter's delay**:
 How far in the past the shooter saw other players when it fired: from the view its fire Command reports to the tick the server takes that Command in, capped at 250 ms. Fixed when the Shot is fired, it holds for the bullet's whole flight (ADR-0044).
 _Avoid_: Ping, lag, latency, rewind time (the RTT is only part of it, next to the Interpolation delay)

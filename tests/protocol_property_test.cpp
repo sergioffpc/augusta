@@ -92,7 +92,9 @@ void showValue(const MessageWire& message, std::ostream& out) {
         out << ", yaw " << body.yaw << "; ";
       }
       out << "rifle{cooldown " << state.rifle.cooldown << ", reload_remaining " << state.rifle.reload_remaining
-          << ", rounds " << +state.rifle.rounds << "}, queued_commands " << +state.queued_commands << "}";
+          << ", recoil " << state.rifle.recoil_pitch << " " << state.rifle.recoil_yaw << ", rounds "
+          << +state.rifle.rounds << ", burst_index " << +state.rifle.burst_index << "}, queued_commands "
+          << +state.queued_commands << "}";
     }
     void operator()(const LobbyWire& lobby) const {
       out << "Lobby{version " << lobby.version << ", ";
@@ -311,7 +313,10 @@ rc::Gen<AuthoritativeStateWire> AuthoritativeState() {
   const auto rifle =
       rc::gen::build<WeaponStateWire>(rc::gen::set(&WeaponStateWire::cooldown, FiniteFloat()),
                                       rc::gen::set(&WeaponStateWire::reload_remaining, FiniteFloat()),
-                                      rc::gen::set(&WeaponStateWire::rounds, rc::gen::arbitrary<std::uint8_t>()));
+                                      rc::gen::set(&WeaponStateWire::recoil_pitch, OnGrid(kAngleGrid)),
+                                      rc::gen::set(&WeaponStateWire::recoil_yaw, OnGrid(kAngleGrid)),
+                                      rc::gen::set(&WeaponStateWire::rounds, rc::gen::arbitrary<std::uint8_t>()),
+                                      rc::gen::set(&WeaponStateWire::burst_index, rc::gen::arbitrary<std::uint8_t>()));
   return rc::gen::build<AuthoritativeStateWire>(
       rc::gen::set(&AuthoritativeStateWire::tick, rc::gen::arbitrary<std::uint32_t>()),
       rc::gen::set(&AuthoritativeStateWire::acknowledged_sequence, rc::gen::arbitrary<std::uint32_t>()),

@@ -207,15 +207,20 @@ TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
   }
 }
 
-// The recipient's rifle is off every grid: its times reach the client as the
-// exact floats the server stepped them to.
+// The recipient's rifle's times are off every grid: they reach the client as
+// the exact floats the server stepped them to, and its Recoil offset, which
+// weapon::Step keeps on the angle grid, as the server had it.
 TEST(WireTest, TheRecipientsRifleReachesTheClientExactly) {
   const augusta::replication::Update sent{
       .recipient = augusta::simulation::EntityId{1},
       .tick = 7,
       .acknowledged_sequence = 3,
       .bodies = {{.entity = augusta::simulation::EntityId{1}, .body = Body(1.0F, Stance::kStanding)}},
-      .rifle = {.cooldown = 0.1F - (1.0F / 60.0F), .reload_remaining = 2.4833333F, .rounds = 27},
+      .rifle = {.cooldown = 0.1F - (1.0F / 60.0F),
+                .reload_remaining = 2.4833333F,
+                .recoil = {.pitch = augusta::math::SnapAngle(0.0421F), .yaw = augusta::math::SnapAngle(-0.0037F)},
+                .rounds = 27,
+                .burst_index = 4},
   };
 
   const augusta::harness::AuthoritativeState received =

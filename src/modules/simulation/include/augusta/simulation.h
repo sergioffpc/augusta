@@ -165,8 +165,9 @@ struct Shot {
   EntityId shooter{};
   /// Where the round left from: the shooter's eye for its stance.
   math::Vec3 origin{};
-  /// Where it left for, as a view's yaw and pitch in radians (command::Command;
-  /// command::ViewDirection gives the direction).
+  /// Where it left for, as a view's yaw and pitch in radians
+  /// (command::ViewDirection gives the direction): the view of the shooter's
+  /// Command, turned by its rifle's Recoil offset (weapon::Step).
   float yaw = 0.0F;
   float pitch = 0.0F;
 };

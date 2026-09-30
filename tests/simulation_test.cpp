@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <map>
 #include <numbers>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -16,6 +17,7 @@
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
+#include "augusta/weapon.h"
 
 // SimulationWorld on flat ground: players are entities with bodies, moved by
 // the commands of each tick.
@@ -614,6 +616,173 @@ TEST_F(InstantReloadTest, AReloadOfNoTimeFillsTheMagazineOnTheTickItIsPressed) {
 
   EXPECT_TRUE(state.shots.empty());
   EXPECT_EQ(state.bodies.front().rifle.rounds, 3);
+}
+
+// The test rifle with recoil (US-09): a pattern of three kicks, each a whole
+// count of the angle grid's step so their sums are exact, halved in ADS, and an
+// offset that recovers by 0.00625 rad a tick. Its reload takes half a second.
+class RecoilTest : public FireTest {
+ protected:
+  static constexpr float kFirstPitch = 1.0F / 64.0F;
+  static constexpr float kSecondPitch = 1.0F / 64.0F;
+  static constexpr float kSecondYaw = 1.0F / 256.0F;
+  static constexpr float kThirdPitch = 1.0F / 32.0F;
+  static constexpr float kThirdYaw = -1.0F / 128.0F;
+  static constexpr float kRecoveryPerTick = 0.00625F;
+  // Half a grid step, and the rounding of the recovery itself.
+  static constexpr float kAngleTolerance = 1e-6F;
+  // The view every burst is fired from.
+  static constexpr float kViewYaw = 0.75F;
+  static constexpr float kViewPitch = -0.25F;
+
+  static Parameters WithRecoil() {
+    Parameters parameters = WithTheTestRifle();
+    parameters.rifle.recoil_pattern = {{.pitch = kFirstPitch, .yaw = 0.0F},
+                                       {.pitch = kSecondPitch, .yaw = kSecondYaw},
+                                       {.pitch = kThirdPitch, .yaw = kThirdYaw}};
+    parameters.rifle.recoil_recovery_per_second = kRecoveryPerTick * kTickRate;
+    parameters.rifle.ads_recoil_scale = 0.5F;
+    parameters.rifle.reload_seconds = 0.5F;
+    return parameters;
+  }
+
+  RecoilTest() : FireTest(WithRecoil()) {}
+
+  // Fire held from the hip, or in ADS, looking along the tests' view.
+  static Command FiringFromTheView(bool ads = false) {
+    Command command = Firing();
+    command.yaw = kViewYaw;
+    command.pitch = kViewPitch;
+    command.ads = ads;
+    return command;
+  }
+
+  // Holds command until it has fired the given number of rounds; returns their
+  // Shots. The trigger is still held when it returns.
+  std::vector<augusta::simulation::Shot> Burst(int rounds, const Command& command = FiringFromTheView()) {
+    constexpr int kTicksPerRound = 6;
+    std::vector<augusta::simulation::Shot> shots;
+    for (int i = 0; i < rounds * kTicksPerRound && std::cmp_less(shots.size(), rounds); ++i) {
+      const State state = Tick(command);
+      shots.insert(shots.end(), state.shots.begin(), state.shots.end());
+    }
+    EXPECT_EQ(shots.size(), static_cast<std::size_t>(rounds));
+    shots.resize(static_cast<std::size_t>(rounds));
+    return shots;
+  }
+
+  // How far Alice's rifle points off her view after a tick with no command.
+  augusta::weapon::RecoilOffset RecoilAfterARestingTick() { return Tick(Command{}).bodies.front().rifle.recoil; }
+};
+
+TEST_F(RecoilTest, EachRoundOfABurstLeavesOffTheViewByTheKicksOfTheRoundsBeforeIt) {
+  const auto shots = Burst(4);
+
+  EXPECT_EQ(shots[0].yaw, kViewYaw);
+  EXPECT_EQ(shots[0].pitch, kViewPitch);
+  EXPECT_EQ(shots[1].yaw, kViewYaw);
+  EXPECT_EQ(shots[1].pitch, kViewPitch + kFirstPitch);
+  EXPECT_EQ(shots[2].yaw, kViewYaw + kSecondYaw);
+  EXPECT_EQ(shots[2].pitch, kViewPitch + kFirstPitch + kSecondPitch);
+  EXPECT_EQ(shots[3].yaw, kViewYaw + kSecondYaw + kThirdYaw);
+  EXPECT_EQ(shots[3].pitch, kViewPitch + kFirstPitch + kSecondPitch + kThirdPitch);
+}
+
+TEST_F(RecoilTest, PastThePatternsLastKickTheLastRepeats) {
+  const auto shots = Burst(6);
+
+  EXPECT_EQ(shots[5].yaw - shots[4].yaw, kThirdYaw);
+  EXPECT_EQ(shots[5].pitch - shots[4].pitch, kThirdPitch);
+  EXPECT_EQ(shots[4].yaw - shots[3].yaw, kThirdYaw);
+  EXPECT_EQ(shots[4].pitch - shots[3].pitch, kThirdPitch);
+}
+
+// US-09: the pattern is the same every burst, and the aim settles back between them.
+TEST_F(RecoilTest, ASecondBurstFromTheSameViewAfterTheRecoilHasRecoveredLeavesAsTheFirstDid) {
+  const auto first = Burst(4);
+  Run(60);
+
+  const auto second = Burst(4);
+
+  for (std::size_t i = 0; i < first.size(); ++i) {
+    EXPECT_EQ(second[i].yaw, first[i].yaw) << "round " << i;
+    EXPECT_EQ(second[i].pitch, first[i].pitch) << "round " << i;
+  }
+}
+
+TEST_F(RecoilTest, ABurstFiredBeforeTheLastHasRecoveredStartsThePatternOverOnTopOfWhatIsLeft) {
+  Burst(3);
+  // One tick off the trigger: the burst is over, and little of it has recovered.
+  Tick(Command{});
+
+  const auto shots = Burst(2);
+
+  const float left = shots[0].pitch - kViewPitch;
+  EXPECT_GT(left, 0.0F);
+  EXPECT_LT(left, kFirstPitch + kSecondPitch + kThirdPitch);
+  EXPECT_EQ(shots[1].pitch - shots[0].pitch, kFirstPitch);
+  EXPECT_EQ(shots[1].yaw - shots[0].yaw, 0.0F);
+}
+
+TEST_F(RecoilTest, AimingDownSightsScalesEveryKick) {
+  const auto shots = Burst(4, FiringFromTheView(/*ads=*/true));
+
+  EXPECT_EQ(shots[0].pitch, kViewPitch);
+  EXPECT_EQ(shots[1].pitch, kViewPitch + (kFirstPitch / 2.0F));
+  EXPECT_EQ(shots[2].yaw, kViewYaw + (kSecondYaw / 2.0F));
+  EXPECT_EQ(shots[3].yaw, kViewYaw + ((kSecondYaw + kThirdYaw) / 2.0F));
+  EXPECT_EQ(shots[3].pitch, kViewPitch + ((kFirstPitch + kSecondPitch + kThirdPitch) / 2.0F));
+}
+
+TEST_F(RecoilTest, TheRecoilHoldsWhileTheTriggerIsHeldAndRecoversAtTheParametersRateOnceItIsNot) {
+  Burst(1);
+  // Held between two rounds, the trigger keeps what the first round kicked.
+  EXPECT_EQ(Tick(FiringFromTheView()).bodies.front().rifle.recoil.pitch, kFirstPitch);
+
+  EXPECT_NEAR(RecoilAfterARestingTick().pitch, kFirstPitch - kRecoveryPerTick, kAngleTolerance);
+  EXPECT_NEAR(RecoilAfterARestingTick().pitch, kFirstPitch - (2.0F * kRecoveryPerTick), kAngleTolerance);
+  EXPECT_EQ(RecoilAfterARestingTick(), augusta::weapon::RecoilOffset{});
+  EXPECT_EQ(RecoilAfterARestingTick(), augusta::weapon::RecoilOffset{});
+}
+
+// The rate is the offset's own, not each angle's: it shrinks along its line.
+TEST_F(RecoilTest, ARecoveringOffsetShrinksStraightTowardZero) {
+  Burst(2);
+  const float pitch = kFirstPitch + kSecondPitch;
+  const float length = std::hypot(pitch, kSecondYaw);
+
+  const augusta::weapon::RecoilOffset recoil = RecoilAfterARestingTick();
+
+  EXPECT_NEAR(std::hypot(recoil.pitch, recoil.yaw), length - kRecoveryPerTick, kAngleTolerance);
+  EXPECT_NEAR(recoil.yaw / recoil.pitch, kSecondYaw / pitch, 1e-3F);
+}
+
+// A rifle being reloaded pulls no trigger, whatever the fire control does.
+TEST_F(RecoilTest, AReloadEndsTheBurstThoughFireIsStillHeld) {
+  Burst(3);
+  Command reload = FiringFromTheView();
+  reload.reload = true;
+  Tick(reload);
+  // Fire held through the rest of the reload's half second, and on.
+  EXPECT_TRUE(FiringTicks(29, FiringFromTheView()).empty());
+
+  const auto shots = Burst(2);
+
+  EXPECT_EQ(shots[0].yaw, kViewYaw);
+  EXPECT_EQ(shots[0].pitch, kViewPitch);
+  EXPECT_EQ(shots[1].pitch, kViewPitch + kFirstPitch);
+}
+
+TEST_F(RecoilTest, AShotOffTheViewIsStillOnTheGridItTravelsOn) {
+  Command command = Firing();
+  command.yaw = 0.1234567F;
+  command.pitch = -0.0654321F;
+
+  const auto shots = Burst(3, command);
+
+  EXPECT_EQ(shots[2].yaw, augusta::math::SnapAngle(shots[2].yaw));
+  EXPECT_EQ(shots[2].pitch, augusta::math::SnapAngle(shots[2].pitch));
+  EXPECT_NEAR(shots[2].pitch, -0.0654321F + kFirstPitch + kSecondPitch, kAngleTolerance);
 }
 
 // A hitbox for part: the box from low to high, as the twelve triangles of its faces.

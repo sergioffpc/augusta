@@ -56,7 +56,7 @@ its step is an exact float, and a value read back encodes to the same bytes:
 | position (a body's, the spawn point, a Shot's origin), per axis | 3 (signed) | 1/1024 m | ±8192 m |
 | velocity, per axis | 2 (signed) | 1/512 m/s | ±64 m/s |
 | movement direction, per axis | 2 (signed) | 1/16384 | ±2 |
-| yaw, pitch (a command's view, a body's facing, a Shot's direction) | 3 (signed) | 2⁻²¹ rad (about 0.5 µrad) | ±4 rad |
+| yaw, pitch (a command's view, a body's facing, a Shot's direction, a rifle's Recoil offset) | 3 (signed) | 2⁻²¹ rad (about 0.5 µrad) | ±4 rad |
 | stamina | 2 (unsigned) | 1/32768 | 0 to 2 |
 | a command's view fraction | 1 (unsigned) | 1/256 | 0 to 255/256 |
 
@@ -66,7 +66,7 @@ they are sent once, and must arrive exactly. So do a rifle's two times: its
 owner replays its commands from them (ADR-0004) with the function the server
 stepped them with, and a rounded start would be a rifle the server never had.
 So a body is 18 bytes (25 in an update, with its entity ID and its yaw), a
-rifle 9 and a command 15, a whole Shot message is 24 and a whole Hit
+rifle 16 and a command 15, a whole Shot message is 24 and a whole Hit
 confirmation 10.
 
 **Aim is not the network's to blur.** The server fires with the angle it was
@@ -84,6 +84,14 @@ which gives what `Decode` would give back.
 direction to these grids before it fires the bullet, so the round the server
 flies and judges is exactly the one every client is told of and draws
 (ADR-0044).
+
+**Recoil lives on the grid, and off the Command.** The rifle's rules
+(`weapon::Step`) round a rifle's Recoil offset to the angle grid on every tick,
+on the server and in the owner's prediction alike, so the offset an update
+carries is exactly the one the server had and the replay starts from it. The
+offset is the rifle's alone: a Command's yaw and pitch are the player's view,
+never the view with recoil on it, and the server adds its own offset to them
+when it fires the Shot.
 
 **A body faces where its player looks.** A body's yaw is the yaw of the last
 Command the server took in from its player, on the angle grid: the server turns
@@ -117,7 +125,7 @@ supersedes is unreliable.
 | Join accepted | server → client | reliable | session ID, the server's tick rate, the parameters to predict with (the Player count, the stamina rules, the rifle with its recoil pattern of at most 64 kicks, its ammo with damage by body part, and the starting health), the player's own character index |
 | Join refused | server → client | reliable | reason: version mismatch, pack mismatch, unknown character, match in progress, lobby full |
 | Commands | client → server | unreliable | up to 8 commands, oldest first: sequence, movement direction, yaw, pitch, one byte holding the sprint, ADS, fire and reload flags (bits 0-3) and the desired stance (bits 4-5), and the view the command was sampled against (ADR-0044) as one byte for how many ticks before the message's view tick its own is and one for its fraction; then the message's view tick, the newest server tick any of its commands was sampled against |
-| Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, per body (at most 8): entity ID, position, velocity, one byte holding the stance (bits 0-1) and the exhausted flag (bit 2), stamina, the yaw it faces; then one byte: how many of the recipient's commands the server still holds queued after the tick; then the recipient's own rifle as of the tick, to reconcile its predicted one against (ADR-0004): one byte for the rounds in its magazine, and the time until its next round may fire and the time its reload still takes, each a 32-bit float |
+| Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, per body (at most 8): entity ID, position, velocity, one byte holding the stance (bits 0-1) and the exhausted flag (bit 2), stamina, the yaw it faces; then one byte: how many of the recipient's commands the server still holds queued after the tick; then the recipient's own rifle as of the tick, to reconcile its predicted one against (ADR-0004): one byte for the rounds in its magazine, the time until its next round may fire and the time its reload still takes, each a 32-bit float, one byte for the rounds its Burst has fired, and its Recoil offset as a pitch and a yaw |
 | Lobby | server → client | reliable | the Roster's version, and every player in the Lobby (at most 8, the recipient included) with session ID and character index (ADR-0043) |
 | Ready | client → server | reliable | the Lobby version the client loaded for (ADR-0043) |
 | Match start | server → client | reliable | every player in the Match (at most 8, the recipient included): session ID, the entity ID of its body, character index, spawn position (ADR-0043) |
