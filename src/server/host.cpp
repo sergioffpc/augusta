@@ -26,6 +26,7 @@
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
+#include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "augusta/version.h"
@@ -40,8 +41,8 @@ namespace {
 // The authoritative world with the map's collision already in it. Built
 // before the socket exists, so a map that is rejected never leaves a bound
 // port behind.
-simulation::World BuildSimulation(const HostConfig& config, const Map& map) {
-  simulation::World simulation(config.parameters, config.tick_rate_hz);
+simulation::World BuildSimulation(const HostConfig& config, const Map& map, scripting::Engine policy) {
+  simulation::World simulation(config.parameters, config.tick_rate_hz, std::move(policy));
   for (const physics::CollisionMesh& mesh : map.collision) {
     if (const auto added = simulation.AddCollisionMesh(mesh); !added) {
       throw std::runtime_error(
@@ -199,8 +200,8 @@ struct Host::Impl {
   // are limited; the heartbeat still counts every one. Guarded by mutex.
   logging::Throttle drop_warnings{std::chrono::seconds{1}};
 
-  Impl(const HostConfig& config, Map map)
-      : simulation(BuildSimulation(config, map)),
+  Impl(const HostConfig& config, Map map, scripting::Engine policy)
+      : simulation(BuildSimulation(config, map, std::move(policy))),
         tick_rate_hz(config.tick_rate_hz),
         parameters(config.parameters),
         characters(ToSimulation(map.characters)),
@@ -481,7 +482,8 @@ struct Host::Impl {
   }
 };
 
-Host::Host(const HostConfig& config, Map map) : impl_(std::make_unique<Impl>(config, std::move(map))) {}
+Host::Host(const HostConfig& config, Map map, scripting::Engine policy)
+    : impl_(std::make_unique<Impl>(config, std::move(map), std::move(policy))) {}
 
 Host::~Host() = default;
 

@@ -13,6 +13,7 @@
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
+#include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "match.h"
@@ -86,9 +87,9 @@ class Host {
  public:
   /// Constructs SimulationWorld with map's collision (throws
   /// std::runtime_error if a map mesh, or a character's hitbox, is not a whole
-  /// triangle list) and starts listening (throws std::runtime_error if the
-  /// address can't be bound).
-  Host(const HostConfig& config, Map map);
+  /// triangle list) and the scenario's Game policy (none by default), and starts
+  /// listening (throws std::runtime_error if the address can't be bound).
+  Host(const HostConfig& config, Map map, scripting::Engine policy = {});
   ~Host();
 
   // Not copyable or movable: owns the listening socket.

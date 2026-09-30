@@ -1,8 +1,21 @@
 # Gameplay Scripting Language: Lua
 
-Game policy (Match lifecycle, win conditions, spawn rules) runs as Lua (MIT, lua.org reference implementation), embedded via sol2 (MIT, header-only C++ binding), in a sandboxed environment (no `io`, `os.execute`, `package.loadlib`) inside SimulationWorld's Scripts/Behaviours phase. This keeps game policy separate from mechanism code.
+Game policy (Match lifecycle, win conditions, spawn rules) runs as Lua (MIT, lua.org reference implementation), embedded via sol2 (MIT, header-only C++ binding), in a sandboxed environment (no `io`, `os`, `package`, `require`) inside SimulationWorld's Scripts/Behaviours phase. This keeps game policy separate from mechanism code.
+
+## How policy runs
+
+- **The scripts** are a scenario's `objectives.lua` (win conditions) and `behaviours.lua` (spawn rules and other policy), cooked into its server pack beside `parameters.lua` (ADR-0039). The server reads them at startup, before it opens a socket, and runs each one's top level once. A script that does not compile, raises an error or runs past the instruction limit there stops the server, which names the script and the error, as a bad `parameters.lua` does. A scenario may lack either script, and then has no policy for that concern.
+- **The sandbox** is ADR-0039's: each script has a Lua state of its own, sharing no globals with the other or with the Parameters script, holding only the base, math, string and table libraries. There is no `io`, `os`, `package`, `require`, `debug` or `coroutine`, no `dofile`, `loadfile` or `load`, no `math.random`, and no `pcall`/`xpcall`, so a script cannot catch the instruction limit's stop.
+- **Hooks** are global functions a script defines, called by name from SimulationWorld. A hook a script does not define is a no-op, and the mechanism decides that concern alone. The catalogue is fixed in C++ and grows only with a decision policy is given: the Scripts/Behaviours phase calls the objectives' `on_tick` once a tick, and it has no decision to make yet.
+- **A hook reads** a plain read-only table built for the call: numbers, booleans, strings and nested lists and records, never a live binding into Flecs or any other engine state. Writing to it raises an error.
+- **A hook acts** only through what it returns. What crosses back is plain data (nil, booleans, numbers, strings, lists keyed 1 to n, records keyed by strings), and C++ validates every returned value against what that hook may decide: an unknown key, a wrong type or an out-of-range value is refused. Returning nil decides nothing.
+- **Each call has an instruction limit** of 100 000 Lua instructions, counted afresh per call, so a hook takes well under a millisecond of the tick (NFR-01). A top level has ADR-0039's limit of 1 000 000.
+- **Failure inside a Match is contained.** A hook that raises an error, runs past its limit or returns something invalid is logged at WARN with its script, hook and tick (at most once a second, ADR-0029) and treated as having decided nothing. The tick goes on, and the next call runs as usual.
+- **Deterministic and server-only.** The same scripts called with the same views return the same decisions; neither client world runs policy (ADR-0024).
 
 ## Considered Options
 
 - **LuaJIT**: considered and deferred — policy logic is low-frequency, not hot-path numeric work, so JIT performance is unnecessary, and LuaJIT's upstream is stalled (would mean depending on the OpenResty-maintained fork rather than lua.org directly).
 - **Python**: already used for offline asset tooling via OpenUSD, but deliberately not reused here — it isn't designed for embedding into a 60Hz real-time tick loop (CPython overhead, GIL).
+- **Live bindings into the ECS** (functions or userdata a hook calls to read or change the world): rejected. A hook could then change mechanism state in the middle of a tick, and every binding would have to be guarded against misuse; a table in and a validated value out keeps everything policy can do explicit and checked in C++.
+- **One Lua state for both policy scripts**: rejected. Two scripts defining the same global would silently overwrite each other, and a state per script costs little.

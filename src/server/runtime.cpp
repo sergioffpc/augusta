@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "augusta/logging.h"
+#include "augusta/scripting.h"
 #include "augusta/tick.h"
 #include "host.h"
 
@@ -40,7 +41,7 @@ struct ServerRuntime::Impl {
   std::atomic<bool> running{false};
   std::thread network_thread;
 
-  Impl(const Config& cfg, server::Map map)
+  Impl(const Config& cfg, server::Map map, scripting::Engine policy)
       : config(cfg),
         host(
             server::HostConfig{
@@ -48,7 +49,7 @@ struct ServerRuntime::Impl {
                 .parameters = cfg.parameters,
                 .listen = cfg.listen,
             },
-            std::move(map)) {}
+            std::move(map), std::move(policy)) {}
 
   // Network I/O thread body (ADR-0005): pumps the connection until running is
   // cleared by ThreadJoiner or Stop(), waiting kNetworkRoundWait between
@@ -64,8 +65,8 @@ struct ServerRuntime::Impl {
   }
 };
 
-ServerRuntime::ServerRuntime(const Config& config, server::Map map)
-    : impl_(std::make_unique<Impl>(config, std::move(map))) {}
+ServerRuntime::ServerRuntime(const Config& config, server::Map map, scripting::Engine policy)
+    : impl_(std::make_unique<Impl>(config, std::move(map), std::move(policy))) {}
 
 ServerRuntime::~ServerRuntime() = default;
 

@@ -36,8 +36,8 @@
 // entity too.
 // CommandIngestion, Movement, WeaponHandling, Damage and Commit act on players
 // and Ballistics and HitDetection on bullets, which end on the Map, on a
-// player or at their range; Scripts/Behaviours is a stub until what it needs is
-// built. What each one does is documented on its Phase enumerator below.
+// player or at their range; Scripts/Behaviours calls the scenario's Game policy.
+// What each one does is documented on its Phase enumerator below.
 namespace augusta::simulation {
 
 // SimulationWorld's eight phases (ADR-0023), executed in this exact
@@ -87,8 +87,10 @@ enum class Phase {
   // death and spectating (US-13) are not built yet.
   kDamage,
   // Policy, sandboxed Lua (ADR-0022). Win condition, round transitions,
-  // spawn logic (US-14, US-03) - augusta::scripting::Engine::RunHook,
-  // once per relevant hook. The only phase not implemented in C++.
+  // spawn logic (US-14, US-03) - augusta::scripting::Engine::Call: the
+  // objectives' on_tick hook, handed a read-only view of the tick. A hook
+  // that fails, or returns a decision it cannot make, is logged and decides
+  // nothing, and the tick goes on. The only phase not implemented in C++.
   kScriptsBehaviours,
   // Mechanism. Packages the tick's resolved state into Authoritative
   // State (State, below), which augusta::replication plans into each
@@ -226,10 +228,11 @@ class World {
   // fixed for its lifetime, and ticking tick_rate_hz times a second, which
   // sets how many ticks kMaxShootersDelay and the Hitbox history span: an
   // empty physics::World (its stamina rules for every player body) and an
-  // empty ballistics::World (no bullets in flight yet), a scripting::Engine
-  // with no script loaded yet, and the Flecs world with Phase's eight phases
-  // and their systems registered (see header comment).
-  World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz);
+  // empty ballistics::World (no bullets in flight yet), policy, the scenario's
+  // Game policy (ADR-0022) as the server loaded it from its pack (none by
+  // default), and the Flecs world with Phase's eight phases and their systems
+  // registered (see header comment).
+  World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz, scripting::Engine policy = {});
   ~World();
 
   /// Adds immovable level geometry to this world's physics, the same way PredictionWorld does.

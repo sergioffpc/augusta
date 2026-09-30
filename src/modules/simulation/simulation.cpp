@@ -8,8 +8,10 @@
 #include <expected>
 #include <memory>
 #include <span>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <flecs.h>
@@ -17,6 +19,7 @@
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
 #include "augusta/grid.h"
+#include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -165,6 +168,13 @@ ballistics::TargetId ToTarget(EntityId entity) { return static_cast<ballistics::
 
 EntityId FromTarget(ballistics::TargetId target) { return static_cast<EntityId>(std::to_underlying(target)); }
 
+// The objectives' hook called every tick in Scripts/Behaviours (ADR-0022).
+constexpr std::string_view kOnTick = "on_tick";
+
+// How often a failing Game policy hook is logged: one that fails every tick
+// would otherwise write a line a tick (ADR-0029).
+constexpr std::chrono::seconds kPolicyWarningInterval{1};
+
 }  // namespace
 
 std::size_t HitboxHistoryTicks(std::uint8_t tick_rate_hz) {
@@ -188,7 +198,8 @@ struct World::Impl {
   flecs::world ecs;
   physics::World physics;
   ballistics::World ballistics;
-  scripting::Engine scripting;
+  scripting::Engine policy;
+  logging::Throttle policy_warnings{kPolicyWarningInterval};
   PhaseEntities phases;
   std::unordered_map<EntityId, Slot> players;
   // Set by Tick for CommandIngestion to read, and filled by Commit for Tick to return.
@@ -205,11 +216,12 @@ struct World::Impl {
   std::vector<ballistics::Hitbox> bullet_hitboxes;
   std::vector<PlayerHit> player_hits;
 
-  Impl(const parameters::Parameters& params, std::uint8_t tick_rate_hz)
+  Impl(const parameters::Parameters& params, std::uint8_t tick_rate_hz, scripting::Engine policy_engine)
       : parameters(params),
         max_shooters_delay(MaxShootersDelayTicks(tick_rate_hz)),
         history_ticks(HitboxHistoryTicks(tick_rate_hz)),
         physics(params.stamina),
+        policy(std::move(policy_engine)),
         targets(ecs.query<const Player, const Body, const Facing, const Hitboxes, const HitboxHistory>()) {
     ChainPhases();
     RegisterSystems();
@@ -232,11 +244,9 @@ struct World::Impl {
   }
 
   // Registers one system per phase, matching the responsibility documented
-  // on Phase's matching enumerator in simulation.h. The stub uses run()
-  // rather than each(): it fires exactly once per Tick regardless of matched
-  // entities, since its component shapes aren't designed yet (see
-  // simulation.h's header comment) - there is nothing to iterate. This only
-  // establishes its place in the pipeline.
+  // on Phase's matching enumerator in simulation.h. Scripts/Behaviours uses
+  // run() rather than each(): it fires exactly once per Tick regardless of
+  // matched entities, since a hook is called once a tick, not once a player.
   void RegisterSystems() {
     ecs.system<const Player, Intent, Facing>("CommandIngestionSystem")
         .kind(phases[kCommandIngestion])
@@ -410,8 +420,24 @@ struct World::Impl {
     }
   }
 
+  // Calls the objectives' on_tick with the tick. It has no decision to make yet,
+  // so anything but nil is refused; either way the tick goes on.
   void OnScriptsBehaviours() {
-    // TODO(sergioffpc): scripting::Engine::RunHook per relevant hook.
+    const scripting::Value::Record view{{.key = "tick", .value = {.data = static_cast<double>(tick)}}};
+    const auto returned = policy.Call(scripting::Script::kObjectives, kOnTick, view);
+    if (!returned) {
+      LW_LIMITED(policy_warnings,
+                 "subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
+                 scripting::ScriptPath(scripting::Script::kObjectives), kOnTick, tick,
+                 scripting::DescribeHookError(returned.error()));
+      return;
+    }
+    if (!std::holds_alternative<std::monostate>(returned->data)) {
+      LW_LIMITED(policy_warnings,
+                 "subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} "
+                 "reason=\"it decides nothing yet, so it returns nil\"",
+                 scripting::ScriptPath(scripting::Script::kObjectives), kOnTick, tick);
+    }
   }
 
   void OnCommit(const Player& player, const Body& body, const Facing& facing, const Health& health,
@@ -421,8 +447,8 @@ struct World::Impl {
   }
 };
 
-World::World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz)
-    : impl_(std::make_unique<Impl>(parameters, tick_rate_hz)) {}
+World::World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz, scripting::Engine policy)
+    : impl_(std::make_unique<Impl>(parameters, tick_rate_hz, std::move(policy))) {}
 
 World::~World() = default;
 
