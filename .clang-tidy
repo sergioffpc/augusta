@@ -98,5 +98,5 @@ CheckOptions:
   - { key: readability-identifier-naming.MacroDefinitionIgnoredRegexp, value: '^AUGUSTA_[A-Z0-9_]+_H_$' }
   - { key: readability-function-size.LineThreshold,               value: 60         }
   # Matched against the header's path as found on disk: under MSVC's flags
-  # Boost's are found as boost\..., hence [/\].
-  - { key: misc-include-cleaner.IgnoreHeaders, value: 'boost[/\].*;yaml-cpp/.*;glm/.*;spdlog/.*;fmt/.*;flecs.*;Px.*;foundation/.*;extensions/.*;characterkinematic/.*;steam/.*;sol/.*;lua.*;lauxlib.h;lualib.h;blake3.h;sodium.*;nvtx3/.*;gtest/.*;gmock/.*;benchmark/.*;Falcor.*;Core/.*;Utils/.*;RenderGraph/.*' }
+  # Boost's and sol2's are found as boost\... and sol\..., hence [/\].
+  - { key: misc-include-cleaner.IgnoreHeaders, value: 'boost[/\].*;yaml-cpp/.*;glm/.*;spdlog/.*;fmt/.*;flecs.*;Px.*;foundation/.*;extensions/.*;characterkinematic/.*;steam/.*;sol[/\].*;lua.*;lauxlib.h;lualib.h;blake3.h;sodium.*;nvtx3/.*;gtest/.*;gmock/.*;benchmark/.*;Falcor.*;Core/.*;Utils/.*;RenderGraph/.*' }
