@@ -2277,11 +2277,13 @@ TEST_F(RobustnessTest, AClientThatDropsWithoutClosingKeepsTheServerTickingAndIsR
 }
 
 // A match of kPlayers on the floor, each with the test rifle: 600 rounds a
-// minute, a round every six ticks at the test tick rate, and a magazine of 15.
+// minute, a round every six ticks at the test tick rate, and a magazine of 15
+// that takes half a second, 30 ticks, to reload.
 template <std::uint8_t kPlayers>
 class FireMatchOf : public LoopbackMatch {
  protected:
   static constexpr std::uint8_t kMagazine = 15;
+  static constexpr int kReloadTicks = 30;
   // The test character's eye, standing, above its feet.
   static constexpr float kEyeHeight = 1.6F;
 
@@ -2289,6 +2291,7 @@ class FireMatchOf : public LoopbackMatch {
     Parameters parameters = WithPlayerCount(kPlayers);
     parameters.rifle.rounds_per_minute = 600.0F;
     parameters.rifle.magazine_capacity = kMagazine;
+    parameters.rifle.reload_seconds = 0.5F;
     parameters.rifle.muzzle_velocity = 800.0F;
     parameters.ammo.max_range = 1000.0F;
     HostSetup setup = OnTheFloor({Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F)}, parameters);
@@ -2311,6 +2314,14 @@ class FireMatchOf : public LoopbackMatch {
   static Command Firing() {
     Command command{};
     command.fire = true;
+    return command;
+  }
+
+  // Reload pressed, with fire held or not.
+  static Command Reloading(bool fire) {
+    Command command{};
+    command.reload = true;
+    command.fire = fire;
     return command;
   }
 
@@ -2371,6 +2382,50 @@ TEST_F(FireTest, NoShotIsFiredWhileFireIsNotHeld) {
   Run(30);
 
   EXPECT_TRUE(ShotsOf(client).empty());
+}
+
+TEST_F(FireTest, AfterAReloadOfAnEmptyMagazineTheShotsResumeForAFullMagazine) {
+  Session& client = *sessions_.front();
+  Run(120, Firing());
+  ASSERT_EQ(ShotsOf(client).size(), kMagazine);
+
+  // The press and the 29 ticks after it are the reload's half second.
+  Step(Reloading(/*fire=*/true));
+  Run(kReloadTicks - 1, Firing());
+  EXPECT_EQ(ShotsOf(client).size(), kMagazine);
+
+  Step(Firing());
+  EXPECT_EQ(ShotsOf(client).size(), kMagazine + 1U);
+
+  // Long enough for two magazines: only the one the reload gave is fired.
+  Run(240, Firing());
+  EXPECT_EQ(ShotsOf(client).size(), 2U * kMagazine);
+}
+
+TEST_F(FireTest, AReloadPressWithAFullMagazineStartsNothingAndFireContinues) {
+  Session& client = *sessions_.front();
+
+  // A second of fire, as without the press: ten rounds.
+  Step(Reloading(/*fire=*/true));
+  Run(59, Firing());
+
+  EXPECT_EQ(ShotsOf(client).size(), 10U);
+}
+
+// A Command's reload is a press (the sampler sets it on one tick), but the
+// server does not count on it: sent on every tick, it still starts one reload.
+TEST_F(FireTest, ReloadSentOnEveryTickStartsOneReloadNotOneEveryTick) {
+  Session& client = *sessions_.front();
+  Run(120, Firing());
+  ASSERT_EQ(ShotsOf(client).size(), kMagazine);
+
+  // Started over on every tick, the reload would not be done after its half second.
+  Run(kReloadTicks, Reloading(/*fire=*/false));
+  Step(Firing());
+  EXPECT_EQ(ShotsOf(client).size(), kMagazine + 1U);
+
+  Run(120, Firing());
+  EXPECT_EQ(ShotsOf(client).size(), 2U * kMagazine);
 }
 
 using FireDuelTest = FireMatchOf<2>;

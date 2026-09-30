@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <numbers>
 #include <vector>
 
@@ -250,6 +251,15 @@ class FireTest : public ::testing::Test {
     return state.shots.empty() ? augusta::simulation::Shot{} : state.shots.front();
   }
 
+  // Ticks the given number of times with no command and returns the last state.
+  State Run(int ticks) {
+    State state;
+    for (int i = 0; i < ticks; ++i) {
+      state = world_.Tick({}, kTick);
+    }
+    return state;
+  }
+
   // Where Alice's feet are.
   Vec3 Feet() { return world_.Tick({}, kTick).bodies.front().body.position; }
 
@@ -492,6 +502,109 @@ TEST_F(SmallMagazineFireTest, AnEmptyMagazineFiresNothingHoweverLongItRests) {
   FiringTicks(120, Command{});
 
   EXPECT_TRUE(FiringTicks(30, Firing()).empty());
+}
+
+// A magazine of three rounds that takes half a second, 30 ticks, to reload.
+class ReloadTest : public FireTest {
+ protected:
+  static constexpr int kReloadTicks = 30;
+
+  static Parameters WithThreeRoundsAndAHalfSecondReload() {
+    Parameters parameters = WithTheTestRifle();
+    parameters.rifle.magazine_capacity = 3;
+    parameters.rifle.reload_seconds = 0.5F;
+    return parameters;
+  }
+
+  ReloadTest() : FireTest(WithThreeRoundsAndAHalfSecondReload()) {}
+
+  static Command Reloading(bool fire = false) {
+    Command command{};
+    command.reload = true;
+    command.fire = fire;
+    return command;
+  }
+
+  // How many rounds Alice's magazine holds.
+  std::uint8_t Rounds() { return Tick(Command{}).bodies.front().rifle.rounds; }
+};
+
+TEST_F(ReloadTest, AReloadFiresNothingForItsDurationAndThenTheMagazineIsFull) {
+  FiringTicks(30, Firing());
+  ASSERT_EQ(Rounds(), 0);
+
+  // The press and the 29 ticks after it are the half second; a full magazine follows.
+  EXPECT_TRUE(Tick(Reloading(/*fire=*/true)).shots.empty());
+  EXPECT_TRUE(FiringTicks(kReloadTicks - 1, Firing()).empty());
+  EXPECT_EQ(FiringTicks(120, Firing()), (std::vector<int>{0, 6, 12}));
+}
+
+TEST_F(ReloadTest, AReloadOfAPartlyEmptyMagazineFillsIt) {
+  Tick(Firing());
+  ASSERT_EQ(Rounds(), 2);
+
+  Tick(Reloading());
+  FiringTicks(kReloadTicks, Command{});
+
+  EXPECT_EQ(Rounds(), 3);
+}
+
+TEST_F(ReloadTest, TheMagazineIsNotFullBeforeTheReloadEnds) {
+  Tick(Firing());
+
+  Tick(Reloading());
+  const State state = Run(kReloadTicks - 2);
+
+  EXPECT_EQ(state.bodies.front().rifle.rounds, 2);
+  EXPECT_GT(state.bodies.front().rifle.reload_remaining, 0.0F);
+}
+
+TEST_F(ReloadTest, AReloadPressWithAFullMagazineStartsNothingAndFireGoesOn) {
+  EXPECT_EQ(Tick(Reloading(/*fire=*/true)).shots.size(), 1U);
+
+  EXPECT_EQ(FiringTicks(12, Firing()), (std::vector<int>{5, 11}));
+}
+
+// A client that sends reload on every tick (the sampler sends it on one) still
+// reloads once: a reload under way is not started over.
+TEST_F(ReloadTest, HoldingReloadForManyTicksStartsOneReloadNotOneEveryTick) {
+  FiringTicks(30, Firing());
+
+  FiringTicks(kReloadTicks, Reloading());
+
+  EXPECT_EQ(Rounds(), 3);
+}
+
+TEST_F(ReloadTest, FireHeldThroughAReloadFiresOnTheFirstTickAfterIt) {
+  Tick(Firing());
+  Tick(Reloading());
+
+  EXPECT_EQ(FiringTicks(kReloadTicks + 1, Firing()), (std::vector<int>{kReloadTicks - 1}));
+}
+
+// A reload of no time at all still takes the tick it is pressed on.
+class InstantReloadTest : public FireTest {
+ protected:
+  static Parameters WithThreeRoundsAndNoReloadTime() {
+    Parameters parameters = WithTheTestRifle();
+    parameters.rifle.magazine_capacity = 3;
+    parameters.rifle.reload_seconds = 0.0F;
+    return parameters;
+  }
+
+  InstantReloadTest() : FireTest(WithThreeRoundsAndNoReloadTime()) {}
+};
+
+TEST_F(InstantReloadTest, AReloadOfNoTimeFillsTheMagazineOnTheTickItIsPressed) {
+  FiringTicks(30, Firing());
+  Command reload{};
+  reload.reload = true;
+  reload.fire = true;
+
+  const State state = Tick(reload);
+
+  EXPECT_TRUE(state.shots.empty());
+  EXPECT_EQ(state.bodies.front().rifle.rounds, 3);
 }
 
 }  // namespace

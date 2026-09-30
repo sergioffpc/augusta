@@ -138,9 +138,9 @@ struct World::Impl {
     ecs.system("ScriptsBehavioursSystem").kind(phases[kScriptsBehaviours]).run([this](flecs::iter&) {
       OnScriptsBehaviours();
     });
-    ecs.system<const Player, const Body>("CommitSystem")
+    ecs.system<const Player, const Body, const Rifle>("CommitSystem")
         .kind(phases[kCommit])
-        .each([this](const Player& player, const Body& body) { OnCommit(player, body); });
+        .each([this](const Player& player, const Body& body, const Rifle& rifle) { OnCommit(player, body, rifle); });
   }
 
   // A player with no command this tick stops and keeps the stance it asked for.
@@ -219,8 +219,8 @@ struct World::Impl {
     // TODO(sergioffpc): scripting::Engine::RunHook per relevant hook.
   }
 
-  void OnCommit(const Player& player, const Body& body) {
-    committed.bodies.push_back(EntityState{.entity = player.entity, .body = body.state});
+  void OnCommit(const Player& player, const Body& body, const Rifle& rifle) {
+    committed.bodies.push_back(EntityState{.entity = player.entity, .body = body.state, .rifle = rifle.state});
   }
 };
 

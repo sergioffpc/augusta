@@ -12,6 +12,7 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/scripting.h"
+#include "augusta/weapon.h"
 
 // augusta::simulation orchestrates SimulationWorld (ADR-0023): the single
 // authoritative ECS pipeline, run once per tick on the server's
@@ -56,7 +57,9 @@ enum class Phase {
   // augusta::weapon::Step, one call per player: the same function
   // PredictionWorld's WeaponHandling phase predicts with (ARCHITECTURE.md
   // §5). Here its result is authoritative: each round fired is a Shot, and a
-  // bullet in ballistics::World from this tick on.
+  // bullet in ballistics::World from this tick on. A Command's fire and reload
+  // are only intent: the fire rate, the magazine and the reload are this
+  // phase's to keep, whatever a client sends.
   kWeaponHandling,
   // Mechanism. Advances in-flight bullet trajectories (US-10) -
   // augusta::ballistics::World::Step, one call per in-flight bullet.
@@ -103,6 +106,8 @@ struct PlayerCommand {
 struct EntityState {
   EntityId entity{};
   physics::BodyState body{};
+  /// The rifle of the player who controls it.
+  weapon::State rifle{};
 };
 
 /// One round a player fired on a tick (CONTEXT.md's Shot, ADR-0044), with its
@@ -179,8 +184,8 @@ class World {
   // validated input, at most one per player (US-02, 2-8 players) - unlike
   // PredictionWorld, which only ever ticks the local player (see
   // augusta::prediction::World::Tick). A player with no command this tick
-  // stops moving, keeps its stance and does not fire. Returns the tick's
-  // Authoritative State.
+  // stops moving, keeps its stance and does not fire; a reload it had started
+  // goes on. Returns the tick's Authoritative State.
   State Tick(const std::vector<PlayerCommand>& commands, float delta_time);
 
  private:

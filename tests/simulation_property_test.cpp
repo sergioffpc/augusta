@@ -20,8 +20,9 @@
 #include "augusta/simulation.h"
 
 // Property-based tests of the simulation (ADR-0013), through the Worlds' public
-// interfaces: a player's stamina stays a fraction whatever it is commanded to
-// do, and a client whose prediction diverged from the server converges on the
+// interfaces: a player's stamina stays a fraction and its magazine within its
+// capacity whatever it is commanded to do, no rifle outpaces its fire rate, and
+// a client whose prediction diverged from the server converges on the
 // server's state once the server stops diverging. RC_PARAMS sets the case count
 // at run time; pull requests run the default 100.
 namespace augusta::command {
@@ -144,6 +145,60 @@ RC_GTEST_PROP(SimulationPropertyTest, StaminaStaysWithinTheBarWhateverThePlayerD
     RC_ASSERT(state.bodies.size() == 1U);
     RC_ASSERT(state.bodies.front().body.stamina >= 0.0F);
     RC_ASSERT(state.bodies.front().body.stamina <= 1.0F);
+  }
+}
+
+// A rifle a scenario could give: a magazine of 1 to 30 rounds, from one round a
+// second to more than one a tick, and a reload of no time up to a second.
+rc::Gen<augusta::parameters::Rifle> Rifle() {
+  using augusta::parameters::Rifle;
+  return rc::gen::apply(
+      [](int capacity, int rounds_per_minute, int reload_milliseconds) {
+        Rifle rifle;
+        rifle.magazine_capacity = static_cast<std::uint8_t>(capacity);
+        rifle.rounds_per_minute = static_cast<float>(rounds_per_minute);
+        rifle.reload_seconds = static_cast<float>(reload_milliseconds) / 1000.0F;
+        rifle.muzzle_velocity = 600.0F;
+        return rifle;
+      },
+      rc::gen::inRange(1, 31), rc::gen::inRange(60, 6001), rc::gen::inRange(0, 1001));
+}
+
+// Whatever a client sends, fire and reload on every tick included, the server
+// keeps the magazine and the fire rate (US-07, US-08). The rounds fired in any
+// stretch of ticks are at most what the fire interval fits in it, and one more
+// for the round that opens it.
+RC_GTEST_PROP(SimulationPropertyTest, TheMagazineStaysWithinItsCapacityAndNoWindowOutpacesTheFireRate, ()) {
+  augusta::parameters::Parameters parameters;
+  parameters.rifle = *Rifle();
+  parameters.ammo.max_range = 50.0F;
+  const std::vector<Command> commands = *Commands(1);
+
+  augusta::simulation::World world(parameters);
+  RC_ASSERT(world.AddCollisionMesh(Floor()).has_value());
+  world.AddPlayer(kPlayer, kSpawn, kEye);
+
+  std::vector<std::size_t> fired;  // The ticks a round was fired on.
+  for (std::size_t i = 0; i < commands.size(); ++i) {
+    const auto state = world.Tick({{.entity = kPlayer, .command = commands[i]}}, kTick);
+    RC_ASSERT(state.bodies.size() == 1U);
+    // Unsigned, so a magazine taken below zero would be far above its capacity.
+    RC_ASSERT(state.bodies.front().rifle.rounds <= parameters.rifle.magazine_capacity);
+    RC_ASSERT(state.shots.size() <= 1U);
+    if (!state.shots.empty()) {
+      fired.push_back(i);
+    }
+  }
+
+  // Rounding, and the 0.1 ms within which a round counts as ready.
+  constexpr float kTolerance = 0.05F;
+  const float rounds_per_tick = parameters.rifle.rounds_per_minute / 60.0F * kTick;
+  for (std::size_t first = 0; first < fired.size(); ++first) {
+    for (std::size_t last = first; last < fired.size(); ++last) {
+      const auto rounds = static_cast<float>(last - first + 1);
+      const auto ticks = static_cast<float>(fired[last] - fired[first] + 1);
+      RC_ASSERT(rounds <= (ticks * rounds_per_tick) + 1.0F + kTolerance);
+    }
   }
 }
 
