@@ -232,3 +232,17 @@ if (WIN32)
 endif()
 
 add_subdirectory(fuzz)
+
+# Every executable here and in fuzz/: what ctest, the benchmarks and the fuzz
+# jobs run. The directory is EXCLUDE_FROM_ALL, so this is how they get built.
+# Custom targets (the seed regenerators) stay out: they rewrite committed files.
+add_custom_target(augusta_tests)
+foreach(directory IN ITEMS ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/fuzz)
+  get_property(directory_targets DIRECTORY ${directory} PROPERTY BUILDSYSTEM_TARGETS)
+  foreach(target IN LISTS directory_targets)
+    get_target_property(target_type ${target} TYPE)
+    if (target_type STREQUAL "EXECUTABLE")
+      add_dependencies(augusta_tests ${target})
+    endif()
+  endforeach()
+endforeach()

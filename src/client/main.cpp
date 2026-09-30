@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <format>
 #include <optional>
+#include <print>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -91,17 +92,6 @@ std::string DescribePackError(const PackError& error, const std::filesystem::pat
       return std::format("client pack {} {}", pack_path.string(), augusta::assets::DescribeLoadError(error.load_error));
   }
   return "unknown pack error";
-}
-
-// Settings come from a config file - augustac.yaml next to the executable
-// unless --config names another (ADR-0034) - not from the command line.
-std::expected<augusta::config::ClientConfig, augusta::config::ConfigError> LoadConfig(int argc, char** argv) {
-  const auto config_file =
-      augusta::config::ResolveConfigFile(argc, argv, "augustac", augusta::config::kClientConfigFileName);
-  if (!config_file) {
-    return std::unexpected(config_file.error());
-  }
-  return augusta::config::LoadClientConfig(*config_file);
 }
 
 // Only the scene graph and its meshes are consumed so far (what the renderer
@@ -275,7 +265,17 @@ int main(int argc, char** argv) {
   const TimerResolution timer_resolution;
 #endif
 
-  const auto file_config = LoadConfig(argc, argv);
+  // Settings come from a config file - augustac.yaml next to the executable
+  // unless --config names another (ADR-0034) - not from the command line,
+  // which otherwise only asks for --help or --version (printed, then exit).
+  const auto command_line = augusta::config::ParseCommandLine(
+      argc, argv, "augustac", augusta::config::kClientConfigFileName, augusta::EngineVersion());
+  if (command_line && command_line->action != augusta::config::CommandLineAction::kRun) {
+    std::println("{}", command_line->message);
+    return 0;
+  }
+  const auto file_config = command_line.and_then(
+      [](const augusta::config::CommandLine& read) { return augusta::config::LoadClientConfig(read.config_file); });
   if (!file_config) {
     LE("subsystem=client event=config_loading_failed error={}",
        augusta::config::DescribeConfigError(file_config.error()));

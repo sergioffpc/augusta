@@ -49,10 +49,13 @@ COPY tests tests
 
 RUN cmake --preset linux
 RUN cmake --build --preset linux --target augustad
+# Staged under DESTDIR with the prefix the runtime stage runs it from, so this
+# file never names a path inside the build tree.
+RUN DESTDIR=/workspace/stage cmake --install build/x64-linux --prefix /usr/local
 
-# Runtime stage: just the binary and the shared libraries it links against
-# (vcpkg's own dependencies are linked statically) - no build toolchain, no
-# vcpkg source tree.
+# Runtime stage: just what `cmake --install` staged and the shared libraries
+# it links against (vcpkg's own dependencies are linked statically) - no build
+# toolchain, no vcpkg source tree.
 FROM ubuntu:26.04 AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -60,7 +63,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --no-create-home --shell /usr/sbin/nologin augusta
 
-COPY --from=build /workspace/build/x64-linux/src/server/augustad /usr/local/bin/augustad
+COPY --from=build /workspace/stage/ /
 
 USER augusta
 ENTRYPOINT ["/usr/local/bin/augustad"]
