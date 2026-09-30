@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_ASSETS_WIRE_FORMAT_H_
 #define AUGUSTA_ASSETS_WIRE_FORMAT_H_
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -44,6 +45,10 @@ inline constexpr std::uint32_t kMaxTextureBytes = 256U * 1024 * 1024;
 // A Lua script is text an author wrote by hand; a megabyte is far beyond any
 // real one and rejects a hostile blob before an oversized allocation.
 inline constexpr std::uint32_t kMaxScriptBytes = 1U * 1024 * 1024;
+// A cue is a short one-shot sound; 64 MiB is minutes of it.
+inline constexpr std::uint32_t kMaxAudioBytes = 64U * 1024 * 1024;
+// The sample widths a PCM WAV file can hold, the only ones an audio blob has.
+inline constexpr std::array<std::uint8_t, 4> kPcmBitsPerSample = {8, 16, 24, 32};
 
 // Bit flags for a scene node's optional references (encoder.cpp's
 // EncodeSceneNode / decoder.cpp's DecodeSceneNode - see ADR-0032). Shared

@@ -168,4 +168,29 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeCharactersBlob(std::spa
   return blob;
 }
 
+// Audio blob wire format: sample rate (u32), bits per sample (u8), then the
+// samples as a u32 byte count and the bytes.
+std::expected<std::vector<std::byte>, EncodeError> EncodeAudioBlob(const AudioData& sound) {
+  if (sound.samples.size() > kMaxAudioBytes) {
+    return std::unexpected(EncodeError::kTooLarge);
+  }
+  std::vector<std::byte> blob;
+  ByteWriter writer(blob);
+  writer.WriteU32(sound.sample_rate);
+  writer.WriteU8(sound.bits_per_sample);
+  writer.WriteU32(static_cast<std::uint32_t>(sound.samples.size()));
+  writer.WriteBytes(sound.samples);
+  return blob;
+}
+
+// Sounds blob wire format: one length-prefixed string.
+std::expected<std::vector<std::byte>, EncodeError> EncodeSoundsBlob(std::string_view sounds_path) {
+  std::vector<std::byte> blob;
+  ByteWriter writer(blob);
+  if (!writer.WriteString(sounds_path)) {
+    return std::unexpected(EncodeError::kTooLarge);
+  }
+  return blob;
+}
+
 }  // namespace augusta::assets

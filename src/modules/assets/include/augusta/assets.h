@@ -48,6 +48,7 @@ enum class AssetType : std::uint8_t {
   kCharacters,
   kClientPack,
   kEye,
+  kSounds,
 };
 
 // True if value is one of AssetType's defined enumerators - an index
@@ -159,6 +160,19 @@ struct TextureData {
   std::vector<std::byte> dds_bytes;
   TextureFormat format = TextureFormat::kBC7;
 };
+
+/// A mono PCM sound (ADR-0020): a cue the client plays. samples are as the
+/// authored WAV file held them, little-endian: unsigned at 8 bits per sample,
+/// signed at 16, 24 or 32.
+struct AudioData {
+  std::uint32_t sample_rate = 0;
+  std::uint8_t bits_per_sample = 0;
+  std::vector<std::byte> samples;
+};
+
+/// Pack-relative path, in a scenario's client pack, of the sounds folder its cue
+/// sounds are addressed under: each at `<sounds folder>/<cue>` (ADR-0031).
+inline constexpr std::string_view kSoundsPath = "Sounds";
 
 /// Pack-relative path of the Parameters script (ADR-0039) in a scenario's
 /// server pack: `parameters.lua` at the root of the scenario's folder.
@@ -363,6 +377,15 @@ class Pack {
   /// Resolves a character's eye by its pack-relative path (CharacterEyePath,
   /// ADR-0040). Present in both client and server packs.
   [[nodiscard]] std::expected<EyeData, ResolveError> ResolveEye(std::string_view path) const;
+
+  /// Resolves a sound by its pack-relative path (ADR-0020). Present in the client
+  /// pack only.
+  [[nodiscard]] std::expected<AudioData, ResolveError> ResolveAudio(std::string_view path) const;
+
+  /// Resolves, at kSoundsPath, the sounds folder the scenario's cue sounds are
+  /// addressed under, relative to `authoring/` (e.g. "sounds/augusta"). Present in
+  /// the client pack only.
+  [[nodiscard]] std::expected<std::string, ResolveError> ResolveSoundsPath() const;
 
   /// Resolves a Lua script's text by its path relative to the scenario's
   /// folder, e.g. kParametersScriptPath (ADR-0031). Present in the server pack

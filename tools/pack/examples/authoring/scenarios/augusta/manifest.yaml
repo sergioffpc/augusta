@@ -2,7 +2,7 @@
 # together into one client/server pack pair. A scenario is this folder
 # (authoring/scenarios/<name>/manifest.yaml, fixed name regardless of the
 # folder's own name, same convention as map.usda/parameters.lua, ADR-0015) -
-# it is not the map itself. map and every entry in characters are paths
+# it is not the map itself. map, every entry in characters, and sounds are paths
 # relative to <assets-root>/authoring/, the same convention ADR-0040 already
 # uses for a character's own pack addressing.
 
@@ -16,3 +16,8 @@ map: maps/augusta
 # unconditionally.
 characters:
   - characters/player
+
+# The folder holding a sound for every cue the client plays (ADR-0020,
+# ADR-0031): <cue>.wav, a mono PCM WAV file, for each of gunshot, hit_marker,
+# hit_taken, death, match_won and match_lost. Cooked into the client pack only.
+sounds: sounds/augusta

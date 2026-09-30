@@ -34,6 +34,7 @@ ASSET_TYPE_NAMES = {
     pack.ASSET_TYPE_CHARACTERS: "characters",
     pack.ASSET_TYPE_CLIENT_PACK: "client-pack",
     pack.ASSET_TYPE_EYE: "eye",
+    pack.ASSET_TYPE_SOUNDS: "sounds",
 }
 
 

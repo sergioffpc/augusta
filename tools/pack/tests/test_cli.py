@@ -41,6 +41,9 @@ def test_the_example_scenario_cooks_into_a_signed_pack_pair(tmp_path):
     assert server.blob(pack.CLIENT_PACK_PATH) == client.hash
     assert "parameters.lua" in server.paths_of_type(pack.ASSET_TYPE_SCRIPT)
     assert client.paths_of_type(pack.ASSET_TYPE_SCRIPT) == set()
+    cues = ("gunshot", "hit_marker", "hit_taken", "death", "match_won", "match_lost")
+    assert client.paths_of_type(pack.ASSET_TYPE_AUDIO) == {f"sounds/augusta/{cue}" for cue in cues}
+    assert server.paths_of_type(pack.ASSET_TYPE_AUDIO) == set()
 
 
 def test_a_missing_scenario_fails_without_writing_a_pack(tmp_path, capsys):

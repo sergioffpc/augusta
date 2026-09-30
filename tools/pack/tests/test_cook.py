@@ -7,10 +7,19 @@ import shutil
 import struct
 
 import pytest
-from conftest import FIXTURES_DIR, decode_hitbox, decode_mesh, decode_spawn_point, read_pack_contents
+from conftest import (
+    FIXTURES_DIR,
+    decode_audio,
+    decode_hitbox,
+    decode_mesh,
+    decode_spawn_point,
+    decode_string,
+    read_pack_contents,
+)
 
 from pack import pack
 from pack.cook import CookError, cook_scenario
+from pack.sounds import CueSounds, Sound
 
 
 def cook_stage(stage_name, tmp_path, key_pair):
@@ -146,6 +155,31 @@ def test_scripts_go_into_the_server_pack_only(tmp_path, key_pair):
     server = read_pack_contents(server_path, key_pair.public_key)
     assert client.paths_of_type(pack.ASSET_TYPE_SCRIPT) == set()
     assert server.blob("parameters.lua") == b"return {}"
+
+
+def test_cue_sounds_go_into_the_client_pack_only_addressed_under_their_folder(tmp_path, key_pair):
+    gunshot = Sound(sample_rate=22050, bits_per_sample=16, samples=b"\x01\x00\xff\x7f")
+    death = Sound(sample_rate=44100, bits_per_sample=8, samples=b"\x80\x90\xa0")
+    client_path = tmp_path / "client.pack"
+    server_path = tmp_path / "server.pack"
+    cook_scenario(
+        FIXTURES_DIR / "mesh_fixture.usda",
+        [],
+        client_path,
+        server_path,
+        key_pair.private_key,
+        sounds=CueSounds(path="sounds/test", cues=[("gunshot", gunshot), ("death", death)]),
+    )
+
+    client = read_pack_contents(client_path, key_pair.public_key)
+    server = read_pack_contents(server_path, key_pair.public_key)
+    assert client.paths_of_type(pack.ASSET_TYPE_AUDIO) == {"sounds/test/gunshot", "sounds/test/death"}
+    assert decode_audio(client.blob("sounds/test/gunshot")) == (22050, 16, b"\x01\x00\xff\x7f")
+    assert decode_audio(client.blob("sounds/test/death")) == (44100, 8, b"\x80\x90\xa0")
+    assert decode_string(client.blob(pack.SOUNDS_PATH)) == "sounds/test"
+    assert client.entries[pack.SOUNDS_PATH][0] == pack.ASSET_TYPE_SOUNDS
+    assert server.paths_of_type(pack.ASSET_TYPE_AUDIO) == set()
+    assert pack.SOUNDS_PATH not in server.entries
 
 
 def test_more_characters_than_an_index_can_name_are_refused(tmp_path, key_pair):

@@ -26,6 +26,8 @@ std::optional<EyeData> DecodeEyeBlob(std::span<const std::byte> blob);
 std::optional<std::string> DecodeScriptBlob(std::span<const std::byte> blob);
 std::optional<std::vector<std::string>> DecodeCharactersBlob(std::span<const std::byte> blob);
 std::optional<PackHash> DecodeClientPackBlob(std::span<const std::byte> blob);
+std::optional<AudioData> DecodeAudioBlob(std::span<const std::byte> blob);
+std::optional<std::string> DecodeSoundsBlob(std::span<const std::byte> blob);
 
 }  // namespace augusta::assets
 

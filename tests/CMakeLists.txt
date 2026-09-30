@@ -223,11 +223,19 @@ target_link_libraries(augusta_assets_tests PRIVATE augusta_assets GTest::gtest G
 target_include_directories(augusta_assets_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
 gtest_discover_tests(augusta_assets_tests)
 
+# The client's cue sounds; builds real packs with augusta_assets' private
+# encoder, as augusta_assets_tests does.
+add_executable(augusta_cues_tests cues_test.cpp)
+target_link_libraries(augusta_cues_tests PRIVATE augusta_assets augusta_cues GTest::gtest GTest::gtest_main)
+target_include_directories(augusta_cues_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
+gtest_discover_tests(augusta_cues_tests)
+
 # Loads the golden packs the Python cooker wrote from its example scenario
 # (ADR-0013); the cooker's own tests keep it writing them byte for byte.
 add_executable(augusta_cooked_pack_tests cooked_pack_test.cpp)
-# Also loads the example's Game policy scripts as the server does (ADR-0022).
-target_link_libraries(augusta_cooked_pack_tests PRIVATE augusta_assets augustad_policy_loader GTest::gtest GTest::gtest_main)
+# Also loads the example's Game policy scripts as the server does (ADR-0022),
+# and every cue's sound as the client does.
+target_link_libraries(augusta_cooked_pack_tests PRIVATE augusta_assets augusta_cues augustad_policy_loader GTest::gtest GTest::gtest_main)
 target_compile_definitions(augusta_cooked_pack_tests PRIVATE
   AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs")
 gtest_discover_tests(augusta_cooked_pack_tests)

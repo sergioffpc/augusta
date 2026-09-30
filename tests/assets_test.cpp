@@ -277,6 +277,76 @@ TEST_F(PackTest, EncodesAndResolvesTheCharacterListInOrder) {
   EXPECT_EQ(pack->ResolveCharacters().value(), characters);
 }
 
+// A cue's sound is mono PCM (ADR-0020): resolved by path with its sample rate,
+// its sample width and its samples as the WAV file held them, and only as audio.
+TEST_F(PackTest, EncodesAndResolvesASound) {
+  const auto pack_path = MakePackPath("augusta_assets_test_audio.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::vector<std::byte> samples = {std::byte{0x01}, std::byte{0x00}, std::byte{0xFF}, std::byte{0x7F}};
+
+  const auto blob = augusta::assets::EncodeAudioBlob({.sample_rate = 22050, .bits_per_sample = 16, .samples = samples});
+  ASSERT_TRUE(blob.has_value());
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kAudio, .path = "sounds/test/gunshot", .data = *blob},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  const auto sound = pack->ResolveAudio("sounds/test/gunshot");
+  ASSERT_TRUE(sound.has_value());
+  EXPECT_EQ(sound->sample_rate, 22050U);
+  EXPECT_EQ(sound->bits_per_sample, 16U);
+  EXPECT_EQ(sound->samples, samples);
+  EXPECT_EQ(pack->ResolveMesh("sounds/test/gunshot").error(), augusta::assets::ResolveError::kTypeMismatch);
+  EXPECT_EQ(pack->ResolveAudio("sounds/test/death").error(), augusta::assets::ResolveError::kNotFound);
+}
+
+// Only whole samples of a width PCM has are a sound: anything else is corrupt.
+TEST_F(PackTest, ASoundWithAnUnknownSampleWidthOrAPartialSampleIsCorrupt) {
+  const auto pack_path = MakePackPath("augusta_assets_test_corrupt_audio.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  // sample rate 22050, then the bits per sample, then 3 sample bytes.
+  const auto blob = [](std::uint8_t bits_per_sample) {
+    return std::vector<std::byte>{
+        std::byte{0x22}, std::byte{0x56}, std::byte{0x00}, std::byte{0x00}, std::byte{bits_per_sample},
+        std::byte{0x03}, std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0x01},
+        std::byte{0x02}, std::byte{0x03}};
+  };
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kAudio, .path = "width12", .data = blob(12)},
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kAudio, .path = "partial16", .data = blob(16)},
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kAudio, .path = "whole24", .data = blob(24)},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveAudio("width12").error(), augusta::assets::ResolveError::kCorruptBlob);
+  EXPECT_EQ(pack->ResolveAudio("partial16").error(), augusta::assets::ResolveError::kCorruptBlob);
+  EXPECT_TRUE(pack->ResolveAudio("whole24").has_value());
+}
+
+// A client pack names the folder its cue sounds are addressed under (ADR-0031).
+TEST_F(PackTest, EncodesAndResolvesTheSoundsFolder) {
+  const auto pack_path = MakePackPath("augusta_assets_test_sounds.pack");
+  const auto keys = GenerateEd25519KeyPair();
+
+  const auto blob = augusta::assets::EncodeSoundsBlob("sounds/augusta");
+  ASSERT_TRUE(blob.has_value());
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kSounds,
+                                  .path = std::string(augusta::assets::kSoundsPath),
+                                  .data = *blob},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveSoundsPath().value(), "sounds/augusta");
+}
+
 // A character's eye is where the local player's camera sits (ADR-0040): a bare
 // point, resolved by path, and only as an eye.
 TEST(CharacterEyePathTest, ACharactersEyeIsTheEyeChildOfItsRootPrim) {

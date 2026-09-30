@@ -23,15 +23,18 @@ from pack.pack import (
     AssetEntry,
     MeshData,
     SceneNode,
+    encode_audio_blob,
     encode_characters_blob,
     encode_eye_blob,
     encode_hitbox_blob,
     encode_mesh_blob,
     encode_scene_blob,
     encode_script_blob,
+    encode_sounds_blob,
     encode_spawn_point_blob,
     encode_texture_blob,
 )
+from pack.pack import ASSET_TYPE_AUDIO as _TYPE_AUDIO
 from pack.pack import ASSET_TYPE_CHARACTERS as _TYPE_CHARACTERS
 from pack.pack import ASSET_TYPE_CLIENT_PACK as _TYPE_CLIENT_PACK
 from pack.pack import ASSET_TYPE_COLLISION as _TYPE_COLLISION
@@ -40,6 +43,7 @@ from pack.pack import ASSET_TYPE_HITBOX as _TYPE_HITBOX
 from pack.pack import ASSET_TYPE_MESH as _TYPE_MESH
 from pack.pack import ASSET_TYPE_SCENE as _TYPE_SCENE
 from pack.pack import ASSET_TYPE_SCRIPT as _TYPE_SCRIPT
+from pack.pack import ASSET_TYPE_SOUNDS as _TYPE_SOUNDS
 from pack.pack import ASSET_TYPE_SPAWN_POINT as _TYPE_SPAWN_POINT
 from pack.pack import ASSET_TYPE_TEXTURE as _TYPE_TEXTURE
 from pack.pack import (
@@ -49,11 +53,13 @@ from pack.pack import (
     CHARACTERS_PATH,
     CLIENT_PACK_PATH,
     NO_PARENT,
+    SOUNDS_PATH,
     TEXTURE_FORMAT_BC4,
     TEXTURE_FORMAT_BC5,
     TEXTURE_FORMAT_BC7,
     write_pack,
 )
+from pack.sounds import CueSounds
 
 # augusta:spawnPoint / augusta:hitbox: custom bool attributes (ADR-0032's
 # authoring convention) rather than a native USD prim type. A hitbox is
@@ -107,6 +113,7 @@ class CookReport:
     texture_count: int
     node_count: int
     script_count: int
+    sound_count: int
 
 
 def _sanitize_prim_path(usd_prim_path: str) -> str:
@@ -577,6 +584,20 @@ def _cook_character_prim(
     return None
 
 
+def _sound_entries(sounds: CueSounds) -> list[AssetEntry]:
+    """The client pack's audio entries for sounds, and the entry naming their folder."""
+    entries = [
+        AssetEntry(
+            type=_TYPE_AUDIO,
+            path=f"{sounds.path}/{cue}",
+            data=encode_audio_blob(sound.sample_rate, sound.bits_per_sample, sound.samples),
+        )
+        for cue, sound in sounds.cues
+    ]
+    entries.append(AssetEntry(type=_TYPE_SOUNDS, path=SOUNDS_PATH, data=encode_sounds_blob(sounds.path)))
+    return entries
+
+
 def cook_scenario(
     map_stage_path: Path,
     character_stages: Sequence[tuple[str, Path]],
@@ -584,6 +605,7 @@ def cook_scenario(
     server_output_path: Path,
     signing_key: bytes,
     scripts: Sequence[tuple[str, bytes]] = (),
+    sounds: CueSounds | None = None,
     on_prim: Callable[[int, int, str], None] | None = None,
 ) -> CookReport:
     """Bakes map_stage_path and every (manifest_path, stage_path) in
@@ -595,6 +617,11 @@ def cook_scenario(
     scripts are a scenario's Lua files as (path relative to its folder, bytes):
     they go into the server pack only, as script assets (ADR-0031, ADR-0039). A
     client is sent the values a script decides, never the script.
+
+    sounds, if given, are the client's cue sounds: they go into the client pack
+    only, each as an audio asset addressed <sounds.path>/<cue>, with sounds.path
+    itself at SOUNDS_PATH so the client can find them (ADR-0020, ADR-0031). The
+    headless server plays nothing (ADR-0019).
 
     The manifest paths, in character_stages' order, are also recorded as the
     character list both packs carry (ADR-0042).
@@ -737,9 +764,19 @@ def cook_scenario(
         ]
     except Exception as error:  # noqa: BLE001 - re-raised as CookError below
         raise CookError("script_encode_failed", "", str(error)) from error
+    try:
+        sound_entries = _sound_entries(sounds) if sounds is not None else []
+    except Exception as error:  # noqa: BLE001 - re-raised as CookError below
+        raise CookError("sound_encode_failed", "", str(error)) from error
 
-    # Client pack: everything cooked from this stage, plus the full scene.
-    client_entries = [*entries, AssetEntry(type=_TYPE_SCENE, path="Scene", data=client_scene_blob), characters_entry]
+    # Client pack: everything cooked from this stage, plus the full scene and the
+    # cue sounds.
+    client_entries = [
+        *entries,
+        AssetEntry(type=_TYPE_SCENE, path="Scene", data=client_scene_blob),
+        characters_entry,
+        *sound_entries,
+    ]
     try:
         client_pack_hash = write_pack(client_output_path, client_entries, signing_key)
     except Exception as error:  # noqa: BLE001 - re-raised as CookError below
@@ -758,5 +795,9 @@ def cook_scenario(
         raise CookError("pack_write_failed", "", f"server pack: {error}") from error
 
     return CookReport(
-        mesh_count=mesh_count, texture_count=texture_count, node_count=node_count, script_count=len(scripts)
+        mesh_count=mesh_count,
+        texture_count=texture_count,
+        node_count=node_count,
+        script_count=len(scripts),
+        sound_count=len(sounds.cues) if sounds is not None else 0,
     )

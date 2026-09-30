@@ -11,6 +11,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/config.h"
+#include "augusta/cues.h"
 #include "augusta/harness.h"
 #include "augusta/logging.h"
 #include "augusta/map.h"
@@ -95,7 +96,7 @@ std::string DescribePackError(const PackError& error, const std::filesystem::pat
 }
 
 // Only the scene graph and its meshes are consumed so far (what the renderer
-// draws); collision/hitbox/texture/audio resolution waits for the ECS
+// draws); collision/hitbox/texture resolution waits for the ECS
 // component shapes and gameplay code that will use them. Reports what is
 // wrong and returns nullopt.
 std::optional<augusta::renderer::Scene> LoadRenderScene(const augusta::assets::Pack& pack,
@@ -167,11 +168,26 @@ std::optional<augusta::runtime::Map> LoadMap(const augusta::assets::Pack& pack,
   return augusta::runtime::Map{.collision = *std::move(collision)};
 }
 
+// Every cue's sound (ADR-0020), loaded at startup so a pack missing one is found
+// before a Match rather than during one. Reports what is wrong and returns nullopt.
+std::optional<augusta::audio::CueSounds> LoadCueSounds(const augusta::assets::Pack& pack,
+                                                       const std::filesystem::path& pack_path) {
+  auto sounds = augusta::audio::LoadCueSounds(pack);
+  if (!sounds) {
+    LE("subsystem=client event=cue_sounds_loading_failed path={} error={}", pack_path.string(),
+       augusta::audio::DescribeCueSoundError(sounds.error()));
+    return std::nullopt;
+  }
+  LI("subsystem=client event=cue_sounds_loaded cues={}", sounds->size());
+  return *std::move(sounds);
+}
+
 struct Content {
   augusta::math::Vec3 eye;
   augusta::renderer::Scene scene;
   augusta::runtime::Map map;
   augusta::runtime::CharacterMeshLoader load_character_mesh;
+  augusta::audio::CueSounds cue_sounds;
 };
 
 enum class ContentError {
@@ -179,6 +195,7 @@ enum class ContentError {
   kSceneLoading,
   kCharacterMeshLoading,
   kMapLoading,
+  kCueSoundsLoading,
 };
 
 std::string_view DescribeContentError(ContentError error) {
@@ -191,6 +208,8 @@ std::string_view DescribeContentError(ContentError error) {
       return "character mesh loading failed";
     case ContentError::kMapLoading:
       return "map loading failed";
+    case ContentError::kCueSoundsLoading:
+      return "cue sounds loading failed";
   }
   return "unknown content error";
 }
@@ -220,10 +239,16 @@ std::expected<Content, ContentError> LoadClientContent(const augusta::assets::Pa
     return std::unexpected(ContentError::kMapLoading);
   }
 
+  auto cue_sounds = LoadCueSounds(pack, pack_path);
+  if (!cue_sounds) {
+    return std::unexpected(ContentError::kCueSoundsLoading);
+  }
+
   return Content{.eye = *eye,
                  .scene = *std::move(scene),
                  .map = *std::move(map),
-                 .load_character_mesh = *std::move(load_character_mesh)};
+                 .load_character_mesh = *std::move(load_character_mesh),
+                 .cue_sounds = *std::move(cue_sounds)};
 }
 
 augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ClientConfig& file_config,
