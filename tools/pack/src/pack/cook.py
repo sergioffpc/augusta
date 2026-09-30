@@ -74,8 +74,8 @@ BASE_COLOR_PROPERTY = "base_color"
 # <manifest path>/Character/Visual.
 CHARACTER_ROOT_PRIM = "Character"
 # The child of CHARACTER_ROOT_PRIM every character stage has, whose origin is
-# where the local player's camera sits (ADR-0040): the client reads it at
-# <manifest path>/Character/Eye.
+# where the local player's camera sits and its Shots leave from (ADR-0040):
+# client and server read it at <manifest path>/Character/Eye.
 CHARACTER_EYE_PRIM = "Eye"
 # augusta:textureFormat: selects which BC format a UsdUVTexture prim
 # compresses to (ADR-0017/issue #49). Defaults to BC7 when absent/
@@ -533,10 +533,11 @@ def _maybe_cook_texture_prim(prim: Usd.Prim, prim_path: str, stage_path: Path, e
 
 
 # True for the AssetType values ADR-0019 puts in the server pack: collision
-# geometry, hitboxes, and spawn points. Mesh/texture/eye/scene are client-only
+# geometry, hitboxes, spawn points and character eyes (the server fires each
+# Shot from its shooter's eye, ADR-0040). Mesh/texture/scene are client-only
 # (scene is handled separately, since it needs its mesh/material
 # references stripped rather than being dropped outright).
-_SERVER_PACK_ASSET_TYPES = frozenset({_TYPE_COLLISION, _TYPE_HITBOX, _TYPE_SPAWN_POINT})
+_SERVER_PACK_ASSET_TYPES = frozenset({_TYPE_COLLISION, _TYPE_HITBOX, _TYPE_SPAWN_POINT, _TYPE_EYE})
 
 
 def _transform_mesh(mesh: MeshData, matrix: Gf.Matrix4d) -> MeshData:
@@ -638,7 +639,7 @@ def cook_scenario(
                 "",
                 f"{stage_path}: a character's default prim must be named {CHARACTER_ROOT_PRIM!r}",
             )
-        # The client puts its camera at <manifest path>/Character/Eye (ADR-0040).
+        # The camera sits, and Shots leave from, <manifest path>/Character/Eye (ADR-0040).
         eye_prim = default_prim.GetChild(CHARACTER_EYE_PRIM)
         if not eye_prim:
             raise CookError(
@@ -744,7 +745,7 @@ def cook_scenario(
     except Exception as error:  # noqa: BLE001 - re-raised as CookError below
         raise CookError("pack_write_failed", "", f"client pack: {error}") from error
 
-    # Server pack: only the collision/hitbox/spawn-point entries, plus the
+    # Server pack: only the collision/hitbox/spawn-point/eye entries, plus the
     # stripped scene, the client pack's hash and the scripts.
     server_entries = [entry for entry in entries if entry.type in _SERVER_PACK_ASSET_TYPES]
     server_entries.append(AssetEntry(type=_TYPE_SCENE, path="Scene", data=server_scene_blob))
