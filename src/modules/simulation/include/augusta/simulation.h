@@ -9,6 +9,7 @@
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
 #include "augusta/math.h"
+#include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/scripting.h"
 
@@ -27,16 +28,12 @@
 // header leaks in here. Phase's eight values become, in the same order,
 // eight dependency-chained flecs::Phase entities, each with one
 // registered flecs::system (named "<Phase>System") - see simulation.cpp.
-// A player is one entity with a physics body; CommandIngestion, Movement
-// and Commit act on players today, and the other phases' bodies are stubs
-// until what they need (bullets, damage) is designed; what each one will
-// eventually do is documented on its Phase enumerator below.
-//
-// WeaponHandling has no C++ home yet either: ARCHITECTURE.md's Shared
-// Core lists it as its own module (one interface used identically by
-// SimulationWorld and PredictionWorld, mirroring how both Worlds share
-// augusta::physics), but it hasn't been created. Phase::kWeaponHandling
-// is a forward reference to it, not a system implemented here.
+// A player is one entity with a physics body and a rifle, and a bullet in
+// flight is one entity too. CommandIngestion, Movement, WeaponHandling and
+// Commit act on players today and Ballistics on bullets, which end on the Map
+// or at their range; HitDetection against players, Damage and
+// Scripts/Behaviours are stubs until what they need is built. What each one
+// will eventually do is documented on its Phase enumerator below.
 namespace augusta::simulation {
 
 // SimulationWorld's eight phases (ADR-0023), executed in this exact
@@ -55,10 +52,11 @@ enum class Phase {
   // body. The same physics::World interface PredictionWorld's Movement
   // phase uses (ARCHITECTURE.md §5).
   kMovement,
-  // Mechanism. Aim/ADS, fire, reload, recoil, ammo rules (US-06-US-09).
-  // Not yet a module of its own - see the header comment above; this
-  // enumerator is a forward reference to it, not a system implemented
-  // here.
+  // Mechanism. Aim/ADS, fire, reload, recoil, ammo rules (US-06-US-09) -
+  // augusta::weapon::Step, one call per player: the same function
+  // PredictionWorld's WeaponHandling phase predicts with (ARCHITECTURE.md
+  // §5). Here its result is authoritative: each round fired is a Shot, and a
+  // bullet in ballistics::World from this tick on.
   kWeaponHandling,
   // Mechanism. Advances in-flight bullet trajectories (US-10) -
   // augusta::ballistics::World::Step, one call per in-flight bullet.
@@ -107,13 +105,34 @@ struct EntityState {
   physics::BodyState body{};
 };
 
+/// One round a player fired on a tick (CONTEXT.md's Shot, ADR-0044), with its
+/// numbers on the grids the Networking Protocol sends them on (ADR-0038), so
+/// the round the server fires is exactly the one its clients are told of.
+struct Shot {
+  /// The body of the player who fired it.
+  EntityId shooter{};
+  /// Where the round left from: the shooter's eye for its stance.
+  math::Vec3 origin{};
+  /// Where it left for, as a view's yaw and pitch in radians (command::Command;
+  /// command::ViewDirection gives the direction).
+  float yaw = 0.0F;
+  float pitch = 0.0F;
+};
+
 // SimulationWorld's per-tick output - ADR-0023/ARCHITECTURE.md's
 // "Authoritative State", for augusta::replication to send to clients.
-// Today it holds every player's body; later phases add what they resolve
-// (bullets, damage).
+// Today it holds every player's body, the rounds fired and what became of
+// the bullets in flight; later phases add what they resolve (hits, damage).
 struct State {
   /// Every dynamic body in the world, ordered by EntityId.
   std::vector<EntityState> bodies;
+  /// Every round fired this tick, ordered by shooter: at most one a player.
+  std::vector<Shot> shots;
+  /// Where each bullet that struck the Map this tick struck it.
+  std::vector<math::Vec3> map_impacts;
+  /// How many bullets are still flying after this tick: fired and neither
+  /// stopped by the Map nor past the ammo's max range.
+  std::uint32_t bullets_in_flight = 0;
 };
 
 // The single authoritative SimulationWorld. The server constructs
@@ -127,12 +146,13 @@ struct State {
 // world, neither of which is meaningful.
 class World {
  public:
-  // Constructs an empty World: an empty physics::World (using
-  // stamina_config for every player body) and an empty ballistics::World
-  // (no bullets in flight yet), a scripting::Engine with no script
-  // loaded yet, and the Flecs world with Phase's eight phases and their
-  // systems registered (see header comment).
-  explicit World(const physics::StaminaConfig& stamina_config);
+  // Constructs an empty World running on parameters (ADR-0039), copied and
+  // fixed for its lifetime: an empty physics::World (its stamina rules for
+  // every player body) and an empty ballistics::World (no bullets in flight
+  // yet), a scripting::Engine with no script loaded yet, and the Flecs world
+  // with Phase's eight phases and their systems registered (see header
+  // comment).
+  explicit World(const parameters::Parameters& parameters);
   ~World();
 
   /// Adds immovable level geometry to this world's physics, the same way PredictionWorld does.
@@ -143,11 +163,14 @@ class World {
   World(World&&) noexcept;
   World& operator=(World&&) noexcept;
 
-  /// Puts a new player-controlled body entity, standing and at full stamina, at
-  /// spawn. entity must not already be in the world.
-  void AddPlayer(EntityId entity, const math::Vec3& spawn);
+  /// Puts a new player-controlled body entity, standing, at full stamina and
+  /// with a rifle ready to fire, at spawn. eye is its character's eye (ADR-0040):
+  /// where it sees from standing, relative to its feet. entity must not already
+  /// be in the world.
+  void AddPlayer(EntityId entity, const math::Vec3& spawn, const math::Vec3& eye);
 
-  /// Takes entity's body out of the world; a no-op if it is not in it.
+  /// Takes entity's body out of the world; a no-op if it is not in it. The
+  /// bullets it fired fly on.
   void RemovePlayer(EntityId entity);
 
   // Runs all eight Phase values above, in their declared order, for one
@@ -156,8 +179,8 @@ class World {
   // validated input, at most one per player (US-02, 2-8 players) - unlike
   // PredictionWorld, which only ever ticks the local player (see
   // augusta::prediction::World::Tick). A player with no command this tick
-  // stops moving and keeps its stance. Returns the tick's Authoritative
-  // State.
+  // stops moving, keeps its stance and does not fire. Returns the tick's
+  // Authoritative State.
   State Tick(const std::vector<PlayerCommand>& commands, float delta_time);
 
  private:

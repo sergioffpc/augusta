@@ -39,6 +39,13 @@ enum class Stance {
 /// meters - lower crouching than standing, and lower prone than crouching.
 [[nodiscard]] float StanceHeight(Stance stance);
 
+/// Where a point of a standing body is once the body is in stance:
+/// standing_point is relative to the feet, and is lowered in proportion to the
+/// body's height in that stance (StanceHeight). What keeps a character's eye
+/// (ADR-0040) with its body as it crouches or goes prone, for the client's
+/// camera and the server's Shots alike.
+[[nodiscard]] math::Vec3 LowerToStance(const math::Vec3& standing_point, Stance stance);
+
 // Opaque handle to a body created by World::CreateBody. Valid only for the
 // World instance that created it; passing a handle from one World to
 // another is undefined behavior.

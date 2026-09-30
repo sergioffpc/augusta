@@ -384,6 +384,16 @@ MatchStartWire ReadMatchStart(Reader& reader) {
   return start;
 }
 
+ShotWire ReadShot(Reader& reader) {
+  ShotWire shot;
+  shot.shooter = static_cast<EntityIdWire>(reader.ReadU32());
+  shot.tick = reader.ReadU32();
+  shot.origin = reader.ReadVec3(math::kPositionGrid);
+  shot.yaw = reader.ReadSteps(math::kAngleGrid);
+  shot.pitch = reader.ReadSteps(math::kAngleGrid);
+  return shot;
+}
+
 // nullopt when type is not a message of this protocol.
 std::optional<MessageWire> ReadBody(MessageTypeWire type, Reader& reader) {
   switch (type) {
@@ -405,6 +415,8 @@ std::optional<MessageWire> ReadBody(MessageTypeWire type, Reader& reader) {
       return ReadMatchStart(reader);
     case MessageTypeWire::kMatchEnd:
       return MatchEndWire{};
+    case MessageTypeWire::kShot:
+      return ReadShot(reader);
   }
   return std::nullopt;
 }
@@ -520,6 +532,15 @@ struct Encoder {
 
   void operator()(const MatchEndWire& /*message*/) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kMatchEnd));
+  }
+
+  void operator()(const ShotWire& message) const {
+    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kShot));
+    WriteU32(out, static_cast<std::uint32_t>(message.shooter));
+    WriteU32(out, message.tick);
+    WriteVec3(out, message.origin, math::kPositionGrid);
+    WriteSteps(out, message.yaw, math::kAngleGrid);
+    WriteSteps(out, message.pitch, math::kAngleGrid);
   }
 };
 

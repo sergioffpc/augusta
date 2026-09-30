@@ -12,8 +12,12 @@
 
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
+#include "augusta/grid.h"
+#include "augusta/math.h"
+#include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/scripting.h"
+#include "augusta/weapon.h"
 
 namespace augusta::simulation {
 
@@ -52,6 +56,22 @@ struct Intent {
   physics::MovementInput input{};
 };
 
+// A player's rifle, as WeaponHandling left it.
+struct Rifle {
+  weapon::State state{};
+};
+
+// Where a player's character sees from standing, relative to its feet (ADR-0040).
+struct Eye {
+  math::Vec3 standing{};
+};
+
+// A bullet in flight: an entity of its own, from the tick it is fired on until
+// the tick ballistics::World resolves it.
+struct Bullet {
+  ballistics::BulletHandle handle{};
+};
+
 }  // namespace
 
 struct World::Impl {
@@ -61,6 +81,7 @@ struct World::Impl {
     physics::BodyHandle body{};
   };
 
+  const parameters::Parameters parameters;
   flecs::world ecs;
   physics::World physics;
   ballistics::World ballistics;
@@ -71,7 +92,7 @@ struct World::Impl {
   std::unordered_map<EntityId, command::Command> tick_commands;
   State committed;
 
-  explicit Impl(const physics::StaminaConfig& stamina_config) : physics(stamina_config) {
+  explicit Impl(const parameters::Parameters& params) : parameters(params), physics(params.stamina) {
     // Chain the eight phases in Phase's declared order (ADR-0023): each
     // depends_on the previous one, and the first depends on Flecs's
     // built-in OnUpdate phase, so a single ecs.progress() call runs them
@@ -87,12 +108,11 @@ struct World::Impl {
     phases[kCommit] = ecs.entity("Commit").add(flecs::Phase).depends_on(phases[kScriptsBehaviours]);
 
     // One system per phase, matching the responsibility documented on
-    // Phase's matching enumerator in simulation.h. Each uses run()
+    // Phase's matching enumerator in simulation.h. The stubs use run()
     // rather than each(): it fires exactly once per Tick regardless of
-    // matched entities, since ECS component shapes aren't designed yet
+    // matched entities, since their component shapes aren't designed yet
     // (see simulation.h's header comment) - there is nothing to iterate.
-    // Bodies are stubs until those shapes exist; this only establishes
-    // each system's place in the pipeline.
+    // This only establishes each stub's place in the pipeline.
     ecs.system<const Player, Intent>("CommandIngestionSystem")
         .kind(phases[kCommandIngestion])
         .each([this](const Player& player, Intent& intent) { OnCommandIngestion(player, intent); });
@@ -101,8 +121,18 @@ struct World::Impl {
         .each([this](flecs::iter& it, std::size_t /*row*/, Body& body, const Intent& intent) {
           OnMovement(it.delta_time(), body, intent);
         });
-    ecs.system("WeaponHandlingSystem").kind(phases[kWeaponHandling]).run([this](flecs::iter&) { OnWeaponHandling(); });
-    ecs.system("BallisticsSystem").kind(phases[kBallistics]).run([this](flecs::iter&) { OnBallistics(); });
+    // Writes Bullet, so the bullets it fires exist by the time Ballistics runs
+    // and fly their first tick on the tick they are fired.
+    ecs.system<const Player, const Body, const Eye, Rifle>("WeaponHandlingSystem")
+        .kind(phases[kWeaponHandling])
+        .write<Bullet>()
+        .each([this](flecs::iter& it, std::size_t /*row*/, const Player& player, const Body& body, const Eye& eye,
+                     Rifle& rifle) { OnWeaponHandling(it.delta_time(), player, body, eye, rifle); });
+    ecs.system<const Bullet>("BallisticsSystem")
+        .kind(phases[kBallistics])
+        .each([this](flecs::iter& it, std::size_t row, const Bullet& bullet) {
+          OnBallistics(it.delta_time(), it.entity(row), bullet);
+        });
     ecs.system("HitDetectionSystem").kind(phases[kHitDetection]).run([this](flecs::iter&) { OnHitDetection(); });
     ecs.system("DamageSystem").kind(phases[kDamage]).run([this](flecs::iter&) { OnDamage(); });
     ecs.system("ScriptsBehavioursSystem").kind(phases[kScriptsBehaviours]).run([this](flecs::iter&) {
@@ -128,18 +158,56 @@ struct World::Impl {
     body.state = physics.Step(body.handle, intent.input, delta_time);
   }
 
-  void OnWeaponHandling() {
-    // TODO(sergioffpc): not yet a module of its own - see simulation.h.
+  // A player with no command this tick holds nothing: its rifle only waits.
+  // A round leaves from where Movement just put the shooter's eye.
+  void OnWeaponHandling(float delta_time, const Player& player, const Body& body, const Eye& eye, Rifle& rifle) {
+    const auto found = tick_commands.find(player.entity);
+    const command::Command command = found == tick_commands.end() ? command::Command{} : found->second;
+    const weapon::Result result = weapon::Step(parameters.rifle, rifle.state, command, delta_time);
+    rifle.state = result.state;
+    if (!result.fired) {
+      return;
+    }
+    Fire(Shot{
+        .shooter = player.entity,
+        .origin = math::SnapPosition(body.state.position + physics::LowerToStance(eye.standing, body.state.stance)),
+        .yaw = math::SnapAngle(command.yaw),
+        .pitch = math::SnapAngle(command.pitch),
+    });
   }
 
-  void OnBallistics() {
-    // TODO(sergioffpc): ballistics::World::Step per in-flight bullet.
+  // Announces shot in the tick's state and puts its bullet in flight.
+  void Fire(const Shot& shot) {
+    committed.shots.push_back(shot);
+    const ballistics::BulletHandle bullet =
+        ballistics.Fire(shot.origin, command::ViewDirection(shot.yaw, shot.pitch), parameters.rifle.muzzle_velocity,
+                        {.gravity = parameters.ammo.gravity, .max_range = parameters.ammo.max_range});
+    ecs.entity().set<Bullet>({.handle = bullet});
+  }
+
+  // Advances one bullet a tick. No hitbox is handed in yet, so it ends on the
+  // Map or at its range, and flies through players.
+  void OnBallistics(float delta_time, flecs::entity entity, const Bullet& bullet) {
+    const ballistics::StepResult result = ballistics.Step(bullet.handle, delta_time, physics, {});
+    switch (result.outcome) {
+      case ballistics::Outcome::kInFlight:
+        ++committed.bullets_in_flight;
+        return;
+      case ballistics::Outcome::kHitMap:
+        committed.map_impacts.push_back(result.impact_point);
+        break;
+      case ballistics::Outcome::kHitPlayer:
+      case ballistics::Outcome::kExpired:
+        break;
+    }
+    // The handle is gone with the bullet (ballistics::World::Step).
+    entity.destruct();
   }
 
   void OnHitDetection() {
-    // Already folded into OnBallistics's ballistics::World::Step
-    // call - see simulation.h's Phase::kHitDetection doc comment.
-    // Kept as its own phase/system for pipeline ordering.
+    // Folded into OnBallistics's ballistics::World::Step call - see
+    // simulation.h's Phase::kHitDetection doc comment. Kept as its own
+    // phase/system for pipeline ordering.
   }
 
   void OnDamage() {
@@ -156,7 +224,7 @@ struct World::Impl {
   }
 };
 
-World::World(const physics::StaminaConfig& stamina_config) : impl_(std::make_unique<Impl>(stamina_config)) {}
+World::World(const parameters::Parameters& parameters) : impl_(std::make_unique<Impl>(parameters)) {}
 
 World::~World() = default;
 
@@ -167,7 +235,7 @@ std::expected<void, physics::CollisionMeshError> World::AddCollisionMesh(const p
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
-void World::AddPlayer(EntityId entity, const math::Vec3& spawn) {
+void World::AddPlayer(EntityId entity, const math::Vec3& spawn, const math::Vec3& eye) {
   Impl& impl = *impl_;
   if (impl.players.contains(entity)) {
     return;
@@ -175,8 +243,12 @@ void World::AddPlayer(EntityId entity, const math::Vec3& spawn) {
   const physics::BodyHandle body = impl.physics.CreateBody(spawn);
   physics::BodyState initial{};
   initial.position = spawn;
-  const flecs::entity ecs_entity =
-      impl.ecs.entity().set<Player>({.entity = entity}).set<Body>({.handle = body, .state = initial}).set<Intent>({});
+  const flecs::entity ecs_entity = impl.ecs.entity()
+                                       .set<Player>({.entity = entity})
+                                       .set<Body>({.handle = body, .state = initial})
+                                       .set<Intent>({})
+                                       .set<Eye>({.standing = eye})
+                                       .set<Rifle>({.state = weapon::Loaded(impl.parameters.rifle)});
   impl.players.emplace(entity, Impl::Slot{.entity = ecs_entity, .body = body});
 }
 
@@ -197,11 +269,15 @@ State World::Tick(const std::vector<PlayerCommand>& commands, float delta_time) 
   for (const PlayerCommand& entry : commands) {
     impl.tick_commands[entry.entity] = entry.command;
   }
+  // Cleared rather than replaced, so a tick reuses the last one's storage.
   impl.committed.bodies.clear();
+  impl.committed.shots.clear();
+  impl.committed.map_impacts.clear();
+  impl.committed.bullets_in_flight = 0;
   impl.ecs.progress(delta_time);
-  // The ECS visits bodies in storage order; the state is ordered by id.
-  std::ranges::sort(impl.committed.bodies,
-                    [](const EntityState& a, const EntityState& b) { return a.entity < b.entity; });
+  // The ECS visits players in storage order; the state is ordered by id.
+  std::ranges::sort(impl.committed.bodies, {}, &EntityState::entity);
+  std::ranges::sort(impl.committed.shots, {}, &Shot::shooter);
   return impl.committed;
 }
 

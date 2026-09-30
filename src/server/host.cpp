@@ -19,6 +19,7 @@
 
 #include "augusta/logging.h"
 #include "augusta/networking.h"
+#include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
@@ -37,7 +38,7 @@ namespace {
 // before the socket exists, so a map that is rejected never leaves a bound
 // port behind.
 simulation::World BuildSimulation(const HostConfig& config, const Map& map) {
-  simulation::World simulation(config.parameters.stamina);
+  simulation::World simulation(config.parameters);
   for (const physics::CollisionMesh& mesh : map.collision) {
     if (const auto added = simulation.AddCollisionMesh(mesh); !added) {
       throw std::runtime_error(
@@ -96,6 +97,8 @@ struct Host::Impl {
   // changes, so neither needs the lock.
   const std::uint8_t tick_rate_hz;
   const parameters::Parameters parameters;
+  // The scenario's characters, by index - 1 (ADR-0042); never changes either.
+  const std::vector<Character> characters;
 
   // Thread-safe by the transport's contract, used from both threads.
   networking::Server network;
@@ -135,12 +138,13 @@ struct Host::Impl {
       : simulation(BuildSimulation(config, map)),
         tick_rate_hz(config.tick_rate_hz),
         parameters(config.parameters),
+        characters(std::move(map.characters)),
         network(config.listen),
         match(
             MatchConfig{
                 .engine_version = std::string(EngineVersion()),
                 .client_pack = map.client_pack,
-                .characters = CharacterPaths(map.characters),
+                .characters = CharacterPaths(characters),
                 .player_count = config.parameters.player_count,
                 .pause_ticks = PauseTicks(config.tick_rate_hz),
             },
@@ -307,7 +311,7 @@ struct Host::Impl {
     }
     std::vector<SessionId> sessions;
     for (const MatchPlayer& player : start->players) {
-      simulation.AddPlayer(ToSimulation(player.entity), player.spawn);
+      simulation.AddPlayer(ToSimulation(player.entity), player.spawn, characters.at(player.character - 1).eye);
       bodies.emplace(player.session, player.entity);
       players.at(player.session).commands = CommandQueue{tick_rate_hz};
       sessions.push_back(player.session);
@@ -375,10 +379,18 @@ struct Host::Impl {
     activity_since = now;
   }
 
+  // Each recipient's update, which a newer one supersedes, and then every Shot
+  // of the tick to all of them, which must arrive (ADR-0044).
   void Send(const simulation::State& state, const TickInput& input) {
     for (const replication::Update& update : replication::PlanUpdates(state, tick, input.recipients)) {
       network.Send(input.peers.at(FromSimulation(update.recipient)), protocol::Encode(ToWire(update)),
                    networking::Reliability::kUnreliable);
+    }
+    for (const replication::Shot& shot : replication::PlanShots(state, tick)) {
+      const protocol::BytesWire payload = protocol::Encode(ToWire(shot));
+      for (const auto& [entity, peer] : input.peers) {
+        network.Send(peer, payload, networking::Reliability::kReliable);
+      }
     }
   }
 };

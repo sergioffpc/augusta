@@ -56,6 +56,7 @@ using augusta::harness::Phase;
 using augusta::harness::Session;
 using augusta::harness::SessionConfig;
 using augusta::harness::SessionId;
+using augusta::harness::Shot;
 using augusta::math::Length;
 using augusta::math::Vec3;
 using augusta::networking::ConnectionState;
@@ -2273,6 +2274,263 @@ TEST_F(RobustnessTest, AClientThatDropsWithoutClosingKeepsTheServerTickingAndIsR
   Run(kSettleTicks);
   EXPECT_TRUE(next.GetAuthoritativeState().has_value());
   EXPECT_EQ(next.GetAuthoritativeState()->bodies.size(), 1U);
+}
+
+// A match of kPlayers on the floor, each with the test rifle: 600 rounds a
+// minute, a round every six ticks at the test tick rate, and a magazine of 15.
+template <std::uint8_t kPlayers>
+class FireMatchOf : public LoopbackMatch {
+ protected:
+  static constexpr std::uint8_t kMagazine = 15;
+  // The test character's eye, standing, above its feet.
+  static constexpr float kEyeHeight = 1.6F;
+
+  static HostSetup Armed() {
+    Parameters parameters = WithPlayerCount(kPlayers);
+    parameters.rifle.rounds_per_minute = 600.0F;
+    parameters.rifle.magazine_capacity = kMagazine;
+    parameters.rifle.muzzle_velocity = 800.0F;
+    parameters.ammo.max_range = 1000.0F;
+    HostSetup setup = OnTheFloor({Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F)}, parameters);
+    setup.map.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    return setup;
+  }
+
+  FireMatchOf() : LoopbackMatch(Armed()) {}
+
+  void TearDown() override { augusta::networking::SimulateNetworkConditions({}); }
+
+  void SetUp() override {
+    for (std::uint8_t i = 0; i < kPlayers; ++i) {
+      Join();
+    }
+    ASSERT_TRUE(StartMatch());
+    Run(kSettleTicks);
+  }
+
+  static Command Firing() {
+    Command command{};
+    command.fire = true;
+    return command;
+  }
+
+  // Adds the Shots each client has received since last asked to what it had.
+  void Collect() {
+    for (const auto& session : sessions_) {
+      std::vector<Shot>& shots = shots_[session.get()];
+      const std::vector<Shot> taken = session->TakeShots();
+      shots.insert(shots.end(), taken.begin(), taken.end());
+    }
+  }
+
+  // Runs the network until every client has received count Shots in all, or the
+  // deadline passes; returns whether they all have.
+  bool ReceiveShots(std::size_t count) {
+    return ExchangeUntil(host_, Pointers(sessions_), [&] {
+      Collect();
+      return std::ranges::all_of(sessions_, [&](const auto& session) { return shots_[session.get()].size() >= count; });
+    });
+  }
+
+  // The Shots client has received in all, once the network has had the time to deliver any on its way.
+  const std::vector<Shot>& ShotsOf(const Session& client) {
+    Settle(host_, Pointers(sessions_));
+    Collect();
+    return shots_[&client];
+  }
+
+  std::map<const Session*, std::vector<Shot>> shots_;
+};
+
+using FireTest = FireMatchOf<1>;
+
+TEST_F(FireTest, HoldingFireFiresAtTheFireRateUntilTheMagazineIsEmpty) {
+  Session& client = *sessions_.front();
+
+  // A second of fire: ten rounds.
+  Run(60, Firing());
+  EXPECT_EQ(ShotsOf(client).size(), 10U);
+
+  // Two more: the five rounds left, and then nothing.
+  Run(120, Firing());
+  EXPECT_EQ(ShotsOf(client).size(), kMagazine);
+}
+
+TEST_F(FireTest, AOneTickPressOfFireGivesExactlyOneShot) {
+  Session& client = *sessions_.front();
+
+  Step(Firing());
+  Run(30);
+
+  EXPECT_EQ(ShotsOf(client).size(), 1U);
+}
+
+TEST_F(FireTest, NoShotIsFiredWhileFireIsNotHeld) {
+  Session& client = *sessions_.front();
+
+  Run(30);
+
+  EXPECT_TRUE(ShotsOf(client).empty());
+}
+
+using FireDuelTest = FireMatchOf<2>;
+
+TEST_F(FireDuelTest, EveryClientIsToldOfAShotWithItsShooterTickOriginAndDirection) {
+  Session& shooter = *sessions_[0];
+  Session& bystander = *sessions_[1];
+  Settle(host_, Pointers(sessions_));
+  const std::uint32_t last_tick = shooter.GetAuthoritativeState()->tick;
+  const Vec3 feet = PositionSeenBy(shooter, *shooter.GetEntityId()).value();
+  Command command = Firing();
+  command.yaw = 0.75F;
+  command.pitch = -0.25F;
+  const auto shooter_session = static_cast<augusta::server::SessionId>(std::to_underlying(*shooter.GetSessionId()));
+
+  // One tick, by hand: the server takes in the fire command on its next tick.
+  shooter.Tick(command, kFixedTick);
+  bystander.Tick(Command{}, kFixedTick);
+  ASSERT_TRUE(ExchangeUntil(host_, Pointers(sessions_), [&] { return host_.QueuedCommands(shooter_session) > 0; }));
+  ASSERT_EQ(host_.Tick(kFixedTick).shots.size(), 1U);
+
+  ASSERT_TRUE(ReceiveShots(1));
+  for (const Session* client : {&shooter, &bystander}) {
+    ASSERT_EQ(shots_[client].size(), 1U);
+    const Shot& shot = shots_[client].front();
+    EXPECT_EQ(shot.shooter, *shooter.GetEntityId());
+    EXPECT_EQ(shot.tick, last_tick + 1);
+    EXPECT_NEAR(shot.origin.x, feet.x, 0.002F);
+    EXPECT_NEAR(shot.origin.y, feet.y + kEyeHeight, 0.002F);
+    EXPECT_NEAR(shot.origin.z, feet.z, 0.002F);
+    EXPECT_EQ(shot.yaw, 0.75F);
+    EXPECT_EQ(shot.pitch, -0.25F);
+  }
+}
+
+// A Shot is reliable (ADR-0044): under the packet loss of the movement tests,
+// every client still hears every round, in the order they were fired.
+TEST_F(FireDuelTest, WithPacketLossEveryClientStillReceivesEveryShot) {
+  constexpr float kLossPercent = 20.0F;
+  constexpr int kTicks = 90;
+  augusta::networking::SimulateNetworkConditions({.loss_percent = kLossPercent});
+
+  // What the server fired, which is what every client must be told.
+  std::vector<augusta::simulation::Shot> fired;
+  for (int i = 0; i < kTicks; ++i) {
+    for (const auto& session : sessions_) {
+      session->Tick(Firing(), kFixedTick);
+    }
+    std::this_thread::sleep_for(kNetworkDelay);
+    Exchange();
+    const augusta::simulation::State state = host_.Tick(kFixedTick);
+    fired.insert(fired.end(), state.shots.begin(), state.shots.end());
+    std::this_thread::sleep_for(kNetworkDelay);
+    Exchange();
+  }
+  augusta::networking::SimulateNetworkConditions({});
+
+  ASSERT_GT(fired.size(), 10U);
+  ASSERT_TRUE(ReceiveShots(fired.size()));
+  for (const auto& session : sessions_) {
+    const std::vector<Shot>& received = shots_[session.get()];
+    ASSERT_EQ(received.size(), fired.size());
+    for (std::size_t i = 0; i < fired.size(); ++i) {
+      EXPECT_EQ(std::to_underlying(received[i].shooter), std::to_underlying(fired[i].shooter)) << "shot " << i;
+      EXPECT_EQ(received[i].origin, fired[i].origin) << "shot " << i;
+      EXPECT_EQ(received[i].yaw, fired[i].yaw) << "shot " << i;
+      EXPECT_EQ(received[i].pitch, fired[i].pitch) << "shot " << i;
+      // The server's ticks are not the test's to number, but both clients are told the same one.
+      EXPECT_EQ(received[i].tick, shots_[sessions_.front().get()][i].tick) << "shot " << i;
+    }
+  }
+}
+
+// A Shot of the scripted server's one player, or of whoever else it names.
+augusta::protocol::ShotWire ShotBy(EntityIdWire shooter) {
+  return augusta::protocol::ShotWire{
+      .origin = Vec3(1.0F, 1.5F, -2.0F), .shooter = shooter, .tick = 7, .yaw = 0.5F, .pitch = -0.125F};
+}
+
+TEST_F(ScriptedServerTest, AShotOfABodyInTheMatchIsHandedOutOnceAsItWasSent) {
+  server_.Send(ShotBy(kScriptedEntity));
+  Settle();
+
+  const std::vector<Shot> shots = session_.TakeShots();
+
+  ASSERT_EQ(shots.size(), 1U);
+  EXPECT_EQ(shots[0].shooter, *session_.GetEntityId());
+  EXPECT_EQ(shots[0].tick, 7U);
+  EXPECT_EQ(shots[0].origin, Vec3(1.0F, 1.5F, -2.0F));
+  EXPECT_EQ(shots[0].yaw, 0.5F);
+  EXPECT_EQ(shots[0].pitch, -0.125F);
+  EXPECT_TRUE(session_.TakeShots().empty());
+}
+
+TEST_F(ScriptedServerTest, ShotsAreHandedOutInTheOrderTheyArrived) {
+  for (std::uint32_t tick = 1; tick <= 3; ++tick) {
+    augusta::protocol::ShotWire shot = ShotBy(kScriptedEntity);
+    shot.tick = tick;
+    server_.Send(shot);
+  }
+  Settle();
+
+  const std::vector<Shot> shots = session_.TakeShots();
+
+  ASSERT_EQ(shots.size(), 3U);
+  EXPECT_EQ(shots[0].tick, 1U);
+  EXPECT_EQ(shots[1].tick, 2U);
+  EXPECT_EQ(shots[2].tick, 3U);
+}
+
+TEST_F(ScriptedServerTest, AShotNamingABodyNotInTheMatchIsDropped) {
+  server_.Send(ShotBy(EntityIdWire{99}));
+  Settle();
+
+  EXPECT_TRUE(session_.TakeShots().empty());
+}
+
+TEST_F(ScriptedServerTest, AShotThatArrivesAfterMatchEndIsDropped) {
+  server_.Send(augusta::protocol::MatchEndWire{});
+  server_.Send(ShotBy(kScriptedEntity));
+  Settle();
+
+  EXPECT_TRUE(session_.TakeShots().empty());
+}
+
+TEST_F(ScriptedServerTest, AShotNobodyAskedForIsNotHandedOutInTheNextMatch) {
+  server_.Send(ShotBy(kScriptedEntity));
+  server_.Send(augusta::protocol::MatchEndWire{});
+  server_.Send(ScriptedServer::StartOfAlone());
+  Settle();
+  ASSERT_EQ(session_.GetPhase(), Phase::kMatch);
+
+  EXPECT_TRUE(session_.TakeShots().empty());
+}
+
+TEST_F(ScriptedLobbyTest, AShotThatArrivesBeforeMatchStartIsDropped) {
+  server_.Send(ShotBy(kScriptedEntity));
+  Settle();
+  EXPECT_TRUE(session_.TakeShots().empty());
+
+  server_.Send(ScriptedServer::StartOfAlone());
+  Settle();
+  EXPECT_TRUE(session_.TakeShots().empty());
+}
+
+// A client nobody asks keeps the newest Shots, not all of them for ever.
+TEST_F(ScriptedServerTest, AClientThatIsNeverAskedKeepsOnlyTheNewestShots) {
+  const auto sent = static_cast<std::uint32_t>(augusta::harness::kMaxPendingShots + 10);
+  for (std::uint32_t tick = 1; tick <= sent; ++tick) {
+    augusta::protocol::ShotWire shot = ShotBy(kScriptedEntity);
+    shot.tick = tick;
+    server_.Send(shot);
+  }
+  Settle();
+
+  const std::vector<Shot> shots = session_.TakeShots();
+
+  ASSERT_EQ(shots.size(), augusta::harness::kMaxPendingShots);
+  EXPECT_EQ(shots.front().tick, 11U);
+  EXPECT_EQ(shots.back().tick, sent);
 }
 
 }  // namespace

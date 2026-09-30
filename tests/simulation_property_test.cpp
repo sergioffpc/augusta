@@ -71,6 +71,7 @@ constexpr std::size_t kMaxCommands = 240;  // Four seconds of input.
 constexpr float kPi = 3.14159265F;
 constexpr augusta::simulation::EntityId kPlayer = static_cast<augusta::simulation::EntityId>(1);
 const Vec3 kSpawn(0.0F, 0.0F, 0.0F);
+const Vec3 kEye(0.0F, 1.7F, 0.0F);
 
 CollisionMesh Floor() {
   constexpr float kExtent = 100.0F;
@@ -96,7 +97,7 @@ rc::Gen<Command> RealCommand() {
          bool reload) {
         Command command;
         command.movement.direction =
-            augusta::math::Normalize(augusta::input::ViewRotation(yaw, 0.0F) * Vec3(right, 0.0F, -forward));
+            augusta::math::Normalize(augusta::command::ViewRotation(yaw, 0.0F) * Vec3(right, 0.0F, -forward));
         command.movement.sprint = sprint;
         command.movement.desired_stance = stance;
         command.yaw = yaw;
@@ -134,9 +135,9 @@ RC_GTEST_PROP(SimulationPropertyTest, StaminaStaysWithinTheBarWhateverThePlayerD
   const StaminaConfig stamina = *Stamina();
   const std::vector<Command> commands = *Commands(1);
 
-  augusta::simulation::World world(stamina);
+  augusta::simulation::World world(augusta::parameters::Parameters{.stamina = stamina});
   RC_ASSERT(world.AddCollisionMesh(Floor()).has_value());
-  world.AddPlayer(kPlayer, kSpawn);
+  world.AddPlayer(kPlayer, kSpawn, kEye);
 
   for (const Command& command : commands) {
     const auto state = world.Tick({{.entity = kPlayer, .command = command}}, kTick);
@@ -164,9 +165,9 @@ RC_GTEST_PROP(SimulationPropertyTest, AClientThatDivergedConvergesOnTheServersSt
   const auto lost = *rc::gen::container<std::set<std::size_t>>(rc::gen::inRange<std::size_t>(0, commands.size()));
   const std::size_t losses_end = commands.size() - delay - 1;
 
-  augusta::simulation::World server(stamina);
+  augusta::simulation::World server(augusta::parameters::Parameters{.stamina = stamina});
   RC_ASSERT(server.AddCollisionMesh(Floor()).has_value());
-  server.AddPlayer(kPlayer, kSpawn);
+  server.AddPlayer(kPlayer, kSpawn, kEye);
 
   augusta::prediction::World client;
   RC_ASSERT(client.AddCollisionMesh(Floor()).has_value());

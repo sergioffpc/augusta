@@ -155,6 +155,16 @@ protocol::AuthoritativeStateWire ToWire(const replication::Update& update) {
   return state;
 }
 
+protocol::ShotWire ToWire(const replication::Shot& shot) {
+  return protocol::ShotWire{
+      .origin = shot.origin,
+      .shooter = ToWire(FromSimulation(shot.shooter)),
+      .tick = shot.tick,
+      .yaw = shot.yaw,
+      .pitch = shot.pitch,
+  };
+}
+
 assets::PackHash FromWire(const protocol::PackHashWire& hash) {
   assets::PackHash result{};
   std::ranges::copy(hash, result.begin());

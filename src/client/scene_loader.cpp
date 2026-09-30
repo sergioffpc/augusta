@@ -151,10 +151,8 @@ std::expected<renderer::SceneMesh, SceneError> LoadCharacterMesh(std::span<const
   return renderer::SceneMesh{.positions = mesh->points, .indices = mesh->indices};
 }
 
-std::string CharacterEyePath(std::string_view character) { return std::format("{}/Character/Eye", character); }
-
 std::expected<math::Vec3, SceneError> LoadCharacterEye(std::string_view character, const EyeResolver& resolve_eye) {
-  const std::string path = CharacterEyePath(character);
+  const std::string path = assets::CharacterEyePath(character);
   const auto eye = resolve_eye(path);
   if (!eye) {
     return std::unexpected(SceneError{.code = SceneErrorCode::kCharacterEyeUnresolved,

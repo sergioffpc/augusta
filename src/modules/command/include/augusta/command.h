@@ -1,6 +1,9 @@
 #ifndef AUGUSTA_COMMAND_H_
 #define AUGUSTA_COMMAND_H_
 
+#include <glm/ext/quaternion_trigonometric.hpp>
+
+#include "augusta/math.h"
 #include "augusta/physics.h"
 
 // augusta::command is the Command (CONTEXT.md): one tick's player intent, in
@@ -9,6 +12,9 @@
 // the harness sends it; the server gets it back off the wire, screens and
 // queues it, and SimulationWorld's CommandIngestion phase consumes it. None of
 // those but the client's sampler links the device-facing input module.
+//
+// What a Command's view means is here with it: the client's camera and the
+// server's Shots turn the same yaw and pitch into the same direction.
 namespace augusta::command {
 
 /// One tick's worth of player intent.
@@ -21,8 +27,8 @@ struct Command {
   // positive yaw turns left (counter-clockwise seen from above, right-handed
   // about +Y); the client's sampler keeps it within one turn. A positive
   // pitch looks up; the sampler clamps it to input::kMaxLookPitch either way,
-  // short of straight up/down (no gimbal flip). input::ViewRotation turns the
-  // pair into a rotation. Determines aim direction for WeaponHandling (bullet
+  // short of straight up/down (no gimbal flip). ViewRotation turns the pair
+  // into a rotation. Determines aim direction for WeaponHandling (bullet
   // origin/direction, US-07) as well as view for Camera (US-06).
   float yaw = 0.0F;
   float pitch = 0.0F;
@@ -38,6 +44,18 @@ struct Command {
   // the control is actually held.
   bool reload = false;
 };
+
+/// The rotation of a view with this yaw and pitch (see Command): yaw about +Y,
+/// then pitch about the view's own +X. Applied to -Z, it gives where the view
+/// looks.
+[[nodiscard]] inline math::Quat ViewRotation(float yaw, float pitch) {
+  return glm::angleAxis(yaw, math::Vec3(0.0F, 1.0F, 0.0F)) * glm::angleAxis(pitch, math::Vec3(1.0F, 0.0F, 0.0F));
+}
+
+/// Where a view with this yaw and pitch looks, as a unit vector.
+[[nodiscard]] inline math::Vec3 ViewDirection(float yaw, float pitch) {
+  return ViewRotation(yaw, pitch) * math::Vec3(0.0F, 0.0F, -1.0F);
+}
 
 }  // namespace augusta::command
 

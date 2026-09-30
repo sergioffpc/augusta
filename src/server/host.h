@@ -48,11 +48,14 @@ struct HostConfig {
 };
 
 /// A character a player may join as (ADR-0042), with the hitboxes a bullet
-/// that reaches a body of that character is judged against (US-11, ADR-0040).
+/// that reaches a body of that character is judged against (US-11, ADR-0040)
+/// and the eye its Shots leave from.
 struct Character {
   /// Its path in the pack, as the scenario's character list names it.
   std::string path;
   std::vector<assets::HitboxData> hitboxes;
+  /// Where it sees from standing, relative to its feet (ADR-0040).
+  math::Vec3 eye{};
 };
 
 /// The map's collision and where joining players spawn, as built by
@@ -97,7 +100,8 @@ class Host {
   void PumpNetwork();
 
   /// Runs one fixed tick of SimulationWorld on one command per player in the
-  /// match, sends each of them its update, and returns the state. Starts a
+  /// match, sends each of them its update and every Shot of the tick (reliably,
+  /// ADR-0044), and returns the state. Starts a
   /// match first if the Lobby is full and Ready and the pause after the last
   /// one (server::kMatchPause, counted in these ticks) has passed.
   simulation::State Tick(float delta_time);

@@ -15,7 +15,6 @@ using augusta::physics::Stance;
 using augusta::prediction::State;
 using augusta::presentation::BlendTicks;
 using augusta::presentation::Camera;
-using augusta::presentation::EyeAt;
 using augusta::presentation::LocalCamera;
 
 constexpr float kTolerance = 1e-5F;
@@ -70,26 +69,6 @@ TEST(BlendTicksTest, AJumpInTheLatestTickIsBlendedInWithItsCorrection) {
   ExpectNear(blended.local_body.position - blended.total_correction, Vec3(0.0F, 0.0F, 0.0F));
 }
 
-TEST(EyeAtTest, StandingItIsTheCharactersEye) { ExpectNear(EyeAt(kStandingEye, Stance::kStanding), kStandingEye); }
-
-TEST(EyeAtTest, TheEyeIsLowerCrouchingThanStandingAndLowerProneThanCrouching) {
-  const float standing = EyeAt(kStandingEye, Stance::kStanding).y;
-  const float crouching = EyeAt(kStandingEye, Stance::kCrouching).y;
-  const float prone = EyeAt(kStandingEye, Stance::kProne).y;
-
-  EXPECT_LT(crouching, standing);
-  EXPECT_LT(prone, crouching);
-  EXPECT_GT(prone, 0.0F);
-}
-
-TEST(EyeAtTest, TheEyeStaysInsideTheBodyInEveryStance) {
-  const Vec3 top_of_head(0.0F, augusta::physics::StanceHeight(Stance::kStanding), 0.0F);
-
-  for (const Stance stance : {Stance::kStanding, Stance::kCrouching, Stance::kProne}) {
-    EXPECT_LT(EyeAt(top_of_head, stance).y, augusta::physics::StanceHeight(stance) + kTolerance);
-  }
-}
-
 TEST(LocalCameraTest, TheCameraFollowsTheBodysStance) {
   const Vec3 feet(3.0F, 1.0F, -4.0F);
 
@@ -98,7 +77,7 @@ TEST(LocalCameraTest, TheCameraFollowsTheBodysStance) {
   const Camera prone = LocalCamera(feet, Stance::kProne, kStandingEye, kLookingAhead);
 
   ExpectNear(standing.position, feet + kStandingEye);
-  ExpectNear(crouching.position, feet + EyeAt(kStandingEye, Stance::kCrouching));
+  ExpectNear(crouching.position, feet + augusta::physics::LowerToStance(kStandingEye, Stance::kCrouching));
   EXPECT_LT(prone.position.y, crouching.position.y);
   EXPECT_LT(crouching.position.y, standing.position.y);
 }

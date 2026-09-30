@@ -53,15 +53,15 @@ its step is an exact float, and a value read back encodes to the same bytes:
 
 | Number | Bytes per value | Step | Range |
 | --- | --- | --- | --- |
-| position (a body's, the spawn point), per axis | 3 (signed) | 1/1024 m | ±8192 m |
+| position (a body's, the spawn point, a Shot's origin), per axis | 3 (signed) | 1/1024 m | ±8192 m |
 | velocity, per axis | 2 (signed) | 1/512 m/s | ±64 m/s |
 | movement direction, per axis | 2 (signed) | 1/16384 | ±2 |
-| yaw, pitch | 3 (signed) | 2⁻²¹ rad (about 0.5 µrad) | ±4 rad |
+| yaw, pitch (a command's view, a Shot's direction) | 3 (signed) | 2⁻²¹ rad (about 0.5 µrad) | ±4 rad |
 | stamina | 2 (unsigned) | 1/32768 | 0 to 2 |
 
 A value beyond its range travels as the bound, and a NaN travels as 0. The tick
 rate travels as one byte of whole Hz, and the parameters stay 32-bit floats:
-they are sent once, and must arrive exactly. So a body is 18 bytes and a command 13.
+they are sent once, and must arrive exactly. So a body is 18 bytes and a command 13, and a whole Shot message is 24.
 
 **Aim is not the network's to blur.** The server fires with the angle it was
 sent, so the angle grid decides how far a shot lands from where the player
@@ -73,6 +73,11 @@ command, about 1 KB/s more upload per client at 60 Hz with 8 commands a message.
 decoder and `augusta_physics` both use, so neither depends on the other and the two cannot
 diverge. Each grid has a `Snap` function (`math::SnapPosition` and the rest),
 which gives what `Decode` would give back.
+
+**A Shot is fired on the grid.** SimulationWorld rounds a Shot's origin and
+direction to these grids before it fires the bullet, so the round the server
+flies and judges is exactly the one every client is told of and draws
+(ADR-0044).
 
 **Bodies live on the grid.** `physics::World` rounds every body to these grids
 in `CreateBody`, `Step`, `SetState` and `Restore`. So a server's body is exactly
@@ -105,6 +110,7 @@ supersedes is unreliable.
 | Ready | client → server | reliable | the Lobby version the client loaded for (ADR-0043) |
 | Match start | server → client | reliable | every player in the Match (at most 8, the recipient included): session ID, the entity ID of its body, character index, spawn position (ADR-0043) |
 | Match end | server → client | reliable | nothing: the Match is over and its players are back in the Lobby (ADR-0043) |
+| Shot | server → client | reliable | one round a player fired, sent to every player in the Match, the shooter included: the entity ID of the shooter's body, the server tick it was fired on, its origin, and its direction as a yaw and a pitch (ADR-0044) |
 
 Per-tick traffic is unreliable because a newer message supersedes an older one,
 and it is made loss-tolerant without retransmission:

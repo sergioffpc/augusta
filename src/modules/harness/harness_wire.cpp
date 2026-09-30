@@ -123,6 +123,16 @@ AuthoritativeState FromWire(const protocol::AuthoritativeStateWire& state) {
   return result;
 }
 
+Shot FromWire(const protocol::ShotWire& shot) {
+  return Shot{
+      .shooter = FromWire(shot.shooter),
+      .tick = shot.tick,
+      .origin = shot.origin,
+      .yaw = shot.yaw,
+      .pitch = shot.pitch,
+  };
+}
+
 Lobby FromWire(const protocol::LobbyWire& lobby) {
   Lobby result{.version = lobby.version, .roster = {}};
   result.roster.reserve(lobby.roster.size());

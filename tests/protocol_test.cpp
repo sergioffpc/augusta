@@ -50,6 +50,7 @@ using augusta::protocol::ReadyWire;
 using augusta::protocol::RosterEntryWire;
 using augusta::protocol::SequencedCommandWire;
 using augusta::protocol::SessionIdWire;
+using augusta::protocol::ShotWire;
 
 BytesWire BytesOf(std::initializer_list<std::uint8_t> values) {
   BytesWire bytes;
@@ -68,6 +69,7 @@ constexpr auto kLobbyType = static_cast<std::uint8_t>(MessageTypeWire::kLobby);
 constexpr auto kReadyType = static_cast<std::uint8_t>(MessageTypeWire::kReady);
 constexpr auto kMatchStartType = static_cast<std::uint8_t>(MessageTypeWire::kMatchStart);
 constexpr auto kMatchEndType = static_cast<std::uint8_t>(MessageTypeWire::kMatchEnd);
+constexpr auto kShotType = static_cast<std::uint8_t>(MessageTypeWire::kShot);
 
 // Every refusal the protocol has.
 constexpr std::array<JoinRefusalWire, 5> kEveryRefusal = {
@@ -333,6 +335,40 @@ TEST(ProtocolTest, MatchEndIsItsTypeAlone) {
   EXPECT_TRUE(std::holds_alternative<MatchEndWire>(RoundTrip(MatchEndWire{})));
 }
 
+TEST(ProtocolTest, AShotRoundTripsWithItsShooterTickOriginAndDirection) {
+  const ShotWire shot{.origin = Vec3(12.5F, 1.75F, -40.0F),
+                      .shooter = static_cast<EntityIdWire>(0xA1B2C3D4U),
+                      .tick = 1200,
+                      .yaw = -1.5F,
+                      .pitch = 0.25F};
+
+  const auto decoded = RoundTrip(shot);
+
+  ASSERT_TRUE(std::holds_alternative<ShotWire>(decoded));
+  EXPECT_EQ(std::get<ShotWire>(decoded), shot);
+}
+
+// Its origin and its direction travel on the grids a body's position and a
+// command's view do (ADR-0038): three bytes a number.
+TEST(ProtocolTest, AShotTravelsInTwentyFourBytes) {
+  const ShotWire shot{.origin = Vec3(1.0F, 0.0F, -1.0F / 1024.0F),
+                      .shooter = static_cast<EntityIdWire>(0x01020304U),
+                      .tick = 0x0A0B0C0DU,
+                      .yaw = 1.0F,
+                      .pitch = -1.0F / 2097152.0F};
+
+  // The type, the shooter, the tick, the origin's x, y and z, the yaw and the pitch.
+  EXPECT_EQ(Encode(shot), BytesOf({kShotType, 0x04, 0x03, 0x02, 0x01, 0x0D, 0x0C, 0x0B, 0x0A, 0x00, 0x04, 0x00,
+                                   0x00,      0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x20, 0xFF, 0xFF, 0xFF}));
+}
+
+TEST(ProtocolTest, BytesAfterAShotAreTrailing) {
+  BytesWire shot = Encode(ShotWire{});
+  shot.push_back(std::byte{0});
+
+  EXPECT_EQ(Decode(shot).error(), DecodeError::kTrailingBytes);
+}
+
 TEST(ProtocolTest, CharacterIndexZeroInAMatchStartIsInvalid) {
   BytesWire payload = Encode(MatchStartWire{.players = {MatchPlayer(1, 1, 0.0F)}});
   // type, count, session, entity, then the character.
@@ -346,12 +382,12 @@ TEST(ProtocolTest, AnEmptyPayloadIsEmpty) { EXPECT_EQ(Decode(BytesWire{}).error(
 
 TEST(ProtocolTest, AnUnknownTypeIsRejected) {
   EXPECT_EQ(Decode(BytesOf({0})).error(), DecodeError::kUnknownType);
-  EXPECT_EQ(Decode(BytesOf({10, 0, 0, 0, 0})).error(), DecodeError::kUnknownType);
+  EXPECT_EQ(Decode(BytesOf({11, 0, 0, 0, 0})).error(), DecodeError::kUnknownType);
   EXPECT_EQ(Decode(BytesOf({0xFF})).error(), DecodeError::kUnknownType);
 }
 
 TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
-  const std::array<MessageWire, 8> messages = {
+  const std::array<MessageWire, 9> messages = {
       JoinRequestWire{.engine_version = "0.1.0", .character = "characters/player"},
       JoinAcceptedWire{.session = static_cast<SessionIdWire>(7), .character = 1},
       JoinRefusedWire{.reason = JoinRefusalWire::kMatchInProgress},
@@ -359,7 +395,8 @@ TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
       AuthoritativeStateWire{.tick = 3, .bodies = {EntityStateWire{}, {}}, .queued_commands = 2},
       LobbyWire{.version = 2, .roster = {RosterEntryWire{}, {}}},
       MatchStartWire{.players = {MatchPlayer(1, 1, 0.0F), MatchPlayer(2, 2, 1.0F)}},
-      ReadyWire{.version = 0x01020304U}};
+      ReadyWire{.version = 0x01020304U},
+      ShotWire{.origin = Vec3(1.0F, 2.0F, 3.0F), .shooter = static_cast<EntityIdWire>(7), .tick = 9}};
   for (const MessageWire& message : messages) {
     const BytesWire whole = Encode(message);
     for (std::size_t length = 1; length < whole.size(); ++length) {

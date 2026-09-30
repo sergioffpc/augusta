@@ -68,6 +68,8 @@ enum class MessageTypeWire : std::uint8_t {
   kMatchStart = 8,
   /// Server to client: the match is over and its players are back in the Lobby.
   kMatchEnd = 9,
+  /// Server to client: a player fired a round (ADR-0044).
+  kShot = 10,
 };
 
 /// Longest engine version string a JoinRequestWire may carry, in bytes.
@@ -347,9 +349,25 @@ struct MatchEndWire {
   bool operator==(const MatchEndWire&) const = default;
 };
 
+/// Server to client: one round a player in the match fired (CONTEXT.md's Shot,
+/// ADR-0044), told to every player in it, the shooter included.
+struct ShotWire {
+  /// Where the round left from.
+  math::Vec3 origin{};
+  /// The body of the player who fired it.
+  EntityIdWire shooter{};
+  /// The server tick it was fired on.
+  std::uint32_t tick = 0;
+  /// Where it left for, as a view's yaw and pitch, in radians.
+  float yaw = 0.0F;
+  float pitch = 0.0F;
+
+  bool operator==(const ShotWire&) const = default;
+};
+
 /// Any message of the protocol.
 using MessageWire = std::variant<JoinRequestWire, JoinAcceptedWire, JoinRefusedWire, CommandsWire,
-                                 AuthoritativeStateWire, LobbyWire, ReadyWire, MatchStartWire, MatchEndWire>;
+                                 AuthoritativeStateWire, LobbyWire, ReadyWire, MatchStartWire, MatchEndWire, ShotWire>;
 
 /// A payload is this many bytes, the same type networking::Payload names.
 using BytesWire = std::vector<std::byte>;

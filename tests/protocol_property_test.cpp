@@ -111,6 +111,11 @@ void showValue(const MessageWire& message, std::ostream& out) {
       out << "}";
     }
     void operator()(const MatchEndWire& /*end*/) const { out << "MatchEnd{}"; }
+    void operator()(const ShotWire& shot) const {
+      out << "Shot{shooter " << static_cast<std::uint32_t>(shot.shooter) << ", tick " << shot.tick << ", origin ";
+      showValue(shot.origin, out);
+      out << ", yaw " << shot.yaw << ", pitch " << shot.pitch << "}";
+    }
   };
   std::visit(Printer{.out = out}, message);
 }
@@ -159,6 +164,7 @@ using augusta::protocol::RifleWire;
 using augusta::protocol::RosterEntryWire;
 using augusta::protocol::SequencedCommandWire;
 using augusta::protocol::SessionIdWire;
+using augusta::protocol::ShotWire;
 using augusta::protocol::StaminaWire;
 using augusta::protocol::StanceWire;
 
@@ -316,13 +322,21 @@ rc::Gen<MatchStartWire> MatchStart() {
       rc::gen::set(&MatchStartWire::players, UpTo<std::vector<MatchPlayerWire>>(kMaxPlayers, player)));
 }
 
+rc::Gen<ShotWire> Shot() {
+  return rc::gen::build<ShotWire>(rc::gen::set(&ShotWire::origin, Vec3OnGrid(kPositionGrid)),
+                                  rc::gen::set(&ShotWire::shooter, AnyId<EntityIdWire>()),
+                                  rc::gen::set(&ShotWire::tick, rc::gen::arbitrary<std::uint32_t>()),
+                                  rc::gen::set(&ShotWire::yaw, OnGrid(kAngleGrid)),
+                                  rc::gen::set(&ShotWire::pitch, OnGrid(kAngleGrid)));
+}
+
 // Any message of the protocol, within its limits.
 rc::Gen<MessageWire> Message() {
   return rc::gen::oneOf(rc::gen::cast<MessageWire>(JoinRequest()), rc::gen::cast<MessageWire>(JoinAccepted()),
                         rc::gen::cast<MessageWire>(JoinRefused()), rc::gen::cast<MessageWire>(Commands()),
                         rc::gen::cast<MessageWire>(AuthoritativeState()), rc::gen::cast<MessageWire>(Lobby()),
                         rc::gen::cast<MessageWire>(Ready()), rc::gen::cast<MessageWire>(MatchStart()),
-                        rc::gen::just(MessageWire{MatchEndWire{}}));
+                        rc::gen::just(MessageWire{MatchEndWire{}}), rc::gen::cast<MessageWire>(Shot()));
 }
 
 RC_GTEST_PROP(ProtocolPropertyTest, EveryMessageSurvivesEncodeThenDecode, ()) {

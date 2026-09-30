@@ -22,6 +22,33 @@ using augusta::physics::World;
 
 constexpr float kFixedTick = 1.0F / 60.0F;
 
+// A character's eye (ADR-0040), standing, relative to its feet.
+const Vec3 kStandingEye(0.0F, 1.7F, 0.1F);
+
+TEST(LowerToStanceTest, StandingAPointIsWhereItWasAuthored) {
+  EXPECT_EQ(augusta::physics::LowerToStance(kStandingEye, Stance::kStanding), kStandingEye);
+}
+
+TEST(LowerToStanceTest, APointIsLowerCrouchingThanStandingAndLowerProneThanCrouching) {
+  const Vec3 crouching = augusta::physics::LowerToStance(kStandingEye, Stance::kCrouching);
+  const Vec3 prone = augusta::physics::LowerToStance(kStandingEye, Stance::kProne);
+
+  EXPECT_LT(crouching.y, kStandingEye.y);
+  EXPECT_LT(prone.y, crouching.y);
+  EXPECT_GT(prone.y, 0.0F);
+  // Only the height changes.
+  EXPECT_EQ(prone.x, kStandingEye.x);
+  EXPECT_EQ(prone.z, kStandingEye.z);
+}
+
+TEST(LowerToStanceTest, ThePointStaysInsideTheBodyInEveryStance) {
+  const Vec3 top_of_head(0.0F, augusta::physics::StanceHeight(Stance::kStanding), 0.0F);
+
+  for (const Stance stance : {Stance::kStanding, Stance::kCrouching, Stance::kProne}) {
+    EXPECT_LE(augusta::physics::LowerToStance(top_of_head, stance).y, augusta::physics::StanceHeight(stance) + 1e-5F);
+  }
+}
+
 TEST(PhysicsWorldTest, StepMovesBodyAlongInputDirection) {
   World world{StaminaConfig{}};
   const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));

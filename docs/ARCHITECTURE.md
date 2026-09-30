@@ -101,8 +101,8 @@ No matchmaking, master server, or third-party platform integration in v1.
   Props are simulated only by the server and moved kinematically on the
   client; Cosmetic bodies (ragdolls, debris) only on the client
   (ADR-0045). Particles are the renderer's, not physics'
-- WeaponHandling — aim/ADS, fire, reload, recoil, ammo rules; one
-  interface used identically by both Worlds. The client/server
+- WeaponHandling — aim/ADS, fire, reload, recoil, ammo rules
+  (augusta_weapon); one interface used identically by both Worlds. The client/server
   difference isn't in this module's logic, it's in what each World
   does with the result: the server treats it as authoritative and
   feeds Ballistics, the client uses it only for local predicted

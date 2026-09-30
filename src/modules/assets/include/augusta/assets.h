@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <format>
 #include <memory>
 #include <optional>
 #include <span>
@@ -191,12 +192,20 @@ struct SpawnPointData {
   math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};
 };
 
-/// A character's eye (ADR-0040): the point the local player's camera sits at, in
-/// the character's own root space - its feet at the origin, the same space its
-/// visual mesh is cooked into.
+/// A character's eye (ADR-0040): the point its player sees from - where the
+/// client puts the local player's camera and the server fires its Shots from -
+/// in the character's own root space: its feet at the origin, the same space
+/// its visual mesh is cooked into.
 struct EyeData {
   math::Vec3 position{0.0F, 0.0F, 0.0F};
 };
+
+/// Pack-relative path of the eye of the character at character_path (its path
+/// relative to `authoring/`): its `Character` root prim's `Eye` child
+/// (ADR-0040), e.g. "characters/player/Character/Eye".
+[[nodiscard]] inline std::string CharacterEyePath(std::string_view character_path) {
+  return std::format("{}/Character/Eye", character_path);
+}
 
 // Sanitizes a USD prim path (e.g. "/Geom/Cube") into the pack-relative
 // path ADR-0031 addresses its blob by: the leading '/' is stripped, '/'
@@ -351,8 +360,8 @@ class Pack {
   // ADR-0032). Present in both client and server packs.
   [[nodiscard]] std::expected<SpawnPointData, ResolveError> ResolveSpawnPoint(std::string_view path) const;
 
-  /// Resolves a character's eye by its pack-relative path (ADR-0040). Present
-  /// in the client pack only.
+  /// Resolves a character's eye by its pack-relative path (CharacterEyePath,
+  /// ADR-0040). Present in both client and server packs.
   [[nodiscard]] std::expected<EyeData, ResolveError> ResolveEye(std::string_view path) const;
 
   /// Resolves a Lua script's text by its path relative to the scenario's

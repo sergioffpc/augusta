@@ -72,6 +72,9 @@ struct SequencedCommand {
 /// An Authoritative State the server sent, in the engine's terms.
 [[nodiscard]] AuthoritativeState FromWire(const protocol::AuthoritativeStateWire& state);
 
+/// A Shot the server announced, in the engine's terms.
+[[nodiscard]] Shot FromWire(const protocol::ShotWire& shot);
+
 /// The Lobby's Roster the server sent, in the engine's terms.
 [[nodiscard]] Lobby FromWire(const protocol::LobbyWire& lobby);
 

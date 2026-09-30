@@ -47,15 +47,11 @@ struct Camera {
 [[nodiscard]] prediction::State BlendTicks(const prediction::State& previous, const prediction::State& latest,
                                            float fraction);
 
-/// Where the eye is in stance, for a character whose eye standing is
-/// standing_eye (ADR-0040, in its root space: feet at the origin): lowered in
-/// proportion to the body's height in that stance (physics::StanceHeight).
-[[nodiscard]] math::Vec3 EyeAt(const math::Vec3& standing_eye, physics::Stance stance);
-
 /// The view camera of a body shown at feet, in stance, of a character whose eye
-/// standing is standing_eye, looking where view says: at the eye for that
-/// stance - added as authored, since the character is drawn unrotated - and
-/// turned by view.
+/// standing is standing_eye (ADR-0040, in its root space: feet at the origin),
+/// looking where view says: at the eye lowered for that stance
+/// (physics::LowerToStance) - added as authored, since the character is drawn
+/// unrotated - and turned by view.
 [[nodiscard]] Camera LocalCamera(const math::Vec3& feet, physics::Stance stance, const math::Vec3& standing_eye,
                                  const math::Quat& view);
 
