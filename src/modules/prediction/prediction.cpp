@@ -168,6 +168,7 @@ struct World::Impl {
     rifle = result.state;
     tick_state.rifle = rifle;
     tick_state.rounds_fired = result.fired ? 1 : 0;
+    tick_state.total_rounds_fired += tick_state.rounds_fired;
   }
 
   void OnCommit() {
@@ -204,6 +205,7 @@ void World::Start(const math::Vec3& spawn, const parameters::Parameters& paramet
                           .total_correction = impl.tick_state.total_correction,
                           .rifle = impl.rifle,
                           .rifle_corrections = impl.tick_state.rifle_corrections,
+                          .total_rounds_fired = impl.tick_state.total_rounds_fired,
                           .rounds_fired = 0};
 }
 

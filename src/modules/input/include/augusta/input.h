@@ -213,6 +213,14 @@ struct Config {
 /// short of straight up/down.
 inline constexpr float kMaxLookPitch = 1.55F;
 
+/// Where the player aims now: the yaw and pitch of its view, as a Command's,
+/// and whether it holds ADS.
+struct Aim {
+  float yaw = 0.0F;
+  float pitch = 0.0F;
+  bool ads = false;
+};
+
 // Accumulates device state pushed via EventSink and samples it into a
 // command::Command once per Simulation tick. The client constructs exactly
 // one, alongside the one Renderer, and wires the two together (Renderer
@@ -233,11 +241,11 @@ class Input : public EventSink {
   // Renderer::PumpEvents on the Main/Render thread.
   [[nodiscard]] command::Command Sample();
 
-  /// Where the view looks now: command::ViewRotation of the yaw and pitch accumulated
-  /// so far, mouse movement since the last Sample included. The camera turns
-  /// by it every render frame, from the Main/Render thread, rather than by the
-  /// Command's view, which is only as new as the last tick.
-  [[nodiscard]] math::Quat CurrentView() const;
+  /// Where the player aims now: the yaw and pitch accumulated so far, mouse
+  /// movement since the last Sample included, and whether ADS is held. The
+  /// camera turns and zooms by it every render frame, from the Main/Render
+  /// thread, rather than by the Command's, which is only as new as the last tick.
+  [[nodiscard]] Aim CurrentAim() const;
 
   // Whether the cursor should be captured for mouselook: true at first, false
   // once kReleaseCursorKey is pressed, and true again on the next click of any

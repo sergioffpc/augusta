@@ -40,9 +40,8 @@ target_compile_definitions(augustac PRIVATE NOMINMAX)
 # other consumer of the vendored Falcor build.
 add_custom_command(TARGET augustac POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${FALCOR_BIN_DIR}" "$<TARGET_FILE_DIR:augustac>"
-  COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:augustac>/shaders/Augusta/Renderer"
-  COMMAND ${CMAKE_COMMAND} -E copy
-    "${CMAKE_SOURCE_DIR}/src/modules/renderer/shaders/Renderer.3d.slang"
-    "$<TARGET_FILE_DIR:augustac>/shaders/Augusta/Renderer/Renderer.3d.slang"
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+    "${CMAKE_SOURCE_DIR}/src/modules/renderer/shaders"
+    "$<TARGET_FILE_DIR:augustac>/shaders/Augusta/Renderer"
   COMMENT "Deploying Falcor's runtime (ADR-0009) and shaders next to augustac"
 )

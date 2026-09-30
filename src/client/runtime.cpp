@@ -17,9 +17,11 @@
 
 #include "augusta/audio.h"
 #include "augusta/command.h"
+#include "augusta/effects.h"
 #include "augusta/harness.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
+#include "augusta/parameters.h"
 #include "augusta/prediction.h"
 #include "augusta/presentation.h"
 #include "augusta/tick.h"
@@ -30,16 +32,40 @@ namespace {
 
 // Maps one interpolated remote player into a renderer-drawable instance of
 // its character's mesh, which ClientRuntime uploads via SetCharacterMesh in
-// the Lobby (ADR-0042/ADR-0043). The mesh is drawn as authored, standing:
-// its stance shows once animation poses it.
+// the Lobby (ADR-0042/ADR-0043), turned where it faces. The mesh is drawn as
+// authored, standing: its stance shows once animation poses it.
 renderer::RemotePlayer ToRenderer(const presentation::RemotePlayer& remote) {
-  return {.position = remote.body.position, .character = remote.character};
+  return {.position = remote.body.position, .yaw = remote.body.yaw, .character = remote.character};
 }
 
 // Maps this frame's presentation::Camera into what Renderer::SetCamera
 // takes - same decoupling reason as the RemotePlayer overload above.
 renderer::Camera ToRenderer(const presentation::Camera& camera) {
-  return {.position = camera.position, .rotation = camera.rotation};
+  return {.position = camera.position, .rotation = camera.rotation, .vertical_fov = camera.vertical_fov};
+}
+
+// Maps effects that show for lifetime seconds into glows, faded by their age.
+std::vector<renderer::Glow> ToRenderer(const std::vector<presentation::Effect>& effects, float lifetime) {
+  std::vector<renderer::Glow> glows;
+  glows.reserve(effects.size());
+  for (const presentation::Effect& effect : effects) {
+    glows.push_back({.position = effect.position, .fade = 1.0F - (effect.age / lifetime)});
+  }
+  return glows;
+}
+
+// This frame's tracers, impacts and muzzle flashes, as Renderer::SetCombatEffects takes them.
+renderer::CombatEffects CombatEffectsOf(const presentation::State& state) {
+  renderer::CombatEffects effects{
+      .tracers = {},
+      .impacts = ToRenderer(state.impacts, presentation::kImpactSeconds),
+      .muzzle_flashes = ToRenderer(state.muzzle_flashes, presentation::kMuzzleFlashSeconds),
+  };
+  effects.tracers.reserve(state.tracers.size());
+  for (const presentation::Tracer& tracer : state.tracers) {
+    effects.tracers.push_back({.head = tracer.head, .tail = tracer.tail});
+  }
+  return effects;
 }
 
 // Maps the harness's Entity ID into presentation's own - the same number,
@@ -60,7 +86,7 @@ presentation::WorldSnapshot ToPresentation(const harness::AuthoritativeState& st
   };
   snapshot.bodies.reserve(state.bodies.size());
   for (const harness::EntityBody& body : state.bodies) {
-    snapshot.bodies.push_back({.entity = ToPresentation(body.entity), .state = body.body});
+    snapshot.bodies.push_back({.entity = ToPresentation(body.entity), .state = body.body, .yaw = body.yaw});
   }
   return snapshot;
 }
@@ -74,6 +100,14 @@ std::optional<presentation::WorldSnapshot> SnapshotOf(const harness::Session& se
     return tick_rate_hz.transform([&state](std::uint8_t rate) { return ToPresentation(state, rate); });
   });
 }
+
+// Maps a Shot as the harness received it into presentation's own, which draws
+// it: who fired it and where from and for; its tick is the server's business.
+presentation::Shot ToPresentation(const harness::Shot& shot) {
+  return {.shooter = ToPresentation(shot.shooter), .origin = shot.origin, .yaw = shot.yaw, .pitch = shot.pitch};
+}
+
+presentation::Aim ToPresentation(const input::Aim& aim) { return {.yaw = aim.yaw, .pitch = aim.pitch, .ads = aim.ads}; }
 
 // Every player's character as Match start named it, for
 // PresentationWorld::RunFrame; empty before the first match. Only the
@@ -126,11 +160,13 @@ struct ThreadJoiner {
 struct ClientRuntime::Impl {
   Config config;
   // Main/Render thread only: loads a character's mesh, which characters'
-  // meshes the renderer has (for the life of the process), and the newest
-  // Roster version Ready was reported for.
+  // meshes the renderer has (for the life of the process), the newest
+  // Roster version Ready was reported for, and whether PresentationWorld has
+  // the server's parameters.
   CharacterMeshLoader load_character_mesh;
   std::set<std::uint8_t> loaded_characters;
   std::optional<std::uint32_t> ready_version;
+  bool presentation_has_parameters = false;
   input::Input input;
   audio::Engine audio;
   // Emplaced by the constructor once the map is loaded into its PredictionWorld.
@@ -277,9 +313,11 @@ struct ClientRuntime::Impl {
     // account for that.
     // No rules of its own: the Session starts the prediction under the
     // server's once it has joined, so the two cannot drift.
+    // The Map goes into PresentationWorld too, for the tracers to meet.
     prediction::World world;
     for (const physics::CollisionMesh& mesh : map.collision) {
-      if (const auto added = world.AddCollisionMesh(mesh); !added) {
+      auto added = world.AddCollisionMesh(mesh).and_then([&] { return presentation.AddCollisionMesh(mesh); });
+      if (!added) {
         throw std::runtime_error(std::format("ClientRuntime: map collision rejected: {}",
                                              physics::DescribeCollisionMeshError(added.error())));
       }
@@ -435,6 +473,68 @@ struct ClientRuntime::Impl {
     return latest_tick;
   }
 
+  // Once the server has admitted this client, hands PresentationWorld the
+  // parameters it sent and its tick, once: what tracers fly by and ADS zooms to.
+  void SharePresentationParameters() {
+    if (presentation_has_parameters) {
+      return;
+    }
+    const std::optional<parameters::Parameters> parameters = session->GetParameters();
+    const std::optional<std::uint8_t> tick_rate_hz = session->GetTickRate();
+    if (parameters.has_value() && tick_rate_hz.has_value()) {
+      presentation.SetParameters(*parameters, 1.0F / static_cast<float>(*tick_rate_hz));
+      presentation_has_parameters = true;
+    }
+  }
+
+  // What this render frame is shown from: the latest Prediction ticks blended
+  // by how far through the tick it is, where the player aims now, and what the
+  // session has received, converted into presentation's own types here, at
+  // ClientRuntime's edge (see SnapshotOf and CharactersOf above). Takes the
+  // Shots and Hit confirmations received since the last frame.
+  //
+  // Two independent Session getters, not one view - safe here because
+  // harness::Session keeps an Authoritative State only once the Match start
+  // that names this client's body has been published (see harness.cpp's
+  // ServerView), so a GetAuthoritativeState() read before GetEntityId(), as
+  // below, can never race ahead of a GetEntityId() that is still nullopt.
+  presentation::FrameInput NextFrameInput() {
+    const LatestTick latest = GetLatestTick();
+    presentation::FrameInput frame{
+        .ticks = {.previous = latest.previous,
+                  .latest = latest.latest,
+                  .fraction = tick::FractionElapsed(latest.start, latest.duration, tick::Clock::now())},
+        .aim = ToPresentation(input.CurrentAim()),
+        .local_entity = std::nullopt,
+        .snapshot = SnapshotOf(*session),
+        .characters = CharactersOf(session->GetMatchStart()),
+        .shots = {},
+        .hit_confirmations = static_cast<std::uint32_t>(session->TakeHitConfirmations().size()),
+    };
+    frame.local_entity =
+        session->GetEntityId().transform([](harness::EntityId entity) { return ToPresentation(entity); });
+    for (const harness::Shot& shot : session->TakeShots()) {
+      frame.shots.push_back(ToPresentation(shot));
+    }
+    return frame;
+  }
+
+  // Hands the renderer what this frame shows. The local player's own position
+  // isn't drawn yet (renderer.h) - only remote players, each as its character.
+  // In the Lobby there are none, so the map is drawn empty.
+  void Show(const presentation::State& frame_state) {
+    renderer.SetCamera(ToRenderer(frame_state.camera));
+    std::vector<renderer::RemotePlayer> remote_boxes;
+    remote_boxes.reserve(frame_state.remote_players.size());
+    for (const auto& remote : frame_state.remote_players) {
+      remote_boxes.push_back(ToRenderer(remote));
+    }
+    renderer.SetRemotePlayers(remote_boxes);
+    // After SetCamera: the effects are turned to face it.
+    renderer.SetCombatEffects(CombatEffectsOf(frame_state));
+    renderer.SetOverlay({.crosshair = frame_state.crosshair, .hit_marker = frame_state.hit_marker});
+  }
+
   void SetShownView(const std::optional<presentation::ShownView>& view) {
     const std::lock_guard<std::mutex> lock(shown_view_mutex);
     shown_view = view;
@@ -486,36 +586,10 @@ std::optional<Failure> ClientRuntime::Run() {
       cursor_locked = captured;
     }
     impl_->renderer.SetDebugHudStats({.net = impl_->GetLatestHudNet()});
-    // Two independent Session getters, not one view - safe here because
-    // harness::Session keeps an Authoritative State only once the Match start
-    // that names this client's body has been published (see harness.cpp's
-    // ServerView), so a GetAuthoritativeState() read before GetEntityId(), as
-    // below, can never race ahead of a GetEntityId() that is still nullopt.
-    // Each is converted into presentation's own types here, at ClientRuntime's
-    // edge (see SnapshotOf and CharactersOf above).
-    const Impl::LatestTick latest = impl_->GetLatestTick();
-    const presentation::PredictedTicks ticks{
-        .previous = latest.previous,
-        .latest = latest.latest,
-        .fraction = tick::FractionElapsed(latest.start, latest.duration, tick::Clock::now()),
-    };
-    const std::optional<presentation::WorldSnapshot> snapshot = SnapshotOf(*impl_->session);
-    const std::optional<presentation::EntityId> local_entity =
-        impl_->session->GetEntityId().transform([](harness::EntityId entity) { return ToPresentation(entity); });
-    const std::vector<presentation::PlayerCharacter> characters = CharactersOf(impl_->session->GetMatchStart());
-    presentation::State frame_state =
-        impl_->presentation.RunFrame(ticks, impl_->input.CurrentView(), local_entity, snapshot, characters);
+    impl_->SharePresentationParameters();
+    const presentation::State frame_state = impl_->presentation.RunFrame(impl_->NextFrameInput());
     impl_->SetShownView(frame_state.view);
-    impl_->renderer.SetCamera(ToRenderer(frame_state.camera));
-    // The local player's own position isn't drawn yet (renderer.h) - only
-    // remote players, each as its character. In the Lobby there are none, so
-    // the map is drawn empty.
-    std::vector<renderer::RemotePlayer> remote_boxes;
-    remote_boxes.reserve(frame_state.remote_players.size());
-    for (const auto& remote : frame_state.remote_players) {
-      remote_boxes.push_back(ToRenderer(remote));
-    }
-    impl_->renderer.SetRemotePlayers(remote_boxes);
+    impl_->Show(frame_state);
     impl_->renderer.RenderFrame();
   }
   LI("subsystem=clientruntime event=loop_stopping loop=render");

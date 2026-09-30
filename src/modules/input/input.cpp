@@ -112,9 +112,9 @@ command::Command Input::Sample() {
   return command;
 }
 
-math::Quat Input::CurrentView() const {
+Aim Input::CurrentAim() const {
   const std::lock_guard<std::mutex> lock(mutex_);
-  return command::ViewRotation(yaw_, pitch_);
+  return Aim{.yaw = yaw_, .pitch = pitch_, .ads = Held(Control::kAds)};
 }
 
 bool Input::CursorCaptured() const {

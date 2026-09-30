@@ -109,12 +109,15 @@ struct ShownView {
                                std::uint32_t newest_tick);
 
 /// One remote player's body as shown this frame: position and velocity
-/// linearly interpolated between the two surrounding updates; stance (a
-/// discrete state, not a number) taken from whichever of the two is nearer
-/// the sample point.
+/// linearly interpolated between the two surrounding updates, and facing along
+/// the shorter arc between them (math::LerpAngle, as the server poses its
+/// hitboxes, ADR-0044); stance (a discrete state, not a number) taken from
+/// whichever of the two is nearer the sample point.
 struct RemoteBody {
   math::Vec3 position{};
   math::Vec3 velocity{};
+  /// Where the body faces: the yaw of its player's view, in radians (command::Command).
+  float yaw = 0.0F;
   physics::Stance stance = physics::Stance::kStanding;
 };
 
@@ -138,7 +141,7 @@ class RemoteInterpolator {
   /// dropped. A server_time at or before the entity's current newest is
   /// ignored: out-of-order or repeated Authoritative State cannot move
   /// interpolation backward.
-  void Record(EntityId entity, double server_time, const physics::BodyState& body);
+  void Record(EntityId entity, double server_time, const physics::BodyState& body, float yaw);
 
   /// Forgets every buffered entity not present in current - the disconnect
   /// case, driven by each Authoritative State's full player list rather than
@@ -155,6 +158,7 @@ class RemoteInterpolator {
   struct Update {
     double server_time = 0.0;
     physics::BodyState body{};
+    float yaw = 0.0F;
   };
   struct Buffered {
     EntityId entity{};

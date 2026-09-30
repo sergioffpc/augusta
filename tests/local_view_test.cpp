@@ -2,24 +2,34 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/command.h"
 #include "augusta/math.h"
+#include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
+#include "augusta/weapon.h"
 
 // Pure: the two ticks, the fraction and the view are handed in, no clock or ECS.
 namespace {
 
-using augusta::math::Quat;
 using augusta::math::Vec3;
 using augusta::physics::Stance;
 using augusta::prediction::State;
+using augusta::presentation::AdsZoom;
+using augusta::presentation::Aim;
 using augusta::presentation::BlendTicks;
 using augusta::presentation::Camera;
+using augusta::presentation::HitMarker;
+using augusta::presentation::kHipFieldOfView;
 using augusta::presentation::LocalCamera;
+using augusta::weapon::RecoilOffset;
 
 constexpr float kTolerance = 1e-5F;
 const Vec3 kStandingEye(0.0F, 1.7F, 0.1F);
-const Quat kLookingAhead(1.0F, 0.0F, 0.0F, 0.0F);
+constexpr Aim kLookingAhead{};
+constexpr RecoilOffset kNoRecoil{};
+constexpr float kAdsFieldOfView = 0.5F;
+constexpr float kFrame = 1.0F / 120.0F;
 
 void ExpectNear(const Vec3& actual, const Vec3& expected) {
   EXPECT_NEAR(actual.x, expected.x, kTolerance);
@@ -69,12 +79,24 @@ TEST(BlendTicksTest, AJumpInTheLatestTickIsBlendedInWithItsCorrection) {
   ExpectNear(blended.local_body.position - blended.total_correction, Vec3(0.0F, 0.0F, 0.0F));
 }
 
+TEST(BlendTicksTest, TheRecoilOffsetIsBlendedBetweenTheTwoTicks) {
+  State previous;
+  previous.rifle.recoil = RecoilOffset{.pitch = 0.02F, .yaw = -0.01F};
+  State latest;
+  latest.rifle.recoil = RecoilOffset{.pitch = 0.04F, .yaw = 0.01F};
+
+  const RecoilOffset blended = BlendTicks(previous, latest, 0.25F).rifle.recoil;
+
+  EXPECT_NEAR(blended.pitch, 0.025F, kTolerance);
+  EXPECT_NEAR(blended.yaw, -0.005F, kTolerance);
+}
+
 TEST(LocalCameraTest, TheCameraFollowsTheBodysStance) {
   const Vec3 feet(3.0F, 1.0F, -4.0F);
 
-  const Camera standing = LocalCamera(feet, Stance::kStanding, kStandingEye, kLookingAhead);
-  const Camera crouching = LocalCamera(feet, Stance::kCrouching, kStandingEye, kLookingAhead);
-  const Camera prone = LocalCamera(feet, Stance::kProne, kStandingEye, kLookingAhead);
+  const Camera standing = LocalCamera(feet, Stance::kStanding, kStandingEye, kLookingAhead, kNoRecoil);
+  const Camera crouching = LocalCamera(feet, Stance::kCrouching, kStandingEye, kLookingAhead, kNoRecoil);
+  const Camera prone = LocalCamera(feet, Stance::kProne, kStandingEye, kLookingAhead, kNoRecoil);
 
   ExpectNear(standing.position, feet + kStandingEye);
   ExpectNear(crouching.position, feet + augusta::physics::LowerToStance(kStandingEye, Stance::kCrouching));
@@ -83,11 +105,94 @@ TEST(LocalCameraTest, TheCameraFollowsTheBodysStance) {
 }
 
 TEST(LocalCameraTest, TheCameraTurnsByTheViewHandedToTheFrame) {
-  const Quat view(0.9F, 0.1F, 0.3F, 0.2F);
+  const Aim aim{.yaw = 0.7F, .pitch = -0.2F, .ads = false};
 
-  const Camera camera = LocalCamera(Vec3(0.0F, 0.0F, 0.0F), Stance::kStanding, kStandingEye, view);
+  const Camera camera = LocalCamera(Vec3(0.0F, 0.0F, 0.0F), Stance::kStanding, kStandingEye, aim, kNoRecoil);
 
-  EXPECT_EQ(camera.rotation, view);
+  EXPECT_EQ(camera.rotation, augusta::command::ViewRotation(aim.yaw, aim.pitch));
+}
+
+// The view shows where the next round goes: a rifle climbing by its recoil
+// takes the camera with it, off the view the player holds.
+TEST(LocalCameraTest, TheCameraLooksWhereTheNextRoundLeaves) {
+  augusta::parameters::Rifle rifle;
+  rifle.magazine_capacity = 30;
+  rifle.rounds_per_minute = 600.0F;
+  rifle.recoil_pattern = {{.pitch = 0.03F, .yaw = 0.01F}, {.pitch = 0.02F, .yaw = -0.02F}};
+  augusta::command::Command command;
+  command.yaw = 0.4F;
+  command.pitch = 0.1F;
+  command.fire = true;
+  augusta::weapon::State held = augusta::weapon::Loaded(rifle);
+  held = augusta::weapon::Step(rifle, held, command, 1.0F).state;
+  const augusta::weapon::Result next = augusta::weapon::Step(rifle, held, command, 1.0F);
+  ASSERT_TRUE(next.fired);
+
+  const Camera camera = LocalCamera(Vec3(0.0F, 0.0F, 0.0F), Stance::kStanding, kStandingEye,
+                                    Aim{.yaw = command.yaw, .pitch = command.pitch, .ads = false}, held.recoil);
+
+  const Vec3 looking = camera.rotation * Vec3(0.0F, 0.0F, -1.0F);
+  ExpectNear(looking, augusta::command::ViewDirection(next.yaw, next.pitch));
+}
+
+TEST(AdsZoomTest, FromTheHipTheViewIsNotZoomed) {
+  AdsZoom zoom;
+
+  EXPECT_FLOAT_EQ(zoom.Update(false, kAdsFieldOfView, kFrame), kHipFieldOfView);
+}
+
+TEST(AdsZoomTest, HoldingAdsZoomsToItsFieldOfViewOverTheTransition) {
+  AdsZoom zoom;
+
+  const float first = zoom.Update(true, kAdsFieldOfView, kFrame);
+  float previous = first;
+  for (float held = kFrame; held < AdsZoom::kTransitionSeconds - kFrame; held += kFrame) {
+    const float now = zoom.Update(true, kAdsFieldOfView, kFrame);
+    EXPECT_LE(now, previous);
+    previous = now;
+  }
+  const float settled = zoom.Update(true, kAdsFieldOfView, 2.0F * kFrame);
+
+  EXPECT_LT(first, kHipFieldOfView);
+  EXPECT_GT(first, kAdsFieldOfView);
+  EXPECT_FLOAT_EQ(settled, kAdsFieldOfView);
+}
+
+TEST(AdsZoomTest, ReleasingAdsZoomsBackOut) {
+  AdsZoom zoom;
+  (void)zoom.Update(true, kAdsFieldOfView, AdsZoom::kTransitionSeconds);
+
+  const float releasing = zoom.Update(false, kAdsFieldOfView, kFrame);
+  const float released = zoom.Update(false, kAdsFieldOfView, AdsZoom::kTransitionSeconds);
+
+  EXPECT_GT(releasing, kAdsFieldOfView);
+  EXPECT_LT(releasing, kHipFieldOfView);
+  EXPECT_FLOAT_EQ(released, kHipFieldOfView);
+}
+
+TEST(HitMarkerTest, NoHitMarkerShowsWithoutAHitConfirmation) {
+  HitMarker marker;
+
+  for (int frame = 0; frame < 100; ++frame) {
+    EXPECT_FALSE(marker.Update(0, kFrame)) << frame;
+  }
+}
+
+TEST(HitMarkerTest, AHitConfirmationShowsTheMarkerForAMoment) {
+  HitMarker marker;
+
+  EXPECT_TRUE(marker.Update(1, kFrame));
+  EXPECT_TRUE(marker.Update(0, HitMarker::kShownSeconds / 2.0F));
+  EXPECT_FALSE(marker.Update(0, HitMarker::kShownSeconds));
+}
+
+TEST(HitMarkerTest, EachHitConfirmationShowsTheMarkerAfresh) {
+  HitMarker marker;
+  (void)marker.Update(1, kFrame);
+  (void)marker.Update(0, HitMarker::kShownSeconds * 0.9F);
+
+  EXPECT_TRUE(marker.Update(1, kFrame));
+  EXPECT_TRUE(marker.Update(0, HitMarker::kShownSeconds * 0.9F));
 }
 
 }  // namespace

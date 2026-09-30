@@ -4,7 +4,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <numbers>
 #include <optional>
 
 #include "augusta/math.h"
@@ -16,12 +15,6 @@ namespace {
 // Below this fraction of the way from one tick to the next the earlier stance
 // is the nearer one, as on the client (presentation's RemoteInterpolator).
 constexpr float kMidpointFraction = 0.5F;
-
-// The yaw fraction of the way from one to another, along the shorter arc.
-float LerpYaw(float from, float to, float fraction) {
-  constexpr float kTurn = 2.0F * std::numbers::pi_v<float>;
-  return from + (std::remainder(to - from, kTurn) * fraction);
-}
 
 }  // namespace
 
@@ -49,7 +42,7 @@ std::optional<Pose> PoseHistory::At(double time) const {
   }
   const Pose& later = poses_[earlier_index + 1];
   return Pose{.position = math::Lerp(earlier.position, later.position, fraction),
-              .yaw = LerpYaw(earlier.yaw, later.yaw, fraction),
+              .yaw = math::LerpAngle(earlier.yaw, later.yaw, fraction),
               .stance = fraction < kMidpointFraction ? earlier.stance : later.stance};
 }
 
