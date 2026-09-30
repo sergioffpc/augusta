@@ -90,7 +90,8 @@ void showValue(const MessageWire& message, std::ostream& out) {
         showValue(body.body, out);
         out << ", yaw " << body.yaw << "; ";
       }
-      out << "queued_commands " << +state.queued_commands << "}";
+      out << "rifle{cooldown " << state.rifle.cooldown << ", reload_remaining " << state.rifle.reload_remaining
+          << ", rounds " << +state.rifle.rounds << "}, queued_commands " << +state.queued_commands << "}";
     }
     void operator()(const LobbyWire& lobby) const {
       out << "Lobby{version " << lobby.version << ", ";
@@ -173,6 +174,7 @@ using augusta::protocol::SessionIdWire;
 using augusta::protocol::ShotWire;
 using augusta::protocol::StaminaWire;
 using augusta::protocol::StanceWire;
+using augusta::protocol::WeaponStateWire;
 
 // A value on grid, anywhere in its range: the only numbers a body or a command
 // holds (augusta/grid.h), so the only ones the codec must carry exactly.
@@ -301,10 +303,15 @@ rc::Gen<AuthoritativeStateWire> AuthoritativeState() {
   const auto entity = rc::gen::build<EntityStateWire>(rc::gen::set(&EntityStateWire::entity, AnyId<EntityIdWire>()),
                                                       rc::gen::set(&EntityStateWire::body, Body()),
                                                       rc::gen::set(&EntityStateWire::yaw, OnGrid(kAngleGrid)));
+  const auto rifle =
+      rc::gen::build<WeaponStateWire>(rc::gen::set(&WeaponStateWire::cooldown, FiniteFloat()),
+                                      rc::gen::set(&WeaponStateWire::reload_remaining, FiniteFloat()),
+                                      rc::gen::set(&WeaponStateWire::rounds, rc::gen::arbitrary<std::uint8_t>()));
   return rc::gen::build<AuthoritativeStateWire>(
       rc::gen::set(&AuthoritativeStateWire::tick, rc::gen::arbitrary<std::uint32_t>()),
       rc::gen::set(&AuthoritativeStateWire::acknowledged_sequence, rc::gen::arbitrary<std::uint32_t>()),
       rc::gen::set(&AuthoritativeStateWire::bodies, UpTo<std::vector<EntityStateWire>>(kMaxPlayers, entity)),
+      rc::gen::set(&AuthoritativeStateWire::rifle, rifle),
       rc::gen::set(&AuthoritativeStateWire::queued_commands, rc::gen::arbitrary<std::uint8_t>()));
 }
 

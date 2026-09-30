@@ -25,8 +25,9 @@
 // Property-based tests of the simulation (ADR-0013), through the Worlds' public
 // interfaces: a player's stamina stays a fraction and its magazine within its
 // capacity whatever it is commanded to do, no rifle outpaces its fire rate,
-// health never rises nor goes below zero, and a client whose prediction diverged from the server converges on the
-// server's state once the server stops diverging. RC_PARAMS sets the case count
+// health never rises nor goes below zero, and a client whose prediction of its
+// body and its rifle diverged from the server converges on the server's state
+// once the server stops diverging. RC_PARAMS sets the case count
 // at run time; pull requests run the default 100.
 namespace augusta::command {
 
@@ -288,47 +289,56 @@ constexpr float kConvergedPosition = 0.005F;
 constexpr float kConvergedStamina = 0.001F;
 
 // The client predicts every command while the server loses some of them,
-// moving the player for a lost one with no command, as it does when none
-// arrives; each answer reaches the client delay ticks after the command it
-// answers. Losses stop delay ticks before the end, so the client's newest
-// answer, and every command it replays after it, followed what the server did.
+// moving the player and handling its rifle for a lost one with no command, as
+// it does when none arrives; each answer reaches the client delay ticks after
+// the command it answers. Losses stop delay ticks before the end, so the
+// client's newest answer, and every command it replays after it, followed what
+// the server did.
 RC_GTEST_PROP(SimulationPropertyTest, AClientThatDivergedConvergesOnTheServersState, ()) {
-  const StaminaConfig stamina = *Stamina();
+  augusta::parameters::Parameters parameters;
+  parameters.stamina = *Stamina();
+  parameters.rifle = *Rifle();
+  parameters.ammo.max_range = 50.0F;
   const auto delay = *rc::gen::inRange<std::size_t>(1, 7);  // A round trip of up to 100 ms.
   const std::vector<Command> commands = *Commands(delay + 1);
   const auto lost = *rc::gen::container<std::set<std::size_t>>(rc::gen::inRange<std::size_t>(0, commands.size()));
   const std::size_t losses_end = commands.size() - delay - 1;
 
-  augusta::simulation::World server(augusta::parameters::Parameters{.stamina = stamina});
+  augusta::simulation::World server(parameters);
   RC_ASSERT(server.AddCollisionMesh(Floor()).has_value());
   server.AddPlayer(kPlayer, kSpawn, kCharacter);
 
   augusta::prediction::World client;
   RC_ASSERT(client.AddCollisionMesh(Floor()).has_value());
-  client.Start(kSpawn, augusta::parameters::Parameters{.stamina = stamina});
+  client.Start(kSpawn, parameters);
 
   std::vector<Acknowledgement> answers;  // answers[i] is the server's to commands[i].
-  BodyState predicted{};
+  augusta::prediction::State predicted{};
   for (std::size_t i = 0; i < commands.size(); ++i) {
     const auto sequence = static_cast<std::uint32_t>(i + 1);
     std::vector<augusta::simulation::PlayerCommand> received;
     if (i >= losses_end || !lost.contains(i)) {
       received.push_back({.entity = kPlayer, .command = commands[i]});
     }
-    answers.push_back({.sequence = sequence, .body = server.Tick(received, kTick).bodies.front().body});
+    const augusta::simulation::EntityState answered = server.Tick(received, kTick).bodies.front();
+    answers.push_back({.sequence = sequence, .body = answered.body, .rifle = answered.rifle});
 
     std::optional<Acknowledgement> answer;
     if (i >= delay) {
       answer = answers[i - delay];
     }
-    predicted = client.Tick(commands[i], sequence, answer, kTick).local_body;
+    predicted = client.Tick(commands[i], sequence, answer, kTick);
   }
 
+  const BodyState& body = predicted.local_body;
   const BodyState& authoritative = answers.back().body;
-  RC_ASSERT(augusta::math::Length(predicted.position - authoritative.position) < kConvergedPosition);
-  RC_ASSERT(std::abs(predicted.stamina - authoritative.stamina) < kConvergedStamina);
-  RC_ASSERT(predicted.stance == authoritative.stance);
-  RC_ASSERT(predicted.exhausted == authoritative.exhausted);
+  RC_ASSERT(augusta::math::Length(body.position - authoritative.position) < kConvergedPosition);
+  RC_ASSERT(std::abs(body.stamina - authoritative.stamina) < kConvergedStamina);
+  RC_ASSERT(body.stance == authoritative.stance);
+  RC_ASSERT(body.exhausted == authoritative.exhausted);
+  // The rifle is plain arithmetic, the same on both sides: it converges exactly.
+  RC_ASSERT(predicted.rifle == answers.back().rifle);
+  RC_CLASSIFY(predicted.rifle_corrections > 0, "the rifle was corrected");
 }
 
 }  // namespace

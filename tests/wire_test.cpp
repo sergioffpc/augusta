@@ -162,6 +162,23 @@ TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
   }
 }
 
+// The recipient's rifle is off every grid: its times reach the client as the
+// exact floats the server stepped them to.
+TEST(WireTest, TheRecipientsRifleReachesTheClientExactly) {
+  const augusta::replication::Update sent{
+      .recipient = augusta::simulation::EntityId{1},
+      .tick = 7,
+      .acknowledged_sequence = 3,
+      .bodies = {{.entity = augusta::simulation::EntityId{1}, .body = Body(1.0F, Stance::kStanding)}},
+      .rifle = {.cooldown = 0.1F - (1.0F / 60.0F), .reload_remaining = 2.4833333F, .rounds = 27},
+  };
+
+  const augusta::harness::AuthoritativeState received =
+      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+
+  EXPECT_EQ(received.rifle, sent.rifle);
+}
+
 TEST(WireTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged) {
   augusta::parameters::Parameters parameters;
   parameters.stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F};

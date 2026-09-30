@@ -95,6 +95,15 @@ void WriteBodies(BytesWire& out, const std::vector<EntityStateWire>& bodies) {
   }
 }
 
+// A rifle's two times travel as their bits, not on a grid: its owner replays
+// its commands from them, with the function the server stepped them with, and
+// must start from exactly what the server had.
+void WriteWeaponState(BytesWire& out, const WeaponStateWire& rifle) {
+  WriteU8(out, rifle.rounds);
+  WriteF32(out, rifle.cooldown);
+  WriteF32(out, rifle.reload_remaining);
+}
+
 // Walks a payload front to back. The first problem it meets is remembered and
 // every read after it returns a zero value, so a decoder can read all of a
 // message's fields and ask once at the end whether they were all there.
@@ -352,12 +361,21 @@ CommandsWire ReadCommands(Reader& reader) {
   return message;
 }
 
+WeaponStateWire ReadWeaponState(Reader& reader) {
+  WeaponStateWire rifle;
+  rifle.rounds = reader.ReadU8();
+  rifle.cooldown = reader.ReadF32();
+  rifle.reload_remaining = reader.ReadF32();
+  return rifle;
+}
+
 AuthoritativeStateWire ReadAuthoritativeState(Reader& reader) {
   AuthoritativeStateWire state;
   state.tick = reader.ReadU32();
   state.acknowledged_sequence = reader.ReadU32();
   state.bodies = ReadBodies(reader);
   state.queued_commands = reader.ReadU8();
+  state.rifle = ReadWeaponState(reader);
   return state;
 }
 
@@ -512,6 +530,7 @@ struct Encoder {
     WriteU32(out, message.acknowledged_sequence);
     WriteBodies(out, message.bodies);
     WriteU8(out, message.queued_commands);
+    WriteWeaponState(out, message.rifle);
   }
 
   void operator()(const LobbyWire& message) const {

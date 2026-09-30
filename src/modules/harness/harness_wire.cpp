@@ -128,6 +128,9 @@ AuthoritativeState FromWire(const protocol::AuthoritativeStateWire& state) {
       .tick = state.tick,
       .acknowledged_sequence = state.acknowledged_sequence,
       .bodies = {},
+      .rifle = {.cooldown = state.rifle.cooldown,
+                .reload_remaining = state.rifle.reload_remaining,
+                .rounds = state.rifle.rounds},
       .queued_commands = state.queued_commands,
   };
   result.bodies.reserve(state.bodies.size());

@@ -12,8 +12,9 @@
 // state of its own, so the two Worlds that run a WeaponHandling phase call the
 // same function, as both call physics::World. The server's SimulationWorld
 // takes the result as authoritative and fires a bullet for each round
-// (ADR-0023); the client's PredictionWorld is to predict its own fire with it
-// (ADR-0024). Nothing here is random, so the two agree.
+// (ADR-0023); the client's PredictionWorld predicts its own fire and reload
+// with it (ADR-0024), and is reconciled against the server's State (ADR-0004).
+// Nothing here is random, so the two agree.
 //
 // The rifle's values are the Parameters' (ADR-0039), handed in on every call.
 namespace augusta::weapon {

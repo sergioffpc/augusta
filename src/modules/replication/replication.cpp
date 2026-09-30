@@ -1,12 +1,25 @@
 #include "augusta/replication.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <span>
 #include <vector>
 
 #include "augusta/simulation.h"
+#include "augusta/weapon.h"
 
 namespace augusta::replication {
+
+namespace {
+
+// The rifle of the player who controls entity in state; one with no round if
+// state holds no such body.
+weapon::State RifleOf(const simulation::State& state, simulation::EntityId entity) {
+  const auto body = std::ranges::find(state.bodies, entity, &simulation::EntityState::entity);
+  return body == state.bodies.end() ? weapon::State{} : body->rifle;
+}
+
+}  // namespace
 
 std::vector<Update> PlanUpdates(const simulation::State& state, std::uint32_t tick,
                                 std::span<const Recipient> recipients) {
@@ -24,6 +37,7 @@ std::vector<Update> PlanUpdates(const simulation::State& state, std::uint32_t ti
         .tick = tick,
         .acknowledged_sequence = recipient.acknowledged_sequence,
         .bodies = everyone,
+        .rifle = RifleOf(state, recipient.entity),
         .queued_commands = recipient.queued_commands,
     });
   }

@@ -46,6 +46,7 @@ using augusta::protocol::SessionIdWire;
 using augusta::protocol::ShotWire;
 using augusta::protocol::StaminaWire;
 using augusta::protocol::StanceWire;
+using augusta::protocol::WeaponStateWire;
 
 struct Seed {
   std::string name;
@@ -87,6 +88,7 @@ std::vector<Seed> Seeds() {
                .acknowledged_sequence = 42,
                .bodies = {EntityStateWire{.entity = static_cast<EntityIdWire>(1), .body = body, .yaw = 1.5F},
                           EntityStateWire{.entity = static_cast<EntityIdWire>(2), .body = BodyStateWire{}}},
+               .rifle = WeaponStateWire{.cooldown = 0.0625F, .reload_remaining = 1.75F, .rounds = 12},
                .queued_commands = 2}},
       {.name = "lobby",
        .message = LobbyWire{.version = 3,

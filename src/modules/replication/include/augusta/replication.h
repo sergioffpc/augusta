@@ -9,6 +9,7 @@
 #include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/simulation.h"
+#include "augusta/weapon.h"
 
 // augusta::replication decides what SimulationWorld's per-tick Authoritative
 // State (augusta::simulation::State, ADR-0023) means for each connected
@@ -48,12 +49,17 @@ struct Update {
   std::uint32_t acknowledged_sequence = 0;
   /// Every dynamic body in the match.
   std::vector<EntityBody> bodies;
+  /// The recipient's own rifle after the tick, for it to reconcile its
+  /// predicted one against; no one else's is sent. A rifle with no round if the
+  /// recipient has no body in the state.
+  weapon::State rifle{};
   /// How many of the recipient's commands the server still holds queued after the tick.
   std::uint8_t queued_commands = 0;
 };
 
 /// What each recipient is sent for tick: every body, and its own acknowledged
-/// sequence and queued commands (which is why each update is its own message).
+/// sequence, rifle and queued commands (which is why each update is its own
+/// message).
 [[nodiscard]] std::vector<Update> PlanUpdates(const simulation::State& state, std::uint32_t tick,
                                               std::span<const Recipient> recipients);
 

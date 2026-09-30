@@ -61,9 +61,12 @@ its step is an exact float, and a value read back encodes to the same bytes:
 
 A value beyond its range travels as the bound, and a NaN travels as 0. The tick
 rate travels as one byte of whole Hz, and the parameters stay 32-bit floats:
-they are sent once, and must arrive exactly. So a body is 18 bytes (25 in an
-update, with its entity ID and its yaw) and a command 13, a whole Shot message
-is 24 and a whole Hit confirmation 10.
+they are sent once, and must arrive exactly. So do a rifle's two times: its
+owner replays its commands from them (ADR-0004) with the function the server
+stepped them with, and a rounded start would be a rifle the server never had.
+So a body is 18 bytes (25 in an update, with its entity ID and its yaw), a
+rifle 9 and a command 13, a whole Shot message is 24 and a whole Hit
+confirmation 10.
 
 **Aim is not the network's to blur.** The server fires with the angle it was
 sent, so the angle grid decides how far a shot lands from where the player
@@ -113,7 +116,7 @@ supersedes is unreliable.
 | Join accepted | server → client | reliable | session ID, the server's tick rate, the parameters to predict with (the Player count, the stamina rules, the rifle with its recoil pattern of at most 64 kicks, its ammo with damage by body part, and the starting health), the player's own character index |
 | Join refused | server → client | reliable | reason: version mismatch, pack mismatch, unknown character, match in progress, lobby full |
 | Commands | client → server | unreliable | up to 8 commands, oldest first: sequence, movement direction, yaw, pitch, and one byte holding the sprint, ADS, fire and reload flags (bits 0-3) and the desired stance (bits 4-5) |
-| Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, per body (at most 8): entity ID, position, velocity, one byte holding the stance (bits 0-1) and the exhausted flag (bit 2), stamina, the yaw it faces; then one byte: how many of the recipient's commands the server still holds queued after the tick |
+| Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, per body (at most 8): entity ID, position, velocity, one byte holding the stance (bits 0-1) and the exhausted flag (bit 2), stamina, the yaw it faces; then one byte: how many of the recipient's commands the server still holds queued after the tick; then the recipient's own rifle as of the tick, to reconcile its predicted one against (ADR-0004): one byte for the rounds in its magazine, and the time until its next round may fire and the time its reload still takes, each a 32-bit float |
 | Lobby | server → client | reliable | the Roster's version, and every player in the Lobby (at most 8, the recipient included) with session ID and character index (ADR-0043) |
 | Ready | client → server | reliable | the Lobby version the client loaded for (ADR-0043) |
 | Match start | server → client | reliable | every player in the Match (at most 8, the recipient included): session ID, the entity ID of its body, character index, spawn position (ADR-0043) |

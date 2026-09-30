@@ -74,6 +74,22 @@ TEST(ReplicationTest, EachRecipientIsToldHowManyOfItsOwnCommandsAreQueued) {
   EXPECT_EQ(updates[1].queued_commands, 0U);
 }
 
+TEST(ReplicationTest, EachRecipientIsToldItsOwnRifleAndNoOneElses) {
+  EntityState firing = PlayerAt(1, 0.0F);
+  firing.rifle = {.cooldown = 0.05F, .reload_remaining = 0.0F, .rounds = 12};
+  EntityState reloading = PlayerAt(2, 0.0F);
+  reloading.rifle = {.cooldown = 0.0F, .reload_remaining = 1.5F, .rounds = 3};
+  const State state = StateOf({firing, reloading});
+  // Not in the order of the bodies: a recipient finds its own by its entity.
+  const std::array<Recipient, 2> recipients = {Recipient{.entity = static_cast<EntityId>(2)},
+                                               Recipient{.entity = static_cast<EntityId>(1)}};
+
+  const auto updates = PlanUpdates(state, 1, recipients);
+
+  EXPECT_EQ(updates[0].rifle, reloading.rifle);
+  EXPECT_EQ(updates[1].rifle, firing.rifle);
+}
+
 TEST(ReplicationTest, NobodyToSendToMeansNothingIsPlanned) {
   const State state = StateOf({PlayerAt(1, 0.0F)});
 

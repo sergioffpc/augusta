@@ -53,6 +53,7 @@ using augusta::protocol::RosterEntryWire;
 using augusta::protocol::SequencedCommandWire;
 using augusta::protocol::SessionIdWire;
 using augusta::protocol::ShotWire;
+using augusta::protocol::WeaponStateWire;
 
 BytesWire BytesOf(std::initializer_list<std::uint8_t> values) {
   BytesWire bytes;
@@ -671,6 +672,29 @@ TEST(ProtocolTest, AnUpdateTellsItsRecipientHowManyOfItsCommandsTheServerHolds) 
   }
 }
 
+// The recipient's rifle is what it replays its commands from, so its times
+// arrive as the floats they were, off any grid.
+TEST(ProtocolTest, AnUpdateTellsItsRecipientItsOwnRifleExactly) {
+  const WeaponStateWire rifle{.cooldown = 0.1F - (1.0F / 60.0F), .reload_remaining = 2.4833333F, .rounds = 27};
+
+  const auto received = std::get<AuthoritativeStateWire>(
+      RoundTrip(AuthoritativeStateWire{.tick = 9, .bodies = {BodyAt(1, 1.0F)}, .rifle = rifle, .queued_commands = 1}));
+
+  EXPECT_EQ(received.rifle, rifle);
+  EXPECT_EQ(received.queued_commands, 1U);
+}
+
+TEST(ProtocolTest, ARecipientsRifleTravelsInNineBytesAtTheEndOfAnUpdate) {
+  const BytesWire payload = Encode(
+      AuthoritativeStateWire{.bodies = {}, .rifle = {.cooldown = 1.0F, .reload_remaining = -2.0F, .rounds = 30}});
+  // type, tick, acknowledged sequence, count, the queued commands, then the rifle.
+  constexpr std::ptrdiff_t kRifleOffset = 1 + 4 + 4 + 1 + 1;
+
+  // The rounds, then each time as its IEEE-754 bits, little-endian.
+  EXPECT_EQ(BytesWire(payload.begin() + kRifleOffset, payload.end()),
+            BytesOf({30, 0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x00, 0xC0}));
+}
+
 TEST(ProtocolTest, MorePlayersThanAMatchHoldsIsTooLong) {
   // type, tick (4), acknowledged sequence (4), then the count.
   const BytesWire payload =
@@ -736,8 +760,9 @@ TEST(ProtocolTest, ABodysUnusedStanceByteBitsSetAreInvalid) {
 // Every number of a body or a command travels as a whole count of its grid's
 // step (ADR-0038), in the fewest bytes its range needs.
 TEST(ProtocolTest, ABodyTravelsInEighteenBytesAndACommandInThirteen) {
-  // type, tick, acknowledged sequence, count, entity, the body, its yaw, then the queued commands.
-  EXPECT_EQ(Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}}).size(), 1 + 4 + 4 + 1 + 4 + 18 + 3 + 1);
+  // type, tick, acknowledged sequence, count, entity, the body, its yaw, the
+  // queued commands, then the recipient's rifle.
+  EXPECT_EQ(Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}}).size(), 1 + 4 + 4 + 1 + 4 + 18 + 3 + 1 + 9);
   EXPECT_EQ(Encode(CommandsWire{.commands = {SequencedCommandWire{}}}).size(), 2 + 4 + 13);
 }
 

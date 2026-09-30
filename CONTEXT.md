@@ -67,11 +67,11 @@ One tick's local input (command::Command, in the shared core) a client sends the
 _Avoid_: Input (Command is the sequenced payload sent to the server each tick; augusta::input::Input is the per-frame local sampler that produces one)
 
 **Reconciliation**:
-The process of correcting a client's predicted state against the server's authoritative state: the client restores the server's state and replays the commands the server has not yet acknowledged from it, and presentation smooths the resulting jump.
+The process of correcting a client's predicted state against the server's authoritative state: the client restores the server's state of its body and its rifle and replays the commands the server has not yet acknowledged from it, and presentation smooths the resulting jump.
 _Avoid_: Resync, rollback
 
 **Authoritative State update**:
-One server tick's Authoritative State as sent to one client (protocol::AuthoritativeStateWire): every body as of that tick, by its Entity ID, plus the recipient's own newest acknowledged Command sequence. augusta::replication decides who gets what.
+One server tick's Authoritative State as sent to one client (protocol::AuthoritativeStateWire): every body as of that tick, by its Entity ID, plus the recipient's own newest acknowledged Command sequence and its own rifle. augusta::replication decides who gets what.
 _Avoid_: Snapshot, state sync
 
 **Spawn point**:

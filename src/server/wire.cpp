@@ -158,6 +158,9 @@ protocol::AuthoritativeStateWire ToWire(const replication::Update& update) {
       .tick = update.tick,
       .acknowledged_sequence = update.acknowledged_sequence,
       .bodies = {},
+      .rifle = {.cooldown = update.rifle.cooldown,
+                .reload_remaining = update.rifle.reload_remaining,
+                .rounds = update.rifle.rounds},
       .queued_commands = update.queued_commands,
   };
   state.bodies.reserve(update.bodies.size());
