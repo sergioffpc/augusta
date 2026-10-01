@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -5,6 +6,7 @@
 #include <optional>
 #include <ostream>
 #include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -20,12 +22,14 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
+#include "augusta/scripting.h"
 #include "augusta/simulation.h"
 
 // Property-based tests of the simulation (ADR-0013), through the Worlds' public
 // interfaces: a player's stamina stays a fraction and its magazine within its
 // capacity whatever it is commanded to do, no rifle outpaces its fire rate,
-// health never rises nor goes below zero, a dead player stays dead, and a client whose prediction of its
+// health never rises nor goes below zero, a dead player stays dead, Game policy
+// ends a Match at most once and only ever with a winner alive in it, and a client whose prediction of its
 // body and its rifle diverged from the server converges on the server's state
 // once the server stops diverging. RC_PARAMS sets the case count
 // at run time; pull requests run the default 100.
@@ -325,6 +329,83 @@ RC_GTEST_PROP(SimulationPropertyTest, ADeadPlayerNeverComesBackFiresOrMoves, ())
     }
   }
   RC_CLASSIFY(alive.size() < 2U, "a player died");
+}
+
+// What a Game policy hook may answer on one tick: mostly nothing, so a Match
+// lasts long enough for its players to die, else a draw or a winner by
+// session, which may be no player's (11 and 12 are the players'), a player's
+// who has died or one alive.
+rc::Gen<std::string> MatchEndAnswer() {
+  return rc::gen::weightedOneOf<std::string>({{60, rc::gen::just(std::string("nil"))},
+                                              {1, rc::gen::just(std::string("{draw = true}"))},
+                                              {3, rc::gen::map(rc::gen::inRange(10, 14), [](int session) {
+                                                 return "{winner = " + std::to_string(session) + "}";
+                                               })}});
+}
+
+// An objectives script whose on_tick answers what answers holds for each tick,
+// counted from 1, and nil past them.
+std::string AnsweringObjectives(const std::vector<std::string>& answers) {
+  std::string script = "local answers = {";
+  for (const std::string& answer : answers) {
+    script += answer == "nil" ? "false, " : answer + ", ";
+  }
+  return script + "}\nfunction on_tick(match) return answers[match.tick] or nil end\n";
+}
+
+// The same two players, in two Matches one after the other, under objectives
+// that answer anything at all on any tick: whatever policy answers, at most one
+// Match end takes effect per Match, and a winner is a player alive in it on the
+// tick it is declared.
+RC_GTEST_PROP(SimulationPropertyTest, AtMostOneMatchEndPerMatchAndAWinnerIsAlwaysAPlayerAliveInIt, ()) {
+  constexpr augusta::simulation::EntityId kOther = static_cast<augusta::simulation::EntityId>(2);
+  const std::map<augusta::simulation::EntityId, augusta::simulation::SessionId> sessions = {
+      {kPlayer, static_cast<augusta::simulation::SessionId>(11)},
+      {kOther, static_cast<augusta::simulation::SessionId>(12)}};
+  augusta::parameters::Parameters parameters;
+  parameters.player_count = 2;
+  parameters.rifle.rounds_per_minute = 3600.0F;
+  parameters.rifle.magazine_capacity = 255;
+  parameters.rifle.muzzle_velocity = 600.0F;
+  parameters.ammo.max_range = 50.0F;
+  const auto damage = rc::gen::map(rc::gen::inRange(1, 41), [](int points) { return static_cast<float>(points); });
+  parameters.ammo.damage = {.head = *damage, .torso = *damage, .limb = *damage};
+  parameters.starting_health = static_cast<float>(*rc::gen::inRange(1, 101));
+  const std::vector<Command> commands = LookingRoughly(0.0F, *Commands(2));
+  const std::vector<Command> other_commands =
+      LookingRoughly(kPi, *rc::gen::container<std::vector<Command>>(commands.size(), RealCommand()));
+  const std::vector<std::string> answers =
+      *rc::gen::container<std::vector<std::string>>(commands.size(), MatchEndAnswer());
+  const std::size_t second_match = *rc::gen::inRange<std::size_t>(1, commands.size());
+  auto policy = augusta::scripting::Engine::Load({.objectives = AnsweringObjectives(answers), .behaviours = {}});
+  RC_ASSERT(policy.has_value());
+
+  augusta::simulation::World world(parameters, kTickRate, *std::move(policy));
+  RC_ASSERT(world.AddCollisionMesh(Floor()).has_value());
+  int match_ends = 0;
+  int winners = 0;
+  bool died = false;
+  for (std::size_t i = 0; i < commands.size(); ++i) {
+    if (i == 0 || i == second_match) {
+      world.EndMatch();
+      match_ends = 0;
+      world.AddPlayer(kPlayer, kSpawn, WideTarget(), {.session = sessions.at(kPlayer), .character = 1});
+      world.AddPlayer(kOther, Vec3(0.0F, 0.0F, -6.0F), WideTarget(), {.session = sessions.at(kOther), .character = 1});
+    }
+    const auto state = world.Tick(
+        {{.entity = kPlayer, .command = commands[i]}, {.entity = kOther, .command = other_commands[i]}}, kTick);
+    died = died || !state.deaths.empty();
+    if (!state.match_end.has_value()) {
+      continue;
+    }
+    RC_ASSERT(++match_ends == 1);
+    if (const auto winner = state.match_end->winner) {
+      ++winners;
+      RC_ASSERT(std::ranges::any_of(state.alive, [&](auto entity) { return sessions.at(entity) == *winner; }));
+    }
+  }
+  RC_CLASSIFY(winners > 0, "a winner was declared");
+  RC_CLASSIFY(died, "a player died");
 }
 
 // How far apart the client and the server may end: Reconciliation leaves a

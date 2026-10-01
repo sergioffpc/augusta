@@ -114,7 +114,7 @@ std::vector<Seed> Seeds() {
                                                              .session = static_cast<SessionIdWire>(9),
                                                              .entity = static_cast<EntityIdWire>(2),
                                                              .character = 2}}}},
-      {.name = "match_end", .message = MatchEndWire{}},
+      {.name = "match_end", .message = MatchEndWire{.winner = static_cast<SessionIdWire>(3)}},
       {.name = "shot",
        .message = ShotWire{.origin = Vec3(12.5F, 1.75F, -40.0F),
                            .shooter = static_cast<EntityIdWire>(2),

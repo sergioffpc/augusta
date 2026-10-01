@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <expected>
 #include <memory>
@@ -76,6 +77,16 @@ std::expected<Slot, LoadError> LoadScript(Script script, std::string_view text) 
 
 sol::object ToLua(Slot& slot, const Value& value);
 
+// A whole number reaches Lua as an integer, so an ID or a tick reads and prints
+// as one (11, not 11.0); any other number as a float.
+sol::object ToLuaNumber(Slot& slot, double number) {
+  constexpr double kIntegerLimit = 9'007'199'254'740'992.0;  // 2^53: every whole double below it is exact.
+  if (std::trunc(number) == number && std::abs(number) < kIntegerLimit) {
+    return sol::make_object(slot.lua, static_cast<lua_Integer>(number));
+  }
+  return sol::make_object(slot.lua, number);
+}
+
 // A read-only view of a table the caller fills.
 template <typename Fill>
 sol::object Frozen(Slot& slot, Fill fill) {
@@ -108,6 +119,8 @@ sol::object ToLua(Slot& slot, const Value& value) {
           return sol::make_object(slot.lua, sol::lua_nil);
         } else if constexpr (std::is_same_v<Data, Value::List> || std::is_same_v<Data, Value::Record>) {
           return ToLua(slot, data);
+        } else if constexpr (std::is_same_v<Data, double>) {
+          return ToLuaNumber(slot, data);
         } else {
           return sol::make_object(slot.lua, data);
         }
