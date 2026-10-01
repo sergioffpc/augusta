@@ -68,9 +68,17 @@ the decisions already made in ARCHITECTURE.md:
     certificate checks, it is a files cache in the Actions cache, one entry
     for every Linux job (all clang), saved only when a job built a package
     it didn't restore.
+  - Falcor is not built on every run: the `falcor-prebuilt` workflow builds
+    it once for each combination of submodule commit, `falcor.patch` and
+    Falcor features, and publishes it as an asset of a `falcor-*` release,
+    which the Windows builds download at configure time
+    (`cmake/FalcorPrebuilt.cmake`). A build with no matching package — a
+    pull request that changes Falcor, or an Aftermath-enabled local build —
+    builds Falcor from source.
   - The Actions cache (10 GB per repository, least recently used evicted
     first) holds only what a pull request restores from `develop`: the
-    vcpkg binaries, the Falcor build, sccache objects. The server image's
+    vcpkg binaries, packman's downloads for a Falcor built from source,
+    sccache objects. The server image's
     Docker layers live in GHCR (`augustad:buildcache`) instead: at several
     GB they would evict the rest, and every pull request would rebuild its
     dependencies from source.

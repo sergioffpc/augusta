@@ -29,7 +29,6 @@ if (WIN32)
   set(FALCOR_DIR ${CMAKE_SOURCE_DIR}/third_party/falcor)
   set(FALCOR_PRESET windows-ninja-msvc-augusta)
   set(FALCOR_BUILD_DIR ${FALCOR_DIR}/build/${FALCOR_PRESET})
-  set(FALCOR_BIN_DIR ${FALCOR_BUILD_DIR}/bin/${CMAKE_BUILD_TYPE} CACHE INTERNAL "Falcor's own build output directory")
   set(FALCOR_DIR ${FALCOR_DIR} CACHE INTERNAL "Vendored Falcor submodule's root directory")
 
   # NVIDIA Nsight Aftermath SDK (optional, GPU crash dump capture) - unlike
@@ -106,84 +105,139 @@ if (WIN32)
     FALCOR_HAS_D3D12_AGILITY_SDK=1 FALCOR_HAS_RTXDI=1
   )
 
-  set(FALCOR_STAMP ${CMAKE_CURRENT_BINARY_DIR}/falcor.stamp)
-  add_custom_command(
-    OUTPUT ${FALCOR_STAMP}
-    # tools-dependencies.xml doesn't exist upstream - falcor.patch's own
-    # last hunk creates it fresh (a git-apply "new file" diff) rather than
-    # this being a copy_if_different of a file kept alongside the patch,
-    # so it has to be removed before every re-apply the same way the
-    # checkout below resets the patch's other, tracked-file hunks:
-    # `git apply` refuses to recreate a file that's already sitting there
-    # untracked from the previous run.
+  # A prebuilt Falcor (cmake/FalcorPrebuilt.cmake) when the repository's
+  # releases have one matching this checkout, patch and features; Falcor built
+  # from source below otherwise. AUGUSTA_FALCOR_PREBUILT_TAG/_PACKAGE are what
+  # .github/workflows/falcor-prebuilt.yml reads to publish one.
+  option(AUGUSTA_FALCOR_PREBUILT "Download a prebuilt Falcor from the repository's releases when one matches" ON)
+  set(AUGUSTA_FALCOR_PREBUILT_URL "https://github.com/sergioffpc/augusta/releases/download"
+      CACHE STRING "Where prebuilt Falcor release assets are downloaded from")
+  include(${CMAKE_SOURCE_DIR}/cmake/FalcorPrebuilt.cmake)
+  augusta_falcor_prebuilt_name(${FALCOR_DIR} ${CMAKE_SOURCE_DIR}/cmake/patches/falcor.patch
+                               "${AUGUSTA_FALCOR_FEATURES}" ${CMAKE_BUILD_TYPE} falcor_tag falcor_asset)
+  set(AUGUSTA_FALCOR_PREBUILT_TAG ${falcor_tag} CACHE INTERNAL "Release tag of the matching prebuilt Falcor")
+  set(AUGUSTA_FALCOR_PREBUILT_PACKAGE ${CMAKE_BINARY_DIR}/falcor-prebuilt/${falcor_asset}
+      CACHE INTERNAL "Where the falcor_prebuilt_package target writes the prebuilt Falcor")
+  set(falcor_prebuilt FALSE)
+  if (AUGUSTA_FALCOR_PREBUILT)
+    set(FALCOR_PREBUILT_DIR ${FALCOR_DIR}/build/prebuilt/${falcor_tag}-${CMAKE_BUILD_TYPE})
+    augusta_falcor_prebuilt_fetch(${AUGUSTA_FALCOR_PREBUILT_URL}/${falcor_tag}/${falcor_asset}
+                                  ${FALCOR_PREBUILT_DIR} falcor_prebuilt)
+  endif()
+  set(AUGUSTA_FALCOR_PREBUILT_USED ${falcor_prebuilt} CACHE INTERNAL "Whether this build uses a prebuilt Falcor")
+
+  # tools-dependencies.xml doesn't exist upstream - falcor.patch's own last
+  # hunk creates it fresh (a git-apply "new file" diff) rather than this being
+  # a copy_if_different of a file kept alongside the patch, so it has to be
+  # removed before every re-apply the same way the checkout below resets the
+  # patch's other, tracked-file hunks: `git apply` refuses to recreate a file
+  # that's already sitting there untracked from the previous run. A prebuilt
+  # Falcor still needs the patch: augusta_renderer includes the headers it
+  # changes.
+  set(FALCOR_PATCH_COMMANDS
     COMMAND ${CMAKE_COMMAND} -E rm -f ${FALCOR_DIR}/tools-dependencies.xml
     COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} checkout -- CMakeLists.txt CMakePresets.json
             Source/Falcor/Core/Window.h Source/Falcor/Core/Window.cpp
     COMMAND ${GIT_EXECUTABLE} -C ${FALCOR_DIR} apply ${CMAKE_SOURCE_DIR}/cmake/patches/falcor.patch
-    # windows-ninja-msvc-base's CMAKE_MAKE_PROGRAM points at
-    # tools/.packman/ninja/ninja.exe, needed immediately by project() - but
-    # Falcor's own root CMakeLists.txt only pulls packman dependencies
-    # *after* project(), too late for this on a fresh checkout. Falcor's
-    # documented fix is setup.bat, pulling the *whole* dependencies.xml
-    # first - but that runs packman pull against external/packman/* (e.g.
-    # slang) a second time in a row once Falcor's own CMakeLists.txt does
-    # its own pull moments later, and packman isn't reliably idempotent
-    # against its own immediately-preceding run for at least that entry
-    # ("Link ... cannot be created because it already exists as a
-    # different type of file"). Pulling only the tools/.packman/* entries
-    # here - via the tools-dependencies.xml the git apply above just
-    # created, itself just dependencies.xml's own
-    # <dependency name="tools_*"> elements - satisfies project()'s
-    # immediate need without ever touching external/packman/* twice.
-    # packman resolves each entry's linkPath relative to the project
-    # file's own location, so it has to actually live inside ${FALCOR_DIR}
-    # for tools/.packman/ninja to end up in the right place - which is
-    # exactly where the patch put it.
-    COMMAND ${FALCOR_DIR}/tools/packman/packman.cmd pull ${FALCOR_DIR}/tools-dependencies.xml --platform windows-x86_64
-    # -DCMAKE_POLICY_VERSION_MINIMUM is redundant with the preset's own
-    # cacheVariables entry (both set it) but not with what actually
-    # happens in practice: FALCOR_BUILD_DIR is shared across every one of
-    # augusta's own outer presets (windows, windows-debug, ...), so the
-    # first build under a *second* outer preset reconfigures an
-    # already-cached Falcor build tree - and CMake's own "cache variable
-    # changed, regenerating" path for an existing cache doesn't reliably
-    # re-derive preset-only cacheVariables, silently dropping this one and
-    # reviving the pybind11 CMAKE_POLICY_VERSION_MINIMUM error. Passing it
-    # explicitly here makes it immune to that, regardless of which path
-    # triggers the reconfigure.
-    ${FALCOR_AFTERMATH_SYNC_COMMAND}
-    COMMAND ${CMAKE_COMMAND} -S ${FALCOR_DIR} --preset ${FALCOR_PRESET} -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-    COMMAND ${CMAKE_COMMAND} --build ${FALCOR_BUILD_DIR} --config ${CMAKE_BUILD_TYPE} --target Falcor
-    ${FALCOR_AFTERMATH_DEPLOY_COMMAND}
-    COMMAND ${CMAKE_COMMAND} "-DCOMPILE_COMMANDS=${FALCOR_BUILD_DIR}/compile_commands.json"
-            "-DEXPECTED=${AUGUSTA_FALCOR_FEATURES}" -P ${CMAKE_SOURCE_DIR}/cmake/CheckFalcorFeatures.cmake
-    COMMAND ${CMAKE_COMMAND} -E touch ${FALCOR_STAMP}
-    WORKING_DIRECTORY ${FALCOR_DIR}
-    COMMENT "Patching and building vendored Falcor (ADR-0009) - slow on a clean checkout"
-    # Without these, Ninja's static graph validation has no rule for
-    # Falcor.lib/Falcor.dll/fmt.lib (only falcor.stamp is a declared
-    # OUTPUT) and fails outright ("missing and no known rule to make it")
-    # on a build where they don't already exist - the add_dependencies()
-    # order-only edge below isn't enough on its own. fmt.lib is genuinely
-    # built from source by the `--target Falcor` step, same as
-    # Falcor.lib/Falcor.dll. python310.lib/slang.lib/gfx.lib are NOT
-    # listed here on purpose - see the comment by their target_link_options
-    # use further down for why.
-    BYPRODUCTS
-      "${FALCOR_BUILD_DIR}/Source/Falcor/${CMAKE_BUILD_TYPE}/Falcor.lib"
-      "${FALCOR_BIN_DIR}/Falcor.dll"
-      "${FALCOR_BUILD_DIR}/external/fmt/${CMAKE_BUILD_TYPE}/$<IF:$<CONFIG:Debug>,fmtd,fmt>.lib"
-    # Ninja only re-runs a custom command when one of its declared
-    # DEPENDS changes (or the command line itself does) - without this,
-    # editing the patch's *content* (e.g. tweaking a CMakePresets.json
-    # cache variable inside its patched hunk) left falcor.stamp looking
-    # up to date and silently skipped re-applying it, even though
-    # `git apply` above references the file.
-    DEPENDS
-      ${CMAKE_SOURCE_DIR}/cmake/patches/falcor.patch
-      ${FALCOR_AFTERMATH_DEPENDS}
-    VERBATIM
   )
+
+  set(FALCOR_STAMP ${CMAKE_CURRENT_BINARY_DIR}/falcor.stamp)
+  if (falcor_prebuilt)
+    set(FALCOR_BIN_DIR ${FALCOR_PREBUILT_DIR}/bin CACHE INTERNAL "Falcor's own build output directory")
+    set(FALCOR_LIB ${FALCOR_PREBUILT_DIR}/lib/Falcor.lib)
+    set(FALCOR_FMT_LIB ${FALCOR_PREBUILT_DIR}/lib/$<IF:$<CONFIG:Debug>,fmtd,fmt>.lib)
+    set(FALCOR_PACKMAN_DIR ${FALCOR_PREBUILT_DIR}/packman)
+    add_custom_command(
+      OUTPUT ${FALCOR_STAMP}
+      ${FALCOR_PATCH_COMMANDS}
+      COMMAND ${CMAKE_COMMAND} "-DCOMPILE_COMMANDS=${FALCOR_PREBUILT_DIR}/compile_commands.json"
+              "-DEXPECTED=${AUGUSTA_FALCOR_FEATURES}" -P ${CMAKE_SOURCE_DIR}/cmake/CheckFalcorFeatures.cmake
+      COMMAND ${CMAKE_COMMAND} -E touch ${FALCOR_STAMP}
+      WORKING_DIRECTORY ${FALCOR_DIR}
+      COMMENT "Patching vendored Falcor's headers (ADR-0009) for prebuilt ${falcor_tag}"
+      DEPENDS ${CMAKE_SOURCE_DIR}/cmake/patches/falcor.patch
+      VERBATIM
+    )
+  else()
+    set(FALCOR_BIN_DIR ${FALCOR_BUILD_DIR}/bin/${CMAKE_BUILD_TYPE} CACHE INTERNAL "Falcor's own build output directory")
+    set(FALCOR_LIB ${FALCOR_BUILD_DIR}/Source/Falcor/${CMAKE_BUILD_TYPE}/Falcor.lib)
+    # fmt's own CMakeLists applies a "d" debug postfix to its output name
+    # (fmtd.lib) - unlike Falcor.lib itself, which doesn't get one.
+    set(FALCOR_FMT_LIB ${FALCOR_BUILD_DIR}/external/fmt/${CMAKE_BUILD_TYPE}/$<IF:$<CONFIG:Debug>,fmtd,fmt>.lib)
+    set(FALCOR_PACKMAN_DIR ${FALCOR_DIR}/external/packman)
+    add_custom_command(
+      OUTPUT ${FALCOR_STAMP}
+      ${FALCOR_PATCH_COMMANDS}
+      # windows-ninja-msvc-base's CMAKE_MAKE_PROGRAM points at
+      # tools/.packman/ninja/ninja.exe, needed immediately by project() - but
+      # Falcor's own root CMakeLists.txt only pulls packman dependencies
+      # *after* project(), too late for this on a fresh checkout. Falcor's
+      # documented fix is setup.bat, pulling the *whole* dependencies.xml
+      # first - but that runs packman pull against external/packman/* (e.g.
+      # slang) a second time in a row once Falcor's own CMakeLists.txt does
+      # its own pull moments later, and packman isn't reliably idempotent
+      # against its own immediately-preceding run for at least that entry
+      # ("Link ... cannot be created because it already exists as a
+      # different type of file"). Pulling only the tools/.packman/* entries
+      # here - via the tools-dependencies.xml the git apply above just
+      # created, itself just dependencies.xml's own
+      # <dependency name="tools_*"> elements - satisfies project()'s
+      # immediate need without ever touching external/packman/* twice.
+      # packman resolves each entry's linkPath relative to the project
+      # file's own location, so it has to actually live inside ${FALCOR_DIR}
+      # for tools/.packman/ninja to end up in the right place - which is
+      # exactly where the patch put it.
+      COMMAND ${FALCOR_DIR}/tools/packman/packman.cmd pull ${FALCOR_DIR}/tools-dependencies.xml --platform windows-x86_64
+      # -DCMAKE_POLICY_VERSION_MINIMUM is redundant with the preset's own
+      # cacheVariables entry (both set it) but not with what actually
+      # happens in practice: FALCOR_BUILD_DIR is shared across every one of
+      # augusta's own outer presets (windows, windows-debug, ...), so the
+      # first build under a *second* outer preset reconfigures an
+      # already-cached Falcor build tree - and CMake's own "cache variable
+      # changed, regenerating" path for an existing cache doesn't reliably
+      # re-derive preset-only cacheVariables, silently dropping this one and
+      # reviving the pybind11 CMAKE_POLICY_VERSION_MINIMUM error. Passing it
+      # explicitly here makes it immune to that, regardless of which path
+      # triggers the reconfigure.
+      ${FALCOR_AFTERMATH_SYNC_COMMAND}
+      COMMAND ${CMAKE_COMMAND} -S ${FALCOR_DIR} --preset ${FALCOR_PRESET} -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+      COMMAND ${CMAKE_COMMAND} --build ${FALCOR_BUILD_DIR} --config ${CMAKE_BUILD_TYPE} --target Falcor
+      ${FALCOR_AFTERMATH_DEPLOY_COMMAND}
+      COMMAND ${CMAKE_COMMAND} "-DCOMPILE_COMMANDS=${FALCOR_BUILD_DIR}/compile_commands.json"
+              "-DEXPECTED=${AUGUSTA_FALCOR_FEATURES}" -P ${CMAKE_SOURCE_DIR}/cmake/CheckFalcorFeatures.cmake
+      COMMAND ${CMAKE_COMMAND} -E touch ${FALCOR_STAMP}
+      WORKING_DIRECTORY ${FALCOR_DIR}
+      COMMENT "Patching and building vendored Falcor (ADR-0009) - slow on a clean checkout"
+      # Without these, Ninja's static graph validation has no rule for
+      # Falcor.lib/Falcor.dll/fmt.lib (only falcor.stamp is a declared
+      # OUTPUT) and fails outright ("missing and no known rule to make it")
+      # on a build where they don't already exist - the add_dependencies()
+      # order-only edge below isn't enough on its own. fmt.lib is genuinely
+      # built from source by the `--target Falcor` step, same as
+      # Falcor.lib/Falcor.dll. python310.lib/slang.lib/gfx.lib are NOT
+      # listed here on purpose - see the comment by their target_link_options
+      # use further down for why.
+      BYPRODUCTS "${FALCOR_LIB}" "${FALCOR_BIN_DIR}/Falcor.dll" "${FALCOR_FMT_LIB}"
+      # Ninja only re-runs a custom command when one of its declared
+      # DEPENDS changes (or the command line itself does) - without this,
+      # editing the patch's *content* (e.g. tweaking a CMakePresets.json
+      # cache variable inside its patched hunk) left falcor.stamp looking
+      # up to date and silently skipped re-applying it, even though
+      # `git apply` above references the file.
+      DEPENDS
+        ${CMAKE_SOURCE_DIR}/cmake/patches/falcor.patch
+        ${FALCOR_AFTERMATH_DEPENDS}
+      VERBATIM
+    )
+    add_custom_target(falcor_prebuilt_package
+      COMMAND ${CMAKE_COMMAND} "-DBIN_DIR=${FALCOR_BIN_DIR}" "-DLIBS=${FALCOR_LIB}$<SEMICOLON>${FALCOR_FMT_LIB}"
+              "-DPACKMAN_DIR=${FALCOR_PACKMAN_DIR}" "-DCOMPILE_COMMANDS=${FALCOR_BUILD_DIR}/compile_commands.json"
+              "-DOUTPUT=${AUGUSTA_FALCOR_PREBUILT_PACKAGE}" -P ${CMAKE_SOURCE_DIR}/cmake/FalcorPrebuilt.cmake
+      DEPENDS ${FALCOR_STAMP}
+      COMMENT "Packaging the Falcor just built as prebuilt ${falcor_tag}"
+      VERBATIM
+    )
+  endif()
   add_custom_target(falcor_build DEPENDS ${FALCOR_STAMP})
 
   # Falcor's own PUBLIC link/include/compile-definition requirements (fmt,
@@ -207,12 +261,12 @@ if (WIN32)
     "${FALCOR_DIR}/Source/Falcor"
     "${FALCOR_DIR}/external/imgui"
     "${FALCOR_DIR}/external/imgui_addons"
-    "${FALCOR_DIR}/external/packman/nanovdb/include"
+    "${FALCOR_PACKMAN_DIR}/nanovdb/include"
     "${FALCOR_DIR}/external/include"
-    "${FALCOR_DIR}/external/packman/rtxdi/rtxdi-sdk/include"
+    "${FALCOR_PACKMAN_DIR}/rtxdi/rtxdi-sdk/include"
     "${FALCOR_DIR}/external/pybind11/include"
-    "${FALCOR_DIR}/external/packman/python/Include"
-    "${FALCOR_DIR}/external/packman/slang/include"
+    "${FALCOR_PACKMAN_DIR}/python/Include"
+    "${FALCOR_PACKMAN_DIR}/slang/include"
   )
   target_compile_definitions(augusta_renderer PRIVATE
     NOMINMAX UNICODE _USE_MATH_DEFINES
@@ -233,12 +287,7 @@ if (WIN32)
     # code path in Debug config on newer MSVC otherwise.
     _SECURE_SCL=0
   )
-  target_link_libraries(augusta_renderer PUBLIC
-    "${FALCOR_BUILD_DIR}/Source/Falcor/${CMAKE_BUILD_TYPE}/Falcor.lib"
-    # fmt's own CMakeLists applies a "d" debug postfix to its output name
-    # (fmtd.lib) - unlike Falcor.lib itself, which doesn't get one.
-    "${FALCOR_BUILD_DIR}/external/fmt/${CMAKE_BUILD_TYPE}/$<IF:$<CONFIG:Debug>,fmtd,fmt>.lib"
-  )
+  target_link_libraries(augusta_renderer PUBLIC "${FALCOR_LIB}" "${FALCOR_FMT_LIB}")
   # python310.lib/slang.lib/gfx.lib live under external/packman/python and
   # external/packman/slang - directories packman itself creates as
   # links (junctions), not plain directories. target_link_libraries()
@@ -252,9 +301,9 @@ if (WIN32)
   # that; add_dependencies() below still guarantees these files exist by
   # link time regardless.
   target_link_options(augusta_renderer PUBLIC
-    "${FALCOR_DIR}/external/packman/python/libs/python310.lib"
-    "${FALCOR_DIR}/external/packman/slang/lib/slang.lib"
-    "${FALCOR_DIR}/external/packman/slang/lib/gfx.lib"
+    "${FALCOR_PACKMAN_DIR}/python/libs/python310.lib"
+    "${FALCOR_PACKMAN_DIR}/slang/lib/slang.lib"
+    "${FALCOR_PACKMAN_DIR}/slang/lib/gfx.lib"
   )
   add_dependencies(augusta_renderer falcor_build)
 

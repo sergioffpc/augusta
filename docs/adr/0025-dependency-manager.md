@@ -8,4 +8,4 @@ Chosen over Conan for broader, more current coverage of this project's specific 
 
 ## Consequences
 
-NVIDIA Falcor remains outside any package manager — vendored and built from source (it fetches its own sub-dependencies, e.g. Slang, via NVIDIA's internal Packman tool).
+NVIDIA Falcor remains outside any package manager — vendored and built from source (it fetches its own sub-dependencies, e.g. Slang, via NVIDIA's internal Packman tool). It is built once per submodule commit, `falcor.patch` and feature set, and published as a GitHub release asset that builds download instead of building it, falling back to a source build when none matches.
