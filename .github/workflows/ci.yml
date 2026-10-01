@@ -109,7 +109,7 @@ jobs:
 
       - name: Bootstrap vcpkg
         shell: pwsh
-        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+        run: .\scripts\bootstrap-vcpkg.ps1
 
       - name: Cache vendored Falcor build (ADR-0009)
         id: falcor-commit
@@ -250,7 +250,7 @@ jobs:
 
       - name: Bootstrap vcpkg
         shell: pwsh
-        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+        run: .\scripts\bootstrap-vcpkg.ps1
 
       - name: Configure vcpkg NuGet cache
         shell: pwsh
