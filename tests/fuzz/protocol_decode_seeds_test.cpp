@@ -25,6 +25,7 @@ using augusta::protocol::BodyStateWire;
 using augusta::protocol::BytesWire;
 using augusta::protocol::CommandsWire;
 using augusta::protocol::CommandWire;
+using augusta::protocol::DeathWire;
 using augusta::protocol::Encode;
 using augusta::protocol::EntityIdWire;
 using augusta::protocol::EntityStateWire;
@@ -97,6 +98,7 @@ std::vector<Seed> Seeds() {
                                         .recoil_yaw = -0.00390625F,
                                         .rounds = 12,
                                         .burst_index = 3},
+               .health = 37.25F,
                .queued_commands = 2}},
       {.name = "lobby",
        .message = LobbyWire{.version = 3,
@@ -122,6 +124,12 @@ std::vector<Seed> Seeds() {
       {.name = "hit_confirmation",
        .message =
            HitConfirmationWire{.target = static_cast<EntityIdWire>(2), .damage = 37.5F, .part = BodyPartWire::kHead}},
+      {.name = "death",
+       .message = DeathWire{.victim = static_cast<EntityIdWire>(2),
+                            .killer = static_cast<EntityIdWire>(1),
+                            .yaw = 1.5F,
+                            .pitch = -0.25F,
+                            .part = BodyPartWire::kTorso}},
   };
 }
 

@@ -83,8 +83,12 @@ enum class Phase {
   kHitDetection,
   // Mechanism, reads Data/Config. Takes the damage the Parameters give the
   // ammo for the body part hit (US-12) off the target's health, which stops
-  // at zero and never regenerates in a Match. A player at zero plays on:
-  // death and spectating (US-13) are not built yet.
+  // at zero and never regenerates in a Match. The hit that takes it to zero
+  // kills its player (US-13) for the rest of the Match: from that tick its
+  // body leaves physics and its hitboxes are no longer tested, and
+  // CommandIngestion drops its commands, so nothing it sends moves, turns or
+  // fires. The bullets it fired while alive fly on. The player stays in the
+  // world, bodiless, until it is removed.
   kDamage,
   // Policy, sandboxed Lua (ADR-0022). Win condition, round transitions,
   // spawn logic (US-14, US-03) - augusta::scripting::Engine::Call: the
@@ -152,8 +156,8 @@ struct EntityState {
   /// it on (ADR-0038). Its hitboxes turn with it.
   float yaw = 0.0F;
   /// What is left of its player's health: the Parameters' starting health at
-  /// Match start, less the damage taken since, never below 0. The server's
-  /// alone: it is not sent.
+  /// Match start, less the damage taken since, never below 0. Its own player
+  /// alone is told it (ADR-0038).
   float health = 0.0F;
   /// The rifle of the player who controls it.
   weapon::State rifle{};
@@ -191,16 +195,36 @@ struct Hit {
   bool reached_zero = false;
 };
 
+/// A player's death (US-13): the Hit that took its health to zero, told with
+/// what a ragdoll would start from (ADR-0045). Permanent for the rest of the Match.
+struct Death {
+  /// The body of the player who died.
+  EntityId victim{};
+  /// The body of the player who fired the killing bullet, which may have left the world since.
+  EntityId killer{};
+  /// Where the killing bullet was fired for, as a view's yaw and pitch in
+  /// radians: its Shot's, on the angle grid (ADR-0038).
+  float yaw = 0.0F;
+  float pitch = 0.0F;
+  /// Where on the victim it struck.
+  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+};
+
 // SimulationWorld's per-tick output - ADR-0023/ARCHITECTURE.md's
 // "Authoritative State", for augusta::replication to send to clients.
-// It holds every player's body, the rounds fired and what became of the
-// bullets in flight: the Map impacts and the hits on players.
+// It holds every living player's body, the rounds fired, what became of the
+// bullets in flight (the Map impacts and the hits on players), and the
+// tick's deaths.
 struct State {
   /// Which tick of its World this is the State of, from 1: what a client names
   /// the view its Commands were sampled against by (command::Command).
   std::uint32_t tick = 0;
-  /// Every dynamic body in the world, ordered by EntityId.
+  /// Every dynamic body in the world, ordered by EntityId. A dead player has none.
   std::vector<EntityState> bodies;
+  /// Every player in the world that has not died, ordered by EntityId.
+  std::vector<EntityId> alive;
+  /// Every player that died this tick, ordered by victim: at most once a player in a Match.
+  std::vector<Death> deaths;
   /// Every round fired this tick, ordered by shooter: at most one a player.
   std::vector<Shot> shots;
   /// Where each bullet that struck the Map this tick struck it.

@@ -491,7 +491,7 @@ struct ClientRuntime::Impl {
   // by how far through the tick it is, where the player aims now, and what the
   // session has received, converted into presentation's own types here, at
   // ClientRuntime's edge (see SnapshotOf and CharactersOf above). Takes the
-  // Shots and Hit confirmations received since the last frame.
+  // Shots, Hit confirmations and Deaths received since the last frame.
   //
   // Two independent Session getters, not one view - safe here because
   // harness::Session keeps an Authoritative State only once the Match start
@@ -510,11 +510,15 @@ struct ClientRuntime::Impl {
         .characters = CharactersOf(session->GetMatchStart()),
         .shots = {},
         .hit_confirmations = static_cast<std::uint32_t>(session->TakeHitConfirmations().size()),
+        .deaths = {},
     };
     frame.local_entity =
         session->GetEntityId().transform([](harness::EntityId entity) { return ToPresentation(entity); });
     for (const harness::Shot& shot : session->TakeShots()) {
       frame.shots.push_back(ToPresentation(shot));
+    }
+    for (const harness::Death& death : session->TakeDeaths()) {
+      frame.deaths.push_back(ToPresentation(death.victim));
     }
     return frame;
   }

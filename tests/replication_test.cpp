@@ -90,6 +90,50 @@ TEST(ReplicationTest, EachRecipientIsToldItsOwnRifleAndNoOneElses) {
   EXPECT_EQ(updates[1].rifle, firing.rifle);
 }
 
+TEST(ReplicationTest, EachRecipientIsToldItsOwnHealthAndADeadOneZero) {
+  EntityState hurt = PlayerAt(1, 0.0F);
+  hurt.health = 30.0F;
+  EntityState unhurt = PlayerAt(2, 0.0F);
+  unhurt.health = 100.0F;
+  // Entity 3 is dead: it has no body in the state.
+  const State state = StateOf({hurt, unhurt});
+  const std::array<Recipient, 3> recipients = {Recipient{.entity = static_cast<EntityId>(2)},
+                                               Recipient{.entity = static_cast<EntityId>(1)},
+                                               Recipient{.entity = static_cast<EntityId>(3)}};
+
+  const auto updates = PlanUpdates(state, 1, recipients);
+
+  EXPECT_EQ(updates[0].health, 100.0F);
+  EXPECT_EQ(updates[1].health, 30.0F);
+  EXPECT_EQ(updates[2].health, 0.0F);
+  EXPECT_EQ(updates[2].bodies.size(), 2U);
+}
+
+TEST(ReplicationTest, EveryDeathOfATickIsPlannedOnceForEveryone) {
+  State state = StateOf({PlayerAt(1, 0.0F)});
+  state.deaths = {augusta::simulation::Death{.victim = static_cast<EntityId>(2),
+                                             .killer = static_cast<EntityId>(1),
+                                             .yaw = 0.5F,
+                                             .pitch = -0.25F,
+                                             .part = augusta::ballistics::BodyPart::kHead},
+                  augusta::simulation::Death{.victim = static_cast<EntityId>(3),
+                                             .killer = static_cast<EntityId>(2),
+                                             .yaw = 1.0F,
+                                             .pitch = 0.0F,
+                                             .part = augusta::ballistics::BodyPart::kLimb}};
+
+  const auto deaths = augusta::replication::PlanDeaths(state);
+
+  ASSERT_EQ(deaths.size(), 2U);
+  EXPECT_EQ(deaths[0].victim, static_cast<EntityId>(2));
+  EXPECT_EQ(deaths[0].killer, static_cast<EntityId>(1));
+  EXPECT_EQ(deaths[0].yaw, 0.5F);
+  EXPECT_EQ(deaths[0].pitch, -0.25F);
+  EXPECT_EQ(deaths[0].part, augusta::ballistics::BodyPart::kHead);
+  EXPECT_EQ(deaths[1].victim, static_cast<EntityId>(3));
+  EXPECT_EQ(deaths[1].part, augusta::ballistics::BodyPart::kLimb);
+}
+
 TEST(ReplicationTest, NobodyToSendToMeansNothingIsPlanned) {
   const State state = StateOf({PlayerAt(1, 0.0F)});
 

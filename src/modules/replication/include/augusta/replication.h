@@ -53,13 +53,16 @@ struct Update {
   /// predicted one against; no one else's is sent. A rifle with no round if the
   /// recipient has no body in the state.
   weapon::State rifle{};
+  /// The recipient's own health after the tick; no one else's is sent. 0 if the
+  /// recipient has no body in the state: it has died.
+  float health = 0.0F;
   /// How many of the recipient's commands the server still holds queued after the tick.
   std::uint8_t queued_commands = 0;
 };
 
 /// What each recipient is sent for tick: every body, and its own acknowledged
-/// sequence, rifle and queued commands (which is why each update is its own
-/// message).
+/// sequence, rifle, health and queued commands (which is why each update is
+/// its own message).
 [[nodiscard]] std::vector<Update> PlanUpdates(const simulation::State& state, std::uint32_t tick,
                                               std::span<const Recipient> recipients);
 
@@ -98,6 +101,23 @@ struct HitConfirmation {
 /// shooter alone, so neither the target nor anyone else is told, and what
 /// health the target has left is told to no one.
 [[nodiscard]] std::vector<HitConfirmation> PlanHitConfirmations(const simulation::State& state);
+
+/// A player's death, as every client in the match is told of it (US-13).
+struct Death {
+  /// The body of the player who died.
+  simulation::EntityId victim{};
+  /// The body of the player who fired the killing round.
+  simulation::EntityId killer{};
+  /// Where the killing round was fired for, as a view's yaw and pitch, in radians.
+  float yaw = 0.0F;
+  float pitch = 0.0F;
+  /// Where on the victim it struck.
+  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+};
+
+/// The Deaths of state, in its order. Every recipient is sent every one of
+/// them, the victim included, so there is one per death and not one per recipient.
+[[nodiscard]] std::vector<Death> PlanDeaths(const simulation::State& state);
 
 }  // namespace augusta::replication
 

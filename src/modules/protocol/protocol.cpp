@@ -388,6 +388,7 @@ AuthoritativeStateWire ReadAuthoritativeState(Reader& reader) {
   state.bodies = ReadBodies(reader);
   state.queued_commands = reader.ReadU8();
   state.rifle = ReadWeaponState(reader);
+  state.health = reader.ReadF32();
   return state;
 }
 
@@ -436,6 +437,16 @@ HitConfirmationWire ReadHitConfirmation(Reader& reader) {
   return hit;
 }
 
+DeathWire ReadDeath(Reader& reader) {
+  DeathWire death;
+  death.victim = static_cast<EntityIdWire>(reader.ReadU32());
+  death.killer = static_cast<EntityIdWire>(reader.ReadU32());
+  death.part = reader.ReadEnum(BodyPartWire::kHead, BodyPartWire::kLimb);
+  death.yaw = reader.ReadSteps(math::kAngleGrid);
+  death.pitch = reader.ReadSteps(math::kAngleGrid);
+  return death;
+}
+
 // nullopt when type is not a message of this protocol.
 std::optional<MessageWire> ReadBody(MessageTypeWire type, Reader& reader) {
   switch (type) {
@@ -461,6 +472,8 @@ std::optional<MessageWire> ReadBody(MessageTypeWire type, Reader& reader) {
       return ReadShot(reader);
     case MessageTypeWire::kHitConfirmation:
       return ReadHitConfirmation(reader);
+    case MessageTypeWire::kDeath:
+      return ReadDeath(reader);
   }
   return std::nullopt;
 }
@@ -544,6 +557,8 @@ struct Encoder {
     WriteBodies(out, message.bodies);
     WriteU8(out, message.queued_commands);
     WriteWeaponState(out, message.rifle);
+    // As its bits, as the Parameters' starting health it counts down from.
+    WriteF32(out, message.health);
   }
 
   void operator()(const LobbyWire& message) const {
@@ -594,6 +609,15 @@ struct Encoder {
     WriteU32(out, static_cast<std::uint32_t>(message.target));
     WriteU8(out, static_cast<std::uint8_t>(message.part));
     WriteF32(out, message.damage);
+  }
+
+  void operator()(const DeathWire& message) const {
+    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kDeath));
+    WriteU32(out, static_cast<std::uint32_t>(message.victim));
+    WriteU32(out, static_cast<std::uint32_t>(message.killer));
+    WriteU8(out, static_cast<std::uint8_t>(message.part));
+    WriteSteps(out, message.yaw, math::kAngleGrid);
+    WriteSteps(out, message.pitch, math::kAngleGrid);
   }
 };
 

@@ -81,11 +81,13 @@ damage is the weapons' decision, not this one.
 
 **Ragdolls start from a replicated death.** A ragdoll's bodies and joints are
 authored per Character in Composer (ADR-0015) and cooked into the client pack
-only (ADR-0031). A player's death is told reliably to every client, with the
-body, the direction of the killing blow and the bone it struck, so each client
-throws its ragdoll the right way; the Hit confirmation, which only the shooter
-receives (ADR-0044), cannot. Ragdolls exist only after death: hit reactions
-while alive are animation.
+only (ADR-0031). A player's death is told reliably to every client (the Death
+message, ADR-0038), with the body, the direction of the killing blow and the
+Body part it struck, so each client throws its ragdoll the right way; the Hit
+confirmation, which only the shooter receives (ADR-0044), cannot. The Body part
+stands in for a bone: a Character's skeleton is not designed, and its bones
+would name no more than the hitboxes the server judges by. Ragdolls exist only
+after death: hit reactions while alive are animation.
 
 **Replication.** Props travel in the Authoritative State as a list apart from
 the players' bodies, which carry stance and stamina that Props lack but no

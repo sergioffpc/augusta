@@ -68,6 +68,9 @@ struct AuthoritativeState {
   /// This client's own player's rifle as of that tick: what its predicted rifle
   /// is reconciled against.
   weapon::State rifle{};
+  /// This client's own player's health as of that tick, 0 once it has died. No
+  /// other player's is told.
+  float health = 0.0F;
   /// How many of this client's commands the server still held queued after
   /// that tick: what the client paces its own ticks by (tick::PacedTickDuration).
   std::uint8_t queued_commands = 0;
@@ -103,6 +106,24 @@ struct HitConfirmation {
   /// Where on the body it struck.
   ballistics::BodyPart part = ballistics::BodyPart::kTorso;
 };
+
+/// A player in the match died (US-13), as the server told every client in it:
+/// for the rest of the match. Carries what a ragdoll would start from (ADR-0045).
+struct Death {
+  /// The body of the player who died.
+  EntityId victim{};
+  /// The body of the player who fired the killing round.
+  EntityId killer{};
+  /// Where the killing round was fired for, as a view's yaw and pitch in
+  /// radians (command::ViewDirection gives the direction).
+  float yaw = 0.0F;
+  float pitch = 0.0F;
+  /// Where on the victim it struck.
+  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+};
+
+/// The most Deaths a Session keeps for TakeDeaths: a match's players die once each.
+inline constexpr std::size_t kMaxPendingDeaths = 16;
 
 /// The most Hit confirmations a Session keeps for TakeHitConfirmations: more
 /// than one rifle lands between two frames, by far.
@@ -302,6 +323,25 @@ class Session {
   /// safe to call from any thread.
   [[nodiscard]] std::vector<HitConfirmation> TakeHitConfirmations();
 
+  /// The Deaths of the match in progress received since the last call, in the
+  /// order they arrived; the newest kMaxPendingDeaths of them if more did. One
+  /// that arrives outside a match or names a body not in it is dropped, and a
+  /// match starts with none. Received by ExchangeMessages; safe to call from
+  /// any thread.
+  [[nodiscard]] std::vector<Death> TakeDeaths();
+
+  /// Whether this client's own player is alive: in a match, and neither told
+  /// of its Death nor at zero health in the newest Authoritative State. Death
+  /// is for the rest of the match. Set by ExchangeMessages; safe to read from
+  /// any thread.
+  [[nodiscard]] bool IsAlive() const;
+
+  /// This client's own player's health, as the newest Authoritative State of
+  /// the match in progress told it; nullopt outside a match and until the
+  /// match's first state arrives. Set by ExchangeMessages; safe to read from
+  /// any thread.
+  [[nodiscard]] std::optional<float> GetHealth() const;
+
   /// The body this client's player controls, as Match start named it: in the
   /// match in progress, or the last one if back in the Lobby; nullopt before
   /// the first. Set by ExchangeMessages; safe to read from any thread.
@@ -317,7 +357,10 @@ class Session {
   /// command goes to the server under the next sequence, together with the
   /// recent commands the server has not yet acknowledged, and the prediction is
   /// reconciled against what the server last said about this client's player:
-  /// its body and its rifle.
+  /// its body and its rifle, when the server's state still has its body. Once
+  /// this client's player is dead (IsAlive), nothing more is predicted and the
+  /// state is the last one predicted; the command still goes to the server,
+  /// which acknowledges it and does nothing with it, but never with fire held.
   prediction::State Tick(const command::Command& command, float delta_time);
 
  private:

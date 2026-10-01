@@ -74,6 +74,8 @@ enum class MessageTypeWire : std::uint8_t {
   kShot = 10,
   /// Server to client: a round the recipient fired hit a player (ADR-0044).
   kHitConfirmation = 11,
+  /// Server to client: a player in the match died (US-13).
+  kDeath = 12,
 };
 
 /// Longest engine version string a JoinRequestWire may carry, in bytes.
@@ -333,6 +335,9 @@ struct AuthoritativeStateWire {
   /// The recipient's own rifle as of this tick: what it reconciles its
   /// predicted rifle against, as it does its body against its entry in bodies.
   WeaponStateWire rifle{};
+  /// The recipient's own health as of this tick, 0 once it has died; no one
+  /// else's is ever sent.
+  float health = 0.0F;
   /// How many of the recipient's commands the server still holds queued after
   /// this tick: what the client paces its own ticks by (ADR-0038).
   std::uint8_t queued_commands = 0;
@@ -422,10 +427,26 @@ struct HitConfirmationWire {
   bool operator==(const HitConfirmationWire&) const = default;
 };
 
+/// Server to client: a player in the match died (US-13), told to every player
+/// in it, the victim included, with what a ragdoll starts from (ADR-0045).
+struct DeathWire {
+  /// The body of the player who died.
+  EntityIdWire victim{};
+  /// The body of the player who fired the killing round.
+  EntityIdWire killer{};
+  /// Where the killing round was fired for, as a view's yaw and pitch, in radians.
+  float yaw = 0.0F;
+  float pitch = 0.0F;
+  /// Where on the victim it struck.
+  BodyPartWire part = BodyPartWire::kTorso;
+
+  bool operator==(const DeathWire&) const = default;
+};
+
 /// Any message of the protocol.
 using MessageWire =
     std::variant<JoinRequestWire, JoinAcceptedWire, JoinRefusedWire, CommandsWire, AuthoritativeStateWire, LobbyWire,
-                 ReadyWire, MatchStartWire, MatchEndWire, ShotWire, HitConfirmationWire>;
+                 ReadyWire, MatchStartWire, MatchEndWire, ShotWire, HitConfirmationWire, DeathWire>;
 
 /// A payload is this many bytes, the same type networking::Payload names.
 using BytesWire = std::vector<std::byte>;

@@ -393,6 +393,28 @@ TEST(WireTest, AHitConfirmationTheServerSendsReachesTheClientUnchanged) {
   }
 }
 
+TEST(WireTest, ADeathTheServerTellsReachesTheClientUnchanged) {
+  using augusta::ballistics::BodyPart;
+  for (const BodyPart part : {BodyPart::kHead, BodyPart::kTorso, BodyPart::kLimb}) {
+    // Its direction on the angle grid, as its Shot's (ADR-0038).
+    const augusta::replication::Death sent{
+        .victim = augusta::simulation::EntityId{5},
+        .killer = augusta::simulation::EntityId{3},
+        .yaw = augusta::math::SnapAngle(-2.345678F),
+        .pitch = augusta::math::SnapAngle(0.123456F),
+        .part = part,
+    };
+
+    const augusta::harness::Death received = augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+
+    EXPECT_EQ(Number(received.victim), Number(sent.victim));
+    EXPECT_EQ(Number(received.killer), Number(sent.killer));
+    EXPECT_EQ(received.yaw, sent.yaw);
+    EXPECT_EQ(received.pitch, sent.pitch);
+    EXPECT_EQ(received.part, part);
+  }
+}
+
 TEST(WireTest, MatchAndSimulationWorldNameABodyByTheSameEntity) {
   EXPECT_EQ(augusta::server::FromSimulation(augusta::server::ToSimulation(EntityId{77})), EntityId{77});
   EXPECT_EQ(Number(augusta::server::ToSimulation(EntityId{77})), 77U);

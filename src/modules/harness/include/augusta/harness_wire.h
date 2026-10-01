@@ -84,6 +84,9 @@ struct SequencedCommand {
 /// A match's start the server sent, in the engine's terms.
 [[nodiscard]] MatchStart FromWire(const protocol::MatchStartWire& start);
 
+/// A Death the server told, in the engine's terms.
+[[nodiscard]] Death FromWire(const protocol::DeathWire& death);
+
 /// hash as the protocol carries it.
 [[nodiscard]] protocol::PackHashWire ToWire(const assets::PackHash& hash);
 

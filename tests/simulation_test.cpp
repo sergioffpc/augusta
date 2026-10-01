@@ -31,6 +31,7 @@ using augusta::physics::CollisionMesh;
 using augusta::physics::Stance;
 using augusta::simulation::Character;
 using augusta::simulation::CharacterHitbox;
+using augusta::simulation::Death;
 using augusta::simulation::EntityId;
 using augusta::simulation::Hit;
 using augusta::simulation::PlayerCommand;
@@ -960,18 +961,118 @@ TEST_F(HitTest, HealthStopsAtZeroAndReachingItIsReportedOnce) {
   ShootAt(Vec3(0.0F, kTorsoHeight, 0.0F));
   const std::vector<Hit> third = ShootAt(Vec3(0.0F, kTorsoHeight, 0.0F));
   const std::vector<Hit> fourth = ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
-  const std::vector<Hit> fifth = ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
 
-  ASSERT_TRUE(third.size() == 1U && fourth.size() == 1U && fifth.size() == 1U);
+  ASSERT_TRUE(third.size() == 1U && fourth.size() == 1U);
   EXPECT_EQ(third[0].health, 10.0F);
   EXPECT_FALSE(third[0].reached_zero);
   EXPECT_EQ(fourth[0].damage, kHeadDamage);
   EXPECT_EQ(fourth[0].health, 0.0F);
   EXPECT_TRUE(fourth[0].reached_zero);
-  // A player at zero plays on (death is not built yet), and is still hit.
-  EXPECT_EQ(fifth[0].health, 0.0F);
-  EXPECT_FALSE(fifth[0].reached_zero);
-  EXPECT_EQ(Entity(Tick(Command{}), kBob).health, 0.0F);
+}
+
+// Bob, at 50 of health after a head shot, dies of the second one.
+TEST_F(HitTest, APlayerDiesOnTheTickAHitTakesItsHealthToZero) {
+  ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
+  const State before = Tick(Command{});
+  ASSERT_EQ(before.alive, (std::vector<EntityId>{kAlice, kBob}));
+  ASSERT_TRUE(before.deaths.empty());
+
+  const State state = Tick(FiringAt(Vec3(0.0F, kHeadHeight, 0.0F)));
+
+  ASSERT_EQ(state.hits.size(), 1U);
+  ASSERT_TRUE(state.hits[0].reached_zero);
+  ASSERT_EQ(state.shots.size(), 1U);
+  ASSERT_EQ(state.deaths.size(), 1U);
+  const Death& death = state.deaths[0];
+  EXPECT_EQ(death.victim, kBob);
+  EXPECT_EQ(death.killer, kAlice);
+  EXPECT_EQ(death.part, BodyPart::kHead);
+  EXPECT_EQ(death.yaw, state.shots[0].yaw);
+  EXPECT_EQ(death.pitch, state.shots[0].pitch);
+  EXPECT_EQ(state.alive, std::vector<EntityId>{kAlice});
+  ASSERT_EQ(state.bodies.size(), 1U);
+  EXPECT_EQ(state.bodies[0].entity, kAlice);
+}
+
+// A death is told on the tick it happens, and never again.
+TEST_F(HitTest, ADeadPlayerStaysDeadAndOutOfTheStateForTheRestOfTheMatch) {
+  ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
+  ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
+  bob_ = Walking(Vec3(1.0F, 0.0F, 0.0F));
+
+  for (int i = 0; i < 120; ++i) {
+    const State state = Tick(Command{});
+    EXPECT_TRUE(state.deaths.empty()) << "tick " << i;
+    EXPECT_EQ(state.alive, std::vector<EntityId>{kAlice}) << "tick " << i;
+    ASSERT_EQ(state.bodies.size(), 1U) << "tick " << i;
+  }
+}
+
+// Carol stands 5 m behind Bob, on the line Alice shoots along. Alice aims at
+// Bob's torso while he lives, and fires once he has died.
+TEST_F(HitTest, ABulletAimedThroughWhereADeadPlayerStoodHitsWhatIsBehindIt) {
+  constexpr EntityId kCarol = static_cast<EntityId>(3);
+  world_.AddPlayer(kCarol, Vec3(0.0F, 0.5F, -15.0F), Target());
+  Wait(kSettleTicks);
+  ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
+  const Command aimed = FiringAt(Vec3(0.0F, kTorsoHeight, 0.0F));
+  ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
+
+  const std::vector<Hit> hits = Shoot(aimed);
+
+  ASSERT_EQ(hits.size(), 1U);
+  EXPECT_EQ(hits[0].target, kCarol);
+}
+
+TEST_F(HitTest, ADeadPlayersFireAndMovementChangeNothing) {
+  ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
+  ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
+  // Bob walks at Alice, turned to face her, firing.
+  bob_ = Firing();
+  bob_.movement.direction = Vec3(0.0F, 0.0F, 1.0F);
+  bob_.yaw = std::numbers::pi_v<float>;
+
+  for (int i = 0; i < 120; ++i) {
+    const State state = Tick(Command{});
+    EXPECT_TRUE(state.shots.empty()) << "tick " << i;
+    EXPECT_TRUE(state.hits.empty()) << "tick " << i;
+    EXPECT_EQ(state.bodies.size(), 1U) << "tick " << i;
+  }
+}
+
+// A dead body is no obstacle: Alice walks on through where Bob fell.
+TEST_F(HitTest, ADeadPlayersBodyNoLongerBlocksMovement) {
+  ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
+  ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
+
+  State state;
+  for (int i = 0; i < 360; ++i) {
+    state = Tick(Walking(Vec3(0.0F, 0.0F, -1.0F)));
+  }
+
+  EXPECT_LT(Entity(state, kAlice).body.position.z, -15.0F);
+}
+
+// Carol stands 60 m down the line, 6 ticks of flight from Bob: Bob fires at
+// her, and Alice kills him on the next tick, before his round arrives.
+TEST_F(HitTest, ABulletADeadPlayerFiredWhileAliveStillHits) {
+  constexpr EntityId kCarol = static_cast<EntityId>(3);
+  world_.AddPlayer(kCarol, Vec3(0.0F, 0.5F, -70.0F), Target());
+  Wait(kSettleTicks);
+  ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
+  bob_ = Firing();
+  const Command kill = FiringAt(Vec3(0.0F, kHeadHeight, 0.0F));
+  bob_ = Command{};
+
+  std::vector<Hit> hits = Tick(kill).hits;
+  const std::vector<Hit> later = Wait(10);
+  hits.insert(hits.end(), later.begin(), later.end());
+
+  ASSERT_EQ(hits.size(), 2U);
+  EXPECT_EQ(hits[0].target, kBob);
+  EXPECT_TRUE(hits[0].reached_zero);
+  EXPECT_EQ(hits[1].shooter, kBob);
+  EXPECT_EQ(hits[1].target, kCarol);
 }
 
 TEST_F(HitTest, HealthDoesNotComeBackWithTime) {

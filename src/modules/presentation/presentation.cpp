@@ -1,5 +1,6 @@
 #include "augusta/presentation.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -97,6 +98,9 @@ struct World::Impl {
   std::optional<std::uint32_t> last_recorded_tick;
   std::vector<RemotePlayer> remote_players;
   std::optional<ShownView> view;
+  // The bodies of the match in progress whose Death has arrived: shown no
+  // more, whatever update still lists them.
+  std::vector<EntityId> dead;
 
   State frame_state;
 
@@ -143,6 +147,7 @@ struct World::Impl {
       server_clock.Reset();
       first_recorded_tick.reset();
       last_recorded_tick.reset();
+      dead.clear();
     } else if (!last_recorded_tick.has_value() || snapshot->tick > *last_recorded_tick) {
       RecordSnapshot(*snapshot);
     }
@@ -153,6 +158,10 @@ struct World::Impl {
       remote_players = remote_interpolator.Sample(sample_time);
       view = ViewAt(sample_time, snapshot->tick_duration, *first_recorded_tick, *last_recorded_tick);
     }
+    // A Death is reliable and can overtake the update that no longer lists its body.
+    dead.insert(dead.end(), input.deaths.begin(), input.deaths.end());
+    std::erase_if(remote_players,
+                  [&](const RemotePlayer& remote) { return std::ranges::contains(dead, remote.entity); });
     for (RemotePlayer& remote : remote_players) {
       remote.character = CharacterOf(remote.entity);
     }

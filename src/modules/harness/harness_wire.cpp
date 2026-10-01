@@ -134,6 +134,7 @@ AuthoritativeState FromWire(const protocol::AuthoritativeStateWire& state) {
                 .recoil = {.pitch = state.rifle.recoil_pitch, .yaw = state.rifle.recoil_yaw},
                 .rounds = state.rifle.rounds,
                 .burst_index = state.rifle.burst_index},
+      .health = state.health,
       .queued_commands = state.queued_commands,
   };
   result.bodies.reserve(state.bodies.size());
@@ -155,6 +156,14 @@ Shot FromWire(const protocol::ShotWire& shot) {
 
 HitConfirmation FromWire(const protocol::HitConfirmationWire& hit) {
   return HitConfirmation{.target = FromWire(hit.target), .damage = hit.damage, .part = FromWire(hit.part)};
+}
+
+Death FromWire(const protocol::DeathWire& death) {
+  return Death{.victim = FromWire(death.victim),
+               .killer = FromWire(death.killer),
+               .yaw = death.yaw,
+               .pitch = death.pitch,
+               .part = FromWire(death.part)};
 }
 
 Lobby FromWire(const protocol::LobbyWire& lobby) {

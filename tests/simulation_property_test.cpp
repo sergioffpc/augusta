@@ -25,7 +25,7 @@
 // Property-based tests of the simulation (ADR-0013), through the Worlds' public
 // interfaces: a player's stamina stays a fraction and its magazine within its
 // capacity whatever it is commanded to do, no rifle outpaces its fire rate,
-// health never rises nor goes below zero, and a client whose prediction of its
+// health never rises nor goes below zero, a dead player stays dead, and a client whose prediction of its
 // body and its rifle diverged from the server converges on the server's state
 // once the server stops diverging. RC_PARAMS sets the case count
 // at run time; pull requests run the default 100.
@@ -271,6 +271,9 @@ RC_GTEST_PROP(SimulationPropertyTest, HealthNeverRisesNeverGoesBelowZeroAndReach
     }
     for (const auto& hit : state.hits) {
       RC_ASSERT(hit.shooter != hit.target);
+      RC_ASSERT(hit.health <= health.at(hit.target));
+      // A player dies of the hit that takes it to zero, and has no body in the state to tell it by.
+      health.at(hit.target) = hit.health;
       reached_zero.at(hit.target) += hit.reached_zero ? 1 : 0;
     }
     hits += state.hits.size();
@@ -281,6 +284,47 @@ RC_GTEST_PROP(SimulationPropertyTest, HealthNeverRisesNeverGoesBelowZeroAndReach
   for (const auto& [entity, left] : health) {
     RC_ASSERT(reached_zero.at(entity) == (left <= 0.0F ? 1 : 0));
   }
+}
+
+// The same two players, each dying of the hit that takes its health to zero: a
+// dead player never comes back to life, never fires and never moves (it has no
+// body to) for the rest of the Match, and dies once.
+RC_GTEST_PROP(SimulationPropertyTest, ADeadPlayerNeverComesBackFiresOrMoves, ()) {
+  constexpr augusta::simulation::EntityId kOther = static_cast<augusta::simulation::EntityId>(2);
+  augusta::parameters::Parameters parameters;
+  parameters.rifle.rounds_per_minute = 3600.0F;
+  parameters.rifle.magazine_capacity = 255;
+  parameters.rifle.muzzle_velocity = 600.0F;
+  parameters.ammo.max_range = 50.0F;
+  const auto damage = rc::gen::map(rc::gen::inRange(1, 41), [](int points) { return static_cast<float>(points); });
+  parameters.ammo.damage = {.head = *damage, .torso = *damage, .limb = *damage};
+  parameters.starting_health = static_cast<float>(*rc::gen::inRange(1, 201));
+  const std::vector<Command> commands = LookingRoughly(0.0F, *Commands(1));
+  const std::vector<Command> other_commands =
+      LookingRoughly(kPi, *rc::gen::container<std::vector<Command>>(commands.size(), RealCommand()));
+
+  augusta::simulation::World world(parameters, kTickRate);
+  RC_ASSERT(world.AddCollisionMesh(Floor()).has_value());
+  world.AddPlayer(kPlayer, kSpawn, WideTarget());
+  world.AddPlayer(kOther, Vec3(0.0F, 0.0F, -6.0F), WideTarget());
+
+  std::set<augusta::simulation::EntityId> alive = {kPlayer, kOther};
+  for (std::size_t i = 0; i < commands.size(); ++i) {
+    const auto state = world.Tick(
+        {{.entity = kPlayer, .command = commands[i]}, {.entity = kOther, .command = other_commands[i]}}, kTick);
+    // A round fired on the tick its shooter dies was fired while it lived.
+    for (const auto& shot : state.shots) {
+      RC_ASSERT(alive.contains(shot.shooter));
+    }
+    for (const auto& death : state.deaths) {
+      RC_ASSERT(alive.erase(death.victim) == 1U);
+    }
+    RC_ASSERT(std::set<augusta::simulation::EntityId>(state.alive.begin(), state.alive.end()) == alive);
+    for (const auto& body : state.bodies) {
+      RC_ASSERT(alive.contains(body.entity));
+    }
+  }
+  RC_CLASSIFY(alive.size() < 2U, "a player died");
 }
 
 // How far apart the client and the server may end: Reconciliation leaves a
