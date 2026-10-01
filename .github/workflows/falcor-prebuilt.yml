@@ -1,0 +1,103 @@
+name: Falcor prebuilt
+
+# Builds the vendored Falcor (ADR-0009) from source and publishes it as an
+# asset of the release cmake/FalcorPrebuilt.cmake names, for the Windows builds
+# to download instead of building it. Runs when anything the package's name or
+# contents depend on lands on main or develop; a package that is already
+# published is left alone. Until it is, builds fall back to building Falcor
+# from source, as a pull request that changes Falcor does.
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - third_party/falcor
+      - cmake/patches/falcor.patch
+      - cmake/FalcorPrebuilt.cmake
+      - src/modules/renderer/CMakeLists.txt
+      - .github/workflows/falcor-prebuilt.yml
+  workflow_dispatch:
+
+# One at a time, so main and develop landing the same Falcor don't both create
+# its release.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: read
+
+env:
+  VCPKG_BINARY_SOURCES: "clear;nuget,GitHubPackages,read"
+  # packman's cache, on the system drive rather than the workspace's (its own
+  # default) - see ci.yml's client job.
+  PM_PACKAGES_ROOT: C:\packman-repo
+
+jobs:
+  publish:
+    # The same image as the builds that link the package (ci.yml, release.yml).
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+
+      - name: Install Ninja
+        run: choco install ninja -y
+        shell: pwsh
+
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Configure vcpkg NuGet cache
+        shell: pwsh
+        run: |
+          $nugetPath = & ".\third_party\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
+          & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
+
+      - name: Configure
+        # Falcor from source, never the package this job is about to publish.
+        run: cmake --preset windows -DAUGUSTA_FALCOR_PREBUILT=OFF
+        shell: pwsh
+
+      - name: Look for the published package
+        id: package
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(sed -n 's/^AUGUSTA_FALCOR_PREBUILT_TAG:INTERNAL=//p' build/x64-windows/CMakeCache.txt)"
+          package="$(sed -n 's/^AUGUSTA_FALCOR_PREBUILT_PACKAGE:INTERNAL=//p' build/x64-windows/CMakeCache.txt)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "package=$package" >> "$GITHUB_OUTPUT"
+          # The asset, not just the release: an upload that failed half way
+          # leaves the release without it.
+          if gh release view "$tag" --json assets --jq '.assets[].name' 2>/dev/null | grep -qxF "$(basename "$package")"; then
+            echo "$tag already has $(basename "$package")."
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and package Falcor
+        if: steps.package.outputs.published != 'true'
+        run: cmake --build --preset windows --target falcor_prebuilt_package
+
+      - name: Publish
+        if: steps.package.outputs.published != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.package.outputs.tag }}
+          PACKAGE: ${{ steps.package.outputs.package }}
+        run: |
+          # Never the latest release: that stays the game's own (release.yml).
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --latest=false \
+              --title "Prebuilt Falcor $TAG" \
+              --notes "Vendored Falcor built by the falcor-prebuilt workflow from $GITHUB_SHA, for cmake/FalcorPrebuilt.cmake to download."
+          fi
+          gh release upload "$TAG" "$PACKAGE" --clobber

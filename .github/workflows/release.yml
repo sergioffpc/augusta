@@ -21,6 +21,10 @@ env:
 jobs:
   client:
     runs-on: windows-2025
+    # See ci.yml's client job: packman's cache stays off the workspace's drive
+    # when Falcor is built from source (no prebuilt published for it yet).
+    env:
+      PM_PACKAGES_ROOT: C:\packman-repo
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
