@@ -28,7 +28,9 @@
 //
 // Admitted players wait in the Lobby, and a match starts on the tick the Lobby
 // is full and everyone is Ready (ADR-0043): only then are bodies simulated and
-// Authoritative States sent, and only to the players in the match.
+// Authoritative States sent, and only to the players in the match. It ends after
+// the tick on which Game policy decides it has (ADR-0023), or once its last
+// player leaves, and its players are back in the Lobby.
 //
 // The Network I/O thread's PumpNetwork and the Simulation thread's Tick may
 // run concurrently: what they share (the Lobby, the match and the players'
@@ -103,10 +105,12 @@ class Host {
 
   /// Runs one fixed tick of SimulationWorld on one command per player in the
   /// match, sends each of them its update and, reliably (ADR-0044), every Shot
-  /// of the tick and the Hit confirmations of its own hits, logs the tick's
-  /// hits, and returns the state. Starts a match first if the Lobby is full and
-  /// Ready and the pause after the last one (server::kMatchPause, counted in
-  /// these ticks) has passed.
+  /// and Death of the tick and the Hit confirmations of its own hits, logs the
+  /// tick's hits and deaths, and returns the state. Starts a match first if the
+  /// Lobby is full and Ready and the pause after the last one
+  /// (server::kMatchPause, counted in these ticks) has passed. When the state
+  /// carries Game policy's Match end, ends the match after the tick, as
+  /// EndMatch does, with policy's winner or as a draw.
   simulation::State Tick(float delta_time);
 
   /// Counts the Tick just run, with how it kept to the Simulation loop's
@@ -115,10 +119,11 @@ class Host {
   /// test that has no schedule need not call it.
   void RecordTiming(const tick::Timing& timing);
 
-  /// Ends the match in progress, if any: its players are sent Match end and are
-  /// back in the Lobby, and their bodies leave the simulation on the next Tick.
-  /// Game policy's way to end a match (and a test's). From the Simulation
-  /// thread, between Ticks.
+  /// Ends the match in progress as a draw, if one is: its players are sent
+  /// Match end and are back in the Lobby, and their bodies and the bullets still
+  /// in flight leave the simulation on the next Tick. A test's way to end a
+  /// match; Game policy's is the Match end of a tick's state. From the
+  /// Simulation thread, between Ticks.
   void EndMatch();
 
   /// How many commands the player of session has queued for the coming Ticks, 0

@@ -72,6 +72,14 @@ struct MatchStart {
   std::vector<MatchPlayer> players;
 };
 
+/// How a match ended, for its players to be told.
+struct MatchEnd {
+  /// Who was in it, ordered by session.
+  std::vector<SessionId> players;
+  /// The player Game policy declared the winner; nullopt for a draw.
+  std::optional<SessionId> winner;
+};
+
 /// What a peer is told when it is admitted to the Lobby.
 struct Admission {
   /// The name the server gave the peer's player.
@@ -171,10 +179,12 @@ class Match {
   /// nothing, if it cannot start.
   [[nodiscard]] std::optional<MatchStart> TryStart();
 
-  /// Ends the match in progress: its players return to the Lobby, under a new
-  /// Roster version none of them is Ready for yet, and the pause begins. Returns
-  /// who was in it; empty, changing nothing, if no match is in progress.
-  std::vector<SessionId> End();
+  /// Ends the match in progress with winner, or as a draw: its players return to
+  /// the Lobby, under a new Roster version none of them is Ready for yet, and the
+  /// pause begins. A winner no longer in the match is none, and the match a
+  /// draw. Returns who was in it and who won; nullopt, changing nothing, if no
+  /// match is in progress.
+  std::optional<MatchEnd> End(std::optional<SessionId> winner = std::nullopt);
 
   /// Whether a match is in progress.
   [[nodiscard]] bool InMatch() const;

@@ -153,6 +153,10 @@ protocol::MatchStartWire ToWire(const MatchStart& start) {
   return message;
 }
 
+protocol::MatchEndWire ToWire(const MatchEnd& end) {
+  return protocol::MatchEndWire{.winner = end.winner.has_value() ? ToWire(*end.winner) : protocol::kDraw};
+}
+
 protocol::AuthoritativeStateWire ToWire(const replication::Update& update) {
   protocol::AuthoritativeStateWire state{
       .tick = update.tick,

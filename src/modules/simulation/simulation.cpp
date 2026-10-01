@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -181,6 +182,65 @@ constexpr std::string_view kOnTick = "on_tick";
 // would otherwise write a line a tick (ADR-0029).
 constexpr std::chrono::seconds kPolicyWarningInterval{1};
 
+scripting::Field NumberField(std::string key, double value) {
+  return scripting::Field{.key = std::move(key), .value = {.data = value}};
+}
+
+scripting::Field BoolField(std::string key, bool value) {
+  return scripting::Field{.key = std::move(key), .value = {.data = value}};
+}
+
+// One player as a Game policy hook sees it (ADR-0022), its fields ordered by
+// key: killer, the body of whoever killed it, only on the tick it was killed.
+scripting::Value PlayerView(EntityId entity, const PlayerIdentity& identity, bool alive, float health,
+                            const std::optional<EntityId>& killer) {
+  scripting::Value::Record player{
+      BoolField("alive", alive),
+      NumberField("character", identity.character),
+      NumberField("entity", std::to_underlying(entity)),
+      NumberField("health", health),
+      BoolField("killed", killer.has_value()),
+  };
+  if (killer.has_value()) {
+    player.push_back(NumberField("killer", std::to_underlying(*killer)));
+  }
+  player.push_back(NumberField("session", std::to_underlying(identity.session)));
+  return scripting::Value{.data = std::move(player)};
+}
+
+// Why a value on_tick returned is not a decision it may make.
+constexpr std::string_view kNotAMatchEnd = "it is neither {winner = <Session ID>} nor {draw = true}";
+constexpr std::string_view kNotAWinner = "its winner is not a player alive in the Match";
+
+// What on_tick returned, as the Match end it decides: nullopt for nil, which
+// decides nothing; an error, saying why, for anything else that is not
+// {draw = true} or {winner = <the session of a player alive in the Match>}.
+// alive_sessions holds the sessions of the players alive in the Match.
+std::expected<std::optional<MatchEnd>, std::string_view> ReadMatchEnd(const scripting::Value& returned,
+                                                                      const std::vector<SessionId>& alive_sessions) {
+  if (std::holds_alternative<std::monostate>(returned.data)) {
+    return std::nullopt;
+  }
+  const auto* record = std::get_if<scripting::Value::Record>(&returned.data);
+  if (record == nullptr || record->size() != 1) {
+    return std::unexpected(kNotAMatchEnd);
+  }
+  const scripting::Field& field = record->front();
+  if (const auto* draw = std::get_if<bool>(&field.value.data); field.key == "draw" && draw != nullptr && *draw) {
+    return MatchEnd{.winner = std::nullopt};
+  }
+  const auto* winner = std::get_if<double>(&field.value.data);
+  if (field.key != "winner" || winner == nullptr) {
+    return std::unexpected(kNotAMatchEnd);
+  }
+  const auto alive = std::ranges::find_if(
+      alive_sessions, [&](SessionId session) { return static_cast<double>(std::to_underlying(session)) == *winner; });
+  if (alive == alive_sessions.end()) {
+    return std::unexpected(kNotAWinner);
+  }
+  return MatchEnd{.winner = *alive};
+}
+
 }  // namespace
 
 std::size_t HitboxHistoryTicks(std::uint8_t tick_rate_hz) {
@@ -188,10 +248,12 @@ std::size_t HitboxHistoryTicks(std::uint8_t tick_rate_hz) {
 }
 
 struct World::Impl {
-  // Where a player lives, for RemovePlayer; a dead player's body has left physics.
+  // Where a player lives, for RemovePlayer, and who plays it, for Game policy;
+  // a dead player's body has left physics.
   struct Slot {
     flecs::entity entity;
     std::optional<physics::BodyHandle> body;
+    PlayerIdentity identity;
   };
 
   const parameters::Parameters parameters;
@@ -206,6 +268,9 @@ struct World::Impl {
   ballistics::World ballistics;
   scripting::Engine policy;
   logging::Throttle policy_warnings{kPolicyWarningInterval};
+  // Whether policy has ended the Match the world's players are in: it then
+  // decides no more until EndMatch.
+  bool match_ended_by_policy = false;
   PhaseEntities phases;
   std::unordered_map<EntityId, Slot> players;
   // Set by Tick for CommandIngestion to read, and filled by Commit for Tick to return.
@@ -451,11 +516,53 @@ struct World::Impl {
     slot.entity.remove<Body>().remove<Intent>();
   }
 
-  // Calls the objectives' on_tick with the tick. It has no decision to make yet,
-  // so anything but nil is refused; either way the tick goes on.
+  // The read-only view of the Match a Game policy hook is handed (ADR-0022), as
+  // Damage left it this tick: the tick, the Player count, and every player in
+  // the world, ordered by session, with who killed it if it died this tick.
+  // Players who left are not in the world, so not in it either.
+  [[nodiscard]] scripting::Value::Record MatchView() const {
+    std::vector<std::pair<EntityId, const Slot*>> ordered;
+    ordered.reserve(players.size());
+    for (const auto& [entity, slot] : players) {
+      ordered.emplace_back(entity, &slot);
+    }
+    std::ranges::sort(ordered, {}, [](const auto& entry) { return entry.second->identity.session; });
+    scripting::Value::List roster;
+    roster.reserve(ordered.size());
+    for (const auto& [entity, slot] : ordered) {
+      const auto death = std::ranges::find(committed.deaths, entity, &Death::victim);
+      const std::optional<EntityId> killer =
+          death == committed.deaths.end() ? std::nullopt : std::optional<EntityId>(death->killer);
+      roster.push_back(
+          PlayerView(entity, slot->identity, slot->body.has_value(), slot->entity.get<Health>().value, killer));
+    }
+    return scripting::Value::Record{
+        NumberField("player_count", parameters.player_count),
+        scripting::Field{.key = "players", .value = {.data = std::move(roster)}},
+        NumberField("tick", tick),
+    };
+  }
+
+  // The sessions of the players alive in the world.
+  [[nodiscard]] std::vector<SessionId> AliveSessions() const {
+    std::vector<SessionId> alive;
+    for (const auto& [entity, slot] : players) {
+      if (slot.body.has_value()) {
+        alive.push_back(slot.identity.session);
+      }
+    }
+    return alive;
+  }
+
+  // Calls the objectives' on_tick with the Match view while the world has a
+  // Match policy has not ended, and records the Match end it decides, if any,
+  // in the tick's state. A hook that fails or decides what it may not is
+  // logged and decides nothing; either way the tick goes on.
   void OnScriptsBehaviours() {
-    const scripting::Value::Record view{{.key = "tick", .value = {.data = static_cast<double>(tick)}}};
-    const auto returned = policy.Call(scripting::Script::kObjectives, kOnTick, view);
+    if (players.empty() || match_ended_by_policy) {
+      return;
+    }
+    const auto returned = policy.Call(scripting::Script::kObjectives, kOnTick, MatchView());
     if (!returned) {
       LW_LIMITED(policy_warnings,
                  "subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
@@ -463,11 +570,16 @@ struct World::Impl {
                  scripting::DescribeHookError(returned.error()));
       return;
     }
-    if (!std::holds_alternative<std::monostate>(returned->data)) {
+    const auto decision = ReadMatchEnd(*returned, AliveSessions());
+    if (!decision) {
       LW_LIMITED(policy_warnings,
-                 "subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} "
-                 "reason=\"it decides nothing yet, so it returns nil\"",
-                 scripting::ScriptPath(scripting::Script::kObjectives), kOnTick, tick);
+                 "subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
+                 scripting::ScriptPath(scripting::Script::kObjectives), kOnTick, tick, decision.error());
+      return;
+    }
+    if (decision->has_value()) {
+      committed.match_end = **decision;
+      match_ended_by_policy = true;
     }
   }
 
@@ -491,7 +603,8 @@ std::expected<void, physics::CollisionMeshError> World::AddCollisionMesh(const p
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
-void World::AddPlayer(EntityId entity, const math::Vec3& spawn, const Character& character) {
+void World::AddPlayer(EntityId entity, const math::Vec3& spawn, const Character& character,
+                      const PlayerIdentity& identity) {
   Impl& impl = *impl_;
   if (impl.players.contains(entity)) {
     return;
@@ -509,7 +622,7 @@ void World::AddPlayer(EntityId entity, const math::Vec3& spawn, const Character&
                                        .set<Hitboxes>({.standing = character.hitboxes})
                                        .set<HitboxHistory>({.poses = PoseHistory(impl.history_ticks)})
                                        .set<Rifle>({.state = weapon::Loaded(impl.parameters.rifle)});
-  impl.players.emplace(entity, Impl::Slot{.entity = ecs_entity, .body = body});
+  impl.players.emplace(entity, Impl::Slot{.entity = ecs_entity, .body = body, .identity = identity});
 }
 
 void World::RemovePlayer(EntityId entity) {
@@ -523,6 +636,16 @@ void World::RemovePlayer(EntityId entity) {
   }
   slot->second.entity.destruct();
   impl.players.erase(slot);
+}
+
+void World::EndMatch() {
+  Impl& impl = *impl_;
+  while (!impl.players.empty()) {
+    RemovePlayer(impl.players.begin()->first);
+  }
+  impl.ecs.delete_with<Bullet>();
+  impl.ballistics = ballistics::World();
+  impl.match_ended_by_policy = false;
 }
 
 State World::Tick(const std::vector<PlayerCommand>& commands, float delta_time) {
@@ -541,6 +664,7 @@ State World::Tick(const std::vector<PlayerCommand>& commands, float delta_time) 
   impl.committed.map_impacts.clear();
   impl.committed.hits.clear();
   impl.committed.bullets_in_flight = 0;
+  impl.committed.match_end.reset();
   impl.player_hits.clear();
   impl.ecs.progress(delta_time);
   // The ECS visits players in storage order; the state is ordered by id.

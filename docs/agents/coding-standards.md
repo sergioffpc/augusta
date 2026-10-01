@@ -79,8 +79,8 @@ A bug found by the fuzzer or by a shrunk RapidCheck case gets a
 regression test in the pull request that fixes it: the minimized input as a
 fixture, the case as an example-based test.
 
-Out of scope for now: Lua gameplay scripts (ADR-0022) — decided when M5
-starts.
+Lua gameplay scripts (ADR-0022) are tested inside the real engine, through
+`simulation::World`, never through a fake Lua harness (ADR-0013).
 
 ## Naming
 

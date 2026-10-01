@@ -70,6 +70,11 @@ how noisy its result is.
   output. A deliberate change to the format or the example regenerates the
   golden packs with one command. pytest also covers the cooker's own logic
   (validation, optimization, signing).
+- **Lua gameplay scripts** (ADR-0022) are tested by running them inside the
+  real engine, through `simulation::World`, never through a fake Lua harness:
+  a shipped policy script is loaded out of a pack as the server loads it, and
+  its rules are checked on what each tick's State says, across the Player
+  counts a scenario may have.
 - **Fuzzing** targets what arrives from outside: the protocol's message
   decoding (the NFR-05 attack surface) and `Pack::Load`. It builds with the
   `linux-fuzz` preset (clang, libFuzzer, ASan). Seeds live in the repository
@@ -97,8 +102,6 @@ how noisy its result is.
 
 - Rendering, audio, and the client as a whole are validated by eye and ear,
   with no written checklist; CI's Windows runners have no GPU for Falcor.
-- Lua gameplay scripts (ADR-0022) get a testing decision when M5 starts,
-  when the first ones exist.
 
 ## Considered Options
 

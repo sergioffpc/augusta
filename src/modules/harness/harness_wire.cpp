@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <span>
 #include <utility>
 
@@ -185,6 +186,10 @@ MatchStart FromWire(const protocol::MatchStartWire& start) {
                                          .spawn = player.spawn});
   }
   return result;
+}
+
+MatchEnd FromWire(const protocol::MatchEndWire& end) {
+  return MatchEnd{.winner = end.winner == protocol::kDraw ? std::nullopt : std::optional(FromWire(end.winner))};
 }
 
 protocol::PackHashWire ToWire(const assets::PackHash& hash) {

@@ -489,7 +489,8 @@ TEST(MatchTest, EndingAMatchReturnsItsPlayersToTheLobbyUnderANewRoster) {
 
   const auto ended = match.End();
 
-  EXPECT_EQ(ended, (std::vector<SessionId>{*match.SessionOf(Peer(1)), *match.SessionOf(Peer(2))}));
+  ASSERT_TRUE(ended.has_value());
+  EXPECT_EQ(ended->players, (std::vector<SessionId>{*match.SessionOf(Peer(1)), *match.SessionOf(Peer(2))}));
   EXPECT_FALSE(match.InMatch());
   EXPECT_TRUE(match.Playing().empty());
   const auto roster = match.GetRoster();
@@ -497,6 +498,45 @@ TEST(MatchTest, EndingAMatchReturnsItsPlayersToTheLobbyUnderANewRoster) {
   ASSERT_EQ(roster.players.size(), 2U);
   EXPECT_EQ(roster.players[0].session, *match.SessionOf(Peer(1)));
   EXPECT_EQ(roster.players[1].session, *match.SessionOf(Peer(2)));
+}
+
+TEST(MatchTest, AMatchEndedWithAWinnerNamesItToItsPlayers) {
+  Match match(Config(2));
+  JoinPeers(match, 1, 2);
+  ASSERT_TRUE(ReadyAndStart(match).has_value());
+
+  const auto ended = match.End(match.SessionOf(Peer(2)));
+
+  ASSERT_TRUE(ended.has_value());
+  EXPECT_EQ(ended->winner, match.SessionOf(Peer(2)));
+  EXPECT_EQ(ended->players.size(), 2U);
+}
+
+TEST(MatchTest, AMatchEndedWithNoWinnerIsADraw) {
+  Match match(Config(2));
+  JoinPeers(match, 1, 2);
+  ASSERT_TRUE(ReadyAndStart(match).has_value());
+
+  const auto ended = match.End();
+
+  ASSERT_TRUE(ended.has_value());
+  EXPECT_FALSE(ended->winner.has_value());
+}
+
+// Policy declares a winner from the tick's state; the player may have left
+// before the server acts on it, and a Match end never names a player not told of it.
+TEST(MatchTest, AWinnerNoLongerInTheMatchEndsItAsADraw) {
+  Match match(Config(3));
+  JoinPeers(match, 1, 3);
+  ASSERT_TRUE(ReadyAndStart(match).has_value());
+  const SessionId left = *match.SessionOf(Peer(3));
+  ASSERT_EQ(match.Leave(Peer(3)), Departure::kFromMatch);
+
+  const auto ended = match.End(left);
+
+  ASSERT_TRUE(ended.has_value());
+  EXPECT_FALSE(ended->winner.has_value());
+  EXPECT_EQ(ended->players.size(), 2U);
 }
 
 TEST(MatchTest, PlayersKeepTheirSessionAndCharacterAcrossMatches) {
@@ -529,7 +569,7 @@ TEST(MatchTest, EndingWithNoMatchInProgressChangesNothing) {
   JoinPeers(match, 1, 1);
   const auto version = match.GetRoster().version;
 
-  EXPECT_TRUE(match.End().empty());
+  EXPECT_FALSE(match.End().has_value());
 
   EXPECT_EQ(match.GetRoster().version, version);
 }

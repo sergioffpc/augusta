@@ -315,10 +315,12 @@ Damage → Scripts/Behaviours → Commit)
    presentation smooths the jump (see ADR-0004)
 
 **Scenario: Match End**
-1. Server evaluates the win condition each tick (game policy, e.g. one side
-   eliminated)
-2. When it is met, the server ends the Match, declares the winner and sends
-   Match end reliably; everyone still connected returns to the Lobby
+1. Server evaluates the win condition each tick (game policy, the scenario's
+   `objectives.lua`; in v1 last player standing)
+2. When it is met, the decision is in that tick's state; the server ends the
+   Match after the tick, removes every body and bullet in flight, and sends
+   Match end, with the winner or a draw, reliably; everyone still connected
+   returns to the Lobby
 3. The next Match starts once the Lobby is full and Ready again, never less
    than 5 seconds after the previous one ended (ADR-0043)
 
