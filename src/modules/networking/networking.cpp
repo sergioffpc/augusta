@@ -198,11 +198,15 @@ void Client::Connect(const Endpoint& server) {
   LI("subsystem=networking event=connecting role=client server_addr={}", server.address);
 
   // Both config values must be supplied here, not via a
-  // SetConnectionUserData call after ConnectByIPAddress returns: GNS can
-  // fire the first (Connecting) status-changed callback synchronously as
-  // part of creating the connection, snapshotting whatever user data was
-  // set at that point - which would be none, since Impl isn't reachable
-  // from OnStatusChanged until this call supplies it up front.
+  // SetConnectionUserData call after ConnectByIPAddress returns: GNS queues
+  // the first (Connecting) status-changed callback while creating the
+  // connection, snapshotting the user data in effect at that point - which
+  // would be none, since Impl isn't reachable from OnStatusChanged until
+  // this call supplies it up front.
+  //
+  // Holding the mutex across ConnectByIPAddress cannot deadlock: GNS only
+  // invokes queued callbacks from RunCallbacks (PumpEvents), never from
+  // inside the call that queued them.
   std::array<SteamNetworkingConfigValue_t, 2> options;
   options[0].SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged,
                     reinterpret_cast<void*>(&OnStatusChanged));
@@ -365,11 +369,11 @@ Server::Server(const Endpoint& local_endpoint) : impl_(std::make_unique<Impl>())
 
   // Two config values applied to every connection accepted through this
   // listen socket: the status-changed callback, and a default user data
-  // value carrying impl_.get() - set here, before any connection exists,
-  // so OnStatusChanged can already resolve it on that connection's very
-  // first (Connecting) callback. Client::Connect instead sets user data
-  // itself right after ConnectByIPAddress returns, since it has only one
-  // connection to tag and no listen socket to inherit a default from.
+  // value carrying this server's handler registration - set here, before
+  // any connection exists, so OnStatusChanged can already resolve it on
+  // that connection's very first (Connecting) callback. Client::Connect
+  // passes the same two values to ConnectByIPAddress instead, since it has
+  // only one connection to tag and no listen socket to inherit them from.
   std::array<SteamNetworkingConfigValue_t, 2> options;
   options[0].SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged,
                     reinterpret_cast<void*>(&OnStatusChanged));
