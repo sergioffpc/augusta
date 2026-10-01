@@ -320,24 +320,25 @@ class Session {
   /// from any thread.
   [[nodiscard]] std::optional<AuthoritativeState> GetAuthoritativeState() const;
 
-  /// The Shots of the match in progress received since the last call, in the
-  /// order they arrived; the newest kMaxPendingShots of them if more did. One
-  /// that arrives outside a match or names a body not in it is dropped, and a
-  /// match starts with none. Received by ExchangeMessages; safe to call from
-  /// any thread.
+  /// The Shots of the match in progress, or of the last one if back in the
+  /// Lobby, received since the last call, in the order they arrived; the newest
+  /// kMaxPendingShots of them if more did. One that arrives outside a match or
+  /// names a body not in it is dropped, and a match starts with none. Received
+  /// by ExchangeMessages; safe to call from any thread.
   [[nodiscard]] std::vector<Shot> TakeShots();
 
-  /// The Hit confirmations of the match in progress received since the last
-  /// call, in the order they arrived; the newest kMaxPendingHitConfirmations of
-  /// them if more did. One that arrives outside a match or names a body not in
-  /// it is dropped, and a match starts with none. Received by ExchangeMessages;
-  /// safe to call from any thread.
+  /// The Hit confirmations of the match in progress, or of the last one if back
+  /// in the Lobby, received since the last call, in the order they arrived; the
+  /// newest kMaxPendingHitConfirmations of them if more did. One that arrives
+  /// outside a match or names a body not in it is dropped, and a match starts
+  /// with none. Received by ExchangeMessages; safe to call from any thread.
   [[nodiscard]] std::vector<HitConfirmation> TakeHitConfirmations();
 
-  /// The Deaths of the match in progress received since the last call, in the
-  /// order they arrived; the newest kMaxPendingDeaths of them if more did. One
-  /// that arrives outside a match or names a body not in it is dropped, and a
-  /// match starts with none. Received by ExchangeMessages; safe to call from
+  /// The Deaths of the match in progress, or of the last one if back in the
+  /// Lobby (those that ended it among them), received since the last call, in
+  /// the order they arrived; the newest kMaxPendingDeaths of them if more did.
+  /// One that arrives outside a match or names a body not in it is dropped, and
+  /// a match starts with none. Received by ExchangeMessages; safe to call from
   /// any thread.
   [[nodiscard]] std::vector<Death> TakeDeaths();
 

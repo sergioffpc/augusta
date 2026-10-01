@@ -76,6 +76,7 @@ struct World::Impl {
   // How many rounds the local player's predicted fire fired this frame
   // (OnCamera), which OnAudioCues hears.
   std::uint32_t rounds_fired = 0;
+  CueSelector cue_selector;
 
   // The local player's Prediction State blended for this frame
   // (OnInterpolation), which the later phases read.
@@ -308,7 +309,7 @@ struct World::Impl {
   void OnAudioCues() {
     const nvtx3::scoped_range range{"AudioCues"};
     audio_engine.SetListener(ListenerOf(camera));
-    for (const CuePlay& play : SelectCues(input, rounds_fired)) {
+    for (const CuePlay& play : cue_selector.Select(input, rounds_fired)) {
       const auto index = static_cast<std::size_t>(std::ranges::find(audio::kCues, play.cue) - audio::kCues.begin());
       if (play.position.has_value()) {
         audio_engine.Play(cue_sounds.at(index), *play.position);

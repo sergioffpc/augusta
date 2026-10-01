@@ -251,7 +251,8 @@ struct Session::Impl {
       next.authoritative.reset();
       next.match_end = end;
     });
-    ForgetCombat();
+    // The fight's last events, the Deaths that ended the match among them, are
+    // still taken; the next Match start forgets those that were not.
     if (end.winner.has_value()) {
       LI("subsystem=harness event=match_ended winner={}", std::to_underlying(*end.winner));
     } else {
