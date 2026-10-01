@@ -73,9 +73,19 @@ struct LoadedCharacter {
 // could not.
 using CharacterLoader = std::function<std::expected<LoadedCharacter, client::SceneError>(std::uint8_t)>;
 
+// A Prediction or Network I/O thread stopped on an exception (for one, the
+// transport rejecting the server address): which thread, and what it said.
+struct WorkerFailure {
+  std::string thread;
+  std::string reason;
+};
+
+// A sentence saying which thread failed and why, for logs and for the player.
+[[nodiscard]] std::string DescribeWorkerFailure(const WorkerFailure& failure);
+
 // Why Run() stopped without the player closing the window: the session ended
-// on its own, or a character could not be loaded.
-using Failure = std::variant<harness::Failure, client::SceneError>;
+// on its own, a character could not be loaded, or a worker thread failed.
+using Failure = std::variant<harness::Failure, client::SceneError, WorkerFailure>;
 
 // Owns one of every client-only module/World and the three fixed
 // threads ADR-0005 assigns them to. The client process constructs
@@ -133,8 +143,9 @@ class ClientRuntime {
   // every other player's character and report Ready, read the latest
   // committed Prediction State, PresentationWorld::RunFrame,
   // Renderer::RenderFrame - until Renderer::ShouldClose() returns true, the
-  // session fails (refused, server unreachable, connection lost) or a
-  // character cannot be loaded, which is what it returns: the caller
+  // session fails (refused, server unreachable, connection lost), a
+  // character cannot be loaded or the Prediction or Network I/O thread
+  // throws (which stops the others), which is what it returns: the caller
   // reports it and exits, since there is no reconnecting. nullopt if the
   // player closed the window.
   // Always stops and joins both spawned threads before returning or

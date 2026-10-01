@@ -4,11 +4,14 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <exception>
 #include <format>
 #include <mutex>
 #include <optional>
 #include <set>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -160,6 +163,10 @@ struct ThreadJoiner {
 
 }  // namespace
 
+std::string DescribeWorkerFailure(const WorkerFailure& failure) {
+  return std::format("the {} thread failed: {}", failure.thread, failure.reason);
+}
+
 struct ClientRuntime::Impl {
   Config config;
   // Main/Render thread only: loads a character, which characters the renderer
@@ -180,6 +187,40 @@ struct ClientRuntime::Impl {
   std::atomic<bool> running{false};
   std::thread prediction_thread;
   std::thread network_thread;
+
+  // The first worker thread to fail, which Run() returns: written by that
+  // thread (RunWorker), read by the Main/Render thread once per frame.
+  std::mutex worker_failure_mutex;
+  std::optional<WorkerFailure> worker_failure;
+
+  // Runs body as the whole of the named worker thread. An exception escaping a
+  // thread would terminate the process, so it is recorded instead and running
+  // cleared, which stops the other threads.
+  void RunWorker(std::string_view thread, void (Impl::*body)()) {
+    try {
+      (this->*body)();
+    } catch (const std::exception& error) {
+      RecordWorkerFailure(thread, error.what());
+    } catch (...) {
+      RecordWorkerFailure(thread, "unknown exception");
+    }
+  }
+
+  void RecordWorkerFailure(std::string_view thread, std::string_view reason) {
+    LE("subsystem=clientruntime event=worker_failed thread={} reason=\"{}\"", thread, reason);
+    {
+      const std::lock_guard<std::mutex> lock(worker_failure_mutex);
+      if (!worker_failure.has_value()) {
+        worker_failure = WorkerFailure{.thread = std::string(thread), .reason = std::string(reason)};
+      }
+    }
+    running.store(false, std::memory_order_relaxed);
+  }
+
+  std::optional<WorkerFailure> GetWorkerFailure() {
+    const std::lock_guard<std::mutex> lock(worker_failure_mutex);
+    return worker_failure;
+  }
 
   // What the Prediction thread's last tick left: the predicted states before
   // and after it, and when it was due and for how long, so a render frame
@@ -390,7 +431,8 @@ struct ClientRuntime::Impl {
   // Prediction thread body (ADR-0005): loop sampling local input and ticking
   // PredictionWorld on a fixed schedule (tick.h), at the server's tick rate
   // once it has joined, each tick paced to keep the server's queue of this
-  // client's commands short. Runs until running is cleared by ThreadJoiner.
+  // client's commands short. Runs until running is cleared (by ThreadJoiner,
+  // or by a failing worker).
   void PredictionThreadMain() {
     const auto tick_rate_hz = WaitForTickRate();
     if (!tick_rate_hz.has_value()) {
@@ -424,7 +466,7 @@ struct ClientRuntime::Impl {
   }
 
   // Network I/O thread body (ADR-0005): connects once, then pumps the
-  // connection until running is cleared by ThreadJoiner, waiting
+  // connection until running is cleared (as for the Prediction thread), waiting
   // kNetworkRoundWait between rounds rather than spinning a core. The
   // transport has no wait on incoming work, so that wait bounds how late a
   // received message is handled, and how long stopping takes.
@@ -567,8 +609,8 @@ ClientRuntime::~ClientRuntime() = default;
 
 std::optional<Failure> ClientRuntime::Run() {
   impl_->running.store(true, std::memory_order_relaxed);
-  impl_->prediction_thread = std::thread([this] { impl_->PredictionThreadMain(); });
-  impl_->network_thread = std::thread([this] { impl_->NetworkThreadMain(); });
+  impl_->prediction_thread = std::thread([this] { impl_->RunWorker("prediction", &Impl::PredictionThreadMain); });
+  impl_->network_thread = std::thread([this] { impl_->RunWorker("network", &Impl::NetworkThreadMain); });
   ThreadJoiner joiner{.running = impl_->running,
                       .prediction_thread = impl_->prediction_thread,
                       .network_thread = impl_->network_thread};
@@ -578,6 +620,11 @@ std::optional<Failure> ClientRuntime::Run() {
   LI("subsystem=clientruntime event=loop_starting loop=render");
   std::optional<Failure> failure;
   while (!impl_->renderer.ShouldClose()) {
+    // Logged by the worker, where it failed.
+    if (auto worker_failure = impl_->GetWorkerFailure(); worker_failure.has_value()) {
+      failure = std::move(*worker_failure);
+      break;
+    }
     if (const auto session_failure = impl_->session->GetFailure(); session_failure.has_value()) {
       LE("subsystem=clientruntime event=session_failed reason=\"{}\"", harness::DescribeFailure(*session_failure));
       failure = *session_failure;

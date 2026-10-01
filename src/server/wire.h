@@ -2,10 +2,12 @@
 #define AUGUSTA_SERVER_WIRE_H_
 
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include "augusta/assets.h"
 #include "augusta/command.h"
+#include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
@@ -46,8 +48,13 @@ namespace augusta::server {
 /// The Lobby's Roster as the protocol carries it.
 [[nodiscard]] protocol::LobbyWire ToWire(const Roster& roster);
 
-/// A match's start as the protocol carries it.
-[[nodiscard]] protocol::MatchStartWire ToWire(const MatchStart& start);
+/// A match's start as the protocol carries it, its players spawned where
+/// SimulationWorld put them: each of start.players at the spawns entry of the
+/// same index.
+[[nodiscard]] protocol::MatchStartWire ToWire(const MatchStart& start, std::span<const math::Vec3> spawns);
+
+/// A match's end as the protocol carries it: a draw names protocol::kDraw.
+[[nodiscard]] protocol::MatchEndWire ToWire(const MatchEnd& end);
 
 /// What replication planned for one recipient, as the message it is sent.
 [[nodiscard]] protocol::AuthoritativeStateWire ToWire(const replication::Update& update);

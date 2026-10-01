@@ -12,18 +12,17 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/math.h"
 #include "augusta/networking.h"
 
 // augusta::server::Match is the server's book of who is playing, in the Lobby
 // and in a Match (ADR-0043): it decides whether a peer's join is admitted,
 // names each admitted peer with a session ID of its own making, remembers its
 // character, numbers every version of the Lobby's Roster, counts who is Ready
-// for which, and decides when a match starts and when it has ended, handing out
-// the map's spawn points in order (a mechanism until spawn rules are Game
-// policy). Pure bookkeeping (no I/O, no clock: Host tells it each tick that
-// passes), so all of it is tested without a network; what to do with the
-// answer - reply, log, spawn bodies - is Host's mechanism.
+// for which, and decides when a match starts and when it has ended. Where each
+// player spawns is not its to decide: Game policy assigns Spawn points in
+// SimulationWorld at Match start. Pure bookkeeping (no I/O, no clock: Host
+// tells it each tick that passes), so all of it is tested without a network;
+// what to do with the answer - reply, log, spawn bodies - is Host's mechanism.
 namespace augusta::server {
 
 /// The least time between one match ending and the next starting, so a Lobby
@@ -57,19 +56,26 @@ struct Roster {
   std::vector<RosterEntry> players;
 };
 
-/// One player in a match, the body it controls, and where that spawns.
+/// One player in a match and the body it controls.
 struct MatchPlayer {
   SessionId session{};
   /// The body the player's commands move for the whole match.
   EntityId entity{};
   std::uint8_t character = 1;
-  math::Vec3 spawn{};
 };
 
-/// What every player is told when a match starts.
+/// Who a match starts with.
 struct MatchStart {
   /// Ordered by session.
   std::vector<MatchPlayer> players;
+};
+
+/// How a match ended, for its players to be told.
+struct MatchEnd {
+  /// Who was in it, ordered by session.
+  std::vector<SessionId> players;
+  /// The player Game policy declared the winner; nullopt for a draw.
+  std::optional<SessionId> winner;
 };
 
 /// What a peer is told when it is admitted to the Lobby.
@@ -139,9 +145,8 @@ struct MatchConfig {
 /// The Lobby, and the match its players go on to, keyed by the transport's handle for each player.
 class Match {
  public:
-  /// A match built from config, spawning players at spawn_points in order and
-  /// starting over after the last (at the origin if there are none).
-  explicit Match(MatchConfig config, std::vector<math::Vec3> spawn_points = {});
+  /// A match built from config.
+  explicit Match(MatchConfig config);
 
   /// Admits peer to the Lobby as request asks, or says why not: its version
   /// first, then its pack, then its character, then whether a match is in
@@ -167,14 +172,16 @@ class Match {
 
   /// Starts the match if the Lobby holds the Player count, everyone in it is
   /// Ready for the current Roster and the pause since the last match has
-  /// passed; says who is in it and where each spawns. nullopt, changing
+  /// passed; says who is in it and the body each controls. nullopt, changing
   /// nothing, if it cannot start.
   [[nodiscard]] std::optional<MatchStart> TryStart();
 
-  /// Ends the match in progress: its players return to the Lobby, under a new
-  /// Roster version none of them is Ready for yet, and the pause begins. Returns
-  /// who was in it; empty, changing nothing, if no match is in progress.
-  std::vector<SessionId> End();
+  /// Ends the match in progress with winner, or as a draw: its players return to
+  /// the Lobby, under a new Roster version none of them is Ready for yet, and the
+  /// pause begins. A winner no longer in the match is none, and the match a
+  /// draw. Returns who was in it and who won; nullopt, changing nothing, if no
+  /// match is in progress.
+  std::optional<MatchEnd> End(std::optional<SessionId> winner = std::nullopt);
 
   /// Whether a match is in progress.
   [[nodiscard]] bool InMatch() const;
@@ -210,14 +217,11 @@ class Match {
   std::vector<std::string> characters_;
   std::size_t player_count_;
   std::uint32_t pause_ticks_;
-  std::vector<math::Vec3> spawn_points_;
   bool in_match_ = false;
   // Versions start at 1 once anyone has joined, so a ready_version of 0 never counts.
   std::uint32_t roster_version_ = 0;
   // Ticks since the last match ended; the first match waits for no pause.
   std::uint32_t ticks_since_end_;
-  // Counts every spawn handed out, so spawn points are taken in turn across the life of the server.
-  std::size_t next_spawn_ = 0;
   // IDs count up and are never reused, so a session ID never names two
   // players over the life of the server.
   std::uint32_t next_session_ = 1;

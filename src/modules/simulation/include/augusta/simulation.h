@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "augusta/ballistics.h"
@@ -44,8 +45,9 @@ namespace augusta::simulation {
 // SimulationWorld's eight phases (ADR-0023), executed in this exact
 // order every tick. Scripts/Behaviours runs last, after Damage has
 // resolved the tick's deaths, so a hook can react to what just happened
-// (e.g. evaluate a win condition) and schedule what follows (spawns,
-// Match end) for the next tick.
+// (e.g. evaluate a win condition) and schedule what follows (Match end) for
+// the next tick. With no respawn, Game policy assigns Spawn points once a
+// Match, at Match start (World::StartMatch), outside the tick.
 enum class Phase {
   // Mechanism. Applies this tick's already-validated client commands
   // (augusta::command::Command; Input Validation - US-15 - is a boundary
@@ -91,11 +93,15 @@ enum class Phase {
   // fires. The bullets it fired while alive fly on. The player stays in the
   // world, bodiless, until it is removed.
   kDamage,
-  // Policy, sandboxed Lua (ADR-0022). Win condition, round transitions,
-  // spawn logic (US-14, US-03) - augusta::scripting::Engine::Call: the
-  // objectives' on_tick hook, handed a read-only view of the tick. A hook
-  // that fails, or returns a decision it cannot make, is logged and decides
-  // nothing, and the tick goes on. The only phase not implemented in C++.
+  // Policy, sandboxed Lua (ADR-0022). Win condition, round transitions
+  // (US-14) - augusta::scripting::Engine::Call: the
+  // objectives' on_tick hook, handed a read-only view of the Match as Damage
+  // left it (MatchView in simulation.cpp), while the world has players and
+  // policy has not already ended their Match. It may end the Match, with a
+  // winner or as a draw: the decision goes in the tick's State (MatchEnd),
+  // for server::Host to act on after the tick. A hook that fails, or returns
+  // a decision it cannot make, is logged and decides nothing, and the tick
+  // goes on. The only phase not implemented in C++.
   kScriptsBehaviours,
   // Mechanism. Packages the tick's resolved state into Authoritative
   // State (State, below), which augusta::replication plans into each
@@ -109,6 +115,20 @@ enum class Phase {
 /// in the world. It names the body, not whoever controls it: a player's
 /// session is a different number.
 enum class EntityId : std::uint32_t {};
+
+/// The server's name for the player who controls a body (CONTEXT.md, "Session
+/// ID"): how Game policy names a player, and a Match end its winner. The
+/// server's start at 1; 0 is no player's, and never a winner.
+enum class SessionId : std::uint32_t {};
+
+/// Who plays a body, as Game policy sees them (ADR-0022): the session of its
+/// player and the index of the Character it plays.
+struct PlayerIdentity {
+  /// The session of its player; 0, for a body no session plays, cannot win.
+  SessionId session{};
+  /// 1-based position in the scenario's character list (ADR-0042).
+  std::uint8_t character = 1;
+};
 
 /// The longest Shooter's delay (CONTEXT.md, ADR-0044): a round whose shooter
 /// reports an older view is judged against the players as they were this long ago.
@@ -146,6 +166,16 @@ struct Character {
   /// What a bullet that reaches its body is judged against. One without any
   /// cannot be hit.
   std::vector<CharacterHitbox> hitboxes;
+};
+
+/// One player of a Match, as Match start hands it to SimulationWorld.
+struct MatchPlayer {
+  /// The body its commands move for the whole Match.
+  EntityId entity{};
+  /// Who plays it, as Game policy sees them.
+  PlayerIdentity identity{};
+  /// The Character identity's index names, copied.
+  Character character{};
 };
 
 /// One dynamic body as of the end of a tick.
@@ -211,11 +241,19 @@ struct Death {
   ballistics::BodyPart part = ballistics::BodyPart::kTorso;
 };
 
+/// Game policy's decision to end the Match (US-14), made by the objectives'
+/// on_tick on a tick and taken by server::Host after it (ADR-0023).
+struct MatchEnd {
+  /// The session of the player who won, alive in the Match on the tick it was
+  /// decided; nullopt for a draw.
+  std::optional<SessionId> winner;
+};
+
 // SimulationWorld's per-tick output - ADR-0023/ARCHITECTURE.md's
 // "Authoritative State", for augusta::replication to send to clients.
 // It holds every living player's body, the rounds fired, what became of the
-// bullets in flight (the Map impacts and the hits on players), and the
-// tick's deaths.
+// bullets in flight (the Map impacts and the hits on players), the tick's
+// deaths, and the Match end Game policy decided on it, if any.
 struct State {
   /// Which tick of its World this is the State of, from 1: what a client names
   /// the view its Commands were sampled against by (command::Command).
@@ -236,6 +274,9 @@ struct State {
   /// How many bullets are still flying after this tick: fired and neither
   /// stopped by the Map nor past the ammo's max range.
   std::uint32_t bullets_in_flight = 0;
+  /// The end of the Match Game policy decided on this tick, if it did: at most
+  /// one tick of a Match carries one.
+  std::optional<MatchEnd> match_end;
 };
 
 // The single authoritative SimulationWorld. The server constructs
@@ -270,13 +311,32 @@ class World {
 
   /// Puts a new player-controlled body entity, standing, facing yaw 0, at full
   /// stamina, with the Parameters' starting health and a rifle ready to fire, at
-  /// spawn. character is the one its player plays, copied. entity must not
-  /// already be in the world.
-  void AddPlayer(EntityId entity, const math::Vec3& spawn, const Character& character);
+  /// spawn. character is the one its player plays, copied, and identity who
+  /// that player is to Game policy. entity must not already be in the world.
+  void AddPlayer(EntityId entity, const math::Vec3& spawn, const Character& character,
+                 const PlayerIdentity& identity = {});
 
   /// Takes entity's body out of the world; a no-op if it is not in it. The
   /// bullets it fired fly on.
   void RemovePlayer(EntityId entity);
+
+  /// Match start (US-03): the Match in the world ends first, as EndMatch ends
+  /// it, then players, which name distinct entities, each get a Spawn point of
+  /// spawn_points from Game policy (the behaviours' assign_spawns hook,
+  /// ADR-0022) and are added there as AddPlayer adds them, with their identity:
+  /// fresh, with the Parameters' starting health and a full rifle. With no
+  /// hook, or an answer that is refused (and logged), players take spawn_points
+  /// in order, starting over after the last. With no spawn_points, every player
+  /// spawns at the origin. Returns where each of players spawned, in the same
+  /// order.
+  std::vector<math::Vec3> StartMatch(const std::vector<MatchPlayer>& players,
+                                     const std::vector<math::Vec3>& spawn_points);
+
+  /// Ends the Match in the world: takes every player and every bullet still in
+  /// flight out of it, so nothing carries over to the next, and has Game policy
+  /// decide afresh on the players added from then on. Called by server::Host
+  /// between ticks, on a Match end policy decided or not.
+  void EndMatch();
 
   // Runs all eight Phase values above, in their declared order, for one
   // fixed tick of duration delta_time seconds (internally, one

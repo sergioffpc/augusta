@@ -3,12 +3,14 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -182,6 +184,202 @@ constexpr std::string_view kOnTick = "on_tick";
 // would otherwise write a line a tick (ADR-0029).
 constexpr std::chrono::seconds kPolicyWarningInterval{1};
 
+// The behaviours' hook called once at Match start (ADR-0022).
+constexpr std::string_view kAssignSpawns = "assign_spawns";
+
+// Why an assign_spawns answer is refused.
+enum class SpawnRefusal : std::uint8_t {
+  kNotAList,
+  kNotAnAssignment,
+  kUnknownPlayer,
+  kPlayerTwice,
+  kPlayerMissing,
+  kNotASpawnPoint,
+};
+
+std::string_view DescribeSpawnRefusal(SpawnRefusal refusal) {
+  switch (refusal) {
+    case SpawnRefusal::kNotAList:
+      return "it is not a list";
+    case SpawnRefusal::kNotAnAssignment:
+      return "an entry is not a record of exactly a session and a spawn_point";
+    case SpawnRefusal::kUnknownPlayer:
+      return "it names a session that is not a player in the Match";
+    case SpawnRefusal::kPlayerTwice:
+      return "it names a player twice";
+    case SpawnRefusal::kPlayerMissing:
+      return "it leaves a player out";
+    case SpawnRefusal::kNotASpawnPoint:
+      return "a spawn_point is not a whole number from 1 to the number of Spawn points";
+  }
+  std::unreachable();
+}
+
+// value as a whole number from 1 to max, or nullopt if it is anything else.
+std::optional<std::size_t> WholeNumberUpTo(const scripting::Value& value, std::size_t max) {
+  const double* number = std::get_if<double>(&value.data);
+  // A NaN fails the last test: it equals nothing, not even its own floor.
+  if (number == nullptr || *number < 1.0 || *number > static_cast<double>(max) || *number != std::floor(*number)) {
+    return std::nullopt;
+  }
+  return static_cast<std::size_t>(*number);
+}
+
+// The Spawn point, from 0, an assign_spawns answer gives each of players, in
+// their order. The answer is a list holding, for every player once, a record
+// {session = <Session ID>, spawn_point = <1-based Spawn point index>}.
+std::expected<std::vector<std::size_t>, SpawnRefusal> ReadSpawnAssignment(const scripting::Value& answer,
+                                                                          std::span<const MatchPlayer> players,
+                                                                          std::size_t spawn_points) {
+  const auto* list = std::get_if<scripting::Value::List>(&answer.data);
+  if (list == nullptr) {
+    return std::unexpected(SpawnRefusal::kNotAList);
+  }
+  std::vector<std::optional<std::size_t>> assigned(players.size());
+  for (const scripting::Value& entry : *list) {
+    const auto* record = std::get_if<scripting::Value::Record>(&entry.data);
+    if (record == nullptr || record->size() != 2 || (*record)[0].key != "session" ||
+        (*record)[1].key != "spawn_point") {
+      return std::unexpected(SpawnRefusal::kNotAnAssignment);
+    }
+    const auto* session = std::get_if<double>(&(*record)[0].value.data);
+    const auto player = std::ranges::find_if(players, [&](const MatchPlayer& candidate) {
+      return session != nullptr && static_cast<double>(std::to_underlying(candidate.identity.session)) == *session;
+    });
+    if (player == players.end()) {
+      return std::unexpected(SpawnRefusal::kUnknownPlayer);
+    }
+    std::optional<std::size_t>& slot = assigned[static_cast<std::size_t>(player - players.begin())];
+    if (slot.has_value()) {
+      return std::unexpected(SpawnRefusal::kPlayerTwice);
+    }
+    const std::optional<std::size_t> spawn_point = WholeNumberUpTo((*record)[1].value, spawn_points);
+    if (!spawn_point.has_value()) {
+      return std::unexpected(SpawnRefusal::kNotASpawnPoint);
+    }
+    slot = *spawn_point - 1;
+  }
+  std::vector<std::size_t> indices;
+  indices.reserve(assigned.size());
+  for (const std::optional<std::size_t>& slot : assigned) {
+    if (!slot.has_value()) {
+      return std::unexpected(SpawnRefusal::kPlayerMissing);
+    }
+    indices.push_back(*slot);
+  }
+  return indices;
+}
+
+// The Spawn point, from 0, each of a Match's players takes with no Game policy
+// for it: in order, starting over after the last.
+std::vector<std::size_t> InOrderSpawns(std::size_t players, std::size_t spawn_points) {
+  std::vector<std::size_t> indices(players);
+  for (std::size_t i = 0; i < players; ++i) {
+    indices[i] = i % spawn_points;
+  }
+  return indices;
+}
+
+scripting::Field NumberField(std::string key, double value) {
+  return scripting::Field{.key = std::move(key), .value = {.data = value}};
+}
+
+scripting::Field BoolField(std::string key, bool value) {
+  return scripting::Field{.key = std::move(key), .value = {.data = value}};
+}
+
+// One player in the Match as Game policy sees it (ADR-0022).
+struct ViewedPlayer {
+  EntityId entity{};
+  PlayerIdentity identity{};
+  bool alive = true;
+  float health = 0.0F;
+  // The body of whoever killed it, only on the tick it was killed.
+  std::optional<EntityId> killer;
+};
+
+// player as a hook sees it, its fields ordered by key.
+scripting::Value PlayerView(const ViewedPlayer& player) {
+  scripting::Value::Record record{
+      BoolField("alive", player.alive),
+      NumberField("character", player.identity.character),
+      NumberField("entity", std::to_underlying(player.entity)),
+      NumberField("health", player.health),
+      BoolField("killed", player.killer.has_value()),
+  };
+  if (player.killer.has_value()) {
+    record.push_back(NumberField("killer", std::to_underlying(*player.killer)));
+  }
+  record.push_back(NumberField("session", std::to_underlying(player.identity.session)));
+  return scripting::Value{.data = std::move(record)};
+}
+
+// The read-only view of the Match every Game policy hook is handed (ADR-0022):
+// the Player count and every player in the Match, ordered by session. Each hook
+// appends what is its own (the tick, the number of Spawn points), keeping the
+// keys in order, as Value::Record wants.
+scripting::Value::Record MatchView(std::size_t player_count, std::vector<ViewedPlayer> players) {
+  std::ranges::sort(players, {}, [](const ViewedPlayer& player) { return player.identity.session; });
+  scripting::Value::List roster;
+  roster.reserve(players.size());
+  for (const ViewedPlayer& player : players) {
+    roster.push_back(PlayerView(player));
+  }
+  return scripting::Value::Record{
+      NumberField("player_count", static_cast<double>(player_count)),
+      scripting::Field{.key = "players", .value = {.data = std::move(roster)}},
+  };
+}
+
+// Why a value on_tick returned is not a decision it may make.
+enum class DecisionRefusal : std::uint8_t {
+  // Neither {winner = <Session ID>} nor {draw = true}.
+  kNotAMatchEnd,
+  // A winner that is not the session of a player alive in the Match.
+  kNotAWinner,
+};
+
+std::string_view DescribeDecisionRefusal(DecisionRefusal refusal) {
+  switch (refusal) {
+    case DecisionRefusal::kNotAMatchEnd:
+      return "it is neither {winner = <Session ID>} nor {draw = true}";
+    case DecisionRefusal::kNotAWinner:
+      return "its winner is not a player alive in the Match";
+  }
+  std::unreachable();
+}
+
+// What on_tick returned, as the Match end it decides: nullopt for nil, which
+// decides nothing; a refusal for anything else that is not {draw = true} or
+// {winner = <the session of a player alive in the Match>}. alive_sessions
+// holds the sessions of the players alive in the Match; Session ID 0 is no
+// player's.
+std::expected<std::optional<MatchEnd>, DecisionRefusal> ReadMatchEnd(const scripting::Value& returned,
+                                                                     const std::vector<SessionId>& alive_sessions) {
+  if (std::holds_alternative<std::monostate>(returned.data)) {
+    return std::nullopt;
+  }
+  const auto* record = std::get_if<scripting::Value::Record>(&returned.data);
+  if (record == nullptr || record->size() != 1) {
+    return std::unexpected(DecisionRefusal::kNotAMatchEnd);
+  }
+  const scripting::Field& field = record->front();
+  if (const auto* draw = std::get_if<bool>(&field.value.data); field.key == "draw" && draw != nullptr && *draw) {
+    return MatchEnd{.winner = std::nullopt};
+  }
+  const auto* winner = std::get_if<double>(&field.value.data);
+  if (field.key != "winner" || winner == nullptr) {
+    return std::unexpected(DecisionRefusal::kNotAMatchEnd);
+  }
+  const auto alive = std::ranges::find_if(alive_sessions, [&](SessionId session) {
+    return session != SessionId{} && static_cast<double>(std::to_underlying(session)) == *winner;
+  });
+  if (alive == alive_sessions.end()) {
+    return std::unexpected(DecisionRefusal::kNotAWinner);
+  }
+  return MatchEnd{.winner = *alive};
+}
+
 }  // namespace
 
 std::size_t HitboxHistoryTicks(std::uint8_t tick_rate_hz) {
@@ -189,10 +387,12 @@ std::size_t HitboxHistoryTicks(std::uint8_t tick_rate_hz) {
 }
 
 struct World::Impl {
-  // Where a player lives, for RemovePlayer; a dead player's body has left physics.
+  // Where a player lives, for RemovePlayer, and who plays it, for Game policy;
+  // a dead player's body has left physics.
   struct Slot {
     flecs::entity entity;
     std::optional<physics::BodyHandle> body;
+    PlayerIdentity identity;
   };
 
   const parameters::Parameters parameters;
@@ -207,6 +407,9 @@ struct World::Impl {
   ballistics::World ballistics;
   scripting::Engine policy;
   logging::Throttle policy_warnings{kPolicyWarningInterval};
+  // Whether policy has ended the Match the world's players are in: it then
+  // decides no more until EndMatch.
+  bool match_ended_by_policy = false;
   PhaseEntities phases;
   std::unordered_map<EntityId, Slot> players;
   // Set by Tick for CommandIngestion to read, and filled by Commit for Tick to return.
@@ -452,11 +655,47 @@ struct World::Impl {
     slot.entity.remove<Body>().remove<Intent>();
   }
 
-  // Calls the objectives' on_tick with the tick. It has no decision to make yet,
-  // so anything but nil is refused; either way the tick goes on.
+  // The Match view on_tick is handed, as Damage left it this tick: every player
+  // in the world, with who killed it if it died this tick, and the tick.
+  // Players who left are not in the world, so not in it either.
+  [[nodiscard]] scripting::Value::Record TickView() const {
+    std::vector<ViewedPlayer> viewed;
+    viewed.reserve(players.size());
+    for (const auto& [entity, slot] : players) {
+      const auto death = std::ranges::find(committed.deaths, entity, &Death::victim);
+      viewed.push_back(ViewedPlayer{
+          .entity = entity,
+          .identity = slot.identity,
+          .alive = slot.body.has_value(),
+          .health = slot.entity.get<Health>().value,
+          .killer = death == committed.deaths.end() ? std::nullopt : std::optional<EntityId>(death->killer),
+      });
+    }
+    scripting::Value::Record view = MatchView(parameters.player_count, std::move(viewed));
+    view.push_back(NumberField("tick", static_cast<double>(tick)));
+    return view;
+  }
+
+  // The sessions of the players alive in the world.
+  [[nodiscard]] std::vector<SessionId> AliveSessions() const {
+    std::vector<SessionId> alive;
+    for (const auto& [entity, slot] : players) {
+      if (slot.body.has_value()) {
+        alive.push_back(slot.identity.session);
+      }
+    }
+    return alive;
+  }
+
+  // Calls the objectives' on_tick with the Match view while the world has a
+  // Match policy has not ended, and records the Match end it decides, if any,
+  // in the tick's state. A hook that fails or decides what it may not is
+  // logged and decides nothing; either way the tick goes on.
   void OnScriptsBehaviours() {
-    const scripting::Value::Record view{{.key = "tick", .value = {.data = static_cast<double>(tick)}}};
-    const auto returned = policy.Call(scripting::Script::kObjectives, kOnTick, view);
+    if (players.empty() || match_ended_by_policy) {
+      return;
+    }
+    const auto returned = policy.Call(scripting::Script::kObjectives, kOnTick, TickView());
     if (!returned) {
       LW_LIMITED(policy_warnings,
                  "subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
@@ -464,12 +703,54 @@ struct World::Impl {
                  scripting::DescribeHookError(returned.error()));
       return;
     }
-    if (!std::holds_alternative<std::monostate>(returned->data)) {
+    const auto decision = ReadMatchEnd(*returned, AliveSessions());
+    if (!decision) {
       LW_LIMITED(policy_warnings,
-                 "subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} "
-                 "reason=\"it decides nothing yet, so it returns nil\"",
-                 scripting::ScriptPath(scripting::Script::kObjectives), kOnTick, tick);
+                 "subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
+                 scripting::ScriptPath(scripting::Script::kObjectives), kOnTick, tick,
+                 DescribeDecisionRefusal(decision.error()));
+      return;
     }
+    if (decision->has_value()) {
+      committed.match_end = **decision;
+      match_ended_by_policy = true;
+    }
+  }
+
+  // The Spawn point, from 0 and below spawn_points, each of match_players takes:
+  // what the behaviours' assign_spawns answers, or in order when it is not
+  // defined, answers nil or is refused. A refusal is logged; as a hook is
+  // called once a Match, it is not limited.
+  std::vector<std::size_t> AssignSpawns(std::span<const MatchPlayer> match_players, std::size_t spawn_points) {
+    std::vector<ViewedPlayer> viewed;
+    viewed.reserve(match_players.size());
+    for (const MatchPlayer& player : match_players) {
+      viewed.push_back(ViewedPlayer{.entity = player.entity,
+                                    .identity = player.identity,
+                                    .alive = true,
+                                    .health = parameters.starting_health,
+                                    .killer = std::nullopt});
+    }
+    scripting::Value::Record view = MatchView(parameters.player_count, std::move(viewed));
+    view.push_back(NumberField("spawn_points", static_cast<double>(spawn_points)));
+    const auto answer = policy.Call(scripting::Script::kBehaviours, kAssignSpawns, view);
+    if (!answer) {
+      LW("subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
+         scripting::ScriptPath(scripting::Script::kBehaviours), kAssignSpawns, tick,
+         scripting::DescribeHookError(answer.error()));
+      return InOrderSpawns(match_players.size(), spawn_points);
+    }
+    if (std::holds_alternative<std::monostate>(answer->data)) {
+      return InOrderSpawns(match_players.size(), spawn_points);
+    }
+    auto assignment = ReadSpawnAssignment(*answer, match_players, spawn_points);
+    if (!assignment) {
+      LW("subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
+         scripting::ScriptPath(scripting::Script::kBehaviours), kAssignSpawns, tick,
+         DescribeSpawnRefusal(assignment.error()));
+      return InOrderSpawns(match_players.size(), spawn_points);
+    }
+    return *std::move(assignment);
   }
 
   void OnCommit(const Player& player, const Body& body, const Facing& facing, const Health& health,
@@ -492,7 +773,8 @@ std::expected<void, physics::CollisionMeshError> World::AddCollisionMesh(const p
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
-void World::AddPlayer(EntityId entity, const math::Vec3& spawn, const Character& character) {
+void World::AddPlayer(EntityId entity, const math::Vec3& spawn, const Character& character,
+                      const PlayerIdentity& identity) {
   Impl& impl = *impl_;
   if (impl.players.contains(entity)) {
     return;
@@ -510,7 +792,7 @@ void World::AddPlayer(EntityId entity, const math::Vec3& spawn, const Character&
                                        .set<Hitboxes>({.standing = character.hitboxes})
                                        .set<HitboxHistory>({.poses = PoseHistory(impl.history_ticks)})
                                        .set<Rifle>({.state = weapon::Loaded(impl.parameters.rifle)});
-  impl.players.emplace(entity, Impl::Slot{.entity = ecs_entity, .body = body});
+  impl.players.emplace(entity, Impl::Slot{.entity = ecs_entity, .body = body, .identity = identity});
 }
 
 void World::RemovePlayer(EntityId entity) {
@@ -524,6 +806,33 @@ void World::RemovePlayer(EntityId entity) {
   }
   slot->second.entity.destruct();
   impl.players.erase(slot);
+}
+
+std::vector<math::Vec3> World::StartMatch(const std::vector<MatchPlayer>& players,
+                                          const std::vector<math::Vec3>& spawn_points) {
+  EndMatch();
+  Impl& impl = *impl_;
+  // A Map without Spawn points spawns everyone at the origin.
+  const std::vector<math::Vec3> points = spawn_points.empty() ? std::vector<math::Vec3>{math::Vec3{}} : spawn_points;
+  std::vector<math::Vec3> spawned;
+  spawned.reserve(players.size());
+  for (const std::size_t index : impl.AssignSpawns(players, points.size())) {
+    spawned.push_back(points[index]);
+  }
+  for (std::size_t i = 0; i < players.size(); ++i) {
+    AddPlayer(players[i].entity, spawned[i], players[i].character, players[i].identity);
+  }
+  return spawned;
+}
+
+void World::EndMatch() {
+  Impl& impl = *impl_;
+  while (!impl.players.empty()) {
+    RemovePlayer(impl.players.begin()->first);
+  }
+  impl.ecs.delete_with<Bullet>();
+  impl.ballistics = ballistics::World();
+  impl.match_ended_by_policy = false;
 }
 
 State World::Tick(const std::vector<PlayerCommand>& commands, float delta_time) {
@@ -542,6 +851,7 @@ State World::Tick(const std::vector<PlayerCommand>& commands, float delta_time) 
   impl.committed.map_impacts.clear();
   impl.committed.hits.clear();
   impl.committed.bullets_in_flight = 0;
+  impl.committed.match_end.reset();
   impl.player_hits.clear();
   impl.ecs.progress(delta_time);
   // The ECS visits players in storage order; the state is ordered by id.

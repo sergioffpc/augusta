@@ -115,7 +115,9 @@ void showValue(const MessageWire& message, std::ostream& out) {
       }
       out << "}";
     }
-    void operator()(const MatchEndWire& /*end*/) const { out << "MatchEnd{}"; }
+    void operator()(const MatchEndWire& end) const {
+      out << "MatchEnd{winner " << static_cast<std::uint32_t>(end.winner) << "}";
+    }
     void operator()(const ShotWire& shot) const {
       out << "Shot{shooter " << static_cast<std::uint32_t>(shot.shooter) << ", tick " << shot.tick << ", origin ";
       showValue(shot.origin, out);
@@ -353,6 +355,10 @@ rc::Gen<MatchStartWire> MatchStart() {
       rc::gen::set(&MatchStartWire::players, UpTo<std::vector<MatchPlayerWire>>(kMaxPlayers, player)));
 }
 
+rc::Gen<MatchEndWire> MatchEnd() {
+  return rc::gen::build<MatchEndWire>(rc::gen::set(&MatchEndWire::winner, AnyId<SessionIdWire>()));
+}
+
 rc::Gen<ShotWire> Shot() {
   return rc::gen::build<ShotWire>(rc::gen::set(&ShotWire::origin, Vec3OnGrid(kPositionGrid)),
                                   rc::gen::set(&ShotWire::shooter, AnyId<EntityIdWire>()),
@@ -382,7 +388,7 @@ rc::Gen<MessageWire> Message() {
                         rc::gen::cast<MessageWire>(JoinRefused()), rc::gen::cast<MessageWire>(Commands()),
                         rc::gen::cast<MessageWire>(AuthoritativeState()), rc::gen::cast<MessageWire>(Lobby()),
                         rc::gen::cast<MessageWire>(Ready()), rc::gen::cast<MessageWire>(MatchStart()),
-                        rc::gen::just(MessageWire{MatchEndWire{}}), rc::gen::cast<MessageWire>(Shot()),
+                        rc::gen::cast<MessageWire>(MatchEnd()), rc::gen::cast<MessageWire>(Shot()),
                         rc::gen::cast<MessageWire>(HitConfirmation()), rc::gen::cast<MessageWire>(Death()));
 }
 
