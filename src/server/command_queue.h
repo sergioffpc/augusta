@@ -20,6 +20,7 @@ namespace augusta::server {
 
 /// One tick's command and the number its client gave it. Numbers start at 1 and
 /// grow by one per command, so the queue can tell what it has already seen.
+/// They start over with every connection, so 32 bits outlast any session (ADR-0038).
 struct SequencedCommand {
   std::uint32_t sequence = 0;
   command::Command command{};

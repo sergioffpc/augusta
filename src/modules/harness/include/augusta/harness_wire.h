@@ -96,7 +96,7 @@ struct SequencedCommand {
 /// command as the protocol carries it in a message whose view tick is
 /// view_tick: its own view tick as how far before that it is, no further than a
 /// byte tells.
-[[nodiscard]] protocol::CommandWire ToWire(const command::Command& command, std::uint32_t view_tick);
+[[nodiscard]] protocol::CommandWire ToWire(const command::Command& command, std::uint64_t view_tick);
 
 /// commands, oldest first, as the one message that carries them; its view tick
 /// is the newest of theirs.

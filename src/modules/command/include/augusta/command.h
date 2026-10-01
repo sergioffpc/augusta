@@ -52,7 +52,7 @@ struct Command {
   // command fires is judged against the other players as they were then
   // (CONTEXT.md's Lag compensation). Only what the client says: the server
   // holds it within what it sent and within the Shooter's delay's cap.
-  std::uint32_t view_tick = 0;
+  std::uint64_t view_tick = 0;
   float view_fraction = 0.0F;
 };
 

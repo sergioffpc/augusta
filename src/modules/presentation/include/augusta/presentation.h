@@ -120,7 +120,7 @@ struct DynamicBody {
 /// presentation's own terms - World::RunFrame's input (see there).
 struct WorldSnapshot {
   /// The server tick the bodies are from.
-  std::uint32_t tick = 0;
+  std::uint64_t tick = 0;
   /// The server's tick duration, in seconds (its tick rate's inverse,
   /// ADR-0039): tick × tick_duration is when the bodies are from on the
   /// server's timeline.

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -104,7 +105,7 @@ TEST(WireTest, EachCommandOfAMessageReachesTheServerWithTheViewItWasSampledAgain
   std::vector<augusta::harness::SequencedCommand> sent(4);
   for (std::size_t i = 0; i < sent.size(); ++i) {
     sent[i].sequence = static_cast<std::uint32_t>(40 + i);
-    sent[i].command.view_tick = static_cast<std::uint32_t>(70000 + (2 * i));
+    sent[i].command.view_tick = 70000 + (2 * i);
     sent[i].command.view_fraction = 0.25F * static_cast<float>(i);
   }
 
@@ -115,6 +116,25 @@ TEST(WireTest, EachCommandOfAMessageReachesTheServerWithTheViewItWasSampledAgain
   for (std::size_t i = 0; i < sent.size(); ++i) {
     EXPECT_EQ(received[i].command.view_tick, sent[i].command.view_tick) << i;
     EXPECT_EQ(received[i].command.view_fraction, sent[i].command.view_fraction) << i;
+  }
+}
+
+// The server's ticks never start over (ADR-0038): commands sampled either side
+// of the last tick 32 bits hold reach the server with the views they named.
+TEST(WireTest, ViewsEitherSideOfThirtyTwoBitsReachTheServerAsTheyWereSampled) {
+  constexpr std::uint64_t kLastOf32Bits = std::numeric_limits<std::uint32_t>::max();
+  std::vector<augusta::harness::SequencedCommand> sent(4);
+  for (std::size_t i = 0; i < sent.size(); ++i) {
+    sent[i].sequence = static_cast<std::uint32_t>(1 + i);
+    sent[i].command.view_tick = kLastOf32Bits - 1 + i;
+  }
+
+  const std::vector<augusta::server::SequencedCommand> received =
+      augusta::server::FromWire(ThroughTheWire(augusta::harness::ToWire(sent)));
+
+  ASSERT_EQ(received.size(), sent.size());
+  for (std::size_t i = 0; i < sent.size(); ++i) {
+    EXPECT_EQ(received[i].command.view_tick, sent[i].command.view_tick) << i;
   }
 }
 

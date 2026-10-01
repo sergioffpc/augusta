@@ -110,8 +110,8 @@ struct World::Impl {
   // which is of nothing outside what there is to show.
   RemoteInterpolator remote_interpolator;
   ServerClock server_clock;
-  std::optional<std::uint32_t> first_recorded_tick;
-  std::optional<std::uint32_t> last_recorded_tick;
+  std::optional<std::uint64_t> first_recorded_tick;
+  std::optional<std::uint64_t> last_recorded_tick;
   std::vector<RemotePlayer> remote_players;
   std::optional<ShownView> view;
   // The bodies of the match in progress whose Death has arrived: shown no

@@ -32,7 +32,7 @@ class PoseHistory {
 
   /// Keeps pose as that of tick, the tick after the newest kept; beyond the
   /// capacity, the oldest goes.
-  void Record(std::uint32_t tick, const Pose& pose);
+  void Record(std::uint64_t tick, const Pose& pose);
 
   /// The pose at time, a moment between ticks counted in ticks: position and
   /// yaw interpolated between the two ticks around it, the yaw along the
@@ -46,7 +46,7 @@ class PoseHistory {
   std::size_t capacity_;
   // Oldest first; the last is newest_tick_'s.
   std::deque<Pose> poses_;
-  std::uint32_t newest_tick_ = 0;
+  std::uint64_t newest_tick_ = 0;
 };
 
 }  // namespace augusta::simulation

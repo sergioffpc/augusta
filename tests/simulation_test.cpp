@@ -898,7 +898,7 @@ class HitTest : public ::testing::Test {
   std::vector<Hit> ShootAt(const Vec3& offset) { return Shoot(FiringAt(offset)); }
 
   // As ShootAt, on a Command that reports the view of view_tick and view_fraction.
-  std::vector<Hit> ShootAt(const Vec3& offset, std::uint32_t view_tick, float view_fraction) {
+  std::vector<Hit> ShootAt(const Vec3& offset, std::uint64_t view_tick, float view_fraction) {
     Command command = FiringAt(offset);
     command.view_tick = view_tick;
     command.view_fraction = view_fraction;
@@ -1121,7 +1121,7 @@ TEST_F(HitTest, ATargetsHitboxesTurnWithWhereItFaces) {
 // him as the nearer of the two has him, as a client does.
 TEST_F(HitTest, AViewBetweenTwoStancesIsJudgedInTheStanceOfTheNearerTick) {
   bob_.movement.desired_stance = Stance::kCrouching;
-  std::uint32_t crouched = 0;
+  std::uint64_t crouched = 0;
   for (int i = 0; i < kSettleTicks && crouched == 0; ++i) {
     const State state = Tick(Command{});
     if (Entity(state, kBob).body.stance == Stance::kCrouching) {
@@ -1147,7 +1147,7 @@ TEST_F(HitTest, AViewBetweenTwoFacingsTurnsTheHitboxesAlongTheShorterArc) {
   bob_.yaw = 3.0F;
   Wait(2);
   bob_.yaw = -3.0F;
-  const std::uint32_t turned = Tick(Command{}).tick;
+  const std::uint64_t turned = Tick(Command{}).tick;
 
   const std::vector<Hit> hits = ShootAt(left_of_it, turned - 1, 0.5F);
 
@@ -1268,18 +1268,18 @@ class LagCompensationTest : public ::testing::Test {
   }
 
   // The tick Alice's next Command is taken in on.
-  [[nodiscard]] std::uint32_t Next() const { return last_tick_ + 1; }
+  [[nodiscard]] std::uint64_t Next() const { return last_tick_ + 1; }
 
   // Where a view of tick and fraction shows Bob's feet: between where the
   // States of tick and of the one after it put them.
-  [[nodiscard]] Vec3 BobAt(std::uint32_t tick, float fraction = 0.0F) const {
+  [[nodiscard]] Vec3 BobAt(std::uint64_t tick, float fraction = 0.0F) const {
     return fraction == 0.0F ? seen_.at(tick) : augusta::math::Lerp(seen_.at(tick), seen_.at(tick + 1), fraction);
   }
 
   // Alice taps fire on the next tick, aimed at kAimHeight above feet, on a
   // Command that reports the view of view_tick and view_fraction; returns the
   // hits of that tick and of the six after it.
-  std::vector<Hit> Shoot(const Vec3& feet, std::uint32_t view_tick, float view_fraction) {
+  std::vector<Hit> Shoot(const Vec3& feet, std::uint64_t view_tick, float view_fraction) {
     const Vec3 aim = feet + Vec3(0.0F, kAimHeight, 0.0F) - (alice_ + Sliver().eye);
     Command command = Firing();
     command.yaw = std::atan2(-aim.x, -aim.z);
@@ -1298,12 +1298,12 @@ class LagCompensationTest : public ::testing::Test {
   Command bob_{};
   Vec3 alice_{};
   // Where the State of each tick put Bob's feet.
-  std::map<std::uint32_t, Vec3> seen_;
-  std::uint32_t last_tick_ = 0;
+  std::map<std::uint64_t, Vec3> seen_;
+  std::uint64_t last_tick_ = 0;
 };
 
 TEST_F(LagCompensationTest, ARoundIsJudgedAgainstHitboxesInterpolatedAtTheFractionItsViewReports) {
-  std::uint32_t view = Next() - 6;
+  std::uint64_t view = Next() - 6;
   const std::vector<Hit> hits = Shoot(BobAt(view, 0.5F), view, 0.5F);
   ASSERT_EQ(hits.size(), 1U);
   EXPECT_EQ(hits[0].shooter, kAlice);
@@ -1318,7 +1318,7 @@ TEST_F(LagCompensationTest, ARoundIsJudgedAgainstHitboxesInterpolatedAtTheFracti
 }
 
 TEST_F(LagCompensationTest, ATargetThatHasSinceMovedAwayIsStillHitWhereItWasSeen) {
-  const std::uint32_t view = Next() - 10;
+  const std::uint64_t view = Next() - 10;
   // Bob has walked most of half a meter since.
   ASSERT_GT(BobAt(Next() - 1).x - BobAt(view).x, 0.4F);
 
@@ -1330,7 +1330,7 @@ TEST_F(LagCompensationTest, ARoundAimedWhereTheTargetIsNowMissesOnAnOlderView) {
 }
 
 TEST_F(LagCompensationTest, AViewAsOldAsTheCapIsJudgedWhereTheTargetWasThen) {
-  const std::uint32_t view = Next() - kCapTicks;
+  const std::uint64_t view = Next() - kCapTicks;
 
   EXPECT_EQ(Shoot(BobAt(view), view, 0.0F).size(), 1U);
 }
@@ -1351,7 +1351,7 @@ TEST_F(LagCompensationTest, AViewNewerThanTheLastStateIsJudgedAtTheLastState) {
 }
 
 TEST_F(LagCompensationTest, AFractionOutsideZeroToOneIsHeldWithinIt) {
-  std::uint32_t view = Next() - 6;
+  std::uint64_t view = Next() - 6;
   EXPECT_EQ(Shoot(BobAt(view + 1), view, 7.0F).size(), 1U);
   view = Next() - 6;
   EXPECT_EQ(Shoot(BobAt(view), view, -3.0F).size(), 1U);
@@ -1369,7 +1369,7 @@ class LongShotTest : public LagCompensationTest {
 // The lead is judged on the shooter's screen: by the time the round arrives,
 // its view shows Bob three ticks further along than when it fired.
 TEST_F(LongShotTest, ABulletInFlightKeepsItsShootersDelaySoACorrectlyLedMovingTargetIsHit) {
-  const std::uint32_t view = Next() - 8;
+  const std::uint64_t view = Next() - 8;
 
   const std::vector<Hit> hits = Shoot(BobAt(view + kFlightTicks), view, 0.0F);
 
@@ -1380,7 +1380,7 @@ TEST_F(LongShotTest, ABulletInFlightKeepsItsShootersDelaySoACorrectlyLedMovingTa
 // With the freshest view there is, a round is judged a tick behind the
 // present: Bob is long past where that lead put it.
 TEST_F(LongShotTest, TheSameLeadJudgedAgainstThePresentMisses) {
-  const std::uint32_t view = Next() - 8;
+  const std::uint64_t view = Next() - 8;
 
   EXPECT_TRUE(Shoot(BobAt(view + kFlightTicks), Next() - 1, 0.0F).empty());
 }

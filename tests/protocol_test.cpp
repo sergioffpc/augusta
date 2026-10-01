@@ -343,9 +343,9 @@ TEST(ProtocolTest, MatchEndIsItsTypeAlone) {
 }
 
 TEST(ProtocolTest, AShotRoundTripsWithItsShooterTickOriginAndDirection) {
-  const ShotWire shot{.origin = Vec3(12.5F, 1.75F, -40.0F),
+  const ShotWire shot{.tick = 1200,
+                      .origin = Vec3(12.5F, 1.75F, -40.0F),
                       .shooter = static_cast<EntityIdWire>(0xA1B2C3D4U),
-                      .tick = 1200,
                       .yaw = -1.5F,
                       .pitch = 0.25F};
 
@@ -357,16 +357,17 @@ TEST(ProtocolTest, AShotRoundTripsWithItsShooterTickOriginAndDirection) {
 
 // Its origin and its direction travel on the grids a body's position and a
 // command's view do (ADR-0038): three bytes a number.
-TEST(ProtocolTest, AShotTravelsInTwentyFourBytes) {
-  const ShotWire shot{.origin = Vec3(1.0F, 0.0F, -1.0F / 1024.0F),
+TEST(ProtocolTest, AShotTravelsInTwentyEightBytes) {
+  const ShotWire shot{.tick = 0x0A0B0C0D0E0F1011U,
+                      .origin = Vec3(1.0F, 0.0F, -1.0F / 1024.0F),
                       .shooter = static_cast<EntityIdWire>(0x01020304U),
-                      .tick = 0x0A0B0C0DU,
                       .yaw = 1.0F,
                       .pitch = -1.0F / 2097152.0F};
 
   // The type, the shooter, the tick, the origin's x, y and z, the yaw and the pitch.
-  EXPECT_EQ(Encode(shot), BytesOf({kShotType, 0x04, 0x03, 0x02, 0x01, 0x0D, 0x0C, 0x0B, 0x0A, 0x00, 0x04, 0x00,
-                                   0x00,      0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x20, 0xFF, 0xFF, 0xFF}));
+  EXPECT_EQ(Encode(shot),
+            BytesOf({kShotType, 0x04, 0x03, 0x02, 0x01, 0x11, 0x10, 0x0F, 0x0E, 0x0D, 0x0C, 0x0B, 0x0A, 0x00,
+                     0x04,      0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x20, 0xFF, 0xFF, 0xFF}));
 }
 
 TEST(ProtocolTest, BytesAfterAShotAreTrailing) {
@@ -486,7 +487,7 @@ TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
       LobbyWire{.version = 2, .roster = {RosterEntryWire{}, {}}},
       MatchStartWire{.players = {MatchPlayer(1, 1, 0.0F), MatchPlayer(2, 2, 1.0F)}},
       ReadyWire{.version = 0x01020304U},
-      ShotWire{.origin = Vec3(1.0F, 2.0F, 3.0F), .shooter = static_cast<EntityIdWire>(7), .tick = 9},
+      ShotWire{.tick = 9, .origin = Vec3(1.0F, 2.0F, 3.0F), .shooter = static_cast<EntityIdWire>(7)},
       HitConfirmationWire{.target = static_cast<EntityIdWire>(7), .damage = 20.0F, .part = BodyPartWire::kHead},
       DeathWire{.victim = static_cast<EntityIdWire>(7), .killer = static_cast<EntityIdWire>(8)}};
   for (const MessageWire& message : messages) {
@@ -659,7 +660,7 @@ TEST(ProtocolTest, ACommandsFlagsAndStanceShareOneByte) {
 
   const BytesWire payload = Encode(CommandsWire{.commands = {sequenced}});
 
-  ASSERT_EQ(payload.size(), kViewTickOffset + 4);
+  ASSERT_EQ(payload.size(), kViewTickOffset + 8);
   // The flags in the low four bits, the stance in the two above them.
   EXPECT_EQ(payload[kCommandFlagsOffset], std::byte{0b0010'1001});
 }
@@ -672,12 +673,13 @@ TEST(ProtocolTest, ACommandsViewTravelsAsItsAgeAndItsFractionInAByteEachAndTheMe
   sequenced.command.view_age = 3;
   sequenced.command.view_fraction = 0.75F;
 
-  const BytesWire payload = Encode(CommandsWire{.commands = {sequenced}, .view_tick = 0x01020304U});
+  const BytesWire payload = Encode(CommandsWire{.commands = {sequenced}, .view_tick = 0x0102030405060708U});
 
   EXPECT_EQ(payload[kCommandViewOffset], std::byte{3});
   EXPECT_EQ(payload[kCommandViewOffset + 1], std::byte{192});
   const auto tick_offset = static_cast<std::ptrdiff_t>(kViewTickOffset);
-  EXPECT_EQ(BytesWire(payload.begin() + tick_offset, payload.end()), BytesOf({0x04, 0x03, 0x02, 0x01}));
+  EXPECT_EQ(BytesWire(payload.begin() + tick_offset, payload.end()),
+            BytesOf({0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01}));
 }
 
 TEST(ProtocolTest, AViewsFractionIsHeldBelowOneAndANaNIsZero) {
@@ -699,7 +701,7 @@ TEST(ProtocolTest, ACommandsStanceOrUnusedBitsOutsideTheirRangeAreInvalid) {
 }
 
 TEST(ProtocolTest, AuthoritativeStateRoundTrips) {
-  AuthoritativeStateWire sent{.tick = 900, .acknowledged_sequence = 875, .bodies = {}};
+  AuthoritativeStateWire sent{.tick = 900, .bodies = {}, .acknowledged_sequence = 875};
   for (std::uint32_t i = 0; i < 3; ++i) {
     EntityStateWire body{.entity = static_cast<EntityIdWire>(10 + i)};
     body.body.position = Vec3(1.0F + static_cast<float>(i), 2.0F, -3.5F);
@@ -731,7 +733,7 @@ TEST(ProtocolTest, ABodysYawTravelsAsThreeBytesAfterTheBody) {
   body.yaw = 1.0F;
   const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {body}});
   // type, tick, acknowledged sequence, count, entity, the body (18), then the yaw.
-  constexpr std::ptrdiff_t kYawOffset = 1 + 4 + 4 + 1 + 4 + 18;
+  constexpr std::ptrdiff_t kYawOffset = 1 + 8 + 4 + 1 + 4 + 18;
 
   const BytesWire yaw(payload.begin() + kYawOffset, payload.begin() + kYawOffset + 3);
   EXPECT_EQ(yaw, BytesOf({0x00, 0x00, 0x20}));
@@ -753,6 +755,17 @@ TEST(ProtocolTest, AnUpdateTellsItsRecipientHowManyOfItsCommandsTheServerHolds) 
     EXPECT_EQ(received.tick, 9U);
     EXPECT_EQ(received.bodies.size(), 1U);
   }
+}
+
+// The server's tick counts from its start and never starts over (ADR-0038), so
+// one past the last 32 bits hold travels whole in every message that carries one.
+TEST(ProtocolTest, ATickPastThirtyTwoBitsRoundTripsInEveryMessageThatCarriesOne) {
+  constexpr std::uint64_t kTick = std::uint64_t{std::numeric_limits<std::uint32_t>::max()} + 1;
+
+  EXPECT_EQ(std::get<AuthoritativeStateWire>(RoundTrip(AuthoritativeStateWire{.tick = kTick, .bodies = {}})).tick,
+            kTick);
+  EXPECT_EQ(std::get<ShotWire>(RoundTrip(ShotWire{.tick = kTick})).tick, kTick);
+  EXPECT_EQ(std::get<CommandsWire>(RoundTrip(CommandsWire{.commands = {}, .view_tick = kTick})).view_tick, kTick);
 }
 
 // The recipient's rifle is what it replays its commands from, so its times
@@ -798,7 +811,7 @@ TEST(ProtocolTest, ARecipientsRifleTravelsInSixteenBytesAfterItsQueuedCommands) 
                                                                     .rounds = 30,
                                                                     .burst_index = 3}});
   // type, tick, acknowledged sequence, count, the queued commands, then the rifle.
-  constexpr std::ptrdiff_t kRifleOffset = 1 + 4 + 4 + 1 + 1;
+  constexpr std::ptrdiff_t kRifleOffset = 1 + 8 + 4 + 1 + 1;
 
   // The rounds, each time as its IEEE-754 bits, little-endian, the burst index,
   // then the Recoil offset's pitch and yaw as counts of the angle grid's step:
@@ -808,9 +821,9 @@ TEST(ProtocolTest, ARecipientsRifleTravelsInSixteenBytesAfterItsQueuedCommands) 
 }
 
 TEST(ProtocolTest, MorePlayersThanAMatchHoldsIsTooLong) {
-  // type, tick (4), acknowledged sequence (4), then the count.
-  const BytesWire payload =
-      BytesOf({kAuthoritativeStateType, 0, 0, 0, 0, 0, 0, 0, 0, static_cast<std::uint8_t>(kMaxPlayers + 1)});
+  // type, tick (8), acknowledged sequence (4), then the count.
+  const BytesWire payload = BytesOf(
+      {kAuthoritativeStateType, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, static_cast<std::uint8_t>(kMaxPlayers + 1)});
 
   EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
 }
@@ -818,14 +831,14 @@ TEST(ProtocolTest, MorePlayersThanAMatchHoldsIsTooLong) {
 TEST(ProtocolTest, APlayersStanceOutsideItsRangeIsInvalid) {
   BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}});
   // type, tick, acknowledged sequence, count, entity, position (9), velocity (6), then stance.
-  constexpr std::size_t kStanceOffset = 1 + 4 + 4 + 1 + 4 + 9 + 6;
+  constexpr std::size_t kStanceOffset = 1 + 8 + 4 + 1 + 4 + 9 + 6;
   payload[kStanceOffset] = static_cast<std::byte>(3);
 
   EXPECT_EQ(Decode(payload).error(), DecodeError::kInvalidEnum);
 }
 
 // type, tick, acknowledged sequence, count, entity, position (9), velocity (6), then the stance byte.
-constexpr std::size_t kBodyStanceOffset = 1 + 4 + 4 + 1 + 4 + 9 + 6;
+constexpr std::size_t kBodyStanceOffset = 1 + 8 + 4 + 1 + 4 + 9 + 6;
 
 TEST(ProtocolTest, AnExhaustedBodyRoundTripsInEveryStance) {
   AuthoritativeStateWire sent;
@@ -875,8 +888,8 @@ TEST(ProtocolTest, ABodyTravelsInEighteenBytesAndACommandInFifteen) {
   // type, tick, acknowledged sequence, count, entity, the body, its yaw, the
   // queued commands, then the recipient's rifle and health.
   EXPECT_EQ(Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}}).size(),
-            1 + 4 + 4 + 1 + 4 + 18 + 3 + 1 + 16 + 4);
-  EXPECT_EQ(Encode(CommandsWire{.commands = {SequencedCommandWire{}}}).size(), 2 + 4 + 15 + 4);
+            1 + 8 + 4 + 1 + 4 + 18 + 3 + 1 + 16 + 4);
+  EXPECT_EQ(Encode(CommandsWire{.commands = {SequencedCommandWire{}}}).size(), 2 + 4 + 15 + 8);
 }
 
 TEST(ProtocolTest, APositionTravelsAsThreeBytesPerAxisInMillimeterSteps) {
@@ -884,7 +897,7 @@ TEST(ProtocolTest, APositionTravelsAsThreeBytesPerAxisInMillimeterSteps) {
   body.body.position = Vec3(1.0F, -1.0F / 1024.0F, 0.0F);
   const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {body}});
   // type, tick, acknowledged sequence, count, entity, then x, y and z.
-  constexpr std::ptrdiff_t kPositionOffset = 1 + 4 + 4 + 1 + 4;
+  constexpr std::ptrdiff_t kPositionOffset = 1 + 8 + 4 + 1 + 4;
 
   const BytesWire position(payload.begin() + kPositionOffset, payload.begin() + kPositionOffset + 9);
   EXPECT_EQ(position, BytesOf({0x00, 0x04, 0x00, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00}));
@@ -909,7 +922,7 @@ TEST(ProtocolTest, AValueBeyondItsRangeIsSentAsTheBound) {
 }
 
 TEST(ProtocolTest, DecodingAndEncodingAgainGivesTheSameBytes) {
-  const AuthoritativeStateWire state{.tick = 1, .acknowledged_sequence = 1, .bodies = {BodyAt(1, 3.14159F)}};
+  const AuthoritativeStateWire state{.tick = 1, .bodies = {BodyAt(1, 3.14159F)}, .acknowledged_sequence = 1};
   const BytesWire first = Encode(state);
   EXPECT_EQ(Encode(std::get<AuthoritativeStateWire>(Decode(first).value())), first);
 

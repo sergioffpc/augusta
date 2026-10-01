@@ -940,7 +940,7 @@ class PacingTest : public MovementTest {
         client_next +=
             augusta::tick::PacedTickDuration(nominal, session_.GetAuthoritativeState()->queued_commands) / clock_rate;
       } else {
-        const std::uint32_t last_tick = session_.GetAuthoritativeState()->tick;
+        const std::uint64_t last_tick = session_.GetAuthoritativeState()->tick;
         host_.Tick(kFixedTick);
         DeliverUntil([&] { return session_.GetAuthoritativeState()->tick > last_tick; });
         const auto state = session_.GetAuthoritativeState();
@@ -1832,10 +1832,10 @@ class ScriptedServer {
 
   // An Authoritative State of tick listing entities, each at the origin, with
   // the client's player unhurt.
-  static augusta::protocol::AuthoritativeStateWire StateOf(std::uint32_t tick,
+  static augusta::protocol::AuthoritativeStateWire StateOf(std::uint64_t tick,
                                                            const std::vector<EntityIdWire>& entities) {
     augusta::protocol::AuthoritativeStateWire state{
-        .tick = tick, .acknowledged_sequence = 0, .bodies = {}, .rifle = {}, .health = 100.0F};
+        .tick = tick, .bodies = {}, .rifle = {}, .health = 100.0F, .acknowledged_sequence = 0};
     for (const EntityIdWire entity : entities) {
       state.bodies.push_back({.entity = entity, .body = {}});
     }
@@ -1960,6 +1960,32 @@ TEST_F(ScriptedServerTest, AStateNamingABodyNotInTheMatchIsDropped) {
   server_.Send(ScriptedServer::StateOf(2, {kScriptedEntity}));
   Settle();
   EXPECT_TRUE(session_.GetAuthoritativeState().has_value());
+}
+
+// The server's tick never starts over (ADR-0038): past the last one 32 bits
+// hold, a newer state is still newer and an older one still stale, and the
+// client keeps sending its commands.
+TEST_F(ScriptedServerTest, StatesPastThirtyTwoBitsOfTicksAreStillNewestWins) {
+  constexpr std::uint64_t kLastOf32Bits = std::numeric_limits<std::uint32_t>::max();
+  Settle();
+
+  server_.Send(ScriptedServer::StateOf(kLastOf32Bits, {kScriptedEntity}));
+  Settle();
+  ASSERT_TRUE(session_.GetAuthoritativeState().has_value());
+  EXPECT_EQ(session_.GetAuthoritativeState()->tick, kLastOf32Bits);
+
+  server_.Send(ScriptedServer::StateOf(kLastOf32Bits + 1, {kScriptedEntity}));
+  Settle();
+  EXPECT_EQ(session_.GetAuthoritativeState()->tick, kLastOf32Bits + 1);
+
+  server_.Send(ScriptedServer::StateOf(kLastOf32Bits, {kScriptedEntity}));
+  Settle();
+  EXPECT_EQ(session_.GetAuthoritativeState()->tick, kLastOf32Bits + 1);
+
+  const int sent_before = server_.CommandsReceived();
+  session_.Tick(Command{}, kFixedTick);
+  Settle();
+  EXPECT_GT(server_.CommandsReceived(), sent_before);
 }
 
 TEST_F(ScriptedServerTest, AStateThatArrivesAfterMatchEndIsDroppedAndTheClientIsBackInTheLobby) {
@@ -2517,7 +2543,7 @@ TEST_F(FireDuelTest, EveryClientIsToldOfAShotWithItsShooterTickOriginAndDirectio
   Session& shooter = *sessions_[0];
   Session& bystander = *sessions_[1];
   Settle(host_, Pointers(sessions_));
-  const std::uint32_t last_tick = shooter.GetAuthoritativeState()->tick;
+  const std::uint64_t last_tick = shooter.GetAuthoritativeState()->tick;
   const Vec3 feet = PositionSeenBy(shooter, *shooter.GetEntityId()).value();
   Command command = Firing();
   command.yaw = 0.75F;
@@ -3247,7 +3273,7 @@ class LagCompensatedHitTest : public HitMatchOf<2> {
   }
 
   // Where each update the shooter was sent put the target's feet, by its tick.
-  std::map<std::uint32_t, Vec3> seen_;
+  std::map<std::uint64_t, Vec3> seen_;
 };
 
 // US-11, ADR-0044: a shot that hits on the shooter's screen hits on the server.
@@ -3263,7 +3289,7 @@ TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairInT
   // The view: the newest update kept that is the Interpolation delay or more
   // behind the newest of all, and halfway to the next one if that is kept too.
   ASSERT_FALSE(seen_.empty());
-  const std::uint32_t newest = seen_.rbegin()->first;
+  const std::uint64_t newest = seen_.rbegin()->first;
   ASSERT_GT(newest, kInterpolationTicks);
   auto shown = seen_.upper_bound(newest - kInterpolationTicks);
   ASSERT_NE(shown, seen_.begin());
@@ -3531,7 +3557,7 @@ TEST_F(ScriptedServerTest, AClientThatIsNeverAskedKeepsOnlyTheNewestHitConfirmat
 // A Shot of the scripted server's one player, or of whoever else it names.
 augusta::protocol::ShotWire ShotBy(EntityIdWire shooter) {
   return augusta::protocol::ShotWire{
-      .origin = Vec3(1.0F, 1.5F, -2.0F), .shooter = shooter, .tick = 7, .yaw = 0.5F, .pitch = -0.125F};
+      .tick = 7, .origin = Vec3(1.0F, 1.5F, -2.0F), .shooter = shooter, .yaw = 0.5F, .pitch = -0.125F};
 }
 
 TEST_F(ScriptedServerTest, AShotOfABodyInTheMatchIsHandedOutOnceAsItWasSent) {
@@ -3550,7 +3576,7 @@ TEST_F(ScriptedServerTest, AShotOfABodyInTheMatchIsHandedOutOnceAsItWasSent) {
 }
 
 TEST_F(ScriptedServerTest, ShotsAreHandedOutInTheOrderTheyArrived) {
-  for (std::uint32_t tick = 1; tick <= 3; ++tick) {
+  for (std::uint64_t tick = 1; tick <= 3; ++tick) {
     augusta::protocol::ShotWire shot = ShotBy(kScriptedEntity);
     shot.tick = tick;
     server_.Send(shot);
@@ -3602,8 +3628,8 @@ TEST_F(ScriptedLobbyTest, AShotThatArrivesBeforeMatchStartIsDropped) {
 
 // A client nobody asks keeps the newest Shots, not all of them for ever.
 TEST_F(ScriptedServerTest, AClientThatIsNeverAskedKeepsOnlyTheNewestShots) {
-  const auto sent = static_cast<std::uint32_t>(augusta::harness::kMaxPendingShots + 10);
-  for (std::uint32_t tick = 1; tick <= sent; ++tick) {
+  const auto sent = static_cast<std::uint64_t>(augusta::harness::kMaxPendingShots + 10);
+  for (std::uint64_t tick = 1; tick <= sent; ++tick) {
     augusta::protocol::ShotWire shot = ShotBy(kScriptedEntity);
     shot.tick = tick;
     server_.Send(shot);

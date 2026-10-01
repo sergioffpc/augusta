@@ -60,7 +60,7 @@ struct EntityBody {
 /// Authoritative State, as this client receives it.
 struct AuthoritativeState {
   /// The server tick this state is from; a client keeps only the newest it has seen.
-  std::uint32_t tick = 0;
+  std::uint64_t tick = 0;
   /// The highest command sequence of this client that the server has processed, 0 if none.
   std::uint32_t acknowledged_sequence = 0;
   /// Every dynamic body in the match.
@@ -82,7 +82,7 @@ struct Shot {
   /// The body of the player who fired it.
   EntityId shooter{};
   /// The server tick it was fired on.
-  std::uint32_t tick = 0;
+  std::uint64_t tick = 0;
   /// Where the round left from.
   math::Vec3 origin{};
   /// Where it left for, as a view's yaw and pitch in radians (command::Command;

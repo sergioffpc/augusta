@@ -305,6 +305,8 @@ struct WeaponStateWire {
 
 /// One tick's command and the number the client gave it. Numbers start at 1 and
 /// grow by one per command, so the server can tell what it has already seen.
+/// They count one connection's commands and start over on the next, so 32 bits
+/// outlast any session: at 60 Hz they would take over two years to wrap.
 struct SequencedCommandWire {
   std::uint32_t sequence = 0;
   CommandWire command{};
@@ -319,7 +321,7 @@ struct CommandsWire {
   std::vector<SequencedCommandWire> commands;
   /// The newest server tick any of the commands was sampled against
   /// (ADR-0044): each says how far before it its own is (CommandWire::view_age).
-  std::uint32_t view_tick = 0;
+  std::uint64_t view_tick = 0;
 
   bool operator==(const CommandsWire&) const = default;
 };
@@ -327,9 +329,9 @@ struct CommandsWire {
 /// Server to client: the Authoritative State of one server tick.
 struct AuthoritativeStateWire {
   /// The server tick this state is from; a client keeps only the newest it has seen.
-  std::uint32_t tick = 0;
-  /// The highest command sequence of the recipient that the server has processed, 0 if none.
-  std::uint32_t acknowledged_sequence = 0;
+  /// Ticks count from the server's start and never start over, so they take 64
+  /// bits: 32 would wrap after about 828 days at 60 Hz.
+  std::uint64_t tick = 0;
   /// Every dynamic body in the match, at most kMaxPlayers (only players have one so far).
   std::vector<EntityStateWire> bodies;
   /// The recipient's own rifle as of this tick: what it reconciles its
@@ -338,6 +340,8 @@ struct AuthoritativeStateWire {
   /// The recipient's own health as of this tick, 0 once it has died; no one
   /// else's is ever sent.
   float health = 0.0F;
+  /// The highest command sequence of the recipient that the server has processed, 0 if none.
+  std::uint32_t acknowledged_sequence = 0;
   /// How many of the recipient's commands the server still holds queued after
   /// this tick: what the client paces its own ticks by (ADR-0038).
   std::uint8_t queued_commands = 0;
@@ -401,12 +405,12 @@ struct MatchEndWire {
 /// Server to client: one round a player in the match fired (CONTEXT.md's Shot,
 /// ADR-0044), told to every player in it, the shooter included.
 struct ShotWire {
+  /// The server tick it was fired on.
+  std::uint64_t tick = 0;
   /// Where the round left from.
   math::Vec3 origin{};
   /// The body of the player who fired it.
   EntityIdWire shooter{};
-  /// The server tick it was fired on.
-  std::uint32_t tick = 0;
   /// Where it left for, as a view's yaw and pitch, in radians.
   float yaw = 0.0F;
   float pitch = 0.0F;

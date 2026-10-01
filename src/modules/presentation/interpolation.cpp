@@ -52,11 +52,11 @@ void ServerClock::Reset() {
 
 std::optional<double> ServerClock::Now() const { return now_; }
 
-ShownView ViewAt(double sample_time, double tick_duration, std::uint32_t oldest_tick, std::uint32_t newest_tick) {
+ShownView ViewAt(double sample_time, double tick_duration, std::uint64_t oldest_tick, std::uint64_t newest_tick) {
   const double ticks =
       std::clamp(sample_time / tick_duration, static_cast<double>(oldest_tick), static_cast<double>(newest_tick));
   const double whole = std::floor(ticks);
-  return ShownView{.tick = static_cast<std::uint32_t>(whole), .fraction = static_cast<float>(ticks - whole)};
+  return ShownView{.tick = static_cast<std::uint64_t>(whole), .fraction = static_cast<float>(ticks - whole)};
 }
 
 void RemoteInterpolator::Record(EntityId entity, double server_time, const physics::BodyState& body, float yaw) {

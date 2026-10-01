@@ -68,11 +68,11 @@ namespace augusta::server {
 
 /// A command a client sent in a message whose view tick is view_tick, in the
 /// engine's terms: its own view tick is that many ticks before it, or 0.
-[[nodiscard]] command::Command FromWire(const protocol::CommandWire& command, std::uint32_t view_tick);
+[[nodiscard]] command::Command FromWire(const protocol::CommandWire& command, std::uint64_t view_tick);
 
 /// A sequenced command a client sent in a message whose view tick is view_tick,
 /// in the engine's terms.
-[[nodiscard]] SequencedCommand FromWire(const protocol::SequencedCommandWire& command, std::uint32_t view_tick);
+[[nodiscard]] SequencedCommand FromWire(const protocol::SequencedCommandWire& command, std::uint64_t view_tick);
 
 /// The commands a client sent in one message, oldest first, in the engine's terms.
 [[nodiscard]] std::vector<SequencedCommand> FromWire(const protocol::CommandsWire& message);

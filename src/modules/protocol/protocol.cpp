@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <bit>
 #include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -26,11 +27,17 @@ constexpr int kBitsPerByte = 8;
 
 void WriteU8(BytesWire& out, std::uint8_t value) { out.push_back(static_cast<std::byte>(value)); }
 
-void WriteU32(BytesWire& out, std::uint32_t value) {
-  for (int shift = 0; shift < std::numeric_limits<std::uint32_t>::digits; shift += kBitsPerByte) {
+// value's bytes, least significant first.
+template <std::unsigned_integral Unsigned>
+void WriteUnsigned(BytesWire& out, Unsigned value) {
+  for (int shift = 0; shift < std::numeric_limits<Unsigned>::digits; shift += kBitsPerByte) {
     WriteU8(out, static_cast<std::uint8_t>(value >> shift));
   }
 }
+
+void WriteU32(BytesWire& out, std::uint32_t value) { WriteUnsigned(out, value); }
+
+void WriteU64(BytesWire& out, std::uint64_t value) { WriteUnsigned(out, value); }
 
 void WriteF32(BytesWire& out, float value) { WriteU32(out, std::bit_cast<std::uint32_t>(value)); }
 
@@ -127,19 +134,9 @@ class Reader {
     return value;
   }
 
-  std::uint32_t ReadU32() {
-    constexpr std::size_t kSize = sizeof(std::uint32_t);
-    if (bytes_.size() < kSize) {
-      Fail(DecodeError::kTruncated);
-      return 0;
-    }
-    std::uint32_t value = 0;
-    for (std::size_t i = 0; i < kSize; ++i) {
-      value |= static_cast<std::uint32_t>(bytes_[i]) << (kBitsPerByte * i);
-    }
-    bytes_ = bytes_.subspan(kSize);
-    return value;
-  }
+  std::uint32_t ReadU32() { return ReadUnsigned<std::uint32_t>(); }
+
+  std::uint64_t ReadU64() { return ReadUnsigned<std::uint64_t>(); }
 
   float ReadF32() { return std::bit_cast<float>(ReadU32()); }
 
@@ -243,6 +240,22 @@ class Reader {
     if (!error_.has_value()) {
       error_ = error;
     }
+  }
+
+  // The read side of WriteUnsigned.
+  template <std::unsigned_integral Unsigned>
+  Unsigned ReadUnsigned() {
+    constexpr std::size_t kSize = sizeof(Unsigned);
+    if (bytes_.size() < kSize) {
+      Fail(DecodeError::kTruncated);
+      return 0;
+    }
+    Unsigned value = 0;
+    for (std::size_t i = 0; i < kSize; ++i) {
+      value |= static_cast<Unsigned>(bytes_[i]) << (kBitsPerByte * i);
+    }
+    bytes_ = bytes_.subspan(kSize);
+    return value;
   }
 
   std::span<const std::byte> bytes_;
@@ -366,7 +379,7 @@ CommandsWire ReadCommands(Reader& reader) {
     const std::uint32_t sequence = reader.ReadU32();
     message.commands.push_back(SequencedCommandWire{.sequence = sequence, .command = ReadCommand(reader)});
   }
-  message.view_tick = reader.ReadU32();
+  message.view_tick = reader.ReadU64();
   return message;
 }
 
@@ -383,7 +396,7 @@ WeaponStateWire ReadWeaponState(Reader& reader) {
 
 AuthoritativeStateWire ReadAuthoritativeState(Reader& reader) {
   AuthoritativeStateWire state;
-  state.tick = reader.ReadU32();
+  state.tick = reader.ReadU64();
   state.acknowledged_sequence = reader.ReadU32();
   state.bodies = ReadBodies(reader);
   state.queued_commands = reader.ReadU8();
@@ -422,7 +435,7 @@ MatchStartWire ReadMatchStart(Reader& reader) {
 ShotWire ReadShot(Reader& reader) {
   ShotWire shot;
   shot.shooter = static_cast<EntityIdWire>(reader.ReadU32());
-  shot.tick = reader.ReadU32();
+  shot.tick = reader.ReadU64();
   shot.origin = reader.ReadVec3(math::kPositionGrid);
   shot.yaw = reader.ReadSteps(math::kAngleGrid);
   shot.pitch = reader.ReadSteps(math::kAngleGrid);
@@ -547,12 +560,12 @@ struct Encoder {
       WriteU32(out, sequenced.sequence);
       WriteCommand(out, sequenced.command);
     }
-    WriteU32(out, message.view_tick);
+    WriteU64(out, message.view_tick);
   }
 
   void operator()(const AuthoritativeStateWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kAuthoritativeState));
-    WriteU32(out, message.tick);
+    WriteU64(out, message.tick);
     WriteU32(out, message.acknowledged_sequence);
     WriteBodies(out, message.bodies);
     WriteU8(out, message.queued_commands);
@@ -598,7 +611,7 @@ struct Encoder {
   void operator()(const ShotWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kShot));
     WriteU32(out, static_cast<std::uint32_t>(message.shooter));
-    WriteU32(out, message.tick);
+    WriteU64(out, message.tick);
     WriteVec3(out, message.origin, math::kPositionGrid);
     WriteSteps(out, message.yaw, math::kAngleGrid);
     WriteSteps(out, message.pitch, math::kAngleGrid);
