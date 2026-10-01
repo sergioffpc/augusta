@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
+#include "augusta/cues.h"
 #include "policy_loader.h"
 
 // The C++ half of the contract between the pack's two implementations: the
@@ -94,6 +95,23 @@ TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersHitboxesForEveryBodyPart
     EXPECT_EQ(hitboxes->size(), 6U);
     EXPECT_EQ(augusta::assets::FirstMissingBodyPart(*hitboxes), std::nullopt);
   }
+}
+
+// The client loads a sound for every cue at startup (ADR-0020), so a missing one
+// is found before a Match; the headless server plays none.
+TEST_F(CookedPackTest, TheClientPackHoldsASoundForEveryCueAndTheServerPackNone) {
+  const auto sounds = augusta::audio::LoadCueSounds(*client_);
+  ASSERT_TRUE(sounds.has_value()) << augusta::audio::DescribeCueSoundError(sounds.error());
+  for (const augusta::assets::AudioData& sound : *sounds) {
+    EXPECT_EQ(sound.sample_rate, 22050U);
+    EXPECT_EQ(sound.bits_per_sample, 16U);
+    EXPECT_FALSE(sound.samples.empty());
+  }
+
+  const auto server_sounds = augusta::audio::LoadCueSounds(*server_);
+  ASSERT_FALSE(server_sounds.has_value());
+  EXPECT_EQ(server_sounds.error().path, augusta::assets::kSoundsPath);
+  EXPECT_FALSE(server_->ResolveAudio("sounds/augusta/gunshot").has_value());
 }
 
 }  // namespace

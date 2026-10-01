@@ -41,9 +41,10 @@ it never overwrites a seeded piece below once it exists at its path.
 
 The script also seeds a small worked example from
 [examples/authoring/](examples/authoring/), piece by piece: `authoring/maps/augusta`
-(a floor, a prop, a spawn point), `authoring/characters/player` (ADR-0040), and
+(a floor, a prop, a spawn point), `authoring/characters/player` (ADR-0040),
+`authoring/sounds/augusta` (placeholder cue sounds, ADR-0020), and
 `authoring/scenarios/augusta` (its `manifest.yaml`, ADR-0041, composing
-the other two, plus `parameters.lua` and placeholder `objectives.lua`/
+the other three, plus `parameters.lua` and placeholder `objectives.lua`/
 `behaviours.lua` for when game policy, ADR-0022, is wired up) - committed to
 this repo so a fresh environment has something to cook straight away:
 
@@ -59,7 +60,7 @@ The assets root looks like this:
 
 | Path | Contents |
 |---|---|
-| `authoring/` | `maps/<name>/` (ADR-0015), `characters/<name>/` (ADR-0040), `scenarios/<name>/` (`manifest.yaml` + Lua scripts, ADR-0041) - the only one of the three `augustap` resolves a name against |
+| `authoring/` | `maps/<name>/` (ADR-0015), `characters/<name>/` (ADR-0040), `sounds/<name>/` (ADR-0020), `scenarios/<name>/` (`manifest.yaml` + Lua scripts, ADR-0041) - the only one of the three `augustap` resolves a name against |
 | `packs/` | Cooked, signed packs |
 | `keys/` | `augusta.key` / `augusta.pub` (Ed25519). Never commit these. |
 | `bin/` | `augustap.exe`, `augustap-keygen.exe`, `augustap-inspect.exe`, `augustap-verify.exe` (installed here by `uv tool install`), plus `augustap-composer.ps1` unless `-SkipAuthoring` |
@@ -110,8 +111,8 @@ the same app the bootstrap scaffolds and builds
 
 A scenario is named, not pathed (ADR-0041): `augustap` resolves the bare name
 you give it to `<assets-root>\authoring\scenarios\<name>`, which holds a
-`manifest.yaml` naming the one map and every character that scenario
-composes, plus the Lua scripts that go with it:
+`manifest.yaml` naming the one map, every character and the sounds folder that
+scenario composes, plus the Lua scripts that go with it:
 
 ```
 scenarios\test_map\manifest.yaml     # map: maps/test_map, characters: [...]
@@ -119,6 +120,7 @@ scenarios\test_map\parameters.lua    # required: the scenario's Parameters
 scenarios\test_map\rules\round.lua   # any other *.lua, in any subfolder
 maps\test_map\map.usda               # the stage (.usd, .usda, .usdc or .usdz)
 characters\marine\character.usda     # a character the manifest can name (ADR-0040)
+sounds\test_map\gunshot.wav          # a mono PCM WAV for each cue (ADR-0020)
 ```
 
 ```yaml
@@ -126,6 +128,7 @@ characters\marine\character.usda     # a character the manifest can name (ADR-00
 map: maps/test_map
 characters:
   - characters/marine
+sounds: sounds/test_map
 ```
 
 ```powershell
@@ -144,11 +147,19 @@ only, as a script asset addressed by its path relative to that folder
 script decides and never receives the script (ADR-0019). The manifest's
 `characters` list itself, in manifest order, goes into both packs as the
 `Characters` entry, the table a character index resolves against (ADR-0042);
-a manifest naming more than 255 characters fails the cook. Each character's
+a manifest naming more than 255 characters fails the cook. The sounds folder
+holds one mono PCM WAV file for each of the client's cues, named after it:
+`gunshot.wav`, `hit_marker.wav`, `hit_taken.wav`, `death.wav`, `match_won.wav`
+and `match_lost.wav`. Each goes into the **client** pack only, as an audio
+asset addressed `<sounds path>/<cue>` (e.g. `sounds/test_map/gunshot`), and the
+sounds path itself as the `Sounds` entry the client finds them by (ADR-0020,
+ADR-0031). Each character's
 `Character/Eye` prim, where its player's camera sits and its Shots leave from,
 goes into both packs as that point alone (ADR-0040). It is an error if the scenario folder or its
 `manifest.yaml` is missing, if the map or a named character doesn't resolve to
-a stage, if a character has no `Character/Eye`, or if there is no
+a stage, if a character has no `Character/Eye`, if the manifest names no
+`sounds` folder, if that folder lacks a cue's sound (the error names the cue),
+if a sound is not a mono PCM WAV (the error names the file), or if there is no
 `parameters.lua`: the server reads its Parameters out of its pack at startup, so that is found here
 rather than when a server starts on the pack.
 
@@ -242,7 +253,8 @@ offset and size in bytes:
 - **Header:** magic, format version, data offset, index offset and index count.
 - **Data:** only its offset and size. The blobs themselves are not read.
 - **Index:** one line per entry with its type (`mesh`, `texture`, `audio`,
-  `collision`, `spawn-point`, `hitbox`, `scene` or `script`), its offset and
+  `collision`, `spawn-point`, `hitbox`, `scene`, `script`, `characters`,
+  `client-pack`, `eye` or `sounds`), its offset and
   size within the pack, and its pack-relative path.
 - **Trailer:** the stored BLAKE3 hash and Ed25519 signature, in hex.
 
@@ -280,7 +292,8 @@ failure it prints the reason to stderr and exits `1`:
 | Path | Role |
 |---|---|
 | `src/pack/cli.py` | `augustap` entry point |
-| `src/pack/scenario.py` | Scenario folder resolution (stage, `*.lua` scripts) |
+| `src/pack/scenario.py` | Scenario folder resolution (stage, `*.lua` scripts, cue sounds) |
+| `src/pack/sounds.py` | The cue catalogue and the mono PCM WAV reader |
 | `src/pack/optimize.py` | usd-optimize step |
 | `src/pack/validate.py` | usd-validation-nvidia step |
 | `src/pack/cook.py` | Stage walk and asset conversion |
@@ -292,7 +305,7 @@ failure it prints the reason to stderr and exits `1`:
 | `cpp/` | Standalone CMake/vcpkg project for the two native modules. It builds straight into `src/pack/`. |
 | `composer/` | Playback file that scaffolds the Augusta USD Composer app, and `augustap-composer.ps1` (launches it) |
 | `tests/` | pytest suite and the USD fixtures it cooks (see Running the tests) |
-| `examples/authoring/` | A committed `<assets-root>/authoring/` sample the bootstrap seeds into a fresh assets root: `maps/augusta/` (ADR-0015), `characters/player/` (ADR-0040), `scenarios/augusta/` composing both (ADR-0041) |
+| `examples/authoring/` | A committed `<assets-root>/authoring/` sample the bootstrap seeds into a fresh assets root: `maps/augusta/` (ADR-0015), `characters/player/` (ADR-0040), `sounds/augusta/` (placeholder cue sounds, ADR-0020), `scenarios/augusta/` composing them (ADR-0041) |
 | `scripts/bootstrap-windows.ps1` | Builds the assets root |
 
 ## Rebuilding the native modules

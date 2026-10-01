@@ -8,9 +8,10 @@ The manifest is YAML, not Lua, since composing a map and a list of characters is
 map: maps/augusta
 characters:
   - characters/player
+sounds: sounds/augusta
 ```
 
-`map` names exactly one map; `characters` a list of zero or more characters - both as paths relative to `authoring/`, the same convention ADR-0040 already established for a character's own pack addressing. The cooker resolves these paths, reads the named map's stage, walks the named characters' stages, and packs all of it plus the scenario's own Lua scripts into one client/server pack pair - only what feeds the walk changes; the pack's byte layout (ADR-0031) and the client/server split (ADR-0019) are unaffected.
+`map` names exactly one map; `characters` a list of zero or more characters; `sounds` the one folder holding a mono PCM WAV file for each of the client's cues (ADR-0020, ADR-0031) - all as paths relative to `authoring/`, the same convention ADR-0040 already established for a character's own pack addressing. `sounds` is required: the client plays every cue, so a scenario without them, or missing one, is refused when it is cooked rather than found silent in a Match. A sounds folder is authoring content like a map or a character, so scenarios can share one. The cooker resolves these paths, reads the named map's stage, walks the named characters' stages, reads the cue sounds, and packs all of it plus the scenario's own Lua scripts into one client/server pack pair - only what feeds the walk changes; the pack's byte layout (ADR-0031) and the client/server split (ADR-0019) are unaffected.
 
 This supersedes ADR-0040's packing decision: "every cook run walks `authoring/characters/` unconditionally... every scenario pack ships the full character library" is replaced — a scenario pack now ships exactly the characters its manifest names. ADR-0040's own Considered Options already named this alternative ("per-scenario explicit character binding") and deferred it until the always-pack-everything shortcut stopped being good enough; this is that revisit, not a reversal of a mistake.
 

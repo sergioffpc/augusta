@@ -333,4 +333,35 @@ std::optional<PackHash> DecodeClientPackBlob(std::span<const std::byte> blob) {
   return hash;
 }
 
+// Audio blob wire format: see EncodeAudioBlob. Only whole samples of a width a
+// PCM WAV file can hold are a sound.
+std::optional<AudioData> DecodeAudioBlob(std::span<const std::byte> blob) {
+  ByteReader reader(blob);
+  const auto sample_rate = reader.ReadU32();
+  const auto bits_per_sample = reader.ReadU8();
+  const auto size = reader.ReadU32();
+  if (!sample_rate || !bits_per_sample || !size || *size > kMaxAudioBytes) {
+    return std::nullopt;
+  }
+  if (std::ranges::find(kPcmBitsPerSample, *bits_per_sample) == kPcmBitsPerSample.end()) {
+    return std::nullopt;
+  }
+  if (*size % (*bits_per_sample / kBitsPerByte) != 0) {
+    return std::nullopt;
+  }
+  const auto samples = reader.ReadBytes(*size);
+  if (!samples) {
+    return std::nullopt;
+  }
+  return AudioData{.sample_rate = *sample_rate,
+                   .bits_per_sample = *bits_per_sample,
+                   .samples = std::vector<std::byte>(samples->begin(), samples->end())};
+}
+
+// Sounds blob wire format: see EncodeSoundsBlob.
+std::optional<std::string> DecodeSoundsBlob(std::span<const std::byte> blob) {
+  ByteReader reader(blob);
+  return reader.ReadString();
+}
+
 }  // namespace augusta::assets

@@ -446,6 +446,7 @@ bool IsValidAssetType(std::uint8_t value) {
     case AssetType::kCharacters:
     case AssetType::kClientPack:
     case AssetType::kEye:
+    case AssetType::kSounds:
       return true;
   }
   return false;
@@ -659,6 +660,14 @@ std::expected<SpawnPointData, ResolveError> Pack::ResolveSpawnPoint(std::string_
 
 std::expected<EyeData, ResolveError> Pack::ResolveEye(std::string_view path) const {
   return ResolveAsset<EyeData>(impl_->index, impl_->mapping, path, AssetType::kEye, DecodeEyeBlob);
+}
+
+std::expected<AudioData, ResolveError> Pack::ResolveAudio(std::string_view path) const {
+  return ResolveAsset<AudioData>(impl_->index, impl_->mapping, path, AssetType::kAudio, DecodeAudioBlob);
+}
+
+std::expected<std::string, ResolveError> Pack::ResolveSoundsPath() const {
+  return ResolveAsset<std::string>(impl_->index, impl_->mapping, kSoundsPath, AssetType::kSounds, DecodeSoundsBlob);
 }
 
 std::expected<std::string, ResolveError> Pack::ResolveScript(std::string_view path) const {

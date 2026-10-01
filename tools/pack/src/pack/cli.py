@@ -9,7 +9,9 @@ for the two pieces with no Python equivalent - no subprocess/CLI binary
 anywhere in this pipeline. A validation failure aborts before cooking, so no
 pack is written if any composed stage didn't pass cleanup/validation, unless
 --skip-validation is given. Every *.lua file under the scenario folder goes
-into the server pack (ADR-0031, ADR-0039).
+into the server pack (ADR-0031, ADR-0039), and a mono PCM WAV sound for each of
+the client's cues, from the sounds folder the manifest names, into the client
+pack (ADR-0020).
 
 The scenario argument is a bare name, not a path (ADR-0041): it resolves to
 <assets-root>/authoring/scenarios/<name>/, whose manifest.yaml names the one
@@ -170,6 +172,7 @@ def main(argv: list[str] | None = None) -> int:
                 server_output_pack,
                 signing_key,
                 scripts=scenario.scripts,
+                sounds=scenario.sounds,
                 on_prim=report_prim,
             )
         except CookError as error:
@@ -181,7 +184,8 @@ def main(argv: list[str] | None = None) -> int:
             progress.finish()
         print(
             f"      cooked {report.mesh_count} mesh(es), {report.texture_count} texture(s), "
-            f"{report.node_count} node(s), {report.script_count} script(s) (server pack)"
+            f"{report.node_count} node(s), {report.script_count} script(s) (server pack), "
+            f"{report.sound_count} sound(s) (client pack)"
         )
         print(f"[3/3] done in {time.monotonic() - step_start:.1f}s")
 
