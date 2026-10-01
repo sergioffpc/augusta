@@ -129,6 +129,25 @@ std::vector<presentation::PlayerCharacter> CharactersOf(const std::optional<harn
   return characters;
 }
 
+// What session was told when the match it was last in ended, its winner named
+// by the body it played, from that match's Match start; nullopt before the first
+// ends and while one is in progress. A winner missing from Match start is none.
+std::optional<presentation::MatchEnd> MatchEndOf(const harness::Session& session) {
+  return session.GetMatchEnd().transform([&session](const harness::MatchEnd& end) {
+    presentation::MatchEnd match_end;
+    const std::optional<harness::MatchStart> start = session.GetMatchStart();
+    if (end.winner.has_value() && start.has_value()) {
+      for (const harness::MatchPlayer& player : start->players) {
+        if (player.session == *end.winner) {
+          match_end.winner = ToPresentation(player.entity);
+          break;
+        }
+      }
+    }
+    return match_end;
+  });
+}
+
 // command as sampled against view, what the last render frame showed the other
 // players at: the view it reports to the server, which judges its shots against
 // the players as they were then (ADR-0044). With no view, it reports none.
@@ -560,6 +579,8 @@ struct ClientRuntime::Impl {
         .shots = {},
         .hit_confirmations = static_cast<std::uint32_t>(session->TakeHitConfirmations().size()),
         .deaths = {},
+        .health = session->GetHealth(),
+        .match_end = MatchEndOf(*session),
     };
     frame.local_entity =
         session->GetEntityId().transform([](harness::EntityId entity) { return ToPresentation(entity); });

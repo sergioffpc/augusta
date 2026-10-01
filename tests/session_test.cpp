@@ -3874,6 +3874,30 @@ TEST_F(ScriptedServerTest, ADeathNamingABodyNotInTheMatchIsDropped) {
   EXPECT_FALSE(session_.IsAlive());
 }
 
+// The Death that ends a match is told before Match end, often in the same round.
+TEST_F(ScriptedServerTest, TheDeathThatEndedAMatchIsHandedOutAfterItsMatchEnd) {
+  Settle();
+
+  server_.Send(DeathOf(kScriptedEntity, kScriptedEntity));
+  server_.Send(augusta::protocol::MatchEndWire{});
+  Settle();
+  ASSERT_EQ(session_.GetPhase(), Phase::kLobby);
+
+  EXPECT_EQ(session_.TakeDeaths().size(), 1U);
+}
+
+TEST_F(ScriptedServerTest, ADeathNobodyAskedForIsNotHandedOutInTheNextMatch) {
+  Settle();
+
+  server_.Send(DeathOf(kScriptedEntity, kScriptedEntity));
+  server_.Send(augusta::protocol::MatchEndWire{});
+  server_.Send(ScriptedServer::StartOfAlone());
+  Settle();
+  ASSERT_EQ(session_.GetPhase(), Phase::kMatch);
+
+  EXPECT_TRUE(session_.TakeDeaths().empty());
+}
+
 // Told of its own death, a client predicts no more, even before an update says so.
 TEST_F(ScriptedServerTest, AClientToldOfItsOwnDeathStopsPredicting) {
   Settle();

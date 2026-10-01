@@ -94,12 +94,15 @@ enum class Phase {
   // Interpolation/Camera which only concern the local player's own
   // predicted state).
   kAnimation,
-  // Mechanism. Sets the listener to the camera Phase::kCamera just placed
-  // (ListenerOf, audio_cues.h), then plays the frame's one-shot cues
-  // (SelectCues, audio_cues.h) through augusta::audio::Engine: the local
-  // player's own gunshot on the frame its predicted fire fires a round, every
-  // other player's gunshot from its Shot's origin, and the hit marker on a Hit
-  // confirmation.
+  // Mechanism. Sets the listener to the camera Phase::kCamera just placed, a
+  // spectator's included (ListenerOf, audio_cues.h), then plays the frame's
+  // one-shot cues (CueSelector, audio_cues.h) through augusta::audio::Engine:
+  // the local player's own gunshot on the frame its predicted fire fires a
+  // round, every other player's gunshot from its Shot's origin, the hit marker
+  // on a Hit confirmation, hit taken when the local player's health drops, a
+  // death from where the server last reported the body, the local player's own
+  // included, and at Match end the match won stinger to the winner and match
+  // lost to everyone else.
   kAudioCues,
   // Mechanism. Packages the frame's presentation data into Presentation
   // State (State, below), for augusta::renderer::Renderer::RenderFrame
@@ -149,6 +152,13 @@ struct Shot {
   float pitch = 0.0F;
 };
 
+/// What the server said when a match ended (US-14) - World::RunFrame's input,
+/// in presentation's own terms (see there).
+struct MatchEnd {
+  /// The body of the player declared the winner; nullopt for a draw.
+  std::optional<EntityId> winner;
+};
+
 /// What one render frame is shown from - World::RunFrame's input. Every field is
 /// presentation's own type: ClientRuntime converts them from the harness's at
 /// its edge, the way each peer converts the protocol at its own (ADR-0038), so
@@ -180,6 +190,12 @@ struct FrameInput {
   /// The bodies whose Death arrived since the previous frame, in the order
   /// they arrived: each leaves presentation for the rest of the match.
   std::vector<EntityId> deaths;
+  /// The local player's health, as the newest Authoritative State of the match
+  /// in progress told it; nullopt outside a match and until its first state.
+  std::optional<float> health;
+  /// What the server said when the match this client was last in ended, or
+  /// nullopt before the first ends and while one is in progress.
+  std::optional<MatchEnd> match_end;
 };
 
 // PresentationWorld's per-frame output - ADR-0024/ARCHITECTURE.md's
