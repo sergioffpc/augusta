@@ -209,9 +209,18 @@ void Client::Connect(const Endpoint& server) {
   options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, impl_->registration.Id());
 
   std::lock_guard<std::mutex> lock(impl_->mutex);
-  impl_->state = ConnectionState::kConnecting;
   impl_->connection =
       SteamNetworkingSockets()->ConnectByIPAddress(addr, static_cast<int>(options.size()), options.data());
+  // A connection GNS refused to create never gets a status-changed callback,
+  // so this is the only place that can report it.
+  if (impl_->connection == k_HSteamNetConnection_Invalid) {
+    impl_->state = ConnectionState::kDisconnected;
+    LW("subsystem=networking event=state_changed role=client state=disconnected reason=connection_not_created "
+       "server_addr={}",
+       server.address);
+    return;
+  }
+  impl_->state = ConnectionState::kConnecting;
 }
 
 void Client::Disconnect() {
