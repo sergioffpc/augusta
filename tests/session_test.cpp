@@ -1333,13 +1333,13 @@ class PolicySpawnTest : public LoopbackMatch {
     return policy ? *std::move(policy) : augusta::scripting::Engine{};
   }
 
-  static HostSetup Setup() {
+  static HostSetup BackwardsSetup() {
     HostSetup setup = OnTheFloor(SpawnPoints(), WithPlayerCount(3));
     setup.policy = Backwards();
     return setup;
   }
 
-  PolicySpawnTest() : LoopbackMatch(Setup()) {}
+  PolicySpawnTest() : LoopbackMatch(BackwardsSetup()) {}
 };
 
 TEST_F(PolicySpawnTest, EveryClientIsToldTheDistinctSpawnPointPolicyGaveEachPlayer) {
