@@ -209,21 +209,36 @@ scripting::Value PlayerView(EntityId entity, const PlayerIdentity& identity, boo
 }
 
 // Why a value on_tick returned is not a decision it may make.
-constexpr std::string_view kNotAMatchEnd = "it is neither {winner = <Session ID>} nor {draw = true}";
-constexpr std::string_view kNotAWinner = "its winner is not a player alive in the Match";
+enum class DecisionRefusal : std::uint8_t {
+  // Neither {winner = <Session ID>} nor {draw = true}.
+  kNotAMatchEnd,
+  // A winner that is not the session of a player alive in the Match.
+  kNotAWinner,
+};
+
+std::string_view DescribeDecisionRefusal(DecisionRefusal refusal) {
+  switch (refusal) {
+    case DecisionRefusal::kNotAMatchEnd:
+      return "it is neither {winner = <Session ID>} nor {draw = true}";
+    case DecisionRefusal::kNotAWinner:
+      return "its winner is not a player alive in the Match";
+  }
+  std::unreachable();
+}
 
 // What on_tick returned, as the Match end it decides: nullopt for nil, which
-// decides nothing; an error, saying why, for anything else that is not
-// {draw = true} or {winner = <the session of a player alive in the Match>}.
-// alive_sessions holds the sessions of the players alive in the Match.
-std::expected<std::optional<MatchEnd>, std::string_view> ReadMatchEnd(const scripting::Value& returned,
-                                                                      const std::vector<SessionId>& alive_sessions) {
+// decides nothing; a refusal for anything else that is not {draw = true} or
+// {winner = <the session of a player alive in the Match>}. alive_sessions
+// holds the sessions of the players alive in the Match; Session ID 0 is no
+// player's.
+std::expected<std::optional<MatchEnd>, DecisionRefusal> ReadMatchEnd(const scripting::Value& returned,
+                                                                     const std::vector<SessionId>& alive_sessions) {
   if (std::holds_alternative<std::monostate>(returned.data)) {
     return std::nullopt;
   }
   const auto* record = std::get_if<scripting::Value::Record>(&returned.data);
   if (record == nullptr || record->size() != 1) {
-    return std::unexpected(kNotAMatchEnd);
+    return std::unexpected(DecisionRefusal::kNotAMatchEnd);
   }
   const scripting::Field& field = record->front();
   if (const auto* draw = std::get_if<bool>(&field.value.data); field.key == "draw" && draw != nullptr && *draw) {
@@ -231,12 +246,13 @@ std::expected<std::optional<MatchEnd>, std::string_view> ReadMatchEnd(const scri
   }
   const auto* winner = std::get_if<double>(&field.value.data);
   if (field.key != "winner" || winner == nullptr) {
-    return std::unexpected(kNotAMatchEnd);
+    return std::unexpected(DecisionRefusal::kNotAMatchEnd);
   }
-  const auto alive = std::ranges::find_if(
-      alive_sessions, [&](SessionId session) { return static_cast<double>(std::to_underlying(session)) == *winner; });
+  const auto alive = std::ranges::find_if(alive_sessions, [&](SessionId session) {
+    return session != SessionId{} && static_cast<double>(std::to_underlying(session)) == *winner;
+  });
   if (alive == alive_sessions.end()) {
-    return std::unexpected(kNotAWinner);
+    return std::unexpected(DecisionRefusal::kNotAWinner);
   }
   return MatchEnd{.winner = *alive};
 }
@@ -574,7 +590,8 @@ struct World::Impl {
     if (!decision) {
       LW_LIMITED(policy_warnings,
                  "subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
-                 scripting::ScriptPath(scripting::Script::kObjectives), kOnTick, tick, decision.error());
+                 scripting::ScriptPath(scripting::Script::kObjectives), kOnTick, tick,
+                 DescribeDecisionRefusal(decision.error()));
       return;
     }
     if (decision->has_value()) {

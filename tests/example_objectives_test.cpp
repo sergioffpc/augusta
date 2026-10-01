@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -64,10 +65,14 @@ augusta::assets::AssetEntry ScriptEntry(std::string path, const std::string& tex
 }
 
 // The example scenario's Game policy, written into a signed server pack and
-// loaded back out of it by the server's own loader.
+// loaded back out of it by the server's own loader. ctest runs every test in a
+// process of its own, possibly in parallel, so each writes a pack of its own.
 augusta::scripting::Engine ExamplePolicy() {
   const std::filesystem::path scenario{AUGUSTA_EXAMPLE_SCENARIO};
-  const auto pack_path = std::filesystem::temp_directory_path() / "augusta_example_objectives_test.pack";
+  const ::testing::TestInfo& test = *::testing::UnitTest::GetInstance()->current_test_info();
+  std::string name = std::string("augusta_example_objectives_test_") + test.test_suite_name() + "_" + test.name();
+  std::ranges::replace(name, '/', '_');
+  const auto pack_path = std::filesystem::temp_directory_path() / (name + ".pack");
   const auto keys = augusta::assets::GenerateEd25519KeyPair();
   EXPECT_TRUE(augusta::assets::WritePack(pack_path,
                                          {ScriptEntry("objectives.lua", ReadFile(scenario / "objectives.lua")),
@@ -75,9 +80,12 @@ augusta::scripting::Engine ExamplePolicy() {
                                          keys.private_key)
                   .has_value());
   auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
-  EXPECT_TRUE(pack.has_value());
-  auto policy = augusta::server::LoadPolicy(*pack);
   std::filesystem::remove(pack_path);
+  if (!pack.has_value()) {
+    ADD_FAILURE() << augusta::assets::DescribeLoadError(pack.error());
+    return augusta::scripting::Engine{};
+  }
+  auto policy = augusta::server::LoadPolicy(*pack);
   EXPECT_TRUE(policy.has_value()) << augusta::server::DescribePolicyLoadError(policy.error());
   return policy ? *std::move(policy) : augusta::scripting::Engine{};
 }

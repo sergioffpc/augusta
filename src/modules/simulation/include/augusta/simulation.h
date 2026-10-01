@@ -115,12 +115,14 @@ enum class Phase {
 enum class EntityId : std::uint32_t {};
 
 /// The server's name for the player who controls a body (CONTEXT.md, "Session
-/// ID"): how Game policy names a player, and a Match end its winner. Never 0.
+/// ID"): how Game policy names a player, and a Match end its winner. The
+/// server's start at 1; 0 is no player's, and never a winner.
 enum class SessionId : std::uint32_t {};
 
 /// Who plays a body, as Game policy sees them (ADR-0022): the session of its
 /// player and the index of the Character it plays.
 struct PlayerIdentity {
+  /// The session of its player; 0, for a body no session plays, cannot win.
   SessionId session{};
   /// 1-based position in the scenario's character list (ADR-0042).
   std::uint8_t character = 1;

@@ -361,6 +361,15 @@ TEST_F(PolicyTest, APlayerWhoLeftTheMatchIsAbsentFromWhatOnTickSees) {
   EXPECT_EQ(state.match_end->winner, kBobSession);
 }
 
+// A body added with no identity has Session ID 0, which is no player's: it is
+// never declared the winner, whatever policy says.
+TEST_F(PolicyTest, SessionZeroIsNeverTheWinner) {
+  World world(Parameters{}, kTickRate, WithObjectives("function on_tick() return {winner = 0} end"));
+  world.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
+
+  EXPECT_FALSE(world.Tick({}, kTick).match_end.has_value());
+}
+
 TEST_F(PolicyTest, AWinnerWhoIsNotInTheMatchIsRefusedLoggedAndTheMatchGoesOn) {
   World world = WithAlice(WithObjectives("function on_tick() return {winner = 12} end"));
 

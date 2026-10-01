@@ -47,7 +47,7 @@ The player Game policy declares has won a Match, alive in it when declared, name
 _Avoid_: Victor, champion
 
 **Draw**:
-A Match end with no Winner: its last players died on the same tick, or a Match of one ended with its player's death. Match end names Session ID 0 for it.
+A Match end with no Winner: its last players died on the same tick, or a Match of one ended with its player's death.
 _Avoid_: Tie, stalemate
 
 **Session**:

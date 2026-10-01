@@ -78,10 +78,28 @@ std::string WinnerName(const std::optional<SessionId>& winner) {
   return winner.has_value() ? std::to_string(SessionNumber(*winner)) : "draw";
 }
 
-// Why a match ended, as its log line says (ADR-0029).
-constexpr std::string_view kWinCondition = "win condition";
-constexpr std::string_view kNoPlayersLeft = "no players left";
-constexpr std::string_view kEndedByTheHost = "ended by the host";
+// Why a match ended.
+enum class EndReason : std::uint8_t {
+  // Game policy decided it was over (US-14).
+  kWinCondition,
+  // Its last player left.
+  kNoPlayersLeft,
+  // Host::EndMatch was called.
+  kEndedByTheHost,
+};
+
+// reason as a match end's log line says it (ADR-0029).
+std::string_view EndReasonName(EndReason reason) {
+  switch (reason) {
+    case EndReason::kWinCondition:
+      return "win condition";
+    case EndReason::kNoPlayersLeft:
+      return "no players left";
+    case EndReason::kEndedByTheHost:
+      return "ended by the host";
+  }
+  std::unreachable();
+}
 
 ballistics::BodyPart ToBallistics(assets::BodyPart part) {
   switch (part) {
@@ -375,22 +393,22 @@ struct Host::Impl {
       case Departure::kEndedMatch:
         LI("subsystem=serverruntime event=match_left peer={} session={} lost={} playing=0", PeerNumber(peer),
            SessionNumber(*session), lost);
-        LogMatchEnded(kNoPlayersLeft, std::nullopt, 0);
+        LogMatchEnded(EndReason::kNoPlayersLeft, std::nullopt, 0);
         break;
     }
   }
 
   // One line for every match that ends (ADR-0029): why, who won, how many
   // ticks it lasted, counting the one it ended on, and how many were in it.
-  void LogMatchEnded(std::string_view reason, const std::optional<SessionId>& winner, std::size_t playing) const {
-    LI("subsystem=serverruntime event=match_ended reason=\"{}\" winner={} ticks={} players={} version={}", reason,
-       WinnerName(winner), tick - match_start_tick + 1, playing, match.GetRoster().version);
+  void LogMatchEnded(EndReason reason, const std::optional<SessionId>& winner, std::size_t playing) const {
+    LI("subsystem=serverruntime event=match_ended reason=\"{}\" winner={} ticks={} players={} version={}",
+       EndReasonName(reason), WinnerName(winner), tick - match_start_tick + 1, playing, match.GetRoster().version);
   }
 
   // Ends the match in progress, if any, with winner or as a draw, for reason:
   // its players are told, and are back in the Lobby; their bodies and the
   // bullets in flight leave the simulation at the start of the next tick.
-  void EndMatch(const std::optional<SessionId>& winner, std::string_view reason) {
+  void EndMatch(const std::optional<SessionId>& winner, EndReason reason) {
     const std::optional<MatchEnd> ended = match.End(winner);
     if (!ended.has_value()) {
       return;
@@ -574,7 +592,7 @@ simulation::State Host::Tick(float delta_time) {
   if (state.match_end.has_value()) {
     const std::optional<simulation::SessionId> winner = state.match_end->winner;
     const std::lock_guard<std::mutex> lock(impl.mutex);
-    impl.EndMatch(winner.has_value() ? std::optional(FromSimulation(*winner)) : std::nullopt, kWinCondition);
+    impl.EndMatch(winner.has_value() ? std::optional(FromSimulation(*winner)) : std::nullopt, EndReason::kWinCondition);
   }
   return state;
 }
@@ -583,7 +601,7 @@ void Host::RecordTiming(const tick::Timing& timing) { impl_->Heartbeat(timing); 
 
 void Host::EndMatch() {
   const std::lock_guard<std::mutex> lock(impl_->mutex);
-  impl_->EndMatch(std::nullopt, kEndedByTheHost);
+  impl_->EndMatch(std::nullopt, EndReason::kEndedByTheHost);
 }
 
 std::size_t Host::QueuedCommands(SessionId session) const {
