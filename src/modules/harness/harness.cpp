@@ -251,7 +251,6 @@ struct Session::Impl {
       next.authoritative.reset();
       next.match_end = end;
     });
-    ForgetCombat();
     if (end.winner.has_value()) {
       LI("subsystem=harness event=match_ended winner={}", std::to_underlying(*end.winner));
     } else {
@@ -312,6 +311,7 @@ struct Session::Impl {
   }
 
   // The Shots, the Hit confirmations and the Deaths of one match are not the next one's to draw.
+  // Match end keeps them: the tick that ends a match sends its own just before it.
   void ForgetCombat() {
     shots.Clear();
     hit_confirmations.Clear();

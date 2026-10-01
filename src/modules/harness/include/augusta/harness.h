@@ -320,25 +320,28 @@ class Session {
   /// from any thread.
   [[nodiscard]] std::optional<AuthoritativeState> GetAuthoritativeState() const;
 
-  /// The Shots of the match in progress received since the last call, in the
+  /// The Shots of the latest match received since the last call, in the
   /// order they arrived; the newest kMaxPendingShots of them if more did. One
-  /// that arrives outside a match or names a body not in it is dropped, and a
-  /// match starts with none. Received by ExchangeMessages; safe to call from
-  /// any thread.
+  /// that arrives outside a match or names a body not in it is dropped. Those
+  /// that arrived before Match end are kept after it, and the next match
+  /// starts with none. Received by ExchangeMessages; safe to call from any
+  /// thread.
   [[nodiscard]] std::vector<Shot> TakeShots();
 
-  /// The Hit confirmations of the match in progress received since the last
+  /// The Hit confirmations of the latest match received since the last
   /// call, in the order they arrived; the newest kMaxPendingHitConfirmations of
   /// them if more did. One that arrives outside a match or names a body not in
-  /// it is dropped, and a match starts with none. Received by ExchangeMessages;
-  /// safe to call from any thread.
+  /// it is dropped. Those that arrived before Match end are kept after it, and
+  /// the next match starts with none. Received by ExchangeMessages; safe to
+  /// call from any thread.
   [[nodiscard]] std::vector<HitConfirmation> TakeHitConfirmations();
 
-  /// The Deaths of the match in progress received since the last call, in the
+  /// The Deaths of the latest match received since the last call, in the
   /// order they arrived; the newest kMaxPendingDeaths of them if more did. One
-  /// that arrives outside a match or names a body not in it is dropped, and a
-  /// match starts with none. Received by ExchangeMessages; safe to call from
-  /// any thread.
+  /// that arrives outside a match or names a body not in it is dropped. Those
+  /// that arrived before Match end are kept after it, and the next match
+  /// starts with none. Received by ExchangeMessages; safe to call from any
+  /// thread.
   [[nodiscard]] std::vector<Death> TakeDeaths();
 
   /// Whether this client's own player is alive: in a match, and neither told
