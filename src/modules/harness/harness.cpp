@@ -113,6 +113,8 @@ struct ServerView {
   std::optional<MatchStart> match_start;
   std::uint32_t matches_started = 0;
   bool in_match = false;
+  // How the last match ended, until the next starts.
+  std::optional<MatchEnd> match_end;
   // Only while in_match.
   std::optional<AuthoritativeState> authoritative;
   // The bodies of the match in progress whose Death has been told.
@@ -190,8 +192,8 @@ struct Session::Impl {
       OnLobby(FromWire(*lobby));
     } else if (const auto* start = std::get_if<protocol::MatchStartWire>(&message)) {
       OnMatchStart(FromWire(*start));
-    } else if (std::holds_alternative<protocol::MatchEndWire>(message)) {
-      OnMatchEnd();
+    } else if (const auto* end = std::get_if<protocol::MatchEndWire>(&message)) {
+      OnMatchEnd(FromWire(*end));
     } else {
       return false;
     }
@@ -235,6 +237,7 @@ struct Session::Impl {
       next.match_start = std::move(start);
       ++next.matches_started;
       next.in_match = true;
+      next.match_end.reset();
       next.authoritative.reset();
       next.dead.clear();
     });
@@ -242,13 +245,18 @@ struct Session::Impl {
     LI("subsystem=harness event=match_started players={}", players);
   }
 
-  void OnMatchEnd() {
+  void OnMatchEnd(const MatchEnd& end) {
     Publish([&](ServerView& next) {
       next.in_match = false;
       next.authoritative.reset();
+      next.match_end = end;
     });
     ForgetCombat();
-    LI("subsystem=harness event=match_ended");
+    if (end.winner.has_value()) {
+      LI("subsystem=harness event=match_ended winner={}", std::to_underlying(*end.winner));
+    } else {
+      LI("subsystem=harness event=match_ended winner=draw");
+    }
   }
 
   // Keeps shot for TakeShots if it is of the match in progress. One fired on
@@ -509,6 +517,8 @@ Phase Session::GetPhase() const {
 std::optional<Lobby> Session::GetLobby() const { return impl_->view.load()->lobby; }
 
 std::optional<MatchStart> Session::GetMatchStart() const { return impl_->view.load()->match_start; }
+
+std::optional<MatchEnd> Session::GetMatchEnd() const { return impl_->view.load()->match_end; }
 
 void Session::ReportReady(std::uint32_t version) {
   const std::shared_ptr<const ServerView> server_view = impl_->view.load();

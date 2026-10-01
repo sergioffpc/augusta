@@ -68,7 +68,7 @@ enum class MessageTypeWire : std::uint8_t {
   kReady = 7,
   /// Server to client: the match has started, with who is in it and where each spawns.
   kMatchStart = 8,
-  /// Server to client: the match is over and its players are back in the Lobby.
+  /// Server to client: the match is over, with its winner or a draw, and its players are back in the Lobby.
   kMatchEnd = 9,
   /// Server to client: a player fired a round (ADR-0044).
   kShot = 10,
@@ -217,6 +217,10 @@ struct ParametersWire {
 /// handle for the connection. Identifies a player inside messages; it is not a
 /// credential, since the server tells senders apart by connection.
 enum class SessionIdWire : std::uint32_t {};
+
+/// The session a Match end names as its winner when it is a draw: Session IDs
+/// start at 1, so none is ever 0 (ADR-0038).
+inline constexpr SessionIdWire kDraw{};
 
 /// The server's name for one dynamic body - today a player's, later any that
 /// moves (a crate, a door). Distinct from the session of the player who
@@ -395,6 +399,9 @@ struct MatchStartWire {
 
 /// Server to client: the match is over, and everyone still connected is back in the Lobby.
 struct MatchEndWire {
+  /// The session of the player Game policy declared the winner, or kDraw.
+  SessionIdWire winner = kDraw;
+
   bool operator==(const MatchEndWire&) const = default;
 };
 

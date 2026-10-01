@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -276,18 +277,19 @@ TEST(WireTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
 
 TEST(WireTest, AMatchStartTheServerSendsReachesTheClientUnchanged) {
   const augusta::server::MatchStart sent{
-      .players = {{.session = SessionId{3}, .entity = EntityId{11}, .character = 2, .spawn = Vec3(4.0F, 0.5F, -8.0F)},
-                  {.session = SessionId{5}, .entity = EntityId{12}, .character = 1, .spawn = Vec3(-1.0F, 0.0F, 2.0F)}}};
+      .players = {{.session = SessionId{3}, .entity = EntityId{11}, .character = 2},
+                  {.session = SessionId{5}, .entity = EntityId{12}, .character = 1}}};
+  const std::vector<Vec3> spawns{Vec3(4.0F, 0.5F, -8.0F), Vec3(-1.0F, 0.0F, 2.0F)};
 
   const augusta::harness::MatchStart received =
-      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent, spawns)));
 
   ASSERT_EQ(received.players.size(), sent.players.size());
   for (std::size_t i = 0; i < sent.players.size(); ++i) {
     EXPECT_EQ(Number(received.players[i].session), Number(sent.players[i].session));
     EXPECT_EQ(Number(received.players[i].entity), Number(sent.players[i].entity));
     EXPECT_EQ(received.players[i].character, sent.players[i].character);
-    EXPECT_EQ(received.players[i].spawn, sent.players[i].spawn);
+    EXPECT_EQ(received.players[i].spawn, spawns[i]);
   }
 }
 
@@ -391,6 +393,20 @@ TEST(WireTest, AHitConfirmationTheServerSendsReachesTheClientUnchanged) {
     EXPECT_EQ(received.part, part);
     EXPECT_EQ(received.damage, sent.damage);
   }
+}
+
+TEST(WireTest, AMatchEndTheServerSendsReachesTheClientWithItsWinnerOrAsADraw) {
+  const augusta::server::MatchEnd won{.players = {SessionId{3}, SessionId{5}}, .winner = SessionId{5}};
+  const augusta::server::MatchEnd drawn{.players = {SessionId{3}, SessionId{5}}, .winner = std::nullopt};
+
+  const augusta::harness::MatchEnd won_received =
+      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(won)));
+  const augusta::harness::MatchEnd drawn_received =
+      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(drawn)));
+
+  ASSERT_TRUE(won_received.winner.has_value());
+  EXPECT_EQ(Number(*won_received.winner), 5U);
+  EXPECT_FALSE(drawn_received.winner.has_value());
 }
 
 TEST(WireTest, ADeathTheServerTellsReachesTheClientUnchanged) {

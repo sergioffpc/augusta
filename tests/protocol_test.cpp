@@ -337,9 +337,19 @@ TEST(ProtocolTest, ReadyRoundTripsTheVersionItWasLoadedFor) {
   EXPECT_EQ(Encode(ReadyWire{.version = 0x01020304U}), BytesOf({kReadyType, 0x04, 0x03, 0x02, 0x01}));
 }
 
-TEST(ProtocolTest, MatchEndIsItsTypeAlone) {
-  EXPECT_EQ(Encode(MatchEndWire{}), BytesOf({kMatchEndType}));
-  EXPECT_TRUE(std::holds_alternative<MatchEndWire>(RoundTrip(MatchEndWire{})));
+TEST(ProtocolTest, MatchEndRoundTripsItsWinnersSession) {
+  const auto decoded = RoundTrip(MatchEndWire{.winner = static_cast<SessionIdWire>(0xA1B2C3D4U)});
+
+  ASSERT_TRUE(std::holds_alternative<MatchEndWire>(decoded));
+  EXPECT_EQ(std::get<MatchEndWire>(decoded).winner, static_cast<SessionIdWire>(0xA1B2C3D4U));
+  EXPECT_EQ(Encode(MatchEndWire{.winner = static_cast<SessionIdWire>(0x01020304U)}),
+            BytesOf({kMatchEndType, 0x04, 0x03, 0x02, 0x01}));
+}
+
+// Session IDs start at 1, so a winner of 0 is a draw (ADR-0038).
+TEST(ProtocolTest, AMatchEndThatIsADrawNamesSessionZero) {
+  EXPECT_EQ(Encode(MatchEndWire{}), BytesOf({kMatchEndType, 0, 0, 0, 0}));
+  EXPECT_EQ(Encode(MatchEndWire{.winner = augusta::protocol::kDraw}), BytesOf({kMatchEndType, 0, 0, 0, 0}));
 }
 
 TEST(ProtocolTest, AShotRoundTripsWithItsShooterTickOriginAndDirection) {
@@ -477,7 +487,7 @@ TEST(ProtocolTest, AnUnknownTypeIsRejected) {
 }
 
 TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
-  const std::array<MessageWire, 11> messages = {
+  const std::array<MessageWire, 12> messages = {
       JoinRequestWire{.engine_version = "0.1.0", .character = "characters/player"},
       JoinAcceptedWire{.session = static_cast<SessionIdWire>(7), .character = 1},
       JoinRefusedWire{.reason = JoinRefusalWire::kMatchInProgress},
@@ -488,7 +498,8 @@ TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
       ReadyWire{.version = 0x01020304U},
       ShotWire{.origin = Vec3(1.0F, 2.0F, 3.0F), .shooter = static_cast<EntityIdWire>(7), .tick = 9},
       HitConfirmationWire{.target = static_cast<EntityIdWire>(7), .damage = 20.0F, .part = BodyPartWire::kHead},
-      DeathWire{.victim = static_cast<EntityIdWire>(7), .killer = static_cast<EntityIdWire>(8)}};
+      DeathWire{.victim = static_cast<EntityIdWire>(7), .killer = static_cast<EntityIdWire>(8)},
+      MatchEndWire{.winner = static_cast<SessionIdWire>(3)}};
   for (const MessageWire& message : messages) {
     const BytesWire whole = Encode(message);
     for (std::size_t length = 1; length < whole.size(); ++length) {
@@ -536,7 +547,7 @@ TEST(ProtocolTest, BytesAfterAMessageAreTrailing) {
   start.push_back(std::byte{0});
   EXPECT_EQ(Decode(start).error(), DecodeError::kTrailingBytes);
   EXPECT_EQ(Decode(BytesOf({kReadyType, 1, 0, 0, 0, 0})).error(), DecodeError::kTrailingBytes);
-  EXPECT_EQ(Decode(BytesOf({kMatchEndType, 0})).error(), DecodeError::kTrailingBytes);
+  EXPECT_EQ(Decode(BytesOf({kMatchEndType, 1, 0, 0, 0, 0})).error(), DecodeError::kTrailingBytes);
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 1, 1})).error(), DecodeError::kTrailingBytes);
 }
 

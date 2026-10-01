@@ -38,12 +38,24 @@ _Avoid_: Loaded, prepared
 The moment the Lobby is full and every player is Ready, at least 5 seconds after the previous Match ended: the server closes the Lobby and tells every client who is in the Match, with each player's Character, the Entity ID of the body it controls, and Spawn point.
 _Avoid_: Spawn (a player's body is placed at Match start, but "spawn" names the placement, not the start of the match)
 
+**Match end**:
+The moment Game policy decides a Match is over (in v1, when at most one player is left alive: last player standing), or its last player leaves. The server takes every body and bullet out of the simulation and tells every client still in the Match, with the Winner or a Draw; everyone returns to the Lobby (ADR-0043).
+_Avoid_: Game over, round end
+
+**Winner**:
+The player Game policy declares has won a Match, alive in it when declared, named by its Session ID in Match end.
+_Avoid_: Victor, champion
+
+**Draw**:
+A Match end with no Winner: its last players died on the same tick, or a Match of one ended with its player's death.
+_Avoid_: Tie, stalemate
+
 **Session**:
 One player's presence on the server, from being admitted to the Lobby until it disconnects, named by its Session ID. It spans the Lobby and every Match the player plays in between. The client's own connection and PredictionWorld pairing (augusta::harness::Session) is the client-side implementation of one.
 _Avoid_: Connection (a session is the gameplay identity kept for the life of the player's presence on the server; the transport connection beneath it, augusta::networking's own peer handle, can in principle outlive or be distinct from it)
 
 **Session ID**:
-The Authoritative server's name for one connected player (harness::SessionId on the client, server::SessionId on the server, protocol::SessionIdWire on the wire), assigned when it admits the join. Distinct from the transport's own handle for the connection, and not a credential — the server tells senders apart by connection, not by this ID.
+The Authoritative server's name for one connected player (harness::SessionId on the client, server::SessionId and simulation::SessionId on the server, protocol::SessionIdWire on the wire), assigned when it admits the join. Distinct from the transport's own handle for the connection, and not a credential — the server tells senders apart by connection, not by this ID.
 _Avoid_: Player ID, connection ID
 
 **Entity ID**:
@@ -75,7 +87,7 @@ One server tick's Authoritative State as sent to one client (protocol::Authorita
 _Avoid_: Snapshot, state sync
 
 **Spawn point**:
-A place in the Map where a player's feet are put at Match start, authored as a scene node in the pack (ADR-0032). The server takes them in order, starting over after the last, and tells the client which one it got; which player gets which is Game policy once Match rules exist.
+A place in the Map where a player's feet are put at Match start, authored as a scene node in the pack (ADR-0032). Which player gets which is Game policy: the scenario's `assign_spawns` hook assigns them once, at Match start (ADR-0022, ADR-0023), and players take them in order, starting over after the last, when it is undefined or its answer is refused. Every client is told where each player spawned in Match start.
 _Avoid_: Spawn location, start position
 
 **Roster**:

@@ -1,5 +1,6 @@
 #include "host.h"
 
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -21,6 +22,7 @@
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/logging.h"
+#include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -64,6 +66,41 @@ static_assert(kMaxQueuedCommands <= std::numeric_limits<std::uint8_t>::max());
 std::uint32_t PeerNumber(networking::PeerId peer) { return static_cast<std::uint32_t>(peer); }
 
 std::uint32_t SessionNumber(SessionId session) { return static_cast<std::uint32_t>(session); }
+
+// session as SimulationWorld's Game policy names the same player, and back.
+simulation::SessionId ToSimulation(SessionId session) {
+  return static_cast<simulation::SessionId>(SessionNumber(session));
+}
+
+SessionId FromSimulation(simulation::SessionId session) { return static_cast<SessionId>(std::to_underlying(session)); }
+
+// What a Match end's log line names as its winner.
+std::string WinnerName(const std::optional<SessionId>& winner) {
+  return winner.has_value() ? std::to_string(SessionNumber(*winner)) : "draw";
+}
+
+// Why a match ended.
+enum class EndReason : std::uint8_t {
+  // Game policy decided it was over (US-14).
+  kWinCondition,
+  // Its last player left.
+  kNoPlayersLeft,
+  // Host::EndMatch was called.
+  kEndedByTheHost,
+};
+
+// reason as a match end's log line says it (ADR-0029).
+std::string_view EndReasonName(EndReason reason) {
+  switch (reason) {
+    case EndReason::kWinCondition:
+      return "win condition";
+    case EndReason::kNoPlayersLeft:
+      return "no players left";
+    case EndReason::kEndedByTheHost:
+      return "ended by the host";
+  }
+  std::unreachable();
+}
 
 ballistics::BodyPart ToBallistics(assets::BodyPart part) {
   switch (part) {
@@ -152,19 +189,24 @@ struct Host::Impl {
   };
 
   // Declared before the socket so it is constructed first; see BuildSimulation.
-  // Simulation thread only, with the body each player in it controls.
+  // Simulation thread only, with the body each player in it controls, and
+  // whether the match those bodies are in is still in the simulation.
   simulation::World simulation;
   std::unordered_map<SessionId, EntityId> bodies;
+  bool simulating_match = false;
   // The last tick SimulationWorld ran, as it numbers them: what its State was
-  // sent under, and what a client names the view of its Commands by.
-  std::uint32_t tick = 0;
+  // sent under, and what a client names the view of its Commands by. Written by
+  // the Simulation thread; read by the Network I/O thread too, to log how long
+  // a match its last player left lasted.
+  std::atomic<std::uint32_t> tick = 0;
   // What every client is told when it joins, with the tick rate; neither ever
   // changes, so neither needs the lock.
   const std::uint8_t tick_rate_hz;
   const parameters::Parameters parameters;
   // The scenario's characters as SimulationWorld takes them, by index - 1
-  // (ADR-0042); never changes either.
+  // (ADR-0042), and the Map's Spawn points; neither changes either.
   const std::vector<simulation::Character> characters;
+  const std::vector<math::Vec3> spawn_points;
 
   // Thread-safe by the transport's contract, used from both threads.
   networking::Server network;
@@ -175,6 +217,8 @@ struct Host::Impl {
   std::mutex mutex;
   Match match;
   std::unordered_map<SessionId, Player> players;
+  // The tick the match in progress, or the last one, started on.
+  std::uint32_t match_start_tick = 0;
 
   // What Network I/O and the ticks did since the last heartbeat. Guarded by mutex.
   struct Activity {
@@ -205,16 +249,15 @@ struct Host::Impl {
         tick_rate_hz(config.tick_rate_hz),
         parameters(config.parameters),
         characters(ToSimulation(map.characters)),
+        spawn_points(std::move(map.spawn_points)),
         network(config.listen),
-        match(
-            MatchConfig{
-                .engine_version = std::string(EngineVersion()),
-                .client_pack = map.client_pack,
-                .characters = CharacterPaths(map.characters),
-                .player_count = config.parameters.player_count,
-                .pause_ticks = PauseTicks(config.tick_rate_hz),
-            },
-            std::move(map.spawn_points)) {}
+        match(MatchConfig{
+            .engine_version = std::string(EngineVersion()),
+            .client_pack = map.client_pack,
+            .characters = CharacterPaths(map.characters),
+            .player_count = config.parameters.player_count,
+            .pause_ticks = PauseTicks(config.tick_rate_hz),
+        }) {}
 
   void Reply(networking::PeerId peer, const protocol::MessageWire& message) {
     network.Send(peer, protocol::Encode(message), networking::Reliability::kReliable);
@@ -351,39 +394,57 @@ struct Host::Impl {
       case Departure::kEndedMatch:
         LI("subsystem=serverruntime event=match_left peer={} session={} lost={} playing=0", PeerNumber(peer),
            SessionNumber(*session), lost);
-        LI("subsystem=serverruntime event=match_ended reason=\"no players left\"");
+        LogMatchEnded(EndReason::kNoPlayersLeft, std::nullopt, 0);
         break;
     }
   }
 
-  // Ends the match in progress, if any: its players are told, and are back in
-  // the Lobby; their bodies leave the simulation at the start of the next tick.
-  void EndMatch() {
-    const std::vector<SessionId> ended = match.End();
-    if (ended.empty()) {
+  // One line for every match that ends (ADR-0029): why, who won, how many
+  // ticks it lasted, counting the one it ended on, and how many were in it.
+  void LogMatchEnded(EndReason reason, const std::optional<SessionId>& winner, std::size_t playing) const {
+    LI("subsystem=serverruntime event=match_ended reason=\"{}\" winner={} ticks={} players={} version={}",
+       EndReasonName(reason), WinnerName(winner), tick - match_start_tick + 1, playing, match.GetRoster().version);
+  }
+
+  // Ends the match in progress, if any, with winner or as a draw, for reason:
+  // its players are told, and are back in the Lobby; their bodies and the
+  // bullets in flight leave the simulation at the start of the next tick.
+  void EndMatch(const std::optional<SessionId>& winner, EndReason reason) {
+    const std::optional<MatchEnd> ended = match.End(winner);
+    if (!ended.has_value()) {
       return;
     }
-    SendTo(ended, protocol::MatchEndWire{});
-    LI("subsystem=serverruntime event=match_ended players={} version={}", ended.size(), match.GetRoster().version);
+    SendTo(ended->players, ToWire(*ended));
+    LogMatchEnded(reason, ended->winner, ended->players.size());
     SendRoster();
   }
 
   // Starts a match if one can start: its players' bodies enter the simulation
-  // at their spawn points, their commands start afresh, and they are told.
+  // at the Spawn points Game policy gives them, their commands start afresh,
+  // and they are told where each spawned.
   void StartMatchIfReady() {
     const std::optional<MatchStart> start = match.TryStart();
     if (!start.has_value()) {
       return;
     }
+    std::vector<simulation::MatchPlayer> entrants;
+    entrants.reserve(start->players.size());
     std::vector<SessionId> sessions;
     for (const MatchPlayer& player : start->players) {
-      simulation.AddPlayer(ToSimulation(player.entity), player.spawn, characters.at(player.character - 1));
+      entrants.push_back(
+          simulation::MatchPlayer{.entity = ToSimulation(player.entity),
+                                  .identity = {.session = ToSimulation(player.session), .character = player.character},
+                                  .character = characters.at(player.character - 1)});
       bodies.emplace(player.session, player.entity);
       players.at(player.session).commands = CommandQueue{tick_rate_hz};
       sessions.push_back(player.session);
     }
-    SendTo(sessions, ToWire(*start));
-    LI("subsystem=serverruntime event=match_started tick={} players={}", tick, sessions.size());
+    const std::vector<math::Vec3> spawns = simulation.StartMatch(entrants, spawn_points);
+    simulating_match = true;
+    // Its first tick is the one about to run.
+    match_start_tick = tick + 1;
+    SendTo(sessions, ToWire(*start, spawns));
+    LI("subsystem=serverruntime event=match_started tick={} players={}", match_start_tick, sessions.size());
   }
 
   // What a tick runs on: one command per player in the match, and who to send
@@ -395,10 +456,16 @@ struct Host::Impl {
     std::unordered_map<EntityId, networking::PeerId> peers;
   };
 
-  // Removes the bodies of players no longer in a match, starts a match if one
-  // can start, then takes one command per player in it for this tick.
+  // Takes a match that has ended out of the simulation, or the bodies of
+  // players who left the one in progress, starts a match if one can start,
+  // then takes one command per player in it for this tick.
   TickInput PrepareTick() {
     const std::lock_guard<std::mutex> lock(mutex);
+    if (simulating_match && !match.InMatch()) {
+      simulation.EndMatch();
+      bodies.clear();
+      simulating_match = false;
+    }
     std::erase_if(bodies, [&](const auto& body) {
       const auto& [session, entity] = body;
       if (match.IsPlaying(session)) {
@@ -439,7 +506,7 @@ struct Host::Impl {
     }
     LD("subsystem=serverruntime event=heartbeat tick={} players={} in_match={} ticks={} late={} overrun={} "
        "messages={} stale={} dropped={} overflow={}",
-       tick, players.size(), match.InMatch(), activity.ticks, activity.late, activity.overrun, activity.messages,
+       tick.load(), players.size(), match.InMatch(), activity.ticks, activity.late, activity.overrun, activity.messages,
        activity.stale, activity.dropped, activity.overflow);
     activity = Activity{};
     activity_since = now;
@@ -450,12 +517,12 @@ struct Host::Impl {
   // for (US-12, US-13), in a Release build too.
   void LogCombat(const simulation::State& state) const {
     for (const simulation::Hit& hit : state.hits) {
-      LI("subsystem=serverruntime event=hit tick={} shooter={} target={} part={} damage={} health={}", tick,
+      LI("subsystem=serverruntime event=hit tick={} shooter={} target={} part={} damage={} health={}", state.tick,
          std::to_underlying(hit.shooter), std::to_underlying(hit.target), BodyPartName(hit.part), hit.damage,
          hit.health);
     }
     for (const simulation::Death& death : state.deaths) {
-      LI("subsystem=serverruntime event=death tick={} victim={} killer={} part={}", tick,
+      LI("subsystem=serverruntime event=death tick={} victim={} killer={} part={}", state.tick,
          std::to_underlying(death.victim), std::to_underlying(death.killer), BodyPartName(death.part));
     }
   }
@@ -527,6 +594,13 @@ simulation::State Host::Tick(float delta_time) {
   impl.tick = state.tick;
   impl.Send(state, input);
   impl.LogCombat(state);
+  // After the tick's own messages, so a client hears the deaths that ended the
+  // match before it hears that it has.
+  if (state.match_end.has_value()) {
+    const std::optional<simulation::SessionId> winner = state.match_end->winner;
+    const std::lock_guard<std::mutex> lock(impl.mutex);
+    impl.EndMatch(winner.has_value() ? std::optional(FromSimulation(*winner)) : std::nullopt, EndReason::kWinCondition);
+  }
   return state;
 }
 
@@ -534,7 +608,7 @@ void Host::RecordTiming(const tick::Timing& timing) { impl_->Heartbeat(timing); 
 
 void Host::EndMatch() {
   const std::lock_guard<std::mutex> lock(impl_->mutex);
-  impl_->EndMatch();
+  impl_->EndMatch(std::nullopt, EndReason::kEndedByTheHost);
 }
 
 std::size_t Host::QueuedCommands(SessionId session) const {
