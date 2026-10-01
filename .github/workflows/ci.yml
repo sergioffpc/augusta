@@ -1,418 +1,418 @@
 name: CI
 
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
+    push:
+        branches: [main, develop]
+    pull_request:
+        branches: [main, develop]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
 
 permissions:
-  contents: read
-  packages: write
-  # Deleting superseded cache entries (.github/actions/prune-cache).
-  actions: write
+    contents: read
+    packages: write
+    # Deleting superseded cache entries (.github/actions/prune-cache).
+    actions: write
 
 env:
-  VCPKG_BINARY_SOURCES: "clear;nuget,GitHubPackages,readwrite"
-  SCCACHE_GHA_ENABLED: "true"
+    VCPKG_BINARY_SOURCES: "clear;nuget,GitHubPackages,readwrite"
+    SCCACHE_GHA_ENABLED: "true"
 
 jobs:
-  changes:
-    runs-on: ubuntu-26.04
-    outputs:
-      run_build: ${{ steps.filter.outputs.run_build }}
-      run_container: ${{ steps.filter.outputs.run_container }}
-      run_tools: ${{ steps.filter.outputs.run_tools }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
+    changes:
+        runs-on: ubuntu-26.04
+        outputs:
+            run_build: ${{ steps.filter.outputs.run_build }}
+            run_container: ${{ steps.filter.outputs.run_container }}
+            run_tools: ${{ steps.filter.outputs.run_tools }}
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  fetch-depth: 0
 
-      - id: filter
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            base="${{ github.event.pull_request.base.sha }}"
-          else
-            base="${{ github.event.before }}"
-          fi
+            - id: filter
+              run: |
+                  if [ "${{ github.event_name }}" = "pull_request" ]; then
+                    base="${{ github.event.pull_request.base.sha }}"
+                  else
+                    base="${{ github.event.before }}"
+                  fi
 
-          if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null; then
-            echo "run_build=true" >> "$GITHUB_OUTPUT"
-            echo "run_container=true" >> "$GITHUB_OUTPUT"
-            echo "run_tools=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+                  if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null; then
+                    echo "run_build=true" >> "$GITHUB_OUTPUT"
+                    echo "run_container=true" >> "$GITHUB_OUTPUT"
+                    echo "run_tools=true" >> "$GITHUB_OUTPUT"
+                    exit 0
+                  fi
 
-          changed="$(git diff --name-only "$base" "${{ github.sha }}")"
+                  changed="$(git diff --name-only "$base" "${{ github.sha }}")"
 
-          if echo "$changed" \
-              | grep -qE '^(src/|tests/|tools/pack/examples/|tools/pack/cpp/|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/)'; then
-            echo "run_build=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run_build=false" >> "$GITHUB_OUTPUT"
-          fi
+                  if echo "$changed" \
+                      | grep -qE '^(src/|tests/|tools/composer/examples/|tools/pack/cpp/|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/)'; then
+                    echo "run_build=true" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "run_build=false" >> "$GITHUB_OUTPUT"
+                  fi
 
-          if echo "$changed" \
-              | grep -qE '^(Dockerfile$|\.dockerignore$|charts/|\.github/workflows/ci\.yml$)'; then
-            echo "run_container=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run_container=false" >> "$GITHUB_OUTPUT"
-          fi
+                  if echo "$changed" \
+                      | grep -qE '^(Dockerfile$|\.dockerignore$|charts/|\.github/workflows/ci\.yml$)'; then
+                    echo "run_container=true" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "run_container=false" >> "$GITHUB_OUTPUT"
+                  fi
 
-          # The offline tools (tools/), and the golden output of theirs the
-          # runtime's tests load, which the tools job checks they still write.
-          if echo "$changed" \
-              | grep -qE '^(tools/|tests/fixtures/example-packs/|\.github/workflows/ci\.yml$)'; then
-            echo "run_tools=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run_tools=false" >> "$GITHUB_OUTPUT"
-          fi
+                  # The offline tools (tools/), and the golden output of theirs the
+                  # runtime's tests load, which the tools job checks they still write.
+                  if echo "$changed" \
+                      | grep -qE '^(tools/|tests/fixtures/example-packs/|\.github/workflows/ci\.yml$)'; then
+                    echo "run_tools=true" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "run_tools=false" >> "$GITHUB_OUTPUT"
+                  fi
 
-  format:
-    needs: changes
-    if: needs.changes.outputs.run_build == 'true'
-    runs-on: ubuntu-26.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    format:
+        needs: changes
+        if: needs.changes.outputs.run_build == 'true'
+        runs-on: ubuntu-26.04
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install clang-format
-        run: sudo apt-get update && sudo apt-get install -y clang-format
+            - name: Install clang-format
+              run: sudo apt-get update && sudo apt-get install -y clang-format
 
-      - name: Check formatting
-        run: find src tests tools \( -name '*.cpp' -o -name '*.h' \) | xargs clang-format --dry-run --Werror
+            - name: Check formatting
+              run: find src tests tools \( -name '*.cpp' -o -name '*.h' \) | xargs clang-format --dry-run --Werror
 
-  client:
-    needs: [changes, format]
-    if: needs.changes.outputs.run_build == 'true'
-    # Pinned rather than windows-latest, so the toolchain doesn't shift
-    # underneath us when GitHub migrates the "latest" runner image.
-    runs-on: windows-2025
-    env:
-      # packman, which fetches Falcor's binary dependencies when Falcor is built
-      # from source, keeps its cache on the drive its own script is on unless
-      # told otherwise - the workspace's D: on this runner, where the cache
-      # below would never find it.
-      PM_PACKAGES_ROOT: C:\packman-repo
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # recursive, not just true: third_party/falcor (ADR-0009) has its
-          # own nested submodules (glfw, imgui, fmt, ...) that need pulling
-          # too - see .gitmodules.
-          submodules: recursive
+    client:
+        needs: [changes, format]
+        if: needs.changes.outputs.run_build == 'true'
+        # Pinned rather than windows-latest, so the toolchain doesn't shift
+        # underneath us when GitHub migrates the "latest" runner image.
+        runs-on: windows-2025
+        env:
+            # packman, which fetches Falcor's binary dependencies when Falcor is built
+            # from source, keeps its cache on the drive its own script is on unless
+            # told otherwise - the workspace's D: on this runner, where the cache
+            # below would never find it.
+            PM_PACKAGES_ROOT: C:\packman-repo
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  # recursive, not just true: third_party/falcor (ADR-0009) has its
+                  # own nested submodules (glfw, imgui, fmt, ...) that need pulling
+                  # too - see .gitmodules.
+                  submodules: recursive
 
-      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+            - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
 
-      - name: Install Ninja
-        run: choco install ninja -y
-        shell: pwsh
+            - name: Install Ninja
+              run: choco install ninja -y
+              shell: pwsh
 
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+            - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
 
-      - name: Bootstrap vcpkg
-        shell: pwsh
-        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+            - name: Bootstrap vcpkg
+              shell: pwsh
+              run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
 
-      - name: Configure vcpkg NuGet cache
-        shell: pwsh
-        run: |
-          $nugetPath = & ".\third_party\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
-          & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
-          & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
+            - name: Configure vcpkg NuGet cache
+              shell: pwsh
+              run: |
+                  $nugetPath = & ".\third_party\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
+                  & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
+                  & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
 
-      - name: Configure
-        run: cmake --preset windows
-        shell: pwsh
+            - name: Configure
+              run: cmake --preset windows
+              shell: pwsh
 
-      # Configure downloads the prebuilt Falcor published for this Falcor
-      # (cmake/FalcorPrebuilt.cmake, falcor-prebuilt.yml). Without one - a pull
-      # request that changes Falcor, or before that workflow has published it -
-      # the build builds Falcor from source, and only then needs packman's
-      # downloads, cached here.
-      - name: Check for a prebuilt Falcor
-        id: falcor
-        shell: bash
-        run: echo "prebuilt=$(sed -n 's/^AUGUSTA_FALCOR_PREBUILT_USED:INTERNAL=//p' build/x64-windows/CMakeCache.txt)" >> "$GITHUB_OUTPUT"
+            # Configure downloads the prebuilt Falcor published for this Falcor
+            # (cmake/FalcorPrebuilt.cmake, falcor-prebuilt.yml). Without one - a pull
+            # request that changes Falcor, or before that workflow has published it -
+            # the build builds Falcor from source, and only then needs packman's
+            # downloads, cached here.
+            - name: Check for a prebuilt Falcor
+              id: falcor
+              shell: bash
+              run: echo "prebuilt=$(sed -n 's/^AUGUSTA_FALCOR_PREBUILT_USED:INTERNAL=//p' build/x64-windows/CMakeCache.txt)" >> "$GITHUB_OUTPUT"
 
-      - name: Restore packman's downloads
-        id: packman-cache
-        if: steps.falcor.outputs.prebuilt != 'TRUE'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: C:\packman-repo
-          key: falcor-packman-${{ hashFiles('third_party/falcor/dependencies.xml', 'cmake/patches/falcor.patch') }}
+            - name: Restore packman's downloads
+              id: packman-cache
+              if: steps.falcor.outputs.prebuilt != 'TRUE'
+              uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: C:\packman-repo
+                  key: falcor-packman-${{ hashFiles('third_party/falcor/dependencies.xml', 'cmake/patches/falcor.patch') }}
 
-      - name: Build
-        run: cmake --build --preset windows --target all augusta_tests
+            - name: Build
+              run: cmake --build --preset windows --target all augusta_tests
 
-      # Saved right after the Build that downloaded them, so a failing test
-      # can't keep it from saving.
-      - name: Save packman's downloads
-        if: steps.falcor.outputs.prebuilt != 'TRUE' && steps.packman-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: C:\packman-repo
-          key: falcor-packman-${{ hashFiles('third_party/falcor/dependencies.xml', 'cmake/patches/falcor.patch') }}
+            # Saved right after the Build that downloaded them, so a failing test
+            # can't keep it from saving.
+            - name: Save packman's downloads
+              if: steps.falcor.outputs.prebuilt != 'TRUE' && steps.packman-cache.outputs.cache-hit != 'true'
+              uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: C:\packman-repo
+                  key: falcor-packman-${{ hashFiles('third_party/falcor/dependencies.xml', 'cmake/patches/falcor.patch') }}
 
-      - if: steps.falcor.outputs.prebuilt != 'TRUE' && steps.packman-cache.outputs.cache-hit != 'true'
-        uses: ./.github/actions/prune-cache
-        with:
-          prefix: falcor-packman-
-          keep: falcor-packman-${{ hashFiles('third_party/falcor/dependencies.xml', 'cmake/patches/falcor.patch') }}
+            - if: steps.falcor.outputs.prebuilt != 'TRUE' && steps.packman-cache.outputs.cache-hit != 'true'
+              uses: ./.github/actions/prune-cache
+              with:
+                  prefix: falcor-packman-
+                  keep: falcor-packman-${{ hashFiles('third_party/falcor/dependencies.xml', 'cmake/patches/falcor.patch') }}
 
-      - name: Test
-        run: ctest --preset windows
+            - name: Test
+              run: ctest --preset windows
 
-  server:
-    needs: [changes, format]
-    if: needs.changes.outputs.run_build == 'true'
-    # Pinned rather than ubuntu-latest - see the client job. This also makes
-    # clang-tidy's version stable without needing to pull it from
-    # apt.llvm.org (a stable runner image already gives a stable distro
-    # package version).
-    runs-on: ubuntu-26.04
-    # Overrides the workflow-level NuGet/GitHubPackages default (Windows-
-    # only, see the client job): that path runs nuget.exe under Mono here,
-    # and Mono's own bundled cert store is untrusted-by-default on a
-    # fresh runner image, failing every restore/push with
-    # CERTIFICATE_VERIFY_FAILED (silently - vcpkg just rebuilds from
-    # source instead of erroring). x-gha (GitHub Actions' own cache
-    # backend for vcpkg) would have sidestepped Mono entirely, but it was
-    # removed upstream (microsoft/vcpkg-tool#1662); actions/cache over
-    # the local files provider is GitHub Actions' own recommended
-    # replacement.
-    env:
-      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
+    server:
+        needs: [changes, format]
+        if: needs.changes.outputs.run_build == 'true'
+        # Pinned rather than ubuntu-latest - see the client job. This also makes
+        # clang-tidy's version stable without needing to pull it from
+        # apt.llvm.org (a stable runner image already gives a stable distro
+        # package version).
+        runs-on: ubuntu-26.04
+        # Overrides the workflow-level NuGet/GitHubPackages default (Windows-
+        # only, see the client job): that path runs nuget.exe under Mono here,
+        # and Mono's own bundled cert store is untrusted-by-default on a
+        # fresh runner image, failing every restore/push with
+        # CERTIFICATE_VERIFY_FAILED (silently - vcpkg just rebuilds from
+        # source instead of erroring). x-gha (GitHub Actions' own cache
+        # backend for vcpkg) would have sidestepped Mono entirely, but it was
+        # removed upstream (microsoft/vcpkg-tool#1662); actions/cache over
+        # the local files provider is GitHub Actions' own recommended
+        # replacement.
+        env:
+            VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  submodules: true
 
-      - uses: ./.github/actions/setup-linux-build
-        with:
-          # The same distro version as the clang the presets compile with.
-          extra-packages: clang-tidy
+            - uses: ./.github/actions/setup-linux-build
+              with:
+                  # The same distro version as the clang the presets compile with.
+                  extra-packages: clang-tidy
 
-      - name: Configure
-        run: cmake --preset linux
+            - name: Configure
+              run: cmake --preset linux
 
-      - uses: ./.github/actions/save-vcpkg-cache
+            - uses: ./.github/actions/save-vcpkg-cache
 
-      - name: Lint (clang-tidy)
-        # src/client and src/modules/renderer are Windows-only (CMakeLists.txt
-        # gates both on WIN32 - the latter since ADR-0009's Falcor backend is
-        # Windows-only), as is the audio module's output device (miniaudio and
-        # Steam Audio, Windows-only dependencies - src/modules/audio/
-        # CMakeLists.txt), and aren't part of this Linux configure's build graph
-        # at all, so they have no compile_commands.json entry here - excluded
-        # rather than linted against the wrong platform's (missing) compile
-        # flags. Note: clang-tidy given multiple files in one invocation
-        # cascades a spurious error onto every file *after* the first one
-        # missing its compile_commands entry, not just that file itself - so
-        # a stray Windows-only file left in this list fails the whole batch.
-        run: find src -name '*.cpp' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_windows.cpp' -not -path 'src/modules/audio/miniaudio.cpp' | xargs clang-tidy -p build/x64-linux
+            - name: Lint (clang-tidy)
+              # src/client and src/modules/renderer are Windows-only (CMakeLists.txt
+              # gates both on WIN32 - the latter since ADR-0009's Falcor backend is
+              # Windows-only), as is the audio module's output device (miniaudio and
+              # Steam Audio, Windows-only dependencies - src/modules/audio/
+              # CMakeLists.txt), and aren't part of this Linux configure's build graph
+              # at all, so they have no compile_commands.json entry here - excluded
+              # rather than linted against the wrong platform's (missing) compile
+              # flags. Note: clang-tidy given multiple files in one invocation
+              # cascades a spurious error onto every file *after* the first one
+              # missing its compile_commands entry, not just that file itself - so
+              # a stray Windows-only file left in this list fails the whole batch.
+              run: find src -name '*.cpp' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_windows.cpp' -not -path 'src/modules/audio/miniaudio.cpp' | xargs clang-tidy -p build/x64-linux
 
-      - name: Build
-        run: cmake --build --preset linux --target all augusta_tests
+            - name: Build
+              run: cmake --build --preset linux --target all augusta_tests
 
-      - name: Test
-        run: ctest --preset linux
+            - name: Test
+              run: ctest --preset linux
 
-  tools:
-    needs: changes
-    if: needs.changes.outputs.run_tools == 'true'
-    # Builds and tests the offline tools (tools/), including that each still
-    # writes the golden output the runtime's tests load (ADR-0013). A new
-    # tool adds steps here, not a job. Windows: the asset cooker's native
-    # modules wrap DirectXTex (ADR-0017), and the cooker only ever runs on
-    # Windows (tools/pack/README.md).
-    runs-on: windows-2025
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    tools:
+        needs: changes
+        if: needs.changes.outputs.run_tools == 'true'
+        # Builds and tests the offline tools (tools/), including that each still
+        # writes the golden output the runtime's tests load (ADR-0013). A new
+        # tool adds steps here, not a job. Windows: the asset cooker's native
+        # modules wrap DirectXTex (ADR-0017), and the cooker only ever runs on
+        # Windows (tools/README.md).
+        runs-on: windows-2025
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Fetch vcpkg
-        # Only vcpkg: the native modules build against no other submodule,
-        # and third_party/falcor is large.
-        run: git submodule update --init --depth 1 third_party/vcpkg
+            - name: Fetch vcpkg
+              # Only vcpkg: the native modules build against no other submodule,
+              # and third_party/falcor is large.
+              run: git submodule update --init --depth 1 third_party/vcpkg
 
-      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+            - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
 
-      - name: Install Ninja
-        run: choco install ninja -y
-        shell: pwsh
+            - name: Install Ninja
+              run: choco install ninja -y
+              shell: pwsh
 
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+            - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
 
-      - name: Bootstrap vcpkg
-        shell: pwsh
-        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+            - name: Bootstrap vcpkg
+              shell: pwsh
+              run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
 
-      - name: Configure vcpkg NuGet cache
-        shell: pwsh
-        run: |
-          $nugetPath = & ".\third_party\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
-          & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
-          & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
+            - name: Configure vcpkg NuGet cache
+              shell: pwsh
+              run: |
+                  $nugetPath = & ".\third_party\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
+                  & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
+                  & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
 
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-        with:
-          enable-cache: true
-          cache-dependency-glob: tools/pack/uv.lock
+            - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+              with:
+                  enable-cache: true
+                  cache-dependency-glob: tools/pack/uv.lock
 
-      - name: Install the cooker
-        working-directory: tools/pack
-        run: uv sync --locked
+            - name: Install the cooker
+              working-directory: tools/pack
+              run: uv sync --locked
 
-      - name: Build the native modules
-        # Into tools/pack/src/pack, against the venv's own interpreter, as
-        # tools/pack/scripts/bootstrap-windows.ps1 does.
-        shell: pwsh
-        run: |
-          cmake --preset windows -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$PWD/tools/pack/.venv/Scripts/python.exe"
-          cmake --build tools/pack/cpp/build/x64-windows
+            - name: Build the native modules
+              # Into tools/pack/src/pack, against the venv's own interpreter, as
+              # tools/pack/scripts/bootstrap-windows.ps1 does.
+              shell: pwsh
+              run: |
+                  cmake --preset windows -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$PWD/tools/pack/.venv/Scripts/python.exe"
+                  cmake --build tools/pack/cpp/build/x64-windows
 
-      - name: Test (pytest)
-        working-directory: tools/pack
-        run: uv run pytest
+            - name: Test (pytest)
+              working-directory: tools/pack
+              run: uv run pytest
 
-  sanitizers:
-    needs: [changes, format]
-    if: needs.changes.outputs.run_build == 'true' && github.event_name == 'pull_request'
-    runs-on: ubuntu-26.04
-    # See the server job's env override for why this isn't the workflow-
-    # level NuGet default.
-    env:
-      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
+    sanitizers:
+        needs: [changes, format]
+        if: needs.changes.outputs.run_build == 'true' && github.event_name == 'pull_request'
+        runs-on: ubuntu-26.04
+        # See the server job's env override for why this isn't the workflow-
+        # level NuGet default.
+        env:
+            VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  submodules: true
 
-      - uses: ./.github/actions/setup-linux-build
+            - uses: ./.github/actions/setup-linux-build
 
-      - name: Configure (ASan + UBSan)
-        run: cmake --preset linux-san
+            - name: Configure (ASan + UBSan)
+              run: cmake --preset linux-san
 
-      - uses: ./.github/actions/save-vcpkg-cache
+            - uses: ./.github/actions/save-vcpkg-cache
 
-      - name: Build
-        run: cmake --build --preset linux-san --target all augusta_tests
+            - name: Build
+              run: cmake --build --preset linux-san --target all augusta_tests
 
-      - name: Test
-        run: ctest --preset linux-san
+            - name: Test
+              run: ctest --preset linux-san
 
-  fuzz:
-    # A short run per fuzz target (ADR-0013): long enough to catch an obvious
-    # crash before merge. The long runs, over a corpus kept between them, are
-    # the nightly's. tests/fuzz/README.md has what a crash becomes.
-    needs: [changes, format]
-    if: needs.changes.outputs.run_build == 'true' && github.event_name == 'pull_request'
-    runs-on: ubuntu-26.04
-    # See the server job's env override for why this isn't the workflow-
-    # level NuGet default.
-    env:
-      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
+    fuzz:
+        # A short run per fuzz target (ADR-0013): long enough to catch an obvious
+        # crash before merge. The long runs, over a corpus kept between them, are
+        # the nightly's. tests/fuzz/README.md has what a crash becomes.
+        needs: [changes, format]
+        if: needs.changes.outputs.run_build == 'true' && github.event_name == 'pull_request'
+        runs-on: ubuntu-26.04
+        # See the server job's env override for why this isn't the workflow-
+        # level NuGet default.
+        env:
+            VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  submodules: true
 
-      # libFuzzer ships with the clang package this installs.
-      - uses: ./.github/actions/setup-linux-build
+            # libFuzzer ships with the clang package this installs.
+            - uses: ./.github/actions/setup-linux-build
 
-      - name: Configure (libFuzzer + ASan)
-        run: cmake --preset linux-fuzz
+            - name: Configure (libFuzzer + ASan)
+              run: cmake --preset linux-fuzz
 
-      - uses: ./.github/actions/save-vcpkg-cache
+            - uses: ./.github/actions/save-vcpkg-cache
 
-      - name: Build
-        run: cmake --build --preset linux-fuzz --target all augusta_tests
+            - name: Build
+              run: cmake --build --preset linux-fuzz --target all augusta_tests
 
-      - name: Fuzz
-        # Each target in turn (tests/fuzz/README.md). New inputs go to a scratch
-        # directory, never into the committed seeds; a crash lands in
-        # fuzz-crashes/ and fails the step, after the other targets have run.
-        run: |
-          mkdir -p fuzz-crashes
-          status=0
-          for target in protocol_decode pack_load; do
-            mkdir -p "fuzz-corpus/$target"
-            "build/x64-linux-fuzz/tests/fuzz/augusta_${target}_fuzz" \
-              -max_total_time=60 -timeout=5 -artifact_prefix="fuzz-crashes/$target-" \
-              "fuzz-corpus/$target" "tests/fuzz/corpus/$target" || status=1
-          done
-          exit "$status"
+            - name: Fuzz
+              # Each target in turn (tests/fuzz/README.md). New inputs go to a scratch
+              # directory, never into the committed seeds; a crash lands in
+              # fuzz-crashes/ and fails the step, after the other targets have run.
+              run: |
+                  mkdir -p fuzz-crashes
+                  status=0
+                  for target in protocol_decode pack_load; do
+                    mkdir -p "fuzz-corpus/$target"
+                    "build/x64-linux-fuzz/tests/fuzz/augusta_${target}_fuzz" \
+                      -max_total_time=60 -timeout=5 -artifact_prefix="fuzz-crashes/$target-" \
+                      "fuzz-corpus/$target" "tests/fuzz/corpus/$target" || status=1
+                  done
+                  exit "$status"
 
-      - name: Upload crashing inputs
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: fuzz-crashes
-          path: fuzz-crashes/
-          if-no-files-found: ignore
+            - name: Upload crashing inputs
+              if: failure()
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: fuzz-crashes
+                  path: fuzz-crashes/
+                  if-no-files-found: ignore
 
-  container:
-    needs: [changes, server]
-    # The server job only runs when run_build is true (see changes above), so
-    # a skipped result there is fine - only an actual failure should block
-    # the image build.
-    # A push to main/develop always builds and publishes, since the deployed
-    # chart runs the image of its own commit (charts/augustad/values.yaml): a
-    # commit with no image would never start. PRs build only when the image or
-    # chart changed.
-    if: |
-      always() &&
-      (github.event_name == 'push' || needs.changes.outputs.run_container == 'true') &&
-      (needs.server.result == 'success' || needs.server.result == 'skipped')
-    runs-on: ubuntu-26.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
+    container:
+        needs: [changes, server]
+        # The server job only runs when run_build is true (see changes above), so
+        # a skipped result there is fine - only an actual failure should block
+        # the image build.
+        # A push to main/develop always builds and publishes, since the deployed
+        # chart runs the image of its own commit (charts/augustad/values.yaml): a
+        # commit with no image would never start. PRs build only when the image or
+        # chart changed.
+        if: |
+            always() &&
+            (github.event_name == 'push' || needs.changes.outputs.run_container == 'true') &&
+            (needs.server.result == 'success' || needs.server.result == 'skipped')
+        runs-on: ubuntu-26.04
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  submodules: true
 
-      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+            - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
 
-      - name: Lint Helm chart
-        run: helm lint charts/augustad
+            - name: Lint Helm chart
+              run: helm lint charts/augustad
 
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+            - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      # Only main/develop pushes publish - PRs (including from forks) just
-      # validate that the image builds, same reasoning as ADR-0026's decision
-      # to keep this pipeline off a self-hosted runner. A PR from this
-      # repository logs in too, only to read the layer cache below.
-      - name: Log in to GHCR
-        if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+            # Only main/develop pushes publish - PRs (including from forks) just
+            # validate that the image builds, same reasoning as ADR-0026's decision
+            # to keep this pipeline off a self-hosted runner. A PR from this
+            # repository logs in too, only to read the layer cache below.
+            - name: Log in to GHCR
+              if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
+              uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+              with:
+                  registry: ghcr.io
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
 
-      - id: short-sha
-        run: echo "value=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+            - id: short-sha
+              run: echo "value=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
 
-      - name: Build server image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          push: ${{ github.event_name == 'push' }}
-          # sha-<first 12 characters of the commit> is the tag the chart runs:
-          # Flux versions a Git-sourced chart <version>+<the same 12
-          # characters>. The branch name tag is for people. github.ref_name is
-          # only a plain branch name (safe as a Docker tag) on push - for
-          # pull_request it's "<pr-number>/merge", which Docker rejects.
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.short-sha.outputs.value }}
-            ${{ github.event_name == 'push' && format('ghcr.io/{0}/augustad:{1}', github.repository_owner, github.ref_name) || '' }}
-          # A commit that leaves src/ alone reuses the cached build. The layers
-          # live in GHCR, next to the image, not in the Actions cache: at
-          # several GB they took most of its 10 GB, and GitHub evicted the
-          # vcpkg and Falcor caches every pull request restores from develop.
-          # Only a push writes them, as only a push publishes.
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/augustad:buildcache
-          cache-to: ${{ github.event_name == 'push' && format('type=registry,ref=ghcr.io/{0}/augustad:buildcache,mode=max', github.repository_owner) || '' }}
+            - name: Build server image
+              uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+              with:
+                  context: .
+                  push: ${{ github.event_name == 'push' }}
+                  # sha-<first 12 characters of the commit> is the tag the chart runs:
+                  # Flux versions a Git-sourced chart <version>+<the same 12
+                  # characters>. The branch name tag is for people. github.ref_name is
+                  # only a plain branch name (safe as a Docker tag) on push - for
+                  # pull_request it's "<pr-number>/merge", which Docker rejects.
+                  tags: |
+                      ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.short-sha.outputs.value }}
+                      ${{ github.event_name == 'push' && format('ghcr.io/{0}/augustad:{1}', github.repository_owner, github.ref_name) || '' }}
+                  # A commit that leaves src/ alone reuses the cached build. The layers
+                  # live in GHCR, next to the image, not in the Actions cache: at
+                  # several GB they took most of its 10 GB, and GitHub evicted the
+                  # vcpkg and Falcor caches every pull request restores from develop.
+                  # Only a push writes them, as only a push publishes.
+                  cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/augustad:buildcache
+                  cache-to: ${{ github.event_name == 'push' && format('type=registry,ref=ghcr.io/{0}/augustad:buildcache,mode=max', github.repository_owner) || '' }}

@@ -12,10 +12,10 @@ dependencies = [
 ]
 
 [project.scripts]
-augustap = "pack.cli:main"
-augustap-keygen = "pack.keys:main"
-augustap-inspect = "pack.pack_cli:inspect_main"
-augustap-verify = "pack.pack_cli:verify_main"
+augusta-pack = "pack.cli:main"
+augusta-keygen = "pack.keys:main"
+augusta-inspect = "pack.pack_cli:inspect_main"
+augusta-verify = "pack.pack_cli:verify_main"
 
 [dependency-groups]
 dev = ["pytest>=8"]

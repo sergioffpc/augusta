@@ -417,7 +417,7 @@ TEST(ParametersLoaderTest, ADescriptionNamesTheKeyItIsAbout) {
   EXPECT_NE(message.find("stamina.regen_per_second"), std::string::npos) << message;
 }
 
-// The example scenario's script (tools/pack/examples/authoring/scenarios/augusta)
+// The example scenario's script (tools/composer/examples/authoring/scenarios/augusta)
 // is what an author copies to start a new one, so it must stay a script the
 // loader accepts.
 TEST(ParametersExampleTest, TheExampleScriptLoadsToTheDocumentedDefaults) {

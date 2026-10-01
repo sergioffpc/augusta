@@ -14,7 +14,7 @@ import pytest
 from pack import keys, reader
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
-EXAMPLES_ROOT = Path(__file__).parent.parent / "examples"
+EXAMPLES_ROOT = Path(__file__).parents[2] / "composer" / "examples"
 
 
 @dataclass(frozen=True)

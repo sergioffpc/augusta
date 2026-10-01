@@ -7,6 +7,11 @@
 
 remote="$1"
 
+command -v git-lfs >/dev/null 2>&1 || {
+  echo "pre-push: git-lfs not found on PATH; install Git LFS before pushing." >&2
+  exit 2
+}
+
 case "$(uname -s)" in
   MINGW* | MSYS* | CYGWIN*) windows=1 build_dir=build/x64-windows-debug ;;
   *) windows=0 build_dir=build/x64-linux-debug ;;
@@ -38,7 +43,8 @@ files=$(echo "$files" | grep -E '^src/.*\.cpp$' |
   while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)
 
 if [ -z "$files" ]; then
-  exit 0
+  git lfs pre-push "$@"
+  exit $?
 fi
 
 if [ ! -f "$build_dir/compile_commands.json" ]; then
@@ -64,3 +70,5 @@ if [ "$status" -ne 0 ]; then
   echo "pre-push: clang-tidy failed - fix the warnings above, or push with --no-verify to skip." >&2
   exit 1
 fi
+
+git lfs pre-push "$@"
