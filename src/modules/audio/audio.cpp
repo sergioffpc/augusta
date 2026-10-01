@@ -1,39 +1,72 @@
 #include "augusta/audio.h"
 
+#include <format>
+#include <memory>
+#include <optional>
 #include <string>
+#include <utility>
 
+#include "augusta/assets.h"
+#include "augusta/logging.h"
 #include "augusta/math.h"
+#include "output.h"
 
 namespace augusta::audio {
 
-// TODO(sergioffpc): every method below is a placeholder - neither Steam
-// Audio nor miniaudio are wired in yet (ADR-0010, ADR-0028). Just enough
-// is defined here for callers to construct/link against this module.
-
-// TODO(sergioffpc): open the output device and initialize Steam Audio's
-// HRTF context.
-Engine::Engine() = default;
-
-SoundHandle Engine::LoadSound([[maybe_unused]] const std::string& asset_path) {
-  // TODO(sergioffpc): decode the mono PCM asset via miniaudio.
-  return {};
+std::string DescribeOutputError(const OutputError& error) {
+  switch (error.step) {
+    case OutputStep::kUnsupported:
+      return "this build has no audio output";
+    case OutputStep::kSteamAudioContext:
+      return std::format("Steam Audio context creation failed (IPLerror {})", error.code);
+    case OutputStep::kHrtf:
+      return std::format("Steam Audio HRTF creation failed (IPLerror {})", error.code);
+    case OutputStep::kDevice:
+      return std::format("no output device opened (ma_result {})", error.code);
+    case OutputStep::kDeviceStart:
+      return std::format("output device did not start (ma_result {})", error.code);
+  }
+  return "unknown output error";
 }
 
-void Engine::UnloadSound([[maybe_unused]] SoundHandle sound) {
-  // TODO(sergioffpc): stop and free every voice playing sound.
+Engine::Engine() {
+  auto output = OpenOutput();
+  if (!output) {
+    LW("subsystem=audio event=output_unavailable reason=\"{}\" fallback=silent", DescribeOutputError(output.error()));
+    return;
+  }
+  output_ = *std::move(output);
+  LI("subsystem=audio event=output_opened");
 }
 
-void Engine::SetListener([[maybe_unused]] const Listener& listener) {
-  // TODO(sergioffpc): update Steam Audio's HRTF listener pose.
+Engine::~Engine() = default;
+
+SoundHandle Engine::LoadSound(const assets::AudioData& sound) {
+  return output_ ? output_->LoadSound(sound) : SoundHandle{};
 }
 
-VoiceHandle Engine::PlaySound([[maybe_unused]] SoundHandle sound, [[maybe_unused]] const math::Vec3& world_position) {
-  // TODO(sergioffpc): spatialize via Steam Audio, mix via miniaudio.
-  return {};
+void Engine::UnloadSound(SoundHandle sound) {
+  if (output_) {
+    output_->UnloadSound(sound);
+  }
 }
 
-void Engine::StopVoice([[maybe_unused]] VoiceHandle voice) {
-  // TODO(sergioffpc): stop a still-playing voice immediately.
+void Engine::SetListener(const Listener& listener) {
+  if (output_) {
+    output_->SetListener(listener);
+  }
+}
+
+VoiceHandle Engine::Play(SoundHandle sound, const math::Vec3& world_position) {
+  return output_ ? output_->Play(sound, world_position) : VoiceHandle{};
+}
+
+VoiceHandle Engine::Play(SoundHandle sound) { return output_ ? output_->Play(sound, std::nullopt) : VoiceHandle{}; }
+
+void Engine::StopVoice(VoiceHandle voice) {
+  if (output_) {
+    output_->StopVoice(voice);
+  }
 }
 
 }  // namespace augusta::audio

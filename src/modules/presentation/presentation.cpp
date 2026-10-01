@@ -14,8 +14,10 @@
 
 #include "augusta/animation.h"
 #include "augusta/audio.h"
+#include "augusta/audio_cues.h"
 #include "augusta/command.h"
 #include "augusta/correction.h"
+#include "augusta/cues.h"
 #include "augusta/effects.h"
 #include "augusta/interpolation.h"
 #include "augusta/local_view.h"
@@ -45,6 +47,9 @@ enum PhaseIndex : std::size_t {
 struct World::Impl {
   flecs::world ecs;
   audio::Engine& audio_engine;
+  // Every cue's sound, loaded into audio_engine, index for index with
+  // audio::kCues.
+  std::array<audio::SoundHandle, audio::kCues.size()> cue_sounds{};
   // Where the camera sits relative to the local player's body position
   // (physics::BodyState's feet) standing: its character's eye (World's
   // constructor).
@@ -67,6 +72,9 @@ struct World::Impl {
   Tracers tracers{map};
   std::vector<Effect> muzzle_flashes;
   FiredRounds fired_rounds;
+  // How many rounds the local player's predicted fire fired this frame
+  // (OnCamera), which OnAudioCues hears.
+  std::uint32_t rounds_fired = 0;
 
   // The local player's Prediction State blended for this frame
   // (OnInterpolation), which the later phases read.
@@ -104,7 +112,11 @@ struct World::Impl {
 
   State frame_state;
 
-  Impl(audio::Engine& engine, const math::Vec3& local_eye) : audio_engine(engine), eye(local_eye) {
+  Impl(audio::Engine& engine, const audio::CueSounds& sounds, const math::Vec3& local_eye)
+      : audio_engine(engine), eye(local_eye) {
+    for (std::size_t i = 0; i < sounds.size(); ++i) {
+      cue_sounds[i] = audio_engine.LoadSound(sounds[i]);
+    }
     // Chain the five phases in Phase's declared order (ADR-0024): each
     // depends_on the previous one, and the first depends on Flecs's
     // built-in OnUpdate phase, so a single ecs.progress() call runs them
@@ -227,7 +239,8 @@ struct World::Impl {
     camera.vertical_fov = ads_zoom.Update(input.aim.ads, ads_field_of_view, delta_time);
     hit_marker_shown = hit_marker.Update(input.hit_confirmations, delta_time);
     // Flashed where the camera now is, the frame the round fires.
-    if (fired_rounds.Update(shown.total_rounds_fired) > 0) {
+    rounds_fired = fired_rounds.Update(shown.total_rounds_fired);
+    if (rounds_fired > 0) {
       const math::Vec3 forward = camera.rotation * math::Vec3(0.0F, 0.0F, -1.0F);
       muzzle_flashes.push_back(Effect{.position = MuzzleOf(camera.position, forward)});
     }
@@ -246,11 +259,15 @@ struct World::Impl {
 
   void OnAudioCues() {
     const nvtx3::scoped_range range{"AudioCues"};
-    // TODO(sergioffpc): audio_engine.SetListener then PlaySound per
-    // this frame's cues - see presentation.h's Phase::kAudioCues doc
-    // comment. The capture only proves audio_engine is reachable from
-    // here; no call is made yet.
-    (void)audio_engine;
+    audio_engine.SetListener(ListenerOf(camera));
+    for (const CuePlay& play : SelectCues(input, rounds_fired)) {
+      const auto index = static_cast<std::size_t>(std::ranges::find(audio::kCues, play.cue) - audio::kCues.begin());
+      if (play.position.has_value()) {
+        audio_engine.Play(cue_sounds.at(index), *play.position);
+      } else {
+        audio_engine.Play(cue_sounds.at(index));
+      }
+    }
   }
 
   void OnCommit() {
@@ -267,7 +284,8 @@ struct World::Impl {
   }
 };
 
-World::World(audio::Engine& audio_engine, const math::Vec3& eye) : impl_(std::make_unique<Impl>(audio_engine, eye)) {}
+World::World(audio::Engine& audio_engine, const audio::CueSounds& cue_sounds, const math::Vec3& eye)
+    : impl_(std::make_unique<Impl>(audio_engine, cue_sounds, eye)) {}
 
 World::~World() = default;
 World::World(World&&) noexcept = default;

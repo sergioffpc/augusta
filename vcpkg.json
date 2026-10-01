@@ -14,9 +14,17 @@
     "gtest",
     "libsodium",
     "lua",
+    {
+      "name": "miniaudio",
+      "platform": "windows"
+    },
     "physx",
     "rapidcheck",
     "sol2",
+    {
+      "name": "steam-audio",
+      "platform": "windows"
+    },
     "yaml-cpp"
   ]
 }
