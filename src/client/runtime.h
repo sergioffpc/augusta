@@ -66,12 +66,20 @@ struct Map {
   std::vector<physics::CollisionMesh> collision;
 };
 
-// Loads the visual mesh of the character with the given index from the client
-// pack (client::LoadCharacterMesh), or says why it could not.
-using CharacterMeshLoader = std::function<std::expected<renderer::SceneMesh, client::SceneError>(std::uint8_t)>;
+// What the client loads of a character another player brings: its visual mesh,
+// which the renderer draws, and its eye, which a spectator watches it from.
+struct LoadedCharacter {
+  renderer::SceneMesh mesh{};
+  math::Vec3 eye{};
+};
+
+// Loads the character with the given index from the client pack
+// (client::LoadCharacterMesh and client::LoadCharacterEye), or says why it
+// could not.
+using CharacterLoader = std::function<std::expected<LoadedCharacter, client::SceneError>(std::uint8_t)>;
 
 // Why Run() stopped without the player closing the window: the session ended
-// on its own, or a character's mesh could not be loaded.
+// on its own, or a character could not be loaded.
 using Failure = std::variant<harness::Failure, client::SceneError>;
 
 // Owns one of every client-only module/World and the three fixed
@@ -99,12 +107,12 @@ class ClientRuntime {
   // executable's business, not the orchestrator's. For the same reason the
   // caller hands in eye, the local player's character's eye (scene_loader.h's
   // LoadCharacterEye) that the camera follows the body at, and
-  // load_character_mesh, which Run() calls in the Lobby for
+  // load_character, which Run() calls in the Lobby for
   // each character another player brings (ADR-0043); it must stay callable
   // until Run() returns. Throws std::runtime_error if physics rejects a
   // collision mesh.
   ClientRuntime(const Config& config, Map map, const renderer::Scene& scene, const math::Vec3& eye,
-                CharacterMeshLoader load_character_mesh);
+                CharacterLoader load_character);
 
   // Run() always stops and joins the Simulation and Network I/O
   // threads it spawned before returning, including if the Main/Render
@@ -129,7 +137,7 @@ class ClientRuntime {
   // committed Prediction State, PresentationWorld::RunFrame,
   // Renderer::RenderFrame - until Renderer::ShouldClose() returns true, the
   // session fails (refused, server unreachable, connection lost) or a
-  // character's mesh cannot be loaded, which is what it returns: the caller
+  // character cannot be loaded, which is what it returns: the caller
   // reports it and exits, since there is no reconnecting. nullopt if the
   // player closed the window.
   // Always stops and joins both spawned threads before returning or

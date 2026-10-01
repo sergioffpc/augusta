@@ -109,14 +109,16 @@ presentation::Shot ToPresentation(const harness::Shot& shot) {
 
 presentation::Aim ToPresentation(const input::Aim& aim) { return {.yaw = aim.yaw, .pitch = aim.pitch, .ads = aim.ads}; }
 
-// Every player's character as Match start named it, for
+// Every player's character as Match start named it, in Session order, for
 // PresentationWorld::RunFrame; empty before the first match. Only the
 // characters: presentation needs nothing else of Match start.
 std::vector<presentation::PlayerCharacter> CharactersOf(const std::optional<harness::MatchStart>& match_start) {
   std::vector<presentation::PlayerCharacter> characters;
   if (match_start.has_value()) {
-    characters.reserve(match_start->players.size());
-    for (const harness::MatchPlayer& player : match_start->players) {
+    std::vector<harness::MatchPlayer> players = match_start->players;
+    std::ranges::sort(players, {}, &harness::MatchPlayer::session);
+    characters.reserve(players.size());
+    for (const harness::MatchPlayer& player : players) {
       characters.push_back({.entity = ToPresentation(player.entity), .character = player.character});
     }
   }
@@ -159,11 +161,11 @@ struct ThreadJoiner {
 
 struct ClientRuntime::Impl {
   Config config;
-  // Main/Render thread only: loads a character's mesh, which characters'
-  // meshes the renderer has (for the life of the process), the newest
+  // Main/Render thread only: loads a character, which characters the renderer
+  // and PresentationWorld have (for the life of the process), the newest
   // Roster version Ready was reported for, and whether PresentationWorld has
   // the server's parameters.
-  CharacterMeshLoader load_character_mesh;
+  CharacterLoader load_character;
   std::set<std::uint8_t> loaded_characters;
   std::optional<std::uint32_t> ready_version;
   bool presentation_has_parameters = false;
@@ -302,9 +304,9 @@ struct ClientRuntime::Impl {
     net_pending_bytes.sample(static_cast<double>(stats->pending_bytes));
   }
 
-  Impl(const Config& cfg, const Map& map, const math::Vec3& eye, CharacterMeshLoader loader)
+  Impl(const Config& cfg, const Map& map, const math::Vec3& eye, CharacterLoader loader)
       : config(cfg),
-        load_character_mesh(std::move(loader)),
+        load_character(std::move(loader)),
         input(cfg.input),
         presentation(audio, eye),
         renderer(cfg.renderer, input) {
@@ -440,9 +442,10 @@ struct ClientRuntime::Impl {
   }
 
   // In the Lobby, once per Roster version: uploads the mesh of every other
-  // player's character not loaded yet, then reports Ready for that Roster
-  // (ADR-0043). Nothing is loaded during a match. Main/Render thread only, as
-  // the upload is. Returns why a mesh could not be loaded, if one could not.
+  // player's character not loaded yet and hands PresentationWorld its eye, then
+  // reports Ready for that Roster (ADR-0043). Nothing is loaded during a match.
+  // Main/Render thread only, as the upload is. Returns why a character could
+  // not be loaded, if one could not.
   std::optional<client::SceneError> GetReadyForLobby() {
     const std::optional<harness::Lobby> lobby = session->GetLobby();
     if (session->GetPhase() != harness::Phase::kLobby || !lobby.has_value() || lobby->version == ready_version) {
@@ -455,11 +458,12 @@ struct ClientRuntime::Impl {
       }
     }
     for (const std::uint8_t character : client::CharactersToLoad(others, loaded_characters)) {
-      auto mesh = load_character_mesh(character);
-      if (!mesh.has_value()) {
-        return mesh.error();
+      auto loaded = load_character(character);
+      if (!loaded.has_value()) {
+        return loaded.error();
       }
-      renderer.SetCharacterMesh(character, *mesh);
+      renderer.SetCharacterMesh(character, loaded->mesh);
+      presentation.SetCharacterEye(character, loaded->eye);
       loaded_characters.insert(character);
       LI("subsystem=clientruntime event=character_loaded character={}", character);
     }
@@ -505,6 +509,7 @@ struct ClientRuntime::Impl {
                   .latest = latest.latest,
                   .fraction = tick::FractionElapsed(latest.start, latest.duration, tick::Clock::now())},
         .aim = ToPresentation(input.CurrentAim()),
+        .fire = input.IsHeld(input::Control::kFire),
         .local_entity = std::nullopt,
         .snapshot = SnapshotOf(*session),
         .characters = CharactersOf(session->GetMatchStart()),
@@ -551,8 +556,8 @@ struct ClientRuntime::Impl {
 };
 
 ClientRuntime::ClientRuntime(const Config& config, Map map, const renderer::Scene& scene, const math::Vec3& eye,
-                             CharacterMeshLoader load_character_mesh)
-    : impl_(std::make_unique<Impl>(config, map, eye, std::move(load_character_mesh))) {
+                             CharacterLoader load_character)
+    : impl_(std::make_unique<Impl>(config, map, eye, std::move(load_character))) {
   impl_->renderer.SetScene(scene);
 }
 

@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <map>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -85,6 +86,13 @@ struct World::Impl {
   HitMarker hit_marker;
   bool hit_marker_shown = false;
 
+  // Whether the local player is a spectator this frame (OnCamera), whom it
+  // watches, and every other character's eye it might watch from
+  // (SetCharacterEye).
+  bool spectating = false;
+  Spectator spectator;
+  std::map<std::uint8_t, math::Vec3> character_eyes;
+
   // Every other player's buffered updates, on the server's timeline, and the
   // render side's estimate of that timeline's current time, which render frame
   // deltas advance (see interpolation.h). The ticks of the first and the last
@@ -148,6 +156,7 @@ struct World::Impl {
       first_recorded_tick.reset();
       last_recorded_tick.reset();
       dead.clear();
+      spectator = Spectator{};
     } else if (!last_recorded_tick.has_value() || snapshot->tick > *last_recorded_tick) {
       RecordSnapshot(*snapshot);
     }
@@ -219,18 +228,57 @@ struct World::Impl {
 
   void OnCamera(float delta_time) {
     const nvtx3::scoped_range range{"Camera"};
-    // shown and local_offset are already this frame's - OnInterpolation (the
-    // previous phase) just updated them. Same base position as OnCommit's
-    // local_position.
-    camera = LocalCamera(shown.local_body.position + local_offset, shown.local_body.stance, eye, input.aim,
-                         shown.rifle.recoil);
-    camera.vertical_fov = ads_zoom.Update(input.aim.ads, ads_field_of_view, delta_time);
+    // The local player's Death clears with the match (OnInterpolation).
+    spectating = input.local_entity.has_value() && std::ranges::contains(dead, *input.local_entity);
+    if (spectating) {
+      WatchLivingPlayer();
+      // Let go of ADS, so the next match starts from the hip.
+      (void)ads_zoom.Update(false, ads_field_of_view, delta_time);
+    } else {
+      // shown and local_offset are already this frame's - OnInterpolation (the
+      // previous phase) just updated them. Same base position as OnCommit's
+      // local_position.
+      camera = LocalCamera(shown.local_body.position + local_offset, shown.local_body.stance, eye, input.aim,
+                           shown.rifle.recoil);
+      camera.vertical_fov = ads_zoom.Update(input.aim.ads, ads_field_of_view, delta_time);
+    }
     hit_marker_shown = hit_marker.Update(input.hit_confirmations, delta_time);
     // Flashed where the camera now is, the frame the round fires.
     if (fired_rounds.Update(shown.total_rounds_fired) > 0) {
       const math::Vec3 forward = camera.rotation * math::Vec3(0.0F, 0.0F, -1.0F);
       muzzle_flashes.push_back(Effect{.position = MuzzleOf(camera.position, forward)});
     }
+  }
+
+  // A spectator's camera: at the eye of the living player it watches, as
+  // remote_players shows it this frame. With no one left alive it holds where
+  // it was, from the hip.
+  void WatchLivingPlayer() {
+    std::vector<EntityId> players;
+    players.reserve(input.characters.size());
+    for (const PlayerCharacter& player : input.characters) {
+      players.push_back(player.entity);
+    }
+    // remote_players holds neither the local player nor anyone dead or gone.
+    std::vector<EntityId> living;
+    living.reserve(remote_players.size());
+    for (const RemotePlayer& remote : remote_players) {
+      living.push_back(remote.entity);
+    }
+    const std::optional<EntityId> watched = spectator.Update(players, living, input.fire);
+    const auto shown_watched =
+        std::ranges::find_if(remote_players, [&](const RemotePlayer& remote) { return remote.entity == watched; });
+    if (shown_watched == remote_players.end()) {
+      camera.vertical_fov = kHipFieldOfView;
+      return;
+    }
+    camera = WatchedCamera(shown_watched->body, EyeOf(shown_watched->character));
+  }
+
+  // The eye standing of character, or the local player's character's if it was never set.
+  [[nodiscard]] math::Vec3 EyeOf(std::uint8_t character) const {
+    const auto found = character_eyes.find(character);
+    return found != character_eyes.end() ? found->second : eye;
   }
 
   void OnAnimation() {
@@ -262,8 +310,8 @@ struct World::Impl {
     frame_state.tracers = tracers.Drawn();
     frame_state.impacts.assign(tracers.Impacts().begin(), tracers.Impacts().end());
     frame_state.muzzle_flashes = muzzle_flashes;
-    frame_state.crosshair = !input.aim.ads;
-    frame_state.hit_marker = hit_marker_shown;
+    frame_state.crosshair = !spectating && !input.aim.ads;
+    frame_state.hit_marker = !spectating && hit_marker_shown;
   }
 };
 
@@ -284,6 +332,10 @@ void World::SetParameters(const parameters::Parameters& parameters, float tick_d
       .tick_duration = tick_duration,
   };
   impl_->ads_field_of_view = parameters.rifle.ads_field_of_view;
+}
+
+void World::SetCharacterEye(std::uint8_t character, const math::Vec3& eye) {
+  impl_->character_eyes.insert_or_assign(character, eye);
 }
 
 State World::RunFrame(const FrameInput& input) {

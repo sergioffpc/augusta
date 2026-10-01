@@ -247,6 +247,10 @@ class Input : public EventSink {
   /// thread, rather than by the Command's, which is only as new as the last tick.
   [[nodiscard]] Aim CurrentAim() const;
 
+  /// Whether control's key is held now, between Samples: what a render frame
+  /// reads a control by, from the Main/Render thread (a spectator's fire).
+  [[nodiscard]] bool IsHeld(Control control) const;
+
   // Whether the cursor should be captured for mouselook: true at first, false
   // once kReleaseCursorKey is pressed, and true again on the next click of any
   // mouse button (which is taken by the capture, not passed on as a control).
