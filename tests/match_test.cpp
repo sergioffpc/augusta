@@ -10,14 +10,12 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
-#include "augusta/math.h"
 #include "augusta/networking.h"
 
 // The Lobby and the match are pure bookkeeping: no socket is opened here.
 namespace {
 
 using augusta::assets::PackHash;
-using augusta::math::Vec3;
 using augusta::networking::PeerId;
 using augusta::server::Departure;
 using augusta::server::JoinRefusal;
@@ -70,8 +68,6 @@ std::optional<MatchStart> ReadyAndStart(Match& match) {
   ReadyEveryone(match);
   return match.TryStart();
 }
-
-std::vector<Vec3> SpawnPoints() { return {Vec3(1.0F, 0.0F, 0.0F), Vec3(2.0F, 0.0F, 0.0F), Vec3(3.0F, 0.0F, 0.0F)}; }
 
 // Joins peers first to first + count - 1, all of which must be admitted.
 void JoinPeers(Match& match, std::uint32_t first, std::uint32_t count) {
@@ -332,46 +328,8 @@ TEST(MatchTest, MatchStartTellsEachPlayersCharacter) {
   EXPECT_EQ(start->players[1].character, 1U);
 }
 
-TEST(MatchTest, PlayersTakeTheSpawnPointsInOrderAtMatchStart) {
-  Match match(Config(3), SpawnPoints());
-  JoinPeers(match, 1, 3);
-
-  const auto start = ReadyAndStart(match);
-
-  ASSERT_TRUE(start.has_value());
-  EXPECT_EQ(start->players[0].spawn, Vec3(1.0F, 0.0F, 0.0F));
-  EXPECT_EQ(start->players[1].spawn, Vec3(2.0F, 0.0F, 0.0F));
-  EXPECT_EQ(start->players[2].spawn, Vec3(3.0F, 0.0F, 0.0F));
-}
-
-TEST(MatchTest, MorePlayersThanSpawnPointsWrapAround) {
-  Match match(Config(4), SpawnPoints());
-  JoinPeers(match, 1, 4);
-
-  const auto start = ReadyAndStart(match);
-
-  ASSERT_TRUE(start.has_value());
-  EXPECT_EQ(start->players[3].spawn, Vec3(1.0F, 0.0F, 0.0F));
-}
-
-TEST(MatchTest, WithoutSpawnPointsPlayersSpawnAtTheOrigin) {
-  Match match(Config(1));
-  JoinPeers(match, 1, 1);
-
-  EXPECT_EQ(ReadyAndStart(match)->players[0].spawn, Vec3{});
-}
-
-TEST(MatchTest, ARefusedJoinDoesNotUseUpASpawnPoint) {
-  Match match(Config(1), SpawnPoints());
-  ASSERT_FALSE(match.Join(Peer(1), Request("other", kCharacter)).has_value());
-  ASSERT_FALSE(match.Join(Peer(2), Request(kVersion, "characters/nobody")).has_value());
-  JoinPeers(match, 3, 1);
-
-  EXPECT_EQ(ReadyAndStart(match)->players[0].spawn, Vec3(1.0F, 0.0F, 0.0F));
-}
-
-TEST(MatchTest, APlayerWhoLeftTheLobbyTakesNoSpawnPoint) {
-  Match match(Config(2), SpawnPoints());
+TEST(MatchTest, APlayerWhoLeftTheLobbyIsNotInTheMatch) {
+  Match match(Config(2));
   JoinPeers(match, 1, 2);
   match.Leave(Peer(1));
   JoinPeers(match, 3, 1);
@@ -379,8 +337,9 @@ TEST(MatchTest, APlayerWhoLeftTheLobbyTakesNoSpawnPoint) {
   const auto start = ReadyAndStart(match);
 
   ASSERT_TRUE(start.has_value());
-  EXPECT_EQ(start->players[0].spawn, Vec3(1.0F, 0.0F, 0.0F));
-  EXPECT_EQ(start->players[1].spawn, Vec3(2.0F, 0.0F, 0.0F));
+  ASSERT_EQ(start->players.size(), 2U);
+  EXPECT_EQ(start->players[0].session, *match.SessionOf(Peer(2)));
+  EXPECT_EQ(start->players[1].session, *match.SessionOf(Peer(3)));
 }
 
 TEST(MatchTest, TheRosterIsEmptyWhileAMatchIsInProgress) {
@@ -623,19 +582,6 @@ TEST(MatchTest, TicksDuringAMatchDoNotCountTowardsThePauseAfterIt) {
   match.End();
 
   EXPECT_FALSE(ReadyAndStart(match).has_value());
-}
-
-TEST(MatchTest, SpawnPointsContinueTheirRotationAcrossMatches) {
-  Match match(Config(2), SpawnPoints());
-  JoinPeers(match, 1, 2);
-  ASSERT_TRUE(ReadyAndStart(match).has_value());
-  match.End();
-
-  const auto second = ReadyAndStart(match);
-
-  ASSERT_TRUE(second.has_value());
-  EXPECT_EQ(second->players[0].spawn, Vec3(3.0F, 0.0F, 0.0F));
-  EXPECT_EQ(second->players[1].spawn, Vec3(1.0F, 0.0F, 0.0F));
 }
 
 TEST(MatchTest, EachPlayerInAMatchControlsABodyOfItsOwn) {

@@ -277,18 +277,19 @@ TEST(WireTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
 
 TEST(WireTest, AMatchStartTheServerSendsReachesTheClientUnchanged) {
   const augusta::server::MatchStart sent{
-      .players = {{.session = SessionId{3}, .entity = EntityId{11}, .character = 2, .spawn = Vec3(4.0F, 0.5F, -8.0F)},
-                  {.session = SessionId{5}, .entity = EntityId{12}, .character = 1, .spawn = Vec3(-1.0F, 0.0F, 2.0F)}}};
+      .players = {{.session = SessionId{3}, .entity = EntityId{11}, .character = 2},
+                  {.session = SessionId{5}, .entity = EntityId{12}, .character = 1}}};
+  const std::vector<Vec3> spawns{Vec3(4.0F, 0.5F, -8.0F), Vec3(-1.0F, 0.0F, 2.0F)};
 
   const augusta::harness::MatchStart received =
-      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent, spawns)));
 
   ASSERT_EQ(received.players.size(), sent.players.size());
   for (std::size_t i = 0; i < sent.players.size(); ++i) {
     EXPECT_EQ(Number(received.players[i].session), Number(sent.players[i].session));
     EXPECT_EQ(Number(received.players[i].entity), Number(sent.players[i].entity));
     EXPECT_EQ(received.players[i].character, sent.players[i].character);
-    EXPECT_EQ(received.players[i].spawn, sent.players[i].spawn);
+    EXPECT_EQ(received.players[i].spawn, spawns[i]);
   }
 }
 

@@ -1311,6 +1311,75 @@ TEST_F(SpawnTest, EveryClientIsToldEveryPlayersCharacterAndSpawnPointAtMatchStar
   }
 }
 
+// Three players on the floor, whose scenario's behaviours.lua hands the Map's
+// three Spawn points out backwards: the last player in the Match takes the first.
+class PolicySpawnTest : public LoopbackMatch {
+ protected:
+  static std::vector<Vec3> SpawnPoints() {
+    return {Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F), Vec3(30.0F, kFloorY, -5.0F)};
+  }
+
+  static augusta::scripting::Engine Backwards() {
+    auto policy = augusta::scripting::Engine::Load({.objectives = std::nullopt, .behaviours = R"(
+      function assign_spawns(match)
+        local assignment = {}
+        for i, player in ipairs(match.players) do
+          assignment[i] = {session = player.session, spawn_point = match.spawn_points - i + 1}
+        end
+        return assignment
+      end
+    )"});
+    EXPECT_TRUE(policy.has_value());
+    return policy ? *std::move(policy) : augusta::scripting::Engine{};
+  }
+
+  static HostSetup Setup() {
+    HostSetup setup = OnTheFloor(SpawnPoints(), WithPlayerCount(3));
+    setup.policy = Backwards();
+    return setup;
+  }
+
+  PolicySpawnTest() : LoopbackMatch(Setup()) {}
+};
+
+TEST_F(PolicySpawnTest, EveryClientIsToldTheDistinctSpawnPointPolicyGaveEachPlayer) {
+  for (int i = 0; i < 3; ++i) {
+    Join();
+  }
+
+  ASSERT_TRUE(StartMatch());
+
+  for (const auto& client : sessions_) {
+    const auto start = client->GetMatchStart();
+    ASSERT_TRUE(start.has_value());
+    ASSERT_EQ(start->players.size(), 3U);
+    EXPECT_EQ(start->players[0].spawn, SpawnPoints()[2]);
+    EXPECT_EQ(start->players[1].spawn, SpawnPoints()[1]);
+    EXPECT_EQ(start->players[2].spawn, SpawnPoints()[0]);
+  }
+}
+
+TEST_F(PolicySpawnTest, TheFirstAuthoritativeStatePlacesEachBodyAtItsSpawnPointAtFullHealth) {
+  for (int i = 0; i < 3; ++i) {
+    Join();
+  }
+  ASSERT_TRUE(StartMatch());
+
+  const augusta::simulation::State first = ServerTick();
+
+  ASSERT_EQ(first.bodies.size(), 3U);
+  for (const auto& client : sessions_) {
+    const auto state = client->GetAuthoritativeState();
+    ASSERT_TRUE(state.has_value());
+    EXPECT_EQ(state->health, kTestParameters.starting_health);
+    const Vec3 spawn = OwnSpawn(*client);
+    const auto position = PositionSeenBy(*client, *client->GetEntityId());
+    ASSERT_TRUE(position.has_value());
+    EXPECT_NEAR(position->x, spawn.x, 0.1F);
+    EXPECT_NEAR(position->z, spawn.z, 0.1F);
+  }
+}
+
 using SpawnWrapTest = MatchOf<4>;
 
 TEST_F(SpawnWrapTest, MorePlayersThanSpawnPointsWrapInsteadOfFailing) {
@@ -1540,7 +1609,7 @@ TEST_F(MatchCycleTest, TheNextMatchStartsExactlyThePauseAfterTheLastEndedAndNotO
   EXPECT_EQ(host_.Tick(kFixedTick).bodies.size(), 2U);
 }
 
-TEST_F(MatchCycleTest, PlayersKeepTheirSessionAndCharacterAndTheNextMatchTakesTheNextSpawnPoints) {
+TEST_F(MatchCycleTest, PlayersKeepTheirSessionAndCharacterAndTheNextMatchHandsOutTheSpawnPointsAfresh) {
   Session& first = Join();
   Session& second = Join();
   ASSERT_TRUE(StartMatch());
@@ -1560,12 +1629,12 @@ TEST_F(MatchCycleTest, PlayersKeepTheirSessionAndCharacterAndTheNextMatchTakesTh
   ASSERT_EQ(start->players.size(), 2U);
   EXPECT_EQ(start->players[0].session, first_session);
   EXPECT_EQ(start->players[0].character, 1U);
-  EXPECT_EQ(start->players[0].spawn, SpawnPoints()[2]);
+  EXPECT_EQ(start->players[0].spawn, SpawnPoints()[0]);
   EXPECT_EQ(start->players[1].session, second_session);
-  EXPECT_EQ(start->players[1].spawn, SpawnPoints()[0]);
+  EXPECT_EQ(start->players[1].spawn, SpawnPoints()[1]);
   // Each client's prediction starts over where the new match put it.
-  EXPECT_NEAR(states_.at(&first).local_body.position.x, SpawnPoints()[2].x, 0.1F);
-  EXPECT_NEAR(states_.at(&second).local_body.position.x, SpawnPoints()[0].x, 0.1F);
+  EXPECT_NEAR(states_.at(&first).local_body.position.x, SpawnPoints()[0].x, 0.1F);
+  EXPECT_NEAR(states_.at(&second).local_body.position.x, SpawnPoints()[1].x, 0.1F);
 }
 
 TEST_F(MatchCycleTest, AMatchWhoseLastPlayerLeavesEndsOnItsOwnAndTheLobbyTakesPlayersAgain) {
@@ -3750,6 +3819,35 @@ TEST_F(DeathTest, ADeadPlayersOwnClientKnowsItIsDeadAndItsHealthAndStopsPredicti
   EXPECT_EQ(states_[&victim].local_body.position, dead.local_body.position);
   EXPECT_EQ(states_[&victim].total_rounds_fired, dead.total_rounds_fired);
   EXPECT_TRUE(Standing(0).IsAlive());
+}
+
+using NextMatchTest = HitMatchOf<2>;
+
+// Nothing carries over (US-03): the shooter emptied rounds and the victim died,
+// yet both start the next Match alive, at full health, with full rifles.
+TEST_F(NextMatchTest, TheSecondMatchOfARunStartsWithFullHealthAndFullMagazines) {
+  Session& victim = Standing(1);
+  Kill(victim);
+  ASSERT_EQ(deaths_.size(), 1U);
+  host_.EndMatch();
+  ASSERT_TRUE(ExchangeUntil(host_, Pointers(sessions_), [&] {
+    return std::ranges::all_of(sessions_, [](const auto& s) { return s->GetPhase() == Phase::kLobby; });
+  }));
+
+  ASSERT_TRUE(StartMatch());
+  const augusta::simulation::State first = ServerTick();
+
+  ASSERT_EQ(first.bodies.size(), 2U);
+  for (const auto& client : sessions_) {
+    const auto state = client->GetAuthoritativeState();
+    ASSERT_TRUE(state.has_value());
+    EXPECT_TRUE(client->IsAlive());
+    EXPECT_EQ(state->health, 100.0F);
+    EXPECT_EQ(state->rifle.rounds, 30U);
+    EXPECT_EQ(state->rifle.reload_remaining, 0.0F);
+    EXPECT_EQ(state->rifle.burst_index, 0U);
+    EXPECT_EQ(state->rifle.recoil, augusta::weapon::RecoilOffset{});
+  }
 }
 
 // A Death of victim, killed by killer with a round to the torso.

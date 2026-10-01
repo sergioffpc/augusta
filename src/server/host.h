@@ -61,14 +61,14 @@ struct Character {
   math::Vec3 eye{};
 };
 
-/// The map's collision and where joining players spawn, as built by
+/// The map's collision and where players spawn, as built by
 /// augusta::map from the server pack by the caller: where content comes from
 /// is the executable's business, not the config file's - so it travels
 /// alongside HostConfig rather than inside it.
 struct Map {
   std::vector<physics::CollisionMesh> collision;
-  /// In the order players take them at each match start, continuing across
-  /// matches; empty spawns everyone at the origin.
+  /// Game policy gives each player one at every match start (US-03), as
+  /// simulation::World::StartMatch does; empty spawns everyone at the origin.
   std::vector<math::Vec3> spawn_points;
   /// The scenario's characters: the only ones a player may join as
   /// (ADR-0042). Empty admits no one.

@@ -22,6 +22,7 @@
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/logging.h"
+#include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -203,8 +204,9 @@ struct Host::Impl {
   const std::uint8_t tick_rate_hz;
   const parameters::Parameters parameters;
   // The scenario's characters as SimulationWorld takes them, by index - 1
-  // (ADR-0042); never changes either.
+  // (ADR-0042), and the Map's Spawn points; neither changes either.
   const std::vector<simulation::Character> characters;
+  const std::vector<math::Vec3> spawn_points;
 
   // Thread-safe by the transport's contract, used from both threads.
   networking::Server network;
@@ -247,16 +249,15 @@ struct Host::Impl {
         tick_rate_hz(config.tick_rate_hz),
         parameters(config.parameters),
         characters(ToSimulation(map.characters)),
+        spawn_points(std::move(map.spawn_points)),
         network(config.listen),
-        match(
-            MatchConfig{
-                .engine_version = std::string(EngineVersion()),
-                .client_pack = map.client_pack,
-                .characters = CharacterPaths(map.characters),
-                .player_count = config.parameters.player_count,
-                .pause_ticks = PauseTicks(config.tick_rate_hz),
-            },
-            std::move(map.spawn_points)) {}
+        match(MatchConfig{
+            .engine_version = std::string(EngineVersion()),
+            .client_pack = map.client_pack,
+            .characters = CharacterPaths(map.characters),
+            .player_count = config.parameters.player_count,
+            .pause_ticks = PauseTicks(config.tick_rate_hz),
+        }) {}
 
   void Reply(networking::PeerId peer, const protocol::MessageWire& message) {
     network.Send(peer, protocol::Encode(message), networking::Reliability::kReliable);
@@ -419,24 +420,30 @@ struct Host::Impl {
   }
 
   // Starts a match if one can start: its players' bodies enter the simulation
-  // at their spawn points, their commands start afresh, and they are told.
+  // at the Spawn points Game policy gives them, their commands start afresh,
+  // and they are told where each spawned.
   void StartMatchIfReady() {
     const std::optional<MatchStart> start = match.TryStart();
     if (!start.has_value()) {
       return;
     }
+    std::vector<simulation::MatchPlayer> entrants;
+    entrants.reserve(start->players.size());
     std::vector<SessionId> sessions;
     for (const MatchPlayer& player : start->players) {
-      simulation.AddPlayer(ToSimulation(player.entity), player.spawn, characters.at(player.character - 1),
-                           {.session = ToSimulation(player.session), .character = player.character});
+      entrants.push_back(
+          simulation::MatchPlayer{.entity = ToSimulation(player.entity),
+                                  .identity = {.session = ToSimulation(player.session), .character = player.character},
+                                  .character = characters.at(player.character - 1)});
       bodies.emplace(player.session, player.entity);
       players.at(player.session).commands = CommandQueue{tick_rate_hz};
       sessions.push_back(player.session);
     }
+    const std::vector<math::Vec3> spawns = simulation.StartMatch(entrants, spawn_points);
     simulating_match = true;
     // Its first tick is the one about to run.
     match_start_tick = tick + 1;
-    SendTo(sessions, ToWire(*start));
+    SendTo(sessions, ToWire(*start, spawns));
     LI("subsystem=serverruntime event=match_started tick={} players={}", match_start_tick, sessions.size());
   }
 

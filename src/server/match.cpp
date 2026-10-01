@@ -10,23 +10,17 @@
 #include <utility>
 #include <vector>
 
-#include "augusta/math.h"
 #include "augusta/networking.h"
 
 namespace augusta::server {
 
-Match::Match(MatchConfig config, std::vector<math::Vec3> spawn_points)
+Match::Match(MatchConfig config)
     : engine_version_(std::move(config.engine_version)),
       client_pack_(config.client_pack),
       characters_(std::move(config.characters)),
       player_count_(config.player_count),
       pause_ticks_(config.pause_ticks),
-      spawn_points_(std::move(spawn_points)),
-      ticks_since_end_(config.pause_ticks) {
-  if (spawn_points_.empty()) {
-    spawn_points_.emplace_back();
-  }
-}
+      ticks_since_end_(config.pause_ticks) {}
 
 std::string_view DescribeJoinRefusal(JoinRefusal reason) {
   switch (reason) {
@@ -128,10 +122,8 @@ std::optional<MatchStart> Match::TryStart() {
   in_match_ = true;
   MatchStart start;
   for (const Member& member : MembersBySession()) {
-    start.players.push_back(MatchPlayer{.session = member.session,
-                                        .entity = static_cast<EntityId>(next_entity_++),
-                                        .character = member.character,
-                                        .spawn = spawn_points_[next_spawn_++ % spawn_points_.size()]});
+    start.players.push_back(MatchPlayer{
+        .session = member.session, .entity = static_cast<EntityId>(next_entity_++), .character = member.character});
   }
   return start;
 }
