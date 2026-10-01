@@ -18,6 +18,7 @@
 
 #include "augusta/grid.h"
 #include "augusta/math.h"
+#include "augusta/tick.h"
 
 namespace augusta::protocol {
 
@@ -37,7 +38,8 @@ void WriteUnsigned(BytesWire& out, Unsigned value) {
 
 void WriteU32(BytesWire& out, std::uint32_t value) { WriteUnsigned(out, value); }
 
-void WriteU64(BytesWire& out, std::uint64_t value) { WriteUnsigned(out, value); }
+// A tick in as many bytes as tick::Tick has.
+void WriteTick(BytesWire& out, tick::Tick value) { WriteUnsigned(out, value); }
 
 void WriteF32(BytesWire& out, float value) { WriteU32(out, std::bit_cast<std::uint32_t>(value)); }
 
@@ -136,7 +138,7 @@ class Reader {
 
   std::uint32_t ReadU32() { return ReadUnsigned<std::uint32_t>(); }
 
-  std::uint64_t ReadU64() { return ReadUnsigned<std::uint64_t>(); }
+  tick::Tick ReadTick() { return ReadUnsigned<tick::Tick>(); }
 
   float ReadF32() { return std::bit_cast<float>(ReadU32()); }
 
@@ -379,7 +381,7 @@ CommandsWire ReadCommands(Reader& reader) {
     const std::uint32_t sequence = reader.ReadU32();
     message.commands.push_back(SequencedCommandWire{.sequence = sequence, .command = ReadCommand(reader)});
   }
-  message.view_tick = reader.ReadU64();
+  message.view_tick = reader.ReadTick();
   return message;
 }
 
@@ -396,7 +398,7 @@ WeaponStateWire ReadWeaponState(Reader& reader) {
 
 AuthoritativeStateWire ReadAuthoritativeState(Reader& reader) {
   AuthoritativeStateWire state;
-  state.tick = reader.ReadU64();
+  state.tick = reader.ReadTick();
   state.acknowledged_sequence = reader.ReadU32();
   state.bodies = ReadBodies(reader);
   state.queued_commands = reader.ReadU8();
@@ -435,7 +437,7 @@ MatchStartWire ReadMatchStart(Reader& reader) {
 ShotWire ReadShot(Reader& reader) {
   ShotWire shot;
   shot.shooter = static_cast<EntityIdWire>(reader.ReadU32());
-  shot.tick = reader.ReadU64();
+  shot.tick = reader.ReadTick();
   shot.origin = reader.ReadVec3(math::kPositionGrid);
   shot.yaw = reader.ReadSteps(math::kAngleGrid);
   shot.pitch = reader.ReadSteps(math::kAngleGrid);
@@ -560,12 +562,12 @@ struct Encoder {
       WriteU32(out, sequenced.sequence);
       WriteCommand(out, sequenced.command);
     }
-    WriteU64(out, message.view_tick);
+    WriteTick(out, message.view_tick);
   }
 
   void operator()(const AuthoritativeStateWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kAuthoritativeState));
-    WriteU64(out, message.tick);
+    WriteTick(out, message.tick);
     WriteU32(out, message.acknowledged_sequence);
     WriteBodies(out, message.bodies);
     WriteU8(out, message.queued_commands);
@@ -611,7 +613,7 @@ struct Encoder {
   void operator()(const ShotWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kShot));
     WriteU32(out, static_cast<std::uint32_t>(message.shooter));
-    WriteU64(out, message.tick);
+    WriteTick(out, message.tick);
     WriteVec3(out, message.origin, math::kPositionGrid);
     WriteSteps(out, message.yaw, math::kAngleGrid);
     WriteSteps(out, message.pitch, math::kAngleGrid);

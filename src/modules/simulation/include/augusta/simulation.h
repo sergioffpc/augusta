@@ -14,6 +14,7 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/scripting.h"
+#include "augusta/tick.h"
 #include "augusta/weapon.h"
 
 // augusta::simulation orchestrates SimulationWorld (ADR-0023): the single
@@ -218,7 +219,7 @@ struct Death {
 struct State {
   /// Which tick of its World this is the State of, from 1: what a client names
   /// the view its Commands were sampled against by (command::Command).
-  std::uint64_t tick = 0;
+  tick::Tick tick = 0;
   /// Every dynamic body in the world, ordered by EntityId. A dead player has none.
   std::vector<EntityState> bodies;
   /// Every player in the world that has not died, ordered by EntityId.

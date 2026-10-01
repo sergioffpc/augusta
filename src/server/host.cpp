@@ -157,7 +157,7 @@ struct Host::Impl {
   std::unordered_map<SessionId, EntityId> bodies;
   // The last tick SimulationWorld ran, as it numbers them: what its State was
   // sent under, and what a client names the view of its Commands by.
-  std::uint64_t tick = 0;
+  tick::Tick tick = 0;
   // What every client is told when it joins, with the tick rate; neither ever
   // changes, so neither needs the lock.
   const std::uint8_t tick_rate_hz;

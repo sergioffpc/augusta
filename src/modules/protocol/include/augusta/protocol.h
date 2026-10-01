@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "augusta/math.h"
+#include "augusta/tick.h"
 
 // augusta::protocol is the Networking Protocol (ADR-0007, ADR-0038): the
 // messages client and server exchange and their custom binary encoding. It is
@@ -321,7 +322,7 @@ struct CommandsWire {
   std::vector<SequencedCommandWire> commands;
   /// The newest server tick any of the commands was sampled against
   /// (ADR-0044): each says how far before it its own is (CommandWire::view_age).
-  std::uint64_t view_tick = 0;
+  tick::Tick view_tick = 0;
 
   bool operator==(const CommandsWire&) const = default;
 };
@@ -331,7 +332,7 @@ struct AuthoritativeStateWire {
   /// The server tick this state is from; a client keeps only the newest it has seen.
   /// Ticks count from the server's start and never start over, so they take 64
   /// bits: 32 would wrap after about 828 days at 60 Hz.
-  std::uint64_t tick = 0;
+  tick::Tick tick = 0;
   /// Every dynamic body in the match, at most kMaxPlayers (only players have one so far).
   std::vector<EntityStateWire> bodies;
   /// The recipient's own rifle as of this tick: what it reconciles its
@@ -406,7 +407,7 @@ struct MatchEndWire {
 /// ADR-0044), told to every player in it, the shooter included.
 struct ShotWire {
   /// The server tick it was fired on.
-  std::uint64_t tick = 0;
+  tick::Tick tick = 0;
   /// Where the round left from.
   math::Vec3 origin{};
   /// The body of the player who fired it.

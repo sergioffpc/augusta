@@ -3,10 +3,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <optional>
 
 #include "augusta/math.h"
+#include "augusta/tick.h"
 
 namespace augusta::simulation {
 
@@ -18,7 +18,7 @@ constexpr float kMidpointFraction = 0.5F;
 
 }  // namespace
 
-void PoseHistory::Record(std::uint64_t tick, const Pose& pose) {
+void PoseHistory::Record(tick::Tick tick, const Pose& pose) {
   poses_.push_back(pose);
   newest_tick_ = tick;
   if (poses_.size() > capacity_) {

@@ -1,12 +1,11 @@
 #ifndef AUGUSTA_COMMAND_H_
 #define AUGUSTA_COMMAND_H_
 
-#include <cstdint>
-
 #include <glm/ext/quaternion_trigonometric.hpp>
 
 #include "augusta/math.h"
 #include "augusta/physics.h"
+#include "augusta/tick.h"
 
 // augusta::command is the Command (CONTEXT.md): one tick's player intent, in
 // the shared core (ARCHITECTURE.md §5). The client's input sampler
@@ -52,7 +51,7 @@ struct Command {
   // command fires is judged against the other players as they were then
   // (CONTEXT.md's Lag compensation). Only what the client says: the server
   // holds it within what it sent and within the Shooter's delay's cap.
-  std::uint64_t view_tick = 0;
+  tick::Tick view_tick = 0;
   float view_fraction = 0.0F;
 };
 

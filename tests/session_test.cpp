@@ -940,7 +940,7 @@ class PacingTest : public MovementTest {
         client_next +=
             augusta::tick::PacedTickDuration(nominal, session_.GetAuthoritativeState()->queued_commands) / clock_rate;
       } else {
-        const std::uint64_t last_tick = session_.GetAuthoritativeState()->tick;
+        const augusta::tick::Tick last_tick = session_.GetAuthoritativeState()->tick;
         host_.Tick(kFixedTick);
         DeliverUntil([&] { return session_.GetAuthoritativeState()->tick > last_tick; });
         const auto state = session_.GetAuthoritativeState();
@@ -1832,7 +1832,7 @@ class ScriptedServer {
 
   // An Authoritative State of tick listing entities, each at the origin, with
   // the client's player unhurt.
-  static augusta::protocol::AuthoritativeStateWire StateOf(std::uint64_t tick,
+  static augusta::protocol::AuthoritativeStateWire StateOf(augusta::tick::Tick tick,
                                                            const std::vector<EntityIdWire>& entities) {
     augusta::protocol::AuthoritativeStateWire state{
         .tick = tick, .bodies = {}, .rifle = {}, .health = 100.0F, .acknowledged_sequence = 0};
@@ -1966,7 +1966,7 @@ TEST_F(ScriptedServerTest, AStateNamingABodyNotInTheMatchIsDropped) {
 // hold, a newer state is still newer and an older one still stale, and the
 // client keeps sending its commands.
 TEST_F(ScriptedServerTest, StatesPastThirtyTwoBitsOfTicksAreStillNewestWins) {
-  constexpr std::uint64_t kLastOf32Bits = std::numeric_limits<std::uint32_t>::max();
+  constexpr augusta::tick::Tick kLastOf32Bits = std::numeric_limits<std::uint32_t>::max();
   Settle();
 
   server_.Send(ScriptedServer::StateOf(kLastOf32Bits, {kScriptedEntity}));
@@ -2543,7 +2543,7 @@ TEST_F(FireDuelTest, EveryClientIsToldOfAShotWithItsShooterTickOriginAndDirectio
   Session& shooter = *sessions_[0];
   Session& bystander = *sessions_[1];
   Settle(host_, Pointers(sessions_));
-  const std::uint64_t last_tick = shooter.GetAuthoritativeState()->tick;
+  const augusta::tick::Tick last_tick = shooter.GetAuthoritativeState()->tick;
   const Vec3 feet = PositionSeenBy(shooter, *shooter.GetEntityId()).value();
   Command command = Firing();
   command.yaw = 0.75F;
@@ -3273,7 +3273,7 @@ class LagCompensatedHitTest : public HitMatchOf<2> {
   }
 
   // Where each update the shooter was sent put the target's feet, by its tick.
-  std::map<std::uint64_t, Vec3> seen_;
+  std::map<augusta::tick::Tick, Vec3> seen_;
 };
 
 // US-11, ADR-0044: a shot that hits on the shooter's screen hits on the server.
@@ -3289,7 +3289,7 @@ TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairInT
   // The view: the newest update kept that is the Interpolation delay or more
   // behind the newest of all, and halfway to the next one if that is kept too.
   ASSERT_FALSE(seen_.empty());
-  const std::uint64_t newest = seen_.rbegin()->first;
+  const augusta::tick::Tick newest = seen_.rbegin()->first;
   ASSERT_GT(newest, kInterpolationTicks);
   auto shown = seen_.upper_bound(newest - kInterpolationTicks);
   ASSERT_NE(shown, seen_.begin());
@@ -3576,7 +3576,7 @@ TEST_F(ScriptedServerTest, AShotOfABodyInTheMatchIsHandedOutOnceAsItWasSent) {
 }
 
 TEST_F(ScriptedServerTest, ShotsAreHandedOutInTheOrderTheyArrived) {
-  for (std::uint64_t tick = 1; tick <= 3; ++tick) {
+  for (augusta::tick::Tick tick = 1; tick <= 3; ++tick) {
     augusta::protocol::ShotWire shot = ShotBy(kScriptedEntity);
     shot.tick = tick;
     server_.Send(shot);
@@ -3628,8 +3628,8 @@ TEST_F(ScriptedLobbyTest, AShotThatArrivesBeforeMatchStartIsDropped) {
 
 // A client nobody asks keeps the newest Shots, not all of them for ever.
 TEST_F(ScriptedServerTest, AClientThatIsNeverAskedKeepsOnlyTheNewestShots) {
-  const auto sent = static_cast<std::uint64_t>(augusta::harness::kMaxPendingShots + 10);
-  for (std::uint64_t tick = 1; tick <= sent; ++tick) {
+  const auto sent = static_cast<augusta::tick::Tick>(augusta::harness::kMaxPendingShots + 10);
+  for (augusta::tick::Tick tick = 1; tick <= sent; ++tick) {
     augusta::protocol::ShotWire shot = ShotBy(kScriptedEntity);
     shot.tick = tick;
     server_.Send(shot);

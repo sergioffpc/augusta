@@ -17,6 +17,11 @@ namespace augusta::tick {
 
 using Clock = std::chrono::steady_clock;
 
+/// A server tick's number: counts from 1 for the life of the server process and
+/// never starts over, so it is wide enough never to wrap (ADR-0038). Everything
+/// that holds a tick, the wire included, takes its width from here.
+using Tick = std::uint64_t;
+
 /// How many ticks a loop may fall behind its schedule and still catch up; any
 /// further and it resynchronises to now.
 inline constexpr int kMaxTicksBehind = 3;

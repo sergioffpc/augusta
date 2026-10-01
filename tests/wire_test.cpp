@@ -21,6 +21,7 @@
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
+#include "augusta/tick.h"
 #include "command_queue.h"
 #include "host.h"
 #include "match.h"
@@ -122,7 +123,7 @@ TEST(WireTest, EachCommandOfAMessageReachesTheServerWithTheViewItWasSampledAgain
 // The server's ticks never start over (ADR-0038): commands sampled either side
 // of the last tick 32 bits hold reach the server with the views they named.
 TEST(WireTest, ViewsEitherSideOfThirtyTwoBitsReachTheServerAsTheyWereSampled) {
-  constexpr std::uint64_t kLastOf32Bits = std::numeric_limits<std::uint32_t>::max();
+  constexpr augusta::tick::Tick kLastOf32Bits = std::numeric_limits<std::uint32_t>::max();
   std::vector<augusta::harness::SequencedCommand> sent(4);
   for (std::size_t i = 0; i < sent.size(); ++i) {
     sent[i].sequence = static_cast<std::uint32_t>(1 + i);

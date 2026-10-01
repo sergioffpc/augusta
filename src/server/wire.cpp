@@ -12,6 +12,7 @@
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
+#include "augusta/tick.h"
 #include "command_queue.h"
 #include "host.h"
 #include "match.h"
@@ -217,7 +218,7 @@ JoinRequest FromWire(const protocol::JoinRequestWire& request) {
   };
 }
 
-command::Command FromWire(const protocol::CommandWire& command, std::uint64_t view_tick) {
+command::Command FromWire(const protocol::CommandWire& command, tick::Tick view_tick) {
   command::Command result;
   result.movement.direction = command.direction;
   result.movement.sprint = (command.flags & protocol::CommandWire::kSprint) != 0;
@@ -227,12 +228,12 @@ command::Command FromWire(const protocol::CommandWire& command, std::uint64_t vi
   result.ads = (command.flags & protocol::CommandWire::kAds) != 0;
   result.fire = (command.flags & protocol::CommandWire::kFire) != 0;
   result.reload = (command.flags & protocol::CommandWire::kReload) != 0;
-  result.view_tick = view_tick - std::min<std::uint64_t>(command.view_age, view_tick);
+  result.view_tick = view_tick - std::min<tick::Tick>(command.view_age, view_tick);
   result.view_fraction = command.view_fraction;
   return result;
 }
 
-SequencedCommand FromWire(const protocol::SequencedCommandWire& command, std::uint64_t view_tick) {
+SequencedCommand FromWire(const protocol::SequencedCommandWire& command, tick::Tick view_tick) {
   return SequencedCommand{.sequence = command.sequence, .command = FromWire(command.command, view_tick)};
 }
 
