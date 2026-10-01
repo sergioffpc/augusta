@@ -59,12 +59,13 @@ make                            # configure + compile the binaries (PRESET defau
 make check PRESET=windows-debug # + compile the tests, run ctest, with another preset
 make install prefix=C:/augusta  # build + cmake --install augustad (DESTDIR honoured)
 make clean                      # remove build outputs (distclean deletes the build dir)
-make format-check               # the clang-format check CI runs
+make format                     # clang-format and yamlfmt on tracked files
+make format-check               # clang-format, yamlfmt and yamllint checks CI runs
 ```
 
 **WSL2 (server / shared core):**
 ```bash
-./scripts/bootstrap-wsl.sh        # build-essential, clang, autotools, make, CMake, Ninja, clang-format/clang-tidy, vcpkg, sccache
+./scripts/bootstrap-wsl.sh        # build tools, uv, standalone yamlfmt, clang-format/clang-tidy, vcpkg, sccache
 cmake --preset linux
 cmake --build --preset linux --target all augusta_tests
 ctest --preset linux

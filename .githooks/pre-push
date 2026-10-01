@@ -1,11 +1,9 @@
 #!/bin/sh
-# Runs clang-tidy on the src/*.cpp files the push brings to the remote
-# (ADR-0013, Pre-push; docs/ENGINEERING.md, Code Quality), and blocks the push
-# on any warning: .clang-tidy makes every check an error. Lints what CI's
-# clang-tidy step lints, minus what the Makefile's tidy target also leaves out
-# on this platform, against the debug build's compilation database.
+# Runs clang-tidy on changed C++ files and yamllint on changed YAML files before
+# pushing. Git LFS uploads still run after both checks pass.
 
 remote="$1"
+push_refs=$(cat)
 
 command -v git-lfs >/dev/null 2>&1 || {
   echo "pre-push: git-lfs not found on PATH; install Git LFS before pushing." >&2
@@ -22,10 +20,27 @@ esac
 files=""
 zero=0000000000000000000000000000000000000000
 while read -r _local_ref local_sha _remote_ref _remote_sha; do
+  [ -n "$local_sha" ] || continue
   [ "$local_sha" = "$zero" ] && continue # deleting a remote branch
   files="$files
 $(git log --format= --name-only --diff-filter=ACMR "$local_sha" --not --remotes="$remote")"
-done
+done <<EOF
+$push_refs
+EOF
+
+# Lint YAML/config files changed by the commits being pushed. If the shared
+# lint/ignore rules change, lint the whole tree. Helm templates and the generated
+# Flux bundle are excluded by .yamllint.
+yaml_config_changed=$(printf '%s\n' "$files" | grep -E '^\.(yamlfmt|yamllint|yamlignore|gitignore)$' || true)
+if [ -n "$yaml_config_changed" ]; then
+  yaml_files=.
+else
+  yaml_files=$(printf '%s\n' "$files" |
+    grep -E '(^\.yamlfmt$|^\.yamllint$|\.(yaml|yml)$)' |
+    grep -vE '^charts/augustad/templates/|^clusters/onprem/flux-system/gotk-components\.yaml$' |
+    sort -u |
+    while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)
+fi
 
 # src/client and src/modules/renderer are Windows-only, so CI's Linux run has
 # no compile commands for them; PhysX's SSE headers break clang-tidy under
@@ -42,33 +57,52 @@ files=$(echo "$files" | grep -E '^src/.*\.cpp$' |
   sort -u |
   while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)
 
-if [ -z "$files" ]; then
-  git lfs pre-push "$@"
+if [ -z "$files" ] && [ -z "$yaml_files" ]; then
+  printf '%s\n' "$push_refs" | git lfs pre-push "$@"
   exit $?
 fi
 
-if [ ! -f "$build_dir/compile_commands.json" ]; then
-  echo "pre-push: $build_dir/compile_commands.json not found - configure the debug build first (make configure PRESET=$(basename "$build_dir" | sed 's/^x64-//')), or push with --no-verify to skip clang-tidy." >&2
-  exit 1
+if [ -n "$files" ]; then
+  if [ ! -f "$build_dir/compile_commands.json" ]; then
+    echo "pre-push: $build_dir/compile_commands.json not found - configure the debug build first (make configure PRESET=$(basename "$build_dir" | sed 's/^x64-//')), or push with --no-verify to skip clang-tidy." >&2
+    exit 1
+  fi
+
+  echo "pre-push: clang-tidy on $(echo "$files" | wc -l | tr -d ' ') changed file(s)..." >&2
+
+  # -p=<dir>, never -p <dir>: through vcenv.ps1, PowerShell reads a bare -p as
+  # its own parameter and clang-tidy would run without the compile commands
+  # (see the Makefile's tidy target).
+  if [ "$windows" = 1 ]; then
+    # shellcheck disable=SC2086 # one argument per file; src/ paths have no spaces
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/vcenv.ps1 clang-tidy --quiet -p="$build_dir" $files
+  else
+    # shellcheck disable=SC2086
+    clang-tidy --quiet -p="$build_dir" $files
+  fi
+  status=$?
+
+  if [ "$status" -ne 0 ]; then
+    echo "pre-push: clang-tidy failed - fix the warnings above, or push with --no-verify to skip." >&2
+    exit 1
+  fi
 fi
 
-echo "pre-push: clang-tidy on $(echo "$files" | wc -l | tr -d ' ') changed file(s)..." >&2
+if [ -n "$yaml_files" ]; then
+  if command -v yamllint >/dev/null 2>&1; then
+    yamllint --strict -c .yamllint $yaml_files
+  elif command -v uv >/dev/null 2>&1; then
+    uv tool run --from yamllint==1.37.1 yamllint --strict -c .yamllint $yaml_files
+  else
+    echo "pre-push: yamllint (or uv) not found on PATH; install yamllint 1.37.1 before pushing YAML changes." >&2
+    exit 2
+  fi
+  status=$?
 
-# -p=<dir>, never -p <dir>: through vcenv.ps1, PowerShell reads a bare -p as
-# its own parameter and clang-tidy would run without the compile commands
-# (see the Makefile's tidy target).
-if [ "$windows" = 1 ]; then
-  # shellcheck disable=SC2086 # one argument per file; src/ paths have no spaces
-  powershell -NoProfile -ExecutionPolicy Bypass -File scripts/vcenv.ps1 clang-tidy --quiet -p="$build_dir" $files
-else
-  # shellcheck disable=SC2086
-  clang-tidy --quiet -p="$build_dir" $files
-fi
-status=$?
-
-if [ "$status" -ne 0 ]; then
-  echo "pre-push: clang-tidy failed - fix the warnings above, or push with --no-verify to skip." >&2
-  exit 1
+  if [ "$status" -ne 0 ]; then
+    echo "pre-push: yamllint failed - fix the YAML errors above, or push with --no-verify to skip." >&2
+    exit 1
+  fi
 fi
 
-git lfs pre-push "$@"
+printf '%s\n' "$push_refs" | git lfs pre-push "$@"

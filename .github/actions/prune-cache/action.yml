@@ -1,12 +1,6 @@
 name: Prune superseded cache entries
 description: >
-  Deletes this ref's other Actions cache entries whose key starts with prefix,
-  once the entry keep is saved on this ref: a newer entry supersedes them, and
-  left in place they only push useful caches out of the repository's 10 GB
-  until they expire unused. Does nothing when keep isn't on this ref (another
-  job's save won the key, or the save failed), so a ref never loses its last
-  entry. Needs `actions: write`; without it (a fork's pull request) it reports
-  and skips.
+  Deletes this ref's other Actions cache entries whose key starts with prefix, once the entry keep is saved on this ref: a newer entry supersedes them, and left in place they only push useful caches out of the repository's 10 GB until they expire unused. Does nothing when keep isn't on this ref (another job's save won the key, or the save failed), so a ref never loses its last entry. Needs `actions: write`; without it (a fork's pull request) it reports and skips.
 
 inputs:
   prefix:
@@ -15,7 +9,6 @@ inputs:
   keep:
     description: The key just saved, which stays.
     required: true
-
 runs:
   using: composite
   steps:

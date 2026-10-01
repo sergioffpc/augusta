@@ -1,5 +1,4 @@
 name: Cache cleanup
-
 # A pull request's caches are scoped to refs/pull/<n>/merge, which only that
 # pull request's own runs can restore: once it closes, merged or not, nothing
 # reads them again. Left to expire, they push the caches every pull request
@@ -7,10 +6,8 @@ name: Cache cleanup
 on:
   pull_request:
     types: [closed]
-
 permissions:
   actions: write
-
 jobs:
   delete-pull-request-caches:
     runs-on: ubuntu-26.04
