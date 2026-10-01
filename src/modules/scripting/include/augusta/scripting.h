@@ -51,7 +51,8 @@ struct Field;
 
 /// Plain data that crosses between C++ and a hook: nil, a boolean, a number, a
 /// string, a list (a Lua table keyed 1 to n) or a record (one keyed by strings).
-/// What a hook is handed and what it returns are both one.
+/// What a hook is handed and what it returns are both one. A whole number a
+/// hook is handed reaches it as a Lua integer, so an ID or a tick reads as one.
 struct Value {
   using List = std::vector<Value>;
   /// Ordered by key, each key once.

@@ -128,10 +128,13 @@ std::optional<MatchStart> Match::TryStart() {
   return start;
 }
 
-std::vector<SessionId> Match::End() {
-  std::vector<SessionId> ended = Playing();
+std::optional<MatchEnd> Match::End(std::optional<SessionId> winner) {
   if (!in_match_) {
-    return ended;
+    return std::nullopt;
+  }
+  MatchEnd ended{.players = Playing(), .winner = std::nullopt};
+  if (winner.has_value() && IsPlaying(*winner)) {
+    ended.winner = winner;
   }
   in_match_ = false;
   ++roster_version_;

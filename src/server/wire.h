@@ -52,6 +52,9 @@ namespace augusta::server {
 /// same index.
 [[nodiscard]] protocol::MatchStartWire ToWire(const MatchStart& start, std::span<const math::Vec3> spawns);
 
+/// A match's end as the protocol carries it: a draw names protocol::kDraw.
+[[nodiscard]] protocol::MatchEndWire ToWire(const MatchEnd& end);
+
 /// What replication planned for one recipient, as the message it is sent.
 [[nodiscard]] protocol::AuthoritativeStateWire ToWire(const replication::Update& update);
 

@@ -158,6 +158,12 @@ struct MatchStart {
   std::vector<MatchPlayer> players;
 };
 
+/// What the server said when a match ended (US-14).
+struct MatchEnd {
+  /// The session of the player Game policy declared the winner; nullopt for a draw.
+  std::optional<SessionId> winner;
+};
+
 /// Where a Session is in the lifecycle of ADR-0043.
 enum class Phase : std::uint8_t {
   /// The server has not admitted this client: not yet, or it refused.
@@ -280,6 +286,11 @@ class Session {
   /// one if back in the Lobby; nullopt before the first. Set by
   /// ExchangeMessages; safe to read from any thread.
   [[nodiscard]] std::optional<MatchStart> GetMatchStart() const;
+
+  /// What the server said when the match this client was last in ended, with
+  /// its winner; nullopt before the first ends and while one is in progress.
+  /// Set by ExchangeMessages; safe to read from any thread.
+  [[nodiscard]] std::optional<MatchEnd> GetMatchEnd() const;
 
   /// Tells the server this client has loaded what it needs to draw everyone in
   /// the Roster of version, which makes it Ready. Sends nothing unless version
