@@ -142,7 +142,8 @@ struct Session::Impl {
   std::uint32_t started_match = 0;
   prediction::State last_state{};
   // The commands still waiting to be acknowledged, and the sequence the next
-  // one goes under. Sequences start at 1; 0 means none.
+  // one goes under. Sequences start at 1; 0 means none. They count this
+  // connection's commands alone, so 32 bits outlast any session (ADR-0038).
   std::deque<SequencedCommand> unacknowledged;
   std::uint32_t next_sequence = 1;
   // Network I/O thread only: a server can send messages that are refused as fast

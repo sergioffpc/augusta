@@ -11,6 +11,7 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
+#include "augusta/tick.h"
 
 // The client's edge with the Networking Protocol (ADR-0038): what
 // harness::Session receives, turned from the protocol's plain types into the
@@ -100,7 +101,7 @@ struct SequencedCommand {
 /// command as the protocol carries it in a message whose view tick is
 /// view_tick: its own view tick as how far before that it is, no further than a
 /// byte tells.
-[[nodiscard]] protocol::CommandWire ToWire(const command::Command& command, std::uint32_t view_tick);
+[[nodiscard]] protocol::CommandWire ToWire(const command::Command& command, tick::Tick view_tick);
 
 /// commands, oldest first, as the one message that carries them; its view tick
 /// is the newest of theirs.

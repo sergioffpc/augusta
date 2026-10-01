@@ -27,6 +27,7 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/scripting.h"
+#include "augusta/tick.h"
 #include "augusta/weapon.h"
 #include "hitbox_history.h"
 
@@ -150,8 +151,8 @@ float MaxShootersDelayTicks(std::uint8_t tick_rate_hz) {
 // The view is only what a client says, so its fraction is held within 0 to 1
 // and the whole of it to no newer than the last tick's State, the newest any
 // client has been sent.
-float ShootersDelay(std::uint32_t tick, const command::Command& command, float max_delay) {
-  const double now = tick;
+float ShootersDelay(tick::Tick tick, const command::Command& command, float max_delay) {
+  const auto now = static_cast<double>(tick);
   const double reported =
       static_cast<double>(command.view_tick) + static_cast<double>(std::clamp(command.view_fraction, 0.0F, 1.0F));
   const double view = std::min(reported, now - 1.0);
@@ -400,7 +401,7 @@ struct World::Impl {
   const float max_shooters_delay;
   const std::size_t history_ticks;
   // The tick being run, from 1: the number its State goes out under.
-  std::uint32_t tick = 0;
+  tick::Tick tick = 0;
   flecs::world ecs;
   physics::World physics;
   ballistics::World ballistics;
@@ -671,7 +672,7 @@ struct World::Impl {
       });
     }
     scripting::Value::Record view = MatchView(parameters.player_count, std::move(viewed));
-    view.push_back(NumberField("tick", tick));
+    view.push_back(NumberField("tick", static_cast<double>(tick)));
     return view;
   }
 

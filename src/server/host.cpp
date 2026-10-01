@@ -198,7 +198,7 @@ struct Host::Impl {
   // sent under, and what a client names the view of its Commands by. Written by
   // the Simulation thread; read by the Network I/O thread too, to log how long
   // a match its last player left lasted.
-  std::atomic<std::uint32_t> tick = 0;
+  std::atomic<tick::Tick> tick = 0;
   // What every client is told when it joins, with the tick rate; neither ever
   // changes, so neither needs the lock.
   const std::uint8_t tick_rate_hz;
@@ -218,7 +218,7 @@ struct Host::Impl {
   Match match;
   std::unordered_map<SessionId, Player> players;
   // The tick the match in progress, or the last one, started on.
-  std::uint32_t match_start_tick = 0;
+  tick::Tick match_start_tick = 0;
 
   // What Network I/O and the ticks did since the last heartbeat. Guarded by mutex.
   struct Activity {

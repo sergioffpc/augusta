@@ -13,6 +13,7 @@
 #include "augusta/grid.h"
 #include "augusta/math.h"
 #include "augusta/protocol.h"
+#include "augusta/tick.h"
 
 // Property-based tests of the codec (ADR-0013): every message within the
 // protocol's limits survives Encode and Decode unchanged. RC_PARAMS sets the case
@@ -311,7 +312,7 @@ rc::Gen<CommandsWire> Commands() {
       rc::gen::set(&SequencedCommandWire::command, Command()));
   return rc::gen::build<CommandsWire>(
       rc::gen::set(&CommandsWire::commands, UpTo<std::vector<SequencedCommandWire>>(kMaxCommandsPerMessage, sequenced)),
-      rc::gen::set(&CommandsWire::view_tick, rc::gen::arbitrary<std::uint32_t>()));
+      rc::gen::set(&CommandsWire::view_tick, rc::gen::arbitrary<augusta::tick::Tick>()));
 }
 
 rc::Gen<AuthoritativeStateWire> AuthoritativeState() {
@@ -326,7 +327,7 @@ rc::Gen<AuthoritativeStateWire> AuthoritativeState() {
                                       rc::gen::set(&WeaponStateWire::rounds, rc::gen::arbitrary<std::uint8_t>()),
                                       rc::gen::set(&WeaponStateWire::burst_index, rc::gen::arbitrary<std::uint8_t>()));
   return rc::gen::build<AuthoritativeStateWire>(
-      rc::gen::set(&AuthoritativeStateWire::tick, rc::gen::arbitrary<std::uint32_t>()),
+      rc::gen::set(&AuthoritativeStateWire::tick, rc::gen::arbitrary<augusta::tick::Tick>()),
       rc::gen::set(&AuthoritativeStateWire::acknowledged_sequence, rc::gen::arbitrary<std::uint32_t>()),
       rc::gen::set(&AuthoritativeStateWire::bodies, UpTo<std::vector<EntityStateWire>>(kMaxPlayers, entity)),
       rc::gen::set(&AuthoritativeStateWire::rifle, rifle), rc::gen::set(&AuthoritativeStateWire::health, FiniteFloat()),
@@ -361,7 +362,7 @@ rc::Gen<MatchEndWire> MatchEnd() {
 rc::Gen<ShotWire> Shot() {
   return rc::gen::build<ShotWire>(rc::gen::set(&ShotWire::origin, Vec3OnGrid(kPositionGrid)),
                                   rc::gen::set(&ShotWire::shooter, AnyId<EntityIdWire>()),
-                                  rc::gen::set(&ShotWire::tick, rc::gen::arbitrary<std::uint32_t>()),
+                                  rc::gen::set(&ShotWire::tick, rc::gen::arbitrary<augusta::tick::Tick>()),
                                   rc::gen::set(&ShotWire::yaw, OnGrid(kAngleGrid)),
                                   rc::gen::set(&ShotWire::pitch, OnGrid(kAngleGrid)));
 }

@@ -14,6 +14,7 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
+#include "augusta/tick.h"
 
 namespace augusta::harness {
 
@@ -206,8 +207,8 @@ protocol::JoinRequestWire ToWire(const JoinRequest& request) {
   };
 }
 
-protocol::CommandWire ToWire(const command::Command& command, std::uint32_t view_tick) {
-  const std::uint32_t age = view_tick > command.view_tick ? view_tick - command.view_tick : 0U;
+protocol::CommandWire ToWire(const command::Command& command, tick::Tick view_tick) {
+  const tick::Tick age = view_tick > command.view_tick ? view_tick - command.view_tick : 0U;
   std::uint8_t flags = 0;
   if (command.movement.sprint) {
     flags |= protocol::CommandWire::kSprint;
@@ -228,7 +229,7 @@ protocol::CommandWire ToWire(const command::Command& command, std::uint32_t view
       .view_fraction = command.view_fraction,
       .flags = flags,
       .desired_stance = ToWire(command.movement.desired_stance),
-      .view_age = static_cast<std::uint8_t>(std::min<std::uint32_t>(age, std::numeric_limits<std::uint8_t>::max())),
+      .view_age = static_cast<std::uint8_t>(std::min<tick::Tick>(age, std::numeric_limits<std::uint8_t>::max())),
   };
 }
 

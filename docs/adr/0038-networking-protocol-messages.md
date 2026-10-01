@@ -47,6 +47,15 @@ where it fits, and the bits no field uses are 0. Message types and refusal
 reasons start at 1, so a zeroed byte is never one. There is no length prefix on
 the payload itself, since the transport already frames messages.
 
+**Counters are wide enough never to wrap.** The server tick counts from 1 for
+the life of the server process and starts over at neither a Match nor a
+reconnect, so it travels in 8 bytes wherever it appears (an Authoritative
+State's tick, a Shot's, a Commands message's view tick): 4 would wrap after
+about 828 days at 60 Hz. A command sequence, and the acknowledged sequence that
+answers it, counts one connection's commands and starts over at 1 on the next,
+so 4 bytes outlast any session. Neither ever wraps, so every receiver orders
+them as plain numbers.
+
 **Quantized numbers.** A body's and a command's numbers travel as a whole count
 of a grid's step, not as floats. The step is a power of two, so a count times
 its step is an exact float, and a value read back encodes to the same bytes:
@@ -66,7 +75,7 @@ they are sent once, and must arrive exactly. So do a rifle's two times: its
 owner replays its commands from them (ADR-0004) with the function the server
 stepped them with, and a rounded start would be a rifle the server never had.
 So a body is 18 bytes (25 in an update, with its entity ID and its yaw), a
-rifle 16 and a command 15, a whole Shot message is 24, a whole Hit
+rifle 16 and a command 15, a whole Shot message is 28, a whole Hit
 confirmation 10 and a whole Death 16. A player's own health is a 32-bit float
 too, the Parameters' starting health counted down by the damage the
 Parameters give, and arrives as the server has it.

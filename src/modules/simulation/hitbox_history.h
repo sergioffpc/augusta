@@ -2,12 +2,12 @@
 #define AUGUSTA_SIMULATION_HITBOX_HISTORY_H_
 
 #include <cstddef>
-#include <cstdint>
 #include <deque>
 #include <optional>
 
 #include "augusta/math.h"
 #include "augusta/physics.h"
+#include "augusta/tick.h"
 
 // The Hitbox history (CONTEXT.md, ADR-0044): what SimulationWorld keeps of
 // every player's recent ticks, to judge a bullet against the players as its
@@ -32,7 +32,7 @@ class PoseHistory {
 
   /// Keeps pose as that of tick, the tick after the newest kept; beyond the
   /// capacity, the oldest goes.
-  void Record(std::uint32_t tick, const Pose& pose);
+  void Record(tick::Tick tick, const Pose& pose);
 
   /// The pose at time, a moment between ticks counted in ticks: position and
   /// yaw interpolated between the two ticks around it, the yaw along the
@@ -46,7 +46,7 @@ class PoseHistory {
   std::size_t capacity_;
   // Oldest first; the last is newest_tick_'s.
   std::deque<Pose> poses_;
-  std::uint32_t newest_tick_ = 0;
+  tick::Tick newest_tick_ = 0;
 };
 
 }  // namespace augusta::simulation

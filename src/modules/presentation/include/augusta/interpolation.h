@@ -10,6 +10,7 @@
 
 #include "augusta/math.h"
 #include "augusta/physics.h"
+#include "augusta/tick.h"
 
 // Remote-player interpolation (ADR-0024's Interpolation phase): what
 // PresentationWorld shows for every player but the local one. Neither
@@ -96,7 +97,7 @@ class ServerClock {
 /// 1. It is what a Command sampled on that frame reports to the server, which
 /// judges the Command's shots against the players as they were then (ADR-0044).
 struct ShownView {
-  std::uint32_t tick = 0;
+  tick::Tick tick = 0;
   float fraction = 0.0F;
 };
 
@@ -105,8 +106,8 @@ struct ShownView {
 /// tick_duration seconds long, and how far past it it is. Held within
 /// oldest_tick and newest_tick, the first and the last update there is to show:
 /// before or past them a frame shows that update itself (RemoteInterpolator::Sample).
-[[nodiscard]] ShownView ViewAt(double sample_time, double tick_duration, std::uint32_t oldest_tick,
-                               std::uint32_t newest_tick);
+[[nodiscard]] ShownView ViewAt(double sample_time, double tick_duration, tick::Tick oldest_tick,
+                               tick::Tick newest_tick);
 
 /// One remote player's body as shown this frame: position and velocity
 /// linearly interpolated between the two surrounding updates, and facing along

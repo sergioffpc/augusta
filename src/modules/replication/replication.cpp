@@ -1,11 +1,11 @@
 #include "augusta/replication.h"
 
 #include <algorithm>
-#include <cstdint>
 #include <span>
 #include <vector>
 
 #include "augusta/simulation.h"
+#include "augusta/tick.h"
 #include "augusta/weapon.h"
 
 namespace augusta::replication {
@@ -28,7 +28,7 @@ float HealthOf(const simulation::State& state, simulation::EntityId entity) {
 
 }  // namespace
 
-std::vector<Update> PlanUpdates(const simulation::State& state, std::uint32_t tick,
+std::vector<Update> PlanUpdates(const simulation::State& state, tick::Tick tick,
                                 std::span<const Recipient> recipients) {
   std::vector<EntityBody> everyone;
   everyone.reserve(state.bodies.size());
@@ -52,7 +52,7 @@ std::vector<Update> PlanUpdates(const simulation::State& state, std::uint32_t ti
   return updates;
 }
 
-std::vector<Shot> PlanShots(const simulation::State& state, std::uint32_t tick) {
+std::vector<Shot> PlanShots(const simulation::State& state, tick::Tick tick) {
   std::vector<Shot> shots;
   shots.reserve(state.shots.size());
   for (const simulation::Shot& shot : state.shots) {

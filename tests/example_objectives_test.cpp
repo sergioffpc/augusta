@@ -22,6 +22,7 @@
 #include "augusta/physics.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
+#include "augusta/tick.h"
 #include "encoder.h"
 #include "policy_loader.h"
 
@@ -169,7 +170,7 @@ class Arena {
   }
 
   // Every Match end the objectives have decided so far, with the tick of each.
-  const std::vector<std::pair<std::uint32_t, augusta::simulation::MatchEnd>>& Ends() const { return ends_; }
+  const std::vector<std::pair<augusta::tick::Tick, augusta::simulation::MatchEnd>>& Ends() const { return ends_; }
 
  private:
   static Parameters WithLethalRifle(std::size_t player_count) {
@@ -201,7 +202,7 @@ class Arena {
   }
 
   World world_;
-  std::vector<std::pair<std::uint32_t, augusta::simulation::MatchEnd>> ends_;
+  std::vector<std::pair<augusta::tick::Tick, augusta::simulation::MatchEnd>> ends_;
 };
 
 class ExampleObjectivesTest : public ::testing::TestWithParam<std::size_t> {

@@ -89,7 +89,6 @@ std::vector<Seed> Seeds() {
        .message =
            AuthoritativeStateWire{
                .tick = 1200,
-               .acknowledged_sequence = 42,
                .bodies = {EntityStateWire{.entity = static_cast<EntityIdWire>(1), .body = body, .yaw = 1.5F},
                           EntityStateWire{.entity = static_cast<EntityIdWire>(2), .body = BodyStateWire{}}},
                .rifle = WeaponStateWire{.cooldown = 0.0625F,
@@ -99,6 +98,7 @@ std::vector<Seed> Seeds() {
                                         .rounds = 12,
                                         .burst_index = 3},
                .health = 37.25F,
+               .acknowledged_sequence = 42,
                .queued_commands = 2}},
       {.name = "lobby",
        .message = LobbyWire{.version = 3,
@@ -116,9 +116,9 @@ std::vector<Seed> Seeds() {
                                                              .character = 2}}}},
       {.name = "match_end", .message = MatchEndWire{.winner = static_cast<SessionIdWire>(3)}},
       {.name = "shot",
-       .message = ShotWire{.origin = Vec3(12.5F, 1.75F, -40.0F),
+       .message = ShotWire{.tick = 1200,
+                           .origin = Vec3(12.5F, 1.75F, -40.0F),
                            .shooter = static_cast<EntityIdWire>(2),
-                           .tick = 1200,
                            .yaw = 1.5F,
                            .pitch = -0.25F}},
       {.name = "hit_confirmation",
