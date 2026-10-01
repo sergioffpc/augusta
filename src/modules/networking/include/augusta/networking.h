@@ -104,7 +104,8 @@ enum class ConnectionState {
   kConnecting,    // Connect() called; handshake not yet complete.
   kConnected,     // Ready to Send/ReceiveMessages.
   kDisconnected,  // Initial state, and terminal after any of: rejected,
-                  // dropped, or a local Disconnect() call.
+                  // dropped, a local Disconnect() call, or a Connect()
+                  // the transport could not even start.
 };
 
 // A snapshot of Client's connection quality/throughput, sourced directly
@@ -157,8 +158,11 @@ class Client {
   Client(Client&&) = delete;
   Client& operator=(Client&&) = delete;
 
-  // Begins connecting to server; returns immediately. Calling again
-  // before GetState() reports kDisconnected is undefined behavior.
+  // Begins connecting to server; returns immediately. Throws if
+  // server.address does not parse; if the transport cannot create the
+  // connection, GetState() reports kDisconnected on return instead of
+  // kConnecting. Calling again before GetState() reports kDisconnected
+  // is undefined behavior.
   void Connect(const Endpoint& server);
 
   // Ends the connection, if any. GetState() reports kDisconnected
