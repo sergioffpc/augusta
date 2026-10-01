@@ -157,6 +157,9 @@ std::string DescribeRunFailure(const augusta::runtime::Failure& failure, const s
   if (const auto* session = std::get_if<augusta::harness::Failure>(&failure)) {
     return augusta::harness::DescribeFailure(*session);
   }
+  if (const auto* worker = std::get_if<augusta::runtime::WorkerFailure>(&failure)) {
+    return augusta::runtime::DescribeWorkerFailure(*worker);
+  }
   return std::format("client pack {}: {}", pack_path.string(),
                      augusta::client::DescribeSceneError(std::get<augusta::client::SceneError>(failure)));
 }
