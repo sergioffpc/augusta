@@ -43,6 +43,28 @@ sudo apt-get install -y \
   pkg-config \
   gh
 
+# Install uv for the pinned yamllint invocation used by the YAML hook/CI.
+if ! command -v uv >/dev/null 2>&1; then
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+fi
+export PATH="$HOME/.local/bin:$PATH"
+yamlfmt_version="0.21.0"
+yamlfmt_asset="yamlfmt_${yamlfmt_version}_Linux_x86_64.tar.gz"
+yamlfmt_tmp="$(mktemp -d)"
+trap 'rm -rf "$yamlfmt_tmp"' EXIT
+yamlfmt_url="https://github.com/google/yamlfmt/releases/download/v${yamlfmt_version}"
+curl -fsSLo "$yamlfmt_tmp/$yamlfmt_asset" "$yamlfmt_url/$yamlfmt_asset"
+printf '%s  %s\n' \
+  '1f300d9257b232bb3b541d7fb1b0e6b3c121bcbab381c86cd38cb8722be8a566' \
+  "$yamlfmt_tmp/$yamlfmt_asset" | sha256sum --check --status
+tar -xzf "$yamlfmt_tmp/$yamlfmt_asset" -C "$yamlfmt_tmp"
+install -m 0755 "$yamlfmt_tmp/yamlfmt" "$HOME/.local/bin/yamlfmt"
+if ! grep -Fq 'export PATH="$HOME/.local/bin:$PATH"' ~/.bashrc 2>/dev/null; then
+  printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >> ~/.bashrc
+fi
+trap - EXIT
+rm -rf "$yamlfmt_tmp"
+
 if ! command -v kubectl >/dev/null 2>&1; then
   curl -fsSL -o /tmp/kubectl "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
   sudo install -o root -g root -m 0755 /tmp/kubectl /usr/local/bin/kubectl

@@ -9,7 +9,6 @@ updates:
       actions:
         patterns:
           - "*"
-
   - package-ecosystem: "gitsubmodule"
     directory: "/"
     target-branch: "develop"

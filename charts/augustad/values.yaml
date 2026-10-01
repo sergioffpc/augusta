@@ -7,9 +7,7 @@ image:
   # image.
   tag: ""
   pullPolicy: IfNotPresent
-
 replicaCount: 1
-
 service:
   type: NodePort
   # Left unset by default so Kubernetes assigns the node port, per
@@ -18,12 +16,10 @@ service:
   # The server listens on port.
   port: 7777
   nodePort: ""
-
 # What the server runs with besides its pack (config/augustad.example.yaml).
 server:
   tickRateHz: 60
   logLevel: info
-
 # Shared hostPath volume on the k3s node holding signed asset packs
 # (ENGINEERING.md's Deployment & CD section), populated manually after
 # signing and mounted read-only into every server pod. Each environment's
@@ -35,5 +31,4 @@ assetPacks:
   packVersion: ""
   pack: server.pack
   publicKey: augusta.pub
-
 resources: {}

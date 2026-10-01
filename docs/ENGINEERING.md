@@ -176,7 +176,8 @@ pipeline).
 - **Server / shared core (Linux, via WSL2):** develop and build directly
   inside WSL2, accessing the repo via `/mnt/c/...`. No Docker container —
   a `scripts/bootstrap-wsl.sh` setup script installs clang (ADR-0008), CMake, Ninja,
-  vcpkg, clang-tidy, clang-format, gdb, GitHub CLI, kubectl, and helm
+  uv (for yamllint) and standalone yamlfmt, vcpkg, clang-tidy, clang-format,
+  gdb, GitHub CLI, kubectl, and helm
   directly into the WSL environment. It requires the Ubuntu release CI's
   runner uses, whose distro packages fix the same LLVM major as CI's. The cross-filesystem access cost
   (`/mnt/c`) is accepted here, since this side has the lighter build
@@ -188,8 +189,8 @@ pipeline).
   Studio Build Tools system-wide (default install location) — simpler
   than pinning a project-specific path, at the cost of not being able to
   side-by-side independent Build Tools versions per project — plus the
-  Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, and LLVM's clang-format
-  and clang-tidy (for the `pre-commit` and `pre-push` hooks below),
+  Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, uv (for yamllint) and
+  standalone yamlfmt, and LLVM's clang-format/clang-tidy (for the hooks below),
   pinned to the LLVM major CI's Ubuntu runner ships so the hooks agree
   with CI's gates.
   (A fully hermetic, registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was
@@ -221,23 +222,17 @@ pipeline).
 
 ## Code Quality
 
-- Google C++ Style Guide (ADR-0012), enforced via `clang-format` +
-  `clang-tidy`. `clang-format` also runs as a local `pre-commit` git
-  hook (auto-formats staged `.cpp`/`.h` files under `src/`/`tests/`,
-  same scope as CI's own check) so most formatting issues never reach
-  a push; CI's `format` job stays as the actual gate, since the hook
-  can be skipped (`--no-verify`), missing, or running a different
-  local `clang-format` version than CI's. `clang-tidy` stays out of the
-  commit hook — slower, and needs a full `compile_commands.json`, a poor
-  fit for a commit-time hook — and runs instead as a `pre-push` hook on
-  the `src/*.cpp` files touched by the commits the remote doesn't have yet
-  (the same files `make tidy` covers on that platform), since it catches
-  what MSVC doesn't and CI would. It reads the debug build's
-  `compile_commands.json` (`windows-debug` / `linux-debug` preset), blocks
-  the push on any warning, refuses the push with a message naming the
-  preset when that database is missing, and runs nothing when no such file
-  changed; `make lint` runs both checks as CI does, and `make tidy` alone
-  runs `clang-tidy`.
+- Google C++ Style Guide (ADR-0012), enforced via `clang-format` and
+  `clang-tidy`; YAML uses the standalone `yamlfmt` v0.21.0 binary (two-space indentation) and
+  `yamllint` 1.37.1. `clang-format` and `yamlfmt` auto-format staged files in
+  the local `pre-commit` hook; `clang-tidy` checks changed C++ and `yamllint`
+  checks changed YAML in `pre-push`. CI's `format` job runs the formatters in
+  check mode and strict YAML lint as the actual gate, since hooks can be
+  skipped (`--no-verify`) or missing/mismatched locally. `clang-tidy` needs a
+  full `compile_commands.json`, so it stays out of the commit hook and runs on
+  changed C++ before push. `make format` applies both formatters,
+  `make format-check` checks formatting and YAML lint, `make lint` also runs
+  `clang-tidy`, and `make tidy` alone runs `clang-tidy`.
 - Strict warnings-as-errors in CI (see CI/CD above).
 - ASan/UBSan and fuzzing in CI; TSan nightly given multithreading
   (ADR-0005, ADR-0013).

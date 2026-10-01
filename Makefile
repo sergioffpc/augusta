@@ -59,8 +59,8 @@ help:
 	$(info $()  uninstall     remove what install put in place (same DESTDIR))
 	$(info $()  clean         remove build outputs, keep the configuration)
 	$(info $()  distclean     delete $(BUILD_DIR))
-	$(info $()  format        clang-format -i on src, tests and tools)
-	$(info $()  format-check  the same check CI runs (no changes written))
+	$(info $()  format        clang-format and yamlfmt on tracked source/config files)
+	$(info $()  format-check  clang-format, yamlfmt and yamllint checks from CI)
 	$(info $()  tidy          clang-tidy on src, as CI runs it (configures first))
 	$(info $()  lint          format-check, then tidy: everything CI lints)
 	@:
@@ -99,9 +99,12 @@ distclean:
 
 format:
 	clang-format -i $(shell git ls-files -- $(CXX_SOURCES))
+	yamlfmt -conf .yamlfmt
 
 format-check:
 	clang-format --dry-run --Werror $(shell git ls-files -- $(CXX_SOURCES))
+	yamlfmt -conf .yamlfmt -lint
+	uv tool run --from yamllint==1.37.1 yamllint --strict -c .yamllint .
 
 # -p is written -p=<dir> because PowerShell reads a bare -p as its own
 # -PipelineVariable when vcenv.ps1 forwards the arguments, and clang-tidy would

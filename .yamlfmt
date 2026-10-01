@@ -1,0 +1,22 @@
+extensions:
+  - yaml
+  - yml
+  - yamlfmt
+  - yamllint
+exclude:
+  - charts/augustad/templates/**
+  - clusters/onprem/flux-system/gotk-components.yaml
+  - third_party/**
+gitignore_excludes: true
+line_ending: lf
+match_type: doublestar
+include:
+  - "**/*.yaml"
+  - "**/*.yml"
+  - "**/.yamlfmt"
+  - "**/.yamllint"
+formatter:
+  type: basic
+  indent: 2
+  line_ending: lf
+  eof_newline: true

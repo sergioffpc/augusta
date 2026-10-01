@@ -1,5 +1,4 @@
 name: Nightly
-
 # GitHub runs a schedule from the default branch's copy of this file (main),
 # while the nightly tests develop. So a scheduled run calls develop's copy of
 # the jobs (nightly-jobs.yml), never main's: main's would build develop the way
@@ -9,13 +8,11 @@ on:
   schedule:
     - cron: "0 3 * * *"
   workflow_dispatch:
-
 # One nightly at a time per branch, but never cancel a running one: its result
 # is the only report there is.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
-
 # A called workflow gets at most what its caller grants.
 permissions:
   contents: read
@@ -23,14 +20,12 @@ permissions:
   actions: write
   # Opening or updating the nightly-failure issue.
   issues: write
-
 jobs:
   scheduled:
     if: github.event_name == 'schedule'
     uses: sergioffpc/augusta/.github/workflows/nightly-jobs.yml@develop
     with:
       ref: develop
-
   manual:
     if: github.event_name != 'schedule'
     uses: ./.github/workflows/nightly-jobs.yml

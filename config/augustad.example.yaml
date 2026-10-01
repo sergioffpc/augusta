@@ -2,11 +2,9 @@
 # augustad.yaml and edit it, or keep it anywhere and run
 # `augustad --config <this file>`. Keys are grouped into sections; an error
 # names a key by its path, e.g. simulation.tick_rate_hz.
-
 # Where the relative paths below start from (required). A relative value is
 # relative to this file's directory, so "." means the directory of this file.
 base_dir: .
-
 content:
   # Server pack to load (required). It holds the scenario's map and its Lua
   # scripts, among them the parameters.lua the simulation's tunable values (the
@@ -14,10 +12,8 @@ content:
   # (ADR-0039). See tools/composer/examples/authoring/scenarios/augusta/parameters.lua.
   # Cook it with `augusta-pack <scenario>` (tools/pack).
   pack: packs/augusta/server.pack
-
   # Ed25519 public key the pack is signed with (required).
   public_key: keys/augusta.pub
-
 simulation:
   # The rate, in Hz, at which the server simulates and every client predicts
   # (required): a whole number from 1 to 255. It is fixed for as long as the server
@@ -25,11 +21,9 @@ simulation:
   # for it. NFR-01 asks the server to sustain 60 Hz; a slower rate is accepted
   # so a run can be debugged.
   tick_rate_hz: 60
-
 network:
   # Local address to listen on (optional, default 0.0.0.0:27015).
   listen_address: 0.0.0.0:27015
-
 logging:
   # Console sink's runtime floor (optional, default debug): one of trace, debug,
   # info, warn, error, critical. Only lowers what the build already compiles in
