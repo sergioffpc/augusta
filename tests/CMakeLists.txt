@@ -88,10 +88,14 @@ gtest_discover_tests(augusta_simulation_tests DISCOVERY_TIMEOUT 30)
 # SimulationWorld with a Game policy script the test chooses (ADR-0022).
 add_executable(augusta_policy_tests policy_test.cpp)
 target_link_libraries(augusta_policy_tests PRIVATE
-  augusta_simulation augusta_scripting augustad_parameters_loader augusta_logging GTest::gtest GTest::gtest_main)
-# A policy script shares no globals with the example scenario's Parameters script.
+  augusta_simulation augusta_scripting augustad_parameters_loader augustad_policy_loader augusta_logging
+  GTest::gtest GTest::gtest_main)
+# A policy script shares no globals with the example scenario's Parameters
+# script, and the example's own policy scripts run as the server loads them
+# from its golden server pack (ADR-0013).
 target_compile_definitions(augusta_policy_tests PRIVATE
-  AUGUSTA_EXAMPLE_PARAMETERS="${CMAKE_SOURCE_DIR}/tools/pack/examples/authoring/scenarios/augusta/parameters.lua")
+  AUGUSTA_EXAMPLE_PARAMETERS="${CMAKE_SOURCE_DIR}/tools/pack/examples/authoring/scenarios/augusta/parameters.lua"
+  AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs")
 # Links PhysX, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_policy_tests DISCOVERY_TIMEOUT 30)
 

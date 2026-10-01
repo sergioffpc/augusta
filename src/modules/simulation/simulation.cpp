@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -180,6 +181,123 @@ constexpr std::string_view kOnTick = "on_tick";
 // How often a failing Game policy hook is logged: one that fails every tick
 // would otherwise write a line a tick (ADR-0029).
 constexpr std::chrono::seconds kPolicyWarningInterval{1};
+
+// The behaviours' hook called once at Match start (ADR-0022).
+constexpr std::string_view kAssignSpawns = "assign_spawns";
+
+scripting::Value Number(double number) { return scripting::Value{.data = number}; }
+
+// The read-only view of the Match a Game policy hook is handed (ADR-0022): the
+// Player count, and every player in the Match with its Session ID, Entity ID
+// and Character index. Each record's keys are in order, as Value::Record wants.
+scripting::Value::Record MatchView(std::span<const MatchPlayer> players) {
+  scripting::Value::List list;
+  list.reserve(players.size());
+  for (const MatchPlayer& player : players) {
+    list.push_back(scripting::Value{.data = scripting::Value::Record{
+                                        {.key = "character", .value = Number(player.character_index)},
+                                        {.key = "entity", .value = Number(std::to_underlying(player.entity))},
+                                        {.key = "session", .value = Number(std::to_underlying(player.session))},
+                                    }});
+  }
+  return {
+      {.key = "player_count", .value = Number(static_cast<double>(players.size()))},
+      {.key = "players", .value = scripting::Value{.data = std::move(list)}},
+  };
+}
+
+// Why an assign_spawns answer is refused.
+enum class SpawnRefusal : std::uint8_t {
+  kNotAList,
+  kNotAnAssignment,
+  kUnknownPlayer,
+  kPlayerTwice,
+  kPlayerMissing,
+  kNotASpawnPoint,
+};
+
+std::string_view DescribeSpawnRefusal(SpawnRefusal refusal) {
+  switch (refusal) {
+    case SpawnRefusal::kNotAList:
+      return "it is not a list";
+    case SpawnRefusal::kNotAnAssignment:
+      return "an entry is not a record of exactly a session and a spawn_point";
+    case SpawnRefusal::kUnknownPlayer:
+      return "it names a session that is not a player in the Match";
+    case SpawnRefusal::kPlayerTwice:
+      return "it names a player twice";
+    case SpawnRefusal::kPlayerMissing:
+      return "it leaves a player out";
+    case SpawnRefusal::kNotASpawnPoint:
+      return "a spawn_point is not a whole number from 1 to the number of Spawn points";
+  }
+  std::unreachable();
+}
+
+// value as a whole number from 1 to max, or nullopt if it is anything else.
+std::optional<std::size_t> WholeNumberUpTo(const scripting::Value& value, std::size_t max) {
+  const double* number = std::get_if<double>(&value.data);
+  // A NaN fails the last test: it equals nothing, not even its own floor.
+  if (number == nullptr || *number < 1.0 || *number > static_cast<double>(max) || *number != std::floor(*number)) {
+    return std::nullopt;
+  }
+  return static_cast<std::size_t>(*number);
+}
+
+// The Spawn point, from 0, an assign_spawns answer gives each of players, in
+// their order. The answer is a list holding, for every player once, a record
+// {session = <Session ID>, spawn_point = <1-based Spawn point index>}.
+std::expected<std::vector<std::size_t>, SpawnRefusal> ReadSpawnAssignment(const scripting::Value& answer,
+                                                                          std::span<const MatchPlayer> players,
+                                                                          std::size_t spawn_points) {
+  const auto* list = std::get_if<scripting::Value::List>(&answer.data);
+  if (list == nullptr) {
+    return std::unexpected(SpawnRefusal::kNotAList);
+  }
+  std::vector<std::optional<std::size_t>> assigned(players.size());
+  for (const scripting::Value& entry : *list) {
+    const auto* record = std::get_if<scripting::Value::Record>(&entry.data);
+    if (record == nullptr || record->size() != 2 || (*record)[0].key != "session" ||
+        (*record)[1].key != "spawn_point") {
+      return std::unexpected(SpawnRefusal::kNotAnAssignment);
+    }
+    const auto* session = std::get_if<double>(&(*record)[0].value.data);
+    const auto player = std::ranges::find_if(players, [&](const MatchPlayer& candidate) {
+      return session != nullptr && static_cast<double>(std::to_underlying(candidate.session)) == *session;
+    });
+    if (player == players.end()) {
+      return std::unexpected(SpawnRefusal::kUnknownPlayer);
+    }
+    std::optional<std::size_t>& slot = assigned[static_cast<std::size_t>(player - players.begin())];
+    if (slot.has_value()) {
+      return std::unexpected(SpawnRefusal::kPlayerTwice);
+    }
+    const std::optional<std::size_t> spawn_point = WholeNumberUpTo((*record)[1].value, spawn_points);
+    if (!spawn_point.has_value()) {
+      return std::unexpected(SpawnRefusal::kNotASpawnPoint);
+    }
+    slot = *spawn_point - 1;
+  }
+  std::vector<std::size_t> indices;
+  indices.reserve(assigned.size());
+  for (const std::optional<std::size_t>& slot : assigned) {
+    if (!slot.has_value()) {
+      return std::unexpected(SpawnRefusal::kPlayerMissing);
+    }
+    indices.push_back(*slot);
+  }
+  return indices;
+}
+
+// The Spawn point, from 0, each of a Match's players takes with no Game policy
+// for it: in order, starting over after the last.
+std::vector<std::size_t> InOrderSpawns(std::size_t players, std::size_t spawn_points) {
+  std::vector<std::size_t> indices(players);
+  for (std::size_t i = 0; i < players; ++i) {
+    indices[i] = i % spawn_points;
+  }
+  return indices;
+}
 
 }  // namespace
 
@@ -471,6 +589,33 @@ struct World::Impl {
     }
   }
 
+  // The Spawn point, from 0 and below spawn_points, each of match_players takes:
+  // what the behaviours' assign_spawns answers, or in order when it is not
+  // defined, answers nil or is refused. A refusal is logged; as a hook is
+  // called once a Match, it is not limited.
+  std::vector<std::size_t> AssignSpawns(std::span<const MatchPlayer> match_players, std::size_t spawn_points) {
+    scripting::Value::Record view = MatchView(match_players);
+    view.push_back({.key = "spawn_points", .value = Number(static_cast<double>(spawn_points))});
+    const auto answer = policy.Call(scripting::Script::kBehaviours, kAssignSpawns, view);
+    if (!answer) {
+      LW("subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
+         scripting::ScriptPath(scripting::Script::kBehaviours), kAssignSpawns, tick,
+         scripting::DescribeHookError(answer.error()));
+      return InOrderSpawns(match_players.size(), spawn_points);
+    }
+    if (std::holds_alternative<std::monostate>(answer->data)) {
+      return InOrderSpawns(match_players.size(), spawn_points);
+    }
+    auto assignment = ReadSpawnAssignment(*answer, match_players, spawn_points);
+    if (!assignment) {
+      LW("subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
+         scripting::ScriptPath(scripting::Script::kBehaviours), kAssignSpawns, tick,
+         DescribeSpawnRefusal(assignment.error()));
+      return InOrderSpawns(match_players.size(), spawn_points);
+    }
+    return *std::move(assignment);
+  }
+
   void OnCommit(const Player& player, const Body& body, const Facing& facing, const Health& health,
                 const Rifle& rifle) {
     committed.bodies.push_back(EntityState{
@@ -523,6 +668,30 @@ void World::RemovePlayer(EntityId entity) {
   }
   slot->second.entity.destruct();
   impl.players.erase(slot);
+}
+
+std::vector<math::Vec3> World::StartMatch(const std::vector<MatchPlayer>& players,
+                                          const std::vector<math::Vec3>& spawn_points) {
+  Impl& impl = *impl_;
+  std::vector<EntityId> leftover;
+  leftover.reserve(impl.players.size());
+  for (const auto& [entity, slot] : impl.players) {
+    leftover.push_back(entity);
+  }
+  for (const EntityId entity : leftover) {
+    RemovePlayer(entity);
+  }
+  // A Map without Spawn points spawns everyone at the origin.
+  const std::vector<math::Vec3> points = spawn_points.empty() ? std::vector<math::Vec3>{math::Vec3{}} : spawn_points;
+  std::vector<math::Vec3> spawned;
+  spawned.reserve(players.size());
+  for (const std::size_t index : impl.AssignSpawns(players, points.size())) {
+    spawned.push_back(points[index]);
+  }
+  for (std::size_t i = 0; i < players.size(); ++i) {
+    AddPlayer(players[i].entity, spawned[i], players[i].character);
+  }
+  return spawned;
 }
 
 State World::Tick(const std::vector<PlayerCommand>& commands, float delta_time) {

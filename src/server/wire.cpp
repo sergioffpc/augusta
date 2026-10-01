@@ -1,13 +1,16 @@
 #include "wire.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <span>
 #include <utility>
 #include <vector>
 
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
+#include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
@@ -141,11 +144,12 @@ protocol::LobbyWire ToWire(const Roster& roster) {
   return lobby;
 }
 
-protocol::MatchStartWire ToWire(const MatchStart& start) {
+protocol::MatchStartWire ToWire(const MatchStart& start, std::span<const math::Vec3> spawns) {
   protocol::MatchStartWire message;
   message.players.reserve(start.players.size());
-  for (const MatchPlayer& player : start.players) {
-    message.players.push_back(protocol::MatchPlayerWire{.spawn = player.spawn,
+  for (std::size_t i = 0; i < start.players.size(); ++i) {
+    const MatchPlayer& player = start.players[i];
+    message.players.push_back(protocol::MatchPlayerWire{.spawn = spawns[i],
                                                         .session = ToWire(player.session),
                                                         .entity = ToWire(player.entity),
                                                         .character = player.character});
