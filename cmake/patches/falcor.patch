@@ -20,7 +20,7 @@ diff --git a/CMakePresets.json b/CMakePresets.json
 index 8d52e7b1..14273cae 100644
 --- a/CMakePresets.json
 +++ b/CMakePresets.json
-@@ -96,6 +96,19 @@
+@@ -96,6 +96,20 @@
                  "windows-ninja-msvc-base"
              ]
          },
@@ -34,13 +34,14 @@ index 8d52e7b1..14273cae 100644
 +            "cacheVariables": {
 +                "CMAKE_POLICY_VERSION_MINIMUM": "3.5",
 +                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
++                "CMAKE_C_COMPILER": "cl",
 +                "CMAKE_CXX_FLAGS": "/EHsc /D_SECURE_SCL=0"
 +            }
 +        },
          {
              "name": "windows-ninja-msvc-ci",
              "displayName": "Windows Ninja/MSVC (CI)",
-@@ -178,6 +191,18 @@
+@@ -178,6 +192,18 @@
              "configurePreset": "windows-ninja-msvc",
              "configuration": "Debug"
          },
@@ -66,7 +67,7 @@ index 61b4f9c7..9152dae0 100644
 @@ -533,6 +533,13 @@ void Window::setWindowTitle(const std::string& title)
      glfwSetWindowTitle(mpGLFWWindow, title.c_str());
  }
- 
+
 +void Window::setCursorLocked(bool locked)
 +{
 +    glfwSetInputMode(mpGLFWWindow, GLFW_CURSOR, locked ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
@@ -84,7 +85,7 @@ index 1540b6b3..00f28911 100644
 @@ -149,6 +149,12 @@ public:
       */
      void setWindowIcon(const std::filesystem::path& path);
- 
+
 +    /**
 +     * Hide the cursor and capture it for unbounded mouse movement (GLFW_CURSOR_DISABLED), or release it.
 +     * While captured, mouse move events report a virtual position that never stops at the window edge.

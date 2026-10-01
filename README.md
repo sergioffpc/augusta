@@ -27,66 +27,73 @@ Unreal/Unity/Godot.
 Early stage — see [docs/ROADMAP.md](docs/ROADMAP.md) for the milestone plan.
 This is a solo-developer hobby project with no fixed deadline.
 
-## Building
+## Development Setup
 
-One-time setup, then the same CMake presets on either side.
+### Bootstrap
 
-**Windows (client):**
-
-`bootstrap-windows.ps1` installs Visual Studio Build Tools, so it needs an
-**elevated** PowerShell (Win+X → "Terminal (Admin)"), and PowerShell's default
-execution policy blocks running local scripts at all:
+**Windows (client):** run PowerShell as Administrator (Win+X → "Terminal
+(Admin)"). The bootstrap installs Visual Studio Build Tools and GNU make:
 ```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force   # this session only
-.\scripts\bootstrap-windows.ps1
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+./scripts/bootstrap-windows.ps1
 ```
 
-Then build **from inside VS Code** (open the repo, install the recommended
-extensions), using the CMake Tools extension's Configure/Build/Test commands
-(command palette, or the status bar buttons) with the `windows` preset. A
-plain terminal doesn't have `cl.exe`'s `INCLUDE`/`LIB`/`PATH` set up, which
-the Ninja generator needs and a Build Tools-only install has no Start Menu
-shortcut to get for you — CMake Tools finds and loads it automatically,
-which a raw `cmake --preset windows` in a terminal won't.
+Open a new terminal after setup. The Makefile loads the Visual Studio Build
+Tools environment automatically for each command on Windows.
 
-**From a terminal, with `make`:** the [Makefile](Makefile) wraps the presets, and
-on Windows runs each command through [scripts/vcenv.ps1](scripts/vcenv.ps1),
-which loads the Build Tools environment for you. `bootstrap-windows.ps1`
-installs GNU make (`ezwinports.make`) along with the rest, so from a new terminal:
-```
-make help                       # list the targets
-make                            # configure + compile the binaries (PRESET defaults to windows / linux)
-make check PRESET=windows-debug # + compile the tests, run ctest, with another preset
-make install prefix=C:/augusta  # build + cmake --install augustad (DESTDIR honoured)
-make clean                      # remove build outputs (distclean deletes the build dir)
-make format                     # clang-format and yamlfmt on tracked files
-make format-check               # clang-format, yamlfmt and yamllint checks CI runs
-```
-
-**WSL2 (server / shared core):**
+**WSL2 (server / shared core):** use Ubuntu 26.04 under WSL2:
 ```bash
-./scripts/bootstrap-wsl.sh        # build tools, uv, standalone yamlfmt, clang-format/clang-tidy, vcpkg, sccache
-cmake --preset linux
-cmake --build --preset linux --target all augusta_tests
-ctest --preset linux
+./scripts/bootstrap-wsl.sh
 ```
-or, with the [Makefile](Makefile), just `make test`.
 
-Both bootstrap scripts also `git submodule update --init` the vendored vcpkg
-(`third_party/vcpkg`) and wire up the Conventional Commits `commit-msg` hook.
+Both scripts initialize the vendored submodules and configure the Conventional
+Commits `commit-msg` hook.
 
-**Sanitizer build (Linux, ASan+UBSan):**
+### Build and Run
+
+The [Makefile](Makefile) wraps the build presets. On Windows it loads the
+Visual Studio Build Tools environment through [scripts/vcenv.ps1](scripts/vcenv.ps1).
+
+Build and start the Linux server in WSL first. Leave it running, listening on
+the configured address (the default client connects to `127.0.0.1:27015`):
 ```bash
-cmake --preset linux-san
-cmake --build --preset linux-san --target all augusta_tests
-ctest --preset linux-san
+make
+./build/x64-linux/src/server/augustad --config config/augustad.yaml
 ```
 
-**Fuzzing (Linux, libFuzzer + ASan):** the `linux-fuzz` preset builds the fuzz
-targets; [tests/fuzz/README.md](tests/fuzz/README.md) has how to run one.
+Then, from a separate Windows PowerShell terminal, build and start the client
+with its local config and cooked client pack:
+```powershell
+make
+& "build/x64-windows/src/client/augustac.exe" --config config/augustac.yaml
+```
 
-The presets (`windows`, `linux`, `linux-san`, `linux-fuzz`) are defined in
-[CMakePresets.json](CMakePresets.json) and are what CI builds with too.
+Create each local YAML from its `*.example.yaml` file and edit its pack and
+public-key paths to point to cooked content before running. `make` builds the
+default release preset (`windows` on Windows, `linux` on WSL). To install the
+server, use `make install prefix=C:/augusta` on Windows or choose a Unix-style
+prefix on Linux.
+
+### Tests
+
+Run the tests with the host's default preset, or select another preset:
+```bash
+make test
+make test PRESET=windows-debug
+make test PRESET=linux-san
+```
+
+The `linux-fuzz` preset builds the fuzz targets:
+```bash
+make PRESET=linux-fuzz
+```
+[tests/fuzz/README.md](tests/fuzz/README.md) explains how to run them.
+
+Other useful checks:
+```bash
+make format-check
+make lint
+```
 
 ## Documentation
 
