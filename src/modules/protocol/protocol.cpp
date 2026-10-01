@@ -467,7 +467,7 @@ std::optional<MessageWire> ReadBody(MessageTypeWire type, Reader& reader) {
     case MessageTypeWire::kMatchStart:
       return ReadMatchStart(reader);
     case MessageTypeWire::kMatchEnd:
-      return MatchEndWire{};
+      return MatchEndWire{.winner = static_cast<SessionIdWire>(reader.ReadU32())};
     case MessageTypeWire::kShot:
       return ReadShot(reader);
     case MessageTypeWire::kHitConfirmation:
@@ -591,8 +591,9 @@ struct Encoder {
     }
   }
 
-  void operator()(const MatchEndWire& /*message*/) const {
+  void operator()(const MatchEndWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kMatchEnd));
+    WriteU32(out, static_cast<std::uint32_t>(message.winner));
   }
 
   void operator()(const ShotWire& message) const {

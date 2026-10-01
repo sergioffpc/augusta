@@ -87,6 +87,10 @@ struct SequencedCommand {
 /// A Death the server told, in the engine's terms.
 [[nodiscard]] Death FromWire(const protocol::DeathWire& death);
 
+/// A match's end the server sent, in the engine's terms: a winner of
+/// protocol::kDraw is none.
+[[nodiscard]] MatchEnd FromWire(const protocol::MatchEndWire& end);
+
 /// hash as the protocol carries it.
 [[nodiscard]] protocol::PackHashWire ToWire(const assets::PackHash& hash);
 

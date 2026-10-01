@@ -31,7 +31,8 @@ it catches up. A departure never does.
 **The match starts when the Lobby is full and everyone is Ready.** At that point
 the server closes the Lobby and sends one reliable Match start message. It lists
 every player in the match with their character index, the Entity ID of the
-body they control (ADR-0038) and its Spawn point. After
+body they control (ADR-0038) and its Spawn point, which Game policy assigns
+(ADR-0023). After
 that, the set of players can only shrink.
 
 **No one joins a match in progress.** A join that arrives while a match runs is
@@ -68,8 +69,12 @@ to leave.
 - **The mid-match Roster in Join accepted goes away.** The Lobby's membership
   replaces it. The server sends it to everyone in the Lobby whenever it
   changes.
-- **The Spawn point is assigned at match start, not at join.** The server keeps
-  taking spawn points in order until Game policy says otherwise.
+- **The Spawn point is assigned at match start, not at join, and by Game
+  policy.** `server::Match` decides who is in a match and when it starts, never
+  where anyone spawns: SimulationWorld's Match start runs the scenario's
+  `assign_spawns` hook (ADR-0022, ADR-0023), and players take the spawn points
+  in order, starting over after the last, when the scenario defines no hook or
+  its answer is refused.
 
 ## Considered Options
 

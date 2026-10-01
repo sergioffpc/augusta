@@ -88,12 +88,27 @@ gtest_discover_tests(augusta_simulation_tests DISCOVERY_TIMEOUT 30)
 # SimulationWorld with a Game policy script the test chooses (ADR-0022).
 add_executable(augusta_policy_tests policy_test.cpp)
 target_link_libraries(augusta_policy_tests PRIVATE
-  augusta_simulation augusta_scripting augustad_parameters_loader augusta_logging GTest::gtest GTest::gtest_main)
-# A policy script shares no globals with the example scenario's Parameters script.
+  augusta_simulation augusta_scripting augustad_parameters_loader augustad_policy_loader augusta_logging
+  GTest::gtest GTest::gtest_main)
+# A policy script shares no globals with the example scenario's Parameters
+# script, and the example's own policy scripts run as the server loads them
+# from its golden server pack (ADR-0013).
 target_compile_definitions(augusta_policy_tests PRIVATE
-  AUGUSTA_EXAMPLE_PARAMETERS="${CMAKE_SOURCE_DIR}/tools/pack/examples/authoring/scenarios/augusta/parameters.lua")
+  AUGUSTA_EXAMPLE_PARAMETERS="${CMAKE_SOURCE_DIR}/tools/pack/examples/authoring/scenarios/augusta/parameters.lua"
+  AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs")
 # Links PhysX, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_policy_tests DISCOVERY_TIMEOUT 30)
+
+# The example scenario's shipped objectives.lua, loaded out of a pack built with
+# augusta_assets' private encoder and run through SimulationWorld (ADR-0013).
+add_executable(augusta_example_objectives_tests example_objectives_test.cpp)
+target_link_libraries(augusta_example_objectives_tests PRIVATE
+  augusta_simulation augustad_policy_loader augusta_logging GTest::gtest GTest::gtest_main)
+target_include_directories(augusta_example_objectives_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
+target_compile_definitions(augusta_example_objectives_tests PRIVATE
+  AUGUSTA_EXAMPLE_SCENARIO="${CMAKE_SOURCE_DIR}/tools/pack/examples/authoring/scenarios/augusta")
+# Links PhysX, so the same first-launch cost applies as below.
+gtest_discover_tests(augusta_example_objectives_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_networking_tests networking_test.cpp)
 target_link_libraries(augusta_networking_tests PRIVATE augusta_networking GTest::gtest GTest::gtest_main)
@@ -196,7 +211,10 @@ target_include_directories(augusta_policy_loader_tests PRIVATE ${CMAKE_SOURCE_DI
 gtest_discover_tests(augusta_policy_loader_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_session_tests session_test.cpp)
-target_link_libraries(augusta_session_tests PRIVATE augusta_harness augustad_host augustad_parameters_loader GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_session_tests PRIVATE augusta_harness augustad_host augustad_parameters_loader augusta_logging GTest::gtest GTest::gtest_main)
+# The server runs the example scenario's objectives.lua for the win condition (US-14).
+target_compile_definitions(augusta_session_tests PRIVATE
+  AUGUSTA_EXAMPLE_OBJECTIVES="${CMAKE_SOURCE_DIR}/tools/pack/examples/authoring/scenarios/augusta/objectives.lua")
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_session_tests DISCOVERY_TIMEOUT 30)
 
