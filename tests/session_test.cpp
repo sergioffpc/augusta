@@ -3890,6 +3890,18 @@ TEST_F(ScriptedServerTest, TheShotsHitsAndDeathsThatArriveJustBeforeMatchEndAreS
   EXPECT_EQ(session_.TakeDeaths().size(), 1U);
 }
 
+TEST_F(ScriptedServerTest, ADeathNobodyAskedForIsNotHandedOutInTheNextMatch) {
+  Settle();
+
+  server_.Send(DeathOf(kScriptedEntity, kScriptedEntity));
+  server_.Send(augusta::protocol::MatchEndWire{});
+  server_.Send(ScriptedServer::StartOfAlone());
+  Settle();
+  ASSERT_EQ(session_.GetPhase(), Phase::kMatch);
+
+  EXPECT_TRUE(session_.TakeDeaths().empty());
+}
+
 // Told of its own death, a client predicts no more, even before an update says so.
 TEST_F(ScriptedServerTest, AClientToldOfItsOwnDeathStopsPredicting) {
   Settle();

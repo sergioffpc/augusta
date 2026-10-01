@@ -22,13 +22,25 @@ using augusta::audio::Listener;
 using augusta::math::Vec3;
 using augusta::presentation::Camera;
 using augusta::presentation::CuePlay;
+using augusta::presentation::CueSelector;
+using augusta::presentation::DynamicBody;
 using augusta::presentation::EntityId;
 using augusta::presentation::FrameInput;
 using augusta::presentation::ListenerOf;
-using augusta::presentation::SelectCues;
+using augusta::presentation::MatchEnd;
 using augusta::presentation::Shot;
+using augusta::presentation::WorldSnapshot;
 
 constexpr float kTolerance = 1e-5F;
+
+constexpr double kTickDuration = 1.0 / 60.0;
+const Vec3 kThere(5.0F, 0.0F, -2.0F);
+
+DynamicBody BodyAt(EntityId entity, const Vec3& position) {
+  DynamicBody body{.entity = entity, .state = {}, .yaw = 0.0F};
+  body.state.position = position;
+  return body;
+}
 
 void ExpectNear(const Vec3& actual, const Vec3& expected) {
   EXPECT_NEAR(actual.x, expected.x, kTolerance);
@@ -36,64 +48,182 @@ void ExpectNear(const Vec3& actual, const Vec3& expected) {
   EXPECT_NEAR(actual.z, expected.z, kTolerance);
 }
 
-TEST(SelectCuesTest, AFrameWhereNothingHappenedPlaysNoCue) {
+TEST(CueSelectorTest, AFrameWhereNothingHappenedPlaysNoCue) {
   const FrameInput input;
 
-  EXPECT_TRUE(SelectCues(input, 0).empty());
+  EXPECT_TRUE(CueSelector().Select(input, 0).empty());
 }
 
-TEST(SelectCuesTest, EachRoundThePredictedFireFiredIsTheLocalPlayersOwnGunshot) {
+TEST(CueSelectorTest, EachRoundThePredictedFireFiredIsTheLocalPlayersOwnGunshot) {
   const FrameInput input;
 
   // Two rounds since the previous frame, heard at once, as the listener's own.
   const std::vector<CuePlay> expected = {CuePlay{.cue = Cue::kGunshot, .position = std::nullopt},
                                          CuePlay{.cue = Cue::kGunshot, .position = std::nullopt}};
-  EXPECT_EQ(SelectCues(input, 2), expected);
+  EXPECT_EQ(CueSelector().Select(input, 2), expected);
 }
 
-TEST(SelectCuesTest, AnotherPlayersShotIsAGunshotHeardFromWhereItWasFired) {
+TEST(CueSelectorTest, AnotherPlayersShotIsAGunshotHeardFromWhereItWasFired) {
   FrameInput input;
   input.local_entity = EntityId{1};
   input.shots = {Shot{.shooter = EntityId{2}, .origin = Vec3(4.0F, 1.7F, -3.0F), .yaw = 0.5F, .pitch = 0.0F}};
 
   const std::vector<CuePlay> expected = {CuePlay{.cue = Cue::kGunshot, .position = Vec3(4.0F, 1.7F, -3.0F)}};
-  EXPECT_EQ(SelectCues(input, 0), expected);
+  EXPECT_EQ(CueSelector().Select(input, 0), expected);
 }
 
-TEST(SelectCuesTest, TheLocalPlayersOwnShotIsNotHeardAgain) {
+TEST(CueSelectorTest, TheLocalPlayersOwnShotIsNotHeardAgain) {
   FrameInput input;
   input.local_entity = EntityId{1};
   input.shots = {Shot{.shooter = EntityId{1}, .origin = Vec3(0.0F, 1.7F, 0.0F), .yaw = 0.0F, .pitch = 0.0F}};
 
   // Its predicted fire was heard a round trip ago.
-  EXPECT_TRUE(SelectCues(input, 0).empty());
+  EXPECT_TRUE(CueSelector().Select(input, 0).empty());
 }
 
-TEST(SelectCuesTest, AHitConfirmationIsTheHitMarkerHeardAsTheListenersOwn) {
+TEST(CueSelectorTest, AHitConfirmationIsTheHitMarkerHeardAsTheListenersOwn) {
   FrameInput input;
   input.hit_confirmations = 1;
 
   const std::vector<CuePlay> expected = {CuePlay{.cue = Cue::kHitMarker, .position = std::nullopt}};
-  EXPECT_EQ(SelectCues(input, 0), expected);
+  EXPECT_EQ(CueSelector().Select(input, 0), expected);
 }
 
-TEST(SelectCuesTest, HitsConfirmedTogetherAreHeardAsOneHitMarker) {
+TEST(CueSelectorTest, HitsConfirmedTogetherAreHeardAsOneHitMarker) {
   FrameInput input;
   input.hit_confirmations = 3;
 
   const std::vector<CuePlay> expected = {CuePlay{.cue = Cue::kHitMarker, .position = std::nullopt}};
-  EXPECT_EQ(SelectCues(input, 0), expected);
+  EXPECT_EQ(CueSelector().Select(input, 0), expected);
 }
 
-TEST(SelectCuesTest, FiringAloneIsNoHitMarker) {
+TEST(CueSelectorTest, FiringAloneIsNoHitMarker) {
   FrameInput input;
   input.local_entity = EntityId{1};
   input.shots = {Shot{.shooter = EntityId{1}, .origin = Vec3(0.0F, 1.7F, 0.0F), .yaw = 0.0F, .pitch = 0.0F}};
 
   // A round the prediction fired, and its Shot, but no Hit confirmation yet.
-  for (const CuePlay& cue : SelectCues(input, 1)) {
+  for (const CuePlay& cue : CueSelector().Select(input, 1)) {
     EXPECT_NE(cue.cue, Cue::kHitMarker);
   }
+}
+
+TEST(CueSelectorTest, ADropInTheLocalPlayersHealthIsAHitTakenHeardAsTheListenersOwn) {
+  CueSelector selector;
+  FrameInput input;
+  input.health = 100.0F;
+  EXPECT_TRUE(selector.Select(input, 0).empty());
+
+  input.health = 75.0F;
+
+  const std::vector<CuePlay> expected = {CuePlay{.cue = Cue::kHitTaken, .position = std::nullopt}};
+  EXPECT_EQ(selector.Select(input, 0), expected);
+}
+
+TEST(CueSelectorTest, HealthThatHoldsOrStartsAMatchIsNoHitTaken) {
+  CueSelector selector;
+  FrameInput input;
+  input.health = 40.0F;
+  EXPECT_TRUE(selector.Select(input, 0).empty());
+  EXPECT_TRUE(selector.Select(input, 0).empty());
+
+  // Between matches there is no health, and the next starts afresh, even lower.
+  input.health.reset();
+  EXPECT_TRUE(selector.Select(input, 0).empty());
+  input.health = 30.0F;
+  EXPECT_TRUE(selector.Select(input, 0).empty());
+}
+
+TEST(CueSelectorTest, ADeathIsHeardFromWhereTheServerLastReportedTheBody) {
+  CueSelector selector;
+  FrameInput input;
+  input.local_entity = EntityId{1};
+  input.snapshot = WorldSnapshot{.tick = 10, .tick_duration = kTickDuration, .bodies = {BodyAt(EntityId{2}, kThere)}};
+  EXPECT_TRUE(selector.Select(input, 0).empty());
+
+  // The body left the simulation, and the updates, before its Death arrived.
+  input.snapshot = WorldSnapshot{.tick = 11, .tick_duration = kTickDuration, .bodies = {}};
+  input.deaths = {EntityId{2}};
+
+  const std::vector<CuePlay> expected = {CuePlay{.cue = Cue::kDeath, .position = kThere}};
+  EXPECT_EQ(selector.Select(input, 0), expected);
+}
+
+TEST(CueSelectorTest, TheLocalPlayersOwnDeathIsHeardFromWhereItsBodyWas) {
+  CueSelector selector;
+  FrameInput input;
+  input.local_entity = EntityId{1};
+  input.snapshot = WorldSnapshot{.tick = 10, .tick_duration = kTickDuration, .bodies = {BodyAt(EntityId{1}, kThere)}};
+  EXPECT_TRUE(selector.Select(input, 0).empty());
+
+  input.deaths = {EntityId{1}};
+
+  const std::vector<CuePlay> expected = {CuePlay{.cue = Cue::kDeath, .position = kThere}};
+  EXPECT_EQ(selector.Select(input, 0), expected);
+}
+
+TEST(CueSelectorTest, TheWinnerHearsTheMatchWonStingerAsTheListenersOwnOnce) {
+  CueSelector selector;
+  FrameInput input;
+  input.local_entity = EntityId{1};
+  input.match_end = MatchEnd{.winner = EntityId{1}};
+
+  const std::vector<CuePlay> expected = {CuePlay{.cue = Cue::kMatchWon, .position = std::nullopt}};
+  EXPECT_EQ(selector.Select(input, 0), expected);
+  // Match end stays told until the next match starts.
+  EXPECT_TRUE(selector.Select(input, 0).empty());
+}
+
+TEST(CueSelectorTest, EveryoneButTheWinnerHearsTheMatchLostStinger) {
+  CueSelector selector;
+  FrameInput input;
+  input.local_entity = EntityId{1};
+  input.match_end = MatchEnd{.winner = EntityId{2}};
+
+  const std::vector<CuePlay> expected = {CuePlay{.cue = Cue::kMatchLost, .position = std::nullopt}};
+  EXPECT_EQ(selector.Select(input, 0), expected);
+}
+
+TEST(CueSelectorTest, ADrawIsHeardAsTheMatchLostStinger) {
+  CueSelector selector;
+  FrameInput input;
+  input.local_entity = EntityId{1};
+  input.match_end = MatchEnd{.winner = std::nullopt};
+
+  const std::vector<CuePlay> expected = {CuePlay{.cue = Cue::kMatchLost, .position = std::nullopt}};
+  EXPECT_EQ(selector.Select(input, 0), expected);
+}
+
+TEST(CueSelectorTest, EachMatchsEndIsHeard) {
+  CueSelector selector;
+  FrameInput input;
+  input.local_entity = EntityId{1};
+  input.match_end = MatchEnd{.winner = EntityId{2}};
+  (void)selector.Select(input, 0);
+
+  input.match_end.reset();
+  EXPECT_TRUE(selector.Select(input, 0).empty());
+
+  input.match_end = MatchEnd{.winner = EntityId{2}};
+  const std::vector<CuePlay> expected = {CuePlay{.cue = Cue::kMatchLost, .position = std::nullopt}};
+  EXPECT_EQ(selector.Select(input, 0), expected);
+}
+
+TEST(CueSelectorTest, TheDeathThatEndsTheMatchIsHeardWithItsStinger) {
+  CueSelector selector;
+  FrameInput input;
+  input.local_entity = EntityId{1};
+  input.snapshot = WorldSnapshot{.tick = 10, .tick_duration = kTickDuration, .bodies = {BodyAt(EntityId{2}, kThere)}};
+  (void)selector.Select(input, 0);
+
+  // The match is over, so there is no update any more.
+  input.snapshot.reset();
+  input.deaths = {EntityId{2}};
+  input.match_end = MatchEnd{.winner = EntityId{1}};
+
+  const std::vector<CuePlay> expected = {CuePlay{.cue = Cue::kDeath, .position = kThere},
+                                         CuePlay{.cue = Cue::kMatchWon, .position = std::nullopt}};
+  EXPECT_EQ(selector.Select(input, 0), expected);
 }
 
 TEST(ListenerOfTest, TheListenerHearsFromTheCameraFacingWhereItLooks) {
