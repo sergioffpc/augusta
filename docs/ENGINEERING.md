@@ -42,7 +42,7 @@ the decisions already made in ARCHITECTURE.md:
 - **Trigger:** `push` to `main`/`develop`, and `pull_request` targeting
   either; a separate nightly workflow runs on `develop` (ADR-0013). A `changes` job diffs against the base commit first and skips
   build/test/lint entirely when nothing under `src/`, `tests/`,
-  `tools/pack/examples/` (the example scenario a test loads),
+  `tools/composer/examples/` (the example scenario a test loads),
   `tools/pack/cpp/` (formatted by the `format` job, though CI doesn't
   build it), `cmake/`, `config/` (the example configs a test loads),
   `CMakeLists.txt`, `CMakePresets.json`, `vcpkg.json`, the `third_party`
@@ -196,18 +196,16 @@ pipeline).
   considered and rejected: Falcor's CMake presets only test/support
   MSVC on Windows, and stacking an unsupported compiler on top of an
   already-unmaintained dependency, ADR-0009, isn't worth the purity.)
-- **Asset pipeline tooling (authoring-only, opt-in):** a separate
-  `tools/pack/scripts/bootstrap-windows.ps1` script builds a hermetic
-  authoring/cooking environment under a caller-chosen `-AssetsRoot`
-  (ADR-0015, ADR-0016, ADR-0017, ADR-0030) — NVIDIA Omniverse USD Composer
-  (via kit-app-template, since the old Launcher was deprecated), a
-  uv-managed Python venv with `tools/pack` (this repo's own
-  pure-Python cooker project, pulling in `usd-optimize`/
-  `usd-validation-nvidia`/`pynacl`/`blake3` as its own dependencies)
-  installed editable, and Adobe's USD-Fileformat-plugins. Deliberately kept
-  out of `bootstrap-windows.ps1`: these are heavier, GPU-dependent,
-  authoring-only tools never linked into shipped binaries (ARCHITECTURE.md
-  §2), so only whoever is actually authoring content runs it.
+- **Asset cooker setup (opt-in):** `tools/pack/scripts/bootstrap-windows.ps1`
+  builds the pack environment under a caller-chosen assets root (ADR-0030): a
+  uv-managed Python environment with `tools/pack` installed editable, its
+  native modules, signing keys and sample authoring content.
+- **USD Composer setup (authoring-only, opt-in):**
+  `tools/composer/scripts/bootstrap-windows.ps1` builds NVIDIA Omniverse USD Composer
+  via kit-app-template and fetches Adobe's USD-Fileformat-plugins under the
+  same assets root. These heavier, GPU-dependent tools are deliberately kept
+  out of `bootstrap-windows.ps1` and are never linked into shipped binaries
+  (ARCHITECTURE.md §2); only content authors need them.
   `meshoptimizer` and DirectXTex are `tools/pack/cpp`'s own
   C++ build dependencies (two small pybind11 modules, no OpenUSD - see
   ADR-0030) — vendored via `vcpkg.json` (ADR-0025) like the rest of the

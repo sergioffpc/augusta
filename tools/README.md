@@ -1,4 +1,32 @@
-# pack
+# Tools
+
+This directory contains two separate Windows tools: `pack` cooks authored
+content into signed runtime packs, while `composer` sets up the optional USD
+authoring application and its launcher.
+
+| Tool | Purpose |
+|---|---|
+| [`pack/`](pack/) | Python asset cooker, signing utilities, and native cooking modules. |
+| [`composer/`](composer/) | Optional NVIDIA USD Composer setup, playback definition, and launcher. |
+
+## Composer
+
+Composer is an optional authoring tool; it is not needed to cook stages someone
+else authored. After the repository's `scripts\bootstrap-windows.ps1`, run the
+separate Composer bootstrap from the repository root:
+
+```powershell
+.\tools\composer\scripts\bootstrap-windows.ps1 <assets-root>
+```
+
+It builds the Augusta app with NVIDIA's Kit App Template, fetches Adobe's
+USD-Fileformat-plugins, and copies `augusta-composer.ps1` to
+`<assets-root>\bin`. The bootstrap checks NVIDIA's license interactively; for
+unattended setup, pass `-AcceptOmniverseEula` only after accepting the terms.
+Launch with `<assets-root>\bin\augusta-composer.ps1` or
+`augusta-composer.ps1` when `bin` is on `PATH`.
+
+## Pack
 
 The offline asset cooker (ADR-0030): it turns a raw authored OpenUSD stage into
 the signed client and server packs the game loads (ADR-0018, ADR-0019). It is a
@@ -19,28 +47,25 @@ server.
    result. ADR-0031, ADR-0032.
 
 The whole pipeline is pure Python except for two small pybind11 modules in
-[cpp/](cpp/): `_meshoptimizer` (ADR-0016) and `_textconv` (ADR-0017). They have
+[pack/cpp/](pack/cpp/): `_meshoptimizer` (ADR-0016) and `_textconv` (ADR-0017). They have
 no USD dependency on purpose; see ADR-0030 for why.
 
-## Setup
+### Setup
 
-Everything lives under one hermetic **assets root** (a uv-managed Python venv,
-the native modules, the signing key and the content directories). Nothing is
-installed globally. From an elevated PowerShell, after the repository's own
-`scripts\bootstrap-windows.ps1`:
+The pack bootstrap creates the cooker's **assets root** (a uv-managed Python
+environment, native modules, a signing key and content directories). From an
+elevated PowerShell, after the repository's own `scripts\bootstrap-windows.ps1`:
 
 ```powershell
 .\tools\pack\scripts\bootstrap-windows.ps1 <assets-root>
 ```
 
-Pass `-SkipAuthoring` on a machine that only cooks stages someone else authored;
-otherwise NVIDIA Omniverse USD Composer and Adobe's USD-Fileformat-plugins are
-set up as well. The script is safe to re-run. It never regenerates an existing
-signing key, since that would invalidate every pack already signed with it, and
-it never overwrites a seeded piece below once it exists at its path.
+This bootstraps only the cooker. It is safe to re-run, never regenerates an
+existing signing key (which would invalidate every pack already signed with
+it), and never overwrites a seeded piece below once it exists at its path.
 
 The script also seeds a small worked example from
-[examples/authoring/](examples/authoring/), piece by piece: `authoring/maps/augusta`
+[composer/examples/authoring/](composer/examples/authoring/), piece by piece: `authoring/maps/augusta`
 (a floor, a prop, a spawn point), `authoring/characters/player` (ADR-0040),
 `authoring/sounds/augusta` (placeholder cue sounds, ADR-0020), and
 `authoring/scenarios/augusta` (its `manifest.yaml`, ADR-0041, composing
@@ -49,10 +74,10 @@ the other three, plus `parameters.lua` and placeholder `objectives.lua`/
 this repo so a fresh environment has something to cook straight away:
 
 ```powershell
-augustap augusta
+augusta-pack augusta
 ```
 
-`augustap` takes the scenario's bare name (ADR-0041), always resolved as
+`augusta-pack` takes the scenario's bare name (ADR-0041), always resolved as
 `<assets-root>\authoring\scenarios\<name>` - never a path, and never
 resolved from the current directory.
 
@@ -60,56 +85,39 @@ The assets root looks like this:
 
 | Path | Contents |
 |---|---|
-| `authoring/` | `maps/<name>/` (ADR-0015), `characters/<name>/` (ADR-0040), `sounds/<name>/` (ADR-0020), `scenarios/<name>/` (`manifest.yaml` + Lua scripts, ADR-0041) - the only one of the three `augustap` resolves a name against |
+| `authoring/` | `maps/<name>/` (ADR-0015), `characters/<name>/` (ADR-0040), `sounds/<name>/` (ADR-0020), `scenarios/<name>/` (`manifest.yaml` + Lua scripts, ADR-0041) - resolved by `augusta-pack` |
 | `packs/` | Cooked, signed packs |
 | `keys/` | `augusta.key` / `augusta.pub` (Ed25519). Never commit these. |
-| `bin/` | `augustap.exe`, `augustap-keygen.exe`, `augustap-inspect.exe`, `augustap-verify.exe` (installed here by `uv tool install`), plus `augustap-composer.ps1` unless `-SkipAuthoring` |
+| `bin/` | `augusta-pack.exe`, `augusta-keygen.exe`, `augusta-inspect.exe`, `augusta-verify.exe` (installed here by `uv tool install`), plus `augusta-composer.ps1` if the Composer bootstrap ran |
 | `python/` | The uv tool venv (`python/pack`), with this project installed editable |
-| `tools/` | Composer and the Adobe plugins (unless `-SkipAuthoring`) |
+| `tools/` | Composer and Adobe plugins (installed by the Composer bootstrap) |
 
-## Running the commands
+### Running the commands
 
-All the commands are self-contained launchers in `<assets-root>/bin`, so they run
-from any directory and any shell, by full path:
+The pack commands are self-contained launchers in `<assets-root>/bin`, so they
+run from any directory and any shell, by full path. The Composer launcher is
+present only if its separate bootstrap ran:
 
 ```powershell
-<assets-root>\bin\augustap.exe --help
-<assets-root>\bin\augustap-keygen.exe --help
-<assets-root>\bin\augustap-inspect.exe --help
-<assets-root>\bin\augustap-verify.exe --help
-<assets-root>\bin\augustap-composer.ps1
+<assets-root>\bin\augusta-pack.exe --help
+<assets-root>\bin\augusta-keygen.exe --help
+<assets-root>\bin\augusta-inspect.exe --help
+<assets-root>\bin\augusta-verify.exe --help
+<assets-root>\bin\augusta-composer.ps1
 ```
 
-To type just `augustap`, add the directory to `PATH` for the current session:
+To type just `augusta-pack`, add the directory to `PATH` for the current session:
 
 ```powershell
 $env:Path = "<assets-root>\bin;$env:Path"
-augustap --help
+augusta-pack --help
 ```
 
 The examples below assume `bin` is on `PATH`.
 
-## Launching Composer
+### Cooking a scenario
 
-```powershell
-augustap-composer.ps1
-```
-
-A PowerShell script rather than an `.exe`, so its extension has to be typed
-(PowerShell doesn't resolve a bare name to a `.ps1` on `PATH` the way it does
-for `.exe`). Only installed when the bootstrap ran without `-SkipAuthoring`. A
-thin wrapper (`composer/augustap-composer.ps1`, committed here and copied into
-`bin/`) around kit-app-template's own `repo.bat launch`, run from
-`<assets-root>/tools/kit-app-template` (it locates that directory relative to
-its own path via `$PSScriptRoot`, so it works wherever the assets root lives) -
-the same app the bootstrap scaffolds and builds
-(`composer/augusta.playback.toml`). Arguments are forwarded as-is, e.g.
-`augustap-composer.ps1 --name augusta.kit` if
-`repo.bat launch` asks which app when more than one is registered.
-
-## Cooking a scenario
-
-A scenario is named, not pathed (ADR-0041): `augustap` resolves the bare name
+A scenario is named, not pathed (ADR-0041): `augusta-pack` resolves the bare name
 you give it to `<assets-root>\authoring\scenarios\<name>`, which holds a
 `manifest.yaml` naming the one map, every character and the sounds folder that
 scenario composes, plus the Lua scripts that go with it:
@@ -132,8 +140,8 @@ sounds: sounds/test_map
 ```
 
 ```powershell
-augustap <name>                    # -> <assets-root>\packs\<name>\{client,server}.pack
-augustap <name> --skip-validation  # skip usd-validation-nvidia only
+augusta-pack <name>                    # -> <assets-root>\packs\<name>\{client,server}.pack
+augusta-pack <name> --skip-validation  # skip usd-validation-nvidia only
 ```
 
 A successful run ends with the paths of the client and server packs it wrote.
@@ -172,13 +180,13 @@ again.
 
 The cooker's geometry reader classifies `UsdGeomMesh`, `UsdGeomCube`, and
 `UsdGeomCapsule` (ADR-0032/ADR-0041) - a character authored as any of the
-three, like `examples/authoring/characters/player/`, cooks into real
+three, like `composer/examples/authoring/characters/player/`, cooks into real
 mesh/collision entries.
 
-### `augustap` reference
+#### `augusta-pack` reference
 
 ```
-augustap [-h] [--assets-root ASSETS_ROOT]
+augusta-pack [-h] [--assets-root ASSETS_ROOT]
          [--client-output-pack CLIENT_OUTPUT_PACK]
          [--server-output-pack SERVER_OUTPUT_PACK]
          [--signing-key SIGNING_KEY] [--skip-validation]
@@ -197,20 +205,20 @@ augustap [-h] [--assets-root ASSETS_ROOT]
 
 Exit status is `0` on success and `1` if any step fails.
 
-## Signing keys
+### Signing keys
 
 The bootstrap already generates `keys\augusta.key` / `augusta.pub`, so you only
-need `augustap-keygen` to create an additional keypair:
+need `augusta-keygen` to create an additional keypair:
 
 ```powershell
-augustap-keygen <key-prefix>   # writes <key-prefix>.key and <key-prefix>.pub
-augustap <scenario> --signing-key <key-prefix>.key
+augusta-keygen <key-prefix>   # writes <key-prefix>.key and <key-prefix>.pub
+augusta-pack <scenario> --signing-key <key-prefix>.key
 ```
 
-### `augustap-keygen` reference
+#### `augusta-keygen` reference
 
 ```
-augustap-keygen [-h] prefix
+augusta-keygen [-h] prefix
 ```
 
 | Argument | Description |
@@ -225,21 +233,21 @@ It **overwrites** existing `<prefix>.key` / `<prefix>.pub` without asking. Never
 point it at `keys\augusta`: that would invalidate every pack already signed with
 the current key and the public key already deployed for verification.
 
-## Inspecting and verifying packs
+### Inspecting and verifying packs
 
 ```powershell
-augustap-inspect <pack>   # what does the pack contain?
-augustap-verify <pack>    # is it intact, and signed by the key I expect?
+augusta-inspect <pack>   # what does the pack contain?
+augusta-verify <pack>    # is it intact, and signed by the key I expect?
 ```
 
 `<pack>` is an ordinary path - relative to the current directory or absolute,
 never resolved against an assets root. The `.pack` extension is optional, so
 `<stage>.client` finds `<stage>.client.pack`.
 
-### `augustap-inspect` reference
+#### `augusta-inspect` reference
 
 ```
-augustap-inspect [-h] pack
+augusta-inspect [-h] pack
 ```
 
 | Argument | Description |
@@ -260,12 +268,12 @@ offset and size in bytes:
 
 Only the header, index and trailer are read, so it is fast on large packs. It
 does **not** check the hash or signature (the trailer is labelled as unverified):
-use `augustap-verify` before trusting the contents.
+use `augusta-verify` before trusting the contents.
 
-### `augustap-verify` reference
+#### `augusta-verify` reference
 
 ```
-augustap-verify [-h] [--assets-root ASSETS_ROOT] [--public-key PUBLIC_KEY] pack
+augusta-verify [-h] [--assets-root ASSETS_ROOT] [--public-key PUBLIC_KEY] pack
 ```
 
 | Argument | Default | Description |
@@ -287,28 +295,28 @@ failure it prints the reason to stderr and exits `1`:
 | `signature is not valid for this public key` | The pack was signed by a different key, or the signature was tampered with. |
 | `bad magic`, `unsupported format version`, `too small`, ... | The file isn't a (supported) Augusta pack. |
 
-## Layout
+### Layout
 
 | Path | Role |
 |---|---|
-| `src/pack/cli.py` | `augustap` entry point |
-| `src/pack/scenario.py` | Scenario folder resolution (stage, `*.lua` scripts, cue sounds) |
-| `src/pack/sounds.py` | The cue catalogue and the mono PCM WAV reader |
-| `src/pack/optimize.py` | usd-optimize step |
-| `src/pack/validate.py` | usd-validation-nvidia step |
-| `src/pack/cook.py` | Stage walk and asset conversion |
-| `src/pack/pack.py`, `wire.py` | Pack wire format, hashing, signing |
-| `src/pack/keys.py` | `augustap-keygen` and key file I/O |
-| `src/pack/pack_cli.py` | `augustap-inspect` and `augustap-verify` entry points |
-| `src/pack/reader.py` | Pack container parsing and verification (the read side of `pack.py`) |
-| `src/pack/assets_root.py` | Assets-root inference shared by the entry points |
-| `cpp/` | Standalone CMake/vcpkg project for the two native modules. It builds straight into `src/pack/`. |
-| `composer/` | Playback file that scaffolds the Augusta USD Composer app, and `augustap-composer.ps1` (launches it) |
-| `tests/` | pytest suite and the USD fixtures it cooks (see Running the tests) |
-| `examples/authoring/` | A committed `<assets-root>/authoring/` sample the bootstrap seeds into a fresh assets root: `maps/augusta/` (ADR-0015), `characters/player/` (ADR-0040), `sounds/augusta/` (placeholder cue sounds, ADR-0020), `scenarios/augusta/` composing them (ADR-0041) |
-| `scripts/bootstrap-windows.ps1` | Builds the assets root |
+| `pack/src/pack/cli.py` | `augusta-pack` entry point |
+| `pack/src/pack/scenario.py` | Scenario folder resolution (stage, `*.lua` scripts, cue sounds) |
+| `pack/src/pack/sounds.py` | The cue catalogue and the mono PCM WAV reader |
+| `pack/src/pack/optimize.py` | usd-optimize step |
+| `pack/src/pack/validate.py` | usd-validation-nvidia step |
+| `pack/src/pack/cook.py` | Stage walk and asset conversion |
+| `pack/src/pack/pack.py`, `wire.py` | Pack wire format, hashing, signing |
+| `pack/src/pack/keys.py` | `augusta-keygen` and key file I/O |
+| `pack/src/pack/pack_cli.py` | `augusta-inspect` and `augusta-verify` entry points |
+| `pack/src/pack/reader.py` | Pack container parsing and verification (the read side of `pack.py`) |
+| `pack/src/pack/assets_root.py` | Assets-root inference shared by the entry points |
+| `pack/cpp/` | Standalone CMake/vcpkg project for the two native modules. It builds straight into `pack/src/pack/`. |
+| `composer/` | Composer bootstrap, playback file that scaffolds the app, and `augusta-composer.ps1` (launches it) |
+| `pack/tests/` | pytest suite and the USD fixtures it cooks (see Running the tests) |
+| `composer/examples/authoring/` | A committed `<assets-root>/authoring/` sample the pack bootstrap seeds into a fresh assets root: `maps/augusta/` (ADR-0015), `characters/player/` (ADR-0040), `sounds/augusta/` (placeholder cue sounds, ADR-0020), `scenarios/augusta/` composing them (ADR-0041) |
+| `pack/scripts/bootstrap-windows.ps1` | Builds the pack assets root |
 
-## Rebuilding the native modules
+### Rebuilding the native modules
 
 The bootstrap builds them once and skips the step if the `.pyd` files exist. To
 rebuild after changing `cpp/`, delete them from `src/pack/` and re-run
@@ -322,9 +330,9 @@ cmake --build tools\pack\cpp\build\x64-windows
 `PYTHON_EXECUTABLE` must point at the venv so the extension's ABI matches the
 interpreter that imports it.
 
-## Running the tests
+### Running the tests
 
-The tests live in [tests/](tests/) and run with pytest in a separate
+The tests live in [pack/tests/](pack/tests/) and run with pytest in a separate
 environment `uv` creates at `tools/pack/.venv`, not the assets root's venv.
 They need the native modules built into `src/pack/` (above) against that
 environment's interpreter:
@@ -338,21 +346,21 @@ uv run pytest
 ```
 
 The USD stages the cook tests read, including the malformed ones, are in
-[tests/fixtures/](tests/fixtures/); the end-to-end test cooks
-[examples/authoring/](examples/authoring/) with a throwaway key.
+[pack/tests/fixtures/](pack/tests/fixtures/); the end-to-end test cooks
+[composer/examples/authoring/](composer/examples/authoring/) with a throwaway key.
 
-### Golden packs
+#### Golden packs
 
-`tests/fixtures/example-packs/` at the repository root holds the example
+`../tests/fixtures/example-packs/` at the repository root holds the example
 scenario's client and server packs, cooked with the test key next to them
 (never the release key). The C++ runtime's tests load them, and
-`tests/test_golden.py` requires the cooker to still write them byte for byte:
+`pack/tests/test_golden.py` requires the cooker to still write them byte for byte:
 that is the contract between the two implementations of the pack format
 (ADR-0013). After a deliberate change to the format or to the example,
 regenerate them from `tools/pack` and commit the result:
 
 ```powershell
 $golden = "..\..\tests\fixtures\example-packs"
-uv run augustap augusta --assets-root examples --signing-key $golden\test.key `
+uv run augusta-pack augusta --assets-root examples --signing-key $golden\test.key `
   --client-output-pack $golden\client.pack --server-output-pack $golden\server.pack
 ```

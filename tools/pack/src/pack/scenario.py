@@ -1,4 +1,4 @@
-"""A scenario is named, not pathed (ADR-0041): `augustap <name>` resolves to
+"""A scenario is named, not pathed (ADR-0041): `augusta-pack <name>` resolves to
 <assets-root>/authoring/scenarios/<name>/, which holds a manifest.yaml naming
 the one map, every character and the sounds folder that scenario composes,
 plus the scripts that go with it:
@@ -120,7 +120,7 @@ def resolve_scenario(assets_root: Path, name: str) -> Scenario:
     if PARAMETERS_SCRIPT not in (path for path, _ in scripts):
         raise ScenarioError(
             f"Scenario {folder} has no {PARAMETERS_SCRIPT}: the server reads its Parameters from its pack "
-            f"(see tools/pack/examples/authoring/scenarios/augusta/parameters.lua)."
+            f"(see tools/composer/examples/authoring/scenarios/augusta/parameters.lua)."
         )
 
     sounds = _read_sounds(authoring_dir, manifest.get("sounds"), folder / MANIFEST_NAME)

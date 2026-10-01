@@ -68,7 +68,7 @@ tools/pack/src/pack/*.dll
 
 # Local runtime config (ADR-0034): machine-specific paths, never committed. The
 # templates in config/ are named *.example.yaml and stay tracked. A scenario's
-# parameters.lua (ADR-0039) lives under authoring/ or tools/pack/examples/ and
+# parameters.lua (ADR-0039) lives under authoring/ or tools/composer/examples/ and
 # is meant to be committed, so it is never matched here.
 config/augustac.yaml
 config/augustad.yaml

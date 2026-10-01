@@ -34,7 +34,7 @@ target_link_libraries(augusta_parameters_loader_tests PRIVATE augustad_parameter
 # The example scenario's script is what a new scenario is copied from, so a
 # test keeps it loading.
 target_compile_definitions(augusta_parameters_loader_tests PRIVATE
-  AUGUSTA_EXAMPLE_PARAMETERS="${CMAKE_SOURCE_DIR}/tools/pack/examples/authoring/scenarios/augusta/parameters.lua")
+  AUGUSTA_EXAMPLE_PARAMETERS="${CMAKE_SOURCE_DIR}/tools/composer/examples/authoring/scenarios/augusta/parameters.lua")
 gtest_discover_tests(augusta_parameters_loader_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_protocol_tests protocol_test.cpp)
@@ -94,7 +94,7 @@ target_link_libraries(augusta_policy_tests PRIVATE
 # script, and the example's own policy scripts run as the server loads them
 # from its golden server pack (ADR-0013).
 target_compile_definitions(augusta_policy_tests PRIVATE
-  AUGUSTA_EXAMPLE_PARAMETERS="${CMAKE_SOURCE_DIR}/tools/pack/examples/authoring/scenarios/augusta/parameters.lua"
+  AUGUSTA_EXAMPLE_PARAMETERS="${CMAKE_SOURCE_DIR}/tools/composer/examples/authoring/scenarios/augusta/parameters.lua"
   AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs")
 # Links PhysX, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_policy_tests DISCOVERY_TIMEOUT 30)
@@ -106,7 +106,7 @@ target_link_libraries(augusta_example_objectives_tests PRIVATE
   augusta_simulation augustad_policy_loader augusta_logging GTest::gtest GTest::gtest_main)
 target_include_directories(augusta_example_objectives_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
 target_compile_definitions(augusta_example_objectives_tests PRIVATE
-  AUGUSTA_EXAMPLE_SCENARIO="${CMAKE_SOURCE_DIR}/tools/pack/examples/authoring/scenarios/augusta")
+  AUGUSTA_EXAMPLE_SCENARIO="${CMAKE_SOURCE_DIR}/tools/composer/examples/authoring/scenarios/augusta")
 # Links PhysX, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_example_objectives_tests DISCOVERY_TIMEOUT 30)
 

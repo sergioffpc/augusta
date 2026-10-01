@@ -1,4 +1,4 @@
-"""augustap end to end on the example scenario: usd-optimize, validation and
+"""augusta-pack end to end on the example scenario: usd-optimize, validation and
 the cook, into a signed client/server pack pair.
 """
 

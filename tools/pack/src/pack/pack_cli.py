@@ -1,5 +1,5 @@
-"""Pack inspection commands: `augustap-inspect` (header, index and trailer) and
-`augustap-verify` (hash + signature check), both ADR-0031 container-level
+"""Pack inspection commands: `augusta-inspect` (header, index and trailer) and
+`augusta-verify` (hash + signature check), both ADR-0031 container-level
 and independent of the USD stack. A pack argument is an ordinary path -
 relative to the current directory or absolute, like any file argument, never
 resolved against an assets root; the `.pack` extension is optional.
@@ -47,7 +47,7 @@ def inspect_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Shows a pack's container: the header fields, the index (one line per entry: type, offset, "
         "size in bytes, path) and the trailer (BLAKE3 hash and Ed25519 signature). Reads only those sections; "
-        "it does not verify the hash or signature (see augustap-verify)."
+        "it does not verify the hash or signature (see augusta-verify)."
     )
     _add_pack_argument(parser)
     args = parser.parse_args(argv)
@@ -86,7 +86,7 @@ def inspect_main(argv: list[str] | None = None) -> int:
         )
 
     print()
-    print(f"Trailer (offset {_format_size(trailer_offset)}, {TRAILER_SIZE} bytes) - not verified, see augustap-verify")
+    print(f"Trailer (offset {_format_size(trailer_offset)}, {TRAILER_SIZE} bytes) - not verified, see augusta-verify")
     print(f"  BLAKE3 hash   {info.hash.hex()}")
     print(f"  signature     {info.signature.hex()}")
     return 0

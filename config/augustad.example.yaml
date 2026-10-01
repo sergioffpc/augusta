@@ -11,8 +11,8 @@ content:
   # Server pack to load (required). It holds the scenario's map and its Lua
   # scripts, among them the parameters.lua the simulation's tunable values (the
   # stamina rules) come from; every client is sent the values when it joins
-  # (ADR-0039). See tools/pack/examples/authoring/scenarios/augusta/parameters.lua.
-  # Cook it with `augustap <scenario>` (tools/pack).
+  # (ADR-0039). See tools/composer/examples/authoring/scenarios/augusta/parameters.lua.
+  # Cook it with `augusta-pack <scenario>` (tools/pack).
   pack: packs/augusta/server.pack
 
   # Ed25519 public key the pack is signed with (required).

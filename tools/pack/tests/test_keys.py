@@ -1,4 +1,4 @@
-"""augustap-keygen's key files (ADR-0018): raw, fixed-size, and usable to sign
+"""augusta-keygen's key files (ADR-0018): raw, fixed-size, and usable to sign
 and verify a pack.
 """
 
