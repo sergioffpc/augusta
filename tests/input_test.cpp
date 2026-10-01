@@ -200,6 +200,16 @@ TEST_F(InputTest, TheCurrentAimHoldsAdsWhileItsKeyIsHeldBetweenSamples) {
   EXPECT_FALSE(input_.CurrentAim().ads);
 }
 
+TEST_F(InputTest, AControlIsHeldBetweenSamplesWhileItsKeyIsDown) {
+  (void)input_.Sample();
+
+  Press(Key::kMouseLeft);
+  EXPECT_TRUE(input_.IsHeld(Control::kFire));
+  EXPECT_FALSE(input_.IsHeld(Control::kAds));
+  Release(Key::kMouseLeft);
+  EXPECT_FALSE(input_.IsHeld(Control::kFire));
+}
+
 TEST_F(InputTest, PitchStopsShortOfStraightUpAndStraightDown) {
   MoveMouse(0.0F, 0.0F);
   MoveMouse(0.0F, -100000.0F);

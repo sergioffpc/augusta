@@ -117,6 +117,11 @@ Aim Input::CurrentAim() const {
   return Aim{.yaw = yaw_, .pitch = pitch_, .ads = Held(Control::kAds)};
 }
 
+bool Input::IsHeld(Control control) const {
+  const std::lock_guard<std::mutex> lock(mutex_);
+  return Held(control);
+}
+
 bool Input::CursorCaptured() const {
   const std::lock_guard<std::mutex> lock(mutex_);
   return cursor_captured_;

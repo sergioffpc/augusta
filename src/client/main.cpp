@@ -126,21 +126,29 @@ std::optional<augusta::math::Vec3> LoadEye(const augusta::assets::Pack& pack, co
   return *eye;
 }
 
-// Loads a character's mesh from pack by its index into the scenario's
+// Loads a character's mesh and eye from pack by its index into the scenario's
 // characters (ADR-0042), which pack must outlive. Reports what is wrong with the
 // character list and returns nullopt.
-std::optional<augusta::runtime::CharacterMeshLoader> CharacterMeshLoaderFor(const augusta::assets::Pack& pack,
-                                                                            const std::filesystem::path& pack_path) {
+std::optional<augusta::runtime::CharacterLoader> CharacterLoaderFor(const augusta::assets::Pack& pack,
+                                                                    const std::filesystem::path& pack_path) {
   auto characters = pack.ResolveCharacters();
   if (!characters) {
-    LE("subsystem=client event=character_mesh_loading_failed path={} error={}", pack_path.string(),
+    LE("subsystem=client event=character_loading_failed path={} error={}", pack_path.string(),
        std::format("{} {}", augusta::assets::kCharactersPath,
                    augusta::assets::DescribeResolveError(characters.error(), "character list")));
     return std::nullopt;
   }
   return [&pack, characters = *std::move(characters)](std::uint8_t character) {
     return augusta::client::LoadCharacterMesh(characters, character,
-                                              [&pack](std::string_view path) { return pack.ResolveMesh(path); });
+                                              [&pack](std::string_view path) { return pack.ResolveMesh(path); })
+        .and_then([&](augusta::renderer::SceneMesh mesh) {
+          // LoadCharacterMesh has checked the index names one of characters.
+          return augusta::client::LoadCharacterEye(characters[character - 1],
+                                                   [&pack](std::string_view path) { return pack.ResolveEye(path); })
+              .transform([&mesh](const augusta::math::Vec3& eye) {
+                return augusta::runtime::LoadedCharacter{.mesh = std::move(mesh), .eye = eye};
+              });
+        });
   };
 }
 
@@ -186,14 +194,14 @@ struct Content {
   augusta::math::Vec3 eye;
   augusta::renderer::Scene scene;
   augusta::runtime::Map map;
-  augusta::runtime::CharacterMeshLoader load_character_mesh;
+  augusta::runtime::CharacterLoader load_character;
   augusta::audio::CueSounds cue_sounds;
 };
 
 enum class ContentError {
   kEyeLoading,
   kSceneLoading,
-  kCharacterMeshLoading,
+  kCharacterLoading,
   kMapLoading,
   kCueSoundsLoading,
 };
@@ -204,8 +212,8 @@ std::string_view DescribeContentError(ContentError error) {
       return "character eye loading failed";
     case ContentError::kSceneLoading:
       return "scene loading failed";
-    case ContentError::kCharacterMeshLoading:
-      return "character mesh loading failed";
+    case ContentError::kCharacterLoading:
+      return "character loading failed";
     case ContentError::kMapLoading:
       return "map loading failed";
     case ContentError::kCueSoundsLoading:
@@ -228,10 +236,10 @@ std::expected<Content, ContentError> LoadClientContent(const augusta::assets::Pa
     return std::unexpected(ContentError::kSceneLoading);
   }
 
-  // A character's mesh is loaded only once another player in the Lobby brings it (ADR-0043).
-  auto load_character_mesh = CharacterMeshLoaderFor(pack, pack_path);
-  if (!load_character_mesh) {
-    return std::unexpected(ContentError::kCharacterMeshLoading);
+  // A character is loaded only once another player in the Lobby brings it (ADR-0043).
+  auto load_character = CharacterLoaderFor(pack, pack_path);
+  if (!load_character) {
+    return std::unexpected(ContentError::kCharacterLoading);
   }
 
   auto map = LoadMap(pack, pack_path);
@@ -247,7 +255,7 @@ std::expected<Content, ContentError> LoadClientContent(const augusta::assets::Pa
   return Content{.eye = *eye,
                  .scene = *std::move(scene),
                  .map = *std::move(map),
-                 .load_character_mesh = *std::move(load_character_mesh),
+                 .load_character = *std::move(load_character),
                  .cue_sounds = *std::move(cue_sounds)};
 }
 
@@ -271,7 +279,7 @@ int Run(const augusta::config::ClientConfig& file_config, const augusta::assets:
 
   const augusta::runtime::Config config = BuildRuntimeConfig(file_config, pack);
   augusta::runtime::ClientRuntime runtime(config, std::move(content.map), content.scene, content.eye,
-                                          std::move(content.load_character_mesh));
+                                          content.cue_sounds, std::move(content.load_character));
   if (const auto failure = runtime.Run(); failure.has_value()) {
     // No reconnecting and no connection screen: say what happened and exit.
     LE("subsystem=client event=run_failed path={} error={}", pack_path.string(),
