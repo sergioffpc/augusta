@@ -161,3 +161,7 @@ _Avoid_: Hit marker (the marker is how the client shows a Hit confirmation), hit
 **ADS (Aim Down Sights)**:
 The player action of aiming through a weapon's sights, trading movement/hip-fire speed for accuracy.
 _Avoid_: Zoom, scope (those describe an effect of ADS, not the action itself)
+
+**Spectator**:
+A dead player still in the Match: until the Match ends it watches from a living player's eye, chosen in Session order and moved on with fire, and its input moves, turns and fires nothing. It never respawns.
+_Avoid_: Ghost, observer, dead cam

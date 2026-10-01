@@ -1,5 +1,7 @@
 #include "augusta/local_view.h"
 
+#include <vector>
+
 #include <gtest/gtest.h>
 
 #include "augusta/command.h"
@@ -19,9 +21,13 @@ using augusta::presentation::AdsZoom;
 using augusta::presentation::Aim;
 using augusta::presentation::BlendTicks;
 using augusta::presentation::Camera;
+using augusta::presentation::EntityId;
 using augusta::presentation::HitMarker;
 using augusta::presentation::kHipFieldOfView;
 using augusta::presentation::LocalCamera;
+using augusta::presentation::RemoteBody;
+using augusta::presentation::Spectator;
+using augusta::presentation::WatchedCamera;
 using augusta::weapon::RecoilOffset;
 
 constexpr float kTolerance = 1e-5F;
@@ -193,6 +199,75 @@ TEST(HitMarkerTest, EachHitConfirmationShowsTheMarkerAfresh) {
 
   EXPECT_TRUE(marker.Update(1, kFrame));
   EXPECT_TRUE(marker.Update(0, HitMarker::kShownSeconds * 0.9F));
+}
+
+// The match's players in Session order; the local player (kLocal) is dead.
+constexpr EntityId kLocal{1};
+constexpr EntityId kSecond{2};
+constexpr EntityId kThird{3};
+constexpr EntityId kFourth{4};
+const std::vector<EntityId> kPlayers{kLocal, kSecond, kThird, kFourth};
+
+TEST(SpectatorTest, ADeadPlayerFirstWatchesTheFirstLivingPlayerInSessionOrder) {
+  Spectator spectator;
+
+  EXPECT_EQ(spectator.Update(kPlayers, std::vector{kFourth, kThird}, false), kThird);
+}
+
+TEST(SpectatorTest, EachPressOfFireWatchesTheNextLivingPlayerInSessionOrderSkippingTheDead) {
+  Spectator spectator;
+  const std::vector living{kSecond, kFourth};
+  (void)spectator.Update(kPlayers, living, false);
+
+  EXPECT_EQ(spectator.Update(kPlayers, living, true), kFourth);
+  EXPECT_EQ(spectator.Update(kPlayers, living, false), kFourth);
+  EXPECT_EQ(spectator.Update(kPlayers, living, true), kSecond);
+}
+
+// A player killed while firing does not skip past the first living player, nor
+// cycle on for as long as fire stays held.
+TEST(SpectatorTest, HoldingFireMovesOnOncePerPress) {
+  Spectator spectator;
+  const std::vector all_alive{kSecond, kThird, kFourth};
+
+  EXPECT_EQ(spectator.Update(kPlayers, all_alive, true), kSecond);
+  EXPECT_EQ(spectator.Update(kPlayers, all_alive, true), kSecond);
+  EXPECT_EQ(spectator.Update(kPlayers, all_alive, false), kSecond);
+  EXPECT_EQ(spectator.Update(kPlayers, all_alive, true), kThird);
+  EXPECT_EQ(spectator.Update(kPlayers, all_alive, true), kThird);
+}
+
+TEST(SpectatorTest, WhenTheWatchedPlayerDiesTheViewMovesOnToTheNextLivingPlayer) {
+  Spectator spectator;
+  const std::vector all_alive{kSecond, kThird, kFourth};
+  (void)spectator.Update(kPlayers, all_alive, false);
+  ASSERT_EQ(spectator.Update(kPlayers, all_alive, true), kThird);
+
+  EXPECT_EQ(spectator.Update(kPlayers, std::vector{kSecond, kFourth}, false), kFourth);
+  EXPECT_EQ(spectator.Update(kPlayers, std::vector{kSecond}, false), kSecond);
+}
+
+TEST(SpectatorTest, WithNoOneLeftAliveNoOneIsWatched) {
+  Spectator spectator;
+  (void)spectator.Update(kPlayers, std::vector{kThird}, false);
+
+  EXPECT_EQ(spectator.Update(kPlayers, {}, false), std::nullopt);
+  EXPECT_EQ(spectator.Update(kPlayers, {}, true), std::nullopt);
+}
+
+// Remote pitch is not replicated, so the watched view looks level.
+TEST(WatchedCameraTest, TheCameraIsAtTheWatchedPlayersEyeForItsStanceLookingLevelWhereItFaces) {
+  const RemoteBody crouching{.position = Vec3(3.0F, 1.0F, -4.0F),
+                             .velocity = Vec3(1.0F, 0.0F, 0.0F),
+                             .yaw = 0.6F,
+                             .stance = Stance::kCrouching};
+
+  const Camera camera = WatchedCamera(crouching, kStandingEye);
+
+  ExpectNear(camera.position,
+             Vec3(3.0F, 1.0F, -4.0F) + augusta::physics::LowerToStance(kStandingEye, Stance::kCrouching));
+  EXPECT_EQ(camera.rotation, augusta::command::ViewRotation(0.6F, 0.0F));
+  EXPECT_FLOAT_EQ(camera.vertical_fov, kHipFieldOfView);
 }
 
 }  // namespace

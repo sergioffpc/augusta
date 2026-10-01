@@ -80,8 +80,13 @@ enum class Phase {
   // goes; the field of view zooms in and out with ADS (AdsZoom). Also what
   // shows over the view: the crosshair from the hip, the hit marker after a Hit
   // confirmation (HitMarker), and the local player's muzzle flash on the frame
-  // its predicted fire fires a round (FiredRounds). View bob is still future
-  // work. Not yet a module of its own - see the header comment above.
+  // its predicted fire fires a round (FiredRounds). Once the local player's
+  // Death has arrived it is a spectator until the match ends: the camera
+  // follows the eye of a living player instead (Spectator and WatchedCamera,
+  // local_view.h; fire moves it on), holds where it was while no one is left
+  // alive, and neither turns with the local player's aim nor zooms; no
+  // crosshair or hit marker shows. View bob is still future work. Not yet a
+  // module of its own - see the header comment above.
   kCamera,
   // Mechanism. Drives skeletal/procedural animation from interpolated
   // movement and weapon state - augusta::animation::Engine::Update, once
@@ -154,6 +159,9 @@ struct FrameInput {
   PredictedTicks ticks{};
   /// Where the local player aims as of this frame, which the camera takes.
   Aim aim{};
+  /// Whether the local player holds fire as of this frame: a spectator's press
+  /// moves its view on to the next living player.
+  bool fire = false;
   /// The body this client's player controls, or nullopt before its first match.
   std::optional<EntityId> local_entity;
   /// The newest Authoritative State update of the match in progress, or nullopt
@@ -162,7 +170,8 @@ struct FrameInput {
   /// newer a tick than the previous frame's) is not recorded again.
   std::optional<WorldSnapshot> snapshot;
   /// Every player's character, as the server named them when the match
-  /// started, or empty before the first.
+  /// started, in Session order (whom a spectator watches first and next), or
+  /// empty before the first.
   std::vector<PlayerCharacter> characters;
   /// The Shots announced since the previous frame, in the order they arrived.
   std::vector<Shot> shots;
@@ -185,7 +194,7 @@ struct State {
   math::Vec3 local_position{};
   /// The local player's view camera this frame (Phase::kCamera) - tracks
   /// local_position at its character's eye for its stance, every frame, turned
-  /// where the player looks.
+  /// where the player looks; a spectator's, the watched player's eye.
   Camera camera{};
   /// Every other player in the match, at its interpolated position and stance
   /// this frame (RemoteInterpolator::Sample, interpolation.h), with its
@@ -202,9 +211,10 @@ struct State {
   std::vector<Effect> impacts;
   /// Every muzzle flash still showing, the local player's and every other's.
   std::vector<Effect> muzzle_flashes;
-  /// Whether the crosshair shows: from the hip, not in ADS.
+  /// Whether the crosshair shows: from the hip, not in ADS, and never to a
+  /// spectator.
   bool crosshair = true;
-  /// Whether the hit marker shows (HitMarker).
+  /// Whether the hit marker shows (HitMarker); never to a spectator.
   bool hit_marker = false;
 };
 
@@ -246,6 +256,12 @@ class World {
   /// tick duration, in seconds: what a Shot's tracer flies by, and the ADS field
   /// of view. Until then no tracer is drawn and ADS does not zoom.
   void SetParameters(const parameters::Parameters& parameters, float tick_duration);
+
+  /// Takes the eye standing of the character with index character (ADR-0040,
+  /// ADR-0042), in its root space: where a spectator's camera sits watching a
+  /// player of that character. A character whose eye was never set is watched
+  /// from the local player's character's eye.
+  void SetCharacterEye(std::uint8_t character, const math::Vec3& eye);
 
   // Runs all five Phase values above, in their declared order, for one render
   // frame (internally, one flecs::world::progress() call), shown from input.
