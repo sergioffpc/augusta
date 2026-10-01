@@ -29,12 +29,15 @@ BUILD_DIR := build/x64-$(PRESET)
 CXX_SOURCES := "src/*.cpp" "src/*.h" "tests/*.cpp" "tests/*.h" "tools/*.cpp" "tools/*.h"
 
 # What CI's clang-tidy step lints: every src .cpp except the two Windows-only
-# trees, which its Linux build graph has no compile commands for.
+# trees and the audio module's Windows-only output device, which its Linux
+# build graph has no compile commands for.
 TIDY_EXCLUDES := ":(exclude)src/client/*" ":(exclude)src/modules/renderer/*"
 ifeq ($(OS),Windows_NT)
 # PhysX's SSE headers break clang-tidy under MSVC's flags, so this one is
-# linted by CI's Linux run alone.
-TIDY_EXCLUDES += ":(exclude)src/modules/physics/physics.cpp"
+# linted by CI's Linux run alone, as is the audio output every other build has.
+TIDY_EXCLUDES += ":(exclude)src/modules/physics/physics.cpp" ":(exclude)src/modules/audio/output_none.cpp"
+else
+TIDY_EXCLUDES += ":(exclude)src/modules/audio/output_windows.cpp" ":(exclude)src/modules/audio/miniaudio.cpp"
 endif
 TIDY_SOURCES := $(shell git ls-files -- "src/*.cpp" $(TIDY_EXCLUDES))
 

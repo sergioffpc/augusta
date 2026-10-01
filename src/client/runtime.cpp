@@ -17,6 +17,7 @@
 
 #include "augusta/audio.h"
 #include "augusta/command.h"
+#include "augusta/cues.h"
 #include "augusta/effects.h"
 #include "augusta/harness.h"
 #include "augusta/logging.h"
@@ -304,11 +305,12 @@ struct ClientRuntime::Impl {
     net_pending_bytes.sample(static_cast<double>(stats->pending_bytes));
   }
 
-  Impl(const Config& cfg, const Map& map, const math::Vec3& eye, CharacterLoader loader)
+  Impl(const Config& cfg, const Map& map, const math::Vec3& eye, const audio::CueSounds& cue_sounds,
+       CharacterLoader loader)
       : config(cfg),
         load_character(std::move(loader)),
         input(cfg.input),
-        presentation(audio, eye),
+        presentation(audio, cue_sounds, eye),
         renderer(cfg.renderer, input) {
     // The map goes in before the Session takes the world over: a body that has
     // already ticked has been predicted without it, and reconciliation cannot
@@ -556,8 +558,8 @@ struct ClientRuntime::Impl {
 };
 
 ClientRuntime::ClientRuntime(const Config& config, Map map, const renderer::Scene& scene, const math::Vec3& eye,
-                             CharacterLoader load_character)
-    : impl_(std::make_unique<Impl>(config, map, eye, std::move(load_character))) {
+                             const audio::CueSounds& cue_sounds, CharacterLoader load_character)
+    : impl_(std::make_unique<Impl>(config, map, eye, cue_sounds, std::move(load_character))) {
   impl_->renderer.SetScene(scene);
 }
 

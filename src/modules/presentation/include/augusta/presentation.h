@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "augusta/audio.h"
+#include "augusta/cues.h"
 #include "augusta/effects.h"
 #include "augusta/interpolation.h"
 #include "augusta/local_view.h"
@@ -93,14 +94,16 @@ enum class Phase {
   // Interpolation/Camera which only concern the local player's own
   // predicted state).
   kAnimation,
-  // Mechanism. Translates events carried in the Prediction State (e.g.
-  // fire, footstep) into spatialized audio cues -
-  // augusta::audio::Engine::SetListener then PlaySound, per audio.h's
-  // own note that this phase is what calls them.
+  // Mechanism. Sets the listener to the camera Phase::kCamera just placed
+  // (ListenerOf, audio_cues.h), then plays the frame's one-shot cues
+  // (SelectCues, audio_cues.h) through augusta::audio::Engine: the local
+  // player's own gunshot on the frame its predicted fire fires a round, every
+  // other player's gunshot from its Shot's origin, and the hit marker on a Hit
+  // confirmation.
   kAudioCues,
   // Mechanism. Packages the frame's presentation data into Presentation
   // State (State, below), for augusta::renderer::Renderer::RenderFrame
-  // and augusta::audio to consume.
+  // to consume.
   kCommit,
 };
 
@@ -183,7 +186,7 @@ struct FrameInput {
 // "Presentation State". Today it holds where the local player is shown, the
 // camera, every remote player, the fight's tracers, impacts and muzzle flashes,
 // and what shows over the view; later phases add what they present (animation
-// poses, audio cues).
+// poses). Cues are not in it: Phase::kAudioCues plays them itself.
 struct State {
   /// Where the local player is shown: its predicted position blended between
   /// the two newest ticks, plus the offset that hides a reconciliation jump
@@ -230,14 +233,14 @@ class World {
   // audio_engine must outlive this World - the same reference-not-owned
   // pattern as augusta::renderer::Renderer's input_sink parameter:
   // ClientRuntime (src/client/runtime.h) constructs the client's one
-  // audio::Engine and wires it to both Renderer's window and this
-  // World's AudioCues phase. eye is the local player's character's eye
+  // audio::Engine and wires it to this World's AudioCues phase, which plays
+  // cue_sounds, loaded into audio_engine here. eye is the local player's character's eye
   // standing, in that character's root space (its feet at the origin,
   // ADR-0040): where Phase::kCamera puts the camera relative to the predicted
   // body, lowered for the body's stance (LocalCamera, local_view.h). Also
   // registers Phase's five phases and their systems on the owned Flecs world
   // (see header comment). Tracers meet no Map until AddCollisionMesh adds it.
-  World(audio::Engine& audio_engine, const math::Vec3& eye);
+  World(audio::Engine& audio_engine, const audio::CueSounds& cue_sounds, const math::Vec3& eye);
   ~World();
 
   World(const World&) = delete;

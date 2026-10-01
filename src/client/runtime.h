@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/cues.h"
 #include "augusta/harness.h"
 #include "augusta/input.h"
 #include "augusta/math.h"
@@ -36,13 +37,7 @@
 // Prediction thread only hands it each tick's command, and the Network I/O
 // thread only pumps it.
 //
-// Constructed and run from main.cpp today. Renderer (ADR-0009, the M1
-// Falcor spike), networking::Client (ADR-0003), and physics::World
-// (ADR-0002, constructed inside prediction::World) are all real -
-// audio::Engine is still a placeholder stub (see audio.h/audio.cpp),
-// which is why there's no sound yet; a stub still links and runs as a
-// no-op, same as every other module before its real implementation
-// landed (see e.g. physics.h's own history).
+// Constructed and run from main.cpp today.
 namespace augusta::runtime {
 
 // Everything ClientRuntime needs to construct its owned sub-worlds/
@@ -93,8 +88,9 @@ class ClientRuntime {
   // EventSink; PresentationWorld needs the audio::Engine reference) -
   // but does not yet connect to the server or spawn any thread; see
   // Run(). Throws whatever the underlying module constructors throw
-  // (Renderer and audio::Engine both throw std::runtime_error on
-  // device/window failure - see their own headers).
+  // (Renderer throws std::runtime_error on device/window failure - see its
+  // own header; audio::Engine never throws, and is silent without an output
+  // device).
   //
   // augusta::networking::Init() must already have been called once,
   // process-wide, before this constructor runs (see networking.h) -
@@ -106,13 +102,14 @@ class ClientRuntime {
   // scene_loader.h and map.h), since where content comes from is the
   // executable's business, not the orchestrator's. For the same reason the
   // caller hands in eye, the local player's character's eye (scene_loader.h's
-  // LoadCharacterEye) that the camera follows the body at, and
+  // LoadCharacterEye) that the camera follows the body at, cue_sounds, every
+  // cue's sound (cues.h), and
   // load_character, which Run() calls in the Lobby for
   // each character another player brings (ADR-0043); it must stay callable
   // until Run() returns. Throws std::runtime_error if physics rejects a
   // collision mesh.
   ClientRuntime(const Config& config, Map map, const renderer::Scene& scene, const math::Vec3& eye,
-                CharacterLoader load_character);
+                const audio::CueSounds& cue_sounds, CharacterLoader load_character);
 
   // Run() always stops and joins the Simulation and Network I/O
   // threads it spawned before returning, including if the Main/Render

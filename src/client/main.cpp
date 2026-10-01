@@ -279,7 +279,7 @@ int Run(const augusta::config::ClientConfig& file_config, const augusta::assets:
 
   const augusta::runtime::Config config = BuildRuntimeConfig(file_config, pack);
   augusta::runtime::ClientRuntime runtime(config, std::move(content.map), content.scene, content.eye,
-                                          std::move(content.load_character));
+                                          content.cue_sounds, std::move(content.load_character));
   if (const auto failure = runtime.Run(); failure.has_value()) {
     // No reconnecting and no connection screen: say what happened and exit.
     LE("subsystem=client event=run_failed path={} error={}", pack_path.string(),

@@ -208,14 +208,16 @@ jobs:
       - name: Lint (clang-tidy)
         # src/client and src/modules/renderer are Windows-only (CMakeLists.txt
         # gates both on WIN32 - the latter since ADR-0009's Falcor backend is
-        # Windows-only) and aren't part of this Linux configure's build graph
+        # Windows-only), as is the audio module's output device (miniaudio and
+        # Steam Audio, Windows-only dependencies - src/modules/audio/
+        # CMakeLists.txt), and aren't part of this Linux configure's build graph
         # at all, so they have no compile_commands.json entry here - excluded
         # rather than linted against the wrong platform's (missing) compile
         # flags. Note: clang-tidy given multiple files in one invocation
         # cascades a spurious error onto every file *after* the first one
         # missing its compile_commands entry, not just that file itself - so
         # a stray Windows-only file left in this list fails the whole batch.
-        run: find src -name '*.cpp' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' | xargs clang-tidy -p build/x64-linux
+        run: find src -name '*.cpp' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_windows.cpp' -not -path 'src/modules/audio/miniaudio.cpp' | xargs clang-tidy -p build/x64-linux
 
       - name: Build
         run: cmake --build --preset linux --target all augusta_tests
