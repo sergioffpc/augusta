@@ -1,0 +1,234 @@
+name: Nightly jobs
+
+# The checks too slow or noisy for every pull request (ADR-0013), called by
+# nightly.yml. They live here rather than there so a scheduled run uses
+# develop's copy of them: a change to how develop builds or tests lands with
+# the jobs that run it, not when main next catches up.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The branch every job checks out and tests.
+        required: true
+        type: string
+
+env:
+  SCCACHE_GHA_ENABLED: "true"
+  NIGHTLY_REF: ${{ inputs.ref }}
+
+jobs:
+  property-tests:
+    runs-on: ubuntu-26.04
+    # See ci.yml's server job for why this isn't the NuGet feed.
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+          submodules: true
+
+      - uses: ./.github/actions/setup-linux-build
+
+      - name: Configure
+        run: cmake --preset linux
+
+      - uses: ./.github/actions/save-vcpkg-cache
+
+      - name: Build
+        run: cmake --build --preset linux --target all augusta_tests
+
+      - name: Test (property tests, ~10 000 cases)
+        # The same binaries a pull request runs at RapidCheck's default 100
+        # cases; only RC_PARAMS differs. A failure prints its seed and shrunk
+        # case, for turning into an example-based regression test.
+        env:
+          RC_PARAMS: max_success=10000
+        run: ctest --preset linux --label-regex '^property$' --no-tests=error
+
+  fuzz:
+    # Each fuzz target for about 30 minutes (ADR-0013), from the corpus earlier
+    # nights grew, kept in the Actions cache rather than the repository.
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [protocol_decode, pack_load]
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+      CORPUS: fuzz-corpus/${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+          submodules: true
+
+      - uses: ./.github/actions/setup-linux-build
+
+      - name: Configure (libFuzzer + ASan)
+        run: cmake --preset linux-fuzz
+
+      - uses: ./.github/actions/save-vcpkg-cache
+
+      - name: Build
+        run: cmake --build --preset linux-fuzz --target all augusta_tests
+
+      - name: Restore the corpus
+        # A cache entry can't be overwritten, so each night saves under its own
+        # run id and restores the newest one by prefix.
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.CORPUS }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz-corpus-${{ matrix.target }}-
+
+      - name: Fuzz
+        # New inputs go to the cached corpus, never into the committed seeds;
+        # a crash lands in fuzz-crashes/ and fails the job.
+        run: |
+          mkdir -p "$CORPUS" fuzz-crashes
+          "build/x64-linux-fuzz/tests/fuzz/augusta_${{ matrix.target }}_fuzz" \
+            -max_total_time=1800 -timeout=5 -artifact_prefix="fuzz-crashes/${{ matrix.target }}-" \
+            "$CORPUS" "tests/fuzz/corpus/${{ matrix.target }}"
+
+      - name: Minimize the corpus
+        # Keeps only the inputs that add coverage, so the cache stops growing
+        # once coverage does. Skipped after a crash: the step above already failed.
+        run: |
+          mkdir -p minimized
+          "build/x64-linux-fuzz/tests/fuzz/augusta_${{ matrix.target }}_fuzz" -merge=1 minimized "$CORPUS"
+          rm -rf "$CORPUS"
+          mv minimized "$CORPUS"
+
+      - name: Save the corpus
+        if: success()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.CORPUS }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+
+      # Each night's corpus holds the one before, minimized: the older entries
+      # are superseded.
+      - if: success()
+        uses: ./.github/actions/prune-cache
+        with:
+          prefix: fuzz-corpus-${{ matrix.target }}-
+          keep: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+
+      - name: Upload crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-crashes-${{ matrix.target }}
+          path: fuzz-crashes/
+          if-no-files-found: ignore
+
+  tsan:
+    # ctest under ThreadSanitizer, for data races across the threading model's
+    # threads (ADR-0005). A report fails the test it came from; known false
+    # positives are suppressed in tests/tsan.supp, each with its reason.
+    runs-on: ubuntu-26.04
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+          submodules: true
+
+      - uses: ./.github/actions/setup-linux-build
+
+      - name: Lower ASLR entropy
+        # TSan's shadow memory layout doesn't fit the kernel's default
+        # mmap_rnd_bits on current runner images, and aborts every binary with
+        # "unexpected memory mapping" before a test runs.
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Configure (TSan)
+        run: cmake --preset linux-tsan
+
+      - uses: ./.github/actions/save-vcpkg-cache
+
+      - name: Build
+        run: cmake --build --preset linux-tsan --target all augusta_tests
+
+      - name: Test
+        run: ctest --preset linux-tsan
+
+  coverage:
+    # An llvm-cov report of the Linux ctest run, uploaded as a run artifact:
+    # a report for finding untested deterministic logic, never a gate
+    # (ADR-0013), so no percentage fails anything.
+    runs-on: ubuntu-26.04
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+          submodules: true
+
+      - uses: ./.github/actions/setup-linux-build
+        with:
+          # llvm-profdata and llvm-cov, the same version as the clang.
+          extra-packages: llvm
+
+      - name: Configure (coverage)
+        run: cmake --preset linux-coverage
+
+      - uses: ./.github/actions/save-vcpkg-cache
+
+      - name: Build
+        run: cmake --build --preset linux-coverage --target all augusta_tests
+
+      - name: Test
+        run: ctest --preset linux-coverage
+
+      - name: Report
+        # Also after a failing test: what ran still counts, and the failure
+        # itself is reported by the step above.
+        if: success() || failure()
+        run: scripts/coverage-report.sh coverage-report
+
+      - name: Upload the report
+        if: success() || failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-report
+          path: coverage-report/
+          if-no-files-found: ignore
+
+  # A new nightly job adds itself to `needs` here, and nothing else: this job
+  # reports on every job it waits for.
+  report-failure:
+    needs: [property-tests, fuzz, tsan, coverage]
+    if: always() && contains(needs.*.result, 'failure')
+    runs-on: ubuntu-26.04
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      NEEDS: ${{ toJSON(needs) }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Open or update the nightly-failure issue
+        # One open issue at a time: a failure while one is open comments on it,
+        # so a check that keeps failing doesn't pile up duplicates. Closing it
+        # is left to whoever fixes the failure.
+        run: |
+          failed="$(jq -r 'to_entries[] | select(.value.result == "failure") | "- `\(.key)`"' <<< "$NEEDS")"
+          body="$(printf 'The nightly on `%s` failed: %s\n\nFailed jobs:\n%s\n' "$NIGHTLY_REF" "$RUN_URL" "$failed")"
+
+          # --force: creates the label on first use, and is a no-op after.
+          gh label create nightly-failure --force \
+            --color B60205 --description "A nightly workflow run failed"
+
+          open_issue="$(gh issue list --label nightly-failure --state open \
+            --limit 1 --json number --jq '.[0].number // empty')"
+          if [ -n "$open_issue" ]; then
+            gh issue comment "$open_issue" --body "$body"
+          else
+            gh issue create --title "Nightly failure" --label nightly-failure --body "$body"
+          fi
