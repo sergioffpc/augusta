@@ -211,10 +211,13 @@ target_include_directories(augusta_policy_loader_tests PRIVATE ${CMAKE_SOURCE_DI
 gtest_discover_tests(augusta_policy_loader_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_session_tests session_test.cpp)
-target_link_libraries(augusta_session_tests PRIVATE augusta_harness augustad_host augustad_parameters_loader augusta_logging GTest::gtest GTest::gtest_main)
-# The server runs the example scenario's objectives.lua for the win condition (US-14).
+target_link_libraries(augusta_session_tests PRIVATE
+  augusta_harness augustad_host augustad_parameters_loader augustad_policy_loader augusta_logging
+  GTest::gtest GTest::gtest_main)
+# The server runs the example scenario's Game policy, as it loads it from its
+# golden server pack: the Spawn points and the win condition (US-03, US-14).
 target_compile_definitions(augusta_session_tests PRIVATE
-  AUGUSTA_EXAMPLE_OBJECTIVES="${CMAKE_SOURCE_DIR}/tools/pack/examples/authoring/scenarios/augusta/objectives.lua")
+  AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs")
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_session_tests DISCOVERY_TIMEOUT 30)
 

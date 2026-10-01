@@ -4,14 +4,13 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <fstream>
+#include <filesystem>
 #include <limits>
 #include <map>
 #include <memory>
 #include <numbers>
 #include <optional>
 #include <set>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -47,6 +46,7 @@
 #include "host.h"
 #include "match.h"
 #include "parameters_loader.h"
+#include "policy_loader.h"
 #include "wire.h"
 
 // The seam the M3 tickets test through (issue #73): a real server host and a
@@ -3900,15 +3900,19 @@ TEST_F(ScriptedServerTest, ADeathNamingABodyNotInTheMatchIsDropped) {
   EXPECT_FALSE(session_.IsAlive());
 }
 
-// The Death that ends a match is told before Match end, often in the same round.
-TEST_F(ScriptedServerTest, TheDeathThatEndedAMatchIsHandedOutAfterItsMatchEnd) {
-  Settle();
-
+// The tick that ends a Match sends its own Shots, Hit confirmations and Deaths
+// just before Match end, so they often arrive together: what the Match ended
+// on is still handed out once it has.
+TEST_F(ScriptedServerTest, TheShotsHitsAndDeathsThatArriveJustBeforeMatchEndAreStillHandedOutAfterIt) {
+  server_.Send(ShotBy(kScriptedEntity));
+  server_.Send(HitOn(kScriptedEntity));
   server_.Send(DeathOf(kScriptedEntity, kScriptedEntity));
   server_.Send(augusta::protocol::MatchEndWire{});
   Settle();
   ASSERT_EQ(session_.GetPhase(), Phase::kLobby);
 
+  EXPECT_EQ(session_.TakeShots().size(), 1U);
+  EXPECT_EQ(session_.TakeHitConfirmations().size(), 1U);
   EXPECT_EQ(session_.TakeDeaths().size(), 1U);
 }
 
@@ -3954,23 +3958,26 @@ TEST_F(ScriptedLobbyTest, ADeathThatArrivesOutsideAMatchIsDropped) {
   EXPECT_FALSE(session_.GetHealth().has_value());
 }
 
-// The example scenario's objectives.lua, last player standing (US-14), loaded as
-// the server's Game policy.
-augusta::scripting::Engine ExampleObjectives() {
-  const std::ifstream file(AUGUSTA_EXAMPLE_OBJECTIVES);
-  std::stringstream text;
-  text << file.rdbuf();
-  auto policy = augusta::scripting::Engine::Load({.objectives = text.str(), .behaviours = std::nullopt});
-  EXPECT_TRUE(policy.has_value()) << augusta::scripting::DescribeLoadError(policy.error());
+// The example scenario's Game policy, read out of its golden server pack by the
+// server's own loader: behaviours.lua hands out the Spawn points, objectives.lua
+// ends the Match on the last player standing (US-14).
+augusta::scripting::Engine ExamplePolicy() {
+  const std::filesystem::path packs{AUGUSTA_EXAMPLE_PACKS};
+  const auto public_key = augusta::assets::ReadEd25519PublicKeyFile(packs / "test.pub");
+  EXPECT_TRUE(public_key.has_value());
+  auto pack = augusta::assets::Pack::Load(packs / "server.pack", public_key.value());
+  EXPECT_TRUE(pack.has_value()) << augusta::assets::DescribeLoadError(pack.error());
+  auto policy = augusta::server::LoadPolicy(pack.value());
+  EXPECT_TRUE(policy.has_value()) << augusta::server::DescribePolicyLoadError(policy.error());
   return policy ? *std::move(policy) : augusta::scripting::Engine{};
 }
 
-// A match of kPlayers in the line, under the example scenario's objectives:
+// A match of kPlayers in the line, under the example scenario's Game policy:
 // the last player standing wins.
 template <std::uint8_t kPlayers>
 class LastStandingMatchOf : public HitMatchOf<kPlayers> {
  protected:
-  LastStandingMatchOf() : HitMatchOf<kPlayers>(false, ExampleObjectives()) {}
+  LastStandingMatchOf() : HitMatchOf<kPlayers>(false, ExamplePolicy()) {}
 
   // Runs the network until every connected client is back in the Lobby and has
   // been told how the match ended; returns whether they all were.
@@ -4133,6 +4140,197 @@ TEST_F(LastStandingTrioTest, WhenAllButOnePlayerDisconnectTheOneLeftWins) {
   EXPECT_EQ(survivor.GetMatchEnd()->winner, survivor.GetSessionId());
 }
 
+// A full Match of eight under the example scenario's Game policy, everyone
+// standing in a line along X, 4 m apart, at the Spawn point behaviours.lua
+// hands it: its rank down the line, 0 at the origin. Everyone looks along -X,
+// at the player in front of it, and plays the character of HumanHitboxes with a
+// rifle of 600 rounds a minute whose magazine of 15 takes half a second to
+// reload, and whose every round kicks the aim up by 1/256 rad. Five torso hits kill.
+class EightPlayerMatchTest : public LoopbackMatch {
+ protected:
+  static constexpr std::size_t kPlayers = augusta::protocol::kMaxPlayers;
+  static constexpr float kEyeHeight = 1.6F;
+  static constexpr float kTorsoHeight = 1.2F;
+  static constexpr float kSpacing = 4.0F;
+
+  static HostSetup InALine() {
+    Parameters parameters = WithPlayerCount(kPlayers);
+    parameters.rifle.rounds_per_minute = 600.0F;
+    parameters.rifle.magazine_capacity = 15;
+    parameters.rifle.reload_seconds = 0.5F;
+    parameters.rifle.muzzle_velocity = 800.0F;
+    parameters.rifle.recoil_pattern = {{.pitch = 1.0F / 256.0F, .yaw = 0.0F}};
+    parameters.rifle.recoil_recovery_per_second = 0.375F;
+    parameters.ammo.gravity = 9.81F;
+    parameters.ammo.max_range = 200.0F;
+    parameters.ammo.damage = {.head = 50.0F, .torso = 20.0F, .limb = 10.0F};
+    parameters.starting_health = 100.0F;
+    std::vector<Vec3> spawn_points;
+    for (std::size_t rank = 0; rank < kPlayers; ++rank) {
+      spawn_points.emplace_back(kSpacing * static_cast<float>(rank), kFloorY, 0.0F);
+    }
+    HostSetup setup = OnTheFloor(std::move(spawn_points), parameters);
+    setup.policy = ExamplePolicy();
+    setup.map.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    setup.map.characters.front().hitboxes = HumanHitboxes();
+    return setup;
+  }
+
+  EightPlayerMatchTest() : LoopbackMatch(InALine()) {}
+
+  void SetUp() override {
+    for (std::size_t i = 0; i < kPlayers; ++i) {
+      Join();
+    }
+    ASSERT_TRUE(StartMatch());
+  }
+
+  // Every client by its rank down the line, each spawned at a Spawn point of its
+  // own; empty if two share one or one is off the line.
+  std::vector<Session*> ByRank() {
+    std::vector<Session*> by_rank(kPlayers, nullptr);
+    for (const auto& session : sessions_) {
+      const Vec3 spawn = OwnSpawn(*session);
+      const auto rank = static_cast<std::size_t>(std::lround(spawn.x / kSpacing));
+      if (rank >= kPlayers || by_rank[rank] != nullptr ||
+          spawn != Vec3(kSpacing * static_cast<float>(rank), kFloorY, 0.0F)) {
+        return {};
+      }
+      by_rank[rank] = session.get();
+    }
+    return by_rank;
+  }
+};
+
+// NFR-01 and NFR-06 for a whole Match (issue #252), paced to the real 60 Hz for
+// the reason the M3 soak test gives: eight players strafe and sprint, all the
+// same way so the line keeps its shape, and hold fire from Match start,
+// reloading whenever their magazine is empty, with the policy hooks running.
+// Each fires over everyone's head until its turn comes, then at the player in
+// front, so the players die one by one from the back of the line, each killed
+// by the next, and the front one is the last standing. The server keeps up with
+// every client's commands, the dead's included, to the end, which the example
+// objectives.lua decides with that player as winner, and every client is told
+// of every Death and of the winner.
+TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMissedTicks) {
+  constexpr int kTickLimit = 900;  // The Match ends some 540 ticks in.
+  constexpr int kFirstTurnTick = 60;
+  constexpr int kTurnTicks = 75;
+  constexpr std::uint32_t kAckTolerance = 20;  // A few round trips' worth still in flight.
+  constexpr int kSprintBlockTicks = 100;
+  // A block strafing one way, a block still, a block the other way, a block still.
+  constexpr int kStrafeBlockTicks = 30;
+  constexpr std::array<float, 4> kStrafeCycle = {1.0F, 0.0F, -1.0F, 0.0F};
+  // Down the line, from the eye of one player at the torso of the next.
+  constexpr float kAlongTheLine = std::numbers::pi_v<float> / 2.0F;
+  const float at_the_one_in_front = std::atan2(kTorsoHeight - kEyeHeight, kSpacing);
+  constexpr float kOverTheirHeads = 0.3F;
+
+  const std::vector<Session*> by_rank = ByRank();
+  ASSERT_EQ(by_rank.size(), kPlayers) << "the players did not spawn at a Spawn point each";
+  std::vector<std::uint32_t> entities;
+  for (const Session* client : by_rank) {
+    entities.push_back(std::to_underlying(*client->GetEntityId()));
+  }
+
+  struct Client {
+    // Its rifle as it last predicted it: what it decides to reload by.
+    augusta::weapon::State rifle{};
+    std::uint32_t sent = 0;
+    std::uint32_t acknowledged = 0;
+    std::vector<std::uint32_t> victims{};
+  };
+  std::vector<Client> clients(kPlayers);
+  const auto collect = [&] {
+    for (std::size_t rank = 0; rank < kPlayers; ++rank) {
+      for (const Death& death : by_rank[rank]->TakeDeaths()) {
+        clients[rank].victims.push_back(std::to_underlying(death.victim));
+      }
+    }
+  };
+  std::vector<augusta::simulation::Death> deaths;
+  std::optional<augusta::simulation::MatchEnd> match_end;
+  auto slowest_tick = std::chrono::steady_clock::duration::zero();
+
+  const auto tick_duration = std::chrono::duration<float>(kFixedTick);
+  for (int tick = 0; tick < kTickLimit && !match_end.has_value(); ++tick) {
+    const auto tick_start = std::chrono::steady_clock::now();
+
+    const augusta::simulation::State state = host_.Tick(kFixedTick);
+    slowest_tick = std::max(slowest_tick, std::chrono::steady_clock::now() - tick_start);
+    deaths.insert(deaths.end(), state.deaths.begin(), state.deaths.end());
+    match_end = state.match_end;
+    for (std::size_t rank = 0; rank < kPlayers; ++rank) {
+      Session& session = *by_rank[rank];
+      Client& client = clients[rank];
+      const bool its_turn = rank > 0 && tick >= kFirstTurnTick + ((static_cast<int>(rank) - 1) * kTurnTicks);
+      Command command{};
+      command.movement.direction = Vec3(kStrafeCycle.at((tick / kStrafeBlockTicks) % kStrafeCycle.size()), 0.0F, 0.0F);
+      command.movement.sprint = (tick / kSprintBlockTicks) % 2 == 0;
+      command.yaw = kAlongTheLine;
+      command.pitch = its_turn ? at_the_one_in_front : kOverTheirHeads;
+      command.fire = true;
+      command.reload = tick > 0 && client.rifle.rounds == 0 && client.rifle.reload_remaining <= 0.0F;
+      if (const auto shown = session.GetAuthoritativeState()) {
+        command.view_tick = shown->tick;
+      }
+
+      if (session.GetPhase() == Phase::kMatch) {
+        ++client.sent;
+      }
+      client.rifle = session.Tick(command, kFixedTick).rifle;
+    }
+
+    host_.PumpNetwork();
+    for (std::size_t rank = 0; rank < kPlayers; ++rank) {
+      Session& session = *by_rank[rank];
+      session.PumpEvents();
+      session.ExchangeMessages();
+
+      ASSERT_FALSE(session.GetFailure().has_value()) << "rank " << rank << " failed at tick " << tick;
+      EXPECT_EQ(session.GetConnectionState(), ConnectionState::kConnected)
+          << "rank " << rank << " dropped at tick " << tick;
+
+      if (const auto authoritative = session.GetAuthoritativeState()) {
+        clients[rank].acknowledged = std::max(clients[rank].acknowledged, authoritative->acknowledged_sequence);
+      }
+    }
+    collect();
+
+    std::this_thread::sleep_until(tick_start +
+                                  std::chrono::duration_cast<std::chrono::steady_clock::duration>(tick_duration));
+  }
+  RecordProperty("slowest_tick_us",
+                 static_cast<int>(std::chrono::duration_cast<std::chrono::microseconds>(slowest_tick).count()));
+
+  ASSERT_TRUE(match_end.has_value()) << "the Match had not ended after " << kTickLimit << " ticks";
+  ASSERT_TRUE(match_end->winner.has_value());
+  EXPECT_EQ(std::to_underlying(*match_end->winner), std::to_underlying(*by_rank.back()->GetSessionId()));
+  ASSERT_EQ(deaths.size(), kPlayers - 1);
+  std::vector<std::uint32_t> victims;
+  for (std::size_t rank = 0; rank + 1 < kPlayers; ++rank) {
+    EXPECT_EQ(std::to_underlying(deaths[rank].victim), entities[rank]) << "death " << rank;
+    EXPECT_EQ(std::to_underlying(deaths[rank].killer), entities[rank + 1]) << "death " << rank;
+    victims.push_back(entities[rank]);
+  }
+
+  // Death and Match end are reliable: the last of them are on their way.
+  ASSERT_TRUE(ExchangeUntil(host_, by_rank, [&] {
+    collect();
+    return std::ranges::all_of(by_rank, [](const Session* session) {
+      return session->GetPhase() == Phase::kLobby && session->GetMatchEnd().has_value();
+    });
+  }));
+  for (std::size_t rank = 0; rank < kPlayers; ++rank) {
+    const Client& client = clients[rank];
+    EXPECT_GE(client.acknowledged + kAckTolerance, client.sent)
+        << "rank " << rank << " fell behind: server acknowledged only " << client.acknowledged << " of " << client.sent
+        << " commands";
+    EXPECT_EQ(client.victims, victims) << "rank " << rank << " was not told of every Death";
+    EXPECT_EQ(by_rank[rank]->GetMatchEnd()->winner, by_rank.back()->GetSessionId()) << "rank " << rank;
+  }
+}
+
 // A Match of one, for development (ADR-0043). In v1 only rounds kill and none
 // hits its own shooter, so a lone player cannot die over the network: that its
 // death is a draw is checked through SimulationWorld
@@ -4151,7 +4349,7 @@ class SoloMatchTest : public LoopbackMatch {
 
 class SoloLastStandingTest : public SoloMatchTest {
  protected:
-  SoloLastStandingTest() : SoloMatchTest(ExampleObjectives()) {}
+  SoloLastStandingTest() : SoloMatchTest(ExamplePolicy()) {}
 };
 
 TEST_F(SoloLastStandingTest, ALonePlayerPlaysOnUnderTheExampleObjectives) {

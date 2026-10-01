@@ -314,6 +314,7 @@ struct Session::Impl {
   }
 
   // The Shots, the Hit confirmations and the Deaths of one match are not the next one's to draw.
+  // Match end keeps them: the tick that ends a match sends its own just before it.
   void ForgetCombat() {
     shots.Clear();
     hit_confirmations.Clear();
