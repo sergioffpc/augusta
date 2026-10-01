@@ -24,10 +24,16 @@ done
 
 # src/client and src/modules/renderer are Windows-only, so CI's Linux run has
 # no compile commands for them; PhysX's SSE headers break clang-tidy under
-# MSVC's flags, so physics.cpp is linted by CI's Linux run alone.
+# MSVC's flags, so physics.cpp is linted by CI's Linux run alone. The audio
+# module's output device builds from different sources on each platform, so
+# each side skips the other's (as the Makefile's tidy target does).
 files=$(echo "$files" | grep -E '^src/.*\.cpp$' |
   grep -vE '^src/(client|modules/renderer)/' |
-  { if [ "$windows" = 1 ]; then grep -vx 'src/modules/physics/physics.cpp'; else cat; fi; } |
+  { if [ "$windows" = 1 ]; then
+      grep -vxE 'src/modules/(physics/physics|audio/output_none)\.cpp'
+    else
+      grep -vxE 'src/modules/audio/(output_windows|miniaudio)\.cpp'
+    fi; } |
   sort -u |
   while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)
 
