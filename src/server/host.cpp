@@ -15,6 +15,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -35,6 +36,7 @@
 #include "augusta/version.h"
 #include "command_queue.h"
 #include "match.h"
+#include "misbehaviour.h"
 #include "wire.h"
 
 namespace augusta::server {
@@ -162,6 +164,42 @@ std::string_view BodyPartName(ballistics::BodyPart part) {
   std::unreachable();
 }
 
+// How a player's connection ended.
+enum class Leaving : std::uint8_t {
+  // The peer closed it.
+  kLeft,
+  // The transport gave up on it.
+  kTimedOut,
+  // This side closed it, for misbehaving.
+  kMisbehaving,
+};
+
+// how as a departure's log line says it (ADR-0038).
+std::string_view LeavingName(Leaving how) {
+  switch (how) {
+    case Leaving::kLeft:
+      return "left";
+    case Leaving::kTimedOut:
+      return "timeout";
+    case Leaving::kMisbehaving:
+      return "misbehaving";
+  }
+  std::unreachable();
+}
+
+// rejection, of one of a peer's commands, as the peer's misbehaviour is counted.
+PeerRejection ToPeerRejection(Rejection rejection) {
+  switch (rejection) {
+    case Rejection::kStale:
+      return PeerRejection::kStaleCommand;
+    case Rejection::kNonFinite:
+      return PeerRejection::kNonFiniteCommand;
+    case Rejection::kOutOfRange:
+      return PeerRejection::kOutOfRangeCommand;
+  }
+  std::unreachable();
+}
+
 // The path of each of characters, in the same order: all Match needs of them.
 std::vector<std::string> CharacterPaths(const std::vector<Character>& characters) {
   std::vector<std::string> paths;
@@ -237,6 +275,8 @@ struct Host::Impl {
     // Queued commands dropped because a client ran further ahead than
     // kMaxQueuedCommands: its pacing is not keeping up.
     std::uint32_t overflow = 0;
+    // Peers disconnected for misbehaving.
+    std::uint32_t misbehaving = 0;
   };
   static constexpr std::chrono::seconds kHeartbeatInterval{1};
   Activity activity;
@@ -244,6 +284,10 @@ struct Host::Impl {
   // A peer can send malformed messages as fast as it likes, so their warnings
   // are limited; the heartbeat still counts every one. Guarded by mutex.
   logging::Throttle drop_warnings{std::chrono::seconds{1}};
+  // Each connected peer's misbehaviour, and the peers disconnected for it during
+  // this PumpNetwork, whose messages still in its batch are ignored. Guarded by mutex.
+  std::unordered_map<networking::PeerId, MisbehaviourTracker> misbehaviour;
+  std::unordered_set<networking::PeerId> expelled;
 
   Impl(const HostConfig& config, Map map, scripting::Engine policy)
       : simulation(BuildSimulation(config, map, std::move(policy))),
@@ -289,6 +333,7 @@ struct Host::Impl {
       LI("subsystem=serverruntime event=join_refused peer={} reason=\"{}\"", PeerNumber(peer),
          DescribeJoinRefusal(admission.error()));
       Reply(peer, protocol::JoinRefusedWire{.reason = ToWire(admission.error())});
+      Judge(peer, PeerRejection::kJoinRefused);
       return;
     }
     Reply(peer, ToWire(*admission, tick_rate_hz, parameters));
@@ -307,6 +352,7 @@ struct Host::Impl {
       // The Roster can change while a Ready is in flight; the client sends another for the new one.
       LD("subsystem=serverruntime event=ready_ignored peer={} version={} current={}", PeerNumber(peer), version,
          match.GetRoster().version);
+      Judge(peer, PeerRejection::kStaleReady);
     }
   }
 
@@ -316,11 +362,13 @@ struct Host::Impl {
       ++activity.dropped;
       LW_LIMITED(drop_warnings, "subsystem=serverruntime event=dropped peer={} reason=\"commands before joining\"",
                  PeerNumber(peer));
+      Judge(peer, PeerRejection::kCommandsBeforeJoining);
       return;
     }
     if (!match.IsPlaying(*session)) {
       ++activity.stale;
       LT("subsystem=serverruntime event=dropped peer={} reason=\"commands outside a match\"", PeerNumber(peer));
+      Judge(peer, PeerRejection::kCommandsOutsideMatch);
       return;
     }
     CommandQueue& queue = players.at(*session).commands;
@@ -328,6 +376,10 @@ struct Host::Impl {
       const auto enqueued = queue.TryEnqueue(command);
       if (!enqueued.has_value()) {
         RecordRejection(peer, command, enqueued.error());
+        // A disconnected player's queue is gone with it.
+        if (Judge(peer, ToPeerRejection(enqueued.error())) == Verdict::kDisconnect) {
+          return;
+        }
       } else if (*enqueued == Enqueued::kDroppedOldest) {
         ++activity.overflow;
       }
@@ -354,6 +406,7 @@ struct Host::Impl {
       ++activity.dropped;
       LW_LIMITED(drop_warnings, "subsystem=serverruntime event=dropped_malformed peer={} bytes={} reason=\"{}\"",
                  PeerNumber(message.from), message.payload.size(), protocol::DescribeDecodeError(decoded.error()));
+      Judge(message.from, PeerRejection::kUndecodable);
       return;
     }
     if (const auto* request = std::get_if<protocol::JoinRequestWire>(&*decoded)) {
@@ -367,34 +420,62 @@ struct Host::Impl {
       LW_LIMITED(drop_warnings,
                  "subsystem=serverruntime event=dropped_malformed peer={} bytes={} reason=\"not a client message\"",
                  PeerNumber(message.from), message.payload.size());
+      Judge(message.from, PeerRejection::kNotAClientMessage);
     }
   }
 
+  // Counts rejection toward peer's misbehaviour and, once it has misbehaved too
+  // often, disconnects it, as a departure like any other. Returns which.
+  Verdict Judge(networking::PeerId peer, PeerRejection rejection) {
+    const Verdict verdict = misbehaviour[peer].Record(rejection, std::chrono::steady_clock::now());
+    if (verdict == Verdict::kDisconnect) {
+      Expel(peer, rejection);
+    }
+    return verdict;
+  }
+
+  // Disconnects peer for misbehaving, the last time for rejection. The
+  // transport reports no departure for a connection this side closes, so the
+  // player leaves here.
+  void Expel(networking::PeerId peer, PeerRejection rejection) {
+    ++activity.misbehaving;
+    if (const std::optional<SessionId> session = match.SessionOf(peer); session.has_value()) {
+      LW("subsystem=serverruntime event=misbehaving_disconnected peer={} session={} reason=\"{}\"", PeerNumber(peer),
+         SessionNumber(*session), DescribePeerRejection(rejection));
+    } else {
+      LW("subsystem=serverruntime event=misbehaving_disconnected peer={} reason=\"{}\"", PeerNumber(peer),
+         DescribePeerRejection(rejection));
+    }
+    expelled.insert(peer);
+    network.Disconnect(peer);
+    HandleDisconnect(peer, Leaving::kMisbehaving);
+  }
+
   // A player whose connection ended leaves at once; a body it had leaves the
-  // simulation at the start of the next tick. reason only decides which event is logged.
-  void HandleDisconnect(networking::PeerId peer, networking::DisconnectReason reason) {
+  // simulation at the start of the next tick. how only decides what is logged.
+  void HandleDisconnect(networking::PeerId peer, Leaving how) {
+    misbehaviour.erase(peer);
     const std::optional<SessionId> session = match.SessionOf(peer);
     if (!session.has_value()) {
       return;
     }
     const Departure departure = match.Leave(peer);
     players.erase(*session);
-    const bool lost = reason == networking::DisconnectReason::kConnectionLost;
     switch (departure) {
       case Departure::kNone:
         break;
       case Departure::kFromLobby:
-        LI("subsystem=serverruntime event=lobby_left peer={} session={} lost={} players={} version={}",
-           PeerNumber(peer), SessionNumber(*session), lost, match.PlayerCount(), match.GetRoster().version);
+        LI("subsystem=serverruntime event=lobby_left peer={} session={} how={} players={} version={}", PeerNumber(peer),
+           SessionNumber(*session), LeavingName(how), match.PlayerCount(), match.GetRoster().version);
         SendRoster();
         break;
       case Departure::kFromMatch:
-        LI("subsystem=serverruntime event=match_left peer={} session={} lost={} playing={}", PeerNumber(peer),
-           SessionNumber(*session), lost, match.Playing().size());
+        LI("subsystem=serverruntime event=match_left peer={} session={} how={} playing={}", PeerNumber(peer),
+           SessionNumber(*session), LeavingName(how), match.Playing().size());
         break;
       case Departure::kEndedMatch:
-        LI("subsystem=serverruntime event=match_left peer={} session={} lost={} playing=0", PeerNumber(peer),
-           SessionNumber(*session), lost);
+        LI("subsystem=serverruntime event=match_left peer={} session={} how={} playing=0", PeerNumber(peer),
+           SessionNumber(*session), LeavingName(how));
         LogMatchEnded(EndReason::kNoPlayersLeft, std::nullopt, 0);
         break;
     }
@@ -513,9 +594,9 @@ struct Host::Impl {
       return;
     }
     LD("subsystem=serverruntime event=heartbeat tick={} players={} in_match={} ticks={} late={} overrun={} "
-       "messages={} stale={} dropped={} overflow={}",
+       "messages={} stale={} dropped={} overflow={} misbehaving={}",
        tick.load(), players.size(), match.InMatch(), activity.ticks, activity.late, activity.overrun, activity.messages,
-       activity.stale, activity.dropped, activity.overflow);
+       activity.stale, activity.dropped, activity.overflow, activity.misbehaving);
     activity = Activity{};
     activity_since = now;
   }
@@ -582,7 +663,9 @@ void Host::PumpNetwork() {
         break;
       case networking::PeerEventType::kDisconnected: {
         const std::lock_guard<std::mutex> lock(impl.mutex);
-        impl.HandleDisconnect(event.peer, event.reason);
+        impl.HandleDisconnect(event.peer, event.reason == networking::DisconnectReason::kConnectionLost
+                                              ? Leaving::kTimedOut
+                                              : Leaving::kLeft);
         break;
       }
     }
@@ -590,9 +673,15 @@ void Host::PumpNetwork() {
   for (const networking::PeerMessage& message : impl.network.ReceiveMessages()) {
     LT("subsystem=serverruntime event=received peer={} bytes={}", PeerNumber(message.from), message.payload.size());
     const std::lock_guard<std::mutex> lock(impl.mutex);
+    if (impl.expelled.contains(message.from)) {
+      continue;
+    }
     ++impl.activity.messages;
     impl.HandleMessage(message);
   }
+  // A closed connection delivers nothing more.
+  const std::lock_guard<std::mutex> lock(impl.mutex);
+  impl.expelled.clear();
 }
 
 simulation::TickResult Host::Tick(float delta_time) {

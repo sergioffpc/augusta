@@ -238,9 +238,22 @@ fail the range checks of ADR-0039, as it drops any message that does not decode.
 **Failure paths.** The server drops what does not decode, is not a client message
 or fails the command gate (a number beyond what a client produces), and logs it as
 `dropped_malformed`; a peer's garbage never reaches the world or another client.
+A peer that keeps doing so is disconnected: the server counts, per peer, what
+does not decode, what is not a client message, commands outside what a client
+produces and commands before joining, and once 16 fall within 5 seconds it
+closes the connection, an ordinary departure (the Roster changes in the Lobby;
+in a Match the body leaves, and the Match goes on or ends with its last
+player). An honest client sends none of these, whatever its latency and loss.
+Routine rejections never count: a stale command, commands outside a Match, a
+Ready for an old Roster and a refused Join. The window and threshold are
+boundary constants, like the command queue's cap, neither Parameters (ADR-0039)
+nor settings (ADR-0034). No message announces it; each such disconnect is one
+`WARN`, `event=misbehaving_disconnected`, with the peer, its session if it has
+one and the reason, and the heartbeat counts them as `misbehaving=`.
 A stale command is routine, since commands repeat, and only traced. A connection that ends frees its slot at once and
 removes the player at the start of the next tick; the log tells `left` (the peer
-closed it) from `timeout` (the transport gave up on it). The client has no
+closed it) from `timeout` (the transport gave up on it) and `misbehaving` (the
+server closed it). The client has no
 reconnecting and no connection screen: it ends the session with one of three
 failures, refused (with the reason), server unreachable (the connection ended
 before the server admitted it) or connection lost (after), reports it, and exits
