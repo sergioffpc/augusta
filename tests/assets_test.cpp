@@ -556,6 +556,65 @@ TEST_F(PackTest, APacksHashIsItsTrailersHash) {
   EXPECT_TRUE(std::ranges::equal(pack->Hash(), trailer_hash));
 }
 
+// The executables name the pack in every error about its content.
+TEST_F(PackTest, APackRemembersThePathItWasLoadedFrom) {
+  const auto pack_path = MakePackPath("augusta_assets_test_path.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = MakeTriangleMeshBlob()},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->Path(), pack_path);
+}
+
+TEST_F(PackTest, LoadVerifiedPackLoadsAPackAgainstTheKeyInAFile) {
+  const auto pack_path = MakePackPath("augusta_assets_test_verified.pack");
+  const auto key_path = MakePackPath("augusta_assets_test_verified.pub");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = MakeTriangleMeshBlob()},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  WriteFileBytes(key_path, keys.public_key.data(), keys.public_key.size());
+
+  const auto pack = augusta::assets::LoadVerifiedPack(pack_path, key_path);
+
+  ASSERT_TRUE(pack.has_value());
+  EXPECT_TRUE(pack->ResolveMesh("Mesh").has_value());
+}
+
+TEST_F(PackTest, LoadVerifiedPackRefusesAnUnreadableKey) {
+  const auto pack = augusta::assets::LoadVerifiedPack(MakePackPath("augusta_assets_test_unread.pack"),
+                                                      MakePackPath("augusta_assets_test_missing.pub"));
+
+  ASSERT_FALSE(pack.has_value());
+  EXPECT_EQ(pack.error().failure, augusta::assets::VerifiedPackFailure::kPublicKeyUnreadable);
+}
+
+TEST_F(PackTest, LoadVerifiedPackRefusesAPackSignedByAnotherKey) {
+  const auto pack_path = MakePackPath("augusta_assets_test_other_key.pack");
+  const auto key_path = MakePackPath("augusta_assets_test_other_key.pub");
+  const auto keys = GenerateEd25519KeyPair();
+  const auto other_keys = GenerateEd25519KeyPair();
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = MakeTriangleMeshBlob()},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  WriteFileBytes(key_path, other_keys.public_key.data(), other_keys.public_key.size());
+
+  const auto pack = augusta::assets::LoadVerifiedPack(pack_path, key_path);
+
+  ASSERT_FALSE(pack.has_value());
+  EXPECT_EQ(pack.error().failure, augusta::assets::VerifiedPackFailure::kPackRejected);
+  EXPECT_EQ(pack.error().load_error, augusta::assets::LoadError::kSignatureInvalid);
+}
+
 TEST_F(PackTest, AServerPackResolvesTheHashOfItsClientPack) {
   const auto keys = GenerateEd25519KeyPair();
   const auto client_path = MakePackPath("augusta_assets_test_client.pack");

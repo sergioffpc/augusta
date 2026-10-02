@@ -405,12 +405,36 @@ class Pack {
   /// This pack's hash, as its trailer holds it and Load verified it.
   [[nodiscard]] const PackHash& Hash() const;
 
+  /// The file this pack was loaded from, as Load was given it.
+  [[nodiscard]] const std::filesystem::path& Path() const;
+
  private:
   Pack();
 
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };
+
+enum class VerifiedPackFailure {
+  kPublicKeyUnreadable,
+  kPackRejected,
+};
+
+struct VerifiedPackError {
+  VerifiedPackFailure failure;
+  // Why Pack::Load refused the pack; only meaningful for kPackRejected.
+  LoadError load_error{};
+};
+
+/// Reads the Ed25519 public key at public_key_path and loads the pack at
+/// pack_path against it - the step the client and server executables both take
+/// before anything else starts (ADR-0018, ADR-0019).
+std::expected<Pack, VerifiedPackError> LoadVerifiedPack(const std::filesystem::path& pack_path,
+                                                        const std::filesystem::path& public_key_path);
+
+/// What to tell whoever runs the process about why LoadVerifiedPack failed.
+std::string DescribeVerifiedPackError(const VerifiedPackError& error, const std::filesystem::path& pack_path,
+                                      const std::filesystem::path& public_key_path);
 
 }  // namespace augusta::assets
 

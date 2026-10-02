@@ -544,6 +544,7 @@ struct Pack::Impl {
   Mapping mapping;
   std::vector<IndexEntry> index;
   PackHash hash;
+  std::filesystem::path path;
 };
 
 std::string_view DescribeLoadError(LoadError error) {
@@ -609,7 +610,7 @@ std::expected<Pack, LoadError> Pack::Load(const std::filesystem::path& path, con
 
   Pack pack;
   pack.impl_ = std::make_unique<Impl>(
-      Impl{.mapping = std::move(*mapping), .index = std::move(*index), .hash = hashed.trailer.hash});
+      Impl{.mapping = std::move(*mapping), .index = std::move(*index), .hash = hashed.trailer.hash, .path = path});
   return pack;
 }
 
@@ -685,5 +686,29 @@ std::expected<PackHash, ResolveError> Pack::ResolveClientPackHash() const {
 }
 
 const PackHash& Pack::Hash() const { return impl_->hash; }
+
+const std::filesystem::path& Pack::Path() const { return impl_->path; }
+
+std::expected<Pack, VerifiedPackError> LoadVerifiedPack(const std::filesystem::path& pack_path,
+                                                        const std::filesystem::path& public_key_path) {
+  const auto public_key = ReadEd25519PublicKeyFile(public_key_path);
+  if (!public_key) {
+    return std::unexpected(VerifiedPackError{.failure = VerifiedPackFailure::kPublicKeyUnreadable});
+  }
+  return Pack::Load(pack_path, *public_key).transform_error([](LoadError error) {
+    return VerifiedPackError{.failure = VerifiedPackFailure::kPackRejected, .load_error = error};
+  });
+}
+
+std::string DescribeVerifiedPackError(const VerifiedPackError& error, const std::filesystem::path& pack_path,
+                                      const std::filesystem::path& public_key_path) {
+  switch (error.failure) {
+    case VerifiedPackFailure::kPublicKeyUnreadable:
+      return std::format("could not read Ed25519 public key from {}", public_key_path.string());
+    case VerifiedPackFailure::kPackRejected:
+      return std::format("pack {} {}", pack_path.string(), DescribeLoadError(error.load_error));
+  }
+  return "unknown pack error";
+}
 
 }  // namespace augusta::assets
