@@ -89,9 +89,6 @@ std::optional<Client> CreateRuntime(const augusta::config::ClientConfig& file_co
   config.character = file_config.character;
   config.client_pack = pack->Hash();
 
-  // augusta::networking::Init() must run once, process-wide, before any
-  // Client/Server is constructed - see networking.h.
-  augusta::networking::Init();
   auto runtime = std::make_unique<augusta::client::ClientRuntime>(config, *std::move(content));
   return Client{.pack = std::move(pack), .runtime = std::move(runtime)};
 }
@@ -138,6 +135,10 @@ int main(int argc, char** argv) {
   // ParseClientConfig already validated log_level, so this is never nullopt.
   augusta::logging::SetLogLevel(*augusta::logging::ParseSeverity(file_config->log_level));
   LI("subsystem=client event=starting version={}", augusta::EngineVersion());
+
+  // augusta::networking::Init() must run once, process-wide, before any
+  // Client/Server is constructed - see networking.h.
+  augusta::networking::Init();
 
   return Run(*file_config);
 }
