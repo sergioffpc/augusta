@@ -102,8 +102,14 @@ class PackTest : public ::testing::Test {
     }
   }
 
+  // Named after the running test too: ctest runs every test in a process of
+  // its own, possibly in parallel, so no other test removes it while in use.
   std::filesystem::path MakePackPath(std::string_view name) {
-    const auto path = std::filesystem::temp_directory_path() / name;
+    const ::testing::TestInfo& test = *::testing::UnitTest::GetInstance()->current_test_info();
+    std::string unique =
+        std::string("augusta_assets_test_") + test.test_suite_name() + "_" + test.name() + "_" + std::string(name);
+    std::ranges::replace(unique, '/', '_');
+    const auto path = std::filesystem::temp_directory_path() / unique;
     cleanup_.push_back(path);
     return path;
   }

@@ -1,5 +1,6 @@
 #include "augusta/cues.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <filesystem>
 #include <string>
@@ -47,7 +48,16 @@ class CueSoundsTest : public ::testing::Test {
   }
 
  private:
-  std::filesystem::path path_ = std::filesystem::temp_directory_path() / "augusta_cues_test.pack";
+  // Named after the running test: ctest runs every test in a process of its
+  // own, possibly in parallel, so no other test removes it while in use.
+  static std::filesystem::path TestPackPath() {
+    const ::testing::TestInfo& test = *::testing::UnitTest::GetInstance()->current_test_info();
+    std::string name = std::string("augusta_cues_test_") + test.test_suite_name() + "_" + test.name() + ".pack";
+    std::ranges::replace(name, '/', '_');
+    return std::filesystem::temp_directory_path() / name;
+  }
+
+  std::filesystem::path path_ = TestPackPath();
 };
 
 TEST(CueNameTest, EachCueIsNamedAsItsSoundFileIs) {
