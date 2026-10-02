@@ -2527,7 +2527,9 @@ class ImpossibleCommandTest : public LoopbackMatch {
 
   // What the two have been told so far.
   [[nodiscard]] Told Now() const {
-    Told told{.shots = adversary_.ReceivedOf<protocol::ShotWire>().size(), .bystander_shots = bystander_shots_};
+    Told told;
+    told.shots = adversary_.ReceivedOf<protocol::ShotWire>().size();
+    told.bystander_shots = bystander_shots_;
     const auto state = adversary_.NewestState();
     if (!state.has_value()) {
       ADD_FAILURE() << "the adversary has been told no state";
