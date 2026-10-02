@@ -11,6 +11,7 @@
 #include <variant>
 #include <vector>
 
+#include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/tick.h"
 
@@ -310,10 +311,10 @@ struct WeaponStateWire {
 
 /// One tick's command and the number the client gave it. Numbers start at 1 and
 /// grow by one per command, so the server can tell what it has already seen.
-/// They count one connection's commands and start over on the next, so 32 bits
-/// outlast any session: at 60 Hz they would take over two years to wrap.
+/// They count one connection's commands and start over on the next, in
+/// command::Sequence's width, which never wraps.
 struct SequencedCommandWire {
-  std::uint32_t sequence = 0;
+  command::Sequence sequence = 0;
   CommandWire command{};
 
   bool operator==(const SequencedCommandWire&) const = default;
@@ -346,7 +347,7 @@ struct AuthoritativeStateWire {
   /// else's is ever sent.
   float health = 0.0F;
   /// The highest command sequence of the recipient that the server has processed, 0 if none.
-  std::uint32_t acknowledged_sequence = 0;
+  command::Sequence acknowledged_sequence = 0;
   /// How many of the recipient's commands the server still holds queued after
   /// this tick: what the client paces its own ticks by (ADR-0038).
   std::uint8_t queued_commands = 0;

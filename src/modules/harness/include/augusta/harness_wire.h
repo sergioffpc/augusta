@@ -33,7 +33,7 @@ struct JoinRequest {
 
 /// One tick's command under the sequence this client gave it.
 struct SequencedCommand {
-  std::uint32_t sequence = 0;
+  command::Sequence sequence = 0;
   command::Command command{};
 };
 

@@ -448,7 +448,7 @@ RC_GTEST_PROP(SimulationPropertyTest, AClientThatDivergedConvergesOnTheServersSt
   std::vector<Acknowledgement> answers;  // answers[i] is the server's to commands[i].
   augusta::prediction::State predicted{};
   for (std::size_t i = 0; i < commands.size(); ++i) {
-    const auto sequence = static_cast<std::uint32_t>(i + 1);
+    const auto sequence = static_cast<augusta::command::Sequence>(i + 1);
     std::vector<augusta::simulation::PlayerCommand> received;
     if (i >= losses_end || !lost.contains(i)) {
       received.push_back({.entity = kPlayer, .command = commands[i]});

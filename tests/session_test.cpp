@@ -562,7 +562,7 @@ TEST_F(JoinTest, EightClientsMoveSprintAndChangeStanceForARoundWithNoMissedTicks
 
   std::vector<Vec3> first_position(sessions_.size());
   std::vector<Vec3> last_position(sessions_.size());
-  std::vector<std::uint32_t> max_acknowledged(sessions_.size(), 0);
+  std::vector<augusta::command::Sequence> max_acknowledged(sessions_.size(), 0);
 
   const auto tick_duration = std::chrono::duration<float>(kFixedTick);
   for (int tick = 0; tick < kRoundTicks; ++tick) {
@@ -603,7 +603,7 @@ TEST_F(JoinTest, EightClientsMoveSprintAndChangeStanceForARoundWithNoMissedTicks
   }
 
   for (std::size_t i = 0; i < sessions_.size(); ++i) {
-    EXPECT_GE(max_acknowledged[i] + kAckTolerance, static_cast<std::uint32_t>(kRoundTicks))
+    EXPECT_GE(max_acknowledged[i] + kAckTolerance, static_cast<augusta::command::Sequence>(kRoundTicks))
         << "client " << i << " fell behind: server acknowledged only " << max_acknowledged[i] << " of " << kRoundTicks
         << " ticks";
     EXPECT_GT(Length(last_position[i] - first_position[i]), 0.5F) << "client " << i << " did not move over the round";
@@ -760,10 +760,10 @@ class MovementTest : public ::testing::Test {
   // Ticks the server, without the client sending anything more, until it has
   // processed the command with this sequence or a generous number of ticks has
   // passed; returns the sequence it has processed.
-  std::uint32_t DrainServer(int last_sequence) {
+  augusta::command::Sequence DrainServer(int last_sequence) {
     constexpr int kMaxTicks = 120;
-    std::uint32_t acknowledged = session_.GetAuthoritativeState()->acknowledged_sequence;
-    for (int i = 0; i < kMaxTicks && acknowledged < static_cast<std::uint32_t>(last_sequence); ++i) {
+    augusta::command::Sequence acknowledged = session_.GetAuthoritativeState()->acknowledged_sequence;
+    for (int i = 0; i < kMaxTicks && acknowledged < static_cast<augusta::command::Sequence>(last_sequence); ++i) {
       ServerTickAndDeliver();
       acknowledged = session_.GetAuthoritativeState()->acknowledged_sequence;
     }
@@ -853,7 +853,7 @@ TEST_F(MovementTest, ALostDatagramDoesNotLoseAMovementCommand) {
     Step(Walking());
   }
 
-  std::uint32_t previous = session_.GetAuthoritativeState()->acknowledged_sequence;
+  augusta::command::Sequence previous = session_.GetAuthoritativeState()->acknowledged_sequence;
 
   // CommandsWire the server never hears, then one that arrives together with them.
   augusta::networking::SimulateNetworkConditions({.loss_percent = 100.0F});
@@ -863,11 +863,11 @@ TEST_F(MovementTest, ALostDatagramDoesNotLoseAMovementCommand) {
   }
   augusta::networking::SimulateNetworkConditions({});
   session_.Tick(Walking(), kFixedTick);
-  const std::uint32_t last_sent = kSettleTicks + kDeliveredSteps + kLostCommands + 1;
+  const augusta::command::Sequence last_sent = kSettleTicks + kDeliveredSteps + kLostCommands + 1;
 
   // The server consumes one command per tick, so every sequence passes through
   // the acknowledgement in turn; a lost one would make it skip.
-  std::uint32_t acknowledged = 0;
+  augusta::command::Sequence acknowledged = 0;
   for (int i = 0; i < 12; ++i) {
     ServerTickAndDeliver();
     acknowledged = session_.GetAuthoritativeState()->acknowledged_sequence;
@@ -924,7 +924,7 @@ class PacingTest : public MovementTest {
   // What the client learned from one server tick.
   struct Told {
     std::uint8_t queued_commands = 0;
-    std::uint32_t acknowledged_sequence = 0;
+    augusta::command::Sequence acknowledged_sequence = 0;
   };
 
   // Runs the match for ticks server ticks with a client whose clock runs
@@ -1005,7 +1005,7 @@ TEST(RawCommandsTest, CommandsThatAreOutOfOrderOrOutOfRangeAreDroppedWithoutAffe
   ASSERT_TRUE(raw.Join(host));
   ASSERT_TRUE(DriveIntoMatch(host, {}, &raw));
 
-  const auto command = [](std::uint32_t sequence, float yaw = 0.0F, float pitch = 0.0F) {
+  const auto command = [](augusta::command::Sequence sequence, float yaw = 0.0F, float pitch = 0.0F) {
     augusta::protocol::SequencedCommandWire sequenced{.sequence = sequence};
     sequenced.command.direction = Vec3(1.0F, 0.0F, 0.0F);
     sequenced.command.yaw = yaw;
@@ -1022,7 +1022,7 @@ TEST(RawCommandsTest, CommandsThatAreOutOfOrderOrOutOfRangeAreDroppedWithoutAffe
   raw.Send(augusta::protocol::CommandsWire{.commands = {command(6)}});
   raw.Send(augusta::protocol::CommandsWire{.commands = {command(5)}});
 
-  std::vector<std::uint32_t> acknowledged;
+  std::vector<augusta::command::Sequence> acknowledged;
   for (int i = 0; i < 12; ++i) {
     std::this_thread::sleep_for(kNetworkDelay);
     host.PumpNetwork();
@@ -1038,7 +1038,7 @@ TEST(RawCommandsTest, CommandsThatAreOutOfOrderOrOutOfRangeAreDroppedWithoutAffe
 
   ASSERT_FALSE(acknowledged.empty());
   EXPECT_EQ(acknowledged.back(), 6U);
-  for (const std::uint32_t ack : acknowledged) {
+  for (const augusta::command::Sequence ack : acknowledged) {
     EXPECT_TRUE(ack == 0 || ack == 1 || ack == 4 || ack == 6)
         << "processed a command that should have been dropped: " << ack;
   }
@@ -1519,7 +1519,7 @@ TEST_F(ReadyTest, AClientInTheLobbyNeitherPredictsNorSendsCommands) {
   constexpr int kSteps = 10;
   Run(kSteps, Forward());
   // Sequences start with the match: nothing was sent from the Lobby.
-  EXPECT_LE(first.GetAuthoritativeState()->acknowledged_sequence, static_cast<std::uint32_t>(kSteps));
+  EXPECT_LE(first.GetAuthoritativeState()->acknowledged_sequence, static_cast<augusta::command::Sequence>(kSteps));
   EXPECT_GT(states_.at(&first).local_body.position.x, OwnSpawn(first).x);
 }
 
@@ -2722,7 +2722,7 @@ class PredictedFireTest : public FireMatchOf<1> {
   }
 
   // The newest of the client's commands the server has told it of.
-  [[nodiscard]] std::uint32_t Acknowledged() const {
+  [[nodiscard]] augusta::command::Sequence Acknowledged() const {
     const auto state = client_->GetAuthoritativeState();
     return state.has_value() ? state->acknowledged_sequence : 0U;
   }
@@ -2801,11 +2801,11 @@ class PredictedFireTest : public FireMatchOf<1> {
   }
 
   Session* client_ = nullptr;
-  std::uint32_t sequence_ = kSettleTicks;
+  augusta::command::Sequence sequence_ = kSettleTicks;
   // The rifle the client predicted after each command, by its sequence, and
   // the sequences the server's answer has been compared at.
-  std::map<std::uint32_t, augusta::weapon::State> predicted_;
-  std::set<std::uint32_t> compared_;
+  std::map<augusta::command::Sequence, augusta::weapon::State> predicted_;
+  std::set<augusta::command::Sequence> compared_;
 };
 
 // US-08: the ammo count and the reload, predicted exactly as the server applies them.
@@ -3504,7 +3504,7 @@ TEST_F(FullAutoMatchTest, EightClientsMoveFireFullAutoReloadAndHitEachOtherForAM
     augusta::weapon::State rifle{};
     float first_x = 0.0F;
     float farthest = 0.0F;
-    std::uint32_t acknowledged = 0;
+    augusta::command::Sequence acknowledged = 0;
     std::size_t shots = 0;
     std::size_t confirmations = 0;
   };
@@ -3583,7 +3583,7 @@ TEST_F(FullAutoMatchTest, EightClientsMoveFireFullAutoReloadAndHitEachOtherForAM
   EXPECT_GT(fired, kPlayers * 60U);
   for (std::size_t i = 0; i < sessions_.size(); ++i) {
     const Client& client = clients[i];
-    EXPECT_GE(client.acknowledged + kAckTolerance, static_cast<std::uint32_t>(kMatchTicks))
+    EXPECT_GE(client.acknowledged + kAckTolerance, static_cast<augusta::command::Sequence>(kMatchTicks))
         << "client " << i << " fell behind: server acknowledged only " << client.acknowledged << " of " << kMatchTicks
         << " ticks";
     EXPECT_GT(client.farthest, 0.5F) << "client " << i << " did not move over the match";
@@ -4264,7 +4264,7 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
     // Its rifle as it last predicted it: what it decides to reload by.
     augusta::weapon::State rifle{};
     std::uint32_t sent = 0;
-    std::uint32_t acknowledged = 0;
+    augusta::command::Sequence acknowledged = 0;
     std::vector<std::uint32_t> victims{};
   };
   std::vector<Client> clients(kPlayers);

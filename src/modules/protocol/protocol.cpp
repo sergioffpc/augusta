@@ -16,6 +16,7 @@
 #include <variant>
 #include <vector>
 
+#include "augusta/command.h"
 #include "augusta/grid.h"
 #include "augusta/math.h"
 #include "augusta/tick.h"
@@ -40,6 +41,9 @@ void WriteU32(BytesWire& out, std::uint32_t value) { WriteUnsigned(out, value); 
 
 // A tick in as many bytes as tick::Tick has.
 void WriteTick(BytesWire& out, tick::Tick value) { WriteUnsigned(out, value); }
+
+// A command sequence in as many bytes as command::Sequence has.
+void WriteSequence(BytesWire& out, command::Sequence value) { WriteUnsigned(out, value); }
 
 void WriteF32(BytesWire& out, float value) { WriteU32(out, std::bit_cast<std::uint32_t>(value)); }
 
@@ -139,6 +143,8 @@ class Reader {
   std::uint32_t ReadU32() { return ReadUnsigned<std::uint32_t>(); }
 
   tick::Tick ReadTick() { return ReadUnsigned<tick::Tick>(); }
+
+  command::Sequence ReadSequence() { return ReadUnsigned<command::Sequence>(); }
 
   float ReadF32() { return std::bit_cast<float>(ReadU32()); }
 
@@ -378,7 +384,7 @@ CommandsWire ReadCommands(Reader& reader) {
   const std::size_t count = reader.ReadCount(kMaxCommandsPerMessage);
   message.commands.reserve(count);
   for (std::size_t i = 0; i < count; ++i) {
-    const std::uint32_t sequence = reader.ReadU32();
+    const command::Sequence sequence = reader.ReadSequence();
     message.commands.push_back(SequencedCommandWire{.sequence = sequence, .command = ReadCommand(reader)});
   }
   message.view_tick = reader.ReadTick();
@@ -399,7 +405,7 @@ WeaponStateWire ReadWeaponState(Reader& reader) {
 AuthoritativeStateWire ReadAuthoritativeState(Reader& reader) {
   AuthoritativeStateWire state;
   state.tick = reader.ReadTick();
-  state.acknowledged_sequence = reader.ReadU32();
+  state.acknowledged_sequence = reader.ReadSequence();
   state.bodies = ReadBodies(reader);
   state.queued_commands = reader.ReadU8();
   state.rifle = ReadWeaponState(reader);
@@ -559,7 +565,7 @@ struct Encoder {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kCommands));
     WriteU8(out, static_cast<std::uint8_t>(message.commands.size()));
     for (const SequencedCommandWire& sequenced : message.commands) {
-      WriteU32(out, sequenced.sequence);
+      WriteSequence(out, sequenced.sequence);
       WriteCommand(out, sequenced.command);
     }
     WriteTick(out, message.view_tick);
@@ -568,7 +574,7 @@ struct Encoder {
   void operator()(const AuthoritativeStateWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kAuthoritativeState));
     WriteTick(out, message.tick);
-    WriteU32(out, message.acknowledged_sequence);
+    WriteSequence(out, message.acknowledged_sequence);
     WriteBodies(out, message.bodies);
     WriteU8(out, message.queued_commands);
     WriteWeaponState(out, message.rifle);

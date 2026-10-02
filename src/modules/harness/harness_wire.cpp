@@ -10,7 +10,6 @@
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
-#include "augusta/counter.h"
 #include "augusta/harness.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -209,7 +208,7 @@ protocol::JoinRequestWire ToWire(const JoinRequest& request) {
 }
 
 protocol::CommandWire ToWire(const command::Command& command, tick::Tick view_tick) {
-  const tick::Tick age = counter::IsNewer(view_tick, command.view_tick) ? view_tick - command.view_tick : 0U;
+  const tick::Tick age = view_tick > command.view_tick ? view_tick - command.view_tick : 0U;
   std::uint8_t flags = 0;
   if (command.movement.sprint) {
     flags |= protocol::CommandWire::kSprint;
@@ -237,9 +236,7 @@ protocol::CommandWire ToWire(const command::Command& command, tick::Tick view_ti
 protocol::CommandsWire ToWire(std::span<const SequencedCommand> commands) {
   protocol::CommandsWire message;
   for (const SequencedCommand& command : commands) {
-    if (counter::IsNewer(command.command.view_tick, message.view_tick)) {
-      message.view_tick = command.command.view_tick;
-    }
+    message.view_tick = std::max(message.view_tick, command.command.view_tick);
   }
   message.commands.reserve(commands.size());
   for (const SequencedCommand& command : commands) {

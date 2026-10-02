@@ -52,12 +52,11 @@ the life of the server process and starts over at neither a Match nor a
 reconnect, so it travels in 8 bytes wherever it appears (an Authoritative
 State's tick, a Shot's, a Commands message's view tick): 4 would wrap after
 about 828 days at 60 Hz. A command sequence, and the acknowledged sequence that
-answers it, counts one connection's commands and starts over at 1 on the next,
-so 4 bytes outlast any session. Neither ever wraps; still, every receiver
-orders them through one comparison (`augusta::counter::IsNewer`, serial-number
-arithmetic per RFC 1982) rather than with `<`, so that the ordering of every
-tick and sequence is defined in one place and stays correct on either side of a
-wrap, should a counter ever be narrowed.
+answers it, counts one connection's commands and starts over at 1 on the next;
+it travels in 8 bytes too (`command::Sequence`, as `tick::Tick` is the tick's
+type), so no session, however long, can wrap it, at the cost of 4 bytes per
+sequenced command over 4. Neither ever wraps, so every receiver orders them as
+plain numbers.
 
 **Quantized numbers.** A body's and a command's numbers travel as a whole count
 of a grid's step, not as floats. The step is a power of two, so a count times

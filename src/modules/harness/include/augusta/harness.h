@@ -63,7 +63,7 @@ struct AuthoritativeState {
   /// The server tick this state is from; a client keeps only the newest it has seen.
   tick::Tick tick = 0;
   /// The highest command sequence of this client that the server has processed, 0 if none.
-  std::uint32_t acknowledged_sequence = 0;
+  command::Sequence acknowledged_sequence = 0;
   /// Every dynamic body in the match.
   std::vector<EntityBody> bodies;
   /// This client's own player's rifle as of that tick: what its predicted rifle

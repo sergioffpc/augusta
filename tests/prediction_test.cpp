@@ -102,21 +102,22 @@ class ReconciliationTest : public ::testing::Test {
 
   // What the server would say after command number sequence, if it had the
   // player somewhere other than the rest position.
-  Acknowledgement ServerSays(std::uint32_t sequence, const Vec3& offset) const {
+  Acknowledgement ServerSays(augusta::command::Sequence sequence, const Vec3& offset) const {
     BodyState body = rest_;
     body.position += offset;
     return Acknowledgement{.sequence = sequence, .body = body};
   }
 
   // What the client itself predicted after command number sequence, moved by offset.
-  [[nodiscard]] Acknowledgement ServerAgreesWithTheClientExcept(std::uint32_t sequence, const Vec3& offset) const {
+  [[nodiscard]] Acknowledgement ServerAgreesWithTheClientExcept(augusta::command::Sequence sequence,
+                                                                const Vec3& offset) const {
     BodyState body = states_[sequence - 1];
     body.position += offset;
     return Acknowledgement{.sequence = sequence, .body = body};
   }
 
   World world_;
-  std::uint32_t sequence_ = 0;
+  augusta::command::Sequence sequence_ = 0;
   std::vector<BodyState> states_;
   State latest_;
   BodyState rest_{};
@@ -351,13 +352,13 @@ class WeaponPredictionTest : public ::testing::Test {
   }
 
   // What the client itself predicted after command number sequence.
-  [[nodiscard]] Acknowledgement ServerAgreesWithTheClient(std::uint32_t sequence) const {
+  [[nodiscard]] Acknowledgement ServerAgreesWithTheClient(augusta::command::Sequence sequence) const {
     const State& state = states_[sequence - 1];
     return Acknowledgement{.sequence = sequence, .body = state.local_body, .rifle = state.rifle};
   }
 
   World world_;
-  std::uint32_t sequence_ = 0;
+  augusta::command::Sequence sequence_ = 0;
   std::vector<State> states_;
   State latest_;
 };

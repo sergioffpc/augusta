@@ -11,6 +11,7 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/command.h"
 #include "augusta/grid.h"
 #include "augusta/tick.h"
 
@@ -80,6 +81,7 @@ constexpr auto kHitConfirmationType = static_cast<std::uint8_t>(MessageTypeWire:
 constexpr auto kDeathType = static_cast<std::uint8_t>(MessageTypeWire::kDeath);
 // How many bytes a tick takes on the wire: as many as tick::Tick has.
 constexpr int kTickBytes = static_cast<int>(sizeof(augusta::tick::Tick));
+constexpr int kSequenceBytes = static_cast<int>(sizeof(augusta::command::Sequence));
 
 // Every refusal the protocol has.
 constexpr std::array<JoinRefusalWire, 5> kEveryRefusal = {
@@ -556,7 +558,7 @@ TEST(ProtocolTest, BytesAfterAMessageAreTrailing) {
 }
 
 // A command with every field set to something other than its default.
-SequencedCommandWire BusyCommand(std::uint32_t sequence) {
+SequencedCommandWire BusyCommand(augusta::command::Sequence sequence) {
   SequencedCommandWire sequenced{.sequence = sequence};
   sequenced.command.direction = Vec3(0.5F, -0.25F, 1.0F);
   sequenced.command.yaw = 3.5F;
@@ -631,7 +633,7 @@ TEST(ProtocolTest, ANonFiniteNumberIsSentAsZeroOrItsNearestBound) {
 // type, count, then per command: sequence (4), direction (6), yaw (3), pitch
 // (3), one byte for the flags and the stance, and one each for the view's age
 // and its fraction: a command is 15 bytes. Then the message's view tick (4).
-constexpr std::size_t kCommandYawOffset = 2 + 4 + 6;
+constexpr std::size_t kCommandYawOffset = 2 + kSequenceBytes + 6;
 constexpr std::size_t kCommandFlagsOffset = kCommandYawOffset + 3 + 3;
 constexpr std::size_t kCommandViewOffset = kCommandFlagsOffset + 1;
 constexpr std::size_t kViewTickOffset = kCommandViewOffset + 2;
@@ -747,7 +749,7 @@ TEST(ProtocolTest, ABodysYawTravelsAsThreeBytesAfterTheBody) {
   body.yaw = 1.0F;
   const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {body}});
   // type, tick, acknowledged sequence, count, entity, the body (18), then the yaw.
-  constexpr std::ptrdiff_t kYawOffset = 1 + kTickBytes + 4 + 1 + 4 + 18;
+  constexpr std::ptrdiff_t kYawOffset = 1 + kTickBytes + kSequenceBytes + 1 + 4 + 18;
 
   const BytesWire yaw(payload.begin() + kYawOffset, payload.begin() + kYawOffset + 3);
   EXPECT_EQ(yaw, BytesOf({0x00, 0x00, 0x20}));
@@ -825,7 +827,7 @@ TEST(ProtocolTest, ARecipientsRifleTravelsInSixteenBytesAfterItsQueuedCommands) 
                                                                     .rounds = 30,
                                                                     .burst_index = 3}});
   // type, tick, acknowledged sequence, count, the queued commands, then the rifle.
-  constexpr std::ptrdiff_t kRifleOffset = 1 + kTickBytes + 4 + 1 + 1;
+  constexpr std::ptrdiff_t kRifleOffset = 1 + kTickBytes + kSequenceBytes + 1 + 1;
 
   // The rounds, each time as its IEEE-754 bits, little-endian, the burst index,
   // then the Recoil offset's pitch and yaw as counts of the angle grid's step:
@@ -835,9 +837,9 @@ TEST(ProtocolTest, ARecipientsRifleTravelsInSixteenBytesAfterItsQueuedCommands) 
 }
 
 TEST(ProtocolTest, MorePlayersThanAMatchHoldsIsTooLong) {
-  // type, tick (8), acknowledged sequence (4), then the count.
-  const BytesWire payload = BytesOf(
-      {kAuthoritativeStateType, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, static_cast<std::uint8_t>(kMaxPlayers + 1)});
+  // type, tick (8), acknowledged sequence (8), then the count.
+  const BytesWire payload = BytesOf({kAuthoritativeStateType, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                     static_cast<std::uint8_t>(kMaxPlayers + 1)});
 
   EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
 }
@@ -845,14 +847,14 @@ TEST(ProtocolTest, MorePlayersThanAMatchHoldsIsTooLong) {
 TEST(ProtocolTest, APlayersStanceOutsideItsRangeIsInvalid) {
   BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}});
   // type, tick, acknowledged sequence, count, entity, position (9), velocity (6), then stance.
-  constexpr std::size_t kStanceOffset = 1 + kTickBytes + 4 + 1 + 4 + 9 + 6;
+  constexpr std::size_t kStanceOffset = 1 + kTickBytes + kSequenceBytes + 1 + 4 + 9 + 6;
   payload[kStanceOffset] = static_cast<std::byte>(3);
 
   EXPECT_EQ(Decode(payload).error(), DecodeError::kInvalidEnum);
 }
 
 // type, tick, acknowledged sequence, count, entity, position (9), velocity (6), then the stance byte.
-constexpr std::size_t kBodyStanceOffset = 1 + kTickBytes + 4 + 1 + 4 + 9 + 6;
+constexpr std::size_t kBodyStanceOffset = 1 + kTickBytes + kSequenceBytes + 1 + 4 + 9 + 6;
 
 TEST(ProtocolTest, AnExhaustedBodyRoundTripsInEveryStance) {
   AuthoritativeStateWire sent;
@@ -902,8 +904,8 @@ TEST(ProtocolTest, ABodyTravelsInEighteenBytesAndACommandInFifteen) {
   // type, tick, acknowledged sequence, count, entity, the body, its yaw, the
   // queued commands, then the recipient's rifle and health.
   EXPECT_EQ(Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}}).size(),
-            1 + kTickBytes + 4 + 1 + 4 + 18 + 3 + 1 + 16 + 4);
-  EXPECT_EQ(Encode(CommandsWire{.commands = {SequencedCommandWire{}}}).size(), 2 + 4 + 15 + kTickBytes);
+            1 + kTickBytes + kSequenceBytes + 1 + 4 + 18 + 3 + 1 + 16 + 4);
+  EXPECT_EQ(Encode(CommandsWire{.commands = {SequencedCommandWire{}}}).size(), 2 + kSequenceBytes + 15 + kTickBytes);
 }
 
 TEST(ProtocolTest, APositionTravelsAsThreeBytesPerAxisInMillimeterSteps) {
@@ -911,7 +913,7 @@ TEST(ProtocolTest, APositionTravelsAsThreeBytesPerAxisInMillimeterSteps) {
   body.body.position = Vec3(1.0F, -1.0F / 1024.0F, 0.0F);
   const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {body}});
   // type, tick, acknowledged sequence, count, entity, then x, y and z.
-  constexpr std::ptrdiff_t kPositionOffset = 1 + kTickBytes + 4 + 1 + 4;
+  constexpr std::ptrdiff_t kPositionOffset = 1 + kTickBytes + kSequenceBytes + 1 + 4;
 
   const BytesWire position(payload.begin() + kPositionOffset, payload.begin() + kPositionOffset + 9);
   EXPECT_EQ(position, BytesOf({0x00, 0x04, 0x00, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00}));

@@ -3,7 +3,6 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <expected>
 #include <memory>
 #include <optional>
@@ -71,7 +70,7 @@ struct World::Impl {
   // entity (rather than the systems closing over it directly) is what
   // replaces this.
   command::Command tick_command;
-  std::uint32_t tick_sequence = 0;
+  command::Sequence tick_sequence = 0;
   std::optional<Acknowledgement> tick_acknowledgement;
   State tick_state;
 
@@ -212,7 +211,7 @@ void World::Start(const math::Vec3& spawn, const parameters::Parameters& paramet
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
-State World::Tick(const command::Command& command, std::uint32_t sequence,
+State World::Tick(const command::Command& command, command::Sequence sequence,
                   const std::optional<Acknowledgement>& acknowledgement, float delta_time) {
   impl_->tick_command = command;
   impl_->tick_sequence = sequence;

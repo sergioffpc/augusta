@@ -19,7 +19,6 @@
 
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
-#include "augusta/counter.h"
 #include "augusta/harness_wire.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
@@ -151,7 +150,7 @@ struct Session::Impl {
   // one goes under. Sequences start at 1; 0 means none. They count this
   // connection's commands alone, so 32 bits outlast any session (ADR-0038).
   std::deque<SequencedCommand> unacknowledged;
-  std::uint32_t next_sequence = 1;
+  command::Sequence next_sequence = 1;
   // Network I/O thread only: a server can send messages that are refused as fast
   // as it likes, so their warnings are limited.
   logging::Throttle drop_warnings{std::chrono::seconds{1}};
@@ -347,7 +346,7 @@ struct Session::Impl {
                  "subsystem=harness event=dropped tick={} reason=\"state names a body not in the match\"", state.tick);
       return;
     }
-    if (current->authoritative.has_value() && !counter::IsNewer(state.tick, current->authoritative->tick)) {
+    if (current->authoritative.has_value() && state.tick <= current->authoritative->tick) {
       return;
     }
     Publish([&](ServerView& next) { next.authoritative = std::move(state); });
@@ -392,11 +391,11 @@ struct Session::Impl {
   }
 
   // Sends command under sequence with the commands server_view does not yet acknowledge.
-  void SendCommand(const ServerView& server_view, std::uint32_t sequence, const command::Command& command) {
+  void SendCommand(const ServerView& server_view, command::Sequence sequence, const command::Command& command) {
     // Commands the server has already processed need not go again.
     if (server_view.authoritative.has_value()) {
       while (!unacknowledged.empty() &&
-             !counter::IsNewer(unacknowledged.front().sequence, server_view.authoritative->acknowledged_sequence)) {
+             unacknowledged.front().sequence <= server_view.authoritative->acknowledged_sequence) {
         unacknowledged.pop_front();
       }
     }
@@ -566,7 +565,7 @@ prediction::State Session::Tick(const command::Command& command, float delta_tim
     impl.unacknowledged.clear();
     impl.started_match = server_view->matches_started;
   }
-  const std::uint32_t sequence = impl.next_sequence++;
+  const command::Sequence sequence = impl.next_sequence++;
   // A dead player's body and rifle are gone from the server: there is nothing
   // to predict or reconcile, and its commands keep only the stream in step.
   if (!server_view->OwnAlive()) {

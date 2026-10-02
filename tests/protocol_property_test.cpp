@@ -308,7 +308,7 @@ rc::Gen<JoinRefusedWire> JoinRefused() {
 
 rc::Gen<CommandsWire> Commands() {
   const auto sequenced = rc::gen::build<SequencedCommandWire>(
-      rc::gen::set(&SequencedCommandWire::sequence, rc::gen::arbitrary<std::uint32_t>()),
+      rc::gen::set(&SequencedCommandWire::sequence, rc::gen::arbitrary<augusta::command::Sequence>()),
       rc::gen::set(&SequencedCommandWire::command, Command()));
   return rc::gen::build<CommandsWire>(
       rc::gen::set(&CommandsWire::commands, UpTo<std::vector<SequencedCommandWire>>(kMaxCommandsPerMessage, sequenced)),
@@ -328,7 +328,7 @@ rc::Gen<AuthoritativeStateWire> AuthoritativeState() {
                                       rc::gen::set(&WeaponStateWire::burst_index, rc::gen::arbitrary<std::uint8_t>()));
   return rc::gen::build<AuthoritativeStateWire>(
       rc::gen::set(&AuthoritativeStateWire::tick, rc::gen::arbitrary<augusta::tick::Tick>()),
-      rc::gen::set(&AuthoritativeStateWire::acknowledged_sequence, rc::gen::arbitrary<std::uint32_t>()),
+      rc::gen::set(&AuthoritativeStateWire::acknowledged_sequence, rc::gen::arbitrary<augusta::command::Sequence>()),
       rc::gen::set(&AuthoritativeStateWire::bodies, UpTo<std::vector<EntityStateWire>>(kMaxPlayers, entity)),
       rc::gen::set(&AuthoritativeStateWire::rifle, rifle), rc::gen::set(&AuthoritativeStateWire::health, FiniteFloat()),
       rc::gen::set(&AuthoritativeStateWire::queued_commands, rc::gen::arbitrary<std::uint8_t>()));

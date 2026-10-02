@@ -1,22 +1,20 @@
 #include "augusta/reconciliation.h"
 
-#include <cstdint>
 #include <optional>
 
 #include "augusta/command.h"
-#include "augusta/counter.h"
 
 namespace augusta::prediction {
 
-void History::Record(std::uint32_t sequence, const command::Command& command, const Predicted& predicted) {
+void History::Record(command::Sequence sequence, const command::Command& command, const Predicted& predicted) {
   entries_.push_back(Entry{.sequence = sequence, .command = command, .predicted = predicted});
   if (entries_.size() > kMaxHistory) {
     entries_.pop_front();
   }
 }
 
-std::optional<Predicted> History::Acknowledge(std::uint32_t sequence) {
-  while (!entries_.empty() && counter::IsNewer(sequence, entries_.front().sequence)) {
+std::optional<Predicted> History::Acknowledge(command::Sequence sequence) {
+  while (!entries_.empty() && entries_.front().sequence < sequence) {
     entries_.pop_front();
   }
   if (entries_.empty() || entries_.front().sequence != sequence) {

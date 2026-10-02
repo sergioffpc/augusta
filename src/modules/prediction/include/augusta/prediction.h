@@ -109,7 +109,7 @@ struct State {
 /// its rifle after the command with this sequence, the newest of ours it has
 /// processed.
 struct Acknowledgement {
-  std::uint32_t sequence = 0;
+  command::Sequence sequence = 0;
   physics::BodyState body{};
   weapon::State rifle{};
 };
@@ -161,7 +161,7 @@ class World {
   // while it waits for input, so passing the same one again is harmless -
   // Reconciliation acts on each acknowledged sequence once. Returns the
   // tick's Prediction State.
-  State Tick(const command::Command& command, std::uint32_t sequence,
+  State Tick(const command::Command& command, command::Sequence sequence,
              const std::optional<Acknowledgement>& acknowledgement, float delta_time);
 
  private:

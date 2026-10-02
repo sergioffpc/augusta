@@ -19,10 +19,6 @@ add_executable(augusta_supervisor_tests supervisor_test.cpp)
 target_link_libraries(augusta_supervisor_tests PRIVATE augusta_supervisor GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_supervisor_tests)
 
-add_executable(augusta_counter_tests counter_test.cpp)
-target_link_libraries(augusta_counter_tests PRIVATE augusta_tick GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_counter_tests)
-
 add_executable(augusta_config_tests config_test.cpp)
 target_link_libraries(augusta_config_tests PRIVATE augusta_config GTest::gtest GTest::gtest_main)
 # The example configs are what a new install is copied from, so a test keeps them loading.
