@@ -18,6 +18,7 @@
 #include "augusta/networking.h"
 #include "augusta/physics.h"
 #include "augusta/renderer.h"
+#include "augusta/supervisor.h"
 #include "scene_loader.h"
 
 // augusta::runtime is ClientRuntime (ARCHITECTURE.md §5): the augustac
@@ -73,19 +74,11 @@ struct LoadedCharacter {
 // could not.
 using CharacterLoader = std::function<std::expected<LoadedCharacter, client::SceneError>(std::uint8_t)>;
 
-// A Prediction or Network I/O thread stopped on an exception (for one, the
-// transport rejecting the server address): which thread, and what it said.
-struct WorkerFailure {
-  std::string thread;
-  std::string reason;
-};
-
-// A sentence saying which thread failed and why, for logs and for the player.
-[[nodiscard]] std::string DescribeWorkerFailure(const WorkerFailure& failure);
-
 // Why Run() stopped without the player closing the window: the session ended
-// on its own, a character could not be loaded, or a worker thread failed.
-using Failure = std::variant<harness::Failure, client::SceneError, WorkerFailure>;
+// on its own, a character could not be loaded, or the Prediction or Network I/O
+// thread stopped on an exception (for one, the transport rejecting the server
+// address).
+using Failure = std::variant<harness::Failure, client::SceneError, supervisor::WorkerFailure>;
 
 // Owns one of every client-only module/World and the three fixed
 // threads ADR-0005 assigns them to. The client process constructs

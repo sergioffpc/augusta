@@ -18,6 +18,7 @@
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/renderer.h"
+#include "augusta/supervisor.h"
 #include "augusta/version.h"
 #include "runtime.h"
 #include "scene_loader.h"
@@ -157,8 +158,8 @@ std::string DescribeRunFailure(const augusta::runtime::Failure& failure, const s
   if (const auto* session = std::get_if<augusta::harness::Failure>(&failure)) {
     return augusta::harness::DescribeFailure(*session);
   }
-  if (const auto* worker = std::get_if<augusta::runtime::WorkerFailure>(&failure)) {
-    return augusta::runtime::DescribeWorkerFailure(*worker);
+  if (const auto* worker = std::get_if<augusta::supervisor::WorkerFailure>(&failure)) {
+    return augusta::supervisor::DescribeWorkerFailure(*worker);
   }
   return std::format("client pack {}: {}", pack_path.string(),
                      augusta::client::DescribeSceneError(std::get<augusta::client::SceneError>(failure)));

@@ -8,6 +8,7 @@
 #include <set>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -150,7 +151,7 @@ RC_GTEST_PROP(SimulationPropertyTest, StaminaStaysWithinTheBarWhateverThePlayerD
   world.AddPlayer(kPlayer, kSpawn, kCharacter);
 
   for (const Command& command : commands) {
-    const auto state = world.Tick({{.entity = kPlayer, .command = command}}, kTick);
+    const auto state = world.Tick({{.entity = kPlayer, .command = command}}, kTick).state;
     RC_ASSERT(state.bodies.size() == 1U);
     RC_ASSERT(state.bodies.front().body.stamina >= 0.0F);
     RC_ASSERT(state.bodies.front().body.stamina <= 1.0F);
@@ -189,7 +190,7 @@ RC_GTEST_PROP(SimulationPropertyTest, TheMagazineStaysWithinItsCapacityAndNoWind
 
   std::vector<std::size_t> fired;  // The ticks a round was fired on.
   for (std::size_t i = 0; i < commands.size(); ++i) {
-    const auto state = world.Tick({{.entity = kPlayer, .command = commands[i]}}, kTick);
+    const auto state = world.Tick({{.entity = kPlayer, .command = commands[i]}}, kTick).state;
     RC_ASSERT(state.bodies.size() == 1U);
     // Unsigned, so a magazine taken below zero would be far above its capacity.
     RC_ASSERT(state.bodies.front().rifle.rounds <= parameters.rifle.magazine_capacity);
@@ -266,8 +267,11 @@ RC_GTEST_PROP(SimulationPropertyTest, HealthNeverRisesNeverGoesBelowZeroAndReach
   std::map<augusta::simulation::EntityId, int> reached_zero = {{kPlayer, 0}, {kOther, 0}};
   std::size_t hits = 0;
   for (std::size_t i = 0; i < commands.size(); ++i) {
-    const auto state = world.Tick(
-        {{.entity = kPlayer, .command = commands[i]}, {.entity = kOther, .command = other_commands[i]}}, kTick);
+    const auto state =
+        world
+            .Tick({{.entity = kPlayer, .command = commands[i]}, {.entity = kOther, .command = other_commands[i]}},
+                  kTick)
+            .state;
     for (const auto& body : state.bodies) {
       RC_ASSERT(body.health >= 0.0F);
       RC_ASSERT(body.health <= health.at(body.entity));
@@ -314,8 +318,11 @@ RC_GTEST_PROP(SimulationPropertyTest, ADeadPlayerNeverComesBackFiresOrMoves, ())
 
   std::set<augusta::simulation::EntityId> alive = {kPlayer, kOther};
   for (std::size_t i = 0; i < commands.size(); ++i) {
-    const auto state = world.Tick(
-        {{.entity = kPlayer, .command = commands[i]}, {.entity = kOther, .command = other_commands[i]}}, kTick);
+    const auto state =
+        world
+            .Tick({{.entity = kPlayer, .command = commands[i]}, {.entity = kOther, .command = other_commands[i]}},
+                  kTick)
+            .state;
     // A round fired on the tick its shooter dies was fired while it lived.
     for (const auto& shot : state.shots) {
       RC_ASSERT(alive.contains(shot.shooter));
@@ -392,16 +399,16 @@ RC_GTEST_PROP(SimulationPropertyTest, AtMostOneMatchEndPerMatchAndAWinnerIsAlway
       world.AddPlayer(kPlayer, kSpawn, WideTarget(), {.session = sessions.at(kPlayer), .character = 1});
       world.AddPlayer(kOther, Vec3(0.0F, 0.0F, -6.0F), WideTarget(), {.session = sessions.at(kOther), .character = 1});
     }
-    const auto state = world.Tick(
+    const auto result = world.Tick(
         {{.entity = kPlayer, .command = commands[i]}, {.entity = kOther, .command = other_commands[i]}}, kTick);
-    died = died || !state.deaths.empty();
-    if (!state.match_end.has_value()) {
-      continue;
-    }
-    RC_ASSERT(++match_ends == 1);
-    if (const auto winner = state.match_end->winner) {
-      ++winners;
-      RC_ASSERT(std::ranges::any_of(state.alive, [&](auto entity) { return sessions.at(entity) == *winner; }));
+    died = died || !result.state.deaths.empty();
+    for (const augusta::simulation::PolicyAction& action : result.actions) {
+      const auto& end = std::get<augusta::simulation::MatchEnd>(action);
+      RC_ASSERT(++match_ends == 1);
+      if (const auto winner = end.winner) {
+        ++winners;
+        RC_ASSERT(std::ranges::any_of(result.state.alive, [&](auto entity) { return sessions.at(entity) == *winner; }));
+      }
     }
   }
   RC_CLASSIFY(winners > 0, "a winner was declared");
@@ -441,12 +448,12 @@ RC_GTEST_PROP(SimulationPropertyTest, AClientThatDivergedConvergesOnTheServersSt
   std::vector<Acknowledgement> answers;  // answers[i] is the server's to commands[i].
   augusta::prediction::State predicted{};
   for (std::size_t i = 0; i < commands.size(); ++i) {
-    const auto sequence = static_cast<std::uint32_t>(i + 1);
+    const auto sequence = static_cast<augusta::command::Sequence>(i + 1);
     std::vector<augusta::simulation::PlayerCommand> received;
     if (i >= losses_end || !lost.contains(i)) {
       received.push_back({.entity = kPlayer, .command = commands[i]});
     }
-    const augusta::simulation::EntityState answered = server.Tick(received, kTick).bodies.front();
+    const augusta::simulation::EntityState answered = server.Tick(received, kTick).state.bodies.front();
     answers.push_back({.sequence = sequence, .body = answered.body, .rifle = answered.rifle});
 
     std::optional<Acknowledgement> answer;

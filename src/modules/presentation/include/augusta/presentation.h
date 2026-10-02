@@ -25,7 +25,8 @@
 // augusta::prediction's fixed-tick Simulation thread. It translates the
 // fixed-tick Prediction State (augusta::prediction::State) into smooth,
 // frame-rate-independent visuals/audio, through the five ordered phases
-// ADR-0024 defines (see Phase below).
+// ADR-0024 runs until its Dynamics phase arrives with the first dynamic body
+// (see Phase below).
 //
 // Like augusta::simulation and augusta::prediction, World owns one Flecs
 // world (ADR-0001) internally, entirely encapsulated behind Impl

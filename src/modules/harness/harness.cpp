@@ -99,27 +99,32 @@ class Pending {
 
 }  // namespace
 
-// What the server has told this client. Immutable once published: the Network
-// I/O thread makes a new one for each message that changes it, and the
-// Prediction thread reads whichever is current.
-struct ServerView {
-  // The whole answer to a join request: the session, the tick rate and the
-  // parameters, all the server's for the whole run.
-  std::optional<Admission> accepted;
-  std::optional<JoinRefusal> refusal;
-  std::optional<Lobby> lobby;
-  // The last match's start, and how many have started: a new count is a new
-  // match for the prediction to start over in.
-  std::optional<MatchStart> match_start;
-  std::uint32_t matches_started = 0;
-  bool in_match = false;
-  // How the last match ended, until the next starts.
-  std::optional<MatchEnd> match_end;
-  // Only while in_match.
-  std::optional<AuthoritativeState> authoritative;
-  // The bodies of the match in progress whose Death has been told.
-  std::vector<EntityId> dead;
-};
+Phase ServerView::GetPhase() const {
+  if (in_match) {
+    return Phase::kMatch;
+  }
+  return accepted.has_value() ? Phase::kLobby : Phase::kNotAdmitted;
+}
+
+std::optional<EntityId> ServerView::OwnEntity() const {
+  if (!accepted.has_value() || !match_start.has_value()) {
+    return std::nullopt;
+  }
+  return EntityOf(*match_start, accepted->session);
+}
+
+// A Death and an update at zero health each say it is not, and either can
+// arrive first: the one is reliable, the other can overtake it.
+bool ServerView::OwnAlive() const {
+  const std::optional<EntityId> own = OwnEntity();
+  if (!in_match || !own.has_value()) {
+    return false;
+  }
+  if (authoritative.has_value() && authoritative->health <= 0.0F) {
+    return false;
+  }
+  return !std::ranges::contains(dead, *own);
+}
 
 struct Session::Impl {
   networking::Endpoint server;
@@ -145,7 +150,7 @@ struct Session::Impl {
   // one goes under. Sequences start at 1; 0 means none. They count this
   // connection's commands alone, so 32 bits outlast any session (ADR-0038).
   std::deque<SequencedCommand> unacknowledged;
-  std::uint32_t next_sequence = 1;
+  command::Sequence next_sequence = 1;
   // Network I/O thread only: a server can send messages that are refused as fast
   // as it likes, so their warnings are limited.
   logging::Throttle drop_warnings{std::chrono::seconds{1}};
@@ -367,31 +372,9 @@ struct Session::Impl {
     return {};
   }
 
-  // The body this client's own player controls, as the last Match start named it.
-  static std::optional<EntityId> OwnEntity(const ServerView& server_view) {
-    if (!server_view.accepted.has_value() || !server_view.match_start.has_value()) {
-      return std::nullopt;
-    }
-    return EntityOf(*server_view.match_start, server_view.accepted->session);
-  }
-
-  // Whether this client's own player is alive in the match in progress. A
-  // Death and an update at zero health each say it is not, and either can
-  // arrive first: the one is reliable, the other can overtake it.
-  static bool OwnAlive(const ServerView& server_view) {
-    const std::optional<EntityId> own = OwnEntity(server_view);
-    if (!server_view.in_match || !own.has_value()) {
-      return false;
-    }
-    if (server_view.authoritative.has_value() && server_view.authoritative->health <= 0.0F) {
-      return false;
-    }
-    return !std::ranges::contains(server_view.dead, *own);
-  }
-
   // What the server's state says about this client's own player: its body and its rifle.
   static std::optional<prediction::Acknowledgement> OwnAcknowledgement(const ServerView& server_view) {
-    const std::optional<EntityId> own = OwnEntity(server_view);
+    const std::optional<EntityId> own = server_view.OwnEntity();
     if (!own.has_value() || !server_view.authoritative.has_value()) {
       return std::nullopt;
     }
@@ -408,7 +391,7 @@ struct Session::Impl {
   }
 
   // Sends command under sequence with the commands server_view does not yet acknowledge.
-  void SendCommand(const ServerView& server_view, std::uint32_t sequence, const command::Command& command) {
+  void SendCommand(const ServerView& server_view, command::Sequence sequence, const command::Command& command) {
     // Commands the server has already processed need not go again.
     if (server_view.authoritative.has_value()) {
       while (!unacknowledged.empty() &&
@@ -485,6 +468,8 @@ void Session::ExchangeMessages() {
   }
 }
 
+std::shared_ptr<const ServerView> Session::GetServerView() const { return impl_->view.load(); }
+
 networking::ConnectionState Session::GetConnectionState() const { return impl_->network.GetState(); }
 
 std::optional<Failure> Session::GetFailure() const {
@@ -509,13 +494,7 @@ std::optional<SessionId> Session::GetSessionId() const {
   return server_view->accepted->session;
 }
 
-Phase Session::GetPhase() const {
-  const std::shared_ptr<const ServerView> server_view = impl_->view.load();
-  if (server_view->in_match) {
-    return Phase::kMatch;
-  }
-  return server_view->accepted.has_value() ? Phase::kLobby : Phase::kNotAdmitted;
-}
+Phase Session::GetPhase() const { return impl_->view.load()->GetPhase(); }
 
 std::optional<Lobby> Session::GetLobby() const { return impl_->view.load()->lobby; }
 
@@ -558,7 +537,7 @@ std::vector<HitConfirmation> Session::TakeHitConfirmations() { return impl_->hit
 
 std::vector<Death> Session::TakeDeaths() { return impl_->deaths.Take(); }
 
-bool Session::IsAlive() const { return Impl::OwnAlive(*impl_->view.load()); }
+bool Session::IsAlive() const { return impl_->view.load()->OwnAlive(); }
 
 std::optional<float> Session::GetHealth() const {
   const std::shared_ptr<const ServerView> server_view = impl_->view.load();
@@ -568,7 +547,7 @@ std::optional<float> Session::GetHealth() const {
   return server_view->authoritative->health;
 }
 
-std::optional<EntityId> Session::GetEntityId() const { return Impl::OwnEntity(*impl_->view.load()); }
+std::optional<EntityId> Session::GetEntityId() const { return impl_->view.load()->OwnEntity(); }
 
 prediction::State Session::Tick(const command::Command& command, float delta_time) {
   Impl& impl = *impl_;
@@ -586,10 +565,10 @@ prediction::State Session::Tick(const command::Command& command, float delta_tim
     impl.unacknowledged.clear();
     impl.started_match = server_view->matches_started;
   }
-  const std::uint32_t sequence = impl.next_sequence++;
+  const command::Sequence sequence = impl.next_sequence++;
   // A dead player's body and rifle are gone from the server: there is nothing
   // to predict or reconcile, and its commands keep only the stream in step.
-  if (!Impl::OwnAlive(*server_view)) {
+  if (!server_view->OwnAlive()) {
     command::Command unarmed = command;
     unarmed.fire = false;
     impl.SendCommand(*server_view, sequence, unarmed);

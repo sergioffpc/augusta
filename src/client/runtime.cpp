@@ -1,17 +1,14 @@
 #include "runtime.h"
 
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <exception>
 #include <format>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <set>
 #include <stdexcept>
-#include <string>
-#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -28,6 +25,7 @@
 #include "augusta/parameters.h"
 #include "augusta/prediction.h"
 #include "augusta/presentation.h"
+#include "augusta/supervisor.h"
 #include "augusta/tick.h"
 
 namespace augusta::runtime {
@@ -95,14 +93,14 @@ presentation::WorldSnapshot ToPresentation(const harness::AuthoritativeState& st
   return snapshot;
 }
 
-// session's newest Authoritative State update as presentation's
-// WorldSnapshot, or nullopt outside a match. An Authoritative State only
-// follows Join accepted, which told the tick rate.
-std::optional<presentation::WorldSnapshot> SnapshotOf(const harness::Session& session) {
-  const std::optional<std::uint8_t> tick_rate_hz = session.GetTickRate();
-  return session.GetAuthoritativeState().and_then([tick_rate_hz](const harness::AuthoritativeState& state) {
-    return tick_rate_hz.transform([&state](std::uint8_t rate) { return ToPresentation(state, rate); });
-  });
+// view's newest Authoritative State update as presentation's WorldSnapshot,
+// or nullopt outside a match. An Authoritative State only follows Join
+// accepted, which told the tick rate.
+std::optional<presentation::WorldSnapshot> SnapshotOf(const harness::ServerView& view) {
+  if (!view.authoritative.has_value() || !view.accepted.has_value()) {
+    return std::nullopt;
+  }
+  return ToPresentation(*view.authoritative, view.accepted->tick_rate_hz);
 }
 
 // Maps a Shot as the harness received it into presentation's own, which draws
@@ -129,13 +127,14 @@ std::vector<presentation::PlayerCharacter> CharactersOf(const std::optional<harn
   return characters;
 }
 
-// What session was told when the match it was last in ended, its winner named
-// by the body it played, from that match's Match start; nullopt before the first
-// ends and while one is in progress. A winner missing from Match start is none.
-std::optional<presentation::MatchEnd> MatchEndOf(const harness::Session& session) {
-  return session.GetMatchEnd().transform([&session](const harness::MatchEnd& end) {
+// What view says the match this client was last in ended with, its winner
+// named by the body it played, from that match's Match start; nullopt before
+// the first ends and while one is in progress. A winner missing from Match
+// start is none.
+std::optional<presentation::MatchEnd> MatchEndOf(const harness::ServerView& view) {
+  return view.match_end.transform([&view](const harness::MatchEnd& end) {
     presentation::MatchEnd match_end;
-    const std::optional<harness::MatchStart> start = session.GetMatchStart();
+    const std::optional<harness::MatchStart>& start = view.match_start;
     if (end.winner.has_value() && start.has_value()) {
       for (const harness::MatchPlayer& player : start->players) {
         if (player.session == *end.winner) {
@@ -159,32 +158,18 @@ command::Command WithView(command::Command command, const std::optional<presenta
   return command;
 }
 
-// Stops Impl's background threads and joins both, on scope exit -
-// including when unwinding past Run() due to an exception from the
-// Main/Render loop body. This is the only place thread cleanup happens;
-// ~ClientRuntime relies on Run() having already run it (see that
-// destructor's own doc comment in runtime.h).
-struct ThreadJoiner {
-  std::atomic<bool>& running;
-  std::thread& prediction_thread;
-  std::thread& network_thread;
+// Stops the background threads and joins both, on scope exit - including
+// when unwinding past Run() due to an exception from the Main/Render loop
+// body. This is the only place thread cleanup happens; ~ClientRuntime relies
+// on Run() having already run it (see that destructor's own doc comment in
+// runtime.h).
+struct WorkerJoiner {
+  supervisor::Supervisor& workers;
 
-  ~ThreadJoiner() {
-    running.store(false, std::memory_order_relaxed);
-    if (prediction_thread.joinable()) {
-      prediction_thread.join();
-    }
-    if (network_thread.joinable()) {
-      network_thread.join();
-    }
-  }
+  ~WorkerJoiner() { workers.StopAndJoin(); }
 };
 
 }  // namespace
-
-std::string DescribeWorkerFailure(const WorkerFailure& failure) {
-  return std::format("the {} thread failed: {}", failure.thread, failure.reason);
-}
 
 struct ClientRuntime::Impl {
   Config config;
@@ -202,44 +187,6 @@ struct ClientRuntime::Impl {
   std::optional<harness::Session> session;
   presentation::World presentation;
   renderer::Renderer renderer;
-
-  std::atomic<bool> running{false};
-  std::thread prediction_thread;
-  std::thread network_thread;
-
-  // The first worker thread to fail, which Run() returns: written by that
-  // thread (RunWorker), read by the Main/Render thread once per frame.
-  std::mutex worker_failure_mutex;
-  std::optional<WorkerFailure> worker_failure;
-
-  // Runs body as the whole of the named worker thread. An exception escaping a
-  // thread would terminate the process, so it is recorded instead and running
-  // cleared, which stops the other threads.
-  void RunWorker(std::string_view thread, void (Impl::*body)()) {
-    try {
-      (this->*body)();
-    } catch (const std::exception& error) {
-      RecordWorkerFailure(thread, error.what());
-    } catch (...) {
-      RecordWorkerFailure(thread, "unknown exception");
-    }
-  }
-
-  void RecordWorkerFailure(std::string_view thread, std::string_view reason) {
-    LE("subsystem=clientruntime event=worker_failed thread={} reason=\"{}\"", thread, reason);
-    {
-      const std::lock_guard<std::mutex> lock(worker_failure_mutex);
-      if (!worker_failure.has_value()) {
-        worker_failure = WorkerFailure{.thread = std::string(thread), .reason = std::string(reason)};
-      }
-    }
-    running.store(false, std::memory_order_relaxed);
-  }
-
-  std::optional<WorkerFailure> GetWorkerFailure() {
-    const std::lock_guard<std::mutex> lock(worker_failure_mutex);
-    return worker_failure;
-  }
 
   // What the Prediction thread's last tick left: the predicted states before
   // and after it, and when it was due and for how long, so a render frame
@@ -392,11 +339,11 @@ struct ClientRuntime::Impl {
   }
 
   // The tick rate the server sent when it admitted this client, or nullopt if
-  // running was cleared first. The tick rate is the server's (ADR-0039), so
+  // a stop was requested first. The tick rate is the server's (ADR-0039), so
   // nothing is predicted before it is known.
   std::optional<float> WaitForTickRate() {
     constexpr auto kPollInterval = std::chrono::milliseconds(10);
-    while (running.load(std::memory_order_relaxed)) {
+    while (!workers.StopRequested()) {
       if (const auto rate = session->GetTickRate()) {
         return rate;
       }
@@ -450,7 +397,7 @@ struct ClientRuntime::Impl {
   // Prediction thread body (ADR-0005): loop sampling local input and ticking
   // PredictionWorld on a fixed schedule (tick.h), at the server's tick rate
   // once it has joined, each tick paced to keep the server's queue of this
-  // client's commands short. Runs until running is cleared (by ThreadJoiner,
+  // client's commands short. Runs until a stop is requested (by WorkerJoiner,
   // or by a failing worker).
   void PredictionThreadMain() {
     const auto tick_rate_hz = WaitForTickRate();
@@ -463,7 +410,7 @@ struct ClientRuntime::Impl {
     tick::Clock::time_point deadline = tick::Clock::now();
     // The first tick has none before it to blend from.
     std::optional<prediction::State> previous;
-    while (running.load(std::memory_order_relaxed)) {
+    while (!workers.StopRequested()) {
       const nvtx3::scoped_range range{"Prediction Tick"};
       const tick::Clock::time_point tick_start = tick::Clock::now();
 
@@ -485,14 +432,14 @@ struct ClientRuntime::Impl {
   }
 
   // Network I/O thread body (ADR-0005): connects once, then pumps the
-  // connection until running is cleared (as for the Prediction thread), waiting
+  // connection until a stop is requested (as for the Prediction thread), waiting
   // kNetworkRoundWait between rounds rather than spinning a core. The
   // transport has no wait on incoming work, so that wait bounds how late a
   // received message is handled, and how long stopping takes.
   void NetworkThreadMain() {
     constexpr auto kNetworkRoundWait = std::chrono::milliseconds(1);
     session->Connect();
-    while (running.load(std::memory_order_relaxed)) {
+    while (!workers.StopRequested()) {
       {
         const nvtx3::scoped_range range{"Network PumpEvents"};
         session->PumpEvents();
@@ -510,13 +457,14 @@ struct ClientRuntime::Impl {
   // Main/Render thread only, as the upload is. Returns why a character could
   // not be loaded, if one could not.
   std::optional<client::SceneError> GetReadyForLobby() {
-    const std::optional<harness::Lobby> lobby = session->GetLobby();
-    if (session->GetPhase() != harness::Phase::kLobby || !lobby.has_value() || lobby->version == ready_version) {
+    const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
+    const std::optional<harness::Lobby>& lobby = view->lobby;
+    if (view->GetPhase() != harness::Phase::kLobby || !lobby.has_value() || lobby->version == ready_version) {
       return std::nullopt;
     }
     std::vector<std::uint8_t> others;
     for (const harness::RosterEntry& entry : lobby->roster) {
-      if (entry.session != session->GetSessionId()) {
+      if (entry.session != view->accepted->session) {
         others.push_back(entry.character);
       }
     }
@@ -546,10 +494,8 @@ struct ClientRuntime::Impl {
     if (presentation_has_parameters) {
       return;
     }
-    const std::optional<parameters::Parameters> parameters = session->GetParameters();
-    const std::optional<std::uint8_t> tick_rate_hz = session->GetTickRate();
-    if (parameters.has_value() && tick_rate_hz.has_value()) {
-      presentation.SetParameters(*parameters, 1.0F / static_cast<float>(*tick_rate_hz));
+    if (const std::optional<harness::Admission>& accepted = session->GetServerView()->accepted; accepted.has_value()) {
+      presentation.SetParameters(accepted->parameters, 1.0F / static_cast<float>(accepted->tick_rate_hz));
       presentation_has_parameters = true;
     }
   }
@@ -560,13 +506,12 @@ struct ClientRuntime::Impl {
   // ClientRuntime's edge (see SnapshotOf and CharactersOf above). Takes the
   // Shots, Hit confirmations and Deaths received since the last frame.
   //
-  // Two independent Session getters, not one view - safe here because
-  // harness::Session keeps an Authoritative State only once the Match start
-  // that names this client's body has been published (see harness.cpp's
-  // ServerView), so a GetAuthoritativeState() read before GetEntityId(), as
-  // below, can never race ahead of a GetEntityId() that is still nullopt.
+  // Everything the server has said is read from one Server view, so the
+  // state, the bodies it names and the match it belongs to are of one moment
+  // (ADR-0005), however the Network I/O thread interleaves with this one.
   presentation::FrameInput NextFrameInput() {
     const LatestTick latest = GetLatestTick();
+    const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
     presentation::FrameInput frame{
         .ticks = {.previous = latest.previous,
                   .latest = latest.latest,
@@ -574,16 +519,15 @@ struct ClientRuntime::Impl {
         .aim = ToPresentation(input.CurrentAim()),
         .fire = input.IsHeld(input::Control::kFire),
         .local_entity = std::nullopt,
-        .snapshot = SnapshotOf(*session),
-        .characters = CharactersOf(session->GetMatchStart()),
+        .snapshot = SnapshotOf(*view),
+        .characters = CharactersOf(view->match_start),
         .shots = {},
         .hit_confirmations = static_cast<std::uint32_t>(session->TakeHitConfirmations().size()),
         .deaths = {},
-        .health = session->GetHealth(),
-        .match_end = MatchEndOf(*session),
+        .health = view->authoritative.transform([](const harness::AuthoritativeState& state) { return state.health; }),
+        .match_end = MatchEndOf(*view),
     };
-    frame.local_entity =
-        session->GetEntityId().transform([](harness::EntityId entity) { return ToPresentation(entity); });
+    frame.local_entity = view->OwnEntity().transform([](harness::EntityId entity) { return ToPresentation(entity); });
     for (const harness::Shot& shot : session->TakeShots()) {
       frame.shots.push_back(ToPresentation(shot));
     }
@@ -609,6 +553,10 @@ struct ClientRuntime::Impl {
     renderer.SetOverlay({.crosshair = frame_state.crosshair, .hit_marker = frame_state.hit_marker});
   }
 
+  // The Prediction and Network I/O threads' stop request and first failure
+  // (ADR-0005). Last, so its threads are joined before anything they use goes.
+  supervisor::Supervisor workers;
+
   void SetShownView(const std::optional<presentation::ShownView>& view) {
     const std::lock_guard<std::mutex> lock(shown_view_mutex);
     shown_view = view;
@@ -629,12 +577,10 @@ ClientRuntime::ClientRuntime(const Config& config, Map map, const renderer::Scen
 ClientRuntime::~ClientRuntime() = default;
 
 std::optional<Failure> ClientRuntime::Run() {
-  impl_->running.store(true, std::memory_order_relaxed);
-  impl_->prediction_thread = std::thread([this] { impl_->RunWorker("prediction", &Impl::PredictionThreadMain); });
-  impl_->network_thread = std::thread([this] { impl_->RunWorker("network", &Impl::NetworkThreadMain); });
-  ThreadJoiner joiner{.running = impl_->running,
-                      .prediction_thread = impl_->prediction_thread,
-                      .network_thread = impl_->network_thread};
+  Impl& impl = *impl_;
+  impl.workers.Spawn("prediction", [&impl] { impl.PredictionThreadMain(); });
+  impl.workers.Spawn("network", [&impl] { impl.NetworkThreadMain(); });
+  const WorkerJoiner joiner{.workers = impl.workers};
 
   bool cursor_locked = impl_->input.CursorCaptured();
   impl_->renderer.SetCursorLocked(cursor_locked);
@@ -642,7 +588,7 @@ std::optional<Failure> ClientRuntime::Run() {
   std::optional<Failure> failure;
   while (!impl_->renderer.ShouldClose()) {
     // Logged by the worker, where it failed.
-    if (auto worker_failure = impl_->GetWorkerFailure(); worker_failure.has_value()) {
+    if (auto worker_failure = impl_->workers.Failure(); worker_failure.has_value()) {
       failure = std::move(*worker_failure);
       break;
     }

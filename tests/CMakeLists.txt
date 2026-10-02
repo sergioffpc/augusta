@@ -15,6 +15,10 @@ add_executable(augusta_tick_tests tick_test.cpp)
 target_link_libraries(augusta_tick_tests PRIVATE augusta_tick GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_tick_tests)
 
+add_executable(augusta_supervisor_tests supervisor_test.cpp)
+target_link_libraries(augusta_supervisor_tests PRIVATE augusta_supervisor GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_supervisor_tests)
+
 add_executable(augusta_config_tests config_test.cpp)
 target_link_libraries(augusta_config_tests PRIVATE augusta_config GTest::gtest GTest::gtest_main)
 # The example configs are what a new install is copied from, so a test keeps them loading.
@@ -99,6 +103,12 @@ target_compile_definitions(augusta_policy_tests PRIVATE
 # Links PhysX, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_policy_tests DISCOVERY_TIMEOUT 30)
 
+# What a hook's answer becomes once C++ validates it, apart from any script.
+add_executable(augusta_policy_actions_tests policy_actions_test.cpp)
+target_link_libraries(augusta_policy_actions_tests PRIVATE augusta_simulation GTest::gtest GTest::gtest_main)
+# Links PhysX through augusta_simulation, so the same first-launch cost applies as below.
+gtest_discover_tests(augusta_policy_actions_tests DISCOVERY_TIMEOUT 30)
+
 # The example scenario's shipped objectives.lua, loaded out of a pack built with
 # augusta_assets' private encoder and run through SimulationWorld (ADR-0013).
 add_executable(augusta_example_objectives_tests example_objectives_test.cpp)
@@ -129,6 +139,14 @@ target_link_libraries(augusta_send_flags_tests PRIVATE
   GTest::gtest GTest::gtest_main)
 # Links GameNetworkingSockets, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_send_flags_tests DISCOVERY_TIMEOUT 30)
+
+# What a transport event does to the peers is decided in a header private to
+# the networking module, tested apart from a live connection the same way.
+add_executable(augusta_transport_events_tests transport_events_test.cpp)
+target_include_directories(augusta_transport_events_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/networking)
+target_link_libraries(augusta_transport_events_tests PRIVATE augusta_networking GTest::gtest GTest::gtest_main)
+# Links GameNetworkingSockets, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_transport_events_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_physics_tests physics_test.cpp)
 target_link_libraries(augusta_physics_tests PRIVATE augusta_physics GTest::gtest GTest::gtest_main)

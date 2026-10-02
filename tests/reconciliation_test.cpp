@@ -56,7 +56,7 @@ TEST(HistoryTest, AcknowledgeReturnsTheRiflePredictedAfterThatCommand) {
 
 TEST(HistoryTest, AcknowledgingDiscardsWhatIsOlderAndTheStateItself) {
   History history;
-  for (std::uint32_t sequence = 1; sequence <= 5; ++sequence) {
+  for (augusta::command::Sequence sequence = 1; sequence <= 5; ++sequence) {
     history.Record(sequence, Command(1.0F), At(static_cast<float>(sequence)));
   }
 
@@ -144,7 +144,7 @@ TEST(HistoryTest, ReplayOfAnEmptyHistoryNeverRunsTheStep) {
 TEST(HistoryTest, OnlyTheMostRecentStatesAreKept) {
   History history;
   const auto total = static_cast<std::uint32_t>(kMaxHistory + 10);
-  for (std::uint32_t sequence = 1; sequence <= total; ++sequence) {
+  for (augusta::command::Sequence sequence = 1; sequence <= total; ++sequence) {
     history.Record(sequence, Command(1.0F), At(0.0F));
   }
 

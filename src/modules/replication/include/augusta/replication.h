@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "augusta/ballistics.h"
+#include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/simulation.h"
@@ -27,7 +28,7 @@ namespace augusta::replication {
 struct Recipient {
   simulation::EntityId entity{};
   /// The highest command sequence of this client that the tick processed, 0 if none.
-  std::uint32_t acknowledged_sequence = 0;
+  command::Sequence acknowledged_sequence = 0;
   /// How many of this client's commands the server still holds queued after the tick.
   std::uint8_t queued_commands = 0;
 };
@@ -47,7 +48,7 @@ struct Update {
   /// The server tick the bodies are from.
   tick::Tick tick = 0;
   /// The highest command sequence of the recipient that the tick processed, 0 if none.
-  std::uint32_t acknowledged_sequence = 0;
+  command::Sequence acknowledged_sequence = 0;
   /// Every dynamic body in the match.
   std::vector<EntityBody> bodies;
   /// The recipient's own rifle after the tick, for it to reconcile its

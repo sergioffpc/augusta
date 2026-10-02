@@ -49,7 +49,7 @@ class History {
   /// Remembers command, the one sent under this sequence, and predicted, the
   /// state after it, until the server answers that command. Sequences grow;
   /// beyond kMaxHistory the oldest is forgotten.
-  void Record(std::uint32_t sequence, const command::Command& command, const Predicted& predicted);
+  void Record(command::Sequence sequence, const command::Command& command, const Predicted& predicted);
 
   /// The server has answered the command with this sequence: returns the state
   /// predicted after it, to be compared with the server's, and discards it and
@@ -57,7 +57,7 @@ class History {
   /// that state is not held: it was already acknowledged (the server repeats an
   /// acknowledgement while it waits for input), is older than the history, or
   /// was never recorded. Whatever is older than sequence is discarded even then.
-  [[nodiscard]] std::optional<Predicted> Acknowledge(std::uint32_t sequence);
+  [[nodiscard]] std::optional<Predicted> Acknowledge(command::Sequence sequence);
 
   /// Runs step for each command held, oldest first, and keeps what it returns as
   /// the state predicted after that command: what those states are once the
@@ -69,7 +69,7 @@ class History {
 
  private:
   struct Entry {
-    std::uint32_t sequence;
+    command::Sequence sequence;
     command::Command command;
     Predicted predicted;
   };

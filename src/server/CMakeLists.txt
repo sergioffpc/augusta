@@ -60,7 +60,7 @@ add_library(augustad_runtime STATIC
 )
 target_include_directories(augustad_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_runtime
-  PUBLIC augustad_host augusta_networking augusta_parameters augusta_physics augusta_simulation
+  PUBLIC augustad_host augusta_networking augusta_parameters augusta_physics augusta_simulation augusta_supervisor
   PRIVATE augusta_assets augusta_logging augusta_tick
 )
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)

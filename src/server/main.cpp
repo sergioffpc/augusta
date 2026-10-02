@@ -258,7 +258,6 @@ int main(int argc, char** argv) {
   std::signal(SIGINT, HandleShutdownSignal);
   std::signal(SIGTERM, HandleShutdownSignal);
 
-  runtime.Run();
-
-  return 0;
+  // A failure was logged by the supervisor where it happened; it only sets the exit status here.
+  return runtime.Run().has_value() ? 1 : 0;
 }

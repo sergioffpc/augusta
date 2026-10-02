@@ -1,6 +1,8 @@
 #ifndef AUGUSTA_COMMAND_H_
 #define AUGUSTA_COMMAND_H_
 
+#include <cstdint>
+
 #include <glm/ext/quaternion_trigonometric.hpp>
 
 #include "augusta/math.h"
@@ -61,6 +63,13 @@ struct Command {
 [[nodiscard]] inline math::Quat ViewRotation(float yaw, float pitch) {
   return glm::angleAxis(yaw, math::Vec3(0.0F, 1.0F, 0.0F)) * glm::angleAxis(pitch, math::Vec3(1.0F, 0.0F, 0.0F));
 }
+
+/// The number a client gives each Command it sends (ADR-0038): from 1, one more
+/// per command, over one connection, and the acknowledged sequence that answers
+/// it. Wide enough never to wrap, as tick::Tick is, so every receiver orders
+/// sequences as plain numbers; everything that holds one, the wire included,
+/// takes its width from here.
+using Sequence = std::uint64_t;
 
 /// Where a view with this yaw and pitch looks, as a unit vector.
 [[nodiscard]] inline math::Vec3 ViewDirection(float yaw, float pitch) {

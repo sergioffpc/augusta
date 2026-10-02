@@ -21,18 +21,6 @@
 // accepts is decided after, by whoever takes it in.
 namespace augusta::harness {
 
-/// What the server said when it admitted this client, in the engine's terms.
-struct Admission {
-  /// The session the server assigned to this client.
-  SessionId session{};
-  /// The rate, in Hz, at which the server ticks and this client must.
-  std::uint8_t tick_rate_hz = 0;
-  /// The parameters this client must predict with.
-  parameters::Parameters parameters{};
-  /// This client's own character index (see RosterEntry::character).
-  std::uint8_t character = 1;
-};
-
 /// What this client asks when it joins, in the engine's terms.
 struct JoinRequest {
   /// Its engine version (augusta::EngineVersion).
@@ -45,7 +33,7 @@ struct JoinRequest {
 
 /// One tick's command under the sequence this client gave it.
 struct SequencedCommand {
-  std::uint32_t sequence = 0;
+  command::Sequence sequence = 0;
   command::Command command{};
 };
 

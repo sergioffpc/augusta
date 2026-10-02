@@ -9,6 +9,7 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -41,6 +42,7 @@ using augusta::simulation::PlayerCommand;
 using augusta::simulation::PlayerIdentity;
 using augusta::simulation::SessionId;
 using augusta::simulation::State;
+using augusta::simulation::TickResult;
 using augusta::simulation::World;
 
 constexpr std::uint8_t kTickRate = 60;
@@ -194,11 +196,14 @@ class Arena {
 
   static Vec3 Direction(std::size_t player) { return Vec3(-std::sin(Yaw(player)), 0.0F, -std::cos(Yaw(player))); }
 
-  State Record(State state) {
-    if (state.match_end.has_value()) {
-      ends_.emplace_back(state.tick, *state.match_end);
+  // Keeps the Match end Game policy took on the tick of result, if any; returns its State.
+  State Record(TickResult result) {
+    for (const augusta::simulation::PolicyAction& action : result.actions) {
+      if (const auto* end = std::get_if<augusta::simulation::MatchEnd>(&action)) {
+        ends_.emplace_back(result.state.tick, *end);
+      }
     }
-    return state;
+    return std::move(result.state);
   }
 
   World world_;
