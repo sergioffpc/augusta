@@ -1,5 +1,6 @@
 #include "augusta/config.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <expected>
 #include <filesystem>
@@ -781,7 +782,12 @@ TEST(DescribeConfigErrorTest, OmitsTheFileWhenThereIsNone) {
 class LoadConfigTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    directory_ = std::filesystem::temp_directory_path() / "augusta_config_test";
+    // Named after the running test: ctest runs every test in a process of its
+    // own, possibly in parallel, so no other test removes it while in use.
+    const ::testing::TestInfo& test = *::testing::UnitTest::GetInstance()->current_test_info();
+    std::string name = std::string("augusta_config_test_") + test.test_suite_name() + "_" + test.name();
+    std::ranges::replace(name, '/', '_');
+    directory_ = std::filesystem::temp_directory_path() / name;
     std::filesystem::remove_all(directory_);
     std::filesystem::create_directories(directory_);
   }
