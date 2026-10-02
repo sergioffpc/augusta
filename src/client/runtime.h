@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -74,6 +75,29 @@ struct LoadedCharacter {
 // could not.
 using CharacterLoader = std::function<std::expected<LoadedCharacter, client::SceneError>(std::uint8_t)>;
 
+struct Content {
+  math::Vec3 eye;
+  renderer::Scene scene;
+  Map map;
+  CharacterLoader load_character;
+  audio::CueSounds cue_sounds;
+};
+
+enum class ContentError {
+  kEyeLoading,
+  kSceneLoading,
+  kCharacterLoading,
+  kMapLoading,
+  kCueSoundsLoading,
+};
+
+[[nodiscard]] std::string_view DescribeContentError(ContentError error);
+
+// Loads startup content from the verified pack; the pack must outlive the
+// returned content and the ClientRuntime constructed from it.
+[[nodiscard]] std::expected<Content, ContentError> LoadClientContent(const assets::Pack& pack,
+                                                                     std::string_view character);
+
 // Why Run() stopped without the player closing the window: the session ended
 // on its own, a character could not be loaded, or the Prediction or Network I/O
 // thread stopped on an exception (for one, the transport rejecting the server
@@ -100,19 +124,13 @@ class ClientRuntime {
   // ClientRuntime doesn't call it itself since Init() is a one-time
   // process concern, not a per-instance one.
   //
-  // scene is what the Renderer draws every frame and map is what physics
-  // ticks against, both loaded from the client pack by the caller (see
-  // scene_loader.h and map.h), since where content comes from is the
-  // executable's business, not the orchestrator's. For the same reason the
-  // caller hands in eye, the local player's character's eye (scene_loader.h's
-  // LoadCharacterEye) that the camera follows the body at, cue_sounds, every
-  // cue's sound (cues.h), and
-  // load_character, which Run() calls in the Lobby for
-  // each character another player brings (ADR-0043); it must stay callable
-  // until Run() returns. Throws std::runtime_error if physics rejects a
-  // collision mesh.
-  ClientRuntime(const Config& config, Map map, const renderer::Scene& scene, const math::Vec3& eye,
-                const audio::CueSounds& cue_sounds, CharacterLoader load_character);
+  // Content is loaded from the client pack by the caller (see scene_loader.h
+  // and map.h), since where content comes from is the executable's business,
+  // not the orchestrator's. load_character is called in the Lobby for each
+  // character another player brings (ADR-0043); it must stay callable until
+  // Run() returns. Throws std::runtime_error if physics rejects a collision
+  // mesh.
+  ClientRuntime(const Config& config, Content content);
 
   // Run() always stops and joins the Simulation and Network I/O
   // threads it spawned before returning, including if the Main/Render
