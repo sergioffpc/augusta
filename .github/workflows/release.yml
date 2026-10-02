@@ -34,7 +34,7 @@ jobs:
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Bootstrap vcpkg
         shell: pwsh
-        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+        run: .\scripts\bootstrap-vcpkg.ps1
       - name: Configure vcpkg NuGet cache
         shell: pwsh
         run: |
@@ -103,7 +103,7 @@ jobs:
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Bootstrap vcpkg
         shell: pwsh
-        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+        run: .\scripts\bootstrap-vcpkg.ps1
       - name: Configure vcpkg NuGet cache
         shell: pwsh
         run: |

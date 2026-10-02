@@ -39,10 +39,24 @@ RUN ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
 # uses (manifest mode, <binaryDir>/vcpkg_installed): that configure then finds
 # them installed and builds none. Built after COPY src instead, a change to
 # any source rebuilt all of them. The scratch trees go in the same layer, so
-# the registry cache doesn't carry them.
-RUN ./third_party/vcpkg/vcpkg install --x-install-root=build/x64-linux/vcpkg_installed \
-    && rm -rf third_party/vcpkg/buildtrees third_party/vcpkg/packages third_party/vcpkg/downloads \
-      /root/.cache/vcpkg
+# the registry cache doesn't carry them. vcpkg retries one source download,
+# but a short GitHub outage can still exhaust that retry budget (for example,
+# PhysX returned HTTP 504 in CI). Retry the whole install: work and downloads
+# already completed by earlier attempts remain available. The cache mount also
+# preserves downloaded source archives for later steps using this builder,
+# without putting them in the final image.
+RUN --mount=type=cache,target=/workspace/third_party/vcpkg/downloads \
+    set -e; \
+    for attempt in 1 2 3; do \
+      if ./third_party/vcpkg/vcpkg install --x-install-root=build/x64-linux/vcpkg_installed; then \
+        break; \
+      fi; \
+      if [ "$attempt" -eq 3 ]; then \
+        exit 1; \
+      fi; \
+      sleep "$((attempt * 15))"; \
+    done; \
+    rm -rf third_party/vcpkg/buildtrees third_party/vcpkg/packages /root/.cache/vcpkg
 
 COPY src src
 COPY tests tests
