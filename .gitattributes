@@ -10,6 +10,9 @@
 # Cooked packs and raw Ed25519 key files are bytes, whatever they happen to
 # contain (tests/fixtures/example-packs).
 *.pack filter=lfs diff=lfs merge=lfs -text
+# Except the golden packs, kept as plain bytes: the C++ test jobs load them
+# without fetching LFS objects (tools/README.md, "Golden packs").
+tests/fixtures/example-packs/*.pack -filter -diff -merge binary
 *.png filter=lfs diff=lfs merge=lfs -text
 *.key binary
 *.pub binary
