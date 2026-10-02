@@ -110,9 +110,9 @@ struct RemotePlayer {
   /// turns left (a view's yaw). Its mesh turns with it about its origin.
   float yaw = 0.0F;
   math::Vec3 color = kDefaultRemotePlayerColor;
-  /// The character index whose mesh this player is drawn with; a player whose
-  /// index has no mesh is not drawn.
-  std::uint8_t character = 0;
+  /// The character, by its path, whose mesh this player is drawn with; a player
+  /// whose character has no mesh is not drawn.
+  std::string character;
 };
 
 /// One tracer, in world space: a streak from tail, where its bullet was a tick
@@ -231,7 +231,7 @@ class Renderer {
   /// the Lobby, never during a match (ADR-0043).
   /// From the Main/Render thread. Throws std::runtime_error if a mesh index is
   /// out of range for its positions.
-  void SetCharacterMesh(std::uint8_t character, const SceneMesh& mesh);
+  void SetCharacterMesh(const std::string& character, const SceneMesh& mesh);
 
   /// Replaces the drawn remote-player instances via a persistently-mapped
   /// upload-heap buffer - unlike SetScene/SetCharacterMesh, cheap enough to

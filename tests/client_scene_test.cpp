@@ -187,21 +187,21 @@ TEST(DescribeSceneErrorTest, NamesTheAssetThatFailedToResolve) {
   EXPECT_EQ(mesh, "mesh Root/Missing of node Root not found");
 }
 
-// A scenario's characters, in manifest order: index 1 is the sniper, 2 the medic.
+// A scenario's characters.
 const std::vector<std::string> kCharacters = {"characters/sniper", "characters/medic"};
 
 TEST(CharactersToLoadTest, AreTheOtherPlayersCharactersNotLoadedYetEachOnce) {
-  const std::vector<std::uint8_t> others = {3, 1, 3, 2};
+  const std::vector<std::string> others = {"c", "a", "c", "b"};
 
-  EXPECT_EQ(CharactersToLoad(others, {}), (std::vector<std::uint8_t>{3, 1, 2}));
-  EXPECT_EQ(CharactersToLoad(others, {1}), (std::vector<std::uint8_t>{3, 2}));
-  EXPECT_TRUE(CharactersToLoad(others, {1, 2, 3}).empty());
+  EXPECT_EQ(CharactersToLoad(others, {}), (std::vector<std::string>{"c", "a", "b"}));
+  EXPECT_EQ(CharactersToLoad(others, {"a"}), (std::vector<std::string>{"c", "b"}));
+  EXPECT_TRUE(CharactersToLoad(others, {"a", "b", "c"}).empty());
   EXPECT_TRUE(CharactersToLoad({}, {}).empty());
 }
 
-TEST(LoadCharacterMeshTest, ResolvesTheVisualMeshOfTheCharacterAnIndexNames) {
+TEST(LoadCharacterMeshTest, ResolvesTheVisualMeshOfTheCharacterAPathNames) {
   std::string resolved;
-  const auto mesh = LoadCharacterMesh(kCharacters, 2, [&](std::string_view path) {
+  const auto mesh = LoadCharacterMesh(kCharacters, "characters/medic", [&](std::string_view path) {
     resolved = path;
     return std::expected<MeshData, ResolveError>(Triangle());
   });
@@ -215,7 +215,7 @@ TEST(LoadCharacterMeshTest, ResolvesTheVisualMeshOfTheCharacterAnIndexNames) {
 }
 
 TEST(LoadCharacterMeshTest, AMissingVisualMeshIsASceneErrorNamingTheCharacter) {
-  const auto mesh = LoadCharacterMesh(kCharacters, 1, ResolveTriangle());
+  const auto mesh = LoadCharacterMesh(kCharacters, "characters/sniper", ResolveTriangle());
 
   ASSERT_FALSE(mesh.has_value());
   EXPECT_EQ(mesh.error().code, SceneErrorCode::kCharacterMeshUnresolved);
@@ -225,13 +225,13 @@ TEST(LoadCharacterMeshTest, AMissingVisualMeshIsASceneErrorNamingTheCharacter) {
   EXPECT_NE(DescribeSceneError(mesh.error()).find("characters/sniper"), std::string::npos);
 }
 
-TEST(LoadCharacterMeshTest, AnIndexOutsideThePacksCharacterListIsASceneError) {
-  for (const std::uint8_t index : {std::uint8_t{0}, std::uint8_t{3}, std::uint8_t{255}}) {
-    const auto mesh = LoadCharacterMesh(kCharacters, index, ResolveTriangle());
+TEST(LoadCharacterMeshTest, ACharacterOutsideThePacksCharacterListIsASceneError) {
+  for (const std::string_view character : {"", "characters/nobody", "characters/medic/"}) {
+    const auto mesh = LoadCharacterMesh(kCharacters, character, ResolveTriangle());
 
-    ASSERT_FALSE(mesh.has_value()) << static_cast<int>(index);
+    ASSERT_FALSE(mesh.has_value()) << character;
     EXPECT_EQ(mesh.error().code, SceneErrorCode::kUnknownCharacter);
-    EXPECT_EQ(mesh.error().subject, std::to_string(index));
+    EXPECT_EQ(mesh.error().subject, character);
     EXPECT_FALSE(DescribeSceneError(mesh.error()).empty());
   }
 }

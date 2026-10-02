@@ -30,7 +30,7 @@ it catches up. A departure never does.
 
 **The match starts when the Lobby is full and everyone is Ready.** At that point
 the server closes the Lobby and sends one reliable Match start message. It lists
-every player in the match with their character index, the Entity ID of the
+every player in the match with their character, the Entity ID of the
 body they control (ADR-0038) and its Spawn point, which Game policy assigns
 (ADR-0023). After
 that, the set of players can only shrink.
@@ -61,11 +61,11 @@ to leave.
 
 ## Consequences
 
-- **The character index leaves the Authoritative State.** ADR-0042 put it in
-  every update only because a player could first appear mid-match through that
-  unreliable channel. The Lobby updates and Match start now carry each player's
-  index reliably, and the set of players is fixed before the first tick, so the
-  per-tick byte is dropped.
+- **No player's character rides in the Authoritative State.** A player could
+  first appear mid-match only through that unreliable channel, so each update
+  would have had to name every player's character. The Lobby updates and Match
+  start carry each player's character reliably instead, and the set of players
+  is fixed before the first tick (ADR-0042).
 - **The mid-match Roster in Join accepted goes away.** The Lobby's membership
   replaces it. The server sends it to everyone in the Lobby whenever it
   changes.

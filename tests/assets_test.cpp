@@ -499,8 +499,7 @@ TEST_F(PackTest, APackWithoutTheCharacterListIsAResolveError) {
   EXPECT_EQ(pack->ResolveCharacters().error(), augusta::assets::ResolveError::kNotFound);
 }
 
-// A character index is one byte with zero never valid (ADR-0042), so a list
-// longer than kMaxCharacters could name a character no index can reach.
+// kMaxCharacters bounds the character list a pack is read with (ADR-0042).
 TEST_F(PackTest, ACharacterListLongerThanTheLimitIsTooLargeToEncodeAndCorruptToResolve) {
   const std::vector<std::string> too_many(augusta::assets::kMaxCharacters + 1, "characters/player");
   const auto blob = augusta::assets::EncodeCharactersBlob(too_many);

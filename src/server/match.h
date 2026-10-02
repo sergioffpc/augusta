@@ -44,8 +44,8 @@ enum class EntityId : std::uint32_t {};
 /// One player in the Lobby.
 struct RosterEntry {
   SessionId session{};
-  /// Its character index: 1-based position in the scenario's character list (ADR-0042).
-  std::uint8_t character = 1;
+  /// Its character, by its path relative to `authoring/`: one of the scenario's (ADR-0042).
+  std::string character;
 };
 
 /// Who is in the Lobby, under the version that names this membership.
@@ -61,7 +61,8 @@ struct MatchPlayer {
   SessionId session{};
   /// The body the player's commands move for the whole match.
   EntityId entity{};
-  std::uint8_t character = 1;
+  /// Its character (see RosterEntry::character).
+  std::string character;
 };
 
 /// Who a match starts with.
@@ -82,8 +83,8 @@ struct MatchEnd {
 struct Admission {
   /// The name the server gave the peer's player.
   SessionId session{};
-  /// The character it plays.
-  std::uint8_t character = 1;
+  /// The character it plays (see RosterEntry::character).
+  std::string character;
 };
 
 /// What a peer asks when it joins.
@@ -204,7 +205,7 @@ class Match {
  private:
   struct Member {
     SessionId session;
-    std::uint8_t character;
+    std::string character;
     // The Roster version this player's client last loaded for; 0 for none.
     std::uint32_t ready_version = 0;
   };

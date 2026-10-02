@@ -29,15 +29,15 @@ refusal by its own `JoinRefusal`; `tests/protocol_boundary.cmake` fails the buil
 headers names the protocol, or a `presentation` header the harness.
 
 **Extended by ADR-0042**: Join request also carries the chosen character's path,
-Join refused gains the *unknown character* reason, and Join accepted, each Roster
-entry and each player in Authoritative State carry a character index.
+Join refused gains the *unknown character* reason, and Join accepted names the
+player's own character by the same path.
 
 **Extended by ADR-0043**: Join refused gains *match in progress* (and *match
 full* is renamed *lobby full*, same value), a reliable Lobby update replaces the
 Roster in Join accepted, the client sends Ready naming the Lobby version it
 loaded for, and reliable Match start and Match end messages bound each match.
 The spawn position moves from Join accepted to Match start, which gives every
-player's. The per-player character index leaves Authoritative State.
+player's. Each Lobby entry and each player in Match start carries its character's path.
 
 **Wire shape.** One message is one transport payload: a one-byte `MessageType`
 followed by that type's fields, fixed-width and little-endian; a string is a
@@ -151,13 +151,13 @@ supersedes is unreliable.
 | Message | Direction | Reliability | Fields |
 | --- | --- | --- | --- |
 | Join request | client → server | reliable | engine version, client pack hash, the chosen character's path (ADR-0042) |
-| Join accepted | server → client | reliable | session ID, the server's tick rate, the parameters to predict with (the Player count, the stamina rules, the rifle with its recoil pattern of at most 64 kicks, its ammo with damage by body part, and the starting health), the player's own character index |
+| Join accepted | server → client | reliable | session ID, the server's tick rate, the parameters to predict with (the Player count, the stamina rules, the rifle with its recoil pattern of at most 64 kicks, its ammo with damage by body part, and the starting health), the player's own character's path (ADR-0042) |
 | Join refused | server → client | reliable | reason: version mismatch, pack mismatch, unknown character, match in progress, lobby full |
 | Commands | client → server | unreliable | up to 8 commands, oldest first: sequence, movement direction, yaw, pitch, one byte holding the sprint, ADS, fire and reload flags (bits 0-3) and the desired stance (bits 4-5), and the view the command was sampled against (ADR-0044) as one byte for how many ticks before the message's view tick its own is and one for its fraction; then the message's view tick, the newest server tick any of its commands was sampled against |
 | Authoritative State | server → client | unreliable | server tick, the recipient's acknowledged command sequence, per body (at most 8): entity ID, position, velocity, one byte holding the stance (bits 0-1) and the exhausted flag (bit 2), stamina, the yaw it faces; then one byte: how many of the recipient's commands the server still holds queued after the tick; then the recipient's own rifle as of the tick, to reconcile its predicted one against (ADR-0004): one byte for the rounds in its magazine, the time until its next round may fire and the time its reload still takes, each a 32-bit float, one byte for the rounds its Burst has fired, and its Recoil offset as a pitch and a yaw; then the recipient's own health as a 32-bit float, 0 once it has died. A dead player's body is not in the list |
-| Lobby | server → client | reliable | the Roster's version, and every player in the Lobby (at most 8, the recipient included) with session ID and character index (ADR-0043) |
+| Lobby | server → client | reliable | the Roster's version, and every player in the Lobby (at most 8, the recipient included) with session ID and character's path (ADR-0043) |
 | Ready | client → server | reliable | the Lobby version the client loaded for (ADR-0043) |
-| Match start | server → client | reliable | every player in the Match (at most 8, the recipient included): session ID, the entity ID of its body, character index, spawn position (ADR-0043) |
+| Match start | server → client | reliable | every player in the Match (at most 8, the recipient included): session ID, the entity ID of its body, character's path, spawn position (ADR-0043) |
 | Match end | server → client | reliable | the Match is over and its players are back in the Lobby (ADR-0043), sent to every player still in it after the deaths of its last tick: the session ID of the winner Game policy declared (US-14), or 0 for a draw (session IDs start at 1) |
 | Shot | server → client | reliable | one round a player fired, sent to every player in the Match, the shooter included: the entity ID of the shooter's body, the server tick it was fired on, its origin, and its direction as a yaw and a pitch (ADR-0044) |
 | Hit confirmation | server → client | reliable | one round the recipient fired that hit a player, sent to the shooter alone: the entity ID of the body hit, one byte for the body part (head, torso or limb, from 1), and the damage as a 32-bit float, as the Parameters give it (ADR-0044) |

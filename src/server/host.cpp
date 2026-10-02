@@ -137,10 +137,10 @@ simulation::CharacterHitbox ToSimulation(const assets::HitboxData& hitbox, const
   return result;
 }
 
-// Each of characters as SimulationWorld takes it, in the same order. Built
-// with the simulation, before the socket exists, for the same reason.
-std::vector<simulation::Character> ToSimulation(const std::vector<Character>& characters) {
-  std::vector<simulation::Character> result;
+// Each of characters as SimulationWorld takes it, by its path. Built with the
+// simulation, before the socket exists, for the same reason.
+std::unordered_map<std::string, simulation::Character> ToSimulation(const std::vector<Character>& characters) {
+  std::unordered_map<std::string, simulation::Character> result;
   result.reserve(characters.size());
   for (const Character& character : characters) {
     simulation::Character converted{.eye = character.eye, .hitboxes = {}};
@@ -148,7 +148,7 @@ std::vector<simulation::Character> ToSimulation(const std::vector<Character>& ch
     for (const assets::HitboxData& hitbox : character.hitboxes) {
       converted.hitboxes.push_back(ToSimulation(hitbox, character.path));
     }
-    result.push_back(std::move(converted));
+    result.emplace(character.path, std::move(converted));
   }
   return result;
 }
@@ -243,9 +243,9 @@ struct Host::Impl {
   // changes, so neither needs the lock.
   const std::uint8_t tick_rate_hz;
   const parameters::Parameters parameters;
-  // The scenario's characters as SimulationWorld takes them, by index - 1
+  // The scenario's characters as SimulationWorld takes them, by path
   // (ADR-0042), and the Map's Spawn points; neither changes either.
-  const std::vector<simulation::Character> characters;
+  const std::unordered_map<std::string, simulation::Character> characters;
   const std::vector<math::Vec3> spawn_points;
 
   // Thread-safe by the transport's contract, used from both threads.
@@ -537,7 +537,7 @@ struct Host::Impl {
       entrants.push_back(
           simulation::MatchPlayer{.entity = ToSimulation(player.entity),
                                   .identity = {.session = ToSimulation(player.session), .character = player.character},
-                                  .character = characters.at(player.character - 1)});
+                                  .character = characters.at(player.character)});
       bodies.emplace(player.session, player.entity);
       players.at(player.session).commands = CommandQueue{tick_rate_hz};
       sessions.push_back(player.session);

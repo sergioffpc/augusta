@@ -1,4 +1,4 @@
-# Character Selection: Chosen in the Client Config, Validated at Join, Replicated as an Index
+# Character Selection: Chosen in the Client Config, Validated at Join, Named by Path
 
 A scenario can now compose more than one character (ADR-0041), and a character
 is gameplay, not just appearance: its `Collider` ships in the server pack
@@ -8,11 +8,10 @@ how every client learns every other player's character. It extends the message
 catalogue of ADR-0038.
 
 **Changed by ADR-0043**: a Lobby now comes before every match and no one joins
-mid-match. The character index therefore rides in the Lobby updates and the
-Match start message instead of every Authoritative State, and the Join checks
-gain *match in progress* before *lobby full*. How the choice is made (the client
-config), validated (at join) and addressed (by index into the pack's list) is
-unchanged.
+mid-match. Each player's character therefore rides in the Lobby updates and the
+Match start message, never in an Authoritative State, and the Join checks gain
+*match in progress* before *lobby full*. How the choice is made (the client
+config), validated (at join) and named (by its path) is unchanged.
 
 **The choice comes from the client config.** `augustac.yaml` (ADR-0034) gains a
 required `player.character` key naming a character by its path relative to
@@ -25,37 +24,31 @@ screen.) A future UI only changes who fills in
 the value, not the protocol beneath it.
 
 **The server validates it at join and has the final word.** The Join request
-carries the character path next to the engine version, as a string: it is sent
-once per session, so its size doesn't matter, and it keeps the client from
-depending on the manifest's order to name its own choice. The server admits the
+carries the character path next to the engine version. The server admits the
 player only if the path is one of its scenario's characters, and otherwise
 refuses with a new Join refused reason, *unknown character*. Where this check
 falls among the others is stated in ADR-0043. The character is fixed for the
 life of the session: no message changes it after admission.
 
-**Every other message names a character by index.** Both packs of a scenario are
-cooked from the same manifest, so the cooker records its `characters` list, in
-manifest order, in both the client and the server pack. A character's
-**character index** is its 1-based position in that list, so a zeroed byte is
-never valid, following ADR-0038's enum rule. That caps a scenario at 255
-characters. Join accepted tells the joining player its own index, and each
-player in a Lobby update and in Match start carries one (ADR-0043).
-A client drops a message whose index is outside its own pack's list, as it drops
-any message that does not decode.
+**Every message names a character by its path.** Join accepted tells the
+joining player its own character, and each player in a Lobby update and in
+Match start carries theirs (ADR-0043), each as the same string the Join request
+carries, at most 64 bytes. These messages are reliable and sent only when the
+Lobby changes or a Match starts, never per tick, so a string's size doesn't
+matter. A name means the same in both packs whatever order the manifest lists
+them in, reads the same in a log line, and is what Game policy sees of a
+player's character (ADR-0022).
 
-**_Superseded by ADR-0043:_ the index rode in every Authoritative State, not in
-a join event.** Now that no one joins a Match in progress, the Lobby updates and
-Match start carry it reliably and the per-tick byte is gone. The reasoning held
-while players could join mid-match: such a player first reached a client
-through the Authoritative State, which is unreliable (ADR-0038). Putting the
-index in that update made each update self-sufficient: a client never saw a
-player whose character it didn't know, and no ordering between a reliable and
-an unreliable channel had to be handled. The cost was at most 8 bytes per tick.
+Both packs of a scenario are cooked from the same manifest, so the cooker
+records its `characters` list in both the client and the server pack: the
+server checks a join against it, and the client checks each character it is
+told about against its own. A client told a character its pack does not list
+cannot draw that player and stops, as it does for any character it cannot load.
 
 **The client draws each player as its character.** The client loads the visual
-mesh of each character it meets in the Lobby (ADR-0043), keyed by index and
+mesh of each character it meets in the Lobby (ADR-0043), keyed by path and
 found at `<character path>/Character/Visual` (ADR-0040), and the renderer draws
-each remote player with the mesh its index names. This replaces the single fixed
+each remote player with the mesh its character names. This replaces the single fixed
 mesh drawn for everyone, which stood in only while no selection existed.
 
 ## Considered Options
@@ -67,15 +60,16 @@ mesh drawn for everyone, which stood in only while no selection existed.
   comes from.
 - **The client requests and the server may override**: rejected for now as
   machinery with no rule to drive it yet. If policy ever needs to substitute a
-  character, Join accepted already carries the player's own index, so the server
-  could return a different one without a wire change.
-- **A reliable "player joined" message carrying the character instead of a
-  per-tick index**: rejected. The unreliable Authoritative State can arrive
-  before it, so the client would have to hold or hide a player whose character
-  it doesn't know yet. That is an ordering problem the per-tick byte avoids.
-- **The character path as a string in every Authoritative State**: rejected,
-  because it costs about 20–30 bytes per player per tick on the one channel
-  whose size matters.
+  character, Join accepted already carries the player's own character, so the
+  server could return a different one without a wire change.
+- **A character index, its 1-based position in the pack's list, in one byte**:
+  rejected. It saves up to 63 bytes per player, but only in the Lobby updates
+  and Match start, which are rare, while it ties the meaning of every message
+  to the manifest's order, makes logs name a number, and hands Game policy a
+  number to look up instead of the character itself.
+- **The character in every Authoritative State**: rejected. ADR-0043 settles
+  every player's character before a Match's first tick, so nothing per tick
+  needs it, and the one channel whose size matters would pay for it.
 - **Fall back to the first character in the manifest on an unknown choice**:
   rejected, because the player would silently play something they didn't pick.
   A refusal with a reason matches how a version mismatch is already treated.

@@ -5,9 +5,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include <flecs.h>
@@ -101,7 +103,7 @@ struct World::Impl {
   // (SetCharacterEye).
   bool spectating = false;
   Spectator spectator;
-  std::map<std::uint8_t, math::Vec3> character_eyes;
+  std::map<std::string, math::Vec3, std::less<>> character_eyes;
 
   // Every other player's buffered updates, on the server's timeline, and the
   // render side's estimate of that timeline's current time, which render frame
@@ -230,14 +232,14 @@ struct World::Impl {
     last_recorded_tick = world.tick;
   }
 
-  // The character of the player whose body entity is, or 0 if none is.
-  [[nodiscard]] std::uint8_t CharacterOf(EntityId entity) const {
+  // The character of the player whose body entity is, or empty if none is.
+  [[nodiscard]] std::string CharacterOf(EntityId entity) const {
     for (const PlayerCharacter& player : input.characters) {
       if (player.entity == entity) {
         return player.character;
       }
     }
-    return 0;
+    return {};
   }
 
   void OnCamera(float delta_time) {
@@ -291,7 +293,7 @@ struct World::Impl {
   }
 
   // The eye standing of character, or the local player's character's if it was never set.
-  [[nodiscard]] math::Vec3 EyeOf(std::uint8_t character) const {
+  [[nodiscard]] math::Vec3 EyeOf(const std::string& character) const {
     const auto found = character_eyes.find(character);
     return found != character_eyes.end() ? found->second : eye;
   }
@@ -354,7 +356,7 @@ void World::SetParameters(const parameters::Parameters& parameters, float tick_d
   impl_->ads_field_of_view = parameters.rifle.ads_field_of_view;
 }
 
-void World::SetCharacterEye(std::uint8_t character, const math::Vec3& eye) {
+void World::SetCharacterEye(const std::string& character, const math::Vec3& eye) {
   impl_->character_eyes.insert_or_assign(character, eye);
 }
 

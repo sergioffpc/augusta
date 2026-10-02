@@ -1,7 +1,6 @@
 #ifndef AUGUSTA_RUNTIME_H_
 #define AUGUSTA_RUNTIME_H_
 
-#include <cstdint>
 #include <expected>
 #include <functional>
 #include <memory>
@@ -70,10 +69,10 @@ struct LoadedCharacter {
   math::Vec3 eye{};
 };
 
-// Loads the character with the given index from the client pack
+// Loads the character with the given path from the client pack
 // (client::LoadCharacterMesh and client::LoadCharacterEye), or says why it
 // could not.
-using CharacterLoader = std::function<std::expected<LoadedCharacter, client::SceneError>(std::uint8_t)>;
+using CharacterLoader = std::function<std::expected<LoadedCharacter, client::SceneError>(std::string_view)>;
 
 struct Content {
   math::Vec3 eye;

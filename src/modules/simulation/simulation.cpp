@@ -205,6 +205,10 @@ scripting::Field BoolField(std::string key, bool value) {
   return scripting::Field{.key = std::move(key), .value = {.data = value}};
 }
 
+scripting::Field StringField(std::string key, std::string value) {
+  return scripting::Field{.key = std::move(key), .value = {.data = std::move(value)}};
+}
+
 // One player in the Match as Game policy sees it (ADR-0022).
 struct ViewedPlayer {
   EntityId entity{};
@@ -219,7 +223,7 @@ struct ViewedPlayer {
 scripting::Value PlayerView(const ViewedPlayer& player) {
   scripting::Value::Record record{
       BoolField("alive", player.alive),
-      NumberField("character", player.identity.character),
+      StringField("character", player.identity.character),
       NumberField("entity", std::to_underlying(player.entity)),
       NumberField("health", player.health),
       BoolField("killed", player.killer.has_value()),

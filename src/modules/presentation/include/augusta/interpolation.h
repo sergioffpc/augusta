@@ -6,6 +6,7 @@
 #include <limits>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "augusta/math.h"
@@ -126,9 +127,9 @@ struct RemoteBody {
 struct RemotePlayer {
   EntityId entity{};
   RemoteBody body{};
-  /// The character index it is drawn as, from Match start; 0 if unknown.
-  /// PresentationWorld fills it in: the interpolator knows only bodies.
-  std::uint8_t character = 0;
+  /// The character it is drawn as, by its path, from Match start; empty if
+  /// unknown. PresentationWorld fills it in: the interpolator knows only bodies.
+  std::string character;
 };
 
 /// Buffers the Authoritative State's per-entity updates for every player

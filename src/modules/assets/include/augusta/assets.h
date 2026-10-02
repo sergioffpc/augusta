@@ -192,8 +192,8 @@ inline constexpr std::size_t kPackHashSize = 32;
 /// A pack's BLAKE3 hash, the one its trailer signs (ADR-0031): names one cook of it.
 using PackHash = std::array<std::byte, kPackHashSize>;
 
-/// Most characters a scenario can compose: a character index is one byte and
-/// zero is never valid (ADR-0042).
+/// Most characters a scenario can compose: what bounds the character list a
+/// pack is read with (ADR-0042).
 inline constexpr std::size_t kMaxCharacters = 255;
 
 // A cooked spawn-point marker (ADR-0032): the point's own local
@@ -393,8 +393,8 @@ class Pack {
   [[nodiscard]] std::expected<std::string, ResolveError> ResolveScript(std::string_view path) const;
 
   /// Resolves the scenario's character list at kCharactersPath: each character's
-  /// path relative to `authoring/`, in manifest order, so character index N is
-  /// element N-1 (ADR-0042). Present in both client and server packs.
+  /// path relative to `authoring/`, in manifest order (ADR-0042). Present in
+  /// both client and server packs.
   [[nodiscard]] std::expected<std::vector<std::string>, ResolveError> ResolveCharacters() const;
 
   /// Resolves, at kClientPackPath, the Hash() of the client pack cooked with

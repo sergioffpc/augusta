@@ -396,8 +396,10 @@ RC_GTEST_PROP(SimulationPropertyTest, AtMostOneMatchEndPerMatchAndAWinnerIsAlway
     if (i == 0 || i == second_match) {
       world.EndMatch();
       match_ends = 0;
-      world.AddPlayer(kPlayer, kSpawn, WideTarget(), {.session = sessions.at(kPlayer), .character = 1});
-      world.AddPlayer(kOther, Vec3(0.0F, 0.0F, -6.0F), WideTarget(), {.session = sessions.at(kOther), .character = 1});
+      world.AddPlayer(kPlayer, kSpawn, WideTarget(),
+                      {.session = sessions.at(kPlayer), .character = "characters/player"});
+      world.AddPlayer(kOther, Vec3(0.0F, 0.0F, -6.0F), WideTarget(),
+                      {.session = sessions.at(kOther), .character = "characters/player"});
     }
     const auto result = world.Tick(
         {{.entity = kPlayer, .command = commands[i]}, {.entity = kOther, .command = other_commands[i]}}, kTick);

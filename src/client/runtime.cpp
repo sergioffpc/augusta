@@ -4,12 +4,14 @@
 #include <chrono>
 #include <cstdint>
 #include <format>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <variant>
@@ -62,8 +64,8 @@ std::optional<math::Vec3> LoadEye(const assets::Pack& pack, std::string_view cha
   return *eye;
 }
 
-// Loads a character's mesh and eye from pack by its index into the scenario's
-// characters (ADR-0042), which pack must outlive. Reports what is wrong with the
+// Loads a character's mesh and eye from pack by its path, which must be one of
+// the scenario's characters (ADR-0042); pack must outlive it. Reports what is wrong with the
 // character list and returns nullopt.
 std::optional<CharacterLoader> CharacterLoaderFor(const assets::Pack& pack) {
   auto characters = pack.ResolveCharacters();
@@ -73,13 +75,11 @@ std::optional<CharacterLoader> CharacterLoaderFor(const assets::Pack& pack) {
                    assets::DescribeResolveError(characters.error(), "character list")));
     return std::nullopt;
   }
-  return [&pack, characters = *std::move(characters)](std::uint8_t character) {
+  return [&pack, characters = *std::move(characters)](std::string_view character) {
     return client::LoadCharacterMesh(characters, character,
                                      [&pack](std::string_view path) { return pack.ResolveMesh(path); })
         .and_then([&](renderer::SceneMesh mesh) {
-          // LoadCharacterMesh has checked the index names one of characters.
-          return client::LoadCharacterEye(characters[character - 1],
-                                          [&pack](std::string_view path) { return pack.ResolveEye(path); })
+          return client::LoadCharacterEye(character, [&pack](std::string_view path) { return pack.ResolveEye(path); })
               .transform(
                   [&mesh](const math::Vec3& eye) { return LoadedCharacter{.mesh = std::move(mesh), .eye = eye}; });
         });
@@ -320,7 +320,7 @@ struct ClientRuntime::Impl {
   // Roster version Ready was reported for, and whether PresentationWorld has
   // the server's parameters.
   CharacterLoader load_character;
-  std::set<std::uint8_t> loaded_characters;
+  std::set<std::string, std::less<>> loaded_characters;
   std::optional<std::uint32_t> ready_version;
   bool presentation_has_parameters = false;
   input::Input input;
@@ -604,21 +604,21 @@ struct ClientRuntime::Impl {
     if (view->GetPhase() != harness::Phase::kLobby || !lobby.has_value() || lobby->version == ready_version) {
       return std::nullopt;
     }
-    std::vector<std::uint8_t> others;
+    std::vector<std::string> others;
     for (const harness::RosterEntry& entry : lobby->roster) {
       if (entry.session != view->accepted->session) {
         others.push_back(entry.character);
       }
     }
-    for (const std::uint8_t character : client::CharactersToLoad(others, loaded_characters)) {
+    for (std::string& character : client::CharactersToLoad(others, loaded_characters)) {
       auto loaded = load_character(character);
       if (!loaded.has_value()) {
         return loaded.error();
       }
       renderer.SetCharacterMesh(character, loaded->mesh);
       presentation.SetCharacterEye(character, loaded->eye);
-      loaded_characters.insert(character);
       LI("subsystem=clientruntime event=character_loaded character={}", character);
+      loaded_characters.insert(std::move(character));
     }
     session->ReportReady(lobby->version);
     ready_version = lobby->version;
