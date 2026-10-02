@@ -2516,9 +2516,12 @@ TEST_F(MisbehaviourTest, APeerFloodingMalformedMessagesIsDisconnectedAndItsBodyL
   }
   Run(kSettleTicks, Forward());
   raw.Serve();
-  // The heartbeat after the disconnect counts it.
+#if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_DEBUG
+  // The heartbeat after the disconnect counts it; a DEBUG line, so only where
+  // DEBUG is compiled in.
   std::this_thread::sleep_for(std::chrono::seconds(1));
   host_.RecordTiming(augusta::tick::Timing{});
+#endif
   const std::string log = testing::internal::GetCapturedStdout();
 
   EXPECT_EQ(raw.GetConnectionState(), ConnectionState::kDisconnected);
@@ -2532,7 +2535,9 @@ TEST_F(MisbehaviourTest, APeerFloodingMalformedMessagesIsDisconnectedAndItsBodyL
                      " reason=\"undecodable message\""),
             std::string::npos)
       << log;
+#if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_DEBUG
   EXPECT_NE(log.find(" misbehaving=1"), std::string::npos) << log;
+#endif
 }
 
 TEST_F(LobbyMisbehaviourTest, AMisbehavingPlayerDisconnectedFromTheLobbyChangesTheRosterEveryClientIsTold) {
