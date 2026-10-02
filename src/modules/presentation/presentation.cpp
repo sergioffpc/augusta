@@ -18,6 +18,7 @@
 #include "augusta/audio_cues.h"
 #include "augusta/command.h"
 #include "augusta/correction.h"
+#include "augusta/counter.h"
 #include "augusta/cues.h"
 #include "augusta/effects.h"
 #include "augusta/interpolation.h"
@@ -171,7 +172,7 @@ struct World::Impl {
       last_recorded_tick.reset();
       dead.clear();
       spectator = Spectator{};
-    } else if (!last_recorded_tick.has_value() || snapshot->tick > *last_recorded_tick) {
+    } else if (!last_recorded_tick.has_value() || counter::IsNewer(snapshot->tick, *last_recorded_tick)) {
       RecordSnapshot(*snapshot);
     }
     remote_players.clear();

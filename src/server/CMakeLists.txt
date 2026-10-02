@@ -37,7 +37,7 @@ add_library(augustad_commands STATIC
   command_queue.cpp
 )
 target_include_directories(augustad_commands PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_commands PUBLIC augusta_command)
+target_link_libraries(augustad_commands PUBLIC augusta_command PRIVATE augusta_tick)
 augusta_set_module_scope(augustad_commands SERVER_ONLY)
 
 # The server's socket and SimulationWorld without threads or a clock, so a test
@@ -60,7 +60,7 @@ add_library(augustad_runtime STATIC
 )
 target_include_directories(augustad_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_runtime
-  PUBLIC augustad_host augusta_networking augusta_parameters augusta_physics augusta_simulation
+  PUBLIC augustad_host augusta_networking augusta_parameters augusta_physics augusta_simulation augusta_supervisor
   PRIVATE augusta_assets augusta_logging augusta_tick
 )
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)

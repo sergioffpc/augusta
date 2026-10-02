@@ -106,12 +106,14 @@ class Host {
   /// Runs one fixed tick of SimulationWorld on one command per player in the
   /// match, sends each of them its update and, reliably (ADR-0044), every Shot
   /// and Death of the tick and the Hit confirmations of its own hits, logs the
-  /// tick's hits and deaths, and returns the state. Starts a match first if the
+  /// tick's hits and deaths, and returns what the tick resolved and what Game
+  /// policy decided on it. Starts a match first if the
   /// Lobby is full and Ready and the pause after the last one
-  /// (server::kMatchPause, counted in these ticks) has passed. When the state
-  /// carries Game policy's Match end, ends the match after the tick, as
-  /// EndMatch does, with policy's winner or as a draw.
-  simulation::State Tick(float delta_time);
+  /// (server::kMatchPause, counted in these ticks) has passed. Then takes the
+  /// actions Game policy took on the tick, typed and validated by
+  /// SimulationWorld (simulation::TickResult): a Match end ends the match
+  /// after the tick, as EndMatch does, with policy's winner or as a draw.
+  simulation::TickResult Tick(float delta_time);
 
   /// Counts the Tick just run, with how it kept to the Simulation loop's
   /// schedule, toward the once-a-second heartbeat line (ADR-0029), and writes

@@ -8,6 +8,7 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -27,7 +28,7 @@
 
 // SimulationWorld ticked with a Game policy script chosen by the test (ADR-0022,
 // ADR-0023): what a hook sees, what it may do and what happens when it fails,
-// observed through the State each tick returns and the lines the server logs.
+// observed through the TickResult each tick returns and the lines the server logs.
 namespace {
 
 using augusta::command::Command;
@@ -37,10 +38,12 @@ using augusta::scripting::Engine;
 using augusta::scripting::Scripts;
 using augusta::simulation::Character;
 using augusta::simulation::EntityId;
+using augusta::simulation::MatchEnd;
 using augusta::simulation::PlayerCommand;
 using augusta::simulation::PlayerIdentity;
 using augusta::simulation::SessionId;
 using augusta::simulation::State;
+using augusta::simulation::TickResult;
 using augusta::simulation::World;
 
 constexpr std::uint8_t kTickRate = 60;
@@ -52,6 +55,16 @@ constexpr EntityId kBob = static_cast<EntityId>(2);
 constexpr SessionId kAliceSession = static_cast<SessionId>(11);
 constexpr SessionId kBobSession = static_cast<SessionId>(12);
 const Character kCharacter{.eye = Vec3(0.0F, 1.5F, 0.0F), .hitboxes = {}};
+
+// The Match end Game policy took on the tick of result, if it took one.
+std::optional<MatchEnd> MatchEndOf(const TickResult& result) {
+  for (const augusta::simulation::PolicyAction& action : result.actions) {
+    if (const auto* end = std::get_if<MatchEnd>(&action)) {
+      return *end;
+    }
+  }
+  return std::nullopt;
+}
 
 // Alice walking, for every tick.
 std::vector<PlayerCommand> Walking() {
@@ -79,7 +92,7 @@ Vec3 WalkedTo(Engine policy, int ticks) {
   World world = WithAlice(std::move(policy));
   State state;
   for (int i = 0; i < ticks; ++i) {
-    state = world.Tick(Walking(), kTick);
+    state = world.Tick(Walking(), kTick).state;
   }
   return state.bodies.at(0).body.position;
 }
@@ -174,18 +187,18 @@ TEST_F(PolicyTest, AFailingHookIsLoggedDecidesNothingAndTheTickGoesOn) {
     World world = WithAlice(WithObjectives(hook.objectives));
 
     testing::internal::CaptureStdout();
-    const State first = world.Tick(Walking(), kTick);
+    const TickResult first = world.Tick(Walking(), kTick);
     const std::string log = testing::internal::GetCapturedStdout();
-    const State second = world.Tick(Walking(), kTick);
+    const TickResult second = world.Tick(Walking(), kTick);
 
     EXPECT_NE(log.find("WARN subsystem=simulationworld"), std::string::npos) << hook.objectives << "\n" << log;
     EXPECT_NE(log.find("script=objectives.lua hook=on_tick tick=1"), std::string::npos) << hook.objectives;
     EXPECT_NE(log.find(hook.logged), std::string::npos) << hook.objectives << "\n" << log;
-    EXPECT_FALSE(first.match_end.has_value()) << hook.objectives;
-    EXPECT_FALSE(second.match_end.has_value()) << hook.objectives;
-    EXPECT_EQ(second.tick, 2U) << hook.objectives;
-    ASSERT_EQ(second.bodies.size(), 1U) << hook.objectives;
-    EXPECT_EQ(second.bodies[0].body.position, WalkedTo(Engine{}, 2)) << hook.objectives;
+    EXPECT_TRUE(first.actions.empty()) << hook.objectives;
+    EXPECT_TRUE(second.actions.empty()) << hook.objectives;
+    EXPECT_EQ(second.state.tick, 2U) << hook.objectives;
+    ASSERT_EQ(second.state.bodies.size(), 1U) << hook.objectives;
+    EXPECT_EQ(second.state.bodies[0].body.position, WalkedTo(Engine{}, 2)) << hook.objectives;
   }
 }
 
@@ -310,7 +323,7 @@ TEST_F(PolicyTest, AnAssignSpawnsAnswerPlacesEachPlayerAtTheSpawnPointItNames) {
   )"));
 
   const std::vector<Vec3> spawned = world.StartMatch(ThreePlayers(), kSpawnPoints);
-  const State first = world.Tick({}, kTick);
+  const State first = world.Tick({}, kTick).state;
 
   EXPECT_EQ(spawned, (std::vector<Vec3>{kSpawnPoints[2], kSpawnPoints[0], kSpawnPoints[1]}));
   ASSERT_EQ(first.bodies.size(), 3U);
@@ -439,7 +452,7 @@ TEST_F(PolicyTest, EveryMatchStartsFromFreshBodiesAtFullHealthWithFullRifles) {
     player.entity = static_cast<EntityId>(std::to_underlying(player.entity) + 10);
   }
   world.StartMatch(next, kSpawnPoints);
-  const State first = world.Tick({}, kTick);
+  const State first = world.Tick({}, kTick).state;
 
   ASSERT_EQ(first.bodies.size(), 3U);
   for (std::size_t i = 0; i < 3; ++i) {
@@ -512,30 +525,31 @@ TEST_F(PolicyTest, TheExampleBehavioursStartTheSpawnPointsOverOnlyWhenTheMapHasF
 // What the objectives' on_tick hook may decide (ADR-0022): to end the Match with
 // a winner, or as a draw. A decision is in the State of the tick that made it,
 // for Host to act on after it (ADR-0023).
-TEST_F(PolicyTest, AWinnerOnTickDeclaresIsInTheStateOfTheTickThatDeclaredIt) {
+TEST_F(PolicyTest, AWinnerOnTickDeclaresIsAnActionOfTheTickThatDeclaredIt) {
   World world = WithAlice(WithObjectives(R"(
     function on_tick(match)
       if match.tick == 3 then return {winner = 11} end
     end
   )"));
 
-  const State first = world.Tick({}, kTick);
-  const State second = world.Tick({}, kTick);
-  const State third = world.Tick({}, kTick);
+  const TickResult first = world.Tick({}, kTick);
+  const TickResult second = world.Tick({}, kTick);
+  const TickResult third = world.Tick({}, kTick);
 
-  EXPECT_FALSE(first.match_end.has_value());
-  EXPECT_FALSE(second.match_end.has_value());
-  ASSERT_TRUE(third.match_end.has_value());
-  EXPECT_EQ(third.match_end->winner, kAliceSession);
+  EXPECT_TRUE(first.actions.empty());
+  EXPECT_TRUE(second.actions.empty());
+  ASSERT_EQ(third.actions.size(), 1U);
+  ASSERT_TRUE(MatchEndOf(third).has_value());
+  EXPECT_EQ(MatchEndOf(third)->winner, kAliceSession);
 }
 
 TEST_F(PolicyTest, ADrawOnTickDeclaresIsAMatchEndWithNoWinner) {
   World world = WithAlice(WithObjectives("function on_tick() return {draw = true} end"));
 
-  const State state = world.Tick({}, kTick);
+  const TickResult result = world.Tick({}, kTick);
 
-  ASSERT_TRUE(state.match_end.has_value());
-  EXPECT_FALSE(state.match_end->winner.has_value());
+  ASSERT_TRUE(MatchEndOf(result).has_value());
+  EXPECT_FALSE(MatchEndOf(result)->winner.has_value());
 }
 
 // Policy ends a Match once: once it has decided, on_tick is not asked again
@@ -544,17 +558,17 @@ TEST_F(PolicyTest, OnceOnTickHasEndedTheMatchItIsNotCalledAgainUntilTheNextMatch
   World world = WithAlice(WithObjectives(R"(
     function on_tick(match) return {winner = match.players[1].session} end
   )"));
-  ASSERT_TRUE(world.Tick({}, kTick).match_end.has_value());
+  ASSERT_TRUE(MatchEndOf(world.Tick({}, kTick)).has_value());
 
   for (int i = 0; i < 5; ++i) {
-    EXPECT_FALSE(world.Tick({}, kTick).match_end.has_value()) << "tick " << i;
+    EXPECT_TRUE(world.Tick({}, kTick).actions.empty()) << "tick " << i;
   }
 
   world.EndMatch();
   world.AddPlayer(kBob, Vec3(0.0F, 0.0F, 0.0F), kCharacter, PlayerIdentity{.session = kBobSession, .character = 1});
-  const State next = world.Tick({}, kTick);
-  ASSERT_TRUE(next.match_end.has_value());
-  EXPECT_EQ(next.match_end->winner, kBobSession);
+  const TickResult next = world.Tick({}, kTick);
+  ASSERT_TRUE(MatchEndOf(next).has_value());
+  EXPECT_EQ(MatchEndOf(next)->winner, kBobSession);
 }
 
 // A world with no one in it has no Match for policy to decide on: the Lobby.
@@ -599,13 +613,13 @@ TEST_F(PolicyTest, APlayerWhoLeftTheMatchIsAbsentFromWhatOnTickSees) {
     end
   )"));
   world.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter, PlayerIdentity{.session = kBobSession, .character = 1});
-  ASSERT_FALSE(world.Tick({}, kTick).match_end.has_value());
+  ASSERT_FALSE(MatchEndOf(world.Tick({}, kTick)).has_value());
 
   world.RemovePlayer(kAlice);
-  const State state = world.Tick({}, kTick);
+  const TickResult result = world.Tick({}, kTick);
 
-  ASSERT_TRUE(state.match_end.has_value());
-  EXPECT_EQ(state.match_end->winner, kBobSession);
+  ASSERT_TRUE(MatchEndOf(result).has_value());
+  EXPECT_EQ(MatchEndOf(result)->winner, kBobSession);
 }
 
 // A body added with no identity has Session ID 0, which is no player's: it is
@@ -614,17 +628,17 @@ TEST_F(PolicyTest, SessionZeroIsNeverTheWinner) {
   World world(Parameters{}, kTickRate, WithObjectives("function on_tick() return {winner = 0} end"));
   world.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
 
-  EXPECT_FALSE(world.Tick({}, kTick).match_end.has_value());
+  EXPECT_FALSE(MatchEndOf(world.Tick({}, kTick)).has_value());
 }
 
 TEST_F(PolicyTest, AWinnerWhoIsNotInTheMatchIsRefusedLoggedAndTheMatchGoesOn) {
   World world = WithAlice(WithObjectives("function on_tick() return {winner = 12} end"));
 
   testing::internal::CaptureStdout();
-  const State state = world.Tick({}, kTick);
+  const TickResult result = world.Tick({}, kTick);
   const std::string log = testing::internal::GetCapturedStdout();
 
-  EXPECT_FALSE(state.match_end.has_value());
+  EXPECT_TRUE(result.actions.empty());
   EXPECT_NE(log.find("event=policy_decision_refused script=objectives.lua hook=on_tick tick=1"), std::string::npos)
       << log;
 }
@@ -670,7 +684,7 @@ World Duel(std::string objectives) {
 }
 
 // The tick on which Alice fires her one round, which kills Bob.
-State AliceKillsBob(World& world) {
+TickResult AliceKillsBob(World& world) {
   Command fire;
   fire.fire = true;
   return world.Tick({PlayerCommand{.entity = kAlice, .command = fire}}, kTick);
@@ -690,14 +704,14 @@ TEST_F(PolicyTest, OnTickSeesWhoWasKilledThisTickAndByWhomAndThatTheyAreDead) {
   )");
 
   testing::internal::CaptureStdout();
-  const State killing = AliceKillsBob(world);
+  const TickResult killing = AliceKillsBob(world);
   const std::string log = testing::internal::GetCapturedStdout();
-  const State next = world.Tick({}, kTick);
+  const TickResult next = world.Tick({}, kTick);
 
-  ASSERT_EQ(killing.deaths.size(), 1U);
+  ASSERT_EQ(killing.state.deaths.size(), 1U);
   EXPECT_NE(log.find("health=0 alive=false killer=1"), std::string::npos) << log;
-  EXPECT_FALSE(killing.match_end.has_value());
-  EXPECT_TRUE(next.match_end.has_value());
+  EXPECT_FALSE(MatchEndOf(killing).has_value());
+  EXPECT_TRUE(MatchEndOf(next).has_value());
 }
 
 TEST_F(PolicyTest, ADeadPlayerCannotBeDeclaredTheWinner) {
@@ -707,10 +721,10 @@ TEST_F(PolicyTest, ADeadPlayerCannotBeDeclaredTheWinner) {
     end
   )");
 
-  const State killing = AliceKillsBob(world);
+  const TickResult killing = AliceKillsBob(world);
 
-  ASSERT_EQ(killing.deaths.size(), 1U);
-  EXPECT_FALSE(killing.match_end.has_value());
+  ASSERT_EQ(killing.state.deaths.size(), 1U);
+  EXPECT_FALSE(MatchEndOf(killing).has_value());
 }
 
 // Ending a Match leaves nothing of it for the next: no body and no bullet in flight.
@@ -723,10 +737,10 @@ TEST_F(PolicyTest, EndingTheMatchTakesEveryPlayerAndEveryBulletInFlightOutOfTheW
   Command fire;
   fire.fire = true;
   fire.pitch = 0.5F;
-  ASSERT_EQ(world.Tick({PlayerCommand{.entity = kAlice, .command = fire}}, kTick).bullets_in_flight, 1U);
+  ASSERT_EQ(world.Tick({PlayerCommand{.entity = kAlice, .command = fire}}, kTick).state.bullets_in_flight, 1U);
 
   world.EndMatch();
-  const State state = world.Tick({}, kTick);
+  const State state = world.Tick({}, kTick).state;
 
   EXPECT_TRUE(state.bodies.empty());
   EXPECT_TRUE(state.alive.empty());

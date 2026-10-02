@@ -63,6 +63,7 @@ using augusta::harness::FailureKind;
 using augusta::harness::HitConfirmation;
 using augusta::harness::JoinRefusal;
 using augusta::harness::Phase;
+using augusta::harness::ServerView;
 using augusta::harness::Session;
 using augusta::harness::SessionConfig;
 using augusta::harness::SessionId;
@@ -1152,7 +1153,7 @@ class LoopbackMatch : public ::testing::Test {
   // the server before a command arrives, which would hold that player's last
   // movement (ADR-0038) and turn into a correction no real mismatch caused. The
   // patience bounds a test that loses commands on purpose.
-  augusta::simulation::State StepEach(const std::vector<Command>& commands) {
+  augusta::simulation::TickResult StepEach(const std::vector<Command>& commands) {
     std::vector<std::pair<const Session*, augusta::server::SessionId>> sending;
     for (std::size_t i = 0; i < sessions_.size(); ++i) {
       const auto& session = sessions_[i];
@@ -1168,14 +1169,14 @@ class LoopbackMatch : public ::testing::Test {
                return host_.QueuedCommands(sent.second) > 0 || sent.first->GetPhase() != Phase::kMatch;
              });
     });
-    augusta::simulation::State state = host_.Tick(kFixedTick);
+    augusta::simulation::TickResult result = host_.Tick(kFixedTick);
     std::this_thread::sleep_for(kNetworkDelay);
     Exchange();
-    return state;
+    return result;
   }
 
   // A StepEach on which every client does command.
-  augusta::simulation::State Step(const Command& command = Command{}) {
+  augusta::simulation::TickResult Step(const Command& command = Command{}) {
     return StepEach(std::vector<Command>(sessions_.size(), command));
   }
 
@@ -1189,7 +1190,7 @@ class LoopbackMatch : public ::testing::Test {
   augusta::simulation::State ServerTick() {
     std::this_thread::sleep_for(kNetworkDelay);
     Exchange();
-    auto state = host_.Tick(kFixedTick);
+    augusta::simulation::State state = host_.Tick(kFixedTick).state;
     std::this_thread::sleep_for(kNetworkDelay);
     Exchange();
     return state;
@@ -1470,12 +1471,12 @@ TEST_F(LobbyTest, AMatchStartsOnTheTickTheLastClientOfAFullLobbyIsReady) {
   sessions_[0]->ReportReady(sessions_[0]->GetLobby()->version);
   sessions_[1]->ReportReady(sessions_[1]->GetLobby()->version);
   Settle(host_, All());
-  EXPECT_TRUE(host_.Tick(kFixedTick).bodies.empty()) << "started with a client not ReadyWire";
+  EXPECT_TRUE(host_.Tick(kFixedTick).state.bodies.empty()) << "started with a client not ReadyWire";
 
   sessions_[2]->ReportReady(sessions_[2]->GetLobby()->version);
   Settle(host_, All());
 
-  EXPECT_EQ(host_.Tick(kFixedTick).bodies.size(), 3U);
+  EXPECT_EQ(host_.Tick(kFixedTick).state.bodies.size(), 3U);
   ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
     return std::ranges::all_of(sessions_, [](const auto& s) { return s->GetPhase() == Phase::kMatch; });
   }));
@@ -1497,12 +1498,12 @@ TEST_F(ReadyTest, ANewcomerMakesTheClientsAlreadyThereNotReadyUntilTheyReportThe
   // The harness sends nothing for a Roster older than its newest.
   first.ReportReady(before);
   Settle(host_, All());
-  EXPECT_TRUE(host_.Tick(kFixedTick).bodies.empty()) << "started on a ReadyWire for an older Roster";
+  EXPECT_TRUE(host_.Tick(kFixedTick).state.bodies.empty()) << "started on a ReadyWire for an older Roster";
 
   first.ReportReady(first.GetLobby()->version);
   Settle(host_, All());
 
-  EXPECT_EQ(host_.Tick(kFixedTick).bodies.size(), 2U);
+  EXPECT_EQ(host_.Tick(kFixedTick).state.bodies.size(), 2U);
 }
 
 TEST_F(ReadyTest, AClientInTheLobbyNeitherPredictsNorSendsCommands) {
@@ -1572,6 +1573,31 @@ TEST_F(MatchCycleTest, EndingTheMatchSendsEveryoneBackToTheLobbyUnderANewRoster)
   }
 }
 
+// A Server view is one moment of what the server has said (ADR-0005): one taken
+// during a match still holds that match after it ends, while one taken after
+// shows the Lobby.
+TEST_F(MatchCycleTest, AServerViewKeepsTheMomentItWasTakenAt) {
+  Session& client = Join();
+  Join();
+  ASSERT_TRUE(StartMatch());
+  Run(kSettleTicks);
+  const std::shared_ptr<const ServerView> in_match = client.GetServerView();
+
+  host_.EndMatch();
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return client.GetPhase() == Phase::kLobby; }));
+
+  EXPECT_EQ(in_match->GetPhase(), Phase::kMatch);
+  EXPECT_TRUE(in_match->authoritative.has_value());
+  EXPECT_FALSE(in_match->match_end.has_value());
+  EXPECT_EQ(in_match->OwnEntity(), client.GetEntityId());
+  EXPECT_TRUE(in_match->OwnAlive());
+  const std::shared_ptr<const ServerView> in_lobby = client.GetServerView();
+  EXPECT_EQ(in_lobby->GetPhase(), Phase::kLobby);
+  EXPECT_FALSE(in_lobby->authoritative.has_value());
+  EXPECT_TRUE(in_lobby->match_end.has_value());
+  EXPECT_FALSE(in_lobby->OwnAlive());
+}
+
 TEST_F(MatchCycleTest, AfterMatchEndNoBodyIsSimulatedAndNoStateReachesAClient) {
   Join();
   Join();
@@ -1603,10 +1629,10 @@ TEST_F(MatchCycleTest, TheNextMatchStartsExactlyThePauseAfterTheLastEndedAndNotO
   Settle(host_, All());
 
   for (std::uint32_t i = 1; i < PauseTicks(); ++i) {
-    ASSERT_TRUE(host_.Tick(kFixedTick).bodies.empty()) << "started " << PauseTicks() - i << " ticks early";
+    ASSERT_TRUE(host_.Tick(kFixedTick).state.bodies.empty()) << "started " << PauseTicks() - i << " ticks early";
   }
 
-  EXPECT_EQ(host_.Tick(kFixedTick).bodies.size(), 2U);
+  EXPECT_EQ(host_.Tick(kFixedTick).state.bodies.size(), 2U);
 }
 
 TEST_F(MatchCycleTest, PlayersKeepTheirSessionAndCharacterAndTheNextMatchHandsOutTheSpawnPointsAfresh) {
@@ -2629,7 +2655,7 @@ TEST_F(FireDuelTest, EveryClientIsToldOfAShotWithItsShooterTickOriginAndDirectio
   shooter.Tick(command, kFixedTick);
   bystander.Tick(Command{}, kFixedTick);
   ASSERT_TRUE(ExchangeUntil(host_, Pointers(sessions_), [&] { return host_.QueuedCommands(shooter_session) > 0; }));
-  ASSERT_EQ(host_.Tick(kFixedTick).shots.size(), 1U);
+  ASSERT_EQ(host_.Tick(kFixedTick).state.shots.size(), 1U);
 
   ASSERT_TRUE(ReceiveShots(1));
   for (const Session* client : {&shooter, &bystander}) {
@@ -2660,7 +2686,7 @@ TEST_F(FireDuelTest, WithPacketLossEveryClientStillReceivesEveryShot) {
     }
     std::this_thread::sleep_for(kNetworkDelay);
     Exchange();
-    const augusta::simulation::State state = host_.Tick(kFixedTick);
+    const augusta::simulation::State state = host_.Tick(kFixedTick).state;
     fired.insert(fired.end(), state.shots.begin(), state.shots.end());
     std::this_thread::sleep_for(kNetworkDelay);
     Exchange();
@@ -2899,7 +2925,7 @@ class RecoilTest : public FireMatchOf<1> {
   std::vector<Shot> Burst(std::size_t rounds, const Command& command = FiringFromTheView()) {
     const std::size_t before = fired_;
     for (std::size_t i = 0; i < rounds * kTicksPerRound && fired_ < before + rounds; ++i) {
-      fired_ += Step(command).shots.size();
+      fired_ += Step(command).state.shots.size();
     }
     EXPECT_EQ(fired_, before + rounds);
     EXPECT_TRUE(ReceiveShots(fired_));
@@ -3087,13 +3113,14 @@ class HitMatchOf : public LoopbackMatch {
   // keeping what the server resolved on them.
   void Fight(int ticks) {
     for (int i = 0; i < ticks; ++i) {
-      const augusta::simulation::State state = StepEach(commands_);
+      const augusta::simulation::TickResult result = StepEach(commands_);
+      const augusta::simulation::State& state = result.state;
       hits_.insert(hits_.end(), state.hits.begin(), state.hits.end());
       map_impacts_.insert(map_impacts_.end(), state.map_impacts.begin(), state.map_impacts.end());
       shots_fired_.insert(shots_fired_.end(), state.shots.begin(), state.shots.end());
       deaths_.insert(deaths_.end(), state.deaths.begin(), state.deaths.end());
-      if (state.match_end.has_value()) {
-        match_ends_.emplace_back(state.tick, *state.match_end);
+      for (const augusta::simulation::PolicyAction& action : result.actions) {
+        match_ends_.emplace_back(state.tick, std::get<augusta::simulation::MatchEnd>(action));
       }
     }
   }
@@ -3345,7 +3372,7 @@ class LagCompensatedHitTest : public HitMatchOf<2> {
     std::this_thread::sleep_for(kNetworkDelay);
     Exchange();
     while (EveryoneHasACommandQueued()) {
-      const augusta::simulation::State state = host_.Tick(kFixedTick);
+      const augusta::simulation::State state = host_.Tick(kFixedTick).state;
       hits_.insert(hits_.end(), state.hits.begin(), state.hits.end());
     }
     std::this_thread::sleep_for(kNetworkDelay);
@@ -3499,7 +3526,7 @@ TEST_F(FullAutoMatchTest, EightClientsMoveFireFullAutoReloadAndHitEachOtherForAM
   for (int tick = 0; tick < kMatchTicks; ++tick) {
     const auto tick_start = std::chrono::steady_clock::now();
 
-    const augusta::simulation::State state = host_.Tick(kFixedTick);
+    const augusta::simulation::State state = host_.Tick(kFixedTick).state;
     fired += state.shots.size();
     for (const augusta::simulation::Hit& hit : state.hits) {
       ++hits_by[std::to_underlying(hit.shooter)];
@@ -4090,7 +4117,7 @@ TEST_F(LastStandingDuelTest, TheNextMatchStartsOnItsOwnOnceEveryoneIsReadyAgainN
         reported[session.get()] = lobby->version;
       }
     }
-    const augusta::simulation::State state = host_.Tick(kFixedTick);
+    const augusta::simulation::State state = host_.Tick(kFixedTick).state;
     started = state.bodies.empty() ? 0 : state.tick;
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -4256,10 +4283,12 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
   for (int tick = 0; tick < kTickLimit && !match_end.has_value(); ++tick) {
     const auto tick_start = std::chrono::steady_clock::now();
 
-    const augusta::simulation::State state = host_.Tick(kFixedTick);
+    const augusta::simulation::TickResult result = host_.Tick(kFixedTick);
     slowest_tick = std::max(slowest_tick, std::chrono::steady_clock::now() - tick_start);
-    deaths.insert(deaths.end(), state.deaths.begin(), state.deaths.end());
-    match_end = state.match_end;
+    deaths.insert(deaths.end(), result.state.deaths.begin(), result.state.deaths.end());
+    for (const augusta::simulation::PolicyAction& action : result.actions) {
+      match_end = std::get<augusta::simulation::MatchEnd>(action);
+    }
     for (std::size_t rank = 0; rank < kPlayers; ++rank) {
       Session& session = *by_rank[rank];
       Client& client = clients[rank];

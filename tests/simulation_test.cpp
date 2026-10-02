@@ -73,7 +73,7 @@ class SimulationTest : public ::testing::Test {
   State Run(int ticks, const std::vector<PlayerCommand>& commands) {
     State state;
     for (int i = 0; i < ticks; ++i) {
-      state = world_.Tick(commands, kTick);
+      state = world_.Tick(commands, kTick).state;
     }
     return state;
   }
@@ -116,13 +116,13 @@ TEST_F(SimulationTest, AWallStopsAWalkingPlayer) {
   EXPECT_GT(Body(state, kAlice).position.x, kWallX - 1.0F);
 }
 
-TEST_F(SimulationTest, AnEmptyWorldHasAnEmptyState) { EXPECT_TRUE(world_.Tick({}, kTick).bodies.empty()); }
+TEST_F(SimulationTest, AnEmptyWorldHasAnEmptyState) { EXPECT_TRUE(world_.Tick({}, kTick).state.bodies.empty()); }
 
 TEST_F(SimulationTest, AddedPlayersAppearInTheStateOrderedById) {
   world_.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter);
   world_.AddPlayer(kAlice, Vec3(-5.0F, 0.0F, 0.0F), kCharacter);
 
-  const State state = world_.Tick({}, kTick);
+  const State state = world_.Tick({}, kTick).state;
 
   ASSERT_EQ(state.bodies.size(), 2U);
   EXPECT_EQ(state.bodies[0].entity, kAlice);
@@ -133,7 +133,7 @@ TEST_F(SimulationTest, APlayerStartsStandingWhereItSpawned) {
   world_.AddPlayer(kAlice, Vec3(3.0F, 0.0F, -2.0F), kCharacter);
   Run(kSettleTicks, {});
 
-  const State state = world_.Tick({}, kTick);
+  const State state = world_.Tick({}, kTick).state;
 
   EXPECT_NEAR(Body(state, kAlice).position.x, 3.0F, 0.05F);
   EXPECT_NEAR(Body(state, kAlice).position.z, -2.0F, 0.05F);
@@ -144,8 +144,8 @@ TEST_F(SimulationTest, AForwardCommandMovesThatPlayerOnly) {
   world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
   world_.AddPlayer(kBob, Vec3(0.0F, 0.0F, 10.0F), kCharacter);
   Run(kSettleTicks, {});
-  const float start = Body(world_.Tick({}, kTick), kAlice).position.x;
-  const float bob_start = Body(world_.Tick({}, kTick), kBob).position.x;
+  const float start = Body(world_.Tick({}, kTick).state, kAlice).position.x;
+  const float bob_start = Body(world_.Tick({}, kTick).state, kBob).position.x;
 
   const State state = Run(kWalkTicks, {PlayerCommand{.entity = kAlice, .command = Walking(Vec3(1.0F, 0.0F, 0.0F))}});
 
@@ -199,7 +199,7 @@ TEST_F(SimulationTest, ARemovedPlayerLeavesTheState) {
   Run(kSettleTicks, {});
 
   world_.RemovePlayer(kAlice);
-  const State state = world_.Tick({}, kTick);
+  const State state = world_.Tick({}, kTick).state;
 
   ASSERT_EQ(state.bodies.size(), 1U);
   EXPECT_EQ(state.bodies[0].entity, kBob);
@@ -210,14 +210,14 @@ TEST_F(SimulationTest, RemovingAPlayerNotInTheWorldChangesNothing) {
 
   world_.RemovePlayer(kBob);
 
-  EXPECT_EQ(world_.Tick({}, kTick).bodies.size(), 1U);
+  EXPECT_EQ(world_.Tick({}, kTick).state.bodies.size(), 1U);
 }
 
 TEST_F(SimulationTest, AddingAPlayerTwiceKeepsOne) {
   world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
   world_.AddPlayer(kAlice, Vec3(9.0F, 0.0F, 0.0F), kCharacter);
 
-  EXPECT_EQ(world_.Tick({}, kTick).bodies.size(), 1U);
+  EXPECT_EQ(world_.Tick({}, kTick).state.bodies.size(), 1U);
 }
 
 // A rifle of 600 rounds a minute, a round every six ticks of kTick, with a
@@ -254,7 +254,7 @@ class FireTest : public ::testing::Test {
   }
 
   State Tick(const Command& command) {
-    return world_.Tick({PlayerCommand{.entity = kAlice, .command = command}}, kTick);
+    return world_.Tick({PlayerCommand{.entity = kAlice, .command = command}}, kTick).state;
   }
 
   // The one Shot of a tick on which Alice fires with command.
@@ -268,13 +268,13 @@ class FireTest : public ::testing::Test {
   State Run(int ticks) {
     State state;
     for (int i = 0; i < ticks; ++i) {
-      state = world_.Tick({}, kTick);
+      state = world_.Tick({}, kTick).state;
     }
     return state;
   }
 
   // Where Alice's feet are.
-  Vec3 Feet() { return world_.Tick({}, kTick).bodies.front().body.position; }
+  Vec3 Feet() { return world_.Tick({}, kTick).state.bodies.front().body.position; }
 
   // Ticks the given number of times with command; returns on which of them,
   // counted from 0, a Shot was fired.
@@ -304,7 +304,7 @@ TEST_F(FireTest, ATapOfFireFiresExactlyOneRound) {
 TEST_F(FireTest, AShotNamesThePlayerWhoFiredIt) {
   world_.AddPlayer(kBob, Vec3(5.0F, 0.5F, 0.0F), kCharacter);
 
-  const State state = world_.Tick({PlayerCommand{.entity = kBob, .command = Firing()}}, kTick);
+  const State state = world_.Tick({PlayerCommand{.entity = kBob, .command = Firing()}}, kTick).state;
 
   ASSERT_EQ(state.shots.size(), 1U);
   EXPECT_EQ(state.shots[0].shooter, kBob);
@@ -857,8 +857,10 @@ class HitTest : public ::testing::Test {
 
   // A tick on which Alice does command and Bob what he was last told.
   State Tick(const Command& command) {
-    return world_.Tick(
-        {PlayerCommand{.entity = kAlice, .command = command}, PlayerCommand{.entity = kBob, .command = bob_}}, kTick);
+    return world_
+        .Tick({PlayerCommand{.entity = kAlice, .command = command}, PlayerCommand{.entity = kBob, .command = bob_}},
+              kTick)
+        .state;
   }
 
   // Ticks the given number of times with Alice idle, and returns every hit of them.
@@ -1160,7 +1162,7 @@ TEST_F(HitTest, APlayerWithNoCommandKeepsWhereItFaced) {
   bob_.yaw = 1.25F;
   Wait(1);
 
-  const State state = world_.Tick({}, kTick);
+  const State state = world_.Tick({}, kTick).state;
 
   EXPECT_EQ(Entity(state, kBob).yaw, 1.25F);
 }
@@ -1209,8 +1211,8 @@ TEST_F(HitTest, ATargetBehindAWallIsNotHitAndTheWallIs) {
 }
 
 TEST_F(SimulationTest, AStateNamesItsTickFromOne) {
-  EXPECT_EQ(world_.Tick({}, kTick).tick, 1U);
-  EXPECT_EQ(world_.Tick({}, kTick).tick, 2U);
+  EXPECT_EQ(world_.Tick({}, kTick).state.tick, 1U);
+  EXPECT_EQ(world_.Tick({}, kTick).state.tick, 2U);
 }
 
 // What the Shooter's delay's cap of 250 ms needs, and no more (ADR-0044).
@@ -1259,8 +1261,11 @@ class LagCompensationTest : public ::testing::Test {
 
   // A tick on which Alice does command and Bob what he was last told.
   State Tick(const Command& command) {
-    State state = world_.Tick(
-        {PlayerCommand{.entity = kAlice, .command = command}, PlayerCommand{.entity = kBob, .command = bob_}}, kTick);
+    State state =
+        world_
+            .Tick({PlayerCommand{.entity = kAlice, .command = command}, PlayerCommand{.entity = kBob, .command = bob_}},
+                  kTick)
+            .state;
     for (const auto& entry : state.bodies) {
       (entry.entity == kBob ? seen_[state.tick] : alice_) = entry.body.position;
     }
@@ -1397,7 +1402,7 @@ TEST_F(HitTest, ABulletWhoseShooterLeftStillHits) {
   world_.RemovePlayer(kAlice);
   std::vector<Hit> hits;
   for (int i = 0; i < 6; ++i) {
-    const State state = world_.Tick({}, kTick);
+    const State state = world_.Tick({}, kTick).state;
     hits.insert(hits.end(), state.hits.begin(), state.hits.end());
   }
 

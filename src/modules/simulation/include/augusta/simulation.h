@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
-#include <optional>
 #include <vector>
 
 #include "augusta/ballistics.h"
@@ -14,6 +13,7 @@
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
+#include "augusta/policy_actions.h"
 #include "augusta/scripting.h"
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
@@ -22,7 +22,8 @@
 // authoritative ECS pipeline, run once per tick on the server's
 // Simulation thread (ADR-0005). It composes the mechanism modules that
 // already exist (physics, ballistics, scripting) into the eight ordered
-// phases ADR-0023 defines (see Phase below); server::Host hands its
+// phases ADR-0023 runs until its Dynamics phase arrives with the first Prop
+// (see Phase below); server::Host hands its
 // per-tick output to augusta::replication to reach clients
 // (ARCHITECTURE.md §5's "SimulationWorld... emits authoritative state
 // each tick").
@@ -98,10 +99,11 @@ enum class Phase {
   // objectives' on_tick hook, handed a read-only view of the Match as Damage
   // left it (MatchView in simulation.cpp), while the world has players and
   // policy has not already ended their Match. It may end the Match, with a
-  // winner or as a draw: the decision goes in the tick's State (MatchEnd),
-  // for server::Host to act on after the tick. A hook that fails, or returns
-  // a decision it cannot make, is logged and decides nothing, and the tick
-  // goes on. The only phase not implemented in C++.
+  // winner or as a draw: its answer, validated into a typed action
+  // (policy_actions.h), goes in the tick's TickResult, for server::Host to act
+  // on after the tick. A hook that fails, or returns a decision it cannot
+  // make, is logged and decides nothing, and the tick goes on. The only phase
+  // not implemented in C++.
   kScriptsBehaviours,
   // Mechanism. Packages the tick's resolved state into Authoritative
   // State (State, below), which augusta::replication plans into each
@@ -115,11 +117,6 @@ enum class Phase {
 /// in the world. It names the body, not whoever controls it: a player's
 /// session is a different number.
 enum class EntityId : std::uint32_t {};
-
-/// The server's name for the player who controls a body (CONTEXT.md, "Session
-/// ID"): how Game policy names a player, and a Match end its winner. The
-/// server's start at 1; 0 is no player's, and never a winner.
-enum class SessionId : std::uint32_t {};
 
 /// Who plays a body, as Game policy sees them (ADR-0022): the session of its
 /// player and the index of the Character it plays.
@@ -241,19 +238,10 @@ struct Death {
   ballistics::BodyPart part = ballistics::BodyPart::kTorso;
 };
 
-/// Game policy's decision to end the Match (US-14), made by the objectives'
-/// on_tick on a tick and taken by server::Host after it (ADR-0023).
-struct MatchEnd {
-  /// The session of the player who won, alive in the Match on the tick it was
-  /// decided; nullopt for a draw.
-  std::optional<SessionId> winner;
-};
-
-// SimulationWorld's per-tick output - ADR-0023/ARCHITECTURE.md's
-// "Authoritative State", for augusta::replication to send to clients.
-// It holds every living player's body, the rounds fired, what became of the
-// bullets in flight (the Map impacts and the hits on players), the tick's
-// deaths, and the Match end Game policy decided on it, if any.
+// ADR-0023/ARCHITECTURE.md's "Authoritative State" of one tick, for
+// augusta::replication to send to clients: every living player's body, the
+// rounds fired, what became of the bullets in flight (the Map impacts and the
+// hits on players) and the tick's deaths.
 struct State {
   /// Which tick of its World this is the State of, from 1: what a client names
   /// the view its Commands were sampled against by (command::Command).
@@ -274,9 +262,19 @@ struct State {
   /// How many bullets are still flying after this tick: fired and neither
   /// stopped by the Map nor past the ammo's max range.
   std::uint32_t bullets_in_flight = 0;
-  /// The end of the Match Game policy decided on this tick, if it did: at most
-  /// one tick of a Match carries one.
-  std::optional<MatchEnd> match_end;
+};
+
+/// SimulationWorld's per-tick output (ADR-0023): what the tick resolved, for
+/// server::Host to replicate, and what Game policy decided on it, for
+/// server::Host to act on after the tick. Policy's decisions arrive here typed
+/// and already validated (policy_actions.h), so the server never reads a hook's
+/// answer itself.
+struct TickResult {
+  /// The tick's Authoritative State, its combat events (Shots, hits, deaths) included.
+  State state;
+  /// The actions Game policy took on this tick, in the order it took them: at
+  /// most one MatchEnd, on at most one tick of a Match.
+  std::vector<PolicyAction> actions;
 };
 
 // The single authoritative SimulationWorld. The server constructs
@@ -349,8 +347,9 @@ class World {
   // against the other players as they were its Shooter's delay ago: from the
   // view its Command reports, held to no newer than the last tick's State and
   // its fraction within 0 to 1, to this tick, and no longer than
-  // kMaxShootersDelay. Returns the tick's Authoritative State.
-  State Tick(const std::vector<PlayerCommand>& commands, float delta_time);
+  // kMaxShootersDelay. Returns the tick's Authoritative State and the actions
+  // Game policy took on it.
+  TickResult Tick(const std::vector<PlayerCommand>& commands, float delta_time);
 
  private:
   struct Impl;

@@ -4,6 +4,7 @@
 #include <optional>
 
 #include "augusta/command.h"
+#include "augusta/counter.h"
 
 namespace augusta::prediction {
 
@@ -15,7 +16,7 @@ void History::Record(std::uint32_t sequence, const command::Command& command, co
 }
 
 std::optional<Predicted> History::Acknowledge(std::uint32_t sequence) {
-  while (!entries_.empty() && entries_.front().sequence < sequence) {
+  while (!entries_.empty() && counter::IsNewer(sequence, entries_.front().sequence)) {
     entries_.pop_front();
   }
   if (entries_.empty() || entries_.front().sequence != sequence) {

@@ -189,12 +189,13 @@ WeaponHandling → Commit)
 
 **PresentationWorld phases** (Main/Render thread, per render frame, in
 execution order: Interpolation → Dynamics → Camera → Animation →
-AudioCues → Commit)
+AudioCues → Commit; Dynamics is added with the client's first Prop or
+Cosmetic body, and until then the other five run — ADR-0024)
 
 | Phase | Category | Responsibility |
 |---|---|---|
 | Interpolation | Mechanism | Interpolates between the last two Prediction States, by the fraction of the tick elapsed at render time, for smooth motion at render frame rate |
-| Dynamics | Mechanism | Moves Props to their interpolated poses and advances Cosmetic bodies: one fixed-step `simulate()` per tick Prediction advanced since the last frame, capped per frame (ADR-0045) |
+| Dynamics | Mechanism | Moves Props to their interpolated poses and advances Cosmetic bodies: one fixed-step `simulate()` per tick Prediction advanced since the last frame, capped per frame (ADR-0045). Added with the first dynamic body |
 | Camera | Mechanism | View camera — position at the character's eye for the body's stance, orientation from the newest mouse-look every frame (not the tick's), ADS zoom transition, recoil kick decay, view bob |
 | Animation | Mechanism | Drives skeletal/procedural animation from interpolated movement and weapon state |
 | AudioCues | Mechanism | Translates events carried in the Prediction State (e.g., fire, footstep) into spatialized audio cues |
@@ -256,18 +257,22 @@ inbound commands)*
 
 **SimulationWorld phases** (executed in order, once per tick: Command
 Ingestion → Movement → Dynamics → WeaponHandling → Ballistics → HitDetection →
-Damage → Scripts/Behaviours → Commit)
+Damage → Scripts/Behaviours → Commit; Dynamics is added with the first Prop,
+and until then the other eight run — ADR-0023). Each tick returns a
+`TickResult`: the Authoritative State, its combat events included, and the
+Game policy actions taken on it, typed and validated in C++ (ADR-0022), which
+`server::Host` acts on after the tick.
 
 | Phase | Category | Responsibility |
 |---|---|---|
 | CommandIngestion | Mechanism | Applies validated client commands to this tick's entities |
 | Movement | Mechanism | PhysX integration, stamina, collision resolution (US-04, US-05) |
-| Dynamics | Mechanism | One fixed-step PhysX `simulate()`: Props, grenades, explosion impulses; reports Prop contacts for Damage (ADR-0045) |
+| Dynamics | Mechanism | One fixed-step PhysX `simulate()`: Props, grenades, explosion impulses; reports Prop contacts for Damage (ADR-0045). Added with the first Prop |
 | WeaponHandling | Mechanism | Aim/ADS, fire, reload, recoil (US-06–US-09) |
 | Ballistics | Mechanism | Advances in-flight bullet trajectories (US-10) |
 | HitDetection | Mechanism | Resolves impact point + body part against hitboxes as they were the Shooter's delay ago (US-11, ADR-0044) |
 | Damage | Mechanism (reads Data/Config) | Applies damage, marks death/spectator (US-12, US-13) |
-| Scripts/Behaviours | Policy (Lua, sandboxed) | Win condition, Match end, spawn logic (US-14, US-03) |
+| Scripts/Behaviours | Policy (Lua, sandboxed) | Win condition, Match end, spawn logic (US-14, US-03); a hook's answer leaves as a typed action |
 | Commit | Mechanism | Packages tick state into Authoritative State for Networking |
 
 **Tooling** (offline, not shipped)
@@ -317,8 +322,9 @@ Damage → Scripts/Behaviours → Commit)
 **Scenario: Match End**
 1. Server evaluates the win condition each tick (game policy, the scenario's
    `objectives.lua`; in v1 last player standing)
-2. When it is met, the decision is in that tick's state; the server ends the
-   Match after the tick, removes every body and bullet in flight, and sends
+2. When it is met, the decision is a typed Match end action in that tick's
+   result; the server ends the Match after the tick, removes every body and
+   bullet in flight, and sends
    Match end, with the winner or a draw, reliably; everyone still connected
    returns to the Lobby
 3. The next Match starts once the Lobby is full and Ready again, never less
@@ -344,7 +350,13 @@ now.
 - **Threading:** fixed dedicated threads, no generic job/task scheduler in
   v1. Client: 3 threads (Main/Render, Simulation [ECS + PhysX], Network
   I/O). Server: 2 threads (Simulation, Network I/O) — no render thread,
-  since it's headless (see ADR-0005).
+  since it's headless (see ADR-0005). Each piece of mutable state has one
+  owning thread and crosses to another only as an immutable value: transport
+  callbacks publish events that the Network I/O owner applies outside their
+  locks, the client reads what the server said through one immutable Server
+  view, and SimulationWorld returns a `TickResult`. A runtime supervisor owns
+  the worker threads, their stop request and the first failure, which a
+  runtime reports rather than terminating the process.
 - **Determinism strategy:** PhysX does not guarantee cross-platform bit-exact
   determinism (confirmed: NVIDIA docs state cross-platform determinism is
   unsupported). Client prediction is therefore treated as approximate: the

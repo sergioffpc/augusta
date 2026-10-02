@@ -116,6 +116,17 @@ _Avoid_: Engine code, core logic
 Gameplay-specific rules (Match lifecycle, win conditions, spawn rules) that decide how mechanism is used, implemented as sandboxed Lua in SimulationWorld's Scripts/Behaviours phase, kept out of C++ so it can change without touching mechanism code.
 _Avoid_: Game logic, gameplay code (too broad — conflates policy with mechanism)
 
+**Policy action**:
+One decision of Game policy as the server receives it: a hook's answer read into one of a closed set of C++ types and validated as it is read (ADR-0022), such as a Match end. The server acts on policy actions; it never reads a hook's answer itself.
+_Avoid_: Policy result, script output
+
+**Tick result**:
+What one SimulationWorld tick returns (simulation::TickResult): the tick's Authoritative State, its combat events included, and the Policy actions taken on it (ADR-0023).
+
+**Server view**:
+Everything the server has told one client, as of one moment (harness::ServerView): published whole by the client's Network I/O thread for every message that changes it and never changed after, so a reader on another thread sees one moment (ADR-0005).
+_Avoid_: Snapshot (an Authoritative State update is not one), network state
+
 **Data-driven configuration**:
 Tunable values (e.g. weapon/ammo damage, stamina rules) written as a Lua table script rather than expressed as mechanism code or policy scripts — a third category alongside mechanism and policy. A value may be an expression of other values; the script is authored in the scenario's folder next to its stage, cooked into the scenario's server pack, evaluated once at server startup into a plain immutable struct (**Parameters**) and sent to clients (ADR-0039).
 _Avoid_: Config, settings (too generic — this specifically means simulation-tunable values, not startup settings, which the YAML files of ADR-0034 hold in place of command-line arguments)

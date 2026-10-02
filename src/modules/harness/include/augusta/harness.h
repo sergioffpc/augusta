@@ -215,6 +215,52 @@ struct Failure {
 /// tell, what to fix; the same wording wherever it is shown.
 [[nodiscard]] std::string DescribeFailure(const Failure& failure);
 
+/// What the server said when it admitted this client, in the engine's terms.
+struct Admission {
+  /// The session the server assigned to this client.
+  SessionId session{};
+  /// The rate, in Hz, at which the server ticks and this client must.
+  std::uint8_t tick_rate_hz = 0;
+  /// The parameters this client must predict with.
+  parameters::Parameters parameters{};
+  /// This client's own character index (see RosterEntry::character).
+  std::uint8_t character = 1;
+};
+
+/// What the server has told this client, as of one moment (ADR-0005): the
+/// Network I/O thread publishes a new one, whole, for every message that changes
+/// it, and never changes one it has published. A reader on another thread takes
+/// one (Session::GetServerView) and reads everything it needs from it, so what
+/// it reads is one moment, never a mix of two.
+struct ServerView {
+  /// The whole answer to a join request; nullopt until the server admits this client.
+  std::optional<Admission> accepted;
+  /// Why the server refused this client, if it did.
+  std::optional<JoinRefusal> refusal;
+  /// The newest Roster, kept through a match.
+  std::optional<Lobby> lobby;
+  /// The last match's start, and how many have started: a new count is a new
+  /// match for the prediction to start over in.
+  std::optional<MatchStart> match_start;
+  std::uint32_t matches_started = 0;
+  /// Whether this client is playing in a match: from its Match start to its Match end.
+  bool in_match = false;
+  /// How the last match ended, until the next starts.
+  std::optional<MatchEnd> match_end;
+  /// The newest Authoritative State of the match in progress; only while in_match.
+  std::optional<AuthoritativeState> authoritative;
+  /// The bodies of the match in progress whose Death has been told.
+  std::vector<EntityId> dead;
+
+  /// Whether this client is waiting to be admitted, in the Lobby, or in a match.
+  [[nodiscard]] Phase GetPhase() const;
+  /// The body this client's player controls, as the last Match start named it.
+  [[nodiscard]] std::optional<EntityId> OwnEntity() const;
+  /// Whether this client's player is alive in the match in progress: neither
+  /// told of its Death nor at zero health in the newest Authoritative State.
+  [[nodiscard]] bool OwnAlive() const;
+};
+
 /// What a Session needs to connect.
 struct SessionConfig {
   /// The dedicated server to connect to (US-01).
@@ -258,6 +304,10 @@ class Session {
   /// Sends what is due and takes in what has been received. Call after
   /// PumpEvents, in the same round of the Network I/O thread's loop.
   void ExchangeMessages();
+
+  /// What the server has told this client as of now, whole: the one way to read
+  /// several of the values below as of the same moment. Safe from any thread.
+  [[nodiscard]] std::shared_ptr<const ServerView> GetServerView() const;
 
   /// Whether the connection is still connecting, connected or disconnected.
   [[nodiscard]] networking::ConnectionState GetConnectionState() const;

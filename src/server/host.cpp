@@ -26,6 +26,7 @@
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
+#include "augusta/policy_actions.h"
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
 #include "augusta/scripting.h"
@@ -419,6 +420,13 @@ struct Host::Impl {
     SendRoster();
   }
 
+  // Acts on Game policy's Match end, after the tick it was decided on.
+  void Act(const simulation::MatchEnd& end) {
+    const std::lock_guard<std::mutex> lock(mutex);
+    EndMatch(end.winner.transform([](simulation::SessionId winner) { return FromSimulation(winner); }),
+             EndReason::kWinCondition);
+  }
+
   // Starts a match if one can start: its players' bodies enter the simulation
   // at the Spawn points Game policy gives them, their commands start afresh,
   // and they are told where each spawned.
@@ -587,21 +595,19 @@ void Host::PumpNetwork() {
   }
 }
 
-simulation::State Host::Tick(float delta_time) {
+simulation::TickResult Host::Tick(float delta_time) {
   Impl& impl = *impl_;
   const Impl::TickInput input = impl.PrepareTick();
-  simulation::State state = impl.simulation.Tick(input.commands, delta_time);
-  impl.tick = state.tick;
-  impl.Send(state, input);
-  impl.LogCombat(state);
+  const simulation::TickResult result = impl.simulation.Tick(input.commands, delta_time);
+  impl.tick = result.state.tick;
+  impl.Send(result.state, input);
+  impl.LogCombat(result.state);
   // After the tick's own messages, so a client hears the deaths that ended the
   // match before it hears that it has.
-  if (state.match_end.has_value()) {
-    const std::optional<simulation::SessionId> winner = state.match_end->winner;
-    const std::lock_guard<std::mutex> lock(impl.mutex);
-    impl.EndMatch(winner.has_value() ? std::optional(FromSimulation(*winner)) : std::nullopt, EndReason::kWinCondition);
+  for (const simulation::PolicyAction& action : result.actions) {
+    std::visit([&impl](const auto& typed) { impl.Act(typed); }, action);
   }
-  return state;
+  return result;
 }
 
 void Host::RecordTiming(const tick::Timing& timing) { impl_->Heartbeat(timing); }
