@@ -27,7 +27,7 @@ namespace {
 // Signal handlers can't capture context, so this is the only way to
 // reach the one ServerRuntime main() constructs - set just before
 // Run() is called, never reassigned afterward.
-augusta::runtime::ServerRuntime* g_runtime = nullptr;
+augusta::server::ServerRuntime* g_runtime = nullptr;
 
 extern "C" void HandleShutdownSignal(int /*signal*/) {
   if (g_runtime != nullptr) {
@@ -179,9 +179,9 @@ void WarnIfTheRifleOutpacesTheTick(const augusta::parameters::Rifle& rifle, std:
 // What ServerRuntime's Config is built from: the file's settings and the
 // pack's Parameters script. The pack's map travels to ServerRuntime
 // separately (see main()), not through Config.
-augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ServerConfig& file_config,
-                                            const augusta::parameters::Parameters& parameters) {
-  augusta::runtime::Config config;
+augusta::server::RuntimeConfig BuildRuntimeConfig(const augusta::config::ServerConfig& file_config,
+                                                  const augusta::parameters::Parameters& parameters) {
+  augusta::server::RuntimeConfig config;
   config.listen.address = file_config.listen_address;
   config.tick_rate_hz = file_config.tick_rate_hz;
   // Every client is sent the rate and these when it joins and predicts with
@@ -241,8 +241,8 @@ int main(int argc, char** argv) {
   // Client/Server is constructed - see networking.h.
   augusta::networking::Init();
 
-  const augusta::runtime::Config config = BuildRuntimeConfig(*file_config, *parameters);
-  augusta::runtime::ServerRuntime runtime(config, *std::move(map), *std::move(policy));
+  const augusta::server::RuntimeConfig config = BuildRuntimeConfig(*file_config, *parameters);
+  augusta::server::ServerRuntime runtime(config, *std::move(map), *std::move(policy));
   g_runtime = &runtime;
   std::signal(SIGINT, HandleShutdownSignal);
   std::signal(SIGTERM, HandleShutdownSignal);

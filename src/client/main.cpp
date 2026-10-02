@@ -8,6 +8,7 @@
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/version.h"
+#include "content.h"
 #include "runtime.h"
 
 #ifdef _WIN32
@@ -47,9 +48,9 @@ class TimerResolution {
 };
 #endif
 
-augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ClientConfig& file_config,
-                                            const augusta::assets::Pack& pack) {
-  augusta::runtime::Config config;
+augusta::client::RuntimeConfig BuildRuntimeConfig(const augusta::config::ClientConfig& file_config,
+                                                  const augusta::assets::Pack& pack) {
+  augusta::client::RuntimeConfig config;
   config.renderer.title = "augusta";
   // Direct IP:port only, no server discovery (ARCHITECTURE.md §3).
   config.server.address = file_config.server_address;
@@ -59,13 +60,13 @@ augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ClientConfig&
   return config;
 }
 
-std::optional<augusta::runtime::Failure> Run(const augusta::runtime::Config& config,
-                                             augusta::runtime::Content content) {
+std::optional<augusta::client::RunFailure> Run(const augusta::client::RuntimeConfig& config,
+                                               augusta::client::Content content) {
   // augusta::networking::Init() must run once, process-wide, before any
   // Client/Server is constructed - see networking.h.
   augusta::networking::Init();
 
-  augusta::runtime::ClientRuntime runtime(config, std::move(content));
+  augusta::client::ClientRuntime runtime(config, std::move(content));
   return runtime.Run();
 }
 
@@ -110,18 +111,18 @@ int main(int argc, char** argv) {
   }
   LI("subsystem=client event=pack_verified path={}", pack->Path().string());
 
-  auto content = augusta::runtime::LoadClientContent(*pack, file_config->character);
+  auto content = augusta::client::LoadClientContent(*pack, file_config->character);
   if (!content) {
     LE("subsystem=client event=content_loading_failed path={} error={}", pack->Path().string(),
-       augusta::runtime::DescribeContentError(content.error()));
+       augusta::client::DescribeContentError(content.error()));
     return 1;
   }
 
-  const augusta::runtime::Config config = BuildRuntimeConfig(*file_config, *pack);
+  const augusta::client::RuntimeConfig config = BuildRuntimeConfig(*file_config, *pack);
   if (const auto failure = Run(config, *std::move(content)); failure.has_value()) {
     // No reconnecting and no connection screen: say what happened and exit.
     LE("subsystem=client event=run_failed path={} error={}", pack->Path().string(),
-       augusta::runtime::DescribeFailure(*failure));
+       augusta::client::DescribeRunFailure(*failure));
     return 1;
   }
 

@@ -1,6 +1,5 @@
 #include "scene_loader.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <format>
 #include <optional>
@@ -62,14 +61,6 @@ std::string DescribeSceneError(const SceneError& error) {
                          assets::DescribeResolveError(error.resolve_error, "mesh"));
     case SceneErrorCode::kMalformedBaseColor:
       return std::format("node {} has a malformed {} \"{}\"", error.node, kBaseColorProperty, error.subject);
-    case SceneErrorCode::kUnknownCharacter:
-      return std::format("character {} is not in the pack's character list", error.subject);
-    case SceneErrorCode::kCharacterMeshUnresolved:
-      return std::format("visual mesh {} of character {} {}", error.subject, error.node,
-                         assets::DescribeResolveError(error.resolve_error, "mesh"));
-    case SceneErrorCode::kCharacterEyeUnresolved:
-      return std::format("eye {} of character {} {}", error.subject, error.node,
-                         assets::DescribeResolveError(error.resolve_error, "eye"));
   }
   return "unknown scene error";
 }
@@ -116,50 +107,6 @@ std::expected<renderer::Scene, SceneError> LoadRenderScene(const assets::Pack& p
         .code = SceneErrorCode::kSceneUnresolved, .subject = std::string(scene_path), .resolve_error = scene.error()});
   }
   return BuildRenderScene(*scene, [&pack](std::string_view path) { return pack.ResolveMesh(path); }, eye);
-}
-
-std::vector<std::string> CharactersToLoad(std::span<const std::string> others,
-                                          const std::set<std::string, std::less<>>& loaded) {
-  std::vector<std::string> to_load;
-  for (const std::string& character : others) {
-    if (!loaded.contains(character) && std::ranges::find(to_load, character) == to_load.end()) {
-      to_load.push_back(character);
-    }
-  }
-  return to_load;
-}
-
-std::string CharacterMeshPath(std::string_view character) { return std::format("{}/Character/Visual", character); }
-
-std::expected<renderer::SceneMesh, SceneError> LoadCharacterMesh(std::span<const std::string> characters,
-                                                                 std::string_view character,
-                                                                 const MeshResolver& resolve_mesh) {
-  if (std::ranges::find(characters, character) == characters.end()) {
-    return std::unexpected(SceneError{.code = SceneErrorCode::kUnknownCharacter, .subject = std::string(character)});
-  }
-  const std::string path = CharacterMeshPath(character);
-  const auto mesh = resolve_mesh(path);
-  if (!mesh) {
-    return std::unexpected(SceneError{.code = SceneErrorCode::kCharacterMeshUnresolved,
-                                      .node = std::string(character),
-                                      .subject = path,
-                                      .resolve_error = mesh.error()});
-  }
-  // color is unused here - BuildRemoteVertices (renderer.cpp) replaces it
-  // with each RemotePlayer's own color; left at SceneMesh's own default.
-  return renderer::SceneMesh{.positions = mesh->points, .indices = mesh->indices};
-}
-
-std::expected<math::Vec3, SceneError> LoadCharacterEye(std::string_view character, const EyeResolver& resolve_eye) {
-  const std::string path = assets::CharacterEyePath(character);
-  const auto eye = resolve_eye(path);
-  if (!eye) {
-    return std::unexpected(SceneError{.code = SceneErrorCode::kCharacterEyeUnresolved,
-                                      .node = std::string(character),
-                                      .subject = path,
-                                      .resolve_error = eye.error()});
-  }
-  return eye->position;
 }
 
 }  // namespace augusta::client

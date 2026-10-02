@@ -1,29 +1,22 @@
-#ifndef AUGUSTA_RUNTIME_H_
-#define AUGUSTA_RUNTIME_H_
+#ifndef AUGUSTA_CLIENT_RUNTIME_H_
+#define AUGUSTA_CLIENT_RUNTIME_H_
 
-#include <expected>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
-#include <string_view>
 #include <variant>
-#include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/cues.h"
 #include "augusta/harness.h"
 #include "augusta/input.h"
-#include "augusta/math.h"
 #include "augusta/networking.h"
-#include "augusta/physics.h"
 #include "augusta/renderer.h"
 #include "augusta/supervisor.h"
-#include "scene_loader.h"
+#include "character_loader.h"
+#include "content.h"
 
-// augusta::runtime is ClientRuntime (ARCHITECTURE.md §5): the augustac
-// executable's own orchestrator, owning one of every client module and
-// tying them into the three-thread model ADR-0005 mandates - Main/
+// ClientRuntime (ARCHITECTURE.md §5) is the augustac executable's own
+// orchestrator, owning one of every client module and tying them into the three-thread model ADR-0005 mandates - Main/
 // Render, Simulation, and Network I/O - carrying augusta::prediction's
 // per-tick Prediction State across to augusta::presentation each frame.
 // Unlike the modules it composes, this one belongs to src/client - it's
@@ -39,11 +32,11 @@
 // thread only pumps it.
 //
 // Constructed and run from main.cpp today.
-namespace augusta::runtime {
+namespace augusta::client {
 
 // Everything ClientRuntime needs to construct its owned sub-worlds/
 // modules.
-struct Config {
+struct RuntimeConfig {
   renderer::Config renderer;
   input::Config input;
   // The dedicated server to connect to (US-01).
@@ -55,56 +48,14 @@ struct Config {
   assets::PackHash client_pack{};
 };
 
-// The map's collision, built by augusta::map from the client pack by the
-// caller: where content comes from is the executable's business, not the
-// config file's - so it travels alongside Config rather than inside it.
-struct Map {
-  std::vector<physics::CollisionMesh> collision;
-};
-
-// What the client loads of a character another player brings: its visual mesh,
-// which the renderer draws, and its eye, which a spectator watches it from.
-struct LoadedCharacter {
-  renderer::SceneMesh mesh{};
-  math::Vec3 eye{};
-};
-
-// Loads the character with the given path from the client pack
-// (client::LoadCharacterMesh and client::LoadCharacterEye), or says why it
-// could not.
-using CharacterLoader = std::function<std::expected<LoadedCharacter, client::SceneError>(std::string_view)>;
-
-struct Content {
-  math::Vec3 eye;
-  renderer::Scene scene;
-  Map map;
-  CharacterLoader load_character;
-  audio::CueSounds cue_sounds;
-};
-
-enum class ContentError {
-  kEyeLoading,
-  kSceneLoading,
-  kCharacterLoading,
-  kMapLoading,
-  kCueSoundsLoading,
-};
-
-[[nodiscard]] std::string_view DescribeContentError(ContentError error);
-
-// Loads startup content from the verified pack; the pack must outlive the
-// returned content and the ClientRuntime constructed from it.
-[[nodiscard]] std::expected<Content, ContentError> LoadClientContent(const assets::Pack& pack,
-                                                                     std::string_view character);
-
 // Why Run() stopped without the player closing the window: the session ended
 // on its own, a character could not be loaded, or the Prediction or Network I/O
 // thread stopped on an exception (for one, the transport rejecting the server
 // address).
-using Failure = std::variant<harness::Failure, client::SceneError, supervisor::WorkerFailure>;
+using RunFailure = std::variant<harness::Failure, CharacterError, supervisor::WorkerFailure>;
 
 // What to tell whoever runs the process about why the client stopped.
-[[nodiscard]] std::string DescribeFailure(const Failure& failure);
+[[nodiscard]] std::string DescribeRunFailure(const RunFailure& failure);
 
 // Owns one of every client-only module/World and the three fixed
 // threads ADR-0005 assigns them to. The client process constructs
@@ -126,13 +77,13 @@ class ClientRuntime {
   // ClientRuntime doesn't call it itself since Init() is a one-time
   // process concern, not a per-instance one.
   //
-  // Content is loaded from the client pack by the caller (see scene_loader.h
-  // and map.h), since where content comes from is the executable's business,
-  // not the orchestrator's. load_character is called in the Lobby for each
+  // Content is loaded from the client pack by the caller (see content.h),
+  // since where content comes from is the executable's business, not the
+  // orchestrator's. load_character is called in the Lobby for each
   // character another player brings (ADR-0043); it must stay callable until
   // Run() returns. Throws std::runtime_error if physics rejects a collision
   // mesh.
-  ClientRuntime(const Config& config, Content content);
+  ClientRuntime(const RuntimeConfig& config, Content content);
 
   // Run() always stops and joins the Simulation and Network I/O
   // threads it spawned before returning, including if the Main/Render
@@ -166,13 +117,13 @@ class ClientRuntime {
   // the same thread that constructed this ClientRuntime (ADR-0009's
   // window-thread-affinity requirement, inherited from Renderer) and
   // must not be called more than once.
-  [[nodiscard]] std::optional<Failure> Run();
+  [[nodiscard]] std::optional<RunFailure> Run();
 
  private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace augusta::runtime
+}  // namespace augusta::client
 
-#endif  // AUGUSTA_RUNTIME_H_
+#endif  // AUGUSTA_CLIENT_RUNTIME_H_

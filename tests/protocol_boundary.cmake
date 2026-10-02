@@ -62,7 +62,7 @@ endif()
 if (harness_violations)
   list(JOIN harness_violations "\n" harness_report)
   string(APPEND report
-    "The harness leaks into presentation - convert to presentation's own types in ClientRuntime instead:\n${harness_report}\n")
+    "The harness leaks into presentation - convert to presentation's own types in src/client/frame_mapping.h instead:\n${harness_report}\n")
 endif()
 if (report)
   string(STRIP "${report}" report)

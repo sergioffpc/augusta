@@ -221,6 +221,13 @@ struct EyeData {
   return std::format("{}/Character/Eye", character_path);
 }
 
+/// Pack-relative path of the visual mesh of the character at character_path
+/// (its path relative to `authoring/`): its `Character` root prim's `Visual`
+/// child (ADR-0040), e.g. "characters/player/Character/Visual".
+[[nodiscard]] inline std::string CharacterMeshPath(std::string_view character_path) {
+  return std::format("{}/Character/Visual", character_path);
+}
+
 // Sanitizes a USD prim path (e.g. "/Geom/Cube") into the pack-relative
 // path ADR-0031 addresses its blob by: the leading '/' is stripped, '/'
 // is kept as the path separator.
