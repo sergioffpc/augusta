@@ -14,7 +14,8 @@ the connection), never on the server's counters.
   boundary (Input Validation: `protocol::Decode`, `CommandQueue`'s `Validate`,
   and `Host`'s checks of who may send what, and when) refuses it before it is
   queued. The Authoritative State and the acknowledged sequence stay exactly as
-  if it had never been sent.
+  if it had never been sent. A peer that keeps sending rejected data that no
+  honest client sends is also disconnected (`server/misbehaviour.h`).
 - **Corrected**: an action the game forbids (firing with an empty magazine,
   sprinting with no stamina). SimulationWorld simulates the intent and never
   what the client claims, so the forbidden outcome cannot happen.

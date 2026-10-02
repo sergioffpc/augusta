@@ -45,6 +45,7 @@
 #include "augusta/weapon.h"
 #include "host.h"
 #include "match.h"
+#include "misbehaviour.h"
 #include "parameters_loader.h"
 #include "policy_loader.h"
 #include "wire.h"
@@ -202,7 +203,13 @@ class RawClient {
 
   [[nodiscard]] bool InMatch() const { return !ReceivedOf<augusta::protocol::MatchStartWire>().empty(); }
 
-  [[nodiscard]] ConnectionState GetState() const { return client_.GetState(); }
+  [[nodiscard]] ConnectionState GetConnectionState() const { return client_.GetState(); }
+
+  // The session the server admitted this client as, if it has.
+  [[nodiscard]] std::optional<SessionIdWire> GetSessionId() const {
+    const auto accepted = ReceivedOf<augusta::protocol::JoinAcceptedWire>();
+    return accepted.empty() ? std::nullopt : std::optional<SessionIdWire>(accepted.front().session);
+  }
 
   void Send(const augusta::protocol::MessageWire& message) { SendPayload(augusta::protocol::Encode(message)); }
 
@@ -2993,6 +3000,153 @@ TEST_F(ImpossibleJoinTest, AJoinThatCanNeverPlayHereIsRefusedAndTheLobbyIsToldNo
   EXPECT_EQ(lobby.version, version);
   EXPECT_EQ(lobby.roster.size(), 1U);
   EXPECT_EQ(bystander.GetPhase(), Phase::kLobby);
+}
+
+// How many times log holds needle.
+std::size_t CountOccurrences(const std::string& log, const std::string& needle) {
+  std::size_t count = 0;
+  for (std::size_t at = log.find(needle); at != std::string::npos; at = log.find(needle, at + needle.size())) {
+    ++count;
+  }
+  return count;
+}
+
+// Bytes that are no message: what a misbehaving peer floods the server with.
+const augusta::protocol::BytesWire kUndecodable{std::byte{0xFF}, std::byte{1}, std::byte{2}};
+
+// More misbehaviour than the server tolerates, with plenty to spare.
+constexpr std::size_t kFlood = 3 * augusta::server::kMisbehaviourThreshold;
+
+// A peer that keeps sending what no honest client sends is disconnected
+// (US-15), as an ordinary departure; routine rejections never disconnect it.
+using MisbehaviourTest = RobustnessOf<2>;
+using LobbyMisbehaviourTest = RobustnessOf<3>;
+
+TEST_F(MisbehaviourTest, APeerFloodingMalformedMessagesIsDisconnectedAndItsBodyLeavesWhileAnHonestClientPlaysOn) {
+  augusta::logging::Init();
+  Session& honest = Join();
+  RawClient raw(Endpoint{.address = LoopbackAddress()});
+  ASSERT_TRUE(raw.Join(host_));
+  ASSERT_TRUE(DriveIntoMatch(host_, All(), &raw));
+  Run(kSettleTicks);
+  ASSERT_EQ(honest.GetAuthoritativeState()->bodies.size(), 2U);
+
+  testing::internal::CaptureStdout();
+  for (std::size_t i = 0; i < kFlood; ++i) {
+    raw.SendPayload(kUndecodable);
+  }
+  Run(kSettleTicks, Forward());
+  raw.Serve();
+#if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_DEBUG
+  // The heartbeat after the disconnect counts it; a DEBUG line, so only where
+  // DEBUG is compiled in.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+  host_.RecordTiming(augusta::tick::Timing{});
+#endif
+  const std::string log = testing::internal::GetCapturedStdout();
+
+  EXPECT_EQ(raw.GetConnectionState(), ConnectionState::kDisconnected);
+  EXPECT_EQ(honest.GetConnectionState(), ConnectionState::kConnected);
+  EXPECT_EQ(honest.GetPhase(), Phase::kMatch);
+  EXPECT_EQ(honest.GetAuthoritativeState()->bodies.size(), 1U);
+  EXPECT_GT(BodySeenBy(honest, *honest.GetEntityId())->position.x, SpawnPoints()[0].x + 1.0F);
+  EXPECT_EQ(CountOccurrences(log, "event=misbehaving_disconnected"), 1U) << log;
+  EXPECT_NE(log.find("WARN subsystem=serverruntime event=misbehaving_disconnected peer="), std::string::npos) << log;
+  EXPECT_NE(log.find("session=" + std::to_string(std::to_underlying(raw.GetSessionId().value())) +
+                     " reason=\"undecodable message\""),
+            std::string::npos)
+      << log;
+#if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_DEBUG
+  EXPECT_NE(log.find(" misbehaving=1"), std::string::npos) << log;
+#endif
+}
+
+TEST_F(LobbyMisbehaviourTest, AMisbehavingPlayerDisconnectedFromTheLobbyChangesTheRosterEveryClientIsTold) {
+  Session& first = Join();
+  Session& second = Join();
+  RawClient raw(Endpoint{.address = LoopbackAddress()});
+  ASSERT_TRUE(raw.Join(host_));
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
+    return std::ranges::all_of(sessions_,
+                               [](const auto& s) { return s->GetLobby() && s->GetLobby()->roster.size() == 3; });
+  }));
+  const auto version = first.GetLobby()->version;
+
+  for (std::size_t i = 0; i < kFlood; ++i) {
+    raw.SendPayload(kUndecodable);
+  }
+
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
+    return std::ranges::all_of(sessions_, [](const auto& s) { return s->GetLobby()->roster.size() == 2; });
+  }));
+  for (const Session* client : {&first, &second}) {
+    EXPECT_GT(client->GetLobby()->version, version);
+    EXPECT_EQ(client->GetLobby()->roster[0].session, *first.GetSessionId());
+    EXPECT_EQ(client->GetLobby()->roster[1].session, *second.GetSessionId());
+  }
+  raw.Serve();
+  EXPECT_EQ(raw.GetConnectionState(), ConnectionState::kDisconnected);
+}
+
+TEST_F(MisbehaviourTest, StaleRepeatsAndCommandsInFlightAcrossAMatchEndNeverDisconnect) {
+  Session& honest = Join();
+  RawClient raw(Endpoint{.address = LoopbackAddress()});
+  ASSERT_TRUE(raw.Join(host_));
+  ASSERT_TRUE(DriveIntoMatch(host_, All(), &raw));
+  Run(kSettleTicks, Forward());
+
+  const auto commands = [](augusta::command::Sequence sequence) {
+    augusta::protocol::SequencedCommandWire sequenced{.sequence = sequence};
+    sequenced.command.direction = Vec3(1.0F, 0.0F, 0.0F);
+    return augusta::protocol::CommandsWire{.commands = {sequenced}};
+  };
+  // The same command over and over: every repeat after the first is stale.
+  for (std::size_t i = 0; i < kFlood; ++i) {
+    raw.Send(commands(1));
+  }
+  Run(kSettleTicks, Forward());
+  const auto version = honest.GetLobby()->version;
+  host_.EndMatch();
+  // Commands still arriving after the match ended, and a Ready for the Roster before it.
+  for (std::size_t i = 0; i < kFlood; ++i) {
+    raw.Send(commands(static_cast<augusta::command::Sequence>(2 + i)));
+    raw.Send(augusta::protocol::ReadyWire{.version = version});
+  }
+  Run(kSettleTicks, Forward());
+  Settle(host_, All());
+  raw.Serve();
+
+  EXPECT_EQ(raw.GetConnectionState(), ConnectionState::kConnected);
+  EXPECT_EQ(honest.GetConnectionState(), ConnectionState::kConnected);
+  EXPECT_EQ(honest.GetPhase(), Phase::kLobby);
+  EXPECT_EQ(honest.GetLobby()->roster.size(), 2U);
+}
+
+// An honest client under NFR-02's 100 ms of latency, and with packet loss, never
+// reaches the misbehaviour threshold through a full match.
+using HonestClientTest = MovementTest;
+
+TEST_F(HonestClientTest, AtAHundredMillisecondsOfLatencyAndWithPacketLossAClientStaysConnectedThroughAFullMatch) {
+  augusta::logging::Init();
+  constexpr int kOneWayLatencyMs = 50;
+  constexpr float kLossPercent = 20.0F;
+  constexpr int kWalkSteps = 120;
+  testing::internal::CaptureStdout();
+  augusta::networking::SimulateNetworkConditions({.latency_ms = kOneWayLatencyMs, .loss_percent = kLossPercent});
+
+  Run(kWalkSteps, Walking());
+  host_.EndMatch();
+  // Its commands in flight as the match ends arrive after it.
+  Run(kSettleTicks, Walking());
+  augusta::networking::SimulateNetworkConditions({});
+  const bool back_in_lobby = ExchangeUntil(host_, {&session_}, [&] { return session_.GetPhase() == Phase::kLobby; });
+  Settle(host_, {&session_});
+  const std::string log = testing::internal::GetCapturedStdout();
+
+  EXPECT_TRUE(back_in_lobby);
+  EXPECT_EQ(session_.GetConnectionState(), ConnectionState::kConnected);
+  EXPECT_EQ(session_.GetLobby()->roster.size(), 1U);
+  EXPECT_EQ(CountOccurrences(log, "event=misbehaving_disconnected"), 0U) << log;
 }
 
 // A match of kPlayers on the floor, each with the test rifle: 600 rounds a

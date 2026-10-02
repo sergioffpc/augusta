@@ -100,7 +100,9 @@ class Host {
   Host(Host&&) = delete;
   Host& operator=(Host&&) = delete;
 
-  /// Does one round of the Network I/O thread's work: connection events and received messages.
+  /// Does one round of the Network I/O thread's work: connection events and
+  /// received messages. A peer that keeps sending what no honest client sends
+  /// is disconnected (MisbehaviourTracker), and leaves as if it had left.
   void PumpNetwork();
 
   /// Runs one fixed tick of SimulationWorld on one command per player in the
