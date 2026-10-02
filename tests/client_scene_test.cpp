@@ -2,6 +2,7 @@
 #include <expected>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -14,16 +15,12 @@
 // Falcor or window: the loader only uses renderer.h's plain scene types.
 namespace {
 
-using augusta::assets::EyeData;
 using augusta::assets::MeshData;
 using augusta::assets::ResolveError;
 using augusta::assets::SceneData;
 using augusta::assets::SceneNode;
 using augusta::client::BuildRenderScene;
-using augusta::client::CharactersToLoad;
 using augusta::client::DescribeSceneError;
-using augusta::client::LoadCharacterEye;
-using augusta::client::LoadCharacterMesh;
 using augusta::client::SceneErrorCode;
 using augusta::math::Quat;
 using augusta::math::Vec3;
@@ -185,81 +182,6 @@ TEST(DescribeSceneErrorTest, NamesTheAssetThatFailedToResolve) {
 
   EXPECT_EQ(scene, "scene Scene is not a scene");
   EXPECT_EQ(mesh, "mesh Root/Missing of node Root not found");
-}
-
-// A scenario's characters.
-const std::vector<std::string> kCharacters = {"characters/sniper", "characters/medic"};
-
-TEST(CharactersToLoadTest, AreTheOtherPlayersCharactersNotLoadedYetEachOnce) {
-  const std::vector<std::string> others = {"c", "a", "c", "b"};
-
-  EXPECT_EQ(CharactersToLoad(others, {}), (std::vector<std::string>{"c", "a", "b"}));
-  EXPECT_EQ(CharactersToLoad(others, {"a"}), (std::vector<std::string>{"c", "b"}));
-  EXPECT_TRUE(CharactersToLoad(others, {"a", "b", "c"}).empty());
-  EXPECT_TRUE(CharactersToLoad({}, {}).empty());
-}
-
-TEST(LoadCharacterMeshTest, ResolvesTheVisualMeshOfTheCharacterAPathNames) {
-  std::string resolved;
-  const auto mesh = LoadCharacterMesh(kCharacters, "characters/medic", [&](std::string_view path) {
-    resolved = path;
-    return std::expected<MeshData, ResolveError>(Triangle());
-  });
-
-  ASSERT_TRUE(mesh.has_value());
-  EXPECT_EQ(resolved, "characters/medic/Character/Visual");
-  // In the character's own root space: the renderer places it per player.
-  ASSERT_EQ(mesh->positions.size(), 3U);
-  ExpectNear(mesh->positions[1], {1.0F, 0.0F, 0.0F});
-  EXPECT_EQ(mesh->indices, (std::vector<std::uint32_t>{0, 1, 2}));
-}
-
-TEST(LoadCharacterMeshTest, AMissingVisualMeshIsASceneErrorNamingTheCharacter) {
-  const auto mesh = LoadCharacterMesh(kCharacters, "characters/sniper", ResolveTriangle());
-
-  ASSERT_FALSE(mesh.has_value());
-  EXPECT_EQ(mesh.error().code, SceneErrorCode::kCharacterMeshUnresolved);
-  EXPECT_EQ(mesh.error().node, "characters/sniper");
-  EXPECT_EQ(mesh.error().subject, "characters/sniper/Character/Visual");
-  EXPECT_EQ(mesh.error().resolve_error, ResolveError::kNotFound);
-  EXPECT_NE(DescribeSceneError(mesh.error()).find("characters/sniper"), std::string::npos);
-}
-
-TEST(LoadCharacterMeshTest, ACharacterOutsideThePacksCharacterListIsASceneError) {
-  for (const std::string_view character : {"", "characters/nobody", "characters/medic/"}) {
-    const auto mesh = LoadCharacterMesh(kCharacters, character, ResolveTriangle());
-
-    ASSERT_FALSE(mesh.has_value()) << character;
-    EXPECT_EQ(mesh.error().code, SceneErrorCode::kUnknownCharacter);
-    EXPECT_EQ(mesh.error().subject, character);
-    EXPECT_FALSE(DescribeSceneError(mesh.error()).empty());
-  }
-}
-
-TEST(LoadCharacterEyeTest, ResolvesTheEyeOfTheCharacterAPathNames) {
-  std::string resolved;
-  const auto eye = LoadCharacterEye("characters/medic", [&](std::string_view path) {
-    resolved = path;
-    return std::expected<EyeData, ResolveError>(EyeData{.position = kEye});
-  });
-
-  ASSERT_TRUE(eye.has_value());
-  EXPECT_EQ(resolved, "characters/medic/Character/Eye");
-  ExpectNear(*eye, kEye);
-}
-
-TEST(LoadCharacterEyeTest, AMissingEyeIsASceneErrorNamingTheCharacter) {
-  const auto eye = LoadCharacterEye("characters/sniper", [](std::string_view) {
-    return std::expected<EyeData, ResolveError>(std::unexpected(ResolveError::kNotFound));
-  });
-
-  ASSERT_FALSE(eye.has_value());
-  EXPECT_EQ(eye.error().code, SceneErrorCode::kCharacterEyeUnresolved);
-  EXPECT_EQ(eye.error().node, "characters/sniper");
-  EXPECT_EQ(eye.error().subject, "characters/sniper/Character/Eye");
-  EXPECT_EQ(eye.error().resolve_error, ResolveError::kNotFound);
-  EXPECT_EQ(DescribeSceneError(eye.error()),
-            "eye characters/sniper/Character/Eye of character characters/sniper not found");
 }
 
 }  // namespace

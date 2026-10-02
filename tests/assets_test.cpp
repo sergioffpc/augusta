@@ -359,6 +359,10 @@ TEST(CharacterEyePathTest, ACharactersEyeIsTheEyeChildOfItsRootPrim) {
   EXPECT_EQ(augusta::assets::CharacterEyePath("characters/player"), "characters/player/Character/Eye");
 }
 
+TEST(CharacterMeshPathTest, ACharactersMeshIsTheVisualChildOfItsRootPrim) {
+  EXPECT_EQ(augusta::assets::CharacterMeshPath("characters/player"), "characters/player/Character/Visual");
+}
+
 TEST_F(PackTest, EncodesAndResolvesACharactersEye) {
   const auto pack_path = MakePackPath("augusta_assets_test_eye.pack");
   const auto keys = GenerateEd25519KeyPair();

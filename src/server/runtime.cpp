@@ -12,19 +12,19 @@
 #include "augusta/tick.h"
 #include "host.h"
 
-namespace augusta::runtime {
+namespace augusta::server {
 
 struct ServerRuntime::Impl {
-  Config config;
-  server::Host host;
+  RuntimeConfig config;
+  Host host;
   // The two threads' stop request and first failure (ADR-0005). Declared after
   // host, so it stops and joins the Network I/O thread before host goes.
   supervisor::Supervisor workers;
 
-  Impl(const Config& cfg, server::Map map, scripting::Engine policy)
+  Impl(const RuntimeConfig& cfg, Map map, scripting::Engine policy)
       : config(cfg),
         host(
-            server::HostConfig{
+            HostConfig{
                 .tick_rate_hz = cfg.tick_rate_hz,
                 .parameters = cfg.parameters,
                 .listen = cfg.listen,
@@ -64,7 +64,7 @@ struct ServerRuntime::Impl {
   }
 };
 
-ServerRuntime::ServerRuntime(const Config& config, server::Map map, scripting::Engine policy)
+ServerRuntime::ServerRuntime(const RuntimeConfig& config, Map map, scripting::Engine policy)
     : impl_(std::make_unique<Impl>(config, std::move(map), std::move(policy))) {}
 
 ServerRuntime::~ServerRuntime() = default;
@@ -79,4 +79,4 @@ std::optional<supervisor::WorkerFailure> ServerRuntime::Run() {
 
 void ServerRuntime::Stop() { impl_->workers.RequestStop(); }
 
-}  // namespace augusta::runtime
+}  // namespace augusta::server

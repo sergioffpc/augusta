@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <print>
 #include <utility>
@@ -8,6 +9,7 @@
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/version.h"
+#include "content.h"
 #include "runtime.h"
 
 #ifdef _WIN32
@@ -47,26 +49,63 @@ class TimerResolution {
 };
 #endif
 
-augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ClientConfig& file_config,
-                                            const augusta::assets::Pack& pack) {
-  augusta::runtime::Config config;
+// The verified pack and the runtime that reads from it. The runtime holds on to
+// the pack (it loads the characters other players bring from it), so the pack
+// keeps its address and is declared first, to be destroyed last.
+struct Client {
+  std::unique_ptr<const augusta::assets::Pack> pack;
+  std::unique_ptr<augusta::client::ClientRuntime> runtime;
+};
+
+// Verifies the pack the file's settings name, loads its content and creates the
+// runtime from both; or logs why it could not and returns nullopt.
+std::optional<Client> CreateRuntime(const augusta::config::ClientConfig& file_config) {
+  // Verified before anything else starts (no renderer/audio device,
+  // network socket, or thread is spun up yet) - a bad pack or key means
+  // this process exits here, never partially running against untrusted
+  // content (ADR-0018, ARCHITECTURE.md §8).
+  const std::filesystem::path& pack_path = file_config.pack_path;
+  auto verified = augusta::assets::LoadVerifiedPack(pack_path, file_config.public_key_path);
+  if (!verified) {
+    LE("subsystem=client event=pack_verification_failed path={} error={}", pack_path.string(),
+       augusta::assets::DescribeVerifiedPackError(verified.error(), pack_path, file_config.public_key_path));
+    return std::nullopt;
+  }
+  auto pack = std::make_unique<const augusta::assets::Pack>(*std::move(verified));
+  LI("subsystem=client event=pack_verified path={}", pack->Path().string());
+
+  auto content = augusta::client::LoadClientContent(*pack, file_config.character);
+  if (!content) {
+    LE("subsystem=client event=content_loading_failed path={} error={}", pack->Path().string(),
+       augusta::client::DescribeContentError(content.error()));
+    return std::nullopt;
+  }
+
+  augusta::client::RuntimeConfig config;
   config.renderer.title = "augusta";
   // Direct IP:port only, no server discovery (ARCHITECTURE.md §3).
   config.server.address = file_config.server_address;
   config.input = file_config.input;
   config.character = file_config.character;
-  config.client_pack = pack.Hash();
-  return config;
+  config.client_pack = pack->Hash();
+
+  auto runtime = std::make_unique<augusta::client::ClientRuntime>(config, *std::move(content));
+  return Client{.pack = std::move(pack), .runtime = std::move(runtime)};
 }
 
-std::optional<augusta::runtime::Failure> Run(const augusta::runtime::Config& config,
-                                             augusta::runtime::Content content) {
-  // augusta::networking::Init() must run once, process-wide, before any
-  // Client/Server is constructed - see networking.h.
-  augusta::networking::Init();
+int Run(const augusta::config::ClientConfig& file_config) {
+  const auto client = CreateRuntime(file_config);
+  if (!client) {
+    return 1;
+  }
+  if (const auto failure = client->runtime->Run(); failure.has_value()) {
+    // No reconnecting and no connection screen: say what happened and exit.
+    LE("subsystem=client event=run_failed path={} error={}", client->pack->Path().string(),
+       augusta::client::DescribeRunFailure(*failure));
+    return 1;
+  }
 
-  augusta::runtime::ClientRuntime runtime(config, std::move(content));
-  return runtime.Run();
+  return 0;
 }
 
 }  // namespace
@@ -97,33 +136,9 @@ int main(int argc, char** argv) {
   augusta::logging::SetLogLevel(*augusta::logging::ParseSeverity(file_config->log_level));
   LI("subsystem=client event=starting version={}", augusta::EngineVersion());
 
-  // Verified before anything else starts (no renderer/audio device,
-  // network socket, or thread is spun up yet) - a bad pack or key means
-  // this process exits here, never partially running against untrusted
-  // content (ADR-0018, ARCHITECTURE.md §8).
-  const std::filesystem::path& pack_path = file_config->pack_path;
-  const auto pack = augusta::assets::LoadVerifiedPack(pack_path, file_config->public_key_path);
-  if (!pack) {
-    LE("subsystem=client event=pack_verification_failed path={} error={}", pack_path.string(),
-       augusta::assets::DescribeVerifiedPackError(pack.error(), pack_path, file_config->public_key_path));
-    return 1;
-  }
-  LI("subsystem=client event=pack_verified path={}", pack->Path().string());
+  // augusta::networking::Init() must run once, process-wide, before any
+  // Client/Server is constructed - see networking.h.
+  augusta::networking::Init();
 
-  auto content = augusta::runtime::LoadClientContent(*pack, file_config->character);
-  if (!content) {
-    LE("subsystem=client event=content_loading_failed path={} error={}", pack->Path().string(),
-       augusta::runtime::DescribeContentError(content.error()));
-    return 1;
-  }
-
-  const augusta::runtime::Config config = BuildRuntimeConfig(*file_config, *pack);
-  if (const auto failure = Run(config, *std::move(content)); failure.has_value()) {
-    // No reconnecting and no connection screen: say what happened and exit.
-    LE("subsystem=client event=run_failed path={} error={}", pack->Path().string(),
-       augusta::runtime::DescribeFailure(*failure));
-    return 1;
-  }
-
-  return 0;
+  return Run(*file_config);
 }

@@ -255,7 +255,7 @@ gtest_discover_tests(augusta_wire_tests DISCOVERY_TIMEOUT 30)
 
 # No header past the protocol's edge names a protocol type (ADR-0038): only
 # harness_wire.h and server/wire.h convert. Nor does a presentation header name
-# the harness: ClientRuntime converts. A source scan, so it builds nothing.
+# the harness: the client converts (src/client/frame_mapping.h). A source scan, so it builds nothing.
 add_test(NAME augusta_protocol_boundary
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/protocol_boundary.cmake)
 
@@ -302,11 +302,25 @@ target_link_libraries(augusta_frame_regions_tests PRIVATE GTest::gtest GTest::gt
 gtest_discover_tests(augusta_frame_regions_tests)
 
 if (WIN32)
-  # The client is Windows-only (Falcor, ADR-0009), and so is the scene
-  # loader's target.
+  # The client is Windows-only (Falcor, ADR-0009), and so are its private
+  # libraries' targets - though none of these links Falcor.
   add_executable(augusta_client_scene_tests client_scene_test.cpp)
-  target_link_libraries(augusta_client_scene_tests PRIVATE augustac_scene GTest::gtest GTest::gtest_main)
+  target_link_libraries(augusta_client_scene_tests PRIVATE augustac_content GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_client_scene_tests)
+
+  add_executable(augusta_client_character_tests client_character_test.cpp)
+  target_link_libraries(augusta_client_character_tests PRIVATE augustac_content GTest::gtest GTest::gtest_main)
+  gtest_discover_tests(augusta_client_character_tests)
+
+  add_executable(augusta_client_frame_mapping_tests client_frame_mapping_test.cpp)
+  target_link_libraries(augusta_client_frame_mapping_tests PRIVATE augustac_frame_mapping GTest::gtest GTest::gtest_main)
+  # Links networking and PhysX through the harness, so the same first-launch
+  # cost applies as above.
+  gtest_discover_tests(augusta_client_frame_mapping_tests DISCOVERY_TIMEOUT 30)
+
+  add_executable(augusta_client_net_stats_tests client_net_stats_test.cpp)
+  target_link_libraries(augusta_client_net_stats_tests PRIVATE augustac_net_stats GTest::gtest GTest::gtest_main)
+  gtest_discover_tests(augusta_client_net_stats_tests DISCOVERY_TIMEOUT 30)
 endif()
 
 add_subdirectory(fuzz)

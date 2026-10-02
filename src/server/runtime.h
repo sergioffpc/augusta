@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_RUNTIME_H_
-#define AUGUSTA_RUNTIME_H_
+#ifndef AUGUSTA_SERVER_RUNTIME_H_
+#define AUGUSTA_SERVER_RUNTIME_H_
 
 #include <cstdint>
 #include <memory>
@@ -12,10 +12,9 @@
 #include "augusta/supervisor.h"
 #include "host.h"
 
-// augusta::runtime is ServerRuntime (ARCHITECTURE.md §5): the augustad
-// executable's own orchestrator, owning the single authoritative
-// SimulationWorld and the two fixed threads ADR-0005 assigns the server
-// - Simulation and Network I/O; headless, so no render thread the way
+// ServerRuntime (ARCHITECTURE.md §5) is the augustad executable's own
+// orchestrator, owning the single authoritative SimulationWorld and the two
+// fixed threads ADR-0005 assigns the server - Simulation and Network I/O; headless, so no render thread the way
 // the client's counterpart (src/client/runtime.h) has. Carries
 // validated commands in from augusta::networking::Server and
 // SimulationWorld's Authoritative State back out to it each tick.
@@ -34,11 +33,11 @@
 // real (see networking.cpp, physics.cpp), as is ballistics::World (also
 // constructed inside simulation::World), which every round a player fires
 // flies in, and scripting::Engine, which runs the scenario's Game policy.
-namespace augusta::runtime {
+namespace augusta::server {
 
 // Everything ServerRuntime needs to construct SimulationWorld and start
 // listening.
-struct Config {
+struct RuntimeConfig {
   // The Simulation thread's fixed tick rate in Hz (NFR-01 asks it to sustain
   // 60 Hz, no missed ticks), which each client is told when it joins.
   std::uint8_t tick_rate_hz = 0;
@@ -60,7 +59,7 @@ class ServerRuntime {
   // scenario's Game policy, and starts networking::Server listening on
   // config.listen (throws std::runtime_error if the address can't be bound -
   // see networking.h). Does not yet spawn any thread; see Run().
-  ServerRuntime(const Config& config, server::Map map, scripting::Engine policy = {});
+  ServerRuntime(const RuntimeConfig& config, Map map, scripting::Engine policy = {});
 
   // Run() always stops and joins the Network I/O thread it spawned
   // before returning, so there is nothing left for this destructor to do
@@ -96,6 +95,6 @@ class ServerRuntime {
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace augusta::runtime
+}  // namespace augusta::server
 
-#endif  // AUGUSTA_RUNTIME_H_
+#endif  // AUGUSTA_SERVER_RUNTIME_H_
