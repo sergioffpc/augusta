@@ -4,9 +4,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <random>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -178,6 +181,34 @@ void MakeTransportCall(TransportCall call, HSteamNetConnection connection, HStea
       SteamNetworkingSockets()->CloseConnection(connection, 0, nullptr, false);
       break;
   }
+}
+
+// Listens on addr with options. GameNetworkingSockets refuses port 0, so for
+// it this picks ports of the dynamic range (IANA's 49152-65535) at random
+// until one binds - a port another socket holds fails to bind, and is passed
+// over - and leaves the one it bound in addr.
+HSteamListenSocket CreateListenSocket(SteamNetworkingIPAddr& addr,
+                                      std::span<const SteamNetworkingConfigValue_t> options) {
+  const auto create = [&] {
+    return SteamNetworkingSockets()->CreateListenSocketIP(addr, static_cast<int>(options.size()), options.data());
+  };
+  if (addr.m_port != 0) {
+    return create();
+  }
+  // Enough that only a range nearly all taken runs out: with a handful of
+  // servers on the machine, a single attempt already all but always binds.
+  constexpr int kAttempts = 32;
+  constexpr std::uint16_t kFirstDynamicPort = 49152;
+  std::random_device seed;
+  std::mt19937 engine(seed());
+  std::uniform_int_distribution<std::uint16_t> ports(kFirstDynamicPort, std::numeric_limits<std::uint16_t>::max());
+  for (int attempt = 0; attempt < kAttempts; ++attempt) {
+    addr.m_port = ports(engine);
+    if (const HSteamListenSocket socket = create(); socket != k_HSteamListenSocket_Invalid) {
+      return socket;
+    }
+  }
+  return k_HSteamListenSocket_Invalid;
 }
 
 }  // namespace
@@ -371,6 +402,8 @@ struct Server::Impl {
   std::mutex mutex;
   HSteamListenSocket listen_socket = k_HSteamListenSocket_Invalid;
   HSteamNetPollGroup poll_group = k_HSteamNetPollGroup_Invalid;
+  // What LocalEndpoint reports, set once the listen socket is bound.
+  Endpoint local_endpoint;
   // Pending peers, re-delivered as kConnectRequested on every PumpEvents call
   // until Accept/Disconnect answers them (see Server::PumpEvents's own doc
   // comment in networking.h); connected peers, Send/Broadcast's only way to
@@ -417,13 +450,15 @@ Server::Server(const Endpoint& local_endpoint) : impl_(std::make_unique<Impl>())
   options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, impl_->registration.Id());
 
   impl_->poll_group = SteamNetworkingSockets()->CreatePollGroup();
-  impl_->listen_socket =
-      SteamNetworkingSockets()->CreateListenSocketIP(addr, static_cast<int>(options.size()), options.data());
+  impl_->listen_socket = CreateListenSocket(addr, options);
   if (impl_->listen_socket == k_HSteamListenSocket_Invalid) {
     throw std::runtime_error("networking::Server: failed to bind " + local_endpoint.address);
   }
-  LI("subsystem=networking event=listening address={}", local_endpoint.address);
+  impl_->local_endpoint = Endpoint{.address = FormatAddr(addr)};
+  LI("subsystem=networking event=listening address={}", impl_->local_endpoint.address);
 }
+
+Endpoint Server::LocalEndpoint() const { return impl_->local_endpoint; }
 
 Server::~Server() {
   for (const HSteamNetConnection connection : impl_->peers.Connections()) {

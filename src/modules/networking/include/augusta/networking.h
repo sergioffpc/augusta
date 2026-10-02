@@ -242,8 +242,9 @@ struct PeerMessage {
 // The server process constructs exactly one.
 class Server {
  public:
-  // Starts listening on local_endpoint. Throws std::runtime_error if the
-  // address can't be bound.
+  // Starts listening on local_endpoint - on a free port of its own choosing
+  // if that names port 0 (see LocalEndpoint). Throws std::runtime_error if
+  // the address can't be bound.
   explicit Server(const Endpoint& local_endpoint);
 
   // Closes the listen socket and every connected peer's connection.
@@ -256,6 +257,9 @@ class Server {
   Server& operator=(const Server&) = delete;
   Server(Server&&) = delete;
   Server& operator=(Server&&) = delete;
+
+  /// The address it listens on: local_endpoint's, with the port it chose if that named port 0.
+  [[nodiscard]] Endpoint LocalEndpoint() const;
 
   // Drains connection-lifecycle events since the last call (see
   // PeerEventType) and returns them in arrival order. Every

@@ -10,12 +10,6 @@
 #include <thread>
 #include <vector>
 
-#ifdef _WIN32
-#include <process.h>
-#else
-#include <unistd.h>
-#endif
-
 #include <gtest/gtest.h>
 
 // M1 spike (ADR-0003): this is the "standalone round-trip" issue #31
@@ -45,18 +39,9 @@ constexpr auto kPollInterval = std::chrono::milliseconds(10);
 constexpr auto kPollDeadline = std::chrono::seconds(5);
 
 // ctest runs every test case in its own process, possibly in parallel, so a
-// fixed port would collide; derive one from the process id instead. The span is
-// prime because Windows process ids are all multiples of 4.
-std::string LoopbackAddress() {
-#ifdef _WIN32
-  const int pid = _getpid();
-#else
-  const int pid = getpid();
-#endif
-  constexpr int kFirstPort = 31000;
-  constexpr int kPortSpan = 2999;
-  return "127.0.0.1:" + std::to_string(kFirstPort + (pid % kPortSpan));
-}
+// fixed port would collide: each server binds port 0, a free one of its own
+// choosing, and its client connects to the one the server reports.
+constexpr const char* kLoopbackAnyPort = "127.0.0.1:0";
 
 Payload MakePayload(const std::string& text) {
   const auto* bytes = reinterpret_cast<const std::byte*>(text.data());
@@ -165,10 +150,17 @@ class NetworkingEnvironment : public ::testing::Environment {
 
 class NetworkingTest : public ::testing::Test {};
 
+TEST_F(NetworkingTest, AServerBoundToPortZeroReportsThePortItGot) {
+  Server server(Endpoint{.address = kLoopbackAnyPort});
+
+  EXPECT_TRUE(server.LocalEndpoint().address.starts_with("127.0.0.1:"));
+  EXPECT_NE(server.LocalEndpoint().address, kLoopbackAnyPort);
+}
+
 TEST_F(NetworkingTest, RoundTripsAMessageBothWays) {
-  Server server(Endpoint{.address = LoopbackAddress()});
+  Server server(Endpoint{.address = kLoopbackAnyPort});
   Client client;
-  client.Connect(Endpoint{.address = LoopbackAddress()});
+  client.Connect(server.LocalEndpoint());
 
   RoundTripResult result;
   ASSERT_TRUE(PerformRoundTrip(server, client, result));
@@ -182,9 +174,9 @@ TEST_F(NetworkingTest, RoundTripsAMessageBothWays) {
 class ConnectedNetworkingTest : public NetworkingTest {
  protected:
   void SetUp() override {
-    server_ = std::make_unique<Server>(Endpoint{.address = LoopbackAddress()});
+    server_ = std::make_unique<Server>(Endpoint{.address = kLoopbackAnyPort});
     client_ = std::make_unique<Client>();
-    client_->Connect(Endpoint{.address = LoopbackAddress()});
+    client_->Connect(server_->LocalEndpoint());
     ASSERT_TRUE(PollUntil([&] { PollBoth(); }, [&] { return client_->GetState() == ConnectionState::kConnected; }));
     ASSERT_TRUE(PollUntil([&] { PollBoth(); }, [&] { return peer_.has_value(); }));
   }
@@ -354,9 +346,9 @@ TEST_F(NetworkingTest, APeerThatGoesSilentIsReportedAsALostConnectionOnceTheTime
   constexpr int kTimeoutMs = 500;
   // Set before the connection exists: the timeout only reaches new connections.
   SimulateNetworkConditions({.timeout_ms = kTimeoutMs});
-  Server server(Endpoint{.address = LoopbackAddress()});
+  Server server(Endpoint{.address = kLoopbackAnyPort});
   Client client;
-  client.Connect(Endpoint{.address = LoopbackAddress()});
+  client.Connect(server.LocalEndpoint());
   std::optional<PeerId> peer;
   const auto poll_both = [&] {
     client.PumpEvents();
@@ -395,9 +387,9 @@ TEST_F(NetworkingTest, APeerThatGoesSilentIsReportedAsALostConnectionOnceTheTime
 TEST_F(NetworkingTest, TheDefaultTimeoutIsBackOnceTheConditionsAreReset) {
   SimulateNetworkConditions({.timeout_ms = 200});
   SimulateNetworkConditions({});
-  Server server(Endpoint{.address = LoopbackAddress()});
+  Server server(Endpoint{.address = kLoopbackAnyPort});
   Client client;
-  client.Connect(Endpoint{.address = LoopbackAddress()});
+  client.Connect(server.LocalEndpoint());
   std::optional<PeerId> peer;
   const auto poll_both = [&] {
     client.PumpEvents();
