@@ -1,16 +1,21 @@
 #include "wire.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <span>
 #include <utility>
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/ballistics.h"
 #include "augusta/command.h"
+#include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
+#include "augusta/tick.h"
 #include "command_queue.h"
 #include "host.h"
 #include "match.h"
@@ -34,6 +39,18 @@ physics::Stance FromWire(protocol::StanceWire stance) { return static_cast<physi
 
 // The protocol carries a pack's hash as the assets module computes it.
 static_assert(protocol::kPackHashSize == assets::kPackHashSize);
+
+protocol::BodyPartWire ToWire(ballistics::BodyPart part) {
+  switch (part) {
+    case ballistics::BodyPart::kHead:
+      return protocol::BodyPartWire::kHead;
+    case ballistics::BodyPart::kTorso:
+      return protocol::BodyPartWire::kTorso;
+    case ballistics::BodyPart::kLimb:
+      return protocol::BodyPartWire::kLimb;
+  }
+  std::unreachable();
+}
 
 }  // namespace
 
@@ -82,6 +99,22 @@ protocol::BodyStateWire ToWire(const physics::BodyState& body) {
 }
 
 protocol::ParametersWire ToWire(const parameters::Parameters& parameters) {
+  const parameters::Rifle& rifle = parameters.rifle;
+  protocol::RifleWire rifle_wire{
+      .rounds_per_minute = rifle.rounds_per_minute,
+      .muzzle_velocity = rifle.muzzle_velocity,
+      .reload_seconds = rifle.reload_seconds,
+      .recoil_recovery_per_second = rifle.recoil_recovery_per_second,
+      .ads_recoil_scale = rifle.ads_recoil_scale,
+      .ads_field_of_view = rifle.ads_field_of_view,
+      .recoil_pattern = {},
+      .magazine_capacity = rifle.magazine_capacity,
+  };
+  rifle_wire.recoil_pattern.reserve(rifle.recoil_pattern.size());
+  for (const parameters::RecoilKick& kick : rifle.recoil_pattern) {
+    rifle_wire.recoil_pattern.push_back(protocol::RecoilKickWire{.pitch = kick.pitch, .yaw = kick.yaw});
+  }
+  const parameters::Ammo& ammo = parameters.ammo;
   return protocol::ParametersWire{
       .stamina =
           {
@@ -89,6 +122,16 @@ protocol::ParametersWire ToWire(const parameters::Parameters& parameters) {
               .regen_per_second = parameters.stamina.regen_per_second,
               .forced_walk_below = parameters.stamina.forced_walk_below,
           },
+      .rifle = std::move(rifle_wire),
+      .ammo =
+          {
+              .gravity = ammo.gravity,
+              .max_range = ammo.max_range,
+              .head_damage = ammo.damage.head,
+              .torso_damage = ammo.damage.torso,
+              .limb_damage = ammo.damage.limb,
+          },
+      .starting_health = parameters.starting_health,
       .player_count = parameters.player_count,
   };
 }
@@ -102,11 +145,12 @@ protocol::LobbyWire ToWire(const Roster& roster) {
   return lobby;
 }
 
-protocol::MatchStartWire ToWire(const MatchStart& start) {
+protocol::MatchStartWire ToWire(const MatchStart& start, std::span<const math::Vec3> spawns) {
   protocol::MatchStartWire message;
   message.players.reserve(start.players.size());
-  for (const MatchPlayer& player : start.players) {
-    message.players.push_back(protocol::MatchPlayerWire{.spawn = player.spawn,
+  for (std::size_t i = 0; i < start.players.size(); ++i) {
+    const MatchPlayer& player = start.players[i];
+    message.players.push_back(protocol::MatchPlayerWire{.spawn = spawns[i],
                                                         .session = ToWire(player.session),
                                                         .entity = ToWire(player.entity),
                                                         .character = player.character});
@@ -114,19 +158,58 @@ protocol::MatchStartWire ToWire(const MatchStart& start) {
   return message;
 }
 
+protocol::MatchEndWire ToWire(const MatchEnd& end) {
+  return protocol::MatchEndWire{.winner = end.winner.has_value() ? ToWire(*end.winner) : protocol::kDraw};
+}
+
 protocol::AuthoritativeStateWire ToWire(const replication::Update& update) {
   protocol::AuthoritativeStateWire state{
       .tick = update.tick,
-      .acknowledged_sequence = update.acknowledged_sequence,
       .bodies = {},
+      .rifle = {.cooldown = update.rifle.cooldown,
+                .reload_remaining = update.rifle.reload_remaining,
+                .recoil_pitch = update.rifle.recoil.pitch,
+                .recoil_yaw = update.rifle.recoil.yaw,
+                .rounds = update.rifle.rounds,
+                .burst_index = update.rifle.burst_index},
+      .health = update.health,
+      .acknowledged_sequence = update.acknowledged_sequence,
       .queued_commands = update.queued_commands,
   };
   state.bodies.reserve(update.bodies.size());
   for (const replication::EntityBody& body : update.bodies) {
-    state.bodies.push_back(
-        protocol::EntityStateWire{.entity = ToWire(FromSimulation(body.entity)), .body = ToWire(body.body)});
+    state.bodies.push_back(protocol::EntityStateWire{
+        .entity = ToWire(FromSimulation(body.entity)), .body = ToWire(body.body), .yaw = body.yaw});
   }
   return state;
+}
+
+protocol::ShotWire ToWire(const replication::Shot& shot) {
+  return protocol::ShotWire{
+      .tick = shot.tick,
+      .origin = shot.origin,
+      .shooter = ToWire(FromSimulation(shot.shooter)),
+      .yaw = shot.yaw,
+      .pitch = shot.pitch,
+  };
+}
+
+protocol::HitConfirmationWire ToWire(const replication::HitConfirmation& hit) {
+  return protocol::HitConfirmationWire{
+      .target = ToWire(FromSimulation(hit.target)),
+      .damage = hit.damage,
+      .part = ToWire(hit.part),
+  };
+}
+
+protocol::DeathWire ToWire(const replication::Death& death) {
+  return protocol::DeathWire{
+      .victim = ToWire(FromSimulation(death.victim)),
+      .killer = ToWire(FromSimulation(death.killer)),
+      .yaw = death.yaw,
+      .pitch = death.pitch,
+      .part = ToWire(death.part),
+  };
 }
 
 assets::PackHash FromWire(const protocol::PackHashWire& hash) {
@@ -143,7 +226,7 @@ JoinRequest FromWire(const protocol::JoinRequestWire& request) {
   };
 }
 
-command::Command FromWire(const protocol::CommandWire& command) {
+command::Command FromWire(const protocol::CommandWire& command, tick::Tick view_tick) {
   command::Command result;
   result.movement.direction = command.direction;
   result.movement.sprint = (command.flags & protocol::CommandWire::kSprint) != 0;
@@ -153,18 +236,20 @@ command::Command FromWire(const protocol::CommandWire& command) {
   result.ads = (command.flags & protocol::CommandWire::kAds) != 0;
   result.fire = (command.flags & protocol::CommandWire::kFire) != 0;
   result.reload = (command.flags & protocol::CommandWire::kReload) != 0;
+  result.view_tick = view_tick - std::min<tick::Tick>(command.view_age, view_tick);
+  result.view_fraction = command.view_fraction;
   return result;
 }
 
-SequencedCommand FromWire(const protocol::SequencedCommandWire& command) {
-  return SequencedCommand{.sequence = command.sequence, .command = FromWire(command.command)};
+SequencedCommand FromWire(const protocol::SequencedCommandWire& command, tick::Tick view_tick) {
+  return SequencedCommand{.sequence = command.sequence, .command = FromWire(command.command, view_tick)};
 }
 
 std::vector<SequencedCommand> FromWire(const protocol::CommandsWire& message) {
   std::vector<SequencedCommand> commands;
   commands.reserve(message.commands.size());
   for (const protocol::SequencedCommandWire& command : message.commands) {
-    commands.push_back(FromWire(command));
+    commands.push_back(FromWire(command, message.view_tick));
   }
   return commands;
 }

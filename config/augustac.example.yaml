@@ -2,28 +2,22 @@
 # augustac.yaml and edit it, or keep it anywhere and run
 # `augustac --config <this file>`. Keys are grouped into sections; an error
 # names a key by its path, e.g. network.server_address.
-
 # Where the relative paths below start from (required). A relative value is
 # relative to this file's directory, so "." means the directory of this file.
 base_dir: .
-
 player:
   # The character to play (required), by its path relative to authoring/, e.g.
   # characters/player: one of the characters the server's scenario names in
   # its manifest.yaml. The server refuses the join otherwise (ADR-0042).
   character: characters/player
-
 content:
   # Client pack to load (required).
   pack: packs/augusta/client.pack
-
   # Ed25519 public key the pack is signed with (required).
   public_key: keys/augusta.pub
-
 network:
   # Server to connect to (optional, default 127.0.0.1:27015).
   server_address: 127.0.0.1:27015
-
 logging:
   # Console sink's runtime floor (optional, default debug): one of trace, debug,
   # info, warn, error, critical. Only lowers what the build already compiles in
@@ -32,12 +26,10 @@ logging:
   # (once a second: ticks, messages, drops, corrections) without the per-packet
   # trace firehose; set trace when debugging the network layer itself.
   level: debug
-
 input:
   # How far the view turns, in radians, per pixel of mouse movement (optional,
   # default 0.0022).
   mouse_sensitivity: 0.0022
-
   # Which key triggers each control (optional). Leave a control out to keep its
   # default; no two controls may share a key, and Escape is reserved for
   # releasing the cursor. Key names: A-Z, 0-9, Space, Tab, Enter, Backspace,

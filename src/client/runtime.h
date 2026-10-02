@@ -11,12 +11,14 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/cues.h"
 #include "augusta/harness.h"
 #include "augusta/input.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/physics.h"
 #include "augusta/renderer.h"
+#include "augusta/supervisor.h"
 #include "scene_loader.h"
 
 // augusta::runtime is ClientRuntime (ARCHITECTURE.md §5): the augustac
@@ -36,13 +38,7 @@
 // Prediction thread only hands it each tick's command, and the Network I/O
 // thread only pumps it.
 //
-// Constructed and run from main.cpp today. Renderer (ADR-0009, the M1
-// Falcor spike), networking::Client (ADR-0003), and physics::World
-// (ADR-0002, constructed inside prediction::World) are all real -
-// audio::Engine is still a placeholder stub (see audio.h/audio.cpp),
-// which is why there's no sound yet; a stub still links and runs as a
-// no-op, same as every other module before its real implementation
-// landed (see e.g. physics.h's own history).
+// Constructed and run from main.cpp today.
 namespace augusta::runtime {
 
 // Everything ClientRuntime needs to construct its owned sub-worlds/
@@ -66,13 +62,23 @@ struct Map {
   std::vector<physics::CollisionMesh> collision;
 };
 
-// Loads the visual mesh of the character with the given index from the client
-// pack (client::LoadCharacterMesh), or says why it could not.
-using CharacterMeshLoader = std::function<std::expected<renderer::SceneMesh, client::SceneError>(std::uint8_t)>;
+// What the client loads of a character another player brings: its visual mesh,
+// which the renderer draws, and its eye, which a spectator watches it from.
+struct LoadedCharacter {
+  renderer::SceneMesh mesh{};
+  math::Vec3 eye{};
+};
+
+// Loads the character with the given index from the client pack
+// (client::LoadCharacterMesh and client::LoadCharacterEye), or says why it
+// could not.
+using CharacterLoader = std::function<std::expected<LoadedCharacter, client::SceneError>(std::uint8_t)>;
 
 // Why Run() stopped without the player closing the window: the session ended
-// on its own, or a character's mesh could not be loaded.
-using Failure = std::variant<harness::Failure, client::SceneError>;
+// on its own, a character could not be loaded, or the Prediction or Network I/O
+// thread stopped on an exception (for one, the transport rejecting the server
+// address).
+using Failure = std::variant<harness::Failure, client::SceneError, supervisor::WorkerFailure>;
 
 // Owns one of every client-only module/World and the three fixed
 // threads ADR-0005 assigns them to. The client process constructs
@@ -85,8 +91,9 @@ class ClientRuntime {
   // EventSink; PresentationWorld needs the audio::Engine reference) -
   // but does not yet connect to the server or spawn any thread; see
   // Run(). Throws whatever the underlying module constructors throw
-  // (Renderer and audio::Engine both throw std::runtime_error on
-  // device/window failure - see their own headers).
+  // (Renderer throws std::runtime_error on device/window failure - see its
+  // own header; audio::Engine never throws, and is silent without an output
+  // device).
   //
   // augusta::networking::Init() must already have been called once,
   // process-wide, before this constructor runs (see networking.h) -
@@ -98,13 +105,14 @@ class ClientRuntime {
   // scene_loader.h and map.h), since where content comes from is the
   // executable's business, not the orchestrator's. For the same reason the
   // caller hands in eye, the local player's character's eye (scene_loader.h's
-  // LoadCharacterEye) that the camera follows the body at, and
-  // load_character_mesh, which Run() calls in the Lobby for
+  // LoadCharacterEye) that the camera follows the body at, cue_sounds, every
+  // cue's sound (cues.h), and
+  // load_character, which Run() calls in the Lobby for
   // each character another player brings (ADR-0043); it must stay callable
   // until Run() returns. Throws std::runtime_error if physics rejects a
   // collision mesh.
   ClientRuntime(const Config& config, Map map, const renderer::Scene& scene, const math::Vec3& eye,
-                CharacterMeshLoader load_character_mesh);
+                const audio::CueSounds& cue_sounds, CharacterLoader load_character);
 
   // Run() always stops and joins the Simulation and Network I/O
   // threads it spawned before returning, including if the Main/Render
@@ -128,8 +136,9 @@ class ClientRuntime {
   // every other player's character and report Ready, read the latest
   // committed Prediction State, PresentationWorld::RunFrame,
   // Renderer::RenderFrame - until Renderer::ShouldClose() returns true, the
-  // session fails (refused, server unreachable, connection lost) or a
-  // character's mesh cannot be loaded, which is what it returns: the caller
+  // session fails (refused, server unreachable, connection lost), a
+  // character cannot be loaded or the Prediction or Network I/O thread
+  // throws (which stops the others), which is what it returns: the caller
   // reports it and exits, since there is no reconnecting. nullopt if the
   // player closed the window.
   // Always stops and joins both spawned threads before returning or

@@ -41,10 +41,14 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeSceneBlob(const SceneDa
 std::expected<std::vector<std::byte>, EncodeError> EncodeTextureBlob(const TextureData& texture);
 
 // Encodes spawn_point into the pack's spawn-point-blob byte layout
-// (ADR-0031/ADR-0032). Collision and hitbox blobs need no analogous
-// EncodeCollisionBlob/EncodeHitboxBlob - they reuse EncodeMeshBlob
-// directly (see MeshData's own comment).
+// (ADR-0031/ADR-0032). Collision blobs need no analogous
+// EncodeCollisionBlob - they reuse EncodeMeshBlob directly (see MeshData's
+// own comment).
 std::expected<std::vector<std::byte>, EncodeError> EncodeSpawnPointBlob(const SpawnPointData& spawn_point);
+
+// Encodes hitbox into the pack's hitbox-blob byte layout (ADR-0040): its body
+// part as one byte, then its geometry as a mesh blob.
+std::expected<std::vector<std::byte>, EncodeError> EncodeHitboxBlob(const HitboxData& hitbox);
 
 // Encodes eye into the pack's eye-blob byte layout (ADR-0040).
 std::expected<std::vector<std::byte>, EncodeError> EncodeEyeBlob(const EyeData& eye);
@@ -57,6 +61,14 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeScriptBlob(std::string_
 // pack's character-list blob byte layout (ADR-0042): kTooLarge past
 // kMaxCharacters.
 std::expected<std::vector<std::byte>, EncodeError> EncodeCharactersBlob(std::span<const std::string> characters);
+
+// Encodes sound into the pack's audio-blob byte layout (ADR-0020, ADR-0031):
+// kTooLarge past kMaxAudioBytes.
+std::expected<std::vector<std::byte>, EncodeError> EncodeAudioBlob(const AudioData& sound);
+
+// Encodes sounds_path, the sounds folder the cue sounds are addressed under, into
+// the pack's sounds-blob byte layout (ADR-0031).
+std::expected<std::vector<std::byte>, EncodeError> EncodeSoundsBlob(std::string_view sounds_path);
 
 enum class WriteError {
   // output_path (or its temporary file) could not be created, written,

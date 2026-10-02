@@ -3,10 +3,13 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
+#include "augusta/scripting.h"
 #include "augusta/simulation.h"
+#include "augusta/supervisor.h"
 #include "host.h"
 
 // augusta::runtime is ServerRuntime (ARCHITECTURE.md §5): the augustad
@@ -28,9 +31,9 @@
 //
 // Constructed and run from main.cpp. networking::Server (ADR-0003) and
 // physics::World (ADR-0002, constructed inside simulation::World) are
-// real (see networking.cpp, physics.cpp); ballistics::World and
-// scripting::Engine (also constructed inside simulation::World) are
-// still placeholder stubs.
+// real (see networking.cpp, physics.cpp), as is ballistics::World (also
+// constructed inside simulation::World), which every round a player fires
+// flies in, and scripting::Engine, which runs the scenario's Game policy.
 namespace augusta::runtime {
 
 // Everything ServerRuntime needs to construct SimulationWorld and start
@@ -53,15 +56,14 @@ struct Config {
 class ServerRuntime {
  public:
   // Constructs SimulationWorld with map's collision (throws
-  // std::runtime_error if a map mesh is rejected - see host.h)
-  // and starts networking::Server listening on config.listen (throws
-  // std::runtime_error if the address can't be bound - see
-  // networking.h). Does not yet spawn any thread; see Run().
-  ServerRuntime(const Config& config, server::Map map);
+  // std::runtime_error if a map mesh is rejected - see host.h) and the
+  // scenario's Game policy, and starts networking::Server listening on
+  // config.listen (throws std::runtime_error if the address can't be bound -
+  // see networking.h). Does not yet spawn any thread; see Run().
+  ServerRuntime(const Config& config, server::Map map, scripting::Engine policy = {});
 
   // Run() always stops and joins the Network I/O thread it spawned
-  // before returning, including if the Simulation loop exits via an
-  // exception - so there is nothing left for this destructor to do
+  // before returning, so there is nothing left for this destructor to do
   // once Run() has run. Also safe if Run() was never called.
   ~ServerRuntime();
 
@@ -76,14 +78,17 @@ class ServerRuntime {
   // Spawns the Network I/O thread (ADR-0005), then runs the fixed-rate
   // Simulation loop on the calling thread - gather this tick's latest
   // validated commands, SimulationWorld::Tick, hand the resulting
-  // Authoritative State onward - until Stop() is called. Always stops
-  // and joins the Network I/O thread before returning or propagating an
-  // exception (see ~ServerRuntime). Must not be called more than once.
-  void Run();
+  // Authoritative State onward - until Stop() is called or either thread
+  // fails on an exception, which stops the other (supervisor.h). Always stops
+  // and joins the Network I/O thread before returning. Returns the failure
+  // that stopped it, nullopt if Stop() did: the caller reports it and exits.
+  // Must not be called more than once.
+  [[nodiscard]] std::optional<supervisor::WorkerFailure> Run();
 
-  // Signals Run()'s Simulation loop to stop after its current tick.
-  // Safe to call from any thread - e.g. main() installing a SIGINT/
-  // SIGTERM handler that calls this.
+  // Signals Run()'s Simulation loop to stop after its current tick, and the
+  // Network I/O thread after its current round. Safe to call from any thread
+  // and from a signal handler - e.g. main() installing a SIGINT/SIGTERM handler
+  // that calls this.
   void Stop();
 
  private:

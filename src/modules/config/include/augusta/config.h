@@ -11,8 +11,9 @@
 
 // augusta::config reads the client's and the server's startup settings from a
 // YAML file (ADR-0034) instead of a list of command-line arguments. By default
-// each executable reads one fixed-name file from its own directory; the only
-// argument, `--config <file>`, points it at another. Shared by both (ADR-0006).
+// each executable reads one fixed-name file from its own directory;
+// `--config <file>` points it at another, and `--help` and `--version` are the
+// only other arguments. Shared by both (ADR-0006).
 //
 // The file groups its keys into sections (`content`, `network`, `logging`,
 // ...), each a mapping; a key is named by its dotted path
@@ -87,7 +88,8 @@ struct ServerConfig {
 
 /// Why reading the command line or a config file failed.
 enum class ConfigErrorCode {
-  /// The command line is not empty or `--config <file>`; subject is the usage message.
+  /// The command line is not empty, `--config <file>`, `--help` or `--version`;
+  /// subject is the usage message.
   kInvalidArguments,
   /// The running executable's directory is unknown, so the default file can't be
   /// found; subject is the default file name.
@@ -137,7 +139,7 @@ struct ConfigError {
   /// The key, message or usage text the code's documentation names.
   std::string subject;
   /// The config file being read, set by the Load* functions; empty from
-  /// ParseClientConfig, ParseServerConfig and ResolveConfigFile.
+  /// ParseClientConfig, ParseServerConfig and ParseCommandLine.
   std::filesystem::path file;
 };
 
@@ -165,14 +167,35 @@ std::expected<ClientConfig, ConfigError> LoadClientConfig(const std::filesystem:
 /// file's directory. Errors carry file.
 std::expected<ServerConfig, ConfigError> LoadServerConfig(const std::filesystem::path& file);
 
-/// Where the config file is, from the command line (argc/argv as main gets
-/// them): the path after `--config`, taken as given (relative to the working
-/// directory), or default_file_name in the running executable's directory when
-/// there are no arguments. Any other arguments are a kInvalidArguments error
-/// whose subject is the usage message, naming program.
-std::expected<std::filesystem::path, ConfigError> ResolveConfigFile(int argc, const char* const* argv,
-                                                                    std::string_view program,
-                                                                    std::string_view default_file_name);
+/// What the command line asks the executable to do.
+enum class CommandLineAction : std::uint8_t {
+  /// Start, reading config_file.
+  kRun,
+  /// Print message (the usage) to stdout and exit successfully.
+  kShowHelp,
+  /// Print message (the version) to stdout and exit successfully.
+  kShowVersion,
+};
+
+/// The command line, read: the action, and what the executable needs for it.
+struct CommandLine {
+  /// Only set for kRun.
+  std::filesystem::path config_file;
+  /// Only set for kShowHelp (the usage message) and kShowVersion
+  /// (`<program> <version>`).
+  std::string message;
+  CommandLineAction action = CommandLineAction::kRun;
+};
+
+/// Reads the command line (argc/argv as main gets them). `--help` asks for the
+/// usage and `--version` for version, whatever else is on it (`--help` first);
+/// otherwise the config file is the path after `--config`, taken as given
+/// (relative to the working directory), or default_file_name in the running
+/// executable's directory when there are no arguments. Any other arguments are
+/// a kInvalidArguments error whose subject is the usage message, naming
+/// program.
+std::expected<CommandLine, ConfigError> ParseCommandLine(int argc, const char* const* argv, std::string_view program,
+                                                         std::string_view default_file_name, std::string_view version);
 
 }  // namespace augusta::config
 

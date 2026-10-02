@@ -412,6 +412,27 @@ PackVerificationData ComputePackHashAndReadTrailer(std::span<const std::byte> ma
 
 }  // namespace
 
+std::string_view BodyPartName(BodyPart part) {
+  switch (part) {
+    case BodyPart::kHead:
+      return "head";
+    case BodyPart::kTorso:
+      return "torso";
+    case BodyPart::kLimb:
+      return "limb";
+  }
+  return "unknown";
+}
+
+std::optional<BodyPart> FirstMissingBodyPart(std::span<const HitboxData> hitboxes) {
+  for (const BodyPart part : {BodyPart::kHead, BodyPart::kTorso, BodyPart::kLimb}) {
+    if (std::ranges::none_of(hitboxes, [part](const HitboxData& hitbox) { return hitbox.part == part; })) {
+      return part;
+    }
+  }
+  return std::nullopt;
+}
+
 bool IsValidAssetType(std::uint8_t value) {
   switch (static_cast<AssetType>(value)) {
     case AssetType::kMesh:
@@ -425,6 +446,7 @@ bool IsValidAssetType(std::uint8_t value) {
     case AssetType::kCharacters:
     case AssetType::kClientPack:
     case AssetType::kEye:
+    case AssetType::kSounds:
       return true;
   }
   return false;
@@ -607,8 +629,29 @@ std::expected<MeshData, ResolveError> Pack::ResolveCollision(std::string_view pa
   return ResolveAsset<MeshData>(impl_->index, impl_->mapping, path, AssetType::kCollision, DecodeMeshBlob);
 }
 
-std::expected<MeshData, ResolveError> Pack::ResolveHitbox(std::string_view path) const {
-  return ResolveAsset<MeshData>(impl_->index, impl_->mapping, path, AssetType::kHitbox, DecodeMeshBlob);
+std::expected<HitboxData, ResolveError> Pack::ResolveHitbox(std::string_view path) const {
+  return ResolveAsset<HitboxData>(impl_->index, impl_->mapping, path, AssetType::kHitbox, DecodeHitboxBlob);
+}
+
+std::expected<std::vector<HitboxData>, ResolveError> Pack::ResolveHitboxes(std::string_view character_path) const {
+  const std::string prefix = std::string(character_path) + "/";
+  std::vector<const IndexEntry*> entries;
+  for (const IndexEntry& entry : impl_->index) {
+    if (entry.type == AssetType::kHitbox && entry.path.starts_with(prefix)) {
+      entries.push_back(&entry);
+    }
+  }
+  std::ranges::sort(entries, {}, &IndexEntry::path);
+  std::vector<HitboxData> hitboxes;
+  hitboxes.reserve(entries.size());
+  for (const IndexEntry* entry : entries) {
+    auto hitbox = DecodeHitboxBlob(BlobBytes(impl_->mapping, *entry));
+    if (!hitbox) {
+      return std::unexpected(ResolveError::kCorruptBlob);
+    }
+    hitboxes.push_back(*std::move(hitbox));
+  }
+  return hitboxes;
 }
 
 std::expected<SpawnPointData, ResolveError> Pack::ResolveSpawnPoint(std::string_view path) const {
@@ -617,6 +660,14 @@ std::expected<SpawnPointData, ResolveError> Pack::ResolveSpawnPoint(std::string_
 
 std::expected<EyeData, ResolveError> Pack::ResolveEye(std::string_view path) const {
   return ResolveAsset<EyeData>(impl_->index, impl_->mapping, path, AssetType::kEye, DecodeEyeBlob);
+}
+
+std::expected<AudioData, ResolveError> Pack::ResolveAudio(std::string_view path) const {
+  return ResolveAsset<AudioData>(impl_->index, impl_->mapping, path, AssetType::kAudio, DecodeAudioBlob);
+}
+
+std::expected<std::string, ResolveError> Pack::ResolveSoundsPath() const {
+  return ResolveAsset<std::string>(impl_->index, impl_->mapping, kSoundsPath, AssetType::kSounds, DecodeSoundsBlob);
 }
 
 std::expected<std::string, ResolveError> Pack::ResolveScript(std::string_view path) const {

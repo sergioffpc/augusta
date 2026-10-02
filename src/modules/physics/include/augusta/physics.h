@@ -11,9 +11,9 @@
 
 // augusta::physics wraps PhysX for collision and movement (ADR-0002):
 // general body movement, stance transitions, and stamina depletion/
-// recovery (US-04, US-05). Ballistics (bullet trajectories) is a separate,
-// server-only module (see augusta::ballistics) - PhysX's own generic
-// projectile handling is deliberately not used for that.
+// recovery (US-04, US-05). Ballistics (bullet trajectories) is a separate
+// module (see augusta::ballistics) - PhysX's own generic projectile
+// handling is deliberately not used for that.
 //
 // This module's World is used identically by both PredictionWorld (client,
 // predicted/approximate) and SimulationWorld (server, authoritative) - the
@@ -38,6 +38,13 @@ enum class Stance {
 /// How tall a body is in stance, feet to the top of its collision capsule, in
 /// meters - lower crouching than standing, and lower prone than crouching.
 [[nodiscard]] float StanceHeight(Stance stance);
+
+/// Where a point of a standing body is once the body is in stance:
+/// standing_point is relative to the feet, and is lowered in proportion to the
+/// body's height in that stance (StanceHeight). What keeps a character's eye
+/// (ADR-0040) with its body as it crouches or goes prone, for the client's
+/// camera and the server's Shots alike.
+[[nodiscard]] math::Vec3 LowerToStance(const math::Vec3& standing_point, Stance stance);
 
 // Opaque handle to a body created by World::CreateBody. Valid only for the
 // World instance that created it; passing a handle from one World to
@@ -230,17 +237,18 @@ class World {
 
   // Casts a ray from origin in direction (need not be pre-normalized) up
   // to max_distance, against every body and collision mesh currently in this
-  // World, and returns the closest intersection. Used by augusta::ballistics
-  // for player hit detection (US-11): PhysX's cross-platform
-  // non-determinism (see the header comment above) isn't a correctness
-  // concern there, since ballistics runs exclusively server-side - there
-  // is no second, client-side computation to diverge from.
+  // World, and returns the closest intersection.
   //
-  // A body is not yet hit where it is: the ray sees it where its PhysX
+  // A body is not hit where it is: the ray sees it where its PhysX
   // controller was made (centered on the world origin), however far
-  // CreateBody, Step, SetState or Restore have put it since. Player hit
-  // detection must fix that first (ADR-0002).
+  // CreateBody, Step, SetState or Restore have put it since (ADR-0002).
+  // Player hit detection does not use this - see RaycastMap.
   [[nodiscard]] RaycastHit Raycast(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const;
+
+  /// Like Raycast, but against the collision meshes (the Map) only: no body is
+  /// ever reported, wherever its controller is. What a bullet's flight is tested
+  /// against, since player hits are judged against hitboxes instead (ADR-0044).
+  [[nodiscard]] RaycastHit RaycastMap(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const;
 
  private:
   struct Impl;

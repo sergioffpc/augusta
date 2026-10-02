@@ -2,6 +2,8 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
+#include <optional>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -9,6 +11,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
+#include "augusta/ballistics.h"
 #include "augusta/command.h"
 #include "augusta/grid.h"
 #include "augusta/harness.h"
@@ -19,6 +22,7 @@
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
+#include "augusta/tick.h"
 #include "command_queue.h"
 #include "host.h"
 #include "match.h"
@@ -76,11 +80,12 @@ TEST(WireTest, ACommandTheClientSendsReachesTheServerUnchanged) {
     sent.ads = true;
     sent.fire = true;
     sent.reload = true;
+    sent.view_tick = 1200;
+    sent.view_fraction = 0.75F;
 
-    const augusta::protocol::CommandsWire message{
-        .commands = {{.sequence = 9, .command = augusta::harness::ToWire(sent)}}};
+    const std::array<augusta::harness::SequencedCommand, 1> commands = {{{.sequence = 9, .command = sent}}};
     const augusta::server::SequencedCommand received =
-        augusta::server::FromWire(ThroughTheWire(message).commands.at(0));
+        augusta::server::FromWire(ThroughTheWire(augusta::harness::ToWire(commands))).at(0);
 
     EXPECT_EQ(received.sequence, 9U);
     EXPECT_EQ(received.command.movement.direction, sent.movement.direction);
@@ -91,7 +96,71 @@ TEST(WireTest, ACommandTheClientSendsReachesTheServerUnchanged) {
     EXPECT_EQ(received.command.ads, sent.ads);
     EXPECT_EQ(received.command.fire, sent.fire);
     EXPECT_EQ(received.command.reload, sent.reload);
+    EXPECT_EQ(received.command.view_tick, sent.view_tick);
+    EXPECT_EQ(received.command.view_fraction, sent.view_fraction);
   }
+}
+
+// A message's commands were sampled a tick apart, each against its own view:
+// every one reaches the server with the tick it named.
+TEST(WireTest, EachCommandOfAMessageReachesTheServerWithTheViewItWasSampledAgainst) {
+  std::vector<augusta::harness::SequencedCommand> sent(4);
+  for (std::size_t i = 0; i < sent.size(); ++i) {
+    sent[i].sequence = static_cast<augusta::command::Sequence>(40 + i);
+    sent[i].command.view_tick = 70000 + (2 * i);
+    sent[i].command.view_fraction = 0.25F * static_cast<float>(i);
+  }
+
+  const std::vector<augusta::server::SequencedCommand> received =
+      augusta::server::FromWire(ThroughTheWire(augusta::harness::ToWire(sent)));
+
+  ASSERT_EQ(received.size(), sent.size());
+  for (std::size_t i = 0; i < sent.size(); ++i) {
+    EXPECT_EQ(received[i].command.view_tick, sent[i].command.view_tick) << i;
+    EXPECT_EQ(received[i].command.view_fraction, sent[i].command.view_fraction) << i;
+  }
+}
+
+// The server's ticks never start over (ADR-0038): commands sampled either side
+// of the last tick 32 bits hold reach the server with the views they named.
+TEST(WireTest, ViewsEitherSideOfThirtyTwoBitsReachTheServerAsTheyWereSampled) {
+  constexpr augusta::tick::Tick kLastOf32Bits = std::numeric_limits<std::uint32_t>::max();
+  std::vector<augusta::harness::SequencedCommand> sent(4);
+  for (std::size_t i = 0; i < sent.size(); ++i) {
+    sent[i].sequence = static_cast<augusta::command::Sequence>(1 + i);
+    sent[i].command.view_tick = kLastOf32Bits - 1 + i;
+  }
+
+  const std::vector<augusta::server::SequencedCommand> received =
+      augusta::server::FromWire(ThroughTheWire(augusta::harness::ToWire(sent)));
+
+  ASSERT_EQ(received.size(), sent.size());
+  for (std::size_t i = 0; i < sent.size(); ++i) {
+    EXPECT_EQ(received[i].command.view_tick, sent[i].command.view_tick) << i;
+  }
+}
+
+// A command's view travels as how far before the message's newest it is, in a
+// byte: one further back arrives as far back as a byte tells, which is already
+// beyond what the server judges a shot against.
+TEST(WireTest, AViewTooFarBeforeTheMessagesNewestReachesTheServerAsTheOldestAByteTells) {
+  std::vector<augusta::harness::SequencedCommand> sent(2);
+  sent[0].command.view_tick = 100;
+  sent[1].command.view_tick = 1000;
+
+  const std::vector<augusta::server::SequencedCommand> received =
+      augusta::server::FromWire(ThroughTheWire(augusta::harness::ToWire(sent)));
+
+  EXPECT_EQ(received.at(0).command.view_tick, 1000U - 255U);
+  EXPECT_EQ(received.at(1).command.view_tick, 1000U);
+}
+
+// An age the message's view tick cannot go back by names the first tick there is.
+TEST(WireTest, AViewAgeBeyondTheMessagesViewTickIsTheFirstTick) {
+  augusta::protocol::CommandsWire message{.commands = {{.sequence = 1}}, .view_tick = 3};
+  message.commands[0].command.view_age = 10;
+
+  EXPECT_EQ(augusta::server::FromWire(ThroughTheWire(message)).at(0).command.view_tick, 0U);
 }
 
 TEST(WireTest, EachFlagOfACommandReachesTheServerAsItselfAlone) {
@@ -102,10 +171,9 @@ TEST(WireTest, EachFlagOfACommandReachesTheServerAsItselfAlone) {
     sent.fire = flag == 2;
     sent.reload = flag == 3;
 
-    const augusta::protocol::CommandsWire message{
-        .commands = {{.sequence = 1, .command = augusta::harness::ToWire(sent)}}};
+    const std::array<augusta::harness::SequencedCommand, 1> commands = {{{.sequence = 1, .command = sent}}};
     const augusta::command::Command received =
-        augusta::server::FromWire(ThroughTheWire(message).commands.at(0)).command;
+        augusta::server::FromWire(ThroughTheWire(augusta::harness::ToWire(commands))).at(0).command;
 
     EXPECT_EQ(received.movement.sprint, sent.movement.sprint) << flag;
     EXPECT_EQ(received.ads, sent.ads) << flag;
@@ -140,8 +208,10 @@ TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
       .tick = 42,
       .acknowledged_sequence = 17,
       .bodies = {{.entity = augusta::simulation::EntityId{1}, .body = Body(1.0F, Stance::kStanding)},
-                 {.entity = augusta::simulation::EntityId{2}, .body = Body(2.0F, Stance::kCrouching)},
-                 {.entity = augusta::simulation::EntityId{3}, .body = Body(3.0F, Stance::kProne)}},
+                 {.entity = augusta::simulation::EntityId{2},
+                  .body = Body(2.0F, Stance::kCrouching),
+                  .yaw = augusta::math::SnapAngle(-2.345678F)},
+                 {.entity = augusta::simulation::EntityId{3}, .body = Body(3.0F, Stance::kProne), .yaw = 1.5F}},
       .queued_commands = 2,
   };
 
@@ -155,12 +225,45 @@ TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
   for (std::size_t i = 0; i < sent.bodies.size(); ++i) {
     EXPECT_EQ(Number(received.bodies[i].entity), Number(sent.bodies[i].entity));
     ExpectSameBody(received.bodies[i].body, sent.bodies[i].body);
+    EXPECT_EQ(received.bodies[i].yaw, sent.bodies[i].yaw);
   }
+}
+
+// The recipient's rifle's times are off every grid: they reach the client as
+// the exact floats the server stepped them to, and its Recoil offset, which
+// weapon::Step keeps on the angle grid, as the server had it.
+TEST(WireTest, TheRecipientsRifleReachesTheClientExactly) {
+  const augusta::replication::Update sent{
+      .recipient = augusta::simulation::EntityId{1},
+      .tick = 7,
+      .acknowledged_sequence = 3,
+      .bodies = {{.entity = augusta::simulation::EntityId{1}, .body = Body(1.0F, Stance::kStanding)}},
+      .rifle = {.cooldown = 0.1F - (1.0F / 60.0F),
+                .reload_remaining = 2.4833333F,
+                .recoil = {.pitch = augusta::math::SnapAngle(0.0421F), .yaw = augusta::math::SnapAngle(-0.0037F)},
+                .rounds = 27,
+                .burst_index = 4},
+  };
+
+  const augusta::harness::AuthoritativeState received =
+      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+
+  EXPECT_EQ(received.rifle, sent.rifle);
 }
 
 TEST(WireTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged) {
   augusta::parameters::Parameters parameters;
   parameters.stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F};
+  parameters.rifle = {.rounds_per_minute = 650.0F,
+                      .muzzle_velocity = 820.0F,
+                      .reload_seconds = 2.25F,
+                      .recoil_recovery_per_second = 0.15F,
+                      .ads_recoil_scale = 0.6F,
+                      .ads_field_of_view = 0.65F,
+                      .recoil_pattern = {{.pitch = 0.01F, .yaw = 0.002F}, {.pitch = 0.007F, .yaw = -0.003F}},
+                      .magazine_capacity = 25};
+  parameters.ammo = {.gravity = 9.81F, .max_range = 900.0F, .damage = {.head = 100.0F, .torso = 34.0F, .limb = 22.5F}};
+  parameters.starting_health = 120.0F;
   parameters.player_count = 4;
 
   const augusta::protocol::JoinAcceptedWire received =
@@ -168,10 +271,14 @@ TEST(WireTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged) {
                                                          .parameters = augusta::server::ToWire(parameters),
                                                          .character = 1});
 
+  // Every parameter travels as its exact bits, so nothing is rounded on the way.
   const augusta::parameters::Parameters received_parameters = augusta::harness::FromWire(received.parameters);
   EXPECT_EQ(received_parameters.stamina.deplete_per_second, parameters.stamina.deplete_per_second);
   EXPECT_EQ(received_parameters.stamina.regen_per_second, parameters.stamina.regen_per_second);
   EXPECT_EQ(received_parameters.stamina.forced_walk_below, parameters.stamina.forced_walk_below);
+  EXPECT_EQ(received_parameters.rifle, parameters.rifle);
+  EXPECT_EQ(received_parameters.ammo, parameters.ammo);
+  EXPECT_EQ(received_parameters.starting_health, parameters.starting_health);
   EXPECT_EQ(received_parameters.player_count, parameters.player_count);
 }
 
@@ -191,18 +298,19 @@ TEST(WireTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
 
 TEST(WireTest, AMatchStartTheServerSendsReachesTheClientUnchanged) {
   const augusta::server::MatchStart sent{
-      .players = {{.session = SessionId{3}, .entity = EntityId{11}, .character = 2, .spawn = Vec3(4.0F, 0.5F, -8.0F)},
-                  {.session = SessionId{5}, .entity = EntityId{12}, .character = 1, .spawn = Vec3(-1.0F, 0.0F, 2.0F)}}};
+      .players = {{.session = SessionId{3}, .entity = EntityId{11}, .character = 2},
+                  {.session = SessionId{5}, .entity = EntityId{12}, .character = 1}}};
+  const std::vector<Vec3> spawns{Vec3(4.0F, 0.5F, -8.0F), Vec3(-1.0F, 0.0F, 2.0F)};
 
   const augusta::harness::MatchStart received =
-      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent, spawns)));
 
   ASSERT_EQ(received.players.size(), sent.players.size());
   for (std::size_t i = 0; i < sent.players.size(); ++i) {
     EXPECT_EQ(Number(received.players[i].session), Number(sent.players[i].session));
     EXPECT_EQ(Number(received.players[i].entity), Number(sent.players[i].entity));
     EXPECT_EQ(received.players[i].character, sent.players[i].character);
-    EXPECT_EQ(received.players[i].spawn, sent.players[i].spawn);
+    EXPECT_EQ(received.players[i].spawn, spawns[i]);
   }
 }
 
@@ -256,7 +364,7 @@ TEST(WireTest, EveryRefusalTheServerSendsReachesTheClientAsTheSameReason) {
 TEST(WireTest, TheCommandsTheClientSendsReachTheServerInOrder) {
   std::vector<augusta::harness::SequencedCommand> sent(3);
   for (std::size_t i = 0; i < sent.size(); ++i) {
-    sent[i].sequence = static_cast<std::uint32_t>(4 + i);
+    sent[i].sequence = static_cast<augusta::command::Sequence>(4 + i);
     sent[i].command.yaw = 0.25F * static_cast<float>(i);
   }
 
@@ -267,6 +375,80 @@ TEST(WireTest, TheCommandsTheClientSendsReachTheServerInOrder) {
   for (std::size_t i = 0; i < sent.size(); ++i) {
     EXPECT_EQ(received[i].sequence, sent[i].sequence);
     EXPECT_EQ(received[i].command.yaw, sent[i].command.yaw);
+  }
+}
+
+TEST(WireTest, AShotTheServerAnnouncesReachesTheClientUnchanged) {
+  // Numbers on their grids, as SimulationWorld fires a Shot (ADR-0038).
+  const augusta::replication::Shot sent{
+      .shooter = augusta::simulation::EntityId{3},
+      .tick = 1200,
+      .origin = augusta::math::SnapPosition(Vec3(12.345F, 1.6F, -7.77F)),
+      .yaw = augusta::math::SnapAngle(-2.345678F),
+      .pitch = augusta::math::SnapAngle(0.123456F),
+  };
+
+  const augusta::harness::Shot received = augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+
+  EXPECT_EQ(Number(received.shooter), Number(sent.shooter));
+  EXPECT_EQ(received.tick, sent.tick);
+  EXPECT_EQ(received.origin, sent.origin);
+  EXPECT_EQ(received.yaw, sent.yaw);
+  EXPECT_EQ(received.pitch, sent.pitch);
+}
+
+TEST(WireTest, AHitConfirmationTheServerSendsReachesTheClientUnchanged) {
+  using augusta::ballistics::BodyPart;
+  for (const BodyPart part : {BodyPart::kHead, BodyPart::kTorso, BodyPart::kLimb}) {
+    const augusta::replication::HitConfirmation sent{
+        .recipient = augusta::simulation::EntityId{3},
+        .target = augusta::simulation::EntityId{5},
+        .damage = 37.5F,
+        .part = part,
+    };
+
+    const augusta::harness::HitConfirmation received =
+        augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+
+    EXPECT_EQ(Number(received.target), Number(sent.target));
+    EXPECT_EQ(received.part, part);
+    EXPECT_EQ(received.damage, sent.damage);
+  }
+}
+
+TEST(WireTest, AMatchEndTheServerSendsReachesTheClientWithItsWinnerOrAsADraw) {
+  const augusta::server::MatchEnd won{.players = {SessionId{3}, SessionId{5}}, .winner = SessionId{5}};
+  const augusta::server::MatchEnd drawn{.players = {SessionId{3}, SessionId{5}}, .winner = std::nullopt};
+
+  const augusta::harness::MatchEnd won_received =
+      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(won)));
+  const augusta::harness::MatchEnd drawn_received =
+      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(drawn)));
+
+  ASSERT_TRUE(won_received.winner.has_value());
+  EXPECT_EQ(Number(*won_received.winner), 5U);
+  EXPECT_FALSE(drawn_received.winner.has_value());
+}
+
+TEST(WireTest, ADeathTheServerTellsReachesTheClientUnchanged) {
+  using augusta::ballistics::BodyPart;
+  for (const BodyPart part : {BodyPart::kHead, BodyPart::kTorso, BodyPart::kLimb}) {
+    // Its direction on the angle grid, as its Shot's (ADR-0038).
+    const augusta::replication::Death sent{
+        .victim = augusta::simulation::EntityId{5},
+        .killer = augusta::simulation::EntityId{3},
+        .yaw = augusta::math::SnapAngle(-2.345678F),
+        .pitch = augusta::math::SnapAngle(0.123456F),
+        .part = part,
+    };
+
+    const augusta::harness::Death received = augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+
+    EXPECT_EQ(Number(received.victim), Number(sent.victim));
+    EXPECT_EQ(Number(received.killer), Number(sent.killer));
+    EXPECT_EQ(received.yaw, sent.yaw);
+    EXPECT_EQ(received.pitch, sent.pitch);
+    EXPECT_EQ(received.part, part);
   }
 }
 

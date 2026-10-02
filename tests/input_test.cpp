@@ -15,6 +15,8 @@
 namespace {
 
 using augusta::command::Command;
+using augusta::command::ViewRotation;
+using augusta::input::Aim;
 using augusta::input::Config;
 using augusta::input::Control;
 using augusta::input::Input;
@@ -22,8 +24,6 @@ using augusta::input::Key;
 using augusta::input::Keymap;
 using augusta::input::KeyState;
 using augusta::input::MouseMoveEvent;
-using augusta::input::ViewRotation;
-using augusta::math::Quat;
 using augusta::math::Vec3;
 using augusta::physics::Stance;
 
@@ -31,13 +31,6 @@ constexpr float kSensitivity = 0.01F;
 constexpr float kTolerance = 1e-5F;
 
 void ExpectNear(const Vec3& actual, const Vec3& expected) {
-  EXPECT_NEAR(actual.x, expected.x, kTolerance);
-  EXPECT_NEAR(actual.y, expected.y, kTolerance);
-  EXPECT_NEAR(actual.z, expected.z, kTolerance);
-}
-
-void ExpectNear(const Quat& actual, const Quat& expected) {
-  EXPECT_NEAR(actual.w, expected.w, kTolerance);
   EXPECT_NEAR(actual.x, expected.x, kTolerance);
   EXPECT_NEAR(actual.y, expected.y, kTolerance);
   EXPECT_NEAR(actual.z, expected.z, kTolerance);
@@ -173,22 +166,48 @@ TEST_F(InputTest, TheViewIsKeptAcrossSamples) {
   EXPECT_NEAR(input_.Sample().yaw, 30.0F * kSensitivity, kTolerance);
 }
 
-TEST_F(InputTest, TheCurrentViewIsTheCommandsViewUntilTheMouseMovesAgain) {
+TEST_F(InputTest, TheCurrentAimIsTheCommandsUntilTheMouseMovesAgain) {
   MoveMouse(0.0F, 0.0F);
   MoveMouse(-30.0F, 10.0F);
+  Press(Key::kMouseRight);
   const Command command = input_.Sample();
 
-  ExpectNear(input_.CurrentView(), ViewRotation(command.yaw, command.pitch));
+  const Aim aim = input_.CurrentAim();
+
+  EXPECT_FLOAT_EQ(aim.yaw, command.yaw);
+  EXPECT_FLOAT_EQ(aim.pitch, command.pitch);
+  EXPECT_EQ(aim.ads, command.ads);
 }
 
-TEST_F(InputTest, TheCurrentViewTurnsWithTheMouseBetweenSamples) {
+TEST_F(InputTest, TheCurrentAimTurnsWithTheMouseBetweenSamples) {
   MoveMouse(0.0F, 0.0F);
   const Command command = input_.Sample();
   MoveMouse(-30.0F, 10.0F);
 
   // A frame drawn after the tick turns by the mouse movement since; the tick's Command does not.
-  ExpectNear(input_.CurrentView(), ViewRotation(30.0F * kSensitivity, -10.0F * kSensitivity));
+  const Aim aim = input_.CurrentAim();
+  EXPECT_NEAR(aim.yaw, 30.0F * kSensitivity, kTolerance);
+  EXPECT_NEAR(aim.pitch, -10.0F * kSensitivity, kTolerance);
   EXPECT_FLOAT_EQ(command.yaw, 0.0F);
+}
+
+TEST_F(InputTest, TheCurrentAimHoldsAdsWhileItsKeyIsHeldBetweenSamples) {
+  (void)input_.Sample();
+
+  Press(Key::kMouseRight);
+  EXPECT_TRUE(input_.CurrentAim().ads);
+  Release(Key::kMouseRight);
+  EXPECT_FALSE(input_.CurrentAim().ads);
+}
+
+TEST_F(InputTest, AControlIsHeldBetweenSamplesWhileItsKeyIsDown) {
+  (void)input_.Sample();
+
+  Press(Key::kMouseLeft);
+  EXPECT_TRUE(input_.IsHeld(Control::kFire));
+  EXPECT_FALSE(input_.IsHeld(Control::kAds));
+  Release(Key::kMouseLeft);
+  EXPECT_FALSE(input_.IsHeld(Control::kFire));
 }
 
 TEST_F(InputTest, PitchStopsShortOfStraightUpAndStraightDown) {
@@ -462,19 +481,19 @@ TEST(ControlNameTest, EveryControlHasANameThatNamesItBack) {
 }
 
 TEST(ViewRotationTest, AnUnturnedViewLooksDownMinusZ) {
-  ExpectNear(augusta::input::ViewRotation(0.0F, 0.0F) * Vec3(0.0F, 0.0F, -1.0F), Vec3(0.0F, 0.0F, -1.0F));
+  ExpectNear(ViewRotation(0.0F, 0.0F) * Vec3(0.0F, 0.0F, -1.0F), Vec3(0.0F, 0.0F, -1.0F));
 }
 
 TEST(ViewRotationTest, PositiveYawTurnsLeftAndPositivePitchLooksUp) {
   const float quarter = std::numbers::pi_v<float> / 2;
-  ExpectNear(augusta::input::ViewRotation(quarter, 0.0F) * Vec3(0.0F, 0.0F, -1.0F), Vec3(-1.0F, 0.0F, 0.0F));
-  const Vec3 looking_up = augusta::input::ViewRotation(0.0F, 0.5F) * Vec3(0.0F, 0.0F, -1.0F);
+  ExpectNear(ViewRotation(quarter, 0.0F) * Vec3(0.0F, 0.0F, -1.0F), Vec3(-1.0F, 0.0F, 0.0F));
+  const Vec3 looking_up = ViewRotation(0.0F, 0.5F) * Vec3(0.0F, 0.0F, -1.0F);
   ExpectNear(looking_up, Vec3(0.0F, std::sin(0.5F), -std::cos(0.5F)));
 }
 
 TEST(ViewRotationTest, PitchTiltsTheViewWithoutChangingWhereItFacesAcrossTheGround) {
-  const Vec3 forward = augusta::input::ViewRotation(1.0F, 0.7F) * Vec3(0.0F, 0.0F, -1.0F);
-  const Vec3 flat_forward = augusta::input::ViewRotation(1.0F, 0.0F) * Vec3(0.0F, 0.0F, -1.0F);
+  const Vec3 forward = ViewRotation(1.0F, 0.7F) * Vec3(0.0F, 0.0F, -1.0F);
+  const Vec3 flat_forward = ViewRotation(1.0F, 0.0F) * Vec3(0.0F, 0.0F, -1.0F);
   ExpectNear(augusta::math::Normalize(Vec3(forward.x, 0.0F, forward.z)), flat_forward);
 }
 

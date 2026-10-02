@@ -1,6 +1,6 @@
 {
   "name": "augusta",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "dependencies": [
     "benchmark",
     "blake3",
@@ -14,9 +14,17 @@
     "gtest",
     "libsodium",
     "lua",
+    {
+      "name": "miniaudio",
+      "platform": "windows"
+    },
     "physx",
     "rapidcheck",
     "sol2",
+    {
+      "name": "steam-audio",
+      "platform": "windows"
+    },
     "yaml-cpp"
   ]
 }

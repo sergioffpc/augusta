@@ -2,15 +2,19 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
+#include <optional>
 #include <span>
 #include <utility>
 
 #include "augusta/assets.h"
+#include "augusta/ballistics.h"
 #include "augusta/command.h"
 #include "augusta/harness.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
+#include "augusta/tick.h"
 
 namespace augusta::harness {
 
@@ -31,6 +35,19 @@ protocol::StanceWire ToWire(physics::Stance stance) { return static_cast<protoco
 
 // The protocol carries a pack's hash as the assets module computes it.
 static_assert(protocol::kPackHashSize == assets::kPackHashSize);
+
+ballistics::BodyPart FromWire(protocol::BodyPartWire part) {
+  switch (part) {
+    case protocol::BodyPartWire::kHead:
+      return ballistics::BodyPart::kHead;
+    case protocol::BodyPartWire::kTorso:
+      return ballistics::BodyPart::kTorso;
+    case protocol::BodyPartWire::kLimb:
+      return ballistics::BodyPart::kLimb;
+  }
+  // Decode admits only the body parts above.
+  std::unreachable();
+}
 
 }  // namespace
 
@@ -70,6 +87,26 @@ parameters::Parameters FromWire(const protocol::ParametersWire& parameters) {
   result.stamina.deplete_per_second = parameters.stamina.deplete_per_second;
   result.stamina.regen_per_second = parameters.stamina.regen_per_second;
   result.stamina.forced_walk_below = parameters.stamina.forced_walk_below;
+  const protocol::RifleWire& rifle = parameters.rifle;
+  result.rifle.rounds_per_minute = rifle.rounds_per_minute;
+  result.rifle.muzzle_velocity = rifle.muzzle_velocity;
+  result.rifle.reload_seconds = rifle.reload_seconds;
+  result.rifle.recoil_recovery_per_second = rifle.recoil_recovery_per_second;
+  result.rifle.ads_recoil_scale = rifle.ads_recoil_scale;
+  result.rifle.ads_field_of_view = rifle.ads_field_of_view;
+  result.rifle.recoil_pattern.reserve(rifle.recoil_pattern.size());
+  for (const protocol::RecoilKickWire& kick : rifle.recoil_pattern) {
+    result.rifle.recoil_pattern.push_back(parameters::RecoilKick{.pitch = kick.pitch, .yaw = kick.yaw});
+  }
+  result.rifle.magazine_capacity = rifle.magazine_capacity;
+  result.ammo.gravity = parameters.ammo.gravity;
+  result.ammo.max_range = parameters.ammo.max_range;
+  result.ammo.damage = {
+      .head = parameters.ammo.head_damage,
+      .torso = parameters.ammo.torso_damage,
+      .limb = parameters.ammo.limb_damage,
+  };
+  result.starting_health = parameters.starting_health;
   result.player_count = parameters.player_count;
   return result;
 }
@@ -86,7 +123,7 @@ Admission FromWire(const protocol::JoinAcceptedWire& accepted) {
 EntityId FromWire(protocol::EntityIdWire entity) { return static_cast<EntityId>(static_cast<std::uint32_t>(entity)); }
 
 EntityBody FromWire(const protocol::EntityStateWire& body) {
-  return EntityBody{.entity = FromWire(body.entity), .body = FromWire(body.body)};
+  return EntityBody{.entity = FromWire(body.entity), .body = FromWire(body.body), .yaw = body.yaw};
 }
 
 AuthoritativeState FromWire(const protocol::AuthoritativeStateWire& state) {
@@ -94,6 +131,12 @@ AuthoritativeState FromWire(const protocol::AuthoritativeStateWire& state) {
       .tick = state.tick,
       .acknowledged_sequence = state.acknowledged_sequence,
       .bodies = {},
+      .rifle = {.cooldown = state.rifle.cooldown,
+                .reload_remaining = state.rifle.reload_remaining,
+                .recoil = {.pitch = state.rifle.recoil_pitch, .yaw = state.rifle.recoil_yaw},
+                .rounds = state.rifle.rounds,
+                .burst_index = state.rifle.burst_index},
+      .health = state.health,
       .queued_commands = state.queued_commands,
   };
   result.bodies.reserve(state.bodies.size());
@@ -101,6 +144,28 @@ AuthoritativeState FromWire(const protocol::AuthoritativeStateWire& state) {
     result.bodies.push_back(FromWire(body));
   }
   return result;
+}
+
+Shot FromWire(const protocol::ShotWire& shot) {
+  return Shot{
+      .shooter = FromWire(shot.shooter),
+      .tick = shot.tick,
+      .origin = shot.origin,
+      .yaw = shot.yaw,
+      .pitch = shot.pitch,
+  };
+}
+
+HitConfirmation FromWire(const protocol::HitConfirmationWire& hit) {
+  return HitConfirmation{.target = FromWire(hit.target), .damage = hit.damage, .part = FromWire(hit.part)};
+}
+
+Death FromWire(const protocol::DeathWire& death) {
+  return Death{.victim = FromWire(death.victim),
+               .killer = FromWire(death.killer),
+               .yaw = death.yaw,
+               .pitch = death.pitch,
+               .part = FromWire(death.part)};
 }
 
 Lobby FromWire(const protocol::LobbyWire& lobby) {
@@ -124,6 +189,10 @@ MatchStart FromWire(const protocol::MatchStartWire& start) {
   return result;
 }
 
+MatchEnd FromWire(const protocol::MatchEndWire& end) {
+  return MatchEnd{.winner = end.winner == protocol::kDraw ? std::nullopt : std::optional(FromWire(end.winner))};
+}
+
 protocol::PackHashWire ToWire(const assets::PackHash& hash) {
   protocol::PackHashWire result{};
   std::ranges::copy(hash, result.begin());
@@ -138,7 +207,8 @@ protocol::JoinRequestWire ToWire(const JoinRequest& request) {
   };
 }
 
-protocol::CommandWire ToWire(const command::Command& command) {
+protocol::CommandWire ToWire(const command::Command& command, tick::Tick view_tick) {
+  const tick::Tick age = view_tick > command.view_tick ? view_tick - command.view_tick : 0U;
   std::uint8_t flags = 0;
   if (command.movement.sprint) {
     flags |= protocol::CommandWire::kSprint;
@@ -156,17 +226,22 @@ protocol::CommandWire ToWire(const command::Command& command) {
       .direction = command.movement.direction,
       .yaw = command.yaw,
       .pitch = command.pitch,
+      .view_fraction = command.view_fraction,
       .flags = flags,
       .desired_stance = ToWire(command.movement.desired_stance),
+      .view_age = static_cast<std::uint8_t>(std::min<tick::Tick>(age, std::numeric_limits<std::uint8_t>::max())),
   };
 }
 
 protocol::CommandsWire ToWire(std::span<const SequencedCommand> commands) {
   protocol::CommandsWire message;
+  for (const SequencedCommand& command : commands) {
+    message.view_tick = std::max(message.view_tick, command.command.view_tick);
+  }
   message.commands.reserve(commands.size());
   for (const SequencedCommand& command : commands) {
-    message.commands.push_back(
-        protocol::SequencedCommandWire{.sequence = command.sequence, .command = ToWire(command.command)});
+    message.commands.push_back(protocol::SequencedCommandWire{.sequence = command.sequence,
+                                                              .command = ToWire(command.command, message.view_tick)});
   }
   return message;
 }

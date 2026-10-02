@@ -20,13 +20,16 @@ namespace {
 
 using augusta::math::Vec3;
 using augusta::protocol::AuthoritativeStateWire;
+using augusta::protocol::BodyPartWire;
 using augusta::protocol::BodyStateWire;
 using augusta::protocol::BytesWire;
 using augusta::protocol::CommandsWire;
 using augusta::protocol::CommandWire;
+using augusta::protocol::DeathWire;
 using augusta::protocol::Encode;
 using augusta::protocol::EntityIdWire;
 using augusta::protocol::EntityStateWire;
+using augusta::protocol::HitConfirmationWire;
 using augusta::protocol::JoinAcceptedWire;
 using augusta::protocol::JoinRefusalWire;
 using augusta::protocol::JoinRefusedWire;
@@ -41,8 +44,10 @@ using augusta::protocol::ReadyWire;
 using augusta::protocol::RosterEntryWire;
 using augusta::protocol::SequencedCommandWire;
 using augusta::protocol::SessionIdWire;
+using augusta::protocol::ShotWire;
 using augusta::protocol::StaminaWire;
 using augusta::protocol::StanceWire;
+using augusta::protocol::WeaponStateWire;
 
 struct Seed {
   std::string name;
@@ -60,8 +65,10 @@ std::vector<Seed> Seeds() {
   const CommandWire command{.direction = Vec3(0.6F, 0.0F, -0.8F),
                             .yaw = 1.5F,
                             .pitch = -0.25F,
+                            .view_fraction = 0.75F,
                             .flags = CommandWire::kSprint | CommandWire::kFire,
-                            .desired_stance = StanceWire::kProne};
+                            .desired_stance = StanceWire::kProne,
+                            .view_age = 1};
   return {
       {.name = "join_request",
        .message = JoinRequestWire{.engine_version = "0.1.0", .client_pack = {}, .character = "characters/player"}},
@@ -76,14 +83,22 @@ std::vector<Seed> Seeds() {
       {.name = "join_refused", .message = JoinRefusedWire{.reason = JoinRefusalWire::kPackMismatch}},
       {.name = "commands",
        .message = CommandsWire{.commands = {SequencedCommandWire{.sequence = 41, .command = CommandWire{}},
-                                            SequencedCommandWire{.sequence = 42, .command = command}}}},
+                                            SequencedCommandWire{.sequence = 42, .command = command}},
+                               .view_tick = 1194}},
       {.name = "authoritative_state",
        .message =
            AuthoritativeStateWire{
                .tick = 1200,
-               .acknowledged_sequence = 42,
-               .bodies = {EntityStateWire{.entity = static_cast<EntityIdWire>(1), .body = body},
+               .bodies = {EntityStateWire{.entity = static_cast<EntityIdWire>(1), .body = body, .yaw = 1.5F},
                           EntityStateWire{.entity = static_cast<EntityIdWire>(2), .body = BodyStateWire{}}},
+               .rifle = WeaponStateWire{.cooldown = 0.0625F,
+                                        .reload_remaining = 1.75F,
+                                        .recoil_pitch = 0.046875F,
+                                        .recoil_yaw = -0.00390625F,
+                                        .rounds = 12,
+                                        .burst_index = 3},
+               .health = 37.25F,
+               .acknowledged_sequence = 42,
                .queued_commands = 2}},
       {.name = "lobby",
        .message = LobbyWire{.version = 3,
@@ -99,7 +114,22 @@ std::vector<Seed> Seeds() {
                                                              .session = static_cast<SessionIdWire>(9),
                                                              .entity = static_cast<EntityIdWire>(2),
                                                              .character = 2}}}},
-      {.name = "match_end", .message = MatchEndWire{}},
+      {.name = "match_end", .message = MatchEndWire{.winner = static_cast<SessionIdWire>(3)}},
+      {.name = "shot",
+       .message = ShotWire{.tick = 1200,
+                           .origin = Vec3(12.5F, 1.75F, -40.0F),
+                           .shooter = static_cast<EntityIdWire>(2),
+                           .yaw = 1.5F,
+                           .pitch = -0.25F}},
+      {.name = "hit_confirmation",
+       .message =
+           HitConfirmationWire{.target = static_cast<EntityIdWire>(2), .damage = 37.5F, .part = BodyPartWire::kHead}},
+      {.name = "death",
+       .message = DeathWire{.victim = static_cast<EntityIdWire>(2),
+                            .killer = static_cast<EntityIdWire>(1),
+                            .yaw = 1.5F,
+                            .pitch = -0.25F,
+                            .part = BodyPartWire::kTorso}},
   };
 }
 

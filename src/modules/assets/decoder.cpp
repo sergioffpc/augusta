@@ -268,6 +268,22 @@ std::optional<SpawnPointData> DecodeSpawnPointBlob(std::span<const std::byte> bl
   };
 }
 
+// Hitbox blob wire format: see EncodeHitboxBlob.
+std::optional<HitboxData> DecodeHitboxBlob(std::span<const std::byte> blob) {
+  if (blob.empty()) {
+    return std::nullopt;
+  }
+  const auto part = static_cast<std::uint8_t>(blob.front());
+  if (part > static_cast<std::uint8_t>(BodyPart::kLimb)) {
+    return std::nullopt;
+  }
+  auto mesh = DecodeMeshBlob(blob.subspan(1));
+  if (!mesh) {
+    return std::nullopt;
+  }
+  return HitboxData{.part = static_cast<BodyPart>(part), .mesh = *std::move(mesh)};
+}
+
 // Eye blob wire format: see EncodeEyeBlob.
 std::optional<EyeData> DecodeEyeBlob(std::span<const std::byte> blob) {
   ByteReader reader(blob);
@@ -315,6 +331,37 @@ std::optional<PackHash> DecodeClientPackBlob(std::span<const std::byte> blob) {
   PackHash hash;
   std::ranges::copy(blob, hash.begin());
   return hash;
+}
+
+// Audio blob wire format: see EncodeAudioBlob. Only whole samples of a width a
+// PCM WAV file can hold are a sound.
+std::optional<AudioData> DecodeAudioBlob(std::span<const std::byte> blob) {
+  ByteReader reader(blob);
+  const auto sample_rate = reader.ReadU32();
+  const auto bits_per_sample = reader.ReadU8();
+  const auto size = reader.ReadU32();
+  if (!sample_rate || !bits_per_sample || !size || *size > kMaxAudioBytes) {
+    return std::nullopt;
+  }
+  if (std::ranges::find(kPcmBitsPerSample, *bits_per_sample) == kPcmBitsPerSample.end()) {
+    return std::nullopt;
+  }
+  if (*size % (*bits_per_sample / kBitsPerByte) != 0) {
+    return std::nullopt;
+  }
+  const auto samples = reader.ReadBytes(*size);
+  if (!samples) {
+    return std::nullopt;
+  }
+  return AudioData{.sample_rate = *sample_rate,
+                   .bits_per_sample = *bits_per_sample,
+                   .samples = std::vector<std::byte>(samples->begin(), samples->end())};
+}
+
+// Sounds blob wire format: see EncodeSoundsBlob.
+std::optional<std::string> DecodeSoundsBlob(std::span<const std::byte> blob) {
+  ByteReader reader(blob);
+  return reader.ReadString();
 }
 
 }  // namespace augusta::assets

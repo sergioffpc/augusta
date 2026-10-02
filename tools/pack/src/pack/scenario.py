@@ -1,12 +1,13 @@
-"""A scenario is named, not pathed (ADR-0041): `augustap <name>` resolves to
+"""A scenario is named, not pathed (ADR-0041): `augusta-pack <name>` resolves to
 <assets-root>/authoring/scenarios/<name>/, which holds a manifest.yaml naming
-the one map and every character that scenario composes, plus the scripts that
-go with it:
+the one map, every character and the sounds folder that scenario composes,
+plus the scripts that go with it:
 
-    authoring/scenarios/test_map/manifest.yaml   # map: maps/test_map
+    authoring/scenarios/test_map/manifest.yaml   # map: maps/test_map, sounds: sounds/test_map
     authoring/scenarios/test_map/parameters.lua
     authoring/maps/test_map/map.usda
     authoring/characters/player/character.usda
+    authoring/sounds/test_map/gunshot.wav        # one mono PCM WAV per cue
 
 The cooker packs everything the manifest names: the map's stage and every
 named character's stage into the client and server packs (a character's own
@@ -14,6 +15,8 @@ prim paths addressed under its manifest path, e.g. characters/player/Visual -
 ADR-0040), and every `*.lua` file under the scenario folder into the server
 pack, addressed by its path relative to that folder (ADR-0031, ADR-0039). The
 scripts are signed with the map/characters and cannot change during a run.
+Each of the client's cues (sounds.CUES) is <sounds folder>/<cue>.wav, a mono
+PCM WAV file, cooked into the client pack only (ADR-0020, ADR-0031).
 The map's stage, a character's stage, and the Parameters script all have
 fixed names (map.usd*, character.usd*, parameters.lua) rather than names
 derived from their folder, so renaming any of them never means renaming the
@@ -26,6 +29,7 @@ from pathlib import Path
 import yaml
 
 from pack.pack import MAX_CHARACTERS
+from pack.sounds import CUES, SOUND_EXTENSION, CueSounds, SoundError, read_sound
 
 USD_EXTENSIONS = (".usd", ".usda", ".usdc", ".usdz")
 
@@ -72,6 +76,8 @@ class Scenario:
     # Each script's path relative to the folder ('/' separated, as it is addressed
     # in the pack), with its bytes, in path order so a cook is reproducible.
     scripts: list[tuple[str, bytes]]
+    # The sound of every cue the client plays, from the manifest's sounds folder.
+    sounds: CueSounds
 
 
 def resolve_scenario(assets_root: Path, name: str) -> Scenario:
@@ -80,7 +86,8 @@ def resolve_scenario(assets_root: Path, name: str) -> Scenario:
 
     Raises ScenarioError if the scenario folder or its manifest is missing,
     if the manifest is malformed or names a map/character that doesn't
-    resolve to a stage, or if the scenario has no parameters.lua.
+    resolve to a stage, if the scenario has no parameters.lua, or if its
+    sounds folder lacks a cue or holds one that is not a mono PCM WAV.
     """
     authoring_dir = assets_root / "authoring"
     folder = authoring_dir / "scenarios" / name
@@ -113,9 +120,18 @@ def resolve_scenario(assets_root: Path, name: str) -> Scenario:
     if PARAMETERS_SCRIPT not in (path for path, _ in scripts):
         raise ScenarioError(
             f"Scenario {folder} has no {PARAMETERS_SCRIPT}: the server reads its Parameters from its pack "
-            f"(see tools/pack/examples/authoring/scenarios/augusta/parameters.lua)."
+            f"(see tools/composer/examples/authoring/scenarios/augusta/parameters.lua)."
         )
-    return Scenario(name=name, folder=folder, map_stage_path=map_stage_path, characters=characters, scripts=scripts)
+
+    sounds = _read_sounds(authoring_dir, manifest.get("sounds"), folder / MANIFEST_NAME)
+    return Scenario(
+        name=name,
+        folder=folder,
+        map_stage_path=map_stage_path,
+        characters=characters,
+        scripts=scripts,
+        sounds=sounds,
+    )
 
 
 def _read_manifest(folder: Path) -> dict:
@@ -150,3 +166,22 @@ def _read_scripts(folder: Path) -> list[tuple[str, bytes]]:
         for path in sorted(folder.rglob("*.lua"), key=lambda path: path.relative_to(folder).as_posix())
         if path.is_file()
     ]
+
+
+def _read_sounds(authoring_dir: Path, sounds_rel: object, manifest_path: Path) -> CueSounds:
+    """Every cue's sound from the sounds folder the manifest names: a client needs
+    them all, so one missing or unplayable is found here rather than in a Match.
+    """
+    if not isinstance(sounds_rel, str) or not sounds_rel:
+        raise ScenarioError(f"{manifest_path}: 'sounds' must name a sounds folder, e.g. sounds: sounds/test_map")
+    sounds_dir = authoring_dir / sounds_rel
+    cues = []
+    for cue in CUES:
+        sound_path = sounds_dir / f"{cue}{SOUND_EXTENSION}"
+        if not sound_path.is_file():
+            raise ScenarioError(f"Sounds folder {sounds_dir} has no sound for cue {cue!r}: {sound_path.name}")
+        try:
+            cues.append((cue, read_sound(sound_path)))
+        except SoundError as error:
+            raise ScenarioError(str(error)) from error
+    return CueSounds(path=sounds_rel, cues=cues)

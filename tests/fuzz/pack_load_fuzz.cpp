@@ -29,7 +29,7 @@ using augusta::assets::Pack;
 
 // The example scenario's paths (tests/fixtures/example-packs), each resolved as
 // every type: a resolver that meets a path of another type is exercised too.
-constexpr std::array<std::string_view, 9> kPaths = {
+constexpr std::array<std::string_view, 12> kPaths = {
     "Scene",
     "Root/Floor/Visual",
     "Root/Floor/Collider",
@@ -37,8 +37,11 @@ constexpr std::array<std::string_view, 9> kPaths = {
     "characters/player/Character/Visual",
     "characters/player/Character/Collider",
     "characters/player/Character/Eye",
+    "characters/player/Character/HeadHitbox",
     augusta::assets::kParametersScriptPath,
     "behaviours.lua",
+    "sounds/augusta/gunshot",
+    augusta::assets::kSoundsPath,
 };
 
 template <typename Key>
@@ -107,9 +110,12 @@ void ResolveEverything(const Pack& pack) {
     (void)pack.ResolveSpawnPoint(path);
     (void)pack.ResolveEye(path);
     (void)pack.ResolveScript(path);
+    (void)pack.ResolveAudio(path);
   }
+  (void)pack.ResolveHitboxes("characters/player");
   (void)pack.ResolveCharacters();
   (void)pack.ResolveClientPackHash();
+  (void)pack.ResolveSoundsPath();
 }
 
 }  // namespace

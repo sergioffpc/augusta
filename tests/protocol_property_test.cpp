@@ -13,6 +13,7 @@
 #include "augusta/grid.h"
 #include "augusta/math.h"
 #include "augusta/protocol.h"
+#include "augusta/tick.h"
 
 // Property-based tests of the codec (ADR-0013): every message within the
 // protocol's limits survives Encode and Decode unchanged. RC_PARAMS sets the case
@@ -30,7 +31,8 @@ void showValue(const CommandWire& command, std::ostream& out) {
   out << "{direction ";
   showValue(command.direction, out);
   out << ", yaw " << command.yaw << ", pitch " << command.pitch << ", flags " << +command.flags << ", stance "
-      << +static_cast<std::uint8_t>(command.desired_stance) << "}";
+      << +static_cast<std::uint8_t>(command.desired_stance) << ", view_age " << +command.view_age << ", view_fraction "
+      << command.view_fraction << "}";
 }
 
 void showValue(const BodyStateWire& body, std::ostream& out) {
@@ -57,14 +59,25 @@ void showValue(const MessageWire& message, std::ostream& out) {
       out << "JoinAccepted{session " << static_cast<std::uint32_t>(accepted.session) << ", tick_rate_hz "
           << +accepted.tick_rate_hz << ", deplete " << accepted.parameters.stamina.deplete_per_second << ", regen "
           << accepted.parameters.stamina.regen_per_second << ", forced_walk_below "
-          << accepted.parameters.stamina.forced_walk_below << ", player_count " << +accepted.parameters.player_count
-          << ", character " << +accepted.character << "}";
+          << accepted.parameters.stamina.forced_walk_below << ", player_count " << +accepted.parameters.player_count;
+      const RifleWire& rifle = accepted.parameters.rifle;
+      out << ", rifle{capacity " << +rifle.magazine_capacity << ", rpm " << rifle.rounds_per_minute << ", velocity "
+          << rifle.muzzle_velocity << ", reload " << rifle.reload_seconds << ", recovery "
+          << rifle.recoil_recovery_per_second << ", ads_scale " << rifle.ads_recoil_scale << ", ads_fov "
+          << rifle.ads_field_of_view << ", kicks";
+      for (const RecoilKickWire& kick : rifle.recoil_pattern) {
+        out << " (" << kick.pitch << " " << kick.yaw << ")";
+      }
+      const AmmoWire& ammo = accepted.parameters.ammo;
+      out << "}, ammo{gravity " << ammo.gravity << ", range " << ammo.max_range << ", damage " << ammo.head_damage
+          << " " << ammo.torso_damage << " " << ammo.limb_damage << "}, starting_health "
+          << accepted.parameters.starting_health << ", character " << +accepted.character << "}";
     }
     void operator()(const JoinRefusedWire& refused) const {
       out << "JoinRefused{reason " << +static_cast<std::uint8_t>(refused.reason) << "}";
     }
     void operator()(const CommandsWire& commands) const {
-      out << "Commands{";
+      out << "Commands{view_tick " << commands.view_tick << ", ";
       for (const SequencedCommandWire& command : commands.commands) {
         out << command.sequence << ": ";
         showValue(command.command, out);
@@ -77,9 +90,12 @@ void showValue(const MessageWire& message, std::ostream& out) {
       for (const EntityStateWire& body : state.bodies) {
         out << static_cast<std::uint32_t>(body.entity) << ": ";
         showValue(body.body, out);
-        out << "; ";
+        out << ", yaw " << body.yaw << "; ";
       }
-      out << "queued_commands " << +state.queued_commands << "}";
+      out << "rifle{cooldown " << state.rifle.cooldown << ", reload_remaining " << state.rifle.reload_remaining
+          << ", recoil " << state.rifle.recoil_pitch << " " << state.rifle.recoil_yaw << ", rounds "
+          << +state.rifle.rounds << ", burst_index " << +state.rifle.burst_index << "}, health " << state.health
+          << ", queued_commands " << +state.queued_commands << "}";
     }
     void operator()(const LobbyWire& lobby) const {
       out << "Lobby{version " << lobby.version << ", ";
@@ -99,7 +115,23 @@ void showValue(const MessageWire& message, std::ostream& out) {
       }
       out << "}";
     }
-    void operator()(const MatchEndWire& /*end*/) const { out << "MatchEnd{}"; }
+    void operator()(const MatchEndWire& end) const {
+      out << "MatchEnd{winner " << static_cast<std::uint32_t>(end.winner) << "}";
+    }
+    void operator()(const ShotWire& shot) const {
+      out << "Shot{shooter " << static_cast<std::uint32_t>(shot.shooter) << ", tick " << shot.tick << ", origin ";
+      showValue(shot.origin, out);
+      out << ", yaw " << shot.yaw << ", pitch " << shot.pitch << "}";
+    }
+    void operator()(const HitConfirmationWire& hit) const {
+      out << "HitConfirmation{target " << static_cast<std::uint32_t>(hit.target) << ", part "
+          << +static_cast<std::uint8_t>(hit.part) << ", damage " << hit.damage << "}";
+    }
+    void operator()(const DeathWire& death) const {
+      out << "Death{victim " << static_cast<std::uint32_t>(death.victim) << ", killer "
+          << static_cast<std::uint32_t>(death.killer) << ", part " << +static_cast<std::uint8_t>(death.part) << ", yaw "
+          << death.yaw << ", pitch " << death.pitch << "}";
+    }
   };
   std::visit(Printer{.out = out}, message);
 }
@@ -112,18 +144,23 @@ using augusta::math::FromSteps;
 using augusta::math::Grid;
 using augusta::math::kAngleGrid;
 using augusta::math::kDirectionGrid;
+using augusta::math::kFractionGrid;
 using augusta::math::kPositionGrid;
 using augusta::math::kStaminaGrid;
 using augusta::math::kVelocityGrid;
 using augusta::math::Vec3;
+using augusta::protocol::AmmoWire;
 using augusta::protocol::AuthoritativeStateWire;
+using augusta::protocol::BodyPartWire;
 using augusta::protocol::BodyStateWire;
 using augusta::protocol::CommandsWire;
 using augusta::protocol::CommandWire;
+using augusta::protocol::DeathWire;
 using augusta::protocol::Decode;
 using augusta::protocol::Encode;
 using augusta::protocol::EntityIdWire;
 using augusta::protocol::EntityStateWire;
+using augusta::protocol::HitConfirmationWire;
 using augusta::protocol::JoinAcceptedWire;
 using augusta::protocol::JoinRefusalWire;
 using augusta::protocol::JoinRefusedWire;
@@ -132,6 +169,7 @@ using augusta::protocol::kMaxCharacterPathLength;
 using augusta::protocol::kMaxCommandsPerMessage;
 using augusta::protocol::kMaxEngineVersionLength;
 using augusta::protocol::kMaxPlayers;
+using augusta::protocol::kMaxRecoilKicks;
 using augusta::protocol::kPackHashSize;
 using augusta::protocol::LobbyWire;
 using augusta::protocol::MatchEndWire;
@@ -141,11 +179,15 @@ using augusta::protocol::MessageWire;
 using augusta::protocol::PackHashWire;
 using augusta::protocol::ParametersWire;
 using augusta::protocol::ReadyWire;
+using augusta::protocol::RecoilKickWire;
+using augusta::protocol::RifleWire;
 using augusta::protocol::RosterEntryWire;
 using augusta::protocol::SequencedCommandWire;
 using augusta::protocol::SessionIdWire;
+using augusta::protocol::ShotWire;
 using augusta::protocol::StaminaWire;
 using augusta::protocol::StanceWire;
+using augusta::protocol::WeaponStateWire;
 
 // A value on grid, anywhere in its range: the only numbers a body or a command
 // holds (augusta/grid.h), so the only ones the codec must carry exactly.
@@ -206,7 +248,9 @@ rc::Gen<CommandWire> Command() {
       rc::gen::set(&CommandWire::direction, Vec3OnGrid(kDirectionGrid)),
       rc::gen::set(&CommandWire::yaw, OnGrid(kAngleGrid)), rc::gen::set(&CommandWire::pitch, OnGrid(kAngleGrid)),
       rc::gen::set(&CommandWire::flags, rc::gen::inRange<std::uint8_t>(0, CommandWire::kReload << 1U)),
-      rc::gen::set(&CommandWire::desired_stance, Stance()));
+      rc::gen::set(&CommandWire::desired_stance, Stance()),
+      rc::gen::set(&CommandWire::view_age, rc::gen::arbitrary<std::uint8_t>()),
+      rc::gen::set(&CommandWire::view_fraction, OnGrid(kFractionGrid)));
 }
 
 rc::Gen<BodyStateWire> Body() {
@@ -231,9 +275,24 @@ rc::Gen<JoinAcceptedWire> JoinAccepted() {
   const auto stamina = rc::gen::build<StaminaWire>(rc::gen::set(&StaminaWire::deplete_per_second, FiniteFloat()),
                                                    rc::gen::set(&StaminaWire::regen_per_second, FiniteFloat()),
                                                    rc::gen::set(&StaminaWire::forced_walk_below, FiniteFloat()));
-  const auto parameters =
-      rc::gen::build<ParametersWire>(rc::gen::set(&ParametersWire::stamina, stamina),
-                                     rc::gen::set(&ParametersWire::player_count, rc::gen::arbitrary<std::uint8_t>()));
+  const auto kick = rc::gen::build<RecoilKickWire>(rc::gen::set(&RecoilKickWire::pitch, FiniteFloat()),
+                                                   rc::gen::set(&RecoilKickWire::yaw, FiniteFloat()));
+  const auto rifle = rc::gen::build<RifleWire>(
+      rc::gen::set(&RifleWire::rounds_per_minute, FiniteFloat()),
+      rc::gen::set(&RifleWire::muzzle_velocity, FiniteFloat()), rc::gen::set(&RifleWire::reload_seconds, FiniteFloat()),
+      rc::gen::set(&RifleWire::recoil_recovery_per_second, FiniteFloat()),
+      rc::gen::set(&RifleWire::ads_recoil_scale, FiniteFloat()),
+      rc::gen::set(&RifleWire::ads_field_of_view, FiniteFloat()),
+      rc::gen::set(&RifleWire::recoil_pattern, UpTo<std::vector<RecoilKickWire>>(kMaxRecoilKicks, kick)),
+      rc::gen::set(&RifleWire::magazine_capacity, rc::gen::arbitrary<std::uint8_t>()));
+  const auto ammo = rc::gen::build<AmmoWire>(
+      rc::gen::set(&AmmoWire::gravity, FiniteFloat()), rc::gen::set(&AmmoWire::max_range, FiniteFloat()),
+      rc::gen::set(&AmmoWire::head_damage, FiniteFloat()), rc::gen::set(&AmmoWire::torso_damage, FiniteFloat()),
+      rc::gen::set(&AmmoWire::limb_damage, FiniteFloat()));
+  const auto parameters = rc::gen::build<ParametersWire>(
+      rc::gen::set(&ParametersWire::stamina, stamina), rc::gen::set(&ParametersWire::rifle, rifle),
+      rc::gen::set(&ParametersWire::ammo, ammo), rc::gen::set(&ParametersWire::starting_health, FiniteFloat()),
+      rc::gen::set(&ParametersWire::player_count, rc::gen::arbitrary<std::uint8_t>()));
   return rc::gen::build<JoinAcceptedWire>(
       rc::gen::set(&JoinAcceptedWire::session, AnyId<SessionIdWire>()),
       rc::gen::set(&JoinAcceptedWire::tick_rate_hz, rc::gen::arbitrary<std::uint8_t>()),
@@ -249,19 +308,29 @@ rc::Gen<JoinRefusedWire> JoinRefused() {
 
 rc::Gen<CommandsWire> Commands() {
   const auto sequenced = rc::gen::build<SequencedCommandWire>(
-      rc::gen::set(&SequencedCommandWire::sequence, rc::gen::arbitrary<std::uint32_t>()),
+      rc::gen::set(&SequencedCommandWire::sequence, rc::gen::arbitrary<augusta::command::Sequence>()),
       rc::gen::set(&SequencedCommandWire::command, Command()));
-  return rc::gen::build<CommandsWire>(rc::gen::set(
-      &CommandsWire::commands, UpTo<std::vector<SequencedCommandWire>>(kMaxCommandsPerMessage, sequenced)));
+  return rc::gen::build<CommandsWire>(
+      rc::gen::set(&CommandsWire::commands, UpTo<std::vector<SequencedCommandWire>>(kMaxCommandsPerMessage, sequenced)),
+      rc::gen::set(&CommandsWire::view_tick, rc::gen::arbitrary<augusta::tick::Tick>()));
 }
 
 rc::Gen<AuthoritativeStateWire> AuthoritativeState() {
   const auto entity = rc::gen::build<EntityStateWire>(rc::gen::set(&EntityStateWire::entity, AnyId<EntityIdWire>()),
-                                                      rc::gen::set(&EntityStateWire::body, Body()));
+                                                      rc::gen::set(&EntityStateWire::body, Body()),
+                                                      rc::gen::set(&EntityStateWire::yaw, OnGrid(kAngleGrid)));
+  const auto rifle =
+      rc::gen::build<WeaponStateWire>(rc::gen::set(&WeaponStateWire::cooldown, FiniteFloat()),
+                                      rc::gen::set(&WeaponStateWire::reload_remaining, FiniteFloat()),
+                                      rc::gen::set(&WeaponStateWire::recoil_pitch, OnGrid(kAngleGrid)),
+                                      rc::gen::set(&WeaponStateWire::recoil_yaw, OnGrid(kAngleGrid)),
+                                      rc::gen::set(&WeaponStateWire::rounds, rc::gen::arbitrary<std::uint8_t>()),
+                                      rc::gen::set(&WeaponStateWire::burst_index, rc::gen::arbitrary<std::uint8_t>()));
   return rc::gen::build<AuthoritativeStateWire>(
-      rc::gen::set(&AuthoritativeStateWire::tick, rc::gen::arbitrary<std::uint32_t>()),
-      rc::gen::set(&AuthoritativeStateWire::acknowledged_sequence, rc::gen::arbitrary<std::uint32_t>()),
+      rc::gen::set(&AuthoritativeStateWire::tick, rc::gen::arbitrary<augusta::tick::Tick>()),
+      rc::gen::set(&AuthoritativeStateWire::acknowledged_sequence, rc::gen::arbitrary<augusta::command::Sequence>()),
       rc::gen::set(&AuthoritativeStateWire::bodies, UpTo<std::vector<EntityStateWire>>(kMaxPlayers, entity)),
+      rc::gen::set(&AuthoritativeStateWire::rifle, rifle), rc::gen::set(&AuthoritativeStateWire::health, FiniteFloat()),
       rc::gen::set(&AuthoritativeStateWire::queued_commands, rc::gen::arbitrary<std::uint8_t>()));
 }
 
@@ -286,13 +355,41 @@ rc::Gen<MatchStartWire> MatchStart() {
       rc::gen::set(&MatchStartWire::players, UpTo<std::vector<MatchPlayerWire>>(kMaxPlayers, player)));
 }
 
+rc::Gen<MatchEndWire> MatchEnd() {
+  return rc::gen::build<MatchEndWire>(rc::gen::set(&MatchEndWire::winner, AnyId<SessionIdWire>()));
+}
+
+rc::Gen<ShotWire> Shot() {
+  return rc::gen::build<ShotWire>(rc::gen::set(&ShotWire::origin, Vec3OnGrid(kPositionGrid)),
+                                  rc::gen::set(&ShotWire::shooter, AnyId<EntityIdWire>()),
+                                  rc::gen::set(&ShotWire::tick, rc::gen::arbitrary<augusta::tick::Tick>()),
+                                  rc::gen::set(&ShotWire::yaw, OnGrid(kAngleGrid)),
+                                  rc::gen::set(&ShotWire::pitch, OnGrid(kAngleGrid)));
+}
+
+rc::Gen<HitConfirmationWire> HitConfirmation() {
+  return rc::gen::build<HitConfirmationWire>(
+      rc::gen::set(&HitConfirmationWire::target, AnyId<EntityIdWire>()),
+      rc::gen::set(&HitConfirmationWire::damage, FiniteFloat()),
+      rc::gen::set(&HitConfirmationWire::part,
+                   rc::gen::element(BodyPartWire::kHead, BodyPartWire::kTorso, BodyPartWire::kLimb)));
+}
+
+rc::Gen<DeathWire> Death() {
+  return rc::gen::build<DeathWire>(
+      rc::gen::set(&DeathWire::victim, AnyId<EntityIdWire>()), rc::gen::set(&DeathWire::killer, AnyId<EntityIdWire>()),
+      rc::gen::set(&DeathWire::yaw, OnGrid(kAngleGrid)), rc::gen::set(&DeathWire::pitch, OnGrid(kAngleGrid)),
+      rc::gen::set(&DeathWire::part, rc::gen::element(BodyPartWire::kHead, BodyPartWire::kTorso, BodyPartWire::kLimb)));
+}
+
 // Any message of the protocol, within its limits.
 rc::Gen<MessageWire> Message() {
   return rc::gen::oneOf(rc::gen::cast<MessageWire>(JoinRequest()), rc::gen::cast<MessageWire>(JoinAccepted()),
                         rc::gen::cast<MessageWire>(JoinRefused()), rc::gen::cast<MessageWire>(Commands()),
                         rc::gen::cast<MessageWire>(AuthoritativeState()), rc::gen::cast<MessageWire>(Lobby()),
                         rc::gen::cast<MessageWire>(Ready()), rc::gen::cast<MessageWire>(MatchStart()),
-                        rc::gen::just(MessageWire{MatchEndWire{}}));
+                        rc::gen::cast<MessageWire>(MatchEnd()), rc::gen::cast<MessageWire>(Shot()),
+                        rc::gen::cast<MessageWire>(HitConfirmation()), rc::gen::cast<MessageWire>(Death()));
 }
 
 RC_GTEST_PROP(ProtocolPropertyTest, EveryMessageSurvivesEncodeThenDecode, ()) {

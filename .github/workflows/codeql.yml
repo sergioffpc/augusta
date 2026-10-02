@@ -1,5 +1,4 @@
 name: CodeQL
-
 # Documentation can't change what the C++ analysis finds, so a docs-only
 # change skips it. Safe only because analyze is not a required check: a
 # required check filtered out here would never report and block the merge.
@@ -13,14 +12,12 @@ on:
     paths-ignore: ["docs/**", "**.md"]
   schedule:
     - cron: "0 6 * * 1"
-
 permissions:
   contents: read
   security-events: write
   packages: read
   # Deleting superseded cache entries (.github/actions/prune-cache).
   actions: write
-
 jobs:
   analyze:
     # Pinned rather than ubuntu-latest - see ci.yml's client job comment.
@@ -29,14 +26,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
-
       # The same toolchain and vcpkg binary cache as ci.yml's Linux jobs: the
       # clang the linux preset compiles with (ADR-0008), so the packages they
       # built are the ones this job needs.
       - uses: ./.github/actions/setup-linux-build
         with:
           sccache: "false"
-
       # Real CMake/vcpkg build rather than CodeQL's autobuild, which
       # doesn't know how to init the vcpkg submodule or pick our preset.
       # Configured before init, so CodeQL traces only our Build below: under
@@ -46,15 +41,11 @@ jobs:
         run: cmake --preset linux
         env:
           VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
-
       - uses: ./.github/actions/save-vcpkg-cache
-
       - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4
         with:
           languages: cpp
           build-mode: manual
-
       - name: Build
-        run: cmake --build --preset linux
-
+        run: cmake --build --preset linux --target all augusta_tests
       - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4

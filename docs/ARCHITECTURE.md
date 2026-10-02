@@ -96,10 +96,13 @@ No matchmaking, master server, or third-party platform integration in v1.
   World below is its own Flecs world instance built
   directly on the library; not a separate wrapped module in its own
   right.
-- Physics — PhysX wrapper (collision, movement); one interface used
-  identically by PredictionWorld and SimulationWorld
-- WeaponHandling — aim/ADS, fire, reload, recoil, ammo rules; one
-  interface used identically by both Worlds. The client/server
+- Physics — PhysX wrapper (collision, movement, rigid-body dynamics);
+  one interface used identically by PredictionWorld and SimulationWorld.
+  Props are simulated only by the server and moved kinematically on the
+  client; Cosmetic bodies (ragdolls, debris) only on the client
+  (ADR-0045). Particles are the renderer's, not physics'
+- WeaponHandling — aim/ADS, fire, reload, recoil, ammo rules
+  (augusta_weapon); one interface used identically by both Worlds. The client/server
   difference isn't in this module's logic, it's in what each World
   does with the result: the server treats it as authoritative and
   feeds Ballistics, the client uses it only for local predicted
@@ -185,12 +188,14 @@ WeaponHandling → Commit)
 | Commit | Mechanism | Packages the tick's predicted state into the immutable Prediction State |
 
 **PresentationWorld phases** (Main/Render thread, per render frame, in
-execution order: Interpolation → Camera → Animation → AudioCues →
-Commit)
+execution order: Interpolation → Dynamics → Camera → Animation →
+AudioCues → Commit; Dynamics is added with the client's first Prop or
+Cosmetic body, and until then the other five run — ADR-0024)
 
 | Phase | Category | Responsibility |
 |---|---|---|
 | Interpolation | Mechanism | Interpolates between the last two Prediction States, by the fraction of the tick elapsed at render time, for smooth motion at render frame rate |
+| Dynamics | Mechanism | Moves Props to their interpolated poses and advances Cosmetic bodies: one fixed-step `simulate()` per tick Prediction advanced since the last frame, capped per frame (ADR-0045). Added with the first dynamic body |
 | Camera | Mechanism | View camera — position at the character's eye for the body's stance, orientation from the newest mouse-look every frame (not the tick's), ADS zoom transition, recoil kick decay, view bob |
 | Animation | Mechanism | Drives skeletal/procedural animation from interpolated movement and weapon state |
 | AudioCues | Mechanism | Translates events carried in the Prediction State (e.g., fire, footstep) into spatialized audio cues |
@@ -209,9 +214,11 @@ exclusively server-authoritative.
   checks, Ready, Match start, Match end; ADR-0043); when a Match is won
   and over is game policy
 - Scripting (Lua) — sandboxed script hooks for game policy (Match
-  lifecycle, win conditions, spawn rules); small interface (e.g. a
-  RunHook call) hiding the Lua embedding and the restricted-environment
-  sandbox (§8) that upholds "no I/O inside ECS worlds" structurally.
+  lifecycle, win conditions, spawn rules); small interface (load the
+  scenario's scripts, call a hook by name with a read-only view, get back
+  plain data C++ validates) hiding the Lua embedding and the
+  restricted-environment sandbox (§8) that upholds "no I/O inside ECS
+  worlds" structurally (ADR-0022).
   Server-only - game policy is exclusively server-authoritative, never
   run by either client world.
 - ServerRuntime
@@ -249,18 +256,23 @@ Cmds|     | State
 inbound commands)*
 
 **SimulationWorld phases** (executed in order, once per tick: Command
-Ingestion → Movement → WeaponHandling → Ballistics → HitDetection →
-Damage → Scripts/Behaviours → Commit)
+Ingestion → Movement → Dynamics → WeaponHandling → Ballistics → HitDetection →
+Damage → Scripts/Behaviours → Commit; Dynamics is added with the first Prop,
+and until then the other eight run — ADR-0023). Each tick returns a
+`TickResult`: the Authoritative State, its combat events included, and the
+Game policy actions taken on it, typed and validated in C++ (ADR-0022), which
+`server::Host` acts on after the tick.
 
 | Phase | Category | Responsibility |
 |---|---|---|
 | CommandIngestion | Mechanism | Applies validated client commands to this tick's entities |
 | Movement | Mechanism | PhysX integration, stamina, collision resolution (US-04, US-05) |
+| Dynamics | Mechanism | One fixed-step PhysX `simulate()`: Props, grenades, explosion impulses; reports Prop contacts for Damage (ADR-0045). Added with the first Prop |
 | WeaponHandling | Mechanism | Aim/ADS, fire, reload, recoil (US-06–US-09) |
 | Ballistics | Mechanism | Advances in-flight bullet trajectories (US-10) |
 | HitDetection | Mechanism | Resolves impact point + body part against hitboxes as they were the Shooter's delay ago (US-11, ADR-0044) |
 | Damage | Mechanism (reads Data/Config) | Applies damage, marks death/spectator (US-12, US-13) |
-| Scripts/Behaviours | Policy (Lua, sandboxed) | Win condition, Match end, spawn logic (US-14, US-03) |
+| Scripts/Behaviours | Policy (Lua, sandboxed) | Win condition, Match end, spawn logic (US-14, US-03); a hook's answer leaves as a typed action |
 | Commit | Mechanism | Packages tick state into Authoritative State for Networking |
 
 **Tooling** (offline, not shipped)
@@ -269,7 +281,7 @@ Damage → Scripts/Behaviours → Commit)
   geometry), validates it with usd-validation-nvidia, then converts it into the
   engine's runtime level format, including Steam Audio baked
   reflection/occlusion data
-- Asset cooker (`tools/pack`, a pure-Python project - `augustap`
+- Asset cooker (`tools/pack`, a pure-Python project - `augusta-pack`
   console-script entry point) — walks the cleaned OpenUSD stage via
   usd-optimize's own `pxr` build, optimizes meshes via meshoptimizer and
   compresses textures via DirectXTex (BC7/BC5/BC4, DDS) through two small
@@ -308,10 +320,13 @@ Damage → Scripts/Behaviours → Commit)
    presentation smooths the jump (see ADR-0004)
 
 **Scenario: Match End**
-1. Server evaluates the win condition each tick (game policy, e.g. one side
-   eliminated)
-2. When it is met, the server ends the Match, declares the winner and sends
-   Match end reliably; everyone still connected returns to the Lobby
+1. Server evaluates the win condition each tick (game policy, the scenario's
+   `objectives.lua`; in v1 last player standing)
+2. When it is met, the decision is a typed Match end action in that tick's
+   result; the server ends the Match after the tick, removes every body and
+   bullet in flight, and sends
+   Match end, with the winner or a draw, reliably; everyone still connected
+   returns to the Lobby
 3. The next Match starts once the Lobby is full and Ready again, never less
    than 5 seconds after the previous one ended (ADR-0043)
 
@@ -335,7 +350,13 @@ now.
 - **Threading:** fixed dedicated threads, no generic job/task scheduler in
   v1. Client: 3 threads (Main/Render, Simulation [ECS + PhysX], Network
   I/O). Server: 2 threads (Simulation, Network I/O) — no render thread,
-  since it's headless (see ADR-0005).
+  since it's headless (see ADR-0005). Each piece of mutable state has one
+  owning thread and crosses to another only as an immutable value: transport
+  callbacks publish events that the Network I/O owner applies outside their
+  locks, the client reads what the server said through one immutable Server
+  view, and SimulationWorld returns a `TickResult`. A runtime supervisor owns
+  the worker threads, their stop request and the first failure, which a
+  runtime reports rather than terminating the process.
 - **Determinism strategy:** PhysX does not guarantee cross-platform bit-exact
   determinism (confirmed: NVIDIA docs state cross-platform determinism is
   unsupported). Client prediction is therefore treated as approximate: the
@@ -343,8 +364,13 @@ now.
   never assuming the replay matches what the server did, and the next
   acknowledgement corrects what is left.
 - **Serialization:** custom lightweight binary format for game-state messages
-- **Security:** server validates all client input (US-15); encryption
-  deliberately deferred past v1 (trusted LAN testing only)
+- **Security:** server validates all client input (US-15) and disconnects a
+  peer that keeps sending malformed, impossible or out-of-turn data, past a
+  threshold of such rejections within a sliding window, or that connects and is
+  not admitted to the Lobby within a deadline (boundary constants, set so an
+  honest client under NFR-02's latency and loss never reaches them; routine
+  rejections never count); encryption deliberately deferred past v1
+  (trusted LAN testing only)
 - **No I/O inside ECS worlds:** ECS worlds are pure state transformations.
   Device input, networking, rendering, and audio output are all handled by
   dedicated boundary components outside the worlds, which translate
@@ -359,9 +385,9 @@ now.
   policy scripts. Keeping these separate means gameplay rules and balance
   numbers can change without touching engine internals.
 - **Scripting sandbox:** Lua scripts run with a restricted global
-  environment — no `io`, `os.execute`, `package.loadlib`, or filesystem/
-  network access — upholding "no I/O inside ECS worlds" structurally,
-  not just by convention.
+  environment — no `io`, `os`, `package`, `require`, or filesystem/
+  network access — and an instruction limit per hook call, upholding "no
+  I/O inside ECS worlds" structurally, not just by convention (ADR-0022).
 - **Asset packaging & integrity:** runtime assets ship as a single signed
   pack file per target (client/server), never as loose files. Content is
   hashed with BLAKE3 and signed with Ed25519; both the client and server
@@ -389,6 +415,7 @@ aid only and do not affect numbering.
 - [ADR-0038 — Networking Protocol: message catalogue and reliability split](./adr/0038-networking-protocol-messages.md)
 - [ADR-0042 — Character selection: chosen in the client config, validated at join, replicated as an index](./adr/0042-character-selection.md)
 - [ADR-0044 — Shot lag compensation and replication](./adr/0044-shot-lag-compensation-and-replication.md)
+- [ADR-0045 — Dynamic bodies: server-authoritative Props, client-only cosmetics, fixed-step simulate](./adr/0045-dynamic-bodies.md)
 
 ### Tooling & Build
 - [ADR-0008 — Build tooling](./adr/0008-build-tooling.md)

@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <format>
 #include <optional>
+#include <print>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -10,12 +11,14 @@
 
 #include "augusta/assets.h"
 #include "augusta/config.h"
+#include "augusta/cues.h"
 #include "augusta/harness.h"
 #include "augusta/logging.h"
 #include "augusta/map.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/renderer.h"
+#include "augusta/supervisor.h"
 #include "augusta/version.h"
 #include "runtime.h"
 #include "scene_loader.h"
@@ -93,19 +96,8 @@ std::string DescribePackError(const PackError& error, const std::filesystem::pat
   return "unknown pack error";
 }
 
-// Settings come from a config file - augustac.yaml next to the executable
-// unless --config names another (ADR-0034) - not from the command line.
-std::expected<augusta::config::ClientConfig, augusta::config::ConfigError> LoadConfig(int argc, char** argv) {
-  const auto config_file =
-      augusta::config::ResolveConfigFile(argc, argv, "augustac", augusta::config::kClientConfigFileName);
-  if (!config_file) {
-    return std::unexpected(config_file.error());
-  }
-  return augusta::config::LoadClientConfig(*config_file);
-}
-
 // Only the scene graph and its meshes are consumed so far (what the renderer
-// draws); collision/hitbox/texture/audio resolution waits for the ECS
+// draws); collision/hitbox/texture resolution waits for the ECS
 // component shapes and gameplay code that will use them. Reports what is
 // wrong and returns nullopt.
 std::optional<augusta::renderer::Scene> LoadRenderScene(const augusta::assets::Pack& pack,
@@ -135,21 +127,29 @@ std::optional<augusta::math::Vec3> LoadEye(const augusta::assets::Pack& pack, co
   return *eye;
 }
 
-// Loads a character's mesh from pack by its index into the scenario's
+// Loads a character's mesh and eye from pack by its index into the scenario's
 // characters (ADR-0042), which pack must outlive. Reports what is wrong with the
 // character list and returns nullopt.
-std::optional<augusta::runtime::CharacterMeshLoader> CharacterMeshLoaderFor(const augusta::assets::Pack& pack,
-                                                                            const std::filesystem::path& pack_path) {
+std::optional<augusta::runtime::CharacterLoader> CharacterLoaderFor(const augusta::assets::Pack& pack,
+                                                                    const std::filesystem::path& pack_path) {
   auto characters = pack.ResolveCharacters();
   if (!characters) {
-    LE("subsystem=client event=character_mesh_loading_failed path={} error={}", pack_path.string(),
+    LE("subsystem=client event=character_loading_failed path={} error={}", pack_path.string(),
        std::format("{} {}", augusta::assets::kCharactersPath,
                    augusta::assets::DescribeResolveError(characters.error(), "character list")));
     return std::nullopt;
   }
   return [&pack, characters = *std::move(characters)](std::uint8_t character) {
     return augusta::client::LoadCharacterMesh(characters, character,
-                                              [&pack](std::string_view path) { return pack.ResolveMesh(path); });
+                                              [&pack](std::string_view path) { return pack.ResolveMesh(path); })
+        .and_then([&](augusta::renderer::SceneMesh mesh) {
+          // LoadCharacterMesh has checked the index names one of characters.
+          return augusta::client::LoadCharacterEye(characters[character - 1],
+                                                   [&pack](std::string_view path) { return pack.ResolveEye(path); })
+              .transform([&mesh](const augusta::math::Vec3& eye) {
+                return augusta::runtime::LoadedCharacter{.mesh = std::move(mesh), .eye = eye};
+              });
+        });
   };
 }
 
@@ -157,6 +157,9 @@ std::optional<augusta::runtime::CharacterMeshLoader> CharacterMeshLoaderFor(cons
 std::string DescribeRunFailure(const augusta::runtime::Failure& failure, const std::filesystem::path& pack_path) {
   if (const auto* session = std::get_if<augusta::harness::Failure>(&failure)) {
     return augusta::harness::DescribeFailure(*session);
+  }
+  if (const auto* worker = std::get_if<augusta::supervisor::WorkerFailure>(&failure)) {
+    return augusta::supervisor::DescribeWorkerFailure(*worker);
   }
   return std::format("client pack {}: {}", pack_path.string(),
                      augusta::client::DescribeSceneError(std::get<augusta::client::SceneError>(failure)));
@@ -177,18 +180,34 @@ std::optional<augusta::runtime::Map> LoadMap(const augusta::assets::Pack& pack,
   return augusta::runtime::Map{.collision = *std::move(collision)};
 }
 
+// Every cue's sound (ADR-0020), loaded at startup so a pack missing one is found
+// before a Match rather than during one. Reports what is wrong and returns nullopt.
+std::optional<augusta::audio::CueSounds> LoadCueSounds(const augusta::assets::Pack& pack,
+                                                       const std::filesystem::path& pack_path) {
+  auto sounds = augusta::audio::LoadCueSounds(pack);
+  if (!sounds) {
+    LE("subsystem=client event=cue_sounds_loading_failed path={} error={}", pack_path.string(),
+       augusta::audio::DescribeCueSoundError(sounds.error()));
+    return std::nullopt;
+  }
+  LI("subsystem=client event=cue_sounds_loaded cues={}", sounds->size());
+  return *std::move(sounds);
+}
+
 struct Content {
   augusta::math::Vec3 eye;
   augusta::renderer::Scene scene;
   augusta::runtime::Map map;
-  augusta::runtime::CharacterMeshLoader load_character_mesh;
+  augusta::runtime::CharacterLoader load_character;
+  augusta::audio::CueSounds cue_sounds;
 };
 
 enum class ContentError {
   kEyeLoading,
   kSceneLoading,
-  kCharacterMeshLoading,
+  kCharacterLoading,
   kMapLoading,
+  kCueSoundsLoading,
 };
 
 std::string_view DescribeContentError(ContentError error) {
@@ -197,10 +216,12 @@ std::string_view DescribeContentError(ContentError error) {
       return "character eye loading failed";
     case ContentError::kSceneLoading:
       return "scene loading failed";
-    case ContentError::kCharacterMeshLoading:
-      return "character mesh loading failed";
+    case ContentError::kCharacterLoading:
+      return "character loading failed";
     case ContentError::kMapLoading:
       return "map loading failed";
+    case ContentError::kCueSoundsLoading:
+      return "cue sounds loading failed";
   }
   return "unknown content error";
 }
@@ -219,10 +240,10 @@ std::expected<Content, ContentError> LoadClientContent(const augusta::assets::Pa
     return std::unexpected(ContentError::kSceneLoading);
   }
 
-  // A character's mesh is loaded only once another player in the Lobby brings it (ADR-0043).
-  auto load_character_mesh = CharacterMeshLoaderFor(pack, pack_path);
-  if (!load_character_mesh) {
-    return std::unexpected(ContentError::kCharacterMeshLoading);
+  // A character is loaded only once another player in the Lobby brings it (ADR-0043).
+  auto load_character = CharacterLoaderFor(pack, pack_path);
+  if (!load_character) {
+    return std::unexpected(ContentError::kCharacterLoading);
   }
 
   auto map = LoadMap(pack, pack_path);
@@ -230,10 +251,16 @@ std::expected<Content, ContentError> LoadClientContent(const augusta::assets::Pa
     return std::unexpected(ContentError::kMapLoading);
   }
 
+  auto cue_sounds = LoadCueSounds(pack, pack_path);
+  if (!cue_sounds) {
+    return std::unexpected(ContentError::kCueSoundsLoading);
+  }
+
   return Content{.eye = *eye,
                  .scene = *std::move(scene),
                  .map = *std::move(map),
-                 .load_character_mesh = *std::move(load_character_mesh)};
+                 .load_character = *std::move(load_character),
+                 .cue_sounds = *std::move(cue_sounds)};
 }
 
 augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ClientConfig& file_config,
@@ -256,7 +283,7 @@ int Run(const augusta::config::ClientConfig& file_config, const augusta::assets:
 
   const augusta::runtime::Config config = BuildRuntimeConfig(file_config, pack);
   augusta::runtime::ClientRuntime runtime(config, std::move(content.map), content.scene, content.eye,
-                                          std::move(content.load_character_mesh));
+                                          content.cue_sounds, std::move(content.load_character));
   if (const auto failure = runtime.Run(); failure.has_value()) {
     // No reconnecting and no connection screen: say what happened and exit.
     LE("subsystem=client event=run_failed path={} error={}", pack_path.string(),
@@ -275,7 +302,17 @@ int main(int argc, char** argv) {
   const TimerResolution timer_resolution;
 #endif
 
-  const auto file_config = LoadConfig(argc, argv);
+  // Settings come from a config file - augustac.yaml next to the executable
+  // unless --config names another (ADR-0034) - not from the command line,
+  // which otherwise only asks for --help or --version (printed, then exit).
+  const auto command_line = augusta::config::ParseCommandLine(
+      argc, argv, "augustac", augusta::config::kClientConfigFileName, augusta::EngineVersion());
+  if (command_line && command_line->action != augusta::config::CommandLineAction::kRun) {
+    std::println("{}", command_line->message);
+    return 0;
+  }
+  const auto file_config = command_line.and_then(
+      [](const augusta::config::CommandLine& read) { return augusta::config::LoadClientConfig(read.config_file); });
   if (!file_config) {
     LE("subsystem=client event=config_loading_failed error={}",
        augusta::config::DescribeConfigError(file_config.error()));

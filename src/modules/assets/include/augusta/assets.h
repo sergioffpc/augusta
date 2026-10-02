@@ -6,8 +6,10 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <format>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -46,6 +48,7 @@ enum class AssetType : std::uint8_t {
   kCharacters,
   kClientPack,
   kEye,
+  kSounds,
 };
 
 // True if value is one of AssetType's defined enumerators - an index
@@ -69,6 +72,29 @@ struct MeshData {
   std::vector<math::Vec3> points;
   std::vector<std::uint32_t> indices;
 };
+
+/// Where on a player a hitbox is (US-11): what a bullet that crosses it hits,
+/// which decides its damage (US-12). Numbered as the hitbox blob carries it.
+enum class BodyPart : std::uint8_t {
+  kHead = 0,
+  kTorso = 1,
+  kLimb = 2,
+};
+
+/// One hitbox (ADR-0040): its geometry and the body part it stands for. A
+/// character's is in its own root space, its feet at the origin, standing.
+struct HitboxData {
+  BodyPart part = BodyPart::kTorso;
+  MeshData mesh{};
+};
+
+/// part's name as a character stage spells it in augusta:bodyPart: "head",
+/// "torso" or "limb".
+[[nodiscard]] std::string_view BodyPartName(BodyPart part);
+
+/// The first body part, in BodyPart's order, that none of hitboxes stands for,
+/// or nullopt if each has one: a character must be hittable in every part.
+[[nodiscard]] std::optional<BodyPart> FirstMissingBodyPart(std::span<const HitboxData> hitboxes);
 
 // Sentinel parent_index for a SceneNode with no parent (a root node).
 inline constexpr std::uint32_t kSceneNodeNoParent = 0xFFFFFFFFU;
@@ -135,6 +161,19 @@ struct TextureData {
   TextureFormat format = TextureFormat::kBC7;
 };
 
+/// A mono PCM sound (ADR-0020): a cue the client plays. samples are as the
+/// authored WAV file held them, little-endian: unsigned at 8 bits per sample,
+/// signed at 16, 24 or 32.
+struct AudioData {
+  std::uint32_t sample_rate = 0;
+  std::uint8_t bits_per_sample = 0;
+  std::vector<std::byte> samples;
+};
+
+/// Pack-relative path, in a scenario's client pack, of the sounds folder its cue
+/// sounds are addressed under: each at `<sounds folder>/<cue>` (ADR-0031).
+inline constexpr std::string_view kSoundsPath = "Sounds";
+
 /// Pack-relative path of the Parameters script (ADR-0039) in a scenario's
 /// server pack: `parameters.lua` at the root of the scenario's folder.
 inline constexpr std::string_view kParametersScriptPath = "parameters.lua";
@@ -167,12 +206,20 @@ struct SpawnPointData {
   math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};
 };
 
-/// A character's eye (ADR-0040): the point the local player's camera sits at, in
-/// the character's own root space - its feet at the origin, the same space its
-/// visual mesh is cooked into.
+/// A character's eye (ADR-0040): the point its player sees from - where the
+/// client puts the local player's camera and the server fires its Shots from -
+/// in the character's own root space: its feet at the origin, the same space
+/// its visual mesh is cooked into.
 struct EyeData {
   math::Vec3 position{0.0F, 0.0F, 0.0F};
 };
+
+/// Pack-relative path of the eye of the character at character_path (its path
+/// relative to `authoring/`): its `Character` root prim's `Eye` child
+/// (ADR-0040), e.g. "characters/player/Character/Eye".
+[[nodiscard]] inline std::string CharacterEyePath(std::string_view character_path) {
+  return std::format("{}/Character/Eye", character_path);
+}
 
 // Sanitizes a USD prim path (e.g. "/Geom/Cube") into the pack-relative
 // path ADR-0031 addresses its blob by: the leading '/' is stripped, '/'
@@ -312,17 +359,33 @@ class Pack {
   // (ADR-0019/ADR-0031). Present in both client and server packs.
   [[nodiscard]] std::expected<MeshData, ResolveError> ResolveCollision(std::string_view path) const;
 
-  // Resolves a hitbox shape by its pack-relative path (ADR-0019/ADR-0031).
+  // Resolves a hitbox by its pack-relative path (ADR-0019/ADR-0031).
   // Present in both client and server packs.
-  [[nodiscard]] std::expected<MeshData, ResolveError> ResolveHitbox(std::string_view path) const;
+  [[nodiscard]] std::expected<HitboxData, ResolveError> ResolveHitbox(std::string_view path) const;
+
+  /// Resolves every hitbox of the character at character_path (its path
+  /// relative to `authoring/`, e.g. "characters/player", ADR-0040): each one
+  /// addressed under it, in path order. Empty if it has none. Present in both
+  /// client and server packs.
+  [[nodiscard]] std::expected<std::vector<HitboxData>, ResolveError> ResolveHitboxes(
+      std::string_view character_path) const;
 
   // Resolves a spawn-point marker by its pack-relative path (ADR-0019/
   // ADR-0032). Present in both client and server packs.
   [[nodiscard]] std::expected<SpawnPointData, ResolveError> ResolveSpawnPoint(std::string_view path) const;
 
-  /// Resolves a character's eye by its pack-relative path (ADR-0040). Present
-  /// in the client pack only.
+  /// Resolves a character's eye by its pack-relative path (CharacterEyePath,
+  /// ADR-0040). Present in both client and server packs.
   [[nodiscard]] std::expected<EyeData, ResolveError> ResolveEye(std::string_view path) const;
+
+  /// Resolves a sound by its pack-relative path (ADR-0020). Present in the client
+  /// pack only.
+  [[nodiscard]] std::expected<AudioData, ResolveError> ResolveAudio(std::string_view path) const;
+
+  /// Resolves, at kSoundsPath, the sounds folder the scenario's cue sounds are
+  /// addressed under, relative to `authoring/` (e.g. "sounds/augusta"). Present in
+  /// the client pack only.
+  [[nodiscard]] std::expected<std::string, ResolveError> ResolveSoundsPath() const;
 
   /// Resolves a Lua script's text by its path relative to the scenario's
   /// folder, e.g. kParametersScriptPath (ADR-0031). Present in the server pack

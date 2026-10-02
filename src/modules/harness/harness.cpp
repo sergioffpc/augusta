@@ -9,6 +9,7 @@
 #include <expected>
 #include <format>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -16,6 +17,7 @@
 #include <variant>
 #include <vector>
 
+#include "augusta/ballistics.h"
 #include "augusta/command.h"
 #include "augusta/harness_wire.h"
 #include "augusta/logging.h"
@@ -49,25 +51,80 @@ std::optional<EntityId> EntityOf(const MatchStart& start, SessionId session) {
   return std::nullopt;
 }
 
+std::string_view BodyPartName(ballistics::BodyPart part) {
+  switch (part) {
+    case ballistics::BodyPart::kHead:
+      return "head";
+    case ballistics::BodyPart::kTorso:
+      return "torso";
+    case ballistics::BodyPart::kLimb:
+      return "limb";
+  }
+  std::unreachable();
+}
+
+// What the server sent that is handed out once, not read: kept, oldest first
+// and no more than the newest limit of it, until whoever draws it takes it.
+// Safe to use from any thread, since the Network I/O thread adds and another takes.
+template <typename Event>
+class Pending {
+ public:
+  explicit Pending(std::size_t limit) : limit_(limit) {}
+
+  void Add(const Event& event) {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    events_.push_back(event);
+    if (events_.size() > limit_) {
+      events_.pop_front();
+    }
+  }
+
+  std::vector<Event> Take() {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<Event> taken(events_.begin(), events_.end());
+    events_.clear();
+    return taken;
+  }
+
+  void Clear() {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    events_.clear();
+  }
+
+ private:
+  std::size_t limit_;
+  std::mutex mutex_;
+  std::deque<Event> events_;
+};
+
 }  // namespace
 
-// What the server has told this client. Immutable once published: the Network
-// I/O thread makes a new one for each message that changes it, and the
-// Prediction thread reads whichever is current.
-struct ServerView {
-  // The whole answer to a join request: the session, the tick rate and the
-  // parameters, all the server's for the whole run.
-  std::optional<Admission> accepted;
-  std::optional<JoinRefusal> refusal;
-  std::optional<Lobby> lobby;
-  // The last match's start, and how many have started: a new count is a new
-  // match for the prediction to start over in.
-  std::optional<MatchStart> match_start;
-  std::uint32_t matches_started = 0;
-  bool in_match = false;
-  // Only while in_match.
-  std::optional<AuthoritativeState> authoritative;
-};
+Phase ServerView::GetPhase() const {
+  if (in_match) {
+    return Phase::kMatch;
+  }
+  return accepted.has_value() ? Phase::kLobby : Phase::kNotAdmitted;
+}
+
+std::optional<EntityId> ServerView::OwnEntity() const {
+  if (!accepted.has_value() || !match_start.has_value()) {
+    return std::nullopt;
+  }
+  return EntityOf(*match_start, accepted->session);
+}
+
+// A Death and an update at zero health each say it is not, and either can
+// arrive first: the one is reliable, the other can overtake it.
+bool ServerView::OwnAlive() const {
+  const std::optional<EntityId> own = OwnEntity();
+  if (!in_match || !own.has_value()) {
+    return false;
+  }
+  if (authoritative.has_value() && authoritative->health <= 0.0F) {
+    return false;
+  }
+  return !std::ranges::contains(dead, *own);
+}
 
 struct Session::Impl {
   networking::Endpoint server;
@@ -90,12 +147,19 @@ struct Session::Impl {
   std::uint32_t started_match = 0;
   prediction::State last_state{};
   // The commands still waiting to be acknowledged, and the sequence the next
-  // one goes under. Sequences start at 1; 0 means none.
+  // one goes under. Sequences start at 1; 0 means none. They count this
+  // connection's commands alone, so 32 bits outlast any session (ADR-0038).
   std::deque<SequencedCommand> unacknowledged;
-  std::uint32_t next_sequence = 1;
+  command::Sequence next_sequence = 1;
   // Network I/O thread only: a server can send messages that are refused as fast
   // as it likes, so their warnings are limited.
   logging::Throttle drop_warnings{std::chrono::seconds{1}};
+
+  // The Shots and the Hit confirmations received and not yet taken. Not part
+  // of the view: they are handed out once, not read.
+  Pending<Shot> shots{kMaxPendingShots};
+  Pending<HitConfirmation> hit_confirmations{kMaxPendingHitConfirmations};
+  Pending<Death> deaths{kMaxPendingDeaths};
 
   Impl(const SessionConfig& config, prediction::World world)
       : server(config.server),
@@ -110,22 +174,36 @@ struct Session::Impl {
                  protocol::DescribeDecodeError(decoded.error()));
       return;
     }
-    if (const auto* accepted = std::get_if<protocol::JoinAcceptedWire>(&*decoded)) {
-      OnJoinAccepted(FromWire(*accepted));
-    } else if (const auto* refused = std::get_if<protocol::JoinRefusedWire>(&*decoded)) {
-      OnJoinRefused(FromWire(refused->reason));
-    } else if (const auto* state = std::get_if<protocol::AuthoritativeStateWire>(&*decoded)) {
-      OnAuthoritativeState(FromWire(*state));
-    } else if (const auto* lobby = std::get_if<protocol::LobbyWire>(&*decoded)) {
-      OnLobby(FromWire(*lobby));
-    } else if (const auto* start = std::get_if<protocol::MatchStartWire>(&*decoded)) {
-      OnMatchStart(FromWire(*start));
-    } else if (std::holds_alternative<protocol::MatchEndWire>(*decoded)) {
-      OnMatchEnd();
-    } else {
+    if (!TakeIn(*decoded)) {
       LW_LIMITED(drop_warnings, "subsystem=harness event=dropped bytes={} reason=\"not a server message\"",
                  payload.size());
     }
+  }
+
+  // Hands message to what takes in its kind; false if it is not one a server sends.
+  bool TakeIn(const protocol::MessageWire& message) {
+    if (const auto* accepted = std::get_if<protocol::JoinAcceptedWire>(&message)) {
+      OnJoinAccepted(FromWire(*accepted));
+    } else if (const auto* refused = std::get_if<protocol::JoinRefusedWire>(&message)) {
+      OnJoinRefused(FromWire(refused->reason));
+    } else if (const auto* state = std::get_if<protocol::AuthoritativeStateWire>(&message)) {
+      OnAuthoritativeState(FromWire(*state));
+    } else if (const auto* shot = std::get_if<protocol::ShotWire>(&message)) {
+      OnShot(FromWire(*shot));
+    } else if (const auto* hit = std::get_if<protocol::HitConfirmationWire>(&message)) {
+      OnHitConfirmation(FromWire(*hit));
+    } else if (const auto* death = std::get_if<protocol::DeathWire>(&message)) {
+      OnDeath(FromWire(*death));
+    } else if (const auto* lobby = std::get_if<protocol::LobbyWire>(&message)) {
+      OnLobby(FromWire(*lobby));
+    } else if (const auto* start = std::get_if<protocol::MatchStartWire>(&message)) {
+      OnMatchStart(FromWire(*start));
+    } else if (const auto* end = std::get_if<protocol::MatchEndWire>(&message)) {
+      OnMatchEnd(FromWire(*end));
+    } else {
+      return false;
+    }
+    return true;
   }
 
   // A server whose tick rate or parameters the simulation cannot run on (a rate
@@ -165,17 +243,87 @@ struct Session::Impl {
       next.match_start = std::move(start);
       ++next.matches_started;
       next.in_match = true;
+      next.match_end.reset();
       next.authoritative.reset();
+      next.dead.clear();
     });
+    ForgetCombat();
     LI("subsystem=harness event=match_started players={}", players);
   }
 
-  void OnMatchEnd() {
+  void OnMatchEnd(const MatchEnd& end) {
     Publish([&](ServerView& next) {
       next.in_match = false;
       next.authoritative.reset();
+      next.match_end = end;
     });
-    LI("subsystem=harness event=match_ended");
+    // The fight's last events, the Deaths that ended the match among them, are
+    // still taken; the next Match start forgets those that were not.
+    if (end.winner.has_value()) {
+      LI("subsystem=harness event=match_ended winner={}", std::to_underlying(*end.winner));
+    } else {
+      LI("subsystem=harness event=match_ended winner=draw");
+    }
+  }
+
+  // Keeps shot for TakeShots if it is of the match in progress. One fired on
+  // the tick a match ended arrives after Match end, which is routine; one of a
+  // body not in the match is a server's mistake.
+  void OnShot(const Shot& shot) {
+    const std::shared_ptr<const ServerView> current = view.load();
+    if (!current->in_match) {
+      LT("subsystem=harness event=dropped tick={} reason=\"shot outside a match\"", shot.tick);
+      return;
+    }
+    if (!IsInMatch(*current->match_start, shot.shooter)) {
+      LW_LIMITED(drop_warnings, "subsystem=harness event=dropped tick={} reason=\"shot names a body not in the match\"",
+                 shot.tick);
+      return;
+    }
+    shots.Add(shot);
+  }
+
+  // Keeps hit for TakeHitConfirmations if it is of the match in progress, as OnShot does a Shot.
+  void OnHitConfirmation(const HitConfirmation& hit) {
+    const std::shared_ptr<const ServerView> current = view.load();
+    if (!current->in_match) {
+      LT("subsystem=harness event=dropped reason=\"hit confirmation outside a match\"");
+      return;
+    }
+    if (!IsInMatch(*current->match_start, hit.target)) {
+      LW_LIMITED(drop_warnings,
+                 "subsystem=harness event=dropped reason=\"hit confirmation names a body not in the match\"");
+      return;
+    }
+    hit_confirmations.Add(hit);
+  }
+
+  // Keeps death for TakeDeaths, and its victim as dead for the rest of the
+  // match, if it is of the match in progress, as OnShot does a Shot. Both its
+  // victim and its killer are players of the match: one who has left it since
+  // is still in its Match start.
+  void OnDeath(const Death& death) {
+    const std::shared_ptr<const ServerView> current = view.load();
+    if (!current->in_match) {
+      LT("subsystem=harness event=dropped reason=\"death outside a match\"");
+      return;
+    }
+    if (!IsInMatch(*current->match_start, death.victim) || !IsInMatch(*current->match_start, death.killer)) {
+      LW_LIMITED(drop_warnings, "subsystem=harness event=dropped reason=\"death names a body not in the match\"");
+      return;
+    }
+    Publish([&](ServerView& next) { next.dead.push_back(death.victim); });
+    deaths.Add(death);
+    LI("subsystem=harness event=death victim={} killer={} part={}", std::to_underlying(death.victim),
+       std::to_underlying(death.killer), BodyPartName(death.part));
+  }
+
+  // The Shots, the Hit confirmations and the Deaths of one match are not the next one's to draw.
+  // Match end keeps them: the tick that ends a match sends its own just before it.
+  void ForgetCombat() {
+    shots.Clear();
+    hit_confirmations.Clear();
+    deaths.Clear();
   }
 
   void OnJoinRefused(JoinRefusal reason) {
@@ -224,17 +372,9 @@ struct Session::Impl {
     return {};
   }
 
-  // The body this client's own player controls, as the last Match start named it.
-  static std::optional<EntityId> OwnEntity(const ServerView& server_view) {
-    if (!server_view.accepted.has_value() || !server_view.match_start.has_value()) {
-      return std::nullopt;
-    }
-    return EntityOf(*server_view.match_start, server_view.accepted->session);
-  }
-
-  // What the server's state says about this client's own player's body.
+  // What the server's state says about this client's own player: its body and its rifle.
   static std::optional<prediction::Acknowledgement> OwnAcknowledgement(const ServerView& server_view) {
-    const std::optional<EntityId> own = OwnEntity(server_view);
+    const std::optional<EntityId> own = server_view.OwnEntity();
     if (!own.has_value() || !server_view.authoritative.has_value()) {
       return std::nullopt;
     }
@@ -243,6 +383,7 @@ struct Session::Impl {
         return prediction::Acknowledgement{
             .sequence = server_view.authoritative->acknowledged_sequence,
             .body = body.body,
+            .rifle = server_view.authoritative->rifle,
         };
       }
     }
@@ -250,7 +391,7 @@ struct Session::Impl {
   }
 
   // Sends command under sequence with the commands server_view does not yet acknowledge.
-  void SendCommand(const ServerView& server_view, std::uint32_t sequence, const command::Command& command) {
+  void SendCommand(const ServerView& server_view, command::Sequence sequence, const command::Command& command) {
     // Commands the server has already processed need not go again.
     if (server_view.authoritative.has_value()) {
       while (!unacknowledged.empty() &&
@@ -327,6 +468,8 @@ void Session::ExchangeMessages() {
   }
 }
 
+std::shared_ptr<const ServerView> Session::GetServerView() const { return impl_->view.load(); }
+
 networking::ConnectionState Session::GetConnectionState() const { return impl_->network.GetState(); }
 
 std::optional<Failure> Session::GetFailure() const {
@@ -351,17 +494,13 @@ std::optional<SessionId> Session::GetSessionId() const {
   return server_view->accepted->session;
 }
 
-Phase Session::GetPhase() const {
-  const std::shared_ptr<const ServerView> server_view = impl_->view.load();
-  if (server_view->in_match) {
-    return Phase::kMatch;
-  }
-  return server_view->accepted.has_value() ? Phase::kLobby : Phase::kNotAdmitted;
-}
+Phase Session::GetPhase() const { return impl_->view.load()->GetPhase(); }
 
 std::optional<Lobby> Session::GetLobby() const { return impl_->view.load()->lobby; }
 
 std::optional<MatchStart> Session::GetMatchStart() const { return impl_->view.load()->match_start; }
+
+std::optional<MatchEnd> Session::GetMatchEnd() const { return impl_->view.load()->match_end; }
 
 void Session::ReportReady(std::uint32_t version) {
   const std::shared_ptr<const ServerView> server_view = impl_->view.load();
@@ -392,7 +531,23 @@ std::optional<JoinRefusal> Session::GetRefusal() const { return impl_->view.load
 
 std::optional<AuthoritativeState> Session::GetAuthoritativeState() const { return impl_->view.load()->authoritative; }
 
-std::optional<EntityId> Session::GetEntityId() const { return Impl::OwnEntity(*impl_->view.load()); }
+std::vector<Shot> Session::TakeShots() { return impl_->shots.Take(); }
+
+std::vector<HitConfirmation> Session::TakeHitConfirmations() { return impl_->hit_confirmations.Take(); }
+
+std::vector<Death> Session::TakeDeaths() { return impl_->deaths.Take(); }
+
+bool Session::IsAlive() const { return impl_->view.load()->OwnAlive(); }
+
+std::optional<float> Session::GetHealth() const {
+  const std::shared_ptr<const ServerView> server_view = impl_->view.load();
+  if (!server_view->authoritative.has_value()) {
+    return std::nullopt;
+  }
+  return server_view->authoritative->health;
+}
+
+std::optional<EntityId> Session::GetEntityId() const { return impl_->view.load()->OwnEntity(); }
 
 prediction::State Session::Tick(const command::Command& command, float delta_time) {
   Impl& impl = *impl_;
@@ -410,7 +565,15 @@ prediction::State Session::Tick(const command::Command& command, float delta_tim
     impl.unacknowledged.clear();
     impl.started_match = server_view->matches_started;
   }
-  const std::uint32_t sequence = impl.next_sequence++;
+  const command::Sequence sequence = impl.next_sequence++;
+  // A dead player's body and rifle are gone from the server: there is nothing
+  // to predict or reconcile, and its commands keep only the stream in step.
+  if (!server_view->OwnAlive()) {
+    command::Command unarmed = command;
+    unarmed.fire = false;
+    impl.SendCommand(*server_view, sequence, unarmed);
+    return impl.last_state;
+  }
   impl.last_state = impl.prediction.Tick(command, sequence, Impl::OwnAcknowledgement(*server_view), delta_time);
   impl.SendCommand(*server_view, sequence, command);
   return impl.last_state;

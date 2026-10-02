@@ -1,6 +1,9 @@
 #ifndef AUGUSTA_MATH_H_
 #define AUGUSTA_MATH_H_
 
+#include <cmath>
+#include <numbers>
+
 #include <glm/geometric.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -12,7 +15,7 @@
 // other modules depend on augusta::math rather than on GLM directly - the
 // facade is the seam, not a reimplementation. GLM does all the actual
 // arithmetic; this module adds no logic beyond the zero-vector guard on
-// Normalize documented below.
+// Normalize and the shorter-arc rule of LerpAngle documented below.
 namespace augusta::math {
 
 // A 3D vector in engine units (1 unit = 1 meter, see ARCHITECTURE.md §8).
@@ -64,6 +67,15 @@ inline Vec3 Normalize(const Vec3& vec) { return Length(vec) > 0.0F ? glm::normal
 // [0, 1] - a caller that has already clamped or intends to extrapolate
 // does not pay for a redundant clamp.
 inline Vec3 Lerp(const Vec3& from, const Vec3& to, float t) { return glm::mix(from, to, t); }
+
+/// The angle, in radians, t of the way from from to to along the shorter arc
+/// between them, so a turn across a half turn goes the short way round. Not
+/// wrapped into one turn. How client and server both turn a body between two
+/// ticks (ADR-0044), so the two agree.
+inline float LerpAngle(float from, float to, float t) {
+  constexpr float kTurn = 2.0F * std::numbers::pi_v<float>;
+  return from + (std::remainder(to - from, kTurn) * t);
+}
 
 // The inverse of transform: maps back what transform mapped. transform must
 // be invertible (no zero scale) - GLM does not check.

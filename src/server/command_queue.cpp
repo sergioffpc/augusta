@@ -39,12 +39,13 @@ std::string_view DescribeRejection(Rejection rejection) {
   return "unknown rejection";
 }
 
-std::expected<void, Rejection> Validate(const SequencedCommand& command, std::uint32_t last_sequence) {
+std::expected<void, Rejection> Validate(const SequencedCommand& command, command::Sequence last_sequence) {
   if (command.sequence <= last_sequence) {
     return std::unexpected(Rejection::kStale);
   }
   const command::Command& input = command.command;
-  if (!IsFinite(input.movement.direction) || !std::isfinite(input.yaw) || !std::isfinite(input.pitch)) {
+  if (!IsFinite(input.movement.direction) || !std::isfinite(input.yaw) || !std::isfinite(input.pitch) ||
+      !std::isfinite(input.view_fraction)) {
     return std::unexpected(Rejection::kNonFinite);
   }
   if (math::Length(input.movement.direction) > kMaxMovementMagnitude || std::fabs(input.pitch) > kMaxPitch ||

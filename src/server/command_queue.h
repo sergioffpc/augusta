@@ -20,8 +20,9 @@ namespace augusta::server {
 
 /// One tick's command and the number its client gave it. Numbers start at 1 and
 /// grow by one per command, so the queue can tell what it has already seen.
+/// They start over with every connection, in command::Sequence's width (ADR-0038).
 struct SequencedCommand {
-  std::uint32_t sequence = 0;
+  command::Sequence sequence = 0;
   command::Command command{};
 };
 
@@ -52,7 +53,7 @@ inline constexpr float kMaxYaw = 3.2F;
 
 /// Whether command is well formed and newer than last_sequence, the newest
 /// sequence already taken in from this client.
-[[nodiscard]] std::expected<void, Rejection> Validate(const SequencedCommand& command, std::uint32_t last_sequence);
+[[nodiscard]] std::expected<void, Rejection> Validate(const SequencedCommand& command, command::Sequence last_sequence);
 
 /// The most commands a queue holds; when a client runs ahead of the server, the
 /// oldest go. The last resort only: a client paces its ticks to keep far fewer
@@ -76,7 +77,7 @@ enum class Enqueued : std::uint8_t {
 struct TickCommand {
   command::Command command;
   /// The highest sequence the queue has handed out so far, 0 if none.
-  std::uint32_t acknowledged_sequence = 0;
+  command::Sequence acknowledged_sequence = 0;
 };
 
 /// One player's incoming commands.
@@ -102,8 +103,8 @@ class CommandQueue {
   std::optional<command::Command> last_;
   int max_held_ticks_;
   int held_ticks_ = 0;
-  std::uint32_t last_offered_ = 0;
-  std::uint32_t acknowledged_ = 0;
+  command::Sequence last_offered_ = 0;
+  command::Sequence acknowledged_ = 0;
 };
 
 }  // namespace augusta::server

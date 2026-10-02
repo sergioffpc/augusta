@@ -4,5 +4,5 @@
 # links client-only input code.
 add_library(augusta_command INTERFACE)
 target_include_directories(augusta_command INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(augusta_command INTERFACE augusta_physics)
+target_link_libraries(augusta_command INTERFACE augusta_physics augusta_tick)
 augusta_set_module_scope(augusta_command SHARED)

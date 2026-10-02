@@ -1,6 +1,7 @@
 #include "augusta/renderer.h"
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -48,11 +49,135 @@ constexpr float kDefaultClearColorChannel = 0.016F;
 constexpr std::uint32_t kFramesInFlight = Falcor::Device::kInFlightFrameCount;
 
 // One vertex of the flat-shaded scene geometry - see BuildFlatShadedVertices.
+// The effects and the overlay (Effects.3d.slang) use it too, unlit: their
+// normal goes unused.
 struct Vertex {
   Falcor::float3 position;
   Falcor::float3 normal;
   Falcor::float3 color;
 };
+
+// Vertex's layout, for every Vao drawn from Vertex buffers.
+Falcor::ref<Falcor::VertexLayout> MakeVertexLayout() {
+  auto buffer_layout = Falcor::VertexBufferLayout::create();
+  buffer_layout->addElement("POSITION", offsetof(Vertex, position), Falcor::ResourceFormat::RGB32Float, 1, 0);
+  buffer_layout->addElement("NORMAL", offsetof(Vertex, normal), Falcor::ResourceFormat::RGB32Float, 1, 1);
+  buffer_layout->addElement("COLOR", offsetof(Vertex, color), Falcor::ResourceFormat::RGB32Float, 1, 2);
+  auto layout = Falcor::VertexLayout::create();
+  layout->addBufferLayout(0, buffer_layout);
+  return layout;
+}
+
+Falcor::float3 ToFalcor(const math::Vec3& vec) { return {vec.x, vec.y, vec.z}; }
+
+// How the fight is drawn (SetCombatEffects): a tracer's half width, in meters,
+// and the color its head glows with - its tail fades to nothing - and each
+// glow's half size, in meters, and color at its center.
+constexpr float kTracerHalfWidth = 0.015F;
+constexpr math::Vec3 kTracerColor{1.0F, 0.75F, 0.35F};
+constexpr float kMuzzleFlashHalfSize = 0.12F;
+constexpr math::Vec3 kMuzzleFlashColor{1.0F, 0.7F, 0.3F};
+constexpr float kImpactHalfSize = 0.08F;
+constexpr math::Vec3 kImpactColor{0.9F, 0.8F, 0.6F};
+
+// How the overlay is drawn (SetOverlay), in pixels: the crosshair's four bars
+// start kCrosshairGapPixels off the frame's center and run kBarLengthPixels on;
+// the hit marker's four, diagonal, start kHitMarkerGapPixels off it.
+constexpr float kCrosshairGapPixels = 4.0F;
+constexpr float kHitMarkerGapPixels = 7.0F;
+constexpr float kBarLengthPixels = 8.0F;
+constexpr float kBarThicknessPixels = 2.0F;
+constexpr math::Vec3 kCrosshairColor{0.9F, 0.9F, 0.9F};
+constexpr math::Vec3 kHitMarkerColor{1.0F, 0.25F, 0.2F};
+
+Vertex Unlit(const math::Vec3& position, const math::Vec3& color) {
+  return {.position = ToFalcor(position), .normal = {0.0F, 0.0F, 0.0F}, .color = ToFalcor(color)};
+}
+
+// Appends tracer as a ribbon from its tail to its head, turned about its own
+// line to face eye, glowing at the head and fading to nothing at the tail.
+void AppendTracer(std::vector<Vertex>& vertices, const Tracer& tracer, const math::Vec3& eye) {
+  const math::Vec3 side = math::Normalize(math::Cross(tracer.head - tracer.tail, tracer.head - eye)) * kTracerHalfWidth;
+  const Vertex head_left = Unlit(tracer.head - side, kTracerColor);
+  const Vertex head_right = Unlit(tracer.head + side, kTracerColor);
+  const Vertex tail_left = Unlit(tracer.tail - side, math::Vec3());
+  const Vertex tail_right = Unlit(tracer.tail + side, math::Vec3());
+  vertices.insert(vertices.end(), {tail_left, head_left, head_right, tail_left, head_right, tail_right});
+}
+
+// Appends glow as a diamond of half_size around its position, in the plane of
+// right and up (the camera's, so it faces the camera), glowing color scaled by
+// how much of it is left at its center and fading to nothing at its corners.
+void AppendGlow(std::vector<Vertex>& vertices, const Glow& glow, const math::Vec3& right, const math::Vec3& up,
+                float half_size, const math::Vec3& color) {
+  const Vertex center = Unlit(glow.position, color * glow.fade);
+  const std::array<math::Vec3, 4> corners{glow.position + (right * half_size), glow.position + (up * half_size),
+                                          glow.position - (right * half_size), glow.position - (up * half_size)};
+  for (std::size_t i = 0; i < corners.size(); ++i) {
+    vertices.insert(vertices.end(),
+                    {center, Unlit(corners[i], math::Vec3()), Unlit(corners[(i + 1) % corners.size()], math::Vec3())});
+  }
+}
+
+// Every tracer, impact and muzzle flash of effects, in world space, facing camera.
+std::vector<Vertex> BuildEffectVertices(const CombatEffects& effects, const Camera& camera) {
+  const math::Vec3 right = camera.rotation * math::Vec3(1.0F, 0.0F, 0.0F);
+  const math::Vec3 up = camera.rotation * math::Vec3(0.0F, 1.0F, 0.0F);
+  std::vector<Vertex> vertices;
+  for (const Tracer& tracer : effects.tracers) {
+    AppendTracer(vertices, tracer, camera.position);
+  }
+  for (const Glow& impact : effects.impacts) {
+    AppendGlow(vertices, impact, right, up, kImpactHalfSize, kImpactColor);
+  }
+  for (const Glow& flash : effects.muzzle_flashes) {
+    AppendGlow(vertices, flash, right, up, kMuzzleFlashHalfSize, kMuzzleFlashColor);
+  }
+  return vertices;
+}
+
+// Appends a bar kBarThicknessPixels thick from from to to, both in pixels off
+// the frame's center (+x right, +y up, z unused), in clip space: to_clip is
+// the size of a pixel there.
+void AppendBar(std::vector<Vertex>& vertices, const math::Vec3& from, const math::Vec3& to, const math::Vec3& to_clip,
+               const math::Vec3& color) {
+  const math::Vec3 along = math::Normalize(to - from);
+  const math::Vec3 across = math::Vec3(-along.y, along.x, 0.0F) * (kBarThicknessPixels / 2.0F);
+  const Vertex from_left = Unlit((from + across) * to_clip, color);
+  const Vertex from_right = Unlit((from - across) * to_clip, color);
+  const Vertex to_left = Unlit((to + across) * to_clip, color);
+  const Vertex to_right = Unlit((to - across) * to_clip, color);
+  vertices.insert(vertices.end(), {from_left, to_left, to_right, from_left, to_right, from_right});
+}
+
+// Four bars pointing out from the frame's center along each of directions
+// (unit, in pixel space), starting gap pixels off it.
+void AppendBars(std::vector<Vertex>& vertices, std::span<const math::Vec3> directions, float gap,
+                const math::Vec3& to_clip, const math::Vec3& color) {
+  for (const math::Vec3& direction : directions) {
+    AppendBar(vertices, direction * gap, direction * (gap + kBarLengthPixels), to_clip, color);
+  }
+}
+
+// The crosshair and hit marker of overlay, in clip space for a frame of width
+// by height pixels, so they keep their size in pixels whatever the window's.
+std::vector<Vertex> BuildOverlayVertices(const Overlay& overlay, std::uint32_t width, std::uint32_t height) {
+  const math::Vec3 to_clip(2.0F / static_cast<float>(width), 2.0F / static_cast<float>(height), 0.0F);
+  constexpr float kDiagonal = 0.70710678F;
+  constexpr std::array<math::Vec3, 4> kAxes{math::Vec3(1.0F, 0.0F, 0.0F), math::Vec3(0.0F, 1.0F, 0.0F),
+                                            math::Vec3(-1.0F, 0.0F, 0.0F), math::Vec3(0.0F, -1.0F, 0.0F)};
+  constexpr std::array<math::Vec3, 4> kDiagonals{
+      math::Vec3(kDiagonal, kDiagonal, 0.0F), math::Vec3(-kDiagonal, kDiagonal, 0.0F),
+      math::Vec3(-kDiagonal, -kDiagonal, 0.0F), math::Vec3(kDiagonal, -kDiagonal, 0.0F)};
+  std::vector<Vertex> vertices;
+  if (overlay.crosshair) {
+    AppendBars(vertices, kAxes, kCrosshairGapPixels, to_clip, kCrosshairColor);
+  }
+  if (overlay.hit_marker) {
+    AppendBars(vertices, kDiagonals, kHitMarkerGapPixels, to_clip, kHitMarkerColor);
+  }
+  return vertices;
+}
 
 // Expands every mesh's indexed triangles into 3 unshared vertices each,
 // carrying the triangle's own face normal and its mesh's color: cooked meshes have positions and
@@ -86,11 +211,11 @@ std::vector<Vertex> BuildFlatShadedVertices(const Scene& scene) {
 
 // Every RemotePlayer as an instance of its character's local vertices
 // (SetCharacterMesh's own flat-shaded vertices, in the character's local space
-// - ADR-0040/ADR-0041), skipping one whose character has none: translated to
-// that instance's own position and given its own color. remote.position is
-// where the mesh's own origin (y=0) lands - the same convention the
-// character's mesh was cooked around, so no further placement is needed, and
-// a translation leaves the normals as they are.
+// - ADR-0040/ADR-0041), skipping one whose character has none: turned about its
+// origin by that instance's yaw, normals with it, then translated to its own
+// position and given its own color. remote.position is where the mesh's own
+// origin (y=0) lands - the same convention the character's mesh was cooked
+// around, so no further placement is needed.
 std::vector<Vertex> BuildRemoteVertices(
     std::span<const RemotePlayer> remote_players,
     const std::unordered_map<std::uint8_t, std::vector<Vertex>>& character_vertices) {
@@ -103,10 +228,17 @@ std::vector<Vertex> BuildRemoteVertices(
     const std::vector<Vertex>& local_vertices = found->second;
     const math::Vec3& p = remote.position;
     const Falcor::float3 color{remote.color.x, remote.color.y, remote.color.z};
+    // About +Y, counter-clockwise seen from above: -Z turns toward -X as yaw grows.
+    const float cos_yaw = std::cos(remote.yaw);
+    const float sin_yaw = std::sin(remote.yaw);
+    const auto turned = [cos_yaw, sin_yaw](const Falcor::float3& v) {
+      return Falcor::float3{(v.x * cos_yaw) + (v.z * sin_yaw), v.y, (v.z * cos_yaw) - (v.x * sin_yaw)};
+    };
     for (const Vertex& local_vertex : local_vertices) {
+      const Falcor::float3 position = turned(local_vertex.position);
       vertices.push_back({
-          .position = {local_vertex.position.x + p.x, local_vertex.position.y + p.y, local_vertex.position.z + p.z},
-          .normal = local_vertex.normal,
+          .position = {position.x + p.x, position.y + p.y, position.z + p.z},
+          .normal = turned(local_vertex.normal),
           .color = color,
       });
     }
@@ -204,6 +336,60 @@ std::optional<input::Key> MapMouseButton(Falcor::Input::MouseButton button) {
   }
 }
 
+// A vertex buffer the CPU rewrites every frame (remote players, the fight's
+// effects, the overlay): unlike a scene's DeviceLocal buffer (UploadScene), it
+// is kept as MemoryType::Upload - a persistently-mappable heap Write can
+// memcpy into every frame via Buffer::setBlob with no GPU wait - and sized by
+// what Write has needed so far (the most vertices any call wrote). Null until
+// the first call with something to draw.
+//
+// It holds kFramesInFlight regions of region_capacity vertices each, and a
+// frame writes and draws only the region FrameRegion gives it: with vsync off
+// several frames are in flight, and rewriting the one region a previous frame
+// is still drawing from tears that frame's drawing. The caller waits for the
+// GPU to finish the last frame drawn from a region before writing there
+// (Renderer::Impl::ReadyRegion).
+struct StreamedVertices {
+  Falcor::ref<Falcor::Buffer> buffer;
+  Falcor::ref<Falcor::Vao> vao;
+  std::uint32_t region_capacity = 0;
+  std::uint32_t count = 0;
+  std::uint32_t region = 0;
+
+  // Writes vertices into region, first growing the buffer to fit them (with
+  // one GPU wait) if a region holds fewer. Nothing is drawn if there are none.
+  void Write(Falcor::Device& device, const std::vector<Vertex>& vertices, std::uint32_t frame_region) {
+    count = static_cast<std::uint32_t>(vertices.size());
+    region = frame_region;
+    if (vertices.empty()) {
+      return;
+    }
+    if (count > region_capacity) {
+      if (buffer != nullptr) {
+        // The previous buffer may still be in flight on the GPU.
+        device.wait();
+      }
+      buffer = device.createBuffer(std::size_t{count} * kFramesInFlight * sizeof(Vertex),
+                                   Falcor::ResourceBindFlags::Vertex, Falcor::MemoryType::Upload);
+      region_capacity = count;
+      vao = Falcor::Vao::create(Falcor::Vao::Topology::TriangleList, MakeVertexLayout(), {buffer});
+    }
+    buffer->setBlob(vertices.data(), FirstVertex() * sizeof(Vertex), vertices.size() * sizeof(Vertex));
+  }
+
+  // Where region starts in buffer, in vertices.
+  [[nodiscard]] std::uint32_t FirstVertex() const { return region * region_capacity; }
+
+  // Draws what the last Write wrote through pass, if anything.
+  void Draw(Falcor::RasterPass& pass, Falcor::RenderContext* render_context) const {
+    if (count == 0) {
+      return;
+    }
+    pass.getState()->setVao(vao);
+    pass.draw(render_context, count, FirstVertex());
+  }
+};
+
 }  // namespace
 
 // final: Falcor::Window::ICallbacks (a pure-virtual interface) has no
@@ -227,28 +413,20 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   // call.
   std::unordered_map<std::uint8_t, std::vector<Vertex>> character_vertices;
 
-  // Unlike vao/vertex_count above, this buffer is sized by what
-  // SetRemotePlayers has needed so far (the most instance vertices any call
-  // produced) and kept as MemoryType::Upload - a persistently-mappable heap
-  // SetRemotePlayers can memcpy into every frame via Buffer::setBlob with no
-  // GPU wait, unlike UploadScene's DeviceLocal buffer (see that method). Null
-  // until the first call with something to draw.
-  //
-  // It holds kFramesInFlight regions of remote_region_capacity vertices each,
-  // and a frame writes and draws only the region FrameRegion gives it: with
-  // vsync off several frames are in flight, and rewriting the one region a
-  // previous frame is still drawing from tears that frame's remote players.
-  // remote_fence is signaled after every frame's submit, and
-  // remote_region_fence_values holds, per region, the value signaled after the
-  // last frame drawn from it: UpdateRemotePlayers waits for that before writing
-  // there - normally already reached, since that frame is kFramesInFlight back.
-  Falcor::ref<Falcor::Buffer> remote_vertex_buffer;
-  Falcor::ref<Falcor::Vao> remote_vao;
-  std::uint32_t remote_region_capacity = 0;
-  std::uint32_t remote_vertex_count = 0;
-  std::uint32_t remote_region = 0;
-  Falcor::ref<Falcor::Fence> remote_fence;
-  std::array<std::uint64_t, kFramesInFlight> remote_region_fence_values{};
+  // Rewritten every frame (see StreamedVertices): the remote players (lit, by
+  // raster_pass), the fight's effects (added to what is behind them, by
+  // effects_pass) and the overlay (over everything, by overlay_pass).
+  // frame_fence is signaled after every frame's submit, and
+  // region_fence_values holds, per region, the value signaled after the last
+  // frame drawn from it: ReadyRegion waits for that before a region is written
+  // - normally already reached, since that frame is kFramesInFlight back.
+  StreamedVertices remote_vertices;
+  StreamedVertices effect_vertices;
+  StreamedVertices overlay_vertices;
+  Falcor::ref<Falcor::RasterPass> effects_pass;
+  Falcor::ref<Falcor::RasterPass> overlay_pass;
+  Falcor::ref<Falcor::Fence> frame_fence;
+  std::array<std::uint64_t, kFramesInFlight> region_fence_values{};
   std::uint64_t frame_index = 0;
 
   // Debug HUD (FPS, RTT) - see debug_hud.h. frame_rate is ticked once
@@ -298,9 +476,10 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     CreateTargetFbo(size.x, size.y);
     debug_hud = std::make_unique<DebugHud>(device, Falcor::uint2(size.x, size.y));
     BuildRasterPass();
-    // remote_vertex_buffer/remote_vao are created lazily by SetRemotePlayers
+    BuildEffectPasses();
+    // The StreamedVertices buffers are created lazily by their first Write
     // instead, once the vertex count they're sized from is known.
-    remote_fence = device->createFence();
+    frame_fence = device->createFence();
   }
 
   ~Impl() {
@@ -372,36 +551,10 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     auto vertex_buffer = device->createBuffer(vertices.size() * sizeof(Vertex), Falcor::ResourceBindFlags::Vertex,
                                               Falcor::MemoryType::DeviceLocal, vertices.data());
 
-    auto buffer_layout = Falcor::VertexBufferLayout::create();
-    buffer_layout->addElement("POSITION", offsetof(Vertex, position), Falcor::ResourceFormat::RGB32Float, 1, 0);
-    buffer_layout->addElement("NORMAL", offsetof(Vertex, normal), Falcor::ResourceFormat::RGB32Float, 1, 1);
-    buffer_layout->addElement("COLOR", offsetof(Vertex, color), Falcor::ResourceFormat::RGB32Float, 1, 2);
-    auto layout = Falcor::VertexLayout::create();
-    layout->addBufferLayout(0, buffer_layout);
-
-    // Draw() sets the active Vao itself before every draw call (it now
-    // alternates between this one and remote_vao), so there's nothing more
-    // to bind here.
-    vao = Falcor::Vao::create(Falcor::Vao::Topology::TriangleList, layout, {vertex_buffer});
-  }
-
-  // Creates the persistently-mappable upload-heap buffer and Vao
-  // SetRemotePlayers writes into every frame - see the Impl member comment
-  // on remote_vertex_buffer. Sized for region_capacity vertices in each of its
-  // kFramesInFlight regions - replaces any previous buffer/Vao.
-  void CreateRemoteBuffer(std::uint32_t region_capacity) {
-    remote_vertex_buffer = device->createBuffer(std::size_t{region_capacity} * kFramesInFlight * sizeof(Vertex),
-                                                Falcor::ResourceBindFlags::Vertex, Falcor::MemoryType::Upload);
-    remote_region_capacity = region_capacity;
-
-    auto buffer_layout = Falcor::VertexBufferLayout::create();
-    buffer_layout->addElement("POSITION", offsetof(Vertex, position), Falcor::ResourceFormat::RGB32Float, 1, 0);
-    buffer_layout->addElement("NORMAL", offsetof(Vertex, normal), Falcor::ResourceFormat::RGB32Float, 1, 1);
-    buffer_layout->addElement("COLOR", offsetof(Vertex, color), Falcor::ResourceFormat::RGB32Float, 1, 2);
-    auto layout = Falcor::VertexLayout::create();
-    layout->addBufferLayout(0, buffer_layout);
-
-    remote_vao = Falcor::Vao::create(Falcor::Vao::Topology::TriangleList, layout, {remote_vertex_buffer});
+    // Draw() sets the active Vao itself before every draw call (it alternates
+    // between this one and the StreamedVertices'), so there's nothing more to
+    // bind here.
+    vao = Falcor::Vao::create(Falcor::Vao::Topology::TriangleList, MakeVertexLayout(), {vertex_buffer});
   }
 
   // Builds character's local vertices from mesh - the same
@@ -414,39 +567,18 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     character_vertices.insert_or_assign(character, std::move(vertices));
   }
 
-  // Rewrites the remote-player instances' vertex data into this frame's
-  // region via Buffer::setBlob - a map+memcpy into the upload heap, no GPU
-  // wait (unlike UploadScene/UploadCharacterMesh) unless the GPU has not yet
-  // finished the last frame drawn from that region, or these instances need
-  // more room than a region has, which then grows to fit them. Draws every
-  // instance given; nothing if none has a mesh.
-  void UpdateRemotePlayers(std::span<const RemotePlayer> remote_players) {
-    const std::vector<Vertex> vertices = BuildRemoteVertices(remote_players, character_vertices);
-    remote_vertex_count = static_cast<std::uint32_t>(vertices.size());
-    if (vertices.empty()) {
-      return;
-    }
-    if (remote_vertex_count > remote_region_capacity) {
-      if (remote_vertex_buffer != nullptr) {
-        // The previous buffer may still be in flight on the GPU - see UploadScene's own comment.
-        device->wait();
-      }
-      CreateRemoteBuffer(remote_vertex_count);
-    }
-    remote_region = FrameRegion(frame_index, kFramesInFlight);
-    remote_fence->wait(remote_region_fence_values[remote_region]);
-    remote_vertex_buffer->setBlob(vertices.data(), RemoteRegionFirstVertex() * sizeof(Vertex),
-                                  vertices.size() * sizeof(Vertex));
+  // This frame's region of every StreamedVertices, once the GPU has finished
+  // the last frame drawn from it - normally at once (see region_fence_values).
+  std::uint32_t ReadyRegion() {
+    const std::uint32_t region = FrameRegion(frame_index, kFramesInFlight);
+    frame_fence->wait(region_fence_values[region]);
+    return region;
   }
 
-  // Where remote_region starts in remote_vertex_buffer, in vertices.
-  [[nodiscard]] std::uint32_t RemoteRegionFirstVertex() const { return remote_region * remote_region_capacity; }
-
-  // Records that the frame just submitted draws from remote_region, so the
-  // next write there waits for the GPU to finish it, and moves on to the next
-  // frame.
-  void EndRemoteFrame(Falcor::RenderContext* render_context) {
-    remote_region_fence_values[remote_region] = render_context->signal(remote_fence.get());
+  // Records that the frame just submitted draws from its region, so the next
+  // write there waits for the GPU to finish it, and moves on to the next frame.
+  void EndFrame(Falcor::RenderContext* render_context) {
+    region_fence_values[FrameRegion(frame_index, kFramesInFlight)] = render_context->signal(frame_fence.get());
     ++frame_index;
   }
 
@@ -470,6 +602,42 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     RebuildRasterizerState();
   }
 
+  // The fight's effects glow: each adds its light to what is behind it, and is
+  // hidden by what is in front without hiding anything itself. The overlay is
+  // written over everything. Neither is culled: a billboard's winding depends
+  // on how it was turned.
+  void BuildEffectPasses() {
+    const auto no_culling = Falcor::RasterizerState::create(
+        Falcor::RasterizerState::Desc().setCullMode(Falcor::RasterizerState::CullMode::None));
+
+    effects_pass = Falcor::RasterPass::create(device, "Augusta/Renderer/Effects.3d.slang", "vsMain", "psMain");
+    Falcor::BlendState::Desc additive;
+    additive.setRtBlend(0, true).setRtParams(0, Falcor::BlendState::BlendOp::Add, Falcor::BlendState::BlendOp::Add,
+                                             Falcor::BlendState::BlendFunc::One, Falcor::BlendState::BlendFunc::One,
+                                             Falcor::BlendState::BlendFunc::One, Falcor::BlendState::BlendFunc::One);
+    effects_pass->getState()->setBlendState(Falcor::BlendState::create(additive));
+    effects_pass->getState()->setDepthStencilState(Falcor::DepthStencilState::create(
+        Falcor::DepthStencilState::Desc().setDepthEnabled(true).setDepthWriteMask(false)));
+    effects_pass->getState()->setRasterizerState(no_culling);
+
+    overlay_pass = Falcor::RasterPass::create(device, "Augusta/Renderer/Effects.3d.slang", "vsMain", "psMain");
+    overlay_pass->getState()->setDepthStencilState(Falcor::DepthStencilState::create(
+        Falcor::DepthStencilState::Desc().setDepthEnabled(false).setDepthWriteMask(false)));
+    overlay_pass->getState()->setRasterizerState(no_culling);
+  }
+
+  // Points every pass at target_fbo and at the frame's camera, the same for
+  // the whole frame; the overlay is already in clip space.
+  void BindPasses() const {
+    const Falcor::float4x4 view_projection = ViewProjection();
+    raster_pass->getRootVar()["PerFrameCB"]["gViewProj"] = view_projection;
+    raster_pass->getState()->setFbo(target_fbo);
+    effects_pass->getRootVar()["PerFrameCB"]["gViewProj"] = view_projection;
+    effects_pass->getState()->setFbo(target_fbo);
+    overlay_pass->getRootVar()["PerFrameCB"]["gViewProj"] = Falcor::float4x4::identity();
+    overlay_pass->getState()->setFbo(target_fbo);
+  }
+
   void Draw() {
     auto* render_context = device->getRenderContext();
 
@@ -487,13 +655,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
         render_context->clearFbo(target_fbo.get(), clear_color, 1.0F, 0, Falcor::FboAttachmentType::All);
       }
 
-      if (vertex_count > 0 || remote_vertex_count > 0) {
-        // Shared by both draws below - same raster_pass/shader, same
-        // camera for the whole frame.
-        auto root_var = raster_pass->getRootVar();
-        root_var["PerFrameCB"]["gViewProj"] = ViewProjection();
-        raster_pass->getState()->setFbo(target_fbo);
-      }
+      BindPasses();
 
       if (vertex_count > 0) {
         const nvtx3::scoped_range scene_range{"Scene"};
@@ -503,12 +665,23 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
         raster_pass->draw(render_context, vertex_count, 0);
       }
 
-      if (remote_vertex_count > 0) {
+      {
         const nvtx3::scoped_range remote_range{"RemotePlayers"};
         FALCOR_PROFILE(render_context, "RemotePlayers");
+        remote_vertices.Draw(*raster_pass, render_context);
+      }
 
-        raster_pass->getState()->setVao(remote_vao);
-        raster_pass->draw(render_context, remote_vertex_count, RemoteRegionFirstVertex());
+      // After everything opaque, so the depth buffer hides the effects behind it.
+      {
+        const nvtx3::scoped_range effects_range{"CombatEffects"};
+        FALCOR_PROFILE(render_context, "CombatEffects");
+        effect_vertices.Draw(*effects_pass, render_context);
+      }
+
+      {
+        const nvtx3::scoped_range overlay_range{"Overlay"};
+        FALCOR_PROFILE(render_context, "Overlay");
+        overlay_vertices.Draw(*overlay_pass, render_context);
       }
     }
 
@@ -603,10 +776,10 @@ void Renderer::RenderFrame() {
     render_context->copyResource(swapchain_image, impl_->target_fbo->getColorTexture(0).get());
     render_context->resourceBarrier(swapchain_image, Falcor::Resource::State::Present);
   }
-  // Submitted even when not presenting, so the fence EndRemoteFrame signals
-  // comes after this frame's draws.
+  // Submitted even when not presenting, so the fence EndFrame signals comes
+  // after this frame's draws.
   render_context->submit();
-  impl_->EndRemoteFrame(render_context);
+  impl_->EndFrame(render_context);
   if (image_index < 0) {
     // Swapchain out of date (e.g. mid-resize) - skip presenting this frame.
     return;
@@ -625,7 +798,20 @@ void Renderer::SetCharacterMesh(std::uint8_t character, const SceneMesh& mesh) {
 }
 
 void Renderer::SetRemotePlayers(std::span<const RemotePlayer> remote_players) {
-  impl_->UpdateRemotePlayers(remote_players);
+  const std::uint32_t region = impl_->ReadyRegion();
+  impl_->remote_vertices.Write(*impl_->device, BuildRemoteVertices(remote_players, impl_->character_vertices), region);
+}
+
+void Renderer::SetCombatEffects(const CombatEffects& effects) {
+  const std::uint32_t region = impl_->ReadyRegion();
+  impl_->effect_vertices.Write(*impl_->device, BuildEffectVertices(effects, impl_->camera), region);
+}
+
+void Renderer::SetOverlay(const Overlay& overlay) {
+  const std::uint32_t region = impl_->ReadyRegion();
+  const Falcor::ref<Falcor::Fbo>& target = impl_->target_fbo;
+  impl_->overlay_vertices.Write(*impl_->device, BuildOverlayVertices(overlay, target->getWidth(), target->getHeight()),
+                                region);
 }
 
 void Renderer::SetDebugHudStats(const DebugHudStats& stats) { impl_->hud_stats = stats; }

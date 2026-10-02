@@ -48,6 +48,7 @@ def Xform "Root"
     )
     {
         custom bool augusta:hitbox = true
+        custom token augusta:bodyPart = "torso"
         point3f[] points = [(0, 0, 0), (0.5, 0, 0), (0.5, 0.5, 0), (0, 0.5, 0)]
         int[] faceVertexCounts = [3, 3]
         int[] faceVertexIndices = [0, 1, 2, 0, 2, 3]

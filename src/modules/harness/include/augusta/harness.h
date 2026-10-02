@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_HARNESS_H_
 #define AUGUSTA_HARNESS_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -9,13 +10,16 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/ballistics.h"
 #include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
+#include "augusta/tick.h"
 #include "augusta/version.h"
+#include "augusta/weapon.h"
 
 // augusta::harness is where anything that plays talks to the server: the
 // client's network connection and PredictionWorld (ADR-0021, ADR-0024), without
@@ -49,21 +53,82 @@ enum class EntityId : std::uint32_t {};
 struct EntityBody {
   EntityId entity{};
   physics::BodyState body{};
+  /// Where the body faces: the yaw of its player's view (command::Command), in radians.
+  float yaw = 0.0F;
 };
 
 /// What the server said about every body as of one of its ticks: its
 /// Authoritative State, as this client receives it.
 struct AuthoritativeState {
   /// The server tick this state is from; a client keeps only the newest it has seen.
-  std::uint32_t tick = 0;
+  tick::Tick tick = 0;
   /// The highest command sequence of this client that the server has processed, 0 if none.
-  std::uint32_t acknowledged_sequence = 0;
+  command::Sequence acknowledged_sequence = 0;
   /// Every dynamic body in the match.
   std::vector<EntityBody> bodies;
+  /// This client's own player's rifle as of that tick: what its predicted rifle
+  /// is reconciled against.
+  weapon::State rifle{};
+  /// This client's own player's health as of that tick, 0 once it has died. No
+  /// other player's is told.
+  float health = 0.0F;
   /// How many of this client's commands the server still held queued after
   /// that tick: what the client paces its own ticks by (tick::PacedTickDuration).
   std::uint8_t queued_commands = 0;
 };
+
+/// One round a player fired, as the server announced it (CONTEXT.md's Shot,
+/// ADR-0044).
+struct Shot {
+  /// The body of the player who fired it.
+  EntityId shooter{};
+  /// The server tick it was fired on.
+  tick::Tick tick = 0;
+  /// Where the round left from.
+  math::Vec3 origin{};
+  /// Where it left for, as a view's yaw and pitch in radians (command::Command;
+  /// command::ViewDirection gives the direction).
+  float yaw = 0.0F;
+  float pitch = 0.0F;
+};
+
+/// The most Shots a Session keeps for TakeShots: a few seconds of a full match
+/// firing, so a caller that asks every frame loses none and one that never
+/// asks holds no more than this.
+inline constexpr std::size_t kMaxPendingShots = 256;
+
+/// A round this client's player fired hit a player, as the server confirmed it
+/// (CONTEXT.md's Hit confirmation, ADR-0044).
+struct HitConfirmation {
+  /// The body that was hit.
+  EntityId target{};
+  /// The damage the hit did.
+  float damage = 0.0F;
+  /// Where on the body it struck.
+  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+};
+
+/// A player in the match died (US-13), as the server told every client in it:
+/// for the rest of the match. Carries what a ragdoll would start from (ADR-0045).
+struct Death {
+  /// The body of the player who died.
+  EntityId victim{};
+  /// The body of the player who fired the killing round.
+  EntityId killer{};
+  /// Where the killing round was fired for, as a view's yaw and pitch in
+  /// radians (command::ViewDirection gives the direction).
+  float yaw = 0.0F;
+  float pitch = 0.0F;
+  /// Where on the victim it struck.
+  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+};
+
+/// The most Deaths a Session keeps for TakeDeaths: a match's players die once each.
+inline constexpr std::size_t kMaxPendingDeaths = 16;
+
+/// The most Hit confirmations a Session keeps for TakeHitConfirmations: more
+/// than one rifle lands between two frames, by far.
+inline constexpr std::size_t kMaxPendingHitConfirmations = 64;
 
 /// One player in the Lobby.
 struct RosterEntry {
@@ -92,6 +157,12 @@ struct MatchPlayer {
 /// What the server said when a match started: everyone in it, this client's own player included.
 struct MatchStart {
   std::vector<MatchPlayer> players;
+};
+
+/// What the server said when a match ended (US-14).
+struct MatchEnd {
+  /// The session of the player Game policy declared the winner; nullopt for a draw.
+  std::optional<SessionId> winner;
 };
 
 /// Where a Session is in the lifecycle of ADR-0043.
@@ -144,6 +215,52 @@ struct Failure {
 /// tell, what to fix; the same wording wherever it is shown.
 [[nodiscard]] std::string DescribeFailure(const Failure& failure);
 
+/// What the server said when it admitted this client, in the engine's terms.
+struct Admission {
+  /// The session the server assigned to this client.
+  SessionId session{};
+  /// The rate, in Hz, at which the server ticks and this client must.
+  std::uint8_t tick_rate_hz = 0;
+  /// The parameters this client must predict with.
+  parameters::Parameters parameters{};
+  /// This client's own character index (see RosterEntry::character).
+  std::uint8_t character = 1;
+};
+
+/// What the server has told this client, as of one moment (ADR-0005): the
+/// Network I/O thread publishes a new one, whole, for every message that changes
+/// it, and never changes one it has published. A reader on another thread takes
+/// one (Session::GetServerView) and reads everything it needs from it, so what
+/// it reads is one moment, never a mix of two.
+struct ServerView {
+  /// The whole answer to a join request; nullopt until the server admits this client.
+  std::optional<Admission> accepted;
+  /// Why the server refused this client, if it did.
+  std::optional<JoinRefusal> refusal;
+  /// The newest Roster, kept through a match.
+  std::optional<Lobby> lobby;
+  /// The last match's start, and how many have started: a new count is a new
+  /// match for the prediction to start over in.
+  std::optional<MatchStart> match_start;
+  std::uint32_t matches_started = 0;
+  /// Whether this client is playing in a match: from its Match start to its Match end.
+  bool in_match = false;
+  /// How the last match ended, until the next starts.
+  std::optional<MatchEnd> match_end;
+  /// The newest Authoritative State of the match in progress; only while in_match.
+  std::optional<AuthoritativeState> authoritative;
+  /// The bodies of the match in progress whose Death has been told.
+  std::vector<EntityId> dead;
+
+  /// Whether this client is waiting to be admitted, in the Lobby, or in a match.
+  [[nodiscard]] Phase GetPhase() const;
+  /// The body this client's player controls, as the last Match start named it.
+  [[nodiscard]] std::optional<EntityId> OwnEntity() const;
+  /// Whether this client's player is alive in the match in progress: neither
+  /// told of its Death nor at zero health in the newest Authoritative State.
+  [[nodiscard]] bool OwnAlive() const;
+};
+
 /// What a Session needs to connect.
 struct SessionConfig {
   /// The dedicated server to connect to (US-01).
@@ -188,6 +305,10 @@ class Session {
   /// PumpEvents, in the same round of the Network I/O thread's loop.
   void ExchangeMessages();
 
+  /// What the server has told this client as of now, whole: the one way to read
+  /// several of the values below as of the same moment. Safe from any thread.
+  [[nodiscard]] std::shared_ptr<const ServerView> GetServerView() const;
+
   /// Whether the connection is still connecting, connected or disconnected.
   [[nodiscard]] networking::ConnectionState GetConnectionState() const;
 
@@ -217,6 +338,11 @@ class Session {
   /// ExchangeMessages; safe to read from any thread.
   [[nodiscard]] std::optional<MatchStart> GetMatchStart() const;
 
+  /// What the server said when the match this client was last in ended, with
+  /// its winner; nullopt before the first ends and while one is in progress.
+  /// Set by ExchangeMessages; safe to read from any thread.
+  [[nodiscard]] std::optional<MatchEnd> GetMatchEnd() const;
+
   /// Tells the server this client has loaded what it needs to draw everyone in
   /// the Roster of version, which makes it Ready. Sends nothing unless version
   /// is that of the newest Roster received: the server would not count an older
@@ -245,19 +371,59 @@ class Session {
   /// from any thread.
   [[nodiscard]] std::optional<AuthoritativeState> GetAuthoritativeState() const;
 
+  /// The Shots of the match in progress, or of the last one if back in the
+  /// Lobby, received since the last call, in the order they arrived; the newest
+  /// kMaxPendingShots of them if more did. One that arrives outside a match or
+  /// names a body not in it is dropped, and a match starts with none. Received
+  /// by ExchangeMessages; safe to call from any thread.
+  [[nodiscard]] std::vector<Shot> TakeShots();
+
+  /// The Hit confirmations of the match in progress, or of the last one if back
+  /// in the Lobby, received since the last call, in the order they arrived; the
+  /// newest kMaxPendingHitConfirmations of them if more did. One that arrives
+  /// outside a match or names a body not in it is dropped, and a match starts
+  /// with none. Received by ExchangeMessages; safe to call from any thread.
+  [[nodiscard]] std::vector<HitConfirmation> TakeHitConfirmations();
+
+  /// The Deaths of the match in progress, or of the last one if back in the
+  /// Lobby (those that ended it among them), received since the last call, in
+  /// the order they arrived; the newest kMaxPendingDeaths of them if more did.
+  /// One that arrives outside a match or names a body not in it is dropped, and
+  /// a match starts with none. Received by ExchangeMessages; safe to call from
+  /// any thread.
+  [[nodiscard]] std::vector<Death> TakeDeaths();
+
+  /// Whether this client's own player is alive: in a match, and neither told
+  /// of its Death nor at zero health in the newest Authoritative State. Death
+  /// is for the rest of the match. Set by ExchangeMessages; safe to read from
+  /// any thread.
+  [[nodiscard]] bool IsAlive() const;
+
+  /// This client's own player's health, as the newest Authoritative State of
+  /// the match in progress told it; nullopt outside a match and until the
+  /// match's first state arrives. Set by ExchangeMessages; safe to read from
+  /// any thread.
+  [[nodiscard]] std::optional<float> GetHealth() const;
+
   /// The body this client's player controls, as Match start named it: in the
   /// match in progress, or the last one if back in the Lobby; nullopt before
   /// the first. Set by ExchangeMessages; safe to read from any thread.
   [[nodiscard]] std::optional<EntityId> GetEntityId() const;
 
   /// Runs one fixed tick of PredictionWorld for command and returns its state.
+  /// The view command reports (command::Command) is the caller's to fill, from
+  /// whatever it shows the other players with: a Session shows nothing.
   /// Outside a match nothing is predicted or sent, and the state is the last
   /// one predicted. The first tick of each match starts the prediction over at
-  /// the spawn point Match start gave this client, under the stamina rules the
-  /// server sent. From then on the command goes to the server under the next
-  /// sequence, together with the recent commands the server has not yet
-  /// acknowledged, and the prediction is reconciled against what the server
-  /// last said about this client's player.
+  /// the spawn point Match start gave this client, with a rifle ready to fire,
+  /// under the stamina rules and the rifle the server sent. From then on the
+  /// command goes to the server under the next sequence, together with the
+  /// recent commands the server has not yet acknowledged, and the prediction is
+  /// reconciled against what the server last said about this client's player:
+  /// its body and its rifle, when the server's state still has its body. Once
+  /// this client's player is dead (IsAlive), nothing more is predicted and the
+  /// state is the last one predicted; the command still goes to the server,
+  /// which acknowledges it and does nothing with it, but never with fire held.
   prediction::State Tick(const command::Command& command, float delta_time);
 
  private:

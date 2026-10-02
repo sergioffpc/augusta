@@ -1,12 +1,6 @@
 name: Save the vcpkg binary cache
 description: >
-  Saves .vcpkg-bincache for later Linux jobs to restore (setup-linux-build's
-  "Restore vcpkg binaries"), holding only the packages this job's build
-  installed, and only when that differs from what it restored: an unchanged
-  cache is already saved, and saving it again would only push other caches out
-  of the repository's 10 GB. The entry it replaces on this ref is deleted. Run
-  it right after the step that configures the build, so a failing test later
-  can't keep it from saving.
+  Saves .vcpkg-bincache for later Linux jobs to restore (setup-linux-build's "Restore vcpkg binaries"), holding only the packages this job's build installed, and only when that differs from what it restored: an unchanged cache is already saved, and saving it again would only push other caches out of the repository's 10 GB. The entry it replaces on this ref is deleted. Run it right after the step that configures the build, so a failing test later can't keep it from saving.
 
 runs:
   using: composite
@@ -30,7 +24,6 @@ runs:
           abi="$(basename "$archive" .zip)"
           grep -qxF "$abi" "$RUNNER_TEMP/vcpkg-abis" || { echo "dropping $abi"; rm -f "$archive"; }
         done
-
     - name: List the vcpkg binaries
       id: listing
       shell: bash
@@ -42,7 +35,6 @@ runs:
         else
           echo "changed=true" >> "$GITHUB_OUTPUT"
         fi
-
     - name: Save vcpkg binaries
       # Keyed by the listing, so jobs of one run that installed the same
       # packages save one entry: the first reserves the key, the rest skip with
@@ -52,7 +44,6 @@ runs:
       with:
         path: .vcpkg-bincache
         key: vcpkg-bincache-linux-clang-${{ steps.listing.outputs.hash }}
-
     - if: steps.listing.outputs.changed == 'true'
       uses: ./.github/actions/prune-cache
       with:

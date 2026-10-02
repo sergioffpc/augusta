@@ -42,7 +42,7 @@ the decisions already made in ARCHITECTURE.md:
 - **Trigger:** `push` to `main`/`develop`, and `pull_request` targeting
   either; a separate nightly workflow runs on `develop` (ADR-0013). A `changes` job diffs against the base commit first and skips
   build/test/lint entirely when nothing under `src/`, `tests/`,
-  `tools/pack/examples/` (the example scenario a test loads),
+  `tools/composer/examples/` (the example scenario a test loads),
   `tools/pack/cpp/` (formatted by the `format` job, though CI doesn't
   build it), `cmake/`, `config/` (the example configs a test loads),
   `CMakeLists.txt`, `CMakePresets.json`, `vcpkg.json`, the `third_party`
@@ -68,9 +68,17 @@ the decisions already made in ARCHITECTURE.md:
     certificate checks, it is a files cache in the Actions cache, one entry
     for every Linux job (all clang), saved only when a job built a package
     it didn't restore.
+  - Falcor is not built on every run: the `falcor-prebuilt` workflow builds
+    it once for each combination of submodule commit, `falcor.patch` and
+    Falcor features, and publishes it as an asset of a `falcor-*` release,
+    which the Windows builds download at configure time
+    (`cmake/FalcorPrebuilt.cmake`). A build with no matching package — a
+    pull request that changes Falcor, or an Aftermath-enabled local build —
+    builds Falcor from source.
   - The Actions cache (10 GB per repository, least recently used evicted
     first) holds only what a pull request restores from `develop`: the
-    vcpkg binaries, the Falcor build, sccache objects. The server image's
+    vcpkg binaries, packman's downloads for a Falcor built from source,
+    sccache objects. The server image's
     Docker layers live in GHCR (`augustad:buildcache`) instead: at several
     GB they would evict the rest, and every pull request would rebuild its
     dependencies from source.
@@ -94,6 +102,15 @@ the decisions already made in ARCHITECTURE.md:
   pipeline check against them, and attaches them to a GitHub Release —
   not run on every push, so cutting a release is a deliberate tag rather
   than automatic.
+- **Release signing:** release packs are signed by the developer, on
+  the developer's machine, never by a workflow. The release Ed25519
+  keypair is generated offline with `augusta-keygen`. It is distinct
+  from the committed test key and from any development key. Its private
+  key is kept off the repo and out of every CI secret. The client and
+  server packs of a release come from one cook run signed with it, since
+  Join refuses a client pack not cooked with the server pack (ADR-0019,
+  ADR-0038). Only the public key, `augusta.pub`, travels with the packs,
+  named by each executable's config (ADR-0034).
 - **Artifacts/releases:** out of scope for now — CI validates
   build+test+lint only. A publishing pipeline gets built when there's an
   actual release to make.
@@ -168,8 +185,10 @@ pipeline).
 - **Server / shared core (Linux, via WSL2):** develop and build directly
   inside WSL2, accessing the repo via `/mnt/c/...`. No Docker container —
   a `scripts/bootstrap-wsl.sh` setup script installs clang (ADR-0008), CMake, Ninja,
-  vcpkg, clang-tidy, clang-format, gdb, GitHub CLI, kubectl, and helm
-  directly into the WSL environment. The cross-filesystem access cost
+  uv (for yamllint) and standalone yamlfmt, vcpkg, clang-tidy, clang-format,
+  gdb, GitHub CLI, kubectl, and helm
+  directly into the WSL environment. It requires the Ubuntu release CI's
+  runner uses, whose distro packages fix the same LLVM major as CI's. The cross-filesystem access cost
   (`/mnt/c`) is accepted here, since this side has the lighter build
   (no Falcor, D3D12, or Steam Audio).
 - **Client (Windows, native):** built and run natively — never
@@ -179,24 +198,24 @@ pipeline).
   Studio Build Tools system-wide (default install location) — simpler
   than pinning a project-specific path, at the cost of not being able to
   side-by-side independent Build Tools versions per project — plus the
-  Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, and LLVM's clang-format
-  and clang-tidy (for the `pre-commit` and `pre-push` hooks below).
+  Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, uv (for yamllint) and
+  standalone yamlfmt, and LLVM's clang-format/clang-tidy (for the hooks below),
+  pinned to the LLVM major CI's Ubuntu runner ships so the hooks agree
+  with CI's gates.
   (A fully hermetic, registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was
   considered and rejected: Falcor's CMake presets only test/support
   MSVC on Windows, and stacking an unsupported compiler on top of an
   already-unmaintained dependency, ADR-0009, isn't worth the purity.)
-- **Asset pipeline tooling (authoring-only, opt-in):** a separate
-  `tools/pack/scripts/bootstrap-windows.ps1` script builds a hermetic
-  authoring/cooking environment under a caller-chosen `-AssetsRoot`
-  (ADR-0015, ADR-0016, ADR-0017, ADR-0030) — NVIDIA Omniverse USD Composer
-  (via kit-app-template, since the old Launcher was deprecated), a
-  uv-managed Python venv with `tools/pack` (this repo's own
-  pure-Python cooker project, pulling in `usd-optimize`/
-  `usd-validation-nvidia`/`pynacl`/`blake3` as its own dependencies)
-  installed editable, and Adobe's USD-Fileformat-plugins. Deliberately kept
-  out of `bootstrap-windows.ps1`: these are heavier, GPU-dependent,
-  authoring-only tools never linked into shipped binaries (ARCHITECTURE.md
-  §2), so only whoever is actually authoring content runs it.
+- **Asset cooker setup (opt-in):** `tools/pack/scripts/bootstrap-windows.ps1`
+  builds the pack environment under a caller-chosen assets root (ADR-0030): a
+  uv-managed Python environment with `tools/pack` installed editable, its
+  native modules, signing keys and sample authoring content.
+- **USD Composer setup (authoring-only, opt-in):**
+  `tools/composer/scripts/bootstrap-windows.ps1` builds NVIDIA Omniverse USD Composer
+  via kit-app-template and fetches Adobe's USD-Fileformat-plugins under the
+  same assets root. These heavier, GPU-dependent tools are deliberately kept
+  out of `bootstrap-windows.ps1` and are never linked into shipped binaries
+  (ARCHITECTURE.md §2); only content authors need them.
   `meshoptimizer` and DirectXTex are `tools/pack/cpp`'s own
   C++ build dependencies (two small pybind11 modules, no OpenUSD - see
   ADR-0030) — vendored via `vcpkg.json` (ADR-0025) like the rest of the
@@ -212,23 +231,17 @@ pipeline).
 
 ## Code Quality
 
-- Google C++ Style Guide (ADR-0012), enforced via `clang-format` +
-  `clang-tidy`. `clang-format` also runs as a local `pre-commit` git
-  hook (auto-formats staged `.cpp`/`.h` files under `src/`/`tests/`,
-  same scope as CI's own check) so most formatting issues never reach
-  a push; CI's `format` job stays as the actual gate, since the hook
-  can be skipped (`--no-verify`), missing, or running a different
-  local `clang-format` version than CI's. `clang-tidy` stays out of the
-  commit hook — slower, and needs a full `compile_commands.json`, a poor
-  fit for a commit-time hook — and runs instead as a `pre-push` hook on
-  the `src/*.cpp` files touched by the commits the remote doesn't have yet
-  (the same files `make tidy` covers on that platform), since it catches
-  what MSVC doesn't and CI would. It reads the debug build's
-  `compile_commands.json` (`windows-debug` / `linux-debug` preset), blocks
-  the push on any warning, refuses the push with a message naming the
-  preset when that database is missing, and runs nothing when no such file
-  changed; `make lint` runs both checks as CI does, and `make tidy` alone
-  runs `clang-tidy`.
+- Google C++ Style Guide (ADR-0012), enforced via `clang-format` and
+  `clang-tidy`; YAML uses the standalone `yamlfmt` v0.21.0 binary (two-space indentation) and
+  `yamllint` 1.37.1. `clang-format` and `yamlfmt` auto-format staged files in
+  the local `pre-commit` hook; `clang-tidy` checks changed C++ and `yamllint`
+  checks changed YAML in `pre-push`. CI's `format` job runs the formatters in
+  check mode and strict YAML lint as the actual gate, since hooks can be
+  skipped (`--no-verify`) or missing/mismatched locally. `clang-tidy` needs a
+  full `compile_commands.json`, so it stays out of the commit hook and runs on
+  changed C++ before push. `make format` applies both formatters,
+  `make format-check` checks formatting and YAML lint, `make lint` also runs
+  `clang-tidy`, and `make tidy` alone runs `clang-tidy`.
 - Strict warnings-as-errors in CI (see CI/CD above).
 - ASan/UBSan and fuzzing in CI; TSan nightly given multithreading
   (ADR-0005, ADR-0013).

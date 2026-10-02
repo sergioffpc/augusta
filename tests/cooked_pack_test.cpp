@@ -6,6 +6,8 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
+#include "augusta/cues.h"
+#include "policy_loader.h"
 
 // The C++ half of the contract between the pack's two implementations: the
 // Python cooker (tools/pack, ADR-0030) writes it, augusta_assets reads it.
@@ -47,10 +49,6 @@ TEST_F(CookedPackTest, TheClientPackResolvesTheExampleScenariosContent) {
   const auto characters = client_->ResolveCharacters();
   ASSERT_TRUE(characters.has_value());
   EXPECT_EQ(*characters, std::vector<std::string>{"characters/player"});
-
-  const auto eye = client_->ResolveEye("characters/player/Character/Eye");
-  ASSERT_TRUE(eye.has_value());
-  EXPECT_FLOAT_EQ(eye->position.y, 1.7F);
 }
 
 TEST_F(CookedPackTest, TheServerPackHoldsNoVisualContentAndNamesItsClientPack) {
@@ -65,6 +63,55 @@ TEST_F(CookedPackTest, TheServerPackHoldsNoVisualContentAndNamesItsClientPack) {
   const auto parameters = server_->ResolveScript("parameters.lua");
   ASSERT_TRUE(parameters.has_value());
   EXPECT_FALSE(parameters->empty());
+}
+
+// The server loads them at startup as it does any scenario's: an example whose
+// policy did not load would stop every server run on it.
+TEST_F(CookedPackTest, TheServerPackHoldsTheExamplesPolicyScriptsAndTheyLoad) {
+  EXPECT_TRUE(server_->ResolveScript("objectives.lua").has_value());
+  EXPECT_TRUE(server_->ResolveScript("behaviours.lua").has_value());
+
+  const auto policy = augusta::server::LoadPolicy(*server_);
+
+  EXPECT_TRUE(policy.has_value()) << augusta::server::DescribePolicyLoadError(policy.error());
+}
+
+// The client puts the camera at it and the server fires Shots from it, so both
+// packs hold the example character's eye.
+TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersEye) {
+  for (const Pack* pack : {&*client_, &*server_}) {
+    const auto eye = pack->ResolveEye(augusta::assets::CharacterEyePath("characters/player"));
+    ASSERT_TRUE(eye.has_value());
+    EXPECT_FLOAT_EQ(eye->position.y, 1.7F);
+  }
+}
+
+// The server judges hits against them and the client draws where a Shot lands,
+// so both packs hold the example character's hitboxes, one or more per body part.
+TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersHitboxesForEveryBodyPart) {
+  for (const Pack* pack : {&*client_, &*server_}) {
+    const auto hitboxes = pack->ResolveHitboxes("characters/player");
+    ASSERT_TRUE(hitboxes.has_value());
+    EXPECT_EQ(hitboxes->size(), 6U);
+    EXPECT_EQ(augusta::assets::FirstMissingBodyPart(*hitboxes), std::nullopt);
+  }
+}
+
+// The client loads a sound for every cue at startup (ADR-0020), so a missing one
+// is found before a Match; the headless server plays none.
+TEST_F(CookedPackTest, TheClientPackHoldsASoundForEveryCueAndTheServerPackNone) {
+  const auto sounds = augusta::audio::LoadCueSounds(*client_);
+  ASSERT_TRUE(sounds.has_value()) << augusta::audio::DescribeCueSoundError(sounds.error());
+  for (const augusta::assets::AudioData& sound : *sounds) {
+    EXPECT_EQ(sound.sample_rate, 22050U);
+    EXPECT_EQ(sound.bits_per_sample, 16U);
+    EXPECT_FALSE(sound.samples.empty());
+  }
+
+  const auto server_sounds = augusta::audio::LoadCueSounds(*server_);
+  ASSERT_FALSE(server_sounds.has_value());
+  EXPECT_EQ(server_sounds.error().path, augusta::assets::kSoundsPath);
+  EXPECT_FALSE(server_->ResolveAudio("sounds/augusta/gunshot").has_value());
 }
 
 }  // namespace

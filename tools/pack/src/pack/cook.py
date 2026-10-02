@@ -23,14 +23,18 @@ from pack.pack import (
     AssetEntry,
     MeshData,
     SceneNode,
+    encode_audio_blob,
     encode_characters_blob,
     encode_eye_blob,
+    encode_hitbox_blob,
     encode_mesh_blob,
     encode_scene_blob,
     encode_script_blob,
+    encode_sounds_blob,
     encode_spawn_point_blob,
     encode_texture_blob,
 )
+from pack.pack import ASSET_TYPE_AUDIO as _TYPE_AUDIO
 from pack.pack import ASSET_TYPE_CHARACTERS as _TYPE_CHARACTERS
 from pack.pack import ASSET_TYPE_CLIENT_PACK as _TYPE_CLIENT_PACK
 from pack.pack import ASSET_TYPE_COLLISION as _TYPE_COLLISION
@@ -39,16 +43,35 @@ from pack.pack import ASSET_TYPE_HITBOX as _TYPE_HITBOX
 from pack.pack import ASSET_TYPE_MESH as _TYPE_MESH
 from pack.pack import ASSET_TYPE_SCENE as _TYPE_SCENE
 from pack.pack import ASSET_TYPE_SCRIPT as _TYPE_SCRIPT
+from pack.pack import ASSET_TYPE_SOUNDS as _TYPE_SOUNDS
 from pack.pack import ASSET_TYPE_SPAWN_POINT as _TYPE_SPAWN_POINT
 from pack.pack import ASSET_TYPE_TEXTURE as _TYPE_TEXTURE
-from pack.pack import CHARACTERS_PATH, CLIENT_PACK_PATH, NO_PARENT, TEXTURE_FORMAT_BC4, TEXTURE_FORMAT_BC5, TEXTURE_FORMAT_BC7, write_pack
+from pack.pack import (
+    BODY_PART_HEAD,
+    BODY_PART_LIMB,
+    BODY_PART_TORSO,
+    CHARACTERS_PATH,
+    CLIENT_PACK_PATH,
+    NO_PARENT,
+    SOUNDS_PATH,
+    TEXTURE_FORMAT_BC4,
+    TEXTURE_FORMAT_BC5,
+    TEXTURE_FORMAT_BC7,
+    write_pack,
+)
+from pack.sounds import CueSounds
 
 # augusta:spawnPoint / augusta:hitbox: custom bool attributes (ADR-0032's
 # authoring convention) rather than a native USD prim type. A hitbox is
-# authored as a UsdGeomMesh with PhysicsCollisionAPI applied (same as any
-# other collider) plus this marker.
+# authored as geometry (a UsdGeomMesh, Cube or Capsule) with this marker and
+# the body part it stands for; a character has one or more for each body
+# part (ADR-0040).
 _SPAWN_POINT_ATTR = "augusta:spawnPoint"
 _HITBOX_ATTR = "augusta:hitbox"
+# The body part a hitbox stands for (US-11): a token or string every hitbox
+# carries next to augusta:hitbox, one of _BODY_PARTS' names (ADR-0040).
+_BODY_PART_ATTR = "augusta:bodyPart"
+_BODY_PARTS = {"head": BODY_PART_HEAD, "torso": BODY_PART_TORSO, "limb": BODY_PART_LIMB}
 # Node property (ADR-0032) carrying a visual mesh's constant displayColor as
 # "r g b" linear floats; the client reads it as the mesh's base color.
 BASE_COLOR_PROPERTY = "base_color"
@@ -57,8 +80,8 @@ BASE_COLOR_PROPERTY = "base_color"
 # <manifest path>/Character/Visual.
 CHARACTER_ROOT_PRIM = "Character"
 # The child of CHARACTER_ROOT_PRIM every character stage has, whose origin is
-# where the local player's camera sits (ADR-0040): the client reads it at
-# <manifest path>/Character/Eye.
+# where the local player's camera sits and its Shots leave from (ADR-0040):
+# client and server read it at <manifest path>/Character/Eye.
 CHARACTER_EYE_PRIM = "Eye"
 # augusta:textureFormat: selects which BC format a UsdUVTexture prim
 # compresses to (ADR-0017/issue #49). Defaults to BC7 when absent/
@@ -90,6 +113,7 @@ class CookReport:
     texture_count: int
     node_count: int
     script_count: int
+    sound_count: int
 
 
 def _sanitize_prim_path(usd_prim_path: str) -> str:
@@ -147,6 +171,28 @@ def _read_bool_attr(prim: Usd.Prim, attr_name: str) -> bool:
     attr = prim.GetAttribute(attr_name)
     value = attr.Get() if attr else None
     return bool(value)
+
+
+def _read_body_part(prim: Usd.Prim, prim_path: str) -> int:
+    """The body part a hitbox prim stands for (BODY_PART_*), from its
+    augusta:bodyPart: every hitbox names one, since a hit resolves to it (US-11).
+    """
+    attr = prim.GetAttribute(_BODY_PART_ATTR)
+    value = attr.Get() if attr else None
+    if value is None:
+        raise CookError(
+            "hitbox_body_part_missing",
+            prim_path,
+            f"a hitbox must name its body part in {_BODY_PART_ATTR} ({', '.join(_BODY_PARTS)})",
+        )
+    body_part = _BODY_PARTS.get(str(value))
+    if body_part is None:
+        raise CookError(
+            "hitbox_body_part_unknown",
+            prim_path,
+            f"{_BODY_PART_ATTR} is {str(value)!r}, not one of {', '.join(_BODY_PARTS)}",
+        )
+    return body_part
 
 
 def _decompose(matrix: Gf.Matrix4d) -> tuple[tuple[float, float, float], tuple[float, float, float, float], tuple[float, float, float]]:
@@ -460,7 +506,8 @@ def _build_node(
         # kMesh. A guide-purpose prim that is neither is a DCC-only helper
         # and contributes nothing.
         if is_hitbox:
-            entries.append(AssetEntry(type=_TYPE_HITBOX, path=prim_path, data=encode_mesh_blob(geometry)))
+            blob = encode_hitbox_blob(_read_body_part(prim, prim_path), geometry)
+            entries.append(AssetEntry(type=_TYPE_HITBOX, path=prim_path, data=blob))
         elif _has_collision_enabled(prim):
             entries.append(AssetEntry(type=_TYPE_COLLISION, path=prim_path, data=encode_mesh_blob(geometry)))
             node.collider_path = prim_path
@@ -493,10 +540,11 @@ def _maybe_cook_texture_prim(prim: Usd.Prim, prim_path: str, stage_path: Path, e
 
 
 # True for the AssetType values ADR-0019 puts in the server pack: collision
-# geometry, hitboxes, and spawn points. Mesh/texture/eye/scene are client-only
+# geometry, hitboxes, spawn points and character eyes (the server fires each
+# Shot from its shooter's eye, ADR-0040). Mesh/texture/scene are client-only
 # (scene is handled separately, since it needs its mesh/material
 # references stripped rather than being dropped outright).
-_SERVER_PACK_ASSET_TYPES = frozenset({_TYPE_COLLISION, _TYPE_HITBOX, _TYPE_SPAWN_POINT})
+_SERVER_PACK_ASSET_TYPES = frozenset({_TYPE_COLLISION, _TYPE_HITBOX, _TYPE_SPAWN_POINT, _TYPE_EYE})
 
 
 def _transform_mesh(mesh: MeshData, matrix: Gf.Matrix4d) -> MeshData:
@@ -512,23 +560,42 @@ def _transform_mesh(mesh: MeshData, matrix: Gf.Matrix4d) -> MeshData:
     return MeshData(points=[tuple(matrix.Transform(Gf.Vec3d(*point))) for point in mesh.points], indices=mesh.indices)
 
 
-def _cook_character_prim(prim: Usd.Prim, prim_path: str, matrix: Gf.Matrix4d, entries: list[AssetEntry]) -> None:
+def _cook_character_prim(
+    prim: Usd.Prim, prim_path: str, matrix: Gf.Matrix4d, entries: list[AssetEntry]
+) -> int | None:
     """The geometry half of _build_node's classification (mesh vs. collision
     vs. hitbox - ADR-0040/ADR-0041), for one prim of a character stage:
     appends at most one AssetEntry, its points already transformed into the
     character's own root space by matrix. Builds no SceneNode - see
-    _transform_mesh.
+    _transform_mesh. Returns the body part if the prim is a hitbox.
     """
     geometry = _read_raw_geometry(prim, prim_path)
     if geometry is None:
-        return
+        return None
     transformed = _transform_mesh(geometry, matrix)
     if _read_bool_attr(prim, _HITBOX_ATTR):
-        entries.append(AssetEntry(type=_TYPE_HITBOX, path=prim_path, data=encode_mesh_blob(transformed)))
-    elif _has_collision_enabled(prim):
+        body_part = _read_body_part(prim, prim_path)
+        entries.append(AssetEntry(type=_TYPE_HITBOX, path=prim_path, data=encode_hitbox_blob(body_part, transformed)))
+        return body_part
+    if _has_collision_enabled(prim):
         entries.append(AssetEntry(type=_TYPE_COLLISION, path=prim_path, data=encode_mesh_blob(transformed)))
     elif not _is_guide(prim):
         entries.append(AssetEntry(type=_TYPE_MESH, path=prim_path, data=encode_mesh_blob(_optimize_mesh(transformed))))
+    return None
+
+
+def _sound_entries(sounds: CueSounds) -> list[AssetEntry]:
+    """The client pack's audio entries for sounds, and the entry naming their folder."""
+    entries = [
+        AssetEntry(
+            type=_TYPE_AUDIO,
+            path=f"{sounds.path}/{cue}",
+            data=encode_audio_blob(sound.sample_rate, sound.bits_per_sample, sound.samples),
+        )
+        for cue, sound in sounds.cues
+    ]
+    entries.append(AssetEntry(type=_TYPE_SOUNDS, path=SOUNDS_PATH, data=encode_sounds_blob(sounds.path)))
+    return entries
 
 
 def cook_scenario(
@@ -538,6 +605,7 @@ def cook_scenario(
     server_output_path: Path,
     signing_key: bytes,
     scripts: Sequence[tuple[str, bytes]] = (),
+    sounds: CueSounds | None = None,
     on_prim: Callable[[int, int, str], None] | None = None,
 ) -> CookReport:
     """Bakes map_stage_path and every (manifest_path, stage_path) in
@@ -549,6 +617,11 @@ def cook_scenario(
     scripts are a scenario's Lua files as (path relative to its folder, bytes):
     they go into the server pack only, as script assets (ADR-0031, ADR-0039). A
     client is sent the values a script decides, never the script.
+
+    sounds, if given, are the client's cue sounds: they go into the client pack
+    only, each as an audio asset addressed <sounds.path>/<cue>, with sounds.path
+    itself at SOUNDS_PATH so the client can find them (ADR-0020, ADR-0031). The
+    headless server plays nothing (ADR-0019).
 
     The manifest paths, in character_stages' order, are also recorded as the
     character list both packs carry (ADR-0042).
@@ -593,7 +666,7 @@ def cook_scenario(
                 "",
                 f"{stage_path}: a character's default prim must be named {CHARACTER_ROOT_PRIM!r}",
             )
-        # The client puts its camera at <manifest path>/Character/Eye (ADR-0040).
+        # The camera sits, and Shots leave from, <manifest path>/Character/Eye (ADR-0040).
         eye_prim = default_prim.GetChild(CHARACTER_EYE_PRIM)
         if not eye_prim:
             raise CookError(
@@ -625,6 +698,7 @@ def cook_scenario(
 
     for manifest_path, stage_path, character_stage, character_prims, eye_path in opened_characters:
         character_correction = _stage_correction_matrix(character_stage)
+        body_parts: set[int] = set()
         for prim in character_prims:
             prim_path = f"{manifest_path}/{_sanitize_prim_path(str(prim.GetPath()))}"
             xformable = UsdGeom.Xformable(prim)
@@ -634,11 +708,22 @@ def cook_scenario(
             if prim.GetPath() == eye_path:
                 eye = (local_to_root * character_correction).Transform(Gf.Vec3d(0.0, 0.0, 0.0))
                 entries.append(AssetEntry(type=_TYPE_EYE, path=prim_path, data=encode_eye_blob(tuple(eye))))
-            _cook_character_prim(prim, prim_path, local_to_root * character_correction, entries)
+            body_part = _cook_character_prim(prim, prim_path, local_to_root * character_correction, entries)
+            if body_part is not None:
+                body_parts.add(body_part)
             _maybe_cook_texture_prim(prim, prim_path, stage_path, entries)
             done += 1
             if on_prim is not None:
                 on_prim(done, total_prims, prim_path)
+        # Every hit on a player resolves to a body part (US-11), so a character
+        # must be hittable in each.
+        missing = [name for name, body_part in _BODY_PARTS.items() if body_part not in body_parts]
+        if missing:
+            raise CookError(
+                "character_hitbox_missing",
+                "",
+                f"{stage_path}: a character needs a hitbox for each body part, and has none for {', '.join(missing)}",
+            )
 
     mesh_count = sum(1 for entry in entries if entry.type == _TYPE_MESH)
     texture_count = sum(1 for entry in entries if entry.type == _TYPE_TEXTURE)
@@ -679,15 +764,25 @@ def cook_scenario(
         ]
     except Exception as error:  # noqa: BLE001 - re-raised as CookError below
         raise CookError("script_encode_failed", "", str(error)) from error
+    try:
+        sound_entries = _sound_entries(sounds) if sounds is not None else []
+    except Exception as error:  # noqa: BLE001 - re-raised as CookError below
+        raise CookError("sound_encode_failed", "", str(error)) from error
 
-    # Client pack: everything cooked from this stage, plus the full scene.
-    client_entries = [*entries, AssetEntry(type=_TYPE_SCENE, path="Scene", data=client_scene_blob), characters_entry]
+    # Client pack: everything cooked from this stage, plus the full scene and the
+    # cue sounds.
+    client_entries = [
+        *entries,
+        AssetEntry(type=_TYPE_SCENE, path="Scene", data=client_scene_blob),
+        characters_entry,
+        *sound_entries,
+    ]
     try:
         client_pack_hash = write_pack(client_output_path, client_entries, signing_key)
     except Exception as error:  # noqa: BLE001 - re-raised as CookError below
         raise CookError("pack_write_failed", "", f"client pack: {error}") from error
 
-    # Server pack: only the collision/hitbox/spawn-point entries, plus the
+    # Server pack: only the collision/hitbox/spawn-point/eye entries, plus the
     # stripped scene, the client pack's hash and the scripts.
     server_entries = [entry for entry in entries if entry.type in _SERVER_PACK_ASSET_TYPES]
     server_entries.append(AssetEntry(type=_TYPE_SCENE, path="Scene", data=server_scene_blob))
@@ -700,5 +795,9 @@ def cook_scenario(
         raise CookError("pack_write_failed", "", f"server pack: {error}") from error
 
     return CookReport(
-        mesh_count=mesh_count, texture_count=texture_count, node_count=node_count, script_count=len(scripts)
+        mesh_count=mesh_count,
+        texture_count=texture_count,
+        node_count=node_count,
+        script_count=len(scripts),
+        sound_count=len(sounds.cues) if sounds is not None else 0,
     )

@@ -5,9 +5,11 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -100,8 +102,14 @@ class PackTest : public ::testing::Test {
     }
   }
 
+  // Named after the running test too: ctest runs every test in a process of
+  // its own, possibly in parallel, so no other test removes it while in use.
   std::filesystem::path MakePackPath(std::string_view name) {
-    const auto path = std::filesystem::temp_directory_path() / name;
+    const ::testing::TestInfo& test = *::testing::UnitTest::GetInstance()->current_test_info();
+    std::string unique =
+        std::string("augusta_assets_test_") + test.test_suite_name() + "_" + test.name() + "_" + std::string(name);
+    std::ranges::replace(unique, '/', '_');
+    const auto path = std::filesystem::temp_directory_path() / unique;
     cleanup_.push_back(path);
     return path;
   }
@@ -275,8 +283,82 @@ TEST_F(PackTest, EncodesAndResolvesTheCharacterListInOrder) {
   EXPECT_EQ(pack->ResolveCharacters().value(), characters);
 }
 
+// A cue's sound is mono PCM (ADR-0020): resolved by path with its sample rate,
+// its sample width and its samples as the WAV file held them, and only as audio.
+TEST_F(PackTest, EncodesAndResolvesASound) {
+  const auto pack_path = MakePackPath("augusta_assets_test_audio.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::vector<std::byte> samples = {std::byte{0x01}, std::byte{0x00}, std::byte{0xFF}, std::byte{0x7F}};
+
+  const auto blob = augusta::assets::EncodeAudioBlob({.sample_rate = 22050, .bits_per_sample = 16, .samples = samples});
+  ASSERT_TRUE(blob.has_value());
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kAudio, .path = "sounds/test/gunshot", .data = *blob},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  const auto sound = pack->ResolveAudio("sounds/test/gunshot");
+  ASSERT_TRUE(sound.has_value());
+  EXPECT_EQ(sound->sample_rate, 22050U);
+  EXPECT_EQ(sound->bits_per_sample, 16U);
+  EXPECT_EQ(sound->samples, samples);
+  EXPECT_EQ(pack->ResolveMesh("sounds/test/gunshot").error(), augusta::assets::ResolveError::kTypeMismatch);
+  EXPECT_EQ(pack->ResolveAudio("sounds/test/death").error(), augusta::assets::ResolveError::kNotFound);
+}
+
+// Only whole samples of a width PCM has are a sound: anything else is corrupt.
+TEST_F(PackTest, ASoundWithAnUnknownSampleWidthOrAPartialSampleIsCorrupt) {
+  const auto pack_path = MakePackPath("augusta_assets_test_corrupt_audio.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  // sample rate 22050, then the bits per sample, then 3 sample bytes.
+  const auto blob = [](std::uint8_t bits_per_sample) {
+    return std::vector<std::byte>{
+        std::byte{0x22}, std::byte{0x56}, std::byte{0x00}, std::byte{0x00}, std::byte{bits_per_sample},
+        std::byte{0x03}, std::byte{0x00}, std::byte{0x00}, std::byte{0x00}, std::byte{0x01},
+        std::byte{0x02}, std::byte{0x03}};
+  };
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kAudio, .path = "width12", .data = blob(12)},
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kAudio, .path = "partial16", .data = blob(16)},
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kAudio, .path = "whole24", .data = blob(24)},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveAudio("width12").error(), augusta::assets::ResolveError::kCorruptBlob);
+  EXPECT_EQ(pack->ResolveAudio("partial16").error(), augusta::assets::ResolveError::kCorruptBlob);
+  EXPECT_TRUE(pack->ResolveAudio("whole24").has_value());
+}
+
+// A client pack names the folder its cue sounds are addressed under (ADR-0031).
+TEST_F(PackTest, EncodesAndResolvesTheSoundsFolder) {
+  const auto pack_path = MakePackPath("augusta_assets_test_sounds.pack");
+  const auto keys = GenerateEd25519KeyPair();
+
+  const auto blob = augusta::assets::EncodeSoundsBlob("sounds/augusta");
+  ASSERT_TRUE(blob.has_value());
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kSounds,
+                                  .path = std::string(augusta::assets::kSoundsPath),
+                                  .data = *blob},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveSoundsPath().value(), "sounds/augusta");
+}
+
 // A character's eye is where the local player's camera sits (ADR-0040): a bare
 // point, resolved by path, and only as an eye.
+TEST(CharacterEyePathTest, ACharactersEyeIsTheEyeChildOfItsRootPrim) {
+  EXPECT_EQ(augusta::assets::CharacterEyePath("characters/player"), "characters/player/Character/Eye");
+}
+
 TEST_F(PackTest, EncodesAndResolvesACharactersEye) {
   const auto pack_path = MakePackPath("augusta_assets_test_eye.pack");
   const auto keys = GenerateEd25519KeyPair();
@@ -296,6 +378,91 @@ TEST_F(PackTest, EncodesAndResolvesACharactersEye) {
   EXPECT_EQ(eye->position, Vec3(0.0F, 1.6F, 0.1F));
   EXPECT_EQ(pack->ResolveMesh("characters/player/Character/Eye").error(), augusta::assets::ResolveError::kTypeMismatch);
   EXPECT_EQ(pack->ResolveEye("characters/medic/Character/Eye").error(), augusta::assets::ResolveError::kNotFound);
+}
+
+// A character's hitboxes (ADR-0040): each a body part and its geometry, found
+// together under the character's path, in path order.
+class HitboxPackTest : public PackTest {
+ protected:
+  static augusta::assets::AssetEntry Hitbox(std::string path, augusta::assets::BodyPart part, float height) {
+    const augusta::assets::HitboxData hitbox{
+        .part = part,
+        .mesh = {.points = {Vec3(0.0F, height, 0.0F), Vec3(1.0F, height, 0.0F), Vec3(0.0F, height, 1.0F)},
+                 .indices = {0, 1, 2}},
+    };
+    const auto blob = augusta::assets::EncodeHitboxBlob(hitbox);
+    EXPECT_TRUE(blob.has_value());
+    return {.type = augusta::assets::AssetType::kHitbox, .path = std::move(path), .data = blob.value_or({})};
+  }
+
+  augusta::assets::Pack Write(const std::vector<augusta::assets::AssetEntry>& entries) {
+    // One file per test: ctest runs each in its own process, possibly at once.
+    const auto pack_path = MakePackPath(std::string("augusta_assets_test_hitboxes_") +
+                                        ::testing::UnitTest::GetInstance()->current_test_info()->name() + ".pack");
+    const auto keys = GenerateEd25519KeyPair();
+    EXPECT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+    auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+    EXPECT_TRUE(pack.has_value());
+    return *std::move(pack);
+  }
+};
+
+TEST_F(HitboxPackTest, AHitboxResolvesToItsBodyPartAndGeometry) {
+  const auto pack = Write({Hitbox("characters/player/Character/Head", augusta::assets::BodyPart::kHead, 1.8F)});
+
+  const auto hitbox = pack.ResolveHitbox("characters/player/Character/Head");
+
+  ASSERT_TRUE(hitbox.has_value());
+  EXPECT_EQ(hitbox->part, augusta::assets::BodyPart::kHead);
+  EXPECT_EQ(hitbox->mesh.points.size(), 3U);
+  EXPECT_EQ(hitbox->mesh.points[0], Vec3(0.0F, 1.8F, 0.0F));
+  EXPECT_EQ(hitbox->mesh.indices, (std::vector<std::uint32_t>{0, 1, 2}));
+}
+
+TEST_F(HitboxPackTest, ACharactersHitboxesResolveTogetherInPathOrderAndNoOtherCharacters) {
+  const auto pack = Write({
+      Hitbox("characters/player/Character/Torso", augusta::assets::BodyPart::kTorso, 1.3F),
+      Hitbox("characters/medic/Character/Head", augusta::assets::BodyPart::kHead, 1.7F),
+      Hitbox("characters/player/Character/Head", augusta::assets::BodyPart::kHead, 1.8F),
+      Hitbox("characters/player/Character/Leg", augusta::assets::BodyPart::kLimb, 0.5F),
+      // A character whose path the other's is a prefix of is another character.
+      Hitbox("characters/player2/Character/Head", augusta::assets::BodyPart::kHead, 1.9F),
+  });
+
+  const auto hitboxes = pack.ResolveHitboxes("characters/player");
+
+  ASSERT_TRUE(hitboxes.has_value());
+  ASSERT_EQ(hitboxes->size(), 3U);
+  // Head, Leg, Torso: the order of their paths.
+  EXPECT_EQ((*hitboxes)[0].part, augusta::assets::BodyPart::kHead);
+  EXPECT_EQ((*hitboxes)[0].mesh.points[0].y, 1.8F);
+  EXPECT_EQ((*hitboxes)[1].part, augusta::assets::BodyPart::kLimb);
+  EXPECT_EQ((*hitboxes)[2].part, augusta::assets::BodyPart::kTorso);
+  EXPECT_TRUE(pack.ResolveHitboxes("characters/sniper").value().empty());
+}
+
+TEST_F(HitboxPackTest, AHitboxOfAnUnknownBodyPartIsCorrupt) {
+  auto entry = Hitbox("characters/player/Character/Tail", augusta::assets::BodyPart::kLimb, 0.9F);
+  entry.data.front() = std::byte{3};
+  const auto pack = Write({entry});
+
+  EXPECT_EQ(pack.ResolveHitbox("characters/player/Character/Tail").error(),
+            augusta::assets::ResolveError::kCorruptBlob);
+  EXPECT_EQ(pack.ResolveHitboxes("characters/player").error(), augusta::assets::ResolveError::kCorruptBlob);
+}
+
+TEST(FirstMissingBodyPartTest, NamesTheFirstBodyPartNoHitboxStandsFor) {
+  using augusta::assets::BodyPart;
+  using augusta::assets::FirstMissingBodyPart;
+  using augusta::assets::HitboxData;
+  const std::vector<HitboxData> every{{.part = BodyPart::kLimb}, {.part = BodyPart::kHead}, {.part = BodyPart::kTorso}};
+  const std::vector<HitboxData> no_torso{{.part = BodyPart::kLimb}, {.part = BodyPart::kHead}};
+  const std::vector<HitboxData> only_limbs{{.part = BodyPart::kLimb}, {.part = BodyPart::kLimb}};
+
+  EXPECT_EQ(FirstMissingBodyPart(every), std::nullopt);
+  EXPECT_EQ(FirstMissingBodyPart(no_torso), BodyPart::kTorso);
+  EXPECT_EQ(FirstMissingBodyPart(only_limbs), BodyPart::kHead);
+  EXPECT_EQ(FirstMissingBodyPart({}), BodyPart::kHead);
 }
 
 TEST_F(PackTest, AnEmptyCharacterListResolvesAsEmpty) {

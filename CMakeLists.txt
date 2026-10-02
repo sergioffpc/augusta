@@ -22,6 +22,10 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# The GNU install directories (CMAKE_INSTALL_BINDIR, ...) under the prefix, for
+# the targets that `cmake --install` puts in place.
+include(GNUInstallDirs)
+
 if (MSVC)
   add_compile_options(/W4 /WX /EHsc)
 else()
@@ -57,12 +61,14 @@ add_subdirectory(src/modules/logging)
 add_subdirectory(src/modules/config)
 add_subdirectory(src/modules/math)
 add_subdirectory(src/modules/tick)
+add_subdirectory(src/modules/supervisor)
 add_subdirectory(src/modules/assets)
 add_subdirectory(src/modules/physics)
 add_subdirectory(src/modules/command)
 add_subdirectory(src/modules/parameters)
 add_subdirectory(src/modules/map)
 add_subdirectory(src/modules/ballistics)
+add_subdirectory(src/modules/weapon)
 add_subdirectory(src/modules/protocol)
 add_subdirectory(src/modules/networking)
 add_subdirectory(src/modules/scripting)
@@ -88,4 +94,7 @@ endif()
 # graph is complete - see cmake/AugustaModule.cmake.
 augusta_check_module_scopes()
 
-add_subdirectory(tests)
+# Tests, benchmarks and fuzzers build only on request, through the
+# augusta_tests target (tests/CMakeLists.txt) that `make test` builds before
+# ctest: building the binaries never waits on them (ADR-0008).
+add_subdirectory(tests EXCLUDE_FROM_ALL)

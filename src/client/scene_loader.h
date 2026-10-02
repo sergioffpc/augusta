@@ -94,14 +94,10 @@ std::expected<renderer::SceneMesh, SceneError> LoadCharacterMesh(std::span<const
                                                                  std::uint8_t character_index,
                                                                  const MeshResolver& resolve_mesh);
 
-/// Pack-relative path of character's eye: its `Character` root prim's `Eye`
-/// child (ADR-0040), e.g. "characters/player/Character/Eye".
-std::string CharacterEyePath(std::string_view character);
-
 /// Resolves through resolve_eye the eye of character, by its path relative to
-/// `authoring/` (e.g. "characters/player"): where the camera sits, in the
-/// character's own root space, its feet at the origin. The error names the
-/// character.
+/// `authoring/` (e.g. "characters/player"), at assets::CharacterEyePath: where
+/// the camera sits, in the character's own root space, its feet at the origin.
+/// The error names the character.
 std::expected<math::Vec3, SceneError> LoadCharacterEye(std::string_view character, const EyeResolver& resolve_eye);
 
 }  // namespace augusta::client

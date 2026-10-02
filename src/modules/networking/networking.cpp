@@ -9,17 +9,20 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include <steam/isteamnetworkingsockets.h>
 #include <steam/isteamnetworkingutils.h>  // SteamNetworkingIPAddr::ParseString's inline body lives here.
+#include <steam/steamclientpublic.h>
 #include <steam/steamnetworkingsockets.h>
+#include <steam/steamnetworkingtypes.h>
 
 #include "augusta/logging.h"
 #include "send_flags.h"
+#include "transport_events.h"
 
 // M1 spike (ADR-0003): the first real (non-stub) body for this module.
 // Both Client and Server route GameNetworkingSockets' single global
@@ -29,7 +32,8 @@
 // a per-connection/per-listen-socket config value (rather than one
 // shared dispatcher) so a process hosting both a Client and a Server at
 // once - as the standalone round-trip test does - never has to
-// disambiguate whose connection it is.
+// disambiguate whose connection it is. The handler only publishes the
+// event (transport_events.h); PumpEvents, the Network I/O owner, applies it.
 namespace augusta::networking {
 
 namespace {
@@ -112,6 +116,70 @@ void OnStatusChanged(SteamNetConnectionStatusChangedCallback_t* info) {
   StatusHandlers().Dispatch(info->m_info.m_nUserData, info);
 }
 
+TransportState ToTransportState(ESteamNetworkingConnectionState state) {
+  switch (state) {
+    case k_ESteamNetworkingConnectionState_Connecting:
+      return TransportState::kConnecting;
+    case k_ESteamNetworkingConnectionState_Connected:
+      return TransportState::kConnected;
+    case k_ESteamNetworkingConnectionState_ClosedByPeer:
+      return TransportState::kClosedByPeer;
+    case k_ESteamNetworkingConnectionState_ProblemDetectedLocally:
+      return TransportState::kProblemDetectedLocally;
+    default:
+      return TransportState::kOther;
+  }
+}
+
+// What a status-changed callback publishes: the minimal event, and nothing else.
+TransportEvent ToTransportEvent(const SteamNetConnectionStatusChangedCallback_t& info) {
+  return TransportEvent{.connection = info.m_hConn,
+                        .state = ToTransportState(info.m_info.m_eState),
+                        .remote_address = FormatAddr(info.m_info.m_addrRemote)};
+}
+
+// The one log line for a connection's state change, written by the Network I/O
+// owner as it applies the event, not by the callback.
+void LogTransportEvent(std::string_view role, const TransportEvent& event) {
+  switch (event.state) {
+    case TransportState::kConnecting:
+      LD("subsystem=networking event=state_changed role={} state=connecting peer={} peer_addr={}", role,
+         event.connection, event.remote_address);
+      break;
+    case TransportState::kConnected:
+      LI("subsystem=networking event=state_changed role={} state=connected peer={} peer_addr={}", role,
+         event.connection, event.remote_address);
+      break;
+    case TransportState::kClosedByPeer:
+      LI("subsystem=networking event=state_changed role={} state=disconnected peer={} peer_addr={} "
+         "reason=closed_by_peer",
+         role, event.connection, event.remote_address);
+      break;
+    case TransportState::kProblemDetectedLocally:
+      LW("subsystem=networking event=state_changed role={} state=disconnected peer={} peer_addr={} "
+         "reason=problem_detected_locally",
+         role, event.connection, event.remote_address);
+      break;
+    case TransportState::kOther:
+      break;
+  }
+}
+
+// Makes call for connection: the transport work an event asked for, run by the
+// Network I/O owner with no lock held.
+void MakeTransportCall(TransportCall call, HSteamNetConnection connection, HSteamNetPollGroup poll_group) {
+  switch (call) {
+    case TransportCall::kNone:
+      break;
+    case TransportCall::kJoinPollGroup:
+      SteamNetworkingSockets()->SetConnectionPollGroup(connection, poll_group);
+      break;
+    case TransportCall::kClose:
+      SteamNetworkingSockets()->CloseConnection(connection, 0, nullptr, false);
+      break;
+  }
+}
+
 }  // namespace
 
 void Init() {
@@ -151,38 +219,28 @@ struct Client::Impl {
   std::mutex mutex;
   HSteamNetConnection connection = k_HSteamNetConnection_Invalid;
   ConnectionState state = ConnectionState::kDisconnected;
+  // Filled by the status-changed callback, drained by PumpEvents.
+  TransportEventQueue transport_events;
 
-  void HandleStatusChanged(SteamNetConnectionStatusChangedCallback_t* info) {
-    std::lock_guard<std::mutex> lock(mutex);
-    switch (info->m_info.m_eState) {
-      case k_ESteamNetworkingConnectionState_Connecting:
-        state = ConnectionState::kConnecting;
-        LD("subsystem=networking event=state_changed role=client state=connecting");
-        break;
-      case k_ESteamNetworkingConnectionState_Connected:
-        state = ConnectionState::kConnected;
-        LI("subsystem=networking event=state_changed role=client state=connected");
-        break;
-      case k_ESteamNetworkingConnectionState_ClosedByPeer:
-      case k_ESteamNetworkingConnectionState_ProblemDetectedLocally:
-        SteamNetworkingSockets()->CloseConnection(info->m_hConn, 0, nullptr, false);
+  // Applies one drained event: the state under the lock, then the transport
+  // call it needs and its log line outside it.
+  void Apply(const TransportEvent& event) {
+    ClientTransition transition;
+    {
+      const std::lock_guard<std::mutex> lock(mutex);
+      transition = ApplyToClient(connection, state, event);
+      state = transition.state;
+      if (transition.ended) {
         connection = k_HSteamNetConnection_Invalid;
-        state = ConnectionState::kDisconnected;
-        if (info->m_info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally) {
-          LW("subsystem=networking event=state_changed role=client state=disconnected "
-             "reason=problem_detected_locally");
-        } else {
-          LI("subsystem=networking event=state_changed role=client state=disconnected reason=closed_by_peer");
-        }
-        break;
-      default:
-        break;
+      }
     }
+    MakeTransportCall(transition.call, event.connection, k_HSteamNetPollGroup_Invalid);
+    LogTransportEvent("client", event);
   }
 
-  // Last, so it unregisters before the members HandleStatusChanged reads go.
+  // Last, so it unregisters before the queue the callback publishes to goes.
   StatusHandlerRegistration registration{
-      [this](SteamNetConnectionStatusChangedCallback_t* info) { HandleStatusChanged(info); }};
+      [this](SteamNetConnectionStatusChangedCallback_t* info) { transport_events.Publish(ToTransportEvent(*info)); }};
 };
 
 Client::Client() : impl_(std::make_unique<Impl>()) {}
@@ -198,20 +256,33 @@ void Client::Connect(const Endpoint& server) {
   LI("subsystem=networking event=connecting role=client server_addr={}", server.address);
 
   // Both config values must be supplied here, not via a
-  // SetConnectionUserData call after ConnectByIPAddress returns: GNS can
-  // fire the first (Connecting) status-changed callback synchronously as
-  // part of creating the connection, snapshotting whatever user data was
-  // set at that point - which would be none, since Impl isn't reachable
-  // from OnStatusChanged until this call supplies it up front.
+  // SetConnectionUserData call after ConnectByIPAddress returns: GNS queues
+  // the first (Connecting) status-changed callback while creating the
+  // connection, snapshotting the user data in effect at that point - which
+  // would be none, since Impl isn't reachable from OnStatusChanged until
+  // this call supplies it up front.
+  //
+  // Holding the mutex across ConnectByIPAddress cannot deadlock: GNS only
+  // invokes queued callbacks from RunCallbacks (PumpEvents), never from
+  // inside the call that queued them.
   std::array<SteamNetworkingConfigValue_t, 2> options;
   options[0].SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged,
                     reinterpret_cast<void*>(&OnStatusChanged));
   options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, impl_->registration.Id());
 
   std::lock_guard<std::mutex> lock(impl_->mutex);
-  impl_->state = ConnectionState::kConnecting;
   impl_->connection =
       SteamNetworkingSockets()->ConnectByIPAddress(addr, static_cast<int>(options.size()), options.data());
+  // A connection GNS refused to create never gets a status-changed callback,
+  // so this is the only place that can report it.
+  if (impl_->connection == k_HSteamNetConnection_Invalid) {
+    impl_->state = ConnectionState::kDisconnected;
+    LW("subsystem=networking event=state_changed role=client state=disconnected reason=connection_not_created "
+       "server_addr={}",
+       server.address);
+    return;
+  }
+  impl_->state = ConnectionState::kConnecting;
 }
 
 void Client::Disconnect() {
@@ -223,7 +294,12 @@ void Client::Disconnect() {
   impl_->state = ConnectionState::kDisconnected;
 }
 
-void Client::PumpEvents() { SteamNetworkingSockets()->RunCallbacks(); }
+void Client::PumpEvents() {
+  SteamNetworkingSockets()->RunCallbacks();
+  for (const TransportEvent& event : impl_->transport_events.Drain()) {
+    impl_->Apply(event);
+  }
+}
 
 ConnectionState Client::GetState() const {
   std::lock_guard<std::mutex> lock(impl_->mutex);
@@ -295,65 +371,30 @@ struct Server::Impl {
   std::mutex mutex;
   HSteamListenSocket listen_socket = k_HSteamListenSocket_Invalid;
   HSteamNetPollGroup poll_group = k_HSteamNetPollGroup_Invalid;
-  // Peers awaiting Accept/Disconnect - re-delivered as kConnectRequested
-  // on every PumpEvents call until one of those resolves them (see
-  // Server::PumpEvents's own doc comment in networking.h).
-  std::unordered_set<HSteamNetConnection> pending_peers;
-  // Peers currently past Accept and fully connected - Send/Broadcast's
-  // only way to reach a peer, since GNS has no "send to poll group" call.
-  std::unordered_set<HSteamNetConnection> connected_peers;
-  // One-shot lifecycle transitions (kConnected/kDisconnected) queued by
-  // OnStatusChanged since the last PumpEvents call.
-  std::vector<PeerEvent> queued_events;
+  // Pending peers, re-delivered as kConnectRequested on every PumpEvents call
+  // until Accept/Disconnect answers them (see Server::PumpEvents's own doc
+  // comment in networking.h); connected peers, Send/Broadcast's only way to
+  // reach a peer, since GNS has no "send to poll group" call; and the one-shot
+  // events since the last PumpEvents. Guarded by mutex.
+  PeerTable peers;
+  // Filled by the status-changed callback, drained by PumpEvents.
+  TransportEventQueue transport_events;
 
-  void HandleStatusChanged(SteamNetConnectionStatusChangedCallback_t* info) {
-    const auto peer = static_cast<PeerId>(info->m_hConn);
-    const auto peer_id = static_cast<std::uint32_t>(peer);
-    const std::string peer_addr = FormatAddr(info->m_info.m_addrRemote);
-    std::lock_guard<std::mutex> lock(mutex);
-    switch (info->m_info.m_eState) {
-      case k_ESteamNetworkingConnectionState_Connecting:
-        pending_peers.insert(info->m_hConn);
-        LD("subsystem=networking event=state_changed role=server state=connecting peer={} peer_addr={}", peer_id,
-           peer_addr);
-        break;
-      case k_ESteamNetworkingConnectionState_Connected:
-        SteamNetworkingSockets()->SetConnectionPollGroup(info->m_hConn, poll_group);
-        connected_peers.insert(info->m_hConn);
-        queued_events.push_back(PeerEvent{.peer = peer, .type = PeerEventType::kConnected});
-        LI("subsystem=networking event=state_changed role=server state=connected peer={} peer_addr={}", peer_id,
-           peer_addr);
-        break;
-      case k_ESteamNetworkingConnectionState_ClosedByPeer:
-      case k_ESteamNetworkingConnectionState_ProblemDetectedLocally: {
-        SteamNetworkingSockets()->CloseConnection(info->m_hConn, 0, nullptr, false);
-        pending_peers.erase(info->m_hConn);
-        connected_peers.erase(info->m_hConn);
-        const bool lost = info->m_info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally;
-        queued_events.push_back(PeerEvent{
-            .peer = peer,
-            .type = PeerEventType::kDisconnected,
-            .reason = lost ? DisconnectReason::kConnectionLost : DisconnectReason::kClosedByPeer,
-        });
-        if (lost) {
-          LW("subsystem=networking event=state_changed role=server state=disconnected peer={} peer_addr={} "
-             "reason=problem_detected_locally",
-             peer_id, peer_addr);
-        } else {
-          LI("subsystem=networking event=state_changed role=server state=disconnected peer={} peer_addr={} "
-             "reason=closed_by_peer",
-             peer_id, peer_addr);
-        }
-        break;
-      }
-      default:
-        break;
+  // Applies one drained event: the peers under the lock, then the transport
+  // call it needs and its log line outside it.
+  void Apply(const TransportEvent& event) {
+    TransportCall call = TransportCall::kNone;
+    {
+      const std::lock_guard<std::mutex> lock(mutex);
+      call = peers.Apply(event);
     }
+    MakeTransportCall(call, event.connection, poll_group);
+    LogTransportEvent("server", event);
   }
 
-  // Last, so it unregisters before the members HandleStatusChanged reads go.
+  // Last, so it unregisters before the queue the callback publishes to goes.
   StatusHandlerRegistration registration{
-      [this](SteamNetConnectionStatusChangedCallback_t* info) { HandleStatusChanged(info); }};
+      [this](SteamNetConnectionStatusChangedCallback_t* info) { transport_events.Publish(ToTransportEvent(*info)); }};
 };
 
 Server::Server(const Endpoint& local_endpoint) : impl_(std::make_unique<Impl>()) {
@@ -365,11 +406,11 @@ Server::Server(const Endpoint& local_endpoint) : impl_(std::make_unique<Impl>())
 
   // Two config values applied to every connection accepted through this
   // listen socket: the status-changed callback, and a default user data
-  // value carrying impl_.get() - set here, before any connection exists,
-  // so OnStatusChanged can already resolve it on that connection's very
-  // first (Connecting) callback. Client::Connect instead sets user data
-  // itself right after ConnectByIPAddress returns, since it has only one
-  // connection to tag and no listen socket to inherit a default from.
+  // value carrying this server's handler registration - set here, before
+  // any connection exists, so OnStatusChanged can already resolve it on
+  // that connection's very first (Connecting) callback. Client::Connect
+  // passes the same two values to ConnectByIPAddress instead, since it has
+  // only one connection to tag and no listen socket to inherit them from.
   std::array<SteamNetworkingConfigValue_t, 2> options;
   options[0].SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged,
                     reinterpret_cast<void*>(&OnStatusChanged));
@@ -385,10 +426,7 @@ Server::Server(const Endpoint& local_endpoint) : impl_(std::make_unique<Impl>())
 }
 
 Server::~Server() {
-  for (HSteamNetConnection connection : impl_->pending_peers) {
-    SteamNetworkingSockets()->CloseConnection(connection, 0, nullptr, false);
-  }
-  for (HSteamNetConnection connection : impl_->connected_peers) {
+  for (const HSteamNetConnection connection : impl_->peers.Connections()) {
     SteamNetworkingSockets()->CloseConnection(connection, 0, nullptr, false);
   }
   SteamNetworkingSockets()->CloseListenSocket(impl_->listen_socket);
@@ -397,21 +435,19 @@ Server::~Server() {
 
 std::vector<PeerEvent> Server::PumpEvents() {
   SteamNetworkingSockets()->RunCallbacks();
-
-  std::lock_guard<std::mutex> lock(impl_->mutex);
-  std::vector<PeerEvent> events = std::move(impl_->queued_events);
-  impl_->queued_events.clear();
-  for (HSteamNetConnection peer : impl_->pending_peers) {
-    events.push_back(PeerEvent{.peer = static_cast<PeerId>(peer), .type = PeerEventType::kConnectRequested});
+  for (const TransportEvent& event : impl_->transport_events.Drain()) {
+    impl_->Apply(event);
   }
-  return events;
+
+  const std::lock_guard<std::mutex> lock(impl_->mutex);
+  return impl_->peers.TakeEvents();
 }
 
 void Server::Accept(PeerId peer) {
   const auto connection = static_cast<HSteamNetConnection>(peer);
   {
-    std::lock_guard<std::mutex> lock(impl_->mutex);
-    impl_->pending_peers.erase(connection);
+    const std::lock_guard<std::mutex> lock(impl_->mutex);
+    impl_->peers.Answer(connection);
   }
   SteamNetworkingSockets()->AcceptConnection(connection);
 }
@@ -419,18 +455,19 @@ void Server::Accept(PeerId peer) {
 void Server::Disconnect(PeerId peer) {
   const auto connection = static_cast<HSteamNetConnection>(peer);
   {
-    std::lock_guard<std::mutex> lock(impl_->mutex);
-    impl_->pending_peers.erase(connection);
-    impl_->connected_peers.erase(connection);
+    const std::lock_guard<std::mutex> lock(impl_->mutex);
+    impl_->peers.Forget(connection);
   }
-  SteamNetworkingSockets()->CloseConnection(connection, 0, nullptr, false);
+  // Lingering, so what was already sent reliably - a reply that explains the
+  // disconnect, such as a Join refusal - still arrives before the connection ends.
+  SteamNetworkingSockets()->CloseConnection(connection, 0, nullptr, true);
 }
 
 void Server::Send(PeerId peer, const Payload& payload, Reliability reliability) {
   const auto connection = static_cast<HSteamNetConnection>(peer);
   {
-    std::lock_guard<std::mutex> lock(impl_->mutex);
-    if (!impl_->connected_peers.contains(connection)) {
+    const std::lock_guard<std::mutex> lock(impl_->mutex);
+    if (!impl_->peers.IsConnected(connection)) {
       return;
     }
   }
@@ -442,8 +479,8 @@ void Server::Send(PeerId peer, const Payload& payload, Reliability reliability) 
 void Server::Broadcast(const Payload& payload, Reliability reliability) {
   std::vector<HSteamNetConnection> peers;
   {
-    std::lock_guard<std::mutex> lock(impl_->mutex);
-    peers.assign(impl_->connected_peers.begin(), impl_->connected_peers.end());
+    const std::lock_guard<std::mutex> lock(impl_->mutex);
+    peers = impl_->peers.Connected();
   }
   LT("subsystem=networking event=broadcast role=server peers={} bytes={}", peers.size(), payload.size());
   for (HSteamNetConnection connection : peers) {

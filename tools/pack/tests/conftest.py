@@ -5,6 +5,7 @@ on what was cooked; the C++ runtime stays the reference decoder.
 """
 
 import struct
+import wave
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,7 +14,7 @@ import pytest
 from pack import keys, reader
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
-EXAMPLES_ROOT = Path(__file__).parent.parent / "examples"
+EXAMPLES_ROOT = Path(__file__).parents[2] / "composer" / "examples"
 
 
 @dataclass(frozen=True)
@@ -61,7 +62,44 @@ def decode_mesh(blob: bytes) -> tuple[list[tuple[float, float, float]], list[int
     return points, indices
 
 
+def decode_hitbox(blob: bytes) -> tuple[int, list[tuple[float, float, float]], list[int]]:
+    """A hitbox blob: u8 body part, then a mesh blob."""
+    points, indices = decode_mesh(blob[1:])
+    return blob[0], points, indices
+
+
 def decode_spawn_point(blob: bytes) -> tuple[tuple[float, ...], tuple[float, ...]]:
     """A spawn point blob: translation xyz, then rotation xyzw, all f32."""
     values = struct.unpack("<7f", blob)
     return values[:3], values[3:]
+
+
+def write_wav(path: Path, frames: bytes, channels: int = 1, sample_width: int = 2, sample_rate: int = 22050) -> None:
+    """Writes a PCM WAV file, creating its folder."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(channels)
+        wav.setsampwidth(sample_width)
+        wav.setframerate(sample_rate)
+        wav.writeframes(frames)
+
+
+def write_float_wav(path: Path, samples: int = 4, sample_rate: int = 22050) -> None:
+    """Writes a mono 32-bit IEEE float WAV (format tag 3): a WAV that is not PCM."""
+    data = struct.pack(f"<{samples}f", *([0.0] * samples))
+    fmt = struct.pack("<HHIIHH", 3, 1, sample_rate, sample_rate * 4, 4, 32)
+    body = b"WAVE" + b"fmt " + struct.pack("<I", len(fmt)) + fmt + b"data" + struct.pack("<I", len(data)) + data
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"RIFF" + struct.pack("<I", len(body)) + body)
+
+
+def decode_audio(blob: bytes) -> tuple[int, int, bytes]:
+    """An audio blob: u32 sample rate, u8 bits per sample, u32 sample byte count, the samples."""
+    sample_rate, bits_per_sample, size = struct.unpack_from("<IBI", blob, 0)
+    return sample_rate, bits_per_sample, blob[9 : 9 + size]
+
+
+def decode_string(blob: bytes) -> str:
+    """A blob holding one length-prefixed string."""
+    (length,) = struct.unpack_from("<I", blob, 0)
+    return blob[4 : 4 + length].decode("utf-8")

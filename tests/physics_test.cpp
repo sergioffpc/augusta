@@ -22,6 +22,33 @@ using augusta::physics::World;
 
 constexpr float kFixedTick = 1.0F / 60.0F;
 
+// A character's eye (ADR-0040), standing, relative to its feet.
+const Vec3 kStandingEye(0.0F, 1.7F, 0.1F);
+
+TEST(LowerToStanceTest, StandingAPointIsWhereItWasAuthored) {
+  EXPECT_EQ(augusta::physics::LowerToStance(kStandingEye, Stance::kStanding), kStandingEye);
+}
+
+TEST(LowerToStanceTest, APointIsLowerCrouchingThanStandingAndLowerProneThanCrouching) {
+  const Vec3 crouching = augusta::physics::LowerToStance(kStandingEye, Stance::kCrouching);
+  const Vec3 prone = augusta::physics::LowerToStance(kStandingEye, Stance::kProne);
+
+  EXPECT_LT(crouching.y, kStandingEye.y);
+  EXPECT_LT(prone.y, crouching.y);
+  EXPECT_GT(prone.y, 0.0F);
+  // Only the height changes.
+  EXPECT_EQ(prone.x, kStandingEye.x);
+  EXPECT_EQ(prone.z, kStandingEye.z);
+}
+
+TEST(LowerToStanceTest, ThePointStaysInsideTheBodyInEveryStance) {
+  const Vec3 top_of_head(0.0F, augusta::physics::StanceHeight(Stance::kStanding), 0.0F);
+
+  for (const Stance stance : {Stance::kStanding, Stance::kCrouching, Stance::kProne}) {
+    EXPECT_LE(augusta::physics::LowerToStance(top_of_head, stance).y, augusta::physics::StanceHeight(stance) + 1e-5F);
+  }
+}
+
 TEST(PhysicsWorldTest, StepMovesBodyAlongInputDirection) {
   World world{StaminaConfig{}};
   const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
@@ -491,6 +518,21 @@ TEST(StaticGeometryTest, ARaycastHitsAMovedBodyWhereItWasCreatedNotWhereItIs) {
   ASSERT_TRUE(where_it_was.has_hit);
   EXPECT_EQ(where_it_was.body, body);
   EXPECT_GT(where_it_was.point.y, 0.5F);
+}
+
+TEST(StaticGeometryTest, ARaycastOfTheMapSeesTheMapButNoBody) {
+  World world = WorldWithFloor();
+  world.CreateBody(Vec3(0.0F));
+  const Vec3 above(0.0F, 10.0F, 0.0F);
+  const Vec3 down(0.0F, -1.0F, 0.0F);
+  ASSERT_TRUE(world.Raycast(above, down, 20.0F).has_hit);
+  ASSERT_GT(world.Raycast(above, down, 20.0F).point.y, 0.5F);
+
+  const RaycastHit hit = world.RaycastMap(above, down, 20.0F);
+
+  ASSERT_TRUE(hit.has_hit);
+  EXPECT_NEAR(hit.point.y, 0.0F, 0.01F);
+  EXPECT_NEAR(hit.distance, 10.0F, 0.01F);
 }
 
 TEST(StaticGeometryTest, ValidateCollisionMeshAgreesWithAddCollisionMesh) {

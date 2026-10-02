@@ -1,0 +1,3 @@
+charts/augustad/templates/
+clusters/onprem/flux-system/gotk-components.yaml
+third_party/

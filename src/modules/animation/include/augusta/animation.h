@@ -16,9 +16,8 @@
 //
 // Scope, for now: locomotion/aim blend *parameters* and discrete action
 // triggers only - not skeletal rig evaluation or mesh skinning. This
-// project has no character/skeleton data format yet (augusta::
-// ballistics's own header comment notes the same gap for per-body-part
-// hitboxes), so there is nothing yet to evaluate a pose against.
+// project has no character/skeleton data format yet, so there is
+// nothing yet to evaluate a pose against.
 // Engine::Update's return type (Pose) is a deliberately empty
 // placeholder - revisit once a skeleton/rig format
 // exists (mesh import is ADR-0016; skinning/rigging isn't decided there

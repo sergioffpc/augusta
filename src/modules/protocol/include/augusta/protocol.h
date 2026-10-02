@@ -11,7 +11,9 @@
 #include <variant>
 #include <vector>
 
+#include "augusta/command.h"
 #include "augusta/math.h"
+#include "augusta/tick.h"
 
 // augusta::protocol is the Networking Protocol (ADR-0007, ADR-0038): the
 // messages client and server exchange and their custom binary encoding. It is
@@ -34,9 +36,15 @@
 // Every message is one payload: a one-byte MessageTypeWire followed by that
 // type's fields, fixed-width and little-endian, with a string or a list as a
 // one-byte length and its elements. A position, a velocity, a direction, an
-// angle or a stamina travels as a whole count of its grid's step, in the fewest
-// bytes its range needs (augusta/grid.h, which physics::World keeps every body
-// on); the other floats travel as their IEEE-754 bits.
+// angle, a stamina or a view's fraction travels as a whole count of its grid's
+// step, in the fewest bytes its range needs (augusta/grid.h, which
+// physics::World keeps every body on, and weapon::Step a rifle's Recoil
+// offset); the other floats (the Parameters, a rifle's times, a hit's damage)
+// travel as their IEEE-754 bits.
+// A client message carries intent, never an outcome: tests/impossible_actions.md
+// (US-15, NFR-05) lists what bounds each of its fields. A new one needs a line
+// there, and if it carries an outcome (a position, a hit, an ammo count), a
+// check at the server's boundary and a test.
 // Every field takes the smallest type that holds what it says: flags are bits
 // of one byte, shared with a small enumeration where one fits. Decode treats
 // its input as untrusted: it never throws, never reads past the end, and never
@@ -66,8 +74,14 @@ enum class MessageTypeWire : std::uint8_t {
   kReady = 7,
   /// Server to client: the match has started, with who is in it and where each spawns.
   kMatchStart = 8,
-  /// Server to client: the match is over and its players are back in the Lobby.
+  /// Server to client: the match is over, with its winner or a draw, and its players are back in the Lobby.
   kMatchEnd = 9,
+  /// Server to client: a player fired a round (ADR-0044).
+  kShot = 10,
+  /// Server to client: a round the recipient fired hit a player (ADR-0044).
+  kHitConfirmation = 11,
+  /// Server to client: a player in the match died (US-13).
+  kDeath = 12,
 };
 
 /// Longest engine version string a JoinRequestWire may carry, in bytes.
@@ -89,11 +103,22 @@ inline constexpr std::size_t kMaxPlayers = 8;
 /// The most commands one CommandsWire message carries.
 inline constexpr std::size_t kMaxCommandsPerMessage = 8;
 
+/// The most kicks a rifle's recoil pattern holds (RifleWire::recoil_pattern).
+inline constexpr std::size_t kMaxRecoilKicks = 64;
+
 /// A body's stance.
 enum class StanceWire : std::uint8_t {
   kStanding = 0,
   kCrouching = 1,
   kProne = 2,
+};
+
+/// Where on a player's body a round struck (CONTEXT.md's Body part). Starts at
+/// 1, so a zeroed byte is never one.
+enum class BodyPartWire : std::uint8_t {
+  kHead = 1,
+  kTorso = 2,
+  kLimb = 3,
 };
 
 /// One player's body as the server simulated it.
@@ -126,9 +151,15 @@ struct CommandWire {
   /// The view, in radians.
   float yaw = 0.0F;
   float pitch = 0.0F;
+  /// How far the player was shown the other players between two server ticks
+  /// when the command was sampled (ADR-0044), 0 to 255/256.
+  float view_fraction = 0.0F;
   /// Any of kSprint, kAds, kFire and kReload; no other bit.
   std::uint8_t flags = 0;
   StanceWire desired_stance = StanceWire::kStanding;
+  /// The first of those two ticks, as how many ticks before its message's
+  /// CommandsWire::view_tick it is.
+  std::uint8_t view_age = 0;
 
   bool operator==(const CommandWire&) const = default;
 };
@@ -142,9 +173,46 @@ struct StaminaWire {
   bool operator==(const StaminaWire&) const = default;
 };
 
+/// How far one round of a burst turns the aim, in radians.
+struct RecoilKickWire {
+  float pitch = 0.0F;
+  float yaw = 0.0F;
+
+  bool operator==(const RecoilKickWire&) const = default;
+};
+
+/// The rifle every player carries.
+struct RifleWire {
+  float rounds_per_minute = 0.0F;
+  float muzzle_velocity = 0.0F;
+  float reload_seconds = 0.0F;
+  float recoil_recovery_per_second = 0.0F;
+  float ads_recoil_scale = 0.0F;
+  float ads_field_of_view = 0.0F;
+  /// At most kMaxRecoilKicks.
+  std::vector<RecoilKickWire> recoil_pattern;
+  std::uint8_t magazine_capacity = 0;
+
+  bool operator==(const RifleWire&) const = default;
+};
+
+/// The rifle's ammunition, with its damage by body part.
+struct AmmoWire {
+  float gravity = 0.0F;
+  float max_range = 0.0F;
+  float head_damage = 0.0F;
+  float torso_damage = 0.0F;
+  float limb_damage = 0.0F;
+
+  bool operator==(const AmmoWire&) const = default;
+};
+
 /// The Parameters (ADR-0039) a client predicts with.
 struct ParametersWire {
   StaminaWire stamina{};
+  RifleWire rifle{};
+  AmmoWire ammo{};
+  float starting_health = 0.0F;
   /// How many players a match needs to start (ADR-0043).
   std::uint8_t player_count = 1;
 
@@ -155,6 +223,10 @@ struct ParametersWire {
 /// handle for the connection. Identifies a player inside messages; it is not a
 /// credential, since the server tells senders apart by connection.
 enum class SessionIdWire : std::uint32_t {};
+
+/// The session a Match end names as its winner when it is a draw: Session IDs
+/// start at 1, so none is ever 0 (ADR-0038).
+inline constexpr SessionIdWire kDraw{};
 
 /// The server's name for one dynamic body - today a player's, later any that
 /// moves (a crate, a door). Distinct from the session of the player who
@@ -192,6 +264,8 @@ struct JoinRequestWire {
 struct EntityStateWire {
   EntityIdWire entity{};
   BodyStateWire body{};
+  /// Where the body faces: the yaw of its player's view, in radians.
+  float yaw = 0.0F;
 
   bool operator==(const EntityStateWire&) const = default;
 };
@@ -221,10 +295,30 @@ struct JoinRefusedWire {
   bool operator==(const JoinRefusedWire&) const = default;
 };
 
+/// One player's rifle between two ticks.
+struct WeaponStateWire {
+  /// How long, in seconds, until the next round may fire; 0 or less when one may.
+  float cooldown = 0.0F;
+  /// How long, in seconds, the reload under way still takes; 0 when there is none.
+  float reload_remaining = 0.0F;
+  /// How far the rifle points off its player's view (CONTEXT.md's Recoil
+  /// offset), in radians.
+  float recoil_pitch = 0.0F;
+  float recoil_yaw = 0.0F;
+  /// How many rounds are left in the magazine.
+  std::uint8_t rounds = 0;
+  /// How many rounds the Burst under way has fired.
+  std::uint8_t burst_index = 0;
+
+  bool operator==(const WeaponStateWire&) const = default;
+};
+
 /// One tick's command and the number the client gave it. Numbers start at 1 and
 /// grow by one per command, so the server can tell what it has already seen.
+/// They count one connection's commands and start over on the next, in
+/// command::Sequence's width, which never wraps.
 struct SequencedCommandWire {
-  std::uint32_t sequence = 0;
+  command::Sequence sequence = 0;
   CommandWire command{};
 
   bool operator==(const SequencedCommandWire&) const = default;
@@ -235,6 +329,9 @@ struct SequencedCommandWire {
 /// the newest), so one lost datagram does not drop input.
 struct CommandsWire {
   std::vector<SequencedCommandWire> commands;
+  /// The newest server tick any of the commands was sampled against
+  /// (ADR-0044): each says how far before it its own is (CommandWire::view_age).
+  tick::Tick view_tick = 0;
 
   bool operator==(const CommandsWire&) const = default;
 };
@@ -242,11 +339,19 @@ struct CommandsWire {
 /// Server to client: the Authoritative State of one server tick.
 struct AuthoritativeStateWire {
   /// The server tick this state is from; a client keeps only the newest it has seen.
-  std::uint32_t tick = 0;
-  /// The highest command sequence of the recipient that the server has processed, 0 if none.
-  std::uint32_t acknowledged_sequence = 0;
+  /// Ticks count from the server's start and never start over, so they take 64
+  /// bits: 32 would wrap after about 828 days at 60 Hz.
+  tick::Tick tick = 0;
   /// Every dynamic body in the match, at most kMaxPlayers (only players have one so far).
   std::vector<EntityStateWire> bodies;
+  /// The recipient's own rifle as of this tick: what it reconciles its
+  /// predicted rifle against, as it does its body against its entry in bodies.
+  WeaponStateWire rifle{};
+  /// The recipient's own health as of this tick, 0 once it has died; no one
+  /// else's is ever sent.
+  float health = 0.0F;
+  /// The highest command sequence of the recipient that the server has processed, 0 if none.
+  command::Sequence acknowledged_sequence = 0;
   /// How many of the recipient's commands the server still holds queued after
   /// this tick: what the client paces its own ticks by (ADR-0038).
   std::uint8_t queued_commands = 0;
@@ -304,12 +409,61 @@ struct MatchStartWire {
 
 /// Server to client: the match is over, and everyone still connected is back in the Lobby.
 struct MatchEndWire {
+  /// The session of the player Game policy declared the winner, or kDraw.
+  SessionIdWire winner = kDraw;
+
   bool operator==(const MatchEndWire&) const = default;
 };
 
+/// Server to client: one round a player in the match fired (CONTEXT.md's Shot,
+/// ADR-0044), told to every player in it, the shooter included.
+struct ShotWire {
+  /// The server tick it was fired on.
+  tick::Tick tick = 0;
+  /// Where the round left from.
+  math::Vec3 origin{};
+  /// The body of the player who fired it.
+  EntityIdWire shooter{};
+  /// Where it left for, as a view's yaw and pitch, in radians.
+  float yaw = 0.0F;
+  float pitch = 0.0F;
+
+  bool operator==(const ShotWire&) const = default;
+};
+
+/// Server to client: a round the recipient fired hit a player (CONTEXT.md's Hit
+/// confirmation, ADR-0044), told to the shooter alone.
+struct HitConfirmationWire {
+  /// The body that was hit.
+  EntityIdWire target{};
+  /// The damage the hit did.
+  float damage = 0.0F;
+  /// Where on the body it struck.
+  BodyPartWire part = BodyPartWire::kTorso;
+
+  bool operator==(const HitConfirmationWire&) const = default;
+};
+
+/// Server to client: a player in the match died (US-13), told to every player
+/// in it, the victim included, with what a ragdoll starts from (ADR-0045).
+struct DeathWire {
+  /// The body of the player who died.
+  EntityIdWire victim{};
+  /// The body of the player who fired the killing round.
+  EntityIdWire killer{};
+  /// Where the killing round was fired for, as a view's yaw and pitch, in radians.
+  float yaw = 0.0F;
+  float pitch = 0.0F;
+  /// Where on the victim it struck.
+  BodyPartWire part = BodyPartWire::kTorso;
+
+  bool operator==(const DeathWire&) const = default;
+};
+
 /// Any message of the protocol.
-using MessageWire = std::variant<JoinRequestWire, JoinAcceptedWire, JoinRefusedWire, CommandsWire,
-                                 AuthoritativeStateWire, LobbyWire, ReadyWire, MatchStartWire, MatchEndWire>;
+using MessageWire =
+    std::variant<JoinRequestWire, JoinAcceptedWire, JoinRefusedWire, CommandsWire, AuthoritativeStateWire, LobbyWire,
+                 ReadyWire, MatchStartWire, MatchEndWire, ShotWire, HitConfirmationWire, DeathWire>;
 
 /// A payload is this many bytes, the same type networking::Payload names.
 using BytesWire = std::vector<std::byte>;

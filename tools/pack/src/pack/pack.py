@@ -36,6 +36,10 @@ MAX_PROPERTIES = 256
 MAX_TEXTURE_BYTES = 256 * 1024 * 1024
 # A Lua script is hand-written text; a megabyte is far beyond any real one.
 MAX_SCRIPT_BYTES = 1024 * 1024
+# A cue is a short one-shot sound; 64 MiB is minutes of it.
+MAX_AUDIO_BYTES = 64 * 1024 * 1024
+# The sample widths a PCM WAV file can hold.
+AUDIO_BITS_PER_SAMPLE = (8, 16, 24, 32)
 # A character index is one byte and zero is never valid (ADR-0042).
 MAX_CHARACTERS = 255
 MAX_ENTRIES = 1 << 20
@@ -61,6 +65,14 @@ ASSET_TYPE_SCRIPT = 7
 ASSET_TYPE_CHARACTERS = 8
 ASSET_TYPE_CLIENT_PACK = 9
 ASSET_TYPE_EYE = 10
+ASSET_TYPE_SOUNDS = 11
+
+# The body part a hitbox blob stands for (assets::BodyPart): where on a player a
+# bullet struck, which decides its damage (US-11, US-12).
+BODY_PART_HEAD = 0
+BODY_PART_TORSO = 1
+BODY_PART_LIMB = 2
+BODY_PARTS = (BODY_PART_HEAD, BODY_PART_TORSO, BODY_PART_LIMB)
 
 # Pack-relative path of a scenario's character list (assets.h's
 # kCharactersPath), in both of its packs.
@@ -70,6 +82,10 @@ CHARACTERS_PATH = "Characters"
 # pack cooked with it (assets.h's kClientPackPath). The blob is the hash's
 # BLAKE3_HASH_SIZE bytes and nothing else.
 CLIENT_PACK_PATH = "ClientPack"
+
+# Pack-relative path, in a scenario's client pack, of the sounds folder its cue
+# sounds are addressed under (assets.h's kSoundsPath).
+SOUNDS_PATH = "Sounds"
 
 # TextureFormat (assets.h `enum class TextureFormat : uint8_t`).
 TEXTURE_FORMAT_BC7 = 0
@@ -197,6 +213,34 @@ def encode_script_blob(script: bytes) -> bytes:
     return bytes(script)
 
 
+def encode_audio_blob(sample_rate: int, bits_per_sample: int, samples: bytes) -> bytes:
+    """A mono PCM sound (ADR-0020): u32 sample rate, u8 bits per sample, then its
+    samples as a u32 byte count and the bytes, little-endian (8-bit unsigned,
+    wider signed, as a WAV file holds them).
+    """
+    if bits_per_sample not in AUDIO_BITS_PER_SAMPLE:
+        raise EncodeError(f"{bits_per_sample} bits per sample is not a PCM sample width")
+    if len(samples) % (bits_per_sample // 8) != 0:
+        raise EncodeError("audio samples are not a whole number of samples")
+    if len(samples) > MAX_AUDIO_BYTES:
+        raise EncodeError("audio exceeds pack size limits")
+    writer = ByteWriter()
+    writer.u32(sample_rate)
+    writer.u8(bits_per_sample)
+    writer.u32(len(samples))
+    writer.raw(samples)
+    return writer.bytes()
+
+
+def encode_sounds_blob(sounds_path: str) -> bytes:
+    """The sounds folder's path relative to authoring/, as one length-prefixed
+    string: each cue's sound is addressed <sounds_path>/<cue>.
+    """
+    writer = ByteWriter()
+    writer.string(sounds_path, MAX_PATH_LENGTH)
+    return writer.bytes()
+
+
 def encode_characters_blob(characters: list[str]) -> bytes:
     """A u32 count, then each character's path relative to authoring/ as a
     length-prefixed string, in manifest order: character index N is element
@@ -219,6 +263,18 @@ def encode_spawn_point_blob(
         writer.f32(component)
     for component in rotation:
         writer.f32(component)
+    return writer.bytes()
+
+
+def encode_hitbox_blob(body_part: int, mesh: MeshData) -> bytes:
+    """A hitbox (US-11): the body part it stands for as a u8 (BODY_PART_*),
+    then its geometry as a mesh blob.
+    """
+    if body_part not in BODY_PARTS:
+        raise EncodeError(f"{body_part} is not a body part")
+    writer = ByteWriter()
+    writer.u8(body_part)
+    writer.raw(encode_mesh_blob(mesh))
     return writer.bytes()
 
 

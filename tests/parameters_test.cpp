@@ -2,6 +2,9 @@
 
 #include <cstdint>
 #include <limits>
+#include <numbers>
+#include <string_view>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -11,12 +14,14 @@
 // are pure: values in, a verdict out.
 namespace {
 
+using augusta::parameters::FiresFasterThanTheTickRate;
 using augusta::parameters::IsValidTickRate;
 using augusta::parameters::Parameters;
+using augusta::parameters::Rifle;
 using augusta::parameters::Validate;
 
-constexpr Parameters kUsable{
-    .stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.1F}, .player_count = 1};
+const Parameters kUsable{.stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.1F},
+                         .player_count = 1};
 
 TEST(ValidateTest, UsableParametersPass) { EXPECT_TRUE(Validate(kUsable).has_value()); }
 
@@ -50,6 +55,68 @@ TEST(ValidateTest, APlayerCountOfZeroOrAboveTheMostAMatchHoldsIsNamed) {
 
     EXPECT_EQ(Validate(parameters).error().path, "player_count") << static_cast<int>(count);
   }
+}
+
+TEST(ValidateTest, DefaultParametersPass) { EXPECT_TRUE(Validate(Parameters{}).has_value()); }
+
+// One value of a Parameters, set to something the simulation cannot run on, and
+// the path Validate must name for it.
+struct BadValue {
+  void (*spoil)(Parameters&);
+  std::string_view path;
+};
+
+TEST(ValidateTest, EachRifleAmmoOrHealthValueOutsideItsRangeIsNamedByItsPath) {
+  constexpr float kInfinity = std::numeric_limits<float>::infinity();
+  constexpr float kNan = std::numeric_limits<float>::quiet_NaN();
+  const std::vector<BadValue> cases{
+      {[](Parameters& p) { p.rifle.rounds_per_minute = 0.0F; }, "rifle.rounds_per_minute"},
+      {[](Parameters& p) { p.rifle.rounds_per_minute = kInfinity; }, "rifle.rounds_per_minute"},
+      {[](Parameters& p) { p.rifle.muzzle_velocity = -1.0F; }, "rifle.muzzle_velocity"},
+      {[](Parameters& p) { p.rifle.reload_seconds = -0.5F; }, "rifle.reload_seconds"},
+      {[](Parameters& p) { p.rifle.recoil_recovery_per_second = kNan; }, "rifle.recoil_recovery_per_second"},
+      {[](Parameters& p) { p.rifle.ads_recoil_scale = 0.0F; }, "rifle.ads_recoil_scale"},
+      {[](Parameters& p) { p.rifle.ads_recoil_scale = 1.5F; }, "rifle.ads_recoil_scale"},
+      {[](Parameters& p) { p.rifle.ads_field_of_view = 0.0F; }, "rifle.ads_field_of_view"},
+      {[](Parameters& p) { p.rifle.ads_field_of_view = std::numbers::pi_v<float>; }, "rifle.ads_field_of_view"},
+      {[](Parameters& p) { p.rifle.recoil_pattern = {{.pitch = kNan, .yaw = 0.0F}}; }, "rifle.recoil_pattern"},
+      {[](Parameters& p) { p.rifle.recoil_pattern.resize(augusta::protocol::kMaxRecoilKicks + 1); },
+       "rifle.recoil_pattern"},
+      {[](Parameters& p) { p.rifle.magazine_capacity = 0; }, "rifle.magazine_capacity"},
+      {[](Parameters& p) { p.ammo.gravity = -9.81F; }, "ammo.gravity"},
+      {[](Parameters& p) { p.ammo.max_range = 0.0F; }, "ammo.max_range"},
+      {[](Parameters& p) { p.ammo.damage.head = -1.0F; }, "ammo.damage.head"},
+      {[](Parameters& p) { p.ammo.damage.torso = kInfinity; }, "ammo.damage.torso"},
+      {[](Parameters& p) { p.ammo.damage.limb = kNan; }, "ammo.damage.limb"},
+      {[](Parameters& p) { p.starting_health = 0.0F; }, "starting_health"},
+  };
+  for (const BadValue& bad : cases) {
+    Parameters parameters = kUsable;
+    bad.spoil(parameters);
+
+    const auto valid = Validate(parameters);
+
+    ASSERT_FALSE(valid.has_value()) << bad.path;
+    EXPECT_EQ(valid.error().path, bad.path);
+  }
+}
+
+TEST(ValidateTest, ARecoilPatternMayBeEmptyOrHoldTheMostKicksTheWireCarries) {
+  Parameters none = kUsable;
+  none.rifle.recoil_pattern.clear();
+  Parameters most = kUsable;
+  most.rifle.recoil_pattern.assign(augusta::protocol::kMaxRecoilKicks, {.pitch = 0.01F, .yaw = -0.002F});
+
+  EXPECT_TRUE(Validate(none).has_value());
+  EXPECT_TRUE(Validate(most).has_value());
+}
+
+TEST(FiresFasterThanTheTickRateTest, ARateOfMoreThanOneRoundATickIsFaster) {
+  Rifle rifle;
+  rifle.rounds_per_minute = 3600.0F;  // one round a tick at 60 Hz
+
+  EXPECT_FALSE(FiresFasterThanTheTickRate(rifle, 60));
+  EXPECT_TRUE(FiresFasterThanTheTickRate(rifle, 59));
 }
 
 TEST(IsValidTickRateTest, IntegerRatesFromOneTo255AreValid) {

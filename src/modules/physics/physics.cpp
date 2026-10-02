@@ -56,6 +56,7 @@ using physx::PxErrorCallback;
 using physx::PxErrorCode;
 using physx::PxExtendedVec3;
 using physx::PxFoundation;
+using physx::PxHitFlag;
 using physx::PxIdentity;
 using physx::PxMaterial;
 using physx::PxOverlapBuffer;
@@ -289,6 +290,11 @@ PxExtendedVec3 ToFootPosition(const math::Vec3& position) { return {position.x, 
 }  // namespace
 
 float StanceHeight(Stance stance) { return HeightForStance(stance) + kCapsuleDiameter; }
+
+math::Vec3 LowerToStance(const math::Vec3& standing_point, Stance stance) {
+  const float scale = StanceHeight(stance) / StanceHeight(Stance::kStanding);
+  return {standing_point.x, standing_point.y * scale, standing_point.z};
+}
 
 // Per-body bookkeeping PhysX's controller doesn't itself track: a CCT has
 // no notion of "velocity" the way a rigid dynamic does, so World derives
@@ -594,6 +600,27 @@ RaycastHit World::Raycast(const math::Vec3& origin, const math::Vec3& direction,
       break;
     }
   }
+  return result;
+}
+
+RaycastHit World::RaycastMap(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const {
+  RaycastHit result;
+  const float length = math::Length(direction);
+  if (length <= 0.0F || max_distance <= 0.0F) {
+    return result;
+  }
+  const math::Vec3 dir = direction / length;
+
+  // The Map's meshes are the only static actors; every controller's is dynamic.
+  PxRaycastBuffer hit;
+  const PxQueryFilterData filter(PxQueryFlag::eSTATIC);
+  const bool has_hit = impl_->scene->raycast(ToPx(origin), ToPx(dir), max_distance, hit, PxHitFlag::eDEFAULT, filter);
+  if (!has_hit || !hit.hasBlock) {
+    return result;
+  }
+  result.has_hit = true;
+  result.point = FromPx(hit.block.position);
+  result.distance = hit.block.distance;
   return result;
 }
 

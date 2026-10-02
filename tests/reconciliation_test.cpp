@@ -12,7 +12,6 @@ namespace {
 using augusta::math::Vec3;
 using augusta::physics::BodyState;
 using augusta::physics::FallState;
-using augusta::physics::MovementInput;
 using augusta::prediction::History;
 using augusta::prediction::kMaxHistory;
 using augusta::prediction::Predicted;
@@ -24,9 +23,9 @@ Predicted At(float x, float vertical_speed = 0.0F) {
 }
 
 // A command that can be told from another by its direction.
-MovementInput Command(float x) {
-  MovementInput command{};
-  command.direction = Vec3(x, 0.0F, 0.0F);
+augusta::command::Command Command(float x) {
+  augusta::command::Command command{};
+  command.movement.direction = Vec3(x, 0.0F, 0.0F);
   return command;
 }
 
@@ -43,9 +42,21 @@ TEST(HistoryTest, AcknowledgeReturnsTheStatePredictedAfterThatCommand) {
   EXPECT_EQ(predicted->fall.vertical_speed, -3.0F);
 }
 
+TEST(HistoryTest, AcknowledgeReturnsTheRiflePredictedAfterThatCommand) {
+  History history;
+  Predicted fired = At(1.0F);
+  fired.rifle = {.cooldown = 0.1F, .reload_remaining = 0.0F, .rounds = 14};
+  history.Record(1, Command(1.0F), fired);
+
+  const auto predicted = history.Acknowledge(1);
+
+  ASSERT_TRUE(predicted.has_value());
+  EXPECT_EQ(predicted->rifle, fired.rifle);
+}
+
 TEST(HistoryTest, AcknowledgingDiscardsWhatIsOlderAndTheStateItself) {
   History history;
-  for (std::uint32_t sequence = 1; sequence <= 5; ++sequence) {
+  for (augusta::command::Sequence sequence = 1; sequence <= 5; ++sequence) {
     history.Record(sequence, Command(1.0F), At(static_cast<float>(sequence)));
   }
 
@@ -94,9 +105,9 @@ TEST(HistoryTest, ReplayRunsTheStepForEveryCommandHeldOldestFirst) {
   ASSERT_TRUE(history.Acknowledge(1).has_value());
 
   std::vector<float> seen;
-  history.Replay([&seen](const MovementInput& command) {
-    seen.push_back(command.direction.x);
-    return At(command.direction.x * 10.0F);
+  history.Replay([&seen](const augusta::command::Command& command) {
+    seen.push_back(command.movement.direction.x);
+    return At(command.movement.direction.x * 10.0F);
   });
 
   EXPECT_EQ(seen, (std::vector<float>{2.0F, 3.0F}));
@@ -107,7 +118,8 @@ TEST(HistoryTest, ReplayReplacesThePredictedStatesWithWhatTheStepReturned) {
   history.Record(1, Command(1.0F), At(1.0F));
   history.Record(2, Command(2.0F), At(2.0F));
 
-  history.Replay([](const MovementInput& command) { return At(command.direction.x * 10.0F, -1.0F); });
+  history.Replay(
+      [](const augusta::command::Command& command) { return At(command.movement.direction.x * 10.0F, -1.0F); });
 
   const auto first = history.Acknowledge(1);
   const auto second = history.Acknowledge(2);
@@ -121,7 +133,7 @@ TEST(HistoryTest, ReplayOfAnEmptyHistoryNeverRunsTheStep) {
   History history;
   int steps = 0;
 
-  history.Replay([&steps](const MovementInput&) {
+  history.Replay([&steps](const augusta::command::Command&) {
     ++steps;
     return Predicted{};
   });
@@ -132,7 +144,7 @@ TEST(HistoryTest, ReplayOfAnEmptyHistoryNeverRunsTheStep) {
 TEST(HistoryTest, OnlyTheMostRecentStatesAreKept) {
   History history;
   const auto total = static_cast<std::uint32_t>(kMaxHistory + 10);
-  for (std::uint32_t sequence = 1; sequence <= total; ++sequence) {
+  for (augusta::command::Sequence sequence = 1; sequence <= total; ++sequence) {
     history.Record(sequence, Command(1.0F), At(0.0F));
   }
 

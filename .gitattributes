@@ -9,9 +9,13 @@
 
 # Cooked packs and raw Ed25519 key files are bytes, whatever they happen to
 # contain (tests/fixtures/example-packs).
-*.pack binary
+*.pack filter=lfs diff=lfs merge=lfs -text
+*.png filter=lfs diff=lfs merge=lfs -text
 *.key binary
 *.pub binary
+
+# Authored cue sounds are PCM WAV files (ADR-0020).
+*.wav filter=lfs diff=lfs merge=lfs -text
 
 # Fuzz seeds and crash fixtures are raw payloads, with no extension to go by
 # (tests/fuzz/README.md).

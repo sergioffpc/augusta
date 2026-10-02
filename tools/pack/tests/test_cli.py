@@ -1,4 +1,4 @@
-"""augustap end to end on the example scenario: usd-optimize, validation and
+"""augusta-pack end to end on the example scenario: usd-optimize, validation and
 the cook, into a signed client/server pack pair.
 """
 
@@ -31,9 +31,19 @@ def test_the_example_scenario_cooks_into_a_signed_pack_pair(tmp_path):
     client = read_pack_contents(client_path, public_key)
     server = read_pack_contents(server_path, public_key)
     assert client.paths_of_type(pack.ASSET_TYPE_EYE) == {"characters/player/Character/Eye"}
+    assert server.paths_of_type(pack.ASSET_TYPE_EYE) == {"characters/player/Character/Eye"}
+    hitboxes = {
+        f"characters/player/Character/{name}Hitbox"
+        for name in ("Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg")
+    }
+    assert client.paths_of_type(pack.ASSET_TYPE_HITBOX) == hitboxes
+    assert server.paths_of_type(pack.ASSET_TYPE_HITBOX) == hitboxes
     assert server.blob(pack.CLIENT_PACK_PATH) == client.hash
     assert "parameters.lua" in server.paths_of_type(pack.ASSET_TYPE_SCRIPT)
     assert client.paths_of_type(pack.ASSET_TYPE_SCRIPT) == set()
+    cues = ("gunshot", "hit_marker", "hit_taken", "death", "match_won", "match_lost")
+    assert client.paths_of_type(pack.ASSET_TYPE_AUDIO) == {f"sounds/augusta/{cue}" for cue in cues}
+    assert server.paths_of_type(pack.ASSET_TYPE_AUDIO) == set()
 
 
 def test_a_missing_scenario_fails_without_writing_a_pack(tmp_path, capsys):

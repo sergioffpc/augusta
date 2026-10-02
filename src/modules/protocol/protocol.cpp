@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <bit>
 #include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -15,8 +16,10 @@
 #include <variant>
 #include <vector>
 
+#include "augusta/command.h"
 #include "augusta/grid.h"
 #include "augusta/math.h"
+#include "augusta/tick.h"
 
 namespace augusta::protocol {
 
@@ -26,11 +29,21 @@ constexpr int kBitsPerByte = 8;
 
 void WriteU8(BytesWire& out, std::uint8_t value) { out.push_back(static_cast<std::byte>(value)); }
 
-void WriteU32(BytesWire& out, std::uint32_t value) {
-  for (int shift = 0; shift < std::numeric_limits<std::uint32_t>::digits; shift += kBitsPerByte) {
+// value's bytes, least significant first.
+template <std::unsigned_integral Unsigned>
+void WriteUnsigned(BytesWire& out, Unsigned value) {
+  for (int shift = 0; shift < std::numeric_limits<Unsigned>::digits; shift += kBitsPerByte) {
     WriteU8(out, static_cast<std::uint8_t>(value >> shift));
   }
 }
+
+void WriteU32(BytesWire& out, std::uint32_t value) { WriteUnsigned(out, value); }
+
+// A tick in as many bytes as tick::Tick has.
+void WriteTick(BytesWire& out, tick::Tick value) { WriteUnsigned(out, value); }
+
+// A command sequence in as many bytes as command::Sequence has.
+void WriteSequence(BytesWire& out, command::Sequence value) { WriteUnsigned(out, value); }
 
 void WriteF32(BytesWire& out, float value) { WriteU32(out, std::bit_cast<std::uint32_t>(value)); }
 
@@ -56,8 +69,8 @@ void WriteVec3(BytesWire& out, const math::Vec3& value, const math::Grid& grid) 
   WriteSteps(out, value.z, grid);
 }
 
-// A command's flags take the low four bits of its last byte and its stance the
-// two above them; the top two are always 0.
+// A command's flags take the low four bits of one byte and its stance the two
+// above them; the top two are always 0.
 constexpr std::uint8_t kCommandFlagsMask = 0x0FU;
 constexpr unsigned kCommandStanceShift = 4U;
 
@@ -68,6 +81,8 @@ void WriteCommand(BytesWire& out, const CommandWire& command) {
   WriteSteps(out, command.pitch, math::kAngleGrid);
   WriteU8(out, static_cast<std::uint8_t>(command.flags |
                                          (static_cast<std::uint8_t>(command.desired_stance) << kCommandStanceShift)));
+  WriteU8(out, command.view_age);
+  WriteSteps(out, command.view_fraction, math::kFractionGrid);
 }
 
 // A body's stance takes the low two bits of its stance byte and its flags the
@@ -91,7 +106,21 @@ void WriteBodies(BytesWire& out, const std::vector<EntityStateWire>& bodies) {
   for (const EntityStateWire& body : bodies) {
     WriteU32(out, static_cast<std::uint32_t>(body.entity));
     WriteBodyState(out, body.body);
+    WriteSteps(out, body.yaw, math::kAngleGrid);
   }
+}
+
+// A rifle's two times travel as their bits, not on a grid: its owner replays
+// its commands from them, with the function the server stepped them with, and
+// must start from exactly what the server had. Its Recoil offset is kept on the
+// angle grid by that function, so its counts are exactly what the server had too.
+void WriteWeaponState(BytesWire& out, const WeaponStateWire& rifle) {
+  WriteU8(out, rifle.rounds);
+  WriteF32(out, rifle.cooldown);
+  WriteF32(out, rifle.reload_remaining);
+  WriteU8(out, rifle.burst_index);
+  WriteSteps(out, rifle.recoil_pitch, math::kAngleGrid);
+  WriteSteps(out, rifle.recoil_yaw, math::kAngleGrid);
 }
 
 // Walks a payload front to back. The first problem it meets is remembered and
@@ -111,19 +140,11 @@ class Reader {
     return value;
   }
 
-  std::uint32_t ReadU32() {
-    constexpr std::size_t kSize = sizeof(std::uint32_t);
-    if (bytes_.size() < kSize) {
-      Fail(DecodeError::kTruncated);
-      return 0;
-    }
-    std::uint32_t value = 0;
-    for (std::size_t i = 0; i < kSize; ++i) {
-      value |= static_cast<std::uint32_t>(bytes_[i]) << (kBitsPerByte * i);
-    }
-    bytes_ = bytes_.subspan(kSize);
-    return value;
-  }
+  std::uint32_t ReadU32() { return ReadUnsigned<std::uint32_t>(); }
+
+  tick::Tick ReadTick() { return ReadUnsigned<tick::Tick>(); }
+
+  command::Sequence ReadSequence() { return ReadUnsigned<command::Sequence>(); }
 
   float ReadF32() { return std::bit_cast<float>(ReadU32()); }
 
@@ -229,6 +250,22 @@ class Reader {
     }
   }
 
+  // The read side of WriteUnsigned.
+  template <std::unsigned_integral Unsigned>
+  Unsigned ReadUnsigned() {
+    constexpr std::size_t kSize = sizeof(Unsigned);
+    if (bytes_.size() < kSize) {
+      Fail(DecodeError::kTruncated);
+      return 0;
+    }
+    Unsigned value = 0;
+    for (std::size_t i = 0; i < kSize; ++i) {
+      value |= static_cast<Unsigned>(bytes_[i]) << (kBitsPerByte * i);
+    }
+    bytes_ = bytes_.subspan(kSize);
+    return value;
+  }
+
   std::span<const std::byte> bytes_;
   std::optional<DecodeError> error_;
 };
@@ -242,6 +279,8 @@ CommandWire ReadCommand(Reader& reader) {
   command.flags = packed & kCommandFlagsMask;
   command.desired_stance = reader.ToEnum(static_cast<std::uint8_t>(packed >> kCommandStanceShift),
                                          StanceWire::kStanding, StanceWire::kProne);
+  command.view_age = reader.ReadU8();
+  command.view_fraction = reader.ReadSteps(math::kFractionGrid);
   return command;
 }
 
@@ -267,8 +306,11 @@ JoinRequestWire ReadJoinRequest(Reader& reader) {
 }
 
 EntityStateWire ReadEntityState(Reader& reader) {
-  const auto entity = static_cast<EntityIdWire>(reader.ReadU32());
-  return EntityStateWire{.entity = entity, .body = ReadBodyState(reader)};
+  EntityStateWire state;
+  state.entity = static_cast<EntityIdWire>(reader.ReadU32());
+  state.body = ReadBodyState(reader);
+  state.yaw = reader.ReadSteps(math::kAngleGrid);
+  return state;
 }
 
 // The bodies of an update, at most kMaxPlayers.
@@ -282,12 +324,45 @@ std::vector<EntityStateWire> ReadBodies(Reader& reader) {
   return bodies;
 }
 
+RifleWire ReadRifle(Reader& reader) {
+  RifleWire rifle;
+  rifle.magazine_capacity = reader.ReadU8();
+  rifle.rounds_per_minute = reader.ReadF32();
+  rifle.muzzle_velocity = reader.ReadF32();
+  rifle.reload_seconds = reader.ReadF32();
+  rifle.recoil_recovery_per_second = reader.ReadF32();
+  rifle.ads_recoil_scale = reader.ReadF32();
+  rifle.ads_field_of_view = reader.ReadF32();
+  const std::size_t kicks = reader.ReadCount(kMaxRecoilKicks);
+  // Stops at the first missing byte, so a short payload never grows the list.
+  for (std::size_t i = 0; i < kicks && !reader.Error(); ++i) {
+    RecoilKickWire kick;
+    kick.pitch = reader.ReadF32();
+    kick.yaw = reader.ReadF32();
+    rifle.recoil_pattern.push_back(kick);
+  }
+  return rifle;
+}
+
+AmmoWire ReadAmmo(Reader& reader) {
+  AmmoWire ammo;
+  ammo.gravity = reader.ReadF32();
+  ammo.max_range = reader.ReadF32();
+  ammo.head_damage = reader.ReadF32();
+  ammo.torso_damage = reader.ReadF32();
+  ammo.limb_damage = reader.ReadF32();
+  return ammo;
+}
+
 ParametersWire ReadParameters(Reader& reader) {
   ParametersWire parameters;
   parameters.player_count = reader.ReadU8();
   parameters.stamina.deplete_per_second = reader.ReadF32();
   parameters.stamina.regen_per_second = reader.ReadF32();
   parameters.stamina.forced_walk_below = reader.ReadF32();
+  parameters.rifle = ReadRifle(reader);
+  parameters.ammo = ReadAmmo(reader);
+  parameters.starting_health = reader.ReadF32();
   return parameters;
 }
 
@@ -309,18 +384,32 @@ CommandsWire ReadCommands(Reader& reader) {
   const std::size_t count = reader.ReadCount(kMaxCommandsPerMessage);
   message.commands.reserve(count);
   for (std::size_t i = 0; i < count; ++i) {
-    const std::uint32_t sequence = reader.ReadU32();
+    const command::Sequence sequence = reader.ReadSequence();
     message.commands.push_back(SequencedCommandWire{.sequence = sequence, .command = ReadCommand(reader)});
   }
+  message.view_tick = reader.ReadTick();
   return message;
+}
+
+WeaponStateWire ReadWeaponState(Reader& reader) {
+  WeaponStateWire rifle;
+  rifle.rounds = reader.ReadU8();
+  rifle.cooldown = reader.ReadF32();
+  rifle.reload_remaining = reader.ReadF32();
+  rifle.burst_index = reader.ReadU8();
+  rifle.recoil_pitch = reader.ReadSteps(math::kAngleGrid);
+  rifle.recoil_yaw = reader.ReadSteps(math::kAngleGrid);
+  return rifle;
 }
 
 AuthoritativeStateWire ReadAuthoritativeState(Reader& reader) {
   AuthoritativeStateWire state;
-  state.tick = reader.ReadU32();
-  state.acknowledged_sequence = reader.ReadU32();
+  state.tick = reader.ReadTick();
+  state.acknowledged_sequence = reader.ReadSequence();
   state.bodies = ReadBodies(reader);
   state.queued_commands = reader.ReadU8();
+  state.rifle = ReadWeaponState(reader);
+  state.health = reader.ReadF32();
   return state;
 }
 
@@ -351,6 +440,34 @@ MatchStartWire ReadMatchStart(Reader& reader) {
   return start;
 }
 
+ShotWire ReadShot(Reader& reader) {
+  ShotWire shot;
+  shot.shooter = static_cast<EntityIdWire>(reader.ReadU32());
+  shot.tick = reader.ReadTick();
+  shot.origin = reader.ReadVec3(math::kPositionGrid);
+  shot.yaw = reader.ReadSteps(math::kAngleGrid);
+  shot.pitch = reader.ReadSteps(math::kAngleGrid);
+  return shot;
+}
+
+HitConfirmationWire ReadHitConfirmation(Reader& reader) {
+  HitConfirmationWire hit;
+  hit.target = static_cast<EntityIdWire>(reader.ReadU32());
+  hit.part = reader.ReadEnum(BodyPartWire::kHead, BodyPartWire::kLimb);
+  hit.damage = reader.ReadF32();
+  return hit;
+}
+
+DeathWire ReadDeath(Reader& reader) {
+  DeathWire death;
+  death.victim = static_cast<EntityIdWire>(reader.ReadU32());
+  death.killer = static_cast<EntityIdWire>(reader.ReadU32());
+  death.part = reader.ReadEnum(BodyPartWire::kHead, BodyPartWire::kLimb);
+  death.yaw = reader.ReadSteps(math::kAngleGrid);
+  death.pitch = reader.ReadSteps(math::kAngleGrid);
+  return death;
+}
+
 // nullopt when type is not a message of this protocol.
 std::optional<MessageWire> ReadBody(MessageTypeWire type, Reader& reader) {
   switch (type) {
@@ -371,9 +488,39 @@ std::optional<MessageWire> ReadBody(MessageTypeWire type, Reader& reader) {
     case MessageTypeWire::kMatchStart:
       return ReadMatchStart(reader);
     case MessageTypeWire::kMatchEnd:
-      return MatchEndWire{};
+      return MatchEndWire{.winner = static_cast<SessionIdWire>(reader.ReadU32())};
+    case MessageTypeWire::kShot:
+      return ReadShot(reader);
+    case MessageTypeWire::kHitConfirmation:
+      return ReadHitConfirmation(reader);
+    case MessageTypeWire::kDeath:
+      return ReadDeath(reader);
   }
   return std::nullopt;
+}
+
+void WriteRifle(BytesWire& out, const RifleWire& rifle) {
+  assert(rifle.recoil_pattern.size() <= kMaxRecoilKicks);
+  WriteU8(out, rifle.magazine_capacity);
+  WriteF32(out, rifle.rounds_per_minute);
+  WriteF32(out, rifle.muzzle_velocity);
+  WriteF32(out, rifle.reload_seconds);
+  WriteF32(out, rifle.recoil_recovery_per_second);
+  WriteF32(out, rifle.ads_recoil_scale);
+  WriteF32(out, rifle.ads_field_of_view);
+  WriteU8(out, static_cast<std::uint8_t>(rifle.recoil_pattern.size()));
+  for (const RecoilKickWire& kick : rifle.recoil_pattern) {
+    WriteF32(out, kick.pitch);
+    WriteF32(out, kick.yaw);
+  }
+}
+
+void WriteAmmo(BytesWire& out, const AmmoWire& ammo) {
+  WriteF32(out, ammo.gravity);
+  WriteF32(out, ammo.max_range);
+  WriteF32(out, ammo.head_damage);
+  WriteF32(out, ammo.torso_damage);
+  WriteF32(out, ammo.limb_damage);
 }
 
 void WriteParameters(BytesWire& out, const ParametersWire& parameters) {
@@ -381,6 +528,9 @@ void WriteParameters(BytesWire& out, const ParametersWire& parameters) {
   WriteF32(out, parameters.stamina.deplete_per_second);
   WriteF32(out, parameters.stamina.regen_per_second);
   WriteF32(out, parameters.stamina.forced_walk_below);
+  WriteRifle(out, parameters.rifle);
+  WriteAmmo(out, parameters.ammo);
+  WriteF32(out, parameters.starting_health);
 }
 
 // One overload per message: the type tag, then the fields.
@@ -415,17 +565,21 @@ struct Encoder {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kCommands));
     WriteU8(out, static_cast<std::uint8_t>(message.commands.size()));
     for (const SequencedCommandWire& sequenced : message.commands) {
-      WriteU32(out, sequenced.sequence);
+      WriteSequence(out, sequenced.sequence);
       WriteCommand(out, sequenced.command);
     }
+    WriteTick(out, message.view_tick);
   }
 
   void operator()(const AuthoritativeStateWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kAuthoritativeState));
-    WriteU32(out, message.tick);
-    WriteU32(out, message.acknowledged_sequence);
+    WriteTick(out, message.tick);
+    WriteSequence(out, message.acknowledged_sequence);
     WriteBodies(out, message.bodies);
     WriteU8(out, message.queued_commands);
+    WriteWeaponState(out, message.rifle);
+    // As its bits, as the Parameters' starting health it counts down from.
+    WriteF32(out, message.health);
   }
 
   void operator()(const LobbyWire& message) const {
@@ -458,8 +612,34 @@ struct Encoder {
     }
   }
 
-  void operator()(const MatchEndWire& /*message*/) const {
+  void operator()(const MatchEndWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kMatchEnd));
+    WriteU32(out, static_cast<std::uint32_t>(message.winner));
+  }
+
+  void operator()(const ShotWire& message) const {
+    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kShot));
+    WriteU32(out, static_cast<std::uint32_t>(message.shooter));
+    WriteTick(out, message.tick);
+    WriteVec3(out, message.origin, math::kPositionGrid);
+    WriteSteps(out, message.yaw, math::kAngleGrid);
+    WriteSteps(out, message.pitch, math::kAngleGrid);
+  }
+
+  void operator()(const HitConfirmationWire& message) const {
+    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kHitConfirmation));
+    WriteU32(out, static_cast<std::uint32_t>(message.target));
+    WriteU8(out, static_cast<std::uint8_t>(message.part));
+    WriteF32(out, message.damage);
+  }
+
+  void operator()(const DeathWire& message) const {
+    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kDeath));
+    WriteU32(out, static_cast<std::uint32_t>(message.victim));
+    WriteU32(out, static_cast<std::uint32_t>(message.killer));
+    WriteU8(out, static_cast<std::uint8_t>(message.part));
+    WriteSteps(out, message.yaw, math::kAngleGrid);
+    WriteSteps(out, message.pitch, math::kAngleGrid);
   }
 };
 

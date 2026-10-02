@@ -124,6 +124,18 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeSpawnPointBlob(const Sp
 }
 
 // Eye blob wire format: position (3x f32), nothing else.
+std::expected<std::vector<std::byte>, EncodeError> EncodeHitboxBlob(const HitboxData& hitbox) {
+  auto mesh = EncodeMeshBlob(hitbox.mesh);
+  if (!mesh) {
+    return std::unexpected(mesh.error());
+  }
+  std::vector<std::byte> blob;
+  blob.reserve(1 + mesh->size());
+  blob.push_back(static_cast<std::byte>(hitbox.part));
+  blob.insert(blob.end(), mesh->begin(), mesh->end());
+  return blob;
+}
+
 std::expected<std::vector<std::byte>, EncodeError> EncodeEyeBlob(const EyeData& eye) {
   std::vector<std::byte> blob;
   ByteWriter writer(blob);
@@ -152,6 +164,31 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeCharactersBlob(std::spa
     if (!writer.WriteString(character)) {
       return std::unexpected(EncodeError::kTooLarge);
     }
+  }
+  return blob;
+}
+
+// Audio blob wire format: sample rate (u32), bits per sample (u8), then the
+// samples as a u32 byte count and the bytes.
+std::expected<std::vector<std::byte>, EncodeError> EncodeAudioBlob(const AudioData& sound) {
+  if (sound.samples.size() > kMaxAudioBytes) {
+    return std::unexpected(EncodeError::kTooLarge);
+  }
+  std::vector<std::byte> blob;
+  ByteWriter writer(blob);
+  writer.WriteU32(sound.sample_rate);
+  writer.WriteU8(sound.bits_per_sample);
+  writer.WriteU32(static_cast<std::uint32_t>(sound.samples.size()));
+  writer.WriteBytes(sound.samples);
+  return blob;
+}
+
+// Sounds blob wire format: one length-prefixed string.
+std::expected<std::vector<std::byte>, EncodeError> EncodeSoundsBlob(std::string_view sounds_path) {
+  std::vector<std::byte> blob;
+  ByteWriter writer(blob);
+  if (!writer.WriteString(sounds_path)) {
+    return std::unexpected(EncodeError::kTooLarge);
   }
   return blob;
 }
