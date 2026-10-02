@@ -9,8 +9,10 @@
 #include <optional>
 #include <set>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <nvtx3/nvtx3.hpp>
@@ -264,6 +266,16 @@ std::string_view DescribeContentError(ContentError error) {
       return "cue sounds loading failed";
   }
   return "unknown content error";
+}
+
+std::string DescribeFailure(const Failure& failure) {
+  if (const auto* session = std::get_if<harness::Failure>(&failure)) {
+    return harness::DescribeFailure(*session);
+  }
+  if (const auto* worker = std::get_if<supervisor::WorkerFailure>(&failure)) {
+    return supervisor::DescribeWorkerFailure(*worker);
+  }
+  return client::DescribeSceneError(std::get<client::SceneError>(failure));
 }
 
 std::expected<Content, ContentError> LoadClientContent(const assets::Pack& pack, std::string_view character) {

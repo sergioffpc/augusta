@@ -1,16 +1,12 @@
 #include <filesystem>
-#include <format>
+#include <optional>
 #include <print>
-#include <string>
 #include <utility>
-#include <variant>
 
 #include "augusta/assets.h"
 #include "augusta/config.h"
-#include "augusta/harness.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
-#include "augusta/supervisor.h"
 #include "augusta/version.h"
 #include "runtime.h"
 
@@ -51,18 +47,6 @@ class TimerResolution {
 };
 #endif
 
-// What to tell whoever runs the process about why the client stopped.
-std::string DescribeRunFailure(const augusta::runtime::Failure& failure, const augusta::assets::Pack& pack) {
-  if (const auto* session = std::get_if<augusta::harness::Failure>(&failure)) {
-    return augusta::harness::DescribeFailure(*session);
-  }
-  if (const auto* worker = std::get_if<augusta::supervisor::WorkerFailure>(&failure)) {
-    return augusta::supervisor::DescribeWorkerFailure(*worker);
-  }
-  return std::format("client pack {}: {}", pack.Path().string(),
-                     augusta::client::DescribeSceneError(std::get<augusta::client::SceneError>(failure)));
-}
-
 augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ClientConfig& file_config,
                                             const augusta::assets::Pack& pack) {
   augusta::runtime::Config config;
@@ -75,21 +59,14 @@ augusta::runtime::Config BuildRuntimeConfig(const augusta::config::ClientConfig&
   return config;
 }
 
-int Run(const augusta::config::ClientConfig& file_config, const augusta::assets::Pack& pack,
-        augusta::runtime::Content content) {
+std::optional<augusta::runtime::Failure> Run(const augusta::runtime::Config& config,
+                                             augusta::runtime::Content content) {
   // augusta::networking::Init() must run once, process-wide, before any
   // Client/Server is constructed - see networking.h.
   augusta::networking::Init();
 
-  const augusta::runtime::Config config = BuildRuntimeConfig(file_config, pack);
   augusta::runtime::ClientRuntime runtime(config, std::move(content));
-  if (const auto failure = runtime.Run(); failure.has_value()) {
-    // No reconnecting and no connection screen: say what happened and exit.
-    LE("subsystem=client event=run_failed path={} error={}", pack.Path().string(), DescribeRunFailure(*failure, pack));
-    return 1;
-  }
-
-  return 0;
+  return runtime.Run();
 }
 
 }  // namespace
@@ -140,5 +117,13 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  return Run(*file_config, *pack, *std::move(content));
+  const augusta::runtime::Config config = BuildRuntimeConfig(*file_config, *pack);
+  if (const auto failure = Run(config, *std::move(content)); failure.has_value()) {
+    // No reconnecting and no connection screen: say what happened and exit.
+    LE("subsystem=client event=run_failed path={} error={}", pack->Path().string(),
+       augusta::runtime::DescribeFailure(*failure));
+    return 1;
+  }
+
+  return 0;
 }

@@ -104,6 +104,9 @@ enum class ContentError {
 // address).
 using Failure = std::variant<harness::Failure, client::SceneError, supervisor::WorkerFailure>;
 
+// What to tell whoever runs the process about why the client stopped.
+[[nodiscard]] std::string DescribeFailure(const Failure& failure);
+
 // Owns one of every client-only module/World and the three fixed
 // threads ADR-0005 assigns them to. The client process constructs
 // exactly one, on what becomes the Main/Render thread (see Run()).
