@@ -102,6 +102,15 @@ the decisions already made in ARCHITECTURE.md:
   pipeline check against them, and attaches them to a GitHub Release —
   not run on every push, so cutting a release is a deliberate tag rather
   than automatic.
+- **Release signing:** release packs are signed by the developer, on
+  the developer's machine, never by a workflow. The release Ed25519
+  keypair is generated offline with `augusta-keygen`. It is distinct
+  from the committed test key and from any development key. Its private
+  key is kept off the repo and out of every CI secret. The client and
+  server packs of a release come from one cook run signed with it, since
+  Join refuses a client pack not cooked with the server pack (ADR-0019,
+  ADR-0038). Only the public key, `augusta.pub`, travels with the packs,
+  named by each executable's config (ADR-0034).
 - **Artifacts/releases:** out of scope for now — CI validates
   build+test+lint only. A publishing pipeline gets built when there's an
   actual release to make.
