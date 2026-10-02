@@ -2809,8 +2809,9 @@ TEST_F(ImpossibleCommandTest, CommandsFromAPeerThatHasNotBeenAdmittedMoveNothing
   EXPECT_EQ(intruder.ReceivedCount(), 0U);
 }
 
-// A Lobby of kPlayers on the floor whose scenario offers two characters, for
-// the catalogue's entries about joining and Ready: honest Sessions, and
+// A Lobby of kPlayers on the floor, with three spawn points, whose scenario
+// offers two characters, for the catalogue's entries about joining, Ready and
+// Commands sent from the Lobby: honest Sessions, and
 // adversaries a test scripts message by message.
 template <std::uint8_t kPlayers>
 class ImpossibleLobbyOf : public LoopbackMatch {
@@ -2821,7 +2822,8 @@ class ImpossibleLobbyOf : public LoopbackMatch {
   static constexpr int kLobbyTicks = 30;
 
   static HostSetup TwoCharacters() {
-    HostSetup setup = OnTheFloor({}, WithPlayerCount(kPlayers));
+    HostSetup setup = OnTheFloor({Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F), Vec3(30.0F, kFloorY, -5.0F)},
+                                 WithPlayerCount(kPlayers));
     setup.map.characters.push_back({.path = kOtherCharacter, .hitboxes = {}});
     return setup;
   }
@@ -5219,6 +5221,662 @@ TEST_F(SoloDrawTest, ASoloMatchEndedAsADrawIsToldToItsPlayerAsADrawAndItIsBackIn
 
   EXPECT_EQ(client.GetPhase(), Phase::kLobby);
   EXPECT_FALSE(client.GetMatchEnd()->winner.has_value());
+}
+
+// The catalogue's corrected entries (impossible_actions.md): an adversary, a
+// client speaking the protocol by hand, plays a Match beside honest Sessions.
+// Each tick the server runs once every command sent for it has arrived, and
+// everyone is told of it before the next. A test compares what the adversary's
+// impossible action gets with what an honest client's honest equivalent gets,
+// as clients are told it.
+class AdversaryMatch : public LoopbackMatch {
+ protected:
+  using Tick = augusta::tick::Tick;
+  static constexpr std::uint8_t kFire = protocol::CommandWire::kFire;
+  static constexpr std::uint8_t kReload = protocol::CommandWire::kReload;
+  static constexpr std::uint8_t kSprint = protocol::CommandWire::kSprint;
+
+  explicit AdversaryMatch(HostSetup setup) : LoopbackMatch(std::move(setup)) {}
+
+  // Admits an honest Session, then the adversary, starts the Match and lets it settle.
+  void StartWithAnHonestPlayer() {
+    Join();
+    ASSERT_TRUE(adversary_.Join(host_));
+    ASSERT_TRUE(DriveIntoMatch(host_, Pointers(sessions_), &adversary_));
+    const auto entity = adversary_.Entity();
+    ASSERT_TRUE(entity.has_value());
+    adversary_entity_ = *entity;
+    honest_commands_.assign(sessions_.size(), Command{});
+    for (int i = 0; i < kSettleTicks; ++i) {
+      Play();
+    }
+    ASSERT_TRUE(adversary_.NewestState().has_value());
+  }
+
+  [[nodiscard]] EntityId Adversary() const { return static_cast<EntityId>(std::to_underlying(adversary_entity_)); }
+
+  // The newest update the adversary has been told of.
+  [[nodiscard]] protocol::AuthoritativeStateWire AdversaryTold() const { return adversary_.NewestState().value(); }
+
+  // The tick the server runs next: the adversary has been told of every one before it.
+  [[nodiscard]] Tick NextTick() const { return AdversaryTold().tick + 1; }
+
+  // A command with flags set, walking along direction.
+  static protocol::CommandWire Intent(std::uint8_t flags, const Vec3& direction = {}) {
+    return protocol::CommandWire{.direction = direction, .flags = flags};
+  }
+
+  // The adversary's message for one tick: commands, numbered on from the last
+  // it sent, sampled against view_tick, or else the newest update it has been told of.
+  protocol::CommandsWire Numbered(const std::vector<protocol::CommandWire>& commands,
+                                  std::optional<Tick> view_tick = std::nullopt) {
+    protocol::CommandsWire message{.commands = {}, .view_tick = view_tick.value_or(AdversaryTold().tick)};
+    for (const protocol::CommandWire& command : commands) {
+      message.commands.push_back({.sequence = ++sent_, .command = command});
+    }
+    return message;
+  }
+
+  // One tick: the adversary sends message, if it holds a command, and every
+  // honest Session its command of honest_commands_; the server ticks once every
+  // command sent has arrived, or kStepPatience has passed, and everyone is told
+  // of the tick. Returns the server's.
+  augusta::simulation::TickResult Play(const protocol::CommandsWire& message = {}) {
+    std::vector<augusta::server::SessionId> sending;
+    if (!message.commands.empty()) {
+      adversary_.Send(message);
+      sending.push_back(static_cast<augusta::server::SessionId>(std::to_underlying(*adversary_.GetSessionId())));
+    }
+    for (std::size_t i = 0; i < sessions_.size(); ++i) {
+      Session& session = *sessions_[i];
+      if (session.GetPhase() == Phase::kMatch && session.IsAlive()) {
+        sending.push_back(static_cast<augusta::server::SessionId>(std::to_underlying(*session.GetSessionId())));
+      }
+      states_[&session] = session.Tick(honest_commands_.at(i), kFixedTick);
+    }
+    const auto give_up = std::chrono::steady_clock::now() + kStepPatience;
+    ExchangeUntil(host_, Pointers(sessions_), [&] {
+      adversary_.Serve();
+      return std::chrono::steady_clock::now() >= give_up ||
+             std::ranges::all_of(sending,
+                                 [&](augusta::server::SessionId session) { return host_.QueuedCommands(session) > 0; });
+    });
+    augusta::simulation::TickResult result = host_.Tick(kFixedTick);
+    Deliver(result.state.tick);
+    const std::vector<Shot> taken = sessions_.front()->TakeShots();
+    told_shots_.insert(told_shots_.end(), taken.begin(), taken.end());
+    return result;
+  }
+
+  // Plays ticks ticks, the adversary sending commands on each.
+  void PlayFor(int ticks, const std::vector<protocol::CommandWire>& commands) {
+    for (int i = 0; i < ticks; ++i) {
+      Play(Numbered(commands));
+    }
+  }
+
+  // The ticks of the Shots the first honest Session has been told shooter
+  // fired, from tick from on.
+  [[nodiscard]] std::vector<Tick> ShotTicks(EntityId shooter, Tick from = 0) const {
+    std::vector<Tick> ticks;
+    for (const Shot& shot : told_shots_) {
+      if (shot.shooter == shooter && shot.tick >= from) {
+        ticks.push_back(shot.tick);
+      }
+    }
+    return ticks;
+  }
+
+  RawClient adversary_{Endpoint{.address = LoopbackAddress()}};
+  EntityIdWire adversary_entity_{};
+  // What each honest Session sends on every tick, in the order of sessions_.
+  std::vector<Command> honest_commands_;
+  // The sequence of the last Command the adversary sent.
+  augusta::command::Sequence sent_ = 0;
+
+ private:
+  // Runs the network until the adversary and every honest Session have been
+  // told of tick, or kStepPatience has passed.
+  void Deliver(Tick tick) {
+    const auto give_up = std::chrono::steady_clock::now() + kStepPatience;
+    const auto told = [&] {
+      const auto newest = adversary_.NewestState();
+      return newest.has_value() && newest->tick >= tick && std::ranges::all_of(sessions_, [&](const auto& session) {
+               const auto state = session->GetAuthoritativeState();
+               return state.has_value() && state->tick >= tick;
+             });
+    };
+    ExchangeUntil(host_, Pointers(sessions_), [&] {
+      adversary_.Serve();
+      return told() || std::chrono::steady_clock::now() >= give_up;
+    });
+  }
+
+  // Every Shot the first honest Session has been told of.
+  std::vector<Shot> told_shots_;
+};
+
+// The adversary and one honest player, apart on the floor, each with
+// FireMatchOf's rifle (a round every six ticks, a magazine of 15 that takes 30
+// ticks to reload) and on StaminaTest's stamina rules (a bar that empties in a
+// second of sprinting and refills in four of rest, and a walk forced at or
+// below a fifth of it). The honest player sees the adversary's body and Shots.
+class CorrectedActionTest : public AdversaryMatch {
+ protected:
+  static constexpr std::uint8_t kMagazine = 15;
+  static constexpr int kTicksPerRound = 6;
+  static constexpr int kReloadTicks = 30;
+  static constexpr float kWalkSpeed = 3.0F;
+  // How far apart two bodies that moved alike may end up.
+  static constexpr float kAlike = 0.01F;
+
+  static HostSetup ArmedAndTiring() {
+    Parameters parameters = WithPlayerCount(2);
+    parameters.rifle.rounds_per_minute = 600.0F;
+    parameters.rifle.magazine_capacity = kMagazine;
+    parameters.rifle.reload_seconds = 0.5F;
+    parameters.rifle.muzzle_velocity = 800.0F;
+    parameters.ammo.max_range = 1000.0F;
+    parameters.stamina = {.deplete_per_second = 1.0F, .regen_per_second = 0.25F, .forced_walk_below = 0.2F};
+    return OnTheFloor({Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F)}, parameters);
+  }
+
+  CorrectedActionTest() : AdversaryMatch(ArmedAndTiring()) {}
+
+  void SetUp() override { StartWithAnHonestPlayer(); }
+
+  Session& Honest() { return *sessions_.front(); }
+  Command& HonestCommand() { return honest_commands_.front(); }
+  EntityId HonestEntity() { return *Honest().GetEntityId(); }
+
+  // Where the honest player is told entity is.
+  Vec3 Seen(EntityId entity) { return PositionSeenBy(Honest(), entity).value(); }
+
+  // Expects the adversary to have moved from adversary_from as far as the
+  // honest player from honest_from, as the honest player is told.
+  void ExpectMovedAlike(const Vec3& adversary_from, const Vec3& honest_from) {
+    const Vec3 adversary_moved = Seen(Adversary()) - adversary_from;
+    const Vec3 honest_moved = Seen(HonestEntity()) - honest_from;
+    EXPECT_NEAR(adversary_moved.x, honest_moved.x, kAlike);
+    EXPECT_NEAR(adversary_moved.z, honest_moved.z, kAlike);
+  }
+
+  static float HorizontalSpeed(const augusta::physics::BodyState& body) {
+    return std::hypot(body.velocity.x, body.velocity.z);
+  }
+
+  static Command Moving(bool sprint) {
+    Command command{};
+    command.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+    command.movement.sprint = sprint;
+    return command;
+  }
+
+  static Command Firing() {
+    Command command{};
+    command.fire = true;
+    return command;
+  }
+
+  // Both players hold fire until their magazines are empty and the last round's interval is over.
+  void EmptyBothMagazines() {
+    HonestCommand() = Firing();
+    PlayFor((kMagazine + 1) * kTicksPerRound, {Intent(kFire)});
+    ASSERT_EQ(ShotTicks(Adversary()).size(), kMagazine);
+    ASSERT_EQ(ShotTicks(HonestEntity()).size(), kMagazine);
+  }
+
+  // From empty magazines, the honest player presses reload with fire held and
+  // then holds fire, while the adversary sends the same press and then flags on
+  // every tick. Expects the adversary's first round on the tick of the honest
+  // player's, once the reload's 30 ticks are over, and no more rounds than it.
+  void ExpectFirstRoundAfterAReloadWhileSending(std::uint8_t flags) {
+    EmptyBothMagazines();
+    const Tick pressed = NextTick();
+    Command press = Firing();
+    press.reload = true;
+    HonestCommand() = press;
+    Play(Numbered({Intent(kFire | kReload)}));
+    HonestCommand() = Firing();
+    PlayFor(kReloadTicks + kTicksPerRound, {Intent(flags)});
+
+    const std::vector<Tick> honest = ShotTicks(HonestEntity(), pressed);
+    ASSERT_FALSE(honest.empty());
+    EXPECT_EQ(honest.front(), pressed + kReloadTicks);
+    const std::vector<Tick> adversary = ShotTicks(Adversary(), pressed);
+    ASSERT_FALSE(adversary.empty());
+    EXPECT_EQ(adversary.front(), honest.front());
+    EXPECT_LE(adversary.size(), honest.size());
+  }
+};
+
+// Teleport, structural: a Command has no field for a position, so all a client
+// can do is ask to move. This one also claims, in a message only the server
+// sends, to be far away, and asks for the longest movement the boundary takes.
+TEST_F(CorrectedActionTest, AClientThatClaimsAPositionEndsWhereItsSprintTakesItAsAnHonestOneDoes) {
+  const Vec3 claimed(500.0F, kFloorY, 500.0F);
+  const Vec3 adversary_from = Seen(Adversary());
+  const Vec3 honest_from = Seen(HonestEntity());
+  HonestCommand() = Moving(/*sprint=*/true);
+
+  for (int i = 0; i < 30; ++i) {
+    if (i % 10 == 0) {
+      adversary_.Send(protocol::AuthoritativeStateWire{
+          .tick = NextTick(), .bodies = {{.entity = adversary_entity_, .body = {.position = claimed}}}});
+    }
+    Play(Numbered({Intent(kSprint, Vec3(1.99F, 0.0F, 0.0F))}));
+  }
+
+  EXPECT_GT(Seen(HonestEntity()).x - honest_from.x, 1.0F);
+  ExpectMovedAlike(adversary_from, honest_from);
+  EXPECT_GT(Length(Seen(Adversary()) - claimed), 400.0F);
+}
+
+// Speed hack: the server takes one Command a tick, and past the queue's cap
+// drops the oldest.
+TEST_F(CorrectedActionTest, AClientSendingMoreCommandsThanTicksMovesNoFasterThanAnHonestOne) {
+  const Vec3 adversary_from = Seen(Adversary());
+  const Vec3 honest_from = Seen(HonestEntity());
+  HonestCommand() = Moving(/*sprint=*/false);
+
+  for (int i = 0; i < 30; ++i) {
+    Play(Numbered(std::vector<protocol::CommandWire>(8, Intent(0, Vec3(1.0F, 0.0F, 0.0F)))));
+    const auto body = BodySeenBy(Honest(), Adversary());
+    ASSERT_TRUE(body.has_value());
+    EXPECT_LE(HorizontalSpeed(*body), kWalkSpeed + 0.1F) << "tick " << i;
+  }
+
+  EXPECT_GT(Seen(HonestEntity()).x - honest_from.x, 1.0F);
+  ExpectMovedAlike(adversary_from, honest_from);
+}
+
+// Fire rate: held fire fires at the rifle's rate whatever the client does with
+// the trigger. This one sends two Commands a tick, letting go and pressing again.
+TEST_F(CorrectedActionTest, PressingFireAnewTwiceATickFiresNoFasterThanTheRiflesRate) {
+  const Tick from = NextTick();
+  HonestCommand() = Firing();
+
+  PlayFor(60, {Intent(0), Intent(kFire)});
+
+  EXPECT_EQ(ShotTicks(HonestEntity(), from).size(), 10U);
+  const std::vector<Tick> fired = ShotTicks(Adversary(), from);
+  ASSERT_FALSE(fired.empty());
+  EXPECT_LE(fired.size(), 10U);
+  for (std::size_t i = 1; i < fired.size(); ++i) {
+    EXPECT_GE(fired[i] - fired[i - 1], static_cast<Tick>(kTicksPerRound)) << "round " << i;
+  }
+}
+
+// Infinite ammo: the magazine is the server's.
+TEST_F(CorrectedActionTest, HoldingFireWithAnEmptyMagazineFiresNothingMore) {
+  EmptyBothMagazines();
+
+  PlayFor(60, {Intent(kFire)});
+
+  EXPECT_EQ(ShotTicks(Adversary()).size(), kMagazine);
+  EXPECT_EQ(ShotTicks(HonestEntity()).size(), kMagazine);
+  EXPECT_EQ(AdversaryTold().rifle.rounds, 0U);
+}
+
+// Reload skip: no round fires on a tick of a reload.
+TEST_F(CorrectedActionTest, FireDuringAReloadFiresNothingUntilItCompletes) {
+  ExpectFirstRoundAfterAReloadWhileSending(kFire);
+}
+
+// Reload spam: a reload is never started over, and never done sooner. A press
+// once a round has left the magazine starts another, so it only costs rounds.
+TEST_F(CorrectedActionTest, ReloadOnEveryTickRefillsNoSoonerThanTheReloadTime) {
+  ExpectFirstRoundAfterAReloadWhileSending(kFire | kReload);
+}
+
+// Stamina: the server keeps the stamina, so sprint is only ever asked for.
+TEST_F(CorrectedActionTest, SprintingWithNoStaminaIsHeldToAWalkUntilItRecoversAboveTheThreshold) {
+  const Vec3 adversary_from = Seen(Adversary());
+  const Vec3 honest_from = Seen(HonestEntity());
+  HonestCommand() = Moving(/*sprint=*/true);
+  bool was_exhausted = false;
+  bool recovered = false;
+  int walked = 0;
+  int sprinted_after_recovering = 0;
+
+  // A second of sprinting runs the bar out, and 0.2 of it at 0.25 a second
+  // takes 48 ticks to come back. Every tick that starts exhausted is walked;
+  // once recovered, the sprint is honored again until the bar runs out anew.
+  for (int i = 0; i < 150; ++i) {
+    Play(Numbered({Intent(kSprint, Vec3(1.0F, 0.0F, 0.0F))}));
+    const auto body = BodySeenBy(Honest(), Adversary());
+    ASSERT_TRUE(body.has_value());
+    if (was_exhausted) {
+      ++walked;
+      EXPECT_NEAR(HorizontalSpeed(*body), kWalkSpeed, 0.2F) << "tick " << i;
+    } else if (recovered && HorizontalSpeed(*body) > kWalkSpeed + 1.0F) {
+      ++sprinted_after_recovering;
+    }
+    recovered = recovered || (was_exhausted && !body->exhausted);
+    was_exhausted = body->exhausted;
+  }
+
+  EXPECT_GT(walked, 40);
+  EXPECT_GT(sprinted_after_recovering, 0);
+  ExpectMovedAlike(adversary_from, honest_from);
+}
+
+// Impersonation, structural: no client message carries a Session ID, so the
+// server knows whose Command it is by the connection alone. The adversary
+// numbers its Commands on from the honest player's, walking and firing, while
+// the honest player stands still.
+TEST_F(CorrectedActionTest, CommandsNumberedAsAnotherPlayersMoveAndFireOnlyTheSendersOwnBody) {
+  const auto honest_before = Honest().GetAuthoritativeState();
+  ASSERT_TRUE(honest_before.has_value());
+  const Vec3 adversary_from = Seen(Adversary());
+  const Vec3 honest_from = Seen(HonestEntity());
+  sent_ = std::max(sent_, honest_before->acknowledged_sequence);
+
+  PlayFor(30, {Intent(kFire, Vec3(1.0F, 0.0F, 0.0F))});
+
+  EXPECT_NEAR(Seen(HonestEntity()).x, honest_from.x, kAlike);
+  EXPECT_NEAR(Seen(HonestEntity()).z, honest_from.z, kAlike);
+  EXPECT_EQ(Honest().GetAuthoritativeState()->rifle.rounds, kMagazine);
+  EXPECT_TRUE(ShotTicks(HonestEntity()).empty());
+  EXPECT_GT(Seen(Adversary()).x - adversary_from.x, 1.0F);
+  // A round every kTicksPerRound of the 30 ticks.
+  EXPECT_EQ(ShotTicks(Adversary()).size(), 30U / kTicksPerRound);
+}
+
+// The adversary and an honest player 60 m apart down -Z on the floor, playing
+// the character of HumanHitboxes. A round takes 50 of the 100 of health at the
+// head, 20 at the torso and 10 at a limb, and reaches the other player on the
+// tick it is fired. The honest player is the target, and sprints (on stamina
+// that never drains) across the adversary's view, 0.08 m a tick: that the
+// middle of its right arm, 0.1 m wide, is where a round is aimed hits only if
+// the round is judged against the very moment it was aimed at, which shows
+// where Lag compensation judged it.
+class CorrectedAimTest : public AdversaryMatch {
+ protected:
+  static constexpr float kEyeHeight = 1.6F;
+  static constexpr float kHeadHeight = 1.65F;
+  static constexpr float kLimbDamage = 10.0F;
+  static constexpr float kStartingHealth = 100.0F;
+  // The middle of the right arm, beside the torso, from the feet of a body facing yaw 0.
+  static inline const Vec3 kArm{0.35F, 1.2F, 0.0F};
+  // How long the target sprints before the first round: longer than the Shooter's delay's cap.
+  static constexpr int kStrafeTicks = 20;
+  // The ticks after a tap of fire until the rifle is ready again.
+  static constexpr int kRoundTicks = 6;
+
+  static HostSetup DownTheLine() {
+    Parameters parameters = WithPlayerCount(2);
+    parameters.rifle.rounds_per_minute = 600.0F;
+    parameters.rifle.magazine_capacity = 30;
+    parameters.rifle.muzzle_velocity = 8000.0F;
+    parameters.ammo.max_range = 200.0F;
+    parameters.ammo.damage = {.head = 50.0F, .torso = 20.0F, .limb = kLimbDamage};
+    parameters.starting_health = kStartingHealth;
+    HostSetup setup = OnTheFloor({Vec3(0.0F, kFloorY, 0.0F), Vec3(0.0F, kFloorY, -60.0F)}, parameters);
+    setup.map.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    setup.map.characters.front().hitboxes = HumanHitboxes();
+    return setup;
+  }
+
+  CorrectedAimTest() : AdversaryMatch(DownTheLine()) {}
+
+  void SetUp() override { StartWithAnHonestPlayer(); }
+
+  Session& Target() { return *sessions_.front(); }
+  Command& TargetCommand() { return honest_commands_.front(); }
+  EntityIdWire TargetWire() { return EntityIdWire{std::to_underlying(*Target().GetEntityId())}; }
+
+  // The Shooter's delay's cap in ticks: 250 ms at 60 Hz.
+  static Tick Cap() { return augusta::simulation::HitboxHistoryTicks(kTestTickRate); }
+
+  // Where the update of tick the adversary was told of put entity's feet.
+  Vec3 SeenOn(Tick tick, EntityIdWire entity) const {
+    for (const auto& state : adversary_.ReceivedOf<protocol::AuthoritativeStateWire>()) {
+      if (state.tick != tick) {
+        continue;
+      }
+      for (const auto& body : state.bodies) {
+        if (body.entity == entity) {
+          return body.body.position;
+        }
+      }
+    }
+    ADD_FAILURE() << "the adversary was told of no body " << std::to_underlying(entity) << " on tick " << tick;
+    return {};
+  }
+
+  // A view's yaw and pitch.
+  struct View {
+    float yaw = 0.0F;
+    float pitch = 0.0F;
+  };
+
+  // The view from eye to point.
+  static View ViewFrom(const Vec3& eye, const Vec3& point) {
+    const Vec3 aim = point - eye;
+    return View{.yaw = std::atan2(-aim.x, -aim.z), .pitch = std::asin(aim.y / Length(aim))};
+  }
+
+  // The target sprints along +X for kStrafeTicks.
+  void Strafe() {
+    TargetCommand().movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+    TargetCommand().movement.sprint = true;
+    for (int i = 0; i < kStrafeTicks; ++i) {
+      Play();
+    }
+  }
+
+  // On the next tick the adversary taps fire, aimed from its eye at point and
+  // reporting the view of view_tick and fraction; the match then runs until
+  // its rifle is ready again.
+  void FireAt(const Vec3& point, Tick view_tick, float fraction) {
+    const Tick told = AdversaryTold().tick;
+    protocol::CommandWire command = Intent(kFire);
+    const View view = ViewFrom(SeenOn(told, adversary_entity_) + Vec3(0.0F, kEyeHeight, 0.0F), point);
+    command.yaw = view.yaw;
+    command.pitch = view.pitch;
+    command.view_fraction = fraction;
+    Play(Numbered({command}, view_tick));
+    // Fired on the tick it was aimed for.
+    EXPECT_EQ(AdversaryTold().tick, told + 1);
+    for (int i = 0; i < kRoundTicks; ++i) {
+      Play();
+    }
+  }
+
+  // Expects each of rounds rounds of the adversary's to have hit the target's
+  // arm, as both are told: a Hit confirmation of each to the adversary, and the
+  // target's health down by each.
+  void ExpectArmHits(std::size_t rounds) {
+    ASSERT_TRUE(adversary_.ServeUntil(
+        host_, [&] { return adversary_.ReceivedOf<protocol::HitConfirmationWire>().size() >= rounds; }));
+    const auto confirmations = adversary_.ReceivedOf<protocol::HitConfirmationWire>();
+    ASSERT_EQ(confirmations.size(), rounds);
+    for (const auto& confirmation : confirmations) {
+      EXPECT_EQ(confirmation.target, TargetWire());
+      EXPECT_EQ(confirmation.part, protocol::BodyPartWire::kLimb);
+      EXPECT_EQ(confirmation.damage, kLimbDamage);
+    }
+    EXPECT_EQ(Target().GetHealth(), kStartingHealth - (static_cast<float>(rounds) * kLimbDamage));
+  }
+};
+
+// View too old: one older than the Shooter's delay's cap is judged at the cap,
+// as one reporting a view exactly that old is (ADR-0044).
+TEST_F(CorrectedAimTest, AViewOlderThanTheShootersDelaysCapIsJudgedAtTheCap) {
+  Strafe();
+
+  const Tick honest = NextTick();
+  FireAt(SeenOn(honest - Cap(), TargetWire()) + kArm, honest - Cap(), 0.0F);
+  const Tick impossible = NextTick();
+  FireAt(SeenOn(impossible - Cap(), TargetWire()) + kArm, 0, 0.0F);
+
+  ExpectArmHits(2);
+}
+
+// View in the future: one newer than any update sent is judged at the newest
+// sent, the last tick's, as one reporting that update is.
+TEST_F(CorrectedAimTest, AViewNewerThanAnyUpdateSentIsJudgedAtTheNewestSent) {
+  Strafe();
+
+  const Tick honest = NextTick();
+  FireAt(SeenOn(honest - 1, TargetWire()) + kArm, honest - 1, 0.0F);
+  const Tick impossible = NextTick();
+  FireAt(SeenOn(impossible - 1, TargetWire()) + kArm, impossible + 1'000, 0.5F);
+
+  ExpectArmHits(2);
+}
+
+// View fraction: the wire carries a fraction from 0 to 255/256 (augusta/grid.h),
+// so one past 1 arrives as 255/256 and one below 0 as 0, and Lag compensation
+// holds what arrives within 0 to 1 besides.
+TEST_F(CorrectedAimTest, AViewFractionOutsideZeroToOneIsHeldWithinIt) {
+  constexpr float kNearlyOne = 255.0F / 256.0F;
+  // A round reporting the view of 5 ticks before it, well within the Hitbox
+  // history, at sent, aimed where the target was at judged of the way to the next update.
+  const auto fire_with = [&](float judged, float sent) {
+    const Tick view = NextTick() - 5;
+    FireAt(augusta::math::Lerp(SeenOn(view, TargetWire()), SeenOn(view + 1, TargetWire()), judged) + kArm, view, sent);
+  };
+  Strafe();
+
+  fire_with(kNearlyOne, kNearlyOne);
+  fire_with(kNearlyOne, 7.0F);
+  fire_with(0.0F, 0.0F);
+  fire_with(0.0F, -3.0F);
+
+  ExpectArmHits(4);
+}
+
+// Spectator: a dead player's body has left the simulation, so its Commands have
+// nothing to move, turn or fire, which is what a dead honest client, sending
+// nothing, gets too.
+TEST_F(CorrectedAimTest, ADeadPlayersCommandsMoveTurnAndFireNothing) {
+  // The target shoots the adversary twice in the head, from the update it was told last.
+  for (int round = 0; round < 2; ++round) {
+    const Vec3 eye = PositionSeenBy(Target(), *Target().GetEntityId()).value() + Vec3(0.0F, kEyeHeight, 0.0F);
+    const Vec3 head = PositionSeenBy(Target(), Adversary()).value() + Vec3(0.0F, kHeadHeight, 0.0F);
+    const View view = ViewFrom(eye, head);
+    TargetCommand().yaw = view.yaw;
+    TargetCommand().pitch = view.pitch;
+    TargetCommand().view_tick = Target().GetAuthoritativeState()->tick;
+    TargetCommand().fire = true;
+    Play();
+    TargetCommand().fire = false;
+    for (int i = 0; i < kRoundTicks; ++i) {
+      Play();
+    }
+  }
+  ASSERT_EQ(AdversaryTold().health, 0.0F);
+  const std::vector<Death> deaths = Target().TakeDeaths();
+  ASSERT_EQ(deaths.size(), 1U);
+  ASSERT_EQ(deaths.front().victim, Adversary());
+  const Vec3 target = PositionSeenBy(Target(), *Target().GetEntityId()).value();
+
+  // It walks at the target, turned to face it, sprinting and firing.
+  protocol::CommandWire charge = Intent(kFire | kSprint, Vec3(0.0F, 0.0F, 1.0F));
+  charge.yaw = std::numbers::pi_v<float>;
+  PlayFor(20, {charge});
+
+  EXPECT_TRUE(ShotTicks(Adversary()).empty());
+  EXPECT_TRUE(adversary_.ReceivedOf<protocol::HitConfirmationWire>().empty());
+  EXPECT_FALSE(BodySeenBy(Target(), Adversary()).has_value());
+  EXPECT_EQ(Target().GetHealth(), kStartingHealth);
+  EXPECT_TRUE(Target().IsAlive());
+  EXPECT_NEAR(PositionSeenBy(Target(), *Target().GetEntityId())->z, target.z, 0.01F);
+  EXPECT_TRUE(Target().TakeDeaths().empty());
+}
+
+// Reported outcomes, structural: no client message carries a hit, a damage, a
+// health or a kill. The adversary fires wide twice, the second time claiming,
+// in the messages only the server sends, that its round hit and killed the
+// target and won it the Match: it gets what the first, honest, round got.
+TEST_F(CorrectedAimTest, AClientThatClaimsAHitAKillAndAWinHurtsNoOne) {
+  const auto wide = [&] { return SeenOn(AdversaryTold().tick, TargetWire()) + Vec3(5.0F, kHeadHeight, 0.0F); };
+  FireAt(wide(), AdversaryTold().tick, 0.0F);
+
+  adversary_.Send(
+      protocol::HitConfirmationWire{.target = TargetWire(), .damage = 1000.0F, .part = protocol::BodyPartWire::kHead});
+  adversary_.Send(protocol::DeathWire{.victim = TargetWire(), .killer = adversary_entity_});
+  adversary_.Send(protocol::AuthoritativeStateWire{.tick = NextTick(), .bodies = {}, .health = 0.0F});
+  adversary_.Send(protocol::MatchEndWire{.winner = *adversary_.GetSessionId()});
+  FireAt(wide(), AdversaryTold().tick, 0.0F);
+
+  EXPECT_EQ(ShotTicks(Adversary()).size(), 2U);
+  EXPECT_TRUE(adversary_.ReceivedOf<protocol::HitConfirmationWire>().empty());
+  EXPECT_TRUE(adversary_.ReceivedOf<protocol::DeathWire>().empty());
+  EXPECT_TRUE(adversary_.ReceivedOf<protocol::MatchEndWire>().empty());
+  EXPECT_EQ(Target().GetHealth(), kStartingHealth);
+  EXPECT_TRUE(Target().IsAlive());
+  EXPECT_TRUE(Target().TakeDeaths().empty());
+  EXPECT_EQ(Target().GetPhase(), Phase::kMatch);
+}
+
+// Lobby: Commands from a player in the Lobby are dropped at the server, so its
+// Match starts as an honest player's does, which sends none there: at its
+// spawn point, facing yaw 0, with a full magazine and none of them taken in.
+using CorrectedLobbyTest = ImpossibleLobbyOf<2>;
+
+TEST_F(CorrectedLobbyTest, CommandsFromAPlayerInTheLobbyAffectNothing) {
+  Session& honest = Join();
+  RawClient adversary(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  ASSERT_TRUE(AskToJoin(adversary, HonestJoinRequest()));
+  const auto current = RosterVersionOf(adversary, 2);
+  ASSERT_TRUE(current.has_value());
+  // Walking, turned, firing and reloading, numbered from 1, as the first Commands of a Match would be.
+  protocol::CommandsWire walking;
+  for (augusta::command::Sequence sequence = 1; sequence <= protocol::kMaxCommandsPerMessage; ++sequence) {
+    walking.commands.push_back({.sequence = sequence,
+                                .command = {.direction = Vec3(1.0F, 0.0F, 0.0F),
+                                            .yaw = 1.0F,
+                                            .flags = protocol::CommandWire::kFire | protocol::CommandWire::kReload}});
+  }
+
+  for (int i = 0; i < 3; ++i) {
+    adversary.Send(walking);
+  }
+  RunLobby({&adversary});
+  ASSERT_EQ(honest.GetPhase(), Phase::kLobby);
+  adversary.Send(protocol::ReadyWire{.version = *current});
+  ASSERT_TRUE(DriveIntoMatch(host_, Pointers(sessions_), &adversary));
+  Run(kSettleTicks);
+  ASSERT_TRUE(adversary.ServeUntil(host_, [&] { return adversary.NewestState().has_value(); }));
+  Settle(host_, Pointers(sessions_));
+
+  const auto entity = adversary.Entity();
+  ASSERT_TRUE(entity.has_value());
+  Vec3 spawn{};
+  for (const auto& player : adversary.ReceivedOf<protocol::MatchStartWire>().back().players) {
+    if (player.entity == *entity) {
+      spawn = player.spawn;
+    }
+  }
+  const protocol::AuthoritativeStateWire told = adversary.NewestState().value();
+  const auto honest_told = honest.GetAuthoritativeState();
+  ASSERT_TRUE(honest_told.has_value());
+  EXPECT_EQ(told.acknowledged_sequence, 0U);
+  EXPECT_EQ(told.rifle.rounds, honest_told->rifle.rounds);
+  EXPECT_EQ(told.health, honest_told->health);
+  for (const auto& body : told.bodies) {
+    if (body.entity == *entity) {
+      EXPECT_NEAR(body.body.position.x, spawn.x, 0.01F);
+      EXPECT_NEAR(body.body.position.z, spawn.z, 0.01F);
+      EXPECT_EQ(body.yaw, 0.0F);
+    }
+  }
+  const auto seen = PositionSeenBy(honest, static_cast<EntityId>(std::to_underlying(*entity)));
+  ASSERT_TRUE(seen.has_value());
+  EXPECT_NEAR(seen->x, spawn.x, 0.01F);
+  EXPECT_NEAR(seen->z, spawn.z, 0.01F);
+  EXPECT_TRUE(honest.TakeShots().empty());
+
+  // Now that it plays, its Commands are taken in from 1.
+  protocol::SequencedCommandWire first{.sequence = 1};
+  first.command.flags = protocol::CommandWire::kFire;
+  adversary.Send(protocol::CommandsWire{.commands = {first}});
+  Run(kSettleTicks);
+  ASSERT_TRUE(adversary.ServeUntil(host_, [&] { return adversary.NewestState()->acknowledged_sequence == 1U; }));
+  EXPECT_EQ(adversary.NewestState()->rifle.rounds, honest_told->rifle.rounds - 1);
 }
 
 }  // namespace
