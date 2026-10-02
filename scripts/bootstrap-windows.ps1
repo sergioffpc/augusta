@@ -142,7 +142,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 # per ADR-0009) and pulls Falcor's remaining packman-fetched binary
 # dependencies lazily, on first build.
 git -C $repoRoot submodule update --init --recursive
-& "$repoRoot\scripts\fetch-vcpkg.ps1"
+& "$repoRoot\third_party\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
 
 git -C $repoRoot config core.hooksPath .githooks
 
