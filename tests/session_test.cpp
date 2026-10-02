@@ -5665,7 +5665,7 @@ TEST_F(CorrectedAimTest, AClientThatClaimsAHitAKillAndAWinHurtsNoOne) {
   adversary_.Send(
       protocol::HitConfirmationWire{.target = TargetWire(), .damage = 1000.0F, .part = protocol::BodyPartWire::kHead});
   adversary_.Send(protocol::DeathWire{.victim = TargetWire(), .killer = adversary_entity_});
-  adversary_.Send(protocol::AuthoritativeStateWire{.tick = NextTick(), .health = 0.0F});
+  adversary_.Send(protocol::AuthoritativeStateWire{.tick = NextTick(), .bodies = {}, .health = 0.0F});
   adversary_.Send(protocol::MatchEndWire{.winner = *adversary_.GetSessionId()});
   FireAt(wide(), AdversaryTold().tick, 0.0F);
 
