@@ -42,18 +42,10 @@ extern "C" void HandleShutdownSignal(int /*signal*/) {
 // returns nullopt.
 std::optional<augusta::assets::Pack> LoadVerifiedPack(const augusta::config::ServerConfig& file_config) {
   const std::filesystem::path& pack_path = file_config.pack_path;
-  const std::filesystem::path& public_key_path = file_config.public_key_path;
-
-  const auto public_key = augusta::assets::ReadEd25519PublicKeyFile(public_key_path);
-  if (!public_key) {
-    LE("subsystem=server event=public_key_loading_failed path={} error=public_key_unreadable",
-       public_key_path.string());
-    return std::nullopt;
-  }
-  auto pack = augusta::assets::Pack::Load(pack_path, *public_key);
+  auto pack = augusta::assets::LoadVerifiedPack(pack_path, file_config.public_key_path);
   if (!pack) {
     LE("subsystem=server event=pack_verification_failed path={} error={}", pack_path.string(),
-       augusta::assets::DescribeLoadError(pack.error()));
+       augusta::assets::DescribeVerifiedPackError(pack.error(), pack_path, file_config.public_key_path));
     return std::nullopt;
   }
   LI("subsystem=server event=pack_verified path={}", pack_path.string());
@@ -66,25 +58,24 @@ std::optional<augusta::assets::Pack> LoadVerifiedPack(const augusta::config::Ser
 // every Shot leaves from its shooter's eye (US-07), so the server runs only on
 // characters it can judge and fire for.
 std::optional<std::vector<augusta::server::Character>> LoadCharacters(const augusta::assets::Pack& pack,
-                                                                      std::vector<std::string> paths,
-                                                                      const std::filesystem::path& pack_path) {
+                                                                      std::vector<std::string> paths) {
   std::vector<augusta::server::Character> characters;
   characters.reserve(paths.size());
   for (std::string& path : paths) {
     auto hitboxes = pack.ResolveHitboxes(path);
     if (!hitboxes) {
-      LE("subsystem=server event=hitboxes_loading_failed path={} character={} error={}", pack_path.string(), path,
+      LE("subsystem=server event=hitboxes_loading_failed path={} character={} error={}", pack.Path().string(), path,
          augusta::assets::DescribeResolveError(hitboxes.error(), "hitbox"));
       return std::nullopt;
     }
     if (const auto missing = augusta::assets::FirstMissingBodyPart(*hitboxes)) {
       LE("subsystem=server event=hitboxes_loading_failed path={} character={} error=\"no hitbox for the {}\"",
-         pack_path.string(), path, augusta::assets::BodyPartName(*missing));
+         pack.Path().string(), path, augusta::assets::BodyPartName(*missing));
       return std::nullopt;
     }
     const auto eye = pack.ResolveEye(augusta::assets::CharacterEyePath(path));
     if (!eye) {
-      LE("subsystem=server event=eye_loading_failed path={} character={} error={}", pack_path.string(), path,
+      LE("subsystem=server event=eye_loading_failed path={} character={} error={}", pack.Path().string(), path,
          augusta::assets::DescribeResolveError(eye.error(), "eye"));
       return std::nullopt;
     }
@@ -95,35 +86,35 @@ std::optional<std::vector<augusta::server::Character>> LoadCharacters(const augu
 
 // Built before any socket or thread starts, so a pack without a usable map
 // exits like a bad pack does. Reports what is wrong and returns nullopt.
-std::optional<augusta::server::Map> LoadMap(const augusta::assets::Pack& pack, const std::filesystem::path& pack_path) {
+std::optional<augusta::server::Map> LoadMap(const augusta::assets::Pack& pack) {
   auto collision = augusta::map::LoadCollision(pack);
   if (!collision) {
-    LE("subsystem=server event=collision_loading_failed path={} error={}", pack_path.string(),
+    LE("subsystem=server event=collision_loading_failed path={} error={}", pack.Path().string(),
        augusta::map::DescribeMapError(collision.error()));
     return std::nullopt;
   }
   auto spawn_points = augusta::map::LoadSpawnPoints(pack);
   if (!spawn_points) {
-    LE("subsystem=server event=spawn_points_loading_failed path={} error={}", pack_path.string(),
+    LE("subsystem=server event=spawn_points_loading_failed path={} error={}", pack.Path().string(),
        augusta::map::DescribeMapError(spawn_points.error()));
     return std::nullopt;
   }
   // The scenario's characters, the only ones a player may join as (ADR-0042).
   auto character_paths = pack.ResolveCharacters();
   if (!character_paths) {
-    LE("subsystem=server event=characters_loading_failed path={} asset={} error={}", pack_path.string(),
+    LE("subsystem=server event=characters_loading_failed path={} asset={} error={}", pack.Path().string(),
        augusta::assets::kCharactersPath,
        augusta::assets::DescribeResolveError(character_paths.error(), "character list"));
     return std::nullopt;
   }
-  auto characters = LoadCharacters(pack, *std::move(character_paths), pack_path);
+  auto characters = LoadCharacters(pack, *std::move(character_paths));
   if (!characters) {
     return std::nullopt;
   }
   // The client pack cooked with this one, the only one a player may join with.
   const auto client_pack = pack.ResolveClientPackHash();
   if (!client_pack) {
-    LE("subsystem=server event=client_pack_hash_loading_failed path={} asset={} error={}", pack_path.string(),
+    LE("subsystem=server event=client_pack_hash_loading_failed path={} asset={} error={}", pack.Path().string(),
        augusta::assets::kClientPackPath,
        augusta::assets::DescribeResolveError(client_pack.error(), "client pack hash"));
     return std::nullopt;
@@ -143,18 +134,17 @@ std::optional<augusta::server::Map> LoadMap(const augusta::assets::Pack& pack, c
 // once before any socket or thread starts, so a pack without one, or with one
 // that does not load, exits like a bad pack does. The Parameters are the same
 // for the whole run. Reports what is wrong and returns nullopt.
-std::optional<augusta::parameters::Parameters> LoadParameters(const augusta::assets::Pack& pack,
-                                                              const std::filesystem::path& pack_path) {
+std::optional<augusta::parameters::Parameters> LoadParameters(const augusta::assets::Pack& pack) {
   const std::string_view script_path = augusta::assets::kParametersScriptPath;
   const auto script = pack.ResolveScript(script_path);
   if (!script) {
-    LE("subsystem=server event=parameters_script_loading_failed path={} script={} error={}", pack_path.string(),
+    LE("subsystem=server event=parameters_script_loading_failed path={} script={} error={}", pack.Path().string(),
        script_path, augusta::assets::DescribeResolveError(script.error(), "script"));
     return std::nullopt;
   }
   auto parameters = augusta::parameters::Load(*script);
   if (!parameters) {
-    LE("subsystem=server event=parameters_loading_failed path={} script={} error={}", pack_path.string(), script_path,
+    LE("subsystem=server event=parameters_loading_failed path={} script={} error={}", pack.Path().string(), script_path,
        augusta::parameters::DescribeLoadError(parameters.error()));
     return std::nullopt;
   }
@@ -166,11 +156,10 @@ std::optional<augusta::parameters::Parameters> LoadParameters(const augusta::ass
 // loaded before any socket or thread starts, so a script that does not load
 // exits like a bad Parameters script does. A scenario may lack either script.
 // Reports what is wrong and returns nullopt.
-std::optional<augusta::scripting::Engine> LoadPolicy(const augusta::assets::Pack& pack,
-                                                     const std::filesystem::path& pack_path) {
+std::optional<augusta::scripting::Engine> LoadPolicy(const augusta::assets::Pack& pack) {
   auto policy = augusta::server::LoadPolicy(pack);
   if (!policy) {
-    LE("subsystem=server event=policy_loading_failed path={} script={} error=\"{}\"", pack_path.string(),
+    LE("subsystem=server event=policy_loading_failed path={} script={} error=\"{}\"", pack.Path().string(),
        augusta::scripting::ScriptPath(policy.error().script), augusta::server::DescribePolicyLoadError(policy.error()));
     return std::nullopt;
   }
@@ -232,18 +221,18 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  auto map = LoadMap(*pack, file_config->pack_path);
+  auto map = LoadMap(*pack);
   if (!map) {
     return 1;
   }
 
-  const auto parameters = LoadParameters(*pack, file_config->pack_path);
+  const auto parameters = LoadParameters(*pack);
   if (!parameters) {
     return 1;
   }
   WarnIfTheRifleOutpacesTheTick(parameters->rifle, file_config->tick_rate_hz);
 
-  auto policy = LoadPolicy(*pack, file_config->pack_path);
+  auto policy = LoadPolicy(*pack);
   if (!policy) {
     return 1;
   }
