@@ -41,6 +41,10 @@
 // physics::World keeps every body on, and weapon::Step a rifle's Recoil
 // offset); the other floats (the Parameters, a rifle's times, a hit's damage)
 // travel as their IEEE-754 bits.
+// A client message carries intent, never an outcome: tests/impossible_actions.md
+// (US-15, NFR-05) lists what bounds each of its fields. A new one needs a line
+// there, and if it carries an outcome (a position, a hit, an ammo count), a
+// check at the server's boundary and a test.
 // Every field takes the smallest type that holds what it says: flags are bits
 // of one byte, shared with a small enumeration where one fits. Decode treats
 // its input as untrusted: it never throws, never reads past the end, and never

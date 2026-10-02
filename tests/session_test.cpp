@@ -77,6 +77,7 @@ using augusta::physics::CollisionMesh;
 using augusta::physics::Stance;
 using augusta::protocol::EntityIdWire;
 using augusta::protocol::SessionIdWire;
+namespace protocol = augusta::protocol;
 using augusta::server::Host;
 using augusta::server::HostConfig;
 using augusta::server::Map;
@@ -140,10 +141,21 @@ class SessionEnvironment : public ::testing::Environment {
 [[maybe_unused]] ::testing::Environment* const kSessionEnvironment =
     ::testing::AddGlobalTestEnvironment(new SessionEnvironment);
 
+// The JoinRequestWire a real client of the test server sends.
+augusta::protocol::JoinRequestWire HonestJoinRequest() {
+  return augusta::protocol::JoinRequestWire{.engine_version = std::string(augusta::EngineVersion()),
+                                            .character = kCharacter};
+}
+
 // A client speaking the protocol by hand, to send what a real one would not.
 class RawClient {
  public:
-  explicit RawClient(const Endpoint& server) { client_.Connect(server); }
+  // A cooperative client asks to join once connected and reports Ready for each
+  // Roster it is sent, as a client that has loaded everyone does; a scripted one
+  // does neither, and its test sends every message itself.
+  enum class Mode : std::uint8_t { kCooperative, kScripted };
+
+  explicit RawClient(const Endpoint& server, Mode mode = Mode::kCooperative) : mode_(mode) { client_.Connect(server); }
 
   ~RawClient() { client_.Disconnect(); }
 
@@ -152,31 +164,45 @@ class RawClient {
   RawClient(RawClient&&) = delete;
   RawClient& operator=(RawClient&&) = delete;
 
-  // Runs host and client until the server has admitted this one to the Lobby.
-  bool Join(Host& host) {
+  // Runs host and client until until() holds or the deadline passes; returns whether it held.
+  template <typename Condition>
+  bool ServeUntil(Host& host, Condition until) {
     const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
-    while (!accepted_ && std::chrono::steady_clock::now() < deadline) {
+    while (std::chrono::steady_clock::now() < deadline) {
       host.PumpNetwork();
       Serve();
+      if (until()) {
+        return true;
+      }
       std::this_thread::sleep_for(kPollInterval);
     }
-    return accepted_;
+    return false;
   }
 
-  // One round of this client's own network work: asks to join once connected,
-  // takes in what has arrived, and reports ReadyWire for each Roster it is sent,
-  // as a client that has loaded everyone does.
+  // Runs host and client until the connection is up.
+  bool Connect(Host& host) {
+    return ServeUntil(host, [&] { return client_.GetState() == ConnectionState::kConnected; });
+  }
+
+  // Runs host and client until the server has admitted this one to the Lobby.
+  bool Join(Host& host) {
+    return ServeUntil(host, [&] { return !ReceivedOf<augusta::protocol::JoinAcceptedWire>().empty(); });
+  }
+
+  // One round of this client's own network work: takes in what has arrived and,
+  // if cooperative, asks to join once connected.
   void Serve() {
     client_.PumpEvents();
-    if (!requested_ && client_.GetState() == ConnectionState::kConnected) {
-      Send(augusta::protocol::JoinRequestWire{.engine_version = std::string(augusta::EngineVersion()),
-                                              .character = kCharacter});
+    if (mode_ == Mode::kCooperative && !requested_ && client_.GetState() == ConnectionState::kConnected) {
+      Send(HonestJoinRequest());
       requested_ = true;
     }
     Drain();
   }
 
-  [[nodiscard]] bool InMatch() const { return in_match_; }
+  [[nodiscard]] bool InMatch() const { return !ReceivedOf<augusta::protocol::MatchStartWire>().empty(); }
+
+  [[nodiscard]] ConnectionState GetState() const { return client_.GetState(); }
 
   void Send(const augusta::protocol::MessageWire& message) { SendPayload(augusta::protocol::Encode(message)); }
 
@@ -191,9 +217,42 @@ class RawClient {
     return Drain();
   }
 
+  // Every message of type T received so far, in the order it arrived.
+  template <typename T>
+  [[nodiscard]] std::vector<T> ReceivedOf() const {
+    std::vector<T> found;
+    for (const auto& message : received_) {
+      if (const auto* typed = std::get_if<T>(&message)) {
+        found.push_back(*typed);
+      }
+    }
+    return found;
+  }
+
+  // How many messages of any type have arrived so far.
+  [[nodiscard]] std::size_t ReceivedCount() const { return received_.size(); }
+
+  // The newest Authoritative State received so far.
+  [[nodiscard]] std::optional<augusta::protocol::AuthoritativeStateWire> NewestState() const { return newest_; }
+
+  // The body this client controls, as the last Match start named it.
+  [[nodiscard]] std::optional<EntityIdWire> Entity() const {
+    const auto accepted = ReceivedOf<augusta::protocol::JoinAcceptedWire>();
+    const auto starts = ReceivedOf<augusta::protocol::MatchStartWire>();
+    if (accepted.empty() || starts.empty()) {
+      return std::nullopt;
+    }
+    for (const auto& player : starts.back().players) {
+      if (player.session == accepted.front().session) {
+        return player.entity;
+      }
+    }
+    return std::nullopt;
+  }
+
  private:
-  // Takes in what has arrived, answering each Roster with a ReadyWire, and returns
-  // the Authoritative States among it.
+  // Takes in what has arrived, answering each Roster with a ReadyWire if
+  // cooperative, and returns the Authoritative States among it.
   std::vector<augusta::protocol::AuthoritativeStateWire> Drain() {
     std::vector<augusta::protocol::AuthoritativeStateWire> states;
     for (const auto& payload : client_.ReceiveMessages()) {
@@ -201,23 +260,26 @@ class RawClient {
       if (!message.has_value()) {
         continue;
       }
-      if (std::holds_alternative<augusta::protocol::JoinAcceptedWire>(*message)) {
-        accepted_ = true;
-      } else if (const auto* lobby = std::get_if<augusta::protocol::LobbyWire>(&*message)) {
-        Send(augusta::protocol::ReadyWire{.version = lobby->version});
-      } else if (std::holds_alternative<augusta::protocol::MatchStartWire>(*message)) {
-        in_match_ = true;
+      received_.push_back(*message);
+      if (const auto* lobby = std::get_if<augusta::protocol::LobbyWire>(&*message)) {
+        if (mode_ == Mode::kCooperative) {
+          Send(augusta::protocol::ReadyWire{.version = lobby->version});
+        }
       } else if (const auto* state = std::get_if<augusta::protocol::AuthoritativeStateWire>(&*message)) {
         states.push_back(*state);
+        if (!newest_.has_value() || state->tick > newest_->tick) {
+          newest_ = *state;
+        }
       }
     }
     return states;
   }
 
+  Mode mode_;
   augusta::networking::Client client_;
   bool requested_ = false;
-  bool accepted_ = false;
-  bool in_match_ = false;
+  std::vector<augusta::protocol::MessageWire> received_;
+  std::optional<augusta::protocol::AuthoritativeStateWire> newest_;
 };
 
 // Runs host and every one of sessions (and raw, if any) - each reporting it
@@ -994,54 +1056,6 @@ TEST_F(PacingTest, AClientWhoseClockRunsTwoPercentFastKeepsTheServersQueueOfItsC
 
 TEST_F(PacingTest, AClientWhoseClockRunsTwoPercentSlowKeepsTheServerFromRunningOutOfItsCommands) {
   ExpectPacedOnTarget(RunPaced(0.98, kPacedTicks));
-}
-
-TEST(RawCommandsTest, CommandsThatAreOutOfOrderOrOutOfRangeAreDroppedWithoutAffectingTheWorld) {
-  constexpr auto kNetworkDelay = std::chrono::milliseconds(8);
-  Host host(
-      TestHostConfig(),
-      Map{.collision = {FloorAt(-0.5F)}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
-  RawClient raw(Endpoint{.address = LoopbackAddress()});
-  ASSERT_TRUE(raw.Join(host));
-  ASSERT_TRUE(DriveIntoMatch(host, {}, &raw));
-
-  const auto command = [](augusta::command::Sequence sequence, float yaw = 0.0F, float pitch = 0.0F) {
-    augusta::protocol::SequencedCommandWire sequenced{.sequence = sequence};
-    sequenced.command.direction = Vec3(1.0F, 0.0F, 0.0F);
-    sequenced.command.yaw = yaw;
-    sequenced.command.pitch = pitch;
-    return sequenced;
-  };
-  // Numbers the wire can carry and no client produces (a NaN cannot travel:
-  // the codec sends it as 0).
-  constexpr float kImpossibleYaw = 3.9F;
-  constexpr float kImpossiblePitch = 3.0F;
-  // 1 and 4 are good; 2 and 3 are numbers no client produces; 6 arrives before 5.
-  raw.Send(augusta::protocol::CommandsWire{
-      .commands = {command(1), command(2, kImpossibleYaw), command(3, 0.0F, kImpossiblePitch), command(4)}});
-  raw.Send(augusta::protocol::CommandsWire{.commands = {command(6)}});
-  raw.Send(augusta::protocol::CommandsWire{.commands = {command(5)}});
-
-  std::vector<augusta::command::Sequence> acknowledged;
-  for (int i = 0; i < 12; ++i) {
-    std::this_thread::sleep_for(kNetworkDelay);
-    host.PumpNetwork();
-    host.Tick(kFixedTick);
-    std::this_thread::sleep_for(kNetworkDelay);
-    for (const auto& state : raw.Receive()) {
-      acknowledged.push_back(state.acknowledged_sequence);
-      for (const auto& body : state.bodies) {
-        EXPECT_TRUE(std::isfinite(body.body.position.x) && std::isfinite(body.body.position.y));
-      }
-    }
-  }
-
-  ASSERT_FALSE(acknowledged.empty());
-  EXPECT_EQ(acknowledged.back(), 6U);
-  for (const augusta::command::Sequence ack : acknowledged) {
-    EXPECT_TRUE(ack == 0 || ack == 1 || ack == 4 || ack == 6)
-        << "processed a command that should have been dropped: " << ack;
-  }
 }
 
 // A vertical wall across the walking path, at x, that only the server knows.
@@ -2372,52 +2386,7 @@ class RobustnessOf : public MatchOf<kPlayers> {
 };
 
 using RobustnessTest = RobustnessOf<1>;
-using GarbageTest = RobustnessOf<2>;
 using FullMatchRobustnessTest = RobustnessOf<augusta::protocol::kMaxPlayers>;
-
-TEST_F(GarbageTest, GarbageFromAPeerIsDroppedAndTheMatchAndTheOtherClientsAreUnaffected) {
-  Session& bystander = Join();
-  RawClient raw(Endpoint{.address = LoopbackAddress()});
-  ASSERT_TRUE(raw.Join(host_));
-  ASSERT_TRUE(DriveIntoMatch(host_, All(), &raw));
-  Run(kSettleTicks);
-
-  using augusta::protocol::BytesWire;
-  BytesWire truncated_state = augusta::protocol::Encode(augusta::protocol::AuthoritativeStateWire{.bodies = {{}}});
-  truncated_state.resize(truncated_state.size() / 2);
-  BytesWire not_for_the_server = augusta::protocol::Encode(augusta::protocol::AuthoritativeStateWire{});
-  BytesWire commands_with_trailing_bytes = augusta::protocol::Encode(augusta::protocol::CommandsWire{});
-  commands_with_trailing_bytes.push_back(std::byte{7});
-  const BytesWire garbage[] = {
-      BytesWire{},
-      BytesWire{std::byte{0}},
-      BytesWire{std::byte{0xFF}, std::byte{1}, std::byte{2}},
-      truncated_state,
-      not_for_the_server,
-      commands_with_trailing_bytes,
-      augusta::protocol::Encode(augusta::protocol::ReadyWire{.version = 12345}),
-      BytesWire(64 * 1024, std::byte{0xAB}),
-      BytesWire(1000, std::byte{static_cast<unsigned char>(augusta::protocol::MessageTypeWire::kCommands)}),
-  };
-  for (const BytesWire& payload : garbage) {
-    raw.SendPayload(payload);
-  }
-  const auto before = bystander.GetAuthoritativeState();
-  ASSERT_TRUE(before.has_value());
-
-  // The match goes on: the server ticks, and the bystander keeps predicting and being reconciled.
-  Run(kSettleTicks, Forward());
-
-  const auto after = bystander.GetAuthoritativeState();
-  ASSERT_TRUE(after.has_value());
-  EXPECT_GT(after->tick, before->tick);
-  EXPECT_EQ(after->bodies.size(), 2U);  // The bystander, and the raw peer that only joined.
-  EXPECT_GT(BodySeenBy(bystander, *bystander.GetEntityId())->position.x, SpawnPoints()[0].x + 1.0F);
-  for (const auto& body : after->bodies) {
-    EXPECT_TRUE(std::isfinite(body.body.position.x) && std::isfinite(body.body.position.y));
-  }
-  EXPECT_EQ(bystander.GetConnectionState(), ConnectionState::kConnected);
-}
 
 TEST_F(FullMatchRobustnessTest, AfterAClientDisconnectsItsPlayerIsAbsentFromOthersStateAndNoOneTakesItsPlace) {
   for (std::size_t i = 0; i < augusta::protocol::kMaxPlayers; ++i) {
@@ -2471,6 +2440,557 @@ TEST_F(RobustnessTest, AClientThatDropsWithoutClosingKeepsTheServerTickingAndIsR
   Run(kSettleTicks);
   EXPECT_TRUE(next.GetAuthoritativeState().has_value());
   EXPECT_EQ(next.GetAuthoritativeState()->bodies.size(), 1U);
+}
+
+// US-15 and NFR-05: the catalogue of impossible actions
+// (tests/impossible_actions.md), entry by entry, through a real Host and the
+// wire alone. An adversarial client sends by hand what no real client sends,
+// and each test checks only what the clients are told - their Authoritative
+// State, their Shots, the replies to them - never the server's counters.
+
+// A match of an adversary and an honest bystander on the floor, each with a
+// rifle of kMagazine rounds that fires every six ticks. Every command the
+// adversary sends walks, turns and fires, unless a test makes it impossible,
+// so one the server took in shows in what both are told.
+class ImpossibleCommandTest : public LoopbackMatch {
+ protected:
+  static constexpr std::uint8_t kMagazine = 15;
+  // The ticks run after the adversary sends: far more than its message takes
+  // to arrive and a command takes to be processed.
+  static constexpr int kTicks = 20;
+  // How far a body resting on the floor may drift between two states: far less
+  // than one command's walk.
+  static constexpr float kStill = 0.01F;
+
+  // What the adversary has been told of itself, and the bystander of the adversary.
+  struct Told {
+    augusta::command::Sequence acknowledged = 0;
+    std::uint8_t rounds = 0;
+    Vec3 position{};
+    float yaw = 0.0F;
+    std::optional<Vec3> seen_by_bystander;
+    // The Shots each has been told of so far.
+    std::size_t shots = 0;
+    std::size_t bystander_shots = 0;
+  };
+
+  static HostSetup Armed() {
+    Parameters parameters = WithPlayerCount(2);
+    parameters.rifle.rounds_per_minute = 600.0F;
+    parameters.rifle.magazine_capacity = kMagazine;
+    parameters.rifle.muzzle_velocity = 800.0F;
+    parameters.ammo.max_range = 1000.0F;
+    return OnTheFloor({Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F)}, parameters);
+  }
+
+  ImpossibleCommandTest() : LoopbackMatch(Armed()) {}
+
+  void SetUp() override {
+    bystander_ = &Join();
+    ASSERT_TRUE(adversary_.Join(host_));
+    ASSERT_TRUE(DriveIntoMatch(host_, Pointers(sessions_), &adversary_));
+    const auto entity = adversary_.Entity();
+    ASSERT_TRUE(entity.has_value());
+    entity_ = *entity;
+    Run(kSettleTicks);
+    RunAndTell();
+    ASSERT_TRUE(adversary_.NewestState().has_value());
+  }
+
+  // A command a real client could send: walking, turned half a radian, firing.
+  static protocol::SequencedCommandWire Acting(augusta::command::Sequence sequence) {
+    protocol::SequencedCommandWire acting{.sequence = sequence};
+    acting.command.direction = Vec3(1.0F, 0.0F, 0.0F);
+    acting.command.yaw = 0.5F;
+    acting.command.flags = protocol::CommandWire::kFire;
+    return acting;
+  }
+
+  // A message of as many Commands as the protocol allows, each acting, numbered from 1.
+  static protocol::CommandsWire MostCommands() {
+    protocol::CommandsWire most;
+    for (std::size_t i = 1; i <= protocol::kMaxCommandsPerMessage; ++i) {
+      most.commands.push_back(Acting(i));
+    }
+    return most;
+  }
+
+  // Runs the match for kTicks with the bystander standing still, lets what is on
+  // its way arrive, and returns what the two have been told.
+  Told RunAndTell() {
+    Run(kTicks);
+    Settle(host_, Pointers(sessions_));
+    adversary_.Receive();
+    bystander_shots_ += bystander_->TakeShots().size();
+    return Now();
+  }
+
+  // What the two have been told so far.
+  [[nodiscard]] Told Now() const {
+    Told told{.shots = adversary_.ReceivedOf<protocol::ShotWire>().size(), .bystander_shots = bystander_shots_};
+    const auto state = adversary_.NewestState();
+    if (!state.has_value()) {
+      ADD_FAILURE() << "the adversary has been told no state";
+      return told;
+    }
+    told.acknowledged = state->acknowledged_sequence;
+    told.rounds = state->rifle.rounds;
+    for (const auto& body : state->bodies) {
+      if (body.entity == entity_) {
+        told.position = body.body.position;
+        told.yaw = body.yaw;
+      }
+    }
+    told.seen_by_bystander = PositionSeenBy(*bystander_, static_cast<EntityId>(std::to_underlying(entity_)));
+    return told;
+  }
+
+  // Expects the server to have taken in nothing between before and after: no
+  // command acknowledged, no round fired, the adversary's body neither moved nor turned.
+  static void ExpectNothingTaken(const Told& before, const Told& after) {
+    EXPECT_EQ(after.acknowledged, before.acknowledged);
+    EXPECT_EQ(after.rounds, before.rounds);
+    EXPECT_EQ(after.shots, before.shots);
+    EXPECT_EQ(after.bystander_shots, before.bystander_shots);
+    EXPECT_NEAR(after.position.x, before.position.x, kStill);
+    EXPECT_NEAR(after.position.z, before.position.z, kStill);
+    EXPECT_EQ(after.yaw, before.yaw);
+    ASSERT_TRUE(after.seen_by_bystander.has_value());
+    EXPECT_NEAR(after.seen_by_bystander->x, after.position.x, kStill);
+    EXPECT_NEAR(after.seen_by_bystander->z, after.position.z, kStill);
+  }
+
+  // Sends one honest command numbered right after the last acknowledged, and
+  // expects the server to take it in: whatever it refused since before left it
+  // as though it had never been sent.
+  void ExpectTheNextHonestCommandTaken(const Told& before) {
+    adversary_.Send(protocol::CommandsWire{.commands = {Acting(before.acknowledged + 1)}});
+    const Told after = RunAndTell();
+    EXPECT_EQ(after.acknowledged, before.acknowledged + 1);
+    EXPECT_EQ(after.rounds, before.rounds - 1);
+    EXPECT_EQ(after.shots, before.shots + 1);
+  }
+
+  // Sends commands in one message and expects the server to take in none of them.
+  void ExpectRejected(const std::vector<protocol::SequencedCommandWire>& commands) {
+    const Told before = Now();
+    adversary_.Send(protocol::CommandsWire{.commands = commands});
+    ExpectNothingTaken(before, RunAndTell());
+    ExpectTheNextHonestCommandTaken(before);
+  }
+
+  RawClient adversary_{Endpoint{.address = LoopbackAddress()}};
+  EntityIdWire entity_{};
+  Session* bystander_ = nullptr;
+  std::size_t bystander_shots_ = 0;
+};
+
+TEST_F(ImpossibleCommandTest, AMovementLongerThanAnyInputDeviceProducesIsRejected) {
+  auto too_long = Acting(1);
+  too_long.command.direction = Vec3(1.5F, 0.0F, 1.5F);
+  auto too_long_upward = Acting(2);
+  too_long_upward.command.direction = Vec3(-1.2F, 1.2F, -1.2F);
+
+  ExpectRejected({too_long, too_long_upward});
+}
+
+TEST_F(ImpossibleCommandTest, APitchPastStraightUpOrDownIsRejected) {
+  auto past_up = Acting(1);
+  past_up.command.pitch = 3.0F;
+  auto past_down = Acting(2);
+  past_down.command.pitch = -1.7F;
+
+  ExpectRejected({past_up, past_down});
+}
+
+TEST_F(ImpossibleCommandTest, AYawOutsideOneTurnIsRejected) {
+  auto past_half_a_turn = Acting(1);
+  past_half_a_turn.command.yaw = 3.9F;
+  auto past_half_a_turn_back = Acting(2);
+  past_half_a_turn_back.command.yaw = -3.3F;
+
+  ExpectRejected({past_half_a_turn, past_half_a_turn_back});
+}
+
+TEST_F(ImpossibleCommandTest, ARejectedCommandLeavesTheGoodOnesOfItsMessageTakenIn) {
+  // 1 is good; 2 and 3 are impossible; 4 is good but neither walks nor fires.
+  auto impossible_yaw = Acting(2);
+  impossible_yaw.command.yaw = 3.9F;
+  auto impossible_pitch = Acting(3);
+  impossible_pitch.command.pitch = 3.0F;
+  protocol::SequencedCommandWire still{.sequence = 4};
+  still.command.yaw = Acting(1).command.yaw;
+  const Told before = Now();
+
+  adversary_.Send(protocol::CommandsWire{.commands = {Acting(1), impossible_yaw, impossible_pitch, still}});
+  const Told after = RunAndTell();
+
+  // Only the first fired, and nothing turned the body past the good commands' view.
+  EXPECT_EQ(after.acknowledged, 4U);
+  EXPECT_EQ(after.rounds, before.rounds - 1);
+  EXPECT_EQ(after.shots, before.shots + 1);
+  EXPECT_EQ(after.yaw, Acting(1).command.yaw);
+}
+
+// The wire carries a Command's numbers as whole counts of their grids
+// (augusta/grid.h), so it has nowhere to carry a NaN or an infinity: a NaN a
+// client puts in arrives as 0, an infinity as its grid's bound.
+TEST_F(ImpossibleCommandTest, NoNumberOfACommandReachesTheServerAsNaNOrInfinity) {
+  constexpr float kNaN = std::numeric_limits<float>::quiet_NaN();
+  constexpr float kInfinity = std::numeric_limits<float>::infinity();
+  const Told before = Now();
+
+  // Arrives as a command that fires and neither walks nor turns, which a real client could send.
+  auto not_numbers = Acting(1);
+  not_numbers.command.direction = Vec3(kNaN, kNaN, kNaN);
+  not_numbers.command.yaw = kNaN;
+  not_numbers.command.pitch = kNaN;
+  not_numbers.command.view_fraction = kNaN;
+  adversary_.Send(protocol::CommandsWire{.commands = {not_numbers}});
+  const Told after_nan = RunAndTell();
+
+  EXPECT_EQ(after_nan.acknowledged, 1U);
+  EXPECT_EQ(after_nan.rounds, before.rounds - 1);
+  EXPECT_EQ(after_nan.yaw, 0.0F);
+  EXPECT_NEAR(after_nan.position.x, before.position.x, kStill);
+  EXPECT_NEAR(after_nan.position.z, before.position.z, kStill);
+  const auto shots = adversary_.ReceivedOf<protocol::ShotWire>();
+  ASSERT_FALSE(shots.empty());
+  EXPECT_EQ(shots.back().yaw, 0.0F);
+  EXPECT_EQ(shots.back().pitch, 0.0F);
+
+  // Arrive at their grids' bounds: out of range for a yaw, a pitch, or a movement on more than one axis.
+  auto infinite_yaw = Acting(2);
+  infinite_yaw.command.yaw = kInfinity;
+  auto infinite_pitch = Acting(3);
+  infinite_pitch.command.pitch = -kInfinity;
+  auto infinite_movement = Acting(4);
+  infinite_movement.command.direction = Vec3(-kInfinity, kInfinity, kInfinity);
+  for (auto* infinite : {&infinite_yaw, &infinite_pitch, &infinite_movement}) {
+    infinite->command.view_fraction = kInfinity;
+  }
+  ExpectRejected({infinite_yaw, infinite_pitch, infinite_movement});
+}
+
+TEST_F(ImpossibleCommandTest, ACommandWhoseSequenceIsNotNewerThanTheLastTakenInRepeatsNothing) {
+  adversary_.Send(protocol::CommandsWire{.commands = {Acting(1)}});
+  const Told fired = RunAndTell();
+  ASSERT_EQ(fired.acknowledged, 1U);
+  ASSERT_EQ(fired.rounds, kMagazine - 1);
+
+  // A command that changes nothing but the acknowledgement: it keeps the view and neither walks nor fires.
+  protocol::SequencedCommandWire still{.sequence = 3};
+  still.command.yaw = Acting(1).command.yaw;
+  // A replay of the first, then one that arrives after a newer one.
+  adversary_.Send(protocol::CommandsWire{.commands = {Acting(1)}});
+  adversary_.Send(protocol::CommandsWire{.commands = {still}});
+  adversary_.Send(protocol::CommandsWire{.commands = {Acting(2)}});
+  const Told after = RunAndTell();
+
+  EXPECT_EQ(after.acknowledged, 3U);
+  EXPECT_EQ(after.rounds, fired.rounds);
+  EXPECT_EQ(after.shots, fired.shots);
+  EXPECT_NEAR(after.position.x, fired.position.x, kStill);
+  EXPECT_NEAR(after.position.z, fired.position.z, kStill);
+}
+
+TEST_F(ImpossibleCommandTest, BytesThatAreNoMessageChangeNothing) {
+  using protocol::BytesWire;
+  BytesWire truncated_state = protocol::Encode(protocol::AuthoritativeStateWire{.bodies = {{}}});
+  truncated_state.resize(truncated_state.size() / 2);
+  BytesWire commands_with_trailing_bytes = protocol::Encode(protocol::CommandsWire{.commands = {Acting(1)}});
+  commands_with_trailing_bytes.push_back(std::byte{7});
+  BytesWire truncated_commands = protocol::Encode(protocol::CommandsWire{.commands = {Acting(1)}});
+  truncated_commands.pop_back();
+  const BytesWire garbage[] = {
+      BytesWire{},
+      BytesWire{std::byte{0}},
+      BytesWire{std::byte{0xFF}, std::byte{1}, std::byte{2}},
+      truncated_state,
+      commands_with_trailing_bytes,
+      truncated_commands,
+      BytesWire(64 * 1024, std::byte{0xAB}),
+      BytesWire(1000, std::byte{static_cast<unsigned char>(protocol::MessageTypeWire::kCommands)}),
+  };
+  const Told before = Now();
+
+  for (const BytesWire& payload : garbage) {
+    adversary_.SendPayload(payload);
+  }
+
+  ExpectNothingTaken(before, RunAndTell());
+  EXPECT_EQ(bystander_->GetPhase(), Phase::kMatch);
+  EXPECT_EQ(bystander_->GetConnectionState(), ConnectionState::kConnected);
+  ExpectTheNextHonestCommandTaken(before);
+}
+
+TEST_F(ImpossibleCommandTest, AMessageOnlyTheServerSendsChangesNothingWhenAClientSendsIt) {
+  const auto bystander_health = bystander_->GetHealth();
+  const EntityIdWire bystander{std::to_underlying(*bystander_->GetEntityId())};
+  const SessionIdWire adversary = adversary_.ReceivedOf<protocol::JoinAcceptedWire>().front().session;
+  const protocol::MessageWire server_only[] = {
+      protocol::JoinAcceptedWire{.session = SessionIdWire{99}, .tick_rate_hz = 1},
+      protocol::JoinRefusedWire{.reason = protocol::JoinRefusalWire::kLobbyFull},
+      protocol::AuthoritativeStateWire{.tick = 1'000'000,
+                                       .bodies = {{.entity = entity_, .body = {.position = Vec3(100.0F, 0.0F, 0.0F)}}},
+                                       .health = 1000.0F},
+      protocol::LobbyWire{.version = 1, .roster = {}},
+      protocol::MatchStartWire{.players = {}},
+      protocol::MatchEndWire{.winner = adversary},
+      protocol::ShotWire{.tick = 1, .shooter = entity_},
+      protocol::HitConfirmationWire{.target = bystander, .damage = 1000.0F},
+      protocol::DeathWire{.victim = bystander, .killer = entity_},
+  };
+  const Told before = Now();
+
+  for (const protocol::MessageWire& message : server_only) {
+    adversary_.Send(message);
+  }
+
+  ExpectNothingTaken(before, RunAndTell());
+  EXPECT_EQ(bystander_->GetPhase(), Phase::kMatch);
+  EXPECT_EQ(bystander_->GetHealth(), bystander_health);
+  EXPECT_TRUE(bystander_->TakeHitConfirmations().empty());
+  EXPECT_TRUE(bystander_->TakeDeaths().empty());
+  EXPECT_EQ(bystander_->GetAuthoritativeState()->bodies.size(), 2U);
+  EXPECT_EQ(bystander_->GetConnectionState(), ConnectionState::kConnected);
+  ExpectTheNextHonestCommandTaken(before);
+}
+
+TEST_F(ImpossibleCommandTest, ACommandMessageWithMoreCommandsThanTheProtocolAllowsIsRefusedWhole) {
+  // Encode writes no such message, so it is put together by hand: one of
+  // kMaxCommandsPerMessage commands, with one more spliced in before its view tick.
+  constexpr std::size_t kHeader = 2;  // The message type and the count.
+  constexpr std::size_t kViewTick = sizeof(augusta::tick::Tick);
+  const protocol::BytesWire encoded = protocol::Encode(MostCommands());
+  const protocol::BytesWire extra =
+      protocol::Encode(protocol::CommandsWire{.commands = {Acting(protocol::kMaxCommandsPerMessage + 1)}});
+  protocol::BytesWire too_many(encoded.begin(), encoded.end() - static_cast<std::ptrdiff_t>(kViewTick));
+  too_many[1] = static_cast<std::byte>(protocol::kMaxCommandsPerMessage + 1);
+  too_many.insert(too_many.end(), extra.begin() + static_cast<std::ptrdiff_t>(kHeader), extra.end());
+  ASSERT_EQ(protocol::Decode(too_many).error(), protocol::DecodeError::kFieldTooLong);
+  const Told before = Now();
+
+  adversary_.SendPayload(too_many);
+
+  ExpectNothingTaken(before, RunAndTell());
+  ExpectTheNextHonestCommandTaken(before);
+}
+
+TEST_F(ImpossibleCommandTest, CommandsFromAPeerThatHasNotBeenAdmittedMoveNothing) {
+  RawClient intruder(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  ASSERT_TRUE(intruder.Connect(host_));
+  const EntityId bystander = *bystander_->GetEntityId();
+  const auto bystander_before = PositionSeenBy(*bystander_, bystander);
+  ASSERT_TRUE(bystander_before.has_value());
+  const Told before = Now();
+
+  intruder.Send(MostCommands());
+
+  ExpectNothingTaken(before, RunAndTell());
+  const auto bystander_after = PositionSeenBy(*bystander_, bystander);
+  ASSERT_TRUE(bystander_after.has_value());
+  EXPECT_NEAR(bystander_after->x, bystander_before->x, kStill);
+  EXPECT_NEAR(bystander_after->z, bystander_before->z, kStill);
+  EXPECT_EQ(bystander_->GetAuthoritativeState()->bodies.size(), 2U);
+  intruder.Receive();
+  EXPECT_EQ(intruder.ReceivedCount(), 0U);
+}
+
+// A Lobby of kPlayers on the floor whose scenario offers two characters, for
+// the catalogue's entries about joining and Ready: honest Sessions, and
+// adversaries a test scripts message by message.
+template <std::uint8_t kPlayers>
+class ImpossibleLobbyOf : public LoopbackMatch {
+ protected:
+  static constexpr const char* kOtherCharacter = "characters/other";
+  // How long a test runs the Lobby to show no match starts: one that could
+  // start would on the first of them.
+  static constexpr int kLobbyTicks = 30;
+
+  static HostSetup TwoCharacters() {
+    HostSetup setup = OnTheFloor({}, WithPlayerCount(kPlayers));
+    setup.map.characters.push_back({.path = kOtherCharacter, .hitboxes = {}});
+    return setup;
+  }
+
+  ImpossibleLobbyOf() : LoopbackMatch(TwoCharacters()) {}
+
+  // Connects adversary, has it send request, and runs the network until the
+  // server has answered it.
+  bool AskToJoin(RawClient& adversary, const protocol::JoinRequestWire& request) {
+    if (!adversary.Connect(host_)) {
+      return false;
+    }
+    adversary.Send(request);
+    return adversary.ServeUntil(host_, [&] {
+      return !adversary.ReceivedOf<protocol::JoinAcceptedWire>().empty() ||
+             !adversary.ReceivedOf<protocol::JoinRefusedWire>().empty();
+    });
+  }
+
+  // Runs host and adversary until adversary has been told of a Roster holding
+  // players players; returns that Roster's version, or nullopt past the deadline.
+  std::optional<std::uint32_t> RosterVersionOf(RawClient& adversary, std::size_t players) {
+    const auto told = [&] {
+      const auto lobbies = adversary.ReceivedOf<protocol::LobbyWire>();
+      return !lobbies.empty() && lobbies.back().roster.size() == players;
+    };
+    if (!adversary.ServeUntil(host_, told)) {
+      return std::nullopt;
+    }
+    return adversary.ReceivedOf<protocol::LobbyWire>().back().version;
+  }
+
+  // Runs the Lobby for kLobbyTicks, every Session reporting Ready for each
+  // Roster it is sent, and each of adversaries doing its own network work.
+  void RunLobby(const std::vector<RawClient*>& adversaries) {
+    std::map<const Session*, std::uint32_t> reported;
+    for (int i = 0; i < kLobbyTicks; ++i) {
+      host_.PumpNetwork();
+      for (RawClient* adversary : adversaries) {
+        adversary->Serve();
+      }
+      for (const auto& session : sessions_) {
+        session->PumpEvents();
+        session->ExchangeMessages();
+        const auto lobby = session->GetLobby();
+        if (lobby.has_value() && session->GetPhase() == Phase::kLobby && reported[session.get()] != lobby->version) {
+          session->ReportReady(lobby->version);
+          reported[session.get()] = lobby->version;
+        }
+      }
+      host_.Tick(kFixedTick);
+      std::this_thread::sleep_for(kNetworkDelay);
+    }
+  }
+
+  // The Lobby the first Session was told of last, once what is on its way has arrived.
+  augusta::harness::Lobby FirstLobby() {
+    Settle(host_, Pointers(sessions_));
+    return sessions_.front()->GetLobby().value();
+  }
+};
+
+using ImpossibleReadyTest = ImpossibleLobbyOf<2>;
+
+TEST_F(ImpossibleReadyTest, AReadyForAnyRosterButTheCurrentOneStartsNoMatch) {
+  Session& bystander = Join();
+  RawClient adversary(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  ASSERT_TRUE(AskToJoin(adversary, HonestJoinRequest()));
+  const auto current = RosterVersionOf(adversary, 2);
+  ASSERT_TRUE(current.has_value());
+
+  for (const std::uint32_t version : {*current - 1, *current + 1, 0U, std::numeric_limits<std::uint32_t>::max()}) {
+    adversary.Send(protocol::ReadyWire{.version = version});
+  }
+  RunLobby({&adversary});
+
+  EXPECT_EQ(bystander.GetPhase(), Phase::kLobby);
+  EXPECT_FALSE(adversary.InMatch());
+  EXPECT_EQ(FirstLobby().version, *current);
+
+  // The current one starts it at once: the Lobby was full, and the bystander Ready, all along.
+  adversary.Send(protocol::ReadyWire{.version = *current});
+  EXPECT_TRUE(DriveIntoMatch(host_, Pointers(sessions_), &adversary));
+}
+
+using ImpossibleRejoinTest = ImpossibleLobbyOf<3>;
+
+TEST_F(ImpossibleRejoinTest, ASecondJoinFromAnAdmittedPlayerChangesNeitherThePlayerCountNorItsCharacter) {
+  Join();
+  RawClient adversary(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  ASSERT_TRUE(AskToJoin(adversary, HonestJoinRequest()));
+  const auto admitted = adversary.ReceivedOf<protocol::JoinAcceptedWire>();
+  ASSERT_EQ(admitted.size(), 1U);
+  const auto version = RosterVersionOf(adversary, 2);
+  ASSERT_TRUE(version.has_value());
+
+  auto as_another_character = HonestJoinRequest();
+  as_another_character.character = kOtherCharacter;
+  adversary.Send(as_another_character);
+  adversary.Send(HonestJoinRequest());
+  adversary.Send(protocol::ReadyWire{.version = *version});
+  ASSERT_TRUE(
+      adversary.ServeUntil(host_, [&] { return adversary.ReceivedOf<protocol::JoinAcceptedWire>().size() == 3; }));
+  RunLobby({&adversary});
+
+  // Each reply is the admission it already had.
+  for (const auto& reply : adversary.ReceivedOf<protocol::JoinAcceptedWire>()) {
+    EXPECT_EQ(reply.session, admitted.front().session);
+    EXPECT_EQ(reply.character, admitted.front().character);
+  }
+  // Everyone is told of the same two players, and no match starts, though both
+  // are Ready and a third would fill the Lobby.
+  EXPECT_EQ(adversary.ReceivedOf<protocol::LobbyWire>().back().version, *version);
+  const augusta::harness::Lobby lobby = FirstLobby();
+  EXPECT_EQ(lobby.version, *version);
+  ASSERT_EQ(lobby.roster.size(), 2U);
+  for (const auto& entry : lobby.roster) {
+    if (std::to_underlying(entry.session) == std::to_underlying(admitted.front().session)) {
+      EXPECT_EQ(entry.character, admitted.front().character);
+    }
+  }
+  EXPECT_EQ(sessions_.front()->GetPhase(), Phase::kLobby);
+  EXPECT_FALSE(adversary.InMatch());
+
+  // A third player fills it, and the match starts with three players, each once.
+  Join();
+  const auto full = RosterVersionOf(adversary, 3);
+  ASSERT_TRUE(full.has_value());
+  adversary.Send(protocol::ReadyWire{.version = *full});
+  ASSERT_TRUE(DriveIntoMatch(host_, Pointers(sessions_), &adversary));
+  const auto start = sessions_.front()->GetMatchStart();
+  ASSERT_TRUE(start.has_value());
+  std::set<SessionId> players;
+  for (const auto& player : start->players) {
+    players.insert(player.session);
+    if (std::to_underlying(player.session) == std::to_underlying(admitted.front().session)) {
+      EXPECT_EQ(player.character, admitted.front().character);
+    }
+  }
+  EXPECT_EQ(start->players.size(), 3U);
+  EXPECT_EQ(players.size(), 3U);
+}
+
+using ImpossibleJoinTest = ImpossibleLobbyOf<2>;
+
+TEST_F(ImpossibleJoinTest, AJoinThatCanNeverPlayHereIsRefusedAndTheLobbyIsToldNothingOfIt) {
+  Session& bystander = Join();
+  const std::uint32_t version = FirstLobby().version;
+  auto unknown_character = HonestJoinRequest();
+  unknown_character.character = "characters/nobody";
+  auto another_version = HonestJoinRequest();
+  another_version.engine_version = "0.0.0-not-the-servers";
+  auto another_pack = HonestJoinRequest();
+  another_pack.client_pack.back() = std::byte{1};
+  const std::pair<protocol::JoinRequestWire, protocol::JoinRefusalWire> requests[] = {
+      {unknown_character, protocol::JoinRefusalWire::kUnknownCharacter},
+      {another_version, protocol::JoinRefusalWire::kVersionMismatch},
+      {another_pack, protocol::JoinRefusalWire::kPackMismatch},
+  };
+  std::vector<std::unique_ptr<RawClient>> adversaries;
+  std::vector<RawClient*> serving;
+  for (const auto& request : requests) {
+    adversaries.push_back(
+        std::make_unique<RawClient>(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted));
+    serving.push_back(adversaries.back().get());
+    ASSERT_TRUE(AskToJoin(*adversaries.back(), request.first));
+  }
+
+  RunLobby(serving);
+
+  for (std::size_t i = 0; i < adversaries.size(); ++i) {
+    const auto refused = adversaries[i]->ReceivedOf<protocol::JoinRefusedWire>();
+    ASSERT_EQ(refused.size(), 1U) << "request " << i;
+    EXPECT_EQ(refused.front().reason, requests[i].second) << "request " << i;
+    EXPECT_TRUE(adversaries[i]->ReceivedOf<protocol::JoinAcceptedWire>().empty()) << "request " << i;
+    EXPECT_TRUE(adversaries[i]->ReceivedOf<protocol::LobbyWire>().empty()) << "request " << i;
+  }
+  const augusta::harness::Lobby lobby = FirstLobby();
+  EXPECT_EQ(lobby.version, version);
+  EXPECT_EQ(lobby.roster.size(), 1U);
+  EXPECT_EQ(bystander.GetPhase(), Phase::kLobby);
 }
 
 // A match of kPlayers on the floor, each with the test rifle: 600 rounds a
