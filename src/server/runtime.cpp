@@ -38,7 +38,7 @@ struct ServerRuntime::Impl {
   void NetworkThreadMain() {
     constexpr auto kNetworkRoundWait = std::chrono::milliseconds(1);
     while (!workers.StopRequested()) {
-      host.PumpNetwork();
+      host.PumpNetwork(std::chrono::steady_clock::now());
       std::this_thread::sleep_for(kNetworkRoundWait);
     }
   }

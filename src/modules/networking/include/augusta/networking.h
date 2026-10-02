@@ -270,9 +270,9 @@ class Server {
   // currently pending is undefined behavior.
   void Accept(PeerId peer);
 
-  // Ends peer's connection: rejects it if still pending, or forcibly
-  // drops it if already connected. A no-op if peer is unknown (already
-  // disconnected).
+  // Ends peer's connection: rejects it if still pending, or drops it if
+  // already connected, once what was sent to it reliably has been
+  // delivered. A no-op if peer is unknown (already disconnected).
   void Disconnect(PeerId peer);
 
   /// Sends payload to one connected peer as reliability says; a no-op if peer isn't connected.

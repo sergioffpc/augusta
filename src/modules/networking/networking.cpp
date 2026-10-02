@@ -458,7 +458,9 @@ void Server::Disconnect(PeerId peer) {
     const std::lock_guard<std::mutex> lock(impl_->mutex);
     impl_->peers.Forget(connection);
   }
-  SteamNetworkingSockets()->CloseConnection(connection, 0, nullptr, false);
+  // Lingering, so what was already sent reliably - a reply that explains the
+  // disconnect, such as a Join refusal - still arrives before the connection ends.
+  SteamNetworkingSockets()->CloseConnection(connection, 0, nullptr, true);
 }
 
 void Server::Send(PeerId peer, const Payload& payload, Reliability reliability) {
