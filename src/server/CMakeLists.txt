@@ -48,6 +48,15 @@ add_library(augustad_misbehaviour STATIC
 target_include_directories(augustad_misbehaviour PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 augusta_set_module_scope(augustad_misbehaviour SERVER_ONLY)
 
+# When a peer that has not been admitted is past its deadline; pure, so tested
+# without a network (see admission.h).
+add_library(augustad_admission STATIC
+  admission.cpp
+)
+target_include_directories(augustad_admission PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(augustad_admission PUBLIC augusta_networking)
+augusta_set_module_scope(augustad_admission SERVER_ONLY)
+
 # The server's socket and SimulationWorld without threads or a clock, so a test
 # can drive a match by hand (see host.h), and the conversions between the
 # protocol's plain types and the engine's that Host makes at the edge (see wire.h).
@@ -58,7 +67,7 @@ add_library(augustad_host STATIC
 target_include_directories(augustad_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_host
   PUBLIC augusta_networking augusta_parameters augusta_physics augusta_simulation augustad_parameters_loader
-         augustad_commands augustad_match augustad_misbehaviour augusta_assets augusta_protocol augusta_replication
+         augustad_commands augustad_match augustad_misbehaviour augustad_admission augusta_assets augusta_protocol augusta_replication
          augusta_tick
   PRIVATE augusta_logging augusta_version
 )

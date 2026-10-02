@@ -83,6 +83,11 @@ add_executable(augusta_misbehaviour_tests misbehaviour_test.cpp)
 target_link_libraries(augusta_misbehaviour_tests PRIVATE augustad_misbehaviour GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_misbehaviour_tests DISCOVERY_TIMEOUT 30)
 
+add_executable(augusta_admission_tests admission_test.cpp)
+target_link_libraries(augusta_admission_tests PRIVATE augustad_admission GTest::gtest GTest::gtest_main)
+# Links networking (for PeerId), so the same first-launch cost applies as below.
+gtest_discover_tests(augusta_admission_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_replication_tests replication_test.cpp)
 target_link_libraries(augusta_replication_tests PRIVATE augusta_replication GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_simulation, so the same first-launch cost applies as below.

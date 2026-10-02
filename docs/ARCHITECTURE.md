@@ -366,9 +366,10 @@ now.
 - **Serialization:** custom lightweight binary format for game-state messages
 - **Security:** server validates all client input (US-15) and disconnects a
   peer that keeps sending malformed, impossible or out-of-turn data, past a
-  threshold of such rejections within a sliding window (boundary constants, set
-  so an honest client under NFR-02's latency and loss never reaches them;
-  routine rejections never count); encryption deliberately deferred past v1
+  threshold of such rejections within a sliding window, or that connects and is
+  not admitted to the Lobby within a deadline (boundary constants, set so an
+  honest client under NFR-02's latency and loss never reaches them; routine
+  rejections never count); encryption deliberately deferred past v1
   (trusted LAN testing only)
 - **No I/O inside ECS worlds:** ECS worlds are pure state transformations.
   Device input, networking, rendering, and audio output are all handled by

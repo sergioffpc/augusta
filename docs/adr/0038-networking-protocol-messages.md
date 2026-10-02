@@ -247,9 +247,16 @@ player). An honest client sends none of these, whatever its latency and loss.
 Routine rejections never count: a stale command, commands outside a Match, a
 Ready for an old Roster and a refused Join. The window and threshold are
 boundary constants, like the command queue's cap, neither Parameters (ADR-0039)
-nor settings (ADR-0034). No message announces it; each such disconnect is one
-`WARN`, `event=misbehaving_disconnected`, with the peer, its session if it has
-one and the reason, and the heartbeat counts them as `misbehaving=`.
+nor settings (ADR-0034). Every connection is accepted, since a refusal needs one
+to travel on, so a peer not admitted to the Lobby within 30 seconds of
+connecting is disconnected the same way, or idle connections would pile up. An
+honest client asks to join as soon as it is connected, so it is admitted or
+refused within a round trip; a refused one has its refusal long before the
+deadline ends the connection. The deadline is a boundary constant too. No
+message announces either disconnect; each is one `WARN`,
+`event=misbehaving_disconnected`, with the peer, its session if it has one and
+the reason (`not admitted in time` for the deadline), and the heartbeat counts
+them as `misbehaving=`.
 A stale command is routine, since commands repeat, and only traced. A connection that ends frees its slot at once and
 removes the player at the start of the next tick; the log tells `left` (the peer
 closed it) from `timeout` (the transport gave up on it) and `misbehaving` (the

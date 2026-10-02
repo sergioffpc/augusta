@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_SERVER_HOST_H_
 #define AUGUSTA_SERVER_HOST_H_
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -100,10 +101,12 @@ class Host {
   Host(Host&&) = delete;
   Host& operator=(Host&&) = delete;
 
-  /// Does one round of the Network I/O thread's work: connection events and
-  /// received messages. A peer that keeps sending what no honest client sends
-  /// is disconnected (MisbehaviourTracker), and leaves as if it had left.
-  void PumpNetwork();
+  /// Does one round of the Network I/O thread's work, at now: connection events
+  /// and received messages. A peer that keeps sending what no honest client
+  /// sends (MisbehaviourTracker), or is not admitted to the Lobby within
+  /// kAdmissionDeadline of connecting (AdmissionDeadlines), is disconnected,
+  /// and leaves as if it had left.
+  void PumpNetwork(std::chrono::steady_clock::time_point now);
 
   /// Runs one fixed tick of SimulationWorld on one command per player in the
   /// match, sends each of them its update and, reliably (ADR-0044), every Shot

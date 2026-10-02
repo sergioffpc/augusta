@@ -26,6 +26,7 @@
 
 #include <gtest/gtest.h>
 
+#include "admission.h"
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
@@ -165,12 +166,14 @@ class RawClient {
   RawClient(RawClient&&) = delete;
   RawClient& operator=(RawClient&&) = delete;
 
-  // Runs host and client until until() holds or the deadline passes; returns whether it held.
+  // Runs host - its clock stopped at host_time, if given - and client until
+  // until() holds or the deadline passes; returns whether it held.
   template <typename Condition>
-  bool ServeUntil(Host& host, Condition until) {
+  bool ServeUntil(Host& host, Condition until,
+                  std::optional<std::chrono::steady_clock::time_point> host_time = std::nullopt) {
     const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
     while (std::chrono::steady_clock::now() < deadline) {
-      host.PumpNetwork();
+      host.PumpNetwork(host_time.value_or(std::chrono::steady_clock::now()));
       Serve();
       if (until()) {
         return true;
@@ -300,7 +303,7 @@ bool DriveIntoMatch(Host& host, const std::vector<Session*>& sessions, RawClient
   std::map<const Session*, std::uint32_t> reported;
   const auto deadline = std::chrono::steady_clock::now() + kDeadline;
   while (std::chrono::steady_clock::now() < deadline) {
-    host.PumpNetwork();
+    host.PumpNetwork(std::chrono::steady_clock::now());
     bool all_in_match = raw == nullptr || raw->InMatch();
     if (raw != nullptr) {
       raw->Serve();
@@ -330,7 +333,7 @@ template <typename Condition>
 bool ExchangeUntil(Host& host, const std::vector<Session*>& sessions, Condition until) {
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
   while (std::chrono::steady_clock::now() < deadline) {
-    host.PumpNetwork();
+    host.PumpNetwork(std::chrono::steady_clock::now());
     for (Session* session : sessions) {
       session->PumpEvents();
       session->ExchangeMessages();
@@ -372,7 +375,7 @@ class SessionTest : public ::testing::Test {
     session_.Connect();
     const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
     while (std::chrono::steady_clock::now() < deadline) {
-      host_.PumpNetwork();
+      host_.PumpNetwork(std::chrono::steady_clock::now());
       session_.PumpEvents();
       session_.ExchangeMessages();
       if (session_.GetConnectionState() == ConnectionState::kConnected) {
@@ -413,7 +416,7 @@ TEST_F(SessionTest, StaysConnectedWhileTheTestAlternatesTicksAndNetworkWork) {
   for (int i = 0; i < 10; ++i) {
     host_.Tick(kFixedTick);
     session_.Tick(Command{}, kFixedTick);
-    host_.PumpNetwork();
+    host_.PumpNetwork(std::chrono::steady_clock::now());
     session_.PumpEvents();
     session_.ExchangeMessages();
   }
@@ -653,7 +656,7 @@ TEST_F(JoinTest, EightClientsMoveSprintAndChangeStanceForARoundWithNoMissedTicks
       last_position[i] = state.local_body.position;
     }
 
-    host_.PumpNetwork();
+    host_.PumpNetwork(std::chrono::steady_clock::now());
     for (std::size_t i = 0; i < sessions_.size(); ++i) {
       sessions_[i]->PumpEvents();
       sessions_[i]->ExchangeMessages();
@@ -802,7 +805,7 @@ class MovementTest : public ::testing::Test {
   // The server takes in what has arrived and ticks; the client takes in the state it gets back.
   void ServerTickAndDeliver() {
     std::this_thread::sleep_for(kNetworkDelay);
-    host_.PumpNetwork();
+    host_.PumpNetwork(std::chrono::steady_clock::now());
     host_.Tick(kFixedTick);
     std::this_thread::sleep_for(kNetworkDelay);
     session_.PumpEvents();
@@ -1032,7 +1035,7 @@ class PacingTest : public MovementTest {
   void DeliverUntil(Condition delivered) {
     const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
     while (std::chrono::steady_clock::now() < deadline) {
-      host_.PumpNetwork();
+      host_.PumpNetwork(std::chrono::steady_clock::now());
       session_.PumpEvents();
       session_.ExchangeMessages();
       if (delivered()) {
@@ -1158,7 +1161,7 @@ class LoopbackMatch : public ::testing::Test {
   bool StartMatch() { return DriveIntoMatch(host_, Pointers(sessions_)); }
 
   void Exchange() {
-    host_.PumpNetwork();
+    host_.PumpNetwork(std::chrono::steady_clock::now());
     for (const auto& session : sessions_) {
       session->PumpEvents();
       session->ExchangeMessages();
@@ -2352,7 +2355,7 @@ TEST(SessionFailureTest, EndingTheSessionOneselfIsNotAFailure) {
   session.Connect();
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
   while (session.GetConnectionState() != ConnectionState::kConnected && std::chrono::steady_clock::now() < deadline) {
-    host.PumpNetwork();
+    host.PumpNetwork(std::chrono::steady_clock::now());
     session.PumpEvents();
     std::this_thread::sleep_for(kPollInterval);
   }
@@ -2856,7 +2859,7 @@ class ImpossibleLobbyOf : public LoopbackMatch {
   void RunLobby(const std::vector<RawClient*>& adversaries) {
     std::map<const Session*, std::uint32_t> reported;
     for (int i = 0; i < kLobbyTicks; ++i) {
-      host_.PumpNetwork();
+      host_.PumpNetwork(std::chrono::steady_clock::now());
       for (RawClient* adversary : adversaries) {
         adversary->Serve();
       }
@@ -3147,6 +3150,136 @@ TEST_F(HonestClientTest, AtAHundredMillisecondsOfLatencyAndWithPacketLossAClient
   EXPECT_EQ(session_.GetConnectionState(), ConnectionState::kConnected);
   EXPECT_EQ(session_.GetLobby()->roster.size(), 1U);
   EXPECT_EQ(CountOccurrences(log, "event=misbehaving_disconnected"), 0U) << log;
+}
+
+// A peer that connects and is not admitted to the Lobby within
+// kAdmissionDeadline is disconnected, as one that misbehaves is (US-15). The
+// server's clock is handed to it, so the deadline passes without waiting for it.
+class AdmissionDeadlineTest : public RobustnessOf<2> {
+ protected:
+  using Clock = std::chrono::steady_clock;
+  static constexpr auto kDeadline = augusta::server::kAdmissionDeadline;
+  static constexpr auto kJustShort = std::chrono::milliseconds(1);
+
+  // Runs host_ - its clock stopped at host_time - raw and every session for
+  // long enough that a disconnect would have reached them.
+  void ServeAt(Clock::time_point host_time, RawClient& raw) {
+    const auto until = Clock::now() + std::chrono::milliseconds(300);
+    while (Clock::now() < until) {
+      host_.PumpNetwork(host_time);
+      raw.Serve();
+      for (Session* session : All()) {
+        session->PumpEvents();
+        session->ExchangeMessages();
+      }
+      std::this_thread::sleep_for(kPollInterval);
+    }
+  }
+
+  // Runs host_, its clock stopped at host_time, and raw until raw is
+  // disconnected or the deadline passes; returns whether it was.
+  bool DisconnectedAt(Clock::time_point host_time, RawClient& raw) {
+    return raw.ServeUntil(host_, [&] { return raw.GetConnectionState() == ConnectionState::kDisconnected; }, host_time);
+  }
+};
+
+TEST_F(AdmissionDeadlineTest, APeerThatConnectsAndSendsNothingIsDisconnectedOnceTheDeadlinePassesAndNotBefore) {
+  augusta::logging::Init();
+  const Clock::time_point before = Clock::now();
+  RawClient raw(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  ASSERT_TRUE(raw.Connect(host_));
+  const Clock::time_point connected = Clock::now();
+
+  testing::internal::CaptureStdout();
+  ServeAt(before + kDeadline - kJustShort, raw);
+  const ConnectionState short_of_the_deadline = raw.GetConnectionState();
+  const bool disconnected = DisconnectedAt(connected + kDeadline, raw);
+#if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_DEBUG
+  // The heartbeat after the disconnect counts it; a DEBUG line, so only where
+  // DEBUG is compiled in.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+  host_.RecordTiming(augusta::tick::Timing{});
+#endif
+  const std::string log = testing::internal::GetCapturedStdout();
+
+  EXPECT_EQ(short_of_the_deadline, ConnectionState::kConnected);
+  EXPECT_TRUE(disconnected);
+  EXPECT_EQ(CountOccurrences(log, "event=misbehaving_disconnected"), 1U) << log;
+  EXPECT_NE(log.find("WARN subsystem=serverruntime event=misbehaving_disconnected peer="), std::string::npos) << log;
+  EXPECT_NE(log.find(" reason=\"not admitted in time\""), std::string::npos) << log;
+#if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_DEBUG
+  EXPECT_NE(log.find(" misbehaving=1"), std::string::npos) << log;
+#endif
+}
+
+TEST_F(AdmissionDeadlineTest, APeerThatSendsAnythingButAJoinIsDisconnectedAtTheDeadline) {
+  augusta::logging::Init();
+  const Clock::time_point before = Clock::now();
+  RawClient raw(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  ASSERT_TRUE(raw.Connect(host_));
+  const Clock::time_point connected = Clock::now();
+
+  testing::internal::CaptureStdout();
+  raw.Send(protocol::ReadyWire{.version = 1});
+  raw.Send(protocol::CommandsWire{.commands = {protocol::SequencedCommandWire{.sequence = 1, .command = {}}}});
+  ServeAt(before + kDeadline - kJustShort, raw);
+  const ConnectionState short_of_the_deadline = raw.GetConnectionState();
+  const bool disconnected = DisconnectedAt(connected + kDeadline, raw);
+  const std::string log = testing::internal::GetCapturedStdout();
+
+  EXPECT_EQ(short_of_the_deadline, ConnectionState::kConnected);
+  EXPECT_TRUE(disconnected);
+  EXPECT_TRUE(raw.ReceivedOf<protocol::JoinAcceptedWire>().empty());
+  EXPECT_EQ(CountOccurrences(log, "event=misbehaving_disconnected"), 1U) << log;
+  EXPECT_NE(log.find(" reason=\"not admitted in time\""), std::string::npos) << log;
+}
+
+TEST_F(AdmissionDeadlineTest, AClientThatJoinsWithinTheDeadlineIsAdmittedAndStaysConnected) {
+  Session& honest = Join();
+  RawClient idle(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  ASSERT_TRUE(idle.Connect(host_));
+
+  const Clock::time_point past_the_deadline = Clock::now() + (2 * kDeadline);
+  ServeAt(past_the_deadline, idle);
+
+  // The idle peer beside it is not spared: the deadline did pass.
+  EXPECT_TRUE(DisconnectedAt(past_the_deadline, idle));
+  EXPECT_EQ(honest.GetConnectionState(), ConnectionState::kConnected);
+  EXPECT_EQ(honest.GetPhase(), Phase::kLobby);
+  ASSERT_TRUE(honest.GetLobby().has_value());
+  EXPECT_EQ(honest.GetLobby()->roster.size(), 1U);
+}
+
+TEST_F(AdmissionDeadlineTest, ARefusedClientIsToldWhyBeforeTheDeadlineDisconnectsIt) {
+  RawClient raw(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  ASSERT_TRUE(raw.Connect(host_));
+  const Clock::time_point connected = Clock::now();
+
+  raw.Send(protocol::JoinRequestWire{.engine_version = "0.0.0-another", .character = kCharacter});
+  ASSERT_TRUE(raw.ServeUntil(host_, [&] { return !raw.ReceivedOf<protocol::JoinRefusedWire>().empty(); }));
+  const ConnectionState once_refused = raw.GetConnectionState();
+
+  EXPECT_EQ(once_refused, ConnectionState::kConnected);
+  EXPECT_TRUE(DisconnectedAt(connected + kDeadline, raw));
+  const auto refused = raw.ReceivedOf<protocol::JoinRefusedWire>();
+  ASSERT_EQ(refused.size(), 1U);
+  EXPECT_EQ(refused.front().reason, protocol::JoinRefusalWire::kVersionMismatch);
+}
+
+TEST_F(AdmissionDeadlineTest, AJoinRefusedAsTheDeadlinePassesIsStillToldBeforeTheConnectionEnds) {
+  RawClient raw(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  ASSERT_TRUE(raw.Connect(host_));
+  const Clock::time_point connected = Clock::now();
+
+  raw.Send(protocol::JoinRequestWire{.engine_version = "0.0.0-another", .character = kCharacter});
+  // Long enough for the Join to have reached the server, which takes it in on
+  // its next round: the one on which the deadline passes.
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  EXPECT_TRUE(DisconnectedAt(connected + kDeadline, raw));
+  const auto refused = raw.ReceivedOf<protocol::JoinRefusedWire>();
+  ASSERT_EQ(refused.size(), 1U);
+  EXPECT_EQ(refused.front().reason, protocol::JoinRefusalWire::kVersionMismatch);
 }
 
 // A match of kPlayers on the floor, each with the test rifle: 600 rounds a
@@ -4228,7 +4361,7 @@ TEST_F(FullAutoMatchTest, EightClientsMoveFireFullAutoReloadAndHitEachOtherForAM
       client.farthest = std::max(client.farthest, std::abs(predicted.local_body.position.x - client.first_x));
     }
 
-    host_.PumpNetwork();
+    host_.PumpNetwork(std::chrono::steady_clock::now());
     for (std::size_t i = 0; i < sessions_.size(); ++i) {
       sessions_[i]->PumpEvents();
       sessions_[i]->ExchangeMessages();
@@ -4986,7 +5119,7 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
       client.rifle = session.Tick(command, kFixedTick).rifle;
     }
 
-    host_.PumpNetwork();
+    host_.PumpNetwork(std::chrono::steady_clock::now());
     for (std::size_t rank = 0; rank < kPlayers; ++rank) {
       Session& session = *by_rank[rank];
       session.PumpEvents();
