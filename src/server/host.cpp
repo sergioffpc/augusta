@@ -663,6 +663,8 @@ Host::Host(const HostConfig& config, Map map, scripting::Engine policy)
 
 Host::~Host() = default;
 
+networking::Endpoint Host::ListenEndpoint() const { return impl_->network.LocalEndpoint(); }
+
 void Host::PumpNetwork(std::chrono::steady_clock::time_point now) {
   Impl& impl = *impl_;
   for (const networking::PeerEvent& event : impl.network.PumpEvents()) {

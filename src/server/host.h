@@ -101,6 +101,9 @@ class Host {
   Host(Host&&) = delete;
   Host& operator=(Host&&) = delete;
 
+  /// The address it listens on: HostConfig::listen's, with the port it chose if that named port 0.
+  [[nodiscard]] networking::Endpoint ListenEndpoint() const;
+
   /// Does one round of the Network I/O thread's work, at now: connection events
   /// and received messages. A peer that keeps sending what no honest client
   /// sends (MisbehaviourTracker), or is not admitted to the Lobby within

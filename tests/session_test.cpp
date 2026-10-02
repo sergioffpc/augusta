@@ -18,12 +18,6 @@
 #include <variant>
 #include <vector>
 
-#ifdef _WIN32
-#include <process.h>
-#else
-#include <unistd.h>
-#endif
-
 #include <gtest/gtest.h>
 
 #include "admission.h"
@@ -108,29 +102,26 @@ Parameters WithPlayerCount(std::uint8_t count) {
 augusta::prediction::World EmptyWorld() { return augusta::prediction::World(); }
 
 // ctest runs every test case in its own process, possibly in parallel, so a
-// fixed port would collide; derive one from the process id instead.
-std::string LoopbackAddress() {
-#ifdef _WIN32
-  const int pid = _getpid();
-#else
-  const int pid = getpid();
-#endif
-  constexpr int kFirstPort = 27100;
-  // Prime, since Windows process ids are all multiples of 4 and a span sharing
-  // that factor would leave only a quarter of its ports in use.
-  constexpr int kPortSpan = 2999;
-  return "127.0.0.1:" + std::to_string(kFirstPort + (pid % kPortSpan));
+// fixed port would collide: each server binds port 0, a free one of its own
+// choosing, and its clients connect to the one the server reports.
+constexpr const char* kLoopbackAnyPort = "127.0.0.1:0";
+
+// An address nobody listens at: the one a server chose and has since closed.
+// Another process's server could draw it again, but only one port in 16384 does.
+Endpoint UnusedLoopbackEndpoint() {
+  const augusta::networking::Server server(Endpoint{.address = kLoopbackAnyPort});
+  return server.LocalEndpoint();
 }
 
 // A test server's settings: the test tick rate unless a test says otherwise.
 HostConfig TestHostConfig(const Parameters& parameters = kTestParameters, std::uint8_t tick_rate_hz = kTestTickRate) {
   return HostConfig{
-      .tick_rate_hz = tick_rate_hz, .parameters = parameters, .listen = Endpoint{.address = LoopbackAddress()}};
+      .tick_rate_hz = tick_rate_hz, .parameters = parameters, .listen = Endpoint{.address = kLoopbackAnyPort}};
 }
 
-// A client of the test server playing character.
-SessionConfig TestSessionConfig(const std::string& character = kCharacter) {
-  return SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = character};
+// A client of the server at server playing character.
+SessionConfig TestSessionConfig(const Endpoint& server, const std::string& character = kCharacter) {
+  return SessionConfig{.server = server, .character = character};
 }
 
 // Init and Shutdown once for the whole process, as in networking_test.cpp.
@@ -367,7 +358,7 @@ class SessionTest : public ::testing::Test {
   SessionTest()
       : host_(TestHostConfig(),
               Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}}),
-        session_(TestSessionConfig(), EmptyWorld()) {}
+        session_(TestSessionConfig(host_.ListenEndpoint()), EmptyWorld()) {}
 
   // Runs both sides' network work until the session reports connected, or
   // the deadline passes.
@@ -447,7 +438,7 @@ class JoinTest : public ::testing::Test {
   Session& AddClient(const std::string& engine_version = std::string(augusta::EngineVersion()),
                      const std::string& character = kCharacter,
                      const augusta::assets::PackHash& client_pack = ClientPack(1)) {
-    sessions_.push_back(std::make_unique<Session>(SessionConfig{.server = Endpoint{.address = LoopbackAddress()},
+    sessions_.push_back(std::make_unique<Session>(SessionConfig{.server = host_.ListenEndpoint(),
                                                                 .engine_version = engine_version,
                                                                 .client_pack = client_pack,
                                                                 .character = character},
@@ -711,7 +702,7 @@ augusta::prediction::State FallenBody(const std::vector<CollisionMesh>& collisio
   for (const CollisionMesh& mesh : collision) {
     EXPECT_TRUE(world.AddCollisionMesh(mesh).has_value());
   }
-  Session session(TestSessionConfig(), std::move(world));
+  Session session(TestSessionConfig(host.ListenEndpoint()), std::move(world));
   session.Connect();
   EXPECT_TRUE(DriveIntoMatch(host, {&session}));
 
@@ -789,7 +780,7 @@ class MovementTest : public ::testing::Test {
       : host_(TestHostConfig(), Map{.collision = std::move(server_map),
                                     .spawn_points = {},
                                     .characters = {{.path = kCharacter, .hitboxes = {}}}}),
-        session_(TestSessionConfig(), WorldWithFloorAt(kGroundHeight)) {}
+        session_(TestSessionConfig(host_.ListenEndpoint()), WorldWithFloorAt(kGroundHeight)) {}
 
   void TearDown() override { augusta::networking::SimulateNetworkConditions({}); }
 
@@ -1141,7 +1132,8 @@ class LoopbackMatch : public ::testing::Test {
   // it, admitted or not. The client's own stamina rules are none: any it uses
   // came from the server.
   Session& Connect() {
-    sessions_.push_back(std::make_unique<Session>(TestSessionConfig(), WorldWithFloorAt(kFloorY)));
+    sessions_.push_back(
+        std::make_unique<Session>(TestSessionConfig(host_.ListenEndpoint()), WorldWithFloorAt(kFloorY)));
     Session& client = *sessions_.back();
     client.Connect();
     ExchangeUntil(host_, Pointers(sessions_),
@@ -1900,7 +1892,10 @@ constexpr EntityIdWire kScriptedEntity{101};
 // that are no message.
 class ScriptedServer {
  public:
-  explicit ScriptedServer(const Endpoint& listen) : server_(listen) {}
+  ScriptedServer() : server_(Endpoint{.address = kLoopbackAnyPort}) {}
+
+  // The address it listens on, for its client to connect to.
+  [[nodiscard]] Endpoint LocalEndpoint() const { return server_.LocalEndpoint(); }
 
   // Connects session and answers its join with parameters, then with a Match
   // start of it alone if start_match, and reports whether the session was
@@ -1998,8 +1993,7 @@ class ScriptedServerTest : public ::testing::Test {
         .stamina = {.deplete_per_second = deplete_per_second, .regen_per_second = 0.0F, .forced_walk_below = 0.0F}};
   }
 
-  ScriptedServerTest()
-      : server_(Endpoint{.address = LoopbackAddress()}), session_(TestSessionConfig(), WorldWithFloorAt(0.0F)) {}
+  ScriptedServerTest() : session_(TestSessionConfig(server_.LocalEndpoint()), WorldWithFloorAt(0.0F)) {}
 
   void SetUp() override { ASSERT_TRUE(server_.Admit(session_, WithDeplete(0.0F))); }
 
@@ -2214,16 +2208,15 @@ TEST_F(ScriptedLobbyTest, ReadyIsSentOnlyWhenToldAndOnlyForTheNewestRoster) {
 // A client takes the parameters it joins with as the server's, so values that
 // fail the range checks make it drop the Join accepted rather than predict on them.
 TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseParametersFailTheRangeChecks) {
-  ScriptedServer server(Endpoint{.address = LoopbackAddress()});
+  ScriptedServer server;
   Parameters threshold_of_one;
   threshold_of_one.stamina.forced_walk_below = 1.0F;
   for (const Parameters& bad :
        {Parameters{.stamina = {.deplete_per_second = -1.0F}},
         Parameters{.stamina = {.regen_per_second = std::numeric_limits<float>::quiet_NaN()}}, threshold_of_one,
         Parameters{.player_count = 0}, Parameters{.player_count = augusta::protocol::kMaxPlayers + 1}}) {
-    // One server for every case: it answers whichever session sent last, and a
-    // server bound anew each time would find the port not yet released.
-    Session session(TestSessionConfig(), EmptyWorld());
+    // One server for every case: it answers whichever session sent last.
+    Session session(TestSessionConfig(server.LocalEndpoint()), EmptyWorld());
 
     EXPECT_FALSE(server.Admit(session, bad, std::chrono::milliseconds(500)));
     EXPECT_FALSE(session.GetParameters().has_value());
@@ -2288,7 +2281,7 @@ TEST_F(SessionTest, AClientHoldsNoParametersUntilTheServerAdmitsIt) {
 TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseTickRateFailsTheChecks) {
   Host host(TestHostConfig(kTestParameters, 0),
             Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
-  Session session(TestSessionConfig(), EmptyWorld());
+  Session session(TestSessionConfig(host.ListenEndpoint()), EmptyWorld());
   session.Connect();
 
   const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
@@ -2301,7 +2294,7 @@ TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseTickRateFailsTheChecks
 
 // What a client is told when its session ends on its own.
 TEST(SessionFailureTest, ASessionThatNeverConnectedHasNoFailure) {
-  Session session(TestSessionConfig(), EmptyWorld());
+  Session session(TestSessionConfig(UnusedLoopbackEndpoint()), EmptyWorld());
 
   EXPECT_FALSE(session.GetFailure().has_value());
 }
@@ -2309,7 +2302,7 @@ TEST(SessionFailureTest, ASessionThatNeverConnectedHasNoFailure) {
 TEST(SessionFailureTest, AServerNobodyIsListeningAtIsUnreachable) {
   // Set before connecting: the timeout only reaches new connections.
   augusta::networking::SimulateNetworkConditions({.timeout_ms = 500});
-  Session session(TestSessionConfig(), EmptyWorld());
+  Session session(TestSessionConfig(UnusedLoopbackEndpoint()), EmptyWorld());
   session.Connect();
 
   std::optional<Failure> failure;
@@ -2329,7 +2322,7 @@ TEST(SessionFailureTest, AServerNobodyIsListeningAtIsUnreachable) {
 TEST(SessionFailureTest, AServerThatGoesAwayDuringAMatchIsAConnectionLost) {
   auto host = std::make_unique<Host>(
       TestHostConfig(), Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
-  Session session(TestSessionConfig(), EmptyWorld());
+  Session session(TestSessionConfig(host->ListenEndpoint()), EmptyWorld());
   session.Connect();
   ASSERT_TRUE(DriveIntoMatch(*host, {&session}));
   ASSERT_FALSE(session.GetFailure().has_value());
@@ -2351,7 +2344,7 @@ TEST(SessionFailureTest, AServerThatGoesAwayDuringAMatchIsAConnectionLost) {
 TEST(SessionFailureTest, EndingTheSessionOneselfIsNotAFailure) {
   Host host(TestHostConfig(),
             Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
-  Session session(TestSessionConfig(), EmptyWorld());
+  Session session(TestSessionConfig(host.ListenEndpoint()), EmptyWorld());
   session.Connect();
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
   while (session.GetConnectionState() != ConnectionState::kConnected && std::chrono::steady_clock::now() < deadline) {
@@ -2591,7 +2584,7 @@ class ImpossibleCommandTest : public LoopbackMatch {
     ExpectTheNextHonestCommandTaken(before);
   }
 
-  RawClient adversary_{Endpoint{.address = LoopbackAddress()}};
+  RawClient adversary_{host_.ListenEndpoint()};
   EntityIdWire entity_{};
   Session* bystander_ = nullptr;
   std::size_t bystander_shots_ = 0;
@@ -2790,7 +2783,7 @@ TEST_F(ImpossibleCommandTest, ACommandMessageWithMoreCommandsThanTheProtocolAllo
 }
 
 TEST_F(ImpossibleCommandTest, CommandsFromAPeerThatHasNotBeenAdmittedMoveNothing) {
-  RawClient intruder(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  RawClient intruder(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(intruder.Connect(host_));
   const EntityId bystander = *bystander_->GetEntityId();
   const auto bystander_before = PositionSeenBy(*bystander_, bystander);
@@ -2890,7 +2883,7 @@ using ImpossibleReadyTest = ImpossibleLobbyOf<2>;
 
 TEST_F(ImpossibleReadyTest, AReadyForAnyRosterButTheCurrentOneStartsNoMatch) {
   Session& bystander = Join();
-  RawClient adversary(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  RawClient adversary(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(AskToJoin(adversary, HonestJoinRequest()));
   const auto current = RosterVersionOf(adversary, 2);
   ASSERT_TRUE(current.has_value());
@@ -2913,7 +2906,7 @@ using ImpossibleRejoinTest = ImpossibleLobbyOf<3>;
 
 TEST_F(ImpossibleRejoinTest, ASecondJoinFromAnAdmittedPlayerChangesNeitherThePlayerCountNorItsCharacter) {
   Join();
-  RawClient adversary(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  RawClient adversary(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(AskToJoin(adversary, HonestJoinRequest()));
   const auto admitted = adversary.ReceivedOf<protocol::JoinAcceptedWire>();
   ASSERT_EQ(admitted.size(), 1U);
@@ -2986,8 +2979,7 @@ TEST_F(ImpossibleJoinTest, AJoinThatCanNeverPlayHereIsRefusedAndTheLobbyIsToldNo
   std::vector<std::unique_ptr<RawClient>> adversaries;
   std::vector<RawClient*> serving;
   for (const auto& request : requests) {
-    adversaries.push_back(
-        std::make_unique<RawClient>(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted));
+    adversaries.push_back(std::make_unique<RawClient>(host_.ListenEndpoint(), RawClient::Mode::kScripted));
     serving.push_back(adversaries.back().get());
     ASSERT_TRUE(AskToJoin(*adversaries.back(), request.first));
   }
@@ -3030,7 +3022,7 @@ using LobbyMisbehaviourTest = RobustnessOf<3>;
 TEST_F(MisbehaviourTest, APeerFloodingMalformedMessagesIsDisconnectedAndItsBodyLeavesWhileAnHonestClientPlaysOn) {
   augusta::logging::Init();
   Session& honest = Join();
-  RawClient raw(Endpoint{.address = LoopbackAddress()});
+  RawClient raw(host_.ListenEndpoint());
   ASSERT_TRUE(raw.Join(host_));
   ASSERT_TRUE(DriveIntoMatch(host_, All(), &raw));
   Run(kSettleTicks);
@@ -3069,7 +3061,7 @@ TEST_F(MisbehaviourTest, APeerFloodingMalformedMessagesIsDisconnectedAndItsBodyL
 TEST_F(LobbyMisbehaviourTest, AMisbehavingPlayerDisconnectedFromTheLobbyChangesTheRosterEveryClientIsTold) {
   Session& first = Join();
   Session& second = Join();
-  RawClient raw(Endpoint{.address = LoopbackAddress()});
+  RawClient raw(host_.ListenEndpoint());
   ASSERT_TRUE(raw.Join(host_));
   ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
     return std::ranges::all_of(sessions_,
@@ -3095,7 +3087,7 @@ TEST_F(LobbyMisbehaviourTest, AMisbehavingPlayerDisconnectedFromTheLobbyChangesT
 
 TEST_F(MisbehaviourTest, StaleRepeatsAndCommandsInFlightAcrossAMatchEndNeverDisconnect) {
   Session& honest = Join();
-  RawClient raw(Endpoint{.address = LoopbackAddress()});
+  RawClient raw(host_.ListenEndpoint());
   ASSERT_TRUE(raw.Join(host_));
   ASSERT_TRUE(DriveIntoMatch(host_, All(), &raw));
   Run(kSettleTicks, Forward());
@@ -3188,7 +3180,7 @@ class AdmissionDeadlineTest : public RobustnessOf<2> {
 TEST_F(AdmissionDeadlineTest, APeerThatConnectsAndSendsNothingIsDisconnectedOnceTheDeadlinePassesAndNotBefore) {
   augusta::logging::Init();
   const Clock::time_point before = Clock::now();
-  RawClient raw(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  RawClient raw(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(raw.Connect(host_));
   const Clock::time_point connected = Clock::now();
 
@@ -3217,7 +3209,7 @@ TEST_F(AdmissionDeadlineTest, APeerThatConnectsAndSendsNothingIsDisconnectedOnce
 TEST_F(AdmissionDeadlineTest, APeerThatSendsAnythingButAJoinIsDisconnectedAtTheDeadline) {
   augusta::logging::Init();
   const Clock::time_point before = Clock::now();
-  RawClient raw(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  RawClient raw(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(raw.Connect(host_));
   const Clock::time_point connected = Clock::now();
 
@@ -3238,7 +3230,7 @@ TEST_F(AdmissionDeadlineTest, APeerThatSendsAnythingButAJoinIsDisconnectedAtTheD
 
 TEST_F(AdmissionDeadlineTest, AClientThatJoinsWithinTheDeadlineIsAdmittedAndStaysConnected) {
   Session& honest = Join();
-  RawClient idle(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  RawClient idle(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(idle.Connect(host_));
 
   const Clock::time_point past_the_deadline = Clock::now() + (2 * kDeadline);
@@ -3253,7 +3245,7 @@ TEST_F(AdmissionDeadlineTest, AClientThatJoinsWithinTheDeadlineIsAdmittedAndStay
 }
 
 TEST_F(AdmissionDeadlineTest, ARefusedClientIsToldWhyBeforeTheDeadlineDisconnectsIt) {
-  RawClient raw(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  RawClient raw(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(raw.Connect(host_));
   const Clock::time_point connected = Clock::now();
 
@@ -3269,7 +3261,7 @@ TEST_F(AdmissionDeadlineTest, ARefusedClientIsToldWhyBeforeTheDeadlineDisconnect
 }
 
 TEST_F(AdmissionDeadlineTest, AJoinRefusedAsTheDeadlinePassesIsStillToldBeforeTheConnectionEnds) {
-  RawClient raw(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  RawClient raw(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(raw.Connect(host_));
   const Clock::time_point connected = Clock::now();
 
@@ -5327,7 +5319,7 @@ class AdversaryMatch : public LoopbackMatch {
     return ticks;
   }
 
-  RawClient adversary_{Endpoint{.address = LoopbackAddress()}};
+  RawClient adversary_{host_.ListenEndpoint()};
   EntityIdWire adversary_entity_{};
   // What each honest Session sends on every tick, in the order of sessions_.
   std::vector<Command> honest_commands_;
@@ -5819,7 +5811,7 @@ using CorrectedLobbyTest = ImpossibleLobbyOf<2>;
 
 TEST_F(CorrectedLobbyTest, CommandsFromAPlayerInTheLobbyAffectNothing) {
   Session& honest = Join();
-  RawClient adversary(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  RawClient adversary(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(AskToJoin(adversary, HonestJoinRequest()));
   const auto current = RosterVersionOf(adversary, 2);
   ASSERT_TRUE(current.has_value());
