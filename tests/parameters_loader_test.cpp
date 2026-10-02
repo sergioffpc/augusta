@@ -1,10 +1,12 @@
 #include "parameters_loader.h"
 
+#include <cstdint>
 #include <expected>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -12,9 +14,18 @@
 // is a script in, Parameters or an error out.
 namespace {
 
-using augusta::parameters::DescribeLoadError;
-using augusta::parameters::Load;
-using augusta::parameters::LoadErrorCode;
+using augusta::server::DescribeParametersLoadError;
+using augusta::server::LoadParameters;
+using augusta::server::ParametersLoadErrorCode;
+using augusta::server::ParametersWarningSink;
+
+// The tick rate every script below is loaded for, unless a test says otherwise.
+constexpr std::uint8_t kTickRate = 60;
+
+// script loaded for a server ticking at kTickRate, its warnings given to on_warning.
+auto Load(std::string_view script, const ParametersWarningSink& on_warning = {}) {
+  return LoadParameters(script, kTickRate, on_warning);
+}
 
 // The rifle, ammo and health entries every complete script below holds.
 constexpr std::string_view kCombat = R"(
@@ -68,7 +79,7 @@ std::string WithStamina(std::string_view deplete, std::string_view regen, std::s
                   ", forced_walk_below = " + std::string(forced_walk_below) + " }");
 }
 
-void ExpectError(std::string_view script, LoadErrorCode code, std::string_view subject) {
+void ExpectError(std::string_view script, ParametersLoadErrorCode code, std::string_view subject) {
   const auto loaded = Load(script);
   ASSERT_FALSE(loaded.has_value()) << script;
   EXPECT_EQ(loaded.error().code, code) << script;
@@ -105,42 +116,45 @@ TEST(ParametersLoaderTest, ReadsEveryValueOfACompleteScript) {
 }
 
 TEST(ParametersLoaderCombatTest, AMissingCombatKeyIsAnErrorNamingItsPath) {
-  ExpectError(Replacing("starting_health = 100,", ""), LoadErrorCode::kMissingKey, "starting_health");
-  ExpectError(Replacing("magazine_capacity = 30,", ""), LoadErrorCode::kMissingKey, "rifle.magazine_capacity");
-  ExpectError(Replacing("ads_field_of_view = 0.7,", ""), LoadErrorCode::kMissingKey, "rifle.ads_field_of_view");
+  ExpectError(Replacing("starting_health = 100,", ""), ParametersLoadErrorCode::kMissingKey, "starting_health");
+  ExpectError(Replacing("magazine_capacity = 30,", ""), ParametersLoadErrorCode::kMissingKey,
+              "rifle.magazine_capacity");
+  ExpectError(Replacing("ads_field_of_view = 0.7,", ""), ParametersLoadErrorCode::kMissingKey,
+              "rifle.ads_field_of_view");
   ExpectError(Replacing("recoil_pattern = { { pitch = 0.01, yaw = 0.002 }, { pitch = 0.008, yaw = -0.002 } },", ""),
-              LoadErrorCode::kMissingKey, "rifle.recoil_pattern");
-  ExpectError(Replacing("{ pitch = 0.01, yaw = 0.002 }", "{ pitch = 0.01 }"), LoadErrorCode::kMissingKey,
+              ParametersLoadErrorCode::kMissingKey, "rifle.recoil_pattern");
+  ExpectError(Replacing("{ pitch = 0.01, yaw = 0.002 }", "{ pitch = 0.01 }"), ParametersLoadErrorCode::kMissingKey,
               "rifle.recoil_pattern[1].yaw");
-  ExpectError(Replacing("damage = { head = 100, torso = 34, limb = 25 },", ""), LoadErrorCode::kMissingKey,
+  ExpectError(Replacing("damage = { head = 100, torso = 34, limb = 25 },", ""), ParametersLoadErrorCode::kMissingKey,
               "ammo.damage");
-  ExpectError(Replacing("limb = 25", ""), LoadErrorCode::kMissingKey, "ammo.damage.limb");
+  ExpectError(Replacing("limb = 25", ""), ParametersLoadErrorCode::kMissingKey, "ammo.damage.limb");
 }
 
 TEST(ParametersLoaderCombatTest, AWholeTableMissingIsNamed) {
   ExpectError(
       "return { player_count = 1, stamina = { deplete_per_second = 0, regen_per_second = 0, "
       "forced_walk_below = 0 } }",
-      LoadErrorCode::kMissingKey, "rifle");
+      ParametersLoadErrorCode::kMissingKey, "rifle");
 }
 
 TEST(ParametersLoaderCombatTest, AnUnknownCombatKeyIsAnErrorNamingItsPath) {
-  ExpectError(Replacing("reload_seconds = 2.5,", "reload_seconds = 2.5, spread = 0.01,"), LoadErrorCode::kUnknownKey,
-              "rifle.spread");
-  ExpectError(Replacing("limb = 25", "limb = 25, neck = 80"), LoadErrorCode::kUnknownKey, "ammo.damage.neck");
+  ExpectError(Replacing("reload_seconds = 2.5,", "reload_seconds = 2.5, spread = 0.01,"),
+              ParametersLoadErrorCode::kUnknownKey, "rifle.spread");
+  ExpectError(Replacing("limb = 25", "limb = 25, neck = 80"), ParametersLoadErrorCode::kUnknownKey, "ammo.damage.neck");
   ExpectError(Replacing("{ pitch = 0.008, yaw = -0.002 }", "{ pitch = 0.008, yaw = -0.002, roll = 1 }"),
-              LoadErrorCode::kUnknownKey, "rifle.recoil_pattern[2].roll");
+              ParametersLoadErrorCode::kUnknownKey, "rifle.recoil_pattern[2].roll");
 }
 
 TEST(ParametersLoaderCombatTest, ACombatValueOfTheWrongTypeIsAnErrorNamingItsPath) {
-  ExpectError(Replacing("magazine_capacity = 30", "magazine_capacity = 30.5"), LoadErrorCode::kWrongType,
+  ExpectError(Replacing("magazine_capacity = 30", "magazine_capacity = 30.5"), ParametersLoadErrorCode::kWrongType,
               "rifle.magazine_capacity");
-  ExpectError(Replacing("muzzle_velocity = 800", "muzzle_velocity = 'fast'"), LoadErrorCode::kWrongType,
+  ExpectError(Replacing("muzzle_velocity = 800", "muzzle_velocity = 'fast'"), ParametersLoadErrorCode::kWrongType,
               "rifle.muzzle_velocity");
-  ExpectError(Replacing("damage = { head = 100, torso = 34, limb = 25 }", "damage = 50"), LoadErrorCode::kWrongType,
-              "ammo.damage");
-  ExpectError(Replacing("yaw = 0.002", "yaw = '0.002'"), LoadErrorCode::kWrongType, "rifle.recoil_pattern[1].yaw");
-  ExpectError(Replacing("{ pitch = 0.008, yaw = -0.002 }", "0.008"), LoadErrorCode::kWrongType,
+  ExpectError(Replacing("damage = { head = 100, torso = 34, limb = 25 }", "damage = 50"),
+              ParametersLoadErrorCode::kWrongType, "ammo.damage");
+  ExpectError(Replacing("yaw = 0.002", "yaw = '0.002'"), ParametersLoadErrorCode::kWrongType,
+              "rifle.recoil_pattern[1].yaw");
+  ExpectError(Replacing("{ pitch = 0.008, yaw = -0.002 }", "0.008"), ParametersLoadErrorCode::kWrongType,
               "rifle.recoil_pattern[2]");
 }
 
@@ -151,7 +165,7 @@ TEST(ParametersLoaderCombatTest, ARecoilPatternThatIsNotAListIsTheWrongType) {
                                          "{ [0] = { pitch = 0, yaw = 0 } }", "3"}) {
     ExpectError(Replacing("recoil_pattern = { { pitch = 0.01, yaw = 0.002 }, { pitch = 0.008, yaw = -0.002 } }",
                           "recoil_pattern = " + std::string(pattern)),
-                LoadErrorCode::kWrongType, "rifle.recoil_pattern");
+                ParametersLoadErrorCode::kWrongType, "rifle.recoil_pattern");
   }
 }
 
@@ -159,22 +173,22 @@ TEST(ParametersLoaderCombatTest, AnEmptyRecoilPatternIsNoRecoil) {
   const auto loaded = Load(Replacing(
       "recoil_pattern = { { pitch = 0.01, yaw = 0.002 }, { pitch = 0.008, yaw = -0.002 } }", "recoil_pattern = {}"));
 
-  ASSERT_TRUE(loaded.has_value()) << DescribeLoadError(loaded.error());
+  ASSERT_TRUE(loaded.has_value()) << DescribeParametersLoadError(loaded.error());
   EXPECT_TRUE(loaded->rifle.recoil_pattern.empty());
 }
 
 TEST(ParametersLoaderCombatTest, ACombatValueOutsideItsRangeIsOutOfRange) {
-  ExpectError(Replacing("magazine_capacity = 30", "magazine_capacity = 0"), LoadErrorCode::kOutOfRange,
+  ExpectError(Replacing("magazine_capacity = 30", "magazine_capacity = 0"), ParametersLoadErrorCode::kOutOfRange,
               "rifle.magazine_capacity");
-  ExpectError(Replacing("magazine_capacity = 30", "magazine_capacity = 256"), LoadErrorCode::kOutOfRange,
+  ExpectError(Replacing("magazine_capacity = 30", "magazine_capacity = 256"), ParametersLoadErrorCode::kOutOfRange,
               "rifle.magazine_capacity");
-  ExpectError(Replacing("rounds_per_minute = 600", "rounds_per_minute = 0"), LoadErrorCode::kOutOfRange,
+  ExpectError(Replacing("rounds_per_minute = 600", "rounds_per_minute = 0"), ParametersLoadErrorCode::kOutOfRange,
               "rifle.rounds_per_minute");
-  ExpectError(Replacing("ads_recoil_scale = 0.5", "ads_recoil_scale = 2"), LoadErrorCode::kOutOfRange,
+  ExpectError(Replacing("ads_recoil_scale = 0.5", "ads_recoil_scale = 2"), ParametersLoadErrorCode::kOutOfRange,
               "rifle.ads_recoil_scale");
-  ExpectError(Replacing("max_range = 1000", "max_range = 0"), LoadErrorCode::kOutOfRange, "ammo.max_range");
-  ExpectError(Replacing("torso = 34", "torso = -1"), LoadErrorCode::kOutOfRange, "ammo.damage.torso");
-  ExpectError(Replacing("starting_health = 100", "starting_health = 0/0"), LoadErrorCode::kOutOfRange,
+  ExpectError(Replacing("max_range = 1000", "max_range = 0"), ParametersLoadErrorCode::kOutOfRange, "ammo.max_range");
+  ExpectError(Replacing("torso = 34", "torso = -1"), ParametersLoadErrorCode::kOutOfRange, "ammo.damage.torso");
+  ExpectError(Replacing("starting_health = 100", "starting_health = 0/0"), ParametersLoadErrorCode::kOutOfRange,
               "starting_health");
 }
 
@@ -185,7 +199,7 @@ TEST(ParametersLoaderCombatTest, ARecoilPatternLongerThanTheWireCarriesIsOutOfRa
                                        "yaw = -0.002 } }",
                                        "recoil_pattern = kicks");
 
-  ExpectError(long_pattern, LoadErrorCode::kOutOfRange, "rifle.recoil_pattern");
+  ExpectError(long_pattern, ParametersLoadErrorCode::kOutOfRange, "rifle.recoil_pattern");
 }
 
 TEST(ParametersLoaderTest, APlayerCountMayBeAnyWholeNumberFromOneToTheMostAMatchHolds) {
@@ -196,13 +210,13 @@ TEST(ParametersLoaderTest, APlayerCountMayBeAnyWholeNumberFromOneToTheMostAMatch
 
 TEST(ParametersLoaderTest, APlayerCountOutsideItsRangeIsOutOfRange) {
   for (const std::string_view count : {"0", "9", "256", "-1", "2^40", "math.huge", "0/0"}) {
-    ExpectError(WithPlayerCount(count), LoadErrorCode::kOutOfRange, "player_count");
+    ExpectError(WithPlayerCount(count), ParametersLoadErrorCode::kOutOfRange, "player_count");
   }
 }
 
 TEST(ParametersLoaderTest, APlayerCountThatIsNotAWholeNumberIsTheWrongType) {
   for (const std::string_view count : {"1.5", "'2'", "true"}) {
-    ExpectError(WithPlayerCount(count), LoadErrorCode::kWrongType, "player_count");
+    ExpectError(WithPlayerCount(count), ParametersLoadErrorCode::kWrongType, "player_count");
   }
 }
 
@@ -218,7 +232,7 @@ TEST(ParametersLoaderTest, ASyntaxErrorIsAScriptError) {
   const auto loaded = Load("return {");
 
   ASSERT_FALSE(loaded.has_value());
-  EXPECT_EQ(loaded.error().code, LoadErrorCode::kScriptError);
+  EXPECT_EQ(loaded.error().code, ParametersLoadErrorCode::kScriptError);
   EXPECT_FALSE(loaded.error().subject.empty());
 }
 
@@ -226,79 +240,79 @@ TEST(ParametersLoaderTest, AnErrorRaisedByTheScriptIsAScriptErrorCarryingItsMess
   const auto loaded = Load("error('no such thing')");
 
   ASSERT_FALSE(loaded.has_value());
-  EXPECT_EQ(loaded.error().code, LoadErrorCode::kScriptError);
+  EXPECT_EQ(loaded.error().code, ParametersLoadErrorCode::kScriptError);
   EXPECT_NE(loaded.error().subject.find("no such thing"), std::string::npos);
 }
 
 TEST(ParametersLoaderTest, AScriptThatDoesNotReturnATableIsNotATable) {
-  ExpectError("return 3", LoadErrorCode::kNotATable, "");
-  ExpectError("local unused = {}", LoadErrorCode::kNotATable, "");
+  ExpectError("return 3", ParametersLoadErrorCode::kNotATable, "");
+  ExpectError("local unused = {}", ParametersLoadErrorCode::kNotATable, "");
 }
 
 TEST(ParametersLoaderTest, AMissingKeyIsAnErrorNamingItsPath) {
-  ExpectError("return {}", LoadErrorCode::kMissingKey, "player_count");
+  ExpectError("return {}", ParametersLoadErrorCode::kMissingKey, "player_count");
   ExpectError("return { stamina = { deplete_per_second = 0, regen_per_second = 0, forced_walk_below = 0 } }",
-              LoadErrorCode::kMissingKey, "player_count");
-  ExpectError("return { player_count = 1 }", LoadErrorCode::kMissingKey, "stamina");
+              ParametersLoadErrorCode::kMissingKey, "player_count");
+  ExpectError("return { player_count = 1 }", ParametersLoadErrorCode::kMissingKey, "stamina");
   ExpectError("return { player_count = 1, stamina = { regen_per_second = 0, forced_walk_below = 0 } }",
-              LoadErrorCode::kMissingKey, "stamina.deplete_per_second");
+              ParametersLoadErrorCode::kMissingKey, "stamina.deplete_per_second");
   ExpectError("return { player_count = 1, stamina = { deplete_per_second = 0, forced_walk_below = 0 } }",
-              LoadErrorCode::kMissingKey, "stamina.regen_per_second");
+              ParametersLoadErrorCode::kMissingKey, "stamina.regen_per_second");
   ExpectError("return { player_count = 1, stamina = { deplete_per_second = 0, regen_per_second = 0 } }",
-              LoadErrorCode::kMissingKey, "stamina.forced_walk_below");
+              ParametersLoadErrorCode::kMissingKey, "stamina.forced_walk_below");
 }
 
 TEST(ParametersLoaderTest, AnUnknownKeyIsAnErrorNamingItsPath) {
   ExpectError(
       "return { stamina = { deplete_per_second = 0, regen_per_second = 0, forced_walk_below = 0 }, "
       "weapon = 1 }",
-      LoadErrorCode::kUnknownKey, "weapon");
+      ParametersLoadErrorCode::kUnknownKey, "weapon");
   ExpectError(
       "return { player_count = 1, stamina = { deplete_per_second = 0, regen_per_second = 0, forced_walk_below = 0, "
       "regen_per_sec = 1 } }",
-      LoadErrorCode::kUnknownKey, "stamina.regen_per_sec");
+      ParametersLoadErrorCode::kUnknownKey, "stamina.regen_per_sec");
 }
 
 TEST(ParametersLoaderTest, TheTickRateIsNotAParameterAndIsAnUnknownKey) {
   // It is the server's startup setting (ADR-0034), fixed while the server runs.
   ExpectError(
       "return { tick_rate_hz = 60, stamina = { deplete_per_second = 0, regen_per_second = 0, forced_walk_below = 0 } }",
-      LoadErrorCode::kUnknownKey, "tick_rate_hz");
+      ParametersLoadErrorCode::kUnknownKey, "tick_rate_hz");
 }
 
 TEST(ParametersLoaderTest, AMisspelledKeyIsNeverReadAsAMissingOneOrADefault) {
   // The misspelling is the cause, so it is what is reported, not the key it left absent.
   ExpectError(
       "return { player_count = 1, stamina = { deplete_per_second = 0, regen_per_secnd = 0, forced_walk_below = 0 } }",
-      LoadErrorCode::kUnknownKey, "stamina.regen_per_secnd");
+      ParametersLoadErrorCode::kUnknownKey, "stamina.regen_per_secnd");
 }
 
 TEST(ParametersLoaderTest, WhenSeveralKeysAreUnknownTheFirstInNameOrderIsReported) {
-  ExpectError("return { zz = 1, aa = 2, stamina = {} }", LoadErrorCode::kUnknownKey, "aa");
+  ExpectError("return { zz = 1, aa = 2, stamina = {} }", ParametersLoadErrorCode::kUnknownKey, "aa");
 }
 
 TEST(ParametersLoaderTest, AValueOfTheWrongTypeIsAnErrorNamingItsPath) {
-  ExpectError(WithStamina("'0.5'", "0", "0"), LoadErrorCode::kWrongType, "stamina.deplete_per_second");
-  ExpectError(WithStamina("0", "true", "0"), LoadErrorCode::kWrongType, "stamina.regen_per_second");
-  ExpectError(WithStamina("0", "0", "{}"), LoadErrorCode::kWrongType, "stamina.forced_walk_below");
-  ExpectError("return { player_count = 1, stamina = 3 }", LoadErrorCode::kWrongType, "stamina");
+  ExpectError(WithStamina("'0.5'", "0", "0"), ParametersLoadErrorCode::kWrongType, "stamina.deplete_per_second");
+  ExpectError(WithStamina("0", "true", "0"), ParametersLoadErrorCode::kWrongType, "stamina.regen_per_second");
+  ExpectError(WithStamina("0", "0", "{}"), ParametersLoadErrorCode::kWrongType, "stamina.forced_walk_below");
+  ExpectError("return { player_count = 1, stamina = 3 }", ParametersLoadErrorCode::kWrongType, "stamina");
 }
 
 TEST(ParametersLoaderTest, ANegativeRateIsOutOfRange) {
-  ExpectError(WithStamina("-0.1", "0", "0"), LoadErrorCode::kOutOfRange, "stamina.deplete_per_second");
-  ExpectError(WithStamina("0", "-0.1", "0"), LoadErrorCode::kOutOfRange, "stamina.regen_per_second");
+  ExpectError(WithStamina("-0.1", "0", "0"), ParametersLoadErrorCode::kOutOfRange, "stamina.deplete_per_second");
+  ExpectError(WithStamina("0", "-0.1", "0"), ParametersLoadErrorCode::kOutOfRange, "stamina.regen_per_second");
 }
 
 TEST(ParametersLoaderTest, ANumberThatIsNotFiniteIsOutOfRange) {
-  ExpectError(WithStamina("math.huge", "0", "0"), LoadErrorCode::kOutOfRange, "stamina.deplete_per_second");
-  ExpectError(WithStamina("0", "0/0", "0"), LoadErrorCode::kOutOfRange, "stamina.regen_per_second");
-  ExpectError(WithStamina("0", "0", "0/0"), LoadErrorCode::kOutOfRange, "stamina.forced_walk_below");
+  ExpectError(WithStamina("math.huge", "0", "0"), ParametersLoadErrorCode::kOutOfRange, "stamina.deplete_per_second");
+  ExpectError(WithStamina("0", "0/0", "0"), ParametersLoadErrorCode::kOutOfRange, "stamina.regen_per_second");
+  ExpectError(WithStamina("0", "0", "0/0"), ParametersLoadErrorCode::kOutOfRange, "stamina.forced_walk_below");
 }
 
 TEST(ParametersLoaderTest, TheForcedWalkThresholdIsAtLeastZeroAndBelowOne) {
   EXPECT_TRUE(Load(WithStamina("0", "0", "0")).has_value());
-  ExpectError(WithStamina("0", "0", "-0.1"), LoadErrorCode::kOutOfRange, "stamina.forced_walk_below");
-  ExpectError(WithStamina("0", "0", "1"), LoadErrorCode::kOutOfRange, "stamina.forced_walk_below");
+  ExpectError(WithStamina("0", "0", "-0.1"), ParametersLoadErrorCode::kOutOfRange, "stamina.forced_walk_below");
+  ExpectError(WithStamina("0", "0", "1"), ParametersLoadErrorCode::kOutOfRange, "stamina.forced_walk_below");
 }
 
 // Every name below is something the sandbox does not give a script (ADR-0039):
@@ -322,7 +336,7 @@ TEST(ParametersLoaderSandboxTest, AScriptThatCallsWhatTheSandboxLacksFailsToLoad
     const auto loaded = Load("local unused = " + std::string(call) + "\n" + std::string(kValid));
 
     ASSERT_FALSE(loaded.has_value()) << call;
-    EXPECT_EQ(loaded.error().code, LoadErrorCode::kScriptError) << call;
+    EXPECT_EQ(loaded.error().code, ParametersLoadErrorCode::kScriptError) << call;
   }
 }
 
@@ -331,7 +345,7 @@ TEST(ParametersLoaderSandboxTest, AScriptThatNeverReturnsIsStoppedByTheInstructi
     const auto loaded = Load(loop);
 
     ASSERT_FALSE(loaded.has_value()) << loop;
-    EXPECT_EQ(loaded.error().code, LoadErrorCode::kScriptError) << loop;
+    EXPECT_EQ(loaded.error().code, ParametersLoadErrorCode::kScriptError) << loop;
     EXPECT_NE(loaded.error().subject.find("instruction limit"), std::string::npos) << loaded.error().subject;
   }
 }
@@ -343,7 +357,7 @@ TEST(ParametersLoaderSandboxTest, AScriptCannotCatchTheInstructionLimitAndRunOn)
     const auto loaded = Load(loop);
 
     ASSERT_FALSE(loaded.has_value()) << loop;
-    EXPECT_EQ(loaded.error().code, LoadErrorCode::kScriptError) << loop;
+    EXPECT_EQ(loaded.error().code, ParametersLoadErrorCode::kScriptError) << loop;
   }
 }
 
@@ -393,7 +407,7 @@ TEST(ParametersLoaderExpressionTest, AnExpressionCanUseAFunctionOfTheScript) {
 }
 
 TEST(ParametersLoaderExpressionTest, AnExpressionThatIsOutOfRangeIsRefusedLikeAnyValue) {
-  ExpectError(WithStamina("1 / 0", "0", "0"), LoadErrorCode::kOutOfRange, "stamina.deplete_per_second");
+  ExpectError(WithStamina("1 / 0", "0", "0"), ParametersLoadErrorCode::kOutOfRange, "stamina.deplete_per_second");
 }
 
 TEST(ParametersLoaderExpressionTest, TheSameScriptLoadedTwiceGivesEqualParameters) {
@@ -411,10 +425,37 @@ TEST(ParametersLoaderExpressionTest, TheSameScriptLoadedTwiceGivesEqualParameter
 }
 
 TEST(ParametersLoaderTest, ADescriptionNamesTheKeyItIsAbout) {
-  const std::string message =
-      DescribeLoadError({.code = LoadErrorCode::kOutOfRange, .subject = "stamina.regen_per_second"});
+  const std::string message = DescribeParametersLoadError(
+      {.code = ParametersLoadErrorCode::kOutOfRange, .subject = "stamina.regen_per_second"});
 
   EXPECT_NE(message.find("stamina.regen_per_second"), std::string::npos) << message;
+}
+
+TEST(ParametersLoaderServerTest, AScriptReadsTheTickRateItIsLoadedFor) {
+  const std::string script = "if server.tick_rate_hz ~= 30 then error('not 30 Hz') end\n" + std::string(kValid);
+
+  EXPECT_TRUE(LoadParameters(script, 30).has_value());
+  const auto loaded = LoadParameters(script, kTickRate);
+  ASSERT_FALSE(loaded.has_value());
+  EXPECT_EQ(loaded.error().code, ParametersLoadErrorCode::kScriptError);
+}
+
+TEST(ParametersLoaderServerTest, AWarningReachesTheCallerAndTheScriptStillLoads) {
+  std::vector<std::string> warnings;
+  const auto loaded = Load("warn('fires at ', 30, ' Hz')\n" + std::string(kValid),
+                           [&warnings](std::string_view message) { warnings.emplace_back(message); });
+
+  EXPECT_TRUE(loaded.has_value());
+  EXPECT_EQ(warnings, std::vector<std::string>{"fires at 30 Hz"});
+}
+
+TEST(ParametersLoaderServerTest, AWarningOfNothingOrOfATableIsAScriptError) {
+  for (const std::string_view call : {"warn()", "warn({})", "warn('a', {})"}) {
+    const auto loaded = Load(std::string(call) + "\n" + std::string(kValid));
+
+    ASSERT_FALSE(loaded.has_value()) << call;
+    EXPECT_EQ(loaded.error().code, ParametersLoadErrorCode::kScriptError) << call;
+  }
 }
 
 // The example scenario's script (tools/composer/examples/authoring/scenarios/augusta)
@@ -428,7 +469,7 @@ TEST(ParametersExampleTest, TheExampleScriptLoadsToTheDocumentedDefaults) {
 
   const auto loaded = Load(script.str());
 
-  ASSERT_TRUE(loaded.has_value()) << DescribeLoadError(loaded.error());
+  ASSERT_TRUE(loaded.has_value()) << DescribeParametersLoadError(loaded.error());
   EXPECT_EQ(loaded->player_count, 1U);
   EXPECT_FLOAT_EQ(loaded->stamina.deplete_per_second, 0.2F);
   EXPECT_FLOAT_EQ(loaded->stamina.regen_per_second, 0.1F);
@@ -440,6 +481,22 @@ TEST(ParametersExampleTest, TheExampleScriptLoadsToTheDocumentedDefaults) {
   EXPECT_FLOAT_EQ(loaded->ammo.max_range, 1000.0F);
   EXPECT_FLOAT_EQ(loaded->ammo.damage.head, loaded->starting_health);
   EXPECT_FLOAT_EQ(loaded->starting_health, 100.0F);
+}
+
+// The example's rifle fires 10 rounds a second: a server ticking slower fires it
+// slower, which the script warns of rather than refuses.
+TEST(ParametersExampleTest, TheExampleScriptWarnsOfARifleFasterThanTheTick) {
+  std::ifstream stream(AUGUSTA_EXAMPLE_PARAMETERS, std::ios::binary);
+  ASSERT_TRUE(stream.is_open()) << AUGUSTA_EXAMPLE_PARAMETERS;
+  std::ostringstream script;
+  script << stream.rdbuf();
+  std::vector<std::string> warnings;
+  const ParametersWarningSink collect = [&warnings](std::string_view message) { warnings.emplace_back(message); };
+
+  ASSERT_TRUE(LoadParameters(script.str(), 10, collect).has_value());
+  EXPECT_TRUE(warnings.empty());
+  ASSERT_TRUE(LoadParameters(script.str(), 9, collect).has_value());
+  EXPECT_EQ(warnings.size(), 1U);
 }
 
 }  // namespace

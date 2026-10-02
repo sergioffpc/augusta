@@ -253,6 +253,11 @@ target_link_libraries(augusta_wire_tests PRIVATE augusta_harness augustad_host G
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_wire_tests DISCOVERY_TIMEOUT 30)
 
+add_executable(augusta_simulation_mapping_tests simulation_mapping_test.cpp)
+target_link_libraries(augusta_simulation_mapping_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
+# Links PhysX through augusta_physics, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_simulation_mapping_tests DISCOVERY_TIMEOUT 30)
+
 # No header past the protocol's edge names a protocol type (ADR-0038): only
 # harness_wire.h and server/wire.h convert. Nor does a presentation header name
 # the harness: the client converts (src/client/frame_mapping.h). A source scan, so it builds nothing.

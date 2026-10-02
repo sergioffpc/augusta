@@ -1,12 +1,9 @@
 #ifndef AUGUSTA_SERVER_RUNTIME_H_
 #define AUGUSTA_SERVER_RUNTIME_H_
 
-#include <cstdint>
 #include <memory>
 #include <optional>
 
-#include "augusta/networking.h"
-#include "augusta/parameters.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/supervisor.h"
@@ -14,10 +11,11 @@
 
 // ServerRuntime (ARCHITECTURE.md §5) is the augustad executable's own
 // orchestrator, owning the single authoritative SimulationWorld and the two
-// fixed threads ADR-0005 assigns the server - Simulation and Network I/O; headless, so no render thread the way
-// the client's counterpart (src/client/runtime.h) has. Carries
-// validated commands in from augusta::networking::Server and
-// SimulationWorld's Authoritative State back out to it each tick.
+// fixed threads ADR-0005 assigns the server - Simulation and Network I/O;
+// headless, so no render thread the way the client's counterpart
+// (src/client/runtime.h) has. Carries validated commands in from
+// augusta::networking::Server and SimulationWorld's Authoritative State back
+// out to it each tick.
 //
 // Decoding what clients send, admitting them, screening their commands,
 // and encoding and sending each tick's Authoritative State (via
@@ -35,31 +33,17 @@
 // flies in, and scripting::Engine, which runs the scenario's Game policy.
 namespace augusta::server {
 
-// Everything ServerRuntime needs to construct SimulationWorld and start
-// listening.
-struct RuntimeConfig {
-  // The Simulation thread's fixed tick rate in Hz (NFR-01 asks it to sustain
-  // 60 Hz, no missed ticks), which each client is told when it joins.
-  std::uint8_t tick_rate_hz = 0;
-  // What the simulation runs on and each client is told when it joins: every
-  // player body's stamina rules (physics::World, shared with PredictionWorld
-  // client-side).
-  parameters::Parameters parameters;
-  // Local address to listen on (US-01).
-  networking::Endpoint listen;
-};
-
 // Owns the one authoritative SimulationWorld and the two fixed threads
 // ADR-0005 assigns them to. The server process constructs exactly one,
 // on what becomes the Simulation thread (see Run()).
 class ServerRuntime {
  public:
-  // Constructs SimulationWorld with map's collision (throws
+  // Constructs SimulationWorld with scenario's collision (throws
   // std::runtime_error if a map mesh is rejected - see host.h) and the
   // scenario's Game policy, and starts networking::Server listening on
   // config.listen (throws std::runtime_error if the address can't be bound -
   // see networking.h). Does not yet spawn any thread; see Run().
-  ServerRuntime(const RuntimeConfig& config, Map map, scripting::Engine policy = {});
+  ServerRuntime(const HostConfig& config, Scenario scenario, scripting::Engine policy = {});
 
   // Run() always stops and joins the Network I/O thread it spawned
   // before returning, so there is nothing left for this destructor to do

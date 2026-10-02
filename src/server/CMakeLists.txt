@@ -22,6 +22,18 @@ target_include_directories(augustad_policy_loader PUBLIC ${CMAKE_CURRENT_SOURCE_
 target_link_libraries(augustad_policy_loader PUBLIC augusta_assets augusta_scripting)
 augusta_set_module_scope(augustad_policy_loader SERVER_ONLY)
 
+# What the server loads from its verified pack at startup: the scenario, the
+# Parameters and the Game policy (see content.h).
+add_library(augustad_content STATIC
+  content.cpp
+)
+target_include_directories(augustad_content PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(augustad_content
+  PUBLIC augusta_assets augusta_math augusta_parameters augusta_physics augusta_scripting
+  PRIVATE augusta_logging augusta_map augustad_parameters_loader augustad_policy_loader
+)
+augusta_set_module_scope(augustad_content SERVER_ONLY)
+
 # Who is in the match and whether a join is admitted; pure, so tested without a
 # network (see match.h).
 add_library(augustad_match STATIC
@@ -58,15 +70,17 @@ target_link_libraries(augustad_admission PUBLIC augusta_networking)
 augusta_set_module_scope(augustad_admission SERVER_ONLY)
 
 # The server's socket and SimulationWorld without threads or a clock, so a test
-# can drive a match by hand (see host.h), and the conversions between the
-# protocol's plain types and the engine's that Host makes at the edge (see wire.h).
+# can drive a match by hand (see host.h), and the conversions Host makes at its
+# edges: between the protocol's plain types and the engine's (see wire.h), and
+# into SimulationWorld's (see simulation_mapping.h).
 add_library(augustad_host STATIC
   host.cpp
+  simulation_mapping.cpp
   wire.cpp
 )
 target_include_directories(augustad_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_host
-  PUBLIC augusta_networking augusta_parameters augusta_physics augusta_simulation augustad_parameters_loader
+  PUBLIC augusta_ballistics augusta_networking augusta_parameters augusta_physics augusta_simulation augustad_content
          augustad_commands augustad_match augustad_misbehaviour augustad_admission augusta_assets augusta_protocol augusta_replication
          augusta_tick
   PRIVATE augusta_logging augusta_version
@@ -84,7 +98,7 @@ target_link_libraries(augustad_runtime
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)
 
 add_executable(augustad main.cpp)
-target_link_libraries(augustad PRIVATE augusta_assets augusta_config augusta_map augustad_parameters_loader augustad_policy_loader augusta_version augusta_logging augusta_networking augustad_runtime)
+target_link_libraries(augustad PRIVATE augusta_assets augusta_config augustad_content augusta_parameters augusta_version augusta_logging augusta_networking augustad_runtime)
 
 # `cmake --install` puts augustad in the prefix's bin directory (DESTDIR
 # honoured), which is how the Dockerfile's image gets it. On Windows the vcpkg

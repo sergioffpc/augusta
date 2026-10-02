@@ -1,25 +1,16 @@
 #include <csignal>
-#include <cstdint>
-#include <expected>
 #include <filesystem>
-#include <optional>
+#include <memory>
 #include <print>
-#include <string>
-#include <string_view>
 #include <utility>
-#include <vector>
 
 #include "augusta/assets.h"
 #include "augusta/config.h"
 #include "augusta/logging.h"
-#include "augusta/map.h"
 #include "augusta/networking.h"
-#include "augusta/parameters.h"
-#include "augusta/scripting.h"
 #include "augusta/version.h"
+#include "content.h"
 #include "host.h"
-#include "parameters_loader.h"
-#include "policy_loader.h"
 #include "runtime.h"
 
 namespace {
@@ -35,160 +26,39 @@ extern "C" void HandleShutdownSignal(int /*signal*/) {
   }
 }
 
-// The pack file_config names, verified against its public key. Called before
-// anything else starts (no socket, world, or thread is spun up yet) - a bad
-// pack or key means this process exits there, never partially running against
-// untrusted content (ADR-0018, ARCHITECTURE.md §8). Reports what is wrong and
-// returns nullopt.
-std::optional<augusta::assets::Pack> LoadVerifiedPack(const augusta::config::ServerConfig& file_config) {
+// Verifies the pack the file's settings name, loads its content and creates the
+// runtime from both; or logs why it could not and returns nullptr. Nothing in
+// the content refers back to the pack, so it goes once the content is loaded.
+std::unique_ptr<augusta::server::ServerRuntime> CreateRuntime(const augusta::config::ServerConfig& file_config) {
+  // Verified before anything else starts (no socket, world, or thread is spun
+  // up yet) - a bad pack or key means this process exits here, never partially
+  // running against untrusted content (ADR-0018, ARCHITECTURE.md §8).
   const std::filesystem::path& pack_path = file_config.pack_path;
-  auto pack = augusta::assets::LoadVerifiedPack(pack_path, file_config.public_key_path);
+  const auto pack = augusta::assets::LoadVerifiedPack(pack_path, file_config.public_key_path);
   if (!pack) {
     LE("subsystem=server event=pack_verification_failed path={} error={}", pack_path.string(),
        augusta::assets::DescribeVerifiedPackError(pack.error(), pack_path, file_config.public_key_path));
-    return std::nullopt;
+    return nullptr;
   }
   LI("subsystem=server event=pack_verified path={}", pack_path.string());
-  return *std::move(pack);
-}
 
-// Each of paths as a Character with its hitboxes and its eye, in the same
-// order, or nullopt after reporting the first that has no hitbox for a body
-// part or no eye: every hit on a player resolves to a body part (US-11) and
-// every Shot leaves from its shooter's eye (US-07), so the server runs only on
-// characters it can judge and fire for.
-std::optional<std::vector<augusta::server::Character>> LoadCharacters(const augusta::assets::Pack& pack,
-                                                                      std::vector<std::string> paths) {
-  std::vector<augusta::server::Character> characters;
-  characters.reserve(paths.size());
-  for (std::string& path : paths) {
-    auto hitboxes = pack.ResolveHitboxes(path);
-    if (!hitboxes) {
-      LE("subsystem=server event=hitboxes_loading_failed path={} character={} error={}", pack.Path().string(), path,
-         augusta::assets::DescribeResolveError(hitboxes.error(), "hitbox"));
-      return std::nullopt;
-    }
-    if (const auto missing = augusta::assets::FirstMissingBodyPart(*hitboxes)) {
-      LE("subsystem=server event=hitboxes_loading_failed path={} character={} error=\"no hitbox for the {}\"",
-         pack.Path().string(), path, augusta::assets::BodyPartName(*missing));
-      return std::nullopt;
-    }
-    const auto eye = pack.ResolveEye(augusta::assets::CharacterEyePath(path));
-    if (!eye) {
-      LE("subsystem=server event=eye_loading_failed path={} character={} error={}", pack.Path().string(), path,
-         augusta::assets::DescribeResolveError(eye.error(), "eye"));
-      return std::nullopt;
-    }
-    characters.push_back({.path = std::move(path), .hitboxes = *std::move(hitboxes), .eye = eye->position});
+  auto content = augusta::server::LoadServerContent(*pack, file_config.tick_rate_hz);
+  if (!content) {
+    LE("subsystem=server event=content_loading_failed path={} error={}", pack_path.string(),
+       augusta::server::DescribeContentError(content.error()));
+    return nullptr;
   }
-  return characters;
-}
 
-// Built before any socket or thread starts, so a pack without a usable map
-// exits like a bad pack does. Reports what is wrong and returns nullopt.
-std::optional<augusta::server::Map> LoadMap(const augusta::assets::Pack& pack) {
-  auto collision = augusta::map::LoadCollision(pack);
-  if (!collision) {
-    LE("subsystem=server event=collision_loading_failed path={} error={}", pack.Path().string(),
-       augusta::map::DescribeMapError(collision.error()));
-    return std::nullopt;
-  }
-  auto spawn_points = augusta::map::LoadSpawnPoints(pack);
-  if (!spawn_points) {
-    LE("subsystem=server event=spawn_points_loading_failed path={} error={}", pack.Path().string(),
-       augusta::map::DescribeMapError(spawn_points.error()));
-    return std::nullopt;
-  }
-  // The scenario's characters, the only ones a player may join as (ADR-0042).
-  auto character_paths = pack.ResolveCharacters();
-  if (!character_paths) {
-    LE("subsystem=server event=characters_loading_failed path={} asset={} error={}", pack.Path().string(),
-       augusta::assets::kCharactersPath,
-       augusta::assets::DescribeResolveError(character_paths.error(), "character list"));
-    return std::nullopt;
-  }
-  auto characters = LoadCharacters(pack, *std::move(character_paths));
-  if (!characters) {
-    return std::nullopt;
-  }
-  // The client pack cooked with this one, the only one a player may join with.
-  const auto client_pack = pack.ResolveClientPackHash();
-  if (!client_pack) {
-    LE("subsystem=server event=client_pack_hash_loading_failed path={} asset={} error={}", pack.Path().string(),
-       augusta::assets::kClientPackPath,
-       augusta::assets::DescribeResolveError(client_pack.error(), "client pack hash"));
-    return std::nullopt;
-  }
-  LI("subsystem=server event=map_loaded colliders={} spawn_points={} characters={}", collision->size(),
-     spawn_points->size(), characters->size());
-  return augusta::server::Map{
-      .collision = *std::move(collision),
-      .spawn_points = *std::move(spawn_points),
-      .characters = *std::move(characters),
-      .client_pack = *client_pack,
+  const augusta::server::HostConfig config{
+      .tick_rate_hz = file_config.tick_rate_hz,
+      // Every client is sent the rate and these when it joins and predicts with
+      // them, so the config file and the scenario's script are the only places
+      // they are set.
+      .parameters = content->parameters,
+      .listen = {.address = file_config.listen_address},
   };
-}
-
-// The scenario's Parameters script, out of the pack the server was given (it was
-// cooked into the server pack with the map and is signed with it), evaluated
-// once before any socket or thread starts, so a pack without one, or with one
-// that does not load, exits like a bad pack does. The Parameters are the same
-// for the whole run. Reports what is wrong and returns nullopt.
-std::optional<augusta::parameters::Parameters> LoadParameters(const augusta::assets::Pack& pack) {
-  const std::string_view script_path = augusta::assets::kParametersScriptPath;
-  const auto script = pack.ResolveScript(script_path);
-  if (!script) {
-    LE("subsystem=server event=parameters_script_loading_failed path={} script={} error={}", pack.Path().string(),
-       script_path, augusta::assets::DescribeResolveError(script.error(), "script"));
-    return std::nullopt;
-  }
-  auto parameters = augusta::parameters::Load(*script);
-  if (!parameters) {
-    LE("subsystem=server event=parameters_loading_failed path={} script={} error={}", pack.Path().string(), script_path,
-       augusta::parameters::DescribeLoadError(parameters.error()));
-    return std::nullopt;
-  }
-  LI("subsystem=server event=parameters_loaded script={}", script_path);
-  return *std::move(parameters);
-}
-
-// The scenario's Game policy scripts (ADR-0022), out of the same pack and
-// loaded before any socket or thread starts, so a script that does not load
-// exits like a bad Parameters script does. A scenario may lack either script.
-// Reports what is wrong and returns nullopt.
-std::optional<augusta::scripting::Engine> LoadPolicy(const augusta::assets::Pack& pack) {
-  auto policy = augusta::server::LoadPolicy(pack);
-  if (!policy) {
-    LE("subsystem=server event=policy_loading_failed path={} script={} error=\"{}\"", pack.Path().string(),
-       augusta::scripting::ScriptPath(policy.error().script), augusta::server::DescribePolicyLoadError(policy.error()));
-    return std::nullopt;
-  }
-  LI("subsystem=server event=policy_loaded");
-  return *std::move(policy);
-}
-
-// At most one round fires a tick, so a scenario whose rifle asks for more fires
-// slower than its script says: worth a warning, not a refusal.
-void WarnIfTheRifleOutpacesTheTick(const augusta::parameters::Rifle& rifle, std::uint8_t tick_rate_hz) {
-  if (augusta::parameters::FiresFasterThanTheTickRate(rifle, tick_rate_hz)) {
-    LW("subsystem=server event=rifle_fire_rate_capped rounds_per_minute={} tick_rate_hz={}", rifle.rounds_per_minute,
-       tick_rate_hz);
-  }
-}
-
-// What ServerRuntime's Config is built from: the file's settings and the
-// pack's Parameters script. The pack's map travels to ServerRuntime
-// separately (see main()), not through Config.
-augusta::server::RuntimeConfig BuildRuntimeConfig(const augusta::config::ServerConfig& file_config,
-                                                  const augusta::parameters::Parameters& parameters) {
-  augusta::server::RuntimeConfig config;
-  config.listen.address = file_config.listen_address;
-  config.tick_rate_hz = file_config.tick_rate_hz;
-  // Every client is sent the rate and these when it joins and predicts with
-  // them, so the config file and the scenario's script are the only places they
-  // are set.
-  config.parameters = parameters;
-  return config;
+  return std::make_unique<augusta::server::ServerRuntime>(config, std::move(content->scenario),
+                                                          std::move(content->policy));
 }
 
 }  // namespace
@@ -216,37 +86,18 @@ int main(int argc, char** argv) {
   augusta::logging::SetLogLevel(*augusta::logging::ParseSeverity(file_config->log_level));
   LI("subsystem=server event=starting version={}", augusta::EngineVersion());
 
-  const auto pack = LoadVerifiedPack(*file_config);
-  if (!pack) {
-    return 1;
-  }
-
-  auto map = LoadMap(*pack);
-  if (!map) {
-    return 1;
-  }
-
-  const auto parameters = LoadParameters(*pack);
-  if (!parameters) {
-    return 1;
-  }
-  WarnIfTheRifleOutpacesTheTick(parameters->rifle, file_config->tick_rate_hz);
-
-  auto policy = LoadPolicy(*pack);
-  if (!policy) {
-    return 1;
-  }
-
   // augusta::networking::Init() must run once, process-wide, before any
   // Client/Server is constructed - see networking.h.
   augusta::networking::Init();
 
-  const augusta::server::RuntimeConfig config = BuildRuntimeConfig(*file_config, *parameters);
-  augusta::server::ServerRuntime runtime(config, *std::move(map), *std::move(policy));
-  g_runtime = &runtime;
+  const auto runtime = CreateRuntime(*file_config);
+  if (!runtime) {
+    return 1;
+  }
+  g_runtime = runtime.get();
   std::signal(SIGINT, HandleShutdownSignal);
   std::signal(SIGTERM, HandleShutdownSignal);
 
   // A failure was logged by the supervisor where it happened; it only sets the exit status here.
-  return runtime.Run().has_value() ? 1 : 0;
+  return runtime->Run().has_value() ? 1 : 0;
 }

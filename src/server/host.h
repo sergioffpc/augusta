@@ -17,8 +17,8 @@
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
+#include "content.h"
 #include "match.h"
-#include "parameters_loader.h"
 
 // augusta::server::Host is the server's network boundary and the
 // authoritative SimulationWorld (ADR-0023) without the threads and the clock:
@@ -51,48 +51,15 @@ struct HostConfig {
   networking::Endpoint listen{};
 };
 
-/// A character a player may join as (ADR-0042), with the hitboxes a bullet
-/// that reaches a body of that character is judged against (US-11, ADR-0040)
-/// and the eye its Shots leave from.
-struct Character {
-  /// Its path in the pack, as the scenario's character list names it.
-  std::string path;
-  std::vector<assets::HitboxData> hitboxes;
-  /// Where it sees from standing, relative to its feet (ADR-0040).
-  math::Vec3 eye{};
-};
-
-/// The map's collision and where players spawn, as built by
-/// augusta::map from the server pack by the caller: where content comes from
-/// is the executable's business, not the config file's - so it travels
-/// alongside HostConfig rather than inside it.
-struct Map {
-  std::vector<physics::CollisionMesh> collision;
-  /// Game policy gives each player one at every match start (US-03), as
-  /// simulation::World::StartMatch does; empty spawns everyone at the origin.
-  std::vector<math::Vec3> spawn_points;
-  /// The scenario's characters: the only ones a player may join as
-  /// (ADR-0042). Empty admits no one.
-  std::vector<Character> characters;
-  /// The hash of the client pack cooked with the server's: the only one a
-  /// player may join with.
-  assets::PackHash client_pack{};
-};
-
-/// entity as SimulationWorld names the same body.
-[[nodiscard]] simulation::EntityId ToSimulation(EntityId entity);
-
-/// A SimulationWorld body's entity as Match named it; the inverse of ToSimulation.
-[[nodiscard]] EntityId FromSimulation(simulation::EntityId entity);
-
 /// The server's listening socket and its SimulationWorld, without threads or a clock.
 class Host {
  public:
-  /// Constructs SimulationWorld with map's collision (throws
+  /// Constructs SimulationWorld with scenario's collision (throws
   /// std::runtime_error if a map mesh, or a character's hitbox, is not a whole
   /// triangle list) and the scenario's Game policy (none by default), and starts
   /// listening (throws std::runtime_error if the address can't be bound).
-  Host(const HostConfig& config, Map map, scripting::Engine policy = {});
+  /// Content is loaded from the server pack by the caller (see content.h).
+  Host(const HostConfig& config, Scenario scenario, scripting::Engine policy = {});
   ~Host();
 
   // Not copyable or movable: owns the listening socket.

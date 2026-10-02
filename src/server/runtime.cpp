@@ -1,6 +1,7 @@
 #include "runtime.h"
 
 #include <chrono>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <thread>
@@ -10,26 +11,22 @@
 #include "augusta/scripting.h"
 #include "augusta/supervisor.h"
 #include "augusta/tick.h"
+#include "content.h"
 #include "host.h"
 
 namespace augusta::server {
 
 struct ServerRuntime::Impl {
-  RuntimeConfig config;
+  // The Simulation thread's fixed tick rate in Hz (NFR-01 asks it to sustain
+  // 60 Hz, no missed ticks).
+  std::uint8_t tick_rate_hz;
   Host host;
   // The two threads' stop request and first failure (ADR-0005). Declared after
   // host, so it stops and joins the Network I/O thread before host goes.
   supervisor::Supervisor workers;
 
-  Impl(const RuntimeConfig& cfg, Map map, scripting::Engine policy)
-      : config(cfg),
-        host(
-            HostConfig{
-                .tick_rate_hz = cfg.tick_rate_hz,
-                .parameters = cfg.parameters,
-                .listen = cfg.listen,
-            },
-            std::move(map), std::move(policy)) {}
+  Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy)
+      : tick_rate_hz(config.tick_rate_hz), host(config, std::move(scenario), std::move(policy)) {}
 
   // Network I/O thread body (ADR-0005): pumps the connection until a stop is
   // requested, waiting kNetworkRoundWait between rounds rather than spinning a
@@ -46,7 +43,7 @@ struct ServerRuntime::Impl {
   // Simulation thread body (ADR-0005): ticks Host on its fixed schedule until a
   // stop is requested.
   void SimulationLoop() {
-    const auto delta_time = std::chrono::duration<float>(1.0F / config.tick_rate_hz);
+    const auto delta_time = std::chrono::duration<float>(1.0F / tick_rate_hz);
     const auto tick_duration = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
     LI("subsystem=serverruntime event=loop_starting loop=simulation");
     tick::Clock::time_point deadline = tick::Clock::now();
@@ -64,8 +61,8 @@ struct ServerRuntime::Impl {
   }
 };
 
-ServerRuntime::ServerRuntime(const RuntimeConfig& config, Map map, scripting::Engine policy)
-    : impl_(std::make_unique<Impl>(config, std::move(map), std::move(policy))) {}
+ServerRuntime::ServerRuntime(const HostConfig& config, Scenario scenario, scripting::Engine policy)
+    : impl_(std::make_unique<Impl>(config, std::move(scenario), std::move(policy))) {}
 
 ServerRuntime::~ServerRuntime() = default;
 

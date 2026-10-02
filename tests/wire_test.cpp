@@ -453,9 +453,4 @@ TEST(WireTest, ADeathTheServerTellsReachesTheClientUnchanged) {
   }
 }
 
-TEST(WireTest, MatchAndSimulationWorldNameABodyByTheSameEntity) {
-  EXPECT_EQ(augusta::server::FromSimulation(augusta::server::ToSimulation(EntityId{77})), EntityId{77});
-  EXPECT_EQ(Number(augusta::server::ToSimulation(EntityId{77})), 77U);
-}
-
 }  // namespace

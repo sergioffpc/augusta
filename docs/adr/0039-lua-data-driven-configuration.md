@@ -26,8 +26,8 @@ script (ADR-0022).
 **Evaluated once, at startup, never in the tick.** The server reads
 `parameters.lua` out of its pack before it opens a socket, runs it once and keeps
 the resulting `Parameters` for the life of the process. A pure function,
-`script text → std::expected<Parameters, Error>` (ADR-0033), reads the returned
-table into `Parameters`, a plain immutable C++ struct. Mechanism code reads that
+`(script text, tick rate) → std::expected<Parameters, Error>` (ADR-0033), reads
+the returned table into `Parameters`, a plain immutable C++ struct. Mechanism code reads that
 struct and never calls Lua, so an expression costs nothing per tick and cannot see
 simulation state: the script runs outside the tick, with nothing of the world in
 reach. Beyond ADR-0022's sandbox, the environment has no `os.time`, `os.clock` or
@@ -52,6 +52,14 @@ the address it listens on. It is the `simulation.tick_rate_hz` key of `augustad.
 travels as in Join accepted (ADR-0038): NFR-01's 60 Hz is what the
 server must sustain, measured, not a floor on the value, so a run may go slower to
 be debugged. A `tick_rate_hz` left in the script is an unknown key.
+
+**The script checks its own values against the tick rate.** Some values only
+make sense against it: at most one round fires a tick, so a rifle faster than the
+tick rate fires at the tick rate. The script reads the rate the server it is
+loaded for runs at as `server.tick_rate_hz`, and what to do about a value that
+does not fit is the scenario's policy, in its own script: Lua's `warn(...)`
+reaches the server's log and the server starts, `error(...)` stops the load as
+any script error does. The server holds no rule of its own about such values.
 
 **The server is the only source.** Whatever client and server must agree on is
 decided by the server and nowhere else. A client ticking at another rate than the
@@ -88,7 +96,13 @@ say how a running simulation and its clients adopt a new value).
   simplest at runtime and the client needs no Lua, but the cooker (Python) would
   need the interpreter and the loader's rules. The server evaluating the script it
   finds in its pack keeps one loader, and shipping evaluated values instead stays
-  possible later because the loader is a pure function.
+  possible later because the loader is a pure function. The cooker also cannot
+  check a value against the tick rate, which is known only when a server starts
+  (ADR-0034).
+- **Check the values that depend on the tick rate in the server's C++**: one
+  place, but the server would decide for every scenario whether a value that does
+  not fit is a warning or a refusal, and a scenario's own values would be judged
+  by rules outside its script.
 - **Call Lua from the tick** to compute a field on each use: rejected. It puts
   the interpreter in the hot path, lets a field read simulation state (so it is
   policy, not configuration), and lets client and server compute different
@@ -118,4 +132,5 @@ say how a running simulation and its clients adopt a new value).
   (by name, ADR-0041) instead of a single stage.
 - Whether a release build bakes the evaluated `Parameters` into the pack instead
   of the script is not decided here. The loader being a pure function keeps both
-  possible.
+  possible, though a baked pack would lose the script's checks against the tick
+  rate.

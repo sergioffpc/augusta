@@ -113,10 +113,6 @@ struct InvalidParameter {
 /// Whether tick_rate_hz is a rate the simulation can run at: 1..255 Hz.
 [[nodiscard]] bool IsValidTickRate(std::uint8_t tick_rate_hz);
 
-/// Whether rifle fires faster than one round a tick at tick_rate_hz, which
-/// holding fire cannot do: it then fires at the tick rate instead.
-[[nodiscard]] bool FiresFasterThanTheTickRate(const Rifle& rifle, std::uint8_t tick_rate_hz);
-
 }  // namespace augusta::parameters
 
 #endif  // AUGUSTA_PARAMETERS_H_

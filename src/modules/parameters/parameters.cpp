@@ -12,8 +12,6 @@
 namespace augusta::parameters {
 namespace {
 
-constexpr float kSecondsPerMinute = 60.0F;
-
 // A finite number of at least min.
 bool FiniteAndAtLeast(float value, float min) { return std::isfinite(value) && value >= min; }
 
@@ -111,9 +109,5 @@ std::expected<void, InvalidParameter> Validate(const Parameters& parameters) {
 }
 
 bool IsValidTickRate(std::uint8_t tick_rate_hz) { return tick_rate_hz > 0; }
-
-bool FiresFasterThanTheTickRate(const Rifle& rifle, std::uint8_t tick_rate_hz) {
-  return rifle.rounds_per_minute / kSecondsPerMinute > static_cast<float>(tick_rate_hz);
-}
 
 }  // namespace augusta::parameters
