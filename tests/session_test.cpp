@@ -2735,7 +2735,7 @@ TEST_F(ImpossibleCommandTest, AMessageOnlyTheServerSendsChangesNothingWhenAClien
   const EntityIdWire bystander{std::to_underlying(*bystander_->GetEntityId())};
   const SessionIdWire adversary = adversary_.ReceivedOf<protocol::JoinAcceptedWire>().front().session;
   const protocol::MessageWire server_only[] = {
-      protocol::JoinAcceptedWire{.session = SessionIdWire{99}, .tick_rate_hz = 1},
+      protocol::JoinAcceptedWire{.session = SessionIdWire{99}, .tick_rate_hz = 1, .character = kCharacter},
       protocol::JoinRefusedWire{.reason = protocol::JoinRefusalWire::kLobbyFull},
       protocol::AuthoritativeStateWire{.tick = 1'000'000,
                                        .bodies = {{.entity = entity_, .body = {.position = Vec3(100.0F, 0.0F, 0.0F)}}},
