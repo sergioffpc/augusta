@@ -40,7 +40,7 @@ MAX_SCRIPT_BYTES = 1024 * 1024
 MAX_AUDIO_BYTES = 64 * 1024 * 1024
 # The sample widths a PCM WAV file can hold.
 AUDIO_BITS_PER_SAMPLE = (8, 16, 24, 32)
-# A character index is one byte and zero is never valid (ADR-0042).
+# What bounds the character list a pack is read with (ADR-0042).
 MAX_CHARACTERS = 255
 MAX_ENTRIES = 1 << 20
 MAX_PACK_SIZE = 8 * 1024 * 1024 * 1024
@@ -243,8 +243,7 @@ def encode_sounds_blob(sounds_path: str) -> bytes:
 
 def encode_characters_blob(characters: list[str]) -> bytes:
     """A u32 count, then each character's path relative to authoring/ as a
-    length-prefixed string, in manifest order: character index N is element
-    N-1 (ADR-0042).
+    length-prefixed string, in manifest order (ADR-0042).
     """
     if len(characters) > MAX_CHARACTERS:
         raise EncodeError(f"a scenario composes at most {MAX_CHARACTERS} characters, this one names {len(characters)}")

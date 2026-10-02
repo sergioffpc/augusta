@@ -104,7 +104,7 @@ std::vector<RemotePlayer> RemoteInterpolator::Sample(double sample_time) const {
           .stance = t < kMidpointFraction ? earlier.body.stance : later->body.stance,
       };
     }
-    result.push_back(RemotePlayer{.entity = buffered.entity, .body = body});
+    result.push_back(RemotePlayer{.entity = buffered.entity, .body = body, .character = {}});
   }
   return result;
 }

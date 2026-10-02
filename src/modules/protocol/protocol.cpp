@@ -154,14 +154,8 @@ class Reader {
     return ToEnum(ReadU8(), first, last);
   }
 
-  // A character index: 1-based, so a zeroed byte is never one (ADR-0042).
-  std::uint8_t ReadCharacter() {
-    const std::uint8_t character = ReadU8();
-    if (character == 0) {
-      Fail(DecodeError::kInvalidEnum);
-    }
-    return character;
-  }
+  // A character, by its path relative to `authoring/` (ADR-0042).
+  std::string ReadCharacter() { return ReadString(kMaxCharacterPathLength); }
 
   // value as an enumerator between first and last, which must be consecutive.
   template <typename Enum>
@@ -301,7 +295,7 @@ JoinRequestWire ReadJoinRequest(Reader& reader) {
   return JoinRequestWire{
       .engine_version = reader.ReadString(kMaxEngineVersionLength),
       .client_pack = reader.ReadPackHash(),
-      .character = reader.ReadString(kMaxCharacterPathLength),
+      .character = reader.ReadCharacter(),
   };
 }
 
@@ -435,7 +429,7 @@ MatchStartWire ReadMatchStart(Reader& reader) {
     player.entity = static_cast<EntityIdWire>(reader.ReadU32());
     player.character = reader.ReadCharacter();
     player.spawn = reader.ReadVec3(math::kPositionGrid);
-    start.players.push_back(player);
+    start.players.push_back(std::move(player));
   }
   return start;
 }
@@ -547,12 +541,12 @@ struct Encoder {
   }
 
   void operator()(const JoinAcceptedWire& message) const {
-    assert(message.character != 0);
+    assert(message.character.size() <= kMaxCharacterPathLength);
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kJoinAccepted));
     WriteU32(out, static_cast<std::uint32_t>(message.session));
     WriteU8(out, message.tick_rate_hz);
     WriteParameters(out, message.parameters);
-    WriteU8(out, message.character);
+    WriteString(out, message.character);
   }
 
   void operator()(const JoinRefusedWire& message) const {
@@ -588,9 +582,9 @@ struct Encoder {
     WriteU32(out, message.version);
     WriteU8(out, static_cast<std::uint8_t>(message.roster.size()));
     for (const RosterEntryWire& entry : message.roster) {
-      assert(entry.character != 0);
+      assert(entry.character.size() <= kMaxCharacterPathLength);
       WriteU32(out, static_cast<std::uint32_t>(entry.session));
-      WriteU8(out, entry.character);
+      WriteString(out, entry.character);
     }
   }
 
@@ -604,10 +598,10 @@ struct Encoder {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kMatchStart));
     WriteU8(out, static_cast<std::uint8_t>(message.players.size()));
     for (const MatchPlayerWire& player : message.players) {
-      assert(player.character != 0);
+      assert(player.character.size() <= kMaxCharacterPathLength);
       WriteU32(out, static_cast<std::uint32_t>(player.session));
       WriteU32(out, static_cast<std::uint32_t>(player.entity));
-      WriteU8(out, player.character);
+      WriteString(out, player.character);
       WriteVec3(out, player.spawn, math::kPositionGrid);
     }
   }

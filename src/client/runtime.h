@@ -1,7 +1,6 @@
 #ifndef AUGUSTA_RUNTIME_H_
 #define AUGUSTA_RUNTIME_H_
 
-#include <cstdint>
 #include <expected>
 #include <functional>
 #include <memory>
@@ -70,10 +69,10 @@ struct LoadedCharacter {
   math::Vec3 eye{};
 };
 
-// Loads the character with the given index from the client pack
+// Loads the character with the given path from the client pack
 // (client::LoadCharacterMesh and client::LoadCharacterEye), or says why it
 // could not.
-using CharacterLoader = std::function<std::expected<LoadedCharacter, client::SceneError>(std::uint8_t)>;
+using CharacterLoader = std::function<std::expected<LoadedCharacter, client::SceneError>(std::string_view)>;
 
 struct Content {
   math::Vec3 eye;
@@ -103,6 +102,9 @@ enum class ContentError {
 // thread stopped on an exception (for one, the transport rejecting the server
 // address).
 using Failure = std::variant<harness::Failure, client::SceneError, supervisor::WorkerFailure>;
+
+// What to tell whoever runs the process about why the client stopped.
+[[nodiscard]] std::string DescribeFailure(const Failure& failure);
 
 // Owns one of every client-only module/World and the three fixed
 // threads ADR-0005 assigns them to. The client process constructs

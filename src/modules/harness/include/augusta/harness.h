@@ -133,8 +133,8 @@ inline constexpr std::size_t kMaxPendingHitConfirmations = 64;
 /// One player in the Lobby.
 struct RosterEntry {
   SessionId session{};
-  /// Its character index: 1-based position in the scenario's character list (ADR-0042).
-  std::uint8_t character = 1;
+  /// Its character, by its path relative to `authoring/` (ADR-0042).
+  std::string character;
 };
 
 /// Who is in the Lobby, as the server last said (ADR-0043).
@@ -150,7 +150,8 @@ struct MatchPlayer {
   SessionId session{};
   /// The body this player's commands move for the whole match.
   EntityId entity{};
-  std::uint8_t character = 1;
+  /// Its character (see RosterEntry::character).
+  std::string character;
   math::Vec3 spawn{};
 };
 
@@ -223,8 +224,8 @@ struct Admission {
   std::uint8_t tick_rate_hz = 0;
   /// The parameters this client must predict with.
   parameters::Parameters parameters{};
-  /// This client's own character index (see RosterEntry::character).
-  std::uint8_t character = 1;
+  /// This client's own character (see RosterEntry::character).
+  std::string character;
 };
 
 /// What the server has told this client, as of one moment (ADR-0005): the

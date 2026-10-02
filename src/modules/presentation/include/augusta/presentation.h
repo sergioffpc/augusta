@@ -5,6 +5,7 @@
 #include <expected>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "augusta/audio.h"
@@ -133,12 +134,12 @@ struct WorldSnapshot {
   std::vector<DynamicBody> bodies;
 };
 
-/// The body of one player in the match and that player's character index
-/// (ADR-0042), as Match start named them - World::RunFrame's input, in
+/// The body of one player in the match and that player's character, by its
+/// path (ADR-0042), as Match start named them - World::RunFrame's input, in
 /// presentation's own terms (see there).
 struct PlayerCharacter {
   EntityId entity{};
-  std::uint8_t character = 1;
+  std::string character;
 };
 
 /// One round a player fired, as the server announced it (CONTEXT.md's Shot) -
@@ -275,11 +276,11 @@ class World {
   /// of view. Until then no tracer is drawn and ADS does not zoom.
   void SetParameters(const parameters::Parameters& parameters, float tick_duration);
 
-  /// Takes the eye standing of the character with index character (ADR-0040,
-  /// ADR-0042), in its root space: where a spectator's camera sits watching a
+  /// Takes the eye standing of character, by its path (ADR-0040, ADR-0042), in
+  /// its root space: where a spectator's camera sits watching a
   /// player of that character. A character whose eye was never set is watched
   /// from the local player's character's eye.
-  void SetCharacterEye(std::uint8_t character, const math::Vec3& eye);
+  void SetCharacterEye(const std::string& character, const math::Vec3& eye);
 
   // Runs all five Phase values above, in their declared order, for one render
   // frame (internally, one flecs::world::progress() call), shown from input.

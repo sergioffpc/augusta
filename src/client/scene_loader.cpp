@@ -63,7 +63,7 @@ std::string DescribeSceneError(const SceneError& error) {
     case SceneErrorCode::kMalformedBaseColor:
       return std::format("node {} has a malformed {} \"{}\"", error.node, kBaseColorProperty, error.subject);
     case SceneErrorCode::kUnknownCharacter:
-      return std::format("character index {} is not in the pack's character list", error.subject);
+      return std::format("character {} is not in the pack's character list", error.subject);
     case SceneErrorCode::kCharacterMeshUnresolved:
       return std::format("visual mesh {} of character {} {}", error.subject, error.node,
                          assets::DescribeResolveError(error.resolve_error, "mesh"));
@@ -118,9 +118,10 @@ std::expected<renderer::Scene, SceneError> LoadRenderScene(const assets::Pack& p
   return BuildRenderScene(*scene, [&pack](std::string_view path) { return pack.ResolveMesh(path); }, eye);
 }
 
-std::vector<std::uint8_t> CharactersToLoad(std::span<const std::uint8_t> others, const std::set<std::uint8_t>& loaded) {
-  std::vector<std::uint8_t> to_load;
-  for (const std::uint8_t character : others) {
+std::vector<std::string> CharactersToLoad(std::span<const std::string> others,
+                                          const std::set<std::string, std::less<>>& loaded) {
+  std::vector<std::string> to_load;
+  for (const std::string& character : others) {
     if (!loaded.contains(character) && std::ranges::find(to_load, character) == to_load.end()) {
       to_load.push_back(character);
     }
@@ -131,18 +132,16 @@ std::vector<std::uint8_t> CharactersToLoad(std::span<const std::uint8_t> others,
 std::string CharacterMeshPath(std::string_view character) { return std::format("{}/Character/Visual", character); }
 
 std::expected<renderer::SceneMesh, SceneError> LoadCharacterMesh(std::span<const std::string> characters,
-                                                                 std::uint8_t character_index,
+                                                                 std::string_view character,
                                                                  const MeshResolver& resolve_mesh) {
-  if (character_index == 0 || character_index > characters.size()) {
-    return std::unexpected(
-        SceneError{.code = SceneErrorCode::kUnknownCharacter, .subject = std::to_string(character_index)});
+  if (std::ranges::find(characters, character) == characters.end()) {
+    return std::unexpected(SceneError{.code = SceneErrorCode::kUnknownCharacter, .subject = std::string(character)});
   }
-  const std::string& character = characters[character_index - 1];
   const std::string path = CharacterMeshPath(character);
   const auto mesh = resolve_mesh(path);
   if (!mesh) {
     return std::unexpected(SceneError{.code = SceneErrorCode::kCharacterMeshUnresolved,
-                                      .node = character,
+                                      .node = std::string(character),
                                       .subject = path,
                                       .resolve_error = mesh.error()});
   }

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "augusta/ballistics.h"
@@ -119,12 +120,12 @@ enum class Phase {
 enum class EntityId : std::uint32_t {};
 
 /// Who plays a body, as Game policy sees them (ADR-0022): the session of its
-/// player and the index of the Character it plays.
+/// player and the Character it plays.
 struct PlayerIdentity {
   /// The session of its player; 0, for a body no session plays, cannot win.
   SessionId session{};
-  /// 1-based position in the scenario's character list (ADR-0042).
-  std::uint8_t character = 1;
+  /// The character, by its path relative to `authoring/` (ADR-0042).
+  std::string character;
 };
 
 /// The longest Shooter's delay (CONTEXT.md, ADR-0044): a round whose shooter

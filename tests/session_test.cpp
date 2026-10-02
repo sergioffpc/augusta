@@ -1320,10 +1320,10 @@ TEST_F(SpawnTest, EveryClientIsToldEveryPlayersCharacterAndSpawnPointAtMatchStar
     ASSERT_TRUE(start.has_value());
     ASSERT_EQ(start->players.size(), 2U);
     EXPECT_EQ(start->players[0].session, *first.GetSessionId());
-    EXPECT_EQ(start->players[0].character, 1U);
+    EXPECT_EQ(start->players[0].character, kCharacter);
     EXPECT_EQ(start->players[0].spawn, SpawnPoints()[0]);
     EXPECT_EQ(start->players[1].session, *second.GetSessionId());
-    EXPECT_EQ(start->players[1].character, 1U);
+    EXPECT_EQ(start->players[1].character, kCharacter);
     EXPECT_EQ(start->players[1].spawn, SpawnPoints()[1]);
   }
 }
@@ -1430,9 +1430,9 @@ TEST_F(LobbyTest, AdmittedClientsAreToldWhoIsInTheLobbyAndWithWhichCharacter) {
     ASSERT_TRUE(lobby.has_value());
     ASSERT_EQ(lobby->roster.size(), 2U);
     EXPECT_EQ(lobby->roster[0].session, *first.GetSessionId());
-    EXPECT_EQ(lobby->roster[0].character, 1U);
+    EXPECT_EQ(lobby->roster[0].character, kCharacter);
     EXPECT_EQ(lobby->roster[1].session, *second.GetSessionId());
-    EXPECT_EQ(lobby->roster[1].character, 1U);
+    EXPECT_EQ(lobby->roster[1].character, kCharacter);
     EXPECT_EQ(client->GetPhase(), Phase::kLobby);
   }
   EXPECT_EQ(first.GetLobby()->version, second.GetLobby()->version);
@@ -1670,7 +1670,7 @@ TEST_F(MatchCycleTest, PlayersKeepTheirSessionAndCharacterAndTheNextMatchHandsOu
   const auto start = first.GetMatchStart();
   ASSERT_EQ(start->players.size(), 2U);
   EXPECT_EQ(start->players[0].session, first_session);
-  EXPECT_EQ(start->players[0].character, 1U);
+  EXPECT_EQ(start->players[0].character, kCharacter);
   EXPECT_EQ(start->players[0].spawn, SpawnPoints()[0]);
   EXPECT_EQ(start->players[1].session, second_session);
   EXPECT_EQ(start->players[1].spawn, SpawnPoints()[1]);
@@ -1932,7 +1932,7 @@ class ScriptedServer {
         Send(augusta::protocol::JoinAcceptedWire{.session = kScriptedSession,
                                                  .tick_rate_hz = kTestTickRate,
                                                  .parameters = augusta::server::ToWire(parameters_),
-                                                 .character = 1});
+                                                 .character = kCharacter});
         if (start_match_) {
           Send(StartOfAlone());
         }
@@ -1947,7 +1947,7 @@ class ScriptedServer {
   // A Match start of the admitted client alone, at the origin.
   static augusta::protocol::MatchStartWire StartOfAlone() {
     return augusta::protocol::MatchStartWire{
-        .players = {{.spawn = {}, .session = kScriptedSession, .entity = kScriptedEntity, .character = 1}}};
+        .players = {{.spawn = {}, .session = kScriptedSession, .entity = kScriptedEntity, .character = kCharacter}}};
   }
 
   // An Authoritative State of tick listing entities, each at the origin, with
@@ -2161,7 +2161,7 @@ TEST_F(ScriptedLobbyTest, AStateThatArrivesBeforeMatchStartIsDropped) {
 
 TEST_F(ScriptedLobbyTest, AMatchStartThatLeavesThisClientOutIsDropped) {
   server_.Send(augusta::protocol::MatchStartWire{
-      .players = {{.spawn = {}, .session = SessionIdWire{2}, .entity = EntityIdWire{102}, .character = 1}}});
+      .players = {{.spawn = {}, .session = SessionIdWire{2}, .entity = EntityIdWire{102}, .character = kCharacter}}});
   Settle();
 
   EXPECT_EQ(session_.GetPhase(), Phase::kLobby);
@@ -2179,7 +2179,7 @@ TEST_F(ScriptedLobbyTest, NothingIsSentBeforeMatchStartAndTheFirstTickInAMatchSt
 
   const Vec3 spawn(5.0F, 0.0F, -3.0F);
   server_.Send(augusta::protocol::MatchStartWire{
-      .players = {{.spawn = spawn, .session = kScriptedSession, .entity = kScriptedEntity, .character = 1}}});
+      .players = {{.spawn = spawn, .session = kScriptedSession, .entity = kScriptedEntity, .character = kCharacter}}});
   Settle();
   const augusta::prediction::State first = session_.Tick(Command{}, kFixedTick);
   Settle();
@@ -2190,10 +2190,11 @@ TEST_F(ScriptedLobbyTest, NothingIsSentBeforeMatchStartAndTheFirstTickInAMatchSt
 }
 
 TEST_F(ScriptedLobbyTest, ReadyIsSentOnlyWhenToldAndOnlyForTheNewestRoster) {
-  server_.Send(augusta::protocol::LobbyWire{.version = 1, .roster = {{.session = kScriptedSession, .character = 1}}});
-  server_.Send(augusta::protocol::LobbyWire{
-      .version = 2,
-      .roster = {{.session = kScriptedSession, .character = 1}, {.session = SessionIdWire{2}, .character = 1}}});
+  server_.Send(
+      augusta::protocol::LobbyWire{.version = 1, .roster = {{.session = kScriptedSession, .character = kCharacter}}});
+  server_.Send(augusta::protocol::LobbyWire{.version = 2,
+                                            .roster = {{.session = kScriptedSession, .character = kCharacter},
+                                                       {.session = SessionIdWire{2}, .character = kCharacter}}});
   Settle();
   ASSERT_EQ(session_.GetLobby()->version, 2U);
   EXPECT_TRUE(server_.Readies().empty()) << "sent ReadyWire on its own";
@@ -2734,7 +2735,7 @@ TEST_F(ImpossibleCommandTest, AMessageOnlyTheServerSendsChangesNothingWhenAClien
   const EntityIdWire bystander{std::to_underlying(*bystander_->GetEntityId())};
   const SessionIdWire adversary = adversary_.ReceivedOf<protocol::JoinAcceptedWire>().front().session;
   const protocol::MessageWire server_only[] = {
-      protocol::JoinAcceptedWire{.session = SessionIdWire{99}, .tick_rate_hz = 1},
+      protocol::JoinAcceptedWire{.session = SessionIdWire{99}, .tick_rate_hz = 1, .character = kCharacter},
       protocol::JoinRefusedWire{.reason = protocol::JoinRefusalWire::kLobbyFull},
       protocol::AuthoritativeStateWire{.tick = 1'000'000,
                                        .bodies = {{.entity = entity_, .body = {.position = Vec3(100.0F, 0.0F, 0.0F)}}},

@@ -71,7 +71,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
       const AmmoWire& ammo = accepted.parameters.ammo;
       out << "}, ammo{gravity " << ammo.gravity << ", range " << ammo.max_range << ", damage " << ammo.head_damage
           << " " << ammo.torso_damage << " " << ammo.limb_damage << "}, starting_health "
-          << accepted.parameters.starting_health << ", character " << +accepted.character << "}";
+          << accepted.parameters.starting_health << ", character " << rc::toString(accepted.character) << "}";
     }
     void operator()(const JoinRefusedWire& refused) const {
       out << "JoinRefused{reason " << +static_cast<std::uint8_t>(refused.reason) << "}";
@@ -100,7 +100,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
     void operator()(const LobbyWire& lobby) const {
       out << "Lobby{version " << lobby.version << ", ";
       for (const RosterEntryWire& entry : lobby.roster) {
-        out << static_cast<std::uint32_t>(entry.session) << ": " << +entry.character << "; ";
+        out << static_cast<std::uint32_t>(entry.session) << ": " << rc::toString(entry.character) << "; ";
       }
       out << "}";
     }
@@ -109,7 +109,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
       out << "MatchStart{";
       for (const MatchPlayerWire& player : start.players) {
         out << static_cast<std::uint32_t>(player.session) << ": entity " << static_cast<std::uint32_t>(player.entity)
-            << ", character " << +player.character << ", spawn ";
+            << ", character " << rc::toString(player.character) << ", spawn ";
         showValue(player.spawn, out);
         out << "; ";
       }
@@ -222,10 +222,8 @@ rc::Gen<StanceWire> Stance() {
   return rc::gen::element(StanceWire::kStanding, StanceWire::kCrouching, StanceWire::kProne);
 }
 
-// A character index: 1 to 255, never 0 (ADR-0042).
-rc::Gen<std::uint8_t> Character() {
-  return rc::gen::map(rc::gen::inRange(1, 256), [](int index) { return static_cast<std::uint8_t>(index); });
-}
+// A character, by its path: any bytes up to the longest a message may carry (ADR-0042).
+rc::Gen<std::string> Character() { return UpTo<std::string>(kMaxCharacterPathLength, rc::gen::arbitrary<char>()); }
 
 template <typename Id>
 rc::Gen<Id> AnyId() {
@@ -266,9 +264,7 @@ rc::Gen<JoinRequestWire> JoinRequest() {
   return rc::gen::build<JoinRequestWire>(
       rc::gen::set(&JoinRequestWire::engine_version,
                    UpTo<std::string>(kMaxEngineVersionLength, rc::gen::arbitrary<char>())),
-      rc::gen::set(&JoinRequestWire::client_pack, PackHash()),
-      rc::gen::set(&JoinRequestWire::character,
-                   UpTo<std::string>(kMaxCharacterPathLength, rc::gen::arbitrary<char>())));
+      rc::gen::set(&JoinRequestWire::client_pack, PackHash()), rc::gen::set(&JoinRequestWire::character, Character()));
 }
 
 rc::Gen<JoinAcceptedWire> JoinAccepted() {

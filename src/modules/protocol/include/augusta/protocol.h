@@ -87,7 +87,7 @@ enum class MessageTypeWire : std::uint8_t {
 /// Longest engine version string a JoinRequestWire may carry, in bytes.
 inline constexpr std::size_t kMaxEngineVersionLength = 32;
 
-/// Longest character path a JoinRequestWire may carry, in bytes.
+/// Longest character path a message may carry, in bytes.
 inline constexpr std::size_t kMaxCharacterPathLength = 64;
 
 /// The size of a pack's BLAKE3 hash, in bytes.
@@ -281,9 +281,9 @@ struct JoinAcceptedWire {
   /// The parameters the client must predict with, so its numbers (the stamina
   /// rules among them) are the server's.
   ParametersWire parameters{};
-  /// The joining player's own character index: its 1-based position in the
-  /// scenario's character list (ADR-0042). Never 0.
-  std::uint8_t character = 1;
+  /// The joining player's own character, by its path relative to `authoring/`
+  /// (see JoinRequestWire::character); at most kMaxCharacterPathLength bytes.
+  std::string character;
 
   bool operator==(const JoinAcceptedWire&) const = default;
 };
@@ -362,8 +362,8 @@ struct AuthoritativeStateWire {
 /// One player in the Lobby.
 struct RosterEntryWire {
   SessionIdWire session{};
-  /// The player's character index (see JoinAcceptedWire::character). Never 0.
-  std::uint8_t character = 1;
+  /// The player's character (see JoinAcceptedWire::character).
+  std::string character;
 
   bool operator==(const RosterEntryWire&) const = default;
 };
@@ -393,8 +393,8 @@ struct MatchPlayerWire {
   SessionIdWire session{};
   /// The body this player's commands move for the whole match.
   EntityIdWire entity{};
-  /// The player's character index (see JoinAcceptedWire::character). Never 0.
-  std::uint8_t character = 1;
+  /// The player's character (see JoinAcceptedWire::character).
+  std::string character;
 
   bool operator==(const MatchPlayerWire&) const = default;
 };

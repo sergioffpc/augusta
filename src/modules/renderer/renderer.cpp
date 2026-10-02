@@ -9,6 +9,7 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -218,7 +219,7 @@ std::vector<Vertex> BuildFlatShadedVertices(const Scene& scene) {
 // around, so no further placement is needed.
 std::vector<Vertex> BuildRemoteVertices(
     std::span<const RemotePlayer> remote_players,
-    const std::unordered_map<std::uint8_t, std::vector<Vertex>>& character_vertices) {
+    const std::unordered_map<std::string, std::vector<Vertex>>& character_vertices) {
   std::vector<Vertex> vertices;
   for (const RemotePlayer& remote : remote_players) {
     const auto found = character_vertices.find(remote.character);
@@ -409,9 +410,9 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   Camera camera;
 
   // Each character's mesh (ADR-0042), flat-shaded in its own local space and
-  // keyed by character index - set by SetCharacterMesh; empty until the first
+  // keyed by character path - set by SetCharacterMesh; empty until the first
   // call.
-  std::unordered_map<std::uint8_t, std::vector<Vertex>> character_vertices;
+  std::unordered_map<std::string, std::vector<Vertex>> character_vertices;
 
   // Rewritten every frame (see StreamedVertices): the remote players (lit, by
   // raster_pass), the fight's effects (added to what is behind them, by
@@ -562,7 +563,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   // a one-mesh Scene rather than duplicated. Nothing is touched if mesh is
   // invalid (the throw comes before any member is assigned, same as
   // UploadScene).
-  void UploadCharacterMesh(std::uint8_t character, const SceneMesh& mesh) {
+  void UploadCharacterMesh(const std::string& character, const SceneMesh& mesh) {
     std::vector<Vertex> vertices = BuildFlatShadedVertices(Scene{.meshes = {mesh}, .camera = {}});
     character_vertices.insert_or_assign(character, std::move(vertices));
   }
@@ -793,7 +794,7 @@ void Renderer::SetScene(const Scene& scene) { impl_->UploadScene(scene); }
 
 void Renderer::SetCamera(const Camera& camera) { impl_->camera = camera; }
 
-void Renderer::SetCharacterMesh(std::uint8_t character, const SceneMesh& mesh) {
+void Renderer::SetCharacterMesh(const std::string& character, const SceneMesh& mesh) {
   impl_->UploadCharacterMesh(character, mesh);
 }
 

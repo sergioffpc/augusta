@@ -135,12 +135,12 @@ TEST(MatchTest, AdmitsUpToThePlayerCountAndRefusesTheNextAsLobbyFull) {
   EXPECT_EQ(match.PlayerCount(), 3U);
 }
 
-TEST(MatchTest, EachPlayerIsAdmittedWithTheIndexOfItsCharacter) {
+TEST(MatchTest, EachPlayerIsAdmittedWithItsCharacter) {
   Match match(MatchConfig{
       .engine_version = kVersion, .characters = {"characters/sniper", "characters/medic"}, .player_count = 2});
 
-  EXPECT_EQ(match.Join(Peer(1), Request(kVersion, "characters/sniper"))->character, 1U);
-  EXPECT_EQ(match.Join(Peer(2), Request(kVersion, "characters/medic"))->character, 2U);
+  EXPECT_EQ(match.Join(Peer(1), Request(kVersion, "characters/sniper"))->character, "characters/sniper");
+  EXPECT_EQ(match.Join(Peer(2), Request(kVersion, "characters/medic"))->character, "characters/medic");
 }
 
 TEST(MatchTest, RefusesACharacterTheScenarioDoesNotOffer) {
@@ -252,9 +252,9 @@ TEST(MatchTest, TheRosterListsEveryLobbyPlayerWithItsCharacterBySession) {
 
   ASSERT_EQ(roster.players.size(), 2U);
   EXPECT_EQ(roster.players[0].session, medic->session);
-  EXPECT_EQ(roster.players[0].character, 2U);
+  EXPECT_EQ(roster.players[0].character, "characters/medic");
   EXPECT_EQ(roster.players[1].session, sniper->session);
-  EXPECT_EQ(roster.players[1].character, 1U);
+  EXPECT_EQ(roster.players[1].character, "characters/sniper");
 }
 
 TEST(MatchTest, TheRosterVersionGrowsOnEveryJoinAndLeave) {
@@ -324,8 +324,8 @@ TEST(MatchTest, MatchStartTellsEachPlayersCharacter) {
   const auto start = ReadyAndStart(match);
 
   ASSERT_TRUE(start.has_value());
-  EXPECT_EQ(start->players[0].character, 2U);
-  EXPECT_EQ(start->players[1].character, 1U);
+  EXPECT_EQ(start->players[0].character, "characters/medic");
+  EXPECT_EQ(start->players[1].character, "characters/sniper");
 }
 
 TEST(MatchTest, APlayerWhoLeftTheLobbyIsNotInTheMatch) {
@@ -508,7 +508,7 @@ TEST(MatchTest, PlayersKeepTheirSessionAndCharacterAcrossMatches) {
 
   ASSERT_EQ(match.GetRoster().players.size(), 1U);
   EXPECT_EQ(match.GetRoster().players[0].session, admission->session);
-  EXPECT_EQ(match.GetRoster().players[0].character, 2U);
+  EXPECT_EQ(match.GetRoster().players[0].character, "characters/medic");
   EXPECT_EQ(ReadyAndStart(match)->players[0].session, admission->session);
 }
 

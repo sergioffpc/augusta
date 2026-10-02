@@ -135,7 +135,8 @@ class Arena {
   // Puts player at position: one who is not in the Match yet, for a test that
   // brings one in.
   void Add(std::size_t player, const Vec3& position) {
-    world_.AddPlayer(Entity(player), position, Cross(), PlayerIdentity{.session = Session(player), .character = 1});
+    world_.AddPlayer(Entity(player), position, Cross(),
+                     PlayerIdentity{.session = Session(player), .character = "characters/player"});
   }
 
   void Leave(std::size_t player) { world_.RemovePlayer(Entity(player)); }

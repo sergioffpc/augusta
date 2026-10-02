@@ -269,7 +269,7 @@ TEST(WireTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged) {
   const augusta::protocol::JoinAcceptedWire received =
       ThroughTheWire(augusta::protocol::JoinAcceptedWire{.session = augusta::protocol::SessionIdWire{1},
                                                          .parameters = augusta::server::ToWire(parameters),
-                                                         .character = 1});
+                                                         .character = "characters/player"});
 
   // Every parameter travels as its exact bits, so nothing is rounded on the way.
   const augusta::parameters::Parameters received_parameters = augusta::harness::FromWire(received.parameters);
@@ -283,8 +283,9 @@ TEST(WireTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged) {
 }
 
 TEST(WireTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
-  const augusta::server::Roster sent{
-      .version = 7, .players = {{.session = SessionId{3}, .character = 2}, {.session = SessionId{5}, .character = 1}}};
+  const augusta::server::Roster sent{.version = 7,
+                                     .players = {{.session = SessionId{3}, .character = "characters/medic"},
+                                                 {.session = SessionId{5}, .character = "characters/sniper"}}};
 
   const augusta::harness::Lobby received = augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
 
@@ -298,8 +299,8 @@ TEST(WireTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
 
 TEST(WireTest, AMatchStartTheServerSendsReachesTheClientUnchanged) {
   const augusta::server::MatchStart sent{
-      .players = {{.session = SessionId{3}, .entity = EntityId{11}, .character = 2},
-                  {.session = SessionId{5}, .entity = EntityId{12}, .character = 1}}};
+      .players = {{.session = SessionId{3}, .entity = EntityId{11}, .character = "characters/medic"},
+                  {.session = SessionId{5}, .entity = EntityId{12}, .character = "characters/sniper"}}};
   const std::vector<Vec3> spawns{Vec3(4.0F, 0.5F, -8.0F), Vec3(-1.0F, 0.0F, 2.0F)};
 
   const augusta::harness::MatchStart received =
@@ -332,7 +333,7 @@ TEST(WireTest, AJoinRequestTheClientSendsReachesTheServerUnchanged) {
 TEST(WireTest, TheAdmissionTheServerSendsReachesTheClientUnchanged) {
   augusta::parameters::Parameters parameters;
   parameters.player_count = 2;
-  const augusta::server::Admission sent{.session = SessionId{7}, .character = 3};
+  const augusta::server::Admission sent{.session = SessionId{7}, .character = "characters/player"};
 
   const augusta::harness::Admission received =
       augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent, 30, parameters)));
