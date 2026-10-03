@@ -80,7 +80,7 @@ jobs:
           # The scenarios' Lua scripts, and the rules they are formatted and
           # linted by.
           if echo "$changed" \
-              | grep -qE '(\.lua$|^(stylua\.toml|selene\.toml|selene-sandbox\.yml|\.github/workflows/ci\.yml)$)'; then
+              | grep -qE '(\.lua$|^(stylua\.toml|\.luacheckrc|\.github/workflows/ci\.yml)$)'; then
             echo "run_lua=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_lua=false" >> "$GITHUB_OUTPUT"
@@ -127,7 +127,7 @@ jobs:
         run: |
           yamlfmt -conf .yamlfmt -lint
           uv tool run --from yamllint==1.37.1 yamllint --strict -c .yamllint .
-      - name: Install StyLua and selene
+      - name: Install StyLua and luacheck
         if: needs.changes.outputs.run_lua == 'true'
         shell: bash
         run: |
@@ -135,21 +135,20 @@ jobs:
           mkdir -p "$install_dir"
           curl -fsSLo "$install_dir/stylua.zip" \
             https://github.com/JohnnyMorganz/StyLua/releases/download/v2.5.2/stylua-linux-x86_64.zip
-          curl -fsSLo "$install_dir/selene.zip" \
-            https://github.com/Kampfkarren/selene/releases/download/0.31.0/selene-0.31.0-linux.zip
+          curl -fsSLo "$install_dir/luacheck" \
+            https://github.com/lunarmodules/luacheck/releases/download/v1.2.0/luacheck
           printf '%s  %s\n' \
             'bcb0d855e91f102f28a370e850f8566b3b44b79e6274d806ea5246837c0fd5ab' "$install_dir/stylua.zip" \
-            'dac452422747999ec4919bbb8bb52992b66aae533b60022bf005669de8616671' "$install_dir/selene.zip" \
+            'd68da17fca0697d9e2fb04201f3884abd259fa558b3a449bccaed47f1390defc' "$install_dir/luacheck" \
             | sha256sum --check --status
           unzip -q "$install_dir/stylua.zip" -d "$install_dir"
-          unzip -q "$install_dir/selene.zip" -d "$install_dir"
-          chmod +x "$install_dir/stylua" "$install_dir/selene"
+          chmod +x "$install_dir/stylua" "$install_dir/luacheck"
           echo "$install_dir" >> "$GITHUB_PATH"
       - name: Check Lua formatting and lint
         if: needs.changes.outputs.run_lua == 'true'
         run: |
           git ls-files -z -- '*.lua' | xargs -0 stylua --check
-          git ls-files -z -- '*.lua' | xargs -0 selene
+          git ls-files -z -- '*.lua' | xargs -0 luacheck
       - name: Install taplo
         if: needs.changes.outputs.run_toml == 'true'
         shell: bash

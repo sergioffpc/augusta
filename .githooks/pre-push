@@ -1,6 +1,6 @@
 #!/bin/sh
-# Runs clang-tidy on changed C++ files, yamllint on changed YAML files, selene
-# on changed Lua files and taplo on changed TOML files before pushing. Git LFS uploads still run after both checks pass.
+# Runs clang-tidy on changed C++ files, yamllint on changed YAML files,
+# luacheck on changed Lua files and taplo on changed TOML files before pushing. Git LFS uploads still run after both checks pass.
 
 remote="$1"
 push_refs=$(cat)
@@ -42,9 +42,9 @@ else
     while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)
 fi
 
-# Lint Lua scripts changed by the commits being pushed. If selene's rules or the
-# engine sandbox's standard library change, lint every script.
-lua_config_changed=$(printf '%s\n' "$files" | grep -E '^(selene\.toml|selene-sandbox\.yml)$' || true)
+# Lint Lua scripts changed by the commits being pushed. If luacheck's rules
+# (the engine sandbox's standard library among them) change, lint every script.
+lua_config_changed=$(printf '%s\n' "$files" | grep -E '^\.luacheckrc$' || true)
 if [ -n "$lua_config_changed" ]; then
   lua_files=$(git ls-files -- '*.lua')
 else
@@ -123,16 +123,16 @@ if [ -n "$yaml_files" ]; then
 fi
 
 if [ -n "$lua_files" ]; then
-  command -v selene >/dev/null 2>&1 || {
-    echo "pre-push: selene not found on PATH; install selene 0.31.0 before pushing Lua changes." >&2
+  command -v luacheck >/dev/null 2>&1 || {
+    echo "pre-push: luacheck not found on PATH; install luacheck 1.2.0 before pushing Lua changes." >&2
     exit 2
   }
   # shellcheck disable=SC2086 # one argument per file; script paths have no spaces
-  selene $lua_files
+  luacheck --quiet $lua_files
   status=$?
 
   if [ "$status" -ne 0 ]; then
-    echo "pre-push: selene failed - fix the Lua errors above, or push with --no-verify to skip." >&2
+    echo "pre-push: luacheck failed - fix the Lua warnings above, or push with --no-verify to skip." >&2
     exit 1
   fi
 fi

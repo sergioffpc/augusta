@@ -42,11 +42,10 @@ Install-WingetPackage -Id "ezwinports.make"
 Install-WingetPackage -Id "Git.Git"
 Install-WingetPackage -Id "Mozilla.sccache"
 Install-WingetPackage -Id "astral-sh.uv"
-# StyLua and selene format and lint the scenarios' Lua scripts, and taplo
-# formats and lints TOML, in the hooks below and in CI, which pins the same
-# versions.
+# StyLua formats the scenarios' Lua scripts and taplo formats and lints TOML,
+# in the hooks below and in CI, which pins the same versions. luacheck, which
+# lints the Lua, is not on winget: it is installed further down.
 Install-WingetPackage -Id "JohnnyMorganz.StyLua" -Version "2.5.2"
-Install-WingetPackage -Id "Kampfkarren.selene" -Version "0.31.0"
 Install-WingetPackage -Id "tamasfe.taplo" -Version "0.10.0"
 # clang-format and clang-tidy, see docs/ENGINEERING.md, Code Quality. Back
 # the .githooks/pre-commit and .githooks/pre-push hooks below. Pinned to the
@@ -81,7 +80,7 @@ $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";
 # found on PATH - skipping" at commit time, which is easy to miss and
 # leaves every local commit unformatted. Check now, once, instead.
 $requiredCommands = @("cmake", "ninja", "make", "git", "sccache", "uv", "clang-format", "clang-tidy",
-  "stylua", "selene", "taplo")
+  "stylua", "taplo")
 $missing = $requiredCommands | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) }
 if ($missing) {
   throw "Bootstrap installed packages but these commands still aren't on PATH: $($missing -join ', '). " +
@@ -135,6 +134,35 @@ if ($userPath -notlike "*$yamlfmtBin*") {
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + $userPath
 if (-not (Get-Command yamlfmt -ErrorAction SilentlyContinue)) {
   throw "yamlfmt was installed but is not on PATH: $yamlfmtBin"
+}
+
+# Install luacheck's standalone release (it bundles its own Lua) in a
+# user-local bin directory, pinned as CI pins it.
+$luacheckBin = Join-Path $env:LOCALAPPDATA "Programs\luacheck"
+New-Item -ItemType Directory -Force -Path $luacheckBin | Out-Null
+$luacheckTemp = Join-Path $env:TEMP ("luacheck-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $luacheckTemp | Out-Null
+try {
+  $luacheckDownload = Join-Path $luacheckTemp "luacheck.exe"
+  Invoke-WebRequest -Uri "https://github.com/lunarmodules/luacheck/releases/download/v1.2.0/luacheck.exe" `
+    -OutFile $luacheckDownload
+  $expectedHash = "0f1c69c4d09f1ebb4d8df14c215e4553e2e639bd4cb7bf3c639b0daa6198317b"
+  $actualHash = (Get-FileHash $luacheckDownload -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($actualHash -ne $expectedHash) {
+    throw "SHA-256 mismatch for luacheck.exe."
+  }
+  Copy-Item -Force $luacheckDownload (Join-Path $luacheckBin "luacheck.exe")
+} finally {
+  Remove-Item -LiteralPath $luacheckTemp -Recurse -Force
+}
+$userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+if ($userPath -notlike "*$luacheckBin*") {
+  $userPath = "$userPath;$luacheckBin"
+  [System.Environment]::SetEnvironmentVariable("Path", $userPath, "User")
+}
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + $userPath
+if (-not (Get-Command luacheck -ErrorAction SilentlyContinue)) {
+  throw "luacheck was installed but is not on PATH: $luacheckBin"
 }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot

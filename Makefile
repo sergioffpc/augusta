@@ -62,7 +62,7 @@ help:
 	$(info $()  clean         remove build outputs, keep the configuration)
 	$(info $()  distclean     delete $(BUILD_DIR))
 	$(info $()  format        clang-format, yamlfmt, stylua and taplo on tracked source/config files)
-	$(info $()  format-check  clang-format, yamlfmt, yamllint, stylua, selene and taplo checks from CI)
+	$(info $()  format-check  clang-format, yamlfmt, yamllint, stylua, luacheck and taplo checks from CI)
 	$(info $()  tidy          clang-tidy on src, as CI runs it (configures first))
 	$(info $()  lint          format-check, then tidy: everything CI lints)
 	@:
@@ -110,7 +110,7 @@ format-check:
 	yamlfmt -conf .yamlfmt -lint
 	uv tool run --from yamllint==1.37.1 yamllint --strict -c .yamllint .
 	stylua --check $(shell git ls-files -- $(LUA_SOURCES))
-	selene $(shell git ls-files -- $(LUA_SOURCES))
+	luacheck $(shell git ls-files -- $(LUA_SOURCES))
 	taplo fmt --check $(shell git ls-files -- $(TOML_SOURCES))
 	taplo lint $(shell git ls-files -- $(TOML_SOURCES))
 
