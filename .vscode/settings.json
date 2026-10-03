@@ -36,6 +36,7 @@
     "table.new": "disable"
   },
   "Lua.diagnostics.globals": ["server", "on_tick", "assign_spawns"],
+  "Lua.diagnostics.disable": ["undefined-global"],
   "Lua.format.enable": false,
   "Lua.workspace.ignoreDir": [".vscode", ".cache", "build", "third_party"],
 
