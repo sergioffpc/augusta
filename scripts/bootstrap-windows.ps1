@@ -42,6 +42,10 @@ Install-WingetPackage -Id "ezwinports.make"
 Install-WingetPackage -Id "Git.Git"
 Install-WingetPackage -Id "Mozilla.sccache"
 Install-WingetPackage -Id "astral-sh.uv"
+# StyLua and selene format and lint the scenarios' Lua scripts, in the hooks
+# below and in CI, which pins the same versions.
+Install-WingetPackage -Id "JohnnyMorganz.StyLua" -Version "2.5.2"
+Install-WingetPackage -Id "Kampfkarren.selene" -Version "0.31.0"
 # clang-format and clang-tidy, see docs/ENGINEERING.md, Code Quality. Back
 # the .githooks/pre-commit and .githooks/pre-push hooks below. Pinned to the
 # clang CI runs (the ubuntu-26.04 runner's distro package): another major

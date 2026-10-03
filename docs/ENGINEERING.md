@@ -185,7 +185,7 @@ pipeline).
 - **Server / shared core (Linux, via WSL2):** develop and build directly
   inside WSL2, accessing the repo via `/mnt/c/...`. No Docker container —
   a `scripts/bootstrap-wsl.sh` setup script installs clang (ADR-0008), CMake, Ninja,
-  uv (for yamllint) and standalone yamlfmt, vcpkg, clang-tidy, clang-format,
+  uv (for yamllint), standalone yamlfmt, StyLua and selene, vcpkg, clang-tidy, clang-format,
   gdb, GitHub CLI, kubectl, and helm
   directly into the WSL environment. It requires the Ubuntu release CI's
   runner uses, whose distro packages fix the same LLVM major as CI's. The cross-filesystem access cost
@@ -198,8 +198,9 @@ pipeline).
   Studio Build Tools system-wide (default install location) — simpler
   than pinning a project-specific path, at the cost of not being able to
   side-by-side independent Build Tools versions per project — plus the
-  Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, uv (for yamllint) and
-  standalone yamlfmt, and LLVM's clang-format/clang-tidy (for the hooks below),
+  Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, uv (for yamllint),
+  standalone yamlfmt, StyLua and selene, and LLVM's clang-format/clang-tidy
+  (for the hooks below),
   pinned to the LLVM major CI's Ubuntu runner ships so the hooks agree
   with CI's gates.
   (A fully hermetic, registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was
@@ -239,9 +240,17 @@ pipeline).
   check mode and strict YAML lint as the actual gate, since hooks can be
   skipped (`--no-verify`) or missing/mismatched locally. `clang-tidy` needs a
   full `compile_commands.json`, so it stays out of the commit hook and runs on
-  changed C++ before push. `make format` applies both formatters,
-  `make format-check` checks formatting and YAML lint, `make lint` also runs
-  `clang-tidy`, and `make tidy` alone runs `clang-tidy`.
+  changed C++ before push. `make format` applies the formatters,
+  `make format-check` checks formatting and the YAML and Lua lint, `make lint`
+  also runs `clang-tidy`, and `make tidy` alone runs `clang-tidy`.
+- A scenario's Lua scripts (ADR-0022, ADR-0039) are formatted by StyLua 2.5.2
+  (`stylua.toml`: two-space indentation, 120 columns, as the C++) and linted by
+  selene 0.31.0 against `augusta.yml`, a standard library that is the engine's
+  Lua sandbox rather than a stock Lua's: what the sandbox takes out (`print`,
+  `pcall`, `io`, `os`, `math.random`...) is an error, and what the engine gives a
+  script (`server.tick_rate_hz`, `warn`, the Game policy hooks) is known.
+  StyLua formats staged scripts in `pre-commit`, selene checks changed ones in
+  `pre-push`, and CI's `format` job runs both in check mode.
 - Strict warnings-as-errors in CI (see CI/CD above).
 - ASan/UBSan and fuzzing in CI; TSan nightly given multithreading
   (ADR-0005, ADR-0013).

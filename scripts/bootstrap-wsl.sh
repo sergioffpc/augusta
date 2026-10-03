@@ -65,6 +65,25 @@ fi
 trap - EXIT
 rm -rf "$yamlfmt_tmp"
 
+# StyLua and selene format and lint the scenarios' Lua scripts, in the hooks
+# and in CI, which pins the same versions and checksums.
+lua_tools_tmp="$(mktemp -d)"
+trap 'rm -rf "$lua_tools_tmp"' EXIT
+curl -fsSLo "$lua_tools_tmp/stylua.zip" \
+  https://github.com/JohnnyMorganz/StyLua/releases/download/v2.5.2/stylua-linux-x86_64.zip
+curl -fsSLo "$lua_tools_tmp/selene.zip" \
+  https://github.com/Kampfkarren/selene/releases/download/0.31.0/selene-0.31.0-linux.zip
+printf '%s  %s\n' \
+  'bcb0d855e91f102f28a370e850f8566b3b44b79e6274d806ea5246837c0fd5ab' "$lua_tools_tmp/stylua.zip" \
+  'dac452422747999ec4919bbb8bb52992b66aae533b60022bf005669de8616671' "$lua_tools_tmp/selene.zip" \
+  | sha256sum --check --status
+unzip -q "$lua_tools_tmp/stylua.zip" -d "$lua_tools_tmp"
+unzip -q "$lua_tools_tmp/selene.zip" -d "$lua_tools_tmp"
+install -m 0755 "$lua_tools_tmp/stylua" "$HOME/.local/bin/stylua"
+install -m 0755 "$lua_tools_tmp/selene" "$HOME/.local/bin/selene"
+trap - EXIT
+rm -rf "$lua_tools_tmp"
+
 if ! command -v kubectl >/dev/null 2>&1; then
   curl -fsSL -o /tmp/kubectl "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
   sudo install -o root -g root -m 0755 /tmp/kubectl /usr/local/bin/kubectl
