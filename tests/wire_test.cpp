@@ -1,11 +1,11 @@
 #include "wire.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -24,7 +24,6 @@
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "command_queue.h"
-#include "host.h"
 #include "match.h"
 
 // Each peer converts between the engine's types and the protocol's plain ones

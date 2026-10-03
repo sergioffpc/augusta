@@ -5,10 +5,15 @@
 // the two things Falcor::Gui's own wrappers don't expose: text color and a
 // see-through, borderless window.
 #include <cmath>
+#include <cstdint>
 #include <format>
+#include <memory>
+#include <optional>
 #include <string>
 
 #include <imgui.h>
+
+#include "augusta/renderer.h"
 
 namespace augusta::renderer {
 

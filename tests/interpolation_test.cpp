@@ -11,6 +11,9 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/math.h"
+#include "augusta/physics.h"
+
 // Pure: buffered by server time and entity, no real clock or ECS.
 namespace {
 

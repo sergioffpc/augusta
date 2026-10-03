@@ -1,7 +1,20 @@
 #include "frame_mapping.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <optional>
 #include <utility>
+#include <vector>
+
+#include "augusta/command.h"
+#include "augusta/effects.h"
+#include "augusta/harness.h"
+#include "augusta/input.h"
+#include "augusta/interpolation.h"
+#include "augusta/local_view.h"
+#include "augusta/presentation.h"
+#include "augusta/renderer.h"
+#include "augusta/tracers.h"
 
 namespace augusta::client {
 

@@ -1,6 +1,7 @@
 #include "augusta/map.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <utility>
@@ -10,6 +11,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/math.h"
+#include "augusta/physics.h"
 #include "encoder.h"
 
 // Builds a real signed pack in a temp file and loads it back, so what is tested

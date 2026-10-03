@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/math.h"
+
 // M1 spike (ADR-0002/ADR-0004): the "standalone" proof issue #32 asks
 // for - a real PhysX-backed physics::World, driven the same way both
 // PredictionWorld and SimulationWorld drive it, demonstrating movement

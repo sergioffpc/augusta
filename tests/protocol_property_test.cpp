@@ -10,6 +10,7 @@
 #include <rapidcheck.h>
 #include <rapidcheck/gtest.h>
 
+#include "augusta/command.h"
 #include "augusta/grid.h"
 #include "augusta/math.h"
 #include "augusta/protocol.h"
