@@ -3,11 +3,9 @@
 
 #include <expected>
 #include <functional>
-#include <set>
 #include <span>
 #include <string>
 #include <string_view>
-#include <vector>
 
 #include "augusta/assets.h"
 #include "augusta/math.h"
@@ -15,8 +13,7 @@
 #include "scene_loader.h"
 
 // Resolves what the client needs of a character (ADR-0040, ADR-0042): the mesh
-// it is drawn as and the eye its camera sits at; and which characters the Lobby
-// still needs loaded (ADR-0043).
+// it is drawn as and the eye its camera sits at.
 namespace augusta::client {
 
 /// Looks up a character's eye by its pack-relative path, e.g. Pack::ResolveEye.
@@ -46,11 +43,6 @@ struct CharacterError {
 
 /// A message for error fit to print to whoever runs the process.
 std::string DescribeCharacterError(const CharacterError& error);
-
-/// The characters among others (every other Lobby player's, ADR-0043) whose
-/// meshes are not in loaded: each once, in the order they first appear.
-std::vector<std::string> CharactersToLoad(std::span<const std::string> others,
-                                          const std::set<std::string, std::less<>>& loaded);
 
 /// Resolves through resolve_mesh the visual mesh of character, which must be one
 /// of characters, the pack's character list (ADR-0042), for
