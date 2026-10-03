@@ -1,15 +1,56 @@
 {
   "editor.formatOnSave": true,
   "editor.rulers": [120],
-  "files.autoSave": "afterDelay",
-  "[cpp]": { "editor.defaultFormatter": "xaver.clang-format" },
-  "[c]": { "editor.defaultFormatter": "xaver.clang-format" },
+  "files.autoSave": "onFocusChange",
+  "[cpp]": { "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd" },
+  "[c]": { "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd" },
+  "[lua]": { "editor.defaultFormatter": "JohnnyMorganz.stylua" },
+  "[toml]": { "editor.defaultFormatter": "tamasfe.even-better-toml" },
+  "[yaml]": { "editor.formatOnSave": false },
 
   "C_Cpp.intelliSenseEngine": "disabled",
   "editor.detectIndentation": false,
 
+  "clangd.arguments": [
+    "--compile-commands-dir=${workspaceFolder}",
+    "--background-index",
+    "--clang-tidy",
+    "--header-insertion=never"
+  ],
+
+  "stylua.searchBinaryInPath": true,
+
+  "Lua.runtime.version": "Lua 5.5",
+  "Lua.runtime.builtin": {
+    "coroutine": "disable",
+    "debug": "disable",
+    "io": "disable",
+    "os": "disable",
+    "package": "disable",
+    "utf8": "disable",
+    "bit": "disable",
+    "bit32": "disable",
+    "ffi": "disable",
+    "jit": "disable",
+    "table.clear": "disable",
+    "table.new": "disable"
+  },
+  "Lua.diagnostics.globals": ["server", "on_tick", "assign_spawns"],
+  "Lua.format.enable": false,
+  "Lua.workspace.ignoreDir": [".vscode", ".cache", "build", "third_party"],
+
+  "yaml.format.enable": false,
+  "yaml.schemas": {
+    "kubernetes": ["clusters/**/*.yaml"]
+  },
+  "files.associations": {
+    "**/charts/*/templates/**": "helm"
+  },
+
   "git.detectSubmodules": false,
   "git.autofetch": true,
+  "git.inputValidation": true,
+  "git.inputValidationSubjectLength": 72,
 
   "terminal.integrated.profiles.windows": {
     "Developer PowerShell": {
@@ -26,6 +67,10 @@
   "cmake.copyCompileCommands": "${workspaceFolder}/compile_commands.json",
 
   "python.analysis.include": ["tools/**"],
+  "python.defaultInterpreterPath": "${workspaceFolder}/tools/pack/.venv/Scripts/python.exe",
+  "python.testing.pytestEnabled": true,
+  "python.testing.cwd": "${workspaceFolder}/tools/pack",
+  "python.testing.pytestArgs": ["tests"],
 
   "files.exclude": {
     "**/build*": true
@@ -33,11 +78,15 @@
   "search.exclude": {
     "third_party/**": true,
     "**/build*": true,
-    "**/vcpkg_installed": true
+    "**/vcpkg_installed": true,
+    ".cache/**": true,
+    "**/.pytest_cache": true
   },
   "files.watcherExclude": {
     "third_party/**": true,
     "**/build*/**": true,
-    "**/vcpkg_installed/**": true
+    "**/vcpkg_installed/**": true,
+    ".cache/**": true,
+    "**/.pytest_cache/**": true
   }
 }
