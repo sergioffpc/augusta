@@ -18,7 +18,6 @@ using augusta::assets::EyeData;
 using augusta::assets::MeshData;
 using augusta::assets::ResolveError;
 using augusta::client::CharacterErrorCode;
-using augusta::client::CharactersToLoad;
 using augusta::client::DescribeCharacterError;
 using augusta::client::LoadCharacterEye;
 using augusta::client::LoadCharacterMesh;
@@ -44,15 +43,6 @@ void ExpectNear(const Vec3& actual, const Vec3& expected) {
 
 // A scenario's characters.
 const std::vector<std::string> kCharacters = {"characters/sniper", "characters/medic"};
-
-TEST(CharactersToLoadTest, AreTheOtherPlayersCharactersNotLoadedYetEachOnce) {
-  const std::vector<std::string> others = {"c", "a", "c", "b"};
-
-  EXPECT_EQ(CharactersToLoad(others, {}), (std::vector<std::string>{"c", "a", "b"}));
-  EXPECT_EQ(CharactersToLoad(others, {"a"}), (std::vector<std::string>{"c", "b"}));
-  EXPECT_TRUE(CharactersToLoad(others, {"a", "b", "c"}).empty());
-  EXPECT_TRUE(CharactersToLoad({}, {}).empty());
-}
 
 TEST(LoadCharacterMeshTest, ResolvesTheVisualMeshOfTheCharacterAPathNames) {
   std::string resolved;

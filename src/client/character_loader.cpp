@@ -7,7 +7,6 @@
 #include <set>
 #include <span>
 #include <string>
-#include <vector>
 
 #include "augusta/assets.h"
 #include "augusta/math.h"
@@ -28,17 +27,6 @@ std::string DescribeCharacterError(const CharacterError& error) {
                          assets::DescribeResolveError(error.resolve_error, "eye"));
   }
   return "unknown character error";
-}
-
-std::vector<std::string> CharactersToLoad(std::span<const std::string> others,
-                                          const std::set<std::string, std::less<>>& loaded) {
-  std::vector<std::string> to_load;
-  for (const std::string& character : others) {
-    if (!loaded.contains(character) && std::ranges::find(to_load, character) == to_load.end()) {
-      to_load.push_back(character);
-    }
-  }
-  return to_load;
 }
 
 std::expected<renderer::SceneMesh, CharacterError> LoadCharacterMesh(std::span<const std::string> characters,

@@ -323,6 +323,10 @@ if (WIN32)
   # cost applies as above.
   gtest_discover_tests(augusta_client_frame_mapping_tests DISCOVERY_TIMEOUT 30)
 
+  add_executable(augusta_client_lobby_readiness_tests client_lobby_readiness_test.cpp)
+  target_link_libraries(augusta_client_lobby_readiness_tests PRIVATE augustac_lobby_readiness GTest::gtest GTest::gtest_main)
+  gtest_discover_tests(augusta_client_lobby_readiness_tests DISCOVERY_TIMEOUT 30)
+
   add_executable(augusta_client_net_stats_tests client_net_stats_test.cpp)
   target_link_libraries(augusta_client_net_stats_tests PRIVATE augustac_net_stats GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_client_net_stats_tests DISCOVERY_TIMEOUT 30)
