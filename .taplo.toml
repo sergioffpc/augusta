@@ -1,0 +1,12 @@
+# TOML files (taplo, ADR-0012's formatting by tool rather than by hand): the
+# same width and indent as the C++ (.clang-format) and Lua (stylua.toml). Read
+# by the taplo CLI in the hooks and CI, and by the Even Better TOML extension.
+include = ["**/*.toml"]
+exclude = ["third_party/**", "build/**", "**/.venv/**", "**/node_modules/**"]
+
+[formatting]
+column_width = 120
+indent_string = "  "
+# An array written one entry a line stays so, as a dependency list is, so
+# adding an entry is a one-line diff.
+array_auto_collapse = false
