@@ -6,9 +6,11 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/command.h"
 #include "augusta/correction.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
+#include "augusta/physics.h"
 #include "augusta/weapon.h"
 
 // Exercises PredictionWorld's public Tick() surface end-to-end - the local

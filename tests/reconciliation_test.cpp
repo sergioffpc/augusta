@@ -5,6 +5,10 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/command.h"
+#include "augusta/math.h"
+#include "augusta/physics.h"
+
 // The history of commands and predicted states is pure: no physics is stepped
 // here, the replay is handed a step of its own.
 namespace {

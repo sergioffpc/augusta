@@ -5,6 +5,7 @@
 #include <expected>
 #include <filesystem>
 #include <fstream>
+#include <ios>
 #include <string>
 #include <string_view>
 #include <vector>

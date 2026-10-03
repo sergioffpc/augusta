@@ -14,6 +14,7 @@
 
 #include "augusta/command.h"
 #include "augusta/grid.h"
+#include "augusta/math.h"
 #include "augusta/tick.h"
 
 // The codec is pure: every case here is bytes in, message or error out.

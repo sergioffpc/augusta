@@ -1,14 +1,18 @@
 #include "parameters_loader.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <fstream>
+#include <ios>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include <gtest/gtest.h>
+
+#include "augusta/parameters.h"
 
 // The loader is a pure function of the script text (ADR-0039): every case here
 // is a script in, Parameters or an error out.

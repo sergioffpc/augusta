@@ -7,6 +7,9 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/ballistics.h"
+#include "augusta/simulation.h"
+
 // What each recipient is sent is a pure function of the tick's state.
 namespace {
 

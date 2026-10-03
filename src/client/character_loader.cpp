@@ -1,9 +1,18 @@
 #include "character_loader.h"
 
 #include <algorithm>
+#include <expected>
 #include <format>
+#include <functional>
+#include <set>
+#include <span>
 #include <string>
 #include <vector>
+
+#include "augusta/assets.h"
+#include "augusta/math.h"
+#include "augusta/renderer.h"
+#include "scene_loader.h"
 
 namespace augusta::client {
 

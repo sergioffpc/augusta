@@ -8,7 +8,6 @@
 #include <set>
 #include <string>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -22,6 +21,7 @@
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
+#include "augusta/policy_actions.h"
 #include "augusta/prediction.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
