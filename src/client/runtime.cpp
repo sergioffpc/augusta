@@ -7,7 +7,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -30,6 +29,7 @@
 #include "augusta/supervisor.h"
 #include "augusta/tick.h"
 #include "frame_mapping.h"
+#include "lobby_readiness.h"
 #include "net_stats.h"
 
 namespace augusta::client {
@@ -61,13 +61,11 @@ std::string DescribeRunFailure(const RunFailure& failure) {
 
 struct ClientRuntime::Impl {
   RuntimeConfig config;
-  // Main/Render thread only: loads a character, which characters the renderer
-  // and PresentationWorld have (for the life of the process), the newest
-  // Roster version Ready was reported for, and whether PresentationWorld has
-  // the server's parameters.
+  // Main/Render thread only: loads a character, what to load in the Lobby
+  // before reporting Ready, and whether PresentationWorld has the server's
+  // parameters.
   CharacterLoader load_character;
-  std::set<std::string, std::less<>> loaded_characters;
-  std::optional<std::uint32_t> ready_version;
+  LobbyReadiness lobby_readiness;
   bool presentation_has_parameters = false;
   input::Input input;
   audio::Engine audio;
@@ -271,18 +269,11 @@ struct ClientRuntime::Impl {
   // Main/Render thread only, as the upload is. Returns why a character could
   // not be loaded, if one could not.
   std::optional<CharacterError> GetReadyForLobby() {
-    const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
-    const std::optional<harness::Lobby>& lobby = view->lobby;
-    if (view->GetPhase() != harness::Phase::kLobby || !lobby.has_value() || lobby->version == ready_version) {
+    const std::optional<ReadyPlan> plan = lobby_readiness.Plan(*session->GetServerView());
+    if (!plan.has_value()) {
       return std::nullopt;
     }
-    std::vector<std::string> others;
-    for (const harness::RosterEntry& entry : lobby->roster) {
-      if (entry.session != view->accepted->session) {
-        others.push_back(entry.character);
-      }
-    }
-    for (std::string& character : CharactersToLoad(others, loaded_characters)) {
+    for (const std::string& character : plan->characters_to_load) {
       auto loaded = load_character(character);
       if (!loaded.has_value()) {
         return loaded.error();
@@ -290,10 +281,10 @@ struct ClientRuntime::Impl {
       renderer.SetCharacterMesh(character, loaded->mesh);
       presentation.SetCharacterEye(character, loaded->eye);
       LI("subsystem=clientruntime event=character_loaded character={}", character);
-      loaded_characters.insert(std::move(character));
+      lobby_readiness.MarkLoaded(character);
     }
-    session->ReportReady(lobby->version);
-    ready_version = lobby->version;
+    session->ReportReady(plan->version);
+    lobby_readiness.MarkReady(plan->version);
     return std::nullopt;
   }
 

@@ -51,6 +51,16 @@ target_link_libraries(augustac_net_stats PUBLIC augusta_input augusta_networking
 target_compile_definitions(augustac_net_stats PRIVATE NOMINMAX)
 augusta_set_module_scope(augustac_net_stats CLIENT_ONLY)
 
+# What the client loads in the Lobby before it reports Ready, and for which
+# Roster (see lobby_readiness.h): the decision only, so its tests need no
+# renderer or connection.
+add_library(augustac_lobby_readiness STATIC
+  lobby_readiness.cpp
+)
+target_include_directories(augustac_lobby_readiness PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(augustac_lobby_readiness PUBLIC augusta_harness)
+augusta_set_module_scope(augustac_lobby_readiness CLIENT_ONLY)
+
 add_library(augustac_runtime STATIC
   runtime.cpp
 )
@@ -59,7 +69,7 @@ target_link_libraries(augustac_runtime
   PUBLIC augustac_content augusta_assets augusta_harness augusta_input augusta_networking augusta_renderer augusta_supervisor
   # nvtx3-cpp: runtime.cpp names the Main/Render, Simulation, and Network I/O
   # thread loops for Nsight Systems.
-  PRIVATE augustac_frame_mapping augustac_net_stats augusta_audio augusta_logging augusta_physics augusta_prediction
+  PRIVATE augustac_frame_mapping augustac_lobby_readiness augustac_net_stats augusta_audio augusta_logging augusta_physics augusta_prediction
           augusta_presentation augusta_tick nvtx3-cpp
 )
 # NOMINMAX: something in this TU's includes pulls in <windows.h>, whose
