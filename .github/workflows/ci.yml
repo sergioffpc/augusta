@@ -234,6 +234,20 @@ jobs:
         with:
           prefix: falcor-packman-
           keep: falcor-packman-${{ hashFiles('third_party/falcor/dependencies.xml', 'cmake/patches/falcor.patch') }}
+      - name: Install clang-tidy
+        # Pinned to the version the server job's distro package and the
+        # bootstrap scripts give, so both platforms agree on which header
+        # provides what.
+        run: choco install llvm --version=21.1.8 --force -y
+        shell: pwsh
+      - name: Lint (include-cleaner)
+        # .clang-tidy's misc-include-cleaner alone (the Makefile's tidy target
+        # says why -w) on what the server job's Linux build can't lint: the
+        # Windows-only sources and tests. After Build, which generates headers
+        # Falcor's own include.
+        shell: bash
+        run: >-
+          git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'src/modules/audio/output_windows.cpp' 'src/modules/audio/miniaudio.cpp' 'tests/client_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 4 clang-tidy --quiet -p=build/x64-windows --checks=-*,misc-include-cleaner --extra-arg=-w
       - name: Test
         run: ctest --preset windows
   server:
@@ -280,6 +294,12 @@ jobs:
         # missing its compile_commands entry, not just that file itself - so
         # a stray Windows-only file left in this list fails the whole batch.
         run: find src -name '*.cpp' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_windows.cpp' -not -path 'src/modules/audio/miniaudio.cpp' | xargs clang-tidy -p build/x64-linux
+      - name: Lint (include-cleaner)
+        # The tests get .clang-tidy's misc-include-cleaner alone, as the
+        # Makefile's tidy target runs it (which says why -w); the Windows-only
+        # client tests are the client job's.
+        run: >-
+          git ls-files 'tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 8 clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w
       - name: Build
         run: cmake --build --preset linux --target all augusta_tests
       - name: Test
