@@ -24,6 +24,7 @@ jobs:
       run_tools: ${{ steps.filter.outputs.run_tools }}
       run_yaml: ${{ steps.filter.outputs.run_yaml }}
       run_lua: ${{ steps.filter.outputs.run_lua }}
+      run_toml: ${{ steps.filter.outputs.run_toml }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -79,15 +80,21 @@ jobs:
           # The scenarios' Lua scripts, and the rules they are formatted and
           # linted by.
           if echo "$changed" \
-              | grep -qE '(\.lua$|^(stylua\.toml|selene\.toml|augusta\.yml|\.github/workflows/ci\.yml)$)'; then
+              | grep -qE '(\.lua$|^(stylua\.toml|selene\.toml|selene-sandbox\.yml|\.github/workflows/ci\.yml)$)'; then
             echo "run_lua=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_lua=false" >> "$GITHUB_OUTPUT"
           fi
+
+          if echo "$changed" | grep -qE '(\.toml$|^\.github/workflows/ci\.yml$)'; then
+            echo "run_toml=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_toml=false" >> "$GITHUB_OUTPUT"
+          fi
   format:
     needs: changes
     if: >-
-      needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lua == 'true'
+      needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lua == 'true' || needs.changes.outputs.run_toml == 'true'
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -143,6 +150,24 @@ jobs:
         run: |
           git ls-files -z -- '*.lua' | xargs -0 stylua --check
           git ls-files -z -- '*.lua' | xargs -0 selene
+      - name: Install taplo
+        if: needs.changes.outputs.run_toml == 'true'
+        shell: bash
+        run: |
+          install_dir="$RUNNER_TEMP/taplo"
+          mkdir -p "$install_dir"
+          curl -fsSLo "$install_dir/taplo.gz" \
+            https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz
+          printf '%s  %s\n' '8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156' "$install_dir/taplo.gz" \
+            | sha256sum --check --status
+          gunzip "$install_dir/taplo.gz"
+          chmod +x "$install_dir/taplo"
+          echo "$install_dir" >> "$GITHUB_PATH"
+      - name: Check TOML formatting and lint
+        if: needs.changes.outputs.run_toml == 'true'
+        run: |
+          git ls-files -z -- '*.toml' ':!:third_party/*' | xargs -0 taplo fmt --check
+          git ls-files -z -- '*.toml' ':!:third_party/*' | xargs -0 taplo lint
   client:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true'

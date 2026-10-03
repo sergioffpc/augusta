@@ -65,22 +65,29 @@ fi
 trap - EXIT
 rm -rf "$yamlfmt_tmp"
 
-# StyLua and selene format and lint the scenarios' Lua scripts, in the hooks
-# and in CI, which pins the same versions and checksums.
+# StyLua and selene format and lint the scenarios' Lua scripts, and taplo
+# formats and lints TOML, in the hooks and in CI, which pins the same versions
+# and checksums.
+mkdir -p "$HOME/.local/bin"
 lua_tools_tmp="$(mktemp -d)"
 trap 'rm -rf "$lua_tools_tmp"' EXIT
 curl -fsSLo "$lua_tools_tmp/stylua.zip" \
   https://github.com/JohnnyMorganz/StyLua/releases/download/v2.5.2/stylua-linux-x86_64.zip
 curl -fsSLo "$lua_tools_tmp/selene.zip" \
   https://github.com/Kampfkarren/selene/releases/download/0.31.0/selene-0.31.0-linux.zip
+curl -fsSLo "$lua_tools_tmp/taplo.gz" \
+  https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz
 printf '%s  %s\n' \
   'bcb0d855e91f102f28a370e850f8566b3b44b79e6274d806ea5246837c0fd5ab' "$lua_tools_tmp/stylua.zip" \
   'dac452422747999ec4919bbb8bb52992b66aae533b60022bf005669de8616671' "$lua_tools_tmp/selene.zip" \
+  '8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156' "$lua_tools_tmp/taplo.gz" \
   | sha256sum --check --status
 unzip -q "$lua_tools_tmp/stylua.zip" -d "$lua_tools_tmp"
 unzip -q "$lua_tools_tmp/selene.zip" -d "$lua_tools_tmp"
+gunzip "$lua_tools_tmp/taplo.gz"
 install -m 0755 "$lua_tools_tmp/stylua" "$HOME/.local/bin/stylua"
 install -m 0755 "$lua_tools_tmp/selene" "$HOME/.local/bin/selene"
+install -m 0755 "$lua_tools_tmp/taplo" "$HOME/.local/bin/taplo"
 trap - EXIT
 rm -rf "$lua_tools_tmp"
 

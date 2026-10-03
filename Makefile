@@ -28,6 +28,7 @@ BUILD_DIR := build/x64-$(PRESET)
 
 CXX_SOURCES := "src/*.cpp" "src/*.h" "tests/*.cpp" "tests/*.h" "tools/*.cpp" "tools/*.h"
 LUA_SOURCES := "*.lua"
+TOML_SOURCES := "*.toml" ":!:third_party/*"
 
 # What CI's clang-tidy step lints: every src .cpp except the two Windows-only
 # trees and the audio module's Windows-only output device, which its Linux
@@ -60,8 +61,8 @@ help:
 	$(info $()  uninstall     remove what install put in place (same DESTDIR))
 	$(info $()  clean         remove build outputs, keep the configuration)
 	$(info $()  distclean     delete $(BUILD_DIR))
-	$(info $()  format        clang-format, yamlfmt and stylua on tracked source/config files)
-	$(info $()  format-check  clang-format, yamlfmt, yamllint, stylua and selene checks from CI)
+	$(info $()  format        clang-format, yamlfmt, stylua and taplo on tracked source/config files)
+	$(info $()  format-check  clang-format, yamlfmt, yamllint, stylua, selene and taplo checks from CI)
 	$(info $()  tidy          clang-tidy on src, as CI runs it (configures first))
 	$(info $()  lint          format-check, then tidy: everything CI lints)
 	@:
@@ -102,6 +103,7 @@ format:
 	clang-format -i $(shell git ls-files -- $(CXX_SOURCES))
 	yamlfmt -conf .yamlfmt
 	stylua $(shell git ls-files -- $(LUA_SOURCES))
+	taplo fmt $(shell git ls-files -- $(TOML_SOURCES))
 
 format-check:
 	clang-format --dry-run --Werror $(shell git ls-files -- $(CXX_SOURCES))
@@ -109,6 +111,8 @@ format-check:
 	uv tool run --from yamllint==1.37.1 yamllint --strict -c .yamllint .
 	stylua --check $(shell git ls-files -- $(LUA_SOURCES))
 	selene $(shell git ls-files -- $(LUA_SOURCES))
+	taplo fmt --check $(shell git ls-files -- $(TOML_SOURCES))
+	taplo lint $(shell git ls-files -- $(TOML_SOURCES))
 
 # -p is written -p=<dir> because PowerShell reads a bare -p as its own
 # -PipelineVariable when vcenv.ps1 forwards the arguments, and clang-tidy would

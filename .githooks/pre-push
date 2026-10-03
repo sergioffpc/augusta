@@ -1,6 +1,6 @@
 #!/bin/sh
-# Runs clang-tidy on changed C++ files, yamllint on changed YAML files and
-# selene on changed Lua files before pushing. Git LFS uploads still run after both checks pass.
+# Runs clang-tidy on changed C++ files, yamllint on changed YAML files, selene
+# on changed Lua files and taplo on changed TOML files before pushing. Git LFS uploads still run after both checks pass.
 
 remote="$1"
 push_refs=$(cat)
@@ -44,7 +44,7 @@ fi
 
 # Lint Lua scripts changed by the commits being pushed. If selene's rules or the
 # engine sandbox's standard library change, lint every script.
-lua_config_changed=$(printf '%s\n' "$files" | grep -E '^(selene\.toml|augusta\.yml)$' || true)
+lua_config_changed=$(printf '%s\n' "$files" | grep -E '^(selene\.toml|selene-sandbox\.yml)$' || true)
 if [ -n "$lua_config_changed" ]; then
   lua_files=$(git ls-files -- '*.lua')
 else
@@ -52,6 +52,12 @@ else
     sort -u |
     while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)
 fi
+
+# Lint TOML files changed by the commits being pushed (taplo's own config
+# among them, so a change to it is checked like any other).
+toml_files=$(printf '%s\n' "$files" | grep -E '\.toml$' |
+  sort -u |
+  while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)
 
 # src/client and src/modules/renderer are Windows-only, so CI's Linux run has
 # no compile commands for them; PhysX's SSE headers break clang-tidy under
@@ -68,7 +74,7 @@ files=$(echo "$files" | grep -E '^src/.*\.cpp$' |
   sort -u |
   while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)
 
-if [ -z "$files" ] && [ -z "$yaml_files" ] && [ -z "$lua_files" ]; then
+if [ -z "$files" ] && [ -z "$yaml_files" ] && [ -z "$lua_files" ] && [ -z "$toml_files" ]; then
   printf '%s\n' "$push_refs" | git lfs pre-push "$@"
   exit $?
 fi
@@ -127,6 +133,21 @@ if [ -n "$lua_files" ]; then
 
   if [ "$status" -ne 0 ]; then
     echo "pre-push: selene failed - fix the Lua errors above, or push with --no-verify to skip." >&2
+    exit 1
+  fi
+fi
+
+if [ -n "$toml_files" ]; then
+  command -v taplo >/dev/null 2>&1 || {
+    echo "pre-push: taplo not found on PATH; install taplo 0.10.0 before pushing TOML changes." >&2
+    exit 2
+  }
+  # shellcheck disable=SC2086 # one argument per file; TOML paths have no spaces
+  taplo lint $toml_files 2>/dev/null
+  status=$?
+
+  if [ "$status" -ne 0 ]; then
+    echo "pre-push: taplo lint failed - run it again to see why, or push with --no-verify to skip." >&2
     exit 1
   fi
 fi

@@ -4,7 +4,7 @@
 # release builds parse only Lua 5.1's syntax, so this starts from 5.1's library
 # and makes it the newer one's where a script could tell them apart.
 base: lua51
-name: augusta
+name: selene-sandbox
 globals:
   # Taken out by scripting::MakeSandbox: no files, no compiling more code, no
   # output, no garbage collector, no catching the instruction limit's error.

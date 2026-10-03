@@ -42,10 +42,12 @@ Install-WingetPackage -Id "ezwinports.make"
 Install-WingetPackage -Id "Git.Git"
 Install-WingetPackage -Id "Mozilla.sccache"
 Install-WingetPackage -Id "astral-sh.uv"
-# StyLua and selene format and lint the scenarios' Lua scripts, in the hooks
-# below and in CI, which pins the same versions.
+# StyLua and selene format and lint the scenarios' Lua scripts, and taplo
+# formats and lints TOML, in the hooks below and in CI, which pins the same
+# versions.
 Install-WingetPackage -Id "JohnnyMorganz.StyLua" -Version "2.5.2"
 Install-WingetPackage -Id "Kampfkarren.selene" -Version "0.31.0"
+Install-WingetPackage -Id "tamasfe.taplo" -Version "0.10.0"
 # clang-format and clang-tidy, see docs/ENGINEERING.md, Code Quality. Back
 # the .githooks/pre-commit and .githooks/pre-push hooks below. Pinned to the
 # clang CI runs (the ubuntu-26.04 runner's distro package): another major
@@ -78,7 +80,8 @@ $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";
 # clang-format's absence only shows up as ".githooks/pre-commit: not
 # found on PATH - skipping" at commit time, which is easy to miss and
 # leaves every local commit unformatted. Check now, once, instead.
-$requiredCommands = @("cmake", "ninja", "make", "git", "sccache", "uv", "clang-format", "clang-tidy")
+$requiredCommands = @("cmake", "ninja", "make", "git", "sccache", "uv", "clang-format", "clang-tidy",
+  "stylua", "selene", "taplo")
 $missing = $requiredCommands | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) }
 if ($missing) {
   throw "Bootstrap installed packages but these commands still aren't on PATH: $($missing -join ', '). " +
