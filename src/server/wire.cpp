@@ -17,8 +17,8 @@
 #include "augusta/replication.h"
 #include "augusta/tick.h"
 #include "command_queue.h"
-#include "host.h"
 #include "match.h"
+#include "simulation_mapping.h"
 
 namespace augusta::server {
 

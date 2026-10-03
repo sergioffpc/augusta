@@ -5,7 +5,9 @@
 -- pack, so it is signed with the composed map/characters and fixed for the
 -- run. Only the server reads it; each client is sent the result when it
 -- joins. The tick rate is not here: it is fixed while the server runs, so it
--- is `simulation.tick_rate_hz` in augustad.yaml.
+-- is `simulation.tick_rate_hz` in augustad.yaml. The script can read it, as
+-- `server.tick_rate_hz`, to check the values that depend on it: `warn(...)`
+-- logs a warning and the server starts, `error(...)` stops it loading.
 --
 -- A value may be an expression of other values in this script. The script runs
 -- once per load, in a sandbox with no io, os or randomness, and every key must
@@ -24,6 +26,15 @@ for round = 1, 30 do
     pitch = math.rad(round <= 5 and 0.35 or 0.2),
     yaw = math.rad(round % 2 == 0 and 0.05 or -0.05),
   }
+end
+
+-- Rate of fire (US-06): at most one round fires a tick, so a rifle faster than
+-- the server's tick rate fires at the tick rate instead. Worth a warning, not a
+-- refusal: the scenario still plays, only slower to fire.
+local rounds_per_minute = 600
+local ticks_per_minute = server.tick_rate_hz * 60
+if rounds_per_minute > ticks_per_minute then
+  warn("the rifle's ", rounds_per_minute, " rounds per minute fire at the tick rate's ", ticks_per_minute)
 end
 
 -- Health and damage: a head shot kills; torso shots take three, limb shots four.
@@ -46,9 +57,8 @@ return {
   rifle = {
     -- Rounds a full magazine holds (a whole number, 1 to 255).
     magazine_capacity = 30,
-    -- Rounds per minute while fire is held (above 0). At most one round fires
-    -- a tick, so a rate above the tick rate fires at the tick rate.
-    rounds_per_minute = 600,
+    -- Rounds per minute while fire is held (above 0); see above for the tick rate.
+    rounds_per_minute = rounds_per_minute,
     -- Speed a round leaves the muzzle at, in m/s (above 0).
     muzzle_velocity = 800,
     -- Seconds a reload takes (0 or more).

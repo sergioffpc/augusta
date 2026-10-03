@@ -1,6 +1,6 @@
 #!/bin/sh
-# Runs clang-tidy on changed C++ files and yamllint on changed YAML files before
-# pushing. Git LFS uploads still run after both checks pass.
+# Runs clang-tidy on changed C++ files, yamllint on changed YAML files,
+# luacheck on changed Lua files and taplo on changed TOML files before pushing. Git LFS uploads still run after both checks pass.
 
 remote="$1"
 push_refs=$(cat)
@@ -42,6 +42,23 @@ else
     while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)
 fi
 
+# Lint Lua scripts changed by the commits being pushed. If luacheck's rules
+# (the engine sandbox's standard library among them) change, lint every script.
+lua_config_changed=$(printf '%s\n' "$files" | grep -E '^\.luacheckrc$' || true)
+if [ -n "$lua_config_changed" ]; then
+  lua_files=$(git ls-files -- '*.lua')
+else
+  lua_files=$(printf '%s\n' "$files" | grep -E '\.lua$' |
+    sort -u |
+    while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)
+fi
+
+# Lint TOML files changed by the commits being pushed (taplo's own config
+# among them, so a change to it is checked like any other).
+toml_files=$(printf '%s\n' "$files" | grep -E '\.toml$' |
+  sort -u |
+  while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)
+
 # src/client and src/modules/renderer are Windows-only, so CI's Linux run has
 # no compile commands for them; PhysX's SSE headers break clang-tidy under
 # MSVC's flags, so physics.cpp is linted by CI's Linux run alone. The audio
@@ -57,7 +74,7 @@ files=$(echo "$files" | grep -E '^src/.*\.cpp$' |
   sort -u |
   while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)
 
-if [ -z "$files" ] && [ -z "$yaml_files" ]; then
+if [ -z "$files" ] && [ -z "$yaml_files" ] && [ -z "$lua_files" ] && [ -z "$toml_files" ]; then
   printf '%s\n' "$push_refs" | git lfs pre-push "$@"
   exit $?
 fi
@@ -101,6 +118,36 @@ if [ -n "$yaml_files" ]; then
 
   if [ "$status" -ne 0 ]; then
     echo "pre-push: yamllint failed - fix the YAML errors above, or push with --no-verify to skip." >&2
+    exit 1
+  fi
+fi
+
+if [ -n "$lua_files" ]; then
+  command -v luacheck >/dev/null 2>&1 || {
+    echo "pre-push: luacheck not found on PATH; install luacheck 1.2.0 before pushing Lua changes." >&2
+    exit 2
+  }
+  # shellcheck disable=SC2086 # one argument per file; script paths have no spaces
+  luacheck --quiet $lua_files
+  status=$?
+
+  if [ "$status" -ne 0 ]; then
+    echo "pre-push: luacheck failed - fix the Lua warnings above, or push with --no-verify to skip." >&2
+    exit 1
+  fi
+fi
+
+if [ -n "$toml_files" ]; then
+  command -v taplo >/dev/null 2>&1 || {
+    echo "pre-push: taplo not found on PATH; install taplo 0.10.0 before pushing TOML changes." >&2
+    exit 2
+  }
+  # shellcheck disable=SC2086 # one argument per file; TOML paths have no spaces
+  taplo lint $toml_files 2>/dev/null
+  status=$?
+
+  if [ "$status" -ne 0 ]; then
+    echo "pre-push: taplo lint failed - run it again to see why, or push with --no-verify to skip." >&2
     exit 1
   fi
 fi

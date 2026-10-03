@@ -20,7 +20,7 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 
-namespace augusta::parameters {
+namespace augusta::server {
 namespace {
 
 constexpr std::string_view kPlayerCountKey = "player_count";
@@ -42,8 +42,8 @@ constexpr std::string_view kDamageKey = "damage";
 constexpr std::array<std::string_view, 3> kAmmoKeys{"gravity", "max_range", kDamageKey};
 constexpr std::array<std::string_view, 3> kDamageKeys{"head", "torso", "limb"};
 
-std::unexpected<LoadError> Fail(LoadErrorCode code, std::string subject = {}) {
-  return std::unexpected(LoadError{.code = code, .subject = std::move(subject)});
+std::unexpected<ParametersLoadError> Fail(ParametersLoadErrorCode code, std::string subject = {}) {
+  return std::unexpected(ParametersLoadError{.code = code, .subject = std::move(subject)});
 }
 
 std::string KeyPath(std::string_view parent, std::string_view child) {
@@ -60,8 +60,8 @@ std::string KeyName(const sol::object& key) {
 
 // The first key of table, in name order, that is not in known. The order is the
 // names' and not the table's, so the same script always reports the same key.
-std::optional<LoadError> FirstUnknownKey(const sol::table& table, std::string_view parent,
-                                         std::span<const std::string_view> known) {
+std::optional<ParametersLoadError> FirstUnknownKey(const sol::table& table, std::string_view parent,
+                                                   std::span<const std::string_view> known) {
   std::vector<std::string> unknown;
   table.for_each([&](const sol::object& key, const sol::object&) {
     const std::string name = KeyName(key);
@@ -72,23 +72,26 @@ std::optional<LoadError> FirstUnknownKey(const sol::table& table, std::string_vi
   if (unknown.empty()) {
     return std::nullopt;
   }
-  return LoadError{.code = LoadErrorCode::kUnknownKey, .subject = KeyPath(parent, *std::ranges::min_element(unknown))};
+  return ParametersLoadError{.code = ParametersLoadErrorCode::kUnknownKey,
+                             .subject = KeyPath(parent, *std::ranges::min_element(unknown))};
 }
 
-// The number at key; whether it is one the simulation can run on is for Validate.
-std::expected<double, LoadError> ReadNumber(const sol::table& table, std::string_view parent, std::string_view key) {
+// The number at key; whether it is one the simulation can run on is for parameters::Validate.
+std::expected<double, ParametersLoadError> ReadNumber(const sol::table& table, std::string_view parent,
+                                                      std::string_view key) {
   const sol::object value = table.raw_get<sol::object>(key);
   if (value.get_type() == sol::type::lua_nil) {
-    return Fail(LoadErrorCode::kMissingKey, KeyPath(parent, key));
+    return Fail(ParametersLoadErrorCode::kMissingKey, KeyPath(parent, key));
   }
   if (value.get_type() != sol::type::number) {
-    return Fail(LoadErrorCode::kWrongType, KeyPath(parent, key));
+    return Fail(ParametersLoadErrorCode::kWrongType, KeyPath(parent, key));
   }
   return value.as<double>();
 }
 
-// The number at key as a float; whether it is one the simulation can run on is for Validate.
-std::expected<float, LoadError> ReadFloat(const sol::table& table, std::string_view parent, std::string_view key) {
+// The number at key as a float; whether it is one the simulation can run on is for parameters::Validate.
+std::expected<float, ParametersLoadError> ReadFloat(const sol::table& table, std::string_view parent,
+                                                    std::string_view key) {
   const auto number = ReadNumber(table, parent, key);
   if (!number) {
     return std::unexpected(number.error());
@@ -97,33 +100,34 @@ std::expected<float, LoadError> ReadFloat(const sol::table& table, std::string_v
 }
 
 // A count at key, a whole number; one the type cannot hold is out of range
-// here, and whether it is a count the simulation can run on is for Validate. A
+// here, and whether it is a count the simulation can run on is for parameters::Validate. A
 // whole number with a fraction part (8 / 4 is 2.0 in Lua) is still whole.
-std::expected<std::uint8_t, LoadError> ReadCount(const sol::table& table, std::string_view parent,
-                                                 std::string_view key) {
+std::expected<std::uint8_t, ParametersLoadError> ReadCount(const sol::table& table, std::string_view parent,
+                                                           std::string_view key) {
   const auto count = ReadNumber(table, parent, key);
   if (!count) {
     return std::unexpected(count.error());
   }
   if (!std::isfinite(*count) || *count < 0.0 || *count > std::numeric_limits<std::uint8_t>::max()) {
-    return Fail(LoadErrorCode::kOutOfRange, KeyPath(parent, key));
+    return Fail(ParametersLoadErrorCode::kOutOfRange, KeyPath(parent, key));
   }
   if (*count != std::floor(*count)) {
-    return Fail(LoadErrorCode::kWrongType, KeyPath(parent, key));
+    return Fail(ParametersLoadErrorCode::kWrongType, KeyPath(parent, key));
   }
   return static_cast<std::uint8_t>(*count);
 }
 
 // The table at key, holding no key but known.
-std::expected<sol::table, LoadError> ReadTable(const sol::table& table, std::string_view parent, std::string_view key,
-                                               std::span<const std::string_view> known) {
+std::expected<sol::table, ParametersLoadError> ReadTable(const sol::table& table, std::string_view parent,
+                                                         std::string_view key,
+                                                         std::span<const std::string_view> known) {
   const sol::object value = table.raw_get<sol::object>(key);
   const std::string path = KeyPath(parent, key);
   if (value.get_type() == sol::type::lua_nil) {
-    return Fail(LoadErrorCode::kMissingKey, path);
+    return Fail(ParametersLoadErrorCode::kMissingKey, path);
   }
   if (value.get_type() != sol::type::table) {
-    return Fail(LoadErrorCode::kWrongType, path);
+    return Fail(ParametersLoadErrorCode::kWrongType, path);
   }
   sol::table result = value.as<sol::table>();
   if (const auto unknown = FirstUnknownKey(result, path, known)) {
@@ -142,8 +146,8 @@ struct FloatKey {
 // Reads every key of fields out of table into config, in order; the first that
 // is not a number is the error.
 template <typename Config, std::size_t N>
-std::expected<void, LoadError> ReadFloats(const sol::table& table, std::string_view parent,
-                                          const std::array<FloatKey<Config>, N>& fields, Config& config) {
+std::expected<void, ParametersLoadError> ReadFloats(const sol::table& table, std::string_view parent,
+                                                    const std::array<FloatKey<Config>, N>& fields, Config& config) {
   for (const FloatKey<Config>& field : fields) {
     const auto value = ReadFloat(table, parent, field.key);
     if (!value) {
@@ -154,7 +158,7 @@ std::expected<void, LoadError> ReadFloats(const sol::table& table, std::string_v
   return {};
 }
 
-std::expected<physics::StaminaConfig, LoadError> ReadStamina(const sol::table& root) {
+std::expected<physics::StaminaConfig, ParametersLoadError> ReadStamina(const sol::table& root) {
   const auto table = ReadTable(root, {}, kStaminaKey, kStaminaKeys);
   if (!table) {
     return std::unexpected(table.error());
@@ -189,33 +193,33 @@ bool IsList(const sol::table& table) {
 }
 
 // The recoil pattern at rifle.recoil_pattern: a list of {pitch, yaw} kicks. How
-// many it may hold is for Validate.
-std::expected<std::vector<RecoilKick>, LoadError> ReadRecoilPattern(const sol::table& rifle) {
+// many it may hold is for parameters::Validate.
+std::expected<std::vector<parameters::RecoilKick>, ParametersLoadError> ReadRecoilPattern(const sol::table& rifle) {
   const std::string path = KeyPath(kRifleKey, kRecoilPatternKey);
   const sol::object value = rifle.raw_get<sol::object>(kRecoilPatternKey);
   if (value.get_type() == sol::type::lua_nil) {
-    return Fail(LoadErrorCode::kMissingKey, path);
+    return Fail(ParametersLoadErrorCode::kMissingKey, path);
   }
   if (value.get_type() != sol::type::table || !IsList(value.as<sol::table>())) {
-    return Fail(LoadErrorCode::kWrongType, path);
+    return Fail(ParametersLoadErrorCode::kWrongType, path);
   }
   const sol::table list = value.as<sol::table>();
-  constexpr auto kFields = std::to_array<FloatKey<RecoilKick>>({
-      {.key = "pitch", .field = &RecoilKick::pitch},
-      {.key = "yaw", .field = &RecoilKick::yaw},
+  constexpr auto kFields = std::to_array<FloatKey<parameters::RecoilKick>>({
+      {.key = "pitch", .field = &parameters::RecoilKick::pitch},
+      {.key = "yaw", .field = &parameters::RecoilKick::yaw},
   });
-  std::vector<RecoilKick> pattern;
+  std::vector<parameters::RecoilKick> pattern;
   for (std::size_t i = 1; i <= list.size(); ++i) {
     const std::string kick_path = path + "[" + std::to_string(i) + "]";
     const sol::object entry = list.raw_get<sol::object>(i);
     if (entry.get_type() != sol::type::table) {
-      return Fail(LoadErrorCode::kWrongType, kick_path);
+      return Fail(ParametersLoadErrorCode::kWrongType, kick_path);
     }
     const sol::table kick_table = entry.as<sol::table>();
     if (const auto unknown = FirstUnknownKey(kick_table, kick_path, kRecoilKickKeys)) {
       return std::unexpected(*unknown);
     }
-    RecoilKick kick;
+    parameters::RecoilKick kick;
     if (const auto read = ReadFloats(kick_table, kick_path, kFields, kick); !read) {
       return std::unexpected(read.error());
     }
@@ -224,22 +228,22 @@ std::expected<std::vector<RecoilKick>, LoadError> ReadRecoilPattern(const sol::t
   return pattern;
 }
 
-std::expected<Rifle, LoadError> ReadRifle(const sol::table& root) {
+std::expected<parameters::Rifle, ParametersLoadError> ReadRifle(const sol::table& root) {
   const auto table = ReadTable(root, {}, kRifleKey, kRifleKeys);
   if (!table) {
     return std::unexpected(table.error());
   }
-  Rifle rifle;
+  parameters::Rifle rifle;
   const auto capacity = ReadCount(*table, kRifleKey, "magazine_capacity");
   if (!capacity) {
     return std::unexpected(capacity.error());
   }
   rifle.magazine_capacity = *capacity;
-  constexpr auto kFiring = std::to_array<FloatKey<Rifle>>({
-      {.key = "rounds_per_minute", .field = &Rifle::rounds_per_minute},
-      {.key = "muzzle_velocity", .field = &Rifle::muzzle_velocity},
-      {.key = "reload_seconds", .field = &Rifle::reload_seconds},
-      {.key = "recoil_recovery_per_second", .field = &Rifle::recoil_recovery_per_second},
+  constexpr auto kFiring = std::to_array<FloatKey<parameters::Rifle>>({
+      {.key = "rounds_per_minute", .field = &parameters::Rifle::rounds_per_minute},
+      {.key = "muzzle_velocity", .field = &parameters::Rifle::muzzle_velocity},
+      {.key = "reload_seconds", .field = &parameters::Rifle::reload_seconds},
+      {.key = "recoil_recovery_per_second", .field = &parameters::Rifle::recoil_recovery_per_second},
   });
   if (const auto read = ReadFloats(*table, kRifleKey, kFiring, rifle); !read) {
     return std::unexpected(read.error());
@@ -249,9 +253,9 @@ std::expected<Rifle, LoadError> ReadRifle(const sol::table& root) {
     return std::unexpected(pattern.error());
   }
   rifle.recoil_pattern = *std::move(pattern);
-  constexpr auto kAiming = std::to_array<FloatKey<Rifle>>({
-      {.key = "ads_recoil_scale", .field = &Rifle::ads_recoil_scale},
-      {.key = "ads_field_of_view", .field = &Rifle::ads_field_of_view},
+  constexpr auto kAiming = std::to_array<FloatKey<parameters::Rifle>>({
+      {.key = "ads_recoil_scale", .field = &parameters::Rifle::ads_recoil_scale},
+      {.key = "ads_field_of_view", .field = &parameters::Rifle::ads_field_of_view},
   });
   if (const auto read = ReadFloats(*table, kRifleKey, kAiming, rifle); !read) {
     return std::unexpected(read.error());
@@ -259,15 +263,15 @@ std::expected<Rifle, LoadError> ReadRifle(const sol::table& root) {
   return rifle;
 }
 
-std::expected<Ammo, LoadError> ReadAmmo(const sol::table& root) {
+std::expected<parameters::Ammo, ParametersLoadError> ReadAmmo(const sol::table& root) {
   const auto table = ReadTable(root, {}, kAmmoKey, kAmmoKeys);
   if (!table) {
     return std::unexpected(table.error());
   }
-  Ammo ammo;
-  constexpr auto kFlight = std::to_array<FloatKey<Ammo>>({
-      {.key = "gravity", .field = &Ammo::gravity},
-      {.key = "max_range", .field = &Ammo::max_range},
+  parameters::Ammo ammo;
+  constexpr auto kFlight = std::to_array<FloatKey<parameters::Ammo>>({
+      {.key = "gravity", .field = &parameters::Ammo::gravity},
+      {.key = "max_range", .field = &parameters::Ammo::max_range},
   });
   if (const auto read = ReadFloats(*table, kAmmoKey, kFlight, ammo); !read) {
     return std::unexpected(read.error());
@@ -277,15 +281,32 @@ std::expected<Ammo, LoadError> ReadAmmo(const sol::table& root) {
   if (!damage) {
     return std::unexpected(damage.error());
   }
-  constexpr auto kDamage = std::to_array<FloatKey<Damage>>({
-      {.key = "head", .field = &Damage::head},
-      {.key = "torso", .field = &Damage::torso},
-      {.key = "limb", .field = &Damage::limb},
+  constexpr auto kDamage = std::to_array<FloatKey<parameters::Damage>>({
+      {.key = "head", .field = &parameters::Damage::head},
+      {.key = "torso", .field = &parameters::Damage::torso},
+      {.key = "limb", .field = &parameters::Damage::limb},
   });
   if (const auto read = ReadFloats(*damage, damage_path, kDamage, ammo.damage); !read) {
     return std::unexpected(read.error());
   }
   return ammo;
+}
+
+// Lua's warn(), whose arguments are on state's stack: like Lua's own, it takes
+// one or more strings (or numbers) and gives them as one message, but always to
+// on_warning, never to stderr.
+void Warn(lua_State* state, const ParametersWarningSink& on_warning) {
+  const int count = lua_gettop(state);
+  luaL_checkstring(state, 1);
+  std::string message;
+  for (int index = 1; index <= count; ++index) {
+    std::size_t length = 0;
+    const char* part = luaL_checklstring(state, index, &length);
+    message.append(part, length);
+  }
+  if (on_warning) {
+    on_warning(message);
+  }
 }
 
 // Long enough for any script that only states values and computes a few from
@@ -294,36 +315,41 @@ constexpr int kInstructionLimit = 1'000'000;
 
 }  // namespace
 
-std::string DescribeLoadError(const LoadError& error) {
+std::string DescribeParametersLoadError(const ParametersLoadError& error) {
   switch (error.code) {
-    case LoadErrorCode::kScriptError:
+    case ParametersLoadErrorCode::kScriptError:
       return "the parameters script failed: " + error.subject;
-    case LoadErrorCode::kNotATable:
+    case ParametersLoadErrorCode::kNotATable:
       return "the parameters script must return a table";
-    case LoadErrorCode::kUnknownKey:
+    case ParametersLoadErrorCode::kUnknownKey:
       return "the parameters script has a key that is not a parameter: " + error.subject;
-    case LoadErrorCode::kMissingKey:
+    case ParametersLoadErrorCode::kMissingKey:
       return "the parameters script lacks the key " + error.subject;
-    case LoadErrorCode::kWrongType:
+    case ParametersLoadErrorCode::kWrongType:
       return "the parameters script gives " + error.subject + " a value of the wrong type";
-    case LoadErrorCode::kOutOfRange:
+    case ParametersLoadErrorCode::kOutOfRange:
       return "the parameters script gives " + error.subject + " a value that is out of range";
   }
   return "the parameters script is invalid";
 }
 
-std::expected<Parameters, LoadError> Load(std::string_view script) {
+std::expected<parameters::Parameters, ParametersLoadError> LoadParameters(std::string_view script,
+                                                                          std::uint8_t tick_rate_hz,
+                                                                          const ParametersWarningSink& on_warning) {
   // A Lua state of its own: it shares no global with a policy script (ADR-0039).
   sol::state lua = scripting::MakeSandbox();
+  // What the script may read of the server it is loaded for.
+  lua["server"] = lua.create_table_with("tick_rate_hz", static_cast<int>(tick_rate_hz));
+  lua.set_function("warn", [&on_warning](sol::this_state state) { Warn(state, on_warning); });
   scripting::LimitInstructions(lua, kInstructionLimit);
 
   const sol::protected_function_result result = lua.safe_script(script, sol::script_pass_on_error, "=parameters");
   if (!result.valid()) {
     const sol::error failure = result;
-    return Fail(LoadErrorCode::kScriptError, failure.what());
+    return Fail(ParametersLoadErrorCode::kScriptError, failure.what());
   }
   if (result.get_type() != sol::type::table) {
-    return Fail(LoadErrorCode::kNotATable);
+    return Fail(ParametersLoadErrorCode::kNotATable);
   }
   const sol::table root = result.get<sol::table>();
 
@@ -350,17 +376,17 @@ std::expected<Parameters, LoadError> Load(std::string_view script) {
   if (!starting_health) {
     return std::unexpected(starting_health.error());
   }
-  const Parameters parameters{
+  const parameters::Parameters parameters{
       .stamina = *stamina,
       .rifle = *std::move(rifle),
       .ammo = *ammo,
       .starting_health = *starting_health,
       .player_count = *player_count,
   };
-  if (const auto valid = Validate(parameters); !valid) {
-    return Fail(LoadErrorCode::kOutOfRange, std::string(valid.error().path));
+  if (const auto valid = parameters::Validate(parameters); !valid) {
+    return Fail(ParametersLoadErrorCode::kOutOfRange, std::string(valid.error().path));
   }
   return parameters;
 }
 
-}  // namespace augusta::parameters
+}  // namespace augusta::server

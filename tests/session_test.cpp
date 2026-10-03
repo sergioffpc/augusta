@@ -76,7 +76,7 @@ using augusta::protocol::SessionIdWire;
 namespace protocol = augusta::protocol;
 using augusta::server::Host;
 using augusta::server::HostConfig;
-using augusta::server::Map;
+using augusta::server::Scenario;
 
 constexpr auto kPollInterval = std::chrono::milliseconds(10);
 constexpr auto kPollDeadline = std::chrono::seconds(5);
@@ -357,7 +357,7 @@ class SessionTest : public ::testing::Test {
  protected:
   SessionTest()
       : host_(TestHostConfig(),
-              Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}}),
+              Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}}),
         session_(TestSessionConfig(host_.ListenEndpoint()), EmptyWorld()) {}
 
   // Runs both sides' network work until the session reports connected, or
@@ -421,10 +421,10 @@ class JoinTest : public ::testing::Test {
  protected:
   JoinTest()
       : host_(TestHostConfig(WithPlayerCount(augusta::protocol::kMaxPlayers)),
-              Map{.collision = {},
-                  .spawn_points = {},
-                  .characters = {{.path = kCharacter, .hitboxes = {}}},
-                  .client_pack = ClientPack(1)}) {}
+              Scenario{.collision = {},
+                       .spawn_points = {},
+                       .characters = {{.path = kCharacter, .hitboxes = {}}},
+                       .client_pack = ClientPack(1)}) {}
 
   // A client pack hash told apart by its last byte.
   static augusta::assets::PackHash ClientPack(std::uint8_t last) {
@@ -697,7 +697,7 @@ constexpr int kFallTicks = 120;
 // ticks, with collision as the map on both sides.
 augusta::prediction::State FallenBody(const std::vector<CollisionMesh>& collision) {
   Host host(TestHostConfig(),
-            Map{.collision = collision, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+            Scenario{.collision = collision, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
   augusta::prediction::World world = EmptyWorld();
   for (const CollisionMesh& mesh : collision) {
     EXPECT_TRUE(world.AddCollisionMesh(mesh).has_value());
@@ -733,7 +733,7 @@ TEST(MapSessionTest, APredictionWorldRefusesAMapMeshPhysicsRejects) {
 TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
   Host host(
       TestHostConfig(),
-      Map{.collision = {FloorAt(0.0F)}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+      Scenario{.collision = {FloorAt(0.0F)}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
 
   for (int i = 0; i < 10; ++i) {
     host.Tick(kFixedTick);
@@ -750,14 +750,14 @@ TEST(MapHostTest, AHostRefusesACharacterHitboxThatIsNotAWholeTriangleList) {
 
   EXPECT_THROW(
       Host(TestHostConfig(),
-           Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {hitbox}}}}),
+           Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {hitbox}}}}),
       std::runtime_error);
 }
 
 TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
-  EXPECT_THROW(Host(TestHostConfig(), Map{.collision = {CollisionMesh{}},
-                                          .spawn_points = {},
-                                          .characters = {{.path = kCharacter, .hitboxes = {}}}}),
+  EXPECT_THROW(Host(TestHostConfig(), Scenario{.collision = {CollisionMesh{}},
+                                               .spawn_points = {},
+                                               .characters = {{.path = kCharacter, .hitboxes = {}}}}),
                std::runtime_error);
 }
 
@@ -777,9 +777,9 @@ class MovementTest : public ::testing::Test {
   // The client always knows the floor; the host knows server_map, which a test
   // may make differ from it to give the two something to disagree about.
   explicit MovementTest(std::vector<CollisionMesh> server_map)
-      : host_(TestHostConfig(), Map{.collision = std::move(server_map),
-                                    .spawn_points = {},
-                                    .characters = {{.path = kCharacter, .hitboxes = {}}}}),
+      : host_(TestHostConfig(), Scenario{.collision = std::move(server_map),
+                                         .spawn_points = {},
+                                         .characters = {{.path = kCharacter, .hitboxes = {}}}}),
         session_(TestSessionConfig(host_.ListenEndpoint()), WorldWithFloorAt(kGroundHeight)) {}
 
   void TearDown() override { augusta::networking::SimulateNetworkConditions({}); }
@@ -1112,19 +1112,19 @@ class LoopbackMatch : public ::testing::Test {
   // file/script settings, the map and the scenario's Game policy, separately.
   struct HostSetup {
     HostConfig config;
-    Map map;
+    Scenario scenario;
     augusta::scripting::Engine policy;
   };
 
-  explicit LoopbackMatch(HostSetup setup) : host_(setup.config, std::move(setup.map), std::move(setup.policy)) {}
+  explicit LoopbackMatch(HostSetup setup) : host_(setup.config, std::move(setup.scenario), std::move(setup.policy)) {}
 
   // A host setup for the floor with spawn_points, the parameters and the tick rate.
   static HostSetup OnTheFloor(std::vector<Vec3> spawn_points, const Parameters& parameters = kTestParameters,
                               std::uint8_t tick_rate_hz = kTestTickRate) {
     return HostSetup{.config = TestHostConfig(parameters, tick_rate_hz),
-                     .map = Map{.collision = {FloorAt(kFloorY)},
-                                .spawn_points = std::move(spawn_points),
-                                .characters = {{.path = kCharacter, .hitboxes = {}}}},
+                     .scenario = Scenario{.collision = {FloorAt(kFloorY)},
+                                          .spawn_points = std::move(spawn_points),
+                                          .characters = {{.path = kCharacter, .hitboxes = {}}}},
                      .policy = {}};
   }
 
@@ -1828,7 +1828,7 @@ TEST_F(StaminaTest, AClientThatPredictsCorrectlyNeverCorrectsForTheRoundingOnThe
 class ScriptedParametersTest : public LoopbackMatch {
  protected:
   static augusta::parameters::Parameters LoadScript() {
-    const auto loaded = augusta::parameters::Load(
+    const auto loaded = augusta::server::LoadParameters(
         "local sprint_seconds = 1\n"
         "return {\n"
         "  player_count = 1,\n"
@@ -1841,7 +1841,8 @@ class ScriptedParametersTest : public LoopbackMatch {
         "    recoil_pattern = {}, recoil_recovery_per_second = 0, ads_recoil_scale = 1, ads_field_of_view = 0.7 },\n"
         "  ammo = { gravity = 9.81, max_range = 1000, damage = { head = 100, torso = 34, limb = 25 } },\n"
         "  starting_health = 100,\n"
-        "}");
+        "}",
+        kTestTickRate);
     return loaded.value();
   }
 
@@ -2281,7 +2282,7 @@ TEST_F(SessionTest, AClientHoldsNoParametersUntilTheServerAdmitsIt) {
 // accepted rather than divide by it.
 TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseTickRateFailsTheChecks) {
   Host host(TestHostConfig(kTestParameters, 0),
-            Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+            Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
   Session session(TestSessionConfig(host.ListenEndpoint()), EmptyWorld());
   session.Connect();
 
@@ -2322,7 +2323,8 @@ TEST(SessionFailureTest, AServerNobodyIsListeningAtIsUnreachable) {
 
 TEST(SessionFailureTest, AServerThatGoesAwayDuringAMatchIsAConnectionLost) {
   auto host = std::make_unique<Host>(
-      TestHostConfig(), Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+      TestHostConfig(),
+      Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
   Session session(TestSessionConfig(host->ListenEndpoint()), EmptyWorld());
   session.Connect();
   ASSERT_TRUE(DriveIntoMatch(*host, {&session}));
@@ -2344,7 +2346,7 @@ TEST(SessionFailureTest, AServerThatGoesAwayDuringAMatchIsAConnectionLost) {
 
 TEST(SessionFailureTest, EndingTheSessionOneselfIsNotAFailure) {
   Host host(TestHostConfig(),
-            Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+            Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
   Session session(TestSessionConfig(host.ListenEndpoint()), EmptyWorld());
   session.Connect();
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
@@ -2818,7 +2820,7 @@ class ImpossibleLobbyOf : public LoopbackMatch {
   static HostSetup TwoCharacters() {
     HostSetup setup = OnTheFloor({Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F), Vec3(30.0F, kFloorY, -5.0F)},
                                  WithPlayerCount(kPlayers));
-    setup.map.characters.push_back({.path = kOtherCharacter, .hitboxes = {}});
+    setup.scenario.characters.push_back({.path = kOtherCharacter, .hitboxes = {}});
     return setup;
   }
 
@@ -3309,7 +3311,7 @@ class FireMatchOf : public LoopbackMatch {
     parameters.rifle.ads_recoil_scale = 0.5F;
     parameters.ammo.max_range = 1000.0F;
     HostSetup setup = OnTheFloor({Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F)}, parameters);
-    setup.map.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
     return setup;
   }
 
@@ -3869,12 +3871,13 @@ class HitMatchOf : public LoopbackMatch {
     }
     HostSetup setup = OnTheFloor(std::move(spawn_points), parameters);
     setup.policy = std::move(policy);
-    setup.map.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
-    setup.map.characters.front().hitboxes = HumanHitboxes();
+    setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    setup.scenario.characters.front().hitboxes = HumanHitboxes();
     if (walled) {
-      setup.map.collision.push_back(CollisionMesh{.points = {Vec3(-20.0F, kFloorY, kWallZ), Vec3(-20.0F, 5.0F, kWallZ),
-                                                             Vec3(20.0F, 5.0F, kWallZ), Vec3(20.0F, kFloorY, kWallZ)},
-                                                  .indices = {0, 1, 2, 0, 2, 3}});
+      setup.scenario.collision.push_back(
+          CollisionMesh{.points = {Vec3(-20.0F, kFloorY, kWallZ), Vec3(-20.0F, 5.0F, kWallZ), Vec3(20.0F, 5.0F, kWallZ),
+                                   Vec3(20.0F, kFloorY, kWallZ)},
+                        .indices = {0, 1, 2, 0, 2, 3}});
     }
     return setup;
   }
@@ -4265,8 +4268,8 @@ class FullAutoMatchTest : public LoopbackMatch {
       spawn_points.emplace_back(kPairSpacing * static_cast<float>(i / 2), kFloorY, i % 2 == 0 ? 0.0F : -kPairDistance);
     }
     HostSetup setup = OnTheFloor(std::move(spawn_points), parameters);
-    setup.map.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
-    setup.map.characters.front().hitboxes = HumanHitboxes();
+    setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    setup.scenario.characters.front().hitboxes = HumanHitboxes();
     return setup;
   }
 
@@ -5002,8 +5005,8 @@ class EightPlayerMatchTest : public LoopbackMatch {
     }
     HostSetup setup = OnTheFloor(std::move(spawn_points), parameters);
     setup.policy = ExamplePolicy();
-    setup.map.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
-    setup.map.characters.front().hitboxes = HumanHitboxes();
+    setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    setup.scenario.characters.front().hitboxes = HumanHitboxes();
     return setup;
   }
 
@@ -5606,8 +5609,8 @@ class CorrectedAimTest : public AdversaryMatch {
     parameters.ammo.damage = {.head = 50.0F, .torso = 20.0F, .limb = kLimbDamage};
     parameters.starting_health = kStartingHealth;
     HostSetup setup = OnTheFloor({Vec3(0.0F, kFloorY, 0.0F), Vec3(0.0F, kFloorY, -60.0F)}, parameters);
-    setup.map.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
-    setup.map.characters.front().hitboxes = HumanHitboxes();
+    setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    setup.scenario.characters.front().hitboxes = HumanHitboxes();
     return setup;
   }
 

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Auto-formats staged C++ and YAML files. CI's format checks remain the actual
+# Auto-formats staged C++, YAML, Lua and TOML files. CI's format checks remain the actual
 # gate if a local formatter is missing or the hook is bypassed with --no-verify.
 
 cxx_files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^(src|tests)/.*\.(cpp|h)$' || true)
@@ -25,5 +25,29 @@ if [ -n "$yaml_files" ]; then
     done
   else
     echo "pre-commit: yamlfmt not found on PATH - skipping YAML formatting (CI will still catch this)." >&2
+  fi
+fi
+
+lua_files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.lua$' || true)
+if [ -n "$lua_files" ]; then
+  if command -v stylua >/dev/null 2>&1; then
+    echo "$lua_files" | while IFS= read -r f; do
+      stylua "$f" || exit $?
+      git add "$f" || exit $?
+    done
+  else
+    echo "pre-commit: stylua not found on PATH - skipping Lua formatting (CI will still catch this)." >&2
+  fi
+fi
+
+toml_files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.toml$' || true)
+if [ -n "$toml_files" ]; then
+  if command -v taplo >/dev/null 2>&1; then
+    echo "$toml_files" | while IFS= read -r f; do
+      taplo fmt "$f" 2>/dev/null || exit $?
+      git add "$f" || exit $?
+    done
+  else
+    echo "pre-commit: taplo not found on PATH - skipping TOML formatting (CI will still catch this)." >&2
   fi
 fi

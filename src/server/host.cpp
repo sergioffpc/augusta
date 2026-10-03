@@ -21,7 +21,6 @@
 #include <vector>
 
 #include "admission.h"
-#include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
@@ -36,8 +35,10 @@
 #include "augusta/tick.h"
 #include "augusta/version.h"
 #include "command_queue.h"
+#include "content.h"
 #include "match.h"
 #include "misbehaviour.h"
+#include "simulation_mapping.h"
 #include "wire.h"
 
 namespace augusta::server {
@@ -47,9 +48,9 @@ namespace {
 // The authoritative world with the map's collision already in it. Built
 // before the socket exists, so a map that is rejected never leaves a bound
 // port behind.
-simulation::World BuildSimulation(const HostConfig& config, const Map& map, scripting::Engine policy) {
+simulation::World BuildSimulation(const HostConfig& config, const Scenario& scenario, scripting::Engine policy) {
   simulation::World simulation(config.parameters, config.tick_rate_hz, std::move(policy));
-  for (const physics::CollisionMesh& mesh : map.collision) {
+  for (const physics::CollisionMesh& mesh : scenario.collision) {
     if (const auto added = simulation.AddCollisionMesh(mesh); !added) {
       throw std::runtime_error(
           std::format("server::Host: map collision rejected: {}", physics::DescribeCollisionMeshError(added.error())));
@@ -70,13 +71,6 @@ static_assert(kMaxQueuedCommands <= std::numeric_limits<std::uint8_t>::max());
 std::uint32_t PeerNumber(networking::PeerId peer) { return static_cast<std::uint32_t>(peer); }
 
 std::uint32_t SessionNumber(SessionId session) { return static_cast<std::uint32_t>(session); }
-
-// session as SimulationWorld's Game policy names the same player, and back.
-simulation::SessionId ToSimulation(SessionId session) {
-  return static_cast<simulation::SessionId>(SessionNumber(session));
-}
-
-SessionId FromSimulation(simulation::SessionId session) { return static_cast<SessionId>(std::to_underlying(session)); }
 
 // What a Match end's log line names as its winner.
 std::string WinnerName(const std::optional<SessionId>& winner) {
@@ -104,53 +98,6 @@ std::string_view EndReasonName(EndReason reason) {
       return "ended by the host";
   }
   std::unreachable();
-}
-
-ballistics::BodyPart ToBallistics(assets::BodyPart part) {
-  switch (part) {
-    case assets::BodyPart::kHead:
-      return ballistics::BodyPart::kHead;
-    case assets::BodyPart::kTorso:
-      return ballistics::BodyPart::kTorso;
-    case assets::BodyPart::kLimb:
-      return ballistics::BodyPart::kLimb;
-  }
-  std::unreachable();
-}
-
-// hitbox, of character path, as the triangles a bullet is tested against.
-// Throws std::runtime_error if its mesh is not a whole, in-range triangle list:
-// a pack's mesh blob is not checked for that when it is decoded.
-simulation::CharacterHitbox ToSimulation(const assets::HitboxData& hitbox, const std::string& path) {
-  const assets::MeshData& mesh = hitbox.mesh;
-  if (const auto valid = physics::ValidateCollisionMesh({.points = mesh.points, .indices = mesh.indices}); !valid) {
-    throw std::runtime_error(std::format("server::Host: hitbox of character {} rejected: {}", path,
-                                         physics::DescribeCollisionMeshError(valid.error())));
-  }
-  simulation::CharacterHitbox result{.part = ToBallistics(hitbox.part), .triangles = {}};
-  result.triangles.reserve(mesh.indices.size() / 3);
-  for (std::size_t i = 0; i < mesh.indices.size(); i += 3) {
-    result.triangles.push_back(ballistics::Triangle{.a = mesh.points[mesh.indices[i]],
-                                                    .b = mesh.points[mesh.indices[i + 1]],
-                                                    .c = mesh.points[mesh.indices[i + 2]]});
-  }
-  return result;
-}
-
-// Each of characters as SimulationWorld takes it, by its path. Built with the
-// simulation, before the socket exists, for the same reason.
-std::unordered_map<std::string, simulation::Character> ToSimulation(const std::vector<Character>& characters) {
-  std::unordered_map<std::string, simulation::Character> result;
-  result.reserve(characters.size());
-  for (const Character& character : characters) {
-    simulation::Character converted{.eye = character.eye, .hitboxes = {}};
-    converted.hitboxes.reserve(character.hitboxes.size());
-    for (const assets::HitboxData& hitbox : character.hitboxes) {
-      converted.hitboxes.push_back(ToSimulation(hitbox, character.path));
-    }
-    result.emplace(character.path, std::move(converted));
-  }
-  return result;
 }
 
 std::string_view BodyPartName(ballistics::BodyPart part) {
@@ -212,14 +159,6 @@ std::vector<std::string> CharacterPaths(const std::vector<Character>& characters
 }
 
 }  // namespace
-
-simulation::EntityId ToSimulation(EntityId entity) {
-  return static_cast<simulation::EntityId>(static_cast<std::uint32_t>(entity));
-}
-
-EntityId FromSimulation(simulation::EntityId entity) {
-  return static_cast<EntityId>(static_cast<std::uint32_t>(entity));
-}
 
 struct Host::Impl {
   // What the server keeps per joined client.
@@ -292,17 +231,17 @@ struct Host::Impl {
   // The deadline of each connected peer not yet admitted to the Lobby. Guarded by mutex.
   AdmissionDeadlines admission_deadlines;
 
-  Impl(const HostConfig& config, Map map, scripting::Engine policy)
-      : simulation(BuildSimulation(config, map, std::move(policy))),
+  Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy)
+      : simulation(BuildSimulation(config, scenario, std::move(policy))),
         tick_rate_hz(config.tick_rate_hz),
         parameters(config.parameters),
-        characters(ToSimulation(map.characters)),
-        spawn_points(std::move(map.spawn_points)),
+        characters(ToSimulation(scenario.characters)),
+        spawn_points(std::move(scenario.spawn_points)),
         network(config.listen),
         match(MatchConfig{
             .engine_version = std::string(EngineVersion()),
-            .client_pack = map.client_pack,
-            .characters = CharacterPaths(map.characters),
+            .client_pack = scenario.client_pack,
+            .characters = CharacterPaths(scenario.characters),
             .player_count = config.parameters.player_count,
             .pause_ticks = PauseTicks(config.tick_rate_hz),
         }) {}
@@ -658,8 +597,8 @@ struct Host::Impl {
   }
 };
 
-Host::Host(const HostConfig& config, Map map, scripting::Engine policy)
-    : impl_(std::make_unique<Impl>(config, std::move(map), std::move(policy))) {}
+Host::Host(const HostConfig& config, Scenario scenario, scripting::Engine policy)
+    : impl_(std::make_unique<Impl>(config, std::move(scenario), std::move(policy))) {}
 
 Host::~Host() = default;
 

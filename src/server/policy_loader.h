@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_POLICY_LOADER_H_
-#define AUGUSTA_POLICY_LOADER_H_
+#ifndef AUGUSTA_SERVER_POLICY_LOADER_H_
+#define AUGUSTA_SERVER_POLICY_LOADER_H_
 
 #include <expected>
 #include <string>
@@ -40,4 +40,4 @@ std::expected<scripting::Engine, PolicyLoadError> LoadPolicy(const assets::Pack&
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_POLICY_LOADER_H_
+#endif  // AUGUSTA_SERVER_POLICY_LOADER_H_
