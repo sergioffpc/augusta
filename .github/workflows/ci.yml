@@ -187,9 +187,6 @@ jobs:
           # too - see .gitmodules.
           submodules: recursive
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
-      - name: Install Ninja
-        run: choco install ninja -y
-        shell: pwsh
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Bootstrap vcpkg
         shell: pwsh
@@ -235,11 +232,22 @@ jobs:
           prefix: falcor-packman-
           keep: falcor-packman-${{ hashFiles('third_party/falcor/dependencies.xml', 'cmake/patches/falcor.patch') }}
       - name: Install clang-tidy
-        # Pinned to the version the server job's distro package and the
-        # bootstrap scripts give, so both platforms agree on which header
-        # provides what.
-        run: choco install llvm --version=21.1.8 --force -y
+        # LLVM 21.1.8, the version the server job's distro package and the
+        # Windows bootstrap give, so both platforms agree on which header
+        # provides what; the image's own is 20.1.8. Downloaded and checked
+        # like the format job's tools, as the image has no winget, the
+        # bootstrap's package manager. Installed beside the image's LLVM and
+        # put ahead of it on PATH.
         shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $installer = "$env:RUNNER_TEMP\LLVM-21.1.8-win64.exe"
+          Invoke-WebRequest -Uri https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.8/LLVM-21.1.8-win64.exe -OutFile $installer
+          if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne '7a5386c26497db1691f320121e5b113364dd0274b98e55f15f4dbc00c0450113') {
+            throw "LLVM installer checksum mismatch"
+          }
+          Start-Process -FilePath $installer -ArgumentList '/S', "/D=$env:RUNNER_TEMP\llvm" -Wait
+          "$env:RUNNER_TEMP\llvm\bin" >> $env:GITHUB_PATH
       - name: Lint (include-cleaner)
         # .clang-tidy's misc-include-cleaner alone (the Makefile's tidy target
         # says why -w) on what the server job's Linux build can't lint: the
@@ -322,9 +330,6 @@ jobs:
         # and third_party/falcor is large.
         run: git submodule update --init --depth 1 third_party/vcpkg
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
-      - name: Install Ninja
-        run: choco install ninja -y
-        shell: pwsh
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Bootstrap vcpkg
         shell: pwsh

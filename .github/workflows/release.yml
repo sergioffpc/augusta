@@ -28,9 +28,6 @@ jobs:
           # (see ci.yml's client job).
           submodules: recursive
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
-      - name: Install Ninja
-        run: choco install ninja -y
-        shell: pwsh
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Bootstrap vcpkg
         shell: pwsh
@@ -99,9 +96,6 @@ jobs:
       - name: Fetch vcpkg
         run: git submodule update --init --depth 1 third_party/vcpkg
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
-      - name: Install Ninja
-        run: choco install ninja -y
-        shell: pwsh
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Bootstrap vcpkg
         shell: pwsh
