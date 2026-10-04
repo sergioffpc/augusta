@@ -1,0 +1,20 @@
+# Owners requested for review on every PR touching these paths. The last
+# matching pattern wins, so the catch-all comes first. Branch protection's
+# "Require review from Code Owners" turns the sensitive areas (workflows,
+# cluster manifests, the pack-signing tool) into required approvals.
+
+*                @sergioffpc
+
+/src/server/     @sergioffpc
+/src/client/     @sergioffpc
+/src/modules/    @sergioffpc
+
+# Pack cooker, including pack signing (tools/pack/src/pack/keys.py).
+/tools/pack/     @sergioffpc
+
+/charts/         @sergioffpc
+/clusters/       @sergioffpc
+
+/.github/        @sergioffpc
+
+/docs/adr/       @sergioffpc
