@@ -129,13 +129,12 @@ the decisions already made in ARCHITECTURE.md:
 - **Commit messages:** Conventional Commits, enforced via the local
   `commit-msg` hook (see Code Quality below).
 - **Changelog and release notes:** generated from the Conventional Commits
-  by git-cliff (`cliff.toml`), never written by hand. `scripts/changelog.sh
-  vX.Y.Z` is run on the `release/*` branch, prepending the commits since the
-  previous `v*` tag to `CHANGELOG.md`, committed as `chore(release): ...` so
-  the cut leaves itself out; it is re-run if a fix lands on that branch
-  afterwards. The release workflow renders the same section on the tag as the
-  GitHub Release's notes. Features, fixes, performance, refactoring, reverts,
-  docs, tests and build changes are listed; `chore`, `ci` and `style` are not.
+  by git-cliff, never written by hand; `cliff.toml` decides which types are
+  listed (`chore`, `ci` and `style` are not). A release's `CHANGELOG.md`
+  section is cut with `scripts/changelog.sh` on its `release/*` or
+  `hotfix/*` branch, in a `chore(release)` commit so the cut leaves itself
+  out, and the release workflow publishes that section as the GitHub
+  Release's notes, refusing a tag that has none.
 
 ## Deployment & CD
 

@@ -1,7 +1,5 @@
-# git-cliff: CHANGELOG.md and each GitHub Release's notes, both generated from
-# the Conventional Commits history (docs/ENGINEERING.md, Git Workflow). The
-# changelog is cut on the release/* branch and release.yml renders the same
-# section as the notes, so both read from this one file.
+# git-cliff: CHANGELOG.md's sections, generated from the Conventional Commits
+# history by scripts/changelog.sh (docs/ENGINEERING.md, Git Workflow).
 
 [changelog]
 header = """
