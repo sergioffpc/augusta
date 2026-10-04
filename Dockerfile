@@ -47,18 +47,23 @@ RUN ./third_party/vcpkg/vcpkg install --x-install-root=build/x64-linux/vcpkg_ins
 COPY src src
 COPY tests tests
 
-RUN cmake --preset linux
-RUN cmake --build --preset linux --target augustad
-# Staged under DESTDIR with the prefix the runtime stage runs it from, so this
-# file never names a path inside the build tree.
-RUN DESTDIR=/workspace/stage cmake --install build/x64-linux --prefix /usr/local
+# The install is staged under DESTDIR with the prefix the runtime stage runs
+# it from, so this file never names a path inside the build tree.
+RUN cmake --preset linux \
+    && cmake --build --preset linux --target augustad \
+    && DESTDIR=/workspace/stage cmake --install build/x64-linux --prefix /usr/local
 
 # Runtime stage: just what `cmake --install` staged and the shared libraries
 # it links against (vcpkg's own dependencies are linked statically) - no build
 # toolchain, no vcpkg source tree.
 FROM ubuntu:26.04 AS runtime
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Upgraded, not just installed onto: the base image trails Ubuntu's security
+# updates, and CI fails an image with a fixable high or critical CVE. CI
+# rebuilds this stage every time (no-cache-filters), so a cached layer never
+# holds an update back.
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
       libstdc++6 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --no-create-home --shell /usr/sbin/nologin augusta

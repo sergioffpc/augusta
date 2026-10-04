@@ -21,6 +21,7 @@ jobs:
     outputs:
       run_build: ${{ steps.filter.outputs.run_build }}
       run_container: ${{ steps.filter.outputs.run_container }}
+      run_manifests: ${{ steps.filter.outputs.run_manifests }}
       run_tools: ${{ steps.filter.outputs.run_tools }}
       run_yaml: ${{ steps.filter.outputs.run_yaml }}
       run_lua: ${{ steps.filter.outputs.run_lua }}
@@ -40,6 +41,7 @@ jobs:
           if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
             echo "run_container=true" >> "$GITHUB_OUTPUT"
+            echo "run_manifests=true" >> "$GITHUB_OUTPUT"
             echo "run_tools=true" >> "$GITHUB_OUTPUT"
             echo "run_yaml=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -55,10 +57,19 @@ jobs:
           fi
 
           if echo "$changed" \
-              | grep -qE '^(Dockerfile$|\.dockerignore$|charts/|\.github/workflows/ci\.yml$)'; then
+              | grep -qE '^(Dockerfile$|\.dockerignore$|\.hadolint\.yaml$|charts/|\.github/workflows/ci\.yml$)'; then
             echo "run_container=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_container=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # What Flux applies to the cluster: its own manifests and the chart
+          # the HelmReleases there install.
+          if echo "$changed" \
+              | grep -qE '^(charts/|clusters/|\.github/workflows/ci\.yml$)'; then
+            echo "run_manifests=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_manifests=false" >> "$GITHUB_OUTPUT"
           fi
 
           # The offline tools (tools/pack, tools/composer), and the golden
@@ -421,6 +432,68 @@ jobs:
           name: fuzz-crashes
           path: fuzz-crashes/
           if-no-files-found: ignore
+  manifests:
+    # What Flux applies, against the schemas of the Kubernetes version the
+    # cluster runs (k3s, bumped with it): helm lint checks the chart's
+    # templating, not what it renders. Flux's own resources are checked
+    # against the CRDs gotk-components.yaml installs, so a Flux upgrade
+    # brings its schemas with it. kubectl and yq come with the runner image.
+    needs: changes
+    if: needs.changes.outputs.run_manifests == 'true'
+    runs-on: ubuntu-26.04
+    env:
+      KUBERNETES_VERSION: 1.36.4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+      - name: Install kubeconform
+        shell: bash
+        run: |
+          install_dir="$RUNNER_TEMP/kubeconform"
+          mkdir -p "$install_dir"
+          curl -fsSLo "$install_dir/kubeconform.tar.gz" \
+            https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz
+          curl -fsSLo "$install_dir/openapi2jsonschema.py" \
+            https://raw.githubusercontent.com/yannh/kubeconform/v0.8.0/scripts/openapi2jsonschema.py
+          printf '%s  %s\n' \
+            '9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883' "$install_dir/kubeconform.tar.gz" \
+            'd145babfbb765004030764e1b4e518bfb7a4bd7f111691a08fa57983b81881f3' "$install_dir/openapi2jsonschema.py" \
+            | sha256sum --check --status
+          tar -xzf "$install_dir/kubeconform.tar.gz" -C "$install_dir" kubeconform
+          echo "$install_dir" >> "$GITHUB_PATH"
+      - name: Validate the chart, rendered per environment
+        # With each HelmRelease's own values, as Flux renders it: the chart
+        # has no default for some of them (assetPacks.packVersion). bash for
+        # pipefail - a render that fails leaves kubeconform nothing to reject.
+        shell: bash
+        run: |
+          for release in $(grep -l '^kind: HelmRelease$' clusters/onprem/apps/*.yaml); do
+            echo "$release"
+            yq '.spec.values' "$release" \
+              | helm template augustad charts/augustad --values - \
+              | kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION"
+          done
+      - name: Validate the cluster's manifests
+        # Each path a Flux Kustomization in gotk-sync.yaml applies, built as
+        # Flux builds it. CustomResourceDefinitions are skipped: kubeconform's
+        # schemas have none for them, and Flux's come generated
+        # (flux install --export).
+        shell: bash
+        run: |
+          schemas="$RUNNER_TEMP/crd-schemas"
+          mkdir -p "$schemas"
+          (cd "$schemas" && FILENAME_FORMAT='{fullgroup}_{kind}_{version}' \
+            uv run --no-project --with pyyaml python "$RUNNER_TEMP/kubeconform/openapi2jsonschema.py" \
+            "$GITHUB_WORKSPACE/clusters/onprem/flux-system/gotk-components.yaml" >/dev/null)
+          for path in $(yq --no-doc 'select(.kind == "Kustomization") | .spec.path' clusters/onprem/flux-system/gotk-sync.yaml); do
+            echo "$path"
+            kubectl kustomize "$path" \
+              | kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" -skip CustomResourceDefinition \
+                -schema-location default -schema-location "$schemas/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
+          done
   container:
     needs: [changes, server]
     # The server job only runs when run_build is true (see changes above), so
@@ -442,11 +515,31 @@ jobs:
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
       - name: Lint Helm chart
         run: helm lint charts/augustad
+      - name: Install hadolint and trivy
+        shell: bash
+        run: |
+          install_dir="$RUNNER_TEMP/container-tools"
+          mkdir -p "$install_dir"
+          curl -fsSLo "$install_dir/hadolint" \
+            https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-linux-x86_64
+          curl -fsSLo "$install_dir/trivy.tar.gz" \
+            https://github.com/aquasecurity/trivy/releases/download/v0.75.0/trivy_0.75.0_Linux-64bit.tar.gz
+          printf '%s  %s\n' \
+            'c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507' "$install_dir/hadolint" \
+            'c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f' "$install_dir/trivy.tar.gz" \
+            | sha256sum --check --status
+          tar -xzf "$install_dir/trivy.tar.gz" -C "$install_dir" trivy
+          chmod +x "$install_dir/hadolint"
+          echo "$install_dir" >> "$GITHUB_PATH"
+      - name: Lint Dockerfile
+        # .hadolint.yaml has the rules it doesn't apply, and why.
+        run: hadolint Dockerfile
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         # Only main/develop pushes publish - PRs (including from forks) just
-        # validate that the image builds, same reasoning as ADR-0026's decision
-        # to keep this pipeline off a self-hosted runner. A PR from this
-        # repository logs in too, only to read the layer cache below.
+        # validate that the image builds and passes its scan, same reasoning
+        # as ADR-0026's decision to keep this pipeline off a self-hosted
+        # runner. A PR from this repository logs in too, only to read the
+        # layer cache below.
       - name: Log in to GHCR
         if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -460,7 +553,13 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          push: ${{ github.event_name == 'push' }}
+          # Into the runner's Docker, for the scan below - published only
+          # once it passes.
+          load: true
+          # The runtime stage is rebuilt every time, so it takes Ubuntu's
+          # current security updates (the Dockerfile's apt-get upgrade)
+          # rather than a cached layer's.
+          no-cache-filters: runtime
           # sha-<first 12 characters of the commit> is the tag the chart runs:
           # Flux versions a Git-sourced chart <version>+<the same 12
           # characters>. The branch name tag is for people. github.ref_name is
@@ -476,3 +575,14 @@ jobs:
           # Only a push writes them, as only a push publishes.
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/augustad:buildcache
           cache-to: ${{ github.event_name == 'push' && format('type=registry,ref=ghcr.io/{0}/augustad:buildcache,mode=max', github.repository_owner) || '' }}
+      - name: Scan server image
+        # Fails on a high or critical CVE that has a fix. A failure here
+        # leaves the commit unpublished, and so undeployed: Flux's upgrade
+        # times out waiting for its image rather than run a vulnerable one.
+        # trivy fetches its vulnerability database each run, so a CVE
+        # published since can fail an unchanged commit - as intended.
+        run: >-
+          trivy image --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.short-sha.outputs.value }}
+      - name: Publish server image
+        if: github.event_name == 'push'
+        run: docker push --all-tags ghcr.io/${{ github.repository_owner }}/augustad
