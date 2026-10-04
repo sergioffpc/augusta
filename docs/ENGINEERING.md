@@ -99,7 +99,8 @@ the decisions already made in ARCHITECTURE.md:
   (checked by hand on the cluster before a release, ADR-0013).
 - **Releases:** a separate workflow, triggered only on `v*` tags, builds
   Release-config client/server binaries, runs the tests and the asset
-  pipeline check against them, and attaches them to a GitHub Release —
+  pipeline check against them, and attaches them to a GitHub Release,
+  whose notes are generated from the commits (Git Workflow below) —
   not run on every push, so cutting a release is a deliberate tag rather
   than automatic.
 - **Documentation site:** the `docs` workflow builds the site (MkDocs Material
@@ -132,6 +133,13 @@ the decisions already made in ARCHITECTURE.md:
   no formal review requirement, self-merge once CI passes.
 - **Commit messages:** Conventional Commits, enforced via the local
   `commit-msg` hook (see Code Quality below).
+- **Changelog and release notes:** generated from the Conventional Commits
+  by git-cliff, never written by hand; `cliff.toml` decides which types are
+  listed (`chore`, `ci` and `style` are not). A release's `CHANGELOG.md`
+  section is cut with `scripts/changelog.sh` on its `release/*` or
+  `hotfix/*` branch, in a `chore(release)` commit so the cut leaves itself
+  out, and the release workflow publishes that section as the GitHub
+  Release's notes, refusing a tag that has none.
 
 ## Deployment & CD
 
