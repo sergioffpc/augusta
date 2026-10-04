@@ -196,14 +196,24 @@ pipeline).
   need to look up the WSL VM's IP. Requires a reasonably recent
   Windows 11 + WSL2 version; confirm with `wsl --version`.
 - **Server / shared core (Linux, via WSL2):** develop and build directly
-  inside WSL2, accessing the repo via `/mnt/c/...`. No Docker container —
-  a `scripts/bootstrap-wsl.sh` setup script installs clang (ADR-0008), CMake, Ninja,
+  inside WSL2, accessing the repo via `/mnt/c/...`. A
+  `scripts/bootstrap-wsl.sh` setup script installs clang (ADR-0008), CMake, Ninja,
   uv (for yamllint), standalone yamlfmt, StyLua, luacheck and taplo, vcpkg, clang-tidy, clang-format,
   gdb, GitHub CLI, kubectl, and helm
   directly into the WSL environment. It requires the Ubuntu release CI's
   runner uses, whose distro packages fix the same LLVM major as CI's. The cross-filesystem access cost
   (`/mnt/c`) is accepted here, since this side has the lighter build
   (no Falcor, D3D12, or Steam Audio).
+- **Server / shared core (dev container, alternative):** `.devcontainer/`
+  gives the same side as a container, for VS Code or Codespaces, without
+  mutating a host: CI's runner Ubuntu release with the toolchain
+  `.github/actions/setup-linux-build` installs (kept in step with it by hand),
+  the hooks' formatters and linters (`scripts/install-lint-tools.sh`, shared
+  with the WSL bootstrap), and CI's Linux vcpkg binary cache configuration (a
+  files provider in the checkout's `.vcpkg-bincache`). sccache's cache lives in
+  a volume shared by every container of the repository; the build trees in a
+  volume per container, so they never collide with a WSL build of the same
+  checkout. The client has no container equivalent (see below).
 - **Client (Windows, native):** built and run natively — never
   cross-compiled from WSL/Linux (not viable given Falcor/D3D12/NVIDIA
   SDK's MSVC-specific toolchain assumptions). A
@@ -238,7 +248,8 @@ pipeline).
   recommended extensions (C++ tools, CMake Tools, clangd/clang-format,
   EditorConfig, Lua, YAML/Helm, GitHub Actions) — VS Code
   prompts to install these whenever the folder is opened, on either
-  side (WSL remote or native Windows), no container required.
+  side (WSL remote or native Windows); the dev container installs the
+  Linux-relevant subset itself.
 - **Dependency hermeticity:** the `vcpkg.json` manifest (ADR-0025) is what
   actually makes dependency acquisition reproducible on both sides —
   not a container.
