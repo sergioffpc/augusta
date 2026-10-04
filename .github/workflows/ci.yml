@@ -61,10 +61,11 @@ jobs:
             echo "run_container=false" >> "$GITHUB_OUTPUT"
           fi
 
-          # The offline tools (tools/), and the golden output of theirs the
-          # runtime's tests load, which the tools job checks they still write.
+          # The offline tools (tools/pack, tools/composer), and the golden
+          # output of theirs the runtime's tests load, which the tools job checks
+          # they still write. tools/docs is the docs workflow's, not theirs.
           if echo "$changed" \
-              | grep -qE '^(tools/|tests/fixtures/example-packs/|\.github/workflows/ci\.yml$)'; then
+              | grep -qE '^(tools/(pack|composer)/|tests/fixtures/example-packs/|\.github/workflows/ci\.yml$)'; then
             echo "run_tools=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_tools=false" >> "$GITHUB_OUTPUT"

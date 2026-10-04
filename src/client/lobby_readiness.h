@@ -10,9 +10,10 @@
 
 #include "augusta/harness.h"
 
-// Decides what the client loads in the Lobby before it reports Ready, and for
-// which Roster (ADR-0043). It decides only: ClientRuntime loads the characters
-// and reports Ready, then tells it so.
+/// \file
+/// Decides what the client loads in the Lobby before it reports Ready, and for
+/// which Roster (ADR-0043). It decides only: ClientRuntime loads the characters
+/// and reports Ready, then tells it so.
 namespace augusta::client {
 
 /// What to do before reporting Ready for one Roster.

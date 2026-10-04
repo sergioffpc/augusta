@@ -10,11 +10,12 @@
 
 #include "augusta/renderer.h"
 
-// The renderer's debug HUD, private to the module: a small always-on readout of
-// frame time and connection quality, drawn as green text over the frame through
-// Falcor's own ImGui wrapper (Falcor::Gui). System metrics only, never gameplay
-// state; frame capture, profiling and render-state inspection are Nsight's. It
-// owns every ImGui concern, so Renderer::Impl only hands it the numbers.
+/// \file
+/// The renderer's debug HUD, private to the module: a small always-on readout of
+/// frame time and connection quality, drawn as green text over the frame through
+/// Falcor's own ImGui wrapper (Falcor::Gui). System metrics only, never gameplay
+/// state; frame capture, profiling and render-state inspection are Nsight's. It
+/// owns every ImGui concern, so Renderer::Impl only hands it the numbers.
 namespace augusta::renderer {
 
 class DebugHud final {

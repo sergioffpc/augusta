@@ -7,12 +7,13 @@
 #include <deque>
 #include <string_view>
 
-// The server's boundary for a peer that keeps sending what no honest client
-// sends: every rejection of what one peer sent is recorded here, and past a
-// threshold of misbehaviour within a sliding window the peer is to be
-// disconnected. Pure (no I/O, no clock of its own: the caller hands it the
-// time), so it is tested without a network. Routine rejections, which an
-// honest client causes under latency and loss, never count.
+/// \file
+/// The server's boundary for a peer that keeps sending what no honest client
+/// sends: every rejection of what one peer sent is recorded here, and past a
+/// threshold of misbehaviour within a sliding window the peer is to be
+/// disconnected. Pure (no I/O, no clock of its own: the caller hands it the
+/// time), so it is tested without a network. Routine rejections, which an
+/// honest client causes under latency and loss, never count.
 namespace augusta::server {
 
 /// Why the server turned away something a peer sent.

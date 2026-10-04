@@ -3,9 +3,10 @@
 
 #include <cstdint>
 
-// Decision half of the renderer's per-frame upload buffers, kept free of
-// Falcor so it is tested on every platform: renderer.cpp does the writing,
-// fencing and drawing around it.
+/// \file
+/// Decision half of the renderer's per-frame upload buffers, kept free of
+/// Falcor so it is tested on every platform: renderer.cpp does the writing,
+/// fencing and drawing around it.
 namespace augusta::renderer {
 
 /// Which of frames_in_flight regions of a per-frame buffer frame_index writes

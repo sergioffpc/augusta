@@ -10,10 +10,11 @@
 #include "augusta/math.h"
 #include "augusta/physics.h"
 
-// augusta::map turns a verified Pack (ADR-0018) into what a physics::World
-// needs to make the map solid. Client and server both call it with their own
-// pack (ADR-0019 ships collision data in both), so PredictionWorld and
-// SimulationWorld collide against the same geometry built by the same code.
+/// \file
+/// augusta::map turns a verified Pack (ADR-0018) into what a physics::World
+/// needs to make the map solid. Client and server both call it with their own
+/// pack (ADR-0019 ships collision data in both), so PredictionWorld and
+/// SimulationWorld collide against the same geometry built by the same code.
 namespace augusta::map {
 
 /// Why a map's collision could not be built from a pack.

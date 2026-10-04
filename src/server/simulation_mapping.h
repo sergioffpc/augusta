@@ -12,10 +12,11 @@
 #include "content.h"
 #include "match.h"
 
-// The conversions Host makes at SimulationWorld's edge, the way wire.h makes
-// them at the protocol's: Match's names for players and bodies into
-// SimulationWorld's, which are the same numbers, and the pack's characters into
-// what SimulationWorld judges hits against.
+/// \file
+/// The conversions Host makes at SimulationWorld's edge, the way wire.h makes
+/// them at the protocol's: Match's names for players and bodies into
+/// SimulationWorld's, which are the same numbers, and the pack's characters into
+/// what SimulationWorld judges hits against.
 namespace augusta::server {
 
 /// entity as SimulationWorld names the same body.

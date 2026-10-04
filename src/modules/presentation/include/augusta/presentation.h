@@ -20,30 +20,31 @@
 #include "augusta/tick.h"
 #include "augusta/tracers.h"
 
-// augusta::presentation orchestrates PresentationWorld (ADR-0024): the
-// client-side ECS pipeline, run once per render frame on the Main/Render
-// thread (ADR-0005) - a different thread and cadence than
-// augusta::prediction's fixed-tick Prediction thread. It translates the
-// fixed-tick Prediction State (augusta::prediction::State) into smooth,
-// frame-rate-independent visuals/audio, through the five ordered phases
-// ADR-0024 runs until its Dynamics phase arrives with the first dynamic body
-// (see Phase below).
-//
-// Like augusta::simulation and augusta::prediction, World owns one Flecs
-// world (ADR-0001) internally, entirely encapsulated behind Impl
-// (presentation.cpp) - no flecs header leaks in here. Phase's five
-// values become five dependency-chained flecs::Phase entities, each with
-// one registered flecs::system that runs once per RunFrame regardless of
-// matched entities - see presentation.cpp; what each does is documented on
-// its Phase enumerator below.
-//
-// Camera has no C++ home of its own - ARCHITECTURE.md doesn't list it as
-// a separate Shared Core/client-only module the way WeaponHandling is; it
-// stays a system inside this module (see Phase::kCamera below), exposed
-// through State::camera for augusta::renderer::Renderer::SetCamera to
-// consume once per render frame. Animation does have its own home:
-// augusta::animation::Engine (see that header) - this module owns the one
-// Engine instance and calls Update from its Animation phase.
+/// \file
+/// augusta::presentation orchestrates PresentationWorld (ADR-0024): the
+/// client-side ECS pipeline, run once per render frame on the Main/Render
+/// thread (ADR-0005) - a different thread and cadence than
+/// augusta::prediction's fixed-tick Prediction thread. It translates the
+/// fixed-tick Prediction State (augusta::prediction::State) into smooth,
+/// frame-rate-independent visuals/audio, through the five ordered phases
+/// ADR-0024 runs until its Dynamics phase arrives with the first dynamic body
+/// (see Phase below).
+///
+/// Like augusta::simulation and augusta::prediction, World owns one Flecs
+/// world (ADR-0001) internally, entirely encapsulated behind Impl
+/// (presentation.cpp) - no flecs header leaks in here. Phase's five
+/// values become five dependency-chained flecs::Phase entities, each with
+/// one registered flecs::system that runs once per RunFrame regardless of
+/// matched entities - see presentation.cpp; what each does is documented on
+/// its Phase enumerator below.
+///
+/// Camera has no C++ home of its own - ARCHITECTURE.md doesn't list it as
+/// a separate Shared Core/client-only module the way WeaponHandling is; it
+/// stays a system inside this module (see Phase::kCamera below), exposed
+/// through State::camera for augusta::renderer::Renderer::SetCamera to
+/// consume once per render frame. Animation does have its own home:
+/// augusta::animation::Engine (see that header) - this module owns the one
+/// Engine instance and calls Update from its Animation phase.
 namespace augusta::presentation {
 
 /// PresentationWorld's five phases (ADR-0024), executed in this exact

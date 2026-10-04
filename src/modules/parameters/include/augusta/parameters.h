@@ -8,11 +8,12 @@
 
 #include "augusta/physics.h"
 
-// augusta::parameters is the type of the simulation's data-driven
-// configuration (ADR-0039, CONTEXT.md's Parameters). It is shared because the
-// server decides these values and every client ticks and predicts with them, so
-// both sides carry the same struct and judge it with the same rules; where the
-// values come from is the server's business and not this header's.
+/// \file
+/// augusta::parameters is the type of the simulation's data-driven
+/// configuration (ADR-0039, CONTEXT.md's Parameters). It is shared because the
+/// server decides these values and every client ticks and predicts with them, so
+/// both sides carry the same struct and judge it with the same rules; where the
+/// values come from is the server's business and not this header's.
 namespace augusta::parameters {
 
 /// How far one round of a burst turns the aim, in radians: a positive pitch up,

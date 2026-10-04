@@ -4,15 +4,16 @@
 #include <chrono>
 #include <cstdint>
 
-// The fixed schedule both tick loops keep - the server's Simulation thread and
-// the client's Prediction thread (ADR-0005): each Tick is due one tick after the
-// previous one was due, not one tick after it ended, so a late Tick delays no
-// later one. A loop that falls too far behind starts over from now rather than
-// running the missed Ticks back to back.
-//
-// Pure - the caller passes the times in - so it is tested with a fake clock; the
-// loops own the clock and the sleeping. The tick's duration is passed on every
-// call, not fixed at construction, so a loop may change it between Ticks.
+/// \file
+/// The fixed schedule both tick loops keep - the server's Simulation thread and
+/// the client's Prediction thread (ADR-0005): each Tick is due one tick after the
+/// previous one was due, not one tick after it ended, so a late Tick delays no
+/// later one. A loop that falls too far behind starts over from now rather than
+/// running the missed Ticks back to back.
+///
+/// Pure - the caller passes the times in - so it is tested with a fake clock; the
+/// loops own the clock and the sleeping. The tick's duration is passed on every
+/// call, not fixed at construction, so a loop may change it between Ticks.
 namespace augusta::tick {
 
 using Clock = std::chrono::steady_clock;

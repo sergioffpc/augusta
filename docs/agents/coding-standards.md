@@ -51,12 +51,14 @@ is reserved for the Lua-implemented gameplay rules.
 
 ## Comments
 
-Every header opens with a module comment, `//` just above its namespace: what
+Every header opens with a module comment just above its namespace, starting
+`/// \file` so Doxygen takes it as the file's description (ADR-0046): what
 the module is for and where it fits (who uses it, what it depends on), what it
 leaves to others and who does it, its threads or ownership where they matter,
 and the ADR that decides it. It does not list what the header declares.
 
-A symbol a header declares publicly gets a `///` comment only when it says
+A symbol a header declares publicly gets a `///` comment, which Doxygen
+publishes in the API reference, only when it says
 something the name doesn't: units, ranges, what nullopt or an empty value
 means, which thread calls it, preconditions, why it exists. A comment that only
 restates the name (`/// The translation part of transform.` on `TranslationOf`)

@@ -6,22 +6,23 @@
 
 #include "augusta/physics.h"
 
-// augusta::animation drives PresentationWorld's Animation phase
-// (ADR-0024): turning interpolated movement and weapon state into
-// animation blend inputs for every player character the client can see
-// - not just the local player. Unlike augusta::prediction (local player
-// only), this runs client-side in PresentationWorld where remote
-// players are visible too, so Engine is a many-characters, handle-based
-// interface, the same shape as augusta::physics::World's many bodies.
-//
-// Scope, for now: locomotion/aim blend *parameters* and discrete action
-// triggers only - not skeletal rig evaluation or mesh skinning. This
-// project has no character/skeleton data format yet, so there is
-// nothing yet to evaluate a pose against.
-// Engine::Update's return type (Pose) is a deliberately empty
-// placeholder - revisit once a skeleton/rig format
-// exists (mesh import is ADR-0016; skinning/rigging isn't decided there
-// yet).
+/// \file
+/// augusta::animation drives PresentationWorld's Animation phase
+/// (ADR-0024): turning interpolated movement and weapon state into
+/// animation blend inputs for every player character the client can see
+/// - not just the local player. Unlike augusta::prediction (local player
+/// only), this runs client-side in PresentationWorld where remote
+/// players are visible too, so Engine is a many-characters, handle-based
+/// interface, the same shape as augusta::physics::World's many bodies.
+///
+/// Scope, for now: locomotion/aim blend *parameters* and discrete action
+/// triggers only - not skeletal rig evaluation or mesh skinning. This
+/// project has no character/skeleton data format yet, so there is
+/// nothing yet to evaluate a pose against.
+/// Engine::Update's return type (Pose) is a deliberately empty
+/// placeholder - revisit once a skeleton/rig format
+/// exists (mesh import is ADR-0016; skinning/rigging isn't decided there
+/// yet).
 namespace augusta::animation {
 
 /// Discrete, one-shot animation actions triggered by a gameplay event

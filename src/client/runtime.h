@@ -15,17 +15,18 @@
 #include "character_loader.h"
 #include "content.h"
 
-// The augustac executable's orchestrator (ARCHITECTURE.md §5): it owns one of
-// every client module - Input, Audio, the harness::Session, PresentationWorld
-// and Renderer - and runs the Main/Render loop. It belongs to src/client, not
-// to the engine's modules: nothing else links against it.
-//
-// It plays nothing itself. Sending commands, receiving the server's state and
-// reconciling the prediction is harness::Session's work, and its Prediction and
-// Network I/O threads are a harness::Runner's (ADR-0005): ClientRuntime supplies
-// each tick's command from the player's input, blends the ticks it is handed
-// into render frames, and loads what the Lobby names. Where its content comes
-// from is main.cpp's business (content.h).
+/// \file
+/// The augustac executable's orchestrator (ARCHITECTURE.md §5): it owns one of
+/// every client module - Input, Audio, the harness::Session, PresentationWorld
+/// and Renderer - and runs the Main/Render loop. It belongs to src/client, not
+/// to the engine's modules: nothing else links against it.
+///
+/// It plays nothing itself. Sending commands, receiving the server's state and
+/// reconciling the prediction is harness::Session's work, and its Prediction and
+/// Network I/O threads are a harness::Runner's (ADR-0005): ClientRuntime supplies
+/// each tick's command from the player's input, blends the ticks it is handed
+/// into render frames, and loads what the Lobby names. Where its content comes
+/// from is main.cpp's business (content.h).
 namespace augusta::client {
 
 struct RuntimeConfig {

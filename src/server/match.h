@@ -14,15 +14,16 @@
 #include "augusta/assets.h"
 #include "augusta/networking.h"
 
-// augusta::server::Match is the server's book of who is playing, in the Lobby
-// and in a Match (ADR-0043): it decides whether a peer's join is admitted,
-// names each admitted peer with a session ID of its own making, remembers its
-// character, numbers every version of the Lobby's Roster, counts who is Ready
-// for which, and decides when a match starts and when it has ended. Where each
-// player spawns is not its to decide: Game policy assigns Spawn points in
-// SimulationWorld at Match start. Pure bookkeeping (no I/O, no clock: Host
-// tells it each tick that passes), so all of it is tested without a network;
-// what to do with the answer - reply, log, spawn bodies - is Host's mechanism.
+/// \file
+/// augusta::server::Match is the server's book of who is playing, in the Lobby
+/// and in a Match (ADR-0043): it decides whether a peer's join is admitted,
+/// names each admitted peer with a session ID of its own making, remembers its
+/// character, numbers every version of the Lobby's Roster, counts who is Ready
+/// for which, and decides when a match starts and when it has ended. Where each
+/// player spawns is not its to decide: Game policy assigns Spawn points in
+/// SimulationWorld at Match start. Pure bookkeeping (no I/O, no clock: Host
+/// tells it each tick that passes), so all of it is tested without a network;
+/// what to do with the answer - reply, log, spawn bodies - is Host's mechanism.
 namespace augusta::server {
 
 /// The least time between one match ending and the next starting, so a Lobby

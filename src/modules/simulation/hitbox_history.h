@@ -9,10 +9,11 @@
 #include "augusta/physics.h"
 #include "augusta/tick.h"
 
-// The Hitbox history (CONTEXT.md, ADR-0044): what SimulationWorld keeps of
-// every player's recent ticks, to judge a bullet against the players as its
-// shooter saw them (Lag compensation). Pure - no ECS, no physics, no clock - and
-// private to the simulation module: nothing but SimulationWorld judges a hit.
+/// \file
+/// The Hitbox history (CONTEXT.md, ADR-0044): what SimulationWorld keeps of
+/// every player's recent ticks, to judge a bullet against the players as its
+/// shooter saw them (Lag compensation). Pure - no ECS, no physics, no clock - and
+/// private to the simulation module: nothing but SimulationWorld judges a hit.
 namespace augusta::simulation {
 
 /// Where a player's body was on one tick, as that tick's Authoritative State

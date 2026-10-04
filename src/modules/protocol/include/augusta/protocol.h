@@ -15,45 +15,46 @@
 #include "augusta/math.h"
 #include "augusta/tick.h"
 
-// augusta::protocol is the Networking Protocol (ADR-0007, ADR-0038): the
-// messages client and server exchange and their custom binary encoding. It is
-// a pure codec - bytes in, a message or a typed error out, bytes out - with no
-// socket, no clock and no state, so it is tested without a network and shared
-// by both sides (ADR-0006). Which peer may send what, and what a message
-// means for the match, is the receiver's business.
-//
-// Its messages hold only plain types of its own and the math types, never
-// another module's structs: a module changing its structs never changes what
-// travels, and the protocol depends on nothing but augusta_math, which also
-// holds the grids its numbers travel on (augusta/grid.h). A type that mirrors one of the engine's
-// carries the suffix Wire (BodyStateWire for physics::BodyState,
-// AuthoritativeStateWire for harness::AuthoritativeState), so the two never
-// read alike where they meet: each peer converts at its edge
-// and nowhere else, the server in server/wire.h and the client in
-// augusta/harness_wire.h, so no module past that edge (Match, replication,
-// harness::Session's API, presentation) names a Wire type.
-//
-// Every message is one payload: a one-byte MessageTypeWire followed by that
-// type's fields, fixed-width and little-endian, with a string or a list as a
-// one-byte length and its elements. A position, a velocity, a direction, an
-// angle, a stamina or a Seen time's fraction travels as a whole count of its grid's
-// step, in the fewest bytes its range needs (augusta/grid.h, which
-// physics::World keeps every body on, and weapon::Step a rifle's Recoil
-// offset); the other floats (the Parameters, a rifle's times, a hit's damage)
-// travel as their IEEE-754 bits.
-// A client message carries intent, never an outcome: tests/impossible_actions.md
-// (US-15, NFR-05) lists what bounds each of its fields. A new one needs a line
-// there, and if it carries an outcome (a position, a hit, an ammo count), a
-// check at the server's boundary and a test.
-// Every field takes the smallest type that holds what it says: flags are bits
-// of one byte, shared with a small enumeration where one fits. Decode treats
-// its input as untrusted: it never throws, never reads past the end, and never
-// allocates more than the input itself holds.
-//
-// The structs order their fields widest first, so none carries padding between
-// fields; the order on the wire is the codec's and need not follow it.
-// They compare equal field by field, so a message that survives Encode and
-// Decode compares equal to itself, whatever fields it gains.
+/// \file
+/// augusta::protocol is the Networking Protocol (ADR-0007, ADR-0038): the
+/// messages client and server exchange and their custom binary encoding. It is
+/// a pure codec - bytes in, a message or a typed error out, bytes out - with no
+/// socket, no clock and no state, so it is tested without a network and shared
+/// by both sides (ADR-0006). Which peer may send what, and what a message
+/// means for the match, is the receiver's business.
+///
+/// Its messages hold only plain types of its own and the math types, never
+/// another module's structs: a module changing its structs never changes what
+/// travels, and the protocol depends on nothing but augusta_math, which also
+/// holds the grids its numbers travel on (augusta/grid.h). A type that mirrors one of the engine's
+/// carries the suffix Wire (BodyStateWire for physics::BodyState,
+/// AuthoritativeStateWire for harness::AuthoritativeState), so the two never
+/// read alike where they meet: each peer converts at its edge
+/// and nowhere else, the server in server/wire.h and the client in
+/// augusta/harness_wire.h, so no module past that edge (Match, replication,
+/// harness::Session's API, presentation) names a Wire type.
+///
+/// Every message is one payload: a one-byte MessageTypeWire followed by that
+/// type's fields, fixed-width and little-endian, with a string or a list as a
+/// one-byte length and its elements. A position, a velocity, a direction, an
+/// angle, a stamina or a Seen time's fraction travels as a whole count of its grid's
+/// step, in the fewest bytes its range needs (augusta/grid.h, which
+/// physics::World keeps every body on, and weapon::Step a rifle's Recoil
+/// offset); the other floats (the Parameters, a rifle's times, a hit's damage)
+/// travel as their IEEE-754 bits.
+/// A client message carries intent, never an outcome: tests/impossible_actions.md
+/// (US-15, NFR-05) lists what bounds each of its fields. A new one needs a line
+/// there, and if it carries an outcome (a position, a hit, an ammo count), a
+/// check at the server's boundary and a test.
+/// Every field takes the smallest type that holds what it says: flags are bits
+/// of one byte, shared with a small enumeration where one fits. Decode treats
+/// its input as untrusted: it never throws, never reads past the end, and never
+/// allocates more than the input itself holds.
+///
+/// The structs order their fields widest first, so none carries padding between
+/// fields; the order on the wire is the codec's and need not follow it.
+/// They compare equal field by field, so a message that survives Encode and
+/// Decode compares equal to itself, whatever fields it gains.
 namespace augusta::protocol {
 
 /// The first byte of every payload; which message the rest of it is.

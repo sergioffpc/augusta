@@ -10,19 +10,20 @@
 #include "augusta/supervisor.h"
 #include "augusta/tick.h"
 
-// Runs a harness::Session in real time, on the Prediction and Network I/O
-// threads of ADR-0005: anything that plays live - the real client, a future
-// autonomous agent, a load test's clients - runs its Session under one, and
-// supplies only the Command for each Tick. A test that ticks by hand drives
-// the Session itself, without one.
-//
-// The Network I/O thread connects, then does one round of the Session's
-// network work (PumpEvents, ExchangeMessages) about every millisecond until
-// the stop. The Prediction thread waits for the server to admit the client,
-// then Ticks the Session at the server's tick rate on a fixed schedule
-// (augusta::tick), each Tick paced by how many of the client's commands the
-// server last said it held, so the client sends them at the rate the server
-// consumes them.
+/// \file
+/// Runs a harness::Session in real time, on the Prediction and Network I/O
+/// threads of ADR-0005: anything that plays live - the real client, a future
+/// autonomous agent, a load test's clients - runs its Session under one, and
+/// supplies only the Command for each Tick. A test that ticks by hand drives
+/// the Session itself, without one.
+///
+/// The Network I/O thread connects, then does one round of the Session's
+/// network work (PumpEvents, ExchangeMessages) about every millisecond until
+/// the stop. The Prediction thread waits for the server to admit the client,
+/// then Ticks the Session at the server's tick rate on a fixed schedule
+/// (augusta::tick), each Tick paced by how many of the client's commands the
+/// server last said it held, so the client sends them at the rate the server
+/// consumes them.
 namespace augusta::harness {
 
 /// One Tick a Runner ran: the Prediction State it left, when it was due, and

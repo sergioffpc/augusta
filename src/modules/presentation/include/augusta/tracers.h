@@ -9,16 +9,17 @@
 #include "augusta/math.h"
 #include "augusta/physics.h"
 
-// Tracers (ADR-0024, ADR-0044): every Shot the server announces is drawn as a
-// tracer along the trajectory the server computes for it - the same
-// ballistics::World, with the Parameters' muzzle velocity and ammo, stepped a
-// server tick at a time - until it meets the Map, where it leaves an impact,
-// or reaches its max range. A tracer is a visual only: it is handed no
-// player's hitboxes, so it never hits a player (ADR-0044: hits on players are
-// drawn only from the server's Hit confirmations).
-//
-// Pure of clocks and ECS - the caller hands in each frame's elapsed time - so
-// it is tested on its own; PresentationWorld feeds it (see presentation.cpp).
+/// \file
+/// Tracers (ADR-0024, ADR-0044): every Shot the server announces is drawn as a
+/// tracer along the trajectory the server computes for it - the same
+/// ballistics::World, with the Parameters' muzzle velocity and ammo, stepped a
+/// server tick at a time - until it meets the Map, where it leaves an impact,
+/// or reaches its max range. A tracer is a visual only: it is handed no
+/// player's hitboxes, so it never hits a player (ADR-0044: hits on players are
+/// drawn only from the server's Hit confirmations).
+///
+/// Pure of clocks and ECS - the caller hands in each frame's elapsed time - so
+/// it is tested on its own; PresentationWorld feeds it (see presentation.cpp).
 namespace augusta::presentation {
 
 /// How a Shot's bullet flies: the Parameters' muzzle velocity and ammo, and the

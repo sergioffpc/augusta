@@ -7,31 +7,32 @@
 #include "augusta/assets.h"
 #include "augusta/math.h"
 
-// augusta::audio plays spatialized one-shot sound effects on the Windows
-// client (ARCHITECTURE.md §7's Audio: "consumes presentation state").
-// Two third-party libraries split the work, neither of which alone does
-// what a game needs: Steam Audio (ADR-0010) only processes audio buffers
-// already in memory - it spatializes a voice via HRTF but opens no
-// output device, decodes no files, and mixes no voices; miniaudio
-// (ADR-0028) is what actually owns the output device, decodes mono PCM
-// (ADR-0020), and mixes simultaneous voices into the output stream. This
-// module hides that split entirely: Engine spatializes each voice via
-// Steam Audio, then hands the result to miniaudio.
-//
-// Scope: one-shot cues only (augusta/cues.h's catalogue, which
-// PresentationWorld's AudioCues phase plays). No looping ambience or music,
-// no reflection or occlusion.
-//
-// No output device is not an error. An Engine that cannot open one - no
-// device on the machine, or a build with no audio output at all (Linux,
-// whose build has no audio dependency, ADR-0010) - logs why at WARN and is
-// silent: every method below still works and plays nothing, so the client
-// runs the same with or without sound.
-//
-// Every method is called from one thread (PresentationWorld's, the
-// Main/Render thread, ADR-0005). miniaudio mixes on its own library-owned
-// audio callback thread (not one of this engine's three fixed threads,
-// ADR-0005), which Engine synchronizes with internally.
+/// \file
+/// augusta::audio plays spatialized one-shot sound effects on the Windows
+/// client (ARCHITECTURE.md §7's Audio: "consumes presentation state").
+/// Two third-party libraries split the work, neither of which alone does
+/// what a game needs: Steam Audio (ADR-0010) only processes audio buffers
+/// already in memory - it spatializes a voice via HRTF but opens no
+/// output device, decodes no files, and mixes no voices; miniaudio
+/// (ADR-0028) is what actually owns the output device, decodes mono PCM
+/// (ADR-0020), and mixes simultaneous voices into the output stream. This
+/// module hides that split entirely: Engine spatializes each voice via
+/// Steam Audio, then hands the result to miniaudio.
+///
+/// Scope: one-shot cues only (augusta/cues.h's catalogue, which
+/// PresentationWorld's AudioCues phase plays). No looping ambience or music,
+/// no reflection or occlusion.
+///
+/// No output device is not an error. An Engine that cannot open one - no
+/// device on the machine, or a build with no audio output at all (Linux,
+/// whose build has no audio dependency, ADR-0010) - logs why at WARN and is
+/// silent: every method below still works and plays nothing, so the client
+/// runs the same with or without sound.
+///
+/// Every method is called from one thread (PresentationWorld's, the
+/// Main/Render thread, ADR-0005). miniaudio mixes on its own library-owned
+/// audio callback thread (not one of this engine's three fixed threads,
+/// ADR-0005), which Engine synchronizes with internally.
 namespace augusta::audio {
 
 /// The listener's world-space pose (the ears every voice is heard from).

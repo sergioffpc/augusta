@@ -11,19 +11,20 @@
 #include "augusta/physics.h"
 #include "augusta/weapon.h"
 
-// What client-side reconciliation (ADR-0004) has to remember: the commands the
-// client has sent that the server has not yet answered, and the body and the
-// rifle it predicted after each. Pure - no physics, no network, no clock - so
-// it is tested on its own; PredictionWorld does the stepping, handing History
-// the step to run.
-//
-// The server's state is always of an earlier tick than the client's current
-// one (it has to travel, and the command it answers had to travel first), so
-// it is compared with the state the client predicted after that same command,
-// kept here keyed by the command's sequence. The client then puts its body and
-// its rifle at the server's state and replays the commands sent since, so that
-// its present is the server's past with the client's own commands carried
-// forward.
+/// \file
+/// What client-side reconciliation (ADR-0004) has to remember: the commands the
+/// client has sent that the server has not yet answered, and the body and the
+/// rifle it predicted after each. Pure - no physics, no network, no clock - so
+/// it is tested on its own; PredictionWorld does the stepping, handing History
+/// the step to run.
+///
+/// The server's state is always of an earlier tick than the client's current
+/// one (it has to travel, and the command it answers had to travel first), so
+/// it is compared with the state the client predicted after that same command,
+/// kept here keyed by the command's sequence. The client then puts its body and
+/// its rifle at the server's state and replays the commands sent since, so that
+/// its present is the server's past with the client's own commands carried
+/// forward.
 namespace augusta::prediction {
 
 /// The commands and predicted states kept, about two seconds at 60 Hz. The

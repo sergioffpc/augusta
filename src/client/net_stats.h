@@ -10,9 +10,10 @@
 #include "augusta/networking.h"
 #include "augusta/renderer.h"
 
-// What the client makes of its connection's numbers, sampled once per Network
-// I/O round: the readout the renderer's debug HUD shows, and the counters Nsight
-// Systems plots.
+/// \file
+/// What the client makes of its connection's numbers, sampled once per Network
+/// I/O round: the readout the renderer's debug HUD shows, and the counters Nsight
+/// Systems plots.
 namespace augusta::client {
 
 /// Packet loss in percent, from the worse of the two directions; nullopt while

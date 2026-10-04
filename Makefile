@@ -61,7 +61,7 @@ INCLUDE_SOURCES := $(filter-out $(TIDY_SOURCES),$(shell git ls-files -- "src/*.c
 INCLUDE_CHECKS := $(addprefix include-cleaner/,$(INCLUDE_SOURCES))
 
 .DEFAULT_GOAL := all
-.PHONY: all help configure build test check install uninstall clean distclean format format-check tidy lint
+.PHONY: all help configure build test check install uninstall clean distclean format format-check tidy lint docs
 
 all: build
 
@@ -82,6 +82,7 @@ help:
 	$(info $()  format-check  clang-format, yamlfmt, yamllint, stylua, luacheck and taplo checks from CI)
 	$(info $()  tidy          clang-tidy on src, include-cleaner on what it leaves out, as CI runs them (configures first))
 	$(info $()  lint          format-check, then tidy: everything CI lints)
+	$(info $()  docs          the documentation site, MkDocs and Doxygen, into build/docs-site)
 	@:
 
 configure:
@@ -115,6 +116,12 @@ clean:
 
 distclean:
 	cmake -E rm -rf $(BUILD_DIR)
+
+# The documentation site (ADR-0046): MkDocs first, since it empties the site
+# folder, then Doxygen's API reference into its api/ folder.
+docs:
+	uv tool run --from mkdocs==1.6.1 --with mkdocs-material==9.7.7 mkdocs build --strict
+	doxygen tools/docs/Doxyfile
 
 format:
 	clang-format -i $(shell git ls-files -- $(CXX_SOURCES))

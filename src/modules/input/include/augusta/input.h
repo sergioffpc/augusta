@@ -10,30 +10,31 @@
 #include "augusta/command.h"
 #include "augusta/math.h"
 
-// augusta::input owns the client's device-facing vocabulary of player input,
-// from raw device events up to the keymap, and samples it into one tick's
-// worth of intent, a command::Command (ARCHITECTURE.md §7's "Input handling -
-// reads device input, hands commands to PredictionWorld").
-//
-// The raw device-event shapes (KeyEvent, MouseMoveEvent)
-// and the EventSink that receives them live here rather than in
-// augusta::renderer, even though Renderer is the one calling EventSink:
-// Renderer needs this module (to know what to push and who to push it
-// to), so this module cannot also need Renderer's header (to implement
-// something declared there) without a circular module dependency. Since
-// these shapes are conceptually input's vocabulary anyway (not a
-// rendering concern - Renderer only sees them because Falcor happens to
-// fuse window/device delivery with the GPU device it also owns, see
-// ADR-0009), the dependency runs one way: Renderer depends on Input, not
-// the reverse. augusta::input::Input is the sole implementation of
-// EventSink; Renderer pushes events to it from the Main/Render thread as
-// they occur, and Input is responsible for the thread-safe accumulation
-// until the Prediction thread - a different thread, on the server's fixed
-// tick rate (ADR-0005) - samples it.
-//
-// The Command it samples lives in the shared core (augusta::command), not
-// here: the server screens, queues and simulates Commands but never samples
-// a device, so it does not link this module.
+/// \file
+/// augusta::input owns the client's device-facing vocabulary of player input,
+/// from raw device events up to the keymap, and samples it into one tick's
+/// worth of intent, a command::Command (ARCHITECTURE.md §7's "Input handling -
+/// reads device input, hands commands to PredictionWorld").
+///
+/// The raw device-event shapes (KeyEvent, MouseMoveEvent)
+/// and the EventSink that receives them live here rather than in
+/// augusta::renderer, even though Renderer is the one calling EventSink:
+/// Renderer needs this module (to know what to push and who to push it
+/// to), so this module cannot also need Renderer's header (to implement
+/// something declared there) without a circular module dependency. Since
+/// these shapes are conceptually input's vocabulary anyway (not a
+/// rendering concern - Renderer only sees them because Falcor happens to
+/// fuse window/device delivery with the GPU device it also owns, see
+/// ADR-0009), the dependency runs one way: Renderer depends on Input, not
+/// the reverse. augusta::input::Input is the sole implementation of
+/// EventSink; Renderer pushes events to it from the Main/Render thread as
+/// they occur, and Input is responsible for the thread-safe accumulation
+/// until the Prediction thread - a different thread, on the server's fixed
+/// tick rate (ADR-0005) - samples it.
+///
+/// The Command it samples lives in the shared core (augusta::command), not
+/// here: the server screens, queues and simulates Commands but never samples
+/// a device, so it does not link this module.
 namespace augusta::input {
 
 /// A physical key or mouse button: what a keymap binds a Control to, named in

@@ -9,13 +9,14 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-// augusta::math is a thin facade over GLM (https://github.com/g-truc/glm):
-// it re-exports the one type and handful of operations module interfaces
-// actually need, under this project's own name and naming convention, so
-// other modules depend on augusta::math rather than on GLM directly - the
-// facade is the seam, not a reimplementation. GLM does all the actual
-// arithmetic; this module adds no logic beyond the zero-vector guard on
-// Normalize and the shorter-arc rule of LerpAngle documented below.
+/// \file
+/// augusta::math is a thin facade over GLM (https://github.com/g-truc/glm):
+/// it re-exports the one type and handful of operations module interfaces
+/// actually need, under this project's own name and naming convention, so
+/// other modules depend on augusta::math rather than on GLM directly - the
+/// facade is the seam, not a reimplementation. GLM does all the actual
+/// arithmetic; this module adds no logic beyond the zero-vector guard on
+/// Normalize and the shorter-arc rule of LerpAngle documented below.
 namespace augusta::math {
 
 /// A 3D vector in engine units (1 unit = 1 meter, see ARCHITECTURE.md §8).

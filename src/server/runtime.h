@@ -9,13 +9,14 @@
 #include "augusta/supervisor.h"
 #include "host.h"
 
-// The augustad executable's orchestrator (ARCHITECTURE.md §5): it runs a
-// server::Host on the two threads ADR-0005 gives the server - the Network I/O
-// thread pumps its connections, the Simulation thread ticks it at the fixed
-// rate - and has no render thread, since the server is headless. Decoding what
-// clients send, admitting them, screening their commands and replicating each
-// tick is Host's work (host.h); ServerRuntime only runs it. With no window to
-// close, Stop() ends it, e.g. from the SIGINT/SIGTERM handler main.cpp installs.
+/// \file
+/// The augustad executable's orchestrator (ARCHITECTURE.md §5): it runs a
+/// server::Host on the two threads ADR-0005 gives the server - the Network I/O
+/// thread pumps its connections, the Simulation thread ticks it at the fixed
+/// rate - and has no render thread, since the server is headless. Decoding what
+/// clients send, admitting them, screening their commands and replicating each
+/// tick is Host's work (host.h); ServerRuntime only runs it. With no window to
+/// close, Stop() ends it, e.g. from the SIGINT/SIGTERM handler main.cpp installs.
 namespace augusta::server {
 
 /// The server process constructs exactly one, on what becomes the Simulation

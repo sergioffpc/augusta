@@ -11,11 +11,12 @@
 
 #include "augusta/command.h"
 
-// The server's boundary for what a client sends to move its player: a
-// structural sanity gate, and a per-player queue that hands SimulationWorld
-// exactly one command per tick. Pure (no I/O, no clock), so both are tested
-// without a network. The gate is the seam the anti-cheat baseline (US-15) grows
-// into: it checks that a command is well formed, not that it is fair play.
+/// \file
+/// The server's boundary for what a client sends to move its player: a
+/// structural sanity gate, and a per-player queue that hands SimulationWorld
+/// exactly one command per tick. Pure (no I/O, no clock), so both are tested
+/// without a network. The gate is the seam the anti-cheat baseline (US-15) grows
+/// into: it checks that a command is well formed, not that it is fair play.
 namespace augusta::server {
 
 /// One tick's command and the number its client gave it. Numbers start at 1 and

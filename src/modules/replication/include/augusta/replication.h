@@ -13,15 +13,16 @@
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
 
-// augusta::replication decides what SimulationWorld's per-tick Authoritative
-// State (augusta::simulation::State, ADR-0023) means for each connected
-// client: which of them is sent what. It stops at what each is sent, in the
-// engine's own types; turning that into a message, encoding it and putting it
-// on the wire is the caller's mechanism (server::Host), so the decision is a
-// pure function tested without a network (docs/agents/coding-standards.md).
-// It names every body as SimulationWorld does (simulation::EntityId), and each
-// recipient by the entity its player controls; which session and connection
-// that is, is the caller's to say.
+/// \file
+/// augusta::replication decides what SimulationWorld's per-tick Authoritative
+/// State (augusta::simulation::State, ADR-0023) means for each connected
+/// client: which of them is sent what. It stops at what each is sent, in the
+/// engine's own types; turning that into a message, encoding it and putting it
+/// on the wire is the caller's mechanism (server::Host), so the decision is a
+/// pure function tested without a network (docs/agents/coding-standards.md).
+/// It names every body as SimulationWorld does (simulation::EntityId), and each
+/// recipient by the entity its player controls; which session and connection
+/// that is, is the caller's to say.
 namespace augusta::replication {
 
 /// One connected client a tick's state is for, by the entity its player controls.
