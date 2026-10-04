@@ -117,9 +117,29 @@ the decisions already made in ARCHITECTURE.md:
   Join refuses a client pack not cooked with the server pack (ADR-0019,
   ADR-0038). Only the public key, `augusta.pub`, travels with the packs,
   named by each executable's config (ADR-0034).
-- **Artifacts/releases:** out of scope for now — CI validates
-  build+test+lint only. A publishing pipeline gets built when there's an
-  actual release to make.
+- **Provenance and SBOMs:** what packs get from their signature, the
+  release executables and every published server image get from GitHub
+  artifact attestations, signed keylessly (Sigstore) by the workflow
+  that built them: SLSA build provenance, naming the commit and the
+  workflow run, and an SPDX SBOM. Each is attested where it is built, so
+  the image is attested by CI on the push that publishes it, and the
+  image a release runs (`sha-<12>` of its tag's commit) needs nothing
+  more from the release. An executable's SBOM, attached to the Release,
+  lists the vcpkg ports it was built with, taken from vcpkg's own
+  per-port SPDX documents (`scripts/vcpkg-sbom.py`), plus the
+  submodules it uses, by commit: syft finds nothing in a statically
+  linked C++ binary. The image's SBOM is syft's, of its Ubuntu packages.
+  Verified with:
+
+  ```sh
+  gh attestation verify augustac-windows-x64.exe --repo sergioffpc/augusta
+  gh attestation verify augustad-linux-x64 --repo sergioffpc/augusta
+  gh attestation verify oci://ghcr.io/sergioffpc/augustad:sha-<12> \
+    --repo sergioffpc/augusta
+  # The SBOM attestation, rather than the provenance:
+  gh attestation verify augustad-linux-x64 --repo sergioffpc/augusta \
+    --predicate-type https://spdx.dev/Document/v2.3
+  ```
 
 ## Git Workflow
 

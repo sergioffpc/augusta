@@ -435,6 +435,15 @@ jobs:
       (github.event_name == 'push' || needs.changes.outputs.run_container == 'true') &&
       (needs.server.result == 'success' || needs.server.result == 'skipped')
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write
+      # Signing the image's provenance and SBOM attestations (Sigstore, through
+      # the workflow's OIDC token), storing them in the repository and pushing
+      # them to GHCR beside the image.
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -457,6 +466,7 @@ jobs:
       - id: short-sha
         run: echo "value=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
       - name: Build server image
+        id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -476,3 +486,30 @@ jobs:
           # Only a push writes them, as only a push publishes.
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/augustad:buildcache
           cache-to: ${{ github.event_name == 'push' && format('type=registry,ref=ghcr.io/{0}/augustad:buildcache,mode=max', github.repository_owner) || '' }}
+      # Every published image is attested here, where it is built: release.yml
+      # builds none, and the image a release runs is its tag's commit's, pushed
+      # to main (docs/ENGINEERING.md, Provenance and SBOMs).
+      - name: Attest image provenance
+        if: github.event_name == 'push'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/augustad
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Image SBOM
+        if: github.event_name == 'push'
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/augustad@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: augustad-image.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Attest image SBOM
+        if: github.event_name == 'push'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/augustad
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: augustad-image.spdx.json
+          push-to-registry: true
