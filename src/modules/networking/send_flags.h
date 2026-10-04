@@ -5,9 +5,10 @@
 
 #include "augusta/networking.h"
 
-// Decision half of every send, private to the module so it is tested apart
-// from a live connection: networking.cpp hands the result to
-// GameNetworkingSockets.
+/// \file
+/// Decision half of every send, private to the module so it is tested apart
+/// from a live connection: networking.cpp hands the result to
+/// GameNetworkingSockets.
 namespace augusta::networking {
 
 /// The GameNetworkingSockets send flags for a message sent as reliability says.

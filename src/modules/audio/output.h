@@ -11,11 +11,12 @@
 #include "augusta/audio.h"
 #include "augusta/math.h"
 
-// audio::Engine's open output device: what plays once there is one. Engine
-// (audio.cpp) holds none when OpenOutput fails, and is silent. The Windows
-// build opens one through miniaudio and Steam Audio (output_windows.cpp); every
-// other build has no audio output at all (output_none.cpp), so the Linux build
-// graph has no audio dependency (ADR-0010).
+/// \file
+/// audio::Engine's open output device: what plays once there is one. Engine
+/// (audio.cpp) holds none when OpenOutput fails, and is silent. The Windows
+/// build opens one through miniaudio and Steam Audio (output_windows.cpp); every
+/// other build has no audio output at all (output_none.cpp), so the Linux build
+/// graph has no audio dependency (ADR-0010).
 namespace augusta::audio {
 
 /// Which step of opening the output device failed.

@@ -10,10 +10,11 @@
 #include "augusta/math.h"
 #include "augusta/renderer.h"
 
-// Turns a cooked scene graph (ADR-0032) into what augusta::renderer draws:
-// every mesh node's geometry in world space, plus a camera placed at the local
-// player's eye as if it stood at the scene's first spawn point (or the
-// renderer's default camera if it has none).
+/// \file
+/// Turns a cooked scene graph (ADR-0032) into what augusta::renderer draws:
+/// every mesh node's geometry in world space, plus a camera placed at the local
+/// player's eye as if it stood at the scene's first spawn point (or the
+/// renderer's default camera if it has none).
 namespace augusta::client {
 
 /// Key of the node property (ADR-0032) holding a mesh's base color: three

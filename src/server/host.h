@@ -20,22 +20,23 @@
 #include "content.h"
 #include "match.h"
 
-// augusta::server::Host is the server's network boundary and the
-// authoritative SimulationWorld (ADR-0023) without the threads and the clock:
-// ServerRuntime (src/server) runs PumpNetwork on the Network I/O thread and
-// Tick on the Simulation thread at a fixed rate (ADR-0005), reporting how each
-// Tick kept to its schedule to RecordTiming, while a test calls PumpNetwork and
-// Tick by hand, so a match can be driven tick by tick with no sleeping.
-//
-// Admitted players wait in the Lobby, and a match starts on the tick the Lobby
-// is full and everyone is Ready (ADR-0043): only then are bodies simulated and
-// Authoritative States sent, and only to the players in the match. It ends after
-// the tick on which Game policy decides it has (ADR-0023), or once its last
-// player leaves, and its players are back in the Lobby.
-//
-// The Network I/O thread's PumpNetwork and the Simulation thread's Tick may
-// run concurrently: what they share (the Lobby, the match and the players'
-// commands) is guarded inside.
+/// \file
+/// augusta::server::Host is the server's network boundary and the
+/// authoritative SimulationWorld (ADR-0023) without the threads and the clock:
+/// ServerRuntime (src/server) runs PumpNetwork on the Network I/O thread and
+/// Tick on the Simulation thread at a fixed rate (ADR-0005), reporting how each
+/// Tick kept to its schedule to RecordTiming, while a test calls PumpNetwork and
+/// Tick by hand, so a match can be driven tick by tick with no sleeping.
+///
+/// Admitted players wait in the Lobby, and a match starts on the tick the Lobby
+/// is full and everyone is Ready (ADR-0043): only then are bodies simulated and
+/// Authoritative States sent, and only to the players in the match. It ends after
+/// the tick on which Game policy decides it has (ADR-0023), or once its last
+/// player leaves, and its players are back in the Lobby.
+///
+/// The Network I/O thread's PumpNetwork and the Simulation thread's Tick may
+/// run concurrently: what they share (the Lobby, the match and the players'
+/// commands) is guarded inside.
 namespace augusta::server {
 
 /// Everything a Host needs to construct SimulationWorld and start listening.

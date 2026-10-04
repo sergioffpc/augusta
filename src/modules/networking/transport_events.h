@@ -9,15 +9,16 @@
 
 #include "augusta/networking.h"
 
-// The transport's connection events as data (ADR-0005): GameNetworkingSockets'
-// status-changed callback publishes one minimal TransportEvent and does
-// nothing else - no state change, no transport call, no log line. The Network
-// I/O owner (Server::PumpEvents, Client::PumpEvents) drains them after
-// RunCallbacks and applies each: the decision of what it does (PeerTable,
-// ApplyToClient) under the owner's lock, and the transport call it asks for
-// after the lock is released. Private to the module, and free of
-// GameNetworkingSockets types, so the decision is tested apart from a live
-// connection.
+/// \file
+/// The transport's connection events as data (ADR-0005): GameNetworkingSockets'
+/// status-changed callback publishes one minimal TransportEvent and does
+/// nothing else - no state change, no transport call, no log line. The Network
+/// I/O owner (Server::PumpEvents, Client::PumpEvents) drains them after
+/// RunCallbacks and applies each: the decision of what it does (PeerTable,
+/// ApplyToClient) under the owner's lock, and the transport call it asks for
+/// after the lock is released. Private to the module, and free of
+/// GameNetworkingSockets types, so the decision is tested apart from a live
+/// connection.
 namespace augusta::networking {
 
 /// A connection's new state as a status-changed callback reports it: only the

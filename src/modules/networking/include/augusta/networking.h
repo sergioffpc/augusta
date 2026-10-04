@@ -8,34 +8,35 @@
 #include <string>
 #include <vector>
 
-// augusta::networking wraps GameNetworkingSockets/UDP (ADR-0003) for
-// direct client-server connections - no matchmaking, relay, or P2P (out
-// of scope per ARCHITECTURE.md §3: players connect directly via IP:port).
-//
-// Client and Server are two different classes, not one interface used
-// identically by both sides the way physics::World is: a client dials
-// out to exactly one server, while a server listens for and tracks up to
-// a handful of independent peers (US-02, 2-8 players) - genuinely
-// different shapes, not just convenience.
-//
-// Unlike Renderer/Input's EventSink push (forced by GLFW/Win32 only
-// delivering messages on the thread that owns the window), every method
-// here is safe to call from any thread - GameNetworkingSockets is
-// internally thread-safe and queues both connection events and messages
-// itself. PumpEvents/ReceiveMessages are still poll calls, matching this
-// codebase's established idiom, and are expected to run on the Network
-// I/O thread (ARCHITECTURE.md §8, ADR-0005), but nothing here requires
-// that thread specifically the way window/device events required the
-// Main/Render thread.
-//
-// Interface scope: raw framed payloads only. What the bytes mean -
-// message types, fields, how a Command or an Authoritative State update
-// is encoded - is the Networking Protocol's concern (augusta::protocol,
-// ADR-0007, ADR-0038). Which messages are reliable is that catalogue's
-// call too (ADR-0038's reliability split), so every send names
-// its Reliability explicitly rather than this module picking a default:
-// unreliable suits real-time state updates where a newer message
-// supersedes an older one, reliable suits a handshake that must arrive.
+/// \file
+/// augusta::networking wraps GameNetworkingSockets/UDP (ADR-0003) for
+/// direct client-server connections - no matchmaking, relay, or P2P (out
+/// of scope per ARCHITECTURE.md §3: players connect directly via IP:port).
+///
+/// Client and Server are two different classes, not one interface used
+/// identically by both sides the way physics::World is: a client dials
+/// out to exactly one server, while a server listens for and tracks up to
+/// a handful of independent peers (US-02, 2-8 players) - genuinely
+/// different shapes, not just convenience.
+///
+/// Unlike Renderer/Input's EventSink push (forced by GLFW/Win32 only
+/// delivering messages on the thread that owns the window), every method
+/// here is safe to call from any thread - GameNetworkingSockets is
+/// internally thread-safe and queues both connection events and messages
+/// itself. PumpEvents/ReceiveMessages are still poll calls, matching this
+/// codebase's established idiom, and are expected to run on the Network
+/// I/O thread (ARCHITECTURE.md §8, ADR-0005), but nothing here requires
+/// that thread specifically the way window/device events required the
+/// Main/Render thread.
+///
+/// Interface scope: raw framed payloads only. What the bytes mean -
+/// message types, fields, how a Command or an Authoritative State update
+/// is encoded - is the Networking Protocol's concern (augusta::protocol,
+/// ADR-0007, ADR-0038). Which messages are reliable is that catalogue's
+/// call too (ADR-0038's reliability split), so every send names
+/// its Reliability explicitly rather than this module picking a default:
+/// unreliable suits real-time state updates where a newer message
+/// supersedes an older one, reliable suits a handshake that must arrive.
 namespace augusta::networking {
 
 /// One-time process-wide setup for the underlying transport library. Call

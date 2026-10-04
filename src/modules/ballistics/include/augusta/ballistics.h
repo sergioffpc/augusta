@@ -8,30 +8,31 @@
 #include "augusta/math.h"
 #include "augusta/physics.h"
 
-// augusta::ballistics simulates bullet trajectories (gravity-induced
-// drop, travel time - US-10), hand-rolled instead of PhysX's generic
-// projectile handling (ADR-0002: full control over determinism and a
-// core learning goal, not a gap - see that ADR before reaching for an
-// external solver). A semi-implicit Euler integrator is enough for v1;
-// nothing in REQUIREMENTS.md asks for aerodynamic drag/wind modeling.
-//
-// The module is shared (ADR-0024, ADR-0044): the server advances every
-// bullet with it and decides what each one hits, and each client's
-// presentation draws every announced Shot's tracer and Map impact with
-// the same World, handing it no hitboxes - a visual only. Deciding
-// which player a bullet hits, where and for what damage stays the
-// server's: only the server has the hitboxes to hand in.
-//
-// World::Step follows the same per-handle, called-once-per-tick shape as
-// physics::World::Step, since bullets are ECS entities too
-// (ARCHITECTURE.md §5's Shared Core ECS list) advanced by a system that
-// iterates them the same way player bodies are. Each tick's segment is
-// tested against the Map through physics::World::RaycastMap, which never
-// reports a player's controller (ADR-0002), and against the Hitboxes the
-// caller hands in, already posed where the caller judges the players to
-// be: for the server, as they were the Shooter's delay ago (ADR-0044).
-// Hitboxes are tested here, triangle by triangle, not through PhysX,
-// since they are posed anew for every test.
+/// \file
+/// augusta::ballistics simulates bullet trajectories (gravity-induced
+/// drop, travel time - US-10), hand-rolled instead of PhysX's generic
+/// projectile handling (ADR-0002: full control over determinism and a
+/// core learning goal, not a gap - see that ADR before reaching for an
+/// external solver). A semi-implicit Euler integrator is enough for v1;
+/// nothing in REQUIREMENTS.md asks for aerodynamic drag/wind modeling.
+///
+/// The module is shared (ADR-0024, ADR-0044): the server advances every
+/// bullet with it and decides what each one hits, and each client's
+/// presentation draws every announced Shot's tracer and Map impact with
+/// the same World, handing it no hitboxes - a visual only. Deciding
+/// which player a bullet hits, where and for what damage stays the
+/// server's: only the server has the hitboxes to hand in.
+///
+/// World::Step follows the same per-handle, called-once-per-tick shape as
+/// physics::World::Step, since bullets are ECS entities too
+/// (ARCHITECTURE.md §5's Shared Core ECS list) advanced by a system that
+/// iterates them the same way player bodies are. Each tick's segment is
+/// tested against the Map through physics::World::RaycastMap, which never
+/// reports a player's controller (ADR-0002), and against the Hitboxes the
+/// caller hands in, already posed where the caller judges the players to
+/// be: for the server, as they were the Shooter's delay ago (ADR-0044).
+/// Hitboxes are tested here, triangle by triangle, not through PhysX,
+/// since they are posed anew for every test.
 namespace augusta::ballistics {
 
 /// Where on a hit player's body a bullet struck (US-11): the coarse zones

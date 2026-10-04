@@ -9,11 +9,12 @@
 
 #include "augusta/assets.h"
 
-// The client's cue catalogue (ADR-0020, ADR-0031): every one-shot sound the
-// client plays, fixed in code. A scenario ships a mono PCM sound for each in its
-// client pack, addressed `<sounds folder>/<cue name>`, and the client loads them
-// all at startup, so a missing one is found before a Match rather than during
-// one. The cooker (tools/pack/src/pack/sounds.py) holds the same catalogue.
+/// \file
+/// The client's cue catalogue (ADR-0020, ADR-0031): every one-shot sound the
+/// client plays, fixed in code. A scenario ships a mono PCM sound for each in its
+/// client pack, addressed `<sounds folder>/<cue name>`, and the client loads them
+/// all at startup, so a missing one is found before a Match rather than during
+/// one. The cooker (tools/pack/src/pack/sounds.py) holds the same catalogue.
 namespace augusta::audio {
 
 /// A named client sound event.

@@ -13,23 +13,24 @@
 #include "augusta/physics.h"
 #include "augusta/tick.h"
 
-// Remote-player interpolation (ADR-0024's Interpolation phase): what
-// PresentationWorld shows for every player but the local one. Neither
-// PredictionWorld nor client-side reconciliation ever runs for another
-// player's body - the client never has their input, only what the server's
-// Authoritative State reports of them, at most once per server tick and
-// arriving irregularly over the network relative to the render frame rate.
-// Showing the newest report directly would make a remote player step at
-// network arrival times, jitter included. Instead, each update is placed on
-// the server's own timeline (its tick × the tick duration), a short ring of
-// them is kept per remote entity, and each frame shows the point
-// kInterpolationDelay behind a render-side clock aligned to that timeline
-// (ServerClock), interpolated between the two updates surrounding it - smooth
-// motion, independent of when updates arrive or frames run.
-//
-// Pure - no clock, no ECS, no network - so it is tested on its own;
-// PresentationWorld feeds it each frame with its render frame's elapsed time
-// and the newest Authoritative State (see presentation.cpp).
+/// \file
+/// Remote-player interpolation (ADR-0024's Interpolation phase): what
+/// PresentationWorld shows for every player but the local one. Neither
+/// PredictionWorld nor client-side reconciliation ever runs for another
+/// player's body - the client never has their input, only what the server's
+/// Authoritative State reports of them, at most once per server tick and
+/// arriving irregularly over the network relative to the render frame rate.
+/// Showing the newest report directly would make a remote player step at
+/// network arrival times, jitter included. Instead, each update is placed on
+/// the server's own timeline (its tick × the tick duration), a short ring of
+/// them is kept per remote entity, and each frame shows the point
+/// kInterpolationDelay behind a render-side clock aligned to that timeline
+/// (ServerClock), interpolated between the two updates surrounding it - smooth
+/// motion, independent of when updates arrive or frames run.
+///
+/// Pure - no clock, no ECS, no network - so it is tested on its own;
+/// PresentationWorld feeds it each frame with its render frame's elapsed time
+/// and the newest Authoritative State (see presentation.cpp).
 namespace augusta::presentation {
 
 /// The server's name for one dynamic body (CONTEXT.md, "Entity ID"), as

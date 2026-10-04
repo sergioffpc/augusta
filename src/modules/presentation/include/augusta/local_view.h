@@ -11,19 +11,20 @@
 #include "augusta/prediction.h"
 #include "augusta/weapon.h"
 
-// The local player's own view (ADR-0024's Interpolation and Camera phases):
-// where its predicted body is shown between two ticks, where its camera sits
-// and looks, how far it zooms, and what shows over it. The prediction thread ticks at the server's tick rate and
-// the Main/Render thread draws at its own; showing only the newest Prediction
-// State would step the view whenever the two differ. Instead each frame shows
-// the body the fraction of the tick elapsed at render time of the way from the
-// previous tick's state to the newest, and turns the camera by the mouse-look
-// accumulated up to the frame rather than up to the tick. Once the local player
-// is dead, a spectator (US-13), its view is a living player's instead: whom it
-// watches (Spectator) and from where (WatchedCamera).
-//
-// Pure - no clock, no ECS - so it is tested on its own; PresentationWorld feeds
-// it each frame (see presentation.cpp).
+/// \file
+/// The local player's own view (ADR-0024's Interpolation and Camera phases):
+/// where its predicted body is shown between two ticks, where its camera sits
+/// and looks, how far it zooms, and what shows over it. The prediction thread ticks at the server's tick rate and
+/// the Main/Render thread draws at its own; showing only the newest Prediction
+/// State would step the view whenever the two differ. Instead each frame shows
+/// the body the fraction of the tick elapsed at render time of the way from the
+/// previous tick's state to the newest, and turns the camera by the mouse-look
+/// accumulated up to the frame rather than up to the tick. Once the local player
+/// is dead, a spectator (US-13), its view is a living player's instead: whom it
+/// watches (Spectator) and from where (WatchedCamera).
+///
+/// Pure - no clock, no ECS - so it is tested on its own; PresentationWorld feeds
+/// it each frame (see presentation.cpp).
 namespace augusta::presentation {
 
 /// The local player's two newest Prediction States and how far between them a

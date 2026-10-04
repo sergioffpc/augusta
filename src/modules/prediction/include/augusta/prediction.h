@@ -11,28 +11,29 @@
 #include "augusta/physics.h"
 #include "augusta/weapon.h"
 
-// augusta::prediction orchestrates PredictionWorld (ADR-0024): the
-// client-side ECS pipeline, run once per fixed tick on the Prediction
-// thread (ADR-0005), alongside SimulationWorld's server-side counterpart
-// (augusta::simulation). It composes augusta::physics and augusta::weapon -
-// the same interfaces SimulationWorld's Movement and WeaponHandling phases
-// use (ARCHITECTURE.md §5) - into the five ordered phases ADR-0024 defines
-// (see Phase below), and emits an immutable Prediction State each tick for
-// augusta::presentation to consume.
-//
-// Unlike SimulationWorld, PredictionWorld only ever predicts the local
-// player - never a bullet's trajectory or outcome (ADR-0024: Ballistics/
-// HitDetection/Damage stay exclusively server-side) - so World::Tick
-// takes a single command::Command, not a per-player list the way
-// augusta::simulation::World::Tick does.
-//
-// Like augusta::simulation, World owns one Flecs world (ADR-0001)
-// internally, entirely encapsulated behind Impl (prediction.cpp) - no
-// flecs header leaks in here. Phase's five values become five
-// dependency-chained flecs::Phase entities, each with one registered
-// flecs::system that runs once per Tick regardless of matched entities
-// - see prediction.cpp; what each does is documented on its Phase
-// enumerator below.
+/// \file
+/// augusta::prediction orchestrates PredictionWorld (ADR-0024): the
+/// client-side ECS pipeline, run once per fixed tick on the Prediction
+/// thread (ADR-0005), alongside SimulationWorld's server-side counterpart
+/// (augusta::simulation). It composes augusta::physics and augusta::weapon -
+/// the same interfaces SimulationWorld's Movement and WeaponHandling phases
+/// use (ARCHITECTURE.md §5) - into the five ordered phases ADR-0024 defines
+/// (see Phase below), and emits an immutable Prediction State each tick for
+/// augusta::presentation to consume.
+///
+/// Unlike SimulationWorld, PredictionWorld only ever predicts the local
+/// player - never a bullet's trajectory or outcome (ADR-0024: Ballistics/
+/// HitDetection/Damage stay exclusively server-side) - so World::Tick
+/// takes a single command::Command, not a per-player list the way
+/// augusta::simulation::World::Tick does.
+///
+/// Like augusta::simulation, World owns one Flecs world (ADR-0001)
+/// internally, entirely encapsulated behind Impl (prediction.cpp) - no
+/// flecs header leaks in here. Phase's five values become five
+/// dependency-chained flecs::Phase entities, each with one registered
+/// flecs::system that runs once per Tick regardless of matched entities
+/// - see prediction.cpp; what each does is documented on its Phase
+/// enumerator below.
 namespace augusta::prediction {
 
 /// PredictionWorld's five phases (ADR-0024), executed in this exact

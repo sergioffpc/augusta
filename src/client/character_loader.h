@@ -12,8 +12,9 @@
 #include "augusta/renderer.h"
 #include "scene_loader.h"
 
-// Resolves what the client needs of a character (ADR-0040, ADR-0042): the mesh
-// it is drawn as and the eye its camera sits at.
+/// \file
+/// Resolves what the client needs of a character (ADR-0040, ADR-0042): the mesh
+/// it is drawn as and the eye its camera sits at.
 namespace augusta::client {
 
 /// Looks up a character's eye by its pack-relative path, e.g. Pack::ResolveEye.

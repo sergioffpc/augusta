@@ -16,13 +16,14 @@
 #include "command_queue.h"
 #include "match.h"
 
-// The server's edge with the Networking Protocol (ADR-0038): what server::Host
-// sends, turned from the engine's types into the protocol's plain ones right
-// before Encode, and what it receives, turned back right after Decode. The only
-// place on the server where a protocol::*Wire type meets an engine type: Match,
-// CommandQueue and replication never see one. Pure field-by-field copies;
-// whether a value is one the server accepts is decided after, by whoever takes
-// it in.
+/// \file
+/// The server's edge with the Networking Protocol (ADR-0038): what server::Host
+/// sends, turned from the engine's types into the protocol's plain ones right
+/// before Encode, and what it receives, turned back right after Decode. The only
+/// place on the server where a protocol::*Wire type meets an engine type: Match,
+/// CommandQueue and replication never see one. Pure field-by-field copies;
+/// whether a value is one the server accepts is decided after, by whoever takes
+/// it in.
 namespace augusta::server {
 
 /// session as the protocol carries it.

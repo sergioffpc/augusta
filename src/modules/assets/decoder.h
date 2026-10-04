@@ -8,13 +8,14 @@
 
 #include "augusta/assets.h"
 
-// Private (not under include/augusta/, never installed) declarations for
-// decoder.cpp's blob decoders - see encoder.h's own comment for why
-// Encode*/WritePack are equally private. These are NOT part of the public
-// contract: a caller only ever gets typed data back through
-// Pack::Resolve* (assets.cpp), never a raw decoder call. This header
-// exists purely so assets.cpp can see decoder.cpp's definitions from a
-// separate translation unit.
+/// \file
+/// Private (not under include/augusta/, never installed) declarations for
+/// decoder.cpp's blob decoders - see encoder.h's own comment for why
+/// Encode*/WritePack are equally private. These are NOT part of the public
+/// contract: a caller only ever gets typed data back through
+/// Pack::Resolve* (assets.cpp), never a raw decoder call. This header
+/// exists purely so assets.cpp can see decoder.cpp's definitions from a
+/// separate translation unit.
 namespace augusta::assets {
 
 /// Each decodes one blob type's byte layout, the inverse of encoder.h's

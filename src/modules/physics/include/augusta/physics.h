@@ -9,19 +9,20 @@
 
 #include "augusta/math.h"
 
-// augusta::physics wraps PhysX for collision and movement (ADR-0002):
-// general body movement, stance transitions, and stamina depletion/
-// recovery (US-04, US-05). Ballistics (bullet trajectories) is a separate
-// module (see augusta::ballistics) - PhysX's own generic projectile
-// handling is deliberately not used for that.
-//
-// This module's World is used identically by both PredictionWorld (client,
-// predicted/approximate) and SimulationWorld (server, authoritative) - the
-// same interface, called from two different orchestrators. PhysX does not
-// guarantee cross-platform bit-exact determinism, so callers must not
-// assume the client and server ever produce identical results from the
-// same inputs; client-side divergence is corrected by restoring the server's
-// state and stepping again (Restore), not avoided.
+/// \file
+/// augusta::physics wraps PhysX for collision and movement (ADR-0002):
+/// general body movement, stance transitions, and stamina depletion/
+/// recovery (US-04, US-05). Ballistics (bullet trajectories) is a separate
+/// module (see augusta::ballistics) - PhysX's own generic projectile
+/// handling is deliberately not used for that.
+///
+/// This module's World is used identically by both PredictionWorld (client,
+/// predicted/approximate) and SimulationWorld (server, authoritative) - the
+/// same interface, called from two different orchestrators. PhysX does not
+/// guarantee cross-platform bit-exact determinism, so callers must not
+/// assume the client and server ever produce identical results from the
+/// same inputs; client-side divergence is corrected by restoring the server's
+/// state and stepping again (Restore), not avoided.
 namespace augusta::physics {
 
 /// A player's movement stance. Affects collision shape (capsule height/

@@ -13,12 +13,13 @@
 
 #include "augusta/math.h"
 
-// Private (not under include/augusta/, never installed) byte-level
-// primitives shared by encoder.cpp, decoder.cpp, and assets.cpp's own
-// pack-container (header/index/trailer) assembly and parsing - the same
-// length-prefixed little-endian encoding (ADR-0007) underlies every blob
-// type's wire format and the container around them, so this is the one
-// place both sides of every read/write pair agree on it.
+/// \file
+/// Private (not under include/augusta/, never installed) byte-level
+/// primitives shared by encoder.cpp, decoder.cpp, and assets.cpp's own
+/// pack-container (header/index/trailer) assembly and parsing - the same
+/// length-prefixed little-endian encoding (ADR-0007) underlies every blob
+/// type's wire format and the container around them, so this is the one
+/// place both sides of every read/write pair agree on it.
 namespace augusta::assets {
 
 inline constexpr std::size_t kBitsPerByte = 8;

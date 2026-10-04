@@ -13,12 +13,13 @@
 #include "augusta/protocol.h"
 #include "augusta/tick.h"
 
-// The client's edge with the Networking Protocol (ADR-0038): what
-// harness::Session receives, turned from the protocol's plain types into the
-// engine's right after Decode, and what it sends, turned back right before
-// Encode. The only place on the client where a protocol::*Wire type meets an
-// engine type. Pure field-by-field copies; whether a value is one the client
-// accepts is decided after, by whoever takes it in.
+/// \file
+/// The client's edge with the Networking Protocol (ADR-0038): what
+/// harness::Session receives, turned from the protocol's plain types into the
+/// engine's right after Decode, and what it sends, turned back right before
+/// Encode. The only place on the client where a protocol::*Wire type meets an
+/// engine type. Pure field-by-field copies; whether a value is one the client
+/// accepts is decided after, by whoever takes it in.
 namespace augusta::harness {
 
 /// What this client asks when it joins, in the engine's terms.

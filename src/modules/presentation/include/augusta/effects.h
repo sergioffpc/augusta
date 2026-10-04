@@ -7,13 +7,14 @@
 
 #include "augusta/math.h"
 
-// The fight's short-lived effects (ADR-0024's Interpolation phase): muzzle
-// flashes, and the impacts tracers leave on the Map (tracers.h). Each shows at
-// a point for a moment and is gone. The local player's flashes come from its
-// predicted fire, every other player's from its Shots (ADR-0044).
-//
-// Pure - no clock, no ECS - so it is tested on its own; PresentationWorld feeds
-// it each frame (see presentation.cpp).
+/// \file
+/// The fight's short-lived effects (ADR-0024's Interpolation phase): muzzle
+/// flashes, and the impacts tracers leave on the Map (tracers.h). Each shows at
+/// a point for a moment and is gone. The local player's flashes come from its
+/// predicted fire, every other player's from its Shots (ADR-0044).
+///
+/// Pure - no clock, no ECS - so it is tested on its own; PresentationWorld feeds
+/// it each frame (see presentation.cpp).
 namespace augusta::presentation {
 
 /// How long, in seconds, a muzzle flash shows.

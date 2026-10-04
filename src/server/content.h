@@ -13,12 +13,13 @@
 #include "augusta/physics.h"
 #include "augusta/scripting.h"
 
-// What the server loads from its verified pack at startup (ADR-0018): the
-// scenario it runs, the Parameters its simulation and every client run on, and
-// its Game policy. Loaded before any socket or thread starts, so a pack without
-// usable content exits like a bad pack does. Where content comes from is the
-// executable's business, not the config file's: Host (host.h) is handed it
-// already loaded.
+/// \file
+/// What the server loads from its verified pack at startup (ADR-0018): the
+/// scenario it runs, the Parameters its simulation and every client run on, and
+/// its Game policy. Loaded before any socket or thread starts, so a pack without
+/// usable content exits like a bad pack does. Where content comes from is the
+/// executable's business, not the config file's: Host (host.h) is handed it
+/// already loaded.
 namespace augusta::server {
 
 /// A character a player may join as (ADR-0042), with the hitboxes a bullet

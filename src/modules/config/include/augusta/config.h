@@ -9,22 +9,23 @@
 
 #include "augusta/input.h"
 
-// augusta::config reads the client's and the server's startup settings from a
-// YAML file (ADR-0034) instead of a list of command-line arguments. By default
-// each executable reads one fixed-name file from its own directory;
-// `--config <file>` points it at another, and `--help` and `--version` are the
-// only other arguments. Shared by both (ADR-0006).
-//
-// The file groups its keys into sections (`content`, `network`, `logging`,
-// ...), each a mapping; a key is named by its dotted path
-// (`network.server_address`), and that path is what an error's subject names.
-// Values are strings; an unknown key or section, a missing required key, a
-// non-string value or a section that is not a mapping is an error, so a typo
-// never silently falls back to a default. Relative paths in the file start
-// from the required top-level key `base_dir`, never the working directory, so
-// the executable starts the same from anywhere; a relative `base_dir` is itself
-// relative to the file's own directory (`base_dir: .` means the file's
-// directory).
+/// \file
+/// augusta::config reads the client's and the server's startup settings from a
+/// YAML file (ADR-0034) instead of a list of command-line arguments. By default
+/// each executable reads one fixed-name file from its own directory;
+/// `--config <file>` points it at another, and `--help` and `--version` are the
+/// only other arguments. Shared by both (ADR-0006).
+///
+/// The file groups its keys into sections (`content`, `network`, `logging`,
+/// ...), each a mapping; a key is named by its dotted path
+/// (`network.server_address`), and that path is what an error's subject names.
+/// Values are strings; an unknown key or section, a missing required key, a
+/// non-string value or a section that is not a mapping is an error, so a typo
+/// never silently falls back to a default. Relative paths in the file start
+/// from the required top-level key `base_dir`, never the working directory, so
+/// the executable starts the same from anywhere; a relative `base_dir` is itself
+/// relative to the file's own directory (`base_dir: .` means the file's
+/// directory).
 namespace augusta::config {
 
 /// The client's default config file, looked up next to augustac.
@@ -121,10 +122,10 @@ enum class ConfigErrorCode {
   /// subject is the section.
   kNotASection,
   /// An `input.keys` entry names no control input::ControlNamed knows; subject
-  /// is the entry (`input.keys.<name>`).
+  /// is the entry, e.g. `input.keys.jump`.
   kUnknownControl,
   /// An `input.keys` entry names no key input::KeyNamed knows; subject is the
-  /// entry (`input.keys.<control>`).
+  /// entry, e.g. `input.keys.sprint`.
   kInvalidKeyName,
   /// An `input.keys` entry binds a key another control already has; subject is the entry.
   kKeyBoundTwice,

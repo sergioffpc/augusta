@@ -13,12 +13,13 @@
 #include "augusta/math.h"
 #include "augusta/presentation.h"
 
-// What PresentationWorld's AudioCues phase plays (ADR-0024): which of a frame's
-// events give which cue, and where each is heard from. Every cue is a one-shot.
-//
-// No clock, no ECS, no audio device - so it is tested on its own;
-// PresentationWorld hands the cues to augusta::audio::Engine (see
-// presentation.cpp).
+/// \file
+/// What PresentationWorld's AudioCues phase plays (ADR-0024): which of a frame's
+/// events give which cue, and where each is heard from. Every cue is a one-shot.
+///
+/// No clock, no ECS, no audio device - so it is tested on its own;
+/// PresentationWorld hands the cues to augusta::audio::Engine (see
+/// presentation.cpp).
 namespace augusta::presentation {
 
 /// One cue to play this frame.

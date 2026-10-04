@@ -11,10 +11,11 @@
 #include "augusta/presentation.h"
 #include "augusta/renderer.h"
 
-// The conversions ClientRuntime makes at its edges, each frame and each tick:
-// what the harness received into presentation's own types, so presentation does
-// not depend on the network session (ADR-0038), and what presentation decided
-// into what the renderer draws, so neither depends on the other.
+/// \file
+/// The conversions ClientRuntime makes at its edges, each frame and each tick:
+/// what the harness received into presentation's own types, so presentation does
+/// not depend on the network session (ADR-0038), and what presentation decided
+/// into what the renderer draws, so neither depends on the other.
 namespace augusta::client {
 
 /// Maps one interpolated remote player into a renderer-drawable instance of its

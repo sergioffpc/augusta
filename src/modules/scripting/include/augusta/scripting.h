@@ -10,22 +10,23 @@
 #include <variant>
 #include <vector>
 
-// augusta::scripting runs a scenario's Game policy (ADR-0022): its Lua scripts,
-// objectives.lua and behaviours.lua, which the server reads out of its pack at
-// startup. Each script runs in a sandbox of its own (augusta/lua_sandbox.h,
-// ADR-0039) that shares no globals with the other or with the Parameters
-// script. Server-only: game policy is exclusively server-authoritative, never
-// run by either client world.
-//
-// A hook is a global function a script defines, called by name from
-// SimulationWorld (ADR-0023); a script that does not define one leaves that
-// concern to the mechanism. A hook is handed a plain read-only table built for
-// the call, never a live binding into the ECS, and acts only through the plain
-// data it returns, which the caller validates in C++. Every call runs under an
-// instruction limit, and a hook that raises an error, runs past the limit or
-// returns something that is not plain data fails the call without harming the
-// engine: the next call runs as usual. Deterministic, like the rest of the
-// simulation: the same scripts called with the same views return the same values.
+/// \file
+/// augusta::scripting runs a scenario's Game policy (ADR-0022): its Lua scripts,
+/// objectives.lua and behaviours.lua, which the server reads out of its pack at
+/// startup. Each script runs in a sandbox of its own (augusta/lua_sandbox.h,
+/// ADR-0039) that shares no globals with the other or with the Parameters
+/// script. Server-only: game policy is exclusively server-authoritative, never
+/// run by either client world.
+///
+/// A hook is a global function a script defines, called by name from
+/// SimulationWorld (ADR-0023); a script that does not define one leaves that
+/// concern to the mechanism. A hook is handed a plain read-only table built for
+/// the call, never a live binding into the ECS, and acts only through the plain
+/// data it returns, which the caller validates in C++. Every call runs under an
+/// instruction limit, and a hook that raises an error, runs past the limit or
+/// returns something that is not plain data fails the call without harming the
+/// engine: the next call runs as usual. Deterministic, like the rest of the
+/// simulation: the same scripts called with the same views return the same values.
 namespace augusta::scripting {
 
 /// One of a scenario's Game policy scripts (ADR-0022).

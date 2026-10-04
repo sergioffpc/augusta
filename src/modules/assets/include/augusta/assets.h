@@ -17,22 +17,23 @@
 
 #include "augusta/math.h"
 
-// augusta::assets loads runtime packs (ADR-0018/ADR-0031) and resolves
-// their content by pack-relative path. Linked by both the client and
-// server (ADR-0006). The offline cooker (tools/pack, ADR-0030)
-// is pure Python and does not link this module - it reimplements the same
-// wire format independently (validated against this module's WritePack,
-// kept private for exactly that reason - see encoder.h) rather than
-// sharing code across the language boundary.
-//
-// Every pack is BLAKE3-hashed and Ed25519-signed (ADR-0030/ADR-0031's
-// trailer step): Load() verifies the signature before trusting anything
-// else in the file. Load() memory-maps the pack file once (Boost.Interprocess) rather
-// than copying it into a buffer; the BLAKE3 hash is computed directly off
-// that mapping, and every Resolve* call decodes straight out of it too -
-// the file's bytes are never read from disk more than once for a Pack's
-// lifetime, and no blob is ever copied into a separate in-memory buffer
-// before decoding.
+/// \file
+/// augusta::assets loads runtime packs (ADR-0018/ADR-0031) and resolves
+/// their content by pack-relative path. Linked by both the client and
+/// server (ADR-0006). The offline cooker (tools/pack, ADR-0030)
+/// is pure Python and does not link this module - it reimplements the same
+/// wire format independently (validated against this module's WritePack,
+/// kept private for exactly that reason - see encoder.h) rather than
+/// sharing code across the language boundary.
+///
+/// Every pack is BLAKE3-hashed and Ed25519-signed (ADR-0030/ADR-0031's
+/// trailer step): Load() verifies the signature before trusting anything
+/// else in the file. Load() memory-maps the pack file once (Boost.Interprocess) rather
+/// than copying it into a buffer; the BLAKE3 hash is computed directly off
+/// that mapping, and every Resolve* call decodes straight out of it too -
+/// the file's bytes are never read from disk more than once for a Pack's
+/// lifetime, and no blob is ever copied into a separate in-memory buffer
+/// before decoding.
 namespace augusta::assets {
 
 /// The kind of a pack's index entry (ADR-0031's per-blob type tag).

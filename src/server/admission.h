@@ -7,11 +7,12 @@
 
 #include "augusta/networking.h"
 
-// The server's boundary for a peer that connects and never joins: every
-// connection is accepted, since a Join refusal needs one to travel on, so a
-// peer not admitted to the Lobby within a deadline is to be disconnected, or
-// idle connections would pile up. Pure (no I/O, no clock of its own: the caller
-// hands it the time), so it is tested without a network.
+/// \file
+/// The server's boundary for a peer that connects and never joins: every
+/// connection is accepted, since a Join refusal needs one to travel on, so a
+/// peer not admitted to the Lobby within a deadline is to be disconnected, or
+/// idle connections would pile up. Pure (no I/O, no clock of its own: the caller
+/// hands it the time), so it is tested without a network.
 namespace augusta::server {
 
 /// How long a connected peer has to be admitted to the Lobby. A boundary

@@ -9,16 +9,17 @@
 #include "augusta/physics.h"
 #include "augusta/tick.h"
 
-// augusta::command is the Command (CONTEXT.md): one tick's player intent, in
-// the shared core (ARCHITECTURE.md §5). The client's input sampler
-// (augusta::input::Input) builds one per tick, ClientRuntime adds what its
-// player was being shown (its Seen time, below), PredictionWorld applies it
-// and the harness sends it; the server gets it back off the wire, screens and
-// queues it, and SimulationWorld's CommandIngestion phase consumes it. None of
-// those but the client's sampler links the device-facing input module.
-//
-// What a Command's view means is here with it: the client's camera and the
-// server's Shots turn the same yaw and pitch into the same direction.
+/// \file
+/// augusta::command is the Command (CONTEXT.md): one tick's player intent, in
+/// the shared core (ARCHITECTURE.md §5). The client's input sampler
+/// (augusta::input::Input) builds one per tick, ClientRuntime adds what its
+/// player was being shown (its Seen time, below), PredictionWorld applies it
+/// and the harness sends it; the server gets it back off the wire, screens and
+/// queues it, and SimulationWorld's CommandIngestion phase consumes it. None of
+/// those but the client's sampler links the device-facing input module.
+///
+/// What a Command's view means is here with it: the client's camera and the
+/// server's Shots turn the same yaw and pitch into the same direction.
 namespace augusta::command {
 
 /// One tick's worth of player intent.

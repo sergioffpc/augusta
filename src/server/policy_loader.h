@@ -7,10 +7,11 @@
 #include "augusta/assets.h"
 #include "augusta/scripting.h"
 
-// augusta::server::LoadPolicy reads a scenario's Game policy scripts out of the
-// server pack (ADR-0022, ADR-0039) and loads them into the engine SimulationWorld
-// runs them in. The server calls it at startup, before it opens a socket, so a
-// pack whose policy does not load exits like a bad pack does. Server-only.
+/// \file
+/// augusta::server::LoadPolicy reads a scenario's Game policy scripts out of the
+/// server pack (ADR-0022, ADR-0039) and loads them into the engine SimulationWorld
+/// runs them in. The server calls it at startup, before it opens a socket, so a
+/// pack whose policy does not load exits like a bad pack does. Server-only.
 namespace augusta::server {
 
 /// Why a pack's Game policy did not load.

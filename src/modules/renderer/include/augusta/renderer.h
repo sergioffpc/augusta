@@ -11,36 +11,37 @@
 #include "augusta/input.h"
 #include "augusta/math.h"
 
-// augusta::renderer wraps NVIDIA Falcor/D3D12 (ADR-0009), used exclusively
-// by the Windows client. It also owns the client's single OS window:
-// Falcor fuses window creation, GPU device, and swapchain into one object
-// (Falcor::SampleApp) rather than offering them as separable pieces, so
-// there is no clean seam to split a separate augusta::window module out
-// of it. The window/device-event vocabulary (Key, KeyEvent, EventSink,
-// ...) lives in augusta::input instead, even though Renderer is the one
-// that pushes those events - see input.h's header comment for why the
-// dependency has to run this direction and not the other.
-//
-// PumpEvents and RenderFrame are deliberately two separate calls, not one
-// opaque loop, because this engine's threads don't share a cadence
-// (ARCHITECTURE.md §8, ADR-0005): PredictionWorld ticks on the Prediction
-// thread at a fixed rate decoupled from how often a frame is actually
-// presented on the Main/Render thread. PumpEvents just drains the
-// OS/Falcor event queue (cheap, safe to call often, e.g. once per
-// Prediction tick's worth of wall time even though it runs on the
-// Main/Render thread); RenderFrame does the actual GPU work and should be
-// called at the app's presentation rate instead. ClientRuntime's Run()
-// loop decides that split; this module just exposes the two primitives.
-//
-// Interface scope: draws one static Scene (a list of world-space triangle
-// meshes seen from one camera), plus, per frame, however many RemotePlayer
-// instances PresentationWorld's Interpolation phase produces positions for
-// (SetRemotePlayers, below), each drawn with the mesh of its character
-// (SetCharacterMesh), the fight - tracers, impacts and muzzle flashes
-// (SetCombatEffects) - and the crosshair and hit marker over the frame
-// (SetOverlay): the Presentation State it consumes (ADR-0024), drawn with
-// Slang shaders (ADR-0014). Not drawn yet: the local player's own body and
-// weapon model, and skeletal animation.
+/// \file
+/// augusta::renderer wraps NVIDIA Falcor/D3D12 (ADR-0009), used exclusively
+/// by the Windows client. It also owns the client's single OS window:
+/// Falcor fuses window creation, GPU device, and swapchain into one object
+/// (Falcor::SampleApp) rather than offering them as separable pieces, so
+/// there is no clean seam to split a separate augusta::window module out
+/// of it. The window/device-event vocabulary (Key, KeyEvent, EventSink,
+/// ...) lives in augusta::input instead, even though Renderer is the one
+/// that pushes those events - see input.h's header comment for why the
+/// dependency has to run this direction and not the other.
+///
+/// PumpEvents and RenderFrame are deliberately two separate calls, not one
+/// opaque loop, because this engine's threads don't share a cadence
+/// (ARCHITECTURE.md §8, ADR-0005): PredictionWorld ticks on the Prediction
+/// thread at a fixed rate decoupled from how often a frame is actually
+/// presented on the Main/Render thread. PumpEvents just drains the
+/// OS/Falcor event queue (cheap, safe to call often, e.g. once per
+/// Prediction tick's worth of wall time even though it runs on the
+/// Main/Render thread); RenderFrame does the actual GPU work and should be
+/// called at the app's presentation rate instead. ClientRuntime's Run()
+/// loop decides that split; this module just exposes the two primitives.
+///
+/// Interface scope: draws one static Scene (a list of world-space triangle
+/// meshes seen from one camera), plus, per frame, however many RemotePlayer
+/// instances PresentationWorld's Interpolation phase produces positions for
+/// (SetRemotePlayers, below), each drawn with the mesh of its character
+/// (SetCharacterMesh), the fight - tracers, impacts and muzzle flashes
+/// (SetCombatEffects) - and the crosshair and hit marker over the frame
+/// (SetOverlay): the Presentation State it consumes (ADR-0024), drawn with
+/// Slang shaders (ADR-0014). Not drawn yet: the local player's own body and
+/// weapon model, and skeletal animation.
 namespace augusta::renderer {
 
 /// Default initial client-area size, in pixels (see Config::width/height).

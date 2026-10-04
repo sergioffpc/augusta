@@ -13,11 +13,12 @@
 #include "augusta/renderer.h"
 #include "character_loader.h"
 
-// What the client loads from its verified pack at startup (ADR-0018): the scene
-// it draws, the map it predicts against, every cue's sound, and how to load the
-// characters other players bring once the Lobby names them (ADR-0043). Where
-// content comes from is the executable's business, not the orchestrator's:
-// ClientRuntime (runtime.h) is handed it already loaded.
+/// \file
+/// What the client loads from its verified pack at startup (ADR-0018): the scene
+/// it draws, the map it predicts against, every cue's sound, and how to load the
+/// characters other players bring once the Lobby names them (ADR-0043). Where
+/// content comes from is the executable's business, not the orchestrator's:
+/// ClientRuntime (runtime.h) is handed it already loaded.
 namespace augusta::client {
 
 /// The map's collision, the same the server builds from its own pack, so the

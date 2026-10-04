@@ -19,29 +19,30 @@
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
 
-// augusta::simulation orchestrates SimulationWorld (ADR-0023): the single
-// authoritative ECS pipeline, run once per tick on the server's
-// Simulation thread (ADR-0005). It composes the mechanism modules that
-// already exist (physics, ballistics, scripting) into the eight ordered
-// phases ADR-0023 runs until its Dynamics phase arrives with the first Prop
-// (see Phase below); server::Host hands its
-// per-tick output to augusta::replication to reach clients
-// (ARCHITECTURE.md §5's "SimulationWorld... emits authoritative state
-// each tick").
-//
-// World owns one Flecs world (ADR-0001) internally, entirely
-// encapsulated behind Impl (simulation.cpp) - Flecs is this module's
-// implementation detail, not part of its public interface, so no flecs
-// header leaks in here. Phase's eight values become, in the same order,
-// eight dependency-chained flecs::Phase entities, each with one
-// registered flecs::system (named "<Phase>System") - see simulation.cpp.
-// A player is one entity with a physics body, a rifle, its Character's
-// hitboxes, its Hitbox history and its health, and a bullet in flight is one
-// entity too.
-// CommandIngestion, Movement, WeaponHandling, Damage and Commit act on players
-// and Ballistics and HitDetection on bullets, which end on the Map, on a
-// player or at their range; Scripts/Behaviours calls the scenario's Game policy.
-// What each one does is documented on its Phase enumerator below.
+/// \file
+/// augusta::simulation orchestrates SimulationWorld (ADR-0023): the single
+/// authoritative ECS pipeline, run once per tick on the server's
+/// Simulation thread (ADR-0005). It composes the mechanism modules that
+/// already exist (physics, ballistics, scripting) into the eight ordered
+/// phases ADR-0023 runs until its Dynamics phase arrives with the first Prop
+/// (see Phase below); server::Host hands its
+/// per-tick output to augusta::replication to reach clients
+/// (ARCHITECTURE.md §5's "SimulationWorld... emits authoritative state
+/// each tick").
+///
+/// World owns one Flecs world (ADR-0001) internally, entirely
+/// encapsulated behind Impl (simulation.cpp) - Flecs is this module's
+/// implementation detail, not part of its public interface, so no flecs
+/// header leaks in here. Phase's eight values become, in the same order,
+/// eight dependency-chained flecs::Phase entities, each with one
+/// registered flecs::system (named "<Phase>System") - see simulation.cpp.
+/// A player is one entity with a physics body, a rifle, its Character's
+/// hitboxes, its Hitbox history and its health, and a bullet in flight is one
+/// entity too.
+/// CommandIngestion, Movement, WeaponHandling, Damage and Commit act on players
+/// and Ballistics and HitDetection on bullets, which end on the Map, on a
+/// player or at their range; Scripts/Behaviours calls the scenario's Game policy.
+/// What each one does is documented on its Phase enumerator below.
 namespace augusta::simulation {
 
 /// SimulationWorld's eight phases (ADR-0023), executed in this exact

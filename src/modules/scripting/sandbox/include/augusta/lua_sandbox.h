@@ -3,11 +3,12 @@
 
 #include <sol/sol.hpp>
 
-// augusta::scripting's Lua sandbox (ADR-0022, ADR-0039), shared by the two
-// kinds of script the server runs: the Parameters script (server/parameters_loader)
-// and the Game policy scripts (scripting::Engine). Each gets a Lua state of its
-// own, so they share no globals. A header of its own, apart from scripting.h,
-// so sol2 reaches only the code that embeds Lua. Server-only.
+/// \file
+/// augusta::scripting's Lua sandbox (ADR-0022, ADR-0039), shared by the two
+/// kinds of script the server runs: the Parameters script (server/parameters_loader)
+/// and the Game policy scripts (scripting::Engine). Each gets a Lua state of its
+/// own, so they share no globals. A header of its own, apart from scripting.h,
+/// so sol2 reaches only the code that embeds Lua. Server-only.
 namespace augusta::scripting {
 
 /// A new Lua state holding only the pure libraries: base, math, string and
