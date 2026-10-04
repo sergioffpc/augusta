@@ -50,7 +50,7 @@ What bounds every field a client sends today:
 | any | message type | `Decode`: unknown types refused. `Host`: only JoinRequest, Commands and Ready are handled |
 | `JoinRequestWire` | `engine_version`, `client_pack`, `character` | `Decode`: length limits. `Match::Join`: each must be the server's (or one of its scenario's characters) |
 | `CommandsWire` | `commands` | `Decode`: at most `kMaxCommandsPerMessage` |
-| `CommandsWire` | `view_tick`, with each command's `view_age` and `view_fraction` | Corrected by Lag compensation's clamps (ADR-0044) |
+| `CommandsWire` | `seen_tick`, with each command's `seen_age` and `seen_fraction` | Corrected by Lag compensation's clamps (ADR-0044) |
 | `SequencedCommandWire` | `sequence` | `Validate`: must be newer than the last taken in |
 | `CommandWire` | `direction`, `yaw`, `pitch` | Whole grid counts on the wire (`augusta/grid.h`), so always finite. `Validate`: within what a client can produce |
 | `CommandWire` | `flags`, `desired_stance` | `Decode`: the four flags and the stance fill one byte, and an unknown stance is refused. Each flag is an intent SimulationWorld judges |
@@ -79,7 +79,7 @@ What bounds every field a client sends today:
 
 | Impossible action | Outcome | Where | Test |
 | --- | --- | --- | --- |
-| A Command carrying NaN or infinity | No such number can arrive. The wire carries every Command number as a whole grid count, so a NaN arrives as 0 and is taken in as that finite value. An infinity arrives as its grid's bound. In a yaw, a pitch or a movement on more than one axis, that bound is out of range and rejected. In one movement axis (about 2, which physics normalizes) or a view fraction (255/256), it is a value a client can produce and is taken in. `Validate`'s non-finite check is a second line behind it | `augusta/grid.h`, `Validate` | `ImpossibleCommandTest.NoNumberOfACommandReachesTheServerAsNaNOrInfinity` |
+| A Command carrying NaN or infinity | No such number can arrive. The wire carries every Command number as a whole grid count, so a NaN arrives as 0 and is taken in as that finite value. An infinity arrives as its grid's bound. In a yaw, a pitch or a movement on more than one axis, that bound is out of range and rejected. In one movement axis (about 2, which physics normalizes) or a Seen time fraction (255/256), it is a value a client can produce and is taken in. `Validate`'s non-finite check is a second line behind it | `augusta/grid.h`, `Validate` | `ImpossibleCommandTest.NoNumberOfACommandReachesTheServerAsNaNOrInfinity` |
 
 ## Corrected
 
@@ -92,9 +92,9 @@ What bounds every field a client sends today:
 | Reload skip: fire during a reload | Rule: no round fires on a tick of a reload, the one it starts on included | WeaponHandling (`weapon::Step`) | `CorrectedActionTest.FireDuringAReloadFiresNothingUntilItCompletes` |
 | Reload spam: reload on every tick | Rule: a reload is never started over or cut short; a press once a round has left the magazine starts another | WeaponHandling (`weapon::Step`) | `CorrectedActionTest.ReloadOnEveryTickRefillsNoSoonerThanTheReloadTime` |
 | Sprint with no stamina | Rule: the stamina is the server's, and a Command carries only sprint held; an exhausted body is held to a walk until it recovers above the threshold | Movement (`physics::World`) | `CorrectedActionTest.SprintingWithNoStaminaIsHeldToAWalkUntilItRecoversAboveTheThreshold` |
-| A view older than the Shooter's delay's cap | Rule: judged at the cap | Lag compensation (`kMaxShootersDelay`) | `CorrectedAimTest.AViewOlderThanTheShootersDelaysCapIsJudgedAtTheCap` |
-| A view newer than any Authoritative State update sent | Rule: judged at the newest sent, the last tick's | Lag compensation | `CorrectedAimTest.AViewNewerThanAnyUpdateSentIsJudgedAtTheNewestSent` |
-| A view fraction outside 0 to 1 | Structural on the wire, which carries a fraction from 0 to 255/256 (`kFractionGrid`), so one past 1 arrives as 255/256 and one below 0 as 0. Rule behind it: held within 0 to 1 | `augusta/grid.h`, Lag compensation | `CorrectedAimTest.AViewFractionOutsideZeroToOneIsHeldWithinIt` |
+| A Seen time older than the Shooter's delay's cap | Rule: judged at the cap | Lag compensation (`kMaxShootersDelay`) | `CorrectedAimTest.ASeenTimeOlderThanTheShootersDelaysCapIsJudgedAtTheCap` |
+| A Seen time newer than any Authoritative State update sent | Rule: judged at the newest sent, the last tick's | Lag compensation | `CorrectedAimTest.ASeenTimeNewerThanAnyUpdateSentIsJudgedAtTheNewestSent` |
+| A Seen time fraction outside 0 to 1 | Structural on the wire, which carries a fraction from 0 to 255/256 (`kFractionGrid`), so one past 1 arrives as 255/256 and one below 0 as 0. Rule behind it: held within 0 to 1 | `augusta/grid.h`, Lag compensation | `CorrectedAimTest.ASeenTimeFractionOutsideZeroToOneIsHeldWithinIt` |
 | Commands from a dead player (a spectator) | Rule: a dead player's body has left the simulation, so its Commands have nothing to move, turn or fire | SimulationWorld's Damage | `CorrectedAimTest.ADeadPlayersCommandsMoveTurnAndFireNothing` |
 | Commands from a player in the Lobby | Check: dropped, and none taken in, so its Match starts at its spawn point with a full magazine and its Commands numbered from 1 | `Host::HandleCommands` (`Match::IsPlaying`) | `CorrectedLobbyTest.CommandsFromAPlayerInTheLobbyAffectNothing` |
 | Impersonation: Commands sent as another player | Structural: no client message carries a Session ID, so a Session ID is no credential. The server knows whose message it is by its connection alone | `Host` (`Match::SessionOf`) | `CorrectedActionTest.CommandsNumberedAsAnotherPlayersMoveAndFireOnlyTheSendersOwnBody` |
@@ -105,7 +105,7 @@ What bounds every field a client sends today:
 Validation proves that no client can do what the game forbids. It cannot prove
 that a client plays fairly with what the game allows:
 
-- A client may always claim the Shooter's delay's cap: any view up to
+- A client may always claim the Shooter's delay's cap: any Seen time up to
   `kMaxShootersDelay` old is one an honest client on a slow link could report,
   so a round is judged against the targets as they were then (ADR-0044).
 - Every client is sent every body, so a wallhack sees them all. v1 runs on a

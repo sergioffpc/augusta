@@ -226,7 +226,7 @@ JoinRequest FromWire(const protocol::JoinRequestWire& request) {
   };
 }
 
-command::Command FromWire(const protocol::CommandWire& command, tick::Tick view_tick) {
+command::Command FromWire(const protocol::CommandWire& command, tick::Tick seen_tick) {
   command::Command result;
   result.movement.direction = command.direction;
   result.movement.sprint = (command.flags & protocol::CommandWire::kSprint) != 0;
@@ -236,20 +236,20 @@ command::Command FromWire(const protocol::CommandWire& command, tick::Tick view_
   result.ads = (command.flags & protocol::CommandWire::kAds) != 0;
   result.fire = (command.flags & protocol::CommandWire::kFire) != 0;
   result.reload = (command.flags & protocol::CommandWire::kReload) != 0;
-  result.view_tick = view_tick - std::min<tick::Tick>(command.view_age, view_tick);
-  result.view_fraction = command.view_fraction;
+  result.seen_tick = seen_tick - std::min<tick::Tick>(command.seen_age, seen_tick);
+  result.seen_fraction = command.seen_fraction;
   return result;
 }
 
-SequencedCommand FromWire(const protocol::SequencedCommandWire& command, tick::Tick view_tick) {
-  return SequencedCommand{.sequence = command.sequence, .command = FromWire(command.command, view_tick)};
+SequencedCommand FromWire(const protocol::SequencedCommandWire& command, tick::Tick seen_tick) {
+  return SequencedCommand{.sequence = command.sequence, .command = FromWire(command.command, seen_tick)};
 }
 
 std::vector<SequencedCommand> FromWire(const protocol::CommandsWire& message) {
   std::vector<SequencedCommand> commands;
   commands.reserve(message.commands.size());
   for (const protocol::SequencedCommandWire& command : message.commands) {
-    commands.push_back(FromWire(command, message.view_tick));
+    commands.push_back(FromWire(command, message.seen_tick));
   }
   return commands;
 }

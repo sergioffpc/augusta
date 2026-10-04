@@ -81,8 +81,8 @@ void WriteCommand(BytesWire& out, const CommandWire& command) {
   WriteSteps(out, command.pitch, math::kAngleGrid);
   WriteU8(out, static_cast<std::uint8_t>(command.flags |
                                          (static_cast<std::uint8_t>(command.desired_stance) << kCommandStanceShift)));
-  WriteU8(out, command.view_age);
-  WriteSteps(out, command.view_fraction, math::kFractionGrid);
+  WriteU8(out, command.seen_age);
+  WriteSteps(out, command.seen_fraction, math::kFractionGrid);
 }
 
 // A body's stance takes the low two bits of its stance byte and its flags the
@@ -273,8 +273,8 @@ CommandWire ReadCommand(Reader& reader) {
   command.flags = packed & kCommandFlagsMask;
   command.desired_stance = reader.ToEnum(static_cast<std::uint8_t>(packed >> kCommandStanceShift),
                                          StanceWire::kStanding, StanceWire::kProne);
-  command.view_age = reader.ReadU8();
-  command.view_fraction = reader.ReadSteps(math::kFractionGrid);
+  command.seen_age = reader.ReadU8();
+  command.seen_fraction = reader.ReadSteps(math::kFractionGrid);
   return command;
 }
 
@@ -381,7 +381,7 @@ CommandsWire ReadCommands(Reader& reader) {
     const command::Sequence sequence = reader.ReadSequence();
     message.commands.push_back(SequencedCommandWire{.sequence = sequence, .command = ReadCommand(reader)});
   }
-  message.view_tick = reader.ReadTick();
+  message.seen_tick = reader.ReadTick();
   return message;
 }
 
@@ -562,7 +562,7 @@ struct Encoder {
       WriteSequence(out, sequenced.sequence);
       WriteCommand(out, sequenced.command);
     }
-    WriteTick(out, message.view_tick);
+    WriteTick(out, message.seen_tick);
   }
 
   void operator()(const AuthoritativeStateWire& message) const {

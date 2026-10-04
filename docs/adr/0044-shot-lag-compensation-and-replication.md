@@ -10,7 +10,7 @@ a shot. It extends the message catalogue of ADR-0038 and changes ADR-0024's
 split of ballistics between client and server.
 
 **Lag compensation favors the shooter, capped at 250 ms.** A fire Command
-carries what the shooter was seeing when it fired: the tick of the Authoritative
+carries its Seen time, what the shooter was seeing when it fired: the tick of the Authoritative
 State update being shown and the interpolation fraction between it and the next
 one (0 to 1). The server keeps, for every player, the hitboxes of each of its
 recent ticks, as that tick's Authoritative State reported them, enough ticks to
@@ -18,13 +18,13 @@ cover the cap at its tick rate (15 at 60 Hz). It tests the shot against the
 hitboxes interpolated between those two ticks at that fraction: position and
 facing interpolated, the facing along the shorter arc, and the stance of the
 nearer tick, which is how a client shows a body between two updates. The time between
-that view and the tick the server takes the Command in is the Shooter's delay. A
+that Seen time and the tick the server takes the Command in is the Shooter's delay. A
 delay beyond 250 ms is clamped to 250 ms, not refused: the shot is judged
-against the oldest view the cap allows. The cap bounds how far into the past a
+against the oldest Seen time the cap allows. The cap bounds how far into the past a
 high-latency player can hit, which is the cost the victim pays (being shot
-after reaching cover). The view is only what a client says, so the server holds
+after reaching cover). The Seen time is only what a client says, so the server holds
 it within what it can have been shown: a fraction outside 0 to 1 is the nearer
-of the two, and a view newer than the last Authoritative State the server
+of the two, and a Seen time newer than the last Authoritative State the server
 emitted is that State, so a delay is never less than a tick.
 
 **A bullet lives in the shooter's time for its whole flight.** At 800 m/s a
@@ -63,11 +63,11 @@ outcome without ever showing a hit that did not happen. `augusta_ballistics`'
 trajectory math is therefore shared by client and server; deciding a bullet's
 outcome (HitDetection, Damage) stays the server's alone.
 
-**On the wire.** The Shot, the Hit confirmation and the Command's view tick
-and fraction follow ADR-0038: the smallest types, quantized numbers on its
+**On the wire.** The Shot, the Hit confirmation and the Command's Seen time
+(its tick and fraction) follow ADR-0038: the smallest types, quantized numbers on its
 grids, and `Wire` types converted only at `server::Host` and
 `harness::Session`. ADR-0038's table has their layout. Every Command carries
-its view, not only one with fire pressed: whether a Command fires a round is
+its Seen time, not only one with fire pressed: whether a Command fires a round is
 the server's to decide (its WeaponHandling keeps the fire rate), not the
 client's to know.
 
@@ -90,13 +90,13 @@ client's to know.
   target depends on ping rather than skill.
 - **Refusing a shot whose delay exceeds the cap**: rejected - the shooter's
   trigger would do nothing; clamping still fires the shot, just judged against
-  the oldest view the cap allows.
+  the oldest Seen time the cap allows.
 - **Rewinding only the first tick of a flight, then testing against the
   present**: rejected - it switches timelines mid-flight, so long shots at
   moving targets miss inconsistently.
 - **A delay that shrinks during the flight**: rejected - it has no physical
   meaning, and the hitboxes a tick is tested against would drift between the
-  shooter's view and the present.
+  shooter's Seen time and the present.
 - **Client-side hit prediction**: rejected - it needs a second ballistics and
   hitbox simulation on the client and shows hit markers that are later taken
   back.

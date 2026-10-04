@@ -99,8 +99,8 @@ struct ClientRuntime::Impl {
   // What the last render frame showed the other players at, or nullopt while
   // it showed none: written once per Main/Render frame, read once per
   // Prediction tick, which reports it with the tick's Command (ADR-0044).
-  std::mutex shown_view_mutex;
-  std::optional<presentation::ShownView> shown_view;
+  std::mutex seen_time_mutex;
+  std::optional<presentation::SeenTime> seen_time;
 
   // Connection numbers for the renderer's debug HUD: written by the Network
   // I/O thread (SampleNetworkStats), read by the Main/Render thread once per
@@ -160,7 +160,7 @@ struct ClientRuntime::Impl {
 
   // The Runner's Command for each tick: the player's input, with what the last
   // render frame showed the other players at. Prediction thread.
-  command::Command NextCommand() { return WithView(input.Sample(), GetShownView()); }
+  command::Command NextCommand() { return WithSeenTime(input.Sample(), GetSeenTime()); }
 
   // The Runner's word on each tick: publishes it, with the one before it, for
   // render frames to blend. Prediction thread.
@@ -298,14 +298,14 @@ struct ClientRuntime::Impl {
   // Last, so its threads are joined before anything they use goes.
   std::optional<harness::Runner> runner;
 
-  void SetShownView(const std::optional<presentation::ShownView>& view) {
-    const std::lock_guard<std::mutex> lock(shown_view_mutex);
-    shown_view = view;
+  void SetSeenTime(const std::optional<presentation::SeenTime>& time) {
+    const std::lock_guard<std::mutex> lock(seen_time_mutex);
+    seen_time = time;
   }
 
-  std::optional<presentation::ShownView> GetShownView() {
-    const std::lock_guard<std::mutex> lock(shown_view_mutex);
-    return shown_view;
+  std::optional<presentation::SeenTime> GetSeenTime() {
+    const std::lock_guard<std::mutex> lock(seen_time_mutex);
+    return seen_time;
   }
 };
 
@@ -354,7 +354,7 @@ std::optional<RunFailure> ClientRuntime::Run() {
     }
     impl_->renderer.SetDebugHudStats({.net = impl_->GetLatestHudNet()});
     const presentation::State frame_state = impl_->presentation.RunFrame(impl_->NextFrameInput());
-    impl_->SetShownView(frame_state.view);
+    impl_->SetSeenTime(frame_state.seen_time);
     impl_->StageRenderFrame(frame_state);
     impl_->renderer.RenderFrame();
   }

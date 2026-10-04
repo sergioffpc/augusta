@@ -36,7 +36,7 @@
 // Every message is one payload: a one-byte MessageTypeWire followed by that
 // type's fields, fixed-width and little-endian, with a string or a list as a
 // one-byte length and its elements. A position, a velocity, a direction, an
-// angle, a stamina or a view's fraction travels as a whole count of its grid's
+// angle, a stamina or a Seen time's fraction travels as a whole count of its grid's
 // step, in the fewest bytes its range needs (augusta/grid.h, which
 // physics::World keeps every body on, and weapon::Step a rifle's Recoil
 // offset); the other floats (the Parameters, a rifle's times, a hit's damage)
@@ -151,15 +151,15 @@ struct CommandWire {
   /// The view, in radians.
   float yaw = 0.0F;
   float pitch = 0.0F;
-  /// How far the player was shown the other players between two server ticks
-  /// when the command was sampled (ADR-0044), 0 to 255/256.
-  float view_fraction = 0.0F;
+  /// The fraction of the command's Seen time: how far the player was shown the
+  /// other players between two server ticks (ADR-0044), 0 to 255/256.
+  float seen_fraction = 0.0F;
   /// Any of kSprint, kAds, kFire and kReload; no other bit.
   std::uint8_t flags = 0;
   StanceWire desired_stance = StanceWire::kStanding;
-  /// The first of those two ticks, as how many ticks before its message's
-  /// CommandsWire::view_tick it is.
-  std::uint8_t view_age = 0;
+  /// The tick of the command's Seen time, as how many ticks before its message's
+  /// CommandsWire::seen_tick it is.
+  std::uint8_t seen_age = 0;
 
   bool operator==(const CommandWire&) const = default;
 };
@@ -330,8 +330,8 @@ struct SequencedCommandWire {
 struct CommandsWire {
   std::vector<SequencedCommandWire> commands;
   /// The newest server tick any of the commands was sampled against
-  /// (ADR-0044): each says how far before it its own is (CommandWire::view_age).
-  tick::Tick view_tick = 0;
+  /// (ADR-0044): each says how far before it its own is (CommandWire::seen_age).
+  tick::Tick seen_tick = 0;
 
   bool operator==(const CommandsWire&) const = default;
 };

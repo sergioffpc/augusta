@@ -75,7 +75,7 @@ The client simulating its own actions locally, immediately, before the server co
 _Avoid_: Client simulation
 
 **Command**:
-One tick's local input (command::Command, in the shared core), with the view of the other players it was sampled against, a client sends the Authoritative server under a growing sequence number, so the server can tell what it has already seen and the client can tell what it has not yet acknowledged. What Client-side prediction applies locally and Reconciliation replays.
+One tick's local input (command::Command, in the shared core), with the Seen time of the frame it was sampled on, a client sends the Authoritative server under a growing sequence number, so the server can tell what it has already seen and the client can tell what it has not yet acknowledged. What Client-side prediction applies locally and Reconciliation replays.
 _Avoid_: Input (Command is the sequenced payload sent to the server each tick; augusta::input::Input is the per-frame local sampler that produces one)
 
 **Reconciliation**:
@@ -101,6 +101,10 @@ _Avoid_: Skin, model, avatar (a character is not only appearance: its collider i
 **Interpolation delay**:
 How far in the past, about 100 ms, a client shows other players, so it always has two Authoritative State updates to interpolate between.
 _Avoid_: Lerp delay, buffer time, lag
+
+**Seen time**:
+The moment of the server's timeline a client's frame shows the other players at: the tick of an Authoritative State update and how far from it to the next one, 0 to 1 (presentation::SeenTime). Every Command reports the Seen time of the frame it was sampled on, and the server judges its rounds against the other players as they were then (ADR-0044).
+_Avoid_: View, shown view, view tick (a view is where a player looks: a yaw and a pitch)
 
 **RTT (Round-Trip Time)**:
 The measured network latency between a client and the server for a single request/response cycle.
@@ -166,7 +170,7 @@ How far a rifle points off its player's view, as a pitch and a yaw: every round 
 _Avoid_: Spread (recoil is a fixed pattern, not random), kick (a kick is one round's addition to the offset), view punch, aim punch
 
 **Shooter's delay**:
-How far in the past the shooter saw other players when it fired: from the view its fire Command reports to the tick the server takes that Command in, capped at 250 ms. Fixed when the Shot is fired, it holds for the bullet's whole flight (ADR-0044).
+How far in the past the shooter saw other players when it fired: from the Seen time its fire Command reports to the tick the server takes that Command in, capped at 250 ms. Fixed when the Shot is fired, it holds for the bullet's whole flight (ADR-0044).
 _Avoid_: Ping, lag, latency, rewind time (the RTT is only part of it, next to the Interpolation delay)
 
 **Hitbox history**:

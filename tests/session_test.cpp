@@ -2656,7 +2656,7 @@ TEST_F(ImpossibleCommandTest, NoNumberOfACommandReachesTheServerAsNaNOrInfinity)
   not_numbers.command.direction = Vec3(kNaN, kNaN, kNaN);
   not_numbers.command.yaw = kNaN;
   not_numbers.command.pitch = kNaN;
-  not_numbers.command.view_fraction = kNaN;
+  not_numbers.command.seen_fraction = kNaN;
   adversary_.Send(protocol::CommandsWire{.commands = {not_numbers}});
   const Told after_nan = RunAndTell();
 
@@ -2678,7 +2678,7 @@ TEST_F(ImpossibleCommandTest, NoNumberOfACommandReachesTheServerAsNaNOrInfinity)
   auto infinite_movement = Acting(4);
   infinite_movement.command.direction = Vec3(-kInfinity, kInfinity, kInfinity);
   for (auto* infinite : {&infinite_yaw, &infinite_pitch, &infinite_movement}) {
-    infinite->command.view_fraction = kInfinity;
+    infinite->command.seen_fraction = kInfinity;
   }
   ExpectRejected({infinite_yaw, infinite_pitch, infinite_movement});
 }
@@ -2770,13 +2770,13 @@ TEST_F(ImpossibleCommandTest, AMessageOnlyTheServerSendsChangesNothingWhenAClien
 
 TEST_F(ImpossibleCommandTest, ACommandMessageWithMoreCommandsThanTheProtocolAllowsIsRefusedWhole) {
   // Encode writes no such message, so it is put together by hand: one of
-  // kMaxCommandsPerMessage commands, with one more spliced in before its view tick.
+  // kMaxCommandsPerMessage commands, with one more spliced in before its Seen tick.
   constexpr std::size_t kHeader = 2;  // The message type and the count.
-  constexpr std::size_t kViewTick = sizeof(augusta::tick::Tick);
+  constexpr std::size_t kSeenTick = sizeof(augusta::tick::Tick);
   const protocol::BytesWire encoded = protocol::Encode(MostCommands());
   const protocol::BytesWire extra =
       protocol::Encode(protocol::CommandsWire{.commands = {Acting(protocol::kMaxCommandsPerMessage + 1)}});
-  protocol::BytesWire too_many(encoded.begin(), encoded.end() - static_cast<std::ptrdiff_t>(kViewTick));
+  protocol::BytesWire too_many(encoded.begin(), encoded.end() - static_cast<std::ptrdiff_t>(kSeenTick));
   too_many[1] = static_cast<std::byte>(protocol::kMaxCommandsPerMessage + 1);
   too_many.insert(too_many.end(), extra.begin() + static_cast<std::ptrdiff_t>(kHeader), extra.end());
   ASSERT_EQ(protocol::Decode(too_many).error(), protocol::DecodeError::kFieldTooLong);
@@ -3942,8 +3942,8 @@ class HitMatchOf : public LoopbackMatch {
   }
 
   // The shooter taps fire once, aimed from its eye at the point offset from
-  // target's feet as the newest update it has shows them, which is the view
-  // its Command reports, and the match runs until its rifle is ready again.
+  // target's feet as the newest update it has shows them, which is the Seen
+  // time its Command reports, and the match runs until its rifle is ready again.
   void ShootAt(const Session& target, const Vec3& offset) {
     ShootThrough(PositionSeenBy(Standing(0), *target.GetEntityId()).value() + offset);
   }
@@ -3954,7 +3954,7 @@ class HitMatchOf : public LoopbackMatch {
     const Vec3 eye = PositionSeenBy(shooter, *shooter.GetEntityId()).value() + Vec3(0.0F, kEyeHeight, 0.0F);
     Command& command = CommandOf(shooter);
     AimAt(command, point - eye);
-    command.view_tick = shooter.GetAuthoritativeState().value().tick;
+    command.seen_tick = shooter.GetAuthoritativeState().value().tick;
     command.fire = true;
     Fight(1);
     command.fire = false;
@@ -4197,7 +4197,7 @@ class LagCompensatedHitTest : public HitMatchOf<2> {
 };
 
 // US-11, ADR-0044: a shot that hits on the shooter's screen hits on the server.
-TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairInTheShownViewGetsAHitConfirmation) {
+TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairAtItsSeenTimeGetsAHitConfirmation) {
   Session& shooter = Standing(0);
   Session& target = Standing(1);
   CommandOf(target).movement.direction = Vec3(1.0F, 0.0F, 0.0F);
@@ -4206,7 +4206,7 @@ TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairInT
     PlayAhead(shooter, target);
   }
 
-  // The view: the newest update kept that is the Interpolation delay or more
+  // The Seen time: the newest update kept that is the Interpolation delay or more
   // behind the newest of all, and halfway to the next one if that is kept too.
   ASSERT_FALSE(seen_.empty());
   const augusta::tick::Tick newest = seen_.rbegin()->first;
@@ -4217,14 +4217,14 @@ TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairInT
   const auto next = seen_.find(shown->first + 1);
   const float fraction = next == seen_.end() ? 0.0F : 0.5F;
   const Vec3 feet = next == seen_.end() ? shown->second : augusta::math::Lerp(shown->second, next->second, fraction);
-  // The target has since walked clear of where the view shows its torso, 0.4 m wide.
+  // The target has since walked clear of where the Seen time shows its torso, 0.4 m wide.
   ASSERT_GT(seen_.rbegin()->second.x - feet.x, 0.25F);
 
   const Vec3 eye = PositionSeenBy(shooter, *shooter.GetEntityId()).value() + Vec3(0.0F, kEyeHeight, 0.0F);
   Command& command = CommandOf(shooter);
   AimAt(command, feet + Vec3(0.0F, kTorsoHeight, 0.0F) - eye);
-  command.view_tick = shown->first;
-  command.view_fraction = fraction;
+  command.seen_tick = shown->first;
+  command.seen_fraction = fraction;
   command.fire = true;
   PlayAhead(shooter, target);
   command.fire = false;
@@ -4295,7 +4295,7 @@ class FullAutoMatchTest : public LoopbackMatch {
 // the real 60 Hz for the reason given there: eight clients strafe, sprint and
 // change stance, all the same way so each pair stays face to face, holding
 // fire for the whole match and reloading whenever their magazine is empty, and
-// each reports the view it was last sent, so the hits are lag compensated. The
+// each reports the Seen time of the update it was last sent, so the hits are lag compensated. The
 // server keeps up with every client's commands, tells every client of every
 // Shot, and every shooter of every one of its hits.
 TEST_F(FullAutoMatchTest, EightClientsMoveFireFullAutoReloadAndHitEachOtherForAMatchWithNoMissedTicks) {
@@ -4351,7 +4351,7 @@ TEST_F(FullAutoMatchTest, EightClientsMoveFireFullAutoReloadAndHitEachOtherForAM
       command.fire = true;
       command.reload = tick > 0 && client.rifle.rounds == 0 && client.rifle.reload_remaining <= 0.0F;
       if (const auto shown = sessions_[i]->GetAuthoritativeState()) {
-        command.view_tick = shown->tick;
+        command.seen_tick = shown->tick;
       }
 
       const auto predicted = sessions_[i]->Tick(command, kFixedTick);
@@ -4835,7 +4835,7 @@ class LastStandingMatchOf : public HitMatchOf<kPlayers> {
         this->PositionSeenBy(shooter, *target.GetEntityId()).value() + Vec3(0.0F, this->kHeadHeight, 0.0F);
     Command& command = this->CommandOf(shooter);
     this->AimAt(command, head - eye);
-    command.view_tick = shooter.GetAuthoritativeState().value().tick;
+    command.seen_tick = shooter.GetAuthoritativeState().value().tick;
     command.fire = true;
   }
 
@@ -5111,7 +5111,7 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
       command.fire = true;
       command.reload = tick > 0 && client.rifle.rounds == 0 && client.rifle.reload_remaining <= 0.0F;
       if (const auto shown = session.GetAuthoritativeState()) {
-        command.view_tick = shown->tick;
+        command.seen_tick = shown->tick;
       }
 
       if (session.GetPhase() == Phase::kMatch) {
@@ -5266,10 +5266,10 @@ class AdversaryMatch : public LoopbackMatch {
   }
 
   // The adversary's message for one tick: commands, numbered on from the last
-  // it sent, sampled against view_tick, or else the newest update it has been told of.
+  // it sent, sampled against seen_tick, or else the newest update it has been told of.
   protocol::CommandsWire Numbered(const std::vector<protocol::CommandWire>& commands,
-                                  std::optional<Tick> view_tick = std::nullopt) {
-    protocol::CommandsWire message{.commands = {}, .view_tick = view_tick.value_or(AdversaryTold().tick)};
+                                  std::optional<Tick> seen_tick = std::nullopt) {
+    protocol::CommandsWire message{.commands = {}, .seen_tick = seen_tick.value_or(AdversaryTold().tick)};
     for (const protocol::CommandWire& command : commands) {
       message.commands.push_back({.sequence = ++sent_, .command = command});
     }
@@ -5666,16 +5666,16 @@ class CorrectedAimTest : public AdversaryMatch {
   }
 
   // On the next tick the adversary taps fire, aimed from its eye at point and
-  // reporting the view of view_tick and fraction; the match then runs until
+  // reporting the Seen time of seen_tick and fraction; the match then runs until
   // its rifle is ready again.
-  void FireAt(const Vec3& point, Tick view_tick, float fraction) {
+  void FireAt(const Vec3& point, Tick seen_tick, float fraction) {
     const Tick told = AdversaryTold().tick;
     protocol::CommandWire command = Intent(kFire);
     const View view = ViewFrom(SeenOn(told, adversary_entity_) + Vec3(0.0F, kEyeHeight, 0.0F), point);
     command.yaw = view.yaw;
     command.pitch = view.pitch;
-    command.view_fraction = fraction;
-    Play(Numbered({command}, view_tick));
+    command.seen_fraction = fraction;
+    Play(Numbered({command}, seen_tick));
     // Fired on the tick it was aimed for.
     EXPECT_EQ(AdversaryTold().tick, told + 1);
     for (int i = 0; i < kRoundTicks; ++i) {
@@ -5700,9 +5700,9 @@ class CorrectedAimTest : public AdversaryMatch {
   }
 };
 
-// View too old: one older than the Shooter's delay's cap is judged at the cap,
-// as one reporting a view exactly that old is (ADR-0044).
-TEST_F(CorrectedAimTest, AViewOlderThanTheShootersDelaysCapIsJudgedAtTheCap) {
+// Seen time too old: one older than the Shooter's delay's cap is judged at the
+// cap, as one reporting a Seen time exactly that old is (ADR-0044).
+TEST_F(CorrectedAimTest, ASeenTimeOlderThanTheShootersDelaysCapIsJudgedAtTheCap) {
   Strafe();
 
   const Tick honest = NextTick();
@@ -5713,9 +5713,9 @@ TEST_F(CorrectedAimTest, AViewOlderThanTheShootersDelaysCapIsJudgedAtTheCap) {
   ExpectArmHits(2);
 }
 
-// View in the future: one newer than any update sent is judged at the newest
+// Seen time in the future: one newer than any update sent is judged at the newest
 // sent, the last tick's, as one reporting that update is.
-TEST_F(CorrectedAimTest, AViewNewerThanAnyUpdateSentIsJudgedAtTheNewestSent) {
+TEST_F(CorrectedAimTest, ASeenTimeNewerThanAnyUpdateSentIsJudgedAtTheNewestSent) {
   Strafe();
 
   const Tick honest = NextTick();
@@ -5726,16 +5726,16 @@ TEST_F(CorrectedAimTest, AViewNewerThanAnyUpdateSentIsJudgedAtTheNewestSent) {
   ExpectArmHits(2);
 }
 
-// View fraction: the wire carries a fraction from 0 to 255/256 (augusta/grid.h),
+// Seen time fraction: the wire carries a fraction from 0 to 255/256 (augusta/grid.h),
 // so one past 1 arrives as 255/256 and one below 0 as 0, and Lag compensation
 // holds what arrives within 0 to 1 besides.
-TEST_F(CorrectedAimTest, AViewFractionOutsideZeroToOneIsHeldWithinIt) {
+TEST_F(CorrectedAimTest, ASeenTimeFractionOutsideZeroToOneIsHeldWithinIt) {
   constexpr float kNearlyOne = 255.0F / 256.0F;
-  // A round reporting the view of 5 ticks before it, well within the Hitbox
+  // A round reporting the Seen time of 5 ticks before it, well within the Hitbox
   // history, at sent, aimed where the target was at judged of the way to the next update.
   const auto fire_with = [&](float judged, float sent) {
-    const Tick view = NextTick() - 5;
-    FireAt(augusta::math::Lerp(SeenOn(view, TargetWire()), SeenOn(view + 1, TargetWire()), judged) + kArm, view, sent);
+    const Tick seen = NextTick() - 5;
+    FireAt(augusta::math::Lerp(SeenOn(seen, TargetWire()), SeenOn(seen + 1, TargetWire()), judged) + kArm, seen, sent);
   };
   Strafe();
 
@@ -5758,7 +5758,7 @@ TEST_F(CorrectedAimTest, ADeadPlayersCommandsMoveTurnAndFireNothing) {
     const View view = ViewFrom(eye, head);
     TargetCommand().yaw = view.yaw;
     TargetCommand().pitch = view.pitch;
-    TargetCommand().view_tick = Target().GetAuthoritativeState()->tick;
+    TargetCommand().seen_tick = Target().GetAuthoritativeState()->tick;
     TargetCommand().fire = true;
     Play();
     TargetCommand().fire = false;

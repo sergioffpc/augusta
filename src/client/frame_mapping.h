@@ -62,10 +62,11 @@ namespace augusta::client {
 // ends and while one is in progress. A winner missing from Match start is none.
 [[nodiscard]] std::optional<presentation::MatchEnd> MatchEndOf(const harness::ServerView& view);
 
-// command as sampled against view, what the last render frame showed the other
-// players at: the view it reports to the server, which judges its shots against
-// the players as they were then (ADR-0044). With no view, it reports none.
-[[nodiscard]] command::Command WithView(command::Command command, const std::optional<presentation::ShownView>& view);
+// command as sampled against seen_time, the Seen time of the last render frame:
+// what it reports to the server, which judges its shots against the players as
+// they were then (ADR-0044). With no Seen time, it reports none.
+[[nodiscard]] command::Command WithSeenTime(command::Command command,
+                                            const std::optional<presentation::SeenTime>& seen_time);
 
 }  // namespace augusta::client
 
