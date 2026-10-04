@@ -1,10 +1,12 @@
 #include "augusta/local_view.h"
 
+#include <optional>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #include "augusta/command.h"
+#include "augusta/interpolation.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"

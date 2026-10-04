@@ -43,6 +43,23 @@ TIDY_EXCLUDES += ":(exclude)src/modules/audio/output_windows.cpp" ":(exclude)src
 endif
 TIDY_SOURCES := $(shell git ls-files -- "src/*.cpp" $(TIDY_EXCLUDES))
 
+# The rest of src and tests that this platform's build has compile commands
+# for, which tidy holds to include-cleaner alone (.clang-tidy's
+# misc-include-cleaner): the tests and, on Windows, the Windows-only sources.
+# -w because the presets compile with -Werror (/WX), which turns warnings in
+# third-party headers into errors that cut the parse short and leave includes
+# looking unused.
+ifeq ($(OS),Windows_NT)
+INCLUDE_EXCLUDES := ":(exclude)src/modules/physics/physics.cpp" ":(exclude)src/modules/audio/output_none.cpp"
+JOBS ?= $(NUMBER_OF_PROCESSORS)
+else
+INCLUDE_EXCLUDES := $(TIDY_EXCLUDES) ":(exclude)tests/client_*"
+JOBS ?= $(shell nproc)
+endif
+INCLUDE_SOURCES := $(filter-out $(TIDY_SOURCES),$(shell git ls-files -- "src/*.cpp" "tests/*.cpp" $(INCLUDE_EXCLUDES)))
+# One target per file, so a parallel make runs them side by side.
+INCLUDE_CHECKS := $(addprefix include-cleaner/,$(INCLUDE_SOURCES))
+
 .DEFAULT_GOAL := all
 .PHONY: all help configure build test check install uninstall clean distclean format format-check tidy lint
 
@@ -63,7 +80,7 @@ help:
 	$(info $()  distclean     delete $(BUILD_DIR))
 	$(info $()  format        clang-format, yamlfmt, stylua and taplo on tracked source/config files)
 	$(info $()  format-check  clang-format, yamlfmt, yamllint, stylua, luacheck and taplo checks from CI)
-	$(info $()  tidy          clang-tidy on src, as CI runs it (configures first))
+	$(info $()  tidy          clang-tidy on src, include-cleaner on what it leaves out, as CI runs them (configures first))
 	$(info $()  lint          format-check, then tidy: everything CI lints)
 	@:
 
@@ -121,5 +138,10 @@ format-check:
 # entry until then).
 tidy: configure
 	$(RUN) clang-tidy -p=$(BUILD_DIR) $(TIDY_SOURCES)
+	$(MAKE) --no-print-directory -j $(JOBS) -k -Otarget $(INCLUDE_CHECKS)
+
+.PHONY: $(INCLUDE_CHECKS)
+$(INCLUDE_CHECKS): include-cleaner/%:
+	$(RUN) clang-tidy --quiet -p=$(BUILD_DIR) --checks=-*,misc-include-cleaner --extra-arg=-w $*
 
 lint: format-check tidy

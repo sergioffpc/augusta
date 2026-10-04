@@ -1,6 +1,11 @@
 #include "net_stats.h"
 
 #include <algorithm>
+#include <chrono>
+#include <optional>
+
+#include "augusta/networking.h"
+#include "augusta/renderer.h"
 
 namespace augusta::client {
 

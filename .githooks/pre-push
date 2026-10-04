@@ -64,6 +64,7 @@ toml_files=$(printf '%s\n' "$files" | grep -E '\.toml$' |
 # MSVC's flags, so physics.cpp is linted by CI's Linux run alone. The audio
 # module's output device builds from different sources on each platform, so
 # each side skips the other's (as the Makefile's tidy target does).
+changed_files=$files
 files=$(echo "$files" | grep -E '^src/.*\.cpp$' |
   grep -vE '^src/(client|modules/renderer)/' |
   { if [ "$windows" = 1 ]; then
@@ -74,7 +75,23 @@ files=$(echo "$files" | grep -E '^src/.*\.cpp$' |
   sort -u |
   while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)
 
-if [ -z "$files" ] && [ -z "$yaml_files" ] && [ -z "$lua_files" ] && [ -z "$toml_files" ]; then
+# The rest of the changed src and tests .cpp files, which get include-cleaner
+# alone (as the Makefile's tidy target runs it, which says why -w): the tests
+# and, on Windows, the Windows-only sources - those the debug build has compile
+# commands for (its paths are absolute, with \\ for separators on Windows), so
+# not the other platform's, and not physics.cpp under MSVC's flags.
+include_files=""
+if [ -f "$build_dir/compile_commands.json" ]; then
+  compiled=$(tr '\\' '/' <"$build_dir/compile_commands.json" | tr -s '/' | grep '"file": ')
+  include_files=$(echo "$changed_files" | grep -E '^(src|tests)/.*\.cpp$' |
+    grep -vxF "$(printf '%s\n' "$files" src/modules/physics/physics.cpp)" |
+    sort -u |
+    while IFS= read -r f; do
+      [ -f "$f" ] && echo "$compiled" | grep -qF "/$f\"" && echo "$f"
+    done)
+fi
+
+if [ -z "$files" ] && [ -z "$include_files" ] && [ -z "$yaml_files" ] && [ -z "$lua_files" ] && [ -z "$toml_files" ]; then
   printf '%s\n' "$push_refs" | git lfs pre-push "$@"
   exit $?
 fi
@@ -101,6 +118,25 @@ if [ -n "$files" ]; then
 
   if [ "$status" -ne 0 ]; then
     echo "pre-push: clang-tidy failed - fix the warnings above, or push with --no-verify to skip." >&2
+    exit 1
+  fi
+fi
+
+if [ -n "$include_files" ]; then
+  echo "pre-push: include-cleaner on $(echo "$include_files" | wc -l | tr -d ' ') changed file(s)..." >&2
+
+  if [ "$windows" = 1 ]; then
+    # shellcheck disable=SC2086 # one argument per file; src/ and tests/ paths have no spaces
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/vcenv.ps1 clang-tidy --quiet -p="$build_dir" \
+      --checks=-*,misc-include-cleaner --extra-arg=-w $include_files
+  else
+    # shellcheck disable=SC2086
+    clang-tidy --quiet -p="$build_dir" --checks=-*,misc-include-cleaner --extra-arg=-w $include_files
+  fi
+  status=$?
+
+  if [ "$status" -ne 0 ]; then
+    echo "pre-push: include-cleaner failed - fix the includes above (clang-tidy --fix can), or push with --no-verify to skip." >&2
     exit 1
   fi
 fi

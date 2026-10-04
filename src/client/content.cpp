@@ -1,12 +1,18 @@
 #include "content.h"
 
+#include <expected>
 #include <format>
 #include <optional>
 #include <string_view>
 #include <utility>
 
+#include "augusta/assets.h"
+#include "augusta/cues.h"
 #include "augusta/logging.h"
 #include "augusta/map.h"
+#include "augusta/math.h"
+#include "augusta/renderer.h"
+#include "character_loader.h"
 #include "scene_loader.h"
 
 namespace augusta::client {

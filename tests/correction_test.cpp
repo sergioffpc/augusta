@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/math.h"
+
 // Pure: the smoothing is fed the totals and the frame times, no clock or ECS.
 namespace {
 

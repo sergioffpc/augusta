@@ -37,9 +37,6 @@ jobs:
         with:
           submodules: recursive
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
-      - name: Install Ninja
-        run: choco install ninja -y
-        shell: pwsh
       - name: Bootstrap vcpkg
         shell: pwsh
         run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics

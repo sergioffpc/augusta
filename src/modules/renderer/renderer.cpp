@@ -24,6 +24,7 @@
 #include <Utils/Timing/FrameRate.h>
 #include <nvtx3/nvtx3.hpp>
 
+#include "augusta/input.h"
 #include "augusta/math.h"
 #include "debug_hud.h"
 #include "frame_regions.h"

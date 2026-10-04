@@ -1,13 +1,17 @@
 #include "scene_loader.h"
 
 #include <cstddef>
+#include <expected>
 #include <format>
+#include <istream>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
 
+#include "augusta/assets.h"
 #include "augusta/math.h"
+#include "augusta/renderer.h"
 
 namespace augusta::client {
 
