@@ -277,10 +277,11 @@ struct ClientRuntime::Impl {
     return frame;
   }
 
-  // Hands the renderer what this frame shows. The local player's own position
-  // isn't drawn yet (renderer.h) - only remote players, each as its character.
-  // In the Lobby there are none, so the map is drawn empty.
-  void Show(const presentation::State& frame_state) {
+  // Hands the renderer what the next RenderFrame draws of this frame, without
+  // drawing it. The local player's own position isn't drawn yet (renderer.h) -
+  // only remote players, each as its character. In the Lobby there are none,
+  // so the map is drawn empty.
+  void StageRenderFrame(const presentation::State& frame_state) {
     renderer.SetCamera(ToRenderer(frame_state.camera));
     std::vector<renderer::RemotePlayer> remote_boxes;
     remote_boxes.reserve(frame_state.remote_players.size());
@@ -354,7 +355,7 @@ std::optional<RunFailure> ClientRuntime::Run() {
     impl_->renderer.SetDebugHudStats({.net = impl_->GetLatestHudNet()});
     const presentation::State frame_state = impl_->presentation.RunFrame(impl_->NextFrameInput());
     impl_->SetShownView(frame_state.view);
-    impl_->Show(frame_state);
+    impl_->StageRenderFrame(frame_state);
     impl_->renderer.RenderFrame();
   }
   LI("subsystem=clientruntime event=loop_stopping loop=render");
