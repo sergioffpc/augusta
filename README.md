@@ -52,6 +52,13 @@ Tools environment automatically for each command on Windows.
 Both scripts initialize the vendored submodules and configure the Conventional
 Commits `commit-msg` hook.
 
+**Dev container (server / shared core, alternative to WSL2):** open the
+repository in VS Code's Dev Containers or in GitHub Codespaces. The container
+reproduces CI's Linux build environment, so `make test` builds and tests the
+`linux` preset with nothing else to install. The first build compiles the vcpkg
+dependencies; later ones reuse them from `.vcpkg-bincache`, and sccache's
+objects from a volume.
+
 ### Build and Run
 
 The [Makefile](Makefile) wraps the build presets. On Windows it loads the

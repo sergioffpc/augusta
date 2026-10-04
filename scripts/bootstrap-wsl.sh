@@ -44,52 +44,12 @@ sudo apt-get install -y \
   gh \
   doxygen
 
-# Install uv for the pinned yamllint invocation used by the YAML hook/CI.
-if ! command -v uv >/dev/null 2>&1; then
-  curl -LsSf https://astral.sh/uv/install.sh | sh
-fi
-export PATH="$HOME/.local/bin:$PATH"
-yamlfmt_version="0.21.0"
-yamlfmt_asset="yamlfmt_${yamlfmt_version}_Linux_x86_64.tar.gz"
-yamlfmt_tmp="$(mktemp -d)"
-trap 'rm -rf "$yamlfmt_tmp"' EXIT
-yamlfmt_url="https://github.com/google/yamlfmt/releases/download/v${yamlfmt_version}"
-curl -fsSLo "$yamlfmt_tmp/$yamlfmt_asset" "$yamlfmt_url/$yamlfmt_asset"
-printf '%s  %s\n' \
-  '1f300d9257b232bb3b541d7fb1b0e6b3c121bcbab381c86cd38cb8722be8a566' \
-  "$yamlfmt_tmp/$yamlfmt_asset" | sha256sum --check --status
-tar -xzf "$yamlfmt_tmp/$yamlfmt_asset" -C "$yamlfmt_tmp"
-install -m 0755 "$yamlfmt_tmp/yamlfmt" "$HOME/.local/bin/yamlfmt"
+# uv (for yamllint), yamlfmt, StyLua, luacheck and taplo: the hooks' and CI's
+# formatters and linters, at CI's pinned versions.
+bash "$(dirname "${BASH_SOURCE[0]}")/install-lint-tools.sh" "$HOME/.local/bin"
 if ! grep -Fq 'export PATH="$HOME/.local/bin:$PATH"' ~/.bashrc 2>/dev/null; then
   printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >> ~/.bashrc
 fi
-trap - EXIT
-rm -rf "$yamlfmt_tmp"
-
-# StyLua and luacheck format and lint the scenarios' Lua scripts, and taplo
-# formats and lints TOML, in the hooks and in CI, which pins the same versions
-# and checksums.
-mkdir -p "$HOME/.local/bin"
-lua_tools_tmp="$(mktemp -d)"
-trap 'rm -rf "$lua_tools_tmp"' EXIT
-curl -fsSLo "$lua_tools_tmp/stylua.zip" \
-  https://github.com/JohnnyMorganz/StyLua/releases/download/v2.5.2/stylua-linux-x86_64.zip
-curl -fsSLo "$lua_tools_tmp/luacheck" \
-  https://github.com/lunarmodules/luacheck/releases/download/v1.2.0/luacheck
-curl -fsSLo "$lua_tools_tmp/taplo.gz" \
-  https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz
-printf '%s  %s\n' \
-  'bcb0d855e91f102f28a370e850f8566b3b44b79e6274d806ea5246837c0fd5ab' "$lua_tools_tmp/stylua.zip" \
-  'd68da17fca0697d9e2fb04201f3884abd259fa558b3a449bccaed47f1390defc' "$lua_tools_tmp/luacheck" \
-  '8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156' "$lua_tools_tmp/taplo.gz" \
-  | sha256sum --check --status
-unzip -q "$lua_tools_tmp/stylua.zip" -d "$lua_tools_tmp"
-gunzip "$lua_tools_tmp/taplo.gz"
-install -m 0755 "$lua_tools_tmp/stylua" "$HOME/.local/bin/stylua"
-install -m 0755 "$lua_tools_tmp/luacheck" "$HOME/.local/bin/luacheck"
-install -m 0755 "$lua_tools_tmp/taplo" "$HOME/.local/bin/taplo"
-trap - EXIT
-rm -rf "$lua_tools_tmp"
 
 if ! command -v kubectl >/dev/null 2>&1; then
   curl -fsSL -o /tmp/kubectl "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
