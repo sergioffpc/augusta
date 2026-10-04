@@ -107,10 +107,10 @@ std::optional<presentation::MatchEnd> MatchEndOf(const harness::ServerView& view
   });
 }
 
-command::Command WithView(command::Command command, const std::optional<presentation::ShownView>& view) {
-  if (view.has_value()) {
-    command.view_tick = view->tick;
-    command.view_fraction = view->fraction;
+command::Command WithSeenTime(command::Command command, const std::optional<presentation::SeenTime>& seen_time) {
+  if (seen_time.has_value()) {
+    command.seen_tick = seen_time->tick;
+    command.seen_fraction = seen_time->fraction;
   }
   return command;
 }

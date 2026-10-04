@@ -86,12 +86,12 @@ struct SequencedCommand {
 /// request as the protocol carries it.
 [[nodiscard]] protocol::JoinRequestWire ToWire(const JoinRequest& request);
 
-/// command as the protocol carries it in a message whose view tick is
-/// view_tick: its own view tick as how far before that it is, no further than a
-/// byte tells.
-[[nodiscard]] protocol::CommandWire ToWire(const command::Command& command, tick::Tick view_tick);
+/// command as the protocol carries it in a message whose Seen tick is
+/// seen_tick: its own Seen time's tick as how far before that it is, no further
+/// than a byte tells.
+[[nodiscard]] protocol::CommandWire ToWire(const command::Command& command, tick::Tick seen_tick);
 
-/// commands, oldest first, as the one message that carries them; its view tick
+/// commands, oldest first, as the one message that carries them; its Seen tick
 /// is the newest of theirs.
 [[nodiscard]] protocol::CommandsWire ToWire(std::span<const SequencedCommand> commands);
 

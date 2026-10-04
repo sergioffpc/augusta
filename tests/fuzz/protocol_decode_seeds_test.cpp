@@ -66,10 +66,10 @@ std::vector<Seed> Seeds() {
   const CommandWire command{.direction = Vec3(0.6F, 0.0F, -0.8F),
                             .yaw = 1.5F,
                             .pitch = -0.25F,
-                            .view_fraction = 0.75F,
+                            .seen_fraction = 0.75F,
                             .flags = CommandWire::kSprint | CommandWire::kFire,
                             .desired_stance = StanceWire::kProne,
-                            .view_age = 1};
+                            .seen_age = 1};
   return {
       {.name = "join_request",
        .message = JoinRequestWire{.engine_version = "0.1.0", .client_pack = {}, .character = "characters/player"}},
@@ -85,7 +85,7 @@ std::vector<Seed> Seeds() {
       {.name = "commands",
        .message = CommandsWire{.commands = {SequencedCommandWire{.sequence = 41, .command = CommandWire{}},
                                             SequencedCommandWire{.sequence = 42, .command = command}},
-                               .view_tick = 1194}},
+                               .seen_tick = 1194}},
       {.name = "authoritative_state",
        .message =
            AuthoritativeStateWire{

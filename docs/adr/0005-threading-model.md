@@ -6,6 +6,8 @@ Both tick loops — the server's Simulation thread and the client's Prediction t
 
 Both Network I/O threads — the server's and the client's — do one round of transport work (connection events, received messages), then wait about 1 ms before the next, rather than looping flat out: GameNetworkingSockets offers no wait on incoming work, and a spinning loop would hold a core for nothing between the tick rate's messages. That wait bounds both how late a received message is handled and how long stopping the thread takes.
 
+The client's Prediction and Network I/O threads belong to the Harness (`harness::Runner`), not to the client executable: anything that plays live — the real client, an autonomous agent, a load test's clients — runs its `harness::Session` under one and supplies only each tick's command, so all of them keep the same schedule and pace their commands the same way. The client executable adds only its Main/Render thread. `harness::Session` itself owns no thread and reads no clock, so a test drives it by hand instead (ADR-0013).
+
 ## Ownership and thread boundaries
 
 Each piece of mutable state has one owning thread, and crosses to another only in a form that cannot change under the reader:

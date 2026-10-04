@@ -32,8 +32,8 @@ void showValue(const CommandWire& command, std::ostream& out) {
   out << "{direction ";
   showValue(command.direction, out);
   out << ", yaw " << command.yaw << ", pitch " << command.pitch << ", flags " << +command.flags << ", stance "
-      << +static_cast<std::uint8_t>(command.desired_stance) << ", view_age " << +command.view_age << ", view_fraction "
-      << command.view_fraction << "}";
+      << +static_cast<std::uint8_t>(command.desired_stance) << ", seen_age " << +command.seen_age << ", seen_fraction "
+      << command.seen_fraction << "}";
 }
 
 void showValue(const BodyStateWire& body, std::ostream& out) {
@@ -78,7 +78,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
       out << "JoinRefused{reason " << +static_cast<std::uint8_t>(refused.reason) << "}";
     }
     void operator()(const CommandsWire& commands) const {
-      out << "Commands{view_tick " << commands.view_tick << ", ";
+      out << "Commands{seen_tick " << commands.seen_tick << ", ";
       for (const SequencedCommandWire& command : commands.commands) {
         out << command.sequence << ": ";
         showValue(command.command, out);
@@ -248,8 +248,8 @@ rc::Gen<CommandWire> Command() {
       rc::gen::set(&CommandWire::yaw, OnGrid(kAngleGrid)), rc::gen::set(&CommandWire::pitch, OnGrid(kAngleGrid)),
       rc::gen::set(&CommandWire::flags, rc::gen::inRange<std::uint8_t>(0, CommandWire::kReload << 1U)),
       rc::gen::set(&CommandWire::desired_stance, Stance()),
-      rc::gen::set(&CommandWire::view_age, rc::gen::arbitrary<std::uint8_t>()),
-      rc::gen::set(&CommandWire::view_fraction, OnGrid(kFractionGrid)));
+      rc::gen::set(&CommandWire::seen_age, rc::gen::arbitrary<std::uint8_t>()),
+      rc::gen::set(&CommandWire::seen_fraction, OnGrid(kFractionGrid)));
 }
 
 rc::Gen<BodyStateWire> Body() {
@@ -309,7 +309,7 @@ rc::Gen<CommandsWire> Commands() {
       rc::gen::set(&SequencedCommandWire::command, Command()));
   return rc::gen::build<CommandsWire>(
       rc::gen::set(&CommandsWire::commands, UpTo<std::vector<SequencedCommandWire>>(kMaxCommandsPerMessage, sequenced)),
-      rc::gen::set(&CommandsWire::view_tick, rc::gen::arbitrary<augusta::tick::Tick>()));
+      rc::gen::set(&CommandsWire::seen_tick, rc::gen::arbitrary<augusta::tick::Tick>()));
 }
 
 rc::Gen<AuthoritativeStateWire> AuthoritativeState() {

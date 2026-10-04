@@ -66,7 +66,7 @@ enum class Phase {
   // the match is one whose Death has arrived (FrameInput::deaths), and neither
   // is anyone while there is no snapshot (outside a match). Each is drawn as its character
   // (FrameInput::characters), turned where it faces. Which moment of the
-  // server's timeline they are shown at is the frame's view (ViewAt,
+  // server's timeline they are shown at is the frame's Seen time (SeenTimeAt,
   // interpolation.h). Moves the fight on to the frame's time too: starts a
   // tracer for every Shot the frame is handed and moves every tracer along its
   // trajectory (Tracers, tracers.h), and shows the muzzle flash of every other
@@ -223,7 +223,7 @@ struct State {
   /// What of the server's timeline remote_players are shown at this frame, for
   /// the Commands sampled on it to report (ADR-0044); nullopt before the client
   /// has received an Authoritative State and outside a match.
-  std::optional<ShownView> view;
+  std::optional<SeenTime> seen_time;
   /// Every tracer in flight, as drawn this frame (tracers.h).
   std::vector<Tracer> tracers;
   /// Every impact on the Map still showing.

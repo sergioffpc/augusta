@@ -19,7 +19,7 @@ using augusta::client::CharactersOf;
 using augusta::client::CombatEffectsOf;
 using augusta::client::MatchEndOf;
 using augusta::client::SnapshotOf;
-using augusta::client::WithView;
+using augusta::client::WithSeenTime;
 using augusta::harness::EntityId;
 using augusta::harness::SessionId;
 using augusta::math::Vec3;
@@ -113,18 +113,18 @@ TEST(CombatEffectsOfTest, FadesEachEffectByItsAgeOverItsLifetime) {
   EXPECT_EQ(effects.tracers[0].head, Vec3(0.0F, 0.0F, 1.0F));
 }
 
-TEST(WithViewTest, ReportsTheViewTheLastFrameShowed) {
-  const auto command = WithView({}, augusta::presentation::ShownView{.tick = 41, .fraction = 0.5F});
+TEST(WithSeenTimeTest, ReportsTheSeenTimeOfTheLastFrame) {
+  const auto command = WithSeenTime({}, augusta::presentation::SeenTime{.tick = 41, .fraction = 0.5F});
 
-  EXPECT_EQ(command.view_tick, 41U);
-  EXPECT_FLOAT_EQ(command.view_fraction, 0.5F);
+  EXPECT_EQ(command.seen_tick, 41U);
+  EXPECT_FLOAT_EQ(command.seen_fraction, 0.5F);
 }
 
-TEST(WithViewTest, ReportsNoneWithoutAView) {
-  const augusta::command::Command command = WithView({}, std::nullopt);
+TEST(WithSeenTimeTest, ReportsNoneWithoutASeenTime) {
+  const augusta::command::Command command = WithSeenTime({}, std::nullopt);
 
-  EXPECT_EQ(command.view_tick, 0U);
-  EXPECT_FLOAT_EQ(command.view_fraction, 0.0F);
+  EXPECT_EQ(command.seen_tick, 0U);
+  EXPECT_FLOAT_EQ(command.seen_fraction, 0.0F);
 }
 
 }  // namespace

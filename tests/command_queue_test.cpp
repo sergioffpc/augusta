@@ -67,7 +67,7 @@ TEST(ValidateTest, RejectsNonFiniteNumbersWhereverTheyAre) {
   EXPECT_EQ(Validate(command, 0).error(), Rejection::kNonFinite);
 
   command = Walk(1);
-  command.command.view_fraction = kNaN;
+  command.command.seen_fraction = kNaN;
   EXPECT_EQ(Validate(command, 0).error(), Rejection::kNonFinite);
 }
 

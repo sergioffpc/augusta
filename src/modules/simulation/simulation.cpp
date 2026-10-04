@@ -147,16 +147,16 @@ float MaxShootersDelayTicks(std::uint8_t tick_rate_hz) {
 }
 
 // The Shooter's delay (ADR-0044), in ticks, of a round fired on tick by
-// command: from the view command reports to tick, and no more than max_delay.
-// The view is only what a client says, so its fraction is held within 0 to 1
+// command: from the Seen time command reports to tick, and no more than
+// max_delay. The Seen time is only what a client says, so its fraction is held within 0 to 1
 // and the whole of it to no newer than the last tick's State, the newest any
 // client has been sent.
 float ShootersDelay(tick::Tick tick, const command::Command& command, float max_delay) {
   const auto now = static_cast<double>(tick);
   const double reported =
-      static_cast<double>(command.view_tick) + static_cast<double>(std::clamp(command.view_fraction, 0.0F, 1.0F));
-  const double view = std::min(reported, now - 1.0);
-  return std::min(static_cast<float>(now - view), max_delay);
+      static_cast<double>(command.seen_tick) + static_cast<double>(std::clamp(command.seen_fraction, 0.0F, 1.0F));
+  const double seen = std::min(reported, now - 1.0);
+  return std::min(static_cast<float>(now - seen), max_delay);
 }
 
 // What damage gives for a hit on part.

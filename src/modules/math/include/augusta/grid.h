@@ -9,7 +9,7 @@
 #include "augusta/math.h"
 
 // The grids a body's and a command's numbers live on (ADR-0038): a position, a
-// velocity, a direction, an angle, a stamina or a view's fraction is a whole
+// velocity, a direction, an angle, a stamina or a Seen time's fraction is a whole
 // count of its grid's step, within its grid's range. physics::World keeps every
 // body on them and the Networking Protocol sends each number as its count, so
 // what a peer is told is exactly what the sender has. They are augusta::math's,
@@ -94,7 +94,7 @@ inline constexpr Grid kFractionGrid{
 /// A stamina on kStaminaGrid.
 [[nodiscard]] inline float SnapStamina(float stamina) { return Snap(stamina, kStaminaGrid); }
 
-/// A view's fraction on kFractionGrid.
+/// A Seen time's fraction on kFractionGrid.
 [[nodiscard]] inline float SnapFraction(float fraction) { return Snap(fraction, kFractionGrid); }
 
 }  // namespace augusta::math

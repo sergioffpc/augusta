@@ -110,14 +110,14 @@ struct World::Impl {
   // deltas advance (see interpolation.h). The ticks of the first and the last
   // snapshot recorded into remote_interpolator in the match: the last, so a
   // repeated snapshot (the network thread hasn't received a new tick since the
-  // last RunFrame call) is not recorded again, and both for the frame's view,
+  // last RunFrame call) is not recorded again, and both for the frame's Seen time,
   // which is of nothing outside what there is to show.
   RemoteInterpolator remote_interpolator;
   ServerClock server_clock;
   std::optional<tick::Tick> first_recorded_tick;
   std::optional<tick::Tick> last_recorded_tick;
   std::vector<RemotePlayer> remote_players;
-  std::optional<ShownView> view;
+  std::optional<SeenTime> seen_time;
   // The bodies of the match in progress whose Death has arrived: shown no
   // more, whatever update still lists them.
   std::vector<EntityId> dead;
@@ -177,11 +177,11 @@ struct World::Impl {
       RecordSnapshot(*snapshot);
     }
     remote_players.clear();
-    view.reset();
+    seen_time.reset();
     if (const std::optional<double> now = server_clock.Now(); now.has_value() && snapshot.has_value()) {
       const double sample_time = *now - kInterpolationDelay;
       remote_players = remote_interpolator.Sample(sample_time);
-      view = ViewAt(sample_time, snapshot->tick_duration, *first_recorded_tick, *last_recorded_tick);
+      seen_time = SeenTimeAt(sample_time, snapshot->tick_duration, *first_recorded_tick, *last_recorded_tick);
     }
     // A Death is reliable and can overtake the update that no longer lists its body.
     dead.insert(dead.end(), input.deaths.begin(), input.deaths.end());
@@ -327,7 +327,7 @@ struct World::Impl {
     frame_state.local_position = shown.local_body.position + local_offset;
     frame_state.camera = camera;
     frame_state.remote_players = remote_players;
-    frame_state.view = view;
+    frame_state.seen_time = seen_time;
     frame_state.tracers = tracers.Drawn();
     frame_state.impacts.assign(tracers.Impacts().begin(), tracers.Impacts().end());
     frame_state.muzzle_flashes = muzzle_flashes;

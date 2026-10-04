@@ -45,7 +45,7 @@ std::expected<void, Rejection> Validate(const SequencedCommand& command, command
   }
   const command::Command& input = command.command;
   if (!IsFinite(input.movement.direction) || !std::isfinite(input.yaw) || !std::isfinite(input.pitch) ||
-      !std::isfinite(input.view_fraction)) {
+      !std::isfinite(input.seen_fraction)) {
     return std::unexpected(Rejection::kNonFinite);
   }
   if (math::Length(input.movement.direction) > kMaxMovementMagnitude || std::fabs(input.pitch) > kMaxPitch ||
