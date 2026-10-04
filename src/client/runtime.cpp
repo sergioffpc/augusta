@@ -66,12 +66,10 @@ std::string DescribeRunFailure(const RunFailure& failure) {
 
 struct ClientRuntime::Impl {
   RuntimeConfig config;
-  // Main/Render thread only: loads a character, what to load in the Lobby
-  // before reporting Ready, and whether PresentationWorld has the server's
-  // parameters.
+  // Main/Render thread only: loads a character, and what to load in the Lobby
+  // before reporting Ready.
   CharacterLoader load_character;
   LobbyReadiness lobby_readiness;
-  bool presentation_has_parameters = false;
   input::Input input;
   audio::Engine audio;
   // Emplaced by the constructor once the map is loaded into its PredictionWorld.
@@ -298,16 +296,39 @@ struct ClientRuntime::Impl {
     return latest_tick;
   }
 
-  // Once the server has admitted this client, hands PresentationWorld the
-  // parameters it sent and its tick, once: what tracers fly by and ADS zooms to.
-  void SharePresentationParameters() {
-    if (presentation_has_parameters) {
-      return;
+  // Why the run must end, if a worker or the session has failed. A worker has
+  // logged its own failure where it failed; the session's is logged here.
+  std::optional<RunFailure> GetRunFailure() {
+    if (auto worker_failure = workers.Failure(); worker_failure.has_value()) {
+      return std::move(*worker_failure);
     }
-    if (const std::optional<harness::Admission>& accepted = session->GetServerView()->accepted; accepted.has_value()) {
-      presentation.SetParameters(accepted->parameters, 1.0F / static_cast<float>(accepted->tick_rate_hz));
-      presentation_has_parameters = true;
+    if (const auto session_failure = session->GetFailure(); session_failure.has_value()) {
+      LE("subsystem=clientruntime event=session_failed reason=\"{}\"", harness::DescribeFailure(*session_failure));
+      return *session_failure;
     }
+    return std::nullopt;
+  }
+
+  // Keeps the window responsive until the server admits this client, then
+  // hands PresentationWorld the parameters it sent and its tick: what tracers
+  // fly by and ADS zooms to. So every render frame is drawn admitted. Returns
+  // why the run failed first, if it did; returns nothing if the window closed
+  // first. Main/Render thread only.
+  std::optional<RunFailure> WaitForAdmission() {
+    constexpr auto kPollInterval = std::chrono::milliseconds(10);
+    while (!renderer.ShouldClose()) {
+      if (auto failure = GetRunFailure(); failure.has_value()) {
+        return failure;
+      }
+      const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
+      if (const std::optional<harness::Admission>& accepted = view->accepted; accepted.has_value()) {
+        presentation.SetParameters(accepted->parameters, 1.0F / static_cast<float>(accepted->tick_rate_hz));
+        return std::nullopt;
+      }
+      renderer.PumpEvents();
+      std::this_thread::sleep_for(kPollInterval);
+    }
+    return std::nullopt;
   }
 
   // What this render frame is shown from: the latest Prediction ticks blended
@@ -392,19 +413,17 @@ std::optional<RunFailure> ClientRuntime::Run() {
   impl.workers.Spawn("network", [&impl] { impl.NetworkThreadMain(); });
   const WorkerJoiner joiner{.workers = impl.workers};
 
+  std::optional<RunFailure> failure = impl.WaitForAdmission();
+  if (failure.has_value()) {
+    return failure;
+  }
+
   bool cursor_locked = impl_->input.CursorCaptured();
   impl_->renderer.SetCursorLocked(cursor_locked);
   LI("subsystem=clientruntime event=loop_starting loop=render");
-  std::optional<RunFailure> failure;
   while (!impl_->renderer.ShouldClose()) {
-    // Logged by the worker, where it failed.
-    if (auto worker_failure = impl_->workers.Failure(); worker_failure.has_value()) {
-      failure = std::move(*worker_failure);
-      break;
-    }
-    if (const auto session_failure = impl_->session->GetFailure(); session_failure.has_value()) {
-      LE("subsystem=clientruntime event=session_failed reason=\"{}\"", harness::DescribeFailure(*session_failure));
-      failure = *session_failure;
+    failure = impl_->GetRunFailure();
+    if (failure.has_value()) {
       break;
     }
     if (const auto load_failure = impl_->GetReadyForLobby(); load_failure.has_value()) {
@@ -420,7 +439,6 @@ std::optional<RunFailure> ClientRuntime::Run() {
       cursor_locked = captured;
     }
     impl_->renderer.SetDebugHudStats({.net = impl_->GetLatestHudNet()});
-    impl_->SharePresentationParameters();
     const presentation::State frame_state = impl_->presentation.RunFrame(impl_->NextFrameInput());
     impl_->SetShownView(frame_state.view);
     impl_->Show(frame_state);
