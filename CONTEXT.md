@@ -140,7 +140,7 @@ The static space a match is played in - its collision, spawn points and hitboxes
 _Avoid_: Level, stage (a *scene graph* is how the pack stores the map, not the map itself)
 
 **Harness**:
-Where anything that plays connects to the server: the client's network connection and PredictionWorld without a window or GPU. The real client, an automated test and a future autonomous agent each plug into one, supplying the input for every tick.
+Where anything that plays connects to the server: the client's network connection and PredictionWorld without a window or GPU. The real client, an automated test and a future autonomous agent each plug into one, supplying the input for every tick: whatever plays live runs it in real time on the Prediction and Network I/O threads the Harness owns (harness::Runner), and a test drives it by hand.
 _Avoid_: Client session, bot
 
 ### Combat

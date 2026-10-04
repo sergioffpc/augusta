@@ -25,15 +25,15 @@
 // client's network connection and PredictionWorld (ADR-0021, ADR-0024), without
 // the parts that need a window or a GPU (Input, Renderer, Audio,
 // PresentationWorld). Whatever supplies the input for a tick plugs in here:
-// ClientRuntime (src/client) drives one from its Prediction and Network I/O
-// threads (ADR-0005), an automated test drives one by hand so client/server
-// behavior can be checked in CI with no display, and a future autonomous agent
-// would drive one the same way.
+// anything that plays live - ClientRuntime (src/client), a future autonomous
+// agent - runs one in real time under a Runner (runner.h), and an automated
+// test drives one by hand so client/server behavior can be checked in CI with
+// no display and no clock.
 //
 // Nothing here owns a thread or reads a clock: the caller decides when the
 // network is serviced (PumpEvents, ExchangeMessages) and when a tick happens
 // (Tick), and hands in the input for that tick. The two are meant for two
-// different threads, as in ClientRuntime: Connect, Disconnect, PumpEvents,
+// different threads, as in Runner: Connect, Disconnect, PumpEvents,
 // ExchangeMessages, GetConnectionState and GetConnectionStats from the Network
 // I/O thread, and Tick from the Prediction thread (the transport is safe to
 // send from both).

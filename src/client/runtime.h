@@ -27,9 +27,10 @@
 // implements; this header doesn't redraw it.
 //
 // Sending commands, receiving authoritative state and reconciling the
-// prediction against it is harness::Session's work (see harness.h); the
-// Prediction thread only hands it each tick's command, and the Network I/O
-// thread only pumps it.
+// prediction against it is harness::Session's work (see harness.h), and its
+// Prediction and Network I/O threads are a harness::Runner's (see runner.h):
+// ClientRuntime only supplies each tick's command from the player's input, and
+// takes each tick's state for its render frames to blend.
 //
 // Constructed and run from main.cpp today.
 namespace augusta::client {
@@ -102,7 +103,8 @@ class ClientRuntime {
   ClientRuntime(ClientRuntime&&) = delete;
   ClientRuntime& operator=(ClientRuntime&&) = delete;
 
-  // Spawns the Simulation and Network I/O threads (ADR-0005), then runs
+  // Starts the Prediction and Network I/O threads (ADR-0005) under a
+  // harness::Runner, waits for the server to admit this client, then runs
   // the Main/Render loop on the calling thread - PumpEvents, in the Lobby load
   // every other player's character and report Ready, read the latest
   // committed Prediction State, PresentationWorld::RunFrame,
