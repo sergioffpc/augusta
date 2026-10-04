@@ -99,7 +99,8 @@ the decisions already made in ARCHITECTURE.md:
   (checked by hand on the cluster before a release, ADR-0013).
 - **Releases:** a separate workflow, triggered only on `v*` tags, builds
   Release-config client/server binaries, runs the tests and the asset
-  pipeline check against them, and attaches them to a GitHub Release —
+  pipeline check against them, and attaches them to a GitHub Release,
+  whose notes are generated from the commits (Git Workflow below) —
   not run on every push, so cutting a release is a deliberate tag rather
   than automatic.
 - **Release signing:** release packs are signed by the developer, on
@@ -127,6 +128,14 @@ the decisions already made in ARCHITECTURE.md:
   no formal review requirement, self-merge once CI passes.
 - **Commit messages:** Conventional Commits, enforced via the local
   `commit-msg` hook (see Code Quality below).
+- **Changelog and release notes:** generated from the Conventional Commits
+  by git-cliff (`cliff.toml`), never written by hand. `scripts/changelog.sh
+  vX.Y.Z` is run on the `release/*` branch, prepending the commits since the
+  previous `v*` tag to `CHANGELOG.md`, committed as `chore(release): ...` so
+  the cut leaves itself out; it is re-run if a fix lands on that branch
+  afterwards. The release workflow renders the same section on the tag as the
+  GitHub Release's notes. Features, fixes, performance, refactoring, reverts,
+  docs, tests and build changes are listed; `chore`, `ci` and `style` are not.
 
 ## Deployment & CD
 
