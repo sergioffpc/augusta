@@ -34,7 +34,7 @@ class Supervisor {
   /// Stops and joins every worker still running, as StopAndJoin does.
   ~Supervisor();
 
-  // Not copyable or movable: its workers hold a reference to it.
+  /// Not copyable or movable: its workers hold a reference to it.
   Supervisor(const Supervisor&) = delete;
   Supervisor& operator=(const Supervisor&) = delete;
   Supervisor(Supervisor&&) = delete;

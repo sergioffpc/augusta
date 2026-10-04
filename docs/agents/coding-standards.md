@@ -51,8 +51,17 @@ is reserved for the Lua-implemented gameplay rules.
 
 ## Comments
 
-Public symbols in headers get a one-line `///` doc comment. Implementation files
-(`.cpp`) keep the general default: only comment the non-obvious *why*.
+Every header opens with a module comment, `//` just above its namespace: what
+the module is for and where it fits (who uses it, what it depends on), what it
+leaves to others and who does it, its threads or ownership where they matter,
+and the ADR that decides it. It does not list what the header declares.
+
+A symbol a header declares publicly gets a `///` comment only when it says
+something the name doesn't: units, ranges, what nullopt or an empty value
+means, which thread calls it, preconditions, why it exists. A comment that only
+restates the name (`/// The translation part of transform.` on `TranslationOf`)
+is deleted, not kept. Private members, and the implementation files (`.cpp`),
+keep the general default: `//`, and only for the non-obvious *why*.
 
 ## Testing
 

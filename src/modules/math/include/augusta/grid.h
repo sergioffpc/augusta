@@ -50,7 +50,8 @@ inline constexpr Grid kAngleGrid{.step = 1.0F / 2097152.0F, .bytes = 3, .min = -
 inline constexpr Grid kStaminaGrid{
     .step = 1.0F / 32768.0F, .bytes = 2, .min = 0, .max = std::numeric_limits<std::uint16_t>::max()};
 
-/// How far a view is from one tick to the next (command::Command): 1/256, from 0 to 255/256.
+/// A Seen time's fraction, how far it is from one tick to the next
+/// (command::Command): 1/256, from 0 to 255/256.
 inline constexpr Grid kFractionGrid{
     .step = 1.0F / 256.0F, .bytes = 1, .min = 0, .max = std::numeric_limits<std::uint8_t>::max()};
 

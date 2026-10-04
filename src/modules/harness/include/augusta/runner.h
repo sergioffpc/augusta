@@ -55,7 +55,7 @@ class Runner {
   /// the Session first.
   ~Runner();
 
-  // Not copyable or movable: its threads hold a reference to it.
+  /// Not copyable or movable: its threads hold a reference to it.
   Runner(const Runner&) = delete;
   Runner& operator=(const Runner&) = delete;
   Runner(Runner&&) = delete;

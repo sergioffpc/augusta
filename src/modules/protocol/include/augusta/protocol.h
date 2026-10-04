@@ -329,8 +329,8 @@ struct SequencedCommandWire {
 /// the newest), so one lost datagram does not drop input.
 struct CommandsWire {
   std::vector<SequencedCommandWire> commands;
-  /// The newest server tick any of the commands was sampled against
-  /// (ADR-0044): each says how far before it its own is (CommandWire::seen_age).
+  /// The newest tick of its commands' Seen times (ADR-0044): each says how far
+  /// before it its own is (CommandWire::seen_age).
   tick::Tick seen_tick = 0;
 
   bool operator==(const CommandsWire&) const = default;

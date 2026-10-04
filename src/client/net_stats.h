@@ -15,21 +15,21 @@
 // Systems plots.
 namespace augusta::client {
 
-// Packet loss in percent, from the worse of the two directions; nullopt while
-// neither is measured. Qualities are 0..1 (1 = no loss); negative means not
-// measured yet.
+/// Packet loss in percent, from the worse of the two directions; nullopt while
+/// neither is measured. Qualities are 0..1 (1 = no loss); negative means not
+/// measured yet.
 [[nodiscard]] std::optional<float> PacketLossPercent(const networking::ConnectionStats& stats);
 
-// Turns the connection's numbers into the debug HUD's. ConnectionStats reports
-// jitter as a high-water mark cleared by every read, and the Network I/O thread
-// reads it far faster than anyone can read a HUD, so the HUD shows the peak over
-// the last kJitterWindow.
+/// Turns the connection's numbers into the debug HUD's. ConnectionStats reports
+/// jitter as a high-water mark cleared by every read, and the Network I/O thread
+/// reads it far faster than anyone can read a HUD, so the HUD shows the peak over
+/// the last kJitterWindow.
 class HudNetStats {
  public:
   static constexpr std::chrono::seconds kJitterWindow{1};
 
-  // What the HUD shows after stats, sampled at now; nullopt while there is no
-  // connection to measure, which also starts the jitter window over.
+  /// What the HUD shows after stats, sampled at now; nullopt while there is no
+  /// connection to measure, which also starts the jitter window over.
   [[nodiscard]] std::optional<renderer::DebugHudNetStats> Update(
       const std::optional<networking::ConnectionStats>& stats, std::chrono::steady_clock::time_point now);
 
@@ -41,12 +41,12 @@ class HudNetStats {
   std::optional<float> jitter_ms_;
 };
 
-// NVTX counters (nvtx3::counter, third_party/nvtx) mirroring
-// networking::ConnectionStats field-for-field - plotted on the Nsight Systems
-// timeline alongside the Simulation/Network/Render ranges. A sample without
-// stats (not yet kConnected) is recorded as having no value rather than skipped,
-// so the timeline shows an explicit gap rather than a misleading flat line at
-// whatever value came before.
+/// NVTX counters (nvtx3::counter, third_party/nvtx) mirroring
+/// networking::ConnectionStats field-for-field - plotted on the Nsight Systems
+/// timeline alongside the Simulation/Network/Render ranges. A sample without
+/// stats (not yet kConnected) is recorded as having no value rather than skipped,
+/// so the timeline shows an explicit gap rather than a misleading flat line at
+/// whatever value came before.
 class NetStatsCounters {
  public:
   void Sample(const std::optional<networking::ConnectionStats>& stats);

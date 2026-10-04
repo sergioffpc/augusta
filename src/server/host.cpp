@@ -174,7 +174,7 @@ struct Host::Impl {
   std::unordered_map<SessionId, EntityId> bodies;
   bool simulating_match = false;
   // The last tick SimulationWorld ran, as it numbers them: what its State was
-  // sent under, and what a client names the view of its Commands by. Written by
+  // sent under, and what a client names the Seen time of its Commands by. Written by
   // the Simulation thread; read by the Network I/O thread too, to log how long
   // a match its last player left lasted.
   std::atomic<tick::Tick> tick = 0;

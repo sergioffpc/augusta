@@ -287,7 +287,7 @@ class Session {
   Session(const SessionConfig& config, prediction::World prediction);
   ~Session();
 
-  // Not copyable or movable: owns a live network connection.
+  /// Not copyable or movable: owns a live network connection.
   Session(const Session&) = delete;
   Session& operator=(const Session&) = delete;
   Session(Session&&) = delete;
@@ -412,7 +412,7 @@ class Session {
   [[nodiscard]] std::optional<EntityId> GetEntityId() const;
 
   /// Runs one fixed tick of PredictionWorld for command and returns its state.
-  /// The view command reports (command::Command) is the caller's to fill, from
+  /// The Seen time command reports (command::Command) is the caller's to fill, from
   /// whatever it shows the other players with: a Session shows nothing.
   /// Outside a match nothing is predicted or sent, and the state is the last
   /// one predicted. The first tick of each match starts the prediction over at

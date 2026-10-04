@@ -17,6 +17,8 @@
 // separate translation unit.
 namespace augusta::assets {
 
+/// Each decodes one blob type's byte layout, the inverse of encoder.h's
+/// Encode*, or is nullopt if blob is not a valid blob of that type.
 std::optional<MeshData> DecodeMeshBlob(std::span<const std::byte> blob);
 std::optional<SceneData> DecodeSceneBlob(std::span<const std::byte> blob);
 std::optional<TextureData> DecodeTextureBlob(std::span<const std::byte> blob);

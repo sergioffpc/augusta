@@ -48,6 +48,7 @@ struct Scenario {
   assets::PackHash client_pack{};
 };
 
+/// Everything LoadServerContent loads, for ServerRuntime's constructor.
 struct Content {
   Scenario scenario;
   /// The same for the whole run, and told to every client when it joins.
@@ -56,6 +57,8 @@ struct Content {
   scripting::Engine policy;
 };
 
+/// Which part of the startup content could not be loaded; what was wrong with
+/// it is logged where it failed.
 enum class ContentError {
   kCollisionLoading,
   kSpawnPointsLoading,

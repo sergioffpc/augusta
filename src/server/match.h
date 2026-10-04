@@ -146,7 +146,6 @@ struct MatchConfig {
 /// The Lobby, and the match its players go on to, keyed by the transport's handle for each player.
 class Match {
  public:
-  /// A match built from config.
   explicit Match(MatchConfig config);
 
   /// Admits peer to the Lobby as request asks, or says why not: its version
