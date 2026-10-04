@@ -17,7 +17,7 @@ namespace augusta::server {
 
 /// Why the server turned away something a peer sent.
 enum class PeerRejection : std::uint8_t {
-  // Misbehaviour: no honest client sends these.
+  /// Misbehaviour: no honest client sends these.
   /// The bytes did not decode as a message.
   kUndecodable,
   /// A message only the server sends.
@@ -28,9 +28,9 @@ enum class PeerRejection : std::uint8_t {
   kOutOfRangeCommand,
   /// Commands from a peer that has not joined.
   kCommandsBeforeJoining,
-  // Routine: commands repeat until acknowledged, some are in flight when a
-  // Match ends, the Roster can change while a Ready is in flight, and a refused
-  // peer has done nothing wrong.
+  /// Routine: commands repeat until acknowledged, some are in flight when a
+  /// Match ends, the Roster can change while a Ready is in flight, and a refused
+  /// peer has done nothing wrong.
   /// A command whose sequence is not newer than the last taken in.
   kStaleCommand,
   /// Commands from a player not in a Match.

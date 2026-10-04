@@ -44,71 +44,71 @@
 // What each one does is documented on its Phase enumerator below.
 namespace augusta::simulation {
 
-// SimulationWorld's eight phases (ADR-0023), executed in this exact
-// order every tick. Scripts/Behaviours runs last, after Damage has
-// resolved the tick's deaths, so a hook can react to what just happened
-// (e.g. evaluate a win condition) and schedule what follows (Match end) for
-// the next tick. With no respawn, Game policy assigns Spawn points once a
-// Match, at Match start (World::StartMatch), outside the tick.
+/// SimulationWorld's eight phases (ADR-0023), executed in this exact
+/// order every tick. Scripts/Behaviours runs last, after Damage has
+/// resolved the tick's deaths, so a hook can react to what just happened
+/// (e.g. evaluate a win condition) and schedule what follows (Match end) for
+/// the next tick. With no respawn, Game policy assigns Spawn points once a
+/// Match, at Match start (World::StartMatch), outside the tick.
 enum class Phase {
-  // Mechanism. Applies this tick's already-validated client commands
-  // (augusta::command::Command; Input Validation - US-15 - is a boundary
-  // component outside this World, per ARCHITECTURE.md §8, and has
-  // already run by the time World::Tick sees them) to their entities.
+  /// Mechanism. Applies this tick's already-validated client commands
+  /// (augusta::command::Command; Input Validation - US-15 - is a boundary
+  /// component outside this World, per ARCHITECTURE.md §8, and has
+  /// already run by the time World::Tick sees them) to their entities.
   kCommandIngestion,
-  // Mechanism. PhysX integration, stamina, collision resolution
-  // (US-04, US-05) - augusta::physics::World::Step, one call per player
-  // body. The same physics::World interface PredictionWorld's Movement
-  // phase uses (ARCHITECTURE.md §5).
+  /// Mechanism. PhysX integration, stamina, collision resolution
+  /// (US-04, US-05) - augusta::physics::World::Step, one call per player
+  /// body. The same physics::World interface PredictionWorld's Movement
+  /// phase uses (ARCHITECTURE.md §5).
   kMovement,
-  // Mechanism. Aim/ADS, fire, reload, recoil, ammo rules (US-06-US-09) -
-  // augusta::weapon::Step, one call per player: the same function
-  // PredictionWorld's WeaponHandling phase predicts with (ARCHITECTURE.md
-  // §5). Here its result is authoritative: each round fired is a Shot, and a
-  // bullet in ballistics::World from this tick on. A Command's fire and reload
-  // are only intent: the fire rate, the magazine and the reload are this
-  // phase's to keep, whatever a client sends.
+  /// Mechanism. Aim/ADS, fire, reload, recoil, ammo rules (US-06-US-09) -
+  /// augusta::weapon::Step, one call per player: the same function
+  /// PredictionWorld's WeaponHandling phase predicts with (ARCHITECTURE.md
+  /// §5). Here its result is authoritative: each round fired is a Shot, and a
+  /// bullet in ballistics::World from this tick on. A Command's fire and reload
+  /// are only intent: the fire rate, the magazine and the reload are this
+  /// phase's to keep, whatever a client sends.
   kWeaponHandling,
-  // Mechanism. Advances in-flight bullet trajectories (US-10) -
-  // augusta::ballistics::World::Step, one call per in-flight bullet.
+  /// Mechanism. Advances in-flight bullet trajectories (US-10) -
+  /// augusta::ballistics::World::Step, one call per in-flight bullet.
   kBallistics,
-  // Mechanism. Resolves impact point + body part (US-11) against every
-  // player's hitboxes, placed by its pose: where its body was, lowered for
-  // its stance as its eye is, and turned by its yaw. They are judged where
-  // the bullet's shooter saw the players (Lag compensation, ADR-0044): as
-  // they were the bullet's Shooter's delay ago, fixed when it was fired and
-  // kept for its whole flight, from the Hitbox history. The Map is judged in
-  // the present. A bullet is never tested against its own shooter. The test
-  // itself is folded into the same ballistics::World::Step call as
-  // kBallistics - see ballistics.h - so the hitboxes are posed for each
-  // bullet ahead of it, and one Step call returns the nearest of the Map and
-  // the players along the tick's segment, with its BodyPart. What this phase
-  // runs itself is the Hitbox history: it keeps the pose this tick's State
-  // reports of every player, for the bullets of the ticks to come.
+  /// Mechanism. Resolves impact point + body part (US-11) against every
+  /// player's hitboxes, placed by its pose: where its body was, lowered for
+  /// its stance as its eye is, and turned by its yaw. They are judged where
+  /// the bullet's shooter saw the players (Lag compensation, ADR-0044): as
+  /// they were the bullet's Shooter's delay ago, fixed when it was fired and
+  /// kept for its whole flight, from the Hitbox history. The Map is judged in
+  /// the present. A bullet is never tested against its own shooter. The test
+  /// itself is folded into the same ballistics::World::Step call as
+  /// kBallistics - see ballistics.h - so the hitboxes are posed for each
+  /// bullet ahead of it, and one Step call returns the nearest of the Map and
+  /// the players along the tick's segment, with its BodyPart. What this phase
+  /// runs itself is the Hitbox history: it keeps the pose this tick's State
+  /// reports of every player, for the bullets of the ticks to come.
   kHitDetection,
-  // Mechanism, reads Data/Config. Takes the damage the Parameters give the
-  // ammo for the body part hit (US-12) off the target's health, which stops
-  // at zero and never regenerates in a Match. The hit that takes it to zero
-  // kills its player (US-13) for the rest of the Match: from that tick its
-  // body leaves physics and its hitboxes are no longer tested, and
-  // CommandIngestion drops its commands, so nothing it sends moves, turns or
-  // fires. The bullets it fired while alive fly on. The player stays in the
-  // world, bodiless, until it is removed.
+  /// Mechanism, reads Data/Config. Takes the damage the Parameters give the
+  /// ammo for the body part hit (US-12) off the target's health, which stops
+  /// at zero and never regenerates in a Match. The hit that takes it to zero
+  /// kills its player (US-13) for the rest of the Match: from that tick its
+  /// body leaves physics and its hitboxes are no longer tested, and
+  /// CommandIngestion drops its commands, so nothing it sends moves, turns or
+  /// fires. The bullets it fired while alive fly on. The player stays in the
+  /// world, bodiless, until it is removed.
   kDamage,
-  // Policy, sandboxed Lua (ADR-0022). Win condition, round transitions
-  // (US-14) - augusta::scripting::Engine::Call: the
-  // objectives' on_tick hook, handed a read-only view of the Match as Damage
-  // left it (MatchView in simulation.cpp), while the world has players and
-  // policy has not already ended their Match. It may end the Match, with a
-  // winner or as a draw: its answer, validated into a typed action
-  // (policy_actions.h), goes in the tick's TickResult, for server::Host to act
-  // on after the tick. A hook that fails, or returns a decision it cannot
-  // make, is logged and decides nothing, and the tick goes on. The only phase
-  // not implemented in C++.
+  /// Policy, sandboxed Lua (ADR-0022). Win condition, round transitions
+  /// (US-14) - augusta::scripting::Engine::Call: the
+  /// objectives' on_tick hook, handed a read-only view of the Match as Damage
+  /// left it (MatchView in simulation.cpp), while the world has players and
+  /// policy has not already ended their Match. It may end the Match, with a
+  /// winner or as a draw: its answer, validated into a typed action
+  /// (policy_actions.h), goes in the tick's TickResult, for server::Host to act
+  /// on after the tick. A hook that fails, or returns a decision it cannot
+  /// make, is logged and decides nothing, and the tick goes on. The only phase
+  /// not implemented in C++.
   kScriptsBehaviours,
-  // Mechanism. Packages the tick's resolved state into Authoritative
-  // State (State, below), which augusta::replication plans into each
-  // client's update and server::Host sends.
+  /// Mechanism. Packages the tick's resolved state into Authoritative
+  /// State (State, below), which augusta::replication plans into each
+  /// client's update and server::Host sends.
   kCommit,
 };
 
@@ -129,7 +129,7 @@ struct PlayerIdentity {
 };
 
 /// The longest Shooter's delay (CONTEXT.md, ADR-0044): a round whose shooter
-/// reports an older view is judged against the players as they were this long ago.
+/// reports an older Seen time is judged against the players as they were this long ago.
 inline constexpr std::chrono::milliseconds kMaxShootersDelay{250};
 
 /// How many ticks of every player's poses the Hitbox history (CONTEXT.md)
@@ -138,7 +138,7 @@ inline constexpr std::chrono::milliseconds kMaxShootersDelay{250};
 [[nodiscard]] std::size_t HitboxHistoryTicks(std::uint8_t tick_rate_hz);
 
 /// The validated command for one tick of the player who controls entity. The
-/// view it reports (command::Command) is only what its client says:
+/// Seen time it reports (command::Command) is only what its client says:
 /// SimulationWorld holds it within the States it has emitted and within
 /// kMaxShootersDelay.
 struct PlayerCommand {
@@ -239,13 +239,13 @@ struct Death {
   ballistics::BodyPart part = ballistics::BodyPart::kTorso;
 };
 
-// ADR-0023/ARCHITECTURE.md's "Authoritative State" of one tick, for
-// augusta::replication to send to clients: every living player's body, the
-// rounds fired, what became of the bullets in flight (the Map impacts and the
-// hits on players) and the tick's deaths.
+/// ADR-0023/ARCHITECTURE.md's "Authoritative State" of one tick, for
+/// augusta::replication to send to clients: every living player's body, the
+/// rounds fired, what became of the bullets in flight (the Map impacts and the
+/// hits on players) and the tick's deaths.
 struct State {
   /// Which tick of its World this is the State of, from 1: what a client names
-  /// the view its Commands were sampled against by (command::Command).
+  /// the Seen time of its Commands by (command::Command).
   tick::Tick tick = 0;
   /// Every dynamic body in the world, ordered by EntityId. A dead player has none.
   std::vector<EntityState> bodies;
@@ -278,25 +278,25 @@ struct TickResult {
   std::vector<PolicyAction> actions;
 };
 
-// The single authoritative SimulationWorld. The server constructs
-// exactly one, on the Simulation thread (ADR-0005). Owns the mechanism
-// sub-worlds each tick drives through in Phase order, plus the Flecs
-// world they run inside of (see header comment); no I/O happens inside
-// Tick (ARCHITECTURE.md §8) - augusta::replication, not this class, is
-// responsible for getting State to the network.
-//
-// Move-only: copying would either duplicate or alias the owned Flecs
-// world, neither of which is meaningful.
+/// The single authoritative SimulationWorld. The server constructs
+/// exactly one, on the Simulation thread (ADR-0005). Owns the mechanism
+/// sub-worlds each tick drives through in Phase order, plus the Flecs
+/// world they run inside of (see header comment); no I/O happens inside
+/// Tick (ARCHITECTURE.md §8) - augusta::replication, not this class, is
+/// responsible for getting State to the network.
+///
+/// Move-only: copying would either duplicate or alias the owned Flecs
+/// world, neither of which is meaningful.
 class World {
  public:
-  // Constructs an empty World running on parameters (ADR-0039), copied and
-  // fixed for its lifetime, and ticking tick_rate_hz times a second, which
-  // sets how many ticks kMaxShootersDelay and the Hitbox history span: an
-  // empty physics::World (its stamina rules for every player body) and an
-  // empty ballistics::World (no bullets in flight yet), policy, the scenario's
-  // Game policy (ADR-0022) as the server loaded it from its pack (none by
-  // default), and the Flecs world with Phase's eight phases and their systems
-  // registered (see header comment).
+  /// Constructs an empty World running on parameters (ADR-0039), copied and
+  /// fixed for its lifetime, and ticking tick_rate_hz times a second, which
+  /// sets how many ticks kMaxShootersDelay and the Hitbox history span: an
+  /// empty physics::World (its stamina rules for every player body) and an
+  /// empty ballistics::World (no bullets in flight yet), policy, the scenario's
+  /// Game policy (ADR-0022) as the server loaded it from its pack (none by
+  /// default), and the Flecs world with Phase's eight phases and their systems
+  /// registered (see header comment).
   World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz, scripting::Engine policy = {});
   ~World();
 
@@ -337,19 +337,19 @@ class World {
   /// between ticks, on a Match end policy decided or not.
   void EndMatch();
 
-  // Runs all eight Phase values above, in their declared order, for one
-  // fixed tick of duration delta_time seconds (internally, one
-  // flecs::world::progress(delta_time) call). commands holds this tick's
-  // validated input, at most one per player (US-02, 2-8 players) - unlike
-  // PredictionWorld, which only ever ticks the local player (see
-  // augusta::prediction::World::Tick). A player with no command this tick
-  // stops moving, keeps its stance and its facing and does not fire; a reload
-  // it had started goes on. A round fired is judged, for its whole flight,
-  // against the other players as they were its Shooter's delay ago: from the
-  // view its Command reports, held to no newer than the last tick's State and
-  // its fraction within 0 to 1, to this tick, and no longer than
-  // kMaxShootersDelay. Returns the tick's Authoritative State and the actions
-  // Game policy took on it.
+  /// Runs all eight Phase values above, in their declared order, for one
+  /// fixed tick of duration delta_time seconds (internally, one
+  /// flecs::world::progress(delta_time) call). commands holds this tick's
+  /// validated input, at most one per player (US-02, 2-8 players) - unlike
+  /// PredictionWorld, which only ever ticks the local player (see
+  /// augusta::prediction::World::Tick). A player with no command this tick
+  /// stops moving, keeps its stance and its facing and does not fire; a reload
+  /// it had started goes on. A round fired is judged, for its whole flight,
+  /// against the other players as they were its Shooter's delay ago: from the
+  /// Seen time its Command reports, held to no newer than the last tick's State and
+  /// its fraction within 0 to 1, to this tick, and no longer than
+  /// kMaxShootersDelay. Returns the tick's Authoritative State and the actions
+  /// Game policy took on it.
   TickResult Tick(const std::vector<PlayerCommand>& commands, float delta_time);
 
  private:

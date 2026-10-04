@@ -40,11 +40,11 @@ struct PredictedTicks {
 /// from and back to.
 inline constexpr float kHipFieldOfView = 0.9F;
 
-// The local player's view camera for one frame - Phase::kCamera's output.
-// Not augusta::renderer::Camera itself: this module stays decoupled from
-// augusta_renderer the same way presentation::RemotePlayer does (see
-// renderer::RemotePlayer's doc comment) - the client's ToRenderer
-// (src/client/frame_mapping.h) maps both into their renderer-side equivalents.
+/// The local player's view camera for one frame - Phase::kCamera's output.
+/// Not augusta::renderer::Camera itself: this module stays decoupled from
+/// augusta_renderer the same way presentation::RemotePlayer does (see
+/// renderer::RemotePlayer's doc comment) - the client's ToRenderer
+/// (src/client/frame_mapping.h) maps both into their renderer-side equivalents.
 struct Camera {
   math::Vec3 position{};
   math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};

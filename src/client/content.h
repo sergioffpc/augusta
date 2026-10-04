@@ -20,25 +20,26 @@
 // ClientRuntime (runtime.h) is handed it already loaded.
 namespace augusta::client {
 
-// The map's collision, the same the server builds from its own pack, so the
-// client's prediction and the server's simulation agree on where the walls are.
+/// The map's collision, the same the server builds from its own pack, so the
+/// client's prediction and the server's simulation agree on where the walls are.
 struct Map {
   std::vector<physics::CollisionMesh> collision;
 };
 
-// What the client loads of a character another player brings: its visual mesh,
-// which the renderer draws, and its eye, which a spectator watches it from.
+/// What the client loads of a character another player brings: its visual mesh,
+/// which the renderer draws, and its eye, which a spectator watches it from.
 struct LoadedCharacter {
   renderer::SceneMesh mesh{};
   math::Vec3 eye{};
 };
 
-// Loads the character with the given path from the client pack
-// (LoadCharacterMesh and LoadCharacterEye), or says why it could not.
+/// Loads the character with the given path from the client pack
+/// (LoadCharacterMesh and LoadCharacterEye), or says why it could not.
 using CharacterLoader = std::function<std::expected<LoadedCharacter, CharacterError>(std::string_view)>;
 
+/// Everything LoadClientContent loads, for ClientRuntime's constructor.
 struct Content {
-  // Where the local player's camera sits, from the character it asked to play.
+  /// Where the local player's camera sits, from the character it asked to play.
   math::Vec3 eye;
   renderer::Scene scene;
   Map map;
@@ -46,6 +47,8 @@ struct Content {
   audio::CueSounds cue_sounds;
 };
 
+/// Which part of the startup content could not be loaded; what was wrong with
+/// it is logged where it failed.
 enum class ContentError {
   kEyeLoading,
   kSceneLoading,
@@ -56,9 +59,9 @@ enum class ContentError {
 
 [[nodiscard]] std::string_view DescribeContentError(ContentError error);
 
-// Loads startup content from the verified pack for the local player's
-// character, logging what is wrong with it; the pack must outlive the returned
-// content and the ClientRuntime constructed from it.
+/// Loads startup content from the verified pack for the local player's
+/// character, logging what is wrong with it; the pack must outlive the returned
+/// content and the ClientRuntime constructed from it.
 [[nodiscard]] std::expected<Content, ContentError> LoadClientContent(const assets::Pack& pack,
                                                                      std::string_view character);
 

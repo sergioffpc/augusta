@@ -62,7 +62,7 @@ class Host {
   Host(const HostConfig& config, Scenario scenario, scripting::Engine policy = {});
   ~Host();
 
-  // Not copyable or movable: owns the listening socket.
+  /// Not copyable or movable: owns the listening socket.
   Host(const Host&) = delete;
   Host& operator=(const Host&) = delete;
   Host(Host&&) = delete;
