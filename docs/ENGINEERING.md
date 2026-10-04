@@ -102,6 +102,11 @@ the decisions already made in ARCHITECTURE.md:
   pipeline check against them, and attaches them to a GitHub Release —
   not run on every push, so cutting a release is a deliberate tag rather
   than automatic.
+- **Documentation site:** the `docs` workflow builds the site (MkDocs Material
+  for `docs/`, `README.md` and `CONTEXT.md`, Doxygen for the C++ API) on every
+  pull request, and publishes `main`'s on GitHub Pages (ADR-0046). `make docs`
+  builds it locally into `build/docs-site/`, with the `uv` and Doxygen both
+  bootstraps install.
 - **Release signing:** release packs are signed by the developer, on
   the developer's machine, never by a workflow. The release Ed25519
   keypair is generated offline with `augusta-keygen`. It is distinct

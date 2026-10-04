@@ -41,7 +41,8 @@ sudo apt-get install -y \
   unzip \
   tar \
   pkg-config \
-  gh
+  gh \
+  doxygen
 
 # Install uv for the pinned yamllint invocation used by the YAML hook/CI.
 if ! command -v uv >/dev/null 2>&1; then

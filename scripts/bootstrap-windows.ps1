@@ -47,6 +47,9 @@ Install-WingetPackage -Id "astral-sh.uv"
 # lints the Lua, is not on winget: it is installed further down.
 Install-WingetPackage -Id "JohnnyMorganz.StyLua" -Version "2.5.2"
 Install-WingetPackage -Id "tamasfe.taplo" -Version "0.10.0"
+# Doxygen builds the documentation site's C++ API reference (`make docs`,
+# ADR-0046), as the docs workflow does with the runner's own.
+Install-WingetPackage -Id "DimitriVanHeesch.Doxygen"
 # clang-format and clang-tidy, see docs/ENGINEERING.md, Code Quality. Back
 # the .githooks/pre-commit and .githooks/pre-push hooks below. Pinned to the
 # clang CI runs (the ubuntu-26.04 runner's distro package): another major
@@ -56,15 +59,16 @@ Install-WingetPackage -Id "tamasfe.taplo" -Version "0.10.0"
 Install-WingetPackage -Id "LLVM.LLVM" -Version "21.1.8"
 winget pin add --id LLVM.LLVM --exact --version "21.*" --force
 
-# Unlike the other packages here, LLVM's installer doesn't add itself to
-# PATH under winget's --silent flag (that's an interactive-installer
-# checkbox, unchecked by default in silent mode) - add its default
-# install location explicitly rather than relying on that checkbox.
-$llvmBin = "$env:ProgramFiles\LLVM\bin"
-if ((Test-Path $llvmBin) -and
-    ([System.Environment]::GetEnvironmentVariable("Path", "Machine") -notlike "*$llvmBin*")) {
-  $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
-  [System.Environment]::SetEnvironmentVariable("Path", "$machinePath;$llvmBin", "Machine")
+# Unlike the other packages here, LLVM's and Doxygen's installers don't add
+# themselves to PATH under winget's --silent flag (that's an
+# interactive-installer checkbox, unchecked by default in silent mode) - add
+# their default install locations explicitly rather than relying on it.
+foreach ($bin in @("$env:ProgramFiles\LLVM\bin", "$env:ProgramFiles\doxygen\bin")) {
+  if ((Test-Path $bin) -and
+      ([System.Environment]::GetEnvironmentVariable("Path", "Machine") -notlike "*$bin*")) {
+    $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+    [System.Environment]::SetEnvironmentVariable("Path", "$machinePath;$bin", "Machine")
+  }
 }
 
 # winget/MSI installers update the Machine/User PATH in the registry, but
@@ -80,7 +84,7 @@ $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";
 # found on PATH - skipping" at commit time, which is easy to miss and
 # leaves every local commit unformatted. Check now, once, instead.
 $requiredCommands = @("cmake", "ninja", "make", "git", "sccache", "uv", "clang-format", "clang-tidy",
-  "stylua", "taplo")
+  "stylua", "taplo", "doxygen")
 $missing = $requiredCommands | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) }
 if ($missing) {
   throw "Bootstrap installed packages but these commands still aren't on PATH: $($missing -join ', '). " +

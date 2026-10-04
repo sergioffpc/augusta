@@ -2,12 +2,14 @@
 
 This directory contains two separate Windows tools: `pack` cooks authored
 content into signed runtime packs, while `composer` sets up the optional USD
-authoring application and its launcher.
+authoring application and its launcher. `docs` is not a tool of its own: it
+holds how the documentation site is built (ADR-0046).
 
 | Tool | Purpose |
 |---|---|
 | [`pack/`](pack/) | Python asset cooker, signing utilities, and native cooking modules. |
 | [`composer/`](composer/) | Optional NVIDIA USD Composer setup, playback definition, and launcher. |
+| [`docs/`](docs/) | The documentation site's MkDocs hooks and Doxyfile, built by `make docs`. |
 
 ## Composer
 

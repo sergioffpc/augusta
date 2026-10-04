@@ -1,0 +1,35 @@
+# The C++ API reference of the documentation site (ADR-0046), from every header
+# under src/. Run from the repository root, after MkDocs, which cleans the site
+# folder this writes into: `make docs` runs both. Settings left out keep
+# Doxygen's defaults.
+
+PROJECT_NAME           = Augusta
+PROJECT_BRIEF          = "C++ API reference"
+
+INPUT                  = src
+FILE_PATTERNS          = *.h
+RECURSIVE              = YES
+
+OUTPUT_DIRECTORY       = build/docs-site
+HTML_OUTPUT            = api
+GENERATE_LATEX         = NO
+GENERATE_TREEVIEW      = YES
+HTML_COLORSTYLE        = AUTO_LIGHT
+
+# Paths as the repository spells them, e.g. src/modules/harness/include/augusta/harness.h.
+FULL_PATH_NAMES        = YES
+STRIP_FROM_PATH        = .
+
+# Every public symbol is listed: one whose name says everything has no comment
+# by rule (docs/agents/coding-standards.md), so a missing one is no warning.
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+WARN_IF_UNDOCUMENTED   = NO
+
+# A /// comment's first sentence is its brief description.
+JAVADOC_AUTOBRIEF      = YES
+
+QUIET                  = YES
+# A comment Doxygen cannot read fails the build, so the site never publishes it garbled.
+WARN_AS_ERROR          = FAIL_ON_WARNINGS
