@@ -15,6 +15,10 @@ HTML_OUTPUT            = api
 GENERATE_LATEX         = NO
 GENERATE_TREEVIEW      = YES
 HTML_COLORSTYLE        = AUTO_LIGHT
+# No include or inheritance graphs: they need Graphviz's dot, which Doxygen's
+# default turns on wherever dot happens to be installed, so the same Doxyfile
+# would build differently on different machines.
+HAVE_DOT               = NO
 
 # Paths as the repository spells them, e.g. src/modules/harness/include/augusta/harness.h.
 FULL_PATH_NAMES        = YES
