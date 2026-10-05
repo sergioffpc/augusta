@@ -24,10 +24,10 @@
 /// no reflection or occlusion.
 ///
 /// No output device is not an error. An Engine that cannot open one - no
-/// device on the machine, or a build with no audio output at all (Linux,
-/// whose build has no audio dependency, ADR-0010) - logs why at WARN and is
-/// silent: every method below still works and plays nothing, so the client
-/// runs the same with or without sound.
+/// device on the machine, or a build with no audio output at all (one without
+/// AUGUSTA_AUDIO_OUTPUT, as the Linux one, with no audio dependency, ADR-0010) -
+/// logs why at WARN and is silent: every method below still works and plays
+/// nothing, so the client runs the same with or without sound.
 ///
 /// Every method is called from one thread (PresentationWorld's, the
 /// Main/Render thread, ADR-0005). miniaudio mixes on its own library-owned
@@ -49,7 +49,7 @@ struct Listener {
 enum class SoundHandle : std::uint32_t {};
 
 /// Opaque handle to one playing instance of a sound, returned by Play.
-/// Valid until playback finishes or StopVoice is called with it, whichever
+/// Valid until playback finishes or Stop is called with it, whichever
 /// comes first - there is no need to hold onto a voice you won't stop early.
 enum class VoiceHandle : std::uint32_t {};
 
@@ -91,7 +91,7 @@ class Engine {
   VoiceHandle Play(SoundHandle sound);
 
   /// Stops a still-playing voice immediately. A no-op if it already finished.
-  void StopVoice(VoiceHandle voice);
+  void Stop(VoiceHandle voice);
 
  private:
   // The open device, or nullptr when silent.
