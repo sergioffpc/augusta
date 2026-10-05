@@ -115,7 +115,7 @@ void ResolveEverything(const Pack& pack) {
   }
   (void)pack.ResolveHitboxes("characters/player");
   (void)pack.ResolveCharacters();
-  (void)pack.ResolveClientPackHash();
+  (void)pack.ClientPackHash();
   (void)pack.ResolveSoundsPath();
 }
 

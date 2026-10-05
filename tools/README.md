@@ -263,11 +263,12 @@ augusta-inspect [-h] pack
 The output follows the file's own layout (ADR-0031), each section with its
 offset and size in bytes:
 
-- **Header:** magic, format version, data offset, index offset and index count.
+- **Header:** magic, format version, data offset, index offset, index count and
+  the client pack it names (a server pack's), or `none`.
 - **Data:** only its offset and size. The blobs themselves are not read.
 - **Index:** one line per entry with its type (`mesh`, `texture`, `audio`,
   `collision`, `spawn-point`, `hitbox`, `scene`, `script`, `characters`,
-  `client-pack`, `eye` or `sounds`), its offset and
+  `eye` or `sounds`), its offset and
   size within the pack, and its pack-relative path.
 - **Trailer:** the stored BLAKE3 hash and Ed25519 signature, in hex.
 
@@ -366,7 +367,7 @@ regenerate them from `tools/pack` and commit the result:
 
 ```powershell
 $golden = "..\..\tests\fixtures\example-packs"
-uv run augusta-pack augusta --assets-root examples --signing-key $golden\test.key `
+uv run augusta-pack augusta --assets-root ..\composer\examples --signing-key $golden\test.key `
   --client-output-pack $golden\client.pack --server-output-pack $golden\server.pack
 ```
 

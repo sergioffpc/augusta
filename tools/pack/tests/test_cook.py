@@ -102,7 +102,8 @@ def test_collision_geometry_is_kept_as_authored(tmp_path, key_pair):
 def test_the_server_pack_carries_the_hash_of_its_client_pack(tmp_path, key_pair):
     client, server = cook_stage("client_server_split_fixture.usda", tmp_path, key_pair)
 
-    assert server.blob(pack.CLIENT_PACK_PATH) == client.hash
+    assert server.client_pack_hash == client.hash
+    assert client.client_pack_hash is None
 
 
 def test_a_spawn_point_carries_its_local_transform(tmp_path, key_pair):

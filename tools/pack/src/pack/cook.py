@@ -36,7 +36,6 @@ from pack.pack import (
 )
 from pack.pack import ASSET_TYPE_AUDIO as _TYPE_AUDIO
 from pack.pack import ASSET_TYPE_CHARACTERS as _TYPE_CHARACTERS
-from pack.pack import ASSET_TYPE_CLIENT_PACK as _TYPE_CLIENT_PACK
 from pack.pack import ASSET_TYPE_COLLISION as _TYPE_COLLISION
 from pack.pack import ASSET_TYPE_EYE as _TYPE_EYE
 from pack.pack import ASSET_TYPE_HITBOX as _TYPE_HITBOX
@@ -51,7 +50,6 @@ from pack.pack import (
     BODY_PART_LIMB,
     BODY_PART_TORSO,
     CHARACTERS_PATH,
-    CLIENT_PACK_PATH,
     NO_PARENT,
     SOUNDS_PATH,
     TEXTURE_FORMAT_BC4,
@@ -783,14 +781,13 @@ def cook_scenario(
         raise CookError("pack_write_failed", "", f"client pack: {error}") from error
 
     # Server pack: only the collision/hitbox/spawn-point/eye entries, plus the
-    # stripped scene, the client pack's hash and the scripts.
+    # stripped scene and the scripts. Its header names the client pack's hash.
     server_entries = [entry for entry in entries if entry.type in _SERVER_PACK_ASSET_TYPES]
     server_entries.append(AssetEntry(type=_TYPE_SCENE, path="Scene", data=server_scene_blob))
     server_entries.append(characters_entry)
-    server_entries.append(AssetEntry(type=_TYPE_CLIENT_PACK, path=CLIENT_PACK_PATH, data=client_pack_hash))
     server_entries.extend(script_entries)
     try:
-        write_pack(server_output_path, server_entries, signing_key)
+        write_pack(server_output_path, server_entries, signing_key, client_pack_hash)
     except Exception as error:  # noqa: BLE001 - re-raised as CookError below
         raise CookError("pack_write_failed", "", f"server pack: {error}") from error
 

@@ -34,6 +34,19 @@ def test_a_modified_byte_is_a_hash_mismatch(tmp_path, key_pair):
         verify_pack(path, key_pair.public_key)
 
 
+def test_a_pack_names_the_client_pack_it_was_written_with_and_none_otherwise(tmp_path, key_pair):
+    client_hash = pack.write_pack(tmp_path / "client.pack", ENTRIES, key_pair.private_key)
+    pack.write_pack(tmp_path / "server.pack", ENTRIES, key_pair.private_key, client_hash)
+
+    assert verify_pack(tmp_path / "server.pack", key_pair.public_key).client_pack_hash == client_hash
+    assert verify_pack(tmp_path / "client.pack", key_pair.public_key).client_pack_hash is None
+
+
+def test_a_client_pack_hash_of_the_wrong_size_is_refused(tmp_path, key_pair):
+    with pytest.raises(pack.WriteError, match="client_pack_hash"):
+        pack.write_pack(tmp_path / "test.pack", ENTRIES, key_pair.private_key, bytes(pack.BLAKE3_HASH_SIZE - 1))
+
+
 def test_a_pack_signed_by_another_key_does_not_verify(tmp_path, key_pair):
     path = tmp_path / "test.pack"
     pack.write_pack(path, ENTRIES, key_pair.private_key)

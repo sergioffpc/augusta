@@ -32,7 +32,6 @@ ASSET_TYPE_NAMES = {
     pack.ASSET_TYPE_SCENE: "scene",
     pack.ASSET_TYPE_SCRIPT: "script",
     pack.ASSET_TYPE_CHARACTERS: "characters",
-    pack.ASSET_TYPE_CLIENT_PACK: "client-pack",
     pack.ASSET_TYPE_EYE: "eye",
     pack.ASSET_TYPE_SOUNDS: "sounds",
 }
@@ -60,6 +59,8 @@ class PackInfo:
     file_size: int
     data_offset: int
     index_offset: int
+    # The hash of the client pack its header names, None if it names none.
+    client_pack_hash: bytes | None
     entries: list[IndexEntry]
     hash: bytes
     signature: bytes
@@ -114,6 +115,14 @@ def read_pack(path: Path) -> PackInfo:
                 raise PackError("index offset is outside the pack")
             if index_count > pack.MAX_ENTRIES:
                 raise PackError(f"index count {index_count} exceeds the limit {pack.MAX_ENTRIES}")
+            flags = header.u8()
+            client_pack_hash = header.raw(pack.BLAKE3_HASH_SIZE)
+            if flags & ~pack.HEADER_HAS_CLIENT_PACK:
+                raise PackError(f"header has unknown flags {flags:#04x}")
+            if not flags & pack.HEADER_HAS_CLIENT_PACK:
+                if any(client_pack_hash):
+                    raise PackError("header holds a client pack hash it does not flag")
+                client_pack_hash = None
 
             f.seek(index_offset)
             entries = _parse_index(f.read(hashed_length - index_offset), index_offset, index_count)
@@ -128,6 +137,7 @@ def read_pack(path: Path) -> PackInfo:
         file_size=file_size,
         data_offset=data_offset,
         index_offset=index_offset,
+        client_pack_hash=client_pack_hash,
         entries=entries,
         hash=trailer[: pack.BLAKE3_HASH_SIZE],
         signature=trailer[pack.BLAKE3_HASH_SIZE :],

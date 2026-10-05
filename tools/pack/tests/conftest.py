@@ -26,6 +26,7 @@ class KeyPair:
 @dataclass(frozen=True)
 class PackContents:
     hash: bytes
+    client_pack_hash: bytes | None
     # pack-relative path -> (asset type, blob)
     entries: dict[str, tuple[int, bytes]]
 
@@ -47,7 +48,7 @@ def read_pack_contents(path: Path, public_key: bytes) -> PackContents:
     info = reader.verify_pack(path, public_key)
     data = path.read_bytes()
     entries = {entry.path: (entry.type, data[entry.offset : entry.offset + entry.size]) for entry in info.entries}
-    return PackContents(hash=info.hash, entries=entries)
+    return PackContents(hash=info.hash, client_pack_hash=info.client_pack_hash, entries=entries)
 
 
 def decode_mesh(blob: bytes) -> tuple[list[tuple[float, float, float]], list[int]]:

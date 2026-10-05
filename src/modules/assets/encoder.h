@@ -87,11 +87,13 @@ enum class WriteError {
 
 /// Writes entries into a new pack file at output_path, in ADR-0031's
 /// header/data/index/trailer write order, signing the trailer with
-/// signing_key. The write is atomic: entries are assembled into a
-/// temporary file first, which is only renamed into place at output_path
-/// once fully written.
+/// signing_key. Its header names client_pack, the hash of the client pack
+/// cooked with it, when given (a server pack's). The write is atomic: entries
+/// are assembled into a temporary file first, which is only renamed into place
+/// at output_path once fully written.
 std::expected<void, WriteError> WritePack(const std::filesystem::path& output_path,
-                                          const std::vector<AssetEntry>& entries, const Ed25519PrivateKey& signing_key);
+                                          const std::vector<AssetEntry>& entries, const Ed25519PrivateKey& signing_key,
+                                          const std::optional<PackHash>& client_pack = std::nullopt);
 
 }  // namespace augusta::assets
 
