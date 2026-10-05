@@ -4,23 +4,27 @@
 //   augusta_replay <recording> <server pack> <public key> [--across-builds]
 //
 // The pack must be the one the recording names. Without --across-builds the
-// outcome must match bit for bit, which holds on the build that recorded it;
+// outcome must match exactly, which holds on the build that recorded it;
 // with it, positions may be a grid step off (replay.h). Exits 0 when every tick
-// matches, 1 when one diverges, and 2 when the replay cannot start.
+// matches, 1 when one diverges, and 2 when the replay cannot start (the
+// recording or the pack does not load, or the pack's Map is refused).
 
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <expected>
 #include <filesystem>
 #include <fstream>
 #include <ios>
 #include <print>
 #include <span>
+#include <stdexcept>
 #include <string_view>
 #include <utility>
 
 #include "augusta/assets.h"
 #include "augusta/logging.h"
+#include "augusta/tick.h"
 #include "augusta/version.h"
 #include "content.h"
 #include "recording.h"
@@ -85,8 +89,14 @@ int Run(std::span<char*> arguments) {
                  augusta::EngineVersion());
   }
 
-  const auto replayed = augusta::server::Replay(
-      *recording, *std::move(content), across_builds ? augusta::server::kAcrossBuilds : augusta::server::kSameBuild);
+  std::expected<augusta::tick::Tick, augusta::server::Divergence> replayed;
+  try {
+    replayed = augusta::server::Replay(*recording, *std::move(content),
+                                       across_builds ? augusta::server::kAcrossBuilds : augusta::server::kSameBuild);
+  } catch (const std::runtime_error& error) {
+    std::println(stderr, "{}: {}", pack_path.string(), error.what());
+    return kCannotReplay;
+  }
   if (!replayed.has_value()) {
     const augusta::server::Divergence& divergence = replayed.error();
     std::println("diverged on tick {} of {}: {}", divergence.tick, recording->ticks.size(),

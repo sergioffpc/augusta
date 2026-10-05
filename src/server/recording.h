@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_SERVER_RECORDING_H_
 #define AUGUSTA_SERVER_RECORDING_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <istream>
@@ -29,7 +30,7 @@ namespace augusta::server {
 /// What a recording was made on.
 struct RecordingHeader {
   /// The recording engine's version (augusta::EngineVersion): a replay on
-  /// another is not held to the same bits (replay.h).
+  /// another is not held to exactly the same outcome (replay.h).
   std::string engine_version;
   /// The server pack the World's content was loaded from: a replay loads the same.
   assets::PackHash server_pack{};
@@ -79,7 +80,6 @@ struct TickOutcome {
 /// one, spawned its players at spawns.
 [[nodiscard]] TickOutcome OutcomeOf(const std::vector<math::Vec3>& spawns, const simulation::TickResult& result);
 
-/// One tick of a recording.
 struct TickRecord {
   TickInput input;
   TickOutcome outcome;
@@ -94,9 +94,13 @@ struct Recording {
   bool torn = false;
 };
 
-/// Why a recording could not be read.
+/// The longest record a recording holds, in bytes: many times the largest a
+/// tick of the most players makes, so a length past it is a corrupted one, and
+/// is refused before anything is allocated for it.
+inline constexpr std::size_t kMaxRecordSize = std::size_t{64} * 1024;
+
 enum class RecordingError : std::uint8_t {
-  /// The stream could not be read.
+  /// The stream could not be read, or was never opened.
   kUnreadable,
   /// It does not start with a header record.
   kNoHeader,
@@ -110,16 +114,20 @@ enum class RecordingError : std::uint8_t {
 /// Writes a recording to a binary stream, which it does not own: each record
 /// as its 4-byte little-endian length and its payload, the header first, and
 /// flushed after each tick, so a recording outlives a server that stops
-/// abruptly up to its last whole tick.
+/// abruptly up to its last whole tick. On the Simulation thread, as the tick
+/// that made the record (ADR-0050).
 class Recorder {
  public:
   /// Writes header to out.
   Recorder(std::ostream& out, const RecordingHeader& header);
 
+  /// Writes tick's record; a record longer than kMaxRecordSize is logged and
+  /// stops the recording, which then writes nothing more.
   void Write(const TickRecord& tick);
 
  private:
   std::ostream* out_;
+  bool stopped_ = false;
 };
 
 /// Reads a recording a Recorder wrote. A last record cut short is dropped and

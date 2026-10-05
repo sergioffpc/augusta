@@ -191,6 +191,8 @@ struct EntityState {
   float health = 0.0F;
   /// The rifle of the player who controls it.
   weapon::State rifle{};
+
+  bool operator==(const EntityState&) const = default;
 };
 
 /// One round a player fired on a tick (CONTEXT.md's Shot, ADR-0044), with its
@@ -206,6 +208,8 @@ struct Shot {
   /// Command, turned by its rifle's Recoil offset (weapon::Step).
   float yaw = 0.0F;
   float pitch = 0.0F;
+
+  bool operator==(const Shot&) const = default;
 };
 
 /// One bullet that struck a player on a tick (US-11), and what it did (US-12).
@@ -223,6 +227,8 @@ struct Hit {
   /// Whether this is the hit that took the target's health to zero: true of at
   /// most one hit on a player in a Match.
   bool reached_zero = false;
+
+  bool operator==(const Hit&) const = default;
 };
 
 /// A player's death (US-13): the Hit that took its health to zero, told with
@@ -238,6 +244,8 @@ struct Death {
   float pitch = 0.0F;
   /// Where on the victim it struck.
   ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+
+  bool operator==(const Death&) const = default;
 };
 
 /// ADR-0023/ARCHITECTURE.md's "Authoritative State" of one tick, for
@@ -319,6 +327,12 @@ class World {
   /// Takes entity's body out of the world; a no-op if it is not in it. The
   /// bullets it fired fly on.
   void RemovePlayer(EntityId entity);
+
+  /// Puts entity's body at state, on the grids, keeping its fall tracking, as
+  /// if its last tick had ended there; a no-op if it has no body in the world.
+  /// A replay across builds re-syncs each body to the recorded one with it
+  /// (ADR-0050); the server never calls it.
+  void PlaceBody(EntityId entity, const physics::BodyState& state);
 
   /// Match start (US-03): the Match in the world ends first, as EndMatch ends
   /// it, then players, which name distinct entities, each get a Spawn point of

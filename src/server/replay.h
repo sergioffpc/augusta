@@ -14,7 +14,7 @@
 /// Replaying a match recording (recording.h, ADR-0050): a fresh
 /// SimulationWorld, built from the content the recording was made on, is handed
 /// every tick's recorded input in turn, and each tick must resolve the recorded
-/// outcome. What "the same" means is the Tolerance's: bit for bit on the build
+/// outcome. What "the same" means is the Tolerance's: exactly equal on the build
 /// that recorded it, within a grid step of position on any other (PhysX and
 /// the compilers are not deterministic across builds, ADR-0045). Used by the
 /// augusta_replay tool and by the golden match test; no I/O of its own.
@@ -24,8 +24,9 @@ namespace augusta::server {
 struct Tolerance {
   /// How far, in metres per axis, a body's position and a Shot's origin may be
   /// off; a body's velocity, derived from two positions a tick apart, may be off
-  /// by twice this per tick. Every other value must be equal. 0 asks for the
-  /// same bits.
+  /// by twice this per tick. Every other value must be exactly equal. 0 asks
+  /// for every value exactly equal; above 0, each tick starts from the
+  /// recorded bodies, so an allowed difference never carries into the next.
   float position = 0.0F;
 };
 
@@ -41,6 +42,8 @@ inline constexpr Tolerance kAcrossBuilds{.position = 1.0F / 1024.0F};
 enum class DivergenceKind : std::uint8_t {
   /// The recording names a Character the content lacks.
   kUnknownCharacter,
+  /// The World numbered the tick otherwise than the recording does.
+  kTick,
   kSpawns,
   kBodies,
   kShots,
@@ -70,6 +73,10 @@ struct Divergence {
 /// Replays recording on a World built from content, loaded from the server
 /// pack the recording names, and returns how many ticks resolved their
 /// recorded outcome within tolerance: all of them, or the first that did not.
+/// With a tolerance above 0, every body is put where the recording has it
+/// after each tick that matches (simulation::World::PlaceBody). Throws
+/// std::runtime_error if content's Map is not a whole triangle list, which the
+/// server would have refused to start on.
 [[nodiscard]] std::expected<tick::Tick, Divergence> Replay(const Recording& recording, Content content,
                                                            const Tolerance& tolerance);
 

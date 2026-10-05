@@ -157,6 +157,24 @@ std::string RecordScriptedMatch() {
   return std::move(out).str();
 }
 
+// Both players walking the same way for a second, recorded: bodies that move
+// on every tick.
+std::string RecordAWalk() {
+  constexpr int kWalkTicks = 60;
+  std::ostringstream out(std::ios::binary);
+  const Content content = LoadExampleContent();
+  RecordedSimulation simulation = ExampleSimulation(LoadExampleContent(), Recorder(out, ExampleHeader()));
+  simulation.StartMatch(ExampleEntrants(content), content.scenario.spawn_points);
+  Command walk;
+  walk.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
+  for (int i = 0; i < kWalkTicks; ++i) {
+    simulation.Tick(
+        {PlayerCommand{.entity = kFirst, .command = walk}, PlayerCommand{.entity = kSecond, .command = walk}},
+        kDeltaTime);
+  }
+  return std::move(out).str();
+}
+
 Recording Read(const std::string& bytes) {
   std::istringstream in(bytes, std::ios::binary);
   auto recording = augusta::server::ReadRecording(in);
@@ -253,6 +271,11 @@ TEST(RecordingTest, ARecordThatDoesNotDecodeIsMalformed) {
   EXPECT_EQ(augusta::server::ReadRecording(in).error(), RecordingError::kMalformed);
 }
 
+TEST(RecordingTest, AFileThatCannotBeOpenedIsUnreadable) {
+  std::ifstream in(std::filesystem::temp_directory_path() / "augusta_no_such_recording.rec", std::ios::binary);
+  EXPECT_EQ(augusta::server::ReadRecording(in).error(), RecordingError::kUnreadable);
+}
+
 TEST(RecordingTest, ARecordLongerThanAnyTickCanMakeIsMalformedAndNotReadIn) {
   std::string bytes = RecordScriptedMatch();
   const auto header_size = static_cast<std::size_t>(static_cast<unsigned char>(bytes[0]));
@@ -262,7 +285,39 @@ TEST(RecordingTest, ARecordLongerThanAnyTickCanMakeIsMalformedAndNotReadIn) {
   EXPECT_EQ(augusta::server::ReadRecording(in).error(), RecordingError::kMalformed);
 }
 
-TEST(ReplayTest, ARecordingReplaysToTheSameOutcomeBitForBitOnTheBuildThatMadeIt) {
+// A build that rounds a moving body one grid step further on every tick: each
+// tick's recorded bodies are one more step along x than the last's. Replayed
+// across builds, every tick starts from the recorded bodies, so each is a
+// single step off and the difference never grows; replayed exactly, the first
+// step is a divergence.
+TEST(ReplayTest, AcrossBuildsAStepOffOnEveryTickDoesNotCompound) {
+  constexpr float kStep = 1.0F / 1024.0F;
+  Recording recording = Read(RecordAWalk());
+  for (std::size_t i = 0; i < recording.ticks.size(); ++i) {
+    for (augusta::simulation::EntityState& body : recording.ticks[i].outcome.bodies) {
+      body.body.position.x += kStep * static_cast<float>(i + 1);
+    }
+  }
+
+  const auto across = augusta::server::Replay(recording, LoadExampleContent(), kAcrossBuilds);
+  ASSERT_TRUE(across.has_value()) << "diverged on tick " << across.error().tick << ": "
+                                  << augusta::server::DescribeDivergenceKind(across.error().kind);
+  EXPECT_EQ(*across, recording.ticks.size());
+
+  const auto exact = augusta::server::Replay(recording, LoadExampleContent(), kSameBuild);
+  ASSERT_FALSE(exact.has_value());
+  EXPECT_EQ(exact.error().tick, 1U);
+}
+
+TEST(ReplayTest, ATickTheWorldNumbersOtherwiseDiverges) {
+  Recording recording = Read(RecordScriptedMatch());
+  recording.ticks[3].outcome.tick = 7;
+  const auto replayed = augusta::server::Replay(recording, LoadExampleContent(), kSameBuild);
+  ASSERT_FALSE(replayed.has_value());
+  EXPECT_EQ(replayed.error().kind, DivergenceKind::kTick);
+}
+
+TEST(ReplayTest, ARecordingReplaysToExactlyTheSameOutcomeOnTheBuildThatMadeIt) {
   const Recording recording = Read(RecordScriptedMatch());
   const auto replayed = augusta::server::Replay(recording, LoadExampleContent(), kSameBuild);
   ASSERT_TRUE(replayed.has_value()) << "diverged on tick " << replayed.error().tick << ": "

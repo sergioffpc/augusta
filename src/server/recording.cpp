@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "augusta/grid.h"
+#include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/policy_actions.h"
 #include "augusta/protocol.h"
@@ -29,9 +30,6 @@ namespace {
 constexpr std::size_t kLengthSize = 4;
 constexpr int kBitsPerByte = 8;
 constexpr std::size_t kByteMask = 0xFFU;
-// Far more than the largest record a tick of 8 players can make, so a
-// corrupted length is refused before it is allocated for.
-constexpr std::size_t kMaxRecordSize = std::size_t{64} * 1024;
 
 void WriteFrame(std::ostream& out, const protocol::BytesWire& payload) {
   std::array<char, kLengthSize> length{};
@@ -119,11 +117,26 @@ Recorder::Recorder(std::ostream& out, const RecordingHeader& header) : out_(&out
 }
 
 void Recorder::Write(const TickRecord& tick) {
-  WriteFrame(*out_, protocol::EncodeRecord(ToWire(tick)));
+  if (stopped_) {
+    return;
+  }
+  const protocol::BytesWire payload = protocol::EncodeRecord(ToWire(tick));
+  // A record ReadRecording would refuse would make every tick after it
+  // unreadable; stopping here keeps the file readable up to it.
+  if (payload.size() > kMaxRecordSize) {
+    LE("subsystem=server event=recording_stopped tick={} bytes={} reason=\"record too long\"", tick.outcome.tick,
+       payload.size());
+    stopped_ = true;
+    return;
+  }
+  WriteFrame(*out_, payload);
   out_->flush();
 }
 
 std::expected<Recording, RecordingError> ReadRecording(std::istream& in) {
+  if (!in) {
+    return std::unexpected(RecordingError::kUnreadable);
+  }
   protocol::BytesWire payload;
   if (ReadFrame(in, payload) != Frame::kRead) {
     return std::unexpected(in.bad() ? RecordingError::kUnreadable : RecordingError::kNoHeader);

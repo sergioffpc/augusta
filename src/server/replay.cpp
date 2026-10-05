@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "augusta/math.h"
-#include "augusta/policy_actions.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "content.h"
@@ -41,37 +40,27 @@ bool AllSame(const std::vector<Element>& recorded, const std::vector<Element>& r
   return true;
 }
 
-bool SameBody(const simulation::EntityState& recorded, const simulation::EntityState& replayed, float position,
+// Whether replayed is recorded, its position and velocity within their
+// tolerances and every other field equal: compared whole, so a field
+// EntityState gains is compared too.
+bool SameBody(const simulation::EntityState& recorded, simulation::EntityState replayed, float position,
               float velocity) {
-  return recorded.entity == replayed.entity && Near(recorded.body.position, replayed.body.position, position) &&
-         Near(recorded.body.velocity, replayed.body.velocity, velocity) &&
-         recorded.body.stance == replayed.body.stance && recorded.body.stamina == replayed.body.stamina &&
-         recorded.body.exhausted == replayed.body.exhausted && recorded.yaw == replayed.yaw &&
-         recorded.health == replayed.health && recorded.rifle == replayed.rifle;
-}
-
-bool SameShot(const simulation::Shot& recorded, const simulation::Shot& replayed, float position) {
-  return recorded.shooter == replayed.shooter && Near(recorded.origin, replayed.origin, position) &&
-         recorded.yaw == replayed.yaw && recorded.pitch == replayed.pitch;
-}
-
-bool SameHit(const simulation::Hit& recorded, const simulation::Hit& replayed) {
-  return recorded.shooter == replayed.shooter && recorded.target == replayed.target &&
-         recorded.damage == replayed.damage && recorded.health == replayed.health && recorded.part == replayed.part &&
-         recorded.reached_zero == replayed.reached_zero;
-}
-
-bool SameDeath(const simulation::Death& recorded, const simulation::Death& replayed) {
-  return recorded.victim == replayed.victim && recorded.killer == replayed.killer && recorded.yaw == replayed.yaw &&
-         recorded.pitch == replayed.pitch && recorded.part == replayed.part;
-}
-
-bool SameMatchEnd(const std::optional<simulation::MatchEnd>& recorded,
-                  const std::optional<simulation::MatchEnd>& replayed) {
-  if (recorded.has_value() != replayed.has_value()) {
+  if (!Near(recorded.body.position, replayed.body.position, position) ||
+      !Near(recorded.body.velocity, replayed.body.velocity, velocity)) {
     return false;
   }
-  return !recorded.has_value() || recorded->winner == replayed->winner;
+  replayed.body.position = recorded.body.position;
+  replayed.body.velocity = recorded.body.velocity;
+  return replayed == recorded;
+}
+
+// Whether replayed is recorded, its origin within position and every other field equal.
+bool SameShot(const simulation::Shot& recorded, simulation::Shot replayed, float position) {
+  if (!Near(recorded.origin, replayed.origin, position)) {
+    return false;
+  }
+  replayed.origin = recorded.origin;
+  return replayed == recorded;
 }
 
 // The players of a recorded Match start as the World takes them, their
@@ -92,12 +81,23 @@ std::optional<std::vector<simulation::MatchPlayer>> Entrants(
   return players;
 }
 
+// Puts every body of world where recorded has it, so a grid step one build
+// rounds differently from another is not carried into the next tick, where it
+// could grow: each tick of a replay across builds starts from the recorded one.
+void Resync(simulation::World& world, const TickOutcome& recorded) {
+  for (const simulation::EntityState& body : recorded.bodies) {
+    world.PlaceBody(body.entity, body.body);
+  }
+}
+
 }  // namespace
 
 std::string_view DescribeDivergenceKind(DivergenceKind kind) {
   switch (kind) {
     case DivergenceKind::kUnknownCharacter:
       return "a Match start names a character the content lacks";
+    case DivergenceKind::kTick:
+      return "the World numbered the tick otherwise";
     case DivergenceKind::kSpawns:
       return "the players spawned elsewhere";
     case DivergenceKind::kBodies:
@@ -119,6 +119,9 @@ std::optional<DivergenceKind> FindDivergence(const TickOutcome& recorded, const 
   const float position = tolerance.position;
   // Both ends of the tick's displacement may be off.
   const float velocity = delta_time > 0.0F ? 2.0F * position / delta_time : 0.0F;
+  if (recorded.tick != replayed.tick) {
+    return DivergenceKind::kTick;
+  }
   if (!AllSame(recorded.spawns, replayed.spawns,
                [&](const math::Vec3& a, const math::Vec3& b) { return Near(a, b, position); })) {
     return DivergenceKind::kSpawns;
@@ -131,13 +134,13 @@ std::optional<DivergenceKind> FindDivergence(const TickOutcome& recorded, const 
                [&](const auto& a, const auto& b) { return SameShot(a, b, position); })) {
     return DivergenceKind::kShots;
   }
-  if (!AllSame(recorded.hits, replayed.hits, SameHit)) {
+  if (recorded.hits != replayed.hits) {
     return DivergenceKind::kHits;
   }
-  if (!AllSame(recorded.deaths, replayed.deaths, SameDeath)) {
+  if (recorded.deaths != replayed.deaths) {
     return DivergenceKind::kDeaths;
   }
-  if (!SameMatchEnd(recorded.match_end, replayed.match_end)) {
+  if (recorded.match_end != replayed.match_end) {
     return DivergenceKind::kMatchEnd;
   }
   return std::nullopt;
@@ -171,6 +174,9 @@ std::expected<tick::Tick, Divergence> Replay(const Recording& recording, Content
     if (const auto kind = FindDivergence(record.outcome, replayed, input.delta_time, tolerance); kind.has_value()) {
       return std::unexpected(Divergence{
           .tick = record.outcome.tick, .kind = *kind, .recorded = record.outcome, .replayed = std::move(replayed)});
+    }
+    if (tolerance.position > 0.0F) {
+      Resync(world, record.outcome);
     }
   }
   return static_cast<tick::Tick>(recording.ticks.size());

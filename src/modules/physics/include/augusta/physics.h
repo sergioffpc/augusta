@@ -97,6 +97,8 @@ struct BodyState {
   /// StaminaConfig::forced_walk_below: while set, sprint is ignored. It changes
   /// what the next commands do, so it travels and is restored with the rest.
   bool exhausted = false;
+
+  bool operator==(const BodyState&) const = default;
 };
 
 /// Tunable balance values governing stamina depletion/recovery (US-05).
