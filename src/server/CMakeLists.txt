@@ -97,8 +97,35 @@ target_link_libraries(augustad_runtime
 )
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)
 
+# What a crash leaves in the log: the fatal signal and a symbolized stack
+# (ADR-0047). Abseil symbolizes, being async-signal-safe where the
+# alternatives (std::stacktrace, Boost.Stacktrace) allocate.
+find_package(absl CONFIG REQUIRED)
+add_library(augustad_crash STATIC
+  crash.cpp
+)
+target_include_directories(augustad_crash PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(augustad_crash PRIVATE absl::stacktrace absl::symbolize)
+# crash.cpp writes through <windows.h> there; keep its min/max macros out of the
+# way of the standard library.
+target_compile_definitions(augustad_crash PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+augusta_set_module_scope(augustad_crash SERVER_ONLY)
+
 add_executable(augustad main.cpp)
-target_link_libraries(augustad PRIVATE augusta_assets augusta_config augustad_content augusta_parameters augusta_version augusta_logging augusta_networking augustad_runtime)
+target_link_libraries(augustad PRIVATE augusta_assets augusta_config augustad_content augustad_crash augusta_parameters augusta_version augusta_logging augusta_networking augustad_runtime)
+
+# On Linux the debug info is split off into augustad.debug beside it (ADR-0047):
+# the binary keeps its symbol table, which the crash handler symbolizes with,
+# and a .gnu_debuglink naming the file. The build ID is what matches a core
+# dump to the binary and its debug info.
+if (NOT WIN32)
+  target_link_options(augustad PRIVATE -Wl,--build-id=sha1)
+  add_custom_command(TARGET augustad POST_BUILD
+    COMMAND ${CMAKE_OBJCOPY} --only-keep-debug $<TARGET_FILE:augustad> $<TARGET_FILE:augustad>.debug
+    COMMAND ${CMAKE_OBJCOPY} --strip-debug --add-gnu-debuglink=$<TARGET_FILE:augustad>.debug $<TARGET_FILE:augustad>
+    VERBATIM
+  )
+endif()
 
 # `cmake --install` puts augustad in the prefix's bin directory (DESTDIR
 # honoured), which is how the Dockerfile's image gets it. On Windows the vcpkg

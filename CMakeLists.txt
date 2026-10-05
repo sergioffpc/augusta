@@ -30,6 +30,11 @@ if (MSVC)
   add_compile_options(/W4 /WX /EHsc)
 else()
   add_compile_options(-Wall -Wextra -Werror)
+  # Release keeps its debug info, which src/server splits off augustad: what a
+  # crash's core dump is read with (ADR-0047). Every target, not just augustad's
+  # own: a core's frames are mostly in the module libraries it links, and
+  # without theirs gdb has no file, line or local for them.
+  add_compile_options($<$<CONFIG:Release>:-g>)
 endif()
 
 # flecs/GameNetworkingSockets/PhysX back the client/server shared runtime

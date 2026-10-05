@@ -53,6 +53,12 @@ RUN cmake --preset linux \
     && cmake --build --preset linux --target augustad \
     && DESTDIR=/workspace/stage cmake --install build/x64-linux --prefix /usr/local
 
+# The debug info the build split off augustad (ADR-0047), alone: CI publishes
+# it as the image's sha-<12>-debuginfo tag, what reads a core dump of the
+# binary below. Not the last stage, so a plain build still makes the runtime.
+FROM scratch AS debuginfo
+COPY --from=build /workspace/build/x64-linux/src/server/augustad.debug /
+
 # Runtime stage: just what `cmake --install` staged and the shared libraries
 # it links against (vcpkg's own dependencies are linked statically) - no build
 # toolchain, no vcpkg source tree.
@@ -65,10 +71,15 @@ FROM ubuntu:26.04 AS runtime
 RUN apt-get update && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends \
       libstdc++6 \
+      tini \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --no-create-home --shell /usr/sbin/nologin augusta
 
 COPY --from=build /workspace/stage/ /
 
 USER augusta
-ENTRYPOINT ["/usr/local/bin/augustad"]
+# tini is PID 1, not augustad: the kernel drops a signal PID 1 sends itself
+# with no handler for it, so augustad re-raising a fatal signal from its crash
+# handler would neither end it nor dump its core (ADR-0047). tini forwards
+# SIGTERM to augustad and exits with its status.
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/augustad"]

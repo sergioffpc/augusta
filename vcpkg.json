@@ -2,6 +2,7 @@
   "name": "augusta",
   "version": "1.0.0",
   "dependencies": [
+    "abseil",
     "benchmark",
     "blake3",
     "boost-dll",
