@@ -55,6 +55,7 @@ def on_config(config):
         {"Runbooks": runbooks},
         {"Decisions (ADRs)": adrs},
         {"API reference": "api/"},
+        {"Benchmarks": "benchmarks/"},
     ]
     return config
 

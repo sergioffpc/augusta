@@ -11,6 +11,21 @@ gtest_discover_tests(augusta_logging_tests)
 add_executable(augusta_version_benchmarks version_benchmark.cpp)
 target_link_libraries(augusta_version_benchmarks PRIVATE augusta_version benchmark::benchmark benchmark::benchmark_main)
 
+# The hot paths the nightly times and keeps the history of (ADR-0013): one
+# binary, so one run gives one result file for the whole set.
+add_executable(augusta_benchmarks
+  ballistics_benchmark.cpp
+  pack_benchmark.cpp
+  protocol_benchmark.cpp
+  simulation_benchmark.cpp)
+# The tick runs the example scenario's Game policy, as the server loads it from
+# its golden server pack.
+target_link_libraries(augusta_benchmarks PRIVATE
+  augusta_assets augusta_ballistics augusta_protocol augusta_simulation augustad_policy_loader
+  benchmark::benchmark benchmark::benchmark_main)
+target_compile_definitions(augusta_benchmarks PRIVATE
+  AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs")
+
 add_executable(augusta_tick_tests tick_test.cpp)
 target_link_libraries(augusta_tick_tests PRIVATE augusta_tick GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_tick_tests)
