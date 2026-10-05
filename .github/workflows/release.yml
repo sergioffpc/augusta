@@ -7,6 +7,10 @@ permissions:
   packages: write
   # Deleting superseded cache entries (.github/actions/prune-cache).
   actions: write
+  # Signing the binaries' provenance and SBOM attestations (Sigstore, through
+  # the workflow's OIDC token) and storing them in the repository.
+  id-token: write
+  attestations: write
 env:
   VCPKG_BINARY_SOURCES: "clear;nuget,GitHubPackages,readwrite"
   SCCACHE_GHA_ENABLED: "true"
@@ -50,10 +54,30 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item build\x64-windows\src\client\augustac.exe dist\augustac-windows-x64.exe
+      # Falcor and NVTX are submodules, not vcpkg ports, so they are named by
+      # their commits. What Falcor itself fetches with packman is not listed.
+      - name: SBOM
+        shell: pwsh
+        run: |
+          python scripts/vcpkg-sbom.py --name augustac --version $env:GITHUB_REF_NAME `
+            --repo "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY" --commit $env:GITHUB_SHA `
+            --git-package third_party/falcor --git-package third_party/nvtx `
+            build/x64-windows/vcpkg_installed/x64-windows > dist/augustac-windows-x64.spdx.json
+      - name: Attest provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/augustac-windows-x64.exe
+      - name: Attest SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/augustac-windows-x64.exe
+          sbom-path: dist/augustac-windows-x64.spdx.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: client-binary
-          path: dist/augustac-windows-x64.exe
+          path: |
+            dist/augustac-windows-x64.exe
+            dist/augustac-windows-x64.spdx.json
   server:
     runs-on: ubuntu-26.04
     # See ci.yml's server job for why this isn't the workflow-level
@@ -80,10 +104,26 @@ jobs:
         run: |
           mkdir -p dist
           cp build/x64-linux/src/server/augustad dist/augustad-linux-x64
+      - name: SBOM
+        run: |
+          python3 scripts/vcpkg-sbom.py --name augustad --version "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
+            build/x64-linux/vcpkg_installed/x64-linux > dist/augustad-linux-x64.spdx.json
+      - name: Attest provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/augustad-linux-x64
+      - name: Attest SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/augustad-linux-x64
+          sbom-path: dist/augustad-linux-x64.spdx.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: server-binary
-          path: dist/augustad-linux-x64
+          path: |
+            dist/augustad-linux-x64
+            dist/augustad-linux-x64.spdx.json
   tools:
     # The cooker's half of the pack contract: its pytest suite, which requires
     # that cooking the example scenario still gives the golden packs the
@@ -139,7 +179,9 @@ jobs:
         run: |
           gh release create "${{ github.ref_name }}" \
             dist/client-binary/augustac-windows-x64.exe \
+            dist/client-binary/augustac-windows-x64.spdx.json \
             dist/server-binary/augustad-linux-x64 \
+            dist/server-binary/augustad-linux-x64.spdx.json \
             --repo "${{ github.repository }}" \
             --title "${{ github.ref_name }}" \
             --notes-file "$RUNNER_TEMP/notes.md"
