@@ -91,9 +91,12 @@ class ExampleServer {
     }
     parameters::Parameters parameters = content->parameters;
     parameters.player_count = player_count;
-    host_.emplace(
-        server::HostConfig{.tick_rate_hz = kTickRate, .parameters = parameters, .listen = {.address = "127.0.0.1:0"}},
-        *std::move(content));
+    host_.emplace(server::HostConfig{.tick_rate_hz = kTickRate,
+                                     .parameters = parameters,
+                                     .listen = {.address = "127.0.0.1:0"},
+                                     .recording = {},
+                                     .server_pack = {}},
+                  *std::move(content));
   }
 
   // A run of Scripted players against it through the example's client pack,
