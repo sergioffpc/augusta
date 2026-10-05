@@ -200,42 +200,28 @@ pipeline).
 
 - **Model:** a single shared checkout on the Windows filesystem (NTFS) is
   used by both sides — no separate clones.
-- **Client↔server local testing:** WSL2's default NAT networking gives the
-  WSL VM its own IP, separate from the Windows host's `127.0.0.1` — a
-  native Windows `augustac` can't reach a WSL-hosted `augustad` on
-  `127.0.0.1` without it (UDP localhost forwarding, unlike TCP's, isn't
-  reliable across WSL2 versions). Enable WSL2's mirrored networking mode
-  instead, so the WSL VM shares the host's network interfaces (including
-  loopback): add to `%UserProfile%\.wslconfig`
-  ```ini
-  [wsl2]
-  networkingMode=mirrored
-  ```
-  then `wsl --shutdown` and restart WSL. After that, `127.0.0.1:<port>`
-  reaches a WSL-hosted `augustad` from a native Windows `augustac`, no
-  need to look up the WSL VM's IP. Requires a reasonably recent
-  Windows 11 + WSL2 version; confirm with `wsl --version`.
-- **Server / shared core (Linux, via WSL2):** develop and build directly
-  inside WSL2, accessing the repo via `/mnt/c/...`. A
-  `scripts/bootstrap-wsl.sh` setup script installs clang (ADR-0008), CMake, Ninja,
-  uv (for yamllint), standalone yamlfmt, StyLua, luacheck and taplo, vcpkg, clang-tidy, clang-format,
-  gdb, GitHub CLI, kubectl, and helm
-  directly into the WSL environment. It requires the Ubuntu release CI's
-  runner uses, whose distro packages fix the same LLVM major as CI's. The cross-filesystem access cost
-  (`/mnt/c`) is accepted here, since this side has the lighter build
-  (no Falcor, D3D12, or Steam Audio).
-- **Server / shared core (dev container, alternative):** `.devcontainer/`
-  gives the same side as a container, for VS Code or Codespaces, without
-  mutating a host: CI's runner Ubuntu release with the toolchain
-  `.github/actions/setup-linux-build` installs (kept in step with it by hand),
-  the hooks' formatters and linters (`scripts/install-lint-tools.sh`, shared
-  with the WSL bootstrap), and CI's Linux vcpkg binary cache configuration (a
-  files provider in the checkout's `.vcpkg-bincache`). sccache's cache lives in
-  a volume shared by every container of the repository; the build trees in a
-  volume per container, so they never collide with a WSL build of the same
-  checkout. The client has no container equivalent (see below).
+- **Client↔server local testing:** the dev container publishes `augustad`'s
+  default listen port (UDP 27015) on the host, so a native Windows `augustac`
+  reaches a container-hosted `augustad` at `127.0.0.1:27015`. Published
+  rather than forwarded: VS Code's port forwarding is TCP-only.
+- **Server / shared core (Linux, dev container):** `.devcontainer/` gives
+  this side as a container, for VS Code or Codespaces, without mutating a
+  host: CI's runner Ubuntu release, whose distro packages fix the same LLVM
+  major as CI's, with the toolchain `.github/actions/setup-linux-build`
+  installs (kept in step with it by hand), clang (ADR-0008), CMake, Ninja,
+  vcpkg, clang-tidy, clang-format, gdb, GitHub CLI, kubectl, helm, Doxygen,
+  the hooks' formatters and linters (uv for yamllint, standalone yamlfmt,
+  StyLua, luacheck and taplo, at CI's pinned versions), and CI's Linux
+  vcpkg binary cache configuration (a files provider in the checkout's
+  `.vcpkg-bincache`). The image builds for the host's architecture (amd64
+  or arm64) rather than emulating CI's amd64. sccache's cache lives in a volume shared by every
+  container of the repository; the build trees in a volume per container, so
+  they never collide with a Windows build of the same checkout. One
+  environment, not a container beside a WSL bootstrap: two recipes for the
+  same toolchain drift apart. The client has no container equivalent (see
+  below).
 - **Client (Windows, native):** built and run natively — never
-  cross-compiled from WSL/Linux (not viable given Falcor/D3D12/NVIDIA
+  cross-compiled from Linux (not viable given Falcor/D3D12/NVIDIA
   SDK's MSVC-specific toolchain assumptions). A
   `scripts/bootstrap-windows.ps1` script (winget-driven) installs Visual
   Studio Build Tools system-wide (default install location) — simpler
@@ -268,7 +254,7 @@ pipeline).
   recommended extensions (C++ tools, CMake Tools, clangd/clang-format,
   EditorConfig, Lua, YAML/Helm, GitHub Actions) — VS Code
   prompts to install these whenever the folder is opened, on either
-  side (WSL remote or native Windows); the dev container installs the
+  side (dev container or native Windows); the dev container installs the
   Linux-relevant subset itself.
 - **Dependency hermeticity:** the `vcpkg.json` manifest (ADR-0025) is what
   actually makes dependency acquisition reproducible on both sides —

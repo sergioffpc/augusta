@@ -1,4 +1,0 @@
-# The build context is the repository root, for the one script the image runs;
-# sending the rest (the submodules, build trees) would only slow every build.
-*
-!scripts/install-lint-tools.sh

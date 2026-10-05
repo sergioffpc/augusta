@@ -17,8 +17,8 @@ deploying the server onto the self-hosted k3s cluster.
 - `vcpkg.json` manifest + CMake toolchain wiring
 - Windows bootstrap script (`scripts/bootstrap-windows.ps1`): VS Build
   Tools installed system-wide, Windows SDK, CMake, Ninja, Git, vcpkg
-- WSL bootstrap script (`scripts/bootstrap-wsl.sh`): CMake, Ninja, vcpkg,
-  clang-tidy, clang-format, gdb, GitHub CLI, kubectl, helm
+- Linux dev container (`.devcontainer/`): CMake, Ninja, vcpkg, clang-tidy,
+  clang-format, gdb, GitHub CLI, kubectl, helm
 - `.vscode/extensions.json` recommended extensions
 - GitHub Actions CI pipeline: build+test client (Windows runner) and
   server (Linux runner), clang-format/clang-tidy, warnings-as-errors,

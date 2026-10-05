@@ -5,24 +5,26 @@
 {
   "name": "Augusta server (Linux)",
   "build": {
-    "dockerfile": "Dockerfile",
-    "context": ".."
+    "dockerfile": "Dockerfile"
   },
   "remoteUser": "ubuntu",
   "containerEnv": {
     // CI's server job's binary cache: a files provider in the checkout's
     // gitignored .vcpkg-bincache (the job's env says why not the NuGet feed).
-    // A WSL build of the same checkout shares it, with the same toolchain.
     "VCPKG_BINARY_SOURCES": "clear;files,${containerWorkspaceFolder}/.vcpkg-bincache,readwrite"
   },
   "mounts": [
     // sccache's default cache directory, in a volume every container of the
     // repository shares, so a rebuilt container keeps its compiled objects.
     "source=augusta-sccache,target=/home/ubuntu/.cache/sccache,type=volume",
-    // The build trees, one volume per container: a host or WSL build of the same
+    // The build trees, one volume per container: a host build of the same
     // checkout keeps its own build/, whose CMake caches name other paths.
     "source=augusta-build-${devcontainerId},target=${containerWorkspaceFolder}/build,type=volume"
   ],
+  // augustad's default listen port (config/augustad.example.yaml), published
+  // on the host so a native Windows augustac reaches it at 127.0.0.1:27015.
+  // UDP, which forwardPorts doesn't forward.
+  "appPort": ["27015:27015/udp"],
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   "customizations": {
     "vscode": {
