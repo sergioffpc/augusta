@@ -63,9 +63,9 @@ VoiceHandle Engine::Play(SoundHandle sound, const math::Vec3& world_position) {
 
 VoiceHandle Engine::Play(SoundHandle sound) { return output_ ? output_->Play(sound, std::nullopt) : VoiceHandle{}; }
 
-void Engine::StopVoice(VoiceHandle voice) {
+void Engine::Stop(VoiceHandle voice) {
   if (output_) {
-    output_->StopVoice(voice);
+    output_->Stop(voice);
   }
 }
 

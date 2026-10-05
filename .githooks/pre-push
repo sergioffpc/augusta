@@ -70,7 +70,7 @@ files=$(echo "$files" | grep -E '^src/.*\.cpp$' |
   { if [ "$windows" = 1 ]; then
       grep -vxE 'src/modules/(physics/physics|audio/output_none)\.cpp'
     else
-      grep -vxE 'src/modules/audio/(output_windows|miniaudio)\.cpp'
+      grep -vxE 'src/modules/audio/(output_miniaudio|miniaudio)\.cpp'
     fi; } |
   sort -u |
   while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)

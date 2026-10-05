@@ -20,7 +20,7 @@
 #include "augusta/math.h"
 #include "output.h"
 
-// The Windows output device: miniaudio opens it and calls Mix on its own audio
+// The output device: miniaudio opens it and calls Mix on its own audio
 // thread for every period; Mix spatializes each voice through its own Steam
 // Audio binaural effect (HRTF) and sums them into the period. The Main/Render
 // thread only starts and stops voices and moves the listener, under mutex_.
@@ -76,15 +76,15 @@ struct Voice {
   IPLBinauralEffect effect = nullptr;
 };
 
-class WindowsOutput final : public Output {
+class MiniaudioOutput final : public Output {
  public:
-  WindowsOutput() = default;
-  ~WindowsOutput() override;
+  MiniaudioOutput() = default;
+  ~MiniaudioOutput() override;
 
-  WindowsOutput(const WindowsOutput&) = delete;
-  WindowsOutput& operator=(const WindowsOutput&) = delete;
-  WindowsOutput(WindowsOutput&&) = delete;
-  WindowsOutput& operator=(WindowsOutput&&) = delete;
+  MiniaudioOutput(const MiniaudioOutput&) = delete;
+  MiniaudioOutput& operator=(const MiniaudioOutput&) = delete;
+  MiniaudioOutput(MiniaudioOutput&&) = delete;
+  MiniaudioOutput& operator=(MiniaudioOutput&&) = delete;
 
   // Creates Steam Audio's context and HRTF, then opens and starts the device.
   std::optional<OutputError> Open();
@@ -93,7 +93,7 @@ class WindowsOutput final : public Output {
   void UnloadSound(SoundHandle sound) override;
   void SetListener(const Listener& listener) override;
   VoiceHandle Play(SoundHandle sound, const std::optional<math::Vec3>& position) override;
-  void StopVoice(VoiceHandle voice) override;
+  void Stop(VoiceHandle voice) override;
 
  private:
   static void OnData(ma_device* device, void* output, const void* input, ma_uint32 frame_count);
@@ -129,7 +129,7 @@ class WindowsOutput final : public Output {
   std::array<float, kFrameSize> right_{};
 };
 
-WindowsOutput::~WindowsOutput() {
+MiniaudioOutput::~MiniaudioOutput() {
   if (device_open_) {
     // Stops the audio thread: nothing calls Mix after this.
     ma_device_uninit(&device_);
@@ -146,7 +146,7 @@ WindowsOutput::~WindowsOutput() {
   }
 }
 
-std::optional<OutputError> WindowsOutput::Open() {
+std::optional<OutputError> MiniaudioOutput::Open() {
   IPLContextSettings context_settings{};
   context_settings.version = STEAMAUDIO_VERSION;
   context_settings.simdLevel = IPL_SIMDLEVEL_AVX2;
@@ -170,7 +170,7 @@ std::optional<OutputError> WindowsOutput::Open() {
   config.sampleRate = kSampleRate;
   // With miniaudio's default fixed-size callback, every Mix is one Steam Audio frame.
   config.periodSizeInFrames = kFrameSize;
-  config.dataCallback = &WindowsOutput::OnData;
+  config.dataCallback = &MiniaudioOutput::OnData;
   config.pUserData = this;
   if (const ma_result result = ma_device_init(nullptr, &config, &device_); result != MA_SUCCESS) {
     return OutputError{.step = OutputStep::kDevice, .code = static_cast<std::int32_t>(result)};
@@ -182,7 +182,7 @@ std::optional<OutputError> WindowsOutput::Open() {
   return std::nullopt;
 }
 
-SoundHandle WindowsOutput::LoadSound(const assets::AudioData& sound) {
+SoundHandle MiniaudioOutput::LoadSound(const assets::AudioData& sound) {
   const SoundHandle handle{next_sound_++};
   std::vector<float>& samples = sounds_[static_cast<std::uint32_t>(handle)];
   const auto bytes_per_sample = static_cast<std::uint8_t>(sound.bits_per_sample / kBitsPerByte);
@@ -201,7 +201,7 @@ SoundHandle WindowsOutput::LoadSound(const assets::AudioData& sound) {
   return handle;
 }
 
-void WindowsOutput::UnloadSound(SoundHandle sound) {
+void MiniaudioOutput::UnloadSound(SoundHandle sound) {
   {
     const std::lock_guard<std::mutex> lock(mutex_);
     for (Voice& voice : voices_) {
@@ -215,7 +215,7 @@ void WindowsOutput::UnloadSound(SoundHandle sound) {
   sounds_.erase(static_cast<std::uint32_t>(sound));
 }
 
-void WindowsOutput::SetListener(const Listener& listener) {
+void MiniaudioOutput::SetListener(const Listener& listener) {
   {
     const std::lock_guard<std::mutex> lock(mutex_);
     listener_ = listener;
@@ -223,7 +223,7 @@ void WindowsOutput::SetListener(const Listener& listener) {
   ReleaseRetired();
 }
 
-VoiceHandle WindowsOutput::Play(SoundHandle sound, const std::optional<math::Vec3>& position) {
+VoiceHandle MiniaudioOutput::Play(SoundHandle sound, const std::optional<math::Vec3>& position) {
   const auto found = sounds_.find(static_cast<std::uint32_t>(sound));
   if (found == sounds_.end() || found->second.empty()) {
     return VoiceHandle{};
@@ -251,7 +251,7 @@ VoiceHandle WindowsOutput::Play(SoundHandle sound, const std::optional<math::Vec
   return handle;
 }
 
-void WindowsOutput::StopVoice(VoiceHandle voice) {
+void MiniaudioOutput::Stop(VoiceHandle voice) {
   {
     const std::lock_guard<std::mutex> lock(mutex_);
     const auto found = std::ranges::find(voices_, voice, &Voice::handle);
@@ -263,14 +263,14 @@ void WindowsOutput::StopVoice(VoiceHandle voice) {
   ReleaseRetired();
 }
 
-void WindowsOutput::Retire(Voice& voice) {
+void MiniaudioOutput::Retire(Voice& voice) {
   if (voice.effect != nullptr) {
     retired_.push_back(voice.effect);
     voice.effect = nullptr;
   }
 }
 
-void WindowsOutput::ReleaseRetired() {
+void MiniaudioOutput::ReleaseRetired() {
   std::vector<IPLBinauralEffect> released;
   {
     const std::lock_guard<std::mutex> lock(mutex_);
@@ -285,11 +285,12 @@ void WindowsOutput::ReleaseRetired() {
   }
 }
 
-void WindowsOutput::OnData(ma_device* device, void* output, [[maybe_unused]] const void* input, ma_uint32 frame_count) {
-  static_cast<WindowsOutput*>(device->pUserData)->Mix(static_cast<float*>(output), frame_count);
+void MiniaudioOutput::OnData(ma_device* device, void* output, [[maybe_unused]] const void* input,
+                             ma_uint32 frame_count) {
+  static_cast<MiniaudioOutput*>(device->pUserData)->Mix(static_cast<float*>(output), frame_count);
 }
 
-void WindowsOutput::Mix(float* output, ma_uint32 frame_count) {
+void MiniaudioOutput::Mix(float* output, ma_uint32 frame_count) {
   std::fill_n(output, static_cast<std::size_t>(frame_count) * kChannels, 0.0F);
   const std::lock_guard<std::mutex> lock(mutex_);
   // miniaudio's fixed-size callback makes frame_count kFrameSize; any other
@@ -308,7 +309,7 @@ void WindowsOutput::Mix(float* output, ma_uint32 frame_count) {
   std::erase_if(voices_, [](const Voice& voice) { return voice.cursor >= voice.samples->size(); });
 }
 
-void WindowsOutput::MixVoice(Voice& voice, float* output, ma_uint32 frame_count) {
+void MiniaudioOutput::MixVoice(Voice& voice, float* output, ma_uint32 frame_count) {
   const std::vector<float>& samples = *voice.samples;
   const std::size_t count = std::min<std::size_t>(frame_count, samples.size() - std::min(voice.cursor, samples.size()));
   std::ranges::fill(mono_, 0.0F);
@@ -351,7 +352,7 @@ void WindowsOutput::MixVoice(Voice& voice, float* output, ma_uint32 frame_count)
 }  // namespace
 
 std::expected<std::unique_ptr<Output>, OutputError> OpenOutput() {
-  auto output = std::make_unique<WindowsOutput>();
+  auto output = std::make_unique<MiniaudioOutput>();
   if (const std::optional<OutputError> error = output->Open(); error.has_value()) {
     return std::unexpected(*error);
   }
