@@ -44,27 +44,21 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 Open a new terminal after setup. The Makefile loads the Visual Studio Build
 Tools environment automatically for each command on Windows.
 
-**WSL2 (server / shared core):** use Ubuntu 26.04 under WSL2:
-```bash
-./scripts/bootstrap-wsl.sh
-```
+**Dev container (server / shared core):** open the repository in VS Code's
+Dev Containers or in GitHub Codespaces. The container reproduces CI's Linux
+build environment, so `make test` builds and tests the `linux` preset with
+nothing else to install. The first build compiles the vcpkg dependencies; later
+ones reuse them from `.vcpkg-bincache`, and sccache's objects from a volume.
 
-Both scripts initialize the vendored submodules and configure the Conventional
-Commits `commit-msg` hook.
-
-**Dev container (server / shared core, alternative to WSL2):** open the
-repository in VS Code's Dev Containers or in GitHub Codespaces. The container
-reproduces CI's Linux build environment, so `make test` builds and tests the
-`linux` preset with nothing else to install. The first build compiles the vcpkg
-dependencies; later ones reuse them from `.vcpkg-bincache`, and sccache's
-objects from a volume.
+Both the Windows bootstrap and the container initialize the vendored submodules
+and configure the Conventional Commits `commit-msg` hook.
 
 ### Build and Run
 
 The [Makefile](Makefile) wraps the build presets. On Windows it loads the
 Visual Studio Build Tools environment through [scripts/vcenv.ps1](scripts/vcenv.ps1).
 
-Build and start the Linux server in WSL first. Leave it running, listening on
+Build and start the Linux server in the dev container first. Leave it running, listening on
 the configured address (the default client connects to `127.0.0.1:27015`):
 ```bash
 make
@@ -80,7 +74,7 @@ make
 
 Create each local YAML from its `*.example.yaml` file and edit its pack and
 public-key paths to point to cooked content before running. `make` builds the
-default release preset (`windows` on Windows, `linux` on WSL). To install the
+default release preset (`windows` on Windows, `linux` on Linux). To install the
 server, use `make install prefix=C:/augusta` on Windows or choose a Unix-style
 prefix on Linux.
 
@@ -99,6 +93,16 @@ make PRESET=linux-fuzz
 ```
 [tests/fuzz/README.md](tests/fuzz/README.md) explains how to run them.
 
+The `linux-coverage` preset measures the tests' coverage (ADR-0013). In VS
+Code, select it and run "Test: Run All Tests with Coverage": CMake Tools shows
+the result in the editor and the Test Coverage view. From a shell:
+```bash
+cmake --preset linux-coverage && cmake --build --preset linux-coverage
+ctest --preset linux-coverage
+scripts/coverage-report.sh   # HTML and LCOV in build/x64-linux-coverage/report
+```
+The nightly uploads the same report as its `coverage-report` artifact.
+
 Other useful checks:
 ```bash
 make format-check
@@ -113,6 +117,7 @@ make lint
 - [ENGINEERING.md](docs/ENGINEERING.md) — engineering practices, CI/CD, workflow
 - [ROADMAP.md](docs/ROADMAP.md) — milestone-driven roadmap
 - [CONTEXT.md](CONTEXT.md) — domain glossary
+- [docs/runbooks/](docs/runbooks/) — procedures for rollbacks, key rotation, node recovery and releases
 - [docs/adr/](docs/adr/) — architecture decision records
 
 ## License

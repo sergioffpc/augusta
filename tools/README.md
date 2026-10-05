@@ -1,14 +1,17 @@
 # Tools
 
-This directory contains two separate Windows tools: `pack` cooks authored
-content into signed runtime packs, while `composer` sets up the optional USD
-authoring application and its launcher. `docs` is not a tool of its own: it
-holds how the documentation site is built (ADR-0046).
+This directory contains three separate tools: `pack` cooks authored content
+into signed runtime packs, `composer` sets up the optional USD authoring
+application and its launcher (both Windows), and `loadtest` builds
+`augusta-loadtest`, which fills a server with Scripted players for load and
+end-to-end tests. `docs` is not a tool of its own: it holds how the
+documentation site is built (ADR-0046).
 
 | Tool | Purpose |
 |---|---|
 | [`pack/`](pack/) | Python asset cooker, signing utilities, and native cooking modules. |
 | [`composer/`](composer/) | Optional NVIDIA USD Composer setup, playback definition, and launcher. |
+| [`loadtest/`](loadtest/) | `augusta-loadtest`: the Scripted players, a server's worth of headless clients. |
 | [`docs/`](docs/) | The documentation site's MkDocs hooks and Doxyfile, built by `make docs`. |
 
 ## Composer
@@ -365,4 +368,40 @@ regenerate them from `tools/pack` and commit the result:
 $golden = "..\..\tests\fixtures\example-packs"
 uv run augusta-pack augusta --assets-root examples --signing-key $golden\test.key `
   --client-output-pack $golden\client.pack --server-output-pack $golden\server.pack
+```
+
+## Loadtest
+
+`augusta-loadtest` plays the scenario's Player count of Scripted players (see
+[CONTEXT.md](../CONTEXT.md)) against a running `augustad` until every one has
+seen a number of Match ends, then exits 0; it exits 1 as soon as one fails or a
+timeout passes (ADR-0013). Each player is a client with no window or GPU: it
+predicts and sends its Commands like `augustac`, but decides them itself from
+what the server tells it, from a seed. Unlike the other tools it is C++ built
+with the engine, on Windows and Linux, but only when asked for, and never in
+CI:
+
+```powershell
+cmake --preset windows-tools
+cmake --build --preset windows-tools
+# build/x64-windows-tools/tools/loadtest/augusta-loadtest.exe
+```
+
+It reads `augusta-loadtest.yaml` next to the executable, or the file
+`--config` names (ADR-0034); copy
+[`loadtest/augusta-loadtest.example.yaml`](loadtest/augusta-loadtest.example.yaml),
+which documents every key. Its pack must be the client pack cooked with the
+server's, and its scenario's Player count 2 or more: a Match of one ends only
+when its player dies, which nothing in it can cause. The example scenario's is
+1, so a single player can run it alone.
+
+On Linux the presets are `linux-tools`, and the executable lands in
+`build/x64-linux-tools/tools/loadtest/`.
+
+Its tests are in [`loadtest/tests/`](loadtest/tests/). In a tools build they
+join `augusta_tests`, and `ctest` runs them with the engine's:
+
+```powershell
+cmake --build --preset windows-tools --target augusta_tests
+ctest --preset windows-tools
 ```

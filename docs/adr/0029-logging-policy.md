@@ -23,7 +23,8 @@ process-wide `"augusta"` logger (ADR-0027) is kept rather than one logger
 per module, so the console pattern is fixed here rather than left open as
 ADR-0027 did: `<UTC ISO-8601 time> <LEVEL> <message>`, e.g.
 `2024-02-01T12:00:00Z INFO subsystem=client event=starting` (see
-`augusta::logging::FormatLine`).
+`augusta::logging::FormatLine`). The lines a crash writes from its signal
+handler, which cannot use the sink, keep the same pattern (ADR-0047).
 
 No level is a safe place for credentials or session/auth tokens - this
 applies unconditionally, including `TRACE`. Peer IPs are fine to log

@@ -4,6 +4,9 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <functional>
+#include <map>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -171,6 +174,54 @@ std::expected<ClientConfig, ConfigError> LoadClientConfig(const std::filesystem:
 /// Reads and parses the server config at file; its `base_dir` is relative to
 /// file's directory. Errors carry file.
 std::expected<ServerConfig, ConfigError> LoadServerConfig(const std::filesystem::path& file);
+
+// The schema mechanism the functions above read their own files with, for an
+// executable outside the runtime that keeps a config file of its own under the
+// same rules (ADR-0034): its keys and their meaning stay with it.
+
+/// A config file's scalars, under their dotted paths ("network.server_address").
+using ConfigValues = std::map<std::string, std::string, std::less<>>;
+
+/// What a config file may hold, as dotted paths: its scalar keys, and its open
+/// sections - sections whose entries the caller checks by name itself (the
+/// client's "input.keys", whose entries are control names).
+struct ConfigSchema {
+  std::span<const std::string_view> keys;
+  std::span<const std::string_view> open_sections;
+};
+
+/// Reads yaml_text as a mapping, its sections flattened into dotted paths:
+/// every scalar must be a key or open-section entry of schema and every
+/// mapping one of its sections. Which keys are required is the caller's.
+std::expected<ConfigValues, ConfigError> ReadConfigValues(std::string_view yaml_text, const ConfigSchema& schema);
+
+/// The text of file; kCannotOpenFile, with file set, if it can't be read.
+std::expected<std::string, ConfigError> ReadConfigFile(const std::filesystem::path& file);
+
+/// key's value: kMissingKey if values lacks it, kEmptyValue if it is empty.
+std::expected<std::string, ConfigError> RequireString(const ConfigValues& values, std::string_view key);
+
+/// key's value as a path, read as UTF-8: as it is if absolute, else under base_dir.
+std::expected<std::filesystem::path, ConfigError> RequirePath(const ConfigValues& values, std::string_view key,
+                                                              const std::filesystem::path& base_dir);
+
+/// key's value as a finite number above zero, in plain decimal or exponent
+/// notation; kInvalidNumber otherwise.
+std::expected<float, ConfigError> RequirePositiveNumber(const ConfigValues& values, std::string_view key);
+
+/// key's value as a whole number from min to max, in plain decimal;
+/// kInvalidNumber otherwise. DescribeConfigError knows only the runtime's own
+/// ranges, so a caller with others words that error itself.
+std::expected<std::uint32_t, ConfigError> RequireWholeNumber(const ConfigValues& values, std::string_view key,
+                                                             std::uint32_t min, std::uint32_t max);
+
+/// key's value, or fallback if values lacks it.
+std::string OptionalString(const ConfigValues& values, std::string_view key, std::string_view fallback);
+
+/// key's value, or fallback if values lacks it; kInvalidLogLevel if it is not
+/// one augusta::logging::ParseSeverity accepts.
+std::expected<std::string, ConfigError> OptionalLogLevel(const ConfigValues& values, std::string_view key,
+                                                         std::string_view fallback);
 
 /// What the command line asks the executable to do.
 enum class CommandLineAction : std::uint8_t {

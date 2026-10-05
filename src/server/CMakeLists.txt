@@ -69,6 +69,15 @@ target_include_directories(augustad_admission PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(augustad_admission PUBLIC augusta_networking)
 augusta_set_module_scope(augustad_admission SERVER_ONLY)
 
+# The counts behind the server's once-a-second heartbeat line; pure, so tested
+# without a network (see heartbeat.h).
+add_library(augustad_heartbeat STATIC
+  heartbeat.cpp
+)
+target_include_directories(augustad_heartbeat PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(augustad_heartbeat PUBLIC augusta_tick)
+augusta_set_module_scope(augustad_heartbeat SERVER_ONLY)
+
 # The server's socket and SimulationWorld without threads or a clock, so a test
 # can drive a match by hand (see host.h), and the conversions Host makes at its
 # edges: between the protocol's plain types and the engine's (see wire.h), and
@@ -76,17 +85,21 @@ augusta_set_module_scope(augustad_admission SERVER_ONLY)
 # Host writes and its replay (see recording.h and replay.h, ADR-0048).
 add_library(augustad_host STATIC
   host.cpp
+  host_log.cpp
+  host_match.cpp
+  host_network.cpp
   recording.cpp
   replay.cpp
   simulation_mapping.cpp
+  tick_messages.cpp
   wire.cpp
 )
 target_include_directories(augustad_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_host
   PUBLIC augusta_ballistics augusta_networking augusta_parameters augusta_physics augusta_simulation augustad_content
-         augustad_commands augustad_match augustad_misbehaviour augustad_admission augusta_assets augusta_protocol augusta_replication
+         augustad_commands augustad_match augustad_misbehaviour augustad_admission augustad_heartbeat augusta_assets augusta_protocol augusta_replication
          augusta_tick
-  PRIVATE augusta_logging augusta_version
+  PRIVATE augusta_logging augusta_map augusta_version
 )
 augusta_set_module_scope(augustad_host SERVER_ONLY)
 
@@ -105,8 +118,35 @@ augusta_set_module_scope(augustad_runtime SERVER_ONLY)
 add_executable(augusta_replay replay_main.cpp)
 target_link_libraries(augusta_replay PRIVATE augusta_assets augusta_logging augusta_version augustad_content augustad_host)
 
+# What a crash leaves in the log: the fatal signal and a symbolized stack
+# (ADR-0047). Abseil symbolizes, being async-signal-safe where the
+# alternatives (std::stacktrace, Boost.Stacktrace) allocate.
+find_package(absl CONFIG REQUIRED)
+add_library(augustad_crash STATIC
+  crash.cpp
+)
+target_include_directories(augustad_crash PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(augustad_crash PRIVATE absl::stacktrace absl::symbolize)
+# crash.cpp writes through <windows.h> there; keep its min/max macros out of the
+# way of the standard library.
+target_compile_definitions(augustad_crash PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+augusta_set_module_scope(augustad_crash SERVER_ONLY)
+
 add_executable(augustad main.cpp)
-target_link_libraries(augustad PRIVATE augusta_assets augusta_config augustad_content augusta_parameters augusta_version augusta_logging augusta_networking augustad_runtime)
+target_link_libraries(augustad PRIVATE augusta_assets augusta_config augustad_content augustad_crash augusta_parameters augusta_version augusta_logging augusta_networking augustad_runtime)
+
+# On Linux the debug info is split off into augustad.debug beside it (ADR-0047):
+# the binary keeps its symbol table, which the crash handler symbolizes with,
+# and a .gnu_debuglink naming the file. The build ID is what matches a core
+# dump to the binary and its debug info.
+if (NOT WIN32)
+  target_link_options(augustad PRIVATE -Wl,--build-id=sha1)
+  add_custom_command(TARGET augustad POST_BUILD
+    COMMAND ${CMAKE_OBJCOPY} --only-keep-debug $<TARGET_FILE:augustad> $<TARGET_FILE:augustad>.debug
+    COMMAND ${CMAKE_OBJCOPY} --strip-debug --add-gnu-debuglink=$<TARGET_FILE:augustad>.debug $<TARGET_FILE:augustad>
+    VERBATIM
+  )
+endif()
 
 # `cmake --install` puts augustad in the prefix's bin directory (DESTDIR
 # honoured), which is how the Dockerfile's image gets it. On Windows the vcpkg

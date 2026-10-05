@@ -69,7 +69,7 @@ target_link_libraries(augustac_runtime
   PUBLIC augustac_content augusta_assets augusta_harness augusta_input augusta_networking augusta_renderer augusta_supervisor
   # nvtx3-cpp: runtime.cpp names the Main/Render, Simulation, and Network I/O
   # thread loops for Nsight Systems.
-  PRIVATE augustac_frame_mapping augustac_lobby_readiness augustac_net_stats augusta_audio augusta_logging augusta_physics augusta_prediction
+  PRIVATE augustac_frame_mapping augustac_lobby_readiness augustac_net_stats augusta_audio augusta_logging augusta_map augusta_physics augusta_prediction
           augusta_presentation augusta_tick nvtx3-cpp
 )
 # NOMINMAX: something in this TU's includes pulls in <windows.h>, whose

@@ -155,6 +155,10 @@ _Avoid_: Level, stage (a *scene graph* is how the pack stores the map, not the m
 Where anything that plays connects to the server: the client's network connection and PredictionWorld without a window or GPU. The real client, an automated test and a future autonomous agent each plug into one, supplying the input for every tick: whatever plays live runs it in real time on the Prediction and Network I/O threads the Harness owns (harness::Runner), and a test drives it by hand.
 _Avoid_: Client session, bot
 
+**Scripted player**:
+What plays in a person's place through a Harness, deciding each tick's Command from the Server view alone and its seed: it wanders, aims at the nearest living other player, fires in Bursts and reloads. augusta-loadtest runs a scenario's Player count of them against a server, for load and end-to-end tests.
+_Avoid_: Bot (too vague: it names anything automated), AI player (it follows a fixed script, it does not plan)
+
 ### Combat
 
 **Hitbox**:

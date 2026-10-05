@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Turns a `ctest --preset linux-coverage` run into a browsable llvm-cov HTML
 # report (ADR-0013): a report for finding untested deterministic logic, never a
-# gate, so nothing here fails on a percentage.
+# gate, so nothing here fails on a percentage. Beside it, the same coverage as
+# LCOV (coverage.lcov), which an editor shows in its gutters: VS Code's CMake
+# Tools runs this script through the coverage-report target after "Run Tests
+# with Coverage" (.vscode/settings.json).
 #
 #   cmake --preset linux-coverage && cmake --build --preset linux-coverage
 #   ctest --preset linux-coverage
@@ -40,5 +43,8 @@ done
 ignore='(/tests/|/third_party/|/vcpkg_installed/)'
 "$cov" show "${objects[@]}" -instr-profile="$build/coverage.profdata" \
   -format=html -output-dir="$output" -ignore-filename-regex="$ignore" -show-line-counts-or-regions
+# Absolute source paths, as the editor matches them against its open files.
+"$cov" export "${objects[@]}" -instr-profile="$build/coverage.profdata" \
+  -format=lcov -ignore-filename-regex="$ignore" > "$output/coverage.lcov"
 "$cov" report "${objects[@]}" -instr-profile="$build/coverage.profdata" \
   -ignore-filename-regex="$ignore" | tee "$output/summary.txt"

@@ -9,7 +9,8 @@ site on the repository's GitHub Pages, built from the repository on every push t
 **MkDocs Material builds the site from the Markdown as it is.** No document is
 converted or moved for it: `mkdocs.yml` reads `docs/`, and a build hook
 (`tools/docs/hooks.py`) adds the two root documents, `README.md` as the home page
-and `CONTEXT.md`, lists the ADRs in number order under their own titles, and turns a
+and `CONTEXT.md`, lists the runbooks (`docs/runbooks/`) and the ADRs, each under
+its own title and the ADRs in number order, and turns a
 link to anything that is not a page (a source file, the `Makefile`, `LICENSE`) into
 a link to that file on GitHub, so the same Markdown reads right on GitHub and on the
 site. `docs/agents/` is left out: it instructs coding agents, not readers.
@@ -26,6 +27,12 @@ builds the site, so a broken build fails before merge, and a push to `main` buil
 and deploys it with GitHub's own Pages actions. `make docs` builds the same site
 locally, into `build/docs-site/`. MkDocs runs through `uv tool run`, pinned, as the
 other Python tools do; Doxygen is installed on the machine, like clang-format.
+
+**The site also charts the nightly benchmarks' history** (ADR-0013), under
+`benchmarks/`, linked from the navigation: the page and results the nightly keeps on
+the `benchmarks` branch, copied in when the site is built for deployment. So that it
+shows the latest night, `main`'s site is also deployed once a day, after the nightly;
+what it says of the code is still what was released.
 
 ## Considered Options
 
@@ -46,4 +53,4 @@ other Python tools do; Doxygen is installed on the machine, like clang-format.
   file's description; `coding-standards.md` says so.
 - Markdown links stay relative and repository-rooted; nothing is written for the
   site alone.
-- A new ADR appears on the site without touching `mkdocs.yml`.
+- A new ADR or runbook appears on the site without touching `mkdocs.yml`.

@@ -30,9 +30,9 @@ CXX_SOURCES := "src/*.cpp" "src/*.h" "tests/*.cpp" "tests/*.h" "tools/*.cpp" "to
 LUA_SOURCES := "*.lua"
 TOML_SOURCES := "*.toml" ":!:third_party/*"
 
-# What CI's clang-tidy step lints: every src .cpp except the two Windows-only
-# trees and the audio module's Windows-only output device, which its Linux
-# build graph has no compile commands for.
+# What CI's Lint step runs clang-tidy on: every src .cpp except the two
+# Windows-only trees and the audio module's Windows-only output device, which
+# its Linux build graph has no compile commands for.
 TIDY_EXCLUDES := ":(exclude)src/client/*" ":(exclude)src/modules/renderer/*"
 ifeq ($(OS),Windows_NT)
 # PhysX's SSE headers break clang-tidy under MSVC's flags, so this one is

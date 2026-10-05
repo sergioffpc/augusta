@@ -28,6 +28,15 @@
       }
     },
     {
+      "name": "windows-tools",
+      "displayName": "Windows tools (Ninja + cl, augusta-loadtest)",
+      "inherits": "windows",
+      "binaryDir": "${sourceDir}/build/x64-windows-tools",
+      "cacheVariables": {
+        "AUGUSTA_LOADTEST": "ON"
+      }
+    },
+    {
       "name": "linux",
       "displayName": "Linux (Ninja + clang)",
       "generator": "Ninja",
@@ -52,6 +61,15 @@
       "binaryDir": "${sourceDir}/build/x64-linux-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "linux-tools",
+      "displayName": "Linux tools (Ninja + clang, augusta-loadtest)",
+      "inherits": "linux",
+      "binaryDir": "${sourceDir}/build/x64-linux-tools",
+      "cacheVariables": {
+        "AUGUSTA_LOADTEST": "ON"
       }
     },
     {
@@ -95,6 +113,7 @@
       "binaryDir": "${sourceDir}/build/x64-linux-coverage",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "AUGUSTA_COVERAGE": "ON",
         "CMAKE_CXX_FLAGS": "-fprofile-instr-generate -fcoverage-mapping",
         "CMAKE_EXE_LINKER_FLAGS": "-fprofile-instr-generate"
       }
@@ -103,8 +122,18 @@
   "buildPresets": [
     { "name": "windows", "configurePreset": "windows" },
     { "name": "windows-debug", "configurePreset": "windows-debug" },
+    {
+      "name": "windows-tools",
+      "configurePreset": "windows-tools",
+      "targets": ["augusta-loadtest"]
+    },
     { "name": "linux", "configurePreset": "linux" },
     { "name": "linux-debug", "configurePreset": "linux-debug" },
+    {
+      "name": "linux-tools",
+      "configurePreset": "linux-tools",
+      "targets": ["augusta-loadtest"]
+    },
     { "name": "linux-san", "configurePreset": "linux-san" },
     {
       "name": "linux-fuzz",
@@ -126,6 +155,11 @@
       "output": { "outputOnFailure": true }
     },
     {
+      "name": "windows-tools",
+      "configurePreset": "windows-tools",
+      "output": { "outputOnFailure": true }
+    },
+    {
       "name": "linux",
       "configurePreset": "linux",
       "output": { "outputOnFailure": true }
@@ -133,6 +167,11 @@
     {
       "name": "linux-debug",
       "configurePreset": "linux-debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "linux-tools",
+      "configurePreset": "linux-tools",
       "output": { "outputOnFailure": true }
     },
     {

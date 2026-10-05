@@ -66,6 +66,9 @@
   "cmake.useCMakePresets": "always",
   "cmake.configureOnOpen": true,
   "cmake.copyCompileCommands": "${workspaceFolder}/compile_commands.json",
+  "cmake.preRunCoverageTarget": "coverage-clean",
+  "cmake.postRunCoverageTarget": "coverage-report",
+  "cmake.coverageInfoFiles": ["${workspaceFolder}/build/x64-linux-coverage/report/coverage.lcov"],
 
   "python.analysis.include": ["tools/**"],
   "python.defaultInterpreterPath": "${workspaceFolder}/tools/pack/.venv/Scripts/python.exe",

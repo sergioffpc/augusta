@@ -22,7 +22,7 @@ how noisy its result is.
 | TSan | | | ✅ | |
 | Coverage report (`llvm-cov`) | | | ✅ | |
 | NFR-01 (tick rate under load) | | | | manual, on the r630 cluster |
-| Micro-benchmarks | by hand | | | |
+| Micro-benchmarks | by hand | | ✅ history, fails past 2× | |
 
 - **Pre-push** is a `.githooks/pre-push` hook running `clang-tidy` only:
   it is what MSVC does not catch and CI would, and a hook that builds and
@@ -53,6 +53,16 @@ how noisy its result is.
   checked by hand on the r630 cluster before each release; once Flux runs the
   `develop` release (ADR-0026), it becomes a CronJob of 8 Harness clients in
   that namespace.
+- **The load test stays out of CI.** `augusta-loadtest` (`tools/loadtest`)
+  runs the scenario's Player count of Scripted players, each on a Harness,
+  against a server, and exits non-zero unless every one sees the Match ends it
+  was asked for before a timeout. It and its tests build only with the CMake
+  option `AUGUSTA_LOADTEST`, off by default and turned on only by the
+  `windows-tools` and `linux-tools` presets, which no workflow uses, so no
+  workflow compiles, lints or runs them: it is run by hand, against a local
+  `augustad` or the r630 cluster's. A tools build gets the tool's tests in
+  `augusta_tests`, and `ctest` runs them there, the whole Match loop against
+  an in-process `server::Host` among them.
 - **NFR-03 through a golden file.** Reference trajectories live in the
   repository, and the test, on both the Windows (MSVC) and Linux (clang)
   runners, compares what it computes against them within a tolerance defined
@@ -100,9 +110,23 @@ how noisy its result is.
   is kept as an example-based regression test.
 - **Coverage** is a report for finding untested deterministic logic, not a
   gate: a minimum percentage pushes toward tests written for the number.
-- **Micro-benchmarks** are run by hand when a profile (NVTX in Nsight
-  Systems) points at a hot spot. A shared runner is too noisy to gate on a
-  percentage, and NFR-01 is the only formal performance target.
+- **Micro-benchmarks** time the hot paths, through their public interfaces:
+  a server tick through every phase of SimulationWorld in a full Match, the
+  protocol's encoding and decoding of the messages each tick sends and
+  receives, `Pack::Load`, and a bullet's ballistics step. The nightly runs
+  them on a GitHub-hosted runner, keeps the median of five repetitions, and
+  records it with `github-action-benchmark` on the `benchmarks` branch, not
+  in `docs/`; the first night on `develop` starts that branch itself, with
+  an empty commit, and the documentation site charts its history
+  (ADR-0046). Of the nightly's jobs, only this one may push. Only
+  `develop`'s nights are recorded: a manual run on another branch is
+  compared with them and leaves no trace. A shared runner is noisy, so the
+  threshold is generous: a benchmark more than twice as slow as the night
+  before fails the nightly, reported like any other failure. The slower
+  result is recorded all the same, so one regression fails one night, not
+  every night after it. Benchmarks are also run by hand when a profile (NVTX
+  in Nsight Systems) points at a hot spot. They never gate a pull request,
+  and NFR-01 stays the only formal performance target.
 
 ## Out of scope
 
@@ -111,8 +135,17 @@ how noisy its result is.
 
 ## Considered Options
 
-- **Gating micro-benchmarks in CI** by a regression percentage: rejected,
-  see Micro-benchmarks above.
+- **Gating pull requests on micro-benchmarks** by a regression percentage:
+  rejected, a shared runner is too noisy to block a merge on; the nightly
+  catches a regression the day after it lands.
+- **A tight benchmark threshold** (10-50%): rejected, a shared runner's own
+  noise would cross it, and a nightly that fails for nothing gets ignored.
+- **Running the benchmarks on the self-hosted r630**, whose numbers would be
+  steadier: rejected, ADR-0026 keeps runners out of the cluster, and a
+  regression worth the alarm shows through a shared runner's noise.
+- **Keeping the history in `docs/`** or on `develop`: rejected, `docs/`
+  holds decisions only, and a commit every night would bury the code's
+  history in results.
 - **Golden-image tests of the renderer**: rejected, the maintenance of
   reference images outweighs what they catch for a solo project.
 - **Exchanging trajectories between the Windows and Linux jobs** for

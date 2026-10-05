@@ -10,6 +10,7 @@
 #include "augusta/networking.h"
 #include "augusta/version.h"
 #include "content.h"
+#include "crash.h"
 #include "host.h"
 #include "runtime.h"
 
@@ -69,6 +70,9 @@ std::unique_ptr<augusta::server::ServerRuntime> CreateRuntime(const augusta::con
 }  // namespace
 
 int main(int argc, char** argv) {
+  // First, so a crash anywhere after it - startup included - is logged and
+  // leaves a core dump (ADR-0047).
+  augusta::server::InstallCrashHandler(argv[0]);
   augusta::logging::Init();
 
   // Settings come from a config file - augustad.yaml next to the executable

@@ -260,7 +260,7 @@ jobs:
           }
           Start-Process -FilePath $installer -ArgumentList '/S', "/D=$env:RUNNER_TEMP\llvm" -Wait
           "$env:RUNNER_TEMP\llvm\bin" >> $env:GITHUB_PATH
-      - name: Lint (include-cleaner)
+      - name: Lint
         # .clang-tidy's misc-include-cleaner alone (the Makefile's tidy target
         # says why -w) on what the server job's Linux build can't lint: the
         # Windows-only sources and tests. After Build, which generates headers
@@ -301,7 +301,9 @@ jobs:
       - name: Configure
         run: cmake --preset linux
       - uses: ./.github/actions/save-vcpkg-cache
-      - name: Lint (clang-tidy)
+      - name: Lint
+        # Both checks run, and the step fails if either does, so one run shows
+        # every finding. clang-tidy with .clang-tidy's full profile on src:
         # src/client and src/modules/renderer are Windows-only (CMakeLists.txt
         # gates both on WIN32 - the latter since ADR-0009's Falcor backend is
         # Windows-only), as is the audio module's output device (miniaudio and
@@ -313,13 +315,14 @@ jobs:
         # cascades a spurious error onto every file *after* the first one
         # missing its compile_commands entry, not just that file itself - so
         # a stray Windows-only file left in this list fails the whole batch.
-        run: find src -name '*.cpp' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_windows.cpp' -not -path 'src/modules/audio/miniaudio.cpp' | xargs clang-tidy -p build/x64-linux
-      - name: Lint (include-cleaner)
-        # The tests get .clang-tidy's misc-include-cleaner alone, as the
+        # Then the tests get .clang-tidy's misc-include-cleaner alone, as the
         # Makefile's tidy target runs it (which says why -w); the Windows-only
         # client tests are the client job's.
-        run: >-
-          git ls-files 'tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 8 clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w
+        run: |
+          status=0
+          find src -name '*.cpp' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_windows.cpp' -not -path 'src/modules/audio/miniaudio.cpp' | xargs clang-tidy -p build/x64-linux || status=1
+          git ls-files 'tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 8 clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
+          exit "$status"
       - name: Build
         run: cmake --build --preset linux --target all augusta_tests
       - name: Test
@@ -602,6 +605,26 @@ jobs:
           docker push --all-tags "$image"
           digest=$(docker buildx imagetools inspect "$image:sha-${{ steps.short-sha.outputs.value }}" --format '{{.Manifest.Digest}}')
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      # The published binary's debug info (the Dockerfile's debuginfo stage,
+      # from the build layer the image was just built from), kept beside the
+      # image for as long as it: what reads a core dump of it (ADR-0047).
+      - name: Publish server debug info
+        id: debuginfo
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: debuginfo
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.short-sha.outputs.value }}-debuginfo
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/augustad:buildcache
+      - name: Attest debug info provenance
+        if: github.event_name == 'push'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/augustad
+          subject-digest: ${{ steps.debuginfo.outputs.digest }}
+          push-to-registry: true
       # Every published image is attested here, where it is built: release.yml
       # builds none, and the image a release runs is its tag's commit's, pushed
       # to main (docs/ENGINEERING.md, Provenance and SBOMs).

@@ -31,4 +31,14 @@ assetPacks:
   packVersion: ""
   pack: server.pack
   publicKey: augusta.pub
-resources: {}
+# One server per environment (ADR-0026): a request that guarantees its
+# Simulation and Network I/O threads (ADR-0005) their share of the node, and
+# no CPU limit, since a throttled Simulation thread misses ticks (NFR-01).
+# Memory is limited at its request: past it the server is killed and
+# restarted, never evicted for overrunning its request when the node runs short.
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    memory: 512Mi

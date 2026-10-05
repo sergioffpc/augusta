@@ -30,6 +30,11 @@ if (MSVC)
   add_compile_options(/W4 /WX /EHsc)
 else()
   add_compile_options(-Wall -Wextra -Werror)
+  # Release keeps its debug info, which src/server splits off augustad: what a
+  # crash's core dump is read with (ADR-0047). Every target, not just augustad's
+  # own: a core's frames are mostly in the module libraries it links, and
+  # without theirs gdb has no file, line or local for them.
+  add_compile_options($<$<CONFIG:Release>:-g>)
 endif()
 
 # flecs/GameNetworkingSockets/PhysX back the client/server shared runtime
@@ -81,6 +86,27 @@ add_subdirectory(src/modules/harness)
 add_subdirectory(src/modules/presentation)
 add_subdirectory(src/modules/replication)
 add_subdirectory(src/server)
+# augusta-loadtest, the Scripted players: a tool built with the runtime it
+# links (harness, map, config), on every platform. Off by default, so no CI
+# build compiles or tests it: the windows-tools and linux-tools presets
+# (CMakePresets.json) turn it on, for the tool and its tests in augusta_tests.
+option(AUGUSTA_LOADTEST "Build augusta-loadtest (tools/loadtest) and its tests" OFF)
+if (AUGUSTA_LOADTEST)
+  add_subdirectory(tools/loadtest)
+endif()
+# The linux-coverage preset's report as build targets, for an editor that runs
+# one before and one after its tests (VS Code's CMake Tools, "Run Tests with
+# Coverage"): coverage-clean drops the last run's profiles, so the report is of
+# this run alone; coverage-report turns this run's into it.
+option(AUGUSTA_COVERAGE "Add the coverage-clean and coverage-report targets (linux-coverage preset)" OFF)
+if (AUGUSTA_COVERAGE)
+  add_custom_target(coverage-clean COMMAND ${CMAKE_COMMAND} -E rm -rf ${CMAKE_BINARY_DIR}/profiles)
+  add_custom_target(coverage-report
+    COMMAND bash scripts/coverage-report.sh
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    USES_TERMINAL
+  )
+endif()
 if (WIN32)
   # NVIDIA Falcor (ADR-0009) is Windows-only, so augusta_renderer's real
   # implementation only builds here - nothing on Linux (only the

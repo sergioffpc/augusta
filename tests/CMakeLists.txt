@@ -11,6 +11,21 @@ gtest_discover_tests(augusta_logging_tests)
 add_executable(augusta_version_benchmarks version_benchmark.cpp)
 target_link_libraries(augusta_version_benchmarks PRIVATE augusta_version benchmark::benchmark benchmark::benchmark_main)
 
+# The hot paths the nightly times and keeps the history of (ADR-0013): one
+# binary, so one run gives one result file for the whole set.
+add_executable(augusta_benchmarks
+  ballistics_benchmark.cpp
+  pack_benchmark.cpp
+  protocol_benchmark.cpp
+  simulation_benchmark.cpp)
+# The tick runs the example scenario's Game policy, as the server loads it from
+# its golden server pack.
+target_link_libraries(augusta_benchmarks PRIVATE
+  augusta_assets augusta_ballistics augusta_protocol augusta_simulation augustad_policy_loader
+  benchmark::benchmark benchmark::benchmark_main)
+target_compile_definitions(augusta_benchmarks PRIVATE
+  AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs")
+
 add_executable(augusta_tick_tests tick_test.cpp)
 target_link_libraries(augusta_tick_tests PRIVATE augusta_tick GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_tick_tests)
@@ -88,6 +103,10 @@ gtest_discover_tests(augusta_command_queue_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_misbehaviour_tests misbehaviour_test.cpp)
 target_link_libraries(augusta_misbehaviour_tests PRIVATE augustad_misbehaviour GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_misbehaviour_tests DISCOVERY_TIMEOUT 30)
+
+add_executable(augusta_heartbeat_tests heartbeat_test.cpp)
+target_link_libraries(augusta_heartbeat_tests PRIVATE augustad_heartbeat GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_heartbeat_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_admission_tests admission_test.cpp)
 target_link_libraries(augusta_admission_tests PRIVATE augustad_admission GTest::gtest GTest::gtest_main)
@@ -328,6 +347,23 @@ target_compile_definitions(augusta_cooked_pack_tests PRIVATE
   AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs")
 gtest_discover_tests(augusta_cooked_pack_tests)
 
+# The crash lines' format, against the log sink's, and the handler itself in
+# death tests.
+add_executable(augusta_crash_tests crash_test.cpp)
+target_link_libraries(augusta_crash_tests PRIVATE augustad_crash augusta_logging GTest::gtest GTest::gtest_main)
+target_compile_definitions(augusta_crash_tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+gtest_discover_tests(augusta_crash_tests)
+
+# The crash lines' timestamp against the log sink's over every second to the
+# year 9999.
+add_executable(augusta_crash_property_tests crash_property_test.cpp)
+target_link_libraries(augusta_crash_property_tests PRIVATE augustad_crash augusta_logging rapidcheck_gtest GTest::gtest GTest::gtest_main)
+# RapidCheck's Maybe uses std::aligned_storage, deprecated since C++23 (see
+# augusta_protocol_property_tests).
+target_compile_options(augusta_crash_property_tests PRIVATE
+  $<$<CXX_COMPILER_ID:Clang>:-Wno-deprecated-declarations>)
+gtest_discover_tests(augusta_crash_property_tests PROPERTIES LABELS property)
+
 # The renderer is Windows-only (Falcor, ADR-0009), but which region of its
 # per-frame upload buffers a frame uses is a Falcor-free header, private to the
 # module, so it is tested everywhere through a private include path.
@@ -364,11 +400,17 @@ endif()
 
 add_subdirectory(fuzz)
 
-# Every executable here and in fuzz/: what ctest, the benchmarks and the fuzz
-# jobs run. The directory is EXCLUDE_FROM_ALL, so this is how they get built.
-# Custom targets (the seed regenerators) stay out: they rewrite committed files.
+# Every executable here and in fuzz/, and in tools/loadtest/tests (the tests of
+# augusta-loadtest, kept next to it) when AUGUSTA_LOADTEST builds the tool:
+# what ctest, the benchmarks and the fuzz jobs run. Each directory is
+# EXCLUDE_FROM_ALL, so this is how they get built. Custom targets (the seed
+# regenerators) stay out: they rewrite committed files.
 add_custom_target(augusta_tests)
-foreach(directory IN ITEMS ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/fuzz)
+set(test_directories ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/fuzz)
+if (AUGUSTA_LOADTEST)
+  list(APPEND test_directories ${CMAKE_SOURCE_DIR}/tools/loadtest/tests)
+endif()
+foreach(directory IN LISTS test_directories)
   get_property(directory_targets DIRECTORY ${directory} PROPERTY BUILDSYSTEM_TARGETS)
   foreach(target IN LISTS directory_targets)
     get_target_property(target_type ${target} TYPE)
