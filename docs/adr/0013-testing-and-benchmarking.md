@@ -57,9 +57,10 @@ how noisy its result is.
   runs the scenario's Player count of Scripted players, each on a Harness,
   against a server, and exits non-zero unless every one sees the Match ends it
   was asked for before a timeout. It and its tests build only with the CMake
-  option `AUGUSTA_LOADTEST`, off by default, so no workflow compiles, lints or
-  runs them: it is run by hand, against a local `augustad` or the r630
-  cluster's. A build that turns the option on gets the tool's tests in
+  option `AUGUSTA_LOADTEST`, off by default and turned on only by the
+  `windows-tools` and `linux-tools` presets, which no workflow uses, so no
+  workflow compiles, lints or runs them: it is run by hand, against a local
+  `augustad` or the r630 cluster's. A tools build gets the tool's tests in
   `augusta_tests`, and `ctest` runs them there, the whole Match loop against
   an in-process `server::Host` among them.
 - **NFR-03 through a golden file.** Reference trajectories live in the

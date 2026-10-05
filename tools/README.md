@@ -382,9 +382,9 @@ with the engine, on Windows and Linux, but only when asked for, and never in
 CI:
 
 ```powershell
-cmake --preset windows -DAUGUSTA_LOADTEST=ON
-cmake --build --preset windows --target augusta-loadtest
-# build/x64-windows/tools/loadtest/augusta-loadtest.exe
+cmake --preset windows-tools
+cmake --build --preset windows-tools
+# build/x64-windows-tools/tools/loadtest/augusta-loadtest.exe
 ```
 
 It reads `augusta-loadtest.yaml` next to the executable, or the file
@@ -395,5 +395,13 @@ server's, and its scenario's Player count 2 or more: a Match of one ends only
 when its player dies, which nothing in it can cause. The example scenario's is
 1, so a single player can run it alone.
 
-Its tests are in [`loadtest/tests/`](loadtest/tests/). With the option on they
-join `augusta_tests`, and `ctest` runs them with the engine's.
+On Linux the presets are `linux-tools`, and the executable lands in
+`build/x64-linux-tools/tools/loadtest/`.
+
+Its tests are in [`loadtest/tests/`](loadtest/tests/). In a tools build they
+join `augusta_tests`, and `ctest` runs them with the engine's:
+
+```powershell
+cmake --build --preset windows-tools --target augusta_tests
+ctest --preset windows-tools
+```

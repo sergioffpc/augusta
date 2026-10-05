@@ -83,8 +83,8 @@ add_subdirectory(src/modules/replication)
 add_subdirectory(src/server)
 # augusta-loadtest, the Scripted players: a tool built with the runtime it
 # links (harness, map, config), on every platform. Off by default, so no CI
-# build compiles or tests it: configure with -DAUGUSTA_LOADTEST=ON to have it,
-# and its tests in augusta_tests.
+# build compiles or tests it: the windows-tools and linux-tools presets
+# (CMakePresets.json) turn it on, for the tool and its tests in augusta_tests.
 option(AUGUSTA_LOADTEST "Build augusta-loadtest (tools/loadtest) and its tests" OFF)
 if (AUGUSTA_LOADTEST)
   add_subdirectory(tools/loadtest)
