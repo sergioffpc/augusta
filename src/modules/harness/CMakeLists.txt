@@ -1,7 +1,10 @@
 add_library(augusta_harness STATIC
+  command_stream.cpp
   harness.cpp
   harness_wire.cpp
+  inbox.cpp
   runner.cpp
+  server_view.cpp
 )
 target_include_directories(augusta_harness PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(augusta_harness
