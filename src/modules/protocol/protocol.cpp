@@ -63,6 +63,16 @@ void WriteString(BytesWire& out, std::string_view text) {
   }
 }
 
+// A list of at most max elements: a one-byte count, then each one as write writes it.
+template <typename Element, typename Write>
+void WriteList(BytesWire& out, const std::vector<Element>& list, std::size_t max, Write write) {
+  assert(list.size() <= max);
+  WriteU8(out, static_cast<std::uint8_t>(list.size()));
+  for (const Element& element : list) {
+    write(out, element);
+  }
+}
+
 void WriteVec3(BytesWire& out, const math::Vec3& value, const math::Grid& grid) {
   WriteSteps(out, value.x, grid);
   WriteSteps(out, value.y, grid);
@@ -103,15 +113,6 @@ void WriteEntityState(BytesWire& out, const EntityStateWire& body) {
   WriteU32(out, static_cast<std::uint32_t>(body.entity));
   WriteBodyState(out, body.body);
   WriteSteps(out, body.yaw, math::kAngleGrid);
-}
-
-// The bodies of an update: a count, then each one.
-void WriteBodies(BytesWire& out, const std::vector<EntityStateWire>& bodies) {
-  assert(bodies.size() <= kMaxPlayers);
-  WriteU8(out, static_cast<std::uint8_t>(bodies.size()));
-  for (const EntityStateWire& body : bodies) {
-    WriteEntityState(out, body);
-  }
 }
 
 // A rifle's two times travel as their bits, not on a grid: its owner replays
@@ -268,6 +269,18 @@ class Reader {
   std::optional<DecodeError> error_;
 };
 
+// The read side of WriteList: at most max elements, each as read reads it.
+template <typename Read>
+auto ReadList(Reader& reader, std::size_t max, Read read) {
+  const std::size_t count = reader.ReadCount(max);
+  std::vector<decltype(read(reader))> list;
+  list.reserve(count);
+  for (std::size_t i = 0; i < count; ++i) {
+    list.push_back(read(reader));
+  }
+  return list;
+}
+
 CommandWire ReadCommand(Reader& reader) {
   CommandWire command;
   command.direction = reader.ReadVec3(math::kDirectionGrid);
@@ -309,17 +322,6 @@ EntityStateWire ReadEntityState(Reader& reader) {
   state.body = ReadBodyState(reader);
   state.yaw = reader.ReadSteps(math::kAngleGrid);
   return state;
-}
-
-// The bodies of an update, at most kMaxPlayers.
-std::vector<EntityStateWire> ReadBodies(Reader& reader) {
-  const std::size_t count = reader.ReadCount(kMaxPlayers);
-  std::vector<EntityStateWire> bodies;
-  bodies.reserve(count);
-  for (std::size_t i = 0; i < count; ++i) {
-    bodies.push_back(ReadEntityState(reader));
-  }
-  return bodies;
 }
 
 RifleWire ReadRifle(Reader& reader) {
@@ -379,12 +381,10 @@ JoinRefusedWire ReadJoinRefused(Reader& reader) {
 
 CommandsWire ReadCommands(Reader& reader) {
   CommandsWire message;
-  const std::size_t count = reader.ReadCount(kMaxCommandsPerMessage);
-  message.commands.reserve(count);
-  for (std::size_t i = 0; i < count; ++i) {
-    const command::Sequence sequence = reader.ReadSequence();
-    message.commands.push_back(SequencedCommandWire{.sequence = sequence, .command = ReadCommand(reader)});
-  }
+  message.commands = ReadList(reader, kMaxCommandsPerMessage, [](Reader& sequenced) {
+    const command::Sequence sequence = sequenced.ReadSequence();
+    return SequencedCommandWire{.sequence = sequence, .command = ReadCommand(sequenced)};
+  });
   message.seen_tick = reader.ReadTick();
   return message;
 }
@@ -404,7 +404,7 @@ AuthoritativeStateWire ReadAuthoritativeState(Reader& reader) {
   AuthoritativeStateWire state;
   state.tick = reader.ReadTick();
   state.acknowledged_sequence = reader.ReadSequence();
-  state.bodies = ReadBodies(reader);
+  state.bodies = ReadList(reader, kMaxPlayers, ReadEntityState);
   state.queued_commands = reader.ReadU8();
   state.rifle = ReadWeaponState(reader);
   state.health = reader.ReadF32();
@@ -414,12 +414,10 @@ AuthoritativeStateWire ReadAuthoritativeState(Reader& reader) {
 LobbyWire ReadLobby(Reader& reader) {
   LobbyWire lobby;
   lobby.version = reader.ReadU32();
-  const std::size_t count = reader.ReadCount(kMaxPlayers);
-  lobby.roster.reserve(count);
-  for (std::size_t i = 0; i < count; ++i) {
-    const auto session = static_cast<SessionIdWire>(reader.ReadU32());
-    lobby.roster.push_back(RosterEntryWire{.session = session, .character = reader.ReadCharacter()});
-  }
+  lobby.roster = ReadList(reader, kMaxPlayers, [](Reader& entry) {
+    const auto session = static_cast<SessionIdWire>(entry.ReadU32());
+    return RosterEntryWire{.session = session, .character = entry.ReadCharacter()};
+  });
   return lobby;
 }
 
@@ -433,13 +431,7 @@ MatchPlayerWire ReadMatchPlayer(Reader& reader) {
 }
 
 MatchStartWire ReadMatchStart(Reader& reader) {
-  MatchStartWire start;
-  const std::size_t count = reader.ReadCount(kMaxPlayers);
-  start.players.reserve(count);
-  for (std::size_t i = 0; i < count; ++i) {
-    start.players.push_back(ReadMatchPlayer(reader));
-  }
-  return start;
+  return MatchStartWire{.players = ReadList(reader, kMaxPlayers, ReadMatchPlayer)};
 }
 
 ShotWire ReadShot(Reader& reader) {
@@ -587,13 +579,12 @@ struct Encoder {
   }
 
   void operator()(const CommandsWire& message) const {
-    assert(message.commands.size() <= kMaxCommandsPerMessage);
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kCommands));
-    WriteU8(out, static_cast<std::uint8_t>(message.commands.size()));
-    for (const SequencedCommandWire& sequenced : message.commands) {
-      WriteSequence(out, sequenced.sequence);
-      WriteCommand(out, sequenced.command);
-    }
+    WriteList(out, message.commands, kMaxCommandsPerMessage,
+              [](BytesWire& command_out, const SequencedCommandWire& sequenced) {
+                WriteSequence(command_out, sequenced.sequence);
+                WriteCommand(command_out, sequenced.command);
+              });
     WriteTick(out, message.seen_tick);
   }
 
@@ -601,7 +592,7 @@ struct Encoder {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kAuthoritativeState));
     WriteTick(out, message.tick);
     WriteSequence(out, message.acknowledged_sequence);
-    WriteBodies(out, message.bodies);
+    WriteList(out, message.bodies, kMaxPlayers, WriteEntityState);
     WriteU8(out, message.queued_commands);
     WriteWeaponState(out, message.rifle);
     // As its bits, as the Parameters' starting health it counts down from.
@@ -609,15 +600,13 @@ struct Encoder {
   }
 
   void operator()(const LobbyWire& message) const {
-    assert(message.roster.size() <= kMaxPlayers);
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kLobby));
     WriteU32(out, message.version);
-    WriteU8(out, static_cast<std::uint8_t>(message.roster.size()));
-    for (const RosterEntryWire& entry : message.roster) {
+    WriteList(out, message.roster, kMaxPlayers, [](BytesWire& entry_out, const RosterEntryWire& entry) {
       assert(entry.character.size() <= kMaxCharacterPathLength);
-      WriteU32(out, static_cast<std::uint32_t>(entry.session));
-      WriteString(out, entry.character);
-    }
+      WriteU32(entry_out, static_cast<std::uint32_t>(entry.session));
+      WriteString(entry_out, entry.character);
+    });
   }
 
   void operator()(const ReadyWire& message) const {
@@ -626,12 +615,8 @@ struct Encoder {
   }
 
   void operator()(const MatchStartWire& message) const {
-    assert(message.players.size() <= kMaxPlayers);
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kMatchStart));
-    WriteU8(out, static_cast<std::uint8_t>(message.players.size()));
-    for (const MatchPlayerWire& player : message.players) {
-      WriteMatchPlayer(out, player);
-    }
+    WriteList(out, message.players, kMaxPlayers, WriteMatchPlayer);
   }
 
   void operator()(const MatchEndWire& message) const {
@@ -656,28 +641,6 @@ struct Encoder {
     WriteDeath(out, message);
   }
 };
-
-// A list of at most max elements: a one-byte count, then each one as write writes it.
-template <typename Element, typename Write>
-void WriteList(BytesWire& out, const std::vector<Element>& list, std::size_t max, Write write) {
-  assert(list.size() <= max);
-  WriteU8(out, static_cast<std::uint8_t>(list.size()));
-  for (const Element& element : list) {
-    write(out, element);
-  }
-}
-
-// The read side of WriteList: at most max elements, each as read reads it.
-template <typename Read>
-auto ReadList(Reader& reader, std::size_t max, Read read) {
-  const std::size_t count = reader.ReadCount(max);
-  std::vector<decltype(read(reader))> list;
-  list.reserve(count);
-  for (std::size_t i = 0; i < count; ++i) {
-    list.push_back(read(reader));
-  }
-  return list;
-}
 
 // A recorded hit's body part takes the low two bits of one byte and its flags
 // the one above them; the top five are always 0.

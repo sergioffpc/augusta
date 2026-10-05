@@ -599,7 +599,6 @@ struct RecordedTickWire {
   bool operator==(const RecordedTickWire&) const = default;
 };
 
-/// Any record of a match recording.
 using RecordWire = std::variant<RecordingHeaderWire, RecordedTickWire>;
 
 /// Encodes record as one payload. A field beyond its limit is a caller bug, as for Encode.
