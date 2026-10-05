@@ -26,21 +26,19 @@ cluster needs no deploy key.
 The only state not in Git is the asset packs on the node's shared volume:
 `/srv/augusta/asset-packs/<packVersion>/server.pack` and `augusta.pub` for each
 `packVersion` the `HelmRelease` values in `clusters/onprem/apps/` name
-([`charts/augustad/values.yaml`](../../charts/augustad/values.yaml)). The chart
-mounts the folder with `type: DirectoryOrCreate`, so a missing pack does not
-stop the pod from scheduling: the server exits at startup instead, naming the
-missing `augusta.pub` or `server.pack`, and the pod crash-loops. The exact
-layout is
+([`charts/augustad/values.yaml`](../../charts/augustad/values.yaml)). Without
+them the servers crash-loop; the layout, and why a missing folder still lets
+the pod schedule, is
 [Where packs go on the node](pack-key-rotation.md#where-packs-go-on-the-node).
 
 ## Prerequisites
 
 - Console or SSH access, with `sudo`, to the node (`<node>` below). The
   repository does not record its address or OS.
-- The Kubernetes version the cluster runs: `KUBERNETES_VERSION` in the
-  `manifests` job of [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)
-  (1.36.4 at the time of writing), which CI validates the manifests against.
-  The repository does not record the k3s release (`v<version>+k3s<n>`) or any
+- The Kubernetes version the cluster runs, `<k8s-version>` below:
+  `KUBERNETES_VERSION` in the `manifests` job of
+  [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml), which CI
+  validates the manifests against. The repository does not record the k3s release (`v<version>+k3s<n>`) or any
   k3s install options or `/etc/rancher/k3s/config.yaml`; the steps below use
   k3s's defaults.
 - For a rebuild, a copy of every environment's pack folder: either taken from
@@ -51,11 +49,10 @@ layout is
 - The server image, `ghcr.io/sergioffpc/augustad`, pullable without
   credentials: the chart sets no `imagePullSecrets`, so the GHCR package must
   be public.
-- On the workstation: `kubectl` (installed by `scripts/bootstrap-wsl.sh`), the
-  `flux` CLI v2.9.5 (the version in
-  [`gotk-components.yaml`](../../clusters/onprem/flux-system/gotk-components.yaml)'s
-  header; no bootstrap script installs it), and a checkout of `origin/develop`,
-  the branch the `flux-system` GitRepository tracks.
+- On the workstation: `kubectl` and the `flux` CLI
+  ([as for a rollback](flux-rollback.md#prerequisites)), and this repository
+  with `origin/develop` fetched: the `flux-system` GitRepository tracks
+  `develop`.
 
 ## Part A: Recover
 
@@ -115,7 +112,7 @@ layout is
 3. Install k3s at the cluster's Kubernetes version, with k3s's install script:
 
     ```sh
-    ssh <node> "curl -sfL https://get.k3s.io | sudo INSTALL_K3S_VERSION='v1.36.4+k3s<n>' sh -"
+    ssh <node> "curl -sfL https://get.k3s.io | sudo INSTALL_K3S_VERSION='v<k8s-version>+k3s<n>' sh -"
     ssh <node> "sudo k3s kubectl get nodes"
     ```
 
@@ -146,15 +143,16 @@ layout is
     `packVersion` Git names: the folder name, not the pack, is what the chart
     looks for.
 
-6. Install Flux from the repository's own manifests, from the `develop`
-   checkout: its controllers first, then the sync objects that point it at the
+6. Install Flux from the repository's own manifests as `develop` has them,
+   read straight from `origin/develop` so the checkout's branch is left alone:
+   its controllers first, then the sync objects that point it at the
    repository:
 
     ```sh
-    git fetch origin && git switch --detach origin/develop
-    kubectl apply --server-side -f clusters/onprem/flux-system/gotk-components.yaml
+    git fetch origin
+    git show origin/develop:clusters/onprem/flux-system/gotk-components.yaml | kubectl apply --server-side -f -
     kubectl -n flux-system wait --for=condition=Available deployment --all --timeout 5m
-    kubectl apply -f clusters/onprem/flux-system/gotk-sync.yaml
+    git show origin/develop:clusters/onprem/flux-system/gotk-sync.yaml | kubectl apply -f -
     ```
 
     From here Flux manages itself (the `flux-system` Kustomization applies

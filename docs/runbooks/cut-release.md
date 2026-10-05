@@ -12,15 +12,18 @@ ADR-0013 ([testing](../adr/0013-testing-and-benchmarking.md)).
 
 - `develop` holds what the next release ships, and the release is decided.
 
-A fix to a release already out is a `hotfix/vX.Y.Z` branch off `main` instead;
-from step 4 on, it follows the same steps with `hotfix/` for `release/`.
+A fix to a release already out is a `hotfix/vX.Y.Z` branch off `main` instead.
+It follows the same steps with `hotfix/` for `release/`, except that step 2
+branches off `main` (`git switch -c hotfix/vX.Y.Z origin/main`) and step 4 is
+skipped: a branch cut from `main` already has everything `main` has.
 
 ## Prerequisites
 
 - `gh`, authenticated, with permission to merge pull requests to `main` and
-  `develop`. Both require a pull request, signed commits, and the `sanitizers`,
-  `changes`, `format`, `client` and `server` checks. The repository allows
-  merge commits only, and deletes a pull request's branch once it merges.
+  `develop`. Both branches require a pull request, signed commits, and the
+  `sanitizers`, `changes`, `format`, `client` and `server` checks. The
+  repository allows merge commits only, and deletes a pull request's branch
+  once it merges.
 - Commit and tag signing configured locally (the `v*` tags are signed,
   annotated tags), and the repository's hooks active
   (`git config core.hooksPath .githooks`).
@@ -88,14 +91,27 @@ from step 4 on, it follows the same steps with `hotfix/` for `release/`.
 
     ```sh
     git push -u origin release/vX.Y.Z
-    gh pr create --base main --title "release: vX.Y.Z" --body "<evidence checklist>"
+    gh pr create --base main --title "chore(release): vX.Y.Z" --body "<evidence checklist>"
     ```
 
     Before merging, record in the pull request the checks CI cannot run
     (`release/*` is never deployed, ADR-0026):
 
     - NFR-01 on the cluster, eight players for a full Match in the `develop`
-      environment (ADR-0013).
+      environment (ADR-0013). That environment runs `develop`'s head, not this
+      branch, so the measurement covers the release only while both carry the
+      same code. Check that nothing but the step 3 version bump differs:
+
+        ```sh
+        git fetch origin
+        git diff --stat origin/develop release/vX.Y.Z -- src/ charts/ Dockerfile vcpkg.json CMakeLists.txt cmake/ third_party
+        ```
+
+        If more differs (a fix made on this branch, or `develop` has moved on),
+        the measurement does not count for the release: merge this pull request
+        when its other checks pass, but do the back-merge (step 10) before
+        tagging (step 8), measure NFR-01 once Flux has deployed that `develop`
+        commit, and tag only after it passes.
     - The release packs load in this branch's binaries: client and server log
       `event=pack_verified`, and the client is admitted at Join (ADR-0018).
 
@@ -130,7 +146,7 @@ from step 4 on, it follows the same steps with `hotfix/` for `release/`.
     ```sh
     git switch release/vX.Y.Z
     git push -u origin release/vX.Y.Z
-    gh pr create --base develop --title "release: merge vX.Y.Z back into develop" --body "<what reaches develop>"
+    gh pr create --base develop --title "chore(release): merge vX.Y.Z back into develop" --body "<what reaches develop>"
     ```
 
     If it conflicts, merge `origin/develop` into the branch, resolve, push, and
@@ -164,7 +180,7 @@ flux get helmreleases -n flux-system     # augustad-staging at X.Y.Z+<12>
   origin/develop` exits 0).
 - Flux has upgraded `staging` to the chart `X.Y.Z+<12>`
   ([Roll Back a Bad Deploy with Flux](flux-rollback.md#verification) has the
-  checks, including staging's `main` image tag).
+  checks).
 
 ## Rollback / abort
 
@@ -188,5 +204,7 @@ flux get helmreleases -n flux-system     # augustad-staging at X.Y.Z+<12>
     first. Merge the hotfix back into `develop` as in step 10.
 
 - **The published release is bad:** a published tag is never moved or
-  reused. Ship `X.Y.(Z+1)` as a hotfix, and restore `staging` meanwhile with
-  [Roll Back a Bad Deploy with Flux](flux-rollback.md).
+  reused. Restore `staging` first by pinning it to the previous good image
+  ([Roll back staging](flux-rollback.md#roll-back-staging)), then ship
+  `X.Y.(Z+1)` as a hotfix (see [When to use](#when-to-use)), and remove the pin
+  once it is on `main`.
