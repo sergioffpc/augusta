@@ -10,6 +10,7 @@
 #include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/policy_actions.h"
+#include "augusta/protocol.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
 #include "command_queue.h"
@@ -40,7 +41,7 @@ void Host::Impl::EndMatch(const std::optional<SessionId>& winner, EndReason reas
   if (!ended.has_value()) {
     return;
   }
-  SendTo(ended->players, ToWire(*ended));
+  SendTo(ended->players, protocol::Encode(ToWire(*ended)));
   LogMatchEnded(reason, ended->winner, ended->players.size());
   SendRoster();
 }
@@ -76,7 +77,7 @@ void Host::Impl::StartMatchIfReady() {
   simulating_match = true;
   // Its first tick is the one about to run.
   match_start_tick = tick + 1;
-  SendTo(sessions, ToWire(*start, spawns));
+  SendTo(sessions, protocol::Encode(ToWire(*start, spawns)));
   LI("subsystem=serverruntime event=match_started tick={} players={}", match_start_tick, sessions.size());
 }
 

@@ -18,7 +18,6 @@
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
-#include "augusta/protocol.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
@@ -97,10 +96,10 @@ struct Host::Impl {
 
   Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy);
 
-  // Sending to players (host.cpp).
-  void Reply(networking::PeerId peer, const protocol::MessageWire& message);
+  // Sending to players (host.cpp), each message already encoded (wire.h).
+  void Reply(networking::PeerId peer, const networking::Payload& message);
   // Sends message reliably to the player of each of sessions.
-  void SendTo(const std::vector<SessionId>& sessions, const protocol::MessageWire& message);
+  void SendTo(const std::vector<SessionId>& sessions, const networking::Payload& message);
   // Tells everyone in the Lobby who is in it, after it changed.
   void SendRoster();
 

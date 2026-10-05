@@ -77,14 +77,13 @@ Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine 
           .pause_ticks = PauseTicks(config.tick_rate_hz),
       }) {}
 
-void Host::Impl::Reply(networking::PeerId peer, const protocol::MessageWire& message) {
-  network.Send(peer, protocol::Encode(message), networking::Reliability::kReliable);
+void Host::Impl::Reply(networking::PeerId peer, const networking::Payload& message) {
+  network.Send(peer, message, networking::Reliability::kReliable);
 }
 
-void Host::Impl::SendTo(const std::vector<SessionId>& sessions, const protocol::MessageWire& message) {
-  const protocol::BytesWire payload = protocol::Encode(message);
+void Host::Impl::SendTo(const std::vector<SessionId>& sessions, const networking::Payload& message) {
   for (const SessionId session : sessions) {
-    network.Send(players.at(session).peer, payload, networking::Reliability::kReliable);
+    network.Send(players.at(session).peer, message, networking::Reliability::kReliable);
   }
 }
 
@@ -95,7 +94,7 @@ void Host::Impl::SendRoster() {
   for (const RosterEntry& entry : roster.players) {
     sessions.push_back(entry.session);
   }
-  SendTo(sessions, ToWire(roster));
+  SendTo(sessions, protocol::Encode(ToWire(roster)));
 }
 
 Host::Host(const HostConfig& config, Scenario scenario, scripting::Engine policy)
