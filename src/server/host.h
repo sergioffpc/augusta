@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
@@ -50,6 +51,11 @@ struct HostConfig {
   parameters::Parameters parameters{};
   /// Local address to listen on (US-01).
   networking::Endpoint listen{};
+  /// Where to write a recording of every tick SimulationWorld runs (ADR-0050),
+  /// replacing any file there; empty records none.
+  std::filesystem::path recording;
+  /// The hash of the server pack the content was loaded from, which a recording names.
+  assets::PackHash server_pack{};
 };
 
 /// The server's listening socket and its SimulationWorld, without threads or a clock.
@@ -58,7 +64,8 @@ class Host {
   /// Constructs SimulationWorld with scenario's collision (throws
   /// std::runtime_error if a map mesh, or a character's hitbox, is not a whole
   /// triangle list) and the scenario's Game policy (none by default), and starts
-  /// listening (throws std::runtime_error if the address can't be bound).
+  /// listening (throws std::runtime_error if the address can't be bound, or
+  /// HostConfig::recording can't be written).
   /// Content is loaded from the server pack by the caller (see content.h).
   Host(const HostConfig& config, Scenario scenario, scripting::Engine policy = {});
   ~Host();

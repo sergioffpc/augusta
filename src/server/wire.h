@@ -15,11 +15,13 @@
 #include "augusta/tick.h"
 #include "command_queue.h"
 #include "match.h"
+#include "recording.h"
 
 /// \file
 /// The server's edge with the Networking Protocol (ADR-0038): what server::Host
 /// sends, turned from the engine's types into the protocol's plain ones right
-/// before Encode, and what it receives, turned back right after Decode. The only
+/// before Encode, and what it receives, turned back right after Decode; and a
+/// match recording's records (recording.h), the same way. The only
 /// place on the server where a protocol::*Wire type meets an engine type: Match,
 /// CommandQueue and replication never see one. Pure field-by-field copies;
 /// whether a value is one the server accepts is decided after, by whoever takes
@@ -85,6 +87,18 @@ namespace augusta::server {
 
 /// The commands a client sent in one message, oldest first, in the engine's terms.
 [[nodiscard]] std::vector<SequencedCommand> FromWire(const protocol::CommandsWire& message);
+
+/// A match recording's header as its record (ADR-0050).
+[[nodiscard]] protocol::RecordingHeaderWire ToWire(const RecordingHeader& header);
+
+/// A recording's header record in the engine's terms.
+[[nodiscard]] RecordingHeader FromWire(const protocol::RecordingHeaderWire& header);
+
+/// One tick of a match recording as its record.
+[[nodiscard]] protocol::RecordedTickWire ToWire(const TickRecord& record);
+
+/// A recording's record of tick, as the World numbers it, in the engine's terms.
+[[nodiscard]] TickRecord FromWire(const protocol::RecordedTickWire& record, tick::Tick tick);
 
 }  // namespace augusta::server
 

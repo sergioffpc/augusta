@@ -5,11 +5,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <ios>
 #include <limits>
 #include <map>
 #include <memory>
 #include <numbers>
 #include <optional>
+#include <random>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -46,6 +49,8 @@
 #include "misbehaviour.h"
 #include "parameters_loader.h"
 #include "policy_loader.h"
+#include "recording.h"
+#include "replay.h"
 #include "wire.h"
 
 // The seam the M3 tickets test through (issue #73): a real server host and a
@@ -119,7 +124,12 @@ Endpoint UnusedLoopbackEndpoint() {
 // A test server's settings: the test tick rate unless a test says otherwise.
 HostConfig TestHostConfig(const Parameters& parameters = kTestParameters, std::uint8_t tick_rate_hz = kTestTickRate) {
   return HostConfig{
-      .tick_rate_hz = tick_rate_hz, .parameters = parameters, .listen = Endpoint{.address = kLoopbackAnyPort}};
+      .tick_rate_hz = tick_rate_hz,
+      .parameters = parameters,
+      .listen = Endpoint{.address = kLoopbackAnyPort},
+      .recording = {},
+      .server_pack = {},
+  };
 }
 
 // A client of the server at server playing character.
@@ -1698,6 +1708,98 @@ TEST_F(MatchCycleTest, AMatchWhoseLastPlayerLeavesEndsOnItsOwnAndTheLobbyTakesPl
   EXPECT_TRUE(next.GetSessionId().has_value())
       << "refused: "
       << augusta::harness::DescribeJoinRefusal(next.GetRefusal().value_or(JoinRefusal::kVersionMismatch));
+}
+
+// A host on the floor that records every tick it runs (ADR-0050), for a match
+// of two.
+class RecordingHostTest : public LoopbackMatch {
+ protected:
+  static std::vector<Vec3> SpawnPoints() { return {Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F)}; }
+
+  static HostSetup FloorSetup() { return OnTheFloor(SpawnPoints(), WithPlayerCount(2)); }
+
+  // Unique to this process: ctest may run the tests of this suite side by side.
+  static const std::filesystem::path& RecordingPath() {
+    static const std::filesystem::path path =
+        std::filesystem::temp_directory_path() /
+        ("augusta_session_recording_" + std::to_string(std::random_device{}()) + ".rec");
+    return path;
+  }
+
+  static HostSetup RecordingSetup() {
+    HostSetup setup = FloorSetup();
+    setup.config.recording = RecordingPath();
+    return setup;
+  }
+
+  RecordingHostTest() : LoopbackMatch(RecordingSetup()) {}
+
+  // After every Host of the suite has closed the file.
+  static void TearDownTestSuite() { std::filesystem::remove(RecordingPath()); }
+
+  static augusta::server::Recording ReadBack() {
+    std::ifstream in(RecordingPath(), std::ios::binary);
+    auto recording = augusta::server::ReadRecording(in);
+    EXPECT_TRUE(recording.has_value());
+    return recording.value_or(augusta::server::Recording{});
+  }
+
+  // The match the tests record: two clients join, walk forward, fire, and the
+  // host ends the match.
+  void PlayAMatch() {
+    Join();
+    Join();
+    ASSERT_TRUE(StartMatch());
+    Command fire = Forward();
+    fire.fire = true;
+    Run(kSettleTicks, fire);
+    host_.EndMatch();
+    ServerTick();
+  }
+};
+
+TEST_F(RecordingHostTest, EveryTickTheHostRanIsRecordedWithTheCommandsItTookIn) {
+  PlayAMatch();
+  const augusta::server::Recording recording = ReadBack();
+
+  ASSERT_FALSE(recording.ticks.empty());
+  EXPECT_EQ(recording.header.tick_rate_hz, kTestTickRate);
+  EXPECT_EQ(recording.header.engine_version, augusta::EngineVersion());
+  const auto started = std::ranges::find_if(
+      recording.ticks, [](const augusta::server::TickRecord& tick) { return !tick.input.match_start.empty(); });
+  ASSERT_NE(started, recording.ticks.end());
+  EXPECT_EQ(started->input.match_start.size(), 2U);
+  const bool walked_forward = std::ranges::any_of(recording.ticks, [](const augusta::server::TickRecord& tick) {
+    return tick.input.commands.size() == 2 && std::ranges::all_of(tick.input.commands, [](const auto& command) {
+             return command.command.movement.direction.x == 1.0F && command.command.fire;
+           });
+  });
+  EXPECT_TRUE(walked_forward);
+  EXPECT_TRUE(recording.ticks.back().input.match_ended);
+}
+
+TEST_F(RecordingHostTest, WhatTheHostRecordedReplaysToTheSameOutcome) {
+  PlayAMatch();
+  const augusta::server::Recording recording = ReadBack();
+  HostSetup setup = FloorSetup();
+
+  const auto replayed = augusta::server::Replay(recording,
+                                                augusta::server::Content{.scenario = std::move(setup.scenario),
+                                                                         .parameters = setup.config.parameters,
+                                                                         .policy = std::move(setup.policy)},
+                                                augusta::server::kSameBuild);
+
+  ASSERT_TRUE(replayed.has_value()) << "diverged on tick " << replayed.error().tick << ": "
+                                    << augusta::server::DescribeDivergenceKind(replayed.error().kind);
+  EXPECT_EQ(*replayed, recording.ticks.size());
+}
+
+TEST(RecordingHostConfigTest, AHostRefusesARecordingItCannotWrite) {
+  HostConfig config = TestHostConfig();
+  // A directory, which no file can be opened as.
+  config.recording = std::filesystem::temp_directory_path();
+  EXPECT_THROW(Host(config, Scenario{.collision = {}, .spawn_points = {}, .characters = {}, .client_pack = {}}),
+               std::runtime_error);
 }
 
 // One client on a floor, on the server's stamina rules: a bar that empties in

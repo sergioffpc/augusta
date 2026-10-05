@@ -11,8 +11,10 @@
 
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
+#include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/policy_actions.h"
+#include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "content.h"
 #include "match.h"
@@ -73,6 +75,18 @@ std::unordered_map<std::string, simulation::Character> ToSimulation(const std::v
     result.emplace(character.path, std::move(converted));
   }
   return result;
+}
+
+simulation::World BuildSimulation(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz,
+                                  const Scenario& scenario, scripting::Engine policy) {
+  simulation::World simulation(parameters, tick_rate_hz, std::move(policy));
+  for (const physics::CollisionMesh& mesh : scenario.collision) {
+    if (const auto added = simulation.AddCollisionMesh(mesh); !added) {
+      throw std::runtime_error(
+          std::format("server::Host: map collision rejected: {}", physics::DescribeCollisionMeshError(added.error())));
+    }
+  }
+  return simulation;
 }
 
 }  // namespace augusta::server

@@ -72,9 +72,12 @@ augusta_set_module_scope(augustad_admission SERVER_ONLY)
 # The server's socket and SimulationWorld without threads or a clock, so a test
 # can drive a match by hand (see host.h), and the conversions Host makes at its
 # edges: between the protocol's plain types and the engine's (see wire.h), and
-# into SimulationWorld's (see simulation_mapping.h).
+# into SimulationWorld's (see simulation_mapping.h); with the match recording
+# Host writes and its replay (see recording.h and replay.h, ADR-0050).
 add_library(augustad_host STATIC
   host.cpp
+  recording.cpp
+  replay.cpp
   simulation_mapping.cpp
   wire.cpp
 )
@@ -96,6 +99,11 @@ target_link_libraries(augustad_runtime
   PRIVATE augusta_assets augusta_logging augusta_tick
 )
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)
+
+# Replays a match recording augustad wrote against the server pack it names
+# (ADR-0050): a developer's tool, not shipped with the server.
+add_executable(augusta_replay replay_main.cpp)
+target_link_libraries(augusta_replay PRIVATE augusta_assets augusta_logging augusta_version augustad_content augustad_host)
 
 add_executable(augustad main.cpp)
 target_link_libraries(augustad PRIVATE augusta_assets augusta_config augustad_content augusta_parameters augusta_version augusta_logging augusta_networking augustad_runtime)
