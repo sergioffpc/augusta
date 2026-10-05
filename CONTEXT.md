@@ -102,6 +102,14 @@ _Avoid_: Skin, model, avatar (a character is not only appearance: its collider i
 How far in the past, about 100 ms, a client shows other players, so it always has two Authoritative State updates to interpolate between.
 _Avoid_: Lerp delay, buffer time, lag
 
+**Match recording**:
+What the Authoritative server handed SimulationWorld on each tick of its run and what the tick resolved, written to a file when its config asks for one, so a Replay can re-run it (ADR-0050). Every tick from the server's start, Lobby ticks included, not one Match alone.
+_Avoid_: Demo, replay file (a Replay is what is done with a recording)
+
+**Replay**:
+Handing a fresh SimulationWorld, built from the same server pack, every tick's recorded input and checking each tick resolves the recorded outcome: bit for bit on the build that made the recording, within a grid step of position on any other (ADR-0050).
+_Avoid_: Playback, rewind (Lag compensation looks back in time; a Replay re-runs a whole recording), re-simulation (Reconciliation's replay of unacknowledged commands is the client's own)
+
 **Seen time**:
 The moment of the server's timeline a client's frame shows the other players at: the tick of an Authoritative State update and how far from it to the next one, 0 to 1 (presentation::SeenTime). Every Command reports the Seen time of the frame it was sampled on, and the server judges its rounds against the other players as they were then (ADR-0044).
 _Avoid_: View, shown view, view tick (a view is where a player looks: a yaw and a pitch)

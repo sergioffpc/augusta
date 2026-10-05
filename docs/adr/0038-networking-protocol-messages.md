@@ -39,6 +39,10 @@ loaded for, and reliable Match start and Match end messages bound each match.
 The spawn position moves from Join accepted to Match start, which gives every
 player's. Each Lobby entry and each player in Match start carries its character's path.
 
+**Extended by ADR-0050**: a match recording is written in this encoding, as
+records of its own (a header and one per tick) that are never messages, so it
+carries a command in the bytes a Commands message does.
+
 **Wire shape.** One message is one transport payload: a one-byte `MessageType`
 followed by that type's fields, fixed-width and little-endian; a string is a
 one-byte length and its bytes. Every field takes the smallest type that holds

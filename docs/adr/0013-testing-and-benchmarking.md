@@ -60,6 +60,12 @@ how noisy its result is.
   fails, without either job needing the other's output. A deliberate change
   to the ballistics model regenerates the file with one build target, and
   the diff is reviewed like code.
+- **A golden match, the same way.** A match recording (ADR-0050) of a
+  scripted duel on the example scenario's golden server pack lives in the
+  repository, and the test replays it on every runner, within the tolerance
+  ADR-0050 gives a replay on another build: positions a grid step off, every
+  other value equal. A deliberate change to the simulation rewrites it with
+  one build target, and the diff is reviewed like code.
 - **Pack contract through golden packs.** The pack format has two
   implementations, the Python cooker writing it and `augusta_assets` reading
   it, so both are held to the same committed files: the example scenario's

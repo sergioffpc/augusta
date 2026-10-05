@@ -416,6 +416,7 @@ aid only and do not affect numbering.
 - [ADR-0042 — Character selection: chosen in the client config, validated at join, replicated as an index](./adr/0042-character-selection.md)
 - [ADR-0044 — Shot lag compensation and replication](./adr/0044-shot-lag-compensation-and-replication.md)
 - [ADR-0045 — Dynamic bodies: server-authoritative Props, client-only cosmetics, fixed-step simulate](./adr/0045-dynamic-bodies.md)
+- [ADR-0050 — Match recording and replay: SimulationWorld's input and outcome per tick, in the protocol's encoding](./adr/0050-match-recording-and-replay.md)
 
 ### Tooling & Build
 - [ADR-0008 — Build tooling](./adr/0008-build-tooling.md)
