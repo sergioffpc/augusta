@@ -112,14 +112,13 @@ void ScriptedPlayer::StartLegIfDone(std::uint8_t tick_rate_hz) {
   leg_.ticks_left = static_cast<int>(seconds * tick_rate_hz);
 }
 
-command::Command ScriptedPlayer::NextCommand(const harness::ServerView& view) {
+command::Command ScriptedPlayer::NextCommand(const harness::ServerView& view, const physics::BodyState& own) {
   if (!view.OwnAlive() || !view.authoritative.has_value()) {
     return command::Command{};
   }
   // OwnAlive holds only once the server has admitted this player and named its body.
-  const harness::EntityId own = *view.OwnEntity();
-  const std::optional<physics::BodyState> own_body = BodyOf(*view.authoritative, own);
-  if (!own_body.has_value()) {
+  const harness::EntityId own_entity = *view.OwnEntity();
+  if (!BodyOf(*view.authoritative, own_entity).has_value()) {
     return command::Command{};
   }
 
@@ -132,12 +131,14 @@ command::Command ScriptedPlayer::NextCommand(const harness::ServerView& view) {
   // A Scripted player sees the other players where the newest state puts them.
   command.seen_tick = view.authoritative->tick;
 
-  const std::optional<physics::BodyState> target = NearestTarget(view, own, *own_body);
+  const std::optional<physics::BodyState> target = NearestTarget(view, own_entity, own);
   if (!target.has_value()) {
     trigger_ticks_ = 0;
     return command;
   }
-  const View aim = LookAt(PointUp(*own_body, kEyeHeightFraction), PointUp(*target, kTorsoHeightFraction));
+  // From where its prediction puts it, as a client aims from where it shows its
+  // own player: the newest state's is a round trip behind.
+  const View aim = LookAt(PointUp(own, kEyeHeightFraction), PointUp(*target, kTorsoHeightFraction));
   command.yaw = aim.yaw;
   command.pitch = aim.pitch;
 

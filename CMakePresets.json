@@ -157,7 +157,8 @@
     {
       "name": "windows-tools",
       "configurePreset": "windows-tools",
-      "output": { "outputOnFailure": true }
+      "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "label": "^netcode$" } }
     },
     {
       "name": "linux",
@@ -172,7 +173,14 @@
     {
       "name": "linux-tools",
       "configurePreset": "linux-tools",
-      "output": { "outputOnFailure": true }
+      "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "label": "^netcode$" } }
+    },
+    {
+      "name": "linux-netcode",
+      "configurePreset": "linux-tools",
+      "output": { "outputOnFailure": true },
+      "filter": { "include": { "label": "^netcode$" } }
     },
     {
       "name": "linux-san",
