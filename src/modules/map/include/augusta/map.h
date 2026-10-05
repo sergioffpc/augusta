@@ -13,8 +13,9 @@
 /// \file
 /// augusta::map turns a verified Pack (ADR-0018) into what a physics::World
 /// needs to make the map solid. Client and server both call it with their own
-/// pack (ADR-0019 ships collision data in both), so PredictionWorld and
-/// SimulationWorld collide against the same geometry built by the same code.
+/// pack (ADR-0019 ships collision data in both), and adds the result to their
+/// worlds with AddCollision, so PredictionWorld and SimulationWorld collide
+/// against the same geometry, built and added by the same code.
 namespace augusta::map {
 
 /// Why a map's collision could not be built from a pack.
@@ -50,6 +51,20 @@ std::string DescribeMapError(const MapError& error);
 /// one per node that references a collider.
 std::expected<std::vector<physics::CollisionMesh>, MapError> LoadCollision(
     const assets::Pack& pack, std::string_view scene_path = assets::kScenePath);
+
+/// Adds each of collision, as LoadCollision returns it, to world - SimulationWorld,
+/// PredictionWorld or PresentationWorld, whichever has AddCollisionMesh - stopping
+/// at the first mesh world rejects, whose error it returns.
+template <typename World>
+std::expected<void, physics::CollisionMeshError> AddCollision(World& world,
+                                                              const std::vector<physics::CollisionMesh>& collision) {
+  for (const physics::CollisionMesh& mesh : collision) {
+    if (auto added = world.AddCollisionMesh(mesh); !added) {
+      return added;
+    }
+  }
+  return {};
+}
 
 /// The world-space position of every spawn point (a scene node authored with
 /// augusta:spawnPoint, ADR-0032) of the scene graph at scene_path in pack, in
