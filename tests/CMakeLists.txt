@@ -18,8 +18,11 @@ add_executable(augusta_benchmarks
   pack_benchmark.cpp
   protocol_benchmark.cpp
   simulation_benchmark.cpp)
+# The tick runs the example scenario's Game policy, as the server loads it from
+# its golden server pack.
 target_link_libraries(augusta_benchmarks PRIVATE
-  augusta_assets augusta_ballistics augusta_protocol augusta_simulation benchmark::benchmark benchmark::benchmark_main)
+  augusta_assets augusta_ballistics augusta_protocol augusta_simulation augustad_policy_loader
+  benchmark::benchmark benchmark::benchmark_main)
 target_compile_definitions(augusta_benchmarks PRIVATE
   AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs")
 
