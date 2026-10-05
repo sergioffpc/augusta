@@ -21,6 +21,12 @@ simulation:
   # for it. NFR-01 asks the server to sustain 60 Hz; a slower rate is accepted
   # so a run can be debugged.
   tick_rate_hz: 60
+  # Where to write a recording of every tick the server simulates (optional,
+  # default none): the commands each tick ran on and what it resolved, which
+  # augusta_replay re-runs to reproduce a match (ADR-0048). The file is
+  # replaced each time the server starts, and grows by about 35 KB a second
+  # with 8 players at 60 Hz.
+  # recording: recordings/match.rec
 network:
   # Local address to listen on (optional, default 0.0.0.0:27015).
   listen_address: 0.0.0.0:27015

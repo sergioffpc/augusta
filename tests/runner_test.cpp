@@ -96,7 +96,11 @@ std::optional<Vec3> OwnPosition(const ServerView& view) {
 class RunnerTest : public ::testing::Test {
  protected:
   RunnerTest()
-      : host_(HostConfig{.tick_rate_hz = kTickRate, .parameters = {}, .listen = Endpoint{.address = "127.0.0.1:0"}},
+      : host_(HostConfig{.tick_rate_hz = kTickRate,
+                         .parameters = {},
+                         .listen = Endpoint{.address = "127.0.0.1:0"},
+                         .recording = {},
+                         .server_pack = {}},
               Scenario{.collision = {FloorAt(kGroundHeight)},
                        .spawn_points = {},
                        .characters = {{.path = kCharacter, .hitboxes = {}}}}),

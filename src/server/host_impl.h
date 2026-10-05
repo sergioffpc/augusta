@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -27,6 +28,7 @@
 #include "host_log.h"
 #include "match.h"
 #include "misbehaviour.h"
+#include "recording.h"
 #include "tick_messages.h"
 
 /// \file
@@ -51,10 +53,12 @@ struct Host::Impl {
     TickRecipients to;
   };
 
-  // Declared before the socket so it is constructed first; see BuildSimulation.
-  // Simulation thread only, with the body each player in it controls, and
-  // whether the match those bodies are in is still in the simulation.
-  simulation::World simulation;
+  // Declared before the socket so it is constructed first; see
+  // BuildRecordedSimulation. Simulation thread only, with the file it records
+  // to, if any, the body each player in it controls, and whether the match
+  // those bodies are in is still in the simulation.
+  std::ofstream recording_file;
+  RecordedSimulation simulation;
   std::unordered_map<SessionId, EntityId> bodies;
   bool simulating_match = false;
   // The last tick SimulationWorld ran, as it numbers them: what its State was

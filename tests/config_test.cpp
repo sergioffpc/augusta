@@ -544,6 +544,31 @@ TEST(ParseServerConfigTest, DefaultsTheListenAddress) {
   EXPECT_EQ(config->listen_address, augusta::config::kDefaultListenAddress);
 }
 
+TEST(ParseServerConfigTest, RecordsNoMatchByDefault) {
+  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_TRUE(config->recording_path.empty());
+}
+
+TEST(ParseServerConfigTest, ReadsARecordingPathRelativeToTheBaseDir) {
+  const auto config = ParseServerConfig(
+      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  recording: logs/match.rec\n",
+      kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->recording_path, kRoot / "logs" / "match.rec");
+}
+
+TEST(ParseServerConfigTest, RejectsAnEmptyRecordingPath) {
+  const auto config = ParseServerConfig(
+      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  recording: \"\"\n", kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, augusta::config::ConfigErrorCode::kEmptyValue);
+  EXPECT_EQ(config.error().subject, "simulation.recording");
+}
+
 TEST(ParseServerConfigTest, DefaultsTheLogLevel) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 

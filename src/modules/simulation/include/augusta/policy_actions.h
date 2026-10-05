@@ -32,6 +32,8 @@ struct MatchEnd {
   /// The session of the player who won, alive in the Match on the tick it was
   /// decided; nullopt for a draw.
   std::optional<SessionId> winner;
+
+  bool operator==(const MatchEnd&) const = default;
 };
 
 /// Every action the objectives' on_tick may take. A closed set: it grows only

@@ -5,6 +5,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <fstream>
+#include <ios>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -14,9 +16,7 @@
 #include <vector>
 
 #include "augusta/logging.h"
-#include "augusta/map.h"
 #include "augusta/networking.h"
-#include "augusta/physics.h"
 #include "augusta/protocol.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
@@ -26,6 +26,7 @@
 #include "heartbeat.h"
 #include "host_impl.h"
 #include "match.h"
+#include "recording.h"
 #include "simulation_mapping.h"
 #include "wire.h"
 
@@ -33,16 +34,22 @@ namespace augusta::server {
 
 namespace {
 
-// The authoritative world with the map's collision already in it. Built
-// before the socket exists, so a map that is rejected never leaves a bound
-// port behind.
-simulation::World BuildSimulation(const HostConfig& config, const Scenario& scenario, scripting::Engine policy) {
-  simulation::World simulation(config.parameters, config.tick_rate_hz, std::move(policy));
-  if (const auto added = map::AddCollision(simulation, scenario.collision); !added) {
-    throw std::runtime_error(
-        std::format("server::Host: map collision rejected: {}", physics::DescribeCollisionMeshError(added.error())));
+// The authoritative world with the map's collision already in it, recording
+// to file if config asks for a recording (ADR-0048). Built before the socket
+// exists, so a map that is rejected never leaves a bound port behind.
+RecordedSimulation BuildRecordedSimulation(const HostConfig& config, const Scenario& scenario, scripting::Engine policy,
+                                           std::ofstream& file) {
+  simulation::World world = BuildSimulation(config.parameters, config.tick_rate_hz, scenario, std::move(policy));
+  if (config.recording.empty()) {
+    return {std::move(world), std::nullopt};
   }
-  return simulation;
+  file.open(config.recording, std::ios::binary | std::ios::trunc);
+  if (!file) {
+    throw std::runtime_error(std::format("server::Host: cannot write a recording to {}", config.recording.string()));
+  }
+  return {std::move(world), Recorder(file, RecordingHeader{.engine_version = std::string(EngineVersion()),
+                                                           .server_pack = config.server_pack,
+                                                           .tick_rate_hz = config.tick_rate_hz})};
 }
 
 // The ticks of kMatchPause at tick_rate_hz, rounded up so the pause is never shorter.
@@ -63,7 +70,7 @@ std::vector<std::string> CharacterPaths(const std::vector<Character>& characters
 }  // namespace
 
 Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy)
-    : simulation(BuildSimulation(config, scenario, std::move(policy))),
+    : simulation(BuildRecordedSimulation(config, scenario, std::move(policy), recording_file)),
       tick_rate_hz(config.tick_rate_hz),
       parameters(config.parameters),
       characters(ToSimulation(scenario.characters)),

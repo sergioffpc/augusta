@@ -205,6 +205,29 @@ TEST_F(SimulationTest, ARemovedPlayerLeavesTheState) {
   EXPECT_EQ(state.bodies[0].entity, kBob);
 }
 
+TEST_F(SimulationTest, APlacedBodyTicksOnFromWhereItWasPut) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
+  augusta::physics::BodyState placed = Body(Run(kSettleTicks, {}), kAlice);
+  placed.position.x += 3.0F;
+
+  world_.PlaceBody(kAlice, placed);
+  const State state = world_.Tick({}, kTick).state;
+
+  EXPECT_NEAR(Body(state, kAlice).position.x, placed.position.x, 0.01F);
+  EXPECT_NEAR(Body(state, kAlice).position.y, placed.position.y, 0.01F);
+}
+
+TEST_F(SimulationTest, PlacingABodyNotInTheWorldChangesNothing) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
+  const State before = Run(kSettleTicks, {});
+
+  world_.PlaceBody(kBob, augusta::physics::BodyState{});
+
+  const State after = world_.Tick({}, kTick).state;
+  ASSERT_EQ(after.bodies.size(), 1U);
+  EXPECT_EQ(Body(after, kAlice).position, Body(before, kAlice).position);
+}
+
 TEST_F(SimulationTest, RemovingAPlayerNotInTheWorldChangesNothing) {
   world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
 

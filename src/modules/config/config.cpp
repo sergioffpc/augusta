@@ -466,8 +466,13 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
 
 std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 6> kKeys{
-      "base_dir",      "content.pack", "content.public_key", "simulation.tick_rate_hz", "network.listen_address",
+  static constexpr std::array<std::string_view, 7> kKeys{
+      "base_dir",
+      "content.pack",
+      "content.public_key",
+      "simulation.tick_rate_hz",
+      "simulation.recording",
+      "network.listen_address",
       "logging.level",
   };
   const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = {}});
@@ -496,12 +501,21 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!log_level) {
     return std::unexpected(log_level.error());
   }
+  std::filesystem::path recording_path;
+  if (values->contains("simulation.recording")) {
+    auto path = RequirePath(*values, "simulation.recording", *root);
+    if (!path) {
+      return std::unexpected(path.error());
+    }
+    recording_path = *std::move(path);
+  }
   return ServerConfig{
       .pack_path = *std::move(pack_path),
       .public_key_path = *std::move(public_key_path),
       .tick_rate_hz = *tick_rate_hz,
       .listen_address = OptionalString(*values, "network.listen_address", kDefaultListenAddress),
       .log_level = *std::move(log_level),
+      .recording_path = std::move(recording_path),
   };
 }
 

@@ -61,6 +61,12 @@ target_link_libraries(augusta_protocol_tests PRIVATE augusta_protocol GTest::gte
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_protocol_tests DISCOVERY_TIMEOUT 30)
 
+# A match recording's records, in the protocol's encoding (ADR-0048).
+add_executable(augusta_protocol_recording_tests protocol_recording_test.cpp)
+target_link_libraries(augusta_protocol_recording_tests PRIVATE augusta_protocol GTest::gtest GTest::gtest_main)
+# Links PhysX through augusta_physics, so the same first-launch cost applies as below.
+gtest_discover_tests(augusta_protocol_recording_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_protocol_property_tests protocol_property_test.cpp)
 target_link_libraries(augusta_protocol_property_tests PRIVATE augusta_protocol rapidcheck_gtest GTest::gtest GTest::gtest_main)
 # RapidCheck's generator templates, one per message field, outgrow MSVC's
@@ -266,6 +272,25 @@ target_compile_definitions(augusta_session_tests PRIVATE
   AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs")
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_session_tests DISCOVERY_TIMEOUT 30)
+
+# Match recordings and their replay (ADR-0048), on the example scenario as the
+# server loads it from its golden server pack, and the golden match recorded
+# from it. When the simulation changes on purpose, one step rewrites the golden
+# match for review and commit:
+#   cmake --build --preset <preset> --target augusta_golden_match
+add_executable(augusta_recording_tests recording_test.cpp)
+target_link_libraries(augusta_recording_tests PRIVATE augustad_host augustad_content augusta_logging augusta_version
+  GTest::gtest GTest::gtest_main)
+target_compile_definitions(augusta_recording_tests PRIVATE
+  AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
+  AUGUSTA_GOLDEN_MATCH="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/golden_match.rec")
+# Links PhysX, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_recording_tests DISCOVERY_TIMEOUT 30)
+add_custom_target(augusta_golden_match
+  COMMAND augusta_recording_tests --gtest_also_run_disabled_tests
+    --gtest_filter=GoldenMatchTest.DISABLED_RegenerateGoldenMatch
+  COMMENT "Rewriting tests/fixtures/golden_match.rec"
+  VERBATIM)
 
 add_executable(augusta_runner_tests runner_test.cpp)
 target_link_libraries(augusta_runner_tests PRIVATE augusta_harness augustad_host GTest::gtest GTest::gtest_main)

@@ -57,8 +57,9 @@ enum class BodyHandle : std::uint32_t {};
 struct MovementInput {
   /// Desired movement direction in world space. Does not need to be
   /// pre-normalized; World::Step normalizes it internally. The zero vector
-  /// means "no movement input this tick".
-  math::Vec3 direction;
+  /// means "no movement input this tick", and is the default: glm leaves a
+  /// default-initialized vector's components unset.
+  math::Vec3 direction{};
   /// True if the player is holding the sprint control this tick. Sprint is
   /// honored only while the body is standing, moving and not exhausted (see
   /// BodyState::exhausted), and only then depletes stamina (see StaminaConfig);
@@ -97,6 +98,8 @@ struct BodyState {
   /// StaminaConfig::forced_walk_below: while set, sprint is ignored. It changes
   /// what the next commands do, so it travels and is restored with the rest.
   bool exhausted = false;
+
+  bool operator==(const BodyState&) const = default;
 };
 
 /// Tunable balance values governing stamina depletion/recovery (US-05).
