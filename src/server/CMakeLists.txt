@@ -83,7 +83,7 @@ target_link_libraries(augustad_host
   PUBLIC augusta_ballistics augusta_networking augusta_parameters augusta_physics augusta_simulation augustad_content
          augustad_commands augustad_match augustad_misbehaviour augustad_admission augusta_assets augusta_protocol augusta_replication
          augusta_tick
-  PRIVATE augusta_logging augusta_version
+  PRIVATE augusta_logging augusta_map augusta_version
 )
 augusta_set_module_scope(augustad_host SERVER_ONLY)
 

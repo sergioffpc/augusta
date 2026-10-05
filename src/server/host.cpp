@@ -23,6 +23,7 @@
 #include "admission.h"
 #include "augusta/ballistics.h"
 #include "augusta/logging.h"
+#include "augusta/map.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
@@ -50,11 +51,9 @@ namespace {
 // port behind.
 simulation::World BuildSimulation(const HostConfig& config, const Scenario& scenario, scripting::Engine policy) {
   simulation::World simulation(config.parameters, config.tick_rate_hz, std::move(policy));
-  for (const physics::CollisionMesh& mesh : scenario.collision) {
-    if (const auto added = simulation.AddCollisionMesh(mesh); !added) {
-      throw std::runtime_error(
-          std::format("server::Host: map collision rejected: {}", physics::DescribeCollisionMeshError(added.error())));
-    }
+  if (const auto added = map::AddCollision(simulation, scenario.collision); !added) {
+    throw std::runtime_error(
+        std::format("server::Host: map collision rejected: {}", physics::DescribeCollisionMeshError(added.error())));
   }
   return simulation;
 }

@@ -23,6 +23,7 @@
 #include "augusta/input.h"
 #include "augusta/interpolation.h"
 #include "augusta/logging.h"
+#include "augusta/map.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/physics.h"
@@ -142,12 +143,12 @@ struct ClientRuntime::Impl {
     // server's once it has joined, so the two cannot drift.
     // The Map goes into PresentationWorld too, for the tracers to meet.
     prediction::World world;
-    for (const physics::CollisionMesh& mesh : map.collision) {
-      auto added = world.AddCollisionMesh(mesh).and_then([&] { return presentation.AddCollisionMesh(mesh); });
-      if (!added) {
-        throw std::runtime_error(std::format("ClientRuntime: map collision rejected: {}",
-                                             physics::DescribeCollisionMeshError(added.error())));
-      }
+    const auto added = map::AddCollision(world, map.collision).and_then([&] {
+      return map::AddCollision(presentation, map.collision);
+    });
+    if (!added) {
+      throw std::runtime_error(
+          std::format("ClientRuntime: map collision rejected: {}", physics::DescribeCollisionMeshError(added.error())));
     }
     session.emplace(
         harness::SessionConfig{.server = cfg.server, .client_pack = cfg.client_pack, .character = cfg.character},
