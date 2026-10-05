@@ -46,6 +46,12 @@ target_link_libraries(augusta_protocol_tests PRIVATE augusta_protocol GTest::gte
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_protocol_tests DISCOVERY_TIMEOUT 30)
 
+# A match recording's records, in the protocol's encoding (ADR-0050).
+add_executable(augusta_protocol_recording_tests protocol_recording_test.cpp)
+target_link_libraries(augusta_protocol_recording_tests PRIVATE augusta_protocol GTest::gtest GTest::gtest_main)
+# Links PhysX through augusta_physics, so the same first-launch cost applies as below.
+gtest_discover_tests(augusta_protocol_recording_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_protocol_property_tests protocol_property_test.cpp)
 target_link_libraries(augusta_protocol_property_tests PRIVATE augusta_protocol rapidcheck_gtest GTest::gtest GTest::gtest_main)
 # RapidCheck's generator templates, one per message field, outgrow MSVC's

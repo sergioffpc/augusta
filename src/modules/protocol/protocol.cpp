@@ -99,14 +99,18 @@ void WriteBodyState(BytesWire& out, const BodyStateWire& body) {
   WriteSteps(out, body.stamina, math::kStaminaGrid);
 }
 
+void WriteEntityState(BytesWire& out, const EntityStateWire& body) {
+  WriteU32(out, static_cast<std::uint32_t>(body.entity));
+  WriteBodyState(out, body.body);
+  WriteSteps(out, body.yaw, math::kAngleGrid);
+}
+
 // The bodies of an update: a count, then each one.
 void WriteBodies(BytesWire& out, const std::vector<EntityStateWire>& bodies) {
   assert(bodies.size() <= kMaxPlayers);
   WriteU8(out, static_cast<std::uint8_t>(bodies.size()));
   for (const EntityStateWire& body : bodies) {
-    WriteU32(out, static_cast<std::uint32_t>(body.entity));
-    WriteBodyState(out, body.body);
-    WriteSteps(out, body.yaw, math::kAngleGrid);
+    WriteEntityState(out, body);
   }
 }
 
@@ -419,17 +423,21 @@ LobbyWire ReadLobby(Reader& reader) {
   return lobby;
 }
 
+MatchPlayerWire ReadMatchPlayer(Reader& reader) {
+  MatchPlayerWire player;
+  player.session = static_cast<SessionIdWire>(reader.ReadU32());
+  player.entity = static_cast<EntityIdWire>(reader.ReadU32());
+  player.character = reader.ReadCharacter();
+  player.spawn = reader.ReadVec3(math::kPositionGrid);
+  return player;
+}
+
 MatchStartWire ReadMatchStart(Reader& reader) {
   MatchStartWire start;
   const std::size_t count = reader.ReadCount(kMaxPlayers);
   start.players.reserve(count);
   for (std::size_t i = 0; i < count; ++i) {
-    MatchPlayerWire player;
-    player.session = static_cast<SessionIdWire>(reader.ReadU32());
-    player.entity = static_cast<EntityIdWire>(reader.ReadU32());
-    player.character = reader.ReadCharacter();
-    player.spawn = reader.ReadVec3(math::kPositionGrid);
-    start.players.push_back(std::move(player));
+    start.players.push_back(ReadMatchPlayer(reader));
   }
   return start;
 }
@@ -527,6 +535,30 @@ void WriteParameters(BytesWire& out, const ParametersWire& parameters) {
   WriteF32(out, parameters.starting_health);
 }
 
+void WriteMatchPlayer(BytesWire& out, const MatchPlayerWire& player) {
+  assert(player.character.size() <= kMaxCharacterPathLength);
+  WriteU32(out, static_cast<std::uint32_t>(player.session));
+  WriteU32(out, static_cast<std::uint32_t>(player.entity));
+  WriteString(out, player.character);
+  WriteVec3(out, player.spawn, math::kPositionGrid);
+}
+
+void WriteShot(BytesWire& out, const ShotWire& shot) {
+  WriteU32(out, static_cast<std::uint32_t>(shot.shooter));
+  WriteTick(out, shot.tick);
+  WriteVec3(out, shot.origin, math::kPositionGrid);
+  WriteSteps(out, shot.yaw, math::kAngleGrid);
+  WriteSteps(out, shot.pitch, math::kAngleGrid);
+}
+
+void WriteDeath(BytesWire& out, const DeathWire& death) {
+  WriteU32(out, static_cast<std::uint32_t>(death.victim));
+  WriteU32(out, static_cast<std::uint32_t>(death.killer));
+  WriteU8(out, static_cast<std::uint8_t>(death.part));
+  WriteSteps(out, death.yaw, math::kAngleGrid);
+  WriteSteps(out, death.pitch, math::kAngleGrid);
+}
+
 // One overload per message: the type tag, then the fields.
 struct Encoder {
   BytesWire& out;
@@ -598,11 +630,7 @@ struct Encoder {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kMatchStart));
     WriteU8(out, static_cast<std::uint8_t>(message.players.size()));
     for (const MatchPlayerWire& player : message.players) {
-      assert(player.character.size() <= kMaxCharacterPathLength);
-      WriteU32(out, static_cast<std::uint32_t>(player.session));
-      WriteU32(out, static_cast<std::uint32_t>(player.entity));
-      WriteString(out, player.character);
-      WriteVec3(out, player.spawn, math::kPositionGrid);
+      WriteMatchPlayer(out, player);
     }
   }
 
@@ -613,11 +641,7 @@ struct Encoder {
 
   void operator()(const ShotWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kShot));
-    WriteU32(out, static_cast<std::uint32_t>(message.shooter));
-    WriteTick(out, message.tick);
-    WriteVec3(out, message.origin, math::kPositionGrid);
-    WriteSteps(out, message.yaw, math::kAngleGrid);
-    WriteSteps(out, message.pitch, math::kAngleGrid);
+    WriteShot(out, message);
   }
 
   void operator()(const HitConfirmationWire& message) const {
@@ -629,15 +653,187 @@ struct Encoder {
 
   void operator()(const DeathWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kDeath));
-    WriteU32(out, static_cast<std::uint32_t>(message.victim));
-    WriteU32(out, static_cast<std::uint32_t>(message.killer));
-    WriteU8(out, static_cast<std::uint8_t>(message.part));
-    WriteSteps(out, message.yaw, math::kAngleGrid);
-    WriteSteps(out, message.pitch, math::kAngleGrid);
+    WriteDeath(out, message);
   }
 };
 
+// A list of at most max elements: a one-byte count, then each one as write writes it.
+template <typename Element, typename Write>
+void WriteList(BytesWire& out, const std::vector<Element>& list, std::size_t max, Write write) {
+  assert(list.size() <= max);
+  WriteU8(out, static_cast<std::uint8_t>(list.size()));
+  for (const Element& element : list) {
+    write(out, element);
+  }
+}
+
+// The read side of WriteList: at most max elements, each as read reads it.
+template <typename Read>
+auto ReadList(Reader& reader, std::size_t max, Read read) {
+  const std::size_t count = reader.ReadCount(max);
+  std::vector<decltype(read(reader))> list;
+  list.reserve(count);
+  for (std::size_t i = 0; i < count; ++i) {
+    list.push_back(read(reader));
+  }
+  return list;
+}
+
+// A recorded hit's body part takes the low two bits of one byte and its flags
+// the one above them; the top five are always 0.
+constexpr std::uint8_t kHitPartMask = 0x03U;
+constexpr std::uint8_t kHitFlagsMask = RecordedHitWire::kReachedZero;
+constexpr unsigned kHitFlagsShift = 2U;
+
+constexpr std::uint8_t kTickFlagsMask = RecordedTickWire::kMatchEnded | RecordedTickWire::kPolicyMatchEnd;
+
+void WriteEntityId(BytesWire& out, EntityIdWire entity) { WriteU32(out, static_cast<std::uint32_t>(entity)); }
+
+EntityIdWire ReadEntityId(Reader& reader) { return static_cast<EntityIdWire>(reader.ReadU32()); }
+
+void WriteRecordedCommand(BytesWire& out, const RecordedCommandWire& recorded) {
+  WriteEntityId(out, recorded.entity);
+  WriteTick(out, recorded.seen_tick);
+  WriteCommand(out, recorded.command);
+}
+
+RecordedCommandWire ReadRecordedCommand(Reader& reader) {
+  RecordedCommandWire recorded;
+  recorded.entity = ReadEntityId(reader);
+  recorded.seen_tick = reader.ReadTick();
+  recorded.command = ReadCommand(reader);
+  return recorded;
+}
+
+void WriteRecordedBody(BytesWire& out, const RecordedBodyWire& body) {
+  WriteEntityState(out, body.state);
+  WriteWeaponState(out, body.rifle);
+  WriteF32(out, body.health);
+}
+
+RecordedBodyWire ReadRecordedBody(Reader& reader) {
+  RecordedBodyWire body;
+  body.state = ReadEntityState(reader);
+  body.rifle = ReadWeaponState(reader);
+  body.health = reader.ReadF32();
+  return body;
+}
+
+void WriteRecordedHit(BytesWire& out, const RecordedHitWire& hit) {
+  assert((hit.flags & ~kHitFlagsMask) == 0);
+  WriteEntityId(out, hit.shooter);
+  WriteEntityId(out, hit.target);
+  WriteU8(out, static_cast<std::uint8_t>(static_cast<std::uint8_t>(hit.part) | (hit.flags << kHitFlagsShift)));
+  WriteF32(out, hit.damage);
+  WriteF32(out, hit.health);
+}
+
+RecordedHitWire ReadRecordedHit(Reader& reader) {
+  RecordedHitWire hit;
+  hit.shooter = ReadEntityId(reader);
+  hit.target = ReadEntityId(reader);
+  const std::uint8_t packed = reader.ReadU8();
+  hit.part = reader.ToEnum(static_cast<std::uint8_t>(packed & kHitPartMask), BodyPartWire::kHead, BodyPartWire::kLimb);
+  hit.flags = reader.ToFlags(static_cast<std::uint8_t>(packed >> kHitFlagsShift), kHitFlagsMask);
+  hit.damage = reader.ReadF32();
+  hit.health = reader.ReadF32();
+  return hit;
+}
+
+RecordingHeaderWire ReadRecordingHeader(Reader& reader) {
+  RecordingHeaderWire header;
+  header.engine_version = reader.ReadString(kMaxEngineVersionLength);
+  header.server_pack = reader.ReadPackHash();
+  header.tick_rate_hz = reader.ReadU8();
+  return header;
+}
+
+RecordedTickWire ReadRecordedTick(Reader& reader) {
+  RecordedTickWire tick;
+  tick.removed = ReadList(reader, kMaxPlayers, ReadEntityId);
+  tick.match_start = ReadList(reader, kMaxPlayers, ReadMatchPlayer);
+  tick.commands = ReadList(reader, kMaxPlayers, ReadRecordedCommand);
+  tick.bodies = ReadList(reader, kMaxPlayers, ReadRecordedBody);
+  tick.shots = ReadList(reader, kMaxPlayers, ReadShot);
+  tick.hits = ReadList(reader, kMaxRecordedHits, ReadRecordedHit);
+  tick.deaths = ReadList(reader, kMaxPlayers, ReadDeath);
+  tick.delta_time = reader.ReadF32();
+  tick.winner = static_cast<SessionIdWire>(reader.ReadU32());
+  tick.flags = reader.ToFlags(reader.ReadU8(), kTickFlagsMask);
+  return tick;
+}
+
+// nullopt when type is not a record of a recording.
+std::optional<RecordWire> ReadRecordBody(RecordTypeWire type, Reader& reader) {
+  switch (type) {
+    case RecordTypeWire::kHeader:
+      return ReadRecordingHeader(reader);
+    case RecordTypeWire::kTick:
+      return ReadRecordedTick(reader);
+  }
+  return std::nullopt;
+}
+
+// One overload per record: the type tag, then the fields.
+struct RecordEncoder {
+  BytesWire& out;
+
+  void operator()(const RecordingHeaderWire& header) const {
+    assert(header.engine_version.size() <= kMaxEngineVersionLength);
+    WriteU8(out, static_cast<std::uint8_t>(RecordTypeWire::kHeader));
+    WriteString(out, header.engine_version);
+    out.insert(out.end(), header.server_pack.begin(), header.server_pack.end());
+    WriteU8(out, header.tick_rate_hz);
+  }
+
+  void operator()(const RecordedTickWire& tick) const {
+    assert((tick.flags & ~kTickFlagsMask) == 0);
+    WriteU8(out, static_cast<std::uint8_t>(RecordTypeWire::kTick));
+    WriteList(out, tick.removed, kMaxPlayers, WriteEntityId);
+    WriteList(out, tick.match_start, kMaxPlayers, WriteMatchPlayer);
+    WriteList(out, tick.commands, kMaxPlayers, WriteRecordedCommand);
+    WriteList(out, tick.bodies, kMaxPlayers, WriteRecordedBody);
+    WriteList(out, tick.shots, kMaxPlayers, WriteShot);
+    WriteList(out, tick.hits, kMaxRecordedHits, WriteRecordedHit);
+    WriteList(out, tick.deaths, kMaxPlayers, WriteDeath);
+    WriteF32(out, tick.delta_time);
+    WriteU32(out, static_cast<std::uint32_t>(tick.winner));
+    WriteU8(out, tick.flags);
+  }
+};
+
+// A payload whose body was read into body by reader, after its type byte: the
+// body, unless its type is unknown (nullopt), the read met a problem, or bytes
+// remain.
+template <typename Payload>
+std::expected<Payload, DecodeError> Finish(std::optional<Payload> body, const Reader& reader) {
+  if (!body.has_value()) {
+    return std::unexpected(DecodeError::kUnknownType);
+  }
+  if (reader.Error().has_value()) {
+    return std::unexpected(*reader.Error());
+  }
+  if (!reader.AtEnd()) {
+    return std::unexpected(DecodeError::kTrailingBytes);
+  }
+  return std::move(*body);
+}
+
 }  // namespace
+
+BytesWire EncodeRecord(const RecordWire& record) {
+  BytesWire out;
+  std::visit(RecordEncoder{.out = out}, record);
+  return out;
+}
+
+std::expected<RecordWire, DecodeError> DecodeRecord(std::span<const std::byte> payload) {
+  if (payload.empty()) {
+    return std::unexpected(DecodeError::kEmpty);
+  }
+  Reader reader(payload.subspan(1));
+  return Finish(ReadRecordBody(static_cast<RecordTypeWire>(payload.front()), reader), reader);
+}
 
 BytesWire Encode(const MessageWire& message) {
   BytesWire out;
@@ -650,17 +846,7 @@ std::expected<MessageWire, DecodeError> Decode(std::span<const std::byte> payloa
     return std::unexpected(DecodeError::kEmpty);
   }
   Reader reader(payload.subspan(1));
-  std::optional<MessageWire> message = ReadBody(static_cast<MessageTypeWire>(payload.front()), reader);
-  if (!message.has_value()) {
-    return std::unexpected(DecodeError::kUnknownType);
-  }
-  if (reader.Error().has_value()) {
-    return std::unexpected(*reader.Error());
-  }
-  if (!reader.AtEnd()) {
-    return std::unexpected(DecodeError::kTrailingBytes);
-  }
-  return std::move(*message);
+  return Finish(ReadBody(static_cast<MessageTypeWire>(payload.front()), reader), reader);
 }
 
 std::string_view DescribeDecodeError(DecodeError error) {
