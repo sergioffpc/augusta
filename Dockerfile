@@ -53,6 +53,12 @@ RUN cmake --preset linux \
     && cmake --build --preset linux --target augustad \
     && DESTDIR=/workspace/stage cmake --install build/x64-linux --prefix /usr/local
 
+# The debug info the build split off augustad (ADR-0049), alone: CI publishes
+# it as the image's sha-<12>-debuginfo tag, what reads a core dump of the
+# binary below. Not the last stage, so a plain build still makes the runtime.
+FROM scratch AS debuginfo
+COPY --from=build /workspace/build/x64-linux/src/server/augustad.debug /
+
 # Runtime stage: just what `cmake --install` staged and the shared libraries
 # it links against (vcpkg's own dependencies are linked statically) - no build
 # toolchain, no vcpkg source tree.

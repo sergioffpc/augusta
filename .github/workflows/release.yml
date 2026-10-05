@@ -104,6 +104,9 @@ jobs:
         run: |
           mkdir -p dist
           cp build/x64-linux/src/server/augustad dist/augustad-linux-x64
+          # Its debug info, split off by the build: what reads a core dump of
+          # it (ADR-0049).
+          cp build/x64-linux/src/server/augustad.debug dist/augustad-linux-x64.debug
       - name: SBOM
         run: |
           python3 scripts/vcpkg-sbom.py --name augustad --version "$GITHUB_REF_NAME" \
@@ -123,6 +126,7 @@ jobs:
           name: server-binary
           path: |
             dist/augustad-linux-x64
+            dist/augustad-linux-x64.debug
             dist/augustad-linux-x64.spdx.json
   tools:
     # The cooker's half of the pack contract: its pytest suite, which requires
@@ -180,7 +184,7 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             dist/client-binary/augustac-windows-x64.exe \
             dist/client-binary/augustac-windows-x64.spdx.json \
-            dist/server-binary/augustad-linux-x64 \
+            dist/server-binary/augustad-linux-x64             dist/server-binary/augustad-linux-x64.debug \
             dist/server-binary/augustad-linux-x64.spdx.json \
             --repo "${{ github.repository }}" \
             --title "${{ github.ref_name }}" \

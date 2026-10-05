@@ -602,6 +602,18 @@ jobs:
           docker push --all-tags "$image"
           digest=$(docker buildx imagetools inspect "$image:sha-${{ steps.short-sha.outputs.value }}" --format '{{.Manifest.Digest}}')
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      # The published binary's debug info (the Dockerfile's debuginfo stage,
+      # from the build layer the image was just built from), kept beside the
+      # image for as long as it: what reads a core dump of it (ADR-0049).
+      - name: Publish server debug info
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: debuginfo
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.short-sha.outputs.value }}-debuginfo
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/augustad:buildcache
       # Every published image is attested here, where it is built: release.yml
       # builds none, and the image a release runs is its tag's commit's, pushed
       # to main (docs/ENGINEERING.md, Provenance and SBOMs).

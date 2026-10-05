@@ -30,6 +30,9 @@ if (MSVC)
   add_compile_options(/W4 /WX /EHsc)
 else()
   add_compile_options(-Wall -Wextra -Werror)
+  # Release keeps its debug info, which src/server splits off augustad: what a
+  # crash's core dump is read with (ADR-0049).
+  add_compile_options($<$<CONFIG:Release>:-g>)
 endif()
 
 # flecs/GameNetworkingSockets/PhysX back the client/server shared runtime
