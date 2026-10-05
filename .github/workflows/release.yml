@@ -104,8 +104,8 @@ jobs:
         run: |
           mkdir -p dist
           cp build/x64-linux/src/server/augustad dist/augustad-linux-x64
-          # Its debug info, split off by the build: what reads a core dump of
-          # it (ADR-0049).
+          # Its debug info, split off by this same build, so it matches this
+          # binary's build ID - not the image's (ADR-0049).
           cp build/x64-linux/src/server/augustad.debug dist/augustad-linux-x64.debug
       - name: SBOM
         run: |
@@ -184,7 +184,8 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             dist/client-binary/augustac-windows-x64.exe \
             dist/client-binary/augustac-windows-x64.spdx.json \
-            dist/server-binary/augustad-linux-x64             dist/server-binary/augustad-linux-x64.debug \
+            dist/server-binary/augustad-linux-x64 \
+            dist/server-binary/augustad-linux-x64.debug \
             dist/server-binary/augustad-linux-x64.spdx.json \
             --repo "${{ github.repository }}" \
             --title "${{ github.ref_name }}" \

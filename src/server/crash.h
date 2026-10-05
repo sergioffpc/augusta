@@ -2,6 +2,7 @@
 #define AUGUSTA_SERVER_CRASH_H_
 
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
@@ -22,15 +23,15 @@ inline constexpr std::size_t kCrashLineCapacity = 512;
 using CrashLine = std::array<char, kCrashLineCapacity>;
 
 /// Writes into line `<time> CRITICAL subsystem=server event=crash signal=<name>`,
-/// the signal's name (SIGSEGV) or, for one without, its number. unix_seconds is
-/// UTC, from 0 to the year 9999. Async-signal-safe. Returns the line written.
-std::string_view FormatCrashSignalLine(CrashLine& line, std::int64_t unix_seconds, int signal);
+/// the signal's name (SIGSEGV) or, for one without, its number. time is from
+/// the epoch to the year 9999. Async-signal-safe. Returns the line written.
+std::string_view FormatCrashSignalLine(CrashLine& line, std::chrono::sys_seconds time, int signal);
 
 /// Writes into line the frame at index of a crash's stack:
 /// `... event=crash_frame index=<index> pc=0x<pc> symbol="<symbol>"`, without
 /// symbol when it is nullptr (unresolved). A symbol too long for the line is
 /// cut, still quoted. Async-signal-safe. Returns the line written.
-std::string_view FormatCrashFrameLine(CrashLine& line, std::int64_t unix_seconds, int index, std::uintptr_t pc,
+std::string_view FormatCrashFrameLine(CrashLine& line, std::chrono::sys_seconds time, int index, std::uintptr_t pc,
                                       const char* symbol);
 
 /// Makes a fatal signal (SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT) write its

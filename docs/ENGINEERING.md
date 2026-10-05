@@ -196,9 +196,11 @@ pipeline).
   that environment's `server.pack` and the `augusta.pub` key it is signed
   with. The chart writes the server's `augustad.yaml` from its values.
 - **Crash dumps:** a crashing server logs its stack and leaves a kernel core
-  dump, which the k3s node's `systemd-coredump` keeps (`coredumpctl`); it is
-  read with the debug info CI publishes beside every image, as its
-  `sha-<12>-debuginfo` tag (ADR-0049).
+  dump. The k3s node must run `systemd-coredump` as its core handler, which
+  keeps the dump (`coredumpctl`). A cluster core is read with the debug info
+  CI publishes beside each image as its `sha-<12>-debuginfo` tag; a release's
+  `augustad-linux-x64.debug` reads only that release binary, which no image
+  runs (ADR-0049).
 
 ## Developer Environment
 

@@ -1,6 +1,7 @@
 #include "crash.h"
 
 #include <array>
+#include <chrono>
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
@@ -113,10 +114,11 @@ class LineWriter {
   std::size_t size_ = 0;
 };
 
-// `YYYY-MM-DDTHH:MM:SSZ`, as logging::FormatLine writes it, from unix_seconds
+// `YYYY-MM-DDTHH:MM:SSZ`, as logging::FormatLine writes it, from time
 // through the proleptic Gregorian calendar (H. Hinnant's civil_from_days):
 // std::chrono's calendar types would do it too, but std::format allocates.
-void PutTimestamp(LineWriter& writer, std::int64_t unix_seconds) {
+void PutTimestamp(LineWriter& writer, std::chrono::sys_seconds time) {
+  const std::int64_t unix_seconds = time.time_since_epoch().count();
   const std::int64_t days = unix_seconds / kSecondsPerDay;
   const std::int64_t second_of_day = unix_seconds % kSecondsPerDay;
   const std::int64_t shifted = days + 719468;  // Days from 0000-03-01.
@@ -144,8 +146,8 @@ void PutTimestamp(LineWriter& writer, std::int64_t unix_seconds) {
   writer.Put('Z');
 }
 
-void PutCrashPrefix(LineWriter& writer, std::int64_t unix_seconds) {
-  PutTimestamp(writer, unix_seconds);
+void PutCrashPrefix(LineWriter& writer, std::chrono::sys_seconds time) {
+  PutTimestamp(writer, time);
   writer.Put(" CRITICAL subsystem=server ");
 }
 
@@ -200,7 +202,8 @@ int CaptureFrames(std::span<void*> frames) {
 }
 
 void ReportCrash(int signal) {
-  const std::int64_t now = std::time(nullptr);
+  // time() rather than system_clock::now(): POSIX lists it as async-signal-safe.
+  const std::chrono::sys_seconds now{std::chrono::seconds{std::time(nullptr)}};
   CrashLine line{};
   WriteToStdout(FormatCrashSignalLine(line, now, signal));
 
@@ -223,9 +226,8 @@ extern "C" void HandleFatalSignal(int signal) {
   }
   ReportCrash(signal);
   // Pending until the handler returns, then delivered to the default action:
-  // the process dies of it and the kernel dumps its core. As a container's
-  // PID 1 the kernel drops a signal it sends itself, but a fault is raised
-  // again by the instruction that caused it, and abort() falls back to one.
+  // the process dies of it and the kernel dumps its core. Not as PID 1, whose
+  // own signals the kernel drops, hence the image's init (ADR-0049).
   std::raise(signal);
 }
 
@@ -244,9 +246,9 @@ void RaiseCoreLimit() {
 
 }  // namespace
 
-std::string_view FormatCrashSignalLine(CrashLine& line, std::int64_t unix_seconds, int signal) {
+std::string_view FormatCrashSignalLine(CrashLine& line, std::chrono::sys_seconds time, int signal) {
   LineWriter writer(line);
-  PutCrashPrefix(writer, unix_seconds);
+  PutCrashPrefix(writer, time);
   writer.Put("event=crash signal=");
   if (const std::string_view name = SignalName(signal); !name.empty()) {
     writer.Put(name);
@@ -256,14 +258,13 @@ std::string_view FormatCrashSignalLine(CrashLine& line, std::int64_t unix_second
   return writer.Finish();
 }
 
-std::string_view FormatCrashFrameLine(CrashLine& line, std::int64_t unix_seconds, int index, std::uintptr_t pc,
+std::string_view FormatCrashFrameLine(CrashLine& line, std::chrono::sys_seconds time, int index, std::uintptr_t pc,
                                       const char* symbol) {
   LineWriter writer(line);
-  PutCrashPrefix(writer, unix_seconds);
+  PutCrashPrefix(writer, time);
   writer.Put("event=crash_frame index=");
   writer.PutDigits(static_cast<std::uint64_t>(index), kDecimal);
-  writer.Put(" pc=");
-  writer.Put("0x");
+  writer.Put(" pc=0x");
   writer.PutDigits(pc, kHexadecimal);
   if (symbol != nullptr) {
     writer.Put(" symbol=");

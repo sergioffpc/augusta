@@ -71,10 +71,15 @@ FROM ubuntu:26.04 AS runtime
 RUN apt-get update && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends \
       libstdc++6 \
+      tini \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --no-create-home --shell /usr/sbin/nologin augusta
 
 COPY --from=build /workspace/stage/ /
 
 USER augusta
-ENTRYPOINT ["/usr/local/bin/augustad"]
+# tini is PID 1, not augustad: the kernel drops a signal PID 1 sends itself
+# with no handler for it, so augustad re-raising a fatal signal from its crash
+# handler would neither end it nor dump its core (ADR-0049). tini forwards
+# SIGTERM to augustad and exits with its status.
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/augustad"]
