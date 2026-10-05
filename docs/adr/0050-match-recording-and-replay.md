@@ -34,7 +34,10 @@ the very bytes a Commands message carries it in, its Seen time's tick written
 in full beside it. They are `augusta_protocol`'s, next to the messages, but
 never messages: neither decoder yields the other's. A file is the records
 in order, each after its length in 4 little-endian bytes, since the protocol's
-own payloads leave framing to the transport. Every number a record holds is on
+own payloads leave framing to the transport. No record is longer than 64 KiB,
+many times what a tick of 8 players makes: a reader refuses a longer length
+before allocating for it, and a writer that would write one stops recording
+there instead, so a file is always readable up to its last record. Every number a record holds is on
 its grid or travels as its bits, so a tick's outcome reads back exactly what
 the World resolved; only a Spawn point, which need not be on the grid, is
 recorded where the body placed there is.
@@ -49,17 +52,26 @@ cut short is dropped when read, and reported. It costs about 35 KB a second
 with 8 players at 60 Hz, which is why it is a debugging setting and not a
 default.
 
+**The write stays on the Simulation thread.** A record is encoded and handed
+to the operating system on the tick that made it, about 600 bytes into its
+file cache, which takes microseconds of a 16.7 ms tick (NFR-01); a writer
+thread would add a queue and its own failure to report for no gain a
+debugging setting needs. Recording is off in production and when NFR-01 is
+measured, so a disk that stalls a write delays only a debugging session.
+
 **A replay hands a fresh World the same and checks each tick.** The replay
 loads the content of the pack the header names (refusing another pack),
 builds the World as the server does, and for every record hands it the
-recorded input in the recorded order, then compares the tick's outcome with
-the recorded one. It stops at the first tick that differs and reports which
-part of the outcome did. The `augusta_replay` tool does this for a file
+recorded input in the recorded order, then compares the tick's outcome,
+its number included, with the recorded one. It stops at the first tick that
+differs and reports which part of the outcome did. A pack whose Map the World
+refuses stops it before the first tick, as it would have stopped the server. The `augusta_replay` tool does this for a file
 augustad wrote; a test does it for a recording it made.
 
-**"The same" is bit for bit on the build that recorded it, a grid step across
-builds.** On the build and platform that made a recording, every value of
-every tick must be equal: the World keeps bodies on the protocol's grids,
+**"The same" is exactly equal on the build that recorded it, a grid step
+across builds.** On the build and platform that made a recording, every value
+of every tick must be equal, as numbers compare (every value is a count of a
+grid's step or a float of simple arithmetic, and none is a NaN): the World keeps bodies on the protocol's grids,
 simulates no rigid bodies yet (ADR-0045) and runs Game policy with no source
 of randomness, so it has no excuse to differ, and a tolerance there would hide
 the non-determinism a replay exists to catch. Across builds it cannot be held
@@ -69,9 +81,16 @@ way on one build can round the other way on another. So a replay across builds
 lets a body's position and a Shot's origin be off by one step of the position
 grid (about 1 mm, the reconciliation tolerance of ADR-0004 and NFR-03's), and a
 body's velocity, derived from two positions a tick apart, by what two such
-steps make over the tick; every other value must still be equal. The tool
-asks for the strict comparison unless told the recording comes from another
-build.
+steps make over the tick; every other value must still be equal. Each tick
+of such a replay then starts from the recorded bodies, not the replayed ones:
+the World puts every body where the recording has it (position, velocity,
+stance, stamina, keeping its fall), so a step one build rounds differently is
+never carried into the next tick, where movement and collisions could grow
+it, and every tick is judged against the same start the recording had. Only
+the Hitbox history keeps the replayed poses, a step at most off each, which
+moves a hitbox by a millimetre for the Shooter's delay and does not grow. The
+tool asks for the strict comparison unless told the recording comes from
+another build.
 
 **A recorded match is a golden test.** The repository holds one recording, a
 scripted duel on the example scenario's golden server pack (ADR-0013), and the
@@ -100,7 +119,7 @@ recording, from a playtest, becomes a test the same way.
   server's queues, gates and Match lifecycle in the loop with their clock, to
   reach the same World input the recording can hold directly.
 - **A digest of each tick's outcome instead of the outcome**: rejected - it
-  can only be compared bit for bit, so a recording would replay on no build but
+  can only be compared exactly, so a recording would replay on no build but
   its own, and a divergence would say nothing about what differs.
 - **A tolerance on every float**: rejected - outside positions, every value the
   outcome holds is discrete, on a grid fed by commands, or simple arithmetic
@@ -109,5 +128,10 @@ recording, from a playtest, becomes a test the same way.
 - **A schema library for the file (Protobuf, FlatBuffers)**: rejected, as for
   the messages (ADR-0007): the records are few and the protocol's codec already
   encodes every value they hold.
+- **Comparing across builds without re-syncing**: rejected - a step off on one
+  tick moves where the next tick starts, and over a match the difference grows
+  past any fixed tolerance, so the golden match would fail on the other
+  platform as soon as its bodies moved.
+- **A writer thread for the records**: rejected - see above.
 - **Recording by default**: rejected - it costs disk on every run for a file
   only a debugging session reads.

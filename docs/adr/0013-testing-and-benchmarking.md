@@ -64,7 +64,7 @@ how noisy its result is.
   scripted duel on the example scenario's golden server pack lives in the
   repository, and the test replays it on every runner, within the tolerance
   ADR-0050 gives a replay on another build: positions a grid step off, every
-  other value equal. A deliberate change to the simulation rewrites it with
+  other value equal, each tick starting from the recorded bodies. A deliberate change to the simulation rewrites it with
   one build target, and the diff is reviewed like code.
 - **Pack contract through golden packs.** The pack format has two
   implementations, the Python cooker writing it and `augusta_assets` reading

@@ -107,7 +107,7 @@ What the Authoritative server handed SimulationWorld on each tick of its run and
 _Avoid_: Demo, replay file (a Replay is what is done with a recording)
 
 **Replay**:
-Handing a fresh SimulationWorld, built from the same server pack, every tick's recorded input and checking each tick resolves the recorded outcome: bit for bit on the build that made the recording, within a grid step of position on any other (ADR-0050).
+Handing a fresh SimulationWorld, built from the same server pack, every tick's recorded input and checking each tick resolves the recorded outcome: exactly on the build that made the recording, within a grid step of position on any other, each tick starting from the recorded bodies (ADR-0050).
 _Avoid_: Playback, rewind (Lag compensation looks back in time; a Replay re-runs a whole recording), re-simulation (Reconciliation's replay of unacknowledged commands is the client's own)
 
 **Seen time**:
