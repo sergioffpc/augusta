@@ -65,7 +65,7 @@ void WriteString(BytesWire& out, std::string_view text) {
 
 // A list of at most max elements: a one-byte count, then each one as write writes it.
 template <typename Element, typename Write>
-void WriteList(BytesWire& out, const std::vector<Element>& list, std::size_t max, Write write) {
+void WriteList(BytesWire& out, const std::vector<Element>& list, [[maybe_unused]] std::size_t max, Write write) {
   assert(list.size() <= max);
   WriteU8(out, static_cast<std::uint8_t>(list.size()));
   for (const Element& element : list) {
