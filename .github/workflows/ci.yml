@@ -260,7 +260,7 @@ jobs:
           }
           Start-Process -FilePath $installer -ArgumentList '/S', "/D=$env:RUNNER_TEMP\llvm" -Wait
           "$env:RUNNER_TEMP\llvm\bin" >> $env:GITHUB_PATH
-      - name: Lint (include-cleaner)
+      - name: Lint
         # .clang-tidy's misc-include-cleaner alone (the Makefile's tidy target
         # says why -w) on what the server job's Linux build can't lint: the
         # Windows-only sources and tests. After Build, which generates headers
@@ -301,7 +301,9 @@ jobs:
       - name: Configure
         run: cmake --preset linux
       - uses: ./.github/actions/save-vcpkg-cache
-      - name: Lint (clang-tidy)
+      - name: Lint
+        # Both checks run, and the step fails if either does, so one run shows
+        # every finding. clang-tidy with .clang-tidy's full profile on src:
         # src/client and src/modules/renderer are Windows-only (CMakeLists.txt
         # gates both on WIN32 - the latter since ADR-0009's Falcor backend is
         # Windows-only), as is the audio module's output device (miniaudio and
@@ -313,13 +315,14 @@ jobs:
         # cascades a spurious error onto every file *after* the first one
         # missing its compile_commands entry, not just that file itself - so
         # a stray Windows-only file left in this list fails the whole batch.
-        run: find src -name '*.cpp' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_windows.cpp' -not -path 'src/modules/audio/miniaudio.cpp' | xargs clang-tidy -p build/x64-linux
-      - name: Lint (include-cleaner)
-        # The tests get .clang-tidy's misc-include-cleaner alone, as the
+        # Then the tests get .clang-tidy's misc-include-cleaner alone, as the
         # Makefile's tidy target runs it (which says why -w); the Windows-only
         # client tests are the client job's.
-        run: >-
-          git ls-files 'tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 8 clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w
+        run: |
+          status=0
+          find src -name '*.cpp' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_windows.cpp' -not -path 'src/modules/audio/miniaudio.cpp' | xargs clang-tidy -p build/x64-linux || status=1
+          git ls-files 'tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 8 clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
+          exit "$status"
       - name: Build
         run: cmake --build --preset linux --target all augusta_tests
       - name: Test
