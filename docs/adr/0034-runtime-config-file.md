@@ -27,7 +27,10 @@ directory: the process starts the same from anywhere, and where its content
 lives is always written down rather than implied by where the executable sits.
 Parsing lives in the shared `augusta_config` module (ADR-0006), using yaml-cpp
 (ADR-0025), and fails startup through `std::expected` rather than throwing
-(ADR-0033).
+(ADR-0033). A tool with a settings file of its own (`augusta-loadtest`'s
+`augusta-loadtest.yaml`) reads it under the same rules through the module's
+schema functions (`ReadConfigValues`, `RequirePath`, ...), but declares its
+keys and their meaning itself, next to it: the module holds no key of a tool.
 
 YAML because the repository already keeps its configuration in JSON and YAML (CI
 workflows, Helm charts, cluster manifests, `vcpkg.json`, CMake presets): a third
