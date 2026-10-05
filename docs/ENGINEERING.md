@@ -148,9 +148,11 @@ the decisions already made in ARCHITECTURE.md:
 - **Tags/releases:** created only when there's an actual release to make
   (e.g., reaching v1) — ROADMAP.md milestones (M0–M6) are internal
   checkpoints, not tagged releases.
-- **Pull requests:** used even solo — `feature/*` → `develop` and
-  `develop`/`hotfix/*` → `main` go through a PR so CI gates the merge;
-  no formal review requirement, self-merge once CI passes.
+- **Pull requests:** used even solo — `feature/*` → `develop`,
+  `release/*`/`hotfix/*` → `main`, and the same `release/*`/`hotfix/*`
+  branch back into `develop`, go through a PR so CI gates the merge;
+  no formal review requirement, self-merge once CI passes. Cutting a
+  release step by step is [docs/runbooks/cut-release.md](runbooks/cut-release.md).
 - **Commit messages:** Conventional Commits, enforced via the local
   `commit-msg` hook (see Code Quality below).
 - **Changelog and release notes:** generated from the Conventional Commits

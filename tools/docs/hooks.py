@@ -2,9 +2,10 @@
 
 The site reads the repository's Markdown as it is. These hooks make that work:
 README.md and CONTEXT.md, which live at the root, join docs/ as pages; the
-navigation lists the ADRs in number order, so a new one needs no edit to
-mkdocs.yml; and a link to anything that is not a page becomes a link to it on
-GitHub, so the same Markdown reads right in both places.
+navigation lists the runbooks by file name and the ADRs in number order, so a
+new one needs no edit to mkdocs.yml; and a link to anything that is not a page
+becomes a link to it on GitHub, so the same Markdown reads right in both
+places.
 """
 
 import posixpath
@@ -42,12 +43,16 @@ def _title(path: Path) -> str:
 
 
 def on_config(config):
+    runbooks = []
+    for path in sorted((REPO_ROOT / "docs" / "runbooks").glob("*.md")):
+        runbooks.append({_title(path): f"runbooks/{path.name}"})
     adrs = []
     for path in sorted((REPO_ROOT / "docs" / "adr").glob("*.md")):
         match = ADR.match(path.name)
         if match:
             adrs.append({f"{match.group(1)} · {_title(path)}": f"adr/{path.name}"})
     config["nav"] = [{title: page} for title, page in LEADING_NAV] + [
+        {"Runbooks": runbooks},
         {"Decisions (ADRs)": adrs},
         {"API reference": "api/"},
     ]
