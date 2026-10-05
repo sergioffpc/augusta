@@ -113,6 +113,7 @@
       "binaryDir": "${sourceDir}/build/x64-linux-coverage",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "AUGUSTA_COVERAGE": "ON",
         "CMAKE_CXX_FLAGS": "-fprofile-instr-generate -fcoverage-mapping",
         "CMAKE_EXE_LINKER_FLAGS": "-fprofile-instr-generate"
       }

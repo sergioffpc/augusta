@@ -89,6 +89,19 @@ option(AUGUSTA_LOADTEST "Build augusta-loadtest (tools/loadtest) and its tests" 
 if (AUGUSTA_LOADTEST)
   add_subdirectory(tools/loadtest)
 endif()
+# The linux-coverage preset's report as build targets, for an editor that runs
+# one before and one after its tests (VS Code's CMake Tools, "Run Tests with
+# Coverage"): coverage-clean drops the last run's profiles, so the report is of
+# this run alone; coverage-report turns this run's into it.
+option(AUGUSTA_COVERAGE "Add the coverage-clean and coverage-report targets (linux-coverage preset)" OFF)
+if (AUGUSTA_COVERAGE)
+  add_custom_target(coverage-clean COMMAND ${CMAKE_COMMAND} -E rm -rf ${CMAKE_BINARY_DIR}/profiles)
+  add_custom_target(coverage-report
+    COMMAND bash scripts/coverage-report.sh
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    USES_TERMINAL
+  )
+endif()
 if (WIN32)
   # NVIDIA Falcor (ADR-0009) is Windows-only, so augusta_renderer's real
   # implementation only builds here - nothing on Linux (only the
