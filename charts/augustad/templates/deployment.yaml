@@ -17,6 +17,9 @@ spec:
         # Restarts the server when its settings change.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
+      # augustad stops within a tick of SIGTERM (src/server/main.cpp), so this
+      # is not sized for a match to end: a rollout may cut one (ADR-0026).
+      terminationGracePeriodSeconds: 10
       containers:
         - name: augustad
           image: "{{ .Values.image.repository }}:{{ include "augustad.imageTag" . }}"
@@ -26,6 +29,15 @@ spec:
             - name: game
               containerPort: {{ .Values.service.port }}
               protocol: UDP
+          # Ready once the game port's UDP socket is bound, which augustad does
+          # only after its pack is verified and its content loaded. A UDP port
+          # has no tcpSocket check to answer, so the probe looks for the socket
+          # in the pod's own socket table, IPv4 or IPv6 (/proc/net/udp6 may be
+          # absent, hence -s). No liveness probe (ADR-0026).
+          readinessProbe:
+            exec:
+              command: ["grep", "-qs", "{{ printf ":%04X " (int .Values.service.port) }}", "/proc/net/udp", "/proc/net/udp6"]
+            periodSeconds: 5
           volumeMounts:
             - name: config
               mountPath: /etc/augusta

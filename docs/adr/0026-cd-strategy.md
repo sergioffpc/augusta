@@ -4,6 +4,25 @@
 inside the k3s cluster. `feature/*`, `hotfix/*`, and `release/*` branches
 are not deployed to k3s at all — no CD, ephemeral or otherwise, for these.
 
+**A rollout may cut a match in progress.** Each environment runs one
+`augustad` pod, and an upgrade replaces it the Deployment's default way:
+the new pod starts, and the old one gets SIGTERM once the new one is
+Ready. `augustad` stops within a tick of SIGTERM, so the chart's grace
+period is short (10 s) rather than sized for a match to end, and the
+chart declares no PodDisruptionBudget: with one replica, the only budget
+that protects anything blocks every node drain. Both environments exist
+for testing a build, not for players to keep a match through it.
+
+**Ready means the game port is bound.** `augustad` binds its UDP socket
+only after its pack is verified and its content loaded, and exits on any
+failure before or after, so a bound port is the whole of "started". UDP
+answers no `tcpSocket` probe, so the readiness probe finds the socket in
+the pod's own socket table (`/proc/net/udp`, `/proc/net/udp6`): Flux's
+upgrade then waits for the server to be up, and fails when it never is.
+There is no liveness probe: a failed thread already ends the process
+(ADR-0005), Game policy's Lua runs under an instruction limit (ADR-0022),
+and a probe that killed a slow but healthy server would cut its match.
+
 ## Considered Options
 
 The original design (see git history of `docs/ENGINEERING.md`'s
@@ -27,6 +46,15 @@ environments without extra tooling on top). Rather than accept that
 runner's attack surface just for preview environments that aren't
 essential, ephemeral branches are simply not deployed to k3s at all.
 
+- **Draining before a rollout** (stop admitting, wait for the match to
+  end, then exit, under a grace period as long as a match): rejected for
+  now. It needs a drain mode in `augustad` and a grace period with no
+  natural bound (Game policy decides when a match ends), to protect
+  matches no one plays to keep. Revisit when an environment has players.
+- **A health endpoint or file written by `augustad`**: rejected. It
+  would report the same fact the socket table already holds, with code
+  and a config key to maintain for it.
+
 ## Consequences
 
 - No self-hosted GitHub Actions runner exists in this pipeline at all —
@@ -45,3 +73,6 @@ essential, ephemeral branches are simply not deployed to k3s at all.
   `<version>+<those 12 characters>`). A tag is never reused, so a pod
   never runs a stale image, and Flux's upgrade waits for CI to finish
   pushing it. No image-automation controller is needed.
+- The chart requests CPU and memory for the server, limits its memory at
+  that request, and sets no CPU limit: a throttled Simulation thread
+  misses ticks (NFR-01).
