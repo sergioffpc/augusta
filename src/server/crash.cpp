@@ -20,6 +20,8 @@
 #include <cerrno>
 
 #include <execinfo.h>
+// NOLINTNEXTLINE(modernize-deprecated-headers) - SIGBUS is POSIX's, which <csignal> need not declare.
+#include <signal.h>
 #include <sys/resource.h>
 #include <sys/types.h>
 #include <unistd.h>
