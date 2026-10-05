@@ -1,0 +1,45 @@
+// The Linux/server build environment CI's server job runs in (see Dockerfile),
+// for VS Code or Codespaces: `make test` builds and tests the linux preset with
+// nothing else to install. The Windows client keeps scripts/bootstrap-windows.ps1
+// (MSVC, Falcor, D3D12 have no container).
+{
+  "name": "Augusta server (Linux)",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "remoteUser": "ubuntu",
+  "containerEnv": {
+    // CI's server job's binary cache: a files provider in the checkout's
+    // gitignored .vcpkg-bincache (the job's env says why not the NuGet feed).
+    // A WSL build of the same checkout shares it, with the same toolchain.
+    "VCPKG_BINARY_SOURCES": "clear;files,${containerWorkspaceFolder}/.vcpkg-bincache,readwrite"
+  },
+  "mounts": [
+    // sccache's default cache directory, in a volume every container of the
+    // repository shares, so a rebuilt container keeps its compiled objects.
+    "source=augusta-sccache,target=/home/ubuntu/.cache/sccache,type=volume",
+    // The build trees, one volume per container: a host or WSL build of the same
+    // checkout keeps its own build/, whose CMake caches name other paths.
+    "source=augusta-build-${devcontainerId},target=${containerWorkspaceFolder}/build,type=volume"
+  ],
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "customizations": {
+    "vscode": {
+      // The Linux-relevant subset of .vscode/extensions.json.
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "ms-vscode.makefile-tools",
+        "llvm-vs-code-extensions.vscode-clangd",
+        "editorconfig.editorconfig",
+        "redhat.vscode-yaml",
+        "sumneko.lua",
+        "dwenegar.vscode-luacheck",
+        "JohnnyMorganz.stylua",
+        "tamasfe.even-better-toml",
+        "github.vscode-github-actions"
+      ]
+    }
+  }
+}
