@@ -44,7 +44,7 @@ crash fails it with the crashing input uploaded as a run artifact. The nightly
 (`nightly.yml`'s `fuzz` job) runs each for about 30 minutes, starting from the
 corpus earlier nights grew: it lives in the Actions cache, minimized after each
 run, and never in the repository. A crash there fails the nightly, uploads the
-input, and reaches the `nightly-failure` issue. Locally, under WSL:
+input, and reaches the `nightly-failure` issue. Locally, in the dev container:
 
 ```bash
 cmake --preset linux-fuzz
