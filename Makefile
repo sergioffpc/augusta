@@ -39,7 +39,7 @@ ifeq ($(OS),Windows_NT)
 # linted by CI's Linux run alone, as is the audio output every other build has.
 TIDY_EXCLUDES += ":(exclude)src/modules/physics/physics.cpp" ":(exclude)src/modules/audio/output_none.cpp"
 else
-TIDY_EXCLUDES += ":(exclude)src/modules/audio/output_windows.cpp" ":(exclude)src/modules/audio/miniaudio.cpp"
+TIDY_EXCLUDES += ":(exclude)src/modules/audio/output_miniaudio.cpp" ":(exclude)src/modules/audio/miniaudio.cpp"
 endif
 TIDY_SOURCES := $(shell git ls-files -- "src/*.cpp" $(TIDY_EXCLUDES))
 

@@ -267,7 +267,7 @@ jobs:
         # Falcor's own include.
         shell: bash
         run: >-
-          git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'src/modules/audio/output_windows.cpp' 'src/modules/audio/miniaudio.cpp' 'tests/client_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 4 clang-tidy --quiet -p=build/x64-windows --checks=-*,misc-include-cleaner --extra-arg=-w
+          git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'src/modules/audio/output_miniaudio.cpp' 'src/modules/audio/miniaudio.cpp' 'tests/client_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 4 clang-tidy --quiet -p=build/x64-windows --checks=-*,misc-include-cleaner --extra-arg=-w
       - name: Test
         run: ctest --preset windows
   server:
@@ -307,8 +307,8 @@ jobs:
         # src/client and src/modules/renderer are Windows-only (CMakeLists.txt
         # gates both on WIN32 - the latter since ADR-0009's Falcor backend is
         # Windows-only), as is the audio module's output device (miniaudio and
-        # Steam Audio, Windows-only dependencies - src/modules/audio/
-        # CMakeLists.txt), and aren't part of this Linux configure's build graph
+        # Steam Audio, built only with AUGUSTA_AUDIO_OUTPUT, on only on Windows -
+        # src/modules/audio/CMakeLists.txt), and aren't part of this Linux configure's build graph
         # at all, so they have no compile_commands.json entry here - excluded
         # rather than linted against the wrong platform's (missing) compile
         # flags. Note: clang-tidy given multiple files in one invocation
@@ -320,7 +320,7 @@ jobs:
         # client tests are the client job's.
         run: |
           status=0
-          find src -name '*.cpp' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_windows.cpp' -not -path 'src/modules/audio/miniaudio.cpp' | xargs clang-tidy -p build/x64-linux || status=1
+          find src -name '*.cpp' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' | xargs clang-tidy -p build/x64-linux || status=1
           git ls-files 'tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 8 clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
           exit "$status"
       - name: Build
