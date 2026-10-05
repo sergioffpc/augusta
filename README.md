@@ -113,6 +113,7 @@ make lint
 - [ENGINEERING.md](docs/ENGINEERING.md) — engineering practices, CI/CD, workflow
 - [ROADMAP.md](docs/ROADMAP.md) — milestone-driven roadmap
 - [CONTEXT.md](CONTEXT.md) — domain glossary
+- [docs/runbooks/](docs/runbooks/) — procedures for rollbacks, key rotation, node recovery and releases
 - [docs/adr/](docs/adr/) — architecture decision records
 
 ## License
