@@ -10,6 +10,11 @@ on:
         description: The branch every job checks out and tests.
         required: true
         type: string
+# What every job gets unless it says otherwise: a read of the code, and
+# deleting superseded cache entries (.github/actions/prune-cache).
+permissions:
+  contents: read
+  actions: write
 env:
   SCCACHE_GHA_ENABLED: "true"
   NIGHTLY_REF: ${{ inputs.ref }}
@@ -174,6 +179,7 @@ jobs:
     permissions:
       # Pushing the night's results to the benchmarks branch.
       contents: write
+      actions: write
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
@@ -198,7 +204,23 @@ jobs:
         # A scheduled run's own commit is main's, not the one benchmarked.
         id: commit
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Start the history
+        # The first night on develop starts the benchmarks branch, with one
+        # empty commit, for the step below to record on. A manual run on
+        # another branch before then has no history to compare with, and
+        # skips it.
+        id: history
+        run: |
+          if git ls-remote --exit-code --heads origin benchmarks > /dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          elif [ "$NIGHTLY_REF" = develop ]; then
+            empty_tree="$(git hash-object -t tree /dev/null)"
+            commit="$(git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit-tree "$empty_tree" -m "chore: start the benchmark history")"
+            git push origin "$commit:refs/heads/benchmarks"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Compare with the history and record
+        if: steps.history.outputs.exists == 'true'
         # Kept on its own branch, not in docs/ (which holds decisions only);
         # the docs site publishes its chart under benchmarks/ (ADR-0046). Only
         # develop's nights are recorded: a manual run on another branch is

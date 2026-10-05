@@ -94,7 +94,8 @@ the decisions already made in ARCHITECTURE.md:
 - **Nightly** (on `develop`): long fuzzing runs, TSan, property-based
   tests at a high case count, a `llvm-cov` coverage report, and the
   hot-path micro-benchmarks, whose history is kept on the `benchmarks`
-  branch and charted on the documentation site; a failure, a benchmark
+  branch (started by the first night if absent) and charted on the
+  documentation site; a failure, a benchmark
   more than twice as slow as the night before among them, opens or
   updates a `nightly-failure` issue (ADR-0013).
 - **Not in CI:** profiling (NVTX with Nsight Systems/Graphics, interactive tools, not CI checks),

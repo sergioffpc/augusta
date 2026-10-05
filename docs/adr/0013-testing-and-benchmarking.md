@@ -100,7 +100,9 @@ how noisy its result is.
   receives, `Pack::Load`, and a bullet's ballistics step. The nightly runs
   them on a GitHub-hosted runner, keeps the median of five repetitions, and
   records it with `github-action-benchmark` on the `benchmarks` branch, not
-  in `docs/`; the documentation site charts that history (ADR-0046). Only
+  in `docs/`; the first night on `develop` starts that branch itself, with
+  an empty commit, and the documentation site charts its history
+  (ADR-0046). Of the nightly's jobs, only this one may push. Only
   `develop`'s nights are recorded: a manual run on another branch is
   compared with them and leaves no trace. A shared runner is noisy, so the
   threshold is generous: a benchmark more than twice as slow as the night

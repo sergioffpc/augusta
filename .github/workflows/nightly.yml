@@ -13,22 +13,30 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
-# A called workflow gets at most what its caller grants.
 permissions:
-  # Recording the benchmark results on the benchmarks branch.
-  contents: write
-  # Deleting superseded cache entries (.github/actions/prune-cache).
-  actions: write
-  # Opening or updating the nightly-failure issue.
-  issues: write
+  contents: read
+# A called workflow gets at most what its calling job grants, and
+# nightly-jobs.yml narrows that again per job: only the benchmarks job may
+# push, and only report-failure may write issues.
 jobs:
   scheduled:
     if: github.event_name == 'schedule'
     uses: sergioffpc/augusta/.github/workflows/nightly-jobs.yml@develop
+    permissions:
+      # Recording the benchmark results on the benchmarks branch.
+      contents: write
+      # Deleting superseded cache entries (.github/actions/prune-cache).
+      actions: write
+      # Opening or updating the nightly-failure issue.
+      issues: write
     with:
       ref: develop
   manual:
     if: github.event_name != 'schedule'
     uses: ./.github/workflows/nightly-jobs.yml
+    permissions:
+      contents: write
+      actions: write
+      issues: write
     with:
       ref: ${{ github.ref_name }}
