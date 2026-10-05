@@ -88,7 +88,7 @@ namespace augusta::server {
 /// The commands a client sent in one message, oldest first, in the engine's terms.
 [[nodiscard]] std::vector<SequencedCommand> FromWire(const protocol::CommandsWire& message);
 
-/// A match recording's header as its record (ADR-0050).
+/// A match recording's header as its record (ADR-0048).
 [[nodiscard]] protocol::RecordingHeaderWire ToWire(const RecordingHeader& header);
 
 /// A recording's header record in the engine's terms.

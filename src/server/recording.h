@@ -18,7 +18,7 @@
 #include "augusta/tick.h"
 
 /// \file
-/// A match recording (ADR-0050): what server::Host handed its SimulationWorld
+/// A match recording (ADR-0048): what server::Host handed its SimulationWorld
 /// on each tick and what the tick resolved, so a replay (replay.h) can hand a
 /// fresh World the same and check it resolves the same. RecordedSimulation is
 /// the World as Host drives it, writing each tick to a Recorder when it has
@@ -115,7 +115,7 @@ enum class RecordingError : std::uint8_t {
 /// as its 4-byte little-endian length and its payload, the header first, and
 /// flushed after each tick, so a recording outlives a server that stops
 /// abruptly up to its last whole tick. On the Simulation thread, as the tick
-/// that made the record (ADR-0050).
+/// that made the record (ADR-0048).
 class Recorder {
  public:
   /// Writes header to out.

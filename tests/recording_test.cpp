@@ -28,7 +28,7 @@
 #include "replay.h"
 #include "simulation_mapping.h"
 
-// A match recording and its replay (ADR-0050), on the example scenario as the
+// A match recording and its replay (ADR-0048), on the example scenario as the
 // server loads it from its golden server pack: its Map, its characters and its
 // Game policy, whose last player standing wins.
 namespace {
@@ -406,7 +406,7 @@ TEST_F(DivergenceTest, AMatchEndWithAnotherWinnerDiverges) {
   EXPECT_EQ(augusta::server::FindDivergence(recorded, replayed, kDeltaTime, kAcrossBuilds), DivergenceKind::kMatchEnd);
 }
 
-// The golden match (ADR-0013, ADR-0050): the scripted match as recorded in the
+// The golden match (ADR-0013, ADR-0048): the scripted match as recorded in the
 // repository replays to its recorded outcome on any build, within a grid step
 // of position. A deliberate change to the simulation rewrites it with one build
 // target, and the diff is reviewed like the golden trajectories'.

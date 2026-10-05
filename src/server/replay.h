@@ -11,7 +11,7 @@
 #include "recording.h"
 
 /// \file
-/// Replaying a match recording (recording.h, ADR-0050): a fresh
+/// Replaying a match recording (recording.h, ADR-0048): a fresh
 /// SimulationWorld, built from the content the recording was made on, is handed
 /// every tick's recorded input in turn, and each tick must resolve the recorded
 /// outcome. What "the same" means is the Tolerance's: exactly equal on the build

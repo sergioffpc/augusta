@@ -48,7 +48,7 @@ namespace augusta::server {
 namespace {
 
 // The authoritative world with the map's collision already in it, recording
-// to file if config asks for a recording (ADR-0050). Built before the socket
+// to file if config asks for a recording (ADR-0048). Built before the socket
 // exists, so a map that is rejected never leaves a bound port behind.
 RecordedSimulation BuildRecordedSimulation(const HostConfig& config, const Scenario& scenario, scripting::Engine policy,
                                            std::ofstream& file) {

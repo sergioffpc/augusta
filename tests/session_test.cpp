@@ -1710,7 +1710,7 @@ TEST_F(MatchCycleTest, AMatchWhoseLastPlayerLeavesEndsOnItsOwnAndTheLobbyTakesPl
       << augusta::harness::DescribeJoinRefusal(next.GetRefusal().value_or(JoinRefusal::kVersionMismatch));
 }
 
-// A host on the floor that records every tick it runs (ADR-0050), for a match
+// A host on the floor that records every tick it runs (ADR-0048), for a match
 // of two.
 class RecordingHostTest : public LoopbackMatch {
  protected:

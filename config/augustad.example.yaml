@@ -23,7 +23,7 @@ simulation:
   tick_rate_hz: 60
   # Where to write a recording of every tick the server simulates (optional,
   # default none): the commands each tick ran on and what it resolved, which
-  # augusta_replay re-runs to reproduce a match (ADR-0050). The file is
+  # augusta_replay re-runs to reproduce a match (ADR-0048). The file is
   # replaced each time the server starts, and grows by about 35 KB a second
   # with 8 players at 60 Hz.
   # recording: recordings/match.rec

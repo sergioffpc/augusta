@@ -42,7 +42,7 @@
 /// physics::World keeps every body on, and weapon::Step a rifle's Recoil
 /// offset); the other floats (the Parameters, a rifle's times, a hit's damage)
 /// travel as their IEEE-754 bits.
-/// The server's match recordings (ADR-0050) are written in the same encoding,
+/// The server's match recordings (ADR-0048) are written in the same encoding,
 /// as records of their own (RecordWire), so a recording carries a command
 /// exactly as a Commands message does.
 /// A client message carries intent, never an outcome: tests/impossible_actions.md
@@ -499,7 +499,7 @@ enum class DecodeError : std::uint8_t {
 /// A short lowercase description of error, for logs.
 [[nodiscard]] std::string_view DescribeDecodeError(DecodeError error);
 
-// A match recording (ADR-0050): what the server's SimulationWorld was handed
+// A match recording (ADR-0048): what the server's SimulationWorld was handed
 // and what it resolved, tick by tick, in this protocol's encoding. Not a
 // message: a record never travels, Decode never yields one, nor DecodeRecord a
 // message. A record is one payload as a message is, a one-byte RecordTypeWire

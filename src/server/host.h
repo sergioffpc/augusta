@@ -51,7 +51,7 @@ struct HostConfig {
   parameters::Parameters parameters{};
   /// Local address to listen on (US-01).
   networking::Endpoint listen{};
-  /// Where to write a recording of every tick SimulationWorld runs (ADR-0050),
+  /// Where to write a recording of every tick SimulationWorld runs (ADR-0048),
   /// replacing any file there; empty records none.
   std::filesystem::path recording;
   /// The hash of the server pack the content was loaded from, which a recording names.

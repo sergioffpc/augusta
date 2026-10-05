@@ -87,7 +87,7 @@ struct ServerConfig {
   std::string log_level{kDefaultLogLevel};
   /// Key `simulation.recording`: where to write a recording of every tick
   /// SimulationWorld runs, replacing any file there, for augusta_replay
-  /// (ADR-0050). Empty, the default, records nothing.
+  /// (ADR-0048). Empty, the default, records nothing.
   std::filesystem::path recording_path;
 };
 

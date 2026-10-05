@@ -46,7 +46,7 @@ target_link_libraries(augusta_protocol_tests PRIVATE augusta_protocol GTest::gte
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_protocol_tests DISCOVERY_TIMEOUT 30)
 
-# A match recording's records, in the protocol's encoding (ADR-0050).
+# A match recording's records, in the protocol's encoding (ADR-0048).
 add_executable(augusta_protocol_recording_tests protocol_recording_test.cpp)
 target_link_libraries(augusta_protocol_recording_tests PRIVATE augusta_protocol GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
@@ -254,7 +254,7 @@ target_compile_definitions(augusta_session_tests PRIVATE
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_session_tests DISCOVERY_TIMEOUT 30)
 
-# Match recordings and their replay (ADR-0050), on the example scenario as the
+# Match recordings and their replay (ADR-0048), on the example scenario as the
 # server loads it from its golden server pack, and the golden match recorded
 # from it. When the simulation changes on purpose, one step rewrites the golden
 # match for review and commit:

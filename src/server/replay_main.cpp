@@ -1,4 +1,4 @@
-// augusta_replay: replays a match recording augustad wrote (ADR-0050) on a
+// augusta_replay: replays a match recording augustad wrote (ADR-0048) on a
 // fresh SimulationWorld and checks every tick resolves what it recorded.
 //
 //   augusta_replay <recording> <server pack> <public key> [--across-builds]

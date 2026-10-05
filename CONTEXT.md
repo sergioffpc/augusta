@@ -103,11 +103,11 @@ How far in the past, about 100 ms, a client shows other players, so it always ha
 _Avoid_: Lerp delay, buffer time, lag
 
 **Match recording**:
-What the Authoritative server handed SimulationWorld on each tick of its run and what the tick resolved, written to a file when its config asks for one, so a Replay can re-run it (ADR-0050). Every tick from the server's start, Lobby ticks included, not one Match alone.
+What the Authoritative server handed SimulationWorld on each tick of its run and what the tick resolved, written to a file when its config asks for one, so a Replay can re-run it (ADR-0048). Every tick from the server's start, Lobby ticks included, not one Match alone.
 _Avoid_: Demo, replay file (a Replay is what is done with a recording)
 
 **Replay**:
-Handing a fresh SimulationWorld, built from the same server pack, every tick's recorded input and checking each tick resolves the recorded outcome: exactly on the build that made the recording, within a grid step of position on any other, each tick starting from the recorded bodies (ADR-0050).
+Handing a fresh SimulationWorld, built from the same server pack, every tick's recorded input and checking each tick resolves the recorded outcome: exactly on the build that made the recording, within a grid step of position on any other, each tick starting from the recorded bodies (ADR-0048).
 _Avoid_: Playback, rewind (Lag compensation looks back in time; a Replay re-runs a whole recording), re-simulation (Reconciliation's replay of unacknowledged commands is the client's own)
 
 **Seen time**:

@@ -6,7 +6,7 @@
 #include "augusta/math.h"
 #include "augusta/protocol.h"
 
-// A match recording's records (ADR-0050), in the protocol's own encoding: pure
+// A match recording's records (ADR-0048), in the protocol's own encoding: pure
 // bytes in, record or error out, as the messages are (protocol_test.cpp).
 namespace {
 
