@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <csignal>
 #include <cstdint>
@@ -12,10 +13,14 @@
 
 namespace {
 
-// 9999-12-31T23:59:59Z, the last second a four-digit year can name.
-constexpr std::int64_t kLastSecond = 253402300799;
+// 9999-12-31T23:59:59Z, the last second a four-digit year can name, or the last
+// one the log sink's system_clock holds if that ends sooner (2262 where it
+// counts nanoseconds, as libstdc++'s does).
+constexpr std::int64_t kLastSecond = std::min<std::int64_t>(
+    253402300799,
+    std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::time_point::max()).time_since_epoch().count());
 
-// Any time from the epoch to the year 9999 is written as the log sink's
+// Any time from the epoch to kLastSecond is written as the log sink's
 // FormatLine writes it, leap days and all, though the crash lines can't use its
 // std::format.
 RC_GTEST_PROP(CrashFormatProperty, TimestampMatchesTheLogSinks, ()) {
