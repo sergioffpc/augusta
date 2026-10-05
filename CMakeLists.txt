@@ -81,6 +81,14 @@ add_subdirectory(src/modules/harness)
 add_subdirectory(src/modules/presentation)
 add_subdirectory(src/modules/replication)
 add_subdirectory(src/server)
+# augusta-loadtest, the Scripted players: a tool built with the runtime it
+# links (harness, map, config), on every platform. Off by default, so no CI
+# build compiles or tests it: configure with -DAUGUSTA_LOADTEST=ON to have it,
+# and its tests in augusta_tests.
+option(AUGUSTA_LOADTEST "Build augusta-loadtest (tools/loadtest) and its tests" OFF)
+if (AUGUSTA_LOADTEST)
+  add_subdirectory(tools/loadtest)
+endif()
 if (WIN32)
   # NVIDIA Falcor (ADR-0009) is Windows-only, so augusta_renderer's real
   # implementation only builds here - nothing on Linux (only the
