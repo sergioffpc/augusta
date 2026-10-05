@@ -53,7 +53,7 @@ RUN cmake --preset linux \
     && cmake --build --preset linux --target augustad \
     && DESTDIR=/workspace/stage cmake --install build/x64-linux --prefix /usr/local
 
-# The debug info the build split off augustad (ADR-0049), alone: CI publishes
+# The debug info the build split off augustad (ADR-0047), alone: CI publishes
 # it as the image's sha-<12>-debuginfo tag, what reads a core dump of the
 # binary below. Not the last stage, so a plain build still makes the runtime.
 FROM scratch AS debuginfo
@@ -80,6 +80,6 @@ COPY --from=build /workspace/stage/ /
 USER augusta
 # tini is PID 1, not augustad: the kernel drops a signal PID 1 sends itself
 # with no handler for it, so augustad re-raising a fatal signal from its crash
-# handler would neither end it nor dump its core (ADR-0049). tini forwards
+# handler would neither end it nor dump its core (ADR-0047). tini forwards
 # SIGTERM to augustad and exits with its status.
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/augustad"]

@@ -98,7 +98,7 @@ target_link_libraries(augustad_runtime
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)
 
 # What a crash leaves in the log: the fatal signal and a symbolized stack
-# (ADR-0049). Abseil symbolizes, being async-signal-safe where the
+# (ADR-0047). Abseil symbolizes, being async-signal-safe where the
 # alternatives (std::stacktrace, Boost.Stacktrace) allocate.
 find_package(absl CONFIG REQUIRED)
 add_library(augustad_crash STATIC
@@ -114,7 +114,7 @@ augusta_set_module_scope(augustad_crash SERVER_ONLY)
 add_executable(augustad main.cpp)
 target_link_libraries(augustad PRIVATE augusta_assets augusta_config augustad_content augustad_crash augusta_parameters augusta_version augusta_logging augusta_networking augustad_runtime)
 
-# On Linux the debug info is split off into augustad.debug beside it (ADR-0049):
+# On Linux the debug info is split off into augustad.debug beside it (ADR-0047):
 # the binary keeps its symbol table, which the crash handler symbolizes with,
 # and a .gnu_debuglink naming the file. The build ID is what matches a core
 # dump to the binary and its debug info.

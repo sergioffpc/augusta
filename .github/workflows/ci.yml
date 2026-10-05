@@ -604,7 +604,7 @@ jobs:
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
       # The published binary's debug info (the Dockerfile's debuginfo stage,
       # from the build layer the image was just built from), kept beside the
-      # image for as long as it: what reads a core dump of it (ADR-0049).
+      # image for as long as it: what reads a core dump of it (ADR-0047).
       - name: Publish server debug info
         id: debuginfo
         if: github.event_name == 'push'

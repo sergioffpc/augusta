@@ -8,13 +8,13 @@
 #include <string_view>
 
 /// \file
-/// What augustad leaves behind when it crashes (ADR-0049): on a fatal signal it
+/// What augustad leaves behind when it crashes (ADR-0047): on a fatal signal it
 /// writes the signal and a symbolized stack to stdout as CRITICAL log lines,
 /// then dies of that signal, so the kernel still writes its core dump. main()
 /// installs it once, before anything else runs. It writes past
 /// augusta::logging, whose sink allocates and locks, so it formats its lines
 /// itself, the way logging::FormatLine does. Where the core goes, and the
-/// symbols that read it, are the node's and the build's (ADR-0049).
+/// symbols that read it, are the node's and the build's (ADR-0047).
 namespace augusta::server {
 
 inline constexpr std::size_t kCrashLineCapacity = 512;

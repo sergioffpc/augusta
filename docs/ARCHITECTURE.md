@@ -430,6 +430,7 @@ aid only and do not affect numbering.
 - [ADR-0036 — Logging library: Boost.Log replaces spdlog](./adr/0036-boost-log.md)
 - [ADR-0037 — Include order: main header, standard library, third-party, project](./adr/0037-include-order.md)
 - [ADR-0046 — Documentation site: MkDocs Material for the docs, Doxygen for the C++ API, on GitHub Pages](./adr/0046-documentation-site.md)
+- [ADR-0047 — Server crash reports: kernel core dumps, a logged stack, and split debug info](./adr/0047-server-crash-reports.md)
 
 ### Rendering & Audio
 - [ADR-0009 — Renderer: NVIDIA Falcor](./adr/0009-renderer.md)

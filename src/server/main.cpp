@@ -66,7 +66,7 @@ std::unique_ptr<augusta::server::ServerRuntime> CreateRuntime(const augusta::con
 
 int main(int argc, char** argv) {
   // First, so a crash anywhere after it - startup included - is logged and
-  // leaves a core dump (ADR-0049).
+  // leaves a core dump (ADR-0047).
   augusta::server::InstallCrashHandler(argv[0]);
   augusta::logging::Init();
 

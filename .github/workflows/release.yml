@@ -105,7 +105,7 @@ jobs:
           mkdir -p dist
           cp build/x64-linux/src/server/augustad dist/augustad-linux-x64
           # Its debug info, split off by this same build, so it matches this
-          # binary's build ID - not the image's (ADR-0049).
+          # binary's build ID - not the image's (ADR-0047).
           cp build/x64-linux/src/server/augustad.debug dist/augustad-linux-x64.debug
       - name: SBOM
         run: |

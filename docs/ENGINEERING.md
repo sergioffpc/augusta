@@ -200,7 +200,7 @@ pipeline).
   keeps the dump (`coredumpctl`). A cluster core is read with the debug info
   CI publishes beside each image as its `sha-<12>-debuginfo` tag; a release's
   `augustad-linux-x64.debug` reads only that release binary, which no image
-  runs (ADR-0049).
+  runs (ADR-0047).
 
 ## Developer Environment
 

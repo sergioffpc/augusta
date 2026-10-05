@@ -227,7 +227,7 @@ extern "C" void HandleFatalSignal(int signal) {
   ReportCrash(signal);
   // Pending until the handler returns, then delivered to the default action:
   // the process dies of it and the kernel dumps its core. Not as PID 1, whose
-  // own signals the kernel drops, hence the image's init (ADR-0049).
+  // own signals the kernel drops, hence the image's init (ADR-0047).
   std::raise(signal);
 }
 
