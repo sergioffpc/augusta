@@ -92,10 +92,13 @@ the decisions already made in ARCHITECTURE.md:
      packs are signed with a committed test key; the real release private
      key never touches CI
 - **Nightly** (on `develop`): long fuzzing runs, TSan, property-based
-  tests at a high case count, and a `llvm-cov` coverage report; a
-  failure opens or updates a `nightly-failure` issue (ADR-0013).
+  tests at a high case count, a `llvm-cov` coverage report, and the
+  hot-path micro-benchmarks, whose history is kept on the `benchmarks`
+  branch and charted on the documentation site; a failure, a benchmark
+  more than twice as slow as the night before among them, opens or
+  updates a `nightly-failure` issue (ADR-0013).
 - **Not in CI:** profiling (NVTX with Nsight Systems/Graphics, interactive tools, not CI checks),
-  micro-benchmarks (run by hand), and NFR-01's tick rate under load
+  and NFR-01's tick rate under load
   (checked by hand on the cluster before a release, ADR-0013).
 - **Releases:** a separate workflow, triggered only on `v*` tags, builds
   Release-config client/server binaries, runs the tests and the asset
@@ -340,5 +343,6 @@ pipeline).
   v1; no custom arena/pool allocators until profiling shows a
   concrete need.
 - Google Benchmark is used for targeted micro-benchmarks of hot-path code
-  (e.g., ballistics math, serialization) as needed — not a blanket
-  requirement for every function.
+  (the server tick, ballistics, serialization, pack loading) — not a
+  blanket requirement for every function. The nightly tracks them over
+  time (ADR-0013).

@@ -15,7 +15,8 @@ concurrency:
   cancel-in-progress: false
 # A called workflow gets at most what its caller grants.
 permissions:
-  contents: read
+  # Recording the benchmark results on the benchmarks branch.
+  contents: write
   # Deleting superseded cache entries (.github/actions/prune-cache).
   actions: write
   # Opening or updating the nightly-failure issue.

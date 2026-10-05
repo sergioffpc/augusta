@@ -27,6 +27,12 @@ and deploys it with GitHub's own Pages actions. `make docs` builds the same site
 locally, into `build/docs-site/`. MkDocs runs through `uv tool run`, pinned, as the
 other Python tools do; Doxygen is installed on the machine, like clang-format.
 
+**The site also charts the nightly benchmarks' history** (ADR-0013), under
+`benchmarks/`, linked from the navigation: the page and results the nightly keeps on
+the `benchmarks` branch, copied in when the site is built for deployment. So that it
+shows the latest night, `main`'s site is also deployed once a day, after the nightly;
+what it says of the code is still what was released.
+
 ## Considered Options
 
 - **Doxygen alone**, with the Markdown as its related pages: rejected - one tool,

@@ -50,6 +50,7 @@ def on_config(config):
     config["nav"] = [{title: page} for title, page in LEADING_NAV] + [
         {"Decisions (ADRs)": adrs},
         {"API reference": "api/"},
+        {"Benchmarks": "benchmarks/"},
     ]
     return config
 
