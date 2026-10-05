@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <ios>
 #include <optional>
@@ -182,6 +183,27 @@ Recording Read(const std::string& bytes) {
   return recording.value_or(Recording{});
 }
 
+// A divergence's tick, kind and both sides' bodies, every float in hex so a
+// last-bit difference shows: what a failing replay test reports.
+std::string Describe(const augusta::server::Divergence& divergence) {
+  std::string text =
+      std::format("diverged on tick {}: {}", divergence.tick, augusta::server::DescribeDivergenceKind(divergence.kind));
+  for (const auto* side : {&divergence.recorded, &divergence.replayed}) {
+    text += side == &divergence.recorded ? "\n recorded" : "\n replayed";
+    for (const auto& body : side->bodies) {
+      const augusta::physics::BodyState& state = body.body;
+      text += std::format(
+          "\n  body {}: position ({:a}, {:a}, {:a}) velocity ({:a}, {:a}, {:a}) stance {} stamina {:a} exhausted {} "
+          "yaw {:a} health {:a} cooldown {:a} reload {:a} recoil ({:a}, {:a}) rounds {} burst {}",
+          static_cast<std::uint32_t>(body.entity), state.position.x, state.position.y, state.position.z,
+          state.velocity.x, state.velocity.y, state.velocity.z, static_cast<int>(state.stance), state.stamina,
+          state.exhausted, body.yaw, body.health, body.rifle.cooldown, body.rifle.reload_remaining,
+          body.rifle.recoil.pitch, body.rifle.recoil.yaw, body.rifle.rounds, body.rifle.burst_index);
+    }
+  }
+  return text;
+}
+
 TEST(RecordingTest, TheScriptedMatchEndsInADraw) {
   const Content content = LoadExampleContent();
   RecordedSimulation simulation = ExampleSimulation(LoadExampleContent(), std::nullopt);
@@ -314,14 +336,13 @@ TEST(ReplayTest, ATickTheWorldNumbersOtherwiseDiverges) {
   recording.ticks[3].outcome.tick = 7;
   const auto replayed = augusta::server::Replay(recording, LoadExampleContent(), kSameBuild);
   ASSERT_FALSE(replayed.has_value());
-  EXPECT_EQ(replayed.error().kind, DivergenceKind::kTick);
+  EXPECT_EQ(replayed.error().kind, DivergenceKind::kTick) << Describe(replayed.error());
 }
 
 TEST(ReplayTest, ARecordingReplaysToExactlyTheSameOutcomeOnTheBuildThatMadeIt) {
   const Recording recording = Read(RecordScriptedMatch());
   const auto replayed = augusta::server::Replay(recording, LoadExampleContent(), kSameBuild);
-  ASSERT_TRUE(replayed.has_value()) << "diverged on tick " << replayed.error().tick << ": "
-                                    << augusta::server::DescribeDivergenceKind(replayed.error().kind);
+  ASSERT_TRUE(replayed.has_value()) << Describe(replayed.error());
   EXPECT_EQ(*replayed, recording.ticks.size());
 }
 
@@ -331,7 +352,7 @@ TEST(ReplayTest, AnOutcomeThatDiffersIsTheFirstDivergence) {
   recording.ticks[9].outcome.bodies[0].body.position.x += 1.0F;
   const auto replayed = augusta::server::Replay(recording, LoadExampleContent(), kAcrossBuilds);
   ASSERT_FALSE(replayed.has_value());
-  EXPECT_EQ(replayed.error().tick, 6U);
+  EXPECT_EQ(replayed.error().tick, 6U) << Describe(replayed.error());
   EXPECT_EQ(replayed.error().kind, DivergenceKind::kBodies);
 }
 
@@ -417,8 +438,7 @@ TEST(GoldenMatchTest, TheGoldenMatchReplaysToItsRecordedOutcome) {
   ASSERT_TRUE(recording.has_value()) << augusta::server::DescribeRecordingError(recording.error());
   ASSERT_EQ(recording->header.server_pack, LoadExamplePack().Hash()) << "regenerate " << AUGUSTA_GOLDEN_MATCH;
   const auto replayed = augusta::server::Replay(*recording, LoadExampleContent(), kAcrossBuilds);
-  ASSERT_TRUE(replayed.has_value()) << "diverged on tick " << replayed.error().tick << ": "
-                                    << augusta::server::DescribeDivergenceKind(replayed.error().kind);
+  ASSERT_TRUE(replayed.has_value()) << Describe(replayed.error());
   EXPECT_EQ(*replayed, recording->ticks.size());
 }
 
