@@ -1,0 +1,140 @@
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <mutex>
+#include <optional>
+#include <unordered_map>
+#include <variant>
+#include <vector>
+
+#include "augusta/logging.h"
+#include "augusta/math.h"
+#include "augusta/policy_actions.h"
+#include "augusta/replication.h"
+#include "augusta/simulation.h"
+#include "command_queue.h"
+#include "host.h"
+#include "host_impl.h"
+#include "host_log.h"
+#include "match.h"
+#include "simulation_mapping.h"
+#include "tick_messages.h"
+#include "wire.h"
+
+namespace augusta::server {
+
+// Every queue length fits the byte an Authoritative State update tells it in.
+static_assert(kMaxQueuedCommands <= std::numeric_limits<std::uint8_t>::max());
+
+// One line for every match that ends (ADR-0029): why, who won, how many
+// ticks it lasted, counting the one it ended on, and how many were in it.
+void Host::Impl::LogMatchEnded(EndReason reason, const std::optional<SessionId>& winner, std::size_t playing) const {
+  server::LogMatchEnded(reason, winner, tick - match_start_tick + 1, playing, match.GetRoster().version);
+}
+
+// Ends the match in progress, if any, with winner or as a draw, for reason:
+// its players are told, and are back in the Lobby; their bodies and the
+// bullets in flight leave the simulation at the start of the next tick.
+void Host::Impl::EndMatch(const std::optional<SessionId>& winner, EndReason reason) {
+  const std::optional<MatchEnd> ended = match.End(winner);
+  if (!ended.has_value()) {
+    return;
+  }
+  SendTo(ended->players, ToWire(*ended));
+  LogMatchEnded(reason, ended->winner, ended->players.size());
+  SendRoster();
+}
+
+// Acts on Game policy's Match end, after the tick it was decided on.
+void Host::Impl::Act(const simulation::MatchEnd& end) {
+  const std::lock_guard<std::mutex> lock(mutex);
+  EndMatch(end.winner.transform([](simulation::SessionId winner) { return FromSimulation(winner); }),
+           EndReason::kWinCondition);
+}
+
+// Starts a match if one can start: its players' bodies enter the simulation
+// at the Spawn points Game policy gives them, their commands start afresh,
+// and they are told where each spawned.
+void Host::Impl::StartMatchIfReady() {
+  const std::optional<MatchStart> start = match.TryStart();
+  if (!start.has_value()) {
+    return;
+  }
+  std::vector<simulation::MatchPlayer> entrants;
+  entrants.reserve(start->players.size());
+  std::vector<SessionId> sessions;
+  for (const MatchPlayer& player : start->players) {
+    entrants.push_back(
+        simulation::MatchPlayer{.entity = ToSimulation(player.entity),
+                                .identity = {.session = ToSimulation(player.session), .character = player.character},
+                                .character = characters.at(player.character)});
+    bodies.emplace(player.session, player.entity);
+    players.at(player.session).commands = CommandQueue{tick_rate_hz};
+    sessions.push_back(player.session);
+  }
+  const std::vector<math::Vec3> spawns = simulation.StartMatch(entrants, spawn_points);
+  simulating_match = true;
+  // Its first tick is the one about to run.
+  match_start_tick = tick + 1;
+  SendTo(sessions, ToWire(*start, spawns));
+  LI("subsystem=serverruntime event=match_started tick={} players={}", match_start_tick, sessions.size());
+}
+
+// Takes a match that has ended out of the simulation, or the bodies of
+// players who left the one in progress, starts a match if one can start,
+// then takes one command per player in it for this tick.
+Host::Impl::TickInput Host::Impl::PrepareTick() {
+  const std::lock_guard<std::mutex> lock(mutex);
+  if (simulating_match && !match.InMatch()) {
+    simulation.EndMatch();
+    bodies.clear();
+    simulating_match = false;
+  }
+  std::erase_if(bodies, [&](const auto& body) {
+    const auto& [session, entity] = body;
+    if (match.IsPlaying(session)) {
+      return false;
+    }
+    simulation.RemovePlayer(ToSimulation(entity));
+    return true;
+  });
+  match.Tick();
+  StartMatchIfReady();
+
+  TickInput input;
+  for (const SessionId session : match.Playing()) {
+    Player& player = players.at(session);
+    const EntityId entity = bodies.at(session);
+    const TickCommand next = player.commands.Next();
+    input.commands.push_back(simulation::PlayerCommand{.entity = ToSimulation(entity), .command = next.command});
+    input.to.recipients.push_back(replication::Recipient{
+        .entity = ToSimulation(entity),
+        .acknowledged_sequence = next.acknowledged_sequence,
+        .queued_commands = static_cast<std::uint8_t>(player.commands.Queued()),
+    });
+    input.to.peers.emplace(entity, player.peer);
+  }
+  return input;
+}
+
+simulation::TickResult Host::Tick(float delta_time) {
+  Impl& impl = *impl_;
+  const Impl::TickInput input = impl.PrepareTick();
+  const simulation::TickResult result = impl.simulation.Tick(input.commands, delta_time);
+  impl.tick = result.state.tick;
+  SendTickMessages(impl.network, result.state, impl.tick, input.to);
+  LogCombat(result.state);
+  // After the tick's own messages, so a client hears the deaths that ended the
+  // match before it hears that it has.
+  for (const simulation::PolicyAction& action : result.actions) {
+    std::visit([&impl](const auto& typed) { impl.Act(typed); }, action);
+  }
+  return result;
+}
+
+void Host::EndMatch() {
+  const std::lock_guard<std::mutex> lock(impl_->mutex);
+  impl_->EndMatch(std::nullopt, EndReason::kEndedByTheHost);
+}
+
+}  // namespace augusta::server

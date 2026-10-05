@@ -83,6 +83,10 @@ add_executable(augusta_misbehaviour_tests misbehaviour_test.cpp)
 target_link_libraries(augusta_misbehaviour_tests PRIVATE augustad_misbehaviour GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_misbehaviour_tests DISCOVERY_TIMEOUT 30)
 
+add_executable(augusta_heartbeat_tests heartbeat_test.cpp)
+target_link_libraries(augusta_heartbeat_tests PRIVATE augustad_heartbeat GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_heartbeat_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_admission_tests admission_test.cpp)
 target_link_libraries(augusta_admission_tests PRIVATE augustad_admission GTest::gtest GTest::gtest_main)
 # Links networking (for PeerId), so the same first-launch cost applies as below.

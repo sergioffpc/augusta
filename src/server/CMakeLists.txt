@@ -69,19 +69,32 @@ target_include_directories(augustad_admission PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(augustad_admission PUBLIC augusta_networking)
 augusta_set_module_scope(augustad_admission SERVER_ONLY)
 
+# The counts behind the server's once-a-second heartbeat line; pure, so tested
+# without a network (see heartbeat.h).
+add_library(augustad_heartbeat STATIC
+  heartbeat.cpp
+)
+target_include_directories(augustad_heartbeat PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(augustad_heartbeat PUBLIC augusta_tick)
+augusta_set_module_scope(augustad_heartbeat SERVER_ONLY)
+
 # The server's socket and SimulationWorld without threads or a clock, so a test
 # can drive a match by hand (see host.h), and the conversions Host makes at its
 # edges: between the protocol's plain types and the engine's (see wire.h), and
 # into SimulationWorld's (see simulation_mapping.h).
 add_library(augustad_host STATIC
   host.cpp
+  host_log.cpp
+  host_match.cpp
+  host_network.cpp
   simulation_mapping.cpp
+  tick_messages.cpp
   wire.cpp
 )
 target_include_directories(augustad_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_host
   PUBLIC augusta_ballistics augusta_networking augusta_parameters augusta_physics augusta_simulation augustad_content
-         augustad_commands augustad_match augustad_misbehaviour augustad_admission augusta_assets augusta_protocol augusta_replication
+         augustad_commands augustad_match augustad_misbehaviour augustad_admission augustad_heartbeat augusta_assets augusta_protocol augusta_replication
          augusta_tick
   PRIVATE augusta_logging augusta_map augusta_version
 )
