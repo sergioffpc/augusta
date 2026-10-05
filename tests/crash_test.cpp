@@ -2,13 +2,10 @@
 
 #include <chrono>
 #include <csignal>
-#include <cstdint>
 #include <string>
 #include <string_view>
 
 #include <gtest/gtest.h>
-#include <rapidcheck.h>
-#include <rapidcheck/gtest.h>
 
 #include "augusta/logging.h"
 
@@ -25,12 +22,11 @@ using augusta::server::FormatCrashFrameLine;
 using augusta::server::FormatCrashSignalLine;
 
 // 2024-02-01T12:00:00Z
-constexpr std::int64_t kFixedTime = 1706788800;
+constexpr std::chrono::sys_seconds kFixedTime{std::chrono::seconds{1706788800}};
 
 // What logging::FormatLine writes for message at time, as the console sink ends
 // it: the crash lines must read like every other CRITICAL line (ADR-0029).
-std::string LoggedLine(std::int64_t unix_seconds, std::string_view message) {
-  const std::chrono::system_clock::time_point time{std::chrono::seconds{unix_seconds}};
+std::string LoggedLine(std::chrono::sys_seconds time, std::string_view message) {
   return augusta::logging::FormatLine(time, augusta::logging::Severity::kCritical, message, false) + "\n";
 }
 
@@ -73,15 +69,6 @@ TEST(CrashFormat, SymbolTooLongForTheLineIsCutButStillClosed) {
   const std::string_view written = FormatCrashFrameLine(line, kFixedTime, 0, 0x10U, symbol.c_str());
   EXPECT_EQ(written.size(), line.size());
   EXPECT_TRUE(written.ends_with("xx\"\n"));
-}
-
-// Any time from the epoch to the year 9999 is written as FormatLine writes it,
-// leap days and all, though the crash lines can't use its std::format.
-RC_GTEST_PROP(CrashFormat, TimestampMatchesTheLogSinks, ()) {
-  const auto unix_seconds = *rc::gen::inRange<std::int64_t>(0, 253402300799);
-  CrashLine line{};
-  RC_ASSERT(std::string(FormatCrashSignalLine(line, unix_seconds, SIGSEGV)) ==
-            LoggedLine(unix_seconds, "subsystem=server event=crash signal=SIGSEGV"));
 }
 
 // The handler writes where the log sink does, stdout; a death test reads

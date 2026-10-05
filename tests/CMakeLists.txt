@@ -306,12 +306,19 @@ gtest_discover_tests(augusta_cooked_pack_tests)
 # The crash lines' format, against the log sink's, and the handler itself in
 # death tests.
 add_executable(augusta_crash_tests crash_test.cpp)
-target_link_libraries(augusta_crash_tests PRIVATE augustad_crash augusta_logging rapidcheck_gtest GTest::gtest GTest::gtest_main)
-# RapidCheck's Maybe uses std::aligned_storage, deprecated since C++23 (see
-# augusta_protocol_property_tests).
-target_compile_options(augusta_crash_tests PRIVATE $<$<CXX_COMPILER_ID:Clang>:-Wno-deprecated-declarations>)
+target_link_libraries(augusta_crash_tests PRIVATE augustad_crash augusta_logging GTest::gtest GTest::gtest_main)
 target_compile_definitions(augusta_crash_tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 gtest_discover_tests(augusta_crash_tests)
+
+# The crash lines' timestamp against the log sink's over every second to the
+# year 9999.
+add_executable(augusta_crash_property_tests crash_property_test.cpp)
+target_link_libraries(augusta_crash_property_tests PRIVATE augustad_crash augusta_logging rapidcheck_gtest GTest::gtest GTest::gtest_main)
+# RapidCheck's Maybe uses std::aligned_storage, deprecated since C++23 (see
+# augusta_protocol_property_tests).
+target_compile_options(augusta_crash_property_tests PRIVATE
+  $<$<CXX_COMPILER_ID:Clang>:-Wno-deprecated-declarations>)
+gtest_discover_tests(augusta_crash_property_tests PROPERTIES LABELS property)
 
 # The renderer is Windows-only (Falcor, ADR-0009), but which region of its
 # per-frame upload buffers a frame uses is a Falcor-free header, private to the
