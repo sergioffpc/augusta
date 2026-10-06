@@ -1,6 +1,5 @@
 #include "settings.h"
 
-#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <expected>
@@ -13,7 +12,7 @@
 
 #include "augusta/config.h"
 
-namespace augusta::loadtest {
+namespace augusta::swarm {
 
 namespace {
 
@@ -32,6 +31,16 @@ constexpr std::array<WholeNumberKey, 2> kWholeNumberKeys{kMatches, kSeed};
 std::expected<std::uint32_t, config::ConfigError> RequireWholeNumber(const config::ConfigValues& values,
                                                                      const WholeNumberKey& key) {
   return config::RequireWholeNumber(values, key.key, key.min, key.max);
+}
+
+// The whole-number key named `subject`, or null if it names none.
+const WholeNumberKey* FindWholeNumberKey(std::string_view subject) {
+  for (const WholeNumberKey& key : kWholeNumberKeys) {
+    if (key.key == subject) {
+      return &key;
+    }
+  }
+  return nullptr;
 }
 
 }  // namespace
@@ -105,8 +114,8 @@ std::expected<Settings, config::ConfigError> LoadSettings(const std::filesystem:
 }
 
 std::string DescribeSettingsError(const config::ConfigError& error) {
-  const auto range = std::ranges::find(kWholeNumberKeys, error.subject, &WholeNumberKey::key);
-  if (error.code != config::ConfigErrorCode::kInvalidNumber || range == kWholeNumberKeys.end()) {
+  const WholeNumberKey* const range = FindWholeNumberKey(error.subject);
+  if (error.code != config::ConfigErrorCode::kInvalidNumber || range == nullptr) {
     return config::DescribeConfigError(error);
   }
   const std::string phrase =
@@ -114,4 +123,4 @@ std::string DescribeSettingsError(const config::ConfigError& error) {
   return error.file.empty() ? phrase : std::format("{}: {}", error.file.string(), phrase);
 }
 
-}  // namespace augusta::loadtest
+}  // namespace augusta::swarm

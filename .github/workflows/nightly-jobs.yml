@@ -150,11 +150,11 @@ jobs:
           ref: ${{ env.NIGHTLY_REF }}
           submodules: true
       - uses: ./.github/actions/setup-linux-build
-      - name: Configure (tools)
-        run: cmake --preset linux-tools
+      - name: Configure
+        run: cmake --preset linux
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
-        run: cmake --build --preset linux-tools --target augusta_tests
+        run: cmake --build --preset linux --target augusta_tests
       - name: Test (netcode under an impaired link)
         run: ctest --preset linux-netcode --no-tests=error
   coverage:

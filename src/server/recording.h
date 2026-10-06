@@ -19,7 +19,7 @@
 
 /// \file
 /// A match recording (ADR-0048): what server::Host handed its SimulationWorld
-/// on each tick and what the tick resolved, so a replay (replay.h) can hand a
+/// on each tick and what the tick resolved, so a replay (tools/replay/replay.h) can hand a
 /// fresh World the same and check it resolves the same. RecordedSimulation is
 /// the World as Host drives it, writing each tick to a Recorder when it has
 /// one; ReadRecording reads a recording back. The records are the Networking
@@ -30,7 +30,7 @@ namespace augusta::server {
 /// What a recording was made on.
 struct RecordingHeader {
   /// The recording engine's version (augusta::EngineVersion): a replay on
-  /// another is not held to exactly the same outcome (replay.h).
+  /// another is not held to exactly the same outcome (tools/replay/replay.h).
   std::string engine_version;
   /// The server pack the World's content was loaded from: a replay loads the same.
   assets::PackHash server_pack{};
@@ -61,7 +61,7 @@ struct TickInput {
 };
 
 /// What one tick resolved that its players are told of: a replay that resolves
-/// the same has the same outcome (replay.h). Every number is on the protocol's
+/// the same has the same outcome (tools/replay/replay.h). Every number is on the protocol's
 /// grids or travels as its bits, so a recorded one reads back exactly.
 struct TickOutcome {
   /// The tick, as the World numbers it, from 1.

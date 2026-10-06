@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_LOADTEST_RUN_H_
-#define AUGUSTA_LOADTEST_RUN_H_
+#ifndef AUGUSTA_SWARM_RUN_H_
+#define AUGUSTA_SWARM_RUN_H_
 
 #include <chrono>
 #include <cstdint>
@@ -14,14 +14,14 @@
 /// \file
 /// One run of Scripted players (scripted_player.h) against a server: as many
 /// as its scenario's Player count, each on a harness::Session under a
-/// harness::Runner, played through a number of Match ends. What augusta-loadtest
+/// harness::Runner, played through a number of Match ends. What augusta-swarm
 /// (main.cpp) does once it has read its config and its pack, and what a test
 /// does against a server::Host in the same process.
 ///
 /// A Scripted player loads nothing to draw anyone, so it reports Ready for
 /// every Roster as soon as it is sent. The run's threads are the Runners'
 /// (two per player) and the caller's, which watches them until the verdict.
-namespace augusta::loadtest {
+namespace augusta::swarm {
 
 /// What a run needs.
 struct RunConfig {
@@ -90,6 +90,6 @@ struct RunResult {
 /// physics rejects a mesh of the map.
 [[nodiscard]] RunResult RunScriptedPlayers(const RunConfig& config);
 
-}  // namespace augusta::loadtest
+}  // namespace augusta::swarm
 
-#endif  // AUGUSTA_LOADTEST_RUN_H_
+#endif  // AUGUSTA_SWARM_RUN_H_

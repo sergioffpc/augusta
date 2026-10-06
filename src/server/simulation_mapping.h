@@ -20,7 +20,7 @@
 /// them at the protocol's: Match's names for players and bodies into
 /// SimulationWorld's, which are the same numbers, and the pack's characters into
 /// what SimulationWorld judges hits against; and the World itself, built from
-/// the scenario, the same for Host and for a replay (replay.h).
+/// the scenario, the same for Host and for a replay (tools/replay/replay.h).
 namespace augusta::server {
 
 /// entity as SimulationWorld names the same body.

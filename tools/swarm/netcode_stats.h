@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_LOADTEST_NETCODE_STATS_H_
-#define AUGUSTA_LOADTEST_NETCODE_STATS_H_
+#ifndef AUGUSTA_SWARM_NETCODE_STATS_H_
+#define AUGUSTA_SWARM_NETCODE_STATS_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -11,9 +11,9 @@
 /// What one Scripted player's prediction and fire came to over a run: how often
 /// and how far reconciliation (ADR-0004) moved its body, and how many of its
 /// rounds the server confirmed as hits (ADR-0044). What a test of the netcode
-/// under an impaired link judges, and what augusta-loadtest logs at the end of
+/// under an impaired link judges, and what augusta-swarm logs at the end of
 /// a run. Counts only; the bounds they are held to are the caller's.
-namespace augusta::loadtest {
+namespace augusta::swarm {
 
 /// One Scripted player's run, as its NetcodeTally added it up.
 struct NetcodeStats {
@@ -55,6 +55,6 @@ class NetcodeTally {
   std::uint32_t last_total_rounds_fired_ = 0;
 };
 
-}  // namespace augusta::loadtest
+}  // namespace augusta::swarm
 
-#endif  // AUGUSTA_LOADTEST_NETCODE_STATS_H_
+#endif  // AUGUSTA_SWARM_NETCODE_STATS_H_

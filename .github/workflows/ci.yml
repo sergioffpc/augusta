@@ -50,7 +50,7 @@ jobs:
           changed="$(git diff --name-only "$base" "${{ github.sha }}")"
 
           if echo "$changed" \
-              | grep -qE '^(src/|tests/|tools/composer/examples/|tools/pack/cpp/|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/)'; then
+              | grep -qE '^(src/|tests/|tools/(replay|swarm)/|tools/composer/examples/|tools/pack/cpp/|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/)'; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
@@ -315,13 +315,15 @@ jobs:
         # cascades a spurious error onto every file *after* the first one
         # missing its compile_commands entry, not just that file itself - so
         # a stray Windows-only file left in this list fails the whole batch.
+        # The C++ tools (tools/replay, tools/swarm) are built with them, so
+        # linted alike, and their tests like the runtime's.
         # Then the tests get .clang-tidy's misc-include-cleaner alone, as the
         # Makefile's tidy target runs it (which says why -w); the Windows-only
         # client tests are the client job's.
         run: |
           status=0
-          find src -name '*.cpp' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' | xargs clang-tidy -p build/x64-linux || status=1
-          git ls-files 'tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 8 clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
+          find src tools/replay tools/swarm -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' | xargs clang-tidy -p build/x64-linux || status=1
+          git ls-files 'tests/*.cpp' 'tools/replay/tests/*.cpp' 'tools/swarm/tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 8 clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
           exit "$status"
       - name: Build
         run: cmake --build --preset linux --target all augusta_tests

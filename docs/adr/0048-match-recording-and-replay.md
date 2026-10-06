@@ -65,8 +65,10 @@ builds the World as the server does, and for every record hands it the
 recorded input in the recorded order, then compares the tick's outcome,
 its number included, with the recorded one. It stops at the first tick that
 differs and reports which part of the outcome did. A pack whose Map the World
-refuses stops it before the first tick, as it would have stopped the server. The `augusta_replay` tool does this for a file
-augustad wrote; a test does it for a recording it made.
+refuses stops it before the first tick, as it would have stopped the server. The `augusta-replay` tool does this for a file
+augustad wrote; a test does it for a recording it made. The replay is a tool,
+not runtime: it lives in `tools/replay` with its tests, the golden match among
+them, and `augustad` only writes recordings.
 
 **"The same" is exactly equal on the build that recorded it, a grid step
 across builds.** On the build and platform that made a recording, every value

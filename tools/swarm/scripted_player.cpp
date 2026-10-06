@@ -14,7 +14,7 @@
 #include "augusta/physics.h"
 #include "augusta/weapon.h"
 
-namespace augusta::loadtest {
+namespace augusta::swarm {
 
 namespace {
 
@@ -184,4 +184,4 @@ command::Command ScriptedPlayer::NextCommand(const harness::ServerView& view, co
   return command;
 }
 
-}  // namespace augusta::loadtest
+}  // namespace augusta::swarm

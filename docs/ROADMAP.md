@@ -155,5 +155,5 @@ match starts automatically
 - Remote/public access to non-production environments (VPN or
   port-forwarding) — LAN-only for now
 - Client-side metrics (Reconciliation corrections, interpolation running
-  dry), from the real client or `augusta-loadtest`, and an alert
+  dry), from the real client or `augusta-swarm`, and an alert
   receiver (see ADR-0049)

@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_LOADTEST_TESTS_EXAMPLE_SERVER_H_
-#define AUGUSTA_LOADTEST_TESTS_EXAMPLE_SERVER_H_
+#ifndef AUGUSTA_SWARM_TESTS_EXAMPLE_SERVER_H_
+#define AUGUSTA_SWARM_TESTS_EXAMPLE_SERVER_H_
 
 #include <chrono>
 #include <cstdint>
@@ -25,7 +25,7 @@
 /// server::Host serving the example scenario in the same process, at the tick
 /// rate on a thread of its own, the RunConfig of Scripted players against it,
 /// and the transport's process-wide setup.
-namespace augusta::loadtest::testing {
+namespace augusta::swarm::testing {
 
 inline constexpr std::uint8_t kTickRate = 60;
 inline constexpr const char* kCharacter = "characters/player";
@@ -39,7 +39,7 @@ class NetworkingEnvironment : public ::testing::Environment {
 };
 
 // The example scenario's packs, verified with the test key, as augustad and
-// augusta-loadtest load them.
+// augusta-swarm load them.
 inline assets::Pack ExamplePack(std::string_view name) {
   const std::filesystem::path root(AUGUSTA_EXAMPLE_PACKS);
   auto pack = assets::LoadVerifiedPack(root / name, root / "test.pub");
@@ -120,6 +120,6 @@ class ExampleServer {
   std::optional<RunningHost> host_;
 };
 
-}  // namespace augusta::loadtest::testing
+}  // namespace augusta::swarm::testing
 
-#endif  // AUGUSTA_LOADTEST_TESTS_EXAMPLE_SERVER_H_
+#endif  // AUGUSTA_SWARM_TESTS_EXAMPLE_SERVER_H_

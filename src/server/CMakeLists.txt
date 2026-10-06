@@ -112,14 +112,13 @@ augusta_set_module_scope(augustad_metrics SERVER_ONLY)
 # can drive a match by hand (see host.h), and the conversions Host makes at its
 # edges: between the protocol's plain types and the engine's (see wire.h), and
 # into SimulationWorld's (see simulation_mapping.h); with the match recording
-# Host writes and its replay (see recording.h and replay.h, ADR-0048).
+# Host writes (see recording.h, ADR-0048), which tools/replay replays.
 add_library(augustad_host STATIC
   host.cpp
   host_log.cpp
   host_match.cpp
   host_network.cpp
   recording.cpp
-  replay.cpp
   simulation_mapping.cpp
   tick_messages.cpp
   wire.cpp
@@ -142,11 +141,6 @@ target_link_libraries(augustad_runtime
   PRIVATE augusta_assets augusta_logging augusta_tick augustad_metrics
 )
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)
-
-# Replays a match recording augustad wrote against the server pack it names
-# (ADR-0048): a developer's tool, not shipped with the server.
-add_executable(augusta_replay replay_main.cpp)
-target_link_libraries(augusta_replay PRIVATE augusta_assets augusta_logging augusta_version augustad_content augustad_host)
 
 # What a crash leaves in the log: the fatal signal and a symbolized stack
 # (ADR-0047). Abseil symbolizes, being async-signal-safe where the

@@ -7,7 +7,7 @@
 #include "augusta/math.h"
 #include "augusta/prediction.h"
 
-namespace augusta::loadtest {
+namespace augusta::swarm {
 
 NetcodeStats& NetcodeStats::operator+=(const NetcodeStats& other) {
   match_ticks += other.match_ticks;
@@ -50,4 +50,4 @@ void NetcodeTally::RecordHitConfirmations(std::size_t count) {
   stats_.hit_confirmations += static_cast<std::uint32_t>(count);
 }
 
-}  // namespace augusta::loadtest
+}  // namespace augusta::swarm

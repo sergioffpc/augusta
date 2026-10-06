@@ -140,7 +140,7 @@ route to no receiver yet, so they show only in Grafana and Alertmanager.
   how large its Reconciliation corrections are, or when it had fewer than two
   Authoritative State updates to interpolate between. Reporting that needs a
   new protocol message, and the server must not trust it. The same metrics on
-  `augusta-loadtest`'s Scripted players raise no trust question, but a
+  `augusta-swarm`'s Scripted players raise no trust question, but a
   short-lived process outside the cluster needs a Pushgateway or a scrape of
   the developer's machine. Both wait for a phase 2.
 - **Connection health aggregated only**: rejected. It cannot say which player's
