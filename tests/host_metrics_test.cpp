@@ -1,6 +1,7 @@
 #include "host_metrics.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <set>
@@ -17,6 +18,7 @@
 #include "command_queue.h"
 #include "heartbeat.h"
 #include "host_log.h"
+#include "lock_free_metrics.h"
 #include "match.h"
 #include "misbehaviour.h"
 
