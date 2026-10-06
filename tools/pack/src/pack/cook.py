@@ -11,6 +11,7 @@ equivalent (mesh optimization, texture compression).
 
 from __future__ import annotations
 
+import itertools
 import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -19,21 +20,6 @@ from pathlib import Path
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade
 
 from pack import _meshoptimizer, _textconv
-from pack.pack import (
-    AssetEntry,
-    MeshData,
-    SceneNode,
-    encode_audio_blob,
-    encode_characters_blob,
-    encode_eye_blob,
-    encode_hitbox_blob,
-    encode_mesh_blob,
-    encode_scene_blob,
-    encode_script_blob,
-    encode_sounds_blob,
-    encode_spawn_point_blob,
-    encode_texture_blob,
-)
 from pack.pack import ASSET_TYPE_AUDIO as _TYPE_AUDIO
 from pack.pack import ASSET_TYPE_CHARACTERS as _TYPE_CHARACTERS
 from pack.pack import ASSET_TYPE_COLLISION as _TYPE_COLLISION
@@ -55,6 +41,19 @@ from pack.pack import (
     TEXTURE_FORMAT_BC4,
     TEXTURE_FORMAT_BC5,
     TEXTURE_FORMAT_BC7,
+    AssetEntry,
+    MeshData,
+    SceneNode,
+    encode_audio_blob,
+    encode_characters_blob,
+    encode_eye_blob,
+    encode_hitbox_blob,
+    encode_mesh_blob,
+    encode_scene_blob,
+    encode_script_blob,
+    encode_sounds_blob,
+    encode_spawn_point_blob,
+    encode_texture_blob,
     write_pack,
 )
 from pack.sounds import CueSounds
@@ -193,7 +192,9 @@ def _read_body_part(prim: Usd.Prim, prim_path: str) -> int:
     return body_part
 
 
-def _decompose(matrix: Gf.Matrix4d) -> tuple[tuple[float, float, float], tuple[float, float, float, float], tuple[float, float, float]]:
+def _decompose(
+    matrix: Gf.Matrix4d,
+) -> tuple[tuple[float, float, float], tuple[float, float, float, float], tuple[float, float, float]]:
     """Decomposes a USD local-to-parent transform matrix into the
     translation/rotation(x,y,z,w)/scale triple SceneNode stores (ADR-0032
     stores local transforms only, never world).
@@ -249,7 +250,8 @@ def _validate_triangle_topology(face_vertex_counts, face_vertex_index_count: int
         raise CookError(
             "inconsistent_topology",
             prim_path,
-            f"faceVertexCounts sums to {expected_index_count} but faceVertexIndices has {face_vertex_index_count} entries",
+            f"faceVertexCounts sums to {expected_index_count} "
+            f"but faceVertexIndices has {face_vertex_index_count} entries",
         )
     return expected_index_count
 
@@ -299,8 +301,54 @@ def _read_raw_mesh_geometry(mesh: UsdGeom.Mesh, prim_path: str) -> MeshData:
 
 # A UsdGeomCube's 8 corners, ordered (-,-,-) (+,-,-) (+,+,-) (-,+,-)
 # (-,-,+) (+,-,+) (+,+,+) (-,+,+), and its 12 outward-CCW triangles.
-_CUBE_CORNER_SIGNS = [(-1, -1, -1), (1, -1, -1), (1, 1, -1), (-1, 1, -1), (-1, -1, 1), (1, -1, 1), (1, 1, 1), (-1, 1, 1)]
-_CUBE_INDICES = [4, 5, 6, 4, 6, 7, 1, 0, 3, 1, 3, 2, 5, 1, 2, 5, 2, 6, 0, 4, 7, 0, 7, 3, 3, 7, 6, 3, 6, 2, 0, 1, 5, 0, 5, 4]
+_CUBE_CORNER_SIGNS = [
+    (-1, -1, -1),
+    (1, -1, -1),
+    (1, 1, -1),
+    (-1, 1, -1),
+    (-1, -1, 1),
+    (1, -1, 1),
+    (1, 1, 1),
+    (-1, 1, 1),
+]
+_CUBE_INDICES = [
+    4,
+    5,
+    6,
+    4,
+    6,
+    7,
+    1,
+    0,
+    3,
+    1,
+    3,
+    2,
+    5,
+    1,
+    2,
+    5,
+    2,
+    6,
+    0,
+    4,
+    7,
+    0,
+    7,
+    3,
+    3,
+    7,
+    6,
+    3,
+    6,
+    2,
+    0,
+    1,
+    5,
+    0,
+    5,
+    4,
+]
 
 
 def _read_cube_geometry(cube: UsdGeom.Cube, prim_path: str) -> MeshData:
@@ -347,7 +395,9 @@ def _read_capsule_geometry(capsule: UsdGeom.Capsule, prim_path: str) -> MeshData
     axis = capsule.GetAxisAttr().Get()
     if height is None or radius is None or radius <= 0 or height < 0:
         raise CookError(
-            "invalid_capsule_size", prim_path, f"capsule height {height} / radius {radius} must be non-negative/positive"
+            "invalid_capsule_size",
+            prim_path,
+            f"capsule height {height} / radius {radius} must be non-negative/positive",
         )
     up, right, forward = _CAPSULE_BASIS.get(axis, _CAPSULE_BASIS[UsdGeom.Tokens.z])
 
@@ -362,7 +412,9 @@ def _read_capsule_geometry(capsule: UsdGeom.Capsule, prim_path: str) -> MeshData
             phi = 2.0 * math.pi * segment / segments
             points.append(
                 tuple(
-                    up[i] * axis_offset + right[i] * (ring_radius * math.cos(phi)) + forward[i] * (ring_radius * math.sin(phi))
+                    up[i] * axis_offset
+                    + right[i] * (ring_radius * math.cos(phi))
+                    + forward[i] * (ring_radius * math.sin(phi))
                     for i in range(3)
                 )
             )
@@ -399,11 +451,11 @@ def _read_capsule_geometry(capsule: UsdGeom.Capsule, prim_path: str) -> MeshData
     # bottom fan's winding, since the top pole is approached from the
     # opposite direction.
     add_fan(bottom_pole_index, bottom_ring_starts[0], flip=False)
-    for lower, upper in zip(bottom_ring_starts, bottom_ring_starts[1:]):
+    for lower, upper in itertools.pairwise(bottom_ring_starts):
         add_band(lower, upper)
     add_band(bottom_ring_starts[-1], bottom_equator_start)
     add_band(bottom_equator_start, top_equator_start)
-    for lower, upper in zip(top_ring_starts, top_ring_starts[1:]):
+    for lower, upper in itertools.pairwise(top_ring_starts):
         add_band(lower, upper)
     add_fan(top_pole_index, top_ring_starts[-1], flip=True)
 
@@ -532,9 +584,7 @@ def _maybe_cook_texture_prim(prim: Usd.Prim, prim_path: str, stage_path: Path, e
         return
 
     dds_bytes, texture_format = _cook_texture(prim, prim_path, stage_path)
-    entries.append(
-        AssetEntry(type=_TYPE_TEXTURE, path=prim_path, data=encode_texture_blob(dds_bytes, texture_format))
-    )
+    entries.append(AssetEntry(type=_TYPE_TEXTURE, path=prim_path, data=encode_texture_blob(dds_bytes, texture_format)))
 
 
 # True for the AssetType values ADR-0019 puts in the server pack: collision
@@ -558,9 +608,7 @@ def _transform_mesh(mesh: MeshData, matrix: Gf.Matrix4d) -> MeshData:
     return MeshData(points=[tuple(matrix.Transform(Gf.Vec3d(*point))) for point in mesh.points], indices=mesh.indices)
 
 
-def _cook_character_prim(
-    prim: Usd.Prim, prim_path: str, matrix: Gf.Matrix4d, entries: list[AssetEntry]
-) -> int | None:
+def _cook_character_prim(prim: Usd.Prim, prim_path: str, matrix: Gf.Matrix4d, entries: list[AssetEntry]) -> int | None:
     """The geometry half of _build_node's classification (mesh vs. collision
     vs. hitbox - ADR-0040/ADR-0041), for one prim of a character stage:
     appends at most one AssetEntry, its points already transformed into the

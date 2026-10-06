@@ -46,6 +46,7 @@ docs, the decisions behind the engine (ADRs) and the C++ API reference.
 
 **Windows (client):** run PowerShell as Administrator (Win+X → "Terminal
 (Admin)"). The bootstrap installs Visual Studio Build Tools and GNU make:
+
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 ./scripts/bootstrap-windows.ps1
@@ -70,6 +71,7 @@ Visual Studio Build Tools environment through [scripts/vcenv.ps1](scripts/vcenv.
 
 Build and start the Linux server in the dev container first. Leave it running, listening on
 the configured address (the default client connects to `127.0.0.1:27015`):
+
 ```bash
 make
 ./build/x64-linux/src/server/augustad --config config/augustad.yaml
@@ -77,6 +79,7 @@ make
 
 Then, from a separate Windows PowerShell terminal, build and start the client
 with its local config and cooked client pack:
+
 ```powershell
 make
 & "build/x64-windows/src/client/augustac.exe" --config config/augustac.yaml
@@ -91,6 +94,7 @@ prefix on Linux.
 ### Tests
 
 Run the tests with the host's default preset, or select another preset:
+
 ```bash
 make test
 make test PRESET=windows-debug
@@ -98,22 +102,27 @@ make test PRESET=linux-san
 ```
 
 The `linux-fuzz` preset builds the fuzz targets:
+
 ```bash
 make PRESET=linux-fuzz
 ```
+
 [tests/fuzz/README.md](tests/fuzz/README.md) explains how to run them.
 
 The `linux-coverage` preset measures the tests' coverage (ADR-0013). In VS
 Code, select it and run "Test: Run All Tests with Coverage": CMake Tools shows
 the result in the editor and the Test Coverage view. From a shell:
+
 ```bash
 cmake --preset linux-coverage && cmake --build --preset linux-coverage
 ctest --preset linux-coverage
 scripts/coverage-report.sh   # HTML and LCOV in build/x64-linux-coverage/report
 ```
+
 The nightly uploads the same report as its `coverage-report` artifact.
 
 Other useful checks:
+
 ```bash
 make format-check
 make lint

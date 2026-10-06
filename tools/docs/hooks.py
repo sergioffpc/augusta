@@ -79,7 +79,7 @@ def _page_uri(repo_path: str):
     if repo_path in ROOT_PAGES:
         return ROOT_PAGES[repo_path]
     if repo_path.startswith("docs/") and repo_path.endswith(".md") and not repo_path.startswith("docs/agents/"):
-        return repo_path[len("docs/"):]
+        return repo_path[len("docs/") :]
     return None
 
 

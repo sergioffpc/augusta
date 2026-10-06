@@ -5,15 +5,16 @@
 # augusta::command's, so neither needs them.
 #
 # Run by ctest as `cmake -DSOURCE_DIR=<repo root> -P core_boundary.cmake`.
-if (NOT DEFINED SOURCE_DIR)
+if(NOT DEFINED SOURCE_DIR)
   message(FATAL_ERROR "core_boundary.cmake: pass -DSOURCE_DIR=<repo root>")
 endif()
 
-file(GLOB headers
+file(
+  GLOB headers
   "${SOURCE_DIR}/src/modules/physics/include/augusta/*.h"
   "${SOURCE_DIR}/src/modules/simulation/include/augusta/*.h"
 )
-if (NOT headers)
+if(NOT headers)
   message(FATAL_ERROR "core_boundary.cmake: no headers found under ${SOURCE_DIR}")
 endif()
 
@@ -31,10 +32,12 @@ foreach(header ${headers})
   endforeach()
 endforeach()
 
-if (violations)
+if(violations)
   list(JOIN violations "\n" report)
-  message(FATAL_ERROR
-    "physics or SimulationWorld names the protocol or the input sampler - use augusta/grid.h or augusta::command instead:\n${report}")
+  message(
+    FATAL_ERROR
+    "physics or SimulationWorld names the protocol or the input sampler - use augusta/grid.h or augusta::command instead:\n${report}"
+  )
 endif()
 list(LENGTH headers count)
 message(STATUS "core_boundary: ${count} headers free of protocol and input types")

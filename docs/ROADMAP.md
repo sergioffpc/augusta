@@ -4,6 +4,7 @@ Milestones are ordered, not dated (hobby project, no fixed deadline — see
 VISION.md). Sizes are relative effort, not calendar estimates: S / M / L.
 
 ## M0 — Project & Infrastructure Setup (S)
+
 No engine code yet — get the project, tooling, and pipelines standing.
 Split into three sub-milestones: M0a covers everything needed to write,
 build, and test code locally and in CI; M0b covers containerizing and
@@ -12,6 +13,7 @@ watching it there. M0c is the exception to "no engine code": its
 metrics instrument the server the later milestones built.
 
 ### M0a — Client & Dev Environment
+
 - GitHub repository, Git Flow branches (`main` + `develop`), branch
   protection, PR-gated merges
 - `.gitignore`, `.editorconfig`, local `commit-msg` hook (Conventional
@@ -32,6 +34,7 @@ Git Workflow sections; ADR-0008, ADR-0011, ADR-0012, ADR-0013, ADR-0025
 working build environment on both sides; CI is green on a skeleton commit
 
 ### M0b — Server & k8s Infra
+
 - Self-hosted k3s cluster (single node, own hardware)
 - Flux installed in the cluster, reconciling `main` and `develop` from
   Git (GHCR image + Helm chart). No self-hosted GitHub Actions runner
@@ -48,6 +51,7 @@ ADR-0026
 server automatically on merge, in their respective namespaces
 
 ### M0c — Observability
+
 - kube-prometheus-stack (Prometheus, Alertmanager, Grafana) installed by
   Flux in a `monitoring` namespace, under an `infrastructure`
   Kustomization the `apps` one depends on
@@ -62,8 +66,10 @@ dashboards (NFR-07), and a server whose tick loop is stalled is
 restarted by its liveness probe
 
 ## M1 — De-risking Spikes (S)
+
 Prove the riskiest unknowns work in isolation before building on them.
 No gameplay yet.
+
 - Falcor renders a textured, rotating primitive on the Windows target
 - Minimal GameNetworkingSockets round-trip: Windows client ↔ Linux
   dedicated server
@@ -77,8 +83,10 @@ first exercised in practice
 **Exit criteria:** all three spikes run standalone and demonstrably work
 
 ## M2 — Asset Pipeline (M)
+
 Built before any gameplay milestone needs a test map, so nothing
 downstream ever touches a hardcoded placeholder.
+
 - Level baking tool: usd-optimize (stage cleanup) + usd-validation-nvidia
   (validation) on the OpenUSD-authored test map, baked to runtime format
 - Asset cooker (`tools/pack`, pure Python): meshoptimizer
@@ -96,6 +104,7 @@ packs produced by the cooker; a real (if simple) test map exists for every
 milestone from here on to use
 
 ## M3 — Networked Movement Skeleton (M)
+
 - US-01 Connect to Dedicated Server
 - US-02 Join a Match (2–8 Players)
 - US-04 Move Player Character
@@ -108,6 +117,7 @@ match, move (walk/run/crouch/prone) in the pipeline's test map, see each
 other with prediction + reconciliation working
 
 ## M4 — Combat Skeleton (L)
+
 - US-06 Aim Weapon, US-07 Fire Rifle, US-08 Reload Rifle,
   US-09 Apply Weapon Recoil
 - US-10 Simulate Bullet Ballistics, US-11 Detect Hit by Impact Location,
@@ -122,6 +132,7 @@ server-computed physics trajectory; hits resolve by body part with damage
 applied (debug HUD/log is enough, no scoring yet)
 
 ## M5 — Full Match Loop (M)
+
 - US-03 Spawn into a Match, US-13 Player Death (No Respawn),
   US-14 Determine Match End / Win Condition
 
@@ -133,6 +144,7 @@ fight, permanent death for the match, win condition ends the match, next
 match starts automatically
 
 ## M6 — Hardening & v1 Release (S)
+
 - US-15 Server-Side Validation (Anti-Cheat Baseline)
 - Full v1 "definition of done" verification pass (REQUIREMENTS.md)
 
@@ -142,6 +154,7 @@ match starts automatically
 ---
 
 ## Beyond v1 (not planned in detail)
+
 - More weapons, more maps
 - Network encryption (deferred per ADR/§8, trusted-LAN-only in v1)
 - Matchmaking/master server

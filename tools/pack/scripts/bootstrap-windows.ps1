@@ -32,12 +32,12 @@ $packProject = Split-Path -Parent $PSScriptRoot
 
 function Install-WingetPackage {
   param([string]$Id, [string[]]$Override)
-  $args = @("install", "--id", $Id, "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements")
+  $wingetArgs = @("install", "--id", $Id, "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements")
   if ($Override) {
-    $args += @("--override", ($Override -join " "))
+    $wingetArgs += @("--override", ($Override -join " "))
   }
   Write-Host "Installing $Id..."
-  winget @args
+  winget @wingetArgs
 }
 
 # uv manages its own Python interpreters (see the venv creation below) - no

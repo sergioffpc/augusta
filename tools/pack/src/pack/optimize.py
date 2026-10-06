@@ -8,9 +8,8 @@ directly instead.
 
 from pathlib import Path
 
-from pxr import Usd
-
 import usd_optimize.core as usd_optimize_core
+from pxr import Usd
 
 # triangulateMeshes first: cook.py's own topology validation
 # (_validate_triangle_topology, ADR-0030) rejects non-triangular faces
@@ -35,7 +34,7 @@ def optimize_stage(input_path: Path, output_path: Path) -> None:
     core = usd_optimize_core.UsdOptimizeCore.getInstance()
     results = core.executeConfig(context, [{"operation": op} for op in OPERATIONS])
 
-    for op, (success, error, _output) in zip(OPERATIONS, results):
+    for op, (success, error, _output) in zip(OPERATIONS, results, strict=True):
         if not success:
             raise OptimizeError(f"{op} failed: {error}")
 

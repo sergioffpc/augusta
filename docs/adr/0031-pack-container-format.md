@@ -3,6 +3,7 @@
 Defines the on-disk byte layout of the pack file ADR-0018 describes, and how the cooker (ADR-0030) turns the cleaned/validated OpenUSD stage into it.
 
 **Conversion, per USD prim:**
+
 - `UsdGeomMesh` prims: points/normals/UVs/indices read via the OpenUSD API (ADR-0016), optimized with meshoptimizer, written as one mesh blob.
 - Textures referenced by `UsdShadeMaterial`/`UsdUVTexture`: compressed to BC7/BC5/BC4 DDS via DirectXTex (ADR-0017), one blob each.
 - Lua scripts (ADR-0039): every `*.lua` file under the scenario's folder, stored as its text with no framing, one blob each. Written to the server pack only (ADR-0019): a client is sent the values a script decides, never the script.
@@ -16,6 +17,7 @@ Defines the on-disk byte layout of the pack file ADR-0018 describes, and how the
 **Addressing:** each blob's pack-relative path is the source USD prim's path, sanitized (leading `/` stripped; `/` kept as the path separator). A script's pack-relative path is its path relative to the scenario's folder, with `/` as the separator (`parameters.lua`, `rules/match.lua`). No separate authored ID — consistent with ADR-0018 already rejecting a GUID/manifest indirection layer. Renaming or moving a prim in the authored stage therefore changes its runtime path; nothing here guards against that.
 
 **File layout**, in write order:
+
 1. **Header** — magic (`"AUGP"`), format version, index offset/count, data section offset, then a flags byte and the client pack hash (ADR-0038): the BLAKE3 hash of the client pack cooked in the same run, its trailer's 32 bytes. Only a server pack names one, with the flag set; a client pack has the flag clear and 32 zero bytes, and a header with any other flag, or a hash it does not flag, does not load. The server admits only a client whose Join request names that hash, so a client never plays against a server pack cooked from other content, even one signed by the same key. Written first as a placeholder, patched once the index offset is known.
 2. **Data section** — every asset blob, back-to-back, in traversal order. Offsets are recorded as each blob is written.
 3. **Index** — one entry per blob: type tag (Mesh/Texture/Audio/Collision/SpawnPoint/Hitbox/Prop/Ragdoll/Scene/Script/Characters/Eye/Sounds), path, offset, size. Written after the data section, since it needs the recorded offsets.

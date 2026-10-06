@@ -331,7 +331,7 @@ def write_pack(
     index_offset = cursor
 
     index_section = ByteWriter()
-    for entry, offset, size in zip(entries, offsets, sizes):
+    for entry, offset, size in zip(entries, offsets, sizes, strict=True):
         index_section.u8(entry.type)
         index_section.string(entry.path, MAX_PATH_LENGTH)
         index_section.u64(offset)

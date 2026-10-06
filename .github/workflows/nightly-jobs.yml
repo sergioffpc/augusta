@@ -281,7 +281,10 @@ jobs:
         # so a check that keeps failing doesn't pile up duplicates. Closing it
         # is left to whoever fixes the failure.
         run: |
+          # The backticks are Markdown for the issue, not command substitution.
+          # shellcheck disable=SC2016
           failed="$(jq -r 'to_entries[] | select(.value.result == "failure") | "- `\(.key)`"' <<< "$NEEDS")"
+          # shellcheck disable=SC2016
           body="$(printf 'The nightly on `%s` failed: %s\n\nFailed jobs:\n%s\n' "$NIGHTLY_REF" "$RUN_URL" "$failed")"
 
           # --force: creates the label on first use, and is a no-op after.

@@ -46,9 +46,7 @@ def port_packages(installed):
                 port[field] = _NOASSERTION
         packages.append(port)
     if not packages:
-        sys.exit(
-            f"no vcpkg.spdx.json under {installed}/share - not a vcpkg installed tree"
-        )
+        sys.exit(f"no vcpkg.spdx.json under {installed}/share - not a vcpkg installed tree")
     return packages
 
 
@@ -93,9 +91,7 @@ def spdx_document(name, version, repo, commit, dependencies):
         }
         for dependency in dependencies
     ]
-    created = datetime.datetime.now(datetime.timezone.utc).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
+    created = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     return {
         "spdxVersion": "SPDX-2.3",
         "dataLicense": "CC0-1.0",
@@ -122,13 +118,9 @@ def main():
         type=pathlib.Path,
         help="a dependency checked out with git rather than installed by vcpkg",
     )
-    parser.add_argument(
-        "installed", type=pathlib.Path, help="vcpkg_installed/<triplet>"
-    )
+    parser.add_argument("installed", type=pathlib.Path, help="vcpkg_installed/<triplet>")
     args = parser.parse_args()
-    dependencies = port_packages(args.installed) + [
-        git_package(p) for p in args.git_package
-    ]
+    dependencies = port_packages(args.installed) + [git_package(p) for p in args.git_package]
     json.dump(
         spdx_document(args.name, args.version, args.repo, args.commit, dependencies),
         sys.stdout,

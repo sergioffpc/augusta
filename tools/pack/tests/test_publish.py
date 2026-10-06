@@ -8,7 +8,6 @@ import shutil
 from pathlib import Path
 
 import pytest
-
 from pack import keys, pack, publish
 from pack.publish import PublishError
 

@@ -4,7 +4,6 @@ signature that makes it trusted (ADR-0018).
 
 import pytest
 from conftest import read_pack_contents
-
 from pack import keys, pack
 from pack.reader import PackError, read_pack, verify_pack
 

@@ -74,7 +74,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--skip-validation",
         action="store_true",
-        help="Skip usd-validation-nvidia (e.g. third-party stages that fail its checks); usd-optimize and the cook still run.",
+        help="Skip usd-validation-nvidia (e.g. third-party stages that fail its checks); "
+        "usd-optimize and the cook still run.",
     )
     args = parser.parse_args(argv)
 
@@ -189,7 +190,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"[3/3] done in {time.monotonic() - step_start:.1f}s")
 
-    print(f"Pipeline complete in {time.monotonic() - pipeline_start:.1f}s: client pack {client_output_pack}, server pack {server_output_pack}")
+    print(
+        f"Pipeline complete in {time.monotonic() - pipeline_start:.1f}s: "
+        f"client pack {client_output_pack}, server pack {server_output_pack}"
+    )
     return 0
 
 

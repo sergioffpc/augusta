@@ -49,7 +49,7 @@ the signed client and server packs the game loads (ADR-0018, ADR-0019). It is a
 tooling-time project only - nothing here is linked into the shipped client or
 server.
 
-```
+```text
 <scenario>/map.usda -> usd-optimize -> usd-validation-nvidia -> cook -> <scenario>/client.pack
 <scenario>/*.lua                                                          -> <scenario>/server.pack
 ```
@@ -139,7 +139,7 @@ you give it to `<assets-root>\authoring\scenarios\<name>`, which holds a
 `manifest.yaml` naming the one map, every character and the sounds folder that
 scenario composes, plus the Lua scripts that go with it:
 
-```
+```text
 scenarios\test_map\manifest.yaml     # map: maps/test_map, characters: [...]
 scenarios\test_map\parameters.lua    # required: the scenario's Parameters
 scenarios\test_map\rules\round.lua   # any other *.lua, in any subfolder
@@ -202,7 +202,7 @@ mesh/collision entries.
 
 #### `augusta-pack` reference
 
-```
+```text
 augusta-pack [-h] [--assets-root ASSETS_ROOT]
          [--client-output-pack CLIENT_OUTPUT_PACK]
          [--server-output-pack SERVER_OUTPUT_PACK]
@@ -234,7 +234,7 @@ augusta-pack <scenario> --signing-key <key-prefix>.key
 
 #### `augusta-keygen` reference
 
-```
+```text
 augusta-keygen [-h] prefix
 ```
 
@@ -263,7 +263,7 @@ never resolved against an assets root. The `.pack` extension is optional, so
 
 #### `augusta-inspect` reference
 
-```
+```text
 augusta-inspect [-h] pack
 ```
 
@@ -290,7 +290,7 @@ use `augusta-verify` before trusting the contents.
 
 #### `augusta-verify` reference
 
-```
+```text
 augusta-verify [-h] [--assets-root ASSETS_ROOT] [--public-key PUBLIC_KEY] pack
 ```
 
@@ -341,7 +341,7 @@ that can `sudo` on the node without a password.
 
 #### `augusta-publish` reference
 
-```
+```text
 augusta-publish [-h] --host HOST [--assets-root ASSETS_ROOT] [--client-pack CLIENT_PACK]
                 [--server-pack SERVER_PACK] [--public-key PUBLIC_KEY] scenario
 ```
@@ -487,7 +487,7 @@ or on Windows, `ctest --test-dir build/x64-windows -L netcode`.
 `simulation.recording` setting) on a fresh SimulationWorld, and checks that
 every tick resolves what it recorded (ADR-0048):
 
-```
+```text
 augusta-replay <recording> <server pack> <public key> [--across-builds]
 ```
 

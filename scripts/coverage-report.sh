@@ -19,7 +19,7 @@ output="${1:-$build/report}"
 # for some installs.
 version="$(clang -dumpversion | cut -d. -f1)"
 tool() {
-  if command -v "$1-$version" > /dev/null; then echo "$1-$version"; else echo "$1"; fi
+  if command -v "$1-$version" >/dev/null; then echo "$1-$version"; else echo "$1"; fi
 }
 profdata="$(tool llvm-profdata)"
 cov="$(tool llvm-cov)"
@@ -45,6 +45,6 @@ ignore='(/tests/|/third_party/|/vcpkg_installed/)'
   -format=html -output-dir="$output" -ignore-filename-regex="$ignore" -show-line-counts-or-regions
 # Absolute source paths, as the editor matches them against its open files.
 "$cov" export "${objects[@]}" -instr-profile="$build/coverage.profdata" \
-  -format=lcov -ignore-filename-regex="$ignore" > "$output/coverage.lcov"
+  -format=lcov -ignore-filename-regex="$ignore" >"$output/coverage.lcov"
 "$cov" report "${objects[@]}" -instr-profile="$build/coverage.profdata" \
   -ignore-filename-regex="$ignore" | tee "$output/summary.txt"

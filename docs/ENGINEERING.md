@@ -63,6 +63,7 @@ the decisions already made in ARCHITECTURE.md:
   4. ASan + UBSan test build and a short fuzzing run per target (both
      Linux only), only for `pull_request` runs — skipped on the `push`
      that lands after merge, since the PR already validated it
+
   - Dependency restore: `vcpkg install` (manifest mode) before the build
     step, both runners. Binary cache via a GitHub Packages NuGet feed on
     Windows (vcpkg's native GitHub-Actions-cache backend was removed
@@ -84,6 +85,7 @@ the decisions already made in ARCHITECTURE.md:
     Docker layers live in GHCR (`augustad:buildcache`) instead: at several
     GB they would evict the rest, and every pull request would rebuild its
     dependencies from source.
+
   5. Compile with a strict warning set, treated as errors
   6. the `tools` job, when `tools/` changed: on a Windows runner, build the
      asset cooker's native modules and run its pytest suite, which also
@@ -228,8 +230,10 @@ pipeline).
   major as CI's, with the toolchain `.github/actions/setup-linux-build`
   installs (kept in step with it by hand), clang (ADR-0008), CMake, Ninja,
   vcpkg, clang-tidy, clang-format, gdb, GitHub CLI, kubectl, helm, Doxygen,
-  the hooks' formatters and linters (uv for yamllint, standalone yamlfmt,
-  StyLua, luacheck and taplo, at CI's pinned versions), and CI's Linux
+  the hooks' formatters and linters (uv for yamllint, ruff, shfmt,
+  shellcheck, actionlint, gersemi and pymarkdown, standalone yamlfmt,
+  StyLua, luacheck and taplo, at CI's pinned versions; no PowerShell, so
+  no PSScriptAnalyzer), and CI's Linux
   vcpkg binary cache configuration (a files provider in the checkout's
   `.vcpkg-bincache`). The image builds for the host's architecture (amd64
   or arm64) rather than emulating CI's amd64. sccache's cache lives in a volume shared by every
@@ -245,8 +249,9 @@ pipeline).
   Studio Build Tools system-wide (default install location) — simpler
   than pinning a project-specific path, at the cost of not being able to
   side-by-side independent Build Tools versions per project — plus the
-  Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, uv (for yamllint),
-  standalone yamlfmt, StyLua, luacheck and taplo, and LLVM's
+  Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, uv (for yamllint and
+  the formatters and linters uv runs, below), standalone yamlfmt, StyLua,
+  luacheck and taplo, the PSScriptAnalyzer module, and LLVM's
   clang-format/clang-tidy (for the hooks below),
   pinned to the LLVM major CI's Ubuntu runner ships so the hooks agree
   with CI's gates.
@@ -289,7 +294,7 @@ pipeline).
   skipped (`--no-verify`) or missing/mismatched locally. `clang-tidy` needs a
   full `compile_commands.json`, so it stays out of the commit hook and runs on
   changed C++ before push. `make format` applies the formatters,
-  `make format-check` checks formatting and the YAML and Lua lint, `make lint`
+  `make format-check` checks formatting and every linter but `clang-tidy`, `make lint`
   also runs `clang-tidy`, and `make tidy` alone runs `clang-tidy`.
 - A scenario's Lua scripts (ADR-0022, ADR-0039) are formatted by StyLua 2.5.2
   (`stylua.toml`: two-space indentation, 120 columns, as the C++) and linted by
@@ -304,7 +309,28 @@ pipeline).
   width and indent, arrays kept one entry a line where written so), which is
   also the Even Better TOML extension's engine: it formats staged files in
   `pre-commit`, lints changed ones in `pre-push`, and CI's `format` job runs both
-  in check mode. JSON has no tool of its own: `CMakePresets.json` and
+  in check mode.
+- Python, shell, the workflows, CMake, Markdown and PowerShell each have a
+  formatter, a linter or both, every one but PSScriptAnalyzer run by uv at a
+  pinned version (`uv tool run`), so nothing is installed for them but uv.
+  Python: ruff 0.16.10 formats and lints (`ruff.toml`: 120 columns; pycodestyle,
+  Pyflakes, import order, bugbear, pyupgrade and simplify). Shell scripts and
+  the git hooks: shfmt 4.2.0 formats (by `.editorconfig`: two-space indent)
+  and shellcheck 0.11.0 lints. The workflows: actionlint 1.7.12
+  (`.github/actionlint.yaml`), with shellcheck on their `run:` scripts. CMake:
+  gersemi 0.29.2 formats (`.gersemirc`: 120 columns, two-space indent, the
+  project's own functions read from `cmake/`). Markdown: pymarkdown 0.9.40
+  lints with markdownlint's rules (`.pymarkdown.json`), and nothing formats
+  it: a formatter would rewrap and renumber what is written by hand, so the
+  line length, ordered-list numbering and emphasis-as-heading rules are off.
+  PowerShell: PSScriptAnalyzer 1.25.0 lints and formats
+  (`PSScriptAnalyzerSettings.psd1`, through `scripts/psscriptanalyzer.ps1`),
+  with consistent indentation off since it pulls a continued line back to its
+  statement's indent, and `Write-Host` allowed, being how the bootstraps talk
+  to the person running them. The formatters run on staged files in
+  `pre-commit`, the linters on changed files in `pre-push`, and CI's `format`
+  job runs all of them in check mode.
+- JSON has no tool of its own: `CMakePresets.json` and
   `vcpkg.json` are validated by CMake and vcpkg on every configure, and the
   `.vscode` files are the editor's, formatted by it on save.
 - Strict warnings-as-errors in CI (see CI/CD above).

@@ -40,7 +40,10 @@ fi
 # The previous release is the tag sorting just below this version, not the
 # nearest one in the history: a tag sits on main's merge commit, which develop,
 # and so a release/* branch, never contains.
-previous="$({ git tag --list 'v*' | grep -xE "$release" || true; echo "$version"; } |
+previous="$({
+  git tag --list 'v*' | grep -xE "$release" || true
+  echo "$version"
+} |
   sort -uV | grep -B1 -xF "$version" | head -n 1)"
 range=()
 if [ "$previous" != "$version" ]; then
@@ -51,7 +54,7 @@ cliff=(uvx git-cliff@2.14.2 "${range[@]}" --tag "$version")
 if [ -f CHANGELOG.md ]; then
   # A re-cut replaces the earlier one.
   rest="$(section 0)"
-  echo "$rest" > CHANGELOG.md
+  echo "$rest" >CHANGELOG.md
   "${cliff[@]}" --prepend CHANGELOG.md
 else
   "${cliff[@]}" --output CHANGELOG.md

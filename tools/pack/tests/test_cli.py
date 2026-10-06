@@ -3,7 +3,6 @@ the cook, into a signed client/server pack pair.
 """
 
 from conftest import EXAMPLES_ROOT, read_pack_contents
-
 from pack import cli, keys, pack
 
 

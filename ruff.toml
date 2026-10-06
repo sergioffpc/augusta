@@ -1,0 +1,9 @@
+# Python (tools/, scripts/): the same width as the C++ (.clang-format) and the
+# Lua (stylua.toml), and the interpreter tools/pyproject.toml pins.
+line-length = 120
+target-version = "py312"
+
+[lint]
+# pycodestyle, Pyflakes, import order, bugbear, pyupgrade and simplify: the
+# checks that find bugs or dead code, not taste.
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]

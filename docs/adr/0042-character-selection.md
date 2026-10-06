@@ -17,7 +17,7 @@ config), validated (at join) and named (by its path) is unchanged.
 required `player.character` key naming a character by its path relative to
 `authoring/`, the same address the manifest's `characters` list uses (ADR-0041),
 e.g. `characters/player`. There is no selection screen, so the config is the
-only place a player can state a choice today. (_Superseded by ADR-0043:_ this
+only place a player can state a choice today. (*Superseded by ADR-0043:* this
 used to say there is no lobby either, since a Match then had no pre-match
 waiting state; a Lobby now comes before every Match, still without a selection
 screen.) A future UI only changes who fills in

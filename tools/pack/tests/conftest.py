@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-
 from pack import keys, reader
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"

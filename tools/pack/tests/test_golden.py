@@ -6,7 +6,6 @@ and the golden packs are regenerated with the command in README.md.
 """
 
 from conftest import EXAMPLES_ROOT
-
 from pack import cli
 
 GOLDEN_DIR = EXAMPLES_ROOT.parent.parent.parent / "tests" / "fixtures" / "example-packs"

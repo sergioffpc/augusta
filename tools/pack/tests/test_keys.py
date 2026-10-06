@@ -3,7 +3,6 @@ and verify a pack.
 """
 
 import pytest
-
 from pack import keys, pack
 from pack.reader import verify_pack
 

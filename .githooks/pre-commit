@@ -1,6 +1,7 @@
 #!/bin/sh
-# Auto-formats staged C++, YAML, Lua and TOML files. CI's format checks remain the actual
-# gate if a local formatter is missing or the hook is bypassed with --no-verify.
+# Auto-formats staged C++, YAML, Lua, TOML, Python, shell, CMake and PowerShell
+# files. CI's format checks remain the actual gate if a local formatter is
+# missing or the hook is bypassed with --no-verify.
 
 cxx_files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^(src|tests)/.*\.(cpp|h)$' || true)
 if [ -n "$cxx_files" ]; then
@@ -49,5 +50,44 @@ if [ -n "$toml_files" ]; then
     done
   else
     echo "pre-commit: taplo not found on PATH - skipping TOML formatting (CI will still catch this)." >&2
+  fi
+fi
+
+# Python, shell and CMake, by the formatters uv runs at the versions CI pins.
+python_files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.py$' || true)
+shell_files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '(\.sh$|^\.githooks/)' || true)
+cmake_files=$(git diff --cached --name-only --diff-filter=ACMR |
+  grep -E '(^|/)CMakeLists\.txt$|\.cmake$' | grep -v '^third_party/' || true)
+if [ -n "$python_files$shell_files$cmake_files" ]; then
+  if command -v uv >/dev/null 2>&1; then
+    # shellcheck disable=SC2086 # one argument per file; tracked paths have no spaces
+    { [ -z "$python_files" ] || uv tool run ruff@0.16.10 format --quiet $python_files; } || exit $?
+    # shellcheck disable=SC2086
+    { [ -z "$shell_files" ] || uv tool run --from shfmt-py==4.2.0 shfmt -w $shell_files; } || exit $?
+    # shellcheck disable=SC2086
+    { [ -z "$cmake_files" ] || uv tool run gersemi@0.29.2 --quiet -i $cmake_files; } || exit $?
+    # shellcheck disable=SC2086
+    git add $python_files $shell_files $cmake_files || exit $?
+  else
+    echo "pre-commit: uv not found on PATH - skipping Python, shell and CMake formatting (CI will still catch this)." >&2
+  fi
+fi
+
+# PowerShell, by PSScriptAnalyzer's formatter: Windows PowerShell on Windows,
+# PowerShell 7 (pwsh) elsewhere. What PSScriptAnalyzer finds besides is
+# pre-push's to stop, so its exit status is not this hook's.
+powershell_files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.ps1$' || true)
+if [ -n "$powershell_files" ]; then
+  case "$(uname -s)" in
+    MINGW* | MSYS* | CYGWIN*) powershell="powershell -NoProfile -ExecutionPolicy Bypass" ;;
+    *) powershell=$(command -v pwsh >/dev/null 2>&1 && echo "pwsh -NoProfile") ;;
+  esac
+  if [ -n "$powershell" ]; then
+    # shellcheck disable=SC2086 # the command and its options; one argument per file
+    $powershell -File scripts/psscriptanalyzer.ps1 -Fix $powershell_files >/dev/null
+    # shellcheck disable=SC2086
+    git add $powershell_files || exit $?
+  else
+    echo "pre-commit: pwsh not found on PATH - skipping PowerShell formatting (CI will still catch this)." >&2
   fi
 fi

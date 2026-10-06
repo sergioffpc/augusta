@@ -153,7 +153,7 @@ _Avoid_: Tuning, settings; not a function's parameters
 
 **Map**:
 The static space a match is played in - its collision, spawn points and hitboxes - authored in OpenUSD (ADR-0015) and cooked into the signed pack. The shared `map` module builds its collision into the physics of both the client's PredictionWorld and the server's SimulationWorld.
-_Avoid_: Level, stage (a *scene graph* is how the pack stores the map, not the map itself)
+_Avoid_: Level, stage (a _scene graph_ is how the pack stores the map, not the map itself)
 
 **Harness**:
 Where anything that plays connects to the server: the client's network connection and PredictionWorld without a window or GPU. The real client, an automated test and a future autonomous agent each plug into one, supplying the input for every tick: whatever plays live runs it in real time on the Prediction and Network I/O threads the Harness owns (harness::Runner), and a test drives it by hand.

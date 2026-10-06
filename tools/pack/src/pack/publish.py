@@ -31,7 +31,7 @@ from typing import Protocol
 
 from pack.assets_root import default_assets_root
 from pack.keys import read_public_key
-from pack.reader import PackError, verify_pack
+from pack.reader import verify_pack
 
 VOLUME_ROOT = "/srv/augusta/asset-packs"
 SERVER_PACK_NAME = "server.pack"
@@ -193,8 +193,12 @@ def main(argv: list[str] | None = None) -> int:
         default=default_assets_root(),
         help="Hermetic environment root, for the defaults below (default: inferred from this interpreter's own venv).",
     )
-    parser.add_argument("--client-pack", type=Path, default=None, help="Default: <assets-root>/packs/<scenario>/client.pack")
-    parser.add_argument("--server-pack", type=Path, default=None, help="Default: <assets-root>/packs/<scenario>/server.pack")
+    parser.add_argument(
+        "--client-pack", type=Path, default=None, help="Default: <assets-root>/packs/<scenario>/client.pack"
+    )
+    parser.add_argument(
+        "--server-pack", type=Path, default=None, help="Default: <assets-root>/packs/<scenario>/server.pack"
+    )
     parser.add_argument(
         "--public-key",
         type=Path,

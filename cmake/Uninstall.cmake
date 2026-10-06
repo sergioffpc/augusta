@@ -6,7 +6,7 @@
 # removed with the same DESTDIR in the environment, prepended as
 # `cmake --install` prepends it. The directories are left, as a GNU uninstall
 # leaves them.
-if (NOT EXISTS "${MANIFEST}")
+if(NOT EXISTS "${MANIFEST}")
   message(FATAL_ERROR "No install manifest at '${MANIFEST}': nothing is installed from this build tree.")
 endif()
 

@@ -77,7 +77,10 @@ def inspect_main(argv: list[str] | None = None) -> int:
     print(f"Data (offset {_format_size(info.data_offset)}, {_format_size(info.index_offset - info.data_offset)} bytes)")
 
     print()
-    print(f"Index (offset {_format_size(info.index_offset)}, {_format_size(index_size)} bytes, {_format_entry_count(len(info.entries))})")
+    print(
+        f"Index (offset {_format_size(info.index_offset)}, {_format_size(index_size)} bytes, "
+        f"{_format_entry_count(len(info.entries))})"
+    )
     type_width = max((len(entry.type_name) for entry in info.entries), default=0)
     offset_width = max((len(_format_size(entry.offset)) for entry in info.entries), default=0)
     size_width = max((len(_format_size(entry.size)) for entry in info.entries), default=0)

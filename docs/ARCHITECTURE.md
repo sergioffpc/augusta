@@ -1,18 +1,21 @@
 # arc42 Architecture Document — FPS Simulator Engine
 
 ## 1. Introduction and Goals
+
 See [VISION.md](./VISION.md) for full vision. Summary: a realistic, physics-driven,
 server-authoritative multiplayer FPS simulator engine, built in C++ with a
 Windows client (rendering via NVIDIA Falcor/D3D12) and a headless Linux
 server, as a learning project in low-level systems and networking programming.
 
 Top quality goals (see [REQUIREMENTS.md](./REQUIREMENTS.md) for full NFR list):
+
 1. Server-authoritative correctness (NFR-05)
 2. Realistic, consistent ballistics (NFR-03)
 3. Stable performance under v1 load (NFR-01, NFR-06)
 4. Platform targeting, Windows client + Linux server (NFR-04)
 
 ## 2. Architecture Constraints
+
 - **Technical:** C++, CMake + Ninja + sccache. Client: Windows-only, rendering
   via NVIDIA Falcor (D3D12). Server: Linux-only, headless.
 - **Licensing:** third-party dependencies must be free/open-source (Flecs
@@ -33,10 +36,12 @@ Top quality goals (see [REQUIREMENTS.md](./REQUIREMENTS.md) for full NFR list):
   fixed deadline, milestone-driven
 
 ## 3. System Scope and Context
+
 **Business context:** Players connect directly to a dedicated server via IP:port.
 No matchmaking, master server, or third-party platform integration in v1.
 
 **Technical context:**
+
 - Client executable (Windows only): rendering (Falcor/D3D12), input, audio,
   local prediction
 - Dedicated server executable (Linux only): headless, authoritative simulation
@@ -44,13 +49,14 @@ No matchmaking, master server, or third-party platform integration in v1.
   worth of headless clients, for load and end-to-end tests (ADR-0013)
 - Communication: GameNetworkingSockets over UDP, unencrypted in v1
 
-```
+```text
 +--------+          +------------------------+
 | Player |--------->| FPS Simulator Engine   |
 +--------+          +------------------------+
 ```
 
 ## 4. Solution Strategy
+
 - ECS-based simulation core (Flecs), shared between client and server
 - PhysX for general collision/movement; custom-built ballistics module for bullet
   physics (the project's core learning focus)
@@ -83,7 +89,7 @@ No matchmaking, master server, or third-party platform integration in v1.
 
 ## 5. Building Block View
 
-```
+```text
 +--------+     +------------------------------------+
 | Player |     |         FPS Simulator Engine        |
 +--------+     |                                     |
@@ -94,6 +100,7 @@ No matchmaking, master server, or third-party platform integration in v1.
 ```
 
 **Shared Core** (compiled into both client and server)
+
 - ECS (Flecs) — shared entity/component data: players, bullets. Each
   World below is its own Flecs world instance built
   directly on the library; not a separate wrapped module in its own
@@ -126,6 +133,7 @@ No matchmaking, master server, or third-party platform integration in v1.
   SimulationWorld collide against the same map
 
 **Client-only** (Windows-only)
+
 - Input handling — turns keyboard/mouse events pushed by Renderer into
   commands for PredictionWorld. There is no separate Window module:
   Falcor fuses window creation with its GPU device/swapchain into one
@@ -148,7 +156,7 @@ No matchmaking, master server, or third-party platform integration in v1.
 - Audio — Steam Audio; consumes presentation state
 - HUD/UI
 
-```
+```text
 +-------+     +------------+
 | Input |     | Networking |
 +-------+     +------------+
@@ -207,6 +215,7 @@ Neither client world contains a Scripts/Behaviours phase — game policy is
 exclusively server-authoritative.
 
 **Server-only** (Linux-only, headless)
+
 - Networking — receives client commands, sends authoritative state; the
   only server component that touches the network
 - Input Validation — anti-cheat baseline (US-15); rejects/filters invalid
@@ -230,7 +239,7 @@ exclusively server-authoritative.
     Scripts/Behaviours phase (Lua, sandboxed — Match lifecycle, win
     conditions, spawn rules); emits authoritative state each tick
 
-```
+```text
 +------------+
 | Networking |
 +------------+
@@ -253,6 +262,7 @@ Cmds|     | State
 |                            |
 +----------------------------+
 ```
+
 *(the Authoritative State emitted by `SimulationWorld` goes directly to
 `Networking`, bypassing `Input Validation` — validation only applies to
 inbound commands)*
@@ -278,6 +288,7 @@ Game policy actions taken on it, typed and validated in C++ (ADR-0022), which
 | Commit | Mechanism | Packages tick state into Authoritative State for Networking |
 
 **Tooling** (offline, not shipped)
+
 - Level baking tool — cleans up the OpenUSD-authored (ADR-0015) map with
   usd-optimize (dedup instances, flatten hierarchy, remove degenerate
   geometry), validates it with usd-validation-nvidia, then converts it into the
@@ -296,6 +307,7 @@ Game policy actions taken on it, typed and validated in C++ (ADR-0022), which
 ## 6. Runtime View
 
 **Scenario: Fire Rifle**
+
 1. Client predicts local fire feedback (muzzle flash, sound, recoil) immediately
 2. Client sends the fire command to server via GameNetworkingSockets, with
    the Authoritative State tick it was showing and the interpolation fraction
@@ -313,6 +325,7 @@ Game policy actions taken on it, typed and validated in C++ (ADR-0022), which
    are drawn only from the server's hit messages (see ADR-0044)
 
 **Scenario: Player Movement with Reconciliation**
+
 1. Client applies input locally (predicted movement)
 2. Client sends input to server
 3. Server simulates authoritative movement (PhysX)
@@ -322,6 +335,7 @@ Game policy actions taken on it, typed and validated in C++ (ADR-0022), which
    presentation smooths the jump (see ADR-0004)
 
 **Scenario: Match End**
+
 1. Server evaluates the win condition each tick (game policy, the scenario's
    `objectives.lua`; in v1 last player standing)
 2. When it is met, the decision is a typed Match end action in that tick's
@@ -333,6 +347,7 @@ Game policy actions taken on it, typed and validated in C++ (ADR-0022), which
    than 5 seconds after the previous one ended (ADR-0043)
 
 ## 7. Deployment View
+
 v1 gameplay: a Linux dedicated server process and up to 8 Windows client
 processes, on the same LAN/localhost.
 
@@ -347,6 +362,7 @@ Production deployment (`main`) is explicitly out of scope/undecided for
 now.
 
 ## 8. Crosscutting Concepts
+
 - **Units:** 1 engine unit = 1 meter (real-world scale, required for realistic
   ballistics)
 - **Threading:** fixed dedicated threads, no generic job/task scheduler in
@@ -406,6 +422,7 @@ identifiers assigned in decision order. The groupings below are a reading
 aid only and do not affect numbering.
 
 ### Core Engine
+
 - [ADR-0001 — ECS library: Flecs](./adr/0001-ecs-library.md)
 - [ADR-0002 — Physics & ballistics](./adr/0002-physics-and-ballistics.md)
 - [ADR-0003 — Networking transport: GameNetworkingSockets](./adr/0003-networking-transport.md)
@@ -421,6 +438,7 @@ aid only and do not affect numbering.
 - [ADR-0048 — Match recording and replay: SimulationWorld's input and outcome per tick, in the protocol's encoding](./adr/0048-match-recording-and-replay.md)
 
 ### Tooling & Build
+
 - [ADR-0008 — Build tooling](./adr/0008-build-tooling.md)
 - [ADR-0011 — Language standard: C++23](./adr/0011-language-standard.md)
 - [ADR-0012 — Coding style](./adr/0012-coding-style.md)
@@ -437,12 +455,14 @@ aid only and do not affect numbering.
 - [ADR-0049 — Metrics and liveness: Prometheus pull from augustad, kube-prometheus-stack via Flux](./adr/0049-metrics-and-liveness.md)
 
 ### Rendering & Audio
+
 - [ADR-0009 — Renderer: NVIDIA Falcor](./adr/0009-renderer.md)
 - [ADR-0010 — Audio: Steam Audio](./adr/0010-audio.md)
 - [ADR-0014 — Shading language: Slang](./adr/0014-shading-language.md)
 - [ADR-0028 — Audio output: miniaudio](./adr/0028-audio-output.md)
 
 ### Asset Pipeline
+
 - [ADR-0015 — Map/level authoring format: OpenUSD](./adr/0015-map-authoring-format.md)
 - [ADR-0016 — Mesh import & optimization](./adr/0016-mesh-import-and-optimization.md)
 - [ADR-0017 — Texture compression](./adr/0017-texture-compression.md)
@@ -456,23 +476,28 @@ aid only and do not affect numbering.
 - [ADR-0041 — Scenario composition manifest](./adr/0041-scenario-composition-manifest.md)
 
 ### Client Runtime
+
 - [ADR-0021 — Client runtime decomposition](./adr/0021-client-runtime-decomposition.md)
 - [ADR-0024 — Client world phase pipelines](./adr/0024-client-world-phase-pipelines.md)
 
 ### Server Runtime
+
 - [ADR-0022 — Gameplay scripting language: Lua](./adr/0022-gameplay-scripting-language.md)
 - [ADR-0023 — SimulationWorld phase pipeline](./adr/0023-simulationworld-phase-pipeline.md)
 - [ADR-0039 — Data-driven configuration in Lua, shipped in the scenario's server pack](./adr/0039-lua-data-driven-configuration.md)
 - [ADR-0043 — Lobby and Match lifecycle: fixed player count, automatic Ready, no mid-match joins](./adr/0043-lobby-and-match-lifecycle.md)
 
 ### Infrastructure & CD
+
 - [ADR-0026 — CD strategy: Flux for `main`/`develop`; no k3s deploy for ephemeral branches](./adr/0026-cd-strategy.md)
 
 ## 10. Quality Requirements
+
 See [REQUIREMENTS.md](./REQUIREMENTS.md) — Non-Functional Requirements
 (NFR-01 to NFR-07).
 
 ## 11. Risks and Technical Debt
+
 - **PhysX cross-platform determinism gap:** client/server divergence is
   expected; mitigated by restore-and-replay reconciliation with the jump
   smoothed in presentation, but may produce visible corrections
@@ -508,4 +533,5 @@ See [REQUIREMENTS.md](./REQUIREMENTS.md) — Non-Functional Requirements
   exposed API surface before shipping any script content.
 
 ## 12. Glossary
+
 See [`CONTEXT.md`](../CONTEXT.md) at the repo root for the project's domain vocabulary.

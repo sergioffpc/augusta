@@ -1,13 +1,8 @@
-add_library(augusta_physics STATIC
-  physics.cpp
-)
+add_library(augusta_physics STATIC physics.cpp)
 target_include_directories(augusta_physics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(augusta_physics
-  PUBLIC augusta_math
-  PRIVATE augusta_logging
-)
+target_link_libraries(augusta_physics PUBLIC augusta_math PRIVATE augusta_logging)
 
-if (MSVC)
+if(MSVC)
   target_link_libraries(augusta_physics PRIVATE unofficial::omniverse-physx-sdk::sdk)
 else()
   # PhysXCharacterKinematic and PhysXExtensions reference each other's
@@ -17,8 +12,6 @@ else()
   # the way MSVC's linker tolerates, so the whole PhysX SDK needs
   # --start-group/--end-group here (MSVC has no equivalent flag, hence
   # the branch above).
-  target_link_libraries(augusta_physics PRIVATE
-    -Wl,--start-group unofficial::omniverse-physx-sdk::sdk -Wl,--end-group
-  )
+  target_link_libraries(augusta_physics PRIVATE -Wl,--start-group unofficial::omniverse-physx-sdk::sdk -Wl,--end-group)
 endif()
 augusta_set_module_scope(augusta_physics SHARED)

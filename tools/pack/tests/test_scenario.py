@@ -5,7 +5,6 @@ cooked.
 
 import pytest
 from conftest import EXAMPLES_ROOT, write_float_wav, write_wav
-
 from pack.pack import MAX_CHARACTERS
 from pack.scenario import ScenarioError, resolve_scenario
 

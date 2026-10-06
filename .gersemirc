@@ -1,0 +1,10 @@
+# CMake (CMakeLists.txt, *.cmake): the same width and indent as the C++
+# (.clang-format) and the editor's (.editorconfig), with a call kept on one
+# line while it fits.
+line_length: 120
+indent: 2
+list_expansion: favour-inlining
+# The project's own functions (augusta_set_module_scope, ...), so their calls
+# are formatted by their signatures too; pybind11's are left as written.
+definitions: [cmake]
+warn_about_unknown_commands: false

@@ -16,7 +16,6 @@ from conftest import (
     decode_string,
     read_pack_contents,
 )
-
 from pack import pack
 from pack.cook import CookError, cook_scenario
 from pack.sounds import CueSounds, Sound

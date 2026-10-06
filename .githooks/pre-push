@@ -1,6 +1,9 @@
 #!/bin/sh
 # Runs clang-tidy on changed C++ files, yamllint on changed YAML files,
-# luacheck on changed Lua files and taplo on changed TOML files before pushing. Git LFS uploads still run after both checks pass.
+# luacheck on changed Lua files, taplo on changed TOML files, ruff on changed
+# Python, shellcheck on changed shell scripts, pymarkdown on changed Markdown,
+# actionlint on changed workflows and PSScriptAnalyzer on changed PowerShell
+# before pushing. Git LFS uploads still run after the checks pass.
 
 remote="$1"
 push_refs=$(cat)
@@ -59,6 +62,27 @@ toml_files=$(printf '%s\n' "$files" | grep -E '\.toml$' |
   sort -u |
   while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)
 
+# The changed files of every other linter's: if its config changes, the whole
+# tree it covers. Workflows are linted whole by actionlint, which reads them
+# together (a workflow's calls into another are checked against it).
+changed_of() { # <config regex> <files regex> <git ls-files pathspec>...
+  config=$1 pattern=$2
+  shift 2
+  if printf '%s\n' "$files" | grep -qE "$config"; then
+    git ls-files -- "$@"
+  else
+    printf '%s\n' "$files" | grep -E "$pattern" |
+      sort -u |
+      while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done
+  fi
+}
+python_files=$(changed_of '^ruff\.toml$' '\.py$' '*.py' ':!:third_party/*')
+shell_files=$(changed_of '^\.shellcheckrc$' '(\.sh$|^\.githooks/)' '*.sh' '.githooks/*')
+markdown_files=$(changed_of '^\.pymarkdown\.json$' '\.md$' '*.md' ':!:third_party/*' ':!:CHANGELOG.md' |
+  grep -vxF CHANGELOG.md)
+powershell_files=$(changed_of '^PSScriptAnalyzerSettings\.psd1$' '\.ps1$' '*.ps1')
+workflows_changed=$(printf '%s\n' "$files" | grep -E '^\.github/(workflows/|actionlint\.yaml$)' || true)
+
 # src/client and src/modules/renderer are Windows-only, so CI's Linux run has
 # no compile commands for them; PhysX's SSE headers break clang-tidy under
 # MSVC's flags, so physics.cpp is linted by CI's Linux run alone. The audio
@@ -68,10 +92,10 @@ changed_files=$files
 files=$(echo "$files" | grep -E '^src/.*\.cpp$' |
   grep -vE '^src/(client|modules/renderer)/' |
   { if [ "$windows" = 1 ]; then
-      grep -vxE 'src/modules/(physics/physics|audio/output_none)\.cpp'
-    else
-      grep -vxE 'src/modules/audio/(output_miniaudio|miniaudio)\.cpp'
-    fi; } |
+    grep -vxE 'src/modules/(physics/physics|audio/output_none)\.cpp'
+  else
+    grep -vxE 'src/modules/audio/(output_miniaudio|miniaudio)\.cpp'
+  fi; } |
   sort -u |
   while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)
 
@@ -82,6 +106,7 @@ files=$(echo "$files" | grep -E '^src/.*\.cpp$' |
 # not the other platform's, and not physics.cpp under MSVC's flags.
 include_files=""
 if [ -f "$build_dir/compile_commands.json" ]; then
+  # shellcheck disable=SC1003 # a literal backslash, not an escaped quote
   compiled=$(tr '\\' '/' <"$build_dir/compile_commands.json" | tr -s '/' | grep '"file": ')
   include_files=$(echo "$changed_files" | grep -E '^(src|tests)/.*\.cpp$' |
     grep -vxF "$(printf '%s\n' "$files" src/modules/physics/physics.cpp)" |
@@ -91,7 +116,9 @@ if [ -f "$build_dir/compile_commands.json" ]; then
     done)
 fi
 
-if [ -z "$files" ] && [ -z "$include_files" ] && [ -z "$yaml_files" ] && [ -z "$lua_files" ] && [ -z "$toml_files" ]; then
+if [ -z "$files" ] && [ -z "$include_files" ] && [ -z "$yaml_files" ] && [ -z "$lua_files" ] && [ -z "$toml_files" ] &&
+  [ -z "$python_files" ] && [ -z "$shell_files" ] && [ -z "$markdown_files" ] && [ -z "$powershell_files" ] &&
+  [ -z "$workflows_changed" ]; then
   printf '%s\n' "$push_refs" | git lfs pre-push "$@"
   exit $?
 fi
@@ -143,8 +170,10 @@ fi
 
 if [ -n "$yaml_files" ]; then
   if command -v yamllint >/dev/null 2>&1; then
+    # shellcheck disable=SC2086 # one argument per file; YAML paths have no spaces
     yamllint --strict -c .yamllint $yaml_files
   elif command -v uv >/dev/null 2>&1; then
+    # shellcheck disable=SC2086
     uv tool run --from yamllint==1.37.1 yamllint --strict -c .yamllint $yaml_files
   else
     echo "pre-push: yamllint (or uv) not found on PATH; install yamllint 1.37.1 before pushing YAML changes." >&2
@@ -185,6 +214,47 @@ if [ -n "$toml_files" ]; then
   if [ "$status" -ne 0 ]; then
     echo "pre-push: taplo lint failed - run it again to see why, or push with --no-verify to skip." >&2
     exit 1
+  fi
+fi
+
+# Runs a linter (its command and arguments), stopping the push if it fails.
+lint() { # <name> <command>...
+  name=$1
+  shift
+  "$@" || {
+    echo "pre-push: $name failed - fix the findings above, or push with --no-verify to skip." >&2
+    exit 1
+  }
+}
+
+# The linters uv runs, at the versions CI pins (as the Makefile's format-check).
+if [ -n "$python_files$shell_files$markdown_files$workflows_changed" ]; then
+  command -v uv >/dev/null 2>&1 || {
+    echo "pre-push: uv not found on PATH; install uv before pushing Python, shell, Markdown or workflow changes." >&2
+    exit 2
+  }
+fi
+# shellcheck disable=SC2086 # one argument per file; tracked paths have no spaces
+[ -z "$python_files" ] || lint ruff uv tool run ruff@0.16.10 check $python_files
+# shellcheck disable=SC2086
+[ -z "$shell_files" ] || lint shellcheck uv tool run --from shellcheck-py==0.11.0.1 shellcheck $shell_files
+# shellcheck disable=SC2086
+[ -z "$markdown_files" ] ||
+  lint pymarkdown uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pymarkdown.json scan $markdown_files
+[ -z "$workflows_changed" ] ||
+  lint actionlint uv tool run --from actionlint-py==1.7.12.25 --with shellcheck-py==0.11.0.1 actionlint
+
+# PSScriptAnalyzer is a PowerShell module: Windows PowerShell on Windows,
+# PowerShell 7 (pwsh) elsewhere, where it is skipped if there is none.
+if [ -n "$powershell_files" ]; then
+  if [ "$windows" = 1 ]; then
+    # shellcheck disable=SC2086
+    lint PSScriptAnalyzer powershell -NoProfile -ExecutionPolicy Bypass -File scripts/psscriptanalyzer.ps1 $powershell_files
+  elif command -v pwsh >/dev/null 2>&1; then
+    # shellcheck disable=SC2086
+    lint PSScriptAnalyzer pwsh -NoProfile -File scripts/psscriptanalyzer.ps1 $powershell_files
+  else
+    echo "pre-push: pwsh not found on PATH - skipping PSScriptAnalyzer (CI will still catch this)." >&2
   fi
 fi
 
