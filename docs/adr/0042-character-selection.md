@@ -10,14 +10,14 @@ catalogue of ADR-0038.
 **Changed by ADR-0043**: a Lobby now comes before every match and no one joins
 mid-match. Each player's character therefore rides in the Lobby updates and the
 Match start message, never in an Authoritative State, and the Join checks gain
-*match in progress* before *lobby full*. How the choice is made (the client
+_match in progress_ before _lobby full_. How the choice is made (the client
 config), validated (at join) and named (by its path) is unchanged.
 
 **The choice comes from the client config.** `augustac.yaml` (ADR-0034) gains a
 required `player.character` key naming a character by its path relative to
 `authoring/`, the same address the manifest's `characters` list uses (ADR-0041),
 e.g. `characters/player`. There is no selection screen, so the config is the
-only place a player can state a choice today. (*Superseded by ADR-0043:* this
+only place a player can state a choice today. (_Superseded by ADR-0043:_ this
 used to say there is no lobby either, since a Match then had no pre-match
 waiting state; a Lobby now comes before every Match, still without a selection
 screen.) A future UI only changes who fills in
@@ -26,7 +26,7 @@ the value, not the protocol beneath it.
 **The server validates it at join and has the final word.** The Join request
 carries the character path next to the engine version. The server admits the
 player only if the path is one of its scenario's characters, and otherwise
-refuses with a new Join refused reason, *unknown character*. Where this check
+refuses with a new Join refused reason, _unknown character_. Where this check
 falls among the others is stated in ADR-0043. The character is fixed for the
 life of the session: no message changes it after admission.
 

@@ -47,43 +47,43 @@ text, an address or a Character's name. The domain words are CONTEXT.md's.
 
 ## Catalogue
 
-| Family | Metric | Type | Labels |
-|---|---|---|---|
-| Tick | `augustad_tick_duration_seconds` | histogram, buckets 1, 2, 4, 8, 12, 16.7, 20, 33, 50, 100 ms | |
-| | `augustad_ticks_total` | counter | |
-| | `augustad_ticks_late_total` (started more than 1 ms after its deadline) | counter | |
-| | `augustad_tick_overruns_total` (work took longer than a tick) | counter | |
-| | `augustad_tick_resyncs_total` (the loop resynchronised to now, ADR-0005) | counter | |
-| | `augustad_tick_rate_hertz` (configured) | gauge | |
-| Lobby and Match | `augustad_lobby_players` (0 while a Match is in progress: its players are in it) | gauge | |
-| | `augustad_match_in_progress` | gauge, 0 or 1 | |
-| | `augustad_match_players_alive` | gauge | |
-| | `augustad_matches_started_total` | counter | |
-| | `augustad_matches_ended_total` | counter | `outcome` = `winner`, `draw`, `abandoned` |
-| | `augustad_match_duration_seconds` | histogram | |
-| Sessions | `augustad_sessions` | gauge | |
-| | `augustad_joins_total` | counter | `result` = `admitted`, `refused`; `reason` |
-| | `augustad_disconnects_total` | counter | `reason`; `phase` = `admission` (connected, not yet in the Lobby), `lobby`, `match` |
-| Misbehaviour | `augustad_misbehaviour_total` | counter | `kind` |
-| Network | `augustad_network_sent_bytes_total`, `augustad_network_received_bytes_total` | counter | |
-| | `augustad_messages_sent_total`, `augustad_messages_received_total` | counter | `type` (ADR-0038's message types) |
-| | `augustad_authoritative_state_update_bytes` | histogram | |
-| | `augustad_commands_received_total` | counter | |
-| | `augustad_commands_discarded_total` | counter | `reason` |
-| Connection health | `augustad_connection_rtt_seconds` | histogram | |
-| | `augustad_connection_quality_ratio` | histogram | `direction` = `local`, `remote` |
-| | `augustad_connection_jitter_seconds` (worst over the interval) | histogram | |
-| | `augustad_session_connection_rtt_seconds` | gauge | `session_id` |
-| | `augustad_session_connection_quality_ratio` | gauge | `session_id`; `direction` = `local`, `remote` |
-| | `augustad_session_connection_jitter_seconds` | gauge | `session_id` |
-| | `augustad_connection_in_bytes_per_second`, `augustad_connection_out_bytes_per_second` | gauge | `session_id` |
-| | `augustad_connection_pending_bytes` | gauge | `session_id` |
-| Combat | `augustad_shots_total` | counter | |
-| | `augustad_hit_confirmations_total` | counter | `body_part` = `head`, `torso`, `limb` |
-| | `augustad_shooters_delay_seconds` | histogram | |
-| | `augustad_shooters_delay_capped_total` (at the 250 ms cap, ADR-0044) | counter | |
-| Process | `augustad_build_info` = 1 | gauge | `version`, `commit` |
-| | `augustad_start_time_seconds` | gauge | |
+| Family            | Metric                                                                                | Type                                                        | Labels                                                                              |
+| ----------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Tick              | `augustad_tick_duration_seconds`                                                      | histogram, buckets 1, 2, 4, 8, 12, 16.7, 20, 33, 50, 100 ms |                                                                                     |
+|                   | `augustad_ticks_total`                                                                | counter                                                     |                                                                                     |
+|                   | `augustad_ticks_late_total` (started more than 1 ms after its deadline)               | counter                                                     |                                                                                     |
+|                   | `augustad_tick_overruns_total` (work took longer than a tick)                         | counter                                                     |                                                                                     |
+|                   | `augustad_tick_resyncs_total` (the loop resynchronised to now, ADR-0005)              | counter                                                     |                                                                                     |
+|                   | `augustad_tick_rate_hertz` (configured)                                               | gauge                                                       |                                                                                     |
+| Lobby and Match   | `augustad_lobby_players` (0 while a Match is in progress: its players are in it)      | gauge                                                       |                                                                                     |
+|                   | `augustad_match_in_progress`                                                          | gauge, 0 or 1                                               |                                                                                     |
+|                   | `augustad_match_players_alive`                                                        | gauge                                                       |                                                                                     |
+|                   | `augustad_matches_started_total`                                                      | counter                                                     |                                                                                     |
+|                   | `augustad_matches_ended_total`                                                        | counter                                                     | `outcome` = `winner`, `draw`, `abandoned`                                           |
+|                   | `augustad_match_duration_seconds`                                                     | histogram                                                   |                                                                                     |
+| Sessions          | `augustad_sessions`                                                                   | gauge                                                       |                                                                                     |
+|                   | `augustad_joins_total`                                                                | counter                                                     | `result` = `admitted`, `refused`; `reason`                                          |
+|                   | `augustad_disconnects_total`                                                          | counter                                                     | `reason`; `phase` = `admission` (connected, not yet in the Lobby), `lobby`, `match` |
+| Misbehaviour      | `augustad_misbehaviour_total`                                                         | counter                                                     | `kind`                                                                              |
+| Network           | `augustad_network_sent_bytes_total`, `augustad_network_received_bytes_total`          | counter                                                     |                                                                                     |
+|                   | `augustad_messages_sent_total`, `augustad_messages_received_total`                    | counter                                                     | `type` (ADR-0038's message types)                                                   |
+|                   | `augustad_authoritative_state_update_bytes`                                           | histogram                                                   |                                                                                     |
+|                   | `augustad_commands_received_total`                                                    | counter                                                     |                                                                                     |
+|                   | `augustad_commands_discarded_total`                                                   | counter                                                     | `reason`                                                                            |
+| Connection health | `augustad_connection_rtt_seconds`                                                     | histogram                                                   |                                                                                     |
+|                   | `augustad_connection_quality_ratio`                                                   | histogram                                                   | `direction` = `local`, `remote`                                                     |
+|                   | `augustad_connection_jitter_seconds` (worst over the interval)                        | histogram                                                   |                                                                                     |
+|                   | `augustad_session_connection_rtt_seconds`                                             | gauge                                                       | `session_id`                                                                        |
+|                   | `augustad_session_connection_quality_ratio`                                           | gauge                                                       | `session_id`; `direction` = `local`, `remote`                                       |
+|                   | `augustad_session_connection_jitter_seconds`                                          | gauge                                                       | `session_id`                                                                        |
+|                   | `augustad_connection_in_bytes_per_second`, `augustad_connection_out_bytes_per_second` | gauge                                                       | `session_id`                                                                        |
+|                   | `augustad_connection_pending_bytes`                                                   | gauge                                                       | `session_id`                                                                        |
+| Combat            | `augustad_shots_total`                                                                | counter                                                     |                                                                                     |
+|                   | `augustad_hit_confirmations_total`                                                    | counter                                                     | `body_part` = `head`, `torso`, `limb`                                               |
+|                   | `augustad_shooters_delay_seconds`                                                     | histogram                                                   |                                                                                     |
+|                   | `augustad_shooters_delay_capped_total` (at the 250 ms cap, ADR-0044)                  | counter                                                     |                                                                                     |
+| Process           | `augustad_build_info` = 1                                                             | gauge                                                       | `version`, `commit`                                                                 |
+|                   | `augustad_start_time_seconds`                                                         | gauge                                                       |                                                                                     |
 
 The values of `reason` and `kind` are the closed sets the server already
 decides with: admission's refusals, the transport's end reasons (and a

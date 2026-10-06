@@ -83,8 +83,8 @@ skipped: a branch cut from `main` already has everything `main` has.
     git commit -am "chore(release): cut the X.Y.Z changelog"
     ```
 
-    If more fixes land on the branch afterwards, run `scripts/changelog.sh
-    vX.Y.Z` again: a re-cut replaces the section. The release workflow refuses
+    If more fixes land on the branch afterwards, run `scripts/changelog.sh vX.Y.Z`
+    again: a re-cut replaces the section. The release workflow refuses
     a tag whose version has no section.
 
 6. Push and open the pull request to `main`, carrying the release's evidence:
@@ -112,6 +112,7 @@ skipped: a branch cut from `main` already has everything `main` has.
         when its other checks pass, but do the back-merge (step 10) before
         tagging (step 8), measure NFR-01 once Flux has deployed that `develop`
         commit, and tag only after it passes.
+
     - The release packs load in this branch's binaries: client and server log
       `event=pack_verified`, and the client is admitted at Join (ADR-0018).
 
@@ -176,8 +177,8 @@ flux get helmreleases -n flux-system     # augustad-staging at X.Y.Z+<12>
 - The attestations verify. `<12>` is the first 12 characters of the tagged
   merge commit: the image a release runs is the one CI published for it on
   `main`.
-- `develop` contains the release (`git merge-base --is-ancestor vX.Y.Z
-  origin/develop` exits 0).
+- `develop` contains the release (`git merge-base --is-ancestor vX.Y.Z origin/develop`
+  exits 0).
 - Flux has upgraded `staging` to the chart `X.Y.Z+<12>`
   ([Roll Back a Bad Deploy with Flux](flux-rollback.md#verification) has the
   checks).

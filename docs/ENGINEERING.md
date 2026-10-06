@@ -54,47 +54,46 @@ the decisions already made in ARCHITECTURE.md:
   `concurrency` cancels a still-running run for the same branch/PR when
   a new push arrives, so superseded runs don't keep burning minutes.
 - **Pipeline stages:**
-  1. `clang-format` check, alone in its own fast job — gates everything
-     below (`needs:`), so a formatting slip fails in seconds instead of
-     after a full Windows + Linux + sanitizers build
-  2. Build + test the client on a Windows runner (MSVC)
-  3. Build + test the server on a Linux runner (clang, ADR-0008), plus
-     `clang-tidy` (Google style checks profile)
-  4. ASan + UBSan test build and a short fuzzing run per target (both
-     Linux only), only for `pull_request` runs — skipped on the `push`
-     that lands after merge, since the PR already validated it
+    1. `clang-format` check, alone in its own fast job — gates everything
+       below (`needs:`), so a formatting slip fails in seconds instead of
+       after a full Windows + Linux + sanitizers build
+    2. Build + test the client on a Windows runner (MSVC)
+    3. Build + test the server on a Linux runner (clang, ADR-0008), plus
+       `clang-tidy` (Google style checks profile)
+    4. ASan + UBSan test build and a short fuzzing run per target (both
+       Linux only), only for `pull_request` runs — skipped on the `push`
+       that lands after merge, since the PR already validated it
+    5. Compile with a strict warning set, treated as errors
+    6. the `tools` job, when `tools/` changed: on a Windows runner, build the
+       asset cooker's native modules and run its pytest suite, which also
+       requires that cooking the example scenario still gives the golden
+       packs in `tests/fixtures/example-packs/` byte for byte; the C++ tests
+       in 2 and 3 load those same packs — the contract between the Python
+       writer and the C++ reader of the pack format (ADR-0013). The golden
+       packs are signed with a committed test key; the real release private
+       key never touches CI
+    - Dependency restore: `vcpkg install` (manifest mode) before the build
+      step, both runners. Binary cache via a GitHub Packages NuGet feed on
+      Windows (vcpkg's native GitHub-Actions-cache backend was removed
+      upstream in 2026). On Linux, where nuget.exe runs under Mono and fails
+      certificate checks, it is a files cache in the Actions cache, one entry
+      for every Linux job (all clang), saved only when a job built a package
+      it didn't restore.
+    - Falcor is not built on every run: the `falcor-prebuilt` workflow builds
+      it once for each combination of submodule commit, `falcor.patch` and
+      Falcor features, and publishes it as an asset of a `falcor-*` release,
+      which the Windows builds download at configure time
+      (`cmake/FalcorPrebuilt.cmake`). A build with no matching package — a
+      pull request that changes Falcor, or an Aftermath-enabled local build —
+      builds Falcor from source.
+    - The Actions cache (10 GB per repository, least recently used evicted
+      first) holds only what a pull request restores from `develop`: the
+      vcpkg binaries, packman's downloads for a Falcor built from source,
+      sccache objects. The server image's
+      Docker layers live in GHCR (`augustad:buildcache`) instead: at several
+      GB they would evict the rest, and every pull request would rebuild its
+      dependencies from source.
 
-  - Dependency restore: `vcpkg install` (manifest mode) before the build
-    step, both runners. Binary cache via a GitHub Packages NuGet feed on
-    Windows (vcpkg's native GitHub-Actions-cache backend was removed
-    upstream in 2026). On Linux, where nuget.exe runs under Mono and fails
-    certificate checks, it is a files cache in the Actions cache, one entry
-    for every Linux job (all clang), saved only when a job built a package
-    it didn't restore.
-  - Falcor is not built on every run: the `falcor-prebuilt` workflow builds
-    it once for each combination of submodule commit, `falcor.patch` and
-    Falcor features, and publishes it as an asset of a `falcor-*` release,
-    which the Windows builds download at configure time
-    (`cmake/FalcorPrebuilt.cmake`). A build with no matching package — a
-    pull request that changes Falcor, or an Aftermath-enabled local build —
-    builds Falcor from source.
-  - The Actions cache (10 GB per repository, least recently used evicted
-    first) holds only what a pull request restores from `develop`: the
-    vcpkg binaries, packman's downloads for a Falcor built from source,
-    sccache objects. The server image's
-    Docker layers live in GHCR (`augustad:buildcache`) instead: at several
-    GB they would evict the rest, and every pull request would rebuild its
-    dependencies from source.
-
-  5. Compile with a strict warning set, treated as errors
-  6. the `tools` job, when `tools/` changed: on a Windows runner, build the
-     asset cooker's native modules and run its pytest suite, which also
-     requires that cooking the example scenario still gives the golden
-     packs in `tests/fixtures/example-packs/` byte for byte; the C++ tests
-     in 2 and 3 load those same packs — the contract between the Python
-     writer and the C++ reader of the pack format (ADR-0013). The golden
-     packs are signed with a committed test key; the real release private
-     key never touches CI
 - **Nightly** (on `develop`): long fuzzing runs, TSan, property-based
   tests at a high case count, a `llvm-cov` coverage report, and the
   hot-path micro-benchmarks, whose history is kept on the `benchmarks`
@@ -139,15 +138,15 @@ the decisions already made in ARCHITECTURE.md:
   linked C++ binary. The image's SBOM is syft's, of its Ubuntu packages.
   Verified with:
 
-  ```sh
-  gh attestation verify augustac-windows-x64.exe --repo sergioffpc/augusta
-  gh attestation verify augustad-linux-x64 --repo sergioffpc/augusta
-  gh attestation verify oci://ghcr.io/sergioffpc/augustad:sha-<12> \
-    --repo sergioffpc/augusta
-  # The SBOM attestation, rather than the provenance:
-  gh attestation verify augustad-linux-x64 --repo sergioffpc/augusta \
-    --predicate-type https://spdx.dev/Document/v2.3
-  ```
+    ```sh
+    gh attestation verify augustac-windows-x64.exe --repo sergioffpc/augusta
+    gh attestation verify augustad-linux-x64 --repo sergioffpc/augusta
+    gh attestation verify oci://ghcr.io/sergioffpc/augustad:sha-<12> \
+      --repo sergioffpc/augusta
+    # The SBOM attestation, rather than the provenance:
+    gh attestation verify augustad-linux-x64 --repo sergioffpc/augusta \
+      --predicate-type https://spdx.dev/Document/v2.3
+    ```
 
 ## Git Workflow
 
@@ -231,7 +230,7 @@ pipeline).
   installs (kept in step with it by hand), clang (ADR-0008), CMake, Ninja,
   vcpkg, clang-tidy, clang-format, gdb, GitHub CLI, kubectl, helm, Doxygen,
   the hooks' formatters and linters (uv for yamllint, ruff, shfmt,
-  shellcheck, actionlint, gersemi and pymarkdown, standalone yamlfmt,
+  shellcheck, actionlint, gersemi, Prettier and pymarkdown, standalone yamlfmt,
   StyLua, luacheck and taplo, at CI's pinned versions; no PowerShell, so
   no PSScriptAnalyzer), and CI's Linux
   vcpkg binary cache configuration (a files provider in the checkout's
@@ -319,10 +318,14 @@ pipeline).
   and shellcheck 0.11.0 lints. The workflows: actionlint 1.7.12
   (`.github/actionlint.yaml`), with shellcheck on their `run:` scripts. CMake:
   gersemi 0.29.2 formats (`.gersemirc`: 120 columns, two-space indent, the
-  project's own functions read from `cmake/`). Markdown: pymarkdown 0.9.40
-  lints with markdownlint's rules (`.pymarkdown.json`), and nothing formats
-  it: a formatter would rewrap and renumber what is written by hand, so the
-  line length, ordered-list numbering and emphasis-as-heading rules are off.
+  project's own functions read from `cmake/`). Markdown: Prettier 3.9.9
+  formats (`.prettierrc.yaml`), with Node run from its PyPI wheel: line
+  breaks stay where they were written, a nested list or a block in a list
+  item is indented 4 spaces (as MkDocs needs), and code blocks are left as
+  written. pymarkdown 0.9.40 lints with markdownlint's rules
+  (`.pymarkdown.json`), less what is written by hand (line length,
+  ordered-list numbering, emphasis as a heading) and what Prettier decides
+  (blank lines around lists).
   PowerShell: PSScriptAnalyzer 1.25.0 lints and formats
   (`PSScriptAnalyzerSettings.psd1`, through `scripts/psscriptanalyzer.ps1`),
   with consistent indentation off since it pulls a continued line back to its

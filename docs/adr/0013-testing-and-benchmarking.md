@@ -10,20 +10,20 @@ how noisy its result is.
 
 ## Stages
 
-| Kind | Pre-push | Pull request | Nightly | Release tag |
-|---|---|---|---|---|
-| `clang-tidy` | changed `src/*.cpp` | ✅ | | |
-| Unit, integration, and boundary tests (`ctest`) | | ✅ Windows + Linux | | ✅ |
-| Property-based tests (RapidCheck) | | ✅ 100 cases | ✅ ~10 000 cases | |
-| pytest (`tools/pack`) | | ✅ | | |
-| Pack contract (golden packs) | | ✅ | | ✅ |
-| ASan + UBSan | | ✅ | | |
-| Fuzzing | | ✅ ~60 s per target | ✅ ~30 min per target | |
-| TSan | | | ✅ | |
-| Netcode under an impaired link | | | ✅ | |
-| Coverage report (`llvm-cov`) | | | ✅ | |
-| NFR-01 (tick rate under load) | | | | manual, on the r630 cluster |
-| Micro-benchmarks | by hand | | ✅ history, fails past 2× | |
+| Kind                                            | Pre-push            | Pull request        | Nightly                   | Release tag                 |
+| ----------------------------------------------- | ------------------- | ------------------- | ------------------------- | --------------------------- |
+| `clang-tidy`                                    | changed `src/*.cpp` | ✅                  |                           |                             |
+| Unit, integration, and boundary tests (`ctest`) |                     | ✅ Windows + Linux  |                           | ✅                          |
+| Property-based tests (RapidCheck)               |                     | ✅ 100 cases        | ✅ ~10 000 cases          |                             |
+| pytest (`tools/pack`)                           |                     | ✅                  |                           |                             |
+| Pack contract (golden packs)                    |                     | ✅                  |                           | ✅                          |
+| ASan + UBSan                                    |                     | ✅                  |                           |                             |
+| Fuzzing                                         |                     | ✅ ~60 s per target | ✅ ~30 min per target     |                             |
+| TSan                                            |                     |                     | ✅                        |                             |
+| Netcode under an impaired link                  |                     |                     | ✅                        |                             |
+| Coverage report (`llvm-cov`)                    |                     |                     | ✅                        |                             |
+| NFR-01 (tick rate under load)                   |                     |                     |                           | manual, on the r630 cluster |
+| Micro-benchmarks                                | by hand             |                     | ✅ history, fails past 2× |                             |
 
 - **Pre-push** is a `.githooks/pre-push` hook running `clang-tidy` only:
   it is what MSVC does not catch and CI would, and a hook that builds and
@@ -79,23 +79,24 @@ how noisy its result is.
   process for no more realism on loopback. Three profiles, one way each, so
   a round trip is twice the latency:
 
-  | Profile | Latency | Jitter (mean / max) | Loss | Reordered (extra delay) |
-  |---|---|---|---|---|
-  | Broadband | 20 ms | 5 / 20 ms | 1% | 1% (10 ms) |
-  | NFR-02 | 50 ms | 10 / 30 ms | 5% | 2% (20 ms) |
-  | Worst case | 75 ms | 10 / 30 ms | 10% | 5% (20 ms) |
+    | Profile    | Latency | Jitter (mean / max) | Loss | Reordered (extra delay) |
+    | ---------- | ------- | ------------------- | ---- | ----------------------- |
+    | Broadband  | 20 ms   | 5 / 20 ms           | 1%   | 1% (10 ms)              |
+    | NFR-02     | 50 ms   | 10 / 30 ms          | 5%   | 2% (20 ms)              |
+    | Worst case | 75 ms   | 10 / 30 ms          | 10%  | 5% (20 ms)              |
 
-  The worst case is the most this netcode is held to: a Scripted player's
-  Shooter's delay (about a round trip, the jitter both ways and the ticks
-  its commands wait queued) stays within lag compensation's 250 ms cap. At
-  every profile, every player must see every Match end with no disconnect;
-  no single correction may reach the 2 m that the presentation shows at
-  once instead of sliding (ADR-0004), and corrections may happen on at most
-  5% of the players' Match ticks; and at least 40% of the rounds fired must
-  come back as Hit confirmations, so a shot fired within the compensation
-  window is confirmed. The bounds are several times what a working netcode
-  shows at every profile: room for a noisy runner, with a regression still
-  well past them.
+    The worst case is the most this netcode is held to: a Scripted player's
+    Shooter's delay (about a round trip, the jitter both ways and the ticks
+    its commands wait queued) stays within lag compensation's 250 ms cap. At
+    every profile, every player must see every Match end with no disconnect;
+    no single correction may reach the 2 m that the presentation shows at
+    once instead of sliding (ADR-0004), and corrections may happen on at most
+    5% of the players' Match ticks; and at least 40% of the rounds fired must
+    come back as Hit confirmations, so a shot fired within the compensation
+    window is confirmed. The bounds are several times what a working netcode
+    shows at every profile: room for a noisy runner, with a regression still
+    well past them.
+
 - **NFR-03 through a golden file.** Reference trajectories live in the
   repository, and the test, on both the Windows (MSVC) and Linux (clang)
   runners, compares what it computes against them within a tolerance defined

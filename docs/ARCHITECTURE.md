@@ -142,11 +142,11 @@ No matchmaking, master server, or third-party platform integration in v1.
   independently
 - Networking — sends commands, receives authoritative server state
 - ClientRuntime
-  - PredictionWorld (ECS) — consumes commands + authoritative server
-    state; runs client-side prediction and reconciliation (ADR-0004); emits
-    an immutable prediction state each simulation tick
-  - PresentationWorld (ECS) — consumes the prediction state; interpolates/
-    smooths for display; emits presentation state each render frame
+    - PredictionWorld (ECS) — consumes commands + authoritative server
+      state; runs client-side prediction and reconciliation (ADR-0004); emits
+      an immutable prediction state each simulation tick
+    - PresentationWorld (ECS) — consumes the prediction state; interpolates/
+      smooths for display; emits presentation state each render frame
 - Renderer — NVIDIA Falcor (D3D12), shaders authored in Slang; owns the
   client's single OS window (see Input handling, above) and consumes
   presentation state. Exposes pumping window/device events and rendering
@@ -189,27 +189,27 @@ No matchmaking, master server, or third-party platform integration in v1.
 in execution order: CommandIngestion → Reconciliation → Movement →
 WeaponHandling → Commit)
 
-| Phase | Category | Responsibility |
-|---|---|---|
-| CommandIngestion | Mechanism | Applies this tick's local input commands |
-| Reconciliation | Mechanism | Ingests any newly arrived authoritative state; restores it and replays the unacknowledged commands from it (ADR-0004) |
-| Movement | Mechanism | Predicted PhysX movement, stamina |
-| WeaponHandling | Mechanism | Predicts local fire feedback only (muzzle flash, sound cue, recoil, ammo count) — no bullet trajectory; hit/damage stays server-authoritative |
-| Commit | Mechanism | Packages the tick's predicted state into the immutable Prediction State |
+| Phase            | Category  | Responsibility                                                                                                                                |
+| ---------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| CommandIngestion | Mechanism | Applies this tick's local input commands                                                                                                      |
+| Reconciliation   | Mechanism | Ingests any newly arrived authoritative state; restores it and replays the unacknowledged commands from it (ADR-0004)                         |
+| Movement         | Mechanism | Predicted PhysX movement, stamina                                                                                                             |
+| WeaponHandling   | Mechanism | Predicts local fire feedback only (muzzle flash, sound cue, recoil, ammo count) — no bullet trajectory; hit/damage stays server-authoritative |
+| Commit           | Mechanism | Packages the tick's predicted state into the immutable Prediction State                                                                       |
 
 **PresentationWorld phases** (Main/Render thread, per render frame, in
 execution order: Interpolation → Dynamics → Camera → Animation →
 AudioCues → Commit; Dynamics is added with the client's first Prop or
 Cosmetic body, and until then the other five run — ADR-0024)
 
-| Phase | Category | Responsibility |
-|---|---|---|
-| Interpolation | Mechanism | Interpolates between the last two Prediction States, by the fraction of the tick elapsed at render time, for smooth motion at render frame rate |
-| Dynamics | Mechanism | Moves Props to their interpolated poses and advances Cosmetic bodies: one fixed-step `simulate()` per tick Prediction advanced since the last frame, capped per frame (ADR-0045). Added with the first dynamic body |
-| Camera | Mechanism | View camera — position at the character's eye for the body's stance, orientation from the newest mouse-look every frame (not the tick's), ADS zoom transition, recoil kick decay, view bob |
-| Animation | Mechanism | Drives skeletal/procedural animation from interpolated movement and weapon state |
-| AudioCues | Mechanism | Translates events carried in the Prediction State (e.g., fire, footstep) into spatialized audio cues |
-| Commit | Mechanism | Packages the frame's presentation data into Presentation State |
+| Phase         | Category  | Responsibility                                                                                                                                                                                                      |
+| ------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Interpolation | Mechanism | Interpolates between the last two Prediction States, by the fraction of the tick elapsed at render time, for smooth motion at render frame rate                                                                     |
+| Dynamics      | Mechanism | Moves Props to their interpolated poses and advances Cosmetic bodies: one fixed-step `simulate()` per tick Prediction advanced since the last frame, capped per frame (ADR-0045). Added with the first dynamic body |
+| Camera        | Mechanism | View camera — position at the character's eye for the body's stance, orientation from the newest mouse-look every frame (not the tick's), ADS zoom transition, recoil kick decay, view bob                          |
+| Animation     | Mechanism | Drives skeletal/procedural animation from interpolated movement and weapon state                                                                                                                                    |
+| AudioCues     | Mechanism | Translates events carried in the Prediction State (e.g., fire, footstep) into spatialized audio cues                                                                                                                |
+| Commit        | Mechanism | Packages the frame's presentation data into Presentation State                                                                                                                                                      |
 
 Neither client world contains a Scripts/Behaviours phase — game policy is
 exclusively server-authoritative.
@@ -233,11 +233,11 @@ exclusively server-authoritative.
   Server-only - game policy is exclusively server-authoritative, never
   run by either client world.
 - ServerRuntime
-  - SimulationWorld (ECS) — the single authoritative world (no prediction,
-    no presentation needed). Runs mechanism systems in C++ (movement via
-    PhysX, ballistics, hit detection, damage) and policy via a
-    Scripts/Behaviours phase (Lua, sandboxed — Match lifecycle, win
-    conditions, spawn rules); emits authoritative state each tick
+    - SimulationWorld (ECS) — the single authoritative world (no prediction,
+      no presentation needed). Runs mechanism systems in C++ (movement via
+      PhysX, ballistics, hit detection, damage) and policy via a
+      Scripts/Behaviours phase (Lua, sandboxed — Match lifecycle, win
+      conditions, spawn rules); emits authoritative state each tick
 
 ```text
 +------------+
@@ -263,9 +263,9 @@ Cmds|     | State
 +----------------------------+
 ```
 
-*(the Authoritative State emitted by `SimulationWorld` goes directly to
+_(the Authoritative State emitted by `SimulationWorld` goes directly to
 `Networking`, bypassing `Input Validation` — validation only applies to
-inbound commands)*
+inbound commands)_
 
 **SimulationWorld phases** (executed in order, once per tick: Command
 Ingestion → Movement → Dynamics → WeaponHandling → Ballistics → HitDetection →
@@ -275,17 +275,17 @@ and until then the other eight run — ADR-0023). Each tick returns a
 Game policy actions taken on it, typed and validated in C++ (ADR-0022), which
 `server::Host` acts on after the tick.
 
-| Phase | Category | Responsibility |
-|---|---|---|
-| CommandIngestion | Mechanism | Applies validated client commands to this tick's entities |
-| Movement | Mechanism | PhysX integration, stamina, collision resolution (US-04, US-05) |
-| Dynamics | Mechanism | One fixed-step PhysX `simulate()`: Props, grenades, explosion impulses; reports Prop contacts for Damage (ADR-0045). Added with the first Prop |
-| WeaponHandling | Mechanism | Aim/ADS, fire, reload, recoil (US-06–US-09) |
-| Ballistics | Mechanism | Advances in-flight bullet trajectories (US-10) |
-| HitDetection | Mechanism | Resolves impact point + body part against hitboxes as they were the Shooter's delay ago (US-11, ADR-0044) |
-| Damage | Mechanism (reads Data/Config) | Applies damage, marks death/spectator (US-12, US-13) |
-| Scripts/Behaviours | Policy (Lua, sandboxed) | Win condition, Match end, spawn logic (US-14, US-03); a hook's answer leaves as a typed action |
-| Commit | Mechanism | Packages tick state into Authoritative State for Networking |
+| Phase              | Category                      | Responsibility                                                                                                                                 |
+| ------------------ | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| CommandIngestion   | Mechanism                     | Applies validated client commands to this tick's entities                                                                                      |
+| Movement           | Mechanism                     | PhysX integration, stamina, collision resolution (US-04, US-05)                                                                                |
+| Dynamics           | Mechanism                     | One fixed-step PhysX `simulate()`: Props, grenades, explosion impulses; reports Prop contacts for Damage (ADR-0045). Added with the first Prop |
+| WeaponHandling     | Mechanism                     | Aim/ADS, fire, reload, recoil (US-06–US-09)                                                                                                    |
+| Ballistics         | Mechanism                     | Advances in-flight bullet trajectories (US-10)                                                                                                 |
+| HitDetection       | Mechanism                     | Resolves impact point + body part against hitboxes as they were the Shooter's delay ago (US-11, ADR-0044)                                      |
+| Damage             | Mechanism (reads Data/Config) | Applies damage, marks death/spectator (US-12, US-13)                                                                                           |
+| Scripts/Behaviours | Policy (Lua, sandboxed)       | Win condition, Match end, spawn logic (US-14, US-03); a hook's answer leaves as a typed action                                                 |
+| Commit             | Mechanism                     | Packages tick state into Authoritative State for Networking                                                                                    |
 
 **Tooling** (offline, not shipped)
 

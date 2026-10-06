@@ -6,10 +6,10 @@ libFuzzer targets for what arrives from outside (ADR-0013). Each target is one
 (clang, ASan), and on every preset with [replay_main.cpp](replay_main.cpp), so
 `ctest` runs the target's inputs without the fuzzer.
 
-| Target | Input | Seeds |
-|---|---|---|
-| `protocol_decode` | one payload for `protocol::Decode` | one message of each kind |
-| `pack_load` | a pack without its trailer, which the target signs with the golden packs' test key and loads through `assets::Pack::Load` | the golden client and server packs |
+| Target            | Input                                                                                                                     | Seeds                              |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `protocol_decode` | one payload for `protocol::Decode`                                                                                        | one message of each kind           |
+| `pack_load`       | a pack without its trailer, which the target signs with the golden packs' test key and loads through `assets::Pack::Load` | the golden client and server packs |
 
 ## Layout
 

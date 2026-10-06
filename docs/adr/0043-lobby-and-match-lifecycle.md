@@ -36,7 +36,7 @@ body they control (ADR-0038) and its Spawn point, which Game policy assigns
 that, the set of players can only shrink.
 
 **No one joins a match in progress.** A join that arrives while a match runs is
-refused with a new Join refused reason, *match in progress*.
+refused with a new Join refused reason, _match in progress_.
 
 **The order of the Join checks** is stated here and nowhere else: engine
 version, then client pack (ADR-0038), then character (ADR-0042), then match in

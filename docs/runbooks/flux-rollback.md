@@ -22,10 +22,10 @@ Moving an environment back to its previous pack folder is the rollback step of
 
 ## What runs where
 
-| Environment | HelmRelease (namespace `flux-system`) | Helm release | Namespace | Chart from | Image tag |
-|---|---|---|---|---|---|
-| develop | `augustad-develop` | `augustad` | `develop` | GitRepository `augusta-develop` (`develop`) | `sha-<12>` of the chart's commit |
-| staging | `augustad-staging` | `augustad` | `staging` | GitRepository `augusta-main` (`main`) | `main` (`image.tag` in `staging.yaml`) |
+| Environment | HelmRelease (namespace `flux-system`) | Helm release | Namespace | Chart from                                  | Image tag                              |
+| ----------- | ------------------------------------- | ------------ | --------- | ------------------------------------------- | -------------------------------------- |
+| develop     | `augustad-develop`                    | `augustad`   | `develop` | GitRepository `augusta-develop` (`develop`) | `sha-<12>` of the chart's commit       |
+| staging     | `augustad-staging`                    | `augustad`   | `staging` | GitRepository `augusta-main` (`main`)       | `main` (`image.tag` in `staging.yaml`) |
 
 Both `HelmRelease` objects, and the rest of
 [`clusters/onprem/apps/`](../../clusters/onprem/apps), are applied by the
@@ -68,8 +68,8 @@ pinning its image to the last good commit's `sha-<12>` tag instead.
     kubectl -n develop logs -l app.kubernetes.io/name=augustad --prefix --previous
     ```
 
-    The `HelmRelease` revision is `<chart version>+<12 characters of the
-    commit>`: that commit is the one deployed. Note the commit of the bad
+    The `HelmRelease` revision is `<chart version>+<12 characters of the commit>`:
+    that commit is the one deployed. Note the commit of the bad
     merge, `<bad-merge>`, and the environment's last good commit, `<good>`.
 
 2. Continue with [Roll back develop](#roll-back-develop) or

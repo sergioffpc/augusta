@@ -35,5 +35,6 @@ follows real ballistic physics simulated by the server, and take damage determin
 by hit location (no regenerating health).
 
 ---
-*Inspiration: id Tech / Quake-era engines (realistic scope for a solo developer).*
-*Timeline: hobby project, no fixed deadline, progress by milestones.*
+
+_Inspiration: id Tech / Quake-era engines (realistic scope for a solo developer)._
+_Timeline: hobby project, no fixed deadline, progress by milestones._

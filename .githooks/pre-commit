@@ -53,12 +53,15 @@ if [ -n "$toml_files" ]; then
   fi
 fi
 
-# Python, shell and CMake, by the formatters uv runs at the versions CI pins.
+# Python, shell, CMake and Markdown, by the formatters uv runs at the versions
+# CI pins.
 python_files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.py$' || true)
 shell_files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '(\.sh$|^\.githooks/)' || true)
 cmake_files=$(git diff --cached --name-only --diff-filter=ACMR |
   grep -E '(^|/)CMakeLists\.txt$|\.cmake$' | grep -v '^third_party/' || true)
-if [ -n "$python_files$shell_files$cmake_files" ]; then
+markdown_files=$(git diff --cached --name-only --diff-filter=ACMR |
+  grep -E '\.md$' | grep -vE '^(third_party/|CHANGELOG\.md$)' || true)
+if [ -n "$python_files$shell_files$cmake_files$markdown_files" ]; then
   if command -v uv >/dev/null 2>&1; then
     # shellcheck disable=SC2086 # one argument per file; tracked paths have no spaces
     { [ -z "$python_files" ] || uv tool run ruff@0.16.10 format --quiet $python_files; } || exit $?
@@ -67,9 +70,13 @@ if [ -n "$python_files$shell_files$cmake_files" ]; then
     # shellcheck disable=SC2086
     { [ -z "$cmake_files" ] || uv tool run gersemi@0.29.2 --quiet -i $cmake_files; } || exit $?
     # shellcheck disable=SC2086
-    git add $python_files $shell_files $cmake_files || exit $?
+    { [ -z "$markdown_files" ] ||
+      uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9 --log-level warn --write $markdown_files; } ||
+      exit $?
+    # shellcheck disable=SC2086
+    git add $python_files $shell_files $cmake_files $markdown_files || exit $?
   else
-    echo "pre-commit: uv not found on PATH - skipping Python, shell and CMake formatting (CI will still catch this)." >&2
+    echo "pre-commit: uv not found on PATH - skipping Python, shell, CMake and Markdown formatting (CI will still catch this)." >&2
   fi
 fi
 

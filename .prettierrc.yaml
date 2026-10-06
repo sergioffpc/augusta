@@ -1,0 +1,9 @@
+# Prettier formats the Markdown (*.md) and nothing else: the other languages
+# have formatters of their own.
+# Line breaks stay where they were written: Prettier never rewraps a paragraph.
+proseWrap: preserve
+# A nested list or a block inside a list item is indented 4 spaces, which
+# MkDocs (Python-Markdown) needs to see it as nested.
+tabWidth: 4
+# Code blocks are left exactly as written, whatever their language.
+embeddedLanguageFormatting: "off"

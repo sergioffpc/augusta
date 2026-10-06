@@ -113,7 +113,7 @@ jobs:
           # Python, shell, Markdown, CMake, PowerShell and the workflows, and
           # the rules each is formatted and linted by.
           if echo "$changed" \
-              | grep -qE '(\.(py|sh|md|cmake|ps1)$|(^|/)CMakeLists\.txt$|^\.githooks/|^\.github/workflows/|^\.github/actionlint\.yaml$|^(ruff\.toml|\.gersemirc|\.pymarkdown\.json|PSScriptAnalyzerSettings\.psd1|\.editorconfig)$)'; then
+              | grep -qE '(\.(py|sh|md|cmake|ps1)$|(^|/)CMakeLists\.txt$|^\.githooks/|^\.github/workflows/|^\.github/actionlint\.yaml$|^(ruff\.toml|\.gersemirc|\.pymarkdown\.json|\.prettierrc\.yaml|PSScriptAnalyzerSettings\.psd1|\.editorconfig)$)'; then
             echo "run_lint=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_lint=false" >> "$GITHUB_OUTPUT"
@@ -214,9 +214,11 @@ jobs:
         run: |
           git ls-files -z -- 'CMakeLists.txt' '*/CMakeLists.txt' '*.cmake' ':!:third_party/*' \
             | xargs -0 uv tool run gersemi@0.29.2 --check
-      - name: Lint Markdown
+      - name: Check Markdown formatting and lint
         if: needs.changes.outputs.run_lint == 'true'
         run: |
+          git ls-files -z -- '*.md' ':!:third_party/*' ':!:CHANGELOG.md' \
+            | xargs -0 uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9 --log-level warn --check
           git ls-files -z -- '*.md' ':!:third_party/*' ':!:CHANGELOG.md' \
             | xargs -0 uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pymarkdown.json scan
       - name: Install PSScriptAnalyzer

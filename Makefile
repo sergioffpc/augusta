@@ -41,6 +41,8 @@ SHELLCHECK := uv tool run --from shellcheck-py==0.11.0.1 shellcheck
 ACTIONLINT := uv tool run --from actionlint-py==1.7.12.25 --with shellcheck-py==0.11.0.1 actionlint
 GERSEMI := uv tool run gersemi@0.29.2
 PYMARKDOWN := uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pymarkdown.json
+# Prettier is a Node package: uv runs Node from its PyPI wheel, and npx Prettier.
+PRETTIER := uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9
 # PSScriptAnalyzer is a PowerShell module: Windows PowerShell here, PowerShell 7
 # (pwsh) elsewhere, skipped where there is none (CI still runs it).
 ifeq ($(OS),Windows_NT)
@@ -99,7 +101,7 @@ help:
 	$(info $()  uninstall     remove what install put in place (same DESTDIR))
 	$(info $()  clean         remove build outputs, keep the configuration)
 	$(info $()  distclean     delete $(BUILD_DIR))
-	$(info $()  format        every formatter (C++, YAML, Lua, TOML, Python, shell, CMake, PowerShell) on tracked files)
+	$(info $()  format        every formatter (C++, YAML, Lua, TOML, Python, shell, CMake, Markdown, PowerShell) on tracked files)
 	$(info $()  format-check  every formatter check and linter CI's format job runs (not clang-tidy))
 	$(info $()  tidy          clang-tidy on src, include-cleaner on what it leaves out, as CI runs them (configures first))
 	$(info $()  lint          format-check, then tidy: everything CI lints)
@@ -152,6 +154,7 @@ format:
 	$(RUFF) format $(shell git ls-files -- $(PYTHON_SOURCES))
 	$(SHFMT) -w $(shell git ls-files -- $(SHELL_SOURCES))
 	$(GERSEMI) -i $(shell git ls-files -- $(CMAKE_SOURCES))
+	$(PRETTIER) --log-level warn --write $(shell git ls-files -- $(MARKDOWN_SOURCES))
 	$(call psscriptanalyzer,-Fix)
 
 format-check:
@@ -168,6 +171,7 @@ format-check:
 	$(SHELLCHECK) $(shell git ls-files -- $(SHELL_SOURCES))
 	$(ACTIONLINT)
 	$(GERSEMI) --check $(shell git ls-files -- $(CMAKE_SOURCES))
+	$(PRETTIER) --log-level warn --check $(shell git ls-files -- $(MARKDOWN_SOURCES))
 	$(PYMARKDOWN) scan $(shell git ls-files -- $(MARKDOWN_SOURCES))
 	$(call psscriptanalyzer)
 

@@ -9,7 +9,7 @@ count, etc.).
 ## Baseline
 
 Everything not listed below follows Claude Code's own general defaults: avoid
-premature abstraction, comment only the non-obvious *why*, don't add error
+premature abstraction, comment only the non-obvious _why_, don't add error
 handling for scenarios that can't happen, no compatibility shims. This doc records
 only where Augusta diverges from or sharpens those defaults.
 
@@ -37,8 +37,8 @@ concept is clear, not on a schedule.
 
 ## Decision vs. mechanism
 
-Within C++, keep the code that *decides* what to do separate from the code that
-*executes* it, even inside the same module — e.g. in the renderer, "which resource
+Within C++, keep the code that _decides_ what to do separate from the code that
+_executes_ it, even inside the same module — e.g. in the renderer, "which resource
 to bind given this state" (decision) is a different function from "issue the
 D3D12 call" (execution); in networking, the reconciliation strategy (decision) is
 separate from the transport send/receive (mechanism). Extract the decision into
@@ -63,7 +63,7 @@ something the name doesn't: units, ranges, what nullopt or an empty value
 means, which thread calls it, preconditions, why it exists. A comment that only
 restates the name (`/// The translation part of transform.` on `TranslationOf`)
 is deleted, not kept. Private members, and the implementation files (`.cpp`),
-keep the general default: `//`, and only for the non-obvious *why*.
+keep the general default: `//`, and only for the non-obvious _why_.
 
 ## Testing
 

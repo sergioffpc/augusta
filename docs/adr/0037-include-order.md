@@ -24,7 +24,7 @@ Rules `clang-format` can't check:
 - **Platform-conditional includes** (`#ifdef _WIN32 … #include <windows.h>`) go in
   their own block after all unconditional ones; `clang-format` doesn't reorder
   across `#if`.
-- **A trailing comment on an include** is for a non-obvious *why* (a header included
+- **A trailing comment on an include** is for a non-obvious _why_ (a header included
   only for an inline body it defines), as in `networking.cpp`.
 
 ## Why not Google's stock order
