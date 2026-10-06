@@ -20,6 +20,7 @@ Generated from the Conventional Commits history by git-cliff (cliff.toml).
 - **chart:** scrape, liveness-probe and alert on augustad
 - **chart:** ship the Server and Connection health dashboards
 - **cluster:** sign Grafana in as admin/admin
+- **cluster:** run a server per scenario, from packs augusta-publish puts on the node
 
 ### Bug Fixes
 
