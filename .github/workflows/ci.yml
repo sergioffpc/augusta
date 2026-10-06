@@ -496,6 +496,10 @@ jobs:
               | kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" \
                 -schema-location default -schema-location "$schemas/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
           done
+      - name: Validate the chart's dashboards
+        # Grafana's sidecar skips a dashboard it cannot parse without failing
+        # anything, and kubeconform sees only the string it is carried in.
+        run: jq empty charts/augustad/dashboards/*.json
       - name: Validate the cluster's manifests
         # Each path a Flux Kustomization in gotk-sync.yaml applies, built as
         # Flux builds it. CustomResourceDefinitions are skipped: kubeconform's

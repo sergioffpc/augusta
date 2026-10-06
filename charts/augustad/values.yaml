@@ -44,6 +44,11 @@ metrics:
     periodSeconds: 5
     timeoutSeconds: 2
     failureThreshold: 3
+# The Grafana dashboards in dashboards/ (ADR-0049). Each one has its own
+# environment selector, so one release ships them for every environment
+# (develop's) and the others turn them off.
+dashboards:
+  enabled: true
 # Shared hostPath volume on the k3s node holding signed asset packs
 # (ENGINEERING.md's Deployment & CD section), populated manually after
 # signing and mounted read-only into every server pod. Each environment's

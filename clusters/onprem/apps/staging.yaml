@@ -29,3 +29,6 @@ spec:
       tag: main
     assetPacks:
       packVersion: augusta
+    # develop's release ships the dashboards (charts/augustad values.yaml).
+    dashboards:
+      enabled: false
