@@ -470,14 +470,19 @@ jobs:
           tar -xzf "$install_dir/kubeconform.tar.gz" -C "$install_dir" kubeconform
           echo "$install_dir" >> "$GITHUB_PATH"
       - name: Validate the chart, rendered per environment
-        # With each HelmRelease's own values, as Flux renders it: the chart
-        # has no default for some of them (assetPacks.packVersion). bash for
+        # With each HelmRelease's own values, as Flux renders it, and with the
+        # chart of the branch its GitRepository tracks: staging runs main's
+        # chart, whose values can trail develop's until a release. The branch
+        # this run's commit lands on (the pull request's base, or the pushed
+        # branch) is checked out already; the other one is fetched. bash for
         # pipefail - a render that fails leaves kubeconform nothing to reject.
         # Its ServiceMonitor and PrometheusRule are checked against the CRDs
         # of the kube-prometheus-stack version the cluster installs
         # (clusters/onprem/infrastructure), so a stack upgrade brings its
         # schemas with it.
         shell: bash
+        env:
+          TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
         run: |
           stack=clusters/onprem/infrastructure/monitoring.yaml
           schemas="$RUNNER_TEMP/monitoring-crd-schemas"
@@ -490,9 +495,19 @@ jobs:
             uv run --no-project --with pyyaml python "$RUNNER_TEMP/kubeconform/openapi2jsonschema.py" \
             crds.yaml >/dev/null)
           for release in $(grep -l '^kind: HelmRelease$' clusters/onprem/apps/*.yaml); do
-            echo "$release"
+            source=$(yq '.spec.chart.spec.sourceRef.name' "$release")
+            branch=$(yq --no-doc "select(.metadata.name == \"$source\") | .spec.ref.branch" clusters/onprem/apps/sources.yaml)
+            chart=charts/augustad
+            if [ "$branch" != "$TARGET_BRANCH" ]; then
+              tree="$RUNNER_TEMP/branches/$branch"
+              mkdir -p "$tree"
+              git fetch --quiet --depth=1 origin "$branch"
+              git archive FETCH_HEAD charts/augustad | tar -x -C "$tree"
+              chart="$tree/charts/augustad"
+            fi
+            echo "$release, with $branch's chart"
             yq '.spec.values' "$release" \
-              | helm template augustad charts/augustad --values - \
+              | helm template augustad "$chart" --values - \
               | kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" \
                 -schema-location default -schema-location "$schemas/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
           done

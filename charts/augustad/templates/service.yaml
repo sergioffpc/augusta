@@ -1,18 +1,23 @@
+{{- range $scenario, $values := .Values.servers }}
+{{- $server := dict "root" $ "scenario" $scenario }}
+---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "augustad.fullname" . }}
+  name: {{ include "augustad.serverName" $server }}
   labels:
-    {{- include "augustad.labels" . | nindent 4 }}
+    {{- include "augustad.labels" $ | nindent 4 }}
+    scenario: {{ $scenario }}
 spec:
-  type: {{ .Values.service.type }}
+  type: {{ $.Values.service.type }}
   selector:
-    {{- include "augustad.selectorLabels" . | nindent 4 }}
+    {{- include "augustad.serverSelectorLabels" $server | nindent 4 }}
   ports:
     - name: game
-      port: {{ .Values.service.port }}
+      port: {{ $.Values.service.port }}
       targetPort: game
       protocol: UDP
-      {{- if .Values.service.nodePort }}
-      nodePort: {{ .Values.service.nodePort }}
+      {{- with $values.nodePort }}
+      nodePort: {{ . }}
       {{- end }}
+{{- end }}

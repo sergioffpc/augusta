@@ -186,8 +186,9 @@ pipeline).
 - **Server exposure:** plain Kubernetes `Service` (`NodePort`, port
   auto-assigned by Kubernetes) — no Agones. Agones solves fleet-scale
   dynamic allocation, which this project doesn't need (one server
-  instance per environment); revisit only if matchmaking/dynamic
-  multi-server allocation is ever needed (Beyond v1).
+  instance per scenario per environment, each fixed in Git, ADR-0026);
+  revisit only if matchmaking/dynamic multi-server allocation is ever
+  needed (Beyond v1).
 - **CD mechanism:** pull-based via Flux, running inside the k3s cluster
   and reconciling each branch's `HelmRelease` from Git — nothing outside
   the cluster needs inbound access to the LAN, and no external PR can
@@ -198,11 +199,14 @@ pipeline).
   pipeline (see ADR-0018, CI/CD above). Packs are versioned independently
   of code deploys and can be shared across multiple server
   instances/versions. Stored on a shared `hostPath` persistent volume on
-  the k3s node, populated manually after signing, mounted read-only into
-  every server pod. Each environment's Helm values specify which
-  `packVersion` to load: the folder `<hostPath>/<packVersion>/` holding
-  that environment's `server.pack` and the `augusta.pub` key it is signed
-  with. The chart writes the server's `augustad.yaml` from its values.
+  the k3s node, which `augusta-publish` fills after signing (ADR-0026):
+  `<hostPath>/<scenario>/<packVersion>/` holds a scenario's `server.pack`
+  and the `augusta.pub` key it is signed with, `<packVersion>` being the
+  first 12 hex characters of the server pack's BLAKE3 hash. A published
+  folder is never rewritten. Each environment's Helm values list its
+  servers, one per scenario, each naming the `packVersion` it runs; a
+  server mounts only that folder, read-only. The chart writes each
+  server's `augustad.yaml` from its values.
 - **Crash dumps:** a crashing server logs its stack and leaves a kernel core
   dump. The k3s node must run `systemd-coredump` as its core handler, which
   keeps the dump (`coredumpctl`). A cluster core is read with the debug info
