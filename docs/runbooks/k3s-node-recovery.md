@@ -26,11 +26,11 @@ reads the public repository over HTTPS with no credentials, so a rebuilt
 cluster needs no deploy key.
 
 The only state not in Git is the asset packs on the node's shared volume:
-`/srv/augusta/asset-packs/<packVersion>/server.pack` and `augusta.pub` for each
-`packVersion` the `HelmRelease` values in `clusters/onprem/apps/` name
+`/srv/augusta/asset-packs/<scenario>/<packVersion>/server.pack` and
+`augusta.pub` for each server the `HelmRelease` values in
+`clusters/onprem/apps/` list
 ([`charts/augustad/values.yaml`](../../charts/augustad/values.yaml)). Without
-them the servers crash-loop; the layout, and why a missing folder still lets
-the pod schedule, is
+them the servers never start; the layout, and how a missing folder shows, is
 [Where packs go on the node](pack-key-rotation.md#where-packs-go-on-the-node).
 
 Prometheus keeps its last 15 days of series on a `local-path` volume on the
@@ -141,13 +141,13 @@ step restores them.
     ssh <node> "ls -lR /srv/augusta/asset-packs"
     ```
 
-    Without a copy, re-create each folder as step 6 of
-    [Rotate the Pack Signing Key](pack-key-rotation.md) does, one per
-    `packVersion` that `git grep -n packVersion -- clusters/` lists, each
-    holding `server.pack` and the `augusta.pub` it was signed with. If the
-    server pack is still at hand but the folder name is new, copy it under the
-    `packVersion` Git names: the folder name, not the pack, is what the chart
-    looks for.
+    Without a copy, publish each `packVersion` that
+    `git grep -n packVersion -- clusters/` lists again, as step 6 of
+    [Rotate the Pack Signing Key](pack-key-rotation.md) does, from the packs
+    of the cook it names. A pack is found by its hash: only the server pack
+    whose BLAKE3 hash starts with that version publishes to it, so a lost
+    cook cannot be replaced by a new one under the same version. Cook,
+    publish and point the server at the new version instead.
 
 6. Install Flux from the repository's own manifests as `develop` has them,
    read straight from `origin/develop` so the checkout's branch is left alone:
@@ -178,20 +178,21 @@ step restores them.
 flux check
 flux get all -n flux-system
 kubectl get nodes
-kubectl -n develop rollout status deploy/augustad --timeout 30m
-kubectl -n staging rollout status deploy/augustad --timeout 30m
-kubectl -n develop logs deploy/augustad | grep 'event=pack_verified'
-kubectl -n staging logs deploy/augustad | grep 'event=pack_verified'
+kubectl -n develop rollout status deploy -l app.kubernetes.io/name=augustad --timeout 30m
+kubectl -n staging rollout status deploy -l app.kubernetes.io/name=augustad --timeout 30m
+kubectl -n develop logs -l app.kubernetes.io/name=augustad --prefix | grep 'event=pack_verified'
+kubectl -n staging logs -l app.kubernetes.io/name=augustad --prefix | grep 'event=pack_verified'
 kubectl get svc -A -l app.kubernetes.io/name=augustad
 kubectl -n monitoring get pods
 ```
 
 - The node is `Ready`; every Flux source, Kustomization and `HelmRelease` is
   `Ready`.
-- Both servers logged `event=pack_verified` and keep running.
-- `develop`'s Service is on node port 30777 (pinned in `develop.yaml`).
-  `staging`'s node port is assigned by Kubernetes, so a rebuild changes it:
-  give LAN clients the new one from the `get svc` command.
+- Every server logged `event=pack_verified` and keeps running.
+- Each server's Service is on the node port its `HelmRelease` pins (`develop`'s
+  `augusta` on 30777). A server without one gets a node port from
+  Kubernetes, which a rebuild changes: give LAN clients the new one from the
+  `get svc` command.
 - Every pod in `monitoring` is `Running`, and Grafana answers on node port
   30300 (pinned in `infrastructure/monitoring.yaml`).
 

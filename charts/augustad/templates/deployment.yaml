@@ -1,36 +1,44 @@
+# One server per scenario (ADR-0026), each serving that scenario's pack alone.
+{{- range $scenario, $_ := .Values.servers }}
+{{- $server := dict "root" $ "scenario" $scenario }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "augustad.fullname" . }}
+  name: {{ include "augustad.serverName" $server }}
   labels:
-    {{- include "augustad.labels" . | nindent 4 }}
+    {{- include "augustad.labels" $ | nindent 4 }}
+    scenario: {{ $scenario }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  # One: a second replica would be a second server behind the same address,
+  # with its own Lobby and Match.
+  replicas: 1
   selector:
     matchLabels:
-      {{- include "augustad.selectorLabels" . | nindent 6 }}
+      {{- include "augustad.serverSelectorLabels" $server | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "augustad.selectorLabels" . | nindent 8 }}
+        {{- include "augustad.serverSelectorLabels" $server | nindent 8 }}
       annotations:
-        # Restarts the server when its settings change.
-        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        # Restarts the server when its settings change, and no other server.
+        # A new pack version restarts it too, as a change to its volume.
+        checksum/config: {{ include "augustad.config" $server | sha256sum }}
     spec:
       # augustad stops within a tick of SIGTERM (src/server/main.cpp), so this
       # is not sized for a match to end: a rollout may cut one (ADR-0026).
       terminationGracePeriodSeconds: 10
       containers:
         - name: augustad
-          image: "{{ .Values.image.repository }}:{{ include "augustad.imageTag" . }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          image: "{{ $.Values.image.repository }}:{{ include "augustad.imageTag" $ }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
           args: ["--config", "/etc/augusta/augustad.yaml"]
           ports:
             - name: game
-              containerPort: {{ .Values.service.port }}
+              containerPort: {{ $.Values.service.port }}
               protocol: UDP
             - name: metrics
-              containerPort: {{ .Values.metrics.port }}
+              containerPort: {{ $.Values.metrics.port }}
               protocol: TCP
           # Restarts a server whose tick loop has hung, once it has started
           # (ADR-0049, ADR-0026). No readiness probe: a single replica takes no
@@ -39,26 +47,30 @@ spec:
             httpGet:
               path: /livez
               port: metrics
-            {{- toYaml .Values.metrics.startupProbe | nindent 12 }}
+            {{- toYaml $.Values.metrics.startupProbe | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /livez
               port: metrics
-            {{- toYaml .Values.metrics.livenessProbe | nindent 12 }}
+            {{- toYaml $.Values.metrics.livenessProbe | nindent 12 }}
           volumeMounts:
             - name: config
               mountPath: /etc/augusta
               readOnly: true
-            - name: asset-packs
-              mountPath: {{ .Values.assetPacks.mountPath }}
+            - name: pack
+              mountPath: /srv/augusta/pack
               readOnly: true
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml $.Values.resources | nindent 12 }}
       volumes:
         - name: config
           configMap:
-            name: {{ include "augustad.fullname" . }}
-        - name: asset-packs
+            name: {{ include "augustad.serverName" $server }}
+        # Only this server's pack version, which must already be published:
+        # until it is, the pod waits in ContainerCreating, its events naming
+        # the missing folder.
+        - name: pack
           hostPath:
-            path: {{ .Values.assetPacks.hostPath }}
-            type: DirectoryOrCreate
+            path: {{ include "augustad.packFolder" $server }}
+            type: Directory
+{{- end }}
