@@ -7,11 +7,9 @@ tick, its Lobby and Match, its Sessions), and how healthy is each client's
 transport connection (its Connection health). Both are measured on the server
 alone.
 
-**The endpoint.** `augustad` links prometheus-cpp's `core`, which keeps and
-formats the metrics, and the civetweb HTTP server its `pull` feature brings.
-prometheus-cpp's own `Exposer` serves only metrics and cannot answer `503`, so
-`augustad` registers its own two handlers with civetweb, on one TCP port,
-`9464` by default and set in `augustad.yaml` (ADR-0034):
+**The endpoint.** `augustad` links prometheus-cpp's `core`, which keeps the
+metrics and formats them, and serves them with Boost.Beast (ADR-0035) on one
+TCP port, `9464` by default and set in `augustad.yaml` (ADR-0034). Two paths:
 
 - `/metrics`: the Prometheus text exposition of the catalogue below.
 - `/livez`: `200` while the Simulation thread has finished a tick in the last 5
@@ -24,8 +22,9 @@ The endpoint is always on, both in the cluster and in a local run. The chart
 exposes it through its own `ClusterIP` Service (never a NodePort) with a
 `ServiceMonitor` that Prometheus scrapes every 15 seconds.
 
-**Threads.** The HTTP server (civetweb) runs on its own thread, the server's
-third (ADR-0005). It only reads. The Simulation and Network I/O
+**Threads.** The HTTP server runs on its own thread, the server's third
+(ADR-0005): one `io_context` that accepts each connection and answers its one
+request. It only reads. The Simulation and Network I/O
 threads write each metric in place: a counter or histogram is a lock-free
 atomic, and a value read together with others is published whole. The
 heartbeat (ADR-0029) and the metrics count the same events from the same
@@ -122,9 +121,14 @@ route to no receiver yet, so they show only in Grafana and Alertmanager.
   between `augustad` and Prometheus and a heavier C++ SDK. Its strength,
   traces and logs alongside metrics, is not what is asked for: the logs are
   ADR-0029's, and the profiler has the timing.
-- **Hand-rolled exposition** (Boost.Beast, already a dependency, plus our own
-  text format): rejected. Histograms, label sets and the exposition format
-  are exactly what prometheus-cpp already does and tests.
+- **Hand-rolled exposition** (our own metric types and text format):
+  rejected. Histograms, label sets and the exposition format are exactly what
+  prometheus-cpp already does and tests.
+- **prometheus-cpp's `pull` (its `Exposer`, on civetweb)**: rejected. The
+  `Exposer` serves only metrics, always `200`, so `/livez` could not answer
+  `503`, and serving `/livez` beside it would mean a second HTTP server.
+  Serving both paths with Boost.Beast costs one small handler and keeps the
+  HTTP server in a library family the project already uses.
 - **Minimal charts** (the community `prometheus` chart with annotation scraping,
   and `grafana`): rejected. They are lighter, but have no `ServiceMonitor` or
   `PrometheusRule` CRDs, so the scrape and the alerts could not live in the

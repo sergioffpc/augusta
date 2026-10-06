@@ -11,10 +11,9 @@
 /// augustad's metrics endpoint (ADR-0049): an HTTP server on one TCP port
 /// serving /metrics, the Prometheus text exposition the cluster's Prometheus
 /// scrapes, and /livez, the Deployment's liveness probe (liveness.h decides
-/// it). ServerRuntime owns it. It runs on civetweb's threads (a listener and
-/// one worker that answers requests), together the server's third beside
-/// Network I/O and Simulation (ADR-0005), and only reads: the Simulation
-/// thread writes what it reports. The endpoint is not a
+/// it). ServerRuntime owns it. Boost.Beast serves it on a thread of its own,
+/// the server's third beside Network I/O and Simulation (ADR-0005), which only
+/// reads: the Simulation thread writes what it reports. That thread is not a
 /// supervised worker, since an HTTP request must never stop the tick loop: a
 /// request that fails is logged and answered 500.
 namespace augusta::server {

@@ -5,11 +5,11 @@
     "abseil",
     "benchmark",
     "blake3",
+    "boost-beast",
     "boost-dll",
     "boost-interprocess",
     "boost-log",
     "boost-program-options",
-    "civetweb",
     "flecs",
     "gamenetworkingsockets",
     "glm",
@@ -23,10 +23,7 @@
     "physx",
     {
       "name": "prometheus-cpp",
-      "default-features": false,
-      "features": [
-        "pull"
-      ]
+      "default-features": false
     },
     "rapidcheck",
     "sol2",

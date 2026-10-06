@@ -6,7 +6,7 @@ adopted when the standard library or an existing dependency has nothing that
 does the job, and each adoption pays only for that library's own dependency
 closure (ADR-0025).
 
-Three libraries are adopted now:
+Four libraries are adopted now:
 
 - **Boost.DLL** finds the running executable's directory
   (`boost::dll::program_location()`), which is where `augustac.yaml` /
@@ -24,6 +24,10 @@ Three libraries are adopted now:
   `--config`; a bare argument is ignored), so the parser turns guessing off and
   registers an empty positional description to keep every other argument a usage
   error.
+- **Boost.Beast** serves `augustad`'s metrics endpoint, `/metrics` and
+  `/livez` (ADR-0049), on Boost.Asio. It is header-only, and its HTTP parsing
+  and responses leave the endpoint only its routing to write; prometheus-cpp's
+  own HTTP server cannot answer `/livez`'s `503`.
 
 Boost.DLL pulls in Boost.Filesystem and Boost.System, which are compiled
 libraries; they ship as DLLs next to each executable on Windows like every other
