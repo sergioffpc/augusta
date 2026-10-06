@@ -49,9 +49,9 @@ ServerView InMatch(Vec3 own, const std::vector<std::pair<EntityId, Vec3>>& other
   state.tick = 100;
   state.health = 100.0F;
   state.rifle.rounds = 30;
-  state.bodies.push_back({.entity = kOwn, .body = {.position = own}, .yaw = 0.0F});
+  state.bodies.push_back({.entity = kOwn, .body = {.position = own, .velocity = {}}, .yaw = 0.0F});
   for (const auto& [entity, position] : others) {
-    state.bodies.push_back({.entity = entity, .body = {.position = position}, .yaw = 0.0F});
+    state.bodies.push_back({.entity = entity, .body = {.position = position, .velocity = {}}, .yaw = 0.0F});
   }
   view.authoritative = state;
   return view;
@@ -106,7 +106,7 @@ TEST(ScriptedPlayerTest, AimsFromWhereItsPredictionPutsItsBodyNotWhereTheNewestS
   ScriptedPlayer player(kSeed);
   const ServerView view = InMatch(Vec3(0.0F), {{kNear, Vec3(0.0F, 0.0F, -10.0F)}});
 
-  const Command command = player.NextCommand(view, {.position = Vec3(10.0F, 0.0F, -10.0F)});
+  const Command command = player.NextCommand(view, {.position = Vec3(10.0F, 0.0F, -10.0F), .velocity = {}});
 
   const Vec3 aim = Horizontal(ViewDirection(command.yaw, command.pitch));
   EXPECT_NEAR(aim.x, -1.0F, 1e-3F);
@@ -120,7 +120,7 @@ TEST(ScriptedPlayerTest, StrayedFromItsSpawnItHeadsBackTowardIt) {
   // InMatch spawns this player where its body is: at the origin.
   const ServerView view = InMatch(Vec3(0.0F), {{kNear, Vec3(0.0F, 0.0F, -10.0F)}});
 
-  const Command command = player.NextCommand(view, {.position = Vec3(6.0F, 0.0F, 0.0F)});
+  const Command command = player.NextCommand(view, {.position = Vec3(6.0F, 0.0F, 0.0F), .velocity = {}});
 
   const Vec3 heading = Horizontal(command.movement.direction);
   EXPECT_NEAR(heading.x, -1.0F, 1e-3F);
@@ -136,7 +136,7 @@ TEST(ScriptedPlayerTest, NeverStraysFarFromItsSpawnWhereverItsLegsTakeIt) {
   Vec3 own(0.0F);
   float farthest = 0.0F;
   for (int tick = 0; tick < kManyTicks; ++tick) {
-    own += player.NextCommand(view, {.position = own}).movement.direction * kSprintStep;
+    own += player.NextCommand(view, {.position = own, .velocity = {}}).movement.direction * kSprintStep;
     farthest = std::max(farthest, augusta::math::Length(own));
   }
 
