@@ -1,7 +1,9 @@
 #include "runtime.h"
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <exception>
 #include <memory>
 #include <optional>
 #include <thread>
@@ -13,6 +15,7 @@
 #include "augusta/tick.h"
 #include "content.h"
 #include "host.h"
+#include "metrics.h"
 
 namespace augusta::server {
 
@@ -20,13 +23,34 @@ struct ServerRuntime::Impl {
   // The Simulation thread's fixed tick rate in Hz (NFR-01 asks it to sustain
   // 60 Hz, no missed ticks).
   std::uint8_t tick_rate_hz;
+  std::uint16_t metrics_port;
   Host host;
+  // When the Simulation thread last finished a tick, which the metrics
+  // endpoint's /livez reads (ADR-0049). Run() starts it at its own start.
+  std::atomic<tick::Clock::time_point> last_tick_end;
+  // Null until Run() starts it, and if it could not start. Declared after
+  // last_tick_end, which it reads.
+  std::unique_ptr<MetricsEndpoint> metrics;
   // The two threads' stop request and first failure (ADR-0005). Declared after
   // host, so it stops and joins the Network I/O thread before host goes.
   supervisor::Supervisor workers;
 
-  Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy)
-      : tick_rate_hz(config.tick_rate_hz), host(config, std::move(scenario), std::move(policy)) {}
+  Impl(const HostConfig& config, std::uint16_t metrics_port, Scenario scenario, scripting::Engine policy)
+      : tick_rate_hz(config.tick_rate_hz),
+        metrics_port(metrics_port),
+        host(config, std::move(scenario), std::move(policy)) {}
+
+  // The endpoint is not a supervised worker (ADR-0049): a server whose endpoint
+  // can't start keeps running without it, and in the cluster its liveness
+  // probe then fails.
+  void StartMetrics() {
+    try {
+      metrics = std::make_unique<MetricsEndpoint>(metrics_port, last_tick_end);
+      LI("subsystem=serverruntime event=metrics_serving port={}", metrics_port);
+    } catch (const std::exception& error) {
+      LE("subsystem=serverruntime event=metrics_failed port={} error={}", metrics_port, error.what());
+    }
+  }
 
   // Network I/O thread body (ADR-0005): pumps the connection until a stop is
   // requested, waiting kNetworkRoundWait between rounds rather than spinning a
@@ -54,6 +78,7 @@ struct ServerRuntime::Impl {
 
       const tick::Clock::time_point tick_end = tick::Clock::now();
       host.RecordTiming(tick::Measure(deadline, tick_duration, tick_start, tick_end));
+      last_tick_end.store(tick_end, std::memory_order_relaxed);
       deadline = tick::NextDeadline(deadline, tick_duration, tick_end);
       std::this_thread::sleep_until(deadline);
     }
@@ -61,13 +86,16 @@ struct ServerRuntime::Impl {
   }
 };
 
-ServerRuntime::ServerRuntime(const HostConfig& config, Scenario scenario, scripting::Engine policy)
-    : impl_(std::make_unique<Impl>(config, std::move(scenario), std::move(policy))) {}
+ServerRuntime::ServerRuntime(const HostConfig& config, std::uint16_t metrics_port, Scenario scenario,
+                             scripting::Engine policy)
+    : impl_(std::make_unique<Impl>(config, metrics_port, std::move(scenario), std::move(policy))) {}
 
 ServerRuntime::~ServerRuntime() = default;
 
 std::optional<supervisor::WorkerFailure> ServerRuntime::Run() {
   Impl& impl = *impl_;
+  impl.last_tick_end.store(tick::Clock::now(), std::memory_order_relaxed);
+  impl.StartMetrics();
   impl.workers.Spawn("network", [&impl] { impl.NetworkThreadMain(); });
   impl.workers.Run("simulation", [&impl] { impl.SimulationLoop(); });
   impl.workers.StopAndJoin();

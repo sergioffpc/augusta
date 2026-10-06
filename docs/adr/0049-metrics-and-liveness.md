@@ -7,9 +7,11 @@ tick, its Lobby and Match, its Sessions), and how healthy is each client's
 transport connection (its Connection health). Both are measured on the server
 alone.
 
-**The endpoint.** `augustad` links prometheus-cpp (`core` and `pull`) and serves
-two paths on one TCP port, `9464` by default and set in `augustad.yaml`
-(ADR-0034):
+**The endpoint.** `augustad` links prometheus-cpp's `core`, which keeps and
+formats the metrics, and the civetweb HTTP server its `pull` feature brings.
+prometheus-cpp's own `Exposer` serves only metrics and cannot answer `503`, so
+`augustad` registers its own two handlers with civetweb, on one TCP port,
+`9464` by default and set in `augustad.yaml` (ADR-0034):
 
 - `/metrics`: the Prometheus text exposition of the catalogue below.
 - `/livez`: `200` while the Simulation thread has finished a tick in the last 5
@@ -22,8 +24,8 @@ The endpoint is always on, both in the cluster and in a local run. The chart
 exposes it through its own `ClusterIP` Service (never a NodePort) with a
 `ServiceMonitor` that Prometheus scrapes every 15 seconds.
 
-**Threads.** prometheus-cpp's HTTP server (civetweb) runs on its own thread,
-the server's third (ADR-0005). It only reads. The Simulation and Network I/O
+**Threads.** The HTTP server (civetweb) runs on its own thread, the server's
+third (ADR-0005). It only reads. The Simulation and Network I/O
 threads write each metric in place: a counter or histogram is a lock-free
 atomic, and a value read together with others is published whole. The
 heartbeat (ADR-0029) and the metrics count the same events from the same
@@ -81,6 +83,11 @@ text, an address or a Character's name. The domain words are CONTEXT.md's.
 The values of `reason` and `kind` are the closed sets the server already
 decides with: admission's refusals, the transport's end reasons, the
 misbehaviour kinds and the command queue's discards.
+
+`augustad_build_info`'s `commit` is the commit the server image was built from,
+which the image's runtime stage sets as the `AUGUSTA_COMMIT` environment
+variable: compiled in, it would change the build step's input on every commit
+and defeat the image's build cache. A local build reports `unknown`.
 
 Connection health is kept two ways. Histograms over every connection show its
 trend and drive the alert rules. Gauges labelled by Session ID show the one

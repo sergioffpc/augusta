@@ -77,6 +77,13 @@ RUN apt-get update && apt-get upgrade -y --no-install-recommends \
 
 COPY --from=build /workspace/stage/ /
 
+# The commit the image is built from, which augustad reports as
+# augustad_build_info's commit label (ADR-0049). Set here, in the stage rebuilt
+# every time, rather than compiled in, so a new commit does not invalidate the
+# cached build.
+ARG AUGUSTA_COMMIT=unknown
+ENV AUGUSTA_COMMIT=${AUGUSTA_COMMIT}
+
 USER augusta
 # tini is PID 1, not augustad: the kernel drops a signal PID 1 sends itself
 # with no handler for it, so augustad re-raising a fatal signal from its crash

@@ -63,8 +63,8 @@ std::unique_ptr<augusta::server::ServerRuntime> CreateRuntime(const augusta::con
   if (!config.recording.empty()) {
     LI("subsystem=server event=recording path={}", config.recording.string());
   }
-  return std::make_unique<augusta::server::ServerRuntime>(config, std::move(content->scenario),
-                                                          std::move(content->policy));
+  return std::make_unique<augusta::server::ServerRuntime>(config, file_config.metrics_port,
+                                                          std::move(content->scenario), std::move(content->policy));
 }
 
 }  // namespace

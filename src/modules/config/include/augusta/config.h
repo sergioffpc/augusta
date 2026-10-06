@@ -40,6 +40,8 @@ inline constexpr std::string_view kServerConfigFileName = "augustad.yaml";
 inline constexpr std::string_view kDefaultServerAddress = "127.0.0.1:27015";
 /// Default address the server listens on.
 inline constexpr std::string_view kDefaultListenAddress = "0.0.0.0:27015";
+/// Default TCP port the server's metrics endpoint listens on (ADR-0049).
+inline constexpr std::uint16_t kDefaultMetricsPort = 9464;
 /// Default runtime floor for the console sink (ADR-0029, ADR-0036): a Debug
 /// build's DEBUG heartbeat, not its per-packet TRACE.
 inline constexpr std::string_view kDefaultLogLevel = "debug";
@@ -92,6 +94,9 @@ struct ServerConfig {
   /// SimulationWorld runs, replacing any file there, for augusta_replay
   /// (ADR-0048). Empty, the default, records nothing.
   std::filesystem::path recording_path;
+  /// Key `metrics.port`: the TCP port, 1..65535, the metrics endpoint serves
+  /// /metrics and /livez on, on every interface (ADR-0049).
+  std::uint16_t metrics_port = kDefaultMetricsPort;
 };
 
 /// Why reading the command line or a config file failed.

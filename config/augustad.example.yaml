@@ -30,6 +30,11 @@ simulation:
 network:
   # Local address to listen on (optional, default 0.0.0.0:27015).
   listen_address: 0.0.0.0:27015
+metrics:
+  # TCP port the metrics endpoint listens on, on every interface (optional,
+  # default 9464): /metrics for Prometheus, /livez for the liveness probe
+  # (ADR-0049). It is always on, in a local run too.
+  port: 9464
 logging:
   # Console sink's runtime floor (optional, default debug): one of trace, debug,
   # info, warn, error, critical. Only lowers what the build already compiles in

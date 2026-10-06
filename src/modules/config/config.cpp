@@ -124,6 +124,16 @@ std::expected<std::uint8_t, ConfigError> RequireTickRate(const ConfigValues& val
   });
 }
 
+// The fallback when key is absent; when present, a TCP port from 1 to 65535.
+std::expected<std::uint16_t, ConfigError> OptionalPort(const ConfigValues& values, std::string_view key,
+                                                       std::uint16_t fallback) {
+  if (!values.contains(key)) {
+    return fallback;
+  }
+  return RequireWholeNumber(values, key, 1, std::numeric_limits<std::uint16_t>::max())
+      .transform([](std::uint32_t port) { return static_cast<std::uint16_t>(port); });
+}
+
 // The fallback when key is absent; when present, a finite number above zero.
 std::expected<float, ConfigError> OptionalPositiveNumber(const ConfigValues& values, std::string_view key,
                                                          float fallback) {
@@ -227,6 +237,9 @@ std::string Phrase(const ConfigError& error) {
     case ConfigErrorCode::kInvalidNumber:
       if (error.subject == "simulation.tick_rate_hz") {
         return std::format("'{}' must be an integer from 1 to 255", error.subject);
+      }
+      if (error.subject == "metrics.port") {
+        return std::format("'{}' must be an integer from 1 to 65535", error.subject);
       }
       return std::format("'{}' must be a finite number above zero", error.subject);
     case ConfigErrorCode::kInvalidLogLevel:
@@ -466,7 +479,7 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
 
 std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 7> kKeys{
+  static constexpr std::array<std::string_view, 8> kKeys{
       "base_dir",
       "content.pack",
       "content.public_key",
@@ -474,6 +487,7 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
       "simulation.recording",
       "network.listen_address",
       "logging.level",
+      "metrics.port",
   };
   const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = {}});
   if (!values) {
@@ -509,6 +523,10 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
     }
     recording_path = *std::move(path);
   }
+  const auto metrics_port = OptionalPort(*values, "metrics.port", kDefaultMetricsPort);
+  if (!metrics_port) {
+    return std::unexpected(metrics_port.error());
+  }
   return ServerConfig{
       .pack_path = *std::move(pack_path),
       .public_key_path = *std::move(public_key_path),
@@ -516,6 +534,7 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
       .listen_address = OptionalString(*values, "network.listen_address", kDefaultListenAddress),
       .log_level = *std::move(log_level),
       .recording_path = std::move(recording_path),
+      .metrics_port = *metrics_port,
   };
 }
 

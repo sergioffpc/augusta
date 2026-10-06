@@ -9,6 +9,7 @@
     "boost-interprocess",
     "boost-log",
     "boost-program-options",
+    "civetweb",
     "flecs",
     "gamenetworkingsockets",
     "glm",
@@ -20,6 +21,13 @@
       "platform": "windows"
     },
     "physx",
+    {
+      "name": "prometheus-cpp",
+      "default-features": false,
+      "features": [
+        "pull"
+      ]
+    },
     "rapidcheck",
     "sol2",
     {

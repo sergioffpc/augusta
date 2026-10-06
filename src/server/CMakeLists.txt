@@ -78,6 +78,34 @@ target_include_directories(augustad_heartbeat PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(augustad_heartbeat PUBLIC augusta_tick)
 augusta_set_module_scope(augustad_heartbeat SERVER_ONLY)
 
+# Whether the tick loop is still running, which /livez answers; pure, so tested
+# without HTTP (see liveness.h).
+add_library(augustad_liveness STATIC
+  liveness.cpp
+)
+target_include_directories(augustad_liveness PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(augustad_liveness PUBLIC augusta_tick)
+augusta_set_module_scope(augustad_liveness SERVER_ONLY)
+
+# The HTTP endpoint serving /metrics and /livez (see metrics.h, ADR-0049).
+# prometheus-cpp's core keeps and formats the metrics; its pull feature brings
+# civetweb, which serves both paths: prometheus-cpp's own Exposer serves only
+# metrics, and /livez must answer 503.
+find_package(prometheus-cpp CONFIG REQUIRED)
+find_package(civetweb CONFIG REQUIRED)
+add_library(augustad_metrics STATIC
+  metrics.cpp
+)
+target_include_directories(augustad_metrics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(augustad_metrics
+  PUBLIC augusta_tick
+  PRIVATE augustad_liveness augusta_logging augusta_version prometheus-cpp::core civetweb::civetweb-cpp
+)
+# std::getenv reads the commit the image stamps in; MSVC deprecates it for
+# _dupenv_s, which has no portable equivalent.
+target_compile_definitions(augustad_metrics PRIVATE _CRT_SECURE_NO_WARNINGS)
+augusta_set_module_scope(augustad_metrics SERVER_ONLY)
+
 # The server's socket and SimulationWorld without threads or a clock, so a test
 # can drive a match by hand (see host.h), and the conversions Host makes at its
 # edges: between the protocol's plain types and the engine's (see wire.h), and
@@ -109,7 +137,7 @@ add_library(augustad_runtime STATIC
 target_include_directories(augustad_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_runtime
   PUBLIC augustad_host augusta_networking augusta_parameters augusta_physics augusta_simulation augusta_supervisor
-  PRIVATE augusta_assets augusta_logging augusta_tick
+  PRIVATE augusta_assets augusta_logging augusta_tick augustad_metrics
 )
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)
 

@@ -518,7 +518,7 @@ TEST(ParseClientConfigTest, RejectsAnEmptyCharacter) {
 TEST(ParseServerConfigTest, ReadsEveryKey) {
   const auto config = ParseServerConfig(
       "base_dir: content\ncontent:\n  pack: packs/level.server.pack\n  public_key: keys/augusta.pub\nsimulation:\n  "
-      "tick_rate_hz: 30\nnetwork:\n  listen_address: 0.0.0.0:27016\n",
+      "tick_rate_hz: 30\nnetwork:\n  listen_address: 0.0.0.0:27016\nmetrics:\n  port: 9100\n",
       kFileDir);
 
   ASSERT_TRUE(config.has_value());
@@ -526,6 +526,7 @@ TEST(ParseServerConfigTest, ReadsEveryKey) {
   EXPECT_EQ(config->public_key_path, kRoot / "keys" / "augusta.pub");
   EXPECT_EQ(config->tick_rate_hz, 30);
   EXPECT_EQ(config->listen_address, "0.0.0.0:27016");
+  EXPECT_EQ(config->metrics_port, 9100);
 }
 
 // Everything a server config needs but the tick rate, so a test can set that itself.
@@ -619,6 +620,33 @@ TEST(ParseServerConfigTest, RejectsATickRateThatIsNotAnIntegerFromOneTo255) {
     ASSERT_FALSE(config.has_value()) << rate;
     EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidNumber) << rate;
     EXPECT_EQ(config.error().subject, "simulation.tick_rate_hz") << rate;
+  }
+}
+
+TEST(ParseServerConfigTest, DefaultsTheMetricsPort) {
+  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->metrics_port, augusta::config::kDefaultMetricsPort);
+}
+
+TEST(ParseServerConfigTest, AcceptsMetricsPortsFromOneTo65535) {
+  for (const char* port : {"1", "9100", "9464", "65535"}) {
+    const auto config =
+        ParseServerConfig(ServerConfigWith("metrics:\n  port: '" + std::string(port) + "'\n"), kFileDir);
+
+    ASSERT_TRUE(config.has_value()) << port;
+    EXPECT_EQ(config->metrics_port, std::stoi(port)) << port;
+  }
+}
+
+TEST(ParseServerConfigTest, RejectsAMetricsPortThatIsNotAnIntegerFromOneTo65535) {
+  for (const char* port : {"0", "-1", "65536", "9464.5", "abc", "", "0x2508"}) {
+    const auto config =
+        ParseServerConfig(ServerConfigWith("metrics:\n  port: '" + std::string(port) + "'\n"), kFileDir);
+
+    ASSERT_FALSE(config.has_value()) << port;
+    EXPECT_EQ(config.error().subject, "metrics.port") << port;
   }
 }
 
@@ -790,6 +818,13 @@ TEST(DescribeConfigErrorTest, SaysWhatATickRateMustBe) {
       DescribeConfigError({.code = ConfigErrorCode::kInvalidNumber, .subject = "simulation.tick_rate_hz", .file = {}});
 
   EXPECT_EQ(message, "'simulation.tick_rate_hz' must be an integer from 1 to 255");
+}
+
+TEST(DescribeConfigErrorTest, SaysWhatAMetricsPortMustBe) {
+  const auto message =
+      DescribeConfigError({.code = ConfigErrorCode::kInvalidNumber, .subject = "metrics.port", .file = {}});
+
+  EXPECT_EQ(message, "'metrics.port' must be an integer from 1 to 65535");
 }
 
 TEST(DescribeConfigErrorTest, SaysWhatALogLevelMustBe) {
