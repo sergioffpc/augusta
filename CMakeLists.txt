@@ -86,6 +86,10 @@ add_subdirectory(src/modules/harness)
 add_subdirectory(src/modules/presentation)
 add_subdirectory(src/modules/replication)
 add_subdirectory(src/server)
+# augusta-replay, which replays a match recording augustad wrote (ADR-0048): a
+# developer's tool, not shipped with the server, built with the runtime it
+# links on every platform, since its tests hold the golden match.
+add_subdirectory(tools/replay)
 # augusta-loadtest, the Scripted players: a tool built with the runtime it
 # links (harness, map, config), on every platform. Off by default, so no CI
 # build compiles or tests it: the windows-tools and linux-tools presets

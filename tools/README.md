@@ -1,10 +1,11 @@
 # Tools
 
-This directory contains three separate tools: `pack` cooks authored content
-into signed runtime packs, `composer` sets up the optional USD authoring
-application and its launcher (both Windows), and `loadtest` builds
-`augusta-loadtest`, which fills a server with Scripted players for load and
-end-to-end tests. `docs` is not a tool of its own: it holds how the
+This directory contains every tool, apart from the runtime in `src/`: `pack`
+cooks authored content into signed runtime packs, `composer` sets up the
+optional USD authoring application and its launcher (both Windows), `loadtest`
+builds `augusta-loadtest`, which fills a server with Scripted players for load
+and end-to-end tests, and `replay` builds `augusta-replay`, which replays a
+match recording `augustad` wrote. Each tool's tests live beside it. `docs` is not a tool of its own: it holds how the
 documentation site is built (ADR-0046).
 
 | Tool | Purpose |
@@ -12,6 +13,7 @@ documentation site is built (ADR-0046).
 | [`pack/`](pack/) | Python asset cooker, signing utilities, and native cooking modules. |
 | [`composer/`](composer/) | Optional NVIDIA USD Composer setup, playback definition, and launcher. |
 | [`loadtest/`](loadtest/) | `augusta-loadtest`: the Scripted players, a server's worth of headless clients. |
+| [`replay/`](replay/) | `augusta-replay`: replays a match recording against the server pack it was made on. |
 | [`docs/`](docs/) | The documentation site's MkDocs hooks and Doxyfile, built by `make docs`. |
 
 ## Composer
@@ -416,3 +418,35 @@ ctest --preset linux-netcode
 ```
 
 or on Windows, `ctest --test-dir build/x64-windows-tools -L netcode`.
+
+## Replay
+
+`augusta-replay` replays a match recording `augustad` wrote (its
+`simulation.recording` setting) on a fresh SimulationWorld, and checks that
+every tick resolves what it recorded (ADR-0048):
+
+```
+augusta-replay <recording> <server pack> <public key> [--across-builds]
+```
+
+The pack must be the one the recording names. Without `--across-builds` the
+outcome must match exactly, which holds on the build that recorded it; with
+it, positions may be a grid step off. It exits 0 when every tick matches, 1
+when one diverges (printing both sides' bodies), and 2 when the replay cannot
+start. It is C++ built with the engine on every platform, by every build:
+
+```powershell
+cmake --build --preset windows-debug --target augusta-replay
+# build/x64-windows-debug/tools/replay/augusta-replay.exe
+```
+
+Its tests are in [`replay/tests/`](replay/tests/) and join `augusta_tests`,
+among them the golden match (ADR-0013): a recording of a scripted duel on the
+example scenario's golden server pack,
+[`replay/tests/fixtures/golden_match.rec`](replay/tests/fixtures/golden_match.rec),
+which must replay to its recorded outcome on every build. After a deliberate
+change to the simulation, rewrite it and commit the result:
+
+```powershell
+cmake --build --preset windows-debug --target augusta_golden_match
+```

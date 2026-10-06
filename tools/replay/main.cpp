@@ -1,7 +1,7 @@
-// augusta_replay: replays a match recording augustad wrote (ADR-0048) on a
+// augusta-replay: replays a match recording augustad wrote (ADR-0048) on a
 // fresh SimulationWorld and checks every tick resolves what it recorded.
 //
-//   augusta_replay <recording> <server pack> <public key> [--across-builds]
+//   augusta-replay <recording> <server pack> <public key> [--across-builds]
 //
 // The pack must be the one the recording names. Without --across-builds the
 // outcome must match exactly, which holds on the build that recorded it;
@@ -36,7 +36,7 @@ constexpr int kSameOutcome = 0;
 constexpr int kDiverged = 1;
 constexpr int kCannotReplay = 2;
 
-constexpr std::string_view kUsage = "usage: augusta_replay <recording> <server pack> <public key> [--across-builds]";
+constexpr std::string_view kUsage = "usage: augusta-replay <recording> <server pack> <public key> [--across-builds]";
 
 // One line per body of outcome, for comparing a divergent tick by eye.
 void PrintBodies(std::string_view label, const augusta::server::TickOutcome& outcome) {
@@ -89,18 +89,18 @@ int Run(std::span<char*> arguments) {
                  augusta::EngineVersion());
   }
 
-  std::expected<augusta::tick::Tick, augusta::server::Divergence> replayed;
+  std::expected<augusta::tick::Tick, augusta::replay::Divergence> replayed;
   try {
-    replayed = augusta::server::Replay(*recording, *std::move(content),
-                                       across_builds ? augusta::server::kAcrossBuilds : augusta::server::kSameBuild);
+    replayed = augusta::replay::Replay(*recording, *std::move(content),
+                                       across_builds ? augusta::replay::kAcrossBuilds : augusta::replay::kSameBuild);
   } catch (const std::runtime_error& error) {
     std::println(stderr, "{}: {}", pack_path.string(), error.what());
     return kCannotReplay;
   }
   if (!replayed.has_value()) {
-    const augusta::server::Divergence& divergence = replayed.error();
+    const augusta::replay::Divergence& divergence = replayed.error();
     std::println("diverged on tick {} of {}: {}", divergence.tick, recording->ticks.size(),
-                 augusta::server::DescribeDivergenceKind(divergence.kind));
+                 augusta::replay::DescribeDivergenceKind(divergence.kind));
     PrintBodies("recorded", divergence.recorded);
     PrintBodies("replayed", divergence.replayed);
     return kDiverged;

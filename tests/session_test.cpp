@@ -50,7 +50,6 @@
 #include "parameters_loader.h"
 #include "policy_loader.h"
 #include "recording.h"
-#include "replay.h"
 #include "wire.h"
 
 // The seam the M3 tickets test through (issue #73): a real server host and a
@@ -1776,22 +1775,6 @@ TEST_F(RecordingHostTest, EveryTickTheHostRanIsRecordedWithTheCommandsItTookIn) 
   });
   EXPECT_TRUE(walked_forward);
   EXPECT_TRUE(recording.ticks.back().input.match_ended);
-}
-
-TEST_F(RecordingHostTest, WhatTheHostRecordedReplaysToTheSameOutcome) {
-  PlayAMatch();
-  const augusta::server::Recording recording = ReadBack();
-  HostSetup setup = FloorSetup();
-
-  const auto replayed = augusta::server::Replay(recording,
-                                                augusta::server::Content{.scenario = std::move(setup.scenario),
-                                                                         .parameters = setup.config.parameters,
-                                                                         .policy = std::move(setup.policy)},
-                                                augusta::server::kSameBuild);
-
-  ASSERT_TRUE(replayed.has_value()) << "diverged on tick " << replayed.error().tick << ": "
-                                    << augusta::server::DescribeDivergenceKind(replayed.error().kind);
-  EXPECT_EQ(*replayed, recording.ticks.size());
 }
 
 TEST(RecordingHostConfigTest, AHostRefusesARecordingItCannotWrite) {

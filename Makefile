@@ -32,7 +32,8 @@ TOML_SOURCES := "*.toml" ":!:third_party/*"
 
 # What CI's Lint step runs clang-tidy on: every src .cpp except the two
 # Windows-only trees and the audio module's Windows-only output device, which
-# its Linux build graph has no compile commands for.
+# its Linux build graph has no compile commands for, and augusta-replay's
+# (tools/replay), built with them.
 TIDY_EXCLUDES := ":(exclude)src/client/*" ":(exclude)src/modules/renderer/*"
 ifeq ($(OS),Windows_NT)
 # PhysX's SSE headers break clang-tidy under MSVC's flags, so this one is
@@ -41,7 +42,7 @@ TIDY_EXCLUDES += ":(exclude)src/modules/physics/physics.cpp" ":(exclude)src/modu
 else
 TIDY_EXCLUDES += ":(exclude)src/modules/audio/output_miniaudio.cpp" ":(exclude)src/modules/audio/miniaudio.cpp"
 endif
-TIDY_SOURCES := $(shell git ls-files -- "src/*.cpp" $(TIDY_EXCLUDES))
+TIDY_SOURCES := $(shell git ls-files -- "src/*.cpp" "tools/replay/*.cpp" ":(exclude)tools/replay/tests/*" $(TIDY_EXCLUDES))
 
 # The rest of src and tests that this platform's build has compile commands
 # for, which tidy holds to include-cleaner alone (.clang-tidy's
@@ -56,7 +57,7 @@ else
 INCLUDE_EXCLUDES := $(TIDY_EXCLUDES) ":(exclude)tests/client_*"
 JOBS ?= $(shell nproc)
 endif
-INCLUDE_SOURCES := $(filter-out $(TIDY_SOURCES),$(shell git ls-files -- "src/*.cpp" "tests/*.cpp" $(INCLUDE_EXCLUDES)))
+INCLUDE_SOURCES := $(filter-out $(TIDY_SOURCES),$(shell git ls-files -- "src/*.cpp" "tests/*.cpp" "tools/replay/tests/*.cpp" $(INCLUDE_EXCLUDES)))
 # One target per file, so a parallel make runs them side by side.
 INCLUDE_CHECKS := $(addprefix include-cleaner/,$(INCLUDE_SOURCES))
 

@@ -276,24 +276,15 @@ target_compile_definitions(augusta_session_tests PRIVATE
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_session_tests DISCOVERY_TIMEOUT 30)
 
-# Match recordings and their replay (ADR-0048), on the example scenario as the
-# server loads it from its golden server pack, and the golden match recorded
-# from it. When the simulation changes on purpose, one step rewrites the golden
-# match for review and commit:
-#   cmake --build --preset <preset> --target augusta_golden_match
+# Match recordings (ADR-0048), on the example scenario as the server loads it
+# from its golden server pack. Their replay is tools/replay's, tested there.
 add_executable(augusta_recording_tests recording_test.cpp)
 target_link_libraries(augusta_recording_tests PRIVATE augustad_host augustad_content augusta_logging augusta_version
   GTest::gtest GTest::gtest_main)
 target_compile_definitions(augusta_recording_tests PRIVATE
-  AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
-  AUGUSTA_GOLDEN_MATCH="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/golden_match.rec")
+  AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs")
 # Links PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_recording_tests DISCOVERY_TIMEOUT 30)
-add_custom_target(augusta_golden_match
-  COMMAND augusta_recording_tests --gtest_also_run_disabled_tests
-    --gtest_filter=GoldenMatchTest.DISABLED_RegenerateGoldenMatch
-  COMMENT "Rewriting tests/fixtures/golden_match.rec"
-  VERBATIM)
 
 add_executable(augusta_runner_tests runner_test.cpp)
 target_link_libraries(augusta_runner_tests PRIVATE augusta_harness augustad_host GTest::gtest GTest::gtest_main)
@@ -403,13 +394,14 @@ endif()
 
 add_subdirectory(fuzz)
 
-# Every executable here and in fuzz/, and in tools/loadtest/tests (the tests of
-# augusta-loadtest, kept next to it) when AUGUSTA_LOADTEST builds the tool:
+# Every executable here and in fuzz/, in tools/replay/tests (the tests of
+# augusta-replay, kept next to it), and in tools/loadtest/tests (the tests of
+# augusta-loadtest) when AUGUSTA_LOADTEST builds the tool:
 # what ctest, the benchmarks and the fuzz jobs run. Each directory is
 # EXCLUDE_FROM_ALL, so this is how they get built. Custom targets (the seed
 # regenerators) stay out: they rewrite committed files.
 add_custom_target(augusta_tests)
-set(test_directories ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/fuzz)
+set(test_directories ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/fuzz ${CMAKE_SOURCE_DIR}/tools/replay/tests)
 if (AUGUSTA_LOADTEST)
   list(APPEND test_directories ${CMAKE_SOURCE_DIR}/tools/loadtest/tests)
 endif()
