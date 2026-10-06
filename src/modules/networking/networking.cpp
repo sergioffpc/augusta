@@ -4,11 +4,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <random>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -24,6 +22,7 @@
 #include <steam/steamnetworkingtypes.h>
 
 #include "augusta/logging.h"
+#include "free_port.h"
 #include "send_flags.h"
 #include "transport_events.h"
 
@@ -184,9 +183,8 @@ void MakeTransportCall(TransportCall call, HSteamNetConnection connection, HStea
 }
 
 // Listens on addr with options. GameNetworkingSockets refuses port 0, so for
-// it this picks ports of the dynamic range (IANA's 49152-65535) at random
-// until one binds - a port another socket holds fails to bind, and is passed
-// over - and leaves the one it bound in addr.
+// it this listens on a port the OS reports free (see FreeUdpPort) - asking
+// again if it fails to bind there - and leaves the one it bound in addr.
 HSteamListenSocket CreateListenSocket(SteamNetworkingIPAddr& addr,
                                       std::span<const SteamNetworkingConfigValue_t> options) {
   const auto create = [&] {
@@ -195,15 +193,15 @@ HSteamListenSocket CreateListenSocket(SteamNetworkingIPAddr& addr,
   if (addr.m_port != 0) {
     return create();
   }
-  // Enough that only a range nearly all taken runs out: with a handful of
-  // servers on the machine, a single attempt already all but always binds.
-  constexpr int kAttempts = 32;
-  constexpr std::uint16_t kFirstDynamicPort = 49152;
-  std::random_device seed;
-  std::mt19937 engine(seed());
-  std::uniform_int_distribution<std::uint16_t> ports(kFirstDynamicPort, std::numeric_limits<std::uint16_t>::max());
+  // A port fails to bind only if a socket took it in the instant between the
+  // two, so a single attempt all but always binds.
+  constexpr int kAttempts = 8;
   for (int attempt = 0; attempt < kAttempts; ++attempt) {
-    addr.m_port = ports(engine);
+    const std::optional<std::uint16_t> port = FreeUdpPort(!addr.IsIPv4());
+    if (!port.has_value()) {
+      break;
+    }
+    addr.m_port = *port;
     if (const HSteamListenSocket socket = create(); socket != k_HSteamListenSocket_Invalid) {
       return socket;
     }
