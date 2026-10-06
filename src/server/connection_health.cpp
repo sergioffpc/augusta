@@ -194,18 +194,15 @@ struct ConnectionHealth::Impl {
   // The slot session's gauges are in, or else a free one; nullopt if every
   // slot is taken, which no more Sessions than the Lobby holds can do.
   [[nodiscard]] std::optional<std::size_t> SlotOf(SessionId session) const {
-    const auto holds = [session](const std::optional<SessionGauges>& gauges) {
-      return gauges.has_value() && gauges->session == session;
-    };
-    if (const auto found = std::ranges::find_if(published, holds); found != published.end()) {
-      return static_cast<std::size_t>(found - published.begin());
+    std::optional<std::size_t> free;
+    for (std::size_t slot = 0; slot < published.size(); ++slot) {
+      if (!published[slot].has_value()) {
+        free = free.value_or(slot);
+      } else if (published[slot]->session == session) {
+        return slot;
+      }
     }
-    if (const auto free = std::ranges::find_if(
-            published, [](const std::optional<SessionGauges>& gauges) { return !gauges.has_value(); });
-        free != published.end()) {
-      return static_cast<std::size_t>(free - published.begin());
-    }
-    return std::nullopt;
+    return free;
   }
 
   void SetGauges(SessionId session, const networking::ConnectionStats& stats) {
