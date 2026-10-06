@@ -5992,6 +5992,12 @@ using augusta::server::MessageType;
 
 using HostCountsTest = MatchOf<2>;
 
+// Every command the Host discarded, for whatever reason.
+std::uint64_t Discarded(const HostMetrics& metrics) {
+  return metrics.commands_rejected.Total() + metrics.commands_overflowed.Value() +
+         metrics.commands_outside_match.Value() + metrics.commands_before_joining.Value();
+}
+
 TEST_F(HostCountsTest, EveryTickIsCountedWithHowItKeptToTheSchedule) {
   host_.RecordTiming({.duration = std::chrono::milliseconds(3), .late = true});
   host_.RecordTiming({.duration = std::chrono::milliseconds(30), .overrun = true, .resynchronised = true});
@@ -6138,6 +6144,8 @@ TEST_F(HostCountsTest, CommandsFromAPeerThatHasNotJoinedAreMisbehaviour) {
 
   EXPECT_EQ(metrics.misbehaviour[augusta::server::PeerRejection::kCommandsBeforeJoining].Value(), 1U);
   EXPECT_EQ(metrics.joins_admitted.Value(), 0U);
+  EXPECT_EQ(metrics.commands_received.Value(), 1U);
+  EXPECT_EQ(metrics.commands_before_joining.Value(), 1U);
   EXPECT_EQ(metrics.commands_outside_match.Value(), 0U);
 }
 
@@ -6173,6 +6181,37 @@ TEST_F(SoloHostCountsTest, CommandsTheQueueTurnsAwayAreDiscardedByWhy) {
   EXPECT_EQ(metrics.commands_rejected[augusta::server::Rejection::kOutOfRange].Value(), 1U);
   EXPECT_EQ(metrics.misbehaviour[augusta::server::PeerRejection::kOutOfRangeCommand].Value(), 1U);
   EXPECT_EQ(metrics.misbehaviour.Total(), 1U);
+  EXPECT_EQ(metrics.commands_received.Value() - Discarded(metrics), 1U);
+}
+
+// Commands still in a message when its sender is disconnected for misbehaving
+// are never taken in, and never counted received: every command counted
+// received is either taken in or discarded.
+TEST_F(SoloHostCountsTest, CommandsLeftInTheMessageOfAPeerDisconnectedMidwayAreNeitherReceivedNorDiscarded) {
+  RawClient raw(host_.ListenEndpoint());
+  ASSERT_TRUE(raw.Join(host_));
+  ASSERT_TRUE(DriveIntoMatch(host_, {}, &raw));
+  augusta::command::Sequence sequence = 0;
+  const auto out_of_range = [&](std::size_t count) {
+    protocol::CommandsWire message;
+    for (std::size_t i = 0; i < count; ++i) {
+      protocol::SequencedCommandWire command{.sequence = ++sequence};
+      command.command.pitch = 3.0F;
+      message.commands.push_back(command);
+    }
+    return message;
+  };
+
+  // 7 and 7, then the 16th misbehaviour is the second command of 8.
+  raw.Send(out_of_range(7));
+  raw.Send(out_of_range(7));
+  raw.Send(out_of_range(protocol::kMaxCommandsPerMessage));
+  ASSERT_TRUE(raw.ServeUntil(host_, [&] { return raw.GetConnectionState() == ConnectionState::kDisconnected; }));
+
+  const HostMetrics& metrics = host_.Metrics();
+  EXPECT_EQ(metrics.misbehaviour.Total(), augusta::server::kMisbehaviourThreshold);
+  EXPECT_EQ(metrics.commands_received.Value(), augusta::server::kMisbehaviourThreshold);
+  EXPECT_EQ(Discarded(metrics), metrics.commands_received.Value());
 }
 
 // A command that reports no Seen time is judged at the Shooter's delay's cap.

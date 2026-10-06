@@ -49,7 +49,7 @@ void CountCombat(HostMetrics& metrics, const simulation::TickResult& result) {
 // One line for every match that ends (ADR-0029): why, who won, how many
 // ticks it lasted, counting the one it ended on, and how many were in it.
 void Host::Impl::LogMatchEnded(EndReason reason, const std::optional<SessionId>& winner, std::size_t playing) const {
-  server::LogMatchEnded(reason, winner, tick - match_start_tick + 1, playing, match.GetRoster().version);
+  server::LogMatchEnded(reason, winner, MatchTicks(), playing, match.GetRoster().version);
 }
 
 // Counts a match that ended for reason, with winner or as a draw: how, and how
@@ -62,8 +62,7 @@ void Host::Impl::CountMatchEnded(EndReason reason, const std::optional<SessionId
   } else {
     metrics.matches_ended_drawn.Increment();
   }
-  const auto ticks = static_cast<double>(tick - match_start_tick + 1);
-  metrics.match_duration.Observe(ticks / tick_rate_hz);
+  metrics.match_duration.Observe(static_cast<double>(MatchTicks()) / tick_rate_hz);
 }
 
 // Ends the match in progress, if any, with winner or as a draw, for reason:

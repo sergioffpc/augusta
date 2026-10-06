@@ -209,8 +209,8 @@ TEST(HostMetricsTest, DiscardedCommandsAreLabelledByWhyTheyWereTurnedAway) {
 
   EXPECT_EQ(Series(discarded, {{"reason", "out_of_range"}}).counter.value, 1.0);
   EXPECT_EQ(Series(discarded, {{"reason", "overflow"}}).counter.value, 2.0);
-  EXPECT_EQ(ValuesOf(discarded, "reason"),
-            (std::set<std::string>{"stale", "non_finite", "out_of_range", "overflow", "outside_match"}));
+  EXPECT_EQ(ValuesOf(discarded, "reason"), (std::set<std::string>{"stale", "non_finite", "out_of_range", "overflow",
+                                                                  "outside_match", "before_joining"}));
 }
 
 TEST(HostMetricsTest, MessagesAreLabelledByTheirType) {

@@ -29,6 +29,7 @@
 #include "match.h"
 #include "recording.h"
 #include "simulation_mapping.h"
+#include "tick_messages.h"
 #include "wire.h"
 
 namespace augusta::server {
@@ -86,19 +87,13 @@ Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine 
           .pause_ticks = PauseTicks(config.tick_rate_hz),
       }) {}
 
-void Host::Impl::Send(networking::PeerId peer, const networking::Payload& message,
-                      networking::Reliability reliability) {
-  CountSent(metrics, message);
-  network.Send(peer, message, reliability);
-}
-
 void Host::Impl::Reply(networking::PeerId peer, const networking::Payload& message) {
-  Send(peer, message, networking::Reliability::kReliable);
+  SendCounted(network, metrics, peer, message, networking::Reliability::kReliable);
 }
 
 void Host::Impl::SendTo(const std::vector<SessionId>& sessions, const networking::Payload& message) {
   for (const SessionId session : sessions) {
-    Send(players.at(session).peer, message, networking::Reliability::kReliable);
+    SendCounted(network, metrics, players.at(session).peer, message, networking::Reliability::kReliable);
   }
 }
 

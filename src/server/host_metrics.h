@@ -1,13 +1,9 @@
 #ifndef AUGUSTA_SERVER_HOST_METRICS_H_
 #define AUGUSTA_SERVER_HOST_METRICS_H_
 
-#include <array>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <initializer_list>
 #include <span>
-#include <utility>
 #include <vector>
 
 #include <prometheus/collectable.h>
@@ -17,6 +13,7 @@
 #include "command_queue.h"
 #include "heartbeat.h"
 #include "host_log.h"
+#include "lock_free_metrics.h"
 #include "match.h"
 #include "misbehaviour.h"
 
@@ -26,102 +23,14 @@
 /// Misbehaviour, Network and Combat families, each named and labelled as it says.
 /// The Host owns one, and its Network I/O and Simulation threads write each value
 /// in place where the event happens; the endpoint's thread only collects. Every
-/// counter, gauge and histogram here is a lock-free atomic, so neither thread
-/// ever waits on a scrape, as prometheus-cpp's own histogram (behind a mutex)
-/// would have it wait. The heartbeat line (heartbeat.h) reads its totals from the
+/// counter, gauge and histogram here is lock-free (lock_free_metrics.h), so
+/// neither thread ever waits on a scrape. The heartbeat line (heartbeat.h) reads its totals from the
 /// same counters (Totals), so the line and the series count each event once.
 /// Every label takes its values from a closed set, one of the server's own enums
-/// where it has one, never from text a peer sent. The Process family is the endpoint's; Connection health is
-/// not counted here.
+/// where it has one, never from text a peer sent; each range of counters is
+/// checked against its enum at compile time. The Process family is the
+/// endpoint's; Connection health is not counted here.
 namespace augusta::server {
-
-// What lets neither the tick nor the Network I/O thread ever wait on a scrape.
-static_assert(std::atomic<std::uint64_t>::is_always_lock_free && std::atomic<double>::is_always_lock_free);
-
-/// A count that only grows. Lock-free, from any thread.
-class Counter {
- public:
-  void Increment(std::uint64_t by = 1) { value_.fetch_add(by, std::memory_order_relaxed); }
-  [[nodiscard]] std::uint64_t Value() const { return value_.load(std::memory_order_relaxed); }
-
- private:
-  std::atomic<std::uint64_t> value_{0};
-};
-
-/// A value that goes up and down. Lock-free, from any thread.
-class Gauge {
- public:
-  void Set(double value) { value_.store(value, std::memory_order_relaxed); }
-  [[nodiscard]] double Value() const { return value_.load(std::memory_order_relaxed); }
-
- private:
-  std::atomic<double> value_{0.0};
-};
-
-/// Observations counted into fixed buckets. Lock-free, from any thread.
-class Histogram {
- public:
-  /// What a Histogram has counted, as the exposition gives it.
-  struct Snapshot {
-    /// How many observations each bucket holds: those no greater than its bound,
-    /// then every one, for the +Inf bucket.
-    std::vector<std::uint64_t> cumulative_counts;
-    double sum = 0.0;
-  };
-
-  /// bounds are the buckets' upper bounds, ascending; a last bucket, +Inf, holds the rest.
-  Histogram(std::initializer_list<double> bounds);
-
-  void Observe(double value);
-
-  /// What it has counted. Taken without stopping the writers, so an observation
-  /// in progress may be in the counts and not yet in the sum.
-  [[nodiscard]] Snapshot Read() const;
-
-  [[nodiscard]] std::span<const double> Bounds() const { return bounds_; }
-
- private:
-  std::vector<double> bounds_;
-  // Per bucket, not cumulative: one atomic increment per observation.
-  std::vector<std::atomic<std::uint64_t>> counts_;
-  std::atomic<double> sum_{0.0};
-};
-
-/// One Counter per value of Key, an enum whose values run from First to Last.
-template <typename Key, Key First, Key Last>
-class EnumCounters {
- public:
-  [[nodiscard]] Counter& operator[](Key key) { return counters_.at(Index(key)); }
-  [[nodiscard]] const Counter& operator[](Key key) const { return counters_.at(Index(key)); }
-
-  /// The sum over every value.
-  [[nodiscard]] std::uint64_t Total() const {
-    std::uint64_t total = 0;
-    for (const Counter& counter : counters_) {
-      total += counter.Value();
-    }
-    return total;
-  }
-
-  /// Every value of Key, in order.
-  [[nodiscard]] static std::vector<Key> Keys() {
-    std::vector<Key> keys;
-    for (std::size_t i = 0; i < kCount; ++i) {
-      keys.push_back(static_cast<Key>(static_cast<std::size_t>(std::to_underlying(First)) + i));
-    }
-    return keys;
-  }
-
- private:
-  static constexpr std::size_t kCount =
-      static_cast<std::size_t>(std::to_underlying(Last)) - static_cast<std::size_t>(std::to_underlying(First)) + 1;
-
-  static std::size_t Index(Key key) {
-    return static_cast<std::size_t>(std::to_underlying(key)) - static_cast<std::size_t>(std::to_underlying(First));
-  }
-
-  std::array<Counter, kCount> counters_;
-};
 
 /// The Networking Protocol's message types (ADR-0038), as the metrics label
 /// them: the server's own, since the protocol's stay at its edge (wire.h).
@@ -142,7 +51,8 @@ enum class MessageType : std::uint8_t {
 
 using JoinRefusalCounters = EnumCounters<JoinRefusal, JoinRefusal::kVersionMismatch, JoinRefusal::kPackMismatch>;
 using LeavingCounters = EnumCounters<Leaving, Leaving::kLeft, Leaving::kMisbehaving>;
-/// The misbehaviours only: the first of PeerRejection's values (misbehaviour.h).
+/// The misbehaviours only: the first of PeerRejection's values (misbehaviour.h),
+/// which host_metrics.cpp checks.
 using MisbehaviourCounters =
     EnumCounters<PeerRejection, PeerRejection::kUndecodable, PeerRejection::kCommandsBeforeJoining>;
 using MessageCounters = EnumCounters<MessageType, MessageType::kJoinRequest, MessageType::kDeath>;
@@ -202,10 +112,14 @@ struct HostMetrics final : prometheus::Collectable {
   /// Every command of every Commands message.
   Counter commands_received;
   /// Commands the command queue turned away, by why; those it took in but
-  /// dropped as the oldest of a full queue; and those of a player not in a match.
+  /// dropped as the oldest of a full queue; those of a player not in a match;
+  /// and those of a peer that has not joined. Every command counted received
+  /// is either taken in or one of these; one a peer sent after the command
+  /// that got it disconnected is neither received nor discarded.
   RejectionCounters commands_rejected;
   Counter commands_overflowed;
   Counter commands_outside_match;
+  Counter commands_before_joining;
 
   // Combat, written by the Simulation thread.
   Counter shots;

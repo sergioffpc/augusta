@@ -55,7 +55,7 @@ text, an address or a Character's name. The domain words are CONTEXT.md's.
 | | `augustad_tick_overruns_total` (work took longer than a tick) | counter | |
 | | `augustad_tick_resyncs_total` (the loop resynchronised to now, ADR-0005) | counter | |
 | | `augustad_tick_rate_hertz` (configured) | gauge | |
-| Lobby and Match | `augustad_lobby_players` | gauge | |
+| Lobby and Match | `augustad_lobby_players` (0 while a Match is in progress: its players are in it) | gauge | |
 | | `augustad_match_in_progress` | gauge, 0 or 1 | |
 | | `augustad_match_players_alive` | gauge | |
 | | `augustad_matches_started_total` | counter | |
@@ -85,7 +85,10 @@ text, an address or a Character's name. The domain words are CONTEXT.md's.
 The values of `reason` and `kind` are the closed sets the server already
 decides with: admission's refusals, the transport's end reasons (and a
 disconnect for misbehaving), the misbehaviour kinds and the command queue's
-discards (and its overflow, and commands from a player not in a match).
+discards (and its overflow, and commands from a player not in a match or a
+peer that has not joined). Every command counted received is taken in or
+discarded; those a peer sent after the one that got it disconnected are
+neither.
 
 `augustad_build_info`'s `commit` is the commit the server image was built from,
 which the image's runtime stage sets as the `AUGUSTA_COMMIT` environment

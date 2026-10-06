@@ -77,15 +77,17 @@ void Host::Impl::HandleReady(networking::PeerId peer, std::uint32_t version,
 
 void Host::Impl::HandleCommands(networking::PeerId peer, const std::vector<SequencedCommand>& commands,
                                 std::chrono::steady_clock::time_point now) {
-  metrics.commands_received.Increment(commands.size());
   const std::optional<SessionId> session = match.SessionOf(peer);
   if (!session.has_value()) {
+    metrics.commands_received.Increment(commands.size());
+    metrics.commands_before_joining.Increment(commands.size());
     LW_LIMITED(drop_warnings, "subsystem=serverruntime event=dropped peer={} reason=\"commands before joining\"",
                PeerNumber(peer));
     Judge(peer, PeerRejection::kCommandsBeforeJoining, now);
     return;
   }
   if (!match.IsPlaying(*session)) {
+    metrics.commands_received.Increment(commands.size());
     metrics.commands_outside_match.Increment(commands.size());
     LT("subsystem=serverruntime event=dropped peer={} reason=\"commands outside a match\"", PeerNumber(peer));
     Judge(peer, PeerRejection::kCommandsOutsideMatch, now);
@@ -93,6 +95,8 @@ void Host::Impl::HandleCommands(networking::PeerId peer, const std::vector<Seque
   }
   CommandQueue& queue = players.at(*session).commands;
   for (const SequencedCommand& command : commands) {
+    // One at a time: those after a command that disconnects the peer are never taken in.
+    metrics.commands_received.Increment();
     const auto enqueued = queue.TryEnqueue(command);
     if (!enqueued.has_value()) {
       RecordRejection(peer, command, enqueued.error());
@@ -241,11 +245,11 @@ void Host::PumpNetwork(std::chrono::steady_clock::time_point now) {
   }
   for (const networking::PeerMessage& message : impl.network.ReceiveMessages()) {
     LT("subsystem=serverruntime event=received peer={} bytes={}", PeerNumber(message.from), message.payload.size());
-    impl.metrics.received_bytes.Increment(message.payload.size());
     const std::lock_guard<std::mutex> lock(impl.mutex);
     if (impl.expelled.contains(message.from)) {
       continue;
     }
+    impl.metrics.received_bytes.Increment(message.payload.size());
     impl.HandleMessage(message, now);
   }
   const std::lock_guard<std::mutex> lock(impl.mutex);

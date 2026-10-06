@@ -105,8 +105,7 @@ struct Host::Impl {
   Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy);
 
   // Sending to players (host.cpp), each message already encoded (wire.h),
-  // counted as it is sent.
-  void Send(networking::PeerId peer, const networking::Payload& message, networking::Reliability reliability);
+  // counted as it is sent (SendCounted).
   void Reply(networking::PeerId peer, const networking::Payload& message);
   // Sends message reliably to the player of each of sessions.
   void SendTo(const std::vector<SessionId>& sessions, const networking::Payload& message);
@@ -131,6 +130,9 @@ struct Host::Impl {
 
   // The Simulation thread's side (host_match.cpp). CountMatchEnded, EndMatch
   // and StartMatchIfReady with mutex held; Act and PrepareTick take it.
+  // How many ticks the match in progress, or the last one, has lasted,
+  // counting the one it ended on.
+  [[nodiscard]] tick::Tick MatchTicks() const { return tick - match_start_tick + 1; }
   void LogMatchEnded(EndReason reason, const std::optional<SessionId>& winner, std::size_t playing) const;
   void CountMatchEnded(EndReason reason, const std::optional<SessionId>& winner);
   void EndMatch(const std::optional<SessionId>& winner, EndReason reason);

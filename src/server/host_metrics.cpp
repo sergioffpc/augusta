@@ -1,7 +1,5 @@
 #include "host_metrics.h"
 
-#include <algorithm>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
@@ -20,6 +18,7 @@
 #include "command_queue.h"
 #include "heartbeat.h"
 #include "host_log.h"
+#include "lock_free_metrics.h"
 #include "match.h"
 #include "misbehaviour.h"
 #include "wire.h"
@@ -44,7 +43,10 @@ constexpr std::initializer_list<double> kUpdateBuckets = {64, 128, 256, 512, 102
 constexpr std::initializer_list<double> kShootersDelayBuckets = {0.025, 0.050, 0.075, 0.100,
                                                                  0.125, 0.150, 0.200, 0.250};
 
-std::string_view JoinRefusalLabel(JoinRefusal reason) {
+// Each label below is empty for a value no counter has, which
+// LabelledExactly checks.
+
+constexpr std::string_view JoinRefusalLabel(JoinRefusal reason) {
   switch (reason) {
     case JoinRefusal::kVersionMismatch:
       return "version_mismatch";
@@ -57,10 +59,22 @@ std::string_view JoinRefusalLabel(JoinRefusal reason) {
     case JoinRefusal::kPackMismatch:
       return "pack_mismatch";
   }
-  std::unreachable();
+  return {};
 }
 
-std::string_view MisbehaviourLabel(PeerRejection kind) {
+constexpr std::string_view LeavingLabel(Leaving how) {
+  switch (how) {
+    case Leaving::kLeft:
+      return "left";
+    case Leaving::kTimedOut:
+      return "timeout";
+    case Leaving::kMisbehaving:
+      return "misbehaving";
+  }
+  return {};
+}
+
+constexpr std::string_view MisbehaviourLabel(PeerRejection kind) {
   switch (kind) {
     case PeerRejection::kUndecodable:
       return "undecodable";
@@ -76,13 +90,13 @@ std::string_view MisbehaviourLabel(PeerRejection kind) {
     case PeerRejection::kCommandsOutsideMatch:
     case PeerRejection::kStaleReady:
     case PeerRejection::kJoinRefused:
+      // Routine: not misbehaviour, so no counter has them.
       break;
   }
-  // Routine rejections are not misbehaviour, so no counter has them.
-  std::unreachable();
+  return {};
 }
 
-std::string_view MessageTypeLabel(MessageType type) {
+constexpr std::string_view MessageTypeLabel(MessageType type) {
   switch (type) {
     case MessageType::kJoinRequest:
       return "join_request";
@@ -109,10 +123,10 @@ std::string_view MessageTypeLabel(MessageType type) {
     case MessageType::kDeath:
       return "death";
   }
-  std::unreachable();
+  return {};
 }
 
-std::string_view RejectionLabel(Rejection rejection) {
+constexpr std::string_view RejectionLabel(Rejection rejection) {
   switch (rejection) {
     case Rejection::kStale:
       return "stale";
@@ -121,10 +135,10 @@ std::string_view RejectionLabel(Rejection rejection) {
     case Rejection::kOutOfRange:
       return "out_of_range";
   }
-  std::unreachable();
+  return {};
 }
 
-std::string_view BodyPartLabel(ballistics::BodyPart part) {
+constexpr std::string_view BodyPartLabel(ballistics::BodyPart part) {
   switch (part) {
     case ballistics::BodyPart::kHead:
       return "head";
@@ -133,36 +147,29 @@ std::string_view BodyPartLabel(ballistics::BodyPart part) {
     case ballistics::BodyPart::kLimb:
       return "limb";
   }
-  std::unreachable();
+  return {};
 }
 
-ClientMetric CounterSeries(const Counter& counter, Labels labels = {}) {
-  ClientMetric series;
-  series.label = std::move(labels);
-  series.counter.value = static_cast<double>(counter.Value());
-  return series;
-}
+// Each range of counters is exactly the values its label names: an enum value
+// added, or a reorder, fails here rather than indexing past a range.
+static_assert(LabelledExactly<JoinRefusalCounters>(JoinRefusalLabel));
+static_assert(LabelledExactly<LeavingCounters>(LeavingLabel));
+static_assert(LabelledExactly<MisbehaviourCounters>(MisbehaviourLabel));
+static_assert(LabelledExactly<MessageCounters>(MessageTypeLabel));
+static_assert(LabelledExactly<RejectionCounters>(RejectionLabel));
+static_assert(LabelledExactly<BodyPartCounters>(BodyPartLabel));
 
-ClientMetric GaugeSeries(double value) {
-  ClientMetric series;
-  series.gauge.value = value;
-  return series;
-}
-
-ClientMetric HistogramSeries(const Histogram& histogram) {
-  const Histogram::Snapshot snapshot = histogram.Read();
-  const std::span<const double> bounds = histogram.Bounds();
-  ClientMetric series;
-  series.histogram.sample_count = snapshot.cumulative_counts.back();
-  series.histogram.sample_sum = snapshot.sum;
-  for (std::size_t i = 0; i < snapshot.cumulative_counts.size(); ++i) {
-    series.histogram.bucket.push_back(ClientMetric::Bucket{
-        .cumulative_count = snapshot.cumulative_counts[i],
-        .upper_bound = i < bounds.size() ? bounds[i] : std::numeric_limits<double>::infinity(),
-    });
+// What Judge counts as misbehaviour is what MisbehaviourCounters has a counter for.
+consteval bool MisbehaviourIsLabelled() {
+  for (unsigned value = 0; value <= std::numeric_limits<std::uint8_t>::max(); ++value) {
+    const auto rejection = static_cast<PeerRejection>(value);
+    if (IsMisbehaviour(rejection) == MisbehaviourLabel(rejection).empty()) {
+      return false;
+    }
   }
-  return series;
+  return true;
 }
+static_assert(MisbehaviourIsLabelled());
 
 MetricFamily Family(std::string name, std::string help, MetricType type, std::vector<ClientMetric> series) {
   return MetricFamily{.name = std::move(name), .help = std::move(help), .type = type, .metric = std::move(series)};
@@ -173,7 +180,7 @@ MetricFamily CounterFamily(std::string name, std::string help, const Counter& co
 }
 
 MetricFamily GaugeFamily(std::string name, std::string help, const Gauge& gauge) {
-  return Family(std::move(name), std::move(help), MetricType::Gauge, {GaugeSeries(gauge.Value())});
+  return Family(std::move(name), std::move(help), MetricType::Gauge, {GaugeSeries(gauge)});
 }
 
 MetricFamily HistogramFamily(std::string name, std::string help, const Histogram& histogram) {
@@ -211,12 +218,14 @@ void AppendTick(std::vector<MetricFamily>& families, const HostMetrics& metrics)
   families.push_back(CounterFamily("augustad_tick_resyncs_total",
                                    "Times the tick loop fell too far behind and resynchronised to now.",
                                    metrics.tick_resyncs));
-  families.push_back(Family("augustad_tick_rate_hertz", "The configured tick rate.", MetricType::Gauge,
-                            {GaugeSeries(metrics.tick_rate_hz)}));
+  ClientMetric tick_rate;
+  tick_rate.gauge.value = metrics.tick_rate_hz;
+  families.push_back(Family("augustad_tick_rate_hertz", "The configured tick rate.", MetricType::Gauge, {tick_rate}));
 }
 
 void AppendLobbyAndMatch(std::vector<MetricFamily>& families, const HostMetrics& metrics) {
-  families.push_back(GaugeFamily("augustad_lobby_players", "Players in the Lobby.", metrics.lobby_players));
+  families.push_back(GaugeFamily("augustad_lobby_players", "Players in the Lobby: 0 while a match is in progress.",
+                                 metrics.lobby_players));
   families.push_back(
       GaugeFamily("augustad_match_in_progress", "1 while a match is in progress, else 0.", metrics.match_in_progress));
   families.push_back(GaugeFamily("augustad_match_players_alive", "Players of the match in progress still alive.",
@@ -238,11 +247,11 @@ void AppendSessions(std::vector<MetricFamily>& families, const HostMetrics& metr
   families.push_back(Family("augustad_joins_total", "Joins, by result and a refusal's reason.", MetricType::Counter,
                             std::move(joins)));
   std::vector<ClientMetric> disconnects;
-  AppendLabelled(disconnects, metrics.disconnects_before_admission, "reason", LeavingName,
+  AppendLabelled(disconnects, metrics.disconnects_before_admission, "reason", LeavingLabel,
                  {{.name = "phase", .value = "admission"}});
-  AppendLabelled(disconnects, metrics.disconnects_from_lobby, "reason", LeavingName,
+  AppendLabelled(disconnects, metrics.disconnects_from_lobby, "reason", LeavingLabel,
                  {{.name = "phase", .value = "lobby"}});
-  AppendLabelled(disconnects, metrics.disconnects_from_match, "reason", LeavingName,
+  AppendLabelled(disconnects, metrics.disconnects_from_match, "reason", LeavingLabel,
                  {{.name = "phase", .value = "match"}});
   families.push_back(Family("augustad_disconnects_total", "Players who left, by how and from where.",
                             MetricType::Counter, std::move(disconnects)));
@@ -266,6 +275,7 @@ void AppendNetwork(std::vector<MetricFamily>& families, const HostMetrics& metri
   AppendLabelled(discarded, metrics.commands_rejected, "reason", RejectionLabel);
   discarded.push_back(CounterSeries(metrics.commands_overflowed, {{.name = "reason", .value = "overflow"}}));
   discarded.push_back(CounterSeries(metrics.commands_outside_match, {{.name = "reason", .value = "outside_match"}}));
+  discarded.push_back(CounterSeries(metrics.commands_before_joining, {{.name = "reason", .value = "before_joining"}}));
   families.push_back(Family("augustad_commands_discarded_total", "Commands discarded, by why.", MetricType::Counter,
                             std::move(discarded)));
 }
@@ -282,27 +292,6 @@ void AppendCombat(std::vector<MetricFamily>& families, const HostMetrics& metric
 }
 
 }  // namespace
-
-Histogram::Histogram(std::initializer_list<double> bounds) : bounds_(bounds), counts_(bounds.size() + 1) {}
-
-void Histogram::Observe(double value) {
-  // The first bucket whose bound is no less than value; past the last, +Inf.
-  const auto bucket = std::ranges::lower_bound(bounds_, value) - bounds_.begin();
-  counts_[static_cast<std::size_t>(bucket)].fetch_add(1, std::memory_order_relaxed);
-  sum_.fetch_add(value, std::memory_order_relaxed);
-}
-
-Histogram::Snapshot Histogram::Read() const {
-  Snapshot snapshot;
-  snapshot.cumulative_counts.reserve(counts_.size());
-  std::uint64_t cumulative = 0;
-  for (const std::atomic<std::uint64_t>& count : counts_) {
-    cumulative += count.load(std::memory_order_relaxed);
-    snapshot.cumulative_counts.push_back(cumulative);
-  }
-  snapshot.sum = sum_.load(std::memory_order_relaxed);
-  return snapshot;
-}
 
 HostMetrics::HostMetrics(std::uint8_t tick_rate_hz)
     : tick_rate_hz(tick_rate_hz),

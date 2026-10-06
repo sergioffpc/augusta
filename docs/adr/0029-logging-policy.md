@@ -40,7 +40,10 @@ sink, delays the thread that writes it. Two rules keep the volume down:
 
 - **Heartbeat.** The server's Simulation thread and the client's Prediction
   thread each write one `DEBUG` line a second, `event=heartbeat`, with counters
-  for that second (ticks, messages, drops, corrections). The server's also counts
+  for that second (ticks, messages, drops, corrections). The server's
+  `messages=` counts the messages that decoded, `dropped=` every misbehaviour
+  (ADR-0038), `stale=` each command turned away as already taken in or sent
+  outside a Match, and `overflow=` each one a full queue dropped. It also counts
   `late=` (ticks that started more than 1 ms after their deadline) and
   `overrun=` (ticks whose work took longer than a tick), so NFR-01's "no missed
   ticks" is measured, and `misbehaving=` (peers disconnected for misbehaving or

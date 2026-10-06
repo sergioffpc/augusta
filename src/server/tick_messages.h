@@ -27,6 +27,11 @@ struct TickRecipients {
   std::unordered_map<EntityId, networking::PeerId> peers;
 };
 
+/// Sends payload, an encoded message, to peer as reliability says, counting it
+/// into metrics: how the Host sends everything it sends.
+void SendCounted(networking::Server& network, HostMetrics& metrics, networking::PeerId peer,
+                 const networking::Payload& payload, networking::Reliability reliability);
+
 /// Sends to the recipients what tick's state holds for them, counting it into metrics.
 void SendTickMessages(networking::Server& network, HostMetrics& metrics, const simulation::State& state,
                       tick::Tick tick, const TickRecipients& to);
