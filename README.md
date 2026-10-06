@@ -1,5 +1,15 @@
 # Augusta
 
+[![CI](https://github.com/sergioffpc/augusta/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/sergioffpc/augusta/actions/workflows/ci.yml)
+[![Nightly](https://github.com/sergioffpc/augusta/actions/workflows/nightly.yml/badge.svg)](https://github.com/sergioffpc/augusta/actions/workflows/nightly.yml)
+[![CodeQL](https://github.com/sergioffpc/augusta/actions/workflows/codeql.yml/badge.svg)](https://github.com/sergioffpc/augusta/actions/workflows/codeql.yml)
+[![Docs](https://img.shields.io/badge/docs-sergioffpc.github.io-blue)](https://sergioffpc.github.io/augusta/)
+[![Release](https://img.shields.io/github/v/release/sergioffpc/augusta?sort=semver&filter=v*)](https://github.com/sergioffpc/augusta/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/sergioffpc/augusta)](LICENSE)
+![C++23](https://img.shields.io/badge/C%2B%2B-23-00599C?logo=cplusplus)
+![Platforms](https://img.shields.io/badge/platform-Windows%20client%20%7C%20Linux%20server-lightgrey)
+[![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-fe5196?logo=conventionalcommits)](https://www.conventionalcommits.org)
+
 A realistic, physics-driven multiplayer FPS simulator engine — server-authoritative,
 built in C++23 with a Windows client (rendering via NVIDIA Falcor/D3D12) and a
 headless Linux dedicated server. A hobby project to master low-level systems and
