@@ -13,15 +13,17 @@ chart declares no PodDisruptionBudget: with one replica, the only budget
 that protects anything blocks every node drain. Both environments exist
 for testing a build, not for players to keep a match through it.
 
-**Ready means the game port is bound.** `augustad` binds its UDP socket
-only after its pack is verified and its content loaded, and exits on any
-failure before or after, so a bound port is the whole of "started". UDP
-answers no `tcpSocket` probe, so the readiness probe finds the socket in
-the pod's own socket table (`/proc/net/udp`, `/proc/net/udp6`): Flux's
-upgrade then waits for the server to be up, and fails when it never is.
-There is no liveness probe: a failed thread already ends the process
-(ADR-0005), Game policy's Lua runs under an instruction limit (ADR-0022),
-and a probe that killed a slow but healthy server would cut its match.
+**A liveness probe, no readiness probe.** The chart probes the metrics
+endpoint's `/livez` (ADR-0049), which fails once the Simulation thread has
+gone 5 seconds without finishing a tick, so Kubernetes restarts a server
+whose tick loop has hung. `augustad` serves `/livez` only after its pack
+is verified and its content loaded, so a `startupProbe` on it holds the
+`livenessProbe` back until it first answers, and gives a slow pack load
+minutes, not seconds, before restarting the server. The liveness probe
+can then stay tight, restarting a hung loop within seconds, with no fixed
+delay to guess at. There is no readiness probe: a single replica takes no
+balanced traffic, so the pod is Ready once its container runs. A server
+that fails to start exits (ADR-0005) and shows as a crash-looping pod.
 
 ## Considered Options
 
@@ -51,9 +53,11 @@ essential, ephemeral branches are simply not deployed to k3s at all.
   now. It needs a drain mode in `augustad` and a grace period with no
   natural bound (Game policy decides when a match ends), to protect
   matches no one plays to keep. Revisit when an environment has players.
-- **A health endpoint or file written by `augustad`**: rejected. It
-  would report the same fact the socket table already holds, with code
-  and a config key to maintain for it.
+- **A readiness probe** (on `/livez`, or on the game port's UDP socket in
+  the pod's own socket table): rejected. It would make a rollout wait for
+  the new server to load its pack before stopping the old one, but with one
+  replica no traffic is balanced away from an unready pod, and a server
+  that never starts already shows as a crash-looping pod.
 
 ## Consequences
 
@@ -73,6 +77,11 @@ essential, ephemeral branches are simply not deployed to k3s at all.
   `<version>+<those 12 characters>`). A tag is never reused, so a pod
   never runs a stale image, and Flux's upgrade waits for CI to finish
   pushing it. No image-automation controller is needed.
+- Without a readiness probe, the new pod is Ready as soon as its
+  container runs, so Helm's and Flux's upgrade wait no longer catches a
+  server that fails to start or crash-loops after starting: the upgrade
+  succeeds, and the failure shows only as the pod's restarts and the
+  server-down alert (ADR-0049).
 - The chart requests CPU and memory for the server, limits its memory at
   that request, and sets no CPU limit: a throttled Simulation thread
   misses ticks (NFR-01).
