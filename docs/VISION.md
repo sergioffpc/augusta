@@ -2,9 +2,10 @@
 
 ## Vision
 
-A realistic, physics-driven multiplayer FPS simulator engine — server-authoritative,
-built in C++ with a Windows client (rendering via NVIDIA Falcor/D3D12) and a
-headless Linux server, to master low-level systems and networking programming.
+A realistic, physics-driven multiplayer FPS simulator engine —
+server-authoritative, built in C++ with a Windows client (rendering via NVIDIA
+Falcor/D3D12) and a headless Linux server, to master low-level systems and
+networking programming.
 
 ## Target Group
 
@@ -19,22 +20,24 @@ and systems programming — deliberately not using Unreal/Unity/Godot.
 
 - Client: Windows-only, rendering via NVIDIA Falcor (D3D12)
 - Server: Linux-only, headless (no rendering dependency)
-- Multiplayer only, dedicated authoritative server — no singleplayer, no enemy AI
+- Multiplayer only, dedicated authoritative server — no singleplayer, no enemy
+  AI
 - Physics-based ballistics (real bullet drop and travel time, not hitscan)
 - Match-based gameplay, no respawn until the match ends (tactical/milsim style)
-- Movement: walk/run/crouch/prone + basic stamina + simple recoil
-  (weapon sway and breath control deferred post-v1)
+- Movement: walk/run/crouch/prone + basic stamina + simple recoil (weapon sway
+  and breath control deferred post-v1)
 - Realistic, hit-location-based damage — no regenerating health
 - v1 scope: 1 weapon (rifle), 1 test map, 2-8 concurrent players
 
 ## Business Goals
 
-v1 is done when: 2-8 players connect to a dedicated authoritative server, complete
-at least one full match (no respawn) on the test map, fire a rifle whose bullet
-follows real ballistic physics simulated by the server, and take damage determined
-by hit location (no regenerating health).
+v1 is done when: 2-8 players connect to a dedicated authoritative server,
+complete at least one full match (no respawn) on the test map, fire a rifle
+whose bullet follows real ballistic physics simulated by the server, and take
+damage determined by hit location (no regenerating health).
 
 ---
 
-_Inspiration: id Tech / Quake-era engines (realistic scope for a solo developer)._
-_Timeline: hobby project, no fixed deadline, progress by milestones._
+_Inspiration: id Tech / Quake-era engines (realistic scope for a solo
+developer)._ _Timeline: hobby project, no fixed deadline, progress by
+milestones._

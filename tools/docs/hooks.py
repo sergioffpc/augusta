@@ -8,9 +8,9 @@ becomes a link to it on GitHub, so the same Markdown reads right in both
 places.
 """
 
+from pathlib import Path
 import posixpath
 import re
-from pathlib import Path
 
 from mkdocs.structure.files import File
 
@@ -43,6 +43,7 @@ def _title(path: Path) -> str:
 
 
 def on_config(config):
+    """Builds the site's navigation: the leading pages, runbooks and ADRs."""
     runbooks = []
     for path in sorted((REPO_ROOT / "docs" / "runbooks").glob("*.md")):
         runbooks.append({_title(path): f"runbooks/{path.name}"})
@@ -50,7 +51,9 @@ def on_config(config):
     for path in sorted((REPO_ROOT / "docs" / "adr").glob("*.md")):
         match = ADR.match(path.name)
         if match:
-            adrs.append({f"{match.group(1)} · {_title(path)}": f"adr/{path.name}"})
+            adrs.append(
+                {f"{match.group(1)} · {_title(path)}": f"adr/{path.name}"}
+            )
     config["nav"] = [{title: page} for title, page in LEADING_NAV] + [
         {"Runbooks": runbooks},
         {"Decisions (ADRs)": adrs},
@@ -61,8 +64,13 @@ def on_config(config):
 
 
 def on_files(files, config):
+    """Adds the pages that live outside docs/ to the site."""
     for repo_path, src_uri in ROOT_PAGES.items():
-        files.append(File.generated(config, src_uri, abs_src_path=str(REPO_ROOT / repo_path)))
+        files.append(
+            File.generated(
+                config, src_uri, abs_src_path=str(REPO_ROOT / repo_path)
+            )
+        )
     return files
 
 
@@ -78,12 +86,18 @@ def _page_uri(repo_path: str):
     """The page a repository path is published as, or None if it is not one."""
     if repo_path in ROOT_PAGES:
         return ROOT_PAGES[repo_path]
-    if repo_path.startswith("docs/") and repo_path.endswith(".md") and not repo_path.startswith("docs/agents/"):
+    if (
+        repo_path.startswith("docs/")
+        and repo_path.endswith(".md")
+        and not repo_path.startswith("docs/agents/")
+    ):
         return repo_path[len("docs/") :]
     return None
 
 
 def on_page_markdown(markdown, page, config, files):
+    """Points a page's repository-relative links at the site or at GitHub."""
+    del config, files  # Unused.
     src_uri = page.file.src_uri
     page_dir = posixpath.dirname(_repo_path(src_uri))
 

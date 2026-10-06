@@ -1,261 +1,310 @@
-#!/bin/sh
+#!/bin/bash
 # Runs clang-tidy on changed C++ files, yamllint on changed YAML files,
 # luacheck on changed Lua files, taplo on changed TOML files, ruff on changed
 # Python, shellcheck on changed shell scripts, pymarkdown on changed Markdown,
 # actionlint on changed workflows and PSScriptAnalyzer on changed PowerShell
 # before pushing. Git LFS uploads still run after the checks pass.
 
-remote="$1"
-push_refs=$(cat)
+readonly ZERO_SHA=0000000000000000000000000000000000000000
 
-command -v git-lfs >/dev/null 2>&1 || {
-  echo "pre-push: git-lfs not found on PATH; install Git LFS before pushing." >&2
-  exit 2
+# Prints the files read from stdin that exist, once each.
+existing() {
+  sort -u | while IFS= read -r f; do [[ -f "${f}" ]] && echo "${f}"; done
 }
 
-case "$(uname -s)" in
-  MINGW* | MSYS* | CYGWIN*) windows=1 build_dir=build/x64-windows-debug ;;
-  *) windows=0 build_dir=build/x64-linux-debug ;;
-esac
-
-# The files touched by the pushed commits the remote does not have yet: for a
-# new branch, its commits off develop/main; for an existing one, the new ones.
-files=""
-zero=0000000000000000000000000000000000000000
-while read -r _local_ref local_sha _remote_ref _remote_sha; do
-  [ -n "$local_sha" ] || continue
-  [ "$local_sha" = "$zero" ] && continue # deleting a remote branch
-  files="$files
-$(git log --format= --name-only --diff-filter=ACMR "$local_sha" --not --remotes="$remote")"
-done <<EOF
-$push_refs
-EOF
-
-# Lint YAML/config files changed by the commits being pushed. If the shared
-# lint/ignore rules change, lint the whole tree. Helm templates and the generated
-# Flux bundle are excluded by .yamllint.
-yaml_config_changed=$(printf '%s\n' "$files" | grep -E '^\.(yamlfmt|yamllint|yamlignore|gitignore)$' || true)
-if [ -n "$yaml_config_changed" ]; then
-  yaml_files=.
-else
-  yaml_files=$(printf '%s\n' "$files" |
-    grep -E '(^\.yamlfmt$|^\.yamllint$|\.(yaml|yml)$)' |
-    grep -vE '^charts/augustad/templates/|^clusters/onprem/flux-system/gotk-components\.yaml$' |
-    sort -u |
-    while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)
-fi
-
-# Lint Lua scripts changed by the commits being pushed. If luacheck's rules
-# (the engine sandbox's standard library among them) change, lint every script.
-lua_config_changed=$(printf '%s\n' "$files" | grep -E '^\.luacheckrc$' || true)
-if [ -n "$lua_config_changed" ]; then
-  lua_files=$(git ls-files -- '*.lua')
-else
-  lua_files=$(printf '%s\n' "$files" | grep -E '\.lua$' |
-    sort -u |
-    while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)
-fi
-
-# Lint TOML files changed by the commits being pushed (taplo's own config
-# among them, so a change to it is checked like any other).
-toml_files=$(printf '%s\n' "$files" | grep -E '\.toml$' |
-  sort -u |
-  while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)
-
-# The changed files of every other linter's: if its config changes, the whole
-# tree it covers. Workflows are linted whole by actionlint, which reads them
-# together (a workflow's calls into another are checked against it).
-changed_of() { # <config regex> <files regex> <git ls-files pathspec>...
-  config=$1 pattern=$2
-  shift 2
-  if printf '%s\n' "$files" | grep -qE "$config"; then
+# Prints the changed files one linter checks: if its config changed, the whole
+# tree it covers.
+# Arguments:
+#   The changed files, one per line.
+#   A regex matching the linter's config file.
+#   A regex matching the files it checks.
+#   The git ls-files pathspecs of the whole tree it covers.
+changed_of() {
+  local changed="$1" config="$2" pattern="$3"
+  shift 3
+  if printf '%s\n' "${changed}" | grep -qE "${config}"; then
     git ls-files -- "$@"
   else
-    printf '%s\n' "$files" | grep -E "$pattern" |
-      sort -u |
-      while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done
+    printf '%s\n' "${changed}" | grep -E "${pattern}" | existing
   fi
 }
-python_files=$(changed_of '^ruff\.toml$' '\.py$' '*.py' ':!:third_party/*')
-shell_files=$(changed_of '^\.shellcheckrc$' '(\.sh$|^\.githooks/)' '*.sh' '.githooks/*')
-markdown_files=$(changed_of '^\.pymarkdown\.json$' '\.md$' '*.md' ':!:third_party/*' ':!:CHANGELOG.md' |
-  grep -vxF CHANGELOG.md)
-powershell_files=$(changed_of '^PSScriptAnalyzerSettings\.psd1$' '\.ps1$' '*.ps1')
-workflows_changed=$(printf '%s\n' "$files" | grep -E '^\.github/(workflows/|actionlint\.yaml$)' || true)
 
-# src/client and src/modules/renderer are Windows-only, so CI's Linux run has
-# no compile commands for them; PhysX's SSE headers break clang-tidy under
-# MSVC's flags, so physics.cpp is linted by CI's Linux run alone. The audio
-# module's output device builds from different sources on each platform, so
-# each side skips the other's (as the Makefile's tidy target does).
-changed_files=$files
-files=$(echo "$files" | grep -E '^src/.*\.cpp$' |
-  grep -vE '^src/(client|modules/renderer)/' |
-  { if [ "$windows" = 1 ]; then
-    grep -vxE 'src/modules/(physics/physics|audio/output_none)\.cpp'
-  else
-    grep -vxE 'src/modules/audio/(output_miniaudio|miniaudio)\.cpp'
-  fi; } |
-  sort -u |
-  while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done)
+# Prints the message that stops a push on a failed check, to stderr.
+# Arguments:
+#   The check, then what to do about its findings.
+failed() {
+  echo "pre-push: $1 failed - $2, or push with --no-verify to skip." >&2
+}
 
-# The rest of the changed src and tests .cpp files, which get include-cleaner
-# alone (as the Makefile's tidy target runs it, which says why -w): the tests
-# and, on Windows, the Windows-only sources - those the debug build has compile
-# commands for (its paths are absolute, with \\ for separators on Windows), so
-# not the other platform's, and not physics.cpp under MSVC's flags.
-include_files=""
-if [ -f "$build_dir/compile_commands.json" ]; then
-  # shellcheck disable=SC1003 # a literal backslash, not an escaped quote
-  compiled=$(tr '\\' '/' <"$build_dir/compile_commands.json" | tr -s '/' | grep '"file": ')
-  include_files=$(echo "$changed_files" | grep -E '^(src|tests)/.*\.cpp$' |
-    grep -vxF "$(printf '%s\n' "$files" src/modules/physics/physics.cpp)" |
-    sort -u |
-    while IFS= read -r f; do
-      [ -f "$f" ] && echo "$compiled" | grep -qF "/$f\"" && echo "$f"
-    done)
-fi
-
-if [ -z "$files" ] && [ -z "$include_files" ] && [ -z "$yaml_files" ] && [ -z "$lua_files" ] && [ -z "$toml_files" ] &&
-  [ -z "$python_files" ] && [ -z "$shell_files" ] && [ -z "$markdown_files" ] && [ -z "$powershell_files" ] &&
-  [ -z "$workflows_changed" ]; then
-  printf '%s\n' "$push_refs" | git lfs pre-push "$@"
-  exit $?
-fi
-
-if [ -n "$files" ]; then
-  if [ ! -f "$build_dir/compile_commands.json" ]; then
-    echo "pre-push: $build_dir/compile_commands.json not found - configure the debug build first (make configure PRESET=$(basename "$build_dir" | sed 's/^x64-//')), or push with --no-verify to skip clang-tidy." >&2
-    exit 1
-  fi
-
-  echo "pre-push: clang-tidy on $(echo "$files" | wc -l | tr -d ' ') changed file(s)..." >&2
-
-  # -p=<dir>, never -p <dir>: through vcenv.ps1, PowerShell reads a bare -p as
-  # its own parameter and clang-tidy would run without the compile commands
-  # (see the Makefile's tidy target).
-  if [ "$windows" = 1 ]; then
-    # shellcheck disable=SC2086 # one argument per file; src/ paths have no spaces
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/vcenv.ps1 clang-tidy --quiet -p="$build_dir" $files
-  else
-    # shellcheck disable=SC2086
-    clang-tidy --quiet -p="$build_dir" $files
-  fi
-  status=$?
-
-  if [ "$status" -ne 0 ]; then
-    echo "pre-push: clang-tidy failed - fix the warnings above, or push with --no-verify to skip." >&2
-    exit 1
-  fi
-fi
-
-if [ -n "$include_files" ]; then
-  echo "pre-push: include-cleaner on $(echo "$include_files" | wc -l | tr -d ' ') changed file(s)..." >&2
-
-  if [ "$windows" = 1 ]; then
-    # shellcheck disable=SC2086 # one argument per file; src/ and tests/ paths have no spaces
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/vcenv.ps1 clang-tidy --quiet -p="$build_dir" \
-      --checks=-*,misc-include-cleaner --extra-arg=-w $include_files
-  else
-    # shellcheck disable=SC2086
-    clang-tidy --quiet -p="$build_dir" --checks=-*,misc-include-cleaner --extra-arg=-w $include_files
-  fi
-  status=$?
-
-  if [ "$status" -ne 0 ]; then
-    echo "pre-push: include-cleaner failed - fix the includes above (clang-tidy --fix can), or push with --no-verify to skip." >&2
-    exit 1
-  fi
-fi
-
-if [ -n "$yaml_files" ]; then
-  if command -v yamllint >/dev/null 2>&1; then
-    # shellcheck disable=SC2086 # one argument per file; YAML paths have no spaces
-    yamllint --strict -c .yamllint $yaml_files
-  elif command -v uv >/dev/null 2>&1; then
-    # shellcheck disable=SC2086
-    uv tool run --from yamllint==1.37.1 yamllint --strict -c .yamllint $yaml_files
-  else
-    echo "pre-push: yamllint (or uv) not found on PATH; install yamllint 1.37.1 before pushing YAML changes." >&2
-    exit 2
-  fi
-  status=$?
-
-  if [ "$status" -ne 0 ]; then
-    echo "pre-push: yamllint failed - fix the YAML errors above, or push with --no-verify to skip." >&2
-    exit 1
-  fi
-fi
-
-if [ -n "$lua_files" ]; then
-  command -v luacheck >/dev/null 2>&1 || {
-    echo "pre-push: luacheck not found on PATH; install luacheck 1.2.0 before pushing Lua changes." >&2
-    exit 2
-  }
-  # shellcheck disable=SC2086 # one argument per file; script paths have no spaces
-  luacheck --quiet $lua_files
-  status=$?
-
-  if [ "$status" -ne 0 ]; then
-    echo "pre-push: luacheck failed - fix the Lua warnings above, or push with --no-verify to skip." >&2
-    exit 1
-  fi
-fi
-
-if [ -n "$toml_files" ]; then
-  command -v taplo >/dev/null 2>&1 || {
-    echo "pre-push: taplo not found on PATH; install taplo 0.10.0 before pushing TOML changes." >&2
-    exit 2
-  }
-  # shellcheck disable=SC2086 # one argument per file; TOML paths have no spaces
-  taplo lint $toml_files 2>/dev/null
-  status=$?
-
-  if [ "$status" -ne 0 ]; then
-    echo "pre-push: taplo lint failed - run it again to see why, or push with --no-verify to skip." >&2
-    exit 1
-  fi
-fi
-
-# Runs a linter (its command and arguments), stopping the push if it fails.
-lint() { # <name> <command>...
-  name=$1
+# Runs a linter, stopping the push if it fails.
+# Arguments:
+#   The linter's name, then its command and arguments.
+lint() {
+  local name="$1"
   shift
   "$@" || {
-    echo "pre-push: $name failed - fix the findings above, or push with --no-verify to skip." >&2
+    failed "${name}" "fix the findings above"
     exit 1
   }
 }
 
-# The linters uv runs, at the versions CI pins (as the Makefile's format-check).
-if [ -n "$python_files$shell_files$markdown_files$workflows_changed" ]; then
-  command -v uv >/dev/null 2>&1 || {
-    echo "pre-push: uv not found on PATH; install uv before pushing Python, shell, Markdown or workflow changes." >&2
+# Prints how many lines its argument has.
+count() {
+  echo "$1" | wc -l | tr -d ' '
+}
+
+main() {
+  local remote="$1"
+  local push_refs
+  push_refs=$(cat)
+
+  command -v git-lfs >/dev/null 2>&1 || {
+    echo "pre-push: git-lfs not found on PATH; install Git LFS before" \
+      "pushing." >&2
     exit 2
   }
-fi
-# shellcheck disable=SC2086 # one argument per file; tracked paths have no spaces
-[ -z "$python_files" ] || lint ruff uv tool run ruff@0.16.10 check $python_files
-# shellcheck disable=SC2086
-[ -z "$shell_files" ] || lint shellcheck uv tool run --from shellcheck-py==0.11.0.1 shellcheck $shell_files
-# shellcheck disable=SC2086
-[ -z "$markdown_files" ] ||
-  lint pymarkdown uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pymarkdown.json scan $markdown_files
-[ -z "$workflows_changed" ] ||
-  lint actionlint uv tool run --from actionlint-py==1.7.12.25 --with shellcheck-py==0.11.0.1 actionlint
 
-# PSScriptAnalyzer is a PowerShell module: Windows PowerShell on Windows,
-# PowerShell 7 (pwsh) elsewhere, where it is skipped if there is none.
-if [ -n "$powershell_files" ]; then
-  if [ "$windows" = 1 ]; then
-    # shellcheck disable=SC2086
-    lint PSScriptAnalyzer powershell -NoProfile -ExecutionPolicy Bypass -File scripts/psscriptanalyzer.ps1 $powershell_files
-  elif command -v pwsh >/dev/null 2>&1; then
-    # shellcheck disable=SC2086
-    lint PSScriptAnalyzer pwsh -NoProfile -File scripts/psscriptanalyzer.ps1 $powershell_files
+  local windows build_dir
+  case "$(uname -s)" in
+    MINGW* | MSYS* | CYGWIN*) windows=1 build_dir=build/x64-windows-debug ;;
+    *) windows=0 build_dir=build/x64-linux-debug ;;
+  esac
+
+  # The files touched by the pushed commits the remote does not have yet: for
+  # a new branch, its commits off develop/main; for an existing one, the new
+  # ones.
+  local files="" local_sha
+  while read -r _ local_sha _ _; do
+    [[ -n "${local_sha}" ]] || continue
+    [[ "${local_sha}" = "${ZERO_SHA}" ]] && continue # deleting a branch
+    files="${files}
+$(git log --format= --name-only --diff-filter=ACMR "${local_sha}" \
+      --not --remotes="${remote}")"
+  done <<EOF
+${push_refs}
+EOF
+
+  # Lint YAML/config files changed by the commits being pushed. If the shared
+  # lint/ignore rules change, lint the whole tree. Helm templates and the
+  # generated Flux bundle are excluded by .yamllint.
+  local yaml_files
+  if printf '%s\n' "${files}" \
+    | grep -qE '^\.(yamlfmt|yamllint|yamlignore|gitignore)$'; then
+    yaml_files=.
   else
-    echo "pre-push: pwsh not found on PATH - skipping PSScriptAnalyzer (CI will still catch this)." >&2
+    yaml_files=$(printf '%s\n' "${files}" \
+      | grep -E '(^\.yamlfmt$|^\.yamllint$|\.(yaml|yml)$)' \
+      | grep -vE '^charts/augustad/templates/' \
+      | grep -vE '^clusters/onprem/flux-system/gotk-components\.yaml$' \
+      | existing)
   fi
-fi
 
-printf '%s\n' "$push_refs" | git lfs pre-push "$@"
+  # Lint Lua scripts changed by the commits being pushed. If luacheck's rules
+  # (the engine sandbox's standard library among them) change, lint every
+  # script.
+  local lua_files
+  lua_files=$(changed_of "${files}" '^\.luacheckrc$' '\.lua$' '*.lua')
+
+  # Lint TOML files changed by the commits being pushed (taplo's own config
+  # among them, so a change to it is checked like any other).
+  local toml_files
+  toml_files=$(printf '%s\n' "${files}" | grep -E '\.toml$' | existing)
+
+  # The changed files of every other linter's. Workflows are linted whole by
+  # actionlint, which reads them together (a workflow's calls into another are
+  # checked against it).
+  local python_files shell_files markdown_files powershell_files
+  local workflows_changed
+  python_files=$(changed_of "${files}" '^ruff\.toml$' '\.py$' \
+    '*.py' ':!:third_party/*')
+  shell_files=$(changed_of "${files}" '^\.shellcheckrc$' \
+    '(\.sh$|^\.githooks/)' '*.sh' '.githooks/*')
+  markdown_files=$(changed_of "${files}" '^\.pymarkdown\.json$' '\.md$' \
+    '*.md' ':!:third_party/*' ':!:CHANGELOG.md' \
+    | grep -vxF CHANGELOG.md)
+  powershell_files=$(changed_of "${files}" '^PSScriptAnalyzerSettings\.psd1$' \
+    '\.ps1$' '*.ps1')
+  workflows_changed=$(printf '%s\n' "${files}" \
+    | grep -E '^\.github/(workflows/|actionlint\.yaml$)' || true)
+
+  # src/client and src/modules/renderer are Windows-only, so CI's Linux run
+  # has no compile commands for them; PhysX's SSE headers break clang-tidy
+  # under MSVC's flags, so physics.cpp is linted by CI's Linux run alone. The
+  # audio module's output device builds from different sources on each
+  # platform, so each side skips the other's (as the Makefile's tidy target
+  # does).
+  local changed_files="${files}"
+  local other_platform
+  if [[ "${windows}" = 1 ]]; then
+    other_platform='src/modules/(physics/physics|audio/output_none)\.cpp'
+  else
+    other_platform='src/modules/audio/(output_miniaudio|miniaudio)\.cpp'
+  fi
+  files=$(echo "${files}" | grep -E '^src/.*\.cpp$' \
+    | grep -vE '^src/(client|modules/renderer)/' \
+    | grep -vxE "${other_platform}" \
+    | existing)
+
+  # The rest of the changed src and tests .cpp files, which get
+  # include-cleaner alone (as the Makefile's tidy target runs it, which says
+  # why -w): the tests and, on Windows, the Windows-only sources - those the
+  # debug build has compile commands for (its paths are absolute, with \\ for
+  # separators on Windows), so not the other platform's, and not physics.cpp
+  # under MSVC's flags.
+  local include_files="" compiled
+  if [[ -f "${build_dir}/compile_commands.json" ]]; then
+    # shellcheck disable=SC1003 # a literal backslash, not an escaped quote
+    compiled=$(tr '\\' '/' <"${build_dir}/compile_commands.json" \
+      | tr -s '/' | grep '"file": ')
+    include_files=$(echo "${changed_files}" | grep -E '^(src|tests)/.*\.cpp$' \
+      | grep -vxF \
+        "$(printf '%s\n' "${files}" src/modules/physics/physics.cpp)" \
+      | existing \
+      | while IFS= read -r f; do
+        echo "${compiled}" | grep -qF "/${f}\"" && echo "${f}"
+      done)
+  fi
+
+  if [[ -z "${files}${include_files}${yaml_files}${lua_files}${toml_files}" &&
+    -z "${python_files}${shell_files}${markdown_files}" &&
+    -z "${powershell_files}${workflows_changed}" ]]; then
+    printf '%s\n' "${push_refs}" | git lfs pre-push "$@"
+    exit $?
+  fi
+
+  # clang-tidy, through vcenv.ps1 on Windows. -p=<dir>, never -p <dir>:
+  # through vcenv.ps1, PowerShell reads a bare -p as its own parameter and
+  # clang-tidy would run without the compile commands (see the Makefile's
+  # tidy target).
+  local tidy=(clang-tidy --quiet -p="${build_dir}")
+  if [[ "${windows}" = 1 ]]; then
+    tidy=(powershell -NoProfile -ExecutionPolicy Bypass
+      -File scripts/vcenv.ps1 "${tidy[@]}")
+  fi
+
+  if [[ -n "${files}" ]]; then
+    if [[ ! -f "${build_dir}/compile_commands.json" ]]; then
+      local preset
+      preset=$(basename "${build_dir}" | sed 's/^x64-//')
+      echo "pre-push: ${build_dir}/compile_commands.json not found -" \
+        "configure the debug build first (make configure PRESET=${preset})," \
+        "or push with --no-verify to skip clang-tidy." >&2
+      exit 1
+    fi
+
+    echo "pre-push: clang-tidy on $(count "${files}") changed file(s)..." >&2
+    # One argument per file; src/ paths have no spaces.
+    # shellcheck disable=SC2086
+    "${tidy[@]}" ${files} || {
+      failed clang-tidy "fix the warnings above"
+      exit 1
+    }
+  fi
+
+  if [[ -n "${include_files}" ]]; then
+    echo "pre-push: include-cleaner on $(count "${include_files}") changed" \
+      "file(s)..." >&2
+    # One argument per file; src/ and tests/ paths have no spaces.
+    # shellcheck disable=SC2086
+    "${tidy[@]}" --checks=-*,misc-include-cleaner --extra-arg=-w \
+      ${include_files} || {
+      failed include-cleaner "fix the includes above (clang-tidy --fix can)"
+      exit 1
+    }
+  fi
+
+  if [[ -n "${yaml_files}" ]]; then
+    local yamllint
+    if command -v yamllint >/dev/null 2>&1; then
+      yamllint=(yamllint)
+    elif command -v uv >/dev/null 2>&1; then
+      yamllint=(uv tool run --from yamllint==1.37.1 yamllint)
+    else
+      echo "pre-push: yamllint (or uv) not found on PATH; install yamllint" \
+        "1.37.1 before pushing YAML changes." >&2
+      exit 2
+    fi
+    # One argument per file; YAML paths have no spaces.
+    # shellcheck disable=SC2086
+    "${yamllint[@]}" --strict -c .yamllint ${yaml_files} || {
+      failed yamllint "fix the YAML errors above"
+      exit 1
+    }
+  fi
+
+  if [[ -n "${lua_files}" ]]; then
+    command -v luacheck >/dev/null 2>&1 || {
+      echo "pre-push: luacheck not found on PATH; install luacheck 1.2.0" \
+        "before pushing Lua changes." >&2
+      exit 2
+    }
+    # One argument per file; script paths have no spaces.
+    # shellcheck disable=SC2086
+    luacheck --quiet ${lua_files} || {
+      failed luacheck "fix the Lua warnings above"
+      exit 1
+    }
+  fi
+
+  if [[ -n "${toml_files}" ]]; then
+    command -v taplo >/dev/null 2>&1 || {
+      echo "pre-push: taplo not found on PATH; install taplo 0.10.0 before" \
+        "pushing TOML changes." >&2
+      exit 2
+    }
+    # One argument per file; TOML paths have no spaces.
+    # shellcheck disable=SC2086
+    taplo lint ${toml_files} 2>/dev/null || {
+      failed "taplo lint" "run it again to see why"
+      exit 1
+    }
+  fi
+
+  # The linters uv runs, at the versions CI pins (as the Makefile's
+  # format-check).
+  if [[ -n "${python_files}${shell_files}${markdown_files}" ||
+    -n "${workflows_changed}" ]]; then
+    command -v uv >/dev/null 2>&1 || {
+      echo "pre-push: uv not found on PATH; install uv before pushing" \
+        "Python, shell, Markdown or workflow changes." >&2
+      exit 2
+    }
+  fi
+  local shellcheck=(--from shellcheck-py==0.11.0.1 shellcheck)
+  # One argument per file; tracked paths have no spaces.
+  # shellcheck disable=SC2086
+  [[ -z "${python_files}" ]] \
+    || lint ruff uv tool run ruff@0.16.10 check ${python_files}
+  # shellcheck disable=SC2086
+  [[ -z "${shell_files}" ]] \
+    || lint shellcheck uv tool run "${shellcheck[@]}" ${shell_files}
+  # shellcheck disable=SC2086
+  [[ -z "${markdown_files}" ]] \
+    || lint pymarkdown uv tool run --from pymarkdownlnt==0.9.40 \
+      pymarkdown --config .pymarkdown.json scan ${markdown_files}
+  [[ -z "${workflows_changed}" ]] \
+    || lint actionlint uv tool run --from actionlint-py==1.7.12.25 \
+      --with shellcheck-py==0.11.0.1 actionlint
+
+  # PSScriptAnalyzer is a PowerShell module: Windows PowerShell on Windows,
+  # PowerShell 7 (pwsh) elsewhere, where it is skipped if there is none.
+  if [[ -n "${powershell_files}" ]]; then
+    local analyzer=(-File scripts/psscriptanalyzer.ps1)
+    if [[ "${windows}" = 1 ]]; then
+      # shellcheck disable=SC2086
+      lint PSScriptAnalyzer powershell -NoProfile -ExecutionPolicy Bypass \
+        "${analyzer[@]}" ${powershell_files}
+    elif command -v pwsh >/dev/null 2>&1; then
+      # shellcheck disable=SC2086
+      lint PSScriptAnalyzer pwsh -NoProfile "${analyzer[@]}" \
+        ${powershell_files}
+    else
+      echo "pre-push: pwsh not found on PATH - skipping PSScriptAnalyzer" \
+        "(CI will still catch this)." >&2
+    fi
+  fi
+
+  printf '%s\n' "${push_refs}" | git lfs pre-push "$@"
+}
+
+main "$@"

@@ -6,9 +6,9 @@ action a client can attempt, how the server stops it, and the test that proves
 it. Each test, in [session_test.cpp](session_test.cpp), drives a real
 `server::Host` over loopback only through wire messages, and asserts only on
 what clients are told (Authoritative State updates, Shots, Hit confirmations,
-Deaths, replies, the Roster, the connection), never on the server's counters.
-A corrected entry's test also compares what the impossible action gets with
-what an honest client sending the honest equivalent gets in the same Match.
+Deaths, replies, the Roster, the connection), never on the server's counters. A
+corrected entry's test also compares what the impossible action gets with what
+an honest client sending the honest equivalent gets in the same Match.
 
 ## Outcomes and protections
 

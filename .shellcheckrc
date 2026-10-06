@@ -1,0 +1,11 @@
+# shellcheck lints the shell scripts and git hooks to the Google Shell Style
+# Guide (https://google.github.io/styleguide/shellguide.html), ADR-0012: its
+# optional checks for what the guide asks of Bash beyond the defaults.
+# [[ ... ]] rather than [ ... ] or test.
+enable=require-double-brackets
+# "${var}" rather than "$var".
+enable=require-variable-braces
+# Every variable expansion quoted.
+enable=quote-safe-variables
+# -n/-z, never a bare [[ "${var}" ]].
+enable=avoid-nullary-conditions

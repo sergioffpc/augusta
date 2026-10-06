@@ -1,31 +1,42 @@
-"""cook_scenario on single stages: what each authored prim becomes in the
-client and server packs (ADR-0019, ADR-0032), and how malformed geometry is
-refused.
+"""cook_scenario on single stages.
+
+What each authored prim becomes in the client and server packs (ADR-0019,
+ADR-0032), and how malformed geometry is refused.
 """
 
 import shutil
 import struct
 
-import pytest
-from conftest import (
-    FIXTURES_DIR,
-    decode_audio,
-    decode_hitbox,
-    decode_mesh,
-    decode_spawn_point,
-    decode_string,
-    read_pack_contents,
-)
+from conftest import decode_audio
+from conftest import decode_hitbox
+from conftest import decode_mesh
+from conftest import decode_spawn_point
+from conftest import decode_string
+from conftest import FIXTURES_DIR
+from conftest import read_pack_contents
 from pack import pack
-from pack.cook import CookError, cook_scenario
-from pack.sounds import CueSounds, Sound
+from pack.cook import cook_scenario
+from pack.cook import CookError
+from pack.sounds import CueSounds
+from pack.sounds import Sound
+import pytest
 
 
 def cook_stage(stage_name, tmp_path, key_pair):
-    """Cooks one fixture stage as a map with no characters; returns (client, server) contents."""
+    """Cooks one fixture stage as a map with no characters.
+
+    Returns:
+        (client, server) contents.
+    """
     client_path = tmp_path / "client.pack"
     server_path = tmp_path / "server.pack"
-    cook_scenario(FIXTURES_DIR / stage_name, [], client_path, server_path, key_pair.private_key)
+    cook_scenario(
+        FIXTURES_DIR / stage_name,
+        [],
+        client_path,
+        server_path,
+        key_pair.private_key,
+    )
     return (
         read_pack_contents(client_path, key_pair.public_key),
         read_pack_contents(server_path, key_pair.public_key),
@@ -41,7 +52,9 @@ def cook_stage(stage_name, tmp_path, key_pair):
         ("out_of_range_index_fixture.usda", "index_out_of_range"),
     ],
 )
-def test_malformed_geometry_is_refused_and_no_pack_is_written(stage_name, code, tmp_path, key_pair):
+def test_malformed_geometry_is_refused_and_no_pack_is_written(
+    stage_name, code, tmp_path, key_pair
+):
     with pytest.raises(CookError) as raised:
         cook_stage(stage_name, tmp_path, key_pair)
 
@@ -62,27 +75,39 @@ def test_a_visual_mesh_goes_into_the_client_pack_only(tmp_path, key_pair):
 
 
 def test_duplicate_vertices_are_welded(tmp_path, key_pair):
-    client, _ = cook_stage("duplicate_triangles_fixture.usda", tmp_path, key_pair)
+    client, _ = cook_stage(
+        "duplicate_triangles_fixture.usda", tmp_path, key_pair
+    )
 
     points, _ = decode_mesh(client.blob("TestMesh"))
     assert len(points) == 4
 
 
 def test_each_prim_kind_goes_to_the_packs_that_need_it(tmp_path, key_pair):
-    client, server = cook_stage("client_server_split_fixture.usda", tmp_path, key_pair)
+    client, server = cook_stage(
+        "client_server_split_fixture.usda", tmp_path, key_pair
+    )
 
     assert client.paths_of_type(pack.ASSET_TYPE_MESH) == {"Root/Visual"}
-    assert client.paths_of_type(pack.ASSET_TYPE_TEXTURE) == {"Root/Visual/Mat/DiffuseTexture"}
+    assert client.paths_of_type(pack.ASSET_TYPE_TEXTURE) == {
+        "Root/Visual/Mat/DiffuseTexture"
+    }
     for contents in (client, server):
-        assert contents.paths_of_type(pack.ASSET_TYPE_COLLISION) == {"Root/Collider"}
+        assert contents.paths_of_type(pack.ASSET_TYPE_COLLISION) == {
+            "Root/Collider"
+        }
         assert contents.paths_of_type(pack.ASSET_TYPE_HITBOX) == {"Root/Hitbox"}
-        assert contents.paths_of_type(pack.ASSET_TYPE_SPAWN_POINT) == {"Root/Spawn"}
+        assert contents.paths_of_type(pack.ASSET_TYPE_SPAWN_POINT) == {
+            "Root/Spawn"
+        }
     assert server.paths_of_type(pack.ASSET_TYPE_MESH) == set()
     assert server.paths_of_type(pack.ASSET_TYPE_TEXTURE) == set()
 
 
 def test_a_map_hitbox_carries_its_body_part(tmp_path, key_pair):
-    client, server = cook_stage("client_server_split_fixture.usda", tmp_path, key_pair)
+    client, server = cook_stage(
+        "client_server_split_fixture.usda", tmp_path, key_pair
+    )
 
     for contents in (client, server):
         body_part, points, _ = decode_hitbox(contents.blob("Root/Hitbox"))
@@ -91,15 +116,21 @@ def test_a_map_hitbox_carries_its_body_part(tmp_path, key_pair):
 
 
 def test_collision_geometry_is_kept_as_authored(tmp_path, key_pair):
-    client, _ = cook_stage("client_server_split_fixture.usda", tmp_path, key_pair)
+    client, _ = cook_stage(
+        "client_server_split_fixture.usda", tmp_path, key_pair
+    )
 
     points, indices = decode_mesh(client.blob("Root/Collider"))
     assert points == [(0, 0, 0), (2, 0, 0), (2, 2, 0), (0, 2, 0)]
     assert indices == [0, 1, 2, 0, 2, 3]
 
 
-def test_the_server_pack_carries_the_hash_of_its_client_pack(tmp_path, key_pair):
-    client, server = cook_stage("client_server_split_fixture.usda", tmp_path, key_pair)
+def test_the_server_pack_carries_the_hash_of_its_client_pack(
+    tmp_path, key_pair
+):
+    client, server = cook_stage(
+        "client_server_split_fixture.usda", tmp_path, key_pair
+    )
 
     assert server.client_pack_hash == client.hash
     assert client.client_pack_hash is None
@@ -157,8 +188,12 @@ def test_scripts_go_into_the_server_pack_only(tmp_path, key_pair):
     assert server.blob("parameters.lua") == b"return {}"
 
 
-def test_cue_sounds_go_into_the_client_pack_only_addressed_under_the_sounds_prefix(tmp_path, key_pair):
-    gunshot = Sound(sample_rate=22050, bits_per_sample=16, samples=b"\x01\x00\xff\x7f")
+def test_cue_sounds_go_into_the_client_pack_only_under_the_sounds_prefix(
+    tmp_path, key_pair
+):
+    gunshot = Sound(
+        sample_rate=22050, bits_per_sample=16, samples=b"\x01\x00\xff\x7f"
+    )
     death = Sound(sample_rate=44100, bits_per_sample=8, samples=b"\x80\x90\xa0")
     client_path = tmp_path / "client.pack"
     server_path = tmp_path / "server.pack"
@@ -173,9 +208,20 @@ def test_cue_sounds_go_into_the_client_pack_only_addressed_under_the_sounds_pref
 
     client = read_pack_contents(client_path, key_pair.public_key)
     server = read_pack_contents(server_path, key_pair.public_key)
-    assert client.paths_of_type(pack.ASSET_TYPE_AUDIO) == {"sounds/gunshot", "sounds/death"}
-    assert decode_audio(client.blob("sounds/gunshot")) == (22050, 16, b"\x01\x00\xff\x7f")
-    assert decode_audio(client.blob("sounds/death")) == (44100, 8, b"\x80\x90\xa0")
+    assert client.paths_of_type(pack.ASSET_TYPE_AUDIO) == {
+        "sounds/gunshot",
+        "sounds/death",
+    }
+    assert decode_audio(client.blob("sounds/gunshot")) == (
+        22050,
+        16,
+        b"\x01\x00\xff\x7f",
+    )
+    assert decode_audio(client.blob("sounds/death")) == (
+        44100,
+        8,
+        b"\x80\x90\xa0",
+    )
     assert decode_string(client.blob(pack.SOUNDS_PATH)) == "sounds"
     assert client.entries[pack.SOUNDS_PATH][0] == pack.ASSET_TYPE_SOUNDS
     assert server.paths_of_type(pack.ASSET_TYPE_AUDIO) == set()
@@ -183,7 +229,10 @@ def test_cue_sounds_go_into_the_client_pack_only_addressed_under_the_sounds_pref
 
 
 def test_more_characters_than_an_index_can_name_are_refused(tmp_path, key_pair):
-    characters = [(f"characters/c{i}", FIXTURES_DIR / "mesh_fixture.usda") for i in range(pack.MAX_CHARACTERS + 1)]
+    characters = [
+        (f"characters/c{i}", FIXTURES_DIR / "mesh_fixture.usda")
+        for i in range(pack.MAX_CHARACTERS + 1)
+    ]
 
     with pytest.raises(CookError) as raised:
         cook_scenario(
@@ -218,15 +267,23 @@ HITBOXES
 """
 
 # Every body part once, and a second limb: (prim name, body part, height).
-_EVERY_BODY_PART = [("Head", "head", 1.8), ("Torso", "torso", 1.3), ("LeftLeg", "limb", 0.5), ("RightLeg", "limb", 0.5)]
+_EVERY_BODY_PART = [
+    ("Head", "head", 1.8),
+    ("Torso", "torso", 1.3),
+    ("LeftLeg", "limb", 0.5),
+    ("RightLeg", "limb", 0.5),
+]
 
 
 def _hitbox_prim(name, body_part, height):
-    body_part_line = f'        custom token augusta:bodyPart = "{body_part}"\n' if body_part is not None else ""
+    body_part_line = (
+        f'        custom token augusta:bodyPart = "{body_part}"\n'
+        if body_part is not None
+        else ""
+    )
     return (
         f'    def Cube "{name}"\n'
-        "    {\n"
-        "        custom bool augusta:hitbox = true\n"
+        "    {\n        custom bool augusta:hitbox = true\n"
         f"{body_part_line}"
         "        double size = 0.2\n"
         f"        double3 xformOp:translate = (0, {height}, 0)\n"
@@ -236,10 +293,17 @@ def _hitbox_prim(name, body_part, height):
 
 
 def cook_character(hitboxes, tmp_path, key_pair):
-    """Cooks a map with one character, characters/test, holding hitboxes; returns (client, server) contents."""
+    """Cooks a map with one character, characters/test, holding hitboxes.
+
+    Returns:
+        (client, server) contents.
+    """
     stage_path = tmp_path / "character.usda"
     stage_path.write_text(
-        _CHARACTER_STAGE.replace("HITBOXES", "".join(_hitbox_prim(*hitbox) for hitbox in hitboxes)), encoding="utf-8"
+        _CHARACTER_STAGE.replace(
+            "HITBOXES", "".join(_hitbox_prim(*hitbox) for hitbox in hitboxes)
+        ),
+        encoding="utf-8",
     )
     client_path = tmp_path / "client.pack"
     server_path = tmp_path / "server.pack"
@@ -256,7 +320,9 @@ def cook_character(hitboxes, tmp_path, key_pair):
     )
 
 
-def test_a_characters_hitboxes_go_into_both_packs_with_their_body_parts(tmp_path, key_pair):
+def test_a_characters_hitboxes_go_into_both_packs_with_their_body_parts(
+    tmp_path, key_pair
+):
     client, server = cook_character(_EVERY_BODY_PART, tmp_path, key_pair)
 
     expected = {
@@ -275,8 +341,12 @@ def test_a_characters_eye_goes_into_both_packs(tmp_path, key_pair):
     client, server = cook_character(_EVERY_BODY_PART, tmp_path, key_pair)
 
     for contents in (client, server):
-        assert contents.paths_of_type(pack.ASSET_TYPE_EYE) == {"characters/test/Character/Eye"}
-        assert struct.unpack("<3f", contents.blob("characters/test/Character/Eye")) == pytest.approx((0, 1.7, 0))
+        assert contents.paths_of_type(pack.ASSET_TYPE_EYE) == {
+            "characters/test/Character/Eye"
+        }
+        assert struct.unpack(
+            "<3f", contents.blob("characters/test/Character/Eye")
+        ) == pytest.approx((0, 1.7, 0))
 
 
 def test_a_characters_hitbox_is_placed_relative_to_its_feet(tmp_path, key_pair):
@@ -288,7 +358,9 @@ def test_a_characters_hitbox_is_placed_relative_to_its_feet(tmp_path, key_pair):
 
 
 @pytest.mark.parametrize("missing", ["head", "torso", "limb"])
-def test_a_character_without_a_hitbox_for_a_body_part_is_refused(missing, tmp_path, key_pair):
+def test_a_character_without_a_hitbox_for_a_body_part_is_refused(
+    missing, tmp_path, key_pair
+):
     hitboxes = [hitbox for hitbox in _EVERY_BODY_PART if hitbox[1] != missing]
 
     with pytest.raises(CookError) as raised:

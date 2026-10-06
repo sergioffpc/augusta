@@ -9,11 +9,11 @@ line format and levels are unchanged.
 What changes underneath:
 
 - The module is a small compiled library. Boost.Log stays behind `logging.cpp`,
-  so `logging.h` includes only the standard library and no other translation unit
-  pays for Boost.Log's headers.
-- The macros (`LT`/`LD`/`LI`/`LW`/`LE`/`LC`) keep their `std::format`-style
-  `{}` call syntax, so no call site changed. Each first checks the runtime
-  floor, then formats with `std::format` and hands the finished line to
+  so `logging.h` includes only the standard library and no other translation
+  unit pays for Boost.Log's headers.
+- The macros (`LT`/`LD`/`LI`/`LW`/`LE`/`LC`) keep their `std::format`-style `{}`
+  call syntax, so no call site changed. Each first checks the runtime floor,
+  then formats with `std::format` and hands the finished line to
   `augusta::logging::Write`.
 - The runtime floor (`augusta::logging::SetLogLevel`, driven by the config
   file's `logging.level`, ADR-0034) is one atomic inside `logging.cpp`, read
@@ -25,9 +25,10 @@ What changes underneath:
   `AUGUSTA_LOG_ACTIVE_LEVEL` (0 in Debug, 2 otherwise, set publicly by the
   `augusta_logging` target) makes each macro expand to nothing under that level,
   the way `SPDLOG_ACTIVE_LEVEL` did.
-- The line is built by a pure function, `FormatLine`, with the level name and its
-  ANSI color; Boost.Log's own formatter just calls it. Colors are used only when
-  stdout is a terminal (on Windows, the console is switched to interpret them).
+- The line is built by a pure function, `FormatLine`, with the level name and
+  its ANSI color; Boost.Log's own formatter just calls it. Colors are used only
+  when stdout is a terminal (on Windows, the console is switched to interpret
+  them).
 - Every record is flushed as written, as spdlog's stdout sink did in practice.
 
 ## Considered Options

@@ -1,7 +1,8 @@
 # Requirements — FPS Simulator Engine (v1)
 
 Scope: v1 milestone as defined in [VISION.md](./VISION.md) — multiplayer-only,
-server-authoritative, physics-based ballistics, 1 rifle, 1 test map, 2–8 players.
+server-authoritative, physics-based ballistics, 1 rifle, 1 test map, 2–8
+players.
 
 ---
 
@@ -9,7 +10,8 @@ server-authoritative, physics-based ballistics, 1 rifle, 1 test map, 2–8 playe
 
 ### US-01: Connect to Dedicated Server
 
-As a player, I want to connect to a dedicated server, so that I can join a match.
+As a player, I want to connect to a dedicated server, so that I can join a
+match.
 
 ```text
 Given a running dedicated server reachable on the network
@@ -39,8 +41,8 @@ Then I am placed at a valid spawn point with full health and default loadout
 
 ### US-04: Move Player Character (Walk / Run / Crouch / Prone)
 
-As a player, I want to move using walk, run, crouch, and prone stances, so that I can
-navigate and use cover realistically.
+As a player, I want to move using walk, run, crouch, and prone stances, so that
+I can navigate and use cover realistically.
 
 ```text
 Given I am alive and not incapacitated
@@ -50,8 +52,8 @@ Then my position and stance update accordingly on both client and server
 
 ### US-05: Manage Stamina
 
-As a player, I want my stamina to deplete when running and recover when resting, so that
-sustained sprinting has a realistic limit.
+As a player, I want my stamina to deplete when running and recover when resting,
+so that sustained sprinting has a realistic limit.
 
 ```text
 Given I am sprinting
@@ -61,8 +63,8 @@ Then I am forced to slow to a walk until stamina recovers above a defined thresh
 
 ### US-06: Aim Weapon (Hip-fire / ADS)
 
-As a player, I want to aim down sights or fire from the hip, so that I can trade accuracy
-for speed.
+As a player, I want to aim down sights or fire from the hip, so that I can trade
+accuracy for speed.
 
 ```text
 Given I have a weapon equipped
@@ -82,8 +84,8 @@ Then a bullet is spawned server-side with the correct origin, direction, and ini
 
 ### US-08: Reload Rifle
 
-As a player, I want to reload my rifle, so that I can continue fighting after depleting
-my magazine.
+As a player, I want to reload my rifle, so that I can continue fighting after
+depleting my magazine.
 
 ```text
 Given my magazine is not full
@@ -93,8 +95,8 @@ Then my ammo count is restored to the rifle's magazine capacity
 
 ### US-09: Apply Weapon Recoil
 
-As a player, I want the rifle to recoil when fired, so that sustained fire is harder to
-control realistically.
+As a player, I want the rifle to recoil when fired, so that sustained fire is
+harder to control realistically.
 
 ```text
 Given I fire multiple rounds in succession
@@ -104,8 +106,8 @@ Then my aim point shifts according to the weapon's recoil pattern, cumulative pe
 
 ### US-10: Simulate Bullet Ballistics (Server-Authoritative)
 
-As the system, I want the server to simulate each bullet's physics-based trajectory, so
-that ballistics are realistic and consistent for all players.
+As the system, I want the server to simulate each bullet's physics-based
+trajectory, so that ballistics are realistic and consistent for all players.
 
 ```text
 Given a bullet is fired
@@ -116,8 +118,8 @@ and replicates the relevant result to clients
 
 ### US-11: Detect Hit by Impact Location
 
-As the system, I want to detect precisely where a bullet impacts a player, so that damage
-can be determined accordingly.
+As the system, I want to detect precisely where a bullet impacts a player, so
+that damage can be determined accordingly.
 
 ```text
 Given a bullet's simulated trajectory intersects a player's hitbox
@@ -127,8 +129,8 @@ Then the specific body part hit (e.g., head, torso, limb) is recorded
 
 ### US-12: Apply Damage by Hit Location
 
-As the system, I want damage to depend on hit location and ammo type, so that combat
-outcomes are realistic.
+As the system, I want damage to depend on hit location and ammo type, so that
+combat outcomes are realistic.
 
 ```text
 Given a hit is detected at a given body part
@@ -138,8 +140,8 @@ Then the resulting damage matches the configured lethality for that body part an
 
 ### US-13: Player Death (No Respawn)
 
-As a player, I want to die permanently for the rest of the match when my health reaches
-zero, so that matches carry real stakes.
+As a player, I want to die permanently for the rest of the match when my health
+reaches zero, so that matches carry real stakes.
 
 ```text
 Given my health reaches zero
@@ -149,8 +151,8 @@ Then I enter spectator mode for the remainder of the match with no respawn
 
 ### US-14: Determine Match End / Win Condition
 
-As the system, I want to detect when a match's win condition is met, so that the match
-can conclude and a new one can begin.
+As the system, I want to detect when a match's win condition is met, so that the
+match can conclude and a new one can begin.
 
 ```text
 Given all players on one side are eliminated (or another defined win condition is met)
@@ -161,8 +163,8 @@ Then the match ends, a winner is declared, everyone returns to the Lobby, and a 
 
 ### US-15: Server-Side Validation of Client Input (Anti-Cheat Baseline)
 
-As the system, I want the server to validate all client-reported actions, so that clients
-cannot cheat by sending impossible data.
+As the system, I want the server to validate all client-reported actions, so
+that clients cannot cheat by sending impossible data.
 
 ```text
 Given a client reports an action (e.g., fire, move)
@@ -174,7 +176,8 @@ Then invalid actions are rejected or corrected before affecting authoritative st
 
 ## Non-Functional Requirements
 
-Quality attribute scenarios (Source / Stimulus / Environment / Artifact / Response / Measure).
+Quality attribute scenarios (Source / Stimulus / Environment / Artifact /
+Response / Measure).
 
 ### NFR-01: Server Tick Rate (Performance)
 
@@ -210,10 +213,10 @@ Measure:     The server's trajectory is reproducible across runs and platforms
              within a defined tolerance
 ```
 
-The tolerance is the one the golden-trajectory test defines, on the Windows
-and Linux runners both (ADR-0013). Only the server decides where a bullet goes
-and what it hits (ADR-0024); a client computes the same trajectory with the
-same math only to draw it (ADR-0044), so the same check covers that drawing.
+The tolerance is the one the golden-trajectory test defines, on the Windows and
+Linux runners both (ADR-0013). Only the server decides where a bullet goes and
+what it hits (ADR-0024); a client computes the same trajectory with the same
+math only to draw it (ADR-0044), so the same check covers that drawing.
 
 ### NFR-04: Platform Targeting
 

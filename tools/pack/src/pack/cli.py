@@ -1,16 +1,17 @@
-"""Augusta asset-cooking pipeline CLI (ADR-0030), run on a scenario name
-(ADR-0041): usd-optimize (ADR-0015, Python API - see optimize.py) ->
-usd-validation-nvidia (ADR-0015, also called via its own Python API - see
-validate.py) -> cook_scenario (bake to one signed client/server pack pair,
-ADR-0031/ADR-0032/ADR-0041 - see cook.py), run once per stage the scenario
+"""Augusta asset-cooking pipeline CLI (ADR-0030).
+
+Run on a scenario name (ADR-0041): usd-optimize (ADR-0015, Python API - see
+optimize.py) -> usd-validation-nvidia (ADR-0015, also called via its own Python
+API - see validate.py) -> cook_scenario (bake to one signed client/server pack
+pair, ADR-0031/ADR-0032/ADR-0041 - see cook.py), run once per stage the scenario
 composes. cook_scenario is pure Python too: it walks each USD stage via pxr
-directly and calls the small native _meshoptimizer/_textconv bindings only
-for the two pieces with no Python equivalent - no subprocess/CLI binary
-anywhere in this pipeline. A validation failure aborts before cooking, so no
-pack is written if any composed stage didn't pass cleanup/validation, unless
---skip-validation is given. Every script the manifest names goes into the
-server pack (ADR-0031, ADR-0039), and the mono PCM WAV sound it names for each
-of the client's cues into the client pack (ADR-0020).
+directly and calls the small native _meshoptimizer/_textconv bindings only for
+the two pieces with no Python equivalent - no subprocess/CLI binary anywhere in
+this pipeline. A validation failure aborts before cooking, so no pack is written
+if any composed stage didn't pass cleanup/validation, unless --skip-validation
+is given. Every script the manifest names goes into the server pack (ADR-0031,
+ADR-0039), and the mono PCM WAV sound it names for each of the client's cues
+into the client pack (ADR-0020).
 
 The scenario argument is a bare name, not a path (ADR-0041): it resolves to
 <assets-root>/authoring/scenarios/<name>.yaml, a manifest naming, by file, the
@@ -26,36 +27,47 @@ name alone, not its authoring/scenarios/ position.
 """
 
 import argparse
+from pathlib import Path
 import sys
 import tempfile
 import time
 import uuid
-from pathlib import Path
 
 from pack.assets_root import default_assets_root
-from pack.cook import CookError, cook_scenario
+from pack.cook import cook_scenario
+from pack.cook import CookError
 from pack.keys import read_private_key
-from pack.optimize import OptimizeError, optimize_stage
+from pack.optimize import optimize_stage
+from pack.optimize import OptimizeError
 from pack.progress import Progress
-from pack.scenario import ScenarioError, resolve_scenario
-from pack.validate import ValidationError, validate_stage
+from pack.scenario import resolve_scenario
+from pack.scenario import ScenarioError
+from pack.validate import validate_stage
+from pack.validate import ValidationError
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    """Cooks the scenario argv names; returns the process's exit code."""
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument(
         "scenario",
-        help="Scenario name (ADR-0041): resolves to <assets-root>/authoring/scenarios/<name>.yaml, the "
-        "manifest naming the map, characters, cue sounds and scripts it composes. "
-        "tools\\composer\\examples\\authoring is a worked example (name: augusta).",
+        help="Scenario name (ADR-0041): resolves to "
+        "<assets-root>/authoring/scenarios/<name>.yaml, the manifest naming "
+        "the map, characters, cue sounds and scripts it composes. "
+        "tools\\composer\\examples\\authoring is a worked example (name: "
+        "augusta).",
     )
     parser.add_argument(
         "--assets-root",
         type=Path,
         default=default_assets_root(),
-        help="Hermetic environment root the scenario name is resolved under (<assets-root>/authoring/scenarios/), "
-        "and used for the --client-output-pack/--server-output-pack/--signing-key defaults below (default: "
-        "inferred from this interpreter's own venv).",
+        help="Hermetic environment root the scenario name is resolved under "
+        "(<assets-root>/authoring/scenarios/), and used for the "
+        "--client-output-pack/--server-output-pack/--signing-key defaults "
+        "below (default: inferred from this interpreter's own venv).",
     )
     parser.add_argument(
         "--client-output-pack",
@@ -69,12 +81,17 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Default: <assets-root>/packs/<name>/server.pack",
     )
-    parser.add_argument("--signing-key", type=Path, default=None, help="Default: <assets-root>/keys/augusta.key")
+    parser.add_argument(
+        "--signing-key",
+        type=Path,
+        default=None,
+        help="Default: <assets-root>/keys/augusta.key",
+    )
     parser.add_argument(
         "--skip-validation",
         action="store_true",
-        help="Skip usd-validation-nvidia (e.g. third-party stages that fail its checks); "
-        "usd-optimize and the cook still run.",
+        help="Skip usd-validation-nvidia (e.g. third-party stages that fail "
+        "its checks); usd-optimize and the cook still run.",
     )
     args = parser.parse_args(argv)
 
@@ -89,15 +106,20 @@ def main(argv: list[str] | None = None) -> int:
 
     pack_subdir = Path(scenario.name)
     signing_key_path = args.signing_key or assets_root / "keys" / "augusta.key"
-    client_output_pack = args.client_output_pack or packs_dir / pack_subdir / "client.pack"
-    server_output_pack = args.server_output_pack or packs_dir / pack_subdir / "server.pack"
+    client_output_pack = (
+        args.client_output_pack or packs_dir / pack_subdir / "client.pack"
+    )
+    server_output_pack = (
+        args.server_output_pack or packs_dir / pack_subdir / "server.pack"
+    )
 
     # The map/characters were already confirmed by resolve_scenario; only the
     # assets-root-derived signing key can still be missing here.
     if not signing_key_path.exists():
         print(
-            f"Signing key not found: {signing_key_path} - pass --signing-key, or run "
-            f"tools\\pack\\scripts\\bootstrap-windows.ps1 {assets_root} first.",
+            f"Signing key not found: {signing_key_path} - pass --signing-key, "
+            f"or run tools\\pack\\scripts\\bootstrap-windows.ps1 "
+            f"{assets_root} first.",
             file=sys.stderr,
         )
         return 1
@@ -112,32 +134,47 @@ def main(argv: list[str] | None = None) -> int:
     # character is authored and cleaned up independently of any particular
     # map (ADR-0040).
     stages_to_clean = [("map", scenario.map_stage_path)]
-    stages_to_clean += [(character.path, character.stage_path) for character in scenario.characters]
+    stages_to_clean += [
+        (character.path, character.stage_path)
+        for character in scenario.characters
+    ]
 
     pipeline_start = time.monotonic()
     with tempfile.TemporaryDirectory() as tmp_dir:
         cleaned_stages: list[Path] = []
         for step_label, raw_stage_path in stages_to_clean:
-            cleaned_stage = Path(tmp_dir) / f"{step_label.replace('/', '_')}-cleaned-{uuid.uuid4()}.usda"
+            cleaned_stage = (
+                Path(tmp_dir)
+                / f"{step_label.replace('/', '_')}-cleaned-{uuid.uuid4()}.usda"
+            )
 
             print(f"[1/3] usd-optimize: {raw_stage_path}")
             step_start = time.monotonic()
             try:
                 optimize_stage(raw_stage_path, cleaned_stage)
             except OptimizeError as error:
-                print(f"usd-optimize failed: {error} - stage not cleaned, cook aborted.", file=sys.stderr)
+                print(
+                    f"usd-optimize failed: {error} - stage not cleaned, cook "
+                    f"aborted.",
+                    file=sys.stderr,
+                )
                 return 1
             print(f"[1/3] done in {time.monotonic() - step_start:.1f}s")
 
             if args.skip_validation:
-                print("[2/3] usd-validation-nvidia: skipped (--skip-validation)")
+                print(
+                    "[2/3] usd-validation-nvidia: skipped (--skip-validation)"
+                )
             else:
                 print(f"[2/3] usd-validation-nvidia: {raw_stage_path}")
                 step_start = time.monotonic()
                 try:
                     validate_stage(cleaned_stage)
                 except ValidationError as error:
-                    print(f"{error} - cook aborted, no pack written.", file=sys.stderr)
+                    print(
+                        f"{error} - cook aborted, no pack written.",
+                        file=sys.stderr,
+                    )
                     return 1
                 print(f"[2/3] done in {time.monotonic() - step_start:.1f}s")
 
@@ -152,7 +189,10 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
 
-        print(f"[3/3] cooking into {client_output_pack} (client) / {server_output_pack} (server)")
+        print(
+            f"[3/3] cooking into {client_output_pack} (client) / "
+            f"{server_output_pack} (server)"
+        )
         step_start = time.monotonic()
         # The prim total is only known once cook_scenario has traversed
         # every stage, so the Progress is created on the first callback.
@@ -183,8 +223,9 @@ def main(argv: list[str] | None = None) -> int:
         if progress is not None:
             progress.finish()
         print(
-            f"      cooked {report.mesh_count} mesh(es), {report.texture_count} texture(s), "
-            f"{report.node_count} node(s), {report.script_count} script(s) (server pack), "
+            f"      cooked {report.mesh_count} mesh(es), "
+            f"{report.texture_count} texture(s), {report.node_count} node(s), "
+            f"{report.script_count} script(s) (server pack), "
             f"{report.sound_count} sound(s) (client pack)"
         )
         print(f"[3/3] done in {time.monotonic() - step_start:.1f}s")

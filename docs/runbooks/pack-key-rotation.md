@@ -22,10 +22,11 @@ client and server packs must come from that one cook run, since Join refuses a
 client pack not cooked with the server pack (ADR-0019, ADR-0038). Each server
 reads its pack from its own folder of the node's shared volume,
 `/srv/augusta/asset-packs/<scenario>/<packVersion>/`, holding `server.pack` and
-the `augusta.pub` it is signed with ([`charts/augustad/values.yaml`](../../charts/augustad/values.yaml)).
-A new cook has a new `packVersion`, so `augusta-publish` puts it in a new folder,
-and the server is pointed at it through Git, which keeps the old folder in place
-as the rollback.
+the `augusta.pub` it is signed with
+([`charts/augustad/values.yaml`](../../charts/augustad/values.yaml)). A new cook
+has a new `packVersion`, so `augusta-publish` puts it in a new folder, and the
+server is pointed at it through Git, which keeps the old folder in place as the
+rollback.
 
 ## Where packs go on the node
 
@@ -44,11 +45,11 @@ and `augusta.pub` from it
                           # renamed to augusta.pub whatever its name was locally
 ```
 
-`augusta-publish` writes exactly this, and never over a folder that exists.
-The volume is a `hostPath` of type `Directory`: until the folder is there, the
-pod waits in `ContainerCreating` and its events name the missing path. A pack
-that does not verify against `augusta.pub` makes the server exit at startup, and
-the pod crash-loops. The client pack never goes on the node.
+`augusta-publish` writes exactly this, and never over a folder that exists. The
+volume is a `hostPath` of type `Directory`: until the folder is there, the pod
+waits in `ContainerCreating` and its events name the missing path. A pack that
+does not verify against `augusta.pub` makes the server exit at startup, and the
+pod crash-loops. The client pack never goes on the node.
 
 Staging is the exception until `main` carries develop's chart (see the comment
 in [`staging.yaml`](../../clusters/onprem/apps/staging.yaml)): its one server
@@ -62,12 +63,11 @@ copied there by hand, in the pack format of `main`'s server.
   The commands below set `$AssetsRoot` to it.
 - The authoring content the current packs were cooked from, under
   `<AssetsRoot>\authoring\` (only the example scenario is in the repository).
-- For the release key: the offline location the release private key is kept
-  in. The repository does not record it; it is never in the repository or a
-  CI secret.
-- SSH access to the k3s node (`<node>` below, as `ssh` names it), as a user
-  that can `sudo` without a password. The repository does not record its
-  address.
+- For the release key: the offline location the release private key is kept in.
+  The repository does not record it; it is never in the repository or a CI
+  secret.
+- SSH access to the k3s node (`<node>` below, as `ssh` names it), as a user that
+  can `sudo` without a password. The repository does not record its address.
 - A kubeconfig for the cluster, `kubectl`, and the `flux` CLI (see
   [Roll Back a Bad Deploy with Flux](flux-rollback.md#prerequisites)).
 - A Windows client and server build to smoke-test the packs locally.
@@ -90,8 +90,8 @@ copied there by hand, in the pack format of `main`'s server.
     ```
 
     This writes `keys\<Id>.pub` (32 bytes) and `keys\<Id>.key` (64 bytes). For
-    the release key, do this on the offline machine that holds release keys,
-    and move `<Id>.key` into its offline storage once step 3 has cooked.
+    the release key, do this on the offline machine that holds release keys, and
+    move `<Id>.key` into its offline storage once step 3 has cooked.
 
 3. Cook the scenario once, signed with the new key, into the new folder:
 
@@ -104,8 +104,8 @@ copied there by hand, in the pack format of `main`'s server.
 
     Replace `augusta` with the scenario the environment runs.
 
-4. Verify both packs against the new public key, and check the old key no
-   longer verifies them:
+4. Verify both packs against the new public key, and check the old key no longer
+   verifies them:
 
     ```powershell
     & "$AssetsRoot\bin\augusta-verify.exe" "$AssetsRoot\packs\$Id\server.pack" --public-key "$AssetsRoot\keys\$Id.pub"
@@ -141,8 +141,8 @@ copied there by hand, in the pack format of `main`'s server.
    version, quoted, in
    [`clusters/onprem/apps/develop.yaml`](../../clusters/onprem/apps/develop.yaml)
    and/or [`staging.yaml`](../../clusters/onprem/apps/staging.yaml), commit
-   (`chore(cluster): move <environment>'s <scenario> server to a new pack`),
-   and merge it to `develop` through a pull request. Both files deploy from
+   (`chore(cluster): move <environment>'s <scenario> server to a new pack`), and
+   merge it to `develop` through a pull request. Both files deploy from
    `develop`, staging's included. The change alters the server's volume, which
    restarts its pod and no other server's.
 
@@ -184,7 +184,7 @@ against `augusta.pub`. A client with the new `client.pack` and `<Id>.pub` logs
   the node's `/srv/augusta/asset-packs/<scenario>/<packVersion>/`.
 - After step 7, revert the `packVersion` commit on `develop`
   ([Roll Back a Bad Deploy with Flux](flux-rollback.md), steps 4 to 6). The old
-  folder is still on the node, so the pod restarts on the old pack. Do not
-  start step 10 until the new packs have run cleanly.
+  folder is still on the node, so the pod restarts on the old pack. Do not start
+  step 10 until the new packs have run cleanly.
 - A leaked key cannot be rolled back to: if the rotation is because of a leak,
   fix forward instead.

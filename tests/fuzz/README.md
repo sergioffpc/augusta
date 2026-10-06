@@ -16,8 +16,8 @@ libFuzzer targets for what arrives from outside (ADR-0013). Each target is one
 - `corpus/<target>/`: the seeds, committed. The fuzzer starts from them; the
   corpus it grows is not committed.
 - `regressions/<target>/`: the minimized inputs of crashes found, committed.
-- `ctest` replays both through the target (`augusta_<target>_replay`), on
-  every preset, MSVC included.
+- `ctest` replays both through the target (`augusta_<target>_replay`), on every
+  preset, MSVC included.
 
 The `protocol_decode` seeds are what `Encode` writes for the messages in
 [protocol_decode_seeds_test.cpp](protocol_decode_seeds_test.cpp), which fails
@@ -64,7 +64,7 @@ In the pull request that fixes it:
 1. Minimize the crashing input:
    `augusta_<target>_fuzz -minimize_crash=1 -runs=100000 crash-<sha1>`.
 2. Commit the smallest result as `regressions/<target>/<what-it-broke>`. The
-   replay test picks it up on the next configure and fails until the fix
-   lands, on every preset, with no fuzzer.
-3. When the bug is in a module's own logic, also add an example-based test of
-   it to that module's tests (docs/agents/coding-standards.md, Testing).
+   replay test picks it up on the next configure and fails until the fix lands,
+   on every preset, with no fuzzer.
+3. When the bug is in a module's own logic, also add an example-based test of it
+   to that module's tests (docs/agents/coding-standards.md, Testing).

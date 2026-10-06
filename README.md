@@ -10,19 +10,19 @@
 ![Platforms](https://img.shields.io/badge/platform-Windows%20client%20%7C%20Linux%20server-lightgrey)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-fe5196?logo=conventionalcommits)](https://www.conventionalcommits.org)
 
-A realistic, physics-driven multiplayer FPS simulator engine — server-authoritative,
-built in C++23 with a Windows client (rendering via NVIDIA Falcor/D3D12) and a
-headless Linux dedicated server. A hobby project to master low-level systems and
-networking programming, deliberately built from scratch instead of on top of
-Unreal/Unity/Godot.
+A realistic, physics-driven multiplayer FPS simulator engine —
+server-authoritative, built in C++23 with a Windows client (rendering via NVIDIA
+Falcor/D3D12) and a headless Linux dedicated server. A hobby project to master
+low-level systems and networking programming, deliberately built from scratch
+instead of on top of Unreal/Unity/Godot.
 
 ## Highlights
 
 - **Server-authoritative** — the Linux dedicated server is the single source of
   truth for all gameplay state; the Windows client predicts locally and
   reconciles against authoritative snapshots (no exact replay).
-- **Physics-based ballistics** — real bullet drop and travel time, not
-  hitscan; hit location and body part determine damage (no regenerating health).
+- **Physics-based ballistics** — real bullet drop and travel time, not hitscan;
+  hit location and body part determine damage (no regenerating health).
 - **Match-based, tactical** — no respawn until the match ends; movement includes
   walk/run/crouch/prone, stamina, and recoil.
 - **ECS core** (Flecs) shared between client and server, with PhysX for
@@ -55,22 +55,23 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 Open a new terminal after setup. The Makefile loads the Visual Studio Build
 Tools environment automatically for each command on Windows.
 
-**Dev container (server / shared core):** open the repository in VS Code's
-Dev Containers or in GitHub Codespaces. The container reproduces CI's Linux
-build environment, so `make test` builds and tests the `linux` preset with
-nothing else to install. The first build compiles the vcpkg dependencies; later
-ones reuse them from `.vcpkg-bincache`, and sccache's objects from a volume.
+**Dev container (server / shared core):** open the repository in VS Code's Dev
+Containers or in GitHub Codespaces. The container reproduces CI's Linux build
+environment, so `make test` builds and tests the `linux` preset with nothing
+else to install. The first build compiles the vcpkg dependencies; later ones
+reuse them from `.vcpkg-bincache`, and sccache's objects from a volume.
 
 Both the Windows bootstrap and the container initialize the vendored submodules
 and configure the Conventional Commits `commit-msg` hook.
 
 ### Build and Run
 
-The [Makefile](Makefile) wraps the build presets. On Windows it loads the
-Visual Studio Build Tools environment through [scripts/vcenv.ps1](scripts/vcenv.ps1).
+The [Makefile](Makefile) wraps the build presets. On Windows it loads the Visual
+Studio Build Tools environment through [scripts/vcenv.ps1](scripts/vcenv.ps1).
 
-Build and start the Linux server in the dev container first. Leave it running, listening on
-the configured address (the default client connects to `127.0.0.1:27015`):
+Build and start the Linux server in the dev container first. Leave it running,
+listening on the configured address (the default client connects to
+`127.0.0.1:27015`):
 
 ```bash
 make
@@ -109,9 +110,9 @@ make PRESET=linux-fuzz
 
 [tests/fuzz/README.md](tests/fuzz/README.md) explains how to run them.
 
-The `linux-coverage` preset measures the tests' coverage (ADR-0013). In VS
-Code, select it and run "Test: Run All Tests with Coverage": CMake Tools shows
-the result in the editor and the Test Coverage view. From a shell:
+The `linux-coverage` preset measures the tests' coverage (ADR-0013). In VS Code,
+select it and run "Test: Run All Tests with Coverage": CMake Tools shows the
+result in the editor and the Test Coverage view. From a shell:
 
 ```bash
 cmake --preset linux-coverage && cmake --build --preset linux-coverage
@@ -131,12 +132,14 @@ make lint
 ## Documentation
 
 - [VISION.md](docs/VISION.md) — product vision and v1 definition of done
-- [REQUIREMENTS.md](docs/REQUIREMENTS.md) — functional and non-functional requirements
+- [REQUIREMENTS.md](docs/REQUIREMENTS.md) — functional and non-functional
+  requirements
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — arc42 architecture document
 - [ENGINEERING.md](docs/ENGINEERING.md) — engineering practices, CI/CD, workflow
 - [ROADMAP.md](docs/ROADMAP.md) — milestone-driven roadmap
 - [CONTEXT.md](CONTEXT.md) — domain glossary
-- [docs/runbooks/](docs/runbooks/) — procedures for rollbacks, key rotation, node recovery and releases
+- [docs/runbooks/](docs/runbooks/) — procedures for rollbacks, key rotation,
+  node recovery and releases
 - [docs/adr/](docs/adr/) — architecture decision records
 
 ## License

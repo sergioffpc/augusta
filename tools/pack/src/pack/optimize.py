@@ -8,15 +8,20 @@ directly instead.
 
 from pathlib import Path
 
-import usd_optimize.core as usd_optimize_core
 from pxr import Usd
+import usd_optimize.core as usd_optimize_core
 
 # triangulateMeshes first: cook.py's own topology validation
 # (_validate_triangle_topology, ADR-0030) rejects non-triangular faces
 # outright rather than triangulating them itself - that's usd-optimize's
 # job - so topology must be triangulated before dedup/flatten/
 # removeSmallGeometry touch it.
-OPERATIONS = ["triangulateMeshes", "deduplicateHierarchies", "flattenHierarchy", "removeSmallGeometry"]
+OPERATIONS = [
+    "triangulateMeshes",
+    "deduplicateHierarchies",
+    "flattenHierarchy",
+    "removeSmallGeometry",
+]
 
 
 class OptimizeError(RuntimeError):
@@ -24,7 +29,7 @@ class OptimizeError(RuntimeError):
 
 
 def optimize_stage(input_path: Path, output_path: Path) -> None:
-    """Cleans up the stage at input_path and exports the result to output_path."""
+    """Cleans up the stage at input_path and exports it to output_path."""
     stage = Usd.Stage.Open(str(input_path))
     if not stage:
         raise OptimizeError(f"could not open stage: {input_path}")
@@ -32,7 +37,9 @@ def optimize_stage(input_path: Path, output_path: Path) -> None:
     context = usd_optimize_core.ExecutionContext()
     context.set_stage(stage)
     core = usd_optimize_core.UsdOptimizeCore.getInstance()
-    results = core.executeConfig(context, [{"operation": op} for op in OPERATIONS])
+    results = core.executeConfig(
+        context, [{"operation": op} for op in OPERATIONS]
+    )
 
     for op, (success, error, _output) in zip(OPERATIONS, results, strict=True):
         if not success:

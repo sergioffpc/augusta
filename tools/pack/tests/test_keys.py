@@ -1,10 +1,12 @@
-"""augusta-keygen's key files (ADR-0018): raw, fixed-size, and usable to sign
-and verify a pack.
+"""augusta-keygen's key files (ADR-0018).
+
+Raw, fixed-size, and usable to sign and verify a pack.
 """
 
-import pytest
-from pack import keys, pack
+from pack import keys
+from pack import pack
 from pack.reader import verify_pack
+import pytest
 
 
 def test_keygen_writes_a_keypair_that_signs_and_verifies_a_pack(tmp_path):

@@ -1,100 +1,128 @@
-#!/bin/sh
+#!/bin/bash
 # Auto-formats staged C++, YAML, Lua, TOML, Python, shell, CMake and PowerShell
 # files. CI's format checks remain the actual gate if a local formatter is
 # missing or the hook is bypassed with --no-verify.
 
-cxx_files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^(src|tests)/.*\.(cpp|h)$' || true)
-if [ -n "$cxx_files" ]; then
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+
+cxx_files=$(echo "${staged}" | grep -E '^(src|tests)/.*\.(cpp|h)$' || true)
+if [[ -n "${cxx_files}" ]]; then
   if command -v clang-format >/dev/null 2>&1; then
-    echo "$cxx_files" | while IFS= read -r f; do
-      clang-format -i "$f" || exit $?
-      git add "$f" || exit $?
+    echo "${cxx_files}" | while IFS= read -r f; do
+      clang-format -i "${f}" || exit $?
+      git add "${f}" || exit $?
     done
   else
-    echo "pre-commit: clang-format not found on PATH - skipping C++ formatting (CI will still catch this)." >&2
+    echo "pre-commit: clang-format not found on PATH - skipping C++" \
+      "formatting (CI will still catch this)." >&2
   fi
 fi
 
-yaml_files=$(git diff --cached --name-only --diff-filter=ACMR |
-  grep -E '(^\.yamlfmt$|^\.yamllint$|\.(yaml|yml)$)' |
-  grep -vE '^charts/augustad/templates/|^clusters/onprem/flux-system/gotk-components\.yaml$' || true)
-if [ -n "$yaml_files" ]; then
+yaml_files=$(echo "${staged}" \
+  | grep -E '(^\.yamlfmt$|^\.yamllint$|\.(yaml|yml)$)' \
+  | grep -vE '^charts/augustad/templates/' \
+  | grep -vE '^clusters/onprem/flux-system/gotk-components\.yaml$' || true)
+if [[ -n "${yaml_files}" ]]; then
   if command -v yamlfmt >/dev/null 2>&1; then
-    echo "$yaml_files" | while IFS= read -r f; do
-      yamlfmt "$f" || exit $?
-      git add "$f" || exit $?
+    echo "${yaml_files}" | while IFS= read -r f; do
+      yamlfmt "${f}" || exit $?
+      git add "${f}" || exit $?
     done
   else
-    echo "pre-commit: yamlfmt not found on PATH - skipping YAML formatting (CI will still catch this)." >&2
+    echo "pre-commit: yamlfmt not found on PATH - skipping YAML formatting" \
+      "(CI will still catch this)." >&2
   fi
 fi
 
-lua_files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.lua$' || true)
-if [ -n "$lua_files" ]; then
+lua_files=$(echo "${staged}" | grep -E '\.lua$' || true)
+if [[ -n "${lua_files}" ]]; then
   if command -v stylua >/dev/null 2>&1; then
-    echo "$lua_files" | while IFS= read -r f; do
-      stylua "$f" || exit $?
-      git add "$f" || exit $?
+    echo "${lua_files}" | while IFS= read -r f; do
+      stylua "${f}" || exit $?
+      git add "${f}" || exit $?
     done
   else
-    echo "pre-commit: stylua not found on PATH - skipping Lua formatting (CI will still catch this)." >&2
+    echo "pre-commit: stylua not found on PATH - skipping Lua formatting" \
+      "(CI will still catch this)." >&2
   fi
 fi
 
-toml_files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.toml$' || true)
-if [ -n "$toml_files" ]; then
+toml_files=$(echo "${staged}" | grep -E '\.toml$' || true)
+if [[ -n "${toml_files}" ]]; then
   if command -v taplo >/dev/null 2>&1; then
-    echo "$toml_files" | while IFS= read -r f; do
-      taplo fmt "$f" 2>/dev/null || exit $?
-      git add "$f" || exit $?
+    echo "${toml_files}" | while IFS= read -r f; do
+      taplo fmt "${f}" 2>/dev/null || exit $?
+      git add "${f}" || exit $?
     done
   else
-    echo "pre-commit: taplo not found on PATH - skipping TOML formatting (CI will still catch this)." >&2
+    echo "pre-commit: taplo not found on PATH - skipping TOML formatting" \
+      "(CI will still catch this)." >&2
   fi
 fi
 
 # Python, shell, CMake and Markdown, by the formatters uv runs at the versions
 # CI pins.
-python_files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.py$' || true)
-shell_files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '(\.sh$|^\.githooks/)' || true)
-cmake_files=$(git diff --cached --name-only --diff-filter=ACMR |
-  grep -E '(^|/)CMakeLists\.txt$|\.cmake$' | grep -v '^third_party/' || true)
-markdown_files=$(git diff --cached --name-only --diff-filter=ACMR |
-  grep -E '\.md$' | grep -vE '^(third_party/|CHANGELOG\.md$)' || true)
-if [ -n "$python_files$shell_files$cmake_files$markdown_files" ]; then
+python_files=$(echo "${staged}" | grep -E '\.py$' || true)
+shell_files=$(echo "${staged}" | grep -E '(\.sh$|^\.githooks/)' || true)
+cmake_files=$(echo "${staged}" \
+  | grep -E '(^|/)CMakeLists\.txt$|\.cmake$' | grep -v '^third_party/' || true)
+markdown_files=$(echo "${staged}" \
+  | grep -E '\.md$' | grep -vE '^(third_party/|CHANGELOG\.md$)' || true)
+if [[ -n "${python_files}${shell_files}${cmake_files}${markdown_files}" ]]; then
   if command -v uv >/dev/null 2>&1; then
-    # shellcheck disable=SC2086 # one argument per file; tracked paths have no spaces
-    { [ -z "$python_files" ] || uv tool run ruff@0.16.10 format --quiet $python_files; } || exit $?
+    # One argument per file; tracked paths have no spaces.
     # shellcheck disable=SC2086
-    { [ -z "$shell_files" ] || uv tool run --from shfmt-py==4.2.0 shfmt -w $shell_files; } || exit $?
+    {
+      [[ -z "${python_files}" ]] \
+        || uv tool run ruff@0.16.10 format --quiet ${python_files}
+    } || exit $?
     # shellcheck disable=SC2086
-    { [ -z "$cmake_files" ] || uv tool run gersemi@0.29.2 --quiet -i $cmake_files; } || exit $?
+    {
+      [[ -z "${shell_files}" ]] \
+        || uv tool run --from shfmt-py==4.2.0 shfmt -w ${shell_files}
+    } || exit $?
     # shellcheck disable=SC2086
-    { [ -z "$markdown_files" ] ||
-      uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9 --log-level warn --write $markdown_files; } ||
-      exit $?
+    {
+      [[ -z "${cmake_files}" ]] \
+        || uv tool run gersemi@0.29.2 --quiet -i ${cmake_files}
+    } || exit $?
     # shellcheck disable=SC2086
-    git add $python_files $shell_files $cmake_files $markdown_files || exit $?
+    {
+      [[ -z "${markdown_files}" ]] \
+        || uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9 \
+          --log-level warn --write ${markdown_files}
+    } || exit $?
+    # shellcheck disable=SC2086
+    git add ${python_files} ${shell_files} ${cmake_files} ${markdown_files} \
+      || exit $?
   else
-    echo "pre-commit: uv not found on PATH - skipping Python, shell, CMake and Markdown formatting (CI will still catch this)." >&2
+    echo "pre-commit: uv not found on PATH - skipping Python, shell, CMake" \
+      "and Markdown formatting (CI will still catch this)." >&2
   fi
 fi
 
 # PowerShell, by PSScriptAnalyzer's formatter: Windows PowerShell on Windows,
 # PowerShell 7 (pwsh) elsewhere. What PSScriptAnalyzer finds besides is
 # pre-push's to stop, so its exit status is not this hook's.
-powershell_files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.ps1$' || true)
-if [ -n "$powershell_files" ]; then
+powershell_files=$(echo "${staged}" | grep -E '\.ps1$' || true)
+if [[ -n "${powershell_files}" ]]; then
   case "$(uname -s)" in
-    MINGW* | MSYS* | CYGWIN*) powershell="powershell -NoProfile -ExecutionPolicy Bypass" ;;
-    *) powershell=$(command -v pwsh >/dev/null 2>&1 && echo "pwsh -NoProfile") ;;
+    MINGW* | MSYS* | CYGWIN*)
+      powershell="powershell -NoProfile -ExecutionPolicy Bypass"
+      ;;
+    *)
+      powershell=$(command -v pwsh >/dev/null 2>&1 && echo "pwsh -NoProfile")
+      ;;
   esac
-  if [ -n "$powershell" ]; then
-    # shellcheck disable=SC2086 # the command and its options; one argument per file
-    $powershell -File scripts/psscriptanalyzer.ps1 -Fix $powershell_files >/dev/null
+  if [[ -n "${powershell}" ]]; then
+    # The command and its options; one argument per file.
     # shellcheck disable=SC2086
-    git add $powershell_files || exit $?
+    ${powershell} -File scripts/psscriptanalyzer.ps1 -Fix ${powershell_files} \
+      >/dev/null
+    # shellcheck disable=SC2086
+    git add ${powershell_files} || exit $?
   else
-    echo "pre-commit: pwsh not found on PATH - skipping PowerShell formatting (CI will still catch this)." >&2
+    echo "pre-commit: pwsh not found on PATH - skipping PowerShell" \
+      "formatting (CI will still catch this)." >&2
   fi
 fi

@@ -1,17 +1,17 @@
 # Recover or Rebuild the k3s Node
 
 Brings the single-node k3s cluster that runs the `develop` and `staging`
-environments back up, either by recovering the running install or by
-rebuilding it from the repository. The cluster's design is ADR-0026
+environments back up, either by recovering the running install or by rebuilding
+it from the repository. The cluster's design is ADR-0026
 ([CD strategy](../adr/0026-cd-strategy.md)) and
 [ENGINEERING.md's Deployment & CD](../ENGINEERING.md#deployment-cd).
 
 ## When to use
 
-- The node is up but `kubectl` cannot reach the cluster, the node is
-  `NotReady`, or Flux's controllers are not running: **Recover** (part A).
-- k3s will not start after part A, its datastore is corrupt, or the node's OS
-  or disk was replaced: **Rebuild** (part B).
+- The node is up but `kubectl` cannot reach the cluster, the node is `NotReady`,
+  or Flux's controllers are not running: **Recover** (part A).
+- k3s will not start after part A, its datastore is corrupt, or the node's OS or
+  disk was replaced: **Rebuild** (part B).
 
 ## What the cluster holds
 
@@ -22,8 +22,8 @@ monitoring stack's `HelmRelease` in
 two augustad `HelmRelease` objects and their GitRepository sources in
 [`clusters/onprem/apps/`](../../clusters/onprem/apps), and the chart in
 [`charts/augustad/`](../../charts/augustad). The `flux-system` GitRepository
-reads the public repository over HTTPS with no credentials, so a rebuilt
-cluster needs no deploy key.
+reads the public repository over HTTPS with no credentials, so a rebuilt cluster
+needs no deploy key.
 
 The only state not in Git is the asset packs on the node's shared volume:
 `/srv/augusta/asset-packs/<scenario>/<packVersion>/server.pack` and
@@ -33,9 +33,9 @@ The only state not in Git is the asset packs on the node's shared volume:
 them the servers never start; the layout, and how a missing folder shows, is
 [Where packs go on the node](pack-key-rotation.md#where-packs-go-on-the-node).
 
-Prometheus keeps its last 15 days of series on a `local-path` volume on the
-node (ADR-0049). A rebuild loses them, and Prometheus starts again empty; no
-step restores them.
+Prometheus keeps its last 15 days of series on a `local-path` volume on the node
+(ADR-0049). A rebuild loses them, and Prometheus starts again empty; no step
+restores them.
 
 ## Prerequisites
 
@@ -44,17 +44,16 @@ step restores them.
 - The Kubernetes version the cluster runs, `<k8s-version>` below:
   `KUBERNETES_VERSION` in the `manifests` job of
   [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml), which CI
-  validates the manifests against. The repository does not record the k3s release (`v<version>+k3s<n>`) or any
-  k3s install options or `/etc/rancher/k3s/config.yaml`; the steps below use
-  k3s's defaults.
+  validates the manifests against. The repository does not record the k3s
+  release (`v<version>+k3s<n>`) or any k3s install options or
+  `/etc/rancher/k3s/config.yaml`; the steps below use k3s's defaults.
 - For a rebuild, a copy of every environment's pack folder: either taken from
   the node in step B1, or re-made from the pack environment that cooked them
-  (`<AssetsRoot>\packs\<scenario>\server.pack` and the public key it was
-  signed with, see [Rotate the Pack Signing Key](pack-key-rotation.md)).
-  The repository defines no backup of the volume.
-- The server image, `ghcr.io/sergioffpc/augustad`, pullable without
-  credentials: the chart sets no `imagePullSecrets`, so the GHCR package must
-  be public.
+  (`<AssetsRoot>\packs\<scenario>\server.pack` and the public key it was signed
+  with, see [Rotate the Pack Signing Key](pack-key-rotation.md)). The repository
+  defines no backup of the volume.
+- The server image, `ghcr.io/sergioffpc/augustad`, pullable without credentials:
+  the chart sets no `imagePullSecrets`, so the GHCR package must be public.
 - On the workstation: `kubectl` and the `flux` CLI
   ([as for a rollback](flux-rollback.md#prerequisites)), and this repository
   with `origin/develop` fetched: the `flux-system` GitRepository tracks
@@ -143,16 +142,15 @@ step restores them.
 
     Without a copy, publish each `packVersion` that
     `git grep -n packVersion -- clusters/` lists again, as step 6 of
-    [Rotate the Pack Signing Key](pack-key-rotation.md) does, from the packs
-    of the cook it names. A pack is found by its hash: only the server pack
-    whose BLAKE3 hash starts with that version publishes to it, so a lost
-    cook cannot be replaced by a new one under the same version. Cook,
-    publish and point the server at the new version instead.
+    [Rotate the Pack Signing Key](pack-key-rotation.md) does, from the packs of
+    the cook it names. A pack is found by its hash: only the server pack whose
+    BLAKE3 hash starts with that version publishes to it, so a lost cook cannot
+    be replaced by a new one under the same version. Cook, publish and point the
+    server at the new version instead.
 
-6. Install Flux from the repository's own manifests as `develop` has them,
-   read straight from `origin/develop` so the checkout's branch is left alone:
-   its controllers first, then the sync objects that point it at the
-   repository:
+6. Install Flux from the repository's own manifests as `develop` has them, read
+   straight from `origin/develop` so the checkout's branch is left alone: its
+   controllers first, then the sync objects that point it at the repository:
 
     ```sh
     git fetch origin
@@ -190,16 +188,16 @@ kubectl -n monitoring get pods
   `Ready`.
 - Every server logged `event=pack_verified` and keeps running.
 - Each server's Service is on the node port its `HelmRelease` pins (`develop`'s
-  `augusta` on 30777). A server without one gets a node port from
-  Kubernetes, which a rebuild changes: give LAN clients the new one from the
-  `get svc` command.
-- Every pod in `monitoring` is `Running`, and Grafana answers on node port
-  30300 (pinned in `infrastructure/monitoring.yaml`).
+  `augusta` on 30777). A server without one gets a node port from Kubernetes,
+  which a rebuild changes: give LAN clients the new one from the `get svc`
+  command.
+- Every pod in `monitoring` is `Running`, and Grafana answers on node port 30300
+  (pinned in `infrastructure/monitoring.yaml`).
 
 ## Rollback / abort
 
 - Part A changes nothing but the service's state; it can be repeated.
 - Part B is not reversible once step 2 has run: the old datastore is gone.
   Nothing in it is needed, since Git holds every deployed object, so the abort
-  is to repeat part B from step 3. Do not start step 2 without the packs
-  copied (step 1) or a way to re-cook them.
+  is to repeat part B from step 3. Do not start step 2 without the packs copied
+  (step 1) or a way to re-cook them.
