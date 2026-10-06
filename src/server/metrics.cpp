@@ -48,15 +48,17 @@ constexpr std::chrono::seconds kRequestTimeout{5};
 // What the endpoint answers from, read on its thread.
 struct Sources {
   const prometheus::Registry& registry;
-  const prometheus::Collectable& server_metrics;
+  ServerMetrics server_metrics;
   const std::atomic<tick::Clock::time_point>& last_tick_end;
 };
 
 // Every family /metrics serves: the Process family, then the server's.
 std::vector<prometheus::MetricFamily> CollectAll(const Sources& sources) {
   std::vector<prometheus::MetricFamily> families = sources.registry.Collect();
-  std::vector<prometheus::MetricFamily> server = sources.server_metrics.Collect();
-  families.insert(families.end(), std::make_move_iterator(server.begin()), std::make_move_iterator(server.end()));
+  for (const prometheus::Collectable& each : sources.server_metrics) {
+    std::vector<prometheus::MetricFamily> server = each.Collect();
+    families.insert(families.end(), std::make_move_iterator(server.begin()), std::make_move_iterator(server.end()));
+  }
   return families;
 }
 
@@ -172,9 +174,8 @@ struct MetricsEndpoint::Impl {
   // Declared last, so it is joined before what it serves from goes.
   std::thread thread;
 
-  Impl(std::uint16_t port, const std::atomic<tick::Clock::time_point>& last_tick_end,
-       const prometheus::Collectable& server_metrics)
-      : sources{.registry = registry, .server_metrics = server_metrics, .last_tick_end = last_tick_end},
+  Impl(std::uint16_t port, const std::atomic<tick::Clock::time_point>& last_tick_end, ServerMetrics server_metrics)
+      : sources{.registry = registry, .server_metrics = std::move(server_metrics), .last_tick_end = last_tick_end},
         acceptor(Listen(io, port)) {
     AddProcessMetrics(registry);
     Accept();
@@ -217,8 +218,8 @@ struct MetricsEndpoint::Impl {
 };
 
 MetricsEndpoint::MetricsEndpoint(std::uint16_t port, const std::atomic<tick::Clock::time_point>& last_tick_end,
-                                 const prometheus::Collectable& server_metrics)
-    : impl_(std::make_unique<Impl>(port, last_tick_end, server_metrics)) {}
+                                 ServerMetrics server_metrics)
+    : impl_(std::make_unique<Impl>(port, last_tick_end, std::move(server_metrics))) {}
 
 MetricsEndpoint::~MetricsEndpoint() = default;
 

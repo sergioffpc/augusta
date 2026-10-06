@@ -117,6 +117,18 @@ target_compile_definitions(augustad_metrics
 )
 augusta_set_module_scope(augustad_metrics SERVER_ONLY)
 
+# Every client's Connection health as metrics (see connection_health.h,
+# ADR-0049); tested by collecting it, without a network.
+add_library(augustad_connection_health STATIC
+  connection_health.cpp
+)
+target_include_directories(augustad_connection_health PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(augustad_connection_health
+  PUBLIC augusta_networking augustad_match augustad_lock_free_metrics
+  PRIVATE augusta_protocol
+)
+augusta_set_module_scope(augustad_connection_health SERVER_ONLY)
+
 # The server's socket and SimulationWorld without threads or a clock, so a test
 # can drive a match by hand (see host.h), and the conversions Host makes at its
 # edges: between the protocol's plain types and the engine's (see wire.h), and
@@ -150,7 +162,7 @@ add_library(augustad_runtime STATIC
 target_include_directories(augustad_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_runtime
   PUBLIC augustad_host augusta_networking augusta_parameters augusta_physics augusta_simulation augusta_supervisor
-  PRIVATE augusta_assets augusta_logging augusta_tick augustad_metrics
+  PRIVATE augusta_assets augusta_logging augusta_tick augustad_connection_health augustad_metrics
 )
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)
 

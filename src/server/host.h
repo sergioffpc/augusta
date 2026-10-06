@@ -18,6 +18,7 @@
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
+#include "connection_sample.h"
 #include "content.h"
 #include "host_metrics.h"
 #include "match.h"
@@ -87,6 +88,13 @@ class Host {
   /// kAdmissionDeadline of connecting (AdmissionDeadlines), is disconnected,
   /// and leaves as if it had left.
   void PumpNetwork(std::chrono::steady_clock::time_point now);
+
+  /// The transport's measurements of every open connection, each with the
+  /// Session it carries if its client has joined: what ConnectionHealth
+  /// (connection_health.h) records. Each call clears the transport's worst-jitter mark, so one
+  /// caller samples, once a heartbeat interval (ADR-0049): the Network I/O
+  /// thread.
+  [[nodiscard]] std::vector<ConnectionSample> SampleConnections();
 
   /// Runs one fixed tick of SimulationWorld on one command per player in the
   /// match, sends each of them its update and, reliably (ADR-0044), every Shot

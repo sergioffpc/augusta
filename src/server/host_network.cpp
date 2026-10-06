@@ -13,6 +13,7 @@
 #include "augusta/networking.h"
 #include "augusta/protocol.h"
 #include "command_queue.h"
+#include "connection_sample.h"
 #include "host.h"
 #include "host_impl.h"
 #include "host_log.h"
@@ -257,6 +258,17 @@ void Host::PumpNetwork(std::chrono::steady_clock::time_point now) {
   impl.ExpelUnadmitted(now);
   // A closed connection delivers nothing more.
   impl.expelled.clear();
+}
+
+std::vector<ConnectionSample> Host::SampleConnections() {
+  const std::vector<networking::PeerStats> measured = impl_->network.GetStats();
+  std::vector<ConnectionSample> samples;
+  samples.reserve(measured.size());
+  const std::lock_guard<std::mutex> lock(impl_->mutex);
+  for (const networking::PeerStats& peer : measured) {
+    samples.push_back(ConnectionSample{.session = impl_->match.SessionOf(peer.peer), .stats = peer.stats});
+  }
+  return samples;
 }
 
 }  // namespace augusta::server
