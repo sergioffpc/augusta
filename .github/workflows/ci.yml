@@ -76,7 +76,7 @@ jobs:
           # output of theirs the runtime's tests load, which the tools job checks
           # they still write. tools/docs is the docs workflow's, not theirs.
           if echo "$changed" \
-              | grep -qE '^(tools/(pack|composer)/|tests/fixtures/example-packs/|\.github/workflows/ci\.yml$)'; then
+              | grep -qE '^(tools/(pack|composer)/|tools/(pyproject\.toml|uv\.lock)$|tests/fixtures/example-packs/|\.github/workflows/ci\.yml$)'; then
             echo "run_tools=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_tools=false" >> "$GITHUB_OUTPUT"
@@ -360,16 +360,16 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
-          cache-dependency-glob: tools/pack/uv.lock
+          cache-dependency-glob: tools/uv.lock
       - name: Install the cooker
-        working-directory: tools/pack
+        working-directory: tools
         run: uv sync --locked
       - name: Build the native modules
         # Into tools/pack/src/pack, against the venv's own interpreter, as
         # tools/pack/scripts/bootstrap-windows.ps1 does.
         shell: pwsh
         run: |
-          cmake --preset windows -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$PWD/tools/pack/.venv/Scripts/python.exe"
+          cmake --preset windows -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$PWD/tools/.venv/Scripts/python.exe"
           cmake --build tools/pack/cpp/build/x64-windows
       - name: Test (pytest)
         working-directory: tools/pack
