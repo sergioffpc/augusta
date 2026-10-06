@@ -75,7 +75,6 @@ add_library(augustad_heartbeat STATIC
   heartbeat.cpp
 )
 target_include_directories(augustad_heartbeat PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_heartbeat PUBLIC augusta_tick)
 augusta_set_module_scope(augustad_heartbeat SERVER_ONLY)
 
 # Whether the tick loop is still running, which /livez answers; pure, so tested
@@ -87,6 +86,16 @@ target_include_directories(augustad_liveness PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_liveness PUBLIC augusta_tick)
 augusta_set_module_scope(augustad_liveness SERVER_ONLY)
 
+# The lock-free counter, gauge and histogram the server's threads write in
+# place, and their Prometheus form (see lock_free_metrics.h, ADR-0049).
+find_package(prometheus-cpp CONFIG REQUIRED)
+add_library(augustad_lock_free_metrics STATIC
+  lock_free_metrics.cpp
+)
+target_include_directories(augustad_lock_free_metrics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(augustad_lock_free_metrics PUBLIC prometheus-cpp::core)
+augusta_set_module_scope(augustad_lock_free_metrics SERVER_ONLY)
+
 # The HTTP endpoint serving /metrics and /livez (see metrics.h, ADR-0049):
 # prometheus-cpp's core keeps and formats the metrics, Boost.Beast serves them.
 find_package(prometheus-cpp CONFIG REQUIRED)
@@ -96,8 +105,8 @@ add_library(augustad_metrics STATIC
 )
 target_include_directories(augustad_metrics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_metrics
-  PUBLIC augusta_tick
-  PRIVATE augustad_liveness augusta_logging augusta_version prometheus-cpp::core Boost::beast
+  PUBLIC augusta_tick prometheus-cpp::core
+  PRIVATE augustad_liveness augusta_logging augusta_version Boost::beast
 )
 # std::getenv reads the commit the image stamps in; MSVC deprecates it for
 # _dupenv_s, which has no portable equivalent. Asio wants the Windows version
@@ -108,15 +117,29 @@ target_compile_definitions(augustad_metrics
 )
 augusta_set_module_scope(augustad_metrics SERVER_ONLY)
 
+# Every client's Connection health as metrics (see connection_health.h,
+# ADR-0049); tested by collecting it, without a network.
+add_library(augustad_connection_health STATIC
+  connection_health.cpp
+)
+target_include_directories(augustad_connection_health PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(augustad_connection_health
+  PUBLIC augusta_networking augustad_match augustad_lock_free_metrics
+  PRIVATE augusta_protocol
+)
+augusta_set_module_scope(augustad_connection_health SERVER_ONLY)
+
 # The server's socket and SimulationWorld without threads or a clock, so a test
 # can drive a match by hand (see host.h), and the conversions Host makes at its
 # edges: between the protocol's plain types and the engine's (see wire.h), and
 # into SimulationWorld's (see simulation_mapping.h); with the match recording
-# Host writes (see recording.h, ADR-0048), which tools/replay replays.
+# Host writes (see recording.h, ADR-0048), which tools/replay replays, and what
+# it counts for the metrics endpoint (see host_metrics.h, ADR-0049).
 add_library(augustad_host STATIC
   host.cpp
   host_log.cpp
   host_match.cpp
+  host_metrics.cpp
   host_network.cpp
   recording.cpp
   simulation_mapping.cpp
@@ -127,7 +150,7 @@ target_include_directories(augustad_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_host
   PUBLIC augusta_ballistics augusta_networking augusta_parameters augusta_physics augusta_simulation augustad_content
          augustad_commands augustad_match augustad_misbehaviour augustad_admission augustad_heartbeat augusta_assets augusta_protocol augusta_replication
-         augusta_tick
+         augusta_tick augustad_lock_free_metrics prometheus-cpp::core
   PRIVATE augusta_logging augusta_map augusta_version
 )
 augusta_set_module_scope(augustad_host SERVER_ONLY)
@@ -138,7 +161,7 @@ add_library(augustad_runtime STATIC
 target_include_directories(augustad_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_runtime
   PUBLIC augustad_host augusta_networking augusta_parameters augusta_physics augusta_simulation augusta_supervisor
-  PRIVATE augusta_assets augusta_logging augusta_tick augustad_metrics
+  PRIVATE augusta_assets augusta_logging augusta_tick augustad_connection_health augustad_metrics
 )
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)
 

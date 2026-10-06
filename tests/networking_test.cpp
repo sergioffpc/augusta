@@ -39,6 +39,7 @@ using augusta::networking::Payload;
 using augusta::networking::PeerEventType;
 using augusta::networking::PeerId;
 using augusta::networking::PeerMessage;
+using augusta::networking::PeerStats;
 using augusta::networking::Reliability;
 using augusta::networking::Server;
 using augusta::networking::SimulateNetworkConditions;
@@ -506,6 +507,26 @@ TEST_F(ConnectedNetworkingTest, AClientThatClosesItsConnectionIsReportedAsClosed
   const std::optional<DisconnectReason> reason = WaitForServerToLosePeer();
 
   EXPECT_EQ(reason, DisconnectReason::kClosedByPeer);
+}
+
+TEST_F(ConnectedNetworkingTest, TheServerReportsTheStatsOfEachConnectedPeer) {
+  std::vector<PeerStats> stats;
+  ASSERT_TRUE(PollUntil([&] { PollBoth(); },
+                        [&] {
+                          stats = server_->GetStats();
+                          return !stats.empty();
+                        }));
+
+  ASSERT_EQ(stats.size(), 1U);
+  EXPECT_EQ(stats.front().peer, *peer_);
+  EXPECT_GE(stats.front().stats.ping_ms, 0);
+}
+
+TEST_F(ConnectedNetworkingTest, TheServerReportsNoStatsForAPeerThatLeft) {
+  client_->Disconnect();
+  ASSERT_TRUE(WaitForServerToLosePeer().has_value());
+
+  EXPECT_TRUE(server_->GetStats().empty());
 }
 
 TEST_F(NetworkingTest, APeerThatGoesSilentIsReportedAsALostConnectionOnceTheTimeoutPasses) {

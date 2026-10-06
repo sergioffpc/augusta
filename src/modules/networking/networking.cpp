@@ -53,6 +53,23 @@ std::string FormatAddr(const SteamNetworkingIPAddr& addr) {
   return buf.data();
 }
 
+// connection's stats, nullopt if the transport has none for it (it is gone).
+std::optional<ConnectionStats> GetConnectionStats(HSteamNetConnection connection) {
+  SteamNetConnectionRealTimeStatus_t status;
+  if (SteamNetworkingSockets()->GetConnectionRealTimeStatus(connection, &status, 0, nullptr) != k_EResultOK) {
+    return std::nullopt;
+  }
+  return ConnectionStats{
+      .ping_ms = status.m_nPing,
+      .quality_local = status.m_flConnectionQualityLocal,
+      .quality_remote = status.m_flConnectionQualityRemote,
+      .in_bytes_per_sec = status.m_flInBytesPerSec,
+      .out_bytes_per_sec = status.m_flOutBytesPerSec,
+      .max_jitter_us = status.m_usecMaxJitter,
+      .pending_bytes = status.m_cbPendingUnreliable + status.m_cbPendingReliable + status.m_cbSentUnackedReliable,
+  };
+}
+
 using StatusHandler = std::function<void(SteamNetConnectionStatusChangedCallback_t*)>;
 
 // GameNetworkingSockets queues connection-status events and delivers them on
@@ -352,20 +369,7 @@ std::optional<ConnectionStats> Client::GetStats() const {
     return std::nullopt;
   }
 
-  SteamNetConnectionRealTimeStatus_t status;
-  if (SteamNetworkingSockets()->GetConnectionRealTimeStatus(impl_->connection, &status, 0, nullptr) != k_EResultOK) {
-    return std::nullopt;
-  }
-
-  return ConnectionStats{
-      .ping_ms = status.m_nPing,
-      .quality_local = status.m_flConnectionQualityLocal,
-      .quality_remote = status.m_flConnectionQualityRemote,
-      .in_bytes_per_sec = status.m_flInBytesPerSec,
-      .out_bytes_per_sec = status.m_flOutBytesPerSec,
-      .max_jitter_us = status.m_usecMaxJitter,
-      .pending_bytes = status.m_cbPendingUnreliable + status.m_cbPendingReliable + status.m_cbSentUnackedReliable,
-  };
+  return GetConnectionStats(impl_->connection);
 }
 
 void Client::Send(const Payload& payload, Reliability reliability) {
@@ -550,6 +554,22 @@ std::vector<PeerMessage> Server::ReceiveMessages() {
     LT("subsystem=networking event=receive role=server count={}", messages.size());
   }
   return messages;
+}
+
+std::vector<PeerStats> Server::GetStats() const {
+  std::vector<HSteamNetConnection> peers;
+  {
+    const std::lock_guard<std::mutex> lock(impl_->mutex);
+    peers = impl_->peers.Connected();
+  }
+  std::vector<PeerStats> stats;
+  stats.reserve(peers.size());
+  for (const HSteamNetConnection connection : peers) {
+    if (const std::optional<ConnectionStats> connection_stats = GetConnectionStats(connection)) {
+      stats.push_back(PeerStats{.peer = static_cast<PeerId>(connection), .stats = *connection_stats});
+    }
+  }
+  return stats;
 }
 
 }  // namespace augusta::networking

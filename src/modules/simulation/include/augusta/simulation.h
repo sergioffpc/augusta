@@ -285,6 +285,11 @@ struct TickResult {
   /// The actions Game policy took on this tick, in the order it took them: at
   /// most one MatchEnd, on at most one tick of a Match.
   std::vector<PolicyAction> actions;
+  /// The Shooter's delay of each round of state's shots, in seconds, in no
+  /// particular order: from 0 to kMaxShootersDelay, which it is exactly when the
+  /// cap held it. The server's own, for its metrics (ADR-0049): neither sent
+  /// nor recorded.
+  std::vector<float> shooters_delays;
 };
 
 /// The single authoritative SimulationWorld. The server constructs

@@ -26,8 +26,11 @@ exposes it through its own `ClusterIP` Service (never a NodePort) with a
 (ADR-0005): one `io_context` that accepts each connection and answers its one
 request. It only reads. The Simulation and Network I/O
 threads write each metric in place: a counter or histogram is a lock-free
-atomic, and a value read together with others is published whole. The
-heartbeat (ADR-0029) and the metrics count the same events from the same
+atomic, and a value read together with others is published whole.
+prometheus-cpp's own histogram takes a lock to observe, which the metrics
+thread's collection would then hold up the tick with, so the server keeps its
+counters and histograms itself and hands prometheus-cpp only what to format.
+The heartbeat (ADR-0029) and the metrics count the same events from the same
 counters, so the log line and the series cannot disagree. The Network I/O
 thread samples every connection's transport status
 (`GetConnectionRealTimeStatus`) once a heartbeat interval (1 second). The
@@ -52,7 +55,7 @@ text, an address or a Character's name. The domain words are CONTEXT.md's.
 | | `augustad_tick_overruns_total` (work took longer than a tick) | counter | |
 | | `augustad_tick_resyncs_total` (the loop resynchronised to now, ADR-0005) | counter | |
 | | `augustad_tick_rate_hertz` (configured) | gauge | |
-| Lobby and Match | `augustad_lobby_players` | gauge | |
+| Lobby and Match | `augustad_lobby_players` (0 while a Match is in progress: its players are in it) | gauge | |
 | | `augustad_match_in_progress` | gauge, 0 or 1 | |
 | | `augustad_match_players_alive` | gauge | |
 | | `augustad_matches_started_total` | counter | |
@@ -60,16 +63,19 @@ text, an address or a Character's name. The domain words are CONTEXT.md's.
 | | `augustad_match_duration_seconds` | histogram | |
 | Sessions | `augustad_sessions` | gauge | |
 | | `augustad_joins_total` | counter | `result` = `admitted`, `refused`; `reason` |
-| | `augustad_disconnects_total` | counter | `reason`; `phase` = `lobby`, `match` |
+| | `augustad_disconnects_total` | counter | `reason`; `phase` = `admission` (connected, not yet in the Lobby), `lobby`, `match` |
 | Misbehaviour | `augustad_misbehaviour_total` | counter | `kind` |
 | Network | `augustad_network_sent_bytes_total`, `augustad_network_received_bytes_total` | counter | |
 | | `augustad_messages_sent_total`, `augustad_messages_received_total` | counter | `type` (ADR-0038's message types) |
 | | `augustad_authoritative_state_update_bytes` | histogram | |
 | | `augustad_commands_received_total` | counter | |
 | | `augustad_commands_discarded_total` | counter | `reason` |
-| Connection health | `augustad_connection_rtt_seconds` | histogram, and a gauge by `session_id` | |
-| | `augustad_connection_quality_ratio` | histogram, and a gauge by `session_id` | `direction` = `local`, `remote` |
-| | `augustad_connection_jitter_seconds` | histogram, and a gauge by `session_id` | |
+| Connection health | `augustad_connection_rtt_seconds` | histogram | |
+| | `augustad_connection_quality_ratio` | histogram | `direction` = `local`, `remote` |
+| | `augustad_connection_jitter_seconds` (worst over the interval) | histogram | |
+| | `augustad_session_connection_rtt_seconds` | gauge | `session_id` |
+| | `augustad_session_connection_quality_ratio` | gauge | `session_id`; `direction` = `local`, `remote` |
+| | `augustad_session_connection_jitter_seconds` | gauge | `session_id` |
 | | `augustad_connection_in_bytes_per_second`, `augustad_connection_out_bytes_per_second` | gauge | `session_id` |
 | | `augustad_connection_pending_bytes` | gauge | `session_id` |
 | Combat | `augustad_shots_total` | counter | |
@@ -80,18 +86,30 @@ text, an address or a Character's name. The domain words are CONTEXT.md's.
 | | `augustad_start_time_seconds` | gauge | |
 
 The values of `reason` and `kind` are the closed sets the server already
-decides with: admission's refusals, the transport's end reasons, the
-misbehaviour kinds and the command queue's discards.
+decides with: admission's refusals, the transport's end reasons (and a
+disconnect for misbehaving), the misbehaviour kinds and the command queue's
+discards (and its overflow, and commands from a player not in a match or a
+peer that has not joined). Every command counted received is taken in or
+discarded; those a peer sent after the one that got it disconnected are
+neither.
 
 `augustad_build_info`'s `commit` is the commit the server image was built from,
 which the image's runtime stage sets as the `AUGUSTA_COMMIT` environment
 variable: compiled in, it would change the build step's input on every commit
 and defeat the image's build cache. A local build reports `unknown`.
 
-Connection health is kept two ways. Histograms over every connection show its
-trend and drive the alert rules. Gauges labelled by Session ID show the one
-player whose connection is bad. A Session's gauges are removed when the Session
-ends. Session IDs are never reused, so every Session leaves its own series
+Connection health is kept two ways. Histograms over every connection, joined
+or not, show its trend and drive the alert rules. Gauges labelled by Session ID
+show the one player whose connection is bad; the RTT, quality and jitter gauges
+are named apart from their histograms (`augustad_session_connection_*`),
+because one name cannot be both a histogram and a gauge in the exposition. A
+value the transport has not measured yet (a negative quality, or no jitter yet,
+right after connecting) is not recorded. Each Session's gauges are read
+together, so the Network I/O thread publishes them whole, each Session's into
+one of a fixed set of slots, one per player the Lobby can hold, which the
+endpoint reads without the writer ever waiting on it. A Session's gauges are
+removed at the first sample after the Session ends, so within a heartbeat
+interval. Session IDs are never reused, so every Session leaves its own series
 behind, but no more than the Player count are live at once, which a 15-day
 retention easily holds.
 

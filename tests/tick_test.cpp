@@ -83,6 +83,23 @@ TEST(TickTest, ATickWhoseWorkTakesLongerThanATickOverruns) {
   EXPECT_TRUE(timing.overrun);
 }
 
+TEST(TickTest, ATickMeasuresHowLongItsWorkTook) {
+  EXPECT_EQ(Measure(kStart, kTick, kStart + kLateTolerance, kStart + kLateTolerance + kWork).duration, kWork);
+}
+
+TEST(TickTest, ATickThatEndsAFewTicksBehindIsNotResynchronised) {
+  const Clock::time_point end = kStart + ((kMaxTicksBehind + 1) * kTick);
+
+  EXPECT_FALSE(Measure(kStart, kTick, kStart, end).resynchronised);
+}
+
+TEST(TickTest, ATickThatEndsTooFarBehindIsResynchronisedAsTheNextDeadlineIs) {
+  const Clock::time_point end = kStart + ((kMaxTicksBehind + 1) * kTick) + std::chrono::microseconds{1};
+
+  EXPECT_TRUE(Measure(kStart, kTick, kStart, end).resynchronised);
+  EXPECT_EQ(NextDeadline(kStart, kTick, end), end);
+}
+
 // A client whose Ticks are paced, told how many of its commands the server holds.
 TEST(TickPacingTest, AClientTheServerHoldsMoreCommandsOfLengthensItsTick) {
   EXPECT_GT(PacedTickDuration(kTick, 2), kTick);

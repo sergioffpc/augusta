@@ -18,7 +18,9 @@
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
+#include "connection_sample.h"
 #include "content.h"
+#include "host_metrics.h"
 #include "match.h"
 
 /// \file
@@ -37,7 +39,8 @@
 ///
 /// The Network I/O thread's PumpNetwork and the Simulation thread's Tick may
 /// run concurrently: what they share (the Lobby, the match and the players'
-/// commands) is guarded inside.
+/// commands) is guarded inside. Both count what they do into the Host's metrics
+/// (host_metrics.h, ADR-0049) as they do it, lock-free.
 namespace augusta::server {
 
 /// Everything a Host needs to construct SimulationWorld and start listening.
@@ -86,6 +89,13 @@ class Host {
   /// and leaves as if it had left.
   void PumpNetwork(std::chrono::steady_clock::time_point now);
 
+  /// The transport's measurements of every open connection, each with the
+  /// Session it carries if its client has joined: what ConnectionHealth
+  /// (connection_health.h) records. Each call clears the transport's worst-jitter mark, so one
+  /// caller samples, once a heartbeat interval (ADR-0049): the Network I/O
+  /// thread.
+  [[nodiscard]] std::vector<ConnectionSample> SampleConnections();
+
   /// Runs one fixed tick of SimulationWorld on one command per player in the
   /// match, sends each of them its update and, reliably (ADR-0044), every Shot
   /// and Death of the tick and the Hit confirmations of its own hits, logs the
@@ -99,8 +109,8 @@ class Host {
   simulation::TickResult Tick(float delta_time);
 
   /// Counts the Tick just run, with how it kept to the Simulation loop's
-  /// schedule, toward the once-a-second heartbeat line (ADR-0029), and writes
-  /// that line when it is due. From the Simulation thread, after each Tick; a
+  /// schedule, into the metrics, and writes the once-a-second heartbeat line
+  /// (ADR-0029) when it is due. From the Simulation thread, after each Tick; a
   /// test that has no schedule need not call it.
   void RecordTiming(const tick::Timing& timing);
 
@@ -116,6 +126,10 @@ class Host {
   /// command it sent rather than holding its last movement: a test's way to
   /// tick only once what it sent has arrived. From any thread.
   [[nodiscard]] std::size_t QueuedCommands(SessionId session) const;
+
+  /// What it has counted (ADR-0049), for the metrics endpoint to collect and a
+  /// test to read. From any thread; it lives as long as the Host.
+  [[nodiscard]] const HostMetrics& Metrics() const;
 
  private:
   struct Impl;

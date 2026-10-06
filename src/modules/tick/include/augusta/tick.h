@@ -37,12 +37,18 @@ inline constexpr Clock::duration kLateTolerance = std::chrono::milliseconds{1};
 [[nodiscard]] Clock::time_point NextDeadline(Clock::time_point deadline, Clock::duration tick_duration,
                                              Clock::time_point now);
 
-/// How one Tick kept to its schedule, as the server's heartbeat counts it (ADR-0029).
+/// How one Tick kept to its schedule, as the server's heartbeat and metrics
+/// count it (ADR-0029, ADR-0049).
 struct Timing {
+  /// How long its work took.
+  Clock::duration duration{};
   /// It started more than kLateTolerance after its deadline.
   bool late = false;
   /// Its work took longer than a tick.
   bool overrun = false;
+  /// It ended so far behind its schedule that the loop resynchronises to now
+  /// (NextDeadline).
+  bool resynchronised = false;
 };
 
 /// How the Tick due at deadline, which ran from start to end, kept to a

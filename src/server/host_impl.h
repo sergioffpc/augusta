@@ -26,6 +26,7 @@
 #include "heartbeat.h"
 #include "host.h"
 #include "host_log.h"
+#include "host_metrics.h"
 #include "match.h"
 #include "misbehaviour.h"
 #include "recording.h"
@@ -77,6 +78,8 @@ struct Host::Impl {
 
   // Thread-safe by the transport's contract, used from both threads.
   networking::Server network;
+  // Written in place by both threads, lock-free; read by the metrics endpoint's.
+  HostMetrics metrics;
 
   // Guards everything below: written by the Network I/O thread as clients
   // join, leave and send commands, and by the Simulation thread as matches
@@ -86,7 +89,8 @@ struct Host::Impl {
   std::unordered_map<SessionId, Player> players;
   // The tick the match in progress, or the last one, started on.
   tick::Tick match_start_tick = 0;
-  // What Network I/O and the ticks did since the last heartbeat line.
+  // When the next heartbeat line is due, and the totals the last one ended at.
+  // Simulation thread only.
   Heartbeat heartbeat{std::chrono::steady_clock::now()};
   // A peer can send malformed messages as fast as it likes, so their warnings
   // are limited; the heartbeat still counts every one.
@@ -100,12 +104,16 @@ struct Host::Impl {
 
   Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy);
 
-  // Sending to players (host.cpp), each message already encoded (wire.h).
+  // Sending to players (host.cpp), each message already encoded (wire.h),
+  // counted as it is sent (SendCounted).
   void Reply(networking::PeerId peer, const networking::Payload& message);
   // Sends message reliably to the player of each of sessions.
   void SendTo(const std::vector<SessionId>& sessions, const networking::Payload& message);
   // Tells everyone in the Lobby who is in it, after it changed.
   void SendRoster();
+  // Sets the metrics' gauges of who is joined, in the Lobby and in a match,
+  // after any of it changed. With mutex held.
+  void SetLobbyGauges();
 
   // The Network I/O thread's side (host_network.cpp), with mutex held.
   void HandleMessage(const networking::PeerMessage& message, std::chrono::steady_clock::time_point now);
@@ -120,9 +128,13 @@ struct Host::Impl {
   void Expel(networking::PeerId peer, std::string_view reason);
   void HandleDisconnect(networking::PeerId peer, Leaving how);
 
-  // The Simulation thread's side (host_match.cpp). EndMatch and
-  // StartMatchIfReady with mutex held; Act and PrepareTick take it.
+  // The Simulation thread's side (host_match.cpp). CountMatchEnded, EndMatch
+  // and StartMatchIfReady with mutex held; Act and PrepareTick take it.
+  // How many ticks the match in progress, or the last one, has lasted,
+  // counting the one it ended on.
+  [[nodiscard]] tick::Tick MatchTicks() const { return tick - match_start_tick + 1; }
   void LogMatchEnded(EndReason reason, const std::optional<SessionId>& winner, std::size_t playing) const;
+  void CountMatchEnded(EndReason reason, const std::optional<SessionId>& winner);
   void EndMatch(const std::optional<SessionId>& winner, EndReason reason);
   void Act(const simulation::MatchEnd& end);
   void StartMatchIfReady();

@@ -20,6 +20,7 @@
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "command_queue.h"
+#include "host_metrics.h"
 #include "match.h"
 #include "recording.h"
 #include "simulation_mapping.h"
@@ -64,6 +65,36 @@ protocol::EntityIdWire ToWire(EntityId entity) {
 
 protocol::SessionIdWire ToWire(SessionId session) {
   return static_cast<protocol::SessionIdWire>(static_cast<std::uint32_t>(session));
+}
+
+MessageType TypeOf(std::span<const std::byte> payload) {
+  switch (static_cast<protocol::MessageTypeWire>(payload.front())) {
+    case protocol::MessageTypeWire::kJoinRequest:
+      return MessageType::kJoinRequest;
+    case protocol::MessageTypeWire::kJoinAccepted:
+      return MessageType::kJoinAccepted;
+    case protocol::MessageTypeWire::kJoinRefused:
+      return MessageType::kJoinRefused;
+    case protocol::MessageTypeWire::kCommands:
+      return MessageType::kCommands;
+    case protocol::MessageTypeWire::kAuthoritativeState:
+      return MessageType::kAuthoritativeState;
+    case protocol::MessageTypeWire::kLobby:
+      return MessageType::kLobby;
+    case protocol::MessageTypeWire::kReady:
+      return MessageType::kReady;
+    case protocol::MessageTypeWire::kMatchStart:
+      return MessageType::kMatchStart;
+    case protocol::MessageTypeWire::kMatchEnd:
+      return MessageType::kMatchEnd;
+    case protocol::MessageTypeWire::kShot:
+      return MessageType::kShot;
+    case protocol::MessageTypeWire::kHitConfirmation:
+      return MessageType::kHitConfirmation;
+    case protocol::MessageTypeWire::kDeath:
+      return MessageType::kDeath;
+  }
+  std::unreachable();
 }
 
 protocol::JoinRefusalWire ToWire(JoinRefusal reason) {

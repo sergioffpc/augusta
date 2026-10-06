@@ -14,6 +14,7 @@
 #include "augusta/replication.h"
 #include "augusta/tick.h"
 #include "command_queue.h"
+#include "host_metrics.h"
 #include "match.h"
 #include "recording.h"
 
@@ -30,6 +31,10 @@ namespace augusta::server {
 
 /// session as the protocol carries it.
 [[nodiscard]] protocol::SessionIdWire ToWire(SessionId session);
+
+/// The type of payload, an encoded message: what its first byte says. payload
+/// must be one Encode made, or Decode took.
+[[nodiscard]] MessageType TypeOf(std::span<const std::byte> payload);
 
 /// entity as the protocol carries it.
 [[nodiscard]] protocol::EntityIdWire ToWire(EntityId entity);

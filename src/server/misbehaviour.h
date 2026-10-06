@@ -43,7 +43,22 @@ enum class PeerRejection : std::uint8_t {
 };
 
 /// Whether rejection counts toward a disconnect: false for the routine ones.
-[[nodiscard]] bool IsMisbehaviour(PeerRejection rejection);
+[[nodiscard]] constexpr bool IsMisbehaviour(PeerRejection rejection) {
+  switch (rejection) {
+    case PeerRejection::kUndecodable:
+    case PeerRejection::kNotAClientMessage:
+    case PeerRejection::kNonFiniteCommand:
+    case PeerRejection::kOutOfRangeCommand:
+    case PeerRejection::kCommandsBeforeJoining:
+      return true;
+    case PeerRejection::kStaleCommand:
+    case PeerRejection::kCommandsOutsideMatch:
+    case PeerRejection::kStaleReady:
+    case PeerRejection::kJoinRefused:
+      return false;
+  }
+  return false;
+}
 
 /// A short lowercase description of rejection, for logs.
 [[nodiscard]] std::string_view DescribePeerRejection(PeerRejection rejection);
