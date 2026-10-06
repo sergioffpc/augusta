@@ -619,7 +619,7 @@ TEST_F(PackTest, LoadVerifiedPackRefusesAPackSignedByAnotherKey) {
   EXPECT_EQ(pack.error().load_error, augusta::assets::LoadError::kSignatureInvalid);
 }
 
-TEST_F(PackTest, AServerPackResolvesTheHashOfItsClientPack) {
+TEST_F(PackTest, APackNamesTheClientPackItWasWrittenWith) {
   const auto keys = GenerateEd25519KeyPair();
   const auto client_path = MakePackPath("augusta_assets_test_client.pack");
   ASSERT_TRUE(augusta::assets::WritePack(
@@ -632,44 +632,12 @@ TEST_F(PackTest, AServerPackResolvesTheHashOfItsClientPack) {
   ASSERT_TRUE(client.has_value());
 
   const auto server_path = MakePackPath("augusta_assets_test_server.pack");
-  const std::vector<augusta::assets::AssetEntry> entries = {
-      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kClientPack,
-                                  .path = std::string(augusta::assets::kClientPackPath),
-                                  .data = std::vector<std::byte>(client->Hash().begin(), client->Hash().end())},
-  };
-  ASSERT_TRUE(augusta::assets::WritePack(server_path, entries, keys.private_key).has_value());
+  ASSERT_TRUE(augusta::assets::WritePack(server_path, {}, keys.private_key, client->Hash()).has_value());
   const auto server = augusta::assets::Pack::Load(server_path, keys.public_key);
   ASSERT_TRUE(server.has_value());
 
-  EXPECT_EQ(server->ResolveClientPackHash().value(), client->Hash());
-}
-
-TEST_F(PackTest, AClientPackHashThatIsMissingOrOfAnotherSizeIsAResolveError) {
-  const auto keys = GenerateEd25519KeyPair();
-  const auto missing_path = MakePackPath("augusta_assets_test_no_client_pack.pack");
-  ASSERT_TRUE(augusta::assets::WritePack(
-                  missing_path,
-                  {augusta::assets::AssetEntry{
-                      .type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = MakeTriangleMeshBlob()}},
-                  keys.private_key)
-                  .has_value());
-  const auto missing = augusta::assets::Pack::Load(missing_path, keys.public_key);
-  ASSERT_TRUE(missing.has_value());
-  EXPECT_EQ(missing->ResolveClientPackHash().error(), augusta::assets::ResolveError::kNotFound);
-
-  for (const std::size_t size : {augusta::assets::kPackHashSize - 1, augusta::assets::kPackHashSize + 1}) {
-    const auto path = MakePackPath("augusta_assets_test_short_client_pack.pack");
-    ASSERT_TRUE(
-        augusta::assets::WritePack(path,
-                                   {augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kClientPack,
-                                                                .path = std::string(augusta::assets::kClientPackPath),
-                                                                .data = std::vector<std::byte>(size)}},
-                                   keys.private_key)
-            .has_value());
-    const auto pack = augusta::assets::Pack::Load(path, keys.public_key);
-    ASSERT_TRUE(pack.has_value());
-    EXPECT_EQ(pack->ResolveClientPackHash().error(), augusta::assets::ResolveError::kCorruptBlob) << size;
-  }
+  EXPECT_EQ(server->ClientPackHash(), client->Hash());
+  EXPECT_EQ(client->ClientPackHash(), std::nullopt);
 }
 
 // The remaining tests exercise Pack::Load's fail-closed parsing directly,
@@ -679,6 +647,11 @@ TEST_F(PackTest, AClientPackHashThatIsMissingOrOfAnotherSizeIsAResolveError) {
 // these need a re-signed file to behave deterministically.
 class PackLoadNegativeTest : public PackTest {
  protected:
+  // assets.cpp's kHeaderSize and kTrailerSize: magic, version, data offset,
+  // index offset, index count, flags and client pack hash; hash and signature.
+  static constexpr std::size_t kHeaderSize = 4 + 4 + 8 + 8 + 4 + 1 + 32;
+  static constexpr std::size_t kTrailerSize = 32 + 64;
+
   void SetUp() override {
     keys_ = GenerateEd25519KeyPair();
     const std::vector<augusta::assets::AssetEntry> entries = {
@@ -731,7 +704,7 @@ TEST_F(PackLoadNegativeTest, RejectsFileTooShortForHeaderAndTrailer) {
 TEST_F(PackLoadNegativeTest, RejectsIndexOffsetPastTruncatedContent) {
   // Short enough that the header's own (unchanged) index_offset now
   // claims to point past this file's much smaller hashed_length.
-  const std::vector<std::byte> bytes(valid_bytes_.begin(), valid_bytes_.begin() + 40);
+  const std::vector<std::byte> bytes(valid_bytes_.begin(), valid_bytes_.begin() + kHeaderSize + kTrailerSize + 1);
   const auto path = MakePackPath("augusta_assets_test_truncated_mid.pack");
   WriteFileBytes(path, bytes);
 
@@ -746,13 +719,36 @@ TEST_F(PackLoadNegativeTest, RejectsCorruptedContentAsHashMismatch) {
   // header) - the trailer's stored hash still reflects the original
   // content, so this must be caught as a mismatch rather than silently
   // loading corrupted mesh data.
-  bytes[30] ^= std::byte{0xFF};
+  bytes[kHeaderSize + 2] ^= std::byte{0xFF};
   const auto path = MakePackPath("augusta_assets_test_corrupted.pack");
   WriteFileBytes(path, bytes);
 
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
   ASSERT_FALSE(pack.has_value());
   EXPECT_EQ(pack.error(), augusta::assets::LoadError::kHashMismatch);
+}
+
+TEST_F(PackLoadNegativeTest, RejectsAClientPackHashItsHeaderDoesNotFlag) {
+  auto bytes = valid_bytes_;
+  // The hash's first byte, right after the flags byte, which is clear.
+  bytes[kHeaderSize - 32] = std::byte{1};
+  const auto path = MakePackPath("augusta_assets_test_unflagged_hash.pack");
+  WriteFileBytes(path, bytes);
+
+  const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
+  ASSERT_FALSE(pack.has_value());
+  EXPECT_EQ(pack.error(), augusta::assets::LoadError::kTruncated);
+}
+
+TEST_F(PackLoadNegativeTest, RejectsAHeaderFlagNoWriterSets) {
+  auto bytes = valid_bytes_;
+  bytes[kHeaderSize - 33] = std::byte{0x02};
+  const auto path = MakePackPath("augusta_assets_test_unknown_flag.pack");
+  WriteFileBytes(path, bytes);
+
+  const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
+  ASSERT_FALSE(pack.has_value());
+  EXPECT_EQ(pack.error(), augusta::assets::LoadError::kTruncated);
 }
 
 TEST_F(PackLoadNegativeTest, RejectsWrongPublicKeyAsSignatureInvalid) {

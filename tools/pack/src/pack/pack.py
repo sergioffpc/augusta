@@ -63,9 +63,8 @@ ASSET_TYPE_HITBOX = 5
 ASSET_TYPE_SCENE = 6
 ASSET_TYPE_SCRIPT = 7
 ASSET_TYPE_CHARACTERS = 8
-ASSET_TYPE_CLIENT_PACK = 9
-ASSET_TYPE_EYE = 10
-ASSET_TYPE_SOUNDS = 11
+ASSET_TYPE_EYE = 9
+ASSET_TYPE_SOUNDS = 10
 
 # The body part a hitbox blob stands for (assets::BodyPart): where on a player a
 # bullet struck, which decides its damage (US-11, US-12).
@@ -77,11 +76,6 @@ BODY_PARTS = (BODY_PART_HEAD, BODY_PART_TORSO, BODY_PART_LIMB)
 # Pack-relative path of a scenario's character list (assets.h's
 # kCharactersPath), in both of its packs.
 CHARACTERS_PATH = "Characters"
-
-# Pack-relative path, in a scenario's server pack, of the hash of the client
-# pack cooked with it (assets.h's kClientPackPath). The blob is the hash's
-# BLAKE3_HASH_SIZE bytes and nothing else.
-CLIENT_PACK_PATH = "ClientPack"
 
 # Pack-relative path, in a scenario's client pack, of the sounds folder its cue
 # sounds are addressed under (assets.h's kSoundsPath).
@@ -97,11 +91,15 @@ TEXTURE_FORMAT_BC4 = 2
 NO_PARENT = 0xFFFFFFFF
 
 MAGIC = b"AUGP"
-FORMAT_VERSION = 1
-# magic(4) + version(u32=4) + data_offset(u64=8) + index_offset(u64=8) +
-# index_count(u32=4) - assets.cpp's kHeaderSize.
-HEADER_SIZE = 4 + 4 + 8 + 8 + 4
+FORMAT_VERSION = 2
 BLAKE3_HASH_SIZE = 32
+# The header's flags byte (assets.cpp's kHeaderHasClientPack): whether it names
+# the hash of the client pack cooked with this one.
+HEADER_HAS_CLIENT_PACK = 1 << 0
+# magic(4) + version(u32=4) + data_offset(u64=8) + index_offset(u64=8) +
+# index_count(u32=4) + flags(u8=1) + client pack hash(32) - assets.cpp's
+# kHeaderSize.
+HEADER_SIZE = 4 + 4 + 8 + 8 + 4 + 1 + BLAKE3_HASH_SIZE
 ED25519_SIGNATURE_SIZE = 64
 
 
@@ -302,18 +300,24 @@ def _validate_entries(entries: list[AssetEntry]) -> None:
         raise WriteError("duplicate entry path")
 
 
-def write_pack(output_path: Path, entries: list[AssetEntry], signing_key: bytes) -> bytes:
+def write_pack(
+    output_path: Path, entries: list[AssetEntry], signing_key: bytes, client_pack_hash: bytes | None = None
+) -> bytes:
     """Writes entries into a new pack file at output_path, in ADR-0031's
     header/data/index/trailer order, signing the trailer with signing_key
     (the raw 64-byte Ed25519 secret key, libsodium's own seed+pubkey
-    layout - e.g. from keys.py's generate_keypair). Atomic: assembled into
-    a temporary file first, renamed into place only once fully written.
+    layout - e.g. from keys.py's generate_keypair). Its header names
+    client_pack_hash, the hash of the client pack cooked with it, when given
+    (a server pack's). Atomic: assembled into a temporary file first, renamed
+    into place only once fully written.
 
     Returns the pack's BLAKE3 hash, the one its trailer signs.
     """
     _validate_entries(entries)
     if len(signing_key) != 64:
         raise WriteError(f"signing_key must be 64 bytes, got {len(signing_key)}")
+    if client_pack_hash is not None and len(client_pack_hash) != BLAKE3_HASH_SIZE:
+        raise WriteError(f"client_pack_hash must be {BLAKE3_HASH_SIZE} bytes, got {len(client_pack_hash)}")
 
     data_section = bytearray()
     offsets: list[int] = []
@@ -339,6 +343,8 @@ def write_pack(output_path: Path, entries: list[AssetEntry], signing_key: bytes)
     header.u64(HEADER_SIZE)
     header.u64(index_offset)
     header.u32(len(entries))
+    header.u8(HEADER_HAS_CLIENT_PACK if client_pack_hash is not None else 0)
+    header.raw(client_pack_hash if client_pack_hash is not None else bytes(BLAKE3_HASH_SIZE))
 
     total_size = len(header) + len(data_section) + len(index_section) + BLAKE3_HASH_SIZE + ED25519_SIGNATURE_SIZE
     if total_size > MAX_PACK_SIZE:

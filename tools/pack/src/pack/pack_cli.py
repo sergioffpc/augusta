@@ -70,6 +70,8 @@ def inspect_main(argv: list[str] | None = None) -> int:
     print(f"  data offset   {_format_size(info.data_offset)}")
     print(f"  index offset  {_format_size(info.index_offset)}")
     print(f"  index count   {_format_size(len(info.entries))}")
+    client_pack = info.client_pack_hash.hex() if info.client_pack_hash is not None else "none"
+    print(f"  client pack   {client_pack}")
 
     print()
     print(f"Data (offset {_format_size(info.data_offset)}, {_format_size(info.index_offset - info.data_offset)} bytes)")

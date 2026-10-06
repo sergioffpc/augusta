@@ -131,10 +131,10 @@ std::expected<Content, ContentError> LoadServerContent(const assets::Pack& pack,
     return std::unexpected(ContentError::kCharactersLoading);
   }
   // The client pack cooked with this one, the only one a player may join with.
-  const auto client_pack = pack.ResolveClientPackHash();
+  const std::optional<assets::PackHash>& client_pack = pack.ClientPackHash();
   if (!client_pack) {
-    LE("subsystem=server event=client_pack_hash_loading_failed path={} asset={} error={}", pack.Path().string(),
-       assets::kClientPackPath, assets::DescribeResolveError(client_pack.error(), "client pack hash"));
+    LE("subsystem=server event=client_pack_hash_loading_failed path={} error=\"names no client pack\"",
+       pack.Path().string());
     return std::unexpected(ContentError::kClientPackHashLoading);
   }
   LI("subsystem=server event=map_loaded colliders={} spawn_points={} characters={}", collision->size(),

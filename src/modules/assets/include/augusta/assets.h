@@ -47,7 +47,6 @@ enum class AssetType : std::uint8_t {
   kScene,
   kScript,
   kCharacters,
-  kClientPack,
   kEye,
   kSounds,
 };
@@ -182,10 +181,6 @@ inline constexpr std::string_view kParametersScriptPath = "parameters.lua";
 /// Pack-relative path of a scenario's character list (ADR-0042), in both of its
 /// packs.
 inline constexpr std::string_view kCharactersPath = "Characters";
-
-/// Pack-relative path, in a scenario's server pack, of the hash of the client
-/// pack cooked with it.
-inline constexpr std::string_view kClientPackPath = "ClientPack";
 
 /// The size of a pack's BLAKE3 hash, in bytes.
 inline constexpr std::size_t kPackHashSize = 32;
@@ -406,10 +401,11 @@ class Pack {
   /// both client and server packs.
   [[nodiscard]] std::expected<std::vector<std::string>, ResolveError> ResolveCharacters() const;
 
-  /// Resolves, at kClientPackPath, the Hash() of the client pack cooked with
-  /// this one. Present in the server pack only: the server admits only clients
-  /// that loaded that pack.
-  [[nodiscard]] std::expected<PackHash, ResolveError> ResolveClientPackHash() const;
+  /// The Hash() of the client pack cooked with this one, as its header names it
+  /// (ADR-0031); nullopt for a pack that names none, as a client pack never
+  /// does. A server pack names it: the server admits only clients that loaded
+  /// that pack.
+  [[nodiscard]] const std::optional<PackHash>& ClientPackHash() const;
 
   /// This pack's hash, as its trailer holds it and Load verified it.
   [[nodiscard]] const PackHash& Hash() const;

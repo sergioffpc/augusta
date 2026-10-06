@@ -57,9 +57,8 @@ TEST_F(CookedPackTest, TheServerPackHoldsNoVisualContentAndNamesItsClientPack) {
   EXPECT_TRUE(server_->ResolveCollision("Root/Floor/Collider").has_value());
   EXPECT_TRUE(server_->ResolveSpawnPoint("Root/Spawn").has_value());
 
-  const auto client_hash = server_->ResolveClientPackHash();
-  ASSERT_TRUE(client_hash.has_value());
-  EXPECT_EQ(*client_hash, client_->Hash());
+  EXPECT_EQ(server_->ClientPackHash(), client_->Hash());
+  EXPECT_EQ(client_->ClientPackHash(), std::nullopt);
 
   const auto parameters = server_->ResolveScript("parameters.lua");
   ASSERT_TRUE(parameters.has_value());
