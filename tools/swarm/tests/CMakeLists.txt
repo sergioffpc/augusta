@@ -34,8 +34,8 @@ gtest_discover_tests(augusta_swarm_settings_tests DISCOVERY_TIMEOUT 30)
 
 # The netcode under an impaired link: whole runs under the transport's simulated
 # latency, jitter, loss and reordering, minutes each, so they carry the label
-# netcode, which the tools test presets leave out and the linux-netcode one
-# (the nightly's) runs alone.
+# netcode, which every test preset leaves out but linux-netcode (the
+# nightly's), which runs them alone.
 add_executable(augusta_swarm_netcode_tests netcode_test.cpp)
 target_link_libraries(augusta_swarm_netcode_tests PRIVATE
   augusta_swarm_run augusta_swarm_netcode_stats augustad_content augustad_host augusta_assets augusta_map

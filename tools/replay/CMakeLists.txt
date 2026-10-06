@@ -1,5 +1,6 @@
 # augusta-replay: replays a match recording augustad wrote against the server
-# pack it names (ADR-0048). A developer's tool, not shipped with the server.
+# pack it names (ADR-0048). A developer's tool, not shipped with the server,
+# built with AUGUSTA_TOOLS (the root CMakeLists.txt).
 
 # The replay itself, apart from the command line (see replay.h): its tests run
 # it on recordings made in the test.

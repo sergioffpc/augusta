@@ -1,6 +1,6 @@
 # augusta-swarm: the Scripted players (CONTEXT.md), a whole server's worth of
 # clients with no window or GPU, for load and end-to-end tests. A tool, built
-# only with AUGUSTA_SWARM (the root CMakeLists.txt), on every platform.
+# with AUGUSTA_TOOLS (the root CMakeLists.txt), on every platform.
 
 # Its startup settings, read under ADR-0034's rules (see settings.h).
 add_library(augusta_swarm_settings STATIC

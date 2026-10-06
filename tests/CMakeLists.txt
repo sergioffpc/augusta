@@ -394,16 +394,15 @@ endif()
 
 add_subdirectory(fuzz)
 
-# Every executable here and in fuzz/, in tools/replay/tests (the tests of
-# augusta-replay, kept next to it), and in tools/swarm/tests (the tests of
-# augusta-swarm) when AUGUSTA_SWARM builds the tool:
+# Every executable here and in fuzz/, and in each tool's tests/ (kept next to
+# the tool) when AUGUSTA_TOOLS builds the tools:
 # what ctest, the benchmarks and the fuzz jobs run. Each directory is
 # EXCLUDE_FROM_ALL, so this is how they get built. Custom targets (the seed
 # regenerators) stay out: they rewrite committed files.
 add_custom_target(augusta_tests)
-set(test_directories ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/fuzz ${CMAKE_SOURCE_DIR}/tools/replay/tests)
-if (AUGUSTA_SWARM)
-  list(APPEND test_directories ${CMAKE_SOURCE_DIR}/tools/swarm/tests)
+set(test_directories ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/fuzz)
+if (AUGUSTA_TOOLS)
+  list(APPEND test_directories ${CMAKE_SOURCE_DIR}/tools/replay/tests ${CMAKE_SOURCE_DIR}/tools/swarm/tests)
 endif()
 foreach(directory IN LISTS test_directories)
   get_property(directory_targets DIRECTORY ${directory} PROPERTY BUILDSYSTEM_TARGETS)

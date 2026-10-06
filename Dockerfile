@@ -46,12 +46,12 @@ RUN ./third_party/vcpkg/vcpkg install --x-install-root=build/x64-linux/vcpkg_ins
 
 COPY src src
 COPY tests tests
-# augusta-replay and its tests, which the configure always reads (CMakeLists.txt).
-COPY tools/replay tools/replay
 
 # The install is staged under DESTDIR with the prefix the runtime stage runs
 # it from, so this file never names a path inside the build tree.
-RUN cmake --preset linux \
+# Without the C++ tools (AUGUSTA_TOOLS): the image builds augustad alone and
+# does not copy tools/.
+RUN cmake --preset linux -DAUGUSTA_TOOLS=OFF \
     && cmake --build --preset linux --target augustad \
     && DESTDIR=/workspace/stage cmake --install build/x64-linux --prefix /usr/local
 

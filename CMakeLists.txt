@@ -86,16 +86,15 @@ add_subdirectory(src/modules/harness)
 add_subdirectory(src/modules/presentation)
 add_subdirectory(src/modules/replication)
 add_subdirectory(src/server)
-# augusta-replay, which replays a match recording augustad wrote (ADR-0048): a
-# developer's tool, not shipped with the server, built with the runtime it
-# links on every platform, since its tests hold the golden match.
-add_subdirectory(tools/replay)
-# augusta-swarm, the Scripted players: a tool built with the runtime it
-# links (harness, map, config), on every platform. Off by default, so no CI
-# build compiles or tests it: the windows-tools and linux-tools presets
-# (CMakePresets.json) turn it on, for the tool and its tests in augusta_tests.
-option(AUGUSTA_SWARM "Build augusta-swarm (tools/swarm) and its tests" OFF)
-if (AUGUSTA_SWARM)
+# The C++ tools, built with the runtime they link on every platform, all or
+# none: augusta-replay, which replays a match recording augustad wrote
+# (ADR-0048), and augusta-swarm, the Scripted players (ADR-0013). On by
+# default, so every build compiles them and their tests join augusta_tests,
+# the golden match among them; the server image, which builds augustad alone,
+# turns them off.
+option(AUGUSTA_TOOLS "Build the C++ tools (tools/replay, tools/swarm) and their tests" ON)
+if (AUGUSTA_TOOLS)
+  add_subdirectory(tools/replay)
   add_subdirectory(tools/swarm)
 endif()
 # The linux-coverage preset's report as build targets, for an editor that runs

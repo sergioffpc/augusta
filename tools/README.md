@@ -380,14 +380,15 @@ uv run augusta-pack augusta --assets-root ..\composer\examples --signing-key $go
 seen a number of Match ends, then exits 0; it exits 1 as soon as one fails or a
 timeout passes (ADR-0013). Each player is a client with no window or GPU: it
 predicts and sends its Commands like `augustac`, but decides them itself from
-what the server tells it, from a seed. Unlike the other tools it is C++ built
-with the engine, on Windows and Linux, but only when asked for, and never by
-a pull request (the nightly builds it for its netcode tests, below):
+what the server tells it, from a seed. Like `augusta-replay`, it is C++ built
+with the engine, on Windows and Linux, in every build: the CMake option
+`AUGUSTA_TOOLS`, on by default, builds the C++ tools all together or none
+(the server image turns it off):
 
 ```powershell
-cmake --preset windows-tools
-cmake --build --preset windows-tools
-# build/x64-windows-tools/tools/swarm/augusta-swarm.exe
+cmake --preset windows
+cmake --build --preset windows --target augusta-swarm
+# build/x64-windows/tools/swarm/augusta-swarm.exe
 ```
 
 It reads `augusta-swarm.yaml` next to the executable, or the file
@@ -398,26 +399,27 @@ server's, and its scenario's Player count 2 or more: a Match of one ends only
 when its player dies, which nothing in it can cause. The example scenario's is
 1, so a single player can run it alone.
 
-On Linux the presets are `linux-tools`, and the executable lands in
-`build/x64-linux-tools/tools/swarm/`.
+On Linux the preset is `linux`, and the executable lands in
+`build/x64-linux/tools/swarm/`.
 
-Its tests are in [`swarm/tests/`](swarm/tests/). In a tools build they
-join `augusta_tests`, and `ctest` runs them with the engine's:
+Its tests are in [`swarm/tests/`](swarm/tests/). They join `augusta_tests`,
+and `ctest` runs them with the engine's:
 
 ```powershell
-cmake --build --preset windows-tools --target augusta_tests
-ctest --preset windows-tools
+cmake --build --preset windows --target augusta_tests
+ctest --preset windows
 ```
 
 but for the netcode tests (label `netcode`): runs of Scripted players under
-simulated latency, jitter, loss and reordering, minutes each, which the
-nightly runs (ADR-0013). To run them by hand, on Linux:
+simulated latency, jitter, loss and reordering, minutes each, which every
+test preset leaves out and the nightly runs (ADR-0013). To run them by hand,
+on Linux:
 
 ```sh
 ctest --preset linux-netcode
 ```
 
-or on Windows, `ctest --test-dir build/x64-windows-tools -L netcode`.
+or on Windows, `ctest --test-dir build/x64-windows -L netcode`.
 
 ## Replay
 
@@ -433,7 +435,8 @@ The pack must be the one the recording names. Without `--across-builds` the
 outcome must match exactly, which holds on the build that recorded it; with
 it, positions may be a grid step off. It exits 0 when every tick matches, 1
 when one diverges (printing both sides' bodies), and 2 when the replay cannot
-start. It is C++ built with the engine on every platform, by every build:
+start. It is C++ built with the engine on every platform, by every build
+(`AUGUSTA_TOOLS`, as `augusta-swarm` is):
 
 ```powershell
 cmake --build --preset windows-debug --target augusta-replay
