@@ -129,9 +129,12 @@ apart by their namespace label.
 Dashboards are code: JSON in ConfigMaps that Grafana's sidecar loads, kept in
 the repository next to the chart. There are two, "Server" (tick, Lobby and
 Match, Sessions, misbehaviour, network, combat) and "Connection health" (the
-histograms and one line per Session). Alert rules are `PrometheusRule`s in the
-`augustad` chart (server down, tick overruns sustained, packet loss high). They
-route to no receiver yet, so they show only in Grafana and Alertmanager.
+histograms and one line per Session). Each selects its environment from the
+namespace label itself, so only one release ships them, `develop`'s: a second
+copy would load the same dashboards again. Alert rules are `PrometheusRule`s
+in the `augustad` chart (server down, tick overruns sustained, packet loss
+high). They route to no receiver yet, so they show only in Grafana and
+Alertmanager.
 
 ## Considered Options
 
