@@ -118,6 +118,10 @@ _Avoid_: View, shown view, view tick (a view is where a player looks: a yaw and 
 The measured network latency between a client and the server for a single request/response cycle.
 _Avoid_: Ping, lag
 
+**Connection health**:
+How well a client's transport connection is delivering, as the server's own transport measures it: its RTT, packet loss each way, jitter, throughput and send queue. A property of the transport connection, not of the Session above it: what happens to a Session (admitted, refused, left mid-Match) is not part of it.
+_Avoid_: Connection quality (the transport's own 0..1 delivery rate, one input of it), network health, lag
+
 ### Architecture
 
 **Mechanism**:
