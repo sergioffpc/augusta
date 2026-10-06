@@ -76,6 +76,10 @@ spec:
     alertmanager:
       enabled: true
     grafana:
+      # Fixed and in the clear: Grafana is reached only on the LAN, and a
+      # password the chart generated would be lost with the cluster.
+      adminUser: admin
+      adminPassword: admin
       service:
         # Pinned, like the game port (apps), so the LAN has a stable address.
         type: NodePort
