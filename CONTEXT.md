@@ -156,7 +156,7 @@ Where anything that plays connects to the server: the client's network connectio
 _Avoid_: Client session, bot
 
 **Scripted player**:
-What plays in a person's place through a Harness, deciding each tick's Command from the Server view, its own prediction and its seed: it wanders, aims from where its prediction puts it at the nearest living other player, fires in Bursts and reloads. augusta-loadtest runs a scenario's Player count of them against a server, for load and end-to-end tests.
+What plays in a person's place through a Harness, deciding each tick's Command from the Server view, its own prediction and its seed: it wanders within a few metres of where the Match spawned it, aims from where its prediction puts it at the nearest living other player, fires in Bursts and reloads. augusta-loadtest runs a scenario's Player count of them against a server, for load and end-to-end tests.
 _Avoid_: Bot (too vague: it names anything automated), AI player (it follows a fixed script, it does not plan)
 
 ### Combat

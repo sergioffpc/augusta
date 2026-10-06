@@ -1,5 +1,6 @@
 #include "scripted_player.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <numbers>
@@ -112,6 +113,35 @@ TEST(ScriptedPlayerTest, AimsFromWhereItsPredictionPutsItsBodyNotWhereTheNewestS
   EXPECT_NEAR(aim.z, 0.0F, 1e-3F);
 }
 
+// A Scripted player knows nothing of the Map's edges: it stays near where the
+// Match spawned it, so it never wanders off a small Map and falls for good.
+TEST(ScriptedPlayerTest, StrayedFromItsSpawnItHeadsBackTowardIt) {
+  ScriptedPlayer player(kSeed);
+  // InMatch spawns this player where its body is: at the origin.
+  const ServerView view = InMatch(Vec3(0.0F), {{kNear, Vec3(0.0F, 0.0F, -10.0F)}});
+
+  const Command command = player.NextCommand(view, {.position = Vec3(6.0F, 0.0F, 0.0F)});
+
+  const Vec3 heading = Horizontal(command.movement.direction);
+  EXPECT_NEAR(heading.x, -1.0F, 1e-3F);
+  EXPECT_NEAR(heading.z, 0.0F, 1e-3F);
+}
+
+TEST(ScriptedPlayerTest, NeverStraysFarFromItsSpawnWhereverItsLegsTakeIt) {
+  ScriptedPlayer player(kSeed);
+  const ServerView view = InMatch(Vec3(0.0F), {{kNear, Vec3(0.0F, 0.0F, -10.0F)}});
+
+  // Its own body moved by each Command as a sprint would, a tick at a time.
+  constexpr float kSprintStep = 6.0F / kTickRate;
+  Vec3 own(0.0F);
+  float farthest = 0.0F;
+  for (int tick = 0; tick < kManyTicks; ++tick) {
+    own += player.NextCommand(view, {.position = own}).movement.direction * kSprintStep;
+    farthest = std::max(farthest, augusta::math::Length(own));
+  }
+
+  EXPECT_LT(farthest, 4.0F);
+}
 TEST(ScriptedPlayerTest, AimsPastADeadPlayerAtTheNearestLivingOne) {
   ScriptedPlayer player(kSeed);
   ServerView view = InMatch(Vec3(0.0F), {{kFar, Vec3(30.0F, 0.0F, 0.0F)}, {kNear, Vec3(0.0F, 0.0F, -10.0F)}});

@@ -29,6 +29,11 @@ constexpr float kTorsoHeightFraction = 0.6F;
 constexpr int kBurstTicks = 6;
 constexpr int kReleaseTicks = 18;
 
+// How far it may stray from where the Match spawned it, in metres, before it
+// heads back: it knows nothing of the Map's edges, and this keeps it on any Map
+// whose floor reaches a few metres around each spawn point.
+constexpr float kLeashM = 3.0F;
+
 // A leg lasts a whole number of seconds from one to three; of every ten legs,
 // this many sprint, and this many stand and this many crouch (the rest go prone).
 constexpr std::uint32_t kMinLegSeconds = 1;
@@ -81,6 +86,16 @@ std::optional<physics::BodyState> NearestTarget(const harness::ServerView& view,
   return nearest;
 }
 
+// Where the Match view tells of spawned this player, if it does.
+std::optional<math::Vec3> OwnSpawn(const harness::ServerView& view) {
+  if (!view.match_start.has_value() || !view.accepted.has_value()) {
+    return std::nullopt;
+  }
+  const auto& players = view.match_start->players;
+  const auto found = std::ranges::find(players, view.accepted->session, &harness::MatchPlayer::session);
+  return found == players.end() ? std::nullopt : std::optional(found->spawn);
+}
+
 struct View {
   float yaw = 0.0F;
   float pitch = 0.0F;
@@ -112,6 +127,21 @@ void ScriptedPlayer::StartLegIfDone(std::uint8_t tick_rate_hz) {
   leg_.ticks_left = static_cast<int>(seconds * tick_rate_hz);
 }
 
+void ScriptedPlayer::HeadBackIfStrayed(const harness::ServerView& view, const physics::BodyState& own) {
+  const std::optional<math::Vec3> spawn = OwnSpawn(view);
+  if (!spawn.has_value()) {
+    return;
+  }
+  const math::Vec3 away = own.position - *spawn;
+  if (std::hypot(away.x, away.z) <= kLeashM) {
+    return;
+  }
+  // Straight back, for the rest of this tick's leg: the next leg, drawn once
+  // it is back within reach, picks a new heading as any other.
+  leg_.yaw = LookAt(own.position, *spawn).yaw;
+  leg_.ticks_left = 0;
+}
+
 command::Command ScriptedPlayer::NextCommand(const harness::ServerView& view, const physics::BodyState& own) {
   if (!view.OwnAlive() || !view.authoritative.has_value()) {
     return command::Command{};
@@ -124,6 +154,7 @@ command::Command ScriptedPlayer::NextCommand(const harness::ServerView& view, co
 
   StartLegIfDone(view.accepted->tick_rate_hz);
   --leg_.ticks_left;
+  HeadBackIfStrayed(view, own);
   command::Command command;
   command.movement = physics::MovementInput{
       .direction = command::ViewDirection(leg_.yaw, 0.0F), .sprint = leg_.sprint, .desired_stance = leg_.stance};

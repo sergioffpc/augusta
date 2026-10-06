@@ -16,7 +16,8 @@
 /// and sends them like any client's.
 ///
 /// In a Match it wanders, a leg at a time: a random heading, sprint and stance
-/// for one to three seconds. It aims at the nearest living other player, as
+/// for one to three seconds, never more than a few metres from where the Match
+/// spawned it, since it knows nothing of the Map's edges. It aims at the nearest living other player, as
 /// the newest Authoritative State places them, from where its own prediction
 /// places its own body, as a client aims, and fires at it in short
 /// Bursts, releasing the trigger between them so the Recoil offset recovers.
@@ -45,6 +46,9 @@ class ScriptedPlayer {
 
   // A new leg of tick_rate_hz-tick seconds, once the one under way is done.
   void StartLegIfDone(std::uint8_t tick_rate_hz);
+  // Turns the leg under way straight back toward where the Match spawned this
+  // player, if own has strayed beyond its leash, and ends it there.
+  void HeadBackIfStrayed(const harness::ServerView& view, const physics::BodyState& own);
 
   // The standard fixes mt19937's sequence, unlike its distributions', so every
   // platform draws the same numbers from the same seed; the draws are mapped
