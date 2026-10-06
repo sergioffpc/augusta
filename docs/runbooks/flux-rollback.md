@@ -65,7 +65,7 @@ pinning its image to the last good commit's `sha-<12>` tag instead.
     flux get helmreleases -n flux-system
     flux logs --kind=HelmRelease --name=augustad-develop -n flux-system   # or augustad-staging
     kubectl -n develop get pods                                            # or -n staging
-    kubectl -n develop logs deploy/augustad --previous
+    kubectl -n develop logs -l app.kubernetes.io/name=augustad --prefix --previous
     ```
 
     The `HelmRelease` revision is `<chart version>+<12 characters of the
@@ -195,9 +195,9 @@ pinning its image to the last good commit's `sha-<12>` tag instead.
 
 ```sh
 flux get helmreleases -n flux-system
-kubectl -n develop rollout status deploy/augustad --timeout 10m        # or -n staging
-kubectl -n develop get deploy augustad -o jsonpath='{.spec.template.spec.containers[0].image}'
-kubectl -n develop logs deploy/augustad | grep 'event=pack_verified'
+kubectl -n develop rollout status deploy -l app.kubernetes.io/name=augustad --timeout 10m   # or -n staging
+kubectl -n develop get deploy -l app.kubernetes.io/name=augustad -o jsonpath='{range .items[*]}{.metadata.name} {.spec.template.spec.containers[0].image}{"\n"}{end}'
+kubectl -n develop logs -l app.kubernetes.io/name=augustad --prefix | grep 'event=pack_verified'
 ```
 
 - The `HelmRelease` is `Ready` and not suspended.

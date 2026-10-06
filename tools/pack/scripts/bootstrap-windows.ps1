@@ -93,7 +93,8 @@ foreach ($piece in "maps\augusta", "characters\player", "sounds\augusta", "scena
 # an isolated, uv-managed venv per tool (no system Python involved) plus the
 # tool's own console scripts placed in a bin directory. Both are redirected
 # under $AssetsRoot - the venv to $pythonDir\pack, the commands
-# (augusta-pack, augusta-keygen, augusta-inspect, augusta-verify) to $binDir.
+# (augusta-pack, augusta-keygen, augusta-inspect, augusta-verify,
+# augusta-publish) to $binDir.
 # tools/pack (this repo's
 # own Python project - see its pyproject.toml) is installed editable, pulling
 # in usd-optimize (Python API only, no CLI) and usd-validation-nvidia (CLI) as
@@ -166,7 +167,7 @@ Write-Host "Hermetic environment ready at $AssetsRoot (never commit any of it, e
 Write-Host "  - $authoringDir  : scenario folders (a stage and its Lua scripts each) - a convenient place to keep them, not a boundary the cooker enforces"
 Write-Host "  - $packsDir      : signed packs cooked via the cooker"
 Write-Host "  - $keysDir       : Ed25519 signing keypair (augusta.key/augusta.pub)"
-Write-Host "  - $binDir        : augusta-pack, augusta-keygen, augusta-inspect, augusta-verify"
+Write-Host "  - $binDir        : augusta-pack, augusta-keygen, augusta-inspect, augusta-verify, augusta-publish"
 Write-Host "  - $pythonDir     : hermetic Python venv (uv tool), pack installed editable from tools\pack"
 Write-Host "                     (includes the native _meshoptimizer/_textconv modules - $packPackageDir)"
 Write-Host ""

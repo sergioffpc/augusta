@@ -91,6 +91,29 @@
         "includeAll": false,
         "multi": false,
         "skipUrlSync": false
+      },
+      {
+        "name": "scenario",
+        "label": "Scenario",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values(augustad_build_info{namespace=\"$environment\"}, scenario)",
+        "query": {
+          "query": "label_values(augustad_build_info{namespace=\"$environment\"}, scenario)",
+          "refId": "scenario"
+        },
+        "current": {},
+        "options": [],
+        "refresh": 2,
+        "sort": 1,
+        "regex": "",
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "skipUrlSync": false
       }
     ]
   },
@@ -118,7 +141,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(augustad_connection_rtt_seconds_bucket{namespace=\"$environment\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(augustad_connection_rtt_seconds_bucket{namespace=\"$environment\", scenario=\"$scenario\"}[$__rate_interval])))",
           "legendFormat": "p50",
           "refId": "A",
           "range": true,
@@ -129,7 +152,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(augustad_connection_rtt_seconds_bucket{namespace=\"$environment\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(augustad_connection_rtt_seconds_bucket{namespace=\"$environment\", scenario=\"$scenario\"}[$__rate_interval])))",
           "legendFormat": "p95",
           "refId": "B",
           "range": true,
@@ -140,7 +163,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(augustad_connection_rtt_seconds_bucket{namespace=\"$environment\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(augustad_connection_rtt_seconds_bucket{namespace=\"$environment\", scenario=\"$scenario\"}[$__rate_interval])))",
           "legendFormat": "p99",
           "refId": "C",
           "range": true,
@@ -218,7 +241,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (le) (increase(augustad_connection_rtt_seconds_bucket{namespace=\"$environment\"}[$__rate_interval]))",
+          "expr": "sum by (le) (increase(augustad_connection_rtt_seconds_bucket{namespace=\"$environment\", scenario=\"$scenario\"}[$__rate_interval]))",
           "legendFormat": "{{le}}",
           "refId": "A",
           "range": true,
@@ -300,7 +323,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "1 - (sum by (direction) (rate(augustad_connection_quality_ratio_sum{namespace=\"$environment\"}[$__rate_interval])) / sum by (direction) (rate(augustad_connection_quality_ratio_count{namespace=\"$environment\"}[$__rate_interval])))",
+          "expr": "1 - (sum by (direction) (rate(augustad_connection_quality_ratio_sum{namespace=\"$environment\", scenario=\"$scenario\"}[$__rate_interval])) / sum by (direction) (rate(augustad_connection_quality_ratio_count{namespace=\"$environment\", scenario=\"$scenario\"}[$__rate_interval])))",
           "legendFormat": "mean {{direction}}",
           "refId": "A",
           "range": true,
@@ -311,7 +334,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "1 - histogram_quantile(0.05, sum by (le, direction) (rate(augustad_connection_quality_ratio_bucket{namespace=\"$environment\"}[$__rate_interval])))",
+          "expr": "1 - histogram_quantile(0.05, sum by (le, direction) (rate(augustad_connection_quality_ratio_bucket{namespace=\"$environment\", scenario=\"$scenario\"}[$__rate_interval])))",
           "legendFormat": "worst 5% {{direction}}",
           "refId": "B",
           "range": true,
@@ -393,7 +416,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(augustad_connection_jitter_seconds_bucket{namespace=\"$environment\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(augustad_connection_jitter_seconds_bucket{namespace=\"$environment\", scenario=\"$scenario\"}[$__rate_interval])))",
           "legendFormat": "p50",
           "refId": "A",
           "range": true,
@@ -404,7 +427,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(augustad_connection_jitter_seconds_bucket{namespace=\"$environment\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(augustad_connection_jitter_seconds_bucket{namespace=\"$environment\", scenario=\"$scenario\"}[$__rate_interval])))",
           "legendFormat": "p95",
           "refId": "B",
           "range": true,
@@ -415,7 +438,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(augustad_connection_jitter_seconds_bucket{namespace=\"$environment\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(augustad_connection_jitter_seconds_bucket{namespace=\"$environment\", scenario=\"$scenario\"}[$__rate_interval])))",
           "legendFormat": "p99",
           "refId": "C",
           "range": true,
@@ -493,7 +516,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (le) (increase(augustad_connection_jitter_seconds_bucket{namespace=\"$environment\"}[$__rate_interval]))",
+          "expr": "sum by (le) (increase(augustad_connection_jitter_seconds_bucket{namespace=\"$environment\", scenario=\"$scenario\"}[$__rate_interval]))",
           "legendFormat": "{{le}}",
           "refId": "A",
           "range": true,
@@ -575,7 +598,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(augustad_sessions{namespace=\"$environment\"})",
+          "expr": "sum(augustad_sessions{namespace=\"$environment\", scenario=\"$scenario\"})",
           "legendFormat": "sessions",
           "refId": "A",
           "range": true,
@@ -666,7 +689,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "augustad_session_connection_rtt_seconds{namespace=\"$environment\"}",
+          "expr": "augustad_session_connection_rtt_seconds{namespace=\"$environment\", scenario=\"$scenario\"}",
           "legendFormat": "Session {{session_id}}",
           "refId": "A",
           "range": true,
@@ -744,7 +767,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "1 - augustad_session_connection_quality_ratio{namespace=\"$environment\"}",
+          "expr": "1 - augustad_session_connection_quality_ratio{namespace=\"$environment\", scenario=\"$scenario\"}",
           "legendFormat": "Session {{session_id}} {{direction}}",
           "refId": "A",
           "range": true,
@@ -826,7 +849,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "augustad_session_connection_jitter_seconds{namespace=\"$environment\"}",
+          "expr": "augustad_session_connection_jitter_seconds{namespace=\"$environment\", scenario=\"$scenario\"}",
           "legendFormat": "Session {{session_id}}",
           "refId": "A",
           "range": true,
@@ -904,7 +927,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "augustad_connection_pending_bytes{namespace=\"$environment\"}",
+          "expr": "augustad_connection_pending_bytes{namespace=\"$environment\", scenario=\"$scenario\"}",
           "legendFormat": "Session {{session_id}}",
           "refId": "A",
           "range": true,
@@ -982,7 +1005,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "augustad_connection_in_bytes_per_second{namespace=\"$environment\"}",
+          "expr": "augustad_connection_in_bytes_per_second{namespace=\"$environment\", scenario=\"$scenario\"}",
           "legendFormat": "Session {{session_id}}",
           "refId": "A",
           "range": true,
@@ -1060,7 +1083,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "augustad_connection_out_bytes_per_second{namespace=\"$environment\"}",
+          "expr": "augustad_connection_out_bytes_per_second{namespace=\"$environment\", scenario=\"$scenario\"}",
           "legendFormat": "Session {{session_id}}",
           "refId": "A",
           "range": true,

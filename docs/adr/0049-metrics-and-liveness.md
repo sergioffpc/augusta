@@ -124,16 +124,19 @@ Kustomization in `clusters/onprem/`. `apps` depends on it, so the
 uses them. Prometheus keeps 15 days on a `local-path` PVC of about 10 GB.
 Grafana is reached on a fixed NodePort on the LAN, the same way as the game
 port. Both environments, `develop` and `staging`, are scraped the same way, told
-apart by their namespace label.
+apart by their namespace label, and the servers of an environment, one per
+scenario (ADR-0026), by a `scenario` label the `ServiceMonitor` copies from
+each server's metrics Service.
 
 Dashboards are code: JSON in ConfigMaps that Grafana's sidecar loads, kept in
 the repository next to the chart. There are two, "Server" (tick, Lobby and
 Match, Sessions, misbehaviour, network, combat) and "Connection health" (the
 histograms and one line per Session). Each selects its environment from the
-namespace label itself, so only one release ships them, `develop`'s: a second
-copy would load the same dashboards again. Alert rules are `PrometheusRule`s
-in the `augustad` chart (server down, tick overruns sustained, packet loss
-high). They route to no receiver yet, so they show only in Grafana and
+namespace label itself, and then a server from the scenarios that environment
+runs, so only one release ships them, `develop`'s: a second copy would load
+the same dashboards again. Alert rules are `PrometheusRule`s in the `augustad`
+chart (server down, tick overruns sustained, packet loss high), one set per
+server, each alert labelled with its scenario. They route to no receiver yet, so they show only in Grafana and
 Alertmanager.
 
 ## Considered Options

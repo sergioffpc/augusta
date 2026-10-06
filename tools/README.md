@@ -104,7 +104,7 @@ The assets root looks like this:
 | `authoring/` | `maps/<name>/` (ADR-0015), `characters/<name>/` (ADR-0040), `sounds/<name>/` (ADR-0020), `scenarios/<name>/` (`manifest.yaml` + Lua scripts, ADR-0041) - resolved by `augusta-pack` |
 | `packs/` | Cooked, signed packs |
 | `keys/` | `augusta.key` / `augusta.pub` (Ed25519). Never commit these. |
-| `bin/` | `augusta-pack.exe`, `augusta-keygen.exe`, `augusta-inspect.exe`, `augusta-verify.exe` (installed here by `uv tool install`), plus `augusta-composer.ps1` if the Composer bootstrap ran |
+| `bin/` | `augusta-pack.exe`, `augusta-keygen.exe`, `augusta-inspect.exe`, `augusta-verify.exe`, `augusta-publish.exe` (installed here by `uv tool install`), plus `augusta-composer.ps1` if the Composer bootstrap ran |
 | `python/` | The uv tool venv (`python/pack`), with this project installed editable |
 | `tools/` | Composer and Adobe plugins (installed by the Composer bootstrap) |
 
@@ -119,6 +119,7 @@ present only if its separate bootstrap ran:
 <assets-root>\bin\augusta-keygen.exe --help
 <assets-root>\bin\augusta-inspect.exe --help
 <assets-root>\bin\augusta-verify.exe --help
+<assets-root>\bin\augusta-publish.exe --help
 <assets-root>\bin\augusta-composer.ps1
 ```
 
@@ -312,6 +313,55 @@ failure it prints the reason to stderr and exits `1`:
 | `signature is not valid for this public key` | The pack was signed by a different key, or the signature was tampered with. |
 | `bad magic`, `unsupported format version`, `too small`, ... | The file isn't a (supported) Augusta pack. |
 
+### Publishing a server pack
+
+```powershell
+augusta-publish <scenario> --host <node>
+```
+
+Puts a scenario's server pack on the k3s node's shared asset-pack volume, where
+the cluster's servers read it (ADR-0026). It publishes; it does not deploy: a
+server serves the pack once its environment's `HelmRelease` in
+`clusters/onprem/apps/` names the version it prints
+([Rotate the Pack Signing Key](../docs/runbooks/pack-key-rotation.md), step 7).
+
+Before copying anything it verifies both packs of the scenario's cook against
+the public key, and checks that the server pack names that client pack in its
+header (ADR-0031). It then copies only the server pack and the public key, as
+`server.pack` and `augusta.pub`, into
+`/srv/augusta/asset-packs/<scenario>/<version>/`, `<version>` being the first
+12 hex characters of the server pack's BLAKE3 hash. The folder is assembled
+beside its final place and renamed into it, so it never exists half-written,
+and a folder that exists is never written again: publishing the same cook twice
+checks the node holds the same files and copies nothing, and a folder holding
+other files is an error.
+
+It runs `ssh` and `scp` from `PATH` (on Windows, the OpenSSH client), as a user
+that can `sudo` on the node without a password.
+
+#### `augusta-publish` reference
+
+```
+augusta-publish [-h] --host HOST [--assets-root ASSETS_ROOT] [--client-pack CLIENT_PACK]
+                [--server-pack SERVER_PACK] [--public-key PUBLIC_KEY] scenario
+```
+
+| Argument | Default | Description |
+|---|---|---|
+| `scenario` (required) | | Scenario name (ADR-0041), which also names its server in the cluster: lowercase letters, digits and `-`, at most 46 characters. |
+| `--host HOST` (required) | | The k3s node, as `ssh` names it (an address, or an alias in `~/.ssh/config`). |
+| `-h`, `--help` | | Print the usage and option list, then exit. |
+| `--assets-root ASSETS_ROOT` | the root of the venv the command runs from | Assets root, for the defaults below only. |
+| `--client-pack CLIENT_PACK` | `<assets-root>/packs/<scenario>/client.pack` | The client pack of the cook. Verified, never copied. |
+| `--server-pack SERVER_PACK` | `<assets-root>/packs/<scenario>/server.pack` | The server pack to publish. |
+| `--public-key PUBLIC_KEY` | `<assets-root>/keys/augusta.pub` | The key both packs are signed with, published as `augusta.pub`. |
+
+On success it prints the folder on the node and the line to put under the
+scenario's server in the `HelmRelease`
+(`servers.<scenario>.packVersion: "<version>"`), and exits `0`, whether it
+copied the pack or found it there already. On any failure it prints the reason
+to stderr and exits `1`.
+
 ### Layout
 
 | Path | Role |
@@ -325,6 +375,7 @@ failure it prints the reason to stderr and exits `1`:
 | `pack/src/pack/pack.py`, `wire.py` | Pack wire format, hashing, signing |
 | `pack/src/pack/keys.py` | `augusta-keygen` and key file I/O |
 | `pack/src/pack/pack_cli.py` | `augusta-inspect` and `augusta-verify` entry points |
+| `pack/src/pack/publish.py` | `augusta-publish` entry point |
 | `pack/src/pack/reader.py` | Pack container parsing and verification (the read side of `pack.py`) |
 | `pack/src/pack/assets_root.py` | Assets-root inference shared by the entry points |
 | `pack/cpp/` | Standalone CMake/vcpkg project for the two native modules. It builds straight into `pack/src/pack/`. |

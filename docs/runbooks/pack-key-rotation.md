@@ -19,35 +19,41 @@ signs only the golden test packs and is never trusted outside the tests.
 There is no command that re-signs an existing pack: `augusta-pack` signs as it
 cooks. Re-signing is a fresh cook of the scenario with the new key, and the
 client and server packs must come from that one cook run, since Join refuses a
-client pack not cooked with the server pack (ADR-0019, ADR-0038). Each
-environment reads its pack from its own folder of the node's shared volume,
-`/srv/augusta/asset-packs/<packVersion>/`, holding `server.pack` and the
-`augusta.pub` it is signed with ([`charts/augustad/values.yaml`](../../charts/augustad/values.yaml)).
-The new packs therefore go into a new folder, and the environment is pointed at
-it through Git, which keeps the old folder in place as the rollback.
+client pack not cooked with the server pack (ADR-0019, ADR-0038). Each server
+reads its pack from its own folder of the node's shared volume,
+`/srv/augusta/asset-packs/<scenario>/<packVersion>/`, holding `server.pack` and
+the `augusta.pub` it is signed with ([`charts/augustad/values.yaml`](../../charts/augustad/values.yaml)).
+A new cook has a new `packVersion`, so `augusta-publish` puts it in a new folder,
+and the server is pointed at it through Git, which keeps the old folder in place
+as the rollback.
 
 ## Where packs go on the node
 
-The chart writes the server's `augustad.yaml` with
-`base_dir: /srv/augusta/asset-packs/<packVersion>`, `content.pack: server.pack`
-and `content.public_key: augusta.pub`
-([`configmap.yaml`](../../charts/augustad/templates/configmap.yaml)). Every
-`packVersion` an environment names (`git grep -n packVersion -- clusters/`,
-`augusta` for both at the time of writing) needs, on the node:
+Each server mounts its own version's folder read-only and reads `server.pack`
+and `augusta.pub` from it
+([`deployment.yaml`](../../charts/augustad/templates/deployment.yaml)). Every
+`packVersion` an environment's `servers` name
+(`git grep -n packVersion -- clusters/`) needs, on the node:
 
 ```text
 /srv/augusta/asset-packs/
-└── <packVersion>/
-    ├── server.pack   # the server pack of one cook run
-    └── augusta.pub   # the 32-byte public key that cook was signed with,
-                      # renamed to augusta.pub whatever its name was locally
+└── <scenario>/
+    └── <packVersion>/    # the server pack's BLAKE3 hash, first 12 hex characters
+        ├── server.pack   # the server pack of one cook run
+        └── augusta.pub   # the 32-byte public key that cook was signed with,
+                          # renamed to augusta.pub whatever its name was locally
 ```
 
-Both files must be readable before the pod starts. The volume is a `hostPath`
-of type `DirectoryOrCreate`, so a missing folder is created empty and the pod
-still schedules; the server then exits at startup naming the missing or
-unverifiable file, and the pod crash-loops until the files are in place. The
-client pack never goes on the node.
+`augusta-publish` writes exactly this, and never over a folder that exists.
+The volume is a `hostPath` of type `Directory`: until the folder is there, the
+pod waits in `ContainerCreating` and its events name the missing path. A pack
+that does not verify against `augusta.pub` makes the server exit at startup, and
+the pod crash-loops. The client pack never goes on the node.
+
+Staging is the exception until `main` carries develop's chart (see the comment
+in [`staging.yaml`](../../clusters/onprem/apps/staging.yaml)): its one server
+reads `/srv/augusta/asset-packs/<packVersion>/server.pack` and `augusta.pub`,
+copied there by hand, in the pack format of `main`'s server.
 
 ## Prerequisites
 
@@ -59,8 +65,9 @@ client pack never goes on the node.
 - For the release key: the offline location the release private key is kept
   in. The repository does not record it; it is never in the repository or a
   CI secret.
-- SSH access, with `sudo`, to the k3s node (`<node>` below). The repository
-  does not record its address.
+- SSH access to the k3s node (`<node>` below, as `ssh` names it), as a user
+  that can `sudo` without a password. The repository does not record its
+  address.
 - A kubeconfig for the cluster, `kubectl`, and the `flux` CLI (see
   [Roll Back a Bad Deploy with Flux](flux-rollback.md#prerequisites)).
 - A Windows client and server build to smoke-test the packs locally.
@@ -116,23 +123,28 @@ client pack never goes on the node.
    `keys\<Id>.pub`. Both log `event=pack_verified`, and the client is admitted
    at Join.
 
-6. Copy the server pack and the public key to the node, as the file names the
-   chart expects (`server.pack`, `augusta.pub`):
+6. Publish the server pack and the new public key to the node. This first
+   verifies both packs against the key, and that they come from one cook:
 
     ```powershell
-    scp "$AssetsRoot\packs\$Id\server.pack" "$AssetsRoot\keys\$Id.pub" <node>:/tmp/
-    ssh <node> "sudo install -D -m 0644 /tmp/server.pack /srv/augusta/asset-packs/$Id/server.pack && sudo install -m 0644 /tmp/$Id.pub /srv/augusta/asset-packs/$Id/augusta.pub && rm /tmp/server.pack /tmp/$Id.pub"
-    ssh <node> "ls -l /srv/augusta/asset-packs/$Id"
+    & "$AssetsRoot\bin\augusta-publish.exe" augusta --host <node> `
+      --public-key "$AssetsRoot\keys\$Id.pub" `
+      --client-pack "$AssetsRoot\packs\$Id\client.pack" `
+      --server-pack "$AssetsRoot\packs\$Id\server.pack"
     ```
 
-7. Point the environment at the new folder: on a `feature/*` branch off
-   `develop`, set `spec.values.assetPacks.packVersion` to `<Id>` in
+    Replace `augusta` with the scenario. It prints the folder it wrote and the
+    `packVersion` to serve it with.
+
+7. Point the scenario's server at the new version: on a `feature/*` branch off
+   `develop`, set `spec.values.servers.<scenario>.packVersion` to the printed
+   version, quoted, in
    [`clusters/onprem/apps/develop.yaml`](../../clusters/onprem/apps/develop.yaml)
    and/or [`staging.yaml`](../../clusters/onprem/apps/staging.yaml), commit
-   (`chore(cluster): move <environment> to the <Id> packs`), and merge it to
-   `develop` through a pull request. Both files deploy from `develop`, staging's
-   included. The change alters the server's ConfigMap, whose checksum restarts
-   the pod.
+   (`chore(cluster): move <environment>'s <scenario> server to a new pack`),
+   and merge it to `develop` through a pull request. Both files deploy from
+   `develop`, staging's included. The change alters the server's volume, which
+   restarts its pod and no other server's.
 
 8. Make Flux apply it without waiting for its interval:
 
@@ -144,31 +156,32 @@ client pack never goes on the node.
    client that joins this environment: a client with the old pack is refused at
    Join. The repository defines no distribution channel for client packs.
 
-10. Retire the old key once no environment names its folder
-    (`git grep -n packVersion -- clusters/`): remove the folder from the node,
-    and destroy or archive the old private key.
+10. Retire the old key once no environment names a version signed with it
+    (`git grep -n packVersion -- clusters/`): remove those folders from the
+    node, and destroy or archive the old private key.
 
     ```sh
-    ssh <node> "sudo rm -r /srv/augusta/asset-packs/<old-packVersion>"
+    ssh <node> "sudo rm -r /srv/augusta/asset-packs/<scenario>/<old-packVersion>"
     ```
 
 ## Verification
 
 ```sh
 flux get kustomizations -n flux-system
-kubectl -n develop rollout status deploy/augustad --timeout 10m       # or -n staging
-kubectl -n develop logs deploy/augustad | grep 'event=pack_verified'
+kubectl -n develop rollout status deploy/augustad-<scenario> --timeout 10m   # or -n staging
+kubectl -n develop logs deploy/augustad-<scenario> | grep 'event=pack_verified'
 ```
 
-The log line names `/srv/augusta/asset-packs/<Id>/server.pack`, and the pod
-keeps running: the server exits at startup on a pack that does not verify
+The pod mounts the new version's folder
+(`kubectl -n develop get deploy augustad-<scenario> -o yaml | grep asset-packs`),
+and keeps running: the server exits at startup on a pack that does not verify
 against `augusta.pub`. A client with the new `client.pack` and `<Id>.pub` logs
 `event=pack_verified` and joins.
 
 ## Rollback / abort
 
 - Before step 7, nothing is deployed: delete `packs\<Id>\`, `keys\<Id>.*` and
-  the node's `/srv/augusta/asset-packs/<Id>/`.
+  the node's `/srv/augusta/asset-packs/<scenario>/<packVersion>/`.
 - After step 7, revert the `packVersion` commit on `develop`
   ([Roll Back a Bad Deploy with Flux](flux-rollback.md), steps 4 to 6). The old
   folder is still on the node, so the pod restarts on the old pack. Do not

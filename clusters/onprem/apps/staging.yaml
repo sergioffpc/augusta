@@ -27,6 +27,11 @@ spec:
   values:
     image:
       tag: main
+    # main's chart also predates a server per scenario (ADR-0026) and its
+    # server the pack format augusta-publish verifies: until main carries
+    # develop's chart, staging runs one server, reading a pack published by
+    # hand to /srv/augusta/asset-packs/<packVersion>/ (server.pack and
+    # augusta.pub). Replace this with servers, as in develop.yaml, then.
     assetPacks:
       packVersion: augusta
     # develop's release ships the dashboards (charts/augustad values.yaml).
