@@ -46,6 +46,7 @@
 #include "augusta/weapon.h"
 #include "command_queue.h"
 #include "connection_health.h"
+#include "connection_sample.h"
 #include "content.h"
 #include "heartbeat.h"
 #include "host.h"
