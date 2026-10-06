@@ -471,13 +471,28 @@ jobs:
         # With each HelmRelease's own values, as Flux renders it: the chart
         # has no default for some of them (assetPacks.packVersion). bash for
         # pipefail - a render that fails leaves kubeconform nothing to reject.
+        # Its ServiceMonitor and PrometheusRule are checked against the CRDs
+        # of the kube-prometheus-stack version the cluster installs
+        # (clusters/onprem/infrastructure), so a stack upgrade brings its
+        # schemas with it.
         shell: bash
         run: |
+          stack=clusters/onprem/infrastructure/monitoring.yaml
+          schemas="$RUNNER_TEMP/monitoring-crd-schemas"
+          mkdir -p "$schemas"
+          helm show crds kube-prometheus-stack \
+            --repo "$(yq --no-doc 'select(.kind == "HelmRepository") | .spec.url' "$stack")" \
+            --version "$(yq --no-doc 'select(.kind == "HelmRelease") | .spec.chart.spec.version' "$stack")" \
+            > "$schemas/crds.yaml"
+          (cd "$schemas" && FILENAME_FORMAT='{fullgroup}_{kind}_{version}' \
+            uv run --no-project --with pyyaml python "$RUNNER_TEMP/kubeconform/openapi2jsonschema.py" \
+            crds.yaml >/dev/null)
           for release in $(grep -l '^kind: HelmRelease$' clusters/onprem/apps/*.yaml); do
             echo "$release"
             yq '.spec.values' "$release" \
               | helm template augustad charts/augustad --values - \
-              | kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION"
+              | kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" \
+                -schema-location default -schema-location "$schemas/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
           done
       - name: Validate the cluster's manifests
         # Each path a Flux Kustomization in gotk-sync.yaml applies, built as

@@ -13,15 +13,16 @@ chart declares no PodDisruptionBudget: with one replica, the only budget
 that protects anything blocks every node drain. Both environments exist
 for testing a build, not for players to keep a match through it.
 
-**Ready means the game port is bound.** `augustad` binds its UDP socket
-only after its pack is verified and its content loaded, and exits on any
-failure before or after, so a bound port is the whole of "started". UDP
-answers no `tcpSocket` probe, so the readiness probe finds the socket in
-the pod's own socket table (`/proc/net/udp`, `/proc/net/udp6`): Flux's
-upgrade then waits for the server to be up, and fails when it never is.
-There is no liveness probe: a failed thread already ends the process
-(ADR-0005), Game policy's Lua runs under an instruction limit (ADR-0022),
-and a probe that killed a slow but healthy server would cut its match.
+**A liveness probe, no readiness probe.** The chart's one probe is a
+`livenessProbe` on the metrics endpoint's `/livez` (ADR-0049), which fails
+once the Simulation thread has gone 5 seconds without finishing a tick, so
+Kubernetes restarts a server whose tick loop has hung. `augustad` serves
+`/livez` only after its pack is verified and its content loaded, so the
+probe's first check waits that loading out, and a restart takes several
+failed checks in a row: a slow start is not taken for a hung loop. There
+is no readiness probe: a single replica takes no balanced traffic, so the
+pod is Ready once its container runs. A server that fails to start exits
+(ADR-0005) and shows as a crash-looping pod.
 
 ## Considered Options
 
@@ -51,9 +52,11 @@ essential, ephemeral branches are simply not deployed to k3s at all.
   now. It needs a drain mode in `augustad` and a grace period with no
   natural bound (Game policy decides when a match ends), to protect
   matches no one plays to keep. Revisit when an environment has players.
-- **A health endpoint or file written by `augustad`**: rejected. It
-  would report the same fact the socket table already holds, with code
-  and a config key to maintain for it.
+- **A readiness probe** (on `/livez`, or on the game port's UDP socket in
+  the pod's own socket table): rejected. It would make a rollout wait for
+  the new server to load its pack before stopping the old one, but with one
+  replica no traffic is balanced away from an unready pod, and a server
+  that never starts already shows as a crash-looping pod.
 
 ## Consequences
 

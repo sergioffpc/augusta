@@ -20,6 +20,23 @@ service:
 server:
   tickRateHz: 60
   logLevel: info
+# The metrics endpoint (ADR-0049): /metrics, which Prometheus scrapes through
+# the chart's ServiceMonitor, and /livez, the Deployment's liveness probe.
+# Reached only inside the cluster, through its own ClusterIP Service.
+metrics:
+  port: 9464
+  scrapeInterval: 15s
+  # augustad serves /livez only once its pack is verified and its content
+  # loaded, and fails it 5 s after the Simulation thread last finished a tick
+  # (ADR-0026). The first check waits out the loading, and a restart takes
+  # failureThreshold failed checks in a row, so a start that is slow but
+  # under initialDelaySeconds + failureThreshold * periodSeconds (45 s) is
+  # not taken for a hung tick loop.
+  livenessProbe:
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
 # Shared hostPath volume on the k3s node holding signed asset packs
 # (ENGINEERING.md's Deployment & CD section), populated manually after
 # signing and mounted read-only into every server pod. Each environment's

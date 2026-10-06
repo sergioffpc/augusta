@@ -1,0 +1,52 @@
+# The server's alert rules (ADR-0049). They route to no receiver yet, so a
+# firing alert shows only in Grafana and Alertmanager. Each is scoped to this
+# release's namespace, so develop and staging alert apart.
+{{- $selector := printf "namespace=%q, service=%q" .Release.Namespace (printf "%s-metrics" (include "augustad.fullname" .)) }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "augustad.fullname" . }}
+  labels:
+    {{- include "augustad.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: augustad
+      rules:
+        # No scrape has succeeded for 2 minutes: the target is gone (no pod,
+        # or no Service endpoint) or down. A liveness restart, which takes
+        # less, does not fire it.
+        - alert: AugustadDown
+          expr: absent(up{ {{- $selector -}} } == 1)
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: augustad in {{ .Release.Namespace }} is down
+            description: Prometheus has scraped no augustad metrics endpoint in {{ .Release.Namespace }} for 2 minutes.
+        # Ticks whose work took longer than a tick (NFR-01) in every minute
+        # for 5 minutes, not one slow tick now and then.
+        - alert: AugustadTickOverrunsSustained
+          expr: rate(augustad_tick_overruns_total{ {{- $selector -}} }[1m]) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: augustad in {{ .Release.Namespace }} keeps overrunning its tick
+            description: '{{ printf "{{ $value | humanize }}" }} ticks a second have taken longer than a tick for 5 minutes.'
+        # Connection health: a connection's quality is the share of its
+        # packets delivered, so packet loss is what it falls short of 1. The
+        # mean over every connection's samples, each direction apart, above 5%
+        # for 5 minutes.
+        - alert: AugustadPacketLossHigh
+          expr: |
+            1 - (
+              sum by (namespace, direction) (rate(augustad_connection_quality_ratio_sum{ {{- $selector -}} }[5m]))
+              /
+              sum by (namespace, direction) (rate(augustad_connection_quality_ratio_count{ {{- $selector -}} }[5m]))
+            ) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: augustad in {{ .Release.Namespace }} sees high packet loss
+            description: '{{ printf "{{ $value | humanizePercentage }}" }} of {{ printf "{{ $labels.direction }}" }} packets have been lost for 5 minutes.'
