@@ -6,17 +6,26 @@
 
 namespace augusta::tick {
 
+namespace {
+
+// Whether a loop whose Tick due at deadline ended at now is too far behind to
+// catch up, and resynchronises to now.
+bool TooFarBehind(Clock::time_point deadline, Clock::duration tick_duration, Clock::time_point now) {
+  return now - (deadline + tick_duration) > kMaxTicksBehind * tick_duration;
+}
+
+}  // namespace
+
 Clock::time_point NextDeadline(Clock::time_point deadline, Clock::duration tick_duration, Clock::time_point now) {
-  const Clock::time_point next = deadline + tick_duration;
-  if (now - next > kMaxTicksBehind * tick_duration) {
-    return now;
-  }
-  return next;
+  return TooFarBehind(deadline, tick_duration, now) ? now : deadline + tick_duration;
 }
 
 Timing Measure(Clock::time_point deadline, Clock::duration tick_duration, Clock::time_point start,
                Clock::time_point end) {
-  return {.late = start - deadline > kLateTolerance, .overrun = end - start > tick_duration};
+  return {.duration = end - start,
+          .late = start - deadline > kLateTolerance,
+          .overrun = end - start > tick_duration,
+          .resynchronised = TooFarBehind(deadline, tick_duration, end)};
 }
 
 Clock::duration PacedTickDuration(Clock::duration nominal, std::uint8_t queued_commands) {

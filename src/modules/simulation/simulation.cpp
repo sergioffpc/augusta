@@ -289,6 +289,7 @@ struct World::Impl {
   std::unordered_map<EntityId, command::Command> tick_commands;
   State committed;
   std::vector<PolicyAction> actions;
+  std::vector<float> shooters_delays;
   // Every player a bullet may strike, for posing its hitboxes where the bullet
   // judges it to be.
   flecs::query<const Player, const Body, const Facing, const Hitboxes, const HitboxHistory> targets;
@@ -416,6 +417,8 @@ struct World::Impl {
   // judged against the players as they were delay ticks before each tick of it.
   void Fire(const Shot& shot, float delay) {
     committed.shots.push_back(shot);
+    // As a fraction of the cap, so a delay held at it is the cap exactly.
+    shooters_delays.push_back(delay / max_shooters_delay * std::chrono::duration<float>(kMaxShootersDelay).count());
     const ballistics::BulletHandle bullet =
         ballistics.Fire(shot.origin, command::ViewDirection(shot.yaw, shot.pitch), parameters.rifle.muzzle_velocity,
                         {.gravity = parameters.ammo.gravity, .max_range = parameters.ammo.max_range});
@@ -742,6 +745,7 @@ TickResult World::Tick(const std::vector<PlayerCommand>& commands, float delta_t
   impl.committed.hits.clear();
   impl.committed.bullets_in_flight = 0;
   impl.actions.clear();
+  impl.shooters_delays.clear();
   impl.player_hits.clear();
   impl.ecs.progress(delta_time);
   // The ECS visits players in storage order; the state is ordered by id.
@@ -750,7 +754,7 @@ TickResult World::Tick(const std::vector<PlayerCommand>& commands, float delta_t
   std::ranges::sort(impl.committed.deaths, {}, &Death::victim);
   std::ranges::sort(impl.committed.shots, {}, &Shot::shooter);
   std::ranges::stable_sort(impl.committed.hits, {}, &Hit::target);
-  return TickResult{.state = impl.committed, .actions = impl.actions};
+  return TickResult{.state = impl.committed, .actions = impl.actions, .shooters_delays = impl.shooters_delays};
 }
 
 }  // namespace augusta::simulation

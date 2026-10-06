@@ -45,7 +45,7 @@ struct ServerRuntime::Impl {
   // probe then fails.
   void StartMetrics() {
     try {
-      metrics = std::make_unique<MetricsEndpoint>(metrics_port, last_tick_end);
+      metrics = std::make_unique<MetricsEndpoint>(metrics_port, last_tick_end, host.Metrics());
       LI("subsystem=serverruntime event=metrics_serving port={}", metrics_port);
     } catch (const std::exception& error) {
       LE("subsystem=serverruntime event=metrics_failed port={} error={}", metrics_port, error.what());

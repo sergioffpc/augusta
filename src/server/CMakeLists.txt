@@ -75,7 +75,6 @@ add_library(augustad_heartbeat STATIC
   heartbeat.cpp
 )
 target_include_directories(augustad_heartbeat PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_heartbeat PUBLIC augusta_tick)
 augusta_set_module_scope(augustad_heartbeat SERVER_ONLY)
 
 # Whether the tick loop is still running, which /livez answers; pure, so tested
@@ -96,8 +95,8 @@ add_library(augustad_metrics STATIC
 )
 target_include_directories(augustad_metrics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_metrics
-  PUBLIC augusta_tick
-  PRIVATE augustad_liveness augusta_logging augusta_version prometheus-cpp::core Boost::beast
+  PUBLIC augusta_tick prometheus-cpp::core
+  PRIVATE augustad_liveness augusta_logging augusta_version Boost::beast
 )
 # std::getenv reads the commit the image stamps in; MSVC deprecates it for
 # _dupenv_s, which has no portable equivalent. Asio wants the Windows version
@@ -112,11 +111,13 @@ augusta_set_module_scope(augustad_metrics SERVER_ONLY)
 # can drive a match by hand (see host.h), and the conversions Host makes at its
 # edges: between the protocol's plain types and the engine's (see wire.h), and
 # into SimulationWorld's (see simulation_mapping.h); with the match recording
-# Host writes and its replay (see recording.h and replay.h, ADR-0048).
+# Host writes and its replay (see recording.h and replay.h, ADR-0048), and what
+# it counts for the metrics endpoint (see host_metrics.h, ADR-0049).
 add_library(augustad_host STATIC
   host.cpp
   host_log.cpp
   host_match.cpp
+  host_metrics.cpp
   host_network.cpp
   recording.cpp
   replay.cpp
@@ -128,7 +129,7 @@ target_include_directories(augustad_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_host
   PUBLIC augusta_ballistics augusta_networking augusta_parameters augusta_physics augusta_simulation augustad_content
          augustad_commands augustad_match augustad_misbehaviour augustad_admission augustad_heartbeat augusta_assets augusta_protocol augusta_replication
-         augusta_tick
+         augusta_tick prometheus-cpp::core
   PRIVATE augusta_logging augusta_map augusta_version
 )
 augusta_set_module_scope(augustad_host SERVER_ONLY)

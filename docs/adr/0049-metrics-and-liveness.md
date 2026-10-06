@@ -26,8 +26,11 @@ exposes it through its own `ClusterIP` Service (never a NodePort) with a
 (ADR-0005): one `io_context` that accepts each connection and answers its one
 request. It only reads. The Simulation and Network I/O
 threads write each metric in place: a counter or histogram is a lock-free
-atomic, and a value read together with others is published whole. The
-heartbeat (ADR-0029) and the metrics count the same events from the same
+atomic, and a value read together with others is published whole.
+prometheus-cpp's own histogram takes a lock to observe, which the metrics
+thread's collection would then hold up the tick with, so the server keeps its
+counters and histograms itself and hands prometheus-cpp only what to format.
+The heartbeat (ADR-0029) and the metrics count the same events from the same
 counters, so the log line and the series cannot disagree. The Network I/O
 thread samples every connection's transport status
 (`GetConnectionRealTimeStatus`) once a heartbeat interval (1 second). The
@@ -60,7 +63,7 @@ text, an address or a Character's name. The domain words are CONTEXT.md's.
 | | `augustad_match_duration_seconds` | histogram | |
 | Sessions | `augustad_sessions` | gauge | |
 | | `augustad_joins_total` | counter | `result` = `admitted`, `refused`; `reason` |
-| | `augustad_disconnects_total` | counter | `reason`; `phase` = `lobby`, `match` |
+| | `augustad_disconnects_total` | counter | `reason`; `phase` = `admission` (connected, not yet in the Lobby), `lobby`, `match` |
 | Misbehaviour | `augustad_misbehaviour_total` | counter | `kind` |
 | Network | `augustad_network_sent_bytes_total`, `augustad_network_received_bytes_total` | counter | |
 | | `augustad_messages_sent_total`, `augustad_messages_received_total` | counter | `type` (ADR-0038's message types) |
@@ -80,8 +83,9 @@ text, an address or a Character's name. The domain words are CONTEXT.md's.
 | | `augustad_start_time_seconds` | gauge | |
 
 The values of `reason` and `kind` are the closed sets the server already
-decides with: admission's refusals, the transport's end reasons, the
-misbehaviour kinds and the command queue's discards.
+decides with: admission's refusals, the transport's end reasons (and a
+disconnect for misbehaving), the misbehaviour kinds and the command queue's
+discards (and its overflow, and commands from a player not in a match).
 
 `augustad_build_info`'s `commit` is the commit the server image was built from,
 which the image's runtime stage sets as the `AUGUSTA_COMMIT` environment

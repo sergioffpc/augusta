@@ -6,14 +6,18 @@
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
+#include <prometheus/collectable.h>
 #include <prometheus/gauge.h>
+#include <prometheus/metric_family.h>
 #include <prometheus/registry.h>
 #include <prometheus/text_serializer.h>
 
@@ -44,8 +48,17 @@ constexpr std::chrono::seconds kRequestTimeout{5};
 // What the endpoint answers from, read on its thread.
 struct Sources {
   const prometheus::Registry& registry;
+  const prometheus::Collectable& server_metrics;
   const std::atomic<tick::Clock::time_point>& last_tick_end;
 };
+
+// Every family /metrics serves: the Process family, then the server's.
+std::vector<prometheus::MetricFamily> CollectAll(const Sources& sources) {
+  std::vector<prometheus::MetricFamily> families = sources.registry.Collect();
+  std::vector<prometheus::MetricFamily> server = sources.server_metrics.Collect();
+  families.insert(families.end(), std::make_move_iterator(server.begin()), std::make_move_iterator(server.end()));
+  return families;
+}
 
 // What builds the server image stamps into it; local builds have none.
 std::string BuildCommit() {
@@ -88,7 +101,7 @@ Response Respond(const Sources& sources, const Request& request) {
     }
     if (request.target() == "/metrics") {
       return TextResponse(request, http::status::ok, kExpositionContentType,
-                          prometheus::TextSerializer().Serialize(sources.registry.Collect()));
+                          prometheus::TextSerializer().Serialize(CollectAll(sources)));
     }
     if (request.target() == "/livez") {
       // now first: a tick that ends between the two reads is then still live.
@@ -159,8 +172,10 @@ struct MetricsEndpoint::Impl {
   // Declared last, so it is joined before what it serves from goes.
   std::thread thread;
 
-  Impl(std::uint16_t port, const std::atomic<tick::Clock::time_point>& last_tick_end)
-      : sources{.registry = registry, .last_tick_end = last_tick_end}, acceptor(Listen(io, port)) {
+  Impl(std::uint16_t port, const std::atomic<tick::Clock::time_point>& last_tick_end,
+       const prometheus::Collectable& server_metrics)
+      : sources{.registry = registry, .server_metrics = server_metrics, .last_tick_end = last_tick_end},
+        acceptor(Listen(io, port)) {
     AddProcessMetrics(registry);
     Accept();
     thread = std::thread([this] { Serve(); });
@@ -201,8 +216,9 @@ struct MetricsEndpoint::Impl {
   }
 };
 
-MetricsEndpoint::MetricsEndpoint(std::uint16_t port, const std::atomic<tick::Clock::time_point>& last_tick_end)
-    : impl_(std::make_unique<Impl>(port, last_tick_end)) {}
+MetricsEndpoint::MetricsEndpoint(std::uint16_t port, const std::atomic<tick::Clock::time_point>& last_tick_end,
+                                 const prometheus::Collectable& server_metrics)
+    : impl_(std::make_unique<Impl>(port, last_tick_end, server_metrics)) {}
 
 MetricsEndpoint::~MetricsEndpoint() = default;
 

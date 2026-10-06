@@ -118,6 +118,12 @@ add_executable(augusta_metrics_tests metrics_test.cpp)
 target_link_libraries(augusta_metrics_tests PRIVATE augustad_metrics augustad_liveness Boost::beast GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_metrics_tests DISCOVERY_TIMEOUT 30)
 
+# What the Host counts, collected as the endpoint collects it, without HTTP.
+add_executable(augusta_host_metrics_tests host_metrics_test.cpp)
+target_link_libraries(augusta_host_metrics_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
+# Links networking and PhysX through augustad_host, so the same first-launch cost applies as below.
+gtest_discover_tests(augusta_host_metrics_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_admission_tests admission_test.cpp)
 target_link_libraries(augusta_admission_tests PRIVATE augustad_admission GTest::gtest GTest::gtest_main)
 # Links networking (for PeerId), so the same first-launch cost applies as below.

@@ -1,6 +1,7 @@
 #include "augusta/simulation.h"
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -37,6 +38,7 @@ using augusta::simulation::EntityId;
 using augusta::simulation::Hit;
 using augusta::simulation::PlayerCommand;
 using augusta::simulation::State;
+using augusta::simulation::TickResult;
 using augusta::simulation::World;
 
 constexpr std::uint8_t kTickRate = 60;
@@ -1283,17 +1285,18 @@ class LagCompensationTest : public ::testing::Test {
   }
 
   // A tick on which Alice does command and Bob what he was last told.
-  State Tick(const Command& command) {
-    State state =
-        world_
-            .Tick({PlayerCommand{.entity = kAlice, .command = command}, PlayerCommand{.entity = kBob, .command = bob_}},
-                  kTick)
-            .state;
+  State Tick(const Command& command) { return TickWith(command).state; }
+
+  // As Tick, with all the tick resolved.
+  TickResult TickWith(const Command& command) {
+    TickResult result = world_.Tick(
+        {PlayerCommand{.entity = kAlice, .command = command}, PlayerCommand{.entity = kBob, .command = bob_}}, kTick);
+    const State& state = result.state;
     for (const auto& entry : state.bodies) {
       (entry.entity == kBob ? seen_[state.tick] : alice_) = entry.body.position;
     }
     last_tick_ = state.tick;
-    return state;
+    return result;
   }
 
   // The tick Alice's next Command is taken in on.
@@ -1384,6 +1387,31 @@ TEST_F(LagCompensationTest, AFractionOutsideZeroToOneIsHeldWithinIt) {
   EXPECT_EQ(Shoot(BobAt(seen + 1), seen, 7.0F).size(), 1U);
   seen = Next() - 6;
   EXPECT_EQ(Shoot(BobAt(seen), seen, -3.0F).size(), 1U);
+}
+
+// The Shooter's delay of every round a tick fired is what it is judged at, in seconds.
+TEST_F(LagCompensationTest, ATickReportsTheShootersDelayOfEachRoundItFiredInSeconds) {
+  Command command = Firing();
+  command.seen_tick = Next() - 10;
+
+  const std::vector<float> delays = TickWith(command).shooters_delays;
+
+  ASSERT_EQ(delays.size(), 1U);
+  EXPECT_FLOAT_EQ(delays[0], 10.0F / kTickRate);
+}
+
+TEST_F(LagCompensationTest, ARoundHeldAtTheCapReportsExactlyTheCap) {
+  Command command = Firing();
+  command.seen_tick = Next() - 40;
+
+  const std::vector<float> delays = TickWith(command).shooters_delays;
+
+  ASSERT_EQ(delays.size(), 1U);
+  EXPECT_EQ(delays[0], std::chrono::duration<float>(augusta::simulation::kMaxShootersDelay).count());
+}
+
+TEST_F(LagCompensationTest, ATickThatFiresNothingReportsNoShootersDelay) {
+  EXPECT_TRUE(TickWith(Command{}).shooters_delays.empty());
 }
 
 // Bob walks 35 m away: at 10 m a tick, a round crosses his path on its fourth

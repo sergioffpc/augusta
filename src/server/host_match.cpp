@@ -1,3 +1,4 @@
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -17,6 +18,7 @@
 #include "host.h"
 #include "host_impl.h"
 #include "host_log.h"
+#include "host_metrics.h"
 #include "match.h"
 #include "simulation_mapping.h"
 #include "tick_messages.h"
@@ -27,10 +29,41 @@ namespace augusta::server {
 // Every queue length fits the byte an Authoritative State update tells it in.
 static_assert(kMaxQueuedCommands <= std::numeric_limits<std::uint8_t>::max());
 
+namespace {
+
+// What the tick of result fired and hit, and at what Shooter's delay.
+void CountCombat(HostMetrics& metrics, const simulation::TickResult& result) {
+  metrics.shots.Increment(result.state.shots.size());
+  for (const simulation::Hit& hit : result.state.hits) {
+    metrics.hit_confirmations[hit.part].Increment();
+  }
+  const float cap = std::chrono::duration<float>(simulation::kMaxShootersDelay).count();
+  for (const float delay : result.shooters_delays) {
+    metrics.shooters_delay.Observe(delay);
+    metrics.shooters_delay_capped.Increment(delay >= cap ? 1 : 0);
+  }
+}
+
+}  // namespace
+
 // One line for every match that ends (ADR-0029): why, who won, how many
 // ticks it lasted, counting the one it ended on, and how many were in it.
 void Host::Impl::LogMatchEnded(EndReason reason, const std::optional<SessionId>& winner, std::size_t playing) const {
   server::LogMatchEnded(reason, winner, tick - match_start_tick + 1, playing, match.GetRoster().version);
+}
+
+// Counts a match that ended for reason, with winner or as a draw: how, and how
+// long it lasted, counting the tick it ended on.
+void Host::Impl::CountMatchEnded(EndReason reason, const std::optional<SessionId>& winner) {
+  if (reason == EndReason::kNoPlayersLeft) {
+    metrics.matches_ended_abandoned.Increment();
+  } else if (winner.has_value()) {
+    metrics.matches_ended_with_winner.Increment();
+  } else {
+    metrics.matches_ended_drawn.Increment();
+  }
+  const auto ticks = static_cast<double>(tick - match_start_tick + 1);
+  metrics.match_duration.Observe(ticks / tick_rate_hz);
 }
 
 // Ends the match in progress, if any, with winner or as a draw, for reason:
@@ -42,7 +75,9 @@ void Host::Impl::EndMatch(const std::optional<SessionId>& winner, EndReason reas
     return;
   }
   SendTo(ended->players, protocol::Encode(ToWire(*ended)));
+  CountMatchEnded(reason, ended->winner);
   LogMatchEnded(reason, ended->winner, ended->players.size());
+  SetLobbyGauges();
   SendRoster();
 }
 
@@ -77,6 +112,8 @@ void Host::Impl::StartMatchIfReady() {
   simulating_match = true;
   // Its first tick is the one about to run.
   match_start_tick = tick + 1;
+  metrics.matches_started.Increment();
+  SetLobbyGauges();
   SendTo(sessions, protocol::Encode(ToWire(*start, spawns)));
   LI("subsystem=serverruntime event=match_started tick={} players={}", match_start_tick, sessions.size());
 }
@@ -123,7 +160,9 @@ simulation::TickResult Host::Tick(float delta_time) {
   const Impl::TickInput input = impl.PrepareTick();
   const simulation::TickResult result = impl.simulation.Tick(input.commands, delta_time);
   impl.tick = result.state.tick;
-  SendTickMessages(impl.network, result.state, impl.tick, input.to);
+  SendTickMessages(impl.network, impl.metrics, result.state, impl.tick, input.to);
+  impl.metrics.match_players_alive.Set(static_cast<double>(result.state.alive.size()));
+  CountCombat(impl.metrics, result);
   LogCombat(result.state);
   // After the tick's own messages, so a client hears the deaths that ended the
   // match before it hears that it has.

@@ -25,6 +25,7 @@
 #include "content.h"
 #include "heartbeat.h"
 #include "host_impl.h"
+#include "host_metrics.h"
 #include "match.h"
 #include "recording.h"
 #include "simulation_mapping.h"
@@ -76,6 +77,7 @@ Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine 
       characters(ToSimulation(scenario.characters)),
       spawn_points(std::move(scenario.spawn_points)),
       network(config.listen),
+      metrics(config.tick_rate_hz),
       match(MatchConfig{
           .engine_version = std::string(EngineVersion()),
           .client_pack = scenario.client_pack,
@@ -84,13 +86,19 @@ Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine 
           .pause_ticks = PauseTicks(config.tick_rate_hz),
       }) {}
 
+void Host::Impl::Send(networking::PeerId peer, const networking::Payload& message,
+                      networking::Reliability reliability) {
+  CountSent(metrics, message);
+  network.Send(peer, message, reliability);
+}
+
 void Host::Impl::Reply(networking::PeerId peer, const networking::Payload& message) {
-  network.Send(peer, message, networking::Reliability::kReliable);
+  Send(peer, message, networking::Reliability::kReliable);
 }
 
 void Host::Impl::SendTo(const std::vector<SessionId>& sessions, const networking::Payload& message) {
   for (const SessionId session : sessions) {
-    network.Send(players.at(session).peer, message, networking::Reliability::kReliable);
+    Send(players.at(session).peer, message, networking::Reliability::kReliable);
   }
 }
 
@@ -104,6 +112,12 @@ void Host::Impl::SendRoster() {
   SendTo(sessions, protocol::Encode(ToWire(roster)));
 }
 
+void Host::Impl::SetLobbyGauges() {
+  metrics.sessions.Set(static_cast<double>(players.size()));
+  metrics.lobby_players.Set(static_cast<double>(match.GetRoster().players.size()));
+  metrics.match_in_progress.Set(match.InMatch() ? 1.0 : 0.0);
+}
+
 Host::Host(const HostConfig& config, Scenario scenario, scripting::Engine policy)
     : impl_(std::make_unique<Impl>(config, std::move(scenario), std::move(policy))) {}
 
@@ -112,12 +126,17 @@ Host::~Host() = default;
 networking::Endpoint Host::ListenEndpoint() const { return impl_->network.LocalEndpoint(); }
 
 void Host::RecordTiming(const tick::Timing& timing) {
-  const auto now = std::chrono::steady_clock::now();
-  const std::lock_guard<std::mutex> lock(impl_->mutex);
-  const std::optional<Activity> second = impl_->heartbeat.RecordTick(timing, now);
+  HostMetrics& metrics = impl_->metrics;
+  metrics.tick_duration.Observe(std::chrono::duration<double>(timing.duration).count());
+  metrics.ticks.Increment();
+  metrics.ticks_late.Increment(timing.late ? 1 : 0);
+  metrics.tick_overruns.Increment(timing.overrun ? 1 : 0);
+  metrics.tick_resyncs.Increment(timing.resynchronised ? 1 : 0);
+  const std::optional<Activity> second = impl_->heartbeat.Record(Totals(metrics), std::chrono::steady_clock::now());
   if (!second.has_value()) {
     return;
   }
+  const std::lock_guard<std::mutex> lock(impl_->mutex);
   LD("subsystem=serverruntime event=heartbeat tick={} players={} in_match={} ticks={} late={} overrun={} "
      "messages={} stale={} dropped={} overflow={} misbehaving={}",
      impl_->tick.load(), impl_->players.size(), impl_->match.InMatch(), second->ticks, second->late, second->overrun,
@@ -132,5 +151,7 @@ std::size_t Host::QueuedCommands(SessionId session) const {
   }
   return player->second.commands.Queued();
 }
+
+const HostMetrics& Host::Metrics() const { return impl_->metrics; }
 
 }  // namespace augusta::server

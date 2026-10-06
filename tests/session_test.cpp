@@ -44,7 +44,10 @@
 #include "augusta/weapon.h"
 #include "command_queue.h"
 #include "content.h"
+#include "heartbeat.h"
 #include "host.h"
+#include "host_log.h"
+#include "host_metrics.h"
 #include "match.h"
 #include "misbehaviour.h"
 #include "parameters_loader.h"
@@ -5978,6 +5981,231 @@ TEST_F(CorrectedLobbyTest, CommandsFromAPlayerInTheLobbyAffectNothing) {
   Run(kSettleTicks);
   ASSERT_TRUE(adversary.ServeUntil(host_, [&] { return adversary.NewestState()->acknowledged_sequence == 1U; }));
   EXPECT_EQ(adversary.NewestState()->rifle.rounds, honest_told->rifle.rounds - 1);
+}
+
+// What the Host counts for the metrics endpoint (ADR-0049), read through the
+// Host alone, never over HTTP: each event where it happens, once, for both the
+// series and the heartbeat line.
+using augusta::server::HostMetrics;
+using augusta::server::Leaving;
+using augusta::server::MessageType;
+
+using HostCountsTest = MatchOf<2>;
+
+TEST_F(HostCountsTest, EveryTickIsCountedWithHowItKeptToTheSchedule) {
+  host_.RecordTiming({.duration = std::chrono::milliseconds(3), .late = true});
+  host_.RecordTiming({.duration = std::chrono::milliseconds(30), .overrun = true, .resynchronised = true});
+
+  const HostMetrics& metrics = host_.Metrics();
+  EXPECT_EQ(metrics.ticks.Value(), 2U);
+  EXPECT_EQ(metrics.ticks_late.Value(), 1U);
+  EXPECT_EQ(metrics.tick_overruns.Value(), 1U);
+  EXPECT_EQ(metrics.tick_resyncs.Value(), 1U);
+  const auto durations = metrics.tick_duration.Read();
+  EXPECT_EQ(durations.cumulative_counts.back(), 2U);
+  EXPECT_NEAR(durations.sum, 0.033, 1e-9);
+  EXPECT_EQ(metrics.tick_rate_hz, kTestTickRate);
+}
+
+TEST_F(HostCountsTest, JoinsAreCountedByResultAndTheSessionsAndTheLobbyByWhoIsIn) {
+  Join();
+  Join();
+  const Session& third = Connect();
+  ASSERT_EQ(third.GetRefusal(), JoinRefusal::kLobbyFull);
+
+  const HostMetrics& metrics = host_.Metrics();
+  EXPECT_EQ(metrics.joins_admitted.Value(), 2U);
+  EXPECT_EQ(metrics.joins_refused[augusta::server::JoinRefusal::kLobbyFull].Value(), 1U);
+  EXPECT_EQ(metrics.joins_refused.Total(), 1U);
+  EXPECT_EQ(metrics.sessions.Value(), 2.0);
+  EXPECT_EQ(metrics.lobby_players.Value(), 2.0);
+  EXPECT_EQ(metrics.match_in_progress.Value(), 0.0);
+}
+
+TEST_F(HostCountsTest, AMatchIsCountedFromItsStartToItsEnd) {
+  Join();
+  Join();
+  ASSERT_TRUE(StartMatch());
+  Run(kSettleTicks);
+  const HostMetrics& metrics = host_.Metrics();
+  EXPECT_EQ(metrics.matches_started.Value(), 1U);
+  EXPECT_EQ(metrics.match_in_progress.Value(), 1.0);
+  EXPECT_EQ(metrics.match_players_alive.Value(), 2.0);
+  EXPECT_EQ(metrics.lobby_players.Value(), 0.0);
+  EXPECT_EQ(metrics.sessions.Value(), 2.0);
+
+  host_.EndMatch();
+
+  EXPECT_EQ(metrics.matches_ended_drawn.Value(), 1U);
+  EXPECT_EQ(metrics.matches_ended_with_winner.Value() + metrics.matches_ended_abandoned.Value(), 0U);
+  EXPECT_EQ(metrics.match_in_progress.Value(), 0.0);
+  EXPECT_EQ(metrics.lobby_players.Value(), 2.0);
+  const auto durations = metrics.match_duration.Read();
+  EXPECT_EQ(durations.cumulative_counts.back(), 1U);
+  EXPECT_GE(durations.sum, static_cast<double>(kSettleTicks) / kTestTickRate);
+}
+
+TEST_F(HostCountsTest, AMatchWhoseLastPlayerLeavesIsAbandonedAndEachDepartureIsCountedFromTheMatch) {
+  Join();
+  Join();
+  ASSERT_TRUE(StartMatch());
+  Run(kSettleTicks);
+
+  for (const auto& session : sessions_) {
+    session->Disconnect();
+  }
+  const HostMetrics& metrics = host_.Metrics();
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return metrics.sessions.Value() == 0.0; }));
+
+  EXPECT_EQ(metrics.disconnects_from_match[Leaving::kLeft].Value(), 2U);
+  EXPECT_EQ(metrics.disconnects_from_lobby.Total(), 0U);
+  EXPECT_EQ(metrics.matches_ended_abandoned.Value(), 1U);
+  EXPECT_EQ(metrics.match_in_progress.Value(), 0.0);
+}
+
+TEST_F(HostCountsTest, APlayerWhoLeavesTheLobbyIsCountedFromTheLobby) {
+  Join().Disconnect();
+  const HostMetrics& metrics = host_.Metrics();
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return metrics.sessions.Value() == 0.0; }));
+
+  EXPECT_EQ(metrics.disconnects_from_lobby[Leaving::kLeft].Value(), 1U);
+  EXPECT_EQ(metrics.disconnects_from_match.Total(), 0U);
+  EXPECT_EQ(metrics.lobby_players.Value(), 0.0);
+}
+
+TEST_F(HostCountsTest, EveryMessageIsCountedByTypeAndEveryUpdateByItsSize) {
+  Join();
+  Join();
+  ASSERT_TRUE(StartMatch());
+  Run(kSettleTicks, Forward());
+
+  const HostMetrics& metrics = host_.Metrics();
+  EXPECT_EQ(metrics.messages_received[MessageType::kJoinRequest].Value(), 2U);
+  EXPECT_GE(metrics.messages_received[MessageType::kReady].Value(), 2U);
+  EXPECT_GT(metrics.messages_received[MessageType::kCommands].Value(), 0U);
+  EXPECT_GT(metrics.commands_received.Value(), 0U);
+  EXPECT_EQ(metrics.messages_sent[MessageType::kJoinAccepted].Value(), 2U);
+  EXPECT_EQ(metrics.messages_sent[MessageType::kMatchStart].Value(), 2U);
+  const std::uint64_t updates = metrics.messages_sent[MessageType::kAuthoritativeState].Value();
+  EXPECT_GE(updates, 2U * kSettleTicks);
+  const auto sizes = metrics.authoritative_state_update_bytes.Read();
+  EXPECT_EQ(sizes.cumulative_counts.back(), updates);
+  EXPECT_GT(static_cast<double>(metrics.sent_bytes.Value()), sizes.sum);
+  EXPECT_GT(metrics.received_bytes.Value(), 0U);
+  EXPECT_EQ(augusta::server::Totals(metrics).messages, metrics.messages_received.Total());
+}
+
+TEST_F(HostCountsTest, AFloodOfMalformedMessagesIsCountedAsMisbehaviourAndItsDisconnectOnce) {
+  RawClient raw(host_.ListenEndpoint());
+  ASSERT_TRUE(raw.Join(host_));
+
+  for (std::size_t i = 0; i < kFlood; ++i) {
+    raw.SendPayload(kUndecodable);
+  }
+  ASSERT_TRUE(raw.ServeUntil(host_, [&] { return raw.GetConnectionState() == ConnectionState::kDisconnected; }));
+
+  const HostMetrics& metrics = host_.Metrics();
+  EXPECT_EQ(metrics.misbehaviour[augusta::server::PeerRejection::kUndecodable].Value(),
+            augusta::server::kMisbehaviourThreshold);
+  EXPECT_EQ(metrics.misbehaviour.Total(), augusta::server::kMisbehaviourThreshold);
+  EXPECT_EQ(metrics.disconnects_from_lobby[Leaving::kMisbehaving].Value(), 1U);
+  EXPECT_GE(metrics.received_bytes.Value(), augusta::server::kMisbehaviourThreshold * kUndecodable.size());
+  const augusta::server::Activity totals = augusta::server::Totals(metrics);
+  EXPECT_EQ(totals.dropped, augusta::server::kMisbehaviourThreshold);
+  EXPECT_EQ(totals.misbehaving, 1U);
+}
+
+TEST_F(HostCountsTest, CommandsOutsideAMatchAreDiscardedAsRoutineNotAsMisbehaviour) {
+  RawClient raw(host_.ListenEndpoint());
+  ASSERT_TRUE(raw.Join(host_));
+
+  raw.Send(protocol::CommandsWire{.commands = {{.sequence = 1}, {.sequence = 2}}});
+  const HostMetrics& metrics = host_.Metrics();
+  ASSERT_TRUE(raw.ServeUntil(host_, [&] { return metrics.commands_outside_match.Value() == 2U; }));
+
+  EXPECT_EQ(metrics.commands_received.Value(), 2U);
+  EXPECT_EQ(metrics.misbehaviour.Total(), 0U);
+  EXPECT_EQ(augusta::server::Totals(metrics).stale, 2U);
+}
+
+TEST_F(HostCountsTest, CommandsFromAPeerThatHasNotJoinedAreMisbehaviour) {
+  RawClient raw(host_.ListenEndpoint(), RawClient::Mode::kScripted);
+  ASSERT_TRUE(raw.Connect(host_));
+
+  raw.Send(protocol::CommandsWire{.commands = {{.sequence = 1}}});
+  const HostMetrics& metrics = host_.Metrics();
+  ASSERT_TRUE(raw.ServeUntil(host_, [&] { return metrics.misbehaviour.Total() == 1U; }));
+
+  EXPECT_EQ(metrics.misbehaviour[augusta::server::PeerRejection::kCommandsBeforeJoining].Value(), 1U);
+  EXPECT_EQ(metrics.joins_admitted.Value(), 0U);
+  EXPECT_EQ(metrics.commands_outside_match.Value(), 0U);
+}
+
+TEST_F(HostCountsTest, APeerDisconnectedForNotBeingAdmittedInTimeIsCountedBeforeAdmission) {
+  RawClient raw(host_.ListenEndpoint(), RawClient::Mode::kScripted);
+  ASSERT_TRUE(raw.Connect(host_));
+
+  const auto past_the_deadline = std::chrono::steady_clock::now() + augusta::server::kAdmissionDeadline;
+  ASSERT_TRUE(raw.ServeUntil(
+      host_, [&] { return raw.GetConnectionState() == ConnectionState::kDisconnected; }, past_the_deadline));
+
+  const HostMetrics& metrics = host_.Metrics();
+  EXPECT_EQ(metrics.disconnects_before_admission[Leaving::kMisbehaving].Value(), 1U);
+  EXPECT_EQ(metrics.disconnects_from_lobby.Total() + metrics.disconnects_from_match.Total(), 0U);
+  EXPECT_EQ(augusta::server::Totals(metrics).misbehaving, 1U);
+}
+
+using SoloHostCountsTest = MatchOf<1>;
+
+TEST_F(SoloHostCountsTest, CommandsTheQueueTurnsAwayAreDiscardedByWhy) {
+  RawClient raw(host_.ListenEndpoint());
+  ASSERT_TRUE(raw.Join(host_));
+  ASSERT_TRUE(DriveIntoMatch(host_, {}, &raw));
+  protocol::SequencedCommandWire out_of_range{.sequence = 2};
+  out_of_range.command.pitch = 3.0F;
+
+  raw.Send(protocol::CommandsWire{.commands = {{.sequence = 1}, {.sequence = 1}, out_of_range}});
+  const HostMetrics& metrics = host_.Metrics();
+  ASSERT_TRUE(raw.ServeUntil(host_, [&] { return metrics.commands_rejected.Total() == 2U; }));
+
+  EXPECT_EQ(metrics.commands_received.Value(), 3U);
+  EXPECT_EQ(metrics.commands_rejected[augusta::server::Rejection::kStale].Value(), 1U);
+  EXPECT_EQ(metrics.commands_rejected[augusta::server::Rejection::kOutOfRange].Value(), 1U);
+  EXPECT_EQ(metrics.misbehaviour[augusta::server::PeerRejection::kOutOfRangeCommand].Value(), 1U);
+  EXPECT_EQ(metrics.misbehaviour.Total(), 1U);
+}
+
+// A command that reports no Seen time is judged at the Shooter's delay's cap.
+using FireCountsTest = FireMatchOf<1>;
+
+TEST_F(FireCountsTest, EveryRoundIsCountedWithItsShootersDelayAndARoundAtTheCapAsCapped) {
+  Step(Firing());
+  Run(kTicksPerRound);
+
+  const HostMetrics& metrics = host_.Metrics();
+  EXPECT_EQ(metrics.shots.Value(), 1U);
+  const auto delays = metrics.shooters_delay.Read();
+  EXPECT_EQ(delays.cumulative_counts.back(), 1U);
+  EXPECT_FLOAT_EQ(static_cast<float>(delays.sum),
+                  std::chrono::duration<float>(augusta::simulation::kMaxShootersDelay).count());
+  EXPECT_EQ(metrics.shooters_delay_capped.Value(), 1U);
+}
+
+using WinnerCountsTest = LastStandingMatchOf<2>;
+
+TEST_F(WinnerCountsTest, EveryHitIsCountedByBodyPartAndAMatchWithAWinnerAsWon) {
+  ShootAt(Standing(1), Vec3(0.0F, kTorsoHeight, 0.0F));
+  Kill(Standing(1));
+  ASSERT_EQ(match_ends_.size(), 1U);
+
+  const HostMetrics& metrics = host_.Metrics();
+  EXPECT_EQ(metrics.shots.Value(), shots_fired_.size());
+  EXPECT_EQ(metrics.hit_confirmations[BodyPart::kTorso].Value(), 1U);
+  EXPECT_EQ(metrics.hit_confirmations[BodyPart::kHead].Value(), 2U);
+  EXPECT_EQ(metrics.hit_confirmations.Total(), hits_.size());
+  EXPECT_EQ(metrics.shooters_delay.Read().cumulative_counts.back(), shots_fired_.size());
+  EXPECT_EQ(metrics.shooters_delay_capped.Value(), 0U);
+  EXPECT_EQ(metrics.matches_ended_with_winner.Value(), 1U);
 }
 
 }  // namespace

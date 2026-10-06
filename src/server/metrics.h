@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <memory>
 
+#include <prometheus/collectable.h>
+
 #include "augusta/tick.h"
 
 /// \file
@@ -15,19 +17,22 @@
 /// the server's third beside Network I/O and Simulation (ADR-0005), which only
 /// reads: the Simulation thread writes what it reports. That thread is not a
 /// supervised worker, since an HTTP request must never stop the tick loop: a
-/// request that fails is logged and answered 500.
+/// request that fails is logged and answered 500. What the Host counts
+/// (host_metrics.h) it serves beside the Process family, which is its own.
 namespace augusta::server {
 
 /// The server's metrics endpoint, serving from construction to destruction.
 class MetricsEndpoint {
  public:
   /// Starts serving on port, on every interface. last_tick_end is when the
-  /// Simulation thread last finished a tick, which /livez reads; it must
-  /// outlive this. augustad_build_info's commit comes from the AUGUSTA_COMMIT
-  /// environment variable the server image sets, "unknown" without it, and
-  /// augustad_start_time_seconds is now. Throws std::runtime_error if the port
-  /// can't be bound.
-  MetricsEndpoint(std::uint16_t port, const std::atomic<tick::Clock::time_point>& last_tick_end);
+  /// Simulation thread last finished a tick, which /livez reads, and
+  /// server_metrics what /metrics serves beside the Process family, collected
+  /// on this endpoint's thread; both must outlive this. augustad_build_info's
+  /// commit comes from the AUGUSTA_COMMIT environment variable the server image
+  /// sets, "unknown" without it, and augustad_start_time_seconds is now. Throws
+  /// std::runtime_error if the port can't be bound.
+  MetricsEndpoint(std::uint16_t port, const std::atomic<tick::Clock::time_point>& last_tick_end,
+                  const prometheus::Collectable& server_metrics);
 
   /// Stops serving, waiting for a request in progress.
   ~MetricsEndpoint();
