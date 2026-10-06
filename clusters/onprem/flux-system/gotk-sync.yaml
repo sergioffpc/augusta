@@ -25,6 +25,26 @@ spec:
     kind: GitRepository
     name: flux-system
 ---
+# What the apps run on rather than are: the monitoring stack (ADR-0049).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infrastructure
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: flux-system
+  interval: 10m
+  path: ./clusters/onprem/infrastructure
+  prune: true
+  # Ready only once its HelmReleases are, so apps, which depends on it, finds
+  # the monitoring stack's CRDs (ServiceMonitor, PrometheusRule) installed.
+  wait: true
+  timeout: 15m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -33,6 +53,7 @@ metadata:
 spec:
   dependsOn:
     - name: flux-system
+    - name: infrastructure
   interval: 10m
   path: ./clusters/onprem/apps
   prune: true
