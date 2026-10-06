@@ -334,6 +334,79 @@ TEST_F(ConnectedNetworkingTest, InjectedLatencyDelaysDelivery) {
   EXPECT_LT(elapsed, std::chrono::milliseconds(kLatencyMs + 400));
 }
 
+TEST_F(ConnectedNetworkingTest, InjectedJitterDelaysSomeMessagesMoreThanOthers) {
+  constexpr int kJitterMeanMs = 50;
+  constexpr int kJitterMaxMs = 100;
+  SimulateNetworkConditions({.jitter_mean_ms = kJitterMeanMs, .jitter_max_ms = kJitterMaxMs});
+
+  // One message at a time, each timed on its own. Over loopback alone each
+  // takes about a poll; with the jitter about half take longer than 40 ms.
+  constexpr int kMessages = 20;
+  std::chrono::steady_clock::duration longest{};
+  for (int i = 0; i < kMessages; ++i) {
+    const auto start = std::chrono::steady_clock::now();
+    client_->Send(MakePayload("jittered"), Reliability::kUnreliable);
+    ASSERT_EQ(ReceiveOnServer(1).size(), 1U);
+    longest = std::max(longest, std::chrono::steady_clock::now() - start);
+  }
+
+  EXPECT_GE(longest, std::chrono::milliseconds(40));
+  // A loose upper bound so a busy CI machine does not flake it.
+  EXPECT_LT(longest, std::chrono::milliseconds(kJitterMaxMs + 400));
+}
+
+// For the conditions that change the order packets arrive in.
+class ReorderingNetworkingTest : public ConnectedNetworkingTest {
+ protected:
+  // What fills about a packet with one message (see UnreliableMessagesCanBeLostButNeverDuplicated).
+  static constexpr std::size_t kPaddingBytes = 1000;
+
+  // Sends kBurst numbered unreliable messages, each padded to fill about a
+  // packet by itself, and returns where each one that arrived stood among
+  // them, in arrival order.
+  std::vector<int> SendPaddedBurst() {
+    for (int i = 0; i < kBurst; ++i) {
+      client_->Send(MakePayload(std::to_string(i) + std::string(kPaddingBytes, '.')), Reliability::kUnreliable);
+    }
+    std::vector<int> positions;
+    for (const std::string& text : DrainServerFor(kDrainWindow)) {
+      positions.push_back(std::stoi(text));
+    }
+    return positions;
+  }
+};
+
+TEST_F(ReorderingNetworkingTest, InjectedJitterAloneKeepsMessagesInOrder) {
+  SimulateNetworkConditions({.jitter_mean_ms = 20, .jitter_max_ms = 60});
+
+  const std::vector<int> positions = SendPaddedBurst();
+
+  ASSERT_FALSE(positions.empty());
+  EXPECT_TRUE(std::ranges::is_sorted(positions));
+}
+
+TEST_F(ReorderingNetworkingTest, InjectedReorderingDeliversUnreliableMessagesOutOfOrder) {
+  SimulateNetworkConditions({.reorder_percent = 50.0F, .reorder_delay_ms = 50});
+
+  const std::vector<int> positions = SendPaddedBurst();
+
+  ASSERT_FALSE(positions.empty());
+  EXPECT_FALSE(std::ranges::is_sorted(positions));
+}
+
+TEST_F(ReorderingNetworkingTest, ReliableMessagesArriveOnceAndInOrderDespiteReordering) {
+  SimulateNetworkConditions({.reorder_percent = 50.0F, .reorder_delay_ms = 50});
+
+  // Padded to a packet each, as SendPaddedBurst's are, so packets are reordered under them.
+  std::vector<std::string> sent = NumberedMessages(kBurst);
+  for (std::string& text : sent) {
+    text += std::string(kPaddingBytes, '.');
+    client_->Send(MakePayload(text), Reliability::kReliable);
+  }
+
+  EXPECT_EQ(ReceiveOnServer(sent.size()), sent);
+}
+
 TEST_F(ConnectedNetworkingTest, AClientThatClosesItsConnectionIsReportedAsClosedByPeer) {
   client_->Disconnect();
 

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <format>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -19,6 +20,7 @@
 #include "augusta/prediction.h"
 #include "augusta/runner.h"
 #include "augusta/supervisor.h"
+#include "netcode_stats.h"
 #include "scripted_player.h"
 
 namespace augusta::loadtest {
@@ -48,11 +50,12 @@ class Player {
       : index_(index),
         session_(config.session, WorldWithMap(config.map)),
         script_(config.seed + static_cast<std::uint32_t>(index)) {
-    runner_.emplace(session_, harness::RunnerHooks{
-                                  .next_command = [this] { return script_.NextCommand(*session_.GetServerView()); },
-                                  .on_tick = {},
-                                  .on_network_round = {},
-                              });
+    runner_.emplace(
+        session_, harness::RunnerHooks{
+                      .next_command = [this] { return script_.NextCommand(*session_.GetServerView(), predicted_own_); },
+                      .on_tick = [this](const harness::PredictedTick& tick) { Tally(tick); },
+                      .on_network_round = {},
+                  });
   }
 
   Player(const Player&) = delete;
@@ -72,6 +75,19 @@ class Player {
     ready_version_ = view.lobby->version;
   }
 
+  // What its prediction and fire have come to so far.
+  [[nodiscard]] NetcodeStats Stats() const {
+    const std::scoped_lock lock(tally_mutex_);
+    return tally_.Stats();
+  }
+
+  // Takes the Hit confirmations it has been sent since the last call, for its Stats.
+  void CollectHitConfirmations() {
+    const std::size_t confirmations = session_.TakeHitConfirmations().size();
+    const std::scoped_lock lock(tally_mutex_);
+    tally_.RecordHitConfirmations(confirmations);
+  }
+
   // How far it has got as of view, logging a Match end or a failure the first
   // time it is seen.
   PlayerProgress Progress(const harness::ServerView& view) {
@@ -85,6 +101,14 @@ class Player {
   }
 
  private:
+  // The Runner's Prediction thread, each Tick.
+  void Tally(const harness::PredictedTick& tick) {
+    predicted_own_ = tick.state.local_body;
+    const bool in_match = session_.GetPhase() == harness::Phase::kMatch;
+    const std::scoped_lock lock(tally_mutex_);
+    tally_.RecordTick(tick.state, in_match);
+  }
+
   bool Failed() {
     if (const auto worker = runner_->Failure(); worker.has_value()) {
       LogFailureOnce(supervisor::DescribeWorkerFailure(*worker));
@@ -107,12 +131,33 @@ class Player {
   std::size_t index_;
   harness::Session session_;
   ScriptedPlayer script_;
+  // Where the last Tick's prediction left its own body, for its script to aim
+  // from. The Runner's Prediction thread only.
+  physics::BodyState predicted_own_{};
   std::optional<std::uint32_t> ready_version_;
   std::uint32_t logged_matches_ended_ = 0;
   bool failure_logged_ = false;
+  // Ticked on the Prediction thread, read and handed Hit confirmations on the caller's.
+  mutable std::mutex tally_mutex_;
+  NetcodeTally tally_;
   // Last, so its threads are joined before anything they use goes.
   std::optional<harness::Runner> runner_;
 };
+
+// What each player's prediction and fire came to, logged one line a player.
+std::vector<NetcodeStats> StatsOf(const std::vector<std::unique_ptr<Player>>& players) {
+  std::vector<NetcodeStats> stats;
+  for (std::size_t index = 0; index < players.size(); ++index) {
+    // Those that arrived since the watch last looked count too.
+    players[index]->CollectHitConfirmations();
+    const NetcodeStats& player = stats.emplace_back(players[index]->Stats());
+    LI("subsystem=loadtest event=player_netcode player={} match_ticks={} corrections={} largest_correction_m={:.3f} "
+       "rounds_fired={} hit_confirmations={}",
+       index, player.match_ticks, player.corrections, player.largest_correction_m, player.rounds_fired,
+       player.hit_confirmations);
+  }
+  return stats;
+}
 
 }  // namespace
 
@@ -148,7 +193,7 @@ Verdict Judge(std::span<const PlayerProgress> players, std::uint32_t player_coun
   return timed_out ? Verdict::kTimedOut : Verdict::kRunning;
 }
 
-Verdict RunScriptedPlayers(const RunConfig& config) {
+RunResult RunScriptedPlayers(const RunConfig& config) {
   const auto deadline = std::chrono::steady_clock::now() + config.timeout;
   std::vector<std::unique_ptr<Player>> players;
   players.push_back(std::make_unique<Player>(0, config));
@@ -161,6 +206,7 @@ Verdict RunScriptedPlayers(const RunConfig& config) {
     for (const std::unique_ptr<Player>& player : players) {
       const std::shared_ptr<const harness::ServerView> view = player->View();
       player->GetReady(*view);
+      player->CollectHitConfirmations();
       progress.push_back(player->Progress(*view));
     }
     if (player_count == 0) {
@@ -176,7 +222,7 @@ Verdict RunScriptedPlayers(const RunConfig& config) {
     if (verdict != Verdict::kRunning) {
       LI("subsystem=loadtest event=run_finished verdict=\"{}\" players={} matches={}", DescribeVerdict(verdict),
          players.size(), config.matches);
-      return verdict;
+      return RunResult{.verdict = verdict, .players = StatsOf(players)};
     }
     std::this_thread::sleep_for(kWatchInterval);
   }

@@ -9,6 +9,7 @@
 
 #include "augusta/harness.h"
 #include "augusta/physics.h"
+#include "netcode_stats.h"
 
 /// \file
 /// One run of Scripted players (scripted_player.h) against a server: as many
@@ -73,12 +74,21 @@ enum class Verdict : std::uint8_t {
 [[nodiscard]] Verdict Judge(std::span<const PlayerProgress> players, std::uint32_t player_count, std::uint32_t matches,
                             bool timed_out);
 
-/// Plays a run to its verdict (never kRunning): connects one Scripted player,
-/// then, once the server has admitted it and told it the Player count, the
-/// rest, and stops them all once Judge has a verdict. Logs each player's
-/// failure and each Match end it sees. Throws std::runtime_error if
+/// How a run ended.
+struct RunResult {
+  /// Never kRunning.
+  Verdict verdict = Verdict::kRunning;
+  /// What each Scripted player's prediction and fire came to, in the order
+  /// they connected.
+  std::vector<NetcodeStats> players;
+};
+
+/// Plays a run to its verdict: connects one Scripted player, then, once the
+/// server has admitted it and told it the Player count, the rest, and stops
+/// them all once Judge has a verdict. Logs each player's failure, each Match
+/// end it sees and, at the end, its NetcodeStats. Throws std::runtime_error if
 /// physics rejects a mesh of the map.
-[[nodiscard]] Verdict RunScriptedPlayers(const RunConfig& config);
+[[nodiscard]] RunResult RunScriptedPlayers(const RunConfig& config);
 
 }  // namespace augusta::loadtest
 

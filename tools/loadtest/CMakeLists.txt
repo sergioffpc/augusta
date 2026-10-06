@@ -22,13 +22,22 @@ target_link_libraries(augusta_loadtest_scripted_player
 )
 augusta_set_module_scope(augusta_loadtest_scripted_player CLIENT_ONLY)
 
+# What a Scripted player's prediction and fire came to over a run (see
+# netcode_stats.h): counts only, so its tests need no connection.
+add_library(augusta_loadtest_netcode_stats STATIC
+  netcode_stats.cpp
+)
+target_include_directories(augusta_loadtest_netcode_stats PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(augusta_loadtest_netcode_stats PUBLIC augusta_math augusta_prediction)
+augusta_set_module_scope(augusta_loadtest_netcode_stats CLIENT_ONLY)
+
 # A run of Scripted players against a server, to its verdict (see run.h).
 add_library(augusta_loadtest_run STATIC
   run.cpp
 )
 target_include_directories(augusta_loadtest_run PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augusta_loadtest_run
-  PUBLIC augusta_harness augusta_physics
+  PUBLIC augusta_harness augusta_loadtest_netcode_stats augusta_physics
   PRIVATE augusta_loadtest_scripted_player augusta_logging augusta_prediction augusta_supervisor
 )
 augusta_set_module_scope(augusta_loadtest_run CLIENT_ONLY)

@@ -230,7 +230,16 @@ void Shutdown() {
 void SimulateNetworkConditions(const SimulatedConditions& conditions) {
   ISteamNetworkingUtils* utils = SteamNetworkingUtils();
   utils->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_FakePacketLag_Send, conditions.latency_ms);
+  // Every packet draws a jitter; a mean of 0 draws none.
+  constexpr float kEveryPacket = 100.0F;
+  utils->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketJitter_Send_Avg,
+                                   static_cast<float>(conditions.jitter_mean_ms));
+  utils->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketJitter_Send_Max,
+                                   static_cast<float>(conditions.jitter_max_ms));
+  utils->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketJitter_Send_Pct, kEveryPacket);
   utils->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketLoss_Send, conditions.loss_percent);
+  utils->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketReorder_Send, conditions.reorder_percent);
+  utils->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_FakePacketReorder_Time, conditions.reorder_delay_ms);
   for (const ESteamNetworkingConfigValue timeout :
        {k_ESteamNetworkingConfig_TimeoutInitial, k_ESteamNetworkingConfig_TimeoutConnected}) {
     if (conditions.timeout_ms > 0) {
@@ -240,8 +249,10 @@ void SimulateNetworkConditions(const SimulatedConditions& conditions) {
       utils->SetConfigValue(timeout, k_ESteamNetworkingConfig_Global, 0, k_ESteamNetworkingConfig_Int32, nullptr);
     }
   }
-  LI("subsystem=networking event=simulated_conditions latency_ms={} loss_percent={}", conditions.latency_ms,
-     conditions.loss_percent);
+  LI("subsystem=networking event=simulated_conditions latency_ms={} jitter_mean_ms={} jitter_max_ms={} "
+     "loss_percent={} reorder_percent={} reorder_delay_ms={}",
+     conditions.latency_ms, conditions.jitter_mean_ms, conditions.jitter_max_ms, conditions.loss_percent,
+     conditions.reorder_percent, conditions.reorder_delay_ms);
 }
 
 // ---- Client ----
