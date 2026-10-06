@@ -3,12 +3,22 @@
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <set>
 #include <string>
 #include <thread>
 #include <vector>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
 
 #include <gtest/gtest.h>
 
@@ -93,6 +103,68 @@ bool ReceiveAtLeastOne(PollBoth poll_both, ReceiveFn receive, std::vector<Messag
   });
 }
 
+// IPv4 UDP sockets, as many as asked for, bound to the wildcard address each on
+// a port the OS picks, as a client's is; held until destroyed.
+class WildcardUdpSockets {
+ public:
+  explicit WildcardUdpSockets(std::size_t count) {
+#ifdef _WIN32
+    WSADATA wsa_data;
+    started_ = WSAStartup(MAKEWORD(2, 2), &wsa_data) == 0;
+#endif
+    for (std::size_t index = 0; index < count; ++index) {
+      const NativeSocket socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+      if (socket == kInvalidSocket) {
+        return;
+      }
+      sockets_.push_back(socket);
+      sockaddr_in addr{};
+      addr.sin_family = AF_INET;
+      addr.sin_addr.s_addr = htonl(INADDR_ANY);
+      socklen_t length = sizeof(addr);
+      if (::bind(socket, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) != 0 ||
+          ::getsockname(socket, reinterpret_cast<sockaddr*>(&addr), &length) != 0) {
+        return;
+      }
+      ports_.insert(ntohs(addr.sin_port));
+    }
+  }
+
+  ~WildcardUdpSockets() {
+    for (const NativeSocket socket : sockets_) {
+#ifdef _WIN32
+      closesocket(socket);
+#else
+      close(socket);
+#endif
+    }
+#ifdef _WIN32
+    if (started_) {
+      WSACleanup();
+    }
+#endif
+  }
+
+  WildcardUdpSockets(const WildcardUdpSockets&) = delete;
+  WildcardUdpSockets& operator=(const WildcardUdpSockets&) = delete;
+  WildcardUdpSockets(WildcardUdpSockets&&) = delete;
+  WildcardUdpSockets& operator=(WildcardUdpSockets&&) = delete;
+
+  [[nodiscard]] const std::set<std::uint16_t>& Ports() const { return ports_; }
+
+ private:
+#ifdef _WIN32
+  using NativeSocket = SOCKET;
+  static constexpr NativeSocket kInvalidSocket = INVALID_SOCKET;
+  bool started_ = false;
+#else
+  using NativeSocket = int;
+  static constexpr NativeSocket kInvalidSocket = -1;
+#endif
+  std::vector<NativeSocket> sockets_;
+  std::set<std::uint16_t> ports_;
+};
+
 struct RoundTripResult {
   std::string received_by_server;
   std::string received_by_client;
@@ -155,6 +227,27 @@ TEST_F(NetworkingTest, AServerBoundToPortZeroReportsThePortItGot) {
 
   EXPECT_TRUE(server.LocalEndpoint().address.starts_with("127.0.0.1:"));
   EXPECT_NE(server.LocalEndpoint().address, kLoopbackAnyPort);
+}
+
+// A client's socket is bound to the wildcard address on a port the OS picks,
+// and on Windows a later bind to 127.0.0.1 on that same port succeeds and takes
+// every packet sent to it: a server that took it would leave that client
+// unable to hear its own server, though still heard by it (#342). So a server
+// bound to port 0 must never land on a port a wildcard socket already holds -
+// held here by the hundreds, so a server picking ports of its own at random
+// would all but surely land on one of them.
+TEST_F(NetworkingTest, AServerBoundToPortZeroNeverTakesAPortAWildcardSocketHolds) {
+  constexpr std::size_t kHeldPorts = 512;
+  constexpr int kServers = 128;
+  const WildcardUdpSockets held(kHeldPorts);
+  ASSERT_EQ(held.Ports().size(), kHeldPorts);
+
+  for (int server_index = 0; server_index < kServers; ++server_index) {
+    const Server server(Endpoint{.address = kLoopbackAnyPort});
+    const std::string& address = server.LocalEndpoint().address;
+    const auto port = static_cast<std::uint16_t>(std::stoi(address.substr(address.rfind(':') + 1)));
+    ASSERT_FALSE(held.Ports().contains(port)) << address;
+  }
 }
 
 TEST_F(NetworkingTest, RoundTripsAMessageBothWays) {

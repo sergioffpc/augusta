@@ -155,7 +155,10 @@ target_compile_definitions(augusta_example_objectives_tests PRIVATE
 gtest_discover_tests(augusta_example_objectives_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_networking_tests networking_test.cpp)
-target_link_libraries(augusta_networking_tests PRIVATE augusta_networking GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_networking_tests PRIVATE augusta_networking GTest::gtest GTest::gtest_main
+  $<$<PLATFORM_ID:Windows>:ws2_32>)
+# The plain sockets it holds ports with bring in <windows.h> on Windows.
+target_compile_definitions(augusta_networking_tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 # DISCOVERY_TIMEOUT above the 5s default: this binary pulls in GameNetworkingSockets,
 # protobuf, and abseil as DLLs, and a fresh (especially Debug-config) build's first
 # launch can take longer than 5s once Windows Defender scans the newly written
