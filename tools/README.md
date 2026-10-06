@@ -16,6 +16,15 @@ documentation site is built (ADR-0046).
 | [`replay/`](replay/) | `augusta-replay`: replays a match recording against the server pack it was made on. |
 | [`docs/`](docs/) | The documentation site's MkDocs hooks and Doxyfile, built by `make docs`. |
 
+## Python environment
+
+The Python tools share one environment: [`pyproject.toml`](pyproject.toml) here
+is a uv workspace with `pack` as its member and one lock, `uv.lock`. `uv sync`,
+run from this directory, creates `tools/.venv` with the cooker installed
+editable, pytest, and MkDocs (the `docs` group, which `make docs` runs alone).
+The editor uses it as the workspace's interpreter. Run `uv sync` here, not in a
+member, where it would sync that member alone and drop the rest.
+
 ## Composer
 
 Composer is an optional authoring tool; it is not needed to cook stages someone
@@ -340,17 +349,17 @@ interpreter that imports it.
 
 ### Running the tests
 
-The tests live in [pack/tests/](pack/tests/) and run with pytest in a separate
-environment `uv` creates at `tools/pack/.venv`, not the assets root's venv.
-They need the native modules built into `src/pack/` (above) against that
-environment's interpreter:
+The tests live in [pack/tests/](pack/tests/) and run with pytest in the tools'
+shared environment, `tools/.venv` (see Python environment above), not the
+assets root's venv. They need the native modules built into `src/pack/` (above)
+against that environment's interpreter:
 
 ```powershell
-cd tools\pack
+cd tools
 uv sync
-cmake --preset windows -S cpp "-DPYTHON_EXECUTABLE=$PWD\.venv\Scripts\python.exe"
-cmake --build cpp\build\x64-windows
-uv run pytest
+cmake --preset windows -S pack\cpp "-DPYTHON_EXECUTABLE=$PWD\.venv\Scripts\python.exe"
+cmake --build pack\cpp\build\x64-windows
+uv run pytest pack
 ```
 
 The USD stages the cook tests read, including the malformed ones, are in

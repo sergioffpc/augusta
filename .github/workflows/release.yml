@@ -153,14 +153,14 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
-          cache-dependency-glob: tools/pack/uv.lock
+          cache-dependency-glob: tools/uv.lock
       - name: Install the cooker
-        working-directory: tools/pack
+        working-directory: tools
         run: uv sync --locked
       - name: Build the native modules
         shell: pwsh
         run: |
-          cmake --preset windows -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$PWD/tools/pack/.venv/Scripts/python.exe"
+          cmake --preset windows -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$PWD/tools/.venv/Scripts/python.exe"
           cmake --build tools/pack/cpp/build/x64-windows
       - name: Test (pytest)
         working-directory: tools/pack

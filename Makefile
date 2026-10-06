@@ -121,7 +121,7 @@ distclean:
 # The documentation site (ADR-0046): MkDocs first, since it empties the site
 # folder, then Doxygen's API reference into its api/ folder.
 docs:
-	uv tool run --from mkdocs==1.6.1 --with mkdocs-material==9.7.7 mkdocs build --strict
+	uv run --locked --project tools --only-group docs mkdocs build --strict
 	doxygen tools/docs/Doxyfile
 
 format:

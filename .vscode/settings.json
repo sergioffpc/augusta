@@ -71,7 +71,7 @@
   "cmake.coverageInfoFiles": ["${workspaceFolder}/build/x64-linux-coverage/report/coverage.lcov"],
 
   "python.analysis.include": ["tools/**"],
-  "python.defaultInterpreterPath": "${workspaceFolder}/tools/pack/.venv/Scripts/python.exe",
+  "python.defaultInterpreterPath": "${workspaceFolder}/tools/.venv/Scripts/python.exe",
   "python.testing.pytestEnabled": true,
   "python.testing.cwd": "${workspaceFolder}/tools/pack",
   "python.testing.pytestArgs": ["tests"],

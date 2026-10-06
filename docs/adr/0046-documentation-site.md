@@ -25,8 +25,9 @@ name says everything has no comment by rule.
 **GitHub Actions publishes it** (`.github/workflows/docs.yml`): every pull request
 builds the site, so a broken build fails before merge, and a push to `main` builds
 and deploys it with GitHub's own Pages actions. `make docs` builds the same site
-locally, into `build/docs-site/`. MkDocs runs through `uv tool run`, pinned, as the
-other Python tools do; Doxygen is installed on the machine, like clang-format.
+locally, into `build/docs-site/`. MkDocs is pinned in the `docs` group of the
+Python environment the tools share (`tools/pyproject.toml`) and runs from it;
+Doxygen is installed on the machine, like clang-format.
 
 **The site also charts the nightly benchmarks' history** (ADR-0013), under
 `benchmarks/`, linked from the navigation: the page and results the nightly keeps on

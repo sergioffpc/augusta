@@ -49,7 +49,7 @@ packages/
 
 # Python (tools/pack) build/install artifacts - the hermetic venv
 # itself lives under -AssetsRoot (see above), never inside the checkout;
-# .venv/ is the test environment `uv run pytest` creates.
+# .venv/ is the tools/ environment `uv sync` creates there.
 __pycache__/
 *.pyc
 *.egg-info/

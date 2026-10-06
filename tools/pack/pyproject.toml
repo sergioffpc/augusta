@@ -17,9 +17,6 @@ augusta-keygen = "pack.keys:main"
 augusta-inspect = "pack.pack_cli:inspect_main"
 augusta-verify = "pack.pack_cli:verify_main"
 
-[dependency-groups]
-dev = ["pytest>=8"]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
