@@ -46,6 +46,8 @@ RUN ./third_party/vcpkg/vcpkg install --x-install-root=build/x64-linux/vcpkg_ins
 
 COPY src src
 COPY tests tests
+# augusta-replay and its tests, which the configure always reads (CMakeLists.txt).
+COPY tools/replay tools/replay
 
 # The install is staged under DESTDIR with the prefix the runtime stage runs
 # it from, so this file never names a path inside the build tree.
