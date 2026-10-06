@@ -30,12 +30,12 @@ struct ServerRuntime::Impl {
   // When the Simulation thread last finished a tick, which the metrics
   // endpoint's /livez reads (ADR-0049). Run() starts it at its own start.
   std::atomic<tick::Clock::time_point> last_tick_end;
+  // Every client's Connection health, which the Network I/O thread records
+  // and the metrics endpoint collects.
+  ConnectionHealth connection_health;
   // Null until Run() starts it, and if it could not start. Declared after
-  // last_tick_end, which it reads.
+  // last_tick_end and connection_health, which it reads.
   std::unique_ptr<MetricsEndpoint> metrics;
-  // Records into the endpoint's metrics, so null without it. Used by the
-  // Network I/O thread only.
-  std::unique_ptr<ConnectionHealth> connection_health;
   // The two threads' stop request and first failure (ADR-0005). Declared after
   // host, so it stops and joins the Network I/O thread before host goes.
   supervisor::Supervisor workers;
@@ -50,18 +50,20 @@ struct ServerRuntime::Impl {
   // probe then fails.
   void StartMetrics() {
     try {
-      metrics = std::make_unique<MetricsEndpoint>(metrics_port, last_tick_end, host.Metrics());
-      connection_health = std::make_unique<ConnectionHealth>(metrics->Registry());
+      metrics = std::make_unique<MetricsEndpoint>(metrics_port, last_tick_end,
+                                                  ServerMetrics{host.Metrics(), connection_health});
       LI("subsystem=serverruntime event=metrics_serving port={}", metrics_port);
     } catch (const std::exception& error) {
       LE("subsystem=serverruntime event=metrics_failed port={} error={}", metrics_port, error.what());
     }
   }
 
-  // Network I/O thread body (ADR-0005): pumps the connection until a stop is
-  // requested, waiting kNetworkRoundWait between rounds rather than spinning a
-  // core. The transport has no wait on incoming work, so that wait bounds how
-  // late a received message is handled, and how long stopping takes.
+  // Network I/O thread body (ADR-0005): pumps the connection, and once a
+  // heartbeat interval samples every client's Connection health (ADR-0049),
+  // until a stop is requested, waiting kNetworkRoundWait between rounds rather
+  // than spinning a core. The transport has no wait on incoming work, so that
+  // wait bounds how late a received message is handled, and how long stopping
+  // takes.
   void NetworkThreadMain() {
     constexpr auto kNetworkRoundWait = std::chrono::milliseconds(1);
     std::chrono::steady_clock::time_point next_sample = std::chrono::steady_clock::now() + kHeartbeatInterval;
@@ -69,17 +71,10 @@ struct ServerRuntime::Impl {
       const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
       host.PumpNetwork(now);
       if (now >= next_sample) {
-        SampleConnectionHealth();
+        connection_health.Record(host.SampleConnections());
         next_sample = now + kHeartbeatInterval;
       }
       std::this_thread::sleep_for(kNetworkRoundWait);
-    }
-  }
-
-  // Once a heartbeat interval, on the Network I/O thread (ADR-0049).
-  void SampleConnectionHealth() {
-    if (connection_health != nullptr) {
-      connection_health->Record(host.SampleConnections());
     }
   }
 

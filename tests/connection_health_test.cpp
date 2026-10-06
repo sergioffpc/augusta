@@ -4,18 +4,17 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include <prometheus/client_metric.h>
 #include <prometheus/metric_family.h>
-#include <prometheus/registry.h>
 
 #include "augusta/networking.h"
 #include "match.h"
 
-// What ConnectionHealth records, read back from the registry as the metrics
-// endpoint serves it.
+// What ConnectionHealth records, read back as the metrics endpoint collects it.
 namespace {
 
 using augusta::networking::ConnectionStats;
@@ -57,7 +56,7 @@ class ConnectionHealthTest : public ::testing::Test {
   // The metric of family name whose labels include name=value, if any.
   std::optional<prometheus::ClientMetric> Find(const std::string& family, const std::string& label = "",
                                                const std::string& value = "") const {
-    for (const prometheus::MetricFamily& collected : registry_.Collect()) {
+    for (const prometheus::MetricFamily& collected : health_.Collect()) {
       if (collected.name != family) {
         continue;
       }
@@ -71,7 +70,7 @@ class ConnectionHealthTest : public ::testing::Test {
   }
 
   std::optional<double> Gauge(const std::string& family, SessionId session, const std::string& direction = "") const {
-    for (const prometheus::MetricFamily& collected : registry_.Collect()) {
+    for (const prometheus::MetricFamily& collected : health_.Collect()) {
       if (collected.name != family) {
         continue;
       }
@@ -93,7 +92,7 @@ class ConnectionHealthTest : public ::testing::Test {
   // Every metric labelled with session's ID, in any family.
   int GaugesOf(SessionId session) const {
     int count = 0;
-    for (const prometheus::MetricFamily& collected : registry_.Collect()) {
+    for (const prometheus::MetricFamily& collected : health_.Collect()) {
       for (const prometheus::ClientMetric& metric : collected.metric) {
         count += HasLabel(metric, "session_id", std::to_string(static_cast<std::uint32_t>(session))) ? 1 : 0;
       }
@@ -101,8 +100,7 @@ class ConnectionHealthTest : public ::testing::Test {
     return count;
   }
 
-  prometheus::Registry registry_;
-  ConnectionHealth health_{registry_};
+  ConnectionHealth health_;
 };
 
 TEST_F(ConnectionHealthTest, RecordsASessionsMeasurementsInBaseUnits) {
@@ -173,7 +171,7 @@ TEST_F(ConnectionHealthTest, NoGaugeOutlivesItsSession) {
 TEST_F(ConnectionHealthTest, LabelsAreOnlySessionIdAndDirection) {
   health_.Record({{.session = kSession, .stats = Measured()}, {.session = std::nullopt, .stats = Measured()}});
 
-  for (const prometheus::MetricFamily& collected : registry_.Collect()) {
+  for (const prometheus::MetricFamily& collected : health_.Collect()) {
     for (const prometheus::ClientMetric& metric : collected.metric) {
       for (const prometheus::ClientMetric::Label& label : metric.label) {
         EXPECT_TRUE(label.name == "session_id" || label.name == "direction")
@@ -181,6 +179,51 @@ TEST_F(ConnectionHealthTest, LabelsAreOnlySessionIdAndDirection) {
       }
     }
   }
+}
+
+// Every value of a Session's gauges is from one sample, never a mix of two, while
+// the endpoint's thread collects as the Network I/O thread records.
+TEST_F(ConnectionHealthTest, ASessionsGaugesAreCollectedWhole) {
+  // Two samples whose every gauge differs.
+  ConnectionStats slow = Measured();
+  ConnectionStats fast = Measured();
+  fast.ping_ms = 10;
+  fast.quality_local = 0.5F;
+  fast.quality_remote = 0.5F;
+  fast.in_bytes_per_sec = 1.0F;
+  fast.out_bytes_per_sec = 1.0F;
+  fast.max_jitter_us = 1;
+  fast.pending_bytes = 1;
+  constexpr int kRecords = 20000;
+  std::thread writer([&] {
+    for (int i = 0; i < kRecords; ++i) {
+      health_.Record({{.session = kSession, .stats = i % 2 == 0 ? slow : fast}});
+    }
+  });
+
+  int mixed = 0;
+  for (int i = 0; i < kRecords / 10; ++i) {
+    // One collection, read back whole.
+    std::optional<double> rtt_in_collection;
+    std::optional<double> pending_in_collection;
+    for (const prometheus::MetricFamily& collected : health_.Collect()) {
+      for (const prometheus::ClientMetric& metric : collected.metric) {
+        if (collected.name == "augustad_session_connection_rtt_seconds") {
+          rtt_in_collection = metric.gauge.value;
+        } else if (collected.name == "augustad_connection_pending_bytes") {
+          pending_in_collection = metric.gauge.value;
+        }
+      }
+    }
+    if (rtt_in_collection.has_value() && pending_in_collection.has_value()) {
+      const bool was_slow = *rtt_in_collection > 0.02;
+      const bool pending_slow = *pending_in_collection > 1.0;
+      mixed += was_slow != pending_slow ? 1 : 0;
+    }
+  }
+  writer.join();
+
+  EXPECT_EQ(mixed, 0);
 }
 
 }  // namespace

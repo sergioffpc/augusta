@@ -18,7 +18,7 @@
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "connection_health.h"
+#include "connection_sample.h"
 #include "content.h"
 #include "host_metrics.h"
 #include "match.h"
@@ -91,7 +91,7 @@ class Host {
 
   /// The transport's measurements of every open connection, each with the
   /// Session it carries if its client has joined: what ConnectionHealth
-  /// records. Each call clears the transport's worst-jitter mark, so one
+  /// (connection_health.h) records. Each call clears the transport's worst-jitter mark, so one
   /// caller samples, once a heartbeat interval (ADR-0049): the Network I/O
   /// thread.
   [[nodiscard]] std::vector<ConnectionSample> SampleConnections();

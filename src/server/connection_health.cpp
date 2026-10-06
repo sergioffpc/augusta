@@ -1,40 +1,47 @@
 #include "connection_health.h"
 
+#include <algorithm>
 #include <array>
+#include <atomic>
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <initializer_list>
+#include <limits>
 #include <memory>
 #include <optional>
-#include <span>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
+#include <utility>
 #include <vector>
 
-#include <prometheus/family.h>
-#include <prometheus/gauge.h>
-#include <prometheus/histogram.h>
-#include <prometheus/labels.h>
-#include <prometheus/registry.h>
+#include <prometheus/client_metric.h>
+#include <prometheus/metric_family.h>
+#include <prometheus/metric_type.h>
 
 #include "augusta/networking.h"
+#include "augusta/protocol.h"
+#include "connection_sample.h"
+#include "lock_free_metrics.h"
 #include "match.h"
 
 namespace augusta::server {
 namespace {
 
-using prometheus::Family;
-using prometheus::Gauge;
-using prometheus::Histogram;
+using prometheus::ClientMetric;
+using prometheus::MetricFamily;
+using prometheus::MetricType;
 
 constexpr double kMillisecondsPerSecond = 1e3;
 constexpr double kMicrosecondsPerSecond = 1e6;
+constexpr double kNotMeasured = std::numeric_limits<double>::quiet_NaN();
 
 // Quality's buckets are finest near 1, where a healthy connection sits.
 constexpr std::array kRttBucketsSeconds{0.005, 0.01, 0.02, 0.04, 0.06, 0.08, 0.1, 0.15, 0.2, 0.3, 0.5, 1.0};
 constexpr std::array kQualityBuckets{0.5, 0.8, 0.9, 0.95, 0.98, 0.99, 0.995, 0.999, 1.0};
 constexpr std::array kJitterBucketsSeconds{0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2};
 
-Histogram::BucketBoundaries Buckets(std::span<const double> bounds) { return {bounds.begin(), bounds.end()}; }
+// No more Sessions than the Lobby holds are live at once.
+constexpr std::size_t kSlotCount = protocol::kMaxPlayers;
 
 // Decision: what the transport has measured, in base units. Quality and jitter
 // read negative until it has (networking::ConnectionStats); nullopt then.
@@ -52,104 +59,130 @@ std::optional<double> JitterSeconds(const networking::ConnectionStats& stats) {
   return Measured(stats.max_jitter_us, kMicrosecondsPerSecond);
 }
 
-Family<Histogram>& HistogramFamily(prometheus::Registry& registry, const char* name, const char* help) {
-  return prometheus::BuildHistogram().Name(name).Help(help).Register(registry);
-}
-
-Family<Gauge>& GaugeFamily(prometheus::Registry& registry, const char* name, const char* help) {
-  return prometheus::BuildGauge().Name(name).Help(help).Register(registry);
-}
-
 void Observe(Histogram& histogram, const std::optional<double>& value) {
   if (value.has_value()) {
     histogram.Observe(*value);
   }
 }
 
-// One time series of a Session's: null until first measured.
-struct SessionGauge {
-  Family<Gauge>* family = nullptr;
-  Gauge* gauge = nullptr;
-
-  void Set(Family<Gauge>& in, const prometheus::Labels& labels, const std::optional<double>& value) {
-    if (!value.has_value()) {
-      return;
-    }
-    if (gauge == nullptr) {
-      family = &in;
-      gauge = &in.Add(labels);
-    }
-    gauge->Set(*value);
-  }
-
-  void Remove() const {
-    if (gauge != nullptr) {
-      family->Remove(gauge);
-    }
-  }
+// Each of a Session's gauges.
+enum SessionValue : std::uint8_t {
+  kRtt,
+  kQualityLocal,
+  kQualityRemote,
+  kJitter,
+  kInBytes,
+  kOutBytes,
+  kPendingBytes,
+  kSessionValueCount,
 };
 
+// One Session's gauges, each kNotMeasured until first measured.
 struct SessionGauges {
-  SessionGauge rtt;
-  SessionGauge quality_local;
-  SessionGauge quality_remote;
-  SessionGauge jitter;
-  SessionGauge in_bytes;
-  SessionGauge out_bytes;
-  SessionGauge pending_bytes;
+  SessionId session{};
+  std::array<double, kSessionValueCount> values{};
+};
 
-  void Remove() {
-    for (SessionGauge* each : {&rtt, &quality_local, &quality_remote, &jitter, &in_bytes, &out_bytes, &pending_bytes}) {
-      each->Remove();
+// value, unless measured replaces it.
+void Update(double& value, const std::optional<double>& measured) {
+  if (measured.has_value()) {
+    value = *measured;
+  }
+}
+
+// One Session's gauges, published whole by one writer and read by any thread
+// (ADR-0049): a sequence lock, so the writer never waits, and a reader that
+// overlaps a publish reads again.
+class Slot {
+ public:
+  // From the one writer.
+  void Publish(const std::optional<SessionGauges>& gauges) {
+    const std::uint64_t version = version_.load(std::memory_order_relaxed);
+    version_.store(version + 1, std::memory_order_relaxed);
+    std::atomic_thread_fence(std::memory_order_release);
+    occupied_.store(gauges.has_value(), std::memory_order_relaxed);
+    if (gauges.has_value()) {
+      session_.store(std::to_underlying(gauges->session), std::memory_order_relaxed);
+      for (std::size_t i = 0; i < values_.size(); ++i) {
+        values_[i].store(gauges->values[i], std::memory_order_relaxed);
+      }
+    }
+    version_.store(version + 2, std::memory_order_release);
+  }
+
+  [[nodiscard]] std::optional<SessionGauges> Read() const {
+    while (true) {
+      const std::uint64_t before = version_.load(std::memory_order_acquire);
+      if (before % 2 != 0) {
+        continue;
+      }
+      std::optional<SessionGauges> gauges;
+      if (occupied_.load(std::memory_order_relaxed)) {
+        gauges = SessionGauges{.session = SessionId{session_.load(std::memory_order_relaxed)}, .values = {}};
+        for (std::size_t i = 0; i < values_.size(); ++i) {
+          gauges->values[i] = values_[i].load(std::memory_order_relaxed);
+        }
+      }
+      std::atomic_thread_fence(std::memory_order_acquire);
+      if (version_.load(std::memory_order_relaxed) == before) {
+        return gauges;
+      }
     }
   }
+
+ private:
+  // Odd while a publish is in progress.
+  std::atomic<std::uint64_t> version_{0};
+  std::atomic<bool> occupied_{false};
+  std::atomic<std::uint32_t> session_{0};
+  std::array<std::atomic<double>, kSessionValueCount> values_{};
 };
+
+// One of a gauge family's series per Session: which of its values, and the
+// direction label it has, if any.
+struct SessionSeries {
+  SessionValue value;
+  const char* direction = nullptr;
+};
+
+MetricFamily HistogramFamily(std::string name, std::string help, std::vector<ClientMetric> series) {
+  return MetricFamily{
+      .name = std::move(name), .help = std::move(help), .type = MetricType::Histogram, .metric = std::move(series)};
+}
+
+// A gauge family with each of series for every Session that has measured it.
+MetricFamily SessionFamily(std::string name, std::string help, const std::vector<SessionGauges>& sessions,
+                           std::initializer_list<SessionSeries> series) {
+  MetricFamily family{.name = std::move(name), .help = std::move(help), .type = MetricType::Gauge, .metric = {}};
+  for (const SessionSeries& each : series) {
+    for (const SessionGauges& session : sessions) {
+      const double value = session.values[each.value];
+      if (std::isnan(value)) {
+        continue;
+      }
+      ClientMetric metric;
+      metric.label.push_back({.name = "session_id", .value = std::to_string(std::to_underlying(session.session))});
+      if (each.direction != nullptr) {
+        metric.label.push_back({.name = "direction", .value = each.direction});
+      }
+      metric.gauge.value = value;
+      family.metric.push_back(std::move(metric));
+    }
+  }
+  return family;
+}
 
 }  // namespace
 
 struct ConnectionHealth::Impl {
   // Over every connection.
-  Family<Histogram>& rtt_histogram;
-  Family<Histogram>& quality_histogram;
-  Family<Histogram>& jitter_histogram;
-  Histogram& rtt;
-  Histogram& quality_local;
-  Histogram& quality_remote;
-  Histogram& jitter;
-  // By Session. Distinct names from the histograms': one name can't be both a
-  // histogram and a gauge in the exposition.
-  Family<Gauge>& rtt_gauge;
-  Family<Gauge>& quality_gauge;
-  Family<Gauge>& jitter_gauge;
-  Family<Gauge>& in_bytes_gauge;
-  Family<Gauge>& out_bytes_gauge;
-  Family<Gauge>& pending_bytes_gauge;
-  std::unordered_map<SessionId, SessionGauges> sessions;
-
-  explicit Impl(prometheus::Registry& registry)
-      : rtt_histogram(HistogramFamily(registry, "augustad_connection_rtt_seconds",
-                                      "Every connection's round-trip time, sampled once a second.")),
-        quality_histogram(HistogramFamily(
-            registry, "augustad_connection_quality_ratio",
-            "Every connection's share of packets delivered, as measured here (local) and by the client (remote).")),
-        jitter_histogram(HistogramFamily(registry, "augustad_connection_jitter_seconds",
-                                         "Every connection's worst jitter over the last second.")),
-        rtt(rtt_histogram.Add({}, Buckets(kRttBucketsSeconds))),
-        quality_local(quality_histogram.Add({{"direction", "local"}}, Buckets(kQualityBuckets))),
-        quality_remote(quality_histogram.Add({{"direction", "remote"}}, Buckets(kQualityBuckets))),
-        jitter(jitter_histogram.Add({}, Buckets(kJitterBucketsSeconds))),
-        rtt_gauge(GaugeFamily(registry, "augustad_session_connection_rtt_seconds",
-                              "The round-trip time of each Session's connection.")),
-        quality_gauge(GaugeFamily(registry, "augustad_session_connection_quality_ratio",
-                                  "The share of packets each Session's connection delivers, each way.")),
-        jitter_gauge(GaugeFamily(registry, "augustad_session_connection_jitter_seconds",
-                                 "The worst jitter of each Session's connection over the last second.")),
-        in_bytes_gauge(GaugeFamily(registry, "augustad_connection_in_bytes_per_second",
-                                   "What each Session's connection receives.")),
-        out_bytes_gauge(
-            GaugeFamily(registry, "augustad_connection_out_bytes_per_second", "What each Session's connection sends.")),
-        pending_bytes_gauge(GaugeFamily(registry, "augustad_connection_pending_bytes",
-                                        "What each Session's connection has queued or in flight unacknowledged.")) {}
+  Histogram rtt{kRttBucketsSeconds};
+  Histogram quality_local{kQualityBuckets};
+  Histogram quality_remote{kQualityBuckets};
+  Histogram jitter{kJitterBucketsSeconds};
+  // By Session: what the endpoint reads, and the writer's own copy of it.
+  std::array<Slot, kSlotCount> slots;
+  std::array<std::optional<SessionGauges>, kSlotCount> published;
 
   void ObserveAll(const networking::ConnectionStats& stats) {
     Observe(rtt, RttSeconds(stats));
@@ -158,46 +191,112 @@ struct ConnectionHealth::Impl {
     Observe(jitter, JitterSeconds(stats));
   }
 
-  void SetGauges(SessionId session, const networking::ConnectionStats& stats) {
-    const std::string id = std::to_string(static_cast<std::uint32_t>(session));
-    SessionGauges& gauges = sessions[session];
-    gauges.rtt.Set(rtt_gauge, {{"session_id", id}}, RttSeconds(stats));
-    gauges.quality_local.Set(quality_gauge, {{"session_id", id}, {"direction", "local"}},
-                             QualityRatio(stats.quality_local));
-    gauges.quality_remote.Set(quality_gauge, {{"session_id", id}, {"direction", "remote"}},
-                              QualityRatio(stats.quality_remote));
-    gauges.jitter.Set(jitter_gauge, {{"session_id", id}}, JitterSeconds(stats));
-    gauges.in_bytes.Set(in_bytes_gauge, {{"session_id", id}}, stats.in_bytes_per_sec);
-    gauges.out_bytes.Set(out_bytes_gauge, {{"session_id", id}}, stats.out_bytes_per_sec);
-    gauges.pending_bytes.Set(pending_bytes_gauge, {{"session_id", id}}, stats.pending_bytes);
+  // The slot session's gauges are in, or else a free one; nullopt if every
+  // slot is taken, which no more Sessions than the Lobby holds can do.
+  [[nodiscard]] std::optional<std::size_t> SlotOf(SessionId session) const {
+    const auto holds = [session](const std::optional<SessionGauges>& gauges) {
+      return gauges.has_value() && gauges->session == session;
+    };
+    if (const auto found = std::ranges::find_if(published, holds); found != published.end()) {
+      return static_cast<std::size_t>(found - published.begin());
+    }
+    if (const auto free = std::ranges::find_if(
+            published, [](const std::optional<SessionGauges>& gauges) { return !gauges.has_value(); });
+        free != published.end()) {
+      return static_cast<std::size_t>(free - published.begin());
+    }
+    return std::nullopt;
   }
 
-  // Removes the gauges of every Session not in present: it has ended.
-  void RemoveEnded(const std::unordered_set<SessionId>& present) {
-    std::erase_if(sessions, [&present](auto& entry) {
-      if (present.contains(entry.first)) {
-        return false;
+  void SetGauges(SessionId session, const networking::ConnectionStats& stats) {
+    const std::optional<std::size_t> slot = SlotOf(session);
+    if (!slot.has_value()) {
+      return;
+    }
+    SessionGauges gauges{.session = session, .values = {}};
+    if (published[*slot].has_value()) {
+      gauges = *published[*slot];
+    } else {
+      gauges.values.fill(kNotMeasured);
+    }
+    Update(gauges.values[kRtt], RttSeconds(stats));
+    Update(gauges.values[kQualityLocal], QualityRatio(stats.quality_local));
+    Update(gauges.values[kQualityRemote], QualityRatio(stats.quality_remote));
+    Update(gauges.values[kJitter], JitterSeconds(stats));
+    Update(gauges.values[kInBytes], stats.in_bytes_per_sec);
+    Update(gauges.values[kOutBytes], stats.out_bytes_per_sec);
+    Update(gauges.values[kPendingBytes], stats.pending_bytes);
+    Publish(*slot, gauges);
+  }
+
+  // Removes the gauges of every Session not in samples: it has ended.
+  void RemoveEnded(const std::vector<ConnectionSample>& samples) {
+    for (std::size_t slot = 0; slot < kSlotCount; ++slot) {
+      const std::optional<SessionGauges>& gauges = published[slot];
+      if (gauges.has_value() && std::ranges::none_of(samples, [&gauges](const ConnectionSample& sample) {
+            return sample.session == gauges->session;
+          })) {
+        Publish(slot, std::nullopt);
       }
-      entry.second.Remove();
-      return true;
-    });
+    }
+  }
+
+  void Publish(std::size_t slot, const std::optional<SessionGauges>& gauges) {
+    published[slot] = gauges;
+    slots[slot].Publish(gauges);
   }
 };
 
-ConnectionHealth::ConnectionHealth(prometheus::Registry& registry) : impl_(std::make_unique<Impl>(registry)) {}
+ConnectionHealth::ConnectionHealth() : impl_(std::make_unique<Impl>()) {}
 
 ConnectionHealth::~ConnectionHealth() = default;
 
 void ConnectionHealth::Record(const std::vector<ConnectionSample>& samples) {
-  std::unordered_set<SessionId> present;
+  // First, so an ended Session's slot is free for a new one.
+  impl_->RemoveEnded(samples);
   for (const ConnectionSample& sample : samples) {
     impl_->ObserveAll(sample.stats);
     if (sample.session.has_value()) {
-      present.insert(*sample.session);
       impl_->SetGauges(*sample.session, sample.stats);
     }
   }
-  impl_->RemoveEnded(present);
+}
+
+std::vector<MetricFamily> ConnectionHealth::Collect() const {
+  std::vector<SessionGauges> sessions;
+  for (const Slot& slot : impl_->slots) {
+    if (std::optional<SessionGauges> gauges = slot.Read()) {
+      sessions.push_back(*gauges);
+    }
+  }
+  return {
+      HistogramFamily("augustad_connection_rtt_seconds",
+                      "Every connection's round-trip time, sampled once a heartbeat interval.",
+                      {HistogramSeries(impl_->rtt)}),
+      HistogramFamily(
+          "augustad_connection_quality_ratio",
+          "Every connection's share of packets delivered, as measured here (local) and by the client (remote).",
+          {HistogramSeries(impl_->quality_local, {{.name = "direction", .value = "local"}}),
+           HistogramSeries(impl_->quality_remote, {{.name = "direction", .value = "remote"}})}),
+      HistogramFamily("augustad_connection_jitter_seconds",
+                      "Every connection's worst jitter over each heartbeat interval.",
+                      {HistogramSeries(impl_->jitter)}),
+      SessionFamily("augustad_session_connection_rtt_seconds", "The round-trip time of each Session's connection.",
+                    sessions, {{.value = kRtt}}),
+      SessionFamily("augustad_session_connection_quality_ratio",
+                    "The share of packets each Session's connection delivers, each way.", sessions,
+                    {{.value = kQualityLocal, .direction = "local"}, {.value = kQualityRemote, .direction = "remote"}}),
+      SessionFamily("augustad_session_connection_jitter_seconds",
+                    "The worst jitter of each Session's connection over each heartbeat interval.", sessions,
+                    {{.value = kJitter}}),
+      SessionFamily("augustad_connection_in_bytes_per_second", "What each Session's connection receives.", sessions,
+                    {{.value = kInBytes}}),
+      SessionFamily("augustad_connection_out_bytes_per_second", "What each Session's connection sends.", sessions,
+                    {{.value = kOutBytes}}),
+      SessionFamily("augustad_connection_pending_bytes",
+                    "What each Session's connection has queued, or in flight unacknowledged.", sessions,
+                    {{.value = kPendingBytes}}),
+  };
 }
 
 }  // namespace augusta::server

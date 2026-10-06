@@ -104,11 +104,14 @@ show the one player whose connection is bad; the RTT, quality and jitter gauges
 are named apart from their histograms (`augustad_session_connection_*`),
 because one name cannot be both a histogram and a gauge in the exposition. A
 value the transport has not measured yet (a negative quality, or no jitter yet,
-right after connecting) is not recorded. A Session's gauges are removed at the
-first sample after the Session ends, so within a heartbeat interval. Session
-IDs are never reused, so every Session leaves its own series behind, but no
-more than the Player count are live at once, which a 15-day retention easily
-holds.
+right after connecting) is not recorded. Each Session's gauges are read
+together, so the Network I/O thread publishes them whole, each Session's into
+one of a fixed set of slots, one per player the Lobby can hold, which the
+endpoint reads without the writer ever waiting on it. A Session's gauges are
+removed at the first sample after the Session ends, so within a heartbeat
+interval. Session IDs are never reused, so every Session leaves its own series
+behind, but no more than the Player count are live at once, which a 15-day
+retention easily holds.
 
 CPU, memory and restarts are not `augustad`'s metrics: the stack's kubelet and
 cAdvisor scrape already has them per pod.

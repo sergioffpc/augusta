@@ -244,7 +244,6 @@ struct PeerEvent {
   DisconnectReason reason = DisconnectReason::kClosedByPeer;
 };
 
-/// One connected peer's connection stats, returned by Server::GetStats.
 struct PeerStats {
   PeerId peer;
   ConnectionStats stats;

@@ -13,7 +13,7 @@
 #include "augusta/networking.h"
 #include "augusta/protocol.h"
 #include "command_queue.h"
-#include "connection_health.h"
+#include "connection_sample.h"
 #include "host.h"
 #include "host_impl.h"
 #include "host_log.h"

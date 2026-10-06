@@ -22,6 +22,8 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <prometheus/client_metric.h>
+#include <prometheus/metric_family.h>
 
 #include "admission.h"
 #include "augusta/assets.h"
@@ -43,6 +45,7 @@
 #include "augusta/version.h"
 #include "augusta/weapon.h"
 #include "command_queue.h"
+#include "connection_health.h"
 #include "content.h"
 #include "heartbeat.h"
 #include "host.h"
@@ -85,6 +88,7 @@ using augusta::physics::Stance;
 using augusta::protocol::EntityIdWire;
 using augusta::protocol::SessionIdWire;
 namespace protocol = augusta::protocol;
+using augusta::server::ConnectionHealth;
 using augusta::server::ConnectionSample;
 using augusta::server::Host;
 using augusta::server::HostConfig;
@@ -432,6 +436,16 @@ TEST_F(SessionTest, StaysConnectedWhileTheTestAlternatesTicksAndNetworkWork) {
   EXPECT_EQ(session_.GetConnectionState(), ConnectionState::kConnected);
 }
 
+// Whether health has a gauge labelled by any Session.
+bool HasSessionGauges(const ConnectionHealth& health) {
+  return std::ranges::any_of(health.Collect(), [](const prometheus::MetricFamily& family) {
+    return std::ranges::any_of(family.metric, [](const prometheus::ClientMetric& metric) {
+      return std::ranges::any_of(
+          metric.label, [](const prometheus::ClientMetric::Label& label) { return label.name == "session_id"; });
+    });
+  });
+}
+
 // A host whose matches take every player the protocol allows, and however many
 // clients a test starts, all driven by hand.
 class JoinTest : public ::testing::Test {
@@ -523,6 +537,23 @@ TEST_F(JoinTest, EachConnectionIsSampledWithTheSessionItCarries) {
   ASSERT_TRUE(samples.front().session.has_value());
   ASSERT_TRUE(client.GetSessionId().has_value());
   EXPECT_EQ(static_cast<std::uint32_t>(*samples.front().session), static_cast<std::uint32_t>(*client.GetSessionId()));
+}
+
+TEST_F(JoinTest, ASessionThatEndsLeavesTheSampleAndItsGaugesGo) {
+  Session& client = AddClient();
+  ASSERT_TRUE(WaitForAnswers());
+  ConnectionHealth health;
+  health.Record(host_.SampleConnections());
+  ASSERT_TRUE(HasSessionGauges(health));
+
+  client.Disconnect();
+  ASSERT_TRUE(ExchangeUntil(host_, Pointers(sessions_), [&] {
+    const std::vector<ConnectionSample> samples = host_.SampleConnections();
+    return std::ranges::none_of(samples, [](const ConnectionSample& sample) { return sample.session.has_value(); });
+  }));
+  health.Record(host_.SampleConnections());
+
+  EXPECT_FALSE(HasSessionGauges(health));
 }
 
 TEST_F(JoinTest, AConnectionThatHasNotJoinedIsSampledWithoutASession) {

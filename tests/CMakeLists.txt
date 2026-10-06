@@ -124,10 +124,9 @@ target_link_libraries(augusta_host_metrics_tests PRIVATE augustad_host GTest::gt
 # Links networking and PhysX through augustad_host, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_host_metrics_tests DISCOVERY_TIMEOUT 30)
 
-# Reads what it records back from a prometheus-cpp registry.
-find_package(prometheus-cpp CONFIG REQUIRED)
+# Reads what it records back as the metrics endpoint collects it.
 add_executable(augusta_connection_health_tests connection_health_test.cpp)
-target_link_libraries(augusta_connection_health_tests PRIVATE augustad_connection_health prometheus-cpp::core GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_connection_health_tests PRIVATE augustad_connection_health GTest::gtest GTest::gtest_main)
 # Links networking (for ConnectionStats), so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_connection_health_tests DISCOVERY_TIMEOUT 30)
 
@@ -290,8 +289,8 @@ gtest_discover_tests(augusta_policy_loader_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_session_tests session_test.cpp)
 target_link_libraries(augusta_session_tests PRIVATE
-  augusta_harness augustad_host augustad_parameters_loader augustad_policy_loader augusta_logging
-  GTest::gtest GTest::gtest_main)
+  augusta_harness augustad_connection_health augustad_host augustad_parameters_loader augustad_policy_loader
+  augusta_logging GTest::gtest GTest::gtest_main)
 # The server runs the example scenario's Game policy, as it loads it from its
 # golden server pack: the Spawn points and the win condition (US-03, US-14).
 target_compile_definitions(augusta_session_tests PRIVATE
