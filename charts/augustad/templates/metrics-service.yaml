@@ -3,7 +3,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "augustad.fullname" . }}-metrics
+  name: {{ include "augustad.metricsName" . }}
   labels:
     {{- include "augustad.labels" . | nindent 4 }}
     {{- include "augustad.metricsLabels" . | nindent 4 }}

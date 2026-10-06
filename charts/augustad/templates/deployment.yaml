@@ -32,8 +32,14 @@ spec:
             - name: metrics
               containerPort: {{ .Values.metrics.port }}
               protocol: TCP
-          # Restarts a server whose tick loop has hung (ADR-0049). No readiness
-          # probe: a single replica takes no balanced traffic.
+          # Restarts a server whose tick loop has hung, once it has started
+          # (ADR-0049, ADR-0026). No readiness probe: a single replica takes no
+          # balanced traffic.
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: metrics
+            {{- toYaml .Values.metrics.startupProbe | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /livez

@@ -13,16 +13,17 @@ chart declares no PodDisruptionBudget: with one replica, the only budget
 that protects anything blocks every node drain. Both environments exist
 for testing a build, not for players to keep a match through it.
 
-**A liveness probe, no readiness probe.** The chart's one probe is a
-`livenessProbe` on the metrics endpoint's `/livez` (ADR-0049), which fails
-once the Simulation thread has gone 5 seconds without finishing a tick, so
-Kubernetes restarts a server whose tick loop has hung. `augustad` serves
-`/livez` only after its pack is verified and its content loaded, so the
-probe's first check waits that loading out, and a restart takes several
-failed checks in a row: a slow start is not taken for a hung loop. There
-is no readiness probe: a single replica takes no balanced traffic, so the
-pod is Ready once its container runs. A server that fails to start exits
-(ADR-0005) and shows as a crash-looping pod.
+**A liveness probe, no readiness probe.** The chart probes the metrics
+endpoint's `/livez` (ADR-0049), which fails once the Simulation thread has
+gone 5 seconds without finishing a tick, so Kubernetes restarts a server
+whose tick loop has hung. `augustad` serves `/livez` only after its pack
+is verified and its content loaded, so a `startupProbe` on it holds the
+`livenessProbe` back until it first answers, and gives a slow pack load
+minutes, not seconds, before restarting the server. The liveness probe
+can then stay tight, restarting a hung loop within seconds, with no fixed
+delay to guess at. There is no readiness probe: a single replica takes no
+balanced traffic, so the pod is Ready once its container runs. A server
+that fails to start exits (ADR-0005) and shows as a crash-looping pod.
 
 ## Considered Options
 
@@ -76,6 +77,11 @@ essential, ephemeral branches are simply not deployed to k3s at all.
   `<version>+<those 12 characters>`). A tag is never reused, so a pod
   never runs a stale image, and Flux's upgrade waits for CI to finish
   pushing it. No image-automation controller is needed.
+- Without a readiness probe, the new pod is Ready as soon as its
+  container runs, so Helm's and Flux's upgrade wait no longer catches a
+  server that fails to start or crash-loops after starting: the upgrade
+  succeeds, and the failure shows only as the pod's restarts and the
+  server-down alert (ADR-0049).
 - The chart requests CPU and memory for the server, limits its memory at
   that request, and sets no CPU limit: a throttled Simulation thread
   misses ticks (NFR-01).

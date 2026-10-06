@@ -33,6 +33,11 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 
+{{/* The metrics Service's name, which the alert rules match its targets by. */}}
+{{- define "augustad.metricsName" -}}
+{{- printf "%s-metrics" (include "augustad.fullname" .) -}}
+{{- end -}}
+
 {{/* Tells the metrics Service, which the ServiceMonitor selects, from the
      game one. */}}
 {{- define "augustad.metricsLabels" -}}
