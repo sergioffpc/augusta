@@ -73,7 +73,7 @@ target_link_libraries(augusta_parameters_loader_tests PRIVATE augustad_parameter
 target_compile_definitions(
   augusta_parameters_loader_tests
   PRIVATE
-    AUGUSTA_EXAMPLE_PARAMETERS="${CMAKE_SOURCE_DIR}/tools/composer/examples/authoring/scenarios/augusta/parameters.lua"
+    AUGUSTA_EXAMPLE_PARAMETERS="${CMAKE_SOURCE_DIR}/tools/composer/examples/authoring/scripts/parameters/default.lua"
 )
 gtest_discover_tests(augusta_parameters_loader_tests DISCOVERY_TIMEOUT 30)
 
@@ -201,7 +201,7 @@ target_link_libraries(
 target_compile_definitions(
   augusta_policy_tests
   PRIVATE
-    AUGUSTA_EXAMPLE_PARAMETERS="${CMAKE_SOURCE_DIR}/tools/composer/examples/authoring/scenarios/augusta/parameters.lua"
+    AUGUSTA_EXAMPLE_PARAMETERS="${CMAKE_SOURCE_DIR}/tools/composer/examples/authoring/scripts/parameters/default.lua"
     AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
 )
 # Links PhysX, so the same first-launch cost applies as below.
@@ -213,20 +213,20 @@ target_link_libraries(augusta_policy_actions_tests PRIVATE augusta_simulation GT
 # Links PhysX through augusta_simulation, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_policy_actions_tests DISCOVERY_TIMEOUT 30)
 
-# The example scenario's shipped objectives.lua, loaded out of a pack built with
+# The example scenario's shipped rules, loaded out of a pack built with
 # augusta_assets' private encoder and run through SimulationWorld (ADR-0013).
-add_executable(augusta_example_objectives_tests example_objectives_test.cpp)
+add_executable(augusta_example_rules_tests example_rules_test.cpp)
 target_link_libraries(
-  augusta_example_objectives_tests
+  augusta_example_rules_tests
   PRIVATE augusta_simulation augustad_policy_loader augusta_logging GTest::gtest GTest::gtest_main
 )
-target_include_directories(augusta_example_objectives_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
+target_include_directories(augusta_example_rules_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
 target_compile_definitions(
-  augusta_example_objectives_tests
-  PRIVATE AUGUSTA_EXAMPLE_SCENARIO="${CMAKE_SOURCE_DIR}/tools/composer/examples/authoring/scenarios/augusta"
+  augusta_example_rules_tests
+  PRIVATE AUGUSTA_EXAMPLE_RULES="${CMAKE_SOURCE_DIR}/tools/composer/examples/authoring/scripts/rules/last_standing.lua"
 )
 # Links PhysX, so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_example_objectives_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_example_rules_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_networking_tests networking_test.cpp)
 target_link_libraries(

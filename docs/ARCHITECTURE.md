@@ -337,7 +337,7 @@ Game policy actions taken on it, typed and validated in C++ (ADR-0022), which
 **Scenario: Match End**
 
 1. Server evaluates the win condition each tick (game policy, the scenario's
-   `objectives.lua`; in v1 last player standing)
+   rules; in v1 last player standing)
 2. When it is met, the decision is a typed Match end action in that tick's
    result; the server ends the Match after the tick, removes every body and
    bullet in flight, and sends

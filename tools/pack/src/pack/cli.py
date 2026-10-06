@@ -8,19 +8,18 @@ directly and calls the small native _meshoptimizer/_textconv bindings only
 for the two pieces with no Python equivalent - no subprocess/CLI binary
 anywhere in this pipeline. A validation failure aborts before cooking, so no
 pack is written if any composed stage didn't pass cleanup/validation, unless
---skip-validation is given. Every *.lua file under the scenario folder goes
-into the server pack (ADR-0031, ADR-0039), and a mono PCM WAV sound for each of
-the client's cues, from the sounds folder the manifest names, into the client
-pack (ADR-0020).
+--skip-validation is given. Every script the manifest names goes into the
+server pack (ADR-0031, ADR-0039), and the mono PCM WAV sound it names for each
+of the client's cues into the client pack (ADR-0020).
 
 The scenario argument is a bare name, not a path (ADR-0041): it resolves to
-<assets-root>/authoring/scenarios/<name>/, whose manifest.yaml names the one
-map (authoring/<map>/map.usd*) and every character (authoring/<character>/
-character.usd*) that scenario composes - see scenario.py. This project is
+<assets-root>/authoring/scenarios/<name>.yaml, a manifest naming, by file, the
+one map, every character, the cue sounds and the scripts that scenario
+composes - see scenario.py. This project is
 installed into the hermetic environment tools/pack/scripts/bootstrap-
 windows.ps1 builds (--assets-root/python), so --assets-root defaults to the
 root of the venv this interpreter is already running from, and is used for:
-resolving authoring/scenarios/<name> and everything its manifest names; the
+resolving authoring/scenarios/<name>.yaml and everything it names; the
 signing key, --assets-root/keys/augusta.key; and packs, which default to
 --assets-root/packs/<name>/{client,server}.pack - keyed by the scenario's
 name alone, not its authoring/scenarios/ position.
@@ -46,9 +45,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "scenario",
-        help="Scenario name (ADR-0041): resolves to <assets-root>/authoring/scenarios/<name>/, whose "
-        "manifest.yaml names the map and characters it composes. The scenario folder needs a parameters.lua. "
-        "tools\\pack\\examples\\authoring is a worked example (name: augusta).",
+        help="Scenario name (ADR-0041): resolves to <assets-root>/authoring/scenarios/<name>.yaml, the "
+        "manifest naming the map, characters, cue sounds and scripts it composes. "
+        "tools\\composer\\examples\\authoring is a worked example (name: augusta).",
     )
     parser.add_argument(
         "--assets-root",
@@ -113,7 +112,7 @@ def main(argv: list[str] | None = None) -> int:
     # character is authored and cleaned up independently of any particular
     # map (ADR-0040).
     stages_to_clean = [("map", scenario.map_stage_path)]
-    stages_to_clean += [(character.manifest_path, character.stage_path) for character in scenario.characters]
+    stages_to_clean += [(character.path, character.stage_path) for character in scenario.characters]
 
     pipeline_start = time.monotonic()
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -147,7 +146,7 @@ def main(argv: list[str] | None = None) -> int:
         map_cleaned, *character_cleaned_paths = cleaned_stages
         character_cleaned = list(
             zip(
-                (character.manifest_path for character in scenario.characters),
+                (character.path for character in scenario.characters),
                 character_cleaned_paths,
                 strict=True,
             )

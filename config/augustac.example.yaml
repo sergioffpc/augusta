@@ -6,9 +6,11 @@
 # relative to this file's directory, so "." means the directory of this file.
 base_dir: .
 player:
-  # The character to play (required), by its path relative to authoring/, e.g.
-  # characters/player: one of the characters the server's scenario names in
-  # its manifest.yaml. The server refuses the join otherwise (ADR-0042).
+  # The character to play (required), by its stage's path relative to
+  # authoring/ without the extension, e.g. characters/player: one of the
+  # characters the server's scenario names in its manifest
+  # (authoring/scenarios/<scenario>.yaml). The server refuses the join
+  # otherwise (ADR-0042).
   character: characters/player
 content:
   # Client pack to load (required).

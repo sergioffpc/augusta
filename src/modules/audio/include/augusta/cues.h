@@ -12,7 +12,7 @@
 /// \file
 /// The client's cue catalogue (ADR-0020, ADR-0031): every one-shot sound the
 /// client plays, fixed in code. A scenario ships a mono PCM sound for each in its
-/// client pack, addressed `<sounds folder>/<cue name>`, and the client loads them
+/// client pack, addressed `<sounds prefix>/<cue name>`, and the client loads them
 /// all at startup, so a missing one is found before a Match rather than during
 /// one. The cooker (tools/pack/src/pack/sounds.py) holds the same catalogue.
 namespace augusta::audio {
@@ -47,7 +47,7 @@ struct CueSoundError {
 /// A message for error fit to print to whoever runs the process.
 [[nodiscard]] std::string DescribeCueSoundError(const CueSoundError& error);
 
-/// Resolves every cue's sound from pack, under the sounds folder it names.
+/// Resolves every cue's sound from pack, under the sounds prefix it names.
 [[nodiscard]] std::expected<CueSounds, CueSoundError> LoadCueSounds(const assets::Pack& pack);
 
 }  // namespace augusta::audio

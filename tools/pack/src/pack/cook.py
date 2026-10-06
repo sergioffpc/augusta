@@ -1,5 +1,5 @@
 """The asset cooker itself (ADR-0030): walks the authored OpenUSD stages a
-scenario's manifest.yaml composes - one map, zero or more characters
+scenario's manifest composes - one map, zero or more characters
 (ADR-0041) - and bakes them into one signed client/server pack pair
 (ADR-0031/ADR-0032). Walks each stage through pxr directly (the same
 pip-installed usd-optimize build optimize.py already uses, rather than
@@ -56,7 +56,7 @@ from pack.pack import (
     encode_texture_blob,
     write_pack,
 )
-from pack.sounds import CueSounds
+from pack.sounds import SOUNDS_PREFIX, CueSounds
 
 # augusta:spawnPoint / augusta:hitbox: custom bool attributes (ADR-0032's
 # authoring convention) rather than a native USD prim type. A hitbox is
@@ -74,11 +74,11 @@ _BODY_PARTS = {"head": BODY_PART_HEAD, "torso": BODY_PART_TORSO, "limb": BODY_PA
 BASE_COLOR_PROPERTY = "base_color"
 # The default prim every character stage has, named the same regardless of the
 # character's folder (ADR-0040), so the client finds its visual mesh at
-# <manifest path>/Character/Visual.
+# <character path>/Character/Visual.
 CHARACTER_ROOT_PRIM = "Character"
 # The child of CHARACTER_ROOT_PRIM every character stage has, whose origin is
 # where the local player's camera sits and its Shots leave from (ADR-0040):
-# client and server read it at <manifest path>/Character/Eye.
+# client and server read it at <character path>/Character/Eye.
 CHARACTER_EYE_PRIM = "Eye"
 # augusta:textureFormat: selects which BC format a UsdUVTexture prim
 # compresses to (ADR-0017/issue #49). Defaults to BC7 when absent/
@@ -631,16 +631,16 @@ def _cook_character_prim(prim: Usd.Prim, prim_path: str, matrix: Gf.Matrix4d, en
 
 
 def _sound_entries(sounds: CueSounds) -> list[AssetEntry]:
-    """The client pack's audio entries for sounds, and the entry naming their folder."""
+    """The client pack's audio entries for sounds, and the entry naming their prefix."""
     entries = [
         AssetEntry(
             type=_TYPE_AUDIO,
-            path=f"{sounds.path}/{cue}",
+            path=f"{SOUNDS_PREFIX}/{cue}",
             data=encode_audio_blob(sound.sample_rate, sound.bits_per_sample, sound.samples),
         )
         for cue, sound in sounds.cues
     ]
-    entries.append(AssetEntry(type=_TYPE_SOUNDS, path=SOUNDS_PATH, data=encode_sounds_blob(sounds.path)))
+    entries.append(AssetEntry(type=_TYPE_SOUNDS, path=SOUNDS_PATH, data=encode_sounds_blob(SOUNDS_PREFIX)))
     return entries
 
 
@@ -654,22 +654,22 @@ def cook_scenario(
     sounds: CueSounds | None = None,
     on_prim: Callable[[int, int, str], None] | None = None,
 ) -> CookReport:
-    """Bakes map_stage_path and every (manifest_path, stage_path) in
+    """Bakes map_stage_path and every (character_path, stage_path) in
     character_stages into one signed client/server pack pair (ADR-0041) -
-    manifest_path is a character's own path as the scenario's manifest.yaml
-    named it (e.g. "characters/player"), also the prefix its blobs are
-    addressed under (ADR-0040).
+    character_path is a character's own path (its stage's path relative to
+    authoring/ without the extension, e.g. "characters/player/player"), also
+    the prefix its blobs are addressed under (ADR-0040).
 
-    scripts are a scenario's Lua files as (path relative to its folder, bytes):
+    scripts are a scenario's Lua files as (path in the pack, bytes):
     they go into the server pack only, as script assets (ADR-0031, ADR-0039). A
     client is sent the values a script decides, never the script.
 
     sounds, if given, are the client's cue sounds: they go into the client pack
-    only, each as an audio asset addressed <sounds.path>/<cue>, with sounds.path
+    only, each as an audio asset addressed <SOUNDS_PREFIX>/<cue>, with the prefix
     itself at SOUNDS_PATH so the client can find them (ADR-0020, ADR-0031). The
     headless server plays nothing (ADR-0019).
 
-    The manifest paths, in character_stages' order, are also recorded as the
+    The character paths, in character_stages' order, are also recorded as the
     character list both packs carry (ADR-0042).
 
     The client pack is written first, so the server pack can carry its hash: the
@@ -684,7 +684,7 @@ def cook_scenario(
         characters_entry = AssetEntry(
             type=_TYPE_CHARACTERS,
             path=CHARACTERS_PATH,
-            data=encode_characters_blob([manifest_path for manifest_path, _ in character_stages]),
+            data=encode_characters_blob([character_path for character_path, _ in character_stages]),
         )
     except ValueError as error:
         raise CookError("characters_encode_failed", "", str(error)) from error
@@ -700,11 +700,11 @@ def cook_scenario(
     map_prims = list(map_stage.Traverse(Usd.TraverseInstanceProxies(Usd.PrimDefaultPredicate)))
 
     opened_characters = []
-    for manifest_path, stage_path in character_stages:
+    for character_path, stage_path in character_stages:
         character_stage = Usd.Stage.Open(str(stage_path))
         if not character_stage:
             raise CookError("stage_open_failed", "", str(stage_path))
-        # The client finds a character's visual mesh at <manifest path>/Character/Visual (ADR-0040).
+        # The client finds a character's visual mesh at <character path>/Character/Visual (ADR-0040).
         default_prim = character_stage.GetDefaultPrim()
         if not default_prim or default_prim.GetName() != CHARACTER_ROOT_PRIM:
             raise CookError(
@@ -712,7 +712,7 @@ def cook_scenario(
                 "",
                 f"{stage_path}: a character's default prim must be named {CHARACTER_ROOT_PRIM!r}",
             )
-        # The camera sits, and Shots leave from, <manifest path>/Character/Eye (ADR-0040).
+        # The camera sits, and Shots leave from, <character path>/Character/Eye (ADR-0040).
         eye_prim = default_prim.GetChild(CHARACTER_EYE_PRIM)
         if not eye_prim:
             raise CookError(
@@ -721,7 +721,7 @@ def cook_scenario(
                 f"{stage_path}: a character's {CHARACTER_ROOT_PRIM!r} prim must have an {CHARACTER_EYE_PRIM!r} child",
             )
         character_prims = list(character_stage.Traverse(Usd.TraverseInstanceProxies(Usd.PrimDefaultPredicate)))
-        opened_characters.append((manifest_path, stage_path, character_stage, character_prims, eye_prim.GetPath()))
+        opened_characters.append((character_path, stage_path, character_stage, character_prims, eye_prim.GetPath()))
 
     total_prims = len(map_prims) + sum(len(prims) for _, _, _, prims, _ in opened_characters)
     done = 0
@@ -742,11 +742,11 @@ def cook_scenario(
         if on_prim is not None:
             on_prim(done, total_prims, prim_path)
 
-    for manifest_path, stage_path, character_stage, character_prims, eye_path in opened_characters:
+    for character_path, stage_path, character_stage, character_prims, eye_path in opened_characters:
         character_correction = _stage_correction_matrix(character_stage)
         body_parts: set[int] = set()
         for prim in character_prims:
-            prim_path = f"{manifest_path}/{_sanitize_prim_path(str(prim.GetPath()))}"
+            prim_path = f"{character_path}/{_sanitize_prim_path(str(prim.GetPath()))}"
             xformable = UsdGeom.Xformable(prim)
             local_to_root = (
                 xformable.ComputeLocalToWorldTransform(Usd.TimeCode.Default()) if xformable else Gf.Matrix4d(1.0)

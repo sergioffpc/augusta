@@ -68,7 +68,7 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeCharactersBlob(std::spa
 /// kTooLarge past kMaxAudioBytes.
 std::expected<std::vector<std::byte>, EncodeError> EncodeAudioBlob(const AudioData& sound);
 
-/// Encodes sounds_path, the sounds folder the cue sounds are addressed under, into
+/// Encodes sounds_path, the prefix the cue sounds are addressed under, into
 /// the pack's sounds-blob byte layout (ADR-0031).
 std::expected<std::vector<std::byte>, EncodeError> EncodeSoundsBlob(std::string_view sounds_path);
 

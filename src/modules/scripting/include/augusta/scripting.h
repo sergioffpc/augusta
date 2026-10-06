@@ -4,18 +4,16 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <variant>
 #include <vector>
 
 /// \file
-/// augusta::scripting runs a scenario's Game policy (ADR-0022): its Lua scripts,
-/// objectives.lua and behaviours.lua, which the server reads out of its pack at
-/// startup. Each script runs in a sandbox of its own (augusta/lua_sandbox.h,
-/// ADR-0039) that shares no globals with the other or with the Parameters
-/// script. Server-only: game policy is exclusively server-authoritative, never
+/// augusta::scripting runs a scenario's Game policy (ADR-0022): its rules, one
+/// Lua script the server reads out of its pack at startup. It runs in a sandbox
+/// of its own (augusta/lua_sandbox.h, ADR-0039) that shares no globals with the
+/// Parameters script. Server-only: game policy is exclusively server-authoritative, never
 /// run by either client world.
 ///
 /// A hook is a global function a script defines, called by name from
@@ -29,24 +27,9 @@
 /// simulation: the same scripts called with the same views return the same values.
 namespace augusta::scripting {
 
-/// One of a scenario's Game policy scripts (ADR-0022).
-enum class Script : std::uint8_t {
-  /// objectives.lua: win conditions.
-  kObjectives,
-  /// behaviours.lua: spawn rules and other policy.
-  kBehaviours,
-};
-
-/// script's path in the scenario's server pack, which is also the name it is
-/// logged under: "objectives.lua" or "behaviours.lua".
-std::string_view ScriptPath(Script script);
-
-/// The text of each Game policy script a scenario has. One it lacks has no
-/// policy for its concern.
-struct Scripts {
-  std::optional<std::string> objectives;
-  std::optional<std::string> behaviours;
-};
+/// The rules script's path in the scenario's server pack, which is also the
+/// name it is logged under (ADR-0022, ADR-0041).
+inline constexpr std::string_view kRulesScriptPath = "rules.lua";
 
 struct Field;
 
@@ -67,9 +50,8 @@ struct Field {
   Value value;
 };
 
-/// A script that failed to load: which one, and Lua's message.
+/// A rules script that failed to load: Lua's message.
 struct LoadError {
-  Script script = Script::kObjectives;
   std::string message;
 };
 
@@ -102,7 +84,7 @@ std::string DescribeHookError(const HookError& error);
 /// owns exactly one. Move-only: it owns its Lua states.
 class Engine {
  public:
-  /// No script loaded: every hook is undefined.
+  /// No rules loaded: every hook is undefined.
   Engine();
   ~Engine();
   Engine(const Engine&) = delete;
@@ -110,16 +92,16 @@ class Engine {
   Engine(Engine&&) noexcept;
   Engine& operator=(Engine&&) noexcept;
 
-  /// Loads each script scripts holds into a sandbox of its own and runs its top
-  /// level, which defines its hooks, under the instruction limit. A script that
-  /// does not compile, raises an error or reaches for what the sandbox leaves
-  /// out (io, os, require, math.random, ...) is the error.
-  static std::expected<Engine, LoadError> Load(const Scripts& scripts);
+  /// Loads the rules script into a sandbox and runs its top level, which
+  /// defines its hooks, under the instruction limit. A script that does not
+  /// compile, raises an error or reaches for what the sandbox leaves out (io,
+  /// os, require, math.random, ...) is the error.
+  static std::expected<Engine, LoadError> Load(std::string_view rules);
 
-  /// Calls hook of script with view, as a read-only table, and returns what it
-  /// returned: nil when script is not loaded or does not define hook, which is
-  /// then a no-op. Each call starts the instruction limit over.
-  std::expected<Value, HookError> Call(Script script, std::string_view hook, const Value::Record& view);
+  /// Calls hook with view, as a read-only table, and returns what it returned:
+  /// nil when no rules are loaded or they do not define hook, which is then a
+  /// no-op. Each call starts the instruction limit over.
+  std::expected<Value, HookError> Call(std::string_view hook, const Value::Record& view);
 
  private:
   struct Impl;

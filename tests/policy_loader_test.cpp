@@ -20,7 +20,6 @@ namespace {
 using augusta::assets::AssetEntry;
 using augusta::assets::AssetType;
 using augusta::assets::Pack;
-using augusta::scripting::Script;
 using augusta::server::LoadPolicy;
 using augusta::server::PolicyLoadErrorCode;
 
@@ -29,9 +28,9 @@ AssetEntry ScriptEntry(std::string path, std::string_view text) {
       .type = AssetType::kScript, .path = std::move(path), .data = augusta::assets::EncodeScriptBlob(text).value()};
 }
 
-// What hook of script returns, as a string; empty if it returns anything else.
-std::string Returned(augusta::scripting::Engine& engine, Script script, std::string_view hook) {
-  const auto value = engine.Call(script, hook, {});
+// What hook returns, as a string; empty if it returns anything else.
+std::string Returned(augusta::scripting::Engine& engine, std::string_view hook) {
+  const auto value = engine.Call(hook, {});
   if (!value || !std::holds_alternative<std::string>(value->data)) {
     return {};
   }
@@ -61,51 +60,46 @@ class PolicyLoaderTest : public ::testing::Test {
   std::vector<std::filesystem::path> cleanup_;
 };
 
-TEST_F(PolicyLoaderTest, LoadsBothPolicyScriptsFromThePack) {
-  const Pack pack = MakePack("both", {ScriptEntry("objectives.lua", "function probe() return 'objectives' end"),
-                                      ScriptEntry("behaviours.lua", "function probe() return 'behaviours' end")});
+TEST_F(PolicyLoaderTest, LoadsTheRulesFromThePack) {
+  const Pack pack = MakePack("rules", {ScriptEntry("rules.lua", "function probe() return 'rules' end")});
 
   auto engine = LoadPolicy(pack);
 
   ASSERT_TRUE(engine.has_value()) << augusta::server::DescribePolicyLoadError(engine.error());
-  EXPECT_EQ(Returned(*engine, Script::kObjectives, "probe"), "objectives");
-  EXPECT_EQ(Returned(*engine, Script::kBehaviours, "probe"), "behaviours");
+  EXPECT_EQ(Returned(*engine, "probe"), "rules");
 }
 
-TEST_F(PolicyLoaderTest, APackWithoutAPolicyScriptHasNoPolicyForItsConcern) {
-  const Pack pack = MakePack("objectives_only", {ScriptEntry("objectives.lua", "function probe() return 'here' end")});
+TEST_F(PolicyLoaderTest, APackWithoutRulesHasNoPolicy) {
+  const Pack pack = MakePack("no_rules", {ScriptEntry("parameters.lua", "function probe() return 'here' end")});
 
   auto engine = LoadPolicy(pack);
 
   ASSERT_TRUE(engine.has_value()) << augusta::server::DescribePolicyLoadError(engine.error());
-  EXPECT_EQ(Returned(*engine, Script::kObjectives, "probe"), "here");
-  const auto behaviours = engine->Call(Script::kBehaviours, "probe", {});
-  ASSERT_TRUE(behaviours.has_value());
-  EXPECT_TRUE(std::holds_alternative<std::monostate>(behaviours->data));
+  const auto returned = engine->Call("probe", {});
+  ASSERT_TRUE(returned.has_value());
+  EXPECT_TRUE(std::holds_alternative<std::monostate>(returned->data));
 }
 
-TEST_F(PolicyLoaderTest, APolicyScriptWithASyntaxErrorIsAnErrorNamingTheScript) {
-  const Pack pack = MakePack(
-      "syntax_error", {ScriptEntry("objectives.lua", ""), ScriptEntry("behaviours.lua", "function assign_spawns(")});
+TEST_F(PolicyLoaderTest, RulesWithASyntaxErrorAreAnErrorNamingTheScript) {
+  const Pack pack = MakePack("syntax_error", {ScriptEntry("rules.lua", "function assign_spawns(")});
 
   const auto engine = LoadPolicy(pack);
 
   ASSERT_FALSE(engine.has_value());
   EXPECT_EQ(engine.error().code, PolicyLoadErrorCode::kScriptError);
-  EXPECT_EQ(engine.error().script, Script::kBehaviours);
-  EXPECT_NE(augusta::server::DescribePolicyLoadError(engine.error()).find("behaviours.lua"), std::string::npos);
+  EXPECT_NE(augusta::server::DescribePolicyLoadError(engine.error()).find("rules.lua"), std::string::npos);
 }
 
-TEST_F(PolicyLoaderTest, AnEntryAtAPolicyScriptsPathThatIsNotAScriptIsAnError) {
-  const Pack pack = MakePack("not_a_script", {AssetEntry{.type = AssetType::kEye,
-                                                         .path = "objectives.lua",
-                                                         .data = augusta::assets::EncodeEyeBlob({}).value()}});
+TEST_F(PolicyLoaderTest, AnEntryAtTheRulesPathThatIsNotAScriptIsAnError) {
+  const Pack pack = MakePack(
+      "not_a_script",
+      {AssetEntry{.type = AssetType::kEye, .path = "rules.lua", .data = augusta::assets::EncodeEyeBlob({}).value()}});
 
   const auto engine = LoadPolicy(pack);
 
   ASSERT_FALSE(engine.has_value());
   EXPECT_EQ(engine.error().code, PolicyLoadErrorCode::kUnreadable);
-  EXPECT_EQ(engine.error().script, Script::kObjectives);
+  EXPECT_NE(augusta::server::DescribePolicyLoadError(engine.error()).find("rules.lua"), std::string::npos);
 }
 
 }  // namespace

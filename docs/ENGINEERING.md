@@ -301,7 +301,7 @@ pipeline).
   sandbox written out rather than a stock Lua's: what the sandbox takes out
   (`print`, `pcall`, `io`, `os`, `math.random`...) is a warning, and what the
   engine gives a script is known only where it is given - `server.tick_rate_hz`
-  to `parameters.lua`, each Game policy hook to the script that defines it.
+  to a Parameters script, each Game policy hook to the rules.
   StyLua formats staged scripts in `pre-commit`, luacheck checks changed ones in
   `pre-push`, and CI's `format` job runs both in check mode.
 - TOML files are formatted and linted by taplo 0.10.0 (`.taplo.toml`: the same

@@ -69,14 +69,15 @@ New-Item -ItemType Directory -Force -Path $authoringDir, $packsDir, $keysDir, $b
 
 # A small worked authoring/ tree (tools/composer/examples/authoring - committed,
 # unlike everything else under $AssetsRoot) so a fresh environment has
-# something to cook straight away (`augusta-pack augusta`): one map, its required
-# parameters.lua (ADR-0039) and placeholder objectives.lua/behaviours.lua for
-# game policy (ADR-0022), one character (ADR-0040), placeholder cue sounds
-# (ADR-0020), and the manifest.yaml (ADR-0041) composing them. Seeded piece by piece rather than as one tree,
+# something to cook straight away (`augusta-pack augusta`): one map (ADR-0015),
+# one character (ADR-0040), placeholder cue sounds (ADR-0020), a Parameters
+# script (ADR-0039) and rules (ADR-0022), and the scenario's manifest
+# (ADR-0041) composing them. Seeded piece by piece rather than as one tree,
 # so each survives local edits independently - left alone once it exists,
 # like the signing key below.
 $exampleRoot = Join-Path (Split-Path -Parent $packProject) "composer\examples\authoring"
-foreach ($piece in "maps\augusta", "characters\player", "sounds\augusta", "scenarios\augusta") {
+foreach ($piece in "maps\augusta.usda", "characters\player.usda", "sounds\augusta", "scripts\parameters\default.lua",
+  "scripts\rules\last_standing.lua", "scenarios\augusta.yaml") {
   $source = Join-Path $exampleRoot $piece
   $dest = Join-Path $authoringDir $piece
   if (Test-Path $dest) {
