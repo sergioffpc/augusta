@@ -2,6 +2,123 @@
 
 Generated from the Conventional Commits history by git-cliff (cliff.toml).
 
+## 2.0.0 - 2026-10-06
+
+### Features
+
+- **devcontainer:** reproduce the Linux/server build environment
+- **loadtest:** fill a server with Scripted players
+- **chart:** declare augustad's readiness, resources and grace period
+- **bench:** benchmark the server tick, protocol, pack load and ballistics
+- **server:** log a symbolized stack and leave a core dump on a crash
+- **protocol:** encode match recordings as records of their own
+- **server:** record matches and replay them on SimulationWorld
+- **server:** serve /metrics and /livez from augustad
+- **cluster:** install kube-prometheus-stack through Flux
+- **server:** expose augustad's tick, Lobby/Match, Session, network and combat metrics
+- **server:** measure every client's Connection health
+- **chart:** scrape, liveness-probe and alert on augustad
+- **chart:** ship the Server and Connection health dashboards
+- **cluster:** sign Grafana in as admin/admin
+
+### Bug Fixes
+
+- **presentation:** initialize every character a designated initializer builds
+- **pack:** store the texture fixture as an LFS pointer
+- **server:** let the crash handler's re-raise end augustad in the container
+- **server:** include signal.h for SIGBUS
+- **server:** keep the protocol out of host_impl.h
+- **audio:** exclude output_miniaudio.cpp from the Linux lint by its new name
+- **server:** re-sync bodies across builds and harden recordings
+- **protocol:** keep WriteList's bound used when asserts compile out
+- **physics:** default a movement input's direction to zero
+- **networking:** listen on a port no client socket holds
+- **networking:** drop an include the socket test does not use
+- **loadtest:** keep Scripted players within reach of their spawn
+- **server:** find a Session's gauge slot without an iterator type
+- **chart:** hold augustad's liveness probe behind a startup probe
+- **docker:** copy tools/replay into the image's build stage
+- **swarm:** initialize every BodyState field in the scripted player tests
+- **swarm:** look up a whole-number key without an iterator type
+
+### Refactoring
+
+- **assets:** keep a pack's path in Pack and verify packs in one place
+- **client:** move content loading into runtime
+- **client:** describe a run failure in the runtime
+- **protocol:** **BREAKING** name a character by its path, not an index
+- **client:** split the client by responsibility into augusta::client
+- **client:** create the runtime in one place
+- **client:** verify the pack where the runtime is created
+- **client:** set up networking with the rest of the process
+- **server:** split the server by responsibility in augusta::server
+- include what each source uses, as misc-include-cleaner asks
+- **client:** decide Lobby readiness in its own type
+- **client:** drop the <set> include CharactersToLoad's move left behind
+- **client:** wait for admission before the render loop
+- **harness:** run a Session's threads in a harness Runner
+- **client:** rename Show to StageRenderFrame
+- name the moment a frame shows the other players its Seen time
+- **config:** expose the schema readers for a tool's own settings file
+- **bench:** measure every tick phase and share the benchmark scene
+- **map:** add the Map's collision to a world the same way on both sides
+- **server:** split Host into a file per responsibility
+- **harness:** split Session into its inbox and its command stream
+- **audio:** name the playback pair and the output device symmetrically
+- **protocol:** read and write every counted list through one helper
+- **assets:** **BREAKING** name the client pack in the pack header
+- **server:** serve the metrics endpoint with Boost.Beast
+- **server:** account for every command and guard metric ranges at compile time
+- **server:** record Connection health without waiting on a scrape
+- **replay:** move augusta-replay out of src into tools/replay
+- **swarm:** rename augusta-loadtest to augusta-swarm
+
+### Documentation
+
+- document every header's module and drop comments that restate names
+- mark each header's module comment as its file description
+- **runbooks:** add the Flux rollback, key rotation, k3s recovery and release runbooks
+- **site:** list the runbooks in the site's navigation
+- **runbooks:** roll staging back by image pin and tighten the release path
+- point the docs index and Git Workflow at the runbooks
+- **adr:** number the crash-reports ADR 0047
+- **adr:** decide match recording and replay (ADR-0050)
+- **adr:** re-sync across builds, the record limit and the write's thread
+- **adr:** number the match-recording ADR 0048
+- **adr:** add metrics and liveness for the dedicated server
+- add status and project badges to the README
+
+### Tests
+
+- **networking:** bind test servers to a port of the server's choosing
+- **fuzz:** regenerate the pack_load server seed from the new golden pack
+- **harness:** drop runner_test's unused memory include
+- **server:** move the crash timestamp property into its own labelled target
+- **server:** keep the crash timestamp property within system_clock's range
+- **server:** show both sides' bodies when a replay test diverges
+- **netcode:** play Scripted players through an impaired link nightly
+- **loadtest:** name every HostConfig field in the example server
+- **server:** re-record the golden match with the renamed pack header
+- **server:** include what the host metrics test uses
+- **server:** include the Connection sample header where the tests use it
+
+### Build
+
+- **deps:** bump third_party/vcpkg from `ee6a47d` to `b8b8df2`
+- **lua:** format and lint the scenarios' Lua scripts
+- **toml:** format and lint TOML, and name selene's library for itself
+- **lua:** lint the Lua scripts with luacheck instead of selene
+- **lint:** run include-cleaner on the sources clang-tidy leaves out
+- **deps:** bump third_party/vcpkg from `b8b8df2` to `eb2d3a3`
+- **docs:** publish a documentation site with MkDocs and Doxygen
+- **docs:** build the API reference without Graphviz graphs
+- **devcontainer:** make the dev container the one Linux environment
+- **loadtest:** build augusta-loadtest through tools presets
+- **coverage:** show the coverage report in VS Code
+- **lint:** turn off a clang-analyzer check that misfires in MSVC's STL
+- build the C++ tools together under AUGUSTA_TOOLS
+- **tools:** share one uv environment across tools/
+
 ## 1.0.0 - 2026-10-02
 
 ### Features
