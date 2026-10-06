@@ -462,7 +462,7 @@ TEST(ParametersLoaderServerTest, AWarningOfNothingOrOfATableIsAScriptError) {
   }
 }
 
-// The example scenario's script (tools/composer/examples/authoring/scenarios/augusta)
+// The example Parameters script (tools/composer/examples/authoring/scripts/parameters)
 // is what an author copies to start a new one, so it must stay a script the
 // loader accepts.
 TEST(ParametersExampleTest, TheExampleScriptLoadsToTheDocumentedDefaults) {

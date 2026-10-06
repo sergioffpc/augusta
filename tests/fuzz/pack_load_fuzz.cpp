@@ -40,8 +40,8 @@ constexpr std::array<std::string_view, 12> kPaths = {
     "characters/player/Character/Eye",
     "characters/player/Character/HeadHitbox",
     augusta::assets::kParametersScriptPath,
-    "behaviours.lua",
-    "sounds/augusta/gunshot",
+    "rules.lua",
+    "sounds/gunshot",
     augusta::assets::kSoundsPath,
 };
 

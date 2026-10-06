@@ -1,7 +1,6 @@
 #include "policy_loader.h"
 
 #include <expected>
-#include <optional>
 #include <string>
 #include <utility>
 
@@ -9,27 +8,9 @@
 #include "augusta/scripting.h"
 
 namespace augusta::server {
-namespace {
-
-// The text of script in pack, or nullopt if the pack has none.
-std::expected<std::optional<std::string>, PolicyLoadError> ReadScript(const assets::Pack& pack,
-                                                                      scripting::Script script) {
-  auto text = pack.ResolveScript(scripting::ScriptPath(script));
-  if (text) {
-    return *std::move(text);
-  }
-  if (text.error() == assets::ResolveError::kNotFound) {
-    return std::nullopt;
-  }
-  return std::unexpected(PolicyLoadError{.code = PolicyLoadErrorCode::kUnreadable,
-                                         .script = script,
-                                         .subject = assets::DescribeResolveError(text.error(), "script")});
-}
-
-}  // namespace
 
 std::string DescribePolicyLoadError(const PolicyLoadError& error) {
-  const std::string script(scripting::ScriptPath(error.script));
+  const std::string script(scripting::kRulesScriptPath);
   switch (error.code) {
     case PolicyLoadErrorCode::kUnreadable:
       return "the policy script " + script + " is unreadable: " + error.subject;
@@ -40,18 +21,18 @@ std::string DescribePolicyLoadError(const PolicyLoadError& error) {
 }
 
 std::expected<scripting::Engine, PolicyLoadError> LoadPolicy(const assets::Pack& pack) {
-  auto objectives = ReadScript(pack, scripting::Script::kObjectives);
-  if (!objectives) {
-    return std::unexpected(objectives.error());
+  const auto rules = pack.ResolveScript(scripting::kRulesScriptPath);
+  if (!rules) {
+    if (rules.error() == assets::ResolveError::kNotFound) {
+      return scripting::Engine{};
+    }
+    return std::unexpected(PolicyLoadError{.code = PolicyLoadErrorCode::kUnreadable,
+                                           .subject = assets::DescribeResolveError(rules.error(), "script")});
   }
-  auto behaviours = ReadScript(pack, scripting::Script::kBehaviours);
-  if (!behaviours) {
-    return std::unexpected(behaviours.error());
-  }
-  auto engine = scripting::Engine::Load({.objectives = *std::move(objectives), .behaviours = *std::move(behaviours)});
+  auto engine = scripting::Engine::Load(*rules);
   if (!engine) {
-    return std::unexpected(PolicyLoadError{
-        .code = PolicyLoadErrorCode::kScriptError, .script = engine.error().script, .subject = engine.error().message});
+    return std::unexpected(
+        PolicyLoadError{.code = PolicyLoadErrorCode::kScriptError, .subject = std::move(engine.error().message)});
   }
   return *std::move(engine);
 }

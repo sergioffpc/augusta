@@ -2,17 +2,18 @@
 
 Data-driven configuration (the tunable values of ADR-0023: weapon and ammo
 numbers, stamina rules, and their like) is called **Parameters**. It is written as
-a Lua script, `parameters.lua`, so a value may be an expression of other values.
+a Lua script, packed as `parameters.lua`, so a value may be an expression of other values.
 It uses the same embedded Lua (sol2) and sandbox as game policy (ADR-0022), in a
-Lua state of its own: the parameters script and a policy script share no globals.
+Lua state of its own: the parameters script and the rules share no globals.
 
-**A scenario's scripts live with its scenario.** The values change from scenario
-to scenario, so the script is authored in the scenario's own folder
-(`authoring/scenarios/<name>/parameters.lua`, next to its `manifest.yaml`,
-ADR-0041). The cooker is told the scenario's name (ADR-0030) and packs every
-`*.lua` file under that folder into the scenario's **server** pack (ADR-0030,
-ADR-0031), addressed by its path relative to the folder. The scripts are therefore signed with the map (ADR-0018)
-and cannot change during a run. A client never receives a script (ADR-0019): it
+**A scenario chooses its Parameters.** The values change from scenario to
+scenario, so each scenario's manifest names the script it uses
+(`scripts.parameters`, ADR-0041), authored under `authoring/scripts/parameters/`
+(e.g. `scripts/parameters/default.lua`) and shareable between scenarios. The
+cooker is told the scenario's name (ADR-0030) and packs the script into the
+scenario's **server** pack as `parameters.lua` (ADR-0030, ADR-0031), whatever
+its authored file is called. The scripts are therefore signed with the map
+(ADR-0018) and cannot change during a run. A client never receives a script (ADR-0019): it
 is sent the values.
 
 **Where each kind of decision lives.** The YAML files of ADR-0034 (`augustac.yaml`,
@@ -20,8 +21,8 @@ is sent the values.
 key verifies it, which address to use, and the one engine setting the server needs
 before it starts and can never change, its tick rate. They never hold a simulation
 rule. A simulation rule is one of three things: mechanism, in C++ code; a tunable
-value, in the scenario's parameters script of this ADR; or policy, in a behaviour
-script (ADR-0022).
+value, in the scenario's parameters script of this ADR; or policy, in the
+scenario's rules (ADR-0022).
 
 **Evaluated once, at startup, never in the tick.** The server reads
 `parameters.lua` out of its pack before it opens a socket, runs it once and keeps
@@ -40,8 +41,8 @@ wrong type and a number out of range are errors, as in ADR-0034: a misspelled
 field never falls back to a default, which a Lua table would otherwise allow in
 silence. A server whose pack has no `parameters.lua`, or one that does not load,
 exits at startup naming the script and the field, as it does for a bad pack. The
-cooker refuses a scenario without a `parameters.lua`, so that is found when
-the pack is made rather than when a server starts on it.
+cooker refuses a scenario whose manifest names no Parameters script, so that is
+found when the pack is made rather than when a server starts on it.
 
 **The tick rate is not a parameter.** It is fixed for the life of the server
 process: every command, acknowledgement and stretch of history is counted in

@@ -26,7 +26,7 @@ namespace augusta::simulation {
 /// server's start at 1; 0 is no player's, and never a winner.
 enum class SessionId : std::uint32_t {};
 
-/// Game policy's decision to end the Match (US-14), made by the objectives'
+/// Game policy's decision to end the Match (US-14), made by the rules'
 /// on_tick on a tick and taken by server::Host after it (ADR-0023).
 struct MatchEnd {
   /// The session of the player who won, alive in the Match on the tick it was
@@ -36,7 +36,7 @@ struct MatchEnd {
   bool operator==(const MatchEnd&) const = default;
 };
 
-/// Every action the objectives' on_tick may take. A closed set: it grows only
+/// Every action the rules' on_tick may take. A closed set: it grows only
 /// with a decision Game policy is given (ADR-0022).
 using PolicyAction = std::variant<MatchEnd>;
 

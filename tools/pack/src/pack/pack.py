@@ -77,8 +77,8 @@ BODY_PARTS = (BODY_PART_HEAD, BODY_PART_TORSO, BODY_PART_LIMB)
 # kCharactersPath), in both of its packs.
 CHARACTERS_PATH = "Characters"
 
-# Pack-relative path, in a scenario's client pack, of the sounds folder its cue
-# sounds are addressed under (assets.h's kSoundsPath).
+# Pack-relative path, in a scenario's client pack, of the prefix its cue sounds
+# are addressed under (assets.h's kSoundsPath).
 SOUNDS_PATH = "Sounds"
 
 # TextureFormat (assets.h `enum class TextureFormat : uint8_t`).
@@ -230,12 +230,12 @@ def encode_audio_blob(sample_rate: int, bits_per_sample: int, samples: bytes) ->
     return writer.bytes()
 
 
-def encode_sounds_blob(sounds_path: str) -> bytes:
-    """The sounds folder's path relative to authoring/, as one length-prefixed
-    string: each cue's sound is addressed <sounds_path>/<cue>.
+def encode_sounds_blob(sounds_prefix: str) -> bytes:
+    """The prefix the cue sounds are addressed under, as one length-prefixed
+    string: each cue's sound is addressed <sounds_prefix>/<cue>.
     """
     writer = ByteWriter()
-    writer.string(sounds_path, MAX_PATH_LENGTH)
+    writer.string(sounds_prefix, MAX_PATH_LENGTH)
     return writer.bytes()
 
 
