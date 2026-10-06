@@ -351,8 +351,8 @@ now.
   ballistics)
 - **Threading:** fixed dedicated threads, no generic job/task scheduler in
   v1. Client: 3 threads (Main/Render, Simulation [ECS + PhysX], Network
-  I/O). Server: 2 threads (Simulation, Network I/O) — no render thread,
-  since it's headless (see ADR-0005). Each piece of mutable state has one
+  I/O). Server: 3 threads (Simulation, Network I/O, Metrics) — no render
+  thread, since it's headless (see ADR-0005, ADR-0049). Each piece of mutable state has one
   owning thread and crosses to another only as an immutable value: transport
   callbacks publish events that the Network I/O owner applies outside their
   locks, the client reads what the server said through one immutable Server
@@ -434,6 +434,7 @@ aid only and do not affect numbering.
 - [ADR-0037 — Include order: main header, standard library, third-party, project](./adr/0037-include-order.md)
 - [ADR-0046 — Documentation site: MkDocs Material for the docs, Doxygen for the C++ API, on GitHub Pages](./adr/0046-documentation-site.md)
 - [ADR-0047 — Server crash reports: kernel core dumps, a logged stack, and split debug info](./adr/0047-server-crash-reports.md)
+- [ADR-0049 — Metrics and liveness: Prometheus pull from augustad, kube-prometheus-stack via Flux](./adr/0049-metrics-and-liveness.md)
 
 ### Rendering & Audio
 - [ADR-0009 — Renderer: NVIDIA Falcor](./adr/0009-renderer.md)
@@ -469,7 +470,7 @@ aid only and do not affect numbering.
 
 ## 10. Quality Requirements
 See [REQUIREMENTS.md](./REQUIREMENTS.md) — Non-Functional Requirements
-(NFR-01 to NFR-06).
+(NFR-01 to NFR-07).
 
 ## 11. Risks and Technical Debt
 - **PhysX cross-platform determinism gap:** client/server divergence is

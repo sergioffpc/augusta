@@ -322,10 +322,17 @@ pipeline).
   Systems (CPU threads, timeline) and Nsight Graphics (GPU frames,
   D3D12 capture) — the primary tools for inspecting client and server
   performance during development.
-- No metrics/telemetry pipeline beyond profiling for v1.
-- No server watchdog/health-check for v1 — LAN-only, solo-tested; a
-  hang is immediately visible. Revisit if the server is ever deployed
-  unattended (see ROADMAP.md, Beyond v1).
+- **Metrics:** `augustad` serves Prometheus metrics for its tick, Lobby
+  and Match, Sessions and each client's Connection health, which a
+  kube-prometheus-stack in the k3s cluster scrapes and Grafana draws, for
+  both `develop` and `staging` (ADR-0049, which holds the catalogue).
+  Everything is measured on the server: clients report nothing.
+- **Liveness:** `/livez` fails when the tick loop has not finished a tick
+  for 5 seconds, and is the Deployment's liveness probe, so a hung server
+  restarts on its own (ADR-0049).
+- **Alerts:** rules ship with the chart and show in Grafana and
+  Alertmanager, with no receiver yet. One is chosen when the server runs
+  unattended for real.
 
 ## Performance
 

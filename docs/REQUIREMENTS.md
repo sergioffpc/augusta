@@ -230,3 +230,17 @@ Artifact:    Server session management
 Response:    Server supports the target concurrent player count without degradation
 Measure:     Stable operation with 2–8 concurrent players for at least one full match
 ```
+
+### NFR-07: Server Observability
+```
+Source:      Developer watching a deployed server
+Stimulus:    A playtest or load test running against develop or staging
+Environment: k3s cluster with the monitoring stack (ADR-0049)
+Artifact:    Dedicated server's metrics and liveness endpoint
+Response:    Grafana shows the server's tick, Lobby and Match, Sessions and
+             every connected client's Connection health; a server whose
+             tick loop hangs is restarted
+Measure:     Every metric in ADR-0049's catalogue present within one scrape
+             interval (15 s) of the event; a tick loop stalled for 5 s
+             fails the liveness probe
+```

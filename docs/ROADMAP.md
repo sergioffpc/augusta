@@ -5,9 +5,11 @@ VISION.md). Sizes are relative effort, not calendar estimates: S / M / L.
 
 ## M0 — Project & Infrastructure Setup (S)
 No engine code yet — get the project, tooling, and pipelines standing.
-Split into two sub-milestones: M0a covers everything needed to write,
+Split into three sub-milestones: M0a covers everything needed to write,
 build, and test code locally and in CI; M0b covers containerizing and
-deploying the server onto the self-hosted k3s cluster.
+deploying the server onto the self-hosted k3s cluster; M0c covers
+watching it there. M0c is the exception to "no engine code": its
+metrics instrument the server the later milestones built.
 
 ### M0a — Client & Dev Environment
 - GitHub repository, Git Flow branches (`main` + `develop`), branch
@@ -44,6 +46,20 @@ working build environment on both sides; CI is green on a skeleton commit
 ADR-0026
 **Exit criteria:** Flux reconciles `main`/`develop` to a hello-world
 server automatically on merge, in their respective namespaces
+
+### M0c — Observability
+- kube-prometheus-stack (Prometheus, Alertmanager, Grafana) installed by
+  Flux in a `monitoring` namespace, under an `infrastructure`
+  Kustomization the `apps` one depends on
+- `augustad` serves `/metrics` (prometheus-cpp) and `/livez`; the chart
+  adds its Service, `ServiceMonitor`, liveness probe and alert rules
+- The metrics catalogue instrumented, counted where the heartbeat counts
+- Two Grafana dashboards as code: "Server" and "Connection health"
+
+**Exercises:** ADR-0049, ADR-0005 (the Metrics thread), ADR-0026
+**Exit criteria:** a load test against `develop` shows up on both
+dashboards (NFR-07), and a server whose tick loop is stalled is
+restarted by its liveness probe
 
 ## M1 — De-risking Spikes (S)
 Prove the riskiest unknowns work in isolation before building on them.
@@ -138,3 +154,6 @@ match starts automatically
 - Agones, if fleet-scale dynamic server allocation is ever needed
 - Remote/public access to non-production environments (VPN or
   port-forwarding) — LAN-only for now
+- Client-side metrics (Reconciliation corrections, interpolation running
+  dry), from the real client or `augusta-loadtest`, and an alert
+  receiver (see ADR-0049)
