@@ -16,8 +16,10 @@ rebuilding it from the repository. The cluster's design is ADR-0026
 ## What the cluster holds
 
 Everything Flux deploys is in Git: Flux's own manifests in
-[`clusters/onprem/flux-system/`](../../clusters/onprem/flux-system), the two
-`HelmRelease` objects and their GitRepository sources in
+[`clusters/onprem/flux-system/`](../../clusters/onprem/flux-system), the
+monitoring stack's `HelmRelease` in
+[`clusters/onprem/infrastructure/`](../../clusters/onprem/infrastructure), the
+two augustad `HelmRelease` objects and their GitRepository sources in
 [`clusters/onprem/apps/`](../../clusters/onprem/apps), and the chart in
 [`charts/augustad/`](../../charts/augustad). The `flux-system` GitRepository
 reads the public repository over HTTPS with no credentials, so a rebuilt
@@ -30,6 +32,10 @@ The only state not in Git is the asset packs on the node's shared volume:
 them the servers crash-loop; the layout, and why a missing folder still lets
 the pod schedule, is
 [Where packs go on the node](pack-key-rotation.md#where-packs-go-on-the-node).
+
+Prometheus keeps its last 15 days of series on a `local-path` volume on the
+node (ADR-0049). A rebuild loses them, and Prometheus starts again empty; no
+step restores them.
 
 ## Prerequisites
 
@@ -177,6 +183,7 @@ kubectl -n staging rollout status deploy/augustad --timeout 30m
 kubectl -n develop logs deploy/augustad | grep 'event=pack_verified'
 kubectl -n staging logs deploy/augustad | grep 'event=pack_verified'
 kubectl get svc -A -l app.kubernetes.io/name=augustad
+kubectl -n monitoring get pods
 ```
 
 - The node is `Ready`; every Flux source, Kustomization and `HelmRelease` is
@@ -184,7 +191,9 @@ kubectl get svc -A -l app.kubernetes.io/name=augustad
 - Both servers logged `event=pack_verified` and keep running.
 - `develop`'s Service is on node port 30777 (pinned in `develop.yaml`).
   `staging`'s node port is assigned by Kubernetes, so a rebuild changes it:
-  give LAN clients the new one from the last command.
+  give LAN clients the new one from the `get svc` command.
+- Every pod in `monitoring` is `Running`, and Grafana answers on node port
+  30300 (pinned in `infrastructure/monitoring.yaml`).
 
 ## Rollback / abort
 

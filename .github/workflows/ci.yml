@@ -572,6 +572,8 @@ jobs:
           # current security updates (the Dockerfile's apt-get upgrade)
           # rather than a cached layer's.
           no-cache-filters: runtime
+          # Reported as augustad_build_info's commit label (ADR-0049).
+          build-args: AUGUSTA_COMMIT=${{ steps.short-sha.outputs.value }}
           # sha-<first 12 characters of the commit> is the tag the chart runs:
           # Flux versions a Git-sourced chart <version>+<the same 12
           # characters>. The branch name tag is for people. github.ref_name is

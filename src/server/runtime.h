@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_SERVER_RUNTIME_H_
 #define AUGUSTA_SERVER_RUNTIME_H_
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 
@@ -13,10 +14,12 @@
 /// The augustad executable's orchestrator (ARCHITECTURE.md §5): it runs a
 /// server::Host on the two threads ADR-0005 gives the server - the Network I/O
 /// thread pumps its connections, the Simulation thread ticks it at the fixed
-/// rate - and has no render thread, since the server is headless. Decoding what
-/// clients send, admitting them, screening their commands and replicating each
-/// tick is Host's work (host.h); ServerRuntime only runs it. With no window to
-/// close, Stop() ends it, e.g. from the SIGINT/SIGTERM handler main.cpp installs.
+/// rate - and has no render thread, since the server is headless. Beside them
+/// it serves the metrics endpoint (metrics.h, ADR-0049) on a third thread it
+/// does not supervise. Decoding what clients send, admitting them, screening
+/// their commands and replicating each tick is Host's work (host.h);
+/// ServerRuntime only runs it. With no window to close, Stop() ends it, e.g.
+/// from the SIGINT/SIGTERM handler main.cpp installs.
 namespace augusta::server {
 
 /// The server process constructs exactly one, on what becomes the Simulation
@@ -27,8 +30,9 @@ class ServerRuntime {
   /// std::runtime_error if a map mesh is rejected - see host.h) and the
   /// scenario's Game policy, and starts networking::Server listening on
   /// config.listen (throws std::runtime_error if the address can't be bound -
-  /// see networking.h). Does not yet spawn any thread; see Run().
-  ServerRuntime(const HostConfig& config, Scenario scenario, scripting::Engine policy = {});
+  /// see networking.h). Does not yet spawn any thread or start the metrics
+  /// endpoint; see Run().
+  ServerRuntime(const HostConfig& config, std::uint16_t metrics_port, Scenario scenario, scripting::Engine policy = {});
 
   /// Run() always stops and joins the Network I/O thread it spawned
   /// before returning, so there is nothing left for this destructor to do
@@ -43,7 +47,8 @@ class ServerRuntime {
   ServerRuntime(ServerRuntime&&) = delete;
   ServerRuntime& operator=(ServerRuntime&&) = delete;
 
-  /// Spawns the Network I/O thread (ADR-0005), then runs the fixed-rate
+  /// Starts the metrics endpoint, whose failure to start is logged and does not
+  /// stop the server (ADR-0049). Spawns the Network I/O thread (ADR-0005), then runs the fixed-rate
   /// Simulation loop on the calling thread - gather this tick's latest
   /// validated commands, SimulationWorld::Tick, hand the resulting
   /// Authoritative State onward - until Stop() is called or either thread
