@@ -124,6 +124,13 @@ target_link_libraries(augusta_host_metrics_tests PRIVATE augustad_host GTest::gt
 # Links networking and PhysX through augustad_host, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_host_metrics_tests DISCOVERY_TIMEOUT 30)
 
+# Reads what it records back from a prometheus-cpp registry.
+find_package(prometheus-cpp CONFIG REQUIRED)
+add_executable(augusta_connection_health_tests connection_health_test.cpp)
+target_link_libraries(augusta_connection_health_tests PRIVATE augustad_connection_health prometheus-cpp::core GTest::gtest GTest::gtest_main)
+# Links networking (for ConnectionStats), so the same first-launch cost applies as below.
+gtest_discover_tests(augusta_connection_health_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_admission_tests admission_test.cpp)
 target_link_libraries(augusta_admission_tests PRIVATE augustad_admission GTest::gtest GTest::gtest_main)
 # Links networking (for PeerId), so the same first-launch cost applies as below.

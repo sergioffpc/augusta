@@ -121,18 +121,18 @@ enum class ConnectionState {
   kDisconnected,
 };
 
-/// A snapshot of Client's connection quality/throughput, sourced directly
+/// A snapshot of one connection's quality/throughput, sourced directly
 /// from GameNetworkingSockets' own per-connection instrumentation
-/// (ADR-0003) - see Client::GetStats. None of this is computed by this
-/// module itself.
+/// (ADR-0003) - see Client::GetStats and Server::GetStats. None of this is
+/// computed by this module itself.
 struct ConnectionStats {
-  /// Current round-trip time to the server, in milliseconds.
+  /// Current round-trip time to the far end, in milliseconds.
   int ping_ms = 0;
   /// Packet delivery success rate, 0..1 (1 = no loss): measured locally,
-  /// and as reported back by the server for the reverse direction.
+  /// and as reported back by the far end for the reverse direction.
   /// quality_remote in particular is commonly negative right after
   /// connecting - same "not measured yet" convention as max_jitter_us
-  /// below - until the server has echoed back enough acks to compute it.
+  /// below - until the far end has echoed back enough acks to compute it.
   float quality_local = 0.0F;
   float quality_remote = 0.0F;
   /// Actual throughput over the underlying transport's recent history, in
@@ -244,6 +244,12 @@ struct PeerEvent {
   DisconnectReason reason = DisconnectReason::kClosedByPeer;
 };
 
+/// One connected peer's connection stats, returned by Server::GetStats.
+struct PeerStats {
+  PeerId peer;
+  ConnectionStats stats;
+};
+
 /// One received message plus which peer sent it.
 struct PeerMessage {
   PeerId from;
@@ -302,6 +308,11 @@ class Server {
   /// Returns every message received from any peer since the last call,
   /// in arrival order. Empty once drained.
   [[nodiscard]] std::vector<PeerMessage> ReceiveMessages();
+
+  /// Returns a snapshot of every connected peer's connection (ConnectionStats),
+  /// as Client::GetStats does for the client's one: each read clears its
+  /// max_jitter_us. Doesn't block or perform I/O.
+  [[nodiscard]] std::vector<PeerStats> GetStats() const;
 
  private:
   struct Impl;

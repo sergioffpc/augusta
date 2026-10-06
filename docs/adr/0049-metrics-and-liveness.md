@@ -70,9 +70,12 @@ text, an address or a Character's name. The domain words are CONTEXT.md's.
 | | `augustad_authoritative_state_update_bytes` | histogram | |
 | | `augustad_commands_received_total` | counter | |
 | | `augustad_commands_discarded_total` | counter | `reason` |
-| Connection health | `augustad_connection_rtt_seconds` | histogram, and a gauge by `session_id` | |
-| | `augustad_connection_quality_ratio` | histogram, and a gauge by `session_id` | `direction` = `local`, `remote` |
-| | `augustad_connection_jitter_seconds` | histogram, and a gauge by `session_id` | |
+| Connection health | `augustad_connection_rtt_seconds` | histogram | |
+| | `augustad_connection_quality_ratio` | histogram | `direction` = `local`, `remote` |
+| | `augustad_connection_jitter_seconds` (worst over the interval) | histogram | |
+| | `augustad_session_connection_rtt_seconds` | gauge | `session_id` |
+| | `augustad_session_connection_quality_ratio` | gauge | `session_id`; `direction` = `local`, `remote` |
+| | `augustad_session_connection_jitter_seconds` | gauge | `session_id` |
 | | `augustad_connection_in_bytes_per_second`, `augustad_connection_out_bytes_per_second` | gauge | `session_id` |
 | | `augustad_connection_pending_bytes` | gauge | `session_id` |
 | Combat | `augustad_shots_total` | counter | |
@@ -95,12 +98,17 @@ which the image's runtime stage sets as the `AUGUSTA_COMMIT` environment
 variable: compiled in, it would change the build step's input on every commit
 and defeat the image's build cache. A local build reports `unknown`.
 
-Connection health is kept two ways. Histograms over every connection show its
-trend and drive the alert rules. Gauges labelled by Session ID show the one
-player whose connection is bad. A Session's gauges are removed when the Session
-ends. Session IDs are never reused, so every Session leaves its own series
-behind, but no more than the Player count are live at once, which a 15-day
-retention easily holds.
+Connection health is kept two ways. Histograms over every connection, joined
+or not, show its trend and drive the alert rules. Gauges labelled by Session ID
+show the one player whose connection is bad; the RTT, quality and jitter gauges
+are named apart from their histograms (`augustad_session_connection_*`),
+because one name cannot be both a histogram and a gauge in the exposition. A
+value the transport has not measured yet (a negative quality, or no jitter yet,
+right after connecting) is not recorded. A Session's gauges are removed at the
+first sample after the Session ends, so within a heartbeat interval. Session
+IDs are never reused, so every Session leaves its own series behind, but no
+more than the Player count are live at once, which a 15-day retention easily
+holds.
 
 CPU, memory and restarts are not `augustad`'s metrics: the stack's kubelet and
 cAdvisor scrape already has them per pod.

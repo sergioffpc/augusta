@@ -117,6 +117,18 @@ target_compile_definitions(augustad_metrics
 )
 augusta_set_module_scope(augustad_metrics SERVER_ONLY)
 
+# Every client's Connection health as metrics (see connection_health.h,
+# ADR-0049); tested against a registry, without a network.
+add_library(augustad_connection_health STATIC
+  connection_health.cpp
+)
+target_include_directories(augustad_connection_health PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(augustad_connection_health
+  PUBLIC augusta_networking augustad_match
+  PRIVATE prometheus-cpp::core
+)
+augusta_set_module_scope(augustad_connection_health SERVER_ONLY)
+
 # The server's socket and SimulationWorld without threads or a clock, so a test
 # can drive a match by hand (see host.h), and the conversions Host makes at its
 # edges: between the protocol's plain types and the engine's (see wire.h), and
@@ -138,7 +150,7 @@ add_library(augustad_host STATIC
 target_include_directories(augustad_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_host
   PUBLIC augusta_ballistics augusta_networking augusta_parameters augusta_physics augusta_simulation augustad_content
-         augustad_commands augustad_match augustad_misbehaviour augustad_admission augustad_heartbeat augusta_assets augusta_protocol augusta_replication
+         augustad_commands augustad_connection_health augustad_match augustad_misbehaviour augustad_admission augustad_heartbeat augusta_assets augusta_protocol augusta_replication
          augusta_tick augustad_lock_free_metrics prometheus-cpp::core
   PRIVATE augusta_logging augusta_map augusta_version
 )

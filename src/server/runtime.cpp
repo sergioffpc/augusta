@@ -13,7 +13,9 @@
 #include "augusta/scripting.h"
 #include "augusta/supervisor.h"
 #include "augusta/tick.h"
+#include "connection_health.h"
 #include "content.h"
+#include "heartbeat.h"
 #include "host.h"
 #include "metrics.h"
 
@@ -31,6 +33,9 @@ struct ServerRuntime::Impl {
   // Null until Run() starts it, and if it could not start. Declared after
   // last_tick_end, which it reads.
   std::unique_ptr<MetricsEndpoint> metrics;
+  // Records into the endpoint's metrics, so null without it. Used by the
+  // Network I/O thread only.
+  std::unique_ptr<ConnectionHealth> connection_health;
   // The two threads' stop request and first failure (ADR-0005). Declared after
   // host, so it stops and joins the Network I/O thread before host goes.
   supervisor::Supervisor workers;
@@ -46,6 +51,7 @@ struct ServerRuntime::Impl {
   void StartMetrics() {
     try {
       metrics = std::make_unique<MetricsEndpoint>(metrics_port, last_tick_end, host.Metrics());
+      connection_health = std::make_unique<ConnectionHealth>(metrics->Registry());
       LI("subsystem=serverruntime event=metrics_serving port={}", metrics_port);
     } catch (const std::exception& error) {
       LE("subsystem=serverruntime event=metrics_failed port={} error={}", metrics_port, error.what());
@@ -58,9 +64,22 @@ struct ServerRuntime::Impl {
   // late a received message is handled, and how long stopping takes.
   void NetworkThreadMain() {
     constexpr auto kNetworkRoundWait = std::chrono::milliseconds(1);
+    std::chrono::steady_clock::time_point next_sample = std::chrono::steady_clock::now() + kHeartbeatInterval;
     while (!workers.StopRequested()) {
-      host.PumpNetwork(std::chrono::steady_clock::now());
+      const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+      host.PumpNetwork(now);
+      if (now >= next_sample) {
+        SampleConnectionHealth();
+        next_sample = now + kHeartbeatInterval;
+      }
       std::this_thread::sleep_for(kNetworkRoundWait);
+    }
+  }
+
+  // Once a heartbeat interval, on the Network I/O thread (ADR-0049).
+  void SampleConnectionHealth() {
+    if (connection_health != nullptr) {
+      connection_health->Record(host.SampleConnections());
     }
   }
 

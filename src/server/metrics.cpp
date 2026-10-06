@@ -222,4 +222,6 @@ MetricsEndpoint::MetricsEndpoint(std::uint16_t port, const std::atomic<tick::Clo
 
 MetricsEndpoint::~MetricsEndpoint() = default;
 
+prometheus::Registry& MetricsEndpoint::Registry() { return impl_->registry; }
+
 }  // namespace augusta::server

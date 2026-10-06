@@ -85,6 +85,7 @@ using augusta::physics::Stance;
 using augusta::protocol::EntityIdWire;
 using augusta::protocol::SessionIdWire;
 namespace protocol = augusta::protocol;
+using augusta::server::ConnectionSample;
 using augusta::server::Host;
 using augusta::server::HostConfig;
 using augusta::server::Scenario;
@@ -510,6 +511,30 @@ TEST_F(JoinTest, SessionIdsAreUniqueAmongConnectedClients) {
     ids.insert(*session->GetSessionId());
   }
   EXPECT_EQ(ids.size(), static_cast<std::size_t>(kClients));
+}
+
+TEST_F(JoinTest, EachConnectionIsSampledWithTheSessionItCarries) {
+  const Session& client = AddClient();
+  ASSERT_TRUE(WaitForAnswers());
+
+  const std::vector<ConnectionSample> samples = host_.SampleConnections();
+
+  ASSERT_EQ(samples.size(), 1U);
+  ASSERT_TRUE(samples.front().session.has_value());
+  ASSERT_TRUE(client.GetSessionId().has_value());
+  EXPECT_EQ(static_cast<std::uint32_t>(*samples.front().session), static_cast<std::uint32_t>(*client.GetSessionId()));
+}
+
+TEST_F(JoinTest, AConnectionThatHasNotJoinedIsSampledWithoutASession) {
+  RawClient silent(host_.ListenEndpoint(), RawClient::Mode::kScripted);
+  std::vector<ConnectionSample> samples;
+  ASSERT_TRUE(silent.ServeUntil(host_, [&] {
+    samples = host_.SampleConnections();
+    return !samples.empty();
+  }));
+
+  ASSERT_EQ(samples.size(), 1U);
+  EXPECT_FALSE(samples.front().session.has_value());
 }
 
 TEST_F(JoinTest, AClientWithAnotherEngineVersionIsRefusedForTheVersion) {
