@@ -1,7 +1,6 @@
 #include "augusta/scripting.h"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstddef>
 #include <expected>
@@ -62,15 +61,15 @@ std::unexpected<HookError> Fail(HookErrorCode code, std::string subject = {}) {
   return std::unexpected(HookError{.code = code, .subject = std::move(subject)});
 }
 
-std::expected<Slot, LoadError> LoadScript(Script script, std::string_view text) {
+std::expected<Slot, LoadError> LoadScript(std::string_view text) {
   Slot slot{.lua = MakeSandbox(), .freeze = {}};
   slot.freeze = slot.lua.safe_script(kFreezeSource, sol::script_pass_on_error, "=freeze");
   LimitInstructions(slot.lua, kLoadInstructionLimit);
-  const std::string chunk_name = "=" + std::string(ScriptPath(script));
+  const std::string chunk_name = "=" + std::string(kRulesScriptPath);
   const sol::protected_function_result result = slot.lua.safe_script(text, sol::script_pass_on_error, chunk_name);
   if (!result.valid()) {
     const sol::error failure = result;
-    return std::unexpected(LoadError{.script = script, .message = failure.what()});
+    return std::unexpected(LoadError{.message = failure.what()});
   }
   return slot;
 }
@@ -199,18 +198,8 @@ std::expected<Value, HookError> ToValue(const sol::object& object, int depth) {
 
 }  // namespace
 
-std::string_view ScriptPath(Script script) {
-  switch (script) {
-    case Script::kObjectives:
-      return "objectives.lua";
-    case Script::kBehaviours:
-      return "behaviours.lua";
-  }
-  std::unreachable();
-}
-
 std::string DescribeLoadError(const LoadError& error) {
-  return "the policy script " + std::string(ScriptPath(error.script)) + " failed to load: " + error.message;
+  return "the policy script " + std::string(kRulesScriptPath) + " failed to load: " + error.message;
 }
 
 std::string DescribeHookError(const HookError& error) {
@@ -226,8 +215,8 @@ std::string DescribeHookError(const HookError& error) {
 }
 
 struct Engine::Impl {
-  // Indexed by Script; empty for a script the scenario does not have.
-  std::array<std::optional<Slot>, 2> slots;
+  // Empty when the scenario has no rules.
+  std::optional<Slot> rules;
 };
 
 Engine::Engine() : impl_(std::make_unique<Impl>()) {}
@@ -235,24 +224,18 @@ Engine::~Engine() = default;
 Engine::Engine(Engine&&) noexcept = default;
 Engine& Engine::operator=(Engine&&) noexcept = default;
 
-std::expected<Engine, LoadError> Engine::Load(const Scripts& scripts) {
-  Engine engine;
-  for (const auto& [script, text] :
-       {std::pair{Script::kObjectives, &scripts.objectives}, std::pair{Script::kBehaviours, &scripts.behaviours}}) {
-    if (!text->has_value()) {
-      continue;
-    }
-    auto slot = LoadScript(script, **text);
-    if (!slot) {
-      return std::unexpected(slot.error());
-    }
-    engine.impl_->slots.at(std::to_underlying(script)).emplace(*std::move(slot));
+std::expected<Engine, LoadError> Engine::Load(std::string_view rules) {
+  auto slot = LoadScript(rules);
+  if (!slot) {
+    return std::unexpected(slot.error());
   }
+  Engine engine;
+  engine.impl_->rules.emplace(*std::move(slot));
   return engine;
 }
 
-std::expected<Value, HookError> Engine::Call(Script script, std::string_view hook, const Value::Record& view) {
-  std::optional<Slot>& slot = impl_->slots.at(std::to_underlying(script));
+std::expected<Value, HookError> Engine::Call(std::string_view hook, const Value::Record& view) {
+  std::optional<Slot>& slot = impl_->rules;
   if (!slot) {
     return Value{};
   }

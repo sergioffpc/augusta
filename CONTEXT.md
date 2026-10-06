@@ -132,6 +132,10 @@ _Avoid_: Engine code, core logic
 Gameplay-specific rules (Match lifecycle, win conditions, spawn rules) that decide how mechanism is used, implemented as sandboxed Lua in SimulationWorld's Scripts/Behaviours phase, kept out of C++ so it can change without touching mechanism code.
 _Avoid_: Game logic, gameplay code (too broad — conflates policy with mechanism)
 
+**Rules**:
+A scenario's Game policy as one Lua script: every hook of its game mode, such as who spawns where (`assign_spawns`) and when the Match is won (`on_tick`), chosen together because they describe the same mode. The scenario's manifest names the script (e.g. `scripts/rules/last_standing.lua`), and it is packed as `rules.lua` (ADR-0022, ADR-0041). A scenario may have none.
+_Avoid_: Behaviours, objectives (the two scripts the rules replaced), game mode script
+
 **Policy action**:
 One decision of Game policy as the server receives it: a hook's answer read into one of a closed set of C++ types and validated as it is read (ADR-0022), such as a Match end. The server acts on policy actions; it never reads a hook's answer itself.
 _Avoid_: Policy result, script output
@@ -144,7 +148,7 @@ Everything the server has told one client, as of one moment (harness::ServerView
 _Avoid_: Snapshot (an Authoritative State update is not one), network state
 
 **Data-driven configuration**:
-Tunable values (e.g. weapon/ammo damage, stamina rules) written as a Lua table script rather than expressed as mechanism code or policy scripts — a third category alongside mechanism and policy. A value may be an expression of other values; the script is authored in the scenario's folder next to its stage, cooked into the scenario's server pack, evaluated once at server startup into a plain immutable struct (**Parameters**) and sent to clients (ADR-0039).
+Tunable values (e.g. weapon/ammo damage, stamina rules) written as a Lua table script rather than expressed as mechanism code or policy scripts — a third category alongside mechanism and policy. A value may be an expression of other values; the script is authored under `authoring/scripts/parameters/` and named by the scenario's manifest, cooked into the scenario's server pack, evaluated once at server startup into a plain immutable struct (**Parameters**) and sent to clients (ADR-0039).
 _Avoid_: Config, settings (too generic — this specifically means simulation-tunable values, not startup settings, which the YAML files of ADR-0034 hold in place of command-line arguments)
 
 **Parameters**:

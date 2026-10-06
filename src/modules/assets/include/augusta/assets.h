@@ -170,8 +170,8 @@ struct AudioData {
   std::vector<std::byte> samples;
 };
 
-/// Pack-relative path, in a scenario's client pack, of the sounds folder its cue
-/// sounds are addressed under: each at `<sounds folder>/<cue>` (ADR-0031).
+/// Pack-relative path, in a scenario's client pack, of the prefix its cue sounds
+/// are addressed under: each at `<sounds prefix>/<cue>` (ADR-0031).
 inline constexpr std::string_view kSoundsPath = "Sounds";
 
 /// Pack-relative path of the Parameters script (ADR-0039) in a scenario's
@@ -386,9 +386,8 @@ class Pack {
   /// pack only.
   [[nodiscard]] std::expected<AudioData, ResolveError> ResolveAudio(std::string_view path) const;
 
-  /// Resolves, at kSoundsPath, the sounds folder the scenario's cue sounds are
-  /// addressed under, relative to `authoring/` (e.g. "sounds/augusta"). Present in
-  /// the client pack only.
+  /// Resolves, at kSoundsPath, the prefix the scenario's cue sounds are
+  /// addressed under (e.g. "sounds"). Present in the client pack only.
   [[nodiscard]] std::expected<std::string, ResolveError> ResolveSoundsPath() const;
 
   /// Resolves a Lua script's text by its path relative to the scenario's

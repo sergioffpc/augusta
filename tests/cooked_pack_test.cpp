@@ -8,6 +8,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/cues.h"
+#include "augusta/scripting.h"
 #include "policy_loader.h"
 
 // The C++ half of the contract between the pack's two implementations: the
@@ -67,9 +68,8 @@ TEST_F(CookedPackTest, TheServerPackHoldsNoVisualContentAndNamesItsClientPack) {
 
 // The server loads them at startup as it does any scenario's: an example whose
 // policy did not load would stop every server run on it.
-TEST_F(CookedPackTest, TheServerPackHoldsTheExamplesPolicyScriptsAndTheyLoad) {
-  EXPECT_TRUE(server_->ResolveScript("objectives.lua").has_value());
-  EXPECT_TRUE(server_->ResolveScript("behaviours.lua").has_value());
+TEST_F(CookedPackTest, TheServerPackHoldsTheExamplesRulesAndTheyLoad) {
+  EXPECT_TRUE(server_->ResolveScript(augusta::scripting::kRulesScriptPath).has_value());
 
   const auto policy = augusta::server::LoadPolicy(*server_);
 
@@ -111,7 +111,7 @@ TEST_F(CookedPackTest, TheClientPackHoldsASoundForEveryCueAndTheServerPackNone) 
   const auto server_sounds = augusta::audio::LoadCueSounds(*server_);
   ASSERT_FALSE(server_sounds.has_value());
   EXPECT_EQ(server_sounds.error().path, augusta::assets::kSoundsPath);
-  EXPECT_FALSE(server_->ResolveAudio("sounds/augusta/gunshot").has_value());
+  EXPECT_FALSE(server_->ResolveAudio("sounds/gunshot").has_value());
 }
 
 }  // namespace

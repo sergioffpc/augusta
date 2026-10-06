@@ -73,13 +73,13 @@ std::optional<parameters::Parameters> ReadParameters(const assets::Pack& pack, s
   return *std::move(parameters);
 }
 
-// The scenario's Game policy scripts (ADR-0022), out of the same pack. Reports
+// The scenario's Game policy, its rules (ADR-0022), out of the same pack. Reports
 // what is wrong and returns nullopt.
 std::optional<scripting::Engine> ReadPolicy(const assets::Pack& pack) {
   auto policy = LoadPolicy(pack);
   if (!policy) {
     LE("subsystem=server event=policy_loading_failed path={} script={} error=\"{}\"", pack.Path().string(),
-       scripting::ScriptPath(policy.error().script), DescribePolicyLoadError(policy.error()));
+       scripting::kRulesScriptPath, DescribePolicyLoadError(policy.error()));
     return std::nullopt;
   }
   LI("subsystem=server event=policy_loaded");

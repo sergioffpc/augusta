@@ -39,10 +39,10 @@ def test_the_example_scenario_cooks_into_a_signed_pack_pair(tmp_path):
     assert client.paths_of_type(pack.ASSET_TYPE_HITBOX) == hitboxes
     assert server.paths_of_type(pack.ASSET_TYPE_HITBOX) == hitboxes
     assert server.client_pack_hash == client.hash
-    assert "parameters.lua" in server.paths_of_type(pack.ASSET_TYPE_SCRIPT)
+    assert server.paths_of_type(pack.ASSET_TYPE_SCRIPT) == {"parameters.lua", "rules.lua"}
     assert client.paths_of_type(pack.ASSET_TYPE_SCRIPT) == set()
     cues = ("gunshot", "hit_marker", "hit_taken", "death", "match_won", "match_lost")
-    assert client.paths_of_type(pack.ASSET_TYPE_AUDIO) == {f"sounds/augusta/{cue}" for cue in cues}
+    assert client.paths_of_type(pack.ASSET_TYPE_AUDIO) == {f"sounds/{cue}" for cue in cues}
     assert server.paths_of_type(pack.ASSET_TYPE_AUDIO) == set()
 
 

@@ -1,9 +1,8 @@
 -- The simulation's Parameters (ADR-0039): the tunable values that client and
--- server must agree on. Copy this file into a scenario's folder, as
--- parameters.lua (authoring/scenarios/<scenario>/parameters.lua) next to its
--- manifest.yaml (ADR-0041): the cooker packs it into the scenario's server
--- pack, so it is signed with the composed map/characters and fixed for the
--- run. Only the server reads it; each client is sent the result when it
+-- server must agree on. A scenario's manifest names it as scripts.parameters
+-- (ADR-0041): the cooker packs it into the scenario's server pack, as
+-- parameters.lua, so it is signed with the composed map/characters and fixed
+-- for the run. Only the server reads it; each client is sent the result when it
 -- joins. The tick rate is not here: it is fixed while the server runs, so it
 -- is `simulation.tick_rate_hz` in augustad.yaml. The script can read it, as
 -- `server.tick_rate_hz`, to check the values that depend on it: `warn(...)`
