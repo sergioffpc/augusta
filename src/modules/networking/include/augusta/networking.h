@@ -64,8 +64,18 @@ enum class Reliability {
 struct SimulatedConditions {
   /// Extra delay on every packet this process sends, in milliseconds.
   int latency_ms = 0;
+  /// A random delay added on top of latency_ms to every packet this process
+  /// sends, drawn from an exponential distribution of this mean and capped at
+  /// jitter_max_ms, in milliseconds; 0 adds none. A packet is never let overtake
+  /// one sent before it, so jitter alone clumps packets but keeps their order.
+  int jitter_mean_ms = 0;
+  int jitter_max_ms = 0;
   /// Share of packets this process sends that are dropped, 0..100.
   float loss_percent = 0.0F;
+  /// Share of packets this process sends that are held back a further
+  /// reorder_delay_ms, 0..100, so that those sent meanwhile overtake them.
+  float reorder_percent = 0.0F;
+  int reorder_delay_ms = 0;
   /// How long a connection may hear nothing from its peer before it counts as
   /// lost (or, while connecting, as unreachable), in milliseconds; 0 keeps the
   /// transport's own default (about 10 seconds), which is too long for a test

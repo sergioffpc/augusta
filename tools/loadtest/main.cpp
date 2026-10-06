@@ -48,7 +48,7 @@ int Run(const augusta::loadtest::Settings& settings) {
           std::chrono::duration<float>(settings.timeout_seconds)),
       .seed = settings.seed,
   };
-  return augusta::loadtest::RunScriptedPlayers(config) == augusta::loadtest::Verdict::kSucceeded ? 0 : 1;
+  return augusta::loadtest::RunScriptedPlayers(config).verdict == augusta::loadtest::Verdict::kSucceeded ? 0 : 1;
 }
 
 }  // namespace

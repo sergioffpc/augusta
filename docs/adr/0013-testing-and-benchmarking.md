@@ -20,6 +20,7 @@ how noisy its result is.
 | ASan + UBSan | | ✅ | | |
 | Fuzzing | | ✅ ~60 s per target | ✅ ~30 min per target | |
 | TSan | | | ✅ | |
+| Netcode under an impaired link | | | ✅ | |
 | Coverage report (`llvm-cov`) | | | ✅ | |
 | NFR-01 (tick rate under load) | | | | manual, on the r630 cluster |
 | Micro-benchmarks | by hand | | ✅ history, fails past 2× | |
@@ -53,16 +54,48 @@ how noisy its result is.
   checked by hand on the r630 cluster before each release; once Flux runs the
   `develop` release (ADR-0026), it becomes a CronJob of 8 Harness clients in
   that namespace.
-- **The load test stays out of CI.** `augusta-loadtest` (`tools/loadtest`)
-  runs the scenario's Player count of Scripted players, each on a Harness,
-  against a server, and exits non-zero unless every one sees the Match ends it
-  was asked for before a timeout. It and its tests build only with the CMake
-  option `AUGUSTA_LOADTEST`, off by default and turned on only by the
-  `windows-tools` and `linux-tools` presets, which no workflow uses, so no
-  workflow compiles, lints or runs them: it is run by hand, against a local
-  `augustad` or the r630 cluster's. A tools build gets the tool's tests in
-  `augusta_tests`, and `ctest` runs them there, the whole Match loop against
-  an in-process `server::Host` among them.
+- **The load test stays out of the pull request.** `augusta-loadtest`
+  (`tools/loadtest`) runs the scenario's Player count of Scripted players,
+  each on a Harness, against a server, and exits non-zero unless every one
+  sees the Match ends it was asked for before a timeout. It and its tests
+  build only with the CMake option `AUGUSTA_LOADTEST`, off by default and
+  turned on only by the `windows-tools` and `linux-tools` presets, which no
+  pull request or push workflow uses, so neither compiles, lints or runs
+  them: the tool is run by hand, against a local `augustad` or the r630
+  cluster's. A tools build gets the tool's tests in `augusta_tests`, and
+  `ctest` runs them there, the whole Match loop against an in-process
+  `server::Host` among them, but not the netcode tests below, which only
+  the nightly runs.
+- **Netcode under an impaired link, nightly.** Prediction and
+  reconciliation (ADR-0004) and lag compensation (ADR-0044) are only proven
+  under bad network conditions, and a whole run of Scripted players under
+  them takes minutes of real time. So the nightly builds the `linux-tools`
+  preset and runs the tests labelled `netcode` (the `linux-netcode` test
+  preset; the tools presets leave them out): four Scripted players through
+  five Matches against an in-process `server::Host`, under the transport's
+  own simulated conditions (GameNetworkingSockets' fake packet lag, jitter,
+  loss and reordering, on every packet either side sends) rather than
+  `tc netem`, which would need root on the runner and a server in another
+  process for no more realism on loopback. Three profiles, one way each, so
+  a round trip is twice the latency:
+
+  | Profile | Latency | Jitter (mean / max) | Loss | Reordered (extra delay) |
+  |---|---|---|---|---|
+  | Broadband | 20 ms | 5 / 20 ms | 1% | 1% (10 ms) |
+  | NFR-02 | 50 ms | 10 / 30 ms | 5% | 2% (20 ms) |
+  | Worst case | 75 ms | 10 / 30 ms | 10% | 5% (20 ms) |
+
+  The worst case is the most this netcode is held to: a Scripted player's
+  Shooter's delay (about a round trip, the jitter both ways and the ticks
+  its commands wait queued) stays within lag compensation's 250 ms cap. At
+  every profile, every player must see every Match end with no disconnect;
+  no single correction may reach the 2 m that the presentation shows at
+  once instead of sliding (ADR-0004), and corrections may happen on at most
+  5% of the players' Match ticks; and at least 40% of the rounds fired must
+  come back as Hit confirmations, so a shot fired within the compensation
+  window is confirmed. The bounds are several times what a working netcode
+  shows at every profile: room for a noisy runner, with a regression still
+  well past them.
 - **NFR-03 through a golden file.** Reference trajectories live in the
   repository, and the test, on both the Windows (MSVC) and Linux (clang)
   runners, compares what it computes against them within a tolerance defined

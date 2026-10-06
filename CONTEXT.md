@@ -118,6 +118,10 @@ _Avoid_: View, shown view, view tick (a view is where a player looks: a yaw and 
 The measured network latency between a client and the server for a single request/response cycle.
 _Avoid_: Ping, lag
 
+**Connection health**:
+How well a client's transport connection is delivering, as the server's own transport measures it: its RTT, packet loss each way, jitter, throughput and send queue. A property of the transport connection, not of the Session above it: what happens to a Session (admitted, refused, left mid-Match) is not part of it.
+_Avoid_: Connection quality (the transport's own 0..1 delivery rate, one input of it), network health, lag
+
 ### Architecture
 
 **Mechanism**:
@@ -156,7 +160,7 @@ Where anything that plays connects to the server: the client's network connectio
 _Avoid_: Client session, bot
 
 **Scripted player**:
-What plays in a person's place through a Harness, deciding each tick's Command from the Server view alone and its seed: it wanders, aims at the nearest living other player, fires in Bursts and reloads. augusta-loadtest runs a scenario's Player count of them against a server, for load and end-to-end tests.
+What plays in a person's place through a Harness, deciding each tick's Command from the Server view, its own prediction and its seed: it wanders within a few metres of where the Match spawned it, aims from where its prediction puts it at the nearest living other player, fires in Bursts and reloads. augusta-loadtest runs a scenario's Player count of them against a server, for load and end-to-end tests.
 _Avoid_: Bot (too vague: it names anything automated), AI player (it follows a fixed script, it does not plan)
 
 ### Combat

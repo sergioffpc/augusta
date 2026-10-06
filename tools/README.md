@@ -379,8 +379,8 @@ seen a number of Match ends, then exits 0; it exits 1 as soon as one fails or a
 timeout passes (ADR-0013). Each player is a client with no window or GPU: it
 predicts and sends its Commands like `augustac`, but decides them itself from
 what the server tells it, from a seed. Unlike the other tools it is C++ built
-with the engine, on Windows and Linux, but only when asked for, and never in
-CI:
+with the engine, on Windows and Linux, but only when asked for, and never by
+a pull request (the nightly builds it for its netcode tests, below):
 
 ```powershell
 cmake --preset windows-tools
@@ -406,3 +406,13 @@ join `augusta_tests`, and `ctest` runs them with the engine's:
 cmake --build --preset windows-tools --target augusta_tests
 ctest --preset windows-tools
 ```
+
+but for the netcode tests (label `netcode`): runs of Scripted players under
+simulated latency, jitter, loss and reordering, minutes each, which the
+nightly runs (ADR-0013). To run them by hand, on Linux:
+
+```sh
+ctest --preset linux-netcode
+```
+
+or on Windows, `ctest --test-dir build/x64-windows-tools -L netcode`.
