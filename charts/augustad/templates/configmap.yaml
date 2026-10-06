@@ -17,5 +17,7 @@ data:
       tick_rate_hz: {{ .Values.server.tickRateHz }}
     network:
       listen_address: 0.0.0.0:{{ .Values.service.port }}
+    metrics:
+      port: {{ .Values.metrics.port }}
     logging:
       level: {{ .Values.server.logLevel }}

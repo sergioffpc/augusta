@@ -91,7 +91,7 @@ struct ServerConfig {
   /// a Release build has no TRACE/DEBUG to raise it back to.
   std::string log_level{kDefaultLogLevel};
   /// Key `simulation.recording`: where to write a recording of every tick
-  /// SimulationWorld runs, replacing any file there, for augusta_replay
+  /// SimulationWorld runs, replacing any file there, for augusta-replay
   /// (ADR-0048). Empty, the default, records nothing.
   std::filesystem::path recording_path;
   /// Key `metrics.port`: the TCP port, 1..65535, the metrics endpoint serves

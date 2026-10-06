@@ -19,15 +19,15 @@
 // netcode), not every pull request.
 namespace {
 
-using augusta::loadtest::NetcodeStats;
-using augusta::loadtest::RunResult;
-using augusta::loadtest::RunScriptedPlayers;
-using augusta::loadtest::Verdict;
-using augusta::loadtest::testing::ExampleServer;
 using augusta::networking::SimulatedConditions;
+using augusta::swarm::NetcodeStats;
+using augusta::swarm::RunResult;
+using augusta::swarm::RunScriptedPlayers;
+using augusta::swarm::Verdict;
+using augusta::swarm::testing::ExampleServer;
 
 [[maybe_unused]] ::testing::Environment* const kNetworkingEnvironment =
-    ::testing::AddGlobalTestEnvironment(new augusta::loadtest::testing::NetworkingEnvironment);
+    ::testing::AddGlobalTestEnvironment(new augusta::swarm::testing::NetworkingEnvironment);
 
 // One set of link conditions. Both sides are in this process, so each applies
 // to the server's packets and the clients' alike: a round trip is twice the

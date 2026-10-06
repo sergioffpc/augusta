@@ -1,17 +1,19 @@
 # Tools
 
-This directory contains three separate tools: `pack` cooks authored content
-into signed runtime packs, `composer` sets up the optional USD authoring
-application and its launcher (both Windows), and `loadtest` builds
-`augusta-loadtest`, which fills a server with Scripted players for load and
-end-to-end tests. `docs` is not a tool of its own: it holds how the
+This directory contains every tool, apart from the runtime in `src/`: `pack`
+cooks authored content into signed runtime packs, `composer` sets up the
+optional USD authoring application and its launcher (both Windows), `swarm`
+builds `augusta-swarm`, which fills a server with Scripted players for load
+and end-to-end tests, and `replay` builds `augusta-replay`, which replays a
+match recording `augustad` wrote. Each tool's tests live beside it. `docs` is not a tool of its own: it holds how the
 documentation site is built (ADR-0046).
 
 | Tool | Purpose |
 |---|---|
 | [`pack/`](pack/) | Python asset cooker, signing utilities, and native cooking modules. |
 | [`composer/`](composer/) | Optional NVIDIA USD Composer setup, playback definition, and launcher. |
-| [`loadtest/`](loadtest/) | `augusta-loadtest`: the Scripted players, a server's worth of headless clients. |
+| [`swarm/`](swarm/) | `augusta-swarm`: the Scripted players, a server's worth of headless clients. |
+| [`replay/`](replay/) | `augusta-replay`: replays a match recording against the server pack it was made on. |
 | [`docs/`](docs/) | The documentation site's MkDocs hooks and Doxyfile, built by `make docs`. |
 
 ## Composer
@@ -371,48 +373,83 @@ uv run augusta-pack augusta --assets-root ..\composer\examples --signing-key $go
   --client-output-pack $golden\client.pack --server-output-pack $golden\server.pack
 ```
 
-## Loadtest
+## Swarm
 
-`augusta-loadtest` plays the scenario's Player count of Scripted players (see
+`augusta-swarm` plays the scenario's Player count of Scripted players (see
 [CONTEXT.md](../CONTEXT.md)) against a running `augustad` until every one has
 seen a number of Match ends, then exits 0; it exits 1 as soon as one fails or a
 timeout passes (ADR-0013). Each player is a client with no window or GPU: it
 predicts and sends its Commands like `augustac`, but decides them itself from
-what the server tells it, from a seed. Unlike the other tools it is C++ built
-with the engine, on Windows and Linux, but only when asked for, and never by
-a pull request (the nightly builds it for its netcode tests, below):
+what the server tells it, from a seed. Like `augusta-replay`, it is C++ built
+with the engine, on Windows and Linux, in every build: the CMake option
+`AUGUSTA_TOOLS`, on by default, builds the C++ tools all together or none
+(the server image turns it off):
 
 ```powershell
-cmake --preset windows-tools
-cmake --build --preset windows-tools
-# build/x64-windows-tools/tools/loadtest/augusta-loadtest.exe
+cmake --preset windows
+cmake --build --preset windows --target augusta-swarm
+# build/x64-windows/tools/swarm/augusta-swarm.exe
 ```
 
-It reads `augusta-loadtest.yaml` next to the executable, or the file
+It reads `augusta-swarm.yaml` next to the executable, or the file
 `--config` names (ADR-0034); copy
-[`loadtest/augusta-loadtest.example.yaml`](loadtest/augusta-loadtest.example.yaml),
+[`swarm/augusta-swarm.example.yaml`](swarm/augusta-swarm.example.yaml),
 which documents every key. Its pack must be the client pack cooked with the
 server's, and its scenario's Player count 2 or more: a Match of one ends only
 when its player dies, which nothing in it can cause. The example scenario's is
 1, so a single player can run it alone.
 
-On Linux the presets are `linux-tools`, and the executable lands in
-`build/x64-linux-tools/tools/loadtest/`.
+On Linux the preset is `linux`, and the executable lands in
+`build/x64-linux/tools/swarm/`.
 
-Its tests are in [`loadtest/tests/`](loadtest/tests/). In a tools build they
-join `augusta_tests`, and `ctest` runs them with the engine's:
+Its tests are in [`swarm/tests/`](swarm/tests/). They join `augusta_tests`,
+and `ctest` runs them with the engine's:
 
 ```powershell
-cmake --build --preset windows-tools --target augusta_tests
-ctest --preset windows-tools
+cmake --build --preset windows --target augusta_tests
+ctest --preset windows
 ```
 
 but for the netcode tests (label `netcode`): runs of Scripted players under
-simulated latency, jitter, loss and reordering, minutes each, which the
-nightly runs (ADR-0013). To run them by hand, on Linux:
+simulated latency, jitter, loss and reordering, minutes each, which every
+test preset leaves out and the nightly runs (ADR-0013). To run them by hand,
+on Linux:
 
 ```sh
 ctest --preset linux-netcode
 ```
 
-or on Windows, `ctest --test-dir build/x64-windows-tools -L netcode`.
+or on Windows, `ctest --test-dir build/x64-windows -L netcode`.
+
+## Replay
+
+`augusta-replay` replays a match recording `augustad` wrote (its
+`simulation.recording` setting) on a fresh SimulationWorld, and checks that
+every tick resolves what it recorded (ADR-0048):
+
+```
+augusta-replay <recording> <server pack> <public key> [--across-builds]
+```
+
+The pack must be the one the recording names. Without `--across-builds` the
+outcome must match exactly, which holds on the build that recorded it; with
+it, positions may be a grid step off. It exits 0 when every tick matches, 1
+when one diverges (printing both sides' bodies), and 2 when the replay cannot
+start. It is C++ built with the engine on every platform, by every build
+(`AUGUSTA_TOOLS`, as `augusta-swarm` is):
+
+```powershell
+cmake --build --preset windows-debug --target augusta-replay
+# build/x64-windows-debug/tools/replay/augusta-replay.exe
+```
+
+Its tests are in [`replay/tests/`](replay/tests/) and join `augusta_tests`,
+among them the golden match (ADR-0013): a recording of a scripted duel on the
+example scenario's golden server pack,
+[`replay/tests/fixtures/golden_match.rec`](replay/tests/fixtures/golden_match.rec),
+which must replay to its recorded outcome on every build. After a deliberate
+change to the simulation, rewrite it and commit the result:
+
+```powershell
+cmake --build --preset windows-debug --target augusta_golden_match
+```

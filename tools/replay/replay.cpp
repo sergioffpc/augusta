@@ -17,7 +17,17 @@
 #include "recording.h"
 #include "simulation_mapping.h"
 
-namespace augusta::server {
+namespace augusta::replay {
+
+using server::BuildSimulation;
+using server::Content;
+using server::OutcomeOf;
+using server::RecordedEntrant;
+using server::Recording;
+using server::TickInput;
+using server::TickOutcome;
+using server::TickRecord;
+using server::ToSimulation;
 
 namespace {
 
@@ -182,4 +192,4 @@ std::expected<tick::Tick, Divergence> Replay(const Recording& recording, Content
   return static_cast<tick::Tick>(recording.ticks.size());
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::replay

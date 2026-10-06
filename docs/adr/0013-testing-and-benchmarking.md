@@ -54,24 +54,24 @@ how noisy its result is.
   checked by hand on the r630 cluster before each release; once Flux runs the
   `develop` release (ADR-0026), it becomes a CronJob of 8 Harness clients in
   that namespace.
-- **The load test stays out of the pull request.** `augusta-loadtest`
-  (`tools/loadtest`) runs the scenario's Player count of Scripted players,
-  each on a Harness, against a server, and exits non-zero unless every one
-  sees the Match ends it was asked for before a timeout. It and its tests
-  build only with the CMake option `AUGUSTA_LOADTEST`, off by default and
-  turned on only by the `windows-tools` and `linux-tools` presets, which no
-  pull request or push workflow uses, so neither compiles, lints or runs
-  them: the tool is run by hand, against a local `augustad` or the r630
-  cluster's. A tools build gets the tool's tests in `augusta_tests`, and
-  `ctest` runs them there, the whole Match loop against an in-process
-  `server::Host` among them, but not the netcode tests below, which only
-  the nightly runs.
+- **The load test is built with everything else, and run by hand.**
+  `augusta-swarm` (`tools/swarm`) runs the scenario's Player count of
+  Scripted players, each on a Harness, against a server, and exits non-zero
+  unless every one sees the Match ends it was asked for before a timeout.
+  The C++ tools build together or not at all, with the CMake option
+  `AUGUSTA_TOOLS`, on by default: every build, pull requests included,
+  compiles and lints the tool and runs its tests, the whole Match loop
+  against an in-process `server::Host` among them, but not the netcode
+  tests below, which every test preset leaves out and only the nightly
+  runs. The tool itself is run by hand, against a local `augustad` or the
+  r630 cluster's. The server image turns the option off: it builds
+  `augustad` alone.
 - **Netcode under an impaired link, nightly.** Prediction and
   reconciliation (ADR-0004) and lag compensation (ADR-0044) are only proven
   under bad network conditions, and a whole run of Scripted players under
-  them takes minutes of real time. So the nightly builds the `linux-tools`
+  them takes minutes of real time. So the nightly builds the `linux`
   preset and runs the tests labelled `netcode` (the `linux-netcode` test
-  preset; the tools presets leave them out): four Scripted players through
+  preset; every other test preset leaves them out): four Scripted players through
   five Matches against an in-process `server::Host`, under the transport's
   own simulated conditions (GameNetworkingSockets' fake packet lag, jitter,
   loss and reordering, on every packet either side sends) rather than

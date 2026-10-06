@@ -9,15 +9,15 @@
 
 #include "augusta/config.h"
 
-// augusta-loadtest.yaml's keys, read under ADR-0034's rules.
+// augusta-swarm.yaml's keys, read under ADR-0034's rules.
 namespace {
 
 using augusta::config::ConfigError;
 using augusta::config::ConfigErrorCode;
-using augusta::loadtest::DescribeSettingsError;
-using augusta::loadtest::LoadSettings;
-using augusta::loadtest::ParseSettings;
-using augusta::loadtest::Settings;
+using augusta::swarm::DescribeSettingsError;
+using augusta::swarm::LoadSettings;
+using augusta::swarm::ParseSettings;
+using augusta::swarm::Settings;
 
 // The directory of the (imaginary) settings file: what a relative base_dir is relative to.
 const std::filesystem::path kFileDir = std::filesystem::path("file") / "dir";
@@ -56,7 +56,7 @@ TEST(ParseSettingsTest, DefaultsTheServerAddressLogLevelAndSeed) {
   ASSERT_TRUE(settings.has_value()) << DescribeSettingsError(settings.error());
   EXPECT_EQ(settings->server_address, augusta::config::kDefaultServerAddress);
   EXPECT_EQ(settings->log_level, augusta::config::kDefaultLogLevel);
-  EXPECT_EQ(settings->seed, augusta::loadtest::kDefaultSeed);
+  EXPECT_EQ(settings->seed, augusta::swarm::kDefaultSeed);
 }
 
 TEST(ParseSettingsTest, RequiresTheMatchesAndTheTimeout) {
@@ -124,7 +124,7 @@ TEST(ParseSettingsTest, RejectsAKeyItDoesNotHaveSuchAsTheClientsInput) {
 }
 
 TEST(LoadSettingsTest, NamesTheFileWhenItCannotBeOpened) {
-  const std::filesystem::path file = std::filesystem::temp_directory_path() / "augusta-loadtest-missing.yaml";
+  const std::filesystem::path file = std::filesystem::temp_directory_path() / "augusta-swarm-missing.yaml";
 
   const auto settings = LoadSettings(file);
 
@@ -135,7 +135,7 @@ TEST(LoadSettingsTest, NamesTheFileWhenItCannotBeOpened) {
 
 // The example is what a new setup is copied from, so a test keeps it loading.
 TEST(LoadSettingsTest, TheExampleSettingsLoad) {
-  const auto settings = LoadSettings(AUGUSTA_LOADTEST_EXAMPLE_SETTINGS);
+  const auto settings = LoadSettings(AUGUSTA_SWARM_EXAMPLE_SETTINGS);
 
   ASSERT_TRUE(settings.has_value()) << DescribeSettingsError(settings.error());
 }

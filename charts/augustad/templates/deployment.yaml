@@ -29,15 +29,22 @@ spec:
             - name: game
               containerPort: {{ .Values.service.port }}
               protocol: UDP
-          # Ready once the game port's UDP socket is bound, which augustad does
-          # only after its pack is verified and its content loaded. A UDP port
-          # has no tcpSocket check to answer, so the probe looks for the socket
-          # in the pod's own socket table, IPv4 or IPv6 (/proc/net/udp6 may be
-          # absent, hence -s). No liveness probe (ADR-0026).
-          readinessProbe:
-            exec:
-              command: ["grep", "-qs", "{{ printf ":%04X " (int .Values.service.port) }}", "/proc/net/udp", "/proc/net/udp6"]
-            periodSeconds: 5
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+          # Restarts a server whose tick loop has hung, once it has started
+          # (ADR-0049, ADR-0026). No readiness probe: a single replica takes no
+          # balanced traffic.
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: metrics
+            {{- toYaml .Values.metrics.startupProbe | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: metrics
+            {{- toYaml .Values.metrics.livenessProbe | nindent 12 }}
           volumeMounts:
             - name: config
               mountPath: /etc/augusta

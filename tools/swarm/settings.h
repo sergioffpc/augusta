@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_LOADTEST_SETTINGS_H_
-#define AUGUSTA_LOADTEST_SETTINGS_H_
+#ifndef AUGUSTA_SWARM_SETTINGS_H_
+#define AUGUSTA_SWARM_SETTINGS_H_
 
 #include <cstdint>
 #include <expected>
@@ -10,19 +10,19 @@
 #include "augusta/config.h"
 
 /// \file
-/// augusta-loadtest's startup settings, read from augusta-loadtest.yaml under
+/// augusta-swarm's startup settings, read from augusta-swarm.yaml under
 /// ADR-0034's rules through augusta::config's schema mechanism: the keys, their
 /// ranges and how their errors read are the tool's, kept out of the runtime's
 /// config module. main.cpp reads them once, before anything starts.
-namespace augusta::loadtest {
+namespace augusta::swarm {
 
-/// The default settings file, looked up next to augusta-loadtest.
-inline constexpr std::string_view kSettingsFileName = "augusta-loadtest.yaml";
+/// The default settings file, looked up next to augusta-swarm.
+inline constexpr std::string_view kSettingsFileName = "augusta-swarm.yaml";
 
 /// The default seed the Scripted players' choices start from.
 inline constexpr std::uint32_t kDefaultSeed = 1;
 
-/// What augusta-loadtest.yaml holds. Its required key `base_dir` is where the
+/// What augusta-swarm.yaml holds. Its required key `base_dir` is where the
 /// relative paths below start from; it is applied, not kept.
 struct Settings {
   /// Key `content.pack` (required): the client pack to load.
@@ -61,6 +61,6 @@ struct Settings {
 /// the range of the tool's own whole-number keys.
 [[nodiscard]] std::string DescribeSettingsError(const config::ConfigError& error);
 
-}  // namespace augusta::loadtest
+}  // namespace augusta::swarm
 
-#endif  // AUGUSTA_LOADTEST_SETTINGS_H_
+#endif  // AUGUSTA_SWARM_SETTINGS_H_

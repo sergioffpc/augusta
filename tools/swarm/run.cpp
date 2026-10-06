@@ -23,7 +23,7 @@
 #include "netcode_stats.h"
 #include "scripted_player.h"
 
-namespace augusta::loadtest {
+namespace augusta::swarm {
 
 namespace {
 
@@ -35,8 +35,8 @@ prediction::World WorldWithMap(const std::vector<physics::CollisionMesh>& map) {
   prediction::World world;
   for (const physics::CollisionMesh& mesh : map) {
     if (auto added = world.AddCollisionMesh(mesh); !added) {
-      throw std::runtime_error(std::format("augusta-loadtest: map collision rejected: {}",
-                                           physics::DescribeCollisionMeshError(added.error())));
+      throw std::runtime_error(
+          std::format("augusta-swarm: map collision rejected: {}", physics::DescribeCollisionMeshError(added.error())));
     }
   }
   return world;
@@ -93,7 +93,7 @@ class Player {
   PlayerProgress Progress(const harness::ServerView& view) {
     const PlayerProgress progress{.matches_ended = MatchesEnded(view), .failed = Failed()};
     if (progress.matches_ended > logged_matches_ended_) {
-      LI("subsystem=loadtest event=match_ended player={} matches_ended={} won={}", index_, progress.matches_ended,
+      LI("subsystem=swarm event=match_ended player={} matches_ended={} won={}", index_, progress.matches_ended,
          view.match_end.has_value() && view.match_end->winner == view.accepted->session);
       logged_matches_ended_ = progress.matches_ended;
     }
@@ -123,7 +123,7 @@ class Player {
 
   void LogFailureOnce(std::string_view reason) {
     if (!failure_logged_) {
-      LE("subsystem=loadtest event=player_failed player={} reason=\"{}\"", index_, reason);
+      LE("subsystem=swarm event=player_failed player={} reason=\"{}\"", index_, reason);
       failure_logged_ = true;
     }
   }
@@ -151,7 +151,7 @@ std::vector<NetcodeStats> StatsOf(const std::vector<std::unique_ptr<Player>>& pl
     // Those that arrived since the watch last looked count too.
     players[index]->CollectHitConfirmations();
     const NetcodeStats& player = stats.emplace_back(players[index]->Stats());
-    LI("subsystem=loadtest event=player_netcode player={} match_ticks={} corrections={} largest_correction_m={:.3f} "
+    LI("subsystem=swarm event=player_netcode player={} match_ticks={} corrections={} largest_correction_m={:.3f} "
        "rounds_fired={} hit_confirmations={}",
        index, player.match_ticks, player.corrections, player.largest_correction_m, player.rounds_fired,
        player.hit_confirmations);
@@ -212,7 +212,7 @@ RunResult RunScriptedPlayers(const RunConfig& config) {
     if (player_count == 0) {
       if (const auto& accepted = players.front()->View()->accepted; accepted.has_value()) {
         player_count = accepted->parameters.player_count;
-        LI("subsystem=loadtest event=player_count_known player_count={}", player_count);
+        LI("subsystem=swarm event=player_count_known player_count={}", player_count);
         while (players.size() < player_count) {
           players.push_back(std::make_unique<Player>(players.size(), config));
         }
@@ -220,7 +220,7 @@ RunResult RunScriptedPlayers(const RunConfig& config) {
     }
     const Verdict verdict = Judge(progress, player_count, config.matches, std::chrono::steady_clock::now() >= deadline);
     if (verdict != Verdict::kRunning) {
-      LI("subsystem=loadtest event=run_finished verdict=\"{}\" players={} matches={}", DescribeVerdict(verdict),
+      LI("subsystem=swarm event=run_finished verdict=\"{}\" players={} matches={}", DescribeVerdict(verdict),
          players.size(), config.matches);
       return RunResult{.verdict = verdict, .players = StatsOf(players)};
     }
@@ -228,4 +228,4 @@ RunResult RunScriptedPlayers(const RunConfig& config) {
   }
 }
 
-}  // namespace augusta::loadtest
+}  // namespace augusta::swarm

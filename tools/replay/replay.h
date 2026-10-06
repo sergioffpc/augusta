@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_REPLAY_H_
-#define AUGUSTA_SERVER_REPLAY_H_
+#ifndef AUGUSTA_REPLAY_REPLAY_H_
+#define AUGUSTA_REPLAY_REPLAY_H_
 
 #include <cstdint>
 #include <expected>
@@ -17,8 +17,9 @@
 /// outcome. What "the same" means is the Tolerance's: exactly equal on the build
 /// that recorded it, within a grid step of position on any other (PhysX and
 /// the compilers are not deterministic across builds, ADR-0045). Used by the
-/// augusta_replay tool and by the golden match test; no I/O of its own.
-namespace augusta::server {
+/// augusta-replay tool (main.cpp) and by the golden match test; no I/O of its
+/// own. A tool, not runtime: augustad only writes recordings.
+namespace augusta::replay {
 
 /// How far a replayed outcome may be from the recorded one.
 struct Tolerance {
@@ -57,17 +58,18 @@ enum class DivergenceKind : std::uint8_t {
 
 /// The first part of replayed that differs from recorded beyond tolerance, for
 /// a tick of delta_time seconds; nullopt when none does.
-[[nodiscard]] std::optional<DivergenceKind> FindDivergence(const TickOutcome& recorded, const TickOutcome& replayed,
-                                                           float delta_time, const Tolerance& tolerance);
+[[nodiscard]] std::optional<DivergenceKind> FindDivergence(const server::TickOutcome& recorded,
+                                                           const server::TickOutcome& replayed, float delta_time,
+                                                           const Tolerance& tolerance);
 
 /// The first tick of a replay whose outcome is not the recorded one.
 struct Divergence {
   /// The tick, as the World numbers it, from 1.
   tick::Tick tick = 0;
   DivergenceKind kind = DivergenceKind::kBodies;
-  TickOutcome recorded;
+  server::TickOutcome recorded;
   /// Empty when kind is kUnknownCharacter: the tick did not run.
-  TickOutcome replayed;
+  server::TickOutcome replayed;
 };
 
 /// Replays recording on a World built from content, loaded from the server
@@ -77,9 +79,9 @@ struct Divergence {
 /// after each tick that matches (simulation::World::PlaceBody). Throws
 /// std::runtime_error if content's Map is not a whole triangle list, which the
 /// server would have refused to start on.
-[[nodiscard]] std::expected<tick::Tick, Divergence> Replay(const Recording& recording, Content content,
+[[nodiscard]] std::expected<tick::Tick, Divergence> Replay(const server::Recording& recording, server::Content content,
                                                            const Tolerance& tolerance);
 
-}  // namespace augusta::server
+}  // namespace augusta::replay
 
-#endif  // AUGUSTA_SERVER_REPLAY_H_
+#endif  // AUGUSTA_REPLAY_REPLAY_H_
