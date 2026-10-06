@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_LOADTEST_SCRIPTED_PLAYER_H_
-#define AUGUSTA_LOADTEST_SCRIPTED_PLAYER_H_
+#ifndef AUGUSTA_SWARM_SCRIPTED_PLAYER_H_
+#define AUGUSTA_SWARM_SCRIPTED_PLAYER_H_
 
 #include <cstdint>
 #include <random>
@@ -11,7 +11,7 @@
 /// \file
 /// The Scripted player (CONTEXT.md): what plays in a person's place, deciding
 /// each tick's Command from the Server view and its own prediction, so a load or end-to-end test
-/// can fill a server with no one at the keyboard. It decides only: augusta-loadtest
+/// can fill a server with no one at the keyboard. It decides only: augusta-swarm
 /// (main.cpp) hands each one's Commands to a harness::Runner, which predicts
 /// and sends them like any client's.
 ///
@@ -23,7 +23,7 @@
 /// Bursts, releasing the trigger between them so the Recoil offset recovers.
 /// It reloads once its magazine is empty. Every random choice comes from its
 /// seed, so the same seed makes the same choices from the same Server views.
-namespace augusta::loadtest {
+namespace augusta::swarm {
 
 class ScriptedPlayer {
  public:
@@ -60,6 +60,6 @@ class ScriptedPlayer {
   int trigger_ticks_ = 0;
 };
 
-}  // namespace augusta::loadtest
+}  // namespace augusta::swarm
 
-#endif  // AUGUSTA_LOADTEST_SCRIPTED_PLAYER_H_
+#endif  // AUGUSTA_SWARM_SCRIPTED_PLAYER_H_

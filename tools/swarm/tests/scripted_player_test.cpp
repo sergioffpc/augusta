@@ -24,8 +24,8 @@ using augusta::command::ViewDirection;
 using augusta::harness::EntityId;
 using augusta::harness::ServerView;
 using augusta::harness::SessionId;
-using augusta::loadtest::ScriptedPlayer;
 using augusta::math::Vec3;
+using augusta::swarm::ScriptedPlayer;
 
 constexpr std::uint8_t kTickRate = 60;
 constexpr EntityId kOwn{1};

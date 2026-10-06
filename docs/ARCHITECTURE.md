@@ -40,7 +40,7 @@ No matchmaking, master server, or third-party platform integration in v1.
 - Client executable (Windows only): rendering (Falcor/D3D12), input, audio,
   local prediction
 - Dedicated server executable (Linux only): headless, authoritative simulation
-- Scripted players tool (`augusta-loadtest`, Windows and Linux): a server's
+- Scripted players tool (`augusta-swarm`, Windows and Linux): a server's
   worth of headless clients, for load and end-to-end tests (ADR-0013)
 - Communication: GameNetworkingSockets over UDP, unencrypted in v1
 

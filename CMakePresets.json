@@ -29,11 +29,11 @@
     },
     {
       "name": "windows-tools",
-      "displayName": "Windows tools (Ninja + cl, augusta-loadtest)",
+      "displayName": "Windows tools (Ninja + cl, augusta-swarm)",
       "inherits": "windows",
       "binaryDir": "${sourceDir}/build/x64-windows-tools",
       "cacheVariables": {
-        "AUGUSTA_LOADTEST": "ON"
+        "AUGUSTA_SWARM": "ON"
       }
     },
     {
@@ -65,11 +65,11 @@
     },
     {
       "name": "linux-tools",
-      "displayName": "Linux tools (Ninja + clang, augusta-loadtest)",
+      "displayName": "Linux tools (Ninja + clang, augusta-swarm)",
       "inherits": "linux",
       "binaryDir": "${sourceDir}/build/x64-linux-tools",
       "cacheVariables": {
-        "AUGUSTA_LOADTEST": "ON"
+        "AUGUSTA_SWARM": "ON"
       }
     },
     {
@@ -125,14 +125,14 @@
     {
       "name": "windows-tools",
       "configurePreset": "windows-tools",
-      "targets": ["augusta-loadtest"]
+      "targets": ["augusta-swarm"]
     },
     { "name": "linux", "configurePreset": "linux" },
     { "name": "linux-debug", "configurePreset": "linux-debug" },
     {
       "name": "linux-tools",
       "configurePreset": "linux-tools",
-      "targets": ["augusta-loadtest"]
+      "targets": ["augusta-swarm"]
     },
     { "name": "linux-san", "configurePreset": "linux-san" },
     {

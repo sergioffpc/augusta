@@ -1,6 +1,6 @@
 # The Scripted players' startup settings (ADR-0034). Copy this next to
-# augusta-loadtest(.exe) as augusta-loadtest.yaml and edit it, or keep it
-# anywhere and run `augusta-loadtest --config <this file>`. augusta-loadtest
+# augusta-swarm(.exe) as augusta-swarm.yaml and edit it, or keep it
+# anywhere and run `augusta-swarm --config <this file>`. augusta-swarm
 # connects as many Scripted players as the server's scenario has Player count,
 # plays them through run.matches Match ends, and exits 0 when every one has
 # seen them all - or exits 1 as soon as one fails or run.timeout_seconds pass.

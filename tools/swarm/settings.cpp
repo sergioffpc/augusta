@@ -13,7 +13,7 @@
 
 #include "augusta/config.h"
 
-namespace augusta::loadtest {
+namespace augusta::swarm {
 
 namespace {
 
@@ -114,4 +114,4 @@ std::string DescribeSettingsError(const config::ConfigError& error) {
   return error.file.empty() ? phrase : std::format("{}: {}", error.file.string(), phrase);
 }
 
-}  // namespace augusta::loadtest
+}  // namespace augusta::swarm

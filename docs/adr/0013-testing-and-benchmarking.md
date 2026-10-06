@@ -54,11 +54,11 @@ how noisy its result is.
   checked by hand on the r630 cluster before each release; once Flux runs the
   `develop` release (ADR-0026), it becomes a CronJob of 8 Harness clients in
   that namespace.
-- **The load test stays out of the pull request.** `augusta-loadtest`
-  (`tools/loadtest`) runs the scenario's Player count of Scripted players,
+- **The load test stays out of the pull request.** `augusta-swarm`
+  (`tools/swarm`) runs the scenario's Player count of Scripted players,
   each on a Harness, against a server, and exits non-zero unless every one
   sees the Match ends it was asked for before a timeout. It and its tests
-  build only with the CMake option `AUGUSTA_LOADTEST`, off by default and
+  build only with the CMake option `AUGUSTA_SWARM`, off by default and
   turned on only by the `windows-tools` and `linux-tools` presets, which no
   pull request or push workflow uses, so neither compiles, lints or runs
   them: the tool is run by hand, against a local `augustad` or the r630

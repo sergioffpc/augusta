@@ -90,13 +90,13 @@ add_subdirectory(src/server)
 # developer's tool, not shipped with the server, built with the runtime it
 # links on every platform, since its tests hold the golden match.
 add_subdirectory(tools/replay)
-# augusta-loadtest, the Scripted players: a tool built with the runtime it
+# augusta-swarm, the Scripted players: a tool built with the runtime it
 # links (harness, map, config), on every platform. Off by default, so no CI
 # build compiles or tests it: the windows-tools and linux-tools presets
 # (CMakePresets.json) turn it on, for the tool and its tests in augusta_tests.
-option(AUGUSTA_LOADTEST "Build augusta-loadtest (tools/loadtest) and its tests" OFF)
-if (AUGUSTA_LOADTEST)
-  add_subdirectory(tools/loadtest)
+option(AUGUSTA_SWARM "Build augusta-swarm (tools/swarm) and its tests" OFF)
+if (AUGUSTA_SWARM)
+  add_subdirectory(tools/swarm)
 endif()
 # The linux-coverage preset's report as build targets, for an editor that runs
 # one before and one after its tests (VS Code's CMake Tools, "Run Tests with

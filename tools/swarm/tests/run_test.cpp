@@ -14,16 +14,16 @@
 namespace {
 
 using augusta::harness::ServerView;
-using augusta::loadtest::Judge;
-using augusta::loadtest::MatchesEnded;
-using augusta::loadtest::PlayerProgress;
-using augusta::loadtest::RunConfig;
-using augusta::loadtest::RunScriptedPlayers;
-using augusta::loadtest::Verdict;
-using augusta::loadtest::testing::ExampleServer;
+using augusta::swarm::Judge;
+using augusta::swarm::MatchesEnded;
+using augusta::swarm::PlayerProgress;
+using augusta::swarm::RunConfig;
+using augusta::swarm::RunScriptedPlayers;
+using augusta::swarm::Verdict;
+using augusta::swarm::testing::ExampleServer;
 
 [[maybe_unused]] ::testing::Environment* const kNetworkingEnvironment =
-    ::testing::AddGlobalTestEnvironment(new augusta::loadtest::testing::NetworkingEnvironment);
+    ::testing::AddGlobalTestEnvironment(new augusta::swarm::testing::NetworkingEnvironment);
 
 TEST(MatchesEndedTest, CountsEveryMatchStartedButTheOneInProgress) {
   ServerView view;
@@ -88,7 +88,7 @@ TEST(RunScriptedPlayersTest, AServerThatNeverAdmitsAnyoneTimesTheRunOut) {
   // Listening, but never pumped, so no one is ever admitted.
   const augusta::networking::Server silent(augusta::networking::Endpoint{.address = "127.0.0.1:0"});
   const RunConfig config{
-      .session = {.server = silent.LocalEndpoint(), .character = augusta::loadtest::testing::kCharacter},
+      .session = {.server = silent.LocalEndpoint(), .character = augusta::swarm::testing::kCharacter},
       .map = {},
       .matches = 1,
       .timeout = std::chrono::milliseconds(300),
