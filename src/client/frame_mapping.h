@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "augusta/command.h"
@@ -57,6 +58,38 @@ namespace augusta::client {
 /// characters: presentation needs nothing else of Match start.
 [[nodiscard]] std::vector<presentation::PlayerCharacter> CharactersOf(
     const std::optional<harness::MatchStart>& match_start);
+
+/// What a render frame takes of the Server view that the server says once and
+/// every render frame shows again - the newest Authoritative State and the
+/// match's characters - in presentation's own types, converted only when new
+/// server data arrives and lent to every render frame until then
+/// (presentation::FrameInput). Main/Render thread only, like the frames it lends
+/// to.
+class ConvertedServerView {
+ public:
+  /// Brings the conversions up to date with view. The Authoritative State is
+  /// converted only when it is another than the last converted: of another
+  /// match (ServerView::matches_started), or of another tick - the Inbox only
+  /// ever publishes a newer one. The characters only when another match has
+  /// started.
+  void Update(const harness::ServerView& view);
+
+  /// The last Update's view's newest Authoritative State (SnapshotOf), or null
+  /// outside a match. Valid until the next Update.
+  [[nodiscard]] const presentation::WorldSnapshot* Snapshot() const;
+
+  /// The last Update's view's characters (CharactersOf), in Session order.
+  /// Valid until the next Update.
+  [[nodiscard]] std::span<const presentation::PlayerCharacter> Characters() const;
+
+ private:
+  // The match snapshot_ is of: a new one can start back at a tick already seen.
+  std::uint32_t snapshot_match_ = 0;
+  std::optional<presentation::WorldSnapshot> snapshot_;
+  // The match characters_ are of; 0 before the first.
+  std::uint32_t characters_match_ = 0;
+  std::vector<presentation::PlayerCharacter> characters_;
+};
 
 /// What view says the match this client was last in ended with, its winner named
 /// by the body it played, from that match's Match start; nullopt before the first

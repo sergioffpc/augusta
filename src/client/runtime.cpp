@@ -97,6 +97,11 @@ struct ClientRuntime::Impl {
   std::mutex latest_tick_mutex;
   LatestTick latest_tick;
 
+  // Main/Render thread only: the Server view's Authoritative State and Match
+  // start as presentation's types, converted when they change and lent to
+  // every render frame in between (NextFrameInput).
+  ConvertedServerView converted_view;
+
   // What the last render frame showed the other players at, or nullopt while
   // it showed none: written once per Main/Render frame, read once per
   // Prediction tick, which reports it with the tick's Command (ADR-0044).
@@ -249,10 +254,13 @@ struct ClientRuntime::Impl {
   //
   // Everything the server has said is read from one Server view, so the
   // state, the bodies it names and the match it belongs to are of one moment
-  // (ADR-0005), however the Network I/O thread interleaves with this one.
+  // (ADR-0005), however the Network I/O thread interleaves with this one. The
+  // snapshot and characters are lent from converted_view, so the frame must
+  // run before the next call.
   presentation::FrameInput NextFrameInput() {
     const LatestTick latest = GetLatestTick();
     const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
+    converted_view.Update(*view);
     presentation::FrameInput frame{
         .ticks = {.previous = latest.previous,
                   .latest = latest.latest,
@@ -260,8 +268,8 @@ struct ClientRuntime::Impl {
         .aim = ToPresentation(input.CurrentAim()),
         .fire = input.IsHeld(input::Control::kFire),
         .local_entity = std::nullopt,
-        .snapshot = SnapshotOf(*view),
-        .characters = CharactersOf(view->match_start),
+        .snapshot = converted_view.Snapshot(),
+        .characters = converted_view.Characters(),
         .shots = {},
         .hit_confirmations = static_cast<std::uint32_t>(session->TakeHitConfirmations().size()),
         .deaths = {},

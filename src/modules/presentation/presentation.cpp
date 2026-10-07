@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <flecs.h>
@@ -61,9 +62,10 @@ struct World::Impl {
   animation::Engine animation;
   PhaseEntities phases;
 
-  // Staged by RunFrame() immediately before ecs.progress(), read by the phase
-  // systems below; not meaningful outside of a RunFrame call.
-  FrameInput input;
+  // The frame RunFrame() is running, borrowed for its ecs.progress() and read
+  // by the phase systems below; null outside of a RunFrame call, so nothing
+  // here can hold on to what it lends (FrameInput).
+  const FrameInput* input = nullptr;
 
   // What the server sent when it admitted this client (SetParameters): how a
   // Shot's tracer flies, and the ADS field of view. nullopt until then.
@@ -160,13 +162,13 @@ struct World::Impl {
 
   void OnInterpolation(float delta_time) {
     const nvtx3::scoped_range range{"Interpolation"};
-    shown = BlendTicks(input.ticks.previous, input.ticks.latest, input.ticks.fraction);
+    shown = BlendTicks(input->ticks.previous, input->ticks.latest, input->ticks.fraction);
     local_offset = correction.Update(shown.total_correction, delta_time);
 
     server_clock.Advance(delta_time);
-    const std::optional<WorldSnapshot>& snapshot = input.snapshot;
+    const WorldSnapshot* snapshot = input->snapshot;
     // Outside a match there is no one to show (ADR-0043).
-    if (!snapshot.has_value()) {
+    if (snapshot == nullptr) {
       remote_interpolator.Sync({});
       server_clock.Reset();
       first_recorded_tick.reset();
@@ -178,13 +180,13 @@ struct World::Impl {
     }
     remote_players.clear();
     seen_time.reset();
-    if (const std::optional<double> now = server_clock.Now(); now.has_value() && snapshot.has_value()) {
+    if (const std::optional<double> now = server_clock.Now(); now.has_value() && snapshot != nullptr) {
       const double sample_time = *now - kInterpolationDelay;
       remote_players = remote_interpolator.Sample(sample_time);
       seen_time = SeenTimeAt(sample_time, snapshot->tick_duration, *first_recorded_tick, *last_recorded_tick);
     }
     // A Death is reliable and can overtake the update that no longer lists its body.
-    dead.insert(dead.end(), input.deaths.begin(), input.deaths.end());
+    dead.insert(dead.end(), input->deaths.begin(), input->deaths.end());
     std::erase_if(remote_players,
                   [&](const RemotePlayer& remote) { return std::ranges::contains(dead, remote.entity); });
     for (RemotePlayer& remote : remote_players) {
@@ -200,12 +202,12 @@ struct World::Impl {
   void ShowShots(float delta_time) {
     tracers.Advance(delta_time);
     Age(muzzle_flashes, delta_time, kMuzzleFlashSeconds);
-    for (const Shot& shot : input.shots) {
+    for (const Shot& shot : input->shots) {
       const math::Vec3 direction = command::ViewDirection(shot.yaw, shot.pitch);
       if (tracer_rules.has_value()) {
         tracers.Fire(shot.origin, direction, *tracer_rules);
       }
-      if (shot.shooter != input.local_entity) {
+      if (shot.shooter != input->local_entity) {
         muzzle_flashes.push_back(Effect{.position = MuzzleOf(shot.origin, direction)});
       }
     }
@@ -219,7 +221,7 @@ struct World::Impl {
     std::vector<EntityId> present;
     present.reserve(world.bodies.size());
     for (const DynamicBody& body : world.bodies) {
-      if (body.entity == input.local_entity) {
+      if (body.entity == input->local_entity) {
         continue;
       }
       present.push_back(body.entity);
@@ -234,7 +236,7 @@ struct World::Impl {
 
   // The character of the player whose body entity is, or empty if none is.
   [[nodiscard]] std::string CharacterOf(EntityId entity) const {
-    for (const PlayerCharacter& player : input.characters) {
+    for (const PlayerCharacter& player : input->characters) {
       if (player.entity == entity) {
         return player.character;
       }
@@ -245,7 +247,7 @@ struct World::Impl {
   void OnCamera(float delta_time) {
     const nvtx3::scoped_range range{"Camera"};
     // The local player's Death clears with the match (OnInterpolation).
-    spectating = input.local_entity.has_value() && std::ranges::contains(dead, *input.local_entity);
+    spectating = input->local_entity.has_value() && std::ranges::contains(dead, *input->local_entity);
     if (spectating) {
       WatchLivingPlayer();
       // Let go of ADS, so the next match starts from the hip.
@@ -254,11 +256,11 @@ struct World::Impl {
       // shown and local_offset are already this frame's - OnInterpolation (the
       // previous phase) just updated them. Same base position as OnCommit's
       // local_position.
-      camera = LocalCamera(shown.local_body.position + local_offset, shown.local_body.stance, eye, input.aim,
+      camera = LocalCamera(shown.local_body.position + local_offset, shown.local_body.stance, eye, input->aim,
                            shown.rifle.recoil);
-      camera.vertical_fov = ads_zoom.Update(input.aim.ads, ads_field_of_view, delta_time);
+      camera.vertical_fov = ads_zoom.Update(input->aim.ads, ads_field_of_view, delta_time);
     }
-    hit_marker_shown = hit_marker.Update(input.hit_confirmations, delta_time);
+    hit_marker_shown = hit_marker.Update(input->hit_confirmations, delta_time);
     // Flashed where the camera now is, the frame the round fires.
     rounds_fired = fired_rounds.Update(shown.total_rounds_fired);
     if (rounds_fired > 0) {
@@ -272,8 +274,8 @@ struct World::Impl {
   // it was, from the hip.
   void WatchLivingPlayer() {
     std::vector<EntityId> players;
-    players.reserve(input.characters.size());
-    for (const PlayerCharacter& player : input.characters) {
+    players.reserve(input->characters.size());
+    for (const PlayerCharacter& player : input->characters) {
       players.push_back(player.entity);
     }
     // remote_players holds neither the local player nor anyone dead or gone.
@@ -282,7 +284,7 @@ struct World::Impl {
     for (const RemotePlayer& remote : remote_players) {
       living.push_back(remote.entity);
     }
-    const std::optional<EntityId> watched = spectator.Update(players, living, input.fire);
+    const std::optional<EntityId> watched = spectator.Update(players, living, input->fire);
     const auto shown_watched =
         std::ranges::find_if(remote_players, [&](const RemotePlayer& remote) { return remote.entity == watched; });
     if (shown_watched == remote_players.end()) {
@@ -312,7 +314,7 @@ struct World::Impl {
   void OnAudioCues() {
     const nvtx3::scoped_range range{"AudioCues"};
     audio_engine.SetListener(ListenerOf(camera));
-    for (const CuePlay& play : cue_selector.Select(input, rounds_fired)) {
+    for (const CuePlay& play : cue_selector.Select(*input, rounds_fired)) {
       const auto index = static_cast<std::size_t>(std::ranges::find(audio::kCues, play.cue) - audio::kCues.begin());
       if (play.position.has_value()) {
         audio_engine.Play(cue_sounds.at(index), *play.position);
@@ -326,12 +328,13 @@ struct World::Impl {
     const nvtx3::scoped_range range{"Commit"};
     frame_state.local_position = shown.local_body.position + local_offset;
     frame_state.camera = camera;
-    frame_state.remote_players = remote_players;
+    // Sampled anew each frame (OnInterpolation), so handed over, not copied.
+    frame_state.remote_players = std::move(remote_players);
     frame_state.seen_time = seen_time;
     frame_state.tracers = tracers.Drawn();
     frame_state.impacts.assign(tracers.Impacts().begin(), tracers.Impacts().end());
     frame_state.muzzle_flashes = muzzle_flashes;
-    frame_state.crosshair = !spectating && !input.aim.ads;
+    frame_state.crosshair = !spectating && !input->aim.ads;
     frame_state.hit_marker = !spectating && hit_marker_shown;
   }
 };
@@ -361,9 +364,11 @@ void World::SetCharacterEye(const std::string& character, const math::Vec3& eye)
 }
 
 State World::RunFrame(const FrameInput& input) {
-  impl_->input = input;
+  impl_->input = &input;
   impl_->ecs.progress();
-  return impl_->frame_state;
+  impl_->input = nullptr;
+  // OnCommit sets every field anew each frame: nothing of this one is kept.
+  return std::move(impl_->frame_state);
 }
 
 }  // namespace augusta::presentation
