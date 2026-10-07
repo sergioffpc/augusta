@@ -1,6 +1,7 @@
 #include "augusta/replication.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -9,6 +10,7 @@
 
 #include "augusta/ballistics.h"
 #include "augusta/simulation.h"
+#include "augusta/weapon.h"
 
 // What each recipient is sent is a pure function of the tick's state.
 namespace {
@@ -41,15 +43,13 @@ TEST(ReplicationTest, EveryRecipientGetsEveryPlayer) {
 
   const auto updates = PlanUpdates(state, 42, recipients);
 
-  ASSERT_EQ(updates.size(), 2U);
-  for (const auto& update : updates) {
-    EXPECT_EQ(update.tick, 42U);
-    ASSERT_EQ(update.bodies.size(), 2U);
-    EXPECT_EQ(update.bodies[0].entity, static_cast<EntityId>(1));
-    EXPECT_EQ(update.bodies[0].body.position.x, 10.0F);
-    EXPECT_EQ(update.bodies[1].entity, static_cast<EntityId>(2));
-    EXPECT_EQ(update.bodies[1].body.position.x, 20.0F);
-  }
+  ASSERT_EQ(updates.recipients.size(), 2U);
+  EXPECT_EQ(updates.tick, 42U);
+  ASSERT_EQ(updates.bodies.size(), 2U);
+  EXPECT_EQ(updates.bodies[0].entity, static_cast<EntityId>(1));
+  EXPECT_EQ(updates.bodies[0].body.position.x, 10.0F);
+  EXPECT_EQ(updates.bodies[1].entity, static_cast<EntityId>(2));
+  EXPECT_EQ(updates.bodies[1].body.position.x, 20.0F);
 }
 
 TEST(ReplicationTest, EachRecipientGetsItsOwnAcknowledgedSequence) {
@@ -60,10 +60,10 @@ TEST(ReplicationTest, EachRecipientGetsItsOwnAcknowledgedSequence) {
 
   const auto updates = PlanUpdates(state, 1, recipients);
 
-  EXPECT_EQ(updates[0].recipient, static_cast<EntityId>(1));
-  EXPECT_EQ(updates[0].acknowledged_sequence, 100U);
-  EXPECT_EQ(updates[1].recipient, static_cast<EntityId>(2));
-  EXPECT_EQ(updates[1].acknowledged_sequence, 7U);
+  EXPECT_EQ(updates.recipients[0].entity, static_cast<EntityId>(1));
+  EXPECT_EQ(updates.recipients[0].acknowledged_sequence, 100U);
+  EXPECT_EQ(updates.recipients[1].entity, static_cast<EntityId>(2));
+  EXPECT_EQ(updates.recipients[1].acknowledged_sequence, 7U);
 }
 
 TEST(ReplicationTest, EachRecipientIsToldHowManyOfItsOwnCommandsAreQueued) {
@@ -73,8 +73,8 @@ TEST(ReplicationTest, EachRecipientIsToldHowManyOfItsOwnCommandsAreQueued) {
 
   const auto updates = PlanUpdates(state, 1, recipients);
 
-  EXPECT_EQ(updates[0].queued_commands, 3U);
-  EXPECT_EQ(updates[1].queued_commands, 0U);
+  EXPECT_EQ(updates.recipients[0].queued_commands, 3U);
+  EXPECT_EQ(updates.recipients[1].queued_commands, 0U);
 }
 
 TEST(ReplicationTest, EachRecipientIsToldItsOwnRifleAndNoOneElses) {
@@ -89,8 +89,8 @@ TEST(ReplicationTest, EachRecipientIsToldItsOwnRifleAndNoOneElses) {
 
   const auto updates = PlanUpdates(state, 1, recipients);
 
-  EXPECT_EQ(updates[0].rifle, reloading.rifle);
-  EXPECT_EQ(updates[1].rifle, firing.rifle);
+  EXPECT_EQ(updates.recipients[0].rifle, reloading.rifle);
+  EXPECT_EQ(updates.recipients[1].rifle, firing.rifle);
 }
 
 TEST(ReplicationTest, EachRecipientIsToldItsOwnHealthAndADeadOneZero) {
@@ -106,10 +106,47 @@ TEST(ReplicationTest, EachRecipientIsToldItsOwnHealthAndADeadOneZero) {
 
   const auto updates = PlanUpdates(state, 1, recipients);
 
-  EXPECT_EQ(updates[0].health, 100.0F);
-  EXPECT_EQ(updates[1].health, 30.0F);
-  EXPECT_EQ(updates[2].health, 0.0F);
-  EXPECT_EQ(updates[2].bodies.size(), 2U);
+  EXPECT_EQ(updates.recipients[0].health, 100.0F);
+  EXPECT_EQ(updates.recipients[1].health, 30.0F);
+  EXPECT_EQ(updates.recipients[2].health, 0.0F);
+  EXPECT_EQ(updates.recipients[2].rifle, augusta::weapon::State{});
+  EXPECT_EQ(updates.bodies.size(), 2U);
+}
+
+// Every recipient finds its own body among many, wherever it lies in the
+// state's EntityId order, and is told every body in that order.
+TEST(ReplicationTest, EachOfAFullMatchOfRecipientsIsToldItsOwnFieldsAndEveryBodyInOrder) {
+  std::vector<EntityState> bodies;
+  for (std::uint32_t id = 1; id <= 8; ++id) {
+    EntityState body = PlayerAt(id, static_cast<float>(id));
+    body.health = static_cast<float>(id * 10U);
+    body.rifle.rounds = static_cast<std::uint8_t>(id);
+    bodies.push_back(body);
+  }
+  const State state = StateOf(bodies);
+  const std::array<Recipient, 4> recipients = {
+      Recipient{.entity = static_cast<EntityId>(8), .acknowledged_sequence = 80, .queued_commands = 8},
+      Recipient{.entity = static_cast<EntityId>(1), .acknowledged_sequence = 10, .queued_commands = 1},
+      Recipient{.entity = static_cast<EntityId>(9), .acknowledged_sequence = 90, .queued_commands = 9},
+      Recipient{.entity = static_cast<EntityId>(5), .acknowledged_sequence = 50, .queued_commands = 5}};
+
+  const auto updates = PlanUpdates(state, 3, recipients);
+
+  ASSERT_EQ(updates.bodies.size(), 8U);
+  for (std::uint32_t i = 0; i < 8; ++i) {
+    EXPECT_EQ(updates.bodies[i].entity, static_cast<EntityId>(i + 1));
+    EXPECT_EQ(updates.bodies[i].body, bodies[i].body);
+  }
+  const std::array<float, 4> healths = {80.0F, 10.0F, 0.0F, 50.0F};
+  const std::array<std::uint8_t, 4> rounds = {8, 1, 0, 5};
+  ASSERT_EQ(updates.recipients.size(), 4U);
+  for (std::size_t i = 0; i < recipients.size(); ++i) {
+    EXPECT_EQ(updates.recipients[i].entity, recipients[i].entity) << i;
+    EXPECT_EQ(updates.recipients[i].acknowledged_sequence, recipients[i].acknowledged_sequence) << i;
+    EXPECT_EQ(updates.recipients[i].queued_commands, recipients[i].queued_commands) << i;
+    EXPECT_EQ(updates.recipients[i].health, healths[i]) << i;
+    EXPECT_EQ(updates.recipients[i].rifle.rounds, rounds[i]) << i;
+  }
 }
 
 TEST(ReplicationTest, EveryDeathOfATickIsPlannedOnceForEveryone) {
@@ -140,7 +177,7 @@ TEST(ReplicationTest, EveryDeathOfATickIsPlannedOnceForEveryone) {
 TEST(ReplicationTest, NobodyToSendToMeansNothingIsPlanned) {
   const State state = StateOf({PlayerAt(1, 0.0F)});
 
-  EXPECT_TRUE(PlanUpdates(state, 1, {}).empty());
+  EXPECT_TRUE(PlanUpdates(state, 1, {}).recipients.empty());
 }
 
 TEST(ReplicationTest, EveryShotOfATickIsPlannedOnceUnderThatTick) {
@@ -175,9 +212,9 @@ TEST(ReplicationTest, EveryRecipientIsToldWhereEachBodyFaces) {
 
   const auto updates = PlanUpdates(state, 1, recipients);
 
-  ASSERT_EQ(updates[0].bodies.size(), 2U);
-  EXPECT_EQ(updates[0].bodies[0].yaw, 1.25F);
-  EXPECT_EQ(updates[0].bodies[1].yaw, 0.0F);
+  ASSERT_EQ(updates.bodies.size(), 2U);
+  EXPECT_EQ(updates.bodies[0].yaw, 1.25F);
+  EXPECT_EQ(updates.bodies[1].yaw, 0.0F);
 }
 
 TEST(ReplicationTest, EachHitIsConfirmedToItsShooterAloneWithItsTargetBodyPartAndDamage) {
@@ -217,9 +254,9 @@ TEST(ReplicationTest, ARecipientWithNoBodyYetStillSeesTheOthers) {
 
   const auto updates = PlanUpdates(state, 1, recipients);
 
-  ASSERT_EQ(updates.size(), 1U);
-  ASSERT_EQ(updates[0].bodies.size(), 1U);
-  EXPECT_EQ(updates[0].bodies[0].entity, static_cast<EntityId>(1));
+  ASSERT_EQ(updates.recipients.size(), 1U);
+  ASSERT_EQ(updates.bodies.size(), 1U);
+  EXPECT_EQ(updates.bodies[0].entity, static_cast<EntityId>(1));
 }
 
 }  // namespace

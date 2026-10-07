@@ -42,16 +42,12 @@ struct EntityBody {
   float yaw = 0.0F;
 };
 
-/// What one recipient is sent for a tick.
-struct Update {
+/// What one recipient alone is sent for a tick, beside the bodies every recipient is sent.
+struct RecipientUpdate {
   /// The entity the recipient's player controls.
-  simulation::EntityId recipient{};
-  /// The server tick the bodies are from.
-  tick::Tick tick = 0;
+  simulation::EntityId entity{};
   /// The highest command sequence of the recipient that the tick processed, 0 if none.
   command::Sequence acknowledged_sequence = 0;
-  /// Every dynamic body in the match.
-  std::vector<EntityBody> bodies;
   /// The recipient's own rifle after the tick, for it to reconcile its
   /// predicted one against; no one else's is sent. A rifle with no round if the
   /// recipient has no body in the state.
@@ -63,11 +59,23 @@ struct Update {
   std::uint8_t queued_commands = 0;
 };
 
+/// What the recipients of a tick are sent: the bodies once, since every one of
+/// them is sent the same, and what each is sent alone. Each recipient's
+/// update is still its own message: the bodies, then its own fields.
+struct Updates {
+  /// The server tick the bodies are from.
+  tick::Tick tick = 0;
+  /// Every dynamic body in the match, in the state's order.
+  std::vector<EntityBody> bodies;
+  /// Each recipient's own fields, in the order of the recipients planned for.
+  std::vector<RecipientUpdate> recipients;
+};
+
 /// What each recipient is sent for tick: every body, and its own acknowledged
-/// sequence, rifle, health and queued commands (which is why each update is
-/// its own message).
-[[nodiscard]] std::vector<Update> PlanUpdates(const simulation::State& state, tick::Tick tick,
-                                              std::span<const Recipient> recipients);
+/// sequence, rifle, health and queued commands. Each recipient's own body is
+/// found by its entity among state's bodies, which state keeps ordered by it.
+[[nodiscard]] Updates PlanUpdates(const simulation::State& state, tick::Tick tick,
+                                  std::span<const Recipient> recipients);
 
 /// One round fired, as every client in the match is told of it (ADR-0044).
 struct Shot {
