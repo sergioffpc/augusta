@@ -15,6 +15,10 @@
     "github.vscode-github-actions",
     "shader-slang.slang-language-extension",
     "ms-python.python",
-    "ms-python.vscode-pylance"
+    "ms-python.vscode-pylance",
+    "charliermarsh.ruff",
+    "timonwong.shellcheck",
+    "mkhl.shfmt",
+    "ms-vscode.powershell"
   ]
 }

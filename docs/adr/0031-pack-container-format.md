@@ -1,30 +1,104 @@
 # Pack Container Format
 
-Defines the on-disk byte layout of the pack file ADR-0018 describes, and how the cooker (ADR-0030) turns the cleaned/validated OpenUSD stage into it.
+Defines the on-disk byte layout of the pack file ADR-0018 describes, and how the
+cooker (ADR-0030) turns the cleaned/validated OpenUSD stage into it.
 
 **Conversion, per USD prim:**
-- `UsdGeomMesh` prims: points/normals/UVs/indices read via the OpenUSD API (ADR-0016), optimized with meshoptimizer, written as one mesh blob.
-- Textures referenced by `UsdShadeMaterial`/`UsdUVTexture`: compressed to BC7/BC5/BC4 DDS via DirectXTex (ADR-0017), one blob each.
-- Lua scripts (ADR-0022, ADR-0039): each script the scenario's manifest names, stored as its text with no framing, one blob each. Written to the server pack only (ADR-0019): a client is sent the values a script decides, never the script.
-- Character list (ADR-0042): the manifest's `characters` paths, in manifest order, as one blob at the fixed path `Characters` - a count then each path as a string, at most 255. Written to both the client and server pack: the server checks a join against it, and the client each character it is told about.
-- Character eye (ADR-0040): the origin of a character's `Character/Eye` prim, in that character's root space, as three floats and nothing else, one blob at `<character path>/Character/Eye`. Written to both the client and server pack: the client places the local player's camera at it, and the server fires that player's Shots from it.
-- Cue sounds (ADR-0020): an audio clip is associated with a client cue, not with a USD prim or a script. The cue catalogue is fixed in code, in the client and the cooker alike: gunshot, hit marker, hit taken, death, match won, match lost. The scenario's manifest names a mono PCM WAV file for each cue (ADR-0041), which becomes one audio blob at `sounds/<cue>` (e.g. `sounds/gunshot`): its sample rate (u32), bits per sample (u8, 8/16/24/32) and its samples as the WAV held them (a u32 byte count, then the bytes). The prefix the cues are addressed under, `sounds`, is one more blob at the fixed path `Sounds`, a length-prefixed string, so the client finds the cues knowing nothing but the catalogue. Written to the client pack only: the headless server plays nothing (ADR-0019). The cooker refuses a file that is not a mono PCM WAV, naming it, and a manifest lacking any cue, naming the cue; the client resolves every cue's sound at startup, so a missing one is found before a Match, not during one.
-- Collision geometry, spawn points, hitboxes: read from the PhysX-authored USD data (colliders/joints from Composer, ADR-0015), serialized with the existing custom binary format (ADR-0007) rather than a new one. Written to both the client and server pack (ADR-0019) - unlike mesh/texture content, which is client-pack-only, the client needs this data too (e.g. client-side prediction of movement against the same geometry the server uses, and drawing where a Shot lands, ADR-0044; hit detection itself runs only on the server, ADR-0024).
-- Props placed in the Map (ADR-0045): a prim with PhysX's rigid-body, mass and physics-material schemas, read into its collider, mass and material and serialized in the same custom binary format. Written to both the client and server pack: the server simulates them and the client moves them to the poses it is sent and predicts against them.
-- Ragdolls (ADR-0045): a Character's ragdoll bodies and joints, authored in Composer, serialized in the same format. Written to the client pack only: ragdolls are Cosmetic bodies the server never simulates.
 
-**Addressing:** each blob's pack-relative path is the source USD prim's path, sanitized (leading `/` stripped; `/` kept as the path separator). A script's pack-relative path is the fixed name of the role the scenario's manifest gives it (`parameters.lua`, `rules.lua`, ADR-0041), whatever its authored file is called, so the server finds each knowing nothing but its role. No separate authored ID — consistent with ADR-0018 already rejecting a GUID/manifest indirection layer. Renaming or moving a prim in the authored stage therefore changes its runtime path; nothing here guards against that.
+- `UsdGeomMesh` prims: points/normals/UVs/indices read via the OpenUSD API
+  (ADR-0016), optimized with meshoptimizer, written as one mesh blob.
+- Textures referenced by `UsdShadeMaterial`/`UsdUVTexture`: compressed to
+  BC7/BC5/BC4 DDS via DirectXTex (ADR-0017), one blob each.
+- Lua scripts (ADR-0022, ADR-0039): each script the scenario's manifest names,
+  stored as its text with no framing, one blob each. Written to the server pack
+  only (ADR-0019): a client is sent the values a script decides, never the
+  script.
+- Character list (ADR-0042): the manifest's `characters` paths, in manifest
+  order, as one blob at the fixed path `Characters` - a count then each path as
+  a string, at most 255. Written to both the client and server pack: the server
+  checks a join against it, and the client each character it is told about.
+- Character eye (ADR-0040): the origin of a character's `Character/Eye` prim, in
+  that character's root space, as three floats and nothing else, one blob at
+  `<character path>/Character/Eye`. Written to both the client and server pack:
+  the client places the local player's camera at it, and the server fires that
+  player's Shots from it.
+- Cue sounds (ADR-0020): an audio clip is associated with a client cue, not with
+  a USD prim or a script. The cue catalogue is fixed in code, in the client and
+  the cooker alike: gunshot, hit marker, hit taken, death, match won, match
+  lost. The scenario's manifest names a mono PCM WAV file for each cue
+  (ADR-0041), which becomes one audio blob at `sounds/<cue>` (e.g.
+  `sounds/gunshot`): its sample rate (u32), bits per sample (u8, 8/16/24/32) and
+  its samples as the WAV held them (a u32 byte count, then the bytes). The
+  prefix the cues are addressed under, `sounds`, is one more blob at the fixed
+  path `Sounds`, a length-prefixed string, so the client finds the cues knowing
+  nothing but the catalogue. Written to the client pack only: the headless
+  server plays nothing (ADR-0019). The cooker refuses a file that is not a mono
+  PCM WAV, naming it, and a manifest lacking any cue, naming the cue; the client
+  resolves every cue's sound at startup, so a missing one is found before a
+  Match, not during one.
+- Collision geometry, spawn points, hitboxes: read from the PhysX-authored USD
+  data (colliders/joints from Composer, ADR-0015), serialized with the existing
+  custom binary format (ADR-0007) rather than a new one. Written to both the
+  client and server pack (ADR-0019) - unlike mesh/texture content, which is
+  client-pack-only, the client needs this data too (e.g. client-side prediction
+  of movement against the same geometry the server uses, and drawing where a
+  Shot lands, ADR-0044; hit detection itself runs only on the server, ADR-0024).
+- Props placed in the Map (ADR-0045): a prim with PhysX's rigid-body, mass and
+  physics-material schemas, read into its collider, mass and material and
+  serialized in the same custom binary format. Written to both the client and
+  server pack: the server simulates them and the client moves them to the poses
+  it is sent and predicts against them.
+- Ragdolls (ADR-0045): a Character's ragdoll bodies and joints, authored in
+  Composer, serialized in the same format. Written to the client pack only:
+  ragdolls are Cosmetic bodies the server never simulates.
+
+**Addressing:** each blob's pack-relative path is the source USD prim's path,
+sanitized (leading `/` stripped; `/` kept as the path separator). A script's
+pack-relative path is the fixed name of the role the scenario's manifest gives
+it (`parameters.lua`, `rules.lua`, ADR-0041), whatever its authored file is
+called, so the server finds each knowing nothing but its role. No separate
+authored ID — consistent with ADR-0018 already rejecting a GUID/manifest
+indirection layer. Renaming or moving a prim in the authored stage therefore
+changes its runtime path; nothing here guards against that.
 
 **File layout**, in write order:
-1. **Header** — magic (`"AUGP"`), format version, index offset/count, data section offset, then a flags byte and the client pack hash (ADR-0038): the BLAKE3 hash of the client pack cooked in the same run, its trailer's 32 bytes. Only a server pack names one, with the flag set; a client pack has the flag clear and 32 zero bytes, and a header with any other flag, or a hash it does not flag, does not load. The server admits only a client whose Join request names that hash, so a client never plays against a server pack cooked from other content, even one signed by the same key. Written first as a placeholder, patched once the index offset is known.
-2. **Data section** — every asset blob, back-to-back, in traversal order. Offsets are recorded as each blob is written.
-3. **Index** — one entry per blob: type tag (Mesh/Texture/Audio/Collision/SpawnPoint/Hitbox/Prop/Ragdoll/Scene/Script/Characters/Eye/Sounds), path, offset, size. Written after the data section, since it needs the recorded offsets.
-4. **Trailer** — BLAKE3 hash of everything from byte 0 through the end of the index, followed by the Ed25519 signature of that hash (ADR-0030's pack → hash → sign order). Appended last.
 
-Verifying a pack means re-hashing everything but the trailer and checking the signature before trusting the header/index at all — the header is otherwise just as untrusted as the data it points into. Once verified, the trailer's hash names that pack: two cooks of different content never share it, which is what the header's client pack hash relies on.
+1. **Header** — magic (`"AUGP"`), format version, index offset/count, data
+   section offset, then a flags byte and the client pack hash (ADR-0038): the
+   BLAKE3 hash of the client pack cooked in the same run, its trailer's 32
+   bytes. Only a server pack names one, with the flag set; a client pack has the
+   flag clear and 32 zero bytes, and a header with any other flag, or a hash it
+   does not flag, does not load. The server admits only a client whose Join
+   request names that hash, so a client never plays against a server pack cooked
+   from other content, even one signed by the same key. Written first as a
+   placeholder, patched once the index offset is known.
+2. **Data section** — every asset blob, back-to-back, in traversal order.
+   Offsets are recorded as each blob is written.
+3. **Index** — one entry per blob: type tag
+   (Mesh/Texture/Audio/Collision/SpawnPoint/Hitbox/Prop/Ragdoll/Scene/Script/Characters/Eye/Sounds),
+   path, offset, size. Written after the data section, since it needs the
+   recorded offsets.
+4. **Trailer** — BLAKE3 hash of everything from byte 0 through the end of the
+   index, followed by the Ed25519 signature of that hash (ADR-0030's pack → hash
+   → sign order). Appended last.
+
+Verifying a pack means re-hashing everything but the trailer and checking the
+signature before trusting the header/index at all — the header is otherwise just
+as untrusted as the data it points into. Once verified, the trailer's hash names
+that pack: two cooks of different content never share it, which is what the
+header's client pack hash relies on.
 
 ## Considered Options
 
-The client pack hash as one more blob in the index, at a fixed path with a type tag of its own, was considered and rejected: it is not content any prim or script was cooked into but a fact about the pack itself, which pack it pairs with, so it belongs with the other facts about the pack in the header, read once by Load rather than resolved by path like an asset.
+The client pack hash as one more blob in the index, at a fixed path with a type
+tag of its own, was considered and rejected: it is not content any prim or
+script was cooked into but a fact about the pack itself, which pack it pairs
+with, so it belongs with the other facts about the pack in the header, read once
+by Load rather than resolved by path like an asset.
 
-An authored stable identifier (a `augusta:assetName`-style USD attribute, decoupled from prim hierarchy position) was considered for addressing, to survive scene reorganization in Composer. Rejected for now: it adds an authoring convention someone has to maintain and a validation rule to enforce it, for a problem (prim rename fallout) that hasn't actually occurred yet. Revisit if renames start breaking hardcoded gameplay references in practice.
+An authored stable identifier (a `augusta:assetName`-style USD attribute,
+decoupled from prim hierarchy position) was considered for addressing, to
+survive scene reorganization in Composer. Rejected for now: it adds an authoring
+convention someone has to maintain and a validation rule to enforce it, for a
+problem (prim rename fallout) that hasn't actually occurred yet. Revisit if
+renames start breaking hardcoded gameplay references in practice.

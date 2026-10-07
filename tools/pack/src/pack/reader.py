@@ -1,15 +1,16 @@
-"""Pack container reading and verification (ADR-0031): the read-side
-counterpart of pack.write_pack, for inspecting and verifying a pack without
-the C++ runtime. Only the container is parsed (header, index, trailer) - blob
-contents are never decoded here.
+"""Pack container reading and verification (ADR-0031).
+
+The read-side counterpart of pack.write_pack, for inspecting and verifying a
+pack without the C++ runtime. Only the container is parsed (header, index,
+trailer) - blob contents are never decoded here.
 
 Mirrors the bounds checks of assets.cpp's ParsePackHeader/ParsePackIndex, and
 ADR-0031's order for verification: the content hash and signature are checked
 before the header/index are trusted.
 """
 
-import hmac
 from dataclasses import dataclass
+import hmac
 from pathlib import Path
 
 import blake3
@@ -17,7 +18,8 @@ import nacl.bindings
 import nacl.exceptions
 
 from pack import pack
-from pack.wire import ByteReader, WireError
+from pack.wire import ByteReader
+from pack.wire import WireError
 
 TRAILER_SIZE = pack.BLAKE3_HASH_SIZE + pack.ED25519_SIGNATURE_SIZE
 _HASH_CHUNK_SIZE = 1 << 20
@@ -43,6 +45,8 @@ class PackError(ValueError):
 
 @dataclass(frozen=True)
 class IndexEntry:
+    """One entry of a pack's index: an asset's type, path and blob's place."""
+
     type: int
     path: str
     offset: int
@@ -50,11 +54,14 @@ class IndexEntry:
 
     @property
     def type_name(self) -> str:
+        """The asset type's name."""
         return ASSET_TYPE_NAMES[self.type]
 
 
 @dataclass(frozen=True)
 class PackInfo:
+    """A pack's container: its header, index and trailer."""
+
     version: int
     file_size: int
     data_offset: int
@@ -66,7 +73,9 @@ class PackInfo:
     signature: bytes
 
 
-def _parse_index(index_bytes: bytes, index_offset: int, index_count: int) -> list[IndexEntry]:
+def _parse_index(
+    index_bytes: bytes, index_offset: int, index_count: int
+) -> list[IndexEntry]:
     reader = ByteReader(index_bytes)
     entries: list[IndexEntry] = []
     seen_paths: set[str] = set()
@@ -79,8 +88,14 @@ def _parse_index(index_bytes: bytes, index_offset: int, index_count: int) -> lis
         size = reader.u64()
         # Every blob must lie within the data section, never alias into the
         # header, the index or the trailer.
-        if offset < pack.HEADER_SIZE or offset > index_offset or size > index_offset - offset:
-            raise PackError(f"index entry {path!r} points outside the data section")
+        if (
+            offset < pack.HEADER_SIZE
+            or offset > index_offset
+            or size > index_offset - offset
+        ):
+            raise PackError(
+                f"index entry {path!r} points outside the data section"
+            )
         if path in seen_paths:
             raise PackError(f"duplicate index entry {path!r}")
         seen_paths.add(path)
@@ -89,8 +104,9 @@ def _parse_index(index_bytes: bytes, index_offset: int, index_count: int) -> lis
 
 
 def read_pack(path: Path) -> PackInfo:
-    """Parses the header, index and trailer of the pack at path. Doesn't
-    verify the hash or signature (see verify_pack) and reads only those
+    """Parses the header, index and trailer of the pack at path.
+
+    Doesn't verify the hash or signature (see verify_pack) and reads only those
     sections, never the data section.
     """
     file_size = path.stat().st_size
@@ -105,29 +121,43 @@ def read_pack(path: Path) -> PackInfo:
                 raise PackError("bad magic - not an Augusta pack")
             version = header.u32()
             if version != pack.FORMAT_VERSION:
-                raise PackError(f"unsupported format version {version} (expected {pack.FORMAT_VERSION})")
+                raise PackError(
+                    f"unsupported format version {version} (expected "
+                    f"{pack.FORMAT_VERSION})"
+                )
             data_offset = header.u64()
             index_offset = header.u64()
             index_count = header.u32()
             if data_offset != pack.HEADER_SIZE:
-                raise PackError("header is internally inconsistent (data section offset)")
+                raise PackError(
+                    "header is internally inconsistent (data section offset)"
+                )
             if index_offset < pack.HEADER_SIZE or index_offset > hashed_length:
                 raise PackError("index offset is outside the pack")
             if index_count > pack.MAX_ENTRIES:
-                raise PackError(f"index count {index_count} exceeds the limit {pack.MAX_ENTRIES}")
+                raise PackError(
+                    f"index count {index_count} exceeds the limit "
+                    f"{pack.MAX_ENTRIES}"
+                )
             flags = header.u8()
             client_pack_hash = header.raw(pack.BLAKE3_HASH_SIZE)
             if flags & ~pack.HEADER_HAS_CLIENT_PACK:
                 raise PackError(f"header has unknown flags {flags:#04x}")
             if not flags & pack.HEADER_HAS_CLIENT_PACK:
                 if any(client_pack_hash):
-                    raise PackError("header holds a client pack hash it does not flag")
+                    raise PackError(
+                        "header holds a client pack hash it does not flag"
+                    )
                 client_pack_hash = None
 
             f.seek(index_offset)
-            entries = _parse_index(f.read(hashed_length - index_offset), index_offset, index_count)
+            entries = _parse_index(
+                f.read(hashed_length - index_offset), index_offset, index_count
+            )
         except WireError as error:
-            raise PackError(f"pack is truncated or malformed: {error}") from error
+            raise PackError(
+                f"pack is truncated or malformed: {error}"
+            ) from error
 
         f.seek(hashed_length)
         trailer = f.read(TRAILER_SIZE)
@@ -145,11 +175,11 @@ def read_pack(path: Path) -> PackInfo:
 
 
 def verify_pack(path: Path, public_key: bytes) -> PackInfo:
-    """Checks that the pack at path is intact and signed by public_key: its
-    BLAKE3 hash over everything but the trailer matches the trailer's, and
-    the trailer's Ed25519 signature over that hash verifies. Only then are
-    the header and index parsed and returned. Raises PackError on any
-    failure.
+    """Checks that the pack at path is intact and signed by public_key.
+
+    Its BLAKE3 hash over everything but the trailer matches the trailer's, and
+    the trailer's Ed25519 signature over that hash verifies. Only then are the
+    header and index parsed and returned. Raises PackError on any failure.
     """
     file_size = path.stat().st_size
     if file_size < pack.HEADER_SIZE + TRAILER_SIZE:
@@ -170,7 +200,9 @@ def verify_pack(path: Path, public_key: bytes) -> PackInfo:
     stored_hash = trailer[: pack.BLAKE3_HASH_SIZE]
     signature = trailer[pack.BLAKE3_HASH_SIZE :]
     if not hmac.compare_digest(hasher.digest(), stored_hash):
-        raise PackError("content hash mismatch - the pack is corrupted or has been modified")
+        raise PackError(
+            "content hash mismatch - the pack is corrupted or has been modified"
+        )
     try:
         # crypto_sign_open takes the signature prepended to the signed
         # message - the counterpart of how pack.write_pack detaches it.

@@ -10,19 +10,19 @@
 ![Platforms](https://img.shields.io/badge/platform-Windows%20client%20%7C%20Linux%20server-lightgrey)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-fe5196?logo=conventionalcommits)](https://www.conventionalcommits.org)
 
-A realistic, physics-driven multiplayer FPS simulator engine — server-authoritative,
-built in C++23 with a Windows client (rendering via NVIDIA Falcor/D3D12) and a
-headless Linux dedicated server. A hobby project to master low-level systems and
-networking programming, deliberately built from scratch instead of on top of
-Unreal/Unity/Godot.
+A realistic, physics-driven multiplayer FPS simulator engine —
+server-authoritative, built in C++23 with a Windows client (rendering via NVIDIA
+Falcor/D3D12) and a headless Linux dedicated server. A hobby project to master
+low-level systems and networking programming, deliberately built from scratch
+instead of on top of Unreal/Unity/Godot.
 
 ## Highlights
 
 - **Server-authoritative** — the Linux dedicated server is the single source of
   truth for all gameplay state; the Windows client predicts locally and
   reconciles against authoritative snapshots (no exact replay).
-- **Physics-based ballistics** — real bullet drop and travel time, not
-  hitscan; hit location and body part determine damage (no regenerating health).
+- **Physics-based ballistics** — real bullet drop and travel time, not hitscan;
+  hit location and body part determine damage (no regenerating health).
 - **Match-based, tactical** — no respawn until the match ends; movement includes
   walk/run/crouch/prone, stamina, and recoil.
 - **ECS core** (Flecs) shared between client and server, with PhysX for
@@ -46,6 +46,7 @@ docs, the decisions behind the engine (ADRs) and the C++ API reference.
 
 **Windows (client):** run PowerShell as Administrator (Win+X → "Terminal
 (Admin)"). The bootstrap installs Visual Studio Build Tools and GNU make:
+
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 ./scripts/bootstrap-windows.ps1
@@ -54,22 +55,24 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 Open a new terminal after setup. The Makefile loads the Visual Studio Build
 Tools environment automatically for each command on Windows.
 
-**Dev container (server / shared core):** open the repository in VS Code's
-Dev Containers or in GitHub Codespaces. The container reproduces CI's Linux
-build environment, so `make test` builds and tests the `linux` preset with
-nothing else to install. The first build compiles the vcpkg dependencies; later
-ones reuse them from `.vcpkg-bincache`, and sccache's objects from a volume.
+**Dev container (server / shared core):** open the repository in VS Code's Dev
+Containers or in GitHub Codespaces. The container reproduces CI's Linux build
+environment, so `make test` builds and tests the `linux` preset with nothing
+else to install. The first build compiles the vcpkg dependencies; later ones
+reuse them from `.vcpkg-bincache`, and sccache's objects from a volume.
 
 Both the Windows bootstrap and the container initialize the vendored submodules
 and configure the Conventional Commits `commit-msg` hook.
 
 ### Build and Run
 
-The [Makefile](Makefile) wraps the build presets. On Windows it loads the
-Visual Studio Build Tools environment through [scripts/vcenv.ps1](scripts/vcenv.ps1).
+The [Makefile](Makefile) wraps the build presets. On Windows it loads the Visual
+Studio Build Tools environment through [scripts/vcenv.ps1](scripts/vcenv.ps1).
 
-Build and start the Linux server in the dev container first. Leave it running, listening on
-the configured address (the default client connects to `127.0.0.1:27015`):
+Build and start the Linux server in the dev container first. Leave it running,
+listening on the configured address (the default client connects to
+`127.0.0.1:27015`):
+
 ```bash
 make
 ./build/x64-linux/src/server/augustad --config config/augustad.yaml
@@ -77,6 +80,7 @@ make
 
 Then, from a separate Windows PowerShell terminal, build and start the client
 with its local config and cooked client pack:
+
 ```powershell
 make
 & "build/x64-windows/src/client/augustac.exe" --config config/augustac.yaml
@@ -91,6 +95,7 @@ prefix on Linux.
 ### Tests
 
 Run the tests with the host's default preset, or select another preset:
+
 ```bash
 make test
 make test PRESET=windows-debug
@@ -98,22 +103,27 @@ make test PRESET=linux-san
 ```
 
 The `linux-fuzz` preset builds the fuzz targets:
+
 ```bash
 make PRESET=linux-fuzz
 ```
+
 [tests/fuzz/README.md](tests/fuzz/README.md) explains how to run them.
 
-The `linux-coverage` preset measures the tests' coverage (ADR-0013). In VS
-Code, select it and run "Test: Run All Tests with Coverage": CMake Tools shows
-the result in the editor and the Test Coverage view. From a shell:
+The `linux-coverage` preset measures the tests' coverage (ADR-0013). In VS Code,
+select it and run "Test: Run All Tests with Coverage": CMake Tools shows the
+result in the editor and the Test Coverage view. From a shell:
+
 ```bash
 cmake --preset linux-coverage && cmake --build --preset linux-coverage
 ctest --preset linux-coverage
 scripts/coverage-report.sh   # HTML and LCOV in build/x64-linux-coverage/report
 ```
+
 The nightly uploads the same report as its `coverage-report` artifact.
 
 Other useful checks:
+
 ```bash
 make format-check
 make lint
@@ -122,12 +132,14 @@ make lint
 ## Documentation
 
 - [VISION.md](docs/VISION.md) — product vision and v1 definition of done
-- [REQUIREMENTS.md](docs/REQUIREMENTS.md) — functional and non-functional requirements
+- [REQUIREMENTS.md](docs/REQUIREMENTS.md) — functional and non-functional
+  requirements
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — arc42 architecture document
 - [ENGINEERING.md](docs/ENGINEERING.md) — engineering practices, CI/CD, workflow
 - [ROADMAP.md](docs/ROADMAP.md) — milestone-driven roadmap
 - [CONTEXT.md](CONTEXT.md) — domain glossary
-- [docs/runbooks/](docs/runbooks/) — procedures for rollbacks, key rotation, node recovery and releases
+- [docs/runbooks/](docs/runbooks/) — procedures for rollbacks, key rotation,
+  node recovery and releases
 - [docs/adr/](docs/adr/) — architecture decision records
 
 ## License

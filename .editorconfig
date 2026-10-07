@@ -23,16 +23,37 @@ indent_size = 2
 indent_size = 2
 max_line_length = 120
 
+# Python (Google Python Style Guide: 80-col per ruff.toml)
+[*.py]
+max_line_length = 80
+
+# Shell scripts and git hooks (Google Shell Style Guide: 2-space indent, case
+# patterns indented, | && || starting the continued line, 80-col; shfmt formats
+# by these)
+[*.sh]
+indent_size = 2
+switch_case_indent = true
+binary_next_line = true
+max_line_length = 80
+
+[.githooks/*]
+indent_size = 2
+switch_case_indent = true
+binary_next_line = true
+max_line_length = 80
+
 # Data / config
 [*.{json,yml,yaml,toml}]
 indent_size = 2
 
+# Markdown (Google Markdown style guide: 80-col, 4-space nesting, no trailing
+# whitespace; a hard line break is a trailing backslash)
 [*.md]
-indent_size = 2
-trim_trailing_whitespace = false
+indent_size = 4
+max_line_length = 80
 
 # Windows-only scripts keep CRLF
-[*.{ps1,bat,cmd}]
+[*.{ps1,psd1,bat,cmd}]
 end_of_line = crlf
 
 [Makefile]

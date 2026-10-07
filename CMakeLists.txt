@@ -3,15 +3,19 @@ cmake_minimum_required(VERSION 3.25)
 # Default to the vcpkg submodule's toolchain (pinned in third_party/vcpkg,
 # see .gitmodules) unless the caller already picked one. Must run before
 # project().
-if (NOT DEFINED CMAKE_TOOLCHAIN_FILE)
-  set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/vcpkg/scripts/buildsystems/vcpkg.cmake"
-      CACHE STRING "Vcpkg toolchain file")
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+  set(
+    CMAKE_TOOLCHAIN_FILE
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/vcpkg/scripts/buildsystems/vcpkg.cmake"
+    CACHE STRING
+    "Vcpkg toolchain file"
+  )
 endif()
 
 # Use sccache when it's on PATH (ADR-0008). Skip it under MSVC's default
 # Visual Studio generator - sccache only works there via Ninja.
 find_program(SCCACHE_PROGRAM sccache)
-if (SCCACHE_PROGRAM AND (NOT CMAKE_GENERATOR MATCHES "Visual Studio"))
+if(SCCACHE_PROGRAM AND (NOT CMAKE_GENERATOR MATCHES "Visual Studio"))
   set(CMAKE_C_COMPILER_LAUNCHER "${SCCACHE_PROGRAM}")
   set(CMAKE_CXX_COMPILER_LAUNCHER "${SCCACHE_PROGRAM}")
 endif()
@@ -26,7 +30,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # the targets that `cmake --install` puts in place.
 include(GNUInstallDirs)
 
-if (MSVC)
+if(MSVC)
   add_compile_options(/W4 /WX /EHsc)
 else()
   add_compile_options(-Wall -Wextra -Werror)
@@ -93,7 +97,7 @@ add_subdirectory(src/server)
 # the golden match among them; the server image, which builds augustad alone,
 # turns them off.
 option(AUGUSTA_TOOLS "Build the C++ tools (tools/replay, tools/swarm) and their tests" ON)
-if (AUGUSTA_TOOLS)
+if(AUGUSTA_TOOLS)
   add_subdirectory(tools/replay)
   add_subdirectory(tools/swarm)
 endif()
@@ -102,15 +106,19 @@ endif()
 # Coverage"): coverage-clean drops the last run's profiles, so the report is of
 # this run alone; coverage-report turns this run's into it.
 option(AUGUSTA_COVERAGE "Add the coverage-clean and coverage-report targets (linux-coverage preset)" OFF)
-if (AUGUSTA_COVERAGE)
-  add_custom_target(coverage-clean COMMAND ${CMAKE_COMMAND} -E rm -rf ${CMAKE_BINARY_DIR}/profiles)
-  add_custom_target(coverage-report
+if(AUGUSTA_COVERAGE)
+  add_custom_target(
+    coverage-clean
+    COMMAND ${CMAKE_COMMAND} -E rm -rf ${CMAKE_BINARY_DIR}/profiles
+  )
+  add_custom_target(
+    coverage-report
     COMMAND bash scripts/coverage-report.sh
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     USES_TERMINAL
   )
 endif()
-if (WIN32)
+if(WIN32)
   # NVIDIA Falcor (ADR-0009) is Windows-only, so augusta_renderer's real
   # implementation only builds here - nothing on Linux (only the
   # WIN32-only client links it) ever needed it in that build graph anyway.
