@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <expected>
 #include <istream>
+#include <memory>
 #include <optional>
 #include <ostream>
 #include <string>
@@ -24,7 +25,8 @@
 /// the World as Host drives it, writing each tick to a Recorder when it has
 /// one; ReadRecording reads a recording back. The records are the Networking
 /// Protocol's, in its encoding (ADR-0038), converted in wire.h, so this header
-/// names only the engine's types. Simulation thread only, as the World is.
+/// names only the engine's types. Simulation thread only, as the World is; a
+/// Recorder writes its stream on a thread of its own.
 namespace augusta::server {
 
 /// What a recording was made on.
@@ -111,31 +113,49 @@ enum class RecordingError : std::uint8_t {
 /// What to tell whoever runs the process about error.
 [[nodiscard]] std::string_view DescribeRecordingError(RecordingError error);
 
-/// Writes a recording to a binary stream, which it does not own: each record
-/// as its 4-byte little-endian length and its payload, the header first, and
-/// flushed after each tick, so a recording outlives a server that stops
-/// abruptly up to its last whole tick. On the Simulation thread, as the tick
-/// that made the record (ADR-0048).
+/// How many records a Recorder holds that its writer has not yet written:
+/// about 4 seconds of ticks at 60 Hz, past which the disk is not keeping up and
+/// the recording stops. At most kMaxRecordSize each, so 16 MiB at worst.
+inline constexpr std::size_t kRecordQueueCapacity = 256;
+
+/// Writes a recording to a binary stream, which it does not own and which must
+/// outlive it: each record as its 4-byte little-endian length and its payload,
+/// the header first. Write, on the Simulation thread with the tick that made
+/// the record (ADR-0048), only encodes it and queues it; a thread of the
+/// Recorder's own writes and flushes each in turn, so the disk never holds up a
+/// tick, and a recording outlives a server that stops abruptly up to the last
+/// whole tick that thread wrote. Destroying the Recorder waits for every record
+/// it queued to be written, so a stalled disk holds up shutdown, never a tick.
 ///
-/// A write the stream fails, or a record longer than kMaxRecordSize, stops the
-/// recording: it is logged once, as event=recording_stopped, and nothing more
-/// is written, so the file still reads back up to its last whole tick.
+/// A record longer than kMaxRecordSize, one that finds capacity records still
+/// unwritten, or a write the stream fails stops the recording: it is logged
+/// once, as event=recording_stopped, and nothing more is written, so the file
+/// still reads back up to its last whole tick.
 class Recorder {
  public:
-  /// Writes header to out.
-  Recorder(std::ostream& out, const RecordingHeader& header);
+  /// Queues header for out first, and holds at most capacity records not yet
+  /// written; capacity is kRecordQueueCapacity but in tests.
+  Recorder(std::ostream& out, const RecordingHeader& header, std::size_t capacity = kRecordQueueCapacity);
+  ~Recorder();
+  Recorder(Recorder&&) noexcept;
+  Recorder& operator=(Recorder&&) noexcept;
+  Recorder(const Recorder&) = delete;
+  Recorder& operator=(const Recorder&) = delete;
 
-  /// Writes tick's record, unless the recording has stopped.
+  /// Queues tick's record, without waiting for the stream, unless the
+  /// recording has stopped.
   void Write(const TickRecord& tick);
 
-  /// Whether the recording has stopped, its file missing every tick since.
-  [[nodiscard]] bool Stopped() const { return stopped_; }
+  /// Whether the recording has stopped, its file missing every tick since. A
+  /// write the stream fails stops it once the writer thread gets to it.
+  [[nodiscard]] bool Stopped() const;
 
  private:
-  // Logs that the recording stopped on tick, and why, and writes nothing more.
+  // Logs that the recording stopped on tick, and why, and queues nothing more.
   void Stop(tick::Tick tick, std::string_view reason);
 
-  std::ostream* out_;
+  class Writer;
+  std::unique_ptr<Writer> writer_;
   bool stopped_ = false;
 };
 

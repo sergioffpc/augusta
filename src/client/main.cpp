@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "augusta/assets.h"
+#include "augusta/client_config.h"
 #include "augusta/config.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"

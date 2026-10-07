@@ -16,6 +16,7 @@ target_link_libraries(augusta_version_benchmarks PRIVATE augusta_version benchma
 add_executable(
   augusta_benchmarks
   ballistics_benchmark.cpp
+  interpolation_benchmark.cpp
   pack_benchmark.cpp
   presentation_benchmark.cpp
   protocol_benchmark.cpp
@@ -49,6 +50,12 @@ target_compile_definitions(
   PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
 )
 
+# Links augusta_primitives alone, so the build fails if its header ever needs
+# another module's include path.
+add_executable(augusta_primitives_tests primitives_test.cpp)
+target_link_libraries(augusta_primitives_tests PRIVATE augusta_primitives GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_primitives_tests)
+
 add_executable(augusta_tick_tests tick_test.cpp)
 target_link_libraries(augusta_tick_tests PRIVATE augusta_tick GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_tick_tests)
@@ -57,17 +64,31 @@ add_executable(augusta_supervisor_tests supervisor_test.cpp)
 target_link_libraries(augusta_supervisor_tests PRIVATE augusta_supervisor GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_supervisor_tests)
 
+add_executable(augusta_failure_tests failure_test.cpp)
+target_link_libraries(augusta_failure_tests PRIVATE augusta_failure GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_failure_tests)
+
 add_executable(augusta_config_tests config_test.cpp)
 target_link_libraries(augusta_config_tests PRIVATE augusta_config GTest::gtest GTest::gtest_main)
-# The example configs are what a new install is copied from, so a test keeps them loading.
+gtest_discover_tests(augusta_config_tests)
+
+# The example configs are what a new install is copied from, so a test keeps each loading.
+add_executable(augusta_client_config_tests client_config_test.cpp)
+target_link_libraries(augusta_client_config_tests PRIVATE augusta_client_config GTest::gtest GTest::gtest_main)
 target_compile_definitions(
-  augusta_config_tests
-  PRIVATE
-    AUGUSTA_EXAMPLE_CLIENT_CONFIG="${CMAKE_SOURCE_DIR}/config/augustac.example.yaml"
-    AUGUSTA_EXAMPLE_SERVER_CONFIG="${CMAKE_SOURCE_DIR}/config/augustad.example.yaml"
+  augusta_client_config_tests
+  PRIVATE AUGUSTA_EXAMPLE_CLIENT_CONFIG="${CMAKE_SOURCE_DIR}/config/augustac.example.yaml"
 )
 # Links PhysX through augusta_input, so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_config_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_client_config_tests DISCOVERY_TIMEOUT 30)
+
+add_executable(augusta_server_config_tests server_config_test.cpp)
+target_link_libraries(augusta_server_config_tests PRIVATE augusta_server_config GTest::gtest GTest::gtest_main)
+target_compile_definitions(
+  augusta_server_config_tests
+  PRIVATE AUGUSTA_EXAMPLE_SERVER_CONFIG="${CMAKE_SOURCE_DIR}/config/augustad.example.yaml"
+)
+gtest_discover_tests(augusta_server_config_tests)
 
 add_executable(augusta_parameters_tests parameters_test.cpp)
 target_link_libraries(
@@ -89,7 +110,8 @@ target_compile_definitions(
 gtest_discover_tests(augusta_parameters_loader_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_protocol_tests protocol_test.cpp)
-target_link_libraries(augusta_protocol_tests PRIVATE augusta_protocol GTest::gtest GTest::gtest_main)
+# Links augusta_primitives too, to check it agrees with the codec until the codec uses it.
+target_link_libraries(augusta_protocol_tests PRIVATE augusta_primitives augusta_protocol GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_protocol_tests DISCOVERY_TIMEOUT 30)
 
@@ -343,6 +365,11 @@ target_link_libraries(augusta_audio_cues_tests PRIVATE augusta_presentation GTes
 # Links augusta_prediction publicly (so PhysX), same first-launch cost as above.
 gtest_discover_tests(augusta_audio_cues_tests DISCOVERY_TIMEOUT 30)
 
+add_executable(augusta_presentation_tests presentation_test.cpp)
+target_link_libraries(augusta_presentation_tests PRIVATE augusta_presentation GTest::gtest GTest::gtest_main)
+# Links augusta_prediction publicly (so PhysX), same first-launch cost as above.
+gtest_discover_tests(augusta_presentation_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_prediction_tests prediction_test.cpp)
 # Links augusta_presentation too: a new Match must not show as a correction.
 target_link_libraries(
@@ -411,6 +438,11 @@ target_link_libraries(augusta_wire_tests PRIVATE augusta_harness augustad_host G
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_wire_tests DISCOVERY_TIMEOUT 30)
 
+add_executable(augusta_tick_messages_tests tick_messages_test.cpp)
+target_link_libraries(augusta_tick_messages_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
+# Links networking and PhysX through augustad_host, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_tick_messages_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_simulation_mapping_tests simulation_mapping_test.cpp)
 target_link_libraries(augusta_simulation_mapping_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
@@ -426,7 +458,8 @@ add_test(
 
 # Neither physics nor SimulationWorld names the protocol or the client's input
 # sampler in its public headers: the grids and the Command they need are shared
-# core modules of their own. A source scan, so it builds nothing.
+# core modules of their own. Nor do the neutral primitives depend on any other
+# module. A source scan, so it builds nothing.
 add_test(
   NAME augusta_core_boundary
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/core_boundary.cmake
@@ -438,6 +471,18 @@ add_test(
 add_test(
   NAME augusta_server_platform
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/server_platform.cmake
+)
+
+# The headless server has no client Input dependency (ARCHITECTURE.md §5):
+# augusta_input stays client-only so the configure-time scope check covers it,
+# that check rejects a fixture build graph where a server-only target reaches a
+# client-only one, and no server source or server config header names Input.
+# It only configures that fixture, with no compiler, so it builds nothing.
+add_test(
+  NAME augusta_server_boundary
+  COMMAND
+    ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+    -DGENERATOR=${CMAKE_GENERATOR} -P ${CMAKE_CURRENT_SOURCE_DIR}/server_boundary.cmake
 )
 
 add_executable(augusta_assets_tests assets_test.cpp)

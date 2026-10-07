@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_SERVER_TICK_MESSAGES_H_
 #define AUGUSTA_SERVER_TICK_MESSAGES_H_
 
+#include <functional>
 #include <unordered_map>
 #include <vector>
 
@@ -16,8 +17,10 @@
 /// unreliably, since a newer one supersedes it; then, reliably, what must
 /// arrive: every Shot and every Death of the tick to all of them, and each Hit
 /// confirmation to its shooter alone, if it is still in the match. replication
-/// decides what each message holds; this sends them on the Host's connections,
-/// counting each into the Host's metrics (host_metrics.h).
+/// decides what each message holds; this encodes them, in that order and with
+/// that reliability (ForEachTickMessage, tested without a network), and sends
+/// them on the Host's connections, counting each into the Host's metrics
+/// (host_metrics.h).
 namespace augusta::server {
 
 /// Who a tick's messages go to: each player in the match.
@@ -31,6 +34,17 @@ struct TickRecipients {
 /// into metrics: how the Host sends everything it sends.
 void SendCounted(networking::Server& network, HostMetrics& metrics, networking::PeerId peer,
                  const networking::Payload& payload, networking::Reliability reliability);
+
+/// Takes one message a tick sends: payload, an encoded message, to peer as reliability says.
+using TickMessageSink = std::function<void(networking::PeerId, const networking::Payload&, networking::Reliability)>;
+
+/// Hands send every message tick's state holds for the recipients, in the
+/// order the Host sends them: each recipient's Authoritative State update, in
+/// the order of to.recipients; then every Shot, Hit confirmation and Death.
+/// The decision SendTickMessages puts on the wire, apart so it is tested
+/// without a network.
+void ForEachTickMessage(const simulation::State& state, tick::Tick tick, const TickRecipients& to,
+                        const TickMessageSink& send);
 
 /// Sends to the recipients what tick's state holds for them, counting it into metrics.
 void SendTickMessages(networking::Server& network, HostMetrics& metrics, const simulation::State& state,

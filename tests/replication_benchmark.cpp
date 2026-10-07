@@ -17,7 +17,7 @@
 namespace {
 
 using augusta::replication::Recipient;
-using augusta::replication::Update;
+using augusta::replication::RecipientUpdate;
 
 void BM_Replication(benchmark::State& state) {
   const auto match = augusta::benchmarks::StartFullMatch(state);
@@ -32,8 +32,12 @@ void BM_Replication(benchmark::State& state) {
     recipients.push_back(Recipient{.entity = body.entity, .acknowledged_sequence = 4'321, .queued_commands = 2});
   }
   for (auto _ : state) {
-    for (const Update& update : augusta::replication::PlanUpdates(resolved, resolved.tick, recipients)) {
-      benchmark::DoNotOptimize(augusta::protocol::Encode(augusta::server::ToWire(update)));
+    const auto updates = augusta::replication::PlanUpdates(resolved, resolved.tick, recipients);
+    augusta::protocol::MessageWire message = augusta::server::ToWire(updates);
+    auto& addressed = std::get<augusta::protocol::AuthoritativeStateWire>(message);
+    for (const RecipientUpdate& recipient : updates.recipients) {
+      augusta::server::Address(addressed, recipient);
+      benchmark::DoNotOptimize(augusta::protocol::Encode(message));
     }
   }
 }

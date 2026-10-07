@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cmath>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
@@ -15,6 +16,7 @@
 #include "augusta/command.h"
 #include "augusta/grid.h"
 #include "augusta/math.h"
+#include "augusta/primitives.h"
 #include "augusta/tick.h"
 
 // The codec is pure: every case here is bytes in, message or error out.
@@ -964,6 +966,17 @@ TEST(ProtocolTest, BytesAfterCommandsAndStateAreTrailing) {
 
   EXPECT_EQ(Decode(commands).error(), DecodeError::kTrailingBytes);
   EXPECT_EQ(Decode(state).error(), DecodeError::kTrailingBytes);
+}
+
+// augusta::primitives stands alongside the forms the codec uses today: until
+// the codec and its consumers move to it, the two must say the same thing, so a
+// drift fails the build.
+TEST(ProtocolPrimitivesTest, TheNeutralCountersAndBoundsAreTheCodecs) {
+  static_assert(std::same_as<augusta::primitives::Tick, augusta::tick::Tick>);
+  static_assert(std::same_as<augusta::primitives::Sequence, augusta::command::Sequence>);
+  static_assert(augusta::primitives::kMaxPlayers == augusta::protocol::kMaxPlayers);
+  static_assert(augusta::primitives::kMaxCommandsPerMessage == augusta::protocol::kMaxCommandsPerMessage);
+  static_assert(augusta::primitives::kMaxRecoilKicks == augusta::protocol::kMaxRecoilKicks);
 }
 
 TEST(ProtocolTest, EveryErrorHasADescription) {

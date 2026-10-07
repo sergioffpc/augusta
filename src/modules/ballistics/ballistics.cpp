@@ -71,11 +71,7 @@ StepResult World::Step(BulletHandle handle, float delta_time, const physics::Wor
   Bullet& bullet = bullets_.at(handle);
   BulletState& state = bullet.state;
   const math::Vec3 from = state.position;
-
-  // Semi-implicit Euler: the new velocity moves the bullet, so the drop
-  // over a flight does not depend on how its ticks are split.
-  state.velocity.y -= bullet.config.gravity * delta_time;
-  state.position += state.velocity * delta_time;
+  state = Advanced(bullet, delta_time);
 
   StepResult result;
   result.state = state;
@@ -111,6 +107,20 @@ StepResult World::Step(BulletHandle handle, float delta_time, const physics::Wor
     bullets_.erase(handle);
   }
   return result;
+}
+
+Segment World::NextSegment(BulletHandle handle, float delta_time) const {
+  const Bullet& bullet = bullets_.at(handle);
+  return Segment{.from = bullet.state.position, .to = Advanced(bullet, delta_time).position};
+}
+
+BulletState World::Advanced(const Bullet& bullet, float delta_time) {
+  // Semi-implicit Euler: the new velocity moves the bullet, so the drop
+  // over a flight does not depend on how its ticks are split.
+  BulletState state = bullet.state;
+  state.velocity.y -= bullet.config.gravity * delta_time;
+  state.position += state.velocity * delta_time;
+  return state;
 }
 
 }  // namespace augusta::ballistics

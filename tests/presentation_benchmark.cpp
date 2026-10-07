@@ -17,15 +17,16 @@
 
 // One render frame of PresentationWorld (ADR-0024), all five phases, in a full
 // Match, handed its input as ClientRuntime hands it each frame: the newest
-// Authoritative State's bodies and the Match's characters, copied into the
-// frame's FrameInput. The client renders faster than the server ticks, so
-// most frames are handed the same Authoritative State as the frame before
+// Authoritative State's bodies and the Match's characters, lent to the frame's
+// FrameInput. The client renders faster than the server ticks, so most frames
+// are handed the same Authoritative State as the frame before
 // (unchanged_state) and a few a newer one (new_state), whose bodies are
 // buffered for interpolation. Without a GPU or a window: the renderer draws
-// what this returns, and is judged by eye (ADR-0013). ClientRuntime's own
-// conversion from the Server view into FrameInput (src/client/frame_mapping.h)
-// builds on Windows only, and the nightly benchmarks on Linux, so the copy into
-// FrameInput stands in for it.
+// what this returns, and is judged by eye (ADR-0013). ClientRuntime converts
+// the Server view only when a newer Authoritative State arrives
+// (ConvertedServerView, src/client/frame_mapping.h), which builds on Windows
+// only, and the nightly benchmarks on Linux, so building the newer State here
+// stands in for that conversion.
 namespace {
 
 using augusta::math::Vec3;
@@ -63,12 +64,12 @@ std::vector<PlayerCharacter> FullMatchCharacters() {
   return characters;
 }
 
-// What ClientRuntime hands a frame of the Match while snapshot is the newest
+// What ClientRuntime lends a frame of the Match while snapshot is the newest
 // Authoritative State: nothing fired, hit or died since the frame before.
 FrameInput FrameInputFor(const WorldSnapshot& snapshot, const std::vector<PlayerCharacter>& characters) {
   FrameInput frame;
   frame.local_entity = kLocal;
-  frame.snapshot = snapshot;
+  frame.snapshot = &snapshot;
   frame.characters = characters;
   return frame;
 }

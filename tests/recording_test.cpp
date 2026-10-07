@@ -1,18 +1,22 @@
 #include "recording.h"
 
+#include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <ios>
 #include <istream>
+#include <mutex>
 #include <optional>
 #include <ostream>
 #include <sstream>
 #include <stdexcept>
 #include <streambuf>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -43,6 +47,7 @@ using augusta::server::Recorder;
 using augusta::server::Recording;
 using augusta::server::RecordingError;
 using augusta::server::RecordingHeader;
+using augusta::server::TickRecord;
 using augusta::simulation::EntityId;
 using augusta::simulation::MatchPlayer;
 using augusta::simulation::PlayerCommand;
@@ -145,12 +150,15 @@ std::vector<TickResult> PlayScriptedMatch(RecordedSimulation& simulation, const 
   return results;
 }
 
-// The scripted match, recorded.
+// The scripted match, recorded: the simulation, and its Recorder with it, is
+// gone before the bytes are taken, so every record it took is written.
 std::string RecordScriptedMatch() {
   std::ostringstream out(std::ios::binary);
-  const Content content = LoadExampleContent();
-  RecordedSimulation simulation = ExampleSimulation(LoadExampleContent(), Recorder(out, ExampleHeader()));
-  PlayScriptedMatch(simulation, content);
+  {
+    const Content content = LoadExampleContent();
+    RecordedSimulation simulation = ExampleSimulation(LoadExampleContent(), Recorder(out, ExampleHeader()));
+    PlayScriptedMatch(simulation, content);
+  }
   return std::move(out).str();
 }
 
@@ -191,6 +199,21 @@ class FailingBuffer : public std::streambuf {
   std::size_t served_ = 0;
   std::size_t capacity_;
 };
+
+// Whether recorder stops within 5 s: its writer thread stops it on a write the
+// stream fails, after Write has returned.
+bool WaitUntilStopped(const Recorder& recorder) {
+  constexpr auto kPatience = std::chrono::seconds(5);
+  constexpr auto kRetryAfter = std::chrono::milliseconds(10);
+  const auto deadline = std::chrono::steady_clock::now() + kPatience;
+  while (!recorder.Stopped()) {
+    if (std::chrono::steady_clock::now() >= deadline) {
+      return false;
+    }
+    std::this_thread::sleep_for(kRetryAfter);
+  }
+  return true;
+}
 
 Recording Read(const std::string& bytes) {
   std::istringstream in(bytes, std::ios::binary);
@@ -250,12 +273,14 @@ TEST(RecordingTest, TheMatchPolicyEndsAndTheEndingOfTheMatchInTheWorldAreRecorde
 
 TEST(RecordingTest, ARemovedBodyIsRecordedBeforeTheTickItLeftOn) {
   std::ostringstream out(std::ios::binary);
-  const Content content = LoadExampleContent();
-  RecordedSimulation simulation = ExampleSimulation(LoadExampleContent(), Recorder(out, ExampleHeader()));
-  simulation.StartMatch(ExampleEntrants(content), content.scenario.spawn_points);
-  simulation.Tick({}, kDeltaTime);
-  simulation.RemovePlayer(kSecond);
-  simulation.Tick({}, kDeltaTime);
+  {
+    const Content content = LoadExampleContent();
+    RecordedSimulation simulation = ExampleSimulation(LoadExampleContent(), Recorder(out, ExampleHeader()));
+    simulation.StartMatch(ExampleEntrants(content), content.scenario.spawn_points);
+    simulation.Tick({}, kDeltaTime);
+    simulation.RemovePlayer(kSecond);
+    simulation.Tick({}, kDeltaTime);
+  }
   const Recording recording = Read(std::move(out).str());
   ASSERT_EQ(recording.ticks.size(), 2U);
   EXPECT_TRUE(recording.ticks[0].input.removed.empty());
@@ -300,11 +325,14 @@ TEST(RecordingTest, AFailedWriteStopsTheRecordingWhichReadsBackUpToItsLastWholeT
   // Room for about half the ticks, so the write that fails is partway through one.
   FailingBuffer buffer = FailingBuffer::Writing(bytes.size() / 2);
   std::ostream out(&buffer);
-  Recorder recorder(out, whole.header);
-  for (const augusta::server::TickRecord& tick : whole.ticks) {
-    recorder.Write(tick);
+  {
+    // Room in the queue for every tick, so only the write can stop it.
+    Recorder recorder(out, whole.header, whole.ticks.size() + 1);
+    for (const augusta::server::TickRecord& tick : whole.ticks) {
+      recorder.Write(tick);
+    }
+    EXPECT_TRUE(WaitUntilStopped(recorder));
   }
-  EXPECT_TRUE(recorder.Stopped());
   EXPECT_EQ(buffer.written().size(), bytes.size() / 2);
   const Recording cut = Read(buffer.written());
   EXPECT_GT(cut.ticks.size(), 0U);
@@ -314,9 +342,11 @@ TEST(RecordingTest, AFailedWriteStopsTheRecordingWhichReadsBackUpToItsLastWholeT
 TEST(RecordingTest, AFailedHeaderWriteStopsTheRecordingBeforeItsFirstTick) {
   FailingBuffer buffer = FailingBuffer::Writing(2);
   std::ostream out(&buffer);
-  Recorder recorder(out, ExampleHeader());
-  EXPECT_TRUE(recorder.Stopped());
-  recorder.Write(augusta::server::TickRecord{});
+  {
+    Recorder recorder(out, ExampleHeader());
+    EXPECT_TRUE(WaitUntilStopped(recorder));
+    recorder.Write(augusta::server::TickRecord{});
+  }
   EXPECT_EQ(buffer.written().size(), 2U);
 }
 
@@ -356,6 +386,97 @@ TEST(RecordingTest, ARecordLongerThanAnyTickCanMakeIsMalformedAndNotReadIn) {
   bytes.replace(4 + header_size, 4, std::string("\xFF\xFF\xFF\x7F", 4));
   std::istringstream in(bytes, std::ios::binary);
   EXPECT_EQ(augusta::server::ReadRecording(in).error(), RecordingError::kMalformed);
+}
+
+// A disk that stalls: every write waits until Release, and whoever wants to
+// know when one first started waiting can ask WaitUntilStalled.
+class StalledBuffer : public std::streambuf {
+ public:
+  void WaitUntilStalled() {
+    std::unique_lock lock(mutex_);
+    changed_.wait(lock, [this] { return stalled_; });
+  }
+
+  void Release() {
+    const std::scoped_lock lock(mutex_);
+    released_ = true;
+    changed_.notify_all();
+  }
+
+  std::string Written() {
+    const std::scoped_lock lock(mutex_);
+    return written_;
+  }
+
+ protected:
+  std::streamsize xsputn(const char* bytes, std::streamsize count) override {
+    std::unique_lock lock(mutex_);
+    stalled_ = true;
+    changed_.notify_all();
+    changed_.wait(lock, [this] { return released_; });
+    written_.append(bytes, static_cast<std::size_t>(count));
+    return count;
+  }
+
+  int_type overflow(int_type byte) override {
+    if (traits_type::eq_int_type(byte, traits_type::eof())) {
+      return traits_type::not_eof(byte);
+    }
+    const char c = traits_type::to_char_type(byte);
+    return xsputn(&c, 1) == 1 ? byte : traits_type::eof();
+  }
+
+ private:
+  std::mutex mutex_;
+  std::condition_variable changed_;
+  bool stalled_ = false;
+  bool released_ = false;
+  std::string written_;
+};
+
+// A tick's record with nothing in it but its number.
+TickRecord EmptyTick(augusta::tick::Tick tick) {
+  TickRecord record;
+  record.input.delta_time = kDeltaTime;
+  record.outcome.tick = tick;
+  return record;
+}
+
+TEST(RecordingTest, ARecorderTakesTicksWithoutWaitingForAStalledDiskAndStopsWhenItIsFull) {
+  constexpr std::size_t kCapacity = 3;
+  StalledBuffer disk;
+  std::ostream out(&disk);
+  {
+    Recorder recorder(out, ExampleHeader(), kCapacity);
+    // The header is being written, and stuck there: every tick from here on waits.
+    disk.WaitUntilStalled();
+    for (augusta::tick::Tick tick = 1; tick <= kCapacity + 2; ++tick) {
+      recorder.Write(EmptyTick(tick));
+    }
+    disk.Release();
+  }
+  const Recording recording = Read(disk.Written());
+  EXPECT_EQ(recording.header, ExampleHeader());
+  ASSERT_EQ(recording.ticks.size(), kCapacity);
+  EXPECT_EQ(recording.ticks.back().outcome.tick, kCapacity);
+  EXPECT_FALSE(recording.torn);
+}
+
+TEST(RecordingTest, ARecorderThatFellBehindWritesNothingMoreEvenOnceItCaughtUp) {
+  constexpr std::size_t kCapacity = 1;
+  StalledBuffer disk;
+  std::ostream out(&disk);
+  {
+    Recorder recorder(out, ExampleHeader(), kCapacity);
+    disk.WaitUntilStalled();
+    recorder.Write(EmptyTick(1));
+    recorder.Write(EmptyTick(2));
+    disk.Release();
+    recorder.Write(EmptyTick(3));
+  }
+  const Recording recording = Read(disk.Written());
+  ASSERT_EQ(recording.ticks.size(), 1U);
+  EXPECT_EQ(recording.ticks.front().outcome.tick, 1U);
 }
 
 }  // namespace

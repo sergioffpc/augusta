@@ -138,11 +138,13 @@ TEST(CueSelectorTest, ADeathIsHeardFromWhereTheServerLastReportedTheBody) {
   CueSelector selector;
   FrameInput input;
   input.local_entity = EntityId{1};
-  input.snapshot = WorldSnapshot{.tick = 10, .tick_duration = kTickDuration, .bodies = {BodyAt(EntityId{2}, kThere)}};
+  const WorldSnapshot listed{.tick = 10, .tick_duration = kTickDuration, .bodies = {BodyAt(EntityId{2}, kThere)}};
+  input.snapshot = &listed;
   EXPECT_TRUE(selector.Select(input, 0).empty());
 
   // The body left the simulation, and the updates, before its Death arrived.
-  input.snapshot = WorldSnapshot{.tick = 11, .tick_duration = kTickDuration, .bodies = {}};
+  const WorldSnapshot gone{.tick = 11, .tick_duration = kTickDuration, .bodies = {}};
+  input.snapshot = &gone;
   input.deaths = {EntityId{2}};
 
   const std::vector<CuePlay> expected = {CuePlay{.cue = Cue::kDeath, .position = kThere}};
@@ -153,7 +155,8 @@ TEST(CueSelectorTest, TheLocalPlayersOwnDeathIsHeardFromWhereItsBodyWas) {
   CueSelector selector;
   FrameInput input;
   input.local_entity = EntityId{1};
-  input.snapshot = WorldSnapshot{.tick = 10, .tick_duration = kTickDuration, .bodies = {BodyAt(EntityId{1}, kThere)}};
+  const WorldSnapshot snapshot{.tick = 10, .tick_duration = kTickDuration, .bodies = {BodyAt(EntityId{1}, kThere)}};
+  input.snapshot = &snapshot;
   EXPECT_TRUE(selector.Select(input, 0).empty());
 
   input.deaths = {EntityId{1}};
@@ -213,11 +216,12 @@ TEST(CueSelectorTest, TheDeathThatEndsTheMatchIsHeardWithItsStinger) {
   CueSelector selector;
   FrameInput input;
   input.local_entity = EntityId{1};
-  input.snapshot = WorldSnapshot{.tick = 10, .tick_duration = kTickDuration, .bodies = {BodyAt(EntityId{2}, kThere)}};
+  const WorldSnapshot snapshot{.tick = 10, .tick_duration = kTickDuration, .bodies = {BodyAt(EntityId{2}, kThere)}};
+  input.snapshot = &snapshot;
   (void)selector.Select(input, 0);
 
   // The match is over, so there is no update any more.
-  input.snapshot.reset();
+  input.snapshot = nullptr;
   input.deaths = {EntityId{2}};
   input.match_end = MatchEnd{.winner = EntityId{1}};
 

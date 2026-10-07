@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -90,6 +91,25 @@ std::vector<presentation::PlayerCharacter> CharactersOf(const std::optional<harn
   }
   return characters;
 }
+
+void ConvertedServerView::Update(const harness::ServerView& view) {
+  if (view.matches_started != characters_match_) {
+    characters_ = CharactersOf(view.match_start);
+    characters_match_ = view.matches_started;
+  }
+  const bool converted = snapshot_.has_value() && view.authoritative.has_value() &&
+                         snapshot_match_ == view.matches_started && snapshot_->tick == view.authoritative->tick;
+  if (!converted) {
+    snapshot_ = SnapshotOf(view);
+    snapshot_match_ = view.matches_started;
+  }
+}
+
+const presentation::WorldSnapshot* ConvertedServerView::Snapshot() const {
+  return snapshot_.has_value() ? &*snapshot_ : nullptr;
+}
+
+std::span<const presentation::PlayerCharacter> ConvertedServerView::Characters() const { return characters_; }
 
 std::optional<presentation::MatchEnd> MatchEndOf(const harness::ServerView& view) {
   return view.match_end.transform([&view](const harness::MatchEnd& end) {

@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 
+#include "augusta/client_config.h"
 #include "augusta/config.h"
 
 /// \file
