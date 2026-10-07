@@ -186,14 +186,7 @@ find_package(boost_beast CONFIG REQUIRED)
 add_executable(augusta_metrics_tests metrics_test.cpp)
 target_link_libraries(
   augusta_metrics_tests
-  PRIVATE
-    augustad_metrics
-    augustad_liveness
-    augusta_failure
-    augusta_logging
-    Boost::beast
-    GTest::gtest
-    GTest::gtest_main
+  PRIVATE augustad_metrics augustad_liveness augusta_failure augusta_logging Boost::beast GTest::gtest GTest::gtest_main
 )
 gtest_discover_tests(augusta_metrics_tests DISCOVERY_TIMEOUT 30)
 
