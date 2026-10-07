@@ -27,8 +27,8 @@ using augusta::math::Vec3;
 constexpr float kTolerance = 1e-5F;
 
 augusta::harness::MatchStart TwoPlayerMatch() {
-  return {.players = {{.session = SessionId{7}, .entity = EntityId{70}, .character = "characters/medic"},
-                      {.session = SessionId{3}, .entity = EntityId{30}, .character = "characters/sniper"}}};
+  return {.players = {{.session = SessionId{7}, .entity = EntityId{70}, .character = "medic"},
+                      {.session = SessionId{3}, .entity = EntityId{30}, .character = "sniper"}}};
 }
 
 TEST(SnapshotOfTest, IsNoneOutsideAMatch) {
@@ -60,9 +60,9 @@ TEST(CharactersOfTest, AreEveryPlayersCharacterInSessionOrder) {
 
   ASSERT_EQ(characters.size(), 2U);
   EXPECT_EQ(characters[0].entity, augusta::presentation::EntityId{30});
-  EXPECT_EQ(characters[0].character, "characters/sniper");
+  EXPECT_EQ(characters[0].character, "sniper");
   EXPECT_EQ(characters[1].entity, augusta::presentation::EntityId{70});
-  EXPECT_EQ(characters[1].character, "characters/medic");
+  EXPECT_EQ(characters[1].character, "medic");
 }
 
 TEST(CharactersOfTest, AreNoneBeforeTheFirstMatch) { EXPECT_TRUE(CharactersOf(std::nullopt).empty()); }

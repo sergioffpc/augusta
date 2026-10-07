@@ -169,6 +169,41 @@ if (-not (Get-Command luacheck -ErrorAction SilentlyContinue)) {
   throw "luacheck was installed but is not on PATH: $luacheckBin"
 }
 
+# Install the PSScriptAnalyzer module, which lints and formats the PowerShell
+# scripts (scripts\psscriptanalyzer.ps1 imports it from here), pinned as CI
+# pins it. Unpacked from the gallery's package rather than Install-Module,
+# which needs the NuGet provider and a trusted gallery first.
+$psScriptAnalyzerVersion = "1.25.0"
+$psScriptAnalyzerDir = Join-Path $env:LOCALAPPDATA "Programs\PSScriptAnalyzer"
+$psScriptAnalyzerManifest = Join-Path $psScriptAnalyzerDir "PSScriptAnalyzer.psd1"
+if ((Test-Path $psScriptAnalyzerManifest) -and
+    (Import-PowerShellDataFile $psScriptAnalyzerManifest).ModuleVersion -eq $psScriptAnalyzerVersion) {
+  Write-Host "PSScriptAnalyzer $psScriptAnalyzerVersion is already installed; skipping."
+} else {
+  $psScriptAnalyzerTemp = Join-Path $env:TEMP ("PSScriptAnalyzer-" + [guid]::NewGuid().ToString("N"))
+  New-Item -ItemType Directory -Path $psScriptAnalyzerTemp | Out-Null
+  try {
+    $psScriptAnalyzerPackage = Join-Path $psScriptAnalyzerTemp "PSScriptAnalyzer.zip"
+    Invoke-WebRequest -Uri "https://www.powershellgallery.com/api/v2/package/PSScriptAnalyzer/$psScriptAnalyzerVersion" `
+      -OutFile $psScriptAnalyzerPackage
+    $expectedHash = "14e634c828eb98efb9f40b2918ba90f139ed5eccdf663a2a747736d996995d60"
+    $actualHash = (Get-FileHash $psScriptAnalyzerPackage -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -ne $expectedHash) {
+      throw "SHA-256 mismatch for PSScriptAnalyzer $psScriptAnalyzerVersion."
+    }
+    if (Test-Path $psScriptAnalyzerDir) {
+      Remove-Item -LiteralPath $psScriptAnalyzerDir -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $psScriptAnalyzerDir | Out-Null
+    tar.exe -xf $psScriptAnalyzerPackage -C $psScriptAnalyzerDir
+    if ($LASTEXITCODE -ne 0) {
+      throw "Extracting PSScriptAnalyzer $psScriptAnalyzerVersion failed (exit $LASTEXITCODE)."
+    }
+  } finally {
+    Remove-Item -LiteralPath $psScriptAnalyzerTemp -Recurse -Force
+  }
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
 # vcpkg is a pinned git submodule (third_party/vcpkg) rather than a

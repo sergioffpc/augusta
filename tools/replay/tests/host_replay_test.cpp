@@ -47,7 +47,7 @@ using augusta::server::Scenario;
 
 constexpr std::uint8_t kTickRate = 60;
 constexpr float kFixedTick = 1.0F / kTickRate;
-constexpr const char* kCharacter = "characters/player";
+constexpr const char* kCharacter = "soldier";
 constexpr int kMatchTicks = 30;
 constexpr auto kNetworkWait = std::chrono::milliseconds(2);
 constexpr auto kDeadline = std::chrono::seconds(15);

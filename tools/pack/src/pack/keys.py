@@ -1,16 +1,17 @@
-"""Ed25519 signing keypair generation/file I/O (ADR-0018) - raw fixed-size
-binary files, matching augusta::assets::Ed25519PublicKey/Ed25519PrivateKey's
-on-disk layout (32 and 64 bytes respectively, no framing). Keys are
-generated via pynacl's libsodium bindings (nacl.bindings.crypto_sign_keypair)
-rather than augusta_assets' own GenerateEd25519KeyPair - see pack.py's own
-comment on why this project doesn't link that module. Cross-checked to
-produce byte-identical, cross-verifiable keys/signatures against the real
-libsodium C library.
+"""Ed25519 signing keypair generation/file I/O (ADR-0018).
+
+The keys are raw fixed-size binary files, matching
+augusta::assets::Ed25519PublicKey/Ed25519PrivateKey's on-disk layout (32 and 64
+bytes respectively, no framing). Keys are generated via pynacl's libsodium
+bindings (nacl.bindings.crypto_sign_keypair) rather than augusta_assets' own
+GenerateEd25519KeyPair - see pack.py's own comment on why this project doesn't
+link that module. Cross-checked to produce byte-identical, cross-verifiable
+keys/signatures against the real libsodium C library.
 """
 
 import argparse
-import sys
 from pathlib import Path
+import sys
 
 import nacl.bindings
 
@@ -25,21 +26,33 @@ def generate_keypair() -> tuple[bytes, bytes]:
 
 
 def read_private_key(path: Path) -> bytes:
+    """The 64-byte Ed25519 private key at path; ValueError if not one."""
     data = path.read_bytes()
     if len(data) != PRIVATE_KEY_SIZE:
-        raise ValueError(f"{path}: expected a {PRIVATE_KEY_SIZE}-byte Ed25519 private key, got {len(data)} bytes")
+        raise ValueError(
+            f"{path}: expected a {PRIVATE_KEY_SIZE}-byte Ed25519 private key, "
+            f"got {len(data)} bytes"
+        )
     return data
 
 
 def read_public_key(path: Path) -> bytes:
+    """The 32-byte Ed25519 public key at path; ValueError if not one."""
     data = path.read_bytes()
     if len(data) != PUBLIC_KEY_SIZE:
-        raise ValueError(f"{path}: expected a {PUBLIC_KEY_SIZE}-byte Ed25519 public key, got {len(data)} bytes")
+        raise ValueError(
+            f"{path}: expected a {PUBLIC_KEY_SIZE}-byte Ed25519 public key, "
+            f"got {len(data)} bytes"
+        )
     return data
 
 
 def write_keypair(prefix: Path) -> tuple[Path, Path]:
-    """Generates a new keypair, writing it to <prefix>.pub / <prefix>.key. Returns (pub_path, key_path)."""
+    """Generates a new keypair, writing it to <prefix>.pub / <prefix>.key.
+
+    Returns:
+        (pub_path, key_path).
+    """
     public_key, private_key = generate_keypair()
     pub_path = prefix.with_name(prefix.name + ".pub")
     key_path = prefix.with_name(prefix.name + ".key")
@@ -49,8 +62,13 @@ def write_keypair(prefix: Path) -> tuple[Path, Path]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Generates a new Ed25519 signing keypair (ADR-0018).")
-    parser.add_argument("prefix", type=Path, help="Writes <prefix>.pub and <prefix>.key.")
+    """Writes the keypair argv names; returns the process's exit code."""
+    parser = argparse.ArgumentParser(
+        description="Generates a new Ed25519 signing keypair (ADR-0018)."
+    )
+    parser.add_argument(
+        "prefix", type=Path, help="Writes <prefix>.pub and <prefix>.key."
+    )
     args = parser.parse_args(argv)
 
     pub_path, key_path = write_keypair(args.prefix)

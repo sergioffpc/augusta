@@ -29,6 +29,28 @@ BUILD_DIR := build/x64-$(PRESET)
 CXX_SOURCES := "src/*.cpp" "src/*.h" "tests/*.cpp" "tests/*.h" "tools/*.cpp" "tools/*.h"
 LUA_SOURCES := "*.lua"
 TOML_SOURCES := "*.toml" ":!:third_party/*"
+PYTHON_SOURCES := "*.py" ":!:third_party/*"
+SHELL_SOURCES := "*.sh" ".githooks/*"
+CMAKE_SOURCES := "CMakeLists.txt" "*/CMakeLists.txt" "*.cmake" ":!:third_party/*"
+MARKDOWN_SOURCES := "*.md" ":!:third_party/*" ":!:CHANGELOG.md"
+
+# The formatters and linters uv runs, at the versions CI pins.
+RUFF := uv tool run ruff@0.16.10
+SHFMT := uv tool run --from shfmt-py==4.2.0 shfmt
+SHELLCHECK := uv tool run --from shellcheck-py==0.11.0.1 shellcheck
+ACTIONLINT := uv tool run --from actionlint-py==1.7.12.25 --with shellcheck-py==0.11.0.1 actionlint
+GERSEMI := uv tool run gersemi@0.29.2
+PYMARKDOWN := uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pymarkdown.json
+# Prettier is a Node package: uv runs Node from its PyPI wheel, and npx Prettier.
+PRETTIER := uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9
+# PSScriptAnalyzer is a PowerShell module: Windows PowerShell here, PowerShell 7
+# (pwsh) elsewhere, skipped where there is none (CI still runs it).
+ifeq ($(OS),Windows_NT)
+psscriptanalyzer = powershell -NoProfile -ExecutionPolicy Bypass -File scripts/psscriptanalyzer.ps1 $(1)
+else
+psscriptanalyzer = if command -v pwsh >/dev/null; then pwsh -NoProfile -File scripts/psscriptanalyzer.ps1 $(1); \
+  else echo "pwsh not found - skipping PSScriptAnalyzer"; fi
+endif
 
 # What CI's Lint step runs clang-tidy on: every src .cpp except the two
 # Windows-only trees and the audio module's Windows-only output device, which
@@ -79,8 +101,8 @@ help:
 	$(info $()  uninstall     remove what install put in place (same DESTDIR))
 	$(info $()  clean         remove build outputs, keep the configuration)
 	$(info $()  distclean     delete $(BUILD_DIR))
-	$(info $()  format        clang-format, yamlfmt, stylua and taplo on tracked source/config files)
-	$(info $()  format-check  clang-format, yamlfmt, yamllint, stylua, luacheck and taplo checks from CI)
+	$(info $()  format        every formatter (C++, YAML, Lua, TOML, Python, shell, CMake, Markdown, PowerShell) on tracked files)
+	$(info $()  format-check  every formatter check and linter CI's format job runs (not clang-tidy))
 	$(info $()  tidy          clang-tidy on src, include-cleaner on what it leaves out, as CI runs them (configures first))
 	$(info $()  lint          format-check, then tidy: everything CI lints)
 	$(info $()  docs          the documentation site, MkDocs and Doxygen, into build/docs-site)
@@ -129,6 +151,11 @@ format:
 	yamlfmt -conf .yamlfmt
 	stylua $(shell git ls-files -- $(LUA_SOURCES))
 	taplo fmt $(shell git ls-files -- $(TOML_SOURCES))
+	$(RUFF) format $(shell git ls-files -- $(PYTHON_SOURCES))
+	$(SHFMT) -w $(shell git ls-files -- $(SHELL_SOURCES))
+	$(GERSEMI) -i $(shell git ls-files -- $(CMAKE_SOURCES))
+	$(PRETTIER) --log-level warn --write $(shell git ls-files -- $(MARKDOWN_SOURCES))
+	$(call psscriptanalyzer,-Fix)
 
 format-check:
 	clang-format --dry-run --Werror $(shell git ls-files -- $(CXX_SOURCES))
@@ -138,6 +165,15 @@ format-check:
 	luacheck $(shell git ls-files -- $(LUA_SOURCES))
 	taplo fmt --check $(shell git ls-files -- $(TOML_SOURCES))
 	taplo lint $(shell git ls-files -- $(TOML_SOURCES))
+	$(RUFF) format --check $(shell git ls-files -- $(PYTHON_SOURCES))
+	$(RUFF) check $(shell git ls-files -- $(PYTHON_SOURCES))
+	$(SHFMT) -d $(shell git ls-files -- $(SHELL_SOURCES))
+	$(SHELLCHECK) $(shell git ls-files -- $(SHELL_SOURCES))
+	$(ACTIONLINT)
+	$(GERSEMI) --check $(shell git ls-files -- $(CMAKE_SOURCES))
+	$(PRETTIER) --log-level warn --check $(shell git ls-files -- $(MARKDOWN_SOURCES))
+	$(PYMARKDOWN) scan $(shell git ls-files -- $(MARKDOWN_SOURCES))
+	$(call psscriptanalyzer)
 
 # -p is written -p=<dir> because PowerShell reads a bare -p as its own
 # -PipelineVariable when vcenv.ps1 forwards the arguments, and clang-tidy would

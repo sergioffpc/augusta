@@ -105,7 +105,7 @@ const Parameters kTestParameters{};
 
 // The one character every test's server offers and every test's client picks,
 // unless a test says otherwise.
-constexpr const char* kCharacter = "characters/player";
+constexpr const char* kCharacter = "soldier";
 
 // The test parameters, for a match of count players.
 Parameters WithPlayerCount(std::uint8_t count) {
@@ -1400,7 +1400,7 @@ TEST_F(SpawnTest, EveryClientIsToldEveryPlayersCharacterAndSpawnPointAtMatchStar
   }
 }
 
-// Three players on the floor, whose scenario's behaviours.lua hands the Map's
+// Three players on the floor, whose scenario's rules hand the Map's
 // three Spawn points out backwards: the last player in the Match takes the first.
 class PolicySpawnTest : public LoopbackMatch {
  protected:
@@ -1409,7 +1409,7 @@ class PolicySpawnTest : public LoopbackMatch {
   }
 
   static augusta::scripting::Engine Backwards() {
-    auto policy = augusta::scripting::Engine::Load({.objectives = std::nullopt, .behaviours = R"(
+    auto policy = augusta::scripting::Engine::Load(R"(
       function assign_spawns(match)
         local assignment = {}
         for i, player in ipairs(match.players) do
@@ -1417,7 +1417,7 @@ class PolicySpawnTest : public LoopbackMatch {
         end
         return assignment
       end
-    )"});
+    )");
     EXPECT_TRUE(policy.has_value());
     return policy ? *std::move(policy) : augusta::scripting::Engine{};
   }
@@ -4941,8 +4941,8 @@ TEST_F(ScriptedLobbyTest, ADeathThatArrivesOutsideAMatchIsDropped) {
 }
 
 // The example scenario's Game policy, read out of its golden server pack by the
-// server's own loader: behaviours.lua hands out the Spawn points, objectives.lua
-// ends the Match on the last player standing (US-14).
+// server's own loader: its rules hand out the Spawn points and end the Match on
+// the last player standing (US-14).
 augusta::scripting::Engine ExamplePolicy() {
   const std::filesystem::path packs{AUGUSTA_EXAMPLE_PACKS};
   const auto public_key = augusta::assets::ReadEd25519PublicKeyFile(packs / "test.pub");
@@ -5123,8 +5123,8 @@ TEST_F(LastStandingTrioTest, WhenAllButOnePlayerDisconnectTheOneLeftWins) {
 }
 
 // A full Match of eight under the example scenario's Game policy, everyone
-// standing in a line along X, 4 m apart, at the Spawn point behaviours.lua
-// hands it: its rank down the line, 0 at the origin. Everyone looks along -X,
+// standing in a line along X, 4 m apart, at the Spawn point the rules hand
+// it: its rank down the line, 0 at the origin. Everyone looks along -X,
 // at the player in front of it, and plays the character of HumanHitboxes with a
 // rifle of 600 rounds a minute whose magazine of 15 takes half a second to
 // reload, and whose every round kicks the aim up by 1/256 rad. Five torso hits kill.
@@ -5192,7 +5192,7 @@ class EightPlayerMatchTest : public LoopbackMatch {
 // front, so the players die one by one from the back of the line, each killed
 // by the next, and the front one is the last standing. The server keeps up with
 // every client's commands, the dead's included, to the end, which the example
-// objectives.lua decides with that player as winner, and every client is told
+// rules decide with that player as winner, and every client is told
 // of every Death and of the winner.
 TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMissedTicks) {
   constexpr int kTickLimit = 900;  // The Match ends some 540 ticks in.
@@ -5318,7 +5318,7 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
 // A Match of one, for development (ADR-0043). In v1 only rounds kill and none
 // hits its own shooter, so a lone player cannot die over the network: that its
 // death is a draw is checked through SimulationWorld
-// (example_objectives_test.cpp); here, that a lone player plays on, and that a
+// (example_rules_test.cpp); here, that a lone player plays on, and that a
 // draw reaches it as one.
 class SoloMatchTest : public LoopbackMatch {
  protected:
@@ -5348,10 +5348,10 @@ TEST_F(SoloLastStandingTest, ALonePlayerPlaysOnUnderTheExampleObjectives) {
 
 class SoloDrawTest : public SoloMatchTest {
  protected:
-  SoloDrawTest() : SoloMatchTest(Objectives("function on_tick() return {draw = true} end")) {}
+  SoloDrawTest() : SoloMatchTest(Rules("function on_tick() return {draw = true} end")) {}
 
-  static augusta::scripting::Engine Objectives(const char* objectives) {
-    auto policy = augusta::scripting::Engine::Load({.objectives = objectives, .behaviours = std::nullopt});
+  static augusta::scripting::Engine Rules(const char* rules) {
+    auto policy = augusta::scripting::Engine::Load(rules);
     EXPECT_TRUE(policy.has_value());
     return policy ? *std::move(policy) : augusta::scripting::Engine{};
   }

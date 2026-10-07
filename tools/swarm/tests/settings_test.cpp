@@ -26,7 +26,7 @@ const std::filesystem::path kRoot = kFileDir / "content";
 
 // Every required key outside the run section, before what a test adds.
 constexpr std::string_view kBase =
-    "base_dir: content\nplayer:\n  character: characters/player\ncontent:\n  pack: a.pack\n  public_key: k.pub\n";
+    "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.pack\n  public_key: k.pub\n";
 
 bool Contains(const std::string& text, std::string_view part) { return text.find(part) != std::string::npos; }
 
@@ -42,7 +42,7 @@ TEST(ParseSettingsTest, ReadsEveryKey) {
   ASSERT_TRUE(settings.has_value()) << DescribeSettingsError(settings.error());
   EXPECT_EQ(settings->pack_path, kRoot / "a.pack");
   EXPECT_EQ(settings->public_key_path, kRoot / "k.pub");
-  EXPECT_EQ(settings->character, "characters/player");
+  EXPECT_EQ(settings->character, "soldier");
   EXPECT_EQ(settings->server_address, "10.0.0.5:27016");
   EXPECT_EQ(settings->log_level, "warn");
   EXPECT_EQ(settings->matches, 3);

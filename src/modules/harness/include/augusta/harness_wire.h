@@ -28,7 +28,7 @@ struct JoinRequest {
   std::string engine_version;
   /// The hash of the client pack it loaded.
   assets::PackHash client_pack{};
-  /// The character it asks to play, by its path relative to `authoring/`.
+  /// The character it asks to play, by its name in the scenario's manifest.
   std::string character;
 };
 

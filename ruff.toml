@@ -1,0 +1,57 @@
+# Python (tools/, scripts/) follows the Google Python Style Guide
+# (https://google.github.io/styleguide/pyguide.html), ADR-0012, at the
+# interpreter tools/pyproject.toml pins.
+line-length = 80
+target-version = "py312"
+
+[lint]
+# The guide's checks as ruff has them: pycodestyle, Pyflakes, pylint (which the
+# guide lints with), naming, docstrings, import order, no relative imports, no
+# catch-all except, shadowed builtins, unused arguments, logging with %-style
+# arguments; and bugbear, pyupgrade and simplify for bugs and dead code.
+select = [
+  "E",
+  "F",
+  "W",
+  "PL",
+  "N",
+  "D",
+  "I",
+  "TID",
+  "BLE",
+  "A",
+  "ARG",
+  "G",
+  "B",
+  "UP",
+  "SIM",
+]
+ignore = [
+  # The guide sets no limits on arguments, branches, returns or statements.
+  "PLR09",
+  # Literals in comparisons are left to the writer.
+  "PLR2004",
+  # The guide's pylintrc wants no docstring on a dunder method: __init__'s
+  # arguments are the class docstring's.
+  "D105",
+  "D107",
+]
+
+[lint.pydocstyle]
+convention = "google"
+
+[lint.isort]
+# One import per line (but typing and collections.abc), sorted within each
+# group (stdlib, third party, local) by full module path, ignoring case.
+force-single-line = true
+force-sort-within-sections = true
+case-sensitive = false
+order-by-type = false
+single-line-exclusions = ["typing", "collections.abc"]
+
+[lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[lint.per-file-ignores]
+# The guide does not require docstrings in tests.
+"**/tests/**" = ["D1"]

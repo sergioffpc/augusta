@@ -13,7 +13,7 @@
 #include "encoder.h"
 
 // The client's cue sounds (ADR-0020): a sound for every cue in the catalogue,
-// found in the client pack under the sounds folder it names.
+// found in the client pack under the sounds prefix it names.
 namespace {
 
 using augusta::assets::AssetEntry;
@@ -26,7 +26,7 @@ class CueSoundsTest : public ::testing::Test {
  protected:
   void TearDown() override { std::filesystem::remove(path_); }
 
-  // A pack naming sounds/test as its sounds folder, with a sound for every cue
+  // A pack naming sounds/test as its sounds prefix, with a sound for every cue
   // but missing.
   Pack PackWithoutCue(std::string_view missing) {
     std::vector<AssetEntry> entries = {

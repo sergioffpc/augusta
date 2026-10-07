@@ -10,11 +10,7 @@ find_package(blake3 CONFIG REQUIRED)
 find_package(unofficial-sodium CONFIG REQUIRED)
 find_package(boost_interprocess CONFIG REQUIRED)
 
-add_library(augusta_assets STATIC
-  assets.cpp
-  encoder.cpp
-  decoder.cpp
-)
+add_library(augusta_assets STATIC assets.cpp encoder.cpp decoder.cpp)
 target_include_directories(augusta_assets PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(augusta_assets PUBLIC augusta_math)
 target_link_libraries(augusta_assets PRIVATE BLAKE3::blake3 unofficial-sodium::sodium Boost::interprocess)

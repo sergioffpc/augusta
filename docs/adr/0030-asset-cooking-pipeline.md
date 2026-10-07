@@ -1,23 +1,121 @@
 # Asset Cooking Pipeline
 
-The cooker's input is a **scenario name** (ADR-0041): `augusta-pack <name>` always resolves to `<assets-root>/authoring/scenarios/<name>/`, which holds a `manifest.yaml` naming the one map and every character that scenario composes, plus the scenario's Lua scripts (ADR-0015, ADR-0039, ADR-0040). It packs everything the manifest names: the map's and every character's stage cooked as described below (a character's own prims addressed under its manifest path, ADR-0040), and every `*.lua` file under the scenario folder into the server pack as a script asset addressed by its path relative to that folder (ADR-0031), never into the client pack (ADR-0019). The cooker refuses a scenario without a `manifest.yaml`, a manifest naming a map/character that doesn't resolve to a stage, or a scenario without a `parameters.lua`, since the server reads its Parameters out of its pack at startup.
+The cooker's input is a **scenario name** (ADR-0041): `augusta-pack <name>`
+always resolves to `<assets-root>/authoring/scenarios/<name>.yaml`, the manifest
+naming, by file, the one map, every character, the cue sounds and the scripts
+that scenario composes (ADR-0015, ADR-0020, ADR-0022, ADR-0039, ADR-0040). It
+packs everything the manifest names: the map's and every character's stage
+cooked as described below (a character's own prims addressed under its path,
+ADR-0040), and each script into the server pack as a script asset at its role's
+fixed path, `parameters.lua` or `rules.lua` (ADR-0031), never into the client
+pack (ADR-0019). The cooker refuses a scenario without a manifest, a manifest
+holding a key, cue or script role it does not know, a file it names that is
+missing or not what its key needs, a cue without a sound, or a scenario without
+a Parameters script, since the server reads its Parameters out of its pack at
+startup.
 
-By default, packs are written to `<assets-root>/packs/<name>/{client,server}.pack`, keyed by the scenario's name alone (not its `authoring/scenarios/` position) - so a config file naming a pack (ADR-0034) can mirror the scenario's own name without the cooker needing to be told explicitly where to write it. `--client-output-pack`/`--server-output-pack` override this per run.
+By default, packs are written to
+`<assets-root>/packs/<name>/{client,server}.pack`, keyed by the scenario's name
+alone (not its `authoring/scenarios/` position) - so a config file naming a pack
+(ADR-0034) can mirror the scenario's own name without the cooker needing to be
+told explicitly where to write it. `--client-output-pack`/`--server-output-pack`
+override this per run.
 
-The full pipeline runs as a single ordered sequence: **usd-optimize → usd-validation-nvidia → USD stage walk → meshoptimizer/DirectXTex → pack → hash → sign**, entirely inside `tools/pack` - the first two steps run once per stage the manifest composes (the map, then each character, ADR-0041), each independently cleaned/validated, before the walk/pack/hash/sign steps run once over all of them together into one pack pair — a pure-Python project (`augusta-pack` console-script entry point), not a CLI-shelling shell script and not a C++ tool with Python bindings over it. Stage cleanup and validation (ADR-0015) happen first, against the raw authored OpenUSD stage, since everything downstream reads from the cleaned/validated stage rather than the authored one. usd-optimize ships no CLI of its own (a Python library only), so `pack.optimize` drives its Python API in-process; `nvidia_usd_validate` does have a CLI, but `pack.validate` calls the same package's Python entry point (`usd_validation_nvidia.cli_main`) in-process too, catching the `SystemExit` it raises on failure rather than reading a subprocess exit code - no subprocess anywhere in this pipeline. Either stage failing aborts before cooking (no pack written).
+The full pipeline runs as a single ordered sequence: **usd-optimize →
+usd-validation-nvidia → USD stage walk → meshoptimizer/DirectXTex → pack → hash
+→ sign**, entirely inside `tools/pack` - the first two steps run once per stage
+the manifest composes (the map, then each character, ADR-0041), each
+independently cleaned/validated, before the walk/pack/hash/sign steps run once
+over all of them together into one pack pair — a pure-Python project
+(`augusta-pack` console-script entry point), not a CLI-shelling shell script and
+not a C++ tool with Python bindings over it. Stage cleanup and validation
+(ADR-0015) happen first, against the raw authored OpenUSD stage, since
+everything downstream reads from the cleaned/validated stage rather than the
+authored one. usd-optimize ships no CLI of its own (a Python library only), so
+`pack.optimize` drives its Python API in-process; `nvidia_usd_validate` does
+have a CLI, but `pack.validate` calls the same package's Python entry point
+(`usd_validation_nvidia.cli_main`) in-process too, catching the `SystemExit` it
+raises on failure rather than reading a subprocess exit code - no subprocess
+anywhere in this pipeline. Either stage failing aborts before cooking (no pack
+written).
 
-The cooker itself (`pack.cook`) walks the cleaned stage's prims via that same pip-installed `pxr` build (`Usd.Stage.Traverse`, `UsdGeom`/`UsdPhysics`/`UsdShade`), reading mesh/collider/hitbox/spawn-point/texture data exactly as the original C++ walker did (ADR-0015/ADR-0032's authoring conventions). Two pieces have no Python equivalent and stay native, as small independent pybind11 extension modules built from `tools/pack/cpp/` (`_meshoptimizer`, wrapping the vertex weld/simplify/reorder/quantize pass, ADR-0016; `_textconv`, wrapping DirectXTex's WIC load + BC7/BC5/BC4 compression + DDS encode, ADR-0017) — both stateless, taking/returning plain bytes, with **no USD dependency of their own**. That last point is load-bearing, not incidental: an earlier version of this cooker was itself a C++ program linking vcpkg's own OpenUSD build directly, called from Python via a third pybind11 module. It crashed on import with a DLL-name collision (`ImportError: DLL load failed... procedure could not be found`) the moment a process had already loaded usd-optimize's independently-built `pxr` and then tried to load the vcpkg one too — same-named USD DLLs, incompatible ABIs, only one can resolve per process. Moving the stage walk itself into Python (so there is only ever one OpenUSD build in the process) is what actually fixed it, not anything about pybind11 or subprocess boundaries.
+The cooker itself (`pack.cook`) walks the cleaned stage's prims via that same
+pip-installed `pxr` build (`Usd.Stage.Traverse`,
+`UsdGeom`/`UsdPhysics`/`UsdShade`), reading
+mesh/collider/hitbox/spawn-point/texture data exactly as the original C++ walker
+did (ADR-0015/ADR-0032's authoring conventions). Two pieces have no Python
+equivalent and stay native, as small independent pybind11 extension modules
+built from `tools/pack/cpp/` (`_meshoptimizer`, wrapping the vertex
+weld/simplify/reorder/quantize pass, ADR-0016; `_textconv`, wrapping
+DirectXTex's WIC load + BC7/BC5/BC4 compression + DDS encode, ADR-0017) — both
+stateless, taking/returning plain bytes, with **no USD dependency of their
+own**. That last point is load-bearing, not incidental: an earlier version of
+this cooker was itself a C++ program linking vcpkg's own OpenUSD build directly,
+called from Python via a third pybind11 module. It crashed on import with a
+DLL-name collision
+(`ImportError: DLL load failed... procedure could not be found`) the moment a
+process had already loaded usd-optimize's independently-built `pxr` and then
+tried to load the vcpkg one too — same-named USD DLLs, incompatible ABIs, only
+one can resolve per process. Moving the stage walk itself into Python (so there
+is only ever one OpenUSD build in the process) is what actually fixed it, not
+anything about pybind11 or subprocess boundaries.
 
-Packing, hashing, and signing (`pack.pack`) also moved to pure Python rather than reusing `augusta_assets`' C++ implementation over a binding — that C++ code (encoder.h/decoder.h, now private to that module, not under its public `include/`) remains as the format's canonical reference and round-trip test fixture (`tests/assets_test.cpp`), but `pack.pack` reimplements the same wire format independently: BLAKE3 via the `blake3` package, Ed25519 via `pynacl`'s libsodium bindings (`crypto_sign_keypair`/`crypto_sign`, the same raw seed+pubkey key layout `augusta::assets::GenerateEd25519KeyPair` produces). Both were cross-checked byte-for-byte against the real C/C++ libraries before relying on them, and a pack this project writes is verified to load and resolve correctly through the unmodified C++ decoder (`Pack::Load`/`ResolveMesh`/`ResolveScene`) — the actual code path the client/server runtime uses.
+Packing, hashing, and signing (`pack.pack`) also moved to pure Python rather
+than reusing `augusta_assets`' C++ implementation over a binding — that C++ code
+(encoder.h/decoder.h, now private to that module, not under its public
+`include/`) remains as the format's canonical reference and round-trip test
+fixture (`tests/assets_test.cpp`), but `pack.pack` reimplements the same wire
+format independently: BLAKE3 via the `blake3` package, Ed25519 via `pynacl`'s
+libsodium bindings (`crypto_sign_keypair`/`crypto_sign`, the same raw
+seed+pubkey key layout `augusta::assets::GenerateEd25519KeyPair` produces). Both
+were cross-checked byte-for-byte against the real C/C++ libraries before relying
+on them, and a pack this project writes is verified to load and resolve
+correctly through the unmodified C++ decoder
+(`Pack::Load`/`ResolveMesh`/`ResolveScene`) — the actual code path the
+client/server runtime uses.
 
-The client and server packs (ADR-0019) are assembled first (contents + internal table of contents, ADR-0018), then each assembled pack is content-hashed with BLAKE3, then that hash is signed with Ed25519. Hash and signature are computed over the finished pack, not per individual asset — matching ADR-0018's "a single signed, verified pack file per target, content-hashed... and signed", which describes a pack-level guarantee, not a per-asset one. A corollary: the cooker cannot emit a partial/streaming pack, since hashing/signing require the full assembled contents to already exist. The client pack is therefore finished first: its hash goes into the server pack's header (ADR-0031), which is assembled, hashed and signed after it.
+The client and server packs (ADR-0019) are assembled first (contents + internal
+table of contents, ADR-0018), then each assembled pack is content-hashed with
+BLAKE3, then that hash is signed with Ed25519. Hash and signature are computed
+over the finished pack, not per individual asset — matching ADR-0018's "a single
+signed, verified pack file per target, content-hashed... and signed", which
+describes a pack-level guarantee, not a per-asset one. A corollary: the cooker
+cannot emit a partial/streaming pack, since hashing/signing require the full
+assembled contents to already exist. The client pack is therefore finished
+first: its hash goes into the server pack's header (ADR-0031), which is
+assembled, hashed and signed after it.
 
-See ADR-0031 for the pack's actual byte layout (header/index/trailer) and the per-USD-prim conversion mapping.
+See ADR-0031 for the pack's actual byte layout (header/index/trailer) and the
+per-USD-prim conversion mapping.
 
 ## Considered Options
 
-**A single C++ cooker, linking OpenUSD/meshoptimizer/DirectXTex directly, called from Python through one pybind11 module** was the original design. Rejected after implementation: it requires vcpkg's own OpenUSD build to load in the same process as usd-optimize's independently-built one (needed regardless, for stage cleanup) - a hard DLL-name collision on Windows, not a subprocess/threading issue a different calling convention could work around. Splitting the native surface down to only the two USD-independent pieces (meshoptimizer, DirectXTex) and moving the stage walk into Python removes the conflict at its root rather than working around it (e.g. via subprocess isolation, which was considered and would have worked, but keeps two OpenUSD toolchains to maintain for no benefit once the walk itself is trivially portable to Python).
+**A single C++ cooker, linking OpenUSD/meshoptimizer/DirectXTex directly, called
+from Python through one pybind11 module** was the original design. Rejected
+after implementation: it requires vcpkg's own OpenUSD build to load in the same
+process as usd-optimize's independently-built one (needed regardless, for stage
+cleanup) - a hard DLL-name collision on Windows, not a subprocess/threading
+issue a different calling convention could work around. Splitting the native
+surface down to only the two USD-independent pieces (meshoptimizer, DirectXTex)
+and moving the stage walk into Python removes the conflict at its root rather
+than working around it (e.g. via subprocess isolation, which was considered and
+would have worked, but keeps two OpenUSD toolchains to maintain for no benefit
+once the walk itself is trivially portable to Python).
 
-**Reusing `augusta_assets`' C++ pack-writer via a third pybind11 binding** (rather than reimplementing it in Python) was also considered, and was the safer-looking option on paper - byte-for-byte fidelity with the decoder "for free," no format logic to duplicate. Decided against: that binding would have had the same no-USD-dependency property as meshoptimizer/textconv (blake3/libsodium don't touch USD), so it wouldn't have caused the collision above, but keeping the cooker's write path in Python end to end was judged worth the small duplication, validated once by cross-checking the hash/signature primitives against the real libraries directly rather than trusted blindly.
+**Reusing `augusta_assets`' C++ pack-writer via a third pybind11 binding**
+(rather than reimplementing it in Python) was also considered, and was the
+safer-looking option on paper - byte-for-byte fidelity with the decoder "for
+free," no format logic to duplicate. Decided against: that binding would have
+had the same no-USD-dependency property as meshoptimizer/textconv
+(blake3/libsodium don't touch USD), so it wouldn't have caused the collision
+above, but keeping the cooker's write path in Python end to end was judged worth
+the small duplication, validated once by cross-checking the hash/signature
+primitives against the real libraries directly rather than trusted blindly.
 
-Hashing each cooked asset individually (embedding per-asset hashes in the pack's index, in addition to the pack-level hash/signature) was considered, for finer-grained corruption detection than an all-or-nothing pack check. Deferred, not rejected outright: it's a compatible future addition to the pack's index format (ADR-0018 already treats the index as an implementation detail) that doesn't change this pipeline's stage order, so it's left out until a concrete need (e.g., partial pack streaming) justifies the added format complexity.
+Hashing each cooked asset individually (embedding per-asset hashes in the pack's
+index, in addition to the pack-level hash/signature) was considered, for
+finer-grained corruption detection than an all-or-nothing pack check. Deferred,
+not rejected outright: it's a compatible future addition to the pack's index
+format (ADR-0018 already treats the index as an implementation detail) that
+doesn't change this pipeline's stage order, so it's left out until a concrete
+need (e.g., partial pack streaming) justifies the added format complexity.

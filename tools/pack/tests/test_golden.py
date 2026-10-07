@@ -1,15 +1,17 @@
-"""The Python half of the pack format's contract (ADR-0013): cooking the
-example scenario with the committed test key gives, byte for byte, the golden
-packs the C++ runtime's tests load (tests/cooked_pack_test.cpp). A cook is
-deterministic, so any difference is a change to the format or to the example,
-and the golden packs are regenerated with the command in README.md.
+"""The Python half of the pack format's contract (ADR-0013).
+
+Cooking the example scenario with the committed test key gives, byte for byte,
+the golden packs the C++ runtime's tests load (tests/cooked_pack_test.cpp). A
+cook is deterministic, so any difference is a change to the format or to the
+example, and the golden packs are regenerated with the command in README.md.
 """
 
 from conftest import EXAMPLES_ROOT
-
 from pack import cli
 
-GOLDEN_DIR = EXAMPLES_ROOT.parent.parent.parent / "tests" / "fixtures" / "example-packs"
+GOLDEN_DIR = (
+    EXAMPLES_ROOT.parent.parent.parent / "tests" / "fixtures" / "example-packs"
+)
 
 
 def test_the_example_scenario_cooks_into_the_golden_packs(tmp_path):
@@ -18,7 +20,7 @@ def test_the_example_scenario_cooks_into_the_golden_packs(tmp_path):
 
     status = cli.main(
         [
-            "augusta",
+            "firebase",
             "--assets-root",
             str(EXAMPLES_ROOT),
             "--signing-key",

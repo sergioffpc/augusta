@@ -98,7 +98,7 @@ enum class Phase {
   kDamage,
   /// Policy, sandboxed Lua (ADR-0022). Win condition, round transitions
   /// (US-14) - augusta::scripting::Engine::Call: the
-  /// objectives' on_tick hook, handed a read-only view of the Match as Damage
+  /// rules' on_tick hook, handed a read-only view of the Match as Damage
   /// left it (MatchView in simulation.cpp), while the world has players and
   /// policy has not already ended their Match. It may end the Match, with a
   /// winner or as a draw: its answer, validated into a typed action
@@ -125,7 +125,7 @@ enum class EntityId : std::uint32_t {};
 struct PlayerIdentity {
   /// The session of its player; 0, for a body no session plays, cannot win.
   SessionId session{};
-  /// The character, by its path relative to `authoring/` (ADR-0042).
+  /// The character, by its name in the scenario's manifest (ADR-0042).
   std::string character;
 };
 
@@ -341,7 +341,7 @@ class World {
 
   /// Match start (US-03): the Match in the world ends first, as EndMatch ends
   /// it, then players, which name distinct entities, each get a Spawn point of
-  /// spawn_points from Game policy (the behaviours' assign_spawns hook,
+  /// spawn_points from Game policy (the rules' assign_spawns hook,
   /// ADR-0022) and are added there as AddPlayer adds them, with their identity:
   /// fresh, with the Parameters' starting health and a full rifle. With no
   /// hook, or an answer that is refused (and logged), players take spawn_points

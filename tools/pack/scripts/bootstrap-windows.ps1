@@ -32,12 +32,12 @@ $packProject = Split-Path -Parent $PSScriptRoot
 
 function Install-WingetPackage {
   param([string]$Id, [string[]]$Override)
-  $args = @("install", "--id", $Id, "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements")
+  $wingetArgs = @("install", "--id", $Id, "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements")
   if ($Override) {
-    $args += @("--override", ($Override -join " "))
+    $wingetArgs += @("--override", ($Override -join " "))
   }
   Write-Host "Installing $Id..."
-  winget @args
+  winget @wingetArgs
 }
 
 # uv manages its own Python interpreters (see the venv creation below) - no
@@ -69,14 +69,16 @@ New-Item -ItemType Directory -Force -Path $authoringDir, $packsDir, $keysDir, $b
 
 # A small worked authoring/ tree (tools/composer/examples/authoring - committed,
 # unlike everything else under $AssetsRoot) so a fresh environment has
-# something to cook straight away (`augusta-pack augusta`): one map, its required
-# parameters.lua (ADR-0039) and placeholder objectives.lua/behaviours.lua for
-# game policy (ADR-0022), one character (ADR-0040), placeholder cue sounds
-# (ADR-0020), and the manifest.yaml (ADR-0041) composing them. Seeded piece by piece rather than as one tree,
+# something to cook straight away (`augusta-pack firebase`): one map (ADR-0015),
+# one character (ADR-0040), placeholder cue sounds (ADR-0020), a Parameters
+# script (ADR-0039) and rules (ADR-0022), and the scenario's manifest
+# (ADR-0041) composing them. Seeded piece by piece rather than as one tree,
 # so each survives local edits independently - left alone once it exists,
 # like the signing key below.
 $exampleRoot = Join-Path (Split-Path -Parent $packProject) "composer\examples\authoring"
-foreach ($piece in "maps\augusta", "characters\player", "sounds\augusta", "scenarios\augusta") {
+foreach ($piece in "maps\firebase.usda", "characters\soldier.usda", "sounds\gunshot.wav", "sounds\hit_marker.wav",
+  "sounds\hit_taken.wav", "sounds\death.wav", "sounds\match_won.wav", "sounds\match_lost.wav",
+  "scripts\parameters\rules_of_engagement.lua", "scripts\rules\last_man_standing.lua", "scenarios\firebase.yaml") {
   $source = Join-Path $exampleRoot $piece
   $dest = Join-Path $authoringDir $piece
   if (Test-Path $dest) {
@@ -84,7 +86,7 @@ foreach ($piece in "maps\augusta", "characters\player", "sounds\augusta", "scena
   } else {
     Write-Host "Seeding example $piece at $dest..."
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest) | Out-Null
-    Copy-Item -Recurse $source $dest
+    Copy-Item $source $dest
   }
 }
 

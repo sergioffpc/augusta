@@ -28,7 +28,7 @@
 #include "encoder.h"
 #include "policy_loader.h"
 
-// The example scenario's shipped objectives.lua, run inside the real engine
+// The example scenario's shipped rules (last_man_standing.lua), run inside the real engine
 // through SimulationWorld (ADR-0013's decision for Lua gameplay scripts): loaded
 // out of a signed pack as the server loads it, and checked for last player
 // standing (US-14) with every Player count from 1 to 8.
@@ -72,16 +72,15 @@ augusta::assets::AssetEntry ScriptEntry(std::string path, const std::string& tex
 // loaded back out of it by the server's own loader. ctest runs every test in a
 // process of its own, possibly in parallel, so each writes a pack of its own.
 augusta::scripting::Engine ExamplePolicy() {
-  const std::filesystem::path scenario{AUGUSTA_EXAMPLE_SCENARIO};
   const ::testing::TestInfo& test = *::testing::UnitTest::GetInstance()->current_test_info();
-  std::string name = std::string("augusta_example_objectives_test_") + test.test_suite_name() + "_" + test.name();
+  std::string name = std::string("augusta_example_rules_test_") + test.test_suite_name() + "_" + test.name();
   std::ranges::replace(name, '/', '_');
   const auto pack_path = std::filesystem::temp_directory_path() / (name + ".pack");
   const auto keys = augusta::assets::GenerateEd25519KeyPair();
-  EXPECT_TRUE(augusta::assets::WritePack(pack_path,
-                                         {ScriptEntry("objectives.lua", ReadFile(scenario / "objectives.lua")),
-                                          ScriptEntry("behaviours.lua", ReadFile(scenario / "behaviours.lua"))},
-                                         keys.private_key)
+  EXPECT_TRUE(augusta::assets::WritePack(
+                  pack_path,
+                  {ScriptEntry(std::string(augusta::scripting::kRulesScriptPath), ReadFile(AUGUSTA_EXAMPLE_RULES))},
+                  keys.private_key)
                   .has_value());
   auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
   std::filesystem::remove(pack_path);
@@ -115,7 +114,7 @@ augusta::physics::CollisionMesh Floor() {
                                          .indices = {0, 1, 2, 0, 2, 3}};
 }
 
-// A Match of player_count players under the example's objectives, on a floor,
+// A Match of player_count players under the example's rules, on a floor,
 // with rounds that kill at once. Player 0, the shooter, stands at the centre;
 // every other stands kRadius away, each in a direction of its own, so the
 // shooter can turn to each and shoot it, and each can shoot the shooter back.
@@ -137,7 +136,7 @@ class Arena {
   // brings one in.
   void Add(std::size_t player, const Vec3& position) {
     world_.AddPlayer(Entity(player), position, Cross(),
-                     PlayerIdentity{.session = Session(player), .character = "characters/player"});
+                     PlayerIdentity{.session = Session(player), .character = "soldier"});
   }
 
   void Leave(std::size_t player) { world_.RemovePlayer(Entity(player)); }
@@ -173,7 +172,7 @@ class Arena {
     return killing;
   }
 
-  // Every Match end the objectives have decided so far, with the tick of each.
+  // Every Match end the rules have decided so far, with the tick of each.
   const std::vector<std::pair<augusta::tick::Tick, augusta::simulation::MatchEnd>>& Ends() const { return ends_; }
 
  private:
@@ -212,7 +211,7 @@ class Arena {
   std::vector<std::pair<augusta::tick::Tick, augusta::simulation::MatchEnd>> ends_;
 };
 
-class ExampleObjectivesTest : public ::testing::TestWithParam<std::size_t> {
+class ExampleRulesTest : public ::testing::TestWithParam<std::size_t> {
  protected:
   void SetUp() override {
     augusta::logging::Init();
@@ -222,7 +221,7 @@ class ExampleObjectivesTest : public ::testing::TestWithParam<std::size_t> {
 
 // With two or more players: the Match ends on the tick only one is left alive,
 // and that one wins.
-class LastPlayerStandingTest : public ExampleObjectivesTest {};
+class LastPlayerStandingTest : public ExampleRulesTest {};
 
 TEST_P(LastPlayerStandingTest, TheLastPlayerAliveWinsOnTheTickTheOthersAreAllDead) {
   const std::size_t players = GetParam();
@@ -272,7 +271,7 @@ TEST_P(LastPlayerStandingTest, WhenAllButOnePlayerLeaveTheOneLeftWins) {
 
 // A Match everyone has left has no one for policy to decide on: the server
 // ends it on its own, as it always has.
-TEST_P(LastPlayerStandingTest, AMatchEveryoneHasLeftIsNotEndedByTheObjectives) {
+TEST_P(LastPlayerStandingTest, AMatchEveryoneHasLeftIsNotEndedByTheRules) {
   const std::size_t players = GetParam();
   Arena arena(players);
 
@@ -300,7 +299,7 @@ INSTANTIATE_TEST_SUITE_P(PlayerCounts, LastPlayerStandingTest, ::testing::Range<
 
 // A Match that started with one player (ADR-0043's development Match) is a
 // draw once that player dies, and goes on while it lives.
-TEST_F(ExampleObjectivesTest, ASoloMatchGoesOnWhileItsPlayerLivesAndIsADrawWhenItDies) {
+TEST_F(ExampleRulesTest, ASoloMatchGoesOnWhileItsPlayerLivesAndIsADrawWhenItDies) {
   Arena arena(1);
   arena.Wait(10 * kTickRate);
   ASSERT_TRUE(arena.Ends().empty());

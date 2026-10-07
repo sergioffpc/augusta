@@ -26,6 +26,7 @@ jobs:
       run_yaml: ${{ steps.filter.outputs.run_yaml }}
       run_lua: ${{ steps.filter.outputs.run_lua }}
       run_toml: ${{ steps.filter.outputs.run_toml }}
+      run_lint: ${{ steps.filter.outputs.run_lint }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -39,11 +40,16 @@ jobs:
           fi
 
           if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null; then
-            echo "run_build=true" >> "$GITHUB_OUTPUT"
-            echo "run_container=true" >> "$GITHUB_OUTPUT"
-            echo "run_manifests=true" >> "$GITHUB_OUTPUT"
-            echo "run_tools=true" >> "$GITHUB_OUTPUT"
-            echo "run_yaml=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "run_build=true"
+              echo "run_container=true"
+              echo "run_manifests=true"
+              echo "run_tools=true"
+              echo "run_yaml=true"
+              echo "run_lua=true"
+              echo "run_toml=true"
+              echo "run_lint=true"
+            } >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -103,15 +109,24 @@ jobs:
           else
             echo "run_toml=false" >> "$GITHUB_OUTPUT"
           fi
+
+          # Python, shell, Markdown, CMake, PowerShell and the workflows, and
+          # the rules each is formatted and linted by.
+          if echo "$changed" \
+              | grep -qE '(\.(py|sh|md|cmake|ps1)$|(^|/)CMakeLists\.txt$|^\.githooks/|^\.github/workflows/|^\.github/actionlint\.yaml$|^(ruff\.toml|\.shellcheckrc|\.gersemirc|\.pymarkdown\.json|\.prettierrc\.yaml|PSScriptAnalyzerSettings\.psd1|\.editorconfig)$)'; then
+            echo "run_lint=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_lint=false" >> "$GITHUB_OUTPUT"
+          fi
   format:
     needs: changes
     if: >-
-      needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lua == 'true' || needs.changes.outputs.run_toml == 'true'
+      needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lua == 'true' || needs.changes.outputs.run_toml == 'true' || needs.changes.outputs.run_lint == 'true'
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-        if: needs.changes.outputs.run_yaml == 'true'
+        if: needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lint == 'true'
         with:
           enable-cache: true
       - name: Install yamlfmt
@@ -133,7 +148,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y clang-format
       - name: Check C++ formatting
         if: needs.changes.outputs.run_build == 'true'
-        run: find src tests tools \( -name '*.cpp' -o -name '*.h' \) | xargs clang-format --dry-run --Werror
+        run: find src tests tools \( -name '*.cpp' -o -name '*.h' \) -print0 | xargs -0 clang-format --dry-run --Werror
       - name: Check YAML formatting and lint
         if: needs.changes.outputs.run_yaml == 'true'
         run: |
@@ -179,6 +194,49 @@ jobs:
         run: |
           git ls-files -z -- '*.toml' ':!:third_party/*' | xargs -0 taplo fmt --check
           git ls-files -z -- '*.toml' ':!:third_party/*' | xargs -0 taplo lint
+      # uv runs the rest at pinned versions, as the Makefile's format-check and
+      # the git hooks do.
+      - name: Check Python formatting and lint
+        if: needs.changes.outputs.run_lint == 'true'
+        run: |
+          git ls-files -z -- '*.py' ':!:third_party/*' | xargs -0 uv tool run ruff@0.16.10 format --check
+          git ls-files -z -- '*.py' ':!:third_party/*' | xargs -0 uv tool run ruff@0.16.10 check
+      - name: Check shell formatting and lint
+        if: needs.changes.outputs.run_lint == 'true'
+        run: |
+          git ls-files -z -- '*.sh' '.githooks/*' | xargs -0 uv tool run --from shfmt-py==4.2.0 shfmt -d
+          git ls-files -z -- '*.sh' '.githooks/*' | xargs -0 uv tool run --from shellcheck-py==0.11.0.1 shellcheck
+      - name: Lint the workflows
+        if: needs.changes.outputs.run_lint == 'true'
+        run: uv tool run --from actionlint-py==1.7.12.25 --with shellcheck-py==0.11.0.1 actionlint
+      - name: Check CMake formatting
+        if: needs.changes.outputs.run_lint == 'true'
+        run: |
+          git ls-files -z -- 'CMakeLists.txt' '*/CMakeLists.txt' '*.cmake' ':!:third_party/*' \
+            | xargs -0 uv tool run gersemi@0.29.2 --check
+      - name: Check Markdown formatting and lint
+        if: needs.changes.outputs.run_lint == 'true'
+        run: |
+          git ls-files -z -- '*.md' ':!:third_party/*' ':!:CHANGELOG.md' \
+            | xargs -0 uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9 --log-level warn --check
+          git ls-files -z -- '*.md' ':!:third_party/*' ':!:CHANGELOG.md' \
+            | xargs -0 uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pymarkdown.json scan
+      - name: Install PSScriptAnalyzer
+        if: needs.changes.outputs.run_lint == 'true'
+        shell: bash
+        run: |
+          install_dir="$RUNNER_TEMP/PSScriptAnalyzer"
+          mkdir -p "$install_dir"
+          curl -fsSLo "$RUNNER_TEMP/psscriptanalyzer.zip" \
+            https://www.powershellgallery.com/api/v2/package/PSScriptAnalyzer/1.25.0
+          printf '%s  %s\n' '14e634c828eb98efb9f40b2918ba90f139ed5eccdf663a2a747736d996995d60' \
+            "$RUNNER_TEMP/psscriptanalyzer.zip" | sha256sum --check --status
+          unzip -q "$RUNNER_TEMP/psscriptanalyzer.zip" -d "$install_dir"
+          # shellcheck disable=SC2016 # $env:PSModulePath is PowerShell's, for pwsh to expand
+          echo "PSModulePath=$RUNNER_TEMP:$(pwsh -NoProfile -Command '$env:PSModulePath')" >> "$GITHUB_ENV"
+      - name: Check PowerShell formatting and lint
+        if: needs.changes.outputs.run_lint == 'true'
+        run: pwsh -NoProfile -File scripts/psscriptanalyzer.ps1
   client:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true'
@@ -322,7 +380,7 @@ jobs:
         # client tests are the client job's.
         run: |
           status=0
-          find src tools/replay tools/swarm -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' | xargs clang-tidy -p build/x64-linux || status=1
+          find src tools/replay tools/swarm -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' -print0 | xargs -0 clang-tidy -p build/x64-linux || status=1
           git ls-files 'tests/*.cpp' 'tools/replay/tests/*.cpp' 'tools/swarm/tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 8 clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
           exit "$status"
       - name: Build
@@ -494,7 +552,8 @@ jobs:
           (cd "$schemas" && FILENAME_FORMAT='{fullgroup}_{kind}_{version}' \
             uv run --no-project --with pyyaml python "$RUNNER_TEMP/kubeconform/openapi2jsonschema.py" \
             crds.yaml >/dev/null)
-          for release in $(grep -l '^kind: HelmRelease$' clusters/onprem/apps/*.yaml); do
+          for release in clusters/onprem/apps/*.yaml; do
+            grep -q '^kind: HelmRelease$' "$release" || continue
             source=$(yq '.spec.chart.spec.sourceRef.name' "$release")
             branch=$(yq --no-doc "select(.metadata.name == \"$source\") | .spec.ref.branch" clusters/onprem/apps/sources.yaml)
             chart=charts/augustad

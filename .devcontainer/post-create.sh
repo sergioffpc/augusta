@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Readies the checkout once the dev container exists: what the image can't do,
 # since the checkout and its volumes are only mounted when the container runs.
 set -euo pipefail

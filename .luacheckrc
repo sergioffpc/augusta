@@ -85,13 +85,12 @@ stds.sandbox = {
 
 std = "sandbox"
 
--- The Parameters script reads the server it is loaded for (ADR-0039).
-files["**/parameters.lua"] = {
+-- A Parameters script reads the server it is loaded for (ADR-0039).
+files["**/scripts/parameters/*.lua"] = {
   read_globals = {
     server = { fields = { "tick_rate_hz" } },
   },
 }
 
--- The hooks each Game policy script defines and SimulationWorld calls (ADR-0022).
-files["**/objectives.lua"] = { globals = { "on_tick" } }
-files["**/behaviours.lua"] = { globals = { "assign_spawns" } }
+-- The hooks a rules script defines and SimulationWorld calls (ADR-0022).
+files["**/scripts/rules/*.lua"] = { globals = { "on_tick", "assign_spawns" } }

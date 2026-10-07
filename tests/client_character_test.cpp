@@ -42,17 +42,17 @@ void ExpectNear(const Vec3& actual, const Vec3& expected) {
 }
 
 // A scenario's characters.
-const std::vector<std::string> kCharacters = {"characters/sniper", "characters/medic"};
+const std::vector<std::string> kCharacters = {"sniper", "medic"};
 
 TEST(LoadCharacterMeshTest, ResolvesTheVisualMeshOfTheCharacterAPathNames) {
   std::string resolved;
-  const auto mesh = LoadCharacterMesh(kCharacters, "characters/medic", [&](std::string_view path) {
+  const auto mesh = LoadCharacterMesh(kCharacters, "medic", [&](std::string_view path) {
     resolved = path;
     return std::expected<MeshData, ResolveError>(Triangle());
   });
 
   ASSERT_TRUE(mesh.has_value());
-  EXPECT_EQ(resolved, "characters/medic/Character/Visual");
+  EXPECT_EQ(resolved, "medic/Character/Visual");
   // In the character's own root space: the renderer places it per player.
   ASSERT_EQ(mesh->positions.size(), 3U);
   ExpectNear(mesh->positions[1], {1.0F, 0.0F, 0.0F});
@@ -60,18 +60,18 @@ TEST(LoadCharacterMeshTest, ResolvesTheVisualMeshOfTheCharacterAPathNames) {
 }
 
 TEST(LoadCharacterMeshTest, AMissingVisualMeshIsACharacterErrorNamingTheCharacter) {
-  const auto mesh = LoadCharacterMesh(kCharacters, "characters/sniper", ResolveNothing());
+  const auto mesh = LoadCharacterMesh(kCharacters, "sniper", ResolveNothing());
 
   ASSERT_FALSE(mesh.has_value());
   EXPECT_EQ(mesh.error().code, CharacterErrorCode::kMeshUnresolved);
-  EXPECT_EQ(mesh.error().character, "characters/sniper");
-  EXPECT_EQ(mesh.error().subject, "characters/sniper/Character/Visual");
+  EXPECT_EQ(mesh.error().character, "sniper");
+  EXPECT_EQ(mesh.error().subject, "sniper/Character/Visual");
   EXPECT_EQ(mesh.error().resolve_error, ResolveError::kNotFound);
-  EXPECT_NE(DescribeCharacterError(mesh.error()).find("characters/sniper"), std::string::npos);
+  EXPECT_NE(DescribeCharacterError(mesh.error()).find("sniper"), std::string::npos);
 }
 
 TEST(LoadCharacterMeshTest, ACharacterOutsideThePacksCharacterListIsACharacterError) {
-  for (const std::string_view character : {"", "characters/nobody", "characters/medic/"}) {
+  for (const std::string_view character : {"", "characters/nobody", "medic/"}) {
     const auto mesh = LoadCharacterMesh(kCharacters, character, ResolveNothing());
 
     ASSERT_FALSE(mesh.has_value()) << character;
@@ -83,28 +83,27 @@ TEST(LoadCharacterMeshTest, ACharacterOutsideThePacksCharacterListIsACharacterEr
 
 TEST(LoadCharacterEyeTest, ResolvesTheEyeOfTheCharacterAPathNames) {
   std::string resolved;
-  const auto eye = LoadCharacterEye("characters/medic", [&](std::string_view path) {
+  const auto eye = LoadCharacterEye("medic", [&](std::string_view path) {
     resolved = path;
     return std::expected<EyeData, ResolveError>(EyeData{.position = kEye});
   });
 
   ASSERT_TRUE(eye.has_value());
-  EXPECT_EQ(resolved, "characters/medic/Character/Eye");
+  EXPECT_EQ(resolved, "medic/Character/Eye");
   ExpectNear(*eye, kEye);
 }
 
 TEST(LoadCharacterEyeTest, AMissingEyeIsACharacterErrorNamingTheCharacter) {
-  const auto eye = LoadCharacterEye("characters/sniper", [](std::string_view) {
+  const auto eye = LoadCharacterEye("sniper", [](std::string_view) {
     return std::expected<EyeData, ResolveError>(std::unexpected(ResolveError::kNotFound));
   });
 
   ASSERT_FALSE(eye.has_value());
   EXPECT_EQ(eye.error().code, CharacterErrorCode::kEyeUnresolved);
-  EXPECT_EQ(eye.error().character, "characters/sniper");
-  EXPECT_EQ(eye.error().subject, "characters/sniper/Character/Eye");
+  EXPECT_EQ(eye.error().character, "sniper");
+  EXPECT_EQ(eye.error().subject, "sniper/Character/Eye");
   EXPECT_EQ(eye.error().resolve_error, ResolveError::kNotFound);
-  EXPECT_EQ(DescribeCharacterError(eye.error()),
-            "eye characters/sniper/Character/Eye of character characters/sniper not found");
+  EXPECT_EQ(DescribeCharacterError(eye.error()), "eye sniper/Character/Eye of character sniper not found");
 }
 
 }  // namespace

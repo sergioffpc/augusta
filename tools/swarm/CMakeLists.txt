@@ -3,20 +3,17 @@
 # with AUGUSTA_TOOLS (the root CMakeLists.txt), on every platform.
 
 # Its startup settings, read under ADR-0034's rules (see settings.h).
-add_library(augusta_swarm_settings STATIC
-  settings.cpp
-)
+add_library(augusta_swarm_settings STATIC settings.cpp)
 target_include_directories(augusta_swarm_settings PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augusta_swarm_settings PUBLIC augusta_config)
 augusta_set_module_scope(augusta_swarm_settings CLIENT_ONLY)
 
 # What a Scripted player does each tick (see scripted_player.h): the decision
 # only, so its tests need no connection.
-add_library(augusta_swarm_scripted_player STATIC
-  scripted_player.cpp
-)
+add_library(augusta_swarm_scripted_player STATIC scripted_player.cpp)
 target_include_directories(augusta_swarm_scripted_player PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augusta_swarm_scripted_player
+target_link_libraries(
+  augusta_swarm_scripted_player
   PUBLIC augusta_command augusta_harness augusta_physics
   PRIVATE augusta_input augusta_math augusta_weapon
 )
@@ -24,27 +21,35 @@ augusta_set_module_scope(augusta_swarm_scripted_player CLIENT_ONLY)
 
 # What a Scripted player's prediction and fire came to over a run (see
 # netcode_stats.h): counts only, so its tests need no connection.
-add_library(augusta_swarm_netcode_stats STATIC
-  netcode_stats.cpp
-)
+add_library(augusta_swarm_netcode_stats STATIC netcode_stats.cpp)
 target_include_directories(augusta_swarm_netcode_stats PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augusta_swarm_netcode_stats PUBLIC augusta_math augusta_prediction)
 augusta_set_module_scope(augusta_swarm_netcode_stats CLIENT_ONLY)
 
 # A run of Scripted players against a server, to its verdict (see run.h).
-add_library(augusta_swarm_run STATIC
-  run.cpp
-)
+add_library(augusta_swarm_run STATIC run.cpp)
 target_include_directories(augusta_swarm_run PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augusta_swarm_run
+target_link_libraries(
+  augusta_swarm_run
   PUBLIC augusta_harness augusta_swarm_netcode_stats augusta_physics
   PRIVATE augusta_swarm_scripted_player augusta_logging augusta_prediction augusta_supervisor
 )
 augusta_set_module_scope(augusta_swarm_run CLIENT_ONLY)
 
 add_executable(augusta-swarm main.cpp)
-target_link_libraries(augusta-swarm PRIVATE augusta_swarm_run augusta_swarm_settings augusta_assets augusta_config augusta_logging augusta_map augusta_networking augusta_version)
-if (WIN32)
+target_link_libraries(
+  augusta-swarm
+  PRIVATE
+    augusta_swarm_run
+    augusta_swarm_settings
+    augusta_assets
+    augusta_config
+    augusta_logging
+    augusta_map
+    augusta_networking
+    augusta_version
+)
+if(WIN32)
   # winmm: main.cpp raises the system timer resolution (timeBeginPeriod), as
   # augustac does. NOMINMAX: the <windows.h> it includes would define min/max.
   target_link_libraries(augusta-swarm PRIVATE winmm)

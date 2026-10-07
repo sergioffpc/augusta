@@ -8,40 +8,40 @@ ADR-0026 ([CD strategy](../adr/0026-cd-strategy.md)) and
 ## When to use
 
 - The `augustad` pod of an environment crash-loops, fails to start, or
-  misbehaves after a merge to `develop` (the `develop` namespace) or `main`
-  (the `staging` namespace).
-- A Flux `HelmRelease` is stuck failing after a chart or
-  `clusters/onprem/apps/` change.
+  misbehaves after a merge to `develop` (the `develop` namespace) or `main` (the
+  `staging` namespace).
+- A Flux `HelmRelease` is stuck failing after a chart or `clusters/onprem/apps/`
+  change.
 
-Not for a pod that crash-loops because its pack or public key is missing or
-does not verify (the server's last log line names `server.pack` or
-`augusta.pub`): no rollback fixes that, the files must be put in place
+Not for a pod that crash-loops because its pack or public key is missing or does
+not verify (the server's last log line names `server.pack` or `augusta.pub`): no
+rollback fixes that, the files must be put in place
 ([Where packs go on the node](pack-key-rotation.md#where-packs-go-on-the-node)).
 Moving an environment back to its previous pack folder is the rollback step of
 [Rotate the Pack Signing Key](pack-key-rotation.md#rollback-abort).
 
 ## What runs where
 
-| Environment | HelmRelease (namespace `flux-system`) | Helm release | Namespace | Chart from | Image tag |
-|---|---|---|---|---|---|
-| develop | `augustad-develop` | `augustad` | `develop` | GitRepository `augusta-develop` (`develop`) | `sha-<12>` of the chart's commit |
-| staging | `augustad-staging` | `augustad` | `staging` | GitRepository `augusta-main` (`main`) | `main` (`image.tag` in `staging.yaml`) |
+| Environment | HelmRelease (namespace `flux-system`) | Helm release | Namespace | Chart from                                  | Image tag                              |
+| ----------- | ------------------------------------- | ------------ | --------- | ------------------------------------------- | -------------------------------------- |
+| develop     | `augustad-develop`                    | `augustad`   | `develop` | GitRepository `augusta-develop` (`develop`) | `sha-<12>` of the chart's commit       |
+| staging     | `augustad-staging`                    | `augustad`   | `staging` | GitRepository `augusta-main` (`main`)       | `main` (`image.tag` in `staging.yaml`) |
 
 Both `HelmRelease` objects, and the rest of
-[`clusters/onprem/apps/`](../../clusters/onprem/apps), are applied by the
-`apps` Kustomization from the `flux-system` GitRepository, which tracks
-`develop` ([`gotk-sync.yaml`](../../clusters/onprem/flux-system/gotk-sync.yaml)).
-A change to `staging.yaml` therefore deploys when it reaches `develop`, not
-`main`. Neither `HelmRelease` sets `upgrade.remediation`, so Flux never rolls
-back by itself: a failed upgrade stays failed until Git or a person changes it.
+[`clusters/onprem/apps/`](../../clusters/onprem/apps), are applied by the `apps`
+Kustomization from the `flux-system` GitRepository, which tracks `develop`
+([`gotk-sync.yaml`](../../clusters/onprem/flux-system/gotk-sync.yaml)). A change
+to `staging.yaml` therefore deploys when it reaches `develop`, not `main`.
+Neither `HelmRelease` sets `upgrade.remediation`, so Flux never rolls back by
+itself: a failed upgrade stays failed until Git or a person changes it.
 
 The two environments roll back differently. `develop` runs the image of its
-chart's commit, so going back to an earlier commit, by Helm or by Git, goes
-back to its image. `staging` runs the mutable `main` tag with
+chart's commit, so going back to an earlier commit, by Helm or by Git, goes back
+to its image. `staging` runs the mutable `main` tag with
 `pullPolicy: IfNotPresent`: a Helm rollback or a revert on `main` leaves the
-pod's image string `augustad:main` unchanged, so nothing rolls out, and the
-node keeps whichever `main` image it has cached. `staging` is rolled back by
-pinning its image to the last good commit's `sha-<12>` tag instead.
+pod's image string `augustad:main` unchanged, so nothing rolls out, and the node
+keeps whichever `main` image it has cached. `staging` is rolled back by pinning
+its image to the last good commit's `sha-<12>` tag instead.
 
 ## Prerequisites
 
@@ -68,9 +68,10 @@ pinning its image to the last good commit's `sha-<12>` tag instead.
     kubectl -n develop logs -l app.kubernetes.io/name=augustad --prefix --previous
     ```
 
-    The `HelmRelease` revision is `<chart version>+<12 characters of the
-    commit>`: that commit is the one deployed. Note the commit of the bad
-    merge, `<bad-merge>`, and the environment's last good commit, `<good>`.
+    The `HelmRelease` revision is
+    `<chart version>+<12 characters of the commit>`: that commit is the one
+    deployed. Note the commit of the bad merge, `<bad-merge>`, and the
+    environment's last good commit, `<good>`.
 
 2. Continue with [Roll back develop](#roll-back-develop) or
    [Roll back staging](#roll-back-staging).
@@ -78,8 +79,8 @@ pinning its image to the last good commit's `sha-<12>` tag instead.
 ### Roll back develop
 
 1. If the failure is an upgrade still waiting for its image (`timeout: 30m` in
-   `develop.yaml` covers CI still pushing `sha-<12>`), check the `container`
-   job of that commit's CI run first:
+   `develop.yaml` covers CI still pushing `sha-<12>`), check the `container` job
+   of that commit's CI run first:
 
     ```sh
     gh run list --workflow ci.yml --branch develop --limit 5
@@ -89,9 +90,9 @@ pinning its image to the last good commit's `sha-<12>` tag instead.
     published; the fix is the rollback below, or a new commit that publishes
     one.
 
-2. **Restore service now (optional, when the environment cannot wait for
-   CI).** Stop Flux from reconciling the release, then roll Helm back to the
-   last good revision:
+2. **Restore service now (optional, when the environment cannot wait for CI).**
+   Stop Flux from reconciling the release, then roll Helm back to the last good
+   revision:
 
     ```sh
     flux suspend helmrelease augustad-develop -n flux-system
@@ -143,8 +144,8 @@ pinning its image to the last good commit's `sha-<12>` tag instead.
 
 1. Pin `staging` to the last good `main` commit's image. CI published
    `ghcr.io/sergioffpc/augustad:sha-<good12>` (the first 12 characters of
-   `<good>`) when that commit was pushed to `main`. Check it exists, then pin
-   it on a `feature/*` branch off `develop`:
+   `<good>`) when that commit was pushed to `main`. Check it exists, then pin it
+   on a `feature/*` branch off `develop`:
 
     ```sh
     docker buildx imagetools inspect ghcr.io/sergioffpc/augustad:sha-<good12>
@@ -152,7 +153,8 @@ pinning its image to the last good commit's `sha-<12>` tag instead.
     git switch -c feature/pin-staging-<good12> origin/develop
     ```
 
-    In [`clusters/onprem/apps/staging.yaml`](../../clusters/onprem/apps/staging.yaml),
+    In
+    [`clusters/onprem/apps/staging.yaml`](../../clusters/onprem/apps/staging.yaml),
     set `spec.values.image.tag` to `sha-<good12>`, then:
 
     ```sh
@@ -164,8 +166,8 @@ pinning its image to the last good commit's `sha-<12>` tag instead.
     ```
 
     The pod's image string changes, so the Deployment rolls out the pinned
-    image. The chart still comes from `main`'s head: if the bad change is in
-    the chart rather than the image, also suspend and roll back Helm as in
+    image. The chart still comes from `main`'s head: if the bad change is in the
+    chart rather than the image, also suspend and roll back Helm as in
     [Roll back develop](#roll-back-develop) step 2, with `augustad-staging` and
     `-n staging`, and keep the `HelmRelease` suspended until step 3 below.
 
@@ -173,8 +175,8 @@ pinning its image to the last good commit's `sha-<12>` tag instead.
    `origin/main`, as in [Roll back develop](#roll-back-develop) step 3 but with
    `--base main`. After it merges, bring the same branch back into `develop`
    with a second pull request, `--base develop`, as Git Flow does for every
-   hotfix. When the bad change is a published release, the fix ships as the
-   next patch release ([Cut a Release](cut-release.md#rollback-abort)).
+   hotfix. When the bad change is a published release, the fix ships as the next
+   patch release ([Cut a Release](cut-release.md#rollback-abort)).
 
 3. Remove the pin once `main`'s head is good: on a `feature/*` branch off
    `develop`, delete the `image.tag` line from `staging.yaml` and merge it

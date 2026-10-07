@@ -27,7 +27,8 @@ include_guard(GLOBAL)
 set(AUGUSTA_FALCOR_PREBUILT_FORMAT 1)
 
 # What packman/ holds, relative to external/packman.
-set(AUGUSTA_FALCOR_PREBUILT_PACKMAN
+set(
+  AUGUSTA_FALCOR_PREBUILT_PACKMAN
   nanovdb/include
   rtxdi/rtxdi-sdk/include
   python/Include
@@ -40,10 +41,19 @@ set(AUGUSTA_FALCOR_PREBUILT_PACKMAN
 # Sets <out_tag> to the release tag of the package matching this Falcor
 # checkout, falcor.patch and <features>, and <out_asset> to its asset name for
 # <build_type>.
-function(augusta_falcor_prebuilt_name falcor_dir patch features build_type out_tag out_asset)
+function(
+  augusta_falcor_prebuilt_name
+  falcor_dir
+  patch
+  features
+  build_type
+  out_tag
+  out_asset
+)
   execute_process(
     COMMAND git -C "${falcor_dir}" rev-parse HEAD
-    OUTPUT_VARIABLE commit OUTPUT_STRIP_TRAILING_WHITESPACE
+    OUTPUT_VARIABLE commit
+    OUTPUT_STRIP_TRAILING_WHITESPACE
     COMMAND_ERROR_IS_FATAL ANY
   )
   file(SHA256 "${patch}" patch_hash)
@@ -60,7 +70,7 @@ endfunction()
 # when there is none at <url> (or no network), and the caller builds Falcor
 # from source instead.
 function(augusta_falcor_prebuilt_fetch url dest out_found)
-  if (IS_DIRECTORY "${dest}")
+  if(IS_DIRECTORY "${dest}")
     set(${out_found} TRUE PARENT_SCOPE)
     return()
   endif()
@@ -68,7 +78,7 @@ function(augusta_falcor_prebuilt_fetch url dest out_found)
   set(zip "${dest}.zip.part")
   file(DOWNLOAD "${url}" "${zip}" STATUS status INACTIVITY_TIMEOUT 30 TLS_VERIFY ON)
   list(GET status 0 code)
-  if (NOT code EQUAL 0)
+  if(NOT code EQUAL 0)
     list(GET status 1 reason)
     message(STATUS "No prebuilt Falcor at ${url} (${reason}) - building it from source")
     file(REMOVE "${zip}")
@@ -86,7 +96,7 @@ function(augusta_falcor_prebuilt_fetch url dest out_found)
   set(${out_found} TRUE PARENT_SCOPE)
 endfunction()
 
-if (CMAKE_SCRIPT_MODE_FILE STREQUAL CMAKE_CURRENT_LIST_FILE)
+if(CMAKE_SCRIPT_MODE_FILE STREQUAL CMAKE_CURRENT_LIST_FILE)
   set(stage "${OUTPUT}.stage")
   file(REMOVE_RECURSE "${stage}")
 

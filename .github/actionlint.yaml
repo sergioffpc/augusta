@@ -1,0 +1,5 @@
+# actionlint's runner labels predate this GitHub-hosted image; the workflows pin
+# it rather than ubuntu-latest so the toolchain doesn't shift underneath them.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04

@@ -30,7 +30,7 @@ constexpr const char* kVersion = "1.2.3";
 // as a Lobby can hold.
 constexpr std::size_t kPlayerCount = 8;
 // The one character the matches below offer, unless a test says otherwise.
-constexpr const char* kCharacter = "characters/player";
+constexpr const char* kCharacter = "soldier";
 
 PeerId Peer(std::uint32_t number) { return static_cast<PeerId>(number); }
 
@@ -136,17 +136,16 @@ TEST(MatchTest, AdmitsUpToThePlayerCountAndRefusesTheNextAsLobbyFull) {
 }
 
 TEST(MatchTest, EachPlayerIsAdmittedWithItsCharacter) {
-  Match match(MatchConfig{
-      .engine_version = kVersion, .characters = {"characters/sniper", "characters/medic"}, .player_count = 2});
+  Match match(MatchConfig{.engine_version = kVersion, .characters = {"sniper", "medic"}, .player_count = 2});
 
-  EXPECT_EQ(match.Join(Peer(1), Request(kVersion, "characters/sniper"))->character, "characters/sniper");
-  EXPECT_EQ(match.Join(Peer(2), Request(kVersion, "characters/medic"))->character, "characters/medic");
+  EXPECT_EQ(match.Join(Peer(1), Request(kVersion, "sniper"))->character, "sniper");
+  EXPECT_EQ(match.Join(Peer(2), Request(kVersion, "medic"))->character, "medic");
 }
 
 TEST(MatchTest, RefusesACharacterTheScenarioDoesNotOffer) {
   Match match(Config());
 
-  for (const char* other : {"", "characters/sniper", "characters/player/", "Characters/Player"}) {
+  for (const char* other : {"", "sniper", "soldier/", "Soldier"}) {
     EXPECT_EQ(match.Join(Peer(10), Request(kVersion, other)).error(), JoinRefusal::kUnknownCharacter) << other;
   }
   EXPECT_EQ(match.PlayerCount(), 0U);
@@ -243,18 +242,17 @@ TEST(MatchTest, JoiningAgainReturnsTheSameAdmissionWithoutTakingAnotherSlot) {
 }
 
 TEST(MatchTest, TheRosterListsEveryLobbyPlayerWithItsCharacterBySession) {
-  Match match(MatchConfig{
-      .engine_version = kVersion, .characters = {"characters/sniper", "characters/medic"}, .player_count = 2});
-  const auto medic = match.Join(Peer(9), Request(kVersion, "characters/medic"));
-  const auto sniper = match.Join(Peer(3), Request(kVersion, "characters/sniper"));
+  Match match(MatchConfig{.engine_version = kVersion, .characters = {"sniper", "medic"}, .player_count = 2});
+  const auto medic = match.Join(Peer(9), Request(kVersion, "medic"));
+  const auto sniper = match.Join(Peer(3), Request(kVersion, "sniper"));
 
   const auto roster = match.GetRoster();
 
   ASSERT_EQ(roster.players.size(), 2U);
   EXPECT_EQ(roster.players[0].session, medic->session);
-  EXPECT_EQ(roster.players[0].character, "characters/medic");
+  EXPECT_EQ(roster.players[0].character, "medic");
   EXPECT_EQ(roster.players[1].session, sniper->session);
-  EXPECT_EQ(roster.players[1].character, "characters/sniper");
+  EXPECT_EQ(roster.players[1].character, "sniper");
 }
 
 TEST(MatchTest, TheRosterVersionGrowsOnEveryJoinAndLeave) {
@@ -316,16 +314,15 @@ TEST(MatchTest, AMatchInProgressDoesNotStartAgain) {
 }
 
 TEST(MatchTest, MatchStartTellsEachPlayersCharacter) {
-  Match match(MatchConfig{
-      .engine_version = kVersion, .characters = {"characters/sniper", "characters/medic"}, .player_count = 2});
-  ASSERT_TRUE(match.Join(Peer(1), Request(kVersion, "characters/medic")).has_value());
-  ASSERT_TRUE(match.Join(Peer(2), Request(kVersion, "characters/sniper")).has_value());
+  Match match(MatchConfig{.engine_version = kVersion, .characters = {"sniper", "medic"}, .player_count = 2});
+  ASSERT_TRUE(match.Join(Peer(1), Request(kVersion, "medic")).has_value());
+  ASSERT_TRUE(match.Join(Peer(2), Request(kVersion, "sniper")).has_value());
 
   const auto start = ReadyAndStart(match);
 
   ASSERT_TRUE(start.has_value());
-  EXPECT_EQ(start->players[0].character, "characters/medic");
-  EXPECT_EQ(start->players[1].character, "characters/sniper");
+  EXPECT_EQ(start->players[0].character, "medic");
+  EXPECT_EQ(start->players[1].character, "sniper");
 }
 
 TEST(MatchTest, APlayerWhoLeftTheLobbyIsNotInTheMatch) {
@@ -499,16 +496,15 @@ TEST(MatchTest, AWinnerNoLongerInTheMatchEndsItAsADraw) {
 }
 
 TEST(MatchTest, PlayersKeepTheirSessionAndCharacterAcrossMatches) {
-  Match match(MatchConfig{
-      .engine_version = kVersion, .characters = {"characters/sniper", "characters/medic"}, .player_count = 1});
-  const auto admission = match.Join(Peer(1), Request(kVersion, "characters/medic"));
+  Match match(MatchConfig{.engine_version = kVersion, .characters = {"sniper", "medic"}, .player_count = 1});
+  const auto admission = match.Join(Peer(1), Request(kVersion, "medic"));
   ASSERT_TRUE(ReadyAndStart(match).has_value());
 
   match.End();
 
   ASSERT_EQ(match.GetRoster().players.size(), 1U);
   EXPECT_EQ(match.GetRoster().players[0].session, admission->session);
-  EXPECT_EQ(match.GetRoster().players[0].character, "characters/medic");
+  EXPECT_EQ(match.GetRoster().players[0].character, "medic");
   EXPECT_EQ(ReadyAndStart(match)->players[0].session, admission->session);
 }
 

@@ -134,7 +134,7 @@ inline constexpr std::size_t kMaxPendingHitConfirmations = 64;
 /// One player in the Lobby.
 struct RosterEntry {
   SessionId session{};
-  /// Its character, by its path relative to `authoring/` (ADR-0042).
+  /// Its character, by its name in the scenario's manifest (ADR-0042).
   std::string character;
 };
 
@@ -272,8 +272,8 @@ struct SessionConfig {
   /// The hash of the client pack loaded (assets::Pack::Hash); the server admits
   /// only the one cooked with its own pack.
   assets::PackHash client_pack{};
-  /// The character to ask to play, by its path relative to `authoring/` (e.g.
-  /// "characters/player"): the server admits only one of its scenario's (ADR-0042).
+  /// The character to ask to play, by its name in the scenario's manifest (e.g.
+  /// "soldier"): the server admits only one of its scenario's (ADR-0042).
   std::string character;
 };
 

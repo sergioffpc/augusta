@@ -1,0 +1,24 @@
+# The firebase scenario's composition manifest (ADR-0041): what the cooker packs
+# together into one client/server pack pair, every entry a file path relative
+# to authoring/. `augusta-pack firebase` reads this file.
+# The one map this scenario cooks (ADR-0015). A scenario always composes
+# exactly one.
+map: maps/firebase.usda
+# Every character this scenario's pack includes (ADR-0040), by name: the name a
+# client asks for it by (ADR-0042).
+characters:
+  soldier: characters/soldier.usda
+# The mono PCM WAV sound of every cue the client plays (ADR-0020, ADR-0031),
+# by cue. Cooked into the client pack only.
+sounds:
+  gunshot: sounds/gunshot.wav
+  hit_marker: sounds/hit_marker.wav
+  hit_taken: sounds/hit_taken.wav
+  death: sounds/death.wav
+  match_won: sounds/match_won.wav
+  match_lost: sounds/match_lost.wav
+# The scripts the server runs, by role, cooked into the server pack only:
+# parameters (ADR-0039) is required, rules (ADR-0022) optional.
+scripts:
+  parameters: scripts/parameters/rules_of_engagement.lua
+  rules: scripts/rules/last_man_standing.lua

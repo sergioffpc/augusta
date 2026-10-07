@@ -4,11 +4,10 @@
 
 # The replay itself, apart from the command line (see replay.h): its tests run
 # it on recordings made in the test.
-add_library(augusta_replay STATIC
-  replay.cpp
-)
+add_library(augusta_replay STATIC replay.cpp)
 target_include_directories(augusta_replay PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augusta_replay
+target_link_libraries(
+  augusta_replay
   PUBLIC augustad_content augustad_host augusta_simulation augusta_tick
   PRIVATE augusta_math
 )

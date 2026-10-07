@@ -32,7 +32,7 @@ enum class CharacterErrorCode {
   kEyeUnresolved,
 };
 
-/// A failure to load a character: what went wrong (code), the character's path
+/// A failure to load a character: what went wrong (code), the character's name
 /// and what it is about (the other fields, empty or default when the code has
 /// none).
 struct CharacterError {
@@ -55,8 +55,8 @@ std::expected<renderer::SceneMesh, CharacterError> LoadCharacterMesh(std::span<c
                                                                      std::string_view character,
                                                                      const MeshResolver& resolve_mesh);
 
-/// Resolves through resolve_eye the eye of character, by its path relative to
-/// `authoring/` (e.g. "characters/player"), at assets::CharacterEyePath: where
+/// Resolves through resolve_eye the eye of character, by its name in the
+/// scenario's manifest (e.g. "soldier"), at assets::CharacterEyePath: where
 /// the camera sits, in the character's own root space, its feet at the origin.
 std::expected<math::Vec3, CharacterError> LoadCharacterEye(std::string_view character, const EyeResolver& resolve_eye);
 

@@ -40,9 +40,9 @@ constexpr int kManyTicks = 10 * kTickRate;
 ServerView InMatch(Vec3 own, const std::vector<std::pair<EntityId, Vec3>>& others) {
   ServerView view;
   view.accepted = augusta::harness::Admission{
-      .session = SessionId{1}, .tick_rate_hz = kTickRate, .parameters = {}, .character = "characters/player"};
+      .session = SessionId{1}, .tick_rate_hz = kTickRate, .parameters = {}, .character = "soldier"};
   view.match_start = augusta::harness::MatchStart{
-      .players = {{.session = SessionId{1}, .entity = kOwn, .character = "characters/player", .spawn = own}}};
+      .players = {{.session = SessionId{1}, .entity = kOwn, .character = "soldier", .spawn = own}}};
   view.matches_started = 1;
   view.in_match = true;
   augusta::harness::AuthoritativeState state;

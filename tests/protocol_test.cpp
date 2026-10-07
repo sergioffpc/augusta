@@ -134,13 +134,13 @@ TEST(ProtocolTest, JoinRequestCarriesTheClientPackHash) {
 }
 
 TEST(ProtocolTest, JoinRequestCarriesTheChosenCharacter) {
-  const auto decoded = RoundTrip(JoinRequestWire{.engine_version = "0.1.0", .character = "characters/player"});
+  const auto decoded = RoundTrip(JoinRequestWire{.engine_version = "0.1.0", .character = "soldier"});
 
-  EXPECT_EQ(std::get<JoinRequestWire>(decoded).character, "characters/player");
+  EXPECT_EQ(std::get<JoinRequestWire>(decoded).character, "soldier");
 }
 
 TEST(ProtocolTest, JoinRequestWithTheLongestCharacterRoundTrips) {
-  const std::string longest(augusta::protocol::kMaxCharacterPathLength, 'c');
+  const std::string longest(augusta::protocol::kMaxCharacterNameLength, 'c');
 
   const auto decoded = RoundTrip(JoinRequestWire{.engine_version = "0.1.0", .character = longest});
 
@@ -149,8 +149,8 @@ TEST(ProtocolTest, JoinRequestWithTheLongestCharacterRoundTrips) {
 
 TEST(ProtocolTest, ACharacterLongerThanAllowedIsTooLong) {
   BytesWire payload = WithPackHash(BytesOf({kJoinRequestType, 0}), PackHashWire{});
-  payload.push_back(static_cast<std::byte>(augusta::protocol::kMaxCharacterPathLength + 1));
-  payload.resize(payload.size() + augusta::protocol::kMaxCharacterPathLength + 1, static_cast<std::byte>('c'));
+  payload.push_back(static_cast<std::byte>(augusta::protocol::kMaxCharacterNameLength + 1));
+  payload.resize(payload.size() + augusta::protocol::kMaxCharacterNameLength + 1, static_cast<std::byte>('c'));
 
   EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
 }
@@ -199,7 +199,7 @@ TEST(ProtocolTest, JoinAcceptedRoundTrips) {
                               .limb_damage = 25.0F},
                      .starting_health = 100.0F,
                      .player_count = 5},
-      .character = "characters/sniper"};
+      .character = "sniper"};
 
   const auto decoded = RoundTrip(sent);
 
@@ -221,8 +221,8 @@ TEST(ProtocolTest, JoinAcceptedCarriesNoRosterAndNoSpawnPoint) {
 
 TEST(ProtocolTest, ACharacterInJoinAcceptedLongerThanTheLimitIsTooLong) {
   BytesWire payload = Encode(JoinAcceptedWire{});
-  payload.back() = static_cast<std::byte>(augusta::protocol::kMaxCharacterPathLength + 1);
-  payload.resize(payload.size() + augusta::protocol::kMaxCharacterPathLength + 1, static_cast<std::byte>('c'));
+  payload.back() = static_cast<std::byte>(augusta::protocol::kMaxCharacterNameLength + 1);
+  payload.resize(payload.size() + augusta::protocol::kMaxCharacterNameLength + 1, static_cast<std::byte>('c'));
 
   EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
 }
@@ -270,9 +270,9 @@ TEST(ProtocolTest, FieldsAreFixedWidthLittleEndian) {
 TEST(ProtocolTest, LobbyRoundTrips) {
   const LobbyWire sent{
       .version = 42,
-      .roster = {RosterEntryWire{.session = static_cast<SessionIdWire>(7), .character = "characters/player"},
+      .roster = {RosterEntryWire{.session = static_cast<SessionIdWire>(7), .character = "soldier"},
                  RosterEntryWire{.session = static_cast<SessionIdWire>(9),
-                                 .character = std::string(augusta::protocol::kMaxCharacterPathLength, 'c')}}};
+                                 .character = std::string(augusta::protocol::kMaxCharacterNameLength, 'c')}}};
 
   const auto decoded = RoundTrip(sent);
 
@@ -303,7 +303,7 @@ TEST(ProtocolTest, MorePlayersInALobbyThanItHoldsIsTooLong) {
 TEST(ProtocolTest, ACharacterInALobbyLongerThanTheLimitIsTooLong) {
   // type, version, count, session, then the character's length.
   EXPECT_EQ(Decode(BytesOf({kLobbyType, 1, 0, 0, 0, 1, 7, 0, 0, 0,
-                            static_cast<std::uint8_t>(augusta::protocol::kMaxCharacterPathLength + 1)}))
+                            static_cast<std::uint8_t>(augusta::protocol::kMaxCharacterNameLength + 1)}))
                 .error(),
             DecodeError::kFieldTooLong);
 }
@@ -317,8 +317,7 @@ MatchPlayerWire MatchPlayer(std::uint32_t session, std::string character, float 
 }
 
 TEST(ProtocolTest, MatchStartRoundTripsWithEveryPlayersCharacterAndSpawnPoint) {
-  const MatchStartWire sent{
-      .players = {MatchPlayer(3, "characters/player", 4.0F), MatchPlayer(4, "characters/sniper", -12.345F)}};
+  const MatchStartWire sent{.players = {MatchPlayer(3, "soldier", 4.0F), MatchPlayer(4, "sniper", -12.345F)}};
 
   const auto decoded = RoundTrip(sent);
 
@@ -335,7 +334,7 @@ TEST(ProtocolTest, MatchStartRoundTripsWithEveryPlayersCharacterAndSpawnPoint) {
 
 TEST(ProtocolTest, AMatchStartOfAFullMatchRoundTrips) {
   MatchStartWire sent;
-  sent.players.assign(kMaxPlayers, MatchPlayer(1, "characters/player", 0.0F));
+  sent.players.assign(kMaxPlayers, MatchPlayer(1, "soldier", 0.0F));
 
   EXPECT_EQ(std::get<MatchStartWire>(RoundTrip(sent)).players.size(), kMaxPlayers);
 }
@@ -490,7 +489,7 @@ TEST(ProtocolTest, ACharacterInAMatchStartLongerThanTheLimitIsTooLong) {
   BytesWire payload = Encode(MatchStartWire{.players = {MatchPlayer(1, "", 0.0F)}});
   // type, count, session, entity, then the character's length.
   constexpr std::size_t kCharacterOffset = 1 + 1 + 4 + 4;
-  payload[kCharacterOffset] = static_cast<std::byte>(augusta::protocol::kMaxCharacterPathLength + 1);
+  payload[kCharacterOffset] = static_cast<std::byte>(augusta::protocol::kMaxCharacterNameLength + 1);
 
   EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
 }
@@ -505,13 +504,13 @@ TEST(ProtocolTest, AnUnknownTypeIsRejected) {
 
 TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
   const std::array<MessageWire, 12> messages = {
-      JoinRequestWire{.engine_version = "0.1.0", .character = "characters/player"},
-      JoinAcceptedWire{.session = static_cast<SessionIdWire>(7), .character = "characters/player"},
+      JoinRequestWire{.engine_version = "0.1.0", .character = "soldier"},
+      JoinAcceptedWire{.session = static_cast<SessionIdWire>(7), .character = "soldier"},
       JoinRefusedWire{.reason = JoinRefusalWire::kMatchInProgress},
       CommandsWire{.commands = {SequencedCommandWire{.sequence = 1}, {.sequence = 2}}},
       AuthoritativeStateWire{.tick = 3, .bodies = {EntityStateWire{}, {}}, .queued_commands = 2},
       LobbyWire{.version = 2, .roster = {RosterEntryWire{.character = "a"}, {.character = "b"}}},
-      MatchStartWire{.players = {MatchPlayer(1, "characters/player", 0.0F), MatchPlayer(2, "a", 1.0F)}},
+      MatchStartWire{.players = {MatchPlayer(1, "soldier", 0.0F), MatchPlayer(2, "a", 1.0F)}},
       ReadyWire{.version = 0x01020304U},
       ShotWire{.tick = 9, .origin = Vec3(1.0F, 2.0F, 3.0F), .shooter = static_cast<EntityIdWire>(7)},
       HitConfirmationWire{.target = static_cast<EntityIdWire>(7), .damage = 20.0F, .part = BodyPartWire::kHead},

@@ -28,7 +28,7 @@
 namespace augusta::swarm::testing {
 
 inline constexpr std::uint8_t kTickRate = 60;
-inline constexpr const char* kCharacter = "characters/player";
+inline constexpr const char* kCharacter = "soldier";
 
 // The transport set up once for the whole test process, and torn down after:
 // see networking::Shutdown. Each test file registers one.

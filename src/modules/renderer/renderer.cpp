@@ -411,7 +411,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   Camera camera;
 
   // Each character's mesh (ADR-0042), flat-shaded in its own local space and
-  // keyed by character path - set by SetCharacterMesh; empty until the first
+  // keyed by character name - set by SetCharacterMesh; empty until the first
   // call.
   std::unordered_map<std::string, std::vector<Vertex>> character_vertices;
 

@@ -1,23 +1,97 @@
 # Gameplay Scripting Language: Lua
 
-Game policy (Match lifecycle, win conditions, spawn rules) runs as Lua (MIT, lua.org reference implementation), embedded via sol2 (MIT, header-only C++ binding), in a sandboxed environment (no `io`, `os`, `package`, `require`) inside SimulationWorld: its Scripts/Behaviours phase, and its Match start. This keeps game policy separate from mechanism code.
+Game policy (Match lifecycle, win conditions, spawn rules) runs as Lua (MIT,
+lua.org reference implementation), embedded via sol2 (MIT, header-only C++
+binding), in a sandboxed environment (no `io`, `os`, `package`, `require`)
+inside SimulationWorld: its Scripts/Behaviours phase, and its Match start. This
+keeps game policy separate from mechanism code.
 
 ## How policy runs
 
-- **The scripts** are a scenario's `objectives.lua` (win conditions) and `behaviours.lua` (spawn rules and other policy), cooked into its server pack beside `parameters.lua` (ADR-0039). The server reads them at startup, before it opens a socket, and runs each one's top level once. A script that does not compile, raises an error or runs past the instruction limit there stops the server, which names the script and the error, as a bad `parameters.lua` does. A scenario may lack either script, and then has no policy for that concern.
-- **The sandbox** is ADR-0039's: each script has a Lua state of its own, sharing no globals with the other or with the Parameters script, holding only the base, math, string and table libraries. There is no `io`, `os`, `package`, `require`, `debug` or `coroutine`, no `dofile`, `loadfile` or `load`, no `math.random`, and no `pcall`/`xpcall`, so a script cannot catch the instruction limit's stop.
-- **Hooks** are global functions a script defines, called by name from SimulationWorld. A hook a script does not define is a no-op, and the mechanism decides that concern alone. The catalogue is fixed in C++ and grows only with a decision policy is given: the Scripts/Behaviours phase calls the objectives' `on_tick` once a tick while a Match is in progress and policy has not yet ended it. `on_tick` reads the Match view: the tick, the Player count, and every player still in the Match (one who disconnected is absent) with its Session ID, Entity ID, Character (its path, ADR-0042), whether it is alive, its health, and whether it was killed this tick and by whose body. It returns nil, `{winner = <Session ID>}` (a player alive in the Match) or `{draw = true}`. The decision becomes the tick's Match end action (below), and the server ends the Match after the tick (ADR-0023), once per Match. Match start calls the behaviours' `assign_spawns` once a Match (below).
-- **A hook reads** a plain read-only table built for the call: numbers, booleans, strings and nested lists and records, never a live binding into Flecs or any other engine state. Writing to it raises an error.
-- **A hook acts** only through what it returns. What crosses back is plain data (nil, booleans, numbers, strings, lists keyed 1 to n, records keyed by strings), and C++ validates every returned value against what that hook may decide: an unknown key, a wrong type or an out-of-range value is refused. Returning nil decides nothing.
-- **What a hook decides reaches the server as a typed action.** SimulationWorld reads each answer into one of a closed set of C++ types (`augusta/policy_actions.h`), validating it as it reads, and hands the server only the result: `on_tick`'s answer becomes a `MatchEnd` (with its winner, or none for a draw) in the tick's `TickResult`, and `assign_spawns`'s a Spawn point per player. `server::Host` acts on the typed actions and never sees a hook's raw answer. The set grows only with a decision policy is given, as the hook catalogue does; a winner is part of a Match end, not an action of its own, and there is no spawn action during a Match since there is no respawn in v1 (ADR-0023).
-- **Spawn assignment** is the behaviours' `assign_spawns(match)`, called once at Match start (ADR-0023). Its view holds `player_count`, `spawn_points` (how many the Map has) and `players`, a list of `{session, entity, character}` (Session ID, Entity ID, Character path). It returns a list naming every player once as `{session = <Session ID>, spawn_point = <1-based index>}`. An answer that names a session not in the Match, names a player twice or leaves one out, holds any other key, or gives a Spawn point index that is not a whole number from 1 to `spawn_points` is refused, and players take the Spawn points in order, starting over after the last, as they do when the hook is undefined or returns nil.
-- **Each call has an instruction limit** of 100 000 Lua instructions, counted afresh per call, so a hook takes well under a millisecond of the tick (NFR-01). A top level has ADR-0039's limit of 1 000 000.
-- **Failure inside a Match is contained.** A hook that raises an error, runs past its limit or returns something invalid is logged at WARN with its script, hook and tick (at most once a second, ADR-0029) and treated as having decided nothing. The tick goes on, and the next call runs as usual.
-- **Deterministic and server-only.** The same scripts called with the same views return the same decisions; neither client world runs policy (ADR-0024).
+- **The script** is a scenario's **rules**: one Lua file holding every hook of
+  its game mode (who spawns where, when the Match is won), named by the
+  scenario's manifest (`scripts.rules`, ADR-0041) and cooked into its server
+  pack as `rules.lua`, beside `parameters.lua` (ADR-0039). Spawning and the win
+  condition are one script, not one each, because they describe the same game
+  mode and are chosen together: a mode without respawn is what makes last player
+  standing possible, and a mode that spawns players at their team's base is the
+  same mode that wins by its flags. The server reads the rules at startup,
+  before it opens a socket, and runs their top level once. A script that does
+  not compile, raises an error or runs past the instruction limit there stops
+  the server, which names the script and the error, as a bad `parameters.lua`
+  does. A scenario may have no rules, and then has no Game policy: the mechanism
+  decides alone.
+- **The sandbox** is ADR-0039's: the rules have a Lua state of their own,
+  sharing no globals with the Parameters script, holding only the base, math,
+  string and table libraries. There is no `io`, `os`, `package`, `require`,
+  `debug` or `coroutine`, no `dofile`, `loadfile` or `load`, no `math.random`,
+  and no `pcall`/`xpcall`, so a script cannot catch the instruction limit's
+  stop.
+- **Hooks** are global functions a script defines, called by name from
+  SimulationWorld. A hook a script does not define is a no-op, and the mechanism
+  decides that concern alone. The catalogue is fixed in C++ and grows only with
+  a decision policy is given: the Scripts/Behaviours phase calls the rules'
+  `on_tick` once a tick while a Match is in progress and policy has not yet
+  ended it. `on_tick` reads the Match view: the tick, the Player count, and
+  every player still in the Match (one who disconnected is absent) with its
+  Session ID, Entity ID, Character (its path, ADR-0042), whether it is alive,
+  its health, and whether it was killed this tick and by whose body. It returns
+  nil, `{winner = <Session ID>}` (a player alive in the Match) or
+  `{draw = true}`. The decision becomes the tick's Match end action (below), and
+  the server ends the Match after the tick (ADR-0023), once per Match. Match
+  start calls the rules' `assign_spawns` once a Match (below).
+- **A hook reads** a plain read-only table built for the call: numbers,
+  booleans, strings and nested lists and records, never a live binding into
+  Flecs or any other engine state. Writing to it raises an error.
+- **A hook acts** only through what it returns. What crosses back is plain data
+  (nil, booleans, numbers, strings, lists keyed 1 to n, records keyed by
+  strings), and C++ validates every returned value against what that hook may
+  decide: an unknown key, a wrong type or an out-of-range value is refused.
+  Returning nil decides nothing.
+- **What a hook decides reaches the server as a typed action.** SimulationWorld
+  reads each answer into one of a closed set of C++ types
+  (`augusta/policy_actions.h`), validating it as it reads, and hands the server
+  only the result: `on_tick`'s answer becomes a `MatchEnd` (with its winner, or
+  none for a draw) in the tick's `TickResult`, and `assign_spawns`'s a Spawn
+  point per player. `server::Host` acts on the typed actions and never sees a
+  hook's raw answer. The set grows only with a decision policy is given, as the
+  hook catalogue does; a winner is part of a Match end, not an action of its
+  own, and there is no spawn action during a Match since there is no respawn in
+  v1 (ADR-0023).
+- **Spawn assignment** is the rules' `assign_spawns(match)`, called once at
+  Match start (ADR-0023). Its view holds `player_count`, `spawn_points` (how
+  many the Map has) and `players`, a list of `{session, entity, character}`
+  (Session ID, Entity ID, Character path). It returns a list naming every player
+  once as `{session = <Session ID>, spawn_point = <1-based index>}`. An answer
+  that names a session not in the Match, names a player twice or leaves one out,
+  holds any other key, or gives a Spawn point index that is not a whole number
+  from 1 to `spawn_points` is refused, and players take the Spawn points in
+  order, starting over after the last, as they do when the hook is undefined or
+  returns nil.
+- **Each call has an instruction limit** of 100 000 Lua instructions, counted
+  afresh per call, so a hook takes well under a millisecond of the tick
+  (NFR-01). A top level has ADR-0039's limit of 1 000 000.
+- **Failure inside a Match is contained.** A hook that raises an error, runs
+  past its limit or returns something invalid is logged at WARN with its script,
+  hook and tick (at most once a second, ADR-0029) and treated as having decided
+  nothing. The tick goes on, and the next call runs as usual.
+- **Deterministic and server-only.** The same rules called with the same views
+  return the same decisions; neither client world runs policy (ADR-0024).
 
 ## Considered Options
 
-- **LuaJIT**: considered and deferred — policy logic is low-frequency, not hot-path numeric work, so JIT performance is unnecessary, and LuaJIT's upstream is stalled (would mean depending on the OpenResty-maintained fork rather than lua.org directly).
-- **Python**: already used for offline asset tooling via OpenUSD, but deliberately not reused here — it isn't designed for embedding into a 60Hz real-time tick loop (CPython overhead, GIL).
-- **Live bindings into the ECS** (functions or userdata a hook calls to read or change the world): rejected. A hook could then change mechanism state in the middle of a tick, and every binding would have to be guarded against misuse; a table in and a validated value out keeps everything policy can do explicit and checked in C++.
-- **One Lua state for both policy scripts**: rejected. Two scripts defining the same global would silently overwrite each other, and a state per script costs little.
+- **LuaJIT**: considered and deferred — policy logic is low-frequency, not
+  hot-path numeric work, so JIT performance is unnecessary, and LuaJIT's
+  upstream is stalled (would mean depending on the OpenResty-maintained fork
+  rather than lua.org directly).
+- **Python**: already used for offline asset tooling via OpenUSD, but
+  deliberately not reused here — it isn't designed for embedding into a 60Hz
+  real-time tick loop (CPython overhead, GIL).
+- **Live bindings into the ECS** (functions or userdata a hook calls to read or
+  change the world): rejected. A hook could then change mechanism state in the
+  middle of a tick, and every binding would have to be guarded against misuse; a
+  table in and a validated value out keeps everything policy can do explicit and
+  checked in C++.
+- **One Lua state for both policy scripts**: rejected. Two scripts defining the
+  same global would silently overwrite each other, and a state per script costs
+  little.

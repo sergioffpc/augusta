@@ -177,14 +177,14 @@ ballistics::TargetId ToTarget(EntityId entity) { return static_cast<ballistics::
 
 EntityId FromTarget(ballistics::TargetId target) { return static_cast<EntityId>(std::to_underlying(target)); }
 
-// The objectives' hook called every tick in Scripts/Behaviours (ADR-0022).
+// The rules' hook called every tick in Scripts/Behaviours (ADR-0022).
 constexpr std::string_view kOnTick = "on_tick";
 
 // How often a failing Game policy hook is logged: one that fails every tick
 // would otherwise write a line a tick (ADR-0029).
 constexpr std::chrono::seconds kPolicyWarningInterval{1};
 
-// The behaviours' hook called once at Match start (ADR-0022).
+// The rules' hook called once at Match start (ADR-0022).
 constexpr std::string_view kAssignSpawns = "assign_spawns";
 
 // The Spawn point, from 0, each of a Match's players takes with no Game policy
@@ -564,7 +564,7 @@ struct World::Impl {
     return alive;
   }
 
-  // Calls the objectives' on_tick with the Match view while the world has a
+  // Calls the rules' on_tick with the Match view while the world has a
   // Match policy has not ended, and records the action it takes, if any, in
   // the tick's result. A hook that fails or decides what it may not is logged
   // and decides nothing; either way the tick goes on.
@@ -572,20 +572,18 @@ struct World::Impl {
     if (players.empty() || match_ended_by_policy) {
       return;
     }
-    const auto returned = policy.Call(scripting::Script::kObjectives, kOnTick, TickView());
+    const auto returned = policy.Call(kOnTick, TickView());
     if (!returned) {
       LW_LIMITED(policy_warnings,
                  "subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
-                 scripting::ScriptPath(scripting::Script::kObjectives), kOnTick, tick,
-                 scripting::DescribeHookError(returned.error()));
+                 scripting::kRulesScriptPath, kOnTick, tick, scripting::DescribeHookError(returned.error()));
       return;
     }
     const auto action = ReadTickAction(*returned, AliveSessions());
     if (!action) {
       LW_LIMITED(policy_warnings,
                  "subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
-                 scripting::ScriptPath(scripting::Script::kObjectives), kOnTick, tick,
-                 DescribeActionRefusal(action.error()));
+                 scripting::kRulesScriptPath, kOnTick, tick, DescribeActionRefusal(action.error()));
       return;
     }
     if (action->has_value()) {
@@ -595,7 +593,7 @@ struct World::Impl {
   }
 
   // The Spawn point, from 0 and below spawn_points, each of match_players takes:
-  // what the behaviours' assign_spawns answers, or in order when it is not
+  // what the rules' assign_spawns answers, or in order when it is not
   // defined, answers nil or is refused. A refusal is logged; as a hook is
   // called once a Match, it is not limited.
   std::vector<std::size_t> AssignSpawns(std::span<const MatchPlayer> match_players, std::size_t spawn_points) {
@@ -610,11 +608,10 @@ struct World::Impl {
     }
     scripting::Value::Record view = MatchView(parameters.player_count, std::move(viewed));
     view.push_back(NumberField("spawn_points", static_cast<double>(spawn_points)));
-    const auto answer = policy.Call(scripting::Script::kBehaviours, kAssignSpawns, view);
+    const auto answer = policy.Call(kAssignSpawns, view);
     if (!answer) {
       LW("subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
-         scripting::ScriptPath(scripting::Script::kBehaviours), kAssignSpawns, tick,
-         scripting::DescribeHookError(answer.error()));
+         scripting::kRulesScriptPath, kAssignSpawns, tick, scripting::DescribeHookError(answer.error()));
       return InOrderSpawns(match_players.size(), spawn_points);
     }
     if (std::holds_alternative<std::monostate>(answer->data)) {
@@ -628,8 +625,7 @@ struct World::Impl {
     auto assignment = ReadSpawnAssignment(*answer, sessions, spawn_points);
     if (!assignment) {
       LW("subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
-         scripting::ScriptPath(scripting::Script::kBehaviours), kAssignSpawns, tick,
-         DescribeSpawnRefusal(assignment.error()));
+         scripting::kRulesScriptPath, kAssignSpawns, tick, DescribeSpawnRefusal(assignment.error()));
       return InOrderSpawns(match_players.size(), spawn_points);
     }
     return *std::move(assignment);
