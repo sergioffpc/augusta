@@ -1,6 +1,8 @@
 #include "augusta/ballistics.h"
 
+#include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <optional>
 #include <span>
@@ -42,6 +44,14 @@ std::optional<float> CrossingFraction(const math::Vec3& from, const math::Vec3& 
 }
 
 }  // namespace
+
+std::uint32_t MaxFlightSteps(float step_seconds) {
+  // A thousandth of a step off, so a step of 1/rate seconds a float rounds down
+  // does not count one more step than kMaxFlightTime holds.
+  constexpr double kRoundingSlack = 0.001;
+  const double steps = std::chrono::duration<double>(kMaxFlightTime).count() / step_seconds;
+  return static_cast<std::uint32_t>(std::ceil(steps - kRoundingSlack));
+}
 
 World::World() = default;
 
@@ -88,7 +98,9 @@ StepResult World::Step(BulletHandle handle, float delta_time, const physics::Wor
     }
   }
 
-  if (!nearest && math::Length(state.position - bullet.origin) > bullet.config.max_range) {
+  ++bullet.steps;
+  if (!nearest && (math::Length(state.position - bullet.origin) > bullet.config.max_range ||
+                   bullet.steps >= MaxFlightSteps(delta_time))) {
     result.outcome = Outcome::kExpired;
   }
   if (result.outcome != Outcome::kInFlight) {

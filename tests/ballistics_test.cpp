@@ -6,6 +6,7 @@
 #include <format>
 #include <fstream>
 #include <ios>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -182,6 +183,32 @@ TEST(BallisticsWorldTest, TheNextSegmentIsTheMovementTheNextStepTests) {
 
   EXPECT_EQ(next.from, before);
   EXPECT_EQ(next.to, after);
+}
+
+// Requirements: US-10
+TEST(BallisticsWorldTest, MaxFlightStepsIsTheMaxFlightTimeInStepsRoundedUp) {
+  EXPECT_EQ(augusta::ballistics::MaxFlightSteps(2.0F), 3U);
+  EXPECT_EQ(augusta::ballistics::MaxFlightSteps(0.3F), 17U);
+  // Every tick rate, whichever way 1/rate rounds to a float.
+  for (std::uint32_t rate = 1; rate <= std::numeric_limits<std::uint8_t>::max(); ++rate) {
+    EXPECT_EQ(augusta::ballistics::MaxFlightSteps(1.0F / static_cast<float>(rate)), 5 * rate) << rate << " Hz";
+  }
+}
+
+// A metre a second against the longest range a float holds: only the flight
+// time ends it.
+// Requirements: US-10
+TEST(BallisticsWorldTest, ABulletStillFlyingAtTheMaxFlightTimeExpires) {
+  const augusta::physics::World physics_world{StaminaConfig{}};
+  World world;
+  const auto bullet = world.Fire(Vec3(0.0F), Vec3(1.0F, 0.0F, 0.0F), 1.0F,
+                                 {.gravity = 0.0F, .max_range = std::numeric_limits<float>::max()});
+  const std::uint32_t steps = augusta::ballistics::MaxFlightSteps(kFixedTick);
+
+  for (std::uint32_t step = 1; step < steps; ++step) {
+    ASSERT_EQ(world.Step(bullet, kFixedTick, physics_world, {}).outcome, Outcome::kInFlight) << "step " << step;
+  }
+  EXPECT_EQ(world.Step(bullet, kFixedTick, physics_world, {}).outcome, Outcome::kExpired);
 }
 
 // Requirements: US-10

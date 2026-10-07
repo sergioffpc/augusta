@@ -2252,6 +2252,84 @@
       }
     },
     {
+      "type": "timeseries",
+      "title": "Bullets in flight",
+      "description": "Bullets still flying after the last tick, bounded by ADR-0002's flight time.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(augustad_bullets_in_flight{namespace=\"$environment\", scenario=\"$scenario\"})",
+          "legendFormat": "in flight",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 36,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 74
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
       "type": "row",
       "title": "Build and uptime",
       "collapsed": false,
@@ -2260,7 +2338,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 74
+        "y": 82
       },
       "panels": []
     },
@@ -2319,7 +2397,7 @@
         "h": 4,
         "w": 12,
         "x": 0,
-        "y": 75
+        "y": 83
       },
       "datasource": {
         "type": "prometheus",
@@ -2381,7 +2459,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 75
+        "y": 83
       },
       "datasource": {
         "type": "prometheus",
@@ -2457,7 +2535,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 75
+        "y": 83
       },
       "datasource": {
         "type": "prometheus",

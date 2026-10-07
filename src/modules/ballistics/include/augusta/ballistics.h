@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_BALLISTICS_H_
 #define AUGUSTA_BALLISTICS_H_
 
+#include <chrono>
 #include <cstdint>
 #include <span>
 #include <unordered_map>
@@ -54,11 +55,21 @@ struct BulletConfig {
   /// Downward acceleration applied each tick, in engine units/s^2.
   float gravity = 0.0F;
   /// The bullet resolves as kExpired (see Outcome) once it has travelled
-  /// this far from its origin without hitting anything - bounds an
-  /// in-flight bullet's lifetime so a miss doesn't stay simulated
-  /// forever.
+  /// this far from its origin without hitting anything, or once it has
+  /// flown kMaxFlightTime, whichever comes first.
   float max_range = 0.0F;
 };
+
+/// The longest any bullet flies (ADR-0002): one still in flight after this
+/// long expires, whatever its speed and max_range, so a round that crawls
+/// toward a range it never reaches is not simulated forever. Far above a rifle
+/// round's flight to any range a Map has room for.
+inline constexpr std::chrono::seconds kMaxFlightTime{5};
+
+/// How many World::Step calls of step_seconds each a bullet flies at most:
+/// kMaxFlightTime in them, rounded up, so 5 times the rate for a step of 1/rate
+/// seconds however that rounds to a float. step_seconds must be above 0.
+[[nodiscard]] std::uint32_t MaxFlightSteps(float step_seconds);
 
 /// One triangle of a posed Hitbox, in world space.
 struct Triangle {
@@ -104,7 +115,8 @@ enum class Outcome {
   kHitMap,
   /// Struck a player's Hitbox this tick (see StepResult::target/part/impact_point).
   kHitPlayer,
-  /// Exceeded BulletConfig::max_range without hitting anything - a miss.
+  /// Exceeded BulletConfig::max_range, or flew kMaxFlightTime, without
+  /// hitting anything - a miss.
   kExpired,
 };
 
@@ -143,10 +155,10 @@ class World {
   /// integrates gravity, then tests the tick's movement segment against
   /// map's collision meshes and against hitboxes. The nearest intersection
   /// along the segment is the outcome, so nothing is hit through a wall or
-  /// through another player; with none, a bullet past its max range
-  /// expires. Once this returns a non-kInFlight outcome for handle, the
-  /// bullet no longer exists - calling Step again with the same handle is
-  /// undefined behavior.
+  /// through another player; with none, a bullet past its max range, or on
+  /// its MaxFlightSteps(delta_time)-th Step, expires. Once this returns a
+  /// non-kInFlight outcome for handle, the bullet no longer exists - calling
+  /// Step again with the same handle is undefined behavior.
   StepResult Step(BulletHandle handle, float delta_time, const physics::World& map, std::span<const Hitbox> hitboxes);
 
   /// The segment the next Step of handle's bullet by delta_time tests, without
@@ -159,6 +171,7 @@ class World {
     math::Vec3 origin;
     BulletState state;
     BulletConfig config;
+    std::uint32_t steps = 0;
   };
 
   // Where bullet is after one tick of delta_time.
