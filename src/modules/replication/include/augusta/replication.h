@@ -45,7 +45,7 @@ struct EntityBody {
 /// What one recipient alone is sent for a tick, beside the bodies every recipient is sent.
 struct RecipientUpdate {
   /// The entity the recipient's player controls.
-  simulation::EntityId recipient{};
+  simulation::EntityId entity{};
   /// The highest command sequence of the recipient that the tick processed, 0 if none.
   command::Sequence acknowledged_sequence = 0;
   /// The recipient's own rifle after the tick, for it to reconcile its

@@ -34,7 +34,7 @@ Updates PlanUpdates(const simulation::State& state, tick::Tick tick, std::span<c
   for (const Recipient& recipient : recipients) {
     const simulation::EntityState* const body = BodyOf(state, recipient.entity);
     updates.recipients.push_back(RecipientUpdate{
-        .recipient = recipient.entity,
+        .entity = recipient.entity,
         .acknowledged_sequence = recipient.acknowledged_sequence,
         .rifle = body == nullptr ? weapon::State{} : body->rifle,
         .health = body == nullptr ? 0.0F : body->health,

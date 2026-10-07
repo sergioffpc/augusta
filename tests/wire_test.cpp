@@ -201,7 +201,7 @@ TEST(WireTest, AnExhaustedBodyReachesTheClientStillExhausted) {
   };
 
   const augusta::harness::AuthoritativeState received =
-      ReceivedBy(sent, {.recipient = augusta::simulation::EntityId{1}, .acknowledged_sequence = 3});
+      ReceivedBy(sent, {.entity = augusta::simulation::EntityId{1}, .acknowledged_sequence = 3});
 
   ASSERT_EQ(received.bodies.size(), 2U);
   EXPECT_TRUE(received.bodies[0].body.exhausted);
@@ -218,7 +218,7 @@ TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
                  {.entity = augusta::simulation::EntityId{3}, .body = Body(3.0F, Stance::kProne), .yaw = 1.5F}},
       .recipients = {},
   };
-  const augusta::replication::RecipientUpdate recipient{.recipient = augusta::simulation::EntityId{2},
+  const augusta::replication::RecipientUpdate recipient{.entity = augusta::simulation::EntityId{2},
                                                         .acknowledged_sequence = 17,
                                                         .health = 55.0F,
                                                         .queued_commands = 2};
@@ -247,7 +247,7 @@ TEST(WireTest, TheRecipientsRifleReachesTheClientExactly) {
       .recipients = {},
   };
   const augusta::replication::RecipientUpdate sent{
-      .recipient = augusta::simulation::EntityId{1},
+      .entity = augusta::simulation::EntityId{1},
       .acknowledged_sequence = 3,
       .rifle = {.cooldown = 0.1F - (1.0F / 60.0F),
                 .reload_remaining = 2.4833333F,

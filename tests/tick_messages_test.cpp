@@ -13,6 +13,7 @@
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
+#include "augusta/tick.h"
 #include "match.h"
 
 // What the Host hands its connections after a tick, message by message: which
@@ -177,10 +178,13 @@ TEST(TickMessagesTest, CombatEventsFollowTheUpdatesReliablyShotsThenHitConfirmat
       .tick = 42, .origin = augusta::math::Vec3(1.0F, 1.5F, -2.0F), .shooter = EntityIdWire{1}, .yaw = 0.5F});
   const Payload hit = augusta::protocol::Encode(augusta::protocol::HitConfirmationWire{
       .target = EntityIdWire{3}, .damage = 100.0F, .part = augusta::protocol::BodyPartWire::kHead});
-  const Payload death = augusta::protocol::Encode(augusta::protocol::DeathWire{.victim = EntityIdWire{3},
-                                                                               .killer = EntityIdWire{1},
-                                                                               .yaw = 0.5F,
-                                                                               .part = augusta::protocol::BodyPartWire::kHead});
+  const augusta::protocol::DeathWire death_wire{
+      .victim = EntityIdWire{3},
+      .killer = EntityIdWire{1},
+      .yaw = 0.5F,
+      .part = augusta::protocol::BodyPartWire::kHead,
+  };
+  const Payload death = augusta::protocol::Encode(death_wire);
   EXPECT_EQ(PeersOf(sent, 3, 3), everyone);
   EXPECT_EQ(sent[6].peer, kPeer1);
   EXPECT_EQ(PeersOf(sent, 7, 3), everyone);

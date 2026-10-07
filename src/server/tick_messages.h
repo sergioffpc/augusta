@@ -17,8 +17,10 @@
 /// unreliably, since a newer one supersedes it; then, reliably, what must
 /// arrive: every Shot and every Death of the tick to all of them, and each Hit
 /// confirmation to its shooter alone, if it is still in the match. replication
-/// decides what each message holds; this sends them on the Host's connections,
-/// counting each into the Host's metrics (host_metrics.h).
+/// decides what each message holds; this encodes them, in that order and with
+/// that reliability (ForEachTickMessage, tested without a network), and sends
+/// them on the Host's connections, counting each into the Host's metrics
+/// (host_metrics.h).
 namespace augusta::server {
 
 /// Who a tick's messages go to: each player in the match.

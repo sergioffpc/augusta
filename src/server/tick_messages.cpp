@@ -23,12 +23,13 @@ void ForEachTickMessage(const simulation::State& state, tick::Tick tick, const T
                         const TickMessageSink& send) {
   const replication::Updates updates = replication::PlanUpdates(state, tick, to.recipients);
   // One message, its bodies converted once, addressed to each recipient in
-  // turn: only the recipient's own fields change between their payloads.
+  // turn: only the recipient's own fields change between their payloads. It is
+  // held as the MessageWire Encode takes, so encoding it copies no body.
   protocol::MessageWire message = ToWire(updates);
   auto& addressed = std::get<protocol::AuthoritativeStateWire>(message);
   for (const replication::RecipientUpdate& recipient : updates.recipients) {
     Address(addressed, recipient);
-    send(to.peers.at(FromSimulation(recipient.recipient)), protocol::Encode(message),
+    send(to.peers.at(FromSimulation(recipient.entity)), protocol::Encode(message),
          networking::Reliability::kUnreliable);
   }
   for (const replication::Shot& shot : replication::PlanShots(state, tick)) {

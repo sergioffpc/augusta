@@ -60,9 +60,9 @@ TEST(ReplicationTest, EachRecipientGetsItsOwnAcknowledgedSequence) {
 
   const auto updates = PlanUpdates(state, 1, recipients);
 
-  EXPECT_EQ(updates.recipients[0].recipient, static_cast<EntityId>(1));
+  EXPECT_EQ(updates.recipients[0].entity, static_cast<EntityId>(1));
   EXPECT_EQ(updates.recipients[0].acknowledged_sequence, 100U);
-  EXPECT_EQ(updates.recipients[1].recipient, static_cast<EntityId>(2));
+  EXPECT_EQ(updates.recipients[1].entity, static_cast<EntityId>(2));
   EXPECT_EQ(updates.recipients[1].acknowledged_sequence, 7U);
 }
 
@@ -141,7 +141,7 @@ TEST(ReplicationTest, EachOfAFullMatchOfRecipientsIsToldItsOwnFieldsAndEveryBody
   const std::array<std::uint8_t, 4> rounds = {8, 1, 0, 5};
   ASSERT_EQ(updates.recipients.size(), 4U);
   for (std::size_t i = 0; i < recipients.size(); ++i) {
-    EXPECT_EQ(updates.recipients[i].recipient, recipients[i].entity) << i;
+    EXPECT_EQ(updates.recipients[i].entity, recipients[i].entity) << i;
     EXPECT_EQ(updates.recipients[i].acknowledged_sequence, recipients[i].acknowledged_sequence) << i;
     EXPECT_EQ(updates.recipients[i].queued_commands, recipients[i].queued_commands) << i;
     EXPECT_EQ(updates.recipients[i].health, healths[i]) << i;
