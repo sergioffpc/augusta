@@ -84,7 +84,7 @@ target_compile_definitions(
 gtest_discover_tests(augusta_parameters_loader_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_protocol_tests protocol_test.cpp)
-# Links augusta_primitives too, to check it agrees with the codec it will replace the limits of (#385).
+# Links augusta_primitives too, to check it agrees with the codec until the codec uses it.
 target_link_libraries(augusta_protocol_tests PRIVATE augusta_primitives augusta_protocol GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_protocol_tests DISCOVERY_TIMEOUT 30)

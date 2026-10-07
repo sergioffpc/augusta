@@ -44,10 +44,10 @@ if(NOT primitives_headers)
 endif()
 
 # Any augusta include, or any augusta:: name in code but its own namespace.
-set(engine "#[ \t]*include[ \t]*[\"<]augusta/|augusta::[A-Za-z_]")
+set(any_augusta "#[ \t]*include[ \t]*[\"<]augusta/|augusta::[A-Za-z_]")
 set(primitives_violations "")
 foreach(header ${primitives_headers})
-  file(STRINGS "${header}" lines REGEX "${engine}")
+  file(STRINGS "${header}" lines REGEX "${any_augusta}")
   foreach(line ${lines})
     string(STRIP "${line}" line)
     # A comment may name what the primitives stand alongside; only code depends on it.

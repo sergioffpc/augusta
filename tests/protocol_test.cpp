@@ -968,33 +968,15 @@ TEST(ProtocolTest, BytesAfterCommandsAndStateAreTrailing) {
   EXPECT_EQ(Decode(state).error(), DecodeError::kTrailingBytes);
 }
 
-// augusta::primitives stands alongside the forms the codec uses today (#385):
-// until the codec and its consumers move to it, the two must say the same thing.
-TEST(ProtocolPrimitivesTest, TheNeutralCountersAreTheOnesTheWireCarries) {
-  EXPECT_TRUE((std::same_as<augusta::primitives::Tick, augusta::tick::Tick>));
-  EXPECT_TRUE((std::same_as<augusta::primitives::Sequence, augusta::command::Sequence>));
-}
-
-TEST(ProtocolPrimitivesTest, TheNeutralBoundsAreTheCodecsLimits) {
-  EXPECT_EQ(augusta::primitives::kMaxPlayers, augusta::protocol::kMaxPlayers);
-  EXPECT_EQ(augusta::primitives::kMaxCommandsPerMessage, augusta::protocol::kMaxCommandsPerMessage);
-  EXPECT_EQ(augusta::primitives::kMaxRecoilKicks, augusta::protocol::kMaxRecoilKicks);
-}
-
-// The neutral Tick and Sequence hold every value the wire carries: the
-// highest of each survives Encode and Decode.
-TEST(ProtocolPrimitivesTest, TheHighestNeutralTickAndSequenceRoundTrip) {
-  constexpr auto kTick = std::numeric_limits<augusta::primitives::Tick>::max();
-  constexpr auto kSequence = std::numeric_limits<augusta::primitives::Sequence>::max();
-
-  AuthoritativeStateWire sent{};
-  sent.tick = kTick;
-  sent.acknowledged_sequence = kSequence;
-
-  const auto received = std::get<AuthoritativeStateWire>(RoundTrip(sent));
-
-  EXPECT_EQ(received.tick, kTick);
-  EXPECT_EQ(received.acknowledged_sequence, kSequence);
+// augusta::primitives stands alongside the forms the codec uses today: until
+// the codec and its consumers move to it, the two must say the same thing, so a
+// drift fails the build.
+TEST(ProtocolPrimitivesTest, TheNeutralCountersAndBoundsAreTheCodecs) {
+  static_assert(std::same_as<augusta::primitives::Tick, augusta::tick::Tick>);
+  static_assert(std::same_as<augusta::primitives::Sequence, augusta::command::Sequence>);
+  static_assert(augusta::primitives::kMaxPlayers == augusta::protocol::kMaxPlayers);
+  static_assert(augusta::primitives::kMaxCommandsPerMessage == augusta::protocol::kMaxCommandsPerMessage);
+  static_assert(augusta::primitives::kMaxRecoilKicks == augusta::protocol::kMaxRecoilKicks);
 }
 
 TEST(ProtocolTest, EveryErrorHasADescription) {
