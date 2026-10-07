@@ -2,6 +2,7 @@
 #define AUGUSTA_SERVER_METRICS_H_
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -9,6 +10,7 @@
 
 #include <prometheus/collectable.h>
 
+#include "augusta/faults.h"
 #include "augusta/tick.h"
 
 /// \file
@@ -19,13 +21,28 @@
 /// the server's third beside Network I/O and Simulation (ADR-0005), which only
 /// reads: the Simulation and Network I/O threads write what it reports. That
 /// thread is not a supervised worker, since an HTTP request must never stop
-/// the tick loop: a request that fails is logged and answered 500. What the
-/// Host counts (host_metrics.h) and every client's Connection health
-/// (connection_health.h) it serves beside the Process family, which is its own.
+/// the tick loop: a request that fails is logged and answered 500, and a peer
+/// that disconnects only loses its own connection. A failure to accept is
+/// retried a bounded number of times, each wait twice the last; one that
+/// persists, or the thread failing, is the endpoint's permanent failure, a
+/// subsystem one (ADR-0033): it logs it once, stops serving and closes its
+/// port, so /livez fails and the platform restarts the pod (ADR-0049) while the
+/// tick loop goes on until then. What the Host counts (host_metrics.h) and
+/// every client's Connection health (connection_health.h) it serves beside the
+/// Process family, which is its own.
 namespace augusta::server {
 
 /// What /metrics serves beside the Process family, in order.
 using ServerMetrics = std::vector<std::reference_wrapper<const prometheus::Collectable>>;
+
+/// How many accept failures in a row the endpoint takes, the last included,
+/// before it stops serving; a connection accepted in between starts the count
+/// over.
+inline constexpr int kMetricsAcceptAttempts = 5;
+
+/// How long the endpoint waits after its first accept failure in a row before
+/// accepting again; each further wait is twice the one before.
+inline constexpr std::chrono::milliseconds kMetricsFirstAcceptRetry{100};
 
 /// The server's metrics endpoint, serving from construction to destruction.
 class MetricsEndpoint {
@@ -35,13 +52,20 @@ class MetricsEndpoint {
   /// server_metrics what /metrics serves beside the Process family, collected
   /// on this endpoint's thread; each must outlive this. augustad_build_info's
   /// commit comes from the AUGUSTA_COMMIT environment variable the server image
-  /// sets, "unknown" without it, and augustad_start_time_seconds is now. Throws
-  /// std::runtime_error if the port can't be bound.
+  /// sets, "unknown" without it, and augustad_start_time_seconds is now.
+  /// faults, when given, is asked at failure::Site::kMetricsAccept before each
+  /// accept, a trip failing it as the acceptor would; only a test gives one,
+  /// and it must outlive this. Throws std::runtime_error if the port can't be
+  /// bound.
   MetricsEndpoint(std::uint16_t port, const std::atomic<tick::Clock::time_point>& last_tick_end,
-                  ServerMetrics server_metrics);
+                  ServerMetrics server_metrics, failure::Faults* faults = nullptr);
 
   /// Stops serving, waiting for a request in progress.
   ~MetricsEndpoint();
+
+  /// False once the endpoint has failed permanently and stopped serving: its
+  /// port is closed and it never serves again. Any thread.
+  [[nodiscard]] bool Available() const;
 
   /// Non-copyable and not movable: its thread refers to it.
   MetricsEndpoint(const MetricsEndpoint&) = delete;

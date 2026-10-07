@@ -75,14 +75,15 @@ target_link_libraries(augustad_lock_free_metrics PUBLIC prometheus-cpp::core)
 augusta_set_module_scope(augustad_lock_free_metrics SERVER_ONLY)
 
 # The HTTP endpoint serving /metrics and /livez (see metrics.h, ADR-0049):
-# prometheus-cpp's core keeps and formats the metrics, Boost.Beast serves them.
+# prometheus-cpp's core keeps and formats the metrics, Boost.Beast serves them;
+# its permanent failure is a subsystem one in the shared error model (ADR-0033).
 find_package(prometheus-cpp CONFIG REQUIRED)
 find_package(boost_beast CONFIG REQUIRED)
 add_library(augustad_metrics STATIC metrics.cpp)
 target_include_directories(augustad_metrics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augustad_metrics
-  PUBLIC augusta_tick prometheus-cpp::core
+  PUBLIC augusta_failure augusta_tick prometheus-cpp::core
   PRIVATE augustad_liveness augusta_logging augusta_version Boost::beast
 )
 # std::getenv reads the commit the image stamps in; MSVC deprecates it for

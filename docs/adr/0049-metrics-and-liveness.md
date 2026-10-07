@@ -34,10 +34,15 @@ count the same events from the same counters, so the log line and the series
 cannot disagree. The Network I/O thread samples every connection's transport
 status (`GetConnectionRealTimeStatus`) once a heartbeat interval (1 second). The
 endpoint thread is not a supervised worker: if it fails, the failure is logged
-and the tick loop keeps running, because an HTTP request must never stop it.
-`/livez` goes down with the endpoint, though, so in the cluster the liveness
-probe then restarts the pod: a dead endpoint ends the Match in progress, as a
-hung tick does.
+and the tick loop keeps running, because an HTTP request must never stop it. A
+request that fails is answered `500`, and a peer that disconnects loses only its
+own connection. A failure to accept is retried after a wait of 100 ms that
+doubles with each failure in a row, never in a tight loop; the fifth in a row,
+or the endpoint's thread failing, is the endpoint's permanent failure, a
+`subsystem` one (ADR-0033): it is logged once at `ERR`, and the endpoint stops
+serving and closes its port. `/livez` goes down with the endpoint, so in the
+cluster the liveness probe then restarts the pod: a dead endpoint ends the Match
+in progress, as a hung tick does.
 
 **Names.** Every metric is named `augustad_<what>_<unit>`. Units are base units
 (`_seconds`, `_bytes`, `_ratio`, `_hertz`), and counters end in `_total`. Each
