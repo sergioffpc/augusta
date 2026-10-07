@@ -254,9 +254,9 @@ struct ClientRuntime::Impl {
   //
   // Everything the server has said is read from one Server view, so the
   // state, the bodies it names and the match it belongs to are of one moment
-  // (ADR-0005), however the Network I/O thread interleaves with this one. The
-  // snapshot and characters are lent from converted_view, so the frame must
-  // run before the next call.
+  // (ADR-0005), however the Network I/O thread interleaves with this one; the
+  // events taken are of that view's match too. The snapshot and characters
+  // are lent from converted_view, so the frame must run before the next call.
   presentation::FrameInput NextFrameInput() {
     const LatestTick latest = GetLatestTick();
     const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
@@ -271,16 +271,16 @@ struct ClientRuntime::Impl {
         .snapshot = converted_view.Snapshot(),
         .characters = converted_view.Characters(),
         .shots = {},
-        .hit_confirmations = static_cast<std::uint32_t>(session->TakeHitConfirmations().size()),
+        .hit_confirmations = static_cast<std::uint32_t>(session->TakeHitConfirmations(*view).size()),
         .deaths = {},
         .health = view->authoritative.transform([](const harness::AuthoritativeState& state) { return state.health; }),
         .match_end = MatchEndOf(*view),
     };
     frame.local_entity = view->OwnEntity().transform([](harness::EntityId entity) { return ToPresentation(entity); });
-    for (const harness::Shot& shot : session->TakeShots()) {
+    for (const harness::Shot& shot : session->TakeShots(*view)) {
       frame.shots.push_back(ToPresentation(shot));
     }
-    for (const harness::Death& death : session->TakeDeaths()) {
+    for (const harness::Death& death : session->TakeDeaths(*view)) {
       frame.deaths.push_back(ToPresentation(death.victim));
     }
     return frame;
