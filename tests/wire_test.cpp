@@ -218,10 +218,8 @@ TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
                  {.entity = augusta::simulation::EntityId{3}, .body = Body(3.0F, Stance::kProne), .yaw = 1.5F}},
       .recipients = {},
   };
-  const augusta::replication::RecipientUpdate recipient{.entity = augusta::simulation::EntityId{2},
-                                                        .acknowledged_sequence = 17,
-                                                        .health = 55.0F,
-                                                        .queued_commands = 2};
+  const augusta::replication::RecipientUpdate recipient{
+      .entity = augusta::simulation::EntityId{2}, .acknowledged_sequence = 17, .health = 55.0F, .queued_commands = 2};
 
   const augusta::harness::AuthoritativeState received = ReceivedBy(sent, recipient);
 
