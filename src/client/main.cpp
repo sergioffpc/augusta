@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "augusta/assets.h"
+#include "augusta/client_config.h"
 #include "augusta/config.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
@@ -129,7 +130,7 @@ int main(int argc, char** argv) {
       [](const augusta::config::CommandLine& read) { return augusta::config::LoadClientConfig(read.config_file); });
   if (!file_config) {
     LE("subsystem=client event=config_loading_failed error={}",
-       augusta::config::DescribeConfigError(file_config.error()));
+       augusta::config::DescribeClientConfigError(file_config.error()));
     return 1;
   }
   // ParseClientConfig already validated log_level, so this is never nullopt.

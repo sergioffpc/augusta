@@ -8,6 +8,7 @@
 #include "augusta/config.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
+#include "augusta/server_config.h"
 #include "augusta/version.h"
 #include "content.h"
 #include "crash.h"
@@ -88,7 +89,7 @@ int main(int argc, char** argv) {
       [](const augusta::config::CommandLine& read) { return augusta::config::LoadServerConfig(read.config_file); });
   if (!file_config) {
     LE("subsystem=server event=config_loading_failed error={}",
-       augusta::config::DescribeConfigError(file_config.error()));
+       augusta::config::DescribeServerConfigError(file_config.error()));
     return 1;
   }
   // ParseServerConfig already validated log_level, so this is never nullopt.

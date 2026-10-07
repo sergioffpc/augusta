@@ -177,6 +177,7 @@ target_link_libraries(
   PRIVATE
     augusta_assets
     augusta_config
+    augusta_server_config
     augustad_content
     augustad_crash
     augusta_parameters
@@ -185,6 +186,9 @@ target_link_libraries(
     augusta_networking
     augustad_runtime
 )
+# The headless server itself, not only its libraries: a client-only module
+# linked straight into it fails the configure (tests/server_boundary.cmake).
+augusta_set_module_scope(augustad SERVER_ONLY)
 
 # On Linux the debug info is split off into augustad.debug beside it (ADR-0047):
 # the binary keeps its symbol table, which the crash handler symbolizes with,

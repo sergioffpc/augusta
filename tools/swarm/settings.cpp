@@ -10,6 +10,7 @@
 #include <string_view>
 #include <utility>
 
+#include "augusta/client_config.h"
 #include "augusta/config.h"
 
 namespace augusta::swarm {
