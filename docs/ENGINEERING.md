@@ -365,5 +365,6 @@ no self-hosted GitHub Actions runner in this pipeline).
 - **Memory strategy:** rely on Flecs' and PhysX's built-in allocators for v1; no
   custom arena/pool allocators until profiling shows a concrete need.
 - Google Benchmark is used for targeted micro-benchmarks of hot-path code (the
-  server tick, ballistics, serialization, pack loading) — not a blanket
-  requirement for every function. The nightly tracks them over time (ADR-0013).
+  server tick and its recording, replication, a PresentationWorld frame,
+  ballistics, serialization, pack loading) — not a blanket requirement for every
+  function. The nightly tracks them over time (ADR-0013).
