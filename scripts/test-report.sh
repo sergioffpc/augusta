@@ -3,10 +3,13 @@
 # llvm-cov report (scripts/coverage-report.sh) into one browsable test report
 # (ADR-0013), which the documentation site publishes under tests/ (ADR-0046):
 #
-#   index.html    each run's test counts and the coverage totals, linking to
-#   results.html  a row per test, a column per run, each result linked to its
-#                 output (junit2html)
-#   coverage/     the llvm-cov report as it is
+#   index.html         each run's test counts, the requirements' and the
+#                      coverage totals, linking to
+#   results.html       a row per test, a column per run, each result linked to
+#                      its output (junit2html)
+#   requirements.html  every requirement, the tests that name it and how they
+#                      did (scripts/requirements-matrix.py)
+#   coverage/          the llvm-cov report as it is
 #
 # A report, never a gate: nothing here fails on a failed test or a percentage.
 # Either input may be missing (a job that never got to its tests); the report
@@ -16,6 +19,8 @@
 set -euo pipefail
 
 readonly JUNIT2HTML="junit2html==31.1.4"
+SCRIPTS="$(dirname "$(realpath "$0")")"
+readonly SCRIPTS
 
 # Prints the value of a JUnit XML file's first attribute of that name.
 # Arguments:
@@ -55,7 +60,7 @@ main() {
 
   shopt -s nullglob
   local results=("${junit}"/*.xml)
-  local results_section coverage_section
+  local results_section requirements_section coverage_section
   if [[ "${#results[@]}" -gt 0 ]]; then
     # junit2html writes each run's own page, <run>.xml.html, into the
     # current directory, beside the matrix that links to them.
@@ -68,6 +73,13 @@ $(results_rows "${results[@]}")
   else
     results_section="<p>No test results: no run got as far as its tests.</p>"
   fi
+
+  # With no results at all it still lists every requirement and its tests.
+  local requirements_summary
+  requirements_summary="$(python3 "${SCRIPTS}/requirements-matrix.py" \
+    --junit "${junit}" --output "${output}/requirements.html")"
+  requirements_section="<p>${requirements_summary}.</p>
+<p><a href=\"requirements.html\">Every requirement's tests</a></p>"
 
   if [[ -f "${coverage}/index.html" && -f "${coverage}/summary.txt" ]]; then
     cp -r "${coverage}" "${output}/coverage"
@@ -98,6 +110,8 @@ th:first-child, td:first-child { text-align: left; }
 <p>The nightly's tests, generated $(date -u +"%Y-%m-%d %H:%M UTC").</p>
 <h2>Tests</h2>
 ${results_section}
+<h2>Requirements</h2>
+${requirements_section}
 <h2>Coverage</h2>
 ${coverage_section}
 </body>

@@ -128,6 +128,7 @@ std::vector<Trajectory> ReadGolden(const std::string& path) {
   return shots;
 }
 
+// Requirements: US-10
 TEST(BallisticsWorldTest, BulletTravelsAlongItsDirectionAtItsSpeed) {
   const augusta::physics::World physics_world{StaminaConfig{}};
   World world;
@@ -140,6 +141,7 @@ TEST(BallisticsWorldTest, BulletTravelsAlongItsDirectionAtItsSpeed) {
   EXPECT_NEAR(Length(result.state.velocity), 800.0F, 1e-3F);
 }
 
+// Requirements: US-10
 TEST(BallisticsWorldTest, GravityDropsTheBulletMoreEachTick) {
   const augusta::physics::World physics_world{StaminaConfig{}};
   World world;
@@ -153,6 +155,7 @@ TEST(BallisticsWorldTest, GravityDropsTheBulletMoreEachTick) {
   EXPECT_LT(second - first, first);
 }
 
+// Requirements: US-10
 TEST(BallisticsWorldTest, BulletExpiresOncePastItsMaxRange) {
   const augusta::physics::World physics_world{StaminaConfig{}};
   World world;
@@ -165,6 +168,7 @@ TEST(BallisticsWorldTest, BulletExpiresOncePastItsMaxRange) {
   EXPECT_EQ(world.Step(bullet, kFixedTick, physics_world, {}).outcome, Outcome::kExpired);
 }
 
+// Requirements: US-10
 TEST(BallisticsWorldTest, EachBulletKeepsItsOwnConfig) {
   const augusta::physics::World physics_world{StaminaConfig{}};
   World world;
@@ -207,6 +211,7 @@ std::unique_ptr<augusta::physics::World> MapWithWall(float x) {
   return map;
 }
 
+// Requirements: US-10
 TEST(BallisticsHitTest, ABulletStopsOnTheMapWhereItCrossesIt) {
   const auto map = MapWithWall(5.0F);
   World world;
@@ -219,6 +224,7 @@ TEST(BallisticsHitTest, ABulletStopsOnTheMapWhereItCrossesIt) {
   EXPECT_NEAR(result.impact_point.y, 1.0F, 1e-3F);
 }
 
+// Requirements: US-10
 TEST(BallisticsHitTest, ABulletShortOfTheMapStaysInFlight) {
   const auto map = MapWithWall(15.0F);
   World world;
@@ -231,6 +237,7 @@ TEST(BallisticsHitTest, ABulletShortOfTheMapStaysInFlight) {
 // A player is hit through its Hitboxes only (ADR-0044): its controller's
 // capsule, which the physics scene holds where the controller was made, is
 // never what a bullet hits (ADR-0002).
+// Requirements: US-11
 TEST(BallisticsHitTest, ABulletPassesThroughAPlayersControllerWhenNoHitboxIsHandedIn) {
   augusta::physics::World map{StaminaConfig{}};
   map.CreateBody(Vec3(0.0F));
@@ -244,6 +251,7 @@ TEST(BallisticsHitTest, ABulletPassesThroughAPlayersControllerWhenNoHitboxIsHand
   EXPECT_EQ(world.Step(bullet, kFixedTick, map, {}).outcome, Outcome::kInFlight);
 }
 
+// Requirements: US-11
 TEST(BallisticsHitTest, ABulletThatCrossesAHitboxHitsItsTargetAndBodyPart) {
   const augusta::physics::World map{StaminaConfig{}};
   const auto plane = Plane(5.0F);
@@ -260,6 +268,7 @@ TEST(BallisticsHitTest, ABulletThatCrossesAHitboxHitsItsTargetAndBodyPart) {
   EXPECT_NEAR(result.impact_point.y, 1.0F, 1e-4F);
 }
 
+// Requirements: US-11
 TEST(BallisticsHitTest, ABulletThatMissesAHitboxStaysInFlight) {
   const augusta::physics::World map{StaminaConfig{}};
   const auto plane = Plane(5.0F);
@@ -271,6 +280,7 @@ TEST(BallisticsHitTest, ABulletThatMissesAHitboxStaysInFlight) {
   EXPECT_EQ(world.Step(bullet, kFixedTick, map, hitboxes).outcome, Outcome::kInFlight);
 }
 
+// Requirements: US-10, US-11
 TEST(BallisticsHitTest, AWallInFrontOfAHitboxStopsTheBullet) {
   const auto map = MapWithWall(3.0F);
   const auto plane = Plane(5.0F);
@@ -284,6 +294,7 @@ TEST(BallisticsHitTest, AWallInFrontOfAHitboxStopsTheBullet) {
   EXPECT_NEAR(result.impact_point.x, 3.0F, 1e-3F);
 }
 
+// Requirements: US-11
 TEST(BallisticsHitTest, AHitboxInFrontOfAWallIsHit) {
   const auto map = MapWithWall(5.0F);
   const auto plane = Plane(3.0F);
@@ -297,6 +308,7 @@ TEST(BallisticsHitTest, AHitboxInFrontOfAWallIsHit) {
   EXPECT_NEAR(result.impact_point.x, 3.0F, 1e-4F);
 }
 
+// Requirements: US-11
 TEST(BallisticsHitTest, OfTwoPlayersInLineOnlyTheNearerIsHit) {
   const augusta::physics::World map{StaminaConfig{}};
   const auto far = Plane(6.0F);
@@ -314,6 +326,7 @@ TEST(BallisticsHitTest, OfTwoPlayersInLineOnlyTheNearerIsHit) {
   EXPECT_EQ(result.part, BodyPart::kLimb);
 }
 
+// Requirements: US-10, US-11
 TEST(BallisticsHitTest, AHitIsNotAnExpiry) {
   const augusta::physics::World map{StaminaConfig{}};
   const auto plane = Plane(9.0F);
@@ -329,6 +342,7 @@ TEST(BallisticsHitTest, AHitIsNotAnExpiry) {
 // within the tolerance, tick for tick, and ends on the same tick. It runs on the
 // Windows (MSVC) and Linux runners alike, so a compiler that computes a
 // different trajectory fails its own runner (ADR-0013).
+// Requirements: US-10, NFR-03
 TEST(BallisticsGoldenTest, TrajectoriesMatchTheGoldenFileWithinNfr03Tolerance) {
   const std::vector<Trajectory> golden = ReadGolden(AUGUSTA_GOLDEN_TRAJECTORIES);
   ASSERT_EQ(golden.size(), GoldenShots().size()) << "regenerate " << AUGUSTA_GOLDEN_TRAJECTORIES;

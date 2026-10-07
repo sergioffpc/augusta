@@ -149,6 +149,11 @@ jobs:
       - name: Check C++ formatting
         if: needs.changes.outputs.run_build == 'true'
         run: find src tests tools \( -name '*.cpp' -o -name '*.h' \) -print0 | xargs -0 clang-format --dry-run --Werror
+      - name: Check the tests' requirement markers
+        # Every requirement a test names is one docs/REQUIREMENTS.md has, and
+        # every marker is directly above a test (ADR-0013).
+        if: needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_lint == 'true'
+        run: python3 scripts/requirements-matrix.py --check
       - name: Check YAML formatting and lint
         if: needs.changes.outputs.run_yaml == 'true'
         run: |

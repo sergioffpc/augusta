@@ -97,6 +97,7 @@ class SimulationTest : public ::testing::Test {
   World world_;
 };
 
+// Requirements: US-04
 TEST_F(SimulationTest, AWallStopsAWalkingPlayer) {
   constexpr float kWallX = 3.0F;
   constexpr float kHalfWidth = 20.0F;
@@ -131,6 +132,7 @@ TEST_F(SimulationTest, AddedPlayersAppearInTheStateOrderedById) {
   EXPECT_EQ(state.bodies[1].entity, kBob);
 }
 
+// Requirements: US-03
 TEST_F(SimulationTest, APlayerStartsStandingWhereItSpawned) {
   world_.AddPlayer(kAlice, Vec3(3.0F, 0.0F, -2.0F), kCharacter);
   Run(kSettleTicks, {});
@@ -142,6 +144,7 @@ TEST_F(SimulationTest, APlayerStartsStandingWhereItSpawned) {
   EXPECT_EQ(Body(state, kAlice).stance, Stance::kStanding);
 }
 
+// Requirements: US-04
 TEST_F(SimulationTest, AForwardCommandMovesThatPlayerOnly) {
   world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
   world_.AddPlayer(kBob, Vec3(0.0F, 0.0F, 10.0F), kCharacter);
@@ -155,6 +158,7 @@ TEST_F(SimulationTest, AForwardCommandMovesThatPlayerOnly) {
   EXPECT_NEAR(Body(state, kBob).position.x, bob_start, 0.01F);
 }
 
+// Requirements: US-04
 TEST_F(SimulationTest, StanceCommandsChangeTheStanceAndTheSpeed) {
   world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
   Run(kSettleTicks, {});
@@ -174,6 +178,7 @@ TEST_F(SimulationTest, StanceCommandsChangeTheStanceAndTheSpeed) {
   EXPECT_GT(prone, 0.1F);
 }
 
+// Requirements: US-04
 TEST_F(SimulationTest, APlayerWithNoCommandStopsAndKeepsItsStance) {
   world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
   Run(kSettleTicks, {});
@@ -186,6 +191,7 @@ TEST_F(SimulationTest, APlayerWithNoCommandStopsAndKeepsItsStance) {
   EXPECT_EQ(Body(state, kAlice).stance, Stance::kCrouching);
 }
 
+// Requirements: US-15
 TEST_F(SimulationTest, ACommandForAPlayerNotInTheWorldIsIgnored) {
   world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
 
@@ -316,16 +322,19 @@ class FireTest : public ::testing::Test {
   World world_;
 };
 
+// Requirements: US-07
 TEST_F(FireTest, HoldingFireFiresARoundAtOnceAndThenOneEveryFireInterval) {
   EXPECT_EQ(FiringTicks(19, Firing()), (std::vector<int>{0, 6, 12, 18}));
 }
 
+// Requirements: US-07
 TEST_F(FireTest, ATapOfFireFiresExactlyOneRound) {
   EXPECT_EQ(Tick(Firing()).shots.size(), 1U);
 
   EXPECT_TRUE(FiringTicks(30, Command{}).empty());
 }
 
+// Requirements: US-07
 TEST_F(FireTest, AShotNamesThePlayerWhoFiredIt) {
   world_.AddPlayer(kBob, Vec3(5.0F, 0.5F, 0.0F), kCharacter);
 
@@ -335,6 +344,7 @@ TEST_F(FireTest, AShotNamesThePlayerWhoFiredIt) {
   EXPECT_EQ(state.shots[0].shooter, kBob);
 }
 
+// Requirements: US-07
 TEST_F(FireTest, TappingFasterThanTheFireRateFiresNoFasterThanIt) {
   std::vector<int> fired;
   for (int i = 0; i < 19; ++i) {
@@ -347,6 +357,7 @@ TEST_F(FireTest, TappingFasterThanTheFireRateFiresNoFasterThanIt) {
   EXPECT_EQ(fired, (std::vector<int>{0, 6, 12, 18}));
 }
 
+// Requirements: US-07
 TEST_F(FireTest, ARifleAtRestFiresNoSoonerForHavingRested) {
   Tick(Firing());
   FiringTicks(60, Command{});
@@ -354,6 +365,7 @@ TEST_F(FireTest, ARifleAtRestFiresNoSoonerForHavingRested) {
   EXPECT_EQ(FiringTicks(7, Firing()), (std::vector<int>{0, 6}));
 }
 
+// Requirements: US-07
 TEST_F(FireTest, AShotLeavesFromTheShootersEyeAlongTheCommandsView) {
   const Vec3 feet = Feet();
   Command command = Firing();
@@ -370,6 +382,7 @@ TEST_F(FireTest, AShotLeavesFromTheShootersEyeAlongTheCommandsView) {
 }
 
 // The eye is 1.5 m up a body 2.1 m tall standing, 1.3 m crouching and 0.7 m prone.
+// Requirements: US-07
 TEST_F(FireTest, ACrouchedOrProneShooterFiresFromALowerEye) {
   const float feet = Feet().y;
   Command crouched = Firing();
@@ -384,6 +397,7 @@ TEST_F(FireTest, ACrouchedOrProneShooterFiresFromALowerEye) {
 
 // A client is told a Shot's numbers as counts of their grids (ADR-0038), so the
 // server fires the round those counts stand for.
+// Requirements: US-07, NFR-03
 TEST_F(FireTest, AShotsOriginAndDirectionAreOnTheGridsTheyTravelOn) {
   Command command = Firing();
   command.yaw = 0.1234567F;
@@ -422,6 +436,7 @@ class WallFireTest : public FireTest {
 
 // Rounds fly 10 m a tick, from the tick they are fired on: the third tick's
 // segment, 20 to 30 m out, is the one that crosses the wall.
+// Requirements: US-10
 TEST_F(WallFireTest, ABulletFiredAtAWallEndsOnTheTickItsSegmentReachesTheWall) {
   const Vec3 feet = Feet();
 
@@ -443,6 +458,7 @@ TEST_F(WallFireTest, ABulletFiredAtAWallEndsOnTheTickItsSegmentReachesTheWall) {
   EXPECT_TRUE(fourth.map_impacts.empty());
 }
 
+// Requirements: US-10
 TEST_F(WallFireTest, EveryBulletOfABurstEndsOnTheWall) {
   std::size_t impacts = 0;
   for (int i = 0; i < 13; ++i) {
@@ -466,6 +482,7 @@ class ShortRangeFireTest : public FireTest {
 };
 
 // 10 m a tick: the round is past 25 m on its third tick.
+// Requirements: US-10
 TEST_F(ShortRangeFireTest, ABulletFiredIntoOpenSpaceExpiresAtTheAmmosMaxRange) {
   const State first = Tick(FiringDownX());
   const State second = Tick(Command{});
@@ -490,6 +507,7 @@ class OddRateFireTest : public FireTest {
   OddRateFireTest() : FireTest(WithSevenHundredRoundsAMinute()) {}
 };
 
+// Requirements: US-07
 TEST_F(OddRateFireTest, AFireIntervalThatIsNotAWholeNumberOfTicksIsKeptOnAverage) {
   // Six seconds of holding fire: 70 rounds.
   const std::vector<int> fired = FiringTicks(360, Firing());
@@ -513,6 +531,7 @@ class FasterThanTheTickFireTest : public FireTest {
   FasterThanTheTickFireTest() : FireTest(WithSixThousandRoundsAMinute()) {}
 };
 
+// Requirements: US-07
 TEST_F(FasterThanTheTickFireTest, AtMostOneRoundFiresATick) {
   for (int i = 0; i < 30; ++i) {
     EXPECT_EQ(Tick(Firing()).shots.size(), 1U) << "tick " << i;
@@ -531,10 +550,12 @@ class SmallMagazineFireTest : public FireTest {
   SmallMagazineFireTest() : FireTest(WithThreeRounds()) {}
 };
 
+// Requirements: US-07
 TEST_F(SmallMagazineFireTest, HoldingFireFiresTheMagazineAndThenNothing) {
   EXPECT_EQ(FiringTicks(120, Firing()), (std::vector<int>{0, 6, 12}));
 }
 
+// Requirements: US-07
 TEST_F(SmallMagazineFireTest, AnEmptyMagazineFiresNothingHoweverLongItRests) {
   FiringTicks(30, Firing());
   FiringTicks(120, Command{});
@@ -567,6 +588,7 @@ class ReloadTest : public FireTest {
   std::uint8_t Rounds() { return Tick(Command{}).bodies.front().rifle.rounds; }
 };
 
+// Requirements: US-08
 TEST_F(ReloadTest, AReloadFiresNothingForItsDurationAndThenTheMagazineIsFull) {
   FiringTicks(30, Firing());
   ASSERT_EQ(Rounds(), 0);
@@ -577,6 +599,7 @@ TEST_F(ReloadTest, AReloadFiresNothingForItsDurationAndThenTheMagazineIsFull) {
   EXPECT_EQ(FiringTicks(120, Firing()), (std::vector<int>{0, 6, 12}));
 }
 
+// Requirements: US-08
 TEST_F(ReloadTest, AReloadOfAPartlyEmptyMagazineFillsIt) {
   Tick(Firing());
   ASSERT_EQ(Rounds(), 2);
@@ -587,6 +610,7 @@ TEST_F(ReloadTest, AReloadOfAPartlyEmptyMagazineFillsIt) {
   EXPECT_EQ(Rounds(), 3);
 }
 
+// Requirements: US-08
 TEST_F(ReloadTest, TheMagazineIsNotFullBeforeTheReloadEnds) {
   Tick(Firing());
 
@@ -597,6 +621,7 @@ TEST_F(ReloadTest, TheMagazineIsNotFullBeforeTheReloadEnds) {
   EXPECT_GT(state.bodies.front().rifle.reload_remaining, 0.0F);
 }
 
+// Requirements: US-08
 TEST_F(ReloadTest, AReloadPressWithAFullMagazineStartsNothingAndFireGoesOn) {
   EXPECT_EQ(Tick(Reloading(/*fire=*/true)).shots.size(), 1U);
 
@@ -605,6 +630,7 @@ TEST_F(ReloadTest, AReloadPressWithAFullMagazineStartsNothingAndFireGoesOn) {
 
 // A client that sends reload on every tick (the sampler sends it on one) still
 // reloads once: a reload under way is not started over.
+// Requirements: US-08
 TEST_F(ReloadTest, HoldingReloadForManyTicksStartsOneReloadNotOneEveryTick) {
   FiringTicks(30, Firing());
 
@@ -613,6 +639,7 @@ TEST_F(ReloadTest, HoldingReloadForManyTicksStartsOneReloadNotOneEveryTick) {
   EXPECT_EQ(Rounds(), 3);
 }
 
+// Requirements: US-08
 TEST_F(ReloadTest, FireHeldThroughAReloadFiresOnTheFirstTickAfterIt) {
   Tick(Firing());
   Tick(Reloading());
@@ -633,6 +660,7 @@ class InstantReloadTest : public FireTest {
   InstantReloadTest() : FireTest(WithThreeRoundsAndNoReloadTime()) {}
 };
 
+// Requirements: US-08
 TEST_F(InstantReloadTest, AReloadOfNoTimeFillsTheMagazineOnTheTickItIsPressed) {
   FiringTicks(30, Firing());
   Command reload{};
@@ -702,6 +730,7 @@ class RecoilTest : public FireTest {
   augusta::weapon::RecoilOffset RecoilAfterARestingTick() { return Tick(Command{}).bodies.front().rifle.recoil; }
 };
 
+// Requirements: US-09
 TEST_F(RecoilTest, EachRoundOfABurstLeavesOffTheViewByTheKicksOfTheRoundsBeforeIt) {
   const auto shots = Burst(4);
 
@@ -715,6 +744,7 @@ TEST_F(RecoilTest, EachRoundOfABurstLeavesOffTheViewByTheKicksOfTheRoundsBeforeI
   EXPECT_EQ(shots[3].pitch, kViewPitch + kFirstPitch + kSecondPitch + kThirdPitch);
 }
 
+// Requirements: US-09
 TEST_F(RecoilTest, PastThePatternsLastKickTheLastRepeats) {
   const auto shots = Burst(6);
 
@@ -725,6 +755,7 @@ TEST_F(RecoilTest, PastThePatternsLastKickTheLastRepeats) {
 }
 
 // US-09: the pattern is the same every burst, and the aim settles back between them.
+// Requirements: US-09
 TEST_F(RecoilTest, ASecondBurstFromTheSameViewAfterTheRecoilHasRecoveredLeavesAsTheFirstDid) {
   const auto first = Burst(4);
   Run(60);
@@ -737,6 +768,7 @@ TEST_F(RecoilTest, ASecondBurstFromTheSameViewAfterTheRecoilHasRecoveredLeavesAs
   }
 }
 
+// Requirements: US-09
 TEST_F(RecoilTest, ABurstFiredBeforeTheLastHasRecoveredStartsThePatternOverOnTopOfWhatIsLeft) {
   Burst(3);
   // One tick off the trigger: the burst is over, and little of it has recovered.
@@ -751,6 +783,7 @@ TEST_F(RecoilTest, ABurstFiredBeforeTheLastHasRecoveredStartsThePatternOverOnTop
   EXPECT_EQ(shots[1].yaw - shots[0].yaw, 0.0F);
 }
 
+// Requirements: US-09, US-06
 TEST_F(RecoilTest, AimingDownSightsScalesEveryKick) {
   const auto shots = Burst(4, FiringFromTheView(/*ads=*/true));
 
@@ -761,6 +794,7 @@ TEST_F(RecoilTest, AimingDownSightsScalesEveryKick) {
   EXPECT_EQ(shots[3].pitch, kViewPitch + ((kFirstPitch + kSecondPitch + kThirdPitch) / 2.0F));
 }
 
+// Requirements: US-09
 TEST_F(RecoilTest, TheRecoilHoldsWhileTheTriggerIsHeldAndRecoversAtTheParametersRateOnceItIsNot) {
   Burst(1);
   // Held between two rounds, the trigger keeps what the first round kicked.
@@ -773,6 +807,7 @@ TEST_F(RecoilTest, TheRecoilHoldsWhileTheTriggerIsHeldAndRecoversAtTheParameters
 }
 
 // The rate is the offset's own, not each angle's: it shrinks along its line.
+// Requirements: US-09
 TEST_F(RecoilTest, ARecoveringOffsetShrinksStraightTowardZero) {
   Burst(2);
   const float pitch = kFirstPitch + kSecondPitch;
@@ -785,6 +820,7 @@ TEST_F(RecoilTest, ARecoveringOffsetShrinksStraightTowardZero) {
 }
 
 // A rifle being reloaded pulls no trigger, whatever the fire control does.
+// Requirements: US-09
 TEST_F(RecoilTest, AReloadEndsTheBurstThoughFireIsStillHeld) {
   Burst(3);
   Command reload = FiringFromTheView();
@@ -800,6 +836,7 @@ TEST_F(RecoilTest, AReloadEndsTheBurstThoughFireIsStillHeld) {
   EXPECT_EQ(shots[1].pitch, kViewPitch + kFirstPitch);
 }
 
+// Requirements: US-09, NFR-03
 TEST_F(RecoilTest, AShotOffTheViewIsStillOnTheGridItTravelsOn) {
   Command command = Firing();
   command.yaw = 0.1234567F;
@@ -947,6 +984,7 @@ class HitTest : public ::testing::Test {
   Command bob_;
 };
 
+// Requirements: US-03
 TEST_F(HitTest, APlayerStartsAMatchWithTheParametersStartingHealth) {
   const State state = Tick(Command{});
 
@@ -954,6 +992,7 @@ TEST_F(HitTest, APlayerStartsAMatchWithTheParametersStartingHealth) {
   EXPECT_EQ(Entity(state, kBob).health, kStartingHealth);
 }
 
+// Requirements: US-11
 TEST_F(HitTest, AHitNamesItsShooterItsTargetAndTheBodyPartItCrossed) {
   const std::vector<Hit> hits = ShootAt(Vec3(0.0F, kTorsoHeight, 0.0F));
 
@@ -963,6 +1002,7 @@ TEST_F(HitTest, AHitNamesItsShooterItsTargetAndTheBodyPartItCrossed) {
   EXPECT_EQ(hits[0].part, BodyPart::kTorso);
 }
 
+// Requirements: US-12
 TEST_F(HitTest, AHitTakesTheAmmosDamageForItsBodyPartOffTheTargetsHealthAlone) {
   const std::vector<Hit> head = ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
   const std::vector<Hit> torso = ShootAt(Vec3(0.0F, kTorsoHeight, 0.0F));
@@ -983,6 +1023,7 @@ TEST_F(HitTest, AHitTakesTheAmmosDamageForItsBodyPartOffTheTargetsHealthAlone) {
   EXPECT_EQ(Entity(state, kAlice).health, kStartingHealth);
 }
 
+// Requirements: US-12, US-13
 TEST_F(HitTest, HealthStopsAtZeroAndReachingItIsReportedOnce) {
   // Head, torso, torso: 100, 50, 30, 10. The fourth would take it below zero.
   ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
@@ -999,6 +1040,7 @@ TEST_F(HitTest, HealthStopsAtZeroAndReachingItIsReportedOnce) {
 }
 
 // Bob, at 50 of health after a head shot, dies of the second one.
+// Requirements: US-13
 TEST_F(HitTest, APlayerDiesOnTheTickAHitTakesItsHealthToZero) {
   ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
   const State before = Tick(Command{});
@@ -1023,6 +1065,7 @@ TEST_F(HitTest, APlayerDiesOnTheTickAHitTakesItsHealthToZero) {
 }
 
 // A death is told on the tick it happens, and never again.
+// Requirements: US-13
 TEST_F(HitTest, ADeadPlayerStaysDeadAndOutOfTheStateForTheRestOfTheMatch) {
   ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
   ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
@@ -1038,6 +1081,7 @@ TEST_F(HitTest, ADeadPlayerStaysDeadAndOutOfTheStateForTheRestOfTheMatch) {
 
 // Carol stands 5 m behind Bob, on the line Alice shoots along. Alice aims at
 // Bob's torso while he lives, and fires once he has died.
+// Requirements: US-13
 TEST_F(HitTest, ABulletAimedThroughWhereADeadPlayerStoodHitsWhatIsBehindIt) {
   constexpr EntityId kCarol = static_cast<EntityId>(3);
   world_.AddPlayer(kCarol, Vec3(0.0F, 0.5F, -15.0F), Target());
@@ -1052,6 +1096,7 @@ TEST_F(HitTest, ABulletAimedThroughWhereADeadPlayerStoodHitsWhatIsBehindIt) {
   EXPECT_EQ(hits[0].target, kCarol);
 }
 
+// Requirements: US-13, US-15
 TEST_F(HitTest, ADeadPlayersFireAndMovementChangeNothing) {
   ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
   ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
@@ -1069,6 +1114,7 @@ TEST_F(HitTest, ADeadPlayersFireAndMovementChangeNothing) {
 }
 
 // A dead body is no obstacle: Alice walks on through where Bob fell.
+// Requirements: US-13
 TEST_F(HitTest, ADeadPlayersBodyNoLongerBlocksMovement) {
   ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
   ShootAt(Vec3(0.0F, kHeadHeight, 0.0F));
@@ -1083,6 +1129,7 @@ TEST_F(HitTest, ADeadPlayersBodyNoLongerBlocksMovement) {
 
 // Carol stands 60 m down the line, 6 ticks of flight from Bob: Bob fires at
 // her, and Alice kills him on the next tick, before his round arrives.
+// Requirements: US-10, US-13
 TEST_F(HitTest, ABulletADeadPlayerFiredWhileAliveStillHits) {
   constexpr EntityId kCarol = static_cast<EntityId>(3);
   world_.AddPlayer(kCarol, Vec3(0.0F, 0.5F, -70.0F), Target());
@@ -1103,6 +1150,7 @@ TEST_F(HitTest, ABulletADeadPlayerFiredWhileAliveStillHits) {
   EXPECT_EQ(hits[1].target, kCarol);
 }
 
+// Requirements: US-12
 TEST_F(HitTest, HealthDoesNotComeBackWithTime) {
   ShootAt(Vec3(0.0F, kTorsoHeight, 0.0F));
 
@@ -1111,12 +1159,14 @@ TEST_F(HitTest, HealthDoesNotComeBackWithTime) {
   EXPECT_EQ(Entity(Tick(Command{}), kBob).health, kStartingHealth - kTorsoDamage);
 }
 
+// Requirements: US-11
 TEST_F(HitTest, AShotPastTheTargetHitsNoOne) {
   EXPECT_TRUE(ShootAt(Vec3(1.0F, kTorsoHeight, 0.0F)).empty());
   EXPECT_TRUE(ShootAt(Vec3(0.0F, 2.0F, 0.0F)).empty());
 }
 
 // Crouched, a body 2.1 m tall standing is 1.3 m tall, and its hitboxes with it.
+// Requirements: US-11
 TEST_F(HitTest, ACrouchedTargetsHitboxesAreLoweredWithItsBody) {
   bob_.movement.desired_stance = Stance::kCrouching;
   Wait(kSettleTicks);
@@ -1129,6 +1179,7 @@ TEST_F(HitTest, ACrouchedTargetsHitboxesAreLoweredWithItsBody) {
 }
 
 // Its right arm is at +X while it faces yaw 0, and at -X once it has turned half a turn.
+// Requirements: US-11
 TEST_F(HitTest, ATargetsHitboxesTurnWithWhereItFaces) {
   const Vec3 right_of_it(0.35F, kTorsoHeight, 0.0F);
   const Vec3 left_of_it(-0.35F, kTorsoHeight, 0.0F);
@@ -1147,6 +1198,7 @@ TEST_F(HitTest, ATargetsHitboxesTurnWithWhereItFaces) {
 
 // Bob crouches on one tick. A Seen time between the tick before and that one shows
 // him as the nearer of the two has him, as a client does.
+// Requirements: US-11, NFR-02
 TEST_F(HitTest, ASeenTimeBetweenTwoStancesIsJudgedInTheStanceOfTheNearerTick) {
   bob_.movement.desired_stance = Stance::kCrouching;
   augusta::tick::Tick crouched = 0;
@@ -1170,6 +1222,7 @@ TEST_F(HitTest, ASeenTimeBetweenTwoStancesIsJudgedInTheStanceOfTheNearerTick) {
 // Bob faces just short of half a turn one way, then just short of it the
 // other: halfway between the two he faces half a turn, his right arm at -X, and
 // not yaw 0, which is the long way round.
+// Requirements: US-11, NFR-02
 TEST_F(HitTest, ASeenTimeBetweenTwoFacingsTurnsTheHitboxesAlongTheShorterArc) {
   const Vec3 left_of_it(-0.35F, kTorsoHeight, 0.0F);
   bob_.yaw = 3.0F;
@@ -1183,6 +1236,7 @@ TEST_F(HitTest, ASeenTimeBetweenTwoFacingsTurnsTheHitboxesAlongTheShorterArc) {
   EXPECT_EQ(hits[0].part, BodyPart::kLimb);
 }
 
+// Requirements: US-04
 TEST_F(HitTest, APlayerWithNoCommandKeepsWhereItFaced) {
   bob_.yaw = 1.25F;
   Wait(1);
@@ -1193,6 +1247,7 @@ TEST_F(HitTest, APlayerWithNoCommandKeepsWhereItFaced) {
 }
 
 // The eye is inside the shooter's own head hitbox, which every round leaves through.
+// Requirements: US-11
 TEST_F(HitTest, AShooterFiringForwardWhileMovingNeverHitsItself) {
   Command command = Firing();
   command.movement.direction = Vec3(0.0F, 0.0F, -1.0F);
@@ -1207,6 +1262,7 @@ TEST_F(HitTest, AShooterFiringForwardWhileMovingNeverHitsItself) {
 }
 
 // Carol stands 5 m behind Bob, on the line Alice shoots along.
+// Requirements: US-11
 TEST_F(HitTest, WithTwoTargetsInLineOnlyTheNearerIsHit) {
   constexpr EntityId kCarol = static_cast<EntityId>(3);
   world_.AddPlayer(kCarol, Vec3(0.0F, 0.5F, -15.0F), Target());
@@ -1219,6 +1275,7 @@ TEST_F(HitTest, WithTwoTargetsInLineOnlyTheNearerIsHit) {
   EXPECT_EQ(Entity(Tick(Command{}), kCarol).health, kStartingHealth);
 }
 
+// Requirements: US-10, US-11
 TEST_F(HitTest, ATargetBehindAWallIsNotHitAndTheWallIs) {
   constexpr float kWallZ = -5.0F;
   ASSERT_TRUE(world_
@@ -1241,6 +1298,7 @@ TEST_F(SimulationTest, AStateNamesItsTickFromOne) {
 }
 
 // What the Shooter's delay's cap of 250 ms needs, and no more (ADR-0044).
+// Requirements: NFR-02
 TEST(HitboxHistoryTest, TheHistoryHoldsTheCapsWorthOfTicksAtTheTickRate) {
   EXPECT_EQ(augusta::simulation::HitboxHistoryTicks(60), 15U);
   // A cap that is not a whole number of ticks takes the tick that covers it.
@@ -1334,6 +1392,7 @@ class LagCompensationTest : public ::testing::Test {
   augusta::tick::Tick last_tick_ = 0;
 };
 
+// Requirements: US-11, NFR-02
 TEST_F(LagCompensationTest, ARoundIsJudgedAgainstHitboxesInterpolatedAtTheFractionItsSeenTimeReports) {
   augusta::tick::Tick seen = Next() - 6;
   const std::vector<Hit> hits = Shoot(BobAt(seen, 0.5F), seen, 0.5F);
@@ -1349,6 +1408,7 @@ TEST_F(LagCompensationTest, ARoundIsJudgedAgainstHitboxesInterpolatedAtTheFracti
   EXPECT_TRUE(Shoot(BobAt(seen, 0.5F), seen + 1, 0.0F).empty());
 }
 
+// Requirements: US-11, NFR-02
 TEST_F(LagCompensationTest, ATargetThatHasSinceMovedAwayIsStillHitWhereItWasSeen) {
   const augusta::tick::Tick seen = Next() - 10;
   // Bob has walked most of half a meter since.
@@ -1357,10 +1417,12 @@ TEST_F(LagCompensationTest, ATargetThatHasSinceMovedAwayIsStillHitWhereItWasSeen
   EXPECT_EQ(Shoot(BobAt(seen), seen, 0.0F).size(), 1U);
 }
 
+// Requirements: US-11, NFR-02
 TEST_F(LagCompensationTest, ARoundAimedWhereTheTargetIsNowMissesOnAnOlderSeenTime) {
   EXPECT_TRUE(Shoot(BobAt(Next() - 1), Next() - 10, 0.0F).empty());
 }
 
+// Requirements: NFR-02
 TEST_F(LagCompensationTest, ASeenTimeAsOldAsTheCapIsJudgedWhereTheTargetWasThen) {
   const augusta::tick::Tick seen = Next() - kCapTicks;
 
@@ -1369,6 +1431,7 @@ TEST_F(LagCompensationTest, ASeenTimeAsOldAsTheCapIsJudgedWhereTheTargetWasThen)
 
 // A shooter with a delay past the cap still fires, and is judged against the
 // oldest Seen time the cap allows, not against the one it reports.
+// Requirements: NFR-02, US-15
 TEST_F(LagCompensationTest, ASeenTimeOlderThanTheCapIsJudgedAtTheCapNotRefused) {
   EXPECT_EQ(Shoot(BobAt(Next() - kCapTicks), Next() - 40, 0.0F).size(), 1U);
   EXPECT_TRUE(Shoot(BobAt(Next() - 40), Next() - 40, 0.0F).empty());
@@ -1377,11 +1440,13 @@ TEST_F(LagCompensationTest, ASeenTimeOlderThanTheCapIsJudgedAtTheCapNotRefused) 
 }
 
 // No client has been shown more than the last tick's State.
+// Requirements: NFR-02, US-15
 TEST_F(LagCompensationTest, ASeenTimeNewerThanTheLastStateIsJudgedAtTheLastState) {
   EXPECT_EQ(Shoot(BobAt(Next() - 1), Next() + 100, 0.0F).size(), 1U);
   EXPECT_EQ(Shoot(BobAt(Next() - 1), Next() - 1, 0.5F).size(), 1U);
 }
 
+// Requirements: NFR-02, US-15
 TEST_F(LagCompensationTest, AFractionOutsideZeroToOneIsHeldWithinIt) {
   augusta::tick::Tick seen = Next() - 6;
   EXPECT_EQ(Shoot(BobAt(seen + 1), seen, 7.0F).size(), 1U);
@@ -1390,6 +1455,7 @@ TEST_F(LagCompensationTest, AFractionOutsideZeroToOneIsHeldWithinIt) {
 }
 
 // The Shooter's delay of every round a tick fired is what it is judged at, in seconds.
+// Requirements: NFR-02
 TEST_F(LagCompensationTest, ATickReportsTheShootersDelayOfEachRoundItFiredInSeconds) {
   Command command = Firing();
   command.seen_tick = Next() - 10;
@@ -1400,6 +1466,7 @@ TEST_F(LagCompensationTest, ATickReportsTheShootersDelayOfEachRoundItFiredInSeco
   EXPECT_FLOAT_EQ(delays[0], 10.0F / kTickRate);
 }
 
+// Requirements: NFR-02
 TEST_F(LagCompensationTest, ARoundHeldAtTheCapReportsExactlyTheCap) {
   Command command = Firing();
   command.seen_tick = Next() - 40;
@@ -1410,6 +1477,7 @@ TEST_F(LagCompensationTest, ARoundHeldAtTheCapReportsExactlyTheCap) {
   EXPECT_EQ(delays[0], std::chrono::duration<float>(augusta::simulation::kMaxShootersDelay).count());
 }
 
+// Requirements: NFR-02
 TEST_F(LagCompensationTest, ATickThatFiresNothingReportsNoShootersDelay) {
   EXPECT_TRUE(TickWith(Command{}).shooters_delays.empty());
 }
@@ -1425,6 +1493,7 @@ class LongShotTest : public LagCompensationTest {
 
 // The lead is judged on the shooter's screen: by the time the round arrives,
 // its screen shows Bob three ticks further along than when it fired.
+// Requirements: US-10, NFR-02
 TEST_F(LongShotTest, ABulletInFlightKeepsItsShootersDelaySoACorrectlyLedMovingTargetIsHit) {
   const augusta::tick::Tick seen = Next() - 8;
 
@@ -1436,6 +1505,7 @@ TEST_F(LongShotTest, ABulletInFlightKeepsItsShootersDelaySoACorrectlyLedMovingTa
 
 // With the freshest Seen time there is, a round is judged a tick behind the
 // present: Bob is long past where that lead put it.
+// Requirements: US-10, NFR-02
 TEST_F(LongShotTest, TheSameLeadJudgedAgainstThePresentMisses) {
   const augusta::tick::Tick seen = Next() - 8;
 
@@ -1443,6 +1513,7 @@ TEST_F(LongShotTest, TheSameLeadJudgedAgainstThePresentMisses) {
 }
 
 // A bullet flies on after its shooter has left the Match, and still does its damage.
+// Requirements: US-10
 TEST_F(HitTest, ABulletWhoseShooterLeftStillHits) {
   // 10 m a tick and Bob 40 m away: the round is still flying when Alice leaves.
   world_.RemovePlayer(kBob);

@@ -142,6 +142,7 @@ rc::Gen<StaminaConfig> Stamina() {
                                        rc::gen::set(&StaminaConfig::forced_walk_below, fraction(0, 999)));
 }
 
+// Requirements: US-05
 RC_GTEST_PROP(SimulationPropertyTest, StaminaStaysWithinTheBarWhateverThePlayerDoes, ()) {
   const StaminaConfig stamina = *Stamina();
   const std::vector<Command> commands = *Commands(1);
@@ -178,6 +179,7 @@ rc::Gen<augusta::parameters::Rifle> Rifle() {
 // keeps the magazine and the fire rate (US-07, US-08). The rounds fired in any
 // stretch of ticks are at most what the fire interval fits in it, and one more
 // for the round that opens it.
+// Requirements: US-07, US-08
 RC_GTEST_PROP(SimulationPropertyTest, TheMagazineStaysWithinItsCapacityAndNoWindowOutpacesTheFireRate, ()) {
   augusta::parameters::Parameters parameters;
   parameters.rifle = *Rifle();
@@ -242,6 +244,7 @@ std::vector<Command> LookingRoughly(float toward, std::vector<Command> commands)
 // is commanded with a rifle that fires every tick at a target hard to miss:
 // health only ever goes down (it never regenerates in a Match), stops at zero,
 // and reaches it once.
+// Requirements: US-12
 RC_GTEST_PROP(SimulationPropertyTest, HealthNeverRisesNeverGoesBelowZeroAndReachesZeroOnce, ()) {
   constexpr augusta::simulation::EntityId kOther = static_cast<augusta::simulation::EntityId>(2);
   augusta::parameters::Parameters parameters;
@@ -297,6 +300,7 @@ RC_GTEST_PROP(SimulationPropertyTest, HealthNeverRisesNeverGoesBelowZeroAndReach
 // The same two players, each dying of the hit that takes its health to zero: a
 // dead player never comes back to life, never fires and never moves (it has no
 // body to) for the rest of the Match, and dies once.
+// Requirements: US-13
 RC_GTEST_PROP(SimulationPropertyTest, ADeadPlayerNeverComesBackFiresOrMoves, ()) {
   constexpr augusta::simulation::EntityId kOther = static_cast<augusta::simulation::EntityId>(2);
   augusta::parameters::Parameters parameters;
@@ -364,6 +368,7 @@ std::string AnsweringRules(const std::vector<std::string>& answers) {
 // that answer anything at all on any tick: whatever policy answers, at most one
 // Match end takes effect per Match, and a winner is a player alive in it on the
 // tick it is declared.
+// Requirements: US-14
 RC_GTEST_PROP(SimulationPropertyTest, AtMostOneMatchEndPerMatchAndAWinnerIsAlwaysAPlayerAliveInIt, ()) {
   constexpr augusta::simulation::EntityId kOther = static_cast<augusta::simulation::EntityId>(2);
   const std::map<augusta::simulation::EntityId, augusta::simulation::SessionId> sessions = {
@@ -428,6 +433,7 @@ constexpr float kConvergedStamina = 0.001F;
 // the command it answers. Losses stop delay ticks before the end, so the
 // client's newest answer, and every command it replays after it, followed what
 // the server did.
+// Requirements: NFR-02
 RC_GTEST_PROP(SimulationPropertyTest, AClientThatDivergedConvergesOnTheServersState, ()) {
   augusta::parameters::Parameters parameters;
   parameters.stamina = *Stamina();

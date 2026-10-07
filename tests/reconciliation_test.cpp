@@ -33,6 +33,7 @@ augusta::command::Command Command(float x) {
   return command;
 }
 
+// Requirements: NFR-02
 TEST(HistoryTest, AcknowledgeReturnsTheStatePredictedAfterThatCommand) {
   History history;
   history.Record(1, Command(1.0F), At(1.0F));
@@ -46,6 +47,7 @@ TEST(HistoryTest, AcknowledgeReturnsTheStatePredictedAfterThatCommand) {
   EXPECT_EQ(predicted->fall.vertical_speed, -3.0F);
 }
 
+// Requirements: NFR-02
 TEST(HistoryTest, AcknowledgeReturnsTheRiflePredictedAfterThatCommand) {
   History history;
   Predicted fired = At(1.0F);
@@ -58,6 +60,7 @@ TEST(HistoryTest, AcknowledgeReturnsTheRiflePredictedAfterThatCommand) {
   EXPECT_EQ(predicted->rifle, fired.rifle);
 }
 
+// Requirements: NFR-02
 TEST(HistoryTest, AcknowledgingDiscardsWhatIsOlderAndTheStateItself) {
   History history;
   for (augusta::command::Sequence sequence = 1; sequence <= 5; ++sequence) {
@@ -72,6 +75,7 @@ TEST(HistoryTest, AcknowledgingDiscardsWhatIsOlderAndTheStateItself) {
   EXPECT_TRUE(history.Acknowledge(4).has_value());
 }
 
+// Requirements: NFR-02
 TEST(HistoryTest, ARepeatedAcknowledgementIsStaleAndFindsNothing) {
   History history;
   history.Record(1, Command(1.0F), At(1.0F));
@@ -82,6 +86,7 @@ TEST(HistoryTest, ARepeatedAcknowledgementIsStaleAndFindsNothing) {
   EXPECT_EQ(history.Size(), 1U);
 }
 
+// Requirements: NFR-02
 TEST(HistoryTest, AnAcknowledgementOlderThanEverythingHeldChangesNothing) {
   History history;
   history.Record(10, Command(1.0F), At(1.0F));
@@ -92,6 +97,7 @@ TEST(HistoryTest, AnAcknowledgementOlderThanEverythingHeldChangesNothing) {
   EXPECT_EQ(history.Size(), 2U);
 }
 
+// Requirements: NFR-02
 TEST(HistoryTest, AnAcknowledgementOfACommandNeverRecordedFindsNothing) {
   History history;
   history.Record(1, Command(1.0F), At(1.0F));
@@ -101,6 +107,7 @@ TEST(HistoryTest, AnAcknowledgementOfACommandNeverRecordedFindsNothing) {
   EXPECT_TRUE(history.Acknowledge(3).has_value());
 }
 
+// Requirements: NFR-02
 TEST(HistoryTest, ReplayRunsTheStepForEveryCommandHeldOldestFirst) {
   History history;
   history.Record(1, Command(1.0F), At(1.0F));
@@ -117,6 +124,7 @@ TEST(HistoryTest, ReplayRunsTheStepForEveryCommandHeldOldestFirst) {
   EXPECT_EQ(seen, (std::vector<float>{2.0F, 3.0F}));
 }
 
+// Requirements: NFR-02
 TEST(HistoryTest, ReplayReplacesThePredictedStatesWithWhatTheStepReturned) {
   History history;
   history.Record(1, Command(1.0F), At(1.0F));
@@ -133,6 +141,7 @@ TEST(HistoryTest, ReplayReplacesThePredictedStatesWithWhatTheStepReturned) {
   EXPECT_EQ(second->fall.vertical_speed, -1.0F);
 }
 
+// Requirements: NFR-02
 TEST(HistoryTest, ReplayOfAnEmptyHistoryNeverRunsTheStep) {
   History history;
   int steps = 0;
@@ -145,6 +154,7 @@ TEST(HistoryTest, ReplayOfAnEmptyHistoryNeverRunsTheStep) {
   EXPECT_EQ(steps, 0);
 }
 
+// Requirements: NFR-02
 TEST(HistoryTest, OnlyTheMostRecentStatesAreKept) {
   History history;
   const auto total = static_cast<std::uint32_t>(kMaxHistory + 10);

@@ -104,6 +104,7 @@ class ConnectionHealthTest : public ::testing::Test {
   ConnectionHealth health_;
 };
 
+// Requirements: NFR-07
 TEST_F(ConnectionHealthTest, RecordsASessionsMeasurementsInBaseUnits) {
   health_.Record({{.session = kSession, .stats = Measured()}});
 
@@ -116,6 +117,7 @@ TEST_F(ConnectionHealthTest, RecordsASessionsMeasurementsInBaseUnits) {
   EXPECT_DOUBLE_EQ(Gauge("augustad_connection_pending_bytes", kSession).value_or(-1), 300.0);
 }
 
+// Requirements: NFR-07
 TEST_F(ConnectionHealthTest, CountsEveryConnectionInTheHistograms) {
   health_.Record({{.session = kSession, .stats = Measured()}, {.session = std::nullopt, .stats = Measured()}});
 
@@ -128,6 +130,7 @@ TEST_F(ConnectionHealthTest, CountsEveryConnectionInTheHistograms) {
   EXPECT_DOUBLE_EQ(rtt->histogram.sample_sum, 0.080);
 }
 
+// Requirements: NFR-07
 TEST_F(ConnectionHealthTest, AConnectionWithoutASessionHasNoGauges) {
   health_.Record({{.session = std::nullopt, .stats = Measured()}});
 
@@ -135,6 +138,7 @@ TEST_F(ConnectionHealthTest, AConnectionWithoutASessionHasNoGauges) {
   EXPECT_FALSE(Find("augustad_session_connection_rtt_seconds").has_value());
 }
 
+// Requirements: NFR-07
 TEST_F(ConnectionHealthTest, DoesNotRecordWhatIsNotMeasuredYet) {
   health_.Record({{.session = kSession, .stats = NotMeasuredYet()}});
 
@@ -149,6 +153,7 @@ TEST_F(ConnectionHealthTest, DoesNotRecordWhatIsNotMeasuredYet) {
   EXPECT_TRUE(Gauge("augustad_session_connection_rtt_seconds", kSession).has_value());
 }
 
+// Requirements: NFR-07
 TEST_F(ConnectionHealthTest, AGaugeKeepsItsLastMeasurementWhileTheNextIsNotMeasured) {
   health_.Record({{.session = kSession, .stats = Measured()}});
   health_.Record({{.session = kSession, .stats = NotMeasuredYet()}});
@@ -157,6 +162,7 @@ TEST_F(ConnectionHealthTest, AGaugeKeepsItsLastMeasurementWhileTheNextIsNotMeasu
   EXPECT_EQ(HistogramCount("augustad_connection_jitter_seconds"), 1U);
 }
 
+// Requirements: NFR-07
 TEST_F(ConnectionHealthTest, NoGaugeOutlivesItsSession) {
   health_.Record({{.session = kSession, .stats = Measured()}, {.session = kOtherSession, .stats = Measured()}});
   ASSERT_EQ(GaugesOf(kSession), 7);
@@ -169,6 +175,7 @@ TEST_F(ConnectionHealthTest, NoGaugeOutlivesItsSession) {
   EXPECT_EQ(HistogramCount("augustad_connection_rtt_seconds"), 3U);
 }
 
+// Requirements: NFR-07
 TEST_F(ConnectionHealthTest, LabelsAreOnlySessionIdAndDirection) {
   health_.Record({{.session = kSession, .stats = Measured()}, {.session = std::nullopt, .stats = Measured()}});
 
@@ -184,6 +191,7 @@ TEST_F(ConnectionHealthTest, LabelsAreOnlySessionIdAndDirection) {
 
 // Every value of a Session's gauges is from one sample, never a mix of two, while
 // the endpoint's thread collects as the Network I/O thread records.
+// Requirements: NFR-07
 TEST_F(ConnectionHealthTest, ASessionsGaugesAreCollectedWhole) {
   // Two samples whose every gauge differs.
   ConnectionStats slow = Measured();
