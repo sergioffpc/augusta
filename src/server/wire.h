@@ -64,8 +64,14 @@ namespace augusta::server {
 /// A match's end as the protocol carries it: a draw names protocol::kDraw.
 [[nodiscard]] protocol::MatchEndWire ToWire(const MatchEnd& end);
 
-/// What replication planned for one recipient, as the message it is sent.
-[[nodiscard]] protocol::AuthoritativeStateWire ToWire(const replication::Update& update);
+/// What replication planned for every recipient of a tick, as the message each
+/// is sent before Address fills in its own fields: the tick and every body.
+[[nodiscard]] protocol::AuthoritativeStateWire ToWire(const replication::Updates& updates);
+
+/// Fills in state, the message ToWire(Updates) made, with what replication
+/// planned for recipient alone, replacing any other recipient's: so one message
+/// is addressed to each recipient in turn, its bodies converted once.
+void Address(protocol::AuthoritativeStateWire& state, const replication::RecipientUpdate& recipient);
 
 /// A Shot replication planned, as the message every client in the match is sent.
 [[nodiscard]] protocol::ShotWire ToWire(const replication::Shot& shot);

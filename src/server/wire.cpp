@@ -197,26 +197,26 @@ protocol::MatchEndWire ToWire(const MatchEnd& end) {
   return protocol::MatchEndWire{.winner = end.winner.has_value() ? ToWire(*end.winner) : protocol::kDraw};
 }
 
-protocol::AuthoritativeStateWire ToWire(const replication::Update& update) {
-  protocol::AuthoritativeStateWire state{
-      .tick = update.tick,
-      .bodies = {},
-      .rifle = {.cooldown = update.rifle.cooldown,
-                .reload_remaining = update.rifle.reload_remaining,
-                .recoil_pitch = update.rifle.recoil.pitch,
-                .recoil_yaw = update.rifle.recoil.yaw,
-                .rounds = update.rifle.rounds,
-                .burst_index = update.rifle.burst_index},
-      .health = update.health,
-      .acknowledged_sequence = update.acknowledged_sequence,
-      .queued_commands = update.queued_commands,
-  };
-  state.bodies.reserve(update.bodies.size());
-  for (const replication::EntityBody& body : update.bodies) {
+protocol::AuthoritativeStateWire ToWire(const replication::Updates& updates) {
+  protocol::AuthoritativeStateWire state{.tick = updates.tick, .bodies = {}};
+  state.bodies.reserve(updates.bodies.size());
+  for (const replication::EntityBody& body : updates.bodies) {
     state.bodies.push_back(protocol::EntityStateWire{
         .entity = ToWire(FromSimulation(body.entity)), .body = ToWire(body.body), .yaw = body.yaw});
   }
   return state;
+}
+
+void Address(protocol::AuthoritativeStateWire& state, const replication::RecipientUpdate& recipient) {
+  state.rifle = {.cooldown = recipient.rifle.cooldown,
+                 .reload_remaining = recipient.rifle.reload_remaining,
+                 .recoil_pitch = recipient.rifle.recoil.pitch,
+                 .recoil_yaw = recipient.rifle.recoil.yaw,
+                 .rounds = recipient.rifle.rounds,
+                 .burst_index = recipient.rifle.burst_index};
+  state.health = recipient.health;
+  state.acknowledged_sequence = recipient.acknowledged_sequence;
+  state.queued_commands = recipient.queued_commands;
 }
 
 protocol::ShotWire ToWire(const replication::Shot& shot) {

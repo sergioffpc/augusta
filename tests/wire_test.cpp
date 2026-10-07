@@ -44,6 +44,14 @@ MessageWire ThroughTheWire(const MessageWire& message) {
   return std::get<MessageWire>(augusta::protocol::Decode(augusta::protocol::Encode(message)).value());
 }
 
+// What the server sends recipient of updates, as the client takes it in.
+augusta::harness::AuthoritativeState ReceivedBy(const augusta::replication::Updates& updates,
+                                                const augusta::replication::RecipientUpdate& recipient) {
+  augusta::protocol::AuthoritativeStateWire sent = augusta::server::ToWire(updates);
+  augusta::server::Address(sent, recipient);
+  return augusta::harness::FromWire(ThroughTheWire(sent));
+}
+
 // The number a Session ID carries, on either side: each peer has its own type for it.
 template <typename Id>
 std::uint32_t Number(Id id) {
@@ -185,16 +193,15 @@ TEST(WireTest, AnExhaustedBodyReachesTheClientStillExhausted) {
   BodyState exhausted = Body(1.0F, Stance::kStanding);
   exhausted.stamina = 0.1F;
   exhausted.exhausted = true;
-  const augusta::replication::Update sent{
-      .recipient = augusta::simulation::EntityId{1},
+  const augusta::replication::Updates sent{
       .tick = 7,
-      .acknowledged_sequence = 3,
       .bodies = {{.entity = augusta::simulation::EntityId{1}, .body = exhausted},
                  {.entity = augusta::simulation::EntityId{2}, .body = Body(2.0F, Stance::kProne)}},
+      .recipients = {},
   };
 
   const augusta::harness::AuthoritativeState received =
-      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+      ReceivedBy(sent, {.recipient = augusta::simulation::EntityId{1}, .acknowledged_sequence = 3});
 
   ASSERT_EQ(received.bodies.size(), 2U);
   EXPECT_TRUE(received.bodies[0].body.exhausted);
@@ -202,24 +209,26 @@ TEST(WireTest, AnExhaustedBodyReachesTheClientStillExhausted) {
 }
 
 TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
-  const augusta::replication::Update sent{
-      .recipient = augusta::simulation::EntityId{2},
+  const augusta::replication::Updates sent{
       .tick = 42,
-      .acknowledged_sequence = 17,
       .bodies = {{.entity = augusta::simulation::EntityId{1}, .body = Body(1.0F, Stance::kStanding)},
                  {.entity = augusta::simulation::EntityId{2},
                   .body = Body(2.0F, Stance::kCrouching),
                   .yaw = augusta::math::SnapAngle(-2.345678F)},
                  {.entity = augusta::simulation::EntityId{3}, .body = Body(3.0F, Stance::kProne), .yaw = 1.5F}},
-      .queued_commands = 2,
+      .recipients = {},
   };
+  const augusta::replication::RecipientUpdate recipient{.recipient = augusta::simulation::EntityId{2},
+                                                        .acknowledged_sequence = 17,
+                                                        .health = 55.0F,
+                                                        .queued_commands = 2};
 
-  const augusta::harness::AuthoritativeState received =
-      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+  const augusta::harness::AuthoritativeState received = ReceivedBy(sent, recipient);
 
   EXPECT_EQ(received.tick, sent.tick);
-  EXPECT_EQ(received.acknowledged_sequence, sent.acknowledged_sequence);
-  EXPECT_EQ(received.queued_commands, sent.queued_commands);
+  EXPECT_EQ(received.acknowledged_sequence, recipient.acknowledged_sequence);
+  EXPECT_EQ(received.health, recipient.health);
+  EXPECT_EQ(received.queued_commands, recipient.queued_commands);
   ASSERT_EQ(received.bodies.size(), sent.bodies.size());
   for (std::size_t i = 0; i < sent.bodies.size(); ++i) {
     EXPECT_EQ(Number(received.bodies[i].entity), Number(sent.bodies[i].entity));
@@ -232,11 +241,14 @@ TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
 // the exact floats the server stepped them to, and its Recoil offset, which
 // weapon::Step keeps on the angle grid, as the server had it.
 TEST(WireTest, TheRecipientsRifleReachesTheClientExactly) {
-  const augusta::replication::Update sent{
-      .recipient = augusta::simulation::EntityId{1},
+  const augusta::replication::Updates updates{
       .tick = 7,
-      .acknowledged_sequence = 3,
       .bodies = {{.entity = augusta::simulation::EntityId{1}, .body = Body(1.0F, Stance::kStanding)}},
+      .recipients = {},
+  };
+  const augusta::replication::RecipientUpdate sent{
+      .recipient = augusta::simulation::EntityId{1},
+      .acknowledged_sequence = 3,
       .rifle = {.cooldown = 0.1F - (1.0F / 60.0F),
                 .reload_remaining = 2.4833333F,
                 .recoil = {.pitch = augusta::math::SnapAngle(0.0421F), .yaw = augusta::math::SnapAngle(-0.0037F)},
@@ -244,8 +256,7 @@ TEST(WireTest, TheRecipientsRifleReachesTheClientExactly) {
                 .burst_index = 4},
   };
 
-  const augusta::harness::AuthoritativeState received =
-      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+  const augusta::harness::AuthoritativeState received = ReceivedBy(updates, sent);
 
   EXPECT_EQ(received.rifle, sent.rifle);
 }
