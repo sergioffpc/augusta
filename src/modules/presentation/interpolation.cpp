@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <iterator>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <unordered_map>
 #include <vector>
@@ -61,22 +61,34 @@ SeenTime SeenTimeAt(double sample_time, double tick_duration, tick::Tick oldest_
   return SeenTime{.tick = static_cast<tick::Tick>(whole), .fraction = static_cast<float>(ticks - whole)};
 }
 
+RemoteInterpolator::History::History(const Update& first) {
+  slots_.reserve(kUpdatesKept);
+  slots_.push_back(first);
+}
+
+void RemoteInterpolator::History::Push(const Update& update) {
+  if (slots_.size() < kUpdatesKept) {
+    slots_.push_back(update);
+    return;
+  }
+  slots_[oldest_] = update;
+  oldest_ = (oldest_ + 1) % kUpdatesKept;
+}
+
+const RemoteInterpolator::Update& RemoteInterpolator::History::operator[](std::size_t index) const {
+  return slots_[(oldest_ + index) % slots_.size()];
+}
+
 void RemoteInterpolator::Record(EntityId entity, double server_time, const physics::BodyState& body, float yaw) {
   const Update update{.server_time = server_time, .body = body, .yaw = yaw};
   const auto [found, added] = index_.try_emplace(entity, bodies_.size());
   if (added) {
-    Buffered& buffered = bodies_.emplace_back(Buffered{.entity = entity, .updates = {}});
-    buffered.updates.reserve(kUpdatesKept + 1);
-    buffered.updates.push_back(update);
+    bodies_.push_back(Buffered{.entity = entity, .updates = History(update)});
     return;
   }
-  std::vector<Update>& updates = bodies_[found->second].updates;
-  if (server_time <= updates.back().server_time) {
-    return;
-  }
-  updates.push_back(update);
-  if (updates.size() > kUpdatesKept) {
-    updates.erase(updates.begin());
+  History& updates = bodies_[found->second].updates;
+  if (server_time > updates.Newest().server_time) {
+    updates.Push(update);
   }
 }
 
@@ -104,23 +116,27 @@ std::vector<RemotePlayer> RemoteInterpolator::Sample(double sample_time) const {
   std::vector<RemotePlayer> result;
   result.reserve(bodies_.size());
   for (const Buffered& buffered : bodies_) {
-    const std::vector<Update>& updates = buffered.updates;
+    const History& updates = buffered.updates;
     // The first update after sample_time; the one before it is the other end.
-    const auto later = std::ranges::upper_bound(updates, sample_time, {}, &Update::server_time);
+    const auto indices = std::views::iota(std::size_t{0}, updates.Size());
+    const auto later = static_cast<std::size_t>(
+        std::ranges::partition_point(indices,
+                                     [&](std::size_t index) { return updates[index].server_time <= sample_time; }) -
+        indices.begin());
     RemoteBody body;
-    if (later == updates.begin()) {
-      body = AsRemote(updates.front().body, updates.front().yaw);
-    } else if (later == updates.end()) {
-      body = AsRemote(updates.back().body, updates.back().yaw);
+    if (later == 0) {
+      body = AsRemote(updates[0].body, updates[0].yaw);
+    } else if (later == updates.Size()) {
+      body = AsRemote(updates.Newest().body, updates.Newest().yaw);
     } else {
-      const Update& earlier = *std::prev(later);
-      const auto t =
-          static_cast<float>((sample_time - earlier.server_time) / (later->server_time - earlier.server_time));
+      const Update& earlier = updates[later - 1];
+      const Update& next = updates[later];
+      const auto t = static_cast<float>((sample_time - earlier.server_time) / (next.server_time - earlier.server_time));
       body = RemoteBody{
-          .position = math::Lerp(earlier.body.position, later->body.position, t),
-          .velocity = math::Lerp(earlier.body.velocity, later->body.velocity, t),
-          .yaw = math::LerpAngle(earlier.yaw, later->yaw, t),
-          .stance = t < kMidpointFraction ? earlier.body.stance : later->body.stance,
+          .position = math::Lerp(earlier.body.position, next.body.position, t),
+          .velocity = math::Lerp(earlier.body.velocity, next.body.velocity, t),
+          .yaw = math::LerpAngle(earlier.yaw, next.yaw, t),
+          .stance = t < kMidpointFraction ? earlier.body.stance : next.body.stance,
       };
     }
     result.push_back(RemotePlayer{.entity = buffered.entity, .body = body, .character = {}});

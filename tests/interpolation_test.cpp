@@ -439,6 +439,25 @@ TEST(RemoteInterpolatorTest, BeyondTheUpdatesKeptTheOldestIsDropped) {
   EXPECT_FLOAT_EQ(Only(interpolator, ServerTime(0)).position.x, static_cast<float>(kDropped));
 }
 
+// Once more updates have arrived than are kept, every kept pair still
+// interpolates in order, from the oldest kept to the newest.
+// Requirements: NFR-02
+TEST(RemoteInterpolatorTest, BeyondTheUpdatesKeptEveryKeptPairStillInterpolatesInOrder) {
+  constexpr int kDropped = 5;
+  const int ticks = static_cast<int>(augusta::presentation::kUpdatesKept) + kDropped;
+  RemoteInterpolator interpolator;
+  for (int tick = 0; tick < ticks; ++tick) {
+    interpolator.Record(kEntityA, ServerTime(tick), At(static_cast<float>(tick)), 0.0F);
+  }
+
+  for (int tick = kDropped; tick < ticks - 1; ++tick) {
+    EXPECT_FLOAT_EQ(Only(interpolator, ServerTime(tick) + (0.5 * kTickDuration)).position.x,
+                    static_cast<float>(tick) + 0.5F)
+        << tick;
+  }
+  EXPECT_FLOAT_EQ(Only(interpolator, ServerTime(ticks + 10)).position.x, static_cast<float>(ticks - 1));
+}
+
 // Requirements: NFR-02
 TEST(RemoteInterpolatorTest, SyncWithEveryoneStillPresentKeepsBufferedHistory) {
   RemoteInterpolator interpolator;
