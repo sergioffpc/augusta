@@ -270,7 +270,10 @@ struct State {
   /// one target in the order they took its health.
   std::vector<Hit> hits;
   /// How many bullets are still flying after this tick: fired and neither
-  /// stopped by the Map nor past the ammo's max range.
+  /// stopped by the Map nor past the ammo's max range or
+  /// ballistics::kMaxFlightTime. Fewer than ballistics::MaxFlightSteps(the
+  /// tick) per player the Match started with, since each fires at most one
+  /// round a tick (ADR-0002).
   std::uint32_t bullets_in_flight = 0;
 };
 

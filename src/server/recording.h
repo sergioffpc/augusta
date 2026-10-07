@@ -116,22 +116,32 @@ enum class RecordingError : std::uint8_t {
 /// flushed after each tick, so a recording outlives a server that stops
 /// abruptly up to its last whole tick. On the Simulation thread, as the tick
 /// that made the record (ADR-0048).
+///
+/// A write the stream fails, or a record longer than kMaxRecordSize, stops the
+/// recording: it is logged once, as event=recording_stopped, and nothing more
+/// is written, so the file still reads back up to its last whole tick.
 class Recorder {
  public:
   /// Writes header to out.
   Recorder(std::ostream& out, const RecordingHeader& header);
 
-  /// Writes tick's record; a record longer than kMaxRecordSize is logged and
-  /// stops the recording, which then writes nothing more.
+  /// Writes tick's record, unless the recording has stopped.
   void Write(const TickRecord& tick);
 
+  /// Whether the recording has stopped, its file missing every tick since.
+  [[nodiscard]] bool Stopped() const { return stopped_; }
+
  private:
+  // Logs that the recording stopped on tick, and why, and writes nothing more.
+  void Stop(tick::Tick tick, std::string_view reason);
+
   std::ostream* out_;
   bool stopped_ = false;
 };
 
 /// Reads a recording a Recorder wrote. A last record cut short is dropped and
-/// reported in Recording::torn.
+/// reported in Recording::torn; a stream that fails, wherever it does, is
+/// kUnreadable, never a whole or torn recording.
 [[nodiscard]] std::expected<Recording, RecordingError> ReadRecording(std::istream& in);
 
 /// SimulationWorld as server::Host drives it: the World's own calls, each
