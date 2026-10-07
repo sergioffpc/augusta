@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <iterator>
 #include <optional>
 #include <span>
+#include <unordered_map>
 #include <vector>
 
 #include "augusta/math.h"
@@ -61,12 +63,14 @@ SeenTime SeenTimeAt(double sample_time, double tick_duration, tick::Tick oldest_
 
 void RemoteInterpolator::Record(EntityId entity, double server_time, const physics::BodyState& body, float yaw) {
   const Update update{.server_time = server_time, .body = body, .yaw = yaw};
-  const auto found = std::ranges::find_if(bodies_, [entity](const Buffered& b) { return b.entity == entity; });
-  if (found == bodies_.end()) {
-    bodies_.push_back(Buffered{.entity = entity, .updates = {update}});
+  const auto [found, added] = index_.try_emplace(entity, bodies_.size());
+  if (added) {
+    Buffered& buffered = bodies_.emplace_back(Buffered{.entity = entity, .updates = {}});
+    buffered.updates.reserve(kUpdatesKept + 1);
+    buffered.updates.push_back(update);
     return;
   }
-  std::vector<Update>& updates = found->updates;
+  std::vector<Update>& updates = bodies_[found->second].updates;
   if (server_time <= updates.back().server_time) {
     return;
   }
@@ -77,8 +81,23 @@ void RemoteInterpolator::Record(EntityId entity, double server_time, const physi
 }
 
 void RemoteInterpolator::Sync(std::span<const EntityId> current) {
-  std::erase_if(bodies_,
-                [current](const Buffered& b) { return std::ranges::find(current, b.entity) == current.end(); });
+  for (const EntityId entity : current) {
+    if (const auto found = index_.find(entity); found != index_.end()) {
+      bodies_[found->second].listed = true;
+    }
+  }
+  const std::size_t forgotten = std::erase_if(bodies_, [](const Buffered& b) { return !b.listed; });
+  for (Buffered& buffered : bodies_) {
+    buffered.listed = false;
+  }
+  if (forgotten == 0) {
+    return;
+  }
+  // Erasing moved every body after the first forgotten one.
+  index_.clear();
+  for (std::size_t position = 0; position < bodies_.size(); ++position) {
+    index_.emplace(bodies_[position].entity, position);
+  }
 }
 
 std::vector<RemotePlayer> RemoteInterpolator::Sample(double sample_time) const {

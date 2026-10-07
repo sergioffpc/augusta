@@ -7,6 +7,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "augusta/math.h"
@@ -168,9 +169,16 @@ class RemoteInterpolator {
     EntityId entity{};
     // Oldest first, at most kUpdatesKept, never empty.
     std::vector<Update> updates;
+    // Whether the list Sync is applying names this entity; false outside Sync.
+    bool listed = false;
   };
 
+  // Every buffered entity, in the order each was first recorded (since it was
+  // last forgotten): the order Sample returns them in.
   std::vector<Buffered> bodies_;
+  // Each buffered entity's position in bodies_, so Record and Sync find it
+  // without searching every other entity's buffer for each.
+  std::unordered_map<EntityId, std::size_t> index_;
 };
 
 }  // namespace augusta::presentation
