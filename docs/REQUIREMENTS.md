@@ -237,10 +237,10 @@ Measure:     Successful client build + v1 milestone playthrough on
 ```
 
 The server's Windows build is for development (ADR-0047): it runs a match beside
-the client on one machine, but nothing is released, deployed or crash-reported
-from it. `cmake/AugustaPlatform.cmake` holds this contract, and the configure
-stops on any other OS, architecture or 32-bit toolchain rather than compiling
-for it.
+the client on one machine, but nothing is released or deployed from it, and a
+crash there leaves only the logged stack, no core dump or split debug info.
+`cmake/AugustaPlatform.cmake` holds this contract, and the configure stops on
+any other OS, architecture or 32-bit toolchain rather than compiling for it.
 
 ### NFR-05: Server Authority / Cheat Resistance
 
