@@ -242,7 +242,8 @@ struct ServerView {
   /// The newest Roster, kept through a match.
   std::optional<Lobby> lobby;
   /// The last match's start, and how many have started: a new count is a new
-  /// match for the prediction to start over in.
+  /// match for the prediction to start over in, and the match whose Shots, Hit
+  /// confirmations and Deaths a view takes (Session::TakeShots).
   std::optional<MatchStart> match_start;
   std::uint32_t matches_started = 0;
   /// Whether this client is playing in a match: from its Match start to its Match end.
@@ -373,26 +374,30 @@ class Session {
   /// from any thread.
   [[nodiscard]] std::optional<AuthoritativeState> GetAuthoritativeState() const;
 
-  /// The Shots of the match in progress, or of the last one if back in the
-  /// Lobby, received since the last call, in the order they arrived; the newest
-  /// kMaxPendingShots of them if more did. One that arrives outside a match or
-  /// names a body not in it is dropped, and a match starts with none. Received
-  /// by ExchangeMessages; safe to call from any thread.
+  /// The Shots of the match view is of (ServerView::matches_started): the
+  /// match in progress, or the last one if back in the Lobby. Those received
+  /// since the last call, in the order they arrived; the newest
+  /// kMaxPendingShots of them if more did. One of an earlier match is never
+  /// taken: once a view of a match is held, none of the one before is left to
+  /// take. One of a later match is kept for a view of it, so what a reader
+  /// draws is always of the match its view is of. One that arrives outside a
+  /// match or names a body not in it is dropped. Received by ExchangeMessages;
+  /// safe to call from any thread.
+  [[nodiscard]] std::vector<Shot> TakeShots(const ServerView& view);
+  /// TakeShots for the newest Server view (GetServerView).
   [[nodiscard]] std::vector<Shot> TakeShots();
 
-  /// The Hit confirmations of the match in progress, or of the last one if back
-  /// in the Lobby, received since the last call, in the order they arrived; the
-  /// newest kMaxPendingHitConfirmations of them if more did. One that arrives
-  /// outside a match or names a body not in it is dropped, and a match starts
-  /// with none. Received by ExchangeMessages; safe to call from any thread.
+  /// The Hit confirmations of the match view is of, as TakeShots hands out
+  /// Shots; the newest kMaxPendingHitConfirmations of them if more arrived.
+  [[nodiscard]] std::vector<HitConfirmation> TakeHitConfirmations(const ServerView& view);
+  /// TakeHitConfirmations for the newest Server view (GetServerView).
   [[nodiscard]] std::vector<HitConfirmation> TakeHitConfirmations();
 
-  /// The Deaths of the match in progress, or of the last one if back in the
-  /// Lobby (those that ended it among them), received since the last call, in
-  /// the order they arrived; the newest kMaxPendingDeaths of them if more did.
-  /// One that arrives outside a match or names a body not in it is dropped, and
-  /// a match starts with none. Received by ExchangeMessages; safe to call from
-  /// any thread.
+  /// The Deaths of the match view is of (those that ended it among them), as
+  /// TakeShots hands out Shots; the newest kMaxPendingDeaths of them if more
+  /// arrived.
+  [[nodiscard]] std::vector<Death> TakeDeaths(const ServerView& view);
+  /// TakeDeaths for the newest Server view (GetServerView).
   [[nodiscard]] std::vector<Death> TakeDeaths();
 
   /// Whether this client's own player is alive: in a match, and neither told

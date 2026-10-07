@@ -168,11 +168,19 @@ std::optional<JoinRefusal> Session::GetRefusal() const { return impl_->inbox.Vie
 
 std::optional<AuthoritativeState> Session::GetAuthoritativeState() const { return impl_->inbox.View()->authoritative; }
 
-std::vector<Shot> Session::TakeShots() { return impl_->inbox.TakeShots(); }
+std::vector<Shot> Session::TakeShots() { return TakeShots(*GetServerView()); }
 
-std::vector<HitConfirmation> Session::TakeHitConfirmations() { return impl_->inbox.TakeHitConfirmations(); }
+std::vector<Shot> Session::TakeShots(const ServerView& view) { return impl_->inbox.TakeShots(view.matches_started); }
 
-std::vector<Death> Session::TakeDeaths() { return impl_->inbox.TakeDeaths(); }
+std::vector<HitConfirmation> Session::TakeHitConfirmations() { return TakeHitConfirmations(*GetServerView()); }
+
+std::vector<HitConfirmation> Session::TakeHitConfirmations(const ServerView& view) {
+  return impl_->inbox.TakeHitConfirmations(view.matches_started);
+}
+
+std::vector<Death> Session::TakeDeaths() { return TakeDeaths(*GetServerView()); }
+
+std::vector<Death> Session::TakeDeaths(const ServerView& view) { return impl_->inbox.TakeDeaths(view.matches_started); }
 
 bool Session::IsAlive() const { return impl_->inbox.View()->OwnAlive(); }
 
