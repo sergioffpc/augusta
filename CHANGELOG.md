@@ -2,7 +2,7 @@
 
 Generated from the Conventional Commits history by git-cliff (cliff.toml).
 
-## 2.0.0 - 2026-10-06
+## 2.0.0 - 2026-10-07
 
 ### Features
 
@@ -44,6 +44,7 @@ Generated from the Conventional Commits history by git-cliff (cliff.toml).
 - **swarm:** initialize every BodyState field in the scripted player tests
 - **swarm:** look up a whole-number key without an iterator type
 - **pack:** seed the example pieces from a plain list
+- **lint:** keep PSUseCorrectCasing out of the parallel analyzer pass
 
 ### Refactoring
 
