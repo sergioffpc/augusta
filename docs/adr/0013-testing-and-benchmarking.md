@@ -158,21 +158,26 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   artifact, and the documentation site publishes the latest scheduled night's
   (ADR-0046). It reports; the jobs' own results are what fail the nightly.
 - **Micro-benchmarks** time the hot paths, through their public interfaces: a
-  server tick through every phase of SimulationWorld in a full Match, the
-  protocol's encoding and decoding of the messages each tick sends and receives,
-  `Pack::Load`, and a bullet's ballistics step. The nightly runs them on a
-  GitHub-hosted runner, keeps the median of five repetitions, and records it
-  with `github-action-benchmark` on the `benchmarks` branch, not in `docs/`; the
-  first night on `develop` starts that branch itself, with an empty commit, and
-  the documentation site charts its history (ADR-0046). Of the nightly's jobs,
-  only this one may push. Only `develop`'s nights are recorded: a manual run on
-  another branch is compared with them and leaves no trace. A shared runner is
-  noisy, so the threshold is generous: a benchmark more than twice as slow as
-  the night before fails the nightly, reported like any other failure. The
-  slower result is recorded all the same, so one regression fails one night, not
-  every night after it. Benchmarks are also run by hand when a profile (NVTX in
-  Nsight Systems) points at a hot spot. They never gate a pull request, and
-  NFR-01 stays the only formal performance target.
+  server tick through every phase of SimulationWorld in a full Match, alone and
+  with Host writing its match recording; that tick's Authoritative State
+  replicated to every player in the Match as Host replicates it, short of the
+  socket; a PresentationWorld render frame of the Match, without a GPU, both
+  handed a newer Authoritative State and handed the same one as the frame
+  before, as most frames are while the client renders faster than the server
+  ticks; the protocol's encoding and decoding of the messages each tick sends
+  and receives; `Pack::Load`; and a bullet's ballistics step. The nightly runs
+  them on a GitHub-hosted runner, keeps the median of five repetitions, and
+  records it with `github-action-benchmark` on the `benchmarks` branch, not in
+  `docs/`; the first night on `develop` starts that branch itself, with an empty
+  commit, and the documentation site charts its history (ADR-0046). Of the
+  nightly's jobs, only this one may push. Only `develop`'s nights are recorded:
+  a manual run on another branch is compared with them and leaves no trace. A
+  shared runner is noisy, so the threshold is generous: a benchmark more than
+  twice as slow as the night before fails the nightly, reported like any other
+  failure. The slower result is recorded all the same, so one regression fails
+  one night, not every night after it. Benchmarks are also run by hand when a
+  profile (NVTX in Nsight Systems) points at a hot spot. They never gate a pull
+  request, and NFR-01 stays the only formal performance target.
 
 ## Out of scope
 

@@ -126,6 +126,11 @@ inline constexpr std::size_t kRecordQueueCapacity = 256;
 /// tick, and a recording outlives a server that stops abruptly up to the last
 /// whole tick that thread wrote. Destroying the Recorder waits for every record
 /// it queued to be written, so a stalled disk holds up shutdown, never a tick.
+///
+/// A record longer than kMaxRecordSize, one that finds capacity records still
+/// unwritten, or a write the stream fails stops the recording: it is logged
+/// once, as event=recording_stopped, and nothing more is written, so the file
+/// still reads back up to its last whole tick.
 class Recorder {
  public:
   /// Queues header for out first, and holds at most capacity records not yet
@@ -137,20 +142,26 @@ class Recorder {
   Recorder(const Recorder&) = delete;
   Recorder& operator=(const Recorder&) = delete;
 
-  /// Queues tick's record, without waiting for the stream. A record longer
-  /// than kMaxRecordSize, or one that finds capacity records still unwritten,
-  /// is logged and stops the recording, which then queues nothing more: the
-  /// stream holds every tick up to the one before it.
+  /// Queues tick's record, without waiting for the stream, unless the
+  /// recording has stopped.
   void Write(const TickRecord& tick);
 
+  /// Whether the recording has stopped, its file missing every tick since. A
+  /// write the stream fails stops it once the writer thread gets to it.
+  [[nodiscard]] bool Stopped() const;
+
  private:
+  // Logs that the recording stopped on tick, and why, and queues nothing more.
+  void Stop(tick::Tick tick, std::string_view reason);
+
   class Writer;
   std::unique_ptr<Writer> writer_;
   bool stopped_ = false;
 };
 
 /// Reads a recording a Recorder wrote. A last record cut short is dropped and
-/// reported in Recording::torn.
+/// reported in Recording::torn; a stream that fails, wherever it does, is
+/// kUnreadable, never a whole or torn recording.
 [[nodiscard]] std::expected<Recording, RecordingError> ReadRecording(std::istream& in);
 
 /// SimulationWorld as server::Host drives it: the World's own calls, each

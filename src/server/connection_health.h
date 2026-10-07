@@ -18,9 +18,9 @@
 /// sample here once a heartbeat interval on the Network I/O thread (ADR-0005,
 /// ADR-0029), and the metrics endpoint (metrics.h) collects it on its own
 /// thread. Recording never waits on a collection: the histograms are lock-free
-/// (lock_free_metrics.h), and each Session's gauges are published whole into
-/// one of a fixed set of slots, one per player a Lobby can hold. No address or
-/// Character name is ever a label.
+/// (lock_free_metrics.h), and every Session's gauges are published together,
+/// once a Record, into a fixed set of slots, one per player a Lobby can hold.
+/// No address or Character name is ever a label.
 namespace augusta::server {
 
 /// Written by one thread and collected by another.
@@ -43,7 +43,7 @@ class ConnectionHealth final : public prometheus::Collectable {
   void Record(const std::vector<ConnectionSample>& samples);
 
   /// The augustad_connection_* and augustad_session_connection_* families,
-  /// each Session's gauges as one Record left them. From any thread.
+  /// every Session's gauges as one Record left them. From any thread.
   [[nodiscard]] std::vector<prometheus::MetricFamily> Collect() const override;
 
  private:

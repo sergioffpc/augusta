@@ -6434,6 +6434,20 @@ TEST_F(FireCountsTest, EveryRoundIsCountedWithItsShootersDelayAndARoundAtTheCapA
   EXPECT_EQ(metrics.shooters_delay_capped.Value(), 1U);
 }
 
+// 800 m/s against a range of 1000 m: a round flies 75 ticks.
+// Requirements: NFR-07
+TEST_F(FireCountsTest, ARoundIsCountedInFlightUntilItsFlightEnds) {
+  const HostMetrics& metrics = host_.Metrics();
+  EXPECT_EQ(metrics.bullets_in_flight.Value(), 0.0);
+
+  Step(Firing());
+  Run(kTicksPerRound);
+  EXPECT_EQ(metrics.bullets_in_flight.Value(), 1.0);
+
+  Run(75);
+  EXPECT_EQ(metrics.bullets_in_flight.Value(), 0.0);
+}
+
 using WinnerCountsTest = LastStandingMatchOf<2>;
 
 // Requirements: NFR-07

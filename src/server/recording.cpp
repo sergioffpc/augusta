@@ -1,6 +1,7 @@
 #include "recording.h"
 
 #include <array>
+#include <atomic>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -36,6 +37,11 @@ constexpr std::size_t kLengthSize = 4;
 constexpr int kBitsPerByte = 8;
 constexpr std::size_t kByteMask = 0xFFU;
 
+// Logs, once per recording, that it stopped on tick, and why.
+void LogStopped(tick::Tick tick, std::string_view reason) {
+  LE("subsystem=server event=recording_stopped tick={} reason=\"{}\"", tick, reason);
+}
+
 void WriteFrame(std::ostream& out, const protocol::BytesWire& payload) {
   std::array<char, kLengthSize> length{};
   for (std::size_t i = 0; i < kLengthSize; ++i) {
@@ -54,11 +60,17 @@ enum class Frame : std::uint8_t {
   kTorn,
   // Its length is more than any record's.
   kTooLong,
+  // The stream failed: what it holds past here is unknown, so neither an end
+  // nor a torn record can be told from it.
+  kUnreadable,
 };
 
 Frame ReadFrame(std::istream& in, protocol::BytesWire& payload) {
   std::array<char, kLengthSize> length_bytes{};
   in.read(length_bytes.data(), length_bytes.size());
+  if (in.bad()) {
+    return Frame::kUnreadable;
+  }
   const auto length_read = static_cast<std::size_t>(in.gcount());
   if (length_read == 0) {
     return Frame::kEnd;
@@ -75,6 +87,9 @@ Frame ReadFrame(std::istream& in, protocol::BytesWire& payload) {
   }
   payload.resize(length);
   in.read(reinterpret_cast<char*>(payload.data()), static_cast<std::streamsize>(length));
+  if (in.bad()) {
+    return Frame::kUnreadable;
+  }
   const auto payload_read = static_cast<std::size_t>(in.gcount());
   return payload_read == length ? Frame::kRead : Frame::kTorn;
 }
@@ -123,7 +138,7 @@ std::string_view DescribeRecordingError(RecordingError error) {
 class Recorder::Writer {
  public:
   Writer(std::ostream& out, protocol::BytesWire header, std::size_t capacity) : out_(&out), capacity_(capacity) {
-    queue_.push_back(std::move(header));
+    queue_.push_back({.tick = 0, .payload = std::move(header)});
     thread_ = std::thread([this] { Run(); });
   }
 
@@ -142,22 +157,32 @@ class Recorder::Writer {
   Writer(Writer&&) = delete;
   Writer& operator=(Writer&&) = delete;
 
-  // Whether payload was queued: not when capacity records are still unwritten.
-  bool Push(protocol::BytesWire payload) {
+  // Whether tick's payload was taken: not when capacity records are still
+  // unwritten. Once a write has failed, it takes every one and drops it.
+  bool Push(tick::Tick tick, protocol::BytesWire payload) {
     {
       const std::scoped_lock lock(mutex_);
+      if (failed_) {
+        return true;
+      }
       if (queue_.size() >= capacity_) {
         return false;
       }
-      queue_.push_back(std::move(payload));
+      queue_.push_back({.tick = tick, .payload = std::move(payload)});
     }
     ready_.notify_one();
     return true;
   }
 
-  [[nodiscard]] std::size_t Capacity() const { return capacity_; }
+  // Whether a write the stream failed has stopped the recording.
+  [[nodiscard]] bool Failed() const { return failed_; }
 
  private:
+  struct Queued {
+    tick::Tick tick;
+    protocol::BytesWire payload;
+  };
+
   void Run() {
     std::unique_lock lock(mutex_);
     while (true) {
@@ -165,12 +190,21 @@ class Recorder::Writer {
       if (queue_.empty()) {
         return;
       }
-      const protocol::BytesWire payload = std::move(queue_.front());
+      const Queued record = std::move(queue_.front());
       queue_.pop_front();
       lock.unlock();
-      WriteFrame(*out_, payload);
+      WriteFrame(*out_, record.payload);
       out_->flush();
+      const bool failed = !*out_;
       lock.lock();
+      // Whatever of the record reached the file reads back as a torn last
+      // tick; writing on would put whole records after it that no reader
+      // reaches.
+      if (failed) {
+        LogStopped(record.tick, "write failed");
+        failed_ = true;
+        queue_.clear();
+      }
     }
   }
 
@@ -178,8 +212,10 @@ class Recorder::Writer {
   std::size_t capacity_;
   std::mutex mutex_;
   std::condition_variable ready_;
-  std::deque<protocol::BytesWire> queue_;
+  std::deque<Queued> queue_;
   bool closing_ = false;
+  // Written under mutex_, read without it by the Simulation thread.
+  std::atomic<bool> failed_ = false;
   // Declared last, so it is joined before what it writes from goes.
   std::thread thread_;
 };
@@ -192,25 +228,28 @@ Recorder::Recorder(Recorder&&) noexcept = default;
 Recorder& Recorder::operator=(Recorder&&) noexcept = default;
 
 void Recorder::Write(const TickRecord& tick) {
-  if (stopped_) {
+  if (Stopped()) {
     return;
   }
   protocol::BytesWire payload = protocol::EncodeRecord(ToWire(tick));
   // A record ReadRecording would refuse would make every tick after it
   // unreadable; stopping here keeps the file readable up to it.
   if (payload.size() > kMaxRecordSize) {
-    LE("subsystem=server event=recording_stopped tick={} bytes={} reason=\"record too long\"", tick.outcome.tick,
-       payload.size());
-    stopped_ = true;
+    Stop(tick.outcome.tick, "record too long");
     return;
   }
   // Dropping this tick and going on would leave a recording whose ticks are
   // not their places; stopping leaves every one before it.
-  if (!writer_->Push(std::move(payload))) {
-    LE("subsystem=server event=recording_stopped tick={} unwritten={} reason=\"disk fell behind\"", tick.outcome.tick,
-       writer_->Capacity());
-    stopped_ = true;
+  if (!writer_->Push(tick.outcome.tick, std::move(payload))) {
+    Stop(tick.outcome.tick, "disk fell behind");
   }
+}
+
+bool Recorder::Stopped() const { return stopped_ || writer_->Failed(); }
+
+void Recorder::Stop(tick::Tick tick, std::string_view reason) {
+  LogStopped(tick, reason);
+  stopped_ = true;
 }
 
 std::expected<Recording, RecordingError> ReadRecording(std::istream& in) {
@@ -218,8 +257,12 @@ std::expected<Recording, RecordingError> ReadRecording(std::istream& in) {
     return std::unexpected(RecordingError::kUnreadable);
   }
   protocol::BytesWire payload;
-  if (ReadFrame(in, payload) != Frame::kRead) {
-    return std::unexpected(in.bad() ? RecordingError::kUnreadable : RecordingError::kNoHeader);
+  const Frame header_frame = ReadFrame(in, payload);
+  if (header_frame == Frame::kUnreadable) {
+    return std::unexpected(RecordingError::kUnreadable);
+  }
+  if (header_frame != Frame::kRead) {
+    return std::unexpected(RecordingError::kNoHeader);
   }
   const auto header = protocol::DecodeRecord(payload);
   if (!header.has_value() || !std::holds_alternative<protocol::RecordingHeaderWire>(*header)) {
@@ -227,7 +270,7 @@ std::expected<Recording, RecordingError> ReadRecording(std::istream& in) {
   }
   Recording recording{.header = FromWire(std::get<protocol::RecordingHeaderWire>(*header)), .ticks = {}, .torn = false};
   for (Frame frame = ReadFrame(in, payload); frame != Frame::kEnd; frame = ReadFrame(in, payload)) {
-    if (in.bad()) {
+    if (frame == Frame::kUnreadable) {
       return std::unexpected(RecordingError::kUnreadable);
     }
     if (frame == Frame::kTorn) {

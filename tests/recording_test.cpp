@@ -1,5 +1,6 @@
 #include "recording.h"
 
+#include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <cstddef>
@@ -7,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <istream>
 #include <mutex>
 #include <optional>
 #include <ostream>
@@ -14,6 +16,7 @@
 #include <stdexcept>
 #include <streambuf>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -159,6 +162,59 @@ std::string RecordScriptedMatch() {
   return std::move(out).str();
 }
 
+// A stream buffer whose device fails: reads serve bytes, then fail rather than
+// end; writes take up to capacity bytes, then fail.
+class FailingBuffer : public std::streambuf {
+ public:
+  static FailingBuffer Reading(std::string bytes) { return FailingBuffer(std::move(bytes), 0); }
+  static FailingBuffer Writing(std::size_t capacity) { return FailingBuffer({}, capacity); }
+
+  [[nodiscard]] const std::string& written() const { return bytes_; }
+
+ protected:
+  int_type underflow() override {
+    if (served_ == bytes_.size()) {
+      throw std::ios_base::failure("the device failed");
+    }
+    setg(bytes_.data(), bytes_.data() + served_, bytes_.data() + bytes_.size());
+    served_ = bytes_.size();
+    return traits_type::to_int_type(*gptr());
+  }
+
+  int_type overflow(int_type c) override {
+    if (traits_type::eq_int_type(c, traits_type::eof())) {
+      return traits_type::not_eof(c);
+    }
+    if (bytes_.size() == capacity_) {
+      return traits_type::eof();
+    }
+    bytes_.push_back(traits_type::to_char_type(c));
+    return c;
+  }
+
+ private:
+  FailingBuffer(std::string bytes, std::size_t capacity) : bytes_(std::move(bytes)), capacity_(capacity) {}
+
+  std::string bytes_;
+  std::size_t served_ = 0;
+  std::size_t capacity_;
+};
+
+// Whether recorder stops within 5 s: its writer thread stops it on a write the
+// stream fails, after Write has returned.
+bool WaitUntilStopped(const Recorder& recorder) {
+  constexpr auto kPatience = std::chrono::seconds(5);
+  constexpr auto kRetryAfter = std::chrono::milliseconds(10);
+  const auto deadline = std::chrono::steady_clock::now() + kPatience;
+  while (!recorder.Stopped()) {
+    if (std::chrono::steady_clock::now() >= deadline) {
+      return false;
+    }
+    std::this_thread::sleep_for(kRetryAfter);
+  }
+  return true;
+}
+
 Recording Read(const std::string& bytes) {
   std::istringstream in(bytes, std::ios::binary);
   auto recording = augusta::server::ReadRecording(in);
@@ -238,6 +294,67 @@ TEST(RecordingTest, ALastRecordCutShortIsDroppedAndReported) {
   const Recording torn = Read(bytes.substr(0, bytes.size() - 3));
   EXPECT_TRUE(torn.torn);
   EXPECT_EQ(torn.ticks.size(), whole.ticks.size() - 1);
+}
+
+TEST(RecordingTest, ALastRecordCutShortInItsLengthIsDroppedAndReported) {
+  const std::string bytes = RecordScriptedMatch();
+  const Recording whole = Read(bytes);
+  // Two bytes of a record's length past the last whole tick.
+  const Recording torn = Read(bytes + std::string("\x10\x00", 2));
+  EXPECT_TRUE(torn.torn);
+  EXPECT_EQ(torn.ticks.size(), whole.ticks.size());
+}
+
+TEST(RecordingTest, AStreamThatFailsWhereARecordWouldStartIsUnreadableNotWhole) {
+  FailingBuffer buffer = FailingBuffer::Reading(RecordScriptedMatch());
+  std::istream in(&buffer);
+  EXPECT_EQ(augusta::server::ReadRecording(in).error(), RecordingError::kUnreadable);
+}
+
+TEST(RecordingTest, AStreamThatFailsPartwayThroughARecordIsUnreadableNotTorn) {
+  const std::string bytes = RecordScriptedMatch();
+  FailingBuffer buffer = FailingBuffer::Reading(bytes.substr(0, bytes.size() - 3));
+  std::istream in(&buffer);
+  EXPECT_EQ(augusta::server::ReadRecording(in).error(), RecordingError::kUnreadable);
+}
+
+TEST(RecordingTest, AFailedWriteStopsTheRecordingWhichReadsBackUpToItsLastWholeTick) {
+  const std::string bytes = RecordScriptedMatch();
+  const Recording whole = Read(bytes);
+  ASSERT_GE(whole.ticks.size(), 4U);
+  // Room for about half the ticks, so the write that fails is partway through one.
+  FailingBuffer buffer = FailingBuffer::Writing(bytes.size() / 2);
+  std::ostream out(&buffer);
+  {
+    // Room in the queue for every tick, so only the write can stop it.
+    Recorder recorder(out, whole.header, whole.ticks.size() + 1);
+    for (const augusta::server::TickRecord& tick : whole.ticks) {
+      recorder.Write(tick);
+    }
+    EXPECT_TRUE(WaitUntilStopped(recorder));
+  }
+  EXPECT_EQ(buffer.written().size(), bytes.size() / 2);
+  const Recording cut = Read(buffer.written());
+  EXPECT_GT(cut.ticks.size(), 0U);
+  EXPECT_LT(cut.ticks.size(), whole.ticks.size());
+}
+
+TEST(RecordingTest, AFailedHeaderWriteStopsTheRecordingBeforeItsFirstTick) {
+  FailingBuffer buffer = FailingBuffer::Writing(2);
+  std::ostream out(&buffer);
+  {
+    Recorder recorder(out, ExampleHeader());
+    EXPECT_TRUE(WaitUntilStopped(recorder));
+    recorder.Write(augusta::server::TickRecord{});
+  }
+  EXPECT_EQ(buffer.written().size(), 2U);
+}
+
+TEST(RecordingTest, ARecordingThatIsWrittenWholeIsNotStopped) {
+  std::ostringstream out(std::ios::binary);
+  Recorder recorder(out, ExampleHeader());
+  recorder.Write(augusta::server::TickRecord{});
+  EXPECT_FALSE(recorder.Stopped());
 }
 
 TEST(RecordingTest, AStreamThatDoesNotStartWithAHeaderIsNoRecording) {

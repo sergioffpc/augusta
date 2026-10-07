@@ -31,9 +31,11 @@ static_assert(kMaxQueuedCommands <= std::numeric_limits<std::uint8_t>::max());
 
 namespace {
 
-// What the tick of result fired and hit, and at what Shooter's delay.
+// What the tick of result fired and hit, at what Shooter's delay, and how many
+// bullets it left in flight.
 void CountCombat(HostMetrics& metrics, const simulation::TickResult& result) {
   metrics.shots.Increment(result.state.shots.size());
+  metrics.bullets_in_flight.Set(static_cast<double>(result.state.bullets_in_flight));
   for (const simulation::Hit& hit : result.state.hits) {
     metrics.hit_confirmations[hit.part].Increment();
   }
