@@ -129,7 +129,7 @@ class Recorder {
   void Write(const TickRecord& tick);
 
   /// Whether the recording has stopped, its file missing every tick since.
-  [[nodiscard]] bool stopped() const { return stopped_; }
+  [[nodiscard]] bool Stopped() const { return stopped_; }
 
  private:
   // Logs that the recording stopped on tick, and why, and writes nothing more.

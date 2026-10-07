@@ -6,7 +6,9 @@
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <istream>
 #include <optional>
+#include <ostream>
 #include <sstream>
 #include <stdexcept>
 #include <streambuf>
@@ -302,7 +304,7 @@ TEST(RecordingTest, AFailedWriteStopsTheRecordingWhichReadsBackUpToItsLastWholeT
   for (const augusta::server::TickRecord& tick : whole.ticks) {
     recorder.Write(tick);
   }
-  EXPECT_TRUE(recorder.stopped());
+  EXPECT_TRUE(recorder.Stopped());
   EXPECT_EQ(buffer.written().size(), bytes.size() / 2);
   const Recording cut = Read(buffer.written());
   EXPECT_GT(cut.ticks.size(), 0U);
@@ -313,7 +315,7 @@ TEST(RecordingTest, AFailedHeaderWriteStopsTheRecordingBeforeItsFirstTick) {
   FailingBuffer buffer = FailingBuffer::Writing(2);
   std::ostream out(&buffer);
   Recorder recorder(out, ExampleHeader());
-  EXPECT_TRUE(recorder.stopped());
+  EXPECT_TRUE(recorder.Stopped());
   recorder.Write(augusta::server::TickRecord{});
   EXPECT_EQ(buffer.written().size(), 2U);
 }
@@ -322,7 +324,7 @@ TEST(RecordingTest, ARecordingThatIsWrittenWholeIsNotStopped) {
   std::ostringstream out(std::ios::binary);
   Recorder recorder(out, ExampleHeader());
   recorder.Write(augusta::server::TickRecord{});
-  EXPECT_FALSE(recorder.stopped());
+  EXPECT_FALSE(recorder.Stopped());
 }
 
 TEST(RecordingTest, AStreamThatDoesNotStartWithAHeaderIsNoRecording) {
