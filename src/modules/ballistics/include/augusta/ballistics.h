@@ -33,7 +33,8 @@
 /// caller hands in, already posed where the caller judges the players to
 /// be: for the server, as they were the Shooter's delay ago (ADR-0044).
 /// Hitboxes are tested here, triangle by triangle, not through PhysX,
-/// since they are posed anew for every test.
+/// since they are posed anew for every tick; NextSegment tells the caller
+/// which players a bullet passes near, so it poses only those.
 namespace augusta::ballistics {
 
 /// Where on a hit player's body a bullet struck (US-11): the coarse zones
@@ -100,6 +101,12 @@ struct BulletState {
   math::Vec3 velocity;
 };
 
+/// The straight line a bullet moves along in one tick.
+struct Segment {
+  math::Vec3 from;
+  math::Vec3 to;
+};
+
 /// One World::Step call's outcome for one bullet.
 enum class Outcome {
   /// Still travelling; Step must be called again next tick.
@@ -154,6 +161,11 @@ class World {
   /// Step again with the same handle is undefined behavior.
   StepResult Step(BulletHandle handle, float delta_time, const physics::World& map, std::span<const Hitbox> hitboxes);
 
+  /// The segment the next Step of handle's bullet by delta_time tests, without
+  /// moving it: so a caller can pose and hand in only the hitboxes near it.
+  /// handle must be in flight, as for Step.
+  [[nodiscard]] Segment NextSegment(BulletHandle handle, float delta_time) const;
+
  private:
   struct Bullet {
     math::Vec3 origin;
@@ -161,6 +173,9 @@ class World {
     BulletConfig config;
     std::uint32_t steps = 0;
   };
+
+  // Where bullet is after one tick of delta_time.
+  static BulletState Advanced(const Bullet& bullet, float delta_time);
 
   std::unordered_map<BulletHandle, Bullet> bullets_;
   std::uint32_t next_handle_ = 0;

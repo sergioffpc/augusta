@@ -86,9 +86,21 @@ inline std::optional<scripting::Engine> ExamplePolicy() {
   return std::move(*policy);
 }
 
+// How the players' commands report their Seen time.
+enum class SeenTimes : std::uint8_t {
+  // All the last State, as of clients that each drew it just as it arrived:
+  // every round of a tick is judged at one moment.
+  kLastState,
+  // Each a different fraction past the State before it, as of clients that
+  // draw between States at their own times: no two rounds of a tick are judged
+  // at the same moment.
+  kBetweenStates,
+};
+
 // Each player's command for the tick after previous: walking along Z, which way
 // by tick, and firing down -Z.
-inline std::vector<simulation::PlayerCommand> MatchCommands(const simulation::State& previous) {
+inline std::vector<simulation::PlayerCommand> MatchCommands(const simulation::State& previous,
+                                                            SeenTimes seen_times = SeenTimes::kLastState) {
   const bool forward = (previous.tick / kTicksPerWalk) % 2 == 0;
   std::vector<simulation::PlayerCommand> commands;
   for (const auto& body : previous.bodies) {
@@ -97,6 +109,11 @@ inline std::vector<simulation::PlayerCommand> MatchCommands(const simulation::St
     command.fire = true;
     command.reload = body.rifle.rounds == 0;
     command.seen_tick = previous.tick;
+    if (seen_times == SeenTimes::kBetweenStates) {
+      command.seen_tick = previous.tick - 1;
+      command.seen_fraction =
+          static_cast<float>((std::to_underlying(body.entity) + previous.tick) % kPlayers) / kPlayers;
+    }
     commands.push_back(simulation::PlayerCommand{.entity = body.entity, .command = command});
   }
   return commands;
@@ -108,9 +125,11 @@ struct FullMatch {
   simulation::State last_state;
 };
 
-// The full Match, warmed up; nullopt, with benchmark skipped saying why, if it
-// cannot be set up or does not do the work it is meant to.
-inline std::optional<FullMatch> StartFullMatch(benchmark::State& benchmark) {
+// The full Match, warmed up with commands reporting seen_times; nullopt, with
+// benchmark skipped saying why, if it cannot be set up or does not do the work
+// it is meant to.
+inline std::optional<FullMatch> StartFullMatch(benchmark::State& benchmark,
+                                               SeenTimes seen_times = SeenTimes::kLastState) {
   auto policy = ExamplePolicy();
   if (!policy.has_value()) {
     benchmark.SkipWithError("the example's Game policy does not load");
@@ -132,7 +151,7 @@ inline std::optional<FullMatch> StartFullMatch(benchmark::State& benchmark) {
   simulation::State previous = world.Tick({}, kTick).state;
   bool hit = false;
   for (int tick = 0; tick < kWarmUpTicks; ++tick) {
-    auto result = world.Tick(MatchCommands(previous), kTick);
+    auto result = world.Tick(MatchCommands(previous, seen_times), kTick);
     hit = hit || !result.state.hits.empty();
     if (!result.actions.empty()) {
       benchmark.SkipWithError("the Game policy ended the Match");
