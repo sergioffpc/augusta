@@ -119,9 +119,8 @@ std::string DescribeSettingsError(const config::ConfigError& error) {
   if (error.code != config::ConfigErrorCode::kInvalidNumber || range == nullptr) {
     return config::DescribeConfigError(error);
   }
-  const std::string phrase =
-      std::format("'{}' must be an integer from {} to {}", error.subject, range->min, range->max);
-  return error.file.empty() ? phrase : std::format("{}: {}", error.file.string(), phrase);
+  return config::DescribeConfigError(
+      error, std::format("'{}' must be an integer from {} to {}", error.subject, range->min, range->max));
 }
 
 }  // namespace augusta::swarm

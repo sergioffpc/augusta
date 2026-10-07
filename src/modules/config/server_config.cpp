@@ -17,11 +17,14 @@ namespace augusta::config {
 namespace {
 
 constexpr std::string_view kTickRateKey = "simulation.tick_rate_hz";
+constexpr std::uint32_t kMaxTickRate = std::numeric_limits<std::uint8_t>::max();
 constexpr std::string_view kMetricsPortKey = "metrics.port";
+constexpr std::uint32_t kMaxMetricsPort = std::numeric_limits<std::uint16_t>::max();
 
 std::expected<std::uint8_t, ConfigError> RequireTickRate(const ConfigValues& values) {
-  return RequireWholeNumber(values, kTickRateKey, 1, std::numeric_limits<std::uint8_t>::max())
-      .transform([](std::uint32_t rate) { return static_cast<std::uint8_t>(rate); });
+  return RequireWholeNumber(values, kTickRateKey, 1, kMaxTickRate).transform([](std::uint32_t rate) {
+    return static_cast<std::uint8_t>(rate);
+  });
 }
 
 // The fallback when absent; when present, a TCP port from 1 to 65535.
@@ -29,8 +32,9 @@ std::expected<std::uint16_t, ConfigError> OptionalMetricsPort(const ConfigValues
   if (!values.contains(kMetricsPortKey)) {
     return kDefaultMetricsPort;
   }
-  return RequireWholeNumber(values, kMetricsPortKey, 1, std::numeric_limits<std::uint16_t>::max())
-      .transform([](std::uint32_t port) { return static_cast<std::uint16_t>(port); });
+  return RequireWholeNumber(values, kMetricsPortKey, 1, kMaxMetricsPort).transform([](std::uint32_t port) {
+    return static_cast<std::uint16_t>(port);
+  });
 }
 
 }  // namespace
@@ -100,10 +104,11 @@ std::string DescribeServerConfigError(const ConfigError& error) {
     return DescribeConfigError(error);
   }
   if (error.subject == kTickRateKey) {
-    return DescribeConfigError(error, std::format("'{}' must be an integer from 1 to 255", error.subject));
+    return DescribeConfigError(error, std::format("'{}' must be an integer from 1 to {}", error.subject, kMaxTickRate));
   }
   if (error.subject == kMetricsPortKey) {
-    return DescribeConfigError(error, std::format("'{}' must be an integer from 1 to 65535", error.subject));
+    return DescribeConfigError(error,
+                               std::format("'{}' must be an integer from 1 to {}", error.subject, kMaxMetricsPort));
   }
   return DescribeConfigError(error);
 }

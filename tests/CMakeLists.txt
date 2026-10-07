@@ -446,7 +446,7 @@ add_test(
 # augusta_input stays client-only so the configure-time scope check covers it,
 # that check rejects a fixture build graph where a server-only target reaches a
 # client-only one, and no server source or server config header names Input.
-# Configures that fixture (no compiler, no build), so it builds nothing.
+# It only configures that fixture, with no compiler, so it builds nothing.
 add_test(
   NAME augusta_server_boundary
   COMMAND

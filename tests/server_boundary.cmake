@@ -19,7 +19,7 @@ set(report "")
 
 # The input sampler's module must be declared client-only for the check to cover it.
 file(READ "${SOURCE_DIR}/src/modules/input/CMakeLists.txt" input_cmake)
-if(NOT input_cmake MATCHES "augusta_set_module_scope\\(augusta_input CLIENT_ONLY\\)")
+if(NOT input_cmake MATCHES "augusta_set_module_scope\\([ \t\r\n]*augusta_input[ \t\r\n]+CLIENT_ONLY[ \t\r\n]*\\)")
   string(APPEND report "augusta_input is not declared CLIENT_ONLY (src/modules/input/CMakeLists.txt)\n")
 endif()
 
@@ -74,11 +74,10 @@ if(NOT sources)
 endif()
 
 # Only a whole name counts: `input::` right after a letter, digit or underscore
-# (as in `raw_input::`) is some other name. Comments may point at the client's
-# side; only code may not reach it.
+# (as in `raw_input::`) is some other name.
 set(
   forbidden
-  "(^|[^A-Za-z0-9_])(input::|ClientConfig|LoadClientConfig|ParseClientConfig)|#include [<\"]augusta/(input|client_config)\\.h"
+  "(^|[^A-Za-z0-9_])(input::|ClientConfig|LoadClientConfig|ParseClientConfig)|#[ \t]*include[ \t]*[<\"]augusta/(input|client_config)\\.h"
 )
 
 set(violations "")
@@ -86,10 +85,12 @@ foreach(source ${sources})
   file(STRINGS "${source}" lines REGEX "${forbidden}")
   foreach(line ${lines})
     file(RELATIVE_PATH relative "${SOURCE_DIR}" "${source}")
-    string(STRIP "${line}" line)
-    if(line MATCHES "^//")
+    # Comments may name the client's side; only the code before one counts.
+    string(REGEX REPLACE "//.*" "" code "${line}")
+    if(NOT code MATCHES "${forbidden}")
       continue()
     endif()
+    string(STRIP "${line}" line)
     # A semicolon would split the line into list elements.
     string(REPLACE ";" "\\;" line "${line}")
     list(APPEND violations "  ${relative}: ${line}")
