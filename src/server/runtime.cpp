@@ -65,7 +65,7 @@ struct ServerRuntime::Impl {
   // than spinning a core. The transport has no wait on incoming work, so that
   // wait bounds how late a received message is handled, and how long stopping
   // takes.
-  void NetworkThreadMain() {
+  supervisor::WorkerResult NetworkThreadMain() {
     constexpr auto kNetworkRoundWait = std::chrono::milliseconds(1);
     std::chrono::steady_clock::time_point next_sample = std::chrono::steady_clock::now() + kHeartbeatInterval;
     while (!workers.StopRequested()) {
@@ -77,11 +77,12 @@ struct ServerRuntime::Impl {
       }
       std::this_thread::sleep_for(kNetworkRoundWait);
     }
+    return {};
   }
 
   // Simulation thread body (ADR-0005): ticks Host on its fixed schedule until a
   // stop is requested.
-  void SimulationLoop() {
+  supervisor::WorkerResult SimulationLoop() {
     const auto delta_time = std::chrono::duration<float>(1.0F / tick_rate_hz);
     const auto tick_duration = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
     LI("subsystem=serverruntime event=loop_starting loop=simulation");
@@ -98,6 +99,7 @@ struct ServerRuntime::Impl {
       std::this_thread::sleep_until(deadline);
     }
     LI("subsystem=serverruntime event=loop_stopping loop=simulation");
+    return {};
   }
 };
 
@@ -111,8 +113,8 @@ std::optional<failure::Failure> ServerRuntime::Run() {
   Impl& impl = *impl_;
   impl.last_tick_end.store(tick::Clock::now(), std::memory_order_relaxed);
   impl.StartMetrics();
-  impl.workers.Spawn("network", [&impl] { impl.NetworkThreadMain(); });
-  impl.workers.Run("simulation", [&impl] { impl.SimulationLoop(); });
+  impl.workers.Spawn("network", [&impl] { return impl.NetworkThreadMain(); });
+  impl.workers.Run("simulation", [&impl] { return impl.SimulationLoop(); });
   impl.workers.StopAndJoin();
   return impl.workers.Failure();
 }

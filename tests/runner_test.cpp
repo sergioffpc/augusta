@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <stdexcept>
 #include <thread>
 #include <vector>
@@ -19,6 +21,7 @@
 #include "augusta/networking.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
+#include "augusta/supervisor.h"
 #include "augusta/tick.h"
 #include "content.h"
 #include "host.h"
@@ -77,6 +80,16 @@ Command Walking() {
   Command command;
   command.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
   return command;
+}
+
+// The value of the failure's context under key, or empty if it has none.
+std::string ContextOf(const augusta::failure::Failure& failure, std::string_view key) {
+  for (const auto& field : failure.context) {
+    if (field.key == key) {
+      return field.value;
+    }
+  }
+  return {};
 }
 
 // Where the newest Authoritative State in view puts this client's player, if it names it.
@@ -181,10 +194,53 @@ TEST_F(RunnerTest, ACommandSourceThatThrowsStopsTheRunnerWithAFailureOfThePredic
 
   const augusta::failure::Failure failure = *runner.Failure();
   EXPECT_EQ(failure.code, augusta::failure::Code::kWorkerFailed);
-  ASSERT_EQ(failure.context.size(), 1U);
-  EXPECT_EQ(failure.context[0].key, "thread");
-  EXPECT_EQ(failure.context[0].value, "prediction");
+  EXPECT_EQ(ContextOf(failure, augusta::supervisor::kThreadContextKey), "prediction");
   EXPECT_EQ(failure.detail, "no input");
+}
+
+// Once the Network I/O thread fails, the Prediction thread finishes at most
+// the Tick it is in: a Tick that already sees the failure, and so the stop
+// requested before it, is the last one. Nothing ticks once the Runner is gone.
+TEST_F(RunnerTest, ANetworkThreadFailureStopsThePredictionTicksAndBothThreadsAreJoined) {
+  constexpr auto kSeveralTicks = std::chrono::milliseconds(200);
+  std::atomic<const Runner*> running{nullptr};
+  std::atomic<int> ticks = 0;
+  std::atomic<int> ticks_seeing_the_failure = 0;
+  std::atomic<bool> fail_next_round = false;
+  {
+    const Runner runner(session_, RunnerHooks{.next_command = [] { return Command{}; },
+                                              .on_tick =
+                                                  [&](const PredictedTick&) {
+                                                    ++ticks;
+                                                    const Runner* const current = running.load();
+                                                    if (current != nullptr && current->Failure().has_value()) {
+                                                      ++ticks_seeing_the_failure;
+                                                    }
+                                                  },
+                                              .on_network_round =
+                                                  [&] {
+                                                    if (fail_next_round) {
+                                                      throw std::runtime_error("link down");
+                                                    }
+                                                  }});
+    running = &runner;
+    ASSERT_TRUE(ServeUntil([&] { return ticks >= kTickRate / 4; }));
+
+    fail_next_round = true;
+    ASSERT_TRUE(ServeUntil([&] { return runner.Failure().has_value(); }));
+    // Long enough for several more Ticks, had the stop not ended them.
+    std::this_thread::sleep_for(kSeveralTicks);
+
+    const augusta::failure::Failure failure = *runner.Failure();
+    EXPECT_EQ(failure.code, augusta::failure::Code::kWorkerFailed);
+    EXPECT_EQ(ContextOf(failure, augusta::supervisor::kThreadContextKey), "network");
+    EXPECT_EQ(failure.detail, "link down");
+  }
+  const int ticks_when_joined = ticks;
+  std::this_thread::sleep_for(kSeveralTicks);
+
+  EXPECT_LE(ticks_seeing_the_failure.load(), 1);
+  EXPECT_EQ(ticks.load(), ticks_when_joined);
 }
 
 }  // namespace
