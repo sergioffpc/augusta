@@ -11,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -90,52 +91,85 @@ void Update(double& value, const std::optional<double>& measured) {
   }
 }
 
-// One Session's gauges, published whole by one writer and read by any thread
+// Every Session's gauges, one slot each, as the writer last set them.
+using SessionSlots = std::array<std::optional<SessionGauges>, kSlotCount>;
+
+// Every Session's gauges, published whole by one writer and read by any thread
 // (ADR-0049): a sequence lock, so the writer never waits, and a reader that
-// overlaps a publish reads again.
-class Slot {
+// overlaps a publish reads again. One lock over every Session, not one each, so
+// a read never shows a Session that one Record ended alongside one that the
+// next Record added.
+class PublishedGauges {
  public:
   // From the one writer.
-  void Publish(const std::optional<SessionGauges>& gauges) {
+  void Publish(const SessionSlots& sessions) {
     const std::uint64_t version = version_.load(std::memory_order_relaxed);
     version_.store(version + 1, std::memory_order_relaxed);
     std::atomic_thread_fence(std::memory_order_release);
-    occupied_.store(gauges.has_value(), std::memory_order_relaxed);
-    if (gauges.has_value()) {
-      session_.store(std::to_underlying(gauges->session), std::memory_order_relaxed);
-      for (std::size_t i = 0; i < values_.size(); ++i) {
-        values_[i].store(gauges->values[i], std::memory_order_relaxed);
-      }
+    for (std::size_t slot = 0; slot < kSlotCount; ++slot) {
+      slots_[slot].Store(sessions[slot]);
     }
     version_.store(version + 2, std::memory_order_release);
   }
 
-  [[nodiscard]] std::optional<SessionGauges> Read() const {
+  // The gauges of every Session the last publish had, in slot order.
+  [[nodiscard]] std::vector<SessionGauges> Read() const {
+    std::vector<SessionGauges> sessions;
+    sessions.reserve(kSlotCount);
     while (true) {
       const std::uint64_t before = version_.load(std::memory_order_acquire);
       if (before % 2 != 0) {
+        std::this_thread::yield();
         continue;
       }
-      std::optional<SessionGauges> gauges;
-      if (occupied_.load(std::memory_order_relaxed)) {
-        gauges = SessionGauges{.session = SessionId{session_.load(std::memory_order_relaxed)}, .values = {}};
-        for (std::size_t i = 0; i < values_.size(); ++i) {
-          gauges->values[i] = values_[i].load(std::memory_order_relaxed);
+      sessions.clear();
+      for (const Slot& slot : slots_) {
+        if (std::optional<SessionGauges> gauges = slot.Load()) {
+          sessions.push_back(*gauges);
         }
       }
       std::atomic_thread_fence(std::memory_order_acquire);
       if (version_.load(std::memory_order_relaxed) == before) {
-        return gauges;
+        return sessions;
       }
     }
   }
 
  private:
+  // Atomics, though only the version orders them: a read that overlaps a
+  // publish is then discarded rather than a data race.
+  class Slot {
+   public:
+    void Store(const std::optional<SessionGauges>& gauges) {
+      occupied_.store(gauges.has_value(), std::memory_order_relaxed);
+      if (gauges.has_value()) {
+        session_.store(std::to_underlying(gauges->session), std::memory_order_relaxed);
+        for (std::size_t i = 0; i < values_.size(); ++i) {
+          values_[i].store(gauges->values[i], std::memory_order_relaxed);
+        }
+      }
+    }
+
+    [[nodiscard]] std::optional<SessionGauges> Load() const {
+      if (!occupied_.load(std::memory_order_relaxed)) {
+        return std::nullopt;
+      }
+      SessionGauges gauges{.session = SessionId{session_.load(std::memory_order_relaxed)}, .values = {}};
+      for (std::size_t i = 0; i < values_.size(); ++i) {
+        gauges.values[i] = values_[i].load(std::memory_order_relaxed);
+      }
+      return gauges;
+    }
+
+   private:
+    std::atomic<bool> occupied_{false};
+    std::atomic<std::uint32_t> session_{0};
+    std::array<std::atomic<double>, kSessionValueCount> values_{};
+  };
+
   // Odd while a publish is in progress.
   std::atomic<std::uint64_t> version_{0};
-  std::atomic<bool> occupied_{false};
-  std::atomic<std::uint32_t> session_{0};
-  std::array<std::atomic<double>, kSessionValueCount> values_{};
+  std::array<Slot, kSlotCount> slots_;
 };
 
 // One of a gauge family's series per Session: which of its values, and the
@@ -180,9 +214,9 @@ struct ConnectionHealth::Impl {
   Histogram quality_local{kQualityBuckets};
   Histogram quality_remote{kQualityBuckets};
   Histogram jitter{kJitterBucketsSeconds};
-  // By Session: what the endpoint reads, and the writer's own copy of it.
-  std::array<Slot, kSlotCount> slots;
-  std::array<std::optional<SessionGauges>, kSlotCount> published;
+  // By Session: the writer's own copy, and what the endpoint reads of it.
+  SessionSlots sessions;
+  PublishedGauges published;
 
   void ObserveAll(const networking::ConnectionStats& stats) {
     Observe(rtt, RttSeconds(stats));
@@ -195,10 +229,10 @@ struct ConnectionHealth::Impl {
   // slot is taken, which no more Sessions than the Lobby holds can do.
   [[nodiscard]] std::optional<std::size_t> SlotOf(SessionId session) const {
     std::optional<std::size_t> free;
-    for (std::size_t slot = 0; slot < published.size(); ++slot) {
-      if (!published[slot].has_value()) {
+    for (std::size_t slot = 0; slot < sessions.size(); ++slot) {
+      if (!sessions[slot].has_value()) {
         free = free.value_or(slot);
-      } else if (published[slot]->session == session) {
+      } else if (sessions[slot]->session == session) {
         return slot;
       }
     }
@@ -211,8 +245,8 @@ struct ConnectionHealth::Impl {
       return;
     }
     SessionGauges gauges{.session = session, .values = {}};
-    if (published[*slot].has_value()) {
-      gauges = *published[*slot];
+    if (sessions[*slot].has_value()) {
+      gauges = *sessions[*slot];
     } else {
       gauges.values.fill(kNotMeasured);
     }
@@ -223,25 +257,21 @@ struct ConnectionHealth::Impl {
     Update(gauges.values[kInBytes], stats.in_bytes_per_sec);
     Update(gauges.values[kOutBytes], stats.out_bytes_per_sec);
     Update(gauges.values[kPendingBytes], stats.pending_bytes);
-    Publish(*slot, gauges);
+    sessions[*slot] = gauges;
   }
 
   // Removes the gauges of every Session not in samples: it has ended.
   void RemoveEnded(const std::vector<ConnectionSample>& samples) {
-    for (std::size_t slot = 0; slot < kSlotCount; ++slot) {
-      const std::optional<SessionGauges>& gauges = published[slot];
+    for (std::optional<SessionGauges>& gauges : sessions) {
       if (gauges.has_value() && std::ranges::none_of(samples, [&gauges](const ConnectionSample& sample) {
             return sample.session == gauges->session;
           })) {
-        Publish(slot, std::nullopt);
+        gauges.reset();
       }
     }
   }
 
-  void Publish(std::size_t slot, const std::optional<SessionGauges>& gauges) {
-    published[slot] = gauges;
-    slots[slot].Publish(gauges);
-  }
+  void Publish() { published.Publish(sessions); }
 };
 
 ConnectionHealth::ConnectionHealth() : impl_(std::make_unique<Impl>()) {}
@@ -257,15 +287,11 @@ void ConnectionHealth::Record(const std::vector<ConnectionSample>& samples) {
       impl_->SetGauges(*sample.session, sample.stats);
     }
   }
+  impl_->Publish();
 }
 
 std::vector<MetricFamily> ConnectionHealth::Collect() const {
-  std::vector<SessionGauges> sessions;
-  for (const Slot& slot : impl_->slots) {
-    if (std::optional<SessionGauges> gauges = slot.Read()) {
-      sessions.push_back(*gauges);
-    }
-  }
+  const std::vector<SessionGauges> sessions = impl_->published.Read();
   return {
       HistogramFamily("augustad_connection_rtt_seconds",
                       "Every connection's round-trip time, sampled once a heartbeat interval.",
