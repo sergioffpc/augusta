@@ -1,14 +1,20 @@
 #include "recording.h"
 
 #include <array>
+#include <atomic>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <expected>
 #include <ios>
 #include <istream>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <ostream>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -30,6 +36,11 @@ namespace {
 constexpr std::size_t kLengthSize = 4;
 constexpr int kBitsPerByte = 8;
 constexpr std::size_t kByteMask = 0xFFU;
+
+// Logs, once per recording, that it stopped on tick, and why.
+void LogStopped(tick::Tick tick, std::string_view reason) {
+  LE("subsystem=server event=recording_stopped tick={} reason=\"{}\"", tick, reason);
+}
 
 void WriteFrame(std::ostream& out, const protocol::BytesWire& payload) {
   std::array<char, kLengthSize> length{};
@@ -121,36 +132,123 @@ std::string_view DescribeRecordingError(RecordingError error) {
   return "unknown recording error";
 }
 
-Recorder::Recorder(std::ostream& out, const RecordingHeader& header) : out_(&out) {
-  WriteFrame(*out_, protocol::EncodeRecord(ToWire(header)));
-  out_->flush();
-  if (!*out_) {
-    Stop(0, "write failed");
+// The thread a Recorder writes its stream on, and the records queued for it,
+// oldest first. The Simulation thread only ever waits on the lock, which the
+// writer holds to take a record and never across a write.
+class Recorder::Writer {
+ public:
+  Writer(std::ostream& out, protocol::BytesWire header, std::size_t capacity) : out_(&out), capacity_(capacity) {
+    queue_.push_back({.tick = 0, .payload = std::move(header)});
+    thread_ = std::thread([this] { Run(); });
   }
-}
+
+  // Writes what is still queued before it goes.
+  ~Writer() {
+    {
+      const std::scoped_lock lock(mutex_);
+      closing_ = true;
+    }
+    ready_.notify_one();
+    thread_.join();
+  }
+
+  Writer(const Writer&) = delete;
+  Writer& operator=(const Writer&) = delete;
+  Writer(Writer&&) = delete;
+  Writer& operator=(Writer&&) = delete;
+
+  // Whether tick's payload was taken: not when capacity records are still
+  // unwritten. Once a write has failed, it takes every one and drops it.
+  bool Push(tick::Tick tick, protocol::BytesWire payload) {
+    {
+      const std::scoped_lock lock(mutex_);
+      if (failed_) {
+        return true;
+      }
+      if (queue_.size() >= capacity_) {
+        return false;
+      }
+      queue_.push_back({.tick = tick, .payload = std::move(payload)});
+    }
+    ready_.notify_one();
+    return true;
+  }
+
+  // Whether a write the stream failed has stopped the recording.
+  [[nodiscard]] bool Failed() const { return failed_; }
+
+ private:
+  struct Queued {
+    tick::Tick tick;
+    protocol::BytesWire payload;
+  };
+
+  void Run() {
+    std::unique_lock lock(mutex_);
+    while (true) {
+      ready_.wait(lock, [this] { return closing_ || !queue_.empty(); });
+      if (queue_.empty()) {
+        return;
+      }
+      const Queued record = std::move(queue_.front());
+      queue_.pop_front();
+      lock.unlock();
+      WriteFrame(*out_, record.payload);
+      out_->flush();
+      const bool failed = !*out_;
+      lock.lock();
+      // Whatever of the record reached the file reads back as a torn last
+      // tick; writing on would put whole records after it that no reader
+      // reaches.
+      if (failed) {
+        LogStopped(record.tick, "write failed");
+        failed_ = true;
+        queue_.clear();
+      }
+    }
+  }
+
+  std::ostream* out_;
+  std::size_t capacity_;
+  std::mutex mutex_;
+  std::condition_variable ready_;
+  std::deque<Queued> queue_;
+  bool closing_ = false;
+  // Written under mutex_, read without it by the Simulation thread.
+  std::atomic<bool> failed_ = false;
+  // Declared last, so it is joined before what it writes from goes.
+  std::thread thread_;
+};
+
+Recorder::Recorder(std::ostream& out, const RecordingHeader& header, std::size_t capacity)
+    : writer_(std::make_unique<Writer>(out, protocol::EncodeRecord(ToWire(header)), capacity)) {}
+
+Recorder::~Recorder() = default;
+Recorder::Recorder(Recorder&&) noexcept = default;
+Recorder& Recorder::operator=(Recorder&&) noexcept = default;
 
 void Recorder::Write(const TickRecord& tick) {
-  if (stopped_) {
+  if (Stopped()) {
     return;
   }
-  const protocol::BytesWire payload = protocol::EncodeRecord(ToWire(tick));
+  protocol::BytesWire payload = protocol::EncodeRecord(ToWire(tick));
   // A record ReadRecording would refuse would make every tick after it
   // unreadable; stopping here keeps the file readable up to it.
   if (payload.size() > kMaxRecordSize) {
     Stop(tick.outcome.tick, "record too long");
     return;
   }
-  WriteFrame(*out_, payload);
-  out_->flush();
-  // Whatever of the record reached the file reads back as a torn last tick;
-  // writing on would put whole records after it that no reader reaches.
-  if (!*out_) {
-    Stop(tick.outcome.tick, "write failed");
+  // Dropping this tick and going on would leave a recording whose ticks are
+  // not their places; stopping leaves every one before it.
+  if (!writer_->Push(tick.outcome.tick, std::move(payload))) {
+    Stop(tick.outcome.tick, "disk fell behind");
   }
 }
 
+bool Recorder::Stopped() const { return stopped_ || writer_->Failed(); }
+
 void Recorder::Stop(tick::Tick tick, std::string_view reason) {
-  LE("subsystem=server event=recording_stopped tick={} reason=\"{}\"", tick, reason);
+  LogStopped(tick, reason);
   stopped_ = true;
 }
 

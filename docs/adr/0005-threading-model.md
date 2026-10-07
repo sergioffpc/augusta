@@ -4,7 +4,8 @@ The engine is multithreaded from v1, using fixed dedicated threads rather than a
 generic job/task scheduler. The client runs 3 threads (Main/Render, Simulation,
 Network I/O); the server runs 3 (Simulation, Network I/O, Metrics) — no render
 thread, since it's headless. The server's Metrics thread is the HTTP server
-(Boost.Beast) for `/metrics` and `/livez` (ADR-0049).
+(Boost.Beast) for `/metrics` and `/livez` (ADR-0049). A server asked for a match
+recording runs a fourth, which only writes the recording's file (ADR-0048).
 
 Both tick loops — the server's Simulation thread and the client's Prediction
 thread — keep a fixed schedule (`augusta::tick`): each tick is due one tick

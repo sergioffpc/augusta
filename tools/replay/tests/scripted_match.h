@@ -130,13 +130,16 @@ inline std::vector<simulation::TickResult> PlayScriptedMatch(server::RecordedSim
   return results;
 }
 
-// The scripted match, recorded.
+// The scripted match, recorded: the simulation, and its Recorder with it, is
+// gone before the bytes are taken, so every record it took is written.
 inline std::string RecordScriptedMatch() {
   std::ostringstream out(std::ios::binary);
-  const server::Content content = LoadExampleContent();
-  server::RecordedSimulation simulation =
-      ExampleSimulation(LoadExampleContent(), server::Recorder(out, ExampleHeader()));
-  PlayScriptedMatch(simulation, content);
+  {
+    const server::Content content = LoadExampleContent();
+    server::RecordedSimulation simulation =
+        ExampleSimulation(LoadExampleContent(), server::Recorder(out, ExampleHeader()));
+    PlayScriptedMatch(simulation, content);
+  }
   return std::move(out).str();
 }
 
@@ -145,16 +148,18 @@ inline std::string RecordScriptedMatch() {
 inline std::string RecordAWalk() {
   constexpr int kWalkTicks = 60;
   std::ostringstream out(std::ios::binary);
-  const server::Content content = LoadExampleContent();
-  server::RecordedSimulation simulation =
-      ExampleSimulation(LoadExampleContent(), server::Recorder(out, ExampleHeader()));
-  simulation.StartMatch(ExampleEntrants(content), content.scenario.spawn_points);
-  command::Command walk;
-  walk.movement.direction = math::Vec3(1.0F, 0.0F, 0.0F);
-  for (int i = 0; i < kWalkTicks; ++i) {
-    simulation.Tick({simulation::PlayerCommand{.entity = kFirst, .command = walk},
-                     simulation::PlayerCommand{.entity = kSecond, .command = walk}},
-                    kDeltaTime);
+  {
+    const server::Content content = LoadExampleContent();
+    server::RecordedSimulation simulation =
+        ExampleSimulation(LoadExampleContent(), server::Recorder(out, ExampleHeader()));
+    simulation.StartMatch(ExampleEntrants(content), content.scenario.spawn_points);
+    command::Command walk;
+    walk.movement.direction = math::Vec3(1.0F, 0.0F, 0.0F);
+    for (int i = 0; i < kWalkTicks; ++i) {
+      simulation.Tick({simulation::PlayerCommand{.entity = kFirst, .command = walk},
+                       simulation::PlayerCommand{.entity = kSecond, .command = walk}},
+                      kDeltaTime);
+    }
   }
   return std::move(out).str();
 }
