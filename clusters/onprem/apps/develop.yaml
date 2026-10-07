@@ -34,3 +34,6 @@ spec:
         # Pinned (rather than left to Kubernetes to assign) so this server
         # has a stable address for LAN clients to connect to.
         nodePort: 30777
+      firebase:
+        packVersion: "9d0c7edd5b34"
+        nodePort: 30778
