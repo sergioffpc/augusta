@@ -295,6 +295,8 @@ jobs:
           path: C:\packman-repo
           key: falcor-packman-${{ hashFiles('third_party/falcor/dependencies.xml', 'cmake/patches/falcor.patch') }}
       - name: Build
+        # all includes augustad: this job is the build matrix's Windows x64
+        # server, the development-only one (NFR-04, cmake/AugustaPlatform.cmake).
         run: cmake --build --preset windows --target all augusta_tests
         # Saved right after the Build that downloaded them, so a failing test
         # can't keep it from saving.
@@ -392,6 +394,8 @@ jobs:
           git ls-files 'tests/*.cpp' 'tools/replay/tests/*.cpp' 'tools/swarm/tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 8 clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
           exit "$status"
       - name: Build
+        # all includes augustad: this job is the build matrix's Linux x86-64
+        # server, the production one (NFR-04, cmake/AugustaPlatform.cmake).
         run: cmake --build --preset linux --target all augusta_tests
       - name: Test
         run: ctest --preset linux

@@ -56,9 +56,11 @@ decisions already made in ARCHITECTURE.md:
     1. `clang-format` check, alone in its own fast job — gates everything below
        (`needs:`), so a formatting slip fails in seconds instead of after a full
        Windows + Linux + sanitizers build
-    2. Build + test the client on a Windows runner (MSVC)
-    3. Build + test the server on a Linux runner (clang, ADR-0008), plus
-       `clang-tidy` (Google style checks profile)
+    2. Build + test the client on a Windows runner (MSVC), with the server's
+       development-only Windows x64 build (NFR-04)
+    3. Build + test the server on a Linux runner (clang, ADR-0008), its
+       production platform, Linux x86-64 (NFR-04), plus `clang-tidy` (Google
+       style checks profile)
     4. ASan + UBSan test build and a short fuzzing run per target (both Linux
        only), only for `pull_request` runs — skipped on the `push` that lands
        after merge, since the PR already validated it

@@ -432,6 +432,14 @@ add_test(
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/core_boundary.cmake
 )
 
+# Which platforms augustad configures for, and as what (NFR-04): Linux x86-64 in
+# production, Windows x64 for development, nothing else (cmake/AugustaPlatform.cmake).
+# A script, so it builds nothing.
+add_test(
+  NAME augusta_server_platform
+  COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/server_platform.cmake
+)
+
 add_executable(augusta_assets_tests assets_test.cpp)
 target_link_libraries(augusta_assets_tests PRIVATE augusta_assets GTest::gtest GTest::gtest_main)
 # WritePack/Encode*/Pack::Load round-trip coverage (below) exercises
