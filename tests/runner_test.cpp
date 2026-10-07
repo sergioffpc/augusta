@@ -6,9 +6,9 @@
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
-#include <stdexcept>
 #include <thread>
 #include <vector>
 

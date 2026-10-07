@@ -1,8 +1,8 @@
 #include "augusta/supervisor.h"
 
 #include <atomic>
-#include <expected>
 #include <chrono>
+#include <expected>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -122,8 +122,8 @@ TEST(SupervisorTest, AFailureAWorkerReturnsIsTheFirstCauseWithItsOwnCodeAndConte
   });
 
   supervisor.Run("network", []() -> WorkerResult {
-    return std::unexpected(
-        Failure{.code = Code::kTransportSendFailed, .context = {{.key = "session", .value = "3"}}, .detail = "refused"});
+    return std::unexpected(Failure{
+        .code = Code::kTransportSendFailed, .context = {{.key = "session", .value = "3"}}, .detail = "refused"});
   });
   supervisor.StopAndJoin();
 
