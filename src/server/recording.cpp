@@ -49,11 +49,17 @@ enum class Frame : std::uint8_t {
   kTorn,
   // Its length is more than any record's.
   kTooLong,
+  // The stream failed: what it holds past here is unknown, so neither an end
+  // nor a torn record can be told from it.
+  kUnreadable,
 };
 
 Frame ReadFrame(std::istream& in, protocol::BytesWire& payload) {
   std::array<char, kLengthSize> length_bytes{};
   in.read(length_bytes.data(), length_bytes.size());
+  if (in.bad()) {
+    return Frame::kUnreadable;
+  }
   const auto length_read = static_cast<std::size_t>(in.gcount());
   if (length_read == 0) {
     return Frame::kEnd;
@@ -70,6 +76,9 @@ Frame ReadFrame(std::istream& in, protocol::BytesWire& payload) {
   }
   payload.resize(length);
   in.read(reinterpret_cast<char*>(payload.data()), static_cast<std::streamsize>(length));
+  if (in.bad()) {
+    return Frame::kUnreadable;
+  }
   const auto payload_read = static_cast<std::size_t>(in.gcount());
   return payload_read == length ? Frame::kRead : Frame::kTorn;
 }
@@ -114,6 +123,10 @@ std::string_view DescribeRecordingError(RecordingError error) {
 
 Recorder::Recorder(std::ostream& out, const RecordingHeader& header) : out_(&out) {
   WriteFrame(*out_, protocol::EncodeRecord(ToWire(header)));
+  out_->flush();
+  if (!*out_) {
+    Stop(0, "write failed");
+  }
 }
 
 void Recorder::Write(const TickRecord& tick) {
@@ -124,13 +137,21 @@ void Recorder::Write(const TickRecord& tick) {
   // A record ReadRecording would refuse would make every tick after it
   // unreadable; stopping here keeps the file readable up to it.
   if (payload.size() > kMaxRecordSize) {
-    LE("subsystem=server event=recording_stopped tick={} bytes={} reason=\"record too long\"", tick.outcome.tick,
-       payload.size());
-    stopped_ = true;
+    Stop(tick.outcome.tick, "record too long");
     return;
   }
   WriteFrame(*out_, payload);
   out_->flush();
+  // Whatever of the record reached the file reads back as a torn last tick;
+  // writing on would put whole records after it that no reader reaches.
+  if (!*out_) {
+    Stop(tick.outcome.tick, "write failed");
+  }
+}
+
+void Recorder::Stop(tick::Tick tick, std::string_view reason) {
+  LE("subsystem=server event=recording_stopped tick={} reason=\"{}\"", tick, reason);
+  stopped_ = true;
 }
 
 std::expected<Recording, RecordingError> ReadRecording(std::istream& in) {
@@ -138,8 +159,12 @@ std::expected<Recording, RecordingError> ReadRecording(std::istream& in) {
     return std::unexpected(RecordingError::kUnreadable);
   }
   protocol::BytesWire payload;
-  if (ReadFrame(in, payload) != Frame::kRead) {
-    return std::unexpected(in.bad() ? RecordingError::kUnreadable : RecordingError::kNoHeader);
+  const Frame header_frame = ReadFrame(in, payload);
+  if (header_frame == Frame::kUnreadable) {
+    return std::unexpected(RecordingError::kUnreadable);
+  }
+  if (header_frame != Frame::kRead) {
+    return std::unexpected(RecordingError::kNoHeader);
   }
   const auto header = protocol::DecodeRecord(payload);
   if (!header.has_value() || !std::holds_alternative<protocol::RecordingHeaderWire>(*header)) {
@@ -147,7 +172,7 @@ std::expected<Recording, RecordingError> ReadRecording(std::istream& in) {
   }
   Recording recording{.header = FromWire(std::get<protocol::RecordingHeaderWire>(*header)), .ticks = {}, .torn = false};
   for (Frame frame = ReadFrame(in, payload); frame != Frame::kEnd; frame = ReadFrame(in, payload)) {
-    if (in.bad()) {
+    if (frame == Frame::kUnreadable) {
       return std::unexpected(RecordingError::kUnreadable);
     }
     if (frame == Frame::kTorn) {

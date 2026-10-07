@@ -1,10 +1,12 @@
 #include "augusta/simulation.h"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <numbers>
 #include <utility>
@@ -492,6 +494,58 @@ TEST_F(ShortRangeFireTest, ABulletFiredIntoOpenSpaceExpiresAtTheAmmosMaxRange) {
   EXPECT_EQ(second.bullets_in_flight, 1U);
   EXPECT_EQ(third.bullets_in_flight, 0U);
   EXPECT_TRUE(third.map_impacts.empty());
+}
+
+// The most rounds valid Parameters put in the air: two players whose rifles
+// fire every tick, rounds that crawl a metre a second toward the longest range
+// a float holds, and a tick rate of 10 Hz, at which a bullet flies 50 ticks at
+// most (ballistics::kMaxFlightTime) and a magazine lasts five times that.
+class ExtremeFireTest : public ::testing::Test {
+ protected:
+  static constexpr std::uint8_t kSlowTickRate = 10;
+  static constexpr float kSlowTick = 1.0F / kSlowTickRate;
+
+  static Parameters Extreme() {
+    Parameters parameters;
+    parameters.rifle.rounds_per_minute = std::numeric_limits<float>::max();
+    parameters.rifle.magazine_capacity = std::numeric_limits<std::uint8_t>::max();
+    parameters.rifle.muzzle_velocity = 1.0F;
+    parameters.ammo.gravity = 0.0F;
+    parameters.ammo.max_range = std::numeric_limits<float>::max();
+    return parameters;
+  }
+
+  ExtremeFireTest() : world_(Extreme(), kSlowTickRate) {
+    EXPECT_TRUE(augusta::parameters::Validate(Extreme()).has_value());
+    EXPECT_TRUE(world_.AddCollisionMesh(Floor()).has_value());
+    world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), kCharacter);
+    world_.AddPlayer(kBob, Vec3(5.0F, 0.5F, 0.0F), kCharacter);
+  }
+
+  State BothFire() {
+    return world_
+        .Tick(
+            {PlayerCommand{.entity = kAlice, .command = Firing()}, PlayerCommand{.entity = kBob, .command = Firing()}},
+            kSlowTick)
+        .state;
+  }
+
+  World world_;
+};
+
+// Each tick adds a round a player and the oldest expire: a lifetime of rounds
+// less the one that just expired, a player, and never more.
+// Requirements: US-10
+TEST_F(ExtremeFireTest, BulletsInFlightStopAtAFlightTimeOfRoundsAPlayer) {
+  const std::uint32_t flight_ticks = augusta::ballistics::MaxFlightSteps(kSlowTick);
+  ASSERT_EQ(flight_ticks, 50U);
+
+  State state;
+  for (std::uint32_t tick = 1; tick <= 4 * flight_ticks; ++tick) {
+    state = BothFire();
+    ASSERT_EQ(state.shots.size(), 2U) << "tick " << tick;
+    ASSERT_EQ(state.bullets_in_flight, 2 * std::min(tick, flight_ticks - 1)) << "tick " << tick;
+  }
 }
 
 // 700 rounds a minute is a round every 5.14 ticks: some rounds wait five ticks
