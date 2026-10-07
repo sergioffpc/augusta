@@ -59,23 +59,23 @@ namespace augusta::client {
 [[nodiscard]] std::vector<presentation::PlayerCharacter> CharactersOf(
     const std::optional<harness::MatchStart>& match_start);
 
-/// What a render frame takes of the Server view that the server says once and
-/// every render frame shows again - the newest Authoritative State and the
-/// match's characters - in presentation's own types, converted only when new
-/// server data arrives and lent to every render frame until then
+/// The Server view's newest Authoritative State update and its match's
+/// characters in presentation's own types, converted only when the server has
+/// sent new ones and lent to every render frame in between
 /// (presentation::FrameInput). Main/Render thread only, like the frames it lends
 /// to.
 class ConvertedServerView {
  public:
-  /// Brings the conversions up to date with view. The Authoritative State is
-  /// converted only when it is another than the last converted: of another
-  /// match (ServerView::matches_started), or of another tick - the Inbox only
-  /// ever publishes a newer one. The characters only when another match has
-  /// started.
+  /// Brings the conversions up to date with view. The Authoritative State update
+  /// is converted again only when its match (ServerView::matches_started) or its
+  /// tick differs from the last converted: within a match the Inbox only ever
+  /// publishes a newer tick. The characters are converted again only when
+  /// another match has started. The tick rate is taken as fixed: the server
+  /// tells it once, when it admits this client.
   void Update(const harness::ServerView& view);
 
-  /// The last Update's view's newest Authoritative State (SnapshotOf), or null
-  /// outside a match. Valid until the next Update.
+  /// The last Update's view's newest Authoritative State update (SnapshotOf),
+  /// or null outside a match. Valid until the next Update.
   [[nodiscard]] const presentation::WorldSnapshot* Snapshot() const;
 
   /// The last Update's view's characters (CharactersOf), in Session order.

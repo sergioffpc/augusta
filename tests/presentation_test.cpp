@@ -1,8 +1,6 @@
 #include "augusta/presentation.h"
 
 #include <algorithm>
-#include <optional>
-#include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -11,10 +9,12 @@
 #include "augusta/cues.h"
 #include "augusta/interpolation.h"
 #include "augusta/math.h"
+#include "augusta/tick.h"
 
-// PresentationWorld through RunFrame, one render frame at a time. Linux's
-// audio::Engine is silent (audio.h), so no device is needed; bodies stand
-// still, so what a frame shows does not depend on how long it took.
+// PresentationWorld through RunFrame, one render frame at a time. An
+// audio::Engine without an output device is silent (audio.h), so none is
+// needed; bodies stand still, so what a frame shows does not depend on how long
+// it took.
 namespace {
 
 using augusta::math::Vec3;

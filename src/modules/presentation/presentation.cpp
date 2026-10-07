@@ -367,7 +367,8 @@ State World::RunFrame(const FrameInput& input) {
   impl_->input = &input;
   impl_->ecs.progress();
   impl_->input = nullptr;
-  // OnCommit sets every field anew each frame: nothing of this one is kept.
+  // Handed over, not copied: OnCommit sets every State field anew each frame,
+  // so a field it stopped setting would come back moved-from.
   return std::move(impl_->frame_state);
 }
 
