@@ -70,7 +70,7 @@ pod crash-loops. The client pack never goes on the node.
 ## Steps
 
 1. Choose the new folder name, `<Id>`, unused on the node (for example the
-   scenario name and a date, `augusta-2026-10`), and set it up in PowerShell:
+   scenario name and a date, `firebase-2026-10`), and set it up in PowerShell:
 
     ```powershell
     $AssetsRoot = "<AssetsRoot>"
@@ -91,13 +91,13 @@ pod crash-loops. The client pack never goes on the node.
 3. Cook the scenario once, signed with the new key, into the new folder:
 
     ```powershell
-    & "$AssetsRoot\bin\augusta-pack.exe" augusta `
+    & "$AssetsRoot\bin\augusta-pack.exe" firebase `
       --signing-key "$AssetsRoot\keys\$Id.key" `
       --client-output-pack "$AssetsRoot\packs\$Id\client.pack" `
       --server-output-pack "$AssetsRoot\packs\$Id\server.pack"
     ```
 
-    Replace `augusta` with the scenario the environment runs.
+    Replace `firebase` with the scenario the environment runs.
 
 4. Verify both packs against the new public key, and check the old key no longer
    verifies them:
@@ -122,13 +122,13 @@ pod crash-loops. The client pack never goes on the node.
    verifies both packs against the key, and that they come from one cook:
 
     ```powershell
-    & "$AssetsRoot\bin\augusta-publish.exe" augusta --host <node> `
+    & "$AssetsRoot\bin\augusta-publish.exe" firebase --host <node> `
       --public-key "$AssetsRoot\keys\$Id.pub" `
       --client-pack "$AssetsRoot\packs\$Id\client.pack" `
       --server-pack "$AssetsRoot\packs\$Id\server.pack"
     ```
 
-    Replace `augusta` with the scenario. It prints the folder it wrote and the
+    Replace `firebase` with the scenario. It prints the folder it wrote and the
     `packVersion` to serve it with.
 
 7. Point the scenario's server at the new version: on a `feature/*` branch off
