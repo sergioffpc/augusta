@@ -21,6 +21,7 @@ using augusta::ballistics::BodyPart;
 using augusta::ballistics::BulletConfig;
 using augusta::ballistics::Hitbox;
 using augusta::ballistics::Outcome;
+using augusta::ballistics::Segment;
 using augusta::ballistics::StepResult;
 using augusta::ballistics::TargetId;
 using augusta::ballistics::Triangle;
@@ -166,6 +167,21 @@ TEST(BallisticsWorldTest, BulletExpiresOncePastItsMaxRange) {
   EXPECT_EQ(world.Step(bullet, kFixedTick, physics_world, {}).outcome, Outcome::kInFlight);
   EXPECT_EQ(world.Step(bullet, kFixedTick, physics_world, {}).outcome, Outcome::kInFlight);
   EXPECT_EQ(world.Step(bullet, kFixedTick, physics_world, {}).outcome, Outcome::kExpired);
+}
+
+// Requirements: US-10
+TEST(BallisticsWorldTest, TheNextSegmentIsTheMovementTheNextStepTests) {
+  const augusta::physics::World physics_world{StaminaConfig{}};
+  World world;
+  const auto bullet =
+      world.Fire(Vec3(0.0F), Vec3(1.0F, 0.5F, -2.0F), 800.0F, {.gravity = kGravity, .max_range = 1000.0F});
+  const Vec3 before = world.Step(bullet, kFixedTick, physics_world, {}).state.position;
+
+  const Segment next = world.NextSegment(bullet, kFixedTick);
+  const Vec3 after = world.Step(bullet, kFixedTick, physics_world, {}).state.position;
+
+  EXPECT_EQ(next.from, before);
+  EXPECT_EQ(next.to, after);
 }
 
 // Requirements: US-10

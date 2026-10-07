@@ -83,7 +83,10 @@ enum class Phase {
   /// itself is folded into the same ballistics::World::Step call as
   /// kBallistics - see ballistics.h - so the hitboxes are posed for each
   /// bullet ahead of it, and one Step call returns the nearest of the Map and
-  /// the players along the tick's segment, with its BodyPart. What this phase
+  /// the players along the tick's segment, with its BodyPart. Only the
+  /// players the segment passes near enough to cross are posed, and a player
+  /// posed at one moment is posed once a tick, for every bullet judged at
+  /// it: the hits are those of testing every player anew. What this phase
   /// runs itself is the Hitbox history: it keeps the pose this tick's State
   /// reports of every player, for the bullets of the ticks to come.
   kHitDetection,
