@@ -4,6 +4,12 @@
 # lives on are augusta::math's (augusta/grid.h) and the Command SimulationWorld consumes is
 # augusta::command's, so neither needs them.
 #
+# Keeps the neutral primitives (augusta/primitives.h) below everything: the
+# Tick and command sequence widths and the player, command and recoil bounds
+# the engine and the protocol share may include no augusta header, name no
+# other augusta module, nor link any target, so the protocol can take them
+# without taking the gameplay modules that use them.
+#
 # Run by ctest as `cmake -DSOURCE_DIR=<repo root> -P core_boundary.cmake`.
 if(NOT DEFINED SOURCE_DIR)
   message(FATAL_ERROR "core_boundary.cmake: pass -DSOURCE_DIR=<repo root>")
@@ -32,12 +38,55 @@ foreach(header ${headers})
   endforeach()
 endforeach()
 
+file(GLOB primitives_headers "${SOURCE_DIR}/src/modules/primitives/include/augusta/*.h")
+if(NOT primitives_headers)
+  message(FATAL_ERROR "core_boundary.cmake: no primitives headers found under ${SOURCE_DIR}")
+endif()
+
+# Any augusta include, or any augusta:: name in code but its own namespace.
+set(engine "#[ \t]*include[ \t]*[\"<]augusta/|augusta::[A-Za-z_]")
+set(primitives_violations "")
+foreach(header ${primitives_headers})
+  file(STRINGS "${header}" lines REGEX "${engine}")
+  foreach(line ${lines})
+    string(STRIP "${line}" line)
+    # A comment may name what the primitives stand alongside; only code depends on it.
+    if(line MATCHES "^//" OR line MATCHES "namespace augusta::primitives")
+      continue()
+    endif()
+    file(RELATIVE_PATH relative "${SOURCE_DIR}" "${header}")
+    list(APPEND primitives_violations "  ${relative}: ${line}")
+  endforeach()
+endforeach()
+set(primitives_cmake "${SOURCE_DIR}/src/modules/primitives/CMakeLists.txt")
+file(STRINGS "${primitives_cmake}" lines REGEX "target_link_libraries")
+foreach(line ${lines})
+  string(STRIP "${line}" line)
+  list(APPEND primitives_violations "  src/modules/primitives/CMakeLists.txt: ${line}")
+endforeach()
+
+set(report "")
 if(violations)
-  list(JOIN violations "\n" report)
-  message(
-    FATAL_ERROR
-    "physics or SimulationWorld names the protocol or the input sampler - use augusta/grid.h or augusta::command instead:\n${report}"
+  list(JOIN violations "\n" core_report)
+  string(
+    APPEND report
+    "physics or SimulationWorld names the protocol or the input sampler - use augusta/grid.h or augusta::command instead:\n${core_report}\n"
   )
 endif()
+if(primitives_violations)
+  list(JOIN primitives_violations "\n" primitives_report)
+  string(
+    APPEND report
+    "The neutral primitives depend on another module - they must stay below the engine and the protocol alike:\n${primitives_report}\n"
+  )
+endif()
+if(report)
+  string(STRIP "${report}" report)
+  message(FATAL_ERROR "${report}")
+endif()
 list(LENGTH headers count)
-message(STATUS "core_boundary: ${count} headers free of protocol and input types")
+list(LENGTH primitives_headers primitives_count)
+message(
+  STATUS
+  "core_boundary: ${count} headers free of protocol and input types, ${primitives_count} primitives headers free of other modules"
+)

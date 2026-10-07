@@ -38,6 +38,12 @@ target_compile_definitions(
   PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
 )
 
+# Links augusta_primitives alone, so the build fails if its header ever needs
+# another module's include path.
+add_executable(augusta_primitives_tests primitives_test.cpp)
+target_link_libraries(augusta_primitives_tests PRIVATE augusta_primitives GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_primitives_tests)
+
 add_executable(augusta_tick_tests tick_test.cpp)
 target_link_libraries(augusta_tick_tests PRIVATE augusta_tick GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_tick_tests)
@@ -78,7 +84,8 @@ target_compile_definitions(
 gtest_discover_tests(augusta_parameters_loader_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_protocol_tests protocol_test.cpp)
-target_link_libraries(augusta_protocol_tests PRIVATE augusta_protocol GTest::gtest GTest::gtest_main)
+# Links augusta_primitives too, to check it agrees with the codec it will replace the limits of (#385).
+target_link_libraries(augusta_protocol_tests PRIVATE augusta_primitives augusta_protocol GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_protocol_tests DISCOVERY_TIMEOUT 30)
 
@@ -415,7 +422,8 @@ add_test(
 
 # Neither physics nor SimulationWorld names the protocol or the client's input
 # sampler in its public headers: the grids and the Command they need are shared
-# core modules of their own. A source scan, so it builds nothing.
+# core modules of their own. Nor do the neutral primitives depend on any other
+# module. A source scan, so it builds nothing.
 add_test(
   NAME augusta_core_boundary
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/core_boundary.cmake
