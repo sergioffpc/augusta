@@ -17,19 +17,28 @@ add_executable(
   augusta_benchmarks
   ballistics_benchmark.cpp
   pack_benchmark.cpp
+  presentation_benchmark.cpp
   protocol_benchmark.cpp
+  recording_benchmark.cpp
   replication_benchmark.cpp
   simulation_benchmark.cpp
 )
 # The tick runs the example scenario's Game policy, as the server loads it from
-# its golden server pack; replication runs through the Host's tick messages.
+# its golden server pack; recording and replication are server::Host's own
+# (augustad_host), and a render frame plays the golden client pack's cue sounds.
 target_link_libraries(
   augusta_benchmarks
   PRIVATE
     augusta_assets
+    augusta_audio
     augusta_ballistics
+    augusta_cues
+    augusta_parameters
+    augusta_presentation
     augusta_protocol
+    augusta_replication
     augusta_simulation
+    augusta_version
     augustad_host
     augustad_policy_loader
     benchmark::benchmark

@@ -235,4 +235,52 @@ TEST_F(ConnectionHealthTest, ASessionsGaugesAreCollectedWhole) {
   EXPECT_EQ(mixed, 0);
 }
 
+// One collection holds every Session's gauges as one Record left them: never a
+// Session that Record ended beside one it measured anew, while the endpoint's
+// thread collects as the Network I/O thread records.
+// Requirements: NFR-07
+TEST_F(ConnectionHealthTest, EveryCollectionIsOneRecord) {
+  ConnectionStats fast = Measured();
+  fast.ping_ms = 10;
+  // Alternately kSession slow beside a Session that the next Record ends, and
+  // kSession fast alone. Session IDs are never reused, so each is a new one.
+  constexpr int kRecords = 20000;
+  std::thread writer([&] {
+    for (int i = 0; i < kRecords; ++i) {
+      if (i % 2 == 0) {
+        health_.Record({{.session = kSession, .stats = Measured()},
+                        {.session = SessionId{static_cast<std::uint32_t>(100 + i)}, .stats = Measured()}});
+      } else {
+        health_.Record({{.session = kSession, .stats = fast}});
+      }
+    }
+  });
+
+  const std::string session_label = std::to_string(static_cast<std::uint32_t>(kSession));
+  int mixed = 0;
+  for (int i = 0; i < kRecords / 10; ++i) {
+    std::optional<double> rtt;
+    int others = 0;
+    for (const prometheus::MetricFamily& collected : health_.Collect()) {
+      if (collected.name != "augustad_session_connection_rtt_seconds") {
+        continue;
+      }
+      for (const prometheus::ClientMetric& metric : collected.metric) {
+        if (HasLabel(metric, "session_id", session_label)) {
+          rtt = metric.gauge.value;
+        } else {
+          ++others;
+        }
+      }
+    }
+    if (rtt.has_value()) {
+      const bool was_slow = *rtt > 0.02;
+      mixed += others != (was_slow ? 1 : 0) ? 1 : 0;
+    }
+  }
+  writer.join();
+
+  EXPECT_EQ(mixed, 0);
+}
+
 }  // namespace

@@ -1,64 +1,47 @@
-#include <cstddef>
-#include <cstdint>
+#include <variant>
+#include <vector>
 
 #include <benchmark/benchmark.h>
 
-#include "augusta/math.h"
-#include "augusta/networking.h"
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
-#include "match.h"
-#include "tick_messages.h"
+#include "benchmark_match.h"
+#include "wire.h"
 
-// Replicating one tick's Authoritative State (ADR-0038): every player in a full
-// match is sent every body, with its own acknowledgement, rifle, health and
-// queued commands, each encoded as the payload the Host hands its connection.
+// A full Match's Authoritative State replicated as server::Host replicates it
+// after each tick (ADR-0044): what each player in the Match is sent
+// (replication::PlanUpdates), in the protocol's terms and encoded, one message
+// per recipient: everything Host does to send its Authoritative State updates
+// but the send itself. Its Shots, Hit confirmations and Deaths are one message
+// each, not one per recipient, and are not timed here.
 namespace {
 
-using augusta::simulation::EntityId;
+using augusta::replication::Recipient;
+using augusta::replication::RecipientUpdate;
 
-constexpr std::size_t kPlayers = augusta::protocol::kMaxPlayers;
-
-augusta::simulation::State FullMatchState() {
-  augusta::simulation::State state;
-  state.tick = 123'456;
-  for (std::size_t player = 0; player < kPlayers; ++player) {
-    augusta::simulation::EntityState body{.entity = static_cast<EntityId>(player + 1), .yaw = 1.5F, .health = 66.0F};
-    body.body.position = augusta::math::Vec3(static_cast<float>(player) * 3.0F, 0.0F, -12.5F);
-    body.body.velocity = augusta::math::Vec3(1.25F, 0.0F, -4.5F);
-    body.body.stamina = 0.75F;
-    body.rifle.rounds = 17;
-    state.bodies.push_back(body);
+void BM_Replication(benchmark::State& state) {
+  const auto match = augusta::benchmarks::StartFullMatch(state);
+  if (!match.has_value()) {
+    return;
   }
-  return state;
-}
-
-augusta::server::TickRecipients EveryPlayer() {
-  augusta::server::TickRecipients to;
-  for (std::size_t player = 0; player < kPlayers; ++player) {
-    const auto number = static_cast<std::uint32_t>(player + 1);
-    to.recipients.push_back(augusta::replication::Recipient{
-        .entity = static_cast<EntityId>(number), .acknowledged_sequence = 4'321, .queued_commands = 2});
-    to.peers.emplace(static_cast<augusta::server::EntityId>(number), static_cast<augusta::networking::PeerId>(number));
+  const augusta::simulation::State& resolved = match->last_state;
+  // Every player in the Match, each with a command acknowledged and a couple
+  // still queued: any values do, each recipient's are encoded the same way.
+  std::vector<Recipient> recipients;
+  for (const auto& body : resolved.bodies) {
+    recipients.push_back(Recipient{.entity = body.entity, .acknowledged_sequence = 4'321, .queued_commands = 2});
   }
-  return to;
-}
-
-void BM_ReplicateAuthoritativeState(benchmark::State& state) {
-  const augusta::simulation::State tick_state = FullMatchState();
-  const augusta::server::TickRecipients to = EveryPlayer();
   for (auto _ : state) {
-    augusta::server::ForEachTickMessage(
-        tick_state, tick_state.tick, to,
-        [](augusta::networking::PeerId peer, const augusta::networking::Payload& payload,
-           augusta::networking::Reliability reliability) {
-          benchmark::DoNotOptimize(peer);
-          benchmark::DoNotOptimize(payload.data());
-          benchmark::DoNotOptimize(reliability);
-        });
+    const auto updates = augusta::replication::PlanUpdates(resolved, resolved.tick, recipients);
+    augusta::protocol::MessageWire message = augusta::server::ToWire(updates);
+    auto& addressed = std::get<augusta::protocol::AuthoritativeStateWire>(message);
+    for (const RecipientUpdate& recipient : updates.recipients) {
+      augusta::server::Address(addressed, recipient);
+      benchmark::DoNotOptimize(augusta::protocol::Encode(message));
+    }
   }
 }
-BENCHMARK(BM_ReplicateAuthoritativeState);
+BENCHMARK(BM_Replication);
 
 }  // namespace
