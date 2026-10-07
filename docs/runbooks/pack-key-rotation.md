@@ -51,11 +51,6 @@ waits in `ContainerCreating` and its events name the missing path. A pack that
 does not verify against `augusta.pub` makes the server exit at startup, and the
 pod crash-loops. The client pack never goes on the node.
 
-Staging is the exception until `main` carries develop's chart (see the comment
-in [`staging.yaml`](../../clusters/onprem/apps/staging.yaml)): its one server
-reads `/srv/augusta/asset-packs/<packVersion>/server.pack` and `augusta.pub`,
-copied there by hand, in the pack format of `main`'s server.
-
 ## Prerequisites
 
 - The pack environment, built with
