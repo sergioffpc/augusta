@@ -4,6 +4,6 @@
 
 namespace augusta {
 
-std::string_view EngineVersion() { return "1.0.0"; }
+std::string_view EngineVersion() { return "2.0.0"; }
 
 }  // namespace augusta

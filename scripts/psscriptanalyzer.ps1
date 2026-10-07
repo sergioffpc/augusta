@@ -16,6 +16,12 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $settings = Join-Path $root "PSScriptAnalyzerSettings.psd1"
+# PSUseCorrectCasing reads CommandInfo.Parameters from the analyzer's parallel
+# rule threads, which now and then throws a NullReferenceException (seen with
+# PSScriptAnalyzer 1.25.0 on pwsh). Invoke-Formatter applies its rules one at a
+# time and still fixes the casing, so the lint pass alone leaves it out.
+$lintSettings = Import-PowerShellDataFile $settings
+$lintSettings.ExcludeRules += "PSUseCorrectCasing"
 if (-not $Path) {
   $Path = git -C $root ls-files -- "*.ps1" | ForEach-Object { Join-Path $root $_ }
 }
@@ -33,7 +39,8 @@ $utf8 = New-Object System.Text.UTF8Encoding $false
 foreach ($file in $Path) {
   $text = [System.IO.File]::ReadAllText($file)
   $formatted = Invoke-Formatter -ScriptDefinition $text -Settings $settings
-  if ($formatted -ne $text) {
+  # -cne: a fix that only changes casing is a difference too.
+  if ($formatted -cne $text) {
     if ($Fix) {
       [System.IO.File]::WriteAllText($file, $formatted, $utf8)
     } else {
@@ -41,7 +48,7 @@ foreach ($file in $Path) {
       $failed = $true
     }
   }
-  $findings = Invoke-ScriptAnalyzer -Path $file -Settings $settings
+  $findings = Invoke-ScriptAnalyzer -Path $file -Settings $lintSettings
   foreach ($finding in $findings) {
     Write-Output "$($finding.ScriptName):$($finding.Line): $($finding.RuleName): $($finding.Message)"
     $failed = $true

@@ -236,6 +236,9 @@ jobs:
           echo "PSModulePath=$RUNNER_TEMP:$(pwsh -NoProfile -Command '$env:PSModulePath')" >> "$GITHUB_ENV"
       - name: Check PowerShell formatting and lint
         if: needs.changes.outputs.run_lint == 'true'
+        # It takes seconds; a hung analyzer fails here instead of at the job's
+        # six-hour limit.
+        timeout-minutes: 5
         run: pwsh -NoProfile -File scripts/psscriptanalyzer.ps1
   client:
     needs: [changes, format]
