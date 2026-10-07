@@ -16,6 +16,7 @@ target_link_libraries(augusta_version_benchmarks PRIVATE augusta_version benchma
 add_executable(
   augusta_benchmarks
   ballistics_benchmark.cpp
+  interpolation_benchmark.cpp
   pack_benchmark.cpp
   presentation_benchmark.cpp
   protocol_benchmark.cpp
