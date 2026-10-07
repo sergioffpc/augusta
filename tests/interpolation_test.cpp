@@ -488,8 +488,8 @@ TEST(RemoteInterpolatorTest, ManyBodiesEachKeepTheirOwnNewestUpdatesAcrossRepeat
     // Every update twice over, as a repeated Authoritative State would be.
     for (int repeat = 0; repeat < 2; ++repeat) {
       for (int body = 0; body < kBodies; ++body) {
-        interpolator.Record(static_cast<EntityId>(body), ServerTime(tick),
-                            At(static_cast<float>((body * 1000) + tick)), 0.0F);
+        interpolator.Record(static_cast<EntityId>(body), ServerTime(tick), At(static_cast<float>((body * 1000) + tick)),
+                            0.0F);
       }
     }
   }
