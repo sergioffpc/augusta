@@ -97,9 +97,20 @@ std::optional<augusta::scripting::Engine> ExamplePolicy() {
   return std::move(*policy);
 }
 
+// How the players' commands report their Seen time.
+enum class SeenTimes : std::uint8_t {
+  // All the last State, as of clients that each drew it just as it arrived:
+  // every round of a tick is judged at one moment.
+  kLastState,
+  // Each a different fraction past the State before it, as of clients that
+  // draw between States at their own times: no two rounds of a tick are judged
+  // at the same moment.
+  kBetweenStates,
+};
+
 // Each player's command for the tick after previous: walking along Z, which way
 // by tick, and firing down -Z.
-std::vector<PlayerCommand> Commands(const State& previous) {
+std::vector<PlayerCommand> Commands(const State& previous, SeenTimes seen_times) {
   const bool forward = (previous.tick / kTicksPerWalk) % 2 == 0;
   std::vector<PlayerCommand> commands;
   for (const auto& body : previous.bodies) {
@@ -108,12 +119,17 @@ std::vector<PlayerCommand> Commands(const State& previous) {
     command.fire = true;
     command.reload = body.rifle.rounds == 0;
     command.seen_tick = previous.tick;
+    if (seen_times == SeenTimes::kBetweenStates) {
+      command.seen_tick = previous.tick - 1;
+      command.seen_fraction =
+          static_cast<float>((std::to_underlying(body.entity) + previous.tick) % kPlayers) / kPlayers;
+    }
     commands.push_back(PlayerCommand{.entity = body.entity, .command = command});
   }
   return commands;
 }
 
-void BM_SimulationTick(benchmark::State& state) {
+void RunSimulationTick(benchmark::State& state, SeenTimes seen_times) {
   auto policy = ExamplePolicy();
   if (!policy.has_value()) {
     state.SkipWithError("the example's Game policy does not load");
@@ -134,7 +150,7 @@ void BM_SimulationTick(benchmark::State& state) {
   State previous = world.Tick({}, kTick).state;
   bool hit = false;
   for (int tick = 0; tick < kWarmUpTicks; ++tick) {
-    auto result = world.Tick(Commands(previous), kTick);
+    auto result = world.Tick(Commands(previous, seen_times), kTick);
     hit = hit || !result.state.hits.empty();
     if (!result.actions.empty()) {
       state.SkipWithError("the Game policy ended the Match");
@@ -147,9 +163,14 @@ void BM_SimulationTick(benchmark::State& state) {
     return;
   }
   for (auto _ : state) {
-    previous = world.Tick(Commands(previous), kTick).state;
+    previous = world.Tick(Commands(previous, seen_times), kTick).state;
   }
 }
+
+void BM_SimulationTick(benchmark::State& state) { RunSimulationTick(state, SeenTimes::kLastState); }
 BENCHMARK(BM_SimulationTick);
+
+void BM_SimulationTickBetweenStates(benchmark::State& state) { RunSimulationTick(state, SeenTimes::kBetweenStates); }
+BENCHMARK(BM_SimulationTickBetweenStates);
 
 }  // namespace
