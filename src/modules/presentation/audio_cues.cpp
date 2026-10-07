@@ -61,8 +61,8 @@ bool CueSelector::HitTaken(const std::optional<float>& health) {
   return dropped;
 }
 
-void CueSelector::RememberPositions(const std::optional<WorldSnapshot>& snapshot) {
-  if (snapshot.has_value()) {
+void CueSelector::RememberPositions(const WorldSnapshot* snapshot) {
+  if (snapshot != nullptr) {
     for (const DynamicBody& body : snapshot->bodies) {
       last_positions_.insert_or_assign(body.entity, body.state.position);
     }

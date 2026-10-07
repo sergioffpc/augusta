@@ -5,6 +5,7 @@
 #include <expected>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -166,6 +167,11 @@ struct MatchEnd {
 /// presentation's own type: ClientRuntime converts them from the harness's at
 /// its edge, the way each peer converts the protocol at its own (ADR-0038), so
 /// this module does not depend on the network session.
+///
+/// snapshot and characters are borrowed, not owned: the caller converts the
+/// server's data once when it arrives and lends it to every render frame until
+/// newer data replaces it. They need only outlive the RunFrame call; World keeps
+/// nothing of them past it but its own copies.
 struct FrameInput {
   /// The two most recently committed Prediction States and how far between them
   /// the frame is, which Interpolation blends by.
@@ -177,15 +183,15 @@ struct FrameInput {
   bool fire = false;
   /// The body this client's player controls, or nullopt before its first match.
   std::optional<EntityId> local_entity;
-  /// The newest Authoritative State update of the match in progress, or nullopt
+  /// The newest Authoritative State update of the match in progress, or null
   /// outside one. Every body in it other than local_entity's is fed to the
   /// RemoteInterpolator (see interpolation.h); a repeated snapshot (from no
   /// newer a tick than the previous frame's) is not recorded again.
-  std::optional<WorldSnapshot> snapshot;
+  const WorldSnapshot* snapshot = nullptr;
   /// Every player's character, as the server named them when the match
   /// started, in Session order (whom a spectator watches first and next), or
   /// empty before the first.
-  std::vector<PlayerCharacter> characters;
+  std::span<const PlayerCharacter> characters;
   /// The Shots announced since the previous frame, in the order they arrived.
   std::vector<Shot> shots;
   /// How many Hit confirmations arrived since the previous frame.
