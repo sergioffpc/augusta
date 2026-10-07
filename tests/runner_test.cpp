@@ -13,12 +13,12 @@
 #include <gtest/gtest.h>
 
 #include "augusta/command.h"
+#include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
-#include "augusta/supervisor.h"
 #include "augusta/tick.h"
 #include "content.h"
 #include "host.h"
@@ -179,9 +179,12 @@ TEST_F(RunnerTest, ACommandSourceThatThrowsStopsTheRunnerWithAFailureOfThePredic
 
   ASSERT_TRUE(ServeUntil([&] { return runner.Failure().has_value(); }));
 
-  const augusta::supervisor::WorkerFailure failure = *runner.Failure();
-  EXPECT_EQ(failure.thread, "prediction");
-  EXPECT_EQ(failure.reason, "no input");
+  const augusta::failure::Failure failure = *runner.Failure();
+  EXPECT_EQ(failure.code, augusta::failure::Code::kWorkerFailed);
+  ASSERT_EQ(failure.context.size(), 1U);
+  EXPECT_EQ(failure.context[0].key, "thread");
+  EXPECT_EQ(failure.context[0].value, "prediction");
+  EXPECT_EQ(failure.detail, "no input");
 }
 
 }  // namespace

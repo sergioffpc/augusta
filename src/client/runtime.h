@@ -7,11 +7,11 @@
 #include <variant>
 
 #include "augusta/assets.h"
+#include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/input.h"
 #include "augusta/networking.h"
 #include "augusta/renderer.h"
-#include "augusta/supervisor.h"
 #include "character_loader.h"
 #include "content.h"
 
@@ -43,9 +43,9 @@ struct RuntimeConfig {
 
 /// Why Run() stopped without the player closing the window: the session ended
 /// on its own, a character could not be loaded, or the Prediction or Network I/O
-/// thread stopped on an exception (for one, the transport rejecting the server
-/// address).
-using RunFailure = std::variant<harness::Failure, CharacterError, supervisor::WorkerFailure>;
+/// thread stopped on a failure, its first cause (for one, the transport
+/// rejecting the server address).
+using RunFailure = std::variant<harness::Failure, CharacterError, failure::Failure>;
 
 /// What to tell whoever runs the process about why the client stopped.
 [[nodiscard]] std::string DescribeRunFailure(const RunFailure& failure);

@@ -9,6 +9,7 @@
 #include <thread>
 #include <utility>
 
+#include "augusta/failure.h"
 #include "augusta/logging.h"
 #include "augusta/scripting.h"
 #include "augusta/supervisor.h"
@@ -106,7 +107,7 @@ ServerRuntime::ServerRuntime(const HostConfig& config, std::uint16_t metrics_por
 
 ServerRuntime::~ServerRuntime() = default;
 
-std::optional<supervisor::WorkerFailure> ServerRuntime::Run() {
+std::optional<failure::Failure> ServerRuntime::Run() {
   Impl& impl = *impl_;
   impl.last_tick_end.store(tick::Clock::now(), std::memory_order_relaxed);
   impl.StartMetrics();

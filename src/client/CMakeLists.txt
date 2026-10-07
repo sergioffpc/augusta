@@ -60,11 +60,11 @@ target_link_libraries(
   PUBLIC
     augustac_content
     augusta_assets
+    augusta_failure
     augusta_harness
     augusta_input
     augusta_networking
     augusta_renderer
-    augusta_supervisor
   # nvtx3-cpp: runtime.cpp names the Main/Render, Simulation, and Network I/O
   # thread loops for Nsight Systems.
   PRIVATE

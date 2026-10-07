@@ -8,6 +8,7 @@
 
 #include <nvtx3/nvtx3.hpp>
 
+#include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
@@ -69,7 +70,7 @@ Runner::Runner(Session& session, RunnerHooks hooks) : session_(session), hooks_(
 
 Runner::~Runner() { workers_.StopAndJoin(); }
 
-std::optional<supervisor::WorkerFailure> Runner::Failure() const { return workers_.Failure(); }
+std::optional<failure::Failure> Runner::Failure() const { return workers_.Failure(); }
 
 std::optional<float> Runner::WaitForTickRate() {
   constexpr auto kPollInterval = std::chrono::milliseconds(10);

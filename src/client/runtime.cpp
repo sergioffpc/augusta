@@ -19,6 +19,7 @@
 #include "augusta/audio.h"
 #include "augusta/command.h"
 #include "augusta/cues.h"
+#include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/input.h"
 #include "augusta/interpolation.h"
@@ -31,7 +32,6 @@
 #include "augusta/presentation.h"
 #include "augusta/renderer.h"
 #include "augusta/runner.h"
-#include "augusta/supervisor.h"
 #include "augusta/tick.h"
 #include "character_loader.h"
 #include "content.h"
@@ -60,8 +60,8 @@ std::string DescribeRunFailure(const RunFailure& failure) {
   if (const auto* session = std::get_if<harness::Failure>(&failure)) {
     return harness::DescribeFailure(*session);
   }
-  if (const auto* worker = std::get_if<supervisor::WorkerFailure>(&failure)) {
-    return supervisor::DescribeWorkerFailure(*worker);
+  if (const auto* worker = std::get_if<failure::Failure>(&failure)) {
+    return failure::DescribeFailure(*worker);
   }
   return DescribeCharacterError(std::get<CharacterError>(failure));
 }

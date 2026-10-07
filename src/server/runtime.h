@@ -5,9 +5,9 @@
 #include <memory>
 #include <optional>
 
+#include "augusta/failure.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
-#include "augusta/supervisor.h"
 #include "host.h"
 
 /// \file
@@ -52,11 +52,12 @@ class ServerRuntime {
   /// Simulation loop on the calling thread - gather this tick's latest
   /// validated commands, SimulationWorld::Tick, hand the resulting
   /// Authoritative State onward - until Stop() is called or either thread
-  /// fails on an exception, which stops the other (supervisor.h). Always stops
-  /// and joins the Network I/O thread before returning. Returns the failure
-  /// that stopped it, nullopt if Stop() did: the caller reports it and exits.
-  /// Must not be called more than once.
-  [[nodiscard]] std::optional<supervisor::WorkerFailure> Run();
+  /// fails, which stops the other (supervisor.h): neither ticks nor pumps the
+  /// network again once the stop is requested. Always stops and joins the
+  /// Network I/O thread before returning, and so before Host, which it uses,
+  /// can go. Returns the first cause that stopped it, nullopt if Stop() did:
+  /// the caller reports it and exits. Must not be called more than once.
+  [[nodiscard]] std::optional<failure::Failure> Run();
 
   /// Signals Run()'s Simulation loop to stop after its current tick, and the
   /// Network I/O thread after its current round. Safe to call from any thread

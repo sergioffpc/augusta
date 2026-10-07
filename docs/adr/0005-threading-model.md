@@ -80,15 +80,20 @@ Host -> SimulationWorld -> TickResult -> replication + typed Game policy actions
 ## Failure semantics
 
 A runtime supervisor (`augusta::supervisor`) owns each runtime's worker threads,
-the one stop request every loop watches, and the first terminal error. A worker
-whose body throws does not terminate the process: the supervisor records the
-failure (which thread, what it said) if it is the first, and requests the stop;
-every other loop then returns at its next check. The runtime stops and joins
-every worker before it returns, on success, failure or exception, and returns
-the first failure for `main` to report and exit non-zero — the client among its
-other failures (refused, unreachable, connection lost), the server as its own. A
-stop requested from outside (the server's SIGINT/SIGTERM handler) is a single
-lock-free atomic store, safe from a signal handler, and is not a failure.
+the one stop request every loop watches, and the first terminal failure, the
+runtime's first cause. A worker that cannot be started, or whose body throws,
+does not terminate the process: the supervisor records it as a typed
+`failure::Failure` (ADR-0033) — `worker_creation_failed` or `worker_failed`,
+with the thread as context and what it said as detail — if it is the first,
+logs it once, and requests the stop. The stop moves the supervisor from running
+to stopping exactly once; from then on it admits no new worker and every loop
+returns at its next check, before its next tick or network round. The runtime
+stops and joins every worker before it returns, on success, failure or
+exception, and so before the resources they use are released, and returns the
+first cause for `main` to report and exit non-zero — the client among its other
+failures (refused, unreachable, connection lost), the server as its own. A stop
+requested from outside (the server's SIGINT/SIGTERM handler) is a single
+lock-free atomic operation, safe from a signal handler, and is not a failure.
 
 ## Consequences
 
