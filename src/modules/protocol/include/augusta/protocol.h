@@ -91,8 +91,8 @@ enum class MessageTypeWire : std::uint8_t {
 /// Longest engine version string a JoinRequestWire may carry, in bytes.
 inline constexpr std::size_t kMaxEngineVersionLength = 32;
 
-/// Longest character path a message may carry, in bytes.
-inline constexpr std::size_t kMaxCharacterPathLength = 64;
+/// Longest character name a message may carry, in bytes.
+inline constexpr std::size_t kMaxCharacterNameLength = 64;
 
 /// The size of a pack's BLAKE3 hash, in bytes.
 inline constexpr std::size_t kPackHashSize = 32;
@@ -257,8 +257,8 @@ struct JoinRequestWire {
   std::string engine_version;
   /// The hash of the client pack the client loaded.
   PackHashWire client_pack{};
-  /// The character the player chose, by its path relative to `authoring/`
-  /// (e.g. "characters/player", ADR-0042); at most kMaxCharacterPathLength bytes.
+  /// The character the player chose, by its name in the scenario's manifest
+  /// (e.g. "soldier", ADR-0042); at most kMaxCharacterNameLength bytes.
   std::string character;
 
   bool operator==(const JoinRequestWire&) const = default;
@@ -285,8 +285,8 @@ struct JoinAcceptedWire {
   /// The parameters the client must predict with, so its numbers (the stamina
   /// rules among them) are the server's.
   ParametersWire parameters{};
-  /// The joining player's own character, by its path relative to `authoring/`
-  /// (see JoinRequestWire::character); at most kMaxCharacterPathLength bytes.
+  /// The joining player's own character, by its name in the scenario's manifest
+  /// (see JoinRequestWire::character); at most kMaxCharacterNameLength bytes.
   std::string character;
 
   bool operator==(const JoinAcceptedWire&) const = default;

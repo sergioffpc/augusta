@@ -268,7 +268,7 @@ TEST_F(PackTest, AScriptLargerThanTheLimitIsTooLargeToEncodeAndCorruptToResolve)
 TEST_F(PackTest, EncodesAndResolvesTheCharacterListInOrder) {
   const auto pack_path = MakePackPath("augusta_assets_test_characters.pack");
   const auto keys = GenerateEd25519KeyPair();
-  const std::vector<std::string> characters = {"characters/sniper", "characters/player", "characters/medic"};
+  const std::vector<std::string> characters = {"sniper", "soldier", "medic"};
 
   const auto blob = augusta::assets::EncodeCharactersBlob(characters);
   ASSERT_TRUE(blob.has_value());
@@ -340,7 +340,7 @@ TEST_F(PackTest, EncodesAndResolvesTheSoundsFolder) {
   const auto pack_path = MakePackPath("augusta_assets_test_sounds.pack");
   const auto keys = GenerateEd25519KeyPair();
 
-  const auto blob = augusta::assets::EncodeSoundsBlob("sounds/augusta");
+  const auto blob = augusta::assets::EncodeSoundsBlob("sounds");
   ASSERT_TRUE(blob.has_value());
   const std::vector<augusta::assets::AssetEntry> entries = {
       augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kSounds,
@@ -351,17 +351,17 @@ TEST_F(PackTest, EncodesAndResolvesTheSoundsFolder) {
   auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
   ASSERT_TRUE(pack.has_value());
 
-  EXPECT_EQ(pack->ResolveSoundsPath().value(), "sounds/augusta");
+  EXPECT_EQ(pack->ResolveSoundsPath().value(), "sounds");
 }
 
 // A character's eye is where the local player's camera sits (ADR-0040): a bare
 // point, resolved by path, and only as an eye.
 TEST(CharacterEyePathTest, ACharactersEyeIsTheEyeChildOfItsRootPrim) {
-  EXPECT_EQ(augusta::assets::CharacterEyePath("characters/player"), "characters/player/Character/Eye");
+  EXPECT_EQ(augusta::assets::CharacterEyePath("soldier"), "soldier/Character/Eye");
 }
 
 TEST(CharacterMeshPathTest, ACharactersMeshIsTheVisualChildOfItsRootPrim) {
-  EXPECT_EQ(augusta::assets::CharacterMeshPath("characters/player"), "characters/player/Character/Visual");
+  EXPECT_EQ(augusta::assets::CharacterMeshPath("soldier"), "soldier/Character/Visual");
 }
 
 TEST_F(PackTest, EncodesAndResolvesACharactersEye) {
@@ -372,17 +372,17 @@ TEST_F(PackTest, EncodesAndResolvesACharactersEye) {
   ASSERT_TRUE(blob.has_value());
   const std::vector<augusta::assets::AssetEntry> entries = {
       augusta::assets::AssetEntry{
-          .type = augusta::assets::AssetType::kEye, .path = "characters/player/Character/Eye", .data = *blob},
+          .type = augusta::assets::AssetType::kEye, .path = "soldier/Character/Eye", .data = *blob},
   };
   ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
   auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
   ASSERT_TRUE(pack.has_value());
 
-  const auto eye = pack->ResolveEye("characters/player/Character/Eye");
+  const auto eye = pack->ResolveEye("soldier/Character/Eye");
   ASSERT_TRUE(eye.has_value());
   EXPECT_EQ(eye->position, Vec3(0.0F, 1.6F, 0.1F));
-  EXPECT_EQ(pack->ResolveMesh("characters/player/Character/Eye").error(), augusta::assets::ResolveError::kTypeMismatch);
-  EXPECT_EQ(pack->ResolveEye("characters/medic/Character/Eye").error(), augusta::assets::ResolveError::kNotFound);
+  EXPECT_EQ(pack->ResolveMesh("soldier/Character/Eye").error(), augusta::assets::ResolveError::kTypeMismatch);
+  EXPECT_EQ(pack->ResolveEye("medic/Character/Eye").error(), augusta::assets::ResolveError::kNotFound);
 }
 
 // A character's hitboxes (ADR-0040): each a body part and its geometry, found
@@ -413,9 +413,9 @@ class HitboxPackTest : public PackTest {
 };
 
 TEST_F(HitboxPackTest, AHitboxResolvesToItsBodyPartAndGeometry) {
-  const auto pack = Write({Hitbox("characters/player/Character/Head", augusta::assets::BodyPart::kHead, 1.8F)});
+  const auto pack = Write({Hitbox("soldier/Character/Head", augusta::assets::BodyPart::kHead, 1.8F)});
 
-  const auto hitbox = pack.ResolveHitbox("characters/player/Character/Head");
+  const auto hitbox = pack.ResolveHitbox("soldier/Character/Head");
 
   ASSERT_TRUE(hitbox.has_value());
   EXPECT_EQ(hitbox->part, augusta::assets::BodyPart::kHead);
@@ -426,15 +426,15 @@ TEST_F(HitboxPackTest, AHitboxResolvesToItsBodyPartAndGeometry) {
 
 TEST_F(HitboxPackTest, ACharactersHitboxesResolveTogetherInPathOrderAndNoOtherCharacters) {
   const auto pack = Write({
-      Hitbox("characters/player/Character/Torso", augusta::assets::BodyPart::kTorso, 1.3F),
-      Hitbox("characters/medic/Character/Head", augusta::assets::BodyPart::kHead, 1.7F),
-      Hitbox("characters/player/Character/Head", augusta::assets::BodyPart::kHead, 1.8F),
-      Hitbox("characters/player/Character/Leg", augusta::assets::BodyPart::kLimb, 0.5F),
+      Hitbox("soldier/Character/Torso", augusta::assets::BodyPart::kTorso, 1.3F),
+      Hitbox("medic/Character/Head", augusta::assets::BodyPart::kHead, 1.7F),
+      Hitbox("soldier/Character/Head", augusta::assets::BodyPart::kHead, 1.8F),
+      Hitbox("soldier/Character/Leg", augusta::assets::BodyPart::kLimb, 0.5F),
       // A character whose path the other's is a prefix of is another character.
-      Hitbox("characters/player2/Character/Head", augusta::assets::BodyPart::kHead, 1.9F),
+      Hitbox("soldier2/Character/Head", augusta::assets::BodyPart::kHead, 1.9F),
   });
 
-  const auto hitboxes = pack.ResolveHitboxes("characters/player");
+  const auto hitboxes = pack.ResolveHitboxes("soldier");
 
   ASSERT_TRUE(hitboxes.has_value());
   ASSERT_EQ(hitboxes->size(), 3U);
@@ -443,17 +443,16 @@ TEST_F(HitboxPackTest, ACharactersHitboxesResolveTogetherInPathOrderAndNoOtherCh
   EXPECT_EQ((*hitboxes)[0].mesh.points[0].y, 1.8F);
   EXPECT_EQ((*hitboxes)[1].part, augusta::assets::BodyPart::kLimb);
   EXPECT_EQ((*hitboxes)[2].part, augusta::assets::BodyPart::kTorso);
-  EXPECT_TRUE(pack.ResolveHitboxes("characters/sniper").value().empty());
+  EXPECT_TRUE(pack.ResolveHitboxes("sniper").value().empty());
 }
 
 TEST_F(HitboxPackTest, AHitboxOfAnUnknownBodyPartIsCorrupt) {
-  auto entry = Hitbox("characters/player/Character/Tail", augusta::assets::BodyPart::kLimb, 0.9F);
+  auto entry = Hitbox("soldier/Character/Tail", augusta::assets::BodyPart::kLimb, 0.9F);
   entry.data.front() = std::byte{3};
   const auto pack = Write({entry});
 
-  EXPECT_EQ(pack.ResolveHitbox("characters/player/Character/Tail").error(),
-            augusta::assets::ResolveError::kCorruptBlob);
-  EXPECT_EQ(pack.ResolveHitboxes("characters/player").error(), augusta::assets::ResolveError::kCorruptBlob);
+  EXPECT_EQ(pack.ResolveHitbox("soldier/Character/Tail").error(), augusta::assets::ResolveError::kCorruptBlob);
+  EXPECT_EQ(pack.ResolveHitboxes("soldier").error(), augusta::assets::ResolveError::kCorruptBlob);
 }
 
 TEST(FirstMissingBodyPartTest, NamesTheFirstBodyPartNoHitboxStandsFor) {
@@ -506,7 +505,7 @@ TEST_F(PackTest, APackWithoutTheCharacterListIsAResolveError) {
 
 // kMaxCharacters bounds the character list a pack is read with (ADR-0042).
 TEST_F(PackTest, ACharacterListLongerThanTheLimitIsTooLargeToEncodeAndCorruptToResolve) {
-  const std::vector<std::string> too_many(augusta::assets::kMaxCharacters + 1, "characters/player");
+  const std::vector<std::string> too_many(augusta::assets::kMaxCharacters + 1, "soldier");
   const auto blob = augusta::assets::EncodeCharactersBlob(too_many);
   ASSERT_FALSE(blob.has_value());
   EXPECT_EQ(blob.error(), augusta::assets::EncodeError::kTooLarge);
@@ -514,7 +513,7 @@ TEST_F(PackTest, ACharacterListLongerThanTheLimitIsTooLargeToEncodeAndCorruptToR
   // A hostile pack can still carry one: the reader refuses it too. Built from a
   // one-character blob: its u32 count patched to kMaxCharacters + 1, then its one
   // encoded string repeated that many times.
-  const auto one = augusta::assets::EncodeCharactersBlob(std::vector<std::string>{"characters/player"});
+  const auto one = augusta::assets::EncodeCharactersBlob(std::vector<std::string>{"soldier"});
   ASSERT_TRUE(one.has_value());
   const std::span<const std::byte> count_prefix = std::span(*one).first(sizeof(std::uint32_t));
   const std::span<const std::byte> encoded_string = std::span(*one).subspan(sizeof(std::uint32_t));

@@ -59,7 +59,7 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeEyeBlob(const EyeData& 
 /// (ADR-0031): the text itself, with no framing.
 std::expected<std::vector<std::byte>, EncodeError> EncodeScriptBlob(std::string_view script);
 
-/// Encodes characters, a scenario's character paths in manifest order, into the
+/// Encodes characters, a scenario's character names in manifest order, into the
 /// pack's character-list blob byte layout (ADR-0042): kTooLarge past
 /// kMaxCharacters.
 std::expected<std::vector<std::byte>, EncodeError> EncodeCharactersBlob(std::span<const std::string> characters);

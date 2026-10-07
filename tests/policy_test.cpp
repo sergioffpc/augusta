@@ -84,7 +84,7 @@ Engine WithRules(std::string_view rules) {
 World WithAlice(Engine policy, const Parameters& parameters = Parameters{}) {
   World world(parameters, kTickRate, std::move(policy));
   world.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter,
-                  PlayerIdentity{.session = kAliceSession, .character = "characters/sniper"});
+                  PlayerIdentity{.session = kAliceSession, .character = "sniper"});
   return world;
 }
 
@@ -280,13 +280,13 @@ using augusta::simulation::MatchPlayer;
 std::vector<MatchPlayer> ThreePlayers() {
   return {
       MatchPlayer{.entity = static_cast<EntityId>(11),
-                  .identity = PlayerIdentity{.session = static_cast<SessionId>(4), .character = "characters/sniper"},
+                  .identity = PlayerIdentity{.session = static_cast<SessionId>(4), .character = "sniper"},
                   .character = kCharacter},
       MatchPlayer{.entity = static_cast<EntityId>(12),
-                  .identity = PlayerIdentity{.session = static_cast<SessionId>(5), .character = "characters/player"},
+                  .identity = PlayerIdentity{.session = static_cast<SessionId>(5), .character = "soldier"},
                   .character = kCharacter},
       MatchPlayer{.entity = static_cast<EntityId>(13),
-                  .identity = PlayerIdentity{.session = static_cast<SessionId>(6), .character = "characters/medic"},
+                  .identity = PlayerIdentity{.session = static_cast<SessionId>(6), .character = "medic"},
                   .character = kCharacter},
   };
 }
@@ -335,9 +335,7 @@ TEST_F(PolicyTest, AssignSpawnsIsHandedAReadOnlyViewOfTheMatch) {
   world.StartMatch(ThreePlayers(), kSpawnPoints);
   const std::string log = testing::internal::GetCapturedStdout();
 
-  EXPECT_NE(log.find("count=3 points=3 4/11/characters/sniper 5/12/characters/player 6/13/characters/medic"),
-            std::string::npos)
-      << log;
+  EXPECT_NE(log.find("count=3 points=3 4/11/sniper 5/12/soldier 6/13/medic"), std::string::npos) << log;
 }
 
 TEST_F(PolicyTest, WithoutAnAssignSpawnsHookPlayersTakeTheSpawnPointsInOrderSilently) {
@@ -469,7 +467,7 @@ std::vector<MatchPlayer> Players(std::size_t count) {
   for (std::size_t i = 1; i <= count; ++i) {
     players.push_back(
         MatchPlayer{.entity = static_cast<EntityId>(100 + i),
-                    .identity = PlayerIdentity{.session = static_cast<SessionId>(i), .character = "characters/player"},
+                    .identity = PlayerIdentity{.session = static_cast<SessionId>(i), .character = "soldier"},
                     .character = kCharacter});
   }
   return players;
@@ -552,7 +550,7 @@ TEST_F(PolicyTest, OnceOnTickHasEndedTheMatchItIsNotCalledAgainUntilTheNextMatch
 
   world.EndMatch();
   world.AddPlayer(kBob, Vec3(0.0F, 0.0F, 0.0F), kCharacter,
-                  PlayerIdentity{.session = kBobSession, .character = "characters/player"});
+                  PlayerIdentity{.session = kBobSession, .character = "soldier"});
   const TickResult next = world.Tick({}, kTick);
   ASSERT_TRUE(MatchEndOf(next).has_value());
   EXPECT_EQ(MatchEndOf(next)->winner, kBobSession);
@@ -583,14 +581,14 @@ TEST_F(PolicyTest, OnTickSeesTheTickThePlayerCountAndEveryPlayerInTheMatch) {
   )"),
                           parameters);
   world.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter,
-                  PlayerIdentity{.session = kBobSession, .character = "characters/player"});
+                  PlayerIdentity{.session = kBobSession, .character = "soldier"});
 
   const std::string log = LogOfTicks(world, 1);
 
   EXPECT_NE(log.find("tick=1 player_count=2"
-                     " [session=11 entity=1 character=characters/sniper alive=true health=75 killed=false"
+                     " [session=11 entity=1 character=sniper alive=true health=75 killed=false"
                      " killer=nil]"
-                     " [session=12 entity=2 character=characters/player alive=true health=75 killed=false"
+                     " [session=12 entity=2 character=soldier alive=true health=75 killed=false"
                      " killer=nil]"),
             std::string::npos)
       << log;
@@ -603,7 +601,7 @@ TEST_F(PolicyTest, APlayerWhoLeftTheMatchIsAbsentFromWhatOnTickSees) {
     end
   )"));
   world.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter,
-                  PlayerIdentity{.session = kBobSession, .character = "characters/player"});
+                  PlayerIdentity{.session = kBobSession, .character = "soldier"});
   ASSERT_FALSE(MatchEndOf(world.Tick({}, kTick)).has_value());
 
   world.RemovePlayer(kAlice);
@@ -666,9 +664,9 @@ World Duel(std::string_view rules) {
   World world(parameters, kTickRate, WithRules(rules));
   EXPECT_TRUE(world.AddCollisionMesh(Floor()).has_value());
   world.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), Broad(),
-                  PlayerIdentity{.session = kAliceSession, .character = "characters/player"});
+                  PlayerIdentity{.session = kAliceSession, .character = "soldier"});
   world.AddPlayer(kBob, Vec3(0.0F, 0.5F, -10.0F), Broad(),
-                  PlayerIdentity{.session = kBobSession, .character = "characters/player"});
+                  PlayerIdentity{.session = kBobSession, .character = "soldier"});
   for (int i = 0; i < 30; ++i) {
     world.Tick({}, kTick);
   }
@@ -726,7 +724,7 @@ TEST_F(PolicyTest, EndingTheMatchTakesEveryPlayerAndEveryBulletInFlightOutOfTheW
   parameters.ammo.max_range = 1000.0F;
   World world = WithAlice(Engine{}, parameters);
   world.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter,
-                  PlayerIdentity{.session = kBobSession, .character = "characters/player"});
+                  PlayerIdentity{.session = kBobSession, .character = "soldier"});
   Command fire;
   fire.fire = true;
   fire.pitch = 0.5F;

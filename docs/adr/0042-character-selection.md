@@ -11,26 +11,26 @@ catalogue of ADR-0038.
 mid-match. Each player's character therefore rides in the Lobby updates and the
 Match start message, never in an Authoritative State, and the Join checks gain
 _match in progress_ before _lobby full_. How the choice is made (the client
-config), validated (at join) and named (by its path) is unchanged.
+config), validated (at join) and named (by its name in the manifest) is
+unchanged.
 
 **The choice comes from the client config.** `augustac.yaml` (ADR-0034) gains a
-required `player.character` key naming a character by its path relative to
-`authoring/`, the same address the manifest's `characters` list uses (ADR-0041),
-e.g. `characters/player`. There is no selection screen, so the config is the
-only place a player can state a choice today. (_Superseded by ADR-0043:_ this
-used to say there is no lobby either, since a Match then had no pre-match
-waiting state; a Lobby now comes before every Match, still without a selection
-screen.) A future UI only changes who fills in the value, not the protocol
-beneath it.
+required `player.character` key naming a character by its name, the key the
+manifest's `characters` maps to its stage (ADR-0041), e.g. `soldier`. There is
+no selection screen, so the config is the only place a player can state a choice
+today. (_Superseded by ADR-0043:_ this used to say there is no lobby either,
+since a Match then had no pre-match waiting state; a Lobby now comes before
+every Match, still without a selection screen.) A future UI only changes who
+fills in the value, not the protocol beneath it.
 
 **The server validates it at join and has the final word.** The Join request
-carries the character path next to the engine version. The server admits the
-player only if the path is one of its scenario's characters, and otherwise
+carries the character name next to the engine version. The server admits the
+player only if the name is one of its scenario's characters, and otherwise
 refuses with a new Join refused reason, _unknown character_. Where this check
 falls among the others is stated in ADR-0043. The character is fixed for the
 life of the session: no message changes it after admission.
 
-**Every message names a character by its path.** Join accepted tells the joining
+**Every message names a character by its name.** Join accepted tells the joining
 player its own character, and each player in a Lobby update and in Match start
 carries theirs (ADR-0043), each as the same string the Join request carries, at
 most 64 bytes. These messages are reliable and sent only when the Lobby changes
@@ -46,8 +46,8 @@ against its own. A client told a character its pack does not list cannot draw
 that player and stops, as it does for any character it cannot load.
 
 **The client draws each player as its character.** The client loads the visual
-mesh of each character it meets in the Lobby (ADR-0043), keyed by path and found
-at `<character path>/Character/Visual` (ADR-0040), and the renderer draws each
+mesh of each character it meets in the Lobby (ADR-0043), keyed by name and found
+at `<character name>/Character/Visual` (ADR-0040), and the renderer draws each
 remote player with the mesh its character names. This replaces the single fixed
 mesh drawn for everyone, which stood in only while no selection existed.
 

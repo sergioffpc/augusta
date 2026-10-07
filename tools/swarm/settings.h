@@ -30,7 +30,7 @@ struct Settings {
   /// Key `content.public_key` (required): the Ed25519 public key the pack is signed with.
   std::filesystem::path public_key_path;
   /// Key `player.character` (required): the character every Scripted player
-  /// plays, by its path relative to `authoring/`.
+  /// plays, by its name in the scenario's manifest.
   std::string character;
   /// Key `network.server_address`: the server to connect to.
   std::string server_address{config::kDefaultServerAddress};

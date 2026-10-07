@@ -46,11 +46,11 @@ TEST_F(CookedPackTest, TheClientPackResolvesTheExampleScenariosContent) {
   EXPECT_TRUE(client_->ResolveMesh("Root/Floor/Visual").has_value());
   EXPECT_TRUE(client_->ResolveCollision("Root/Floor/Collider").has_value());
   EXPECT_TRUE(client_->ResolveSpawnPoint("Root/Spawn").has_value());
-  EXPECT_TRUE(client_->ResolveMesh("characters/player/Character/Visual").has_value());
+  EXPECT_TRUE(client_->ResolveMesh("soldier/Character/Visual").has_value());
 
   const auto characters = client_->ResolveCharacters();
   ASSERT_TRUE(characters.has_value());
-  EXPECT_EQ(*characters, std::vector<std::string>{"characters/player"});
+  EXPECT_EQ(*characters, std::vector<std::string>{"soldier"});
 }
 
 TEST_F(CookedPackTest, TheServerPackHoldsNoVisualContentAndNamesItsClientPack) {
@@ -80,7 +80,7 @@ TEST_F(CookedPackTest, TheServerPackHoldsTheExamplesRulesAndTheyLoad) {
 // packs hold the example character's eye.
 TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersEye) {
   for (const Pack* pack : {&*client_, &*server_}) {
-    const auto eye = pack->ResolveEye(augusta::assets::CharacterEyePath("characters/player"));
+    const auto eye = pack->ResolveEye(augusta::assets::CharacterEyePath("soldier"));
     ASSERT_TRUE(eye.has_value());
     EXPECT_FLOAT_EQ(eye->position.y, 1.7F);
   }
@@ -90,7 +90,7 @@ TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersEye) {
 // so both packs hold the example character's hitboxes, one or more per body part.
 TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersHitboxesForEveryBodyPart) {
   for (const Pack* pack : {&*client_, &*server_}) {
-    const auto hitboxes = pack->ResolveHitboxes("characters/player");
+    const auto hitboxes = pack->ResolveHitboxes("soldier");
     ASSERT_TRUE(hitboxes.has_value());
     EXPECT_EQ(hitboxes->size(), 6U);
     EXPECT_EQ(augusta::assets::FirstMissingBodyPart(*hitboxes), std::nullopt);

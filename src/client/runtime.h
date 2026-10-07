@@ -34,7 +34,7 @@ struct RuntimeConfig {
   input::Config input;
   /// The dedicated server to connect to (US-01).
   networking::Endpoint server;
-  /// The character to ask to play, by its path relative to `authoring/` (ADR-0042).
+  /// The character to ask to play, by its name in the scenario's manifest (ADR-0042).
   std::string character;
   /// The hash of the client pack loaded, which the server checks is the one
   /// cooked with its own.

@@ -34,9 +34,9 @@ def manifest(**overrides):
     """
     entries = {
         "map": "maps/test.usda",
-        "characters": ["characters/player.usda"],
-        "sounds": {cue: f"sounds/test/{cue}.wav" for cue in CUES},
-        "scripts": {"parameters": "scripts/parameters/default.lua"},
+        "characters": {"soldier": "characters/soldier.usda"},
+        "sounds": {cue: f"sounds/{cue}.wav" for cue in CUES},
+        "scripts": {"parameters": "scripts/parameters/rules_of_engagement.lua"},
     }
     entries.update(overrides)
     return {key: value for key, value in entries.items() if value is not None}
@@ -49,13 +49,13 @@ def make_scenario(root, entries):
     a rules script, and the scenario's manifest is entries (None writes none).
     """
     authoring = root / "authoring"
-    for stage in ("maps/test.usda", "characters/player.usda"):
+    for stage in ("maps/test.usda", "characters/soldier.usda"):
         (authoring / stage).parent.mkdir(parents=True, exist_ok=True)
         (authoring / stage).write_text("#usda 1.0\n")
     for cue in CUES:
-        write_wav(authoring / "sounds" / "test" / f"{cue}.wav", MONO_FRAMES)
+        write_wav(authoring / "sounds" / f"{cue}.wav", MONO_FRAMES)
     for script, text in (
-        ("parameters/default.lua", "return {}"),
+        ("parameters/rules_of_engagement.lua", "return {}"),
         ("rules/round.lua", "function on_tick() end"),
     ):
         (authoring / "scripts" / script).parent.mkdir(
@@ -65,21 +65,19 @@ def make_scenario(root, entries):
     (authoring / "scenarios").mkdir(parents=True)
     if entries is not None:
         (authoring / "scenarios" / "test.yaml").write_text(
-            yaml.safe_dump(entries)
+            yaml.safe_dump(entries, sort_keys=False)
         )
     return root
 
 
 def test_the_example_scenario_resolves():
-    scenario = resolve_scenario(EXAMPLES_ROOT, "augusta")
+    scenario = resolve_scenario(EXAMPLES_ROOT, "firebase")
 
     assert (
         scenario.map_stage_path
-        == EXAMPLES_ROOT / "authoring" / "maps" / "augusta.usda"
+        == EXAMPLES_ROOT / "authoring" / "maps" / "firebase.usda"
     )
-    assert [character.path for character in scenario.characters] == [
-        "characters/player"
-    ]
+    assert [character.name for character in scenario.characters] == ["soldier"]
     assert [path for path, _ in scenario.scripts] == [
         "parameters.lua",
         "rules.lua",
@@ -87,24 +85,60 @@ def test_the_example_scenario_resolves():
     assert [cue for cue, _ in scenario.sounds.cues] == CUES
 
 
-def test_a_character_is_named_by_its_stage_path_without_the_extension(tmp_path):
+def test_a_character_is_named_by_its_key(tmp_path):
     root = make_scenario(tmp_path, manifest())
 
     scenario = resolve_scenario(root, "test")
 
-    assert [character.path for character in scenario.characters] == [
-        "characters/player"
-    ]
+    assert [character.name for character in scenario.characters] == ["soldier"]
     assert (
         scenario.characters[0].stage_path
-        == root / "authoring" / "characters" / "player.usda"
+        == root / "authoring" / "characters" / "soldier.usda"
     )
+
+
+def test_characters_keep_their_manifest_order(tmp_path):
+    characters = {
+        "sniper": "characters/soldier.usda",
+        "medic": "characters/soldier.usda",
+    }
+    root = make_scenario(tmp_path, manifest(characters=characters))
+
+    scenario = resolve_scenario(root, "test")
+
+    assert [character.name for character in scenario.characters] == [
+        "sniper",
+        "medic",
+    ]
+
+
+def test_characters_as_a_list_are_refused(tmp_path):
+    root = make_scenario(
+        tmp_path, manifest(characters=["characters/soldier.usda"])
+    )
+
+    with pytest.raises(ScenarioError, match="must map each character"):
+        resolve_scenario(root, "test")
+
+
+@pytest.mark.parametrize(
+    "name", ["Soldier", "1st", "_soldier", "characters/soldier", "", 7]
+)
+def test_a_character_name_that_is_not_one_lowercase_word_is_refused(
+    tmp_path, name
+):
+    root = make_scenario(
+        tmp_path, manifest(characters={name: "characters/soldier.usda"})
+    )
+
+    with pytest.raises(ScenarioError, match="character name"):
+        resolve_scenario(root, "test")
 
 
 def test_each_script_is_packed_under_its_role_in_path_order(tmp_path):
     scripts = {
         "rules": "scripts/rules/round.lua",
-        "parameters": "scripts/parameters/default.lua",
+        "parameters": "scripts/parameters/rules_of_engagement.lua",
     }
     root = make_scenario(tmp_path, manifest(scripts=scripts))
 
@@ -146,7 +180,7 @@ def test_a_scenario_without_scripts_is_refused(tmp_path):
 
 def test_an_unknown_script_role_is_refused(tmp_path):
     scripts = {
-        "parameters": "scripts/parameters/default.lua",
+        "parameters": "scripts/parameters/rules_of_engagement.lua",
         "behaviours": "scripts/rules/round.lua",
     }
     root = make_scenario(tmp_path, manifest(scripts=scripts))
@@ -183,7 +217,7 @@ def test_a_map_that_names_a_folder_is_refused(tmp_path):
 
 def test_a_character_that_is_not_a_usd_stage_is_refused(tmp_path):
     root = make_scenario(
-        tmp_path, manifest(characters=["sounds/test/death.wav"])
+        tmp_path, manifest(characters={"soldier": "sounds/death.wav"})
     )
 
     with pytest.raises(ScenarioError, match="not a USD stage"):
@@ -193,7 +227,12 @@ def test_a_character_that_is_not_a_usd_stage_is_refused(tmp_path):
 def test_more_characters_than_an_index_can_name_are_refused(tmp_path):
     root = make_scenario(
         tmp_path,
-        manifest(characters=["characters/player.usda"] * (MAX_CHARACTERS + 1)),
+        manifest(
+            characters={
+                f"soldier{i}": "characters/soldier.usda"
+                for i in range(MAX_CHARACTERS + 1)
+            }
+        ),
     )
 
     with pytest.raises(ScenarioError, match="at most"):
@@ -215,7 +254,7 @@ def test_each_cue_resolves_to_its_sound_in_catalogue_order(tmp_path):
 
 
 def test_one_file_may_be_the_sound_of_several_cues(tmp_path):
-    sounds = {cue: "sounds/test/death.wav" for cue in CUES}
+    sounds = {cue: "sounds/death.wav" for cue in CUES}
     root = make_scenario(tmp_path, manifest(sounds=sounds))
 
     scenario = resolve_scenario(root, "test")
@@ -231,9 +270,7 @@ def test_a_scenario_without_sounds_is_refused(tmp_path):
 
 
 def test_a_scenario_missing_a_cue_is_refused_naming_the_cue(tmp_path):
-    sounds = {
-        cue: f"sounds/test/{cue}.wav" for cue in CUES if cue != "hit_taken"
-    }
+    sounds = {cue: f"sounds/{cue}.wav" for cue in CUES if cue != "hit_taken"}
     root = make_scenario(tmp_path, manifest(sounds=sounds))
 
     with pytest.raises(ScenarioError, match="hit_taken"):
@@ -241,8 +278,8 @@ def test_a_scenario_missing_a_cue_is_refused_naming_the_cue(tmp_path):
 
 
 def test_an_unknown_cue_is_refused_naming_it(tmp_path):
-    sounds = {cue: f"sounds/test/{cue}.wav" for cue in CUES} | {
-        "footstep": "sounds/test/death.wav"
+    sounds = {cue: f"sounds/{cue}.wav" for cue in CUES} | {
+        "footstep": "sounds/death.wav"
     }
     root = make_scenario(tmp_path, manifest(sounds=sounds))
 
@@ -253,7 +290,7 @@ def test_an_unknown_cue_is_refused_naming_it(tmp_path):
 def test_a_stereo_sound_is_refused_naming_the_file(tmp_path):
     root = make_scenario(tmp_path, manifest())
     write_wav(
-        root / "authoring" / "sounds" / "test" / "death.wav",
+        root / "authoring" / "sounds" / "death.wav",
         MONO_FRAMES,
         channels=2,
     )
@@ -264,7 +301,7 @@ def test_a_stereo_sound_is_refused_naming_the_file(tmp_path):
 
 def test_a_sound_that_is_not_pcm_is_refused_naming_the_file(tmp_path):
     root = make_scenario(tmp_path, manifest())
-    write_float_wav(root / "authoring" / "sounds" / "test" / "match_won.wav")
+    write_float_wav(root / "authoring" / "sounds" / "match_won.wav")
 
     with pytest.raises(ScenarioError, match=r"match_won\.wav.*PCM"):
         resolve_scenario(root, "test")
@@ -272,7 +309,7 @@ def test_a_sound_that_is_not_pcm_is_refused_naming_the_file(tmp_path):
 
 def test_a_file_that_is_not_a_wav_is_refused_naming_it(tmp_path):
     root = make_scenario(tmp_path, manifest())
-    (root / "authoring" / "sounds" / "test" / "gunshot.wav").write_bytes(
+    (root / "authoring" / "sounds" / "gunshot.wav").write_bytes(
         b"not a wav file"
     )
 

@@ -20,7 +20,7 @@ def test_the_example_scenario_cooks_into_the_golden_packs(tmp_path):
 
     status = cli.main(
         [
-            "augusta",
+            "firebase",
             "--assets-root",
             str(EXAMPLES_ROOT),
             "--signing-key",

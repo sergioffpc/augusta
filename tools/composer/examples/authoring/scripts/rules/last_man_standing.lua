@@ -1,4 +1,4 @@
--- Last player standing: a scenario's rules (ADR-0022), the Game policy that
+-- Last man standing: a scenario's rules (ADR-0022), the Game policy that
 -- decides how the mechanism is used - who spawns where, and when the Match is
 -- won - as opposed to a tunable value (scripts/parameters/, ADR-0039) or
 -- mechanism (C++). A scenario's manifest names it as scripts.rules (ADR-0041);

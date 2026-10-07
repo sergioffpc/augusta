@@ -166,7 +166,7 @@ using augusta::protocol::JoinAcceptedWire;
 using augusta::protocol::JoinRefusalWire;
 using augusta::protocol::JoinRefusedWire;
 using augusta::protocol::JoinRequestWire;
-using augusta::protocol::kMaxCharacterPathLength;
+using augusta::protocol::kMaxCharacterNameLength;
 using augusta::protocol::kMaxCommandsPerMessage;
 using augusta::protocol::kMaxEngineVersionLength;
 using augusta::protocol::kMaxPlayers;
@@ -224,7 +224,7 @@ rc::Gen<StanceWire> Stance() {
 }
 
 // A character, by its path: any bytes up to the longest a message may carry (ADR-0042).
-rc::Gen<std::string> Character() { return UpTo<std::string>(kMaxCharacterPathLength, rc::gen::arbitrary<char>()); }
+rc::Gen<std::string> Character() { return UpTo<std::string>(kMaxCharacterNameLength, rc::gen::arbitrary<char>()); }
 
 template <typename Id>
 rc::Gen<Id> AnyId() {

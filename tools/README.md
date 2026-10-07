@@ -82,16 +82,16 @@ and never overwrites a seeded piece below once it exists at its path.
 
 The script also seeds a small worked example from
 [composer/examples/authoring/](composer/examples/authoring/), piece by piece:
-`authoring/maps/augusta.usda` (a floor, a prop, a spawn point),
-`authoring/characters/player.usda` (ADR-0040), `authoring/sounds/augusta/`
-(placeholder cue sounds, ADR-0020), `authoring/scripts/parameters/default.lua`
-(ADR-0039), `authoring/scripts/rules/last_standing.lua` (ADR-0022), and
-`authoring/scenarios/augusta.yaml` (the manifest composing them, ADR-0041) -
+`authoring/maps/firebase.usda` (a floor, a prop, a spawn point),
+`authoring/characters/soldier.usda` (ADR-0040), `authoring/sounds/` (placeholder
+cue sounds, ADR-0020), `authoring/scripts/parameters/rules_of_engagement.lua`
+(ADR-0039), `authoring/scripts/rules/last_man_standing.lua` (ADR-0022), and
+`authoring/scenarios/firebase.yaml` (the manifest composing them, ADR-0041) -
 committed to this repo so a fresh environment has something to cook straight
 away:
 
 ```powershell
-augusta-pack augusta
+augusta-pack firebase
 ```
 
 `augusta-pack` takes the scenario's bare name (ADR-0041), always resolved as
@@ -146,26 +146,26 @@ and any file can be named by several scenarios:
 scenarios\test_map.yaml                 # the manifest below
 maps\test_map.usda                      # a stage (.usd, .usda, .usdc or .usdz)
 characters\marine.usda                  # a character (ADR-0040)
-sounds\test_map\gunshot.wav             # a mono PCM WAV for each cue (ADR-0020)
+sounds\gunshot.wav                      # a mono PCM WAV for each cue (ADR-0020)
 scripts\parameters\default.lua          # Parameters (ADR-0039)
-scripts\rules\last_standing.lua         # rules: spawns and win condition (ADR-0022)
+scripts\rules\last_man_standing.lua     # rules: spawns and win condition (ADR-0022)
 ```
 
 ```yaml
 # scenarios\test_map.yaml
 map: maps/test_map.usda
 characters:
-  - characters/marine.usda
+  marine: characters/marine.usda              # by name
 sounds:
-  gunshot: sounds/test_map/gunshot.wav
-  hit_marker: sounds/test_map/hit_marker.wav
-  hit_taken: sounds/test_map/hit_taken.wav
-  death: sounds/test_map/death.wav
-  match_won: sounds/test_map/match_won.wav
-  match_lost: sounds/test_map/match_lost.wav
+  gunshot: sounds/gunshot.wav
+  hit_marker: sounds/hit_marker.wav
+  hit_taken: sounds/hit_taken.wav
+  death: sounds/death.wav
+  match_won: sounds/match_won.wav
+  match_lost: sounds/match_lost.wav
 scripts:
   parameters: scripts/parameters/default.lua   # required
-  rules: scripts/rules/last_standing.lua        # optional
+  rules: scripts/rules/last_man_standing.lua    # optional
 ```
 
 ```powershell
@@ -178,13 +178,13 @@ A successful run ends with the paths of the client and server packs it wrote.
 The cooker packs everything the manifest names: the map's stage and every named
 character's stage into both packs, and each script into the **server** pack
 only, at its role's fixed path, `parameters.lua` or `rules.lua`, whatever its
-file is called (ADR-0031). A character's **path** is its stage's path without
-the extension (`characters/marine`): its own prims are addressed
-`<character path>/<prim path>` (e.g. `characters/marine/Character/Visual` -
-ADR-0040), and it is what a client names to play it. A client is sent the values
-a script decides and never receives the script (ADR-0019). The characters'
-paths, in manifest order, go into both packs as the `Characters` entry, the
-table a character index resolves against (ADR-0042); a manifest naming more than
+file is called (ADR-0031). A character's **name** is its key under `characters`
+(`marine`), one lowercase word: its own prims are addressed
+`<character name>/<prim path>` (e.g. `marine/Character/Visual` - ADR-0040), and
+it is what a client names to play it. A client is sent the values a script
+decides and never receives the script (ADR-0019). The characters' names, in
+manifest order, go into both packs as the `Characters` entry, the list a joining
+client's character is checked against (ADR-0042); a manifest naming more than
 255 characters fails the cook. Each cue's sound goes into the **client** pack
 only, as an audio asset addressed `sounds/<cue>` (e.g. `sounds/gunshot`), with
 the prefix `sounds` as the `Sounds` entry the client finds them by (ADR-0020,
@@ -194,21 +194,22 @@ goes into both packs as that point alone (ADR-0040). It is an error if the
 manifest is missing, if it holds a key, cue or script role the cooker does not
 know, if a file it names is missing or is not what its key needs (the map and
 characters a USD stage, a sound a mono PCM WAV - the error names the file), if a
+character's name is not one lowercase word or is a root prim of the map, if a
 character has no `Character/Eye`, if a cue has no sound (the error names the
 cue), or if there is no `parameters` script: the server reads its Parameters out
 of its pack at startup, so that is found here rather than when a server starts
 on the pack.
 
 By default, packs are written under `<assets-root>/packs`, keyed by the
-scenario's name alone, not its `authoring/scenarios/` position (`augusta` ->
-`packs/augusta/client.pack`, `packs/augusta/server.pack`). Pass
+scenario's name alone, not its `authoring/scenarios/` position (`firebase` ->
+`packs/firebase/client.pack`, `packs/firebase/server.pack`). Pass
 `--client-output-pack`/`--server-output-pack` to put them somewhere else.
 Scripts are part of the signed pack: to change a value, edit the file and cook
 again.
 
 The cooker's geometry reader classifies `UsdGeomMesh`, `UsdGeomCube`, and
 `UsdGeomCapsule` (ADR-0032/ADR-0041) - a character authored as any of the three,
-like `composer/examples/authoring/characters/player.usda`, cooks into real
+like `composer/examples/authoring/characters/soldier.usda`, cooks into real
 mesh/collision entries.
 
 #### `augusta-pack` reference
@@ -374,25 +375,25 @@ to stderr and exits `1`.
 
 ### Layout
 
-| Path                                 | Role                                                                                                                                                                                                                                                                                                                                  |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pack/src/pack/cli.py`               | `augusta-pack` entry point                                                                                                                                                                                                                                                                                                            |
-| `pack/src/pack/scenario.py`          | Scenario folder resolution (stage, `*.lua` scripts, cue sounds)                                                                                                                                                                                                                                                                       |
-| `pack/src/pack/sounds.py`            | The cue catalogue and the mono PCM WAV reader                                                                                                                                                                                                                                                                                         |
-| `pack/src/pack/optimize.py`          | usd-optimize step                                                                                                                                                                                                                                                                                                                     |
-| `pack/src/pack/validate.py`          | usd-validation-nvidia step                                                                                                                                                                                                                                                                                                            |
-| `pack/src/pack/cook.py`              | Stage walk and asset conversion                                                                                                                                                                                                                                                                                                       |
-| `pack/src/pack/pack.py`, `wire.py`   | Pack wire format, hashing, signing                                                                                                                                                                                                                                                                                                    |
-| `pack/src/pack/keys.py`              | `augusta-keygen` and key file I/O                                                                                                                                                                                                                                                                                                     |
-| `pack/src/pack/pack_cli.py`          | `augusta-inspect` and `augusta-verify` entry points                                                                                                                                                                                                                                                                                   |
-| `pack/src/pack/publish.py`           | `augusta-publish` entry point                                                                                                                                                                                                                                                                                                         |
-| `pack/src/pack/reader.py`            | Pack container parsing and verification (the read side of `pack.py`)                                                                                                                                                                                                                                                                  |
-| `pack/src/pack/assets_root.py`       | Assets-root inference shared by the entry points                                                                                                                                                                                                                                                                                      |
-| `pack/cpp/`                          | Standalone CMake/vcpkg project for the two native modules. It builds straight into `pack/src/pack/`.                                                                                                                                                                                                                                  |
-| `composer/`                          | Composer bootstrap, playback file that scaffolds the app, and `augusta-composer.ps1` (launches it)                                                                                                                                                                                                                                    |
-| `pack/tests/`                        | pytest suite and the USD fixtures it cooks (see Running the tests)                                                                                                                                                                                                                                                                    |
-| `composer/examples/authoring/`       | A committed `<assets-root>/authoring/` sample the pack bootstrap seeds into a fresh assets root: `maps/augusta.usda` (ADR-0015), `characters/player.usda` (ADR-0040), `sounds/augusta/` (placeholder cue sounds, ADR-0020), `scripts/` (Parameters and rules, ADR-0039, ADR-0022), `scenarios/augusta.yaml` composing them (ADR-0041) |
-| `pack/scripts/bootstrap-windows.ps1` | Builds the pack assets root                                                                                                                                                                                                                                                                                                           |
+| Path                                 | Role                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pack/src/pack/cli.py`               | `augusta-pack` entry point                                                                                                                                                                                                                                                                                                       |
+| `pack/src/pack/scenario.py`          | Scenario folder resolution (stage, `*.lua` scripts, cue sounds)                                                                                                                                                                                                                                                                  |
+| `pack/src/pack/sounds.py`            | The cue catalogue and the mono PCM WAV reader                                                                                                                                                                                                                                                                                    |
+| `pack/src/pack/optimize.py`          | usd-optimize step                                                                                                                                                                                                                                                                                                                |
+| `pack/src/pack/validate.py`          | usd-validation-nvidia step                                                                                                                                                                                                                                                                                                       |
+| `pack/src/pack/cook.py`              | Stage walk and asset conversion                                                                                                                                                                                                                                                                                                  |
+| `pack/src/pack/pack.py`, `wire.py`   | Pack wire format, hashing, signing                                                                                                                                                                                                                                                                                               |
+| `pack/src/pack/keys.py`              | `augusta-keygen` and key file I/O                                                                                                                                                                                                                                                                                                |
+| `pack/src/pack/pack_cli.py`          | `augusta-inspect` and `augusta-verify` entry points                                                                                                                                                                                                                                                                              |
+| `pack/src/pack/publish.py`           | `augusta-publish` entry point                                                                                                                                                                                                                                                                                                    |
+| `pack/src/pack/reader.py`            | Pack container parsing and verification (the read side of `pack.py`)                                                                                                                                                                                                                                                             |
+| `pack/src/pack/assets_root.py`       | Assets-root inference shared by the entry points                                                                                                                                                                                                                                                                                 |
+| `pack/cpp/`                          | Standalone CMake/vcpkg project for the two native modules. It builds straight into `pack/src/pack/`.                                                                                                                                                                                                                             |
+| `composer/`                          | Composer bootstrap, playback file that scaffolds the app, and `augusta-composer.ps1` (launches it)                                                                                                                                                                                                                               |
+| `pack/tests/`                        | pytest suite and the USD fixtures it cooks (see Running the tests)                                                                                                                                                                                                                                                               |
+| `composer/examples/authoring/`       | A committed `<assets-root>/authoring/` sample the pack bootstrap seeds into a fresh assets root: `maps/firebase.usda` (ADR-0015), `characters/soldier.usda` (ADR-0040), `sounds/` (placeholder cue sounds, ADR-0020), `scripts/` (Parameters and rules, ADR-0039, ADR-0022), `scenarios/firebase.yaml` composing them (ADR-0041) |
+| `pack/scripts/bootstrap-windows.ps1` | Builds the pack assets root                                                                                                                                                                                                                                                                                                      |
 
 ### Rebuilding the native modules
 
@@ -440,7 +441,7 @@ regenerate them from `tools/pack` and commit the result:
 
 ```powershell
 $golden = "..\..\tests\fixtures\example-packs"
-uv run augusta-pack augusta --assets-root ..\composer\examples --signing-key $golden\test.key `
+uv run augusta-pack firebase --assets-root ..\composer\examples --signing-key $golden\test.key `
   --client-output-pack $golden\client.pack --server-output-pack $golden\server.pack
 ```
 

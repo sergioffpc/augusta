@@ -159,8 +159,8 @@ class Reader {
     return ToEnum(ReadU8(), first, last);
   }
 
-  // A character, by its path relative to `authoring/` (ADR-0042).
-  std::string ReadCharacter() { return ReadString(kMaxCharacterPathLength); }
+  // A character, by its name in the scenario's manifest (ADR-0042).
+  std::string ReadCharacter() { return ReadString(kMaxCharacterNameLength); }
 
   // value as an enumerator between first and last, which must be consecutive.
   template <typename Enum>
@@ -528,7 +528,7 @@ void WriteParameters(BytesWire& out, const ParametersWire& parameters) {
 }
 
 void WriteMatchPlayer(BytesWire& out, const MatchPlayerWire& player) {
-  assert(player.character.size() <= kMaxCharacterPathLength);
+  assert(player.character.size() <= kMaxCharacterNameLength);
   WriteU32(out, static_cast<std::uint32_t>(player.session));
   WriteU32(out, static_cast<std::uint32_t>(player.entity));
   WriteString(out, player.character);
@@ -557,7 +557,7 @@ struct Encoder {
 
   void operator()(const JoinRequestWire& message) const {
     assert(message.engine_version.size() <= kMaxEngineVersionLength);
-    assert(message.character.size() <= kMaxCharacterPathLength);
+    assert(message.character.size() <= kMaxCharacterNameLength);
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kJoinRequest));
     WriteString(out, message.engine_version);
     out.insert(out.end(), message.client_pack.begin(), message.client_pack.end());
@@ -565,7 +565,7 @@ struct Encoder {
   }
 
   void operator()(const JoinAcceptedWire& message) const {
-    assert(message.character.size() <= kMaxCharacterPathLength);
+    assert(message.character.size() <= kMaxCharacterNameLength);
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kJoinAccepted));
     WriteU32(out, static_cast<std::uint32_t>(message.session));
     WriteU8(out, message.tick_rate_hz);
@@ -603,7 +603,7 @@ struct Encoder {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kLobby));
     WriteU32(out, message.version);
     WriteList(out, message.roster, kMaxPlayers, [](BytesWire& entry_out, const RosterEntryWire& entry) {
-      assert(entry.character.size() <= kMaxCharacterPathLength);
+      assert(entry.character.size() <= kMaxCharacterNameLength);
       WriteU32(entry_out, static_cast<std::uint32_t>(entry.session));
       WriteString(entry_out, entry.character);
     });

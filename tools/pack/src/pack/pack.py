@@ -272,9 +272,9 @@ def encode_sounds_blob(sounds_prefix: str) -> bytes:
 
 
 def encode_characters_blob(characters: list[str]) -> bytes:
-    """The characters' paths: a u32 count, then each path in manifest order.
+    """The characters' names: a u32 count, then each name in manifest order.
 
-    Each is relative to authoring/, as a length-prefixed string (ADR-0042).
+    Each is a length-prefixed string (ADR-0042).
     """
     if len(characters) > MAX_CHARACTERS:
         raise EncodeError(

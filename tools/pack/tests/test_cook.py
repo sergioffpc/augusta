@@ -230,7 +230,7 @@ def test_cue_sounds_go_into_the_client_pack_only_under_the_sounds_prefix(
 
 def test_more_characters_than_an_index_can_name_are_refused(tmp_path, key_pair):
     characters = [
-        (f"characters/c{i}", FIXTURES_DIR / "mesh_fixture.usda")
+        (f"c{i}", FIXTURES_DIR / "mesh_fixture.usda")
         for i in range(pack.MAX_CHARACTERS + 1)
     ]
 
@@ -244,6 +244,22 @@ def test_more_characters_than_an_index_can_name_are_refused(tmp_path, key_pair):
         )
 
     assert raised.value.code == "characters_encode_failed"
+
+
+def test_a_character_named_as_a_root_prim_of_the_map_is_refused(
+    tmp_path, key_pair
+):
+    with pytest.raises(CookError) as raised:
+        cook_scenario(
+            FIXTURES_DIR / "mesh_fixture.usda",
+            [("TestMesh", FIXTURES_DIR / "mesh_fixture.usda")],
+            tmp_path / "client.pack",
+            tmp_path / "server.pack",
+            key_pair.private_key,
+        )
+
+    assert raised.value.code == "character_name_collides"
+    assert raised.value.prim_path == "TestMesh"
 
 
 # A character stage (ADR-0040): the Eye every character has, and the given
@@ -293,7 +309,7 @@ def _hitbox_prim(name, body_part, height):
 
 
 def cook_character(hitboxes, tmp_path, key_pair):
-    """Cooks a map with one character, characters/test, holding hitboxes.
+    """Cooks a map with one character, named test, holding hitboxes.
 
     Returns:
         (client, server) contents.
@@ -309,7 +325,7 @@ def cook_character(hitboxes, tmp_path, key_pair):
     server_path = tmp_path / "server.pack"
     cook_scenario(
         FIXTURES_DIR / "mesh_fixture.usda",
-        [("characters/test", stage_path)],
+        [("test", stage_path)],
         client_path,
         server_path,
         key_pair.private_key,
@@ -326,10 +342,10 @@ def test_a_characters_hitboxes_go_into_both_packs_with_their_body_parts(
     client, server = cook_character(_EVERY_BODY_PART, tmp_path, key_pair)
 
     expected = {
-        "characters/test/Character/Head": pack.BODY_PART_HEAD,
-        "characters/test/Character/Torso": pack.BODY_PART_TORSO,
-        "characters/test/Character/LeftLeg": pack.BODY_PART_LIMB,
-        "characters/test/Character/RightLeg": pack.BODY_PART_LIMB,
+        "test/Character/Head": pack.BODY_PART_HEAD,
+        "test/Character/Torso": pack.BODY_PART_TORSO,
+        "test/Character/LeftLeg": pack.BODY_PART_LIMB,
+        "test/Character/RightLeg": pack.BODY_PART_LIMB,
     }
     for contents in (client, server):
         assert contents.paths_of_type(pack.ASSET_TYPE_HITBOX) == set(expected)
@@ -342,17 +358,17 @@ def test_a_characters_eye_goes_into_both_packs(tmp_path, key_pair):
 
     for contents in (client, server):
         assert contents.paths_of_type(pack.ASSET_TYPE_EYE) == {
-            "characters/test/Character/Eye"
+            "test/Character/Eye"
         }
         assert struct.unpack(
-            "<3f", contents.blob("characters/test/Character/Eye")
+            "<3f", contents.blob("test/Character/Eye")
         ) == pytest.approx((0, 1.7, 0))
 
 
 def test_a_characters_hitbox_is_placed_relative_to_its_feet(tmp_path, key_pair):
     client, _ = cook_character(_EVERY_BODY_PART, tmp_path, key_pair)
 
-    _, points, _ = decode_hitbox(client.blob("characters/test/Character/Head"))
+    _, points, _ = decode_hitbox(client.blob("test/Character/Head"))
     assert min(y for _, y, _ in points) == pytest.approx(1.7)
     assert max(y for _, y, _ in points) == pytest.approx(1.9)
 
@@ -379,7 +395,7 @@ def test_a_hitbox_that_names_no_body_part_is_refused(tmp_path, key_pair):
         cook_character(hitboxes, tmp_path, key_pair)
 
     assert raised.value.code == "hitbox_body_part_missing"
-    assert raised.value.prim_path == "characters/test/Character/Arm"
+    assert raised.value.prim_path == "test/Character/Arm"
 
 
 def test_a_hitbox_whose_body_part_is_unknown_is_refused(tmp_path, key_pair):
@@ -389,5 +405,5 @@ def test_a_hitbox_whose_body_part_is_unknown_is_refused(tmp_path, key_pair):
         cook_character(hitboxes, tmp_path, key_pair)
 
     assert raised.value.code == "hitbox_body_part_unknown"
-    assert raised.value.prim_path == "characters/test/Character/Tail"
+    assert raised.value.prim_path == "test/Character/Tail"
     assert "tail" in raised.value.message

@@ -663,8 +663,8 @@ std::expected<HitboxData, ResolveError> Pack::ResolveHitbox(std::string_view pat
   return ResolveAsset<HitboxData>(impl_->index, impl_->mapping, path, AssetType::kHitbox, DecodeHitboxBlob);
 }
 
-std::expected<std::vector<HitboxData>, ResolveError> Pack::ResolveHitboxes(std::string_view character_path) const {
-  const std::string prefix = std::string(character_path) + "/";
+std::expected<std::vector<HitboxData>, ResolveError> Pack::ResolveHitboxes(std::string_view character) const {
+  const std::string prefix = std::string(character) + "/";
   std::vector<const IndexEntry*> entries;
   for (const IndexEntry& entry : impl_->index) {
     if (entry.type == AssetType::kHitbox && entry.path.starts_with(prefix)) {

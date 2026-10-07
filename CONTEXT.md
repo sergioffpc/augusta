@@ -186,9 +186,10 @@ conflates policy with mechanism)
 **Rules**: A scenario's Game policy as one Lua script: every hook of its game
 mode, such as who spawns where (`assign_spawns`) and when the Match is won
 (`on_tick`), chosen together because they describe the same mode. The scenario's
-manifest names the script (e.g. `scripts/rules/last_standing.lua`), and it is
-packed as `rules.lua` (ADR-0022, ADR-0041). A scenario may have none. _Avoid_:
-Behaviours, objectives (the two scripts the rules replaced), game mode script
+manifest names the script (e.g. `scripts/rules/last_man_standing.lua`), and it
+is packed as `rules.lua` (ADR-0022, ADR-0041). A scenario may have none.
+_Avoid_: Behaviours, objectives (the two scripts the rules replaced), game mode
+script
 
 **Policy action**: One decision of Game policy as the server receives it: a
 hook's answer read into one of a closed set of C++ types and validated as it is

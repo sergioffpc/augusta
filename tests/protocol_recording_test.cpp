@@ -56,7 +56,7 @@ RecordedTickWire BusyTick() {
       .match_start = {MatchPlayerWire{.spawn = Vec3(1.0F, 0.0F, -2.5F),
                                       .session = SessionIdWire{3},
                                       .entity = EntityIdWire{9},
-                                      .character = "characters/player"}},
+                                      .character = "soldier"}},
       .commands = {RecordedCommandWire{.seen_tick = 0x1'0000'0002ULL,
                                        .command = CommandWire{.direction = Vec3(0.5F, 0.0F, -1.0F),
                                                               .yaw = 0.25F,

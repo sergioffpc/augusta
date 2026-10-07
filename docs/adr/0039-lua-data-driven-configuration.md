@@ -10,12 +10,12 @@ no globals.
 **A scenario chooses its Parameters.** The values change from scenario to
 scenario, so each scenario's manifest names the script it uses
 (`scripts.parameters`, ADR-0041), authored under `authoring/scripts/parameters/`
-(e.g. `scripts/parameters/default.lua`) and shareable between scenarios. The
-cooker is told the scenario's name (ADR-0030) and packs the script into the
-scenario's **server** pack as `parameters.lua` (ADR-0030, ADR-0031), whatever
-its authored file is called. The scripts are therefore signed with the map
-(ADR-0018) and cannot change during a run. A client never receives a script
-(ADR-0019): it is sent the values.
+(e.g. `scripts/parameters/rules_of_engagement.lua`) and shareable between
+scenarios. The cooker is told the scenario's name (ADR-0030) and packs the
+script into the scenario's **server** pack as `parameters.lua` (ADR-0030,
+ADR-0031), whatever its authored file is called. The scripts are therefore
+signed with the map (ADR-0018) and cannot change during a run. A client never
+receives a script (ADR-0019): it is sent the values.
 
 **Where each kind of decision lives.** The YAML files of ADR-0034
 (`augustac.yaml`, `augustad.yaml`) exist to replace command-line arguments:

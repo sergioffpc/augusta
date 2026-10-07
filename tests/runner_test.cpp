@@ -46,7 +46,7 @@ using augusta::server::Scenario;
 constexpr std::uint8_t kTickRate = 60;
 constexpr float kFixedTick = 1.0F / kTickRate;
 constexpr auto kServeDeadline = std::chrono::seconds(10);
-constexpr const char* kCharacter = "characters/player";
+constexpr const char* kCharacter = "soldier";
 // Every player spawns at the origin, so the ground is a little below it.
 constexpr float kGroundHeight = -0.5F;
 

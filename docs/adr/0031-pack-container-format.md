@@ -13,13 +13,13 @@ cooker (ADR-0030) turns the cleaned/validated OpenUSD stage into it.
   stored as its text with no framing, one blob each. Written to the server pack
   only (ADR-0019): a client is sent the values a script decides, never the
   script.
-- Character list (ADR-0042): the manifest's `characters` paths, in manifest
-  order, as one blob at the fixed path `Characters` - a count then each path as
+- Character list (ADR-0042): the manifest's `characters` names, in manifest
+  order, as one blob at the fixed path `Characters` - a count then each name as
   a string, at most 255. Written to both the client and server pack: the server
   checks a join against it, and the client each character it is told about.
 - Character eye (ADR-0040): the origin of a character's `Character/Eye` prim, in
   that character's root space, as three floats and nothing else, one blob at
-  `<character path>/Character/Eye`. Written to both the client and server pack:
+  `<character name>/Character/Eye`. Written to both the client and server pack:
   the client places the local player's camera at it, and the server fires that
   player's Shots from it.
 - Cue sounds (ADR-0020): an audio clip is associated with a client cue, not with
