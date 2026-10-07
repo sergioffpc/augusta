@@ -172,11 +172,14 @@ no self-hosted GitHub Actions runner in this pipeline).
 - **Isolation:** two fixed, long-lived Kubernetes namespaces — `staging` (tracks
   `main`) and `develop` (tracks `develop`). No per-branch/ephemeral namespaces.
 - **Container images:** built in CI, pushed to GitHub Container Registry (GHCR).
-- **Server exposure:** plain Kubernetes `Service` (`NodePort`, port
-  auto-assigned by Kubernetes) — no Agones. Agones solves fleet-scale dynamic
-  allocation, which this project doesn't need (one server instance per scenario
-  per environment, each fixed in Git, ADR-0026); revisit only if
-  matchmaking/dynamic multi-server allocation is ever needed (Beyond v1).
+- **Server exposure:** plain Kubernetes `Service` (`NodePort`) — no Agones.
+  Agones solves fleet-scale dynamic allocation, which this project doesn't need
+  (one server instance per scenario per environment, each fixed in Git,
+  ADR-0026); revisit only if matchmaking/dynamic multi-server allocation is ever
+  needed (Beyond v1). Each server pins its node port, so LAN clients keep one
+  address, from its environment's own range so `develop` and `staging` never
+  collide on the shared node: `develop` 30700-30799, `staging` 30800-30899. The
+  chart refuses a server without a node port in its range.
 - **CD mechanism:** pull-based via Flux, running inside the k3s cluster and
   reconciling each branch's `HelmRelease` from Git — nothing outside the cluster
   needs inbound access to the LAN, and no external PR can trigger execution on

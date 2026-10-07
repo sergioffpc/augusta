@@ -7,7 +7,9 @@ deployed to k3s at all — no CD, ephemeral or otherwise, for these.
 **One server per scenario.** An environment runs one `augustad` server for each
 scenario it serves, and a server serves its scenario's pack and no other: its
 own Deployment of one pod, game Service on its own node port, and metrics
-Service, named `augustad-<scenario>`. The servers are a list in the
+Service, named `augustad-<scenario>`. The node port is pinned, from a range of
+the environment's own (`develop` 30700-30799, `staging` 30800-30899), so the two
+environments never collide on the node. The servers are a list in the
 environment's `HelmRelease` values (`servers`, keyed by scenario name, each
 naming the pack version it runs), so one release per environment still owns them
 all, and adding a scenario is one entry, not one more release.
