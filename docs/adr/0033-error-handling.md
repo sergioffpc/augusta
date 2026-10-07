@@ -19,6 +19,30 @@ tests assert on them, and wording lives in one `Describe…` function per module
 so a message change never breaks a caller. This applies to every
 `std::expected<T, E>`; `E` is not a string.
 
+An operational failure, one that decides what the Client or Server keeps
+running, is described by the shared model in `augusta::failure`: a stable
+`Code`, structured context, and the dependency's message as detail. Each `Code`
+is classified centrally, in one place, into one `Disposition`, the scope it is
+recovered at: `peer` (one message is dropped), `session` (one Session ends),
+`subsystem` (an optional, non-authoritative subsystem stops or degrades
+observably), `runtime` (the runtime stops and joins its workers before releasing
+anything they use) or `process` (the process exits with a failure status). The
+detail is for diagnosis only: recovery branches on the `Code`, never on text,
+and the detail is never sent to a peer. A dependency's exception goes no further
+than the call that converts it into a `Failure` (`failure::Guard`), and the
+boundary that owns the disposition's scope writes the one `ERR` or `CRIT` line
+for it (ADR-0029). Module error types predating the model stay until each domain
+moves onto it; a module may keep its own type for outcomes that are not
+operational failures (a malformed recording, a missing config key) and map it to
+a `Code` at the boundary.
+
+Runtime-boundary tests make dependencies fail through controlled fault injection
+(`failure::Faults`): a runtime asks it at each named site (dependency
+initialization, listener setup, worker creation and execution, transport send
+and receive, recording write and flush, metrics endpoint acceptance) and fails
+the way that dependency does when a test has armed the site. Nothing arms a site
+outside a test, and an unarmed site costs one relaxed atomic load.
+
 ## Considered Options
 
 - **Exceptions everywhere**: rejected — throwing on the simulation tick's hot
