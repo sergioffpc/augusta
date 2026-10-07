@@ -5057,9 +5057,10 @@ TEST_F(ScriptedLobbyTest, ADeathThatArrivesOutsideAMatchIsDropped) {
   EXPECT_FALSE(session_.GetHealth().has_value());
 }
 
-// A reader that took its Server view before the next Match started still takes
-// the last one's final Shot with it, and nothing of the next; the next Match's
-// view takes that Match's own and nothing of the last.
+// A reader still holding the Server view of a Match that has ended takes
+// nothing of the next one, even once it has started and sent its own, and the
+// last one's events nobody took are obsolete by then; the next Match's view
+// takes that Match's own and nothing of the last.
 TEST_F(ScriptedServerTest, AServerViewTakesTheShotsHitsAndDeathsOfItsOwnMatchOnly) {
   const auto send_match_events = [&](augusta::tick::Tick tick) {
     augusta::protocol::ShotWire shot = ShotBy(kScriptedEntity);
@@ -5080,30 +5081,15 @@ TEST_F(ScriptedServerTest, AServerViewTakesTheShotsHitsAndDeathsOfItsOwnMatchOnl
   const std::shared_ptr<const ServerView> next = session_.GetServerView();
   ASSERT_EQ(next->matches_started, ended->matches_started + 1);
 
-  const std::vector<Shot> ended_shots = session_.TakeShots(*ended);
-  ASSERT_EQ(ended_shots.size(), 1U);
-  EXPECT_EQ(ended_shots[0].tick, 1U);
-  EXPECT_EQ(session_.TakeHitConfirmations(*ended).size(), 1U);
-  EXPECT_EQ(session_.TakeDeaths(*ended).size(), 1U);
+  EXPECT_TRUE(session_.TakeShots(*ended).empty());
+  EXPECT_TRUE(session_.TakeHitConfirmations(*ended).empty());
+  EXPECT_TRUE(session_.TakeDeaths(*ended).empty());
 
   const std::vector<Shot> next_shots = session_.TakeShots(*next);
   ASSERT_EQ(next_shots.size(), 1U);
   EXPECT_EQ(next_shots[0].tick, 2U);
   EXPECT_EQ(session_.TakeHitConfirmations(*next).size(), 1U);
   EXPECT_EQ(session_.TakeDeaths(*next).size(), 1U);
-}
-
-// Once a view of a Match has taken its events, an older view takes none of the
-// newer Match's: they are not its Match's.
-TEST_F(ScriptedServerTest, AnOlderServerViewTakesNothingOfANewerMatch) {
-  const std::shared_ptr<const ServerView> first = session_.GetServerView();
-  server_.Send(augusta::protocol::MatchEndWire{});
-  server_.Send(ScriptedServer::StartOfAlone());
-  server_.Send(ShotBy(kScriptedEntity));
-  Settle();
-
-  EXPECT_TRUE(session_.TakeShots(*first).empty());
-  EXPECT_EQ(session_.TakeShots().size(), 1U);
 }
 
 // The Network I/O thread takes in Match after Match, each with its own Shot,
