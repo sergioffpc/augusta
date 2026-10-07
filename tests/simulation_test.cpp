@@ -1,5 +1,6 @@
 #include "augusta/simulation.h"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -1292,6 +1293,38 @@ TEST_F(HitTest, ATargetBehindAWallIsNotHitAndTheWallIs) {
   EXPECT_EQ(Entity(state, kBob).health, kStartingHealth);
 }
 
+// Alice and Bob fire at each other on one tick, from the same Seen time: each
+// round is judged against the other, never against its own shooter.
+// Requirements: US-11
+TEST_F(HitTest, TwoPlayersFiringAtEachOtherOnOneTickEachHitTheOther) {
+  const Command alice = FiringAt(Vec3(0.0F, kTorsoHeight, 0.0F));
+  // Half a turn round, Bob aims back along Alice's line: level and as far.
+  bob_ = alice;
+  bob_.yaw = alice.yaw + std::numbers::pi_v<float>;
+
+  std::vector<Hit> hits = Tick(alice).hits;
+  bob_ = Command{};
+  const std::vector<Hit> later = Wait(6);
+  hits.insert(hits.end(), later.begin(), later.end());
+
+  ASSERT_EQ(hits.size(), 2U);
+  std::ranges::sort(hits, {}, &Hit::shooter);
+  EXPECT_EQ(hits[0].shooter, kAlice);
+  EXPECT_EQ(hits[0].target, kBob);
+  EXPECT_EQ(hits[1].shooter, kBob);
+  EXPECT_EQ(hits[1].target, kAlice);
+}
+
+// The top of Bob's head is the farthest any of his hitboxes reaches from his
+// feet: a round that crosses it, a centimetre below, still strikes it.
+// Requirements: US-11
+TEST_F(HitTest, ARoundThroughTheTopOfTheHeadHitsIt) {
+  const std::vector<Hit> hits = ShootAt(Vec3(0.0F, 1.79F, 0.0F));
+
+  ASSERT_EQ(hits.size(), 1U);
+  EXPECT_EQ(hits[0].part, BodyPart::kHead);
+}
+
 TEST_F(SimulationTest, AStateNamesItsTickFromOne) {
   EXPECT_EQ(world_.Tick({}, kTick).state.tick, 1U);
   EXPECT_EQ(world_.Tick({}, kTick).state.tick, 2U);
@@ -1351,7 +1384,11 @@ class LagCompensationTest : public ::testing::Test {
         {PlayerCommand{.entity = kAlice, .command = command}, PlayerCommand{.entity = kBob, .command = bob_}}, kTick);
     const State& state = result.state;
     for (const auto& entry : state.bodies) {
-      (entry.entity == kBob ? seen_[state.tick] : alice_) = entry.body.position;
+      if (entry.entity == kBob) {
+        seen_[state.tick] = entry.body.position;
+      } else if (entry.entity == kAlice) {
+        alice_ = entry.body.position;
+      }
     }
     last_tick_ = state.tick;
     return result;
@@ -1480,6 +1517,49 @@ TEST_F(LagCompensationTest, ARoundHeldAtTheCapReportsExactlyTheCap) {
 // Requirements: NFR-02
 TEST_F(LagCompensationTest, ATickThatFiresNothingReportsNoShootersDelay) {
   EXPECT_TRUE(TickWith(Command{}).shooters_delays.empty());
+}
+
+// Carol stands a meter right of Alice and fires on the same tick from an older
+// Seen time: each round is judged against Bob where its own Seen time showed him.
+// Requirements: US-11, NFR-02
+TEST_F(LagCompensationTest, RoundsFiredOnOneTickAreEachJudgedAtTheirOwnShootersDelay) {
+  constexpr EntityId kCarol = static_cast<EntityId>(3);
+  world_.AddPlayer(kCarol, alice_ + Vec3(1.0F, 0.5F, 0.0F), Sliver());
+  Vec3 carol;
+  for (int i = 0; i < kSettleTicks; ++i) {
+    for (const auto& entry : Tick(Command{}).bodies) {
+      if (entry.entity == kCarol) {
+        carol = entry.body.position;
+      }
+    }
+  }
+  const augusta::tick::Tick alice_seen = Next() - 2;
+  const augusta::tick::Tick carol_seen = Next() - 10;
+  // Bob walks 5 cm a tick: the two Seen times show him 40 cm apart.
+  ASSERT_GT(BobAt(alice_seen).x - BobAt(carol_seen).x, 0.3F);
+  const auto firing_at = [](const Vec3& eye, const Vec3& feet, augusta::tick::Tick seen) {
+    const Vec3 aim = feet + Vec3(0.0F, kAimHeight, 0.0F) - eye;
+    Command command = Firing();
+    command.yaw = std::atan2(-aim.x, -aim.z);
+    command.pitch = std::asin(aim.y / augusta::math::Length(aim));
+    command.seen_tick = seen;
+    return command;
+  };
+
+  const State state =
+      world_
+          .Tick({PlayerCommand{.entity = kAlice,
+                               .command = firing_at(alice_ + Sliver().eye, BobAt(alice_seen), alice_seen)},
+                 PlayerCommand{.entity = kBob, .command = bob_},
+                 PlayerCommand{.entity = kCarol,
+                               .command = firing_at(carol + Sliver().eye, BobAt(carol_seen), carol_seen)}},
+                kTick)
+          .state;
+
+  ASSERT_EQ(state.hits.size(), 2U);
+  EXPECT_EQ(state.hits[0].target, kBob);
+  EXPECT_EQ(state.hits[1].target, kBob);
+  EXPECT_NE(state.hits[0].shooter, state.hits[1].shooter);
 }
 
 // Bob walks 35 m away: at 10 m a tick, a round crosses his path on its fourth
