@@ -10,17 +10,20 @@ on:
         description: The branch every job checks out and tests.
         required: true
         type: string
-# What every job gets unless it says otherwise: a read of the code, and
-# deleting superseded cache entries (.github/actions/prune-cache).
-permissions:
-  contents: read
-  actions: write
+# No workflow-level permissions: in a called workflow they are also the most
+# any of its jobs may ask for, which would keep benchmarks from pushing and
+# report-failure from writing issues. Each job names its own instead, within
+# what nightly.yml's calling job grants.
 env:
   SCCACHE_GHA_ENABLED: "true"
   NIGHTLY_REF: ${{ inputs.ref }}
 jobs:
   property-tests:
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      # Deleting superseded cache entries (.github/actions/prune-cache).
+      actions: write
     # See ci.yml's server job for why this isn't the NuGet feed.
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
@@ -46,6 +49,10 @@ jobs:
     # Each fuzz target for about 30 minutes (ADR-0013), from the corpus earlier
     # nights grew, kept in the Actions cache rather than the repository.
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      # Deleting superseded cache entries (.github/actions/prune-cache).
+      actions: write
     strategy:
       fail-fast: false
       matrix:
@@ -114,6 +121,10 @@ jobs:
     # threads (ADR-0005). A report fails the test it came from; known false
     # positives are suppressed in tests/tsan.supp, each with its reason.
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      # Deleting superseded cache entries (.github/actions/prune-cache).
+      actions: write
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
@@ -142,6 +153,10 @@ jobs:
     # as hits.
     # Minutes of real time a profile, so not on every pull request.
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      # Deleting superseded cache entries (.github/actions/prune-cache).
+      actions: write
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
@@ -162,6 +177,10 @@ jobs:
     # a report for finding untested deterministic logic, never a gate
     # (ADR-0013), so no percentage fails anything.
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      # Deleting superseded cache entries (.github/actions/prune-cache).
+      actions: write
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
