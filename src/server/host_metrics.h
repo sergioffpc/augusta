@@ -127,6 +127,8 @@ struct HostMetrics final : prometheus::Collectable {
   Histogram shooters_delay;
   /// Rounds whose Shooter's delay the cap held (simulation::kMaxShootersDelay).
   Counter shooters_delay_capped;
+  /// Bullets still flying after the last tick (simulation::State's bullets_in_flight).
+  Gauge bullets_in_flight;
 };
 
 /// The heartbeat's running totals (heartbeat.h), read from metrics' counters:

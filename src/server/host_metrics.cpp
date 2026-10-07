@@ -289,6 +289,8 @@ void AppendCombat(std::vector<MetricFamily>& families, const HostMetrics& metric
   families.push_back(CounterFamily("augustad_shooters_delay_capped_total",
                                    "Rounds whose Shooter's delay was held at the 250 ms cap.",
                                    metrics.shooters_delay_capped));
+  families.push_back(GaugeFamily("augustad_bullets_in_flight", "Bullets still flying after the last tick.",
+                                 metrics.bullets_in_flight));
 }
 
 }  // namespace
