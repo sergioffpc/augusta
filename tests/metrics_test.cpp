@@ -4,15 +4,20 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
 #include <gtest/gtest.h>
+#include <prometheus/collectable.h>
 #include <prometheus/counter.h>
 #include <prometheus/gauge.h>
+#include <prometheus/metric_family.h>
 #include <prometheus/registry.h>
 
 #include "augusta/faults.h"
@@ -33,6 +38,7 @@ using Tcp = asio::ip::tcp;
 
 using augusta::failure::Faults;
 using augusta::failure::Site;
+using augusta::server::AcceptRetryDelay;
 using augusta::server::kLivenessWindow;
 using augusta::server::kMetricsAcceptAttempts;
 using augusta::server::kMetricsFirstAcceptRetry;
@@ -85,6 +91,22 @@ std::size_t Occurrences(std::string_view text, std::string_view needle) {
   }
   return count;
 }
+
+// The longest the endpoint waits in all between its first accept failure in a
+// row and its last, permanent one.
+std::chrono::milliseconds RetryWaits() {
+  std::chrono::milliseconds total{0};
+  for (int failures = 1; failures < kMetricsAcceptAttempts; ++failures) {
+    total += *AcceptRetryDelay(failures);
+  }
+  return total;
+}
+
+// What the server counts, failing to be collected.
+class FailingCollectable : public prometheus::Collectable {
+ public:
+  std::vector<prometheus::MetricFamily> Collect() const override { throw std::runtime_error("collection failed"); }
+};
 
 class MetricsEndpointTest : public ::testing::Test {
  protected:
@@ -197,7 +219,7 @@ TEST_F(MetricsEndpointTest, APeerThatDisconnectsMidRequestDoesNotStopTheEndpoint
 }
 
 TEST_F(MetricsEndpointTest, AnAcceptFailureThatClearsWithinTheAttemptsIsRecoveredFrom) {
-  faults_.Arm(Site::kMetricsAccept, "Too many open files", kMetricsAcceptAttempts - 1);
+  faults_.Arm(Site::kMetricsAccept, "Too many open files", static_cast<std::uint32_t>(kMetricsAcceptAttempts - 1));
   const MetricsEndpoint endpoint(port_, last_tick_end_, {server_metrics_}, &faults_);
 
   // Connected while the acceptor fails: answered once it accepts again.
@@ -206,7 +228,7 @@ TEST_F(MetricsEndpointTest, AnAcceptFailureThatClearsWithinTheAttemptsIsRecovere
 }
 
 TEST_F(MetricsEndpointTest, AnAcceptFailureOnEveryAttemptMakesTheEndpointUnavailableAndClosesItsPort) {
-  faults_.Arm(Site::kMetricsAccept, "Too many open files", kMetricsAcceptAttempts);
+  faults_.Arm(Site::kMetricsAccept, "Too many open files", static_cast<std::uint32_t>(kMetricsAcceptAttempts));
   const MetricsEndpoint endpoint(port_, last_tick_end_, {server_metrics_}, &faults_);
 
   ASSERT_TRUE(BecomesUnavailable(endpoint));
@@ -214,7 +236,7 @@ TEST_F(MetricsEndpointTest, AnAcceptFailureOnEveryAttemptMakesTheEndpointUnavail
   EXPECT_TRUE(Refused(port_));
 }
 
-TEST_F(MetricsEndpointTest, APersistentAcceptFailureIsRetriedWithGrowingWaitsThenLoggedOnce) {
+TEST_F(MetricsEndpointTest, APersistentAcceptFailureIsRetriedWithWaitsThenLoggedOnce) {
   augusta::logging::Init();
   augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
   faults_.Arm(Site::kMetricsAccept, "Too many open files", Faults::kEveryTime);
@@ -225,19 +247,51 @@ TEST_F(MetricsEndpointTest, APersistentAcceptFailureIsRetriedWithGrowingWaitsThe
     const MetricsEndpoint endpoint(port_, last_tick_end_, {server_metrics_}, &faults_);
     ASSERT_TRUE(BecomesUnavailable(endpoint));
     took = std::chrono::steady_clock::now() - start;
-    // As long as a further retry would have waited, had it not stopped.
-    std::this_thread::sleep_for(kMetricsFirstAcceptRetry * (1 << (kMetricsAcceptAttempts - 1)));
+    // As long as its longest wait, in which a further attempt would show.
+    std::this_thread::sleep_for(*AcceptRetryDelay(kMetricsAcceptAttempts - 1));
   }
   const std::string written = testing::internal::GetCapturedStdout();
 
-  // Not a tight loop: it waited 1, 2, 4... first waits between its attempts.
-  EXPECT_GE(took, kMetricsFirstAcceptRetry * ((1 << (kMetricsAcceptAttempts - 1)) - 1));
+  // Not a tight loop: it waited between its attempts.
+  EXPECT_GE(took, RetryWaits());
   EXPECT_EQ(Occurrences(written, "WARN"), static_cast<std::size_t>(kMetricsAcceptAttempts - 1)) << written;
   EXPECT_EQ(Occurrences(written, "event=accept_retrying"), static_cast<std::size_t>(kMetricsAcceptAttempts - 1))
       << written;
   EXPECT_EQ(Occurrences(written, "ERROR"), 1U) << written;
   EXPECT_EQ(Occurrences(written, "event=unavailable code=metrics_endpoint_failed disposition=subsystem"), 1U)
       << written;
+}
+
+TEST_F(MetricsEndpointTest, ARequestThatFailsIsAnswered500AndWarnedOfWhileTheEndpointKeepsServing) {
+  augusta::logging::Init();
+  augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
+  const FailingCollectable failing;
+  const MetricsEndpoint endpoint(port_, last_tick_end_, {failing});
+
+  testing::internal::CaptureStdout();
+  const auto failed = Get(port_, "/metrics");
+  const auto after = Get(port_, "/livez");
+  const std::string written = testing::internal::GetCapturedStdout();
+
+  EXPECT_EQ(failed.result(), http::status::internal_server_error);
+  EXPECT_EQ(after.result(), http::status::ok);
+  EXPECT_TRUE(endpoint.Available());
+  EXPECT_EQ(Occurrences(written, "WARN"), 1U) << written;
+  EXPECT_EQ(Occurrences(written, "event=request_failed"), 1U) << written;
+  EXPECT_EQ(Occurrences(written, "ERROR"), 0U) << written;
+}
+
+TEST(AcceptRetryDelayTest, EachFailureInARowWaitsTwiceAsLongAsTheOneBefore) {
+  EXPECT_EQ(AcceptRetryDelay(1), std::optional{kMetricsFirstAcceptRetry});
+  for (int failures = 2; failures < kMetricsAcceptAttempts; ++failures) {
+    ASSERT_TRUE(AcceptRetryDelay(failures).has_value());
+    EXPECT_EQ(*AcceptRetryDelay(failures), *AcceptRetryDelay(failures - 1) * 2);
+  }
+}
+
+TEST(AcceptRetryDelayTest, TheLastAttemptIsNotRetried) {
+  EXPECT_EQ(AcceptRetryDelay(kMetricsAcceptAttempts), std::nullopt);
+  EXPECT_EQ(AcceptRetryDelay(kMetricsAcceptAttempts + 1), std::nullopt);
 }
 
 }  // namespace

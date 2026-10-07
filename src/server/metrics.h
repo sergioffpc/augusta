@@ -6,11 +6,11 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include <prometheus/collectable.h>
 
-#include "augusta/faults.h"
 #include "augusta/tick.h"
 
 /// \file
@@ -21,8 +21,8 @@
 /// the server's third beside Network I/O and Simulation (ADR-0005), which only
 /// reads: the Simulation and Network I/O threads write what it reports. That
 /// thread is not a supervised worker, since an HTTP request must never stop
-/// the tick loop: a request that fails is logged and answered 500, and a peer
-/// that disconnects only loses its own connection. A failure to accept is
+/// the tick loop: a request that fails is warned of and answered 500, and a
+/// failure on one connection, or a peer that disconnects, ends only it. A failure to accept is
 /// retried a bounded number of times, each wait twice the last; one that
 /// persists, or the thread failing, is the endpoint's permanent failure, a
 /// subsystem one (ADR-0033): it logs it once, stops serving and closes its
@@ -30,6 +30,10 @@
 /// tick loop goes on until then. What the Host counts (host_metrics.h) and
 /// every client's Connection health (connection_health.h) it serves beside the
 /// Process family, which is its own.
+namespace augusta::failure {
+class Faults;
+}  // namespace augusta::failure
+
 namespace augusta::server {
 
 /// What /metrics serves beside the Process family, in order.
@@ -43,6 +47,12 @@ inline constexpr int kMetricsAcceptAttempts = 5;
 /// How long the endpoint waits after its first accept failure in a row before
 /// accepting again; each further wait is twice the one before.
 inline constexpr std::chrono::milliseconds kMetricsFirstAcceptRetry{100};
+
+/// How long the endpoint waits before accepting again once accepting has failed
+/// failures times in a row (from 1), or nullopt when that is its permanent
+/// failure: kMetricsFirstAcceptRetry, doubled for each further failure, until
+/// kMetricsAcceptAttempts.
+[[nodiscard]] std::optional<std::chrono::milliseconds> AcceptRetryDelay(int failures);
 
 /// The server's metrics endpoint, serving from construction to destruction.
 class MetricsEndpoint {
