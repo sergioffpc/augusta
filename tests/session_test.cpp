@@ -1842,11 +1842,23 @@ class RecordingHostTest : public LoopbackMatch {
   // After every Host of the suite has closed the file.
   static void TearDownTestSuite() { std::filesystem::remove(RecordingPath()); }
 
+  // The recording once its writer has reached the tick the match ended
+  // before: the Host, which outlives the test, writes it on a thread of its own.
   static augusta::server::Recording ReadBack() {
-    std::ifstream in(RecordingPath(), std::ios::binary);
-    auto recording = augusta::server::ReadRecording(in);
-    EXPECT_TRUE(recording.has_value());
-    return recording.value_or(augusta::server::Recording{});
+    constexpr auto kPatience = std::chrono::seconds(5);
+    constexpr auto kRetryAfter = std::chrono::milliseconds(10);
+    const auto deadline = std::chrono::steady_clock::now() + kPatience;
+    while (true) {
+      std::ifstream in(RecordingPath(), std::ios::binary);
+      auto recording = augusta::server::ReadRecording(in);
+      const bool written =
+          recording.has_value() && !recording->ticks.empty() && recording->ticks.back().input.match_ended;
+      if (written || std::chrono::steady_clock::now() >= deadline) {
+        EXPECT_TRUE(recording.has_value());
+        return recording.value_or(augusta::server::Recording{});
+      }
+      std::this_thread::sleep_for(kRetryAfter);
+    }
   }
 
   // The match the tests record: two clients join, walk forward, fire, and the

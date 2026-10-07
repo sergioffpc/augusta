@@ -1,14 +1,18 @@
 #include "recording.h"
 
 #include <cmath>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <mutex>
 #include <optional>
+#include <ostream>
 #include <sstream>
 #include <stdexcept>
+#include <streambuf>
 #include <string>
 #include <utility>
 #include <vector>
@@ -40,6 +44,7 @@ using augusta::server::Recorder;
 using augusta::server::Recording;
 using augusta::server::RecordingError;
 using augusta::server::RecordingHeader;
+using augusta::server::TickRecord;
 using augusta::simulation::EntityId;
 using augusta::simulation::MatchPlayer;
 using augusta::simulation::PlayerCommand;
@@ -142,12 +147,15 @@ std::vector<TickResult> PlayScriptedMatch(RecordedSimulation& simulation, const 
   return results;
 }
 
-// The scripted match, recorded.
+// The scripted match, recorded: the simulation, and its Recorder with it, is
+// gone before the bytes are taken, so every record it took is written.
 std::string RecordScriptedMatch() {
   std::ostringstream out(std::ios::binary);
-  const Content content = LoadExampleContent();
-  RecordedSimulation simulation = ExampleSimulation(LoadExampleContent(), Recorder(out, ExampleHeader()));
-  PlayScriptedMatch(simulation, content);
+  {
+    const Content content = LoadExampleContent();
+    RecordedSimulation simulation = ExampleSimulation(LoadExampleContent(), Recorder(out, ExampleHeader()));
+    PlayScriptedMatch(simulation, content);
+  }
   return std::move(out).str();
 }
 
@@ -209,12 +217,14 @@ TEST(RecordingTest, TheMatchPolicyEndsAndTheEndingOfTheMatchInTheWorldAreRecorde
 
 TEST(RecordingTest, ARemovedBodyIsRecordedBeforeTheTickItLeftOn) {
   std::ostringstream out(std::ios::binary);
-  const Content content = LoadExampleContent();
-  RecordedSimulation simulation = ExampleSimulation(LoadExampleContent(), Recorder(out, ExampleHeader()));
-  simulation.StartMatch(ExampleEntrants(content), content.scenario.spawn_points);
-  simulation.Tick({}, kDeltaTime);
-  simulation.RemovePlayer(kSecond);
-  simulation.Tick({}, kDeltaTime);
+  {
+    const Content content = LoadExampleContent();
+    RecordedSimulation simulation = ExampleSimulation(LoadExampleContent(), Recorder(out, ExampleHeader()));
+    simulation.StartMatch(ExampleEntrants(content), content.scenario.spawn_points);
+    simulation.Tick({}, kDeltaTime);
+    simulation.RemovePlayer(kSecond);
+    simulation.Tick({}, kDeltaTime);
+  }
   const Recording recording = Read(std::move(out).str());
   ASSERT_EQ(recording.ticks.size(), 2U);
   EXPECT_TRUE(recording.ticks[0].input.removed.empty());
@@ -259,6 +269,97 @@ TEST(RecordingTest, ARecordLongerThanAnyTickCanMakeIsMalformedAndNotReadIn) {
   bytes.replace(4 + header_size, 4, std::string("\xFF\xFF\xFF\x7F", 4));
   std::istringstream in(bytes, std::ios::binary);
   EXPECT_EQ(augusta::server::ReadRecording(in).error(), RecordingError::kMalformed);
+}
+
+// A disk that stalls: every write waits until Release, and whoever wants to
+// know when one first started waiting can ask WaitUntilStalled.
+class StalledBuffer : public std::streambuf {
+ public:
+  void WaitUntilStalled() {
+    std::unique_lock lock(mutex_);
+    changed_.wait(lock, [this] { return stalled_; });
+  }
+
+  void Release() {
+    const std::scoped_lock lock(mutex_);
+    released_ = true;
+    changed_.notify_all();
+  }
+
+  std::string Written() {
+    const std::scoped_lock lock(mutex_);
+    return written_;
+  }
+
+ protected:
+  std::streamsize xsputn(const char* bytes, std::streamsize count) override {
+    std::unique_lock lock(mutex_);
+    stalled_ = true;
+    changed_.notify_all();
+    changed_.wait(lock, [this] { return released_; });
+    written_.append(bytes, static_cast<std::size_t>(count));
+    return count;
+  }
+
+  int_type overflow(int_type byte) override {
+    if (traits_type::eq_int_type(byte, traits_type::eof())) {
+      return traits_type::not_eof(byte);
+    }
+    const char c = traits_type::to_char_type(byte);
+    return xsputn(&c, 1) == 1 ? byte : traits_type::eof();
+  }
+
+ private:
+  std::mutex mutex_;
+  std::condition_variable changed_;
+  bool stalled_ = false;
+  bool released_ = false;
+  std::string written_;
+};
+
+// A tick's record with nothing in it but its number.
+TickRecord EmptyTick(augusta::tick::Tick tick) {
+  TickRecord record;
+  record.input.delta_time = kDeltaTime;
+  record.outcome.tick = tick;
+  return record;
+}
+
+TEST(RecordingTest, ARecorderTakesTicksWithoutWaitingForAStalledDiskAndStopsWhenItIsFull) {
+  constexpr std::size_t kCapacity = 3;
+  StalledBuffer disk;
+  std::ostream out(&disk);
+  {
+    Recorder recorder(out, ExampleHeader(), kCapacity);
+    // The header is being written, and stuck there: every tick from here on waits.
+    disk.WaitUntilStalled();
+    for (augusta::tick::Tick tick = 1; tick <= kCapacity + 2; ++tick) {
+      recorder.Write(EmptyTick(tick));
+    }
+    disk.Release();
+  }
+  const Recording recording = Read(disk.Written());
+  EXPECT_EQ(recording.header, ExampleHeader());
+  ASSERT_EQ(recording.ticks.size(), kCapacity);
+  EXPECT_EQ(recording.ticks.back().outcome.tick, kCapacity);
+  EXPECT_FALSE(recording.torn);
+}
+
+TEST(RecordingTest, ARecorderThatFellBehindWritesNothingMoreEvenOnceItCaughtUp) {
+  constexpr std::size_t kCapacity = 1;
+  StalledBuffer disk;
+  std::ostream out(&disk);
+  {
+    Recorder recorder(out, ExampleHeader(), kCapacity);
+    disk.WaitUntilStalled();
+    recorder.Write(EmptyTick(1));
+    recorder.Write(EmptyTick(2));
+    disk.Release();
+    recorder.Write(EmptyTick(3));
+  }
+  const Recording recording = Read(disk.Written());
+  ASSERT_EQ(recording.ticks.size(), 1U);
+  EXPECT_EQ(recording.ticks.front().outcome.tick, 1U);
 }
 
 }  // namespace

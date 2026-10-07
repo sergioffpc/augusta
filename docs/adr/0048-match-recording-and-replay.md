@@ -45,18 +45,24 @@ the body placed there is.
 **augustad records only when asked.** `simulation.recording` in `augustad.yaml`
 (ADR-0034) names the file; without it nothing is recorded. The file is replaced
 when the server starts and holds the whole run, Lobby ticks included, since the
-World's tick count and every Seen time depend on them. The Simulation thread
-writes each tick's record right after the tick and flushes it, so a server that
-stops abruptly leaves every whole tick behind; a record cut short is dropped
-when read, and reported. It costs about 35 KB a second with 8 players at 60 Hz,
-which is why it is a debugging setting and not a default.
+World's tick count and every Seen time depend on them. Each tick's record is
+written and flushed as soon as the recording's writer reaches it, so a server
+that stops abruptly leaves behind every whole tick written by then; a record cut
+short is dropped when read, and reported. It costs about 35 KB a second with 8
+players at 60 Hz, which is why it is a debugging setting and not a default.
 
-**The write stays on the Simulation thread.** A record is encoded and handed to
-the operating system on the tick that made it, about 600 bytes into its file
-cache, which takes microseconds of a 16.7 ms tick (NFR-01); a writer thread
-would add a queue and its own failure to report for no gain a debugging setting
-needs. Recording is off in production and when NFR-01 is measured, so a disk
-that stalls a write delays only a debugging session.
+**The disk is written on a thread of the recording's own.** The Simulation
+thread encodes a tick's record right after the tick, which costs only the
+record, at most 64 KiB, and hands it to the recording's writer through a queue
+of at most 256 records (about 4 seconds at 60 Hz, 16 MiB at worst), without
+waiting for the disk; the writer writes and flushes each record in turn. A disk
+that stalls a write then holds up only the writer, never a tick (NFR-01). A
+record that finds the queue full means the disk is not keeping up: the recording
+stops there, logged once, and the file keeps every tick before it, as it does
+for a record too long to write, because dropping a tick and going on would leave
+ticks that are no longer their places. When the server stops, the writer writes
+what is still queued before it goes, so a stalled disk holds up the server's
+shutdown, not its ticks.
 
 **A replay hands a fresh World the same and checks each tick.** The replay loads
 the content of the pack the header names (refusing another pack), builds the
@@ -133,6 +139,11 @@ recording, from a playtest, becomes a test the same way.
   tick moves where the next tick starts, and over a match the difference grows
   past any fixed tolerance, so the golden match would fail on the other platform
   as soon as its bodies moved.
-- **A writer thread for the records**: rejected - see above.
+- **Writing each record on the Simulation thread**: rejected - a write is
+  usually microseconds into the operating system's file cache, but nothing
+  bounds it: a disk that stalls holds up the tick, and the debugging session
+  that turned recording on then debugs a server missing its deadlines.
+- **Blocking the Simulation thread when the queue is full**: rejected - it
+  brings the stall back, only later.
 - **Recording by default**: rejected - it costs disk on every run for a file
   only a debugging session reads.
