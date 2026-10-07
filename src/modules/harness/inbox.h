@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -41,10 +42,11 @@ class Inbox {
   /// What the server has said so far. Safe to call from any thread.
   [[nodiscard]] std::shared_ptr<const ServerView> View() const;
 
-  /// Session's TakeShots, TakeHitConfirmations and TakeDeaths. Safe to call from any thread.
-  [[nodiscard]] std::vector<Shot> TakeShots();
-  [[nodiscard]] std::vector<HitConfirmation> TakeHitConfirmations();
-  [[nodiscard]] std::vector<Death> TakeDeaths();
+  /// Session's TakeShots, TakeHitConfirmations and TakeDeaths, for the Match
+  /// numbered match by ServerView::matches_started. Safe to call from any thread.
+  [[nodiscard]] std::vector<Shot> TakeShots(std::uint32_t match);
+  [[nodiscard]] std::vector<HitConfirmation> TakeHitConfirmations(std::uint32_t match);
+  [[nodiscard]] std::vector<Death> TakeDeaths(std::uint32_t match);
 
  private:
   // Hands message to what takes in its kind; false if it is not one a server sends.
@@ -58,7 +60,6 @@ class Inbox {
   void OnHitConfirmation(const HitConfirmation& hit);
   void OnDeath(const Death& death);
   void OnAuthoritativeState(AuthoritativeState state);
-  void ForgetCombat();
 
   // Makes the next view from the current one changed by mutate, and publishes it.
   // Only the Network I/O thread publishes, so nothing can intervene between the load and the store.
@@ -70,8 +71,9 @@ class Inbox {
   }
 
   std::atomic<std::shared_ptr<const ServerView>> view_{std::make_shared<const ServerView>()};
-  // The Shots, the Hit confirmations and the Deaths received and not yet taken.
-  // Not part of the view: they are handed out once, not read.
+  // The Shots, the Hit confirmations and the Deaths received and not yet taken,
+  // each under the Match it is of. Not part of the view: they are handed out
+  // once, not read.
   Pending<Shot> shots_{kMaxPendingShots};
   Pending<HitConfirmation> hit_confirmations_{kMaxPendingHitConfirmations};
   Pending<Death> deaths_{kMaxPendingDeaths};

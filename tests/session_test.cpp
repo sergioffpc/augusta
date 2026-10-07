@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -5054,6 +5055,117 @@ TEST_F(ScriptedLobbyTest, ADeathThatArrivesOutsideAMatchIsDropped) {
   EXPECT_TRUE(session_.TakeDeaths().empty());
   EXPECT_TRUE(session_.IsAlive());
   EXPECT_FALSE(session_.GetHealth().has_value());
+}
+
+// A reader that took its Server view before the next Match started still takes
+// the last one's final Shot with it, and nothing of the next; the next Match's
+// view takes that Match's own and nothing of the last.
+TEST_F(ScriptedServerTest, AServerViewTakesTheShotsHitsAndDeathsOfItsOwnMatchOnly) {
+  const auto send_match_events = [&](augusta::tick::Tick tick) {
+    augusta::protocol::ShotWire shot = ShotBy(kScriptedEntity);
+    shot.tick = tick;
+    server_.Send(shot);
+    server_.Send(HitOn(kScriptedEntity));
+    server_.Send(DeathOf(kScriptedEntity, kScriptedEntity));
+  };
+  send_match_events(1);
+  server_.Send(augusta::protocol::MatchEndWire{});
+  Settle();
+  const std::shared_ptr<const ServerView> ended = session_.GetServerView();
+  ASSERT_EQ(ended->GetPhase(), Phase::kLobby);
+
+  server_.Send(ScriptedServer::StartOfAlone());
+  send_match_events(2);
+  Settle();
+  const std::shared_ptr<const ServerView> next = session_.GetServerView();
+  ASSERT_EQ(next->matches_started, ended->matches_started + 1);
+
+  const std::vector<Shot> ended_shots = session_.TakeShots(*ended);
+  ASSERT_EQ(ended_shots.size(), 1U);
+  EXPECT_EQ(ended_shots[0].tick, 1U);
+  EXPECT_EQ(session_.TakeHitConfirmations(*ended).size(), 1U);
+  EXPECT_EQ(session_.TakeDeaths(*ended).size(), 1U);
+
+  const std::vector<Shot> next_shots = session_.TakeShots(*next);
+  ASSERT_EQ(next_shots.size(), 1U);
+  EXPECT_EQ(next_shots[0].tick, 2U);
+  EXPECT_EQ(session_.TakeHitConfirmations(*next).size(), 1U);
+  EXPECT_EQ(session_.TakeDeaths(*next).size(), 1U);
+}
+
+// Once a view of a Match has taken its events, an older view takes none of the
+// newer Match's: they are not its Match's.
+TEST_F(ScriptedServerTest, AnOlderServerViewTakesNothingOfANewerMatch) {
+  const std::shared_ptr<const ServerView> first = session_.GetServerView();
+  server_.Send(augusta::protocol::MatchEndWire{});
+  server_.Send(ScriptedServer::StartOfAlone());
+  server_.Send(ShotBy(kScriptedEntity));
+  Settle();
+
+  EXPECT_TRUE(session_.TakeShots(*first).empty());
+  EXPECT_EQ(session_.TakeShots().size(), 1U);
+}
+
+// The Network I/O thread takes in Match after Match, each with its own Shot,
+// Hit confirmation and Death tagged with its Match's count (a sixty-fourth of
+// it for an angle, which the wire keeps exact within its range), while another
+// thread reads the Server view and takes: what it takes is never of a Match
+// before the one it last saw start, and what it takes with a view is of that
+// view's Match alone.
+TEST_F(ScriptedServerTest, AReaderThatHasSeenAMatchStartNeverTakesTheEventsOfAnEarlierOne) {
+  constexpr std::uint32_t kMatches = 100;
+  const auto tag = [](std::uint32_t match) { return static_cast<float>(match) / 64.0F; };
+  Settle();
+  const std::uint32_t first = session_.GetServerView()->matches_started;
+  for (std::uint32_t match = first; match < first + kMatches; ++match) {
+    augusta::protocol::ShotWire shot = ShotBy(kScriptedEntity);
+    shot.tick = match;
+    augusta::protocol::HitConfirmationWire hit = HitOn(kScriptedEntity);
+    hit.damage = tag(match);
+    augusta::protocol::DeathWire death = DeathOf(kScriptedEntity, kScriptedEntity);
+    death.yaw = tag(match);
+    server_.Send(shot);
+    server_.Send(hit);
+    server_.Send(death);
+    server_.Send(augusta::protocol::MatchEndWire{});
+    server_.Send(ScriptedServer::StartOfAlone());
+  }
+
+  std::atomic<bool> done{false};
+  std::atomic<int> foreign{0};
+  std::atomic<int> stale{0};
+  std::thread reader([&] {
+    while (!done.load()) {
+      const std::shared_ptr<const ServerView> view = session_.GetServerView();
+      const std::uint32_t match = view->matches_started;
+      for (const Shot& shot : session_.TakeShots(*view)) {
+        foreign += shot.tick != match ? 1 : 0;
+      }
+      for (const HitConfirmation& hit : session_.TakeHitConfirmations(*view)) {
+        foreign += hit.damage != tag(match) ? 1 : 0;
+      }
+      for (const Death& death : session_.TakeDeaths(*view)) {
+        foreign += death.yaw != tag(match) ? 1 : 0;
+      }
+      const std::uint32_t seen = session_.GetServerView()->matches_started;
+      for (const Shot& shot : session_.TakeShots()) {
+        stale += shot.tick < seen ? 1 : 0;
+      }
+    }
+  });
+  const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+  while (session_.GetServerView()->matches_started < first + kMatches &&
+         std::chrono::steady_clock::now() < deadline) {
+    server_.Pump();
+    session_.PumpEvents();
+    session_.ExchangeMessages();
+  }
+  done = true;
+  reader.join();
+
+  ASSERT_EQ(session_.GetServerView()->matches_started, first + kMatches);
+  EXPECT_EQ(foreign.load(), 0);
+  EXPECT_EQ(stale.load(), 0);
 }
 
 // The example scenario's Game policy, read out of its golden server pack by the
