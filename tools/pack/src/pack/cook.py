@@ -83,12 +83,12 @@ _BODY_PARTS = {
 # "r g b" linear floats; the client reads it as the mesh's base color.
 BASE_COLOR_PROPERTY = "base_color"
 # The default prim every character stage has, named the same regardless of the
-# character's folder (ADR-0040), so the client finds its visual mesh at
-# <character path>/Character/Visual.
+# character's name (ADR-0040), so the client finds its visual mesh at
+# <character name>/Character/Visual.
 CHARACTER_ROOT_PRIM = "Character"
 # The child of CHARACTER_ROOT_PRIM every character stage has, whose origin is
 # where the local player's camera sits and its Shots leave from (ADR-0040):
-# client and server read it at <character path>/Character/Eye.
+# client and server read it at <character name>/Character/Eye.
 CHARACTER_EYE_PRIM = "Eye"
 # augusta:textureFormat: selects which BC format a UsdUVTexture prim
 # compresses to (ADR-0017/issue #49). Defaults to BC7 when absent/
@@ -844,11 +844,10 @@ def cook_scenario(
 ) -> CookReport:
     """Bakes a map and its characters into one signed client/server pack pair.
 
-    The map is map_stage_path and the characters every (character_path,
-    stage_path) in character_stages (ADR-0041) - character_path is a character's
-    own path (its stage's path relative to authoring/ without the extension,
-    e.g. "characters/player/player"), also the prefix its blobs are addressed
-    under (ADR-0040).
+    The map is map_stage_path and the characters every (character_name,
+    stage_path) in character_stages (ADR-0041) - character_name is a
+    character's name in the manifest (e.g. "soldier"), also the prefix its
+    blobs are addressed under (ADR-0040).
 
     scripts are a scenario's Lua files as (path in the pack, bytes):
     they go into the server pack only, as script assets (ADR-0031, ADR-0039). A
@@ -859,7 +858,7 @@ def cook_scenario(
     prefix itself at SOUNDS_PATH so the client can find them (ADR-0020,
     ADR-0031). The headless server plays nothing (ADR-0019).
 
-    The character paths, in character_stages' order, are also recorded as the
+    The character names, in character_stages' order, are also recorded as the
     character list both packs carry (ADR-0042).
 
     The client pack is written first, so the server pack can carry its hash: the
@@ -875,7 +874,7 @@ def cook_scenario(
             type=_TYPE_CHARACTERS,
             path=CHARACTERS_PATH,
             data=encode_characters_blob(
-                [character_path for character_path, _ in character_stages]
+                [character_name for character_name, _ in character_stages]
             ),
         )
     except ValueError as error:
@@ -895,8 +894,23 @@ def cook_scenario(
         )
     )
 
+    # A character's blobs are addressed under its name and a map's under its
+    # prim paths, so a name that is one of the map's root prims would mix the
+    # two (ADR-0040).
+    map_roots = {
+        prim.GetName() for prim in map_prims if prim.GetParent().IsPseudoRoot()
+    }
+    for character_name, _ in character_stages:
+        if character_name in map_roots:
+            raise CookError(
+                "character_name_collides",
+                character_name,
+                f"character {character_name!r} has the name of a root prim of "
+                f"the map {map_stage_path}",
+            )
+
     opened_characters = []
-    for character_path, stage_path in character_stages:
+    for character_name, stage_path in character_stages:
         character_stage = Usd.Stage.Open(str(stage_path))
         if not character_stage:
             raise CookError("stage_open_failed", "", str(stage_path))
@@ -910,7 +924,7 @@ def cook_scenario(
                 f"{stage_path}: a character's default prim must be named "
                 f"{CHARACTER_ROOT_PRIM!r}",
             )
-        # The camera sits, and Shots leave from, <character path>/Character/Eye
+        # The camera sits, and Shots leave from, <character name>/Character/Eye
         # (ADR-0040).
         eye_prim = default_prim.GetChild(CHARACTER_EYE_PRIM)
         if not eye_prim:
@@ -927,7 +941,7 @@ def cook_scenario(
         )
         opened_characters.append(
             (
-                character_path,
+                character_name,
                 stage_path,
                 character_stage,
                 character_prims,
@@ -957,7 +971,7 @@ def cook_scenario(
             on_prim(done, total_prims, prim_path)
 
     for (
-        character_path,
+        character_name,
         stage_path,
         character_stage,
         character_prims,
@@ -967,7 +981,7 @@ def cook_scenario(
         body_parts: set[int] = set()
         for prim in character_prims:
             prim_path = (
-                f"{character_path}/{_sanitize_prim_path(str(prim.GetPath()))}"
+                f"{character_name}/{_sanitize_prim_path(str(prim.GetPath()))}"
             )
             xformable = UsdGeom.Xformable(prim)
             local_to_root = (

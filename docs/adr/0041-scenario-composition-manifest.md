@@ -11,35 +11,38 @@ number of scenarios.
 
 ```text
 authoring/
-  maps/augusta.usda
-  characters/player.usda
-  sounds/augusta/gunshot.wav ...
-  scripts/parameters/default.lua
-  scripts/rules/last_standing.lua
-  scenarios/augusta.yaml
+  maps/firebase.usda
+  characters/soldier.usda
+  sounds/gunshot.wav ...
+  scripts/parameters/rules_of_engagement.lua
+  scripts/rules/last_man_standing.lua
+  scenarios/firebase.yaml
 ```
 
 ```yaml
-map: maps/augusta.usda
+map: maps/firebase.usda
 characters:
-  - characters/player.usda
+  soldier: characters/soldier.usda
 sounds:
-  gunshot: sounds/augusta/gunshot.wav
-  hit_marker: sounds/augusta/hit_marker.wav
-  hit_taken: sounds/augusta/hit_taken.wav
-  death: sounds/augusta/death.wav
-  match_won: sounds/augusta/match_won.wav
-  match_lost: sounds/augusta/match_lost.wav
+  gunshot: sounds/gunshot.wav
+  hit_marker: sounds/hit_marker.wav
+  hit_taken: sounds/hit_taken.wav
+  death: sounds/death.wav
+  match_won: sounds/match_won.wav
+  match_lost: sounds/match_lost.wav
 scripts:
-  parameters: scripts/parameters/default.lua
-  rules: scripts/rules/last_standing.lua
+  parameters: scripts/parameters/rules_of_engagement.lua
+  rules: scripts/rules/last_man_standing.lua
 ```
 
 - `map` names exactly one map's USD stage.
-- `characters` names zero or more characters' USD stages. A character's
-  **path**, what a client asks to play (ADR-0042) and what its blobs are
-  addressed under, is its stage's path without the extension:
-  `characters/player`.
+- `characters` maps zero or more characters' names to their USD stages. A
+  character's **name**, what a client asks to play (ADR-0042) and what its blobs
+  are addressed under, is its key: `soldier`. It is one lowercase word (a
+  letter, then letters, digits or underscores), so it is a single path segment
+  in the pack, and it is the scenario's, not the stage's: moving, renaming or
+  converting a stage between `.usda` and `.usdc` never renames the character a
+  client asks for, and one stage can be composed under different names.
 - `sounds` maps every one of the client's cues to a mono PCM WAV file (ADR-0020,
   ADR-0031). It is required, and so is every cue: the client plays them all, so
   a scenario lacking one is refused when it is cooked rather than found silent
@@ -49,21 +52,21 @@ scripts:
   without it the scenario has no Game policy and the mechanism decides alone.
   The cooker packs each at its role's fixed name in the server pack,
   `parameters.lua` and `rules.lua`, which is where the server reads it, so a
-  script file can be named for what it does (`last_standing.lua`) rather than
-  for the slot it fills.
+  script file can be named for what it does (`last_man_standing.lua`) rather
+  than for the slot it fills.
 
 A key, cue or script role the cooker does not know is refused, not ignored, so a
 misspelling is found when cooking. The cooker reads the map's stage, walks the
 characters' stages, reads the cue sounds and scripts, and packs all of it into
 one client/server pack pair: the pack's byte layout (ADR-0031) and the
 client/server split (ADR-0019) are unaffected. A character's own prims are
-addressed `<character path>/<prim path>` (e.g.
-`characters/player/Character/Visual`) with the prim's local transform and its
-stage's own up-axis/metersPerUnit correction baked directly into its points,
-since - unlike a map's top-level nodes - a character contributes no `Scene` node
-of its own to carry that correction as a transform; the `Scene` blob stays
-map-only. usd-optimize and usd-validation-nvidia run once per composed stage,
-the map then each character, before the cook.
+addressed `<character name>/<prim path>` (e.g. `soldier/Character/Visual`) with
+the prim's local transform and its stage's own up-axis/metersPerUnit correction
+baked directly into its points, since - unlike a map's top-level nodes - a
+character contributes no `Scene` node of its own to carry that correction as a
+transform; the `Scene` blob stays map-only. usd-optimize and
+usd-validation-nvidia run once per composed stage, the map then each character,
+before the cook.
 
 The manifest is YAML, not Lua, since composition is plain data with nothing to
 compute - no expressions, no derived values the way the Parameters script's
@@ -84,8 +87,8 @@ own scripts**: rejected. With the scripts out of it, the folder would hold one
 fixed-name file and nothing else, and scripts kept inside a scenario's folder
 cannot be shared with another scenario.
 
-**Naming folders rather than files** (`map: maps/augusta`,
-`sounds: sounds/augusta`, each folder holding fixed-name files such as
+**Naming folders rather than files** (`map: maps/firebase`,
+`sounds: sounds/firebase`, each folder holding fixed-name files such as
 `map.usda` or `<cue>.wav`): rejected. Every fixed name is a convention an author
 has to know and the cooker has to search for, a stage could be ambiguous
 (`map.usda` beside `map.usdc`), and a sound could not be shared between cues or
@@ -107,6 +110,12 @@ exists.
 **A USD reference/payload in the map's stage naming its characters**: rejected
 for the same reason: a map authored to be reusable across scenarios would
 hard-code one scenario's character roster into itself.
+
+**A list of character stages, each character named by its stage's path without
+the extension** (`characters/soldier`): rejected. The name a client asks for
+(ADR-0042) would change whenever an author moves or renames the file, and the
+same stage could not be composed as two characters. A mapping by name, like the
+sounds by cue, keeps the name the scenario's.
 
 **Every character under `authoring/characters/` packed into every scenario**:
 rejected. Declaring the characters costs nothing once a scenario declares its

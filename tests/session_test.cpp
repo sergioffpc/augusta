@@ -105,7 +105,7 @@ const Parameters kTestParameters{};
 
 // The one character every test's server offers and every test's client picks,
 // unless a test says otherwise.
-constexpr const char* kCharacter = "characters/player";
+constexpr const char* kCharacter = "soldier";
 
 // The test parameters, for a match of count players.
 Parameters WithPlayerCount(std::uint8_t count) {

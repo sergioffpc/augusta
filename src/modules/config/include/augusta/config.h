@@ -53,8 +53,8 @@ struct ClientConfig {
   std::filesystem::path pack_path;
   /// Key `content.public_key` (required): the Ed25519 public key the pack is signed with.
   std::filesystem::path public_key_path;
-  /// Key `player.character` (required): the character to play, by its path
-  /// relative to `authoring/` (e.g. "characters/player"). The server admits
+  /// Key `player.character` (required): the character to play, by its name
+  /// in the scenario's manifest (e.g. "soldier"). The server admits
   /// only one of its scenario's (ADR-0042).
   std::string character;
   /// Key `network.server_address`: the server to connect to.

@@ -6,35 +6,36 @@ and the scripts that scenario composes:
 
     authoring/scenarios/test.yaml                  # the manifest below
     authoring/maps/test.usda
-    authoring/characters/player.usda
-    authoring/sounds/test/gunshot.wav              # one mono PCM WAV per cue
-    authoring/scripts/parameters/default.lua
-    authoring/scripts/rules/last_standing.lua
+    authoring/characters/soldier.usda
+    authoring/sounds/gunshot.wav                   # one mono PCM WAV per cue
+    authoring/scripts/parameters/rules_of_engagement.lua
+    authoring/scripts/rules/last_man_standing.lua
 
     map: maps/test.usda
     characters:
-      - characters/player.usda
+      soldier: characters/soldier.usda
     sounds:
-      gunshot: sounds/test/gunshot.wav
+      gunshot: sounds/gunshot.wav
       ...                                          # every cue in sounds.CUES
     scripts:
-      parameters: scripts/parameters/default.lua
-      rules: scripts/rules/last_standing.lua
+      parameters: scripts/parameters/rules_of_engagement.lua
+      rules: scripts/rules/last_man_standing.lua
 
 Every path is relative to authoring/. The cooker packs everything the manifest
 names: the map's stage and every character's stage into the client and server
-packs (a character's own prim paths addressed under its path, e.g.
-characters/player/Character/Visual - ADR-0040), each script into the
+packs (a character's own prim paths addressed under its name, e.g.
+soldier/Character/Visual - ADR-0040), each script into the
 server pack under its role's fixed name (parameters.lua, rules.lua - ADR-0022,
 ADR-0039), signed with the map/characters so it cannot change during a run, and
-each cue's sound into the client pack only (ADR-0020, ADR-0031). A character's
-path is its stage's path without the extension, so converting a stage between
-.usda and .usdc never renames the character a client asks for.
+each cue's sound into the client pack only (ADR-0020, ADR-0031). A character is
+named by its key in the manifest, not by its stage's path, so moving or
+converting a stage never renames the character a client asks for.
 """
 
 from dataclasses import dataclass
 from pathlib import Path
 from pathlib import PurePosixPath
+import re
 
 import yaml
 
@@ -49,6 +50,10 @@ USD_EXTENSIONS = (".usd", ".usda", ".usdc", ".usdz")
 # The keys a manifest may hold; any other is a typo, refused rather than
 # ignored.
 MANIFEST_KEYS = ("map", "characters", "sounds", "scripts")
+
+# A character's name: the prefix of its blobs in the pack, so a single path
+# segment (ADR-0040).
+CHARACTER_NAME = re.compile(r"[a-z][a-z0-9_]*")
 
 # Each script role a manifest's scripts may name, and the path it is packed at,
 # which is where the server reads it (assets.h kParametersScriptPath,
@@ -69,10 +74,10 @@ class ScenarioError(Exception):
 class Character:
     """One character a scenario's manifest names."""
 
-    # The character's stage path relative to authoring/ without its extension
-    # (e.g. "characters/player"): the prefix its own blobs are addressed
-    # under in the pack (ADR-0040), and the name a client asks for it by.
-    path: str
+    # The character's key in the manifest (e.g. "soldier"): the prefix its
+    # own blobs are addressed under in the pack (ADR-0040), and the name a
+    # client asks for it by (ADR-0042).
+    name: str
     # <authoring>/<manifest's entry>, the stage the cooker walks.
     stage_path: Path
 
@@ -121,12 +126,24 @@ def resolve_scenario(assets_root: Path, name: str) -> Scenario:
         )
     map_stage_path = _find_stage(authoring_dir, map_rel, manifest_path)
 
-    characters_rel = manifest.get("characters", [])
-    if not isinstance(characters_rel, list) or not all(
-        isinstance(entry, str) and entry for entry in characters_rel
+    characters_rel = manifest.get("characters", {})
+    if not isinstance(characters_rel, dict) or not all(
+        isinstance(stage, str) and stage for stage in characters_rel.values()
     ):
         raise ScenarioError(
-            f"{manifest_path}: 'characters' must be a list of character stages"
+            f"{manifest_path}: 'characters' must map each character's name to "
+            f"its stage, e.g. soldier: characters/soldier.usda"
+        )
+    misnamed = [
+        str(name)
+        for name in characters_rel
+        if not isinstance(name, str) or not CHARACTER_NAME.fullmatch(name)
+    ]
+    if misnamed:
+        raise ScenarioError(
+            f"{manifest_path}: character name(s) {', '.join(misnamed)} must "
+            f"be a lowercase letter followed by lowercase letters, digits or "
+            f"underscores"
         )
     # Checked here rather than left to the cook, so usd-optimize and validation
     # never run on every stage of a scenario that can't be packed.
@@ -137,10 +154,10 @@ def resolve_scenario(assets_root: Path, name: str) -> Scenario:
         )
     characters = [
         Character(
-            path=PurePosixPath(char_rel).with_suffix("").as_posix(),
-            stage_path=_find_stage(authoring_dir, char_rel, manifest_path),
+            name=name,
+            stage_path=_find_stage(authoring_dir, stage_rel, manifest_path),
         )
-        for char_rel in characters_rel
+        for name, stage_rel in characters_rel.items()
     ]
 
     return Scenario(
@@ -237,7 +254,7 @@ def _read_scripts(
     scripts_rel = _role_files(
         scripts_rel,
         "scripts",
-        "parameters: scripts/parameters/default.lua",
+        "parameters: scripts/parameters/rules_of_engagement.lua",
         tuple(SCRIPT_PACK_PATHS),
         manifest_path,
     )
@@ -246,7 +263,7 @@ def _read_scripts(
             f"{manifest_path}: 'scripts' names no {PARAMETERS_SCRIPT} script: "
             "the server reads its Parameters from its pack (see "
             "tools/composer/examples/authoring/scripts/parameters/"
-            "default.lua)."
+            "rules_of_engagement.lua)."
         )
     return sorted(
         (
@@ -268,7 +285,7 @@ def _read_sounds(
     sounds_rel = _role_files(
         sounds_rel,
         "sounds",
-        "gunshot: sounds/test/gunshot.wav",
+        "gunshot: sounds/gunshot.wav",
         CUES,
         manifest_path,
     )

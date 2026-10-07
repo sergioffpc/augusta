@@ -46,7 +46,7 @@ TEST(SimulationMappingTest, EveryBodyPartIsTheSameBodyPartToBallistics) {
 }
 
 TEST(SimulationMappingTest, AHitboxIsTheTrianglesItsMeshIndexes) {
-  const auto hitbox = ToSimulation(Triangle(BodyPart::kHead), "characters/medic");
+  const auto hitbox = ToSimulation(Triangle(BodyPart::kHead), "medic");
 
   EXPECT_EQ(hitbox.part, augusta::ballistics::BodyPart::kHead);
   ASSERT_EQ(hitbox.triangles.size(), 1U);
@@ -59,21 +59,21 @@ TEST(SimulationMappingTest, AHitboxThatIsNotAWholeTriangleListIsRejected) {
   HitboxData hitbox = Triangle(BodyPart::kTorso);
   hitbox.mesh.indices = {0, 1};
 
-  EXPECT_THROW(static_cast<void>(ToSimulation(hitbox, "characters/medic")), std::runtime_error);
+  EXPECT_THROW(static_cast<void>(ToSimulation(hitbox, "medic")), std::runtime_error);
 }
 
 TEST(SimulationMappingTest, EachCharacterIsKeptByItsPath) {
   const std::vector<augusta::server::Character> characters = {
-      {.path = "characters/medic", .hitboxes = {Triangle(BodyPart::kHead)}, .eye = Vec3(0.0F, 1.6F, 0.0F)},
-      {.path = "characters/sniper", .hitboxes = {}, .eye = Vec3(0.0F, 1.5F, 0.0F)},
+      {.path = "medic", .hitboxes = {Triangle(BodyPart::kHead)}, .eye = Vec3(0.0F, 1.6F, 0.0F)},
+      {.path = "sniper", .hitboxes = {}, .eye = Vec3(0.0F, 1.5F, 0.0F)},
   };
 
   const auto converted = ToSimulation(characters);
 
   ASSERT_EQ(converted.size(), 2U);
-  EXPECT_EQ(converted.at("characters/medic").eye, Vec3(0.0F, 1.6F, 0.0F));
-  EXPECT_EQ(converted.at("characters/medic").hitboxes.size(), 1U);
-  EXPECT_TRUE(converted.at("characters/sniper").hitboxes.empty());
+  EXPECT_EQ(converted.at("medic").eye, Vec3(0.0F, 1.6F, 0.0F));
+  EXPECT_EQ(converted.at("medic").hitboxes.size(), 1U);
+  EXPECT_TRUE(converted.at("sniper").hitboxes.empty());
 }
 
 }  // namespace

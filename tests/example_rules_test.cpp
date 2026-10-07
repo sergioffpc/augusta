@@ -28,7 +28,7 @@
 #include "encoder.h"
 #include "policy_loader.h"
 
-// The example scenario's shipped rules (last_standing.lua), run inside the real engine
+// The example scenario's shipped rules (last_man_standing.lua), run inside the real engine
 // through SimulationWorld (ADR-0013's decision for Lua gameplay scripts): loaded
 // out of a signed pack as the server loads it, and checked for last player
 // standing (US-14) with every Player count from 1 to 8.
@@ -136,7 +136,7 @@ class Arena {
   // brings one in.
   void Add(std::size_t player, const Vec3& position) {
     world_.AddPlayer(Entity(player), position, Cross(),
-                     PlayerIdentity{.session = Session(player), .character = "characters/player"});
+                     PlayerIdentity{.session = Session(player), .character = "soldier"});
   }
 
   void Leave(std::size_t player) { world_.RemovePlayer(Entity(player)); }

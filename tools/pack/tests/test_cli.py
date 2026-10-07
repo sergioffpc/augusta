@@ -18,7 +18,7 @@ def test_the_example_scenario_cooks_into_a_signed_pack_pair(tmp_path):
 
     status = cli.main(
         [
-            "augusta",
+            "firebase",
             "--assets-root",
             str(EXAMPLES_ROOT),
             "--signing-key",
@@ -35,13 +35,13 @@ def test_the_example_scenario_cooks_into_a_signed_pack_pair(tmp_path):
     client = read_pack_contents(client_path, public_key)
     server = read_pack_contents(server_path, public_key)
     assert client.paths_of_type(pack.ASSET_TYPE_EYE) == {
-        "characters/player/Character/Eye"
+        "soldier/Character/Eye"
     }
     assert server.paths_of_type(pack.ASSET_TYPE_EYE) == {
-        "characters/player/Character/Eye"
+        "soldier/Character/Eye"
     }
     hitboxes = {
-        f"characters/player/Character/{name}Hitbox"
+        f"soldier/Character/{name}Hitbox"
         for name in (
             "Head",
             "Torso",

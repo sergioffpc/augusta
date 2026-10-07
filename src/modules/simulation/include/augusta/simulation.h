@@ -125,7 +125,7 @@ enum class EntityId : std::uint32_t {};
 struct PlayerIdentity {
   /// The session of its player; 0, for a body no session plays, cannot win.
   SessionId session{};
-  /// The character, by its path relative to `authoring/` (ADR-0042).
+  /// The character, by its name in the scenario's manifest (ADR-0042).
   std::string character;
 };
 

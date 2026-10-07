@@ -210,18 +210,18 @@ struct EyeData {
   math::Vec3 position{0.0F, 0.0F, 0.0F};
 };
 
-/// Pack-relative path of the eye of the character at character_path (its path
-/// relative to `authoring/`): its `Character` root prim's `Eye` child
-/// (ADR-0040), e.g. "characters/player/Character/Eye".
-[[nodiscard]] inline std::string CharacterEyePath(std::string_view character_path) {
-  return std::format("{}/Character/Eye", character_path);
+/// Pack-relative path of the eye of the character named character
+/// (its name in the scenario's manifest): its `Character` root prim's `Eye` child
+/// (ADR-0040), e.g. "soldier/Character/Eye".
+[[nodiscard]] inline std::string CharacterEyePath(std::string_view character) {
+  return std::format("{}/Character/Eye", character);
 }
 
-/// Pack-relative path of the visual mesh of the character at character_path
-/// (its path relative to `authoring/`): its `Character` root prim's `Visual`
-/// child (ADR-0040), e.g. "characters/player/Character/Visual".
-[[nodiscard]] inline std::string CharacterMeshPath(std::string_view character_path) {
-  return std::format("{}/Character/Visual", character_path);
+/// Pack-relative path of the visual mesh of the character named
+/// character (its name in the scenario's manifest): its `Character` root prim's `Visual`
+/// child (ADR-0040), e.g. "soldier/Character/Visual".
+[[nodiscard]] inline std::string CharacterMeshPath(std::string_view character) {
+  return std::format("{}/Character/Visual", character);
 }
 
 /// Sanitizes a USD prim path (e.g. "/Geom/Cube") into the pack-relative
@@ -367,12 +367,11 @@ class Pack {
   /// Present in both client and server packs.
   [[nodiscard]] std::expected<HitboxData, ResolveError> ResolveHitbox(std::string_view path) const;
 
-  /// Resolves every hitbox of the character at character_path (its path
-  /// relative to `authoring/`, e.g. "characters/player", ADR-0040): each one
+  /// Resolves every hitbox of the character named character (its
+  /// name in the scenario's manifest, e.g. "soldier", ADR-0040): each one
   /// addressed under it, in path order. Empty if it has none. Present in both
   /// client and server packs.
-  [[nodiscard]] std::expected<std::vector<HitboxData>, ResolveError> ResolveHitboxes(
-      std::string_view character_path) const;
+  [[nodiscard]] std::expected<std::vector<HitboxData>, ResolveError> ResolveHitboxes(std::string_view character) const;
 
   /// Resolves a spawn-point marker by its pack-relative path (ADR-0019/
   /// ADR-0032). Present in both client and server packs.
@@ -396,7 +395,7 @@ class Pack {
   [[nodiscard]] std::expected<std::string, ResolveError> ResolveScript(std::string_view path) const;
 
   /// Resolves the scenario's character list at kCharactersPath: each character's
-  /// path relative to `authoring/`, in manifest order (ADR-0042). Present in
+  /// name in the scenario's manifest, in manifest order (ADR-0042). Present in
   /// both client and server packs.
   [[nodiscard]] std::expected<std::vector<std::string>, ResolveError> ResolveCharacters() const;
 

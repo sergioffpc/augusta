@@ -45,7 +45,7 @@ enum class EntityId : std::uint32_t {};
 /// One player in the Lobby.
 struct RosterEntry {
   SessionId session{};
-  /// Its character, by its path relative to `authoring/`: one of the scenario's (ADR-0042).
+  /// Its character, by its name in the scenario's manifest: one of the scenario's (ADR-0042).
   std::string character;
 };
 
@@ -94,8 +94,8 @@ struct JoinRequest {
   std::string engine_version;
   /// The hash of the client pack the client loaded.
   assets::PackHash client_pack{};
-  /// The character the player chose, by its path relative to `authoring/`
-  /// (e.g. "characters/player", ADR-0042).
+  /// The character the player chose, by its name in the scenario's manifest
+  /// (e.g. "soldier", ADR-0042).
   std::string character;
 };
 

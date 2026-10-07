@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
         "<assets-root>/authoring/scenarios/<name>.yaml, the manifest naming "
         "the map, characters, cue sounds and scripts it composes. "
         "tools\\composer\\examples\\authoring is a worked example (name: "
-        "augusta).",
+        "firebase).",
     )
     parser.add_argument(
         "--assets-root",
@@ -135,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     # map (ADR-0040).
     stages_to_clean = [("map", scenario.map_stage_path)]
     stages_to_clean += [
-        (character.path, character.stage_path)
+        (character.name, character.stage_path)
         for character in scenario.characters
     ]
 
@@ -144,8 +144,7 @@ def main(argv: list[str] | None = None) -> int:
         cleaned_stages: list[Path] = []
         for step_label, raw_stage_path in stages_to_clean:
             cleaned_stage = (
-                Path(tmp_dir)
-                / f"{step_label.replace('/', '_')}-cleaned-{uuid.uuid4()}.usda"
+                Path(tmp_dir) / f"{step_label}-cleaned-{uuid.uuid4()}.usda"
             )
 
             print(f"[1/3] usd-optimize: {raw_stage_path}")
@@ -183,7 +182,7 @@ def main(argv: list[str] | None = None) -> int:
         map_cleaned, *character_cleaned_paths = cleaned_stages
         character_cleaned = list(
             zip(
-                (character.path for character in scenario.characters),
+                (character.name for character in scenario.characters),
                 character_cleaned_paths,
                 strict=True,
             )
