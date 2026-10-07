@@ -122,6 +122,10 @@ v1.
   with it, a visual only. Deciding a bullet's outcome (hit detection, damage)
   stays server-side (ADR-0024, ADR-0044).
 - Networking Protocol — message definitions + custom binary serialization
+- Primitives — the Tick and command sequence widths and the player, command and
+  recoil-kick bounds for the engine and the protocol to share
+  (augusta_primitives), depending on no other module, so neither side needs the
+  other's for them
 - Command — one tick's player intent (augusta_command): what the client's Input
   handling samples and the server screens and simulates, so the server links no
   client input code
