@@ -119,7 +119,8 @@ TEST(ParseCommandLineTest, UsageNamesTheProgramAndTheDefaultFile) {
 }
 
 TEST(DescribeConfigErrorTest, NamesTheKeyAndTheFile) {
-  const ConfigError error{.code = ConfigErrorCode::kMissingKey, .subject = "pack", .file = "dir/augustac.yaml"};
+  const ConfigError error{
+      .code = ConfigErrorCode::kMissingKey, .subject = "pack", .reason = {}, .file = "dir/augustac.yaml"};
 
   const auto message = DescribeConfigError(error);
 
@@ -128,32 +129,42 @@ TEST(DescribeConfigErrorTest, NamesTheKeyAndTheFile) {
 }
 
 TEST(DescribeConfigErrorTest, SaysWhatANumberMustBe) {
-  const auto message =
-      DescribeConfigError({.code = ConfigErrorCode::kInvalidNumber, .subject = "input.mouse_sensitivity", .file = {}});
+  const auto message = DescribeConfigError(
+      {.code = ConfigErrorCode::kInvalidNumber, .subject = "input.mouse_sensitivity", .reason = {}, .file = {}});
 
   EXPECT_EQ(message, "'input.mouse_sensitivity' must be a finite number above zero");
 }
 
 TEST(DescribeConfigErrorTest, SaysWhatALogLevelMustBe) {
-  const auto message =
-      DescribeConfigError({.code = ConfigErrorCode::kInvalidLogLevel, .subject = "log_level", .file = {}});
+  const auto message = DescribeConfigError(
+      {.code = ConfigErrorCode::kInvalidLogLevel, .subject = "log_level", .reason = {}, .file = {}});
 
   EXPECT_EQ(message, "'log_level' must be one of trace, debug, info, warn, error, critical");
 }
 
 TEST(DescribeConfigErrorTest, OmitsTheFileWhenThereIsNone) {
-  const auto message = DescribeConfigError({.code = ConfigErrorCode::kUnknownKey, .subject = "typo", .file = {}});
+  const auto message =
+      DescribeConfigError({.code = ConfigErrorCode::kUnknownKey, .subject = "typo", .reason = {}, .file = {}});
 
   EXPECT_EQ(message, "unknown key 'typo'");
 }
 
+TEST(DescribeConfigErrorTest, GivesTheReasonAConfigRejectedAnEntryFor) {
+  const auto message = DescribeConfigError(
+      {.code = ConfigErrorCode::kInvalidEntry, .subject = "keys.jump", .reason = "names no control", .file = {}});
+
+  EXPECT_EQ(message, "'keys.jump' names no control");
+}
+
 TEST(DescribeConfigErrorTest, TakesAPhraseInPlaceOfTheCodesOwn) {
-  const ConfigError error{.code = ConfigErrorCode::kInvalidNumber, .subject = "n", .file = "dir/a.yaml"};
+  const ConfigError error{.code = ConfigErrorCode::kInvalidNumber, .subject = "n", .reason = {}, .file = "dir/a.yaml"};
 
   const auto message = DescribeConfigError(error, "'n' must be odd");
 
   EXPECT_EQ(message, std::filesystem::path("dir/a.yaml").string() + ": 'n' must be odd");
-  EXPECT_EQ(DescribeConfigError({.code = ConfigErrorCode::kInvalidNumber, .subject = "n", .file = {}}, "odd"), "odd");
+  EXPECT_EQ(
+      DescribeConfigError({.code = ConfigErrorCode::kInvalidNumber, .subject = "n", .reason = {}, .file = {}}, "odd"),
+      "odd");
 }
 
 }  // namespace

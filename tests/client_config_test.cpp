@@ -20,7 +20,7 @@ namespace {
 
 using augusta::config::ConfigError;
 using augusta::config::ConfigErrorCode;
-using augusta::config::DescribeClientConfigError;
+using augusta::config::DescribeConfigError;
 using augusta::config::LoadClientConfig;
 using augusta::config::ParseClientConfig;
 
@@ -311,17 +311,19 @@ TEST(ParseClientConfigTest, RejectsAnUnknownControl) {
   const auto config = ParseClient("input:\n  keys:\n    jump: Space\n");
 
   ASSERT_FALSE(config.has_value());
-  EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownControl);
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
   EXPECT_EQ(config.error().subject, "input.keys.jump");
-  EXPECT_TRUE(Contains(DescribeClientConfigError(config.error()), "move_forward, move_back"));
+  EXPECT_TRUE(Contains(DescribeConfigError(config.error()), "'input.keys.jump' names no control"));
+  EXPECT_TRUE(Contains(config.error().reason, "move_forward, move_back")) << config.error().reason;
 }
 
 TEST(ParseClientConfigTest, RejectsAnUnknownKeyName) {
   const auto config = ParseClient("input:\n  keys:\n    sprint: Shift\n");
 
   ASSERT_FALSE(config.has_value());
-  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidKeyName);
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
   EXPECT_EQ(config.error().subject, "input.keys.sprint");
+  EXPECT_TRUE(Contains(config.error().reason, "must name a key")) << config.error().reason;
 }
 
 TEST(ParseClientConfigTest, RejectsAKeyBoundToTwoControls) {
@@ -329,16 +331,18 @@ TEST(ParseClientConfigTest, RejectsAKeyBoundToTwoControls) {
   const auto config = ParseClient("input:\n  keys:\n    sprint: W\n");
 
   ASSERT_FALSE(config.has_value());
-  EXPECT_EQ(config.error().code, ConfigErrorCode::kKeyBoundTwice);
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
   EXPECT_EQ(config.error().subject, "input.keys.sprint");
+  EXPECT_TRUE(Contains(config.error().reason, "another control")) << config.error().reason;
 }
 
 TEST(ParseClientConfigTest, RejectsBindingTheKeyThatReleasesTheCursor) {
   const auto config = ParseClient("input:\n  keys:\n    crouch: Escape\n");
 
   ASSERT_FALSE(config.has_value());
-  EXPECT_EQ(config.error().code, ConfigErrorCode::kReservedKey);
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
   EXPECT_EQ(config.error().subject, "input.keys.crouch");
+  EXPECT_TRUE(Contains(config.error().reason, "Escape")) << config.error().reason;
 }
 
 TEST(ParseClientConfigTest, RejectsAControlNamedTwice) {
@@ -371,8 +375,9 @@ TEST(ParseClientConfigTest, FireOnTheButtonAdsStillHasIsBoundTwice) {
   const auto config = ParseClient("input:\n  keys:\n    fire: MouseRight\n");
 
   ASSERT_FALSE(config.has_value());
-  EXPECT_EQ(config.error().code, ConfigErrorCode::kKeyBoundTwice);
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
   EXPECT_EQ(config.error().subject, "input.keys.fire");
+  EXPECT_TRUE(Contains(config.error().reason, "another control")) << config.error().reason;
 }
 
 TEST(ParseClientConfigTest, AnEmptySectionSetsNothing) {
@@ -438,24 +443,10 @@ TEST(ParseClientConfigTest, AKeyMovedOutOfItsSectionIsUnknown) {
   EXPECT_EQ(config.error().subject, "pack");
 }
 
-TEST(DescribeClientConfigErrorTest, SaysWhatIsWrongWithABinding) {
-  EXPECT_TRUE(Contains(
-      DescribeClientConfigError({.code = ConfigErrorCode::kInvalidKeyName, .subject = "keys.sprint", .file = {}}),
-      "keys.sprint"));
-  EXPECT_TRUE(Contains(
-      DescribeClientConfigError({.code = ConfigErrorCode::kKeyBoundTwice, .subject = "keys.sprint", .file = {}}),
-      "another control"));
-  EXPECT_TRUE(
-      Contains(DescribeClientConfigError({.code = ConfigErrorCode::kReservedKey, .subject = "keys.crouch", .file = {}}),
-               "Escape"));
-  EXPECT_TRUE(Contains(
-      DescribeClientConfigError({.code = ConfigErrorCode::kNotASection, .subject = "keys", .file = {}}), "mapping"));
-}
-
 TEST(ExampleConfigTest, TheExampleClientConfigLoadsWithTheDefaultControls) {
   const auto config = LoadClientConfig(AUGUSTA_EXAMPLE_CLIENT_CONFIG);
 
-  ASSERT_TRUE(config.has_value()) << DescribeClientConfigError(config.error());
+  ASSERT_TRUE(config.has_value()) << DescribeConfigError(config.error());
   EXPECT_EQ(config->input.keymap, augusta::input::kDefaultKeymap);
   EXPECT_FLOAT_EQ(config->input.mouse_sensitivity, augusta::input::kDefaultMouseSensitivity);
 }

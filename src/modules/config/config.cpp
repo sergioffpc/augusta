@@ -32,7 +32,7 @@ namespace {
 // An error about subject, not yet tied to a config file: the Load* functions
 // set that once they know it.
 std::unexpected<ConfigError> Fail(ConfigErrorCode code, std::string subject = {}) {
-  return std::unexpected(ConfigError{.code = code, .subject = std::move(subject), .file = {}});
+  return std::unexpected(ConfigError{.code = code, .subject = std::move(subject), .reason = {}, .file = {}});
 }
 
 std::optional<std::filesystem::path> ExecutableDirectory() {
@@ -144,14 +144,8 @@ std::string Phrase(const ConfigError& error) {
       return std::format("'{}' must be one of trace, debug, info, warn, error, critical", error.subject);
     case ConfigErrorCode::kNotASection:
       return std::format("'{}' must be a mapping of names to values", error.subject);
-    case ConfigErrorCode::kUnknownControl:
-      return std::format("'{}' names no control", error.subject);
-    case ConfigErrorCode::kInvalidKeyName:
-      return std::format("'{}' must name a key, e.g. W, LeftShift, Space, F1 or MouseRight", error.subject);
-    case ConfigErrorCode::kKeyBoundTwice:
-      return std::format("'{}' is bound to a key another control already uses", error.subject);
-    case ConfigErrorCode::kReservedKey:
-      return std::format("'{}' binds a reserved key", error.subject);
+    case ConfigErrorCode::kInvalidEntry:
+      return std::format("'{}' {}", error.subject, error.reason);
   }
   return "unknown config error";
 }
@@ -246,7 +240,8 @@ std::expected<std::string, ConfigError> OptionalLogLevel(const ConfigValues& val
 std::expected<std::string, ConfigError> ReadConfigFile(const std::filesystem::path& file) {
   std::ifstream stream(file, std::ios::binary);
   if (!stream) {
-    return std::unexpected(ConfigError{.code = ConfigErrorCode::kCannotOpenFile, .subject = {}, .file = file});
+    return std::unexpected(
+        ConfigError{.code = ConfigErrorCode::kCannotOpenFile, .subject = {}, .reason = {}, .file = file});
   }
   std::ostringstream contents;
   contents << stream.rdbuf();

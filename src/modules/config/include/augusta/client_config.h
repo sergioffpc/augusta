@@ -45,8 +45,8 @@ struct ClientConfig {
   /// optional: how the player's controls respond and which key triggers each.
   /// Controls the section leaves out keep their input::kDefaultKeymap key; no
   /// two controls may share a key, and none may use input::kReleaseCursorKey.
-  /// An `input.keys` entry's error is kUnknownControl, kInvalidKeyName,
-  /// kKeyBoundTwice or kReservedKey, its subject the entry (`input.keys.jump`).
+  /// An `input.keys` entry it rejects is a kInvalidEntry error, its subject the
+  /// entry (`input.keys.jump`) and its reason what is wrong with it.
   input::Config input{};
 };
 
@@ -59,10 +59,6 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
 /// Reads and parses the client config at file; its `base_dir` is relative to
 /// file's directory. Errors carry file.
 std::expected<ClientConfig, ConfigError> LoadClientConfig(const std::filesystem::path& file);
-
-/// DescribeConfigError's message, naming what a binding may use: the controls
-/// an unknown one is not, and the key a reserved one is.
-std::string DescribeClientConfigError(const ConfigError& error);
 
 }  // namespace augusta::config
 

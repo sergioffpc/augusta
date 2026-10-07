@@ -72,14 +72,10 @@ enum class ConfigErrorCode {
   /// A section's value is not a mapping (an empty one is: it sets nothing);
   /// subject is the section.
   kNotASection,
-  /// A key-binding entry names no control; subject is the entry.
-  kUnknownControl,
-  /// A key-binding entry names no key; subject is the entry.
-  kInvalidKeyName,
-  /// A key-binding entry binds a key another control already has; subject is the entry.
-  kKeyBoundTwice,
-  /// A key-binding entry binds a key reserved for something else; subject is the entry.
-  kReservedKey,
+  /// A value the config's own rules reject, beyond what the mechanism checks
+  /// (e.g. an open-section entry naming something that config does not know);
+  /// subject is the key or entry, and reason, worded by that config, says why.
+  kInvalidEntry,
 };
 
 /// A failure to read the command line or a config file: what went wrong (code)
@@ -88,6 +84,9 @@ struct ConfigError {
   ConfigErrorCode code;
   /// The key, message or usage text the code's documentation names.
   std::string subject;
+  /// Only for kInvalidEntry: why the config rejected subject, as a phrase that
+  /// follows it (e.g. "names no control; the controls are ...").
+  std::string reason;
   /// The config file being read, set by LoadConfigFile; empty from the Parse*
   /// functions.
   std::filesystem::path file;
@@ -95,8 +94,9 @@ struct ConfigError {
 
 /// A message for error fit to print to whoever runs the process, so neither
 /// executable words it on its own. What it knows of a code is the mechanism's
-/// alone: a config whose keys say more (a number's range, the controls a
-/// binding may name) words those errors itself, through the overload below.
+/// alone, and a kInvalidEntry's reason: a config whose keys say more of
+/// another code (a number's range) words that error itself, through the
+/// overload below.
 std::string DescribeConfigError(const ConfigError& error);
 
 /// DescribeConfigError's message with phrase in place of the code's own: error's

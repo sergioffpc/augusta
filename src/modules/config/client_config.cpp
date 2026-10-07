@@ -22,8 +22,19 @@ namespace {
 // defaults for the controls it leaves out.
 constexpr std::string_view kKeysSection = "input.keys";
 
-std::unexpected<ConfigError> Fail(ConfigErrorCode code, std::string subject) {
-  return std::unexpected(ConfigError{.code = code, .subject = std::move(subject), .file = {}});
+// Every control's name, comma-separated, for an entry that names none of them.
+std::string ControlNames() {
+  std::string names;
+  for (std::size_t i = 0; i < input::kControlCount; ++i) {
+    names += std::format("{}{}", i == 0 ? "" : ", ", input::NameOf(static_cast<input::Control>(i)));
+  }
+  return names;
+}
+
+// An `input.keys` entry the keymap rejects, and reason why.
+std::unexpected<ConfigError> Reject(std::string entry, std::string reason) {
+  return std::unexpected(ConfigError{
+      .code = ConfigErrorCode::kInvalidEntry, .subject = std::move(entry), .reason = std::move(reason), .file = {}});
 }
 
 // The fallback when key is absent; when present, a finite number above zero.
@@ -42,21 +53,21 @@ std::expected<input::Keymap, ConfigError> ParseKeymap(const ConfigValues& values
   for (const auto& [path, key_name] : bindings) {
     const auto control = input::ControlNamed(std::string_view(path).substr(prefix.size()));
     if (!control) {
-      return Fail(ConfigErrorCode::kUnknownControl, path);
+      return Reject(path, std::format("names no control; the controls are {}", ControlNames()));
     }
     const auto key = input::KeyNamed(key_name);
     if (!key) {
-      return Fail(ConfigErrorCode::kInvalidKeyName, path);
+      return Reject(path, "must name a key, e.g. W, LeftShift, Space, F1 or MouseRight");
     }
     if (*key == input::kReleaseCursorKey) {
-      return Fail(ConfigErrorCode::kReservedKey, path);
+      return Reject(path, std::format("can't use {}: it releases the cursor", input::NameOf(input::kReleaseCursorKey)));
     }
     keymap.at(static_cast<std::size_t>(*control)) = *key;
   }
   // The defaults never share a key, so any clash involves a control the section rebound.
   for (const auto& [path, key_name] : bindings) {
     if (std::ranges::count(keymap, *input::KeyNamed(key_name)) > 1) {
-      return Fail(ConfigErrorCode::kKeyBoundTwice, path);
+      return Reject(path, "is bound to a key another control already uses");
     }
   }
   return keymap;
@@ -72,15 +83,6 @@ std::expected<input::Config, ConfigError> ParseInputConfig(const ConfigValues& v
     return std::unexpected(keymap.error());
   }
   return input::Config{.mouse_sensitivity = *sensitivity, .keymap = *keymap};
-}
-
-// Every control's name, comma-separated, for an error that names none of them.
-std::string ControlNames() {
-  std::string names;
-  for (std::size_t i = 0; i < input::kControlCount; ++i) {
-    names += std::format("{}{}", i == 0 ? "" : ", ", input::NameOf(static_cast<input::Control>(i)));
-  }
-  return names;
 }
 
 }  // namespace
@@ -139,19 +141,6 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
 
 std::expected<ClientConfig, ConfigError> LoadClientConfig(const std::filesystem::path& file) {
   return LoadConfigFile<ClientConfig>(file, ParseClientConfig);
-}
-
-std::string DescribeClientConfigError(const ConfigError& error) {
-  switch (error.code) {
-    case ConfigErrorCode::kUnknownControl:
-      return DescribeConfigError(
-          error, std::format("'{}' names no control; the controls are {}", error.subject, ControlNames()));
-    case ConfigErrorCode::kReservedKey:
-      return DescribeConfigError(error, std::format("'{}' can't use {}: it releases the cursor", error.subject,
-                                                    input::NameOf(input::kReleaseCursorKey)));
-    default:
-      return DescribeConfigError(error);
-  }
 }
 
 }  // namespace augusta::config

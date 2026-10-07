@@ -221,14 +221,14 @@ TEST(ParseServerConfigTest, RejectsAKeyThatBelongsToTheClient) {
 
 TEST(DescribeServerConfigErrorTest, SaysWhatATickRateMustBe) {
   const auto message = DescribeServerConfigError(
-      {.code = ConfigErrorCode::kInvalidNumber, .subject = "simulation.tick_rate_hz", .file = {}});
+      {.code = ConfigErrorCode::kInvalidNumber, .subject = "simulation.tick_rate_hz", .reason = {}, .file = {}});
 
   EXPECT_EQ(message, "'simulation.tick_rate_hz' must be an integer from 1 to 255");
 }
 
 TEST(DescribeServerConfigErrorTest, SaysWhatAMetricsPortMustBe) {
-  const auto message =
-      DescribeServerConfigError({.code = ConfigErrorCode::kInvalidNumber, .subject = "metrics.port", .file = {}});
+  const auto message = DescribeServerConfigError(
+      {.code = ConfigErrorCode::kInvalidNumber, .subject = "metrics.port", .reason = {}, .file = {}});
 
   EXPECT_EQ(message, "'metrics.port' must be an integer from 1 to 65535");
 }
