@@ -52,11 +52,13 @@ void Inbox::Receive(const networking::Payload& payload) {
 
 std::shared_ptr<const ServerView> Inbox::View() const { return view_.load(); }
 
-std::vector<Shot> Inbox::TakeShots(std::uint32_t match) { return shots_.Take(match); }
+std::vector<Shot> Inbox::TakeShots(std::uint32_t matches_started) { return shots_.Take(matches_started); }
 
-std::vector<HitConfirmation> Inbox::TakeHitConfirmations(std::uint32_t match) { return hit_confirmations_.Take(match); }
+std::vector<HitConfirmation> Inbox::TakeHitConfirmations(std::uint32_t matches_started) {
+  return hit_confirmations_.Take(matches_started);
+}
 
-std::vector<Death> Inbox::TakeDeaths(std::uint32_t match) { return deaths_.Take(match); }
+std::vector<Death> Inbox::TakeDeaths(std::uint32_t matches_started) { return deaths_.Take(matches_started); }
 
 bool Inbox::TakeIn(const protocol::MessageWire& message) {
   if (const auto* accepted = std::get_if<protocol::JoinAcceptedWire>(&message)) {

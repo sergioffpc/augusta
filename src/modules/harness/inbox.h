@@ -42,11 +42,12 @@ class Inbox {
   /// What the server has said so far. Safe to call from any thread.
   [[nodiscard]] std::shared_ptr<const ServerView> View() const;
 
-  /// Session's TakeShots, TakeHitConfirmations and TakeDeaths, for the Match
-  /// numbered match by ServerView::matches_started. Safe to call from any thread.
-  [[nodiscard]] std::vector<Shot> TakeShots(std::uint32_t match);
-  [[nodiscard]] std::vector<HitConfirmation> TakeHitConfirmations(std::uint32_t match);
-  [[nodiscard]] std::vector<Death> TakeDeaths(std::uint32_t match);
+  /// Session's TakeShots, TakeHitConfirmations and TakeDeaths, for the match
+  /// a view with matches_started (ServerView::matches_started) is of. Safe to
+  /// call from any thread.
+  [[nodiscard]] std::vector<Shot> TakeShots(std::uint32_t matches_started);
+  [[nodiscard]] std::vector<HitConfirmation> TakeHitConfirmations(std::uint32_t matches_started);
+  [[nodiscard]] std::vector<Death> TakeDeaths(std::uint32_t matches_started);
 
  private:
   // Hands message to what takes in its kind; false if it is not one a server sends.

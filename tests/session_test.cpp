@@ -5137,6 +5137,12 @@ TEST_F(ScriptedServerTest, AReaderThatHasSeenAMatchStartNeverTakesTheEventsOfAnE
       for (const Shot& shot : session_.TakeShots()) {
         stale += shot.tick < seen ? 1 : 0;
       }
+      for (const HitConfirmation& hit : session_.TakeHitConfirmations()) {
+        stale += hit.damage < tag(seen) ? 1 : 0;
+      }
+      for (const Death& death : session_.TakeDeaths()) {
+        stale += death.yaw < tag(seen) ? 1 : 0;
+      }
     }
   });
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
