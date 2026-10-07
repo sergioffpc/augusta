@@ -171,16 +171,15 @@ Pose PoseOf(const Body& body, const Facing& facing) {
 // position grid, so culling by it never drops a hitbox a bullet crosses.
 constexpr float kReachMargin = 0.1F;
 
-// Hitboxes::reach of a character's hitboxes.
+// Hitboxes::reach of a character's hitboxes. Measured standing: any other
+// stance only lowers a point (physics::LowerToStance), which brings it no
+// farther from the root.
 float ReachOf(const std::vector<CharacterHitbox>& hitboxes) {
-  constexpr std::array kStances = {physics::Stance::kStanding, physics::Stance::kCrouching, physics::Stance::kProne};
   float reach = 0.0F;
   for (const CharacterHitbox& hitbox : hitboxes) {
     for (const ballistics::Triangle& triangle : hitbox.triangles) {
       for (const math::Vec3& point : {triangle.a, triangle.b, triangle.c}) {
-        for (const physics::Stance stance : kStances) {
-          reach = std::max(reach, math::Length(physics::LowerToStance(point, stance)));
-        }
+        reach = std::max(reach, math::Length(point));
       }
     }
   }
