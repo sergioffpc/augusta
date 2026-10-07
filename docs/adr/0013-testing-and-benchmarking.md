@@ -21,6 +21,7 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
 | TSan                                            |                     |                     | ✅                        |                             |
 | Netcode under an impaired link                  |                     |                     | ✅                        |                             |
 | Coverage report (`llvm-cov`)                    |                     |                     | ✅                        |                             |
+| Test report (HTML)                              |                     |                     | ✅                        |                             |
 | NFR-01 (tick rate under load)                   |                     |                     |                           | manual, on the r630 cluster |
 | Micro-benchmarks                                | by hand             |                     | ✅ history, fails past 2× |                             |
 
@@ -139,6 +140,14 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   regression test.
 - **Coverage** is a report for finding untested deterministic logic, not a gate:
   a minimum percentage pushes toward tests written for the number.
+- **The test report** is the nightly's tests in one HTML report
+  (`scripts/test-report.sh`): its `ctest` runs (the whole Linux suite, the
+  property tests, TSan and the netcode profiles), which `ctest` writes as JUnit
+  XML and `junit2html` renders together, a row per test and a column per run,
+  each result linked to its output; and the coverage report beside them, with
+  its totals on the report's first page. It is a run artifact, and the
+  documentation site publishes the latest scheduled night's (ADR-0046). It
+  reports; the jobs' own results are what fail the nightly.
 - **Micro-benchmarks** time the hot paths, through their public interfaces: a
   server tick through every phase of SimulationWorld in a full Match, the
   protocol's encoding and decoding of the messages each tick sends and receives,

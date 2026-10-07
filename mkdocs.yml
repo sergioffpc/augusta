@@ -42,9 +42,9 @@ hooks:
   - tools/docs/hooks.py
 validation:
   # The navigation's API reference entry links to api/, which Doxygen fills
-  # after MkDocs has built, and its Benchmarks entry to benchmarks/, which the
-  # docs workflow fills from the nightly's results; every other entry is a page
-  # the hook found.
+  # after MkDocs has built, and its Benchmarks and Tests entries to benchmarks/
+  # and tests/, which the docs workflow fills from the nightly's results; every
+  # other entry is a page the hook found.
   nav:
     not_found: info
   links:

@@ -2,7 +2,7 @@ name: Docs
 # The documentation site (ADR-0046): every pull request builds it, so a broken
 # build fails before merge, and main, what is released, is published on GitHub
 # Pages, on every push or by hand, and again every day, after the nightly, so
-# the benchmark history it carries is the latest.
+# the benchmark history and test report it carries are the latest.
 on:
   push:
     branches: [main]
@@ -21,6 +21,10 @@ jobs:
   build:
     # Pinned rather than ubuntu-latest - see ci.yml's client job comment.
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      # Downloading the nightly's test report.
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
@@ -39,6 +43,21 @@ jobs:
             mkdir -p build/docs-site/benchmarks
             git archive FETCH_HEAD nightly | tar -x --strip-components=1 -C build/docs-site/benchmarks
           fi
+      - name: Add the test report
+        # The latest scheduled nightly's (ADR-0013), which tests develop, under
+        # tests/. A night without one (it never started) is passed over; with
+        # none in the last ten the site is published without it.
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          runs=$(gh run list --workflow nightly.yml --event schedule --status completed --limit 10 \
+            --json databaseId --jq '.[].databaseId')
+          for run in $runs; do
+            if gh run download "$run" --name test-report --dir build/docs-site/tests; then
+              break
+            fi
+          done
       - if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

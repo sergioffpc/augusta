@@ -59,6 +59,7 @@ def on_config(config):
         {"Decisions (ADRs)": adrs},
         {"API reference": "api/"},
         {"Benchmarks": "benchmarks/"},
+        {"Tests": "tests/"},
     ]
     return config
 
