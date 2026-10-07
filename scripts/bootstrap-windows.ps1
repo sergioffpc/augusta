@@ -8,7 +8,8 @@ install location, no --installPath) plus the rest of the client toolchain.
 $ErrorActionPreference = "Stop"
 
 function Install-WingetPackage {
-  param([string]$Id, [string[]]$Override, [string]$Version)
+  # Pin, a winget version pattern, keeps a later `winget upgrade` within it.
+  param([string]$Id, [string[]]$Override, [string]$Version, [string]$Pin)
   $wingetArgs = @("install", "--id", $Id, "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements")
   if ($Version) {
     # --force so a different installed version (e.g. a newer one) is replaced.
@@ -25,10 +26,14 @@ function Install-WingetPackage {
   winget @wingetArgs
   if ($LASTEXITCODE -eq -1978335135) {
     Write-Host "$Id is already installed; skipping."
-    return
-  }
-  if ($LASTEXITCODE -ne 0) {
+  } elseif ($LASTEXITCODE -ne 0) {
     throw "winget failed to install $Id (exit $LASTEXITCODE)."
+  }
+  if ($Pin) {
+    winget pin add --id $Id --exact --version $Pin --force
+    if ($LASTEXITCODE -ne 0) {
+      throw "winget failed to pin $Id to $Pin (exit $LASTEXITCODE)."
+    }
   }
 }
 
@@ -44,9 +49,10 @@ Install-WingetPackage -Id "Mozilla.sccache"
 Install-WingetPackage -Id "astral-sh.uv"
 # StyLua formats the scenarios' Lua scripts and taplo formats and lints TOML,
 # in the hooks below and in CI, which pins the same versions. luacheck, which
-# lints the Lua, is not on winget: it is installed further down.
-Install-WingetPackage -Id "JohnnyMorganz.StyLua" -Version "2.5.2"
-Install-WingetPackage -Id "tamasfe.taplo" -Version "0.10.0"
+# lints the Lua, is not on winget: it is installed further down. Pinned so
+# `winget upgrade` leaves them on the versions CI runs.
+Install-WingetPackage -Id "JohnnyMorganz.StyLua" -Version "2.5.2" -Pin "2.5.2"
+Install-WingetPackage -Id "tamasfe.taplo" -Version "0.10.0" -Pin "0.10.0"
 # Doxygen builds the documentation site's C++ API reference (`make docs`,
 # ADR-0046), as the docs workflow does with the runner's own.
 Install-WingetPackage -Id "DimitriVanHeesch.Doxygen"
@@ -56,8 +62,7 @@ Install-WingetPackage -Id "DimitriVanHeesch.Doxygen"
 # formats and lints differently, so the hooks would disagree with CI's gates.
 # Bump it together with the runner image. The pin keeps `winget upgrade` on
 # that major.
-Install-WingetPackage -Id "LLVM.LLVM" -Version "21.1.8"
-winget pin add --id LLVM.LLVM --exact --version "21.*" --force
+Install-WingetPackage -Id "LLVM.LLVM" -Version "21.1.8" -Pin "21.*"
 
 # Unlike the other packages here, LLVM's and Doxygen's installers don't add
 # themselves to PATH under winget's --silent flag (that's an
