@@ -5140,8 +5140,7 @@ TEST_F(ScriptedServerTest, AReaderThatHasSeenAMatchStartNeverTakesTheEventsOfAnE
     }
   });
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
-  while (session_.GetServerView()->matches_started < first + kMatches &&
-         std::chrono::steady_clock::now() < deadline) {
+  while (session_.GetServerView()->matches_started < first + kMatches && std::chrono::steady_clock::now() < deadline) {
     server_.Pump();
     session_.PumpEvents();
     session_.ExchangeMessages();

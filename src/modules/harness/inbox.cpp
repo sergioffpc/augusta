@@ -54,9 +54,7 @@ std::shared_ptr<const ServerView> Inbox::View() const { return view_.load(); }
 
 std::vector<Shot> Inbox::TakeShots(std::uint32_t match) { return shots_.Take(match); }
 
-std::vector<HitConfirmation> Inbox::TakeHitConfirmations(std::uint32_t match) {
-  return hit_confirmations_.Take(match);
-}
+std::vector<HitConfirmation> Inbox::TakeHitConfirmations(std::uint32_t match) { return hit_confirmations_.Take(match); }
 
 std::vector<Death> Inbox::TakeDeaths(std::uint32_t match) { return deaths_.Take(match); }
 
