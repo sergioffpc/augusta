@@ -20,6 +20,7 @@ namespace {
 using augusta::math::Vec3;
 using augusta::physics::BodyState;
 using augusta::physics::Stance;
+using augusta::presentation::EntityId;
 using augusta::presentation::RemoteBody;
 using augusta::presentation::RemoteInterpolator;
 using augusta::presentation::RemotePlayer;
@@ -27,8 +28,9 @@ using augusta::presentation::SeenTime;
 using augusta::presentation::SeenTimeAt;
 using augusta::presentation::ServerClock;
 
-constexpr auto kEntityA = static_cast<augusta::presentation::EntityId>(1);
-constexpr auto kEntityB = static_cast<augusta::presentation::EntityId>(2);
+constexpr auto kEntityA = static_cast<EntityId>(1);
+constexpr auto kEntityB = static_cast<EntityId>(2);
+constexpr auto kEntityC = static_cast<EntityId>(3);
 
 BodyState At(float x, Stance stance = Stance::kStanding) {
   return BodyState{.position = Vec3(x, 0.0F, 0.0F), .velocity = Vec3(), .stance = stance};
@@ -177,7 +179,7 @@ TEST(RemoteInterpolatorTest, ASessionNoLongerInSyncsCurrentListIsNoLongerSampled
   interpolator.Record(kEntityA, 0.0F, At(0.0F), 0.0F);
   interpolator.Record(kEntityB, 0.0F, At(0.0F), 0.0F);
 
-  const std::array<augusta::presentation::EntityId, 1> still_here{kEntityA};
+  const std::array<EntityId, 1> still_here{kEntityA};
   interpolator.Sync(still_here);
 
   const std::vector<RemotePlayer> sampled = interpolator.Sample(0.0F);
@@ -187,7 +189,6 @@ TEST(RemoteInterpolatorTest, ASessionNoLongerInSyncsCurrentListIsNoLongerSampled
 
 // Requirements: NFR-02
 TEST(RemoteInterpolatorTest, BodiesAreSampledInTheOrderTheirEntitiesWereFirstRecorded) {
-  constexpr auto kEntityC = static_cast<augusta::presentation::EntityId>(3);
   RemoteInterpolator interpolator;
   for (const double server_time : {0.0, 1.0}) {
     interpolator.Record(kEntityC, server_time, At(3.0F), 0.0F);
@@ -222,7 +223,6 @@ TEST(RemoteInterpolatorTest, AStaleUpdateForOneEntityLeavesTheOthersRecording) {
 
 // Requirements: NFR-02
 TEST(RemoteInterpolatorTest, RemainingBodiesKeepTheirOrderAndHistoryWhenOneDeparts) {
-  constexpr auto kEntityC = static_cast<augusta::presentation::EntityId>(3);
   RemoteInterpolator interpolator;
   for (const double server_time : {0.0, 1.0}) {
     const auto x = static_cast<float>(server_time) * 10.0F;
@@ -231,7 +231,7 @@ TEST(RemoteInterpolatorTest, RemainingBodiesKeepTheirOrderAndHistoryWhenOneDepar
     interpolator.Record(kEntityC, server_time, At(-x), 0.0F);
   }
 
-  const std::array<augusta::presentation::EntityId, 2> still_here{kEntityC, kEntityA};
+  const std::array<EntityId, 2> still_here{kEntityC, kEntityA};
   interpolator.Sync(still_here);
   // Recording after the departure still reaches the right buffers.
   interpolator.Record(kEntityC, 2.0, At(-20.0F), 0.0F);
@@ -257,7 +257,7 @@ TEST(RemoteInterpolatorTest, ADepartedEntityRecordedAgainStartsAFreshHistoryLast
   interpolator.Record(kEntityB, 0.0, At(0.0F), 0.0F);
   interpolator.Record(kEntityA, 1.0, At(10.0F), 0.0F);
 
-  const std::array<augusta::presentation::EntityId, 1> still_here{kEntityB};
+  const std::array<EntityId, 1> still_here{kEntityB};
   interpolator.Sync(still_here);
   // Older than A's newest before it departed: accepted, since that is forgotten.
   interpolator.Record(kEntityA, 0.5, At(7.0F), 0.0F);
@@ -284,11 +284,11 @@ TEST(RemoteInterpolatorTest, SyncWithNoOneForgetsEveryBody) {
 // one is kept once.
 // Requirements: NFR-02
 TEST(RemoteInterpolatorTest, SyncNeitherAddsUnrecordedEntitiesNorDuplicatesRepeatedOnes) {
-  constexpr auto kNeverRecorded = static_cast<augusta::presentation::EntityId>(99);
+  constexpr auto kNeverRecorded = static_cast<EntityId>(99);
   RemoteInterpolator interpolator;
   interpolator.Record(kEntityA, 0.0, At(0.0F), 0.0F);
 
-  const std::array<augusta::presentation::EntityId, 3> current{kNeverRecorded, kEntityA, kEntityA};
+  const std::array<EntityId, 3> current{kNeverRecorded, kEntityA, kEntityA};
   interpolator.Sync(current);
 
   const std::vector<RemotePlayer> sampled = interpolator.Sample(0.0);
@@ -464,7 +464,7 @@ TEST(RemoteInterpolatorTest, SyncWithEveryoneStillPresentKeepsBufferedHistory) {
   interpolator.Record(kEntityA, 0.0F, At(0.0F), 0.0F);
   interpolator.Record(kEntityA, 1.0F, At(10.0F), 0.0F);
 
-  const std::array<augusta::presentation::EntityId, 1> still_here{kEntityA};
+  const std::array<EntityId, 1> still_here{kEntityA};
   interpolator.Sync(still_here);
 
   // The two updates recorded before Sync are still both buffered, so this still
@@ -475,20 +475,20 @@ TEST(RemoteInterpolatorTest, SyncWithEveryoneStillPresentKeepsBufferedHistory) {
 // Each of many bodies keeps its own kUpdatesKept newest updates, whatever the
 // others record and whoever departs.
 // Requirements: NFR-02
-TEST(RemoteInterpolatorTest, ManyBodiesEachKeepTheirOwnNewestUpdatesAcrossRepeatedSnapshots) {
+TEST(RemoteInterpolatorTest, ManyBodiesEachKeepTheirOwnNewestUpdatesAcrossRepeatedAuthoritativeStates) {
   constexpr int kBodies = 64;
   constexpr int kDropped = 5;
   const int ticks = static_cast<int>(augusta::presentation::kUpdatesKept) + kDropped;
   RemoteInterpolator interpolator;
-  std::vector<augusta::presentation::EntityId> odd;
+  std::vector<EntityId> odd;
   for (int body = 1; body < kBodies; body += 2) {
-    odd.push_back(static_cast<augusta::presentation::EntityId>(body));
+    odd.push_back(static_cast<EntityId>(body));
   }
   for (int tick = 0; tick < ticks; ++tick) {
-    // Every snapshot twice over, as a repeated Authoritative State would be.
+    // Every update twice over, as a repeated Authoritative State would be.
     for (int repeat = 0; repeat < 2; ++repeat) {
       for (int body = 0; body < kBodies; ++body) {
-        interpolator.Record(static_cast<augusta::presentation::EntityId>(body), ServerTime(tick),
+        interpolator.Record(static_cast<EntityId>(body), ServerTime(tick),
                             At(static_cast<float>((body * 1000) + tick)), 0.0F);
       }
     }

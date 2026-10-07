@@ -23,11 +23,11 @@ using augusta::presentation::RemoteInterpolator;
 constexpr double kTickDuration = 1.0 / 60.0;
 
 void BM_RemoteInterpolationIngest(benchmark::State& state) {
-  const auto bodies = static_cast<std::uint32_t>(state.range(0));
+  const auto body_count = static_cast<std::uint32_t>(state.range(0));
   std::vector<EntityId> present;
-  present.reserve(bodies);
-  for (std::uint32_t body = 1; body <= bodies; ++body) {
-    present.push_back(static_cast<EntityId>(body));
+  present.reserve(body_count);
+  for (std::uint32_t id = 1; id <= body_count; ++id) {
+    present.push_back(static_cast<EntityId>(id));
   }
   RemoteInterpolator interpolator;
   BodyState body_state;
@@ -41,7 +41,7 @@ void BM_RemoteInterpolationIngest(benchmark::State& state) {
     interpolator.Sync(present);
   }
   benchmark::DoNotOptimize(interpolator);
-  state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(bodies));
+  state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(body_count));
 }
 BENCHMARK(BM_RemoteInterpolationIngest)->RangeMultiplier(4)->Range(8, 2048);
 

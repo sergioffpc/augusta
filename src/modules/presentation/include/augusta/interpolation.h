@@ -194,7 +194,8 @@ class RemoteInterpolator {
   // last forgotten): the order Sample returns them in.
   std::vector<Buffered> bodies_;
   // Each buffered entity's position in bodies_, so Record and Sync find it
-  // without searching every other entity's buffer for each.
+  // without searching every other entity's buffer for each. Always names
+  // exactly bodies_'s entities at their current positions.
   std::unordered_map<EntityId, std::size_t> index_;
 };
 
