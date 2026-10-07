@@ -10,8 +10,6 @@
 #include <string>
 #include <string_view>
 
-#include "augusta/input.h"
-
 /// \file
 /// augusta::config reads the client's and the server's startup settings from a
 /// YAML file (ADR-0034) instead of a list of command-line arguments. By default
@@ -29,75 +27,16 @@
 /// the executable starts the same from anywhere; a relative `base_dir` is itself
 /// relative to the file's own directory (`base_dir: .` means the file's
 /// directory).
+///
+/// This header is the mechanism both share, with no side's keys in it: each
+/// executable's own file is its own module's - augusta/client_config.h
+/// (client-only, with the player's controls) and augusta/server_config.h
+/// (server-only) - so the headless server never depends on client Input.
 namespace augusta::config {
 
-/// The client's default config file, looked up next to augustac.
-inline constexpr std::string_view kClientConfigFileName = "augustac.yaml";
-/// The server's default config file, looked up next to augustad.
-inline constexpr std::string_view kServerConfigFileName = "augustad.yaml";
-
-/// Default server the client connects to (ARCHITECTURE.md §3: direct IP:port).
-inline constexpr std::string_view kDefaultServerAddress = "127.0.0.1:27015";
-/// Default address the server listens on.
-inline constexpr std::string_view kDefaultListenAddress = "0.0.0.0:27015";
-/// Default TCP port the server's metrics endpoint listens on (ADR-0049).
-inline constexpr std::uint16_t kDefaultMetricsPort = 9464;
 /// Default runtime floor for the console sink (ADR-0029, ADR-0036): a Debug
 /// build's DEBUG heartbeat, not its per-packet TRACE.
 inline constexpr std::string_view kDefaultLogLevel = "debug";
-
-/// What augustac.yaml holds. Its required key `base_dir` is where the relative
-/// paths below start from; it is applied, not kept.
-struct ClientConfig {
-  /// Key `content.pack` (required): the client pack to load.
-  std::filesystem::path pack_path;
-  /// Key `content.public_key` (required): the Ed25519 public key the pack is signed with.
-  std::filesystem::path public_key_path;
-  /// Key `player.character` (required): the character to play, by its name
-  /// in the scenario's manifest (e.g. "soldier"). The server admits
-  /// only one of its scenario's (ADR-0042).
-  std::string character;
-  /// Key `network.server_address`: the server to connect to.
-  std::string server_address{kDefaultServerAddress};
-  /// Key `logging.level`: one of "trace", "debug", "info", "warn", "error",
-  /// "critical" - the console sink's runtime floor (augusta::logging::SetLogLevel).
-  /// Only lowers what the build already compiles in (AUGUSTA_LOG_ACTIVE_LEVEL);
-  /// a Release build has no TRACE/DEBUG to raise it back to.
-  std::string log_level{kDefaultLogLevel};
-  /// Key `input.mouse_sensitivity` (a finite number above zero) and section
-  /// `input.keys` (control name -> key name, e.g. `sprint: Space`), both
-  /// optional: how the player's controls respond and which key triggers each.
-  /// Controls the section leaves out keep their input::kDefaultKeymap key; no
-  /// two controls may share a key, and none may use input::kReleaseCursorKey.
-  input::Config input{};
-};
-
-/// What augustad.yaml holds. Its required key `base_dir` is where the relative
-/// paths below start from; it is applied, not kept.
-struct ServerConfig {
-  /// Key `content.pack` (required): the server pack to load.
-  std::filesystem::path pack_path;
-  /// Key `content.public_key` (required): the Ed25519 public key the pack is signed with.
-  std::filesystem::path public_key_path;
-  /// Key `simulation.tick_rate_hz` (required): the integer rate, in Hz, at which
-  /// the server simulates and every client predicts. Must be 1..255; fixed for
-  /// the life of the process, and told to each client when it joins (ADR-0039).
-  std::uint8_t tick_rate_hz = 0;
-  /// Key `network.listen_address`: the local address to listen on.
-  std::string listen_address{kDefaultListenAddress};
-  /// Key `logging.level`: one of "trace", "debug", "info", "warn", "error",
-  /// "critical" - the console sink's runtime floor (augusta::logging::SetLogLevel).
-  /// Only lowers what the build already compiles in (AUGUSTA_LOG_ACTIVE_LEVEL);
-  /// a Release build has no TRACE/DEBUG to raise it back to.
-  std::string log_level{kDefaultLogLevel};
-  /// Key `simulation.recording`: where to write a recording of every tick
-  /// SimulationWorld runs, replacing any file there, for augusta-replay
-  /// (ADR-0048). Empty, the default, records nothing.
-  std::filesystem::path recording_path;
-  /// Key `metrics.port`: the TCP port, 1..65535, the metrics endpoint serves
-  /// /metrics and /livez on, on every interface (ADR-0049).
-  std::uint16_t metrics_port = kDefaultMetricsPort;
-};
 
 /// Why reading the command line or a config file failed.
 enum class ConfigErrorCode {
@@ -133,16 +72,10 @@ enum class ConfigErrorCode {
   /// A section's value is not a mapping (an empty one is: it sets nothing);
   /// subject is the section.
   kNotASection,
-  /// An `input.keys` entry names no control input::ControlNamed knows; subject
-  /// is the entry, e.g. `input.keys.jump`.
-  kUnknownControl,
-  /// An `input.keys` entry names no key input::KeyNamed knows; subject is the
-  /// entry, e.g. `input.keys.sprint`.
-  kInvalidKeyName,
-  /// An `input.keys` entry binds a key another control already has; subject is the entry.
-  kKeyBoundTwice,
-  /// An `input.keys` entry binds input::kReleaseCursorKey; subject is the entry.
-  kReservedKey,
+  /// A value the config's own rules reject, beyond what the mechanism checks
+  /// (e.g. an open-section entry naming something that config does not know);
+  /// subject is the key or entry, and reason, worded by that config, says why.
+  kInvalidEntry,
 };
 
 /// A failure to read the command line or a config file: what went wrong (code)
@@ -151,45 +84,35 @@ struct ConfigError {
   ConfigErrorCode code;
   /// The key, message or usage text the code's documentation names.
   std::string subject;
-  /// The config file being read, set by the Load* functions; empty from
-  /// ParseClientConfig, ParseServerConfig and ParseCommandLine.
+  /// Only for kInvalidEntry: why the config rejected subject, as a phrase that
+  /// follows it (e.g. "names no control; the controls are ...").
+  std::string reason;
+  /// The config file being read, set by LoadConfigFile; empty from the Parse*
+  /// functions.
   std::filesystem::path file;
 };
 
 /// A message for error fit to print to whoever runs the process, so neither
-/// executable words it on its own.
+/// executable words it on its own. What it knows of a code is the mechanism's
+/// alone, and a kInvalidEntry's reason: a config whose keys say more of
+/// another code (a number's range) words that error itself, through the
+/// overload below.
 std::string DescribeConfigError(const ConfigError& error);
 
-/// Parses a client config from yaml_text. A relative `base_dir` key is resolved
-/// against base_dir (the file's directory), and the other relative paths
-/// against the key. The error's subject is the key that is wrong.
-std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml_text,
-                                                           const std::filesystem::path& base_dir);
+/// DescribeConfigError's message with phrase in place of the code's own: error's
+/// file, if any, then phrase.
+std::string DescribeConfigError(const ConfigError& error, std::string_view phrase);
 
-/// Parses a server config from yaml_text. A relative `base_dir` key is resolved
-/// against base_dir (the file's directory), and the other relative paths
-/// against the key. The error's subject is the key that is wrong.
-std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml_text,
-                                                           const std::filesystem::path& base_dir);
-
-/// Reads and parses the client config at file; its `base_dir` is relative to
-/// file's directory. Errors carry file.
-std::expected<ClientConfig, ConfigError> LoadClientConfig(const std::filesystem::path& file);
-
-/// Reads and parses the server config at file; its `base_dir` is relative to
-/// file's directory. Errors carry file.
-std::expected<ServerConfig, ConfigError> LoadServerConfig(const std::filesystem::path& file);
-
-// The schema mechanism the functions above read their own files with, for an
-// executable outside the runtime that keeps a config file of its own under the
-// same rules (ADR-0034): its keys and their meaning stay with it.
+// The schema mechanism every config file is read with - the client's, the
+// server's, and any executable outside the runtime that keeps one of its own
+// under the same rules (ADR-0034): its keys and their meaning stay with it.
 
 /// A config file's scalars, under their dotted paths ("network.server_address").
 using ConfigValues = std::map<std::string, std::string, std::less<>>;
 
 /// What a config file may hold, as dotted paths: its scalar keys, and its open
-/// sections - sections whose entries the caller checks by name itself (the
-/// client's "input.keys", whose entries are control names).
+/// sections - sections whose entries the caller checks by name itself (e.g. a
+/// key-binding section, whose entries are control names).
 struct ConfigSchema {
   std::span<const std::string_view> keys;
   std::span<const std::string_view> open_sections;
@@ -202,6 +125,22 @@ std::expected<ConfigValues, ConfigError> ReadConfigValues(std::string_view yaml_
 
 /// The text of file; kCannotOpenFile, with file set, if it can't be read.
 std::expected<std::string, ConfigError> ReadConfigFile(const std::filesystem::path& file);
+
+/// Reads file and parses its text with parse(text, file's directory), which
+/// returns std::expected<Config, ConfigError>; a relative `base_dir` in it is
+/// thus relative to file's directory. Errors carry file.
+template <typename Config, typename Parse>
+std::expected<Config, ConfigError> LoadConfigFile(const std::filesystem::path& file, Parse parse) {
+  const auto text = ReadConfigFile(file);
+  if (!text) {
+    return std::unexpected(text.error());
+  }
+  std::expected<Config, ConfigError> config = parse(*text, file.parent_path());
+  if (!config) {
+    config.error().file = file;
+  }
+  return config;
+}
 
 /// key's value: kMissingKey if values lacks it, kEmptyValue if it is empty.
 std::expected<std::string, ConfigError> RequireString(const ConfigValues& values, std::string_view key);

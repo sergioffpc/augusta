@@ -90,6 +90,7 @@ target_link_libraries(
   augustac
   PRIVATE
     augusta_assets
+    augusta_client_config
     augusta_config
     augusta_cues
     augusta_version
@@ -98,6 +99,7 @@ target_link_libraries(
     augustac_runtime
     augustac_content
 )
+augusta_set_module_scope(augustac CLIENT_ONLY)
 # winmm: main.cpp raises the system timer resolution (timeBeginPeriod) for the
 # life of the process, so the Prediction thread's sleeps keep its tick schedule.
 # NOMINMAX: the <windows.h> it includes for that would otherwise define min/max.

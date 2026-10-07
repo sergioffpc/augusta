@@ -45,7 +45,7 @@ gtest_discover_tests(augusta_swarm_run_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_swarm_settings_tests settings_test.cpp)
 target_link_libraries(
   augusta_swarm_settings_tests
-  PRIVATE augusta_swarm_settings augusta_config GTest::gtest GTest::gtest_main
+  PRIVATE augusta_swarm_settings augusta_client_config augusta_config GTest::gtest GTest::gtest_main
 )
 target_compile_definitions(
   augusta_swarm_settings_tests

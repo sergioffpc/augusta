@@ -5,7 +5,7 @@
 # Its startup settings, read under ADR-0034's rules (see settings.h).
 add_library(augusta_swarm_settings STATIC settings.cpp)
 target_include_directories(augusta_swarm_settings PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augusta_swarm_settings PUBLIC augusta_config)
+target_link_libraries(augusta_swarm_settings PUBLIC augusta_config augusta_client_config)
 augusta_set_module_scope(augusta_swarm_settings CLIENT_ONLY)
 
 # What a Scripted player does each tick (see scripted_player.h): the decision

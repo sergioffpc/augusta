@@ -70,15 +70,25 @@ gtest_discover_tests(augusta_failure_tests)
 
 add_executable(augusta_config_tests config_test.cpp)
 target_link_libraries(augusta_config_tests PRIVATE augusta_config GTest::gtest GTest::gtest_main)
-# The example configs are what a new install is copied from, so a test keeps them loading.
+gtest_discover_tests(augusta_config_tests)
+
+# The example configs are what a new install is copied from, so a test keeps each loading.
+add_executable(augusta_client_config_tests client_config_test.cpp)
+target_link_libraries(augusta_client_config_tests PRIVATE augusta_client_config GTest::gtest GTest::gtest_main)
 target_compile_definitions(
-  augusta_config_tests
-  PRIVATE
-    AUGUSTA_EXAMPLE_CLIENT_CONFIG="${CMAKE_SOURCE_DIR}/config/augustac.example.yaml"
-    AUGUSTA_EXAMPLE_SERVER_CONFIG="${CMAKE_SOURCE_DIR}/config/augustad.example.yaml"
+  augusta_client_config_tests
+  PRIVATE AUGUSTA_EXAMPLE_CLIENT_CONFIG="${CMAKE_SOURCE_DIR}/config/augustac.example.yaml"
 )
 # Links PhysX through augusta_input, so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_config_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_client_config_tests DISCOVERY_TIMEOUT 30)
+
+add_executable(augusta_server_config_tests server_config_test.cpp)
+target_link_libraries(augusta_server_config_tests PRIVATE augusta_server_config GTest::gtest GTest::gtest_main)
+target_compile_definitions(
+  augusta_server_config_tests
+  PRIVATE AUGUSTA_EXAMPLE_SERVER_CONFIG="${CMAKE_SOURCE_DIR}/config/augustad.example.yaml"
+)
+gtest_discover_tests(augusta_server_config_tests)
 
 add_executable(augusta_parameters_tests parameters_test.cpp)
 target_link_libraries(
@@ -453,6 +463,18 @@ add_test(
 add_test(
   NAME augusta_core_boundary
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/core_boundary.cmake
+)
+
+# The headless server has no client Input dependency (ARCHITECTURE.md §5):
+# augusta_input stays client-only so the configure-time scope check covers it,
+# that check rejects a fixture build graph where a server-only target reaches a
+# client-only one, and no server source or server config header names Input.
+# It only configures that fixture, with no compiler, so it builds nothing.
+add_test(
+  NAME augusta_server_boundary
+  COMMAND
+    ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+    -DGENERATOR=${CMAKE_GENERATOR} -P ${CMAKE_CURRENT_SOURCE_DIR}/server_boundary.cmake
 )
 
 add_executable(augusta_assets_tests assets_test.cpp)
