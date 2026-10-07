@@ -21,6 +21,8 @@ Generated from the Conventional Commits history by git-cliff (cliff.toml).
 - **chart:** ship the Server and Connection health dashboards
 - **cluster:** sign Grafana in as admin/admin
 - **cluster:** run a server per scenario, from packs augusta-publish puts on the node
+- **pack:** compose scenarios from files named in scenarios/<name>.yaml
+- **pack:** **BREAKING** name characters by their key in the scenario manifest
 
 ### Bug Fixes
 
@@ -41,6 +43,7 @@ Generated from the Conventional Commits history by git-cliff (cliff.toml).
 - **docker:** copy tools/replay into the image's build stage
 - **swarm:** initialize every BodyState field in the scripted player tests
 - **swarm:** look up a whole-number key without an iterator type
+- **pack:** seed the example pieces from a plain list
 
 ### Refactoring
 
@@ -119,6 +122,9 @@ Generated from the Conventional Commits history by git-cliff (cliff.toml).
 - **lint:** turn off a clang-analyzer check that misfires in MSVC's STL
 - build the C++ tools together under AUGUSTA_TOOLS
 - **tools:** share one uv environment across tools/
+- lint and format Python, shell, workflows, CMake, Markdown and PowerShell
+- format Markdown with Prettier
+- follow Google's Markdown, Python and shell style guides
 
 ## 1.0.0 - 2026-10-02
 
