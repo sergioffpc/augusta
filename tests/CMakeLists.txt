@@ -57,6 +57,10 @@ add_executable(augusta_supervisor_tests supervisor_test.cpp)
 target_link_libraries(augusta_supervisor_tests PRIVATE augusta_supervisor GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_supervisor_tests)
 
+add_executable(augusta_failure_tests failure_test.cpp)
+target_link_libraries(augusta_failure_tests PRIVATE augusta_failure GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_failure_tests)
+
 add_executable(augusta_config_tests config_test.cpp)
 target_link_libraries(augusta_config_tests PRIVATE augusta_config GTest::gtest GTest::gtest_main)
 # The example configs are what a new install is copied from, so a test keeps them loading.
