@@ -76,10 +76,9 @@ New-Item -ItemType Directory -Force -Path $authoringDir, $packsDir, $keysDir, $b
 # so each survives local edits independently - left alone once it exists,
 # like the signing key below.
 $exampleRoot = Join-Path (Split-Path -Parent $packProject) "composer\examples\authoring"
-$examplePieces = @("maps\firebase.usda", "characters\soldier.usda") +
-  ("gunshot", "hit_marker", "hit_taken", "death", "match_won", "match_lost" | ForEach-Object { "sounds\$_.wav" }) +
-  @("scripts\parameters\rules_of_engagement.lua", "scripts\rules\last_man_standing.lua", "scenarios\firebase.yaml")
-foreach ($piece in $examplePieces) {
+foreach ($piece in "maps\firebase.usda", "characters\soldier.usda", "sounds\gunshot.wav", "sounds\hit_marker.wav",
+  "sounds\hit_taken.wav", "sounds\death.wav", "sounds\match_won.wav", "sounds\match_lost.wav",
+  "scripts\parameters\rules_of_engagement.lua", "scripts\rules\last_man_standing.lua", "scenarios\firebase.yaml") {
   $source = Join-Path $exampleRoot $piece
   $dest = Join-Path $authoringDir $piece
   if (Test-Path $dest) {
