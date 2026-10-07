@@ -1,0 +1,23 @@
+# Each server's metrics endpoint, for Prometheus inside the cluster only
+# (ADR-0049): always a ClusterIP, never exposed on the node as the game port is.
+{{- range $scenario, $_ := .Values.servers }}
+{{- $server := dict "root" $ "scenario" $scenario }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "augustad.metricsName" $server }}
+  labels:
+    {{- include "augustad.labels" $ | nindent 4 }}
+    {{- include "augustad.metricsLabels" $ | nindent 4 }}
+    scenario: {{ $scenario }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "augustad.serverSelectorLabels" $server | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ $.Values.metrics.port }}
+      targetPort: metrics
+      protocol: TCP
+{{- end }}

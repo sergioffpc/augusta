@@ -1,0 +1,21 @@
+# Prometheus scrapes /metrics through each server's metrics Service (ADR-0049).
+# Every environment is scraped the same way, told apart by the namespace label
+# Prometheus gives each target, and every server by the scenario label it
+# copies from the Service.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "augustad.fullname" . }}
+  labels:
+    {{- include "augustad.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "augustad.selectorLabels" . | nindent 6 }}
+      {{- include "augustad.metricsLabels" . | nindent 6 }}
+  targetLabels:
+    - scenario
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.metrics.scrapeInterval }}

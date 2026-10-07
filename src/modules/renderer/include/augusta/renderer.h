@@ -11,54 +11,54 @@
 #include "augusta/input.h"
 #include "augusta/math.h"
 
-// augusta::renderer wraps NVIDIA Falcor/D3D12 (ADR-0009), used exclusively
-// by the Windows client. It also owns the client's single OS window:
-// Falcor fuses window creation, GPU device, and swapchain into one object
-// (Falcor::SampleApp) rather than offering them as separable pieces, so
-// there is no clean seam to split a separate augusta::window module out
-// of it. The window/device-event vocabulary (Key, KeyEvent, EventSink,
-// ...) lives in augusta::input instead, even though Renderer is the one
-// that pushes those events - see input.h's header comment for why the
-// dependency has to run this direction and not the other.
-//
-// PumpEvents and RenderFrame are deliberately two separate calls, not one
-// opaque loop, because this engine's threads don't share a cadence
-// (ARCHITECTURE.md §8, ADR-0005): PredictionWorld ticks the Simulation
-// thread at a fixed rate decoupled from how often a frame is actually
-// presented on the Main/Render thread. PumpEvents just drains the
-// OS/Falcor event queue (cheap, safe to call often, e.g. once per
-// Simulation tick's worth of wall time even though it runs on the
-// Main/Render thread); RenderFrame does the actual GPU work and should be
-// called at the app's presentation rate instead. ClientRuntime's Run()
-// loop decides that split; this module just exposes the two primitives.
-//
-// Interface scope: draws one static Scene (a list of world-space triangle
-// meshes seen from one camera), plus, per frame, however many RemotePlayer
-// instances PresentationWorld's Interpolation phase produces positions for
-// (SetRemotePlayers, below), each drawn with the mesh of its character
-// (SetCharacterMesh) - the first slice of Presentation State this module
-// actually consumes (ADR-0024) - and the fight: tracers, impacts and muzzle
-// flashes (SetCombatEffects), and the crosshair and hit marker over the frame
-// (SetOverlay), drawn with Slang shaders (ADR-0014).
-// The local player's own position, weapon model, skeletal animation and
-// audio cues are still undesigned; revisit this header again once those land.
+/// \file
+/// augusta::renderer wraps NVIDIA Falcor/D3D12 (ADR-0009), used exclusively
+/// by the Windows client. It also owns the client's single OS window:
+/// Falcor fuses window creation, GPU device, and swapchain into one object
+/// (Falcor::SampleApp) rather than offering them as separable pieces, so
+/// there is no clean seam to split a separate augusta::window module out
+/// of it. The window/device-event vocabulary (Key, KeyEvent, EventSink,
+/// ...) lives in augusta::input instead, even though Renderer is the one
+/// that pushes those events - see input.h's header comment for why the
+/// dependency has to run this direction and not the other.
+///
+/// PumpEvents and RenderFrame are deliberately two separate calls, not one
+/// opaque loop, because this engine's threads don't share a cadence
+/// (ARCHITECTURE.md §8, ADR-0005): PredictionWorld ticks on the Prediction
+/// thread at a fixed rate decoupled from how often a frame is actually
+/// presented on the Main/Render thread. PumpEvents just drains the
+/// OS/Falcor event queue (cheap, safe to call often, e.g. once per
+/// Prediction tick's worth of wall time even though it runs on the
+/// Main/Render thread); RenderFrame does the actual GPU work and should be
+/// called at the app's presentation rate instead. ClientRuntime's Run()
+/// loop decides that split; this module just exposes the two primitives.
+///
+/// Interface scope: draws one static Scene (a list of world-space triangle
+/// meshes seen from one camera), plus, per frame, however many RemotePlayer
+/// instances PresentationWorld's Interpolation phase produces positions for
+/// (SetRemotePlayers, below), each drawn with the mesh of its character
+/// (SetCharacterMesh), the fight - tracers, impacts and muzzle flashes
+/// (SetCombatEffects) - and the crosshair and hit marker over the frame
+/// (SetOverlay): the Presentation State it consumes (ADR-0024), drawn with
+/// Slang shaders (ADR-0014). Not drawn yet: the local player's own body and
+/// weapon model, and skeletal animation.
 namespace augusta::renderer {
 
-// Default initial client-area size, in pixels (see Config::width/height).
+/// Default initial client-area size, in pixels (see Config::width/height).
 constexpr std::uint32_t kDefaultWidth = 1920;
 constexpr std::uint32_t kDefaultHeight = 1080;
 
-// Initial window/renderer parameters.
+/// Initial window/renderer parameters.
 struct Config {
-  // Window title, shown in the OS title bar and taskbar.
+  /// Window title, shown in the OS title bar and taskbar.
   std::string title;
-  // Initial client-area size, in pixels. The window is resizable by the
-  // user afterward via standard OS chrome.
+  /// Initial client-area size, in pixels. The window is resizable by the
+  /// user afterward via standard OS chrome.
   std::uint32_t width = kDefaultWidth;
   std::uint32_t height = kDefaultHeight;
 };
 
-// A client-area size, in pixels.
+/// A client-area size, in pixels.
 struct Size {
   std::uint32_t width = 0;
   std::uint32_t height = 0;
@@ -110,9 +110,9 @@ struct RemotePlayer {
   /// turns left (a view's yaw). Its mesh turns with it about its origin.
   float yaw = 0.0F;
   math::Vec3 color = kDefaultRemotePlayerColor;
-  /// The character index whose mesh this player is drawn with; a player whose
-  /// index has no mesh is not drawn.
-  std::uint8_t character = 0;
+  /// The character, by its path, whose mesh this player is drawn with; a player
+  /// whose character has no mesh is not drawn.
+  std::string character;
 };
 
 /// One tracer, in world space: a streak from tail, where its bullet was a tick
@@ -142,76 +142,76 @@ struct Overlay {
   bool hit_marker = false;
 };
 
-// Connection numbers for the debug HUD. The renderer only formats them: how
-// they are sourced from the transport is the caller's business.
+/// Connection numbers for the debug HUD. The renderer only formats them: how
+/// they are sourced from the transport is the caller's business.
 struct DebugHudNetStats {
-  // Round-trip time to the server, in milliseconds.
+  /// Round-trip time to the server, in milliseconds.
   int rtt_ms = 0;
-  // Recent worst jitter in milliseconds; nullopt if not measured yet.
+  /// Recent worst jitter in milliseconds; nullopt if not measured yet.
   std::optional<float> jitter_ms;
-  // Packet loss in percent (worst of the two directions); nullopt if not
-  // measured yet.
+  /// Packet loss in percent (worst of the two directions); nullopt if not
+  /// measured yet.
   std::optional<float> loss_percent;
-  // Actual throughput over the connection, in bytes per second.
+  /// Actual throughput over the connection, in bytes per second.
   float in_bytes_per_sec = 0.0F;
   float out_bytes_per_sec = 0.0F;
 };
 
-// What the debug HUD (a green one-line readout over the frame, e.g.
-// `FPS: 120 (8.3ms) | RTT: 10ms | ...`) shows besides the frame time the
-// renderer measures itself.
+/// What the debug HUD (a green one-line readout over the frame, e.g.
+/// `FPS: 120 (8.3ms) | RTT: 10ms | ...`) shows besides the frame time the
+/// renderer measures itself.
 struct DebugHudStats {
-  // nullopt while not connected (drawn as `RTT: --`).
+  /// nullopt while not connected (drawn as `RTT: --`).
   std::optional<DebugHudNetStats> net;
 };
 
-// Owns the client's single OS window, GPU device, and swapchain. The
-// client constructs exactly one, on the Main/Render thread.
+/// Owns the client's single OS window, GPU device, and swapchain. The
+/// client constructs exactly one, on the Main/Render thread.
 class Renderer {
  public:
-  // Creates the window and GPU device per config, and wires this
-  // Renderer to push keyboard/mouse events to input_sink as Falcor
-  // delivers them (see input::EventSink). Throws std::runtime_error if
-  // window or device creation fails - there is no recoverable path for a
-  // client that can't render. input_sink must outlive this Renderer.
+  /// Creates the window and GPU device per config, and wires this
+  /// Renderer to push keyboard/mouse events to input_sink as Falcor
+  /// delivers them (see input::EventSink). Throws std::runtime_error if
+  /// window or device creation fails - there is no recoverable path for a
+  /// client that can't render. input_sink must outlive this Renderer.
   Renderer(const Config& config, input::EventSink& input_sink);
 
-  // Falcor's Device/Window/Swapchain are unique hardware resources owned
-  // through Impl (see the .cpp) - ~Renderer waits for the GPU to go idle
-  // before tearing them down, same as Falcor::SampleApp's own destructor.
+  /// Falcor's Device/Window/Swapchain are unique hardware resources owned
+  /// through Impl (see the .cpp) - ~Renderer waits for the GPU to go idle
+  /// before tearing them down, same as Falcor::SampleApp's own destructor.
   ~Renderer();
 
-  // Non-copyable/non-movable, same reasoning as ClientRuntime (the sole
-  // owner ties window/device lifetime to the thread that constructed it).
+  /// Non-copyable/non-movable, same reasoning as ClientRuntime (the sole
+  /// owner ties window/device lifetime to the thread that constructed it).
   Renderer(const Renderer&) = delete;
   Renderer& operator=(const Renderer&) = delete;
   Renderer(Renderer&&) = delete;
   Renderer& operator=(Renderer&&) = delete;
 
-  // Drains the OS/Falcor event queue and returns immediately - never
-  // waits for or presents a frame. Updates the state ShouldClose/GetSize
-  // return, and synchronously calls input_sink's matching method for
-  // every keyboard/mouse event seen. Must be called from the same
-  // thread that constructed this Renderer (the Main/Render thread); see
-  // the header comment for why this is separate from RenderFrame.
+  /// Drains the OS/Falcor event queue and returns immediately - never
+  /// waits for or presents a frame. Updates the state ShouldClose/GetSize
+  /// return, and synchronously calls input_sink's matching method for
+  /// every keyboard/mouse event seen. Must be called from the same
+  /// thread that constructed this Renderer (the Main/Render thread); see
+  /// the header comment for why this is separate from RenderFrame.
   void PumpEvents();
 
-  // True once the user has requested the window close (clicked the
-  // title bar's close button, Alt+F4, ...), as of the most recent
-  // PumpEvents call. The app's main loop is responsible for actually
-  // exiting - Renderer keeps working regardless, until destroyed.
+  /// True once the user has requested the window close (clicked the
+  /// title bar's close button, Alt+F4, ...), as of the most recent
+  /// PumpEvents call. The app's main loop is responsible for actually
+  /// exiting - Renderer keeps working regardless, until destroyed.
   [[nodiscard]] bool ShouldClose() const;
 
-  // Current client-area size, as of the most recent PumpEvents call.
+  /// Current client-area size, as of the most recent PumpEvents call.
   [[nodiscard]] Size GetSize() const;
 
-  // Draws and presents one frame - the actual GPU work. Call this at
-  // the app's target presentation rate (e.g. vsynced to the display),
-  // independently of how often PumpEvents is called. From the
-  // Main/Render thread.
-  //
-  // Draws the scene last passed to SetScene (just the cleared frame and the
-  // debug HUD until then).
+  /// Draws and presents one frame - the actual GPU work. Call this at
+  /// the app's target presentation rate (e.g. vsynced to the display),
+  /// independently of how often PumpEvents is called. From the
+  /// Main/Render thread.
+  ///
+  /// Draws the scene last passed to SetScene (just the cleared frame and the
+  /// debug HUD until then).
   void RenderFrame();
 
   /// Replaces the drawn scene, uploading its geometry to the GPU. From the
@@ -231,7 +231,7 @@ class Renderer {
   /// the Lobby, never during a match (ADR-0043).
   /// From the Main/Render thread. Throws std::runtime_error if a mesh index is
   /// out of range for its positions.
-  void SetCharacterMesh(std::uint8_t character, const SceneMesh& mesh);
+  void SetCharacterMesh(const std::string& character, const SceneMesh& mesh);
 
   /// Replaces the drawn remote-player instances via a persistently-mapped
   /// upload-heap buffer - unlike SetScene/SetCharacterMesh, cheap enough to
@@ -255,19 +255,19 @@ class Renderer {
   /// frame. From the Main/Render thread.
   void SetOverlay(const Overlay& overlay);
 
-  // Hides the OS cursor and captures it for continuous mouselook: mouse
-  // move events keep reporting a position that never stops at the window
-  // edge (as opposed to the free OS cursor a menu/UI would need - no such
-  // UI exists yet, so v1 callers enable this once and leave it on).
-  // Idempotent. Falcor exposes no such hook itself (ADR-0009);
-  // cmake/patches/falcor.patch adds Window::setCursorLocked, which puts
-  // GLFW's cursor in its disabled mode - GLFW itself releases the capture
-  // while the window is out of focus and takes it again when it regains it.
+  /// Hides the OS cursor and captures it for continuous mouselook: mouse
+  /// move events keep reporting a position that never stops at the window
+  /// edge (as opposed to the free OS cursor a menu/UI would need - no such
+  /// UI exists yet, so v1 callers enable this once and leave it on).
+  /// Idempotent. Falcor exposes no such hook itself (ADR-0009);
+  /// cmake/patches/falcor.patch adds Window::setCursorLocked, which puts
+  /// GLFW's cursor in its disabled mode - GLFW itself releases the capture
+  /// while the window is out of focus and takes it again when it regains it.
   void SetCursorLocked(bool locked);
 
-  // Updates the values the debug HUD shows, from the Main/Render
-  // thread. Call as often as they change; the HUD is drawn by every
-  // RenderFrame.
+  /// Updates the values the debug HUD shows, from the Main/Render
+  /// thread. Call as often as they change; the HUD is drawn by every
+  /// RenderFrame.
   void SetDebugHudStats(const DebugHudStats& stats);
 
  private:

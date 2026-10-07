@@ -11,6 +11,7 @@ Checks: >
   misc-include-cleaner,
   -modernize-use-trailing-return-type,
   -clang-analyzer-core.StackAddressEscape,
+  -clang-analyzer-optin.core.EnumCastOutOfRange,
   -readability-convert-member-functions-to-static,
   -readability-identifier-length,
   -modernize-use-scoped-lock
@@ -19,8 +20,9 @@ Checks: >
 # symbol a file names comes from a header it includes itself, and no include
 # goes unused. It leaves third-party headers alone (IgnoreHeaders, below):
 # those libraries are meant to be used through their umbrella headers
-# (<boost/log/core.hpp>, <yaml-cpp/yaml.h>, <PxPhysicsAPI.h>, <flecs.h>),
-# not the internal ones the check would otherwise ask for.
+# (<boost/log/core.hpp>, <yaml-cpp/yaml.h>, <PxPhysicsAPI.h>, <flecs.h>,
+# <rapidcheck.h>, <windows.h>), not the internal ones the check would
+# otherwise ask for.
 #
 # Trailing return type is a stylistic alternative the guide doesn't mandate
 # either way, so it's the one thing above we don't turn into a hard rule.
@@ -33,6 +35,13 @@ Checks: >
 # system (augusta::simulation/prediction/presentation World::Impl) - not a
 # real bug in our code, and not fixable from the call site since it's
 # Flecs's own header.
+#
+# clang-analyzer-optin.core.EnumCastOutOfRange is disabled because of a false
+# positive inside MSVC's own standard library: std::filesystem::file_size
+# (assets::Pack::Load) ORs two of xfilesystem_abi.h's __std_fs_stats_flags
+# bit flags into a value no single enumerator names. Not a bug in our code,
+# and not fixable from the call site since it's the STL's own header; the
+# Linux lint, on libstdc++, never reaches it.
 #
 # readability-convert-member-functions-to-static is disabled because most
 # module classes (physics::World, networking::Client, ...) are still
@@ -97,6 +106,8 @@ CheckOptions:
   # which UPPER_CASE alone refuses.
   - { key: readability-identifier-naming.MacroDefinitionIgnoredRegexp, value: '^AUGUSTA_[A-Z0-9_]+_H_$' }
   - { key: readability-function-size.LineThreshold,               value: 60         }
-  # Matched against the header's path as found on disk: under MSVC's flags
-  # Boost's and sol2's are found as boost\... and sol\..., hence [/\].
-  - { key: misc-include-cleaner.IgnoreHeaders, value: 'boost[/\].*;yaml-cpp/.*;glm/.*;spdlog/.*;fmt/.*;flecs.*;Px.*;foundation/.*;extensions/.*;characterkinematic/.*;steam/.*;sol[/\].*;lua.*;lauxlib.h;lualib.h;blake3.h;sodium.*;nvtx3/.*;gtest/.*;gmock/.*;benchmark/.*;Falcor.*;Core/.*;Utils/.*;RenderGraph/.*' }
+  # Matched against the header's path as found on disk: under MSVC's flags a
+  # library's headers are found as glm\..., boost\... and so on, hence [/\].
+  # <Windows.h> is an umbrella over the SDK's um/ and shared/ headers
+  # (winbase.h, minwindef.h, ...), so those are ignored by their location.
+  - { key: misc-include-cleaner.IgnoreHeaders, value: 'boost[/\].*;yaml-cpp[/\].*;glm[/\].*;spdlog[/\].*;fmt[/\].*;flecs.*;Px.*;foundation[/\].*;extensions[/\].*;characterkinematic[/\].*;steam[/\].*;sol[/\].*;lua.*;lauxlib.h;lualib.h;blake3.h;sodium.*;nvtx3[/\].*;gtest[/\].*;gmock[/\].*;rapidcheck.*;benchmark[/\].*;Windows Kits[/\].*[/\](um|shared)[/\].*;Falcor.*;Core[/\].*;Utils[/\].*;RenderGraph[/\].*' }

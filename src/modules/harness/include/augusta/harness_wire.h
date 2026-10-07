@@ -13,12 +13,13 @@
 #include "augusta/protocol.h"
 #include "augusta/tick.h"
 
-// The client's edge with the Networking Protocol (ADR-0038): what
-// harness::Session receives, turned from the protocol's plain types into the
-// engine's right after Decode, and what it sends, turned back right before
-// Encode. The only place on the client where a protocol::*Wire type meets an
-// engine type. Pure field-by-field copies; whether a value is one the client
-// accepts is decided after, by whoever takes it in.
+/// \file
+/// The client's edge with the Networking Protocol (ADR-0038): what
+/// harness::Session receives, turned from the protocol's plain types into the
+/// engine's right after Decode, and what it sends, turned back right before
+/// Encode. The only place on the client where a protocol::*Wire type meets an
+/// engine type. Pure field-by-field copies; whether a value is one the client
+/// accepts is decided after, by whoever takes it in.
 namespace augusta::harness {
 
 /// What this client asks when it joins, in the engine's terms.
@@ -27,7 +28,7 @@ struct JoinRequest {
   std::string engine_version;
   /// The hash of the client pack it loaded.
   assets::PackHash client_pack{};
-  /// The character it asks to play, by its path relative to `authoring/`.
+  /// The character it asks to play, by its name in the scenario's manifest.
   std::string character;
 };
 
@@ -86,12 +87,12 @@ struct SequencedCommand {
 /// request as the protocol carries it.
 [[nodiscard]] protocol::JoinRequestWire ToWire(const JoinRequest& request);
 
-/// command as the protocol carries it in a message whose view tick is
-/// view_tick: its own view tick as how far before that it is, no further than a
-/// byte tells.
-[[nodiscard]] protocol::CommandWire ToWire(const command::Command& command, tick::Tick view_tick);
+/// command as the protocol carries it in a message whose Seen tick is
+/// seen_tick: its own Seen time's tick as how far before that it is, no further
+/// than a byte tells.
+[[nodiscard]] protocol::CommandWire ToWire(const command::Command& command, tick::Tick seen_tick);
 
-/// commands, oldest first, as the one message that carries them; its view tick
+/// commands, oldest first, as the one message that carries them; its Seen tick
 /// is the newest of theirs.
 [[nodiscard]] protocol::CommandsWire ToWire(std::span<const SequencedCommand> commands);
 

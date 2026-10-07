@@ -6,23 +6,6 @@
 
 namespace augusta::server {
 
-bool IsMisbehaviour(PeerRejection rejection) {
-  switch (rejection) {
-    case PeerRejection::kUndecodable:
-    case PeerRejection::kNotAClientMessage:
-    case PeerRejection::kNonFiniteCommand:
-    case PeerRejection::kOutOfRangeCommand:
-    case PeerRejection::kCommandsBeforeJoining:
-      return true;
-    case PeerRejection::kStaleCommand:
-    case PeerRejection::kCommandsOutsideMatch:
-    case PeerRejection::kStaleReady:
-    case PeerRejection::kJoinRefused:
-      return false;
-  }
-  std::unreachable();
-}
-
 std::string_view DescribePeerRejection(PeerRejection rejection) {
   switch (rejection) {
     case PeerRejection::kUndecodable:

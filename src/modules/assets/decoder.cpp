@@ -323,16 +323,6 @@ std::optional<std::vector<std::string>> DecodeCharactersBlob(std::span<const std
   return characters;
 }
 
-// Client-pack blob: the client pack's hash, its kPackHashSize bytes and nothing else.
-std::optional<PackHash> DecodeClientPackBlob(std::span<const std::byte> blob) {
-  if (blob.size() != kPackHashSize) {
-    return std::nullopt;
-  }
-  PackHash hash;
-  std::ranges::copy(blob, hash.begin());
-  return hash;
-}
-
 // Audio blob wire format: see EncodeAudioBlob. Only whole samples of a width a
 // PCM WAV file can hold are a sound.
 std::optional<AudioData> DecodeAudioBlob(std::span<const std::byte> blob) {

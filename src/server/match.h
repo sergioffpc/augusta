@@ -14,15 +14,16 @@
 #include "augusta/assets.h"
 #include "augusta/networking.h"
 
-// augusta::server::Match is the server's book of who is playing, in the Lobby
-// and in a Match (ADR-0043): it decides whether a peer's join is admitted,
-// names each admitted peer with a session ID of its own making, remembers its
-// character, numbers every version of the Lobby's Roster, counts who is Ready
-// for which, and decides when a match starts and when it has ended. Where each
-// player spawns is not its to decide: Game policy assigns Spawn points in
-// SimulationWorld at Match start. Pure bookkeeping (no I/O, no clock: Host
-// tells it each tick that passes), so all of it is tested without a network;
-// what to do with the answer - reply, log, spawn bodies - is Host's mechanism.
+/// \file
+/// augusta::server::Match is the server's book of who is playing, in the Lobby
+/// and in a Match (ADR-0043): it decides whether a peer's join is admitted,
+/// names each admitted peer with a session ID of its own making, remembers its
+/// character, numbers every version of the Lobby's Roster, counts who is Ready
+/// for which, and decides when a match starts and when it has ended. Where each
+/// player spawns is not its to decide: Game policy assigns Spawn points in
+/// SimulationWorld at Match start. Pure bookkeeping (no I/O, no clock: Host
+/// tells it each tick that passes), so all of it is tested without a network;
+/// what to do with the answer - reply, log, spawn bodies - is Host's mechanism.
 namespace augusta::server {
 
 /// The least time between one match ending and the next starting, so a Lobby
@@ -44,8 +45,8 @@ enum class EntityId : std::uint32_t {};
 /// One player in the Lobby.
 struct RosterEntry {
   SessionId session{};
-  /// Its character index: 1-based position in the scenario's character list (ADR-0042).
-  std::uint8_t character = 1;
+  /// Its character, by its name in the scenario's manifest: one of the scenario's (ADR-0042).
+  std::string character;
 };
 
 /// Who is in the Lobby, under the version that names this membership.
@@ -61,7 +62,8 @@ struct MatchPlayer {
   SessionId session{};
   /// The body the player's commands move for the whole match.
   EntityId entity{};
-  std::uint8_t character = 1;
+  /// Its character (see RosterEntry::character).
+  std::string character;
 };
 
 /// Who a match starts with.
@@ -82,8 +84,8 @@ struct MatchEnd {
 struct Admission {
   /// The name the server gave the peer's player.
   SessionId session{};
-  /// The character it plays.
-  std::uint8_t character = 1;
+  /// The character it plays (see RosterEntry::character).
+  std::string character;
 };
 
 /// What a peer asks when it joins.
@@ -92,8 +94,8 @@ struct JoinRequest {
   std::string engine_version;
   /// The hash of the client pack the client loaded.
   assets::PackHash client_pack{};
-  /// The character the player chose, by its path relative to `authoring/`
-  /// (e.g. "characters/player", ADR-0042).
+  /// The character the player chose, by its name in the scenario's manifest
+  /// (e.g. "soldier", ADR-0042).
   std::string character;
 };
 
@@ -145,7 +147,6 @@ struct MatchConfig {
 /// The Lobby, and the match its players go on to, keyed by the transport's handle for each player.
 class Match {
  public:
-  /// A match built from config.
   explicit Match(MatchConfig config);
 
   /// Admits peer to the Lobby as request asks, or says why not: its version
@@ -204,7 +205,7 @@ class Match {
  private:
   struct Member {
     SessionId session;
-    std::uint8_t character;
+    std::string character;
     // The Roster version this player's client last loaded for; 0 for none.
     std::uint32_t ready_version = 0;
   };

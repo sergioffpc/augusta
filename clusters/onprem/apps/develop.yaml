@@ -26,11 +26,11 @@ spec:
         kind: GitRepository
         name: augusta-develop
   values:
-    assetPacks:
-      # The folder of /srv/augusta/asset-packs on the node holding server.pack
-      # and augusta.pub.
-      packVersion: augusta
-    service:
-      # Pinned (rather than left to Kubernetes to assign) so this
-      # environment has a stable address for LAN clients to connect to.
-      nodePort: 30777
+    # A server per scenario (ADR-0026), each running the pack version
+    # augusta-publish printed for it.
+    servers:
+      augusta:
+        packVersion: "88d2bfc69e91"
+        # Pinned (rather than left to Kubernetes to assign) so this server
+        # has a stable address for LAN clients to connect to.
+        nodePort: 30777

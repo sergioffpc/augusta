@@ -12,7 +12,7 @@
   "configurations": [
     // The (gdb) configs below debug the Linux build of augustad (the real
     // deployment target, ADR-0026) and need a real gdb on PATH - only
-    // works from WSL, not plain Windows (no MIDebuggerPath is set here,
+    // works from the dev container, not plain Windows (no MIDebuggerPath is set here,
     // so VS Code falls back to expecting "gdb" to resolve on its own,
     // which it can't on Windows: "Unable to determine path to debugger").
     // For debugging augustad natively on Windows during dev, use the

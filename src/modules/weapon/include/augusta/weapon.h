@@ -6,18 +6,19 @@
 #include "augusta/command.h"
 #include "augusta/parameters.h"
 
-// augusta::weapon holds the rifle's rules (US-07 to US-09): what a tick's
-// Command does to a player's rifle, whether it fires a round, and where that
-// round leaves for. It is ARCHITECTURE.md §5's WeaponHandling: pure mechanism
-// in the shared core, with no world and no state of its own, so the two Worlds
-// that run a WeaponHandling phase call the same function, as both call
-// physics::World. The server's SimulationWorld takes the result as
-// authoritative and fires a bullet for each round (ADR-0023); the client's
-// PredictionWorld predicts its own fire, reload and recoil with it (ADR-0024),
-// and is reconciled against the server's State (ADR-0004). Nothing here is
-// random, so the two agree.
-//
-// The rifle's values are the Parameters' (ADR-0039), handed in on every call.
+/// \file
+/// augusta::weapon holds the rifle's rules (US-07 to US-09): what a tick's
+/// Command does to a player's rifle, whether it fires a round, and where that
+/// round leaves for. It is ARCHITECTURE.md §5's WeaponHandling: pure mechanism
+/// in the shared core, with no world and no state of its own, so the two Worlds
+/// that run a WeaponHandling phase call the same function, as both call
+/// physics::World. The server's SimulationWorld takes the result as
+/// authoritative and fires a bullet for each round (ADR-0023); the client's
+/// PredictionWorld predicts its own fire, reload and recoil with it (ADR-0024),
+/// and is reconciled against the server's State (ADR-0004). Nothing here is
+/// random, so the two agree.
+///
+/// The rifle's values are the Parameters' (ADR-0039), handed in on every call.
 namespace augusta::weapon {
 
 /// How far a rifle points off its player's view (CONTEXT.md's Recoil offset),

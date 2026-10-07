@@ -42,6 +42,14 @@ Install-WingetPackage -Id "ezwinports.make"
 Install-WingetPackage -Id "Git.Git"
 Install-WingetPackage -Id "Mozilla.sccache"
 Install-WingetPackage -Id "astral-sh.uv"
+# StyLua formats the scenarios' Lua scripts and taplo formats and lints TOML,
+# in the hooks below and in CI, which pins the same versions. luacheck, which
+# lints the Lua, is not on winget: it is installed further down.
+Install-WingetPackage -Id "JohnnyMorganz.StyLua" -Version "2.5.2"
+Install-WingetPackage -Id "tamasfe.taplo" -Version "0.10.0"
+# Doxygen builds the documentation site's C++ API reference (`make docs`,
+# ADR-0046), as the docs workflow does with the runner's own.
+Install-WingetPackage -Id "DimitriVanHeesch.Doxygen"
 # clang-format and clang-tidy, see docs/ENGINEERING.md, Code Quality. Back
 # the .githooks/pre-commit and .githooks/pre-push hooks below. Pinned to the
 # clang CI runs (the ubuntu-26.04 runner's distro package): another major
@@ -51,15 +59,16 @@ Install-WingetPackage -Id "astral-sh.uv"
 Install-WingetPackage -Id "LLVM.LLVM" -Version "21.1.8"
 winget pin add --id LLVM.LLVM --exact --version "21.*" --force
 
-# Unlike the other packages here, LLVM's installer doesn't add itself to
-# PATH under winget's --silent flag (that's an interactive-installer
-# checkbox, unchecked by default in silent mode) - add its default
-# install location explicitly rather than relying on that checkbox.
-$llvmBin = "$env:ProgramFiles\LLVM\bin"
-if ((Test-Path $llvmBin) -and
-    ([System.Environment]::GetEnvironmentVariable("Path", "Machine") -notlike "*$llvmBin*")) {
-  $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
-  [System.Environment]::SetEnvironmentVariable("Path", "$machinePath;$llvmBin", "Machine")
+# Unlike the other packages here, LLVM's and Doxygen's installers don't add
+# themselves to PATH under winget's --silent flag (that's an
+# interactive-installer checkbox, unchecked by default in silent mode) - add
+# their default install locations explicitly rather than relying on it.
+foreach ($bin in @("$env:ProgramFiles\LLVM\bin", "$env:ProgramFiles\doxygen\bin")) {
+  if ((Test-Path $bin) -and
+      ([System.Environment]::GetEnvironmentVariable("Path", "Machine") -notlike "*$bin*")) {
+    $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+    [System.Environment]::SetEnvironmentVariable("Path", "$machinePath;$bin", "Machine")
+  }
 }
 
 # winget/MSI installers update the Machine/User PATH in the registry, but
@@ -74,7 +83,8 @@ $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";
 # clang-format's absence only shows up as ".githooks/pre-commit: not
 # found on PATH - skipping" at commit time, which is easy to miss and
 # leaves every local commit unformatted. Check now, once, instead.
-$requiredCommands = @("cmake", "ninja", "make", "git", "sccache", "uv", "clang-format", "clang-tidy")
+$requiredCommands = @("cmake", "ninja", "make", "git", "sccache", "uv", "clang-format", "clang-tidy",
+  "stylua", "taplo", "doxygen")
 $missing = $requiredCommands | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) }
 if ($missing) {
   throw "Bootstrap installed packages but these commands still aren't on PATH: $($missing -join ', '). " +
@@ -128,6 +138,70 @@ if ($userPath -notlike "*$yamlfmtBin*") {
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + $userPath
 if (-not (Get-Command yamlfmt -ErrorAction SilentlyContinue)) {
   throw "yamlfmt was installed but is not on PATH: $yamlfmtBin"
+}
+
+# Install luacheck's standalone release (it bundles its own Lua) in a
+# user-local bin directory, pinned as CI pins it.
+$luacheckBin = Join-Path $env:LOCALAPPDATA "Programs\luacheck"
+New-Item -ItemType Directory -Force -Path $luacheckBin | Out-Null
+$luacheckTemp = Join-Path $env:TEMP ("luacheck-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $luacheckTemp | Out-Null
+try {
+  $luacheckDownload = Join-Path $luacheckTemp "luacheck.exe"
+  Invoke-WebRequest -Uri "https://github.com/lunarmodules/luacheck/releases/download/v1.2.0/luacheck.exe" `
+    -OutFile $luacheckDownload
+  $expectedHash = "0f1c69c4d09f1ebb4d8df14c215e4553e2e639bd4cb7bf3c639b0daa6198317b"
+  $actualHash = (Get-FileHash $luacheckDownload -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($actualHash -ne $expectedHash) {
+    throw "SHA-256 mismatch for luacheck.exe."
+  }
+  Copy-Item -Force $luacheckDownload (Join-Path $luacheckBin "luacheck.exe")
+} finally {
+  Remove-Item -LiteralPath $luacheckTemp -Recurse -Force
+}
+$userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+if ($userPath -notlike "*$luacheckBin*") {
+  $userPath = "$userPath;$luacheckBin"
+  [System.Environment]::SetEnvironmentVariable("Path", $userPath, "User")
+}
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + $userPath
+if (-not (Get-Command luacheck -ErrorAction SilentlyContinue)) {
+  throw "luacheck was installed but is not on PATH: $luacheckBin"
+}
+
+# Install the PSScriptAnalyzer module, which lints and formats the PowerShell
+# scripts (scripts\psscriptanalyzer.ps1 imports it from here), pinned as CI
+# pins it. Unpacked from the gallery's package rather than Install-Module,
+# which needs the NuGet provider and a trusted gallery first.
+$psScriptAnalyzerVersion = "1.25.0"
+$psScriptAnalyzerDir = Join-Path $env:LOCALAPPDATA "Programs\PSScriptAnalyzer"
+$psScriptAnalyzerManifest = Join-Path $psScriptAnalyzerDir "PSScriptAnalyzer.psd1"
+if ((Test-Path $psScriptAnalyzerManifest) -and
+    (Import-PowerShellDataFile $psScriptAnalyzerManifest).ModuleVersion -eq $psScriptAnalyzerVersion) {
+  Write-Host "PSScriptAnalyzer $psScriptAnalyzerVersion is already installed; skipping."
+} else {
+  $psScriptAnalyzerTemp = Join-Path $env:TEMP ("PSScriptAnalyzer-" + [guid]::NewGuid().ToString("N"))
+  New-Item -ItemType Directory -Path $psScriptAnalyzerTemp | Out-Null
+  try {
+    $psScriptAnalyzerPackage = Join-Path $psScriptAnalyzerTemp "PSScriptAnalyzer.zip"
+    Invoke-WebRequest -Uri "https://www.powershellgallery.com/api/v2/package/PSScriptAnalyzer/$psScriptAnalyzerVersion" `
+      -OutFile $psScriptAnalyzerPackage
+    $expectedHash = "14e634c828eb98efb9f40b2918ba90f139ed5eccdf663a2a747736d996995d60"
+    $actualHash = (Get-FileHash $psScriptAnalyzerPackage -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -ne $expectedHash) {
+      throw "SHA-256 mismatch for PSScriptAnalyzer $psScriptAnalyzerVersion."
+    }
+    if (Test-Path $psScriptAnalyzerDir) {
+      Remove-Item -LiteralPath $psScriptAnalyzerDir -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $psScriptAnalyzerDir | Out-Null
+    tar.exe -xf $psScriptAnalyzerPackage -C $psScriptAnalyzerDir
+    if ($LASTEXITCODE -ne 0) {
+      throw "Extracting PSScriptAnalyzer $psScriptAnalyzerVersion failed (exit $LASTEXITCODE)."
+    }
+  } finally {
+    Remove-Item -LiteralPath $psScriptAnalyzerTemp -Recurse -Force
+  }
 }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot

@@ -8,15 +8,18 @@
 
 #include "augusta/assets.h"
 
-// Private (not under include/augusta/, never installed) declarations for
-// decoder.cpp's blob decoders - see encoder.h's own comment for why
-// Encode*/WritePack are equally private. These are NOT part of the public
-// contract: a caller only ever gets typed data back through
-// Pack::Resolve* (assets.cpp), never a raw decoder call. This header
-// exists purely so assets.cpp can see decoder.cpp's definitions from a
-// separate translation unit.
+/// \file
+/// Private (not under include/augusta/, never installed) declarations for
+/// decoder.cpp's blob decoders - see encoder.h's own comment for why
+/// Encode*/WritePack are equally private. These are NOT part of the public
+/// contract: a caller only ever gets typed data back through
+/// Pack::Resolve* (assets.cpp), never a raw decoder call. This header
+/// exists purely so assets.cpp can see decoder.cpp's definitions from a
+/// separate translation unit.
 namespace augusta::assets {
 
+/// Each decodes one blob type's byte layout, the inverse of encoder.h's
+/// Encode*, or is nullopt if blob is not a valid blob of that type.
 std::optional<MeshData> DecodeMeshBlob(std::span<const std::byte> blob);
 std::optional<SceneData> DecodeSceneBlob(std::span<const std::byte> blob);
 std::optional<TextureData> DecodeTextureBlob(std::span<const std::byte> blob);
@@ -25,7 +28,6 @@ std::optional<HitboxData> DecodeHitboxBlob(std::span<const std::byte> blob);
 std::optional<EyeData> DecodeEyeBlob(std::span<const std::byte> blob);
 std::optional<std::string> DecodeScriptBlob(std::span<const std::byte> blob);
 std::optional<std::vector<std::string>> DecodeCharactersBlob(std::span<const std::byte> blob);
-std::optional<PackHash> DecodeClientPackBlob(std::span<const std::byte> blob);
 std::optional<AudioData> DecodeAudioBlob(std::span<const std::byte> blob);
 std::optional<std::string> DecodeSoundsBlob(std::span<const std::byte> blob);
 

@@ -9,7 +9,7 @@
 #   -DCOMPILE_COMMANDS=<Falcor's compile_commands.json>
 #   -DEXPECTED=<augusta_renderer's FALCOR_HAS_* definitions, ';'-separated>
 
-if (NOT EXISTS "${COMPILE_COMMANDS}")
+if(NOT EXISTS "${COMPILE_COMMANDS}")
   message(FATAL_ERROR "No ${COMPILE_COMMANDS} to read Falcor's features from")
 endif()
 
@@ -18,19 +18,21 @@ endif()
 file(STRINGS "${COMPILE_COMMANDS}" falcor_command REGEX "-DFALCOR_DLL " LIMIT_COUNT 1)
 string(REGEX MATCHALL "-DFALCOR_HAS_[A-Z0-9_]+=[^ ]+" falcor_features "${falcor_command}")
 list(TRANSFORM falcor_features REPLACE "^-D" "")
-if (NOT falcor_features)
+if(NOT falcor_features)
   message(FATAL_ERROR "No FALCOR_HAS_* definitions found in ${COMPILE_COMMANDS}")
 endif()
 
 set(expected_features ${EXPECTED})
 list(SORT falcor_features)
 list(SORT expected_features)
-if (NOT falcor_features STREQUAL expected_features)
+if(NOT falcor_features STREQUAL expected_features)
   list(JOIN falcor_features " " falcor_text)
   list(JOIN expected_features " " expected_text)
-  message(FATAL_ERROR
+  message(
+    FATAL_ERROR
     "Falcor.dll and augusta_renderer disagree on Falcor's features:\n"
     "  Falcor.dll:       ${falcor_text}\n"
     "  augusta_renderer: ${expected_text}\n"
-    "Update AUGUSTA_FALCOR_FEATURES in src/modules/renderer/CMakeLists.txt to match.")
+    "Update AUGUSTA_FALCOR_FEATURES in src/modules/renderer/CMakeLists.txt to match."
+  )
 endif()

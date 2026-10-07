@@ -6,29 +6,31 @@
 #include <limits>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/tick.h"
 
-// Remote-player interpolation (ADR-0024's Interpolation phase): what
-// PresentationWorld shows for every player but the local one. Neither
-// PredictionWorld nor client-side reconciliation ever runs for another
-// player's body - the client never has their input, only what the server's
-// Authoritative State reports of them, at most once per server tick and
-// arriving irregularly over the network relative to the render frame rate.
-// Showing the newest report directly would make a remote player step at
-// network arrival times, jitter included. Instead, each update is placed on
-// the server's own timeline (its tick × the tick duration), a short ring of
-// them is kept per remote entity, and each frame shows the point
-// kInterpolationDelay behind a render-side clock aligned to that timeline
-// (ServerClock), interpolated between the two updates surrounding it - smooth
-// motion, independent of when updates arrive or frames run.
-//
-// Pure - no clock, no ECS, no network - so it is tested on its own;
-// PresentationWorld feeds it each frame with its render frame's elapsed time
-// and the newest Authoritative State (see presentation.cpp).
+/// \file
+/// Remote-player interpolation (ADR-0024's Interpolation phase): what
+/// PresentationWorld shows for every player but the local one. Neither
+/// PredictionWorld nor client-side reconciliation ever runs for another
+/// player's body - the client never has their input, only what the server's
+/// Authoritative State reports of them, at most once per server tick and
+/// arriving irregularly over the network relative to the render frame rate.
+/// Showing the newest report directly would make a remote player step at
+/// network arrival times, jitter included. Instead, each update is placed on
+/// the server's own timeline (its tick × the tick duration), a short ring of
+/// them is kept per remote entity, and each frame shows the point
+/// kInterpolationDelay behind a render-side clock aligned to that timeline
+/// (ServerClock), interpolated between the two updates surrounding it - smooth
+/// motion, independent of when updates arrive or frames run.
+///
+/// Pure - no clock, no ECS, no network - so it is tested on its own;
+/// PresentationWorld feeds it each frame with its render frame's elapsed time
+/// and the newest Authoritative State (see presentation.cpp).
 namespace augusta::presentation {
 
 /// The server's name for one dynamic body (CONTEXT.md, "Entity ID"), as
@@ -92,22 +94,23 @@ class ServerClock {
   double behind_ = 0.0;
 };
 
-/// What of the server's timeline a frame shows the other players at: the tick
-/// of an Authoritative State update, and how far from it to the next one, 0 to
-/// 1. It is what a Command sampled on that frame reports to the server, which
-/// judges the Command's shots against the players as they were then (ADR-0044).
-struct ShownView {
+/// The Seen time of a frame: what of the server's timeline it shows the other
+/// players at, as the tick of an Authoritative State update and how far from it
+/// to the next one, 0 to 1. It is what a Command sampled on that frame reports
+/// to the server, which judges the Command's shots against the players as they
+/// were then (ADR-0044).
+struct SeenTime {
   tick::Tick tick = 0;
   float fraction = 0.0F;
 };
 
-/// The view a frame that samples at sample_time shows: sample_time, in seconds
+/// The Seen time of a frame that samples at sample_time: sample_time, in seconds
 /// on the server's timeline, as the tick it falls on or after, of ticks
 /// tick_duration seconds long, and how far past it it is. Held within
 /// oldest_tick and newest_tick, the first and the last update there is to show:
 /// before or past them a frame shows that update itself (RemoteInterpolator::Sample).
-[[nodiscard]] ShownView ViewAt(double sample_time, double tick_duration, tick::Tick oldest_tick,
-                               tick::Tick newest_tick);
+[[nodiscard]] SeenTime SeenTimeAt(double sample_time, double tick_duration, tick::Tick oldest_tick,
+                                  tick::Tick newest_tick);
 
 /// One remote player's body as shown this frame: position and velocity
 /// linearly interpolated between the two surrounding updates, and facing along
@@ -126,9 +129,9 @@ struct RemoteBody {
 struct RemotePlayer {
   EntityId entity{};
   RemoteBody body{};
-  /// The character index it is drawn as, from Match start; 0 if unknown.
-  /// PresentationWorld fills it in: the interpolator knows only bodies.
-  std::uint8_t character = 0;
+  /// The character it is drawn as, by its path, from Match start; empty if
+  /// unknown. PresentationWorld fills it in: the interpolator knows only bodies.
+  std::string character;
 };
 
 /// Buffers the Authoritative State's per-entity updates for every player

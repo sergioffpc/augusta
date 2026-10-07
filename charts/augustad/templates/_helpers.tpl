@@ -20,6 +20,55 @@ app.kubernetes.io/name: {{ include "augustad.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
+{{/* The per-server templates below take a dict of the chart's root context
+     ("root") and the server's scenario ("scenario"). */}}
+
+{{/* A server's resources' name, augustad-<scenario>, after checking the
+     scenario can name it: a DNS label short enough for the metrics Service's
+     name to stay one (augusta-publish refuses the same names). */}}
+{{- define "augustad.serverName" -}}
+{{- if not (regexMatch "^[a-z0-9]([a-z0-9-]{0,44}[a-z0-9])?$" .scenario) -}}
+{{- fail (printf "servers.%s: a scenario's name must be lowercase letters, digits and '-', starting and ending with a letter or digit, at most 46 characters" .scenario) -}}
+{{- end -}}
+{{- printf "%s-%s" (include "augustad.fullname" .root) .scenario -}}
+{{- end -}}
+
+{{/* Tells one server's pods and Services from another's. The scenario label
+     also becomes every metric's scenario label (servicemonitor.yaml). */}}
+{{- define "augustad.serverSelectorLabels" -}}
+{{ include "augustad.selectorLabels" .root }}
+scenario: {{ .scenario }}
+{{- end -}}
+
+{{/* The folder of the asset-pack volume holding a server's pack, after
+     checking its packVersion is one augusta-publish names: 12 hex characters,
+     so it cannot reach outside the scenario's folder. */}}
+{{- define "augustad.packFolder" -}}
+{{- $version := (index .root.Values.servers .scenario).packVersion | default "" | toString -}}
+{{- if not (regexMatch "^[0-9a-f]{12}$" $version) -}}
+{{- fail (printf "servers.%s.packVersion must name the pack version augusta-publish printed, quoted (12 hex characters), not %q" .scenario $version) -}}
+{{- end -}}
+{{- printf "%s/%s/%s" .root.Values.assetPacks.hostPath .scenario $version -}}
+{{- end -}}
+
+{{/* A server's startup settings (ADR-0034), as config/augustad.example.yaml
+     documents them. The pack and its key come from the server's own folder
+     of the asset-pack volume, mounted at the config's base_dir. */}}
+{{- define "augustad.config" -}}
+base_dir: /srv/augusta/pack
+content:
+  pack: server.pack
+  public_key: augusta.pub
+simulation:
+  tick_rate_hz: {{ .root.Values.server.tickRateHz }}
+network:
+  listen_address: 0.0.0.0:{{ .root.Values.service.port }}
+metrics:
+  port: {{ .root.Values.metrics.port }}
+logging:
+  level: {{ .root.Values.server.logLevel }}
+{{- end -}}
+
 {{/* The image tag to run: image.tag if set; else, for a chart Flux versioned
      <version>+<commit>, the sha-<commit> tag CI pushed for that same commit;
      else the chart's appVersion. */}}
@@ -31,4 +80,16 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- else -}}
 {{- .Chart.AppVersion -}}
 {{- end -}}
+{{- end -}}
+
+{{/* A server's metrics Service's name, which the alert rules match its
+     targets by. */}}
+{{- define "augustad.metricsName" -}}
+{{- printf "%s-metrics" (include "augustad.serverName" .) -}}
+{{- end -}}
+
+{{/* Tells the metrics Service, which the ServiceMonitor selects, from the
+     game one. */}}
+{{- define "augustad.metricsLabels" -}}
+app.kubernetes.io/component: metrics
 {{- end -}}

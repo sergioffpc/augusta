@@ -1,0 +1,45 @@
+{
+  "extensions": {
+    "markdown-tables": {
+      "enabled": true
+    },
+    "front-matter": {
+      "enabled": true
+    }
+  },
+  "plugins": {
+    "md003": {
+      "style": "atx"
+    },
+    "md007": {
+      "indent": 4
+    },
+    "md009": {
+      "br_spaces": 0
+    },
+    "md013": {
+      "line_length": 80,
+      "headings": false,
+      "code_blocks": false,
+      "tables": false
+    },
+    "md029": {
+      "enabled": false
+    },
+    "md032": {
+      "enabled": false
+    },
+    "md036": {
+      "enabled": false
+    },
+    "md041": {
+      "enabled": false
+    },
+    "md060": {
+      "enabled": false
+    },
+    "md046": {
+      "style": "fenced"
+    }
+  }
+}

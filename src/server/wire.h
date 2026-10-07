@@ -14,19 +14,27 @@
 #include "augusta/replication.h"
 #include "augusta/tick.h"
 #include "command_queue.h"
+#include "host_metrics.h"
 #include "match.h"
+#include "recording.h"
 
-// The server's edge with the Networking Protocol (ADR-0038): what server::Host
-// sends, turned from the engine's types into the protocol's plain ones right
-// before Encode, and what it receives, turned back right after Decode. The only
-// place on the server where a protocol::*Wire type meets an engine type: Match,
-// CommandQueue and replication never see one. Pure field-by-field copies;
-// whether a value is one the server accepts is decided after, by whoever takes
-// it in.
+/// \file
+/// The server's edge with the Networking Protocol (ADR-0038): what server::Host
+/// sends, turned from the engine's types into the protocol's plain ones right
+/// before Encode, and what it receives, turned back right after Decode; and a
+/// match recording's records (recording.h), the same way. The only
+/// place on the server where a protocol::*Wire type meets an engine type: Match,
+/// CommandQueue and replication never see one. Pure field-by-field copies;
+/// whether a value is one the server accepts is decided after, by whoever takes
+/// it in.
 namespace augusta::server {
 
 /// session as the protocol carries it.
 [[nodiscard]] protocol::SessionIdWire ToWire(SessionId session);
+
+/// The type of payload, an encoded message: what its first byte says. payload
+/// must be one Encode made, or Decode took.
+[[nodiscard]] MessageType TypeOf(std::span<const std::byte> payload);
 
 /// entity as the protocol carries it.
 [[nodiscard]] protocol::EntityIdWire ToWire(EntityId entity);
@@ -74,16 +82,28 @@ namespace augusta::server {
 /// A join a client asked for, in the engine's terms.
 [[nodiscard]] JoinRequest FromWire(const protocol::JoinRequestWire& request);
 
-/// A command a client sent in a message whose view tick is view_tick, in the
-/// engine's terms: its own view tick is that many ticks before it, or 0.
-[[nodiscard]] command::Command FromWire(const protocol::CommandWire& command, tick::Tick view_tick);
+/// A command a client sent in a message whose Seen tick is seen_tick, in the
+/// engine's terms: its own Seen time's tick is that many ticks before it, or 0.
+[[nodiscard]] command::Command FromWire(const protocol::CommandWire& command, tick::Tick seen_tick);
 
-/// A sequenced command a client sent in a message whose view tick is view_tick,
+/// A sequenced command a client sent in a message whose Seen tick is seen_tick,
 /// in the engine's terms.
-[[nodiscard]] SequencedCommand FromWire(const protocol::SequencedCommandWire& command, tick::Tick view_tick);
+[[nodiscard]] SequencedCommand FromWire(const protocol::SequencedCommandWire& command, tick::Tick seen_tick);
 
 /// The commands a client sent in one message, oldest first, in the engine's terms.
 [[nodiscard]] std::vector<SequencedCommand> FromWire(const protocol::CommandsWire& message);
+
+/// A match recording's header as its record (ADR-0048).
+[[nodiscard]] protocol::RecordingHeaderWire ToWire(const RecordingHeader& header);
+
+/// A recording's header record in the engine's terms.
+[[nodiscard]] RecordingHeader FromWire(const protocol::RecordingHeaderWire& header);
+
+/// One tick of a match recording as its record.
+[[nodiscard]] protocol::RecordedTickWire ToWire(const TickRecord& record);
+
+/// A recording's record of tick, as the World numbers it, in the engine's terms.
+[[nodiscard]] TickRecord FromWire(const protocol::RecordedTickWire& record, tick::Tick tick);
 
 }  // namespace augusta::server
 

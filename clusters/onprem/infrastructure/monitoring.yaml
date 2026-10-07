@@ -1,0 +1,94 @@
+# The cluster's monitoring stack (ADR-0049): Prometheus Operator, Prometheus,
+# Alertmanager, Grafana, node-exporter and kube-state-metrics, in their own
+# namespace. The augustad chart (apps) brings its own ServiceMonitor,
+# PrometheusRules and dashboards.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: prometheus-community
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://prometheus-community.github.io/helm-charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: flux-system
+spec:
+  interval: 30m
+  releaseName: kube-prometheus-stack
+  targetNamespace: monitoring
+  # Its own release storage, as each augustad environment has (apps).
+  storageNamespace: monitoring
+  # The first install pulls every component's image.
+  timeout: 15m
+  install:
+    createNamespace: true
+    crds: CreateReplace
+  # A chart upgrade brings its operator's CRDs up to date with it.
+  upgrade:
+    crds: CreateReplace
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      version: 91.9.0
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+  values:
+    # k3s runs the control plane inside its own process, so there are no
+    # controller-manager, scheduler, proxy or etcd endpoints to scrape: their
+    # targets would only be down and alert forever.
+    kubeControllerManager:
+      enabled: false
+    kubeScheduler:
+      enabled: false
+    kubeProxy:
+      enabled: false
+    kubeEtcd:
+      enabled: false
+    prometheus:
+      prometheusSpec:
+        retention: 15d
+        # Below the volume's size, so the oldest series go before it fills.
+        retentionSize: 9GB
+        # Scrape and alert on every ServiceMonitor, PodMonitor and
+        # PrometheusRule in the cluster - the augustad chart's in develop and
+        # staging among them - not only those labelled with this release.
+        serviceMonitorSelectorNilUsesHelmValues: false
+        podMonitorSelectorNilUsesHelmValues: false
+        ruleSelectorNilUsesHelmValues: false
+        # On the node's disk, so the series survive the pod's restart.
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              storageClassName: local-path
+              accessModes:
+                - ReadWriteOnce
+              resources:
+                requests:
+                  storage: 10Gi
+    # The chart's default configuration routes every alert to its "null"
+    # receiver: alerts show only in Grafana and Alertmanager until one is
+    # chosen (ADR-0049).
+    alertmanager:
+      enabled: true
+    grafana:
+      # Fixed and in the clear: Grafana is reached only on the LAN, and a
+      # password the chart generated would be lost with the cluster.
+      adminUser: admin
+      adminPassword: admin
+      service:
+        # Pinned, like the game port (apps), so the LAN has a stable address.
+        type: NodePort
+        nodePort: 30300
+      # Dashboards are ConfigMaps labelled grafana_dashboard: "1", in any
+      # namespace (the augustad chart ships its own).
+      sidecar:
+        dashboards:
+          enabled: true
+          label: grafana_dashboard
+          labelValue: "1"
+          searchNamespace: ALL

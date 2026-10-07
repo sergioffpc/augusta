@@ -10,12 +10,13 @@
 #include <thread>
 #include <vector>
 
-// The runtime supervisor both runtimes run their fixed threads under (ADR-0005):
-// it owns the workers' lifetimes, the one stop request every loop watches, and
-// the first terminal error. A worker that fails publishes its error here and
-// requests the stop instead of terminating the process: an exception escaping
-// a std::thread would call std::terminate. The runtime then stops and joins
-// every worker and reports the failure the way it reports any other.
+/// \file
+/// The runtime supervisor both runtimes run their fixed threads under (ADR-0005):
+/// it owns the workers' lifetimes, the one stop request every loop watches, and
+/// the first terminal error. A worker that fails publishes its error here and
+/// requests the stop instead of terminating the process: an exception escaping
+/// a std::thread would call std::terminate. The runtime then stops and joins
+/// every worker and reports the failure the way it reports any other.
 namespace augusta::supervisor {
 
 /// A worker that stopped on an exception: which thread, and what it said.
@@ -34,7 +35,7 @@ class Supervisor {
   /// Stops and joins every worker still running, as StopAndJoin does.
   ~Supervisor();
 
-  // Not copyable or movable: its workers hold a reference to it.
+  /// Not copyable or movable: its workers hold a reference to it.
   Supervisor(const Supervisor&) = delete;
   Supervisor& operator=(const Supervisor&) = delete;
   Supervisor(Supervisor&&) = delete;

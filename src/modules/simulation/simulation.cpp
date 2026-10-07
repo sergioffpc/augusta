@@ -147,16 +147,16 @@ float MaxShootersDelayTicks(std::uint8_t tick_rate_hz) {
 }
 
 // The Shooter's delay (ADR-0044), in ticks, of a round fired on tick by
-// command: from the view command reports to tick, and no more than max_delay.
-// The view is only what a client says, so its fraction is held within 0 to 1
+// command: from the Seen time command reports to tick, and no more than
+// max_delay. The Seen time is only what a client says, so its fraction is held within 0 to 1
 // and the whole of it to no newer than the last tick's State, the newest any
 // client has been sent.
 float ShootersDelay(tick::Tick tick, const command::Command& command, float max_delay) {
   const auto now = static_cast<double>(tick);
   const double reported =
-      static_cast<double>(command.view_tick) + static_cast<double>(std::clamp(command.view_fraction, 0.0F, 1.0F));
-  const double view = std::min(reported, now - 1.0);
-  return std::min(static_cast<float>(now - view), max_delay);
+      static_cast<double>(command.seen_tick) + static_cast<double>(std::clamp(command.seen_fraction, 0.0F, 1.0F));
+  const double seen = std::min(reported, now - 1.0);
+  return std::min(static_cast<float>(now - seen), max_delay);
 }
 
 // What damage gives for a hit on part.
@@ -177,14 +177,14 @@ ballistics::TargetId ToTarget(EntityId entity) { return static_cast<ballistics::
 
 EntityId FromTarget(ballistics::TargetId target) { return static_cast<EntityId>(std::to_underlying(target)); }
 
-// The objectives' hook called every tick in Scripts/Behaviours (ADR-0022).
+// The rules' hook called every tick in Scripts/Behaviours (ADR-0022).
 constexpr std::string_view kOnTick = "on_tick";
 
 // How often a failing Game policy hook is logged: one that fails every tick
 // would otherwise write a line a tick (ADR-0029).
 constexpr std::chrono::seconds kPolicyWarningInterval{1};
 
-// The behaviours' hook called once at Match start (ADR-0022).
+// The rules' hook called once at Match start (ADR-0022).
 constexpr std::string_view kAssignSpawns = "assign_spawns";
 
 // The Spawn point, from 0, each of a Match's players takes with no Game policy
@@ -205,6 +205,10 @@ scripting::Field BoolField(std::string key, bool value) {
   return scripting::Field{.key = std::move(key), .value = {.data = value}};
 }
 
+scripting::Field StringField(std::string key, std::string value) {
+  return scripting::Field{.key = std::move(key), .value = {.data = std::move(value)}};
+}
+
 // One player in the Match as Game policy sees it (ADR-0022).
 struct ViewedPlayer {
   EntityId entity{};
@@ -219,7 +223,7 @@ struct ViewedPlayer {
 scripting::Value PlayerView(const ViewedPlayer& player) {
   scripting::Value::Record record{
       BoolField("alive", player.alive),
-      NumberField("character", player.identity.character),
+      StringField("character", player.identity.character),
       NumberField("entity", std::to_underlying(player.entity)),
       NumberField("health", player.health),
       BoolField("killed", player.killer.has_value()),
@@ -285,6 +289,7 @@ struct World::Impl {
   std::unordered_map<EntityId, command::Command> tick_commands;
   State committed;
   std::vector<PolicyAction> actions;
+  std::vector<float> shooters_delays;
   // Every player a bullet may strike, for posing its hitboxes where the bullet
   // judges it to be.
   flecs::query<const Player, const Body, const Facing, const Hitboxes, const HitboxHistory> targets;
@@ -412,6 +417,8 @@ struct World::Impl {
   // judged against the players as they were delay ticks before each tick of it.
   void Fire(const Shot& shot, float delay) {
     committed.shots.push_back(shot);
+    // As a fraction of the cap, so a delay held at it is the cap exactly.
+    shooters_delays.push_back(delay / max_shooters_delay * std::chrono::duration<float>(kMaxShootersDelay).count());
     const ballistics::BulletHandle bullet =
         ballistics.Fire(shot.origin, command::ViewDirection(shot.yaw, shot.pitch), parameters.rifle.muzzle_velocity,
                         {.gravity = parameters.ammo.gravity, .max_range = parameters.ammo.max_range});
@@ -557,7 +564,7 @@ struct World::Impl {
     return alive;
   }
 
-  // Calls the objectives' on_tick with the Match view while the world has a
+  // Calls the rules' on_tick with the Match view while the world has a
   // Match policy has not ended, and records the action it takes, if any, in
   // the tick's result. A hook that fails or decides what it may not is logged
   // and decides nothing; either way the tick goes on.
@@ -565,20 +572,18 @@ struct World::Impl {
     if (players.empty() || match_ended_by_policy) {
       return;
     }
-    const auto returned = policy.Call(scripting::Script::kObjectives, kOnTick, TickView());
+    const auto returned = policy.Call(kOnTick, TickView());
     if (!returned) {
       LW_LIMITED(policy_warnings,
                  "subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
-                 scripting::ScriptPath(scripting::Script::kObjectives), kOnTick, tick,
-                 scripting::DescribeHookError(returned.error()));
+                 scripting::kRulesScriptPath, kOnTick, tick, scripting::DescribeHookError(returned.error()));
       return;
     }
     const auto action = ReadTickAction(*returned, AliveSessions());
     if (!action) {
       LW_LIMITED(policy_warnings,
                  "subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
-                 scripting::ScriptPath(scripting::Script::kObjectives), kOnTick, tick,
-                 DescribeActionRefusal(action.error()));
+                 scripting::kRulesScriptPath, kOnTick, tick, DescribeActionRefusal(action.error()));
       return;
     }
     if (action->has_value()) {
@@ -588,7 +593,7 @@ struct World::Impl {
   }
 
   // The Spawn point, from 0 and below spawn_points, each of match_players takes:
-  // what the behaviours' assign_spawns answers, or in order when it is not
+  // what the rules' assign_spawns answers, or in order when it is not
   // defined, answers nil or is refused. A refusal is logged; as a hook is
   // called once a Match, it is not limited.
   std::vector<std::size_t> AssignSpawns(std::span<const MatchPlayer> match_players, std::size_t spawn_points) {
@@ -603,11 +608,10 @@ struct World::Impl {
     }
     scripting::Value::Record view = MatchView(parameters.player_count, std::move(viewed));
     view.push_back(NumberField("spawn_points", static_cast<double>(spawn_points)));
-    const auto answer = policy.Call(scripting::Script::kBehaviours, kAssignSpawns, view);
+    const auto answer = policy.Call(kAssignSpawns, view);
     if (!answer) {
       LW("subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
-         scripting::ScriptPath(scripting::Script::kBehaviours), kAssignSpawns, tick,
-         scripting::DescribeHookError(answer.error()));
+         scripting::kRulesScriptPath, kAssignSpawns, tick, scripting::DescribeHookError(answer.error()));
       return InOrderSpawns(match_players.size(), spawn_points);
     }
     if (std::holds_alternative<std::monostate>(answer->data)) {
@@ -621,8 +625,7 @@ struct World::Impl {
     auto assignment = ReadSpawnAssignment(*answer, sessions, spawn_points);
     if (!assignment) {
       LW("subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
-         scripting::ScriptPath(scripting::Script::kBehaviours), kAssignSpawns, tick,
-         DescribeSpawnRefusal(assignment.error()));
+         scripting::kRulesScriptPath, kAssignSpawns, tick, DescribeSpawnRefusal(assignment.error()));
       return InOrderSpawns(match_players.size(), spawn_points);
     }
     return *std::move(assignment);
@@ -683,6 +686,17 @@ void World::RemovePlayer(EntityId entity) {
   impl.players.erase(slot);
 }
 
+void World::PlaceBody(EntityId entity, const physics::BodyState& state) {
+  Impl& impl = *impl_;
+  const auto slot = impl.players.find(entity);
+  if (slot == impl.players.end() || !slot->second.body.has_value()) {
+    return;
+  }
+  const physics::BodyHandle handle = *slot->second.body;
+  const physics::BodyState placed = impl.physics.Restore(handle, state, impl.physics.Fall(handle));
+  slot->second.entity.set<Body>({.handle = handle, .state = placed});
+}
+
 std::vector<math::Vec3> World::StartMatch(const std::vector<MatchPlayer>& players,
                                           const std::vector<math::Vec3>& spawn_points) {
   EndMatch();
@@ -727,6 +741,7 @@ TickResult World::Tick(const std::vector<PlayerCommand>& commands, float delta_t
   impl.committed.hits.clear();
   impl.committed.bullets_in_flight = 0;
   impl.actions.clear();
+  impl.shooters_delays.clear();
   impl.player_hits.clear();
   impl.ecs.progress(delta_time);
   // The ECS visits players in storage order; the state is ordered by id.
@@ -735,7 +750,7 @@ TickResult World::Tick(const std::vector<PlayerCommand>& commands, float delta_t
   std::ranges::sort(impl.committed.deaths, {}, &Death::victim);
   std::ranges::sort(impl.committed.shots, {}, &Shot::shooter);
   std::ranges::stable_sort(impl.committed.hits, {}, &Hit::target);
-  return TickResult{.state = impl.committed, .actions = impl.actions};
+  return TickResult{.state = impl.committed, .actions = impl.actions, .shooters_delays = impl.shooters_delays};
 }
 
 }  // namespace augusta::simulation

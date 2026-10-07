@@ -95,6 +95,7 @@
       "binaryDir": "${sourceDir}/build/x64-linux-coverage",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "AUGUSTA_COVERAGE": "ON",
         "CMAKE_CXX_FLAGS": "-fprofile-instr-generate -fcoverage-mapping",
         "CMAKE_EXE_LINKER_FLAGS": "-fprofile-instr-generate"
       }
@@ -118,32 +119,44 @@
     {
       "name": "windows",
       "configurePreset": "windows",
-      "output": { "outputOnFailure": true }
+      "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "label": "^netcode$" } }
     },
     {
       "name": "windows-debug",
       "configurePreset": "windows-debug",
-      "output": { "outputOnFailure": true }
+      "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "label": "^netcode$" } }
     },
     {
       "name": "linux",
       "configurePreset": "linux",
-      "output": { "outputOnFailure": true }
+      "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "label": "^netcode$" } }
     },
     {
       "name": "linux-debug",
       "configurePreset": "linux-debug",
-      "output": { "outputOnFailure": true }
+      "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "label": "^netcode$" } }
+    },
+    {
+      "name": "linux-netcode",
+      "configurePreset": "linux",
+      "output": { "outputOnFailure": true },
+      "filter": { "include": { "label": "^netcode$" } }
     },
     {
       "name": "linux-san",
       "configurePreset": "linux-san",
-      "output": { "outputOnFailure": true }
+      "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "label": "^netcode$" } }
     },
     {
       "name": "linux-tsan",
       "configurePreset": "linux-tsan",
       "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "label": "^netcode$" } },
       "environment": {
         "TSAN_OPTIONS": "suppressions=${sourceDir}/tests/tsan.supp second_deadlock_stack=1"
       }
@@ -152,6 +165,7 @@
       "name": "linux-coverage",
       "configurePreset": "linux-coverage",
       "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "label": "^netcode$" } },
       "environment": {
         "LLVM_PROFILE_FILE": "${sourceDir}/build/x64-linux-coverage/profiles/%p-%m.profraw"
       }

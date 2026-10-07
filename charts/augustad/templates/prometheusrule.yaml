@@ -1,0 +1,70 @@
+# The servers' alert rules (ADR-0049). They route to no receiver yet, so a
+# firing alert shows only in Grafana and Alertmanager. Each server has its own,
+# scoped to its metrics Service in this release's namespace, so develop and
+# staging, and every scenario in them, alert apart.
+{{- if .Values.servers }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "augustad.fullname" . }}
+  labels:
+    {{- include "augustad.labels" . | nindent 4 }}
+spec:
+  groups:
+    {{- range $scenario, $_ := .Values.servers }}
+    {{- $server := dict "root" $ "scenario" $scenario }}
+    {{- $matcher := printf "namespace=%q, service=%q" $.Release.Namespace (include "augustad.metricsName" $server) }}
+    {{- $where := printf "%s in %s" $scenario $.Release.Namespace }}
+    - name: {{ include "augustad.serverName" $server }}
+      rules:
+        # No scrape has succeeded for 2 minutes: the target is gone (no pod,
+        # or no Service endpoint) or down. A liveness restart, which takes
+        # less, does not fire it.
+        - alert: AugustadDown
+          expr: absent(up{ {{- $matcher -}} } == 1)
+          for: 2m
+          labels:
+            severity: critical
+            scenario: {{ $scenario }}
+          annotations:
+            summary: augustad for {{ $where }} is down
+            description: Prometheus has scraped no metrics endpoint of augustad for {{ $where }} for 2 minutes.
+        # More than 1% of ticks overran (took longer than a tick, NFR-01) over
+        # 10 minutes running. The loop catches up after an overrun (ADR-0005),
+        # so an odd slow tick, from the scheduler or a busy node, is not worth
+        # an alert; one in a hundred sustained means the server can no longer
+        # keep its tick rate. A share of ticks rather than a rate per second,
+        # so it holds at any configured tick rate.
+        - alert: AugustadTickOverrunsSustained
+          expr: |
+            rate(augustad_tick_overruns_total{ {{- $matcher -}} }[5m])
+            /
+            rate(augustad_ticks_total{ {{- $matcher -}} }[5m])
+            > 0.01
+          for: 5m
+          labels:
+            severity: warning
+            scenario: {{ $scenario }}
+          annotations:
+            summary: augustad for {{ $where }} keeps overrunning its tick
+            description: '{{ printf "{{ $value | humanizePercentage }}" }} of ticks have taken longer than a tick for 10 minutes.'
+        # Connection health: a connection's quality is the share of its
+        # packets delivered, so packet loss is what it falls short of 1. The
+        # mean over every connection's samples, each direction apart, above 5%
+        # for 5 minutes.
+        - alert: AugustadPacketLossHigh
+          expr: |
+            1 - (
+              sum by (namespace, scenario, direction) (rate(augustad_connection_quality_ratio_sum{ {{- $matcher -}} }[5m]))
+              /
+              sum by (namespace, scenario, direction) (rate(augustad_connection_quality_ratio_count{ {{- $matcher -}} }[5m]))
+            ) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+            scenario: {{ $scenario }}
+          annotations:
+            summary: augustad for {{ $where }} sees high packet loss
+            description: '{{ printf "{{ $value | humanizePercentage }}" }} of {{ printf "{{ $labels.direction }}" }} packets have been lost for 5 minutes.'
+    {{- end }}
+{{- end }}

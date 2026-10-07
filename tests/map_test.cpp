@@ -1,6 +1,8 @@
 #include "augusta/map.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <string>
 #include <utility>
@@ -10,6 +12,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/math.h"
+#include "augusta/physics.h"
 #include "encoder.h"
 
 // Builds a real signed pack in a temp file and loads it back, so what is tested
@@ -23,10 +26,13 @@ using augusta::assets::Pack;
 using augusta::assets::ResolveError;
 using augusta::assets::SceneData;
 using augusta::assets::SceneNode;
+using augusta::map::AddCollision;
 using augusta::map::LoadCollision;
 using augusta::map::LoadSpawnPoints;
 using augusta::map::MapErrorCode;
 using augusta::math::Vec3;
+using augusta::physics::CollisionMesh;
+using augusta::physics::CollisionMeshError;
 
 // A unit square on the ground plane, as a collision mesh blob.
 std::vector<std::byte> SquareBlob() {
@@ -238,6 +244,42 @@ TEST(DescribeMapErrorTest, NamesWhatWasMissing) {
 
   EXPECT_NE(message.find("Missing"), std::string::npos) << message;
   EXPECT_NE(message.find("Ground"), std::string::npos) << message;
+}
+
+// A world that takes any mesh with points, and keeps how many points each one it took had.
+struct RecordingWorld {
+  std::vector<std::size_t> added;
+
+  std::expected<void, CollisionMeshError> AddCollisionMesh(const CollisionMesh& mesh) {
+    if (mesh.points.empty()) {
+      return std::unexpected(CollisionMeshError::kEmpty);
+    }
+    added.push_back(mesh.points.size());
+    return {};
+  }
+};
+
+CollisionMesh MeshOf(std::size_t points) {
+  return CollisionMesh{.points = std::vector<Vec3>(points, Vec3(0.0F, 0.0F, 0.0F)), .indices = {}};
+}
+
+TEST(AddCollisionTest, AddsEveryMeshInOrder) {
+  RecordingWorld world;
+
+  const auto added = AddCollision(world, {MeshOf(3), MeshOf(4)});
+
+  EXPECT_TRUE(added.has_value());
+  EXPECT_EQ(world.added, (std::vector<std::size_t>{3, 4}));
+}
+
+TEST(AddCollisionTest, StopsAtTheFirstRejectedMeshWithItsError) {
+  RecordingWorld world;
+
+  const auto added = AddCollision(world, {MeshOf(3), MeshOf(0), MeshOf(4)});
+
+  ASSERT_FALSE(added.has_value());
+  EXPECT_EQ(added.error(), CollisionMeshError::kEmpty);
+  EXPECT_EQ(world.added, (std::vector<std::size_t>{3}));
 }
 
 }  // namespace

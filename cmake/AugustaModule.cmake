@@ -16,8 +16,11 @@ include_guard(GLOBAL)
 set_property(GLOBAL PROPERTY AUGUSTA_MODULE_SCOPE_TARGETS "")
 
 function(augusta_set_module_scope target scope)
-  if (NOT scope MATCHES "^(SHARED|CLIENT_ONLY|SERVER_ONLY)$")
-    message(FATAL_ERROR "augusta_set_module_scope(${target}): scope must be one of SHARED, CLIENT_ONLY, SERVER_ONLY - got '${scope}'")
+  if(NOT scope MATCHES "^(SHARED|CLIENT_ONLY|SERVER_ONLY)$")
+    message(
+      FATAL_ERROR
+      "augusta_set_module_scope(${target}): scope must be one of SHARED, CLIENT_ONLY, SERVER_ONLY - got '${scope}'"
+    )
   endif()
   set_target_properties(${target} PROPERTIES AUGUSTA_MODULE_SCOPE ${scope})
   set_property(GLOBAL APPEND PROPERTY AUGUSTA_MODULE_SCOPE_TARGETS ${target})
@@ -31,7 +34,7 @@ function(augusta_check_module_scopes)
     # Not every tagged target exists on every platform (augusta_renderer
     # and augustac_runtime are only added under WIN32 - see the root
     # CMakeLists.txt).
-    if (NOT TARGET ${target})
+    if(NOT TARGET ${target})
       continue()
     endif()
     get_target_property(scope ${target} AUGUSTA_MODULE_SCOPE)
@@ -43,14 +46,14 @@ function(augusta_check_module_scopes)
     # with.
     set(deps "")
     get_target_property(link_libs ${target} LINK_LIBRARIES)
-    if (link_libs)
+    if(link_libs)
       list(APPEND deps ${link_libs})
     endif()
     get_target_property(iface_libs ${target} INTERFACE_LINK_LIBRARIES)
-    if (iface_libs)
+    if(iface_libs)
       list(APPEND deps ${iface_libs})
     endif()
-    if (deps)
+    if(deps)
       list(REMOVE_DUPLICATES deps)
     endif()
 
@@ -59,27 +62,29 @@ function(augusta_check_module_scopes)
       # $<IF:$<TARGET_EXISTS:...>,...>) or third-party targets/link flags
       # with no AUGUSTA_MODULE_SCOPE of their own - only tagged augusta
       # targets are checked.
-      if (NOT TARGET ${dep})
+      if(NOT TARGET ${dep})
         continue()
       endif()
       get_target_property(dep_scope ${dep} AUGUSTA_MODULE_SCOPE)
-      if (NOT dep_scope)
+      if(NOT dep_scope)
         continue()
       endif()
 
       set(ok FALSE)
-      if (scope STREQUAL "SHARED" AND dep_scope STREQUAL "SHARED")
+      if(scope STREQUAL "SHARED" AND dep_scope STREQUAL "SHARED")
         set(ok TRUE)
-      elseif (scope STREQUAL "CLIENT_ONLY" AND dep_scope MATCHES "^(SHARED|CLIENT_ONLY)$")
+      elseif(scope STREQUAL "CLIENT_ONLY" AND dep_scope MATCHES "^(SHARED|CLIENT_ONLY)$")
         set(ok TRUE)
-      elseif (scope STREQUAL "SERVER_ONLY" AND dep_scope MATCHES "^(SHARED|SERVER_ONLY)$")
+      elseif(scope STREQUAL "SERVER_ONLY" AND dep_scope MATCHES "^(SHARED|SERVER_ONLY)$")
         set(ok TRUE)
       endif()
 
-      if (NOT ok)
-        message(FATAL_ERROR
+      if(NOT ok)
+        message(
+          FATAL_ERROR
           "Module dependency crosses the client/server split (docs/ARCHITECTURE.md #5): "
-          "${target} (${scope}) depends on ${dep} (${dep_scope})")
+          "${target} (${scope}) depends on ${dep} (${dep_scope})"
+        )
       endif()
     endforeach()
   endforeach()

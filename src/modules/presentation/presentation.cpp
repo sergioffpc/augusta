@@ -5,9 +5,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include <flecs.h>
@@ -101,21 +103,21 @@ struct World::Impl {
   // (SetCharacterEye).
   bool spectating = false;
   Spectator spectator;
-  std::map<std::uint8_t, math::Vec3> character_eyes;
+  std::map<std::string, math::Vec3, std::less<>> character_eyes;
 
   // Every other player's buffered updates, on the server's timeline, and the
   // render side's estimate of that timeline's current time, which render frame
   // deltas advance (see interpolation.h). The ticks of the first and the last
   // snapshot recorded into remote_interpolator in the match: the last, so a
   // repeated snapshot (the network thread hasn't received a new tick since the
-  // last RunFrame call) is not recorded again, and both for the frame's view,
+  // last RunFrame call) is not recorded again, and both for the frame's Seen time,
   // which is of nothing outside what there is to show.
   RemoteInterpolator remote_interpolator;
   ServerClock server_clock;
   std::optional<tick::Tick> first_recorded_tick;
   std::optional<tick::Tick> last_recorded_tick;
   std::vector<RemotePlayer> remote_players;
-  std::optional<ShownView> view;
+  std::optional<SeenTime> seen_time;
   // The bodies of the match in progress whose Death has arrived: shown no
   // more, whatever update still lists them.
   std::vector<EntityId> dead;
@@ -175,11 +177,11 @@ struct World::Impl {
       RecordSnapshot(*snapshot);
     }
     remote_players.clear();
-    view.reset();
+    seen_time.reset();
     if (const std::optional<double> now = server_clock.Now(); now.has_value() && snapshot.has_value()) {
       const double sample_time = *now - kInterpolationDelay;
       remote_players = remote_interpolator.Sample(sample_time);
-      view = ViewAt(sample_time, snapshot->tick_duration, *first_recorded_tick, *last_recorded_tick);
+      seen_time = SeenTimeAt(sample_time, snapshot->tick_duration, *first_recorded_tick, *last_recorded_tick);
     }
     // A Death is reliable and can overtake the update that no longer lists its body.
     dead.insert(dead.end(), input.deaths.begin(), input.deaths.end());
@@ -230,14 +232,14 @@ struct World::Impl {
     last_recorded_tick = world.tick;
   }
 
-  // The character of the player whose body entity is, or 0 if none is.
-  [[nodiscard]] std::uint8_t CharacterOf(EntityId entity) const {
+  // The character of the player whose body entity is, or empty if none is.
+  [[nodiscard]] std::string CharacterOf(EntityId entity) const {
     for (const PlayerCharacter& player : input.characters) {
       if (player.entity == entity) {
         return player.character;
       }
     }
-    return 0;
+    return {};
   }
 
   void OnCamera(float delta_time) {
@@ -291,7 +293,7 @@ struct World::Impl {
   }
 
   // The eye standing of character, or the local player's character's if it was never set.
-  [[nodiscard]] math::Vec3 EyeOf(std::uint8_t character) const {
+  [[nodiscard]] math::Vec3 EyeOf(const std::string& character) const {
     const auto found = character_eyes.find(character);
     return found != character_eyes.end() ? found->second : eye;
   }
@@ -325,7 +327,7 @@ struct World::Impl {
     frame_state.local_position = shown.local_body.position + local_offset;
     frame_state.camera = camera;
     frame_state.remote_players = remote_players;
-    frame_state.view = view;
+    frame_state.seen_time = seen_time;
     frame_state.tracers = tracers.Drawn();
     frame_state.impacts.assign(tracers.Impacts().begin(), tracers.Impacts().end());
     frame_state.muzzle_flashes = muzzle_flashes;
@@ -354,7 +356,7 @@ void World::SetParameters(const parameters::Parameters& parameters, float tick_d
   impl_->ads_field_of_view = parameters.rifle.ads_field_of_view;
 }
 
-void World::SetCharacterEye(std::uint8_t character, const math::Vec3& eye) {
+void World::SetCharacterEye(const std::string& character, const math::Vec3& eye) {
   impl_->character_eyes.insert_or_assign(character, eye);
 }
 

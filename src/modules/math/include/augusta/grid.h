@@ -8,13 +8,14 @@
 
 #include "augusta/math.h"
 
-// The grids a body's and a command's numbers live on (ADR-0038): a position, a
-// velocity, a direction, an angle, a stamina or a view's fraction is a whole
-// count of its grid's step, within its grid's range. physics::World keeps every
-// body on them and the Networking Protocol sends each number as its count, so
-// what a peer is told is exactly what the sender has. They are augusta::math's,
-// which both depend on, so neither depends on the other and the two can never
-// disagree on a grid.
+/// \file
+/// The grids a body's and a command's numbers live on (ADR-0038): a position, a
+/// velocity, a direction, an angle, a stamina or a Seen time's fraction is a whole
+/// count of its grid's step, within its grid's range. physics::World keeps every
+/// body on them and the Networking Protocol sends each number as its count, so
+/// what a peer is told is exactly what the sender has. They are augusta::math's,
+/// which both depend on, so neither depends on the other and the two can never
+/// disagree on a grid.
 namespace augusta::math {
 
 /// A whole count of step, from min to max steps, which fits in bytes bytes
@@ -50,7 +51,8 @@ inline constexpr Grid kAngleGrid{.step = 1.0F / 2097152.0F, .bytes = 3, .min = -
 inline constexpr Grid kStaminaGrid{
     .step = 1.0F / 32768.0F, .bytes = 2, .min = 0, .max = std::numeric_limits<std::uint16_t>::max()};
 
-/// How far a view is from one tick to the next (command::Command): 1/256, from 0 to 255/256.
+/// A Seen time's fraction, how far it is from one tick to the next
+/// (command::Command): 1/256, from 0 to 255/256.
 inline constexpr Grid kFractionGrid{
     .step = 1.0F / 256.0F, .bytes = 1, .min = 0, .max = std::numeric_limits<std::uint8_t>::max()};
 
@@ -94,7 +96,7 @@ inline constexpr Grid kFractionGrid{
 /// A stamina on kStaminaGrid.
 [[nodiscard]] inline float SnapStamina(float stamina) { return Snap(stamina, kStaminaGrid); }
 
-/// A view's fraction on kFractionGrid.
+/// A Seen time's fraction on kFractionGrid.
 [[nodiscard]] inline float SnapFraction(float fraction) { return Snap(fraction, kFractionGrid); }
 
 }  // namespace augusta::math

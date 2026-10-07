@@ -27,22 +27,64 @@ endif
 BUILD_DIR := build/x64-$(PRESET)
 
 CXX_SOURCES := "src/*.cpp" "src/*.h" "tests/*.cpp" "tests/*.h" "tools/*.cpp" "tools/*.h"
+LUA_SOURCES := "*.lua"
+TOML_SOURCES := "*.toml" ":!:third_party/*"
+PYTHON_SOURCES := "*.py" ":!:third_party/*"
+SHELL_SOURCES := "*.sh" ".githooks/*"
+CMAKE_SOURCES := "CMakeLists.txt" "*/CMakeLists.txt" "*.cmake" ":!:third_party/*"
+MARKDOWN_SOURCES := "*.md" ":!:third_party/*" ":!:CHANGELOG.md"
 
-# What CI's clang-tidy step lints: every src .cpp except the two Windows-only
-# trees and the audio module's Windows-only output device, which its Linux
-# build graph has no compile commands for.
+# The formatters and linters uv runs, at the versions CI pins.
+RUFF := uv tool run ruff@0.16.10
+SHFMT := uv tool run --from shfmt-py==4.2.0 shfmt
+SHELLCHECK := uv tool run --from shellcheck-py==0.11.0.1 shellcheck
+ACTIONLINT := uv tool run --from actionlint-py==1.7.12.25 --with shellcheck-py==0.11.0.1 actionlint
+GERSEMI := uv tool run gersemi@0.29.2
+PYMARKDOWN := uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pymarkdown.json
+# Prettier is a Node package: uv runs Node from its PyPI wheel, and npx Prettier.
+PRETTIER := uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9
+# PSScriptAnalyzer is a PowerShell module: Windows PowerShell here, PowerShell 7
+# (pwsh) elsewhere, skipped where there is none (CI still runs it).
+ifeq ($(OS),Windows_NT)
+psscriptanalyzer = powershell -NoProfile -ExecutionPolicy Bypass -File scripts/psscriptanalyzer.ps1 $(1)
+else
+psscriptanalyzer = if command -v pwsh >/dev/null; then pwsh -NoProfile -File scripts/psscriptanalyzer.ps1 $(1); \
+  else echo "pwsh not found - skipping PSScriptAnalyzer"; fi
+endif
+
+# What CI's Lint step runs clang-tidy on: every src .cpp except the two
+# Windows-only trees and the audio module's Windows-only output device, which
+# its Linux build graph has no compile commands for, and the C++ tools'
+# (tools/replay, tools/swarm), built with them.
 TIDY_EXCLUDES := ":(exclude)src/client/*" ":(exclude)src/modules/renderer/*"
 ifeq ($(OS),Windows_NT)
 # PhysX's SSE headers break clang-tidy under MSVC's flags, so this one is
 # linted by CI's Linux run alone, as is the audio output every other build has.
 TIDY_EXCLUDES += ":(exclude)src/modules/physics/physics.cpp" ":(exclude)src/modules/audio/output_none.cpp"
 else
-TIDY_EXCLUDES += ":(exclude)src/modules/audio/output_windows.cpp" ":(exclude)src/modules/audio/miniaudio.cpp"
+TIDY_EXCLUDES += ":(exclude)src/modules/audio/output_miniaudio.cpp" ":(exclude)src/modules/audio/miniaudio.cpp"
 endif
-TIDY_SOURCES := $(shell git ls-files -- "src/*.cpp" $(TIDY_EXCLUDES))
+TIDY_SOURCES := $(shell git ls-files -- "src/*.cpp" "tools/replay/*.cpp" "tools/swarm/*.cpp" ":(exclude)tools/*/tests/*" $(TIDY_EXCLUDES))
+
+# The rest of src and tests that this platform's build has compile commands
+# for, which tidy holds to include-cleaner alone (.clang-tidy's
+# misc-include-cleaner): the tests and, on Windows, the Windows-only sources.
+# -w because the presets compile with -Werror (/WX), which turns warnings in
+# third-party headers into errors that cut the parse short and leave includes
+# looking unused.
+ifeq ($(OS),Windows_NT)
+INCLUDE_EXCLUDES := ":(exclude)src/modules/physics/physics.cpp" ":(exclude)src/modules/audio/output_none.cpp"
+JOBS ?= $(NUMBER_OF_PROCESSORS)
+else
+INCLUDE_EXCLUDES := $(TIDY_EXCLUDES) ":(exclude)tests/client_*"
+JOBS ?= $(shell nproc)
+endif
+INCLUDE_SOURCES := $(filter-out $(TIDY_SOURCES),$(shell git ls-files -- "src/*.cpp" "tests/*.cpp" "tools/replay/tests/*.cpp" "tools/swarm/tests/*.cpp" $(INCLUDE_EXCLUDES)))
+# One target per file, so a parallel make runs them side by side.
+INCLUDE_CHECKS := $(addprefix include-cleaner/,$(INCLUDE_SOURCES))
 
 .DEFAULT_GOAL := all
-.PHONY: all help configure build test check install uninstall clean distclean format format-check tidy lint
+.PHONY: all help configure build test check install uninstall clean distclean format format-check tidy lint docs
 
 all: build
 
@@ -59,10 +101,11 @@ help:
 	$(info $()  uninstall     remove what install put in place (same DESTDIR))
 	$(info $()  clean         remove build outputs, keep the configuration)
 	$(info $()  distclean     delete $(BUILD_DIR))
-	$(info $()  format        clang-format and yamlfmt on tracked source/config files)
-	$(info $()  format-check  clang-format, yamlfmt and yamllint checks from CI)
-	$(info $()  tidy          clang-tidy on src, as CI runs it (configures first))
+	$(info $()  format        every formatter (C++, YAML, Lua, TOML, Python, shell, CMake, Markdown, PowerShell) on tracked files)
+	$(info $()  format-check  every formatter check and linter CI's format job runs (not clang-tidy))
+	$(info $()  tidy          clang-tidy on src, include-cleaner on what it leaves out, as CI runs them (configures first))
 	$(info $()  lint          format-check, then tidy: everything CI lints)
+	$(info $()  docs          the documentation site, MkDocs and Doxygen, into build/docs-site)
 	@:
 
 configure:
@@ -97,14 +140,40 @@ clean:
 distclean:
 	cmake -E rm -rf $(BUILD_DIR)
 
+# The documentation site (ADR-0046): MkDocs first, since it empties the site
+# folder, then Doxygen's API reference into its api/ folder.
+docs:
+	uv run --locked --project tools --only-group docs mkdocs build --strict
+	doxygen tools/docs/Doxyfile
+
 format:
 	clang-format -i $(shell git ls-files -- $(CXX_SOURCES))
 	yamlfmt -conf .yamlfmt
+	stylua $(shell git ls-files -- $(LUA_SOURCES))
+	taplo fmt $(shell git ls-files -- $(TOML_SOURCES))
+	$(RUFF) format $(shell git ls-files -- $(PYTHON_SOURCES))
+	$(SHFMT) -w $(shell git ls-files -- $(SHELL_SOURCES))
+	$(GERSEMI) -i $(shell git ls-files -- $(CMAKE_SOURCES))
+	$(PRETTIER) --log-level warn --write $(shell git ls-files -- $(MARKDOWN_SOURCES))
+	$(call psscriptanalyzer,-Fix)
 
 format-check:
 	clang-format --dry-run --Werror $(shell git ls-files -- $(CXX_SOURCES))
 	yamlfmt -conf .yamlfmt -lint
 	uv tool run --from yamllint==1.37.1 yamllint --strict -c .yamllint .
+	stylua --check $(shell git ls-files -- $(LUA_SOURCES))
+	luacheck $(shell git ls-files -- $(LUA_SOURCES))
+	taplo fmt --check $(shell git ls-files -- $(TOML_SOURCES))
+	taplo lint $(shell git ls-files -- $(TOML_SOURCES))
+	$(RUFF) format --check $(shell git ls-files -- $(PYTHON_SOURCES))
+	$(RUFF) check $(shell git ls-files -- $(PYTHON_SOURCES))
+	$(SHFMT) -d $(shell git ls-files -- $(SHELL_SOURCES))
+	$(SHELLCHECK) $(shell git ls-files -- $(SHELL_SOURCES))
+	$(ACTIONLINT)
+	$(GERSEMI) --check $(shell git ls-files -- $(CMAKE_SOURCES))
+	$(PRETTIER) --log-level warn --check $(shell git ls-files -- $(MARKDOWN_SOURCES))
+	$(PYMARKDOWN) scan $(shell git ls-files -- $(MARKDOWN_SOURCES))
+	$(call psscriptanalyzer)
 
 # -p is written -p=<dir> because PowerShell reads a bare -p as its own
 # -PipelineVariable when vcenv.ps1 forwards the arguments, and clang-tidy would
@@ -113,5 +182,10 @@ format-check:
 # entry until then).
 tidy: configure
 	$(RUN) clang-tidy -p=$(BUILD_DIR) $(TIDY_SOURCES)
+	$(MAKE) --no-print-directory -j $(JOBS) -k -Otarget $(INCLUDE_CHECKS)
+
+.PHONY: $(INCLUDE_CHECKS)
+$(INCLUDE_CHECKS): include-cleaner/%:
+	$(RUN) clang-tidy --quiet -p=$(BUILD_DIR) --checks=-*,misc-include-cleaner --extra-arg=-w $*
 
 lint: format-check tidy

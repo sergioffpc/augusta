@@ -10,6 +10,7 @@
 #include <rapidcheck.h>
 #include <rapidcheck/gtest.h>
 
+#include "augusta/command.h"
 #include "augusta/grid.h"
 #include "augusta/math.h"
 #include "augusta/protocol.h"
@@ -31,8 +32,8 @@ void showValue(const CommandWire& command, std::ostream& out) {
   out << "{direction ";
   showValue(command.direction, out);
   out << ", yaw " << command.yaw << ", pitch " << command.pitch << ", flags " << +command.flags << ", stance "
-      << +static_cast<std::uint8_t>(command.desired_stance) << ", view_age " << +command.view_age << ", view_fraction "
-      << command.view_fraction << "}";
+      << +static_cast<std::uint8_t>(command.desired_stance) << ", seen_age " << +command.seen_age << ", seen_fraction "
+      << command.seen_fraction << "}";
 }
 
 void showValue(const BodyStateWire& body, std::ostream& out) {
@@ -71,13 +72,13 @@ void showValue(const MessageWire& message, std::ostream& out) {
       const AmmoWire& ammo = accepted.parameters.ammo;
       out << "}, ammo{gravity " << ammo.gravity << ", range " << ammo.max_range << ", damage " << ammo.head_damage
           << " " << ammo.torso_damage << " " << ammo.limb_damage << "}, starting_health "
-          << accepted.parameters.starting_health << ", character " << +accepted.character << "}";
+          << accepted.parameters.starting_health << ", character " << rc::toString(accepted.character) << "}";
     }
     void operator()(const JoinRefusedWire& refused) const {
       out << "JoinRefused{reason " << +static_cast<std::uint8_t>(refused.reason) << "}";
     }
     void operator()(const CommandsWire& commands) const {
-      out << "Commands{view_tick " << commands.view_tick << ", ";
+      out << "Commands{seen_tick " << commands.seen_tick << ", ";
       for (const SequencedCommandWire& command : commands.commands) {
         out << command.sequence << ": ";
         showValue(command.command, out);
@@ -100,7 +101,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
     void operator()(const LobbyWire& lobby) const {
       out << "Lobby{version " << lobby.version << ", ";
       for (const RosterEntryWire& entry : lobby.roster) {
-        out << static_cast<std::uint32_t>(entry.session) << ": " << +entry.character << "; ";
+        out << static_cast<std::uint32_t>(entry.session) << ": " << rc::toString(entry.character) << "; ";
       }
       out << "}";
     }
@@ -109,7 +110,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
       out << "MatchStart{";
       for (const MatchPlayerWire& player : start.players) {
         out << static_cast<std::uint32_t>(player.session) << ": entity " << static_cast<std::uint32_t>(player.entity)
-            << ", character " << +player.character << ", spawn ";
+            << ", character " << rc::toString(player.character) << ", spawn ";
         showValue(player.spawn, out);
         out << "; ";
       }
@@ -165,7 +166,7 @@ using augusta::protocol::JoinAcceptedWire;
 using augusta::protocol::JoinRefusalWire;
 using augusta::protocol::JoinRefusedWire;
 using augusta::protocol::JoinRequestWire;
-using augusta::protocol::kMaxCharacterPathLength;
+using augusta::protocol::kMaxCharacterNameLength;
 using augusta::protocol::kMaxCommandsPerMessage;
 using augusta::protocol::kMaxEngineVersionLength;
 using augusta::protocol::kMaxPlayers;
@@ -222,10 +223,8 @@ rc::Gen<StanceWire> Stance() {
   return rc::gen::element(StanceWire::kStanding, StanceWire::kCrouching, StanceWire::kProne);
 }
 
-// A character index: 1 to 255, never 0 (ADR-0042).
-rc::Gen<std::uint8_t> Character() {
-  return rc::gen::map(rc::gen::inRange(1, 256), [](int index) { return static_cast<std::uint8_t>(index); });
-}
+// A character, by its path: any bytes up to the longest a message may carry (ADR-0042).
+rc::Gen<std::string> Character() { return UpTo<std::string>(kMaxCharacterNameLength, rc::gen::arbitrary<char>()); }
 
 template <typename Id>
 rc::Gen<Id> AnyId() {
@@ -249,8 +248,8 @@ rc::Gen<CommandWire> Command() {
       rc::gen::set(&CommandWire::yaw, OnGrid(kAngleGrid)), rc::gen::set(&CommandWire::pitch, OnGrid(kAngleGrid)),
       rc::gen::set(&CommandWire::flags, rc::gen::inRange<std::uint8_t>(0, CommandWire::kReload << 1U)),
       rc::gen::set(&CommandWire::desired_stance, Stance()),
-      rc::gen::set(&CommandWire::view_age, rc::gen::arbitrary<std::uint8_t>()),
-      rc::gen::set(&CommandWire::view_fraction, OnGrid(kFractionGrid)));
+      rc::gen::set(&CommandWire::seen_age, rc::gen::arbitrary<std::uint8_t>()),
+      rc::gen::set(&CommandWire::seen_fraction, OnGrid(kFractionGrid)));
 }
 
 rc::Gen<BodyStateWire> Body() {
@@ -266,9 +265,7 @@ rc::Gen<JoinRequestWire> JoinRequest() {
   return rc::gen::build<JoinRequestWire>(
       rc::gen::set(&JoinRequestWire::engine_version,
                    UpTo<std::string>(kMaxEngineVersionLength, rc::gen::arbitrary<char>())),
-      rc::gen::set(&JoinRequestWire::client_pack, PackHash()),
-      rc::gen::set(&JoinRequestWire::character,
-                   UpTo<std::string>(kMaxCharacterPathLength, rc::gen::arbitrary<char>())));
+      rc::gen::set(&JoinRequestWire::client_pack, PackHash()), rc::gen::set(&JoinRequestWire::character, Character()));
 }
 
 rc::Gen<JoinAcceptedWire> JoinAccepted() {
@@ -312,7 +309,7 @@ rc::Gen<CommandsWire> Commands() {
       rc::gen::set(&SequencedCommandWire::command, Command()));
   return rc::gen::build<CommandsWire>(
       rc::gen::set(&CommandsWire::commands, UpTo<std::vector<SequencedCommandWire>>(kMaxCommandsPerMessage, sequenced)),
-      rc::gen::set(&CommandsWire::view_tick, rc::gen::arbitrary<augusta::tick::Tick>()));
+      rc::gen::set(&CommandsWire::seen_tick, rc::gen::arbitrary<augusta::tick::Tick>()));
 }
 
 rc::Gen<AuthoritativeStateWire> AuthoritativeState() {

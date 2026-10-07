@@ -1,0 +1,39 @@
+# The Scripted players' startup settings (ADR-0034). Copy this next to
+# augusta-swarm(.exe) as augusta-swarm.yaml and edit it, or keep it
+# anywhere and run `augusta-swarm --config <this file>`. augusta-swarm
+# connects as many Scripted players as the server's scenario has Player count,
+# plays them through run.matches Match ends, and exits 0 when every one has
+# seen them all - or exits 1 as soon as one fails or run.timeout_seconds pass.
+# Keys are grouped into sections; an error names a key by its path, e.g.
+# run.matches.
+# Where the relative paths below start from (required). A relative value is
+# relative to this file's directory, so "." means the directory of this file.
+base_dir: .
+player:
+  # The character every Scripted player plays (required), by its name
+  # in the server's scenario's manifest. The server refuses the join
+  # otherwise (ADR-0042).
+  character: soldier
+content:
+  # Client pack to load (required): the one cooked with the server's pack.
+  pack: packs/firebase/client.pack
+  # Ed25519 public key the pack is signed with (required).
+  public_key: keys/augusta.pub
+network:
+  # Server to connect to (optional, default 127.0.0.1:27015).
+  server_address: 127.0.0.1:27015
+logging:
+  # Console sink's runtime floor (optional, default debug): one of trace, debug,
+  # info, warn, error, critical.
+  level: info
+run:
+  # How many Match ends every Scripted player must see (required): an integer
+  # from 1 to 255.
+  matches: "1"
+  # How long the run may take, in seconds, before it fails (required): a
+  # number above zero. Each match after the first waits at least 5 seconds in
+  # the Lobby first (ADR-0043).
+  timeout_seconds: "120"
+  # Where the Scripted players' choices start from (optional, default 1): an
+  # integer from 0 to 4294967295. The same seed makes the same choices.
+  seed: "1"

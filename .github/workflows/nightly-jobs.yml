@@ -10,6 +10,11 @@ on:
         description: The branch every job checks out and tests.
         required: true
         type: string
+# What every job gets unless it says otherwise: a read of the code, and
+# deleting superseded cache entries (.github/actions/prune-cache).
+permissions:
+  contents: read
+  actions: write
 env:
   SCCACHE_GHA_ENABLED: "true"
   NIGHTLY_REF: ${{ inputs.ref }}
@@ -129,6 +134,29 @@ jobs:
         run: cmake --build --preset linux-tsan --target all augusta_tests
       - name: Test
         run: ctest --preset linux-tsan
+  netcode:
+    # Scripted players against an in-process server under the transport's
+    # simulated latency, jitter, loss and reordering, from a broadband link to
+    # the agreed worst case (ADR-0013): every one plays through, corrections
+    # stay bounded and shots within the lag compensation window are confirmed
+    # as hits.
+    # Minutes of real time a profile, so not on every pull request.
+    runs-on: ubuntu-26.04
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+          submodules: true
+      - uses: ./.github/actions/setup-linux-build
+      - name: Configure
+        run: cmake --preset linux
+      - uses: ./.github/actions/save-vcpkg-cache
+      - name: Build
+        run: cmake --build --preset linux --target augusta_tests
+      - name: Test (netcode under an impaired link)
+        run: ctest --preset linux-netcode --no-tests=error
   coverage:
     # An llvm-cov report of the Linux ctest run, uploaded as a run artifact:
     # a report for finding untested deterministic logic, never a gate
@@ -164,10 +192,80 @@ jobs:
           name: coverage-report
           path: coverage-report/
           if-no-files-found: ignore
+  benchmarks:
+    # The hot-path micro-benchmarks (ADR-0013), compared with the history the
+    # nights before kept on the benchmarks branch. A shared runner is noisy, so
+    # only a benchmark more than twice as slow as the night before fails the job,
+    # which opens the nightly-failure issue like any other; the slower result is
+    # recorded all the same, so the next night compares with it.
+    runs-on: ubuntu-26.04
+    permissions:
+      # Pushing the night's results to the benchmarks branch.
+      contents: write
+      actions: write
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+          submodules: true
+      - uses: ./.github/actions/setup-linux-build
+      - name: Configure
+        run: cmake --preset linux
+      - uses: ./.github/actions/save-vcpkg-cache
+      - name: Build
+        run: cmake --build --preset linux --target augusta_benchmarks
+      - name: Benchmark
+        # Five repetitions, of which only the median is kept: one slow
+        # repetition on a busy runner moves it less than it would a mean.
+        run: |
+          build/x64-linux/tests/augusta_benchmarks --benchmark_repetitions=5 --benchmark_report_aggregates_only=true \
+            --benchmark_out=benchmark-all.json --benchmark_out_format=json
+          jq '.benchmarks |= map(select(.aggregate_name == "median"))' benchmark-all.json > benchmark-results.json
+      - name: Find the benchmarked commit
+        # A scheduled run's own commit is main's, not the one benchmarked.
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Start the history
+        # The first night on develop starts the benchmarks branch, with one
+        # empty commit, for the step below to record on. A manual run on
+        # another branch before then has no history to compare with, and
+        # skips it.
+        id: history
+        run: |
+          if git ls-remote --exit-code --heads origin benchmarks > /dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          elif [ "$NIGHTLY_REF" = develop ]; then
+            empty_tree="$(git hash-object -t tree /dev/null)"
+            commit="$(git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit-tree "$empty_tree" -m "chore: start the benchmark history")"
+            git push origin "$commit:refs/heads/benchmarks"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Compare with the history and record
+        if: steps.history.outputs.exists == 'true'
+        # Kept on its own branch, not in docs/ (which holds decisions only);
+        # the docs site publishes its chart under benchmarks/ (ADR-0046). Only
+        # develop's nights are recorded: a manual run on another branch is
+        # compared with them and leaves no trace.
+        uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
+        with:
+          name: Hot paths
+          tool: googlecpp
+          output-file-path: benchmark-results.json
+          ref: ${{ steps.commit.outputs.sha }}
+          gh-repository: github.com/${{ github.repository }}
+          gh-pages-branch: benchmarks
+          benchmark-data-dir-path: nightly
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: ${{ env.NIGHTLY_REF == 'develop' }}
+          alert-threshold: "200%"
+          fail-on-alert: true
+          summary-always: true
   # A new nightly job adds itself to `needs` here, and nothing else: this job
   # reports on every job it waits for.
   report-failure:
-    needs: [property-tests, fuzz, tsan, coverage]
+    needs: [property-tests, fuzz, tsan, netcode, coverage, benchmarks]
     if: always() && contains(needs.*.result, 'failure')
     runs-on: ubuntu-26.04
     permissions:
@@ -183,7 +281,10 @@ jobs:
         # so a check that keeps failing doesn't pile up duplicates. Closing it
         # is left to whoever fixes the failure.
         run: |
+          # The backticks are Markdown for the issue, not command substitution.
+          # shellcheck disable=SC2016
           failed="$(jq -r 'to_entries[] | select(.value.result == "failure") | "- `\(.key)`"' <<< "$NEEDS")"
+          # shellcheck disable=SC2016
           body="$(printf 'The nightly on `%s` failed: %s\n\nFailed jobs:\n%s\n' "$NIGHTLY_REF" "$RUN_URL" "$failed")"
 
           # --force: creates the label on first use, and is a no-op after.

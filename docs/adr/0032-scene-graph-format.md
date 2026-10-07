@@ -1,37 +1,35 @@
 # Runtime Scene Graph Format
 
-A pack (ADR-0031) needs one more blob type beyond mesh/texture/audio/
-collision: a scene graph tying everything together into an actual level,
-addressed the same way as any other blob (`AssetType::kScene`).
+A pack (ADR-0031) needs one more blob type beyond mesh/texture/audio/ collision:
+a scene graph tying everything together into an actual level, addressed the same
+way as any other blob (`AssetType::kScene`).
 
 **Layout:** a flat array of nodes, written in parent-before-child order (so
 `parent_index` is always less than the node's own index; the root's
-`parent_index` is a sentinel). Each node carries a name (its sanitized USD
-prim path, ADR-0031), a **local** transform (translation/rotation/scale),
-and a set of optional references — by pack-relative path, same addressing
-every other blob type already uses — to a mesh, material, collider,
-spawn-point marker, or hitbox, plus free-form string-keyed properties (e.g.
-a `script` property pointing at a Lua behaviour, ADR-0022). World transform
-is never stored: it's cheap to recompute by walking the parent chain at
-load time, and storing it would let it go stale relative to the local
-transform it's derived from.
+`parent_index` is a sentinel). Each node carries a name (its sanitized USD prim
+path, ADR-0031), a **local** transform (translation/rotation/scale), and a set
+of optional references — by pack-relative path, same addressing every other blob
+type already uses — to a mesh, material, collider, spawn-point marker, or
+hitbox, plus free-form string-keyed properties (e.g. a `script` property
+pointing at a Lua behaviour, ADR-0022). World transform is never stored: it's
+cheap to recompute by walking the parent chain at load time, and storing it
+would let it go stale relative to the local transform it's derived from.
 
 **Coordinate convention:** Y-up, right-handed, 1 meter per unit — extends
 ARCHITECTURE.md §8's existing "1 engine unit = 1 meter" statement with the
-up-axis/handedness half it left unstated. Matches PhysX's default up axis,
-so collider/joint authoring in Composer (ADR-0015) needs no extra
-conversion. The cooker reads each authored stage's own `upAxis`/
-`metersPerUnit` stage metadata and normalizes into this convention at cook
-time (change-of-basis on transforms and points, winding-order fix on
-indices when handedness flips) — the runtime format is always in this
-convention; nothing downstream (physics, renderer, gameplay) ever branches
-on how a given stage happened to be authored.
+up-axis/handedness half it left unstated. Matches PhysX's default up axis, so
+collider/joint authoring in Composer (ADR-0015) needs no extra conversion. The
+cooker reads each authored stage's own `upAxis`/ `metersPerUnit` stage metadata
+and normalizes into this convention at cook time (change-of-basis on transforms
+and points, winding-order fix on indices when handedness flips) — the runtime
+format is always in this convention; nothing downstream (physics, renderer,
+gameplay) ever branches on how a given stage happened to be authored.
 
-**Instancing:** USD instanceable prototypes are de-instanced at cook time —
-each instance becomes its own node subtree in the flat array, referencing
-the shared underlying mesh blob path. Mesh data is therefore already
-deduplicated (path-based blob addressing, ADR-0031), even though each
-instance gets its own node entry.
+**Instancing:** USD instanceable prototypes are de-instanced at cook time — each
+instance becomes its own node subtree in the flat array, referencing the shared
+underlying mesh blob path. Mesh data is therefore already deduplicated
+(path-based blob addressing, ADR-0031), even though each instance gets its own
+node entry.
 
 **Spawn points and hitboxes** have no native USD prim type. Authoring
 convention: a custom bool attribute (`augusta:spawnPoint`, `augusta:hitbox`)
@@ -39,28 +37,43 @@ applied on a prim alongside PhysX Collision API schemas (colliders/joints
 authored in Composer, ADR-0015). The cooker reads these attributes directly
 rather than inferring intent from geometry shape or prim naming.
 
-**Geometry prims:** the cooker reads `UsdGeomMesh`, `UsdGeomCube`, and `UsdGeomCapsule` alike. A cube is expanded to the same 12-triangle box a mesh would give, so it takes the same hitbox/collider/visual path; its scale lives in the node's local transform. usd-validation-nvidia's primitive-fit rule rejects box-shaped meshes, so authored boxes must be cubes. A capsule is tessellated into a triangle buffer the same way (ADR-0041's character content is the first user of this - a placeholder collision-derived shape, not an authored mesh). Geometry with `purpose = "guide"` that is neither a collider nor a hitbox (e.g. a spawn-point marker) produces no visual mesh.
+**Geometry prims:** the cooker reads `UsdGeomMesh`, `UsdGeomCube`, and
+`UsdGeomCapsule` alike. A cube is expanded to the same 12-triangle box a mesh
+would give, so it takes the same hitbox/collider/visual path; its scale lives in
+the node's local transform. usd-validation-nvidia's primitive-fit rule rejects
+box-shaped meshes, so authored boxes must be cubes. A capsule is tessellated
+into a triangle buffer the same way (ADR-0041's character content is the first
+user of this - a placeholder collision-derived shape, not an authored mesh).
+Geometry with `purpose = "guide"` that is neither a collider nor a hitbox (e.g.
+a spawn-point marker) produces no visual mesh.
 
-**Markers:** a prim that stands for a point rather than geometry - a spawn point, a character's eye (ADR-0040) - is authored as a small `UsdGeomSphere` with `purpose = "guide"`, so it shows in Composer and is never rendered. The cooker reads no geometry from a sphere, so a marker never becomes a mesh even if its guide purpose is dropped. An empty `Xform` would be the plain choice, but usd-validation-nvidia warns on an empty leaf prim and the cooker aborts on any warning (ADR-0015); a one-point `UsdGeomPoints` passes validation but usd-optimize's small-geometry removal deletes it.
+**Markers:** a prim that stands for a point rather than geometry - a spawn
+point, a character's eye (ADR-0040) - is authored as a small `UsdGeomSphere`
+with `purpose = "guide"`, so it shows in Composer and is never rendered. The
+cooker reads no geometry from a sphere, so a marker never becomes a mesh even if
+its guide purpose is dropped. An empty `Xform` would be the plain choice, but
+usd-validation-nvidia warns on an empty leaf prim and the cooker aborts on any
+warning (ADR-0015); a one-point `UsdGeomPoints` passes validation but
+usd-optimize's small-geometry removal deletes it.
 
 ## Considered Options
 
-- **Storing world transforms instead of local:** rejected — doubles the
-  per-node transform cost for a value the loader can recompute in one
-  parent-chain walk, and risks the stored value silently drifting from the
-  local transform it should be derived from.
-- **Client/server pack split (ADR-0019) for the scene blob** — built in
-  issue #51: the cooker emits two scene blobs from the same traversal, one
-  per pack. Collision/spawn-point/hitbox references are populated in both;
-  the server's copy has its mesh/material references stripped instead
-  (the reverse of what this section originally proposed - stripping
-  collision/spawn-point/hitbox from the client - since ADR-0019/ADR-0031
-  settled on shipping that data to both packs, not server-only).
+- **Storing world transforms instead of local:** rejected — doubles the per-node
+  transform cost for a value the loader can recompute in one parent-chain walk,
+  and risks the stored value silently drifting from the local transform it
+  should be derived from.
+- **Client/server pack split (ADR-0019) for the scene blob** — issue #51 built
+  it: the cooker emits two scene blobs from the same traversal, one per pack.
+  Collision/spawn-point/hitbox references are populated in both; the server's
+  copy has its mesh/material references stripped instead (the reverse of what
+  this section originally proposed - stripping collision/spawn-point/hitbox from
+  the client - since ADR-0019/ADR-0031 settled on shipping that data to both
+  packs, not server-only).
 - **True runtime GPU instancing**: deferred. De-instancing at cook time is
   simpler and sufficient until instance count becomes a real performance
   problem; revisit if it does.
 - **An authored stable ID for spawn points/hitboxes** (rather than a bool
   attribute): rejected for the same reason ADR-0031 rejected an authored
-  asset-name attribute for general addressing — it's an authoring
-  convention someone has to maintain for a problem (prim rename breaking a
-  hardcoded reference) that hasn't occurred in practice yet.
+  asset-name attribute for general addressing — it's an authoring convention
+  someone has to maintain for a problem (prim rename breaking a hardcoded
+  reference) that hasn't occurred in practice yet.

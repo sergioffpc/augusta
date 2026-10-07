@@ -1,12 +1,14 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
 #include "augusta/cues.h"
+#include "augusta/scripting.h"
 #include "policy_loader.h"
 
 // The C++ half of the contract between the pack's two implementations: the
@@ -44,11 +46,11 @@ TEST_F(CookedPackTest, TheClientPackResolvesTheExampleScenariosContent) {
   EXPECT_TRUE(client_->ResolveMesh("Root/Floor/Visual").has_value());
   EXPECT_TRUE(client_->ResolveCollision("Root/Floor/Collider").has_value());
   EXPECT_TRUE(client_->ResolveSpawnPoint("Root/Spawn").has_value());
-  EXPECT_TRUE(client_->ResolveMesh("characters/player/Character/Visual").has_value());
+  EXPECT_TRUE(client_->ResolveMesh("soldier/Character/Visual").has_value());
 
   const auto characters = client_->ResolveCharacters();
   ASSERT_TRUE(characters.has_value());
-  EXPECT_EQ(*characters, std::vector<std::string>{"characters/player"});
+  EXPECT_EQ(*characters, std::vector<std::string>{"soldier"});
 }
 
 TEST_F(CookedPackTest, TheServerPackHoldsNoVisualContentAndNamesItsClientPack) {
@@ -56,9 +58,8 @@ TEST_F(CookedPackTest, TheServerPackHoldsNoVisualContentAndNamesItsClientPack) {
   EXPECT_TRUE(server_->ResolveCollision("Root/Floor/Collider").has_value());
   EXPECT_TRUE(server_->ResolveSpawnPoint("Root/Spawn").has_value());
 
-  const auto client_hash = server_->ResolveClientPackHash();
-  ASSERT_TRUE(client_hash.has_value());
-  EXPECT_EQ(*client_hash, client_->Hash());
+  EXPECT_EQ(server_->ClientPackHash(), client_->Hash());
+  EXPECT_EQ(client_->ClientPackHash(), std::nullopt);
 
   const auto parameters = server_->ResolveScript("parameters.lua");
   ASSERT_TRUE(parameters.has_value());
@@ -67,9 +68,8 @@ TEST_F(CookedPackTest, TheServerPackHoldsNoVisualContentAndNamesItsClientPack) {
 
 // The server loads them at startup as it does any scenario's: an example whose
 // policy did not load would stop every server run on it.
-TEST_F(CookedPackTest, TheServerPackHoldsTheExamplesPolicyScriptsAndTheyLoad) {
-  EXPECT_TRUE(server_->ResolveScript("objectives.lua").has_value());
-  EXPECT_TRUE(server_->ResolveScript("behaviours.lua").has_value());
+TEST_F(CookedPackTest, TheServerPackHoldsTheExamplesRulesAndTheyLoad) {
+  EXPECT_TRUE(server_->ResolveScript(augusta::scripting::kRulesScriptPath).has_value());
 
   const auto policy = augusta::server::LoadPolicy(*server_);
 
@@ -80,7 +80,7 @@ TEST_F(CookedPackTest, TheServerPackHoldsTheExamplesPolicyScriptsAndTheyLoad) {
 // packs hold the example character's eye.
 TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersEye) {
   for (const Pack* pack : {&*client_, &*server_}) {
-    const auto eye = pack->ResolveEye(augusta::assets::CharacterEyePath("characters/player"));
+    const auto eye = pack->ResolveEye(augusta::assets::CharacterEyePath("soldier"));
     ASSERT_TRUE(eye.has_value());
     EXPECT_FLOAT_EQ(eye->position.y, 1.7F);
   }
@@ -90,7 +90,7 @@ TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersEye) {
 // so both packs hold the example character's hitboxes, one or more per body part.
 TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersHitboxesForEveryBodyPart) {
   for (const Pack* pack : {&*client_, &*server_}) {
-    const auto hitboxes = pack->ResolveHitboxes("characters/player");
+    const auto hitboxes = pack->ResolveHitboxes("soldier");
     ASSERT_TRUE(hitboxes.has_value());
     EXPECT_EQ(hitboxes->size(), 6U);
     EXPECT_EQ(augusta::assets::FirstMissingBodyPart(*hitboxes), std::nullopt);
@@ -111,7 +111,7 @@ TEST_F(CookedPackTest, TheClientPackHoldsASoundForEveryCueAndTheServerPackNone) 
   const auto server_sounds = augusta::audio::LoadCueSounds(*server_);
   ASSERT_FALSE(server_sounds.has_value());
   EXPECT_EQ(server_sounds.error().path, augusta::assets::kSoundsPath);
-  EXPECT_FALSE(server_->ResolveAudio("sounds/augusta/gunshot").has_value());
+  EXPECT_FALSE(server_->ResolveAudio("sounds/gunshot").has_value());
 }
 
 }  // namespace

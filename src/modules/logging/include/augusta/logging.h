@@ -8,10 +8,11 @@
 #include <string>
 #include <string_view>
 
-// augusta::logging writes the process's log lines (ADR-0027, ADR-0029, ADR-0036):
-// one process-wide, thread-safe console sink, no file sink. Boost.Log does the
-// work behind logging.cpp; nothing here includes it, so no other translation
-// unit pays for its headers.
+/// \file
+/// augusta::logging writes the process's log lines (ADR-0027, ADR-0029, ADR-0036):
+/// one process-wide, thread-safe console sink, no file sink. Boost.Log does the
+/// work behind logging.cpp; nothing here includes it, so no other translation
+/// unit pays for its headers.
 namespace augusta::logging {
 
 /// A log line's severity, lowest to highest.

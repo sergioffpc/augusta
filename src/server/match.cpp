@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <iterator>
 #include <optional>
 #include <string_view>
 #include <utility>
@@ -61,11 +60,10 @@ std::expected<Admission, JoinRefusal> Match::Join(networking::PeerId peer, const
   if (members_.size() >= player_count_) {
     return std::unexpected(JoinRefusal::kLobbyFull);
   }
-  // The scenario composes at most assets::kMaxCharacters, so an index fits in a byte.
-  const auto index = static_cast<std::uint8_t>(std::distance(characters_.begin(), found) + 1);
   // A newcomer bumps the version, so no one is Ready until they have loaded its character.
-  const Member member{.session = static_cast<SessionId>(next_session_++), .character = index};
-  members_.emplace(peer, member);
+  const Member& member =
+      members_.emplace(peer, Member{.session = static_cast<SessionId>(next_session_++), .character = *found})
+          .first->second;
   ++roster_version_;
   return Admission{.session = member.session, .character = member.character};
 }

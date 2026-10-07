@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <ios>
 #include <random>
 #include <string>
 #include <string_view>
@@ -34,13 +35,13 @@ constexpr std::array<std::string_view, 12> kPaths = {
     "Root/Floor/Visual",
     "Root/Floor/Collider",
     "Root/Spawn",
-    "characters/player/Character/Visual",
-    "characters/player/Character/Collider",
-    "characters/player/Character/Eye",
-    "characters/player/Character/HeadHitbox",
+    "soldier/Character/Visual",
+    "soldier/Character/Collider",
+    "soldier/Character/Eye",
+    "soldier/Character/HeadHitbox",
     augusta::assets::kParametersScriptPath,
-    "behaviours.lua",
-    "sounds/augusta/gunshot",
+    "rules.lua",
+    "sounds/gunshot",
     augusta::assets::kSoundsPath,
 };
 
@@ -112,9 +113,9 @@ void ResolveEverything(const Pack& pack) {
     (void)pack.ResolveScript(path);
     (void)pack.ResolveAudio(path);
   }
-  (void)pack.ResolveHitboxes("characters/player");
+  (void)pack.ResolveHitboxes("soldier");
   (void)pack.ResolveCharacters();
-  (void)pack.ResolveClientPackHash();
+  (void)pack.ClientPackHash();
   (void)pack.ResolveSoundsPath();
 }
 

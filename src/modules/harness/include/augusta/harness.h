@@ -21,22 +21,23 @@
 #include "augusta/version.h"
 #include "augusta/weapon.h"
 
-// augusta::harness is where anything that plays talks to the server: the
-// client's network connection and PredictionWorld (ADR-0021, ADR-0024), without
-// the parts that need a window or a GPU (Input, Renderer, Audio,
-// PresentationWorld). Whatever supplies the input for a tick plugs in here:
-// ClientRuntime (src/client) drives one from its Prediction and Network I/O
-// threads (ADR-0005), an automated test drives one by hand so client/server
-// behavior can be checked in CI with no display, and a future autonomous agent
-// would drive one the same way.
-//
-// Nothing here owns a thread or reads a clock: the caller decides when the
-// network is serviced (PumpEvents, ExchangeMessages) and when a tick happens
-// (Tick), and hands in the input for that tick. The two are meant for two
-// different threads, as in ClientRuntime: Connect, Disconnect, PumpEvents,
-// ExchangeMessages, GetConnectionState and GetConnectionStats from the Network
-// I/O thread, and Tick from the Prediction thread (the transport is safe to
-// send from both).
+/// \file
+/// augusta::harness is where anything that plays talks to the server: the
+/// client's network connection and PredictionWorld (ADR-0021, ADR-0024), without
+/// the parts that need a window or a GPU (Input, Renderer, Audio,
+/// PresentationWorld). Whatever supplies the input for a tick plugs in here:
+/// anything that plays live - ClientRuntime (src/client), a future autonomous
+/// agent - runs one in real time under a Runner (runner.h), and an automated
+/// test drives one by hand so client/server behavior can be checked in CI with
+/// no display and no clock.
+///
+/// Nothing here owns a thread or reads a clock: the caller decides when the
+/// network is serviced (PumpEvents, ExchangeMessages) and when a tick happens
+/// (Tick), and hands in the input for that tick. The two are meant for two
+/// different threads, as in Runner: Connect, Disconnect, PumpEvents,
+/// ExchangeMessages, GetConnectionState and GetConnectionStats from the Network
+/// I/O thread, and Tick from the Prediction thread (the transport is safe to
+/// send from both).
 namespace augusta::harness {
 
 /// The server's name for one connected player (CONTEXT.md, "Session ID"), as
@@ -133,8 +134,8 @@ inline constexpr std::size_t kMaxPendingHitConfirmations = 64;
 /// One player in the Lobby.
 struct RosterEntry {
   SessionId session{};
-  /// Its character index: 1-based position in the scenario's character list (ADR-0042).
-  std::uint8_t character = 1;
+  /// Its character, by its name in the scenario's manifest (ADR-0042).
+  std::string character;
 };
 
 /// Who is in the Lobby, as the server last said (ADR-0043).
@@ -150,7 +151,8 @@ struct MatchPlayer {
   SessionId session{};
   /// The body this player's commands move for the whole match.
   EntityId entity{};
-  std::uint8_t character = 1;
+  /// Its character (see RosterEntry::character).
+  std::string character;
   math::Vec3 spawn{};
 };
 
@@ -223,8 +225,8 @@ struct Admission {
   std::uint8_t tick_rate_hz = 0;
   /// The parameters this client must predict with.
   parameters::Parameters parameters{};
-  /// This client's own character index (see RosterEntry::character).
-  std::uint8_t character = 1;
+  /// This client's own character (see RosterEntry::character).
+  std::string character;
 };
 
 /// What the server has told this client, as of one moment (ADR-0005): the
@@ -270,8 +272,8 @@ struct SessionConfig {
   /// The hash of the client pack loaded (assets::Pack::Hash); the server admits
   /// only the one cooked with its own pack.
   assets::PackHash client_pack{};
-  /// The character to ask to play, by its path relative to `authoring/` (e.g.
-  /// "characters/player"): the server admits only one of its scenario's (ADR-0042).
+  /// The character to ask to play, by its name in the scenario's manifest (e.g.
+  /// "soldier"): the server admits only one of its scenario's (ADR-0042).
   std::string character;
 };
 
@@ -286,7 +288,7 @@ class Session {
   Session(const SessionConfig& config, prediction::World prediction);
   ~Session();
 
-  // Not copyable or movable: owns a live network connection.
+  /// Not copyable or movable: owns a live network connection.
   Session(const Session&) = delete;
   Session& operator=(const Session&) = delete;
   Session(Session&&) = delete;
@@ -411,7 +413,7 @@ class Session {
   [[nodiscard]] std::optional<EntityId> GetEntityId() const;
 
   /// Runs one fixed tick of PredictionWorld for command and returns its state.
-  /// The view command reports (command::Command) is the caller's to fill, from
+  /// The Seen time command reports (command::Command) is the caller's to fill, from
   /// whatever it shows the other players with: a Session shows nothing.
   /// Outside a match nothing is predicted or sent, and the state is the last
   /// one predicted. The first tick of each match starts the prediction over at

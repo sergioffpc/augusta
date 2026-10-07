@@ -35,11 +35,14 @@ namespace augusta::assets {
 namespace {
 
 constexpr std::array<char, 4> kMagic = {'A', 'U', 'G', 'P'};
-constexpr std::uint32_t kFormatVersion = 1;
-// magic + version(u32) + data_offset(u64) + index_offset(u64) + index_count(u32),
-// per ADR-0031's header field list.
-constexpr std::uint64_t kHeaderSize =
-    kMagic.size() + sizeof(std::uint32_t) + sizeof(std::uint64_t) + sizeof(std::uint64_t) + sizeof(std::uint32_t);
+constexpr std::uint32_t kFormatVersion = 2;
+// The header's flags byte: whether it names a client pack's hash.
+constexpr std::uint8_t kHeaderHasClientPack = 1U << 0U;
+// magic + version(u32) + data_offset(u64) + index_offset(u64) + index_count(u32)
+// + flags(u8) + client pack hash, per ADR-0031's header field list.
+constexpr std::uint64_t kHeaderSize = kMagic.size() + sizeof(std::uint32_t) + sizeof(std::uint64_t) +
+                                      sizeof(std::uint64_t) + sizeof(std::uint32_t) + sizeof(std::uint8_t) +
+                                      kPackHashSize;
 constexpr std::size_t kEd25519SignatureSize = 64;
 // BLAKE3 hash + Ed25519 signature of that hash, ADR-0031's trailer.
 constexpr std::uint64_t kTrailerSize = kPackHashSize + kEd25519SignatureSize;
@@ -80,6 +83,7 @@ struct IndexEntry {
 struct PackHeader {
   std::uint64_t index_offset;
   std::uint32_t index_count;
+  std::optional<PackHash> client_pack;
 };
 
 // hashed_length is the file's length minus the trailer (kTrailerSize) -
@@ -124,7 +128,26 @@ std::expected<PackHeader, LoadError> ParsePackHeader(std::span<const std::byte> 
     return std::unexpected(LoadError::kTruncated);
   }
 
-  return PackHeader{.index_offset = *index_offset, .index_count = *index_count};
+  const auto flags = header_reader.ReadU8();
+  const auto client_pack_bytes = header_reader.ReadBytes(kPackHashSize);
+  if (!flags || !client_pack_bytes) {
+    return std::unexpected(LoadError::kTruncated);
+  }
+  // No flag but kHeaderHasClientPack, and no hash without it: either would be
+  // a header WritePack never writes.
+  const bool has_client_pack = (*flags & kHeaderHasClientPack) != 0;
+  const bool stray_hash =
+      !has_client_pack && std::ranges::any_of(*client_pack_bytes, [](std::byte b) { return b != std::byte{0}; });
+  if ((*flags & ~kHeaderHasClientPack) != 0 || stray_hash) {
+    return std::unexpected(LoadError::kTruncated);
+  }
+  std::optional<PackHash> client_pack;
+  if (has_client_pack) {
+    client_pack.emplace();
+    std::ranges::copy(*client_pack_bytes, client_pack->begin());
+  }
+
+  return PackHeader{.index_offset = *index_offset, .index_count = *index_count, .client_pack = client_pack};
 }
 
 // index_bytes is exactly the file's [index_offset, hashed_length) range.
@@ -243,7 +266,8 @@ struct PackSections {
   std::vector<std::byte> index_section;
 };
 
-std::expected<PackSections, WriteError> BuildPackSections(const std::vector<AssetEntry>& entries) {
+std::expected<PackSections, WriteError> BuildPackSections(const std::vector<AssetEntry>& entries,
+                                                          const std::optional<PackHash>& client_pack) {
   PackSections sections;
   ByteWriter data_writer(sections.data_section);
   ByteWriter index_writer(sections.index_section);
@@ -274,6 +298,8 @@ std::expected<PackSections, WriteError> BuildPackSections(const std::vector<Asse
   header_writer.WriteU64(kHeaderSize);
   header_writer.WriteU64(index_offset);
   header_writer.WriteU32(static_cast<std::uint32_t>(entries.size()));
+  header_writer.WriteU8(client_pack.has_value() ? kHeaderHasClientPack : 0);
+  header_writer.WriteBytes(client_pack.value_or(PackHash{}));
 
   const std::uint64_t total_size =
       sections.header.size() + sections.data_section.size() + sections.index_section.size() + kTrailerSize;
@@ -444,7 +470,6 @@ bool IsValidAssetType(std::uint8_t value) {
     case AssetType::kScene:
     case AssetType::kScript:
     case AssetType::kCharacters:
-    case AssetType::kClientPack:
     case AssetType::kEye:
     case AssetType::kSounds:
       return true;
@@ -523,15 +548,15 @@ std::expected<Ed25519PublicKey, ReadKeyFileError> ReadEd25519PublicKeyFile(const
 }
 
 std::expected<void, WriteError> WritePack(const std::filesystem::path& output_path,
-                                          const std::vector<AssetEntry>& entries,
-                                          const Ed25519PrivateKey& signing_key) {
+                                          const std::vector<AssetEntry>& entries, const Ed25519PrivateKey& signing_key,
+                                          const std::optional<PackHash>& client_pack) {
   EnsureSodiumInitialized();
 
   if (auto validated = ValidateEntries(entries); !validated) {
     return std::unexpected(validated.error());
   }
 
-  auto sections = BuildPackSections(entries);
+  auto sections = BuildPackSections(entries, client_pack);
   if (!sections) {
     return std::unexpected(sections.error());
   }
@@ -544,6 +569,8 @@ struct Pack::Impl {
   Mapping mapping;
   std::vector<IndexEntry> index;
   PackHash hash;
+  std::optional<PackHash> client_pack;
+  std::filesystem::path path;
 };
 
 std::string_view DescribeLoadError(LoadError error) {
@@ -608,8 +635,11 @@ std::expected<Pack, LoadError> Pack::Load(const std::filesystem::path& path, con
   }
 
   Pack pack;
-  pack.impl_ = std::make_unique<Impl>(
-      Impl{.mapping = std::move(*mapping), .index = std::move(*index), .hash = hashed.trailer.hash});
+  pack.impl_ = std::make_unique<Impl>(Impl{.mapping = std::move(*mapping),
+                                           .index = std::move(*index),
+                                           .hash = hashed.trailer.hash,
+                                           .client_pack = header->client_pack,
+                                           .path = path});
   return pack;
 }
 
@@ -633,8 +663,8 @@ std::expected<HitboxData, ResolveError> Pack::ResolveHitbox(std::string_view pat
   return ResolveAsset<HitboxData>(impl_->index, impl_->mapping, path, AssetType::kHitbox, DecodeHitboxBlob);
 }
 
-std::expected<std::vector<HitboxData>, ResolveError> Pack::ResolveHitboxes(std::string_view character_path) const {
-  const std::string prefix = std::string(character_path) + "/";
+std::expected<std::vector<HitboxData>, ResolveError> Pack::ResolveHitboxes(std::string_view character) const {
+  const std::string prefix = std::string(character) + "/";
   std::vector<const IndexEntry*> entries;
   for (const IndexEntry& entry : impl_->index) {
     if (entry.type == AssetType::kHitbox && entry.path.starts_with(prefix)) {
@@ -679,11 +709,32 @@ std::expected<std::vector<std::string>, ResolveError> Pack::ResolveCharacters() 
                                                 DecodeCharactersBlob);
 }
 
-std::expected<PackHash, ResolveError> Pack::ResolveClientPackHash() const {
-  return ResolveAsset<PackHash>(impl_->index, impl_->mapping, kClientPackPath, AssetType::kClientPack,
-                                DecodeClientPackBlob);
-}
+const std::optional<PackHash>& Pack::ClientPackHash() const { return impl_->client_pack; }
 
 const PackHash& Pack::Hash() const { return impl_->hash; }
+
+const std::filesystem::path& Pack::Path() const { return impl_->path; }
+
+std::expected<Pack, VerifiedPackError> LoadVerifiedPack(const std::filesystem::path& pack_path,
+                                                        const std::filesystem::path& public_key_path) {
+  const auto public_key = ReadEd25519PublicKeyFile(public_key_path);
+  if (!public_key) {
+    return std::unexpected(VerifiedPackError{.failure = VerifiedPackFailure::kPublicKeyUnreadable});
+  }
+  return Pack::Load(pack_path, *public_key).transform_error([](LoadError error) {
+    return VerifiedPackError{.failure = VerifiedPackFailure::kPackRejected, .load_error = error};
+  });
+}
+
+std::string DescribeVerifiedPackError(const VerifiedPackError& error, const std::filesystem::path& pack_path,
+                                      const std::filesystem::path& public_key_path) {
+  switch (error.failure) {
+    case VerifiedPackFailure::kPublicKeyUnreadable:
+      return std::format("could not read Ed25519 public key from {}", public_key_path.string());
+    case VerifiedPackFailure::kPackRejected:
+      return std::format("pack {} {}", pack_path.string(), DescribeLoadError(error.load_error));
+  }
+  return "unknown pack error";
+}
 
 }  // namespace augusta::assets

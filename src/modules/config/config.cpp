@@ -13,7 +13,6 @@
 #include <functional>
 #include <ios>
 #include <limits>
-#include <map>
 #include <optional>
 #include <ranges>
 #include <set>
@@ -41,8 +40,6 @@ std::unexpected<ConfigError> Fail(ConfigErrorCode code, std::string subject = {}
   return std::unexpected(ConfigError{.code = code, .subject = std::move(subject), .file = {}});
 }
 
-using ScalarMap = std::map<std::string, std::string, std::less<>>;
-
 std::optional<std::filesystem::path> ExecutableDirectory() {
   boost::system::error_code error;
   const auto executable = boost::dll::program_location(error);
@@ -53,24 +50,16 @@ std::optional<std::filesystem::path> ExecutableDirectory() {
   return std::filesystem::path(executable.native()).parent_path();
 }
 
-// What a config file may hold, as dotted paths ("network.server_address"):
-// its scalar keys, and its open sections - sections whose entries the schema
-// names itself ("input.keys", whose entries are control names).
-struct Schema {
-  std::span<const std::string_view> keys;
-  std::span<const std::string_view> open_sections;
-};
-
 std::string Child(std::string_view parent, std::string_view name) {
   return parent.empty() ? std::string(name) : std::format("{}.{}", parent, name);
 }
 
-bool IsKey(const Schema& schema, std::string_view path) {
+bool IsKey(const ConfigSchema& schema, std::string_view path) {
   return std::ranges::find(schema.keys, path) != schema.keys.end();
 }
 
 // Whether path is a section: an open section, or a prefix of a key or of an open section.
-bool IsSection(const Schema& schema, std::string_view path) {
+bool IsSection(const ConfigSchema& schema, std::string_view path) {
   // member is path itself or lies under it.
   const auto opens = [&](std::string_view member) {
     return member == path || (member.starts_with(path) && member.size() > path.size() && member[path.size()] == '.');
@@ -80,7 +69,7 @@ bool IsSection(const Schema& schema, std::string_view path) {
 }
 
 // Whether path is an entry of an open section, which the schema checks by name itself.
-bool InOpenSection(const Schema& schema, std::string_view path) {
+bool InOpenSection(const ConfigSchema& schema, std::string_view path) {
   const auto dot = path.rfind('.');
   return dot != std::string_view::npos &&
          std::ranges::find(schema.open_sections, path.substr(0, dot)) != schema.open_sections.end();
@@ -89,8 +78,8 @@ bool InOpenSection(const Schema& schema, std::string_view path) {
 // Mechanism: reads node, the mapping at section (empty at the top), into
 // values under dotted paths. Every scalar must be a key or open-section entry
 // of schema and every mapping one of its sections; errors name the path.
-std::expected<void, ConfigError> Flatten(const YAML::Node& node, const std::string& section, const Schema& schema,
-                                         ScalarMap& values) {
+std::expected<void, ConfigError> Flatten(const YAML::Node& node, const std::string& section, const ConfigSchema& schema,
+                                         ConfigValues& values) {
   std::set<std::string, std::less<>> seen;
   for (const auto& entry : node) {
     if (!entry.first.IsScalar()) {
@@ -129,81 +118,24 @@ std::expected<void, ConfigError> Flatten(const YAML::Node& node, const std::stri
   return {};
 }
 
-// Mechanism: reads text as a YAML mapping, its sections flattened into dotted
-// paths. Which keys exist, and which are required, is the schema's business
-// (the Parse* functions).
-std::expected<ScalarMap, ConfigError> ReadMapping(std::string_view text, const Schema& schema) {
-  YAML::Node root;
-  try {
-    root = YAML::Load(std::string(text));
-  } catch (const YAML::Exception& error) {
-    return Fail(ConfigErrorCode::kInvalidYaml, error.what());
-  }
-  if (!root.IsMap()) {
-    return Fail(ConfigErrorCode::kNotAMapping);
-  }
-  ScalarMap values;
-  if (auto read = Flatten(root, "", schema, values); !read) {
-    return std::unexpected(read.error());
-  }
-  return values;
+std::expected<std::uint8_t, ConfigError> RequireTickRate(const ConfigValues& values, std::string_view key) {
+  return RequireWholeNumber(values, key, 1, std::numeric_limits<std::uint8_t>::max()).transform([](std::uint32_t rate) {
+    return static_cast<std::uint8_t>(rate);
+  });
 }
 
-std::expected<std::string, ConfigError> RequireString(const ScalarMap& values, std::string_view key) {
-  const auto found = values.find(key);
-  if (found == values.end()) {
-    return Fail(ConfigErrorCode::kMissingKey, std::string(key));
+// The fallback when key is absent; when present, a TCP port from 1 to 65535.
+std::expected<std::uint16_t, ConfigError> OptionalPort(const ConfigValues& values, std::string_view key,
+                                                       std::uint16_t fallback) {
+  if (!values.contains(key)) {
+    return fallback;
   }
-  if (found->second.empty()) {
-    return Fail(ConfigErrorCode::kEmptyValue, std::string(key));
-  }
-  return found->second;
-}
-
-std::expected<std::filesystem::path, ConfigError> RequirePath(const ScalarMap& values, std::string_view key,
-                                                              const std::filesystem::path& base_dir) {
-  const auto value = RequireString(values, key);
-  if (!value) {
-    return std::unexpected(value.error());
-  }
-  // YAML text is UTF-8, but a path built from a plain std::string is read in
-  // the system codepage on Windows, which corrupts non-ASCII directory names.
-  const std::filesystem::path path(std::u8string(reinterpret_cast<const char8_t*>(value->data()), value->size()));
-  return (path.is_absolute() ? path : base_dir / path).lexically_normal();
-}
-
-// A finite number above zero, in plain decimal or exponent notation.
-std::expected<float, ConfigError> RequirePositiveNumber(const ScalarMap& values, std::string_view key) {
-  const auto text = RequireString(values, key);
-  if (!text) {
-    return std::unexpected(text.error());
-  }
-  float number = 0.0F;
-  const char* const end = text->data() + text->size();
-  const auto parsed = std::from_chars(text->data(), end, number);
-  if (parsed.ec != std::errc{} || parsed.ptr != end || !std::isfinite(number) || number <= 0.0F) {
-    return Fail(ConfigErrorCode::kInvalidNumber, std::string(key));
-  }
-  return number;
-}
-
-std::expected<std::uint8_t, ConfigError> RequireTickRate(const ScalarMap& values, std::string_view key) {
-  const auto text = RequireString(values, key);
-  if (!text) {
-    return std::unexpected(text.error());
-  }
-  std::uint32_t number = 0;
-  const char* const end = text->data() + text->size();
-  const auto parsed = std::from_chars(text->data(), end, number);
-  if (parsed.ec != std::errc{} || parsed.ptr != end || number == 0 ||
-      number > std::numeric_limits<std::uint8_t>::max()) {
-    return Fail(ConfigErrorCode::kInvalidNumber, std::string(key));
-  }
-  return static_cast<std::uint8_t>(number);
+  return RequireWholeNumber(values, key, 1, std::numeric_limits<std::uint16_t>::max())
+      .transform([](std::uint32_t port) { return static_cast<std::uint16_t>(port); });
 }
 
 // The fallback when key is absent; when present, a finite number above zero.
-std::expected<float, ConfigError> OptionalPositiveNumber(const ScalarMap& values, std::string_view key,
+std::expected<float, ConfigError> OptionalPositiveNumber(const ConfigValues& values, std::string_view key,
                                                          float fallback) {
   return values.contains(key) ? RequirePositiveNumber(values, key) : fallback;
 }
@@ -215,7 +147,7 @@ constexpr std::string_view kKeysSection = "input.keys";
 // Decision: the keymap the `input.keys` entries of values (control name -> key
 // name) make of the defaults. Each control keeps a key of its own, never the
 // one that releases the cursor; errors name the entry ("input.keys.<control>").
-std::expected<input::Keymap, ConfigError> ParseKeymap(const ScalarMap& values) {
+std::expected<input::Keymap, ConfigError> ParseKeymap(const ConfigValues& values) {
   const std::string prefix = std::format("{}.", kKeysSection);
   auto bindings = values | std::views::filter([&](const auto& value) { return value.first.starts_with(prefix); });
   const auto error = [](ConfigErrorCode code, const std::string& path) { return Fail(code, path); };
@@ -243,7 +175,7 @@ std::expected<input::Keymap, ConfigError> ParseKeymap(const ScalarMap& values) {
   return keymap;
 }
 
-std::expected<input::Config, ConfigError> ParseInputConfig(const ScalarMap& values) {
+std::expected<input::Config, ConfigError> ParseInputConfig(const ConfigValues& values) {
   const auto sensitivity = OptionalPositiveNumber(values, "input.mouse_sensitivity", input::kDefaultMouseSensitivity);
   if (!sensitivity) {
     return std::unexpected(sensitivity.error());
@@ -255,35 +187,9 @@ std::expected<input::Config, ConfigError> ParseInputConfig(const ScalarMap& valu
   return input::Config{.mouse_sensitivity = *sensitivity, .keymap = *keymap};
 }
 
-std::string OptionalString(const ScalarMap& values, std::string_view key, std::string_view fallback) {
-  const auto found = values.find(key);
-  return found == values.end() ? std::string(fallback) : found->second;
-}
-
-// fallback when key is absent; when present, its value must be one
-// augusta::logging::ParseSeverity accepts.
-std::expected<std::string, ConfigError> OptionalLogLevel(const ScalarMap& values, std::string_view key,
-                                                         std::string_view fallback) {
-  auto value = OptionalString(values, key, fallback);
-  if (!logging::ParseSeverity(value)) {
-    return Fail(ConfigErrorCode::kInvalidLogLevel, std::string(key));
-  }
-  return value;
-}
-
-std::expected<std::string, ConfigError> ReadFile(const std::filesystem::path& file) {
-  std::ifstream stream(file, std::ios::binary);
-  if (!stream) {
-    return std::unexpected(ConfigError{.code = ConfigErrorCode::kCannotOpenFile, .subject = {}, .file = file});
-  }
-  std::ostringstream contents;
-  contents << stream.rdbuf();
-  return contents.str();
-}
-
 template <typename Config, typename ParseFn>
 std::expected<Config, ConfigError> LoadFile(const std::filesystem::path& file, ParseFn parse) {
-  const auto text = ReadFile(file);
+  const auto text = ReadConfigFile(file);
   if (!text) {
     return std::unexpected(text.error());
   }
@@ -332,6 +238,9 @@ std::string Phrase(const ConfigError& error) {
       if (error.subject == "simulation.tick_rate_hz") {
         return std::format("'{}' must be an integer from 1 to 255", error.subject);
       }
+      if (error.subject == "metrics.port") {
+        return std::format("'{}' must be an integer from 1 to 65535", error.subject);
+      }
       return std::format("'{}' must be a finite number above zero", error.subject);
     case ConfigErrorCode::kInvalidLogLevel:
       return std::format("'{}' must be one of trace, debug, info, warn, error, critical", error.subject);
@@ -363,6 +272,104 @@ std::string Usage(std::string_view program, std::string_view default_file_name) 
 }
 
 }  // namespace
+
+// Mechanism: reads text as a YAML mapping, its sections flattened into dotted
+// paths. Which keys exist, and which are required, is the schema's business
+// (the Parse* functions).
+std::expected<ConfigValues, ConfigError> ReadConfigValues(std::string_view text, const ConfigSchema& schema) {
+  YAML::Node root;
+  try {
+    root = YAML::Load(std::string(text));
+  } catch (const YAML::Exception& error) {
+    return Fail(ConfigErrorCode::kInvalidYaml, error.what());
+  }
+  if (!root.IsMap()) {
+    return Fail(ConfigErrorCode::kNotAMapping);
+  }
+  ConfigValues values;
+  if (auto read = Flatten(root, "", schema, values); !read) {
+    return std::unexpected(read.error());
+  }
+  return values;
+}
+
+std::expected<std::string, ConfigError> RequireString(const ConfigValues& values, std::string_view key) {
+  const auto found = values.find(key);
+  if (found == values.end()) {
+    return Fail(ConfigErrorCode::kMissingKey, std::string(key));
+  }
+  if (found->second.empty()) {
+    return Fail(ConfigErrorCode::kEmptyValue, std::string(key));
+  }
+  return found->second;
+}
+
+std::expected<std::filesystem::path, ConfigError> RequirePath(const ConfigValues& values, std::string_view key,
+                                                              const std::filesystem::path& base_dir) {
+  const auto value = RequireString(values, key);
+  if (!value) {
+    return std::unexpected(value.error());
+  }
+  // YAML text is UTF-8, but a path built from a plain std::string is read in
+  // the system codepage on Windows, which corrupts non-ASCII directory names.
+  const std::filesystem::path path(std::u8string(reinterpret_cast<const char8_t*>(value->data()), value->size()));
+  return (path.is_absolute() ? path : base_dir / path).lexically_normal();
+}
+
+// A finite number above zero, in plain decimal or exponent notation.
+std::expected<float, ConfigError> RequirePositiveNumber(const ConfigValues& values, std::string_view key) {
+  const auto text = RequireString(values, key);
+  if (!text) {
+    return std::unexpected(text.error());
+  }
+  float number = 0.0F;
+  const char* const end = text->data() + text->size();
+  const auto parsed = std::from_chars(text->data(), end, number);
+  if (parsed.ec != std::errc{} || parsed.ptr != end || !std::isfinite(number) || number <= 0.0F) {
+    return Fail(ConfigErrorCode::kInvalidNumber, std::string(key));
+  }
+  return number;
+}
+std::string OptionalString(const ConfigValues& values, std::string_view key, std::string_view fallback) {
+  const auto found = values.find(key);
+  return found == values.end() ? std::string(fallback) : found->second;
+}
+
+// fallback when key is absent; when present, its value must be one
+// augusta::logging::ParseSeverity accepts.
+std::expected<std::string, ConfigError> OptionalLogLevel(const ConfigValues& values, std::string_view key,
+                                                         std::string_view fallback) {
+  auto value = OptionalString(values, key, fallback);
+  if (!logging::ParseSeverity(value)) {
+    return Fail(ConfigErrorCode::kInvalidLogLevel, std::string(key));
+  }
+  return value;
+}
+
+std::expected<std::string, ConfigError> ReadConfigFile(const std::filesystem::path& file) {
+  std::ifstream stream(file, std::ios::binary);
+  if (!stream) {
+    return std::unexpected(ConfigError{.code = ConfigErrorCode::kCannotOpenFile, .subject = {}, .file = file});
+  }
+  std::ostringstream contents;
+  contents << stream.rdbuf();
+  return contents.str();
+}
+
+std::expected<std::uint32_t, ConfigError> RequireWholeNumber(const ConfigValues& values, std::string_view key,
+                                                             std::uint32_t min, std::uint32_t max) {
+  const auto text = RequireString(values, key);
+  if (!text) {
+    return std::unexpected(text.error());
+  }
+  std::uint64_t number = 0;
+  const char* const end = text->data() + text->size();
+  const auto parsed = std::from_chars(text->data(), end, number);
+  if (parsed.ec != std::errc{} || parsed.ptr != end || number < min || number > max) {
+    return Fail(ConfigErrorCode::kInvalidNumber, std::string(key));
+  }
+  return static_cast<std::uint32_t>(number);
+}
 
 std::string DescribeConfigError(const ConfigError& error) {
   const auto phrase = Phrase(error);
@@ -430,7 +437,7 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
       "input.mouse_sensitivity",
   };
   static constexpr std::array<std::string_view, 1> kOpenSections{kKeysSection};
-  const auto values = ReadMapping(yaml_text, Schema{.keys = kKeys, .open_sections = kOpenSections});
+  const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = kOpenSections});
   if (!values) {
     return std::unexpected(values.error());
   }
@@ -472,11 +479,17 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
 
 std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 6> kKeys{
-      "base_dir",      "content.pack", "content.public_key", "simulation.tick_rate_hz", "network.listen_address",
+  static constexpr std::array<std::string_view, 8> kKeys{
+      "base_dir",
+      "content.pack",
+      "content.public_key",
+      "simulation.tick_rate_hz",
+      "simulation.recording",
+      "network.listen_address",
       "logging.level",
+      "metrics.port",
   };
-  const auto values = ReadMapping(yaml_text, Schema{.keys = kKeys, .open_sections = {}});
+  const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = {}});
   if (!values) {
     return std::unexpected(values.error());
   }
@@ -502,12 +515,26 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!log_level) {
     return std::unexpected(log_level.error());
   }
+  std::filesystem::path recording_path;
+  if (values->contains("simulation.recording")) {
+    auto path = RequirePath(*values, "simulation.recording", *root);
+    if (!path) {
+      return std::unexpected(path.error());
+    }
+    recording_path = *std::move(path);
+  }
+  const auto metrics_port = OptionalPort(*values, "metrics.port", kDefaultMetricsPort);
+  if (!metrics_port) {
+    return std::unexpected(metrics_port.error());
+  }
   return ServerConfig{
       .pack_path = *std::move(pack_path),
       .public_key_path = *std::move(public_key_path),
       .tick_rate_hz = *tick_rate_hz,
       .listen_address = OptionalString(*values, "network.listen_address", kDefaultListenAddress),
       .log_level = *std::move(log_level),
+      .recording_path = std::move(recording_path),
+      .metrics_port = *metrics_port,
   };
 }
 

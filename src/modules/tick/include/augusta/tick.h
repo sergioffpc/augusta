@@ -4,15 +4,16 @@
 #include <chrono>
 #include <cstdint>
 
-// The fixed schedule both tick loops keep - the server's Simulation thread and
-// the client's Prediction thread (ADR-0005): each Tick is due one tick after the
-// previous one was due, not one tick after it ended, so a late Tick delays no
-// later one. A loop that falls too far behind starts over from now rather than
-// running the missed Ticks back to back.
-//
-// Pure - the caller passes the times in - so it is tested with a fake clock; the
-// loops own the clock and the sleeping. The tick's duration is passed on every
-// call, not fixed at construction, so a loop may change it between Ticks.
+/// \file
+/// The fixed schedule both tick loops keep - the server's Simulation thread and
+/// the client's Prediction thread (ADR-0005): each Tick is due one tick after the
+/// previous one was due, not one tick after it ended, so a late Tick delays no
+/// later one. A loop that falls too far behind starts over from now rather than
+/// running the missed Ticks back to back.
+///
+/// Pure - the caller passes the times in - so it is tested with a fake clock; the
+/// loops own the clock and the sleeping. The tick's duration is passed on every
+/// call, not fixed at construction, so a loop may change it between Ticks.
 namespace augusta::tick {
 
 using Clock = std::chrono::steady_clock;
@@ -36,12 +37,18 @@ inline constexpr Clock::duration kLateTolerance = std::chrono::milliseconds{1};
 [[nodiscard]] Clock::time_point NextDeadline(Clock::time_point deadline, Clock::duration tick_duration,
                                              Clock::time_point now);
 
-/// How one Tick kept to its schedule, as the server's heartbeat counts it (ADR-0029).
+/// How one Tick kept to its schedule, as the server's heartbeat and metrics
+/// count it (ADR-0029, ADR-0049).
 struct Timing {
+  /// How long its work took.
+  Clock::duration duration{};
   /// It started more than kLateTolerance after its deadline.
   bool late = false;
   /// Its work took longer than a tick.
   bool overrun = false;
+  /// It ended so far behind its schedule that the loop resynchronises to now
+  /// (NextDeadline).
+  bool resynchronised = false;
 };
 
 /// How the Tick due at deadline, which ran from start to end, kept to a

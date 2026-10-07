@@ -15,45 +15,49 @@
 #include "augusta/math.h"
 #include "augusta/tick.h"
 
-// augusta::protocol is the Networking Protocol (ADR-0007, ADR-0038): the
-// messages client and server exchange and their custom binary encoding. It is
-// a pure codec - bytes in, a message or a typed error out, bytes out - with no
-// socket, no clock and no state, so it is tested without a network and shared
-// by both sides (ADR-0006). Which peer may send what, and what a message
-// means for the match, is the receiver's business.
-//
-// Its messages hold only plain types of its own and the math types, never
-// another module's structs: a module changing its structs never changes what
-// travels, and the protocol depends on nothing but augusta_math, which also
-// holds the grids its numbers travel on (augusta/grid.h). A type that mirrors one of the engine's
-// carries the suffix Wire (BodyStateWire for physics::BodyState,
-// AuthoritativeStateWire for harness::AuthoritativeState), so the two never
-// read alike where they meet: each peer converts at its edge
-// and nowhere else, the server in server/wire.h and the client in
-// augusta/harness_wire.h, so no module past that edge (Match, replication,
-// harness::Session's API, presentation) names a Wire type.
-//
-// Every message is one payload: a one-byte MessageTypeWire followed by that
-// type's fields, fixed-width and little-endian, with a string or a list as a
-// one-byte length and its elements. A position, a velocity, a direction, an
-// angle, a stamina or a view's fraction travels as a whole count of its grid's
-// step, in the fewest bytes its range needs (augusta/grid.h, which
-// physics::World keeps every body on, and weapon::Step a rifle's Recoil
-// offset); the other floats (the Parameters, a rifle's times, a hit's damage)
-// travel as their IEEE-754 bits.
-// A client message carries intent, never an outcome: tests/impossible_actions.md
-// (US-15, NFR-05) lists what bounds each of its fields. A new one needs a line
-// there, and if it carries an outcome (a position, a hit, an ammo count), a
-// check at the server's boundary and a test.
-// Every field takes the smallest type that holds what it says: flags are bits
-// of one byte, shared with a small enumeration where one fits. Decode treats
-// its input as untrusted: it never throws, never reads past the end, and never
-// allocates more than the input itself holds.
-//
-// The structs order their fields widest first, so none carries padding between
-// fields; the order on the wire is the codec's and need not follow it.
-// They compare equal field by field, so a message that survives Encode and
-// Decode compares equal to itself, whatever fields it gains.
+/// \file
+/// augusta::protocol is the Networking Protocol (ADR-0007, ADR-0038): the
+/// messages client and server exchange and their custom binary encoding. It is
+/// a pure codec - bytes in, a message or a typed error out, bytes out - with no
+/// socket, no clock and no state, so it is tested without a network and shared
+/// by both sides (ADR-0006). Which peer may send what, and what a message
+/// means for the match, is the receiver's business.
+///
+/// Its messages hold only plain types of its own and the math types, never
+/// another module's structs: a module changing its structs never changes what
+/// travels, and the protocol depends on nothing but augusta_math, which also
+/// holds the grids its numbers travel on (augusta/grid.h). A type that mirrors one of the engine's
+/// carries the suffix Wire (BodyStateWire for physics::BodyState,
+/// AuthoritativeStateWire for harness::AuthoritativeState), so the two never
+/// read alike where they meet: each peer converts at its edge
+/// and nowhere else, the server in server/wire.h and the client in
+/// augusta/harness_wire.h, so no module past that edge (Match, replication,
+/// harness::Session's API, presentation) names a Wire type.
+///
+/// Every message is one payload: a one-byte MessageTypeWire followed by that
+/// type's fields, fixed-width and little-endian, with a string or a list as a
+/// one-byte length and its elements. A position, a velocity, a direction, an
+/// angle, a stamina or a Seen time's fraction travels as a whole count of its grid's
+/// step, in the fewest bytes its range needs (augusta/grid.h, which
+/// physics::World keeps every body on, and weapon::Step a rifle's Recoil
+/// offset); the other floats (the Parameters, a rifle's times, a hit's damage)
+/// travel as their IEEE-754 bits.
+/// The server's match recordings (ADR-0048) are written in the same encoding,
+/// as records of their own (RecordWire), so a recording carries a command
+/// exactly as a Commands message does.
+/// A client message carries intent, never an outcome: tests/impossible_actions.md
+/// (US-15, NFR-05) lists what bounds each of its fields. A new one needs a line
+/// there, and if it carries an outcome (a position, a hit, an ammo count), a
+/// check at the server's boundary and a test.
+/// Every field takes the smallest type that holds what it says: flags are bits
+/// of one byte, shared with a small enumeration where one fits. Decode treats
+/// its input as untrusted: it never throws, never reads past the end, and never
+/// allocates more than the input itself holds.
+///
+/// The structs order their fields widest first, so none carries padding between
+/// fields; the order on the wire is the codec's and need not follow it.
+/// They compare equal field by field, so a message that survives Encode and
+/// Decode compares equal to itself, whatever fields it gains.
 namespace augusta::protocol {
 
 /// The first byte of every payload; which message the rest of it is.
@@ -87,8 +91,8 @@ enum class MessageTypeWire : std::uint8_t {
 /// Longest engine version string a JoinRequestWire may carry, in bytes.
 inline constexpr std::size_t kMaxEngineVersionLength = 32;
 
-/// Longest character path a JoinRequestWire may carry, in bytes.
-inline constexpr std::size_t kMaxCharacterPathLength = 64;
+/// Longest character name a message may carry, in bytes.
+inline constexpr std::size_t kMaxCharacterNameLength = 64;
 
 /// The size of a pack's BLAKE3 hash, in bytes.
 inline constexpr std::size_t kPackHashSize = 32;
@@ -151,15 +155,15 @@ struct CommandWire {
   /// The view, in radians.
   float yaw = 0.0F;
   float pitch = 0.0F;
-  /// How far the player was shown the other players between two server ticks
-  /// when the command was sampled (ADR-0044), 0 to 255/256.
-  float view_fraction = 0.0F;
+  /// The fraction of the command's Seen time: how far the player was shown the
+  /// other players between two server ticks (ADR-0044), 0 to 255/256.
+  float seen_fraction = 0.0F;
   /// Any of kSprint, kAds, kFire and kReload; no other bit.
   std::uint8_t flags = 0;
   StanceWire desired_stance = StanceWire::kStanding;
-  /// The first of those two ticks, as how many ticks before its message's
-  /// CommandsWire::view_tick it is.
-  std::uint8_t view_age = 0;
+  /// The tick of the command's Seen time, as how many ticks before its message's
+  /// CommandsWire::seen_tick it is.
+  std::uint8_t seen_age = 0;
 
   bool operator==(const CommandWire&) const = default;
 };
@@ -253,8 +257,8 @@ struct JoinRequestWire {
   std::string engine_version;
   /// The hash of the client pack the client loaded.
   PackHashWire client_pack{};
-  /// The character the player chose, by its path relative to `authoring/`
-  /// (e.g. "characters/player", ADR-0042); at most kMaxCharacterPathLength bytes.
+  /// The character the player chose, by its name in the scenario's manifest
+  /// (e.g. "soldier", ADR-0042); at most kMaxCharacterNameLength bytes.
   std::string character;
 
   bool operator==(const JoinRequestWire&) const = default;
@@ -281,9 +285,9 @@ struct JoinAcceptedWire {
   /// The parameters the client must predict with, so its numbers (the stamina
   /// rules among them) are the server's.
   ParametersWire parameters{};
-  /// The joining player's own character index: its 1-based position in the
-  /// scenario's character list (ADR-0042). Never 0.
-  std::uint8_t character = 1;
+  /// The joining player's own character, by its name in the scenario's manifest
+  /// (see JoinRequestWire::character); at most kMaxCharacterNameLength bytes.
+  std::string character;
 
   bool operator==(const JoinAcceptedWire&) const = default;
 };
@@ -329,9 +333,9 @@ struct SequencedCommandWire {
 /// the newest), so one lost datagram does not drop input.
 struct CommandsWire {
   std::vector<SequencedCommandWire> commands;
-  /// The newest server tick any of the commands was sampled against
-  /// (ADR-0044): each says how far before it its own is (CommandWire::view_age).
-  tick::Tick view_tick = 0;
+  /// The newest tick of its commands' Seen times (ADR-0044): each says how far
+  /// before it its own is (CommandWire::seen_age).
+  tick::Tick seen_tick = 0;
 
   bool operator==(const CommandsWire&) const = default;
 };
@@ -362,8 +366,8 @@ struct AuthoritativeStateWire {
 /// One player in the Lobby.
 struct RosterEntryWire {
   SessionIdWire session{};
-  /// The player's character index (see JoinAcceptedWire::character). Never 0.
-  std::uint8_t character = 1;
+  /// The player's character (see JoinAcceptedWire::character).
+  std::string character;
 
   bool operator==(const RosterEntryWire&) const = default;
 };
@@ -393,8 +397,8 @@ struct MatchPlayerWire {
   SessionIdWire session{};
   /// The body this player's commands move for the whole match.
   EntityIdWire entity{};
-  /// The player's character index (see JoinAcceptedWire::character). Never 0.
-  std::uint8_t character = 1;
+  /// The player's character (see JoinAcceptedWire::character).
+  std::string character;
 
   bool operator==(const MatchPlayerWire&) const = default;
 };
@@ -494,6 +498,114 @@ enum class DecodeError : std::uint8_t {
 
 /// A short lowercase description of error, for logs.
 [[nodiscard]] std::string_view DescribeDecodeError(DecodeError error);
+
+// A match recording (ADR-0048): what the server's SimulationWorld was handed
+// and what it resolved, tick by tick, in this protocol's encoding. Not a
+// message: a record never travels, Decode never yields one, nor DecodeRecord a
+// message. A record is one payload as a message is, a one-byte RecordTypeWire
+// followed by its fields, read under the same untrusted-input rules.
+
+/// The first byte of every record of a match recording.
+enum class RecordTypeWire : std::uint8_t {
+  /// What a replay must run on: a recording's first record, and its only one of this type.
+  kHeader = 1,
+  /// One tick of SimulationWorld.
+  kTick = 2,
+};
+
+/// The most hits a tick's record holds: the one list of it the players do not bound.
+inline constexpr std::size_t kMaxRecordedHits = 255;
+
+/// What a recording was made on: the server pack whose content a replay must
+/// load, the engine that recorded it, and the tick rate it ran at.
+struct RecordingHeaderWire {
+  /// The hash of the server pack (ADR-0031).
+  PackHashWire server_pack{};
+  /// The recording engine's version (augusta::EngineVersion); at most kMaxEngineVersionLength bytes.
+  std::string engine_version;
+  std::uint8_t tick_rate_hz = 0;
+
+  bool operator==(const RecordingHeaderWire&) const = default;
+};
+
+/// The command one player's body was moved by on one tick.
+struct RecordedCommandWire {
+  /// The tick of the command's Seen time, in full: command.seen_age counts back from it.
+  tick::Tick seen_tick = 0;
+  CommandWire command{};
+  EntityIdWire entity{};
+
+  bool operator==(const RecordedCommandWire&) const = default;
+};
+
+/// One body as of the end of a tick, with what only its own player is told.
+struct RecordedBodyWire {
+  EntityStateWire state{};
+  WeaponStateWire rifle{};
+  /// As AuthoritativeStateWire::health.
+  float health = 0.0F;
+
+  bool operator==(const RecordedBodyWire&) const = default;
+};
+
+/// One bullet that struck a player on a tick.
+struct RecordedHitWire {
+  /// The bits of flags: this hit took the target's health to zero.
+  static constexpr std::uint8_t kReachedZero = 1U << 0U;
+
+  float damage = 0.0F;
+  /// The target's health after it.
+  float health = 0.0F;
+  EntityIdWire shooter{};
+  EntityIdWire target{};
+  BodyPartWire part = BodyPartWire::kTorso;
+  /// kReachedZero or not; no other bit.
+  std::uint8_t flags = 0;
+
+  bool operator==(const RecordedHitWire&) const = default;
+};
+
+/// One tick of SimulationWorld as the server ran it: what it was handed before
+/// and on the tick, then what it resolved.
+struct RecordedTickWire {
+  /// The bits of flags: the Match in the world was ended before the tick, and
+  /// Game policy ended the Match on it, with winner.
+  static constexpr std::uint8_t kMatchEnded = 1U << 0U;
+  static constexpr std::uint8_t kPolicyMatchEnd = 1U << 1U;
+
+  /// The bodies taken out of the world before the tick, at most kMaxPlayers.
+  std::vector<EntityIdWire> removed;
+  /// The players of a Match started before the tick, each at the spawn it was
+  /// given, at most kMaxPlayers; empty when none started, since a Match always
+  /// has a player.
+  std::vector<MatchPlayerWire> match_start;
+  /// The tick's commands, at most kMaxPlayers.
+  std::vector<RecordedCommandWire> commands;
+  /// Every body as of the tick, at most kMaxPlayers.
+  std::vector<RecordedBodyWire> bodies;
+  /// The rounds fired on the tick, at most kMaxPlayers.
+  std::vector<ShotWire> shots;
+  /// At most kMaxRecordedHits.
+  std::vector<RecordedHitWire> hits;
+  /// At most kMaxPlayers.
+  std::vector<DeathWire> deaths;
+  /// The tick's duration, in seconds, as its bits.
+  float delta_time = 0.0F;
+  /// The Match end's winner when flags has kPolicyMatchEnd, or kDraw.
+  SessionIdWire winner = kDraw;
+  /// Any of kMatchEnded and kPolicyMatchEnd; no other bit.
+  std::uint8_t flags = 0;
+
+  bool operator==(const RecordedTickWire&) const = default;
+};
+
+using RecordWire = std::variant<RecordingHeaderWire, RecordedTickWire>;
+
+/// Encodes record as one payload. A field beyond its limit is a caller bug, as for Encode.
+[[nodiscard]] BytesWire EncodeRecord(const RecordWire& record);
+
+/// Decodes one record's payload, or reports what is wrong with it, as Decode does a message's.
+[[nodiscard]] std::expected<RecordWire, DecodeError> DecodeRecord(std::span<const std::byte> payload);
 
 }  // namespace augusta::protocol
 

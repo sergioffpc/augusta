@@ -1,6 +1,6 @@
 # Build output (CMakePresets.json binaryDir per preset - build/x64-windows,
-# build/x64-linux, etc. stay separate since Windows-native and WSL share the
-# same checkout, see ENGINEERING.md)
+# build/x64-linux, etc. stay separate since the Windows-native and Linux builds
+# share the same checkout, see ENGINEERING.md)
 build/
 out/
 bin/
@@ -49,7 +49,7 @@ packages/
 
 # Python (tools/pack) build/install artifacts - the hermetic venv
 # itself lives under -AssetsRoot (see above), never inside the checkout;
-# .venv/ is the test environment `uv run pytest` creates.
+# .venv/ is the tools/ environment `uv sync` creates there.
 __pycache__/
 *.pyc
 *.egg-info/
@@ -67,9 +67,9 @@ tools/pack/src/pack/*.pyd
 tools/pack/src/pack/*.dll
 
 # Local runtime config (ADR-0034): machine-specific paths, never committed. The
-# templates in config/ are named *.example.yaml and stay tracked. A scenario's
-# parameters.lua (ADR-0039) lives under authoring/ or tools/composer/examples/ and
-# is meant to be committed, so it is never matched here.
+# templates in config/ are named *.example.yaml and stay tracked. A Parameters
+# script (ADR-0039) lives under authoring/ or tools/composer/examples/ and is
+# meant to be committed, so it is never matched here.
 config/augustac.yaml
 config/augustad.yaml
 

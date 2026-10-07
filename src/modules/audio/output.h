@@ -11,11 +11,12 @@
 #include "augusta/audio.h"
 #include "augusta/math.h"
 
-// audio::Engine's open output device: what plays once there is one. Engine
-// (audio.cpp) holds none when OpenOutput fails, and is silent. The Windows
-// build opens one through miniaudio and Steam Audio (output_windows.cpp); every
-// other build has no audio output at all (output_none.cpp), so the Linux build
-// graph has no audio dependency (ADR-0010).
+/// \file
+/// audio::Engine's open output device: what plays once there is one. Engine
+/// (audio.cpp) holds none when OpenOutput fails, and is silent. A build with
+/// AUGUSTA_AUDIO_OUTPUT opens one through miniaudio and Steam Audio
+/// (output_miniaudio.cpp), both cross-platform; one without has no audio
+/// output at all (output_none.cpp), and no audio dependency (ADR-0010).
 namespace augusta::audio {
 
 /// Which step of opening the output device failed.
@@ -58,7 +59,7 @@ class Output {
   virtual void SetListener(const Listener& listener) = 0;
   /// Plays sound at position, or as the listener's own when nullopt.
   virtual VoiceHandle Play(SoundHandle sound, const std::optional<math::Vec3>& position) = 0;
-  virtual void StopVoice(VoiceHandle voice) = 0;
+  virtual void Stop(VoiceHandle voice) = 0;
 };
 
 /// Opens the default output device, or says why it could not.

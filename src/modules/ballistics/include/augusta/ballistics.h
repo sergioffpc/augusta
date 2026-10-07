@@ -8,30 +8,31 @@
 #include "augusta/math.h"
 #include "augusta/physics.h"
 
-// augusta::ballistics simulates bullet trajectories (gravity-induced
-// drop, travel time - US-10), hand-rolled instead of PhysX's generic
-// projectile handling (ADR-0002: full control over determinism and a
-// core learning goal, not a gap - see that ADR before reaching for an
-// external solver). A semi-implicit Euler integrator is enough for v1;
-// nothing in REQUIREMENTS.md asks for aerodynamic drag/wind modeling.
-//
-// The module is shared (ADR-0024, ADR-0044): the server advances every
-// bullet with it and decides what each one hits, and each client's
-// presentation draws every announced Shot's tracer and Map impact with
-// the same World, handing it no hitboxes - a visual only. Deciding
-// which player a bullet hits, where and for what damage stays the
-// server's: only the server has the hitboxes to hand in.
-//
-// World::Step follows the same per-handle, called-once-per-tick shape as
-// physics::World::Step, since bullets are ECS entities too
-// (ARCHITECTURE.md §5's Shared Core ECS list) advanced by a system that
-// iterates them the same way player bodies are. Each tick's segment is
-// tested against the Map through physics::World::RaycastMap, which never
-// reports a player's controller (ADR-0002), and against the Hitboxes the
-// caller hands in, already posed where the caller judges the players to
-// be: for the server, as they were the Shooter's delay ago (ADR-0044).
-// Hitboxes are tested here, triangle by triangle, not through PhysX,
-// since they are posed anew for every test.
+/// \file
+/// augusta::ballistics simulates bullet trajectories (gravity-induced
+/// drop, travel time - US-10), hand-rolled instead of PhysX's generic
+/// projectile handling (ADR-0002: full control over determinism and a
+/// core learning goal, not a gap - see that ADR before reaching for an
+/// external solver). A semi-implicit Euler integrator is enough for v1;
+/// nothing in REQUIREMENTS.md asks for aerodynamic drag/wind modeling.
+///
+/// The module is shared (ADR-0024, ADR-0044): the server advances every
+/// bullet with it and decides what each one hits, and each client's
+/// presentation draws every announced Shot's tracer and Map impact with
+/// the same World, handing it no hitboxes - a visual only. Deciding
+/// which player a bullet hits, where and for what damage stays the
+/// server's: only the server has the hitboxes to hand in.
+///
+/// World::Step follows the same per-handle, called-once-per-tick shape as
+/// physics::World::Step, since bullets are ECS entities too
+/// (ARCHITECTURE.md §5's Shared Core ECS list) advanced by a system that
+/// iterates them the same way player bodies are. Each tick's segment is
+/// tested against the Map through physics::World::RaycastMap, which never
+/// reports a player's controller (ADR-0002), and against the Hitboxes the
+/// caller hands in, already posed where the caller judges the players to
+/// be: for the server, as they were the Shooter's delay ago (ADR-0044).
+/// Hitboxes are tested here, triangle by triangle, not through PhysX,
+/// since they are posed anew for every test.
 namespace augusta::ballistics {
 
 /// Where on a hit player's body a bullet struck (US-11): the coarse zones
@@ -42,19 +43,19 @@ enum class BodyPart : std::uint8_t {
   kLimb,
 };
 
-// Tunable per-shot values (ARCHITECTURE.md §8 mechanism/policy/data
-// split, same category as physics::StaminaConfig): the gravity
-// integration and max-range cutoff *logic* is mechanism code in
-// World::Step, identical for every bullet, but these *values* are meant
-// to vary per weapon/ammo type (US-12) and be loaded from external
-// configuration rather than hardcoded.
+/// Tunable per-shot values (ARCHITECTURE.md §8 mechanism/policy/data
+/// split, same category as physics::StaminaConfig): the gravity
+/// integration and max-range cutoff *logic* is mechanism code in
+/// World::Step, identical for every bullet, but these *values* are meant
+/// to vary per weapon/ammo type (US-12) and be loaded from external
+/// configuration rather than hardcoded.
 struct BulletConfig {
-  // Downward acceleration applied each tick, in engine units/s^2.
+  /// Downward acceleration applied each tick, in engine units/s^2.
   float gravity = 0.0F;
-  // The bullet resolves as kExpired (see Outcome) once it has travelled
-  // this far from its origin without hitting anything - bounds an
-  // in-flight bullet's lifetime so a miss doesn't stay simulated
-  // forever.
+  /// The bullet resolves as kExpired (see Outcome) once it has travelled
+  /// this far from its origin without hitting anything - bounds an
+  /// in-flight bullet's lifetime so a miss doesn't stay simulated
+  /// forever.
   float max_range = 0.0F;
 };
 
@@ -77,68 +78,68 @@ struct Hitbox {
   std::span<const Triangle> triangles;
 };
 
-// Opaque handle to an in-flight bullet created by World::Fire. Valid
-// only for the World instance that created it, and only until Step
-// returns a resolved (non-kInFlight) result for it - see Step.
+/// Opaque handle to an in-flight bullet created by World::Fire. Valid
+/// only for the World instance that created it, and only until Step
+/// returns a resolved (non-kInFlight) result for it - see Step.
 enum class BulletHandle : std::uint32_t {};
 
-// A bullet's position/velocity at a point in time.
+/// A bullet's position/velocity at a point in time.
 struct BulletState {
   math::Vec3 position;
   math::Vec3 velocity;
 };
 
-// One World::Step call's outcome for one bullet.
+/// One World::Step call's outcome for one bullet.
 enum class Outcome {
-  // Still travelling; Step must be called again next tick.
+  /// Still travelling; Step must be called again next tick.
   kInFlight,
-  // Struck the Map this tick (see StepResult::impact_point).
+  /// Struck the Map this tick (see StepResult::impact_point).
   kHitMap,
-  // Struck a player's Hitbox this tick (see StepResult::target/part/impact_point).
+  /// Struck a player's Hitbox this tick (see StepResult::target/part/impact_point).
   kHitPlayer,
-  // Exceeded BulletConfig::max_range without hitting anything - a miss.
+  /// Exceeded BulletConfig::max_range without hitting anything - a miss.
   kExpired,
 };
 
-// The result of one World::Step call.
+/// The result of one World::Step call.
 struct StepResult {
   Outcome outcome = Outcome::kInFlight;
-  // The bullet's position/velocity at the end of the tick's movement,
-  // regardless of outcome: past the impact point on a hit.
+  /// The bullet's position/velocity at the end of the tick's movement,
+  /// regardless of outcome: past the impact point on a hit.
   BulletState state;
-  // The player that was hit. Only meaningful if outcome is kHitPlayer.
+  /// The player that was hit. Only meaningful if outcome is kHitPlayer.
   TargetId target{};
-  // Which part of target was hit. Only meaningful if outcome is
-  // kHitPlayer.
+  /// Which part of target was hit. Only meaningful if outcome is
+  /// kHitPlayer.
   BodyPart part = BodyPart::kTorso;
-  // World-space point of impact. Only meaningful if outcome is kHitMap
-  // or kHitPlayer.
+  /// World-space point of impact. Only meaningful if outcome is kHitMap
+  /// or kHitPlayer.
   math::Vec3 impact_point;
 };
 
-// Owns every in-flight bullet of one world: the server's SimulationWorld,
-// or a client's presentation drawing the Shots it is told of.
+/// Owns every in-flight bullet of one world: the server's SimulationWorld,
+/// or a client's presentation drawing the Shots it is told of.
 class World {
  public:
   World();
 
-  // Spawns a new bullet at origin, travelling in direction (need not be
-  // pre-normalized) at initial_speed (engine units/s), obeying config
-  // for the rest of its flight (US-07: "correct origin, direction, and
-  // initial velocity"). config is copied per bullet, not shared with
-  // the World - different ammo types can fire simultaneously with
-  // different gravity/max_range.
+  /// Spawns a new bullet at origin, travelling in direction (need not be
+  /// pre-normalized) at initial_speed (engine units/s), obeying config
+  /// for the rest of its flight (US-07: "correct origin, direction, and
+  /// initial velocity"). config is copied per bullet, not shared with
+  /// the World - different ammo types can fire simultaneously with
+  /// different gravity/max_range.
   BulletHandle Fire(const math::Vec3& origin, const math::Vec3& direction, float initial_speed,
                     const BulletConfig& config);
 
-  // Advances handle's bullet by one fixed tick of delta_time seconds:
-  // integrates gravity, then tests the tick's movement segment against
-  // map's collision meshes and against hitboxes. The nearest intersection
-  // along the segment is the outcome, so nothing is hit through a wall or
-  // through another player; with none, a bullet past its max range
-  // expires. Once this returns a non-kInFlight outcome for handle, the
-  // bullet no longer exists - calling Step again with the same handle is
-  // undefined behavior.
+  /// Advances handle's bullet by one fixed tick of delta_time seconds:
+  /// integrates gravity, then tests the tick's movement segment against
+  /// map's collision meshes and against hitboxes. The nearest intersection
+  /// along the segment is the outcome, so nothing is hit through a wall or
+  /// through another player; with none, a bullet past its max range
+  /// expires. Once this returns a non-kInFlight outcome for handle, the
+  /// bullet no longer exists - calling Step again with the same handle is
+  /// undefined behavior.
   StepResult Step(BulletHandle handle, float delta_time, const physics::World& map, std::span<const Hitbox> hitboxes);
 
  private:

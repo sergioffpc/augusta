@@ -1,11 +1,11 @@
 #include "wire.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -24,7 +24,6 @@
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "command_queue.h"
-#include "host.h"
 #include "match.h"
 
 // Each peer converts between the engine's types and the protocol's plain ones
@@ -80,8 +79,8 @@ TEST(WireTest, ACommandTheClientSendsReachesTheServerUnchanged) {
     sent.ads = true;
     sent.fire = true;
     sent.reload = true;
-    sent.view_tick = 1200;
-    sent.view_fraction = 0.75F;
+    sent.seen_tick = 1200;
+    sent.seen_fraction = 0.75F;
 
     const std::array<augusta::harness::SequencedCommand, 1> commands = {{{.sequence = 9, .command = sent}}};
     const augusta::server::SequencedCommand received =
@@ -96,19 +95,19 @@ TEST(WireTest, ACommandTheClientSendsReachesTheServerUnchanged) {
     EXPECT_EQ(received.command.ads, sent.ads);
     EXPECT_EQ(received.command.fire, sent.fire);
     EXPECT_EQ(received.command.reload, sent.reload);
-    EXPECT_EQ(received.command.view_tick, sent.view_tick);
-    EXPECT_EQ(received.command.view_fraction, sent.view_fraction);
+    EXPECT_EQ(received.command.seen_tick, sent.seen_tick);
+    EXPECT_EQ(received.command.seen_fraction, sent.seen_fraction);
   }
 }
 
-// A message's commands were sampled a tick apart, each against its own view:
+// A message's commands were sampled a tick apart, each with its own Seen time:
 // every one reaches the server with the tick it named.
-TEST(WireTest, EachCommandOfAMessageReachesTheServerWithTheViewItWasSampledAgainst) {
+TEST(WireTest, EachCommandOfAMessageReachesTheServerWithTheSeenTimeItWasSampledOn) {
   std::vector<augusta::harness::SequencedCommand> sent(4);
   for (std::size_t i = 0; i < sent.size(); ++i) {
     sent[i].sequence = static_cast<augusta::command::Sequence>(40 + i);
-    sent[i].command.view_tick = 70000 + (2 * i);
-    sent[i].command.view_fraction = 0.25F * static_cast<float>(i);
+    sent[i].command.seen_tick = 70000 + (2 * i);
+    sent[i].command.seen_fraction = 0.25F * static_cast<float>(i);
   }
 
   const std::vector<augusta::server::SequencedCommand> received =
@@ -116,19 +115,19 @@ TEST(WireTest, EachCommandOfAMessageReachesTheServerWithTheViewItWasSampledAgain
 
   ASSERT_EQ(received.size(), sent.size());
   for (std::size_t i = 0; i < sent.size(); ++i) {
-    EXPECT_EQ(received[i].command.view_tick, sent[i].command.view_tick) << i;
-    EXPECT_EQ(received[i].command.view_fraction, sent[i].command.view_fraction) << i;
+    EXPECT_EQ(received[i].command.seen_tick, sent[i].command.seen_tick) << i;
+    EXPECT_EQ(received[i].command.seen_fraction, sent[i].command.seen_fraction) << i;
   }
 }
 
 // The server's ticks never start over (ADR-0038): commands sampled either side
-// of the last tick 32 bits hold reach the server with the views they named.
-TEST(WireTest, ViewsEitherSideOfThirtyTwoBitsReachTheServerAsTheyWereSampled) {
+// of the last tick 32 bits hold reach the server with the Seen times they named.
+TEST(WireTest, SeenTimesEitherSideOfThirtyTwoBitsReachTheServerAsTheyWereSampled) {
   constexpr augusta::tick::Tick kLastOf32Bits = std::numeric_limits<std::uint32_t>::max();
   std::vector<augusta::harness::SequencedCommand> sent(4);
   for (std::size_t i = 0; i < sent.size(); ++i) {
     sent[i].sequence = static_cast<augusta::command::Sequence>(1 + i);
-    sent[i].command.view_tick = kLastOf32Bits - 1 + i;
+    sent[i].command.seen_tick = kLastOf32Bits - 1 + i;
   }
 
   const std::vector<augusta::server::SequencedCommand> received =
@@ -136,31 +135,31 @@ TEST(WireTest, ViewsEitherSideOfThirtyTwoBitsReachTheServerAsTheyWereSampled) {
 
   ASSERT_EQ(received.size(), sent.size());
   for (std::size_t i = 0; i < sent.size(); ++i) {
-    EXPECT_EQ(received[i].command.view_tick, sent[i].command.view_tick) << i;
+    EXPECT_EQ(received[i].command.seen_tick, sent[i].command.seen_tick) << i;
   }
 }
 
-// A command's view travels as how far before the message's newest it is, in a
+// A command's Seen time travels as how far before the message's newest it is, in a
 // byte: one further back arrives as far back as a byte tells, which is already
 // beyond what the server judges a shot against.
-TEST(WireTest, AViewTooFarBeforeTheMessagesNewestReachesTheServerAsTheOldestAByteTells) {
+TEST(WireTest, ASeenTimeTooFarBeforeTheMessagesNewestReachesTheServerAsTheOldestAByteTells) {
   std::vector<augusta::harness::SequencedCommand> sent(2);
-  sent[0].command.view_tick = 100;
-  sent[1].command.view_tick = 1000;
+  sent[0].command.seen_tick = 100;
+  sent[1].command.seen_tick = 1000;
 
   const std::vector<augusta::server::SequencedCommand> received =
       augusta::server::FromWire(ThroughTheWire(augusta::harness::ToWire(sent)));
 
-  EXPECT_EQ(received.at(0).command.view_tick, 1000U - 255U);
-  EXPECT_EQ(received.at(1).command.view_tick, 1000U);
+  EXPECT_EQ(received.at(0).command.seen_tick, 1000U - 255U);
+  EXPECT_EQ(received.at(1).command.seen_tick, 1000U);
 }
 
-// An age the message's view tick cannot go back by names the first tick there is.
-TEST(WireTest, AViewAgeBeyondTheMessagesViewTickIsTheFirstTick) {
-  augusta::protocol::CommandsWire message{.commands = {{.sequence = 1}}, .view_tick = 3};
-  message.commands[0].command.view_age = 10;
+// An age the message's Seen tick cannot go back by names the first tick there is.
+TEST(WireTest, ASeenAgeBeyondTheMessagesSeenTickIsTheFirstTick) {
+  augusta::protocol::CommandsWire message{.commands = {{.sequence = 1}}, .seen_tick = 3};
+  message.commands[0].command.seen_age = 10;
 
-  EXPECT_EQ(augusta::server::FromWire(ThroughTheWire(message)).at(0).command.view_tick, 0U);
+  EXPECT_EQ(augusta::server::FromWire(ThroughTheWire(message)).at(0).command.seen_tick, 0U);
 }
 
 TEST(WireTest, EachFlagOfACommandReachesTheServerAsItselfAlone) {
@@ -269,7 +268,7 @@ TEST(WireTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged) {
   const augusta::protocol::JoinAcceptedWire received =
       ThroughTheWire(augusta::protocol::JoinAcceptedWire{.session = augusta::protocol::SessionIdWire{1},
                                                          .parameters = augusta::server::ToWire(parameters),
-                                                         .character = 1});
+                                                         .character = "soldier"});
 
   // Every parameter travels as its exact bits, so nothing is rounded on the way.
   const augusta::parameters::Parameters received_parameters = augusta::harness::FromWire(received.parameters);
@@ -284,7 +283,8 @@ TEST(WireTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged) {
 
 TEST(WireTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
   const augusta::server::Roster sent{
-      .version = 7, .players = {{.session = SessionId{3}, .character = 2}, {.session = SessionId{5}, .character = 1}}};
+      .version = 7,
+      .players = {{.session = SessionId{3}, .character = "medic"}, {.session = SessionId{5}, .character = "sniper"}}};
 
   const augusta::harness::Lobby received = augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
 
@@ -298,8 +298,8 @@ TEST(WireTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
 
 TEST(WireTest, AMatchStartTheServerSendsReachesTheClientUnchanged) {
   const augusta::server::MatchStart sent{
-      .players = {{.session = SessionId{3}, .entity = EntityId{11}, .character = 2},
-                  {.session = SessionId{5}, .entity = EntityId{12}, .character = 1}}};
+      .players = {{.session = SessionId{3}, .entity = EntityId{11}, .character = "medic"},
+                  {.session = SessionId{5}, .entity = EntityId{12}, .character = "sniper"}}};
   const std::vector<Vec3> spawns{Vec3(4.0F, 0.5F, -8.0F), Vec3(-1.0F, 0.0F, 2.0F)};
 
   const augusta::harness::MatchStart received =
@@ -319,7 +319,7 @@ TEST(WireTest, AJoinRequestTheClientSendsReachesTheServerUnchanged) {
   client_pack.front() = std::byte{0xAB};
   client_pack.back() = std::byte{0x01};
   const augusta::harness::JoinRequest sent{
-      .engine_version = "1.2.3", .client_pack = client_pack, .character = "characters/player"};
+      .engine_version = "1.2.3", .client_pack = client_pack, .character = "soldier"};
 
   const augusta::server::JoinRequest received =
       augusta::server::FromWire(ThroughTheWire(augusta::harness::ToWire(sent)));
@@ -332,7 +332,7 @@ TEST(WireTest, AJoinRequestTheClientSendsReachesTheServerUnchanged) {
 TEST(WireTest, TheAdmissionTheServerSendsReachesTheClientUnchanged) {
   augusta::parameters::Parameters parameters;
   parameters.player_count = 2;
-  const augusta::server::Admission sent{.session = SessionId{7}, .character = 3};
+  const augusta::server::Admission sent{.session = SessionId{7}, .character = "soldier"};
 
   const augusta::harness::Admission received =
       augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent, 30, parameters)));
@@ -450,11 +450,6 @@ TEST(WireTest, ADeathTheServerTellsReachesTheClientUnchanged) {
     EXPECT_EQ(received.pitch, sent.pitch);
     EXPECT_EQ(received.part, part);
   }
-}
-
-TEST(WireTest, MatchAndSimulationWorldNameABodyByTheSameEntity) {
-  EXPECT_EQ(augusta::server::FromSimulation(augusta::server::ToSimulation(EntityId{77})), EntityId{77});
-  EXPECT_EQ(Number(augusta::server::ToSimulation(EntityId{77})), 77U);
 }
 
 }  // namespace

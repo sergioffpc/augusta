@@ -21,8 +21,12 @@ jobs:
     outputs:
       run_build: ${{ steps.filter.outputs.run_build }}
       run_container: ${{ steps.filter.outputs.run_container }}
+      run_manifests: ${{ steps.filter.outputs.run_manifests }}
       run_tools: ${{ steps.filter.outputs.run_tools }}
       run_yaml: ${{ steps.filter.outputs.run_yaml }}
+      run_lua: ${{ steps.filter.outputs.run_lua }}
+      run_toml: ${{ steps.filter.outputs.run_toml }}
+      run_lint: ${{ steps.filter.outputs.run_lint }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -36,33 +40,49 @@ jobs:
           fi
 
           if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null; then
-            echo "run_build=true" >> "$GITHUB_OUTPUT"
-            echo "run_container=true" >> "$GITHUB_OUTPUT"
-            echo "run_tools=true" >> "$GITHUB_OUTPUT"
-            echo "run_yaml=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "run_build=true"
+              echo "run_container=true"
+              echo "run_manifests=true"
+              echo "run_tools=true"
+              echo "run_yaml=true"
+              echo "run_lua=true"
+              echo "run_toml=true"
+              echo "run_lint=true"
+            } >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           changed="$(git diff --name-only "$base" "${{ github.sha }}")"
 
           if echo "$changed" \
-              | grep -qE '^(src/|tests/|tools/composer/examples/|tools/pack/cpp/|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/)'; then
+              | grep -qE '^(src/|tests/|tools/(replay|swarm)/|tools/composer/examples/|tools/pack/cpp/|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/)'; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
           fi
 
           if echo "$changed" \
-              | grep -qE '^(Dockerfile$|\.dockerignore$|charts/|\.github/workflows/ci\.yml$)'; then
+              | grep -qE '^(Dockerfile$|\.dockerignore$|\.hadolint\.yaml$|charts/|\.github/workflows/ci\.yml$)'; then
             echo "run_container=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_container=false" >> "$GITHUB_OUTPUT"
           fi
 
-          # The offline tools (tools/), and the golden output of theirs the
-          # runtime's tests load, which the tools job checks they still write.
+          # What Flux applies to the cluster: its own manifests and the chart
+          # the HelmReleases there install.
           if echo "$changed" \
-              | grep -qE '^(tools/|tests/fixtures/example-packs/|\.github/workflows/ci\.yml$)'; then
+              | grep -qE '^(charts/|clusters/|\.github/workflows/ci\.yml$)'; then
+            echo "run_manifests=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_manifests=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # The offline tools (tools/pack, tools/composer), and the golden
+          # output of theirs the runtime's tests load, which the tools job checks
+          # they still write. tools/docs is the docs workflow's, not theirs.
+          if echo "$changed" \
+              | grep -qE '^(tools/(pack|composer)/|tools/(pyproject\.toml|uv\.lock)$|tests/fixtures/example-packs/|\.github/workflows/ci\.yml$)'; then
             echo "run_tools=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_tools=false" >> "$GITHUB_OUTPUT"
@@ -74,14 +94,39 @@ jobs:
           else
             echo "run_yaml=false" >> "$GITHUB_OUTPUT"
           fi
+
+          # The scenarios' Lua scripts, and the rules they are formatted and
+          # linted by.
+          if echo "$changed" \
+              | grep -qE '(\.lua$|^(stylua\.toml|\.luacheckrc|\.github/workflows/ci\.yml)$)'; then
+            echo "run_lua=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_lua=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if echo "$changed" | grep -qE '(\.toml$|^\.github/workflows/ci\.yml$)'; then
+            echo "run_toml=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_toml=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Python, shell, Markdown, CMake, PowerShell and the workflows, and
+          # the rules each is formatted and linted by.
+          if echo "$changed" \
+              | grep -qE '(\.(py|sh|md|cmake|ps1)$|(^|/)CMakeLists\.txt$|^\.githooks/|^\.github/workflows/|^\.github/actionlint\.yaml$|^(ruff\.toml|\.shellcheckrc|\.gersemirc|\.pymarkdown\.json|\.prettierrc\.yaml|PSScriptAnalyzerSettings\.psd1|\.editorconfig)$)'; then
+            echo "run_lint=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_lint=false" >> "$GITHUB_OUTPUT"
+          fi
   format:
     needs: changes
-    if: needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true'
+    if: >-
+      needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lua == 'true' || needs.changes.outputs.run_toml == 'true' || needs.changes.outputs.run_lint == 'true'
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-        if: needs.changes.outputs.run_yaml == 'true'
+        if: needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lint == 'true'
         with:
           enable-cache: true
       - name: Install yamlfmt
@@ -103,12 +148,98 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y clang-format
       - name: Check C++ formatting
         if: needs.changes.outputs.run_build == 'true'
-        run: find src tests tools \( -name '*.cpp' -o -name '*.h' \) | xargs clang-format --dry-run --Werror
+        run: find src tests tools \( -name '*.cpp' -o -name '*.h' \) -print0 | xargs -0 clang-format --dry-run --Werror
       - name: Check YAML formatting and lint
         if: needs.changes.outputs.run_yaml == 'true'
         run: |
           yamlfmt -conf .yamlfmt -lint
           uv tool run --from yamllint==1.37.1 yamllint --strict -c .yamllint .
+      - name: Install StyLua and luacheck
+        if: needs.changes.outputs.run_lua == 'true'
+        shell: bash
+        run: |
+          install_dir="$RUNNER_TEMP/lua-tools"
+          mkdir -p "$install_dir"
+          curl -fsSLo "$install_dir/stylua.zip" \
+            https://github.com/JohnnyMorganz/StyLua/releases/download/v2.5.2/stylua-linux-x86_64.zip
+          curl -fsSLo "$install_dir/luacheck" \
+            https://github.com/lunarmodules/luacheck/releases/download/v1.2.0/luacheck
+          printf '%s  %s\n' \
+            'bcb0d855e91f102f28a370e850f8566b3b44b79e6274d806ea5246837c0fd5ab' "$install_dir/stylua.zip" \
+            'd68da17fca0697d9e2fb04201f3884abd259fa558b3a449bccaed47f1390defc' "$install_dir/luacheck" \
+            | sha256sum --check --status
+          unzip -q "$install_dir/stylua.zip" -d "$install_dir"
+          chmod +x "$install_dir/stylua" "$install_dir/luacheck"
+          echo "$install_dir" >> "$GITHUB_PATH"
+      - name: Check Lua formatting and lint
+        if: needs.changes.outputs.run_lua == 'true'
+        run: |
+          git ls-files -z -- '*.lua' | xargs -0 stylua --check
+          git ls-files -z -- '*.lua' | xargs -0 luacheck
+      - name: Install taplo
+        if: needs.changes.outputs.run_toml == 'true'
+        shell: bash
+        run: |
+          install_dir="$RUNNER_TEMP/taplo"
+          mkdir -p "$install_dir"
+          curl -fsSLo "$install_dir/taplo.gz" \
+            https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz
+          printf '%s  %s\n' '8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156' "$install_dir/taplo.gz" \
+            | sha256sum --check --status
+          gunzip "$install_dir/taplo.gz"
+          chmod +x "$install_dir/taplo"
+          echo "$install_dir" >> "$GITHUB_PATH"
+      - name: Check TOML formatting and lint
+        if: needs.changes.outputs.run_toml == 'true'
+        run: |
+          git ls-files -z -- '*.toml' ':!:third_party/*' | xargs -0 taplo fmt --check
+          git ls-files -z -- '*.toml' ':!:third_party/*' | xargs -0 taplo lint
+      # uv runs the rest at pinned versions, as the Makefile's format-check and
+      # the git hooks do.
+      - name: Check Python formatting and lint
+        if: needs.changes.outputs.run_lint == 'true'
+        run: |
+          git ls-files -z -- '*.py' ':!:third_party/*' | xargs -0 uv tool run ruff@0.16.10 format --check
+          git ls-files -z -- '*.py' ':!:third_party/*' | xargs -0 uv tool run ruff@0.16.10 check
+      - name: Check shell formatting and lint
+        if: needs.changes.outputs.run_lint == 'true'
+        run: |
+          git ls-files -z -- '*.sh' '.githooks/*' | xargs -0 uv tool run --from shfmt-py==4.2.0 shfmt -d
+          git ls-files -z -- '*.sh' '.githooks/*' | xargs -0 uv tool run --from shellcheck-py==0.11.0.1 shellcheck
+      - name: Lint the workflows
+        if: needs.changes.outputs.run_lint == 'true'
+        run: uv tool run --from actionlint-py==1.7.12.25 --with shellcheck-py==0.11.0.1 actionlint
+      - name: Check CMake formatting
+        if: needs.changes.outputs.run_lint == 'true'
+        run: |
+          git ls-files -z -- 'CMakeLists.txt' '*/CMakeLists.txt' '*.cmake' ':!:third_party/*' \
+            | xargs -0 uv tool run gersemi@0.29.2 --check
+      - name: Check Markdown formatting and lint
+        if: needs.changes.outputs.run_lint == 'true'
+        run: |
+          git ls-files -z -- '*.md' ':!:third_party/*' ':!:CHANGELOG.md' \
+            | xargs -0 uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9 --log-level warn --check
+          git ls-files -z -- '*.md' ':!:third_party/*' ':!:CHANGELOG.md' \
+            | xargs -0 uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pymarkdown.json scan
+      - name: Install PSScriptAnalyzer
+        if: needs.changes.outputs.run_lint == 'true'
+        shell: bash
+        run: |
+          install_dir="$RUNNER_TEMP/PSScriptAnalyzer"
+          mkdir -p "$install_dir"
+          curl -fsSLo "$RUNNER_TEMP/psscriptanalyzer.zip" \
+            https://www.powershellgallery.com/api/v2/package/PSScriptAnalyzer/1.25.0
+          printf '%s  %s\n' '14e634c828eb98efb9f40b2918ba90f139ed5eccdf663a2a747736d996995d60' \
+            "$RUNNER_TEMP/psscriptanalyzer.zip" | sha256sum --check --status
+          unzip -q "$RUNNER_TEMP/psscriptanalyzer.zip" -d "$install_dir"
+          # shellcheck disable=SC2016 # $env:PSModulePath is PowerShell's, for pwsh to expand
+          echo "PSModulePath=$RUNNER_TEMP:$(pwsh -NoProfile -Command '$env:PSModulePath')" >> "$GITHUB_ENV"
+      - name: Check PowerShell formatting and lint
+        if: needs.changes.outputs.run_lint == 'true'
+        # It takes seconds; a hung analyzer fails here instead of at the job's
+        # six-hour limit.
+        timeout-minutes: 5
+        run: pwsh -NoProfile -File scripts/psscriptanalyzer.ps1
   client:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true'
@@ -129,9 +260,6 @@ jobs:
           # too - see .gitmodules.
           submodules: recursive
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
-      - name: Install Ninja
-        run: choco install ninja -y
-        shell: pwsh
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Bootstrap vcpkg
         shell: pwsh
@@ -176,6 +304,31 @@ jobs:
         with:
           prefix: falcor-packman-
           keep: falcor-packman-${{ hashFiles('third_party/falcor/dependencies.xml', 'cmake/patches/falcor.patch') }}
+      - name: Install clang-tidy
+        # LLVM 21.1.8, the version the server job's distro package and the
+        # Windows bootstrap give, so both platforms agree on which header
+        # provides what; the image's own is 20.1.8. Downloaded and checked
+        # like the format job's tools, as the image has no winget, the
+        # bootstrap's package manager. Installed beside the image's LLVM and
+        # put ahead of it on PATH.
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $installer = "$env:RUNNER_TEMP\LLVM-21.1.8-win64.exe"
+          Invoke-WebRequest -Uri https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.8/LLVM-21.1.8-win64.exe -OutFile $installer
+          if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne '7a5386c26497db1691f320121e5b113364dd0274b98e55f15f4dbc00c0450113') {
+            throw "LLVM installer checksum mismatch"
+          }
+          Start-Process -FilePath $installer -ArgumentList '/S', "/D=$env:RUNNER_TEMP\llvm" -Wait
+          "$env:RUNNER_TEMP\llvm\bin" >> $env:GITHUB_PATH
+      - name: Lint
+        # .clang-tidy's misc-include-cleaner alone (the Makefile's tidy target
+        # says why -w) on what the server job's Linux build can't lint: the
+        # Windows-only sources and tests. After Build, which generates headers
+        # Falcor's own include.
+        shell: bash
+        run: >-
+          git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'src/modules/audio/output_miniaudio.cpp' 'src/modules/audio/miniaudio.cpp' 'tests/client_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 4 clang-tidy --quiet -p=build/x64-windows --checks=-*,misc-include-cleaner --extra-arg=-w
       - name: Test
         run: ctest --preset windows
   server:
@@ -209,19 +362,30 @@ jobs:
       - name: Configure
         run: cmake --preset linux
       - uses: ./.github/actions/save-vcpkg-cache
-      - name: Lint (clang-tidy)
+      - name: Lint
+        # Both checks run, and the step fails if either does, so one run shows
+        # every finding. clang-tidy with .clang-tidy's full profile on src:
         # src/client and src/modules/renderer are Windows-only (CMakeLists.txt
         # gates both on WIN32 - the latter since ADR-0009's Falcor backend is
         # Windows-only), as is the audio module's output device (miniaudio and
-        # Steam Audio, Windows-only dependencies - src/modules/audio/
-        # CMakeLists.txt), and aren't part of this Linux configure's build graph
+        # Steam Audio, built only with AUGUSTA_AUDIO_OUTPUT, on only on Windows -
+        # src/modules/audio/CMakeLists.txt), and aren't part of this Linux configure's build graph
         # at all, so they have no compile_commands.json entry here - excluded
         # rather than linted against the wrong platform's (missing) compile
         # flags. Note: clang-tidy given multiple files in one invocation
         # cascades a spurious error onto every file *after* the first one
         # missing its compile_commands entry, not just that file itself - so
         # a stray Windows-only file left in this list fails the whole batch.
-        run: find src -name '*.cpp' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_windows.cpp' -not -path 'src/modules/audio/miniaudio.cpp' | xargs clang-tidy -p build/x64-linux
+        # The C++ tools (tools/replay, tools/swarm) are built with them, so
+        # linted alike, and their tests like the runtime's.
+        # Then the tests get .clang-tidy's misc-include-cleaner alone, as the
+        # Makefile's tidy target runs it (which says why -w); the Windows-only
+        # client tests are the client job's.
+        run: |
+          status=0
+          find src tools/replay tools/swarm -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' -print0 | xargs -0 clang-tidy -p build/x64-linux || status=1
+          git ls-files 'tests/*.cpp' 'tools/replay/tests/*.cpp' 'tools/swarm/tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 8 clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
+          exit "$status"
       - name: Build
         run: cmake --build --preset linux --target all augusta_tests
       - name: Test
@@ -244,9 +408,6 @@ jobs:
         # and third_party/falcor is large.
         run: git submodule update --init --depth 1 third_party/vcpkg
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
-      - name: Install Ninja
-        run: choco install ninja -y
-        shell: pwsh
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Bootstrap vcpkg
         shell: pwsh
@@ -260,16 +421,16 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
-          cache-dependency-glob: tools/pack/uv.lock
+          cache-dependency-glob: tools/uv.lock
       - name: Install the cooker
-        working-directory: tools/pack
+        working-directory: tools
         run: uv sync --locked
       - name: Build the native modules
         # Into tools/pack/src/pack, against the venv's own interpreter, as
         # tools/pack/scripts/bootstrap-windows.ps1 does.
         shell: pwsh
         run: |
-          cmake --preset windows -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$PWD/tools/pack/.venv/Scripts/python.exe"
+          cmake --preset windows -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$PWD/tools/.venv/Scripts/python.exe"
           cmake --build tools/pack/cpp/build/x64-windows
       - name: Test (pytest)
         working-directory: tools/pack
@@ -337,6 +498,103 @@ jobs:
           name: fuzz-crashes
           path: fuzz-crashes/
           if-no-files-found: ignore
+  manifests:
+    # What Flux applies, against the schemas of the Kubernetes version the
+    # cluster runs (k3s, bumped with it): helm lint checks the chart's
+    # templating, not what it renders. Flux's own resources are checked
+    # against the CRDs gotk-components.yaml installs, so a Flux upgrade
+    # brings its schemas with it. kubectl and yq come with the runner image.
+    needs: changes
+    if: needs.changes.outputs.run_manifests == 'true'
+    runs-on: ubuntu-26.04
+    env:
+      KUBERNETES_VERSION: 1.36.4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+      - name: Install kubeconform
+        shell: bash
+        run: |
+          install_dir="$RUNNER_TEMP/kubeconform"
+          mkdir -p "$install_dir"
+          curl -fsSLo "$install_dir/kubeconform.tar.gz" \
+            https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz
+          curl -fsSLo "$install_dir/openapi2jsonschema.py" \
+            https://raw.githubusercontent.com/yannh/kubeconform/v0.8.0/scripts/openapi2jsonschema.py
+          printf '%s  %s\n' \
+            '9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883' "$install_dir/kubeconform.tar.gz" \
+            'd145babfbb765004030764e1b4e518bfb7a4bd7f111691a08fa57983b81881f3' "$install_dir/openapi2jsonschema.py" \
+            | sha256sum --check --status
+          tar -xzf "$install_dir/kubeconform.tar.gz" -C "$install_dir" kubeconform
+          echo "$install_dir" >> "$GITHUB_PATH"
+      - name: Validate the chart, rendered per environment
+        # With each HelmRelease's own values, as Flux renders it, and with the
+        # chart of the branch its GitRepository tracks: staging runs main's
+        # chart, whose values can trail develop's until a release. The branch
+        # this run's commit lands on (the pull request's base, or the pushed
+        # branch) is checked out already; the other one is fetched. bash for
+        # pipefail - a render that fails leaves kubeconform nothing to reject.
+        # Its ServiceMonitor and PrometheusRule are checked against the CRDs
+        # of the kube-prometheus-stack version the cluster installs
+        # (clusters/onprem/infrastructure), so a stack upgrade brings its
+        # schemas with it.
+        shell: bash
+        env:
+          TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
+        run: |
+          stack=clusters/onprem/infrastructure/monitoring.yaml
+          schemas="$RUNNER_TEMP/monitoring-crd-schemas"
+          mkdir -p "$schemas"
+          helm show crds kube-prometheus-stack \
+            --repo "$(yq --no-doc 'select(.kind == "HelmRepository") | .spec.url' "$stack")" \
+            --version "$(yq --no-doc 'select(.kind == "HelmRelease") | .spec.chart.spec.version' "$stack")" \
+            > "$schemas/crds.yaml"
+          (cd "$schemas" && FILENAME_FORMAT='{fullgroup}_{kind}_{version}' \
+            uv run --no-project --with pyyaml python "$RUNNER_TEMP/kubeconform/openapi2jsonschema.py" \
+            crds.yaml >/dev/null)
+          for release in clusters/onprem/apps/*.yaml; do
+            grep -q '^kind: HelmRelease$' "$release" || continue
+            source=$(yq '.spec.chart.spec.sourceRef.name' "$release")
+            branch=$(yq --no-doc "select(.metadata.name == \"$source\") | .spec.ref.branch" clusters/onprem/apps/sources.yaml)
+            chart=charts/augustad
+            if [ "$branch" != "$TARGET_BRANCH" ]; then
+              tree="$RUNNER_TEMP/branches/$branch"
+              mkdir -p "$tree"
+              git fetch --quiet --depth=1 origin "$branch"
+              git archive FETCH_HEAD charts/augustad | tar -x -C "$tree"
+              chart="$tree/charts/augustad"
+            fi
+            echo "$release, with $branch's chart"
+            yq '.spec.values' "$release" \
+              | helm template augustad "$chart" --values - \
+              | kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" \
+                -schema-location default -schema-location "$schemas/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
+          done
+      - name: Validate the chart's dashboards
+        # Grafana's sidecar skips a dashboard it cannot parse without failing
+        # anything, and kubeconform sees only the string it is carried in.
+        run: jq empty charts/augustad/dashboards/*.json
+      - name: Validate the cluster's manifests
+        # Each path a Flux Kustomization in gotk-sync.yaml applies, built as
+        # Flux builds it. CustomResourceDefinitions are skipped: kubeconform's
+        # schemas have none for them, and Flux's come generated
+        # (flux install --export).
+        shell: bash
+        run: |
+          schemas="$RUNNER_TEMP/crd-schemas"
+          mkdir -p "$schemas"
+          (cd "$schemas" && FILENAME_FORMAT='{fullgroup}_{kind}_{version}' \
+            uv run --no-project --with pyyaml python "$RUNNER_TEMP/kubeconform/openapi2jsonschema.py" \
+            "$GITHUB_WORKSPACE/clusters/onprem/flux-system/gotk-components.yaml" >/dev/null)
+          for path in $(yq --no-doc 'select(.kind == "Kustomization") | .spec.path' clusters/onprem/flux-system/gotk-sync.yaml); do
+            echo "$path"
+            kubectl kustomize "$path" \
+              | kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" -skip CustomResourceDefinition \
+                -schema-location default -schema-location "$schemas/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
+          done
   container:
     needs: [changes, server]
     # The server job only runs when run_build is true (see changes above), so
@@ -351,6 +609,15 @@ jobs:
       (github.event_name == 'push' || needs.changes.outputs.run_container == 'true') &&
       (needs.server.result == 'success' || needs.server.result == 'skipped')
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write
+      # Signing the image's provenance and SBOM attestations (Sigstore, through
+      # the workflow's OIDC token), storing them in the repository and pushing
+      # them to GHCR beside the image.
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -358,11 +625,31 @@ jobs:
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
       - name: Lint Helm chart
         run: helm lint charts/augustad
+      - name: Install hadolint and trivy
+        shell: bash
+        run: |
+          install_dir="$RUNNER_TEMP/container-tools"
+          mkdir -p "$install_dir"
+          curl -fsSLo "$install_dir/hadolint" \
+            https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-linux-x86_64
+          curl -fsSLo "$install_dir/trivy.tar.gz" \
+            https://github.com/aquasecurity/trivy/releases/download/v0.75.0/trivy_0.75.0_Linux-64bit.tar.gz
+          printf '%s  %s\n' \
+            'c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507' "$install_dir/hadolint" \
+            'c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f' "$install_dir/trivy.tar.gz" \
+            | sha256sum --check --status
+          tar -xzf "$install_dir/trivy.tar.gz" -C "$install_dir" trivy
+          chmod +x "$install_dir/hadolint"
+          echo "$install_dir" >> "$GITHUB_PATH"
+      - name: Lint Dockerfile
+        # .hadolint.yaml has the rules it doesn't apply, and why.
+        run: hadolint Dockerfile
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         # Only main/develop pushes publish - PRs (including from forks) just
-        # validate that the image builds, same reasoning as ADR-0026's decision
-        # to keep this pipeline off a self-hosted runner. A PR from this
-        # repository logs in too, only to read the layer cache below.
+        # validate that the image builds and passes its scan, same reasoning
+        # as ADR-0026's decision to keep this pipeline off a self-hosted
+        # runner. A PR from this repository logs in too, only to read the
+        # layer cache below.
       - name: Log in to GHCR
         if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -376,7 +663,15 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          push: ${{ github.event_name == 'push' }}
+          # Into the runner's Docker, for the scan below - published only
+          # once it passes.
+          load: true
+          # The runtime stage is rebuilt every time, so it takes Ubuntu's
+          # current security updates (the Dockerfile's apt-get upgrade)
+          # rather than a cached layer's.
+          no-cache-filters: runtime
+          # Reported as augustad_build_info's commit label (ADR-0049).
+          build-args: AUGUSTA_COMMIT=${{ steps.short-sha.outputs.value }}
           # sha-<first 12 characters of the commit> is the tag the chart runs:
           # Flux versions a Git-sourced chart <version>+<the same 12
           # characters>. The branch name tag is for people. github.ref_name is
@@ -392,3 +687,68 @@ jobs:
           # Only a push writes them, as only a push publishes.
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/augustad:buildcache
           cache-to: ${{ github.event_name == 'push' && format('type=registry,ref=ghcr.io/{0}/augustad:buildcache,mode=max', github.repository_owner) || '' }}
+      - name: Scan server image
+        # Fails on a high or critical CVE that has a fix. A failure here
+        # leaves the commit unpublished, and so undeployed: Flux's upgrade
+        # times out waiting for its image rather than run a vulnerable one.
+        # trivy fetches its vulnerability database each run, so a CVE
+        # published since can fail an unchanged commit - as intended.
+        run: >-
+          trivy image --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.short-sha.outputs.value }}
+      - name: Publish server image
+        id: publish
+        if: github.event_name == 'push'
+        # The digest is read back from GHCR: the build only loaded the image,
+        # so its own digest output isn't the manifest the registry serves.
+        run: |
+          image=ghcr.io/${{ github.repository_owner }}/augustad
+          docker push --all-tags "$image"
+          digest=$(docker buildx imagetools inspect "$image:sha-${{ steps.short-sha.outputs.value }}" --format '{{.Manifest.Digest}}')
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      # The published binary's debug info (the Dockerfile's debuginfo stage,
+      # from the build layer the image was just built from), kept beside the
+      # image for as long as it: what reads a core dump of it (ADR-0047).
+      - name: Publish server debug info
+        id: debuginfo
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: debuginfo
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.short-sha.outputs.value }}-debuginfo
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/augustad:buildcache
+      - name: Attest debug info provenance
+        if: github.event_name == 'push'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/augustad
+          subject-digest: ${{ steps.debuginfo.outputs.digest }}
+          push-to-registry: true
+      # Every published image is attested here, where it is built: release.yml
+      # builds none, and the image a release runs is its tag's commit's, pushed
+      # to main (docs/ENGINEERING.md, Provenance and SBOMs).
+      - name: Attest image provenance
+        if: github.event_name == 'push'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/augustad
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          push-to-registry: true
+      - name: Image SBOM
+        if: github.event_name == 'push'
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/augustad@${{ steps.publish.outputs.digest }}
+          format: spdx-json
+          output-file: augustad-image.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Attest image SBOM
+        if: github.event_name == 'push'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/augustad
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          sbom-path: augustad-image.spdx.json
+          push-to-registry: true

@@ -11,6 +11,9 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/math.h"
+#include "augusta/physics.h"
+
 // Pure: buffered by server time and entity, no real clock or ECS.
 namespace {
 
@@ -20,9 +23,9 @@ using augusta::physics::Stance;
 using augusta::presentation::RemoteBody;
 using augusta::presentation::RemoteInterpolator;
 using augusta::presentation::RemotePlayer;
+using augusta::presentation::SeenTime;
+using augusta::presentation::SeenTimeAt;
 using augusta::presentation::ServerClock;
-using augusta::presentation::ShownView;
-using augusta::presentation::ViewAt;
 
 constexpr auto kEntityA = static_cast<augusta::presentation::EntityId>(1);
 constexpr auto kEntityB = static_cast<augusta::presentation::EntityId>(2);
@@ -386,34 +389,34 @@ TEST(ServerClockTest, ResetForgetsTheAlignment) {
   EXPECT_DOUBLE_EQ(clock.Now().value(), ServerTime(5));
 }
 
-// The view a Command reports (ADR-0044): which update a frame shows, and how
+// The Seen time a Command reports (ADR-0044): which update a frame shows, and how
 // far toward the next.
-TEST(ViewAtTest, ASampleBetweenTwoTicksIsTheEarlierTickAndHowFarPastIt) {
-  const ShownView view = ViewAt(ServerTime(100) + (0.25 * kTickDuration), kTickDuration, 90, 110);
+TEST(SeenTimeAtTest, ASampleBetweenTwoTicksIsTheEarlierTickAndHowFarPastIt) {
+  const SeenTime seen = SeenTimeAt(ServerTime(100) + (0.25 * kTickDuration), kTickDuration, 90, 110);
 
-  EXPECT_EQ(view.tick, 100U);
-  EXPECT_NEAR(view.fraction, 0.25F, 1e-4F);
+  EXPECT_EQ(seen.tick, 100U);
+  EXPECT_NEAR(seen.fraction, 0.25F, 1e-4F);
 }
 
-TEST(ViewAtTest, TheViewIsTheMomentTheInterpolatorSamples) {
+TEST(SeenTimeAtTest, TheSeenTimeIsTheMomentTheInterpolatorSamples) {
   RemoteInterpolator interpolator;
   for (int tick = 100; tick <= 102; ++tick) {
     interpolator.Record(kEntityA, ServerTime(tick), At(static_cast<float>(tick)), 0.0F);
   }
   const Seconds sample_time = ServerTime(101) + (0.75 * kTickDuration);
 
-  const ShownView view = ViewAt(sample_time, kTickDuration, 100, 102);
+  const SeenTime seen = SeenTimeAt(sample_time, kTickDuration, 100, 102);
 
   // Shown three quarters of the way from tick 101's update to tick 102's.
-  EXPECT_NEAR(Only(interpolator, sample_time).position.x, static_cast<float>(view.tick) + view.fraction, 1e-4F);
-  EXPECT_EQ(view.tick, 101U);
+  EXPECT_NEAR(Only(interpolator, sample_time).position.x, static_cast<float>(seen.tick) + seen.fraction, 1e-4F);
+  EXPECT_EQ(seen.tick, 101U);
 }
 
 // Before the first update there is, or past the last, a frame shows that
-// update itself: no view is of a moment outside the updates the client holds.
-TEST(ViewAtTest, ASampleOutsideTheUpdatesThereAreIsTheNearestOfThem) {
-  const ShownView before = ViewAt(ServerTime(100) - 0.1, kTickDuration, 100, 110);
-  const ShownView past = ViewAt(ServerTime(110) + 0.5, kTickDuration, 100, 110);
+// update itself: no Seen time is of a moment outside the updates the client holds.
+TEST(SeenTimeAtTest, ASampleOutsideTheUpdatesThereAreIsTheNearestOfThem) {
+  const SeenTime before = SeenTimeAt(ServerTime(100) - 0.1, kTickDuration, 100, 110);
+  const SeenTime past = SeenTimeAt(ServerTime(110) + 0.5, kTickDuration, 100, 110);
 
   EXPECT_EQ(before.tick, 100U);
   EXPECT_EQ(before.fraction, 0.0F);
@@ -421,11 +424,11 @@ TEST(ViewAtTest, ASampleOutsideTheUpdatesThereAreIsTheNearestOfThem) {
   EXPECT_EQ(past.fraction, 0.0F);
 }
 
-TEST(ViewAtTest, AFractionIsNeverOutsideZeroToOne) {
+TEST(SeenTimeAtTest, AFractionIsNeverOutsideZeroToOne) {
   for (int step = 0; step <= 600; ++step) {
-    const ShownView view = ViewAt(ServerTime(100) + (static_cast<Seconds>(step) * 0.001), kTickDuration, 0, 1000);
-    EXPECT_GE(view.fraction, 0.0F) << step;
-    EXPECT_LE(view.fraction, 1.0F) << step;
+    const SeenTime seen = SeenTimeAt(ServerTime(100) + (static_cast<Seconds>(step) * 0.001), kTickDuration, 0, 1000);
+    EXPECT_GE(seen.fraction, 0.0F) << step;
+    EXPECT_LE(seen.fraction, 1.0F) << step;
   }
 }
 

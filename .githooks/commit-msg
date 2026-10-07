@@ -1,21 +1,23 @@
-#!/bin/sh
-# Validates commit messages against Conventional Commits (docs/ENGINEERING.md, Code Quality).
+#!/bin/bash
+# Validates commit messages against Conventional Commits (docs/ENGINEERING.md,
+# Code Quality).
+
+readonly TYPES='build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test'
+readonly PATTERN="^(${TYPES})(\([a-z0-9.-]+\))?!?: .+"
 
 commit_msg_file="$1"
-first_line=$(head -n 1 "$commit_msg_file")
+first_line=$(head -n 1 "${commit_msg_file}")
 
 # Merge commits (git's own default message, e.g. "Merge branch 'develop'
 # into feature/x") are exempt - there's no author-chosen type/scope to
 # check, and git generates this message itself.
-if [ -f "$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)" ]; then
+if [[ -f "$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)" ]]; then
   exit 0
 fi
 
-pattern='^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([a-z0-9.-]+\))?!?: .+'
-
-if ! echo "$first_line" | grep -Eq "$pattern"; then
-  echo "commit-msg: '$first_line' does not follow Conventional Commits." >&2
+if ! echo "${first_line}" | grep -Eq "${PATTERN}"; then
+  echo "commit-msg: '${first_line}' does not follow Conventional Commits." >&2
   echo "Expected: <type>(<optional scope>): <description>" >&2
-  echo "Types: build chore ci docs feat fix perf refactor revert style test" >&2
+  echo "Types: ${TYPES//|/ }" >&2
   exit 1
 fi

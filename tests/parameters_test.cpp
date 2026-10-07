@@ -14,10 +14,8 @@
 // are pure: values in, a verdict out.
 namespace {
 
-using augusta::parameters::FiresFasterThanTheTickRate;
 using augusta::parameters::IsValidTickRate;
 using augusta::parameters::Parameters;
-using augusta::parameters::Rifle;
 using augusta::parameters::Validate;
 
 const Parameters kUsable{.stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.1F},
@@ -109,14 +107,6 @@ TEST(ValidateTest, ARecoilPatternMayBeEmptyOrHoldTheMostKicksTheWireCarries) {
 
   EXPECT_TRUE(Validate(none).has_value());
   EXPECT_TRUE(Validate(most).has_value());
-}
-
-TEST(FiresFasterThanTheTickRateTest, ARateOfMoreThanOneRoundATickIsFaster) {
-  Rifle rifle;
-  rifle.rounds_per_minute = 3600.0F;  // one round a tick at 60 Hz
-
-  EXPECT_FALSE(FiresFasterThanTheTickRate(rifle, 60));
-  EXPECT_TRUE(FiresFasterThanTheTickRate(rifle, 59));
 }
 
 TEST(IsValidTickRateTest, IntegerRatesFromOneTo255AreValid) {

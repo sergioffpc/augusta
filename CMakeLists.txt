@@ -3,15 +3,19 @@ cmake_minimum_required(VERSION 3.25)
 # Default to the vcpkg submodule's toolchain (pinned in third_party/vcpkg,
 # see .gitmodules) unless the caller already picked one. Must run before
 # project().
-if (NOT DEFINED CMAKE_TOOLCHAIN_FILE)
-  set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/vcpkg/scripts/buildsystems/vcpkg.cmake"
-      CACHE STRING "Vcpkg toolchain file")
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+  set(
+    CMAKE_TOOLCHAIN_FILE
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/vcpkg/scripts/buildsystems/vcpkg.cmake"
+    CACHE STRING
+    "Vcpkg toolchain file"
+  )
 endif()
 
 # Use sccache when it's on PATH (ADR-0008). Skip it under MSVC's default
 # Visual Studio generator - sccache only works there via Ninja.
 find_program(SCCACHE_PROGRAM sccache)
-if (SCCACHE_PROGRAM AND (NOT CMAKE_GENERATOR MATCHES "Visual Studio"))
+if(SCCACHE_PROGRAM AND (NOT CMAKE_GENERATOR MATCHES "Visual Studio"))
   set(CMAKE_C_COMPILER_LAUNCHER "${SCCACHE_PROGRAM}")
   set(CMAKE_CXX_COMPILER_LAUNCHER "${SCCACHE_PROGRAM}")
 endif()
@@ -26,10 +30,15 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # the targets that `cmake --install` puts in place.
 include(GNUInstallDirs)
 
-if (MSVC)
+if(MSVC)
   add_compile_options(/W4 /WX /EHsc)
 else()
   add_compile_options(-Wall -Wextra -Werror)
+  # Release keeps its debug info, which src/server splits off augustad: what a
+  # crash's core dump is read with (ADR-0047). Every target, not just augustad's
+  # own: a core's frames are mostly in the module libraries it links, and
+  # without theirs gdb has no file, line or local for them.
+  add_compile_options($<$<CONFIG:Release>:-g>)
 endif()
 
 # flecs/GameNetworkingSockets/PhysX back the client/server shared runtime
@@ -81,7 +90,35 @@ add_subdirectory(src/modules/harness)
 add_subdirectory(src/modules/presentation)
 add_subdirectory(src/modules/replication)
 add_subdirectory(src/server)
-if (WIN32)
+# The C++ tools, built with the runtime they link on every platform, all or
+# none: augusta-replay, which replays a match recording augustad wrote
+# (ADR-0048), and augusta-swarm, the Scripted players (ADR-0013). On by
+# default, so every build compiles them and their tests join augusta_tests,
+# the golden match among them; the server image, which builds augustad alone,
+# turns them off.
+option(AUGUSTA_TOOLS "Build the C++ tools (tools/replay, tools/swarm) and their tests" ON)
+if(AUGUSTA_TOOLS)
+  add_subdirectory(tools/replay)
+  add_subdirectory(tools/swarm)
+endif()
+# The linux-coverage preset's report as build targets, for an editor that runs
+# one before and one after its tests (VS Code's CMake Tools, "Run Tests with
+# Coverage"): coverage-clean drops the last run's profiles, so the report is of
+# this run alone; coverage-report turns this run's into it.
+option(AUGUSTA_COVERAGE "Add the coverage-clean and coverage-report targets (linux-coverage preset)" OFF)
+if(AUGUSTA_COVERAGE)
+  add_custom_target(
+    coverage-clean
+    COMMAND ${CMAKE_COMMAND} -E rm -rf ${CMAKE_BINARY_DIR}/profiles
+  )
+  add_custom_target(
+    coverage-report
+    COMMAND bash scripts/coverage-report.sh
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    USES_TERMINAL
+  )
+endif()
+if(WIN32)
   # NVIDIA Falcor (ADR-0009) is Windows-only, so augusta_renderer's real
   # implementation only builds here - nothing on Linux (only the
   # WIN32-only client links it) ever needed it in that build graph anyway.

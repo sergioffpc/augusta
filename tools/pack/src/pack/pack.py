@@ -1,5 +1,7 @@
-"""Pure-Python reimplementation of augusta_assets' pack wire format
-(ADR-0007/ADR-0018/ADR-0030/ADR-0031/ADR-0032): the Encode* blob functions
+"""Pure-Python reimplementation of augusta_assets' pack wire format.
+
+The format is ADR-0007/ADR-0018/ADR-0030/ADR-0031/ADR-0032's: the Encode* blob
+functions
 and WritePack (header/data/index/trailer, BLAKE3 hash, Ed25519 sign).
 
 augusta_assets itself has no OpenUSD dependency (only libsodium/BLAKE3/
@@ -17,7 +19,8 @@ blake3/libsodium libraries directly.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
 
 import blake3
@@ -40,7 +43,7 @@ MAX_SCRIPT_BYTES = 1024 * 1024
 MAX_AUDIO_BYTES = 64 * 1024 * 1024
 # The sample widths a PCM WAV file can hold.
 AUDIO_BITS_PER_SAMPLE = (8, 16, 24, 32)
-# A character index is one byte and zero is never valid (ADR-0042).
+# What bounds the character list a pack is read with (ADR-0042).
 MAX_CHARACTERS = 255
 MAX_ENTRIES = 1 << 20
 MAX_PACK_SIZE = 8 * 1024 * 1024 * 1024
@@ -63,9 +66,8 @@ ASSET_TYPE_HITBOX = 5
 ASSET_TYPE_SCENE = 6
 ASSET_TYPE_SCRIPT = 7
 ASSET_TYPE_CHARACTERS = 8
-ASSET_TYPE_CLIENT_PACK = 9
-ASSET_TYPE_EYE = 10
-ASSET_TYPE_SOUNDS = 11
+ASSET_TYPE_EYE = 9
+ASSET_TYPE_SOUNDS = 10
 
 # The body part a hitbox blob stands for (assets::BodyPart): where on a player a
 # bullet struck, which decides its damage (US-11, US-12).
@@ -78,13 +80,8 @@ BODY_PARTS = (BODY_PART_HEAD, BODY_PART_TORSO, BODY_PART_LIMB)
 # kCharactersPath), in both of its packs.
 CHARACTERS_PATH = "Characters"
 
-# Pack-relative path, in a scenario's server pack, of the hash of the client
-# pack cooked with it (assets.h's kClientPackPath). The blob is the hash's
-# BLAKE3_HASH_SIZE bytes and nothing else.
-CLIENT_PACK_PATH = "ClientPack"
-
-# Pack-relative path, in a scenario's client pack, of the sounds folder its cue
-# sounds are addressed under (assets.h's kSoundsPath).
+# Pack-relative path, in a scenario's client pack, of the prefix its cue sounds
+# are addressed under (assets.h's kSoundsPath).
 SOUNDS_PATH = "Sounds"
 
 # TextureFormat (assets.h `enum class TextureFormat : uint8_t`).
@@ -97,11 +94,15 @@ TEXTURE_FORMAT_BC4 = 2
 NO_PARENT = 0xFFFFFFFF
 
 MAGIC = b"AUGP"
-FORMAT_VERSION = 1
-# magic(4) + version(u32=4) + data_offset(u64=8) + index_offset(u64=8) +
-# index_count(u32=4) - assets.cpp's kHeaderSize.
-HEADER_SIZE = 4 + 4 + 8 + 8 + 4
+FORMAT_VERSION = 2
 BLAKE3_HASH_SIZE = 32
+# The header's flags byte (assets.cpp's kHeaderHasClientPack): whether it names
+# the hash of the client pack cooked with this one.
+HEADER_HAS_CLIENT_PACK = 1 << 0
+# magic(4) + version(u32=4) + data_offset(u64=8) + index_offset(u64=8) +
+# index_count(u32=4) + flags(u8=1) + client pack hash(32) - assets.cpp's
+# kHeaderSize.
+HEADER_SIZE = 4 + 4 + 8 + 8 + 4 + 1 + BLAKE3_HASH_SIZE
 ED25519_SIGNATURE_SIZE = 64
 
 
@@ -111,6 +112,8 @@ class EncodeError(ValueError):
 
 @dataclass
 class AssetEntry:
+    """One index entry of a pack: an asset's type, path and blob."""
+
     type: int
     path: str
     data: bytes
@@ -118,16 +121,25 @@ class AssetEntry:
 
 @dataclass
 class MeshData:
+    """A triangle mesh: its points and three indices per triangle."""
+
     points: list[tuple[float, float, float]]
     indices: list[int]
 
 
 @dataclass
 class SceneNode:
+    """One node of a scene blob (ADR-0032), its transform local."""
+
     name: str
     parent_index: int = NO_PARENT
     translation: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    rotation: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)  # x, y, z, w
+    rotation: tuple[float, float, float, float] = (
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    )  # x, y, z, w
     scale: tuple[float, float, float] = (1.0, 1.0, 1.0)
     mesh_path: str | None = None
     material_path: str | None = None
@@ -138,7 +150,11 @@ class SceneNode:
 
 
 def encode_mesh_blob(mesh: MeshData) -> bytes:
-    if len(mesh.points) > MAX_MESH_POINTS or len(mesh.indices) > MAX_MESH_INDICES:
+    """A mesh blob: u32 point count, f32 xyz each, u32 index count, u32 each."""
+    if (
+        len(mesh.points) > MAX_MESH_POINTS
+        or len(mesh.indices) > MAX_MESH_INDICES
+    ):
         raise EncodeError("mesh exceeds pack size limits")
     writer = ByteWriter()
     writer.u32(len(mesh.points))
@@ -149,7 +165,7 @@ def encode_mesh_blob(mesh: MeshData) -> bytes:
     writer.u32(len(mesh.indices))
     for index in mesh.indices:
         writer.u32(index)
-    return writer.bytes()
+    return writer.getvalue()
 
 
 def _encode_scene_node(writer: ByteWriter, node: SceneNode) -> None:
@@ -175,7 +191,12 @@ def _encode_scene_node(writer: ByteWriter, node: SceneNode) -> None:
         flags |= _NODE_IS_SPAWN_POINT
     writer.u8(flags)
 
-    for path in (node.mesh_path, node.material_path, node.collider_path, node.hitbox_path):
+    for path in (
+        node.mesh_path,
+        node.material_path,
+        node.collider_path,
+        node.hitbox_path,
+    ):
         writer.optional_path(path, MAX_PATH_LENGTH)
 
     if len(node.properties) > MAX_PROPERTIES:
@@ -187,39 +208,47 @@ def _encode_scene_node(writer: ByteWriter, node: SceneNode) -> None:
 
 
 def encode_scene_blob(nodes: list[SceneNode]) -> bytes:
+    """A scene blob: a u32 node count, then each node (ADR-0032)."""
     if len(nodes) > MAX_SCENE_NODES:
         raise EncodeError("scene graph exceeds pack size limits")
     writer = ByteWriter()
     writer.u32(len(nodes))
     for node in nodes:
         _encode_scene_node(writer, node)
-    return writer.bytes()
+    return writer.getvalue()
 
 
 def encode_texture_blob(dds_bytes: bytes, texture_format: int) -> bytes:
+    """A texture blob: u8 format, then the DDS as a u32 byte count and bytes."""
     if len(dds_bytes) > MAX_TEXTURE_BYTES:
         raise EncodeError("texture exceeds pack size limits")
     writer = ByteWriter()
     writer.u8(texture_format)
     writer.u32(len(dds_bytes))
     writer.raw(dds_bytes)
-    return writer.bytes()
+    return writer.getvalue()
 
 
 def encode_script_blob(script: bytes) -> bytes:
-    """A script blob is the script's text as it is: no framing, no terminator."""
+    """A script blob: the script's text as it is, no framing, no terminator."""
     if len(script) > MAX_SCRIPT_BYTES:
         raise EncodeError("script exceeds pack size limits")
     return bytes(script)
 
 
-def encode_audio_blob(sample_rate: int, bits_per_sample: int, samples: bytes) -> bytes:
-    """A mono PCM sound (ADR-0020): u32 sample rate, u8 bits per sample, then its
-    samples as a u32 byte count and the bytes, little-endian (8-bit unsigned,
-    wider signed, as a WAV file holds them).
+def encode_audio_blob(
+    sample_rate: int, bits_per_sample: int, samples: bytes
+) -> bytes:
+    """A mono PCM sound (ADR-0020).
+
+    A u32 sample rate, u8 bits per sample, then its samples as a u32 byte count
+    and the bytes, little-endian (8-bit unsigned, wider signed, as a WAV file
+    holds them).
     """
     if bits_per_sample not in AUDIO_BITS_PER_SAMPLE:
-        raise EncodeError(f"{bits_per_sample} bits per sample is not a PCM sample width")
+        raise EncodeError(
+            f"{bits_per_sample} bits per sample is not a PCM sample width"
+        )
     if len(samples) % (bits_per_sample // 8) != 0:
         raise EncodeError("audio samples are not a whole number of samples")
     if len(samples) > MAX_AUDIO_BYTES:
@@ -229,63 +258,73 @@ def encode_audio_blob(sample_rate: int, bits_per_sample: int, samples: bytes) ->
     writer.u8(bits_per_sample)
     writer.u32(len(samples))
     writer.raw(samples)
-    return writer.bytes()
+    return writer.getvalue()
 
 
-def encode_sounds_blob(sounds_path: str) -> bytes:
-    """The sounds folder's path relative to authoring/, as one length-prefixed
-    string: each cue's sound is addressed <sounds_path>/<cue>.
+def encode_sounds_blob(sounds_prefix: str) -> bytes:
+    """The prefix the cue sounds are addressed under, length-prefixed.
+
+    Each cue's sound is addressed <sounds_prefix>/<cue>.
     """
     writer = ByteWriter()
-    writer.string(sounds_path, MAX_PATH_LENGTH)
-    return writer.bytes()
+    writer.string(sounds_prefix, MAX_PATH_LENGTH)
+    return writer.getvalue()
 
 
 def encode_characters_blob(characters: list[str]) -> bytes:
-    """A u32 count, then each character's path relative to authoring/ as a
-    length-prefixed string, in manifest order: character index N is element
-    N-1 (ADR-0042).
+    """The characters' names: a u32 count, then each name in manifest order.
+
+    Each is a length-prefixed string (ADR-0042).
     """
     if len(characters) > MAX_CHARACTERS:
-        raise EncodeError(f"a scenario composes at most {MAX_CHARACTERS} characters, this one names {len(characters)}")
+        raise EncodeError(
+            f"a scenario composes at most {MAX_CHARACTERS} characters, this "
+            f"one names {len(characters)}"
+        )
     writer = ByteWriter()
     writer.u32(len(characters))
     for character in characters:
         writer.string(character, MAX_PATH_LENGTH)
-    return writer.bytes()
+    return writer.getvalue()
 
 
 def encode_spawn_point_blob(
-    translation: tuple[float, float, float], rotation: tuple[float, float, float, float]
+    translation: tuple[float, float, float],
+    rotation: tuple[float, float, float, float],
 ) -> bytes:
+    """A spawn point blob: its translation (xyz) and rotation (xyzw), f32."""
     writer = ByteWriter()
     for component in translation:
         writer.f32(component)
     for component in rotation:
         writer.f32(component)
-    return writer.bytes()
+    return writer.getvalue()
 
 
 def encode_hitbox_blob(body_part: int, mesh: MeshData) -> bytes:
-    """A hitbox (US-11): the body part it stands for as a u8 (BODY_PART_*),
-    then its geometry as a mesh blob.
+    """A hitbox (US-11).
+
+    The body part it stands for as a u8 (BODY_PART_*), then its geometry as a
+    mesh blob.
     """
     if body_part not in BODY_PARTS:
         raise EncodeError(f"{body_part} is not a body part")
     writer = ByteWriter()
     writer.u8(body_part)
     writer.raw(encode_mesh_blob(mesh))
-    return writer.bytes()
+    return writer.getvalue()
 
 
 def encode_eye_blob(position: tuple[float, float, float]) -> bytes:
-    """A character's eye (ADR-0040): its position in the character's own root
-    space, as three f32 and nothing else.
+    """A character's eye (ADR-0040).
+
+    Its position in the character's own root space, as three f32 and nothing
+    else.
     """
     writer = ByteWriter()
     for component in position:
         writer.f32(component)
-    return writer.bytes()
+    return writer.getvalue()
 
 
 class WriteError(RuntimeError):
@@ -303,18 +342,36 @@ def _validate_entries(entries: list[AssetEntry]) -> None:
         raise WriteError("duplicate entry path")
 
 
-def write_pack(output_path: Path, entries: list[AssetEntry], signing_key: bytes) -> bytes:
-    """Writes entries into a new pack file at output_path, in ADR-0031's
-    header/data/index/trailer order, signing the trailer with signing_key
-    (the raw 64-byte Ed25519 secret key, libsodium's own seed+pubkey
-    layout - e.g. from keys.py's generate_keypair). Atomic: assembled into
-    a temporary file first, renamed into place only once fully written.
+def write_pack(
+    output_path: Path,
+    entries: list[AssetEntry],
+    signing_key: bytes,
+    client_pack_hash: bytes | None = None,
+) -> bytes:
+    """Writes entries into a new, signed pack file at output_path.
+
+    The file is in ADR-0031's header/data/index/trailer order, the trailer
+    signed with signing_key (the raw 64-byte Ed25519 secret key, libsodium's own
+    seed+pubkey layout - e.g. from keys.py's generate_keypair). Its header names
+    client_pack_hash, the hash of the client pack cooked with it, when given (a
+    server pack's). Atomic: assembled into a temporary file first, renamed into
+    place only once fully written.
 
     Returns the pack's BLAKE3 hash, the one its trailer signs.
     """
     _validate_entries(entries)
     if len(signing_key) != 64:
-        raise WriteError(f"signing_key must be 64 bytes, got {len(signing_key)}")
+        raise WriteError(
+            f"signing_key must be 64 bytes, got {len(signing_key)}"
+        )
+    if (
+        client_pack_hash is not None
+        and len(client_pack_hash) != BLAKE3_HASH_SIZE
+    ):
+        raise WriteError(
+            f"client_pack_hash must be {BLAKE3_HASH_SIZE} bytes, got "
+            f"{len(client_pack_hash)}"
+        )
 
     data_section = bytearray()
     offsets: list[int] = []
@@ -328,7 +385,7 @@ def write_pack(output_path: Path, entries: list[AssetEntry], signing_key: bytes)
     index_offset = cursor
 
     index_section = ByteWriter()
-    for entry, offset, size in zip(entries, offsets, sizes):
+    for entry, offset, size in zip(entries, offsets, sizes, strict=True):
         index_section.u8(entry.type)
         index_section.string(entry.path, MAX_PATH_LENGTH)
         index_section.u64(offset)
@@ -340,12 +397,24 @@ def write_pack(output_path: Path, entries: list[AssetEntry], signing_key: bytes)
     header.u64(HEADER_SIZE)
     header.u64(index_offset)
     header.u32(len(entries))
+    header.u8(HEADER_HAS_CLIENT_PACK if client_pack_hash is not None else 0)
+    header.raw(
+        client_pack_hash
+        if client_pack_hash is not None
+        else bytes(BLAKE3_HASH_SIZE)
+    )
 
-    total_size = len(header) + len(data_section) + len(index_section) + BLAKE3_HASH_SIZE + ED25519_SIGNATURE_SIZE
+    total_size = (
+        len(header)
+        + len(data_section)
+        + len(index_section)
+        + BLAKE3_HASH_SIZE
+        + ED25519_SIGNATURE_SIZE
+    )
     if total_size > MAX_PACK_SIZE:
         raise WriteError("pack exceeds size limit")
 
-    hashed = header.bytes() + bytes(data_section) + index_section.bytes()
+    hashed = header.getvalue() + bytes(data_section) + index_section.getvalue()
     pack_hash = blake3.blake3(hashed).digest()
     # crypto_sign (attached signing) prepends the 64-byte detached
     # signature to the message it signs - libsodium implements

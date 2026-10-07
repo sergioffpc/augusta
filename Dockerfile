@@ -47,23 +47,48 @@ RUN ./third_party/vcpkg/vcpkg install --x-install-root=build/x64-linux/vcpkg_ins
 COPY src src
 COPY tests tests
 
-RUN cmake --preset linux
-RUN cmake --build --preset linux --target augustad
-# Staged under DESTDIR with the prefix the runtime stage runs it from, so this
-# file never names a path inside the build tree.
-RUN DESTDIR=/workspace/stage cmake --install build/x64-linux --prefix /usr/local
+# The install is staged under DESTDIR with the prefix the runtime stage runs
+# it from, so this file never names a path inside the build tree.
+# Without the C++ tools (AUGUSTA_TOOLS): the image builds augustad alone and
+# does not copy tools/.
+RUN cmake --preset linux -DAUGUSTA_TOOLS=OFF \
+    && cmake --build --preset linux --target augustad \
+    && DESTDIR=/workspace/stage cmake --install build/x64-linux --prefix /usr/local
+
+# The debug info the build split off augustad (ADR-0047), alone: CI publishes
+# it as the image's sha-<12>-debuginfo tag, what reads a core dump of the
+# binary below. Not the last stage, so a plain build still makes the runtime.
+FROM scratch AS debuginfo
+COPY --from=build /workspace/build/x64-linux/src/server/augustad.debug /
 
 # Runtime stage: just what `cmake --install` staged and the shared libraries
 # it links against (vcpkg's own dependencies are linked statically) - no build
 # toolchain, no vcpkg source tree.
 FROM ubuntu:26.04 AS runtime
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Upgraded, not just installed onto: the base image trails Ubuntu's security
+# updates, and CI fails an image with a fixable high or critical CVE. CI
+# rebuilds this stage every time (no-cache-filters), so a cached layer never
+# holds an update back.
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
       libstdc++6 \
+      tini \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --no-create-home --shell /usr/sbin/nologin augusta
 
 COPY --from=build /workspace/stage/ /
 
+# The commit the image is built from, which augustad reports as
+# augustad_build_info's commit label (ADR-0049). Set here, in the stage rebuilt
+# every time, rather than compiled in, so a new commit does not invalidate the
+# cached build.
+ARG AUGUSTA_COMMIT=unknown
+ENV AUGUSTA_COMMIT=${AUGUSTA_COMMIT}
+
 USER augusta
-ENTRYPOINT ["/usr/local/bin/augustad"]
+# tini is PID 1, not augustad: the kernel drops a signal PID 1 sends itself
+# with no handler for it, so augustad re-raising a fatal signal from its crash
+# handler would neither end it nor dump its core (ADR-0047). tini forwards
+# SIGTERM to augustad and exits with its status.
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/augustad"]

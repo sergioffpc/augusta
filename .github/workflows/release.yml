@@ -7,6 +7,10 @@ permissions:
   packages: write
   # Deleting superseded cache entries (.github/actions/prune-cache).
   actions: write
+  # Signing the binaries' provenance and SBOM attestations (Sigstore, through
+  # the workflow's OIDC token) and storing them in the repository.
+  id-token: write
+  attestations: write
 env:
   VCPKG_BINARY_SOURCES: "clear;nuget,GitHubPackages,readwrite"
   SCCACHE_GHA_ENABLED: "true"
@@ -28,9 +32,6 @@ jobs:
           # (see ci.yml's client job).
           submodules: recursive
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
-      - name: Install Ninja
-        run: choco install ninja -y
-        shell: pwsh
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Bootstrap vcpkg
         shell: pwsh
@@ -53,10 +54,30 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item build\x64-windows\src\client\augustac.exe dist\augustac-windows-x64.exe
+      # Falcor and NVTX are submodules, not vcpkg ports, so they are named by
+      # their commits. What Falcor itself fetches with packman is not listed.
+      - name: SBOM
+        shell: pwsh
+        run: |
+          python scripts/vcpkg-sbom.py --name augustac --version $env:GITHUB_REF_NAME `
+            --repo "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY" --commit $env:GITHUB_SHA `
+            --git-package third_party/falcor --git-package third_party/nvtx `
+            build/x64-windows/vcpkg_installed/x64-windows > dist/augustac-windows-x64.spdx.json
+      - name: Attest provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/augustac-windows-x64.exe
+      - name: Attest SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/augustac-windows-x64.exe
+          sbom-path: dist/augustac-windows-x64.spdx.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: client-binary
-          path: dist/augustac-windows-x64.exe
+          path: |
+            dist/augustac-windows-x64.exe
+            dist/augustac-windows-x64.spdx.json
   server:
     runs-on: ubuntu-26.04
     # See ci.yml's server job for why this isn't the workflow-level
@@ -83,10 +104,30 @@ jobs:
         run: |
           mkdir -p dist
           cp build/x64-linux/src/server/augustad dist/augustad-linux-x64
+          # Its debug info, split off by this same build, so it matches this
+          # binary's build ID - not the image's (ADR-0047).
+          cp build/x64-linux/src/server/augustad.debug dist/augustad-linux-x64.debug
+      - name: SBOM
+        run: |
+          python3 scripts/vcpkg-sbom.py --name augustad --version "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
+            build/x64-linux/vcpkg_installed/x64-linux > dist/augustad-linux-x64.spdx.json
+      - name: Attest provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/augustad-linux-x64
+      - name: Attest SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/augustad-linux-x64
+          sbom-path: dist/augustad-linux-x64.spdx.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: server-binary
-          path: dist/augustad-linux-x64
+          path: |
+            dist/augustad-linux-x64
+            dist/augustad-linux-x64.debug
+            dist/augustad-linux-x64.spdx.json
   tools:
     # The cooker's half of the pack contract: its pytest suite, which requires
     # that cooking the example scenario still gives the golden packs the
@@ -99,9 +140,6 @@ jobs:
       - name: Fetch vcpkg
         run: git submodule update --init --depth 1 third_party/vcpkg
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
-      - name: Install Ninja
-        run: choco install ninja -y
-        shell: pwsh
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Bootstrap vcpkg
         shell: pwsh
@@ -115,14 +153,14 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
-          cache-dependency-glob: tools/pack/uv.lock
+          cache-dependency-glob: tools/uv.lock
       - name: Install the cooker
-        working-directory: tools/pack
+        working-directory: tools
         run: uv sync --locked
       - name: Build the native modules
         shell: pwsh
         run: |
-          cmake --preset windows -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$PWD/tools/pack/.venv/Scripts/python.exe"
+          cmake --preset windows -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$PWD/tools/.venv/Scripts/python.exe"
           cmake --build tools/pack/cpp/build/x64-windows
       - name: Test (pytest)
         working-directory: tools/pack
@@ -131,6 +169,11 @@ jobs:
     needs: [client, server, tools]
     runs-on: ubuntu-26.04
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The tag's CHANGELOG.md section, cut on its release/* or hotfix/* branch
+      # (docs/ENGINEERING.md, Git Workflow); a tag without one publishes nothing.
+      - name: Release notes
+        run: scripts/changelog.sh "${{ github.ref_name }}" --notes > "$RUNNER_TEMP/notes.md"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: dist
@@ -140,7 +183,10 @@ jobs:
         run: |
           gh release create "${{ github.ref_name }}" \
             dist/client-binary/augustac-windows-x64.exe \
+            dist/client-binary/augustac-windows-x64.spdx.json \
             dist/server-binary/augustad-linux-x64 \
+            dist/server-binary/augustad-linux-x64.debug \
+            dist/server-binary/augustad-linux-x64.spdx.json \
             --repo "${{ github.repository }}" \
             --title "${{ github.ref_name }}" \
-            --generate-notes
+            --notes-file "$RUNNER_TEMP/notes.md"

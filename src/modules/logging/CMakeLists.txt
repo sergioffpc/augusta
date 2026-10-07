@@ -9,9 +9,9 @@ target_link_libraries(augusta_logging PRIVATE Boost::log)
 # AUGUSTA_LOG_ACTIVE_LEVEL must reach every translation unit that expands the
 # logging macros (they compile away under it - see logging.h), so it is a
 # public definition: 0 is trace, 2 is info.
-target_compile_definitions(augusta_logging PUBLIC
-  $<$<CONFIG:Debug>:AUGUSTA_LOG_ACTIVE_LEVEL=0>
-  $<$<NOT:$<CONFIG:Debug>>:AUGUSTA_LOG_ACTIVE_LEVEL=2>
+target_compile_definitions(
+  augusta_logging
+  PUBLIC $<$<CONFIG:Debug>:AUGUSTA_LOG_ACTIVE_LEVEL=0> $<$<NOT:$<CONFIG:Debug>>:AUGUSTA_LOG_ACTIVE_LEVEL=2>
 )
 # logging.cpp includes <windows.h> for the console mode; keep its min/max
 # macros out of the way of the standard library.

@@ -5,11 +5,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <ios>
 #include <limits>
 #include <map>
 #include <memory>
 #include <numbers>
 #include <optional>
+#include <random>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -18,13 +21,9 @@
 #include <variant>
 #include <vector>
 
-#ifdef _WIN32
-#include <process.h>
-#else
-#include <unistd.h>
-#endif
-
 #include <gtest/gtest.h>
+#include <prometheus/client_metric.h>
+#include <prometheus/metric_family.h>
 
 #include "admission.h"
 #include "augusta/assets.h"
@@ -37,6 +36,7 @@
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
+#include "augusta/policy_actions.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
 #include "augusta/scripting.h"
@@ -44,11 +44,19 @@
 #include "augusta/tick.h"
 #include "augusta/version.h"
 #include "augusta/weapon.h"
+#include "command_queue.h"
+#include "connection_health.h"
+#include "connection_sample.h"
+#include "content.h"
+#include "heartbeat.h"
 #include "host.h"
+#include "host_log.h"
+#include "host_metrics.h"
 #include "match.h"
 #include "misbehaviour.h"
 #include "parameters_loader.h"
 #include "policy_loader.h"
+#include "recording.h"
 #include "wire.h"
 
 // The seam the M3 tickets test through (issue #73): a real server host and a
@@ -80,9 +88,11 @@ using augusta::physics::Stance;
 using augusta::protocol::EntityIdWire;
 using augusta::protocol::SessionIdWire;
 namespace protocol = augusta::protocol;
+using augusta::server::ConnectionHealth;
+using augusta::server::ConnectionSample;
 using augusta::server::Host;
 using augusta::server::HostConfig;
-using augusta::server::Map;
+using augusta::server::Scenario;
 
 constexpr auto kPollInterval = std::chrono::milliseconds(10);
 constexpr auto kPollDeadline = std::chrono::seconds(5);
@@ -95,7 +105,7 @@ const Parameters kTestParameters{};
 
 // The one character every test's server offers and every test's client picks,
 // unless a test says otherwise.
-constexpr const char* kCharacter = "characters/player";
+constexpr const char* kCharacter = "soldier";
 
 // The test parameters, for a match of count players.
 Parameters WithPlayerCount(std::uint8_t count) {
@@ -108,29 +118,31 @@ Parameters WithPlayerCount(std::uint8_t count) {
 augusta::prediction::World EmptyWorld() { return augusta::prediction::World(); }
 
 // ctest runs every test case in its own process, possibly in parallel, so a
-// fixed port would collide; derive one from the process id instead.
-std::string LoopbackAddress() {
-#ifdef _WIN32
-  const int pid = _getpid();
-#else
-  const int pid = getpid();
-#endif
-  constexpr int kFirstPort = 27100;
-  // Prime, since Windows process ids are all multiples of 4 and a span sharing
-  // that factor would leave only a quarter of its ports in use.
-  constexpr int kPortSpan = 2999;
-  return "127.0.0.1:" + std::to_string(kFirstPort + (pid % kPortSpan));
+// fixed port would collide: each server binds port 0, a free one of its own
+// choosing, and its clients connect to the one the server reports.
+constexpr const char* kLoopbackAnyPort = "127.0.0.1:0";
+
+// An address nobody listens at: the one a server chose and has since closed.
+// Another process's server could draw it again, but only one port in 16384 does.
+Endpoint UnusedLoopbackEndpoint() {
+  const augusta::networking::Server server(Endpoint{.address = kLoopbackAnyPort});
+  return server.LocalEndpoint();
 }
 
 // A test server's settings: the test tick rate unless a test says otherwise.
 HostConfig TestHostConfig(const Parameters& parameters = kTestParameters, std::uint8_t tick_rate_hz = kTestTickRate) {
   return HostConfig{
-      .tick_rate_hz = tick_rate_hz, .parameters = parameters, .listen = Endpoint{.address = LoopbackAddress()}};
+      .tick_rate_hz = tick_rate_hz,
+      .parameters = parameters,
+      .listen = Endpoint{.address = kLoopbackAnyPort},
+      .recording = {},
+      .server_pack = {},
+  };
 }
 
-// A client of the test server playing character.
-SessionConfig TestSessionConfig(const std::string& character = kCharacter) {
-  return SessionConfig{.server = Endpoint{.address = LoopbackAddress()}, .character = character};
+// A client of the server at server playing character.
+SessionConfig TestSessionConfig(const Endpoint& server, const std::string& character = kCharacter) {
+  return SessionConfig{.server = server, .character = character};
 }
 
 // Init and Shutdown once for the whole process, as in networking_test.cpp.
@@ -366,8 +378,8 @@ class SessionTest : public ::testing::Test {
  protected:
   SessionTest()
       : host_(TestHostConfig(),
-              Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}}),
-        session_(TestSessionConfig(), EmptyWorld()) {}
+              Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}}),
+        session_(TestSessionConfig(host_.ListenEndpoint()), EmptyWorld()) {}
 
   // Runs both sides' network work until the session reports connected, or
   // the deadline passes.
@@ -424,16 +436,26 @@ TEST_F(SessionTest, StaysConnectedWhileTheTestAlternatesTicksAndNetworkWork) {
   EXPECT_EQ(session_.GetConnectionState(), ConnectionState::kConnected);
 }
 
+// Whether health has a gauge labelled by any Session.
+bool HasSessionGauges(const ConnectionHealth& health) {
+  return std::ranges::any_of(health.Collect(), [](const prometheus::MetricFamily& family) {
+    return std::ranges::any_of(family.metric, [](const prometheus::ClientMetric& metric) {
+      return std::ranges::any_of(
+          metric.label, [](const prometheus::ClientMetric::Label& label) { return label.name == "session_id"; });
+    });
+  });
+}
+
 // A host whose matches take every player the protocol allows, and however many
 // clients a test starts, all driven by hand.
 class JoinTest : public ::testing::Test {
  protected:
   JoinTest()
       : host_(TestHostConfig(WithPlayerCount(augusta::protocol::kMaxPlayers)),
-              Map{.collision = {},
-                  .spawn_points = {},
-                  .characters = {{.path = kCharacter, .hitboxes = {}}},
-                  .client_pack = ClientPack(1)}) {}
+              Scenario{.collision = {},
+                       .spawn_points = {},
+                       .characters = {{.path = kCharacter, .hitboxes = {}}},
+                       .client_pack = ClientPack(1)}) {}
 
   // A client pack hash told apart by its last byte.
   static augusta::assets::PackHash ClientPack(std::uint8_t last) {
@@ -447,7 +469,7 @@ class JoinTest : public ::testing::Test {
   Session& AddClient(const std::string& engine_version = std::string(augusta::EngineVersion()),
                      const std::string& character = kCharacter,
                      const augusta::assets::PackHash& client_pack = ClientPack(1)) {
-    sessions_.push_back(std::make_unique<Session>(SessionConfig{.server = Endpoint{.address = LoopbackAddress()},
+    sessions_.push_back(std::make_unique<Session>(SessionConfig{.server = host_.ListenEndpoint(),
                                                                 .engine_version = engine_version,
                                                                 .client_pack = client_pack,
                                                                 .character = character},
@@ -503,6 +525,47 @@ TEST_F(JoinTest, SessionIdsAreUniqueAmongConnectedClients) {
     ids.insert(*session->GetSessionId());
   }
   EXPECT_EQ(ids.size(), static_cast<std::size_t>(kClients));
+}
+
+TEST_F(JoinTest, EachConnectionIsSampledWithTheSessionItCarries) {
+  const Session& client = AddClient();
+  ASSERT_TRUE(WaitForAnswers());
+
+  const std::vector<ConnectionSample> samples = host_.SampleConnections();
+
+  ASSERT_EQ(samples.size(), 1U);
+  ASSERT_TRUE(samples.front().session.has_value());
+  ASSERT_TRUE(client.GetSessionId().has_value());
+  EXPECT_EQ(static_cast<std::uint32_t>(*samples.front().session), static_cast<std::uint32_t>(*client.GetSessionId()));
+}
+
+TEST_F(JoinTest, ASessionThatEndsLeavesTheSampleAndItsGaugesGo) {
+  Session& client = AddClient();
+  ASSERT_TRUE(WaitForAnswers());
+  ConnectionHealth health;
+  health.Record(host_.SampleConnections());
+  ASSERT_TRUE(HasSessionGauges(health));
+
+  client.Disconnect();
+  ASSERT_TRUE(ExchangeUntil(host_, Pointers(sessions_), [&] {
+    const std::vector<ConnectionSample> samples = host_.SampleConnections();
+    return std::ranges::none_of(samples, [](const ConnectionSample& sample) { return sample.session.has_value(); });
+  }));
+  health.Record(host_.SampleConnections());
+
+  EXPECT_FALSE(HasSessionGauges(health));
+}
+
+TEST_F(JoinTest, AConnectionThatHasNotJoinedIsSampledWithoutASession) {
+  RawClient silent(host_.ListenEndpoint(), RawClient::Mode::kScripted);
+  std::vector<ConnectionSample> samples;
+  ASSERT_TRUE(silent.ServeUntil(host_, [&] {
+    samples = host_.SampleConnections();
+    return !samples.empty();
+  }));
+
+  ASSERT_EQ(samples.size(), 1U);
+  EXPECT_FALSE(samples.front().session.has_value());
 }
 
 TEST_F(JoinTest, AClientWithAnotherEngineVersionIsRefusedForTheVersion) {
@@ -706,12 +769,12 @@ constexpr int kFallTicks = 120;
 // ticks, with collision as the map on both sides.
 augusta::prediction::State FallenBody(const std::vector<CollisionMesh>& collision) {
   Host host(TestHostConfig(),
-            Map{.collision = collision, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+            Scenario{.collision = collision, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
   augusta::prediction::World world = EmptyWorld();
   for (const CollisionMesh& mesh : collision) {
     EXPECT_TRUE(world.AddCollisionMesh(mesh).has_value());
   }
-  Session session(TestSessionConfig(), std::move(world));
+  Session session(TestSessionConfig(host.ListenEndpoint()), std::move(world));
   session.Connect();
   EXPECT_TRUE(DriveIntoMatch(host, {&session}));
 
@@ -742,7 +805,7 @@ TEST(MapSessionTest, APredictionWorldRefusesAMapMeshPhysicsRejects) {
 TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
   Host host(
       TestHostConfig(),
-      Map{.collision = {FloorAt(0.0F)}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+      Scenario{.collision = {FloorAt(0.0F)}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
 
   for (int i = 0; i < 10; ++i) {
     host.Tick(kFixedTick);
@@ -759,14 +822,14 @@ TEST(MapHostTest, AHostRefusesACharacterHitboxThatIsNotAWholeTriangleList) {
 
   EXPECT_THROW(
       Host(TestHostConfig(),
-           Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {hitbox}}}}),
+           Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {hitbox}}}}),
       std::runtime_error);
 }
 
 TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
-  EXPECT_THROW(Host(TestHostConfig(), Map{.collision = {CollisionMesh{}},
-                                          .spawn_points = {},
-                                          .characters = {{.path = kCharacter, .hitboxes = {}}}}),
+  EXPECT_THROW(Host(TestHostConfig(), Scenario{.collision = {CollisionMesh{}},
+                                               .spawn_points = {},
+                                               .characters = {{.path = kCharacter, .hitboxes = {}}}}),
                std::runtime_error);
 }
 
@@ -786,10 +849,10 @@ class MovementTest : public ::testing::Test {
   // The client always knows the floor; the host knows server_map, which a test
   // may make differ from it to give the two something to disagree about.
   explicit MovementTest(std::vector<CollisionMesh> server_map)
-      : host_(TestHostConfig(), Map{.collision = std::move(server_map),
-                                    .spawn_points = {},
-                                    .characters = {{.path = kCharacter, .hitboxes = {}}}}),
-        session_(TestSessionConfig(), WorldWithFloorAt(kGroundHeight)) {}
+      : host_(TestHostConfig(), Scenario{.collision = std::move(server_map),
+                                         .spawn_points = {},
+                                         .characters = {{.path = kCharacter, .hitboxes = {}}}}),
+        session_(TestSessionConfig(host_.ListenEndpoint()), WorldWithFloorAt(kGroundHeight)) {}
 
   void TearDown() override { augusta::networking::SimulateNetworkConditions({}); }
 
@@ -1121,19 +1184,19 @@ class LoopbackMatch : public ::testing::Test {
   // file/script settings, the map and the scenario's Game policy, separately.
   struct HostSetup {
     HostConfig config;
-    Map map;
+    Scenario scenario;
     augusta::scripting::Engine policy;
   };
 
-  explicit LoopbackMatch(HostSetup setup) : host_(setup.config, std::move(setup.map), std::move(setup.policy)) {}
+  explicit LoopbackMatch(HostSetup setup) : host_(setup.config, std::move(setup.scenario), std::move(setup.policy)) {}
 
   // A host setup for the floor with spawn_points, the parameters and the tick rate.
   static HostSetup OnTheFloor(std::vector<Vec3> spawn_points, const Parameters& parameters = kTestParameters,
                               std::uint8_t tick_rate_hz = kTestTickRate) {
     return HostSetup{.config = TestHostConfig(parameters, tick_rate_hz),
-                     .map = Map{.collision = {FloorAt(kFloorY)},
-                                .spawn_points = std::move(spawn_points),
-                                .characters = {{.path = kCharacter, .hitboxes = {}}}},
+                     .scenario = Scenario{.collision = {FloorAt(kFloorY)},
+                                          .spawn_points = std::move(spawn_points),
+                                          .characters = {{.path = kCharacter, .hitboxes = {}}}},
                      .policy = {}};
   }
 
@@ -1141,7 +1204,8 @@ class LoopbackMatch : public ::testing::Test {
   // it, admitted or not. The client's own stamina rules are none: any it uses
   // came from the server.
   Session& Connect() {
-    sessions_.push_back(std::make_unique<Session>(TestSessionConfig(), WorldWithFloorAt(kFloorY)));
+    sessions_.push_back(
+        std::make_unique<Session>(TestSessionConfig(host_.ListenEndpoint()), WorldWithFloorAt(kFloorY)));
     Session& client = *sessions_.back();
     client.Connect();
     ExchangeUntil(host_, Pointers(sessions_),
@@ -1328,15 +1392,15 @@ TEST_F(SpawnTest, EveryClientIsToldEveryPlayersCharacterAndSpawnPointAtMatchStar
     ASSERT_TRUE(start.has_value());
     ASSERT_EQ(start->players.size(), 2U);
     EXPECT_EQ(start->players[0].session, *first.GetSessionId());
-    EXPECT_EQ(start->players[0].character, 1U);
+    EXPECT_EQ(start->players[0].character, kCharacter);
     EXPECT_EQ(start->players[0].spawn, SpawnPoints()[0]);
     EXPECT_EQ(start->players[1].session, *second.GetSessionId());
-    EXPECT_EQ(start->players[1].character, 1U);
+    EXPECT_EQ(start->players[1].character, kCharacter);
     EXPECT_EQ(start->players[1].spawn, SpawnPoints()[1]);
   }
 }
 
-// Three players on the floor, whose scenario's behaviours.lua hands the Map's
+// Three players on the floor, whose scenario's rules hand the Map's
 // three Spawn points out backwards: the last player in the Match takes the first.
 class PolicySpawnTest : public LoopbackMatch {
  protected:
@@ -1345,7 +1409,7 @@ class PolicySpawnTest : public LoopbackMatch {
   }
 
   static augusta::scripting::Engine Backwards() {
-    auto policy = augusta::scripting::Engine::Load({.objectives = std::nullopt, .behaviours = R"(
+    auto policy = augusta::scripting::Engine::Load(R"(
       function assign_spawns(match)
         local assignment = {}
         for i, player in ipairs(match.players) do
@@ -1353,7 +1417,7 @@ class PolicySpawnTest : public LoopbackMatch {
         end
         return assignment
       end
-    )"});
+    )");
     EXPECT_TRUE(policy.has_value());
     return policy ? *std::move(policy) : augusta::scripting::Engine{};
   }
@@ -1438,9 +1502,9 @@ TEST_F(LobbyTest, AdmittedClientsAreToldWhoIsInTheLobbyAndWithWhichCharacter) {
     ASSERT_TRUE(lobby.has_value());
     ASSERT_EQ(lobby->roster.size(), 2U);
     EXPECT_EQ(lobby->roster[0].session, *first.GetSessionId());
-    EXPECT_EQ(lobby->roster[0].character, 1U);
+    EXPECT_EQ(lobby->roster[0].character, kCharacter);
     EXPECT_EQ(lobby->roster[1].session, *second.GetSessionId());
-    EXPECT_EQ(lobby->roster[1].character, 1U);
+    EXPECT_EQ(lobby->roster[1].character, kCharacter);
     EXPECT_EQ(client->GetPhase(), Phase::kLobby);
   }
   EXPECT_EQ(first.GetLobby()->version, second.GetLobby()->version);
@@ -1678,7 +1742,7 @@ TEST_F(MatchCycleTest, PlayersKeepTheirSessionAndCharacterAndTheNextMatchHandsOu
   const auto start = first.GetMatchStart();
   ASSERT_EQ(start->players.size(), 2U);
   EXPECT_EQ(start->players[0].session, first_session);
-  EXPECT_EQ(start->players[0].character, 1U);
+  EXPECT_EQ(start->players[0].character, kCharacter);
   EXPECT_EQ(start->players[0].spawn, SpawnPoints()[0]);
   EXPECT_EQ(start->players[1].session, second_session);
   EXPECT_EQ(start->players[1].spawn, SpawnPoints()[1]);
@@ -1703,6 +1767,82 @@ TEST_F(MatchCycleTest, AMatchWhoseLastPlayerLeavesEndsOnItsOwnAndTheLobbyTakesPl
   EXPECT_TRUE(next.GetSessionId().has_value())
       << "refused: "
       << augusta::harness::DescribeJoinRefusal(next.GetRefusal().value_or(JoinRefusal::kVersionMismatch));
+}
+
+// A host on the floor that records every tick it runs (ADR-0048), for a match
+// of two.
+class RecordingHostTest : public LoopbackMatch {
+ protected:
+  static std::vector<Vec3> SpawnPoints() { return {Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F)}; }
+
+  static HostSetup FloorSetup() { return OnTheFloor(SpawnPoints(), WithPlayerCount(2)); }
+
+  // Unique to this process: ctest may run the tests of this suite side by side.
+  static const std::filesystem::path& RecordingPath() {
+    static const std::filesystem::path path =
+        std::filesystem::temp_directory_path() /
+        ("augusta_session_recording_" + std::to_string(std::random_device{}()) + ".rec");
+    return path;
+  }
+
+  static HostSetup RecordingSetup() {
+    HostSetup setup = FloorSetup();
+    setup.config.recording = RecordingPath();
+    return setup;
+  }
+
+  RecordingHostTest() : LoopbackMatch(RecordingSetup()) {}
+
+  // After every Host of the suite has closed the file.
+  static void TearDownTestSuite() { std::filesystem::remove(RecordingPath()); }
+
+  static augusta::server::Recording ReadBack() {
+    std::ifstream in(RecordingPath(), std::ios::binary);
+    auto recording = augusta::server::ReadRecording(in);
+    EXPECT_TRUE(recording.has_value());
+    return recording.value_or(augusta::server::Recording{});
+  }
+
+  // The match the tests record: two clients join, walk forward, fire, and the
+  // host ends the match.
+  void PlayAMatch() {
+    Join();
+    Join();
+    ASSERT_TRUE(StartMatch());
+    Command fire = Forward();
+    fire.fire = true;
+    Run(kSettleTicks, fire);
+    host_.EndMatch();
+    ServerTick();
+  }
+};
+
+TEST_F(RecordingHostTest, EveryTickTheHostRanIsRecordedWithTheCommandsItTookIn) {
+  PlayAMatch();
+  const augusta::server::Recording recording = ReadBack();
+
+  ASSERT_FALSE(recording.ticks.empty());
+  EXPECT_EQ(recording.header.tick_rate_hz, kTestTickRate);
+  EXPECT_EQ(recording.header.engine_version, augusta::EngineVersion());
+  const auto started = std::ranges::find_if(
+      recording.ticks, [](const augusta::server::TickRecord& tick) { return !tick.input.match_start.empty(); });
+  ASSERT_NE(started, recording.ticks.end());
+  EXPECT_EQ(started->input.match_start.size(), 2U);
+  const bool walked_forward = std::ranges::any_of(recording.ticks, [](const augusta::server::TickRecord& tick) {
+    return tick.input.commands.size() == 2 && std::ranges::all_of(tick.input.commands, [](const auto& command) {
+             return command.command.movement.direction.x == 1.0F && command.command.fire;
+           });
+  });
+  EXPECT_TRUE(walked_forward);
+  EXPECT_TRUE(recording.ticks.back().input.match_ended);
+}
+
+TEST(RecordingHostConfigTest, AHostRefusesARecordingItCannotWrite) {
+  HostConfig config = TestHostConfig();
+  // A directory, which no file can be opened as.
+  config.recording = std::filesystem::temp_directory_path();
+  EXPECT_THROW(Host(config, Scenario{.collision = {}, .spawn_points = {}, .characters = {}, .client_pack = {}}),
+               std::runtime_error);
 }
 
 // One client on a floor, on the server's stamina rules: a bar that empties in
@@ -1836,7 +1976,7 @@ TEST_F(StaminaTest, AClientThatPredictsCorrectlyNeverCorrectsForTheRoundingOnThe
 class ScriptedParametersTest : public LoopbackMatch {
  protected:
   static augusta::parameters::Parameters LoadScript() {
-    const auto loaded = augusta::parameters::Load(
+    const auto loaded = augusta::server::LoadParameters(
         "local sprint_seconds = 1\n"
         "return {\n"
         "  player_count = 1,\n"
@@ -1849,7 +1989,8 @@ class ScriptedParametersTest : public LoopbackMatch {
         "    recoil_pattern = {}, recoil_recovery_per_second = 0, ads_recoil_scale = 1, ads_field_of_view = 0.7 },\n"
         "  ammo = { gravity = 9.81, max_range = 1000, damage = { head = 100, torso = 34, limb = 25 } },\n"
         "  starting_health = 100,\n"
-        "}");
+        "}",
+        kTestTickRate);
     return loaded.value();
   }
 
@@ -1900,7 +2041,10 @@ constexpr EntityIdWire kScriptedEntity{101};
 // that are no message.
 class ScriptedServer {
  public:
-  explicit ScriptedServer(const Endpoint& listen) : server_(listen) {}
+  ScriptedServer() : server_(Endpoint{.address = kLoopbackAnyPort}) {}
+
+  // The address it listens on, for its client to connect to.
+  [[nodiscard]] Endpoint LocalEndpoint() const { return server_.LocalEndpoint(); }
 
   // Connects session and answers its join with parameters, then with a Match
   // start of it alone if start_match, and reports whether the session was
@@ -1937,7 +2081,7 @@ class ScriptedServer {
         Send(augusta::protocol::JoinAcceptedWire{.session = kScriptedSession,
                                                  .tick_rate_hz = kTestTickRate,
                                                  .parameters = augusta::server::ToWire(parameters_),
-                                                 .character = 1});
+                                                 .character = kCharacter});
         if (start_match_) {
           Send(StartOfAlone());
         }
@@ -1952,7 +2096,7 @@ class ScriptedServer {
   // A Match start of the admitted client alone, at the origin.
   static augusta::protocol::MatchStartWire StartOfAlone() {
     return augusta::protocol::MatchStartWire{
-        .players = {{.spawn = {}, .session = kScriptedSession, .entity = kScriptedEntity, .character = 1}}};
+        .players = {{.spawn = {}, .session = kScriptedSession, .entity = kScriptedEntity, .character = kCharacter}}};
   }
 
   // An Authoritative State of tick listing entities, each at the origin, with
@@ -1998,8 +2142,7 @@ class ScriptedServerTest : public ::testing::Test {
         .stamina = {.deplete_per_second = deplete_per_second, .regen_per_second = 0.0F, .forced_walk_below = 0.0F}};
   }
 
-  ScriptedServerTest()
-      : server_(Endpoint{.address = LoopbackAddress()}), session_(TestSessionConfig(), WorldWithFloorAt(0.0F)) {}
+  ScriptedServerTest() : session_(TestSessionConfig(server_.LocalEndpoint()), WorldWithFloorAt(0.0F)) {}
 
   void SetUp() override { ASSERT_TRUE(server_.Admit(session_, WithDeplete(0.0F))); }
 
@@ -2167,7 +2310,7 @@ TEST_F(ScriptedLobbyTest, AStateThatArrivesBeforeMatchStartIsDropped) {
 
 TEST_F(ScriptedLobbyTest, AMatchStartThatLeavesThisClientOutIsDropped) {
   server_.Send(augusta::protocol::MatchStartWire{
-      .players = {{.spawn = {}, .session = SessionIdWire{2}, .entity = EntityIdWire{102}, .character = 1}}});
+      .players = {{.spawn = {}, .session = SessionIdWire{2}, .entity = EntityIdWire{102}, .character = kCharacter}}});
   Settle();
 
   EXPECT_EQ(session_.GetPhase(), Phase::kLobby);
@@ -2185,7 +2328,7 @@ TEST_F(ScriptedLobbyTest, NothingIsSentBeforeMatchStartAndTheFirstTickInAMatchSt
 
   const Vec3 spawn(5.0F, 0.0F, -3.0F);
   server_.Send(augusta::protocol::MatchStartWire{
-      .players = {{.spawn = spawn, .session = kScriptedSession, .entity = kScriptedEntity, .character = 1}}});
+      .players = {{.spawn = spawn, .session = kScriptedSession, .entity = kScriptedEntity, .character = kCharacter}}});
   Settle();
   const augusta::prediction::State first = session_.Tick(Command{}, kFixedTick);
   Settle();
@@ -2196,10 +2339,11 @@ TEST_F(ScriptedLobbyTest, NothingIsSentBeforeMatchStartAndTheFirstTickInAMatchSt
 }
 
 TEST_F(ScriptedLobbyTest, ReadyIsSentOnlyWhenToldAndOnlyForTheNewestRoster) {
-  server_.Send(augusta::protocol::LobbyWire{.version = 1, .roster = {{.session = kScriptedSession, .character = 1}}});
-  server_.Send(augusta::protocol::LobbyWire{
-      .version = 2,
-      .roster = {{.session = kScriptedSession, .character = 1}, {.session = SessionIdWire{2}, .character = 1}}});
+  server_.Send(
+      augusta::protocol::LobbyWire{.version = 1, .roster = {{.session = kScriptedSession, .character = kCharacter}}});
+  server_.Send(augusta::protocol::LobbyWire{.version = 2,
+                                            .roster = {{.session = kScriptedSession, .character = kCharacter},
+                                                       {.session = SessionIdWire{2}, .character = kCharacter}}});
   Settle();
   ASSERT_EQ(session_.GetLobby()->version, 2U);
   EXPECT_TRUE(server_.Readies().empty()) << "sent ReadyWire on its own";
@@ -2214,16 +2358,15 @@ TEST_F(ScriptedLobbyTest, ReadyIsSentOnlyWhenToldAndOnlyForTheNewestRoster) {
 // A client takes the parameters it joins with as the server's, so values that
 // fail the range checks make it drop the Join accepted rather than predict on them.
 TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseParametersFailTheRangeChecks) {
-  ScriptedServer server(Endpoint{.address = LoopbackAddress()});
+  ScriptedServer server;
   Parameters threshold_of_one;
   threshold_of_one.stamina.forced_walk_below = 1.0F;
   for (const Parameters& bad :
        {Parameters{.stamina = {.deplete_per_second = -1.0F}},
         Parameters{.stamina = {.regen_per_second = std::numeric_limits<float>::quiet_NaN()}}, threshold_of_one,
         Parameters{.player_count = 0}, Parameters{.player_count = augusta::protocol::kMaxPlayers + 1}}) {
-    // One server for every case: it answers whichever session sent last, and a
-    // server bound anew each time would find the port not yet released.
-    Session session(TestSessionConfig(), EmptyWorld());
+    // One server for every case: it answers whichever session sent last.
+    Session session(TestSessionConfig(server.LocalEndpoint()), EmptyWorld());
 
     EXPECT_FALSE(server.Admit(session, bad, std::chrono::milliseconds(500)));
     EXPECT_FALSE(session.GetParameters().has_value());
@@ -2287,8 +2430,8 @@ TEST_F(SessionTest, AClientHoldsNoParametersUntilTheServerAdmitsIt) {
 // accepted rather than divide by it.
 TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseTickRateFailsTheChecks) {
   Host host(TestHostConfig(kTestParameters, 0),
-            Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
-  Session session(TestSessionConfig(), EmptyWorld());
+            Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+  Session session(TestSessionConfig(host.ListenEndpoint()), EmptyWorld());
   session.Connect();
 
   const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
@@ -2301,7 +2444,7 @@ TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseTickRateFailsTheChecks
 
 // What a client is told when its session ends on its own.
 TEST(SessionFailureTest, ASessionThatNeverConnectedHasNoFailure) {
-  Session session(TestSessionConfig(), EmptyWorld());
+  Session session(TestSessionConfig(UnusedLoopbackEndpoint()), EmptyWorld());
 
   EXPECT_FALSE(session.GetFailure().has_value());
 }
@@ -2309,7 +2452,7 @@ TEST(SessionFailureTest, ASessionThatNeverConnectedHasNoFailure) {
 TEST(SessionFailureTest, AServerNobodyIsListeningAtIsUnreachable) {
   // Set before connecting: the timeout only reaches new connections.
   augusta::networking::SimulateNetworkConditions({.timeout_ms = 500});
-  Session session(TestSessionConfig(), EmptyWorld());
+  Session session(TestSessionConfig(UnusedLoopbackEndpoint()), EmptyWorld());
   session.Connect();
 
   std::optional<Failure> failure;
@@ -2328,8 +2471,9 @@ TEST(SessionFailureTest, AServerNobodyIsListeningAtIsUnreachable) {
 
 TEST(SessionFailureTest, AServerThatGoesAwayDuringAMatchIsAConnectionLost) {
   auto host = std::make_unique<Host>(
-      TestHostConfig(), Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
-  Session session(TestSessionConfig(), EmptyWorld());
+      TestHostConfig(),
+      Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+  Session session(TestSessionConfig(host->ListenEndpoint()), EmptyWorld());
   session.Connect();
   ASSERT_TRUE(DriveIntoMatch(*host, {&session}));
   ASSERT_FALSE(session.GetFailure().has_value());
@@ -2350,8 +2494,8 @@ TEST(SessionFailureTest, AServerThatGoesAwayDuringAMatchIsAConnectionLost) {
 
 TEST(SessionFailureTest, EndingTheSessionOneselfIsNotAFailure) {
   Host host(TestHostConfig(),
-            Map{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
-  Session session(TestSessionConfig(), EmptyWorld());
+            Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+  Session session(TestSessionConfig(host.ListenEndpoint()), EmptyWorld());
   session.Connect();
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
   while (session.GetConnectionState() != ConnectionState::kConnected && std::chrono::steady_clock::now() < deadline) {
@@ -2591,7 +2735,7 @@ class ImpossibleCommandTest : public LoopbackMatch {
     ExpectTheNextHonestCommandTaken(before);
   }
 
-  RawClient adversary_{Endpoint{.address = LoopbackAddress()}};
+  RawClient adversary_{host_.ListenEndpoint()};
   EntityIdWire entity_{};
   Session* bystander_ = nullptr;
   std::size_t bystander_shots_ = 0;
@@ -2657,7 +2801,7 @@ TEST_F(ImpossibleCommandTest, NoNumberOfACommandReachesTheServerAsNaNOrInfinity)
   not_numbers.command.direction = Vec3(kNaN, kNaN, kNaN);
   not_numbers.command.yaw = kNaN;
   not_numbers.command.pitch = kNaN;
-  not_numbers.command.view_fraction = kNaN;
+  not_numbers.command.seen_fraction = kNaN;
   adversary_.Send(protocol::CommandsWire{.commands = {not_numbers}});
   const Told after_nan = RunAndTell();
 
@@ -2679,7 +2823,7 @@ TEST_F(ImpossibleCommandTest, NoNumberOfACommandReachesTheServerAsNaNOrInfinity)
   auto infinite_movement = Acting(4);
   infinite_movement.command.direction = Vec3(-kInfinity, kInfinity, kInfinity);
   for (auto* infinite : {&infinite_yaw, &infinite_pitch, &infinite_movement}) {
-    infinite->command.view_fraction = kInfinity;
+    infinite->command.seen_fraction = kInfinity;
   }
   ExpectRejected({infinite_yaw, infinite_pitch, infinite_movement});
 }
@@ -2741,7 +2885,7 @@ TEST_F(ImpossibleCommandTest, AMessageOnlyTheServerSendsChangesNothingWhenAClien
   const EntityIdWire bystander{std::to_underlying(*bystander_->GetEntityId())};
   const SessionIdWire adversary = adversary_.ReceivedOf<protocol::JoinAcceptedWire>().front().session;
   const protocol::MessageWire server_only[] = {
-      protocol::JoinAcceptedWire{.session = SessionIdWire{99}, .tick_rate_hz = 1},
+      protocol::JoinAcceptedWire{.session = SessionIdWire{99}, .tick_rate_hz = 1, .character = kCharacter},
       protocol::JoinRefusedWire{.reason = protocol::JoinRefusalWire::kLobbyFull},
       protocol::AuthoritativeStateWire{.tick = 1'000'000,
                                        .bodies = {{.entity = entity_, .body = {.position = Vec3(100.0F, 0.0F, 0.0F)}}},
@@ -2771,13 +2915,13 @@ TEST_F(ImpossibleCommandTest, AMessageOnlyTheServerSendsChangesNothingWhenAClien
 
 TEST_F(ImpossibleCommandTest, ACommandMessageWithMoreCommandsThanTheProtocolAllowsIsRefusedWhole) {
   // Encode writes no such message, so it is put together by hand: one of
-  // kMaxCommandsPerMessage commands, with one more spliced in before its view tick.
+  // kMaxCommandsPerMessage commands, with one more spliced in before its Seen tick.
   constexpr std::size_t kHeader = 2;  // The message type and the count.
-  constexpr std::size_t kViewTick = sizeof(augusta::tick::Tick);
+  constexpr std::size_t kSeenTick = sizeof(augusta::tick::Tick);
   const protocol::BytesWire encoded = protocol::Encode(MostCommands());
   const protocol::BytesWire extra =
       protocol::Encode(protocol::CommandsWire{.commands = {Acting(protocol::kMaxCommandsPerMessage + 1)}});
-  protocol::BytesWire too_many(encoded.begin(), encoded.end() - static_cast<std::ptrdiff_t>(kViewTick));
+  protocol::BytesWire too_many(encoded.begin(), encoded.end() - static_cast<std::ptrdiff_t>(kSeenTick));
   too_many[1] = static_cast<std::byte>(protocol::kMaxCommandsPerMessage + 1);
   too_many.insert(too_many.end(), extra.begin() + static_cast<std::ptrdiff_t>(kHeader), extra.end());
   ASSERT_EQ(protocol::Decode(too_many).error(), protocol::DecodeError::kFieldTooLong);
@@ -2790,7 +2934,7 @@ TEST_F(ImpossibleCommandTest, ACommandMessageWithMoreCommandsThanTheProtocolAllo
 }
 
 TEST_F(ImpossibleCommandTest, CommandsFromAPeerThatHasNotBeenAdmittedMoveNothing) {
-  RawClient intruder(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  RawClient intruder(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(intruder.Connect(host_));
   const EntityId bystander = *bystander_->GetEntityId();
   const auto bystander_before = PositionSeenBy(*bystander_, bystander);
@@ -2824,7 +2968,7 @@ class ImpossibleLobbyOf : public LoopbackMatch {
   static HostSetup TwoCharacters() {
     HostSetup setup = OnTheFloor({Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F), Vec3(30.0F, kFloorY, -5.0F)},
                                  WithPlayerCount(kPlayers));
-    setup.map.characters.push_back({.path = kOtherCharacter, .hitboxes = {}});
+    setup.scenario.characters.push_back({.path = kOtherCharacter, .hitboxes = {}});
     return setup;
   }
 
@@ -2890,7 +3034,7 @@ using ImpossibleReadyTest = ImpossibleLobbyOf<2>;
 
 TEST_F(ImpossibleReadyTest, AReadyForAnyRosterButTheCurrentOneStartsNoMatch) {
   Session& bystander = Join();
-  RawClient adversary(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  RawClient adversary(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(AskToJoin(adversary, HonestJoinRequest()));
   const auto current = RosterVersionOf(adversary, 2);
   ASSERT_TRUE(current.has_value());
@@ -2913,7 +3057,7 @@ using ImpossibleRejoinTest = ImpossibleLobbyOf<3>;
 
 TEST_F(ImpossibleRejoinTest, ASecondJoinFromAnAdmittedPlayerChangesNeitherThePlayerCountNorItsCharacter) {
   Join();
-  RawClient adversary(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  RawClient adversary(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(AskToJoin(adversary, HonestJoinRequest()));
   const auto admitted = adversary.ReceivedOf<protocol::JoinAcceptedWire>();
   ASSERT_EQ(admitted.size(), 1U);
@@ -2986,8 +3130,7 @@ TEST_F(ImpossibleJoinTest, AJoinThatCanNeverPlayHereIsRefusedAndTheLobbyIsToldNo
   std::vector<std::unique_ptr<RawClient>> adversaries;
   std::vector<RawClient*> serving;
   for (const auto& request : requests) {
-    adversaries.push_back(
-        std::make_unique<RawClient>(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted));
+    adversaries.push_back(std::make_unique<RawClient>(host_.ListenEndpoint(), RawClient::Mode::kScripted));
     serving.push_back(adversaries.back().get());
     ASSERT_TRUE(AskToJoin(*adversaries.back(), request.first));
   }
@@ -3030,7 +3173,7 @@ using LobbyMisbehaviourTest = RobustnessOf<3>;
 TEST_F(MisbehaviourTest, APeerFloodingMalformedMessagesIsDisconnectedAndItsBodyLeavesWhileAnHonestClientPlaysOn) {
   augusta::logging::Init();
   Session& honest = Join();
-  RawClient raw(Endpoint{.address = LoopbackAddress()});
+  RawClient raw(host_.ListenEndpoint());
   ASSERT_TRUE(raw.Join(host_));
   ASSERT_TRUE(DriveIntoMatch(host_, All(), &raw));
   Run(kSettleTicks);
@@ -3069,7 +3212,7 @@ TEST_F(MisbehaviourTest, APeerFloodingMalformedMessagesIsDisconnectedAndItsBodyL
 TEST_F(LobbyMisbehaviourTest, AMisbehavingPlayerDisconnectedFromTheLobbyChangesTheRosterEveryClientIsTold) {
   Session& first = Join();
   Session& second = Join();
-  RawClient raw(Endpoint{.address = LoopbackAddress()});
+  RawClient raw(host_.ListenEndpoint());
   ASSERT_TRUE(raw.Join(host_));
   ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
     return std::ranges::all_of(sessions_,
@@ -3095,7 +3238,7 @@ TEST_F(LobbyMisbehaviourTest, AMisbehavingPlayerDisconnectedFromTheLobbyChangesT
 
 TEST_F(MisbehaviourTest, StaleRepeatsAndCommandsInFlightAcrossAMatchEndNeverDisconnect) {
   Session& honest = Join();
-  RawClient raw(Endpoint{.address = LoopbackAddress()});
+  RawClient raw(host_.ListenEndpoint());
   ASSERT_TRUE(raw.Join(host_));
   ASSERT_TRUE(DriveIntoMatch(host_, All(), &raw));
   Run(kSettleTicks, Forward());
@@ -3188,7 +3331,7 @@ class AdmissionDeadlineTest : public RobustnessOf<2> {
 TEST_F(AdmissionDeadlineTest, APeerThatConnectsAndSendsNothingIsDisconnectedOnceTheDeadlinePassesAndNotBefore) {
   augusta::logging::Init();
   const Clock::time_point before = Clock::now();
-  RawClient raw(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  RawClient raw(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(raw.Connect(host_));
   const Clock::time_point connected = Clock::now();
 
@@ -3217,7 +3360,7 @@ TEST_F(AdmissionDeadlineTest, APeerThatConnectsAndSendsNothingIsDisconnectedOnce
 TEST_F(AdmissionDeadlineTest, APeerThatSendsAnythingButAJoinIsDisconnectedAtTheDeadline) {
   augusta::logging::Init();
   const Clock::time_point before = Clock::now();
-  RawClient raw(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  RawClient raw(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(raw.Connect(host_));
   const Clock::time_point connected = Clock::now();
 
@@ -3238,7 +3381,7 @@ TEST_F(AdmissionDeadlineTest, APeerThatSendsAnythingButAJoinIsDisconnectedAtTheD
 
 TEST_F(AdmissionDeadlineTest, AClientThatJoinsWithinTheDeadlineIsAdmittedAndStaysConnected) {
   Session& honest = Join();
-  RawClient idle(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  RawClient idle(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(idle.Connect(host_));
 
   const Clock::time_point past_the_deadline = Clock::now() + (2 * kDeadline);
@@ -3253,7 +3396,7 @@ TEST_F(AdmissionDeadlineTest, AClientThatJoinsWithinTheDeadlineIsAdmittedAndStay
 }
 
 TEST_F(AdmissionDeadlineTest, ARefusedClientIsToldWhyBeforeTheDeadlineDisconnectsIt) {
-  RawClient raw(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  RawClient raw(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(raw.Connect(host_));
   const Clock::time_point connected = Clock::now();
 
@@ -3269,7 +3412,7 @@ TEST_F(AdmissionDeadlineTest, ARefusedClientIsToldWhyBeforeTheDeadlineDisconnect
 }
 
 TEST_F(AdmissionDeadlineTest, AJoinRefusedAsTheDeadlinePassesIsStillToldBeforeTheConnectionEnds) {
-  RawClient raw(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  RawClient raw(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(raw.Connect(host_));
   const Clock::time_point connected = Clock::now();
 
@@ -3316,7 +3459,7 @@ class FireMatchOf : public LoopbackMatch {
     parameters.rifle.ads_recoil_scale = 0.5F;
     parameters.ammo.max_range = 1000.0F;
     HostSetup setup = OnTheFloor({Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F)}, parameters);
-    setup.map.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
     return setup;
   }
 
@@ -3876,12 +4019,13 @@ class HitMatchOf : public LoopbackMatch {
     }
     HostSetup setup = OnTheFloor(std::move(spawn_points), parameters);
     setup.policy = std::move(policy);
-    setup.map.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
-    setup.map.characters.front().hitboxes = HumanHitboxes();
+    setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    setup.scenario.characters.front().hitboxes = HumanHitboxes();
     if (walled) {
-      setup.map.collision.push_back(CollisionMesh{.points = {Vec3(-20.0F, kFloorY, kWallZ), Vec3(-20.0F, 5.0F, kWallZ),
-                                                             Vec3(20.0F, 5.0F, kWallZ), Vec3(20.0F, kFloorY, kWallZ)},
-                                                  .indices = {0, 1, 2, 0, 2, 3}});
+      setup.scenario.collision.push_back(
+          CollisionMesh{.points = {Vec3(-20.0F, kFloorY, kWallZ), Vec3(-20.0F, 5.0F, kWallZ), Vec3(20.0F, 5.0F, kWallZ),
+                                   Vec3(20.0F, kFloorY, kWallZ)},
+                        .indices = {0, 1, 2, 0, 2, 3}});
     }
     return setup;
   }
@@ -3943,8 +4087,8 @@ class HitMatchOf : public LoopbackMatch {
   }
 
   // The shooter taps fire once, aimed from its eye at the point offset from
-  // target's feet as the newest update it has shows them, which is the view
-  // its Command reports, and the match runs until its rifle is ready again.
+  // target's feet as the newest update it has shows them, which is the Seen
+  // time its Command reports, and the match runs until its rifle is ready again.
   void ShootAt(const Session& target, const Vec3& offset) {
     ShootThrough(PositionSeenBy(Standing(0), *target.GetEntityId()).value() + offset);
   }
@@ -3955,7 +4099,7 @@ class HitMatchOf : public LoopbackMatch {
     const Vec3 eye = PositionSeenBy(shooter, *shooter.GetEntityId()).value() + Vec3(0.0F, kEyeHeight, 0.0F);
     Command& command = CommandOf(shooter);
     AimAt(command, point - eye);
-    command.view_tick = shooter.GetAuthoritativeState().value().tick;
+    command.seen_tick = shooter.GetAuthoritativeState().value().tick;
     command.fire = true;
     Fight(1);
     command.fire = false;
@@ -4198,7 +4342,7 @@ class LagCompensatedHitTest : public HitMatchOf<2> {
 };
 
 // US-11, ADR-0044: a shot that hits on the shooter's screen hits on the server.
-TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairInTheShownViewGetsAHitConfirmation) {
+TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairAtItsSeenTimeGetsAHitConfirmation) {
   Session& shooter = Standing(0);
   Session& target = Standing(1);
   CommandOf(target).movement.direction = Vec3(1.0F, 0.0F, 0.0F);
@@ -4207,7 +4351,7 @@ TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairInT
     PlayAhead(shooter, target);
   }
 
-  // The view: the newest update kept that is the Interpolation delay or more
+  // The Seen time: the newest update kept that is the Interpolation delay or more
   // behind the newest of all, and halfway to the next one if that is kept too.
   ASSERT_FALSE(seen_.empty());
   const augusta::tick::Tick newest = seen_.rbegin()->first;
@@ -4218,14 +4362,14 @@ TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairInT
   const auto next = seen_.find(shown->first + 1);
   const float fraction = next == seen_.end() ? 0.0F : 0.5F;
   const Vec3 feet = next == seen_.end() ? shown->second : augusta::math::Lerp(shown->second, next->second, fraction);
-  // The target has since walked clear of where the view shows its torso, 0.4 m wide.
+  // The target has since walked clear of where the Seen time shows its torso, 0.4 m wide.
   ASSERT_GT(seen_.rbegin()->second.x - feet.x, 0.25F);
 
   const Vec3 eye = PositionSeenBy(shooter, *shooter.GetEntityId()).value() + Vec3(0.0F, kEyeHeight, 0.0F);
   Command& command = CommandOf(shooter);
   AimAt(command, feet + Vec3(0.0F, kTorsoHeight, 0.0F) - eye);
-  command.view_tick = shown->first;
-  command.view_fraction = fraction;
+  command.seen_tick = shown->first;
+  command.seen_fraction = fraction;
   command.fire = true;
   PlayAhead(shooter, target);
   command.fire = false;
@@ -4272,8 +4416,8 @@ class FullAutoMatchTest : public LoopbackMatch {
       spawn_points.emplace_back(kPairSpacing * static_cast<float>(i / 2), kFloorY, i % 2 == 0 ? 0.0F : -kPairDistance);
     }
     HostSetup setup = OnTheFloor(std::move(spawn_points), parameters);
-    setup.map.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
-    setup.map.characters.front().hitboxes = HumanHitboxes();
+    setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    setup.scenario.characters.front().hitboxes = HumanHitboxes();
     return setup;
   }
 
@@ -4296,7 +4440,7 @@ class FullAutoMatchTest : public LoopbackMatch {
 // the real 60 Hz for the reason given there: eight clients strafe, sprint and
 // change stance, all the same way so each pair stays face to face, holding
 // fire for the whole match and reloading whenever their magazine is empty, and
-// each reports the view it was last sent, so the hits are lag compensated. The
+// each reports the Seen time of the update it was last sent, so the hits are lag compensated. The
 // server keeps up with every client's commands, tells every client of every
 // Shot, and every shooter of every one of its hits.
 TEST_F(FullAutoMatchTest, EightClientsMoveFireFullAutoReloadAndHitEachOtherForAMatchWithNoMissedTicks) {
@@ -4352,7 +4496,7 @@ TEST_F(FullAutoMatchTest, EightClientsMoveFireFullAutoReloadAndHitEachOtherForAM
       command.fire = true;
       command.reload = tick > 0 && client.rifle.rounds == 0 && client.rifle.reload_remaining <= 0.0F;
       if (const auto shown = sessions_[i]->GetAuthoritativeState()) {
-        command.view_tick = shown->tick;
+        command.seen_tick = shown->tick;
       }
 
       const auto predicted = sessions_[i]->Tick(command, kFixedTick);
@@ -4797,8 +4941,8 @@ TEST_F(ScriptedLobbyTest, ADeathThatArrivesOutsideAMatchIsDropped) {
 }
 
 // The example scenario's Game policy, read out of its golden server pack by the
-// server's own loader: behaviours.lua hands out the Spawn points, objectives.lua
-// ends the Match on the last player standing (US-14).
+// server's own loader: its rules hand out the Spawn points and end the Match on
+// the last player standing (US-14).
 augusta::scripting::Engine ExamplePolicy() {
   const std::filesystem::path packs{AUGUSTA_EXAMPLE_PACKS};
   const auto public_key = augusta::assets::ReadEd25519PublicKeyFile(packs / "test.pub");
@@ -4836,7 +4980,7 @@ class LastStandingMatchOf : public HitMatchOf<kPlayers> {
         this->PositionSeenBy(shooter, *target.GetEntityId()).value() + Vec3(0.0F, this->kHeadHeight, 0.0F);
     Command& command = this->CommandOf(shooter);
     this->AimAt(command, head - eye);
-    command.view_tick = shooter.GetAuthoritativeState().value().tick;
+    command.seen_tick = shooter.GetAuthoritativeState().value().tick;
     command.fire = true;
   }
 
@@ -4979,8 +5123,8 @@ TEST_F(LastStandingTrioTest, WhenAllButOnePlayerDisconnectTheOneLeftWins) {
 }
 
 // A full Match of eight under the example scenario's Game policy, everyone
-// standing in a line along X, 4 m apart, at the Spawn point behaviours.lua
-// hands it: its rank down the line, 0 at the origin. Everyone looks along -X,
+// standing in a line along X, 4 m apart, at the Spawn point the rules hand
+// it: its rank down the line, 0 at the origin. Everyone looks along -X,
 // at the player in front of it, and plays the character of HumanHitboxes with a
 // rifle of 600 rounds a minute whose magazine of 15 takes half a second to
 // reload, and whose every round kicks the aim up by 1/256 rad. Five torso hits kill.
@@ -5009,8 +5153,8 @@ class EightPlayerMatchTest : public LoopbackMatch {
     }
     HostSetup setup = OnTheFloor(std::move(spawn_points), parameters);
     setup.policy = ExamplePolicy();
-    setup.map.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
-    setup.map.characters.front().hitboxes = HumanHitboxes();
+    setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    setup.scenario.characters.front().hitboxes = HumanHitboxes();
     return setup;
   }
 
@@ -5048,7 +5192,7 @@ class EightPlayerMatchTest : public LoopbackMatch {
 // front, so the players die one by one from the back of the line, each killed
 // by the next, and the front one is the last standing. The server keeps up with
 // every client's commands, the dead's included, to the end, which the example
-// objectives.lua decides with that player as winner, and every client is told
+// rules decide with that player as winner, and every client is told
 // of every Death and of the winner.
 TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMissedTicks) {
   constexpr int kTickLimit = 900;  // The Match ends some 540 ticks in.
@@ -5112,7 +5256,7 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
       command.fire = true;
       command.reload = tick > 0 && client.rifle.rounds == 0 && client.rifle.reload_remaining <= 0.0F;
       if (const auto shown = session.GetAuthoritativeState()) {
-        command.view_tick = shown->tick;
+        command.seen_tick = shown->tick;
       }
 
       if (session.GetPhase() == Phase::kMatch) {
@@ -5174,7 +5318,7 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
 // A Match of one, for development (ADR-0043). In v1 only rounds kill and none
 // hits its own shooter, so a lone player cannot die over the network: that its
 // death is a draw is checked through SimulationWorld
-// (example_objectives_test.cpp); here, that a lone player plays on, and that a
+// (example_rules_test.cpp); here, that a lone player plays on, and that a
 // draw reaches it as one.
 class SoloMatchTest : public LoopbackMatch {
  protected:
@@ -5204,10 +5348,10 @@ TEST_F(SoloLastStandingTest, ALonePlayerPlaysOnUnderTheExampleObjectives) {
 
 class SoloDrawTest : public SoloMatchTest {
  protected:
-  SoloDrawTest() : SoloMatchTest(Objectives("function on_tick() return {draw = true} end")) {}
+  SoloDrawTest() : SoloMatchTest(Rules("function on_tick() return {draw = true} end")) {}
 
-  static augusta::scripting::Engine Objectives(const char* objectives) {
-    auto policy = augusta::scripting::Engine::Load({.objectives = objectives, .behaviours = std::nullopt});
+  static augusta::scripting::Engine Rules(const char* rules) {
+    auto policy = augusta::scripting::Engine::Load(rules);
     EXPECT_TRUE(policy.has_value());
     return policy ? *std::move(policy) : augusta::scripting::Engine{};
   }
@@ -5267,10 +5411,10 @@ class AdversaryMatch : public LoopbackMatch {
   }
 
   // The adversary's message for one tick: commands, numbered on from the last
-  // it sent, sampled against view_tick, or else the newest update it has been told of.
+  // it sent, sampled against seen_tick, or else the newest update it has been told of.
   protocol::CommandsWire Numbered(const std::vector<protocol::CommandWire>& commands,
-                                  std::optional<Tick> view_tick = std::nullopt) {
-    protocol::CommandsWire message{.commands = {}, .view_tick = view_tick.value_or(AdversaryTold().tick)};
+                                  std::optional<Tick> seen_tick = std::nullopt) {
+    protocol::CommandsWire message{.commands = {}, .seen_tick = seen_tick.value_or(AdversaryTold().tick)};
     for (const protocol::CommandWire& command : commands) {
       message.commands.push_back({.sequence = ++sent_, .command = command});
     }
@@ -5327,7 +5471,7 @@ class AdversaryMatch : public LoopbackMatch {
     return ticks;
   }
 
-  RawClient adversary_{Endpoint{.address = LoopbackAddress()}};
+  RawClient adversary_{host_.ListenEndpoint()};
   EntityIdWire adversary_entity_{};
   // What each honest Session sends on every tick, in the order of sessions_.
   std::vector<Command> honest_commands_;
@@ -5613,8 +5757,8 @@ class CorrectedAimTest : public AdversaryMatch {
     parameters.ammo.damage = {.head = 50.0F, .torso = 20.0F, .limb = kLimbDamage};
     parameters.starting_health = kStartingHealth;
     HostSetup setup = OnTheFloor({Vec3(0.0F, kFloorY, 0.0F), Vec3(0.0F, kFloorY, -60.0F)}, parameters);
-    setup.map.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
-    setup.map.characters.front().hitboxes = HumanHitboxes();
+    setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    setup.scenario.characters.front().hitboxes = HumanHitboxes();
     return setup;
   }
 
@@ -5667,16 +5811,16 @@ class CorrectedAimTest : public AdversaryMatch {
   }
 
   // On the next tick the adversary taps fire, aimed from its eye at point and
-  // reporting the view of view_tick and fraction; the match then runs until
+  // reporting the Seen time of seen_tick and fraction; the match then runs until
   // its rifle is ready again.
-  void FireAt(const Vec3& point, Tick view_tick, float fraction) {
+  void FireAt(const Vec3& point, Tick seen_tick, float fraction) {
     const Tick told = AdversaryTold().tick;
     protocol::CommandWire command = Intent(kFire);
     const View view = ViewFrom(SeenOn(told, adversary_entity_) + Vec3(0.0F, kEyeHeight, 0.0F), point);
     command.yaw = view.yaw;
     command.pitch = view.pitch;
-    command.view_fraction = fraction;
-    Play(Numbered({command}, view_tick));
+    command.seen_fraction = fraction;
+    Play(Numbered({command}, seen_tick));
     // Fired on the tick it was aimed for.
     EXPECT_EQ(AdversaryTold().tick, told + 1);
     for (int i = 0; i < kRoundTicks; ++i) {
@@ -5701,9 +5845,9 @@ class CorrectedAimTest : public AdversaryMatch {
   }
 };
 
-// View too old: one older than the Shooter's delay's cap is judged at the cap,
-// as one reporting a view exactly that old is (ADR-0044).
-TEST_F(CorrectedAimTest, AViewOlderThanTheShootersDelaysCapIsJudgedAtTheCap) {
+// Seen time too old: one older than the Shooter's delay's cap is judged at the
+// cap, as one reporting a Seen time exactly that old is (ADR-0044).
+TEST_F(CorrectedAimTest, ASeenTimeOlderThanTheShootersDelaysCapIsJudgedAtTheCap) {
   Strafe();
 
   const Tick honest = NextTick();
@@ -5714,9 +5858,9 @@ TEST_F(CorrectedAimTest, AViewOlderThanTheShootersDelaysCapIsJudgedAtTheCap) {
   ExpectArmHits(2);
 }
 
-// View in the future: one newer than any update sent is judged at the newest
+// Seen time in the future: one newer than any update sent is judged at the newest
 // sent, the last tick's, as one reporting that update is.
-TEST_F(CorrectedAimTest, AViewNewerThanAnyUpdateSentIsJudgedAtTheNewestSent) {
+TEST_F(CorrectedAimTest, ASeenTimeNewerThanAnyUpdateSentIsJudgedAtTheNewestSent) {
   Strafe();
 
   const Tick honest = NextTick();
@@ -5727,16 +5871,16 @@ TEST_F(CorrectedAimTest, AViewNewerThanAnyUpdateSentIsJudgedAtTheNewestSent) {
   ExpectArmHits(2);
 }
 
-// View fraction: the wire carries a fraction from 0 to 255/256 (augusta/grid.h),
+// Seen time fraction: the wire carries a fraction from 0 to 255/256 (augusta/grid.h),
 // so one past 1 arrives as 255/256 and one below 0 as 0, and Lag compensation
 // holds what arrives within 0 to 1 besides.
-TEST_F(CorrectedAimTest, AViewFractionOutsideZeroToOneIsHeldWithinIt) {
+TEST_F(CorrectedAimTest, ASeenTimeFractionOutsideZeroToOneIsHeldWithinIt) {
   constexpr float kNearlyOne = 255.0F / 256.0F;
-  // A round reporting the view of 5 ticks before it, well within the Hitbox
+  // A round reporting the Seen time of 5 ticks before it, well within the Hitbox
   // history, at sent, aimed where the target was at judged of the way to the next update.
   const auto fire_with = [&](float judged, float sent) {
-    const Tick view = NextTick() - 5;
-    FireAt(augusta::math::Lerp(SeenOn(view, TargetWire()), SeenOn(view + 1, TargetWire()), judged) + kArm, view, sent);
+    const Tick seen = NextTick() - 5;
+    FireAt(augusta::math::Lerp(SeenOn(seen, TargetWire()), SeenOn(seen + 1, TargetWire()), judged) + kArm, seen, sent);
   };
   Strafe();
 
@@ -5759,7 +5903,7 @@ TEST_F(CorrectedAimTest, ADeadPlayersCommandsMoveTurnAndFireNothing) {
     const View view = ViewFrom(eye, head);
     TargetCommand().yaw = view.yaw;
     TargetCommand().pitch = view.pitch;
-    TargetCommand().view_tick = Target().GetAuthoritativeState()->tick;
+    TargetCommand().seen_tick = Target().GetAuthoritativeState()->tick;
     TargetCommand().fire = true;
     Play();
     TargetCommand().fire = false;
@@ -5819,7 +5963,7 @@ using CorrectedLobbyTest = ImpossibleLobbyOf<2>;
 
 TEST_F(CorrectedLobbyTest, CommandsFromAPlayerInTheLobbyAffectNothing) {
   Session& honest = Join();
-  RawClient adversary(Endpoint{.address = LoopbackAddress()}, RawClient::Mode::kScripted);
+  RawClient adversary(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(AskToJoin(adversary, HonestJoinRequest()));
   const auto current = RosterVersionOf(adversary, 2);
   ASSERT_TRUE(current.has_value());
@@ -5877,6 +6021,270 @@ TEST_F(CorrectedLobbyTest, CommandsFromAPlayerInTheLobbyAffectNothing) {
   Run(kSettleTicks);
   ASSERT_TRUE(adversary.ServeUntil(host_, [&] { return adversary.NewestState()->acknowledged_sequence == 1U; }));
   EXPECT_EQ(adversary.NewestState()->rifle.rounds, honest_told->rifle.rounds - 1);
+}
+
+// What the Host counts for the metrics endpoint (ADR-0049), read through the
+// Host alone, never over HTTP: each event where it happens, once, for both the
+// series and the heartbeat line.
+using augusta::server::HostMetrics;
+using augusta::server::Leaving;
+using augusta::server::MessageType;
+
+using HostCountsTest = MatchOf<2>;
+
+// Every command the Host discarded, for whatever reason.
+std::uint64_t Discarded(const HostMetrics& metrics) {
+  return metrics.commands_rejected.Total() + metrics.commands_overflowed.Value() +
+         metrics.commands_outside_match.Value() + metrics.commands_before_joining.Value();
+}
+
+TEST_F(HostCountsTest, EveryTickIsCountedWithHowItKeptToTheSchedule) {
+  host_.RecordTiming({.duration = std::chrono::milliseconds(3), .late = true});
+  host_.RecordTiming({.duration = std::chrono::milliseconds(30), .overrun = true, .resynchronised = true});
+
+  const HostMetrics& metrics = host_.Metrics();
+  EXPECT_EQ(metrics.ticks.Value(), 2U);
+  EXPECT_EQ(metrics.ticks_late.Value(), 1U);
+  EXPECT_EQ(metrics.tick_overruns.Value(), 1U);
+  EXPECT_EQ(metrics.tick_resyncs.Value(), 1U);
+  const auto durations = metrics.tick_duration.Read();
+  EXPECT_EQ(durations.cumulative_counts.back(), 2U);
+  EXPECT_NEAR(durations.sum, 0.033, 1e-9);
+  EXPECT_EQ(metrics.tick_rate_hz, kTestTickRate);
+}
+
+TEST_F(HostCountsTest, JoinsAreCountedByResultAndTheSessionsAndTheLobbyByWhoIsIn) {
+  Join();
+  Join();
+  const Session& third = Connect();
+  ASSERT_EQ(third.GetRefusal(), JoinRefusal::kLobbyFull);
+
+  const HostMetrics& metrics = host_.Metrics();
+  EXPECT_EQ(metrics.joins_admitted.Value(), 2U);
+  EXPECT_EQ(metrics.joins_refused[augusta::server::JoinRefusal::kLobbyFull].Value(), 1U);
+  EXPECT_EQ(metrics.joins_refused.Total(), 1U);
+  EXPECT_EQ(metrics.sessions.Value(), 2.0);
+  EXPECT_EQ(metrics.lobby_players.Value(), 2.0);
+  EXPECT_EQ(metrics.match_in_progress.Value(), 0.0);
+}
+
+TEST_F(HostCountsTest, AMatchIsCountedFromItsStartToItsEnd) {
+  Join();
+  Join();
+  ASSERT_TRUE(StartMatch());
+  Run(kSettleTicks);
+  const HostMetrics& metrics = host_.Metrics();
+  EXPECT_EQ(metrics.matches_started.Value(), 1U);
+  EXPECT_EQ(metrics.match_in_progress.Value(), 1.0);
+  EXPECT_EQ(metrics.match_players_alive.Value(), 2.0);
+  EXPECT_EQ(metrics.lobby_players.Value(), 0.0);
+  EXPECT_EQ(metrics.sessions.Value(), 2.0);
+
+  host_.EndMatch();
+
+  EXPECT_EQ(metrics.matches_ended_drawn.Value(), 1U);
+  EXPECT_EQ(metrics.matches_ended_with_winner.Value() + metrics.matches_ended_abandoned.Value(), 0U);
+  EXPECT_EQ(metrics.match_in_progress.Value(), 0.0);
+  EXPECT_EQ(metrics.lobby_players.Value(), 2.0);
+  const auto durations = metrics.match_duration.Read();
+  EXPECT_EQ(durations.cumulative_counts.back(), 1U);
+  EXPECT_GE(durations.sum, static_cast<double>(kSettleTicks) / kTestTickRate);
+}
+
+TEST_F(HostCountsTest, AMatchWhoseLastPlayerLeavesIsAbandonedAndEachDepartureIsCountedFromTheMatch) {
+  Join();
+  Join();
+  ASSERT_TRUE(StartMatch());
+  Run(kSettleTicks);
+
+  for (const auto& session : sessions_) {
+    session->Disconnect();
+  }
+  const HostMetrics& metrics = host_.Metrics();
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return metrics.sessions.Value() == 0.0; }));
+
+  EXPECT_EQ(metrics.disconnects_from_match[Leaving::kLeft].Value(), 2U);
+  EXPECT_EQ(metrics.disconnects_from_lobby.Total(), 0U);
+  EXPECT_EQ(metrics.matches_ended_abandoned.Value(), 1U);
+  EXPECT_EQ(metrics.match_in_progress.Value(), 0.0);
+}
+
+TEST_F(HostCountsTest, APlayerWhoLeavesTheLobbyIsCountedFromTheLobby) {
+  Join().Disconnect();
+  const HostMetrics& metrics = host_.Metrics();
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return metrics.sessions.Value() == 0.0; }));
+
+  EXPECT_EQ(metrics.disconnects_from_lobby[Leaving::kLeft].Value(), 1U);
+  EXPECT_EQ(metrics.disconnects_from_match.Total(), 0U);
+  EXPECT_EQ(metrics.lobby_players.Value(), 0.0);
+}
+
+TEST_F(HostCountsTest, EveryMessageIsCountedByTypeAndEveryUpdateByItsSize) {
+  Join();
+  Join();
+  ASSERT_TRUE(StartMatch());
+  Run(kSettleTicks, Forward());
+
+  const HostMetrics& metrics = host_.Metrics();
+  EXPECT_EQ(metrics.messages_received[MessageType::kJoinRequest].Value(), 2U);
+  EXPECT_GE(metrics.messages_received[MessageType::kReady].Value(), 2U);
+  EXPECT_GT(metrics.messages_received[MessageType::kCommands].Value(), 0U);
+  EXPECT_GT(metrics.commands_received.Value(), 0U);
+  EXPECT_EQ(metrics.messages_sent[MessageType::kJoinAccepted].Value(), 2U);
+  EXPECT_EQ(metrics.messages_sent[MessageType::kMatchStart].Value(), 2U);
+  const std::uint64_t updates = metrics.messages_sent[MessageType::kAuthoritativeState].Value();
+  EXPECT_GE(updates, 2U * kSettleTicks);
+  const auto sizes = metrics.authoritative_state_update_bytes.Read();
+  EXPECT_EQ(sizes.cumulative_counts.back(), updates);
+  EXPECT_GT(static_cast<double>(metrics.sent_bytes.Value()), sizes.sum);
+  EXPECT_GT(metrics.received_bytes.Value(), 0U);
+  EXPECT_EQ(augusta::server::Totals(metrics).messages, metrics.messages_received.Total());
+}
+
+TEST_F(HostCountsTest, AFloodOfMalformedMessagesIsCountedAsMisbehaviourAndItsDisconnectOnce) {
+  RawClient raw(host_.ListenEndpoint());
+  ASSERT_TRUE(raw.Join(host_));
+
+  for (std::size_t i = 0; i < kFlood; ++i) {
+    raw.SendPayload(kUndecodable);
+  }
+  ASSERT_TRUE(raw.ServeUntil(host_, [&] { return raw.GetConnectionState() == ConnectionState::kDisconnected; }));
+
+  const HostMetrics& metrics = host_.Metrics();
+  EXPECT_EQ(metrics.misbehaviour[augusta::server::PeerRejection::kUndecodable].Value(),
+            augusta::server::kMisbehaviourThreshold);
+  EXPECT_EQ(metrics.misbehaviour.Total(), augusta::server::kMisbehaviourThreshold);
+  EXPECT_EQ(metrics.disconnects_from_lobby[Leaving::kMisbehaving].Value(), 1U);
+  EXPECT_GE(metrics.received_bytes.Value(), augusta::server::kMisbehaviourThreshold * kUndecodable.size());
+  const augusta::server::Activity totals = augusta::server::Totals(metrics);
+  EXPECT_EQ(totals.dropped, augusta::server::kMisbehaviourThreshold);
+  EXPECT_EQ(totals.misbehaving, 1U);
+}
+
+TEST_F(HostCountsTest, CommandsOutsideAMatchAreDiscardedAsRoutineNotAsMisbehaviour) {
+  RawClient raw(host_.ListenEndpoint());
+  ASSERT_TRUE(raw.Join(host_));
+
+  raw.Send(protocol::CommandsWire{.commands = {{.sequence = 1}, {.sequence = 2}}});
+  const HostMetrics& metrics = host_.Metrics();
+  ASSERT_TRUE(raw.ServeUntil(host_, [&] { return metrics.commands_outside_match.Value() == 2U; }));
+
+  EXPECT_EQ(metrics.commands_received.Value(), 2U);
+  EXPECT_EQ(metrics.misbehaviour.Total(), 0U);
+  EXPECT_EQ(augusta::server::Totals(metrics).stale, 2U);
+}
+
+TEST_F(HostCountsTest, CommandsFromAPeerThatHasNotJoinedAreMisbehaviour) {
+  RawClient raw(host_.ListenEndpoint(), RawClient::Mode::kScripted);
+  ASSERT_TRUE(raw.Connect(host_));
+
+  raw.Send(protocol::CommandsWire{.commands = {{.sequence = 1}}});
+  const HostMetrics& metrics = host_.Metrics();
+  ASSERT_TRUE(raw.ServeUntil(host_, [&] { return metrics.misbehaviour.Total() == 1U; }));
+
+  EXPECT_EQ(metrics.misbehaviour[augusta::server::PeerRejection::kCommandsBeforeJoining].Value(), 1U);
+  EXPECT_EQ(metrics.joins_admitted.Value(), 0U);
+  EXPECT_EQ(metrics.commands_received.Value(), 1U);
+  EXPECT_EQ(metrics.commands_before_joining.Value(), 1U);
+  EXPECT_EQ(metrics.commands_outside_match.Value(), 0U);
+}
+
+TEST_F(HostCountsTest, APeerDisconnectedForNotBeingAdmittedInTimeIsCountedBeforeAdmission) {
+  RawClient raw(host_.ListenEndpoint(), RawClient::Mode::kScripted);
+  ASSERT_TRUE(raw.Connect(host_));
+
+  const auto past_the_deadline = std::chrono::steady_clock::now() + augusta::server::kAdmissionDeadline;
+  ASSERT_TRUE(raw.ServeUntil(
+      host_, [&] { return raw.GetConnectionState() == ConnectionState::kDisconnected; }, past_the_deadline));
+
+  const HostMetrics& metrics = host_.Metrics();
+  EXPECT_EQ(metrics.disconnects_before_admission[Leaving::kMisbehaving].Value(), 1U);
+  EXPECT_EQ(metrics.disconnects_from_lobby.Total() + metrics.disconnects_from_match.Total(), 0U);
+  EXPECT_EQ(augusta::server::Totals(metrics).misbehaving, 1U);
+}
+
+using SoloHostCountsTest = MatchOf<1>;
+
+TEST_F(SoloHostCountsTest, CommandsTheQueueTurnsAwayAreDiscardedByWhy) {
+  RawClient raw(host_.ListenEndpoint());
+  ASSERT_TRUE(raw.Join(host_));
+  ASSERT_TRUE(DriveIntoMatch(host_, {}, &raw));
+  protocol::SequencedCommandWire out_of_range{.sequence = 2};
+  out_of_range.command.pitch = 3.0F;
+
+  raw.Send(protocol::CommandsWire{.commands = {{.sequence = 1}, {.sequence = 1}, out_of_range}});
+  const HostMetrics& metrics = host_.Metrics();
+  ASSERT_TRUE(raw.ServeUntil(host_, [&] { return metrics.commands_rejected.Total() == 2U; }));
+
+  EXPECT_EQ(metrics.commands_received.Value(), 3U);
+  EXPECT_EQ(metrics.commands_rejected[augusta::server::Rejection::kStale].Value(), 1U);
+  EXPECT_EQ(metrics.commands_rejected[augusta::server::Rejection::kOutOfRange].Value(), 1U);
+  EXPECT_EQ(metrics.misbehaviour[augusta::server::PeerRejection::kOutOfRangeCommand].Value(), 1U);
+  EXPECT_EQ(metrics.misbehaviour.Total(), 1U);
+  EXPECT_EQ(metrics.commands_received.Value() - Discarded(metrics), 1U);
+}
+
+// Commands still in a message when its sender is disconnected for misbehaving
+// are never taken in, and never counted received: every command counted
+// received is either taken in or discarded.
+TEST_F(SoloHostCountsTest, CommandsLeftInTheMessageOfAPeerDisconnectedMidwayAreNeitherReceivedNorDiscarded) {
+  RawClient raw(host_.ListenEndpoint());
+  ASSERT_TRUE(raw.Join(host_));
+  ASSERT_TRUE(DriveIntoMatch(host_, {}, &raw));
+  augusta::command::Sequence sequence = 0;
+  const auto out_of_range = [&](std::size_t count) {
+    protocol::CommandsWire message;
+    for (std::size_t i = 0; i < count; ++i) {
+      protocol::SequencedCommandWire command{.sequence = ++sequence};
+      command.command.pitch = 3.0F;
+      message.commands.push_back(command);
+    }
+    return message;
+  };
+
+  // 7 and 7, then the 16th misbehaviour is the second command of 8.
+  raw.Send(out_of_range(7));
+  raw.Send(out_of_range(7));
+  raw.Send(out_of_range(protocol::kMaxCommandsPerMessage));
+  ASSERT_TRUE(raw.ServeUntil(host_, [&] { return raw.GetConnectionState() == ConnectionState::kDisconnected; }));
+
+  const HostMetrics& metrics = host_.Metrics();
+  EXPECT_EQ(metrics.misbehaviour.Total(), augusta::server::kMisbehaviourThreshold);
+  EXPECT_EQ(metrics.commands_received.Value(), augusta::server::kMisbehaviourThreshold);
+  EXPECT_EQ(Discarded(metrics), metrics.commands_received.Value());
+}
+
+// A command that reports no Seen time is judged at the Shooter's delay's cap.
+using FireCountsTest = FireMatchOf<1>;
+
+TEST_F(FireCountsTest, EveryRoundIsCountedWithItsShootersDelayAndARoundAtTheCapAsCapped) {
+  Step(Firing());
+  Run(kTicksPerRound);
+
+  const HostMetrics& metrics = host_.Metrics();
+  EXPECT_EQ(metrics.shots.Value(), 1U);
+  const auto delays = metrics.shooters_delay.Read();
+  EXPECT_EQ(delays.cumulative_counts.back(), 1U);
+  EXPECT_FLOAT_EQ(static_cast<float>(delays.sum),
+                  std::chrono::duration<float>(augusta::simulation::kMaxShootersDelay).count());
+  EXPECT_EQ(metrics.shooters_delay_capped.Value(), 1U);
+}
+
+using WinnerCountsTest = LastStandingMatchOf<2>;
+
+TEST_F(WinnerCountsTest, EveryHitIsCountedByBodyPartAndAMatchWithAWinnerAsWon) {
+  ShootAt(Standing(1), Vec3(0.0F, kTorsoHeight, 0.0F));
+  Kill(Standing(1));
+  ASSERT_EQ(match_ends_.size(), 1U);
+
+  const HostMetrics& metrics = host_.Metrics();
+  EXPECT_EQ(metrics.shots.Value(), shots_fired_.size());
+  EXPECT_EQ(metrics.hit_confirmations[BodyPart::kTorso].Value(), 1U);
+  EXPECT_EQ(metrics.hit_confirmations[BodyPart::kHead].Value(), 2U);
+  EXPECT_EQ(metrics.hit_confirmations.Total(), hits_.size());
+  EXPECT_EQ(metrics.shooters_delay.Read().cumulative_counts.back(), shots_fired_.size());
+  EXPECT_EQ(metrics.shooters_delay_capped.Value(), 0U);
+  EXPECT_EQ(metrics.matches_ended_with_winner.Value(), 1U);
 }
 
 }  // namespace

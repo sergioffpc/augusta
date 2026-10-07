@@ -7,12 +7,14 @@
 #include <initializer_list>
 #include <limits>
 #include <string>
+#include <utility>
 #include <variant>
 
 #include <gtest/gtest.h>
 
 #include "augusta/command.h"
 #include "augusta/grid.h"
+#include "augusta/math.h"
 #include "augusta/tick.h"
 
 // The codec is pure: every case here is bytes in, message or error out.
@@ -132,13 +134,13 @@ TEST(ProtocolTest, JoinRequestCarriesTheClientPackHash) {
 }
 
 TEST(ProtocolTest, JoinRequestCarriesTheChosenCharacter) {
-  const auto decoded = RoundTrip(JoinRequestWire{.engine_version = "0.1.0", .character = "characters/player"});
+  const auto decoded = RoundTrip(JoinRequestWire{.engine_version = "0.1.0", .character = "soldier"});
 
-  EXPECT_EQ(std::get<JoinRequestWire>(decoded).character, "characters/player");
+  EXPECT_EQ(std::get<JoinRequestWire>(decoded).character, "soldier");
 }
 
 TEST(ProtocolTest, JoinRequestWithTheLongestCharacterRoundTrips) {
-  const std::string longest(augusta::protocol::kMaxCharacterPathLength, 'c');
+  const std::string longest(augusta::protocol::kMaxCharacterNameLength, 'c');
 
   const auto decoded = RoundTrip(JoinRequestWire{.engine_version = "0.1.0", .character = longest});
 
@@ -147,8 +149,8 @@ TEST(ProtocolTest, JoinRequestWithTheLongestCharacterRoundTrips) {
 
 TEST(ProtocolTest, ACharacterLongerThanAllowedIsTooLong) {
   BytesWire payload = WithPackHash(BytesOf({kJoinRequestType, 0}), PackHashWire{});
-  payload.push_back(static_cast<std::byte>(augusta::protocol::kMaxCharacterPathLength + 1));
-  payload.resize(payload.size() + augusta::protocol::kMaxCharacterPathLength + 1, static_cast<std::byte>('c'));
+  payload.push_back(static_cast<std::byte>(augusta::protocol::kMaxCharacterNameLength + 1));
+  payload.resize(payload.size() + augusta::protocol::kMaxCharacterNameLength + 1, static_cast<std::byte>('c'));
 
   EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
 }
@@ -197,7 +199,7 @@ TEST(ProtocolTest, JoinAcceptedRoundTrips) {
                               .limb_damage = 25.0F},
                      .starting_health = 100.0F,
                      .player_count = 5},
-      .character = 3};
+      .character = "sniper"};
 
   const auto decoded = RoundTrip(sent);
 
@@ -212,15 +214,17 @@ TEST(ProtocolTest, JoinAcceptedRoundTrips) {
 // The Lobby, not Join accepted, says who else is there (ADR-0043).
 TEST(ProtocolTest, JoinAcceptedCarriesNoRosterAndNoSpawnPoint) {
   // type, session (4), tick rate (1), parameters (63: the player count, stamina 12,
-  // a rifle of 26 with no recoil kick, ammo 20, starting health 4), character (1).
+  // a rifle of 26 with no recoil kick, ammo 20, starting health 4), character (1:
+  // an empty one's length).
   EXPECT_EQ(Encode(JoinAcceptedWire{}).size(), 1 + 4 + 1 + 63 + 1);
 }
 
-TEST(ProtocolTest, CharacterIndexZeroInJoinAcceptedIsInvalid) {
-  BytesWire payload = Encode(JoinAcceptedWire{.character = 1});
-  payload.back() = std::byte{0};
+TEST(ProtocolTest, ACharacterInJoinAcceptedLongerThanTheLimitIsTooLong) {
+  BytesWire payload = Encode(JoinAcceptedWire{});
+  payload.back() = static_cast<std::byte>(augusta::protocol::kMaxCharacterNameLength + 1);
+  payload.resize(payload.size() + augusta::protocol::kMaxCharacterNameLength + 1, static_cast<std::byte>('c'));
 
-  EXPECT_EQ(Decode(payload).error(), DecodeError::kInvalidEnum);
+  EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
 }
 
 TEST(ProtocolTest, JoinRefusedRoundTripsEveryReason) {
@@ -241,15 +245,16 @@ TEST(ProtocolTest, ALobbyFullRefusalKeepsTheWireValueOfAFullMatch) {
 TEST(ProtocolTest, FieldsAreFixedWidthLittleEndian) {
   // The session, then tick rate (one byte of whole Hz), parameters and
   // character: all zero here but the player count, which leads the
-  // parameters, and the character.
+  // parameters, and the character, a one-byte length and its bytes.
   BytesWire accepted = BytesOf({kJoinAcceptedType, 0x01, 0x02, 0x03, 0x04});
   accepted.resize(accepted.size() + 1, std::byte{0});
   accepted.push_back(std::byte{0x03});
   accepted.resize(accepted.size() + 62, std::byte{0});
-  accepted.push_back(std::byte{0x02});
+  accepted.push_back(std::byte{1});
+  accepted.push_back(static_cast<std::byte>('d'));
   EXPECT_EQ(Encode(JoinAcceptedWire{.session = static_cast<SessionIdWire>(0x04030201U),
                                     .parameters = {.stamina = {}, .player_count = 3},
-                                    .character = 2}),
+                                    .character = "d"}),
             accepted);
   BytesWire request = WithPackHash(BytesOf({kJoinRequestType, 2, 'a', 'b'}), CountingPackHash());
   request.push_back(std::byte{1});
@@ -258,14 +263,16 @@ TEST(ProtocolTest, FieldsAreFixedWidthLittleEndian) {
             request);
   EXPECT_EQ(Encode(LobbyWire{
                 .version = 0x0A0B0C0DU,
-                .roster = {RosterEntryWire{.session = static_cast<SessionIdWire>(0x01020304U), .character = 5}}}),
-            BytesOf({kLobbyType, 0x0D, 0x0C, 0x0B, 0x0A, 1, 0x04, 0x03, 0x02, 0x01, 5}));
+                .roster = {RosterEntryWire{.session = static_cast<SessionIdWire>(0x01020304U), .character = "e"}}}),
+            BytesOf({kLobbyType, 0x0D, 0x0C, 0x0B, 0x0A, 1, 0x04, 0x03, 0x02, 0x01, 1, 'e'}));
 }
 
 TEST(ProtocolTest, LobbyRoundTrips) {
-  const LobbyWire sent{.version = 42,
-                       .roster = {RosterEntryWire{.session = static_cast<SessionIdWire>(7), .character = 1},
-                                  RosterEntryWire{.session = static_cast<SessionIdWire>(9), .character = 255}}};
+  const LobbyWire sent{
+      .version = 42,
+      .roster = {RosterEntryWire{.session = static_cast<SessionIdWire>(7), .character = "soldier"},
+                 RosterEntryWire{.session = static_cast<SessionIdWire>(9),
+                                 .character = std::string(augusta::protocol::kMaxCharacterNameLength, 'c')}}};
 
   const auto decoded = RoundTrip(sent);
 
@@ -293,21 +300,24 @@ TEST(ProtocolTest, MorePlayersInALobbyThanItHoldsIsTooLong) {
             DecodeError::kFieldTooLong);
 }
 
-TEST(ProtocolTest, CharacterIndexZeroInALobbyIsInvalid) {
-  // type, version, count, session, then the character.
-  EXPECT_EQ(Decode(BytesOf({kLobbyType, 1, 0, 0, 0, 1, 7, 0, 0, 0, 0})).error(), DecodeError::kInvalidEnum);
+TEST(ProtocolTest, ACharacterInALobbyLongerThanTheLimitIsTooLong) {
+  // type, version, count, session, then the character's length.
+  EXPECT_EQ(Decode(BytesOf({kLobbyType, 1, 0, 0, 0, 1, 7, 0, 0, 0,
+                            static_cast<std::uint8_t>(augusta::protocol::kMaxCharacterNameLength + 1)}))
+                .error(),
+            DecodeError::kFieldTooLong);
 }
 
 // A player whose body is entity 100 more than its session, so the two never pass for each other.
-MatchPlayerWire MatchPlayer(std::uint32_t session, std::uint8_t character, float x) {
+MatchPlayerWire MatchPlayer(std::uint32_t session, std::string character, float x) {
   return MatchPlayerWire{.spawn = Vec3(x, 0.5F, -8.0F),
                          .session = static_cast<SessionIdWire>(session),
                          .entity = static_cast<EntityIdWire>(session + 100),
-                         .character = character};
+                         .character = std::move(character)};
 }
 
 TEST(ProtocolTest, MatchStartRoundTripsWithEveryPlayersCharacterAndSpawnPoint) {
-  const MatchStartWire sent{.players = {MatchPlayer(3, 1, 4.0F), MatchPlayer(4, 2, -12.345F)}};
+  const MatchStartWire sent{.players = {MatchPlayer(3, "soldier", 4.0F), MatchPlayer(4, "sniper", -12.345F)}};
 
   const auto decoded = RoundTrip(sent);
 
@@ -324,7 +334,7 @@ TEST(ProtocolTest, MatchStartRoundTripsWithEveryPlayersCharacterAndSpawnPoint) {
 
 TEST(ProtocolTest, AMatchStartOfAFullMatchRoundTrips) {
   MatchStartWire sent;
-  sent.players.assign(kMaxPlayers, MatchPlayer(1, 1, 0.0F));
+  sent.players.assign(kMaxPlayers, MatchPlayer(1, "soldier", 0.0F));
 
   EXPECT_EQ(std::get<MatchStartWire>(RoundTrip(sent)).players.size(), kMaxPlayers);
 }
@@ -475,13 +485,13 @@ TEST(ProtocolTest, BytesAfterADeathAreTrailing) {
   EXPECT_EQ(Decode(death).error(), DecodeError::kTrailingBytes);
 }
 
-TEST(ProtocolTest, CharacterIndexZeroInAMatchStartIsInvalid) {
-  BytesWire payload = Encode(MatchStartWire{.players = {MatchPlayer(1, 1, 0.0F)}});
-  // type, count, session, entity, then the character.
+TEST(ProtocolTest, ACharacterInAMatchStartLongerThanTheLimitIsTooLong) {
+  BytesWire payload = Encode(MatchStartWire{.players = {MatchPlayer(1, "", 0.0F)}});
+  // type, count, session, entity, then the character's length.
   constexpr std::size_t kCharacterOffset = 1 + 1 + 4 + 4;
-  payload[kCharacterOffset] = std::byte{0};
+  payload[kCharacterOffset] = static_cast<std::byte>(augusta::protocol::kMaxCharacterNameLength + 1);
 
-  EXPECT_EQ(Decode(payload).error(), DecodeError::kInvalidEnum);
+  EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
 }
 
 TEST(ProtocolTest, AnEmptyPayloadIsEmpty) { EXPECT_EQ(Decode(BytesWire{}).error(), DecodeError::kEmpty); }
@@ -494,13 +504,13 @@ TEST(ProtocolTest, AnUnknownTypeIsRejected) {
 
 TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
   const std::array<MessageWire, 12> messages = {
-      JoinRequestWire{.engine_version = "0.1.0", .character = "characters/player"},
-      JoinAcceptedWire{.session = static_cast<SessionIdWire>(7), .character = 1},
+      JoinRequestWire{.engine_version = "0.1.0", .character = "soldier"},
+      JoinAcceptedWire{.session = static_cast<SessionIdWire>(7), .character = "soldier"},
       JoinRefusedWire{.reason = JoinRefusalWire::kMatchInProgress},
       CommandsWire{.commands = {SequencedCommandWire{.sequence = 1}, {.sequence = 2}}},
       AuthoritativeStateWire{.tick = 3, .bodies = {EntityStateWire{}, {}}, .queued_commands = 2},
-      LobbyWire{.version = 2, .roster = {RosterEntryWire{}, {}}},
-      MatchStartWire{.players = {MatchPlayer(1, 1, 0.0F), MatchPlayer(2, 2, 1.0F)}},
+      LobbyWire{.version = 2, .roster = {RosterEntryWire{.character = "a"}, {.character = "b"}}},
+      MatchStartWire{.players = {MatchPlayer(1, "soldier", 0.0F), MatchPlayer(2, "a", 1.0F)}},
       ReadyWire{.version = 0x01020304U},
       ShotWire{.tick = 9, .origin = Vec3(1.0F, 2.0F, 3.0F), .shooter = static_cast<EntityIdWire>(7)},
       HitConfirmationWire{.target = static_cast<EntityIdWire>(7), .damage = 20.0F, .part = BodyPartWire::kHead},
@@ -565,8 +575,8 @@ SequencedCommandWire BusyCommand(augusta::command::Sequence sequence) {
   sequenced.command.pitch = -1.25F;
   sequenced.command.flags = CommandWire::kSprint | CommandWire::kAds | CommandWire::kFire | CommandWire::kReload;
   sequenced.command.desired_stance = augusta::protocol::StanceWire::kProne;
-  sequenced.command.view_age = static_cast<std::uint8_t>(sequence);
-  sequenced.command.view_fraction = 0.3F;
+  sequenced.command.seen_age = static_cast<std::uint8_t>(sequence);
+  sequenced.command.seen_fraction = 0.3F;
   return sequenced;
 }
 
@@ -578,19 +588,19 @@ void ExpectSameCommand(const SequencedCommandWire& actual, const SequencedComman
   EXPECT_EQ(actual.command.pitch, SnapAngle(expected.command.pitch));
   EXPECT_EQ(actual.command.flags, expected.command.flags);
   EXPECT_EQ(actual.command.desired_stance, expected.command.desired_stance);
-  EXPECT_EQ(actual.command.view_age, expected.command.view_age);
-  EXPECT_EQ(actual.command.view_fraction, SnapFraction(expected.command.view_fraction));
+  EXPECT_EQ(actual.command.seen_age, expected.command.seen_age);
+  EXPECT_EQ(actual.command.seen_fraction, SnapFraction(expected.command.seen_fraction));
 }
 
 TEST(ProtocolTest, CommandsRoundTripWithEveryField) {
   const CommandsWire sent{.commands = {BusyCommand(41), BusyCommand(42), SequencedCommandWire{.sequence = 43}},
-                          .view_tick = 123456};
+                          .seen_tick = 123456};
 
   const auto decoded = RoundTrip(sent);
 
   ASSERT_TRUE(std::holds_alternative<CommandsWire>(decoded));
   const CommandsWire& received = std::get<CommandsWire>(decoded);
-  EXPECT_EQ(received.view_tick, sent.view_tick);
+  EXPECT_EQ(received.seen_tick, sent.seen_tick);
   ASSERT_EQ(received.commands.size(), sent.commands.size());
   for (std::size_t i = 0; i < sent.commands.size(); ++i) {
     ExpectSameCommand(received.commands[i], sent.commands[i]);
@@ -631,12 +641,12 @@ TEST(ProtocolTest, ANonFiniteNumberIsSentAsZeroOrItsNearestBound) {
 }
 
 // type, count, then per command: sequence (4), direction (6), yaw (3), pitch
-// (3), one byte for the flags and the stance, and one each for the view's age
-// and its fraction: a command is 15 bytes. Then the message's view tick (4).
+// (3), one byte for the flags and the stance, and one each for the Seen time's
+// age and its fraction: a command is 15 bytes. Then the message's Seen tick (4).
 constexpr std::size_t kCommandYawOffset = 2 + kSequenceBytes + 6;
 constexpr std::size_t kCommandFlagsOffset = kCommandYawOffset + 3 + 3;
-constexpr std::size_t kCommandViewOffset = kCommandFlagsOffset + 1;
-constexpr std::size_t kViewTickOffset = kCommandViewOffset + 2;
+constexpr std::size_t kCommandSeenOffset = kCommandFlagsOffset + 1;
+constexpr std::size_t kSeenTickOffset = kCommandSeenOffset + 2;
 
 // The angle grid's step, 2^-21 rad.
 constexpr float kAngleStep = 1.0F / 2097152.0F;
@@ -676,7 +686,7 @@ TEST(ProtocolTest, ACommandsFlagsAndStanceShareOneByte) {
 
   const BytesWire payload = Encode(CommandsWire{.commands = {sequenced}});
 
-  ASSERT_EQ(payload.size(), kViewTickOffset + kTickBytes);
+  ASSERT_EQ(payload.size(), kSeenTickOffset + kTickBytes);
   // The flags in the low four bits, the stance in the two above them.
   EXPECT_EQ(payload[kCommandFlagsOffset], std::byte{0b0010'1001});
 }
@@ -684,21 +694,21 @@ TEST(ProtocolTest, ACommandsFlagsAndStanceShareOneByte) {
 // What the shooter was shown (ADR-0044): the newest tick once for the whole
 // message, and each command's own as how far before it, with its fraction in
 // 256ths.
-TEST(ProtocolTest, ACommandsViewTravelsAsItsAgeAndItsFractionInAByteEachAndTheMessagesViewTickAtTheEnd) {
+TEST(ProtocolTest, ACommandsSeenTimeTravelsAsItsAgeAndItsFractionInAByteEachAndTheMessagesSeenTickAtTheEnd) {
   SequencedCommandWire sequenced{.sequence = 1};
-  sequenced.command.view_age = 3;
-  sequenced.command.view_fraction = 0.75F;
+  sequenced.command.seen_age = 3;
+  sequenced.command.seen_fraction = 0.75F;
 
-  const BytesWire payload = Encode(CommandsWire{.commands = {sequenced}, .view_tick = 0x0102030405060708U});
+  const BytesWire payload = Encode(CommandsWire{.commands = {sequenced}, .seen_tick = 0x0102030405060708U});
 
-  EXPECT_EQ(payload[kCommandViewOffset], std::byte{3});
-  EXPECT_EQ(payload[kCommandViewOffset + 1], std::byte{192});
-  const auto tick_offset = static_cast<std::ptrdiff_t>(kViewTickOffset);
+  EXPECT_EQ(payload[kCommandSeenOffset], std::byte{3});
+  EXPECT_EQ(payload[kCommandSeenOffset + 1], std::byte{192});
+  const auto tick_offset = static_cast<std::ptrdiff_t>(kSeenTickOffset);
   EXPECT_EQ(BytesWire(payload.begin() + tick_offset, payload.end()),
             BytesOf({0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01}));
 }
 
-TEST(ProtocolTest, AViewsFractionIsHeldBelowOneAndANaNIsZero) {
+TEST(ProtocolTest, ASeenTimesFractionIsHeldBelowOneAndANaNIsZero) {
   EXPECT_EQ(SnapFraction(0.5F), 0.5F);
   EXPECT_EQ(SnapFraction(1.0F), 255.0F / 256.0F);
   EXPECT_EQ(SnapFraction(7.0F), 255.0F / 256.0F);
@@ -781,7 +791,7 @@ TEST(ProtocolTest, ATickPastThirtyTwoBitsRoundTripsInEveryMessageThatCarriesOne)
   EXPECT_EQ(std::get<AuthoritativeStateWire>(RoundTrip(AuthoritativeStateWire{.tick = kTick, .bodies = {}})).tick,
             kTick);
   EXPECT_EQ(std::get<ShotWire>(RoundTrip(ShotWire{.tick = kTick})).tick, kTick);
-  EXPECT_EQ(std::get<CommandsWire>(RoundTrip(CommandsWire{.commands = {}, .view_tick = kTick})).view_tick, kTick);
+  EXPECT_EQ(std::get<CommandsWire>(RoundTrip(CommandsWire{.commands = {}, .seen_tick = kTick})).seen_tick, kTick);
 }
 
 // The recipient's rifle is what it replays its commands from, so its times

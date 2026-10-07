@@ -7,17 +7,18 @@
 #include <deque>
 #include <string_view>
 
-// The server's boundary for a peer that keeps sending what no honest client
-// sends: every rejection of what one peer sent is recorded here, and past a
-// threshold of misbehaviour within a sliding window the peer is to be
-// disconnected. Pure (no I/O, no clock of its own: the caller hands it the
-// time), so it is tested without a network. Routine rejections, which an
-// honest client causes under latency and loss, never count.
+/// \file
+/// The server's boundary for a peer that keeps sending what no honest client
+/// sends: every rejection of what one peer sent is recorded here, and past a
+/// threshold of misbehaviour within a sliding window the peer is to be
+/// disconnected. Pure (no I/O, no clock of its own: the caller hands it the
+/// time), so it is tested without a network. Routine rejections, which an
+/// honest client causes under latency and loss, never count.
 namespace augusta::server {
 
 /// Why the server turned away something a peer sent.
 enum class PeerRejection : std::uint8_t {
-  // Misbehaviour: no honest client sends these.
+  /// Misbehaviour: no honest client sends these.
   /// The bytes did not decode as a message.
   kUndecodable,
   /// A message only the server sends.
@@ -28,9 +29,9 @@ enum class PeerRejection : std::uint8_t {
   kOutOfRangeCommand,
   /// Commands from a peer that has not joined.
   kCommandsBeforeJoining,
-  // Routine: commands repeat until acknowledged, some are in flight when a
-  // Match ends, the Roster can change while a Ready is in flight, and a refused
-  // peer has done nothing wrong.
+  /// Routine: commands repeat until acknowledged, some are in flight when a
+  /// Match ends, the Roster can change while a Ready is in flight, and a refused
+  /// peer has done nothing wrong.
   /// A command whose sequence is not newer than the last taken in.
   kStaleCommand,
   /// Commands from a player not in a Match.
@@ -42,7 +43,22 @@ enum class PeerRejection : std::uint8_t {
 };
 
 /// Whether rejection counts toward a disconnect: false for the routine ones.
-[[nodiscard]] bool IsMisbehaviour(PeerRejection rejection);
+[[nodiscard]] constexpr bool IsMisbehaviour(PeerRejection rejection) {
+  switch (rejection) {
+    case PeerRejection::kUndecodable:
+    case PeerRejection::kNotAClientMessage:
+    case PeerRejection::kNonFiniteCommand:
+    case PeerRejection::kOutOfRangeCommand:
+    case PeerRejection::kCommandsBeforeJoining:
+      return true;
+    case PeerRejection::kStaleCommand:
+    case PeerRejection::kCommandsOutsideMatch:
+    case PeerRejection::kStaleReady:
+    case PeerRejection::kJoinRefused:
+      return false;
+  }
+  return false;
+}
 
 /// A short lowercase description of rejection, for logs.
 [[nodiscard]] std::string_view DescribePeerRejection(PeerRejection rejection);

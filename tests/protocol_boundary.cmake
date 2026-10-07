@@ -9,22 +9,24 @@
 # does not depend on the network session. ClientRuntime converts.
 #
 # Run by ctest as `cmake -DSOURCE_DIR=<repo root> -P protocol_boundary.cmake`.
-if (NOT DEFINED SOURCE_DIR)
+if(NOT DEFINED SOURCE_DIR)
   message(FATAL_ERROR "protocol_boundary.cmake: pass -DSOURCE_DIR=<repo root>")
 endif()
 
-file(GLOB headers
+file(
+  GLOB headers
   "${SOURCE_DIR}/src/modules/harness/include/augusta/*.h"
   "${SOURCE_DIR}/src/modules/replication/include/augusta/*.h"
   "${SOURCE_DIR}/src/modules/presentation/include/augusta/*.h"
   "${SOURCE_DIR}/src/server/*.h"
   "${SOURCE_DIR}/src/client/*.h"
 )
-list(REMOVE_ITEM headers
+list(
+  REMOVE_ITEM headers
   "${SOURCE_DIR}/src/modules/harness/include/augusta/harness_wire.h"
   "${SOURCE_DIR}/src/server/wire.h"
 )
-if (NOT headers)
+if(NOT headers)
   message(FATAL_ERROR "protocol_boundary.cmake: no headers found under ${SOURCE_DIR}")
 endif()
 
@@ -39,7 +41,7 @@ foreach(header ${headers})
 endforeach()
 
 file(GLOB presentation_headers "${SOURCE_DIR}/src/modules/presentation/include/augusta/*.h")
-if (NOT presentation_headers)
+if(NOT presentation_headers)
   message(FATAL_ERROR "protocol_boundary.cmake: no presentation headers found under ${SOURCE_DIR}")
 endif()
 
@@ -54,21 +56,27 @@ foreach(header ${presentation_headers})
 endforeach()
 
 set(report "")
-if (violations)
+if(violations)
   list(JOIN violations "\n" protocol_report)
-  string(APPEND report
-    "The protocol leaks past its edge (ADR-0038) - convert in harness_wire.h or server/wire.h instead:\n${protocol_report}\n")
+  string(
+    APPEND report
+    "The protocol leaks past its edge (ADR-0038) - convert in harness_wire.h or server/wire.h instead:\n${protocol_report}\n"
+  )
 endif()
-if (harness_violations)
+if(harness_violations)
   list(JOIN harness_violations "\n" harness_report)
-  string(APPEND report
-    "The harness leaks into presentation - convert to presentation's own types in ClientRuntime instead:\n${harness_report}\n")
+  string(
+    APPEND report
+    "The harness leaks into presentation - convert to presentation's own types in src/client/frame_mapping.h instead:\n${harness_report}\n"
+  )
 endif()
-if (report)
+if(report)
   string(STRIP "${report}" report)
   message(FATAL_ERROR "${report}")
 endif()
 list(LENGTH headers count)
 list(LENGTH presentation_headers presentation_count)
-message(STATUS
-  "protocol_boundary: ${count} headers free of protocol types, ${presentation_count} presentation headers free of harness types")
+message(
+  STATUS
+  "protocol_boundary: ${count} headers free of protocol types, ${presentation_count} presentation headers free of harness types"
+)

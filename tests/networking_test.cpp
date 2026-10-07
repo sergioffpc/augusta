@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <set>
@@ -11,8 +12,11 @@
 #include <vector>
 
 #ifdef _WIN32
-#include <process.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #else
+#include <netinet/in.h>
+#include <sys/socket.h>
 #include <unistd.h>
 #endif
 
@@ -35,6 +39,7 @@ using augusta::networking::Payload;
 using augusta::networking::PeerEventType;
 using augusta::networking::PeerId;
 using augusta::networking::PeerMessage;
+using augusta::networking::PeerStats;
 using augusta::networking::Reliability;
 using augusta::networking::Server;
 using augusta::networking::SimulateNetworkConditions;
@@ -45,18 +50,9 @@ constexpr auto kPollInterval = std::chrono::milliseconds(10);
 constexpr auto kPollDeadline = std::chrono::seconds(5);
 
 // ctest runs every test case in its own process, possibly in parallel, so a
-// fixed port would collide; derive one from the process id instead. The span is
-// prime because Windows process ids are all multiples of 4.
-std::string LoopbackAddress() {
-#ifdef _WIN32
-  const int pid = _getpid();
-#else
-  const int pid = getpid();
-#endif
-  constexpr int kFirstPort = 31000;
-  constexpr int kPortSpan = 2999;
-  return "127.0.0.1:" + std::to_string(kFirstPort + (pid % kPortSpan));
-}
+// fixed port would collide: each server binds port 0, a free one of its own
+// choosing, and its client connects to the one the server reports.
+constexpr const char* kLoopbackAnyPort = "127.0.0.1:0";
 
 Payload MakePayload(const std::string& text) {
   const auto* bytes = reinterpret_cast<const std::byte*>(text.data());
@@ -107,6 +103,68 @@ bool ReceiveAtLeastOne(PollBoth poll_both, ReceiveFn receive, std::vector<Messag
     return !received.empty();
   });
 }
+
+// IPv4 UDP sockets, as many as asked for, bound to the wildcard address each on
+// a port the OS picks, as a client's is; held until destroyed.
+class WildcardUdpSockets {
+ public:
+  explicit WildcardUdpSockets(std::size_t count) {
+#ifdef _WIN32
+    WSADATA wsa_data;
+    started_ = WSAStartup(MAKEWORD(2, 2), &wsa_data) == 0;
+#endif
+    for (std::size_t index = 0; index < count; ++index) {
+      const NativeSocket socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+      if (socket == kInvalidSocket) {
+        return;
+      }
+      sockets_.push_back(socket);
+      sockaddr_in addr{};
+      addr.sin_family = AF_INET;
+      addr.sin_addr.s_addr = htonl(INADDR_ANY);
+      socklen_t length = sizeof(addr);
+      if (::bind(socket, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) != 0 ||
+          ::getsockname(socket, reinterpret_cast<sockaddr*>(&addr), &length) != 0) {
+        return;
+      }
+      ports_.insert(ntohs(addr.sin_port));
+    }
+  }
+
+  ~WildcardUdpSockets() {
+    for (const NativeSocket socket : sockets_) {
+#ifdef _WIN32
+      closesocket(socket);
+#else
+      close(socket);
+#endif
+    }
+#ifdef _WIN32
+    if (started_) {
+      WSACleanup();
+    }
+#endif
+  }
+
+  WildcardUdpSockets(const WildcardUdpSockets&) = delete;
+  WildcardUdpSockets& operator=(const WildcardUdpSockets&) = delete;
+  WildcardUdpSockets(WildcardUdpSockets&&) = delete;
+  WildcardUdpSockets& operator=(WildcardUdpSockets&&) = delete;
+
+  [[nodiscard]] const std::set<std::uint16_t>& Ports() const { return ports_; }
+
+ private:
+#ifdef _WIN32
+  using NativeSocket = SOCKET;
+  static constexpr NativeSocket kInvalidSocket = INVALID_SOCKET;
+  bool started_ = false;
+#else
+  using NativeSocket = int;
+  static constexpr NativeSocket kInvalidSocket = -1;
+#endif
+  std::vector<NativeSocket> sockets_;
+  std::set<std::uint16_t> ports_;
+};
 
 struct RoundTripResult {
   std::string received_by_server;
@@ -165,10 +223,38 @@ class NetworkingEnvironment : public ::testing::Environment {
 
 class NetworkingTest : public ::testing::Test {};
 
+TEST_F(NetworkingTest, AServerBoundToPortZeroReportsThePortItGot) {
+  Server server(Endpoint{.address = kLoopbackAnyPort});
+
+  EXPECT_TRUE(server.LocalEndpoint().address.starts_with("127.0.0.1:"));
+  EXPECT_NE(server.LocalEndpoint().address, kLoopbackAnyPort);
+}
+
+// A client's socket is bound to the wildcard address on a port the OS picks,
+// and on Windows a later bind to 127.0.0.1 on that same port succeeds and takes
+// every packet sent to it: a server that took it would leave that client
+// unable to hear its own server, though still heard by it (#342). So a server
+// bound to port 0 must never land on a port a wildcard socket already holds -
+// held here by the hundreds, so a server picking ports of its own at random
+// would all but surely land on one of them.
+TEST_F(NetworkingTest, AServerBoundToPortZeroNeverTakesAPortAWildcardSocketHolds) {
+  constexpr std::size_t kHeldPorts = 512;
+  constexpr int kServers = 128;
+  const WildcardUdpSockets held(kHeldPorts);
+  ASSERT_EQ(held.Ports().size(), kHeldPorts);
+
+  for (int server_index = 0; server_index < kServers; ++server_index) {
+    const Server server(Endpoint{.address = kLoopbackAnyPort});
+    const std::string& address = server.LocalEndpoint().address;
+    const auto port = static_cast<std::uint16_t>(std::stoi(address.substr(address.rfind(':') + 1)));
+    ASSERT_FALSE(held.Ports().contains(port)) << address;
+  }
+}
+
 TEST_F(NetworkingTest, RoundTripsAMessageBothWays) {
-  Server server(Endpoint{.address = LoopbackAddress()});
+  Server server(Endpoint{.address = kLoopbackAnyPort});
   Client client;
-  client.Connect(Endpoint{.address = LoopbackAddress()});
+  client.Connect(server.LocalEndpoint());
 
   RoundTripResult result;
   ASSERT_TRUE(PerformRoundTrip(server, client, result));
@@ -182,9 +268,9 @@ TEST_F(NetworkingTest, RoundTripsAMessageBothWays) {
 class ConnectedNetworkingTest : public NetworkingTest {
  protected:
   void SetUp() override {
-    server_ = std::make_unique<Server>(Endpoint{.address = LoopbackAddress()});
+    server_ = std::make_unique<Server>(Endpoint{.address = kLoopbackAnyPort});
     client_ = std::make_unique<Client>();
-    client_->Connect(Endpoint{.address = LoopbackAddress()});
+    client_->Connect(server_->LocalEndpoint());
     ASSERT_TRUE(PollUntil([&] { PollBoth(); }, [&] { return client_->GetState() == ConnectionState::kConnected; }));
     ASSERT_TRUE(PollUntil([&] { PollBoth(); }, [&] { return peer_.has_value(); }));
   }
@@ -342,6 +428,79 @@ TEST_F(ConnectedNetworkingTest, InjectedLatencyDelaysDelivery) {
   EXPECT_LT(elapsed, std::chrono::milliseconds(kLatencyMs + 400));
 }
 
+TEST_F(ConnectedNetworkingTest, InjectedJitterDelaysSomeMessagesMoreThanOthers) {
+  constexpr int kJitterMeanMs = 50;
+  constexpr int kJitterMaxMs = 100;
+  SimulateNetworkConditions({.jitter_mean_ms = kJitterMeanMs, .jitter_max_ms = kJitterMaxMs});
+
+  // One message at a time, each timed on its own. Over loopback alone each
+  // takes about a poll; with the jitter about half take longer than 40 ms.
+  constexpr int kMessages = 20;
+  std::chrono::steady_clock::duration longest{};
+  for (int i = 0; i < kMessages; ++i) {
+    const auto start = std::chrono::steady_clock::now();
+    client_->Send(MakePayload("jittered"), Reliability::kUnreliable);
+    ASSERT_EQ(ReceiveOnServer(1).size(), 1U);
+    longest = std::max(longest, std::chrono::steady_clock::now() - start);
+  }
+
+  EXPECT_GE(longest, std::chrono::milliseconds(40));
+  // A loose upper bound so a busy CI machine does not flake it.
+  EXPECT_LT(longest, std::chrono::milliseconds(kJitterMaxMs + 400));
+}
+
+// For the conditions that change the order packets arrive in.
+class ReorderingNetworkingTest : public ConnectedNetworkingTest {
+ protected:
+  // What fills about a packet with one message (see UnreliableMessagesCanBeLostButNeverDuplicated).
+  static constexpr std::size_t kPaddingBytes = 1000;
+
+  // Sends kBurst numbered unreliable messages, each padded to fill about a
+  // packet by itself, and returns where each one that arrived stood among
+  // them, in arrival order.
+  std::vector<int> SendPaddedBurst() {
+    for (int i = 0; i < kBurst; ++i) {
+      client_->Send(MakePayload(std::to_string(i) + std::string(kPaddingBytes, '.')), Reliability::kUnreliable);
+    }
+    std::vector<int> positions;
+    for (const std::string& text : DrainServerFor(kDrainWindow)) {
+      positions.push_back(std::stoi(text));
+    }
+    return positions;
+  }
+};
+
+TEST_F(ReorderingNetworkingTest, InjectedJitterAloneKeepsMessagesInOrder) {
+  SimulateNetworkConditions({.jitter_mean_ms = 20, .jitter_max_ms = 60});
+
+  const std::vector<int> positions = SendPaddedBurst();
+
+  ASSERT_FALSE(positions.empty());
+  EXPECT_TRUE(std::ranges::is_sorted(positions));
+}
+
+TEST_F(ReorderingNetworkingTest, InjectedReorderingDeliversUnreliableMessagesOutOfOrder) {
+  SimulateNetworkConditions({.reorder_percent = 50.0F, .reorder_delay_ms = 50});
+
+  const std::vector<int> positions = SendPaddedBurst();
+
+  ASSERT_FALSE(positions.empty());
+  EXPECT_FALSE(std::ranges::is_sorted(positions));
+}
+
+TEST_F(ReorderingNetworkingTest, ReliableMessagesArriveOnceAndInOrderDespiteReordering) {
+  SimulateNetworkConditions({.reorder_percent = 50.0F, .reorder_delay_ms = 50});
+
+  // Padded to a packet each, as SendPaddedBurst's are, so packets are reordered under them.
+  std::vector<std::string> sent = NumberedMessages(kBurst);
+  for (std::string& text : sent) {
+    text += std::string(kPaddingBytes, '.');
+    client_->Send(MakePayload(text), Reliability::kReliable);
+  }
+
+  EXPECT_EQ(ReceiveOnServer(sent.size()), sent);
+}
+
 TEST_F(ConnectedNetworkingTest, AClientThatClosesItsConnectionIsReportedAsClosedByPeer) {
   client_->Disconnect();
 
@@ -350,13 +509,33 @@ TEST_F(ConnectedNetworkingTest, AClientThatClosesItsConnectionIsReportedAsClosed
   EXPECT_EQ(reason, DisconnectReason::kClosedByPeer);
 }
 
+TEST_F(ConnectedNetworkingTest, TheServerReportsTheStatsOfEachConnectedPeer) {
+  std::vector<PeerStats> stats;
+  ASSERT_TRUE(PollUntil([&] { PollBoth(); },
+                        [&] {
+                          stats = server_->GetStats();
+                          return !stats.empty();
+                        }));
+
+  ASSERT_EQ(stats.size(), 1U);
+  EXPECT_EQ(stats.front().peer, *peer_);
+  EXPECT_GE(stats.front().stats.ping_ms, 0);
+}
+
+TEST_F(ConnectedNetworkingTest, TheServerReportsNoStatsForAPeerThatLeft) {
+  client_->Disconnect();
+  ASSERT_TRUE(WaitForServerToLosePeer().has_value());
+
+  EXPECT_TRUE(server_->GetStats().empty());
+}
+
 TEST_F(NetworkingTest, APeerThatGoesSilentIsReportedAsALostConnectionOnceTheTimeoutPasses) {
   constexpr int kTimeoutMs = 500;
   // Set before the connection exists: the timeout only reaches new connections.
   SimulateNetworkConditions({.timeout_ms = kTimeoutMs});
-  Server server(Endpoint{.address = LoopbackAddress()});
+  Server server(Endpoint{.address = kLoopbackAnyPort});
   Client client;
-  client.Connect(Endpoint{.address = LoopbackAddress()});
+  client.Connect(server.LocalEndpoint());
   std::optional<PeerId> peer;
   const auto poll_both = [&] {
     client.PumpEvents();
@@ -395,9 +574,9 @@ TEST_F(NetworkingTest, APeerThatGoesSilentIsReportedAsALostConnectionOnceTheTime
 TEST_F(NetworkingTest, TheDefaultTimeoutIsBackOnceTheConditionsAreReset) {
   SimulateNetworkConditions({.timeout_ms = 200});
   SimulateNetworkConditions({});
-  Server server(Endpoint{.address = LoopbackAddress()});
+  Server server(Endpoint{.address = kLoopbackAnyPort});
   Client client;
-  client.Connect(Endpoint{.address = LoopbackAddress()});
+  client.Connect(server.LocalEndpoint());
   std::optional<PeerId> peer;
   const auto poll_both = [&] {
     client.PumpEvents();

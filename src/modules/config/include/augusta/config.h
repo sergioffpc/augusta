@@ -4,27 +4,31 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <functional>
+#include <map>
+#include <span>
 #include <string>
 #include <string_view>
 
 #include "augusta/input.h"
 
-// augusta::config reads the client's and the server's startup settings from a
-// YAML file (ADR-0034) instead of a list of command-line arguments. By default
-// each executable reads one fixed-name file from its own directory;
-// `--config <file>` points it at another, and `--help` and `--version` are the
-// only other arguments. Shared by both (ADR-0006).
-//
-// The file groups its keys into sections (`content`, `network`, `logging`,
-// ...), each a mapping; a key is named by its dotted path
-// (`network.server_address`), and that path is what an error's subject names.
-// Values are strings; an unknown key or section, a missing required key, a
-// non-string value or a section that is not a mapping is an error, so a typo
-// never silently falls back to a default. Relative paths in the file start
-// from the required top-level key `base_dir`, never the working directory, so
-// the executable starts the same from anywhere; a relative `base_dir` is itself
-// relative to the file's own directory (`base_dir: .` means the file's
-// directory).
+/// \file
+/// augusta::config reads the client's and the server's startup settings from a
+/// YAML file (ADR-0034) instead of a list of command-line arguments. By default
+/// each executable reads one fixed-name file from its own directory;
+/// `--config <file>` points it at another, and `--help` and `--version` are the
+/// only other arguments. Shared by both (ADR-0006).
+///
+/// The file groups its keys into sections (`content`, `network`, `logging`,
+/// ...), each a mapping; a key is named by its dotted path
+/// (`network.server_address`), and that path is what an error's subject names.
+/// Values are strings; an unknown key or section, a missing required key, a
+/// non-string value or a section that is not a mapping is an error, so a typo
+/// never silently falls back to a default. Relative paths in the file start
+/// from the required top-level key `base_dir`, never the working directory, so
+/// the executable starts the same from anywhere; a relative `base_dir` is itself
+/// relative to the file's own directory (`base_dir: .` means the file's
+/// directory).
 namespace augusta::config {
 
 /// The client's default config file, looked up next to augustac.
@@ -36,6 +40,8 @@ inline constexpr std::string_view kServerConfigFileName = "augustad.yaml";
 inline constexpr std::string_view kDefaultServerAddress = "127.0.0.1:27015";
 /// Default address the server listens on.
 inline constexpr std::string_view kDefaultListenAddress = "0.0.0.0:27015";
+/// Default TCP port the server's metrics endpoint listens on (ADR-0049).
+inline constexpr std::uint16_t kDefaultMetricsPort = 9464;
 /// Default runtime floor for the console sink (ADR-0029, ADR-0036): a Debug
 /// build's DEBUG heartbeat, not its per-packet TRACE.
 inline constexpr std::string_view kDefaultLogLevel = "debug";
@@ -47,8 +53,8 @@ struct ClientConfig {
   std::filesystem::path pack_path;
   /// Key `content.public_key` (required): the Ed25519 public key the pack is signed with.
   std::filesystem::path public_key_path;
-  /// Key `player.character` (required): the character to play, by its path
-  /// relative to `authoring/` (e.g. "characters/player"). The server admits
+  /// Key `player.character` (required): the character to play, by its name
+  /// in the scenario's manifest (e.g. "soldier"). The server admits
   /// only one of its scenario's (ADR-0042).
   std::string character;
   /// Key `network.server_address`: the server to connect to.
@@ -84,6 +90,13 @@ struct ServerConfig {
   /// Only lowers what the build already compiles in (AUGUSTA_LOG_ACTIVE_LEVEL);
   /// a Release build has no TRACE/DEBUG to raise it back to.
   std::string log_level{kDefaultLogLevel};
+  /// Key `simulation.recording`: where to write a recording of every tick
+  /// SimulationWorld runs, replacing any file there, for augusta-replay
+  /// (ADR-0048). Empty, the default, records nothing.
+  std::filesystem::path recording_path;
+  /// Key `metrics.port`: the TCP port, 1..65535, the metrics endpoint serves
+  /// /metrics and /livez on, on every interface (ADR-0049).
+  std::uint16_t metrics_port = kDefaultMetricsPort;
 };
 
 /// Why reading the command line or a config file failed.
@@ -121,10 +134,10 @@ enum class ConfigErrorCode {
   /// subject is the section.
   kNotASection,
   /// An `input.keys` entry names no control input::ControlNamed knows; subject
-  /// is the entry (`input.keys.<name>`).
+  /// is the entry, e.g. `input.keys.jump`.
   kUnknownControl,
   /// An `input.keys` entry names no key input::KeyNamed knows; subject is the
-  /// entry (`input.keys.<control>`).
+  /// entry, e.g. `input.keys.sprint`.
   kInvalidKeyName,
   /// An `input.keys` entry binds a key another control already has; subject is the entry.
   kKeyBoundTwice,
@@ -166,6 +179,54 @@ std::expected<ClientConfig, ConfigError> LoadClientConfig(const std::filesystem:
 /// Reads and parses the server config at file; its `base_dir` is relative to
 /// file's directory. Errors carry file.
 std::expected<ServerConfig, ConfigError> LoadServerConfig(const std::filesystem::path& file);
+
+// The schema mechanism the functions above read their own files with, for an
+// executable outside the runtime that keeps a config file of its own under the
+// same rules (ADR-0034): its keys and their meaning stay with it.
+
+/// A config file's scalars, under their dotted paths ("network.server_address").
+using ConfigValues = std::map<std::string, std::string, std::less<>>;
+
+/// What a config file may hold, as dotted paths: its scalar keys, and its open
+/// sections - sections whose entries the caller checks by name itself (the
+/// client's "input.keys", whose entries are control names).
+struct ConfigSchema {
+  std::span<const std::string_view> keys;
+  std::span<const std::string_view> open_sections;
+};
+
+/// Reads yaml_text as a mapping, its sections flattened into dotted paths:
+/// every scalar must be a key or open-section entry of schema and every
+/// mapping one of its sections. Which keys are required is the caller's.
+std::expected<ConfigValues, ConfigError> ReadConfigValues(std::string_view yaml_text, const ConfigSchema& schema);
+
+/// The text of file; kCannotOpenFile, with file set, if it can't be read.
+std::expected<std::string, ConfigError> ReadConfigFile(const std::filesystem::path& file);
+
+/// key's value: kMissingKey if values lacks it, kEmptyValue if it is empty.
+std::expected<std::string, ConfigError> RequireString(const ConfigValues& values, std::string_view key);
+
+/// key's value as a path, read as UTF-8: as it is if absolute, else under base_dir.
+std::expected<std::filesystem::path, ConfigError> RequirePath(const ConfigValues& values, std::string_view key,
+                                                              const std::filesystem::path& base_dir);
+
+/// key's value as a finite number above zero, in plain decimal or exponent
+/// notation; kInvalidNumber otherwise.
+std::expected<float, ConfigError> RequirePositiveNumber(const ConfigValues& values, std::string_view key);
+
+/// key's value as a whole number from min to max, in plain decimal;
+/// kInvalidNumber otherwise. DescribeConfigError knows only the runtime's own
+/// ranges, so a caller with others words that error itself.
+std::expected<std::uint32_t, ConfigError> RequireWholeNumber(const ConfigValues& values, std::string_view key,
+                                                             std::uint32_t min, std::uint32_t max);
+
+/// key's value, or fallback if values lacks it.
+std::string OptionalString(const ConfigValues& values, std::string_view key, std::string_view fallback);
+
+/// key's value, or fallback if values lacks it; kInvalidLogLevel if it is not
+/// one augusta::logging::ParseSeverity accepts.
+std::expected<std::string, ConfigError> OptionalLogLevel(const ConfigValues& values, std::string_view key,
+                                                         std::string_view fallback);
 
 /// What the command line asks the executable to do.
 enum class CommandLineAction : std::uint8_t {

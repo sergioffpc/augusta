@@ -8,7 +8,6 @@
 #include <set>
 #include <string>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -22,6 +21,7 @@
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
+#include "augusta/policy_actions.h"
 #include "augusta/prediction.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
@@ -350,9 +350,9 @@ rc::Gen<std::string> MatchEndAnswer() {
                                                })}});
 }
 
-// An objectives script whose on_tick answers what answers holds for each tick,
+// A rules script whose on_tick answers what answers holds for each tick,
 // counted from 1, and nil past them.
-std::string AnsweringObjectives(const std::vector<std::string>& answers) {
+std::string AnsweringRules(const std::vector<std::string>& answers) {
   std::string script = "local answers = {";
   for (const std::string& answer : answers) {
     script += answer == "nil" ? "false, " : answer + ", ";
@@ -360,7 +360,7 @@ std::string AnsweringObjectives(const std::vector<std::string>& answers) {
   return script + "}\nfunction on_tick(match) return answers[match.tick] or nil end\n";
 }
 
-// The same two players, in two Matches one after the other, under objectives
+// The same two players, in two Matches one after the other, under rules
 // that answer anything at all on any tick: whatever policy answers, at most one
 // Match end takes effect per Match, and a winner is a player alive in it on the
 // tick it is declared.
@@ -384,7 +384,7 @@ RC_GTEST_PROP(SimulationPropertyTest, AtMostOneMatchEndPerMatchAndAWinnerIsAlway
   const std::vector<std::string> answers =
       *rc::gen::container<std::vector<std::string>>(commands.size(), MatchEndAnswer());
   const std::size_t second_match = *rc::gen::inRange<std::size_t>(1, commands.size());
-  auto policy = augusta::scripting::Engine::Load({.objectives = AnsweringObjectives(answers), .behaviours = {}});
+  auto policy = augusta::scripting::Engine::Load(AnsweringRules(answers));
   RC_ASSERT(policy.has_value());
 
   augusta::simulation::World world(parameters, kTickRate, *std::move(policy));
@@ -396,8 +396,9 @@ RC_GTEST_PROP(SimulationPropertyTest, AtMostOneMatchEndPerMatchAndAWinnerIsAlway
     if (i == 0 || i == second_match) {
       world.EndMatch();
       match_ends = 0;
-      world.AddPlayer(kPlayer, kSpawn, WideTarget(), {.session = sessions.at(kPlayer), .character = 1});
-      world.AddPlayer(kOther, Vec3(0.0F, 0.0F, -6.0F), WideTarget(), {.session = sessions.at(kOther), .character = 1});
+      world.AddPlayer(kPlayer, kSpawn, WideTarget(), {.session = sessions.at(kPlayer), .character = "soldier"});
+      world.AddPlayer(kOther, Vec3(0.0F, 0.0F, -6.0F), WideTarget(),
+                      {.session = sessions.at(kOther), .character = "soldier"});
     }
     const auto result = world.Tick(
         {{.entity = kPlayer, .command = commands[i]}, {.entity = kOther, .command = other_commands[i]}}, kTick);

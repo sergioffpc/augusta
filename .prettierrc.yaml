@@ -1,0 +1,12 @@
+# Prettier formats the Markdown (*.md) and nothing else: the other languages
+# have formatters of their own. The rules are the Google Markdown style guide's
+# (https://google.github.io/styleguide/docguide/style.html).
+# Paragraphs are rewrapped at 80 columns; Prettier leaves the guide's
+# exceptions (headings, tables, code blocks, a long URL) unwrapped.
+proseWrap: always
+printWidth: 80
+# A nested list or a block inside a list item is indented 4 spaces, as the
+# guide asks and MkDocs (Python-Markdown) needs to see it as nested.
+tabWidth: 4
+# Code blocks are left exactly as written, whatever their language.
+embeddedLanguageFormatting: "off"

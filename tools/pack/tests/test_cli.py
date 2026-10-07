@@ -1,10 +1,14 @@
-"""augusta-pack end to end on the example scenario: usd-optimize, validation and
-the cook, into a signed client/server pack pair.
+"""augusta-pack end to end on the example scenario.
+
+Runs usd-optimize, validation and the cook into a signed client/server pack
+pair.
 """
 
-from conftest import EXAMPLES_ROOT, read_pack_contents
-
-from pack import cli, keys, pack
+from conftest import EXAMPLES_ROOT
+from conftest import read_pack_contents
+from pack import cli
+from pack import keys
+from pack import pack
 
 
 def test_the_example_scenario_cooks_into_a_signed_pack_pair(tmp_path):
@@ -14,7 +18,7 @@ def test_the_example_scenario_cooks_into_a_signed_pack_pair(tmp_path):
 
     status = cli.main(
         [
-            "augusta",
+            "firebase",
             "--assets-root",
             str(EXAMPLES_ROOT),
             "--signing-key",
@@ -30,19 +34,42 @@ def test_the_example_scenario_cooks_into_a_signed_pack_pair(tmp_path):
     public_key = keys.read_public_key(pub_path)
     client = read_pack_contents(client_path, public_key)
     server = read_pack_contents(server_path, public_key)
-    assert client.paths_of_type(pack.ASSET_TYPE_EYE) == {"characters/player/Character/Eye"}
-    assert server.paths_of_type(pack.ASSET_TYPE_EYE) == {"characters/player/Character/Eye"}
+    assert client.paths_of_type(pack.ASSET_TYPE_EYE) == {
+        "soldier/Character/Eye"
+    }
+    assert server.paths_of_type(pack.ASSET_TYPE_EYE) == {
+        "soldier/Character/Eye"
+    }
     hitboxes = {
-        f"characters/player/Character/{name}Hitbox"
-        for name in ("Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg")
+        f"soldier/Character/{name}Hitbox"
+        for name in (
+            "Head",
+            "Torso",
+            "LeftArm",
+            "RightArm",
+            "LeftLeg",
+            "RightLeg",
+        )
     }
     assert client.paths_of_type(pack.ASSET_TYPE_HITBOX) == hitboxes
     assert server.paths_of_type(pack.ASSET_TYPE_HITBOX) == hitboxes
-    assert server.blob(pack.CLIENT_PACK_PATH) == client.hash
-    assert "parameters.lua" in server.paths_of_type(pack.ASSET_TYPE_SCRIPT)
+    assert server.client_pack_hash == client.hash
+    assert server.paths_of_type(pack.ASSET_TYPE_SCRIPT) == {
+        "parameters.lua",
+        "rules.lua",
+    }
     assert client.paths_of_type(pack.ASSET_TYPE_SCRIPT) == set()
-    cues = ("gunshot", "hit_marker", "hit_taken", "death", "match_won", "match_lost")
-    assert client.paths_of_type(pack.ASSET_TYPE_AUDIO) == {f"sounds/augusta/{cue}" for cue in cues}
+    cues = (
+        "gunshot",
+        "hit_marker",
+        "hit_taken",
+        "death",
+        "match_won",
+        "match_lost",
+    )
+    assert client.paths_of_type(pack.ASSET_TYPE_AUDIO) == {
+        f"sounds/{cue}" for cue in cues
+    }
     assert server.paths_of_type(pack.ASSET_TYPE_AUDIO) == set()
 
 

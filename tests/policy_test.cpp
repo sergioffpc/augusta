@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -7,6 +6,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -20,6 +20,7 @@
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
+#include "augusta/policy_actions.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/weapon.h"
@@ -35,7 +36,6 @@ using augusta::command::Command;
 using augusta::math::Vec3;
 using augusta::parameters::Parameters;
 using augusta::scripting::Engine;
-using augusta::scripting::Scripts;
 using augusta::simulation::Character;
 using augusta::simulation::EntityId;
 using augusta::simulation::MatchEnd;
@@ -73,17 +73,18 @@ std::vector<PlayerCommand> Walking() {
   return {PlayerCommand{.entity = kAlice, .command = command}};
 }
 
-// The engine loaded with objectives as the scenario's objectives.lua.
-Engine WithObjectives(std::string objectives) {
-  auto engine = Engine::Load(Scripts{.objectives = std::move(objectives), .behaviours = std::nullopt});
+// The engine loaded with rules as the scenario's rules.lua.
+Engine WithRules(std::string_view rules) {
+  auto engine = Engine::Load(rules);
   EXPECT_TRUE(engine.has_value()) << augusta::scripting::DescribeLoadError(engine.error());
   return engine ? *std::move(engine) : Engine{};
 }
 
-// A world with policy and Alice in it, playing the second character.
+// A world with policy and Alice in it, playing the sniper.
 World WithAlice(Engine policy, const Parameters& parameters = Parameters{}) {
   World world(parameters, kTickRate, std::move(policy));
-  world.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter, PlayerIdentity{.session = kAliceSession, .character = 2});
+  world.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter,
+                  PlayerIdentity{.session = kAliceSession, .character = "sniper"});
   return world;
 }
 
@@ -122,8 +123,8 @@ class PolicyTest : public ::testing::Test {
   }
 };
 
-TEST_F(PolicyTest, AHookTheObjectivesDefineIsCalledEveryTickWithTheTick) {
-  World world = WithAlice(WithObjectives(R"(
+TEST_F(PolicyTest, AHookTheRulesDefineIsCalledEveryTickWithTheTick) {
+  World world = WithAlice(WithRules(R"(
     local calls = 0
     function on_tick(match)
       calls = calls + 1
@@ -136,76 +137,75 @@ TEST_F(PolicyTest, AHookTheObjectivesDefineIsCalledEveryTickWithTheTick) {
   const std::string log = LogOfTicks(world, 5);
 
   EXPECT_NE(log.find("called 5 times by tick 5"), std::string::npos) << log;
-  EXPECT_NE(log.find("script=objectives.lua hook=on_tick"), std::string::npos) << log;
+  EXPECT_NE(log.find("script=rules.lua hook=on_tick"), std::string::npos) << log;
 }
 
-TEST_F(PolicyTest, AHookTheObjectivesDoNotDefineIsANoOp) {
-  for (const char* objectives : {"", "local unused = 1", "function some_other_hook() error('not me') end"}) {
-    World world = WithAlice(WithObjectives(objectives));
+TEST_F(PolicyTest, AHookTheRulesDoNotDefineIsANoOp) {
+  for (const char* rules : {"", "local unused = 1", "function some_other_hook() error('not me') end"}) {
+    World world = WithAlice(WithRules(rules));
 
     const std::string log = LogOfTicks(world, 3);
 
-    EXPECT_EQ(log, "") << objectives;
-    EXPECT_EQ(WalkedTo(WithObjectives(objectives), 10), WalkedTo(Engine{}, 10)) << objectives;
+    EXPECT_EQ(log, "") << rules;
+    EXPECT_EQ(WalkedTo(WithRules(rules), 10), WalkedTo(Engine{}, 10)) << rules;
   }
 }
 
 // A hook that fails, and what the log says of it.
 struct FailingHook {
-  const char* objectives;
+  const char* rules;
   const char* logged;
 };
 
 TEST_F(PolicyTest, AFailingHookIsLoggedDecidesNothingAndTheTickGoesOn) {
   for (const FailingHook& hook : {
-           FailingHook{.objectives = "function on_tick() error('boom') end", .logged = "boom"},
-           FailingHook{.objectives = "function on_tick() while true do end end", .logged = "instruction limit"},
-           FailingHook{.objectives = "function on_tick(match) match.tick = 0 end", .logged = "read-only"},
-           FailingHook{.objectives = "function on_tick() return function() end end", .logged = "not plain data"},
-           FailingHook{.objectives = "function on_tick() return 1, 2 end", .logged = "more than one value"},
-           FailingHook{.objectives = "function on_tick() local t = {} t[1] = t return t end",
-                       .logged = "not plain data"},
-           FailingHook{.objectives = "function on_tick() return {1, x = 2} end", .logged = "not plain data"},
-           FailingHook{.objectives = "on_tick = 5", .logged = "not a function"},
-           FailingHook{.objectives = "function on_tick() return {winner = 1} end",
+           FailingHook{.rules = "function on_tick() error('boom') end", .logged = "boom"},
+           FailingHook{.rules = "function on_tick() while true do end end", .logged = "instruction limit"},
+           FailingHook{.rules = "function on_tick(match) match.tick = 0 end", .logged = "read-only"},
+           FailingHook{.rules = "function on_tick() return function() end end", .logged = "not plain data"},
+           FailingHook{.rules = "function on_tick() return 1, 2 end", .logged = "more than one value"},
+           FailingHook{.rules = "function on_tick() local t = {} t[1] = t return t end", .logged = "not plain data"},
+           FailingHook{.rules = "function on_tick() return {1, x = 2} end", .logged = "not plain data"},
+           FailingHook{.rules = "on_tick = 5", .logged = "not a function"},
+           FailingHook{.rules = "function on_tick() return {winner = 1} end",
                        .logged = "not a player alive in the Match"},
-           FailingHook{.objectives = "function on_tick() return {winner = 11.5} end",
+           FailingHook{.rules = "function on_tick() return {winner = 11.5} end",
                        .logged = "not a player alive in the Match"},
-           FailingHook{.objectives = "function on_tick() return {winner = '11'} end",
+           FailingHook{.rules = "function on_tick() return {winner = '11'} end",
                        .logged = "neither {winner = <Session ID>} nor {draw = true}"},
-           FailingHook{.objectives = "function on_tick() return {draw = false} end",
+           FailingHook{.rules = "function on_tick() return {draw = false} end",
                        .logged = "neither {winner = <Session ID>} nor {draw = true}"},
-           FailingHook{.objectives = "function on_tick() return {winner = 11, draw = true} end",
+           FailingHook{.rules = "function on_tick() return {winner = 11, draw = true} end",
                        .logged = "neither {winner = <Session ID>} nor {draw = true}"},
-           FailingHook{.objectives = "function on_tick() return {winner = 11, by = 'me'} end",
+           FailingHook{.rules = "function on_tick() return {winner = 11, by = 'me'} end",
                        .logged = "neither {winner = <Session ID>} nor {draw = true}"},
-           FailingHook{.objectives = "function on_tick() return {} end",
+           FailingHook{.rules = "function on_tick() return {} end",
                        .logged = "neither {winner = <Session ID>} nor {draw = true}"},
-           FailingHook{.objectives = "function on_tick() return true end",
+           FailingHook{.rules = "function on_tick() return true end",
                        .logged = "neither {winner = <Session ID>} nor {draw = true}"},
        }) {
-    World world = WithAlice(WithObjectives(hook.objectives));
+    World world = WithAlice(WithRules(hook.rules));
 
     testing::internal::CaptureStdout();
     const TickResult first = world.Tick(Walking(), kTick);
     const std::string log = testing::internal::GetCapturedStdout();
     const TickResult second = world.Tick(Walking(), kTick);
 
-    EXPECT_NE(log.find("WARN subsystem=simulationworld"), std::string::npos) << hook.objectives << "\n" << log;
-    EXPECT_NE(log.find("script=objectives.lua hook=on_tick tick=1"), std::string::npos) << hook.objectives;
-    EXPECT_NE(log.find(hook.logged), std::string::npos) << hook.objectives << "\n" << log;
-    EXPECT_TRUE(first.actions.empty()) << hook.objectives;
-    EXPECT_TRUE(second.actions.empty()) << hook.objectives;
-    EXPECT_EQ(second.state.tick, 2U) << hook.objectives;
-    ASSERT_EQ(second.state.bodies.size(), 1U) << hook.objectives;
-    EXPECT_EQ(second.state.bodies[0].body.position, WalkedTo(Engine{}, 2)) << hook.objectives;
+    EXPECT_NE(log.find("WARN subsystem=simulationworld"), std::string::npos) << hook.rules << "\n" << log;
+    EXPECT_NE(log.find("script=rules.lua hook=on_tick tick=1"), std::string::npos) << hook.rules;
+    EXPECT_NE(log.find(hook.logged), std::string::npos) << hook.rules << "\n" << log;
+    EXPECT_TRUE(first.actions.empty()) << hook.rules;
+    EXPECT_TRUE(second.actions.empty()) << hook.rules;
+    EXPECT_EQ(second.state.tick, 2U) << hook.rules;
+    ASSERT_EQ(second.state.bodies.size(), 1U) << hook.rules;
+    EXPECT_EQ(second.state.bodies[0].body.position, WalkedTo(Engine{}, 2)) << hook.rules;
   }
 }
 
 // The instruction limit bounds one call, not the hook's whole life: a hook
 // well within it on every call is never stopped, however long the Match.
 TEST_F(PolicyTest, TheInstructionLimitStartsOverEveryCall) {
-  World world = WithAlice(WithObjectives(R"(
+  World world = WithAlice(WithRules(R"(
     function on_tick()
       local sum = 0
       for i = 1, 20000 do sum = sum + i end
@@ -221,7 +221,7 @@ TEST_F(PolicyTest, TheSandboxRefusesAHookTheMachineAndRandomness) {
   for (const char* call : {"io.open('policy.txt')", "os.time()", "os.execute('echo')", "require('other')",
                            "math.random()", "package.loadlib('x', 'y')", "dofile('other.lua')", "load('return 1')()",
                            "loadfile('other.lua')", "pcall(error)"}) {
-    World world = WithAlice(WithObjectives(std::string("function on_tick() ") + call + " end"));
+    World world = WithAlice(WithRules(std::string("function on_tick() ") + call + " end"));
 
     const std::string log = LogOfTicks(world, 1);
 
@@ -232,50 +232,40 @@ TEST_F(PolicyTest, TheSandboxRefusesAHookTheMachineAndRandomness) {
 TEST_F(PolicyTest, AScriptThatUsesWhatTheSandboxLeavesOutAtItsTopLevelDoesNotLoad) {
   for (const char* use :
        {"io.open('policy.txt')", "os.time()", "require('other')", "math.random()", "package.loadlib('x', 'y')"}) {
-    for (const bool objectives : {true, false}) {
-      Scripts scripts;
-      (objectives ? scripts.objectives : scripts.behaviours) = use;
+    const auto engine = Engine::Load(use);
 
-      const auto engine = Engine::Load(scripts);
-
-      ASSERT_FALSE(engine.has_value()) << use;
-      EXPECT_NE(
-          augusta::scripting::DescribeLoadError(engine.error()).find(objectives ? "objectives.lua" : "behaviours.lua"),
-          std::string::npos)
-          << use;
-    }
+    ASSERT_FALSE(engine.has_value()) << use;
+    EXPECT_NE(augusta::scripting::DescribeLoadError(engine.error()).find("rules.lua"), std::string::npos) << use;
   }
 }
 
 TEST_F(PolicyTest, AScriptWithASyntaxErrorDoesNotLoad) {
-  const auto engine = Engine::Load(Scripts{.objectives = std::nullopt, .behaviours = "function assign_spawns("});
+  const auto engine = Engine::Load("function assign_spawns(");
 
   ASSERT_FALSE(engine.has_value());
-  EXPECT_EQ(engine.error().script, augusta::scripting::Script::kBehaviours);
-  EXPECT_NE(augusta::scripting::DescribeLoadError(engine.error()).find("behaviours.lua"), std::string::npos);
+  EXPECT_NE(augusta::scripting::DescribeLoadError(engine.error()).find("rules.lua"), std::string::npos);
 }
 
 TEST_F(PolicyTest, AScriptWhoseTopLevelNeverFinishesDoesNotLoad) {
-  const auto engine = Engine::Load(Scripts{.objectives = "while true do end", .behaviours = std::nullopt});
+  const auto engine = Engine::Load("while true do end");
 
   ASSERT_FALSE(engine.has_value());
   EXPECT_NE(engine.error().message.find("instruction limit"), std::string::npos) << engine.error().message;
 }
 
 // Neither sees the other's globals, whichever is loaded first (ADR-0039).
-TEST_F(PolicyTest, TheParametersScriptAndAPolicyScriptShareNoGlobals) {
-  auto policy = Engine::Load(Scripts{.objectives = R"(
+TEST_F(PolicyTest, TheParametersScriptAndTheRulesShareNoGlobals) {
+  auto policy = Engine::Load(R"(
     policy_global = 1
     function on_tick()
       if parameters_global ~= nil then error("sees the parameters' global") end
     end
-  )",
-                                     .behaviours = std::nullopt});
+  )");
   ASSERT_TRUE(policy.has_value());
-  const auto parameters = augusta::parameters::Load(
-      "if policy_global ~= nil then error('sees the policy global') end\nparameters_global = 1\n" +
-      ExampleParameters());
-  ASSERT_TRUE(parameters.has_value()) << augusta::parameters::DescribeLoadError(parameters.error());
+  const auto parameters = augusta::server::LoadParameters(
+      "if policy_global ~= nil then error('sees the policy global') end\nparameters_global = 1\n" + ExampleParameters(),
+      kTickRate);
+  ASSERT_TRUE(parameters.has_value()) << augusta::server::DescribeParametersLoadError(parameters.error());
   World world = WithAlice(*std::move(policy), *parameters);
 
   EXPECT_EQ(LogOfTicks(world, 1), "");
@@ -285,25 +275,18 @@ TEST_F(PolicyTest, TheParametersScriptAndAPolicyScriptShareNoGlobals) {
 
 using augusta::simulation::MatchPlayer;
 
-// The engine loaded with behaviours as the scenario's behaviours.lua.
-Engine WithBehaviours(std::string behaviours) {
-  auto engine = Engine::Load(Scripts{.objectives = std::nullopt, .behaviours = std::move(behaviours)});
-  EXPECT_TRUE(engine.has_value()) << augusta::scripting::DescribeLoadError(engine.error());
-  return engine ? *std::move(engine) : Engine{};
-}
-
 // Three players, sessions 4, 5 and 6 with bodies 11, 12 and 13, playing
-// characters 2, 1 and 3.
+// the sniper, the player and the medic.
 std::vector<MatchPlayer> ThreePlayers() {
   return {
       MatchPlayer{.entity = static_cast<EntityId>(11),
-                  .identity = PlayerIdentity{.session = static_cast<SessionId>(4), .character = 2},
+                  .identity = PlayerIdentity{.session = static_cast<SessionId>(4), .character = "sniper"},
                   .character = kCharacter},
       MatchPlayer{.entity = static_cast<EntityId>(12),
-                  .identity = PlayerIdentity{.session = static_cast<SessionId>(5), .character = 1},
+                  .identity = PlayerIdentity{.session = static_cast<SessionId>(5), .character = "soldier"},
                   .character = kCharacter},
       MatchPlayer{.entity = static_cast<EntityId>(13),
-                  .identity = PlayerIdentity{.session = static_cast<SessionId>(6), .character = 3},
+                  .identity = PlayerIdentity{.session = static_cast<SessionId>(6), .character = "medic"},
                   .character = kCharacter},
   };
 }
@@ -312,7 +295,7 @@ std::vector<MatchPlayer> ThreePlayers() {
 const std::vector<Vec3> kSpawnPoints{Vec3(10.0F, 0.0F, 0.0F), Vec3(20.0F, 0.0F, 0.0F), Vec3(30.0F, 0.0F, 0.0F)};
 
 TEST_F(PolicyTest, AnAssignSpawnsAnswerPlacesEachPlayerAtTheSpawnPointItNames) {
-  World world(Parameters{}, kTickRate, WithBehaviours(R"(
+  World world(Parameters{}, kTickRate, WithRules(R"(
     function assign_spawns(match)
       return {
         {session = 4, spawn_point = 3},
@@ -333,16 +316,16 @@ TEST_F(PolicyTest, AnAssignSpawnsAnswerPlacesEachPlayerAtTheSpawnPointItNames) {
   }
 }
 
-// The hook sees each player's Session ID, Entity ID and Character index, the
+// The hook sees each player's Session ID, Entity ID and Character, the
 // Player count and the number of Spawn points, and cannot write to them.
 TEST_F(PolicyTest, AssignSpawnsIsHandedAReadOnlyViewOfTheMatch) {
   Parameters parameters;
   parameters.player_count = 3;
-  World world(parameters, kTickRate, WithBehaviours(R"(
+  World world(parameters, kTickRate, WithRules(R"(
     function assign_spawns(match)
       local seen = string.format("count=%d points=%d", match.player_count, match.spawn_points)
       for _, player in ipairs(match.players) do
-        seen = seen .. string.format(" %d/%d/%d", player.session, player.entity, player.character)
+        seen = seen .. string.format(" %d/%d/%s", player.session, player.entity, player.character)
       end
       error(seen)
     end
@@ -352,19 +335,19 @@ TEST_F(PolicyTest, AssignSpawnsIsHandedAReadOnlyViewOfTheMatch) {
   world.StartMatch(ThreePlayers(), kSpawnPoints);
   const std::string log = testing::internal::GetCapturedStdout();
 
-  EXPECT_NE(log.find("count=3 points=3 4/11/2 5/12/1 6/13/3"), std::string::npos) << log;
+  EXPECT_NE(log.find("count=3 points=3 4/11/sniper 5/12/soldier 6/13/medic"), std::string::npos) << log;
 }
 
 TEST_F(PolicyTest, WithoutAnAssignSpawnsHookPlayersTakeTheSpawnPointsInOrderSilently) {
-  for (const char* behaviours : {"", "function assign_spawns() end", "function assign_spawns() return nil end"}) {
-    World world(Parameters{}, kTickRate, WithBehaviours(behaviours));
+  for (const char* rules : {"", "function assign_spawns() end", "function assign_spawns() return nil end"}) {
+    World world(Parameters{}, kTickRate, WithRules(rules));
 
     testing::internal::CaptureStdout();
     const std::vector<Vec3> spawned = world.StartMatch(ThreePlayers(), kSpawnPoints);
     const std::string log = testing::internal::GetCapturedStdout();
 
-    EXPECT_EQ(spawned, kSpawnPoints) << behaviours;
-    EXPECT_EQ(log, "") << behaviours;
+    EXPECT_EQ(spawned, kSpawnPoints) << rules;
+    EXPECT_EQ(log, "") << rules;
   }
   World without_policy(Parameters{}, kTickRate);
   EXPECT_EQ(without_policy.StartMatch(ThreePlayers(), kSpawnPoints), kSpawnPoints);
@@ -372,54 +355,54 @@ TEST_F(PolicyTest, WithoutAnAssignSpawnsHookPlayersTakeTheSpawnPointsInOrderSile
 
 // An assign_spawns answer that is refused, and what the log says of it.
 struct RefusedAnswer {
-  const char* behaviours;
+  const char* body;
   const char* logged;
 };
 
 TEST_F(PolicyTest, ARefusedOrFailingAssignSpawnsAnswerFallsBackToTheInOrderAssignmentAndIsLogged) {
   // Each answer but the one it is about is a valid one.
   for (const RefusedAnswer& answer : {
-           RefusedAnswer{.behaviours = "return {{session = 4, spawn_point = 1}, {session = 5, spawn_point = 2}, "
-                                       "{session = 6, spawn_point = 4}}",
+           RefusedAnswer{.body = "return {{session = 4, spawn_point = 1}, {session = 5, spawn_point = 2}, "
+                                 "{session = 6, spawn_point = 4}}",
                          .logged = "spawn_point is not a whole number"},
-           RefusedAnswer{.behaviours = "return {{session = 4, spawn_point = 0}, {session = 5, spawn_point = 2}, "
-                                       "{session = 6, spawn_point = 3}}",
+           RefusedAnswer{.body = "return {{session = 4, spawn_point = 0}, {session = 5, spawn_point = 2}, "
+                                 "{session = 6, spawn_point = 3}}",
                          .logged = "spawn_point is not a whole number"},
-           RefusedAnswer{.behaviours = "return {{session = 4, spawn_point = 1.5}, {session = 5, spawn_point = 2}, "
-                                       "{session = 6, spawn_point = 3}}",
+           RefusedAnswer{.body = "return {{session = 4, spawn_point = 1.5}, {session = 5, spawn_point = 2}, "
+                                 "{session = 6, spawn_point = 3}}",
                          .logged = "spawn_point is not a whole number"},
-           RefusedAnswer{.behaviours = "return {{session = 4, spawn_point = '1'}, {session = 5, spawn_point = 2}, "
-                                       "{session = 6, spawn_point = 3}}",
+           RefusedAnswer{.body = "return {{session = 4, spawn_point = '1'}, {session = 5, spawn_point = 2}, "
+                                 "{session = 6, spawn_point = 3}}",
                          .logged = "spawn_point is not a whole number"},
-           RefusedAnswer{.behaviours = "return {{session = 7, spawn_point = 1}, {session = 5, spawn_point = 2}, "
-                                       "{session = 6, spawn_point = 3}}",
+           RefusedAnswer{.body = "return {{session = 7, spawn_point = 1}, {session = 5, spawn_point = 2}, "
+                                 "{session = 6, spawn_point = 3}}",
                          .logged = "not a player in the Match"},
-           RefusedAnswer{.behaviours = "return {{session = 4, spawn_point = 1}, {session = 4, spawn_point = 2}, "
-                                       "{session = 6, spawn_point = 3}}",
+           RefusedAnswer{.body = "return {{session = 4, spawn_point = 1}, {session = 4, spawn_point = 2}, "
+                                 "{session = 6, spawn_point = 3}}",
                          .logged = "names a player twice"},
-           RefusedAnswer{.behaviours = "return {{session = 4, spawn_point = 1}, {session = 6, spawn_point = 3}}",
+           RefusedAnswer{.body = "return {{session = 4, spawn_point = 1}, {session = 6, spawn_point = 3}}",
                          .logged = "leaves a player out"},
-           RefusedAnswer{.behaviours = "return {{session = 4, spawn_point = 1, team = 1}, {session = 5, spawn_point = "
-                                       "2}, {session = 6, spawn_point = 3}}",
+           RefusedAnswer{.body = "return {{session = 4, spawn_point = 1, team = 1}, {session = 5, spawn_point = "
+                                 "2}, {session = 6, spawn_point = 3}}",
                          .logged = "not a record of exactly a session and a spawn_point"},
-           RefusedAnswer{.behaviours = "return {3, 1, 2}", .logged = "not a record of exactly"},
-           RefusedAnswer{.behaviours = "return {session = 4, spawn_point = 1}", .logged = "not a list"},
-           RefusedAnswer{.behaviours = "return 3", .logged = "not a list"},
-           RefusedAnswer{.behaviours = "error('boom')", .logged = "boom"},
-           RefusedAnswer{.behaviours = "while true do end", .logged = "instruction limit"},
-           RefusedAnswer{.behaviours = "return function() end", .logged = "not plain data"},
+           RefusedAnswer{.body = "return {3, 1, 2}", .logged = "not a record of exactly"},
+           RefusedAnswer{.body = "return {session = 4, spawn_point = 1}", .logged = "not a list"},
+           RefusedAnswer{.body = "return 3", .logged = "not a list"},
+           RefusedAnswer{.body = "error('boom')", .logged = "boom"},
+           RefusedAnswer{.body = "while true do end", .logged = "instruction limit"},
+           RefusedAnswer{.body = "return function() end", .logged = "not plain data"},
        }) {
     World world(Parameters{}, kTickRate,
-                WithBehaviours(std::string("function assign_spawns(match) ") + answer.behaviours + " end"));
+                WithRules(std::string("function assign_spawns(match) ") + answer.body + " end"));
 
     testing::internal::CaptureStdout();
     const std::vector<Vec3> spawned = world.StartMatch(ThreePlayers(), kSpawnPoints);
     const std::string log = testing::internal::GetCapturedStdout();
 
-    EXPECT_EQ(spawned, kSpawnPoints) << answer.behaviours;
-    EXPECT_NE(log.find("WARN subsystem=simulationworld"), std::string::npos) << answer.behaviours << "\n" << log;
-    EXPECT_NE(log.find("script=behaviours.lua hook=assign_spawns"), std::string::npos) << answer.behaviours;
-    EXPECT_NE(log.find(answer.logged), std::string::npos) << answer.behaviours << "\n" << log;
+    EXPECT_EQ(spawned, kSpawnPoints) << answer.body;
+    EXPECT_NE(log.find("WARN subsystem=simulationworld"), std::string::npos) << answer.body << "\n" << log;
+    EXPECT_NE(log.find("script=rules.lua hook=assign_spawns"), std::string::npos) << answer.body;
+    EXPECT_NE(log.find(answer.logged), std::string::npos) << answer.body << "\n" << log;
   }
 }
 
@@ -463,7 +446,7 @@ TEST_F(PolicyTest, EveryMatchStartsFromFreshBodiesAtFullHealthWithFullRifles) {
   }
 }
 
-// --- The example scenario's policy scripts, as the server loads them (ADR-0013) ---
+// --- The example scenario's rules, as the server loads them (ADR-0013) ---
 
 // The example scenario's Game policy, read out of its golden server pack by
 // the server's own loader.
@@ -478,13 +461,14 @@ Engine ExamplePolicy() {
   return policy ? *std::move(policy) : Engine{};
 }
 
-// count players, sessions 1 to count with bodies 101 on, all of character 1.
+// count players, sessions 1 to count with bodies 101 on, all playing the player.
 std::vector<MatchPlayer> Players(std::size_t count) {
   std::vector<MatchPlayer> players;
   for (std::size_t i = 1; i <= count; ++i) {
-    players.push_back(MatchPlayer{.entity = static_cast<EntityId>(100 + i),
-                                  .identity = PlayerIdentity{.session = static_cast<SessionId>(i), .character = 1},
-                                  .character = kCharacter});
+    players.push_back(
+        MatchPlayer{.entity = static_cast<EntityId>(100 + i),
+                    .identity = PlayerIdentity{.session = static_cast<SessionId>(i), .character = "soldier"},
+                    .character = kCharacter});
   }
   return players;
 }
@@ -498,7 +482,7 @@ std::vector<Vec3> SpawnPointsInALine(std::size_t count) {
   return points;
 }
 
-TEST_F(PolicyTest, TheExampleBehavioursGiveEveryPlayerADistinctSpawnPointForEveryPlayerCount) {
+TEST_F(PolicyTest, TheExampleRulesGiveEveryPlayerADistinctSpawnPointForEveryPlayerCount) {
   for (std::size_t count = 1; count <= 8; ++count) {
     World world(Parameters{}, kTickRate, ExamplePolicy());
 
@@ -513,7 +497,7 @@ TEST_F(PolicyTest, TheExampleBehavioursGiveEveryPlayerADistinctSpawnPointForEver
   }
 }
 
-TEST_F(PolicyTest, TheExampleBehavioursStartTheSpawnPointsOverOnlyWhenTheMapHasFewerThanPlayers) {
+TEST_F(PolicyTest, TheExampleRulesStartTheSpawnPointsOverOnlyWhenTheMapHasFewerThanPlayers) {
   World world(Parameters{}, kTickRate, ExamplePolicy());
 
   const std::vector<Vec3> points = SpawnPointsInALine(3);
@@ -522,11 +506,11 @@ TEST_F(PolicyTest, TheExampleBehavioursStartTheSpawnPointsOverOnlyWhenTheMapHasF
   EXPECT_EQ(spawned, (std::vector<Vec3>{points[0], points[1], points[2], points[0], points[1]}));
 }
 
-// What the objectives' on_tick hook may decide (ADR-0022): to end the Match with
+// What the rules' on_tick hook may decide (ADR-0022): to end the Match with
 // a winner, or as a draw. A decision is in the State of the tick that made it,
 // for Host to act on after it (ADR-0023).
 TEST_F(PolicyTest, AWinnerOnTickDeclaresIsAnActionOfTheTickThatDeclaredIt) {
-  World world = WithAlice(WithObjectives(R"(
+  World world = WithAlice(WithRules(R"(
     function on_tick(match)
       if match.tick == 3 then return {winner = 11} end
     end
@@ -544,7 +528,7 @@ TEST_F(PolicyTest, AWinnerOnTickDeclaresIsAnActionOfTheTickThatDeclaredIt) {
 }
 
 TEST_F(PolicyTest, ADrawOnTickDeclaresIsAMatchEndWithNoWinner) {
-  World world = WithAlice(WithObjectives("function on_tick() return {draw = true} end"));
+  World world = WithAlice(WithRules("function on_tick() return {draw = true} end"));
 
   const TickResult result = world.Tick({}, kTick);
 
@@ -555,7 +539,7 @@ TEST_F(PolicyTest, ADrawOnTickDeclaresIsAMatchEndWithNoWinner) {
 // Policy ends a Match once: once it has decided, on_tick is not asked again
 // until the Match is over, and in the next Match it is asked afresh.
 TEST_F(PolicyTest, OnceOnTickHasEndedTheMatchItIsNotCalledAgainUntilTheNextMatch) {
-  World world = WithAlice(WithObjectives(R"(
+  World world = WithAlice(WithRules(R"(
     function on_tick(match) return {winner = match.players[1].session} end
   )"));
   ASSERT_TRUE(MatchEndOf(world.Tick({}, kTick)).has_value());
@@ -565,7 +549,8 @@ TEST_F(PolicyTest, OnceOnTickHasEndedTheMatchItIsNotCalledAgainUntilTheNextMatch
   }
 
   world.EndMatch();
-  world.AddPlayer(kBob, Vec3(0.0F, 0.0F, 0.0F), kCharacter, PlayerIdentity{.session = kBobSession, .character = 1});
+  world.AddPlayer(kBob, Vec3(0.0F, 0.0F, 0.0F), kCharacter,
+                  PlayerIdentity{.session = kBobSession, .character = "soldier"});
   const TickResult next = world.Tick({}, kTick);
   ASSERT_TRUE(MatchEndOf(next).has_value());
   EXPECT_EQ(MatchEndOf(next)->winner, kBobSession);
@@ -573,7 +558,7 @@ TEST_F(PolicyTest, OnceOnTickHasEndedTheMatchItIsNotCalledAgainUntilTheNextMatch
 
 // A world with no one in it has no Match for policy to decide on: the Lobby.
 TEST_F(PolicyTest, OnTickIsNotCalledWhileTheWorldHasNoPlayers) {
-  World world(Parameters{}, kTickRate, WithObjectives("function on_tick() error('called in the lobby') end"));
+  World world(Parameters{}, kTickRate, WithRules("function on_tick() error('called in the lobby') end"));
 
   EXPECT_EQ(LogOfTicks(world, 3), "");
 }
@@ -582,7 +567,7 @@ TEST_F(PolicyTest, OnTickSeesTheTickThePlayerCountAndEveryPlayerInTheMatch) {
   Parameters parameters;
   parameters.player_count = 2;
   parameters.starting_health = 75.0F;
-  World world = WithAlice(WithObjectives(R"(
+  World world = WithAlice(WithRules(R"(
     function on_tick(match)
       local seen = "tick=" .. match.tick .. " player_count=" .. match.player_count
       for _, player in ipairs(match.players) do
@@ -595,24 +580,28 @@ TEST_F(PolicyTest, OnTickSeesTheTickThePlayerCountAndEveryPlayerInTheMatch) {
     end
   )"),
                           parameters);
-  world.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter, PlayerIdentity{.session = kBobSession, .character = 1});
+  world.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter,
+                  PlayerIdentity{.session = kBobSession, .character = "soldier"});
 
   const std::string log = LogOfTicks(world, 1);
 
   EXPECT_NE(log.find("tick=1 player_count=2"
-                     " [session=11 entity=1 character=2 alive=true health=75 killed=false killer=nil]"
-                     " [session=12 entity=2 character=1 alive=true health=75 killed=false killer=nil]"),
+                     " [session=11 entity=1 character=sniper alive=true health=75 killed=false"
+                     " killer=nil]"
+                     " [session=12 entity=2 character=soldier alive=true health=75 killed=false"
+                     " killer=nil]"),
             std::string::npos)
       << log;
 }
 
 TEST_F(PolicyTest, APlayerWhoLeftTheMatchIsAbsentFromWhatOnTickSees) {
-  World world = WithAlice(WithObjectives(R"(
+  World world = WithAlice(WithRules(R"(
     function on_tick(match)
       if #match.players == 1 then return {winner = match.players[1].session} end
     end
   )"));
-  world.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter, PlayerIdentity{.session = kBobSession, .character = 1});
+  world.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter,
+                  PlayerIdentity{.session = kBobSession, .character = "soldier"});
   ASSERT_FALSE(MatchEndOf(world.Tick({}, kTick)).has_value());
 
   world.RemovePlayer(kAlice);
@@ -625,22 +614,21 @@ TEST_F(PolicyTest, APlayerWhoLeftTheMatchIsAbsentFromWhatOnTickSees) {
 // A body added with no identity has Session ID 0, which is no player's: it is
 // never declared the winner, whatever policy says.
 TEST_F(PolicyTest, SessionZeroIsNeverTheWinner) {
-  World world(Parameters{}, kTickRate, WithObjectives("function on_tick() return {winner = 0} end"));
+  World world(Parameters{}, kTickRate, WithRules("function on_tick() return {winner = 0} end"));
   world.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
 
   EXPECT_FALSE(MatchEndOf(world.Tick({}, kTick)).has_value());
 }
 
 TEST_F(PolicyTest, AWinnerWhoIsNotInTheMatchIsRefusedLoggedAndTheMatchGoesOn) {
-  World world = WithAlice(WithObjectives("function on_tick() return {winner = 12} end"));
+  World world = WithAlice(WithRules("function on_tick() return {winner = 12} end"));
 
   testing::internal::CaptureStdout();
   const TickResult result = world.Tick({}, kTick);
   const std::string log = testing::internal::GetCapturedStdout();
 
   EXPECT_TRUE(result.actions.empty());
-  EXPECT_NE(log.find("event=policy_decision_refused script=objectives.lua hook=on_tick tick=1"), std::string::npos)
-      << log;
+  EXPECT_NE(log.find("event=policy_decision_refused script=rules.lua hook=on_tick tick=1"), std::string::npos) << log;
 }
 
 // A box 2 m tall and 4 m wide across a player's feet, facing along Z: hard to
@@ -663,8 +651,8 @@ augusta::physics::CollisionMesh Floor() {
 }
 
 // Alice, at the origin, and Bob, 10 m down -Z where her level view of yaw 0
-// looks, on a floor, with rounds that kill at once; on_tick is objectives.
-World Duel(std::string objectives) {
+// looks, on a floor, with rounds that kill at once, with rules.
+World Duel(std::string_view rules) {
   Parameters parameters;
   parameters.player_count = 2;
   parameters.rifle.rounds_per_minute = 600.0F;
@@ -673,10 +661,12 @@ World Duel(std::string objectives) {
   parameters.ammo.max_range = 200.0F;
   parameters.ammo.damage = {.head = 100.0F, .torso = 100.0F, .limb = 100.0F};
   parameters.starting_health = 100.0F;
-  World world(parameters, kTickRate, WithObjectives(std::move(objectives)));
+  World world(parameters, kTickRate, WithRules(rules));
   EXPECT_TRUE(world.AddCollisionMesh(Floor()).has_value());
-  world.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), Broad(), PlayerIdentity{.session = kAliceSession, .character = 1});
-  world.AddPlayer(kBob, Vec3(0.0F, 0.5F, -10.0F), Broad(), PlayerIdentity{.session = kBobSession, .character = 1});
+  world.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), Broad(),
+                  PlayerIdentity{.session = kAliceSession, .character = "soldier"});
+  world.AddPlayer(kBob, Vec3(0.0F, 0.5F, -10.0F), Broad(),
+                  PlayerIdentity{.session = kBobSession, .character = "soldier"});
   for (int i = 0; i < 30; ++i) {
     world.Tick({}, kTick);
   }
@@ -733,7 +723,8 @@ TEST_F(PolicyTest, EndingTheMatchTakesEveryPlayerAndEveryBulletInFlightOutOfTheW
   parameters.rifle.muzzle_velocity = 100.0F;
   parameters.ammo.max_range = 1000.0F;
   World world = WithAlice(Engine{}, parameters);
-  world.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter, PlayerIdentity{.session = kBobSession, .character = 1});
+  world.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter,
+                  PlayerIdentity{.session = kBobSession, .character = "soldier"});
   Command fire;
   fire.fire = true;
   fire.pitch = 0.5F;

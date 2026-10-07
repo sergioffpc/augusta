@@ -1,9 +1,11 @@
 {
   "name": "augusta",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "dependencies": [
+    "abseil",
     "benchmark",
     "blake3",
+    "boost-beast",
     "boost-dll",
     "boost-interprocess",
     "boost-log",
@@ -19,6 +21,10 @@
       "platform": "windows"
     },
     "physx",
+    {
+      "name": "prometheus-cpp",
+      "default-features": false
+    },
     "rapidcheck",
     "sol2",
     {

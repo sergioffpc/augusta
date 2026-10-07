@@ -6,6 +6,10 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/command.h"
+#include "augusta/math.h"
+#include "augusta/physics.h"
+
 // The sanity gate and the per-player queue are pure: no socket is opened here.
 namespace {
 
@@ -63,7 +67,7 @@ TEST(ValidateTest, RejectsNonFiniteNumbersWhereverTheyAre) {
   EXPECT_EQ(Validate(command, 0).error(), Rejection::kNonFinite);
 
   command = Walk(1);
-  command.command.view_fraction = kNaN;
+  command.command.seen_fraction = kNaN;
   EXPECT_EQ(Validate(command, 0).error(), Rejection::kNonFinite);
 }
 

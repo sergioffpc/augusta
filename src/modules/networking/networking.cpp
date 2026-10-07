@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -21,6 +22,7 @@
 #include <steam/steamnetworkingtypes.h>
 
 #include "augusta/logging.h"
+#include "free_port.h"
 #include "send_flags.h"
 #include "transport_events.h"
 
@@ -49,6 +51,23 @@ std::string FormatAddr(const SteamNetworkingIPAddr& addr) {
   std::array<char, SteamNetworkingIPAddr::k_cchMaxString> buf;
   addr.ToString(buf.data(), buf.size(), /*bWithPort=*/true);
   return buf.data();
+}
+
+// connection's stats, nullopt if the transport has none for it (it is gone).
+std::optional<ConnectionStats> GetConnectionStats(HSteamNetConnection connection) {
+  SteamNetConnectionRealTimeStatus_t status;
+  if (SteamNetworkingSockets()->GetConnectionRealTimeStatus(connection, &status, 0, nullptr) != k_EResultOK) {
+    return std::nullopt;
+  }
+  return ConnectionStats{
+      .ping_ms = status.m_nPing,
+      .quality_local = status.m_flConnectionQualityLocal,
+      .quality_remote = status.m_flConnectionQualityRemote,
+      .in_bytes_per_sec = status.m_flInBytesPerSec,
+      .out_bytes_per_sec = status.m_flOutBytesPerSec,
+      .max_jitter_us = status.m_usecMaxJitter,
+      .pending_bytes = status.m_cbPendingUnreliable + status.m_cbPendingReliable + status.m_cbSentUnackedReliable,
+  };
 }
 
 using StatusHandler = std::function<void(SteamNetConnectionStatusChangedCallback_t*)>;
@@ -180,6 +199,33 @@ void MakeTransportCall(TransportCall call, HSteamNetConnection connection, HStea
   }
 }
 
+// Listens on addr with options. GameNetworkingSockets refuses port 0, so for
+// it this listens on a port the OS reports free (see FreeUdpPort) - asking
+// again if it fails to bind there - and leaves the one it bound in addr.
+HSteamListenSocket CreateListenSocket(SteamNetworkingIPAddr& addr,
+                                      std::span<const SteamNetworkingConfigValue_t> options) {
+  const auto create = [&] {
+    return SteamNetworkingSockets()->CreateListenSocketIP(addr, static_cast<int>(options.size()), options.data());
+  };
+  if (addr.m_port != 0) {
+    return create();
+  }
+  // A port fails to bind only if a socket took it in the instant between the
+  // two, so a single attempt all but always binds.
+  constexpr int kAttempts = 8;
+  for (int attempt = 0; attempt < kAttempts; ++attempt) {
+    const std::optional<std::uint16_t> port = FreeUdpPort(!addr.IsIPv4());
+    if (!port.has_value()) {
+      break;
+    }
+    addr.m_port = *port;
+    if (const HSteamListenSocket socket = create(); socket != k_HSteamListenSocket_Invalid) {
+      return socket;
+    }
+  }
+  return k_HSteamListenSocket_Invalid;
+}
+
 }  // namespace
 
 void Init() {
@@ -199,7 +245,16 @@ void Shutdown() {
 void SimulateNetworkConditions(const SimulatedConditions& conditions) {
   ISteamNetworkingUtils* utils = SteamNetworkingUtils();
   utils->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_FakePacketLag_Send, conditions.latency_ms);
+  // Every packet draws a jitter; a mean of 0 draws none.
+  constexpr float kEveryPacket = 100.0F;
+  utils->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketJitter_Send_Avg,
+                                   static_cast<float>(conditions.jitter_mean_ms));
+  utils->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketJitter_Send_Max,
+                                   static_cast<float>(conditions.jitter_max_ms));
+  utils->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketJitter_Send_Pct, kEveryPacket);
   utils->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketLoss_Send, conditions.loss_percent);
+  utils->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketReorder_Send, conditions.reorder_percent);
+  utils->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_FakePacketReorder_Time, conditions.reorder_delay_ms);
   for (const ESteamNetworkingConfigValue timeout :
        {k_ESteamNetworkingConfig_TimeoutInitial, k_ESteamNetworkingConfig_TimeoutConnected}) {
     if (conditions.timeout_ms > 0) {
@@ -209,8 +264,10 @@ void SimulateNetworkConditions(const SimulatedConditions& conditions) {
       utils->SetConfigValue(timeout, k_ESteamNetworkingConfig_Global, 0, k_ESteamNetworkingConfig_Int32, nullptr);
     }
   }
-  LI("subsystem=networking event=simulated_conditions latency_ms={} loss_percent={}", conditions.latency_ms,
-     conditions.loss_percent);
+  LI("subsystem=networking event=simulated_conditions latency_ms={} jitter_mean_ms={} jitter_max_ms={} "
+     "loss_percent={} reorder_percent={} reorder_delay_ms={}",
+     conditions.latency_ms, conditions.jitter_mean_ms, conditions.jitter_max_ms, conditions.loss_percent,
+     conditions.reorder_percent, conditions.reorder_delay_ms);
 }
 
 // ---- Client ----
@@ -312,20 +369,7 @@ std::optional<ConnectionStats> Client::GetStats() const {
     return std::nullopt;
   }
 
-  SteamNetConnectionRealTimeStatus_t status;
-  if (SteamNetworkingSockets()->GetConnectionRealTimeStatus(impl_->connection, &status, 0, nullptr) != k_EResultOK) {
-    return std::nullopt;
-  }
-
-  return ConnectionStats{
-      .ping_ms = status.m_nPing,
-      .quality_local = status.m_flConnectionQualityLocal,
-      .quality_remote = status.m_flConnectionQualityRemote,
-      .in_bytes_per_sec = status.m_flInBytesPerSec,
-      .out_bytes_per_sec = status.m_flOutBytesPerSec,
-      .max_jitter_us = status.m_usecMaxJitter,
-      .pending_bytes = status.m_cbPendingUnreliable + status.m_cbPendingReliable + status.m_cbSentUnackedReliable,
-  };
+  return GetConnectionStats(impl_->connection);
 }
 
 void Client::Send(const Payload& payload, Reliability reliability) {
@@ -371,6 +415,8 @@ struct Server::Impl {
   std::mutex mutex;
   HSteamListenSocket listen_socket = k_HSteamListenSocket_Invalid;
   HSteamNetPollGroup poll_group = k_HSteamNetPollGroup_Invalid;
+  // What LocalEndpoint reports, set once the listen socket is bound.
+  Endpoint local_endpoint;
   // Pending peers, re-delivered as kConnectRequested on every PumpEvents call
   // until Accept/Disconnect answers them (see Server::PumpEvents's own doc
   // comment in networking.h); connected peers, Send/Broadcast's only way to
@@ -417,13 +463,15 @@ Server::Server(const Endpoint& local_endpoint) : impl_(std::make_unique<Impl>())
   options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, impl_->registration.Id());
 
   impl_->poll_group = SteamNetworkingSockets()->CreatePollGroup();
-  impl_->listen_socket =
-      SteamNetworkingSockets()->CreateListenSocketIP(addr, static_cast<int>(options.size()), options.data());
+  impl_->listen_socket = CreateListenSocket(addr, options);
   if (impl_->listen_socket == k_HSteamListenSocket_Invalid) {
     throw std::runtime_error("networking::Server: failed to bind " + local_endpoint.address);
   }
-  LI("subsystem=networking event=listening address={}", local_endpoint.address);
+  impl_->local_endpoint = Endpoint{.address = FormatAddr(addr)};
+  LI("subsystem=networking event=listening address={}", impl_->local_endpoint.address);
 }
+
+Endpoint Server::LocalEndpoint() const { return impl_->local_endpoint; }
 
 Server::~Server() {
   for (const HSteamNetConnection connection : impl_->peers.Connections()) {
@@ -506,6 +554,22 @@ std::vector<PeerMessage> Server::ReceiveMessages() {
     LT("subsystem=networking event=receive role=server count={}", messages.size());
   }
   return messages;
+}
+
+std::vector<PeerStats> Server::GetStats() const {
+  std::vector<HSteamNetConnection> peers;
+  {
+    const std::lock_guard<std::mutex> lock(impl_->mutex);
+    peers = impl_->peers.Connected();
+  }
+  std::vector<PeerStats> stats;
+  stats.reserve(peers.size());
+  for (const HSteamNetConnection connection : peers) {
+    if (const std::optional<ConnectionStats> connection_stats = GetConnectionStats(connection)) {
+      stats.push_back(PeerStats{.peer = static_cast<PeerId>(connection), .stats = *connection_stats});
+    }
+  }
+  return stats;
 }
 
 }  // namespace augusta::networking

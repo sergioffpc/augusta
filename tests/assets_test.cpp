@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <ios>
 #include <optional>
 #include <span>
 #include <string>
@@ -267,7 +268,7 @@ TEST_F(PackTest, AScriptLargerThanTheLimitIsTooLargeToEncodeAndCorruptToResolve)
 TEST_F(PackTest, EncodesAndResolvesTheCharacterListInOrder) {
   const auto pack_path = MakePackPath("augusta_assets_test_characters.pack");
   const auto keys = GenerateEd25519KeyPair();
-  const std::vector<std::string> characters = {"characters/sniper", "characters/player", "characters/medic"};
+  const std::vector<std::string> characters = {"sniper", "soldier", "medic"};
 
   const auto blob = augusta::assets::EncodeCharactersBlob(characters);
   ASSERT_TRUE(blob.has_value());
@@ -339,7 +340,7 @@ TEST_F(PackTest, EncodesAndResolvesTheSoundsFolder) {
   const auto pack_path = MakePackPath("augusta_assets_test_sounds.pack");
   const auto keys = GenerateEd25519KeyPair();
 
-  const auto blob = augusta::assets::EncodeSoundsBlob("sounds/augusta");
+  const auto blob = augusta::assets::EncodeSoundsBlob("sounds");
   ASSERT_TRUE(blob.has_value());
   const std::vector<augusta::assets::AssetEntry> entries = {
       augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kSounds,
@@ -350,13 +351,17 @@ TEST_F(PackTest, EncodesAndResolvesTheSoundsFolder) {
   auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
   ASSERT_TRUE(pack.has_value());
 
-  EXPECT_EQ(pack->ResolveSoundsPath().value(), "sounds/augusta");
+  EXPECT_EQ(pack->ResolveSoundsPath().value(), "sounds");
 }
 
 // A character's eye is where the local player's camera sits (ADR-0040): a bare
 // point, resolved by path, and only as an eye.
 TEST(CharacterEyePathTest, ACharactersEyeIsTheEyeChildOfItsRootPrim) {
-  EXPECT_EQ(augusta::assets::CharacterEyePath("characters/player"), "characters/player/Character/Eye");
+  EXPECT_EQ(augusta::assets::CharacterEyePath("soldier"), "soldier/Character/Eye");
+}
+
+TEST(CharacterMeshPathTest, ACharactersMeshIsTheVisualChildOfItsRootPrim) {
+  EXPECT_EQ(augusta::assets::CharacterMeshPath("soldier"), "soldier/Character/Visual");
 }
 
 TEST_F(PackTest, EncodesAndResolvesACharactersEye) {
@@ -367,17 +372,17 @@ TEST_F(PackTest, EncodesAndResolvesACharactersEye) {
   ASSERT_TRUE(blob.has_value());
   const std::vector<augusta::assets::AssetEntry> entries = {
       augusta::assets::AssetEntry{
-          .type = augusta::assets::AssetType::kEye, .path = "characters/player/Character/Eye", .data = *blob},
+          .type = augusta::assets::AssetType::kEye, .path = "soldier/Character/Eye", .data = *blob},
   };
   ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
   auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
   ASSERT_TRUE(pack.has_value());
 
-  const auto eye = pack->ResolveEye("characters/player/Character/Eye");
+  const auto eye = pack->ResolveEye("soldier/Character/Eye");
   ASSERT_TRUE(eye.has_value());
   EXPECT_EQ(eye->position, Vec3(0.0F, 1.6F, 0.1F));
-  EXPECT_EQ(pack->ResolveMesh("characters/player/Character/Eye").error(), augusta::assets::ResolveError::kTypeMismatch);
-  EXPECT_EQ(pack->ResolveEye("characters/medic/Character/Eye").error(), augusta::assets::ResolveError::kNotFound);
+  EXPECT_EQ(pack->ResolveMesh("soldier/Character/Eye").error(), augusta::assets::ResolveError::kTypeMismatch);
+  EXPECT_EQ(pack->ResolveEye("medic/Character/Eye").error(), augusta::assets::ResolveError::kNotFound);
 }
 
 // A character's hitboxes (ADR-0040): each a body part and its geometry, found
@@ -408,9 +413,9 @@ class HitboxPackTest : public PackTest {
 };
 
 TEST_F(HitboxPackTest, AHitboxResolvesToItsBodyPartAndGeometry) {
-  const auto pack = Write({Hitbox("characters/player/Character/Head", augusta::assets::BodyPart::kHead, 1.8F)});
+  const auto pack = Write({Hitbox("soldier/Character/Head", augusta::assets::BodyPart::kHead, 1.8F)});
 
-  const auto hitbox = pack.ResolveHitbox("characters/player/Character/Head");
+  const auto hitbox = pack.ResolveHitbox("soldier/Character/Head");
 
   ASSERT_TRUE(hitbox.has_value());
   EXPECT_EQ(hitbox->part, augusta::assets::BodyPart::kHead);
@@ -421,15 +426,15 @@ TEST_F(HitboxPackTest, AHitboxResolvesToItsBodyPartAndGeometry) {
 
 TEST_F(HitboxPackTest, ACharactersHitboxesResolveTogetherInPathOrderAndNoOtherCharacters) {
   const auto pack = Write({
-      Hitbox("characters/player/Character/Torso", augusta::assets::BodyPart::kTorso, 1.3F),
-      Hitbox("characters/medic/Character/Head", augusta::assets::BodyPart::kHead, 1.7F),
-      Hitbox("characters/player/Character/Head", augusta::assets::BodyPart::kHead, 1.8F),
-      Hitbox("characters/player/Character/Leg", augusta::assets::BodyPart::kLimb, 0.5F),
+      Hitbox("soldier/Character/Torso", augusta::assets::BodyPart::kTorso, 1.3F),
+      Hitbox("medic/Character/Head", augusta::assets::BodyPart::kHead, 1.7F),
+      Hitbox("soldier/Character/Head", augusta::assets::BodyPart::kHead, 1.8F),
+      Hitbox("soldier/Character/Leg", augusta::assets::BodyPart::kLimb, 0.5F),
       // A character whose path the other's is a prefix of is another character.
-      Hitbox("characters/player2/Character/Head", augusta::assets::BodyPart::kHead, 1.9F),
+      Hitbox("soldier2/Character/Head", augusta::assets::BodyPart::kHead, 1.9F),
   });
 
-  const auto hitboxes = pack.ResolveHitboxes("characters/player");
+  const auto hitboxes = pack.ResolveHitboxes("soldier");
 
   ASSERT_TRUE(hitboxes.has_value());
   ASSERT_EQ(hitboxes->size(), 3U);
@@ -438,17 +443,16 @@ TEST_F(HitboxPackTest, ACharactersHitboxesResolveTogetherInPathOrderAndNoOtherCh
   EXPECT_EQ((*hitboxes)[0].mesh.points[0].y, 1.8F);
   EXPECT_EQ((*hitboxes)[1].part, augusta::assets::BodyPart::kLimb);
   EXPECT_EQ((*hitboxes)[2].part, augusta::assets::BodyPart::kTorso);
-  EXPECT_TRUE(pack.ResolveHitboxes("characters/sniper").value().empty());
+  EXPECT_TRUE(pack.ResolveHitboxes("sniper").value().empty());
 }
 
 TEST_F(HitboxPackTest, AHitboxOfAnUnknownBodyPartIsCorrupt) {
-  auto entry = Hitbox("characters/player/Character/Tail", augusta::assets::BodyPart::kLimb, 0.9F);
+  auto entry = Hitbox("soldier/Character/Tail", augusta::assets::BodyPart::kLimb, 0.9F);
   entry.data.front() = std::byte{3};
   const auto pack = Write({entry});
 
-  EXPECT_EQ(pack.ResolveHitbox("characters/player/Character/Tail").error(),
-            augusta::assets::ResolveError::kCorruptBlob);
-  EXPECT_EQ(pack.ResolveHitboxes("characters/player").error(), augusta::assets::ResolveError::kCorruptBlob);
+  EXPECT_EQ(pack.ResolveHitbox("soldier/Character/Tail").error(), augusta::assets::ResolveError::kCorruptBlob);
+  EXPECT_EQ(pack.ResolveHitboxes("soldier").error(), augusta::assets::ResolveError::kCorruptBlob);
 }
 
 TEST(FirstMissingBodyPartTest, NamesTheFirstBodyPartNoHitboxStandsFor) {
@@ -499,10 +503,9 @@ TEST_F(PackTest, APackWithoutTheCharacterListIsAResolveError) {
   EXPECT_EQ(pack->ResolveCharacters().error(), augusta::assets::ResolveError::kNotFound);
 }
 
-// A character index is one byte with zero never valid (ADR-0042), so a list
-// longer than kMaxCharacters could name a character no index can reach.
+// kMaxCharacters bounds the character list a pack is read with (ADR-0042).
 TEST_F(PackTest, ACharacterListLongerThanTheLimitIsTooLargeToEncodeAndCorruptToResolve) {
-  const std::vector<std::string> too_many(augusta::assets::kMaxCharacters + 1, "characters/player");
+  const std::vector<std::string> too_many(augusta::assets::kMaxCharacters + 1, "soldier");
   const auto blob = augusta::assets::EncodeCharactersBlob(too_many);
   ASSERT_FALSE(blob.has_value());
   EXPECT_EQ(blob.error(), augusta::assets::EncodeError::kTooLarge);
@@ -510,7 +513,7 @@ TEST_F(PackTest, ACharacterListLongerThanTheLimitIsTooLargeToEncodeAndCorruptToR
   // A hostile pack can still carry one: the reader refuses it too. Built from a
   // one-character blob: its u32 count patched to kMaxCharacters + 1, then its one
   // encoded string repeated that many times.
-  const auto one = augusta::assets::EncodeCharactersBlob(std::vector<std::string>{"characters/player"});
+  const auto one = augusta::assets::EncodeCharactersBlob(std::vector<std::string>{"soldier"});
   ASSERT_TRUE(one.has_value());
   const std::span<const std::byte> count_prefix = std::span(*one).first(sizeof(std::uint32_t));
   const std::span<const std::byte> encoded_string = std::span(*one).subspan(sizeof(std::uint32_t));
@@ -556,7 +559,66 @@ TEST_F(PackTest, APacksHashIsItsTrailersHash) {
   EXPECT_TRUE(std::ranges::equal(pack->Hash(), trailer_hash));
 }
 
-TEST_F(PackTest, AServerPackResolvesTheHashOfItsClientPack) {
+// The executables name the pack in every error about its content.
+TEST_F(PackTest, APackRemembersThePathItWasLoadedFrom) {
+  const auto pack_path = MakePackPath("augusta_assets_test_path.pack");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = MakeTriangleMeshBlob()},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->Path(), pack_path);
+}
+
+TEST_F(PackTest, LoadVerifiedPackLoadsAPackAgainstTheKeyInAFile) {
+  const auto pack_path = MakePackPath("augusta_assets_test_verified.pack");
+  const auto key_path = MakePackPath("augusta_assets_test_verified.pub");
+  const auto keys = GenerateEd25519KeyPair();
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = MakeTriangleMeshBlob()},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  WriteFileBytes(key_path, keys.public_key.data(), keys.public_key.size());
+
+  const auto pack = augusta::assets::LoadVerifiedPack(pack_path, key_path);
+
+  ASSERT_TRUE(pack.has_value());
+  EXPECT_TRUE(pack->ResolveMesh("Mesh").has_value());
+}
+
+TEST_F(PackTest, LoadVerifiedPackRefusesAnUnreadableKey) {
+  const auto pack = augusta::assets::LoadVerifiedPack(MakePackPath("augusta_assets_test_unread.pack"),
+                                                      MakePackPath("augusta_assets_test_missing.pub"));
+
+  ASSERT_FALSE(pack.has_value());
+  EXPECT_EQ(pack.error().failure, augusta::assets::VerifiedPackFailure::kPublicKeyUnreadable);
+}
+
+TEST_F(PackTest, LoadVerifiedPackRefusesAPackSignedByAnotherKey) {
+  const auto pack_path = MakePackPath("augusta_assets_test_other_key.pack");
+  const auto key_path = MakePackPath("augusta_assets_test_other_key.pub");
+  const auto keys = GenerateEd25519KeyPair();
+  const auto other_keys = GenerateEd25519KeyPair();
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = MakeTriangleMeshBlob()},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  WriteFileBytes(key_path, other_keys.public_key.data(), other_keys.public_key.size());
+
+  const auto pack = augusta::assets::LoadVerifiedPack(pack_path, key_path);
+
+  ASSERT_FALSE(pack.has_value());
+  EXPECT_EQ(pack.error().failure, augusta::assets::VerifiedPackFailure::kPackRejected);
+  EXPECT_EQ(pack.error().load_error, augusta::assets::LoadError::kSignatureInvalid);
+}
+
+TEST_F(PackTest, APackNamesTheClientPackItWasWrittenWith) {
   const auto keys = GenerateEd25519KeyPair();
   const auto client_path = MakePackPath("augusta_assets_test_client.pack");
   ASSERT_TRUE(augusta::assets::WritePack(
@@ -569,44 +631,12 @@ TEST_F(PackTest, AServerPackResolvesTheHashOfItsClientPack) {
   ASSERT_TRUE(client.has_value());
 
   const auto server_path = MakePackPath("augusta_assets_test_server.pack");
-  const std::vector<augusta::assets::AssetEntry> entries = {
-      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kClientPack,
-                                  .path = std::string(augusta::assets::kClientPackPath),
-                                  .data = std::vector<std::byte>(client->Hash().begin(), client->Hash().end())},
-  };
-  ASSERT_TRUE(augusta::assets::WritePack(server_path, entries, keys.private_key).has_value());
+  ASSERT_TRUE(augusta::assets::WritePack(server_path, {}, keys.private_key, client->Hash()).has_value());
   const auto server = augusta::assets::Pack::Load(server_path, keys.public_key);
   ASSERT_TRUE(server.has_value());
 
-  EXPECT_EQ(server->ResolveClientPackHash().value(), client->Hash());
-}
-
-TEST_F(PackTest, AClientPackHashThatIsMissingOrOfAnotherSizeIsAResolveError) {
-  const auto keys = GenerateEd25519KeyPair();
-  const auto missing_path = MakePackPath("augusta_assets_test_no_client_pack.pack");
-  ASSERT_TRUE(augusta::assets::WritePack(
-                  missing_path,
-                  {augusta::assets::AssetEntry{
-                      .type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = MakeTriangleMeshBlob()}},
-                  keys.private_key)
-                  .has_value());
-  const auto missing = augusta::assets::Pack::Load(missing_path, keys.public_key);
-  ASSERT_TRUE(missing.has_value());
-  EXPECT_EQ(missing->ResolveClientPackHash().error(), augusta::assets::ResolveError::kNotFound);
-
-  for (const std::size_t size : {augusta::assets::kPackHashSize - 1, augusta::assets::kPackHashSize + 1}) {
-    const auto path = MakePackPath("augusta_assets_test_short_client_pack.pack");
-    ASSERT_TRUE(
-        augusta::assets::WritePack(path,
-                                   {augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kClientPack,
-                                                                .path = std::string(augusta::assets::kClientPackPath),
-                                                                .data = std::vector<std::byte>(size)}},
-                                   keys.private_key)
-            .has_value());
-    const auto pack = augusta::assets::Pack::Load(path, keys.public_key);
-    ASSERT_TRUE(pack.has_value());
-    EXPECT_EQ(pack->ResolveClientPackHash().error(), augusta::assets::ResolveError::kCorruptBlob) << size;
-  }
+  EXPECT_EQ(server->ClientPackHash(), client->Hash());
+  EXPECT_EQ(client->ClientPackHash(), std::nullopt);
 }
 
 // The remaining tests exercise Pack::Load's fail-closed parsing directly,
@@ -616,6 +646,11 @@ TEST_F(PackTest, AClientPackHashThatIsMissingOrOfAnotherSizeIsAResolveError) {
 // these need a re-signed file to behave deterministically.
 class PackLoadNegativeTest : public PackTest {
  protected:
+  // assets.cpp's kHeaderSize and kTrailerSize: magic, version, data offset,
+  // index offset, index count, flags and client pack hash; hash and signature.
+  static constexpr std::size_t kHeaderSize = 4 + 4 + 8 + 8 + 4 + 1 + 32;
+  static constexpr std::size_t kTrailerSize = 32 + 64;
+
   void SetUp() override {
     keys_ = GenerateEd25519KeyPair();
     const std::vector<augusta::assets::AssetEntry> entries = {
@@ -668,7 +703,7 @@ TEST_F(PackLoadNegativeTest, RejectsFileTooShortForHeaderAndTrailer) {
 TEST_F(PackLoadNegativeTest, RejectsIndexOffsetPastTruncatedContent) {
   // Short enough that the header's own (unchanged) index_offset now
   // claims to point past this file's much smaller hashed_length.
-  const std::vector<std::byte> bytes(valid_bytes_.begin(), valid_bytes_.begin() + 40);
+  const std::vector<std::byte> bytes(valid_bytes_.begin(), valid_bytes_.begin() + kHeaderSize + kTrailerSize + 1);
   const auto path = MakePackPath("augusta_assets_test_truncated_mid.pack");
   WriteFileBytes(path, bytes);
 
@@ -683,13 +718,36 @@ TEST_F(PackLoadNegativeTest, RejectsCorruptedContentAsHashMismatch) {
   // header) - the trailer's stored hash still reflects the original
   // content, so this must be caught as a mismatch rather than silently
   // loading corrupted mesh data.
-  bytes[30] ^= std::byte{0xFF};
+  bytes[kHeaderSize + 2] ^= std::byte{0xFF};
   const auto path = MakePackPath("augusta_assets_test_corrupted.pack");
   WriteFileBytes(path, bytes);
 
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
   ASSERT_FALSE(pack.has_value());
   EXPECT_EQ(pack.error(), augusta::assets::LoadError::kHashMismatch);
+}
+
+TEST_F(PackLoadNegativeTest, RejectsAClientPackHashItsHeaderDoesNotFlag) {
+  auto bytes = valid_bytes_;
+  // The hash's first byte, right after the flags byte, which is clear.
+  bytes[kHeaderSize - 32] = std::byte{1};
+  const auto path = MakePackPath("augusta_assets_test_unflagged_hash.pack");
+  WriteFileBytes(path, bytes);
+
+  const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
+  ASSERT_FALSE(pack.has_value());
+  EXPECT_EQ(pack.error(), augusta::assets::LoadError::kTruncated);
+}
+
+TEST_F(PackLoadNegativeTest, RejectsAHeaderFlagNoWriterSets) {
+  auto bytes = valid_bytes_;
+  bytes[kHeaderSize - 33] = std::byte{0x02};
+  const auto path = MakePackPath("augusta_assets_test_unknown_flag.pack");
+  WriteFileBytes(path, bytes);
+
+  const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
+  ASSERT_FALSE(pack.has_value());
+  EXPECT_EQ(pack.error(), augusta::assets::LoadError::kTruncated);
 }
 
 TEST_F(PackLoadNegativeTest, RejectsWrongPublicKeyAsSignatureInvalid) {

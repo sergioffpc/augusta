@@ -3,15 +3,16 @@
 
 #include "augusta/math.h"
 
-// The visual half of client-side reconciliation (ADR-0004). Reconciliation
-// replays the client's commands from the server's state and so moves the
-// predicted body at once, by however much the prediction was off. Shown as it
-// is, that is a jump; this hides it, by showing the body where it was and
-// letting it slide to where it is. Only what is shown is smoothed: the
-// predicted body itself is already where the replay put it.
-//
-// Pure - no clock, no ECS - so it is tested on its own; PresentationWorld feeds
-// it each frame.
+/// \file
+/// The visual half of client-side reconciliation (ADR-0004). Reconciliation
+/// replays the client's commands from the server's state and so moves the
+/// predicted body at once, by however much the prediction was off. Shown as it
+/// is, that is a jump; this hides it, by showing the body where it was and
+/// letting it slide to where it is. Only what is shown is smoothed: the
+/// predicted body itself is already where the replay put it.
+///
+/// Pure - no clock, no ECS - so it is tested on its own; PresentationWorld feeds
+/// it each frame.
 namespace augusta::presentation {
 
 /// A jump at or beyond this many meters is shown at once rather than slid: too far

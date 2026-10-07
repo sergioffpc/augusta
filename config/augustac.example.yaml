@@ -6,13 +6,14 @@
 # relative to this file's directory, so "." means the directory of this file.
 base_dir: .
 player:
-  # The character to play (required), by its path relative to authoring/, e.g.
-  # characters/player: one of the characters the server's scenario names in
-  # its manifest.yaml. The server refuses the join otherwise (ADR-0042).
-  character: characters/player
+  # The character to play (required), by its name in the
+  # server's scenario's manifest (authoring/scenarios/<scenario>.yaml), e.g.
+  # soldier. The server refuses the join
+  # otherwise (ADR-0042).
+  character: soldier
 content:
   # Client pack to load (required).
-  pack: packs/augusta/client.pack
+  pack: packs/firebase/client.pack
   # Ed25519 public key the pack is signed with (required).
   public_key: keys/augusta.pub
 network:

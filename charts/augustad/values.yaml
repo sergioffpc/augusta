@@ -7,28 +7,71 @@ image:
   # image.
   tag: ""
   pullPolicy: IfNotPresent
-replicaCount: 1
 service:
   type: NodePort
-  # Left unset by default so Kubernetes assigns the node port, per
-  # ADR-0026/ENGINEERING.md; set per-environment (see clusters/onprem/apps)
-  # where a stable address is needed. UDP, as GameNetworkingSockets speaks.
-  # The server listens on port.
+  # UDP, as GameNetworkingSockets speaks. Every server listens on port; each
+  # one's node port is its own (servers below).
   port: 7777
-  nodePort: ""
 # What the server runs with besides its pack (config/augustad.example.yaml).
 server:
   tickRateHz: 60
   logLevel: info
-# Shared hostPath volume on the k3s node holding signed asset packs
-# (ENGINEERING.md's Deployment & CD section), populated manually after
-# signing and mounted read-only into every server pod. Each environment's
-# packVersion names its folder on the volume, which holds pack and the
-# public key it is signed with.
+# The metrics endpoint (ADR-0049): /metrics, which Prometheus scrapes through
+# the chart's ServiceMonitor, and /livez, the Deployment's startup and liveness
+# probes.
+metrics:
+  port: 9464
+  scrapeInterval: 15s
+  # augustad serves /livez only once its pack is verified and its content
+  # loaded, and fails it 5 s after the Simulation thread last finished a tick
+  # (ADR-0049). Kubernetes restarts the container at the failureThreshold-th
+  # failed check in a row, (failureThreshold - 1) * periodSeconds after the
+  # first one.
+  # Holds the liveness probe back until /livez first answers, restarting a
+  # server that has not within about 5 minutes (59 * 5 s): room for a slow
+  # pack load.
+  startupProbe:
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 60
+  # Then restarts a hung tick loop 10 s (2 * 5 s) after the first failed
+  # check, itself up to 5 s after /livez starts failing.
+  livenessProbe:
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+# The Grafana dashboards in dashboards/ (ADR-0049). Each one has its own
+# environment selector, so one release ships them for every environment
+# (develop's) and the others turn them off.
+dashboards:
+  enabled: true
+# The k3s node's shared volume of signed server packs (ENGINEERING.md's
+# Deployment & CD section), which augusta-publish fills: a folder per scenario,
+# and in it one per published pack, named by its version (the first 12 hex
+# characters of the server pack's BLAKE3 hash) and holding server.pack and the
+# augusta.pub it is signed with. Each server mounts its own version's folder
+# read-only.
 assetPacks:
   hostPath: /srv/augusta/asset-packs
-  mountPath: /srv/augusta/asset-packs
-  packVersion: ""
-  pack: server.pack
-  publicKey: augusta.pub
-resources: {}
+# The servers an environment runs, one per scenario (ADR-0026), keyed by the
+# scenario's name (ADR-0041): a Deployment, game Service and metrics Service
+# each, named augustad-<scenario>. A server serves its scenario's pack and no
+# other. Every entry names the pack version it serves, as augusta-publish
+# prints it: quoted, since a version of digits alone would otherwise read as a
+# number. It may pin its node port (left unset, Kubernetes assigns one):
+#   servers:
+#     augusta:
+#       packVersion: "3f9a1c0b7e21"
+#       nodePort: 30777
+servers: {}
+# Each server's (ADR-0026): a request that guarantees its
+# Simulation and Network I/O threads (ADR-0005) their share of the node, and
+# no CPU limit, since a throttled Simulation thread misses ticks (NFR-01).
+# Memory is limited at its request: past it the server is killed and
+# restarted, never evicted for overrunning its request when the node runs short.
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    memory: 512Mi

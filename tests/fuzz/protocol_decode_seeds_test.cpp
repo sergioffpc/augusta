@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <fstream>
+#include <ios>
 #include <iterator>
 #include <set>
 #include <string>
@@ -65,13 +66,13 @@ std::vector<Seed> Seeds() {
   const CommandWire command{.direction = Vec3(0.6F, 0.0F, -0.8F),
                             .yaw = 1.5F,
                             .pitch = -0.25F,
-                            .view_fraction = 0.75F,
+                            .seen_fraction = 0.75F,
                             .flags = CommandWire::kSprint | CommandWire::kFire,
                             .desired_stance = StanceWire::kProne,
-                            .view_age = 1};
+                            .seen_age = 1};
   return {
       {.name = "join_request",
-       .message = JoinRequestWire{.engine_version = "0.1.0", .client_pack = {}, .character = "characters/player"}},
+       .message = JoinRequestWire{.engine_version = "0.1.0", .client_pack = {}, .character = "soldier"}},
       {.name = "join_accepted",
        .message = JoinAcceptedWire{.session = static_cast<SessionIdWire>(7),
                                    .tick_rate_hz = 60,
@@ -79,12 +80,12 @@ std::vector<Seed> Seeds() {
                                                                                        .regen_per_second = 0.1F,
                                                                                        .forced_walk_below = 0.05F},
                                                                 .player_count = 2},
-                                   .character = 1}},
+                                   .character = "soldier"}},
       {.name = "join_refused", .message = JoinRefusedWire{.reason = JoinRefusalWire::kPackMismatch}},
       {.name = "commands",
        .message = CommandsWire{.commands = {SequencedCommandWire{.sequence = 41, .command = CommandWire{}},
                                             SequencedCommandWire{.sequence = 42, .command = command}},
-                               .view_tick = 1194}},
+                               .seen_tick = 1194}},
       {.name = "authoritative_state",
        .message =
            AuthoritativeStateWire{
@@ -101,19 +102,20 @@ std::vector<Seed> Seeds() {
                .acknowledged_sequence = 42,
                .queued_commands = 2}},
       {.name = "lobby",
-       .message = LobbyWire{.version = 3,
-                            .roster = {RosterEntryWire{.session = static_cast<SessionIdWire>(7), .character = 1},
-                                       RosterEntryWire{.session = static_cast<SessionIdWire>(9), .character = 2}}}},
+       .message =
+           LobbyWire{.version = 3,
+                     .roster = {RosterEntryWire{.session = static_cast<SessionIdWire>(7), .character = "soldier"},
+                                RosterEntryWire{.session = static_cast<SessionIdWire>(9), .character = "sniper"}}}},
       {.name = "ready", .message = ReadyWire{.version = 3}},
       {.name = "match_start",
        .message = MatchStartWire{.players = {MatchPlayerWire{.spawn = Vec3(-8.0F, 0.0F, 16.5F),
                                                              .session = static_cast<SessionIdWire>(7),
                                                              .entity = static_cast<EntityIdWire>(1),
-                                                             .character = 1},
+                                                             .character = "soldier"},
                                              MatchPlayerWire{.spawn = Vec3(8.0F, 0.0F, -16.5F),
                                                              .session = static_cast<SessionIdWire>(9),
                                                              .entity = static_cast<EntityIdWire>(2),
-                                                             .character = 2}}}},
+                                                             .character = "sniper"}}}},
       {.name = "match_end", .message = MatchEndWire{.winner = static_cast<SessionIdWire>(3)}},
       {.name = "shot",
        .message = ShotWire{.tick = 1200,
