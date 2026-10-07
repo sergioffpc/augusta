@@ -117,6 +117,7 @@ TEST(HostMetricsTest, EveryMetricOfTheCatalogueIsCollectedWithItsType) {
       {"augustad_hit_confirmations_total", MetricType::Counter},
       {"augustad_shooters_delay_seconds", MetricType::Histogram},
       {"augustad_shooters_delay_capped_total", MetricType::Counter},
+      {"augustad_bullets_in_flight", MetricType::Gauge},
   };
   for (const auto& [name, type] : catalogue) {
     EXPECT_EQ(Family(families, name).type, type) << name;
