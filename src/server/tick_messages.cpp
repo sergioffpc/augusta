@@ -1,7 +1,5 @@
 #include "tick_messages.h"
 
-#include <variant>
-
 #include "augusta/networking.h"
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
