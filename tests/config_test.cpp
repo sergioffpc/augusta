@@ -42,13 +42,13 @@ std::string Absolute(std::string_view name) { return (std::filesystem::absolute(
 TEST(ParseClientConfigTest, ReadsEveryKey) {
   const auto config = ParseClientConfig(
       "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: packs/level.client.pack\n  "
-      "public_key: keys/augusta.pub\nnetwork:\n  "
+      "public_key: keys/signing.pub\nnetwork:\n  "
       "server_address: 10.0.0.5:27016\n",
       kFileDir);
 
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->pack_path, kRoot / "packs" / "level.client.pack");
-  EXPECT_EQ(config->public_key_path, kRoot / "keys" / "augusta.pub");
+  EXPECT_EQ(config->public_key_path, kRoot / "keys" / "signing.pub");
   EXPECT_EQ(config->server_address, "10.0.0.5:27016");
 }
 
@@ -509,13 +509,13 @@ TEST(ParseClientConfigTest, RejectsAnEmptyCharacter) {
 
 TEST(ParseServerConfigTest, ReadsEveryKey) {
   const auto config = ParseServerConfig(
-      "base_dir: content\ncontent:\n  pack: packs/level.server.pack\n  public_key: keys/augusta.pub\nsimulation:\n  "
+      "base_dir: content\ncontent:\n  pack: packs/level.server.pack\n  public_key: keys/signing.pub\nsimulation:\n  "
       "tick_rate_hz: 30\nnetwork:\n  listen_address: 0.0.0.0:27016\nmetrics:\n  port: 9100\n",
       kFileDir);
 
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->pack_path, kRoot / "packs" / "level.server.pack");
-  EXPECT_EQ(config->public_key_path, kRoot / "keys" / "augusta.pub");
+  EXPECT_EQ(config->public_key_path, kRoot / "keys" / "signing.pub");
   EXPECT_EQ(config->tick_rate_hz, 30);
   EXPECT_EQ(config->listen_address, "0.0.0.0:27016");
   EXPECT_EQ(config->metrics_port, 9100);

@@ -294,6 +294,7 @@ std::vector<MatchPlayer> ThreePlayers() {
 // Three Spawn points far enough apart that no two bodies touch.
 const std::vector<Vec3> kSpawnPoints{Vec3(10.0F, 0.0F, 0.0F), Vec3(20.0F, 0.0F, 0.0F), Vec3(30.0F, 0.0F, 0.0F)};
 
+// Requirements: US-03
 TEST_F(PolicyTest, AnAssignSpawnsAnswerPlacesEachPlayerAtTheSpawnPointItNames) {
   World world(Parameters{}, kTickRate, WithRules(R"(
     function assign_spawns(match)
@@ -318,6 +319,7 @@ TEST_F(PolicyTest, AnAssignSpawnsAnswerPlacesEachPlayerAtTheSpawnPointItNames) {
 
 // The hook sees each player's Session ID, Entity ID and Character, the
 // Player count and the number of Spawn points, and cannot write to them.
+// Requirements: US-03
 TEST_F(PolicyTest, AssignSpawnsIsHandedAReadOnlyViewOfTheMatch) {
   Parameters parameters;
   parameters.player_count = 3;
@@ -338,6 +340,7 @@ TEST_F(PolicyTest, AssignSpawnsIsHandedAReadOnlyViewOfTheMatch) {
   EXPECT_NE(log.find("count=3 points=3 4/11/sniper 5/12/soldier 6/13/medic"), std::string::npos) << log;
 }
 
+// Requirements: US-03
 TEST_F(PolicyTest, WithoutAnAssignSpawnsHookPlayersTakeTheSpawnPointsInOrderSilently) {
   for (const char* rules : {"", "function assign_spawns() end", "function assign_spawns() return nil end"}) {
     World world(Parameters{}, kTickRate, WithRules(rules));
@@ -359,6 +362,7 @@ struct RefusedAnswer {
   const char* logged;
 };
 
+// Requirements: US-03
 TEST_F(PolicyTest, ARefusedOrFailingAssignSpawnsAnswerFallsBackToTheInOrderAssignmentAndIsLogged) {
   // Each answer but the one it is about is a valid one.
   for (const RefusedAnswer& answer : {
@@ -406,6 +410,7 @@ TEST_F(PolicyTest, ARefusedOrFailingAssignSpawnsAnswerFallsBackToTheInOrderAssig
   }
 }
 
+// Requirements: US-03
 TEST_F(PolicyTest, MorePlayersThanSpawnPointsStartOverInOrderAndNoSpawnPointsSpawnAtTheOrigin) {
   World world(Parameters{}, kTickRate);
 
@@ -416,6 +421,7 @@ TEST_F(PolicyTest, MorePlayersThanSpawnPointsStartOverInOrderAndNoSpawnPointsSpa
 
 // Nothing carries over: a Match starts from fresh bodies, health and rifles,
 // and no player of the last one is left in the world.
+// Requirements: US-03
 TEST_F(PolicyTest, EveryMatchStartsFromFreshBodiesAtFullHealthWithFullRifles) {
   Parameters parameters;
   parameters.rifle.magazine_capacity = 30;
@@ -482,6 +488,7 @@ std::vector<Vec3> SpawnPointsInALine(std::size_t count) {
   return points;
 }
 
+// Requirements: US-03
 TEST_F(PolicyTest, TheExampleRulesGiveEveryPlayerADistinctSpawnPointForEveryPlayerCount) {
   for (std::size_t count = 1; count <= 8; ++count) {
     World world(Parameters{}, kTickRate, ExamplePolicy());
@@ -497,6 +504,7 @@ TEST_F(PolicyTest, TheExampleRulesGiveEveryPlayerADistinctSpawnPointForEveryPlay
   }
 }
 
+// Requirements: US-03
 TEST_F(PolicyTest, TheExampleRulesStartTheSpawnPointsOverOnlyWhenTheMapHasFewerThanPlayers) {
   World world(Parameters{}, kTickRate, ExamplePolicy());
 
@@ -509,6 +517,7 @@ TEST_F(PolicyTest, TheExampleRulesStartTheSpawnPointsOverOnlyWhenTheMapHasFewerT
 // What the rules' on_tick hook may decide (ADR-0022): to end the Match with
 // a winner, or as a draw. A decision is in the State of the tick that made it,
 // for Host to act on after it (ADR-0023).
+// Requirements: US-14
 TEST_F(PolicyTest, AWinnerOnTickDeclaresIsAnActionOfTheTickThatDeclaredIt) {
   World world = WithAlice(WithRules(R"(
     function on_tick(match)
@@ -527,6 +536,7 @@ TEST_F(PolicyTest, AWinnerOnTickDeclaresIsAnActionOfTheTickThatDeclaredIt) {
   EXPECT_EQ(MatchEndOf(third)->winner, kAliceSession);
 }
 
+// Requirements: US-14
 TEST_F(PolicyTest, ADrawOnTickDeclaresIsAMatchEndWithNoWinner) {
   World world = WithAlice(WithRules("function on_tick() return {draw = true} end"));
 
@@ -538,6 +548,7 @@ TEST_F(PolicyTest, ADrawOnTickDeclaresIsAMatchEndWithNoWinner) {
 
 // Policy ends a Match once: once it has decided, on_tick is not asked again
 // until the Match is over, and in the next Match it is asked afresh.
+// Requirements: US-14
 TEST_F(PolicyTest, OnceOnTickHasEndedTheMatchItIsNotCalledAgainUntilTheNextMatch) {
   World world = WithAlice(WithRules(R"(
     function on_tick(match) return {winner = match.players[1].session} end
@@ -557,12 +568,14 @@ TEST_F(PolicyTest, OnceOnTickHasEndedTheMatchItIsNotCalledAgainUntilTheNextMatch
 }
 
 // A world with no one in it has no Match for policy to decide on: the Lobby.
+// Requirements: US-14
 TEST_F(PolicyTest, OnTickIsNotCalledWhileTheWorldHasNoPlayers) {
   World world(Parameters{}, kTickRate, WithRules("function on_tick() error('called in the lobby') end"));
 
   EXPECT_EQ(LogOfTicks(world, 3), "");
 }
 
+// Requirements: US-14
 TEST_F(PolicyTest, OnTickSeesTheTickThePlayerCountAndEveryPlayerInTheMatch) {
   Parameters parameters;
   parameters.player_count = 2;
@@ -594,6 +607,7 @@ TEST_F(PolicyTest, OnTickSeesTheTickThePlayerCountAndEveryPlayerInTheMatch) {
       << log;
 }
 
+// Requirements: US-14
 TEST_F(PolicyTest, APlayerWhoLeftTheMatchIsAbsentFromWhatOnTickSees) {
   World world = WithAlice(WithRules(R"(
     function on_tick(match)
@@ -613,6 +627,7 @@ TEST_F(PolicyTest, APlayerWhoLeftTheMatchIsAbsentFromWhatOnTickSees) {
 
 // A body added with no identity has Session ID 0, which is no player's: it is
 // never declared the winner, whatever policy says.
+// Requirements: US-14
 TEST_F(PolicyTest, SessionZeroIsNeverTheWinner) {
   World world(Parameters{}, kTickRate, WithRules("function on_tick() return {winner = 0} end"));
   world.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
@@ -620,6 +635,7 @@ TEST_F(PolicyTest, SessionZeroIsNeverTheWinner) {
   EXPECT_FALSE(MatchEndOf(world.Tick({}, kTick)).has_value());
 }
 
+// Requirements: US-14
 TEST_F(PolicyTest, AWinnerWhoIsNotInTheMatchIsRefusedLoggedAndTheMatchGoesOn) {
   World world = WithAlice(WithRules("function on_tick() return {winner = 12} end"));
 
@@ -682,6 +698,7 @@ TickResult AliceKillsBob(World& world) {
 
 // On the tick Bob dies the hook reports what it sees of him; on the next, with
 // Bob dead but no longer killed on that tick, it ends the Match.
+// Requirements: US-13, US-14
 TEST_F(PolicyTest, OnTickSeesWhoWasKilledThisTickAndByWhomAndThatTheyAreDead) {
   World world = Duel(R"(
     function on_tick(match)
@@ -704,6 +721,7 @@ TEST_F(PolicyTest, OnTickSeesWhoWasKilledThisTickAndByWhomAndThatTheyAreDead) {
   EXPECT_TRUE(MatchEndOf(next).has_value());
 }
 
+// Requirements: US-13, US-14
 TEST_F(PolicyTest, ADeadPlayerCannotBeDeclaredTheWinner) {
   World world = Duel(R"(
     function on_tick(match)
@@ -718,6 +736,7 @@ TEST_F(PolicyTest, ADeadPlayerCannotBeDeclaredTheWinner) {
 }
 
 // Ending a Match leaves nothing of it for the next: no body and no bullet in flight.
+// Requirements: US-14
 TEST_F(PolicyTest, EndingTheMatchTakesEveryPlayerAndEveryBulletInFlightOutOfTheWorld) {
   Parameters parameters;
   parameters.rifle.muzzle_velocity = 100.0F;

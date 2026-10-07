@@ -10,17 +10,20 @@ on:
         description: The branch every job checks out and tests.
         required: true
         type: string
-# What every job gets unless it says otherwise: a read of the code, and
-# deleting superseded cache entries (.github/actions/prune-cache).
-permissions:
-  contents: read
-  actions: write
+# No workflow-level permissions: in a called workflow they are also the most
+# any of its jobs may ask for, which would keep benchmarks from pushing and
+# report-failure from writing issues. Each job names its own instead, within
+# what nightly.yml's calling job grants.
 env:
   SCCACHE_GHA_ENABLED: "true"
   NIGHTLY_REF: ${{ inputs.ref }}
 jobs:
   property-tests:
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      # Deleting superseded cache entries (.github/actions/prune-cache).
+      actions: write
     # See ci.yml's server job for why this isn't the NuGet feed.
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
@@ -41,11 +44,23 @@ jobs:
         # case, for turning into an example-based regression test.
         env:
           RC_PARAMS: max_success=10000
-        run: ctest --preset linux --label-regex '^property$' --no-tests=error
+        run: ctest --preset linux --label-regex '^property$' --no-tests=error --output-junit "$GITHUB_WORKSPACE/junit/property.xml"
+      - name: Upload the test results
+        # For test-report below, also after a failing test.
+        if: success() || failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: junit-property
+          path: junit/
+          if-no-files-found: ignore
   fuzz:
     # Each fuzz target for about 30 minutes (ADR-0013), from the corpus earlier
     # nights grew, kept in the Actions cache rather than the repository.
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      # Deleting superseded cache entries (.github/actions/prune-cache).
+      actions: write
     strategy:
       fail-fast: false
       matrix:
@@ -114,6 +129,10 @@ jobs:
     # threads (ADR-0005). A report fails the test it came from; known false
     # positives are suppressed in tests/tsan.supp, each with its reason.
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      # Deleting superseded cache entries (.github/actions/prune-cache).
+      actions: write
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
@@ -133,7 +152,15 @@ jobs:
       - name: Build
         run: cmake --build --preset linux-tsan --target all augusta_tests
       - name: Test
-        run: ctest --preset linux-tsan
+        run: ctest --preset linux-tsan --output-junit "$GITHUB_WORKSPACE/junit/tsan.xml"
+      - name: Upload the test results
+        # For test-report below, also after a failing test.
+        if: success() || failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: junit-tsan
+          path: junit/
+          if-no-files-found: ignore
   netcode:
     # Scripted players against an in-process server under the transport's
     # simulated latency, jitter, loss and reordering, from a broadband link to
@@ -142,6 +169,10 @@ jobs:
     # as hits.
     # Minutes of real time a profile, so not on every pull request.
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      # Deleting superseded cache entries (.github/actions/prune-cache).
+      actions: write
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
@@ -156,12 +187,25 @@ jobs:
       - name: Build
         run: cmake --build --preset linux --target augusta_tests
       - name: Test (netcode under an impaired link)
-        run: ctest --preset linux-netcode --no-tests=error
+        run: ctest --preset linux-netcode --no-tests=error --output-junit "$GITHUB_WORKSPACE/junit/netcode.xml"
+      - name: Upload the test results
+        # For test-report below, also after a failing test.
+        if: success() || failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: junit-netcode
+          path: junit/
+          if-no-files-found: ignore
   coverage:
-    # An llvm-cov report of the Linux ctest run, uploaded as a run artifact:
+    # An llvm-cov report of the Linux ctest run, uploaded as a run artifact
+    # and part of test-report below:
     # a report for finding untested deterministic logic, never a gate
     # (ADR-0013), so no percentage fails anything.
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      # Deleting superseded cache entries (.github/actions/prune-cache).
+      actions: write
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
@@ -179,7 +223,16 @@ jobs:
       - name: Build
         run: cmake --build --preset linux-coverage --target all augusta_tests
       - name: Test
-        run: ctest --preset linux-coverage
+        # The whole Linux suite, so its results are test-report's linux column.
+        run: ctest --preset linux-coverage --output-junit "$GITHUB_WORKSPACE/junit/linux.xml"
+      - name: Upload the test results
+        # For test-report below, also after a failing test.
+        if: success() || failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: junit-linux
+          path: junit/
+          if-no-files-found: ignore
       - name: Report
         # Also after a failing test: what ran still counts, and the failure
         # itself is reported by the step above.
@@ -262,10 +315,44 @@ jobs:
           alert-threshold: "200%"
           fail-on-alert: true
           summary-always: true
+  test-report:
+    # The nightly's tests in one HTML report (ADR-0013, scripts/test-report.sh):
+    # every ctest run above, a row per test and a column per job, and the
+    # coverage job's llvm-cov report. Uploaded as a run artifact; the
+    # documentation site publishes the latest scheduled night's under tests/
+    # (ADR-0046). Also after a failing test, which is when it is read.
+    needs: [property-tests, tsan, netcode, coverage]
+    if: always()
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+      # By pattern, so a job that uploaded nothing leaves its part empty
+      # rather than failing the download.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: junit-*
+          path: junit
+          merge-multiple: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: coverage-report
+          path: coverage-report
+          merge-multiple: true
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - name: Render
+        run: scripts/test-report.sh junit coverage-report test-report
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-report
+          path: test-report/
   # A new nightly job adds itself to `needs` here, and nothing else: this job
   # reports on every job it waits for.
   report-failure:
-    needs: [property-tests, fuzz, tsan, netcode, coverage, benchmarks]
+    needs: [property-tests, fuzz, tsan, netcode, coverage, benchmarks, test-report]
     if: always() && contains(needs.*.result, 'failure')
     runs-on: ubuntu-26.04
     permissions:

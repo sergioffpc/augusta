@@ -50,6 +50,7 @@ MatchEnd EndOf(const std::optional<PolicyAction>& action) {
   return action.has_value() ? std::get<MatchEnd>(*action) : MatchEnd{};
 }
 
+// Requirements: US-14
 TEST(ReadTickActionTest, NilTakesNoAction) {
   const auto action = ReadTickAction(Value{}, kBothAlive);
 
@@ -57,6 +58,7 @@ TEST(ReadTickActionTest, NilTakesNoAction) {
   EXPECT_FALSE(action->has_value());
 }
 
+// Requirements: US-14
 TEST(ReadTickActionTest, AWinnerAliveInTheMatchEndsItWithThatWinner) {
   const auto action = ReadTickAction(Record({Field{.key = "winner", .value = Number(2)}}), kBothAlive);
 
@@ -64,6 +66,7 @@ TEST(ReadTickActionTest, AWinnerAliveInTheMatchEndsItWithThatWinner) {
   EXPECT_EQ(EndOf(*action).winner, kBob);
 }
 
+// Requirements: US-14
 TEST(ReadTickActionTest, ADrawEndsTheMatchWithNoWinner) {
   const auto action = ReadTickAction(Record({Field{.key = "draw", .value = Value{.data = true}}}), kBothAlive);
 
@@ -71,6 +74,7 @@ TEST(ReadTickActionTest, ADrawEndsTheMatchWithNoWinner) {
   EXPECT_FALSE(EndOf(*action).winner.has_value());
 }
 
+// Requirements: US-14
 TEST(ReadTickActionTest, AWinnerNotAliveInTheMatchIsRefused) {
   const auto action = ReadTickAction(Record({Field{.key = "winner", .value = Number(2)}}), std::vector{kAlice});
 
@@ -78,6 +82,7 @@ TEST(ReadTickActionTest, AWinnerNotAliveInTheMatchIsRefused) {
   EXPECT_EQ(action.error(), ActionRefusal::kNotAWinner);
 }
 
+// Requirements: US-14
 TEST(ReadTickActionTest, SessionZeroIsNeverAWinner) {
   const auto action = ReadTickAction(Record({Field{.key = "winner", .value = Number(0)}}), std::vector{SessionId{}});
 
@@ -85,6 +90,7 @@ TEST(ReadTickActionTest, SessionZeroIsNeverAWinner) {
   EXPECT_EQ(action.error(), ActionRefusal::kNotAWinner);
 }
 
+// Requirements: US-14
 TEST(ReadTickActionTest, AnythingElseIsNotAnAction) {
   const std::vector<Value> refused{
       Number(1),
@@ -103,6 +109,7 @@ TEST(ReadTickActionTest, AnythingElseIsNotAnAction) {
   }
 }
 
+// Requirements: US-03
 TEST(ReadSpawnAssignmentTest, GivesEachPlayerItsSpawnPointFromZeroInPlayerOrder) {
   const auto spawns = ReadSpawnAssignment(List({Assignment(2, 1), Assignment(1, 3)}), kBothAlive, 3);
 
@@ -110,6 +117,7 @@ TEST(ReadSpawnAssignmentTest, GivesEachPlayerItsSpawnPointFromZeroInPlayerOrder)
   EXPECT_EQ(*spawns, (std::vector<std::size_t>{2, 0}));
 }
 
+// Requirements: US-03
 TEST(ReadSpawnAssignmentTest, TwoPlayersMayShareASpawnPoint) {
   const auto spawns = ReadSpawnAssignment(List({Assignment(1, 1), Assignment(2, 1)}), kBothAlive, 1);
 
@@ -117,6 +125,7 @@ TEST(ReadSpawnAssignmentTest, TwoPlayersMayShareASpawnPoint) {
   EXPECT_EQ(*spawns, (std::vector<std::size_t>{0, 0}));
 }
 
+// Requirements: US-03
 TEST(ReadSpawnAssignmentTest, RefusesWhatIsNotAWholeAssignment) {
   const std::vector<std::pair<Value, SpawnRefusal>> refused{
       {Number(1), SpawnRefusal::kNotAList},

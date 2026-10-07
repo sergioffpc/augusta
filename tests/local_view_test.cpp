@@ -143,12 +143,14 @@ TEST(LocalCameraTest, TheCameraLooksWhereTheNextRoundLeaves) {
   ExpectNear(looking, augusta::command::ViewDirection(next.yaw, next.pitch));
 }
 
+// Requirements: US-06
 TEST(AdsZoomTest, FromTheHipTheViewIsNotZoomed) {
   AdsZoom zoom;
 
   EXPECT_FLOAT_EQ(zoom.Update(false, kAdsFieldOfView, kFrame), kHipFieldOfView);
 }
 
+// Requirements: US-06
 TEST(AdsZoomTest, HoldingAdsZoomsToItsFieldOfViewOverTheTransition) {
   AdsZoom zoom;
 
@@ -166,6 +168,7 @@ TEST(AdsZoomTest, HoldingAdsZoomsToItsFieldOfViewOverTheTransition) {
   EXPECT_FLOAT_EQ(settled, kAdsFieldOfView);
 }
 
+// Requirements: US-06
 TEST(AdsZoomTest, ReleasingAdsZoomsBackOut) {
   AdsZoom zoom;
   (void)zoom.Update(true, kAdsFieldOfView, AdsZoom::kTransitionSeconds);
@@ -178,6 +181,7 @@ TEST(AdsZoomTest, ReleasingAdsZoomsBackOut) {
   EXPECT_FLOAT_EQ(released, kHipFieldOfView);
 }
 
+// Requirements: US-11
 TEST(HitMarkerTest, NoHitMarkerShowsWithoutAHitConfirmation) {
   HitMarker marker;
 
@@ -186,6 +190,7 @@ TEST(HitMarkerTest, NoHitMarkerShowsWithoutAHitConfirmation) {
   }
 }
 
+// Requirements: US-11
 TEST(HitMarkerTest, AHitConfirmationShowsTheMarkerForAMoment) {
   HitMarker marker;
 
@@ -194,6 +199,7 @@ TEST(HitMarkerTest, AHitConfirmationShowsTheMarkerForAMoment) {
   EXPECT_FALSE(marker.Update(0, HitMarker::kShownSeconds));
 }
 
+// Requirements: US-11
 TEST(HitMarkerTest, EachHitConfirmationShowsTheMarkerAfresh) {
   HitMarker marker;
   (void)marker.Update(1, kFrame);
@@ -210,12 +216,14 @@ constexpr EntityId kThird{3};
 constexpr EntityId kFourth{4};
 const std::vector<EntityId> kPlayers{kLocal, kSecond, kThird, kFourth};
 
+// Requirements: US-13
 TEST(SpectatorTest, ADeadPlayerFirstWatchesTheFirstLivingPlayerInSessionOrder) {
   Spectator spectator;
 
   EXPECT_EQ(spectator.Update(kPlayers, std::vector{kFourth, kThird}, false), kThird);
 }
 
+// Requirements: US-13
 TEST(SpectatorTest, EachPressOfFireWatchesTheNextLivingPlayerInSessionOrderSkippingTheDead) {
   Spectator spectator;
   const std::vector living{kSecond, kFourth};
@@ -228,6 +236,7 @@ TEST(SpectatorTest, EachPressOfFireWatchesTheNextLivingPlayerInSessionOrderSkipp
 
 // A player killed while firing does not skip past the first living player, nor
 // cycle on for as long as fire stays held.
+// Requirements: US-13
 TEST(SpectatorTest, HoldingFireMovesOnOncePerPress) {
   Spectator spectator;
   const std::vector all_alive{kSecond, kThird, kFourth};
@@ -239,6 +248,7 @@ TEST(SpectatorTest, HoldingFireMovesOnOncePerPress) {
   EXPECT_EQ(spectator.Update(kPlayers, all_alive, true), kThird);
 }
 
+// Requirements: US-13
 TEST(SpectatorTest, WhenTheWatchedPlayerDiesTheViewMovesOnToTheNextLivingPlayer) {
   Spectator spectator;
   const std::vector all_alive{kSecond, kThird, kFourth};
@@ -249,6 +259,7 @@ TEST(SpectatorTest, WhenTheWatchedPlayerDiesTheViewMovesOnToTheNextLivingPlayer)
   EXPECT_EQ(spectator.Update(kPlayers, std::vector{kSecond}, false), kSecond);
 }
 
+// Requirements: US-13
 TEST(SpectatorTest, WithNoOneLeftAliveNoOneIsWatched) {
   Spectator spectator;
   (void)spectator.Update(kPlayers, std::vector{kThird}, false);
@@ -258,6 +269,7 @@ TEST(SpectatorTest, WithNoOneLeftAliveNoOneIsWatched) {
 }
 
 // Remote pitch is not replicated, so the watched view looks level.
+// Requirements: US-13
 TEST(WatchedCameraTest, TheCameraIsAtTheWatchedPlayersEyeForItsStanceLookingLevelWhereItFaces) {
   const RemoteBody crouching{.position = Vec3(3.0F, 1.0F, -4.0F),
                              .velocity = Vec3(1.0F, 0.0F, 0.0F),

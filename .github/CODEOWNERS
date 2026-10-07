@@ -1,20 +1,35 @@
 # Owners requested for review on every PR touching these paths. The last
-# matching pattern wins, so the catch-all comes first. Branch protection's
-# "Require review from Code Owners" turns the sensitive areas (workflows,
-# cluster manifests, the pack-signing tool) into required approvals.
+# matching pattern wins, so the catch-all comes first. The entries below it
+# name the sensitive areas (runtime, tools incl. pack signing, build and supply
+# chain, cluster manifests, CI, docs) so a future second owner can be scoped
+# to them; branch protection's "Require review from Code Owners" stays off
+# while there is a single owner, who can't approve their own PRs.
 
-*                @sergioffpc
+*                   @sergioffpc
 
-/src/server/     @sergioffpc
-/src/client/     @sergioffpc
-/src/modules/    @sergioffpc
+# Runtime.
+/src/server/        @sergioffpc
+/src/client/        @sergioffpc
+/src/modules/       @sergioffpc
 
-# Pack cooker, including pack signing (tools/pack/src/pack/keys.py).
-/tools/pack/     @sergioffpc
+# Content and dev tools, including pack signing (tools/pack/src/pack/keys.py).
+/tools/             @sergioffpc
 
-/charts/         @sergioffpc
-/clusters/       @sergioffpc
+# Build and supply chain.
+/CMakeLists.txt     @sergioffpc
+/CMakePresets.json  @sergioffpc
+/cmake/             @sergioffpc
+/vcpkg.json         @sergioffpc
+/third_party/       @sergioffpc
+/Dockerfile         @sergioffpc
 
-/.github/        @sergioffpc
+# Deployment.
+/charts/            @sergioffpc
+/clusters/          @sergioffpc
 
-/docs/adr/       @sergioffpc
+# CI and repo policy.
+/.github/           @sergioffpc
+
+# Decisions and requirements: ADRs, architecture, requirements, roadmap,
+# runbooks, agent docs.
+/docs/              @sergioffpc

@@ -27,10 +27,12 @@ constexpr float kFixedTick = 1.0F / 60.0F;
 // A character's eye (ADR-0040), standing, relative to its feet.
 const Vec3 kStandingEye(0.0F, 1.7F, 0.1F);
 
+// Requirements: US-04
 TEST(LowerToStanceTest, StandingAPointIsWhereItWasAuthored) {
   EXPECT_EQ(augusta::physics::LowerToStance(kStandingEye, Stance::kStanding), kStandingEye);
 }
 
+// Requirements: US-04
 TEST(LowerToStanceTest, APointIsLowerCrouchingThanStandingAndLowerProneThanCrouching) {
   const Vec3 crouching = augusta::physics::LowerToStance(kStandingEye, Stance::kCrouching);
   const Vec3 prone = augusta::physics::LowerToStance(kStandingEye, Stance::kProne);
@@ -43,6 +45,7 @@ TEST(LowerToStanceTest, APointIsLowerCrouchingThanStandingAndLowerProneThanCrouc
   EXPECT_EQ(prone.z, kStandingEye.z);
 }
 
+// Requirements: US-04
 TEST(LowerToStanceTest, ThePointStaysInsideTheBodyInEveryStance) {
   const Vec3 top_of_head(0.0F, augusta::physics::StanceHeight(Stance::kStanding), 0.0F);
 
@@ -51,6 +54,7 @@ TEST(LowerToStanceTest, ThePointStaysInsideTheBodyInEveryStance) {
   }
 }
 
+// Requirements: US-04
 TEST(PhysicsWorldTest, StepMovesBodyAlongInputDirection) {
   World world{StaminaConfig{}};
   const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
@@ -97,6 +101,7 @@ TEST(PhysicsWorldTest, AWorldCanBeCreatedAfterAllOthersWereDestroyed) {
   EXPECT_NO_THROW(second.Step(body, MovementInput{}, kFixedTick));
 }
 
+// Requirements: US-05
 TEST(PhysicsWorldTest, SprintDepletesStaminaAndForcesWalkBelowThreshold) {
   StaminaConfig config;
   config.deplete_per_second = 1.0F;
@@ -134,6 +139,7 @@ MovementInput SprintingForward() {
   return input;
 }
 
+// Requirements: US-05
 TEST(PhysicsStaminaTest, SustainedSprintRunsStaminaOutThenWalksEveryTickUntilItRecoversAboveTheThreshold) {
   World world{kExhaustingRules};
   const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
@@ -168,6 +174,7 @@ TEST(PhysicsStaminaTest, SustainedSprintRunsStaminaOutThenWalksEveryTickUntilItR
   EXPECT_NEAR(state.velocity.x, kSprintSpeed, kSpeedTolerance);
 }
 
+// Requirements: US-05
 TEST(PhysicsStaminaTest, HoldingSprintWhileStillDoesNotDrainStamina) {
   World world{StaminaConfig{.deplete_per_second = 1.0F, .regen_per_second = 0.0F, .forced_walk_below = 0.2F}};
   const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
@@ -184,6 +191,7 @@ TEST(PhysicsStaminaTest, HoldingSprintWhileStillDoesNotDrainStamina) {
 
 class PhysicsStaminaStanceTest : public ::testing::TestWithParam<Stance> {};
 
+// Requirements: US-05
 TEST_P(PhysicsStaminaStanceTest, HoldingSprintWhileMovingOutOfStandingDoesNotDrainStamina) {
   World world{StaminaConfig{.deplete_per_second = 1.0F, .regen_per_second = 0.0F, .forced_walk_below = 0.2F}};
   const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
@@ -202,6 +210,7 @@ TEST_P(PhysicsStaminaStanceTest, HoldingSprintWhileMovingOutOfStandingDoesNotDra
 INSTANTIATE_TEST_SUITE_P(CrouchedAndProne, PhysicsStaminaStanceTest,
                          ::testing::Values(Stance::kCrouching, Stance::kProne));
 
+// Requirements: US-05
 TEST(PhysicsStaminaTest, RestoreKeepsTheExhaustedFlagAndTheNextStepWalks) {
   World world{kExhaustingRules};
   const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
@@ -217,6 +226,7 @@ TEST(PhysicsStaminaTest, RestoreKeepsTheExhaustedFlagAndTheNextStepWalks) {
   EXPECT_NEAR(stepped.velocity.x, kWalkSpeed, kSpeedTolerance);
 }
 
+// Requirements: US-05
 TEST(PhysicsStaminaTest, RestoreClearsTheExhaustedFlagOfAStateWithoutIt) {
   World world{kExhaustingRules};
   const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
@@ -236,6 +246,7 @@ TEST(PhysicsStaminaTest, RestoreClearsTheExhaustedFlagOfAStateWithoutIt) {
   EXPECT_NEAR(stepped.velocity.x, kSprintSpeed, kSpeedTolerance);
 }
 
+// Requirements: US-05
 TEST(PhysicsWorldTest, TheStaminaRulesCanBeReplacedAndTheNextStepFollowsThem) {
   World world{StaminaConfig{}};
   const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
@@ -267,6 +278,7 @@ TEST(PhysicsWorldTest, RestoreMovesTheBodyAndTheNextStepStartsFromThere) {
   EXPECT_NEAR(stepped.stamina, 0.5F, 0.05F);
 }
 
+// Requirements: US-04
 TEST(PhysicsWorldTest, RestoreChangesTheStance) {
   World world{StaminaConfig{}};
   const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
@@ -372,6 +384,7 @@ BodyState Settle(World& world, augusta::physics::BodyHandle body, const Movement
   return state;
 }
 
+// Requirements: US-04
 TEST(StaticGeometryTest, AFloorHoldsAWalkingBodyAtGroundHeight) {
   World world = WorldWithFloor();
   const auto body = world.CreateBody(Vec3(0.0F, 3.0F, 0.0F));
@@ -409,6 +422,7 @@ class WallTest : public ::testing::TestWithParam<bool> {};
 
 // A cooked map's triangles can face either way, so the wall must stop a body
 // whichever side its triangles face.
+// Requirements: US-04
 TEST_P(WallTest, AWallStopsAWalkingBody) {
   World world = WorldWithFloor();
   ASSERT_TRUE(world.AddCollisionMesh(Wall(5.0F, 5.0F, -kHalfExtent, kHalfExtent, GetParam())).has_value());
@@ -425,6 +439,7 @@ TEST_P(WallTest, AWallStopsAWalkingBody) {
 
 INSTANTIATE_TEST_SUITE_P(EitherFacing, WallTest, ::testing::Bool());
 
+// Requirements: US-04
 TEST(StaticGeometryTest, ACrouchedBodyCannotStandUpUnderALowCeiling) {
   World world = WorldWithFloor();
   // A tunnel from x = 3 onward: 1.7 m of headroom fits a crouch (1.3 m, plus the
@@ -445,6 +460,7 @@ TEST(StaticGeometryTest, ACrouchedBodyCannotStandUpUnderALowCeiling) {
   EXPECT_EQ(after.stance, Stance::kCrouching);
 }
 
+// Requirements: US-04
 TEST(StaticGeometryTest, AProneBodyCannotStandUpUnderALowCeiling) {
   World world = WorldWithFloor();
   ASSERT_TRUE(world.AddCollisionMesh(Ceiling(1.7F, 3.0F, kHalfExtent, -kHalfExtent, kHalfExtent)).has_value());
@@ -462,6 +478,7 @@ TEST(StaticGeometryTest, AProneBodyCannotStandUpUnderALowCeiling) {
   EXPECT_NE(Settle(world, body, try_stand, 10).stance, Stance::kStanding);
 }
 
+// Requirements: US-04
 TEST(StaticGeometryTest, ACeilingJustAboveStandingHeightStillBlocksStandingUp) {
   World world = WorldWithFloor();
   // Standing is 2.1 m tall; the controller also keeps a contact skin around it.
@@ -477,6 +494,7 @@ TEST(StaticGeometryTest, ACeilingJustAboveStandingHeightStillBlocksStandingUp) {
   EXPECT_EQ(Settle(world, body, stand, 30).stance, Stance::kCrouching);
 }
 
+// Requirements: US-04
 TEST(StaticGeometryTest, ABodyCanStandUpWhereThereIsHeadroom) {
   World world = WorldWithFloor();
   const auto body = world.CreateBody(Vec3(0.0F, 1.2F, 0.0F));

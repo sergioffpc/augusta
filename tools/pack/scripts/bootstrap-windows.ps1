@@ -151,7 +151,7 @@ if (-not $nativeModulesBuilt) {
 # for verification (main.cpp's <public_key_path> argument, ADR-0018). Goes
 # through the augusta-keygen entry point (pack/keys.py,
 # pynacl - pure Python, no native module or CLI binary involved).
-$signingKeyPrefix = Join-Path $keysDir "augusta"
+$signingKeyPrefix = Join-Path $keysDir "signing"
 $signingKeyPath = "$signingKeyPrefix.key"
 if (Test-Path $signingKeyPath) {
   Write-Host "Signing keypair already exists at $signingKeyPrefix.key/.pub - leaving it as is."
@@ -168,7 +168,7 @@ Write-Host ""
 Write-Host "Hermetic environment ready at $AssetsRoot (never commit any of it, especially $keysDir):"
 Write-Host "  - $authoringDir  : scenario folders (a stage and its Lua scripts each) - a convenient place to keep them, not a boundary the cooker enforces"
 Write-Host "  - $packsDir      : signed packs cooked via the cooker"
-Write-Host "  - $keysDir       : Ed25519 signing keypair (augusta.key/augusta.pub)"
+Write-Host "  - $keysDir       : Ed25519 signing keypair (signing.key/signing.pub)"
 Write-Host "  - $binDir        : augusta-pack, augusta-keygen, augusta-inspect, augusta-verify, augusta-publish"
 Write-Host "  - $pythonDir     : hermetic Python venv (uv tool), pack installed editable from tools\pack"
 Write-Host "                     (includes the native _meshoptimizer/_textconv modules - $packPackageDir)"

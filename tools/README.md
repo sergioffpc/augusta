@@ -104,7 +104,7 @@ The assets root looks like this:
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `authoring/` | `maps/` (ADR-0015), `characters/` (ADR-0040), `sounds/` (ADR-0020), `scripts/parameters/` (ADR-0039), `scripts/rules/` (ADR-0022), `scenarios/<name>.yaml` (ADR-0041) - resolved by `augusta-pack`            |
 | `packs/`     | Cooked, signed packs                                                                                                                                                                                          |
-| `keys/`      | `augusta.key` / `augusta.pub` (Ed25519). Never commit these.                                                                                                                                                  |
+| `keys/`      | `signing.key` / `signing.pub` (Ed25519). Never commit these.                                                                                                                                                  |
 | `bin/`       | `augusta-pack.exe`, `augusta-keygen.exe`, `augusta-inspect.exe`, `augusta-verify.exe`, `augusta-publish.exe` (installed here by `uv tool install`), plus `augusta-composer.ps1` if the Composer bootstrap ran |
 | `python/`    | The uv tool venv (`python/pack`), with this project installed editable                                                                                                                                        |
 | `tools/`     | Composer and Adobe plugins (installed by the Composer bootstrap)                                                                                                                                              |
@@ -229,14 +229,14 @@ augusta-pack [-h] [--assets-root ASSETS_ROOT]
 | `--assets-root ASSETS_ROOT`               | the root of the venv the command runs from (`<assets-root>/python/...`) | Assets root holding `authoring/`, `packs/` and `keys/`: `scenario` must sit under its `authoring/`, and it's used for the three defaults below. |
 | `--client-output-pack CLIENT_OUTPUT_PACK` | `<assets-root>/packs/<scenario's path under authoring>/client.pack`     | Where to write the client pack. Missing parent directories are created.                                                                         |
 | `--server-output-pack SERVER_OUTPUT_PACK` | `<assets-root>/packs/<scenario's path under authoring>/server.pack`     | Where to write the server pack. Missing parent directories are created.                                                                         |
-| `--signing-key SIGNING_KEY`               | `<assets-root>/keys/augusta.key`                                        | Ed25519 private key (64 bytes) the packs are signed with.                                                                                       |
+| `--signing-key SIGNING_KEY`               | `<assets-root>/keys/signing.key`                                        | Ed25519 private key (64 bytes) the packs are signed with.                                                                                       |
 | `--skip-validation`                       | off                                                                     | Skip usd-validation-nvidia (step 2) for stages that fail its checks. usd-optimize and the cook still run.                                       |
 
 Exit status is `0` on success and `1` if any step fails.
 
 ### Signing keys
 
-The bootstrap already generates `keys\augusta.key` / `augusta.pub`, so you only
+The bootstrap already generates `keys\signing.key` / `signing.pub`, so you only
 need `augusta-keygen` to create an additional keypair:
 
 ```powershell
@@ -259,7 +259,7 @@ On success it prints the two paths it wrote and exits `0`. The public key is
 what the runtime verifies packs against (ADR-0018).
 
 It **overwrites** existing `<prefix>.key` / `<prefix>.pub` without asking. Never
-point it at `keys\augusta`: that would invalidate every pack already signed with
+point it at `keys\signing`: that would invalidate every pack already signed with
 the current key and the public key already deployed for verification.
 
 ### Inspecting and verifying packs
@@ -310,7 +310,7 @@ augusta-verify [-h] [--assets-root ASSETS_ROOT] [--public-key PUBLIC_KEY] pack
 | `pack` (required)           |                                            | Pack file (see above).                                           |
 | `-h`, `--help`              |                                            | Print the usage and option list, then exit.                      |
 | `--assets-root ASSETS_ROOT` | the root of the venv the command runs from | Assets root, for the `--public-key` default only.                |
-| `--public-key PUBLIC_KEY`   | `<assets-root>/keys/augusta.pub`           | Ed25519 public key (32 bytes) the signature must verify against. |
+| `--public-key PUBLIC_KEY`   | `<assets-root>/keys/signing.pub`           | Ed25519 public key (32 bytes) the signature must verify against. |
 
 It recomputes the BLAKE3 hash of everything but the trailer, compares it with
 the trailer's hash, verifies the trailer's Ed25519 signature over that hash, and
@@ -339,7 +339,7 @@ server serves the pack once its environment's `HelmRelease` in
 Before copying anything it verifies both packs of the scenario's cook against
 the public key, and checks that the server pack names that client pack in its
 header (ADR-0031). It then copies only the server pack and the public key, as
-`server.pack` and `augusta.pub`, into
+`server.pack` and `signing.pub`, into
 `/srv/augusta/asset-packs/<scenario>/<version>/`, `<version>` being the first 12
 hex characters of the server pack's BLAKE3 hash. The folder is assembled beside
 its final place and renamed into it, so it never exists half-written, and a
@@ -365,7 +365,7 @@ augusta-publish [-h] --host HOST [--assets-root ASSETS_ROOT] [--client-pack CLIE
 | `--assets-root ASSETS_ROOT` | the root of the venv the command runs from   | Assets root, for the defaults below only.                                                                                       |
 | `--client-pack CLIENT_PACK` | `<assets-root>/packs/<scenario>/client.pack` | The client pack of the cook. Verified, never copied.                                                                            |
 | `--server-pack SERVER_PACK` | `<assets-root>/packs/<scenario>/server.pack` | The server pack to publish.                                                                                                     |
-| `--public-key PUBLIC_KEY`   | `<assets-root>/keys/augusta.pub`             | The key both packs are signed with, published as `augusta.pub`.                                                                 |
+| `--public-key PUBLIC_KEY`   | `<assets-root>/keys/signing.pub`             | The key both packs are signed with, published as `signing.pub`.                                                                 |
 
 On success it prints the folder on the node and the line to put under the
 scenario's server in the `HelmRelease`

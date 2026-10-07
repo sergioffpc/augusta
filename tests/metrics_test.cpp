@@ -57,6 +57,7 @@ class MetricsEndpointTest : public ::testing::Test {
   prometheus::Registry server_metrics_;
 };
 
+// Requirements: NFR-07
 TEST_F(MetricsEndpointTest, LivezIsOkRightAfterATick) {
   const MetricsEndpoint endpoint(port_, last_tick_end_, {server_metrics_});
 
@@ -65,6 +66,7 @@ TEST_F(MetricsEndpointTest, LivezIsOkRightAfterATick) {
   EXPECT_EQ(response.result(), http::status::ok);
 }
 
+// Requirements: NFR-07
 TEST_F(MetricsEndpointTest, LivezIsUnavailableOnceNoTickHasFinishedWithinTheWindow) {
   last_tick_end_ = Clock::now() - kLivenessWindow - std::chrono::seconds{1};
   const MetricsEndpoint endpoint(port_, last_tick_end_, {server_metrics_});
@@ -74,6 +76,7 @@ TEST_F(MetricsEndpointTest, LivezIsUnavailableOnceNoTickHasFinishedWithinTheWind
   EXPECT_EQ(response.result(), http::status::service_unavailable);
 }
 
+// Requirements: NFR-07
 TEST_F(MetricsEndpointTest, MetricsServesTheProcessMetricsInTheTextExposition) {
   const MetricsEndpoint endpoint(port_, last_tick_end_, {server_metrics_});
 
@@ -85,6 +88,7 @@ TEST_F(MetricsEndpointTest, MetricsServesTheProcessMetricsInTheTextExposition) {
   EXPECT_NE(response.body().find("augustad_start_time_seconds "), std::string::npos) << response.body();
 }
 
+// Requirements: NFR-07
 TEST_F(MetricsEndpointTest, MetricsServesWhatTheServerCountsBesideTheProcessMetrics) {
   prometheus::BuildCounter()
       .Name("augustad_ticks_total")
@@ -100,6 +104,7 @@ TEST_F(MetricsEndpointTest, MetricsServesWhatTheServerCountsBesideTheProcessMetr
   EXPECT_NE(response.body().find("augustad_build_info{"), std::string::npos) << response.body();
 }
 
+// Requirements: NFR-07
 TEST_F(MetricsEndpointTest, MetricsServesEachOfTheServersSources) {
   prometheus::Registry connection_health;
   prometheus::BuildGauge()
@@ -118,18 +123,21 @@ TEST_F(MetricsEndpointTest, MetricsServesEachOfTheServersSources) {
       << response.body();
 }
 
+// Requirements: NFR-07
 TEST_F(MetricsEndpointTest, AnUnknownPathIsNotFound) {
   const MetricsEndpoint endpoint(port_, last_tick_end_, {server_metrics_});
 
   EXPECT_EQ(Get(port_, "/healthz").result(), http::status::not_found);
 }
 
+// Requirements: NFR-07
 TEST_F(MetricsEndpointTest, OnlyGetIsAnswered) {
   const MetricsEndpoint endpoint(port_, last_tick_end_, {server_metrics_});
 
   EXPECT_EQ(Get(port_, "/metrics", http::verb::post).result(), http::status::method_not_allowed);
 }
 
+// Requirements: NFR-07
 TEST_F(MetricsEndpointTest, APortInUseIsRefused) {
   asio::io_context io;
   const Tcp::acceptor taken(io, Tcp::endpoint(Tcp::v4(), port_), false);

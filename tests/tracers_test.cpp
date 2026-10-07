@@ -63,6 +63,7 @@ class TracersTest : public ::testing::Test {
   augusta::physics::World map_{augusta::physics::StaminaConfig{}};
 };
 
+// Requirements: US-10
 TEST_F(TracersTest, ATracerIsDrawnAlongTheShotsTrajectoryTickByTick) {
   ASSERT_TRUE(map_.AddCollisionMesh(WallAt(60.0F)).has_value());
   const std::vector<StepResult> trajectory = Trajectory(map_);
@@ -81,6 +82,7 @@ TEST_F(TracersTest, ATracerIsDrawnAlongTheShotsTrajectoryTickByTick) {
   }
 }
 
+// Requirements: US-10
 TEST_F(TracersTest, BetweenTwoTicksATracerIsPartWayAlongTheTicksPath) {
   const std::vector<StepResult> trajectory = Trajectory(map_);
   Tracers tracers(map_);
@@ -93,6 +95,7 @@ TEST_F(TracersTest, BetweenTwoTicksATracerIsPartWayAlongTheTicksPath) {
              augusta::math::Lerp(trajectory[0].state.position, trajectory[1].state.position, 0.25F));
 }
 
+// Requirements: US-10
 TEST_F(TracersTest, ATracerThatMeetsTheMapEndsInAnImpactWhereItStruck) {
   ASSERT_TRUE(map_.AddCollisionMesh(WallAt(20.0F)).has_value());
   const std::vector<StepResult> trajectory = Trajectory(map_);
@@ -110,6 +113,7 @@ TEST_F(TracersTest, ATracerThatMeetsTheMapEndsInAnImpactWhereItStruck) {
   ExpectNear(tracers.Impacts().front().position, trajectory.back().impact_point);
 }
 
+// Requirements: US-10
 TEST_F(TracersTest, AnImpactFadesOnceItsTimeIsUp) {
   ASSERT_TRUE(map_.AddCollisionMesh(WallAt(20.0F)).has_value());
   Tracers tracers(map_);
@@ -126,6 +130,7 @@ TEST_F(TracersTest, AnImpactFadesOnceItsTimeIsUp) {
 // A tracer is a visual only: it is handed no player to hit (ADR-0044), so only
 // the Map ends one early, and one that meets nothing flies to its max range
 // and leaves no impact.
+// Requirements: US-10
 TEST_F(TracersTest, ATracerThatMeetsNothingEndsAtItsMaxRangeWithNoImpact) {
   constexpr TracerRules kShortRange{
       .muzzle_velocity = 300.0F, .bullet = {.gravity = 0.0F, .max_range = 50.0F}, .tick_duration = kTick};
@@ -138,6 +143,7 @@ TEST_F(TracersTest, ATracerThatMeetsNothingEndsAtItsMaxRangeWithNoImpact) {
   EXPECT_TRUE(tracers.Impacts().empty());
 }
 
+// Requirements: US-10
 TEST_F(TracersTest, EveryShotHasATracerOfItsOwn) {
   Tracers tracers(map_);
   tracers.Fire(kEye, kAim, kRules);

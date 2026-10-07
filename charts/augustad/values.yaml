@@ -12,6 +12,14 @@ service:
   # UDP, as GameNetworkingSockets speaks. Every server listens on port; each
   # one's node port is its own (servers below).
   port: 7777
+  # The node ports this environment's servers pin theirs in, first to last,
+  # so environments sharing the node never collide on one: develop's
+  # 30700-30799, staging's 30800-30899. Once set, every server must pin a
+  # node port in it; left unset, a server's node port is unchecked.
+  #   nodePortRange:
+  #     first: 30700
+  #     last: 30799
+  nodePortRange: {}
 # What the server runs with besides its pack (config/augustad.example.yaml).
 server:
   tickRateHz: 60
@@ -49,7 +57,7 @@ dashboards:
 # Deployment & CD section), which augusta-publish fills: a folder per scenario,
 # and in it one per published pack, named by its version (the first 12 hex
 # characters of the server pack's BLAKE3 hash) and holding server.pack and the
-# augusta.pub it is signed with. Each server mounts its own version's folder
+# signing.pub it is signed with. Each server mounts its own version's folder
 # read-only.
 assetPacks:
   hostPath: /srv/augusta/asset-packs
@@ -58,11 +66,12 @@ assetPacks:
 # each, named augustad-<scenario>. A server serves its scenario's pack and no
 # other. Every entry names the pack version it serves, as augusta-publish
 # prints it: quoted, since a version of digits alone would otherwise read as a
-# number. It may pin its node port (left unset, Kubernetes assigns one):
+# number. It may pin its node port (left unset, Kubernetes assigns one), and
+# must when the environment sets service.nodePortRange:
 #   servers:
-#     augusta:
+#     firebase:
 #       packVersion: "3f9a1c0b7e21"
-#       nodePort: 30777
+#       nodePort: 30700
 servers: {}
 # Each server's (ADR-0026): a request that guarantees its
 # Simulation and Network I/O threads (ADR-0005) their share of the node, and
