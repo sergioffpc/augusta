@@ -20,7 +20,14 @@ if(SCCACHE_PROGRAM AND (NOT CMAKE_GENERATOR MATCHES "Visual Studio"))
   set(CMAKE_CXX_COMPILER_LAUNCHER "${SCCACHE_PROGRAM}")
 endif()
 
+# The server is on every build's graph, so a platform augustad doesn't support
+# (NFR-04) stops the configure: by its host OS here, before vcpkg's toolchain
+# installs the dependencies in project(), and by its target right after.
+include(cmake/AugustaPlatform.cmake)
+augusta_require_server_host()
+
 project(augusta LANGUAGES CXX)
+augusta_require_server_platform()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

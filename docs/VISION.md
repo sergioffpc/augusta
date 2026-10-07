@@ -19,7 +19,8 @@ and systems programming — deliberately not using Unreal/Unity/Godot.
 ## Product
 
 - Client: Windows-only, rendering via NVIDIA Falcor (D3D12)
-- Server: Linux-only, headless (no rendering dependency)
+- Server: Linux in production (Windows for development only), headless (no
+  rendering dependency)
 - Multiplayer only, dedicated authoritative server — no singleplayer, no enemy
   AI
 - Physics-based ballistics (real bullet drop and travel time, not hitscan)

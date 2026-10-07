@@ -18,7 +18,8 @@ Top quality goals (see [REQUIREMENTS.md](./REQUIREMENTS.md) for full NFR list):
 ## 2. Architecture Constraints
 
 - **Technical:** C++, CMake + Ninja + sccache. Client: Windows-only, rendering
-  via NVIDIA Falcor (D3D12). Server: Linux-only, headless.
+  via NVIDIA Falcor (D3D12). Server: Linux x86-64 in production (a Windows x64
+  build for development only, NFR-04), headless.
 - **Licensing:** third-party dependencies must be free/open-source (Flecs [MIT],
   PhysX [BSD-3], GameNetworkingSockets [BSD-3], Falcor [BSD-3], Steam Audio
   [Apache 2.0], miniaudio [MIT], Slang [Apache 2.0])
@@ -45,7 +46,8 @@ v1.
 
 - Client executable (Windows only): rendering (Falcor/D3D12), input, audio,
   local prediction
-- Dedicated server executable (Linux only): headless, authoritative simulation
+- Dedicated server executable (Linux in production, Windows for development
+  only - NFR-04): headless, authoritative simulation
 - Scripted players tool (`augusta-swarm`, Windows and Linux): a server's worth
   of headless clients, for load and end-to-end tests (ADR-0013)
 - Communication: GameNetworkingSockets over UDP, unencrypted in v1
@@ -75,8 +77,8 @@ v1.
   dedicated Scripts/Behaviours phase; tunable balance values are data-driven
   configuration — a third category (see §8, ADR-0022, ADR-0023)
 - Rendering built on NVIDIA Falcor (D3D12), used exclusively by the Windows
-  client. The server is Linux-only, headless, and entirely decoupled from
-  Falcor/graphics-API concerns.
+  client. The server runs in production on Linux only (NFR-04), headless, and
+  entirely decoupled from Falcor/graphics-API concerns.
 - Audio via Valve's Steam Audio (Apache 2.0), used by the Windows client for
   spatial audio; no audio dependency on the headless Linux server.
 - Shaders authored in Slang — already Falcor's default shader compiler (targets
@@ -214,7 +216,7 @@ the other five run — ADR-0024)
 Neither client world contains a Scripts/Behaviours phase — game policy is
 exclusively server-authoritative.
 
-**Server-only** (Linux-only, headless)
+**Server-only** (Linux in production, Windows for development; headless)
 
 - Networking — receives client commands, sends authoritative state; the only
   server component that touches the network

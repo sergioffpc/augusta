@@ -223,16 +223,24 @@ math only to draw it (ADR-0044), so the same check covers that drawing.
 ```text
 Source:      Build system
 Stimulus:    Compilation request
-Environment: Client build targets Windows; server build targets Linux
+Environment: Client build targets Windows x64; server build targets
+             Linux x86-64, with Windows x64 for development only
 Artifact:    Engine codebase (shared core, client, server)
 Response:    Shared core (ECS, physics, ballistics, networking) compiles
              cleanly for both target platforms without platform-specific
              branches; client-only code (rendering) is Windows-only;
-             server-only code is Linux-only
+             server-only code runs in production on Linux only; any other
+             target is refused when the build is configured
 Measure:     Successful client build + v1 milestone playthrough on
              Windows; successful server build + v1 milestone playthrough
-             on Linux
+             on Linux; CI builds the server on both its platforms
 ```
+
+The server's Windows build is for development (ADR-0047): it runs a match beside
+the client on one machine, but nothing is released or deployed from it, and a
+crash there leaves only the logged stack, no core dump or split debug info.
+`cmake/AugustaPlatform.cmake` holds this contract, and the configure stops on
+any other OS, architecture or 32-bit toolchain rather than compiling for it.
 
 ### NFR-05: Server Authority / Cheat Resistance
 

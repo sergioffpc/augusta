@@ -89,8 +89,10 @@ make
 Create each local YAML from its `*.example.yaml` file and edit its pack and
 public-key paths to point to cooked content before running. `make` builds the
 default release preset (`windows` on Windows, `linux` on Linux). To install the
-server, use `make install prefix=C:/augusta` on Windows or choose a Unix-style
-prefix on Linux.
+server, use `make install prefix=C:/augusta` on Windows (a development build;
+Linux x86-64 is the only production server platform) or choose a Unix-style
+prefix on Linux. Configuring on any other platform stops with the supported list
+(NFR-04).
 
 ### Tests
 
