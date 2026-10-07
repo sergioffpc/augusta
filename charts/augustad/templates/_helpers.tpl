@@ -70,7 +70,7 @@ scenario: {{ .scenario }}
 base_dir: /srv/augusta/pack
 content:
   pack: server.pack
-  public_key: augusta.pub
+  public_key: signing.pub
 simulation:
   tick_rate_hz: {{ .root.Values.server.tickRateHz }}
 network:

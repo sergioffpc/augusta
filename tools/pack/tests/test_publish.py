@@ -85,11 +85,11 @@ def test_a_cook_is_published_under_its_scenario_and_server_pack_hash(
     )
     folder = node.root / "firebase" / release.version
     assert sorted(path.name for path in folder.iterdir()) == [
-        "augusta.pub",
         "server.pack",
+        "signing.pub",
     ]
     assert (folder / "server.pack").read_bytes() == server_pack.read_bytes()
-    assert (folder / "augusta.pub").read_bytes() == public_key.read_bytes()
+    assert (folder / "signing.pub").read_bytes() == public_key.read_bytes()
 
 
 def test_publishing_a_version_already_on_the_node_copies_nothing(

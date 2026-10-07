@@ -115,7 +115,7 @@ decisions already made in ARCHITECTURE.md:
   test key and from any development key. Its private key is kept off the repo
   and out of every CI secret. The client and server packs of a release come from
   one cook run signed with it, since Join refuses a client pack not cooked with
-  the server pack (ADR-0019, ADR-0038). Only the public key, `augusta.pub`,
+  the server pack (ADR-0019, ADR-0038). Only the public key, `signing.pub`,
   travels with the packs, named by each executable's config (ADR-0034).
 - **Provenance and SBOMs:** what packs get from their signature, the release
   executables and every published server image get from GitHub artifact
@@ -191,7 +191,7 @@ no self-hosted GitHub Actions runner in this pipeline).
   and can be shared across multiple server instances/versions. Stored on a
   shared `hostPath` persistent volume on the k3s node, which `augusta-publish`
   fills after signing (ADR-0026): `<hostPath>/<scenario>/<packVersion>/` holds a
-  scenario's `server.pack` and the `augusta.pub` key it is signed with,
+  scenario's `server.pack` and the `signing.pub` key it is signed with,
   `<packVersion>` being the first 12 hex characters of the server pack's BLAKE3
   hash. A published folder is never rewritten. Each environment's Helm values
   list its servers, one per scenario, each naming the `packVersion` it runs; a

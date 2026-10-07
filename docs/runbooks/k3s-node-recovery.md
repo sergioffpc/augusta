@@ -27,7 +27,7 @@ needs no deploy key.
 
 The only state not in Git is the asset packs on the node's shared volume:
 `/srv/augusta/asset-packs/<scenario>/<packVersion>/server.pack` and
-`augusta.pub` for each server the `HelmRelease` values in
+`signing.pub` for each server the `HelmRelease` values in
 `clusters/onprem/apps/` list
 ([`charts/augustad/values.yaml`](../../charts/augustad/values.yaml)). Without
 them the servers never start; the layout, and how a missing folder shows, is

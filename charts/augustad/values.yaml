@@ -57,7 +57,7 @@ dashboards:
 # Deployment & CD section), which augusta-publish fills: a folder per scenario,
 # and in it one per published pack, named by its version (the first 12 hex
 # characters of the server pack's BLAKE3 hash) and holding server.pack and the
-# augusta.pub it is signed with. Each server mounts its own version's folder
+# signing.pub it is signed with. Each server mounts its own version's folder
 # read-only.
 assetPacks:
   hostPath: /srv/augusta/asset-packs

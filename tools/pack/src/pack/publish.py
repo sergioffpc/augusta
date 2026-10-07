@@ -2,7 +2,7 @@
 
 Puts a scenario's server pack where the cluster's servers read it (ADR-0026), on
 the k3s node's shared asset-pack volume, at
-/srv/augusta/asset-packs/<scenario>/<version>/{server.pack,augusta.pub}.
+/srv/augusta/asset-packs/<scenario>/<version>/{server.pack,signing.pub}.
 
 Before anything is copied, both packs of the scenario's cook verify against
 the public key and the server pack names that client pack in its header
@@ -13,7 +13,7 @@ folder, and the old one stays in place as the rollback. Publishing a version
 already on the node checks it holds the same files and changes nothing.
 
 Only the server pack and the public key go to the node, the key renamed to
-augusta.pub as the chart expects. The client pack stays local; nothing here
+signing.pub as the chart expects. The client pack stays local; nothing here
 distributes it. Publishing does not deploy: an environment serves the new
 pack once its HelmRelease names the printed version (clusters/onprem/apps/).
 
@@ -37,7 +37,7 @@ from pack.reader import verify_pack
 
 VOLUME_ROOT = "/srv/augusta/asset-packs"
 SERVER_PACK_NAME = "server.pack"
-PUBLIC_KEY_NAME = "augusta.pub"
+PUBLIC_KEY_NAME = "signing.pub"
 VERSION_LENGTH = 12
 
 # What the chart can name a server by (charts/augustad): a DNS label short
@@ -265,8 +265,8 @@ def main(argv: list[str] | None = None) -> int:
         "--public-key",
         type=Path,
         default=None,
-        help="The key both packs are signed with, published as augusta.pub. "
-        "Default: <assets-root>/keys/augusta.pub",
+        help="The key both packs are signed with, published as signing.pub. "
+        "Default: <assets-root>/keys/signing.pub",
     )
     args = parser.parse_args(argv)
 
@@ -276,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
             args.scenario,
             args.client_pack or packs / "client.pack",
             args.server_pack or packs / "server.pack",
-            args.public_key or args.assets_root / "keys" / "augusta.pub",
+            args.public_key or args.assets_root / "keys" / "signing.pub",
         )
         copied = publish(release, SshNode(args.host))
     except PublishError as error:
