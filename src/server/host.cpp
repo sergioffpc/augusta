@@ -12,11 +12,11 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <utility>
 #include <vector>
 
 #include "augusta/failure.h"
+#include "augusta/first_failure.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/protocol.h"
@@ -79,7 +79,7 @@ Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine 
       parameters(config.parameters),
       characters(ToSimulation(scenario.characters)),
       spawn_points(std::move(scenario.spawn_points)),
-      network(config.listen),
+      network(config.listen, config.faults),
       metrics(config.tick_rate_hz),
       match(MatchConfig{
           .engine_version = std::string(EngineVersion()),
@@ -89,33 +89,31 @@ Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine 
           .pause_ticks = PauseTicks(config.tick_rate_hz),
       }) {}
 
-void Host::Impl::Fail(failure::Failure broken) {
-  const std::lock_guard<std::mutex> lock(failure_mutex);
-  if (failed) {
-    return;
+void Host::Impl::Deliver(networking::PeerId peer, const networking::Payload& payload) {
+  // Dropped is the peer's outcome: its departure, if it is leaving, arrives as an event.
+  if (networking::SendResult sent = SendCounted(network, metrics, peer, payload, networking::Reliability::kReliable);
+      !sent.has_value()) {
+    transport_failure.Record(std::move(sent.error()));
   }
-  failed = true;
-  failure = std::move(broken);
-  failed_on = std::this_thread::get_id();
 }
 
 void Host::Impl::Reply(networking::PeerId peer, const protocol::MessageWire& message) {
-  const auto payload = EncodeToSend(message);
+  auto payload = EncodeToSend(message);
   if (!payload.has_value()) {
-    Fail(payload.error());
+    invariant_failure.Record(std::move(payload.error()));
     return;
   }
-  SendCounted(network, metrics, peer, *payload, networking::Reliability::kReliable);
+  Deliver(peer, *payload);
 }
 
 void Host::Impl::SendTo(const std::vector<SessionId>& sessions, const protocol::MessageWire& message) {
-  const auto payload = EncodeToSend(message);
+  auto payload = EncodeToSend(message);
   if (!payload.has_value()) {
-    Fail(payload.error());
+    invariant_failure.Record(std::move(payload.error()));
     return;
   }
   for (const SessionId session : sessions) {
-    SendCounted(network, metrics, players.at(session).peer, *payload, networking::Reliability::kReliable);
+    Deliver(players.at(session).peer, *payload);
   }
 }
 
@@ -142,13 +140,7 @@ Host::~Host() = default;
 
 networking::Endpoint Host::ListenEndpoint() const { return impl_->network.LocalEndpoint(); }
 
-std::optional<failure::Failure> Host::TakeInvariantFailure() {
-  const std::lock_guard<std::mutex> lock(impl_->failure_mutex);
-  if (impl_->failed_on != std::this_thread::get_id()) {
-    return std::nullopt;
-  }
-  return std::exchange(impl_->failure, std::nullopt);
-}
+std::optional<failure::Failure> Host::TakeInvariantFailure() { return impl_->invariant_failure.Take(); }
 
 void Host::RecordTiming(const tick::Timing& timing) {
   HostMetrics& metrics = impl_->metrics;
@@ -178,5 +170,7 @@ std::size_t Host::QueuedCommands(SessionId session) const {
 }
 
 const HostMetrics& Host::Metrics() const { return impl_->metrics; }
+
+std::optional<failure::Failure> Host::TakeTransportFailure() { return impl_->transport_failure.Take(); }
 
 }  // namespace augusta::server

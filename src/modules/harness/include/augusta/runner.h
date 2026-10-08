@@ -64,9 +64,10 @@ class Runner {
   Runner& operator=(Runner&&) = delete;
 
   /// The first cause a thread stopped on, including an exception thrown by a
-  /// hook or a message the Session could not encode
-  /// (Session::GetInvariantFailure), or nullopt while none has; the other
-  /// thread is stopped too. Safe from any thread.
+  /// hook, a failure of the local transport (Session::TakeTransportFailure) and
+  /// a message the Session could not encode (Session::TakeInvariantFailure), or
+  /// nullopt while none has; the other thread is stopped too. Safe from any
+  /// thread.
   [[nodiscard]] std::optional<failure::Failure> Failure() const;
 
  private:

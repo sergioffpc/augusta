@@ -24,6 +24,10 @@ std::string_view CodeName(Code code) {
       return "peer_misbehaving";
     case Code::kPeerConnectionLost:
       return "peer_connection_lost";
+    case Code::kJoinRefused:
+      return "join_refused";
+    case Code::kServerUnreachable:
+      return "server_unreachable";
     case Code::kRecordingWriteFailed:
       return "recording_write_failed";
     case Code::kRecordingFlushFailed:
@@ -110,6 +114,8 @@ Disposition DispositionOf(Code code) {
       return Disposition::kPeer;
     case Code::kPeerMisbehaving:
     case Code::kPeerConnectionLost:
+    case Code::kJoinRefused:
+    case Code::kServerUnreachable:
       return Disposition::kSession;
     case Code::kRecordingWriteFailed:
     case Code::kRecordingFlushFailed:

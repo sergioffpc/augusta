@@ -1025,7 +1025,7 @@ TEST(ProtocolEncodeTest, ACharacterLongerThanAllowedIsNotEncodedInAnyMessageThat
 
 TEST(ProtocolEncodeTest, AListLongerThanItsMessageAllowsIsNotEncoded) {
   RifleWire rifle;
-  rifle.recoil_pattern.resize(augusta::protocol::kMaxRecoilKicks + 1);
+  rifle.recoil_pattern.resize(augusta::primitives::kMaxRecoilKicks + 1);
   ParametersWire parameters;
   parameters.rifle = rifle;
 

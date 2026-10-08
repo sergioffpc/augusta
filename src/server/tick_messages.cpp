@@ -17,10 +17,13 @@
 
 namespace augusta::server {
 
-void SendCounted(networking::Server& network, HostMetrics& metrics, networking::PeerId peer,
-                 const networking::Payload& payload, networking::Reliability reliability) {
-  CountSent(metrics, payload);
-  network.Send(peer, payload, reliability);
+networking::SendResult SendCounted(networking::Server& network, HostMetrics& metrics, networking::PeerId peer,
+                                   const networking::Payload& payload, networking::Reliability reliability) {
+  networking::SendResult sent = network.Send(peer, payload, reliability);
+  if (sent == networking::SendOutcome::kAccepted) {
+    CountSent(metrics, payload);
+  }
+  return sent;
 }
 
 namespace {
@@ -95,14 +98,31 @@ std::expected<void, failure::Failure> ForEachTickMessage(const simulation::State
 std::expected<void, failure::Failure> SendTickMessages(networking::Server& network, HostMetrics& metrics,
                                                        const simulation::State& state, tick::Tick tick,
                                                        const TickRecipients& to) {
-  return ForEachTickMessage(state, tick, to,
-                            [&network, &metrics](networking::PeerId peer, const networking::Payload& payload,
-                                                 networking::Reliability reliability) {
-                              if (TypeOf(payload) == MessageType::kAuthoritativeState) {
-                                metrics.authoritative_state_update_bytes.Observe(static_cast<double>(payload.size()));
-                              }
-                              SendCounted(network, metrics, peer, payload, reliability);
-                            });
+  std::optional<failure::Failure> failed;
+  // Nothing is handed on if the tick's messages could not all be encoded.
+  if (auto handed =
+          ForEachTickMessage(state, tick, to,
+                             [&network, &metrics, &failed](networking::PeerId peer, const networking::Payload& payload,
+                                                           networking::Reliability reliability) {
+                               // Once the transport has failed, nothing more is sent on it.
+                               if (failed.has_value()) {
+                                 return;
+                               }
+                               networking::SendResult sent = SendCounted(network, metrics, peer, payload, reliability);
+                               if (!sent.has_value()) {
+                                 failed = std::move(sent.error());
+                               } else if (*sent == networking::SendOutcome::kAccepted &&
+                                          TypeOf(payload) == MessageType::kAuthoritativeState) {
+                                 metrics.authoritative_state_update_bytes.Observe(static_cast<double>(payload.size()));
+                               }
+                             });
+      !handed.has_value()) {
+    return handed;
+  }
+  if (failed.has_value()) {
+    return std::unexpected(std::move(*failed));
+  }
+  return {};
 }
 
 }  // namespace augusta::server

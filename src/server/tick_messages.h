@@ -33,9 +33,11 @@ struct TickRecipients {
 };
 
 /// Sends payload, an encoded message, to peer as reliability says, counting it
-/// into metrics: how the Host sends everything it sends.
-void SendCounted(networking::Server& network, HostMetrics& metrics, networking::PeerId peer,
-                 const networking::Payload& payload, networking::Reliability reliability);
+/// into metrics only if the transport accepted it: how the Host sends
+/// everything it sends. Returns what the transport did with it.
+[[nodiscard]] networking::SendResult SendCounted(networking::Server& network, HostMetrics& metrics,
+                                                 networking::PeerId peer, const networking::Payload& payload,
+                                                 networking::Reliability reliability);
 
 /// Takes one message a tick sends: payload, an encoded message, to peer as reliability says.
 using TickMessageSink = std::function<void(networking::PeerId, const networking::Payload&, networking::Reliability)>;
@@ -51,8 +53,11 @@ using TickMessageSink = std::function<void(networking::PeerId, const networking:
                                                                        const TickRecipients& to,
                                                                        const TickMessageSink& send);
 
-/// Sends to the recipients what tick's state holds for them, counting it into
-/// metrics, or stops at the broken invariant, as ForEachTickMessage does.
+/// Sends to the recipients what tick's state holds for them, counting into
+/// metrics what the transport accepted. Stops at, and returns, the broken
+/// invariant (failure::Code::kInvariantViolated) before sending anything, as
+/// ForEachTickMessage does, or the local transport's first failure; a
+/// recipient that drops a message is its own outcome.
 [[nodiscard]] std::expected<void, failure::Failure> SendTickMessages(networking::Server& network, HostMetrics& metrics,
                                                                      const simulation::State& state, tick::Tick tick,
                                                                      const TickRecipients& to);

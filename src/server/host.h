@@ -13,6 +13,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/failure.h"
+#include "augusta/faults.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
@@ -42,7 +43,11 @@
 /// The Network I/O thread's PumpNetwork and the Simulation thread's Tick may
 /// run concurrently: what they share (the Lobby, the match and the players'
 /// commands) is guarded inside. Both count what they do into the Host's metrics
-/// (host_metrics.h, ADR-0049) as they do it, lock-free.
+/// (host_metrics.h, ADR-0049) as they do it, lock-free, and count only what the
+/// transport accepted. A peer's malformed input or departure stays that peer's
+/// (dropped, judged, disconnected); a failure of the local transport is the
+/// runtime's, which Host keeps for a worker to take (TakeTransportFailure) and
+/// escalate (ADR-0033).
 namespace augusta::server {
 
 /// Everything a Host needs to construct SimulationWorld and start listening.
@@ -61,6 +66,10 @@ struct HostConfig {
   std::filesystem::path recording;
   /// The hash of the server pack the content was loaded from, which a recording names.
   assets::PackHash server_pack{};
+  /// For a test: asked at listener setup and at every send and receive
+  /// (networking.h), so the transport fails there; null otherwise. Must
+  /// outlive the Host.
+  failure::Faults* faults = nullptr;
 };
 
 /// The server's listening socket and its SimulationWorld, without threads or a clock.
@@ -69,8 +78,8 @@ class Host {
   /// Constructs SimulationWorld with scenario's collision (throws
   /// std::runtime_error if a map mesh, or a character's hitbox, is not a whole
   /// triangle list) and the scenario's Game policy (none by default), and starts
-  /// listening (throws std::runtime_error if the address can't be bound, or
-  /// HostConfig::recording can't be written).
+  /// listening (throws networking::TransportFailure if the address can't be
+  /// bound, or std::runtime_error if HostConfig::recording can't be written).
   /// Content is loaded from the server pack by the caller (see content.h).
   Host(const HostConfig& config, Scenario scenario, scripting::Engine policy = {});
   ~Host();
@@ -88,8 +97,8 @@ class Host {
   /// invariant it is (failure::Code::kInvariantViolated, ADR-0033): what it was
   /// is sent to no one and recorded nowhere, and the runtime must stop.
   /// PumpNetwork and Tick may each find one, so the thread that runs each asks
-  /// after it. Given once, and only to the thread whose call found it, so the
-  /// runtime reports it once, against the right thread; nullopt otherwise.
+  /// after it. Given once, as TakeTransportFailure is, so the runtime reports
+  /// it once; nullopt before one and after it has been taken. From any thread.
   [[nodiscard]] std::optional<failure::Failure> TakeInvariantFailure();
 
   /// Does one round of the Network I/O thread's work, at now: connection events
@@ -140,6 +149,14 @@ class Host {
   /// What it has counted (ADR-0049), for the metrics endpoint to collect and a
   /// test to read. From any thread; it lives as long as the Host.
   [[nodiscard]] const HostMetrics& Metrics() const;
+
+  /// The first failure of the local transport PumpNetwork or Tick met (a send,
+  /// or a receive, it refused: failure::Code::kTransportSendFailed,
+  /// kTransportReceiveFailed), once; nullopt before one and after it has been
+  /// taken. A runtime failure: the worker that takes it returns it to the
+  /// supervisor, which stops the runtime. Never a peer's doing - a peer's
+  /// malformed input or departure is handled as that peer's. From any thread.
+  [[nodiscard]] std::optional<failure::Failure> TakeTransportFailure();
 
  private:
   struct Impl;

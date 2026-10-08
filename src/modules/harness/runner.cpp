@@ -55,6 +55,19 @@ class PredictionActivity {
   float correction_m_ = 0.0F;
 };
 
+// The runtime failure session met on any thread, if any - its local
+// transport's, or a message it could not encode - for the Runner thread that
+// takes it to stop on (ADR-0033). Each is taken once, so one thread reports it.
+supervisor::WorkerResult SessionResult(Session& session) {
+  if (std::optional<failure::Failure> failed = session.TakeTransportFailure()) {
+    return std::unexpected(std::move(*failed));
+  }
+  if (std::optional<failure::Failure> broken = session.TakeInvariantFailure()) {
+    return std::unexpected(std::move(*broken));
+  }
+  return {};
+}
+
 // How long the next Tick lasts: the server's tick, paced by how many of the
 // client's commands the server last said it held (tick.h).
 tick::Clock::duration NextTickDuration(const Session& session, tick::Clock::duration nominal) {
@@ -98,6 +111,9 @@ supervisor::WorkerResult Runner::PredictionThreadMain() {
     const tick::Clock::time_point tick_start = tick::Clock::now();
 
     const prediction::State state = session_.Tick(hooks_.next_command(), delta_time.count());
+    if (supervisor::WorkerResult failed = SessionResult(session_); !failed.has_value()) {
+      return failed;
+    }
     activity.Record(state, tick_start);
 
     // The tick spans its schedule, not its wake-ups, so a reader blending
@@ -124,14 +140,9 @@ supervisor::WorkerResult Runner::NetworkThreadMain() {
       session_.PumpEvents();
       session_.ExchangeMessages();
     }
-    // The one thread that reports a message the Session could not send, from
-    // whichever thread it was (a Tick's Commands, a Join request, Ready from
-    // whoever loaded the Roster), so it is reported once: the failure names
-    // the message's type, and the Prediction thread stops on the stop it
-    // requests.
-    if (std::optional<failure::Failure> broken = session_.GetInvariantFailure()) {
+    if (supervisor::WorkerResult failed = SessionResult(session_); !failed.has_value()) {
       session_.Disconnect();
-      return std::unexpected(*std::move(broken));
+      return failed;
     }
     if (hooks_.on_network_round) {
       hooks_.on_network_round();

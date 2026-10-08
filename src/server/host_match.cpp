@@ -1,6 +1,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <limits>
 #include <mutex>
 #include <optional>
@@ -10,6 +11,7 @@
 #include <vector>
 
 #include "augusta/failure.h"
+#include "augusta/first_failure.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/policy_actions.h"
@@ -162,11 +164,15 @@ simulation::TickResult Host::Tick(float delta_time) {
   const Impl::TickInput input = impl.PrepareTick();
   const simulation::TickResult result = impl.simulation.Tick(input.commands, delta_time);
   impl.tick = result.state.tick;
-  if (const std::optional<failure::Failure>& recorded = impl.simulation.Failure()) {
-    impl.Fail(*recorded);
+  if (std::optional<failure::Failure> recorded = impl.simulation.Failure()) {
+    impl.invariant_failure.Record(*std::move(recorded));
   }
   if (auto sent = SendTickMessages(impl.network, impl.metrics, result.state, impl.tick, input.to); !sent.has_value()) {
-    impl.Fail(std::move(sent.error()));
+    // Either the tick's messages could not be encoded, and none was sent, or
+    // the local transport failed sending them: each kept where a worker takes it.
+    failure::FirstFailure& kept =
+        sent.error().code == failure::Code::kInvariantViolated ? impl.invariant_failure : impl.transport_failure;
+    kept.Record(std::move(sent.error()));
   }
   impl.metrics.match_players_alive.Set(static_cast<double>(result.state.alive.size()));
   CountCombat(impl.metrics, result);

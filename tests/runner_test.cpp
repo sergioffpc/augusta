@@ -260,7 +260,8 @@ TEST_F(RunnerTest, AJoinRequestTheProtocolCannotCarryStopsTheRunnerWithAnInvaria
   EXPECT_EQ(failure.code, augusta::failure::Code::kInvariantViolated);
   EXPECT_EQ(ContextOf(failure, augusta::supervisor::kThreadContextKey), "network");
   EXPECT_FALSE(session.GetSessionId().has_value());
-  EXPECT_EQ(session.GetInvariantFailure()->code, augusta::failure::Code::kInvariantViolated);
+  // The Runner took it: it is reported once.
+  EXPECT_FALSE(session.TakeInvariantFailure().has_value());
 }
 
 }  // namespace

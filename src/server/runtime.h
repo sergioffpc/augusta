@@ -6,6 +6,7 @@
 #include <optional>
 
 #include "augusta/failure.h"
+#include "augusta/faults.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "host.h"
@@ -31,8 +32,10 @@ class ServerRuntime {
   /// scenario's Game policy, and starts networking::Server listening on
   /// config.listen (throws std::runtime_error if the address can't be bound -
   /// see networking.h). Does not yet spawn any thread or start the metrics
-  /// endpoint; see Run().
-  ServerRuntime(const HostConfig& config, std::uint16_t metrics_port, Scenario scenario, scripting::Engine policy = {});
+  /// endpoint; see Run(). faults, for tests only, is asked by its supervisor
+  /// at each worker's creation and execution, and must outlive Run().
+  ServerRuntime(const HostConfig& config, std::uint16_t metrics_port, Scenario scenario, scripting::Engine policy = {},
+                failure::Faults* faults = nullptr);
 
   /// Run() always stops and joins the Network I/O thread it spawned
   /// before returning, so there is nothing left for this destructor to do
@@ -52,7 +55,8 @@ class ServerRuntime {
   /// Simulation loop on the calling thread - gather this tick's latest
   /// validated commands, SimulationWorld::Tick, hand the resulting
   /// Authoritative State onward - until Stop() is called or either thread
-  /// fails, which stops the other (supervisor.h): neither ticks nor pumps the
+  /// fails, the local transport failing among the ways it can
+  /// (Host::TakeTransportFailure), which stops the other (supervisor.h): neither ticks nor pumps the
   /// network again once the stop is requested. Always stops and joins the
   /// Network I/O thread before returning, and so before Host, which it uses,
   /// can go. Returns the first cause that stopped it, nullopt if Stop() did:
