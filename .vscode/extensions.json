@@ -14,7 +14,6 @@
     "ms-vscode.cmake-tools",
     "ms-vscode.cpptools",
     "ms-vscode.makefile-tools",
-    "ms-vscode.powershell",
     "redhat.vscode-yaml",
     "shader-slang.slang-language-extension",
     "sumneko.lua",

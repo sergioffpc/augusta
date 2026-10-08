@@ -1,18 +1,8 @@
-#!/bin/bash
-# Bootstraps the Linux/server development environment (docs/ENGINEERING.md,
-# Developer Environment) on Ubuntu 26.04, CI's runner release, whose distro
-# clang/clang-tidy/clang-format fix CI's LLVM major. The one recipe for it:
-# .devcontainer/Dockerfile runs its toolchain step and .devcontainer's
-# post-create.sh its checkout step; a host runs both.
-#
-# Usage: scripts/bootstrap-linux.sh [toolchain|checkout]
-set -euo pipefail
-
-# CI's format job pins the same versions, and the amd64 checksums; bump them
-# together.
-readonly YAMLFMT_VERSION=0.21.0
-readonly STYLUA_VERSION=2.5.2
-readonly TAPLO_VERSION=0.10.0
+# shellcheck shell=bash
+# The Linux/server half of scripts/bootstrap.sh (sourced by it), on Ubuntu
+# 26.04, CI's runner release, whose distro clang/clang-tidy/clang-format fix
+# CI's LLVM major. .devcontainer's image hashes this file and bootstrap.sh
+# (scripts/dev-container.sh), so a Windows-only change doesn't rebuild it.
 
 # Runs its arguments as root: directly when already root (an image build),
 # through sudo otherwise.
@@ -28,7 +18,7 @@ install_toolchain() {
   # shellcheck source=/dev/null
   . /etc/os-release
   if [[ "${ID}" != ubuntu || "${VERSION_ID}" != 26.04 ]]; then
-    echo "bootstrap-linux: ${PRETTY_NAME} is not Ubuntu 26.04, CI's runner" \
+    echo "bootstrap: ${PRETTY_NAME} is not Ubuntu 26.04, CI's runner" \
       "release - its clang may format and lint differently from CI's." >&2
   fi
 
@@ -37,9 +27,9 @@ install_toolchain() {
   # job: clang-tidy. Already on CI's runner image: build-essential, cmake, git,
   # curl, zip, unzip, tar, pkg-config. For the hooks: clang-format, git-lfs
   # (pre-push), and lua-check (luacheck), which this release packages at CI's
-  # pinned 1.2.0 for every architecture, unlike luacheck's own release.
-  # sccache: the root CMakeLists.txt picks it up from PATH. doxygen: `make
-  # docs`. gdb and gh: for development.
+  # pinned LUACHECK_VERSION for every architecture, unlike luacheck's own
+  # release. sccache: the root CMakeLists.txt picks it up from PATH. doxygen:
+  # `make docs`. gdb and gh: for development.
   as_root apt-get update
   as_root apt-get install -y --no-install-recommends \
     autoconf \
@@ -90,7 +80,7 @@ install_toolchain() {
       taplo_sha=033681d01eec8376c3fd38fa3703c79316f5e14bb013d859943b60a07bccdcc3
       ;;
     *)
-      echo "bootstrap-linux: unsupported architecture: ${arch}" >&2
+      echo "bootstrap: unsupported architecture: ${arch}" >&2
       exit 1
       ;;
   esac
@@ -100,17 +90,15 @@ install_toolchain() {
   fi
   local tmp
   tmp="$(mktemp -d)"
-  curl -fsSLo "${tmp}/yamlfmt.tar.gz" \
-    "https://github.com/google/yamlfmt/releases/download/v${YAMLFMT_VERSION}/yamlfmt_${YAMLFMT_VERSION}_Linux_${yamlfmt_arch}.tar.gz"
-  curl -fsSLo "${tmp}/stylua.zip" \
-    "https://github.com/JohnnyMorganz/StyLua/releases/download/v${STYLUA_VERSION}/stylua-linux-${stylua_arch}.zip"
-  curl -fsSLo "${tmp}/taplo.gz" \
-    "https://github.com/tamasfe/taplo/releases/download/${TAPLO_VERSION}/taplo-linux-${taplo_arch}.gz"
-  printf '%s  %s\n' \
-    "${yamlfmt_sha}" "${tmp}/yamlfmt.tar.gz" \
-    "${stylua_sha}" "${tmp}/stylua.zip" \
-    "${taplo_sha}" "${tmp}/taplo.gz" \
-    | sha256sum --check --status
+  download_verified \
+    "https://github.com/google/yamlfmt/releases/download/v${YAMLFMT_VERSION}/yamlfmt_${YAMLFMT_VERSION}_Linux_${yamlfmt_arch}.tar.gz" \
+    "${yamlfmt_sha}" "${tmp}/yamlfmt.tar.gz"
+  download_verified \
+    "https://github.com/JohnnyMorganz/StyLua/releases/download/v${STYLUA_VERSION}/stylua-linux-${stylua_arch}.zip" \
+    "${stylua_sha}" "${tmp}/stylua.zip"
+  download_verified \
+    "https://github.com/tamasfe/taplo/releases/download/${TAPLO_VERSION}/taplo-linux-${taplo_arch}.gz" \
+    "${taplo_sha}" "${tmp}/taplo.gz"
   tar -xzf "${tmp}/yamlfmt.tar.gz" -C "${tmp}" yamlfmt
   unzip -q "${tmp}/stylua.zip" -d "${tmp}"
   gunzip "${tmp}/taplo.gz"
@@ -130,33 +118,18 @@ install_toolchain() {
     | as_root bash
 }
 
-ready_checkout() {
-  cd "$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
-  # LFS's filters only: .githooks' pre-push already runs git lfs pre-push.
-  git lfs install --skip-repo
-  # The submodules the Linux build uses; Falcor is the Windows client's alone.
+# The submodules the Linux build uses; Falcor is the Windows client's alone.
+update_submodules() {
   git submodule update --init third_party/vcpkg third_party/nvtx
+}
+
+bootstrap_vcpkg() {
   ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
   mkdir -p .vcpkg-bincache
-  git config core.hooksPath .githooks
 }
 
-main() {
-  case "${1:-}" in
-    toolchain) install_toolchain ;;
-    checkout) ready_checkout ;;
-    "")
-      install_toolchain
-      ready_checkout
-      # The dev container sets this itself (devcontainer.json).
-      echo "bootstrap-linux: done. Builds use CI's Linux binary cache with:" \
-        "export VCPKG_BINARY_SOURCES=\"clear;files,${PWD}/.vcpkg-bincache,readwrite\""
-      ;;
-    *)
-      echo "usage: $0 [toolchain|checkout]" >&2
-      exit 2
-      ;;
-  esac
+bootstrap_done() {
+  # The dev container sets this itself (devcontainer.json).
+  echo "bootstrap: done. Builds use CI's Linux binary cache with:" \
+    "export VCPKG_BINARY_SOURCES=\"clear;files,${PWD}/.vcpkg-bincache,readwrite\""
 }
-
-main "$@"

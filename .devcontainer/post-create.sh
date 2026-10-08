@@ -12,4 +12,4 @@ sudo chown "$(id -u):$(id -g)" build
 git config --global --add safe.directory '*'
 
 # The rest is a Linux host's too.
-scripts/bootstrap-linux.sh checkout
+scripts/bootstrap.sh checkout

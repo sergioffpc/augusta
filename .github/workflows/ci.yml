@@ -110,10 +110,10 @@ jobs:
             echo "run_toml=false" >> "$GITHUB_OUTPUT"
           fi
 
-          # Python, shell, Markdown, CMake, PowerShell and the workflows, and
+          # Python, shell, Markdown, CMake and the workflows, and
           # the rules each is formatted and linted by.
           if echo "$changed" \
-              | grep -qE '(\.(py|sh|md|cmake|ps1)$|(^|/)CMakeLists\.txt$|^\.githooks/|^\.github/workflows/|^\.github/actionlint\.yaml$|^(ruff\.toml|\.shellcheckrc|\.gersemirc|\.pymarkdown\.json|\.prettierrc\.yaml|PSScriptAnalyzerSettings\.psd1|\.editorconfig)$)'; then
+              | grep -qE '(\.(py|sh|md|cmake)$|(^|/)CMakeLists\.txt$|^\.githooks/|^\.github/workflows/|^\.github/actionlint\.yaml$|^(ruff\.toml|\.shellcheckrc|\.gersemirc|\.pymarkdown\.json|\.prettierrc\.yaml|\.editorconfig)$)'; then
             echo "run_lint=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_lint=false" >> "$GITHUB_OUTPUT"
@@ -226,31 +226,16 @@ jobs:
             | xargs -0 uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9 --log-level warn --check
           git ls-files -z -- '*.md' ':!:third_party/*' ':!:CHANGELOG.md' \
             | xargs -0 uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pymarkdown.json scan
-      - name: Install PSScriptAnalyzer
-        if: needs.changes.outputs.run_lint == 'true'
-        shell: bash
-        run: |
-          install_dir="$RUNNER_TEMP/PSScriptAnalyzer"
-          mkdir -p "$install_dir"
-          curl -fsSLo "$RUNNER_TEMP/psscriptanalyzer.zip" \
-            https://www.powershellgallery.com/api/v2/package/PSScriptAnalyzer/1.25.0
-          printf '%s  %s\n' '14e634c828eb98efb9f40b2918ba90f139ed5eccdf663a2a747736d996995d60' \
-            "$RUNNER_TEMP/psscriptanalyzer.zip" | sha256sum --check --status
-          unzip -q "$RUNNER_TEMP/psscriptanalyzer.zip" -d "$install_dir"
-          # shellcheck disable=SC2016 # $env:PSModulePath is PowerShell's, for pwsh to expand
-          echo "PSModulePath=$RUNNER_TEMP:$(pwsh -NoProfile -Command '$env:PSModulePath')" >> "$GITHUB_ENV"
-      - name: Check PowerShell formatting and lint
-        if: needs.changes.outputs.run_lint == 'true'
-        # It takes seconds; a hung analyzer fails here instead of at the job's
-        # six-hour limit.
-        timeout-minutes: 5
-        run: pwsh -NoProfile -File scripts/psscriptanalyzer.ps1
   client:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true'
     # Pinned rather than windows-latest, so the toolchain doesn't shift
     # underneath us when GitHub migrates the "latest" runner image.
     runs-on: windows-2025
+    # Git Bash, as everywhere else: no PowerShell in the repository.
+    defaults:
+      run:
+        shell: bash
     env:
       # packman, which fetches Falcor's binary dependencies when Falcor is built
       # from source, keeps its cache on the drive its own script is on unless
@@ -267,17 +252,17 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Bootstrap vcpkg
-        shell: pwsh
-        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+        run: ./third_party/vcpkg/bootstrap-vcpkg.bat -disableMetrics
       - name: Configure vcpkg NuGet cache
-        shell: pwsh
+        env:
+          FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+          FEED_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $nugetPath = & ".\third_party\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
-          & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
-          & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
+          nuget="$(cygpath -u "$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1 | tr -d '\r')")"
+          "$nuget" sources add -Name GitHubPackages -Source "$FEED_URL" -Username "$GITHUB_REPOSITORY_OWNER" -Password "$FEED_TOKEN" -StorePasswordInClearText
+          "$nuget" setapikey "$FEED_TOKEN" -Source GitHubPackages
       - name: Configure
         run: cmake --preset windows
-        shell: pwsh
         # Configure downloads the prebuilt Falcor published for this Falcor
         # (cmake/FalcorPrebuilt.cmake, falcor-prebuilt.yml). Without one - a pull
         # request that changes Falcor, or before that workflow has published it -
@@ -285,7 +270,6 @@ jobs:
         # downloads, cached here.
       - name: Check for a prebuilt Falcor
         id: falcor
-        shell: bash
         run: echo "prebuilt=$(sed -n 's/^AUGUSTA_FALCOR_PREBUILT_USED:INTERNAL=//p' build/x64-windows/CMakeCache.txt)" >> "$GITHUB_OUTPUT"
       - name: Restore packman's downloads
         id: packman-cache
@@ -318,22 +302,22 @@ jobs:
         # like the format job's tools, as the image has no winget, the
         # bootstrap's package manager. Installed beside the image's LLVM and
         # put ahead of it on PATH.
-        shell: pwsh
+        # MSYS_NO_PATHCONV: Git Bash would otherwise take the NSIS installer's
+        # /S and /D= for paths and rewrite them.
+        env:
+          MSYS_NO_PATHCONV: 1
         run: |
-          $ProgressPreference = 'SilentlyContinue'
-          $installer = "$env:RUNNER_TEMP\LLVM-21.1.8-win64.exe"
-          Invoke-WebRequest -Uri https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.8/LLVM-21.1.8-win64.exe -OutFile $installer
-          if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne '7a5386c26497db1691f320121e5b113364dd0274b98e55f15f4dbc00c0450113') {
-            throw "LLVM installer checksum mismatch"
-          }
-          Start-Process -FilePath $installer -ArgumentList '/S', "/D=$env:RUNNER_TEMP\llvm" -Wait
-          "$env:RUNNER_TEMP\llvm\bin" >> $env:GITHUB_PATH
+          installer="$RUNNER_TEMP/LLVM-21.1.8-win64.exe"
+          curl -fsSLo "$installer" https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.8/LLVM-21.1.8-win64.exe
+          printf '%s  %s\n' 7a5386c26497db1691f320121e5b113364dd0274b98e55f15f4dbc00c0450113 \
+            "$installer" | sha256sum --check --status
+          "$installer" /S "/D=$(cygpath -w "$RUNNER_TEMP/llvm")"
+          cygpath -w "$RUNNER_TEMP/llvm/bin" >> "$GITHUB_PATH"
       - name: Lint
         # .clang-tidy's misc-include-cleaner alone (the Makefile's tidy target
         # says why -w) on what the server job's Linux build can't lint: the
         # Windows-only sources and tests. After Build, which generates headers
         # Falcor's own include.
-        shell: bash
         run: >-
           git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'src/modules/audio/output_miniaudio.cpp' 'src/modules/audio/miniaudio.cpp' 'tests/client_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 4 clang-tidy --quiet -p=build/x64-windows --checks=-*,misc-include-cleaner --extra-arg=-w
       - name: Test
@@ -408,6 +392,10 @@ jobs:
     # modules wrap DirectXTex (ADR-0017), and the cooker only ever runs on
     # Windows (tools/README.md).
     runs-on: windows-2025
+    # Git Bash, as everywhere else: no PowerShell in the repository.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -419,14 +407,15 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Bootstrap vcpkg
-        shell: pwsh
-        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+        run: ./third_party/vcpkg/bootstrap-vcpkg.bat -disableMetrics
       - name: Configure vcpkg NuGet cache
-        shell: pwsh
+        env:
+          FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+          FEED_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $nugetPath = & ".\third_party\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
-          & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
-          & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
+          nuget="$(cygpath -u "$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1 | tr -d '\r')")"
+          "$nuget" sources add -Name GitHubPackages -Source "$FEED_URL" -Username "$GITHUB_REPOSITORY_OWNER" -Password "$FEED_TOKEN" -StorePasswordInClearText
+          "$nuget" setapikey "$FEED_TOKEN" -Source GitHubPackages
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
@@ -436,10 +425,9 @@ jobs:
         run: uv sync --locked
       - name: Build the native modules
         # Into tools/pack/src/pack, against the venv's own interpreter, as
-        # tools/pack/scripts/bootstrap-windows.ps1 does.
-        shell: pwsh
+        # tools/pack/scripts/bootstrap.sh does.
         run: |
-          cmake --preset windows -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$PWD/tools/.venv/Scripts/python.exe"
+          cmake --preset windows -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$(cygpath -m "$PWD/tools/.venv/Scripts/python.exe")"
           cmake --build tools/pack/cpp/build/x64-windows
       - name: Test (pytest)
         working-directory: tools/pack

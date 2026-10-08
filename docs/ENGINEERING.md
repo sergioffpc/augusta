@@ -226,24 +226,25 @@ no self-hosted GitHub Actions runner in this pipeline).
   than forwarded: VS Code's port forwarding is TCP-only.
 - **Server / shared core (Linux, dev container or host):** `.devcontainer/`
   gives this side as a container, for VS Code or Codespaces, without mutating a
-  host, and `scripts/bootstrap-linux.sh` installs the same on an Ubuntu 26.04
-  host. The script is the one recipe for it: the image runs its `toolchain`
-  step, the container's post-create its `checkout` step (submodules, vcpkg,
-  hooks), and a host both. It installs CI's runner Ubuntu release's packages,
-  whose LLVM major is CI's, with the toolchain
+  host, and `scripts/bootstrap.sh` installs the same on an Ubuntu 26.04 host
+  (its Linux half, `scripts/bootstrap/linux.sh`; the image hashes only the two,
+  so a Windows-only change doesn't rebuild it). The script is the one recipe for
+  it: the image runs its `toolchain` step, the container's post-create its
+  `checkout` step (submodules, vcpkg, hooks), and a host both. It installs CI's
+  runner Ubuntu release's packages, whose LLVM major is CI's, with the toolchain
   `.github/actions/setup-linux-build` installs (kept in step with it by hand),
   clang (ADR-0008), CMake, Ninja, vcpkg, clang-tidy, clang-format, gdb, GitHub
   CLI, kubectl, helm, Doxygen, the hooks' formatters and linters (uv for
   yamllint, ruff, shfmt, shellcheck, actionlint, gersemi, Prettier and
   pymarkdown, standalone yamlfmt, StyLua, luacheck and taplo, at CI's pinned
-  versions; no PowerShell, so no PSScriptAnalyzer), and CI's Linux vcpkg binary
-  cache configuration (a files provider in the checkout's `.vcpkg-bincache`).
-  The image builds for the host's architecture (amd64 or arm64) rather than
-  emulating CI's amd64. sccache's cache lives in a volume shared by every
-  container of the repository; the build trees in a volume per container, so
-  they never collide with a Windows build of the same checkout. One recipe, not
-  a container beside a separate host bootstrap: two recipes for the same
-  toolchain drift apart. The client has no container equivalent (see below).
+  versions), and CI's Linux vcpkg binary cache configuration (a files provider
+  in the checkout's `.vcpkg-bincache`). The image builds for the host's
+  architecture (amd64 or arm64) rather than emulating CI's amd64. sccache's
+  cache lives in a volume shared by every container of the repository; the build
+  trees in a volume per container, so they never collide with a Windows build of
+  the same checkout. One recipe, not a container beside a separate host
+  bootstrap: two recipes for the same toolchain drift apart. The client has no
+  container equivalent (see below).
 - **macOS (through the dev container):** nothing builds natively on macOS (the
   presets are Linux's and Windows'), and nothing is installed there but git, Git
   LFS and Docker or Podman. `scripts/dev-container.sh [command]` runs a command
@@ -259,31 +260,38 @@ no self-hosted GitHub Actions runner in this pipeline).
   for one toolchain do.
 - **Client (Windows, native):** built and run natively — never cross-compiled
   from Linux (not viable given Falcor/D3D12/NVIDIA SDK's MSVC-specific toolchain
-  assumptions). A `scripts/bootstrap-windows.ps1` script (winget-driven)
-  installs Visual Studio Build Tools system-wide (default install location) —
-  simpler than pinning a project-specific path, at the cost of not being able to
-  side-by-side independent Build Tools versions per project — plus the Windows
-  SDK, CMake, Ninja, GNU make, vcpkg, Git, uv (for yamllint and the formatters
-  and linters uv runs, below), standalone yamlfmt, StyLua, luacheck and taplo,
-  the PSScriptAnalyzer module, and LLVM's clang-format/clang-tidy (for the hooks
-  below), pinned to the LLVM major CI's Ubuntu runner ships so the hooks agree
-  with CI's gates. (A fully hermetic, registry-free alternative — clang-cl +
-  xwin-extracted SDK/CRT — was considered and rejected: Falcor's CMake presets
-  only test/support MSVC on Windows, and stacking an unsupported compiler on top
-  of an already-unmaintained dependency, ADR-0009, isn't worth the purity.)
-- **Asset cooker setup (opt-in):** `tools/pack/scripts/bootstrap-windows.ps1`
-  builds the pack environment under a caller-chosen assets root (ADR-0030): a
-  uv-managed Python environment with `tools/pack` installed editable, its native
-  modules, signing keys and sample authoring content.
+  assumptions). The same `scripts/bootstrap.sh`, run in Git Bash as
+  Administrator (its Windows half, `scripts/bootstrap/windows.sh`,
+  winget-driven; one entry point and one `checkout` step and set of pinned
+  formatter versions for both platforms, and no PowerShell: Git for Windows is
+  the one prerequisite, which cloning needs anyway) installs Visual Studio Build
+  Tools system-wide (default install location) — simpler than pinning a
+  project-specific path, at the cost of not being able to side-by-side
+  independent Build Tools versions per project — plus the Windows SDK, CMake,
+  Ninja, GNU make, vcpkg, Git, uv (for yamllint and the formatters and linters
+  uv runs, below), standalone yamlfmt, StyLua, luacheck and taplo, and LLVM's
+  clang-format/clang-tidy (for the hooks below), pinned to the LLVM major CI's
+  Ubuntu runner ships so the hooks agree with CI's gates. (A fully hermetic,
+  registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was considered
+  and rejected: Falcor's CMake presets only test/support MSVC on Windows, and
+  stacking an unsupported compiler on top of an already-unmaintained dependency,
+  ADR-0009, isn't worth the purity.)
+- **Asset cooker setup (opt-in, Windows only):**
+  `tools/pack/scripts/bootstrap.sh` (Git Bash; the cooker's `_textconv` loads
+  images through DirectXTex's WIC loader, which needs COM) builds the pack
+  environment under a caller-chosen assets root (ADR-0030): a uv-managed Python
+  environment with `tools/pack` installed editable, its native modules, signing
+  keys and sample authoring content.
 - **USD Composer setup (authoring-only, opt-in):**
-  `tools/composer/scripts/bootstrap-windows.ps1` builds NVIDIA Omniverse USD
-  Composer via kit-app-template and fetches Adobe's USD-Fileformat-plugins under
-  the same assets root. These heavier, GPU-dependent tools are deliberately kept
-  out of `bootstrap-windows.ps1` and are never linked into shipped binaries
-  (ARCHITECTURE.md §2); only content authors need them. `meshoptimizer` and
-  DirectXTex are `tools/pack/cpp`'s own C++ build dependencies (two small
-  pybind11 modules, no OpenUSD - see ADR-0030) — vendored via `vcpkg.json`
-  (ADR-0025) like the rest of the codebase, not fetched by this script.
+  `tools/composer/scripts/bootstrap.sh` (Windows in Git Bash, or Linux) builds
+  NVIDIA Omniverse USD Composer via kit-app-template and fetches Adobe's
+  USD-Fileformat-plugins under the same assets root. These heavier,
+  GPU-dependent tools are deliberately kept out of `scripts/bootstrap.sh` and
+  are never linked into shipped binaries (ARCHITECTURE.md §2); only content
+  authors need them. `meshoptimizer` and DirectXTex are `tools/pack/cpp`'s own
+  C++ build dependencies (two small pybind11 modules, no OpenUSD - see ADR-0030)
+  — vendored via `vcpkg.json` (ADR-0025) like the rest of the codebase, not
+  fetched by this script.
 - **Editor experience:** a committed `.vscode/extensions.json` lists recommended
   extensions (C++ tools, CMake Tools, clangd/clang-format, EditorConfig, Lua,
   YAML/Helm, GitHub Actions) — VS Code prompts to install these whenever the
@@ -320,35 +328,33 @@ no self-hosted GitHub Actions runner in this pipeline).
   also the Even Better TOML extension's engine: it formats staged files in
   `pre-commit`, lints changed ones in `pre-push`, and CI's `format` job runs
   both in check mode.
-- Python, shell, the workflows, CMake, Markdown and PowerShell each have a
-  formatter, a linter or both, every one but PSScriptAnalyzer run by uv at a
-  pinned version (`uv tool run`), so nothing is installed for them but uv.
-  Python follows the Google Python Style Guide (ADR-0012): ruff 0.16.10 formats
-  and lints (`ruff.toml`: 80 columns; the guide's checks - pylint's, naming,
-  Google-convention docstrings, one import per line, no relative imports - and
-  bugbear, pyupgrade and simplify). Shell scripts and the git hooks follow the
-  Google Shell Style Guide (ADR-0012), in Bash: shfmt 4.2.0 formats (by
-  `.editorconfig`: two-space indent, indented `case` patterns, a continued `|`
-  or `&&` starting the next line) and shellcheck 0.11.0 lints (`.shellcheckrc`:
-  the guide's optional checks, `[[ ]]`, braced and quoted expansions). The
-  workflows: actionlint 1.7.12 (`.github/actionlint.yaml`), with shellcheck on
-  their `run:` scripts. CMake: gersemi 0.29.2 formats (`.gersemirc`: 120
-  columns, two-space indent, the project's own functions read from `cmake/`).
-  Markdown follows the Google Markdown style guide (ADR-0012): Prettier 3.9.9
-  formats (`.prettierrc.yaml`), with Node run from its PyPI wheel: paragraphs
-  wrapped at 80 columns, a nested list or a block in a list item indented 4
-  spaces (as the guide asks and MkDocs needs), and code blocks left as written.
-  pymarkdown 0.9.40 lints with markdownlint's rules (`.pymarkdown.json`) set to
-  the guide (80 columns but for headings, tables, code blocks and a long URL;
-  ATX headings; fenced code blocks; no trailing whitespace), less what the guide
-  leaves to the writer (ordered-list numbering, emphasis as a heading) and what
-  Prettier decides (blank lines around lists, table alignment). PowerShell:
-  PSScriptAnalyzer 1.25.0 lints and formats (`PSScriptAnalyzerSettings.psd1`,
-  through `scripts/psscriptanalyzer.ps1`), with consistent indentation off since
-  it pulls a continued line back to its statement's indent, and `Write-Host`
-  allowed, being how the bootstraps talk to the person running them. The
-  formatters run on staged files in `pre-commit`, the linters on changed files
-  in `pre-push`, and CI's `format` job runs all of them in check mode.
+- Python, shell, the workflows, CMake and Markdown each have a formatter, a
+  linter or both, every one run by uv at a pinned version (`uv tool run`), so
+  nothing is installed for them but uv. Python follows the Google Python Style
+  Guide (ADR-0012): ruff 0.16.10 formats and lints (`ruff.toml`: 80 columns; the
+  guide's checks - pylint's, naming, Google-convention docstrings, one import
+  per line, no relative imports - and bugbear, pyupgrade and simplify). Shell
+  scripts and the git hooks follow the Google Shell Style Guide (ADR-0012), in
+  Bash: shfmt 4.2.0 formats (by `.editorconfig`: two-space indent, indented
+  `case` patterns, a continued `|` or `&&` starting the next line) and
+  shellcheck 0.11.0 lints (`.shellcheckrc`: the guide's optional checks,
+  `[[ ]]`, braced and quoted expansions). The workflows: actionlint 1.7.12
+  (`.github/actionlint.yaml`), with shellcheck on their `run:` scripts. CMake:
+  gersemi 0.29.2 formats (`.gersemirc`: 120 columns, two-space indent, the
+  project's own functions read from `cmake/`). Markdown follows the Google
+  Markdown style guide (ADR-0012): Prettier 3.9.9 formats (`.prettierrc.yaml`),
+  with Node run from its PyPI wheel: paragraphs wrapped at 80 columns, a nested
+  list or a block in a list item indented 4 spaces (as the guide asks and MkDocs
+  needs), and code blocks left as written. pymarkdown 0.9.40 lints with
+  markdownlint's rules (`.pymarkdown.json`) set to the guide (80 columns but for
+  headings, tables, code blocks and a long URL; ATX headings; fenced code
+  blocks; no trailing whitespace), less what the guide leaves to the writer
+  (ordered-list numbering, emphasis as a heading) and what Prettier decides
+  (blank lines around lists, table alignment). The repository has no PowerShell
+  scripts: its scripts are Bash, and the one Windows-native helper,
+  `scripts/vcenv.cmd`, is a batch file. The formatters run on staged files in
+  `pre-commit`, the linters on changed files in `pre-push`, and CI's `format`
+  job runs all of them in check mode.
 - JSON has no tool of its own: `CMakePresets.json` and `vcpkg.json` are
   validated by CMake and vcpkg on every configure, and the `.vscode` files are
   the editor's, formatted by it on save.

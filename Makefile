@@ -9,7 +9,7 @@
 # (CMake's default when unset) and DESTDIR, e.g.
 #   make install prefix=/opt/augusta DESTDIR=/tmp/stage
 #
-# On Windows every command runs through scripts\vcenv.ps1, which loads the
+# On Windows every command runs through scripts\vcenv.cmd, which loads the
 # Visual Studio Build Tools environment first (cl.exe needs it, see README).
 # GNU make for Windows: `winget install ezwinports.make`.
 
@@ -17,7 +17,7 @@ ifeq ($(OS),Windows_NT)
 SHELL := cmd.exe
 .SHELLFLAGS := /c
 PRESET ?= windows
-RUN := powershell -NoProfile -ExecutionPolicy Bypass -File scripts\vcenv.ps1
+RUN := scripts\vcenv.cmd
 else
 PRESET ?= linux
 RUN :=
@@ -43,14 +43,6 @@ GERSEMI := uv tool run gersemi@0.29.2
 PYMARKDOWN := uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pymarkdown.json
 # Prettier is a Node package: uv runs Node from its PyPI wheel, and npx Prettier.
 PRETTIER := uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9
-# PSScriptAnalyzer is a PowerShell module: Windows PowerShell here, PowerShell 7
-# (pwsh) elsewhere, skipped where there is none (CI still runs it).
-ifeq ($(OS),Windows_NT)
-psscriptanalyzer = powershell -NoProfile -ExecutionPolicy Bypass -File scripts/psscriptanalyzer.ps1 $(1)
-else
-psscriptanalyzer = if command -v pwsh >/dev/null; then pwsh -NoProfile -File scripts/psscriptanalyzer.ps1 $(1); \
-  else echo "pwsh not found - skipping PSScriptAnalyzer"; fi
-endif
 
 # What CI's Lint step runs clang-tidy on: every src .cpp except the two
 # Windows-only trees and the audio module's Windows-only output device, which
@@ -164,7 +156,6 @@ format:
 	$(SHFMT) -w $(shell git ls-files -- $(SHELL_SOURCES))
 	$(GERSEMI) -i $(shell git ls-files -- $(CMAKE_SOURCES))
 	$(PRETTIER) --log-level warn --write $(shell git ls-files -- $(MARKDOWN_SOURCES))
-	$(call psscriptanalyzer,-Fix)
 
 format-check:
 	clang-format --dry-run --Werror $(shell git ls-files -- $(CXX_SOURCES))
@@ -182,11 +173,8 @@ format-check:
 	$(GERSEMI) --check $(shell git ls-files -- $(CMAKE_SOURCES))
 	$(PRETTIER) --log-level warn --check $(shell git ls-files -- $(MARKDOWN_SOURCES))
 	$(PYMARKDOWN) scan $(shell git ls-files -- $(MARKDOWN_SOURCES))
-	$(call psscriptanalyzer)
 
-# -p is written -p=<dir> because PowerShell reads a bare -p as its own
-# -PipelineVariable when vcenv.ps1 forwards the arguments, and clang-tidy would
-# then run without the compile commands. Configuring first keeps
+# Configuring first keeps
 # compile_commands.json in step with the sources (a file new on a branch has no
 # entry until then).
 tidy: configure

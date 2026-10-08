@@ -17,8 +17,8 @@ The scenario argument is a bare name, not a path (ADR-0041): it resolves to
 <assets-root>/authoring/scenarios/<name>.yaml, a manifest naming, by file, the
 one map, every character, the cue sounds and the scripts that scenario
 composes - see scenario.py. This project is
-installed into the hermetic environment tools/pack/scripts/bootstrap-
-windows.ps1 builds (--assets-root/python), so --assets-root defaults to the
+installed into the hermetic environment tools/pack/scripts/bootstrap.sh
+builds (--assets-root/python), so --assets-root defaults to the
 root of the venv this interpreter is already running from, and is used for:
 resolving authoring/scenarios/<name>.yaml and everything it names; the
 signing key, --assets-root/keys/signing.key; and packs, which default to
@@ -118,7 +118,7 @@ def main(argv: list[str] | None = None) -> int:
     if not signing_key_path.exists():
         print(
             f"Signing key not found: {signing_key_path} - pass --signing-key, "
-            f"or run tools\\pack\\scripts\\bootstrap-windows.ps1 "
+            f"or run tools/pack/scripts/bootstrap.sh "
             f"{assets_root} first.",
             file=sys.stderr,
         )
