@@ -4,16 +4,16 @@
 # release, whose distro clang/clang-tidy/clang-format fix CI's LLVM major
 # (bump it with the runner image), and the toolchain
 # .github/actions/setup-linux-build installs on top, as
-# scripts/bootstrap-linux.sh installs it - the one recipe for it, which a
+# scripts/bootstrap.sh installs it - the one recipe for it, which a
 # Linux host runs too. Keep it and setup-linux-build in step.
 # Built for the host's architecture (amd64 or arm64), not only CI's amd64: the
 # same packages and pinned tool versions, without emulating another CPU.
 FROM ubuntu:26.04
 
 # The build context is the repository (devcontainer.json), which
-# Dockerfile.dockerignore narrows to this script.
-RUN --mount=type=bind,source=scripts/bootstrap-linux.sh,target=/tmp/bootstrap-linux.sh \
-    bash /tmp/bootstrap-linux.sh toolchain \
+# Dockerfile.dockerignore narrows to scripts/bootstrap.sh and its Linux half.
+RUN --mount=type=bind,source=scripts,target=/tmp/scripts \
+    bash /tmp/scripts/bootstrap.sh toolchain \
     && rm -rf /var/lib/apt/lists/* \
     && echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ubuntu \
     && chmod 0440 /etc/sudoers.d/ubuntu

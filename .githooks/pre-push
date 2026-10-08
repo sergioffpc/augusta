@@ -2,8 +2,7 @@
 # Runs clang-tidy on changed C++ files, yamllint on changed YAML files,
 # luacheck on changed Lua files, taplo on changed TOML files, ruff on changed
 # Python, shellcheck on changed shell scripts, pymarkdown on changed Markdown,
-# actionlint on changed workflows and PSScriptAnalyzer on changed PowerShell
-# before pushing. Git LFS uploads still run after the checks pass.
+# and actionlint on changed workflows before pushing. Git LFS uploads still run after the checks pass.
 
 readonly ZERO_SHA=0000000000000000000000000000000000000000
 
@@ -134,7 +133,7 @@ EOF
   # The changed files of every other linter's. Workflows are linted whole by
   # actionlint, which reads them together (a workflow's calls into another are
   # checked against it).
-  local python_files shell_files markdown_files powershell_files
+  local python_files shell_files markdown_files
   local workflows_changed
   python_files=$(changed_of "${files}" '^ruff\.toml$' '\.py$' \
     '*.py' ':!:third_party/*')
@@ -143,8 +142,6 @@ EOF
   markdown_files=$(changed_of "${files}" '^\.pymarkdown\.json$' '\.md$' \
     '*.md' ':!:third_party/*' ':!:CHANGELOG.md' \
     | grep -vxF CHANGELOG.md)
-  powershell_files=$(changed_of "${files}" '^PSScriptAnalyzerSettings\.psd1$' \
-    '\.ps1$' '*.ps1')
   workflows_changed=$(printf '%s\n' "${files}" \
     | grep -E '^\.github/(workflows/|actionlint\.yaml$)' || true)
 
@@ -188,19 +185,15 @@ EOF
 
   if [[ -z "${files}${include_files}${yaml_files}${lua_files}${toml_files}" &&
     -z "${python_files}${shell_files}${markdown_files}" &&
-    -z "${powershell_files}${workflows_changed}" ]]; then
+    -z "${workflows_changed}" ]]; then
     lfs_pre_push "${push_refs}" "$@"
     exit $?
   fi
 
-  # clang-tidy, through vcenv.ps1 on Windows. -p=<dir>, never -p <dir>:
-  # through vcenv.ps1, PowerShell reads a bare -p as its own parameter and
-  # clang-tidy would run without the compile commands (see the Makefile's
-  # tidy target).
+  # clang-tidy, through vcenv.cmd on Windows.
   local tidy=(clang-tidy --quiet -p="${build_dir}")
   if [[ "${windows}" = 1 ]]; then
-    tidy=(powershell -NoProfile -ExecutionPolicy Bypass
-      -File scripts/vcenv.ps1 "${tidy[@]}")
+    tidy=(scripts/vcenv.cmd "${tidy[@]}")
   fi
 
   if [[ -n "${files}" ]]; then
@@ -307,24 +300,6 @@ EOF
   [[ -z "${workflows_changed}" ]] \
     || lint actionlint uv tool run --from actionlint-py==1.7.12.25 \
       --with shellcheck-py==0.11.0.1 actionlint
-
-  # PSScriptAnalyzer is a PowerShell module: Windows PowerShell on Windows,
-  # PowerShell 7 (pwsh) elsewhere, where it is skipped if there is none.
-  if [[ -n "${powershell_files}" ]]; then
-    local analyzer=(-File scripts/psscriptanalyzer.ps1)
-    if [[ "${windows}" = 1 ]]; then
-      # shellcheck disable=SC2086
-      lint PSScriptAnalyzer powershell -NoProfile -ExecutionPolicy Bypass \
-        "${analyzer[@]}" ${powershell_files}
-    elif command -v pwsh >/dev/null 2>&1; then
-      # shellcheck disable=SC2086
-      lint PSScriptAnalyzer pwsh -NoProfile "${analyzer[@]}" \
-        ${powershell_files}
-    else
-      echo "pre-push: pwsh not found on PATH - skipping PSScriptAnalyzer" \
-        "(CI will still catch this)." >&2
-    fi
-  fi
 
   lfs_pre_push "${push_refs}" "$@"
 }

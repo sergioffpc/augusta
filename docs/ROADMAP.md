@@ -21,8 +21,8 @@ the self-hosted k3s cluster. Watching it there came with v2 (M7).
 - `.gitignore`, `.editorconfig`, local `commit-msg` hook (Conventional Commits
   validation)
 - `vcpkg.json` manifest + CMake toolchain wiring
-- Windows bootstrap script (`scripts/bootstrap-windows.ps1`): VS Build Tools
-  installed system-wide, Windows SDK, CMake, Ninja, Git, vcpkg
+- Windows bootstrap script (`scripts/bootstrap.sh`): VS Build Tools installed
+  system-wide, Windows SDK, CMake, Ninja, Git, vcpkg
 - Linux dev container (`.devcontainer/`): CMake, Ninja, vcpkg, clang-tidy,
   clang-format, gdb, GitHub CLI, kubectl, helm
 - `.vscode/extensions.json` recommended extensions

@@ -54,8 +54,8 @@ pod crash-loops. The client pack never goes on the node.
 ## Prerequisites
 
 - The pack environment, built with
-  `tools\pack\scripts\bootstrap-windows.ps1 <AssetsRoot>` (Windows, ADR-0030).
-  The commands below set `$AssetsRoot` to it.
+  `tools/pack/scripts/bootstrap.sh <AssetsRoot>` (Windows, ADR-0030). The
+  commands below set `$AssetsRoot` to it.
 - The authoring content the current packs were cooked from, under
   `<AssetsRoot>\authoring\` (only the example scenario is in the repository).
 - For the release key: the offline location the release private key is kept in.

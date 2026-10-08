@@ -13,7 +13,8 @@
 # cache and vcpkg's binary cache, downloads and build trees are volumes every
 # checkout shares, so a new worktree doesn't rebuild the vcpkg dependencies.
 # The image is rebuilt, and the container recreated, when the Dockerfile or
-# scripts/bootstrap-linux.sh changes.
+# scripts/bootstrap.sh or scripts/bootstrap/linux.sh changes (not the
+# Windows half).
 #
 # Docker or Podman (rootless Podman maps the host's user to the image's
 # ubuntu, so files written inside are the host user's).
@@ -56,7 +57,7 @@ build_image() {
   local engine="$1" tag="$2" top="$3"
   "${engine}" image inspect "${tag}" >/dev/null 2>&1 && return
   echo "dev-container: building ${tag} (once per change to the Dockerfile" \
-    "or scripts/bootstrap-linux.sh)..." >&2
+    "or the Linux bootstrap)..." >&2
   local ignore=()
   # Docker reads Dockerfile.dockerignore beside the Dockerfile by itself.
   [[ "${engine}" = podman ]] \
@@ -107,7 +108,7 @@ main() {
 
   local tag name
   tag="augusta-dev:$(cat "${top}/.devcontainer/Dockerfile" \
-    "${top}/scripts/bootstrap-linux.sh" | digest)"
+    "${top}/scripts/bootstrap.sh" "${top}/scripts/bootstrap/linux.sh" | digest)"
   name="augusta-dev-$(printf '%s' "${top}" | digest)"
 
   build_image "${engine}" "${tag}" "${top}"
