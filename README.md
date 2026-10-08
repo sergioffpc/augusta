@@ -23,12 +23,11 @@ server.
   hit location and body part determine damage (no regenerating health).
 - **Match-based, tactical** — no respawn until the match ends; movement includes
   walk/run/crouch/prone, stamina, and recoil.
-- **ECS core** (Flecs) shared between client and server, with a custom
-  ballistics module.
+- **ECS core** (Flecs) shared between client and server, with a physics layer
+  for collision/movement and a custom ballistics module.
 - **Mechanism / policy / data separation** — engine mechanism in C++, game
   policy (round lifecycle, win conditions, spawn rules) in sandboxed Lua,
   tunable balance values as data.
-- **v1 scope** — 1 weapon (rifle), 1 test map, 2–8 concurrent players.
 
 ## Status
 
