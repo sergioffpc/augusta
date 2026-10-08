@@ -113,9 +113,7 @@ select it and run "Test: Run All Tests with Coverage": CMake Tools shows the
 result in the editor and the Test Coverage view. From a shell:
 
 ```bash
-cmake --preset linux-coverage && cmake --build --preset linux-coverage
-ctest --preset linux-coverage
-scripts/coverage-report.sh   # HTML and LCOV in build/x64-linux-coverage/report
+make coverage   # HTML and LCOV in build/x64-linux-coverage/report
 ```
 
 The nightly uploads the same report as its `coverage-report` artifact.
