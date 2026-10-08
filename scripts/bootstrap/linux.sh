@@ -25,11 +25,12 @@ install_toolchain() {
   # From .github/actions/setup-linux-build (which says why each): clang,
   # ninja-build, autoconf, autoconf-archive, automake, libtool. From the server
   # job: clang-tidy. Already on CI's runner image: build-essential, cmake, git,
-  # curl, zip, unzip, tar, pkg-config. For the hooks: clang-format, git-lfs
-  # (pre-push), and lua-check (luacheck), which this release packages at CI's
-  # pinned LUACHECK_VERSION for every architecture, unlike luacheck's own
-  # release. sccache: the root CMakeLists.txt picks it up from PATH. doxygen:
-  # `make docs`. gdb and gh: for development.
+  # curl, zip, unzip, tar, pkg-config. From the tools job: libomp-dev
+  # (DirectXTex's CMake config finds OpenMP). For the hooks: clang-format,
+  # git-lfs (pre-push), and lua-check (luacheck), which this release packages
+  # at CI's pinned LUACHECK_VERSION for every architecture, unlike luacheck's
+  # own release. sccache: the root CMakeLists.txt picks it up from PATH.
+  # doxygen: `make docs`. gdb and gh: for development.
   as_root apt-get update
   as_root apt-get install -y --no-install-recommends \
     autoconf \
@@ -47,6 +48,7 @@ install_toolchain() {
     gh \
     git \
     git-lfs \
+    libomp-dev \
     libtool \
     lua-check \
     ninja-build \

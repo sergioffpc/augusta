@@ -78,7 +78,8 @@ decisions already made in ARCHITECTURE.md:
       2026). On Linux, where nuget.exe runs under Mono and fails certificate
       checks, it is a files cache in the Actions cache, one entry for every
       Linux job (all clang), saved only when a job built a package it didn't
-      restore.
+      restore - except the `tools` job's Linux leg, whose `tools/pack/cpp`
+      manifest keeps an entry of its own.
     - Falcor is not built on every run: the `falcor-prebuilt` workflow builds it
       once for each combination of submodule commit, `falcor.patch` and Falcor
       features, and publishes it as an asset of a `falcor-*` release, which the
