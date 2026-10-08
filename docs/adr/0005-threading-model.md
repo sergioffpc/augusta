@@ -1,9 +1,9 @@
 # Threading Model
 
-The engine is multithreaded from v1, using fixed dedicated threads rather than a
-generic job/task scheduler. The client runs 3 threads (Main/Render, Simulation,
-Network I/O); the server runs 3 (Simulation, Network I/O, Metrics) — no render
-thread, since it's headless. The server's Metrics thread is the HTTP server
+The engine is multithreaded, using fixed dedicated threads rather than a generic
+job/task scheduler. The client runs 3 threads (Main/Render, Simulation, Network
+I/O); the server runs 3 (Simulation, Network I/O, Metrics) — no render thread,
+since it's headless. The server's Metrics thread is the HTTP server
 (Boost.Beast) for `/metrics` and `/livez` (ADR-0049). A server asked to capture
 its Matches runs a fourth, which only writes the capture's files (ADR-0050).
 
