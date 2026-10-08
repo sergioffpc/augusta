@@ -44,9 +44,13 @@ The spawn position moves from Join accepted to Match start, which gives every
 player's. Each Lobby entry and each player in Match start carries its
 character's name.
 
-**Extended by ADR-0048**: a match recording is written in this encoding, as
-records of its own (a header and one per tick) that are never messages, so it
-carries a command in the bytes a Commands message does.
+**Extended by ADR-0050 and ADR-0051** (replacing ADR-0048's match recording): a
+Match capture is written in this encoding, as records of its own (a header and
+one per event) that are never messages, so it carries a command in the bytes a
+Commands message does; Match start gains the Match's first tick; and the Reenact
+request, Replay list request, Replay request and Replay view join the catalogue,
+with the Join refused reasons _reenactments not accepted_, _replay server_ and
+_unknown capture_.
 
 **Wire shape.** One message is one transport payload: a one-byte `MessageType`
 followed by that type's fields, fixed-width and little-endian; a string is a
