@@ -244,18 +244,26 @@ _scene graph_ is how the pack stores the map, not the map itself)
 
 **Harness**: Where anything that plays connects to the server: the client's
 network connection and PredictionWorld without a window or GPU. The real client,
-an automated test and a future autonomous agent each plug into one, supplying
-the input for every tick: whatever plays live runs it in real time on the
-Prediction and Network I/O threads the Harness owns (harness::Runner), and a
-test drives it by hand. _Avoid_: Client session, bot
+an automated test and an Agent each plug into one, supplying the input for every
+tick: whatever plays live runs it in real time on the Prediction and Network I/O
+threads the Harness owns (harness::Runner), and a test drives it by hand.
+_Avoid_: Client session, bot
 
-**Scripted player**: What plays in a person's place through a Harness, deciding
-each tick's Command from the Server view, its own prediction and its seed: it
-wanders within a few metres of where the Match spawned it, aims from where its
-prediction puts it at the nearest living other player, fires in Bursts and
-reloads. augusta-swarm runs a scenario's Player count of them against a server,
-for load and end-to-end tests. _Avoid_: Bot (too vague: it names anything
-automated), AI player (it follows a fixed script, it does not plan)
+**Agent**: A player with no one at the keyboard, controlled by a Python script
+through a Harness (ADR-0052): the script observes what the server tells the
+Agent and its events, and chooses Intents; the Harness turns them into a Command
+every tick. A load test and an AI playing the game are the same thing with
+different scripts. _Avoid_: Bot (too vague: it names anything automated),
+Scripted player (the fixed C++ behaviour that augusta-swarm played, which Agents
+replaced)
+
+**Intent**: What an Agent is doing on one of its channels - movement, aim or
+trigger - until its script replaces it, such as moving to a point, aiming at a
+body or firing in Bursts. The Harness carries it out every tick, so aim follows
+a moving target between the script's decisions; a Raw Intent holds one Command
+on all three channels. An Intent that ends - arrived, blocked, target gone,
+replaced - tells the script. _Avoid_: Command (what is sent to the server each
+tick), Policy action (a decision of Game policy), order
 
 **Captured player**: augustac playing one player of a Match capture in a
 Reenactment, from its `--reenact` command line: it joins with a Reenact request

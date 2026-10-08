@@ -471,6 +471,8 @@ not affect numbering.
   core dumps, a logged stack, and split debug info
 - [ADR-0049](./adr/0049-metrics-and-liveness.md) — Metrics and liveness:
   Prometheus pull from augustad, kube-prometheus-stack via Flux
+- [ADR-0052](./adr/0052-python-scripted-agents.md) — Agents: players scripted in
+  Python through Intents the Harness runs
 
 ### Rendering & Audio
 
