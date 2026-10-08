@@ -4,15 +4,13 @@
 
 See [VISION.md](./VISION.md) for full vision. Summary: a realistic,
 physics-driven, server-authoritative multiplayer FPS simulator engine, built in
-C++ with a Windows client (rendering via NVIDIA Falcor/D3D12) and a headless
-Linux server, as a learning project in low-level systems and networking
-programming.
+C++ with a Windows client and a headless Linux server.
 
 Top quality goals (see [REQUIREMENTS.md](./REQUIREMENTS.md) for full NFR list):
 
 1. Server-authoritative correctness (NFR-05)
 2. Realistic, consistent ballistics (NFR-03)
-3. Stable performance under v1 load (NFR-01, NFR-06)
+3. Stable performance under load (NFR-01, NFR-06)
 4. Platform targeting, Windows client + Linux server (NFR-04)
 
 ## 2. Architecture Constraints
@@ -33,14 +31,13 @@ Top quality goals (see [REQUIREMENTS.md](./REQUIREMENTS.md) for full NFR list):
   2.0, stage cleanup), usd-validation-nvidia (Apache 2.0 + CC-BY-4.0,
   validation), and Adobe's USD-Fileformat-plugins (Apache 2.0, glTF/FBX/OBJ
   ingestion as USD layers, ADR-0016) — all offline/build-time only.
-- **Organizational:** solo developer / small informal team, hobby project, no
-  fixed deadline, milestone-driven
+- **Organizational:** solo developer / small informal team, no fixed deadline,
+  milestone-driven
 
 ## 3. System Scope and Context
 
 **Business context:** Players connect directly to a dedicated server via
-IP:port. No matchmaking, master server, or third-party platform integration in
-v1.
+IP:port.
 
 **Technical context:**
 
@@ -50,7 +47,8 @@ v1.
   only - NFR-04): headless, authoritative simulation
 - Scripted players tool (`augusta-swarm`, Windows and Linux): a server's worth
   of headless clients, for load and end-to-end tests (ADR-0013)
-- Communication: GameNetworkingSockets over UDP, unencrypted in v1
+- Communication: GameNetworkingSockets over UDP, encrypted (AES-GCM-256) but
+  unauthenticated
 
 ```text
 +--------+          +------------------------+
@@ -68,8 +66,7 @@ v1.
 - Client-side prediction for responsiveness, reconciled by restoring the
   authoritative server state and replaying the unacknowledged commands from it,
   with the visible jump smoothed in presentation (see ADR-0004)
-- Multithreaded from v1: dedicated Main/Render, Simulation, and Network I/O
-  threads
+- Multithreaded: dedicated Main/Render, Simulation, and Network I/O threads
 - Custom lightweight binary protocol for game-state messages
 - Mechanism vs. policy vs. data separation: engine mechanism (movement, physics,
   ballistics, hit detection) is C++; game policy (Match lifecycle, win
@@ -384,8 +381,10 @@ Production deployment (`main`) is explicitly out of scope/undecided for now.
   of such rejections within a sliding window, or that connects and is not
   admitted to the Lobby within a deadline (boundary constants, set so an honest
   client under NFR-02's latency and loss never reaches them; routine rejections
-  never count); encryption deliberately deferred past v1 (trusted LAN testing
-  only)
+  never count). Every connection is encrypted, GameNetworkingSockets' default
+  (AES-GCM-256, Curve25519 key exchange), but not authenticated: with no
+  certificate authority, each peer presents a self-signed certificate, so a
+  man-in-the-middle on the network goes undetected (trusted LAN only)
 - **No I/O inside ECS worlds:** ECS worlds are pure state transformations.
   Device input, networking, rendering, and audio output are all handled by
   dedicated boundary components outside the worlds, which translate between the
@@ -538,8 +537,10 @@ to NFR-07).
   surface area to learn and integrate simultaneously for v1.
 - **GameNetworkingSockets build complexity:** pulls in transitive dependencies
   (protobuf, OpenSSL) that add cross-platform build maintenance overhead.
-- **No encryption in v1:** acceptable only under the stated trusted-LAN
-  assumption; must be revisited before any non-trusted deployment.
+- **No authentication of peers:** connections are encrypted, but neither side
+  proves who it is, so a man-in-the-middle goes undetected. Acceptable only
+  under the stated trusted-LAN assumption; certificates signed by a project
+  certificate authority are needed before any non-trusted deployment.
 - **Falcor dependency** (see ADR-0009): a fork/vendor of the source is
   recommended to insulate against upstream abandonment.
 - **Cross-OS local development:** building and testing requires both a Windows

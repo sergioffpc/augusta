@@ -38,5 +38,4 @@ hit location (no regenerating health).
 ---
 
 _Inspiration: id Tech / Quake-era engines (realistic scope for a solo
-developer)._ _Timeline: hobby project, no fixed deadline, progress by
-milestones._
+developer)._ _Timeline: no fixed deadline, progress by milestones._

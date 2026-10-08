@@ -1,7 +1,7 @@
 # Contributing
 
-This is a solo hobby project (see `README.md` / `docs/VISION.md`) without a
-formal external contribution process. If you'd still like to contribute:
+This is a solo project (see `README.md` / `docs/VISION.md`) without a formal
+external contribution process. If you'd still like to contribute:
 
 - Open an issue first for anything beyond a trivial fix, so scope can be agreed
   before you spend time on it.
