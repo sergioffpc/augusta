@@ -208,13 +208,73 @@ benchmarks
 **Exercises:** ADR-0012, ADR-0021, ADR-0046 **Exit criteria:** CI checks every
 language's format and lint; the documentation site publishes from `develop`
 
-## v3 — Planned (under discussion)
+## v3 — Reproducible and Scalable (planned, 3.0.0)
 
-Already decided for v3, by requirement or ADR; milestones to be drawn:
+v3 makes what goes wrong under load reproducible, and runs more than one Match
+of a scenario at once. Players with no one at the keyboard come first: Agents
+are the load that proves the rest, and Match captures bring back what fails
+under it. It meets US-21, NFR-09 and NFR-13.
 
-- US-21 and NFR-09: Match capture, Replay and Reenactment (ADR-0050, ADR-0051)
-- NFR-13: horizontal scalability
-- Agents: players scripted in Python, replacing `augusta-swarm` (ADR-0052)
+### M12 — Agents (M)
+
+- Intents in `augusta_harness`: movement, aim and trigger channels, plus Raw,
+  carried out every tick under the Runner
+- `tools/agent`: the netcode and Match loop tests over a fixture of Intents;
+  `tools/swarm` removed
+- Python in the root build under `AUGUSTA_TOOLS`, and the pybind11 module over
+  the Harness
+- The `augusta_agent` package (asyncio), its pytest smoke test against an
+  in-process server, and the `load_test.py` and `raw_hold.py` examples
+
+**Exercises:** ADR-0052, ADR-0005, ADR-0013 **Exit criteria:** `load_test.py`
+replaces `augusta-swarm` and passes against `develop`
+
+### M13 — Client-side Metrics (S)
+
+- Each Agent's NetcodeStats (Reconciliation corrections, interpolation running
+  dry, fire) and connection statistics served on `/metrics` from the load test
+- The load test as a Kubernetes `Job` in the cluster, from an `augusta-agent`
+  Linux image, about 16 Agents per Pod, scraped through a `PodMonitor`
+
+**Exercises:** ADR-0049, ADR-0052, ADR-0026 **Exit criteria:** a load test Job
+started by one Git change shows its Agents' metrics in Grafana beside the
+server's
+
+### M14 — Match Capture & Reenactment (M)
+
+- `augustad` captures every Match's client actions
+- The Reenact request, and `augustac --reenact` playing one Captured player
+  against a live server
+
+**Exercises:** ADR-0050, ADR-0038, US-21 **Exit criteria:** a playtest's capture
+is reenacted against a real server, each Captured player sending its Commands at
+their ticks
+
+### M15 — Replay (M)
+
+- `augustad` in replay mode re-runs a capture on a fresh SimulationWorld
+- Replay viewers: `augustac --replays` and `--replay <capture>`
+
+**Exercises:** ADR-0051, US-21, NFR-09 **Exit criteria:** a capture is watched
+from any player's view, its Deaths and Match end as captured
+
+### M16 — Horizontal Scalability (M)
+
+- An ADR for NFR-13, amending ADR-0026 and ADR-0034: several servers of a
+  scenario declared in Git, each with its own Service
+- `network.servers` in place of `network.server_address`: augustac and Agents
+  try each in turn, moving on at _lobby full_ or _match in progress_
+
+**Exercises:** NFR-13, NFR-11, NFR-01, ADR-0026, ADR-0034 **Exit criteria:** 4
+servers of one scenario run 8-player Matches of Agents at once at 60 Hz with no
+missed ticks; adding or removing a server is one Git change
+
+### M17 — Hardening & v3 Release (S)
+
+- Verification of every requirement planned for v3; each then names v3
+- Release 3.0.0
+
+**Exit criteria:** every requirement planned for v3 is met
 
 ---
 
@@ -234,5 +294,4 @@ Already decided for v3, by requirement or ADR; milestones to be drawn:
 - Agones, if fleet-scale dynamic server allocation is ever needed
 - Remote/public access to non-production environments (VPN or port-forwarding) —
   LAN-only for now
-- Client-side metrics (Reconciliation corrections, interpolation running dry),
-  from the real client or `augusta-swarm`, and an alert receiver (see ADR-0049)
+- Client-side metrics from the real client, and an alert receiver (see ADR-0049)

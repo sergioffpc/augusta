@@ -146,7 +146,7 @@ decisions already made in ARCHITECTURE.md:
 - **Branching model:** Git Flow — `main` (production/release) + `develop`
   (integration), with `feature/*`, `release/*`, `hotfix/*` branches.
 - **Tags/releases:** created only when there's an actual release to make (e.g.,
-  reaching v1) — ROADMAP.md milestones (M0–M11) are internal checkpoints, not
+  reaching v1) — ROADMAP.md milestones (M0–M17) are internal checkpoints, not
   tagged releases.
 - **Pull requests:** used even solo — `feature/*` → `develop`,
   `release/*`/`hotfix/*` → `main`, and the same `release/*`/`hotfix/*` branch
