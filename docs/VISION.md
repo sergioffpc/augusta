@@ -25,7 +25,7 @@ and systems programming.
 - Physics-based ballistics (real bullet drop and travel time, not hitscan)
 - Match-based gameplay, no respawn until the match ends (tactical/milsim style)
 - Movement: walk/run/crouch/prone + basic stamina + simple recoil (weapon sway
-  and breath control deferred post-v1)
+  and breath control deferred)
 - Realistic, hit-location-based damage — no regenerating health
 
 ## Business Goals

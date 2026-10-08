@@ -1,9 +1,8 @@
 # Requirements — FPS Simulator Engine
 
 Scope: the engine described in [VISION.md](./VISION.md) — multiplayer-only,
-server-authoritative, physics-based ballistics, 2–8 players per Match. The v1
-milestone ([ROADMAP.md](./ROADMAP.md)) played them with one rifle on one test
-map.
+server-authoritative, physics-based ballistics, 2–8 players per Match, played
+with one rifle on one test map.
 
 Each requirement names the release that first met it (v1.0.0, v2.0.0), or the
 one it is planned for.
@@ -487,8 +486,8 @@ Response:    Shared core (ECS, physics, ballistics, networking) compiles
              branches; client-only code (rendering) is Windows-only;
              server-only code runs in production on Linux only; any other
              target is refused when the build is configured
-Measure:     Successful client build + v1 milestone playthrough on
-             Windows; successful server build + v1 milestone playthrough
+Measure:     Successful client build + Match playthrough on
+             Windows; successful server build + Match playthrough
              on Linux; CI builds the server on both its platforms
 ```
 

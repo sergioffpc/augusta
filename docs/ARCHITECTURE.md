@@ -333,7 +333,7 @@ after the tick.
 **Scenario: Match End**
 
 1. Server evaluates the win condition each tick (game policy, the scenario's
-   rules; in v1 last player standing)
+   rules; last player standing)
 2. When it is met, the decision is a typed Match end action in that tick's
    result; the server ends the Match after the tick, removes every body and
    bullet in flight, and sends Match end, with the winner or a draw, reliably;
@@ -552,8 +552,8 @@ to NFR-07).
 - **Signing key management:** losing or leaking the pack-signing private key
   would require re-keying and re-signing all shipped packs — back it up securely
   and keep it out of version control.
-- **Full rebake on every cook** is acceptable at v1's asset scale; will need
-  incremental invalidation (e.g., content-hash-based) if asset count grows
+- **Full rebake on every cook** is acceptable at the current asset scale; will
+  need incremental invalidation (e.g., content-hash-based) if asset count grows
   significantly.
 - **Lua sandbox correctness:** security relies on a carefully curated restricted
   environment; an incomplete sandbox (e.g., leaking `load`/`dofile`, or a C++

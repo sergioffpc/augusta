@@ -100,7 +100,7 @@ What bounds every field a client sends today:
 | Impersonation: Commands sent as another player                                    | Structural: no client message carries a Session ID, so a Session ID is no credential. The server knows whose message it is by its connection alone                                                 | `Host` (`Match::SessionOf`)                                           | `CorrectedActionTest.CommandsNumberedAsAnotherPlayersMoveAndFireOnlyTheSendersOwnBody`                                                             |
 | Reported outcomes: a client claims a hit, a damage, a health, a kill or a win     | Structural: no client message carries a hit, a damage, a health or a kill. Messages that do are the server's, and refused from a client                                                            | `JoinRequestWire`, `CommandsWire`, `ReadyWire`, `Host::HandleMessage` | `CorrectedAimTest.AClientThatClaimsAHitAKillAndAWinHurtsNoOne`, `ImpossibleCommandTest.AMessageOnlyTheServerSendsChangesNothingWhenAClientSendsIt` |
 
-## Residual risks v1 accepts
+## Residual risks accepted
 
 Validation proves that no client can do what the game forbids. It cannot prove
 that a client plays fairly with what the game allows:
@@ -108,7 +108,7 @@ that a client plays fairly with what the game allows:
 - A client may always claim the Shooter's delay's cap: any Seen time up to
   `kMaxShootersDelay` old is one an honest client on a slow link could report,
   so a round is judged against the targets as they were then (ADR-0044).
-- Every client is sent every body, so a wallhack sees them all. v1 runs on a
-  trusted LAN.
+- Every client is sent every body, so a wallhack sees them all. The game runs on
+  a trusted LAN.
 - Aim assistance cannot be told from good aim: an aimbot's Commands are views
   and fire held, each within what a client can produce.
