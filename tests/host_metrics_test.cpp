@@ -129,7 +129,6 @@ TEST(HostMetricsTest, EveryMetricOfTheCatalogueIsCollectedWithItsType) {
   EXPECT_EQ(families.size(), catalogue.size());
 }
 
-// Requirements: NFR-07
 // The value of each augustad_recording_state series, by its state label.
 std::map<std::string, double> RecordingStates(const HostMetrics& metrics) {
   std::map<std::string, double> states;
@@ -139,12 +138,14 @@ std::map<std::string, double> RecordingStates(const HostMetrics& metrics) {
   return states;
 }
 
+// Requirements: NFR-07
 TEST(HostMetricsTest, NoRecordingStateIsSetWhileNothingIsRecorded) {
   const HostMetrics metrics(kTickRate);
   EXPECT_EQ(RecordingStates(metrics),
             (std::map<std::string, double>{{"enabled", 0.0}, {"degraded", 0.0}, {"stopped", 0.0}}));
 }
 
+// Requirements: NFR-07
 TEST(HostMetricsTest, OnlyTheRecordingsCurrentStateIsSet) {
   HostMetrics metrics(kTickRate);
   augusta::server::SetRecordingState(metrics, RecordingState::kEnabled);
@@ -153,6 +154,7 @@ TEST(HostMetricsTest, OnlyTheRecordingsCurrentStateIsSet) {
             (std::map<std::string, double>{{"enabled", 0.0}, {"degraded", 1.0}, {"stopped", 0.0}}));
 }
 
+// Requirements: NFR-07
 TEST(HostMetricsTest, TheTickRateIsTheConfiguredOne) {
   const HostMetrics metrics(kTickRate);
 
