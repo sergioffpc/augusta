@@ -32,10 +32,15 @@ using augusta::supervisor::Supervisor;
 using augusta::supervisor::WorkerResult;
 
 // Waits, polling, until stop is requested; what a worker's loop does.
-WorkerResult UntilStopped(const Supervisor& supervisor) {
+void WaitForStop(const Supervisor& supervisor) {
   while (!supervisor.StopRequested()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
+}
+
+// A worker body that runs until stop is requested and then succeeds.
+WorkerResult UntilStopped(const Supervisor& supervisor) {
+  WaitForStop(supervisor);
   return {};
 }
 
@@ -61,7 +66,7 @@ TEST(SupervisorTest, AWorkerRunsUntilStopIsRequestedAndIsJoined) {
   Supervisor supervisor;
   std::atomic<bool> finished{false};
   supervisor.Spawn("network", [&] {
-    UntilStopped(supervisor);
+    WaitForStop(supervisor);
     finished = true;
     return WorkerResult{};
   });
@@ -77,13 +82,13 @@ TEST(SupervisorTest, AWorkerThatThrowsIsTheTypedFirstCauseAndStopsTheOthers) {
   Supervisor supervisor;
   std::atomic<bool> other_stopped{false};
   supervisor.Spawn("prediction", [&] {
-    UntilStopped(supervisor);
+    WaitForStop(supervisor);
     other_stopped = true;
     return WorkerResult{};
   });
   supervisor.Spawn("network", []() -> WorkerResult { throw std::runtime_error("address rejected"); });
 
-  UntilStopped(supervisor);
+  WaitForStop(supervisor);
   supervisor.StopAndJoin();
 
   EXPECT_TRUE(other_stopped);
@@ -99,7 +104,7 @@ TEST(SupervisorTest, AWorkerThatThrowsIsTheTypedFirstCauseAndStopsTheOthers) {
 TEST(SupervisorTest, AFailureWhileStoppingDoesNotReplaceTheFirstCause) {
   Supervisor supervisor;
   supervisor.Spawn("network", [&]() -> WorkerResult {
-    UntilStopped(supervisor);
+    WaitForStop(supervisor);
     throw std::runtime_error("second");
   });
 
@@ -116,7 +121,7 @@ TEST(SupervisorTest, AFailureAWorkerReturnsIsTheFirstCauseWithItsOwnCodeAndConte
   Supervisor supervisor;
   std::atomic<bool> other_stopped{false};
   supervisor.Spawn("simulation", [&] {
-    UntilStopped(supervisor);
+    WaitForStop(supervisor);
     other_stopped = true;
     return WorkerResult{};
   });
@@ -140,7 +145,7 @@ TEST(SupervisorTest, AFailureAWorkerReturnsIsTheFirstCauseWithItsOwnCodeAndConte
 TEST(SupervisorTest, AFailureAfterAStopFromOutsideIsStillTheFirstCause) {
   Supervisor supervisor;
   supervisor.Spawn("network", [&]() -> WorkerResult {
-    UntilStopped(supervisor);
+    WaitForStop(supervisor);
     throw std::runtime_error("disconnect failed");
   });
 
@@ -194,7 +199,7 @@ TEST(SupervisorTest, DestroyingItStopsAndJoinsItsWorkers) {
   {
     Supervisor supervisor;
     supervisor.Spawn("network", [&] {
-      UntilStopped(supervisor);
+      WaitForStop(supervisor);
       finished = true;
       return WorkerResult{};
     });
@@ -231,7 +236,7 @@ TEST(SupervisorTest, AWorkerThatCannotBeCreatedIsTheFirstCauseAndTheOthersAreSto
   Supervisor supervisor(faults);
   std::atomic<bool> other_finished{false};
   supervisor.Spawn("prediction", [&] {
-    UntilStopped(supervisor);
+    WaitForStop(supervisor);
     other_finished = true;
     return WorkerResult{};
   });
