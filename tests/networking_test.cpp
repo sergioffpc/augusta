@@ -22,6 +22,9 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/failure.h"
+#include "augusta/faults.h"
+
 // M1 spike (ADR-0003): this is the "standalone round-trip" issue #31
 // asks for - a Server and Client talking over real GameNetworkingSockets
 // on loopback, in one process. It proves the transport on whichever OS
@@ -31,6 +34,11 @@
 // ever be one OS.
 namespace {
 
+using augusta::failure::Code;
+using augusta::failure::Disposition;
+using augusta::failure::DispositionOf;
+using augusta::failure::Faults;
+using augusta::failure::Site;
 using augusta::networking::Client;
 using augusta::networking::ConnectionState;
 using augusta::networking::DisconnectReason;
@@ -41,8 +49,10 @@ using augusta::networking::PeerId;
 using augusta::networking::PeerMessage;
 using augusta::networking::PeerStats;
 using augusta::networking::Reliability;
+using augusta::networking::SendOutcome;
 using augusta::networking::Server;
 using augusta::networking::SimulateNetworkConditions;
+using augusta::networking::TransportFailure;
 
 // How long PollUntil sleeps between polls - short enough not to add
 // meaningful latency to the test, long enough not to busy-spin.
@@ -186,16 +196,20 @@ bool PerformRoundTrip(Server& server, Client& client, RoundTripResult& result) {
     return false;
   }
 
-  client.Send(MakePayload("hello from client"), Reliability::kUnreliable);
+  if (client.Send(MakePayload("hello from client"), Reliability::kUnreliable) != SendOutcome::kAccepted) {
+    return false;
+  }
   std::vector<PeerMessage> received_by_server;
-  if (!ReceiveAtLeastOne(poll_both, [&] { return server.ReceiveMessages(); }, received_by_server)) {
+  if (!ReceiveAtLeastOne(poll_both, [&] { return server.ReceiveMessages().value(); }, received_by_server)) {
     return false;
   }
   result.received_by_server = PayloadToString(received_by_server.front().payload);
 
-  server.Send(*peer, MakePayload("hello from server"), Reliability::kUnreliable);
+  if (server.Send(*peer, MakePayload("hello from server"), Reliability::kUnreliable) != SendOutcome::kAccepted) {
+    return false;
+  }
   std::vector<Payload> received_by_client;
-  if (!ReceiveAtLeastOne(poll_both, [&] { return client.ReceiveMessages(); }, received_by_client)) {
+  if (!ReceiveAtLeastOne(poll_both, [&] { return client.ReceiveMessages().value(); }, received_by_client)) {
     return false;
   }
   result.received_by_client = PayloadToString(received_by_client.front());
@@ -268,8 +282,8 @@ TEST_F(NetworkingTest, RoundTripsAMessageBothWays) {
 class ConnectedNetworkingTest : public NetworkingTest {
  protected:
   void SetUp() override {
-    server_ = std::make_unique<Server>(Endpoint{.address = kLoopbackAnyPort});
-    client_ = std::make_unique<Client>();
+    server_ = std::make_unique<Server>(Endpoint{.address = kLoopbackAnyPort}, &faults_);
+    client_ = std::make_unique<Client>(&faults_);
     client_->Connect(server_->LocalEndpoint());
     ASSERT_TRUE(PollUntil([&] { PollBoth(); }, [&] { return client_->GetState() == ConnectionState::kConnected; }));
     ASSERT_TRUE(PollUntil([&] { PollBoth(); }, [&] { return peer_.has_value(); }));
@@ -295,7 +309,7 @@ class ConnectedNetworkingTest : public NetworkingTest {
     std::vector<std::string> received;
     PollUntil([&] { PollBoth(); },
               [&] {
-                for (const PeerMessage& message : server_->ReceiveMessages()) {
+                for (const PeerMessage& message : server_->ReceiveMessages().value()) {
                   received.push_back(PayloadToString(message.payload));
                 }
                 return done(received);
@@ -319,7 +333,7 @@ class ConnectedNetworkingTest : public NetworkingTest {
     std::vector<std::string> received;
     PollUntil([&] { PollBoth(); },
               [&] {
-                for (const Payload& payload : client_->ReceiveMessages()) {
+                for (const Payload& payload : client_->ReceiveMessages().value()) {
                   received.push_back(PayloadToString(payload));
                 }
                 return received.size() >= count;
@@ -342,6 +356,8 @@ class ConnectedNetworkingTest : public NetworkingTest {
     return reason;
   }
 
+  // Unarmed unless a test arms it; outlives both ends.
+  Faults faults_;
   std::unique_ptr<Server> server_;
   std::unique_ptr<Client> client_;
   std::optional<PeerId> peer_;
@@ -363,7 +379,7 @@ TEST_F(ConnectedNetworkingTest, ReliableMessagesArriveOnceAndInOrderDespiteLoss)
 
   const std::vector<std::string> sent = NumberedMessages(kBurst);
   for (const std::string& text : sent) {
-    client_->Send(MakePayload(text), Reliability::kReliable);
+    EXPECT_EQ(client_->Send(MakePayload(text), Reliability::kReliable), SendOutcome::kAccepted);
   }
 
   EXPECT_EQ(ReceiveOnServer(sent.size()), sent);
@@ -380,13 +396,14 @@ TEST_F(ConnectedNetworkingTest, UnreliableMessagesCanBeLostButNeverDuplicated) {
   constexpr int kSent = 200;
   constexpr std::size_t kMessageBytes = 1000;
   for (const std::string& text : NumberedMessages(kSent)) {
-    client_->Send(MakePayload(text + std::string(kMessageBytes, '.')), Reliability::kUnreliable);
+    EXPECT_TRUE(
+        client_->Send(MakePayload(text + std::string(kMessageBytes, '.')), Reliability::kUnreliable).has_value());
   }
   // Unreliable messages are not ordered against reliable ones, but with no
   // added latency they land well before a retransmitted reliable marker does,
   // so once the marker is in, everything that will arrive has (give or take
   // the short drain).
-  client_->Send(MakePayload("marker"), Reliability::kReliable);
+  EXPECT_EQ(client_->Send(MakePayload("marker"), Reliability::kReliable), SendOutcome::kAccepted);
   std::vector<std::string> received = ReceiveOnServerUntil(
       [](const std::vector<std::string>& so_far) { return std::ranges::find(so_far, "marker") != so_far.end(); });
   const std::vector<std::string> late = DrainServerFor(kDrainWindow);
@@ -403,9 +420,9 @@ TEST_F(ConnectedNetworkingTest, ServerSendAndBroadcastHonorReliabilityToo) {
 
   const std::vector<std::string> sent = NumberedMessages(kBurst);
   for (const std::string& text : sent) {
-    server_->Send(*peer_, MakePayload(text), Reliability::kReliable);
+    EXPECT_EQ(server_->Send(*peer_, MakePayload(text), Reliability::kReliable), SendOutcome::kAccepted);
   }
-  server_->Broadcast(MakePayload("broadcast"), Reliability::kReliable);
+  EXPECT_TRUE(server_->Broadcast(MakePayload("broadcast"), Reliability::kReliable).has_value());
 
   std::vector<std::string> expected = sent;
   expected.emplace_back("broadcast");
@@ -417,7 +434,7 @@ TEST_F(ConnectedNetworkingTest, InjectedLatencyDelaysDelivery) {
   SimulateNetworkConditions({.latency_ms = kLatencyMs});
 
   const auto start = std::chrono::steady_clock::now();
-  client_->Send(MakePayload("late"), Reliability::kUnreliable);
+  EXPECT_EQ(client_->Send(MakePayload("late"), Reliability::kUnreliable), SendOutcome::kAccepted);
   const std::vector<std::string> received = ReceiveOnServer(1);
   const auto elapsed = std::chrono::steady_clock::now() - start;
 
@@ -439,7 +456,7 @@ TEST_F(ConnectedNetworkingTest, InjectedJitterDelaysSomeMessagesMoreThanOthers) 
   std::chrono::steady_clock::duration longest{};
   for (int i = 0; i < kMessages; ++i) {
     const auto start = std::chrono::steady_clock::now();
-    client_->Send(MakePayload("jittered"), Reliability::kUnreliable);
+    EXPECT_EQ(client_->Send(MakePayload("jittered"), Reliability::kUnreliable), SendOutcome::kAccepted);
     ASSERT_EQ(ReceiveOnServer(1).size(), 1U);
     longest = std::max(longest, std::chrono::steady_clock::now() - start);
   }
@@ -460,7 +477,9 @@ class ReorderingNetworkingTest : public ConnectedNetworkingTest {
   // them, in arrival order.
   std::vector<int> SendPaddedBurst() {
     for (int i = 0; i < kBurst; ++i) {
-      client_->Send(MakePayload(std::to_string(i) + std::string(kPaddingBytes, '.')), Reliability::kUnreliable);
+      EXPECT_TRUE(
+          client_->Send(MakePayload(std::to_string(i) + std::string(kPaddingBytes, '.')), Reliability::kUnreliable)
+              .has_value());
     }
     std::vector<int> positions;
     for (const std::string& text : DrainServerFor(kDrainWindow)) {
@@ -495,7 +514,7 @@ TEST_F(ReorderingNetworkingTest, ReliableMessagesArriveOnceAndInOrderDespiteReor
   std::vector<std::string> sent = NumberedMessages(kBurst);
   for (std::string& text : sent) {
     text += std::string(kPaddingBytes, '.');
-    client_->Send(MakePayload(text), Reliability::kReliable);
+    EXPECT_EQ(client_->Send(MakePayload(text), Reliability::kReliable), SendOutcome::kAccepted);
   }
 
   EXPECT_EQ(ReceiveOnServer(sent.size()), sent);
@@ -550,8 +569,9 @@ TEST_F(NetworkingTest, APeerThatGoesSilentIsReportedAsALostConnectionOnceTheTime
   PollUntil(
       [&] {
         client.PumpEvents();
-        client.Send(MakePayload("anyone there?"), Reliability::kReliable);
-        server.Send(*peer, MakePayload("anyone there?"), Reliability::kReliable);
+        // Dropped once the connection ends; never a local failure.
+        EXPECT_TRUE(client.Send(MakePayload("anyone there?"), Reliability::kReliable).has_value());
+        EXPECT_TRUE(server.Send(*peer, MakePayload("anyone there?"), Reliability::kReliable).has_value());
       },
       [&] {
         for (const auto& event : server.PumpEvents()) {
@@ -589,4 +609,104 @@ TEST_F(NetworkingTest, TheDefaultTimeoutIsBackOnceTheConditionsAreReset) {
   poll_both();
 
   EXPECT_EQ(client.GetState(), ConnectionState::kConnected);
+}
+
+// ---- Local transport failures (ADR-0033) ----
+
+// A transport that cannot listen is the runtime's failure, typed, so the
+// application boundary classifies it by its code and never by its message.
+TEST_F(NetworkingTest, AServerThatCannotSetUpItsListenerThrowsAListenerSetupFailure) {
+  Faults faults;
+  faults.Arm(Site::kListenerSetup, "no socket");
+
+  try {
+    const Server server(Endpoint{.address = kLoopbackAnyPort}, &faults);
+    FAIL() << "listening succeeded on a failed listener setup";
+  } catch (const TransportFailure& error) {
+    EXPECT_EQ(error.Failure().code, Code::kListenerSetupFailed);
+    EXPECT_EQ(DispositionOf(error.Failure().code), Disposition::kRuntime);
+    EXPECT_EQ(error.Failure().detail, "no socket");
+  }
+}
+
+// A peer that is not there is the peer's outcome: dropped, never a failure,
+// and never mistaken for a message sent.
+TEST_F(NetworkingTest, SendingToNoConnectedPeerDropsTheMessageWithoutFailing) {
+  Server server(Endpoint{.address = kLoopbackAnyPort});
+  Client client;
+
+  EXPECT_EQ(server.Send(PeerId{42}, MakePayload("nobody"), Reliability::kReliable), SendOutcome::kDropped);
+  EXPECT_EQ(client.Send(MakePayload("nobody"), Reliability::kReliable), SendOutcome::kDropped);
+}
+
+TEST_F(NetworkingTest, NothingToReceiveIsAnEmptyQueueNotAFailure) {
+  Server server(Endpoint{.address = kLoopbackAnyPort});
+  Client client;
+
+  const auto server_received = server.ReceiveMessages();
+  const auto client_received = client.ReceiveMessages();
+
+  ASSERT_TRUE(server_received.has_value());
+  EXPECT_TRUE(server_received->empty());
+  ASSERT_TRUE(client_received.has_value());
+  EXPECT_TRUE(client_received->empty());
+}
+
+TEST_F(ConnectedNetworkingTest, AClientSendTheLocalTransportRefusesIsAFailureAndNeverArrives) {
+  faults_.Arm(Site::kTransportSend, "socket closed");
+
+  const auto sent = client_->Send(MakePayload("lost"), Reliability::kReliable);
+
+  ASSERT_FALSE(sent.has_value());
+  EXPECT_EQ(sent.error().code, Code::kTransportSendFailed);
+  EXPECT_EQ(DispositionOf(sent.error().code), Disposition::kRuntime);
+  EXPECT_EQ(sent.error().detail, "socket closed");
+  EXPECT_TRUE(DrainServerFor(kDrainWindow).empty());
+}
+
+TEST_F(ConnectedNetworkingTest, AServerSendTheLocalTransportRefusesIsAFailureOfThatPeersSend) {
+  faults_.Arm(Site::kTransportSend, "socket closed");
+
+  const auto sent = server_->Send(*peer_, MakePayload("lost"), Reliability::kReliable);
+
+  ASSERT_FALSE(sent.has_value());
+  EXPECT_EQ(sent.error().code, Code::kTransportSendFailed);
+  EXPECT_EQ(sent.error().detail, "socket closed");
+  const std::string peer = std::to_string(static_cast<std::uint32_t>(*peer_));
+  EXPECT_TRUE(std::ranges::any_of(sent.error().context,
+                                  [&](const auto& field) { return field.key == "peer" && field.value == peer; }));
+}
+
+TEST_F(ConnectedNetworkingTest, ABroadcastStopsAtTheLocalTransportsFailure) {
+  faults_.Arm(Site::kTransportSend, "socket closed");
+
+  const auto broadcast = server_->Broadcast(MakePayload("lost"), Reliability::kReliable);
+
+  ASSERT_FALSE(broadcast.has_value());
+  EXPECT_EQ(broadcast.error().code, Code::kTransportSendFailed);
+}
+
+TEST_F(ConnectedNetworkingTest, AReceiveTheLocalTransportFailsIsAFailureNotAnEmptyQueue) {
+  faults_.Arm(Site::kTransportReceive, "poll group gone", 2);
+
+  const auto server_received = server_->ReceiveMessages();
+  const auto client_received = client_->ReceiveMessages();
+
+  ASSERT_FALSE(server_received.has_value());
+  EXPECT_EQ(server_received.error().code, Code::kTransportReceiveFailed);
+  EXPECT_EQ(DispositionOf(server_received.error().code), Disposition::kRuntime);
+  EXPECT_EQ(server_received.error().detail, "poll group gone");
+  ASSERT_FALSE(client_received.has_value());
+  EXPECT_EQ(client_received.error().code, Code::kTransportReceiveFailed);
+}
+
+// The peer leaving is its own outcome: what is sent to it afterwards is
+// dropped, not a failure of the server's transport.
+TEST_F(ConnectedNetworkingTest, SendingToAPeerThatLeftDropsTheMessageWithoutFailing) {
+  client_->Disconnect();
+  ASSERT_TRUE(WaitForServerToLosePeer().has_value());
+
+  EXPECT_EQ(server_->Send(*peer_, MakePayload("gone"), Reliability::kReliable), SendOutcome::kDropped);
+  const auto broadcast = server_->Broadcast(MakePayload("gone"), Reliability::kReliable);
+  EXPECT_TRUE(broadcast.has_value());
 }

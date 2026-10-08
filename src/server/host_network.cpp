@@ -244,7 +244,13 @@ void Host::PumpNetwork(std::chrono::steady_clock::time_point now) {
       }
     }
   }
-  for (const networking::PeerMessage& message : impl.network.ReceiveMessages()) {
+  auto received = impl.network.ReceiveMessages();
+  if (!received.has_value()) {
+    // Nothing more this round: the runtime stops on it.
+    impl.transport_failure.Record(std::move(received.error()));
+    return;
+  }
+  for (const networking::PeerMessage& message : *received) {
     LT("subsystem=serverruntime event=received peer={} bytes={}", PeerNumber(message.from), message.payload.size());
     const std::lock_guard<std::mutex> lock(impl.mutex);
     if (impl.expelled.contains(message.from)) {

@@ -232,7 +232,8 @@ class RawClient {
 
   // Sends bytes as they are, whether or not they are a message.
   void SendPayload(const augusta::protocol::BytesWire& payload) {
-    client_.Send(payload, augusta::networking::Reliability::kReliable);
+    // Dropped once the server has disconnected it, which a test may be after.
+    ASSERT_TRUE(client_.Send(payload, augusta::networking::Reliability::kReliable).has_value());
   }
 
   // The Authoritative State updates received since the last call.
@@ -279,7 +280,7 @@ class RawClient {
   // cooperative, and returns the Authoritative States among it.
   std::vector<augusta::protocol::AuthoritativeStateWire> Drain() {
     std::vector<augusta::protocol::AuthoritativeStateWire> states;
-    for (const auto& payload : client_.ReceiveMessages()) {
+    for (const auto& payload : client_.ReceiveMessages().value()) {
       const auto message = augusta::protocol::Decode(payload);
       if (!message.has_value()) {
         continue;
@@ -2138,7 +2139,7 @@ class ScriptedServer {
         server_.Accept(event.peer);
       }
     }
-    for (const auto& message : server_.ReceiveMessages()) {
+    for (const auto& message : server_.ReceiveMessages().value()) {
       peer_ = message.from;
       const auto decoded = augusta::protocol::Decode(message.payload);
       if (!decoded.has_value()) {
@@ -2182,7 +2183,7 @@ class ScriptedServer {
 
   // Sends bytes as they are, whether or not they are a message.
   void SendPayload(const augusta::protocol::BytesWire& payload) {
-    server_.Send(*peer_, payload, augusta::networking::Reliability::kReliable);
+    ASSERT_TRUE(server_.Send(*peer_, payload, augusta::networking::Reliability::kReliable).has_value());
   }
 
   // How many CommandsWire messages the client has sent.

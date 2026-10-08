@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <exception>
+#include <expected>
 #include <memory>
 #include <optional>
 #include <thread>
@@ -59,18 +60,31 @@ struct ServerRuntime::Impl {
     }
   }
 
+  // The local transport's failure, if Host met one on either thread, for the
+  // worker that takes it to stop on (ADR-0033): the runtime cannot go on
+  // without its transport.
+  supervisor::WorkerResult TransportResult() {
+    if (std::optional<failure::Failure> failed = host.TakeTransportFailure()) {
+      return std::unexpected(std::move(*failed));
+    }
+    return {};
+  }
+
   // Network I/O thread body (ADR-0005): pumps the connection, and once a
   // heartbeat interval samples every client's Connection health (ADR-0049),
-  // until a stop is requested, waiting kNetworkRoundWait between rounds rather
-  // than spinning a core. The transport has no wait on incoming work, so that
-  // wait bounds how late a received message is handled, and how long stopping
-  // takes.
+  // until a stop is requested or the local transport fails, waiting
+  // kNetworkRoundWait between rounds rather than spinning a core. The
+  // transport has no wait on incoming work, so that wait bounds how late a
+  // received message is handled, and how long stopping takes.
   supervisor::WorkerResult NetworkThreadMain() {
     constexpr auto kNetworkRoundWait = std::chrono::milliseconds(1);
     std::chrono::steady_clock::time_point next_sample = std::chrono::steady_clock::now() + kHeartbeatInterval;
     while (!workers.StopRequested()) {
       const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
       host.PumpNetwork(now);
+      if (supervisor::WorkerResult transport = TransportResult(); !transport.has_value()) {
+        return transport;
+      }
       if (now >= next_sample) {
         connection_health.Record(host.SampleConnections());
         next_sample = now + kHeartbeatInterval;
@@ -81,7 +95,7 @@ struct ServerRuntime::Impl {
   }
 
   // Simulation thread body (ADR-0005): ticks Host on its fixed schedule until a
-  // stop is requested.
+  // stop is requested or the local transport fails.
   supervisor::WorkerResult SimulationLoop() {
     const auto delta_time = std::chrono::duration<float>(1.0F / tick_rate_hz);
     const auto tick_duration = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
@@ -91,6 +105,9 @@ struct ServerRuntime::Impl {
       const tick::Clock::time_point tick_start = tick::Clock::now();
 
       host.Tick(delta_time.count());
+      if (supervisor::WorkerResult transport = TransportResult(); !transport.has_value()) {
+        return transport;
+      }
 
       const tick::Clock::time_point tick_end = tick::Clock::now();
       host.RecordTiming(tick::Measure(deadline, tick_duration, tick_start, tick_end));

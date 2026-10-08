@@ -11,6 +11,8 @@
 #include <vector>
 
 #include "augusta/command.h"
+#include "augusta/failure.h"
+#include "augusta/first_failure.h"
 #include "augusta/harness_wire.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
@@ -36,6 +38,8 @@ struct Session::Impl {
 
   // What the server sent, received on the Network I/O thread and read from any.
   Inbox inbox;
+  // The first local transport failure any thread's send or receive met, until taken.
+  failure::FirstFailure transport_failure;
   // Prediction thread only.
   CommandStream commands;
 
@@ -43,7 +47,19 @@ struct Session::Impl {
       : server(config.server),
         join_request{
             .engine_version = config.engine_version, .client_pack = config.client_pack, .character = config.character},
+        network(config.faults),
         commands(std::move(world)) {}
+
+  // Sends payload to the server as reliability says, keeping a local transport
+  // failure; returns whether the transport accepted it.
+  bool Send(const networking::Payload& payload, networking::Reliability reliability) {
+    networking::SendResult sent = network.Send(payload, reliability);
+    if (!sent.has_value()) {
+      transport_failure.Record(std::move(sent.error()));
+      return false;
+    }
+    return *sent == networking::SendOutcome::kAccepted;
+  }
 };
 
 std::string_view DescribeJoinRefusal(JoinRefusal reason) {
@@ -96,10 +112,14 @@ void Session::PumpEvents() { impl_->network.PumpEvents(); }
 void Session::ExchangeMessages() {
   Impl& impl = *impl_;
   if (!impl.sent_join_request && impl.network.GetState() == networking::ConnectionState::kConnected) {
-    impl.network.Send(protocol::Encode(ToWire(impl.join_request)), networking::Reliability::kReliable);
-    impl.sent_join_request = true;
+    impl.sent_join_request = impl.Send(protocol::Encode(ToWire(impl.join_request)), networking::Reliability::kReliable);
   }
-  for (const networking::Payload& payload : impl.network.ReceiveMessages()) {
+  auto received = impl.network.ReceiveMessages();
+  if (!received.has_value()) {
+    impl.transport_failure.Record(std::move(received.error()));
+    return;
+  }
+  for (const networking::Payload& payload : *received) {
     LT("subsystem=harness event=received bytes={}", payload.size());
     impl.inbox.Receive(payload);
   }
@@ -120,6 +140,8 @@ std::optional<Failure> Session::GetFailure() const {
   const bool was_admitted = server_view->accepted.has_value();
   return Failure{.kind = was_admitted ? FailureKind::kConnectionLost : FailureKind::kServerUnreachable};
 }
+
+std::optional<failure::Failure> Session::TakeTransportFailure() { return impl_->transport_failure.Take(); }
 
 std::optional<networking::ConnectionStats> Session::GetConnectionStats() const { return impl_->network.GetStats(); }
 
@@ -144,8 +166,9 @@ void Session::ReportReady(std::uint32_t version) {
   if (!server_view->lobby.has_value() || server_view->lobby->version != version) {
     return;
   }
-  impl_->network.Send(protocol::Encode(protocol::ReadyWire{.version = version}), networking::Reliability::kReliable);
-  LD("subsystem=harness event=ready version={}", version);
+  if (impl_->Send(protocol::Encode(protocol::ReadyWire{.version = version}), networking::Reliability::kReliable)) {
+    LD("subsystem=harness event=ready version={}", version);
+  }
 }
 
 std::optional<std::uint8_t> Session::GetTickRate() const {
@@ -200,7 +223,8 @@ prediction::State Session::Tick(const command::Command& command, float delta_tim
   // commands sent all agree on what the server had said.
   const CommandTick tick = impl.commands.Tick(*impl.inbox.View(), command, delta_time);
   if (!tick.send.empty()) {
-    impl.network.Send(protocol::Encode(ToWire(tick.send)), networking::Reliability::kUnreliable);
+    // Not accepted, the commands are sent again next tick, as unacknowledged ones always are.
+    impl.Send(protocol::Encode(ToWire(tick.send)), networking::Reliability::kUnreliable);
   }
   return tick.state;
 }

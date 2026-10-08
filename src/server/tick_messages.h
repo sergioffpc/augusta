@@ -1,10 +1,12 @@
 #ifndef AUGUSTA_SERVER_TICK_MESSAGES_H_
 #define AUGUSTA_SERVER_TICK_MESSAGES_H_
 
+#include <expected>
 #include <functional>
 #include <unordered_map>
 #include <vector>
 
+#include "augusta/failure.h"
 #include "augusta/networking.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
@@ -31,9 +33,11 @@ struct TickRecipients {
 };
 
 /// Sends payload, an encoded message, to peer as reliability says, counting it
-/// into metrics: how the Host sends everything it sends.
-void SendCounted(networking::Server& network, HostMetrics& metrics, networking::PeerId peer,
-                 const networking::Payload& payload, networking::Reliability reliability);
+/// into metrics only if the transport accepted it: how the Host sends
+/// everything it sends. Returns what the transport did with it.
+[[nodiscard]] networking::SendResult SendCounted(networking::Server& network, HostMetrics& metrics,
+                                                 networking::PeerId peer, const networking::Payload& payload,
+                                                 networking::Reliability reliability);
 
 /// Takes one message a tick sends: payload, an encoded message, to peer as reliability says.
 using TickMessageSink = std::function<void(networking::PeerId, const networking::Payload&, networking::Reliability)>;
@@ -46,9 +50,13 @@ using TickMessageSink = std::function<void(networking::PeerId, const networking:
 void ForEachTickMessage(const simulation::State& state, tick::Tick tick, const TickRecipients& to,
                         const TickMessageSink& send);
 
-/// Sends to the recipients what tick's state holds for them, counting it into metrics.
-void SendTickMessages(networking::Server& network, HostMetrics& metrics, const simulation::State& state,
-                      tick::Tick tick, const TickRecipients& to);
+/// Sends to the recipients what tick's state holds for them, counting into
+/// metrics what the transport accepted. Stops at, and returns, the local
+/// transport's first failure; a recipient that drops a message is its own
+/// outcome.
+[[nodiscard]] std::expected<void, failure::Failure> SendTickMessages(networking::Server& network, HostMetrics& metrics,
+                                                                     const simulation::State& state, tick::Tick tick,
+                                                                     const TickRecipients& to);
 
 }  // namespace augusta::server
 
