@@ -179,12 +179,14 @@ add_executable(augusta_liveness_tests liveness_test.cpp)
 target_link_libraries(augusta_liveness_tests PRIVATE augustad_liveness GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_liveness_tests DISCOVERY_TIMEOUT 30)
 
-# Over real HTTP on the loopback, on a port the test finds free.
+# Over real HTTP on the loopback, on a port the test finds free, with the
+# acceptor's failures injected (see faults.h) and the log line they end in read
+# off stdout.
 find_package(boost_beast CONFIG REQUIRED)
 add_executable(augusta_metrics_tests metrics_test.cpp)
 target_link_libraries(
   augusta_metrics_tests
-  PRIVATE augustad_metrics augustad_liveness Boost::beast GTest::gtest GTest::gtest_main
+  PRIVATE augustad_metrics augustad_liveness augusta_failure augusta_logging Boost::beast GTest::gtest GTest::gtest_main
 )
 gtest_discover_tests(augusta_metrics_tests DISCOVERY_TIMEOUT 30)
 
