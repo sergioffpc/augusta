@@ -25,7 +25,7 @@ struct RecoilKick {
   bool operator==(const RecoilKick&) const = default;
 };
 
-/// The rifle every player carries (US-06 to US-09; one weapon in v1).
+/// The rifle every player carries (US-06 to US-09; the only weapon).
 struct Rifle {
   /// How many rounds per minute holding fire shoots. At most one round fires a
   /// tick, so a rate above the tick rate fires at the tick rate.
