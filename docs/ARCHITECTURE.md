@@ -359,16 +359,16 @@ Production deployment (`main`) is explicitly out of scope/undecided for now.
 
 - **Units:** 1 engine unit = 1 meter (real-world scale, required for realistic
   ballistics)
-- **Threading:** fixed dedicated threads, no generic job/task scheduler in v1.
-  Client: 3 threads (Main/Render, Simulation [ECS + PhysX], Network I/O).
-  Server: 3 threads (Simulation, Network I/O, Metrics) — no render thread, since
-  it's headless (see ADR-0005, ADR-0049). Each piece of mutable state has one
-  owning thread and crosses to another only as an immutable value: transport
-  callbacks publish events that the Network I/O owner applies outside their
-  locks, the client reads what the server said through one immutable Server
-  view, and SimulationWorld returns a `TickResult`. A runtime supervisor owns
-  the worker threads, their stop request and the first failure, which a runtime
-  reports rather than terminating the process.
+- **Threading:** fixed dedicated threads, no generic job/task scheduler. Client:
+  3 threads (Main/Render, Simulation [ECS + PhysX], Network I/O). Server: 3
+  threads (Simulation, Network I/O, Metrics) — no render thread, since it's
+  headless (see ADR-0005, ADR-0049). Each piece of mutable state has one owning
+  thread and crosses to another only as an immutable value: transport callbacks
+  publish events that the Network I/O owner applies outside their locks, the
+  client reads what the server said through one immutable Server view, and
+  SimulationWorld returns a `TickResult`. A runtime supervisor owns the worker
+  threads, their stop request and the first failure, which a runtime reports
+  rather than terminating the process.
 - **Determinism strategy:** PhysX does not guarantee cross-platform bit-exact
   determinism (confirmed: NVIDIA docs state cross-platform determinism is
   unsupported). Client prediction is therefore treated as approximate: the
