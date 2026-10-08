@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <expected>
 #include <format>
 #include <memory>
 #include <optional>
@@ -112,7 +113,10 @@ void Session::PumpEvents() { impl_->network.PumpEvents(); }
 void Session::ExchangeMessages() {
   Impl& impl = *impl_;
   if (!impl.sent_join_request && impl.network.GetState() == networking::ConnectionState::kConnected) {
-    impl.sent_join_request = impl.Send(protocol::Encode(ToWire(impl.join_request)), networking::Reliability::kReliable);
+    // Once, whatever the transport did with it: reliable delivery is the
+    // transport's, and a send it dropped or refused ends the connection or the runtime.
+    impl.Send(protocol::Encode(ToWire(impl.join_request)), networking::Reliability::kReliable);
+    impl.sent_join_request = true;
   }
   auto received = impl.network.ReceiveMessages();
   if (!received.has_value()) {

@@ -1,4 +1,5 @@
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -19,8 +20,10 @@
 #include "augusta/supervisor.h"
 #include "content.h"
 #include "host.h"
+#include "host_metrics.h"
 #include "misbehaviour.h"
 #include "runtime.h"
+#include "tick_messages.h"
 
 // Local transport failures at the runtime seams (ADR-0033): a send or receive
 // the local transport refuses becomes the runtime's typed failure, which its
@@ -45,6 +48,7 @@ using augusta::math::Vec3;
 using augusta::networking::ConnectionState;
 using augusta::networking::Endpoint;
 using augusta::networking::Payload;
+using augusta::networking::PeerId;
 using augusta::networking::Reliability;
 using augusta::networking::SendOutcome;
 using augusta::physics::CollisionMesh;
@@ -279,9 +283,10 @@ TEST_F(TransportFailureTest, AClientReceiveTheLocalTransportFailsIsTheClientsRun
   EXPECT_EQ(failure->detail, "connection handle gone");
 }
 
-// Through the Runner, as a client runs live: its Network I/O thread stops on
-// the failure, which becomes the Runner's first cause, and both threads stop.
-TEST_F(TransportFailureTest, AClientTransportFailureStopsTheRunnerWithATypedFailureOfTheNetworkThread) {
+// Through the Runner, as a client runs live: the failure becomes the Runner's
+// first cause, and both threads stop. Whichever of its threads takes it first
+// escalates it, so the thread named is either; the failure is the same.
+TEST_F(TransportFailureTest, AClientTransportFailureStopsTheRunnerWithATypedFailure) {
   session_faults_.Arm(Site::kTransportReceive, "connection handle gone", Faults::kEveryTime);
   const Runner runner(session_,
                       RunnerHooks{.next_command = [] { return Command{}; }, .on_tick = {}, .on_network_round = {}});
@@ -291,13 +296,15 @@ TEST_F(TransportFailureTest, AClientTransportFailureStopsTheRunnerWithATypedFail
 
   const Failure failure = *runner.Failure();
   EXPECT_EQ(failure.code, Code::kTransportReceiveFailed);
-  EXPECT_EQ(ContextOf(failure, augusta::supervisor::kThreadContextKey), "network");
+  EXPECT_EQ(failure.detail, "connection handle gone");
+  const std::string thread = ContextOf(failure, augusta::supervisor::kThreadContextKey);
+  EXPECT_TRUE(thread == "network" || thread == "prediction") << thread;
 }
 
-// Through ServerRuntime, as augustad runs: the Network I/O thread stops on the
-// failure, the Simulation thread with it, and Run returns it as the runtime's
-// first cause for the application boundary to report.
-TEST(ServerRuntimeTransportFailureTest, AServerTransportFailureEndsRunWithATypedFailureOfTheNetworkThread) {
+// Through ServerRuntime, as augustad runs: both threads stop on the failure,
+// and Run returns it as the runtime's first cause for the application boundary
+// to report. Whichever thread takes it first escalates it.
+TEST(ServerRuntimeTransportFailureTest, AServerTransportFailureEndsRunWithATypedFailure) {
   Faults faults;
   faults.Arm(Site::kTransportReceive, "poll group gone", Faults::kEveryTime);
   // Port 0: the metrics endpoint takes a free port, and is not what is tested.
@@ -308,7 +315,23 @@ TEST(ServerRuntimeTransportFailureTest, AServerTransportFailureEndsRunWithATyped
   ASSERT_TRUE(failure.has_value());
   EXPECT_EQ(failure->code, Code::kTransportReceiveFailed);
   EXPECT_EQ(DispositionOf(failure->code), Disposition::kRuntime);
-  EXPECT_EQ(ContextOf(*failure, augusta::supervisor::kThreadContextKey), "network");
+  EXPECT_EQ(failure->detail, "poll group gone");
+  const std::string thread = ContextOf(*failure, augusta::supervisor::kThreadContextKey);
+  EXPECT_TRUE(thread == "network" || thread == "simulation") << thread;
+}
+
+// A message the peer's connection dropped was never sent, so the metrics do not
+// count it, as they do not count one the local transport refused.
+TEST(SendCountedTest, AMessageThePeersConnectionDroppedIsNotCounted) {
+  augusta::networking::Server server(Endpoint{.address = "127.0.0.1:0"});
+  augusta::server::HostMetrics metrics(kTickRate);
+
+  const auto sent = augusta::server::SendCounted(server, metrics, PeerId{42}, Payload{std::byte{1}, std::byte{2}},
+                                                 Reliability::kReliable);
+
+  EXPECT_EQ(sent, SendOutcome::kDropped);
+  EXPECT_EQ(metrics.messages_sent.Total(), 0U);
+  EXPECT_EQ(metrics.sent_bytes.Value(), 0U);
 }
 
 }  // namespace

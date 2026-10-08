@@ -18,5 +18,8 @@ listen socket or poll group the local transport itself refuses is a `runtime`
 failure (`transport_send_failed`, `transport_receive_failed`,
 `listener_setup_failed`): it is never read as a message sent or an empty queue,
 and the worker that meets it stops the runtime through its supervisor
-(ADR-0005). Reliable delivery stays the transport's: nothing above it retries a
-send.
+(ADR-0005). A send holds the peer table's lock across the transport call, and
+every close forgets its connection under that lock first, so a send never races
+a close: an invalid handle is then the local transport's failure, never a peer
+that just left. Reliable delivery stays the transport's: nothing above it
+retries a send.
