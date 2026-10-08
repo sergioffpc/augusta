@@ -343,8 +343,8 @@ after the tick.
 
 ## 7. Deployment View
 
-v1 gameplay: a Linux dedicated server process and up to 8 Windows client
-processes, on the same LAN/localhost.
+Linux dedicated server process and up to 8 Windows client processes, on the same
+LAN/localhost.
 
 Non-production development/test deployment: the server also runs on a
 self-hosted, single-node k3s cluster (developer's own hardware), two fixed,
