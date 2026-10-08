@@ -5,7 +5,10 @@
 {
   "name": "Augusta server (Linux)",
   "build": {
-    "dockerfile": "Dockerfile"
+    "dockerfile": "Dockerfile",
+    // The repository, for scripts/bootstrap-linux.sh, which the Dockerfile runs
+    // (Dockerfile.dockerignore keeps the rest out of the context).
+    "context": ".."
   },
   "remoteUser": "ubuntu",
   "containerEnv": {
