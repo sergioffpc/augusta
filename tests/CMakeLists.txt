@@ -488,7 +488,9 @@ gtest_discover_tests(augusta_simulation_mapping_tests DISCOVERY_TIMEOUT 30)
 
 # No header past the protocol's edge names a protocol type (ADR-0038): only
 # harness_wire.h and server/wire.h convert. Nor does a presentation header name
-# the harness: the client converts (src/client/frame_mapping.h). A source scan, so it builds nothing.
+# the harness: the client converts (src/client/frame_mapping.h). Nor does the
+# protocol itself include or link anything but augusta_math and
+# augusta_primitives. A source scan, so it builds nothing.
 add_test(
   NAME augusta_protocol_boundary
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/protocol_boundary.cmake
@@ -497,8 +499,9 @@ add_test(
 # Neither physics nor SimulationWorld names the protocol or the client's input
 # sampler in its public headers: the grids and the Command they need are shared
 # core modules of their own. Nor do the neutral primitives depend on any other
-# module, nor does anything else define them again. A source scan, so it
-# builds nothing.
+# module, nor does anything else give their counters a type of its own or
+# declare their bounds again, even as an alias. A source scan, so it builds
+# nothing.
 add_test(
   NAME augusta_core_boundary
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/core_boundary.cmake
