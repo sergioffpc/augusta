@@ -156,8 +156,8 @@ decisions already made in ARCHITECTURE.md:
 - **Branching model:** Git Flow — `main` (production/release) + `develop`
   (integration), with `feature/*`, `release/*`, `hotfix/*` branches.
 - **Tags/releases:** created only when there's an actual release to make (e.g.,
-  reaching v1) — ROADMAP.md milestones (M0–M17) are internal checkpoints, not
-  tagged releases.
+  v1.0.0) — ROADMAP.md milestones (M0–M17) are internal checkpoints, not tagged
+  releases.
 - **Pull requests:** used even solo — `feature/*` → `develop`,
   `release/*`/`hotfix/*` → `main`, and the same `release/*`/`hotfix/*` branch
   back into `develop`, go through a PR so CI gates the merge; no formal review
@@ -188,10 +188,10 @@ no self-hosted GitHub Actions runner in this pipeline).
   Agones solves fleet-scale dynamic allocation, which this project doesn't need
   (one server instance per scenario per environment, each fixed in Git,
   ADR-0026); revisit only if matchmaking/dynamic multi-server allocation is ever
-  needed (Beyond v1). Each server pins its node port, so LAN clients keep one
-  address, from its environment's own range so `develop` and `staging` never
-  collide on the shared node: `develop` 30700-30799, `staging` 30800-30899. The
-  chart refuses a server without a node port in its range.
+  needed. Each server pins its node port, so LAN clients keep one address, from
+  its environment's own range so `develop` and `staging` never collide on the
+  shared node: `develop` 30700-30799, `staging` 30800-30899. The chart refuses a
+  server without a node port in its range.
 - **CD mechanism:** pull-based via Flux, running inside the k3s cluster and
   reconciling each branch's `HelmRelease` from Git — nothing outside the cluster
   needs inbound access to the LAN, and no external PR can trigger execution on
@@ -392,8 +392,8 @@ no self-hosted GitHub Actions runner in this pipeline).
 - **No formal client frame-rate target.** Deliberately not turned into an NFR —
   frame rate is judged subjectively while playing/testing, not automated or
   gated in CI.
-- **Memory strategy:** rely on Flecs' and PhysX's built-in allocators for v1; no
-  custom arena/pool allocators until profiling shows a concrete need.
+- **Memory strategy:** rely on Flecs' and PhysX's built-in allocators; no custom
+  arena/pool allocators until profiling shows a concrete need.
 - Google Benchmark is used for targeted micro-benchmarks of hot-path code (the
   server tick and its capture, replication, a PresentationWorld frame,
   ballistics, serialization, pack loading) — not a blanket requirement for every

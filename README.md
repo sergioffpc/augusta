@@ -133,7 +133,7 @@ make lint
 
 ## Documentation
 
-- [VISION.md](docs/VISION.md) — product vision and v1 definition of done
+- [VISION.md](docs/VISION.md) — product vision
 - [REQUIREMENTS.md](docs/REQUIREMENTS.md) — functional and non-functional
   requirements
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — arc42 architecture document

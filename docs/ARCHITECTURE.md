@@ -333,7 +333,7 @@ after the tick.
 **Scenario: Match End**
 
 1. Server evaluates the win condition each tick (game policy, the scenario's
-   rules; in v1 last player standing)
+   rules; last player standing)
 2. When it is met, the decision is a typed Match end action in that tick's
    result; the server ends the Match after the tick, removes every body and
    bullet in flight, and sends Match end, with the winner or a draw, reliably;
@@ -343,8 +343,8 @@ after the tick.
 
 ## 7. Deployment View
 
-v1 gameplay: a Linux dedicated server process and up to 8 Windows client
-processes, on the same LAN/localhost.
+Linux dedicated server process and up to 8 Windows client processes, on the same
+LAN/localhost.
 
 Non-production development/test deployment: the server also runs on a
 self-hosted, single-node k3s cluster (developer's own hardware), two fixed,
@@ -359,16 +359,16 @@ Production deployment (`main`) is explicitly out of scope/undecided for now.
 
 - **Units:** 1 engine unit = 1 meter (real-world scale, required for realistic
   ballistics)
-- **Threading:** fixed dedicated threads, no generic job/task scheduler in v1.
-  Client: 3 threads (Main/Render, Simulation [ECS + PhysX], Network I/O).
-  Server: 3 threads (Simulation, Network I/O, Metrics) — no render thread, since
-  it's headless (see ADR-0005, ADR-0049). Each piece of mutable state has one
-  owning thread and crosses to another only as an immutable value: transport
-  callbacks publish events that the Network I/O owner applies outside their
-  locks, the client reads what the server said through one immutable Server
-  view, and SimulationWorld returns a `TickResult`. A runtime supervisor owns
-  the worker threads, their stop request and the first failure, which a runtime
-  reports rather than terminating the process.
+- **Threading:** fixed dedicated threads, no generic job/task scheduler. Client:
+  3 threads (Main/Render, Simulation [ECS + PhysX], Network I/O). Server: 3
+  threads (Simulation, Network I/O, Metrics) — no render thread, since it's
+  headless (see ADR-0005, ADR-0049). Each piece of mutable state has one owning
+  thread and crosses to another only as an immutable value: transport callbacks
+  publish events that the Network I/O owner applies outside their locks, the
+  client reads what the server said through one immutable Server view, and
+  SimulationWorld returns a `TickResult`. A runtime supervisor owns the worker
+  threads, their stop request and the first failure, which a runtime reports
+  rather than terminating the process.
 - **Determinism strategy:** PhysX does not guarantee cross-platform bit-exact
   determinism (confirmed: NVIDIA docs state cross-platform determinism is
   unsupported). Client prediction is therefore treated as approximate: the
@@ -536,7 +536,7 @@ to NFR-07).
   ("rubber-banding") if divergence grows too fast.
 - **Scope ambition vs. solo-dev bandwidth:** ECS + custom physics/ballistics +
   client prediction + multithreading + a new networking library is a lot of new
-  surface area to learn and integrate simultaneously for v1.
+  surface area to learn and integrate simultaneously.
 - **GameNetworkingSockets build complexity:** pulls in transitive dependencies
   (protobuf, OpenSSL) that add cross-platform build maintenance overhead.
 - **No authentication of peers:** connections are encrypted, but neither side
@@ -556,8 +556,8 @@ to NFR-07).
 - **Signing key management:** losing or leaking the pack-signing private key
   would require re-keying and re-signing all shipped packs — back it up securely
   and keep it out of version control.
-- **Full rebake on every cook** is acceptable at v1's asset scale; will need
-  incremental invalidation (e.g., content-hash-based) if asset count grows
+- **Full rebake on every cook** is acceptable at the current asset scale; will
+  need incremental invalidation (e.g., content-hash-based) if asset count grows
   significantly.
 - **Lua sandbox correctness:** security relies on a carefully curated restricted
   environment; an incomplete sandbox (e.g., leaking `load`/`dofile`, or a C++
