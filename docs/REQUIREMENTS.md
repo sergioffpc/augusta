@@ -1,8 +1,9 @@
-# Requirements — FPS Simulator Engine (v1)
+# Requirements — FPS Simulator Engine
 
-Scope: v1 milestone as defined in [VISION.md](./VISION.md) — multiplayer-only,
-server-authoritative, physics-based ballistics, 1 rifle, 1 test map, 2–8
-players.
+Scope: the engine described in [VISION.md](./VISION.md) — multiplayer-only,
+server-authoritative, physics-based ballistics, 2–8 players per Match. The v1
+milestone ([ROADMAP.md](./ROADMAP.md)) played them with one rifle on one test
+map.
 
 ---
 
@@ -15,9 +16,20 @@ match.
 
 ```text
 Given a running dedicated server reachable on the network
-When I initiate a connection with a valid client version
+When I initiate a connection with the server's engine version, the client pack cooked
+     with its server pack, and a Character its scenario offers
 Then the server accepts the connection and assigns me a session ID
+
+Given a client whose engine version is not the server's, or whose client pack was not
+      cooked with the server's
+When I request to join
+Then the server refuses me, telling me why (version or pack mismatch), admits me to no
+     Lobby and assigns me no session ID; the client reports the reason and exits
 ```
+
+A join that fails more than one check is told the first, in the order engine
+version, client pack, Character, match in progress, Lobby full (ADR-0038,
+ADR-0043).
 
 ### US-02: Join a Match (2–8 Players)
 
@@ -172,6 +184,138 @@ When the server validates it against physical and game constraints
 Then invalid actions are rejected or corrected before affecting authoritative state
 ```
 
+### US-16: Choose a Character
+
+As a player, I want to choose the Character I play, so that I can pick among the
+ones a scenario offers.
+
+```text
+Given augustac.yaml names a Character in player.character
+When I join a server whose scenario offers that Character
+Then I am admitted playing it, every client is told my Character in the Lobby's Roster
+     and in Match start, and it stays my Character for the whole Session
+
+Given augustac.yaml names a Character the server's scenario does not offer
+When I request to join
+Then the server refuses me as an unknown Character and I take no Lobby slot
+
+Given augustac.yaml has no player.character, or an empty one
+When the client starts
+Then it refuses the config and does not connect
+```
+
+### US-17: See Other Players
+
+As a player, I want to see the other players move smoothly, so that I can track
+and engage them.
+
+```text
+Given I am in a Match with other players
+When Authoritative State updates arrive, at irregular times
+Then each other player is drawn as its Character's mesh, facing where it faces, at its
+     position on the server's timeline one Interpolation delay (0.1 s) in the past,
+     moving smoothly between the two surrounding updates
+
+Given no newer Authoritative State has arrived
+When frames keep rendering
+Then each other player holds at its newest reported position, never extrapolated, and
+     moves on without jumping backwards once updates resume
+```
+
+Stance is not drawn yet: it reaches the presentation, but the renderer draws a
+Character as authored until animation poses it (ADR-0024).
+
+### US-18: Hear Combat Audio Cues
+
+As a player, I want to hear gunfire, hits, deaths and the Match's end, so that I
+know what is happening around me without seeing it.
+
+```text
+Given I am in a Match
+When I fire, another player's Shot is announced, the server confirms my hit,
+     my health drops, a player dies, or the Match ends
+Then I hear my own gunshot on the frame I fire, other gunshots and deaths from where
+     they happened, and a hit marker, hit-taken or Match end stinger (won if I am the
+     Winner, lost otherwise, a Draw included) as my own, each once
+```
+
+Spatialization itself (Steam Audio, ADR-0010, ADR-0028) is heard, not tested.
+
+### US-19: See Combat Feedback
+
+As a player, I want to see where shots go and when mine hit, so that I can
+correct my aim and locate shooters.
+
+```text
+Given I am in a Match
+When the server announces a Shot, or confirms one of mine hit
+Then a tracer flies along the Shot's server-computed trajectory and leaves an impact
+     where it meets the Map, the shooter's muzzle flashes (mine on the frame I fire),
+     and on my Hit confirmation alone the hit marker shows for a moment
+```
+
+The aiming view (ADS zoom) is US-06's.
+
+### US-20: Rebind Controls
+
+As a player, I want to bind each control to a key of my choice, so that I can
+play with the layout I am used to.
+
+```text
+Given an augustac.yaml whose input.keys section rebinds some controls
+When the client starts
+Then those controls answer to their new keys, their old keys do nothing, and every
+     other control keeps its default
+
+Given an input.keys entry that names an unknown control or key, binds a key another
+      control has, binds Escape, or names a control twice
+When the client starts
+Then it refuses to start and names the offending entry
+
+Given I am playing with the cursor captured
+When I press Escape
+Then the cursor is released and every held key let go, and keys and mouse do nothing
+     until a mouse click, which recaptures the cursor without firing
+```
+
+### US-21: Record a Match and Replay It
+
+As a developer, I want the server to record a Match and to replay that recording
+on a fresh SimulationWorld, so that a bug seen in a playtest can be reproduced
+and a non-determinism is caught.
+
+```text
+Given augustad.yaml names a file under simulation.recording
+When the server runs and I replay that recording with augusta-replay on the server
+     pack it names
+Then every tick is handed the input the server handed SimulationWorld, in the same
+     order, and the replay either confirms every tick resolved the recorded outcome or
+     names the first tick that differs and what differed
+```
+
+A recording that stops early, because its disk fell behind or a write failed,
+keeps every whole tick before that point and never holds the tick up (ADR-0048).
+
+### US-22: Compose and Tune a Scenario
+
+As a content author, I want to compose a scenario from a Map, its Characters,
+its cue sounds and its scripts, and set its Parameters in a Lua script, so that
+I can make and tune a game mode without changing engine code.
+
+```text
+Given a scenario manifest naming its Map, Characters, a sound for every cue, a
+      Parameters script and, optionally, Rules
+When I cook it and start a server on its server pack
+Then a manifest with an unknown or missing entry is refused when cooked; a Parameters
+     script with an unknown, missing, mistyped or out-of-range value, or that reaches
+     outside its sandbox, stops the server at startup naming the field; otherwise every
+     client is admitted with the server's tick rate and Parameters and plays by them
+```
+
+The Parameters set the rifle, its ammo, starting health, stamina and the Player
+count; the tick rate is the server's config, not a Parameter (ADR-0039,
+ADR-0041).
+
 ---
 
 ## Non-Functional Requirements
@@ -253,12 +397,12 @@ Response:    Server rejects or corrects the invalid action
 Measure:     100% of out-of-bounds actions rejected before affecting authoritative state
 ```
 
-### NFR-06: v1 Scalability Baseline
+### NFR-06: Scalability Baseline
 
 ```text
 Source:      Match host
 Stimulus:    Players joining a match
-Environment: v1 milestone
+Environment: A scenario whose Player count is 2–8
 Artifact:    Server session management
 Response:    Server supports the target concurrent player count without degradation
 Measure:     Stable operation with 2–8 concurrent players for at least one full match
@@ -278,3 +422,94 @@ Measure:     Every metric in ADR-0049's catalogue present within one scrape
              interval (15 s) of the event; a tick loop stalled for 5 s
              fails the liveness probe
 ```
+
+### NFR-08: Asset Integrity
+
+```text
+Source:      Anyone who can change a pack file on disk or on the node
+Stimulus:    A client or server pack that is corrupted, truncated, tampered with,
+             unsigned or signed by another key; or a client whose pack was not
+             cooked with the server's
+Environment: Client or server startup; a client joining
+Artifact:    Pack loading and Join admission
+Response:    The process refuses the pack and exits before anything else starts;
+             the server refuses the Join as a pack mismatch
+Measure:     No byte of a pack is trusted before its BLAKE3 hash and Ed25519
+             signature verify against the key the process was given; every
+             refused pack names why
+```
+
+ADR-0018 and ADR-0031 define the hash, the signature and the header's client
+pack hash; ADR-0019 and ADR-0038 the Join's pack mismatch.
+
+### NFR-09: Simulation Reproducibility
+
+```text
+Source:      Developer or CI replaying a Match recording
+Stimulus:    Every tick's recorded input handed to a fresh SimulationWorld
+Environment: The server pack the recording names; the build that recorded it,
+             or any other supported build
+Artifact:    SimulationWorld (phase pipeline and Game policy)
+Response:    Every tick resolves the recorded outcome
+Measure:     On the recording build, every value of every tick exactly equal;
+             on another build, body positions and Shot origins within one
+             position-grid step (1/1024 m) and velocities within two steps over
+             a tick, every other value equal, each tick starting from the
+             recorded bodies; the golden match replays on every CI runner
+```
+
+NFR-03 holds one bullet's trajectory to its tolerance; this holds the whole
+simulation to the same one (ADR-0004, ADR-0048).
+
+### NFR-10: Crash Diagnosability
+
+```text
+Source:      A defect in the dedicated server
+Stimulus:    A fatal signal (SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT) in a
+             published Linux build
+Environment: k3s node whose kernel.core_pattern is systemd-coredump's
+Artifact:    The server's crash handler, its image and the build's debug info
+Response:    The server logs the signal and the crashing thread's symbolized
+             stack, then dies of the signal, and the kernel keeps its core
+Measure:     Every such crash leaves a crash line and one line per frame in
+             ADR-0029's format, a core, and debug info whose build ID matches
+             the binary, kept as long as the image
+```
+
+A stack overflow, or a crash in another thread or in the report itself, leaves
+no logged stack, and the development-only Windows build writes no core
+(ADR-0047).
+
+### NFR-11: Deployability
+
+```text
+Source:      Developer merging to develop or main
+Stimulus:    A merged change to the server, its chart or an environment's values
+Environment: k3s with Flux; GitHub-hosted CI, no runner in the cluster
+Artifact:    Server image, Helm chart and HelmReleases
+Response:    Flux deploys the commit's own image with no manual step; reverting
+             the commit restores the previous image and pack
+Measure:     Every deployed pod runs the image of its chart's commit; a
+             rollback is one Git revert (no deploy-time target is decided)
+```
+
+CI lints and renders the chart and builds the image on every pull request that
+touches them; no stage runs after a deploy (ADR-0013, ADR-0026).
+
+### NFR-12: Robustness Against Malformed Input
+
+```text
+Source:      A peer, or a file from outside (pack, Match recording)
+Stimulus:    Arbitrary bytes: empty, truncated, oversized, out of range or with
+             bytes left over
+Environment: Client or server at any time; the fuzzer under ASan
+Artifact:    Protocol decoding, pack loading and Match recording reading
+Response:    The input is refused with a typed error, nothing is allocated from
+             a length that was not checked, and the process keeps running
+Measure:     No crash, hang (5 s per input) or sanitizer report across every
+             fuzz run (about 60 s per target per pull request, 30 min nightly);
+             every payload decoding accepts re-encodes to the same bytes
+```
+
+The fuzz targets' seeds and regressions replay under ctest on every preset
+(ADR-0013); what refused input does to authoritative state is NFR-05's.
