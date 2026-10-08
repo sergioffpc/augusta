@@ -532,7 +532,7 @@ to NFR-07).
   ("rubber-banding") if divergence grows too fast.
 - **Scope ambition vs. solo-dev bandwidth:** ECS + custom physics/ballistics +
   client prediction + multithreading + a new networking library is a lot of new
-  surface area to learn and integrate simultaneously for v1.
+  surface area to learn and integrate simultaneously.
 - **GameNetworkingSockets build complexity:** pulls in transitive dependencies
   (protobuf, OpenSSL) that add cross-platform build maintenance overhead.
 - **No authentication of peers:** connections are encrypted, but neither side
