@@ -309,7 +309,8 @@ class ConnectedNetworkingTest : public NetworkingTest {
     std::vector<std::string> received;
     PollUntil([&] { PollBoth(); },
               [&] {
-                for (const PeerMessage& message : server_->ReceiveMessages().value()) {
+                const auto messages = server_->ReceiveMessages().value();
+                for (const PeerMessage& message : messages) {
                   received.push_back(PayloadToString(message.payload));
                 }
                 return done(received);
@@ -333,7 +334,8 @@ class ConnectedNetworkingTest : public NetworkingTest {
     std::vector<std::string> received;
     PollUntil([&] { PollBoth(); },
               [&] {
-                for (const Payload& payload : client_->ReceiveMessages().value()) {
+                const auto payloads = client_->ReceiveMessages().value();
+                for (const Payload& payload : payloads) {
                   received.push_back(PayloadToString(payload));
                 }
                 return received.size() >= count;

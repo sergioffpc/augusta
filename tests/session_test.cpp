@@ -280,7 +280,8 @@ class RawClient {
   // cooperative, and returns the Authoritative States among it.
   std::vector<augusta::protocol::AuthoritativeStateWire> Drain() {
     std::vector<augusta::protocol::AuthoritativeStateWire> states;
-    for (const auto& payload : client_.ReceiveMessages().value()) {
+    const auto payloads = client_.ReceiveMessages().value();
+    for (const auto& payload : payloads) {
       const auto message = augusta::protocol::Decode(payload);
       if (!message.has_value()) {
         continue;
@@ -2139,7 +2140,8 @@ class ScriptedServer {
         server_.Accept(event.peer);
       }
     }
-    for (const auto& message : server_.ReceiveMessages().value()) {
+    const auto messages = server_.ReceiveMessages().value();
+    for (const auto& message : messages) {
       peer_ = message.from;
       const auto decoded = augusta::protocol::Decode(message.payload);
       if (!decoded.has_value()) {
