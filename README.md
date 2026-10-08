@@ -31,8 +31,7 @@ server.
 
 ## Status
 
-Early stage — see [docs/ROADMAP.md](docs/ROADMAP.md) for the milestone plan.
-This is a solo-developer hobby project with no fixed deadline.
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the milestone plan.
 
 The [documentation site](https://sergioffpc.github.io/augusta/) publishes these
 docs, the decisions behind the engine (ADRs) and the C++ API reference.
