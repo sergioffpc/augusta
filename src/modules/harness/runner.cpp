@@ -8,6 +8,7 @@
 
 #include <nvtx3/nvtx3.hpp>
 
+#include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
@@ -63,13 +64,13 @@ tick::Clock::duration NextTickDuration(const Session& session, tick::Clock::dura
 }  // namespace
 
 Runner::Runner(Session& session, RunnerHooks hooks) : session_(session), hooks_(std::move(hooks)) {
-  workers_.Spawn("prediction", [this] { PredictionThreadMain(); });
-  workers_.Spawn("network", [this] { NetworkThreadMain(); });
+  workers_.Spawn("prediction", [this] { return PredictionThreadMain(); });
+  workers_.Spawn("network", [this] { return NetworkThreadMain(); });
 }
 
 Runner::~Runner() { workers_.StopAndJoin(); }
 
-std::optional<supervisor::WorkerFailure> Runner::Failure() const { return workers_.Failure(); }
+std::optional<failure::Failure> Runner::Failure() const { return workers_.Failure(); }
 
 std::optional<float> Runner::WaitForTickRate() {
   constexpr auto kPollInterval = std::chrono::milliseconds(10);
@@ -82,10 +83,10 @@ std::optional<float> Runner::WaitForTickRate() {
   return std::nullopt;
 }
 
-void Runner::PredictionThreadMain() {
+supervisor::WorkerResult Runner::PredictionThreadMain() {
   const auto tick_rate_hz = WaitForTickRate();
   if (!tick_rate_hz.has_value()) {
-    return;
+    return {};
   }
   const auto delta_time = std::chrono::duration<float>(1.0F / *tick_rate_hz);
   const auto nominal_tick = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
@@ -108,11 +109,12 @@ void Runner::PredictionThreadMain() {
 
     std::this_thread::sleep_until(deadline);
   }
+  return {};
 }
 
 // The transport has no wait on incoming work, so the wait between rounds
 // bounds how late a received message is handled, and how long stopping takes.
-void Runner::NetworkThreadMain() {
+supervisor::WorkerResult Runner::NetworkThreadMain() {
   constexpr auto kNetworkRoundWait = std::chrono::milliseconds(1);
   session_.Connect();
   while (!workers_.StopRequested()) {
@@ -127,6 +129,7 @@ void Runner::NetworkThreadMain() {
     std::this_thread::sleep_for(kNetworkRoundWait);
   }
   session_.Disconnect();
+  return {};
 }
 
 }  // namespace augusta::harness

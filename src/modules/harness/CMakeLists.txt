@@ -19,6 +19,7 @@ target_link_libraries(
     augusta_parameters
     augusta_prediction
     augusta_command
+    augusta_failure
     augusta_physics
     augusta_protocol
     augusta_supervisor

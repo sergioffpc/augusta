@@ -5,6 +5,7 @@
 #include <optional>
 
 #include "augusta/command.h"
+#include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/prediction.h"
 #include "augusta/supervisor.h"
@@ -62,13 +63,14 @@ class Runner {
   Runner(Runner&&) = delete;
   Runner& operator=(Runner&&) = delete;
 
-  /// Why a thread stopped on an exception (a hook's included), or nullopt
-  /// while none has; the other thread is stopped too. Safe from any thread.
-  [[nodiscard]] std::optional<supervisor::WorkerFailure> Failure() const;
+  /// The first cause a thread stopped on, including an exception thrown by a
+  /// hook, or nullopt while none has; the other thread is stopped too. Safe
+  /// from any thread.
+  [[nodiscard]] std::optional<failure::Failure> Failure() const;
 
  private:
-  void PredictionThreadMain();
-  void NetworkThreadMain();
+  supervisor::WorkerResult PredictionThreadMain();
+  supervisor::WorkerResult NetworkThreadMain();
   // The server's tick rate once it has admitted the client, or nullopt if
   // the stop came first.
   std::optional<float> WaitForTickRate();
