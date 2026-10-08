@@ -391,7 +391,7 @@ rc::Gen<MessageWire> Message() {
 RC_GTEST_PROP(ProtocolPropertyTest, EveryMessageSurvivesEncodeThenDecode, ()) {
   const MessageWire message = *Message();
 
-  const auto decoded = Decode(Encode(message));
+  const auto decoded = Decode(Encode(message).value());
 
   RC_ASSERT(decoded.has_value());
   RC_ASSERT(*decoded == message);

@@ -55,11 +55,15 @@ class PredictionActivity {
   float correction_m_ = 0.0F;
 };
 
-// The local transport's failure, if session met one on any thread, for the
-// Runner thread that takes it to stop on (ADR-0033).
-supervisor::WorkerResult TransportResult(Session& session) {
+// The runtime failure session met on any thread, if any - its local
+// transport's, or a message it could not encode - for the Runner thread that
+// takes it to stop on (ADR-0033). Each is taken once, so one thread reports it.
+supervisor::WorkerResult SessionResult(Session& session) {
   if (std::optional<failure::Failure> failed = session.TakeTransportFailure()) {
     return std::unexpected(std::move(*failed));
+  }
+  if (std::optional<failure::Failure> broken = session.TakeInvariantFailure()) {
+    return std::unexpected(std::move(*broken));
   }
   return {};
 }
@@ -107,8 +111,8 @@ supervisor::WorkerResult Runner::PredictionThreadMain() {
     const tick::Clock::time_point tick_start = tick::Clock::now();
 
     const prediction::State state = session_.Tick(hooks_.next_command(), delta_time.count());
-    if (supervisor::WorkerResult transport = TransportResult(session_); !transport.has_value()) {
-      return transport;
+    if (supervisor::WorkerResult failed = SessionResult(session_); !failed.has_value()) {
+      return failed;
     }
     activity.Record(state, tick_start);
 
@@ -136,9 +140,9 @@ supervisor::WorkerResult Runner::NetworkThreadMain() {
       session_.PumpEvents();
       session_.ExchangeMessages();
     }
-    if (supervisor::WorkerResult transport = TransportResult(session_); !transport.has_value()) {
+    if (supervisor::WorkerResult failed = SessionResult(session_); !failed.has_value()) {
       session_.Disconnect();
-      return transport;
+      return failed;
     }
     if (hooks_.on_network_round) {
       hooks_.on_network_round();

@@ -254,6 +254,7 @@ TEST_F(PolicyTest, AScriptWhoseTopLevelNeverFinishesDoesNotLoad) {
 }
 
 // Neither sees the other's globals, whichever is loaded first (ADR-0039).
+// Requirements: US-22
 TEST_F(PolicyTest, TheParametersScriptAndTheRulesShareNoGlobals) {
   auto policy = Engine::Load(R"(
     policy_global = 1

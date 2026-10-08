@@ -1,0 +1,4 @@
+# The dev container's build context is the whole repository, for the one file
+# its Dockerfile uses: everything else stays out of the context.
+*
+!scripts/bootstrap-linux.sh

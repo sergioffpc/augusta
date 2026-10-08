@@ -141,13 +141,23 @@ decisions already made in ARCHITECTURE.md:
       --predicate-type https://spdx.dev/Document/v2.3
     ```
 
+- **Vulnerability scanning:** the server image is scanned by trivy as CI builds
+  it, and is published only if clean. The latest release's executables are
+  scanned every night by grype, from their SBOMs (`nightly-jobs.yml`'s
+  `sbom-scan`), so a CVE published after the release still fails a run. No
+  vulnerability database knows vcpkg's purls, so `scripts/sbom-cpes.py` first
+  adds each port's NVD CPE, and fails on a port that has neither a CPE nor a
+  written reason for having none. Both fail on a high or critical CVE; the image
+  only on one with a fix available, the executables on any, since the NVD gives
+  most of its ranges with no fixed version.
+
 ## Git Workflow
 
 - **Branching model:** Git Flow — `main` (production/release) + `develop`
   (integration), with `feature/*`, `release/*`, `hotfix/*` branches.
 - **Tags/releases:** created only when there's an actual release to make (e.g.,
-  reaching v1) — ROADMAP.md milestones (M0–M6) are internal checkpoints, not
-  tagged releases.
+  v1.0.0) — ROADMAP.md milestones (M0–M17) are internal checkpoints, not tagged
+  releases.
 - **Pull requests:** used even solo — `feature/*` → `develop`,
   `release/*`/`hotfix/*` → `main`, and the same `release/*`/`hotfix/*` branch
   back into `develop`, go through a PR so CI gates the merge; no formal review
@@ -178,10 +188,10 @@ no self-hosted GitHub Actions runner in this pipeline).
   Agones solves fleet-scale dynamic allocation, which this project doesn't need
   (one server instance per scenario per environment, each fixed in Git,
   ADR-0026); revisit only if matchmaking/dynamic multi-server allocation is ever
-  needed (Beyond v1). Each server pins its node port, so LAN clients keep one
-  address, from its environment's own range so `develop` and `staging` never
-  collide on the shared node: `develop` 30700-30799, `staging` 30800-30899. The
-  chart refuses a server without a node port in its range.
+  needed. Each server pins its node port, so LAN clients keep one address, from
+  its environment's own range so `develop` and `staging` never collide on the
+  shared node: `develop` 30700-30799, `staging` 30800-30899. The chart refuses a
+  server without a node port in its range.
 - **CD mechanism:** pull-based via Flux, running inside the k3s cluster and
   reconciling each branch's `HelmRelease` from Git — nothing outside the cluster
   needs inbound access to the LAN, and no external PR can trigger execution on
@@ -214,23 +224,39 @@ no self-hosted GitHub Actions runner in this pipeline).
   default listen port (UDP 27015) on the host, so a native Windows `augustac`
   reaches a container-hosted `augustad` at `127.0.0.1:27015`. Published rather
   than forwarded: VS Code's port forwarding is TCP-only.
-- **Server / shared core (Linux, dev container):** `.devcontainer/` gives this
-  side as a container, for VS Code or Codespaces, without mutating a host: CI's
-  runner Ubuntu release, whose distro packages fix the same LLVM major as CI's,
-  with the toolchain `.github/actions/setup-linux-build` installs (kept in step
-  with it by hand), clang (ADR-0008), CMake, Ninja, vcpkg, clang-tidy,
-  clang-format, gdb, GitHub CLI, kubectl, helm, Doxygen, the hooks' formatters
-  and linters (uv for yamllint, ruff, shfmt, shellcheck, actionlint, gersemi,
-  Prettier and pymarkdown, standalone yamlfmt, StyLua, luacheck and taplo, at
-  CI's pinned versions; no PowerShell, so no PSScriptAnalyzer), and CI's Linux
-  vcpkg binary cache configuration (a files provider in the checkout's
-  `.vcpkg-bincache`). The image builds for the host's architecture (amd64 or
-  arm64) rather than emulating CI's amd64. sccache's cache lives in a volume
-  shared by every container of the repository; the build trees in a volume per
-  container, so they never collide with a Windows build of the same checkout.
-  One environment, not a container beside a WSL bootstrap: two recipes for the
-  same toolchain drift apart. The client has no container equivalent (see
-  below).
+- **Server / shared core (Linux, dev container or host):** `.devcontainer/`
+  gives this side as a container, for VS Code or Codespaces, without mutating a
+  host, and `scripts/bootstrap-linux.sh` installs the same on an Ubuntu 26.04
+  host. The script is the one recipe for it: the image runs its `toolchain`
+  step, the container's post-create its `checkout` step (submodules, vcpkg,
+  hooks), and a host both. It installs CI's runner Ubuntu release's packages,
+  whose LLVM major is CI's, with the toolchain
+  `.github/actions/setup-linux-build` installs (kept in step with it by hand),
+  clang (ADR-0008), CMake, Ninja, vcpkg, clang-tidy, clang-format, gdb, GitHub
+  CLI, kubectl, helm, Doxygen, the hooks' formatters and linters (uv for
+  yamllint, ruff, shfmt, shellcheck, actionlint, gersemi, Prettier and
+  pymarkdown, standalone yamlfmt, StyLua, luacheck and taplo, at CI's pinned
+  versions; no PowerShell, so no PSScriptAnalyzer), and CI's Linux vcpkg binary
+  cache configuration (a files provider in the checkout's `.vcpkg-bincache`).
+  The image builds for the host's architecture (amd64 or arm64) rather than
+  emulating CI's amd64. sccache's cache lives in a volume shared by every
+  container of the repository; the build trees in a volume per container, so
+  they never collide with a Windows build of the same checkout. One recipe, not
+  a container beside a separate host bootstrap: two recipes for the same
+  toolchain drift apart. The client has no container equivalent (see below).
+- **macOS (through the dev container):** nothing builds natively on macOS (the
+  presets are Linux's and Windows'), and nothing is installed there but git, Git
+  LFS and Docker or Podman. `scripts/dev-container.sh [command]` runs a command
+  (a shell by default) in the dev container's image from a terminal: one
+  container per checkout, kept running, with the checkout mounted at its host
+  path so a git worktree's `.git` resolves inside too, a `build/` volume of its
+  own, and sccache's and vcpkg's caches in volumes every checkout shares.
+  `scripts/dev-container.sh make configure PRESET=linux-debug` gives the hooks
+  the compile commands clang-tidy needs. On macOS the `pre-commit` and
+  `pre-push` hooks run their formatters and linters through it; git itself
+  (identity, signing, credentials, LFS) stays on the host. A second bootstrap of
+  the hooks' tools for macOS would drift from the container's, as two recipes
+  for one toolchain do.
 - **Client (Windows, native):** built and run natively — never cross-compiled
   from Linux (not viable given Falcor/D3D12/NVIDIA SDK's MSVC-specific toolchain
   assumptions). A `scripts/bootstrap-windows.ps1` script (winget-driven)
@@ -351,6 +377,8 @@ no self-hosted GitHub Actions runner in this pipeline).
   kube-prometheus-stack in the k3s cluster scrapes and Grafana draws, for both
   `develop` and `staging` (ADR-0049, which holds the catalogue). Everything is
   measured on the server: clients report nothing.
+- **Log aggregation:** Loki keeps every pod's log for 15 days, shipped by Alloy,
+  and Grafana queries it beside the metrics (ADR-0053).
 - **Liveness:** `/livez` fails when the tick loop has not finished a tick for 5
   seconds, and is the Deployment's liveness probe, so a hung server restarts on
   its own (ADR-0049).
@@ -364,9 +392,9 @@ no self-hosted GitHub Actions runner in this pipeline).
 - **No formal client frame-rate target.** Deliberately not turned into an NFR —
   frame rate is judged subjectively while playing/testing, not automated or
   gated in CI.
-- **Memory strategy:** rely on Flecs' and PhysX's built-in allocators for v1; no
-  custom arena/pool allocators until profiling shows a concrete need.
+- **Memory strategy:** rely on Flecs' and PhysX's built-in allocators; no custom
+  arena/pool allocators until profiling shows a concrete need.
 - Google Benchmark is used for targeted micro-benchmarks of hot-path code (the
-  server tick and its recording, replication, a PresentationWorld frame,
+  server tick and its capture, replication, a PresentationWorld frame,
   ballistics, serialization, pack loading) — not a blanket requirement for every
   function. The nightly tracks them over time (ADR-0013).

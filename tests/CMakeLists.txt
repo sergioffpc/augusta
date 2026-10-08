@@ -538,7 +538,8 @@ add_test(
 )
 
 # Which platforms augustad configures for, and as what (NFR-04): Linux x86-64 in
-# production, Windows x64 for development, nothing else (cmake/AugustaPlatform.cmake).
+# production, Windows x64 and Linux arm64 for development, nothing else
+# (cmake/AugustaPlatform.cmake).
 # A script, so it builds nothing.
 add_test(
   NAME augusta_server_platform

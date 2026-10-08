@@ -46,14 +46,18 @@ using TickMessageSink = std::function<void(networking::PeerId, const networking:
 /// order the Host sends them: each recipient's Authoritative State update, in
 /// the order of to.recipients; then every Shot, Hit confirmation and Death.
 /// The decision SendTickMessages puts on the wire, apart so it is tested
-/// without a network.
-void ForEachTickMessage(const simulation::State& state, tick::Tick tick, const TickRecipients& to,
-                        const TickMessageSink& send);
+/// without a network. Every message is encoded before any is handed on, so if
+/// the protocol cannot carry one, none of the tick's is: the broken invariant
+/// is returned instead (EncodeToSend in wire.h), for the runtime to stop on.
+[[nodiscard]] std::expected<void, failure::Failure> ForEachTickMessage(const simulation::State& state, tick::Tick tick,
+                                                                       const TickRecipients& to,
+                                                                       const TickMessageSink& send);
 
 /// Sends to the recipients what tick's state holds for them, counting into
-/// metrics what the transport accepted. Stops at, and returns, the local
-/// transport's first failure; a recipient that drops a message is its own
-/// outcome.
+/// metrics what the transport accepted. Stops at, and returns, the broken
+/// invariant (failure::Code::kInvariantViolated) before sending anything, as
+/// ForEachTickMessage does, or the local transport's first failure; a
+/// recipient that drops a message is its own outcome.
 [[nodiscard]] std::expected<void, failure::Failure> SendTickMessages(networking::Server& network, HostMetrics& metrics,
                                                                      const simulation::State& state, tick::Tick tick,
                                                                      const TickRecipients& to);

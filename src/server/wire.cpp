@@ -3,14 +3,18 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <optional>
 #include <span>
+#include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
+#include "augusta/failure.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -54,10 +58,32 @@ protocol::BodyPartWire ToWire(ballistics::BodyPart part) {
     case ballistics::BodyPart::kLimb:
       return protocol::BodyPartWire::kLimb;
   }
-  std::unreachable();
+  // A part none of the above names is a corrupted one: it travels on as a
+  // value the protocol lacks, which Encode refuses (ADR-0033).
+  return protocol::BodyPartWire{};
+}
+
+// A payload the protocol could not carry, of the message or record type
+// named under key: a broken invariant of the server's, never a peer's input.
+failure::Failure BrokenInvariant(protocol::EncodeError error, std::string_view key, std::uint8_t type) {
+  return failure::Failure{.code = failure::Code::kInvariantViolated,
+                          .context = {{.key = std::string(key), .value = std::to_string(type)}},
+                          .detail = std::string(protocol::DescribeEncodeError(error))};
 }
 
 }  // namespace
+
+std::expected<protocol::BytesWire, failure::Failure> EncodeToSend(const protocol::MessageWire& message) {
+  return protocol::Encode(message).transform_error([&message](protocol::EncodeError error) {
+    return BrokenInvariant(error, "message_type", static_cast<std::uint8_t>(protocol::TypeOf(message)));
+  });
+}
+
+std::expected<protocol::BytesWire, failure::Failure> EncodeToRecord(const protocol::RecordWire& record) {
+  return protocol::EncodeRecord(record).transform_error([&record](protocol::EncodeError error) {
+    return BrokenInvariant(error, "record_type", static_cast<std::uint8_t>(protocol::TypeOf(record)));
+  });
+}
 
 protocol::EntityIdWire ToWire(EntityId entity) {
   return static_cast<protocol::EntityIdWire>(static_cast<std::uint32_t>(entity));
@@ -110,7 +136,8 @@ protocol::JoinRefusalWire ToWire(JoinRefusal reason) {
     case JoinRefusal::kPackMismatch:
       return protocol::JoinRefusalWire::kPackMismatch;
   }
-  std::unreachable();
+  // As ToWire(BodyPart): a value the protocol lacks, which Encode refuses.
+  return protocol::JoinRefusalWire{};
 }
 
 protocol::JoinAcceptedWire ToWire(const Admission& admission, std::uint8_t tick_rate_hz,

@@ -292,7 +292,7 @@ enum class LoadError {
   /// The file's format version is not one this build understands.
   kUnsupportedVersion,
   /// The file is shorter than its own header/index/trailer claims, or
-  /// exceeds this module's pragmatic v1 size limits (kMaxEntries,
+  /// exceeds this module's pragmatic size limits (kMaxEntries,
   /// kMaxPathLength, kMaxPackSize).
   kTruncated,
   /// An index entry's type byte is not a defined AssetType, or two or more

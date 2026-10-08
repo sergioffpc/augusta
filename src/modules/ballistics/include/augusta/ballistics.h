@@ -14,7 +14,7 @@
 /// drop, travel time - US-10), hand-rolled instead of PhysX's generic
 /// projectile handling (ADR-0002: full control over determinism and a
 /// core learning goal, not a gap - see that ADR before reaching for an
-/// external solver). A semi-implicit Euler integrator is enough for v1;
+/// external solver). A semi-implicit Euler integrator is enough;
 /// nothing in REQUIREMENTS.md asks for aerodynamic drag/wind modeling.
 ///
 /// The module is shared (ADR-0024, ADR-0044): the server advances every

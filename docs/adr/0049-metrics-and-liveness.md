@@ -146,9 +146,9 @@ histograms and one line per Session). Each selects its environment from the
 namespace label itself, and then a server from the scenarios that environment
 runs, so only one release ships them, `develop`'s: a second copy would load the
 same dashboards again. Alert rules are `PrometheusRule`s in the `augustad` chart
-(server down, tick overruns sustained, packet loss high), one set per server,
-each alert labelled with its scenario. They route to no receiver yet, so they
-show only in Grafana and Alertmanager.
+(server down, server restarted, tick overruns sustained, packet loss high), one
+set per server, each alert labelled with its scenario. They route to no receiver
+yet, so they show only in Grafana and Alertmanager.
 
 ## Considered Options
 

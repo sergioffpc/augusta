@@ -169,6 +169,7 @@ class RecordedHostMatch {
   std::vector<std::unique_ptr<Session>> sessions_;
 };
 
+// Requirements: US-21, NFR-09
 TEST(HostReplayTest, WhatTheHostRecordedReplaysToTheSameOutcome) {
   const std::filesystem::path path = RecordingPath();
   {

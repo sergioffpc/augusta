@@ -76,6 +76,7 @@ TEST(ParseServerConfigTest, DefaultsTheListenAddress) {
   EXPECT_EQ(config->listen_address, augusta::config::kDefaultListenAddress);
 }
 
+// Requirements: US-21
 TEST(ParseServerConfigTest, RecordsNoMatchByDefault) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 
@@ -83,6 +84,7 @@ TEST(ParseServerConfigTest, RecordsNoMatchByDefault) {
   EXPECT_TRUE(config->recording_path.empty());
 }
 
+// Requirements: US-21
 TEST(ParseServerConfigTest, ReadsARecordingPathRelativeToTheBaseDir) {
   const auto config = ParseServerConfig(
       std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  recording: logs/match.rec\n",
@@ -224,6 +226,7 @@ TEST(ParseServerConfigTest, RejectsAStaminaKeyLeftInTheFileAsUnknown) {
   }
 }
 
+// Requirements: US-22
 TEST(ParseServerConfigTest, AParametersKeyLeftInTheFileIsUnknown) {
   // The Parameters script is the scenario's, cooked into its server pack (ADR-0039),
   // so the config no longer names one.

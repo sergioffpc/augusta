@@ -99,13 +99,10 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   without either job needing the other's output. A deliberate change to the
   ballistics model regenerates the file with one build target, and the diff is
   reviewed like code.
-- **A golden match, the same way.** A match recording (ADR-0048) of a scripted
-  duel on the example scenario's golden server pack lives in the repository, and
-  the test replays it on every runner, within the tolerance ADR-0048 gives a
-  replay on another build: positions a grid step off, every other value equal,
-  each tick starting from the recorded bodies. A deliberate change to the
-  simulation rewrites it with one build target, and the diff is reviewed like
-  code.
+- **No golden match.** ADR-0048's golden match, a recorded duel replayed on
+  every runner, is dropped with the Match recording (ADR-0050): a Replay
+  (ADR-0051) checks only Deaths and the Match end, and only on the build that
+  captured them.
 - **Pack contract through golden packs.** The pack format has two
   implementations, the Python cooker writing it and `augusta_assets` reading it,
   so both are held to the same committed files: the example scenario's client
@@ -159,7 +156,7 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   (ADR-0046). It reports; the jobs' own results are what fail the nightly.
 - **Micro-benchmarks** time the hot paths, through their public interfaces: a
   server tick through every phase of SimulationWorld in a full Match, alone and
-  with Host writing its match recording; that tick's Authoritative State
+  with Host writing its Match capture; that tick's Authoritative State
   replicated to every player in the Match as Host replicates it, short of the
   socket; a PresentationWorld render frame of the Match, without a GPU, both
   handed a newer Authoritative State and handed the same one as the frame

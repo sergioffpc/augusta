@@ -29,6 +29,23 @@ spec:
           annotations:
             summary: augustad for {{ $where }} is down
             description: Prometheus has scraped no metrics endpoint of augustad for {{ $where }} for 2 minutes.
+        # The container restarted in its pod: a crash (which leaves a core on
+        # the node, ADR-0047), a hung tick loop the liveness probe killed, or
+        # the memory limit. A rollout replaces the pod and starts a new
+        # counter, so it does not fire this. kube-state-metrics has no
+        # Service label, so the pods are matched by name,
+        # augustad-<scenario>-<ReplicaSet hash>-<suffix>: neither hash holds a
+        # '-', so one scenario never matches another's pods. Stays firing for
+        # the 15 minutes the restart is in the window.
+        - alert: AugustadRestarted
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace={{ $.Release.Namespace | quote }}, container="augustad", pod=~{{ printf "%s-[a-z0-9]+-[a-z0-9]+" (include "augustad.serverName" $server) | quote }}}[15m]) > 0
+          labels:
+            severity: error
+            scenario: {{ $scenario }}
+          annotations:
+            summary: augustad for {{ $where }} restarted
+            description: augustad in pod {{ printf "{{ $labels.pod }}" }} for {{ $where }} has restarted in the last 15 minutes. kubectl describe pod gives the reason; a crash leaves its stack in the previous container's log and its core in coredumpctl on the node.
         # More than 1% of ticks overran (took longer than a tick, NFR-01) over
         # 10 minutes running. The loop catches up after an overrun (ADR-0005),
         # so an odd slow tick, from the scheduler or a busy node, is not worth

@@ -263,6 +263,7 @@ augusta::input::Key BoundTo(const augusta::config::ClientConfig& config, augusta
   return config.input.keymap.at(static_cast<std::size_t>(control));
 }
 
+// Requirements: US-20
 TEST(ParseClientConfigTest, WithoutKeysOrSensitivityTheInputDefaultsApply) {
   const auto config = ParseClient("");
 
@@ -288,6 +289,7 @@ TEST(ParseClientConfigTest, RejectsASensitivityThatIsNotAFiniteNumberAboveZero) 
   }
 }
 
+// Requirements: US-20
 TEST(ParseClientConfigTest, AKeysSectionRebindsOnlyTheControlsItNames) {
   const auto config = ParseClient("input:\n  keys:\n    move_forward: Up\n    prone: MouseMiddle\n");
 
@@ -298,6 +300,7 @@ TEST(ParseClientConfigTest, AKeysSectionRebindsOnlyTheControlsItNames) {
   EXPECT_EQ(BoundTo(*config, augusta::input::Control::kSprint), augusta::input::Key::kLeftShift);
 }
 
+// Requirements: US-20
 TEST(ParseClientConfigTest, AControlMayMoveToAKeyItsOwnDefaultFreesUp) {
   // Swapping W and S is two rebinds whose keys only clash with each other's defaults.
   const auto config = ParseClient("input:\n  keys:\n    move_forward: S\n    move_back: W\n");
@@ -307,6 +310,7 @@ TEST(ParseClientConfigTest, AControlMayMoveToAKeyItsOwnDefaultFreesUp) {
   EXPECT_EQ(BoundTo(*config, augusta::input::Control::kMoveBack), augusta::input::Key::kW);
 }
 
+// Requirements: US-20
 TEST(ParseClientConfigTest, RejectsAnUnknownControl) {
   const auto config = ParseClient("input:\n  keys:\n    jump: Space\n");
 
@@ -317,6 +321,7 @@ TEST(ParseClientConfigTest, RejectsAnUnknownControl) {
   EXPECT_TRUE(Contains(config.error().reason, "move_forward, move_back")) << config.error().reason;
 }
 
+// Requirements: US-20
 TEST(ParseClientConfigTest, RejectsAnUnknownKeyName) {
   const auto config = ParseClient("input:\n  keys:\n    sprint: Shift\n");
 
@@ -326,6 +331,7 @@ TEST(ParseClientConfigTest, RejectsAnUnknownKeyName) {
   EXPECT_TRUE(Contains(config.error().reason, "must name a key")) << config.error().reason;
 }
 
+// Requirements: US-20
 TEST(ParseClientConfigTest, RejectsAKeyBoundToTwoControls) {
   // Sprint moves onto W, which move_forward still has by default.
   const auto config = ParseClient("input:\n  keys:\n    sprint: W\n");
@@ -336,6 +342,7 @@ TEST(ParseClientConfigTest, RejectsAKeyBoundToTwoControls) {
   EXPECT_TRUE(Contains(config.error().reason, "another control")) << config.error().reason;
 }
 
+// Requirements: US-20
 TEST(ParseClientConfigTest, RejectsBindingTheKeyThatReleasesTheCursor) {
   const auto config = ParseClient("input:\n  keys:\n    crouch: Escape\n");
 
@@ -345,6 +352,7 @@ TEST(ParseClientConfigTest, RejectsBindingTheKeyThatReleasesTheCursor) {
   EXPECT_TRUE(Contains(config.error().reason, "Escape")) << config.error().reason;
 }
 
+// Requirements: US-20
 TEST(ParseClientConfigTest, RejectsAControlNamedTwice) {
   const auto config = ParseClient("input:\n  keys:\n    sprint: Space\n    sprint: Tab\n");
 
@@ -353,6 +361,7 @@ TEST(ParseClientConfigTest, RejectsAControlNamedTwice) {
   EXPECT_EQ(config.error().subject, "input.keys.sprint");
 }
 
+// Requirements: US-20
 TEST(ParseClientConfigTest, RejectsAKeysValueThatIsNotAMapping) {
   for (const auto value : {"input:\n  keys: W\n", "input:\n  keys: [W, S]\n"}) {
     const auto config = ParseClient(value);
@@ -363,6 +372,7 @@ TEST(ParseClientConfigTest, RejectsAKeysValueThatIsNotAMapping) {
   }
 }
 
+// Requirements: US-20
 TEST(ParseClientConfigTest, FireMayMoveToAnotherMouseButton) {
   const auto config = ParseClient("input:\n  keys:\n    fire: MouseMiddle\n");
 
@@ -371,6 +381,7 @@ TEST(ParseClientConfigTest, FireMayMoveToAnotherMouseButton) {
   EXPECT_EQ(BoundTo(*config, augusta::input::Control::kAds), augusta::input::Key::kMouseRight);
 }
 
+// Requirements: US-20
 TEST(ParseClientConfigTest, FireOnTheButtonAdsStillHasIsBoundTwice) {
   const auto config = ParseClient("input:\n  keys:\n    fire: MouseRight\n");
 
@@ -401,6 +412,7 @@ TEST(ParseClientConfigTest, RejectsADottedNameInPlaceOfASection) {
   }
 }
 
+// Requirements: US-20
 TEST(ParseClientConfigTest, RejectsABindingThatIsNotAString) {
   const auto config = ParseClient("input:\n  keys:\n    sprint: [Space, Tab]\n");
 
@@ -443,6 +455,7 @@ TEST(ParseClientConfigTest, AKeyMovedOutOfItsSectionIsUnknown) {
   EXPECT_EQ(config.error().subject, "pack");
 }
 
+// Requirements: US-20
 TEST(ExampleConfigTest, TheExampleClientConfigLoadsWithTheDefaultControls) {
   const auto config = LoadClientConfig(AUGUSTA_EXAMPLE_CLIENT_CONFIG);
 
@@ -451,6 +464,7 @@ TEST(ExampleConfigTest, TheExampleClientConfigLoadsWithTheDefaultControls) {
   EXPECT_FLOAT_EQ(config->input.mouse_sensitivity, augusta::input::kDefaultMouseSensitivity);
 }
 
+// Requirements: US-16
 TEST(ParseClientConfigTest, ReadsTheChosenCharacter) {
   const auto config = ParseClientConfig(
       "base_dir: content\nplayer:\n  character: sniper\ncontent:\n  pack: a.pack\n  public_key: k.pub\n", kFileDir);
@@ -459,6 +473,7 @@ TEST(ParseClientConfigTest, ReadsTheChosenCharacter) {
   EXPECT_EQ(config->character, "sniper");
 }
 
+// Requirements: US-16
 TEST(ParseClientConfigTest, RejectsAMissingCharacter) {
   // No default: a player never silently plays a character they did not pick (ADR-0042).
   const auto config = ParseClientConfig("base_dir: content\ncontent:\n  pack: a.pack\n  public_key: k.pub\n", kFileDir);
@@ -468,6 +483,7 @@ TEST(ParseClientConfigTest, RejectsAMissingCharacter) {
   EXPECT_EQ(config.error().subject, "player.character");
 }
 
+// Requirements: US-16
 TEST(ParseClientConfigTest, RejectsAnEmptyCharacter) {
   const auto config = ParseClientConfig(
       "base_dir: content\nplayer:\n  character: ''\ncontent:\n  pack: a.pack\n  public_key: k.pub\n", kFileDir);

@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -13,6 +15,7 @@
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
+#include "augusta/failure.h"
 #include "augusta/grid.h"
 #include "augusta/harness.h"
 #include "augusta/harness_wire.h"
@@ -41,7 +44,7 @@ using augusta::server::SessionId;
 // message as the other peer decodes it.
 template <typename MessageWire>
 MessageWire ThroughTheWire(const MessageWire& message) {
-  return std::get<MessageWire>(augusta::protocol::Decode(augusta::protocol::Encode(message)).value());
+  return std::get<MessageWire>(augusta::protocol::Decode(augusta::protocol::Encode(message).value()).value());
 }
 
 // What the server sends recipient of updates, as the client takes it in.
@@ -259,6 +262,7 @@ TEST(WireTest, TheRecipientsRifleReachesTheClientExactly) {
   EXPECT_EQ(received.rifle, sent.rifle);
 }
 
+// Requirements: US-22
 TEST(WireTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged) {
   augusta::parameters::Parameters parameters;
   parameters.stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F};
@@ -459,6 +463,59 @@ TEST(WireTest, ADeathTheServerTellsReachesTheClientUnchanged) {
     EXPECT_EQ(received.pitch, sent.pitch);
     EXPECT_EQ(received.part, part);
   }
+}
+
+// The value of failure's context under key, or empty if it has none.
+std::string ContextOf(const augusta::failure::Failure& failure, std::string_view key) {
+  for (const auto& field : failure.context) {
+    if (field.key == key) {
+      return field.value;
+    }
+  }
+  return {};
+}
+
+// Either peer's edge turns a message the protocol cannot carry into the broken
+// invariant that stops its runtime (ADR-0033), naming the message's type.
+TEST(WireTest, AMessageEitherPeerCannotEncodeIsAnInvariantFailureNamingItsType) {
+  const augusta::protocol::LobbyWire too_long{
+      .version = 1, .roster = {{.character = std::string(augusta::protocol::kMaxCharacterNameLength + 1, 'c')}}};
+  const augusta::protocol::ReadyWire fine{.version = 1};
+
+  for (const auto& encoded : {augusta::server::EncodeToSend(too_long), augusta::harness::EncodeToSend(too_long)}) {
+    ASSERT_FALSE(encoded.has_value());
+    EXPECT_EQ(encoded.error().code, augusta::failure::Code::kInvariantViolated);
+    EXPECT_EQ(ContextOf(encoded.error(), "message_type"), "6");
+    EXPECT_FALSE(encoded.error().detail.empty());
+  }
+  EXPECT_EQ(augusta::server::EncodeToSend(fine).value(), augusta::protocol::Encode(fine).value());
+  EXPECT_EQ(augusta::harness::EncodeToSend(fine).value(), augusta::protocol::Encode(fine).value());
+}
+
+TEST(WireTest, ARecordTheServerCannotEncodeIsAnInvariantFailureNamingItsType) {
+  const augusta::protocol::RecordingHeaderWire too_long{
+      .server_pack = {},
+      .engine_version = std::string(augusta::protocol::kMaxEngineVersionLength + 1, 'v'),
+      .tick_rate_hz = 60};
+
+  const auto encoded = augusta::server::EncodeToRecord(too_long);
+
+  ASSERT_FALSE(encoded.has_value());
+  EXPECT_EQ(encoded.error().code, augusta::failure::Code::kInvariantViolated);
+  EXPECT_EQ(ContextOf(encoded.error(), "record_type"), "1");
+}
+
+// A refusal no case of ToWire names is a corrupted one: it travels on as a
+// value the protocol lacks, which Encode refuses, rather than as undefined
+// behaviour.
+TEST(WireTest, ACorruptedRefusalIsNotEncoded) {
+  const auto corrupted = static_cast<augusta::server::JoinRefusal>(99);
+
+  const auto encoded =
+      augusta::server::EncodeToSend(augusta::protocol::JoinRefusedWire{.reason = augusta::server::ToWire(corrupted)});
+
+  ASSERT_FALSE(encoded.has_value());
+  EXPECT_EQ(encoded.error().code, augusta::failure::Code::kInvariantViolated);
 }
 
 }  // namespace

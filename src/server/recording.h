@@ -182,10 +182,14 @@ struct RecorderOptions {
 /// optional recording then degrades, logged once at ERR as
 /// event=recording_degraded; a strict one stops, logged at INFO as
 /// event=recording_stopped, and the runtime that asks Failure stops on it,
-/// whose boundary writes the one ERR line (ADR-0033).
+/// whose boundary writes the one ERR line (ADR-0033). A record the protocol
+/// cannot carry ends the recording too, but is the server's broken invariant
+/// rather than the recording's loss: Write returns it, unlogged, for the
+/// runtime to stop on.
 class Recorder {
  public:
-  /// Queues header for out first.
+  /// Queues header for out first. Throws std::runtime_error if the protocol
+  /// cannot carry header.
   Recorder(std::ostream& out, const RecordingHeader& header, RecorderOptions options = {});
   ~Recorder();
   Recorder(Recorder&&) noexcept;
@@ -194,8 +198,10 @@ class Recorder {
   Recorder& operator=(const Recorder&) = delete;
 
   /// Queues tick's record, without waiting for the stream, unless the
-  /// recording has lost a tick already.
-  void Write(const TickRecord& tick);
+  /// recording has lost a tick already or broken an invariant. Fails, and
+  /// queues nothing more, only when the protocol cannot carry the record:
+  /// failure::Code::kInvariantViolated, with the tick in its context.
+  [[nodiscard]] std::expected<void, failure::Failure> Write(const TickRecord& tick);
 
   /// Waits until every record queued so far is written, or dropped because
   /// the recording lost one, so State and Failure then account for every tick
@@ -216,6 +222,7 @@ class Recorder {
  private:
   class Writer;
   std::unique_ptr<Writer> writer_;
+  bool broken_ = false;
 };
 
 /// Reads a recording a Recorder wrote. A last record cut short is dropped and
@@ -248,9 +255,14 @@ class RecordedSimulation {
   /// lost no tick or when nothing is recorded.
   [[nodiscard]] std::optional<failure::Failure> RecordingFailure() const;
 
+  /// The broken invariant the first record the protocol could not carry was
+  /// (Recorder::Write), or nullopt: once set, the runtime must stop.
+  [[nodiscard]] const std::optional<failure::Failure>& Failure() const;
+
  private:
   simulation::World world_;
   std::optional<Recorder> recorder_;
+  std::optional<failure::Failure> failure_;
   // What the coming tick was handed so far, and where its Match start spawned its players.
   TickInput pending_;
   std::vector<math::Vec3> pending_spawns_;

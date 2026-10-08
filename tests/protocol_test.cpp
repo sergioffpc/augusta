@@ -10,6 +10,7 @@
 #include <string>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -39,6 +40,7 @@ using augusta::protocol::DeathWire;
 using augusta::protocol::Decode;
 using augusta::protocol::DecodeError;
 using augusta::protocol::Encode;
+using augusta::protocol::EncodeError;
 using augusta::protocol::EntityIdWire;
 using augusta::protocol::EntityStateWire;
 using augusta::protocol::HitConfirmationWire;
@@ -54,11 +56,14 @@ using augusta::protocol::MatchStartWire;
 using augusta::protocol::MessageTypeWire;
 using augusta::protocol::MessageWire;
 using augusta::protocol::PackHashWire;
+using augusta::protocol::ParametersWire;
 using augusta::protocol::ReadyWire;
+using augusta::protocol::RifleWire;
 using augusta::protocol::RosterEntryWire;
 using augusta::protocol::SequencedCommandWire;
 using augusta::protocol::SessionIdWire;
 using augusta::protocol::ShotWire;
+using augusta::protocol::StanceWire;
 using augusta::protocol::WeaponStateWire;
 
 BytesWire BytesOf(std::initializer_list<std::uint8_t> values) {
@@ -106,7 +111,7 @@ BytesWire WithPackHash(BytesWire payload, const PackHashWire& hash) {
 }
 
 MessageWire RoundTrip(const MessageWire& message) {
-  const auto decoded = Decode(Encode(message));
+  const auto decoded = Decode(Encode(message).value());
   EXPECT_TRUE(decoded.has_value());
   return decoded.value_or(MessageWire{});
 }
@@ -147,6 +152,7 @@ TEST(ProtocolTest, JoinRequestWithTheLongestCharacterRoundTrips) {
   EXPECT_EQ(std::get<JoinRequestWire>(decoded).character, longest);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ACharacterLongerThanAllowedIsTooLong) {
   BytesWire payload = WithPackHash(BytesOf({kJoinRequestType, 0}), PackHashWire{});
   payload.push_back(static_cast<std::byte>(augusta::protocol::kMaxCharacterNameLength + 1));
@@ -216,11 +222,12 @@ TEST(ProtocolTest, JoinAcceptedCarriesNoRosterAndNoSpawnPoint) {
   // type, session (4), tick rate (1), parameters (63: the player count, stamina 12,
   // a rifle of 26 with no recoil kick, ammo 20, starting health 4), character (1:
   // an empty one's length).
-  EXPECT_EQ(Encode(JoinAcceptedWire{}).size(), 1 + 4 + 1 + 63 + 1);
+  EXPECT_EQ(Encode(JoinAcceptedWire{}).value().size(), 1 + 4 + 1 + 63 + 1);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ACharacterInJoinAcceptedLongerThanTheLimitIsTooLong) {
-  BytesWire payload = Encode(JoinAcceptedWire{});
+  BytesWire payload = Encode(JoinAcceptedWire{}).value();
   payload.back() = static_cast<std::byte>(augusta::protocol::kMaxCharacterNameLength + 1);
   payload.resize(payload.size() + augusta::protocol::kMaxCharacterNameLength + 1, static_cast<std::byte>('c'));
 
@@ -238,8 +245,9 @@ TEST(ProtocolTest, JoinRefusedRoundTripsEveryReason) {
 
 // A full Lobby is refused with the value a full match was, under its new name.
 TEST(ProtocolTest, ALobbyFullRefusalKeepsTheWireValueOfAFullMatch) {
-  EXPECT_EQ(Encode(JoinRefusedWire{.reason = JoinRefusalWire::kLobbyFull}), BytesOf({kJoinRefusedType, 2}));
-  EXPECT_EQ(Encode(JoinRefusedWire{.reason = JoinRefusalWire::kMatchInProgress}), BytesOf({kJoinRefusedType, 4}));
+  EXPECT_EQ(Encode(JoinRefusedWire{.reason = JoinRefusalWire::kLobbyFull}).value(), BytesOf({kJoinRefusedType, 2}));
+  EXPECT_EQ(Encode(JoinRefusedWire{.reason = JoinRefusalWire::kMatchInProgress}).value(),
+            BytesOf({kJoinRefusedType, 4}));
 }
 
 TEST(ProtocolTest, FieldsAreFixedWidthLittleEndian) {
@@ -254,16 +262,19 @@ TEST(ProtocolTest, FieldsAreFixedWidthLittleEndian) {
   accepted.push_back(static_cast<std::byte>('d'));
   EXPECT_EQ(Encode(JoinAcceptedWire{.session = static_cast<SessionIdWire>(0x04030201U),
                                     .parameters = {.stamina = {}, .player_count = 3},
-                                    .character = "d"}),
+                                    .character = "d"})
+                .value(),
             accepted);
   BytesWire request = WithPackHash(BytesOf({kJoinRequestType, 2, 'a', 'b'}), CountingPackHash());
   request.push_back(std::byte{1});
   request.push_back(static_cast<std::byte>('c'));
-  EXPECT_EQ(Encode(JoinRequestWire{.engine_version = "ab", .client_pack = CountingPackHash(), .character = "c"}),
-            request);
-  EXPECT_EQ(Encode(LobbyWire{
-                .version = 0x0A0B0C0DU,
-                .roster = {RosterEntryWire{.session = static_cast<SessionIdWire>(0x01020304U), .character = "e"}}}),
+  EXPECT_EQ(
+      Encode(JoinRequestWire{.engine_version = "ab", .client_pack = CountingPackHash(), .character = "c"}).value(),
+      request);
+  EXPECT_EQ(Encode(LobbyWire{.version = 0x0A0B0C0DU,
+                             .roster = {RosterEntryWire{.session = static_cast<SessionIdWire>(0x01020304U),
+                                                        .character = "e"}}})
+                .value(),
             BytesOf({kLobbyType, 0x0D, 0x0C, 0x0B, 0x0A, 1, 0x04, 0x03, 0x02, 0x01, 1, 'e'}));
 }
 
@@ -294,12 +305,14 @@ TEST(ProtocolTest, AnEmptyLobbyAndAFullOneRoundTrip) {
   EXPECT_EQ(std::get<LobbyWire>(RoundTrip(full)).roster.size(), kMaxPlayers);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, MorePlayersInALobbyThanItHoldsIsTooLong) {
   // type, version (4), then the count.
   EXPECT_EQ(Decode(BytesOf({kLobbyType, 1, 0, 0, 0, static_cast<std::uint8_t>(kMaxPlayers + 1)})).error(),
             DecodeError::kFieldTooLong);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ACharacterInALobbyLongerThanTheLimitIsTooLong) {
   // type, version, count, session, then the character's length.
   EXPECT_EQ(Decode(BytesOf({kLobbyType, 1, 0, 0, 0, 1, 7, 0, 0, 0,
@@ -339,6 +352,7 @@ TEST(ProtocolTest, AMatchStartOfAFullMatchRoundTrips) {
   EXPECT_EQ(std::get<MatchStartWire>(RoundTrip(sent)).players.size(), kMaxPlayers);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, MorePlayersInAMatchStartThanAMatchHoldsIsTooLong) {
   EXPECT_EQ(Decode(BytesOf({kMatchStartType, static_cast<std::uint8_t>(kMaxPlayers + 1)})).error(),
             DecodeError::kFieldTooLong);
@@ -349,7 +363,7 @@ TEST(ProtocolTest, ReadyRoundTripsTheVersionItWasLoadedFor) {
 
   ASSERT_TRUE(std::holds_alternative<ReadyWire>(decoded));
   EXPECT_EQ(std::get<ReadyWire>(decoded).version, 0xA1B2C3D4U);
-  EXPECT_EQ(Encode(ReadyWire{.version = 0x01020304U}), BytesOf({kReadyType, 0x04, 0x03, 0x02, 0x01}));
+  EXPECT_EQ(Encode(ReadyWire{.version = 0x01020304U}).value(), BytesOf({kReadyType, 0x04, 0x03, 0x02, 0x01}));
 }
 
 TEST(ProtocolTest, MatchEndRoundTripsItsWinnersSession) {
@@ -357,14 +371,14 @@ TEST(ProtocolTest, MatchEndRoundTripsItsWinnersSession) {
 
   ASSERT_TRUE(std::holds_alternative<MatchEndWire>(decoded));
   EXPECT_EQ(std::get<MatchEndWire>(decoded).winner, static_cast<SessionIdWire>(0xA1B2C3D4U));
-  EXPECT_EQ(Encode(MatchEndWire{.winner = static_cast<SessionIdWire>(0x01020304U)}),
+  EXPECT_EQ(Encode(MatchEndWire{.winner = static_cast<SessionIdWire>(0x01020304U)}).value(),
             BytesOf({kMatchEndType, 0x04, 0x03, 0x02, 0x01}));
 }
 
 // Session IDs start at 1, so a winner of 0 is a draw (ADR-0038).
 TEST(ProtocolTest, AMatchEndThatIsADrawNamesSessionZero) {
-  EXPECT_EQ(Encode(MatchEndWire{}), BytesOf({kMatchEndType, 0, 0, 0, 0}));
-  EXPECT_EQ(Encode(MatchEndWire{.winner = augusta::protocol::kDraw}), BytesOf({kMatchEndType, 0, 0, 0, 0}));
+  EXPECT_EQ(Encode(MatchEndWire{}).value(), BytesOf({kMatchEndType, 0, 0, 0, 0}));
+  EXPECT_EQ(Encode(MatchEndWire{.winner = augusta::protocol::kDraw}).value(), BytesOf({kMatchEndType, 0, 0, 0, 0}));
 }
 
 TEST(ProtocolTest, AShotRoundTripsWithItsShooterTickOriginAndDirection) {
@@ -390,13 +404,14 @@ TEST(ProtocolTest, AShotTravelsInTwentyEightBytes) {
                       .pitch = -1.0F / 2097152.0F};
 
   // The type, the shooter, the tick, the origin's x, y and z, the yaw and the pitch.
-  EXPECT_EQ(Encode(shot),
+  EXPECT_EQ(Encode(shot).value(),
             BytesOf({kShotType, 0x04, 0x03, 0x02, 0x01, 0x11, 0x10, 0x0F, 0x0E, 0x0D, 0x0C, 0x0B, 0x0A, 0x00,
                      0x04,      0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x20, 0xFF, 0xFF, 0xFF}));
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, BytesAfterAShotAreTrailing) {
-  BytesWire shot = Encode(ShotWire{});
+  BytesWire shot = Encode(ShotWire{}).value();
   shot.push_back(std::byte{0});
 
   EXPECT_EQ(Decode(shot).error(), DecodeError::kTrailingBytes);
@@ -418,22 +433,24 @@ TEST(ProtocolTest, AHitConfirmationTravelsInTenBytes) {
       .target = static_cast<EntityIdWire>(0x01020304U), .damage = 1.0F, .part = BodyPartWire::kLimb};
 
   // The type, the target, the body part and the damage's bits.
-  EXPECT_EQ(Encode(hit), BytesOf({kHitConfirmationType, 0x04, 0x03, 0x02, 0x01, 0x03, 0x00, 0x00, 0x80, 0x3F}));
+  EXPECT_EQ(Encode(hit).value(), BytesOf({kHitConfirmationType, 0x04, 0x03, 0x02, 0x01, 0x03, 0x00, 0x00, 0x80, 0x3F}));
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, AHitConfirmationsBodyPartOutsideItsRangeIsInvalid) {
   // type, target, then the body part.
   constexpr std::size_t kBodyPartOffset = 1 + 4;
   for (const std::uint8_t bad : {std::uint8_t{0}, std::uint8_t{4}, std::uint8_t{255}}) {
-    BytesWire payload = Encode(HitConfirmationWire{});
+    BytesWire payload = Encode(HitConfirmationWire{}).value();
     payload[kBodyPartOffset] = static_cast<std::byte>(bad);
 
     EXPECT_EQ(Decode(payload).error(), DecodeError::kInvalidEnum) << static_cast<int>(bad);
   }
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, BytesAfterAHitConfirmationAreTrailing) {
-  BytesWire hit = Encode(HitConfirmationWire{});
+  BytesWire hit = Encode(HitConfirmationWire{}).value();
   hit.push_back(std::byte{0});
 
   EXPECT_EQ(Decode(hit).error(), DecodeError::kTrailingBytes);
@@ -463,30 +480,33 @@ TEST(ProtocolTest, ADeathTravelsInSixteenBytes) {
                         .part = BodyPartWire::kHead};
 
   // The type, the victim, the killer, the body part, the yaw and the pitch.
-  EXPECT_EQ(Encode(death), BytesOf({kDeathType, 0x04, 0x03, 0x02, 0x01, 0x08, 0x07, 0x06, 0x05, 0x01, 0x00, 0x00, 0x20,
-                                    0xFF, 0xFF, 0xFF}));
+  EXPECT_EQ(Encode(death).value(), BytesOf({kDeathType, 0x04, 0x03, 0x02, 0x01, 0x08, 0x07, 0x06, 0x05, 0x01, 0x00,
+                                            0x00, 0x20, 0xFF, 0xFF, 0xFF}));
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ADeathsBodyPartOutsideItsRangeIsInvalid) {
   // type, victim, killer, then the body part.
   constexpr std::size_t kBodyPartOffset = 1 + 4 + 4;
   for (const std::uint8_t bad : {std::uint8_t{0}, std::uint8_t{4}, std::uint8_t{255}}) {
-    BytesWire payload = Encode(DeathWire{});
+    BytesWire payload = Encode(DeathWire{}).value();
     payload[kBodyPartOffset] = static_cast<std::byte>(bad);
 
     EXPECT_EQ(Decode(payload).error(), DecodeError::kInvalidEnum) << static_cast<int>(bad);
   }
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, BytesAfterADeathAreTrailing) {
-  BytesWire death = Encode(DeathWire{});
+  BytesWire death = Encode(DeathWire{}).value();
   death.push_back(std::byte{0});
 
   EXPECT_EQ(Decode(death).error(), DecodeError::kTrailingBytes);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ACharacterInAMatchStartLongerThanTheLimitIsTooLong) {
-  BytesWire payload = Encode(MatchStartWire{.players = {MatchPlayer(1, "", 0.0F)}});
+  BytesWire payload = Encode(MatchStartWire{.players = {MatchPlayer(1, "", 0.0F)}}).value();
   // type, count, session, entity, then the character's length.
   constexpr std::size_t kCharacterOffset = 1 + 1 + 4 + 4;
   payload[kCharacterOffset] = static_cast<std::byte>(augusta::protocol::kMaxCharacterNameLength + 1);
@@ -494,14 +514,17 @@ TEST(ProtocolTest, ACharacterInAMatchStartLongerThanTheLimitIsTooLong) {
   EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, AnEmptyPayloadIsEmpty) { EXPECT_EQ(Decode(BytesWire{}).error(), DecodeError::kEmpty); }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, AnUnknownTypeIsRejected) {
   EXPECT_EQ(Decode(BytesOf({0})).error(), DecodeError::kUnknownType);
   EXPECT_EQ(Decode(BytesOf({13, 0, 0, 0, 0})).error(), DecodeError::kUnknownType);
   EXPECT_EQ(Decode(BytesOf({0xFF})).error(), DecodeError::kUnknownType);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
   const std::array<MessageWire, 12> messages = {
       JoinRequestWire{.engine_version = "0.1.0", .character = "soldier"},
@@ -517,7 +540,7 @@ TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
       DeathWire{.victim = static_cast<EntityIdWire>(7), .killer = static_cast<EntityIdWire>(8)},
       MatchEndWire{.winner = static_cast<SessionIdWire>(3)}};
   for (const MessageWire& message : messages) {
-    const BytesWire whole = Encode(message);
+    const BytesWire whole = Encode(message).value();
     for (std::size_t length = 1; length < whole.size(); ++length) {
       const BytesWire cut(whole.begin(), whole.begin() + static_cast<std::ptrdiff_t>(length));
       EXPECT_EQ(Decode(cut).error(), DecodeError::kTruncated)
@@ -526,11 +549,13 @@ TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
   }
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ALengthPointingPastThePayloadIsTruncatedWithoutReadingIt) {
   // Claims 32 bytes of version, supplies 2.
   EXPECT_EQ(Decode(BytesOf({kJoinRequestType, 32, 'a', 'b'})).error(), DecodeError::kTruncated);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, AVersionLongerThanAllowedIsTooLongEvenWhenAllOfItIsPresent) {
   BytesWire payload = BytesOf({kJoinRequestType, static_cast<std::uint8_t>(kMaxEngineVersionLength + 1)});
   payload.resize(payload.size() + kMaxEngineVersionLength + 1, static_cast<std::byte>('v'));
@@ -538,28 +563,31 @@ TEST(ProtocolTest, AVersionLongerThanAllowedIsTooLongEvenWhenAllOfItIsPresent) {
   EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ALengthOf255IsRejectedBeforeAnythingIsAllocatedForIt) {
   EXPECT_EQ(Decode(BytesOf({kJoinRequestType, 255})).error(), DecodeError::kFieldTooLong);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ARefusalReasonOutsideTheEnumerationIsInvalid) {
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 0})).error(), DecodeError::kInvalidEnum);
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 6})).error(), DecodeError::kInvalidEnum);
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 0xFF})).error(), DecodeError::kInvalidEnum);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, BytesAfterAMessageAreTrailing) {
   BytesWire request = WithPackHash(BytesOf({kJoinRequestType, 0}), PackHashWire{});
   request.push_back(std::byte{0});
   request.push_back(std::byte{0});
   EXPECT_EQ(Decode(request).error(), DecodeError::kTrailingBytes);
-  BytesWire accepted = Encode(JoinAcceptedWire{});
+  BytesWire accepted = Encode(JoinAcceptedWire{}).value();
   accepted.push_back(std::byte{0});
   EXPECT_EQ(Decode(accepted).error(), DecodeError::kTrailingBytes);
-  BytesWire lobby = Encode(LobbyWire{});
+  BytesWire lobby = Encode(LobbyWire{}).value();
   lobby.push_back(std::byte{0});
   EXPECT_EQ(Decode(lobby).error(), DecodeError::kTrailingBytes);
-  BytesWire start = Encode(MatchStartWire{});
+  BytesWire start = Encode(MatchStartWire{}).value();
   start.push_back(std::byte{0});
   EXPECT_EQ(Decode(start).error(), DecodeError::kTrailingBytes);
   EXPECT_EQ(Decode(BytesOf({kReadyType, 1, 0, 0, 0, 0})).error(), DecodeError::kTrailingBytes);
@@ -622,6 +650,7 @@ TEST(ProtocolTest, CommandsCarryTheMostAMessageAllows) {
   EXPECT_EQ(std::get<CommandsWire>(RoundTrip(sent)).commands.size(), kMaxCommandsPerMessage);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, MoreCommandsThanAMessageAllowsIsTooLong) {
   EXPECT_EQ(Decode(BytesOf({kCommandsType, static_cast<std::uint8_t>(kMaxCommandsPerMessage + 1)})).error(),
             DecodeError::kFieldTooLong);
@@ -656,7 +685,7 @@ TEST(ProtocolTest, YawAndPitchTravelAsThreeBytesEachInStepsOfTwoToTheMinus21Radi
   sequenced.command.yaw = kAngleStep;
   sequenced.command.pitch = -kAngleStep;
 
-  const BytesWire payload = Encode(CommandsWire{.commands = {sequenced}});
+  const BytesWire payload = Encode(CommandsWire{.commands = {sequenced}}).value();
 
   const auto yaw_offset = static_cast<std::ptrdiff_t>(kCommandYawOffset);
   const BytesWire angles(payload.begin() + yaw_offset, payload.begin() + yaw_offset + 6);
@@ -684,7 +713,7 @@ TEST(ProtocolTest, ACommandsFlagsAndStanceShareOneByte) {
   sequenced.command.flags = CommandWire::kSprint | CommandWire::kReload;
   sequenced.command.desired_stance = augusta::protocol::StanceWire::kProne;
 
-  const BytesWire payload = Encode(CommandsWire{.commands = {sequenced}});
+  const BytesWire payload = Encode(CommandsWire{.commands = {sequenced}}).value();
 
   ASSERT_EQ(payload.size(), kSeenTickOffset + kTickBytes);
   // The flags in the low four bits, the stance in the two above them.
@@ -699,7 +728,7 @@ TEST(ProtocolTest, ACommandsSeenTimeTravelsAsItsAgeAndItsFractionInAByteEachAndT
   sequenced.command.seen_age = 3;
   sequenced.command.seen_fraction = 0.75F;
 
-  const BytesWire payload = Encode(CommandsWire{.commands = {sequenced}, .seen_tick = 0x0102030405060708U});
+  const BytesWire payload = Encode(CommandsWire{.commands = {sequenced}, .seen_tick = 0x0102030405060708U}).value();
 
   EXPECT_EQ(payload[kCommandSeenOffset], std::byte{3});
   EXPECT_EQ(payload[kCommandSeenOffset + 1], std::byte{192});
@@ -716,8 +745,9 @@ TEST(ProtocolTest, ASeenTimesFractionIsHeldBelowOneAndANaNIsZero) {
   EXPECT_EQ(SnapFraction(std::numeric_limits<float>::quiet_NaN()), 0.0F);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ACommandsStanceOrUnusedBitsOutsideTheirRangeAreInvalid) {
-  const BytesWire payload = Encode(CommandsWire{.commands = {BusyCommand(1)}});
+  const BytesWire payload = Encode(CommandsWire{.commands = {BusyCommand(1)}}).value();
   for (const std::uint8_t bad : {std::uint8_t{0b0011'0000}, std::uint8_t{0b0100'0000}, std::uint8_t{0b1000'0000}}) {
     BytesWire altered = payload;
     altered[kCommandFlagsOffset] = static_cast<std::byte>(bad);
@@ -757,7 +787,7 @@ TEST(ProtocolTest, AuthoritativeStateRoundTrips) {
 TEST(ProtocolTest, ABodysYawTravelsAsThreeBytesAfterTheBody) {
   EntityStateWire body;
   body.yaw = 1.0F;
-  const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {body}});
+  const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {body}}).value();
   // type, tick, acknowledged sequence, count, entity, the body (18), then the yaw.
   constexpr std::ptrdiff_t kYawOffset = 1 + kTickBytes + kSequenceBytes + 1 + 4 + 18;
 
@@ -823,7 +853,7 @@ TEST(ProtocolTest, AnUpdateTellsItsRecipientItsOwnHealthExactly) {
 
 // A 32-bit float's bits, after the rifle: the last four bytes of an update.
 TEST(ProtocolTest, ARecipientsHealthTravelsInFourBytesAfterItsRifle) {
-  const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {}, .health = 1.0F});
+  const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {}, .health = 1.0F}).value();
 
   EXPECT_EQ(BytesWire(payload.end() - 4, payload.end()), BytesOf({0x00, 0x00, 0x80, 0x3F}));
 }
@@ -835,7 +865,8 @@ TEST(ProtocolTest, ARecipientsRifleTravelsInSixteenBytesAfterItsQueuedCommands) 
                                                                     .recoil_pitch = 1.0F / 64.0F,
                                                                     .recoil_yaw = -1.0F / 2097152.0F,
                                                                     .rounds = 30,
-                                                                    .burst_index = 3}});
+                                                                    .burst_index = 3}})
+                                .value();
   // type, tick, acknowledged sequence, count, the queued commands, then the rifle.
   constexpr std::ptrdiff_t kRifleOffset = 1 + kTickBytes + kSequenceBytes + 1 + 1;
 
@@ -846,6 +877,7 @@ TEST(ProtocolTest, ARecipientsRifleTravelsInSixteenBytesAfterItsQueuedCommands) 
             BytesOf({30, 0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x00, 0xC0, 3, 0x00, 0x80, 0x00, 0xFF, 0xFF, 0xFF}));
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, MorePlayersThanAMatchHoldsIsTooLong) {
   // type, tick (8), acknowledged sequence (8), then the count.
   const BytesWire payload = BytesOf({kAuthoritativeStateType, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -854,8 +886,9 @@ TEST(ProtocolTest, MorePlayersThanAMatchHoldsIsTooLong) {
   EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, APlayersStanceOutsideItsRangeIsInvalid) {
-  BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}});
+  BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}}).value();
   // type, tick, acknowledged sequence, count, entity, position (9), velocity (6), then stance.
   constexpr std::size_t kStanceOffset = 1 + kTickBytes + kSequenceBytes + 1 + 4 + 9 + 6;
   payload[kStanceOffset] = static_cast<std::byte>(3);
@@ -888,9 +921,9 @@ TEST(ProtocolTest, ABodysExhaustedFlagSharesTheStanceByte) {
   body.body.stance = augusta::protocol::StanceWire::kProne;
   body.body.flags = BodyStateWire::kExhausted;
 
-  const BytesWire exhausted = Encode(AuthoritativeStateWire{.bodies = {body}});
+  const BytesWire exhausted = Encode(AuthoritativeStateWire{.bodies = {body}}).value();
   body.body.flags = 0;
-  const BytesWire rested = Encode(AuthoritativeStateWire{.bodies = {body}});
+  const BytesWire rested = Encode(AuthoritativeStateWire{.bodies = {body}}).value();
 
   // The stance in the low two bits, the flag in the one above them, the rest 0.
   EXPECT_EQ(exhausted[kBodyStanceOffset], std::byte{0b0000'0110});
@@ -898,8 +931,9 @@ TEST(ProtocolTest, ABodysExhaustedFlagSharesTheStanceByte) {
   EXPECT_EQ(exhausted.size(), rested.size());
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ABodysUnusedStanceByteBitsSetAreInvalid) {
-  const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}});
+  const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}}).value();
   for (unsigned bit = 3; bit < 8; ++bit) {
     BytesWire altered = payload;
     altered[kBodyStanceOffset] = static_cast<std::byte>(1U << bit);
@@ -913,15 +947,16 @@ TEST(ProtocolTest, ABodysUnusedStanceByteBitsSetAreInvalid) {
 TEST(ProtocolTest, ABodyTravelsInEighteenBytesAndACommandInFifteen) {
   // type, tick, acknowledged sequence, count, entity, the body, its yaw, the
   // queued commands, then the recipient's rifle and health.
-  EXPECT_EQ(Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}}).size(),
+  EXPECT_EQ(Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}}).value().size(),
             1 + kTickBytes + kSequenceBytes + 1 + 4 + 18 + 3 + 1 + 16 + 4);
-  EXPECT_EQ(Encode(CommandsWire{.commands = {SequencedCommandWire{}}}).size(), 2 + kSequenceBytes + 15 + kTickBytes);
+  EXPECT_EQ(Encode(CommandsWire{.commands = {SequencedCommandWire{}}}).value().size(),
+            2 + kSequenceBytes + 15 + kTickBytes);
 }
 
 TEST(ProtocolTest, APositionTravelsAsThreeBytesPerAxisInMillimeterSteps) {
   EntityStateWire body;
   body.body.position = Vec3(1.0F, -1.0F / 1024.0F, 0.0F);
-  const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {body}});
+  const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {body}}).value();
   // type, tick, acknowledged sequence, count, entity, then x, y and z.
   constexpr std::ptrdiff_t kPositionOffset = 1 + kTickBytes + kSequenceBytes + 1 + 4;
 
@@ -947,19 +982,21 @@ TEST(ProtocolTest, AValueBeyondItsRangeIsSentAsTheBound) {
   EXPECT_EQ(SnapStamina(-0.5F), 0.0F);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, DecodingAndEncodingAgainGivesTheSameBytes) {
   const AuthoritativeStateWire state{.tick = 1, .bodies = {BodyAt(1, 3.14159F)}, .acknowledged_sequence = 1};
-  const BytesWire first = Encode(state);
-  EXPECT_EQ(Encode(std::get<AuthoritativeStateWire>(Decode(first).value())), first);
+  const BytesWire first = Encode(state).value();
+  EXPECT_EQ(Encode(std::get<AuthoritativeStateWire>(Decode(first).value())).value(), first);
 
-  const BytesWire commands = Encode(CommandsWire{.commands = {BusyCommand(1)}});
-  EXPECT_EQ(Encode(std::get<CommandsWire>(Decode(commands).value())), commands);
+  const BytesWire commands = Encode(CommandsWire{.commands = {BusyCommand(1)}}).value();
+  EXPECT_EQ(Encode(std::get<CommandsWire>(Decode(commands).value())).value(), commands);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, BytesAfterCommandsAndStateAreTrailing) {
-  BytesWire commands = Encode(CommandsWire{});
+  BytesWire commands = Encode(CommandsWire{}).value();
   commands.push_back(std::byte{0});
-  BytesWire state = Encode(AuthoritativeStateWire{});
+  BytesWire state = Encode(AuthoritativeStateWire{}).value();
   state.push_back(std::byte{0});
 
   EXPECT_EQ(Decode(commands).error(), DecodeError::kTrailingBytes);
@@ -981,6 +1018,97 @@ TEST(ProtocolTest, EveryErrorHasADescription) {
   for (const DecodeError error : {DecodeError::kEmpty, DecodeError::kUnknownType, DecodeError::kTruncated,
                                   DecodeError::kTrailingBytes, DecodeError::kInvalidEnum, DecodeError::kFieldTooLong}) {
     EXPECT_FALSE(augusta::protocol::DescribeDecodeError(error).empty());
+  }
+}
+
+// Encode refuses a message that breaks one of the protocol's limits, in every
+// build, rather than relying on an assertion a Release build compiles out: it
+// gives back no payload at all, so no peer is ever sent a cut-off or
+// misframed one (ADR-0033).
+
+// The error Encode gives message, which must be one it refuses.
+EncodeError RefusalOf(const MessageWire& message) {
+  const auto encoded = Encode(message);
+  EXPECT_FALSE(encoded.has_value());
+  return encoded.has_value() ? EncodeError{} : encoded.error();
+}
+
+TEST(ProtocolEncodeTest, AnEngineVersionLongerThanAllowedIsNotEncoded) {
+  const JoinRequestWire request{.engine_version = std::string(kMaxEngineVersionLength + 1, 'v'), .character = "c"};
+
+  EXPECT_EQ(RefusalOf(request), EncodeError::kFieldTooLong);
+}
+
+TEST(ProtocolEncodeTest, ACharacterLongerThanAllowedIsNotEncodedInAnyMessageThatCarriesOne) {
+  const std::string too_long(augusta::protocol::kMaxCharacterNameLength + 1, 'c');
+
+  EXPECT_EQ(RefusalOf(JoinRequestWire{.engine_version = "0.1.0", .character = too_long}), EncodeError::kFieldTooLong);
+  EXPECT_EQ(RefusalOf(JoinAcceptedWire{.character = too_long}), EncodeError::kFieldTooLong);
+  EXPECT_EQ(RefusalOf(LobbyWire{.version = 1, .roster = {RosterEntryWire{.character = too_long}}}),
+            EncodeError::kFieldTooLong);
+  EXPECT_EQ(RefusalOf(MatchStartWire{.players = {MatchPlayer(1, too_long, 0.0F)}}), EncodeError::kFieldTooLong);
+}
+
+TEST(ProtocolEncodeTest, AListLongerThanItsMessageAllowsIsNotEncoded) {
+  RifleWire rifle;
+  rifle.recoil_pattern.resize(augusta::primitives::kMaxRecoilKicks + 1);
+  ParametersWire parameters;
+  parameters.rifle = rifle;
+
+  EXPECT_EQ(RefusalOf(CommandsWire{.commands = std::vector<SequencedCommandWire>(kMaxCommandsPerMessage + 1)}),
+            EncodeError::kFieldTooLong);
+  EXPECT_EQ(RefusalOf(AuthoritativeStateWire{.bodies = std::vector<EntityStateWire>(kMaxPlayers + 1)}),
+            EncodeError::kFieldTooLong);
+  EXPECT_EQ(RefusalOf(LobbyWire{.version = 1, .roster = std::vector<RosterEntryWire>(kMaxPlayers + 1)}),
+            EncodeError::kFieldTooLong);
+  EXPECT_EQ(RefusalOf(MatchStartWire{.players = std::vector<MatchPlayerWire>(kMaxPlayers + 1)}),
+            EncodeError::kFieldTooLong);
+  EXPECT_EQ(RefusalOf(JoinAcceptedWire{.parameters = parameters, .character = {}}), EncodeError::kFieldTooLong);
+}
+
+TEST(ProtocolEncodeTest, AFlagBitTheFieldDoesNotHaveIsNotEncoded) {
+  CommandWire command;
+  command.flags = CommandWire::kReload << 1U;
+  EntityStateWire body;
+  body.body.flags = BodyStateWire::kExhausted << 1U;
+
+  EXPECT_EQ(RefusalOf(CommandsWire{.commands = {SequencedCommandWire{.sequence = 1, .command = command}}}),
+            EncodeError::kReservedBits);
+  EXPECT_EQ(RefusalOf(AuthoritativeStateWire{.bodies = {body}}), EncodeError::kReservedBits);
+}
+
+TEST(ProtocolEncodeTest, AnEnumeratedValueTheEnumerationLacksIsNotEncoded) {
+  constexpr auto kNoStance = static_cast<StanceWire>(3);
+  constexpr auto kNoPart = static_cast<BodyPartWire>(4);
+  CommandWire command;
+  command.desired_stance = kNoStance;
+  EntityStateWire body;
+  body.body.stance = kNoStance;
+
+  EXPECT_EQ(RefusalOf(CommandsWire{.commands = {SequencedCommandWire{.sequence = 1, .command = command}}}),
+            EncodeError::kInvalidEnum);
+  EXPECT_EQ(RefusalOf(AuthoritativeStateWire{.bodies = {body}}), EncodeError::kInvalidEnum);
+  EXPECT_EQ(RefusalOf(JoinRefusedWire{}), EncodeError::kInvalidEnum);
+  EXPECT_EQ(RefusalOf(JoinRefusedWire{.reason = static_cast<JoinRefusalWire>(6)}), EncodeError::kInvalidEnum);
+  EXPECT_EQ(RefusalOf(HitConfirmationWire{.part = static_cast<BodyPartWire>(0)}), EncodeError::kInvalidEnum);
+  EXPECT_EQ(RefusalOf(HitConfirmationWire{.part = kNoPart}), EncodeError::kInvalidEnum);
+  EXPECT_EQ(RefusalOf(DeathWire{.part = kNoPart}), EncodeError::kInvalidEnum);
+}
+
+TEST(ProtocolEncodeTest, EveryMessageNamesItsTypeAsItsFirstByteWould) {
+  const std::vector<MessageWire> every = {
+      JoinRequestWire{}, JoinAcceptedWire{},       JoinRefusedWire{.reason = JoinRefusalWire::kLobbyFull},
+      CommandsWire{},    AuthoritativeStateWire{}, LobbyWire{},
+      ReadyWire{},       MatchStartWire{},         MatchEndWire{},
+      ShotWire{},        HitConfirmationWire{},    DeathWire{}};
+  for (const MessageWire& message : every) {
+    EXPECT_EQ(static_cast<std::byte>(augusta::protocol::TypeOf(message)), Encode(message).value().front());
+  }
+}
+
+TEST(ProtocolEncodeTest, EveryEncodeErrorHasADescription) {
+  for (const EncodeError error : {EncodeError::kFieldTooLong, EncodeError::kReservedBits, EncodeError::kInvalidEnum}) {
+    EXPECT_FALSE(augusta::protocol::DescribeEncodeError(error).empty());
   }
 }
 

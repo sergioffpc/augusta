@@ -60,6 +60,7 @@ class PolicyLoaderTest : public ::testing::Test {
   std::vector<std::filesystem::path> cleanup_;
 };
 
+// Requirements: US-22
 TEST_F(PolicyLoaderTest, LoadsTheRulesFromThePack) {
   const Pack pack = MakePack("rules", {ScriptEntry("rules.lua", "function probe() return 'rules' end")});
 
@@ -69,6 +70,7 @@ TEST_F(PolicyLoaderTest, LoadsTheRulesFromThePack) {
   EXPECT_EQ(Returned(*engine, "probe"), "rules");
 }
 
+// Requirements: US-22
 TEST_F(PolicyLoaderTest, APackWithoutRulesHasNoPolicy) {
   const Pack pack = MakePack("no_rules", {ScriptEntry("parameters.lua", "function probe() return 'here' end")});
 
@@ -80,6 +82,7 @@ TEST_F(PolicyLoaderTest, APackWithoutRulesHasNoPolicy) {
   EXPECT_TRUE(std::holds_alternative<std::monostate>(returned->data));
 }
 
+// Requirements: US-22
 TEST_F(PolicyLoaderTest, RulesWithASyntaxErrorAreAnErrorNamingTheScript) {
   const Pack pack = MakePack("syntax_error", {ScriptEntry("rules.lua", "function assign_spawns(")});
 

@@ -59,6 +59,7 @@ TEST(SnapshotOfTest, CarriesEveryBodyAtTheServersTickDuration) {
   EXPECT_EQ(snapshot->bodies[1].entity, augusta::presentation::EntityId{9});
 }
 
+// Requirements: US-17
 TEST(CharactersOfTest, AreEveryPlayersCharacterInSessionOrder) {
   const auto characters = CharactersOf(TwoPlayerMatch());
 
@@ -100,6 +101,7 @@ TEST(MatchEndOfTest, IsNoneWhileNoMatchHasEnded) {
   EXPECT_FALSE(MatchEndOf(view).has_value());
 }
 
+// Requirements: US-19
 TEST(CombatEffectsOfTest, FadesEachEffectByItsAgeOverItsLifetime) {
   augusta::presentation::State state;
   state.impacts = {{.position = Vec3(1.0F, 0.0F, 0.0F), .age = augusta::presentation::kImpactSeconds / 4.0F}};
