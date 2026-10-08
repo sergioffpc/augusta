@@ -11,7 +11,7 @@
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/presentation.h"
-#include "augusta/protocol.h"
+#include "augusta/primitives.h"
 #include "augusta/tick.h"
 #include "benchmark_scene.h"
 
@@ -37,7 +37,7 @@ using augusta::presentation::PlayerCharacter;
 using augusta::presentation::WorldSnapshot;
 
 constexpr double kTickDuration = 1.0 / 60.0;
-constexpr std::size_t kPlayers = augusta::protocol::kMaxPlayers;
+constexpr std::size_t kPlayers = augusta::primitives::kMaxPlayers;
 constexpr EntityId kLocal{1};
 // Each body's walking speed along -Z, in meters per second.
 constexpr float kWalkSpeed = 4.5F;

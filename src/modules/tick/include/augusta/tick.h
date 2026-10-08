@@ -4,6 +4,8 @@
 #include <chrono>
 #include <cstdint>
 
+#include "augusta/primitives.h"
+
 /// \file
 /// The fixed schedule both tick loops keep - the server's Simulation thread and
 /// the client's Prediction thread (ADR-0005): each Tick is due one tick after the
@@ -18,10 +20,9 @@ namespace augusta::tick {
 
 using Clock = std::chrono::steady_clock;
 
-/// A server tick's number: counts from 1 for the life of the server process and
-/// never starts over, so it is wide enough never to wrap (ADR-0038). Everything
-/// that holds a tick, the wire included, takes its width from here.
-using Tick = std::uint64_t;
+/// A server tick's number, as both tick loops count it; its width is the
+/// primitives', which the wire takes too.
+using Tick = primitives::Tick;
 
 /// How many ticks a loop may fall behind its schedule and still catch up; any
 /// further and it resynchronises to now.

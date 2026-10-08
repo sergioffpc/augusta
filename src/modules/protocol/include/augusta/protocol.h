@@ -11,9 +11,8 @@
 #include <variant>
 #include <vector>
 
-#include "augusta/command.h"
 #include "augusta/math.h"
-#include "augusta/tick.h"
+#include "augusta/primitives.h"
 
 /// \file
 /// augusta::protocol is the Networking Protocol (ADR-0007, ADR-0038): the
@@ -101,14 +100,15 @@ inline constexpr std::size_t kPackHashSize = 32;
 using PackHashWire = std::array<std::byte, kPackHashSize>;
 
 /// The players a Lobby or a match holds, and so the most a Lobby, a Match start
-/// or an Authoritative State update lists.
-inline constexpr std::size_t kMaxPlayers = 8;
+/// or an Authoritative State update lists. Its value is the primitives', as are
+/// the two bounds below.
+inline constexpr std::size_t kMaxPlayers = primitives::kMaxPlayers;
 
 /// The most commands one CommandsWire message carries.
-inline constexpr std::size_t kMaxCommandsPerMessage = 8;
+inline constexpr std::size_t kMaxCommandsPerMessage = primitives::kMaxCommandsPerMessage;
 
 /// The most kicks a rifle's recoil pattern holds (RifleWire::recoil_pattern).
-inline constexpr std::size_t kMaxRecoilKicks = 64;
+inline constexpr std::size_t kMaxRecoilKicks = primitives::kMaxRecoilKicks;
 
 /// A body's stance.
 enum class StanceWire : std::uint8_t {
@@ -320,9 +320,9 @@ struct WeaponStateWire {
 /// One tick's command and the number the client gave it. Numbers start at 1 and
 /// grow by one per command, so the server can tell what it has already seen.
 /// They count one connection's commands and start over on the next, in
-/// command::Sequence's width, which never wraps.
+/// primitives::Sequence's width, which never wraps.
 struct SequencedCommandWire {
-  command::Sequence sequence = 0;
+  primitives::Sequence sequence = 0;
   CommandWire command{};
 
   bool operator==(const SequencedCommandWire&) const = default;
@@ -335,7 +335,7 @@ struct CommandsWire {
   std::vector<SequencedCommandWire> commands;
   /// The newest tick of its commands' Seen times (ADR-0044): each says how far
   /// before it its own is (CommandWire::seen_age).
-  tick::Tick seen_tick = 0;
+  primitives::Tick seen_tick = 0;
 
   bool operator==(const CommandsWire&) const = default;
 };
@@ -345,7 +345,7 @@ struct AuthoritativeStateWire {
   /// The server tick this state is from; a client keeps only the newest it has seen.
   /// Ticks count from the server's start and never start over, so they take 64
   /// bits: 32 would wrap after about 828 days at 60 Hz.
-  tick::Tick tick = 0;
+  primitives::Tick tick = 0;
   /// Every dynamic body in the match, at most kMaxPlayers (only players have one so far).
   std::vector<EntityStateWire> bodies;
   /// The recipient's own rifle as of this tick: what it reconciles its
@@ -355,7 +355,7 @@ struct AuthoritativeStateWire {
   /// else's is ever sent.
   float health = 0.0F;
   /// The highest command sequence of the recipient that the server has processed, 0 if none.
-  command::Sequence acknowledged_sequence = 0;
+  primitives::Sequence acknowledged_sequence = 0;
   /// How many of the recipient's commands the server still holds queued after
   /// this tick: what the client paces its own ticks by (ADR-0038).
   std::uint8_t queued_commands = 0;
@@ -423,7 +423,7 @@ struct MatchEndWire {
 /// ADR-0044), told to every player in it, the shooter included.
 struct ShotWire {
   /// The server tick it was fired on.
-  tick::Tick tick = 0;
+  primitives::Tick tick = 0;
   /// Where the round left from.
   math::Vec3 origin{};
   /// The body of the player who fired it.
@@ -531,7 +531,7 @@ struct RecordingHeaderWire {
 /// The command one player's body was moved by on one tick.
 struct RecordedCommandWire {
   /// The tick of the command's Seen time, in full: command.seen_age counts back from it.
-  tick::Tick seen_tick = 0;
+  primitives::Tick seen_tick = 0;
   CommandWire command{};
   EntityIdWire entity{};
 

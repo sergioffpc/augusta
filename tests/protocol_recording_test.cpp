@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/math.h"
+#include "augusta/primitives.h"
 #include "augusta/protocol.h"
 
 // A match recording's records (ADR-0048), in the protocol's own encoding: pure
@@ -11,6 +12,7 @@
 namespace {
 
 using augusta::math::Vec3;
+using augusta::primitives::kMaxPlayers;
 using augusta::protocol::BodyPartWire;
 using augusta::protocol::BytesWire;
 using augusta::protocol::CommandWire;
@@ -21,7 +23,6 @@ using augusta::protocol::Encode;
 using augusta::protocol::EncodeRecord;
 using augusta::protocol::EntityIdWire;
 using augusta::protocol::EntityStateWire;
-using augusta::protocol::kMaxPlayers;
 using augusta::protocol::MatchPlayerWire;
 using augusta::protocol::PackHashWire;
 using augusta::protocol::RecordedBodyWire;

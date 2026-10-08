@@ -11,10 +11,9 @@
 /// them without depending on the Command, the tick schedule or the Parameters,
 /// and those can bound their own data without depending on the protocol.
 ///
-/// It depends on nothing but the standard library, and must stay that way
-/// (tests/core_boundary.cmake). For now it stands alongside the forms the
-/// engine already uses (tick::Tick, command::Sequence and the protocol's
-/// kMax constants), which agree with it (tests/protocol_test.cpp).
+/// It depends on nothing but the standard library, and must stay that way; and
+/// nothing else defines these again, but takes them from here
+/// (tests/core_boundary.cmake).
 namespace augusta::primitives {
 
 /// A server Tick's number: from 1 for the life of the server process, never
