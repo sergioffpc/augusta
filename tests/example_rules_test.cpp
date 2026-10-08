@@ -310,7 +310,7 @@ TEST_F(ExampleRulesTest, ASoloMatchGoesOnWhileItsPlayerLivesAndIsADrawWhenItDies
   arena.Wait(10 * kTickRate);
   ASSERT_TRUE(arena.Ends().empty());
 
-  // In v1 only rounds kill, and a round never hits its shooter: the round that
+  // Only rounds kill, and a round never hits its shooter: the round that
   // kills the solo player is fired by another player, 30 m off, who leaves
   // while it is in flight.
   arena.Add(1, Vec3(0.0F, 0.5F, -30.0F));

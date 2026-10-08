@@ -8,7 +8,7 @@ spec:
   ref:
     # `develop` is where feature work actually lands; `main` only advances on
     # a real release cut (see ENGINEERING.md's Git Workflow), so pinning this
-    # self-sync to `main` would leave Flux's own config dormant until v1.
+    # self-sync to `main` would leave Flux's own config dormant until the next release.
     branch: develop
   url: https://github.com/sergioffpc/augusta
 ---

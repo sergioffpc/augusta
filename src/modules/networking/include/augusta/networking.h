@@ -141,7 +141,7 @@ enum class SendOutcome : std::uint8_t {
 using SendResult = std::expected<SendOutcome, failure::Failure>;
 
 /// A server address in "host:port" form (e.g. "192.168.1.10:27015"). A
-/// numeric IP, not a hostname - no DNS resolution in v1, matching the
+/// numeric IP, not a hostname - no DNS resolution, matching the
 /// direct-IP-only scope above.
 struct Endpoint {
   std::string address;

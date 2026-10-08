@@ -5565,7 +5565,7 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
   }
 }
 
-// A Match of one, for development (ADR-0043). In v1 only rounds kill and none
+// A Match of one, for development (ADR-0043). Only rounds kill and none
 // hits its own shooter, so a lone player cannot die over the network: that its
 // death is a draw is checked through SimulationWorld
 // (example_rules_test.cpp); here, that a lone player plays on, and that a
