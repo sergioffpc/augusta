@@ -1,7 +1,8 @@
 # The cluster's monitoring stack (ADR-0049): Prometheus Operator, Prometheus,
 # Alertmanager, Grafana, node-exporter and kube-state-metrics, in their own
 # namespace. The augustad chart (apps) brings its own ServiceMonitor,
-# PrometheusRules and dashboards.
+# PrometheusRules and dashboards. Loki keeps every pod's logs and Alloy ships
+# them there, so Grafana shows them beside the metrics (ADR-0053).
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
@@ -92,3 +93,159 @@ spec:
           label: grafana_dashboard
           labelValue: "1"
           searchNamespace: ALL
+      # The logs (ADR-0053), beside the chart's own Prometheus data source.
+      additionalDataSources:
+        - name: Loki
+          type: loki
+          uid: loki
+          access: proxy
+          url: http://loki.monitoring.svc.cluster.local:3100
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: grafana
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://grafana.github.io/helm-charts
+---
+# One Loki process on the node's disk: the cluster is one node, and its logs
+# are a few augustad servers' (ADR-0053).
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: loki
+  namespace: flux-system
+spec:
+  interval: 30m
+  releaseName: loki
+  targetNamespace: monitoring
+  storageNamespace: monitoring
+  install:
+    createNamespace: true
+  chart:
+    spec:
+      chart: loki
+      version: 7.3.0
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+  values:
+    deploymentMode: SingleBinary
+    loki:
+      # One tenant: Grafana and Alloy reach Loki only from inside the cluster.
+      auth_enabled: false
+      commonConfig:
+        replication_factor: 1
+      storage:
+        type: filesystem
+      schemaConfig:
+        configs:
+          - from: "2026-10-01"
+            store: tsdb
+            object_store: filesystem
+            schema: v13
+            index:
+              prefix: loki_index_
+              period: 24h
+      # As long as Prometheus keeps the series, so a metric's spike still has
+      # its log lines.
+      limits_config:
+        retention_period: 15d
+      compactor:
+        retention_enabled: true
+        delete_request_store: filesystem
+    singleBinary:
+      replicas: 1
+      # On the node's disk, so the logs survive the pod's restart.
+      persistence:
+        storageClass: local-path
+        size: 10Gi
+    # Each of these exists to spread or speed up a Loki that runs as many
+    # processes, or to test one; a single process on one node needs none.
+    gateway:
+      enabled: false
+    chunksCache:
+      enabled: false
+    resultsCache:
+      enabled: false
+    lokiCanary:
+      enabled: false
+    test:
+      enabled: false
+    backend:
+      replicas: 0
+    read:
+      replicas: 0
+    write:
+      replicas: 0
+---
+# Tails every container's log through the Kubernetes API and pushes it to
+# Loki, labelled with its namespace, pod, container and app.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: alloy
+  namespace: flux-system
+spec:
+  interval: 30m
+  releaseName: alloy
+  targetNamespace: monitoring
+  storageNamespace: monitoring
+  install:
+    createNamespace: true
+  dependsOn:
+    - name: loki
+  chart:
+    spec:
+      chart: alloy
+      version: 1.13.0
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+  values:
+    # One replica reads the whole cluster's logs from the API, so it needs no
+    # host mounts and no clustering.
+    controller:
+      type: deployment
+      replicas: 1
+    alloy:
+      enableReporting: false
+      configMap:
+        content: |
+          discovery.kubernetes "pods" {
+            role = "pod"
+          }
+
+          discovery.relabel "pods" {
+            targets = discovery.kubernetes.pods.targets
+
+            rule {
+              source_labels = ["__meta_kubernetes_namespace"]
+              target_label  = "namespace"
+            }
+            rule {
+              source_labels = ["__meta_kubernetes_pod_name"]
+              target_label  = "pod"
+            }
+            rule {
+              source_labels = ["__meta_kubernetes_pod_container_name"]
+              target_label  = "container"
+            }
+            rule {
+              source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+              target_label  = "app"
+            }
+          }
+
+          loki.source.kubernetes "pods" {
+            targets    = discovery.relabel.pods.output
+            forward_to = [loki.write.default.receiver]
+          }
+
+          loki.write "default" {
+            endpoint {
+              url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+            }
+          }

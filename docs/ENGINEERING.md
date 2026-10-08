@@ -351,6 +351,8 @@ no self-hosted GitHub Actions runner in this pipeline).
   kube-prometheus-stack in the k3s cluster scrapes and Grafana draws, for both
   `develop` and `staging` (ADR-0049, which holds the catalogue). Everything is
   measured on the server: clients report nothing.
+- **Log aggregation:** Loki keeps every pod's log for 15 days, shipped by Alloy,
+  and Grafana queries it beside the metrics (ADR-0053).
 - **Liveness:** `/livez` fails when the tick loop has not finished a tick for 5
   seconds, and is the Deployment's liveness probe, so a hung server restarts on
   its own (ADR-0049).

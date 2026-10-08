@@ -472,6 +472,8 @@ not affect numbering.
   Prometheus pull from augustad, kube-prometheus-stack via Flux
 - [ADR-0052](./adr/0052-python-scripted-agents.md) — Agents: players scripted in
   Python through Intents the Harness runs
+- [ADR-0053](./adr/0053-log-aggregation.md) — Log aggregation: Loki and Alloy
+  beside kube-prometheus-stack
 
 ### Rendering & Audio
 
