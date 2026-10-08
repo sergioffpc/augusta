@@ -839,8 +839,8 @@ std::expected<BytesWire, EncodeError> EncodeRecord(const RecordWire& record) {
 
 RecordTypeWire TypeOf(const RecordWire& record) {
   struct Type {
-    RecordTypeWire operator()(const RecordingHeaderWire&) const { return RecordTypeWire::kHeader; }
-    RecordTypeWire operator()(const RecordedTickWire&) const { return RecordTypeWire::kTick; }
+    RecordTypeWire operator()(const RecordingHeaderWire& /*wire*/) const { return RecordTypeWire::kHeader; }
+    RecordTypeWire operator()(const RecordedTickWire& /*wire*/) const { return RecordTypeWire::kTick; }
   };
   return std::visit(Type{}, record);
 }
@@ -861,18 +861,20 @@ std::expected<BytesWire, EncodeError> Encode(const MessageWire& message) {
 
 MessageTypeWire TypeOf(const MessageWire& message) {
   struct Type {
-    MessageTypeWire operator()(const JoinRequestWire&) const { return MessageTypeWire::kJoinRequest; }
-    MessageTypeWire operator()(const JoinAcceptedWire&) const { return MessageTypeWire::kJoinAccepted; }
-    MessageTypeWire operator()(const JoinRefusedWire&) const { return MessageTypeWire::kJoinRefused; }
-    MessageTypeWire operator()(const CommandsWire&) const { return MessageTypeWire::kCommands; }
-    MessageTypeWire operator()(const AuthoritativeStateWire&) const { return MessageTypeWire::kAuthoritativeState; }
-    MessageTypeWire operator()(const LobbyWire&) const { return MessageTypeWire::kLobby; }
-    MessageTypeWire operator()(const ReadyWire&) const { return MessageTypeWire::kReady; }
-    MessageTypeWire operator()(const MatchStartWire&) const { return MessageTypeWire::kMatchStart; }
-    MessageTypeWire operator()(const MatchEndWire&) const { return MessageTypeWire::kMatchEnd; }
-    MessageTypeWire operator()(const ShotWire&) const { return MessageTypeWire::kShot; }
-    MessageTypeWire operator()(const HitConfirmationWire&) const { return MessageTypeWire::kHitConfirmation; }
-    MessageTypeWire operator()(const DeathWire&) const { return MessageTypeWire::kDeath; }
+    MessageTypeWire operator()(const JoinRequestWire& /*wire*/) const { return MessageTypeWire::kJoinRequest; }
+    MessageTypeWire operator()(const JoinAcceptedWire& /*wire*/) const { return MessageTypeWire::kJoinAccepted; }
+    MessageTypeWire operator()(const JoinRefusedWire& /*wire*/) const { return MessageTypeWire::kJoinRefused; }
+    MessageTypeWire operator()(const CommandsWire& /*wire*/) const { return MessageTypeWire::kCommands; }
+    MessageTypeWire operator()(const AuthoritativeStateWire& /*wire*/) const {
+      return MessageTypeWire::kAuthoritativeState;
+    }
+    MessageTypeWire operator()(const LobbyWire& /*wire*/) const { return MessageTypeWire::kLobby; }
+    MessageTypeWire operator()(const ReadyWire& /*wire*/) const { return MessageTypeWire::kReady; }
+    MessageTypeWire operator()(const MatchStartWire& /*wire*/) const { return MessageTypeWire::kMatchStart; }
+    MessageTypeWire operator()(const MatchEndWire& /*wire*/) const { return MessageTypeWire::kMatchEnd; }
+    MessageTypeWire operator()(const ShotWire& /*wire*/) const { return MessageTypeWire::kShot; }
+    MessageTypeWire operator()(const HitConfirmationWire& /*wire*/) const { return MessageTypeWire::kHitConfirmation; }
+    MessageTypeWire operator()(const DeathWire& /*wire*/) const { return MessageTypeWire::kDeath; }
   };
   return std::visit(Type{}, message);
 }

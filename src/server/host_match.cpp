@@ -78,7 +78,7 @@ void Host::Impl::EndMatch(const std::optional<SessionId>& winner, EndReason reas
   if (!ended.has_value()) {
     return;
   }
-  SendTo(ended->players, ToWire(*ended));
+  SendTo(ended->players, EncodeToSend(ToWire(*ended)));
   CountMatchEnded(reason, ended->winner);
   LogMatchEnded(reason, ended->winner, ended->players.size());
   SetLobbyGauges();
@@ -118,7 +118,7 @@ void Host::Impl::StartMatchIfReady() {
   match_start_tick = tick + 1;
   metrics.matches_started.Increment();
   SetLobbyGauges();
-  SendTo(sessions, ToWire(*start, spawns));
+  SendTo(sessions, EncodeToSend(ToWire(*start, spawns)));
   LI("subsystem=serverruntime event=match_started tick={} players={}", match_start_tick, sessions.size());
 }
 

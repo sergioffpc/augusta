@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <fstream>
 #include <mutex>
 #include <optional>
@@ -15,12 +16,12 @@
 #include <vector>
 
 #include "admission.h"
+#include "augusta/failure.h"
 #include "augusta/first_failure.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
-#include "augusta/protocol.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
@@ -111,15 +112,16 @@ struct Host::Impl {
 
   Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy);
 
-  // Sending to players (host.cpp), each message encoded here (wire.h),
-  // reliably, counted as the transport accepts it (SendCounted). One the
-  // protocol cannot carry is sent to no one and kept in invariant_failure; a
-  // local transport failure is kept in transport_failure.
-  void Reply(networking::PeerId peer, const protocol::MessageWire& message);
+  // Sending to players (host.cpp), each message as EncodeToSend left it
+  // (wire.h), reliably, counted as the transport accepts it (SendCounted).
+  // One the protocol could not carry is sent to no one and kept in
+  // invariant_failure; a local transport failure is kept in transport_failure.
+  void Reply(networking::PeerId peer, const std::expected<networking::Payload, failure::Failure>& message);
   // Sends payload, already encoded, to peer reliably, as Reply does.
   void Deliver(networking::PeerId peer, const networking::Payload& payload);
   // Sends message reliably to the player of each of sessions.
-  void SendTo(const std::vector<SessionId>& sessions, const protocol::MessageWire& message);
+  void SendTo(const std::vector<SessionId>& sessions,
+              const std::expected<networking::Payload, failure::Failure>& message);
   // Tells everyone in the Lobby who is in it, after it changed.
   void SendRoster();
   // Sets the metrics' gauges of who is joined, in the Lobby and in a match,

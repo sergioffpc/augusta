@@ -496,6 +496,7 @@ TEST(RecordingTest, ATickWhoseRecordTheProtocolCannotCarryIsAnInvariantFailureAn
     TickRecord unrepresentable = EmptyTick(2);
     unrepresentable.input.match_start = {RecordedEntrant{
         .entity = EntityId{1}, .identity = {.session = SessionId{1}, .character = TooLongACharacter()}}};
+    unrepresentable.outcome.spawns = {Vec3{}};
 
     const auto written = recorder.Write(unrepresentable);
 
