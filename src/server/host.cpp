@@ -167,4 +167,9 @@ std::optional<failure::Failure> Host::RecordingFailure() const {
   return lost;
 }
 
+std::optional<failure::Failure> Host::FinishRecording() {
+  impl_->simulation.WaitUntilRecorded();
+  return RecordingFailure();
+}
+
 }  // namespace augusta::server

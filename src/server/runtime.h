@@ -55,9 +55,9 @@ class ServerRuntime {
   /// fails, which stops the other (supervisor.h): neither ticks nor pumps the
   /// network again once the stop is requested. A strict recording that lost a
   /// tick (Host::RecordingFailure) fails the Simulation thread before it ticks
-  /// again. Always stops and joins the
-  /// Network I/O thread before returning, and so before Host, which it uses,
-  /// can go. Returns the first cause that stopped it, nullopt if Stop() did:
+  /// again, or, found only at the stop, as it returns (Host::FinishRecording).
+  /// Always stops and joins the Network I/O thread before returning, and so
+  /// before Host, which it uses, can go. Returns the first cause that stopped it, nullopt if Stop() did:
   /// the caller reports it and exits. Must not be called more than once.
   [[nodiscard]] std::optional<failure::Failure> Run();
 

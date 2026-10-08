@@ -180,9 +180,9 @@ struct RecorderOptions {
 /// ticks from there on: nothing more is written, so the file still reads back
 /// up to its last whole tick, and its first loss is kept as Failure. An
 /// optional recording then degrades, logged once at ERR as
-/// event=recording_degraded; a strict one stops, logged as
+/// event=recording_degraded; a strict one stops, logged at INFO as
 /// event=recording_stopped, and the runtime that asks Failure stops on it,
-/// whose boundary writes the ERR line (ADR-0033).
+/// whose boundary writes the one ERR line (ADR-0033).
 class Recorder {
  public:
   /// Queues header for out first.
@@ -197,6 +197,11 @@ class Recorder {
   /// recording has lost a tick already.
   void Write(const TickRecord& tick);
 
+  /// Waits until every record queued so far is written, or dropped because
+  /// the recording lost one, so State and Failure then account for every tick
+  /// written so far. A stalled disk holds it up. Simulation thread.
+  void WaitUntilWritten();
+
   /// A loss on the writer thread shows here once that thread gets to it,
   /// after the Write that queued the record has returned. Any thread.
   [[nodiscard]] RecordingState State() const;
@@ -204,7 +209,7 @@ class Recorder {
   /// The first loss, nullopt while every tick is queued or written: a
   /// subsystem failure (kRecordingWriteFailed, kRecordingFlushFailed) of an
   /// optional recording, a runtime one (kStrictRecordingFailed) of a strict
-  /// one, with the tick and the step (write, flush, queue or size) it was lost
+  /// one, with the tick and the step (write, flush, queue_full or record_too_long) it was lost
   /// at as context. Any thread.
   [[nodiscard]] std::optional<failure::Failure> Failure() const;
 
@@ -235,6 +240,9 @@ class RecordedSimulation {
                                      const std::vector<math::Vec3>& spawn_points);
   /// As simulation::World::Tick, then writes the tick's record.
   simulation::TickResult Tick(const std::vector<simulation::PlayerCommand>& commands, float delta_time);
+
+  /// As Recorder::WaitUntilWritten, if it records.
+  void WaitUntilRecorded();
 
   /// The recording's first loss (Recorder::Failure), nullopt while it has
   /// lost no tick or when nothing is recorded.

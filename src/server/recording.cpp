@@ -252,6 +252,11 @@ class Recorder::Writer {
     LoseLocked(tick, step, {});
   }
 
+  void WaitUntilWritten() {
+    std::unique_lock lock(mutex_);
+    written_.wait(lock, [this] { return queue_.empty() && !writing_; });
+  }
+
   [[nodiscard]] RecordingState State() const { return state_; }
 
   [[nodiscard]] std::optional<failure::Failure> Failure() const {
@@ -265,7 +270,6 @@ class Recorder::Writer {
     protocol::BytesWire payload;
   };
 
-  // How writing a record failed.
   struct Loss {
     Step step;
     std::string detail;
@@ -306,18 +310,23 @@ class Recorder::Writer {
       }
       const Queued record = std::move(queue_.front());
       queue_.pop_front();
+      writing_ = true;
       lock.unlock();
       std::optional<Loss> loss = Persist(record.payload);
       lock.lock();
-      if (!loss) {
+      writing_ = false;
+      if (loss) {
+        // Whatever of the record reached the file reads back as a torn last
+        // tick; writing on would put whole records after it that no reader
+        // reaches.
+        queue_.clear();
+        LoseLocked(record.tick, loss->step, std::move(loss->detail));
+      } else {
         ++records_written_;
-        continue;
       }
-      // Whatever of the record reached the file reads back as a torn last
-      // tick; writing on would put whole records after it that no reader
-      // reaches.
-      queue_.clear();
-      LoseLocked(record.tick, loss->step, std::move(loss->detail));
+      if (queue_.empty()) {
+        written_.notify_all();
+      }
     }
   }
 
@@ -333,8 +342,10 @@ class Recorder::Writer {
       LE("subsystem=server event=recording_degraded {}", failure::DescribeFailure(*failure_));
       Enter(RecordingState::kDegraded);
     } else {
-      // The runtime that stops on it writes its ERR line (ADR-0033).
-      LW("subsystem=server event=recording_stopped {}", failure::DescribeFailure(*failure_));
+      // Only the state change: the runtime that stops on the failure writes
+      // its one ERR line, with its detail (ADR-0033).
+      LI("subsystem=server event=recording_stopped mode={} tick={} step={}", RecordingModeName(mode_), tick,
+         StepName(step));
       Enter(RecordingState::kStopped);
     }
   }
@@ -353,8 +364,12 @@ class Recorder::Writer {
   const std::size_t capacity_;
   mutable std::mutex mutex_;
   std::condition_variable ready_;
+  // Notified each time the queue is found empty, its last record written.
+  std::condition_variable written_;
   std::deque<Queued> queue_;
   bool closing_ = false;
+  // A record off the queue but not yet written keeps WaitUntilWritten waiting.
+  bool writing_ = false;
   // The header among them. Writer thread only.
   std::size_t records_written_ = 0;
   // Written under mutex_, read without it by any thread.
@@ -385,9 +400,18 @@ void Recorder::Write(const TickRecord& tick) {
   writer_->Push(tick.outcome.tick, std::move(payload));
 }
 
+void Recorder::WaitUntilWritten() { writer_->WaitUntilWritten(); }
+
 RecordingState Recorder::State() const { return writer_->State(); }
 
-std::optional<failure::Failure> Recorder::Failure() const { return writer_->Failure(); }
+std::optional<failure::Failure> Recorder::Failure() const {
+  // The Simulation thread asks every tick: a recording still enabled has
+  // lost nothing, which the state says without the writer's lock.
+  if (State() == RecordingState::kEnabled) {
+    return std::nullopt;
+  }
+  return writer_->Failure();
+}
 
 std::expected<Recording, RecordingError> ReadRecording(std::istream& in) {
   if (!in) {
@@ -462,6 +486,12 @@ simulation::TickResult RecordedSimulation::Tick(const std::vector<simulation::Pl
   pending_ = TickInput{};
   pending_spawns_.clear();
   return result;
+}
+
+void RecordedSimulation::WaitUntilRecorded() {
+  if (recorder_.has_value()) {
+    recorder_->WaitUntilWritten();
+  }
 }
 
 std::optional<failure::Failure> RecordedSimulation::RecordingFailure() const {

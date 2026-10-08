@@ -585,8 +585,8 @@ TEST(RecordingFailureModeTest, AStrictRecordingWhoseWriteFailsIsATerminalRuntime
   // says it stopped, once.
   EXPECT_EQ(Occurrences(recording.log, "ERROR"), 0U) << recording.log;
   EXPECT_EQ(Occurrences(recording.log, "event=recording_stopped"), 1U) << recording.log;
-  EXPECT_EQ(Occurrences(recording.log, "event=recording_stopped code=strict_recording_failed disposition=runtime"), 1U)
-      << recording.log;
+  EXPECT_EQ(Occurrences(recording.log, "event=recording_stopped mode=strict tick=0 step=write"), 1U) << recording.log;
+  EXPECT_EQ(Occurrences(recording.log, "code="), 0U) << recording.log;
 }
 
 TEST(RecordingFailureModeTest, AStrictRecordingWhoseFlushFailsIsATerminalRuntimeFailure) {
@@ -635,6 +635,21 @@ TEST(RecordingFailureModeTest, ARecordingReportsEachStateItEntersInOrder) {
   }
   const std::scoped_lock lock(mutex);
   EXPECT_EQ(states, (std::vector{RecordingState::kEnabled, RecordingState::kDegraded, RecordingState::kStopped}));
+}
+
+TEST(RecordingFailureModeTest, ALossIsKnownOnceEveryQueuedTickIsWritten) {
+  Faults faults;
+  std::ostringstream out(std::ios::binary);
+  Recorder recorder(out, ExampleHeader(), RecorderOptions{.mode = RecordingMode::kStrict, .faults = &faults});
+  recorder.Write(EmptyTick(1));
+  recorder.WaitUntilWritten();
+  EXPECT_FALSE(recorder.Failure().has_value());
+
+  faults.Arm(Site::kRecordingWrite, "disk full");
+  recorder.Write(EmptyTick(2));
+  recorder.WaitUntilWritten();
+  ASSERT_TRUE(recorder.Failure().has_value());
+  EXPECT_NE(augusta::failure::DescribeFailure(*recorder.Failure()).find("tick=2 step=write"), std::string::npos);
 }
 
 TEST(RecordingFailureModeTest, AWholeRecordingStopsWhenItIsClosedWithNothingLost) {

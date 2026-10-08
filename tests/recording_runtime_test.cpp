@@ -179,6 +179,32 @@ TEST_F(RecordingFailureTest, AStrictRecordingThatFailsIsTheHostsFailureToStopOn)
   EXPECT_EQ(RecordingStateIn(*host), "stopped");
 }
 
+TEST_F(RecordingFailureTest, AnOptionalRecordingWhoseFlushFailsDegradesWhileTheHostTicksOn) {
+  faults_.Arm(Site::kRecordingFlush, "disk full", Faults::kEveryTime);
+  const auto host = MakeHost(RecordingMode::kOptional);
+  host->Tick(kDeltaTime);
+
+  EXPECT_FALSE(host->FinishRecording().has_value());
+  EXPECT_EQ(RecordingStateIn(*host), "degraded");
+  const auto before = host->Tick(kDeltaTime).state.tick;
+  EXPECT_EQ(host->Tick(kDeltaTime).state.tick, before + 1);
+}
+
+TEST_F(RecordingFailureTest, AStrictRecordingsLossIsKnownOnceItsTicksAreWritten) {
+  // The header and the first tick are written; the second tick's write fails.
+  const auto host = MakeHost(RecordingMode::kStrict);
+  host->Tick(kDeltaTime);
+  ASSERT_FALSE(host->FinishRecording().has_value());
+  faults_.Arm(Site::kRecordingWrite, "disk full");
+  host->Tick(kDeltaTime);
+
+  // No waiting on the writer here: FinishRecording does.
+  const std::optional<augusta::failure::Failure> lost = host->FinishRecording();
+  ASSERT_TRUE(lost.has_value());
+  EXPECT_EQ(lost->code, Code::kStrictRecordingFailed);
+  EXPECT_NE(augusta::failure::DescribeFailure(*lost).find("tick=2 step=write"), std::string::npos);
+}
+
 TEST_F(RecordingFailureTest, AStrictRecordingThatFailsStopsTheRuntimeOnceWithItsFailure) {
   faults_.Arm(Site::kRecordingWrite, "disk full", Faults::kEveryTime);
   std::optional<augusta::failure::Failure> cause;
@@ -202,7 +228,8 @@ TEST_F(RecordingFailureTest, AStrictRecordingThatFailsStopsTheRuntimeOnceWithIts
   EXPECT_EQ(DispositionOf(cause->code), Disposition::kRuntime);
   EXPECT_EQ(cause->detail, "disk full");
   EXPECT_EQ(Occurrences(log, "ERROR"), 1U) << log;
-  EXPECT_EQ(Occurrences(log, "code=strict_recording_failed disposition=runtime"), 2U) << log;
+  EXPECT_EQ(Occurrences(log, "code=strict_recording_failed disposition=runtime"), 1U) << log;
+  EXPECT_EQ(Occurrences(log, "event=recording_stopped mode=strict"), 1U) << log;
   EXPECT_EQ(Occurrences(log, std::string(augusta::supervisor::kThreadContextKey) + "=simulation"), 1U) << log;
 }
 

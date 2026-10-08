@@ -62,11 +62,15 @@ exactly as without a recording. `strict` is for a replay or verification run
 that needs every tick, a test recording a match to replay it among them: the
 same failure is `strict_recording_failed`, a `runtime` one, and the Simulation
 thread stops on it before it ticks again, so the runtime stops and the process
-exits with a failure status, its boundary writing the one `ERR` line. Operators
-tell a recording's states apart by its log lines (`recording_enabled` with its
-mode, `recording_degraded`, `recording_stopped` when it is closed or a strict
-one fails) and by `augustad_recording_state` (ADR-0049). With no failure, the
-two modes write the very same file.
+exits with a failure status, its boundary writing the one `ERR` line. The writer
+finds a loss only after the tick that lost it, so a few ticks may run,
+unrecorded, before the Simulation thread does; a loss found only at the stop, in
+what was still queued, fails the run as it returns. Operators tell a recording's
+states apart by its log lines (`recording_enabled` with its mode,
+`recording_degraded`, `recording_stopped` when it is closed or a strict one
+fails) and by `augustad_recording_state` (ADR-0049), on which `stopped` means a
+strict recording's loss: a recording closed cleanly is closed after the endpoint
+stops serving. With no failure, the two modes write the very same file.
 
 **The disk is written on a thread of the recording's own.** The Simulation
 thread encodes a tick's record right after the tick, which costs only the

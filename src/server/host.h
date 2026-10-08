@@ -147,6 +147,13 @@ class Host {
   /// recording is optional, whose loss only degrades it. From any thread.
   [[nodiscard]] std::optional<failure::Failure> RecordingFailure() const;
 
+  /// RecordingFailure once every tick run so far is written, waiting for the
+  /// recording's writer: the last word on whether a strict recording is whole,
+  /// for the runtime to ask after its last tick. Its writer finds a loss up to
+  /// kRecordQueueCapacity ticks after the tick it lost, which RecordingFailure
+  /// alone misses at a stop. From the Simulation thread, between Ticks.
+  [[nodiscard]] std::optional<failure::Failure> FinishRecording();
+
  private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
