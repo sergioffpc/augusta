@@ -214,23 +214,34 @@ no self-hosted GitHub Actions runner in this pipeline).
   default listen port (UDP 27015) on the host, so a native Windows `augustac`
   reaches a container-hosted `augustad` at `127.0.0.1:27015`. Published rather
   than forwarded: VS Code's port forwarding is TCP-only.
-- **Server / shared core (Linux, dev container):** `.devcontainer/` gives this
-  side as a container, for VS Code or Codespaces, without mutating a host: CI's
-  runner Ubuntu release, whose distro packages fix the same LLVM major as CI's,
-  with the toolchain `.github/actions/setup-linux-build` installs (kept in step
-  with it by hand), clang (ADR-0008), CMake, Ninja, vcpkg, clang-tidy,
-  clang-format, gdb, GitHub CLI, kubectl, helm, Doxygen, the hooks' formatters
-  and linters (uv for yamllint, ruff, shfmt, shellcheck, actionlint, gersemi,
-  Prettier and pymarkdown, standalone yamlfmt, StyLua, luacheck and taplo, at
-  CI's pinned versions; no PowerShell, so no PSScriptAnalyzer), and CI's Linux
-  vcpkg binary cache configuration (a files provider in the checkout's
-  `.vcpkg-bincache`). The image builds for the host's architecture (amd64 or
-  arm64) rather than emulating CI's amd64. sccache's cache lives in a volume
-  shared by every container of the repository; the build trees in a volume per
-  container, so they never collide with a Windows build of the same checkout.
-  One environment, not a container beside a WSL bootstrap: two recipes for the
-  same toolchain drift apart. The client has no container equivalent (see
-  below).
+- **Server / shared core (Linux, dev container or host):** `.devcontainer/`
+  gives this side as a container, for VS Code or Codespaces, without mutating a
+  host, and `scripts/bootstrap-linux.sh` installs the same on an Ubuntu 26.04
+  host. The script is the one recipe for it: the image runs its `toolchain`
+  step, the container's post-create its `checkout` step (submodules, vcpkg,
+  hooks), and a host both. It installs CI's runner Ubuntu release's packages,
+  whose LLVM major is CI's, with the toolchain
+  `.github/actions/setup-linux-build` installs (kept in step with it by hand),
+  clang (ADR-0008), CMake, Ninja, vcpkg, clang-tidy, clang-format, gdb, GitHub
+  CLI, kubectl, helm, Doxygen, the hooks' formatters and linters (uv for
+  yamllint, ruff, shfmt, shellcheck, actionlint, gersemi, Prettier and
+  pymarkdown, standalone yamlfmt, StyLua, luacheck and taplo, at CI's pinned
+  versions; no PowerShell, so no PSScriptAnalyzer), and CI's Linux vcpkg binary
+  cache configuration (a files provider in the checkout's `.vcpkg-bincache`).
+  The image builds for the host's architecture (amd64 or arm64) rather than
+  emulating CI's amd64. sccache's cache lives in a volume shared by every
+  container of the repository; the build trees in a volume per container, so
+  they never collide with a Windows build of the same checkout. One recipe, not
+  a container beside a separate host bootstrap: two recipes for the same
+  toolchain drift apart. The client has no container equivalent (see below).
+- **macOS (hooks and checks only):** nothing builds natively on macOS — the
+  server builds in the dev container, the client on Windows.
+  `scripts/bootstrap-macos.sh` installs what the hooks and `make format-check`
+  run, so formatting and lint failures show before a push rather than in CI:
+  Homebrew's `llvm@21` (only its clang-format and clang-tidy, linked into
+  `~/.local/bin`), luacheck, uv, Git LFS, Doxygen and gh, and standalone
+  yamlfmt, StyLua and taplo at CI's pinned versions, checksummed, in
+  `~/.local/bin`; then it points `core.hooksPath` at `.githooks`.
 - **Client (Windows, native):** built and run natively — never cross-compiled
   from Linux (not viable given Falcor/D3D12/NVIDIA SDK's MSVC-specific toolchain
   assumptions). A `scripts/bootstrap-windows.ps1` script (winget-driven)
