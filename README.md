@@ -11,10 +11,8 @@
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-fe5196?logo=conventionalcommits)](https://www.conventionalcommits.org)
 
 A realistic, physics-driven multiplayer FPS simulator engine —
-server-authoritative, built in C++23 with a Windows client (rendering via NVIDIA
-Falcor/D3D12) and a headless Linux dedicated server. A hobby project to master
-low-level systems and networking programming, deliberately built from scratch
-instead of on top of Unreal/Unity/Godot.
+server-authoritative, with a Windows client and a headless Linux dedicated
+server.
 
 ## Highlights
 
