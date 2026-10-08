@@ -29,6 +29,8 @@ TEST(FailureTest, EachCodeIsClassifiedIntoTheScopeItIsRecoveredAt) {
   EXPECT_EQ(DispositionOf(Code::kInvalidPeerInput), Disposition::kPeer);
   EXPECT_EQ(DispositionOf(Code::kPeerMisbehaving), Disposition::kSession);
   EXPECT_EQ(DispositionOf(Code::kPeerConnectionLost), Disposition::kSession);
+  EXPECT_EQ(DispositionOf(Code::kJoinRefused), Disposition::kSession);
+  EXPECT_EQ(DispositionOf(Code::kServerUnreachable), Disposition::kSession);
   EXPECT_EQ(DispositionOf(Code::kRecordingWriteFailed), Disposition::kSubsystem);
   EXPECT_EQ(DispositionOf(Code::kRecordingFlushFailed), Disposition::kSubsystem);
   EXPECT_EQ(DispositionOf(Code::kMetricsEndpointFailed), Disposition::kSubsystem);

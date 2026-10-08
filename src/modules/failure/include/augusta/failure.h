@@ -46,6 +46,11 @@ enum class Code : std::uint16_t {
   kPeerMisbehaving = 2,
   /// A peer's connection closed or timed out.
   kPeerConnectionLost = 3,
+  /// The server refused this client's join (a client's one Session).
+  kJoinRefused = 4,
+  /// The connection ended before the server admitted this client: nothing
+  /// answered, or what did was not a compatible server.
+  kServerUnreachable = 5,
   /// The Match recording could not be written.
   kRecordingWriteFailed = 100,
   /// The Match recording could not be flushed.
