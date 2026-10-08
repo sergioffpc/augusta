@@ -374,6 +374,52 @@ The Parameters set the rifle, its ammo, starting health, stamina and the Player
 count; the tick rate is the server's config, not a Parameter (ADR-0039,
 ADR-0041).
 
+### US-23: Script Players with Agents
+
+Version: v3 (planned)
+
+As a developer, I want to control players from a Python script, so that a load
+test, an end-to-end test or an AI can play the game with no one at the keyboard.
+
+```text
+Given a running server, its client pack, and a Python script that imports augusta_agent
+When the script connects the scenario's Player count of Agents and sets their Intents
+Then each Agent joins, is Ready in the Lobby and plays the Match: every tick it moves,
+     aims at and fires on what its Intents name, and the script is told each Shot,
+     Hit confirmation, Death, Match start and Match end, and each Intent that ends
+
+Given an Agent aiming at another player, whose script takes seconds to decide
+When the target moves meanwhile
+Then the Agent's aim keeps following it, and the Agent sends a Command every tick
+
+Given a server that refuses an Agent or ends its connection
+When the script awaits anything of that Agent
+Then it raises AgentFailed, saying why as augustac would
+```
+
+The Harness carries out Intents every tick; a script is never called on a tick,
+so a slow one delays its own decisions, never a tick. `load_test.py` replaces
+`augusta-swarm` (ADR-0052).
+
+### US-24: Join a Server with Room
+
+Version: v3 (planned)
+
+As a player, I want my client to join whichever server of the scenario has room,
+so that I can play when one server's Lobby is full or its Match is under way.
+
+```text
+Given augustac.yaml lists several servers of one scenario under network.servers
+When a server refuses me with lobby full or match in progress
+Then the client tries the next in turn and joins the first that admits me; if
+     none does, it tells me every server is full or playing
+```
+
+Agents find a server the same way. Any other refusal - version, pack, Character
+
+- stops at the server that gave it, since every server of the scenario would
+  give it too (NFR-13).
+
 ---
 
 ## Non-Functional Requirements
@@ -617,3 +663,23 @@ environment (ADR-0026), whose Deployment keeps `replicas: 1` because each
 replica would be another Lobby and Match behind the same address. NFR-06 is one
 server's capacity for one Match; this requirement is how many Matches run at
 once, one server each.
+
+### NFR-14: Client-side Observability Under Load
+
+Version: v3 (planned)
+
+```text
+Source:      Developer running a load test
+Stimulus:    A load test of Agents against develop or staging
+Environment: k3s cluster with the monitoring stack (ADR-0049)
+Artifact:    The load test Job and its Agents' metrics endpoint
+Response:    Grafana shows each Agent's Reconciliation corrections,
+             interpolation running dry, fire and Connection health beside the
+             servers' metrics
+Measure:     Starting or stopping a load test of up to 32 Agents is one Git
+             change (NFR-11); every Agent metric is present within one scrape
+             interval (15 s)
+```
+
+NFR-07 watches the server; this requirement watches what its clients see of it,
+which is what NFR-13's "degrades none of them" is measured by.

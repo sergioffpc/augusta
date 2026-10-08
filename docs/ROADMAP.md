@@ -213,7 +213,7 @@ language's format and lint; the documentation site publishes from `develop`
 v3 makes what goes wrong under load reproducible, and runs more than one Match
 of a scenario at once. Players with no one at the keyboard come first: Agents
 are the load that proves the rest, and Match captures bring back what fails
-under it. It meets US-21, NFR-09 and NFR-13.
+under it. It meets US-21, US-23, US-24, NFR-09, NFR-13 and NFR-14.
 
 ### M12 — Agents (M)
 
@@ -226,8 +226,8 @@ under it. It meets US-21, NFR-09 and NFR-13.
 - The `augusta_agent` package (asyncio), its pytest smoke test against an
   in-process server, and the `load_test.py` and `raw_hold.py` examples
 
-**Exercises:** ADR-0052, ADR-0005, ADR-0013 **Exit criteria:** `load_test.py`
-replaces `augusta-swarm` and passes against `develop`
+**Exercises:** US-23, ADR-0052, ADR-0005, ADR-0013 **Exit criteria:**
+`load_test.py` replaces `augusta-swarm` and passes against `develop`
 
 ### M13 — Client-side Metrics (S)
 
@@ -236,9 +236,9 @@ replaces `augusta-swarm` and passes against `develop`
 - The load test as a Kubernetes `Job` in the cluster, from an `augusta-agent`
   Linux image, about 16 Agents per Pod, scraped through a `PodMonitor`
 
-**Exercises:** ADR-0049, ADR-0052, ADR-0026 **Exit criteria:** a load test Job
-started by one Git change shows its Agents' metrics in Grafana beside the
-server's
+**Exercises:** NFR-14, ADR-0049, ADR-0052, ADR-0026 **Exit criteria:** a load
+test Job started by one Git change shows its Agents' metrics in Grafana beside
+the server's
 
 ### M14 — Match Capture & Reenactment (M)
 
@@ -265,9 +265,9 @@ from any player's view, its Deaths and Match end as captured
 - `network.servers` in place of `network.server_address`: augustac and Agents
   try each in turn, moving on at _lobby full_ or _match in progress_
 
-**Exercises:** NFR-13, NFR-11, NFR-01, ADR-0026, ADR-0034 **Exit criteria:** 4
-servers of one scenario run 8-player Matches of Agents at once at 60 Hz with no
-missed ticks; adding or removing a server is one Git change
+**Exercises:** NFR-13, US-24, NFR-11, NFR-01, ADR-0026, ADR-0034 **Exit
+criteria:** 4 servers of one scenario run 8-player Matches of Agents at once at
+60 Hz with no missed ticks; adding or removing a server is one Git change
 
 ### M17 — Hardening & v3 Release (S)
 
