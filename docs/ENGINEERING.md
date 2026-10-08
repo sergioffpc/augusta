@@ -141,6 +141,16 @@ decisions already made in ARCHITECTURE.md:
       --predicate-type https://spdx.dev/Document/v2.3
     ```
 
+- **Vulnerability scanning:** the server image is scanned by trivy as CI builds
+  it, and is published only if clean. The latest release's executables are
+  scanned every night by grype, from their SBOMs (`nightly-jobs.yml`'s
+  `sbom-scan`), so a CVE published after the release still fails a run. No
+  vulnerability database knows vcpkg's purls, so `scripts/sbom-cpes.py` first
+  adds each port's NVD CPE, and fails on a port that has neither a CPE nor a
+  written reason for having none. Both fail on a high or critical CVE; the image
+  only on one with a fix available, the executables on any, since the NVD gives
+  most of its ranges with no fixed version.
+
 ## Git Workflow
 
 - **Branching model:** Git Flow — `main` (production/release) + `develop`
