@@ -388,9 +388,9 @@ jobs:
     if: needs.changes.outputs.run_tools == 'true'
     # Builds and tests the offline tools (tools/), including that each still
     # writes the golden output the runtime's tests load (ADR-0013). A new
-    # tool adds steps here, not a job. Windows: the asset cooker's native
-    # modules wrap DirectXTex (ADR-0017), and the cooker only ever runs on
-    # Windows (tools/README.md).
+    # tool adds steps here, not a job. Windows, where the content authors cook;
+    # tools-linux runs the asset cooker's half again on Linux, its other
+    # platform (tools/README.md).
     runs-on: windows-2025
     # Git Bash, as everywhere else: no PowerShell in the repository.
     defaults:
@@ -429,6 +429,58 @@ jobs:
         run: |
           cmake --preset windows -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$(cygpath -m "$PWD/tools/.venv/Scripts/python.exe")"
           cmake --build tools/pack/cpp/build/x64-windows
+      - name: Test (pytest)
+        working-directory: tools/pack
+        run: uv run pytest
+  tools-linux:
+    needs: changes
+    if: needs.changes.outputs.run_tools == 'true'
+    # The asset cooker on Linux: its native modules built with the linux
+    # preset, and the same pytest suite, golden packs included - a cook gives
+    # the same bytes on either platform.
+    runs-on: ubuntu-26.04
+    # The local files provider, as the server job does (see there why not the
+    # NuGet feed) - but a cache of its own, not setup-linux-build's:
+    # tools/pack/cpp's manifest isn't the root one every job sharing that
+    # cache installs, and save-vcpkg-cache drops whatever the root build didn't
+    # install.
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: true
+      - name: Fetch vcpkg
+        # Only vcpkg, as the tools job does.
+        run: git submodule update --init --depth 1 third_party/vcpkg
+      - name: Install build tools
+        # clang: the linux preset compiles with it. autoconf/autoconf-archive/
+        # automake/libtool: vcpkg's python3 port (pybind11's dependency) builds
+        # via autotools on Linux.
+        run: sudo apt-get update && sudo apt-get install -y clang ninja-build autoconf autoconf-archive automake libtool
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - name: Key the vcpkg binary cache
+        id: vcpkg-key
+        run: echo "key=vcpkg-bincache-pack-linux-clang-$(git rev-parse HEAD:third_party/vcpkg)-${{ hashFiles('tools/pack/cpp/vcpkg.json') }}" >> "$GITHUB_OUTPUT"
+      - name: Restore and save vcpkg binaries
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .vcpkg-bincache
+          key: ${{ steps.vcpkg-key.outputs.key }}
+      - name: Bootstrap vcpkg
+        run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: tools/uv.lock
+      - name: Install the cooker
+        working-directory: tools
+        run: uv sync --locked
+      - name: Build the native modules
+        # As the tools job does, with the linux preset.
+        run: |
+          cmake --preset linux -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$PWD/tools/.venv/bin/python"
+          cmake --build tools/pack/cpp/build/x64-linux
       - name: Test (pytest)
         working-directory: tools/pack
         run: uv run pytest

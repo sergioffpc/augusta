@@ -4,6 +4,7 @@
   "dependencies": [
     "meshoptimizer",
     "directxtex",
+    "stb",
     "pybind11"
   ]
 }

@@ -37,7 +37,7 @@ endif()
 
 # Two small, independent pybind11 extension modules for the asset-cooking
 # pipeline (ADR-0030) - thin wrappers over meshoptimizer (ADR-0016) and
-# DirectXTex (ADR-0017), the only two pieces of the pipeline with no Python
+# stb_image + DirectXTex (ADR-0017), the only two pieces of the pipeline with no Python
 # equivalent. Everything else (USD stage walking, the pack container
 # format, key generation) is pure Python, in ../src/pack - see
 # that project's cook.py/pack.py/keys.py.
@@ -49,6 +49,7 @@ endif()
 # with it (a DLL-name collision between the two builds' same-named DLLs).
 find_package(meshoptimizer CONFIG REQUIRED)
 find_package(directxtex CONFIG REQUIRED)
+find_package(Stb REQUIRED)
 find_package(pybind11 CONFIG REQUIRED)
 
 # Both build straight into ../src/pack so `import pack.
@@ -68,6 +69,7 @@ set_target_properties(
 
 pybind11_add_module(augusta_textconv_py textconv_bindings.cpp)
 target_link_libraries(augusta_textconv_py PRIVATE Microsoft::DirectXTex)
+target_include_directories(augusta_textconv_py SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 set_target_properties(
   augusta_textconv_py
   PROPERTIES

@@ -276,12 +276,12 @@ no self-hosted GitHub Actions runner in this pipeline).
   and rejected: Falcor's CMake presets only test/support MSVC on Windows, and
   stacking an unsupported compiler on top of an already-unmaintained dependency,
   ADR-0009, isn't worth the purity.)
-- **Asset cooker setup (opt-in, Windows only):**
-  `tools/pack/scripts/bootstrap.sh` (Git Bash; the cooker's `_textconv` loads
-  images through DirectXTex's WIC loader, which needs COM) builds the pack
-  environment under a caller-chosen assets root (ADR-0030): a uv-managed Python
-  environment with `tools/pack` installed editable, its native modules, signing
-  keys and sample authoring content.
+- **Asset cooker setup (opt-in):** `tools/pack/scripts/bootstrap.sh` (Windows in
+  Git Bash, or Linux - the platforms vcpkg's DirectXTex port, which the cooker's
+  `_textconv` wraps, builds for) builds the pack environment under a
+  caller-chosen assets root (ADR-0030): a uv-managed Python environment with
+  `tools/pack` installed editable, its native modules, signing keys and sample
+  authoring content.
 - **USD Composer setup (authoring-only, opt-in):**
   `tools/composer/scripts/bootstrap.sh` (Windows in Git Bash, or Linux) builds
   NVIDIA Omniverse USD Composer via kit-app-template and fetches Adobe's
