@@ -1037,7 +1037,7 @@ TEST(ProtocolEncodeTest, AListLongerThanItsMessageAllowsIsNotEncoded) {
             EncodeError::kFieldTooLong);
   EXPECT_EQ(RefusalOf(MatchStartWire{.players = std::vector<MatchPlayerWire>(kMaxPlayers + 1)}),
             EncodeError::kFieldTooLong);
-  EXPECT_EQ(RefusalOf(JoinAcceptedWire{.parameters = parameters}), EncodeError::kFieldTooLong);
+  EXPECT_EQ(RefusalOf(JoinAcceptedWire{.parameters = parameters, .character = {}}), EncodeError::kFieldTooLong);
 }
 
 TEST(ProtocolEncodeTest, AFlagBitTheFieldDoesNotHaveIsNotEncoded) {
