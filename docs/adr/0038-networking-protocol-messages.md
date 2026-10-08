@@ -150,6 +150,16 @@ allocating, and rejects a payload with bytes left over once its message is
 complete, so a message has exactly one encoding. Every receiver drops what fails
 to decode and logs it; a malformed message never changes state.
 
+**Outbound invariants.** `Encode` and `EncodeRecord` check their own side as
+strictly, in every build: they return `std::expected<BytesWire, EncodeError>`
+(ADR-0033), where the error is `kFieldTooLong`, `kReservedBits` or
+`kInvalidEnum`, and give no payload at all for a message or record a field of
+which the protocol cannot carry, so nothing cut off or misframed is ever sent or
+recorded. Such a field is the sender's bug, never a peer's input: each peer's
+edge (`server/wire.h`, `augusta/harness_wire.h`) turns the error into a
+`kInvariantViolated` failure naming the message or record type, and the runtime
+that sent it stops (ADR-0033).
+
 **Reliability split.** The sender names a `networking::Reliability` for every
 send (ADR-0003's transport offers both). A message that must arrive, and whose
 loss would leave the two sides disagreeing, is reliable; a message a newer one
