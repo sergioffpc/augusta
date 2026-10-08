@@ -54,6 +54,10 @@ struct Host::Impl {
     TickRecipients to;
   };
 
+  // Written in place by both threads, lock-free; read by the metrics endpoint's.
+  // Declared before the recording, which writes its state here until it is
+  // closed.
+  HostMetrics metrics;
   // Declared before the socket so it is constructed first; see
   // BuildRecordedSimulation. Simulation thread only, with the file it records
   // to, if any, the body each player in it controls, and whether the match
@@ -78,8 +82,6 @@ struct Host::Impl {
 
   // Thread-safe by the transport's contract, used from both threads.
   networking::Server network;
-  // Written in place by both threads, lock-free; read by the metrics endpoint's.
-  HostMetrics metrics;
 
   // Guards everything below: written by the Network I/O thread as clients
   // join, leave and send commands, and by the Simulation thread as matches

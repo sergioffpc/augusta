@@ -44,6 +44,8 @@ std::string_view CodeName(Code code) {
       return "worker_failed";
     case Code::kInvariantViolated:
       return "invariant_violated";
+    case Code::kStrictRecordingFailed:
+      return "strict_recording_failed";
     case Code::kInvalidConfiguration:
       return "invalid_configuration";
     case Code::kInvalidContent:
@@ -122,6 +124,7 @@ Disposition DispositionOf(Code code) {
     case Code::kWorkerCreationFailed:
     case Code::kWorkerFailed:
     case Code::kInvariantViolated:
+    case Code::kStrictRecordingFailed:
       return Disposition::kRuntime;
     case Code::kInvalidConfiguration:
     case Code::kInvalidContent:

@@ -436,6 +436,25 @@ target_compile_definitions(
 # Links PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_recording_tests DISCOVERY_TIMEOUT 30)
 
+# A Match recording that cannot be written, optional or strict (ADR-0048,
+# ADR-0033): its write and flush failures injected (see faults.h), seen from the
+# Host and the ServerRuntime running it, with the log lines read off stdout.
+add_executable(augusta_recording_runtime_tests recording_runtime_test.cpp)
+target_link_libraries(
+  augusta_recording_runtime_tests
+  PRIVATE
+    augustad_host
+    augustad_runtime
+    augusta_failure
+    augusta_logging
+    augusta_networking
+    augusta_supervisor
+    GTest::gtest
+    GTest::gtest_main
+)
+# Links networking and PhysX through augustad_host, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_recording_runtime_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_runner_tests runner_test.cpp)
 target_link_libraries(augusta_runner_tests PRIVATE augusta_harness augustad_host GTest::gtest GTest::gtest_main)
 # Links networking and PhysX, so the same first-launch cost applies as above.

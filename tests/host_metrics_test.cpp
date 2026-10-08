@@ -21,6 +21,7 @@
 #include "lock_free_metrics.h"
 #include "match.h"
 #include "misbehaviour.h"
+#include "recording.h"
 
 // What the Host counts, as the metrics endpoint collects it: the catalogue's
 // names, types and labels (ADR-0049), and the heartbeat's totals read from the
@@ -33,6 +34,7 @@ using augusta::server::HostMetrics;
 using augusta::server::JoinRefusal;
 using augusta::server::Leaving;
 using augusta::server::PeerRejection;
+using augusta::server::RecordingState;
 using augusta::server::Rejection;
 using augusta::server::Totals;
 using prometheus::ClientMetric;
@@ -118,6 +120,7 @@ TEST(HostMetricsTest, EveryMetricOfTheCatalogueIsCollectedWithItsType) {
       {"augustad_shooters_delay_seconds", MetricType::Histogram},
       {"augustad_shooters_delay_capped_total", MetricType::Counter},
       {"augustad_bullets_in_flight", MetricType::Gauge},
+      {"augustad_recording_state", MetricType::Gauge},
   };
   for (const auto& [name, type] : catalogue) {
     EXPECT_EQ(Family(families, name).type, type) << name;
@@ -127,6 +130,29 @@ TEST(HostMetricsTest, EveryMetricOfTheCatalogueIsCollectedWithItsType) {
 }
 
 // Requirements: NFR-07
+// The value of each augustad_recording_state series, by its state label.
+std::map<std::string, double> RecordingStates(const HostMetrics& metrics) {
+  std::map<std::string, double> states;
+  for (const ClientMetric& series : Family(metrics.Collect(), "augustad_recording_state").metric) {
+    states.emplace(LabelsOf(series).at("state"), series.gauge.value);
+  }
+  return states;
+}
+
+TEST(HostMetricsTest, NoRecordingStateIsSetWhileNothingIsRecorded) {
+  const HostMetrics metrics(kTickRate);
+  EXPECT_EQ(RecordingStates(metrics),
+            (std::map<std::string, double>{{"enabled", 0.0}, {"degraded", 0.0}, {"stopped", 0.0}}));
+}
+
+TEST(HostMetricsTest, OnlyTheRecordingsCurrentStateIsSet) {
+  HostMetrics metrics(kTickRate);
+  augusta::server::SetRecordingState(metrics, RecordingState::kEnabled);
+  augusta::server::SetRecordingState(metrics, RecordingState::kDegraded);
+  EXPECT_EQ(RecordingStates(metrics),
+            (std::map<std::string, double>{{"enabled", 0.0}, {"degraded", 1.0}, {"stopped", 0.0}}));
+}
+
 TEST(HostMetricsTest, TheTickRateIsTheConfiguredOne) {
   const HostMetrics metrics(kTickRate);
 

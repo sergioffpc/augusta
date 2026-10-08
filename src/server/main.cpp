@@ -59,11 +59,11 @@ std::unique_ptr<augusta::server::ServerRuntime> CreateRuntime(const augusta::con
       .parameters = content->parameters,
       .listen = {.address = file_config.listen_address},
       .recording = file_config.recording_path,
+      .recording_mode = file_config.strict_recording ? augusta::server::RecordingMode::kStrict
+                                                     : augusta::server::RecordingMode::kOptional,
       .server_pack = pack->Hash(),
+      .faults = nullptr,
   };
-  if (!config.recording.empty()) {
-    LI("subsystem=server event=recording path={}", config.recording.string());
-  }
   return std::make_unique<augusta::server::ServerRuntime>(config, file_config.metrics_port,
                                                           std::move(content->scenario), std::move(content->policy));
 }

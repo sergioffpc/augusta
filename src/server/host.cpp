@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "augusta/failure.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/protocol.h"
@@ -37,10 +38,11 @@ namespace augusta::server {
 namespace {
 
 // The authoritative world with the map's collision already in it, recording
-// to file if config asks for a recording (ADR-0048). Built before the socket
-// exists, so a map that is rejected never leaves a bound port behind.
+// to file if config asks for a recording (ADR-0048), its state counted into
+// metrics. Built before the socket exists, so a map that is rejected never
+// leaves a bound port behind.
 RecordedSimulation BuildRecordedSimulation(const HostConfig& config, const Scenario& scenario, scripting::Engine policy,
-                                           std::ofstream& file) {
+                                           std::ofstream& file, HostMetrics& metrics) {
   simulation::World world = BuildSimulation(config.parameters, config.tick_rate_hz, scenario, std::move(policy));
   if (config.recording.empty()) {
     return {std::move(world), std::nullopt};
@@ -49,9 +51,17 @@ RecordedSimulation BuildRecordedSimulation(const HostConfig& config, const Scena
   if (!file) {
     throw std::runtime_error(std::format("server::Host: cannot write a recording to {}", config.recording.string()));
   }
-  return {std::move(world), Recorder(file, RecordingHeader{.engine_version = std::string(EngineVersion()),
-                                                           .server_pack = config.server_pack,
-                                                           .tick_rate_hz = config.tick_rate_hz})};
+  LI("subsystem=server event=recording_enabled path={} mode={}", config.recording.string(),
+     RecordingModeName(config.recording_mode));
+  return {std::move(world),
+          Recorder(file,
+                   RecordingHeader{.engine_version = std::string(EngineVersion()),
+                                   .server_pack = config.server_pack,
+                                   .tick_rate_hz = config.tick_rate_hz},
+                   RecorderOptions{.mode = config.recording_mode,
+                                   .faults = config.faults,
+                                   .on_state = [&metrics](RecordingState state) { SetRecordingState(metrics, state); },
+                                   .capacity = kRecordQueueCapacity})};
 }
 
 // The ticks of kMatchPause at tick_rate_hz, rounded up so the pause is never shorter.
@@ -72,13 +82,13 @@ std::vector<std::string> CharacterPaths(const std::vector<Character>& characters
 }  // namespace
 
 Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy)
-    : simulation(BuildRecordedSimulation(config, scenario, std::move(policy), recording_file)),
+    : metrics(config.tick_rate_hz),
+      simulation(BuildRecordedSimulation(config, scenario, std::move(policy), recording_file, metrics)),
       tick_rate_hz(config.tick_rate_hz),
       parameters(config.parameters),
       characters(ToSimulation(scenario.characters)),
       spawn_points(std::move(scenario.spawn_points)),
       network(config.listen),
-      metrics(config.tick_rate_hz),
       match(MatchConfig{
           .engine_version = std::string(EngineVersion()),
           .client_pack = scenario.client_pack,
@@ -148,5 +158,13 @@ std::size_t Host::QueuedCommands(SessionId session) const {
 }
 
 const HostMetrics& Host::Metrics() const { return impl_->metrics; }
+
+std::optional<failure::Failure> Host::RecordingFailure() const {
+  std::optional<failure::Failure> lost = impl_->simulation.RecordingFailure();
+  if (lost.has_value() && failure::DispositionOf(lost->code) != failure::Disposition::kRuntime) {
+    return std::nullopt;
+  }
+  return lost;
+}
 
 }  // namespace augusta::server

@@ -7,10 +7,13 @@
 #include <expected>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/failure.h"
+#include "augusta/faults.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
@@ -22,6 +25,7 @@
 #include "content.h"
 #include "host_metrics.h"
 #include "match.h"
+#include "recording.h"
 
 /// \file
 /// augusta::server::Host is the server's network boundary and the
@@ -57,8 +61,14 @@ struct HostConfig {
   /// Where to write a recording of every tick SimulationWorld runs (ADR-0048),
   /// replacing any file there; empty records none.
   std::filesystem::path recording;
+  /// What losing a tick of that recording costs: an optional one degrades
+  /// while the Host goes on, a strict one is Host::RecordingFailure.
+  RecordingMode recording_mode = RecordingMode::kOptional;
   /// The hash of the server pack the content was loaded from, which a recording names.
   assets::PackHash server_pack{};
+  /// Asked at the recording's write and flush (failure::Site), so a test can
+  /// make either fail; only a test gives one, and it must outlive the Host.
+  failure::Faults* faults = nullptr;
 };
 
 /// The server's listening socket and its SimulationWorld, without threads or a clock.
@@ -130,6 +140,12 @@ class Host {
   /// What it has counted (ADR-0049), for the metrics endpoint to collect and a
   /// test to read. From any thread; it lives as long as the Host.
   [[nodiscard]] const HostMetrics& Metrics() const;
+
+  /// The failure a strict recording lost a tick on
+  /// (failure::Code::kStrictRecordingFailed), which the runtime must stop on
+  /// before it ticks again; nullopt while it has lost none, or when the
+  /// recording is optional, whose loss only degrades it. From any thread.
+  [[nodiscard]] std::optional<failure::Failure> RecordingFailure() const;
 
  private:
   struct Impl;

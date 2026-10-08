@@ -39,6 +39,7 @@ TEST(FailureTest, EachCodeIsClassifiedIntoTheScopeItIsRecoveredAt) {
   EXPECT_EQ(DispositionOf(Code::kWorkerCreationFailed), Disposition::kRuntime);
   EXPECT_EQ(DispositionOf(Code::kWorkerFailed), Disposition::kRuntime);
   EXPECT_EQ(DispositionOf(Code::kInvariantViolated), Disposition::kRuntime);
+  EXPECT_EQ(DispositionOf(Code::kStrictRecordingFailed), Disposition::kRuntime);
   EXPECT_EQ(DispositionOf(Code::kInvalidConfiguration), Disposition::kProcess);
   EXPECT_EQ(DispositionOf(Code::kInvalidContent), Disposition::kProcess);
   EXPECT_EQ(DispositionOf(Code::kDependencyInitFailed), Disposition::kProcess);

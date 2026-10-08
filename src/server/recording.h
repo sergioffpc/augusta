@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <istream>
 #include <memory>
 #include <optional>
@@ -13,6 +14,8 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/failure.h"
+#include "augusta/faults.h"
 #include "augusta/math.h"
 #include "augusta/policy_actions.h"
 #include "augusta/simulation.h"
@@ -26,7 +29,9 @@
 /// one; ReadRecording reads a recording back. The records are the Networking
 /// Protocol's, in its encoding (ADR-0038), converted in wire.h, so this header
 /// names only the engine's types. Simulation thread only, as the World is; a
-/// Recorder writes its stream on a thread of its own.
+/// Recorder writes its stream on a thread of its own. A recording that cannot
+/// be written is optional, and degrades while the Match goes on, or strict,
+/// and is a terminal failure of the runtime that asks for it (ADR-0033).
 namespace augusta::server {
 
 /// What a recording was made on.
@@ -118,6 +123,49 @@ enum class RecordingError : std::uint8_t {
 /// the recording stops. At most kMaxRecordSize each, so 16 MiB at worst.
 inline constexpr std::size_t kRecordQueueCapacity = 256;
 
+/// What losing a recording's ticks costs the run (ADR-0048).
+enum class RecordingMode : std::uint8_t {
+  /// A debugging aid: the recording degrades, and the Match goes on as it
+  /// would without one. augustad's default.
+  kOptional,
+  /// Evidence a replay or verification run needs whole: losing a tick is a
+  /// terminal runtime failure (failure::Code::kStrictRecordingFailed).
+  kStrict,
+};
+
+/// Where a recording is in its one-way life, as its logs and metrics name it.
+enum class RecordingState : std::uint8_t {
+  /// Every tick so far is queued or written.
+  kEnabled,
+  /// An optional recording lost a tick and writes nothing more; the run goes
+  /// on without it.
+  kDegraded,
+  /// It writes nothing more: it was closed, or a strict recording lost a tick
+  /// and the runtime is to stop on it.
+  kStopped,
+};
+
+/// "optional" or "strict", as logs name mode.
+[[nodiscard]] std::string_view RecordingModeName(RecordingMode mode);
+
+/// "enabled", "degraded" or "stopped", as logs and metrics name state.
+[[nodiscard]] std::string_view RecordingStateName(RecordingState state);
+
+/// How a Recorder records, beyond its stream and header.
+struct RecorderOptions {
+  RecordingMode mode = RecordingMode::kOptional;
+  /// Asked before each write (failure::Site::kRecordingWrite) and flush
+  /// (kRecordingFlush), a trip failing the stream as the disk would; only a
+  /// test gives one, and it must outlive the Recorder.
+  failure::Faults* faults = nullptr;
+  /// Called with each state the recording enters, from whichever thread
+  /// enters it, kEnabled first, from the constructor; must outlive the
+  /// Recorder. Empty calls nothing.
+  std::function<void(RecordingState)> on_state;
+  /// kRecordQueueCapacity but in tests.
+  std::size_t capacity = kRecordQueueCapacity;
+};
+
 /// Writes a recording to a binary stream, which it does not own and which must
 /// outlive it: each record as its 4-byte little-endian length and its payload,
 /// the header first. Write, on the Simulation thread with the tick that made
@@ -125,17 +173,20 @@ inline constexpr std::size_t kRecordQueueCapacity = 256;
 /// Recorder's own writes and flushes each in turn, so the disk never holds up a
 /// tick, and a recording outlives a server that stops abruptly up to the last
 /// whole tick that thread wrote. Destroying the Recorder waits for every record
-/// it queued to be written, so a stalled disk holds up shutdown, never a tick.
+/// it queued to be written, then stops the recording.
 ///
 /// A record longer than kMaxRecordSize, one that finds capacity records still
-/// unwritten, or a write the stream fails stops the recording: it is logged
-/// once, as event=recording_stopped, and nothing more is written, so the file
-/// still reads back up to its last whole tick.
+/// unwritten, or a write or flush the stream fails loses the recording's
+/// ticks from there on: nothing more is written, so the file still reads back
+/// up to its last whole tick, and its first loss is kept as Failure. An
+/// optional recording then degrades, logged once at ERR as
+/// event=recording_degraded; a strict one stops, logged as
+/// event=recording_stopped, and the runtime that asks Failure stops on it,
+/// whose boundary writes the ERR line (ADR-0033).
 class Recorder {
  public:
-  /// Queues header for out first, and holds at most capacity records not yet
-  /// written; capacity is kRecordQueueCapacity but in tests.
-  Recorder(std::ostream& out, const RecordingHeader& header, std::size_t capacity = kRecordQueueCapacity);
+  /// Queues header for out first.
+  Recorder(std::ostream& out, const RecordingHeader& header, RecorderOptions options = {});
   ~Recorder();
   Recorder(Recorder&&) noexcept;
   Recorder& operator=(Recorder&&) noexcept;
@@ -143,20 +194,23 @@ class Recorder {
   Recorder& operator=(const Recorder&) = delete;
 
   /// Queues tick's record, without waiting for the stream, unless the
-  /// recording has stopped.
+  /// recording has lost a tick already.
   void Write(const TickRecord& tick);
 
-  /// Whether the recording has stopped, its file missing every tick since. A
-  /// write the stream fails stops it once the writer thread gets to it.
-  [[nodiscard]] bool Stopped() const;
+  /// A loss on the writer thread shows here once that thread gets to it,
+  /// after the Write that queued the record has returned. Any thread.
+  [[nodiscard]] RecordingState State() const;
+
+  /// The first loss, nullopt while every tick is queued or written: a
+  /// subsystem failure (kRecordingWriteFailed, kRecordingFlushFailed) of an
+  /// optional recording, a runtime one (kStrictRecordingFailed) of a strict
+  /// one, with the tick and the step (write, flush, queue or size) it was lost
+  /// at as context. Any thread.
+  [[nodiscard]] std::optional<failure::Failure> Failure() const;
 
  private:
-  // Logs that the recording stopped on tick, and why, and queues nothing more.
-  void Stop(tick::Tick tick, std::string_view reason);
-
   class Writer;
   std::unique_ptr<Writer> writer_;
-  bool stopped_ = false;
 };
 
 /// Reads a recording a Recorder wrote. A last record cut short is dropped and
@@ -181,6 +235,10 @@ class RecordedSimulation {
                                      const std::vector<math::Vec3>& spawn_points);
   /// As simulation::World::Tick, then writes the tick's record.
   simulation::TickResult Tick(const std::vector<simulation::PlayerCommand>& commands, float delta_time);
+
+  /// The recording's first loss (Recorder::Failure), nullopt while it has
+  /// lost no tick or when nothing is recorded.
+  [[nodiscard]] std::optional<failure::Failure> RecordingFailure() const;
 
  private:
   simulation::World world_;
