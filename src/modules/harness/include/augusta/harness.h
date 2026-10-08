@@ -324,7 +324,8 @@ class Session {
   /// The first message this client could not encode, as the broken invariant
   /// it is (failure::Code::kInvariantViolated, ADR-0033), or nullopt while
   /// there is none. What it was is not sent; once set, whoever runs the Session
-  /// must stop it. ExchangeMessages, ReportReady and Tick may each set it.
+  /// must stop it, once (harness::Runner asks from its Network I/O thread).
+  /// ExchangeMessages, ReportReady and Tick may each set it.
   /// Safe to read from any thread.
   [[nodiscard]] std::optional<failure::Failure> GetInvariantFailure() const;
 

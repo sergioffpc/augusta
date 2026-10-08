@@ -98,9 +98,6 @@ supervisor::WorkerResult Runner::PredictionThreadMain() {
     const tick::Clock::time_point tick_start = tick::Clock::now();
 
     const prediction::State state = session_.Tick(hooks_.next_command(), delta_time.count());
-    if (std::optional<failure::Failure> broken = session_.GetInvariantFailure()) {
-      return std::unexpected(*std::move(broken));
-    }
     activity.Record(state, tick_start);
 
     // The tick spans its schedule, not its wake-ups, so a reader blending
@@ -127,8 +124,11 @@ supervisor::WorkerResult Runner::NetworkThreadMain() {
       session_.PumpEvents();
       session_.ExchangeMessages();
     }
-    // Ready is reported from whichever thread loaded the Roster, so a message
-    // it could not send is found here too, on the next round.
+    // The one thread that reports a message the Session could not send, from
+    // whichever thread it was (a Tick's Commands, a Join request, Ready from
+    // whoever loaded the Roster), so it is reported once: the failure names
+    // the message's type, and the Prediction thread stops on the stop it
+    // requests.
     if (std::optional<failure::Failure> broken = session_.GetInvariantFailure()) {
       session_.Disconnect();
       return std::unexpected(*std::move(broken));

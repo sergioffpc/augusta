@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -108,12 +109,15 @@ struct Host::Impl {
 
   // The first outbound message or record the protocol could not carry: a
   // broken invariant, never sent, after which the runtime must stop
-  // (ADR-0033). Set by either thread, so guarded by failure_mutex.
-  mutable std::mutex failure_mutex;
+  // (ADR-0033). Set by either thread, and taken once, by the thread that
+  // set it (TakeInvariantFailure), so guarded by failure_mutex.
+  std::mutex failure_mutex;
+  bool failed = false;
   std::optional<failure::Failure> failure;
+  std::thread::id failed_on;
 
-  // Keeps failure, unless an earlier one is kept.
-  void Fail(failure::Failure failure);
+  // Keeps broken, with the calling thread, unless an earlier failure was kept.
+  void Fail(failure::Failure broken);
 
   // Sending to players (host.cpp), each message encoded here (wire.h) and
   // counted as it is sent (SendCounted); one the protocol cannot carry is

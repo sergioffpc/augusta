@@ -9,7 +9,11 @@ instead, since that code isn't on the tick path and ergonomics matter more than
 allocation-free unwinding. Violated internal invariants (bugs, not external
 failures) use `assert`/abort in debug builds; in release, they escalate to a
 `CRIT` log line (ADR-0029) followed by controlled shutdown, never silent
-continuation.
+continuation. An invariant that protocol correctness, authority or a resource's
+lifetime depends on is checked in every build instead, where breaking it would
+emit or use invalid state: the check returns a `kInvariantViolated` failure and
+the runtime stops, so an assertion is only ever a development aid on top of it.
+Outbound protocol encoding is one (ADR-0038).
 
 An error is always a type, never a string: a function that reports failure
 returns a dedicated error type (an `enum class`, or a struct or class when the

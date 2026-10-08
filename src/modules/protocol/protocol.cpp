@@ -838,7 +838,11 @@ std::expected<BytesWire, EncodeError> EncodeRecord(const RecordWire& record) {
 }
 
 RecordTypeWire TypeOf(const RecordWire& record) {
-  return std::holds_alternative<RecordingHeaderWire>(record) ? RecordTypeWire::kHeader : RecordTypeWire::kTick;
+  struct Type {
+    RecordTypeWire operator()(const RecordingHeaderWire&) const { return RecordTypeWire::kHeader; }
+    RecordTypeWire operator()(const RecordedTickWire&) const { return RecordTypeWire::kTick; }
+  };
+  return std::visit(Type{}, record);
 }
 
 std::expected<RecordWire, DecodeError> DecodeRecord(std::span<const std::byte> payload) {

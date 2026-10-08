@@ -12,6 +12,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -90,9 +91,12 @@ Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine 
 
 void Host::Impl::Fail(failure::Failure broken) {
   const std::lock_guard<std::mutex> lock(failure_mutex);
-  if (!failure.has_value()) {
-    failure = std::move(broken);
+  if (failed) {
+    return;
   }
+  failed = true;
+  failure = std::move(broken);
+  failed_on = std::this_thread::get_id();
 }
 
 void Host::Impl::Reply(networking::PeerId peer, const protocol::MessageWire& message) {
@@ -138,9 +142,12 @@ Host::~Host() = default;
 
 networking::Endpoint Host::ListenEndpoint() const { return impl_->network.LocalEndpoint(); }
 
-std::optional<failure::Failure> Host::InvariantFailure() const {
+std::optional<failure::Failure> Host::TakeInvariantFailure() {
   const std::lock_guard<std::mutex> lock(impl_->failure_mutex);
-  return impl_->failure;
+  if (impl_->failed_on != std::this_thread::get_id()) {
+    return std::nullopt;
+  }
+  return std::exchange(impl_->failure, std::nullopt);
 }
 
 void Host::RecordTiming(const tick::Timing& timing) {

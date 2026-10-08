@@ -85,11 +85,12 @@ class Host {
   [[nodiscard]] networking::Endpoint ListenEndpoint() const;
 
   /// The first message or record the Host could not encode, as the broken
-  /// invariant it is (failure::Code::kInvariantViolated, ADR-0033), or nullopt
-  /// while there is none. What it was is sent to no one and recorded nowhere;
-  /// once set, the runtime must stop. PumpNetwork and Tick may each set it, so
-  /// whoever runs them asks after each. From any thread.
-  [[nodiscard]] std::optional<failure::Failure> InvariantFailure() const;
+  /// invariant it is (failure::Code::kInvariantViolated, ADR-0033): what it was
+  /// is sent to no one and recorded nowhere, and the runtime must stop.
+  /// PumpNetwork and Tick may each find one, so the thread that runs each asks
+  /// after it. Given once, and only to the thread whose call found it, so the
+  /// runtime reports it once, against the right thread; nullopt otherwise.
+  [[nodiscard]] std::optional<failure::Failure> TakeInvariantFailure();
 
   /// Does one round of the Network I/O thread's work, at now: connection events
   /// and received messages. A peer that keeps sending what no honest client

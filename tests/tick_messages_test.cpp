@@ -231,4 +231,26 @@ TEST(TickMessagesTest, AnUpdateTheProtocolCannotCarryIsNotSentAndIsAnInvariantFa
   EXPECT_TRUE(sent.empty());
 }
 
+// Every message of a tick is encoded before any is sent: a Death the protocol
+// cannot carry, its body part corrupted, sends none of the tick's, not even
+// the updates before it.
+TEST(TickMessagesTest, AMessageTheProtocolCannotCarrySendsNoneOfTheTicks) {
+  State state = TwoBodies();
+  state.deaths = {{.victim = EntityId{2},
+                   .killer = EntityId{1},
+                   .yaw = 0.5F,
+                   .pitch = 0.0F,
+                   .part = static_cast<augusta::ballistics::BodyPart>(99)}};
+  std::vector<Sent> sent;
+
+  const auto handed = ForEachTickMessage(state, 42, ThreePlayers(),
+                                         [&sent](PeerId peer, const Payload& payload, Reliability reliability) {
+                                           sent.push_back({peer, payload, reliability});
+                                         });
+
+  ASSERT_FALSE(handed.has_value());
+  EXPECT_EQ(handed.error().code, augusta::failure::Code::kInvariantViolated);
+  EXPECT_TRUE(sent.empty());
+}
+
 }  // namespace
