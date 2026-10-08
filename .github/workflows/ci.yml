@@ -554,12 +554,16 @@ jobs:
         env:
           TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
         run: |
+          # The file holds other releases (Loki, Alloy): pick the stack's by
+          # name, and its repository by the release's sourceRef.
           stack=clusters/onprem/infrastructure/monitoring.yaml
+          stack_release='select(.kind == "HelmRelease" and .metadata.name == "kube-prometheus-stack")'
+          repo=$(yq --no-doc "$stack_release | .spec.chart.spec.sourceRef.name" "$stack")
           schemas="$RUNNER_TEMP/monitoring-crd-schemas"
           mkdir -p "$schemas"
           helm show crds kube-prometheus-stack \
-            --repo "$(yq --no-doc 'select(.kind == "HelmRepository") | .spec.url' "$stack")" \
-            --version "$(yq --no-doc 'select(.kind == "HelmRelease") | .spec.chart.spec.version' "$stack")" \
+            --repo "$(yq --no-doc "select(.kind == \"HelmRepository\" and .metadata.name == \"$repo\") | .spec.url" "$stack")" \
+            --version "$(yq --no-doc "$stack_release | .spec.chart.spec.version" "$stack")" \
             > "$schemas/crds.yaml"
           (cd "$schemas" && FILENAME_FORMAT='{fullgroup}_{kind}_{version}' \
             uv run --no-project --with pyyaml python "$RUNNER_TEMP/kubeconform/openapi2jsonschema.py" \
