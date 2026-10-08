@@ -441,6 +441,17 @@ target_link_libraries(augusta_runner_tests PRIVATE augusta_harness augustad_host
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_runner_tests DISCOVERY_TIMEOUT 30)
 
+# Local transport failures at the runtime seams (ADR-0033): a real Host,
+# Session, Runner and ServerRuntime over loopback, the transport made to fail
+# by fault injection.
+add_executable(augusta_transport_failure_tests transport_failure_test.cpp)
+target_link_libraries(
+  augusta_transport_failure_tests
+  PRIVATE augusta_harness augustad_host augustad_runtime augusta_supervisor GTest::gtest GTest::gtest_main
+)
+# Links networking and PhysX, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_transport_failure_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_wire_tests wire_test.cpp)
 target_link_libraries(augusta_wire_tests PRIVATE augusta_harness augustad_host GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
