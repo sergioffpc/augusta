@@ -603,7 +603,7 @@ TEST_F(JoinTest, ARefusedClientReportsTheRefusalAsItsFailure) {
   EXPECT_EQ(failure->refusal, JoinRefusal::kVersionMismatch);
 }
 
-// Requirements: US-01
+// Requirements: US-01, NFR-08
 TEST_F(JoinTest, AClientWithAnotherClientPackIsRefusedForThePack) {
   Session& client = AddClient(std::string(augusta::EngineVersion()), kCharacter, ClientPack(2));
 
@@ -613,7 +613,7 @@ TEST_F(JoinTest, AClientWithAnotherClientPackIsRefusedForThePack) {
   EXPECT_FALSE(client.GetSessionId().has_value());
 }
 
-// Requirements: US-02
+// Requirements: US-02, US-16
 TEST_F(JoinTest, AClientThatPicksACharacterTheScenarioLacksIsRefusedForIt) {
   Session& client = AddClient(std::string(augusta::EngineVersion()), "characters/nobody");
 
@@ -1415,7 +1415,7 @@ TEST_F(SpawnTest, AClientsPredictionStartsAtTheSpawnPointMatchStartGaveIt) {
   EXPECT_NEAR(body.position.z, SpawnPoints()[1].z, 0.1F);
 }
 
-// Requirements: US-03
+// Requirements: US-03, US-16
 TEST_F(SpawnTest, EveryClientIsToldEveryPlayersCharacterAndSpawnPointAtMatchStart) {
   Session& first = Join();
   Session& second = Join();
@@ -1527,7 +1527,7 @@ TEST_F(SpawnWrapTest, MorePlayersThanSpawnPointsWrapInsteadOfFailing) {
 // A Lobby of three, which a test fills or not (ADR-0043).
 using LobbyTest = MatchOf<3>;
 
-// Requirements: US-02
+// Requirements: US-02, US-16
 TEST_F(LobbyTest, AdmittedClientsAreToldWhoIsInTheLobbyAndWithWhichCharacter) {
   Session& first = Join();
   Session& second = Join();
@@ -1771,7 +1771,7 @@ TEST_F(MatchCycleTest, TheNextMatchStartsExactlyThePauseAfterTheLastEndedAndNotO
   EXPECT_EQ(host_.Tick(kFixedTick).state.bodies.size(), 2U);
 }
 
-// Requirements: US-03, US-14
+// Requirements: US-03, US-14, US-16
 TEST_F(MatchCycleTest, PlayersKeepTheirSessionAndCharacterAndTheNextMatchHandsOutTheSpawnPointsAfresh) {
   Session& first = Join();
   Session& second = Join();
@@ -1879,6 +1879,7 @@ class RecordingHostTest : public LoopbackMatch {
   }
 };
 
+// Requirements: US-21
 TEST_F(RecordingHostTest, EveryTickTheHostRanIsRecordedWithTheCommandsItTookIn) {
   PlayAMatch();
   const augusta::server::Recording recording = ReadBack();
@@ -2064,7 +2065,7 @@ class ScriptedParametersTest : public LoopbackMatch {
   ScriptedParametersTest() : LoopbackMatch(OnTheFloor({}, LoadScript())) {}
 };
 
-// Requirements: US-05
+// Requirements: US-05, US-22
 TEST_F(ScriptedParametersTest, AClientPredictsItsStaminaWithTheRulesOfTheServersScript) {
   Session& client = Join();
   ASSERT_TRUE(StartMatch());
@@ -2080,7 +2081,7 @@ TEST_F(ScriptedParametersTest, AClientPredictsItsStaminaWithTheRulesOfTheServers
   EXPECT_NEAR(states_.at(&client).local_body.stamina, BodySeenBy(client, *client.GetEntityId())->stamina, 0.1F);
 }
 
-// Requirements: US-07, US-08
+// Requirements: US-07, US-08, US-22
 TEST_F(ScriptedParametersTest, AClientPredictsItsRifleWithTheValuesOfTheServersScript) {
   Session& client = Join();
   ASSERT_TRUE(StartMatch());
@@ -2244,6 +2245,7 @@ class ScriptedServerTest : public ::testing::Test {
   Session session_;
 };
 
+// Requirements: US-22
 TEST_F(ScriptedServerTest, AClientPredictsWithTheParametersItWasAdmittedWith) {
   ASSERT_TRUE(session_.GetParameters().has_value());
   EXPECT_FLOAT_EQ(session_.GetParameters()->stamina.deplete_per_second, 0.0F);
@@ -2252,6 +2254,7 @@ TEST_F(ScriptedServerTest, AClientPredictsWithTheParametersItWasAdmittedWith) {
   EXPECT_GT(PredictedStaminaAfterSprinting(60), 0.99F);
 }
 
+// Requirements: NFR-12
 TEST_F(ScriptedServerTest, BytesThatAreNoMessageChangeNothingAndTheClientKeepsRunning) {
   // A Lobby cut short, and a type nobody has.
   for (const auto& payload :
@@ -2431,6 +2434,7 @@ TEST_F(ScriptedLobbyTest, ReadyIsSentOnlyWhenToldAndOnlyForTheNewestRoster) {
 
 // A client takes the parameters it joins with as the server's, so values that
 // fail the range checks make it drop the Join accepted rather than predict on them.
+// Requirements: US-22
 TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseParametersFailTheRangeChecks) {
   ScriptedServer server;
   Parameters threshold_of_one;
@@ -2455,6 +2459,7 @@ class TickRateTest : public LoopbackMatch {
   TickRateTest() : LoopbackMatch(OnTheFloor({}, kTestParameters, kServerRate)) {}
 };
 
+// Requirements: US-22
 TEST_F(TickRateTest, AClientLearnsTheServersTickRateWhenItJoins) {
   Session& client = Join();
 
@@ -2489,6 +2494,7 @@ TEST_F(TickRateTest, AClientTickingAtTheRateItWasToldAgreesWithTheServerWithoutC
 }
 
 // A client that has not joined holds nothing a server decides.
+// Requirements: US-22
 TEST_F(SessionTest, AClientHoldsNoParametersUntilTheServerAdmitsIt) {
   EXPECT_FALSE(session_.GetParameters().has_value());
   EXPECT_FALSE(session_.GetTickRate().has_value());
@@ -2502,6 +2508,7 @@ TEST_F(SessionTest, AClientHoldsNoParametersUntilTheServerAdmitsIt) {
 
 // A server whose tick rate is unusable (zero): the client drops the Join
 // accepted rather than divide by it.
+// Requirements: US-22
 TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseTickRateFailsTheChecks) {
   Host host(TestHostConfig(kTestParameters, 0),
             Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});

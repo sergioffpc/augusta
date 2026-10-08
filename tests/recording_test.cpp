@@ -233,8 +233,10 @@ TEST(RecordingTest, TheScriptedMatchEndsInADraw) {
   EXPECT_EQ(ending.state.deaths.size(), 2U);
 }
 
+// Requirements: US-21
 TEST(RecordingTest, ARecordingStartsWithItsHeader) { EXPECT_EQ(Read(RecordScriptedMatch()).header, ExampleHeader()); }
 
+// Requirements: US-21
 TEST(RecordingTest, EveryTickIsRecordedWithTheCommandsItRanOn) {
   const Recording recording = Read(RecordScriptedMatch());
   const Content content = LoadExampleContent();
@@ -250,6 +252,7 @@ TEST(RecordingTest, EveryTickIsRecordedWithTheCommandsItRanOn) {
   EXPECT_FALSE(recording.torn);
 }
 
+// Requirements: US-21
 TEST(RecordingTest, AMatchStartIsRecordedBeforeItsFirstTickWithWhereItsPlayersSpawned) {
   const Recording recording = Read(RecordScriptedMatch());
   const auto& first = recording.ticks.front();
@@ -260,6 +263,7 @@ TEST(RecordingTest, AMatchStartIsRecordedBeforeItsFirstTickWithWhereItsPlayersSp
   EXPECT_TRUE(recording.ticks[1].input.match_start.empty());
 }
 
+// Requirements: US-21
 TEST(RecordingTest, TheMatchPolicyEndsAndTheEndingOfTheMatchInTheWorldAreRecorded) {
   const Recording recording = Read(RecordScriptedMatch());
   const auto& ending = recording.ticks[recording.ticks.size() - 2];
@@ -271,6 +275,7 @@ TEST(RecordingTest, TheMatchPolicyEndsAndTheEndingOfTheMatchInTheWorldAreRecorde
   EXPECT_FALSE(ending.input.match_ended);
 }
 
+// Requirements: US-21
 TEST(RecordingTest, ARemovedBodyIsRecordedBeforeTheTickItLeftOn) {
   std::ostringstream out(std::ios::binary);
   {
@@ -288,6 +293,7 @@ TEST(RecordingTest, ARemovedBodyIsRecordedBeforeTheTickItLeftOn) {
   EXPECT_EQ(recording.ticks[1].outcome.bodies.size(), 1U);
 }
 
+// Requirements: NFR-12
 TEST(RecordingTest, ALastRecordCutShortIsDroppedAndReported) {
   const std::string bytes = RecordScriptedMatch();
   const Recording whole = Read(bytes);
@@ -296,6 +302,7 @@ TEST(RecordingTest, ALastRecordCutShortIsDroppedAndReported) {
   EXPECT_EQ(torn.ticks.size(), whole.ticks.size() - 1);
 }
 
+// Requirements: NFR-12
 TEST(RecordingTest, ALastRecordCutShortInItsLengthIsDroppedAndReported) {
   const std::string bytes = RecordScriptedMatch();
   const Recording whole = Read(bytes);
@@ -318,6 +325,7 @@ TEST(RecordingTest, AStreamThatFailsPartwayThroughARecordIsUnreadableNotTorn) {
   EXPECT_EQ(augusta::server::ReadRecording(in).error(), RecordingError::kUnreadable);
 }
 
+// Requirements: US-21
 TEST(RecordingTest, AFailedWriteStopsTheRecordingWhichReadsBackUpToItsLastWholeTick) {
   const std::string bytes = RecordScriptedMatch();
   const Recording whole = Read(bytes);
@@ -339,6 +347,7 @@ TEST(RecordingTest, AFailedWriteStopsTheRecordingWhichReadsBackUpToItsLastWholeT
   EXPECT_LT(cut.ticks.size(), whole.ticks.size());
 }
 
+// Requirements: US-21
 TEST(RecordingTest, AFailedHeaderWriteStopsTheRecordingBeforeItsFirstTick) {
   FailingBuffer buffer = FailingBuffer::Writing(2);
   std::ostream out(&buffer);
@@ -357,6 +366,7 @@ TEST(RecordingTest, ARecordingThatIsWrittenWholeIsNotStopped) {
   EXPECT_FALSE(recorder.Stopped());
 }
 
+// Requirements: NFR-12
 TEST(RecordingTest, AStreamThatDoesNotStartWithAHeaderIsNoRecording) {
   std::istringstream empty(std::string{}, std::ios::binary);
   EXPECT_EQ(augusta::server::ReadRecording(empty).error(), RecordingError::kNoHeader);
@@ -365,6 +375,7 @@ TEST(RecordingTest, AStreamThatDoesNotStartWithAHeaderIsNoRecording) {
   EXPECT_EQ(augusta::server::ReadRecording(in).error(), RecordingError::kNoHeader);
 }
 
+// Requirements: NFR-12
 TEST(RecordingTest, ARecordThatDoesNotDecodeIsMalformed) {
   std::string bytes = RecordScriptedMatch();
   // The first tick's type byte, after the header's length and payload and the tick's length.
@@ -379,6 +390,7 @@ TEST(RecordingTest, AFileThatCannotBeOpenedIsUnreadable) {
   EXPECT_EQ(augusta::server::ReadRecording(in).error(), RecordingError::kUnreadable);
 }
 
+// Requirements: NFR-12
 TEST(RecordingTest, ARecordLongerThanAnyTickCanMakeIsMalformedAndNotReadIn) {
   std::string bytes = RecordScriptedMatch();
   const auto header_size = static_cast<std::size_t>(static_cast<unsigned char>(bytes[0]));
@@ -442,6 +454,7 @@ TickRecord EmptyTick(augusta::tick::Tick tick) {
   return record;
 }
 
+// Requirements: US-21, NFR-01
 TEST(RecordingTest, ARecorderTakesTicksWithoutWaitingForAStalledDiskAndStopsWhenItIsFull) {
   constexpr std::size_t kCapacity = 3;
   StalledBuffer disk;
@@ -462,6 +475,7 @@ TEST(RecordingTest, ARecorderTakesTicksWithoutWaitingForAStalledDiskAndStopsWhen
   EXPECT_FALSE(recording.torn);
 }
 
+// Requirements: US-21
 TEST(RecordingTest, ARecorderThatFellBehindWritesNothingMoreEvenOnceItCaughtUp) {
   constexpr std::size_t kCapacity = 1;
   StalledBuffer disk;

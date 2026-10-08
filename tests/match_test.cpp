@@ -99,7 +99,7 @@ TEST(MatchTest, RefusesAnyOtherVersion) {
   EXPECT_FALSE(match.SessionOf(Peer(10)).has_value());
 }
 
-// Requirements: US-01
+// Requirements: US-01, NFR-08
 TEST(MatchTest, AdmitsOnlyTheClientPackCookedWithTheServers) {
   MatchConfig config = Config();
   config.client_pack = OtherClientPack();
@@ -141,7 +141,7 @@ TEST(MatchTest, AdmitsUpToThePlayerCountAndRefusesTheNextAsLobbyFull) {
   EXPECT_EQ(match.PlayerCount(), 3U);
 }
 
-// Requirements: US-02
+// Requirements: US-02, US-16
 TEST(MatchTest, EachPlayerIsAdmittedWithItsCharacter) {
   Match match(MatchConfig{.engine_version = kVersion, .characters = {"sniper", "medic"}, .player_count = 2});
 
@@ -149,7 +149,7 @@ TEST(MatchTest, EachPlayerIsAdmittedWithItsCharacter) {
   EXPECT_EQ(match.Join(Peer(2), Request(kVersion, "medic"))->character, "medic");
 }
 
-// Requirements: US-02
+// Requirements: US-02, US-16
 TEST(MatchTest, RefusesACharacterTheScenarioDoesNotOffer) {
   Match match(Config());
 
@@ -159,7 +159,7 @@ TEST(MatchTest, RefusesACharacterTheScenarioDoesNotOffer) {
   EXPECT_EQ(match.PlayerCount(), 0U);
 }
 
-// Requirements: US-02
+// Requirements: US-02, US-16
 TEST(MatchTest, AScenarioWithNoCharactersAdmitsNoOne) {
   Match match(MatchConfig{.engine_version = kVersion, .characters = {}});
 
@@ -259,7 +259,7 @@ TEST(MatchTest, JoiningAgainReturnsTheSameAdmissionWithoutTakingAnotherSlot) {
   EXPECT_EQ(match.GetRoster().version, version);
 }
 
-// Requirements: US-02
+// Requirements: US-02, US-16
 TEST(MatchTest, TheRosterListsEveryLobbyPlayerWithItsCharacterBySession) {
   Match match(MatchConfig{.engine_version = kVersion, .characters = {"sniper", "medic"}, .player_count = 2});
   const auto medic = match.Join(Peer(9), Request(kVersion, "medic"));
@@ -337,7 +337,7 @@ TEST(MatchTest, AMatchInProgressDoesNotStartAgain) {
   EXPECT_FALSE(ReadyAndStart(match).has_value());
 }
 
-// Requirements: US-03
+// Requirements: US-03, US-16
 TEST(MatchTest, MatchStartTellsEachPlayersCharacter) {
   Match match(MatchConfig{.engine_version = kVersion, .characters = {"sniper", "medic"}, .player_count = 2});
   ASSERT_TRUE(match.Join(Peer(1), Request(kVersion, "medic")).has_value());
@@ -534,7 +534,7 @@ TEST(MatchTest, AWinnerNoLongerInTheMatchEndsItAsADraw) {
   EXPECT_EQ(ended->players.size(), 2U);
 }
 
-// Requirements: US-14
+// Requirements: US-14, US-16
 TEST(MatchTest, PlayersKeepTheirSessionAndCharacterAcrossMatches) {
   Match match(MatchConfig{.engine_version = kVersion, .characters = {"sniper", "medic"}, .player_count = 1});
   const auto admission = match.Join(Peer(1), Request(kVersion, "medic"));

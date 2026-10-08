@@ -84,7 +84,7 @@ INCLUDE_SOURCES := $(filter-out $(TIDY_SOURCES),$(shell git ls-files -- "src/*.c
 INCLUDE_CHECKS := $(addprefix include-cleaner/,$(INCLUDE_SOURCES))
 
 .DEFAULT_GOAL := all
-.PHONY: all help configure build test check install uninstall clean distclean format format-check tidy lint docs
+.PHONY: all help configure build test check coverage install uninstall clean distclean format format-check tidy lint docs
 
 all: build
 
@@ -97,6 +97,7 @@ help:
 	$(info $()  build         configure, then compile the binaries (no tests))
 	$(info $()  test          build, then compile the tests and run ctest)
 	$(info $()  check         the same as test)
+	$(info $()  coverage      test under the linux-coverage preset, then its report into build/x64-linux-coverage/report)
 	$(info $()  install       build, then cmake --install augustad (prefix=..., DESTDIR=...))
 	$(info $()  uninstall     remove what install put in place (same DESTDIR))
 	$(info $()  clean         remove build outputs, keep the configuration)
@@ -120,6 +121,14 @@ test: build
 	$(RUN) ctest --preset $(PRESET)
 
 check: test
+
+# The tests' coverage (ADR-0013), whatever PRESET says: the linux-coverage
+# preset's tests, then their llvm-cov report. The last run's profiles go first,
+# so the report is of this run alone.
+coverage:
+	cmake -E rm -rf build/x64-linux-coverage/profiles
+	$(MAKE) --no-print-directory test PRESET=linux-coverage
+	bash scripts/coverage-report.sh
 
 # DESTDIR reaches cmake --install through the environment: make exports a
 # variable set on its command line. PREFIX is taken for the GNU prefix too.

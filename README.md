@@ -11,10 +11,8 @@
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-fe5196?logo=conventionalcommits)](https://www.conventionalcommits.org)
 
 A realistic, physics-driven multiplayer FPS simulator engine —
-server-authoritative, built in C++23 with a Windows client (rendering via NVIDIA
-Falcor/D3D12) and a headless Linux dedicated server. A hobby project to master
-low-level systems and networking programming, deliberately built from scratch
-instead of on top of Unreal/Unity/Godot.
+server-authoritative, with a Windows client and a headless Linux dedicated
+server.
 
 ## Highlights
 
@@ -25,17 +23,15 @@ instead of on top of Unreal/Unity/Godot.
   hit location and body part determine damage (no regenerating health).
 - **Match-based, tactical** — no respawn until the match ends; movement includes
   walk/run/crouch/prone, stamina, and recoil.
-- **ECS core** (Flecs) shared between client and server, with PhysX for
-  collision/movement and a custom ballistics module.
+- **ECS core** (Flecs) shared between client and server, with a physics layer
+  for collision/movement and a custom ballistics module.
 - **Mechanism / policy / data separation** — engine mechanism in C++, game
   policy (round lifecycle, win conditions, spawn rules) in sandboxed Lua,
   tunable balance values as data.
-- **v1 scope** — 1 weapon (rifle), 1 test map, 2–8 concurrent players.
 
 ## Status
 
-Early stage — see [docs/ROADMAP.md](docs/ROADMAP.md) for the milestone plan.
-This is a solo-developer hobby project with no fixed deadline.
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the milestone plan.
 
 The [documentation site](https://sergioffpc.github.io/augusta/) publishes these
 docs, the decisions behind the engine (ADRs) and the C++ API reference.
@@ -117,9 +113,7 @@ select it and run "Test: Run All Tests with Coverage": CMake Tools shows the
 result in the editor and the Test Coverage view. From a shell:
 
 ```bash
-cmake --preset linux-coverage && cmake --build --preset linux-coverage
-ctest --preset linux-coverage
-scripts/coverage-report.sh   # HTML and LCOV in build/x64-linux-coverage/report
+make coverage   # HTML and LCOV in build/x64-linux-coverage/report
 ```
 
 The nightly uploads the same report as its `coverage-report` artifact.

@@ -72,6 +72,7 @@ class PresentationWorldTest : public ::testing::Test {
   augusta::presentation::World world{audio, augusta::audio::CueSounds{}, kEye};
 };
 
+// Requirements: US-17
 TEST_F(PresentationWorldTest, DrawsEachRemotePlayerAsTheCharacterMatchStartNamed) {
   const WorldSnapshot snapshot = ThreePlayersAt(5);
   const std::vector<PlayerCharacter> characters = SessionOrder();
@@ -101,6 +102,7 @@ TEST_F(PresentationWorldTest, ASpectatorWatchesTheLivingPlayersInSessionOrder) {
   EXPECT_NEAR(next.camera.position.x, -100.0F, kTolerance);
 }
 
+// Requirements: US-17
 TEST_F(PresentationWorldTest, RenderFramesWithoutNewerStateKeepShowingTheRemotePlayers) {
   const WorldSnapshot snapshot = ThreePlayersAt(5);
   const std::vector<PlayerCharacter> characters = SessionOrder();
@@ -137,6 +139,7 @@ TEST_F(PresentationWorldTest, KeepsNothingItWasLentPastTheRenderFrame) {
   EXPECT_EQ(Find(next, kMedic)->character, "medic");
 }
 
+// Requirements: US-17
 TEST_F(PresentationWorldTest, OutsideAMatchNoRemotePlayerIsShown) {
   const WorldSnapshot snapshot = ThreePlayersAt(5);
   const std::vector<PlayerCharacter> characters = SessionOrder();

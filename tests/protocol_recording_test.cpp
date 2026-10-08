@@ -145,27 +145,32 @@ TEST(ProtocolRecordingTest, ARecordedCommandIsEncodedAsACommandsMessageEncodesIt
   EXPECT_NE(std::search(record.begin(), record.end(), command.begin(), command.end()), record.end());
 }
 
+// Requirements: NFR-12
 TEST(ProtocolRecordingTest, AnEmptyPayloadIsNoRecord) {
   EXPECT_EQ(DecodeRecord(BytesWire{}).error(), DecodeError::kEmpty);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolRecordingTest, AnUnknownTypeIsNoRecord) {
   EXPECT_EQ(DecodeRecord(BytesWire{std::byte{0}}).error(), DecodeError::kUnknownType);
   EXPECT_EQ(DecodeRecord(BytesWire{std::byte{3}}).error(), DecodeError::kUnknownType);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolRecordingTest, ATruncatedTickIsRefused) {
   BytesWire bytes = EncodeRecord(BusyTick());
   bytes.pop_back();
   EXPECT_EQ(DecodeRecord(bytes).error(), DecodeError::kTruncated);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolRecordingTest, BytesAfterARecordAreRefused) {
   BytesWire bytes = EncodeRecord(BusyTick());
   bytes.push_back(std::byte{0});
   EXPECT_EQ(DecodeRecord(bytes).error(), DecodeError::kTrailingBytes);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolRecordingTest, ATickFlagNoTickHasIsRefused) {
   RecordedTickWire tick = BusyTick();
   tick.removed.clear();
@@ -181,6 +186,7 @@ TEST(ProtocolRecordingTest, ATickFlagNoTickHasIsRefused) {
   EXPECT_EQ(DecodeRecord(bytes).error(), DecodeError::kInvalidEnum);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolRecordingTest, MoreBodiesThanPlayersAreRefused) {
   RecordedTickWire tick = BusyTick();
   tick.removed.clear();

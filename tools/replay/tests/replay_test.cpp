@@ -62,6 +62,7 @@ std::string Describe(const augusta::replay::Divergence& divergence) {
 // across builds, every tick starts from the recorded bodies, so each is a
 // single step off and the difference never grows; replayed exactly, the first
 // step is a divergence.
+// Requirements: NFR-09
 TEST(ReplayTest, AcrossBuildsAStepOffOnEveryTickDoesNotCompound) {
   constexpr float kStep = 1.0F / 1024.0F;
   Recording recording = Read(RecordAWalk());
@@ -81,6 +82,7 @@ TEST(ReplayTest, AcrossBuildsAStepOffOnEveryTickDoesNotCompound) {
   EXPECT_EQ(exact.error().tick, 1U);
 }
 
+// Requirements: US-21
 TEST(ReplayTest, ATickTheWorldNumbersOtherwiseDiverges) {
   Recording recording = Read(RecordScriptedMatch());
   recording.ticks[3].outcome.tick = 7;
@@ -89,6 +91,7 @@ TEST(ReplayTest, ATickTheWorldNumbersOtherwiseDiverges) {
   EXPECT_EQ(replayed.error().kind, DivergenceKind::kTick) << Describe(replayed.error());
 }
 
+// Requirements: US-21, NFR-09
 TEST(ReplayTest, ARecordingReplaysToExactlyTheSameOutcomeOnTheBuildThatMadeIt) {
   const Recording recording = Read(RecordScriptedMatch());
   const auto replayed = augusta::replay::Replay(recording, LoadExampleContent(), kSameBuild);
@@ -96,6 +99,7 @@ TEST(ReplayTest, ARecordingReplaysToExactlyTheSameOutcomeOnTheBuildThatMadeIt) {
   EXPECT_EQ(*replayed, recording.ticks.size());
 }
 
+// Requirements: US-21
 TEST(ReplayTest, AnOutcomeThatDiffersIsTheFirstDivergence) {
   Recording recording = Read(RecordScriptedMatch());
   recording.ticks[5].outcome.bodies[1].health -= 1.0F;
@@ -136,16 +140,19 @@ class DivergenceTest : public ::testing::Test {
   static constexpr float kStep = 1.0F / 1024.0F;
 };
 
+// Requirements: NFR-09
 TEST_F(DivergenceTest, TheSameOutcomeHasNone) {
   EXPECT_EQ(augusta::replay::FindDivergence(OneBody(), OneBody(), kDeltaTime, kSameBuild), std::nullopt);
 }
 
+// Requirements: NFR-09
 TEST_F(DivergenceTest, OnTheSameBuildAPositionAStepOffDiverges) {
   TickOutcome replayed = OneBody();
   replayed.bodies[0].body.position.y += kStep;
   EXPECT_EQ(augusta::replay::FindDivergence(OneBody(), replayed, kDeltaTime, kSameBuild), DivergenceKind::kBodies);
 }
 
+// Requirements: NFR-09
 TEST_F(DivergenceTest, AcrossBuildsAPositionAndAShotOriginAStepOffDoNotDivergeButTwoStepsDo) {
   TickOutcome replayed = OneBody();
   replayed.bodies[0].body.position.y += kStep;
@@ -157,18 +164,21 @@ TEST_F(DivergenceTest, AcrossBuildsAPositionAndAShotOriginAStepOffDoNotDivergeBu
   EXPECT_EQ(augusta::replay::FindDivergence(OneBody(), replayed, kDeltaTime, kAcrossBuilds), DivergenceKind::kShots);
 }
 
+// Requirements: NFR-09
 TEST_F(DivergenceTest, AcrossBuildsEveryOtherValueMustStillBeEqual) {
   TickOutcome replayed = OneBody();
   replayed.bodies[0].yaw += 1.0F / 2097152.0F;
   EXPECT_EQ(augusta::replay::FindDivergence(OneBody(), replayed, kDeltaTime, kAcrossBuilds), DivergenceKind::kBodies);
 }
 
+// Requirements: NFR-09
 TEST_F(DivergenceTest, ABodyMissingDiverges) {
   TickOutcome replayed = OneBody();
   replayed.bodies.clear();
   EXPECT_EQ(augusta::replay::FindDivergence(OneBody(), replayed, kDeltaTime, kAcrossBuilds), DivergenceKind::kBodies);
 }
 
+// Requirements: NFR-09
 TEST_F(DivergenceTest, AMatchEndWithAnotherWinnerDiverges) {
   TickOutcome recorded = OneBody();
   recorded.match_end = augusta::simulation::MatchEnd{.winner = SessionId{1}};
@@ -181,6 +191,7 @@ TEST_F(DivergenceTest, AMatchEndWithAnotherWinnerDiverges) {
 // repository replays to its recorded outcome on any build, within a grid step
 // of position. A deliberate change to the simulation rewrites it with one build
 // target, and the diff is reviewed like the golden trajectories'.
+// Requirements: US-21, NFR-09
 TEST(GoldenMatchTest, TheGoldenMatchReplaysToItsRecordedOutcome) {
   std::ifstream in(AUGUSTA_GOLDEN_MATCH, std::ios::binary);
   ASSERT_TRUE(in) << "missing " << AUGUSTA_GOLDEN_MATCH;
