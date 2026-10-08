@@ -4,7 +4,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <variant>
 
 #include "augusta/assets.h"
 #include "augusta/failure.h"
@@ -12,7 +11,6 @@
 #include "augusta/input.h"
 #include "augusta/networking.h"
 #include "augusta/renderer.h"
-#include "character_loader.h"
 #include "content.h"
 
 /// \file
@@ -40,15 +38,6 @@ struct RuntimeConfig {
   /// cooked with its own.
   assets::PackHash client_pack{};
 };
-
-/// Why Run() stopped without the player closing the window: the session ended
-/// on its own, a character could not be loaded, or the Prediction or Network I/O
-/// thread stopped on a failure, its first cause (for one, the transport
-/// rejecting the server address).
-using RunFailure = std::variant<harness::Failure, CharacterError, failure::Failure>;
-
-/// What to tell whoever runs the process about why the client stopped.
-[[nodiscard]] std::string DescribeRunFailure(const RunFailure& failure);
 
 /// The client process constructs exactly one, on what becomes the Main/Render
 /// thread (see Run()).
@@ -102,15 +91,16 @@ class ClientRuntime {
   /// Renderer::RenderFrame - until Renderer::ShouldClose() returns true, the
   /// session fails (refused, server unreachable, connection lost), a
   /// character cannot be loaded or the Prediction or Network I/O thread
-  /// throws (which stops the others), which is what it returns: the caller
-  /// reports it and exits, since there is no reconnecting. nullopt if the
-  /// player closed the window.
+  /// fails (which stops the others), which is what it returns, classified
+  /// (application.h) - a thread's first cause as its supervisor recorded it:
+  /// the caller reports it and exits, since there is no reconnecting. nullopt
+  /// if the player closed the window.
   /// Always stops and joins both spawned threads before returning or
   /// propagating an exception (see ~ClientRuntime). Must be called from
   /// the same thread that constructed this ClientRuntime (ADR-0009's
   /// window-thread-affinity requirement, inherited from Renderer) and
   /// must not be called more than once.
-  [[nodiscard]] std::optional<RunFailure> Run();
+  [[nodiscard]] std::optional<failure::Failure> Run();
 
  private:
   struct Impl;

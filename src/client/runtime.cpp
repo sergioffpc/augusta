@@ -11,11 +11,11 @@
 #include <string>
 #include <thread>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include <nvtx3/nvtx3.hpp>
 
+#include "application.h"
 #include "augusta/audio.h"
 #include "augusta/command.h"
 #include "augusta/cues.h"
@@ -55,16 +55,6 @@ struct RunnerJoiner {
 };
 
 }  // namespace
-
-std::string DescribeRunFailure(const RunFailure& failure) {
-  if (const auto* session = std::get_if<harness::Failure>(&failure)) {
-    return harness::DescribeFailure(*session);
-  }
-  if (const auto* worker = std::get_if<failure::Failure>(&failure)) {
-    return failure::DescribeFailure(*worker);
-  }
-  return DescribeCharacterError(std::get<CharacterError>(failure));
-}
 
 struct ClientRuntime::Impl {
   RuntimeConfig config;
@@ -213,13 +203,14 @@ struct ClientRuntime::Impl {
 
   // Why the run must end, if a worker or the session has failed. A worker has
   // logged its own failure where it failed; the session's is logged here.
-  std::optional<RunFailure> GetRunFailure() {
+  // The application boundary logs it once, as the client's terminal event
+  // (application.h); the runner's supervisor has already logged its own.
+  std::optional<failure::Failure> GetRunFailure() {
     if (auto worker_failure = runner->Failure(); worker_failure.has_value()) {
       return std::move(*worker_failure);
     }
     if (const auto session_failure = session->GetFailure(); session_failure.has_value()) {
-      LE("subsystem=clientruntime event=session_failed reason=\"{}\"", harness::DescribeFailure(*session_failure));
-      return *session_failure;
+      return ClassifySessionFailure(*session_failure);
     }
     return std::nullopt;
   }
@@ -229,7 +220,7 @@ struct ClientRuntime::Impl {
   // fly by and ADS zooms to. So every render frame is drawn admitted. Returns
   // why the run failed first, if it did; returns nothing if the window closed
   // first. Main/Render thread only.
-  std::optional<RunFailure> WaitForAdmission() {
+  std::optional<failure::Failure> WaitForAdmission() {
     constexpr auto kPollInterval = std::chrono::milliseconds(10);
     while (!renderer.ShouldClose()) {
       if (auto failure = GetRunFailure(); failure.has_value()) {
@@ -326,7 +317,7 @@ ClientRuntime::ClientRuntime(const RuntimeConfig& config, Content content)
 
 ClientRuntime::~ClientRuntime() = default;
 
-std::optional<RunFailure> ClientRuntime::Run() {
+std::optional<failure::Failure> ClientRuntime::Run() {
   Impl& impl = *impl_;
   impl.runner.emplace(*impl.session,
                       harness::RunnerHooks{
@@ -336,7 +327,7 @@ std::optional<RunFailure> ClientRuntime::Run() {
                       });
   const RunnerJoiner joiner{.runner = impl.runner};
 
-  std::optional<RunFailure> failure = impl.WaitForAdmission();
+  std::optional<failure::Failure> failure = impl.WaitForAdmission();
   if (failure.has_value()) {
     return failure;
   }
@@ -350,8 +341,7 @@ std::optional<RunFailure> ClientRuntime::Run() {
       break;
     }
     if (const auto load_failure = impl_->GetReadyForLobby(); load_failure.has_value()) {
-      LE("subsystem=clientruntime event=character_load_failed reason=\"{}\"", DescribeCharacterError(*load_failure));
-      failure = *load_failure;
+      failure = ClassifyCharacterError(*load_failure);
       break;
     }
     const nvtx3::scoped_range range{"Main/Render Frame"};
