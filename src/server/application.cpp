@@ -16,6 +16,7 @@
 #include "augusta/server_config.h"
 #include "content.h"
 #include "host.h"
+#include "recording.h"
 #include "runtime.h"
 
 namespace augusta::server {

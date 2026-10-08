@@ -161,7 +161,7 @@ struct RecorderOptions {
   /// Called with each state the recording enters, from whichever thread
   /// enters it, kEnabled first, from the constructor; must outlive the
   /// Recorder. Empty calls nothing.
-  std::function<void(RecordingState)> on_state = {};
+  std::function<void(RecordingState)> on_state;
   /// kRecordQueueCapacity but in tests.
   std::size_t capacity = kRecordQueueCapacity;
 };

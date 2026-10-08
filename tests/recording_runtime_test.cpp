@@ -12,6 +12,7 @@
 #include <thread>
 
 #include <gtest/gtest.h>
+#include <prometheus/client_metric.h>
 #include <prometheus/metric_family.h>
 
 #include "augusta/failure.h"
@@ -19,6 +20,7 @@
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/supervisor.h"
+#include "content.h"
 #include "host.h"
 #include "recording.h"
 #include "runtime.h"
