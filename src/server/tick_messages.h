@@ -1,10 +1,12 @@
 #ifndef AUGUSTA_SERVER_TICK_MESSAGES_H_
 #define AUGUSTA_SERVER_TICK_MESSAGES_H_
 
+#include <expected>
 #include <functional>
 #include <unordered_map>
 #include <vector>
 
+#include "augusta/failure.h"
 #include "augusta/networking.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
@@ -42,13 +44,18 @@ using TickMessageSink = std::function<void(networking::PeerId, const networking:
 /// order the Host sends them: each recipient's Authoritative State update, in
 /// the order of to.recipients; then every Shot, Hit confirmation and Death.
 /// The decision SendTickMessages puts on the wire, apart so it is tested
-/// without a network.
-void ForEachTickMessage(const simulation::State& state, tick::Tick tick, const TickRecipients& to,
-                        const TickMessageSink& send);
+/// without a network. A message the protocol cannot carry is not handed on,
+/// nor is any after it: the broken invariant is returned instead (EncodeToSend
+/// in wire.h), for the runtime to stop on.
+[[nodiscard]] std::expected<void, failure::Failure> ForEachTickMessage(const simulation::State& state, tick::Tick tick,
+                                                                       const TickRecipients& to,
+                                                                       const TickMessageSink& send);
 
-/// Sends to the recipients what tick's state holds for them, counting it into metrics.
-void SendTickMessages(networking::Server& network, HostMetrics& metrics, const simulation::State& state,
-                      tick::Tick tick, const TickRecipients& to);
+/// Sends to the recipients what tick's state holds for them, counting it into
+/// metrics, or stops at the broken invariant, as ForEachTickMessage does.
+[[nodiscard]] std::expected<void, failure::Failure> SendTickMessages(networking::Server& network, HostMetrics& metrics,
+                                                                     const simulation::State& state, tick::Tick tick,
+                                                                     const TickRecipients& to);
 
 }  // namespace augusta::server
 

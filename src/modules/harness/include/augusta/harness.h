@@ -12,6 +12,7 @@
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
+#include "augusta/failure.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
@@ -319,6 +320,13 @@ class Session {
   /// Connect, while connecting or connected, and after Disconnect (which the
   /// caller asked for, so it is not a failure). Safe to read from any thread.
   [[nodiscard]] std::optional<Failure> GetFailure() const;
+
+  /// The first message this client could not encode, as the broken invariant
+  /// it is (failure::Code::kInvariantViolated, ADR-0033), or nullopt while
+  /// there is none. What it was is not sent; once set, whoever runs the Session
+  /// must stop it. ExchangeMessages, ReportReady and Tick may each set it.
+  /// Safe to read from any thread.
+  [[nodiscard]] std::optional<failure::Failure> GetInvariantFailure() const;
 
   /// The connection's quality numbers, or nullopt if not connected.
   [[nodiscard]] std::optional<networking::ConnectionStats> GetConnectionStats() const;

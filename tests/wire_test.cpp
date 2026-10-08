@@ -41,7 +41,7 @@ using augusta::server::SessionId;
 // message as the other peer decodes it.
 template <typename MessageWire>
 MessageWire ThroughTheWire(const MessageWire& message) {
-  return std::get<MessageWire>(augusta::protocol::Decode(augusta::protocol::Encode(message)).value());
+  return std::get<MessageWire>(augusta::protocol::Decode(augusta::protocol::Encode(message).value()).value());
 }
 
 // What the server sends recipient of updates, as the client takes it in.

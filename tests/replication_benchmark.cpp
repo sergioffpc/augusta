@@ -37,7 +37,7 @@ void BM_Replication(benchmark::State& state) {
     auto& addressed = std::get<augusta::protocol::AuthoritativeStateWire>(message);
     for (const RecipientUpdate& recipient : updates.recipients) {
       augusta::server::Address(addressed, recipient);
-      benchmark::DoNotOptimize(augusta::protocol::Encode(message));
+      benchmark::DoNotOptimize(augusta::protocol::Encode(message).value());
     }
   }
 }

@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <exception>
+#include <expected>
 #include <memory>
 #include <optional>
 #include <thread>
@@ -61,16 +62,18 @@ struct ServerRuntime::Impl {
 
   // Network I/O thread body (ADR-0005): pumps the connection, and once a
   // heartbeat interval samples every client's Connection health (ADR-0049),
-  // until a stop is requested, waiting kNetworkRoundWait between rounds rather
-  // than spinning a core. The transport has no wait on incoming work, so that
-  // wait bounds how late a received message is handled, and how long stopping
-  // takes.
+  // until a stop is requested or the Host breaks an invariant (ADR-0033),
+  // waiting kNetworkRoundWait between rounds rather than spinning a core. The transport has no wait on incoming work,
+  // so that wait bounds how late a received message is handled, and how long stopping takes.
   supervisor::WorkerResult NetworkThreadMain() {
     constexpr auto kNetworkRoundWait = std::chrono::milliseconds(1);
     std::chrono::steady_clock::time_point next_sample = std::chrono::steady_clock::now() + kHeartbeatInterval;
     while (!workers.StopRequested()) {
       const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
       host.PumpNetwork(now);
+      if (std::optional<failure::Failure> broken = host.InvariantFailure()) {
+        return std::unexpected(*std::move(broken));
+      }
       if (now >= next_sample) {
         connection_health.Record(host.SampleConnections());
         next_sample = now + kHeartbeatInterval;
@@ -81,7 +84,7 @@ struct ServerRuntime::Impl {
   }
 
   // Simulation thread body (ADR-0005): ticks Host on its fixed schedule until a
-  // stop is requested.
+  // stop is requested or the Host breaks an invariant (ADR-0033).
   supervisor::WorkerResult SimulationLoop() {
     const auto delta_time = std::chrono::duration<float>(1.0F / tick_rate_hz);
     const auto tick_duration = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
@@ -91,6 +94,9 @@ struct ServerRuntime::Impl {
       const tick::Clock::time_point tick_start = tick::Clock::now();
 
       host.Tick(delta_time.count());
+      if (std::optional<failure::Failure> broken = host.InvariantFailure()) {
+        return std::unexpected(*std::move(broken));
+      }
 
       const tick::Clock::time_point tick_end = tick::Clock::now();
       host.RecordTiming(tick::Measure(deadline, tick_duration, tick_start, tick_end));

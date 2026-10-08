@@ -228,7 +228,7 @@ class RawClient {
     return accepted.empty() ? std::nullopt : std::optional<SessionIdWire>(accepted.front().session);
   }
 
-  void Send(const augusta::protocol::MessageWire& message) { SendPayload(augusta::protocol::Encode(message)); }
+  void Send(const augusta::protocol::MessageWire& message) { SendPayload(augusta::protocol::Encode(message).value()); }
 
   // Sends bytes as they are, whether or not they are a message.
   void SendPayload(const augusta::protocol::BytesWire& payload) {
@@ -2178,7 +2178,7 @@ class ScriptedServer {
     return state;
   }
 
-  void Send(const augusta::protocol::MessageWire& message) { SendPayload(augusta::protocol::Encode(message)); }
+  void Send(const augusta::protocol::MessageWire& message) { SendPayload(augusta::protocol::Encode(message).value()); }
 
   // Sends bytes as they are, whether or not they are a message.
   void SendPayload(const augusta::protocol::BytesWire& payload) {
@@ -2935,11 +2935,11 @@ TEST_F(ImpossibleCommandTest, ACommandWhoseSequenceIsNotNewerThanTheLastTakenInR
 // Requirements: US-15, NFR-05
 TEST_F(ImpossibleCommandTest, BytesThatAreNoMessageChangeNothing) {
   using protocol::BytesWire;
-  BytesWire truncated_state = protocol::Encode(protocol::AuthoritativeStateWire{.bodies = {{}}});
+  BytesWire truncated_state = protocol::Encode(protocol::AuthoritativeStateWire{.bodies = {{}}}).value();
   truncated_state.resize(truncated_state.size() / 2);
-  BytesWire commands_with_trailing_bytes = protocol::Encode(protocol::CommandsWire{.commands = {Acting(1)}});
+  BytesWire commands_with_trailing_bytes = protocol::Encode(protocol::CommandsWire{.commands = {Acting(1)}}).value();
   commands_with_trailing_bytes.push_back(std::byte{7});
-  BytesWire truncated_commands = protocol::Encode(protocol::CommandsWire{.commands = {Acting(1)}});
+  BytesWire truncated_commands = protocol::Encode(protocol::CommandsWire{.commands = {Acting(1)}}).value();
   truncated_commands.pop_back();
   const BytesWire garbage[] = {
       BytesWire{},
@@ -3003,9 +3003,10 @@ TEST_F(ImpossibleCommandTest, ACommandMessageWithMoreCommandsThanTheProtocolAllo
   // kMaxCommandsPerMessage commands, with one more spliced in before its Seen tick.
   constexpr std::size_t kHeader = 2;  // The message type and the count.
   constexpr std::size_t kSeenTick = sizeof(augusta::tick::Tick);
-  const protocol::BytesWire encoded = protocol::Encode(MostCommands());
+  const protocol::BytesWire encoded = protocol::Encode(MostCommands()).value();
   const protocol::BytesWire extra =
-      protocol::Encode(protocol::CommandsWire{.commands = {Acting(augusta::primitives::kMaxCommandsPerMessage + 1)}});
+      protocol::Encode(protocol::CommandsWire{.commands = {Acting(augusta::primitives::kMaxCommandsPerMessage + 1)}})
+          .value();
   protocol::BytesWire too_many(encoded.begin(), encoded.end() - static_cast<std::ptrdiff_t>(kSeenTick));
   too_many[1] = static_cast<std::byte>(augusta::primitives::kMaxCommandsPerMessage + 1);
   too_many.insert(too_many.end(), extra.begin() + static_cast<std::ptrdiff_t>(kHeader), extra.end());

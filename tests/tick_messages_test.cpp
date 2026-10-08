@@ -2,14 +2,17 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #include "augusta/ballistics.h"
+#include "augusta/failure.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/physics.h"
+#include "augusta/primitives.h"
 #include "augusta/protocol.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
@@ -41,9 +44,11 @@ struct Sent {
 
 std::vector<Sent> SendAll(const State& state, augusta::tick::Tick tick, const TickRecipients& to) {
   std::vector<Sent> sent;
-  ForEachTickMessage(state, tick, to, [&sent](PeerId peer, const Payload& payload, Reliability reliability) {
-    sent.push_back(Sent{.peer = peer, .payload = payload, .reliability = reliability});
-  });
+  const auto handed =
+      ForEachTickMessage(state, tick, to, [&sent](PeerId peer, const Payload& payload, Reliability reliability) {
+        sent.push_back(Sent{.peer = peer, .payload = payload, .reliability = reliability});
+      });
+  EXPECT_TRUE(handed.has_value());
   return sent;
 }
 
@@ -104,7 +109,7 @@ std::vector<EntityStateWire> TwoBodiesOnTheWire() {
   };
 }
 
-Payload Encoded(const AuthoritativeStateWire& state) { return augusta::protocol::Encode(state); }
+Payload Encoded(const AuthoritativeStateWire& state) { return augusta::protocol::Encode(state).value(); }
 
 std::vector<PeerId> PeersOf(const std::vector<Sent>& sent, std::size_t first, std::size_t count) {
   std::vector<PeerId> peers;
@@ -173,17 +178,23 @@ TEST(TickMessagesTest, CombatEventsFollowTheUpdatesReliablyShotsThenHitConfirmat
 
   ASSERT_EQ(sent.size(), 3U + 3U + 1U + 3U);
   const std::vector<PeerId> everyone = {kPeer1, kPeer2, kPeer3};
-  const Payload shot = augusta::protocol::Encode(augusta::protocol::ShotWire{
-      .tick = 42, .origin = augusta::math::Vec3(1.0F, 1.5F, -2.0F), .shooter = EntityIdWire{1}, .yaw = 0.5F});
-  const Payload hit = augusta::protocol::Encode(augusta::protocol::HitConfirmationWire{
-      .target = EntityIdWire{3}, .damage = 100.0F, .part = augusta::protocol::BodyPartWire::kHead});
+  const Payload shot =
+      augusta::protocol::Encode(
+          augusta::protocol::ShotWire{
+              .tick = 42, .origin = augusta::math::Vec3(1.0F, 1.5F, -2.0F), .shooter = EntityIdWire{1}, .yaw = 0.5F})
+          .value();
+  const Payload hit =
+      augusta::protocol::Encode(augusta::protocol::HitConfirmationWire{.target = EntityIdWire{3},
+                                                                       .damage = 100.0F,
+                                                                       .part = augusta::protocol::BodyPartWire::kHead})
+          .value();
   const augusta::protocol::DeathWire death_wire{
       .victim = EntityIdWire{3},
       .killer = EntityIdWire{1},
       .yaw = 0.5F,
       .part = augusta::protocol::BodyPartWire::kHead,
   };
-  const Payload death = augusta::protocol::Encode(death_wire);
+  const Payload death = augusta::protocol::Encode(death_wire).value();
   EXPECT_EQ(PeersOf(sent, 3, 3), everyone);
   EXPECT_EQ(sent[6].peer, kPeer1);
   EXPECT_EQ(PeersOf(sent, 7, 3), everyone);
@@ -195,6 +206,29 @@ TEST(TickMessagesTest, CombatEventsFollowTheUpdatesReliablyShotsThenHitConfirmat
 
 TEST(TickMessagesTest, NoOneInTheMatchMeansNothingIsSent) {
   EXPECT_TRUE(SendAll(TwoBodies(), 42, TickRecipients{}).empty());
+}
+
+// An update listing more bodies than the protocol carries is a broken
+// invariant, never a peer's doing: it is not sent, in any build, and the
+// failure stops the runtime (ADR-0033).
+TEST(TickMessagesTest, AnUpdateTheProtocolCannotCarryIsNotSentAndIsAnInvariantFailure) {
+  State state = TwoBodies();
+  while (state.bodies.size() <= augusta::primitives::kMaxPlayers) {
+    EntityState body = state.bodies.front();
+    body.entity = EntityId{static_cast<std::uint32_t>(state.bodies.size() + 1)};
+    state.bodies.push_back(body);
+  }
+  std::vector<Sent> sent;
+
+  const auto handed = ForEachTickMessage(state, 42, ThreePlayers(),
+                                         [&sent](PeerId peer, const Payload& payload, Reliability reliability) {
+                                           sent.push_back({peer, payload, reliability});
+                                         });
+
+  ASSERT_FALSE(handed.has_value());
+  EXPECT_EQ(handed.error().code, augusta::failure::Code::kInvariantViolated);
+  EXPECT_EQ(augusta::failure::DispositionOf(handed.error().code), augusta::failure::Disposition::kRuntime);
+  EXPECT_TRUE(sent.empty());
 }
 
 }  // namespace

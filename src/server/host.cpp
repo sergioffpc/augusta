@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "augusta/failure.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/protocol.h"
@@ -87,13 +88,30 @@ Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine 
           .pause_ticks = PauseTicks(config.tick_rate_hz),
       }) {}
 
-void Host::Impl::Reply(networking::PeerId peer, const networking::Payload& message) {
-  SendCounted(network, metrics, peer, message, networking::Reliability::kReliable);
+void Host::Impl::Fail(failure::Failure broken) {
+  const std::lock_guard<std::mutex> lock(failure_mutex);
+  if (!failure.has_value()) {
+    failure = std::move(broken);
+  }
 }
 
-void Host::Impl::SendTo(const std::vector<SessionId>& sessions, const networking::Payload& message) {
+void Host::Impl::Reply(networking::PeerId peer, const protocol::MessageWire& message) {
+  const auto payload = EncodeToSend(message);
+  if (!payload.has_value()) {
+    Fail(payload.error());
+    return;
+  }
+  SendCounted(network, metrics, peer, *payload, networking::Reliability::kReliable);
+}
+
+void Host::Impl::SendTo(const std::vector<SessionId>& sessions, const protocol::MessageWire& message) {
+  const auto payload = EncodeToSend(message);
+  if (!payload.has_value()) {
+    Fail(payload.error());
+    return;
+  }
   for (const SessionId session : sessions) {
-    SendCounted(network, metrics, players.at(session).peer, message, networking::Reliability::kReliable);
+    SendCounted(network, metrics, players.at(session).peer, *payload, networking::Reliability::kReliable);
   }
 }
 
@@ -104,7 +122,7 @@ void Host::Impl::SendRoster() {
   for (const RosterEntry& entry : roster.players) {
     sessions.push_back(entry.session);
   }
-  SendTo(sessions, protocol::Encode(ToWire(roster)));
+  SendTo(sessions, ToWire(roster));
 }
 
 void Host::Impl::SetLobbyGauges() {
@@ -119,6 +137,11 @@ Host::Host(const HostConfig& config, Scenario scenario, scripting::Engine policy
 Host::~Host() = default;
 
 networking::Endpoint Host::ListenEndpoint() const { return impl_->network.LocalEndpoint(); }
+
+std::optional<failure::Failure> Host::InvariantFailure() const {
+  const std::lock_guard<std::mutex> lock(impl_->failure_mutex);
+  return impl_->failure;
+}
 
 void Host::RecordTiming(const tick::Timing& timing) {
   HostMetrics& metrics = impl_->metrics;

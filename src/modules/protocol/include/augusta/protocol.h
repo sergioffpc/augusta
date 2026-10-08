@@ -488,16 +488,36 @@ enum class DecodeError : std::uint8_t {
   kFieldTooLong,
 };
 
-/// Encodes message as one payload. A field beyond its limit (an engine version
-/// over kMaxEngineVersionLength, more than kMaxCommandsPerMessage commands,
-/// more than kMaxPlayers players) is a caller bug, not an input.
-[[nodiscard]] BytesWire Encode(const MessageWire& message);
+/// Why a message or record is not encoded: a field holds what the protocol
+/// cannot carry. Always the sender's bug, never a peer's input, so its
+/// boundary treats it as a broken invariant (ADR-0033).
+enum class EncodeError : std::uint8_t {
+  /// A string or list field is longer than the protocol allows.
+  kFieldTooLong = 1,
+  /// A flags field has a bit set that is not one of its flags.
+  kReservedBits = 2,
+  /// An enumerated field holds a value the enumeration does not have.
+  kInvalidEnum = 3,
+};
+
+/// Encodes message as one payload, or reports the first field beyond its
+/// limit (an engine version over kMaxEngineVersionLength, more than
+/// kMaxCommandsPerMessage commands, a flag bit or stance a field lacks) and
+/// gives no payload at all: checked in every build, so a payload is either
+/// whole and decodable or not made.
+[[nodiscard]] std::expected<BytesWire, EncodeError> Encode(const MessageWire& message);
+
+/// The type message's payload starts with.
+[[nodiscard]] MessageTypeWire TypeOf(const MessageWire& message);
 
 /// Decodes one payload, or reports what is wrong with it.
 [[nodiscard]] std::expected<MessageWire, DecodeError> Decode(std::span<const std::byte> payload);
 
 /// A short lowercase description of error, for logs.
 [[nodiscard]] std::string_view DescribeDecodeError(DecodeError error);
+
+/// A short lowercase description of error, for logs.
+[[nodiscard]] std::string_view DescribeEncodeError(EncodeError error);
 
 // A match recording (ADR-0048): what the server's SimulationWorld was handed
 // and what it resolved, tick by tick, in this protocol's encoding. Not a
@@ -601,8 +621,12 @@ struct RecordedTickWire {
 
 using RecordWire = std::variant<RecordingHeaderWire, RecordedTickWire>;
 
-/// Encodes record as one payload. A field beyond its limit is a caller bug, as for Encode.
-[[nodiscard]] BytesWire EncodeRecord(const RecordWire& record);
+/// Encodes record as one payload, or reports the first field beyond its limit
+/// and gives no payload at all, as Encode does a message.
+[[nodiscard]] std::expected<BytesWire, EncodeError> EncodeRecord(const RecordWire& record);
+
+/// The type record's payload starts with.
+[[nodiscard]] RecordTypeWire TypeOf(const RecordWire& record);
 
 /// Decodes one record's payload, or reports what is wrong with it, as Decode does a message's.
 [[nodiscard]] std::expected<RecordWire, DecodeError> DecodeRecord(std::span<const std::byte> payload);

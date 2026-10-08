@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <expected>
 #include <optional>
 #include <thread>
 #include <utility>
@@ -97,6 +98,9 @@ supervisor::WorkerResult Runner::PredictionThreadMain() {
     const tick::Clock::time_point tick_start = tick::Clock::now();
 
     const prediction::State state = session_.Tick(hooks_.next_command(), delta_time.count());
+    if (std::optional<failure::Failure> broken = session_.GetInvariantFailure()) {
+      return std::unexpected(*std::move(broken));
+    }
     activity.Record(state, tick_start);
 
     // The tick spans its schedule, not its wake-ups, so a reader blending
@@ -122,6 +126,12 @@ supervisor::WorkerResult Runner::NetworkThreadMain() {
       const nvtx3::scoped_range range{"Network PumpEvents"};
       session_.PumpEvents();
       session_.ExchangeMessages();
+    }
+    // Ready is reported from whichever thread loaded the Roster, so a message
+    // it could not send is found here too, on the next round.
+    if (std::optional<failure::Failure> broken = session_.GetInvariantFailure()) {
+      session_.Disconnect();
+      return std::unexpected(*std::move(broken));
     }
     if (hooks_.on_network_round) {
       hooks_.on_network_round();

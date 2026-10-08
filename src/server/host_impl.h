@@ -15,10 +15,12 @@
 #include <vector>
 
 #include "admission.h"
+#include "augusta/failure.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
+#include "augusta/protocol.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
@@ -104,11 +106,21 @@ struct Host::Impl {
 
   Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy);
 
-  // Sending to players (host.cpp), each message already encoded (wire.h),
-  // counted as it is sent (SendCounted).
-  void Reply(networking::PeerId peer, const networking::Payload& message);
+  // The first outbound message or record the protocol could not carry: a
+  // broken invariant, never sent, after which the runtime must stop
+  // (ADR-0033). Set by either thread, so guarded by failure_mutex.
+  mutable std::mutex failure_mutex;
+  std::optional<failure::Failure> failure;
+
+  // Keeps failure, unless an earlier one is kept.
+  void Fail(failure::Failure failure);
+
+  // Sending to players (host.cpp), each message encoded here (wire.h) and
+  // counted as it is sent (SendCounted); one the protocol cannot carry is
+  // sent to no one, and kept by Fail.
+  void Reply(networking::PeerId peer, const protocol::MessageWire& message);
   // Sends message reliably to the player of each of sessions.
-  void SendTo(const std::vector<SessionId>& sessions, const networking::Payload& message);
+  void SendTo(const std::vector<SessionId>& sessions, const protocol::MessageWire& message);
   // Tells everyone in the Lobby who is in it, after it changed.
   void SendRoster();
   // Sets the metrics' gauges of who is joined, in the Lobby and in a match,

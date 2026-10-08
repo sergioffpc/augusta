@@ -47,13 +47,13 @@ void Host::Impl::HandleJoinRequest(networking::PeerId peer, const JoinRequest& r
   if (!admission.has_value()) {
     LI("subsystem=serverruntime event=join_refused peer={} reason=\"{}\"", PeerNumber(peer),
        DescribeJoinRefusal(admission.error()));
-    Reply(peer, protocol::Encode(protocol::JoinRefusedWire{.reason = ToWire(admission.error())}));
+    Reply(peer, protocol::JoinRefusedWire{.reason = ToWire(admission.error())});
     metrics.joins_refused[admission.error()].Increment();
     Judge(peer, PeerRejection::kJoinRefused, now);
     return;
   }
   admission_deadlines.Admitted(peer);
-  Reply(peer, protocol::Encode(ToWire(*admission, tick_rate_hz, parameters)));
+  Reply(peer, ToWire(*admission, tick_rate_hz, parameters));
   if (players.try_emplace(admission->session, Player{.peer = peer, .commands = CommandQueue{tick_rate_hz}}).second) {
     metrics.joins_admitted.Increment();
     SetLobbyGauges();

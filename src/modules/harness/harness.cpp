@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <format>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -11,6 +12,7 @@
 #include <vector>
 
 #include "augusta/command.h"
+#include "augusta/failure.h"
 #include "augusta/harness_wire.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
@@ -39,11 +41,30 @@ struct Session::Impl {
   // Prediction thread only.
   CommandStream commands;
 
+  // The first message the protocol could not carry, which was not sent. Set
+  // from whichever thread sent it, so guarded by failure_mutex.
+  mutable std::mutex failure_mutex;
+  std::optional<failure::Failure> invariant_failure;
+
   Impl(const SessionConfig& config, prediction::World world)
       : server(config.server),
         join_request{
             .engine_version = config.engine_version, .client_pack = config.client_pack, .character = config.character},
         commands(std::move(world)) {}
+
+  // Sends message as reliability says, unless the protocol cannot carry it:
+  // then it keeps the broken invariant, if it is the first, and sends nothing.
+  void Send(const protocol::MessageWire& message, networking::Reliability reliability) {
+    auto payload = EncodeToSend(message);
+    if (!payload.has_value()) {
+      const std::lock_guard<std::mutex> lock(failure_mutex);
+      if (!invariant_failure.has_value()) {
+        invariant_failure = std::move(payload.error());
+      }
+      return;
+    }
+    network.Send(*payload, reliability);
+  }
 };
 
 std::string_view DescribeJoinRefusal(JoinRefusal reason) {
@@ -96,7 +117,7 @@ void Session::PumpEvents() { impl_->network.PumpEvents(); }
 void Session::ExchangeMessages() {
   Impl& impl = *impl_;
   if (!impl.sent_join_request && impl.network.GetState() == networking::ConnectionState::kConnected) {
-    impl.network.Send(protocol::Encode(ToWire(impl.join_request)), networking::Reliability::kReliable);
+    impl.Send(ToWire(impl.join_request), networking::Reliability::kReliable);
     impl.sent_join_request = true;
   }
   for (const networking::Payload& payload : impl.network.ReceiveMessages()) {
@@ -119,6 +140,11 @@ std::optional<Failure> Session::GetFailure() const {
   }
   const bool was_admitted = server_view->accepted.has_value();
   return Failure{.kind = was_admitted ? FailureKind::kConnectionLost : FailureKind::kServerUnreachable};
+}
+
+std::optional<failure::Failure> Session::GetInvariantFailure() const {
+  const std::lock_guard<std::mutex> lock(impl_->failure_mutex);
+  return impl_->invariant_failure;
 }
 
 std::optional<networking::ConnectionStats> Session::GetConnectionStats() const { return impl_->network.GetStats(); }
@@ -144,7 +170,7 @@ void Session::ReportReady(std::uint32_t version) {
   if (!server_view->lobby.has_value() || server_view->lobby->version != version) {
     return;
   }
-  impl_->network.Send(protocol::Encode(protocol::ReadyWire{.version = version}), networking::Reliability::kReliable);
+  impl_->Send(protocol::ReadyWire{.version = version}, networking::Reliability::kReliable);
   LD("subsystem=harness event=ready version={}", version);
 }
 
@@ -200,7 +226,7 @@ prediction::State Session::Tick(const command::Command& command, float delta_tim
   // commands sent all agree on what the server had said.
   const CommandTick tick = impl.commands.Tick(*impl.inbox.View(), command, delta_time);
   if (!tick.send.empty()) {
-    impl.network.Send(protocol::Encode(ToWire(tick.send)), networking::Reliability::kUnreliable);
+    impl.Send(ToWire(tick.send), networking::Reliability::kUnreliable);
   }
   return tick.state;
 }

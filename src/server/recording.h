@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/failure.h"
 #include "augusta/math.h"
 #include "augusta/policy_actions.h"
 #include "augusta/simulation.h"
@@ -130,11 +131,15 @@ inline constexpr std::size_t kRecordQueueCapacity = 256;
 /// A record longer than kMaxRecordSize, one that finds capacity records still
 /// unwritten, or a write the stream fails stops the recording: it is logged
 /// once, as event=recording_stopped, and nothing more is written, so the file
-/// still reads back up to its last whole tick.
+/// still reads back up to its last whole tick. A record the protocol cannot
+/// carry stops it too, but is the server's broken invariant rather than the
+/// recording's failure: Write returns it, unlogged, for the runtime to stop on
+/// (ADR-0033).
 class Recorder {
  public:
   /// Queues header for out first, and holds at most capacity records not yet
-  /// written; capacity is kRecordQueueCapacity but in tests.
+  /// written; capacity is kRecordQueueCapacity but in tests. Throws
+  /// std::runtime_error if the protocol cannot carry header.
   Recorder(std::ostream& out, const RecordingHeader& header, std::size_t capacity = kRecordQueueCapacity);
   ~Recorder();
   Recorder(Recorder&&) noexcept;
@@ -143,8 +148,10 @@ class Recorder {
   Recorder& operator=(const Recorder&) = delete;
 
   /// Queues tick's record, without waiting for the stream, unless the
-  /// recording has stopped.
-  void Write(const TickRecord& tick);
+  /// recording has stopped. Fails, and stops the recording, only when the
+  /// protocol cannot carry the record: failure::Code::kInvariantViolated, with
+  /// the tick in its context.
+  [[nodiscard]] std::expected<void, failure::Failure> Write(const TickRecord& tick);
 
   /// Whether the recording has stopped, its file missing every tick since. A
   /// write the stream fails stops it once the writer thread gets to it.
@@ -182,9 +189,14 @@ class RecordedSimulation {
   /// As simulation::World::Tick, then writes the tick's record.
   simulation::TickResult Tick(const std::vector<simulation::PlayerCommand>& commands, float delta_time);
 
+  /// The broken invariant the first record the protocol could not carry was
+  /// (Recorder::Write), or nullopt: once set, the runtime must stop.
+  [[nodiscard]] const std::optional<failure::Failure>& Failure() const;
+
  private:
   simulation::World world_;
   std::optional<Recorder> recorder_;
+  std::optional<failure::Failure> failure_;
   // What the coming tick was handed so far, and where its Match start spawned its players.
   TickInput pending_;
   std::vector<math::Vec3> pending_spawns_;
