@@ -1,7 +1,7 @@
 # Roadmap — FPS Simulator Engine
 
-Milestones are ordered, not dated (hobby project, no fixed deadline — see
-VISION.md). Sizes are relative effort, not calendar estimates: S / M / L.
+Milestones are ordered, not dated (no fixed deadline — see VISION.md). Sizes are
+relative effort, not calendar estimates: S / M / L.
 
 ## M0 — Project & Infrastructure Setup (S)
 
@@ -150,7 +150,9 @@ criteria:** matches REQUIREMENTS.md's v1 definition of done exactly
 ## Beyond v1 (not planned in detail)
 
 - More weapons, more maps
-- Network encryption (deferred per ADR/§8, trusted-LAN-only in v1)
+- Network authentication: certificates signed by a project certificate
+  authority, so peers prove who they are (connections are already encrypted;
+  trusted-LAN-only until then, see ARCHITECTURE.md §8)
 - Matchmaking/master server
 - Cross-platform client (would require revisiting Falcor's Linux/Vulkan path —
   currently Windows-only, see ADR-0009)
