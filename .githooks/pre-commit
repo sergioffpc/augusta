@@ -3,6 +3,11 @@
 # files. CI's format checks remain the actual gate if a local formatter is
 # missing or the hook is bypassed with --no-verify.
 
+# macOS has none of the formatters: they run in the dev container.
+if [[ "$(uname -s)" = Darwin ]]; then
+  exec scripts/dev-container.sh .githooks/pre-commit
+fi
+
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 
 cxx_files=$(echo "${staged}" | grep -E '^(src|tests)/.*\.(cpp|h)$' || true)

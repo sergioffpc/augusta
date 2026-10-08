@@ -57,6 +57,12 @@ environment, so `make test` builds and tests the `linux` preset with nothing
 else to install. The first build compiles the vcpkg dependencies; later ones
 reuse them from `.vcpkg-bincache`, and sccache's objects from a volume.
 
+**macOS:** nothing builds natively. With Docker or Podman running,
+`scripts/dev-container.sh` opens a shell in the same container from a terminal
+(or runs the command it's given), and the git hooks run their checks there. Run
+`scripts/dev-container.sh make configure PRESET=linux-debug` once so the
+`pre-push` hook can run clang-tidy.
+
 Both the Windows bootstrap and the container initialize the vendored submodules
 and configure the Conventional Commits `commit-msg` hook.
 
