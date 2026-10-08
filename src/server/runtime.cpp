@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "augusta/failure.h"
+#include "augusta/faults.h"
 #include "augusta/logging.h"
 #include "augusta/scripting.h"
 #include "augusta/supervisor.h"
@@ -37,14 +38,19 @@ struct ServerRuntime::Impl {
   // Null until Run() starts it, and if it could not start. Declared after
   // last_tick_end and connection_health, which it reads.
   std::unique_ptr<MetricsEndpoint> metrics;
+  // What the supervisor asks when no test has given it faults: nothing is
+  // ever armed in it.
+  failure::Faults no_faults;
   // The two threads' stop request and first failure (ADR-0005). Declared after
   // host, so it stops and joins the Network I/O thread before host goes.
   supervisor::Supervisor workers;
 
-  Impl(const HostConfig& config, std::uint16_t metrics_port, Scenario scenario, scripting::Engine policy)
+  Impl(const HostConfig& config, std::uint16_t metrics_port, Scenario scenario, scripting::Engine policy,
+       failure::Faults* faults)
       : tick_rate_hz(config.tick_rate_hz),
         metrics_port(metrics_port),
-        host(config, std::move(scenario), std::move(policy)) {}
+        host(config, std::move(scenario), std::move(policy)),
+        workers(faults != nullptr ? *faults : no_faults) {}
 
   // The endpoint is not a supervised worker (ADR-0049): a server whose endpoint
   // can't start keeps running without it, and in the cluster its liveness
@@ -104,8 +110,8 @@ struct ServerRuntime::Impl {
 };
 
 ServerRuntime::ServerRuntime(const HostConfig& config, std::uint16_t metrics_port, Scenario scenario,
-                             scripting::Engine policy)
-    : impl_(std::make_unique<Impl>(config, metrics_port, std::move(scenario), std::move(policy))) {}
+                             scripting::Engine policy, failure::Faults* faults)
+    : impl_(std::make_unique<Impl>(config, metrics_port, std::move(scenario), std::move(policy), faults)) {}
 
 ServerRuntime::~ServerRuntime() = default;
 

@@ -53,6 +53,18 @@ target_include_directories(augustac_lobby_readiness PUBLIC ${CMAKE_CURRENT_SOURC
 target_link_libraries(augustac_lobby_readiness PUBLIC augusta_harness)
 augusta_set_module_scope(augustac_lobby_readiness CLIENT_ONLY)
 
+# How augustac's phases classify their failures behind the application
+# boundary (see application.h, ADR-0033): no window or GPU, so its tests need
+# no renderer.
+add_library(augustac_application STATIC application.cpp)
+target_include_directories(augustac_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(
+  augustac_application
+  PUBLIC augustac_content augusta_assets augusta_client_config augusta_config augusta_failure augusta_harness
+  PRIVATE augusta_logging augusta_networking
+)
+augusta_set_module_scope(augustac_application CLIENT_ONLY)
+
 add_library(augustac_runtime STATIC runtime.cpp)
 target_include_directories(augustac_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
@@ -68,6 +80,7 @@ target_link_libraries(
   # nvtx3-cpp: runtime.cpp names the Main/Render, Simulation, and Network I/O
   # thread loops for Nsight Systems.
   PRIVATE
+    augustac_application
     augustac_frame_mapping
     augustac_lobby_readiness
     augustac_net_stats
@@ -89,13 +102,14 @@ add_executable(augustac main.cpp)
 target_link_libraries(
   augustac
   PRIVATE
+    augusta_application
     augusta_assets
     augusta_client_config
     augusta_config
-    augusta_cues
+    augusta_failure
     augusta_version
     augusta_logging
-    augusta_networking
+    augustac_application
     augustac_runtime
     augustac_content
 )

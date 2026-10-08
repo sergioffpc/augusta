@@ -72,6 +72,13 @@ add_executable(augusta_failure_tests failure_test.cpp)
 target_link_libraries(augusta_failure_tests PRIVATE augusta_failure GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_failure_tests)
 
+add_executable(augusta_application_tests application_test.cpp)
+target_link_libraries(
+  augusta_application_tests
+  PRIVATE augusta_application augusta_failure augusta_logging GTest::gtest GTest::gtest_main
+)
+gtest_discover_tests(augusta_application_tests)
+
 add_executable(augusta_config_tests config_test.cpp)
 target_link_libraries(augusta_config_tests PRIVATE augusta_config GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_config_tests)
@@ -422,6 +429,29 @@ target_compile_definitions(
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_session_tests DISCOVERY_TIMEOUT 30)
 
+# augustad's application boundary (ADR-0033): its startup and runtime
+# failures, each ending in one classified outcome, on the golden server pack.
+add_executable(augusta_server_application_tests server_application_test.cpp)
+target_link_libraries(
+  augusta_server_application_tests
+  PRIVATE
+    augustad_application
+    augusta_application
+    augusta_config
+    augusta_failure
+    augusta_logging
+    augusta_networking
+    augusta_server_config
+    GTest::gtest
+    GTest::gtest_main
+)
+target_compile_definitions(
+  augusta_server_application_tests
+  PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
+)
+# Links networking and PhysX, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_server_application_tests DISCOVERY_TIMEOUT 30)
+
 # Match recordings (ADR-0048), on the example scenario as the server loads it
 # from its golden server pack. Their replay is tools/replay's, tested there.
 add_executable(augusta_recording_tests recording_test.cpp)
@@ -580,6 +610,24 @@ if(WIN32)
     PRIVATE augustac_lobby_readiness GTest::gtest GTest::gtest_main
   )
   gtest_discover_tests(augusta_client_lobby_readiness_tests DISCOVERY_TIMEOUT 30)
+
+  add_executable(augusta_client_application_tests client_application_test.cpp)
+  target_link_libraries(
+    augusta_client_application_tests
+    PRIVATE
+      augustac_application
+      augusta_client_config
+      augusta_config
+      augusta_failure
+      augusta_harness
+      GTest::gtest
+      GTest::gtest_main
+  )
+  target_compile_definitions(
+    augusta_client_application_tests
+    PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
+  )
+  gtest_discover_tests(augusta_client_application_tests DISCOVERY_TIMEOUT 30)
 
   add_executable(augusta_client_net_stats_tests client_net_stats_test.cpp)
   target_link_libraries(augusta_client_net_stats_tests PRIVATE augustac_net_stats GTest::gtest GTest::gtest_main)

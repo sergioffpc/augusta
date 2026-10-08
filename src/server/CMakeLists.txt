@@ -160,6 +160,18 @@ target_link_libraries(
 )
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)
 
+# augustad's phases behind the application boundary - config, transport,
+# content, runtime - each classifying its own failure (see application.h,
+# ADR-0033); tested with the golden server pack and injected faults.
+add_library(augustad_application STATIC application.cpp)
+target_include_directories(augustad_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(
+  augustad_application
+  PUBLIC augusta_application augusta_config augusta_failure augusta_server_config augustad_runtime
+  PRIVATE augusta_assets augusta_logging augusta_networking augustad_content augustad_host
+)
+augusta_set_module_scope(augustad_application SERVER_ONLY)
+
 # What a crash leaves in the log: the fatal signal and a symbolized stack
 # (ADR-0047). Abseil symbolizes, being async-signal-safe where the
 # alternatives (std::stacktrace, Boost.Stacktrace) allocate.
@@ -176,15 +188,13 @@ add_executable(augustad main.cpp)
 target_link_libraries(
   augustad
   PRIVATE
-    augusta_assets
+    augusta_application
     augusta_config
     augusta_server_config
-    augustad_content
+    augustad_application
     augustad_crash
-    augusta_parameters
     augusta_version
     augusta_logging
-    augusta_networking
     augustad_runtime
 )
 # The headless server itself, not only its libraries: a client-only module
