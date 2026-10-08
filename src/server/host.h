@@ -25,6 +25,7 @@
 #include "content.h"
 #include "host_metrics.h"
 #include "match.h"
+#include "recording.h"
 
 /// \file
 /// augusta::server::Host is the server's network boundary and the
@@ -64,11 +65,14 @@ struct HostConfig {
   /// Where to write a recording of every tick SimulationWorld runs (ADR-0048),
   /// replacing any file there; empty records none.
   std::filesystem::path recording;
+  /// What losing a tick of that recording costs: an optional one degrades
+  /// while the Host goes on, a strict one is Host::RecordingFailure.
+  RecordingMode recording_mode = RecordingMode::kOptional;
   /// The hash of the server pack the content was loaded from, which a recording names.
   assets::PackHash server_pack{};
-  /// For a test: asked at listener setup and at every send and receive
-  /// (networking.h), so the transport fails there; null otherwise. Must
-  /// outlive the Host.
+  /// For a test: asked at listener setup, at every send and receive
+  /// (networking.h) and at the recording's write and flush, so the transport
+  /// or the disk fails there; null otherwise. Must outlive the Host.
   failure::Faults* faults = nullptr;
 };
 
@@ -149,6 +153,19 @@ class Host {
   /// What it has counted (ADR-0049), for the metrics endpoint to collect and a
   /// test to read. From any thread; it lives as long as the Host.
   [[nodiscard]] const HostMetrics& Metrics() const;
+
+  /// The failure a strict recording lost a tick on
+  /// (failure::Code::kStrictRecordingFailed), which the runtime must stop on
+  /// before it ticks again; nullopt while it has lost none, or when the
+  /// recording is optional, whose loss only degrades it. From any thread.
+  [[nodiscard]] std::optional<failure::Failure> RecordingFailure() const;
+
+  /// RecordingFailure once every tick run so far is written, waiting for the
+  /// recording's writer: the last word on whether a strict recording is whole,
+  /// for the runtime to ask after its last tick. Its writer finds a loss up to
+  /// kRecordQueueCapacity ticks after the tick it lost, which RecordingFailure
+  /// alone misses at a stop. From the Simulation thread, between Ticks.
+  [[nodiscard]] std::optional<failure::Failure> FinishRecording();
 
   /// The first failure of the local transport PumpNetwork or Tick met (a send,
   /// or a receive, it refused: failure::Code::kTransportSendFailed,

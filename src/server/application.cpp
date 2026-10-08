@@ -16,6 +16,7 @@
 #include "augusta/server_config.h"
 #include "content.h"
 #include "host.h"
+#include "recording.h"
 #include "runtime.h"
 
 namespace augusta::server {
@@ -57,11 +58,9 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
       .parameters = content->parameters,
       .listen = {.address = file_config.listen_address},
       .recording = file_config.recording_path,
+      .recording_mode = file_config.strict_recording ? RecordingMode::kStrict : RecordingMode::kOptional,
       .server_pack = pack->Hash(),
   };
-  if (!host_config.recording.empty()) {
-    LI("subsystem=server event=recording path={}", host_config.recording.string());
-  }
   return std::make_unique<ServerRuntime>(host_config, file_config.metrics_port, std::move(content->scenario),
                                          std::move(content->policy), faults);
 }

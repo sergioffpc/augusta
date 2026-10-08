@@ -20,6 +20,7 @@ constexpr std::string_view kTickRateKey = "simulation.tick_rate_hz";
 constexpr std::uint32_t kMaxTickRate = std::numeric_limits<std::uint8_t>::max();
 constexpr std::string_view kMetricsPortKey = "metrics.port";
 constexpr std::uint32_t kMaxMetricsPort = std::numeric_limits<std::uint16_t>::max();
+constexpr std::string_view kRecordingModeKey = "simulation.recording_mode";
 
 std::expected<std::uint8_t, ConfigError> RequireTickRate(const ConfigValues& values) {
   return RequireWholeNumber(values, kTickRateKey, 1, kMaxTickRate).transform([](std::uint32_t rate) {
@@ -37,14 +38,25 @@ std::expected<std::uint16_t, ConfigError> OptionalMetricsPort(const ConfigValues
   });
 }
 
+// Whether the recording is strict: "optional" when absent.
+std::expected<bool, ConfigError> OptionalStrictRecording(const ConfigValues& values) {
+  const std::string mode = OptionalString(values, kRecordingModeKey, "optional");
+  if (mode != "optional" && mode != "strict") {
+    return std::unexpected(ConfigError{.code = ConfigErrorCode::kInvalidEntry,
+                                       .subject = std::string(kRecordingModeKey),
+                                       .reason = "must be optional or strict",
+                                       .file = {}});
+  }
+  return mode == "strict";
+}
+
 }  // namespace
 
 std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 8> kKeys{
-      "base_dir",      "content.pack",         "content.public_key",
-      kTickRateKey,    "simulation.recording", "network.listen_address",
-      "logging.level", kMetricsPortKey,
+  static constexpr std::array<std::string_view, 9> kKeys{
+      "base_dir",        "content.pack",           "content.public_key", kTickRateKey,    "simulation.recording",
+      kRecordingModeKey, "network.listen_address", "logging.level",      kMetricsPortKey,
   };
   const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = {}});
   if (!values) {
@@ -80,6 +92,10 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
     }
     recording_path = *std::move(path);
   }
+  const auto strict_recording = OptionalStrictRecording(*values);
+  if (!strict_recording) {
+    return std::unexpected(strict_recording.error());
+  }
   const auto metrics_port = OptionalMetricsPort(*values);
   if (!metrics_port) {
     return std::unexpected(metrics_port.error());
@@ -91,6 +107,7 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
       .listen_address = OptionalString(*values, "network.listen_address", kDefaultListenAddress),
       .log_level = *std::move(log_level),
       .recording_path = std::move(recording_path),
+      .strict_recording = *strict_recording,
       .metrics_port = *metrics_port,
   };
 }

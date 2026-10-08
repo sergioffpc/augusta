@@ -88,6 +88,7 @@ HostConfig HostConfigWith(Faults* faults) {
                     .parameters = {},
                     .listen = Endpoint{.address = "127.0.0.1:0"},
                     .recording = {},
+                    .recording_mode = {},
                     .server_pack = {},
                     .faults = faults};
 }

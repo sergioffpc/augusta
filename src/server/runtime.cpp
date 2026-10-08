@@ -105,13 +105,20 @@ struct ServerRuntime::Impl {
   }
 
   // Simulation thread body (ADR-0005): ticks Host on its fixed schedule until a
-  // stop is requested or the Host meets a runtime failure.
+  // stop is requested or the Host meets a runtime failure, or until a strict
+  // recording has lost a tick, which is the runtime's failure: no tick runs
+  // once it is known (ADR-0033, ADR-0048). The recording's writer finds a loss
+  // after the tick that lost it, so a few ticks may run, unrecorded, before it
+  // is.
   supervisor::WorkerResult SimulationLoop() {
     const auto delta_time = std::chrono::duration<float>(1.0F / tick_rate_hz);
     const auto tick_duration = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
     LI("subsystem=serverruntime event=loop_starting loop=simulation");
     tick::Clock::time_point deadline = tick::Clock::now();
     while (!workers.StopRequested()) {
+      if (std::optional<failure::Failure> lost = host.RecordingFailure()) {
+        return std::unexpected(*std::move(lost));
+      }
       const tick::Clock::time_point tick_start = tick::Clock::now();
 
       host.Tick(delta_time.count());
@@ -126,6 +133,11 @@ struct ServerRuntime::Impl {
       std::this_thread::sleep_until(deadline);
     }
     LI("subsystem=serverruntime event=loop_stopping loop=simulation");
+    // The writer may find a strict recording's loss after the last check, or
+    // in what it still had queued at the stop: the run fails all the same.
+    if (std::optional<failure::Failure> lost = host.FinishRecording()) {
+      return std::unexpected(*std::move(lost));
+    }
     return {};
   }
 };

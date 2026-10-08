@@ -1,9 +1,11 @@
 #include "host_metrics.h"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -21,6 +23,7 @@
 #include "lock_free_metrics.h"
 #include "match.h"
 #include "misbehaviour.h"
+#include "recording.h"
 #include "wire.h"
 
 namespace augusta::server {
@@ -293,6 +296,20 @@ void AppendCombat(std::vector<MetricFamily>& families, const HostMetrics& metric
                                  metrics.bullets_in_flight));
 }
 
+void AppendRecording(std::vector<MetricFamily>& families, const HostMetrics& metrics) {
+  const std::optional<RecordingState> current = metrics.recording_state.load(std::memory_order_relaxed);
+  std::vector<ClientMetric> states;
+  for (const RecordingState state : {RecordingState::kEnabled, RecordingState::kDegraded, RecordingState::kStopped}) {
+    ClientMetric series;
+    series.label = {{.name = "state", .value = std::string(RecordingStateName(state))}};
+    series.gauge.value = current == state ? 1.0 : 0.0;
+    states.push_back(std::move(series));
+  }
+  families.push_back(Family("augustad_recording_state",
+                            "1 for the Match recording's state, 0 for the others; 0 for all while none is recorded.",
+                            MetricType::Gauge, std::move(states)));
+}
+
 }  // namespace
 
 HostMetrics::HostMetrics(std::uint8_t tick_rate_hz)
@@ -311,6 +328,7 @@ std::vector<prometheus::MetricFamily> HostMetrics::Collect() const {
                                     "kind", MisbehaviourLabel));
   AppendNetwork(families, *this);
   AppendCombat(families, *this);
+  AppendRecording(families, *this);
   return families;
 }
 
@@ -327,6 +345,10 @@ Activity Totals(const HostMetrics& metrics) {
                      metrics.disconnects_from_lobby[Leaving::kMisbehaving].Value() +
                      metrics.disconnects_from_match[Leaving::kMisbehaving].Value(),
   };
+}
+
+void SetRecordingState(HostMetrics& metrics, RecordingState state) {
+  metrics.recording_state.store(state, std::memory_order_relaxed);
 }
 
 void CountSent(HostMetrics& metrics, std::span<const std::byte> payload) {

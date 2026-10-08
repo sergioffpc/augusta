@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <deque>
 #include <expected>
+#include <functional>
 #include <ios>
 #include <istream>
 #include <memory>
@@ -22,6 +23,7 @@
 #include <vector>
 
 #include "augusta/failure.h"
+#include "augusta/faults.h"
 #include "augusta/grid.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
@@ -40,9 +42,41 @@ constexpr std::size_t kLengthSize = 4;
 constexpr int kBitsPerByte = 8;
 constexpr std::size_t kByteMask = 0xFFU;
 
-// Logs, once per recording, that it stopped on tick, and why.
-void LogStopped(tick::Tick tick, std::string_view reason) {
-  LE("subsystem=server event=recording_stopped tick={} reason=\"{}\"", tick, reason);
+// Where a recording lost a record: the step a Failure's context names.
+enum class Step : std::uint8_t {
+  kWrite,
+  kFlush,
+  // The record found the queue full: the disk is not keeping up.
+  kQueueFull,
+  // The record is longer than a reader takes.
+  kRecordTooLong,
+};
+
+std::string_view StepName(Step step) {
+  switch (step) {
+    case Step::kWrite:
+      return "write";
+    case Step::kFlush:
+      return "flush";
+    case Step::kQueueFull:
+      return "queue_full";
+    case Step::kRecordTooLong:
+      return "record_too_long";
+  }
+  return "unknown";
+}
+
+// Decision: what losing tick's record at step is in mode. An optional
+// recording's loss is its own subsystem's; a strict one's is the runtime's.
+failure::Failure LostRecording(RecordingMode mode, tick::Tick tick, Step step, std::string detail) {
+  failure::Code code = failure::Code::kStrictRecordingFailed;
+  if (mode == RecordingMode::kOptional) {
+    code = step == Step::kFlush ? failure::Code::kRecordingFlushFailed : failure::Code::kRecordingWriteFailed;
+  }
+  return {.code = code,
+          .context = {{.key = "tick", .value = std::to_string(tick)},
+                      {.key = "step", .value = std::string(StepName(step))}},
+          .detail = std::move(detail)};
 }
 
 void WriteFrame(std::ostream& out, const protocol::BytesWire& payload) {
@@ -123,6 +157,28 @@ TickOutcome OutcomeOf(const std::vector<math::Vec3>& spawns, const simulation::T
   return outcome;
 }
 
+std::string_view RecordingModeName(RecordingMode mode) {
+  switch (mode) {
+    case RecordingMode::kOptional:
+      return "optional";
+    case RecordingMode::kStrict:
+      return "strict";
+  }
+  return "unknown";
+}
+
+std::string_view RecordingStateName(RecordingState state) {
+  switch (state) {
+    case RecordingState::kEnabled:
+      return "enabled";
+    case RecordingState::kDegraded:
+      return "degraded";
+    case RecordingState::kStopped:
+      return "stopped";
+  }
+  return "unknown";
+}
+
 std::string_view DescribeRecordingError(RecordingError error) {
   switch (error) {
     case RecordingError::kUnreadable:
@@ -135,17 +191,24 @@ std::string_view DescribeRecordingError(RecordingError error) {
   return "unknown recording error";
 }
 
-// The thread a Recorder writes its stream on, and the records queued for it,
-// oldest first. The Simulation thread only ever waits on the lock, which the
-// writer holds to take a record and never across a write.
+// The thread a Recorder writes its stream on, the records queued for it,
+// oldest first, and the recording's state. The Simulation thread only ever
+// waits on the lock, which the writer holds to take a record and never across
+// a write.
 class Recorder::Writer {
  public:
-  Writer(std::ostream& out, protocol::BytesWire header, std::size_t capacity) : out_(&out), capacity_(capacity) {
+  Writer(std::ostream& out, protocol::BytesWire header, RecorderOptions options)
+      : out_(&out),
+        mode_(options.mode),
+        faults_(options.faults),
+        on_state_(std::move(options.on_state)),
+        capacity_(options.capacity) {
+    Enter(RecordingState::kEnabled);
     queue_.push_back({.tick = 0, .payload = std::move(header)});
     thread_ = std::thread([this] { Run(); });
   }
 
-  // Writes what is still queued before it goes.
+  // Writes what is still queued before it goes, then stops the recording.
   ~Writer() {
     {
       const std::scoped_lock lock(mutex_);
@@ -153,6 +216,12 @@ class Recorder::Writer {
     }
     ready_.notify_one();
     thread_.join();
+    const std::scoped_lock lock(mutex_);
+    if (state_ != RecordingState::kStopped) {
+      LI("subsystem=server event=recording_stopped mode={} ticks={} lost={}", RecordingModeName(mode_),
+         records_written_ == 0 ? std::size_t{0} : records_written_ - 1, failure_.has_value());
+      Enter(RecordingState::kStopped);
+    }
   }
 
   Writer(const Writer&) = delete;
@@ -160,31 +229,78 @@ class Recorder::Writer {
   Writer(Writer&&) = delete;
   Writer& operator=(Writer&&) = delete;
 
-  // Whether tick's payload was taken: not when capacity records are still
-  // unwritten. Once a write has failed, it takes every one and drops it.
-  bool Push(tick::Tick tick, protocol::BytesWire payload) {
+  // Queues tick's payload, or loses the recording there when capacity records
+  // are still unwritten. Once it has lost one, drops every one.
+  void Push(tick::Tick tick, protocol::BytesWire payload) {
     {
       const std::scoped_lock lock(mutex_);
-      if (failed_) {
-        return true;
+      if (state_ != RecordingState::kEnabled) {
+        return;
       }
+      // Dropping this tick and going on would leave a recording whose ticks
+      // are not their places; losing it here keeps every one before it.
       if (queue_.size() >= capacity_) {
-        return false;
+        LoseLocked(tick, Step::kQueueFull, {});
+        return;
       }
       queue_.push_back({.tick = tick, .payload = std::move(payload)});
     }
     ready_.notify_one();
-    return true;
   }
 
-  // Whether a write the stream failed has stopped the recording.
-  [[nodiscard]] bool Failed() const { return failed_; }
+  void Lose(tick::Tick tick, Step step) {
+    const std::scoped_lock lock(mutex_);
+    LoseLocked(tick, step, {});
+  }
+
+  void WaitUntilWritten() {
+    std::unique_lock lock(mutex_);
+    written_.wait(lock, [this] { return queue_.empty() && !writing_; });
+  }
+
+  [[nodiscard]] RecordingState State() const { return state_; }
+
+  [[nodiscard]] std::optional<failure::Failure> Failure() const {
+    const std::scoped_lock lock(mutex_);
+    return failure_;
+  }
 
  private:
   struct Queued {
     tick::Tick tick;
     protocol::BytesWire payload;
   };
+
+  struct Loss {
+    Step step;
+    std::string detail;
+  };
+
+  std::optional<std::string> Trip(failure::Site site) const {
+    return faults_ == nullptr ? std::nullopt : faults_->Trip(site);
+  }
+
+  // Mechanism: writes and flushes payload's frame, or says which step the
+  // stream failed at. An injected fault fails the stream, as the disk would.
+  std::optional<Loss> Persist(const protocol::BytesWire& payload) {
+    if (std::optional<std::string> fault = Trip(failure::Site::kRecordingWrite)) {
+      out_->setstate(std::ios::badbit);
+      return Loss{.step = Step::kWrite, .detail = *std::move(fault)};
+    }
+    WriteFrame(*out_, payload);
+    if (!*out_) {
+      return Loss{.step = Step::kWrite, .detail = {}};
+    }
+    if (std::optional<std::string> fault = Trip(failure::Site::kRecordingFlush)) {
+      out_->setstate(std::ios::badbit);
+      return Loss{.step = Step::kFlush, .detail = *std::move(fault)};
+    }
+    out_->flush();
+    if (!*out_) {
+      return Loss{.step = Step::kFlush, .detail = {}};
+    }
+    return std::nullopt;
+  }
 
   void Run() {
     std::unique_lock lock(mutex_);
@@ -195,30 +311,71 @@ class Recorder::Writer {
       }
       const Queued record = std::move(queue_.front());
       queue_.pop_front();
+      writing_ = true;
       lock.unlock();
-      WriteFrame(*out_, record.payload);
-      out_->flush();
-      const bool failed = !*out_;
+      std::optional<Loss> loss = Persist(record.payload);
       lock.lock();
-      // Whatever of the record reached the file reads back as a torn last
-      // tick; writing on would put whole records after it that no reader
-      // reaches.
-      if (failed) {
-        LogStopped(record.tick, "write failed");
-        failed_ = true;
+      writing_ = false;
+      if (loss) {
+        // Whatever of the record reached the file reads back as a torn last
+        // tick; writing on would put whole records after it that no reader
+        // reaches.
         queue_.clear();
+        LoseLocked(record.tick, loss->step, std::move(loss->detail));
+      } else {
+        ++records_written_;
+      }
+      if (queue_.empty()) {
+        written_.notify_all();
       }
     }
   }
 
+  // The recording's first loss, at tick's step: kept, reported once, and
+  // nothing more queued. A later one changes nothing. With mutex_ held.
+  void LoseLocked(tick::Tick tick, Step step, std::string detail) {
+    if (state_ != RecordingState::kEnabled) {
+      return;
+    }
+    failure_ = LostRecording(mode_, tick, step, std::move(detail));
+    if (mode_ == RecordingMode::kOptional) {
+      // This is the boundary that recovers it: the run goes on without it.
+      LE("subsystem=server event=recording_degraded {}", failure::DescribeFailure(*failure_));
+      Enter(RecordingState::kDegraded);
+    } else {
+      // Only the state change: the runtime that stops on the failure writes
+      // its one ERR line, with its detail (ADR-0033).
+      LI("subsystem=server event=recording_stopped mode={} tick={} step={}", RecordingModeName(mode_), tick,
+         StepName(step));
+      Enter(RecordingState::kStopped);
+    }
+  }
+
+  void Enter(RecordingState state) {
+    state_ = state;
+    if (on_state_) {
+      on_state_(state);
+    }
+  }
+
   std::ostream* out_;
-  std::size_t capacity_;
-  std::mutex mutex_;
+  const RecordingMode mode_;
+  failure::Faults* const faults_;
+  const std::function<void(RecordingState)> on_state_;
+  const std::size_t capacity_;
+  mutable std::mutex mutex_;
   std::condition_variable ready_;
+  // Notified each time the queue is found empty, its last record written.
+  std::condition_variable written_;
   std::deque<Queued> queue_;
   bool closing_ = false;
-  // Written under mutex_, read without it by the Simulation thread.
-  std::atomic<bool> failed_ = false;
+  // A record off the queue but not yet written keeps WaitUntilWritten waiting.
+  bool writing_ = false;
+  // The header among them. Writer thread only.
+  std::size_t records_written_ = 0;
+  // Written under mutex_, read without it by any thread.
+  std::atomic<RecordingState> state_ = RecordingState::kEnabled;
+  std::optional<failure::Failure> failure_;
   // Declared last, so it is joined before what it writes from goes.
   std::thread thread_;
 };
@@ -237,45 +394,47 @@ protocol::BytesWire HeaderRecord(const RecordingHeader& header) {
 
 }  // namespace
 
-Recorder::Recorder(std::ostream& out, const RecordingHeader& header, std::size_t capacity)
-    : writer_(std::make_unique<Writer>(out, HeaderRecord(header), capacity)) {}
+Recorder::Recorder(std::ostream& out, const RecordingHeader& header, RecorderOptions options)
+    : writer_(std::make_unique<Writer>(out, HeaderRecord(header), std::move(options))) {}
 
 Recorder::~Recorder() = default;
 Recorder::Recorder(Recorder&&) noexcept = default;
 Recorder& Recorder::operator=(Recorder&&) noexcept = default;
 
 std::expected<void, failure::Failure> Recorder::Write(const TickRecord& tick) {
-  if (Stopped()) {
+  if (broken_ || State() != RecordingState::kEnabled) {
     return {};
   }
   auto payload = EncodeToRecord(ToWire(tick));
-  // Not the recording's failure but the server's own bug, which stops the
-  // runtime, and is reported once by whoever stops it: the recording just
-  // ends here, every tick before it whole.
+  // Not the recording's loss but the server's own bug, which stops the
+  // runtime, and is reported once by whoever stops it: nothing more is
+  // queued, every tick before it whole.
   if (!payload.has_value()) {
-    stopped_ = true;
+    broken_ = true;
     payload.error().context.push_back({.key = "tick", .value = std::to_string(tick.outcome.tick)});
     return std::unexpected(std::move(payload.error()));
   }
   // A record ReadRecording would refuse would make every tick after it
-  // unreadable; stopping here keeps the file readable up to it.
+  // unreadable; losing it here keeps the file readable up to it.
   if (payload->size() > kMaxRecordSize) {
-    Stop(tick.outcome.tick, "record too long");
+    writer_->Lose(tick.outcome.tick, Step::kRecordTooLong);
     return {};
   }
-  // Dropping this tick and going on would leave a recording whose ticks are
-  // not their places; stopping leaves every one before it.
-  if (!writer_->Push(tick.outcome.tick, *std::move(payload))) {
-    Stop(tick.outcome.tick, "disk fell behind");
-  }
+  writer_->Push(tick.outcome.tick, *std::move(payload));
   return {};
 }
 
-bool Recorder::Stopped() const { return stopped_ || writer_->Failed(); }
+void Recorder::WaitUntilWritten() { writer_->WaitUntilWritten(); }
 
-void Recorder::Stop(tick::Tick tick, std::string_view reason) {
-  LogStopped(tick, reason);
-  stopped_ = true;
+RecordingState Recorder::State() const { return writer_->State(); }
+
+std::optional<failure::Failure> Recorder::Failure() const {
+  // The Simulation thread asks every tick: a recording still enabled has
+  // lost nothing, which the state says without the writer's lock.
+  if (State() == RecordingState::kEnabled) {
+    return std::nullopt;
+  }
+  return writer_->Failure();
 }
 
 std::expected<Recording, RecordingError> ReadRecording(std::istream& in) {
@@ -357,6 +516,16 @@ simulation::TickResult RecordedSimulation::Tick(const std::vector<simulation::Pl
   pending_ = TickInput{};
   pending_spawns_.clear();
   return result;
+}
+
+void RecordedSimulation::WaitUntilRecorded() {
+  if (recorder_.has_value()) {
+    recorder_->WaitUntilWritten();
+  }
+}
+
+std::optional<failure::Failure> RecordedSimulation::RecordingFailure() const {
+  return recorder_.has_value() ? recorder_->Failure() : std::nullopt;
 }
 
 }  // namespace augusta::server

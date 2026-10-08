@@ -72,6 +72,9 @@ enum class Code : std::uint16_t {
   /// An invariant protocol correctness, authority or a resource's lifetime
   /// depends on does not hold.
   kInvariantViolated = 206,
+  /// A strict Match recording, which a replay or verification run needs whole,
+  /// could not be written or flushed.
+  kStrictRecordingFailed = 207,
   /// The command line or config file is not usable.
   kInvalidConfiguration = 300,
   /// A content pack, map, scenario or script is not usable.

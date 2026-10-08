@@ -56,6 +56,27 @@ that stops abruptly leaves behind every whole tick written by then; a record cut
 short is dropped when read, and reported. It costs about 35 KB a second with 8
 players at 60 Hz, which is why it is a debugging setting and not a default.
 
+**Optional or strict.** `simulation.recording_mode` says what losing a tick of
+the recording costs. `optional`, the default, is for a debugging aid: the
+recording is a non-authoritative subsystem (ADR-0033), and a failure to write or
+flush a record, a queue found full, or a record too long degrades it. Its first
+failure is logged once at `ERR` (`event=recording_degraded`, its code
+`recording_write_failed` or `recording_flush_failed`, the tick and the step it
+was lost at), nothing more is written, and the server and its Match go on
+exactly as without a recording. `strict` is for a replay or verification run
+that needs every tick, a test recording a match to replay it among them: the
+same failure is `strict_recording_failed`, a `runtime` one, and the Simulation
+thread stops on it before it ticks again, so the runtime stops and the process
+exits with a failure status, its boundary writing the one `ERR` line. The writer
+finds a loss only after the tick that lost it, so a few ticks may run,
+unrecorded, before the Simulation thread does; a loss found only at the stop, in
+what was still queued, fails the run as it returns. Operators tell a recording's
+states apart by its log lines (`recording_enabled` with its mode,
+`recording_degraded`, `recording_stopped` when it is closed or a strict one
+fails) and by `augustad_recording_state` (ADR-0049), on which `stopped` means a
+strict recording's loss: a recording closed cleanly is closed after the endpoint
+stops serving. With no failure, the two modes write the very same file.
+
 **The disk is written on a thread of the recording's own.** The Simulation
 thread encodes a tick's record right after the tick, which costs only the
 record, at most 64 KiB, and hands it to the recording's writer through a queue
@@ -63,11 +84,11 @@ of at most 256 records (about 4 seconds at 60 Hz, 16 MiB at worst), without
 waiting for the disk; the writer writes and flushes each record in turn. A disk
 that stalls a write then holds up only the writer, never a tick (NFR-01). A
 record that finds the queue full means the disk is not keeping up: the recording
-stops there, logged once, and the file keeps every tick before it, as it does
-for a record too long to write, because dropping a tick and going on would leave
-ticks that are no longer their places. When the server stops, the writer writes
-what is still queued before it goes, so a stalled disk holds up the server's
-shutdown, not its ticks.
+loses its ticks from there, as for a record too long to write or a write that
+fails, and the file keeps every tick before it, because dropping a tick and
+going on would leave ticks that are no longer their places. When the server
+stops, the writer writes what is still queued before it goes, so a stalled disk
+holds up the server's shutdown, not its ticks.
 
 **A replay hands a fresh World the same and checks each tick.** The replay loads
 the content of the pack the header names (refusing another pack), builds the

@@ -16,6 +16,7 @@
 #include <stdexcept>
 #include <streambuf>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -25,7 +26,9 @@
 #include "augusta/assets.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
+#include "augusta/faults.h"
 #include "augusta/grid.h"
+#include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/policy_actions.h"
 #include "augusta/protocol.h"
@@ -42,14 +45,22 @@
 namespace {
 
 using augusta::command::Command;
+using augusta::failure::Code;
+using augusta::failure::Disposition;
+using augusta::failure::DispositionOf;
+using augusta::failure::Faults;
+using augusta::failure::Site;
 using augusta::math::Vec3;
 using augusta::server::Content;
 using augusta::server::RecordedEntrant;
 using augusta::server::RecordedSimulation;
 using augusta::server::Recorder;
+using augusta::server::RecorderOptions;
 using augusta::server::Recording;
 using augusta::server::RecordingError;
 using augusta::server::RecordingHeader;
+using augusta::server::RecordingMode;
+using augusta::server::RecordingState;
 using augusta::server::TickRecord;
 using augusta::simulation::EntityId;
 using augusta::simulation::MatchPlayer;
@@ -153,13 +164,14 @@ std::vector<TickResult> PlayScriptedMatch(RecordedSimulation& simulation, const 
   return results;
 }
 
-// The scripted match, recorded: the simulation, and its Recorder with it, is
-// gone before the bytes are taken, so every record it took is written.
-std::string RecordScriptedMatch() {
+// The scripted match, recorded in mode: the simulation, and its Recorder with
+// it, is gone before the bytes are taken, so every record it took is written.
+std::string RecordScriptedMatch(RecordingMode mode = RecordingMode::kOptional) {
   std::ostringstream out(std::ios::binary);
   {
     const Content content = LoadExampleContent();
-    RecordedSimulation simulation = ExampleSimulation(LoadExampleContent(), Recorder(out, ExampleHeader()));
+    RecordedSimulation simulation = ExampleSimulation(
+        LoadExampleContent(), Recorder(out, ExampleHeader(), RecorderOptions{.mode = mode, .on_state = {}}));
     PlayScriptedMatch(simulation, content);
   }
   return std::move(out).str();
@@ -203,13 +215,13 @@ class FailingBuffer : public std::streambuf {
   std::size_t capacity_;
 };
 
-// Whether recorder stops within 5 s: its writer thread stops it on a write the
-// stream fails, after Write has returned.
-bool WaitUntilStopped(const Recorder& recorder) {
+// Whether recorder loses a tick within 5 s, degrading or stopping: its writer
+// thread loses it on a write the stream fails, after Write has returned.
+bool WaitUntilLost(const Recorder& recorder) {
   constexpr auto kPatience = std::chrono::seconds(5);
   constexpr auto kRetryAfter = std::chrono::milliseconds(10);
   const auto deadline = std::chrono::steady_clock::now() + kPatience;
-  while (!recorder.Stopped()) {
+  while (recorder.State() == RecordingState::kEnabled) {
     if (std::chrono::steady_clock::now() >= deadline) {
       return false;
     }
@@ -338,11 +350,11 @@ TEST(RecordingTest, AFailedWriteStopsTheRecordingWhichReadsBackUpToItsLastWholeT
   std::ostream out(&buffer);
   {
     // Room in the queue for every tick, so only the write can stop it.
-    Recorder recorder(out, whole.header, whole.ticks.size() + 1);
+    Recorder recorder(out, whole.header, RecorderOptions{.on_state = {}, .capacity = whole.ticks.size() + 1});
     for (const augusta::server::TickRecord& tick : whole.ticks) {
       EXPECT_TRUE(recorder.Write(tick).has_value());
     }
-    EXPECT_TRUE(WaitUntilStopped(recorder));
+    EXPECT_TRUE(WaitUntilLost(recorder));
   }
   EXPECT_EQ(buffer.written().size(), bytes.size() / 2);
   const Recording cut = Read(buffer.written());
@@ -356,17 +368,18 @@ TEST(RecordingTest, AFailedHeaderWriteStopsTheRecordingBeforeItsFirstTick) {
   std::ostream out(&buffer);
   {
     Recorder recorder(out, ExampleHeader());
-    EXPECT_TRUE(WaitUntilStopped(recorder));
+    EXPECT_TRUE(WaitUntilLost(recorder));
     EXPECT_TRUE(recorder.Write(augusta::server::TickRecord{}).has_value());
   }
   EXPECT_EQ(buffer.written().size(), 2U);
 }
 
-TEST(RecordingTest, ARecordingThatIsWrittenWholeIsNotStopped) {
+TEST(RecordingTest, ARecordingThatIsWrittenWholeIsEnabledWithNoFailure) {
   std::ostringstream out(std::ios::binary);
   Recorder recorder(out, ExampleHeader());
   EXPECT_TRUE(recorder.Write(augusta::server::TickRecord{}).has_value());
-  EXPECT_FALSE(recorder.Stopped());
+  EXPECT_EQ(recorder.State(), RecordingState::kEnabled);
+  EXPECT_FALSE(recorder.Failure().has_value());
 }
 
 // Requirements: NFR-12
@@ -463,7 +476,7 @@ TEST(RecordingTest, ARecorderTakesTicksWithoutWaitingForAStalledDiskAndStopsWhen
   StalledBuffer disk;
   std::ostream out(&disk);
   {
-    Recorder recorder(out, ExampleHeader(), kCapacity);
+    Recorder recorder(out, ExampleHeader(), RecorderOptions{.on_state = {}, .capacity = kCapacity});
     // The header is being written, and stuck there: every tick from here on waits.
     disk.WaitUntilStalled();
     for (augusta::tick::Tick tick = 1; tick <= kCapacity + 2; ++tick) {
@@ -484,7 +497,7 @@ TEST(RecordingTest, ARecorderThatFellBehindWritesNothingMoreEvenOnceItCaughtUp) 
   StalledBuffer disk;
   std::ostream out(&disk);
   {
-    Recorder recorder(out, ExampleHeader(), kCapacity);
+    Recorder recorder(out, ExampleHeader(), RecorderOptions{.on_state = {}, .capacity = kCapacity});
     disk.WaitUntilStalled();
     EXPECT_TRUE(recorder.Write(EmptyTick(1)).has_value());
     EXPECT_TRUE(recorder.Write(EmptyTick(2)).has_value());
@@ -494,6 +507,227 @@ TEST(RecordingTest, ARecorderThatFellBehindWritesNothingMoreEvenOnceItCaughtUp) 
   const Recording recording = Read(disk.Written());
   ASSERT_EQ(recording.ticks.size(), 1U);
   EXPECT_EQ(recording.ticks.front().outcome.tick, 1U);
+}
+
+std::size_t Occurrences(std::string_view text, std::string_view needle) {
+  std::size_t count = 0;
+  for (std::size_t at = text.find(needle); at != std::string_view::npos; at = text.find(needle, at + 1)) {
+    ++count;
+  }
+  return count;
+}
+
+// What a Recorder in mode, its stream failing at site every time with "disk
+// full", logs from its construction to its end, having been handed ticks
+// ticks, with its state and first loss as it lost it.
+struct FailedRecording {
+  std::string log;
+  RecordingState state = RecordingState::kEnabled;
+  std::optional<augusta::failure::Failure> failure;
+  std::string written;
+};
+
+FailedRecording RecordWithFailing(RecordingMode mode, Site site, int ticks = 5) {
+  augusta::logging::Init();
+  augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
+  Faults faults;
+  faults.Arm(site, "disk full", Faults::kEveryTime);
+  std::ostringstream out(std::ios::binary);
+  FailedRecording result;
+  testing::internal::CaptureStdout();
+  {
+    Recorder recorder(out, ExampleHeader(), RecorderOptions{.mode = mode, .faults = &faults, .on_state = {}});
+    for (augusta::tick::Tick tick = 1; tick <= static_cast<augusta::tick::Tick>(ticks); ++tick) {
+      EXPECT_TRUE(recorder.Write(EmptyTick(tick)).has_value());
+    }
+    EXPECT_TRUE(WaitUntilLost(recorder));
+    // Ticks after the loss change nothing.
+    EXPECT_TRUE(recorder.Write(EmptyTick(static_cast<augusta::tick::Tick>(ticks) + 1)).has_value());
+    result.state = recorder.State();
+    result.failure = recorder.Failure();
+  }
+  result.log = testing::internal::GetCapturedStdout();
+  result.written = std::move(out).str();
+  return result;
+}
+
+TEST(RecordingFailureModeTest, AnOptionalRecordingWhoseWriteFailsDegradesAndReportsItOnce) {
+  const FailedRecording recording = RecordWithFailing(RecordingMode::kOptional, Site::kRecordingWrite);
+
+  EXPECT_EQ(recording.state, RecordingState::kDegraded);
+  ASSERT_TRUE(recording.failure.has_value());
+  EXPECT_EQ(recording.failure->code, Code::kRecordingWriteFailed);
+  EXPECT_EQ(DispositionOf(recording.failure->code), Disposition::kSubsystem);
+  EXPECT_EQ(recording.failure->detail, "disk full");
+  EXPECT_EQ(Occurrences(recording.log, "ERROR"), 1U) << recording.log;
+  EXPECT_EQ(Occurrences(recording.log, "event=recording_degraded code=recording_write_failed disposition=subsystem"),
+            1U)
+      << recording.log;
+  EXPECT_EQ(Occurrences(recording.log, "step=write"), 1U) << recording.log;
+  EXPECT_TRUE(recording.written.empty());
+}
+
+TEST(RecordingFailureModeTest, AnOptionalRecordingWhoseFlushFailsDegradesAndReportsItOnce) {
+  const FailedRecording recording = RecordWithFailing(RecordingMode::kOptional, Site::kRecordingFlush);
+
+  EXPECT_EQ(recording.state, RecordingState::kDegraded);
+  ASSERT_TRUE(recording.failure.has_value());
+  EXPECT_EQ(recording.failure->code, Code::kRecordingFlushFailed);
+  EXPECT_EQ(DispositionOf(recording.failure->code), Disposition::kSubsystem);
+  EXPECT_EQ(Occurrences(recording.log, "ERROR"), 1U) << recording.log;
+  EXPECT_EQ(Occurrences(recording.log, "event=recording_degraded code=recording_flush_failed disposition=subsystem"),
+            1U)
+      << recording.log;
+  // The header, written but never flushed, and not a tick after it.
+  EXPECT_TRUE(Read(recording.written).ticks.empty());
+}
+
+TEST(RecordingFailureModeTest, ADegradedRecordingStopsWhenItIsClosed) {
+  const FailedRecording recording = RecordWithFailing(RecordingMode::kOptional, Site::kRecordingWrite);
+
+  EXPECT_EQ(Occurrences(recording.log, "event=recording_stopped mode=optional ticks=0 lost=true"), 1U) << recording.log;
+}
+
+TEST(RecordingFailureModeTest, AStrictRecordingWhoseWriteFailsIsATerminalRuntimeFailure) {
+  const FailedRecording recording = RecordWithFailing(RecordingMode::kStrict, Site::kRecordingWrite);
+
+  EXPECT_EQ(recording.state, RecordingState::kStopped);
+  ASSERT_TRUE(recording.failure.has_value());
+  EXPECT_EQ(recording.failure->code, Code::kStrictRecordingFailed);
+  EXPECT_EQ(DispositionOf(recording.failure->code), Disposition::kRuntime);
+  EXPECT_EQ(recording.failure->detail, "disk full");
+  EXPECT_NE(augusta::failure::DescribeFailure(*recording.failure).find("step=write"), std::string::npos);
+  // The runtime that stops on it writes its one ERR line; the recording only
+  // says it stopped, once.
+  EXPECT_EQ(Occurrences(recording.log, "ERROR"), 0U) << recording.log;
+  EXPECT_EQ(Occurrences(recording.log, "event=recording_stopped"), 1U) << recording.log;
+  EXPECT_EQ(Occurrences(recording.log, "event=recording_stopped mode=strict tick=0 step=write"), 1U) << recording.log;
+  EXPECT_EQ(Occurrences(recording.log, "code="), 0U) << recording.log;
+}
+
+TEST(RecordingFailureModeTest, AStrictRecordingWhoseFlushFailsIsATerminalRuntimeFailure) {
+  const FailedRecording recording = RecordWithFailing(RecordingMode::kStrict, Site::kRecordingFlush);
+
+  EXPECT_EQ(recording.state, RecordingState::kStopped);
+  ASSERT_TRUE(recording.failure.has_value());
+  EXPECT_EQ(recording.failure->code, Code::kStrictRecordingFailed);
+  EXPECT_EQ(DispositionOf(recording.failure->code), Disposition::kRuntime);
+  EXPECT_NE(augusta::failure::DescribeFailure(*recording.failure).find("step=flush"), std::string::npos);
+}
+
+TEST(RecordingFailureModeTest, AStrictRecordingThatFellBehindIsATerminalRuntimeFailure) {
+  constexpr std::size_t kCapacity = 1;
+  StalledBuffer disk;
+  std::ostream out(&disk);
+  std::optional<augusta::failure::Failure> failure;
+  {
+    Recorder recorder(out, ExampleHeader(),
+                      RecorderOptions{.mode = RecordingMode::kStrict, .on_state = {}, .capacity = kCapacity});
+    disk.WaitUntilStalled();
+    EXPECT_TRUE(recorder.Write(EmptyTick(1)).has_value());
+    EXPECT_TRUE(recorder.Write(EmptyTick(2)).has_value());
+    EXPECT_EQ(recorder.State(), RecordingState::kStopped);
+    failure = recorder.Failure();
+    disk.Release();
+  }
+  ASSERT_TRUE(failure.has_value());
+  EXPECT_EQ(failure->code, Code::kStrictRecordingFailed);
+  EXPECT_NE(augusta::failure::DescribeFailure(*failure).find("tick=2 step=queue_full"), std::string::npos);
+}
+
+TEST(RecordingFailureModeTest, ARecordingReportsEachStateItEntersInOrder) {
+  Faults faults;
+  faults.Arm(Site::kRecordingWrite, "disk full", Faults::kEveryTime);
+  std::ostringstream out(std::ios::binary);
+  std::mutex mutex;
+  std::vector<RecordingState> states;
+  {
+    Recorder recorder(
+        out, ExampleHeader(),
+        RecorderOptions{.mode = RecordingMode::kOptional, .faults = &faults, .on_state = [&](RecordingState state) {
+                          const std::scoped_lock lock(mutex);
+                          states.push_back(state);
+                        }});
+    EXPECT_TRUE(WaitUntilLost(recorder));
+  }
+  const std::scoped_lock lock(mutex);
+  EXPECT_EQ(states, (std::vector{RecordingState::kEnabled, RecordingState::kDegraded, RecordingState::kStopped}));
+}
+
+TEST(RecordingFailureModeTest, ALossIsKnownOnceEveryQueuedTickIsWritten) {
+  Faults faults;
+  std::ostringstream out(std::ios::binary);
+  Recorder recorder(out, ExampleHeader(),
+                    RecorderOptions{.mode = RecordingMode::kStrict, .faults = &faults, .on_state = {}});
+  EXPECT_TRUE(recorder.Write(EmptyTick(1)).has_value());
+  recorder.WaitUntilWritten();
+  EXPECT_FALSE(recorder.Failure().has_value());
+
+  faults.Arm(Site::kRecordingWrite, "disk full");
+  EXPECT_TRUE(recorder.Write(EmptyTick(2)).has_value());
+  recorder.WaitUntilWritten();
+  ASSERT_TRUE(recorder.Failure().has_value());
+  EXPECT_NE(augusta::failure::DescribeFailure(*recorder.Failure()).find("tick=2 step=write"), std::string::npos);
+}
+
+TEST(RecordingFailureModeTest, AWholeRecordingStopsWhenItIsClosedWithNothingLost) {
+  augusta::logging::Init();
+  augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
+  std::ostringstream out(std::ios::binary);
+  testing::internal::CaptureStdout();
+  {
+    Recorder recorder(out, ExampleHeader(), RecorderOptions{.mode = RecordingMode::kStrict, .on_state = {}});
+    EXPECT_TRUE(recorder.Write(EmptyTick(1)).has_value());
+    EXPECT_TRUE(recorder.Write(EmptyTick(2)).has_value());
+  }
+  const std::string log = testing::internal::GetCapturedStdout();
+  EXPECT_EQ(Occurrences(log, "event=recording_stopped mode=strict ticks=2 lost=false"), 1U) << log;
+  EXPECT_EQ(Read(std::move(out).str()).ticks.size(), 2U);
+}
+
+// An optional recording is a debugging aid: losing it leaves every tick of the
+// Match resolving as it would have with no recording at all.
+TEST(RecordingFailureModeTest, AnOptionalRecordingThatDegradesLeavesTheMatchAsItWouldHaveBeen) {
+  const Content content = LoadExampleContent();
+  RecordedSimulation unrecorded = ExampleSimulation(LoadExampleContent(), std::nullopt);
+  const std::vector<TickResult> expected = PlayScriptedMatch(unrecorded, content);
+
+  Faults faults;
+  faults.Arm(Site::kRecordingWrite, "disk full", Faults::kEveryTime);
+  std::ostringstream out(std::ios::binary);
+  RecordedSimulation degraded =
+      ExampleSimulation(LoadExampleContent(),
+                        Recorder(out, ExampleHeader(),
+                                 RecorderOptions{.mode = RecordingMode::kOptional, .faults = &faults, .on_state = {}}));
+  const std::vector<TickResult> results = PlayScriptedMatch(degraded, content);
+
+  ASSERT_EQ(results.size(), expected.size());
+  for (std::size_t i = 0; i < results.size(); ++i) {
+    EXPECT_EQ(results[i].state.tick, expected[i].state.tick);
+    EXPECT_EQ(results[i].state.bodies, expected[i].state.bodies);
+    EXPECT_EQ(results[i].state.shots, expected[i].state.shots);
+    EXPECT_EQ(results[i].state.hits, expected[i].state.hits);
+    EXPECT_EQ(results[i].state.deaths, expected[i].state.deaths);
+    EXPECT_EQ(results[i].actions.size(), expected[i].actions.size());
+  }
+  // Its writer thread may get to the failed write only after the last tick.
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (!degraded.RecordingFailure().has_value() && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_TRUE(degraded.RecordingFailure().has_value());
+  EXPECT_EQ(degraded.RecordingFailure()->code, Code::kRecordingWriteFailed);
+}
+
+TEST(RecordingFailureModeTest, AMatchIsRecordedTheSameInEitherModeWhenNothingFails) {
+  const std::string optional = RecordScriptedMatch(RecordingMode::kOptional);
+  EXPECT_EQ(RecordScriptedMatch(RecordingMode::kStrict), optional);
+  EXPECT_EQ(RecordScriptedMatch(RecordingMode::kOptional), optional);
+}
+
+TEST(RecordingFailureModeTest, ASimulationThatRecordsNothingHasNoRecordingFailure) {
+  const RecordedSimulation simulation = ExampleSimulation(LoadExampleContent(), std::nullopt);
+  EXPECT_FALSE(simulation.RecordingFailure().has_value());
 }
 
 // A character's name longer than the protocol carries.
@@ -516,7 +750,8 @@ TEST(RecordingTest, ATickWhoseRecordTheProtocolCannotCarryIsAnInvariantFailureAn
 
     ASSERT_FALSE(written.has_value());
     EXPECT_EQ(written.error().code, augusta::failure::Code::kInvariantViolated);
-    EXPECT_TRUE(recorder.Stopped());
+    // The server's bug, not the recording's loss.
+    EXPECT_FALSE(recorder.Failure().has_value());
     EXPECT_TRUE(recorder.Write(EmptyTick(3)).has_value());
   }
   const Recording recording = Read(std::move(out).str());

@@ -97,7 +97,10 @@ class RecordedHostMatch {
                          .parameters = TwoPlayers(),
                          .listen = Endpoint{.address = "127.0.0.1:0"},
                          .recording = path,
-                         .server_pack = {}},
+                         // A replay needs every tick: one lost fails the run.
+                         .recording_mode = augusta::server::RecordingMode::kStrict,
+                         .server_pack = {},
+                         .faults = nullptr},
               TwoPlayerFloor(), {}) {
     for (int i = 0; i < 2; ++i) {
       augusta::prediction::World world;

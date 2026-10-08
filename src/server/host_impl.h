@@ -57,6 +57,10 @@ struct Host::Impl {
     TickRecipients to;
   };
 
+  // Written in place by both threads, lock-free; read by the metrics endpoint's.
+  // Declared before the recording, which writes its state here until it is
+  // closed.
+  HostMetrics metrics;
   // Declared before the socket so it is constructed first; see
   // BuildRecordedSimulation. Simulation thread only, with the file it records
   // to, if any, the body each player in it controls, and whether the match
@@ -81,8 +85,6 @@ struct Host::Impl {
 
   // Thread-safe by the transport's contract, used from both threads.
   networking::Server network;
-  // Written in place by both threads, lock-free; read by the metrics endpoint's.
-  HostMetrics metrics;
   // The first local transport failure either thread met, until a worker takes it.
   failure::FirstFailure transport_failure;
   // The first outbound message or record either thread could not encode: a

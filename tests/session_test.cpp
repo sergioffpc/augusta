@@ -138,7 +138,9 @@ HostConfig TestHostConfig(const Parameters& parameters = kTestParameters, std::u
       .parameters = parameters,
       .listen = Endpoint{.address = kLoopbackAnyPort},
       .recording = {},
+      .recording_mode = {},
       .server_pack = {},
+      .faults = nullptr,
   };
 }
 

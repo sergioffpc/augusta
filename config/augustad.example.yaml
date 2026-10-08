@@ -27,6 +27,11 @@ simulation:
   # replaced each time the server starts, and grows by about 35 KB a second
   # with 8 players at 60 Hz.
   # recording: recordings/match.rec
+  # What losing a tick of that recording costs (optional, default optional):
+  # optional, for a debugging aid, logs the failure once and records nothing
+  # more while the server and its Match go on; strict, for a replay or
+  # verification run that needs every tick, stops the server with a failure.
+  # recording_mode: optional
 network:
   # Local address to listen on (optional, default 0.0.0.0:27015).
   listen_address: 0.0.0.0:27015

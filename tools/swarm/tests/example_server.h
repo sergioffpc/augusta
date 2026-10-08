@@ -95,7 +95,9 @@ class ExampleServer {
                                      .parameters = parameters,
                                      .listen = {.address = "127.0.0.1:0"},
                                      .recording = {},
-                                     .server_pack = {}},
+                                     .recording_mode = {},
+                                     .server_pack = {},
+                                     .faults = nullptr},
                   *std::move(content));
   }
 
