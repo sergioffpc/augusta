@@ -2,12 +2,9 @@
 # reaching a shipped executable. Each rule names the package's version too, so
 # a new version is scanned, and assessed, again.
 ignore:
-    - vulnerability: CVE-2026-85091
-      package:
-          name: ^zlib$
-          version: 1.3.2#2
-      reason: >-
-          gz_vacate() is reached only through zlib's gzFile API (gzprintf or
-          gzvprintf after a stalled non-blocking gzwrite). Nothing in augustac
-          calls it: zlib reaches it only through steam-audio's libmysofa, whose
-          one use of zlib (src/hdf/gunzip.c, v1.3.5) is an in-memory inflate().
+  - vulnerability: CVE-2026-85091
+    package:
+      name: ^zlib$
+      version: 1.3.2#2
+    reason: >-
+      gz_vacate() is reached only through zlib's gzFile API (gzprintf or gzvprintf after a stalled non-blocking gzwrite). Nothing in augustac calls it: zlib reaches it only through steam-audio's libmysofa, whose one use of zlib (src/hdf/gunzip.c, v1.3.5) is an in-memory inflate().
