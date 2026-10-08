@@ -131,6 +131,7 @@ target_link_libraries(
   augustad_host
   PUBLIC
     augusta_ballistics
+    augusta_failure
     augusta_networking
     augusta_parameters
     augusta_physics

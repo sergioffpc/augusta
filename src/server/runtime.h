@@ -55,7 +55,8 @@ class ServerRuntime {
   /// Simulation loop on the calling thread - gather this tick's latest
   /// validated commands, SimulationWorld::Tick, hand the resulting
   /// Authoritative State onward - until Stop() is called or either thread
-  /// fails, which stops the other (supervisor.h): neither ticks nor pumps the
+  /// fails, the local transport failing among the ways it can
+  /// (Host::TakeTransportFailure), which stops the other (supervisor.h): neither ticks nor pumps the
   /// network again once the stop is requested. Always stops and joins the
   /// Network I/O thread before returning, and so before Host, which it uses,
   /// can go. Returns the first cause that stopped it, nullopt if Stop() did:

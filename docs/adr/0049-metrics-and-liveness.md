@@ -98,7 +98,9 @@ with: admission's refusals, the transport's end reasons (and a disconnect for
 misbehaving), the misbehaviour kinds and the command queue's discards (and its
 overflow, and commands from a player not in a match or a peer that has not
 joined). Every command counted received is taken in or discarded; those a peer
-sent after the one that got it disconnected are neither.
+sent after the one that got it disconnected are neither. A message counts as
+sent, in the Network family, only once the transport has accepted it: one it
+dropped, or refused, was never sent (ADR-0003).
 
 `augustad_build_info`'s `commit` is the commit the server image was built from,
 which the image's runtime stage sets as the `AUGUSTA_COMMIT` environment

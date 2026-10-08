@@ -64,8 +64,9 @@ class Runner {
   Runner& operator=(Runner&&) = delete;
 
   /// The first cause a thread stopped on, including an exception thrown by a
-  /// hook, or nullopt while none has; the other thread is stopped too. Safe
-  /// from any thread.
+  /// hook and a failure of the local transport (Session::TakeTransportFailure),
+  /// or nullopt while none has; the other thread is stopped too. Safe from any
+  /// thread.
   [[nodiscard]] std::optional<failure::Failure> Failure() const;
 
  private:
