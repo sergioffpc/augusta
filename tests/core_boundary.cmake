@@ -8,8 +8,9 @@
 # Tick and command sequence widths and the player, command and recoil bounds
 # the engine and the protocol share may include no augusta header, name no
 # other augusta module, nor link any target, so the protocol can take them
-# without taking the gameplay modules that use them. And nothing else defines
-# them again with a value of its own.
+# without taking the gameplay modules that use them. And nothing else gives
+# the counters an integer type of its own, or declares the bounds again, with
+# a value of its own or as an alias.
 #
 # Run by ctest as `cmake -DSOURCE_DIR=<repo root> -P core_boundary.cmake`.
 if(NOT DEFINED SOURCE_DIR)
@@ -66,10 +67,13 @@ foreach(line ${lines})
   list(APPEND primitives_violations "  src/modules/primitives/CMakeLists.txt: ${line}")
 endforeach()
 
-# Nothing else gives a Tick or Sequence an integer type of its own, or a
-# player, command or recoil bound a number of its own: they take the
-# primitives', so the engine and the wire cannot drift apart. A line scan, so
-# it catches the plain spellings, not every one C++ allows.
+# Nothing else gives a Tick or Sequence an integer type of its own (tick::Tick
+# and command::Sequence name the primitives' own), or declares a player,
+# command or recoil bound again, with a number, as an alias or by a
+# using-declaration: everything takes the bounds from augusta::primitives, so
+# the engine and the wire cannot drift apart and no module re-exports them as
+# its own. A line scan, so it catches the plain spellings, not every one C++
+# allows.
 file(
   GLOB_RECURSE sources
   "${SOURCE_DIR}/src/*.h"
@@ -80,7 +84,7 @@ file(
 list(FILTER sources EXCLUDE REGEX "/src/modules/primitives/")
 set(
   own_definition
-  "using[ \t]+(Tick|Sequence)[ \t]*=[ \t]*(std::)?(u?int|unsigned|size_t)|k(MaxPlayers|MaxCommandsPerMessage|MaxRecoilKicks)[ \t]*(=[ \t]*|{)[0-9]"
+  "using[ \t]+(Tick|Sequence)[ \t]*=[ \t]*(std::)?(u?int|unsigned|size_t)|k(MaxPlayers|MaxCommandsPerMessage|MaxRecoilKicks)[ \t]*(=([^=]|$)|{)|using[ \t]+[A-Za-z_:]*::k(MaxPlayers|MaxCommandsPerMessage|MaxRecoilKicks)"
 )
 set(definition_violations "")
 foreach(source ${sources})
