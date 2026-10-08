@@ -23,6 +23,7 @@ const Parameters kUsable{.stamina = {.deplete_per_second = 0.2F, .regen_per_seco
 
 TEST(ValidateTest, UsableParametersPass) { EXPECT_TRUE(Validate(kUsable).has_value()); }
 
+// Requirements: US-22
 TEST(ValidateTest, EachValueOutsideItsRangeIsNamedByItsPath) {
   Parameters negative_deplete = kUsable;
   negative_deplete.stamina.deplete_per_second = -0.1F;
@@ -36,6 +37,7 @@ TEST(ValidateTest, EachValueOutsideItsRangeIsNamedByItsPath) {
   EXPECT_EQ(Validate(threshold_of_one).error().path, "stamina.forced_walk_below");
 }
 
+// Requirements: US-22
 TEST(ValidateTest, APlayerCountFromOneToTheMostAMatchHoldsPasses) {
   for (const std::uint8_t count : {std::uint8_t{1}, std::uint8_t{augusta::protocol::kMaxPlayers}}) {
     Parameters parameters = kUsable;
@@ -45,6 +47,7 @@ TEST(ValidateTest, APlayerCountFromOneToTheMostAMatchHoldsPasses) {
   }
 }
 
+// Requirements: US-22
 TEST(ValidateTest, APlayerCountOfZeroOrAboveTheMostAMatchHoldsIsNamed) {
   for (const std::uint8_t count :
        {std::uint8_t{0}, std::uint8_t{augusta::protocol::kMaxPlayers + 1}, std::numeric_limits<std::uint8_t>::max()}) {
@@ -64,6 +67,7 @@ struct BadValue {
   std::string_view path;
 };
 
+// Requirements: US-22
 TEST(ValidateTest, EachRifleAmmoOrHealthValueOutsideItsRangeIsNamedByItsPath) {
   constexpr float kInfinity = std::numeric_limits<float>::infinity();
   constexpr float kNan = std::numeric_limits<float>::quiet_NaN();

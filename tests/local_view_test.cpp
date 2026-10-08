@@ -181,7 +181,7 @@ TEST(AdsZoomTest, ReleasingAdsZoomsBackOut) {
   EXPECT_FLOAT_EQ(released, kHipFieldOfView);
 }
 
-// Requirements: US-11
+// Requirements: US-11, US-19
 TEST(HitMarkerTest, NoHitMarkerShowsWithoutAHitConfirmation) {
   HitMarker marker;
 
@@ -190,7 +190,7 @@ TEST(HitMarkerTest, NoHitMarkerShowsWithoutAHitConfirmation) {
   }
 }
 
-// Requirements: US-11
+// Requirements: US-11, US-19
 TEST(HitMarkerTest, AHitConfirmationShowsTheMarkerForAMoment) {
   HitMarker marker;
 
@@ -199,7 +199,7 @@ TEST(HitMarkerTest, AHitConfirmationShowsTheMarkerForAMoment) {
   EXPECT_FALSE(marker.Update(0, HitMarker::kShownSeconds));
 }
 
-// Requirements: US-11
+// Requirements: US-11, US-19
 TEST(HitMarkerTest, EachHitConfirmationShowsTheMarkerAfresh) {
   HitMarker marker;
   (void)marker.Update(1, kFrame);

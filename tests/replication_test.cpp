@@ -36,6 +36,7 @@ State StateOf(std::vector<EntityState> bodies) {
   return state;
 }
 
+// Requirements: US-17
 TEST(ReplicationTest, EveryRecipientGetsEveryPlayer) {
   const State state = StateOf({PlayerAt(1, 10.0F), PlayerAt(2, 20.0F)});
   const std::array<Recipient, 2> recipients = {Recipient{.entity = static_cast<EntityId>(1)},
@@ -204,6 +205,7 @@ TEST(ReplicationTest, ATickWithoutFireHasNoShotToPlan) {
   EXPECT_TRUE(PlanShots(StateOf({PlayerAt(1, 0.0F)}), 1).empty());
 }
 
+// Requirements: US-17
 TEST(ReplicationTest, EveryRecipientIsToldWhereEachBodyFaces) {
   EntityState turned = PlayerAt(1, 0.0F);
   turned.yaw = 1.25F;

@@ -44,6 +44,7 @@ void ExpectNear(const Vec3& actual, const Vec3& expected) {
 // A scenario's characters.
 const std::vector<std::string> kCharacters = {"sniper", "medic"};
 
+// Requirements: US-17
 TEST(LoadCharacterMeshTest, ResolvesTheVisualMeshOfTheCharacterAPathNames) {
   std::string resolved;
   const auto mesh = LoadCharacterMesh(kCharacters, "medic", [&](std::string_view path) {

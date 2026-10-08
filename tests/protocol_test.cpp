@@ -149,6 +149,7 @@ TEST(ProtocolTest, JoinRequestWithTheLongestCharacterRoundTrips) {
   EXPECT_EQ(std::get<JoinRequestWire>(decoded).character, longest);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ACharacterLongerThanAllowedIsTooLong) {
   BytesWire payload = WithPackHash(BytesOf({kJoinRequestType, 0}), PackHashWire{});
   payload.push_back(static_cast<std::byte>(augusta::protocol::kMaxCharacterNameLength + 1));
@@ -221,6 +222,7 @@ TEST(ProtocolTest, JoinAcceptedCarriesNoRosterAndNoSpawnPoint) {
   EXPECT_EQ(Encode(JoinAcceptedWire{}).size(), 1 + 4 + 1 + 63 + 1);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ACharacterInJoinAcceptedLongerThanTheLimitIsTooLong) {
   BytesWire payload = Encode(JoinAcceptedWire{});
   payload.back() = static_cast<std::byte>(augusta::protocol::kMaxCharacterNameLength + 1);
@@ -296,12 +298,14 @@ TEST(ProtocolTest, AnEmptyLobbyAndAFullOneRoundTrip) {
   EXPECT_EQ(std::get<LobbyWire>(RoundTrip(full)).roster.size(), kMaxPlayers);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, MorePlayersInALobbyThanItHoldsIsTooLong) {
   // type, version (4), then the count.
   EXPECT_EQ(Decode(BytesOf({kLobbyType, 1, 0, 0, 0, static_cast<std::uint8_t>(kMaxPlayers + 1)})).error(),
             DecodeError::kFieldTooLong);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ACharacterInALobbyLongerThanTheLimitIsTooLong) {
   // type, version, count, session, then the character's length.
   EXPECT_EQ(Decode(BytesOf({kLobbyType, 1, 0, 0, 0, 1, 7, 0, 0, 0,
@@ -341,6 +345,7 @@ TEST(ProtocolTest, AMatchStartOfAFullMatchRoundTrips) {
   EXPECT_EQ(std::get<MatchStartWire>(RoundTrip(sent)).players.size(), kMaxPlayers);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, MorePlayersInAMatchStartThanAMatchHoldsIsTooLong) {
   EXPECT_EQ(Decode(BytesOf({kMatchStartType, static_cast<std::uint8_t>(kMaxPlayers + 1)})).error(),
             DecodeError::kFieldTooLong);
@@ -397,6 +402,7 @@ TEST(ProtocolTest, AShotTravelsInTwentyEightBytes) {
                      0x04,      0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x20, 0xFF, 0xFF, 0xFF}));
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, BytesAfterAShotAreTrailing) {
   BytesWire shot = Encode(ShotWire{});
   shot.push_back(std::byte{0});
@@ -423,6 +429,7 @@ TEST(ProtocolTest, AHitConfirmationTravelsInTenBytes) {
   EXPECT_EQ(Encode(hit), BytesOf({kHitConfirmationType, 0x04, 0x03, 0x02, 0x01, 0x03, 0x00, 0x00, 0x80, 0x3F}));
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, AHitConfirmationsBodyPartOutsideItsRangeIsInvalid) {
   // type, target, then the body part.
   constexpr std::size_t kBodyPartOffset = 1 + 4;
@@ -434,6 +441,7 @@ TEST(ProtocolTest, AHitConfirmationsBodyPartOutsideItsRangeIsInvalid) {
   }
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, BytesAfterAHitConfirmationAreTrailing) {
   BytesWire hit = Encode(HitConfirmationWire{});
   hit.push_back(std::byte{0});
@@ -469,6 +477,7 @@ TEST(ProtocolTest, ADeathTravelsInSixteenBytes) {
                                     0xFF, 0xFF, 0xFF}));
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ADeathsBodyPartOutsideItsRangeIsInvalid) {
   // type, victim, killer, then the body part.
   constexpr std::size_t kBodyPartOffset = 1 + 4 + 4;
@@ -480,6 +489,7 @@ TEST(ProtocolTest, ADeathsBodyPartOutsideItsRangeIsInvalid) {
   }
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, BytesAfterADeathAreTrailing) {
   BytesWire death = Encode(DeathWire{});
   death.push_back(std::byte{0});
@@ -487,6 +497,7 @@ TEST(ProtocolTest, BytesAfterADeathAreTrailing) {
   EXPECT_EQ(Decode(death).error(), DecodeError::kTrailingBytes);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ACharacterInAMatchStartLongerThanTheLimitIsTooLong) {
   BytesWire payload = Encode(MatchStartWire{.players = {MatchPlayer(1, "", 0.0F)}});
   // type, count, session, entity, then the character's length.
@@ -496,14 +507,17 @@ TEST(ProtocolTest, ACharacterInAMatchStartLongerThanTheLimitIsTooLong) {
   EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, AnEmptyPayloadIsEmpty) { EXPECT_EQ(Decode(BytesWire{}).error(), DecodeError::kEmpty); }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, AnUnknownTypeIsRejected) {
   EXPECT_EQ(Decode(BytesOf({0})).error(), DecodeError::kUnknownType);
   EXPECT_EQ(Decode(BytesOf({13, 0, 0, 0, 0})).error(), DecodeError::kUnknownType);
   EXPECT_EQ(Decode(BytesOf({0xFF})).error(), DecodeError::kUnknownType);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
   const std::array<MessageWire, 12> messages = {
       JoinRequestWire{.engine_version = "0.1.0", .character = "soldier"},
@@ -528,11 +542,13 @@ TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
   }
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ALengthPointingPastThePayloadIsTruncatedWithoutReadingIt) {
   // Claims 32 bytes of version, supplies 2.
   EXPECT_EQ(Decode(BytesOf({kJoinRequestType, 32, 'a', 'b'})).error(), DecodeError::kTruncated);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, AVersionLongerThanAllowedIsTooLongEvenWhenAllOfItIsPresent) {
   BytesWire payload = BytesOf({kJoinRequestType, static_cast<std::uint8_t>(kMaxEngineVersionLength + 1)});
   payload.resize(payload.size() + kMaxEngineVersionLength + 1, static_cast<std::byte>('v'));
@@ -540,16 +556,19 @@ TEST(ProtocolTest, AVersionLongerThanAllowedIsTooLongEvenWhenAllOfItIsPresent) {
   EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ALengthOf255IsRejectedBeforeAnythingIsAllocatedForIt) {
   EXPECT_EQ(Decode(BytesOf({kJoinRequestType, 255})).error(), DecodeError::kFieldTooLong);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ARefusalReasonOutsideTheEnumerationIsInvalid) {
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 0})).error(), DecodeError::kInvalidEnum);
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 6})).error(), DecodeError::kInvalidEnum);
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 0xFF})).error(), DecodeError::kInvalidEnum);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, BytesAfterAMessageAreTrailing) {
   BytesWire request = WithPackHash(BytesOf({kJoinRequestType, 0}), PackHashWire{});
   request.push_back(std::byte{0});
@@ -624,6 +643,7 @@ TEST(ProtocolTest, CommandsCarryTheMostAMessageAllows) {
   EXPECT_EQ(std::get<CommandsWire>(RoundTrip(sent)).commands.size(), kMaxCommandsPerMessage);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, MoreCommandsThanAMessageAllowsIsTooLong) {
   EXPECT_EQ(Decode(BytesOf({kCommandsType, static_cast<std::uint8_t>(kMaxCommandsPerMessage + 1)})).error(),
             DecodeError::kFieldTooLong);
@@ -718,6 +738,7 @@ TEST(ProtocolTest, ASeenTimesFractionIsHeldBelowOneAndANaNIsZero) {
   EXPECT_EQ(SnapFraction(std::numeric_limits<float>::quiet_NaN()), 0.0F);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ACommandsStanceOrUnusedBitsOutsideTheirRangeAreInvalid) {
   const BytesWire payload = Encode(CommandsWire{.commands = {BusyCommand(1)}});
   for (const std::uint8_t bad : {std::uint8_t{0b0011'0000}, std::uint8_t{0b0100'0000}, std::uint8_t{0b1000'0000}}) {
@@ -848,6 +869,7 @@ TEST(ProtocolTest, ARecipientsRifleTravelsInSixteenBytesAfterItsQueuedCommands) 
             BytesOf({30, 0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x00, 0xC0, 3, 0x00, 0x80, 0x00, 0xFF, 0xFF, 0xFF}));
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, MorePlayersThanAMatchHoldsIsTooLong) {
   // type, tick (8), acknowledged sequence (8), then the count.
   const BytesWire payload = BytesOf({kAuthoritativeStateType, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -856,6 +878,7 @@ TEST(ProtocolTest, MorePlayersThanAMatchHoldsIsTooLong) {
   EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, APlayersStanceOutsideItsRangeIsInvalid) {
   BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}});
   // type, tick, acknowledged sequence, count, entity, position (9), velocity (6), then stance.
@@ -900,6 +923,7 @@ TEST(ProtocolTest, ABodysExhaustedFlagSharesTheStanceByte) {
   EXPECT_EQ(exhausted.size(), rested.size());
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ABodysUnusedStanceByteBitsSetAreInvalid) {
   const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}});
   for (unsigned bit = 3; bit < 8; ++bit) {
@@ -949,6 +973,7 @@ TEST(ProtocolTest, AValueBeyondItsRangeIsSentAsTheBound) {
   EXPECT_EQ(SnapStamina(-0.5F), 0.0F);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, DecodingAndEncodingAgainGivesTheSameBytes) {
   const AuthoritativeStateWire state{.tick = 1, .bodies = {BodyAt(1, 3.14159F)}, .acknowledged_sequence = 1};
   const BytesWire first = Encode(state);
@@ -958,6 +983,7 @@ TEST(ProtocolTest, DecodingAndEncodingAgainGivesTheSameBytes) {
   EXPECT_EQ(Encode(std::get<CommandsWire>(Decode(commands).value())), commands);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, BytesAfterCommandsAndStateAreTrailing) {
   BytesWire commands = Encode(CommandsWire{});
   commands.push_back(std::byte{0});

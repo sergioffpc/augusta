@@ -259,6 +259,7 @@ TEST(WireTest, TheRecipientsRifleReachesTheClientExactly) {
   EXPECT_EQ(received.rifle, sent.rifle);
 }
 
+// Requirements: US-22
 TEST(WireTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged) {
   augusta::parameters::Parameters parameters;
   parameters.stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F};
