@@ -1,18 +1,20 @@
 # Roadmap — FPS Simulator Engine
 
 Milestones are ordered, not dated (no fixed deadline — see VISION.md). Sizes are
-relative effort, not calendar estimates: S / M / L.
+relative effort, not calendar estimates: S / M / L. They are grouped by the
+release that shipped them; each requirement in REQUIREMENTS.md names the release
+that first met it, or the one it is planned for.
 
-## M0 — Project & Infrastructure Setup (S)
+## v1 — Playable Match (1.0.0, 2026-10-02)
+
+### M0 — Project & Infrastructure Setup (S)
 
 No engine code yet — get the project, tooling, and pipelines standing. Split
-into three sub-milestones: M0a covers everything needed to write, build, and
-test code locally and in CI; M0b covers containerizing and deploying the server
-onto the self-hosted k3s cluster; M0c covers watching it there. M0c is the
-exception to "no engine code": its metrics instrument the server the later
-milestones built.
+into two sub-milestones: M0a covers everything needed to write, build, and test
+code locally and in CI; M0b covers containerizing and deploying the server onto
+the self-hosted k3s cluster. Watching it there came with v2 (M7).
 
-### M0a — Client & Dev Environment
+#### M0a — Client & Dev Environment
 
 - GitHub repository, Git Flow branches (`main` + `develop`), branch protection,
   PR-gated merges
@@ -32,7 +34,7 @@ Workflow sections; ADR-0008, ADR-0011, ADR-0012, ADR-0013, ADR-0025 **Exit
 criteria:** a fresh clone + the two bootstrap scripts produce a working build
 environment on both sides; CI is green on a skeleton commit
 
-### M0b — Server & k8s Infra
+#### M0b — Server & k8s Infra
 
 - Self-hosted k3s cluster (single node, own hardware)
 - Flux installed in the cluster, reconciling `main` and `develop` from Git (GHCR
@@ -48,21 +50,7 @@ environment on both sides; CI is green on a skeleton commit
 **Exit criteria:** Flux reconciles `main`/`develop` to a hello-world server
 automatically on merge, in their respective namespaces
 
-### M0c — Observability
-
-- kube-prometheus-stack (Prometheus, Alertmanager, Grafana) installed by Flux in
-  a `monitoring` namespace, under an `infrastructure` Kustomization the `apps`
-  one depends on
-- `augustad` serves `/metrics` (prometheus-cpp) and `/livez`; the chart adds its
-  Service, `ServiceMonitor`, liveness probe and alert rules
-- The metrics catalogue instrumented, counted where the heartbeat counts
-- Two Grafana dashboards as code: "Server" and "Connection health"
-
-**Exercises:** ADR-0049, ADR-0005 (the Metrics thread), ADR-0026 **Exit
-criteria:** a load test against `develop` shows up on both dashboards (NFR-07),
-and a server whose tick loop is stalled is restarted by its liveness probe
-
-## M1 — De-risking Spikes (S)
+### M1 — De-risking Spikes (S)
 
 Prove the riskiest unknowns work in isolation before building on them. No
 gameplay yet.
@@ -79,7 +67,7 @@ code written on this project, so where these foundational tooling ADRs are first
 exercised in practice **Exit criteria:** all three spikes run standalone and
 demonstrably work
 
-## M2 — Asset Pipeline (M)
+### M2 — Asset Pipeline (M)
 
 Built before any gameplay milestone needs a test map, so nothing downstream ever
 touches a hardcoded placeholder.
@@ -99,7 +87,7 @@ both executables load exclusively from signed, verified packs produced by the
 cooker; a real (if simple) test map exists for every milestone from here on to
 use
 
-## M3 — Networked Movement Skeleton (M)
+### M3 — Networked Movement Skeleton (M)
 
 - US-01 Connect to Dedicated Server
 - US-02 Join a Match (2–8 Players)
@@ -112,7 +100,7 @@ criteria:** 2–8 Windows clients connect to the Linux server, join a match, mov
 (walk/run/crouch/prone) in the pipeline's test map, see each other with
 prediction + reconciliation working
 
-## M4 — Combat Skeleton (L)
+### M4 — Combat Skeleton (L)
 
 - US-06 Aim Weapon, US-07 Fire Rifle, US-08 Reload Rifle, US-09 Apply Weapon
   Recoil
@@ -126,7 +114,7 @@ muzzle flash/tracer effects) **Exit criteria:** players aim/fire/reload a rifle;
 bullets follow a real server-computed physics trajectory; hits resolve by body
 part with damage applied (debug HUD/log is enough, no scoring yet)
 
-## M5 — Full Match Loop (M)
+### M5 — Full Match Loop (M)
 
 - US-03 Spawn into a Match, US-13 Player Death (No Respawn), US-14 Determine
   Match End / Win Condition
@@ -137,7 +125,7 @@ match-end stingers, become meaningful to exercise) **Exit criteria:** a complete
 match is playable start to finish — spawn, fight, permanent death for the match,
 win condition ends the match, next match starts automatically
 
-## M6 — Hardening & v1 Release (S)
+### M6 — Hardening & v1 Release (S)
 
 - US-15 Server-Side Validation (Anti-Cheat Baseline)
 - Full v1 "definition of done" verification pass (REQUIREMENTS.md)
@@ -145,9 +133,92 @@ win condition ends the match, next match starts automatically
 **Exercises:** §8 Security concept, ADR-0018 (signing enforced) **Exit
 criteria:** matches REQUIREMENTS.md's v1 definition of done exactly
 
+## v2 — Operable and Testable (2.0.0, 2026-10-07)
+
+v1 made a Match playable; v2 made the server watchable, diagnosable and
+deployable per scenario, and gave the engine the tools to test itself under
+load. It added no new player-facing requirement: it met NFR-07 and NFR-10.
+
+### M7 — Observability (M)
+
+- kube-prometheus-stack (Prometheus, Alertmanager, Grafana) installed by Flux in
+  a `monitoring` namespace, under an `infrastructure` Kustomization the `apps`
+  one depends on
+- `augustad` serves `/metrics` (prometheus-cpp) and `/livez`; the chart adds its
+  Service, `ServiceMonitor`, liveness probe and alert rules
+- The metrics catalogue instrumented, counted where the heartbeat counts
+- Two Grafana dashboards as code: "Server" and "Connection health"
+
+**Exercises:** ADR-0049, ADR-0005 (the Metrics thread), ADR-0026 **Exit
+criteria:** a load test against `develop` shows up on both dashboards (NFR-07),
+and a server whose tick loop is stalled is restarted by its liveness probe
+
+### M8 — Crash Diagnosability & Operations (S)
+
+- `augustad` logs a symbolized stack and leaves a core dump on a crash, with
+  split debug info
+- The chart declares `augustad`'s readiness, resources and grace period, and a
+  startup probe holds the liveness probe back
+- One server per scenario in the cluster, from the packs `augusta-publish` puts
+  on the node
+- Runbooks: Flux rollback, k3s node recovery, pack key rotation, cutting a
+  release
+
+**Exercises:** ADR-0047, ADR-0026, NFR-10, NFR-11 **Exit criteria:** a crashed
+`augustad` leaves a symbolized stack in its log and a core dump the release's
+debug info opens; each scenario's server runs from its published pack
+
+### M9 — Scenario Composition (S)
+
+- A scenario composed from the files `scenarios/<name>.yaml` names, cooked by
+  the pack tool
+- Characters named by their key in the scenario manifest, and by their path in
+  the protocol (breaking for packs and clients of v1)
+
+**Exercises:** ADR-0041, ADR-0042, US-22 **Exit criteria:** two scenarios cook
+from their manifests and each runs on its own server
+
+### M10 — Test & Performance Tooling (M)
+
+- `augusta-swarm`: a scenario's Player count of Scripted players against a
+  server, for load and end-to-end tests
+- Netcode tests: Scripted players through a simulated impaired link, nightly
+- Benchmarks of the server tick (per phase), the protocol, pack loading and
+  ballistics
+- Match recording and replay on SimulationWorld, checked by a golden match
+  (ADR-0048, since superseded by ADR-0050 and ADR-0051 for v3)
+
+**Exercises:** ADR-0013, ADR-0048 **Exit criteria:** `augusta-swarm` plays a
+server through its Match ends; the nightly runs the netcode tests and the
+benchmarks
+
+### M11 — Codebase & Developer Experience (M)
+
+- Client and server split by responsibility (`augusta::client`,
+  `augusta::server`); a Session's threads run under a Harness Runner
+- The dev container as the one Linux environment
+- A documentation site: MkDocs Material for the docs, Doxygen for the C++ API,
+  on GitHub Pages
+- Formatting and linting for every language in the repository (Python, shell,
+  workflows, CMake, Markdown, PowerShell, Lua, TOML), following Google's style
+  guides
+- The C++ tools built together under `AUGUSTA_TOOLS`; one uv environment for
+  `tools/`
+
+**Exercises:** ADR-0012, ADR-0021, ADR-0046 **Exit criteria:** CI checks every
+language's format and lint; the documentation site publishes from `develop`
+
+## v3 — Planned (under discussion)
+
+Already decided for v3, by requirement or ADR; milestones to be drawn:
+
+- US-21 and NFR-09: Match capture, Replay and Reenactment (ADR-0050, ADR-0051)
+- NFR-13: horizontal scalability
+- Agents: players scripted in Python, replacing `augusta-swarm` (ADR-0052)
+
 ---
 
-## Beyond v1 (not planned in detail)
+## Not yet planned
 
 - More weapons, more maps
 - Network authentication: certificates signed by a project certificate
