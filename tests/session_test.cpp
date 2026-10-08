@@ -39,6 +39,7 @@
 #include "augusta/physics.h"
 #include "augusta/policy_actions.h"
 #include "augusta/prediction.h"
+#include "augusta/primitives.h"
 #include "augusta/protocol.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
@@ -455,7 +456,7 @@ bool HasSessionGauges(const ConnectionHealth& health) {
 class JoinTest : public ::testing::Test {
  protected:
   JoinTest()
-      : host_(TestHostConfig(WithPlayerCount(augusta::protocol::kMaxPlayers)),
+      : host_(TestHostConfig(WithPlayerCount(augusta::primitives::kMaxPlayers)),
               Scenario{.collision = {},
                        .spawn_points = {},
                        .characters = {{.path = kCharacter, .hitboxes = {}}},
@@ -494,7 +495,7 @@ class JoinTest : public ::testing::Test {
 
   // Fills the Lobby with kMaxPlayers clients and starts their match.
   void StartAFullMatch() {
-    for (std::size_t i = 0; i < augusta::protocol::kMaxPlayers; ++i) {
+    for (std::size_t i = 0; i < augusta::primitives::kMaxPlayers; ++i) {
       AddClient();
     }
     ASSERT_TRUE(WaitForAnswers());
@@ -644,7 +645,7 @@ TEST_F(JoinTest, AnAdmittedClientHasNoFailure) {
 
 // Requirements: US-02
 TEST_F(JoinTest, TheNinthClientIsRefusedBecauseTheLobbyIsFull) {
-  for (std::size_t i = 0; i < augusta::protocol::kMaxPlayers; ++i) {
+  for (std::size_t i = 0; i < augusta::primitives::kMaxPlayers; ++i) {
     AddClient();
   }
   ASSERT_TRUE(WaitForAnswers());
@@ -2434,7 +2435,7 @@ TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseParametersFailTheRange
   for (const Parameters& bad :
        {Parameters{.stamina = {.deplete_per_second = -1.0F}},
         Parameters{.stamina = {.regen_per_second = std::numeric_limits<float>::quiet_NaN()}}, threshold_of_one,
-        Parameters{.player_count = 0}, Parameters{.player_count = augusta::protocol::kMaxPlayers + 1}}) {
+        Parameters{.player_count = 0}, Parameters{.player_count = augusta::primitives::kMaxPlayers + 1}}) {
     // One server for every case: it answers whichever session sent last.
     Session session(TestSessionConfig(server.LocalEndpoint()), EmptyWorld());
 
@@ -2613,30 +2614,30 @@ class RobustnessOf : public MatchOf<kPlayers> {
 };
 
 using RobustnessTest = RobustnessOf<1>;
-using FullMatchRobustnessTest = RobustnessOf<augusta::protocol::kMaxPlayers>;
+using FullMatchRobustnessTest = RobustnessOf<augusta::primitives::kMaxPlayers>;
 
 // Requirements: NFR-06
 TEST_F(FullMatchRobustnessTest, AfterAClientDisconnectsItsPlayerIsAbsentFromOthersStateAndNoOneTakesItsPlace) {
-  for (std::size_t i = 0; i < augusta::protocol::kMaxPlayers; ++i) {
+  for (std::size_t i = 0; i < augusta::primitives::kMaxPlayers; ++i) {
     Join();
   }
   ASSERT_TRUE(StartMatch());
   Run(kSettleTicks);
   Session& watcher = *sessions_.front();
-  ASSERT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::protocol::kMaxPlayers);
+  ASSERT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::primitives::kMaxPlayers);
   const auto leaver = *sessions_.back()->GetEntityId();
 
   sessions_.back()->Disconnect();
   Run(kSettleTicks);
 
-  EXPECT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::protocol::kMaxPlayers - 1);
+  EXPECT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::primitives::kMaxPlayers - 1);
   EXPECT_FALSE(PositionSeenBy(watcher, leaver).has_value());
 
   Session& ninth = Connect();
   Run(kSettleTicks);
 
   EXPECT_EQ(ninth.GetRefusal(), JoinRefusal::kMatchInProgress);
-  EXPECT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::protocol::kMaxPlayers - 1);
+  EXPECT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::primitives::kMaxPlayers - 1);
 }
 
 // Requirements: NFR-06
@@ -2738,7 +2739,7 @@ class ImpossibleCommandTest : public LoopbackMatch {
   // A message of as many Commands as the protocol allows, each acting, numbered from 1.
   static protocol::CommandsWire MostCommands() {
     protocol::CommandsWire most;
-    for (std::size_t i = 1; i <= protocol::kMaxCommandsPerMessage; ++i) {
+    for (std::size_t i = 1; i <= augusta::primitives::kMaxCommandsPerMessage; ++i) {
       most.commands.push_back(Acting(i));
     }
     return most;
@@ -3004,9 +3005,9 @@ TEST_F(ImpossibleCommandTest, ACommandMessageWithMoreCommandsThanTheProtocolAllo
   constexpr std::size_t kSeenTick = sizeof(augusta::tick::Tick);
   const protocol::BytesWire encoded = protocol::Encode(MostCommands());
   const protocol::BytesWire extra =
-      protocol::Encode(protocol::CommandsWire{.commands = {Acting(protocol::kMaxCommandsPerMessage + 1)}});
+      protocol::Encode(protocol::CommandsWire{.commands = {Acting(augusta::primitives::kMaxCommandsPerMessage + 1)}});
   protocol::BytesWire too_many(encoded.begin(), encoded.end() - static_cast<std::ptrdiff_t>(kSeenTick));
-  too_many[1] = static_cast<std::byte>(protocol::kMaxCommandsPerMessage + 1);
+  too_many[1] = static_cast<std::byte>(augusta::primitives::kMaxCommandsPerMessage + 1);
   too_many.insert(too_many.end(), extra.begin() + static_cast<std::ptrdiff_t>(kHeader), extra.end());
   ASSERT_EQ(protocol::Decode(too_many).error(), protocol::DecodeError::kFieldTooLong);
   const Told before = Now();
@@ -4513,7 +4514,7 @@ TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairAtI
 // 1/256 rad, about 4 cm at the partner. No one has health enough to die.
 class FullAutoMatchTest : public LoopbackMatch {
  protected:
-  static constexpr std::size_t kPlayers = augusta::protocol::kMaxPlayers;
+  static constexpr std::size_t kPlayers = augusta::primitives::kMaxPlayers;
   static constexpr float kEyeHeight = 1.6F;
   static constexpr float kPairSpacing = 5.0F;
   static constexpr float kPairDistance = 10.0F;
@@ -5367,7 +5368,7 @@ TEST_F(LastStandingTrioTest, WhenAllButOnePlayerDisconnectTheOneLeftWins) {
 // reload, and whose every round kicks the aim up by 1/256 rad. Five torso hits kill.
 class EightPlayerMatchTest : public LoopbackMatch {
  protected:
-  static constexpr std::size_t kPlayers = augusta::protocol::kMaxPlayers;
+  static constexpr std::size_t kPlayers = augusta::primitives::kMaxPlayers;
   static constexpr float kEyeHeight = 1.6F;
   static constexpr float kTorsoHeight = 1.2F;
   static constexpr float kSpacing = 4.0F;
@@ -6223,7 +6224,7 @@ TEST_F(CorrectedLobbyTest, CommandsFromAPlayerInTheLobbyAffectNothing) {
   ASSERT_TRUE(current.has_value());
   // Walking, turned, firing and reloading, numbered from 1, as the first Commands of a Match would be.
   protocol::CommandsWire walking;
-  for (augusta::command::Sequence sequence = 1; sequence <= protocol::kMaxCommandsPerMessage; ++sequence) {
+  for (augusta::command::Sequence sequence = 1; sequence <= augusta::primitives::kMaxCommandsPerMessage; ++sequence) {
     walking.commands.push_back({.sequence = sequence,
                                 .command = {.direction = Vec3(1.0F, 0.0F, 0.0F),
                                             .yaw = 1.0F,
@@ -6511,7 +6512,7 @@ TEST_F(SoloHostCountsTest, CommandsLeftInTheMessageOfAPeerDisconnectedMidwayAreN
   // 7 and 7, then the 16th misbehaviour is the second command of 8.
   raw.Send(out_of_range(7));
   raw.Send(out_of_range(7));
-  raw.Send(out_of_range(protocol::kMaxCommandsPerMessage));
+  raw.Send(out_of_range(augusta::primitives::kMaxCommandsPerMessage));
   ASSERT_TRUE(raw.ServeUntil(host_, [&] { return raw.GetConnectionState() == ConnectionState::kDisconnected; }));
 
   const HostMetrics& metrics = host_.Metrics();

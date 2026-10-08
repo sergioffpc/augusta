@@ -8,7 +8,8 @@
 # Tick and command sequence widths and the player, command and recoil bounds
 # the engine and the protocol share may include no augusta header, name no
 # other augusta module, nor link any target, so the protocol can take them
-# without taking the gameplay modules that use them.
+# without taking the gameplay modules that use them. And nothing else defines
+# them again with a value of its own.
 #
 # Run by ctest as `cmake -DSOURCE_DIR=<repo root> -P core_boundary.cmake`.
 if(NOT DEFINED SOURCE_DIR)
@@ -65,6 +66,36 @@ foreach(line ${lines})
   list(APPEND primitives_violations "  src/modules/primitives/CMakeLists.txt: ${line}")
 endforeach()
 
+# Nothing else gives a Tick or Sequence an integer type of its own, or a
+# player, command or recoil bound a number of its own: they take the
+# primitives', so the engine and the wire cannot drift apart. A line scan, so
+# it catches the plain spellings, not every one C++ allows.
+file(
+  GLOB_RECURSE sources
+  "${SOURCE_DIR}/src/*.h"
+  "${SOURCE_DIR}/src/*.cpp"
+  "${SOURCE_DIR}/tools/*.h"
+  "${SOURCE_DIR}/tools/*.cpp"
+)
+list(FILTER sources EXCLUDE REGEX "/src/modules/primitives/")
+set(
+  own_definition
+  "using[ \t]+(Tick|Sequence)[ \t]*=[ \t]*(std::)?(u?int|unsigned|size_t)|k(MaxPlayers|MaxCommandsPerMessage|MaxRecoilKicks)[ \t]*(=[ \t]*|{)[0-9]"
+)
+set(definition_violations "")
+foreach(source ${sources})
+  file(STRINGS "${source}" lines REGEX "${own_definition}")
+  foreach(line ${lines})
+    # A definition's closing semicolon splits the line as a CMake list.
+    if(NOT line MATCHES "${own_definition}")
+      continue()
+    endif()
+    file(RELATIVE_PATH relative "${SOURCE_DIR}" "${source}")
+    string(STRIP "${line}" line)
+    list(APPEND definition_violations "  ${relative}: ${line}")
+  endforeach()
+endforeach()
+
 set(report "")
 if(violations)
   list(JOIN violations "\n" core_report)
@@ -80,6 +111,13 @@ if(primitives_violations)
     "The neutral primitives depend on another module - they must stay below the engine and the protocol alike:\n${primitives_report}\n"
   )
 endif()
+if(definition_violations)
+  list(JOIN definition_violations "\n" definition_report)
+  string(
+    APPEND report
+    "A counter or bound the primitives own is defined again - take it from augusta/primitives.h instead:\n${definition_report}\n"
+  )
+endif()
 if(report)
   string(STRIP "${report}" report)
   message(FATAL_ERROR "${report}")
@@ -88,5 +126,5 @@ list(LENGTH headers count)
 list(LENGTH primitives_headers primitives_count)
 message(
   STATUS
-  "core_boundary: ${count} headers free of protocol and input types, ${primitives_count} primitives headers free of other modules"
+  "core_boundary: ${count} headers free of protocol and input types, ${primitives_count} primitives headers free of other modules and defined nowhere else"
 )

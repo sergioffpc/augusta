@@ -27,6 +27,6 @@ target_link_libraries(
     augusta_version
     augusta_weapon
   # nvtx3-cpp: runner.cpp names the Prediction and Network I/O loops for Nsight Systems.
-  PRIVATE augusta_logging nvtx3-cpp
+  PRIVATE augusta_logging augusta_primitives nvtx3-cpp
 )
 augusta_set_module_scope(augusta_harness CLIENT_ONLY)

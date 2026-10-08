@@ -13,11 +13,9 @@
 
 #include <gtest/gtest.h>
 
-#include "augusta/command.h"
 #include "augusta/grid.h"
 #include "augusta/math.h"
 #include "augusta/primitives.h"
-#include "augusta/tick.h"
 
 // The codec is pure: every case here is bytes in, message or error out.
 namespace {
@@ -29,6 +27,8 @@ using augusta::math::SnapPosition;
 using augusta::math::SnapStamina;
 using augusta::math::SnapVelocity;
 using augusta::math::Vec3;
+using augusta::primitives::kMaxCommandsPerMessage;
+using augusta::primitives::kMaxPlayers;
 using augusta::protocol::AuthoritativeStateWire;
 using augusta::protocol::BodyPartWire;
 using augusta::protocol::BodyStateWire;
@@ -46,9 +46,7 @@ using augusta::protocol::JoinAcceptedWire;
 using augusta::protocol::JoinRefusalWire;
 using augusta::protocol::JoinRefusedWire;
 using augusta::protocol::JoinRequestWire;
-using augusta::protocol::kMaxCommandsPerMessage;
 using augusta::protocol::kMaxEngineVersionLength;
-using augusta::protocol::kMaxPlayers;
 using augusta::protocol::LobbyWire;
 using augusta::protocol::MatchEndWire;
 using augusta::protocol::MatchPlayerWire;
@@ -83,9 +81,9 @@ constexpr auto kMatchEndType = static_cast<std::uint8_t>(MessageTypeWire::kMatch
 constexpr auto kShotType = static_cast<std::uint8_t>(MessageTypeWire::kShot);
 constexpr auto kHitConfirmationType = static_cast<std::uint8_t>(MessageTypeWire::kHitConfirmation);
 constexpr auto kDeathType = static_cast<std::uint8_t>(MessageTypeWire::kDeath);
-// How many bytes a tick takes on the wire: as many as tick::Tick has.
-constexpr int kTickBytes = static_cast<int>(sizeof(augusta::tick::Tick));
-constexpr int kSequenceBytes = static_cast<int>(sizeof(augusta::command::Sequence));
+// How many bytes a tick takes on the wire: as many as primitives::Tick has.
+constexpr int kTickBytes = static_cast<int>(sizeof(augusta::primitives::Tick));
+constexpr int kSequenceBytes = static_cast<int>(sizeof(augusta::primitives::Sequence));
 
 // Every refusal the protocol has.
 constexpr std::array<JoinRefusalWire, 5> kEveryRefusal = {
@@ -570,7 +568,7 @@ TEST(ProtocolTest, BytesAfterAMessageAreTrailing) {
 }
 
 // A command with every field set to something other than its default.
-SequencedCommandWire BusyCommand(augusta::command::Sequence sequence) {
+SequencedCommandWire BusyCommand(augusta::primitives::Sequence sequence) {
   SequencedCommandWire sequenced{.sequence = sequence};
   sequenced.command.direction = Vec3(0.5F, -0.25F, 1.0F);
   sequenced.command.yaw = 3.5F;
@@ -788,7 +786,7 @@ TEST(ProtocolTest, AnUpdateTellsItsRecipientHowManyOfItsCommandsTheServerHolds) 
 // The server's tick counts from its start and never starts over (ADR-0038), so
 // one past the last 32 bits hold travels whole in every message that carries one.
 TEST(ProtocolTest, ATickPastThirtyTwoBitsRoundTripsInEveryMessageThatCarriesOne) {
-  constexpr augusta::tick::Tick kTick = augusta::tick::Tick{std::numeric_limits<std::uint32_t>::max()} + 1;
+  constexpr augusta::primitives::Tick kTick = augusta::primitives::Tick{std::numeric_limits<std::uint32_t>::max()} + 1;
 
   EXPECT_EQ(std::get<AuthoritativeStateWire>(RoundTrip(AuthoritativeStateWire{.tick = kTick, .bodies = {}})).tick,
             kTick);
@@ -968,15 +966,15 @@ TEST(ProtocolTest, BytesAfterCommandsAndStateAreTrailing) {
   EXPECT_EQ(Decode(state).error(), DecodeError::kTrailingBytes);
 }
 
-// augusta::primitives stands alongside the forms the codec uses today: until
-// the codec and its consumers move to it, the two must say the same thing, so a
-// drift fails the build.
-TEST(ProtocolPrimitivesTest, TheNeutralCountersAndBoundsAreTheCodecs) {
-  static_assert(std::same_as<augusta::primitives::Tick, augusta::tick::Tick>);
-  static_assert(std::same_as<augusta::primitives::Sequence, augusta::command::Sequence>);
-  static_assert(augusta::primitives::kMaxPlayers == augusta::protocol::kMaxPlayers);
-  static_assert(augusta::primitives::kMaxCommandsPerMessage == augusta::protocol::kMaxCommandsPerMessage);
-  static_assert(augusta::primitives::kMaxRecoilKicks == augusta::protocol::kMaxRecoilKicks);
+// The codec takes its counters' widths from augusta::primitives, as the
+// engine's tick::Tick and command::Sequence do, so the wire and the engine
+// cannot drift apart.
+TEST(ProtocolPrimitivesTest, TheCodecsCountersAreThePrimitives) {
+  static_assert(std::same_as<decltype(AuthoritativeStateWire::tick), augusta::primitives::Tick>);
+  static_assert(std::same_as<decltype(CommandsWire::seen_tick), augusta::primitives::Tick>);
+  static_assert(std::same_as<decltype(ShotWire::tick), augusta::primitives::Tick>);
+  static_assert(std::same_as<decltype(SequencedCommandWire::sequence), augusta::primitives::Sequence>);
+  static_assert(std::same_as<decltype(AuthoritativeStateWire::acknowledged_sequence), augusta::primitives::Sequence>);
 }
 
 TEST(ProtocolTest, EveryErrorHasADescription) {

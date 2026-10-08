@@ -4,6 +4,7 @@
 #include <benchmark/benchmark.h>
 
 #include "augusta/math.h"
+#include "augusta/primitives.h"
 #include "augusta/protocol.h"
 
 // The two messages the server handles every tick for every player (ADR-0038):
@@ -24,7 +25,7 @@ using augusta::protocol::SequencedCommandWire;
 AuthoritativeStateWire FullAuthoritativeState() {
   AuthoritativeStateWire message;
   message.tick = 123'456;
-  for (std::size_t player = 0; player < augusta::protocol::kMaxPlayers; ++player) {
+  for (std::size_t player = 0; player < augusta::primitives::kMaxPlayers; ++player) {
     EntityStateWire entity;
     entity.entity = static_cast<EntityIdWire>(player + 1);
     entity.body.position = Vec3(static_cast<float>(player) * 3.0F, 0.0F, -12.5F);
@@ -43,7 +44,7 @@ AuthoritativeStateWire FullAuthoritativeState() {
 CommandsWire FullCommands() {
   CommandsWire message;
   message.seen_tick = 123'450;
-  for (std::size_t index = 0; index < augusta::protocol::kMaxCommandsPerMessage; ++index) {
+  for (std::size_t index = 0; index < augusta::primitives::kMaxCommandsPerMessage; ++index) {
     SequencedCommandWire command;
     command.sequence = 4'322 + index;
     command.command.direction = Vec3(0.0F, 0.0F, -1.0F);

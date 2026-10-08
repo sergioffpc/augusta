@@ -36,6 +36,7 @@ target_link_libraries(
     augusta_cues
     augusta_parameters
     augusta_presentation
+    augusta_primitives
     augusta_protocol
     augusta_replication
     augusta_simulation
@@ -96,7 +97,7 @@ gtest_discover_tests(augusta_server_config_tests)
 add_executable(augusta_parameters_tests parameters_test.cpp)
 target_link_libraries(
   augusta_parameters_tests
-  PRIVATE augusta_parameters augusta_protocol GTest::gtest GTest::gtest_main
+  PRIVATE augusta_parameters augusta_primitives GTest::gtest GTest::gtest_main
 )
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_parameters_tests DISCOVERY_TIMEOUT 30)
@@ -113,21 +114,23 @@ target_compile_definitions(
 gtest_discover_tests(augusta_parameters_loader_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_protocol_tests protocol_test.cpp)
-# Links augusta_primitives too, to check it agrees with the codec until the codec uses it.
 target_link_libraries(augusta_protocol_tests PRIVATE augusta_primitives augusta_protocol GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_protocol_tests DISCOVERY_TIMEOUT 30)
 
 # A match recording's records, in the protocol's encoding (ADR-0048).
 add_executable(augusta_protocol_recording_tests protocol_recording_test.cpp)
-target_link_libraries(augusta_protocol_recording_tests PRIVATE augusta_protocol GTest::gtest GTest::gtest_main)
+target_link_libraries(
+  augusta_protocol_recording_tests
+  PRIVATE augusta_primitives augusta_protocol GTest::gtest GTest::gtest_main
+)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_protocol_recording_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_protocol_property_tests protocol_property_test.cpp)
 target_link_libraries(
   augusta_protocol_property_tests
-  PRIVATE augusta_protocol rapidcheck_gtest GTest::gtest GTest::gtest_main
+  PRIVATE augusta_primitives augusta_protocol rapidcheck_gtest GTest::gtest GTest::gtest_main
 )
 # RapidCheck's generator templates, one per message field, outgrow MSVC's
 # default section count for one object file.
@@ -464,7 +467,8 @@ add_test(
 # Neither physics nor SimulationWorld names the protocol or the client's input
 # sampler in its public headers: the grids and the Command they need are shared
 # core modules of their own. Nor do the neutral primitives depend on any other
-# module. A source scan, so it builds nothing.
+# module, nor does anything else define them again. A source scan, so it
+# builds nothing.
 add_test(
   NAME augusta_core_boundary
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/core_boundary.cmake

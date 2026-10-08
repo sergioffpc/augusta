@@ -9,7 +9,7 @@
 #include "augusta/harness_wire.h"
 #include "augusta/math.h"
 #include "augusta/prediction.h"
-#include "augusta/protocol.h"
+#include "augusta/primitives.h"
 
 namespace augusta::harness {
 
@@ -83,7 +83,7 @@ std::vector<SequencedCommand> CommandStream::Queue(const ServerView& server_view
   }
   // Keeps at most the newest kMaxCommandsPerMessage, all a message can carry.
   unacknowledged_.push_back(SequencedCommand{.sequence = sequence, .command = command});
-  if (unacknowledged_.size() > protocol::kMaxCommandsPerMessage) {
+  if (unacknowledged_.size() > primitives::kMaxCommandsPerMessage) {
     unacknowledged_.pop_front();
   }
   return {unacknowledged_.begin(), unacknowledged_.end()};
