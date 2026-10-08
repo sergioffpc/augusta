@@ -315,6 +315,42 @@ jobs:
           alert-threshold: "200%"
           fail-on-alert: true
           summary-always: true
+  sbom-scan:
+    # The latest release's executables, by their SBOMs, against the night's
+    # vulnerability data: a CVE published after the release fails here with
+    # nothing rebuilt. Each SBOM gets its dependencies' CPEs first
+    # (scripts/sbom-cpes.py), which grype matches against the NVD; no
+    # database has advisories for the vcpkg purls the SBOM names them by.
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        executable: [augustac-windows-x64, augustad-linux-x64]
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+      - name: Download the SBOM
+        run: gh release download --pattern "${{ matrix.executable }}.spdx.json"
+      - name: Add the CPEs
+        run: python3 scripts/sbom-cpes.py "${{ matrix.executable }}.spdx.json" > sbom.spdx.json
+      - name: Scan
+        # Fails on a high or critical CVE, fixed or not - unlike the server
+        # image's scan (ci.yml): a CPE match comes from the NVD, which gives
+        # most ranges as "up to and including" with no fixed version, so only
+        # fixed CVEs would leave out most of them. .grype.yaml has the CVEs
+        # assessed as not reaching an executable, and why.
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          sbom: sbom.spdx.json
+          config: .grype.yaml
+          severity-cutoff: high
+          output-format: table
   test-report:
     # The nightly's tests in one HTML report (ADR-0013, scripts/test-report.sh):
     # every ctest run above, a row per test and a column per job, and the
@@ -352,7 +388,7 @@ jobs:
   # A new nightly job adds itself to `needs` here, and nothing else: this job
   # reports on every job it waits for.
   report-failure:
-    needs: [property-tests, fuzz, tsan, netcode, coverage, benchmarks, test-report]
+    needs: [property-tests, fuzz, tsan, netcode, coverage, benchmarks, sbom-scan, test-report]
     if: always() && contains(needs.*.result, 'failure')
     runs-on: ubuntu-26.04
     permissions:
