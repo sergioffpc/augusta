@@ -20,7 +20,7 @@ constexpr std::string_view kSubsystem = "server";
 
 // Signal handlers can't capture context, so this is the only way to
 // reach the one ServerRuntime main() constructs - set just before Run() is
-// called, and cleared once it returns, before the runtime is released.
+// called, and cleared once it returns or throws, before the runtime is released.
 std::atomic<augusta::server::ServerRuntime*> g_runtime{nullptr};
 static_assert(std::atomic<augusta::server::ServerRuntime*>::is_always_lock_free,
               "the signal handler must read it lock-free");
@@ -30,6 +30,24 @@ extern "C" void HandleShutdownSignal(int /*signal*/) {
     runtime->Stop();
   }
 }
+
+// Points the signal handlers at runtime for as long as it lives, and away
+// from it again however run ends - an exception included, which the
+// application boundary catches before it releases the runtime.
+class SignalTarget {
+ public:
+  explicit SignalTarget(augusta::server::ServerRuntime& runtime) {
+    g_runtime = &runtime;
+    std::signal(SIGINT, HandleShutdownSignal);
+    std::signal(SIGTERM, HandleShutdownSignal);
+  }
+  ~SignalTarget() { g_runtime = nullptr; }
+
+  SignalTarget(const SignalTarget&) = delete;
+  SignalTarget& operator=(const SignalTarget&) = delete;
+  SignalTarget(SignalTarget&&) = delete;
+  SignalTarget& operator=(SignalTarget&&) = delete;
+};
 
 }  // namespace
 
@@ -58,12 +76,8 @@ int main(int argc, char** argv) {
 
   auto lifecycle = augusta::server::ServerLifecycle(*file_config);
   lifecycle.run = [run = std::move(lifecycle.run)](augusta::server::ServerRuntime& runtime) {
-    g_runtime = &runtime;
-    std::signal(SIGINT, HandleShutdownSignal);
-    std::signal(SIGTERM, HandleShutdownSignal);
-    auto outcome = run(runtime);
-    g_runtime = nullptr;
-    return outcome;
+    const SignalTarget target(runtime);
+    return run(runtime);
   };
   // The runtime's supervisor logged a runtime failure where it happened; this
   // is the process's one terminal event for it.

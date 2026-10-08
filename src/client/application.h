@@ -56,7 +56,7 @@ struct LoadedClient {
 /// failure::Code::kJoinRefused, a server that never admitted this client
 /// kServerUnreachable, and a connection lost after admission
 /// kPeerConnectionLost. The detail is the sentence the player is told.
-[[nodiscard]] failure::Failure ClassifySessionFailure(const harness::Failure& session);
+[[nodiscard]] failure::Failure ClassifySessionFailure(const harness::Failure& ended);
 
 /// A character that could not be loaded in the Lobby, as the
 /// failure::Code::kInvalidContent failure naming it under `character=`.

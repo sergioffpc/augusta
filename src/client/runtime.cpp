@@ -201,10 +201,9 @@ struct ClientRuntime::Impl {
     return latest_tick;
   }
 
-  // Why the run must end, if a worker or the session has failed. A worker has
-  // logged its own failure where it failed; the session's is logged here.
-  // The application boundary logs it once, as the client's terminal event
-  // (application.h); the runner's supervisor has already logged its own.
+  // Why the run must end, if a worker or the session has failed, classified.
+  // Not logged here: the application boundary writes the client's one terminal
+  // event for it (augusta/application.h).
   std::optional<failure::Failure> GetRunFailure() {
     if (auto worker_failure = runner->Failure(); worker_failure.has_value()) {
       return std::move(*worker_failure);

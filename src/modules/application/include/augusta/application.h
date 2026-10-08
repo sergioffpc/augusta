@@ -31,10 +31,9 @@ namespace augusta::application {
 /// given - a runtime's first cause keeps the one the supervisor recorded.
 using Outcome = std::optional<failure::Failure>;
 
-/// The exit status of an executable that stopped as asked.
 inline constexpr int kStoppedExitStatus = 0;
-/// The exit status of one that ended on a failure, whatever its Disposition:
-/// the terminal event's code, not the status, says which.
+/// Whatever the failure's Disposition: the terminal event's code, not the
+/// status, says which failure it was.
 inline constexpr int kFailedExitStatus = 1;
 
 /// An executable's phases after its config is read, each run once, in order,
@@ -45,6 +44,7 @@ struct Lifecycle {
   /// before any runtime exists.
   std::function<std::expected<void, failure::Failure>()> initialize;
   /// Loads what the runtime is made from and constructs it; starts no thread.
+  /// Returns a runtime, never a null pointer.
   std::function<std::expected<std::unique_ptr<Runtime>, failure::Failure>()> construct;
   /// Runs the runtime until it stops: returns only once it has stopped and
   /// joined its workers, with its first cause, or nullopt if it was asked to stop.

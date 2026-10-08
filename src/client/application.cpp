@@ -78,8 +78,8 @@ std::expected<LoadedClient, failure::Failure> LoadClient(const config::ClientCon
   return LoadedClient{.pack = std::move(pack), .content = *std::move(content)};
 }
 
-failure::Failure ClassifySessionFailure(const harness::Failure& session) {
-  return {.code = SessionCode(session.kind), .context = {}, .detail = harness::DescribeFailure(session)};
+failure::Failure ClassifySessionFailure(const harness::Failure& ended) {
+  return {.code = SessionCode(ended.kind), .context = {}, .detail = harness::DescribeFailure(ended)};
 }
 
 failure::Failure ClassifyCharacterError(const CharacterError& error) {

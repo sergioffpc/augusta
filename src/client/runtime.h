@@ -7,7 +7,6 @@
 
 #include "augusta/assets.h"
 #include "augusta/failure.h"
-#include "augusta/harness.h"
 #include "augusta/input.h"
 #include "augusta/networking.h"
 #include "augusta/renderer.h"

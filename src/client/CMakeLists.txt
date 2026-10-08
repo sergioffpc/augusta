@@ -103,6 +103,7 @@ target_link_libraries(
   augustac
   PRIVATE
     augusta_application
+    augusta_assets
     augusta_client_config
     augusta_config
     augusta_failure
