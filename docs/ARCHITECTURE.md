@@ -438,9 +438,14 @@ not affect numbering.
   compensation and replication
 - [ADR-0045](./adr/0045-dynamic-bodies.md) — Dynamic bodies:
   server-authoritative Props, client-only cosmetics, fixed-step simulate
-- [ADR-0048](./adr/0048-match-recording-and-replay.md) — Match recording and
-  replay: SimulationWorld's input and outcome per tick, in the protocol's
-  encoding
+- [ADR-0048](./adr/0048-match-recording-and-replay.md) — (Superseded by
+  ADR-0050, ADR-0051) Match recording and replay: SimulationWorld's input and
+  outcome per tick, in the protocol's encoding
+- [ADR-0050](./adr/0050-match-capture-and-reenactment.md) — Match capture and
+  Reenactment: one Match's client actions, played again by augustac against a
+  live server
+- [ADR-0051](./adr/0051-replay.md) — Replay: augustad re-runs a Match capture
+  and streams it to Replay viewers
 
 ### Tooling & Build
 

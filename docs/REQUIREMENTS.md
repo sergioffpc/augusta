@@ -278,23 +278,34 @@ Then the cursor is released and every held key let go, and keys and mouse do not
      until a mouse click, which recaptures the cursor without firing
 ```
 
-### US-21: Record a Match and Replay It
+### US-21: Capture a Match, Then Replay or Reenact It
 
-As a developer, I want the server to record a Match and to replay that recording
-on a fresh SimulationWorld, so that a bug seen in a playtest can be reproduced
-and a non-determinism is caught.
+As a developer, I want the server to capture a Match, to watch it again from any
+player's eyes and to play it again against a live server, so that a crash, a
+load problem or a moment seen in a playtest can be brought back.
 
 ```text
-Given augustad.yaml names a file under simulation.recording
-When the server runs and I replay that recording with augusta-replay on the server
-     pack it names
-Then every tick is handed the input the server handed SimulationWorld, in the same
-     order, and the replay either confirms every tick resolved the recorded outcome or
-     names the first tick that differs and what differed
+Given augustad.yaml names a directory under simulation.capture
+When a Match is played to its Match end
+Then the directory holds one Match capture of it, which augusta-inspect reads as
+     its packs, its length, and each player's Character, spawn, Commands, Leave
+     and Death
+
+Given a replay server whose replay.captures holds that capture, on its server pack
+When I run augustac --replay with the capture's name
+Then I watch the Match from its first player's eyes, with that player's pitch and
+     ADS, move on to the next player with fire, and the replay server logs the
+     first Death or Match end that differs from the capture's, if any
+
+Given a server with simulation.reenactments on, on the capture's packs
+When I run augustac --reenact with the capture, once per player, all at once
+Then each player spawns where the capture has it and its Commands reach the
+     server on their ticks, each Seen time keeping its captured delay
 ```
 
-A recording that stops early, because its disk fell behind or a write failed,
-keeps every whole tick before that point and never holds the tick up (ADR-0048).
+A capture that stops early, because its disk fell behind or a write failed,
+keeps every whole record before that point and never holds the tick up
+(ADR-0050, ADR-0051).
 
 ### US-22: Compose and Tune a Scenario
 
@@ -442,24 +453,22 @@ Measure:     No byte of a pack is trusted before its BLAKE3 hash and Ed25519
 ADR-0018 and ADR-0031 define the hash, the signature and the header's client
 pack hash; ADR-0019 and ADR-0038 the Join's pack mismatch.
 
-### NFR-09: Simulation Reproducibility
+### NFR-09: Replay Consistency
 
 ```text
-Source:      Developer or CI replaying a Match recording
-Stimulus:    Every tick's recorded input handed to a fresh SimulationWorld
-Environment: The server pack the recording names; the build that recorded it,
-             or any other supported build
+Source:      Developer replaying a Match capture
+Stimulus:    The capture's players, spawns, Leaves and Commands handed to a fresh
+             SimulationWorld on a replay server, tick by tick
+Environment: The server pack the capture names; the build that captured it
 Artifact:    SimulationWorld (phase pipeline and Game policy)
-Response:    Every tick resolves the recorded outcome
-Measure:     On the recording build, every value of every tick exactly equal;
-             on another build, body positions and Shot origins within one
-             position-grid step (1/1024 m) and velocities within two steps over
-             a tick, every other value equal, each tick starting from the
-             recorded bodies; the golden match replays on every CI runner
+Response:    Every Death and the Match end come out as captured
+Measure:     Each Death's victim, killer and tick and the Match end's tick and
+             winner equal to the capture's; the first that differs logged
 ```
 
-NFR-03 holds one bullet's trajectory to its tolerance; this holds the whole
-simulation to the same one (ADR-0004, ADR-0048).
+Only the Deaths and the Match end are compared, and only on the build that
+captured the Match: a Replay on another build may drift as floats round
+differently, and nothing re-syncs it (ADR-0051).
 
 ### NFR-10: Crash Diagnosability
 
@@ -499,11 +508,11 @@ touches them; no stage runs after a deploy (ADR-0013, ADR-0026).
 ### NFR-12: Robustness Against Malformed Input
 
 ```text
-Source:      A peer, or a file from outside (pack, Match recording)
+Source:      A peer, or a file from outside (pack, Match capture)
 Stimulus:    Arbitrary bytes: empty, truncated, oversized, out of range or with
              bytes left over
 Environment: Client or server at any time; the fuzzer under ASan
-Artifact:    Protocol decoding, pack loading and Match recording reading
+Artifact:    Protocol decoding, pack loading and Match capture reading
 Response:    The input is refused with a typed error, nothing is allocated from
              a length that was not checked, and the process keeps running
 Measure:     No crash, hang (5 s per input) or sanitizer report across every

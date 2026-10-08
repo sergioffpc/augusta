@@ -1,5 +1,10 @@
 # Match Recording and Replay: SimulationWorld's Input and Outcome per Tick, in the Protocol's Encoding
 
+> Superseded by ADR-0050 and ADR-0051: the Match recording is dropped, and a
+> Match capture is the one way the server keeps a Match, re-run on the server
+> for Replay viewers (ADR-0051) or reenacted by Captured players (ADR-0050).
+> Nothing below stands.
+
 A bug seen in a playtest is hard to reproduce by playing again, and a
 non-determinism in SimulationWorld's phase pipeline (ADR-0023) shows only as a
 match that cannot be played the same way twice. This ADR decides what the server

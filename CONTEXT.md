@@ -139,19 +139,29 @@ gameplay)
 players, so it always has two Authoritative State updates to interpolate
 between. _Avoid_: Lerp delay, buffer time, lag
 
-**Match recording**: What the Authoritative server handed SimulationWorld on
-each tick of its run and what the tick resolved, written to a file when its
-config asks for one, so a Replay can re-run it (ADR-0048). Every tick from the
-server's start, Lobby ticks included, not one Match alone. _Avoid_: Demo, replay
-file (a Replay is what is done with a recording)
+**Match capture**: What the players of one Match did, from its Match start to
+its Match end, as the Authoritative server took it in: who joined it and where
+they spawned, each Command a client sent and who left it, each at its tick from
+the Match's first, with its Deaths and its Match end to compare against
+(ADR-0050). Written per Match when the server's config asks for it, for a Replay
+or a Reenactment. _Avoid_: Match recording (ADR-0048's, dropped), demo, playback
 
-**Replay**: Handing a fresh SimulationWorld, built from the same server pack,
-every tick's recorded input and checking each tick resolves the recorded
-outcome: exactly on the build that made the recording, within a grid step of
-position on any other, each tick starting from the recorded bodies (ADR-0048).
-_Avoid_: Playback, rewind (Lag compensation looks back in time; a Replay re-runs
-a whole recording), re-simulation (Reconciliation's replay of unacknowledged
-commands is the client's own)
+**Reenactment**: Captured players playing a Match capture again against a live
+server, through the network, one augustac each: the playtest's input at the
+playtest's pace, to bring back a crash or load problem; what the server resolves
+from it may differ from the Match captured (ADR-0050). _Avoid_: Replay (the
+server re-runs a Replay itself), rerun
+
+**Replay**: A replay server handing a fresh SimulationWorld a Match capture,
+tick by tick, and streaming what it resolves to a Replay viewer, who watches the
+Match from any player's eyes; each Death and the Match end are checked against
+the capture's (ADR-0051). _Avoid_: Playback, demo, rewind (Lag compensation
+looks back in time), re-simulation (Reconciliation's replay of unacknowledged
+commands is the client's own), Reenactment (that goes through live clients)
+
+**Replay viewer**: A client watching a Replay: a Spectator from the first tick,
+with no body and no Commands, shown each watched player's pitch and ADS as well
+(ADR-0051). _Avoid_: Observer, ghost
 
 **Seen time**: The moment of the server's timeline a client's frame shows the
 other players at: the tick of an Authoritative State update and how far from it
@@ -246,6 +256,12 @@ prediction puts it at the nearest living other player, fires in Bursts and
 reloads. augusta-swarm runs a scenario's Player count of them against a server,
 for load and end-to-end tests. _Avoid_: Bot (too vague: it names anything
 automated), AI player (it follows a fixed script, it does not plan)
+
+**Captured player**: augustac playing one player of a Match capture in a
+Reenactment, from its `--reenact` command line: it joins with a Reenact request
+naming that player's Character and spawn, sends that player's Commands at their
+ticks, leaves when that player did and shows the Match from that player's view
+(ADR-0050). _Avoid_: Replay viewer (it watches, it does not play), bot, ghost
 
 ### Combat
 
