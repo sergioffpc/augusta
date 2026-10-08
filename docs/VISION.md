@@ -3,9 +3,8 @@
 ## Vision
 
 A realistic, physics-driven multiplayer FPS simulator engine —
-server-authoritative, built in C++ with a Windows client (rendering via NVIDIA
-Falcor/D3D12) and a headless Linux server, to master low-level systems and
-networking programming.
+server-authoritative, built in C++ with a Windows client and a headless Linux
+server.
 
 ## Target Group
 
