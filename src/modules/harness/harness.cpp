@@ -44,6 +44,9 @@ struct Session::Impl {
   // Prediction thread only.
   CommandStream commands;
 
+  // The first message any thread could not encode, which was not sent, until taken.
+  failure::FirstFailure invariant_failure;
+
   Impl(const SessionConfig& config, prediction::World world)
       : server(config.server),
         join_request{
@@ -51,10 +54,17 @@ struct Session::Impl {
         network(config.faults),
         commands(std::move(world)) {}
 
-  // Sends payload to the server as reliability says, keeping a local transport
-  // failure; returns whether the transport accepted it.
-  bool Send(const networking::Payload& payload, networking::Reliability reliability) {
-    networking::SendResult sent = network.Send(payload, reliability);
+  // Sends message to the server as reliability says; returns whether the
+  // transport accepted it. A message the protocol cannot carry is not sent:
+  // it is kept in invariant_failure. A local transport failure is kept in
+  // transport_failure.
+  bool Send(const protocol::MessageWire& message, networking::Reliability reliability) {
+    auto payload = EncodeToSend(message);
+    if (!payload.has_value()) {
+      invariant_failure.Record(std::move(payload.error()));
+      return false;
+    }
+    networking::SendResult sent = network.Send(*payload, reliability);
     if (!sent.has_value()) {
       transport_failure.Record(std::move(sent.error()));
       return false;
@@ -115,7 +125,7 @@ void Session::ExchangeMessages() {
   if (!impl.sent_join_request && impl.network.GetState() == networking::ConnectionState::kConnected) {
     // Once, whatever the transport did with it: reliable delivery is the
     // transport's, and a send it dropped or refused ends the connection or the runtime.
-    impl.Send(protocol::Encode(ToWire(impl.join_request)), networking::Reliability::kReliable);
+    impl.Send(ToWire(impl.join_request), networking::Reliability::kReliable);
     impl.sent_join_request = true;
   }
   auto received = impl.network.ReceiveMessages();
@@ -147,6 +157,8 @@ std::optional<Failure> Session::GetFailure() const {
 
 std::optional<failure::Failure> Session::TakeTransportFailure() { return impl_->transport_failure.Take(); }
 
+std::optional<failure::Failure> Session::TakeInvariantFailure() { return impl_->invariant_failure.Take(); }
+
 std::optional<networking::ConnectionStats> Session::GetConnectionStats() const { return impl_->network.GetStats(); }
 
 std::optional<SessionId> Session::GetSessionId() const {
@@ -170,7 +182,7 @@ void Session::ReportReady(std::uint32_t version) {
   if (!server_view->lobby.has_value() || server_view->lobby->version != version) {
     return;
   }
-  if (impl_->Send(protocol::Encode(protocol::ReadyWire{.version = version}), networking::Reliability::kReliable)) {
+  if (impl_->Send(protocol::ReadyWire{.version = version}, networking::Reliability::kReliable)) {
     LD("subsystem=harness event=ready version={}", version);
   }
 }
@@ -228,7 +240,7 @@ prediction::State Session::Tick(const command::Command& command, float delta_tim
   const CommandTick tick = impl.commands.Tick(*impl.inbox.View(), command, delta_time);
   if (!tick.send.empty()) {
     // Not accepted, the commands are sent again next tick, as unacknowledged ones always are.
-    impl.Send(protocol::Encode(ToWire(tick.send)), networking::Reliability::kUnreliable);
+    impl.Send(ToWire(tick.send), networking::Reliability::kUnreliable);
   }
   return tick.state;
 }

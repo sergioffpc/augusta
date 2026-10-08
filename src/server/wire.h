@@ -2,11 +2,13 @@
 #define AUGUSTA_SERVER_WIRE_H_
 
 #include <cstdint>
+#include <expected>
 #include <span>
 #include <vector>
 
 #include "augusta/assets.h"
 #include "augusta/command.h"
+#include "augusta/failure.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -26,8 +28,19 @@
 /// place on the server where a protocol::*Wire type meets an engine type: Match,
 /// CommandQueue and replication never see one. Pure field-by-field copies;
 /// whether a value is one the server accepts is decided after, by whoever takes
-/// it in.
+/// it in. What the server sends or records is encoded here too, so a payload
+/// the protocol cannot carry becomes the broken invariant that stops the
+/// runtime (ADR-0033) before anything of it leaves.
 namespace augusta::server {
+
+/// message encoded, or, if a field of it is beyond what the protocol carries,
+/// no payload but a failure::Code::kInvariantViolated naming its type
+/// (`message_type=`): what Host never sends.
+[[nodiscard]] std::expected<protocol::BytesWire, failure::Failure> EncodeToSend(const protocol::MessageWire& message);
+
+/// record encoded, or no payload but the broken invariant naming its type
+/// (`record_type=`), as EncodeToSend: what a recording never holds.
+[[nodiscard]] std::expected<protocol::BytesWire, failure::Failure> EncodeToRecord(const protocol::RecordWire& record);
 
 /// session as the protocol carries it.
 [[nodiscard]] protocol::SessionIdWire ToWire(SessionId session);

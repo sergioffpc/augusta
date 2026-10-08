@@ -334,6 +334,13 @@ class Session {
   /// any thread.
   [[nodiscard]] std::optional<failure::Failure> TakeTransportFailure();
 
+  /// The first message this client could not encode, as the broken invariant
+  /// it is (failure::Code::kInvariantViolated, ADR-0033), once; nullopt before
+  /// one and after it has been taken. What it was is not sent: whoever runs
+  /// the Session stops on it, as on a transport failure. ExchangeMessages,
+  /// ReportReady and Tick may each meet one. Safe from any thread.
+  [[nodiscard]] std::optional<failure::Failure> TakeInvariantFailure();
+
   /// The connection's quality numbers, or nullopt if not connected.
   [[nodiscard]] std::optional<networking::ConnectionStats> GetConnectionStats() const;
 

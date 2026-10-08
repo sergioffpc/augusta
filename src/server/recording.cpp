@@ -13,12 +13,15 @@
 #include <mutex>
 #include <optional>
 #include <ostream>
+#include <stdexcept>
+#include <string>
 #include <string_view>
 #include <thread>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include "augusta/failure.h"
 #include "augusta/grid.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
@@ -220,29 +223,52 @@ class Recorder::Writer {
   std::thread thread_;
 };
 
+namespace {
+
+// header's record. One the protocol cannot carry is the recording server's own
+// bug, found before the recording starts, when a failure may still throw.
+protocol::BytesWire HeaderRecord(const RecordingHeader& header) {
+  auto record = EncodeToRecord(ToWire(header));
+  if (!record.has_value()) {
+    throw std::runtime_error("server::Recorder: " + failure::DescribeFailure(record.error()));
+  }
+  return *std::move(record);
+}
+
+}  // namespace
+
 Recorder::Recorder(std::ostream& out, const RecordingHeader& header, std::size_t capacity)
-    : writer_(std::make_unique<Writer>(out, protocol::EncodeRecord(ToWire(header)), capacity)) {}
+    : writer_(std::make_unique<Writer>(out, HeaderRecord(header), capacity)) {}
 
 Recorder::~Recorder() = default;
 Recorder::Recorder(Recorder&&) noexcept = default;
 Recorder& Recorder::operator=(Recorder&&) noexcept = default;
 
-void Recorder::Write(const TickRecord& tick) {
+std::expected<void, failure::Failure> Recorder::Write(const TickRecord& tick) {
   if (Stopped()) {
-    return;
+    return {};
   }
-  protocol::BytesWire payload = protocol::EncodeRecord(ToWire(tick));
+  auto payload = EncodeToRecord(ToWire(tick));
+  // Not the recording's failure but the server's own bug, which stops the
+  // runtime, and is reported once by whoever stops it: the recording just
+  // ends here, every tick before it whole.
+  if (!payload.has_value()) {
+    stopped_ = true;
+    payload.error().context.push_back({.key = "tick", .value = std::to_string(tick.outcome.tick)});
+    return std::unexpected(std::move(payload.error()));
+  }
   // A record ReadRecording would refuse would make every tick after it
   // unreadable; stopping here keeps the file readable up to it.
-  if (payload.size() > kMaxRecordSize) {
+  if (payload->size() > kMaxRecordSize) {
     Stop(tick.outcome.tick, "record too long");
-    return;
+    return {};
   }
   // Dropping this tick and going on would leave a recording whose ticks are
   // not their places; stopping leaves every one before it.
-  if (!writer_->Push(tick.outcome.tick, std::move(payload))) {
+  if (!writer_->Push(tick.outcome.tick, *std::move(payload))) {
     Stop(tick.outcome.tick, "disk fell behind");
   }
+  return {};
 }
 
 bool Recorder::Stopped() const { return stopped_ || writer_->Failed(); }
@@ -314,13 +340,19 @@ std::vector<math::Vec3> RecordedSimulation::StartMatch(const std::vector<simulat
   return spawns;
 }
 
+const std::optional<failure::Failure>& RecordedSimulation::Failure() const { return failure_; }
+
 simulation::TickResult RecordedSimulation::Tick(const std::vector<simulation::PlayerCommand>& commands,
                                                 float delta_time) {
   simulation::TickResult result = world_.Tick(commands, delta_time);
   if (recorder_.has_value()) {
     pending_.commands = commands;
     pending_.delta_time = delta_time;
-    recorder_->Write(TickRecord{.input = std::move(pending_), .outcome = OutcomeOf(pending_spawns_, result)});
+    auto written =
+        recorder_->Write(TickRecord{.input = std::move(pending_), .outcome = OutcomeOf(pending_spawns_, result)});
+    if (!written.has_value() && !failure_.has_value()) {
+      failure_ = std::move(written.error());
+    }
   }
   pending_ = TickInput{};
   pending_spawns_.clear();

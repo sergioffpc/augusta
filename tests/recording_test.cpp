@@ -24,9 +24,11 @@
 
 #include "augusta/assets.h"
 #include "augusta/command.h"
+#include "augusta/failure.h"
 #include "augusta/grid.h"
 #include "augusta/math.h"
 #include "augusta/policy_actions.h"
+#include "augusta/protocol.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "augusta/version.h"
@@ -42,6 +44,7 @@ namespace {
 using augusta::command::Command;
 using augusta::math::Vec3;
 using augusta::server::Content;
+using augusta::server::RecordedEntrant;
 using augusta::server::RecordedSimulation;
 using augusta::server::Recorder;
 using augusta::server::Recording;
@@ -337,7 +340,7 @@ TEST(RecordingTest, AFailedWriteStopsTheRecordingWhichReadsBackUpToItsLastWholeT
     // Room in the queue for every tick, so only the write can stop it.
     Recorder recorder(out, whole.header, whole.ticks.size() + 1);
     for (const augusta::server::TickRecord& tick : whole.ticks) {
-      recorder.Write(tick);
+      EXPECT_TRUE(recorder.Write(tick).has_value());
     }
     EXPECT_TRUE(WaitUntilStopped(recorder));
   }
@@ -354,7 +357,7 @@ TEST(RecordingTest, AFailedHeaderWriteStopsTheRecordingBeforeItsFirstTick) {
   {
     Recorder recorder(out, ExampleHeader());
     EXPECT_TRUE(WaitUntilStopped(recorder));
-    recorder.Write(augusta::server::TickRecord{});
+    EXPECT_TRUE(recorder.Write(augusta::server::TickRecord{}).has_value());
   }
   EXPECT_EQ(buffer.written().size(), 2U);
 }
@@ -362,7 +365,7 @@ TEST(RecordingTest, AFailedHeaderWriteStopsTheRecordingBeforeItsFirstTick) {
 TEST(RecordingTest, ARecordingThatIsWrittenWholeIsNotStopped) {
   std::ostringstream out(std::ios::binary);
   Recorder recorder(out, ExampleHeader());
-  recorder.Write(augusta::server::TickRecord{});
+  EXPECT_TRUE(recorder.Write(augusta::server::TickRecord{}).has_value());
   EXPECT_FALSE(recorder.Stopped());
 }
 
@@ -464,7 +467,7 @@ TEST(RecordingTest, ARecorderTakesTicksWithoutWaitingForAStalledDiskAndStopsWhen
     // The header is being written, and stuck there: every tick from here on waits.
     disk.WaitUntilStalled();
     for (augusta::tick::Tick tick = 1; tick <= kCapacity + 2; ++tick) {
-      recorder.Write(EmptyTick(tick));
+      EXPECT_TRUE(recorder.Write(EmptyTick(tick)).has_value());
     }
     disk.Release();
   }
@@ -483,14 +486,58 @@ TEST(RecordingTest, ARecorderThatFellBehindWritesNothingMoreEvenOnceItCaughtUp) 
   {
     Recorder recorder(out, ExampleHeader(), kCapacity);
     disk.WaitUntilStalled();
-    recorder.Write(EmptyTick(1));
-    recorder.Write(EmptyTick(2));
+    EXPECT_TRUE(recorder.Write(EmptyTick(1)).has_value());
+    EXPECT_TRUE(recorder.Write(EmptyTick(2)).has_value());
     disk.Release();
-    recorder.Write(EmptyTick(3));
+    EXPECT_TRUE(recorder.Write(EmptyTick(3)).has_value());
   }
   const Recording recording = Read(disk.Written());
   ASSERT_EQ(recording.ticks.size(), 1U);
   EXPECT_EQ(recording.ticks.front().outcome.tick, 1U);
+}
+
+// A character's name longer than the protocol carries.
+std::string TooLongACharacter() { return std::string(augusta::protocol::kMaxCharacterNameLength + 1, 'c'); }
+
+// A record the protocol cannot carry is a broken invariant, not a disk's
+// failure: it is not written, in any build, and the failure stops the runtime
+// (ADR-0033). The recording holds every tick before it, and nothing after.
+TEST(RecordingTest, ATickWhoseRecordTheProtocolCannotCarryIsAnInvariantFailureAndEndsTheRecording) {
+  std::ostringstream out(std::ios::binary);
+  {
+    Recorder recorder(out, ExampleHeader());
+    EXPECT_TRUE(recorder.Write(EmptyTick(1)).has_value());
+    TickRecord unrepresentable = EmptyTick(2);
+    unrepresentable.input.match_start = {RecordedEntrant{
+        .entity = EntityId{1}, .identity = {.session = SessionId{1}, .character = TooLongACharacter()}}};
+    unrepresentable.outcome.spawns = {Vec3{}};
+
+    const auto written = recorder.Write(unrepresentable);
+
+    ASSERT_FALSE(written.has_value());
+    EXPECT_EQ(written.error().code, augusta::failure::Code::kInvariantViolated);
+    EXPECT_TRUE(recorder.Stopped());
+    EXPECT_TRUE(recorder.Write(EmptyTick(3)).has_value());
+  }
+  const Recording recording = Read(std::move(out).str());
+  ASSERT_EQ(recording.ticks.size(), 1U);
+  EXPECT_EQ(recording.ticks.front().outcome.tick, 1U);
+  EXPECT_FALSE(recording.torn);
+}
+
+TEST(RecordingTest, ARecordedSimulationTellsOfTheInvariantItsRecordingBroke) {
+  std::ostringstream out(std::ios::binary);
+  const Content content = LoadExampleContent();
+  RecordedSimulation simulation = ExampleSimulation(LoadExampleContent(), Recorder(out, ExampleHeader()));
+  std::vector<MatchPlayer> entrants = ExampleEntrants(content);
+  entrants.front().identity.character = TooLongACharacter();
+  EXPECT_FALSE(simulation.Failure().has_value());
+
+  simulation.StartMatch(entrants, content.scenario.spawn_points);
+  simulation.Tick({}, kDeltaTime);
+
+  ASSERT_TRUE(simulation.Failure().has_value());
+  EXPECT_EQ(simulation.Failure()->code, augusta::failure::Code::kInvariantViolated);
 }
 
 }  // namespace

@@ -58,14 +58,14 @@ CommandsWire FullCommands() {
 
 void BM_ProtocolEncode(benchmark::State& state, const MessageWire& message) {
   for (auto _ : state) {
-    benchmark::DoNotOptimize(augusta::protocol::Encode(message));
+    benchmark::DoNotOptimize(augusta::protocol::Encode(message).value());
   }
 }
 BENCHMARK_CAPTURE(BM_ProtocolEncode, authoritative_state, MessageWire{FullAuthoritativeState()});
 BENCHMARK_CAPTURE(BM_ProtocolEncode, commands, MessageWire{FullCommands()});
 
 void BM_ProtocolDecode(benchmark::State& state, const MessageWire& message) {
-  const BytesWire payload = augusta::protocol::Encode(message);
+  const BytesWire payload = augusta::protocol::Encode(message).value();
   if (!augusta::protocol::Decode(payload).has_value()) {
     state.SkipWithError("the encoded message does not decode");
     return;

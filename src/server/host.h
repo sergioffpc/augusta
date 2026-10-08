@@ -93,6 +93,14 @@ class Host {
   /// The address it listens on: HostConfig::listen's, with the port it chose if that named port 0.
   [[nodiscard]] networking::Endpoint ListenEndpoint() const;
 
+  /// The first message or record the Host could not encode, as the broken
+  /// invariant it is (failure::Code::kInvariantViolated, ADR-0033): what it was
+  /// is sent to no one and recorded nowhere, and the runtime must stop.
+  /// PumpNetwork and Tick may each find one, so the thread that runs each asks
+  /// after it. Given once, as TakeTransportFailure is, so the runtime reports
+  /// it once; nullopt before one and after it has been taken. From any thread.
+  [[nodiscard]] std::optional<failure::Failure> TakeInvariantFailure();
+
   /// Does one round of the Network I/O thread's work, at now: connection events
   /// and received messages. A peer that keeps sending what no honest client
   /// sends (MisbehaviourTracker), or is not admitted to the Lobby within

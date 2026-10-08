@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <format>
 #include <fstream>
 #include <ios>
@@ -19,7 +20,6 @@
 #include "augusta/first_failure.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
-#include "augusta/protocol.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
@@ -89,17 +89,30 @@ Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine 
           .pause_ticks = PauseTicks(config.tick_rate_hz),
       }) {}
 
-void Host::Impl::Reply(networking::PeerId peer, const networking::Payload& message) {
+void Host::Impl::Deliver(networking::PeerId peer, const networking::Payload& payload) {
   // Dropped is the peer's outcome: its departure, if it is leaving, arrives as an event.
-  if (networking::SendResult sent = SendCounted(network, metrics, peer, message, networking::Reliability::kReliable);
+  if (networking::SendResult sent = SendCounted(network, metrics, peer, payload, networking::Reliability::kReliable);
       !sent.has_value()) {
     transport_failure.Record(std::move(sent.error()));
   }
 }
 
-void Host::Impl::SendTo(const std::vector<SessionId>& sessions, const networking::Payload& message) {
+void Host::Impl::Reply(networking::PeerId peer, const std::expected<networking::Payload, failure::Failure>& message) {
+  if (!message.has_value()) {
+    invariant_failure.Record(message.error());
+    return;
+  }
+  Deliver(peer, *message);
+}
+
+void Host::Impl::SendTo(const std::vector<SessionId>& sessions,
+                        const std::expected<networking::Payload, failure::Failure>& message) {
+  if (!message.has_value()) {
+    invariant_failure.Record(message.error());
+    return;
+  }
   for (const SessionId session : sessions) {
-    Reply(players.at(session).peer, message);
+    Deliver(players.at(session).peer, *message);
   }
 }
 
@@ -110,7 +123,7 @@ void Host::Impl::SendRoster() {
   for (const RosterEntry& entry : roster.players) {
     sessions.push_back(entry.session);
   }
-  SendTo(sessions, protocol::Encode(ToWire(roster)));
+  SendTo(sessions, EncodeToSend(ToWire(roster)));
 }
 
 void Host::Impl::SetLobbyGauges() {
@@ -125,6 +138,8 @@ Host::Host(const HostConfig& config, Scenario scenario, scripting::Engine policy
 Host::~Host() = default;
 
 networking::Endpoint Host::ListenEndpoint() const { return impl_->network.LocalEndpoint(); }
+
+std::optional<failure::Failure> Host::TakeInvariantFailure() { return impl_->invariant_failure.Take(); }
 
 void Host::RecordTiming(const tick::Timing& timing) {
   HostMetrics& metrics = impl_->metrics;

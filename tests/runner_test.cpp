@@ -21,6 +21,7 @@
 #include "augusta/networking.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
+#include "augusta/protocol.h"
 #include "augusta/supervisor.h"
 #include "augusta/tick.h"
 #include "content.h"
@@ -241,6 +242,26 @@ TEST_F(RunnerTest, ANetworkThreadFailureStopsThePredictionTicksAndBothThreadsAre
 
   EXPECT_LE(ticks_seeing_the_failure.load(), 1);
   EXPECT_EQ(ticks.load(), ticks_when_joined);
+}
+
+// A Join request naming a character longer than the protocol carries is never
+// sent, in any build: the Network I/O thread stops on a broken invariant
+// (ADR-0033) instead, and the server admits no one.
+TEST_F(RunnerTest, AJoinRequestTheProtocolCannotCarryStopsTheRunnerWithAnInvariantFailureOfTheNetworkThread) {
+  Session session(SessionConfig{.server = host_.ListenEndpoint(),
+                                .character = std::string(augusta::protocol::kMaxCharacterNameLength + 1, 'c')},
+                  WorldWithFloor());
+  const Runner runner(session,
+                      RunnerHooks{.next_command = [] { return Command{}; }, .on_tick = {}, .on_network_round = {}});
+
+  ASSERT_TRUE(ServeUntil([&] { return runner.Failure().has_value(); }));
+
+  const augusta::failure::Failure failure = *runner.Failure();
+  EXPECT_EQ(failure.code, augusta::failure::Code::kInvariantViolated);
+  EXPECT_EQ(ContextOf(failure, augusta::supervisor::kThreadContextKey), "network");
+  EXPECT_FALSE(session.GetSessionId().has_value());
+  // The Runner took it: it is reported once.
+  EXPECT_FALSE(session.TakeInvariantFailure().has_value());
 }
 
 }  // namespace

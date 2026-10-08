@@ -66,19 +66,23 @@ struct ServerRuntime::Impl {
     }
   }
 
-  // The local transport's failure, if Host met one on either thread, for the
-  // worker that takes it to stop on (ADR-0033): the runtime cannot go on
-  // without its transport.
-  supervisor::WorkerResult TransportResult() {
+  // The runtime failure Host met on either thread, if any, for the worker that
+  // takes it to stop on (ADR-0033): its local transport's, without which the
+  // runtime cannot go on, or a message or record it could not encode, a
+  // broken invariant. Each is taken once, so one worker reports it.
+  supervisor::WorkerResult HostResult() {
     if (std::optional<failure::Failure> failed = host.TakeTransportFailure()) {
       return std::unexpected(std::move(*failed));
+    }
+    if (std::optional<failure::Failure> broken = host.TakeInvariantFailure()) {
+      return std::unexpected(std::move(*broken));
     }
     return {};
   }
 
   // Network I/O thread body (ADR-0005): pumps the connection, and once a
   // heartbeat interval samples every client's Connection health (ADR-0049),
-  // until a stop is requested or the local transport fails, waiting
+  // until a stop is requested or the Host meets a runtime failure, waiting
   // kNetworkRoundWait between rounds rather than spinning a core. The
   // transport has no wait on incoming work, so that wait bounds how late a
   // received message is handled, and how long stopping takes.
@@ -88,8 +92,8 @@ struct ServerRuntime::Impl {
     while (!workers.StopRequested()) {
       const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
       host.PumpNetwork(now);
-      if (supervisor::WorkerResult transport = TransportResult(); !transport.has_value()) {
-        return transport;
+      if (supervisor::WorkerResult failed = HostResult(); !failed.has_value()) {
+        return failed;
       }
       if (now >= next_sample) {
         connection_health.Record(host.SampleConnections());
@@ -101,7 +105,7 @@ struct ServerRuntime::Impl {
   }
 
   // Simulation thread body (ADR-0005): ticks Host on its fixed schedule until a
-  // stop is requested or the local transport fails.
+  // stop is requested or the Host meets a runtime failure.
   supervisor::WorkerResult SimulationLoop() {
     const auto delta_time = std::chrono::duration<float>(1.0F / tick_rate_hz);
     const auto tick_duration = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
@@ -111,8 +115,8 @@ struct ServerRuntime::Impl {
       const tick::Clock::time_point tick_start = tick::Clock::now();
 
       host.Tick(delta_time.count());
-      if (supervisor::WorkerResult transport = TransportResult(); !transport.has_value()) {
-        return transport;
+      if (supervisor::WorkerResult failed = HostResult(); !failed.has_value()) {
+        return failed;
       }
 
       const tick::Clock::time_point tick_end = tick::Clock::now();
