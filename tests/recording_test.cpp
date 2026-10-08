@@ -168,8 +168,8 @@ std::string RecordScriptedMatch(RecordingMode mode = RecordingMode::kOptional) {
   std::ostringstream out(std::ios::binary);
   {
     const Content content = LoadExampleContent();
-    RecordedSimulation simulation =
-        ExampleSimulation(LoadExampleContent(), Recorder(out, ExampleHeader(), RecorderOptions{.mode = mode}));
+    RecordedSimulation simulation = ExampleSimulation(
+        LoadExampleContent(), Recorder(out, ExampleHeader(), RecorderOptions{.mode = mode, .on_state = {}}));
     PlayScriptedMatch(simulation, content);
   }
   return std::move(out).str();
@@ -340,7 +340,7 @@ TEST(RecordingTest, AFailedWriteStopsTheRecordingWhichReadsBackUpToItsLastWholeT
   std::ostream out(&buffer);
   {
     // Room in the queue for every tick, so only the write can stop it.
-    Recorder recorder(out, whole.header, RecorderOptions{.capacity = whole.ticks.size() + 1});
+    Recorder recorder(out, whole.header, RecorderOptions{.on_state = {}, .capacity = whole.ticks.size() + 1});
     for (const augusta::server::TickRecord& tick : whole.ticks) {
       recorder.Write(tick);
     }
@@ -461,7 +461,7 @@ TEST(RecordingTest, ARecorderTakesTicksWithoutWaitingForAStalledDiskAndStopsWhen
   StalledBuffer disk;
   std::ostream out(&disk);
   {
-    Recorder recorder(out, ExampleHeader(), RecorderOptions{.capacity = kCapacity});
+    Recorder recorder(out, ExampleHeader(), RecorderOptions{.on_state = {}, .capacity = kCapacity});
     // The header is being written, and stuck there: every tick from here on waits.
     disk.WaitUntilStalled();
     for (augusta::tick::Tick tick = 1; tick <= kCapacity + 2; ++tick) {
@@ -481,7 +481,7 @@ TEST(RecordingTest, ARecorderThatFellBehindWritesNothingMoreEvenOnceItCaughtUp) 
   StalledBuffer disk;
   std::ostream out(&disk);
   {
-    Recorder recorder(out, ExampleHeader(), RecorderOptions{.capacity = kCapacity});
+    Recorder recorder(out, ExampleHeader(), RecorderOptions{.on_state = {}, .capacity = kCapacity});
     disk.WaitUntilStalled();
     recorder.Write(EmptyTick(1));
     recorder.Write(EmptyTick(2));
@@ -520,7 +520,7 @@ FailedRecording RecordWithFailing(RecordingMode mode, Site site, int ticks = 5) 
   FailedRecording result;
   testing::internal::CaptureStdout();
   {
-    Recorder recorder(out, ExampleHeader(), RecorderOptions{.mode = mode, .faults = &faults});
+    Recorder recorder(out, ExampleHeader(), RecorderOptions{.mode = mode, .faults = &faults, .on_state = {}});
     for (augusta::tick::Tick tick = 1; tick <= static_cast<augusta::tick::Tick>(ticks); ++tick) {
       recorder.Write(EmptyTick(tick));
     }
@@ -605,7 +605,8 @@ TEST(RecordingFailureModeTest, AStrictRecordingThatFellBehindIsATerminalRuntimeF
   std::ostream out(&disk);
   std::optional<augusta::failure::Failure> failure;
   {
-    Recorder recorder(out, ExampleHeader(), RecorderOptions{.mode = RecordingMode::kStrict, .capacity = kCapacity});
+    Recorder recorder(out, ExampleHeader(),
+                      RecorderOptions{.mode = RecordingMode::kStrict, .on_state = {}, .capacity = kCapacity});
     disk.WaitUntilStalled();
     recorder.Write(EmptyTick(1));
     recorder.Write(EmptyTick(2));
@@ -640,7 +641,8 @@ TEST(RecordingFailureModeTest, ARecordingReportsEachStateItEntersInOrder) {
 TEST(RecordingFailureModeTest, ALossIsKnownOnceEveryQueuedTickIsWritten) {
   Faults faults;
   std::ostringstream out(std::ios::binary);
-  Recorder recorder(out, ExampleHeader(), RecorderOptions{.mode = RecordingMode::kStrict, .faults = &faults});
+  Recorder recorder(out, ExampleHeader(),
+                    RecorderOptions{.mode = RecordingMode::kStrict, .faults = &faults, .on_state = {}});
   recorder.Write(EmptyTick(1));
   recorder.WaitUntilWritten();
   EXPECT_FALSE(recorder.Failure().has_value());
@@ -658,7 +660,7 @@ TEST(RecordingFailureModeTest, AWholeRecordingStopsWhenItIsClosedWithNothingLost
   std::ostringstream out(std::ios::binary);
   testing::internal::CaptureStdout();
   {
-    Recorder recorder(out, ExampleHeader(), RecorderOptions{.mode = RecordingMode::kStrict});
+    Recorder recorder(out, ExampleHeader(), RecorderOptions{.mode = RecordingMode::kStrict, .on_state = {}});
     recorder.Write(EmptyTick(1));
     recorder.Write(EmptyTick(2));
   }
@@ -677,9 +679,10 @@ TEST(RecordingFailureModeTest, AnOptionalRecordingThatDegradesLeavesTheMatchAsIt
   Faults faults;
   faults.Arm(Site::kRecordingWrite, "disk full", Faults::kEveryTime);
   std::ostringstream out(std::ios::binary);
-  RecordedSimulation degraded = ExampleSimulation(
-      LoadExampleContent(),
-      Recorder(out, ExampleHeader(), RecorderOptions{.mode = RecordingMode::kOptional, .faults = &faults}));
+  RecordedSimulation degraded =
+      ExampleSimulation(LoadExampleContent(),
+                        Recorder(out, ExampleHeader(),
+                                 RecorderOptions{.mode = RecordingMode::kOptional, .faults = &faults, .on_state = {}}));
   const std::vector<TickResult> results = PlayScriptedMatch(degraded, content);
 
   ASSERT_EQ(results.size(), expected.size());
