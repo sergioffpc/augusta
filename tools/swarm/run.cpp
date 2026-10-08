@@ -210,7 +210,8 @@ RunResult RunScriptedPlayers(const RunConfig& config) {
       progress.push_back(player->Progress(*view));
     }
     if (player_count == 0) {
-      if (const auto& accepted = players.front()->View()->accepted; accepted.has_value()) {
+      const std::shared_ptr<const harness::ServerView> view = players.front()->View();
+      if (const auto& accepted = view->accepted; accepted.has_value()) {
         player_count = accepted->parameters.player_count;
         LI("subsystem=swarm event=player_count_known player_count={}", player_count);
         while (players.size() < player_count) {

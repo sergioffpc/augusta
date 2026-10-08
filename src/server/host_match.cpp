@@ -1,13 +1,16 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <limits>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <utility>
 #include <variant>
 #include <vector>
 
+#include "augusta/first_failure.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/policy_actions.h"
@@ -161,7 +164,9 @@ simulation::TickResult Host::Tick(float delta_time) {
   const Impl::TickInput input = impl.PrepareTick();
   const simulation::TickResult result = impl.simulation.Tick(input.commands, delta_time);
   impl.tick = result.state.tick;
-  SendTickMessages(impl.network, impl.metrics, result.state, impl.tick, input.to);
+  if (auto sent = SendTickMessages(impl.network, impl.metrics, result.state, impl.tick, input.to); !sent.has_value()) {
+    impl.transport_failure.Record(std::move(sent.error()));
+  }
   impl.metrics.match_players_alive.Set(static_cast<double>(result.state.alive.size()));
   CountCombat(impl.metrics, result);
   LogCombat(result.state);

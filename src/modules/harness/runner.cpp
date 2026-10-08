@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <expected>
 #include <optional>
 #include <thread>
 #include <utility>
@@ -54,6 +55,15 @@ class PredictionActivity {
   float correction_m_ = 0.0F;
 };
 
+// The local transport's failure, if session met one on any thread, for the
+// Runner thread that takes it to stop on (ADR-0033).
+supervisor::WorkerResult TransportResult(Session& session) {
+  if (std::optional<failure::Failure> failed = session.TakeTransportFailure()) {
+    return std::unexpected(std::move(*failed));
+  }
+  return {};
+}
+
 // How long the next Tick lasts: the server's tick, paced by how many of the
 // client's commands the server last said it held (tick.h).
 tick::Clock::duration NextTickDuration(const Session& session, tick::Clock::duration nominal) {
@@ -97,6 +107,9 @@ supervisor::WorkerResult Runner::PredictionThreadMain() {
     const tick::Clock::time_point tick_start = tick::Clock::now();
 
     const prediction::State state = session_.Tick(hooks_.next_command(), delta_time.count());
+    if (supervisor::WorkerResult transport = TransportResult(session_); !transport.has_value()) {
+      return transport;
+    }
     activity.Record(state, tick_start);
 
     // The tick spans its schedule, not its wake-ups, so a reader blending
@@ -122,6 +135,10 @@ supervisor::WorkerResult Runner::NetworkThreadMain() {
       const nvtx3::scoped_range range{"Network PumpEvents"};
       session_.PumpEvents();
       session_.ExchangeMessages();
+    }
+    if (supervisor::WorkerResult transport = TransportResult(session_); !transport.has_value()) {
+      session_.Disconnect();
+      return transport;
     }
     if (hooks_.on_network_round) {
       hooks_.on_network_round();

@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "admission.h"
+#include "augusta/first_failure.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
@@ -82,6 +83,8 @@ struct Host::Impl {
 
   // Thread-safe by the transport's contract, used from both threads.
   networking::Server network;
+  // The first local transport failure either thread met, until a worker takes it.
+  failure::FirstFailure transport_failure;
 
   // Guards everything below: written by the Network I/O thread as clients
   // join, leave and send commands, and by the Simulation thread as matches
@@ -107,7 +110,8 @@ struct Host::Impl {
   Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy);
 
   // Sending to players (host.cpp), each message already encoded (wire.h),
-  // counted as it is sent (SendCounted).
+  // reliably, counted as the transport accepts it (SendCounted); a local
+  // transport failure is kept in transport_failure.
   void Reply(networking::PeerId peer, const networking::Payload& message);
   // Sends message reliably to the player of each of sessions.
   void SendTo(const std::vector<SessionId>& sessions, const networking::Payload& message);

@@ -44,7 +44,11 @@
 /// The Network I/O thread's PumpNetwork and the Simulation thread's Tick may
 /// run concurrently: what they share (the Lobby, the match and the players'
 /// commands) is guarded inside. Both count what they do into the Host's metrics
-/// (host_metrics.h, ADR-0049) as they do it, lock-free.
+/// (host_metrics.h, ADR-0049) as they do it, lock-free, and count only what the
+/// transport accepted. A peer's malformed input or departure stays that peer's
+/// (dropped, judged, disconnected); a failure of the local transport is the
+/// runtime's, which Host keeps for a worker to take (TakeTransportFailure) and
+/// escalate (ADR-0033).
 namespace augusta::server {
 
 /// Everything a Host needs to construct SimulationWorld and start listening.
@@ -66,8 +70,9 @@ struct HostConfig {
   RecordingMode recording_mode = RecordingMode::kOptional;
   /// The hash of the server pack the content was loaded from, which a recording names.
   assets::PackHash server_pack{};
-  /// Asked at the recording's write and flush (failure::Site), so a test can
-  /// make either fail; only a test gives one, and it must outlive the Host.
+  /// For a test: asked at listener setup, at every send and receive
+  /// (networking.h) and at the recording's write and flush, so the transport
+  /// or the disk fails there; null otherwise. Must outlive the Host.
   failure::Faults* faults = nullptr;
 };
 
@@ -77,8 +82,8 @@ class Host {
   /// Constructs SimulationWorld with scenario's collision (throws
   /// std::runtime_error if a map mesh, or a character's hitbox, is not a whole
   /// triangle list) and the scenario's Game policy (none by default), and starts
-  /// listening (throws std::runtime_error if the address can't be bound, or
-  /// HostConfig::recording can't be written).
+  /// listening (throws networking::TransportFailure if the address can't be
+  /// bound, or std::runtime_error if HostConfig::recording can't be written).
   /// Content is loaded from the server pack by the caller (see content.h).
   Host(const HostConfig& config, Scenario scenario, scripting::Engine policy = {});
   ~Host();
@@ -153,6 +158,14 @@ class Host {
   /// kRecordQueueCapacity ticks after the tick it lost, which RecordingFailure
   /// alone misses at a stop. From the Simulation thread, between Ticks.
   [[nodiscard]] std::optional<failure::Failure> FinishRecording();
+
+  /// The first failure of the local transport PumpNetwork or Tick met (a send,
+  /// or a receive, it refused: failure::Code::kTransportSendFailed,
+  /// kTransportReceiveFailed), once; nullopt before one and after it has been
+  /// taken. A runtime failure: the worker that takes it returns it to the
+  /// supervisor, which stops the runtime. Never a peer's doing - a peer's
+  /// malformed input or departure is handled as that peer's. From any thread.
+  [[nodiscard]] std::optional<failure::Failure> TakeTransportFailure();
 
  private:
   struct Impl;

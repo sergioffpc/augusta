@@ -9,9 +9,12 @@ clock or state, used by both client and server (ADR-0006).
 body state, command, stance and parameters, as plain fields) and the math types
 (`math::Vec3`); never another module's structs. So `augusta_protocol` depends on
 nothing but `augusta_math`, which also holds the grids its numbers travel on,
-and a module changing its own structs never changes what travels. A protocol
-type that mirrors one of the engine's carries the suffix `Wire`: `BodyStateWire`
-for `physics::BodyState`, and the Authoritative State message is
+and `augusta_primitives`, whose Tick and sequence widths and player, command and
+recoil bounds it encodes without owning or re-exporting them; a module changing
+its own structs never changes what travels. `tests/protocol_boundary.cmake`
+fails if the protocol includes or links anything else. A protocol type that
+mirrors one of the engine's carries the suffix `Wire`: `BodyStateWire` for
+`physics::BodyState`, and the Authoritative State message is
 `AuthoritativeStateWire`, for the client's `harness::AuthoritativeState`. Every
 protocol type carries the suffix, so none reads like an engine type. Each peer
 converts between the protocol's types and its own at its edge and nowhere else:

@@ -24,8 +24,12 @@
 ///
 /// Its messages hold only plain types of its own and the math types, never
 /// another module's structs: a module changing its structs never changes what
-/// travels, and the protocol depends on nothing but augusta_math, which also
-/// holds the grids its numbers travel on (augusta/grid.h). A type that mirrors one of the engine's
+/// travels. The protocol depends on nothing but augusta_math, which also holds
+/// the grids its numbers travel on (augusta/grid.h), and augusta_primitives,
+/// whose Tick and Sequence widths its counters take and whose player, command
+/// and recoil bounds (primitives::kMaxPlayers and the rest) bound its lists;
+/// it neither owns nor re-exports them (tests/protocol_boundary.cmake,
+/// tests/core_boundary.cmake). A type that mirrors one of the engine's
 /// carries the suffix Wire (BodyStateWire for physics::BodyState,
 /// AuthoritativeStateWire for harness::AuthoritativeState), so the two never
 /// read alike where they meet: each peer converts at its edge
@@ -98,17 +102,6 @@ inline constexpr std::size_t kPackHashSize = 32;
 
 /// A pack's BLAKE3 hash, the one its trailer signs (ADR-0031): names one cook of it.
 using PackHashWire = std::array<std::byte, kPackHashSize>;
-
-/// The players a Lobby or a match holds, and so the most a Lobby, a Match start
-/// or an Authoritative State update lists. Its value is the primitives', as are
-/// the two bounds below.
-inline constexpr std::size_t kMaxPlayers = primitives::kMaxPlayers;
-
-/// The most commands one CommandsWire message carries.
-inline constexpr std::size_t kMaxCommandsPerMessage = primitives::kMaxCommandsPerMessage;
-
-/// The most kicks a rifle's recoil pattern holds (RifleWire::recoil_pattern).
-inline constexpr std::size_t kMaxRecoilKicks = primitives::kMaxRecoilKicks;
 
 /// A body's stance.
 enum class StanceWire : std::uint8_t {
@@ -193,7 +186,7 @@ struct RifleWire {
   float recoil_recovery_per_second = 0.0F;
   float ads_recoil_scale = 0.0F;
   float ads_field_of_view = 0.0F;
-  /// At most kMaxRecoilKicks.
+  /// At most primitives::kMaxRecoilKicks.
   std::vector<RecoilKickWire> recoil_pattern;
   std::uint8_t magazine_capacity = 0;
 
@@ -329,7 +322,7 @@ struct SequencedCommandWire {
 };
 
 /// Client to server: recent commands, oldest first. Each message repeats the
-/// ones the client has not seen acknowledged (at most kMaxCommandsPerMessage,
+/// ones the client has not seen acknowledged (at most primitives::kMaxCommandsPerMessage,
 /// the newest), so one lost datagram does not drop input.
 struct CommandsWire {
   std::vector<SequencedCommandWire> commands;
@@ -346,7 +339,7 @@ struct AuthoritativeStateWire {
   /// Ticks count from the server's start and never start over, so they take 64
   /// bits: 32 would wrap after about 828 days at 60 Hz.
   primitives::Tick tick = 0;
-  /// Every dynamic body in the match, at most kMaxPlayers (only players have one so far).
+  /// Every dynamic body in the match, at most primitives::kMaxPlayers (only players have one so far).
   std::vector<EntityStateWire> bodies;
   /// The recipient's own rifle as of this tick: what it reconciles its
   /// predicted rifle against, as it does its body against its entry in bodies.
@@ -376,7 +369,7 @@ struct RosterEntryWire {
 struct LobbyWire {
   /// Numbers this Roster: it grows on every join and leave, so a client can say which one it loaded for.
   std::uint32_t version = 0;
-  /// Every player in the Lobby, the recipient included, at most kMaxPlayers.
+  /// Every player in the Lobby, the recipient included, at most primitives::kMaxPlayers.
   std::vector<RosterEntryWire> roster;
 
   bool operator==(const LobbyWire&) const = default;
@@ -405,7 +398,7 @@ struct MatchPlayerWire {
 
 /// Server to client: the match has started. From here on its players can only leave.
 struct MatchStartWire {
-  /// Every player in the match, the recipient included, at most kMaxPlayers.
+  /// Every player in the match, the recipient included, at most primitives::kMaxPlayers.
   std::vector<MatchPlayerWire> players;
 
   bool operator==(const MatchStartWire&) const = default;
@@ -489,8 +482,8 @@ enum class DecodeError : std::uint8_t {
 };
 
 /// Encodes message as one payload. A field beyond its limit (an engine version
-/// over kMaxEngineVersionLength, more than kMaxCommandsPerMessage commands,
-/// more than kMaxPlayers players) is a caller bug, not an input.
+/// over kMaxEngineVersionLength, more than primitives::kMaxCommandsPerMessage commands,
+/// more than primitives::kMaxPlayers players) is a caller bug, not an input.
 [[nodiscard]] BytesWire Encode(const MessageWire& message);
 
 /// Decodes one payload, or reports what is wrong with it.
@@ -573,21 +566,21 @@ struct RecordedTickWire {
   static constexpr std::uint8_t kMatchEnded = 1U << 0U;
   static constexpr std::uint8_t kPolicyMatchEnd = 1U << 1U;
 
-  /// The bodies taken out of the world before the tick, at most kMaxPlayers.
+  /// The bodies taken out of the world before the tick, at most primitives::kMaxPlayers.
   std::vector<EntityIdWire> removed;
   /// The players of a Match started before the tick, each at the spawn it was
-  /// given, at most kMaxPlayers; empty when none started, since a Match always
+  /// given, at most primitives::kMaxPlayers; empty when none started, since a Match always
   /// has a player.
   std::vector<MatchPlayerWire> match_start;
-  /// The tick's commands, at most kMaxPlayers.
+  /// The tick's commands, at most primitives::kMaxPlayers.
   std::vector<RecordedCommandWire> commands;
-  /// Every body as of the tick, at most kMaxPlayers.
+  /// Every body as of the tick, at most primitives::kMaxPlayers.
   std::vector<RecordedBodyWire> bodies;
-  /// The rounds fired on the tick, at most kMaxPlayers.
+  /// The rounds fired on the tick, at most primitives::kMaxPlayers.
   std::vector<ShotWire> shots;
   /// At most kMaxRecordedHits.
   std::vector<RecordedHitWire> hits;
-  /// At most kMaxPlayers.
+  /// At most primitives::kMaxPlayers.
   std::vector<DeathWire> deaths;
   /// The tick's duration, in seconds, as its bits.
   float delta_time = 0.0F;

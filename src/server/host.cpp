@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "augusta/failure.h"
+#include "augusta/first_failure.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/protocol.h"
@@ -88,7 +89,7 @@ Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine 
       parameters(config.parameters),
       characters(ToSimulation(scenario.characters)),
       spawn_points(std::move(scenario.spawn_points)),
-      network(config.listen),
+      network(config.listen, config.faults),
       match(MatchConfig{
           .engine_version = std::string(EngineVersion()),
           .client_pack = scenario.client_pack,
@@ -98,12 +99,16 @@ Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine 
       }) {}
 
 void Host::Impl::Reply(networking::PeerId peer, const networking::Payload& message) {
-  SendCounted(network, metrics, peer, message, networking::Reliability::kReliable);
+  // Dropped is the peer's outcome: its departure, if it is leaving, arrives as an event.
+  if (networking::SendResult sent = SendCounted(network, metrics, peer, message, networking::Reliability::kReliable);
+      !sent.has_value()) {
+    transport_failure.Record(std::move(sent.error()));
+  }
 }
 
 void Host::Impl::SendTo(const std::vector<SessionId>& sessions, const networking::Payload& message) {
   for (const SessionId session : sessions) {
-    SendCounted(network, metrics, players.at(session).peer, message, networking::Reliability::kReliable);
+    Reply(players.at(session).peer, message);
   }
 }
 
@@ -171,5 +176,7 @@ std::optional<failure::Failure> Host::FinishRecording() {
   impl_->simulation.WaitUntilRecorded();
   return RecordingFailure();
 }
+
+std::optional<failure::Failure> Host::TakeTransportFailure() { return impl_->transport_failure.Take(); }
 
 }  // namespace augusta::server
