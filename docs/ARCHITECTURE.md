@@ -16,8 +16,8 @@ Top quality goals (see [REQUIREMENTS.md](./REQUIREMENTS.md) for full NFR list):
 ## 2. Architecture Constraints
 
 - **Technical:** C++, CMake + Ninja + sccache. Client: Windows-only, rendering
-  via NVIDIA Falcor (D3D12). Server: Linux x86-64 in production (a Windows x64
-  build for development only, NFR-04), headless.
+  via NVIDIA Falcor (D3D12). Server: Linux x86-64 in production (Windows x64 and
+  Linux arm64 builds for development only, NFR-04), headless.
 - **Licensing:** third-party dependencies must be free/open-source (Flecs [MIT],
   PhysX [BSD-3], GameNetworkingSockets [BSD-3], Falcor [BSD-3], Steam Audio
   [Apache 2.0], miniaudio [MIT], Slang [Apache 2.0])

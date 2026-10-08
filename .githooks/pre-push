@@ -29,6 +29,15 @@ changed_of() {
   fi
 }
 
+# Hands the push to Git LFS, unless this run is the checks alone: macOS runs
+# those in the dev container and LFS on the host, with the host's credentials.
+# Arguments:
+#   The pushed refs, then the hook's own arguments.
+lfs_pre_push() {
+  [[ -n "${PRE_PUSH_CHECKS_ONLY:-}" ]] && return
+  printf '%s\n' "$1" | git lfs pre-push "${@:2}"
+}
+
 # Prints the message that stops a push on a failed check, to stderr.
 # Arguments:
 #   The check, then what to do about its findings.
@@ -58,11 +67,23 @@ main() {
   local push_refs
   push_refs=$(cat)
 
-  command -v git-lfs >/dev/null 2>&1 || {
-    echo "pre-push: git-lfs not found on PATH; install Git LFS before" \
-      "pushing." >&2
-    exit 2
-  }
+  if [[ -z "${PRE_PUSH_CHECKS_ONLY:-}" ]]; then
+    command -v git-lfs >/dev/null 2>&1 || {
+      echo "pre-push: git-lfs not found on PATH; install Git LFS before" \
+        "pushing." >&2
+      exit 2
+    }
+  fi
+
+  # macOS has none of the linters nor a build: the checks run in the dev
+  # container, against its debug build's compile commands.
+  if [[ "$(uname -s)" = Darwin ]]; then
+    printf '%s\n' "${push_refs}" \
+      | scripts/dev-container.sh env PRE_PUSH_CHECKS_ONLY=1 \
+        .githooks/pre-push "$@" || exit $?
+    lfs_pre_push "${push_refs}" "$@"
+    exit $?
+  fi
 
   local windows build_dir
   case "$(uname -s)" in
@@ -168,7 +189,7 @@ EOF
   if [[ -z "${files}${include_files}${yaml_files}${lua_files}${toml_files}" &&
     -z "${python_files}${shell_files}${markdown_files}" &&
     -z "${powershell_files}${workflows_changed}" ]]; then
-    printf '%s\n' "${push_refs}" | git lfs pre-push "$@"
+    lfs_pre_push "${push_refs}" "$@"
     exit $?
   fi
 
@@ -187,7 +208,8 @@ EOF
       local preset
       preset=$(basename "${build_dir}" | sed 's/^x64-//')
       echo "pre-push: ${build_dir}/compile_commands.json not found -" \
-        "configure the debug build first (make configure PRESET=${preset})," \
+        "configure the debug build first (make configure PRESET=${preset};" \
+        "on macOS, through scripts/dev-container.sh)," \
         "or push with --no-verify to skip clang-tidy." >&2
       exit 1
     fi
@@ -304,7 +326,7 @@ EOF
     fi
   fi
 
-  printf '%s\n' "${push_refs}" | git lfs pre-push "$@"
+  lfs_pre_push "${push_refs}" "$@"
 }
 
 main "$@"

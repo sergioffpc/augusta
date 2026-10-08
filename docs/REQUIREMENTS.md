@@ -480,7 +480,8 @@ Version: v1
 Source:      Build system
 Stimulus:    Compilation request
 Environment: Client build targets Windows x64; server build targets
-             Linux x86-64, with Windows x64 for development only
+             Linux x86-64, with Windows x64 and Linux arm64 for
+             development only
 Artifact:    Engine codebase (shared core, client, server)
 Response:    Shared core (ECS, physics, ballistics, networking) compiles
              cleanly for both target platforms without platform-specific
@@ -494,7 +495,10 @@ Measure:     Successful client build + v1 milestone playthrough on
 
 The server's Windows build is for development (ADR-0047): it runs a match beside
 the client on one machine, but nothing is released or deployed from it, and a
-crash there leaves only the logged stack, no core dump or split debug info.
+crash there leaves only the logged stack, no core dump or split debug info. The
+Linux arm64 build is the dev container's on an arm64 host (an Apple silicon Mac,
+`scripts/dev-container.sh`), so it builds natively rather than emulating x86-64;
+CI doesn't build it, and nothing is released or deployed from it either.
 `cmake/AugustaPlatform.cmake` holds this contract, and the configure stops on
 any other OS, architecture or 32-bit toolchain rather than compiling for it.
 

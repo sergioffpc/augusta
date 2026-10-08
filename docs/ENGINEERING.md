@@ -244,14 +244,19 @@ no self-hosted GitHub Actions runner in this pipeline).
   they never collide with a Windows build of the same checkout. One recipe, not
   a container beside a separate host bootstrap: two recipes for the same
   toolchain drift apart. The client has no container equivalent (see below).
-- **macOS (hooks and checks only):** nothing builds natively on macOS — the
-  server builds in the dev container, the client on Windows.
-  `scripts/bootstrap-macos.sh` installs what the hooks and `make format-check`
-  run, so formatting and lint failures show before a push rather than in CI:
-  Homebrew's `llvm@21` (only its clang-format and clang-tidy, linked into
-  `~/.local/bin`), luacheck, uv, Git LFS, Doxygen and gh, and standalone
-  yamlfmt, StyLua and taplo at CI's pinned versions, checksummed, in
-  `~/.local/bin`; then it points `core.hooksPath` at `.githooks`.
+- **macOS (through the dev container):** nothing builds natively on macOS (the
+  presets are Linux's and Windows'), and nothing is installed there but git, Git
+  LFS and Docker or Podman. `scripts/dev-container.sh [command]` runs a command
+  (a shell by default) in the dev container's image from a terminal: one
+  container per checkout, kept running, with the checkout mounted at its host
+  path so a git worktree's `.git` resolves inside too, a `build/` volume of its
+  own, and sccache's and vcpkg's caches in volumes every checkout shares.
+  `scripts/dev-container.sh make configure PRESET=linux-debug` gives the hooks
+  the compile commands clang-tidy needs. On macOS the `pre-commit` and
+  `pre-push` hooks run their formatters and linters through it; git itself
+  (identity, signing, credentials, LFS) stays on the host. A second bootstrap of
+  the hooks' tools for macOS would drift from the container's, as two recipes
+  for one toolchain do.
 - **Client (Windows, native):** built and run natively — never cross-compiled
   from Linux (not viable given Falcor/D3D12/NVIDIA SDK's MSVC-specific toolchain
   assumptions). A `scripts/bootstrap-windows.ps1` script (winget-driven)

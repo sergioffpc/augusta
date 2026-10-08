@@ -1,7 +1,9 @@
 // The Linux/server build environment CI's server job runs in (see Dockerfile),
 // for VS Code or Codespaces: `make test` builds and tests the linux preset with
 // nothing else to install. The Windows client keeps scripts/bootstrap-windows.ps1
-// (MSVC, Falcor, D3D12 have no container).
+// (MSVC, Falcor, D3D12 have no container). scripts/dev-container.sh runs the
+// same image from a terminal (macOS's git hooks run through it), with its own
+// mounts: there the checkout keeps its host path.
 {
   "name": "Augusta server (Linux)",
   "build": {
