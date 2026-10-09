@@ -1912,9 +1912,24 @@ TEST(RecordingHostConfigTest, AHostRefusesARecordingItCannotWrite) {
                std::runtime_error);
 }
 
+// A directory removed only once everything declared after it is gone: as a
+// base ahead of LoopbackMatch it outlives the Host, whose capture file Windows
+// will not delete while it is still open.
+struct CaptureDirectory {
+  explicit CaptureDirectory(std::filesystem::path directory) : directory_(std::move(directory)) {}
+  ~CaptureDirectory() { std::filesystem::remove_all(directory_); }
+
+  CaptureDirectory(const CaptureDirectory&) = delete;
+  CaptureDirectory& operator=(const CaptureDirectory&) = delete;
+  CaptureDirectory(CaptureDirectory&&) = delete;
+  CaptureDirectory& operator=(CaptureDirectory&&) = delete;
+
+  std::filesystem::path directory_;
+};
+
 // A host on the floor capturing each Match (ADR-0050) into a directory of the
 // test's own, whose two players walk forward and fire until the host ends it.
-class CaptureHostTest : public LoopbackMatch {
+class CaptureHostTest : private CaptureDirectory, public LoopbackMatch {
  protected:
   static std::vector<Vec3> SpawnPoints() { return {Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F)}; }
 
@@ -1932,15 +1947,8 @@ class CaptureHostTest : public LoopbackMatch {
   }
 
   CaptureHostTest() : CaptureHostTest(Directory()) {}
-  explicit CaptureHostTest(std::filesystem::path directory)
-      : LoopbackMatch(CaptureSetup(directory)), directory_(std::move(directory)) {}
-
-  ~CaptureHostTest() override { std::filesystem::remove_all(directory_); }
-
-  CaptureHostTest(const CaptureHostTest&) = delete;
-  CaptureHostTest& operator=(const CaptureHostTest&) = delete;
-  CaptureHostTest(CaptureHostTest&&) = delete;
-  CaptureHostTest& operator=(CaptureHostTest&&) = delete;
+  explicit CaptureHostTest(const std::filesystem::path& directory)
+      : CaptureDirectory(directory), LoopbackMatch(CaptureSetup(directory)) {}
 
   void PlayAMatch() {
     Join();
@@ -1979,8 +1987,6 @@ class CaptureHostTest : public LoopbackMatch {
       std::this_thread::sleep_for(kRetryAfter);
     }
   }
-
-  std::filesystem::path directory_;
 };
 
 // Requirements: US-21
