@@ -80,8 +80,8 @@ struct RetentionPlan {
 /// one being written hold, from one scan at each Match start plus what the
 /// writer writes and minus what it deletes. A capture that cannot be deleted is
 /// logged once per Match start and left out of both until the next, which
-/// tries again; it never stops a capture. With retention off it neither scans
-/// nor deletes anything. Writer thread only.
+/// tries again; it never stops a capture. With retention off it still scans
+/// and counts, for the metrics, but deletes nothing. Writer thread only.
 class CaptureDirectory {
  public:
   /// faults, when given, is asked before each deletion

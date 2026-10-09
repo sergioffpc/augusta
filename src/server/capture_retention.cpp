@@ -83,9 +83,6 @@ CaptureDirectory::CaptureDirectory(std::filesystem::path directory, CaptureReten
       faults_(faults) {}
 
 bool CaptureDirectory::Open(std::uint64_t match, std::string_view file_name, std::uintmax_t bytes) {
-  if (!retention_.Enabled()) {
-    return true;
-  }
   match_ = match;
   failure_logged_ = false;
   open_ = false;
@@ -106,9 +103,6 @@ bool CaptureDirectory::Open(std::uint64_t match, std::string_view file_name, std
 }
 
 bool CaptureDirectory::Reserve(std::uintmax_t bytes) {
-  if (!retention_.Enabled()) {
-    return true;
-  }
   if (!MakeRoom(false, bytes)) {
     return false;
   }

@@ -9,6 +9,7 @@
 #include <fstream>
 #include <ios>
 #include <iterator>
+#include <mutex>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -38,6 +39,7 @@ using augusta::math::Vec3;
 using augusta::server::Capture;
 using augusta::server::CapturedCommand;
 using augusta::server::CapturedDeath;
+using augusta::server::CaptureDirectoryUsage;
 using augusta::server::CapturedJoin;
 using augusta::server::CapturedLeave;
 using augusta::server::CapturedMatchEnd;
@@ -45,9 +47,12 @@ using augusta::server::CaptureEntrant;
 using augusta::server::CaptureError;
 using augusta::server::CaptureFileName;
 using augusta::server::CaptureHeader;
+using augusta::server::CaptureObserver;
 using augusta::server::CaptureOptions;
 using augusta::server::Capturer;
 using augusta::server::CaptureRecord;
+using augusta::server::CaptureState;
+using augusta::server::CaptureStop;
 using augusta::server::EntityId;
 using augusta::server::ReadCapture;
 using augusta::server::SessionId;
@@ -86,6 +91,63 @@ Command Walk(std::uint64_t seen_tick) {
   command.seen_tick = seen_tick;
   return command;
 }
+
+// What a Capturer told its observer, as Told keeps it.
+struct Telling {
+  std::vector<CaptureState> states;
+  std::uint64_t started = 0;
+  std::uint64_t completed = 0;
+  std::vector<CaptureStop> stops;
+  std::uint64_t written = 0;
+  // The last count of records queued, and the most.
+  std::size_t queued = 0;
+  std::size_t most_queued = 0;
+  CaptureDirectoryUsage directory;
+};
+
+// Keeps what a Capturer tells it, from either of its threads.
+class Told final : public CaptureObserver {
+ public:
+  void OnState(CaptureState state) override {
+    Update([&](Telling& told) { told.states.push_back(state); });
+  }
+  void OnStarted() override {
+    Update([](Telling& told) { ++told.started; });
+  }
+  void OnCompleted() override {
+    Update([](Telling& told) { ++told.completed; });
+  }
+  void OnStopped(CaptureStop stop) override {
+    Update([&](Telling& told) { told.stops.push_back(stop); });
+  }
+  void OnWritten(std::size_t bytes) override {
+    Update([&](Telling& told) { told.written += bytes; });
+  }
+  void OnQueued(std::size_t records) override {
+    Update([&](Telling& told) {
+      told.queued = records;
+      told.most_queued = std::max(told.most_queued, records);
+    });
+  }
+  void OnDirectory(CaptureDirectoryUsage usage) override {
+    Update([&](Telling& told) { told.directory = usage; });
+  }
+
+  [[nodiscard]] Telling Get() const {
+    const std::scoped_lock lock(mutex_);
+    return told_;
+  }
+
+ private:
+  template <typename Change>
+  void Update(Change change) {
+    const std::scoped_lock lock(mutex_);
+    change(told_);
+  }
+
+  mutable std::mutex mutex_;
+  Telling told_;
+};
 
 class CaptureTest : public ::testing::Test {
  protected:
@@ -277,8 +339,9 @@ TEST_F(CaptureTest, ADiskThatStallsNeverHoldsUpTheCallerAndStopsTheCaptureOnceIt
   constexpr std::size_t kCapacity = 4;
   std::string drained;
   std::thread reader;
+  Told told;
   {
-    Capturer capturer(directory_, Header(), CaptureOptions{.capacity = kCapacity});
+    Capturer capturer(directory_, Header(), CaptureOptions{.capacity = kCapacity, .observer = &told});
     const auto before = std::chrono::steady_clock::now();
     capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
     for (std::uint64_t tick = kFirstTick; tick < kFirstTick + 100; ++tick) {
@@ -299,6 +362,87 @@ TEST_F(CaptureTest, ADiskThatStallsNeverHoldsUpTheCallerAndStopsTheCaptureOnceIt
   ASSERT_TRUE(capture.has_value());
   // Both Joins and the Commands that found room; nothing after the stop.
   EXPECT_EQ(capture->records.size(), kCapacity);
+  EXPECT_EQ(told.Get().most_queued, kCapacity);
+  EXPECT_EQ(told.Get().stops, std::vector{CaptureStop::kQueueFull});
+}
+
+// Requirements: NFR-07
+TEST_F(CaptureTest, TheObserverIsToldOfACaptureFromItsStartToItsEnd) {
+  Told told;
+  {
+    Capturer capturer(directory_, Header(), CaptureOptions{.observer = &told});
+    capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
+    capturer.Command(kFirstTick, EntityId{70}, Walk(0));
+    capturer.EndMatch(kFirstTick + 1, std::nullopt);
+  }
+
+  const std::uintmax_t size = std::filesystem::file_size(Files().front());
+  const Telling telling = told.Get();
+  EXPECT_EQ(telling.states, (std::vector{CaptureState::kIdle, CaptureState::kCapturing, CaptureState::kIdle}));
+  EXPECT_EQ(telling.started, 1U);
+  EXPECT_EQ(telling.completed, 1U);
+  EXPECT_TRUE(telling.stops.empty());
+  EXPECT_EQ(telling.written, size);
+  EXPECT_EQ(telling.queued, 0U);
+  EXPECT_GT(telling.most_queued, 0U);
+  EXPECT_EQ(telling.directory, (CaptureDirectoryUsage{.files = 1, .bytes = size}));
+}
+
+// Requirements: NFR-07
+TEST_F(CaptureTest, TheDirectoryIsScannedForCapturesAtEachMatchStart) {
+  // Captures are the files named as captures that start with a capture's magic.
+  const std::string magic(reinterpret_cast<const char*>(augusta::protocol::kCaptureMagic.data()),
+                          augusta::protocol::kCaptureMagic.size());
+  std::ofstream(directory_ / "20260101T000000000Z-0001.capture", std::ios::binary) << magic << "01";
+  std::ofstream(directory_ / "20260101T000000000Z-0002.capture", std::ios::binary) << magic;
+  std::ofstream(directory_ / "20260101T000000000Z-0003.capture", std::ios::binary) << "no magic";
+  std::ofstream(directory_ / "notes.txt", std::ios::binary) << "not a capture";
+  std::filesystem::create_directory(directory_ / "nested.capture");
+  Told told;
+  {
+    Capturer capturer(directory_, Header(), CaptureOptions{.observer = &told});
+    capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
+    capturer.EndMatch(kFirstTick, std::nullopt);
+  }
+
+  const std::uintmax_t size = std::filesystem::file_size(directory_ / CaptureFileName(kStarted, 1));
+  EXPECT_EQ(told.Get().directory, (CaptureDirectoryUsage{.files = 3, .bytes = (2 * magic.size()) + 2 + size}));
+}
+
+// Requirements: NFR-07
+TEST_F(CaptureTest, AStopIsToldWithItsReasonAndHoldsUntilTheMatchEnds) {
+  Told told;
+  {
+    Capturer capturer(directory_, Header(), CaptureOptions{.capacity = 0, .observer = &told});
+    capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
+    capturer.EndMatch(kFirstTick, std::nullopt);
+  }
+
+  const Telling telling = told.Get();
+  EXPECT_EQ(telling.stops, std::vector{CaptureStop::kQueueFull});
+  EXPECT_EQ(telling.states,
+            (std::vector{CaptureState::kIdle, CaptureState::kCapturing, CaptureState::kStopped, CaptureState::kIdle}));
+  EXPECT_EQ(telling.started, 1U);
+  EXPECT_EQ(telling.completed, 0U);
+}
+
+// Requirements: NFR-07
+TEST_F(CaptureTest, AFailedWriteIsToldAsWriteFailed) {
+  Faults faults;
+  Told told;
+  {
+    Capturer capturer(directory_, Header(), CaptureOptions{.faults = &faults, .observer = &told});
+    faults.Arm(Site::kCaptureWrite, "disk full", 1);
+    capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
+    capturer.WaitUntilWritten();
+    EXPECT_EQ(told.Get().states.back(), CaptureState::kStopped);
+    capturer.EndMatch(kFirstTick, std::nullopt);
+  }
+
+  const Telling telling = told.Get();
+  EXPECT_EQ(telling.stops, std::vector{CaptureStop::kWriteFailed});
+  EXPECT_EQ(telling.states.back(), CaptureState::kIdle);
+  EXPECT_EQ(telling.completed, 0U);
 }
 
 // A file of the capture written in one Match, for ReadCapture's own tests.

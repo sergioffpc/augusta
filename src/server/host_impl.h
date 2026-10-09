@@ -69,6 +69,9 @@ struct Host::Impl {
   // those bodies are in is still in the simulation.
   std::ofstream recording_file;
   RecordedSimulation simulation;
+  // What the capturer tells of itself, counted into metrics; declared before
+  // it, so it outlives the capturer's writer.
+  CaptureMetrics capture_metrics{metrics};
   // Each Match's capture, if HostConfig::capture_directory asks for them (ADR-0050).
   std::unique_ptr<Capturer> capturer;
   std::unordered_map<SessionId, EntityId> bodies;
