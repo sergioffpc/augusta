@@ -17,6 +17,7 @@
 #include <prometheus/metric_type.h>
 
 #include "augusta/ballistics.h"
+#include "capture.h"
 #include "command_queue.h"
 #include "heartbeat.h"
 #include "host_log.h"
@@ -310,6 +311,20 @@ void AppendRecording(std::vector<MetricFamily>& families, const HostMetrics& met
                             MetricType::Gauge, std::move(states)));
 }
 
+void AppendCaptureHealth(std::vector<MetricFamily>& families, const HostMetrics& metrics) {
+  const std::optional<CaptureHealth> current = metrics.capture_health.load(std::memory_order_relaxed);
+  std::vector<ClientMetric> states;
+  for (const CaptureHealth health : {CaptureHealth::kEnabled, CaptureHealth::kDegraded, CaptureHealth::kStopped}) {
+    ClientMetric series;
+    series.label = {{.name = "state", .value = std::string(CaptureHealthName(health))}};
+    series.gauge.value = current == health ? 1.0 : 0.0;
+    states.push_back(std::move(series));
+  }
+  families.push_back(Family("augustad_capture_health",
+                            "1 for the Match captures' health, 0 for the others; 0 for all while none is captured.",
+                            MetricType::Gauge, std::move(states)));
+}
+
 }  // namespace
 
 HostMetrics::HostMetrics(std::uint8_t tick_rate_hz)
@@ -329,6 +344,7 @@ std::vector<prometheus::MetricFamily> HostMetrics::Collect() const {
   AppendNetwork(families, *this);
   AppendCombat(families, *this);
   AppendRecording(families, *this);
+  AppendCaptureHealth(families, *this);
   return families;
 }
 
@@ -349,6 +365,10 @@ Activity Totals(const HostMetrics& metrics) {
 
 void SetRecordingState(HostMetrics& metrics, RecordingState state) {
   metrics.recording_state.store(state, std::memory_order_relaxed);
+}
+
+void SetCaptureHealth(HostMetrics& metrics, CaptureHealth health) {
+  metrics.capture_health.store(health, std::memory_order_relaxed);
 }
 
 void CountSent(HostMetrics& metrics, std::span<const std::byte> payload) {

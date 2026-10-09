@@ -62,6 +62,23 @@ fails stops the capture there, logged once, and the file keeps every record
 before it. A server that stops abruptly leaves every whole record written by
 then; a record cut short is dropped when read, and reported.
 
+**Optional or strict (#398).** `simulation.capture_mode` says what losing a
+record costs the run, ADR-0033's dispositions. `optional`, the default, is the
+debugging aid above: the run's first loss is logged once at `ERR` as
+`event=capture_degraded`, a `capture_write_failed` or `capture_flush_failed`
+failure of the `subsystem`, the captures are `degraded` from then on, and the
+next Match is still captured afresh; the Match's authority never changes. A
+playtest whose point is the capture runs `strict`: the same loss is
+`strict_capture_failed`, a `runtime` failure, nothing more is captured, and the
+Simulation thread stops the runtime on it before its next tick, the supervisor
+writing the one `ERR` line. A record too long or one that finds the queue full
+is such a loss too, since the capture misses it all the same. The captures'
+health, `enabled`, `degraded` or `stopped`, is the `augustad_capture_health`
+metric (ADR-0049), and each change of it a log line (`capture_enabled`,
+`capture_degraded`, `capture_disabled`). A capture that loses nothing is written
+the same in either mode, and neither mode makes a tick wait for the disk: a
+stalled disk fails a strict run only once its queue is full.
+
 **augustad captures only when asked.** `simulation.capture` in `augustad.yaml`
 (ADR-0034) names a directory; without it nothing is captured. Each Match is a
 file of its own, named by when it started and its number in the server's run, so

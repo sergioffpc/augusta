@@ -22,6 +22,7 @@ constexpr std::string_view kMetricsPortKey = "metrics.port";
 constexpr std::uint32_t kMaxMetricsPort = std::numeric_limits<std::uint16_t>::max();
 constexpr std::string_view kRecordingModeKey = "simulation.recording_mode";
 constexpr std::string_view kCaptureKey = "simulation.capture";
+constexpr std::string_view kCaptureModeKey = "simulation.capture_mode";
 
 std::expected<std::uint8_t, ConfigError> RequireTickRate(const ConfigValues& values) {
   return RequireWholeNumber(values, kTickRateKey, 1, kMaxTickRate).transform([](std::uint32_t rate) {
@@ -48,25 +49,43 @@ std::expected<std::filesystem::path, ConfigError> OptionalPath(const ConfigValue
   return RequirePath(values, key, root);
 }
 
-// Whether the recording is strict: "optional" when absent.
-std::expected<bool, ConfigError> OptionalStrictRecording(const ConfigValues& values) {
-  const std::string mode = OptionalString(values, kRecordingModeKey, "optional");
+// Whether the mode under key is strict: "optional" when absent.
+std::expected<bool, ConfigError> OptionalStrict(const ConfigValues& values, std::string_view key) {
+  const std::string mode = OptionalString(values, key, "optional");
   if (mode != "optional" && mode != "strict") {
     return std::unexpected(ConfigError{.code = ConfigErrorCode::kInvalidEntry,
-                                       .subject = std::string(kRecordingModeKey),
+                                       .subject = std::string(key),
                                        .reason = "must be optional or strict",
                                        .file = {}});
   }
   return mode == "strict";
 }
 
+// Reads simulation.capture, relative to root, and simulation.capture_mode into config.
+std::expected<void, ConfigError> ReadCapture(const ConfigValues& values, const std::filesystem::path& root,
+                                             ServerConfig& config) {
+  auto directory = OptionalPath(values, kCaptureKey, root);
+  if (!directory) {
+    return std::unexpected(directory.error());
+  }
+  const auto strict = OptionalStrict(values, kCaptureModeKey);
+  if (!strict) {
+    return std::unexpected(strict.error());
+  }
+  config.capture_directory = *std::move(directory);
+  config.strict_capture = *strict;
+  return {};
+}
+
 }  // namespace
 
 std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 10> kKeys{
-      "base_dir",        "content.pack", "content.public_key",     kTickRateKey,    "simulation.recording",
-      kRecordingModeKey, kCaptureKey,    "network.listen_address", "logging.level", kMetricsPortKey,
+  static constexpr std::array<std::string_view, 11> kKeys{
+      "base_dir",      "content.pack",         "content.public_key",
+      kTickRateKey,    "simulation.recording", kRecordingModeKey,
+      kCaptureKey,     kCaptureModeKey,        "network.listen_address",
+      "logging.level", kMetricsPortKey,
   };
   const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = {}});
   if (!values) {
@@ -98,19 +117,15 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!recording_path) {
     return std::unexpected(recording_path.error());
   }
-  const auto strict_recording = OptionalStrictRecording(*values);
+  const auto strict_recording = OptionalStrict(*values, kRecordingModeKey);
   if (!strict_recording) {
     return std::unexpected(strict_recording.error());
-  }
-  auto capture_directory = OptionalPath(*values, kCaptureKey, *root);
-  if (!capture_directory) {
-    return std::unexpected(capture_directory.error());
   }
   const auto metrics_port = OptionalMetricsPort(*values);
   if (!metrics_port) {
     return std::unexpected(metrics_port.error());
   }
-  return ServerConfig{
+  ServerConfig config{
       .pack_path = *std::move(pack_path),
       .public_key_path = *std::move(public_key_path),
       .tick_rate_hz = *tick_rate_hz,
@@ -118,9 +133,11 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
       .log_level = *std::move(log_level),
       .recording_path = *std::move(recording_path),
       .strict_recording = *strict_recording,
-      .capture_directory = *std::move(capture_directory),
+      .capture_directory = {},
+      .strict_capture = false,
       .metrics_port = *metrics_port,
   };
+  return ReadCapture(*values, *root, config).transform([&config] { return std::move(config); });
 }
 
 std::expected<ServerConfig, ConfigError> LoadServerConfig(const std::filesystem::path& file) {

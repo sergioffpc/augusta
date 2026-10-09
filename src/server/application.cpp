@@ -14,6 +14,7 @@
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/server_config.h"
+#include "capture.h"
 #include "content.h"
 #include "host.h"
 #include "recording.h"
@@ -61,6 +62,7 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
       .recording_mode = file_config.strict_recording ? RecordingMode::kStrict : RecordingMode::kOptional,
       .server_pack = pack->Hash(),
       .capture_directory = file_config.capture_directory,
+      .capture_mode = file_config.strict_capture ? CaptureMode::kStrict : CaptureMode::kOptional,
   };
   return std::make_unique<ServerRuntime>(host_config, file_config.metrics_port, std::move(content->scenario),
                                          std::move(content->policy), faults);

@@ -12,6 +12,7 @@
 #include <prometheus/metric_family.h>
 
 #include "augusta/ballistics.h"
+#include "capture.h"
 #include "command_queue.h"
 #include "heartbeat.h"
 #include "host_log.h"
@@ -23,7 +24,7 @@
 /// \file
 /// What the server counts about itself, for the metrics endpoint (metrics.h)
 /// to expose: ADR-0049's catalogue of the Tick, Lobby and Match, Sessions,
-/// Misbehaviour, Network, Combat and Recording families, each named and labelled
+/// Misbehaviour, Network, Combat, Recording and Capture health families, each named and labelled
 /// as it says.
 /// The Host owns one, and its Network I/O and Simulation threads write each value
 /// in place where the event happens; the endpoint's thread only collects. Every
@@ -139,6 +140,12 @@ struct HostMetrics final : prometheus::Collectable {
   /// states or none; nullopt while nothing is recorded.
   std::atomic<std::optional<RecordingState>> recording_state;
   static_assert(std::atomic<std::optional<RecordingState>>::is_always_lock_free);
+
+  /// The Match captures' health, written by whichever thread it changes on
+  /// (SetCaptureHealth) and published whole, as recording_state is; nullopt
+  /// while nothing is captured.
+  std::atomic<std::optional<CaptureHealth>> capture_health;
+  static_assert(std::atomic<std::optional<CaptureHealth>>::is_always_lock_free);
 };
 
 /// The heartbeat's running totals (heartbeat.h), read from metrics' counters:
@@ -147,6 +154,9 @@ struct HostMetrics final : prometheus::Collectable {
 
 /// Publishes state as the Match recording's.
 void SetRecordingState(HostMetrics& metrics, RecordingState state);
+
+/// Publishes health as the Match captures'.
+void SetCaptureHealth(HostMetrics& metrics, CaptureHealth health);
 
 /// Counts payload, an encoded message the server is sending, by its type and size.
 void CountSent(HostMetrics& metrics, std::span<const std::byte> payload);

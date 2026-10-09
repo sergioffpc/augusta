@@ -15,6 +15,7 @@
 #include <prometheus/metric_type.h>
 
 #include "augusta/ballistics.h"
+#include "capture.h"
 #include "command_queue.h"
 #include "heartbeat.h"
 #include "host_log.h"
@@ -29,6 +30,7 @@
 namespace {
 
 using augusta::server::Activity;
+using augusta::server::CaptureHealth;
 using augusta::server::Histogram;
 using augusta::server::HostMetrics;
 using augusta::server::JoinRefusal;
@@ -121,6 +123,7 @@ TEST(HostMetricsTest, EveryMetricOfTheCatalogueIsCollectedWithItsType) {
       {"augustad_shooters_delay_capped_total", MetricType::Counter},
       {"augustad_bullets_in_flight", MetricType::Gauge},
       {"augustad_recording_state", MetricType::Gauge},
+      {"augustad_capture_health", MetricType::Gauge},
   };
   for (const auto& [name, type] : catalogue) {
     EXPECT_EQ(Family(families, name).type, type) << name;
@@ -151,6 +154,29 @@ TEST(HostMetricsTest, OnlyTheRecordingsCurrentStateIsSet) {
   augusta::server::SetRecordingState(metrics, RecordingState::kEnabled);
   augusta::server::SetRecordingState(metrics, RecordingState::kDegraded);
   EXPECT_EQ(RecordingStates(metrics),
+            (std::map<std::string, double>{{"enabled", 0.0}, {"degraded", 1.0}, {"stopped", 0.0}}));
+}
+
+// The value of each augustad_capture_health series, by its state label.
+std::map<std::string, double> CaptureHealths(const HostMetrics& metrics) {
+  std::map<std::string, double> states;
+  for (const ClientMetric& series : Family(metrics.Collect(), "augustad_capture_health").metric) {
+    states.emplace(LabelsOf(series).at("state"), series.gauge.value);
+  }
+  return states;
+}
+
+TEST(HostMetricsTest, NoCaptureHealthIsSetWhileNothingIsCaptured) {
+  const HostMetrics metrics(kTickRate);
+  EXPECT_EQ(CaptureHealths(metrics),
+            (std::map<std::string, double>{{"enabled", 0.0}, {"degraded", 0.0}, {"stopped", 0.0}}));
+}
+
+TEST(HostMetricsTest, OnlyTheCapturesCurrentHealthIsSet) {
+  HostMetrics metrics(kTickRate);
+  augusta::server::SetCaptureHealth(metrics, CaptureHealth::kEnabled);
+  augusta::server::SetCaptureHealth(metrics, CaptureHealth::kDegraded);
+  EXPECT_EQ(CaptureHealths(metrics),
             (std::map<std::string, double>{{"enabled", 0.0}, {"degraded", 1.0}, {"stopped", 0.0}}));
 }
 

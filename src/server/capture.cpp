@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -11,6 +12,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <functional>
 #include <ios>
 #include <istream>
 #include <limits>
@@ -39,6 +41,62 @@
 namespace augusta::server {
 
 namespace {
+
+// Where a capture lost a record: the step its capture_stopped line and its
+// Failure name.
+enum class Step : std::uint8_t {
+  kCreate,
+  kWrite,
+  kFlush,
+  // The record found the writer's queue full: the disk is not keeping up.
+  kQueueFull,
+  // The record is longer than a capture's frame holds.
+  kRecordTooLong,
+};
+
+std::string_view StepName(Step step) {
+  switch (step) {
+    case Step::kCreate:
+      return "create";
+    case Step::kWrite:
+      return "write";
+    case Step::kFlush:
+      return "flush";
+    case Step::kQueueFull:
+      return "queue_full";
+    case Step::kRecordTooLong:
+      return "record_too_long";
+  }
+  return "unknown";
+}
+
+// Why a capture lost at step stopped, as its capture_stopped line names it.
+CaptureStop StopAt(Step step) {
+  switch (step) {
+    case Step::kQueueFull:
+      return CaptureStop::kQueueFull;
+    case Step::kRecordTooLong:
+      return CaptureStop::kRecordTooLong;
+    case Step::kCreate:
+    case Step::kWrite:
+    case Step::kFlush:
+      return CaptureStop::kWriteFailed;
+  }
+  return CaptureStop::kWriteFailed;
+}
+
+// Decision: what losing match's record at step is in mode. An optional
+// capture's loss is its own subsystem's; a strict one's is the runtime's.
+failure::Failure LostCapture(CaptureMode mode, std::uint64_t match, Step step, std::string detail) {
+  failure::Code code = failure::Code::kStrictCaptureFailed;
+  if (mode == CaptureMode::kOptional) {
+    code = step == Step::kFlush ? failure::Code::kCaptureFlushFailed : failure::Code::kCaptureWriteFailed;
+  }
+  return {.code = code,
+          .context = {{.key = "match", .value = std::to_string(match)},
+                      {.key = "step", .value = std::string(StepName(step))}},
+          .detail = std::move(detail)};
+}
 
 // Decision: whether next may follow the records of capture so far, joins of
 // them Joins (ADR-0050): every Join first, numbered from 1 in order, then the
@@ -175,18 +233,46 @@ std::string_view CaptureStopName(CaptureStop stop) {
   return "unknown";
 }
 
+std::string_view CaptureModeName(CaptureMode mode) {
+  switch (mode) {
+    case CaptureMode::kOptional:
+      return "optional";
+    case CaptureMode::kStrict:
+      return "strict";
+  }
+  return "unknown";
+}
+
+std::string_view CaptureHealthName(CaptureHealth health) {
+  switch (health) {
+    case CaptureHealth::kEnabled:
+      return "enabled";
+    case CaptureHealth::kDegraded:
+      return "degraded";
+    case CaptureHealth::kStopped:
+      return "stopped";
+  }
+  return "unknown";
+}
+
 // The thread a Capturer writes its files on and what is queued for it, oldest
 // first: each Match's file opened, its records, and its file closed, each
 // item naming its Match by its number in the run. The Simulation thread only
 // ever waits on the lock, which the writer holds to take an item and never
-// across a write.
+// across a write. It keeps the run's first loss and the health it leaves the
+// captures in.
 class Capturer::Writer {
  public:
-  explicit Writer(CaptureOptions options) : faults_(options.faults), capacity_(options.capacity) {
+  explicit Writer(CaptureOptions options)
+      : mode_(options.mode),
+        faults_(options.faults),
+        on_health_(std::move(options.on_health)),
+        capacity_(options.capacity) {
+    Enter(CaptureHealth::kEnabled);
     thread_ = std::thread([this] { Run(); });
   }
 
-  // Writes what is still queued before it goes.
+  // Writes what is still queued before it goes, then stops the captures.
   ~Writer() {
     {
       const std::scoped_lock lock(mutex_);
@@ -194,6 +280,11 @@ class Capturer::Writer {
     }
     ready_.notify_one();
     thread_.join();
+    const std::scoped_lock lock(mutex_);
+    if (health_ != CaptureHealth::kStopped) {
+      LI("subsystem=capture event=capture_disabled mode={} lost={}", CaptureModeName(mode_), loss_.has_value());
+      Enter(CaptureHealth::kStopped);
+    }
   }
 
   Writer(const Writer&) = delete;
@@ -212,13 +303,13 @@ class Capturer::Writer {
   void Push(std::uint64_t match, protocol::BytesWire record) {
     {
       const std::scoped_lock lock(mutex_);
-      if (stopped_.contains(match)) {
+      if (stopped_.contains(match) || health_ == CaptureHealth::kStopped) {
         return;
       }
       // Dropping this record and going on would leave a capture missing one
       // in its middle; stopping here keeps every one before it.
       if (records_queued_ >= capacity_) {
-        StopLocked(match, CaptureStop::kQueueFull);
+        StopLocked(match, Step::kQueueFull, {});
         return;
       }
       ++records_queued_;
@@ -227,9 +318,9 @@ class Capturer::Writer {
     ready_.notify_one();
   }
 
-  void Stop(std::uint64_t match, CaptureStop stop) {
+  void Stop(std::uint64_t match, Step step) {
     const std::scoped_lock lock(mutex_);
-    StopLocked(match, stop);
+    StopLocked(match, step, {});
   }
 
   void WaitUntilWritten() {
@@ -237,18 +328,21 @@ class Capturer::Writer {
     written_.wait(lock, [this] { return queue_.empty() && !writing_; });
   }
 
+  [[nodiscard]] CaptureHealth Health() const { return health_; }
+
+  [[nodiscard]] std::optional<failure::Failure> Loss() const {
+    const std::scoped_lock lock(mutex_);
+    return loss_;
+  }
+
  private:
   enum class Kind : std::uint8_t { kOpen, kRecord, kClose };
 
-  // Where the writer lost a Match's file, as its capture_stopped line names it.
-  enum class Step : std::uint8_t { kCreate, kWrite };
-
-  struct Loss {
+  // Where the writer lost a Match's file, and what the disk said of it.
+  struct Failed {
     Step step;
     std::string detail;
   };
-
-  static std::string_view StepName(Step step) { return step == Step::kCreate ? "create" : "write"; }
 
   struct Item {
     Kind kind;
@@ -281,7 +375,7 @@ class Capturer::Writer {
       }
       writing_ = true;
       lock.unlock();
-      std::optional<Loss> loss = Handle(item);
+      std::optional<Failed> loss = Handle(item);
       lock.lock();
       writing_ = false;
       if (loss.has_value()) {
@@ -291,8 +385,7 @@ class Capturer::Writer {
                       [&](const Item& queued) { return queued.kind == Kind::kRecord && queued.match == item.match; });
         records_queued_ = static_cast<std::size_t>(
             std::ranges::count_if(queue_, [](const Item& queued) { return queued.kind == Kind::kRecord; }));
-        StopLocked(item.match, CaptureStop::kWriteFailed,
-                   std::format("step={} detail=\"{}\"", StepName(loss->step), loss->detail));
+        StopLocked(item.match, loss->step, std::move(loss->detail));
       }
       if (queue_.empty()) {
         written_.notify_all();
@@ -302,7 +395,7 @@ class Capturer::Writer {
 
   // Mechanism: carries out item on the writer's own file, or says why the
   // file failed. Writer thread only.
-  std::optional<Loss> Handle(const Item& item) {
+  std::optional<Failed> Handle(const Item& item) {
     switch (item.kind) {
       case Kind::kOpen:
         return OpenFile(item);
@@ -315,10 +408,10 @@ class Capturer::Writer {
     return std::nullopt;
   }
 
-  std::optional<Loss> OpenFile(const Item& item) {
+  std::optional<Failed> OpenFile(const Item& item) {
     file_ = std::ofstream(item.path, std::ios::binary | std::ios::trunc);
     if (!file_) {
-      return Loss{.step = Step::kCreate, .detail = item.path.string()};
+      return Failed{.step = Step::kCreate, .detail = item.path.string()};
     }
     file_match_ = item.match;
     path_ = item.path;
@@ -328,17 +421,28 @@ class Capturer::Writer {
     return Persist(item.payload);
   }
 
-  // Writes and flushes payload's frame. An injected fault fails the file, as the disk would.
-  std::optional<Loss> Persist(const protocol::BytesWire& payload) {
-    if (std::optional<std::string> fault =
-            faults_ == nullptr ? std::nullopt : faults_->Trip(failure::Site::kCaptureWrite)) {
+  std::optional<std::string> Trip(failure::Site site) const {
+    return faults_ == nullptr ? std::nullopt : faults_->Trip(site);
+  }
+
+  // Writes and flushes payload's frame, or says which step the file failed
+  // at. An injected fault fails the file, as the disk would.
+  std::optional<Failed> Persist(const protocol::BytesWire& payload) {
+    if (std::optional<std::string> fault = Trip(failure::Site::kCaptureWrite)) {
       file_.setstate(std::ios::badbit);
-      return Loss{.step = Step::kWrite, .detail = *std::move(fault)};
+      return Failed{.step = Step::kWrite, .detail = *std::move(fault)};
     }
     WriteFrame(file_, kCaptureFrames, payload);
+    if (!file_) {
+      return Failed{.step = Step::kWrite, .detail = path_.string()};
+    }
+    if (std::optional<std::string> fault = Trip(failure::Site::kCaptureFlush)) {
+      file_.setstate(std::ios::badbit);
+      return Failed{.step = Step::kFlush, .detail = *std::move(fault)};
+    }
     file_.flush();
     if (!file_) {
-      return Loss{.step = Step::kWrite, .detail = path_.string()};
+      return Failed{.step = Step::kFlush, .detail = path_.string()};
     }
     ++records_;
     return std::nullopt;
@@ -362,18 +466,55 @@ class Capturer::Writer {
     }
   }
 
-  // match's capture stops at stop: reported once, with what the writer knows
-  // of it in where, nothing more of it queued, and its file closed once the
+  // match's capture stops at step: reported once, with what the disk said of
+  // it in detail, nothing more of it queued, and its file closed once the
   // writer gets to it. With mutex_ held.
-  void StopLocked(std::uint64_t match, CaptureStop stop, std::string_view where = {}) {
+  void StopLocked(std::uint64_t match, Step step, std::string detail) {
     if (!stopped_.insert(match).second) {
       return;
     }
-    LW("subsystem=capture event=capture_stopped match={} reason={}{}{}", match, CaptureStopName(stop),
-       where.empty() ? "" : " ", where);
+    const CaptureStop stop = StopAt(step);
+    if (stop == CaptureStop::kWriteFailed) {
+      LW("subsystem=capture event=capture_stopped match={} reason={} step={} detail=\"{}\"", match,
+         CaptureStopName(stop), StepName(step), detail);
+    } else {
+      LW("subsystem=capture event=capture_stopped match={} reason={}", match, CaptureStopName(stop));
+    }
+    LoseLocked(match, step, std::move(detail));
   }
 
+  // The run's first loss, of match's record at step: kept, and reported once
+  // as the health it leaves the captures in. A later one changes nothing.
+  // With mutex_ held.
+  void LoseLocked(std::uint64_t match, Step step, std::string detail) {
+    if (health_ != CaptureHealth::kEnabled) {
+      return;
+    }
+    loss_ = LostCapture(mode_, match, step, std::move(detail));
+    if (mode_ == CaptureMode::kOptional) {
+      // This is the boundary that recovers it: the run goes on without it.
+      LE("subsystem=capture event=capture_degraded mode={} {}", CaptureModeName(mode_),
+         failure::DescribeFailure(*loss_));
+      Enter(CaptureHealth::kDegraded);
+    } else {
+      // Only the state change: the runtime that stops on the failure writes
+      // its one ERR line, with its detail (ADR-0033).
+      LI("subsystem=capture event=capture_disabled mode={} match={} step={}", CaptureModeName(mode_), match,
+         StepName(step));
+      Enter(CaptureHealth::kStopped);
+    }
+  }
+
+  void Enter(CaptureHealth health) {
+    health_ = health;
+    if (on_health_) {
+      on_health_(health);
+    }
+  }
+
+  const CaptureMode mode_;
   failure::Faults* const faults_;
+  const std::function<void(CaptureHealth)> on_health_;
   const std::size_t capacity_;
   mutable std::mutex mutex_;
   std::condition_variable ready_;
@@ -386,6 +527,9 @@ class Capturer::Writer {
   bool closing_ = false;
   // An item off the queue but not yet handled keeps WaitUntilWritten waiting.
   bool writing_ = false;
+  // Written under mutex_, read without it by any thread.
+  std::atomic<CaptureHealth> health_ = CaptureHealth::kEnabled;
+  std::optional<failure::Failure> loss_;
   // The file open, the Match it captures (0 for none), and how many records
   // it holds. Writer thread only.
   std::ofstream file_;
@@ -405,6 +549,11 @@ void Capturer::StartMatch(const std::vector<CaptureEntrant>& players, tick::Tick
                           std::chrono::system_clock::time_point started) {
   if (open_) {
     writer_->Close(matches_);
+    open_ = false;
+  }
+  // A strict capture that lost a record captures nothing more.
+  if (Health() == CaptureHealth::kStopped) {
+    return;
   }
   ++matches_;
   open_ = true;
@@ -481,6 +630,17 @@ void Capturer::EndMatch(tick::Tick last_tick, std::optional<SessionId> winner) {
 
 void Capturer::WaitUntilWritten() { writer_->WaitUntilWritten(); }
 
+CaptureHealth Capturer::Health() const { return writer_->Health(); }
+
+std::optional<failure::Failure> Capturer::Loss() const {
+  // The Simulation thread asks every tick: captures still enabled have lost
+  // nothing, which the health says without the writer's lock.
+  if (Health() == CaptureHealth::kEnabled) {
+    return std::nullopt;
+  }
+  return writer_->Loss();
+}
+
 const std::optional<failure::Failure>& Capturer::Failure() const { return failure_; }
 
 CapturedPlayer Capturer::PlayerOf(EntityId entity) const {
@@ -505,7 +665,7 @@ std::optional<std::vector<std::byte>> Capturer::Admit(std::expected<std::vector<
   // A record ReadCapture would refuse would make every record after it
   // unreadable; stopping here keeps the file readable up to it.
   if (encoded->size() > kCaptureFrames.max_payload) {
-    writer_->Stop(matches_, CaptureStop::kRecordTooLong);
+    writer_->Stop(matches_, Step::kRecordTooLong);
     return std::nullopt;
   }
   return *std::move(encoded);

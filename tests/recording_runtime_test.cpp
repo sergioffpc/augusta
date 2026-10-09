@@ -117,6 +117,7 @@ class RecordingFailureTest : public ::testing::Test {
         .recording_mode = mode.value_or(RecordingMode::kOptional),
         .server_pack = {},
         .capture_directory = {},
+        .capture_mode = {},
         .faults = &faults_,
     };
   }

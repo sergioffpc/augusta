@@ -34,6 +34,10 @@ std::string_view CodeName(Code code) {
       return "recording_flush_failed";
     case Code::kMetricsEndpointFailed:
       return "metrics_endpoint_failed";
+    case Code::kCaptureWriteFailed:
+      return "capture_write_failed";
+    case Code::kCaptureFlushFailed:
+      return "capture_flush_failed";
     case Code::kTransportInitFailed:
       return "transport_init_failed";
     case Code::kListenerSetupFailed:
@@ -50,6 +54,8 @@ std::string_view CodeName(Code code) {
       return "invariant_violated";
     case Code::kStrictRecordingFailed:
       return "strict_recording_failed";
+    case Code::kStrictCaptureFailed:
+      return "strict_capture_failed";
     case Code::kInvalidConfiguration:
       return "invalid_configuration";
     case Code::kInvalidContent:
@@ -122,6 +128,8 @@ Disposition DispositionOf(Code code) {
     case Code::kRecordingWriteFailed:
     case Code::kRecordingFlushFailed:
     case Code::kMetricsEndpointFailed:
+    case Code::kCaptureWriteFailed:
+    case Code::kCaptureFlushFailed:
       return Disposition::kSubsystem;
     case Code::kTransportInitFailed:
     case Code::kListenerSetupFailed:
@@ -131,6 +139,7 @@ Disposition DispositionOf(Code code) {
     case Code::kWorkerFailed:
     case Code::kInvariantViolated:
     case Code::kStrictRecordingFailed:
+    case Code::kStrictCaptureFailed:
       return Disposition::kRuntime;
     case Code::kInvalidConfiguration:
     case Code::kInvalidContent:

@@ -130,6 +130,38 @@ TEST(ParseServerConfigTest, RejectsAnEmptyCaptureDirectory) {
   EXPECT_EQ(config.error().subject, "simulation.capture");
 }
 
+TEST(ParseServerConfigTest, CapturesOptionallyByDefault) {
+  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_FALSE(config->strict_capture);
+}
+
+TEST(ParseServerConfigTest, ReadsEitherCaptureMode) {
+  const auto strict = ParseServerConfig(
+      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  capture_mode: strict\n",
+      kFileDir);
+  const auto optional = ParseServerConfig(
+      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  capture_mode: optional\n",
+      kFileDir);
+
+  ASSERT_TRUE(strict.has_value());
+  EXPECT_TRUE(strict->strict_capture);
+  ASSERT_TRUE(optional.has_value());
+  EXPECT_FALSE(optional->strict_capture);
+}
+
+TEST(ParseServerConfigTest, RejectsACaptureModeThatIsNeitherOptionalNorStrict) {
+  const auto config = ParseServerConfig(
+      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  capture_mode: required\n",
+      kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
+  EXPECT_EQ(config.error().subject, "simulation.capture_mode");
+  EXPECT_EQ(DescribeServerConfigError(config.error()), "'simulation.capture_mode' must be optional or strict");
+}
+
 TEST(ParseServerConfigTest, RecordsOptionallyByDefault) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 

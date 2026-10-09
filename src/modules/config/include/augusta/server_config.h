@@ -55,6 +55,11 @@ struct ServerConfig {
   /// Key `simulation.capture`: the directory to capture every Match into, one
   /// file each (ADR-0050), created if missing. Empty, the default, captures nothing.
   std::filesystem::path capture_directory;
+  /// Key `simulation.capture_mode`: "optional", the default, for a capture
+  /// that only degrades if it cannot be written while the server goes on; or
+  /// "strict", true here, for a playtest whose point is the capture, whose
+  /// server then stops with a failure (ADR-0050).
+  bool strict_capture = false;
   /// Key `metrics.port`: the TCP port, 1..65535, the metrics endpoint serves
   /// /metrics and /livez on, on every interface (ADR-0049).
   std::uint16_t metrics_port = kDefaultMetricsPort;

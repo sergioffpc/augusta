@@ -57,6 +57,11 @@ enum class Code : std::uint16_t {
   kRecordingFlushFailed = 101,
   /// The metrics endpoint stopped accepting connections.
   kMetricsEndpointFailed = 102,
+  /// An optional Match capture could not create or write its file, or keep up
+  /// with its Match.
+  kCaptureWriteFailed = 103,
+  /// An optional Match capture could not flush its file.
+  kCaptureFlushFailed = 104,
   /// The local transport could not be initialized.
   kTransportInitFailed = 200,
   /// The listen socket or poll group could not be set up.
@@ -75,6 +80,9 @@ enum class Code : std::uint16_t {
   /// A strict Match recording, which a replay or verification run needs whole,
   /// could not be written or flushed.
   kStrictRecordingFailed = 207,
+  /// A strict Match capture, which a playtest is run for, lost a record: it
+  /// could not be written or flushed, or its Match outran it.
+  kStrictCaptureFailed = 208,
   /// The command line or config file is not usable.
   kInvalidConfiguration = 300,
   /// A content pack, map, scenario or script is not usable.
