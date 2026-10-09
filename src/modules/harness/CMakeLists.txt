@@ -6,6 +6,7 @@ add_library(
   harness_wire.cpp
   inbox.cpp
   netcode_stats.cpp
+  replay_list.cpp
   runner.cpp
   server_view.cpp
 )

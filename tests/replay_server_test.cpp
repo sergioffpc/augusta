@@ -43,8 +43,8 @@
 // A replay server (ADR-0051) over loopback, driven by hand: what a Replay
 // viewer, a Replay list request and a Join request get from it, and the whole
 // path of a Match a live Host captured, re-run and checked against its
-// capture (NFR-09). Viewers speak the protocol by hand here; the client's own
-// viewer is session_test.cpp's.
+// capture (NFR-09). ReplayServerTest's viewers speak the protocol by hand;
+// ReplayViewerTest's are the client's own, harness::Session and ReplayListQuery.
 namespace {
 
 using augusta::command::Command;
@@ -600,6 +600,172 @@ TEST_F(ReplayServerTest, TwoViewersEachWatchFromTheStartAndOnePastTheMostIsRefus
     EXPECT_EQ(viewer->ReceivedOf<protocol::MatchEndWire>().size(), 1U);
   }
   EXPECT_EQ(server->Viewers(), 0U);
+}
+
+// The client's side of a Replay (ADR-0051): a harness::Session that watches.
+class ReplayViewerTest : public ReplayServerTest {
+ protected:
+  std::unique_ptr<augusta::harness::Session> Viewer(const ReplayServer& server, const std::string& capture) {
+    auto viewer = std::make_unique<augusta::harness::Session>(
+        augusta::harness::SessionConfig{.server = server.ListenEndpoint(), .character = {}, .replay = capture},
+        augusta::prediction::World());
+    viewer->Connect();
+    return viewer;
+  }
+
+  // Runs server, ticking it if tick, and viewer until until holds or the deadline passes.
+  template <typename Condition>
+  static bool RunUntil(ReplayServer& server, augusta::harness::Session& viewer, Condition until, bool tick = false) {
+    const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+    while (std::chrono::steady_clock::now() < deadline) {
+      server.PumpNetwork(std::chrono::steady_clock::now());
+      viewer.PumpEvents();
+      viewer.ExchangeMessages();
+      if (until()) {
+        return true;
+      }
+      if (tick) {
+        server.Tick();
+      }
+      std::this_thread::sleep_for(kPollInterval);
+    }
+    return false;
+  }
+};
+
+// A viewer is a Spectator from the first tick: in the Match, with no body of
+// its own, shown every player's pitch and ADS, until the Match end, after
+// which its connection's end is no failure.
+// Requirements: US-21
+TEST_F(ReplayViewerTest, AViewerWatchesACaptureFromItsFirstTickToItsEndWithEveryPlayersView) {
+  const std::string name = CaptureAKill(directory_.Path());
+  ReadWhole(directory_.Path() / name);
+  const std::unique_ptr<ReplayServer> server = Serve();
+  const std::unique_ptr<augusta::harness::Session> viewer = Viewer(*server, name);
+
+  // Until the shooter has aimed: before its first Command, it idles.
+  ASSERT_TRUE(RunUntil(
+      *server, *viewer,
+      [&] {
+        const auto& view = viewer->GetServerView()->replay_view;
+        return view.has_value() && !view->players.empty() && view->players[0].ads;
+      },
+      true));
+  const std::shared_ptr<const augusta::harness::ServerView> watching = viewer->GetServerView();
+  EXPECT_EQ(watching->GetPhase(), augusta::harness::Phase::kMatch);
+  EXPECT_FALSE(watching->OwnEntity().has_value());
+  EXPECT_EQ(watching->match_start->players.size(), 2U);
+  EXPECT_EQ(watching->match_start->first_tick, 1U);
+  ASSERT_EQ(watching->replay_view->players.size(), 2U);
+  EXPECT_EQ(watching->replay_view->players[0].entity, augusta::harness::EntityId{1});
+  EXPECT_GT(watching->replay_view->players[0].pitch, 0.0F);
+  EXPECT_TRUE(watching->replay_view->players[0].ads);
+  EXPECT_FALSE(watching->replay_view->players[1].ads);
+  // It predicts nothing and sends nothing, however it is ticked.
+  EXPECT_EQ(viewer->Tick(Command{}, kFixedTick).local_body.position, Vec3{});
+
+  std::vector<augusta::harness::Death> deaths;
+  ASSERT_TRUE(RunUntil(
+      *server, *viewer,
+      [&] {
+        const auto taken = viewer->TakeDeaths();
+        deaths.insert(deaths.end(), taken.begin(), taken.end());
+        return viewer->ReplayEnded();
+      },
+      true));
+
+  ASSERT_EQ(deaths.size(), 1U);
+  EXPECT_EQ(deaths[0].victim, augusta::harness::EntityId{2});
+  ASSERT_TRUE(viewer->GetMatchEnd().has_value());
+  EXPECT_EQ(viewer->GetMatchEnd()->winner, watching->match_start->players[0].session);
+  EXPECT_FALSE(viewer->GetFailure().has_value());
+}
+
+// Requirements: US-21
+TEST_F(ReplayViewerTest, AViewerOfACaptureTheServerDoesNotReplayIsRefusedForIt) {
+  const std::unique_ptr<ReplayServer> server = Serve();
+  const std::unique_ptr<augusta::harness::Session> viewer = Viewer(*server, "../elsewhere.capture");
+
+  ASSERT_TRUE(RunUntil(*server, *viewer, [&] { return viewer->GetFailure().has_value(); }));
+
+  EXPECT_EQ(viewer->GetFailure()->kind, augusta::harness::FailureKind::kRefused);
+  EXPECT_EQ(viewer->GetFailure()->refusal, augusta::harness::JoinRefusal::kUnknownCapture);
+  EXPECT_FALSE(viewer->ReplayEnded());
+}
+
+// A player's client on a replay server is told what it is.
+// Requirements: US-21
+TEST_F(ReplayViewerTest, APlayersClientIsRefusedAsAReplayServerRefusesAnyRequestToPlay) {
+  const std::unique_ptr<ReplayServer> server = Serve();
+  augusta::harness::Session player(
+      augusta::harness::SessionConfig{.server = server->ListenEndpoint(), .character = kCharacter},
+      augusta::prediction::World());
+  player.Connect();
+
+  ASSERT_TRUE(RunUntil(*server, player, [&] { return player.GetFailure().has_value(); }));
+
+  EXPECT_EQ(player.GetFailure()->refusal, augusta::harness::JoinRefusal::kReplayServer);
+}
+
+// augustac --replays: the server's list, oldest first.
+// Requirements: US-21
+TEST_F(ReplayViewerTest, AReplayListQueryGetsTheServersList) {
+  const std::string name = CaptureAKill(directory_.Path());
+  ReadWhole(directory_.Path() / name);
+  const std::unique_ptr<ReplayServer> server = Serve();
+  augusta::harness::ReplayListQuery query(server->ListenEndpoint());
+
+  const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+  while (!query.List().has_value() && !query.GetFailure().has_value() && std::chrono::steady_clock::now() < deadline) {
+    server->PumpNetwork(std::chrono::steady_clock::now());
+    query.Pump();
+    std::this_thread::sleep_for(kPollInterval);
+  }
+
+  ASSERT_TRUE(query.List().has_value());
+  ASSERT_EQ(query.List()->size(), 1U);
+  EXPECT_EQ(query.List()->front().name, name);
+  EXPECT_EQ(query.List()->front().characters, (std::vector<std::string>{kCharacter, kCharacter}));
+  EXPECT_FALSE(query.GetFailure().has_value());
+}
+
+TEST(ReplayListQueryTest, AServerThatIsNotThereIsUnreachable) {
+  Endpoint gone;
+  {
+    const augusta::networking::Server server(Endpoint{.address = kLoopbackAnyPort});
+    gone = server.LocalEndpoint();
+  }
+  augusta::networking::SimulateNetworkConditions({.timeout_ms = 500});
+  augusta::harness::ReplayListQuery query(gone);
+
+  const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+  while (!query.GetFailure().has_value() && std::chrono::steady_clock::now() < deadline) {
+    query.Pump();
+    std::this_thread::sleep_for(kPollInterval);
+  }
+  augusta::networking::SimulateNetworkConditions({});
+
+  ASSERT_TRUE(query.GetFailure().has_value());
+  EXPECT_EQ(query.GetFailure()->kind, augusta::harness::FailureKind::kServerUnreachable);
+}
+
+TEST(DescribeReplayListTest, ItNamesEachCaptureWithItsStartLengthAndCharacters) {
+  const std::vector<augusta::harness::ReplayListing> listings = {
+      {.name = "20261009T101500123Z-0001.capture",
+       .started = std::chrono::sys_time<std::chrono::milliseconds>(std::chrono::milliseconds{1'791'540'900'123}),
+       .ticks = 7500,
+       .tick_rate_hz = 60,
+       .characters = {"soldier", "sniper"}},
+      {.name = "b.capture",
+       .started = std::chrono::sys_time<std::chrono::milliseconds>(std::chrono::milliseconds{1'791'540'960'000}),
+       .ticks = 30,
+       .tick_rate_hz = 60,
+       .characters = {"soldier"}}};
+
+  EXPECT_EQ(augusta::harness::DescribeReplayList(listings),
+            "20261009T101500123Z-0001.capture  started 2026-10-09 10:15:00 UTC  lasted 2:05  soldier, sniper\n"
+            "b.capture  started 2026-10-09 10:16:00 UTC  lasted 0:00  soldier");
+  EXPECT_EQ(augusta::harness::DescribeReplayList({}), "the server replays no capture");
 }
 
 TEST(ReplayServerConfigTest, AReplayServerRefusesACapturesDirectoryThatIsNone) {

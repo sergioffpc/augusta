@@ -84,8 +84,10 @@ struct Aim {
 /// A spectator's camera watching body, a living player as shown this frame, of
 /// a character whose eye standing is standing_eye: at that eye lowered for the
 /// body's stance, as LocalCamera puts it, facing where the body faces and
-/// looking level - remote pitch is not replicated - from the hip.
-[[nodiscard]] Camera WatchedCamera(const RemoteBody& body, const math::Vec3& standing_eye);
+/// looking at pitch, in radians, from the hip. A Replay viewer knows the
+/// watched player's pitch (ADR-0051); any other spectator does not, since
+/// remote pitch is not replicated, and looks level, at 0.
+[[nodiscard]] Camera WatchedCamera(const RemoteBody& body, const math::Vec3& standing_eye, float pitch);
 
 /// The camera's field of view, zooming smoothly between the hip's and ADS's
 /// (US-06): holding ADS moves it to the ADS field of view over
