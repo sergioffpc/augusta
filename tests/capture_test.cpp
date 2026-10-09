@@ -60,7 +60,9 @@ using augusta::server::CaptureMode;
 using augusta::server::CaptureOptions;
 using augusta::server::Capturer;
 using augusta::server::CaptureRecord;
+using augusta::server::CaptureStep;
 using augusta::server::EntityId;
+using augusta::server::LostCapture;
 using augusta::server::ReadCapture;
 using augusta::server::SessionId;
 
@@ -425,6 +427,83 @@ TEST_F(CaptureTest, AStrictCaptureWhoseQueueIsFullFailsAtOnce) {
 }
 
 // Requirements: US-21
+TEST_F(CaptureTest, AnOptionalCaptureWhoseQueueIsFullIsASlowDiskNotAFailedWrite) {
+  Capturer capturer(directory_, Header(), CaptureOptions{.mode = CaptureMode::kOptional, .capacity = 0});
+  capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
+
+  EXPECT_EQ(capturer.Health(), CaptureHealth::kDegraded);
+  ASSERT_TRUE(capturer.Loss().has_value());
+  EXPECT_EQ(capturer.Loss()->code, Code::kCaptureQueueFull);
+  EXPECT_EQ(DispositionOf(capturer.Loss()->code), Disposition::kSubsystem);
+  EXPECT_TRUE(Names(*capturer.Loss(), "code=capture_queue_full")) << DescribeFailure(*capturer.Loss());
+}
+
+TEST(LostCaptureTest, AnOptionalCapturesLossIsNamedForTheStepItWasLostAt) {
+  const auto code_at = [](CaptureStep step) { return LostCapture(CaptureMode::kOptional, 3, step, {}).code; };
+  EXPECT_EQ(code_at(CaptureStep::kCreate), Code::kCaptureWriteFailed);
+  EXPECT_EQ(code_at(CaptureStep::kWrite), Code::kCaptureWriteFailed);
+  EXPECT_EQ(code_at(CaptureStep::kFlush), Code::kCaptureFlushFailed);
+  EXPECT_EQ(code_at(CaptureStep::kQueueFull), Code::kCaptureQueueFull);
+  EXPECT_EQ(code_at(CaptureStep::kRecordTooLong), Code::kCaptureRecordTooLong);
+  for (const CaptureStep step : {CaptureStep::kCreate, CaptureStep::kWrite, CaptureStep::kFlush,
+                                 CaptureStep::kQueueFull, CaptureStep::kRecordTooLong}) {
+    EXPECT_EQ(DispositionOf(code_at(step)), Disposition::kSubsystem);
+  }
+}
+
+TEST(LostCaptureTest, AStrictCapturesLossIsTheRuntimesWhateverItsStep) {
+  for (const CaptureStep step : {CaptureStep::kCreate, CaptureStep::kWrite, CaptureStep::kFlush,
+                                 CaptureStep::kQueueFull, CaptureStep::kRecordTooLong}) {
+    EXPECT_EQ(LostCapture(CaptureMode::kStrict, 3, step, {}).code, Code::kStrictCaptureFailed);
+  }
+}
+
+TEST(LostCaptureTest, ALossNamesItsMatchStepAndDetail) {
+  EXPECT_EQ(DescribeFailure(LostCapture(CaptureMode::kOptional, 3, CaptureStep::kRecordTooLong, "300 bytes")),
+            "code=capture_record_too_long disposition=subsystem match=3 step=record_too_long detail=\"300 bytes\"");
+}
+
+// Requirements: US-21
+TEST_F(CaptureTest, AFinishedCaptureIsStoppedAndCapturesNothingMore) {
+  HealthLog health;
+  {
+    Capturer capturer(directory_, Header(),
+                      CaptureOptions{.mode = CaptureMode::kOptional, .on_health = health.Callback()});
+    capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
+    capturer.Command(kFirstTick, EntityId{70}, Walk(0));
+    capturer.Finish();
+
+    EXPECT_EQ(capturer.Health(), CaptureHealth::kStopped);
+    EXPECT_FALSE(capturer.Loss().has_value());
+    capturer.Command(kFirstTick + 1, EntityId{70}, Walk(0));
+    capturer.StartMatch(TwoPlayers(), kFirstTick + 10, kStarted + std::chrono::seconds{1});
+    capturer.EndMatch(kFirstTick + 10, std::nullopt);
+  }
+
+  // The first Match up to the Finish: both Joins and its one Command; no second file.
+  const std::vector<std::filesystem::path> files = Files();
+  ASSERT_EQ(files.size(), 1U);
+  EXPECT_EQ(Read(files.front()).records.size(), 3U);
+  EXPECT_EQ(health.Entered(), (std::vector<CaptureHealth>{CaptureHealth::kEnabled, CaptureHealth::kStopped}));
+}
+
+TEST_F(CaptureTest, ADegradedCaptureIsStoppedOnceFinishedKeepingItsLoss) {
+  Faults faults;
+  HealthLog health;
+  Capturer capturer(directory_, Header(),
+                    CaptureOptions{.mode = CaptureMode::kOptional, .faults = &faults, .on_health = health.Callback()});
+  faults.Arm(Site::kCaptureWrite, "disk full", 1);
+  capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
+  capturer.Finish();
+
+  EXPECT_EQ(capturer.Health(), CaptureHealth::kStopped);
+  ASSERT_TRUE(capturer.Loss().has_value());
+  EXPECT_EQ(capturer.Loss()->code, Code::kCaptureWriteFailed);
+  EXPECT_EQ(health.Entered(),
+            (std::vector<CaptureHealth>{CaptureHealth::kEnabled, CaptureHealth::kDegraded, CaptureHealth::kStopped}));
+}
+
+// Requirements: US-21
 TEST_F(CaptureTest, ACaptureThatLosesNothingIsTheSameInEitherMode) {
   std::vector<std::string> written;
   for (const CaptureMode mode : {CaptureMode::kOptional, CaptureMode::kStrict}) {
@@ -477,7 +556,7 @@ TEST_P(StalledDiskTest, ADiskThatStallsNeverHoldsUpTheCallerAndStopsTheCaptureOn
     EXPECT_LT(std::chrono::steady_clock::now() - before, std::chrono::seconds{1});
     ASSERT_TRUE(capturer.Loss().has_value());
     EXPECT_EQ(capturer.Loss()->code,
-              GetParam() == CaptureMode::kStrict ? Code::kStrictCaptureFailed : Code::kCaptureWriteFailed);
+              GetParam() == CaptureMode::kStrict ? Code::kStrictCaptureFailed : Code::kCaptureQueueFull);
     EXPECT_TRUE(Names(*capturer.Loss(), "step=queue_full")) << DescribeFailure(*capturer.Loss());
     // Unblocks the writer, which then writes what it queued before the stop.
     reader = std::thread([&] {

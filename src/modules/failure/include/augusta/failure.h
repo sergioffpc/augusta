@@ -57,11 +57,15 @@ enum class Code : std::uint16_t {
   kRecordingFlushFailed = 101,
   /// The metrics endpoint stopped accepting connections.
   kMetricsEndpointFailed = 102,
-  /// An optional Match capture could not create or write its file, or keep up
-  /// with its Match.
+  /// An optional Match capture could not create or write its file.
   kCaptureWriteFailed = 103,
   /// An optional Match capture could not flush its file.
   kCaptureFlushFailed = 104,
+  /// An optional Match capture's record found its writer's queue full: the
+  /// disk is not keeping up with the Match.
+  kCaptureQueueFull = 105,
+  /// An optional Match capture's record is longer than a capture's frame holds.
+  kCaptureRecordTooLong = 106,
   /// The local transport could not be initialized.
   kTransportInitFailed = 200,
   /// The listen socket or poll group could not be set up.

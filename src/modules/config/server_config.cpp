@@ -61,20 +61,57 @@ std::expected<bool, ConfigError> OptionalStrict(const ConfigValues& values, std:
   return mode == "strict";
 }
 
-// Reads simulation.capture, relative to root, and simulation.capture_mode into config.
-std::expected<void, ConfigError> ReadCapture(const ConfigValues& values, const std::filesystem::path& root,
-                                             ServerConfig& config) {
-  auto directory = OptionalPath(values, kCaptureKey, root);
-  if (!directory) {
-    return std::unexpected(directory.error());
+// The ServerConfig values holds, each relative path in it from root.
+std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& values,
+                                                          const std::filesystem::path& root) {
+  auto pack_path = RequirePath(values, "content.pack", root);
+  if (!pack_path) {
+    return std::unexpected(pack_path.error());
   }
-  const auto strict = OptionalStrict(values, kCaptureModeKey);
-  if (!strict) {
-    return std::unexpected(strict.error());
+  auto public_key_path = RequirePath(values, "content.public_key", root);
+  if (!public_key_path) {
+    return std::unexpected(public_key_path.error());
   }
-  config.capture_directory = *std::move(directory);
-  config.strict_capture = *strict;
-  return {};
+  const auto tick_rate_hz = RequireTickRate(values);
+  if (!tick_rate_hz) {
+    return std::unexpected(tick_rate_hz.error());
+  }
+  auto log_level = OptionalLogLevel(values, "logging.level", kDefaultLogLevel);
+  if (!log_level) {
+    return std::unexpected(log_level.error());
+  }
+  auto recording_path = OptionalPath(values, "simulation.recording", root);
+  if (!recording_path) {
+    return std::unexpected(recording_path.error());
+  }
+  const auto strict_recording = OptionalStrict(values, kRecordingModeKey);
+  if (!strict_recording) {
+    return std::unexpected(strict_recording.error());
+  }
+  auto capture_directory = OptionalPath(values, kCaptureKey, root);
+  if (!capture_directory) {
+    return std::unexpected(capture_directory.error());
+  }
+  const auto strict_capture = OptionalStrict(values, kCaptureModeKey);
+  if (!strict_capture) {
+    return std::unexpected(strict_capture.error());
+  }
+  const auto metrics_port = OptionalMetricsPort(values);
+  if (!metrics_port) {
+    return std::unexpected(metrics_port.error());
+  }
+  return ServerConfig{
+      .pack_path = *std::move(pack_path),
+      .public_key_path = *std::move(public_key_path),
+      .tick_rate_hz = *tick_rate_hz,
+      .listen_address = OptionalString(values, "network.listen_address", kDefaultListenAddress),
+      .log_level = *std::move(log_level),
+      .recording_path = *std::move(recording_path),
+      .strict_recording = *strict_recording,
+      .capture_directory = *std::move(capture_directory),
+      .strict_capture = *strict_capture,
+      .metrics_port = *metrics_port,
+  };
 }
 
 }  // namespace
@@ -97,47 +134,7 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!root) {
     return std::unexpected(root.error());
   }
-  auto pack_path = RequirePath(*values, "content.pack", *root);
-  if (!pack_path) {
-    return std::unexpected(pack_path.error());
-  }
-  auto public_key_path = RequirePath(*values, "content.public_key", *root);
-  if (!public_key_path) {
-    return std::unexpected(public_key_path.error());
-  }
-  const auto tick_rate_hz = RequireTickRate(*values);
-  if (!tick_rate_hz) {
-    return std::unexpected(tick_rate_hz.error());
-  }
-  auto log_level = OptionalLogLevel(*values, "logging.level", kDefaultLogLevel);
-  if (!log_level) {
-    return std::unexpected(log_level.error());
-  }
-  auto recording_path = OptionalPath(*values, "simulation.recording", *root);
-  if (!recording_path) {
-    return std::unexpected(recording_path.error());
-  }
-  const auto strict_recording = OptionalStrict(*values, kRecordingModeKey);
-  if (!strict_recording) {
-    return std::unexpected(strict_recording.error());
-  }
-  const auto metrics_port = OptionalMetricsPort(*values);
-  if (!metrics_port) {
-    return std::unexpected(metrics_port.error());
-  }
-  ServerConfig config{
-      .pack_path = *std::move(pack_path),
-      .public_key_path = *std::move(public_key_path),
-      .tick_rate_hz = *tick_rate_hz,
-      .listen_address = OptionalString(*values, "network.listen_address", kDefaultListenAddress),
-      .log_level = *std::move(log_level),
-      .recording_path = *std::move(recording_path),
-      .strict_recording = *strict_recording,
-      .capture_directory = {},
-      .strict_capture = false,
-      .metrics_port = *metrics_port,
-  };
-  return ReadCapture(*values, *root, config).transform([&config] { return std::move(config); });
+  return ServerConfigFrom(*values, *root);
 }
 
 std::expected<ServerConfig, ConfigError> LoadServerConfig(const std::filesystem::path& file) {

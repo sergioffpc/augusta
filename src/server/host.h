@@ -184,9 +184,11 @@ class Host {
   [[nodiscard]] std::optional<failure::Failure> CaptureFailure() const;
 
   /// CaptureFailure once every record queued so far is written, waiting for
-  /// the capture's writer: the last word on whether a strict capture is whole,
-  /// for the runtime to ask after its last tick. A stalled disk holds it up.
-  /// From the Simulation thread, between Ticks.
+  /// the capture's writer, which then stops the captures (Capturer::Finish):
+  /// the last word on whether a strict capture is whole, for the runtime to
+  /// ask once it ticks no more, so its metrics read the captures stopped until
+  /// the process exits. A stalled disk holds it up. From the Simulation
+  /// thread, after its last Tick.
   [[nodiscard]] std::optional<failure::Failure> FinishCapture();
 
   /// The first failure of the local transport PumpNetwork or Tick met (a send,

@@ -242,7 +242,7 @@ std::optional<failure::Failure> Host::CaptureFailure() const {
 
 std::optional<failure::Failure> Host::FinishCapture() {
   if (impl_->capturer) {
-    impl_->capturer->WaitUntilWritten();
+    impl_->capturer->Finish();
   }
   return CaptureFailure();
 }

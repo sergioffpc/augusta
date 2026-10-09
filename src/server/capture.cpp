@@ -42,60 +42,36 @@ namespace augusta::server {
 
 namespace {
 
-// Where a capture lost a record: the step its capture_stopped line and its
-// Failure name.
-enum class Step : std::uint8_t {
-  kCreate,
-  kWrite,
-  kFlush,
-  // The record found the writer's queue full: the disk is not keeping up.
-  kQueueFull,
-  // The record is longer than a capture's frame holds.
-  kRecordTooLong,
-};
-
-std::string_view StepName(Step step) {
-  switch (step) {
-    case Step::kCreate:
-      return "create";
-    case Step::kWrite:
-      return "write";
-    case Step::kFlush:
-      return "flush";
-    case Step::kQueueFull:
-      return "queue_full";
-    case Step::kRecordTooLong:
-      return "record_too_long";
-  }
-  return "unknown";
-}
-
 // Why a capture lost at step stopped, as its capture_stopped line names it.
-CaptureStop StopAt(Step step) {
+CaptureStop StopAt(CaptureStep step) {
   switch (step) {
-    case Step::kQueueFull:
+    case CaptureStep::kQueueFull:
       return CaptureStop::kQueueFull;
-    case Step::kRecordTooLong:
+    case CaptureStep::kRecordTooLong:
       return CaptureStop::kRecordTooLong;
-    case Step::kCreate:
-    case Step::kWrite:
-    case Step::kFlush:
+    case CaptureStep::kCreate:
+    case CaptureStep::kWrite:
+    case CaptureStep::kFlush:
       return CaptureStop::kWriteFailed;
   }
   return CaptureStop::kWriteFailed;
 }
 
-// Decision: what losing match's record at step is in mode. An optional
-// capture's loss is its own subsystem's; a strict one's is the runtime's.
-failure::Failure LostCapture(CaptureMode mode, std::uint64_t match, Step step, std::string detail) {
-  failure::Code code = failure::Code::kStrictCaptureFailed;
-  if (mode == CaptureMode::kOptional) {
-    code = step == Step::kFlush ? failure::Code::kCaptureFlushFailed : failure::Code::kCaptureWriteFailed;
+// What an optional capture's loss at step is: a slow disk and an oversized
+// record are named apart from a disk that refused the file.
+failure::Code OptionalLossCode(CaptureStep step) {
+  switch (step) {
+    case CaptureStep::kFlush:
+      return failure::Code::kCaptureFlushFailed;
+    case CaptureStep::kQueueFull:
+      return failure::Code::kCaptureQueueFull;
+    case CaptureStep::kRecordTooLong:
+      return failure::Code::kCaptureRecordTooLong;
+    case CaptureStep::kCreate:
+    case CaptureStep::kWrite:
+      return failure::Code::kCaptureWriteFailed;
   }
-  return {.code = code,
-          .context = {{.key = "match", .value = std::to_string(match)},
-                      {.key = "step", .value = std::string(StepName(step))}},
-          .detail = std::move(detail)};
+  return failure::Code::kCaptureWriteFailed;
 }
 
 // Decision: whether next may follow the records of capture so far, joins of
@@ -233,6 +209,29 @@ std::string_view CaptureStopName(CaptureStop stop) {
   return "unknown";
 }
 
+std::string_view CaptureStepName(CaptureStep step) {
+  switch (step) {
+    case CaptureStep::kCreate:
+      return "create";
+    case CaptureStep::kWrite:
+      return "write";
+    case CaptureStep::kFlush:
+      return "flush";
+    case CaptureStep::kQueueFull:
+      return "queue_full";
+    case CaptureStep::kRecordTooLong:
+      return "record_too_long";
+  }
+  return "unknown";
+}
+
+failure::Failure LostCapture(CaptureMode mode, std::uint64_t match, CaptureStep step, std::string detail) {
+  return {.code = mode == CaptureMode::kStrict ? failure::Code::kStrictCaptureFailed : OptionalLossCode(step),
+          .context = {{.key = "match", .value = std::to_string(match)},
+                      {.key = "step", .value = std::string(CaptureStepName(step))}},
+          .detail = std::move(detail)};
+}
+
 std::string_view CaptureModeName(CaptureMode mode) {
   switch (mode) {
     case CaptureMode::kOptional:
@@ -281,10 +280,7 @@ class Capturer::Writer {
     ready_.notify_one();
     thread_.join();
     const std::scoped_lock lock(mutex_);
-    if (health_ != CaptureHealth::kStopped) {
-      LI("subsystem=capture event=capture_disabled mode={} lost={}", CaptureModeName(mode_), loss_.has_value());
-      Enter(CaptureHealth::kStopped);
-    }
+    StopCapturesLocked();
   }
 
   Writer(const Writer&) = delete;
@@ -309,7 +305,7 @@ class Capturer::Writer {
       // Dropping this record and going on would leave a capture missing one
       // in its middle; stopping here keeps every one before it.
       if (records_queued_ >= capacity_) {
-        StopLocked(match, Step::kQueueFull, {});
+        StopLocked(match, CaptureStep::kQueueFull, {});
         return;
       }
       ++records_queued_;
@@ -318,7 +314,7 @@ class Capturer::Writer {
     ready_.notify_one();
   }
 
-  void Stop(std::uint64_t match, Step step) {
+  void Stop(std::uint64_t match, CaptureStep step) {
     const std::scoped_lock lock(mutex_);
     StopLocked(match, step, {});
   }
@@ -326,6 +322,14 @@ class Capturer::Writer {
   void WaitUntilWritten() {
     std::unique_lock lock(mutex_);
     written_.wait(lock, [this] { return queue_.empty() && !writing_; });
+  }
+
+  // Waits until what is queued is written, then stops the captures: nothing
+  // queued after is written.
+  void Finish() {
+    std::unique_lock lock(mutex_);
+    written_.wait(lock, [this] { return queue_.empty() && !writing_; });
+    StopCapturesLocked();
   }
 
   [[nodiscard]] CaptureHealth Health() const { return health_; }
@@ -340,7 +344,7 @@ class Capturer::Writer {
 
   // Where the writer lost a Match's file, and what the disk said of it.
   struct Failed {
-    Step step;
+    CaptureStep step;
     std::string detail;
   };
 
@@ -411,7 +415,7 @@ class Capturer::Writer {
   std::optional<Failed> OpenFile(const Item& item) {
     file_ = std::ofstream(item.path, std::ios::binary | std::ios::trunc);
     if (!file_) {
-      return Failed{.step = Step::kCreate, .detail = item.path.string()};
+      return Failed{.step = CaptureStep::kCreate, .detail = item.path.string()};
     }
     file_match_ = item.match;
     path_ = item.path;
@@ -430,19 +434,19 @@ class Capturer::Writer {
   std::optional<Failed> Persist(const protocol::BytesWire& payload) {
     if (std::optional<std::string> fault = Trip(failure::Site::kCaptureWrite)) {
       file_.setstate(std::ios::badbit);
-      return Failed{.step = Step::kWrite, .detail = *std::move(fault)};
+      return Failed{.step = CaptureStep::kWrite, .detail = *std::move(fault)};
     }
     WriteFrame(file_, kCaptureFrames, payload);
     if (!file_) {
-      return Failed{.step = Step::kWrite, .detail = path_.string()};
+      return Failed{.step = CaptureStep::kWrite, .detail = path_.string()};
     }
     if (std::optional<std::string> fault = Trip(failure::Site::kCaptureFlush)) {
       file_.setstate(std::ios::badbit);
-      return Failed{.step = Step::kFlush, .detail = *std::move(fault)};
+      return Failed{.step = CaptureStep::kFlush, .detail = *std::move(fault)};
     }
     file_.flush();
     if (!file_) {
-      return Failed{.step = Step::kFlush, .detail = path_.string()};
+      return Failed{.step = CaptureStep::kFlush, .detail = path_.string()};
     }
     ++records_;
     return std::nullopt;
@@ -469,14 +473,14 @@ class Capturer::Writer {
   // match's capture stops at step: reported once, with what the disk said of
   // it in detail, nothing more of it queued, and its file closed once the
   // writer gets to it. With mutex_ held.
-  void StopLocked(std::uint64_t match, Step step, std::string detail) {
+  void StopLocked(std::uint64_t match, CaptureStep step, std::string detail) {
     if (!stopped_.insert(match).second) {
       return;
     }
     const CaptureStop stop = StopAt(step);
     if (stop == CaptureStop::kWriteFailed) {
       LW("subsystem=capture event=capture_stopped match={} reason={} step={} detail=\"{}\"", match,
-         CaptureStopName(stop), StepName(step), detail);
+         CaptureStopName(stop), CaptureStepName(step), detail);
     } else {
       LW("subsystem=capture event=capture_stopped match={} reason={}", match, CaptureStopName(stop));
     }
@@ -486,7 +490,7 @@ class Capturer::Writer {
   // The run's first loss, of match's record at step: kept, and reported once
   // as the health it leaves the captures in. A later one changes nothing.
   // With mutex_ held.
-  void LoseLocked(std::uint64_t match, Step step, std::string detail) {
+  void LoseLocked(std::uint64_t match, CaptureStep step, std::string detail) {
     if (health_ != CaptureHealth::kEnabled) {
       return;
     }
@@ -500,9 +504,19 @@ class Capturer::Writer {
       // Only the state change: the runtime that stops on the failure writes
       // its one ERR line, with its detail (ADR-0033).
       LI("subsystem=capture event=capture_disabled mode={} match={} step={}", CaptureModeName(mode_), match,
-         StepName(step));
+         CaptureStepName(step));
       Enter(CaptureHealth::kStopped);
     }
+  }
+
+  // The run's captures are over, logged once with whether any lost a record.
+  // With mutex_ held.
+  void StopCapturesLocked() {
+    if (health_ == CaptureHealth::kStopped) {
+      return;
+    }
+    LI("subsystem=capture event=capture_disabled mode={} lost={}", CaptureModeName(mode_), loss_.has_value());
+    Enter(CaptureHealth::kStopped);
   }
 
   void Enter(CaptureHealth health) {
@@ -630,6 +644,11 @@ void Capturer::EndMatch(tick::Tick last_tick, std::optional<SessionId> winner) {
 
 void Capturer::WaitUntilWritten() { writer_->WaitUntilWritten(); }
 
+void Capturer::Finish() {
+  writer_->Finish();
+  open_ = false;
+}
+
 CaptureHealth Capturer::Health() const { return writer_->Health(); }
 
 std::optional<failure::Failure> Capturer::Loss() const {
@@ -665,7 +684,7 @@ std::optional<std::vector<std::byte>> Capturer::Admit(std::expected<std::vector<
   // A record ReadCapture would refuse would make every record after it
   // unreadable; stopping here keeps the file readable up to it.
   if (encoded->size() > kCaptureFrames.max_payload) {
-    writer_->Stop(matches_, Step::kRecordTooLong);
+    writer_->Stop(matches_, CaptureStep::kRecordTooLong);
     return std::nullopt;
   }
   return *std::move(encoded);

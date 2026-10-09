@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <random>
@@ -150,13 +151,19 @@ TEST_F(CaptureFailureTest, AHostThatCapturesNothingHasNoCaptureHealth) {
   EXPECT_FALSE(host->FinishCapture().has_value());
 }
 
-TEST_F(CaptureFailureTest, ACapturingHostThatWritesItsMatchIsEnabled) {
+// The captures are stopped once the run's last tick is captured, and read so
+// for as long as the Host's metrics are collected.
+TEST_F(CaptureFailureTest, ACapturingHostIsEnabledUntilItsCaptureIsFinishedThenStopped) {
   testing::internal::CaptureStdout();
   {
     const auto host = MakeHost(CaptureMode::kStrict);
     host->Tick(kDeltaTime);
-    EXPECT_FALSE(host->FinishCapture().has_value());
     EXPECT_EQ(CaptureHealthIn(*host), "enabled");
+
+    EXPECT_FALSE(host->FinishCapture().has_value());
+    EXPECT_EQ(CaptureHealthIn(*host), "stopped");
+    host->Tick(kDeltaTime);
+    EXPECT_EQ(CaptureHealthIn(*host), "stopped");
   }
   const std::string log = testing::internal::GetCapturedStdout();
   EXPECT_EQ(Occurrences(log, "event=capture_enabled"), 1U) << log;
@@ -251,6 +258,27 @@ TEST_F(CaptureFailureTest, AnOptionalCaptureThatFailsLeavesTheRuntimeRunningUnti
   EXPECT_EQ(Occurrences(log, "ERROR"), 1U) << log;
   EXPECT_EQ(Occurrences(log, "event=capture_degraded mode=optional code=capture_write_failed"), 1U) << log;
   EXPECT_EQ(Occurrences(log, "event=capture_disabled mode=optional lost=true"), 1U) << log;
+}
+
+// However its Simulation loop ends - here the local transport fails - the run
+// stops its captures before Run returns, while its metrics endpoint still
+// serves, so the last scrape reads them stopped.
+TEST_F(CaptureFailureTest, ARuntimeStopsItsCapturesBeforeRunReturns) {
+  faults_.Arm(Site::kTransportReceive, "poll group gone", Faults::kEveryTime);
+  constexpr std::string_view kReturned = "run_returned";
+  testing::internal::CaptureStdout();
+  {
+    ServerRuntime runtime(Config(CaptureMode::kOptional), 0, EmptyScenario());
+    const std::optional<augusta::failure::Failure> cause = runtime.Run();
+    std::cout << kReturned << std::endl;
+    EXPECT_TRUE(cause.has_value());
+  }
+  const std::string log = testing::internal::GetCapturedStdout();
+
+  const std::size_t stopped = log.find("event=capture_disabled mode=optional lost=false");
+  ASSERT_NE(stopped, std::string::npos) << log;
+  EXPECT_LT(stopped, log.find(kReturned)) << log;
+  EXPECT_EQ(Occurrences(log, "event=capture_disabled"), 1U) << log;
 }
 
 }  // namespace

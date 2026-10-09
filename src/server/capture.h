@@ -171,10 +171,36 @@ enum class CaptureHealth : std::uint8_t {
   /// An optional capture lost a record: that Match's capture stopped there, and
   /// each Match after it is still captured afresh.
   kDegraded,
-  /// Nothing more is captured: the Capturer is gone, or a strict capture lost
-  /// a record and the runtime is to stop on it.
+  /// Nothing more is captured, until the process exits: the run's last tick
+  /// was captured (Capturer::Finish), or a strict capture lost a record and the
+  /// runtime is to stop on it.
   kStopped,
 };
+
+/// Where a capture lost a record, as its Failure's context names it.
+enum class CaptureStep : std::uint8_t {
+  /// The file could not be created.
+  kCreate,
+  /// A record could not be written.
+  kWrite,
+  /// A record could not be flushed.
+  kFlush,
+  /// A record found kCaptureQueueCapacity records still unwritten: the disk is
+  /// not keeping up.
+  kQueueFull,
+  /// A record is longer than a capture's frame holds (kCaptureFrames).
+  kRecordTooLong,
+};
+
+/// "create", "write", "flush", "queue_full" or "record_too_long".
+[[nodiscard]] std::string_view CaptureStepName(CaptureStep step);
+
+/// Decision: what losing a record of the match-th Match's capture at step is in
+/// mode, with the disk's own words as detail. A strict capture's loss is the
+/// runtime's (failure::Code::kStrictCaptureFailed); an optional one's is its
+/// own subsystem's, named for the step: kCaptureWriteFailed (create, write),
+/// kCaptureFlushFailed, kCaptureQueueFull or kCaptureRecordTooLong.
+[[nodiscard]] failure::Failure LostCapture(CaptureMode mode, std::uint64_t match, CaptureStep step, std::string detail);
 
 /// "optional" or "strict", as logs name mode.
 [[nodiscard]] std::string_view CaptureModeName(CaptureMode mode);
@@ -227,8 +253,9 @@ struct CaptureOptions {
 /// is captured afresh; a strict one stops, logged at INFO as
 /// event=capture_disabled, captures nothing more, and the runtime that asks
 /// Loss stops on it, whose boundary writes the one ERR line (ADR-0033). A
-/// capture that loses nothing is written the same in either mode. Destroying
-/// the Capturer waits for every record queued to be written, then stops it.
+/// capture that loses nothing is written the same in either mode. Finish, or
+/// destroying the Capturer, waits for every record queued to be written, then
+/// stops the captures.
 class Capturer {
  public:
   /// Captures into directory, which must exist, each file under header with
@@ -262,6 +289,13 @@ class Capturer {
   /// its capture stopped, so Health and Loss then account for every record
   /// queued so far. A stalled disk holds it up. Simulation thread.
   void WaitUntilWritten();
+
+  /// Waits until every record queued so far is written, then stops the
+  /// captures (CaptureHealth::kStopped), logged once as event=capture_disabled:
+  /// everything handed in after is dropped. For the runtime, after its last
+  /// tick, so the captures read stopped while its metrics are still served. A
+  /// stalled disk holds it up. Simulation thread.
+  void Finish();
 
   /// A loss on the writer thread shows here once that thread gets to it. Any
   /// thread.

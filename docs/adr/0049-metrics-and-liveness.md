@@ -125,6 +125,13 @@ heartbeat interval. Session IDs are never reused, so every Session leaves its
 own series behind, but no more than the Player count are live at once, which a
 15-day retention easily holds.
 
+`augustad_capture_health` is 0 for every state while the server captures
+nothing. Otherwise it is `enabled` from the start, `degraded` once an optional
+capture has lost a record, and `stopped` once the run's captures produce no more
+records: a strict capture lost one, or the runtime's last tick was captured. It
+reads `stopped` from then until the process exits, since the metrics endpoint
+outlives the runtime's workers (ADR-0050).
+
 CPU, memory and restarts are not `augustad`'s metrics: the stack's kubelet and
 cAdvisor scrape already has them per pod.
 

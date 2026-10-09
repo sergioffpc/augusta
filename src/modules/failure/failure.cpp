@@ -38,6 +38,10 @@ std::string_view CodeName(Code code) {
       return "capture_write_failed";
     case Code::kCaptureFlushFailed:
       return "capture_flush_failed";
+    case Code::kCaptureQueueFull:
+      return "capture_queue_full";
+    case Code::kCaptureRecordTooLong:
+      return "capture_record_too_long";
     case Code::kTransportInitFailed:
       return "transport_init_failed";
     case Code::kListenerSetupFailed:
@@ -130,6 +134,8 @@ Disposition DispositionOf(Code code) {
     case Code::kMetricsEndpointFailed:
     case Code::kCaptureWriteFailed:
     case Code::kCaptureFlushFailed:
+    case Code::kCaptureQueueFull:
+    case Code::kCaptureRecordTooLong:
       return Disposition::kSubsystem;
     case Code::kTransportInitFailed:
     case Code::kListenerSetupFailed:
