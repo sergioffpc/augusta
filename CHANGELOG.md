@@ -2,6 +2,12 @@
 
 Generated from the Conventional Commits history by git-cliff (cliff.toml).
 
+## 2.0.1 - 2026-10-08
+
+### Bug Fixes
+
+- **swarm:** hold the server view while reading its admission
+
 ## 2.0.0 - 2026-10-07
 
 ### Features
