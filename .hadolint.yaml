@@ -3,6 +3,3 @@ ignored:
   # one stops installing once it is superseded. The image takes the current
   # ones, and CI's scan of the image is what holds them to account.
   - DL3008
-  # Only a pod with runAsNonRoot needs a numeric user, and the chart's
-  # Deployment (charts/augustad/templates/deployment.yaml) sets none.
-  - DL3066

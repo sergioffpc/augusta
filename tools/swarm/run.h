@@ -8,8 +8,8 @@
 #include <vector>
 
 #include "augusta/harness.h"
+#include "augusta/netcode_stats.h"
 #include "augusta/physics.h"
-#include "netcode_stats.h"
 
 /// \file
 /// One run of Scripted players (scripted_player.h) against a server: as many
@@ -80,7 +80,7 @@ struct RunResult {
   Verdict verdict = Verdict::kRunning;
   /// What each Scripted player's prediction and fire came to, in the order
   /// they connected.
-  std::vector<NetcodeStats> players;
+  std::vector<harness::NetcodeStats> players;
 };
 
 /// Plays a run to its verdict: connects one Scripted player, then, once the
