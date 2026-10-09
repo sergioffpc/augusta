@@ -17,10 +17,10 @@
 #include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/logging.h"
+#include "augusta/netcode_stats.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/runner.h"
-#include "netcode_stats.h"
 #include "scripted_player.h"
 
 namespace augusta::swarm {
@@ -76,7 +76,7 @@ class Player {
   }
 
   // What its prediction and fire have come to so far.
-  [[nodiscard]] NetcodeStats Stats() const {
+  [[nodiscard]] harness::NetcodeStats Stats() const {
     const std::scoped_lock lock(tally_mutex_);
     return tally_.Stats();
   }
@@ -139,18 +139,18 @@ class Player {
   bool failure_logged_ = false;
   // Ticked on the Prediction thread, read and handed Hit confirmations on the caller's.
   mutable std::mutex tally_mutex_;
-  NetcodeTally tally_;
+  harness::NetcodeTally tally_;
   // Last, so its threads are joined before anything they use goes.
   std::optional<harness::Runner> runner_;
 };
 
 // What each player's prediction and fire came to, logged one line a player.
-std::vector<NetcodeStats> StatsOf(const std::vector<std::unique_ptr<Player>>& players) {
-  std::vector<NetcodeStats> stats;
+std::vector<harness::NetcodeStats> StatsOf(const std::vector<std::unique_ptr<Player>>& players) {
+  std::vector<harness::NetcodeStats> stats;
   for (std::size_t index = 0; index < players.size(); ++index) {
     // Those that arrived since the watch last looked count too.
     players[index]->CollectHitConfirmations();
-    const NetcodeStats& player = stats.emplace_back(players[index]->Stats());
+    const harness::NetcodeStats& player = stats.emplace_back(players[index]->Stats());
     LI("subsystem=swarm event=player_netcode player={} match_ticks={} corrections={} largest_correction_m={:.3f} "
        "rounds_fired={} hit_confirmations={}",
        index, player.match_ticks, player.corrections, player.largest_correction_m, player.rounds_fired,

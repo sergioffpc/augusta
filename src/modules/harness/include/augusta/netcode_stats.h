@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SWARM_NETCODE_STATS_H_
-#define AUGUSTA_SWARM_NETCODE_STATS_H_
+#ifndef AUGUSTA_NETCODE_STATS_H_
+#define AUGUSTA_NETCODE_STATS_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -8,14 +8,15 @@
 #include "augusta/prediction.h"
 
 /// \file
-/// What one Scripted player's prediction and fire came to over a run: how often
-/// and how far reconciliation (ADR-0004) moved its body, and how many of its
-/// rounds the server confirmed as hits (ADR-0044). What a test of the netcode
-/// under an impaired link judges, and what augusta-swarm logs at the end of
-/// a run. Counts only; the bounds they are held to are the caller's.
-namespace augusta::swarm {
+/// What one player's prediction and fire came to over a run, from the
+/// Prediction States its Session's Ticks left: how often and how far
+/// reconciliation (ADR-0004) moved its body, and how many of its rounds the
+/// server confirmed as hits (ADR-0044). What a test of the netcode under an
+/// impaired link judges, and what a load test reports at the end of a run.
+/// Counts only; the bounds they are held to are the caller's.
+namespace augusta::harness {
 
-/// One Scripted player's run, as its NetcodeTally added it up.
+/// One player's run, as its NetcodeTally added it up.
 struct NetcodeStats {
   /// The ticks it predicted in a Match.
   std::uint32_t match_ticks = 0;
@@ -37,7 +38,7 @@ struct NetcodeStats {
   [[nodiscard]] float HitRate() const;
 };
 
-/// Adds up a Scripted player's NetcodeStats, tick by tick. Not thread-safe:
+/// Adds up a player's NetcodeStats, tick by tick. Not thread-safe:
 /// the caller guards it when ticks and Hit confirmations come from two threads.
 class NetcodeTally {
  public:
@@ -55,6 +56,6 @@ class NetcodeTally {
   std::uint32_t last_total_rounds_fired_ = 0;
 };
 
-}  // namespace augusta::swarm
+}  // namespace augusta::harness
 
-#endif  // AUGUSTA_SWARM_NETCODE_STATS_H_
+#endif  // AUGUSTA_NETCODE_STATS_H_

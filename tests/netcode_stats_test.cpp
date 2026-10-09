@@ -1,4 +1,4 @@
-#include "netcode_stats.h"
+#include "augusta/netcode_stats.h"
 
 #include <cstdint>
 
@@ -7,13 +7,13 @@
 #include "augusta/math.h"
 #include "augusta/prediction.h"
 
-// What a Scripted player's ticks add up to, from Prediction States built by hand.
+// What a player's ticks add up to, from Prediction States built by hand.
 namespace {
 
+using augusta::harness::NetcodeStats;
+using augusta::harness::NetcodeTally;
 using augusta::math::Vec3;
 using augusta::prediction::State;
-using augusta::swarm::NetcodeStats;
-using augusta::swarm::NetcodeTally;
 
 State StateAt(const Vec3& total_correction, std::uint32_t total_rounds_fired = 0) {
   State state;
