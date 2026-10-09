@@ -90,9 +90,10 @@ std::expected<void, failure::Failure> CheckReenactmentPack(const harness::Script
   if (script.client_pack == loaded) {
     return {};
   }
-  return std::unexpected(failure::Failure{.code = failure::Code::kInvalidConfiguration,
-                                          .context = {},
-                                          .detail = "the capture was made with another client pack than the one loaded"});
+  return std::unexpected(
+      failure::Failure{.code = failure::Code::kInvalidConfiguration,
+                       .context = {},
+                       .detail = "the capture was made with another client pack than the one loaded"});
 }
 
 std::expected<void, failure::Failure> InitializeClientTransport(failure::Faults* faults) {

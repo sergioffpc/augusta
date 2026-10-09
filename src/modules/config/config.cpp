@@ -19,7 +19,6 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
-#include <vector>
 
 #include <boost/dll/runtime_symbol_info.hpp>
 #include <boost/program_options.hpp>
@@ -171,6 +170,33 @@ std::string Usage(std::string_view program, std::string_view default_file_name,
       program, default_file_name, synopsis, described);
 }
 
+// The options a command line may hold: the shared ones, then own_options.
+boost::program_options::options_description Options(std::span<const CommandLineOption> own_options) {
+  namespace po = boost::program_options;
+  po::options_description options;
+  options.add_options()("config", po::value<std::string>(), "config file, relative to the working directory")(
+      "help", "print the usage and exit")("version", "print the version and exit");
+  // Boost copies each name and description it is handed.
+  for (const CommandLineOption& option : own_options) {
+    options.add_options()(std::string(option.name).c_str(), po::value<std::string>(),
+                          std::string(option.description).c_str());
+  }
+  return options;
+}
+
+// The value of each of own_options that arguments holds, by its name.
+std::map<std::string, std::string, std::less<>> OwnValues(const boost::program_options::variables_map& arguments,
+                                                          std::span<const CommandLineOption> own_options) {
+  std::map<std::string, std::string, std::less<>> given;
+  for (const CommandLineOption& option : own_options) {
+    const std::string name(option.name);
+    if (!arguments[name].empty()) {
+      given.emplace(name, arguments[name].as<std::string>());
+    }
+  }
+  return given;
+}
+
 }  // namespace
 
 // Mechanism: reads text as a YAML mapping, its sections flattened into dotted
@@ -284,16 +310,7 @@ std::expected<CommandLine, ConfigError> ParseCommandLine(int argc, const char* c
   const auto usage = Usage(program, default_file_name, own_options);
 
   namespace po = boost::program_options;
-  po::options_description options;
-  options.add_options()("config", po::value<std::string>(), "config file, relative to the working directory")(
-      "help", "print the usage and exit")("version", "print the version and exit");
-  // By name, as the arguments are looked up once parsed.
-  std::vector<std::string> own_names;
-  own_names.reserve(own_options.size());
-  for (const CommandLineOption& option : own_options) {
-    own_names.emplace_back(option.name);
-    options.add_options()(own_names.back().c_str(), po::value<std::string>(), std::string(option.description).c_str());
-  }
+  const po::options_description options = Options(own_options);
 
   // Prefix guessing is off so `--conf` is an error, not a silent `--config`;
   // the empty positional description makes a bare argument an error too,
@@ -314,19 +331,15 @@ std::expected<CommandLine, ConfigError> ParseCommandLine(int argc, const char* c
   // variables_map's own operator[] (an empty value for an absent option), not
   // std::map::contains: MSVC links that through Boost's DLL, which lacks it.
   if (!arguments["help"].empty()) {
-    return CommandLine{.config_file = {}, .message = usage, .action = CommandLineAction::kShowHelp};
+    return CommandLine{.config_file = {}, .message = usage, .action = CommandLineAction::kShowHelp, .options = {}};
   }
   if (!arguments["version"].empty()) {
     return CommandLine{.config_file = {},
                        .message = std::format("{} {}", program, version),
-                       .action = CommandLineAction::kShowVersion};
+                       .action = CommandLineAction::kShowVersion,
+                       .options = {}};
   }
-  std::map<std::string, std::string, std::less<>> given;
-  for (const std::string& name : own_names) {
-    if (!arguments[name].empty()) {
-      given.emplace(name, arguments[name].as<std::string>());
-    }
-  }
+  auto given = OwnValues(arguments, own_options);
   if (arguments["config"].empty()) {
     const auto directory = ExecutableDirectory();
     if (!directory) {

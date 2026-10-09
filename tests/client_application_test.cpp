@@ -8,11 +8,11 @@
 #include <gtest/gtest.h>
 
 #include "application.h"
+#include "augusta/assets.h"
 #include "augusta/client_config.h"
 #include "augusta/config.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
-#include "augusta/assets.h"
 #include "augusta/harness.h"
 #include "augusta/math.h"
 #include "augusta/protocol.h"
@@ -57,8 +57,8 @@ std::string ContextOf(const Failure& failure, std::string_view key) {
 }
 
 TEST(ClientApplicationTest, AConfigFileThatCannotBeReadIsAConfigurationFailure) {
-  const auto config = ReadClientConfig(
-      CommandLine{.config_file = "no/such/augustac.yaml", .message = {}, .action = CommandLineAction::kRun});
+  const auto config = ReadClientConfig(CommandLine{
+      .config_file = "no/such/augustac.yaml", .message = {}, .action = CommandLineAction::kRun, .options = {}});
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, Code::kInvalidConfiguration);
@@ -120,9 +120,10 @@ TEST(ClientApplicationTest, ACharacterThatCannotBeLoadedIsAContentFailure) {
 
 // The command line `augustac --reenact capture --player player`.
 CommandLine ReenactCommandLine(const std::filesystem::path& capture, const std::string& player) {
-  CommandLine command_line{.config_file = "augustac.yaml", .message = {}, .action = CommandLineAction::kRun};
-  command_line.options = {{"reenact", capture.string()}, {"player", player}};
-  return command_line;
+  return CommandLine{.config_file = "augustac.yaml",
+                     .message = {},
+                     .action = CommandLineAction::kRun,
+                     .options = {{"reenact", capture.string()}, {"player", player}}};
 }
 
 // A capture of one player, the soldier, at (4, 0, -2), made with a client pack of 9s.
@@ -131,16 +132,13 @@ std::filesystem::path WriteCapture(const std::string& name) {
   const std::filesystem::path path = std::filesystem::temp_directory_path() / name;
   std::ofstream out(path, std::ios::binary | std::ios::trunc);
   out.write(reinterpret_cast<const char*>(protocol::kCaptureMagic.data()), protocol::kCaptureMagic.size());
-  protocol::CaptureHeaderWire header{.engine_version = "1.0.0",
-                                     .format_version = protocol::kCaptureFormatVersion,
-                                     .tick_rate_hz = 60};
+  protocol::CaptureHeaderWire header{
+      .engine_version = "1.0.0", .format_version = protocol::kCaptureFormatVersion, .tick_rate_hz = 60};
   header.client_pack.fill(std::byte{9});
   const protocol::CaptureRecordWire records[] = {
       header,
-      protocol::CapturedJoinWire{.spawn = {4, 0, -2},
-                                 .session = protocol::SessionIdWire{1},
-                                 .character = "soldier",
-                                 .player = 1},
+      protocol::CapturedJoinWire{
+          .spawn = {4, 0, -2}, .session = protocol::SessionIdWire{1}, .character = "soldier", .player = 1},
   };
   for (const protocol::CaptureRecordWire& record : records) {
     const protocol::BytesWire payload = protocol::EncodeCaptureRecord(record).value();
@@ -151,8 +149,8 @@ std::filesystem::path WriteCapture(const std::string& name) {
 }
 
 TEST(ClientApplicationTest, ARunThatAsksToReenactNothingPlaysAsAPerson) {
-  const auto reenactment =
-      ReadReenactment(CommandLine{.config_file = "augustac.yaml", .message = {}, .action = CommandLineAction::kRun});
+  const auto reenactment = ReadReenactment(
+      CommandLine{.config_file = "augustac.yaml", .message = {}, .action = CommandLineAction::kRun, .options = {}});
 
   ASSERT_TRUE(reenactment.has_value());
   EXPECT_FALSE(reenactment->has_value());

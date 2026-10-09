@@ -199,7 +199,7 @@ struct CommandLine {
   CommandLineAction action = CommandLineAction::kRun;
   /// Only set for kRun: the value of each of the executable's own options
   /// given, by its name; what each must hold is the executable's to check.
-  std::map<std::string, std::string, std::less<>> options = {};
+  std::map<std::string, std::string, std::less<>> options;
 };
 
 /// Reads the command line (argc/argv as main gets them). `--help` asks for the

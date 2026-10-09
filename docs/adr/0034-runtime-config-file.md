@@ -39,8 +39,8 @@ their meaning itself, next to it: the module holds no key of a tool.
 `--player <n>`, together, which make one run a Captured player: a capture is
 chosen for one run, not kept as a setting. An executable names such options of
 its own to the shared parser (`augusta_client_config`'s
-`kClientCommandLineOptions`), which lists them in its usage; every other
-setting still comes from the file.
+`kClientCommandLineOptions`), which lists them in its usage; every other setting
+still comes from the file.
 
 YAML because the repository already keeps its configuration in JSON and YAML (CI
 workflows, Helm charts, cluster manifests, `vcpkg.json`, CMake presets): a third

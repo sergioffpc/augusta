@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <initializer_list>
+#include <ios>
 #include <istream>
 #include <optional>
 #include <string_view>

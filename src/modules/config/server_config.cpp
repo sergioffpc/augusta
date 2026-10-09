@@ -61,6 +61,12 @@ std::expected<bool, ConfigError> OptionalStrictRecording(const ConfigValues& val
   return mode == "strict";
 }
 
+// Every key augustad.yaml may hold.
+constexpr std::array<std::string_view, 11> kServerKeys{
+    "base_dir",  "content.pack",   "content.public_key",     kTickRateKey,    "simulation.recording", kRecordingModeKey,
+    kCaptureKey, kReenactmentsKey, "network.listen_address", "logging.level", kMetricsPortKey,
+};
+
 // Whether Reenact requests are taken: "false" when absent.
 std::expected<bool, ConfigError> OptionalReenactments(const ConfigValues& values) {
   const std::string taken = OptionalString(values, kReenactmentsKey, "false");
@@ -77,13 +83,7 @@ std::expected<bool, ConfigError> OptionalReenactments(const ConfigValues& values
 
 std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 11> kKeys{
-      "base_dir",      "content.pack",         "content.public_key",
-      kTickRateKey,    "simulation.recording", kRecordingModeKey,
-      kCaptureKey,     kReenactmentsKey,       "network.listen_address",
-      "logging.level", kMetricsPortKey,
-  };
-  const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = {}});
+  const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kServerKeys, .open_sections = {}});
   if (!values) {
     return std::unexpected(values.error());
   }

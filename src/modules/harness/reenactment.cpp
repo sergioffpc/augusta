@@ -11,6 +11,7 @@
 
 #include "augusta/command.h"
 #include "augusta/harness.h"
+#include "augusta/math.h"
 #include "augusta/tick.h"
 
 namespace augusta::harness {

@@ -46,7 +46,7 @@ namespace augusta::client {
 /// another, whose Commands and spawns this pack's Map and Characters need not
 /// fit.
 [[nodiscard]] std::expected<void, failure::Failure> CheckReenactmentPack(const harness::Script& script,
-                                                                        const assets::PackHash& loaded);
+                                                                         const assets::PackHash& loaded);
 
 /// Starts the transport, once per process, before any ClientRuntime is
 /// constructed (networking.h), or returns the failure::Code::kTransportInitFailed

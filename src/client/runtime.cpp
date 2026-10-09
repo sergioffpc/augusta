@@ -222,6 +222,11 @@ struct ClientRuntime::Impl {
     if (progress == harness::Progress::kPlaying) {
       return false;
     }
+    // The Deaths no frame took yet, the ones that ended the Match among them.
+    for (const harness::Death& death : session->TakeDeaths(view)) {
+      observed_deaths.push_back(
+          harness::ObservedDeath{.tick = last_tick, .victim = death.victim, .killer = death.killer});
+    }
     LI("subsystem=reenactment event={} player={}", progress == harness::Progress::kLeave ? "left" : "ended",
        reenactment->GetScript().player);
     for (const std::string& line : reenactment->Outcome(view, observed_deaths, last_tick)) {
@@ -351,10 +356,10 @@ struct ClientRuntime::Impl {
     for (const harness::Death& death : session->TakeDeaths(*view)) {
       frame.deaths.push_back(ToPresentation(death.victim));
       if (reenactment.has_value()) {
-        observed_deaths.push_back(harness::ObservedDeath{
-            .tick = view->authoritative.has_value() ? view->authoritative->tick : last_tick,
-            .victim = death.victim,
-            .killer = death.killer});
+        observed_deaths.push_back(
+            harness::ObservedDeath{.tick = view->authoritative.has_value() ? view->authoritative->tick : last_tick,
+                                   .victim = death.victim,
+                                   .killer = death.killer});
       }
     }
     return frame;

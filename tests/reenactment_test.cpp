@@ -1,6 +1,5 @@
 #include "augusta/reenactment.h"
 
-#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -10,6 +9,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>

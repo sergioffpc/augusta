@@ -89,8 +89,8 @@ std::size_t Occurrences(std::string_view text, std::string_view needle) {
 }
 
 TEST(ServerApplicationTest, AConfigFileThatCannotBeReadIsAConfigurationFailure) {
-  const auto config = ReadServerConfig(
-      CommandLine{.config_file = "no/such/augustad.yaml", .message = {}, .action = CommandLineAction::kRun});
+  const auto config = ReadServerConfig(CommandLine{
+      .config_file = "no/such/augustad.yaml", .message = {}, .action = CommandLineAction::kRun, .options = {}});
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, Code::kInvalidConfiguration);
