@@ -357,6 +357,54 @@ TEST_F(PolicyTest, WithoutAnAssignSpawnsHookPlayersTakeTheSpawnPointsInOrderSile
   EXPECT_EQ(without_policy.StartMatch(ThreePlayers(), kSpawnPoints), kSpawnPoints);
 }
 
+// ADR-0050: a Captured player spawns where its Reenact request said, and
+// assign_spawns places only the others, seeing only them.
+// Requirements: US-21
+TEST_F(PolicyTest, APlayerThatNamesItsSpawnIsPlacedThereAndAssignSpawnsPlacesOnlyTheOthers) {
+  World world(Parameters{}, kTickRate, WithRules(R"(
+    function assign_spawns(match)
+      assert(#match.players == 1 and match.players[1].session == 5)
+      return {{session = 5, spawn_point = 3}}
+    end
+  )"));
+  std::vector<MatchPlayer> players = ThreePlayers();
+  players[0].spawn = Vec3(-4.0F, 0.0F, 7.0F);
+  players[2].spawn = Vec3(50.0F, 0.0F, -5.0F);
+
+  testing::internal::CaptureStdout();
+  const std::vector<Vec3> spawned = world.StartMatch(players, kSpawnPoints);
+  const std::string log = testing::internal::GetCapturedStdout();
+  const State first = world.Tick({}, kTick).state;
+
+  EXPECT_EQ(spawned, (std::vector<Vec3>{Vec3(-4.0F, 0.0F, 7.0F), kSpawnPoints[2], Vec3(50.0F, 0.0F, -5.0F)}));
+  EXPECT_EQ(log, "");
+  ASSERT_EQ(first.bodies.size(), 3U);
+  for (std::size_t i = 0; i < 3; ++i) {
+    EXPECT_NEAR(first.bodies[i].body.position.x, spawned[i].x, 0.01F) << i;
+    EXPECT_NEAR(first.bodies[i].body.position.z, spawned[i].z, 0.01F) << i;
+  }
+}
+
+// Requirements: US-21
+TEST_F(PolicyTest, AssignSpawnsIsNotAskedWhenEveryPlayerNamesItsSpawn) {
+  World world(Parameters{}, kTickRate, WithRules(R"(
+    function assign_spawns(match)
+      error("asked")
+    end
+  )"));
+  std::vector<MatchPlayer> players = ThreePlayers();
+  for (std::size_t i = 0; i < players.size(); ++i) {
+    players[i].spawn = Vec3(static_cast<float>(i), 0.0F, 1.0F);
+  }
+
+  testing::internal::CaptureStdout();
+  const std::vector<Vec3> spawned = world.StartMatch(players, kSpawnPoints);
+  const std::string log = testing::internal::GetCapturedStdout();
+
+  EXPECT_EQ(spawned, (std::vector<Vec3>{Vec3(0.0F, 0.0F, 1.0F), Vec3(1.0F, 0.0F, 1.0F), Vec3(2.0F, 0.0F, 1.0F)}));
+  EXPECT_EQ(log, "");
+}
+
 // An assign_spawns answer that is refused, and what the log says of it.
 struct RefusedAnswer {
   const char* body;

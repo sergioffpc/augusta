@@ -10,12 +10,14 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
+#include "augusta/math.h"
 #include "augusta/networking.h"
 
 // The Lobby and the match are pure bookkeeping: no socket is opened here.
 namespace {
 
 using augusta::assets::PackHash;
+using augusta::math::Vec3;
 using augusta::networking::PeerId;
 using augusta::server::Departure;
 using augusta::server::JoinRefusal;
@@ -654,6 +656,60 @@ TEST(MatchTest, EntityIdsAreNeverReusedAcrossMatches) {
       EXPECT_NE(earlier.entity, later.entity);
     }
   }
+}
+
+// A Captured player's Reenact request (ADR-0050): a Join request that names its spawn.
+JoinRequest ReenactRequest(std::string version, const Vec3& spawn) {
+  JoinRequest request = Request(std::move(version), kCharacter);
+  request.spawn = spawn;
+  return request;
+}
+
+// A match of player_count that takes Reenact requests.
+MatchConfig ReenactingConfig(std::size_t player_count = kPlayerCount) {
+  MatchConfig config = Config(player_count);
+  config.reenactments = true;
+  return config;
+}
+
+// Requirements: US-21
+TEST(MatchTest, AMatchThatTakesNoReenactmentsRefusesAReenactRequestBeforeAnythingElse) {
+  Match match(Config());
+
+  EXPECT_EQ(match.Join(Peer(1), ReenactRequest(kVersion, Vec3(1.0F, 0.0F, 2.0F))).error(),
+            JoinRefusal::kReenactmentsNotAccepted);
+  EXPECT_EQ(match.Join(Peer(2), ReenactRequest("other", Vec3(1.0F, 0.0F, 2.0F))).error(),
+            JoinRefusal::kReenactmentsNotAccepted);
+  EXPECT_EQ(match.PlayerCount(), 0U);
+  EXPECT_TRUE(match.Join(Peer(3), Request(kVersion, kCharacter)).has_value());
+}
+
+// Requirements: US-21
+TEST(MatchTest, AReenactRequestIsCheckedAsAJoinRequestIs) {
+  Match match(ReenactingConfig(1));
+
+  EXPECT_EQ(match.Join(Peer(1), ReenactRequest("other", Vec3())).error(), JoinRefusal::kVersionMismatch);
+  JoinRequest unknown = ReenactRequest(kVersion, Vec3());
+  unknown.character = "characters/nobody";
+  EXPECT_EQ(match.Join(Peer(2), unknown).error(), JoinRefusal::kUnknownCharacter);
+  ASSERT_TRUE(match.Join(Peer(3), ReenactRequest(kVersion, Vec3())).has_value());
+  EXPECT_EQ(match.Join(Peer(4), ReenactRequest(kVersion, Vec3())).error(), JoinRefusal::kLobbyFull);
+}
+
+// Requirements: US-21
+TEST(MatchTest, AMatchStartNamesTheSpawnOfEachPlayerAdmittedThroughAReenactRequestAndNoOneElses) {
+  Match match(ReenactingConfig(3));
+  ASSERT_TRUE(match.Join(Peer(1), Request(kVersion, kCharacter)).has_value());
+  ASSERT_TRUE(match.Join(Peer(2), ReenactRequest(kVersion, Vec3(4.0F, 0.0F, -2.0F))).has_value());
+  ASSERT_TRUE(match.Join(Peer(3), ReenactRequest(kVersion, Vec3(-6.0F, 1.0F, 8.0F))).has_value());
+
+  const auto start = ReadyAndStart(match);
+
+  ASSERT_TRUE(start.has_value());
+  ASSERT_EQ(start->players.size(), 3U);
+  EXPECT_FALSE(start->players[0].spawn.has_value());
+  EXPECT_EQ(start->players[1].spawn, Vec3(4.0F, 0.0F, -2.0F));
+  EXPECT_EQ(start->players[2].spawn, Vec3(-6.0F, 1.0F, 8.0F));
 }
 
 }  // namespace

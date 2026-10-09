@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -175,6 +176,9 @@ struct MatchPlayer {
   PlayerIdentity identity{};
   /// The Character identity's index names, copied.
   Character character{};
+  /// Where it spawns when it named its own, as a Captured player's Reenact
+  /// request does (ADR-0050); nullopt for Game policy to assign.
+  std::optional<math::Vec3> spawn = std::nullopt;
 };
 
 /// One dynamic body as of the end of a tick.
@@ -346,7 +350,9 @@ class World {
   /// it, then players, which name distinct entities, each get a Spawn point of
   /// spawn_points from Game policy (the rules' assign_spawns hook,
   /// ADR-0022) and are added there as AddPlayer adds them, with their identity:
-  /// fresh, with the Parameters' starting health and a full rifle. With no
+  /// fresh, with the Parameters' starting health and a full rifle. A player
+  /// that names its spawn (MatchPlayer::spawn) is added there instead, and the
+  /// hook is asked about the others alone, if there are any (ADR-0050). With no
   /// hook, or an answer that is refused (and logged), players take spawn_points
   /// in order, starting over after the last. With no spawn_points, every player
   /// spawns at the origin. Returns where each of players spawned, in the same

@@ -61,6 +61,8 @@ constexpr std::string_view JoinRefusalLabel(JoinRefusal reason) {
       return "match_in_progress";
     case JoinRefusal::kPackMismatch:
       return "pack_mismatch";
+    case JoinRefusal::kReenactmentsNotAccepted:
+      return "reenactments_not_accepted";
   }
   return {};
 }
@@ -125,6 +127,8 @@ constexpr std::string_view MessageTypeLabel(MessageType type) {
       return "hit_confirmation";
     case MessageType::kDeath:
       return "death";
+    case MessageType::kReenactRequest:
+      return "reenact_request";
   }
   return {};
 }

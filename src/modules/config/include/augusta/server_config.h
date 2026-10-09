@@ -55,6 +55,10 @@ struct ServerConfig {
   /// Key `simulation.capture`: the directory to capture every Match into, one
   /// file each (ADR-0050), created if missing. Empty, the default, captures nothing.
   std::filesystem::path capture_directory;
+  /// Key `simulation.reenactments`: "true" to admit a Captured player's Reenact
+  /// request at the spawn it names (ADR-0050), "false", the default, to refuse
+  /// each. A debugging setting, never on for a server open to players.
+  bool reenactments = false;
   /// Key `metrics.port`: the TCP port, 1..65535, the metrics endpoint serves
   /// /metrics and /livez on, on every interface (ADR-0049).
   std::uint16_t metrics_port = kDefaultMetricsPort;

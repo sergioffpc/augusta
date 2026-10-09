@@ -139,6 +139,8 @@ MessageType TypeOf(std::span<const std::byte> payload) {
       return MessageType::kHitConfirmation;
     case protocol::MessageTypeWire::kDeath:
       return MessageType::kDeath;
+    case protocol::MessageTypeWire::kReenactRequest:
+      return MessageType::kReenactRequest;
   }
   std::unreachable();
 }
@@ -155,6 +157,8 @@ protocol::JoinRefusalWire ToWire(JoinRefusal reason) {
       return protocol::JoinRefusalWire::kMatchInProgress;
     case JoinRefusal::kPackMismatch:
       return protocol::JoinRefusalWire::kPackMismatch;
+    case JoinRefusal::kReenactmentsNotAccepted:
+      return protocol::JoinRefusalWire::kReenactmentsNotAccepted;
   }
   // As ToWire(BodyPart): a value the protocol lacks, which Encode refuses.
   return protocol::JoinRefusalWire{};
@@ -306,6 +310,15 @@ JoinRequest FromWire(const protocol::JoinRequestWire& request) {
       .engine_version = request.engine_version,
       .client_pack = FromWire(request.client_pack),
       .character = request.character,
+  };
+}
+
+JoinRequest FromWire(const protocol::ReenactRequestWire& request) {
+  return JoinRequest{
+      .engine_version = request.engine_version,
+      .client_pack = FromWire(request.client_pack),
+      .character = request.character,
+      .spawn = request.spawn,
   };
 }
 

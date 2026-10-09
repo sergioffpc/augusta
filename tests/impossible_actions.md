@@ -38,16 +38,17 @@ Each entry's protection is one of:
 
 Structural protections are the fragile ones. They hold only while no client
 message carries an outcome. A new field in `JoinRequestWire`, `CommandsWire`,
-`CommandWire` or `ReadyWire` that carries one (a position, a hit, a damage, an
-ammo count, a health, a kill) turns a structural entry into nothing at all. It
-needs a check at the boundary, an entry below, and a test. Any other new field
-still needs a line in the next table that says what bounds it.
+`CommandWire`, `ReadyWire` or `ReenactRequestWire` that carries one (a position,
+a hit, a damage, an ammo count, a health, a kill) turns a structural entry into
+nothing at all. It needs a check at the boundary, an entry below, and a test.
+Any other new field still needs a line in the next table that says what bounds
+it.
 
 What bounds every field a client sends today:
 
 | Message                | Field                                                           | What bounds it                                                                                                                         |
 | ---------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| any                    | message type                                                    | `Decode`: unknown types refused. `Host`: only JoinRequest, Commands and Ready are handled                                              |
+| any                    | message type                                                    | `Decode`: unknown types refused. `Host`: only JoinRequest, ReenactRequest, Commands and Ready are handled                              |
 | `JoinRequestWire`      | `engine_version`, `client_pack`, `character`                    | `Decode`: length limits. `Match::Join`: each must be the server's (or one of its scenario's characters)                                |
 | `CommandsWire`         | `commands`                                                      | `Decode`: at most `kMaxCommandsPerMessage`                                                                                             |
 | `CommandsWire`         | `seen_tick`, with each command's `seen_age` and `seen_fraction` | Corrected by Lag compensation's clamps (ADR-0044)                                                                                      |
@@ -55,6 +56,8 @@ What bounds every field a client sends today:
 | `CommandWire`          | `direction`, `yaw`, `pitch`                                     | Whole grid counts on the wire (`augusta/grid.h`), so always finite. `Validate`: within what a client can produce                       |
 | `CommandWire`          | `flags`, `desired_stance`                                       | `Decode`: the four flags and the stance fill one byte, and an unknown stance is refused. Each flag is an intent SimulationWorld judges |
 | `ReadyWire`            | `version`                                                       | `Match::Ready`: only the current Roster version counts                                                                                 |
+| `ReenactRequestWire`   | `engine_version`, `client_pack`, `character`                    | As `JoinRequestWire`'s                                                                                                                 |
+| `ReenactRequestWire`   | `spawn`, an outcome (a position)                                | `Match::Join`: refused unless `simulation.reenactments` is on, which takes it on trust (ADR-0050). Whole grid counts, so always finite |
 
 ## Rejected
 
@@ -74,6 +77,7 @@ What bounds every field a client sends today:
 | A Join naming a Character the scenario lacks                                                                                                                   | Check                                                           | `Match::Join`                                 | `ImpossibleJoinTest.AJoinThatCanNeverPlayHereIsRefusedAndTheLobbyIsToldNothingOfIt`, `JoinTest.AClientThatPicksACharacterTheScenarioLacksIsRefusedForIt` |
 | A Join from another engine version                                                                                                                             | Check                                                           | `Match::Join`                                 | `ImpossibleJoinTest.AJoinThatCanNeverPlayHereIsRefusedAndTheLobbyIsToldNothingOfIt`, `JoinTest.AClientWithAnotherEngineVersionIsRefusedForTheVersion`    |
 | A Join with another client pack                                                                                                                                | Check                                                           | `Match::Join`                                 | `ImpossibleJoinTest.AJoinThatCanNeverPlayHereIsRefusedAndTheLobbyIsToldNothingOfIt`, `JoinTest.AClientWithAnotherClientPackIsRefusedForThePack`          |
+| A Reenact request, which names its own spawn, to a server without `simulation.reenactments`                                                                    | Check                                                           | `Match::Join`                                 | `ImpossibleJoinTest.AReenactRequestToAServerThatTakesNoneIsRefusedAndTheLobbyIsToldNothingOfIt`                                                          |
 
 ## Structural
 

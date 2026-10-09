@@ -1,7 +1,6 @@
 #ifndef AUGUSTA_SERVER_COMMAND_QUEUE_H_
 #define AUGUSTA_SERVER_COMMAND_QUEUE_H_
 
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -61,12 +60,6 @@ inline constexpr float kMaxYaw = 3.2F;
 /// queued (tick::PacedTickDuration).
 inline constexpr std::size_t kMaxQueuedCommands = 16;
 
-/// How long the last movement is repeated when nothing new arrived.
-inline constexpr std::chrono::milliseconds kMaxHeldTime{100};
-
-/// kMaxHeldTime in ticks at tick_rate_hz, rounded up so the hold is never shorter.
-[[nodiscard]] int HeldTicks(std::uint8_t tick_rate_hz);
-
 /// How a command that passed validation was queued.
 enum class Enqueued : std::uint8_t {
   kQueued,
@@ -89,14 +82,14 @@ struct TickCommand {
 class CommandQueue {
  public:
   /// A queue for a server ticking at tick_rate_hz, which sets how many ticks
-  /// kMaxHeldTime lasts.
-  explicit CommandQueue(std::uint8_t tick_rate_hz) : max_held_ticks_(HeldTicks(tick_rate_hz)) {}
+  /// command::kMaxHeldTime lasts.
+  explicit CommandQueue(std::uint8_t tick_rate_hz) : max_held_ticks_(command::HeldTicks(tick_rate_hz)) {}
 
   /// Validates command and, if it passes, queues it.
   [[nodiscard]] std::expected<Enqueued, Rejection> TryEnqueue(const SequencedCommand& command);
 
   /// The command for this tick: the oldest queued one; else the last movement
-  /// held for up to kMaxHeldTime; else no movement. Held and idle ticks never
+  /// held for up to command::kMaxHeldTime; else no movement. Held and idle ticks never
   /// repeat a one-shot action (reload) or keep firing.
   [[nodiscard]] TickCommand Next();
 

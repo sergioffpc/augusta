@@ -61,6 +61,7 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
       .recording_mode = file_config.strict_recording ? RecordingMode::kStrict : RecordingMode::kOptional,
       .server_pack = pack->Hash(),
       .capture_directory = file_config.capture_directory,
+      .reenactments = file_config.reenactments,
   };
   return std::make_unique<ServerRuntime>(host_config, file_config.metrics_port, std::move(content->scenario),
                                          std::move(content->policy), faults);

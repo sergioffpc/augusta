@@ -14,11 +14,11 @@
 namespace {
 
 using augusta::command::Command;
+using augusta::command::HeldTicks;
+using augusta::command::kMaxHeldTime;
 using augusta::math::Vec3;
 using augusta::server::CommandQueue;
 using augusta::server::Enqueued;
-using augusta::server::HeldTicks;
-using augusta::server::kMaxHeldTime;
 using augusta::server::kMaxMovementMagnitude;
 using augusta::server::kMaxPitch;
 using augusta::server::kMaxQueuedCommands;

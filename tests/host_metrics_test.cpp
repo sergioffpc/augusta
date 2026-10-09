@@ -205,8 +205,9 @@ TEST(HostMetricsTest, JoinsAreLabelledByResultAndARefusalByItsReason) {
 
   EXPECT_EQ(Series(joins, {{"result", "admitted"}}).counter.value, 1.0);
   EXPECT_EQ(Series(joins, {{"result", "refused"}, {"reason", "lobby_full"}}).counter.value, 1.0);
-  EXPECT_EQ(ValuesOf(joins, "reason"), (std::set<std::string>{"version_mismatch", "lobby_full", "unknown_character",
-                                                              "match_in_progress", "pack_mismatch"}));
+  EXPECT_EQ(ValuesOf(joins, "reason"),
+            (std::set<std::string>{"version_mismatch", "lobby_full", "unknown_character", "match_in_progress",
+                                   "pack_mismatch", "reenactments_not_accepted"}));
 }
 
 // Requirements: NFR-07
@@ -262,8 +263,9 @@ TEST(HostMetricsTest, MessagesAreLabelledByTheirType) {
   EXPECT_EQ(Series(Family(families, "augustad_messages_sent_total"), {{"type", "authoritative_state"}}).counter.value,
             1.0);
   const std::set<std::string> types = {
-      "join_request", "join_accepted", "join_refused", "commands", "authoritative_state", "lobby",
-      "ready",        "match_start",   "match_end",    "shot",     "hit_confirmation",    "death"};
+      "join_request",   "join_accepted", "join_refused", "commands", "authoritative_state", "lobby",
+      "ready",          "match_start",   "match_end",    "shot",     "hit_confirmation",    "death",
+      "reenact_request"};
   EXPECT_EQ(ValuesOf(Family(families, "augustad_messages_sent_total"), "type"), types);
   EXPECT_EQ(ValuesOf(Family(families, "augustad_messages_received_total"), "type"), types);
 }

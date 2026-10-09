@@ -51,15 +51,17 @@ enum class MessageType : std::uint8_t {
   kShot,
   kHitConfirmation,
   kDeath,
+  kReenactRequest,
 };
 
-using JoinRefusalCounters = EnumCounters<JoinRefusal, JoinRefusal::kVersionMismatch, JoinRefusal::kPackMismatch>;
+using JoinRefusalCounters =
+    EnumCounters<JoinRefusal, JoinRefusal::kVersionMismatch, JoinRefusal::kReenactmentsNotAccepted>;
 using LeavingCounters = EnumCounters<Leaving, Leaving::kLeft, Leaving::kMisbehaving>;
 /// The misbehaviours only: the first of PeerRejection's values (misbehaviour.h),
 /// which host_metrics.cpp checks.
 using MisbehaviourCounters =
     EnumCounters<PeerRejection, PeerRejection::kUndecodable, PeerRejection::kCommandsBeforeJoining>;
-using MessageCounters = EnumCounters<MessageType, MessageType::kJoinRequest, MessageType::kDeath>;
+using MessageCounters = EnumCounters<MessageType, MessageType::kJoinRequest, MessageType::kReenactRequest>;
 using RejectionCounters = EnumCounters<Rejection, Rejection::kStale, Rejection::kOutOfRange>;
 using BodyPartCounters = EnumCounters<ballistics::BodyPart, ballistics::BodyPart::kHead, ballistics::BodyPart::kLimb>;
 

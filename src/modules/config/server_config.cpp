@@ -22,6 +22,7 @@ constexpr std::string_view kMetricsPortKey = "metrics.port";
 constexpr std::uint32_t kMaxMetricsPort = std::numeric_limits<std::uint16_t>::max();
 constexpr std::string_view kRecordingModeKey = "simulation.recording_mode";
 constexpr std::string_view kCaptureKey = "simulation.capture";
+constexpr std::string_view kReenactmentsKey = "simulation.reenactments";
 
 std::expected<std::uint8_t, ConfigError> RequireTickRate(const ConfigValues& values) {
   return RequireWholeNumber(values, kTickRateKey, 1, kMaxTickRate).transform([](std::uint32_t rate) {
@@ -60,13 +61,27 @@ std::expected<bool, ConfigError> OptionalStrictRecording(const ConfigValues& val
   return mode == "strict";
 }
 
+// Whether Reenact requests are taken: "false" when absent.
+std::expected<bool, ConfigError> OptionalReenactments(const ConfigValues& values) {
+  const std::string taken = OptionalString(values, kReenactmentsKey, "false");
+  if (taken != "true" && taken != "false") {
+    return std::unexpected(ConfigError{.code = ConfigErrorCode::kInvalidEntry,
+                                       .subject = std::string(kReenactmentsKey),
+                                       .reason = "must be true or false",
+                                       .file = {}});
+  }
+  return taken == "true";
+}
+
 }  // namespace
 
 std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 10> kKeys{
-      "base_dir",        "content.pack", "content.public_key",     kTickRateKey,    "simulation.recording",
-      kRecordingModeKey, kCaptureKey,    "network.listen_address", "logging.level", kMetricsPortKey,
+  static constexpr std::array<std::string_view, 11> kKeys{
+      "base_dir",      "content.pack",         "content.public_key",
+      kTickRateKey,    "simulation.recording", kRecordingModeKey,
+      kCaptureKey,     kReenactmentsKey,       "network.listen_address",
+      "logging.level", kMetricsPortKey,
   };
   const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = {}});
   if (!values) {
@@ -106,6 +121,10 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!capture_directory) {
     return std::unexpected(capture_directory.error());
   }
+  const auto reenactments = OptionalReenactments(*values);
+  if (!reenactments) {
+    return std::unexpected(reenactments.error());
+  }
   const auto metrics_port = OptionalMetricsPort(*values);
   if (!metrics_port) {
     return std::unexpected(metrics_port.error());
@@ -119,6 +138,7 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
       .recording_path = *std::move(recording_path),
       .strict_recording = *strict_recording,
       .capture_directory = *std::move(capture_directory),
+      .reenactments = *reenactments,
       .metrics_port = *metrics_port,
   };
 }

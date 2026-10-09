@@ -123,7 +123,12 @@ Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine 
           .characters = CharacterPaths(scenario.characters),
           .player_count = config.parameters.player_count,
           .pause_ticks = PauseTicks(config.tick_rate_hz),
-      }) {}
+          .reenactments = config.reenactments,
+      }) {
+  if (config.reenactments) {
+    LW("subsystem=serverruntime event=reenactments_enabled");
+  }
+}
 
 void Host::Impl::Deliver(networking::PeerId peer, const networking::Payload& payload) {
   // Dropped is the peer's outcome: its departure, if it is leaving, arrives as an event.

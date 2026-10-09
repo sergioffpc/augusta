@@ -73,6 +73,9 @@ struct HostConfig {
   /// The directory to capture every Match into (ADR-0050), created if
   /// missing; empty captures none.
   std::filesystem::path capture_directory;
+  /// Whether a Captured player's Reenact request is admitted, at the spawn it
+  /// names (ADR-0050); without it each is refused. Never for a server open to players.
+  bool reenactments = false;
   /// For a test: asked at listener setup, at every send and receive
   /// (networking.h) and at the recording's write and flush, so the transport
   /// or the disk fails there; null otherwise. Must outlive the Host.

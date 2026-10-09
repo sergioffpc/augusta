@@ -96,8 +96,9 @@ void Host::Impl::Act(const simulation::MatchEnd& end) {
 }
 
 // Starts a match if one can start: its players' bodies enter the simulation
-// at the Spawn points Game policy gives them, their commands start afresh,
-// and they are told where each spawned.
+// at the Spawn points Game policy gives them, or a Captured player's at the
+// spawn its Reenact request named, their commands start afresh, and they are
+// told where each spawned.
 void Host::Impl::StartMatchIfReady() {
   const std::optional<MatchStart> start = match.TryStart();
   if (!start.has_value()) {
@@ -110,7 +111,8 @@ void Host::Impl::StartMatchIfReady() {
     entrants.push_back(
         simulation::MatchPlayer{.entity = ToSimulation(player.entity),
                                 .identity = {.session = ToSimulation(player.session), .character = player.character},
-                                .character = characters.at(player.character)});
+                                .character = characters.at(player.character),
+                                .spawn = player.spawn});
     bodies.emplace(player.session, player.entity);
     players.at(player.session).commands = CommandQueue{tick_rate_hz};
     sessions.push_back(player.session);

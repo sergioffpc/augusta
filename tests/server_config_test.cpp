@@ -130,6 +130,37 @@ TEST(ParseServerConfigTest, RejectsAnEmptyCaptureDirectory) {
   EXPECT_EQ(config.error().subject, "simulation.capture");
 }
 
+// Requirements: US-21
+TEST(ParseServerConfigTest, TakesNoReenactmentsByDefault) {
+  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_FALSE(config->reenactments);
+}
+
+// Requirements: US-21
+TEST(ParseServerConfigTest, ReadsWhetherReenactmentsAreTaken) {
+  const auto on = ParseServerConfig(
+      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  reenactments: true\n", kFileDir);
+  const auto off = ParseServerConfig(
+      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  reenactments: false\n", kFileDir);
+
+  ASSERT_TRUE(on.has_value());
+  EXPECT_TRUE(on->reenactments);
+  ASSERT_TRUE(off.has_value());
+  EXPECT_FALSE(off->reenactments);
+}
+
+TEST(ParseServerConfigTest, RejectsReenactmentsThatAreNeitherTrueNorFalse) {
+  const auto config = ParseServerConfig(
+      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  reenactments: yes\n", kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
+  EXPECT_EQ(config.error().subject, "simulation.reenactments");
+  EXPECT_EQ(DescribeServerConfigError(config.error()), "'simulation.reenactments' must be true or false");
+}
+
 TEST(ParseServerConfigTest, RecordsOptionallyByDefault) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 
