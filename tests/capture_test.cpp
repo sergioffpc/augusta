@@ -16,7 +16,10 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+
+#ifndef _WIN32
 #include <sys/stat.h>
+#endif
 
 #include "augusta/command.h"
 #include "augusta/faults.h"
@@ -268,8 +271,10 @@ TEST_F(CaptureTest, ARecordThatFindsTheQueueFullStopsTheCapture) {
   EXPECT_TRUE(capture.records.empty());
 }
 
+#ifndef _WIN32
 // NFR-01: a disk that stalls holds up the writer, never the Simulation thread.
 // The file is a FIFO with no reader yet, so the writer blocks opening it.
+// POSIX only: Windows has no FIFO at a file path, and augustad runs on Linux.
 // Requirements: NFR-01, US-21
 TEST_F(CaptureTest, ADiskThatStallsNeverHoldsUpTheCallerAndStopsTheCaptureOnceItsQueueIsFull) {
   const std::filesystem::path fifo = directory_ / CaptureFileName(kStarted, 1);
@@ -300,6 +305,7 @@ TEST_F(CaptureTest, ADiskThatStallsNeverHoldsUpTheCallerAndStopsTheCaptureOnceIt
   // Both Joins and the Commands that found room; nothing after the stop.
   EXPECT_EQ(capture->records.size(), kCapacity);
 }
+#endif
 
 // A file of the capture written in one Match, for ReadCapture's own tests.
 class ReadCaptureTest : public CaptureTest {
