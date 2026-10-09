@@ -1,10 +1,10 @@
 #!/bin/bash
 # Bootstraps the development environment (docs/ENGINEERING.md, Developer
 # Environment): the Linux/server one on Ubuntu 26.04, the Windows client one in
-# Git Bash. The one recipe for each: what differs lives in
-# scripts/bootstrap/<platform>.sh, what both share here. .devcontainer's
-# Dockerfile runs the Linux toolchain step and its post-create.sh the checkout
-# step; a host runs both.
+# Git Bash, and on macOS the dev container (scripts/dev-container.sh). The one
+# recipe for each: what differs lives in scripts/bootstrap/<platform>.sh, what
+# they share here. .devcontainer's Dockerfile runs the Linux toolchain step and
+# its post-create.sh the checkout step; a host runs both.
 #
 # Usage: scripts/bootstrap.sh [toolchain|checkout]
 #
@@ -20,14 +20,14 @@ readonly REPOSITORY=https://github.com/sergioffpc/augusta.git
 readonly YAMLFMT_VERSION=0.21.0 STYLUA_VERSION=2.5.2 TAPLO_VERSION=0.10.0 \
   LUACHECK_VERSION=1.2.0
 
-# Prints the platform: linux or windows (Git Bash).
+# Prints the platform: linux, windows (Git Bash) or macos.
 platform() {
   case "$(uname -s)" in
     Linux) echo linux ;;
     MINGW* | MSYS* | CYGWIN*) echo windows ;;
+    Darwin) echo macos ;;
     *)
-      echo "bootstrap: unsupported platform: $(uname -s) - see README.md" \
-        "for macOS (the dev container)." >&2
+      echo "bootstrap: unsupported platform: $(uname -s)" >&2
       exit 1
       ;;
   esac
@@ -74,7 +74,7 @@ ready_checkout() {
 bootstrap_from_pipe() {
   local dir="${AUGUSTA_DIR:-${PWD}/augusta}"
   if ! command -v git >/dev/null 2>&1; then
-    # Only Linux can get here: Git Bash comes with git.
+    # Only Linux can get here: Git Bash comes with git, macOS with Apple's.
     sudo apt-get update
     sudo apt-get install -y --no-install-recommends git
   fi

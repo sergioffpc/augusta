@@ -62,7 +62,8 @@ build_image() {
   # Docker reads Dockerfile.dockerignore beside the Dockerfile by itself.
   [[ "${engine}" = podman ]] \
     && ignore=(--ignorefile "${top}/.devcontainer/Dockerfile.dockerignore")
-  "${engine}" build "${ignore[@]}" -f "${top}/.devcontainer/Dockerfile" \
+  # Expanded only when set: macOS's bash 3.2 takes an empty array for unbound.
+  "${engine}" build ${ignore[@]+"${ignore[@]}"} -f "${top}/.devcontainer/Dockerfile" \
     -t "${tag}" "${top}"
 }
 
