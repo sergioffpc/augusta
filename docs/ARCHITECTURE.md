@@ -474,6 +474,8 @@ not affect numbering.
   Python through Intents the Harness runs
 - [ADR-0053](./adr/0053-log-aggregation.md) — Log aggregation: Loki and Alloy
   beside kube-prometheus-stack
+- [ADR-0054](./adr/0054-chiselled-server-image.md) — Server image: a chiselled
+  Ubuntu 26.04 root on `scratch`
 
 ### Rendering & Audio
 
