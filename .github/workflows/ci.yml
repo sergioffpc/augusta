@@ -388,11 +388,22 @@ jobs:
     if: needs.changes.outputs.run_tools == 'true'
     # Builds and tests the offline tools (tools/), including that each still
     # writes the golden output the runtime's tests load (ADR-0013). A new
-    # tool adds steps here, not a job. Windows: the asset cooker's native
-    # modules wrap DirectXTex (ADR-0017), and the cooker only ever runs on
-    # Windows (tools/README.md).
-    runs-on: windows-2025
-    # Git Bash, as everywhere else: no PowerShell in the repository.
+    # tool adds steps here, not a job. Windows, where the content authors cook,
+    # and Linux, the asset cooker's other platform (tools/README.md): the same
+    # pytest suite, golden packs included - a cook gives the same bytes on
+    # either platform.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            preset: windows
+            python: tools/.venv/Scripts/python.exe
+          - os: ubuntu-26.04
+            preset: linux
+            python: tools/.venv/bin/python
+    runs-on: ${{ matrix.os }}
+    # Git Bash on Windows, as everywhere else: no PowerShell in the repository.
     defaults:
       run:
         shell: bash
@@ -405,10 +416,20 @@ jobs:
         # and third_party/falcor is large.
         run: git submodule update --init --depth 1 third_party/vcpkg
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        if: runner.os == 'Windows'
+      - name: Install build tools
+        if: runner.os == 'Linux'
+        # clang: the linux preset compiles with it. autoconf/autoconf-archive/
+        # automake/libtool: vcpkg's python3 port (pybind11's dependency) builds
+        # via autotools on Linux. libomp-dev: DirectXTex's CMake config finds
+        # OpenMP, and clang's runtime isn't on the runner image.
+        run: sudo apt-get update && sudo apt-get install -y clang libomp-dev ninja-build autoconf autoconf-archive automake libtool
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      - name: Bootstrap vcpkg
+      - name: Bootstrap vcpkg (Windows)
+        if: runner.os == 'Windows'
         run: ./third_party/vcpkg/bootstrap-vcpkg.bat -disableMetrics
       - name: Configure vcpkg NuGet cache
+        if: runner.os == 'Windows'
         env:
           FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
           FEED_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -416,6 +437,25 @@ jobs:
           nuget="$(cygpath -u "$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1 | tr -d '\r')")"
           "$nuget" sources add -Name GitHubPackages -Source "$FEED_URL" -Username "$GITHUB_REPOSITORY_OWNER" -Password "$FEED_TOKEN" -StorePasswordInClearText
           "$nuget" setapikey "$FEED_TOKEN" -Source GitHubPackages
+      - name: Use a local vcpkg binary cache
+        if: runner.os == 'Linux'
+        # The local files provider, as the server job does (see there why not
+        # the NuGet feed) - but a cache of its own, not setup-linux-build's:
+        # tools/pack/cpp's manifest isn't the root one every job sharing that
+        # cache installs, and save-vcpkg-cache drops whatever the root build
+        # didn't install.
+        run: |
+          echo "VCPKG_BINARY_SOURCES=clear;files,$GITHUB_WORKSPACE/.vcpkg-bincache,readwrite" >> "$GITHUB_ENV"
+          echo "VCPKG_CACHE_KEY=vcpkg-bincache-pack-linux-clang-$(git rev-parse HEAD:third_party/vcpkg)-${{ hashFiles('tools/pack/cpp/vcpkg.json') }}" >> "$GITHUB_ENV"
+      - name: Restore and save vcpkg binaries
+        if: runner.os == 'Linux'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .vcpkg-bincache
+          key: ${{ env.VCPKG_CACHE_KEY }}
+      - name: Bootstrap vcpkg (Linux)
+        if: runner.os == 'Linux'
+        run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
@@ -425,10 +465,13 @@ jobs:
         run: uv sync --locked
       - name: Build the native modules
         # Into tools/pack/src/pack, against the venv's own interpreter, as
-        # tools/pack/scripts/bootstrap.sh does.
+        # tools/pack/scripts/bootstrap.sh does - a mixed-slash path from cygpath
+        # on Windows, as is on Linux.
         run: |
-          cmake --preset windows -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$(cygpath -m "$PWD/tools/.venv/Scripts/python.exe")"
-          cmake --build tools/pack/cpp/build/x64-windows
+          python="$PWD/${{ matrix.python }}"
+          [[ "$RUNNER_OS" == Windows ]] && python="$(cygpath -m "$python")"
+          cmake --preset ${{ matrix.preset }} -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$python"
+          cmake --build tools/pack/cpp/build/x64-${{ matrix.preset }}
       - name: Test (pytest)
         working-directory: tools/pack
         run: uv run pytest

@@ -71,9 +71,9 @@ They have no USD dependency on purpose; see ADR-0030 for why.
 
 The pack bootstrap creates the cooker's **assets root** (a uv-managed Python
 environment, native modules, a signing key and content directories). The cooker
-runs on Windows only: `_textconv` loads images through DirectXTex's WIC loader,
-which needs COM. From Git Bash, after the repository's own
-`scripts/bootstrap.sh`:
+runs on Windows and Linux, the platforms vcpkg's DirectXTex port builds for, and
+cooks the same bytes on both. From Git Bash on Windows, or a Linux shell (the
+dev container included), after the repository's own `scripts/bootstrap.sh`:
 
 ```bash
 tools/pack/scripts/bootstrap.sh <assets-root>
@@ -103,14 +103,14 @@ resolved from the current directory.
 
 The assets root looks like this:
 
-| Path         | Contents                                                                                                                                                                                                     |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `authoring/` | `maps/` (ADR-0015), `characters/` (ADR-0040), `sounds/` (ADR-0020), `scripts/parameters/` (ADR-0039), `scripts/rules/` (ADR-0022), `scenarios/<name>.yaml` (ADR-0041) - resolved by `augusta-pack`           |
-| `packs/`     | Cooked, signed packs                                                                                                                                                                                         |
-| `keys/`      | `signing.key` / `signing.pub` (Ed25519). Never commit these.                                                                                                                                                 |
-| `bin/`       | `augusta-pack.exe`, `augusta-keygen.exe`, `augusta-inspect.exe`, `augusta-verify.exe`, `augusta-publish.exe` (installed here by `uv tool install`), plus `augusta-composer.sh` if the Composer bootstrap ran |
-| `python/`    | The uv tool venv (`python/pack`), with this project installed editable                                                                                                                                       |
-| `tools/`     | Composer and Adobe plugins (installed by the Composer bootstrap)                                                                                                                                             |
+| Path         | Contents                                                                                                                                                                                                    |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `authoring/` | `maps/` (ADR-0015), `characters/` (ADR-0040), `sounds/` (ADR-0020), `scripts/parameters/` (ADR-0039), `scripts/rules/` (ADR-0022), `scenarios/<name>.yaml` (ADR-0041) - resolved by `augusta-pack`          |
+| `packs/`     | Cooked, signed packs                                                                                                                                                                                        |
+| `keys/`      | `signing.key` / `signing.pub` (Ed25519). Never commit these.                                                                                                                                                |
+| `bin/`       | `augusta-pack`, `augusta-keygen`, `augusta-inspect`, `augusta-verify`, `augusta-publish` (`.exe` on Windows; installed here by `uv tool install`), plus `augusta-composer.sh` if the Composer bootstrap ran |
+| `python/`    | The uv tool venv (`python/pack`), with this project installed editable                                                                                                                                      |
+| `tools/`     | Composer and Adobe plugins (installed by the Composer bootstrap)                                                                                                                                            |
 
 ### Running the commands
 
@@ -400,13 +400,20 @@ to stderr and exits `1`.
 
 ### Rebuilding the native modules
 
-The bootstrap builds them once and skips the step if the `.pyd` files exist. To
-rebuild after changing `cpp/`, delete them from `src/pack/` and re-run the
-bootstrap, or build directly:
+The bootstrap builds them once and skips the step if the `.pyd` (Windows) or
+`.so` (Linux) files exist. To rebuild after changing `cpp/`, delete them from
+`src/pack/` and re-run the bootstrap, or build directly:
 
 ```powershell
 cmake --preset windows -S tools\pack\cpp "-DPYTHON_EXECUTABLE=<assets-root>\python\pack\Scripts\python.exe"
 cmake --build tools\pack\cpp\build\x64-windows
+```
+
+On Linux, with the `linux` preset (clang):
+
+```bash
+cmake --preset linux -S tools/pack/cpp "-DPYTHON_EXECUTABLE=<assets-root>/python/pack/bin/python"
+cmake --build tools/pack/cpp/build/x64-linux
 ```
 
 `PYTHON_EXECUTABLE` must point at the venv so the extension's ABI matches the
@@ -424,6 +431,16 @@ cd tools
 uv sync
 cmake --preset windows -S pack\cpp "-DPYTHON_EXECUTABLE=$PWD\.venv\Scripts\python.exe"
 cmake --build pack\cpp\build\x64-windows
+uv run pytest pack
+```
+
+On Linux:
+
+```bash
+cd tools
+uv sync
+cmake --preset linux -S pack/cpp "-DPYTHON_EXECUTABLE=$PWD/.venv/bin/python"
+cmake --build pack/cpp/build/x64-linux
 uv run pytest pack
 ```
 

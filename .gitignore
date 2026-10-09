@@ -61,9 +61,10 @@ __pycache__/
 # (DirectXTex, meshoptimizer, ...) - CMake builds these straight into this
 # path (RUNTIME_OUTPUT_DIRECTORY); compiled binaries, not source.
 # pybind11's actual filenames are ABI-tagged (e.g.
-# _meshoptimizer.cp312-win_amd64.pyd) - Python resolves that back to the
-# plain module name on import regardless.
+# _meshoptimizer.cp312-win_amd64.pyd, or a .so on Linux) - Python resolves
+# that back to the plain module name on import regardless.
 tools/pack/src/pack/*.pyd
+tools/pack/src/pack/*.so
 tools/pack/src/pack/*.dll
 
 # Local runtime config (ADR-0034): machine-specific paths, never committed. The
