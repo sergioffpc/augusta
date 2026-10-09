@@ -13,7 +13,6 @@
 #include <variant>
 #include <vector>
 
-#include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"

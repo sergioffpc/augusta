@@ -22,7 +22,6 @@
 #include <thread>
 #include <unordered_set>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "augusta/capture_error.h"

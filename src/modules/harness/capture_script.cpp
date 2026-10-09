@@ -2,7 +2,6 @@
 #include <istream>
 #include <optional>
 #include <string>
-#include <utility>
 #include <variant>
 
 #include "augusta/capture_error.h"

@@ -3,13 +3,11 @@
 #include <algorithm>
 #include <cstdint>
 #include <expected>
-#include <limits>
 #include <optional>
 #include <span>
 #include <string>
 #include <utility>
 
-#include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
@@ -19,7 +17,6 @@
 #include "augusta/protocol.h"
 #include "augusta/reenactment.h"
 #include "augusta/shared_wire.h"
-#include "augusta/tick.h"
 
 namespace augusta::harness {
 
