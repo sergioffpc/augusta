@@ -19,8 +19,8 @@
 // netcode), not every pull request.
 namespace {
 
-using augusta::networking::SimulatedConditions;
 using augusta::harness::NetcodeStats;
+using augusta::networking::SimulatedConditions;
 using augusta::swarm::RunResult;
 using augusta::swarm::RunScriptedPlayers;
 using augusta::swarm::Verdict;
