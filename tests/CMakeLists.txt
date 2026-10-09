@@ -485,6 +485,15 @@ target_link_libraries(
 # Links networking and PhysX through augustad_host, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_recording_runtime_tests DISCOVERY_TIMEOUT 30)
 
+# What a player's ticks add up to, from Prediction States built by hand.
+add_executable(augusta_netcode_stats_tests netcode_stats_test.cpp)
+target_link_libraries(
+  augusta_netcode_stats_tests
+  PRIVATE augusta_harness augusta_math augusta_prediction GTest::gtest GTest::gtest_main
+)
+# Links PhysX through augusta_prediction, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_netcode_stats_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_runner_tests runner_test.cpp)
 target_link_libraries(augusta_runner_tests PRIVATE augusta_harness augustad_host GTest::gtest GTest::gtest_main)
 # Links networking and PhysX, so the same first-launch cost applies as above.

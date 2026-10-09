@@ -6,9 +6,9 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/netcode_stats.h"
 #include "augusta/networking.h"
 #include "example_server.h"
-#include "netcode_stats.h"
 #include "run.h"
 
 // The netcode under an impaired link (ADR-0013): whole runs of Scripted players
@@ -20,7 +20,7 @@
 namespace {
 
 using augusta::networking::SimulatedConditions;
-using augusta::swarm::NetcodeStats;
+using augusta::harness::NetcodeStats;
 using augusta::swarm::RunResult;
 using augusta::swarm::RunScriptedPlayers;
 using augusta::swarm::Verdict;
