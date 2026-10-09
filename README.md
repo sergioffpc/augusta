@@ -14,6 +14,18 @@ A realistic, physics-driven multiplayer FPS simulator engine —
 server-authoritative, with a Windows client and a headless Linux dedicated
 server.
 
+## Contents
+
+- [Highlights](#highlights)
+- [Status](#status)
+- [Development Setup](#development-setup)
+    - [Bootstrap](#bootstrap)
+    - [Build and Run](#build-and-run)
+    - [Tests](#tests)
+    - [Agent Skills](#agent-skills)
+- [Documentation](#documentation)
+- [License](#license)
+
 ## Highlights
 
 - **Server-authoritative** — the Linux dedicated server is the single source of

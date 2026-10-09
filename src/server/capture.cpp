@@ -32,6 +32,7 @@
 #include "augusta/logging.h"
 #include "augusta/protocol.h"
 #include "augusta/tick.h"
+#include "capture_retention.h"
 #include "frames.h"
 #include "match.h"
 #include "wire.h"
@@ -39,6 +40,20 @@
 namespace augusta::server {
 
 namespace {
+
+// What every capture's file name ends in (CaptureFileName).
+constexpr std::string_view kCaptureExtension = ".capture";
+
+// What directory's retention reports, told to observer: the directory's
+// files and bytes, and each deletion and failed one.
+CaptureRetentionObserver RetentionReports(CaptureObserver& observer) {
+  return CaptureRetentionObserver{
+      .on_deleted = [&observer] { observer.OnRetentionDeleted(); },
+      .on_delete_failed = [&observer] { observer.OnRetentionDeleteFailed(); },
+      .on_directory = [&observer](std::size_t files,
+                                  std::uintmax_t bytes) { observer.OnDirectory({.files = files, .bytes = bytes}); },
+  };
+}
 
 // Decision: whether next may follow the records of capture so far, joins of
 // them Joins (ADR-0050): every Join first, numbered from 1 in order, then the
@@ -160,7 +175,8 @@ std::expected<Capture, CaptureError> ReadCapture(std::istream& in) {
 
 std::string CaptureFileName(std::chrono::sys_time<std::chrono::milliseconds> started, std::uint64_t match_number) {
   const auto seconds = std::chrono::floor<std::chrono::seconds>(started);
-  return std::format("{:%Y%m%dT%H%M%S}{:03}Z-{:04}.capture", seconds, (started - seconds).count(), match_number);
+  return std::format("{:%Y%m%dT%H%M%S}{:03}Z-{:04}{}", seconds, (started - seconds).count(), match_number,
+                     kCaptureExtension);
 }
 
 std::string_view CaptureStopName(CaptureStop stop) {
@@ -171,6 +187,8 @@ std::string_view CaptureStopName(CaptureStop stop) {
       return "queue_full";
     case CaptureStop::kWriteFailed:
       return "write_failed";
+    case CaptureStop::kRetentionBudget:
+      return "retention_budget";
   }
   return "unknown";
 }
@@ -179,10 +197,17 @@ std::string_view CaptureStopName(CaptureStop stop) {
 // first: each Match's file opened, its records, and its file closed, each
 // item naming its Match by its number in the run. The Simulation thread only
 // ever waits on the lock, which the writer holds to take an item and never
-// across a write.
+// across a write. It tells its observer what it does, the state of captures
+// under the lock so that a stop the writer finds is never told after the
+// Simulation thread has moved to another Match.
 class Capturer::Writer {
  public:
-  explicit Writer(CaptureOptions options) : faults_(options.faults), capacity_(options.capacity) {
+  Writer(std::filesystem::path directory, CaptureOptions options)
+      : faults_(options.faults),
+        capacity_(options.capacity),
+        observer_(options.observer != nullptr ? options.observer : &unobserved_),
+        directory_(std::move(directory), std::move(options.retention), RetentionReports(*observer_), options.faults) {
+    observer_->OnState(CaptureState::kIdle);
     thread_ = std::thread([this] { Run(); });
   }
 
@@ -201,11 +226,28 @@ class Capturer::Writer {
   Writer(Writer&&) = delete;
   Writer& operator=(Writer&&) = delete;
 
+  // match is the Match open, captured until its Close or a stop.
+  void Begin(std::uint64_t match) {
+    const std::scoped_lock lock(mutex_);
+    open_match_ = match;
+    observer_->OnState(CaptureState::kCapturing);
+  }
+
   void Open(std::uint64_t match, std::filesystem::path path, protocol::BytesWire header) {
     Enqueue({.kind = Kind::kOpen, .match = match, .payload = std::move(header), .path = std::move(path)});
   }
 
-  void Close(std::uint64_t match) { Enqueue({.kind = Kind::kClose, .match = match, .payload = {}, .path = {}}); }
+  void Close(std::uint64_t match) {
+    {
+      const std::scoped_lock lock(mutex_);
+      if (open_match_ == match) {
+        open_match_ = 0;
+        observer_->OnState(CaptureState::kIdle);
+      }
+      queue_.push_back({.kind = Kind::kClose, .match = match, .payload = {}, .path = {}});
+    }
+    ready_.notify_one();
+  }
 
   // Queues match's record, or stops its capture there when capacity records
   // are still unwritten. Once its capture has stopped, drops every one.
@@ -222,6 +264,7 @@ class Capturer::Writer {
         return;
       }
       ++records_queued_;
+      observer_->OnQueued(records_queued_);
       queue_.push_back({.kind = Kind::kRecord, .match = match, .payload = std::move(record), .path = {}});
     }
     ready_.notify_one();
@@ -243,12 +286,16 @@ class Capturer::Writer {
   // Where the writer lost a Match's file, as its capture_stopped line names it.
   enum class Step : std::uint8_t { kCreate, kWrite };
 
+  // Why the writer stopped a Match's capture, and what it knows of where.
   struct Loss {
-    Step step;
-    std::string detail;
+    CaptureStop stop;
+    std::string where;
   };
 
-  static std::string_view StepName(Step step) { return step == Step::kCreate ? "create" : "write"; }
+  static Loss Failed(Step step, std::string_view detail) {
+    return Loss{.stop = CaptureStop::kWriteFailed,
+                .where = std::format("step={} detail=\"{}\"", step == Step::kCreate ? "create" : "write", detail)};
+  }
 
   struct Item {
     Kind kind;
@@ -257,8 +304,7 @@ class Capturer::Writer {
     std::filesystem::path path;
   };
 
-  // Queues an item that opens or closes a file: never refused, since each is
-  // one per Match.
+  // Queues an item that opens a file: never refused, since it is one per Match.
   void Enqueue(Item item) {
     {
       const std::scoped_lock lock(mutex_);
@@ -278,6 +324,7 @@ class Capturer::Writer {
       queue_.pop_front();
       if (item.kind == Kind::kRecord) {
         --records_queued_;
+        observer_->OnQueued(records_queued_);
       }
       writing_ = true;
       lock.unlock();
@@ -291,8 +338,8 @@ class Capturer::Writer {
                       [&](const Item& queued) { return queued.kind == Kind::kRecord && queued.match == item.match; });
         records_queued_ = static_cast<std::size_t>(
             std::ranges::count_if(queue_, [](const Item& queued) { return queued.kind == Kind::kRecord; }));
-        StopLocked(item.match, CaptureStop::kWriteFailed,
-                   std::format("step={} detail=\"{}\"", StepName(loss->step), loss->detail));
+        observer_->OnQueued(records_queued_);
+        StopLocked(item.match, loss->stop, loss->where);
       }
       if (queue_.empty()) {
         written_.notify_all();
@@ -315,32 +362,51 @@ class Capturer::Writer {
     return std::nullopt;
   }
 
+  // Makes room in the directory for the magic and the header, then creates
+  // the file with them.
   std::optional<Loss> OpenFile(const Item& item) {
+    if (!directory_.Open(item.match, item.path.filename().string(),
+                         protocol::kCaptureMagic.size() + FrameSize(kCaptureFrames, item.payload.size()))) {
+      return Loss{.stop = CaptureStop::kRetentionBudget, .where = {}};
+    }
     file_ = std::ofstream(item.path, std::ios::binary | std::ios::trunc);
     if (!file_) {
-      return Loss{.step = Step::kCreate, .detail = item.path.string()};
+      return Failed(Step::kCreate, item.path.string());
     }
     file_match_ = item.match;
     path_ = item.path;
     records_ = 0;
     file_.write(reinterpret_cast<const char*>(protocol::kCaptureMagic.data()), protocol::kCaptureMagic.size());
     LI("subsystem=capture event=capture_started match={} path={}", item.match, path_.string());
-    return Persist(item.payload);
+    observer_->OnStarted();
+    if (file_) {
+      observer_->OnWritten(protocol::kCaptureMagic.size());
+    }
+    return Write(item.payload);
+  }
+
+  // Makes room in the directory for payload's frame, then writes it.
+  std::optional<Loss> Persist(const protocol::BytesWire& payload) {
+    if (!directory_.Reserve(FrameSize(kCaptureFrames, payload.size()))) {
+      return Loss{.stop = CaptureStop::kRetentionBudget, .where = {}};
+    }
+    return Write(payload);
   }
 
   // Writes and flushes payload's frame. An injected fault fails the file, as the disk would.
-  std::optional<Loss> Persist(const protocol::BytesWire& payload) {
+  std::optional<Loss> Write(const protocol::BytesWire& payload) {
     if (std::optional<std::string> fault =
             faults_ == nullptr ? std::nullopt : faults_->Trip(failure::Site::kCaptureWrite)) {
       file_.setstate(std::ios::badbit);
-      return Loss{.step = Step::kWrite, .detail = *std::move(fault)};
+      return Failed(Step::kWrite, *fault);
     }
     WriteFrame(file_, kCaptureFrames, payload);
     file_.flush();
     if (!file_) {
-      return Loss{.step = Step::kWrite, .detail = path_.string()};
+      return Failed(Step::kWrite, path_.string());
     }
     ++records_;
+    observer_->OnWritten(FrameSize(kCaptureFrames, payload.size()));
     return std::nullopt;
   }
 
@@ -359,22 +425,33 @@ class Capturer::Writer {
     // A capture that stopped said so once already.
     if (!stopped) {
       LI("subsystem=capture event=capture_completed match={} path={} records={}", match, path_.string(), records_);
+      observer_->OnCompleted();
     }
   }
 
   // match's capture stops at stop: reported once, with what the writer knows
   // of it in where, nothing more of it queued, and its file closed once the
-  // writer gets to it. With mutex_ held.
+  // writer gets to it. Told as the state of captures only while match is
+  // still the one open. With mutex_ held.
   void StopLocked(std::uint64_t match, CaptureStop stop, std::string_view where = {}) {
     if (!stopped_.insert(match).second) {
       return;
     }
     LW("subsystem=capture event=capture_stopped match={} reason={}{}{}", match, CaptureStopName(stop),
        where.empty() ? "" : " ", where);
+    observer_->OnStopped(stop);
+    if (match == open_match_) {
+      observer_->OnState(CaptureState::kStopped);
+    }
   }
 
   failure::Faults* const faults_;
   const std::size_t capacity_;
+  // Told nothing, for a Capturer given no observer.
+  CaptureObserver unobserved_;
+  CaptureObserver* const observer_;
+  // Kept within its retention by the writer thread alone.
+  CaptureDirectory directory_;
   mutable std::mutex mutex_;
   std::condition_variable ready_;
   // Notified each time the queue is found empty, its last item handled.
@@ -383,6 +460,8 @@ class Capturer::Writer {
   std::size_t records_queued_ = 0;
   // The Matches whose capture stopped and whose file is not yet closed.
   std::unordered_set<std::uint64_t> stopped_;
+  // The Match the Simulation thread has open (0 for none), as Begin and Close set it.
+  std::uint64_t open_match_ = 0;
   bool closing_ = false;
   // An item off the queue but not yet handled keeps WaitUntilWritten waiting.
   bool writing_ = false;
@@ -392,12 +471,16 @@ class Capturer::Writer {
   std::uint64_t file_match_ = 0;
   std::filesystem::path path_;
   std::size_t records_ = 0;
+  // The directory's captures, as scanned at the file's creation and grown by
+  // what was written since. Writer thread only.
   // Declared last, so it is joined before what it writes from goes.
   std::thread thread_;
 };
 
 Capturer::Capturer(std::filesystem::path directory, CaptureHeader header, CaptureOptions options)
-    : directory_(std::move(directory)), header_(std::move(header)), writer_(std::make_unique<Writer>(options)) {}
+    : directory_(std::move(directory)),
+      header_(std::move(header)),
+      writer_(std::make_unique<Writer>(directory_, std::move(options))) {}
 
 Capturer::~Capturer() = default;
 
@@ -408,6 +491,7 @@ void Capturer::StartMatch(const std::vector<CaptureEntrant>& players, tick::Tick
   }
   ++matches_;
   open_ = true;
+  writer_->Begin(matches_);
   first_tick_ = first_tick;
   players_.clear();
   sessions_.clear();

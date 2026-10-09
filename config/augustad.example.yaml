@@ -41,6 +41,18 @@ simulation:
   # written stops, logged once, while the server and its Match go on. A
   # debugging setting: never on for a server open to players.
   # capture: captures/firebase
+  # What the capture directory is kept within (optional, default no limit),
+  # oldest Match first: only its own files named and marked as captures count,
+  # and the Match being captured is never deleted (ADR-0050). Either limit may
+  # be set alone; each must be an integer of at least 1.
+  # capture_retention:
+  #   # Captures kept, the new one included: each Match start deletes the
+  #   # oldest until fewer than this remain.
+  #   max_files: 200
+  #   # Their total size in MiB, the Match being captured included: the oldest
+  #   # are deleted as it is written to stay under it. A Match that alone
+  #   # outgrows it stops its capture there, logged once.
+  #   max_mib: 2048
   # Whether a Captured player's Reenact request is admitted (optional, default
   # false): true lets augustac --reenact join and spawn where its capture has
   # it, which the server takes on trust; false refuses it with "reenactments

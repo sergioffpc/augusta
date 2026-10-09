@@ -462,6 +462,14 @@ add_executable(augusta_capture_tests capture_test.cpp)
 target_link_libraries(augusta_capture_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_capture_tests DISCOVERY_TIMEOUT 30)
 
+# A capture directory kept within a count and a size (ADR-0050, #461).
+add_executable(augusta_capture_retention_tests capture_retention_test.cpp)
+target_link_libraries(
+  augusta_capture_retention_tests
+  PRIVATE augustad_host augusta_logging GTest::gtest GTest::gtest_main
+)
+gtest_discover_tests(augusta_capture_retention_tests DISCOVERY_TIMEOUT 30)
+
 # A Captured player (ADR-0050): its Script read from a capture a Capturer
 # writes, and its pacing and progress from Server views built by hand.
 add_executable(augusta_reenactment_tests reenactment_test.cpp)
@@ -679,7 +687,6 @@ if(WIN32)
       augusta_config
       augusta_failure
       augusta_harness
-      augusta_protocol
       GTest::gtest
       GTest::gtest_main
   )

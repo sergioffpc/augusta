@@ -21,6 +21,7 @@
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
+#include "capture_retention.h"
 #include "connection_sample.h"
 #include "content.h"
 #include "host_metrics.h"
@@ -73,6 +74,8 @@ struct HostConfig {
   /// The directory to capture every Match into (ADR-0050), created if
   /// missing; empty captures none.
   std::filesystem::path capture_directory;
+  /// What that directory is kept within, oldest capture first; off by default.
+  CaptureRetention capture_retention{};
   /// Whether a Captured player's Reenact request is admitted, at the spawn it
   /// names (ADR-0050); without it each is refused. Never for a server open to players.
   bool reenactments = false;

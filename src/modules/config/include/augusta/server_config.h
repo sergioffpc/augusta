@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -55,6 +56,16 @@ struct ServerConfig {
   /// Key `simulation.capture`: the directory to capture every Match into, one
   /// file each (ADR-0050), created if missing. Empty, the default, captures nothing.
   std::filesystem::path capture_directory;
+  /// Key `simulation.capture_retention.max_files`: how many captures the
+  /// capture directory keeps, the Match's in progress included, the oldest
+  /// deleted at each Match start (ADR-0050). At least 1; nullopt, the
+  /// default, keeps every one.
+  std::optional<std::uint32_t> capture_max_files;
+  /// Key `simulation.capture_retention.max_mib`: the most the capture
+  /// directory's captures may hold together, in MiB, the Match's in progress
+  /// included, the oldest deleted to stay within it (ADR-0050). At least 1;
+  /// nullopt, the default, sets no limit.
+  std::optional<std::uint32_t> capture_max_mib;
   /// Key `simulation.reenactments`: "true" to admit a Captured player's Reenact
   /// request at the spawn it names (ADR-0050), "false", the default, to refuse
   /// each. A debugging setting, never on for a server open to players.
@@ -74,8 +85,8 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
 /// file's directory. Errors carry file.
 std::expected<ServerConfig, ConfigError> LoadServerConfig(const std::filesystem::path& file);
 
-/// DescribeConfigError's message, naming the range a tick rate or metrics
-/// port must lie in.
+/// DescribeConfigError's message, naming the range a tick rate, metrics port
+/// or capture retention limit must lie in.
 std::string DescribeServerConfigError(const ConfigError& error);
 
 }  // namespace augusta::config
