@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -128,6 +129,58 @@ TEST(ParseServerConfigTest, RejectsAnEmptyCaptureDirectory) {
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kEmptyValue);
   EXPECT_EQ(config.error().subject, "simulation.capture");
+}
+
+TEST(ParseServerConfigTest, KeepsEveryCaptureByDefault) {
+  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->capture_max_files, std::nullopt);
+  EXPECT_EQ(config->capture_max_mib, std::nullopt);
+}
+
+// Requirements: US-21
+TEST(ParseServerConfigTest, ReadsTheCaptureRetention) {
+  const auto config =
+      ParseServerConfig(ServerConfigWith("  capture_retention:\n    max_files: 200\n    max_mib: 2048\n"), kFileDir);
+
+  ASSERT_TRUE(config.has_value()) << DescribeServerConfigError(config.error());
+  EXPECT_EQ(config->capture_max_files, 200U);
+  EXPECT_EQ(config->capture_max_mib, 2048U);
+}
+
+TEST(ParseServerConfigTest, ReadsEitherCaptureRetentionLimitAlone) {
+  const auto files = ParseServerConfig(ServerConfigWith("  capture_retention:\n    max_files: 1\n"), kFileDir);
+  const auto mib = ParseServerConfig(ServerConfigWith("  capture_retention:\n    max_mib: 1\n"), kFileDir);
+
+  ASSERT_TRUE(files.has_value());
+  EXPECT_EQ(files->capture_max_files, 1U);
+  EXPECT_EQ(files->capture_max_mib, std::nullopt);
+  ASSERT_TRUE(mib.has_value());
+  EXPECT_EQ(mib->capture_max_files, std::nullopt);
+  EXPECT_EQ(mib->capture_max_mib, 1U);
+}
+
+// Requirements: US-21
+TEST(ParseServerConfigTest, RejectsACaptureRetentionLimitThatIsNotAWholeNumberAboveZero) {
+  for (const std::string key : {"max_files", "max_mib"}) {
+    for (const char* limit : {"0", "-1", "-200", "1.5", "abc", "", "4294967296"}) {
+      const auto config = ParseServerConfig(
+          ServerConfigWith("  capture_retention:\n    " + key + ": '" + std::string(limit) + "'\n"), kFileDir);
+
+      ASSERT_FALSE(config.has_value()) << key << " " << limit;
+      EXPECT_EQ(config.error().subject, "simulation.capture_retention." + key) << limit;
+    }
+  }
+}
+
+TEST(DescribeServerConfigErrorTest, SaysWhatACaptureRetentionLimitMustBe) {
+  const auto message = DescribeServerConfigError({.code = ConfigErrorCode::kInvalidNumber,
+                                                  .subject = "simulation.capture_retention.max_mib",
+                                                  .reason = {},
+                                                  .file = {}});
+
+  EXPECT_EQ(message, "'simulation.capture_retention.max_mib' must be an integer from 1 to 4294967295");
 }
 
 TEST(ParseServerConfigTest, RecordsOptionallyByDefault) {

@@ -21,6 +21,7 @@
 #include "augusta/faults.h"
 #include "augusta/math.h"
 #include "augusta/tick.h"
+#include "capture_retention.h"
 #include "match.h"
 
 /// \file
@@ -145,9 +146,12 @@ enum class CaptureStop : std::uint8_t {
   kQueueFull,
   /// The file could not be created, written or flushed.
   kWriteFailed,
+  /// The record would take the directory past CaptureRetention::max_bytes with
+  /// no completed capture left to delete: the Match alone fills it.
+  kRetentionBudget,
 };
 
-/// "record_too_long", "queue_full" or "write_failed".
+/// "record_too_long", "queue_full", "write_failed" or "retention_budget".
 [[nodiscard]] std::string_view CaptureStopName(CaptureStop stop);
 
 /// How many records a Capturer holds that its writer has not yet written:
@@ -173,16 +177,21 @@ struct CaptureOptions {
   failure::Faults* faults = nullptr;
   /// kCaptureQueueCapacity but in tests.
   std::size_t capacity = kCaptureQueueCapacity;
+  /// What the directory is kept within; off by default, deleting nothing.
+  CaptureRetention retention{};
+  /// What retention reports as it works, for the metrics.
+  CaptureRetentionObserver observer{};
 };
 
 /// Captures every Match a server runs into a directory of its own, one file
 /// each (CaptureFileName), each file the capture's magic then its records,
-/// framed as frames.h writes kCaptureFrames, the header first. Every call but the
+/// framed as frames.h writes kCaptureFrames, the header first, the directory
+/// kept within CaptureOptions::retention (capture_retention.h). Every call but the
 /// destructor is the Simulation thread's, in the order the tick makes its
 /// events, and only encodes and queues; the Capturer's writer thread creates,
 /// writes, flushes and closes the files. A Match's capture stops at a record
-/// too long, one that finds the queue full, or a failed write, logged once at
-/// WARN as event=capture_stopped: its file keeps every whole record before it,
+/// too long, one that finds the queue full, a failed write, or one past the
+/// retention budget, logged once at WARN as event=capture_stopped: its file keeps every whole record before it,
 /// and the next Match is captured afresh. Destroying the Capturer waits for
 /// every record queued to be written.
 class Capturer {

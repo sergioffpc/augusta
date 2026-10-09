@@ -87,6 +87,17 @@ simulation:
   {{- if .root.Values.captures.hostPath }}
   capture: {{ include "augustad.captureFolder" . }}
   {{- end }}
+{{- with (.root.Values.captures).retention }}
+{{- if or .maxFiles .maxMiB }}
+  capture_retention:
+{{- with .maxFiles }}
+    max_files: {{ . }}
+{{- end }}
+{{- with .maxMiB }}
+    max_mib: {{ . }}
+{{- end }}
+{{- end }}
+{{- end }}
 network:
   listen_address: 0.0.0.0:{{ .root.Values.service.port }}
 metrics:

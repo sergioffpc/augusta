@@ -32,6 +32,7 @@
 #include "augusta/logging.h"
 #include "augusta/protocol.h"
 #include "augusta/tick.h"
+#include "capture_retention.h"
 #include "frames.h"
 #include "match.h"
 #include "wire.h"
@@ -171,6 +172,8 @@ std::string_view CaptureStopName(CaptureStop stop) {
       return "queue_full";
     case CaptureStop::kWriteFailed:
       return "write_failed";
+    case CaptureStop::kRetentionBudget:
+      return "retention_budget";
   }
   return "unknown";
 }
@@ -182,7 +185,10 @@ std::string_view CaptureStopName(CaptureStop stop) {
 // across a write.
 class Capturer::Writer {
  public:
-  explicit Writer(CaptureOptions options) : faults_(options.faults), capacity_(options.capacity) {
+  Writer(std::filesystem::path directory, CaptureOptions options)
+      : faults_(options.faults),
+        capacity_(options.capacity),
+        directory_(std::move(directory), std::move(options.retention), std::move(options.observer), options.faults) {
     thread_ = std::thread([this] { Run(); });
   }
 
@@ -243,12 +249,16 @@ class Capturer::Writer {
   // Where the writer lost a Match's file, as its capture_stopped line names it.
   enum class Step : std::uint8_t { kCreate, kWrite };
 
+  // Why the writer stopped a Match's capture, and what it knows of where.
   struct Loss {
-    Step step;
-    std::string detail;
+    CaptureStop stop;
+    std::string where;
   };
 
-  static std::string_view StepName(Step step) { return step == Step::kCreate ? "create" : "write"; }
+  static Loss Failed(Step step, std::string_view detail) {
+    return Loss{.stop = CaptureStop::kWriteFailed,
+                .where = std::format("step={} detail=\"{}\"", step == Step::kCreate ? "create" : "write", detail)};
+  }
 
   struct Item {
     Kind kind;
@@ -291,8 +301,7 @@ class Capturer::Writer {
                       [&](const Item& queued) { return queued.kind == Kind::kRecord && queued.match == item.match; });
         records_queued_ = static_cast<std::size_t>(
             std::ranges::count_if(queue_, [](const Item& queued) { return queued.kind == Kind::kRecord; }));
-        StopLocked(item.match, CaptureStop::kWriteFailed,
-                   std::format("step={} detail=\"{}\"", StepName(loss->step), loss->detail));
+        StopLocked(item.match, loss->stop, loss->where);
       }
       if (queue_.empty()) {
         written_.notify_all();
@@ -315,30 +324,44 @@ class Capturer::Writer {
     return std::nullopt;
   }
 
+  // Makes room in the directory for the magic and the header, then creates
+  // the file with them.
   std::optional<Loss> OpenFile(const Item& item) {
+    if (!directory_.Open(item.match, item.path.filename().string(),
+                         protocol::kCaptureMagic.size() + FrameSize(kCaptureFrames, item.payload.size()))) {
+      return Loss{.stop = CaptureStop::kRetentionBudget, .where = {}};
+    }
     file_ = std::ofstream(item.path, std::ios::binary | std::ios::trunc);
     if (!file_) {
-      return Loss{.step = Step::kCreate, .detail = item.path.string()};
+      return Failed(Step::kCreate, item.path.string());
     }
     file_match_ = item.match;
     path_ = item.path;
     records_ = 0;
     file_.write(reinterpret_cast<const char*>(protocol::kCaptureMagic.data()), protocol::kCaptureMagic.size());
     LI("subsystem=capture event=capture_started match={} path={}", item.match, path_.string());
-    return Persist(item.payload);
+    return Write(item.payload);
+  }
+
+  // Makes room in the directory for payload's frame, then writes it.
+  std::optional<Loss> Persist(const protocol::BytesWire& payload) {
+    if (!directory_.Reserve(FrameSize(kCaptureFrames, payload.size()))) {
+      return Loss{.stop = CaptureStop::kRetentionBudget, .where = {}};
+    }
+    return Write(payload);
   }
 
   // Writes and flushes payload's frame. An injected fault fails the file, as the disk would.
-  std::optional<Loss> Persist(const protocol::BytesWire& payload) {
+  std::optional<Loss> Write(const protocol::BytesWire& payload) {
     if (std::optional<std::string> fault =
             faults_ == nullptr ? std::nullopt : faults_->Trip(failure::Site::kCaptureWrite)) {
       file_.setstate(std::ios::badbit);
-      return Loss{.step = Step::kWrite, .detail = *std::move(fault)};
+      return Failed(Step::kWrite, *fault);
     }
     WriteFrame(file_, kCaptureFrames, payload);
     file_.flush();
     if (!file_) {
-      return Loss{.step = Step::kWrite, .detail = path_.string()};
+      return Failed(Step::kWrite, path_.string());
     }
     ++records_;
     return std::nullopt;
@@ -375,6 +398,8 @@ class Capturer::Writer {
 
   failure::Faults* const faults_;
   const std::size_t capacity_;
+  // Kept within its retention by the writer thread alone.
+  CaptureDirectory directory_;
   mutable std::mutex mutex_;
   std::condition_variable ready_;
   // Notified each time the queue is found empty, its last item handled.
@@ -397,7 +422,9 @@ class Capturer::Writer {
 };
 
 Capturer::Capturer(std::filesystem::path directory, CaptureHeader header, CaptureOptions options)
-    : directory_(std::move(directory)), header_(std::move(header)), writer_(std::make_unique<Writer>(options)) {}
+    : directory_(std::move(directory)),
+      header_(std::move(header)),
+      writer_(std::make_unique<Writer>(directory_, std::move(options))) {}
 
 Capturer::~Capturer() = default;
 
