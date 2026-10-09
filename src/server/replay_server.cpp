@@ -10,9 +10,10 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <ranges>
 #include <stdexcept>
 #include <string>
-#include <string_view>
+#include <system_error>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -20,10 +21,12 @@
 #include <vector>
 
 #include "admission.h"
+#include "augusta/assets.h"
 #include "augusta/failure.h"
 #include "augusta/first_failure.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
+#include "augusta/parameters.h"
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
@@ -73,43 +76,53 @@ std::filesystem::path RequireDirectory(const std::filesystem::path& directory) {
 
 }  // namespace
 
-std::vector<ViewerMessage> ViewerMessages(const ReplayTick& tick) {
+std::expected<std::vector<ViewerMessage>, failure::Failure> ViewerMessages(const ReplayTick& tick) {
   const simulation::State& state = tick.result.state;
-  std::vector<ViewerMessage> messages;
+  std::vector<protocol::MessageWire> messages;
+  std::vector<networking::Reliability> reliabilities;
+  const auto add = [&](protocol::MessageWire message, networking::Reliability reliability) {
+    messages.push_back(std::move(message));
+    reliabilities.push_back(reliability);
+  };
   // Every body, and no recipient: a viewer has no rifle, health or Commands of its own.
-  messages.push_back({.message = ToWire(replication::PlanUpdates(state, state.tick, {})),
-                      .reliability = networking::Reliability::kUnreliable});
+  add(ToWire(replication::PlanUpdates(state, state.tick, {})), networking::Reliability::kUnreliable);
   for (const replication::Shot& shot : replication::PlanShots(state, state.tick)) {
-    messages.push_back({.message = ToWire(shot), .reliability = networking::Reliability::kReliable});
+    add(ToWire(shot), networking::Reliability::kReliable);
   }
   for (const replication::Death& death : replication::PlanDeaths(state)) {
-    messages.push_back({.message = ToWire(death), .reliability = networking::Reliability::kReliable});
+    add(ToWire(death), networking::Reliability::kReliable);
   }
-  messages.push_back({.message = ToWire(tick.views, state.tick), .reliability = networking::Reliability::kUnreliable});
+  add(ToWire(tick.views, state.tick), networking::Reliability::kUnreliable);
   if (tick.end.has_value()) {
-    messages.push_back(
-        {.message = protocol::MatchEndWire{.winner = tick.end->winner.has_value() ? ToWire(*tick.end->winner)
-                                                                                  : protocol::kDraw},
-         .reliability = networking::Reliability::kReliable});
+    add(ToWire(MatchEnd{.players = {}, .winner = tick.end->winner}), networking::Reliability::kReliable);
   }
-  return messages;
+  std::vector<ViewerMessage> encoded;
+  encoded.reserve(messages.size());
+  for (std::size_t i = 0; i < messages.size(); ++i) {
+    auto payload = EncodeToSend(messages[i]);
+    if (!payload.has_value()) {
+      return std::unexpected(std::move(payload.error()));
+    }
+    encoded.push_back({.payload = *std::move(payload), .reliability = reliabilities[i]});
+  }
+  return encoded;
 }
 
-protocol::ReplayListWire ReplayListOf(const std::vector<ReplayListing>& listings) {
-  protocol::ReplayListWire list;
+std::vector<ReplayListing> ListedOf(const std::vector<ReplayListing>& listings) {
+  std::vector<ReplayListing> listed;
   // Newest last, as the listing orders them, so the oldest are the ones left out.
-  for (auto listing = listings.rbegin(); listing != listings.rend(); ++listing) {
-    if (list.replays.size() == protocol::kMaxReplayListings) {
+  for (const ReplayListing& listing : std::views::reverse(listings)) {
+    if (listed.size() == protocol::kMaxReplayListings) {
       break;
     }
     // A name no Replay request could carry is no capture a viewer can watch.
-    if (listing->name.size() > protocol::kMaxCaptureNameLength) {
+    if (listing.name.size() > protocol::kMaxCaptureNameLength) {
       continue;
     }
-    list.replays.push_back(ToWire(*listing));
+    listed.push_back(listing);
   }
-  std::ranges::reverse(list.replays);
-  return list;
+  std::ranges::reverse(listed);
+  return listed;
 }
 
 struct ReplayServer::Impl {
@@ -173,19 +186,26 @@ struct ReplayServer::Impl {
     return listen;
   }
 
-  // Sends payload to peer as reliability says, counted as Host counts what it sends.
+  // Sends payload, an encoded message, to peer as reliability says, counted
+  // as Host counts what it sends.
+  void Deliver(networking::PeerId peer, const networking::Payload& payload, networking::Reliability reliability) {
+    networking::SendResult sent = SendCounted(network, metrics, peer, payload, reliability);
+    if (!sent.has_value()) {
+      transport_failure.Record(std::move(sent.error()));
+    } else if (*sent == networking::SendOutcome::kAccepted && TypeOf(payload) == MessageType::kAuthoritativeState) {
+      metrics.authoritative_state_update_bytes.Observe(static_cast<double>(payload.size()));
+    }
+  }
+
+  // Sends message to peer as Deliver does, once encoded: one the protocol
+  // cannot carry is sent to no one and kept in invariant_failure.
   void Send(networking::PeerId peer, const protocol::MessageWire& message, networking::Reliability reliability) {
     auto payload = EncodeToSend(message);
     if (!payload.has_value()) {
       invariant_failure.Record(std::move(payload.error()));
       return;
     }
-    networking::SendResult sent = SendCounted(network, metrics, peer, *payload, reliability);
-    if (!sent.has_value()) {
-      transport_failure.Record(std::move(sent.error()));
-    } else if (*sent == networking::SendOutcome::kAccepted && TypeOf(*payload) == MessageType::kAuthoritativeState) {
-      metrics.authoritative_state_update_bytes.Observe(static_cast<double>(payload->size()));
-    }
+    Deliver(peer, *payload, reliability);
   }
 
   // Closes peer's connection from this side, once what was sent to it
@@ -236,9 +256,9 @@ struct ReplayServer::Impl {
   // Answers a Replay list request with the captures replayed here, then
   // closes the connection. With mutex held.
   void HandleReplayListRequest(networking::PeerId peer) {
-    const protocol::ReplayListWire list = ReplayListOf(catalog.List());
-    LI("subsystem=replay event=replay_list peer={} captures={}", PeerNumber(peer), list.replays.size());
-    Send(peer, list, networking::Reliability::kReliable);
+    const std::vector<ReplayListing> listed = ListedOf(catalog.List());
+    LI("subsystem=replay event=replay_list peer={} captures={}", PeerNumber(peer), listed.size());
+    Send(peer, ToWire(listed), networking::Reliability::kReliable);
     Close(peer);
   }
 
@@ -328,8 +348,14 @@ struct ReplayServer::Impl {
       LW("subsystem=replay event=replay_diverged peer={} capture={} {}", PeerNumber(peer), viewer.capture,
          DescribeDivergence(*tick.divergence));
     }
-    for (const ViewerMessage& message : ViewerMessages(tick)) {
-      Send(peer, message.message, message.reliability);
+    // None of the tick is sent if the protocol cannot carry all of it.
+    auto messages = ViewerMessages(tick);
+    if (!messages.has_value()) {
+      invariant_failure.Record(std::move(messages.error()));
+    } else {
+      for (const ViewerMessage& message : *messages) {
+        Deliver(peer, message.payload, message.reliability);
+      }
     }
     if (!tick.end.has_value()) {
       return false;

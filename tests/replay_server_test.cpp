@@ -11,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -36,7 +37,6 @@
 #include "frames.h"
 #include "host.h"
 #include "match.h"
-#include "replay.h"
 #include "replay_catalog.h"
 #include "wire.h"
 
@@ -782,7 +782,7 @@ TEST(ReplayServerConfigTest, AReplayServerRefusesACapturesDirectoryThatIsNone) {
 }
 
 // A list of more captures than a Replay list holds names the newest.
-TEST(ReplayListOfTest, ItNamesTheNewestCapturesAReplayRequestCanName) {
+TEST(ListedOfTest, ItNamesTheNewestCapturesAReplayRequestCanName) {
   std::vector<augusta::server::ReplayListing> listings;
   for (std::size_t i = 0; i < protocol::kMaxReplayListings + 2; ++i) {
     listings.push_back(augusta::server::ReplayListing{
@@ -794,11 +794,13 @@ TEST(ReplayListOfTest, ItNamesTheNewestCapturesAReplayRequestCanName) {
                                                     .tick_rate_hz = kTickRate,
                                                     .characters = {}});
 
-  const protocol::ReplayListWire list = augusta::server::ReplayListOf(listings);
+  const std::vector<augusta::server::ReplayListing> listed = augusta::server::ListedOf(listings);
 
-  ASSERT_EQ(list.replays.size(), protocol::kMaxReplayListings);
-  EXPECT_EQ(list.replays.front().name, "1002");
-  EXPECT_EQ(list.replays.back().name, std::to_string(1000 + protocol::kMaxReplayListings + 1));
+  ASSERT_EQ(listed.size(), protocol::kMaxReplayListings);
+  EXPECT_EQ(listed.front().name, "1002");
+  EXPECT_EQ(listed.back().name, std::to_string(1000 + protocol::kMaxReplayListings + 1));
+  // Whatever it names, the list carries.
+  EXPECT_TRUE(protocol::Encode(augusta::server::ToWire(listed)).has_value());
 }
 
 }  // namespace

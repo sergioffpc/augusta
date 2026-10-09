@@ -323,6 +323,15 @@ protocol::ReplayListingWire ToWire(const ReplayListing& listing) {
                                      .tick_rate_hz = listing.tick_rate_hz};
 }
 
+protocol::ReplayListWire ToWire(const std::vector<ReplayListing>& listings) {
+  protocol::ReplayListWire list;
+  list.replays.reserve(listings.size());
+  for (const ReplayListing& listing : listings) {
+    list.replays.push_back(ToWire(listing));
+  }
+  return list;
+}
+
 protocol::ReplayViewWire ToWire(const std::vector<PlayerView>& views, tick::Tick tick) {
   protocol::ReplayViewWire message{.tick = tick, .players = {}};
   message.players.reserve(views.size());

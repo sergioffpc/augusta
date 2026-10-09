@@ -159,6 +159,21 @@ TEST(TickMessagesTest, EachRecipientIsSentEveryBodyAndItsOwnFieldsUnreliablyInRe
   }
 }
 
+// A Replay view is a Replay viewer's alone (ADR-0051): a live tick sends its
+// players none, and their updates keep the bytes they had - the protocol's
+// authoritative_state seed (tests/fuzz) holds them to that, byte for byte.
+TEST(TickMessagesTest, ALiveTickSendsItsPlayersNoReplayView) {
+  State state = TwoBodies();
+  state.shots = {{.shooter = EntityId{1}, .origin = augusta::math::Vec3(1.0F, 1.5F, -2.0F), .yaw = 0.5F}};
+
+  const std::vector<Sent> sent = SendAll(state, 42, ThreePlayers());
+
+  ASSERT_FALSE(sent.empty());
+  for (const Sent& message : sent) {
+    EXPECT_NE(message.payload.front(), static_cast<std::byte>(augusta::protocol::MessageTypeWire::kReplayView));
+  }
+}
+
 TEST(TickMessagesTest, CombatEventsFollowTheUpdatesReliablyShotsThenHitConfirmationsThenDeaths) {
   State state = TwoBodies();
   state.shots = {{.shooter = EntityId{1}, .origin = augusta::math::Vec3(1.0F, 1.5F, -2.0F), .yaw = 0.5F}};

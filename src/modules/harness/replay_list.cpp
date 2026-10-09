@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "augusta/failure.h"
+#include "augusta/faults.h"
 #include "augusta/first_failure.h"
 #include "augusta/harness.h"
 #include "augusta/harness_wire.h"
@@ -17,6 +18,12 @@
 #include "augusta/protocol.h"
 
 namespace augusta::harness {
+
+namespace {
+
+constexpr std::uint32_t kSecondsPerMinute = 60;
+
+}  // namespace
 
 struct ReplayListQuery::Impl {
   networking::Endpoint server;
@@ -106,8 +113,8 @@ std::string DescribeReplayList(const std::vector<ReplayListing>& listings) {
       characters += (characters.empty() ? "" : ", ") + character;
     }
     lines += std::format("{}{}  started {:%Y-%m-%d %H:%M:%S} UTC  lasted {}:{:02}  {}", lines.empty() ? "" : "\n",
-                         listing.name, std::chrono::floor<std::chrono::seconds>(listing.started), seconds / 60,
-                         seconds % 60, characters);
+                         listing.name, std::chrono::floor<std::chrono::seconds>(listing.started),
+                         seconds / kSecondsPerMinute, seconds % kSecondsPerMinute, characters);
   }
   return lines;
 }

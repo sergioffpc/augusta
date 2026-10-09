@@ -1,4 +1,3 @@
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -12,7 +11,6 @@
 #include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
-#include "augusta/policy_actions.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "capture.h"

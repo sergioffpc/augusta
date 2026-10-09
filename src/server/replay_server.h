@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -16,7 +17,6 @@
 #include "augusta/faults.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
-#include "augusta/protocol.h"
 #include "augusta/scripting.h"
 #include "augusta/tick.h"
 #include "connection_sample.h"
@@ -75,9 +75,9 @@ struct ReplayServerConfig {
 /// Makes the scenario's Game policy afresh: every Replay's World needs one of its own.
 using PolicyMaker = std::function<scripting::Engine()>;
 
-/// One message a Replay viewer is sent, and how.
+/// One message a Replay viewer is sent, encoded, and how.
 struct ViewerMessage {
-  protocol::MessageWire message;
+  networking::Payload payload;
   networking::Reliability reliability{};
 };
 
@@ -85,13 +85,14 @@ struct ViewerMessage {
 /// Authoritative State, with every body and none of a player's own fields,
 /// unreliably; every Shot and Death, reliably; its Replay view, unreliably;
 /// and, on its last tick, the Match end, reliably. No Hit confirmation: the
-/// viewer fired nothing.
-[[nodiscard]] std::vector<ViewerMessage> ViewerMessages(const ReplayTick& tick);
+/// viewer fired nothing. Every message is encoded before any is returned, so
+/// if the protocol cannot carry one, the broken invariant is returned instead
+/// (EncodeToSend in wire.h), as ForEachTickMessage does a live tick's.
+[[nodiscard]] std::expected<std::vector<ViewerMessage>, failure::Failure> ViewerMessages(const ReplayTick& tick);
 
-/// What a replay server answers a Replay list request with: every one of
-/// listings a Replay request can name, the newest protocol::kMaxReplayListings
-/// of them if there are more.
-[[nodiscard]] protocol::ReplayListWire ReplayListOf(const std::vector<ReplayListing>& listings);
+/// What of listings a replay server's Replay list names: every one a Replay
+/// request can name, the newest the list holds if there are more.
+[[nodiscard]] std::vector<ReplayListing> ListedOf(const std::vector<ReplayListing>& listings);
 
 /// A replay server's listening socket and its Replays, without threads or a clock.
 class ReplayServer {

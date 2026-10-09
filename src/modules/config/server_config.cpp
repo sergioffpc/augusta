@@ -64,6 +64,31 @@ std::expected<bool, ConfigError> OptionalStrictRecording(const ConfigValues& val
   return mode == "strict";
 }
 
+// What the server writes of what it simulates: a recording, how strictly,
+// and each Match's capture; each path empty when its key is absent.
+struct Outputs {
+  std::filesystem::path recording;
+  bool strict_recording = false;
+  std::filesystem::path capture;
+};
+
+std::expected<Outputs, ConfigError> OptionalOutputs(const ConfigValues& values, const std::filesystem::path& root) {
+  auto recording = OptionalPath(values, kRecordingKey, root);
+  if (!recording) {
+    return std::unexpected(recording.error());
+  }
+  const auto strict_recording = OptionalStrictRecording(values);
+  if (!strict_recording) {
+    return std::unexpected(strict_recording.error());
+  }
+  auto capture = OptionalPath(values, kCaptureKey, root);
+  if (!capture) {
+    return std::unexpected(capture.error());
+  }
+  return Outputs{
+      .recording = *std::move(recording), .strict_recording = *strict_recording, .capture = *std::move(capture)};
+}
+
 // A key that may not be set with replay.captures, or that needs it.
 ConfigError ReplayEntryError(std::string_view key, std::string_view reason) {
   return ConfigError{
@@ -111,9 +136,9 @@ std::expected<ReplaySettings, ConfigError> OptionalReplay(const ConfigValues& va
 std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
   static constexpr std::array<std::string_view, 12> kKeys{
-      "base_dir",          "content.pack",         "content.public_key",     kTickRateKey,
-      kRecordingKey,       kRecordingModeKey,      kCaptureKey,              "network.listen_address",
-      "logging.level",     kMetricsPortKey,        kReplayCapturesKey,       kReplayMaxViewersKey,
+      "base_dir",      "content.pack",    "content.public_key", kTickRateKey,
+      kRecordingKey,   kRecordingModeKey, kCaptureKey,          "network.listen_address",
+      "logging.level", kMetricsPortKey,   kReplayCapturesKey,   kReplayMaxViewersKey,
   };
   const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = {}});
   if (!values) {
@@ -141,17 +166,9 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!log_level) {
     return std::unexpected(log_level.error());
   }
-  auto recording_path = OptionalPath(*values, kRecordingKey, *root);
-  if (!recording_path) {
-    return std::unexpected(recording_path.error());
-  }
-  const auto strict_recording = OptionalStrictRecording(*values);
-  if (!strict_recording) {
-    return std::unexpected(strict_recording.error());
-  }
-  auto capture_directory = OptionalPath(*values, kCaptureKey, *root);
-  if (!capture_directory) {
-    return std::unexpected(capture_directory.error());
+  auto outputs = OptionalOutputs(*values, *root);
+  if (!outputs) {
+    return std::unexpected(outputs.error());
   }
   const auto metrics_port = OptionalMetricsPort(*values);
   if (!metrics_port) {
@@ -167,9 +184,9 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
       .tick_rate_hz = *tick_rate_hz,
       .listen_address = OptionalString(*values, "network.listen_address", kDefaultListenAddress),
       .log_level = *std::move(log_level),
-      .recording_path = *std::move(recording_path),
-      .strict_recording = *strict_recording,
-      .capture_directory = *std::move(capture_directory),
+      .recording_path = std::move(outputs->recording),
+      .strict_recording = outputs->strict_recording,
+      .capture_directory = std::move(outputs->capture),
       .metrics_port = *metrics_port,
       .replay_captures = std::move(replay->captures),
       .replay_max_viewers = replay->max_viewers,

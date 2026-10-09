@@ -1,7 +1,6 @@
 #include "replay_catalog.h"
 
 #include <algorithm>
-#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <ios>

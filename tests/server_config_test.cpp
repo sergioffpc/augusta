@@ -151,10 +151,10 @@ TEST(ParseServerConfigTest, ReadsAReplayServersCapturesRelativeToTheBaseDirAndIt
 
 TEST(ParseServerConfigTest, RejectsMostViewersThatAreNotAnIntegerFromOneTo255) {
   for (const std::string_view viewers : {"0", "256", "-1", "two", "1.5"}) {
-    const auto config = ParseServerConfig(std::string(kMinimalServerConfig) +
-                                              "replay:\n  captures: captures\n  max_viewers: \"" +
-                                              std::string(viewers) + "\"\n",
-                                          kFileDir);
+    const auto config =
+        ParseServerConfig(std::string(kMinimalServerConfig) + "replay:\n  captures: captures\n  max_viewers: \"" +
+                              std::string(viewers) + "\"\n",
+                          kFileDir);
 
     ASSERT_FALSE(config.has_value()) << viewers;
     EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidNumber) << viewers;

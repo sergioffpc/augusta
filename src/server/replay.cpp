@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "augusta/command.h"
-#include "augusta/math.h"
 #include "augusta/policy_actions.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"

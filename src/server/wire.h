@@ -137,6 +137,9 @@ void Address(protocol::AuthoritativeStateWire& state, const replication::Recipie
 /// A capture a replay server replays, as its Replay list names it (ADR-0051).
 [[nodiscard]] protocol::ReplayListingWire ToWire(const ReplayListing& listing);
 
+/// The captures a replay server's Replay list names (ListedOf), as the list.
+[[nodiscard]] protocol::ReplayListWire ToWire(const std::vector<ReplayListing>& listings);
+
 /// What each player of a Replay looked like on tick, as its viewer's Replay view.
 [[nodiscard]] protocol::ReplayViewWire ToWire(const std::vector<PlayerView>& views, tick::Tick tick);
 

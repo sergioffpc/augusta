@@ -199,7 +199,7 @@ struct CommandLine {
   /// Only set for kRun: each CommandLineOption given, by name, with its value,
   /// empty for one that takes none. What they mean together is the
   /// executable's to decide.
-  std::map<std::string, std::string, std::less<>> options{};
+  std::map<std::string, std::string, std::less<>> options;
   CommandLineAction action = CommandLineAction::kRun;
 };
 
