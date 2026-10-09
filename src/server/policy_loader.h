@@ -2,6 +2,7 @@
 #define AUGUSTA_SERVER_POLICY_LOADER_H_
 
 #include <expected>
+#include <functional>
 #include <string>
 
 #include "augusta/assets.h"
@@ -36,6 +37,11 @@ std::string DescribePolicyLoadError(const PolicyLoadError& error);
 /// The engine loaded with the rules.lua pack holds. A pack without one is no
 /// error: the scenario has no Game policy, and the mechanism decides alone.
 std::expected<scripting::Engine, PolicyLoadError> LoadPolicy(const assets::Pack& pack);
+
+/// What makes the engine LoadPolicy loads, afresh for each World that runs it
+/// (a replay server's every Replay, ADR-0051), or the error LoadPolicy gives:
+/// the rules are checked once, here, so making them again cannot fail.
+std::expected<std::function<scripting::Engine()>, PolicyLoadError> LoadPolicyMaker(const assets::Pack& pack);
 
 }  // namespace augusta::server
 

@@ -16,7 +16,9 @@
 #include "augusta/server_config.h"
 #include "content.h"
 #include "host.h"
+#include "policy_loader.h"
 #include "recording.h"
+#include "replay_server.h"
 #include "runtime.h"
 
 namespace augusta::server {
@@ -27,6 +29,28 @@ failure::Failure ContentFailure(const std::filesystem::path& pack_path, std::str
   return {.code = failure::Code::kInvalidContent,
           .context = {{.key = "path", .value = pack_path.string()}},
           .detail = std::move(detail)};
+}
+
+// A replay server's runtime (ADR-0051), on the content loaded from pack: each
+// Replay's World makes the pack's Game policy afresh, so the policy is kept
+// as what makes it rather than as the one engine content loaded.
+std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructReplayRuntime(
+    const config::ServerConfig& file_config, const assets::Pack& pack, Content content, failure::Faults* faults) {
+  auto policy = LoadPolicyMaker(pack);
+  if (!policy) {
+    return std::unexpected(ContentFailure(pack.Path(), DescribePolicyLoadError(policy.error())));
+  }
+  const ReplayServerConfig replay_config{
+      .tick_rate_hz = file_config.tick_rate_hz,
+      .parameters = content.parameters,
+      .listen = {.address = file_config.listen_address},
+      .server_pack = pack.Hash(),
+      .captures = file_config.replay_captures,
+      .max_viewers = file_config.replay_max_viewers,
+      .faults = nullptr,
+  };
+  return std::make_unique<ServerRuntime>(replay_config, file_config.metrics_port, std::move(content.scenario),
+                                         *std::move(policy), faults);
 }
 
 // Verifies the pack the file's settings name, loads its content and constructs
@@ -48,6 +72,9 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
   auto content = LoadServerContent(*pack, file_config.tick_rate_hz);
   if (!content) {
     return std::unexpected(ContentFailure(pack_path, std::string(DescribeContentError(content.error()))));
+  }
+  if (!file_config.replay_captures.empty()) {
+    return ConstructReplayRuntime(file_config, *pack, *std::move(content), faults);
   }
 
   const HostConfig host_config{

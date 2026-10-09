@@ -21,6 +21,7 @@ using augusta::assets::AssetEntry;
 using augusta::assets::AssetType;
 using augusta::assets::Pack;
 using augusta::server::LoadPolicy;
+using augusta::server::LoadPolicyMaker;
 using augusta::server::PolicyLoadErrorCode;
 
 AssetEntry ScriptEntry(std::string path, std::string_view text) {
@@ -68,6 +69,42 @@ TEST_F(PolicyLoaderTest, LoadsTheRulesFromThePack) {
 
   ASSERT_TRUE(engine.has_value()) << augusta::server::DescribePolicyLoadError(engine.error());
   EXPECT_EQ(Returned(*engine, "probe"), "rules");
+}
+
+// Every Replay's World runs a policy of its own (ADR-0051): what one keeps
+// between its hooks' calls is none of another's.
+TEST_F(PolicyLoaderTest, EachPolicyTheMakerMakesStartsAfresh) {
+  const Pack pack = MakePack(
+      "maker",
+      {ScriptEntry("rules.lua", "local calls = 0 function probe() calls = calls + 1 return tostring(calls) end")});
+
+  const auto make = LoadPolicyMaker(pack);
+
+  ASSERT_TRUE(make.has_value()) << augusta::server::DescribePolicyLoadError(make.error());
+  augusta::scripting::Engine first = (*make)();
+  augusta::scripting::Engine second = (*make)();
+  EXPECT_EQ(Returned(first, "probe"), "1");
+  EXPECT_EQ(Returned(first, "probe"), "2");
+  EXPECT_EQ(Returned(second, "probe"), "1");
+}
+
+TEST_F(PolicyLoaderTest, TheMakerOfRulesThatDoNotLoadIsTheirError) {
+  const Pack pack = MakePack("maker_broken", {ScriptEntry("rules.lua", "function probe(")});
+
+  const auto make = LoadPolicyMaker(pack);
+
+  ASSERT_FALSE(make.has_value());
+  EXPECT_EQ(make.error().code, PolicyLoadErrorCode::kScriptError);
+}
+
+TEST_F(PolicyLoaderTest, ThePolicyMadeForAPackWithoutRulesIsNone) {
+  const Pack pack = MakePack("maker_none", {ScriptEntry("parameters.lua", "function probe() return 'here' end")});
+
+  const auto make = LoadPolicyMaker(pack);
+
+  ASSERT_TRUE(make.has_value());
+  augusta::scripting::Engine none = (*make)();
+  EXPECT_EQ(Returned(none, "probe"), "");
 }
 
 // Requirements: US-22

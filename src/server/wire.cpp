@@ -30,6 +30,8 @@
 #include "host_metrics.h"
 #include "match.h"
 #include "recording.h"
+#include "replay.h"
+#include "replay_catalog.h"
 #include "simulation_mapping.h"
 
 namespace augusta::server {
@@ -311,6 +313,34 @@ assets::PackHash FromWire(const protocol::PackHashWire& hash) {
   assets::PackHash result{};
   std::ranges::copy(hash, result.begin());
   return result;
+}
+
+protocol::ReplayListingWire ToWire(const ReplayListing& listing) {
+  return protocol::ReplayListingWire{.started_unix_ms = listing.started.time_since_epoch().count(),
+                                     .characters = listing.characters,
+                                     .name = listing.name,
+                                     .ticks = listing.ticks,
+                                     .tick_rate_hz = listing.tick_rate_hz};
+}
+
+protocol::ReplayViewWire ToWire(const std::vector<PlayerView>& views, tick::Tick tick) {
+  protocol::ReplayViewWire message{.tick = tick, .players = {}};
+  message.players.reserve(views.size());
+  for (const PlayerView& view : views) {
+    message.players.push_back(
+        protocol::PlayerViewWire{.pitch = view.pitch,
+                                 .entity = ToWire(view.entity),
+                                 .flags = static_cast<std::uint8_t>(view.ads ? protocol::PlayerViewWire::kAds : 0U)});
+  }
+  return message;
+}
+
+ReplayRequest FromWire(const protocol::ReplayRequestWire& request) {
+  return ReplayRequest{
+      .engine_version = request.engine_version,
+      .client_pack = FromWire(request.client_pack),
+      .capture = request.capture,
+  };
 }
 
 JoinRequest FromWire(const protocol::JoinRequestWire& request) {

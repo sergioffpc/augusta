@@ -21,6 +21,8 @@
 #include "host_metrics.h"
 #include "match.h"
 #include "recording.h"
+#include "replay.h"
+#include "replay_catalog.h"
 
 /// \file
 /// The server's edge with the Networking Protocol (ADR-0038): what server::Host
@@ -131,6 +133,15 @@ void Address(protocol::AuthoritativeStateWire& state, const replication::Recipie
 
 /// A recording's record of tick, as the World numbers it, in the engine's terms.
 [[nodiscard]] TickRecord FromWire(const protocol::RecordedTickWire& record, tick::Tick tick);
+
+/// A capture a replay server replays, as its Replay list names it (ADR-0051).
+[[nodiscard]] protocol::ReplayListingWire ToWire(const ReplayListing& listing);
+
+/// What each player of a Replay looked like on tick, as its viewer's Replay view.
+[[nodiscard]] protocol::ReplayViewWire ToWire(const std::vector<PlayerView>& views, tick::Tick tick);
+
+/// A Replay a viewer asked for, in the engine's terms.
+[[nodiscard]] ReplayRequest FromWire(const protocol::ReplayRequestWire& request);
 
 /// A Match capture's header as its record (ADR-0050), in this engine's format version.
 [[nodiscard]] protocol::CaptureHeaderWire ToWire(const CaptureHeader& header);
