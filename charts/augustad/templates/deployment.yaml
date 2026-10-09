@@ -28,11 +28,30 @@ spec:
       # augustad stops within a tick of SIGTERM (src/server/main.cpp), so this
       # is not sized for a match to end: a rollout may cut one (ADR-0026).
       terminationGracePeriodSeconds: 10
+      # The image's own user (the Dockerfile's AUGUSTA_UID, ADR-0054): the kubelet
+      # refuses to start the server as root, and a `kubectl debug` ephemeral
+      # container runs as the server does, so it can read the server's files.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
       containers:
         - name: augustad
           image: "{{ $.Values.image.repository }}:{{ include "augustad.imageTag" $ }}"
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
           args: ["--config", "/etc/augusta/augustad.yaml"]
+          # augustad needs no privilege: its ports are unprivileged, and it
+          # writes only to the capture volume, if any (GameNetworkingSockets
+          # writes a file only when STEAMNETWORKINGSOCKETS_LOG_LEVEL is set,
+          # which nothing here sets). A crash's core goes to the node's
+          # systemd-coredump, outside the container (ADR-0047).
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
           ports:
             - name: game
               containerPort: {{ $.Values.service.port }}
@@ -60,6 +79,10 @@ spec:
             - name: pack
               mountPath: /srv/augusta/pack
               readOnly: true
+            {{- if $.Values.captures.hostPath }}
+            - name: captures
+              mountPath: {{ include "augustad.capturesMount" $server }}
+            {{- end }}
           resources:
             {{- toYaml $.Values.resources | nindent 12 }}
       volumes:
@@ -73,4 +96,13 @@ spec:
           hostPath:
             path: {{ include "augustad.packFolder" $server }}
             type: Directory
+        {{- if $.Values.captures.hostPath }}
+        # The whole capture volume, which node setup creates: augustad creates
+        # its own folder in it (augustad.captureFolder). Until it exists the pod
+        # waits in ContainerCreating, as for a missing pack.
+        - name: captures
+          hostPath:
+            path: {{ $.Values.captures.hostPath }}
+            type: Directory
+        {{- end }}
 {{- end }}

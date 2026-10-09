@@ -10,15 +10,6 @@ target_link_libraries(
 # default discovery timeout (see tests/CMakeLists.txt).
 gtest_discover_tests(augusta_swarm_scripted_player_tests DISCOVERY_TIMEOUT 30)
 
-# What a Scripted player's ticks add up to, from Prediction States built by hand.
-add_executable(augusta_swarm_netcode_stats_tests netcode_stats_test.cpp)
-target_link_libraries(
-  augusta_swarm_netcode_stats_tests
-  PRIVATE augusta_swarm_netcode_stats augusta_math augusta_prediction GTest::gtest GTest::gtest_main
-)
-# Links PhysX through augusta_prediction (see above).
-gtest_discover_tests(augusta_swarm_netcode_stats_tests DISCOVERY_TIMEOUT 30)
-
 # Whole runs of Scripted players against a server::Host in the same process,
 # one of them through the example scenario's packs and Game policy.
 add_executable(augusta_swarm_run_tests run_test.cpp)
@@ -62,7 +53,7 @@ target_link_libraries(
   augusta_swarm_netcode_tests
   PRIVATE
     augusta_swarm_run
-    augusta_swarm_netcode_stats
+    augusta_harness
     augustad_content
     augustad_host
     augusta_assets

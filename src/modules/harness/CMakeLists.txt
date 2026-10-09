@@ -5,6 +5,7 @@ add_library(
   harness.cpp
   harness_wire.cpp
   inbox.cpp
+  netcode_stats.cpp
   runner.cpp
   server_view.cpp
 )
