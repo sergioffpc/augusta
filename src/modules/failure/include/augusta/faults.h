@@ -34,6 +34,7 @@ enum class Site : std::uint8_t {
   kTransportReceive,
   kRecordingWrite,
   kRecordingFlush,
+  kCaptureWrite,
   kMetricsAccept,
 };
 

@@ -47,7 +47,8 @@
 /// travel as their IEEE-754 bits.
 /// The server's match recordings (ADR-0048) are written in the same encoding,
 /// as records of their own (RecordWire), so a recording carries a command
-/// exactly as a Commands message does.
+/// exactly as a Commands message does. Its Match captures (ADR-0050) are too,
+/// as records of their own again (CaptureRecordWire).
 /// A client message carries intent, never an outcome: tests/impossible_actions.md
 /// (US-15, NFR-05) lists what bounds each of its fields. A new one needs a line
 /// there, and if it carries an outcome (a position, a hit, an ammo count), a
@@ -400,6 +401,8 @@ struct MatchPlayerWire {
 struct MatchStartWire {
   /// Every player in the match, the recipient included, at most primitives::kMaxPlayers.
   std::vector<MatchPlayerWire> players;
+  /// The Match's first server tick: what a Match capture's offsets count from (ADR-0050).
+  primitives::Tick first_tick = 0;
 
   bool operator==(const MatchStartWire&) const = default;
 };
@@ -623,6 +626,120 @@ using RecordWire = std::variant<RecordingHeaderWire, RecordedTickWire>;
 
 /// Decodes one record's payload, or reports what is wrong with it, as Decode does a message's.
 [[nodiscard]] std::expected<RecordWire, DecodeError> DecodeRecord(std::span<const std::byte> payload);
+
+// A Match capture (ADR-0050): one Match's client actions and markers, from its
+// Match start to its Match end, each at its offset in ticks from the Match's
+// first tick, in this protocol's encoding. Neither a message nor a Match
+// recording's record: Decode and DecodeRecord never yield one, nor
+// DecodeCaptureRecord either of theirs. A record is one payload as a message
+// is, a one-byte CaptureRecordTypeWire followed by its fields, read under the
+// same untrusted-input rules. A player is named by its number in the capture,
+// from 1, in its Join's order.
+
+/// The bytes a capture file starts with, before its first record, so a reader
+/// tells it from a pack (ADR-0031) by them alone.
+inline constexpr std::array<std::byte, 8> kCaptureMagic{std::byte{'A'},  std::byte{'U'}, std::byte{'G'},
+                                                        std::byte{'C'},  std::byte{'A'}, std::byte{'P'},
+                                                        std::byte{'\r'}, std::byte{'\n'}};
+
+/// The capture format this engine writes, in CaptureHeaderWire::format_version.
+inline constexpr std::uint8_t kCaptureFormatVersion = 1;
+
+/// The first byte of every record of a capture.
+enum class CaptureRecordTypeWire : std::uint8_t {
+  /// What the Match ran on: a capture's first record, and its only one of this type.
+  kHeader = 1,
+  kJoin = 2,
+  kCommand = 3,
+  kLeave = 4,
+  kDeath = 5,
+  /// A capture's last record.
+  kMatchEnd = 6,
+};
+
+/// What a captured Match ran on and when it started.
+struct CaptureHeaderWire {
+  /// The hash of the server pack the Match ran on (ADR-0031).
+  PackHashWire server_pack{};
+  /// The hash of the client pack its players joined with.
+  PackHashWire client_pack{};
+  /// The capturing engine's version (augusta::EngineVersion); at most kMaxEngineVersionLength bytes.
+  std::string engine_version;
+  /// When the Match started, in milliseconds since the Unix epoch, UTC.
+  std::int64_t started_unix_ms = 0;
+  /// kCaptureFormatVersion of the engine that wrote it.
+  std::uint8_t format_version = 0;
+  std::uint8_t tick_rate_hz = 0;
+
+  bool operator==(const CaptureHeaderWire&) const = default;
+};
+
+/// A player of the Match start, in its order: always at offset 0.
+struct CapturedJoinWire {
+  /// Where the Match start spawned it, on the position grid.
+  math::Vec3 spawn{};
+  std::uint32_t offset = 0;
+  SessionIdWire session{};
+  /// Its Character, by its name in the scenario's manifest (ADR-0042); at most
+  /// kMaxCharacterNameLength bytes.
+  std::string character;
+  std::uint8_t player = 0;
+
+  bool operator==(const CapturedJoinWire&) const = default;
+};
+
+/// A Command a player sent, at the offset of the tick the server's command
+/// queue handed it to SimulationWorld.
+struct CapturedCommandWire {
+  /// As a Commands message carries it, its seen_age 0: seen_offset names its Seen time's tick.
+  CommandWire command{};
+  std::uint32_t offset = 0;
+  /// Its Seen time's tick, as an offset from the Match's first tick: negative
+  /// for a State sent before the Match started.
+  std::int32_t seen_offset = 0;
+  std::uint8_t player = 0;
+
+  bool operator==(const CapturedCommandWire&) const = default;
+};
+
+/// A player whose connection ended mid-Match, at the offset of the tick its body was taken out on.
+struct CapturedLeaveWire {
+  std::uint32_t offset = 0;
+  std::uint8_t player = 0;
+
+  bool operator==(const CapturedLeaveWire&) const = default;
+};
+
+/// A player who died, and who killed them.
+struct CapturedDeathWire {
+  std::uint32_t offset = 0;
+  std::uint8_t victim = 0;
+  std::uint8_t killer = 0;
+
+  bool operator==(const CapturedDeathWire&) const = default;
+};
+
+/// The Match's end, at the offset of its last tick.
+struct CapturedMatchEndWire {
+  std::uint32_t offset = 0;
+  /// The winner's number, or 0 for a Draw.
+  std::uint8_t winner = 0;
+
+  bool operator==(const CapturedMatchEndWire&) const = default;
+};
+
+using CaptureRecordWire = std::variant<CaptureHeaderWire, CapturedJoinWire, CapturedCommandWire, CapturedLeaveWire,
+                                       CapturedDeathWire, CapturedMatchEndWire>;
+
+/// Encodes record as one payload, or reports the first field beyond its limit
+/// and gives no payload at all, as Encode does a message.
+[[nodiscard]] std::expected<BytesWire, EncodeError> EncodeCaptureRecord(const CaptureRecordWire& record);
+
+/// The type record's payload starts with.
+[[nodiscard]] CaptureRecordTypeWire TypeOf(const CaptureRecordWire& record);
+
+/// Decodes one capture record's payload, or reports what is wrong with it, as Decode does a message's.
+[[nodiscard]] std::expected<CaptureRecordWire, DecodeError> DecodeCaptureRecord(std::span<const std::byte> payload);
 
 }  // namespace augusta::protocol
 

@@ -100,6 +100,7 @@ class RecordedHostMatch {
                          // A replay needs every tick: one lost fails the run.
                          .recording_mode = augusta::server::RecordingMode::kStrict,
                          .server_pack = {},
+                         .capture = {},
                          .faults = nullptr},
               TwoPlayerFloor(), {}) {
     for (int i = 0; i < 2; ++i) {

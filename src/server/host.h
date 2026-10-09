@@ -68,8 +68,11 @@ struct HostConfig {
   /// What losing a tick of that recording costs: an optional one degrades
   /// while the Host goes on, a strict one is Host::RecordingFailure.
   RecordingMode recording_mode = RecordingMode::kOptional;
-  /// The hash of the server pack the content was loaded from, which a recording names.
+  /// The hash of the server pack the content was loaded from, which a recording and a capture name.
   assets::PackHash server_pack{};
+  /// The directory to capture every Match into (ADR-0050), created if
+  /// missing; empty captures none.
+  std::filesystem::path capture;
   /// For a test: asked at listener setup, at every send and receive
   /// (networking.h) and at the recording's write and flush, so the transport
   /// or the disk fails there; null otherwise. Must outlive the Host.
@@ -83,7 +86,8 @@ class Host {
   /// std::runtime_error if a map mesh, or a character's hitbox, is not a whole
   /// triangle list) and the scenario's Game policy (none by default), and starts
   /// listening (throws networking::TransportFailure if the address can't be
-  /// bound, or std::runtime_error if HostConfig::recording can't be written).
+  /// bound, or std::runtime_error if HostConfig::recording can't be written or
+  /// HostConfig::capture can't be created).
   /// Content is loaded from the server pack by the caller (see content.h).
   Host(const HostConfig& config, Scenario scenario, scripting::Engine policy = {});
   ~Host();

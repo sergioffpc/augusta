@@ -17,6 +17,8 @@
 #include "augusta/policy_actions.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
+#include "augusta/tick.h"
+#include "capture.h"
 #include "command_queue.h"
 #include "host.h"
 #include "host_impl.h"
@@ -79,6 +81,7 @@ void Host::Impl::EndMatch(const std::optional<SessionId>& winner, EndReason reas
     return;
   }
   SendTo(ended->players, EncodeToSend(ToWire(*ended)));
+  match_winner = ended->winner;
   CountMatchEnded(reason, ended->winner);
   LogMatchEnded(reason, ended->winner, ended->players.size());
   SetLobbyGauges();
@@ -116,10 +119,37 @@ void Host::Impl::StartMatchIfReady() {
   simulating_match = true;
   // Its first tick is the one about to run.
   match_start_tick = tick + 1;
+  if (capturer) {
+    std::vector<CaptureEntrant> captured;
+    captured.reserve(start->players.size());
+    for (std::size_t i = 0; i < start->players.size(); ++i) {
+      const MatchPlayer& player = start->players[i];
+      captured.push_back(CaptureEntrant{
+          .session = player.session, .entity = player.entity, .character = player.character, .spawn = spawns[i]});
+    }
+    capturer->StartMatch(captured, match_start_tick, std::chrono::system_clock::now());
+  }
   metrics.matches_started.Increment();
   SetLobbyGauges();
-  SendTo(sessions, EncodeToSend(ToWire(*start, spawns)));
+  SendTo(sessions, EncodeToSend(ToWire(*start, spawns, match_start_tick)));
   LI("subsystem=serverruntime event=match_started tick={} players={}", match_start_tick, sessions.size());
+}
+
+// Takes a match that has ended out of the simulation, its capture ending on
+// the last tick it ran: those of its players who had left by then left on it.
+// With mutex held.
+void Host::Impl::TakeOutEndedMatch() {
+  simulation.EndMatch();
+  if (capturer) {
+    for (const auto& [session, entity] : bodies) {
+      if (!players.contains(session)) {
+        capturer->Leave(tick, entity);
+      }
+    }
+    capturer->EndMatch(tick, match_winner);
+  }
+  bodies.clear();
+  simulating_match = false;
 }
 
 // Takes a match that has ended out of the simulation, or the bodies of
@@ -128,16 +158,19 @@ void Host::Impl::StartMatchIfReady() {
 Host::Impl::TickInput Host::Impl::PrepareTick() {
   const std::lock_guard<std::mutex> lock(mutex);
   if (simulating_match && !match.InMatch()) {
-    simulation.EndMatch();
-    bodies.clear();
-    simulating_match = false;
+    TakeOutEndedMatch();
   }
+  // The tick about to run, which each of its events is captured at.
+  const tick::Tick next_tick = tick + 1;
   std::erase_if(bodies, [&](const auto& body) {
     const auto& [session, entity] = body;
     if (match.IsPlaying(session)) {
       return false;
     }
     simulation.RemovePlayer(ToSimulation(entity));
+    if (capturer) {
+      capturer->Leave(next_tick, entity);
+    }
     return true;
   });
   match.Tick();
@@ -148,6 +181,9 @@ Host::Impl::TickInput Host::Impl::PrepareTick() {
     Player& player = players.at(session);
     const EntityId entity = bodies.at(session);
     const TickCommand next = player.commands.Next();
+    if (capturer && next.sent) {
+      capturer->Command(next_tick, entity, next.command);
+    }
     input.commands.push_back(simulation::PlayerCommand{.entity = ToSimulation(entity), .command = next.command});
     input.to.recipients.push_back(replication::Recipient{
         .entity = ToSimulation(entity),
@@ -159,6 +195,16 @@ Host::Impl::TickInput Host::Impl::PrepareTick() {
   return input;
 }
 
+// Captures each Death of the tick of result, if Matches are captured.
+void Host::Impl::CaptureDeaths(const simulation::TickResult& result) const {
+  if (!capturer) {
+    return;
+  }
+  for (const simulation::Death& death : result.state.deaths) {
+    capturer->Death(result.state.tick, FromSimulation(death.victim), FromSimulation(death.killer));
+  }
+}
+
 simulation::TickResult Host::Tick(float delta_time) {
   Impl& impl = *impl_;
   const Impl::TickInput input = impl.PrepareTick();
@@ -166,6 +212,10 @@ simulation::TickResult Host::Tick(float delta_time) {
   impl.tick = result.state.tick;
   if (std::optional<failure::Failure> recorded = impl.simulation.Failure()) {
     impl.invariant_failure.Record(*std::move(recorded));
+  }
+  impl.CaptureDeaths(result);
+  if (impl.capturer && impl.capturer->Failure().has_value()) {
+    impl.invariant_failure.Record(*impl.capturer->Failure());
   }
   if (auto sent = SendTickMessages(impl.network, impl.metrics, result.state, impl.tick, input.to); !sent.has_value()) {
     // Either the tick's messages could not be encoded, and none was sent, or

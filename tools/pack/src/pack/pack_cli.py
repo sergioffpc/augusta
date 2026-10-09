@@ -2,15 +2,17 @@
 
 `augusta-inspect` (header, index and trailer) and `augusta-verify` (hash +
 signature check), both ADR-0031 container-level and independent of the USD
-stack. A pack argument is an ordinary path - relative to the current directory
-or absolute, like any file argument, never resolved against an assets root; the
-`.pack` extension is optional.
+stack. `augusta-inspect` reads a Match capture (ADR-0050) too, told from a
+pack by its magic. A pack argument is an ordinary path - relative to the
+current directory or absolute, like any file argument, never resolved against
+an assets root; the `.pack` extension is optional.
 """
 
 import argparse
 from pathlib import Path
 import sys
 
+from pack import capture
 from pack import pack
 from pack.assets_root import default_assets_root
 from pack.keys import read_public_key
@@ -56,6 +58,20 @@ def _format_entry_count(count: int) -> str:
     return f"{count} {'entry' if count == 1 else 'entries'}"
 
 
+def _inspect_capture(path: Path) -> int:
+    """Prints the Match capture at path; returns the exit code."""
+    try:
+        read = capture.read_capture(path.read_bytes())
+    except capture.CaptureError as error:
+        print(f"{path}: {error}", file=sys.stderr)
+        return 1
+    print(f"{path}: {_format_size(path.stat().st_size)} bytes")
+    print()
+    for line in capture.format_capture(read):
+        print(line)
+    return 0
+
+
 def inspect_main(argv: list[str] | None = None) -> int:
     """`augusta-inspect`; returns the process's exit code."""
     parser = argparse.ArgumentParser(
@@ -63,13 +79,18 @@ def inspect_main(argv: list[str] | None = None) -> int:
         "(one line per entry: type, offset, size in bytes, path) and the "
         "trailer (BLAKE3 hash and Ed25519 signature). Reads only those "
         "sections; it does not verify the hash or signature (see "
-        "augusta-verify)."
+        "augusta-verify). Given a Match capture instead, shows its header, "
+        "its length and one line per player."
     )
     _add_pack_argument(parser)
     args = parser.parse_args(argv)
 
     try:
         pack_path = _resolve_pack(args.pack)
+        with pack_path.open("rb") as file:
+            is_capture = capture.is_capture(file.read(len(capture.MAGIC)))
+        if is_capture:
+            return _inspect_capture(pack_path)
         info = read_pack(pack_path)
     except (FileNotFoundError, PackError) as error:
         print(error, file=sys.stderr)

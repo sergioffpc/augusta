@@ -103,6 +103,33 @@ TEST(ParseServerConfigTest, RejectsAnEmptyRecordingPath) {
   EXPECT_EQ(config.error().subject, "simulation.recording");
 }
 
+// Requirements: US-21
+TEST(ParseServerConfigTest, CapturesNoMatchByDefault) {
+  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_TRUE(config->capture_directory.empty());
+}
+
+// Requirements: US-21
+TEST(ParseServerConfigTest, ReadsACaptureDirectoryRelativeToTheBaseDir) {
+  const auto config = ParseServerConfig(
+      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  capture: captures/firebase\n",
+      kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->capture_directory, kRoot / "captures" / "firebase");
+}
+
+TEST(ParseServerConfigTest, RejectsAnEmptyCaptureDirectory) {
+  const auto config = ParseServerConfig(
+      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  capture: \"\"\n", kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kEmptyValue);
+  EXPECT_EQ(config.error().subject, "simulation.capture");
+}
+
 TEST(ParseServerConfigTest, RecordsOptionallyByDefault) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 

@@ -309,15 +309,16 @@ TEST(WireTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
   }
 }
 
-TEST(WireTest, AMatchStartTheServerSendsReachesTheClientUnchanged) {
+TEST(WireTest, AMatchStartTheServerSendsReachesTheClientUnchangedWithItsFirstTick) {
   const augusta::server::MatchStart sent{
       .players = {{.session = SessionId{3}, .entity = EntityId{11}, .character = "medic"},
                   {.session = SessionId{5}, .entity = EntityId{12}, .character = "sniper"}}};
   const std::vector<Vec3> spawns{Vec3(4.0F, 0.5F, -8.0F), Vec3(-1.0F, 0.0F, 2.0F)};
 
   const augusta::harness::MatchStart received =
-      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent, spawns)));
+      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent, spawns, 0x1'0000'0042ULL)));
 
+  EXPECT_EQ(received.first_tick, 0x1'0000'0042ULL);
   ASSERT_EQ(received.players.size(), sent.players.size());
   for (std::size_t i = 0; i < sent.players.size(); ++i) {
     EXPECT_EQ(Number(received.players[i].session), Number(sent.players[i].session));

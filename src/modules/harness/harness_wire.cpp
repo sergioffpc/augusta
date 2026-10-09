@@ -199,6 +199,7 @@ MatchStart FromWire(const protocol::MatchStartWire& start) {
                                          .character = player.character,
                                          .spawn = player.spawn});
   }
+  result.first_tick = start.first_tick;
   return result;
 }
 

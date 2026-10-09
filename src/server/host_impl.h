@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <expected>
 #include <fstream>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -25,6 +26,7 @@
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
+#include "capture.h"
 #include "command_queue.h"
 #include "heartbeat.h"
 #include "host.h"
@@ -67,6 +69,8 @@ struct Host::Impl {
   // those bodies are in is still in the simulation.
   std::ofstream recording_file;
   RecordedSimulation simulation;
+  // Each Match's capture, if HostConfig::capture asks for them (ADR-0050).
+  std::unique_ptr<Capturer> capturer;
   std::unordered_map<SessionId, EntityId> bodies;
   bool simulating_match = false;
   // The last tick SimulationWorld ran, as it numbers them: what its State was
@@ -99,6 +103,9 @@ struct Host::Impl {
   std::unordered_map<SessionId, Player> players;
   // The tick the match in progress, or the last one, started on.
   tick::Tick match_start_tick = 0;
+  // The winner of the match that ended last, nullopt for a draw: what its
+  // capture's Match end names once the Simulation thread takes it out.
+  std::optional<SessionId> match_winner;
   // When the next heartbeat line is due, and the totals the last one ended at.
   // Simulation thread only.
   Heartbeat heartbeat{std::chrono::steady_clock::now()};
@@ -153,7 +160,9 @@ struct Host::Impl {
   void EndMatch(const std::optional<SessionId>& winner, EndReason reason);
   void Act(const simulation::MatchEnd& end);
   void StartMatchIfReady();
+  void TakeOutEndedMatch();
   TickInput PrepareTick();
+  void CaptureDeaths(const simulation::TickResult& result) const;
 };
 
 }  // namespace augusta::server

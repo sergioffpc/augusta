@@ -46,6 +46,7 @@
 #include "augusta/tick.h"
 #include "augusta/version.h"
 #include "augusta/weapon.h"
+#include "capture.h"
 #include "command_queue.h"
 #include "connection_health.h"
 #include "connection_sample.h"
@@ -140,6 +141,7 @@ HostConfig TestHostConfig(const Parameters& parameters = kTestParameters, std::u
       .recording = {},
       .recording_mode = {},
       .server_pack = {},
+      .capture = {},
       .faults = nullptr,
   };
 }
@@ -1908,6 +1910,129 @@ TEST(RecordingHostConfigTest, AHostRefusesARecordingItCannotWrite) {
   config.recording = std::filesystem::temp_directory_path();
   EXPECT_THROW(Host(config, Scenario{.collision = {}, .spawn_points = {}, .characters = {}, .client_pack = {}}),
                std::runtime_error);
+}
+
+// A host on the floor capturing each Match (ADR-0050) into a directory of the
+// test's own, whose two players walk forward and fire until the host ends it.
+class CaptureHostTest : public LoopbackMatch {
+ protected:
+  static std::vector<Vec3> SpawnPoints() { return {Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F)}; }
+
+  // Unique to this test: ctest may run the tests of this suite side by side.
+  static std::filesystem::path Directory() {
+    const ::testing::TestInfo& test = *::testing::UnitTest::GetInstance()->current_test_info();
+    return std::filesystem::temp_directory_path() /
+           ("augusta_session_capture_" + std::string(test.name()) + "_" + std::to_string(std::random_device{}()));
+  }
+
+  static HostSetup CaptureSetup(const std::filesystem::path& directory) {
+    HostSetup setup = OnTheFloor(SpawnPoints(), WithPlayerCount(2));
+    setup.config.capture = directory;
+    return setup;
+  }
+
+  CaptureHostTest() : CaptureHostTest(Directory()) {}
+  explicit CaptureHostTest(std::filesystem::path directory)
+      : LoopbackMatch(CaptureSetup(directory)), directory_(std::move(directory)) {}
+
+  ~CaptureHostTest() override { std::filesystem::remove_all(directory_); }
+
+  CaptureHostTest(const CaptureHostTest&) = delete;
+  CaptureHostTest& operator=(const CaptureHostTest&) = delete;
+  CaptureHostTest(CaptureHostTest&&) = delete;
+  CaptureHostTest& operator=(CaptureHostTest&&) = delete;
+
+  void PlayAMatch() {
+    Join();
+    Join();
+    ASSERT_TRUE(StartMatch());
+    Command fire = Forward();
+    fire.fire = true;
+    Run(kSettleTicks, fire);
+    host_.EndMatch();
+    ServerTick();
+  }
+
+  // The directory's one capture once its writer has reached its Match end:
+  // the Host, which outlives the test, writes it on a thread of its own.
+  [[nodiscard]] augusta::server::Capture ReadBack() const {
+    constexpr auto kPatience = std::chrono::seconds(5);
+    constexpr auto kRetryAfter = std::chrono::milliseconds(10);
+    const auto deadline = std::chrono::steady_clock::now() + kPatience;
+    while (true) {
+      const std::vector<std::filesystem::path> files(std::filesystem::directory_iterator(directory_), {});
+      std::optional<augusta::server::Capture> capture;
+      if (files.size() == 1) {
+        std::ifstream in(files.front(), std::ios::binary);
+        auto read = augusta::server::ReadCapture(in);
+        if (read.has_value()) {
+          capture = *std::move(read);
+        }
+      }
+      const bool ended = capture.has_value() && !capture->records.empty() &&
+                         std::holds_alternative<augusta::server::CapturedMatchEnd>(capture->records.back().event);
+      if (ended || std::chrono::steady_clock::now() >= deadline) {
+        EXPECT_EQ(files.size(), 1U);
+        EXPECT_TRUE(ended);
+        return capture.value_or(augusta::server::Capture{});
+      }
+      std::this_thread::sleep_for(kRetryAfter);
+    }
+  }
+
+  std::filesystem::path directory_;
+};
+
+// Requirements: US-21
+TEST_F(CaptureHostTest, AMatchPlayedToItsEndLeavesOneCaptureOfWhatItsPlayersDid) {
+  PlayAMatch();
+  const augusta::server::Capture capture = ReadBack();
+
+  EXPECT_EQ(capture.header.tick_rate_hz, kTestTickRate);
+  EXPECT_EQ(capture.header.engine_version, augusta::EngineVersion());
+  ASSERT_GE(capture.records.size(), 2U);
+  for (std::size_t i = 0; i < 2; ++i) {
+    const auto* join = std::get_if<augusta::server::CapturedJoin>(&capture.records[i].event);
+    ASSERT_NE(join, nullptr);
+    EXPECT_EQ(join->player, i + 1);
+    EXPECT_EQ(join->character, kCharacter);
+  }
+  for (const augusta::server::CapturedPlayer player : {1, 2}) {
+    const auto sent = std::ranges::count_if(capture.records, [player](const augusta::server::CaptureRecord& record) {
+      const auto* command = std::get_if<augusta::server::CapturedCommand>(&record.event);
+      return command != nullptr && command->player == player && command->command.movement.direction.x == 1.0F &&
+             command->command.fire;
+    });
+    // Each Command a client sent once, never the server's held or idle ones.
+    EXPECT_GT(sent, 0);
+    EXPECT_LE(sent, kSettleTicks);
+  }
+  const auto& end = std::get<augusta::server::CapturedMatchEnd>(capture.records.back().event);
+  EXPECT_FALSE(end.winner.has_value());
+}
+
+// ADR-0050: a capture's offsets count from the Match's first tick, which Match start names.
+TEST_F(CaptureHostTest, EveryClientReadsTheMatchsFirstTickFromMatchStart) {
+  Session& first = Join();
+  Session& second = Join();
+  ASSERT_TRUE(StartMatch());
+  Step();
+
+  const augusta::tick::Tick first_tick = first.GetMatchStart().value().first_tick;
+  EXPECT_GT(first_tick, 0U);
+  EXPECT_EQ(second.GetMatchStart().value().first_tick, first_tick);
+  EXPECT_GE(first.GetAuthoritativeState().value().tick, first_tick);
+}
+
+TEST(CaptureHostConfigTest, AHostRefusesACaptureDirectoryItCannotCreate) {
+  const std::filesystem::path file =
+      std::filesystem::temp_directory_path() / ("augusta_capture_file_" + std::to_string(std::random_device{}()));
+  std::ofstream(file) << "not a directory";
+  HostConfig config = TestHostConfig();
+  config.capture = file / "captures";
+  EXPECT_THROW(Host(config, Scenario{.collision = {}, .spawn_points = {}, .characters = {}, .client_pack = {}}),
+               std::runtime_error);
+  std::filesystem::remove(file);
 }
 
 // One client on a floor, on the server's stamina rules: a bar that empties in

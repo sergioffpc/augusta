@@ -79,6 +79,10 @@ struct TickCommand {
   command::Command command;
   /// The highest sequence the queue has handed out so far, 0 if none.
   command::Sequence acknowledged_sequence = 0;
+  /// Whether command is one its client sent, taken off the queue for this
+  /// tick, rather than the queue's own held or idle movement: what a Match
+  /// capture keeps (ADR-0050). A command the client repeated was taken in once.
+  bool sent = false;
 };
 
 /// One player's incoming commands.

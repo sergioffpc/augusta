@@ -32,6 +32,15 @@ simulation:
   # more while the server and its Match go on; strict, for a replay or
   # verification run that needs every tick, stops the server with a failure.
   # recording_mode: optional
+  # The directory to capture every Match into (optional, default none), one file
+  # each, named by when it started and its number in the server's run: who
+  # joined where, the Commands each player sent, who left or died, and how it
+  # ended, for augusta-inspect to read and augustac to reenact (ADR-0050). It is
+  # created if missing; augustad refuses to start if it cannot be. A capture
+  # grows by about 15 KB a second with 8 players at 60 Hz; one that cannot be
+  # written stops, logged once, while the server and its Match go on. A
+  # debugging setting: never on for a server open to players.
+  # capture: captures/firebase
 network:
   # Local address to listen on (optional, default 0.0.0.0:27015).
   listen_address: 0.0.0.0:27015

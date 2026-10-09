@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <format>
 #include <fstream>
 #include <ios>
@@ -13,9 +14,11 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
+#include "augusta/assets.h"
 #include "augusta/failure.h"
 #include "augusta/first_failure.h"
 #include "augusta/logging.h"
@@ -24,6 +27,7 @@
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "augusta/version.h"
+#include "capture.h"
 #include "content.h"
 #include "heartbeat.h"
 #include "host_impl.h"
@@ -65,6 +69,28 @@ RecordedSimulation BuildRecordedSimulation(const HostConfig& config, const Scena
                                    .capacity = kRecordQueueCapacity})};
 }
 
+// What captures each Match into the directory config names, if it names one
+// (ADR-0050), creating it first; none otherwise.
+std::unique_ptr<Capturer> BuildCapturer(const HostConfig& config, const assets::PackHash& client_pack) {
+  if (config.capture.empty()) {
+    return nullptr;
+  }
+  std::error_code error;
+  std::filesystem::create_directories(config.capture, error);
+  if (error) {
+    throw std::runtime_error(std::format("server::Host: cannot create the capture directory {}: {}",
+                                         config.capture.string(), error.message()));
+  }
+  LI("subsystem=capture event=capture_enabled directory={}", config.capture.string());
+  return std::make_unique<Capturer>(config.capture,
+                                    CaptureHeader{.engine_version = std::string(EngineVersion()),
+                                                  .server_pack = config.server_pack,
+                                                  .client_pack = client_pack,
+                                                  .tick_rate_hz = config.tick_rate_hz,
+                                                  .started = {}},
+                                    CaptureOptions{.faults = config.faults, .capacity = kCaptureQueueCapacity});
+}
+
 // The ticks of kMatchPause at tick_rate_hz, rounded up so the pause is never shorter.
 std::uint32_t PauseTicks(std::uint8_t tick_rate_hz) {
   return static_cast<std::uint32_t>(std::ceil(std::chrono::duration<float>(kMatchPause).count() * tick_rate_hz));
@@ -85,6 +111,7 @@ std::vector<std::string> CharacterPaths(const std::vector<Character>& characters
 Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy)
     : metrics(config.tick_rate_hz),
       simulation(BuildRecordedSimulation(config, scenario, std::move(policy), recording_file, metrics)),
+      capturer(BuildCapturer(config, scenario.client_pack)),
       tick_rate_hz(config.tick_rate_hz),
       parameters(config.parameters),
       characters(ToSimulation(scenario.characters)),

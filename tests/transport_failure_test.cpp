@@ -90,6 +90,7 @@ HostConfig HostConfigWith(Faults* faults) {
                     .recording = {},
                     .recording_mode = {},
                     .server_pack = {},
+                    .capture = {},
                     .faults = faults};
 }
 

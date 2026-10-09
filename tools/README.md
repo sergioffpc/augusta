@@ -298,6 +298,15 @@ offset and size in bytes:
   or `sounds`), its offset and size within the pack, and its pack-relative path.
 - **Trailer:** the stored BLAKE3 hash and Ed25519 signature, in hex.
 
+Given a Match capture (ADR-0050) instead, which it tells from a pack by the
+file's first bytes, it prints the capture's header (format version, engine
+version, server and client pack hashes, tick rate, when the Match started in
+UTC), how long the Match lasted in ticks and seconds, one line per player (its
+number, which `augustac --reenact --player` takes, Session, Character, spawn,
+how many Commands it sent, and when it died and who killed it or when it left),
+then the Match end's winner or a Draw, and whether the file ends partway through
+a record. A Command's contents are counted, not decoded.
+
 Only the header, index and trailer are read, so it is fast on large packs. It
 does **not** check the hash or signature (the trailer is labelled as
 unverified): use `augusta-verify` before trusting the contents.
@@ -391,6 +400,7 @@ to stderr and exits `1`.
 | `pack/src/pack/pack_cli.py`        | `augusta-inspect` and `augusta-verify` entry points                                                                                                                                                                                                                                                                              |
 | `pack/src/pack/publish.py`         | `augusta-publish` entry point                                                                                                                                                                                                                                                                                                    |
 | `pack/src/pack/reader.py`          | Pack container parsing and verification (the read side of `pack.py`)                                                                                                                                                                                                                                                             |
+| `pack/src/pack/capture.py`         | Match capture reading for `augusta-inspect` (the read side of `src/server/capture.cpp`)                                                                                                                                                                                                                                          |
 | `pack/src/pack/assets_root.py`     | Assets-root inference shared by the entry points                                                                                                                                                                                                                                                                                 |
 | `pack/cpp/`                        | Standalone CMake/vcpkg project for the two native modules. It builds straight into `pack/src/pack/`.                                                                                                                                                                                                                             |
 | `composer/`                        | Composer bootstrap, playback file that scaffolds the app, and `augusta-composer.sh` (launches it)                                                                                                                                                                                                                                |

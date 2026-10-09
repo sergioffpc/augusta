@@ -330,7 +330,8 @@ MatchPlayerWire MatchPlayer(std::uint32_t session, std::string character, float 
 }
 
 TEST(ProtocolTest, MatchStartRoundTripsWithEveryPlayersCharacterAndSpawnPoint) {
-  const MatchStartWire sent{.players = {MatchPlayer(3, "soldier", 4.0F), MatchPlayer(4, "sniper", -12.345F)}};
+  const MatchStartWire sent{.players = {MatchPlayer(3, "soldier", 4.0F), MatchPlayer(4, "sniper", -12.345F)},
+                            .first_tick = 0x1'0000'0007ULL};
 
   const auto decoded = RoundTrip(sent);
 
@@ -343,6 +344,7 @@ TEST(ProtocolTest, MatchStartRoundTripsWithEveryPlayersCharacterAndSpawnPoint) {
     EXPECT_EQ(received.players[i].character, sent.players[i].character);
     EXPECT_EQ(received.players[i].spawn, SnapPosition(sent.players[i].spawn));
   }
+  EXPECT_EQ(received.first_tick, sent.first_tick);
 }
 
 TEST(ProtocolTest, AMatchStartOfAFullMatchRoundTrips) {

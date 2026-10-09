@@ -1,6 +1,5 @@
 #include "recording.h"
 
-#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <cstddef>
@@ -31,16 +30,12 @@
 #include "augusta/protocol.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
+#include "frames.h"
 #include "wire.h"
 
 namespace augusta::server {
 
 namespace {
-
-// A record's length goes before it, in this many bytes, least significant first.
-constexpr std::size_t kLengthSize = 4;
-constexpr int kBitsPerByte = 8;
-constexpr std::size_t kByteMask = 0xFFU;
 
 // Where a recording lost a record: the step a Failure's context names.
 enum class Step : std::uint8_t {
@@ -77,58 +72,6 @@ failure::Failure LostRecording(RecordingMode mode, tick::Tick tick, Step step, s
           .context = {{.key = "tick", .value = std::to_string(tick)},
                       {.key = "step", .value = std::string(StepName(step))}},
           .detail = std::move(detail)};
-}
-
-void WriteFrame(std::ostream& out, const protocol::BytesWire& payload) {
-  std::array<char, kLengthSize> length{};
-  for (std::size_t i = 0; i < kLengthSize; ++i) {
-    length[i] = static_cast<char>((payload.size() >> (kBitsPerByte * i)) & kByteMask);
-  }
-  out.write(length.data(), length.size());
-  out.write(reinterpret_cast<const char*>(payload.data()), static_cast<std::streamsize>(payload.size()));
-}
-
-// How reading the next record's frame ended.
-enum class Frame : std::uint8_t {
-  kRead,
-  // The stream ended where a frame would start.
-  kEnd,
-  // The stream ended partway through a frame.
-  kTorn,
-  // Its length is more than any record's.
-  kTooLong,
-  // The stream failed: what it holds past here is unknown, so neither an end
-  // nor a torn record can be told from it.
-  kUnreadable,
-};
-
-Frame ReadFrame(std::istream& in, protocol::BytesWire& payload) {
-  std::array<char, kLengthSize> length_bytes{};
-  in.read(length_bytes.data(), length_bytes.size());
-  if (in.bad()) {
-    return Frame::kUnreadable;
-  }
-  const auto length_read = static_cast<std::size_t>(in.gcount());
-  if (length_read == 0) {
-    return Frame::kEnd;
-  }
-  if (length_read < kLengthSize) {
-    return Frame::kTorn;
-  }
-  std::size_t length = 0;
-  for (std::size_t i = 0; i < kLengthSize; ++i) {
-    length |= static_cast<std::size_t>(static_cast<unsigned char>(length_bytes[i])) << (kBitsPerByte * i);
-  }
-  if (length > kMaxRecordSize) {
-    return Frame::kTooLong;
-  }
-  payload.resize(length);
-  in.read(reinterpret_cast<char*>(payload.data()), static_cast<std::streamsize>(length));
-  if (in.bad()) {
-    return Frame::kUnreadable;
-  }
-  const auto payload_read = static_cast<std::size_t>(in.gcount());
-  return payload_read == length ? Frame::kRead : Frame::kTorn;
 }
 
 }  // namespace
@@ -287,7 +230,7 @@ class Recorder::Writer {
       out_->setstate(std::ios::badbit);
       return Loss{.step = Step::kWrite, .detail = *std::move(fault)};
     }
-    WriteFrame(*out_, payload);
+    WriteFrame(*out_, kRecordingFrames, payload);
     if (!*out_) {
       return Loss{.step = Step::kWrite, .detail = {}};
     }
@@ -442,7 +385,7 @@ std::expected<Recording, RecordingError> ReadRecording(std::istream& in) {
     return std::unexpected(RecordingError::kUnreadable);
   }
   protocol::BytesWire payload;
-  const Frame header_frame = ReadFrame(in, payload);
+  const Frame header_frame = ReadFrame(in, kRecordingFrames, payload);
   if (header_frame == Frame::kUnreadable) {
     return std::unexpected(RecordingError::kUnreadable);
   }
@@ -454,7 +397,8 @@ std::expected<Recording, RecordingError> ReadRecording(std::istream& in) {
     return std::unexpected(RecordingError::kNoHeader);
   }
   Recording recording{.header = FromWire(std::get<protocol::RecordingHeaderWire>(*header)), .ticks = {}, .torn = false};
-  for (Frame frame = ReadFrame(in, payload); frame != Frame::kEnd; frame = ReadFrame(in, payload)) {
+  for (Frame frame = ReadFrame(in, kRecordingFrames, payload); frame != Frame::kEnd;
+       frame = ReadFrame(in, kRecordingFrames, payload)) {
     if (frame == Frame::kUnreadable) {
       return std::unexpected(RecordingError::kUnreadable);
     }

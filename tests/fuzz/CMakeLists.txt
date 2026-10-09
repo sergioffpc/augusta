@@ -34,6 +34,36 @@ add_custom_target(
   VERBATIM
 )
 
+# server::ReadCapture and protocol::DecodeCaptureRecord, a Match capture file
+# that may have been cut short or corrupted (ADR-0050).
+add_executable(augusta_capture_read_replay capture_read_fuzz.cpp replay_main.cpp)
+target_link_libraries(augusta_capture_read_replay PRIVATE augustad_host augusta_protocol)
+file(
+  GLOB augusta_capture_read_inputs
+  CONFIGURE_DEPENDS
+  ${CMAKE_CURRENT_SOURCE_DIR}/corpus/capture_read/*
+  ${CMAKE_CURRENT_SOURCE_DIR}/regressions/capture_read/*
+)
+add_test(NAME augusta_capture_read_replay COMMAND augusta_capture_read_replay ${augusta_capture_read_inputs})
+
+add_executable(augusta_capture_read_seeds_tests capture_read_seeds_test.cpp)
+target_link_libraries(augusta_capture_read_seeds_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
+target_compile_definitions(
+  augusta_capture_read_seeds_tests
+  PRIVATE AUGUSTA_CAPTURE_READ_CORPUS="${CMAKE_CURRENT_SOURCE_DIR}/corpus/capture_read"
+)
+gtest_discover_tests(augusta_capture_read_seeds_tests)
+# When the capture format changes on purpose, one step rewrites the seed for review and commit:
+#   cmake --build --preset <preset> --target augusta_capture_read_seeds
+add_custom_target(
+  augusta_capture_read_seeds
+  COMMAND
+    augusta_capture_read_seeds_tests --gtest_also_run_disabled_tests
+    --gtest_filter=CaptureReadSeedsTest.DISABLED_RegenerateSeeds
+  COMMENT "Rewriting tests/fuzz/corpus/capture_read"
+  VERBATIM
+)
+
 # assets::Pack::Load, a pack file from outside. The target signs its input with
 # the golden packs' test key itself (pack_load_fuzz.cpp), so it hashes and signs
 # directly, as only augusta_assets does elsewhere.
@@ -76,6 +106,10 @@ if(AUGUSTA_FUZZ)
   add_executable(augusta_protocol_decode_fuzz protocol_decode_fuzz.cpp)
   target_link_libraries(augusta_protocol_decode_fuzz PRIVATE augusta_protocol)
   target_link_options(augusta_protocol_decode_fuzz PRIVATE -fsanitize=fuzzer)
+
+  add_executable(augusta_capture_read_fuzz capture_read_fuzz.cpp)
+  target_link_libraries(augusta_capture_read_fuzz PRIVATE augustad_host augusta_protocol)
+  target_link_options(augusta_capture_read_fuzz PRIVATE -fsanitize=fuzzer)
 
   add_executable(augusta_pack_load_fuzz pack_load_fuzz.cpp)
   target_link_libraries(augusta_pack_load_fuzz PRIVATE augusta_assets BLAKE3::blake3 unofficial-sodium::sodium)
