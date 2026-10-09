@@ -13,6 +13,7 @@
 
 #include "augusta/ballistics.h"
 #include "capture.h"
+#include "capture_retention.h"
 #include "command_queue.h"
 #include "heartbeat.h"
 #include "host_log.h"

@@ -4,8 +4,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -16,6 +18,7 @@
 
 #include "augusta/ballistics.h"
 #include "capture.h"
+#include "capture_retention.h"
 #include "command_queue.h"
 #include "heartbeat.h"
 #include "host_log.h"
