@@ -5,6 +5,35 @@ relative effort, not calendar estimates: S / M / L. They are grouped by the
 release that shipped them; each requirement in REQUIREMENTS.md names the release
 that first met it, or the one it is planned for.
 
+## Contents
+
+<!-- pyml disable md051 -->
+
+- [v1 — Playable Match (1.0.0, 2026-10-02)](#v1--playable-match-100-2026-10-02)
+    - [M0 — Project & Infrastructure Setup (S)](#m0--project--infrastructure-setup-s)
+    - [M1 — De-risking Spikes (S)](#m1--de-risking-spikes-s)
+    - [M2 — Asset Pipeline (M)](#m2--asset-pipeline-m)
+    - [M3 — Networked Movement Skeleton (M)](#m3--networked-movement-skeleton-m)
+    - [M4 — Combat Skeleton (L)](#m4--combat-skeleton-l)
+    - [M5 — Full Match Loop (M)](#m5--full-match-loop-m)
+    - [M6 — Hardening & v1 Release (S)](#m6--hardening--v1-release-s)
+- [v2 — Operable and Testable (2.0.0, 2026-10-07)](#v2--operable-and-testable-200-2026-10-07)
+    - [M7 — Observability (M)](#m7--observability-m)
+    - [M8 — Crash Diagnosability & Operations (S)](#m8--crash-diagnosability--operations-s)
+    - [M9 — Scenario Composition (S)](#m9--scenario-composition-s)
+    - [M10 — Test & Performance Tooling (M)](#m10--test--performance-tooling-m)
+    - [M11 — Codebase & Developer Experience (M)](#m11--codebase--developer-experience-m)
+- [v3 — Reproducible and Scalable (planned, 3.0.0)](#v3--reproducible-and-scalable-planned-300)
+    - [M12 — Agents (M)](#m12--agents-m)
+    - [M13 — Client-side Metrics (S)](#m13--client-side-metrics-s)
+    - [M14 — Match Capture & Reenactment (M)](#m14--match-capture--reenactment-m)
+    - [M15 — Replay (M)](#m15--replay-m)
+    - [M16 — Horizontal Scalability (M)](#m16--horizontal-scalability-m)
+    - [M17 — Hardening & v3 Release (S)](#m17--hardening--v3-release-s)
+- [Not yet planned](#not-yet-planned)
+
+<!-- pyml enable md051 -->
+
 ## v1 — Playable Match (1.0.0, 2026-10-02)
 
 ### M0 — Project & Infrastructure Setup (S)
