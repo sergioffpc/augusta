@@ -185,15 +185,19 @@ struct ClientRuntime::Impl {
   // The Runner's Command for each tick: the player's input, with what the last
   // render frame showed the other players at; or a Captured player's, paced
   // with its own Seen time, the input sampled and set aside. Prediction thread.
-  command::Command NextCommand() {
+  // A Captured player skips the tick (nullopt) while enough of its Commands
+  // already wait at the server.
+  std::optional<command::Command> NextCommand() {
     const command::Command sampled = input.Sample();
     if (!reenactment.has_value()) {
       return WithSeenTime(sampled, GetSeenTime());
     }
-    const command::Command next =
+    const std::optional<command::Command> next =
         reenactment->NextCommand(*session->GetServerView(), session->NextSequence(), round_trip_ticks.load());
-    const std::lock_guard<std::mutex> lock(reenacted_mutex);
-    reenacted = next;
+    if (next.has_value()) {
+      const std::lock_guard<std::mutex> lock(reenacted_mutex);
+      reenacted = *next;
+    }
     return next;
   }
 
@@ -208,31 +212,47 @@ struct ClientRuntime::Impl {
             reenacted.fire};
   }
 
-  // Whether a Captured player's run is over as of view: at its captured
-  // Leave, or at the capture's Match end or the server's, when it logs what it
-  // saw beside the capture (ADR-0050). Main/Render thread.
-  bool ReenactmentOver(const harness::ServerView& view) {
+  // How a Captured player's run ends as of view, or nullopt while it plays
+  // on or this client is none: at its captured Leave, or at the capture's
+  // Match end or the server's (ADR-0050). Main/Render thread.
+  std::optional<harness::Progress> ReenactmentEnding(const harness::ServerView& view) const {
     if (!reenactment.has_value()) {
-      return false;
+      return std::nullopt;
+    }
+    const harness::Progress progress = reenactment->Check(view, round_trip_ticks.load());
+    return progress == harness::Progress::kPlaying ? std::nullopt : std::optional(progress);
+  }
+
+  // Keeps what a Captured player's run compares with its capture: the newest
+  // server tick of view, and the Deaths of its Match told and not yet taken,
+  // each at that tick. Main/Render thread.
+  void CollectOutcome(const harness::ServerView& view) {
+    if (!reenactment.has_value()) {
+      return;
     }
     if (view.authoritative.has_value()) {
       last_tick = std::max(last_tick, view.authoritative->tick);
     }
-    const harness::Progress progress = reenactment->Check(view, round_trip_ticks.load());
-    if (progress == harness::Progress::kPlaying) {
-      return false;
-    }
-    // The Deaths no frame took yet, the ones that ended the Match among them.
     for (const harness::Death& death : session->TakeDeaths(view)) {
-      observed_deaths.push_back(
-          harness::ObservedDeath{.tick = last_tick, .victim = death.victim, .killer = death.killer});
+      RecordDeath(death);
     }
-    LI("subsystem=reenactment event={} player={}", progress == harness::Progress::kLeave ? "left" : "ended",
+  }
+
+  // Keeps death, told as of the newest server tick seen, for a Captured
+  // player's outcome. Main/Render thread.
+  void RecordDeath(const harness::Death& death) {
+    observed_deaths.push_back(
+        harness::ObservedDeath{.tick = last_tick, .victim = death.victim, .killer = death.killer});
+  }
+
+  // Logs how a Captured player's run ended, and what it saw beside what its
+  // capture holds. Main/Render thread.
+  void LogOutcome(const harness::ServerView& view, harness::Progress how) const {
+    LI("subsystem=reenactment event={} player={}", how == harness::Progress::kLeave ? "left" : "ended",
        reenactment->GetScript().player);
-    for (const std::string& line : reenactment->Outcome(view, observed_deaths, last_tick)) {
+    for (const std::string& line : reenactment->Outcome(view, observed_deaths, last_tick, how)) {
       LI("subsystem=reenactment {}", line);
     }
-    return true;
   }
 
   // The Runner's word on each tick: publishes it, with the one before it, for
@@ -353,13 +373,13 @@ struct ClientRuntime::Impl {
     for (const harness::Shot& shot : session->TakeShots(*view)) {
       frame.shots.push_back(ToPresentation(shot));
     }
+    if (reenactment.has_value() && view->authoritative.has_value()) {
+      last_tick = std::max(last_tick, view->authoritative->tick);
+    }
     for (const harness::Death& death : session->TakeDeaths(*view)) {
       frame.deaths.push_back(ToPresentation(death.victim));
       if (reenactment.has_value()) {
-        observed_deaths.push_back(
-            harness::ObservedDeath{.tick = view->authoritative.has_value() ? view->authoritative->tick : last_tick,
-                                   .victim = death.victim,
-                                   .killer = death.killer});
+        RecordDeath(death);
       }
     }
     return frame;
@@ -432,7 +452,11 @@ std::optional<failure::Failure> ClientRuntime::Run() {
       failure = ClassifyCharacterError(*load_failure);
       break;
     }
-    if (impl_->ReenactmentOver(*impl_->session->GetServerView())) {
+    const std::shared_ptr<const harness::ServerView> view = impl_->session->GetServerView();
+    if (const std::optional<harness::Progress> ending = impl_->ReenactmentEnding(*view)) {
+      // The Deaths no frame took yet, the ones that ended the Match among them.
+      impl_->CollectOutcome(*view);
+      impl_->LogOutcome(*view, *ending);
       break;
     }
     const nvtx3::scoped_range range{"Main/Render Frame"};

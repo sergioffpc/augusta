@@ -77,11 +77,15 @@ tick::Tick RoundTripTicks(int ping_ms, std::uint8_t tick_rate_hz) {
   return (scaled + kMillisecondsPerSecond - 1) / kMillisecondsPerSecond;
 }
 
-Pacer::Pacer(std::vector<CapturedCommand> commands, std::uint8_t tick_rate_hz)
-    : commands_(std::move(commands)), max_held_ticks_(command::HeldTicks(tick_rate_hz)) {}
+Pacer::Pacer(std::vector<CapturedCommand> commands, std::uint8_t tick_rate_hz, std::optional<std::uint32_t> leave)
+    : commands_(std::move(commands)), max_held_ticks_(command::HeldTicks(tick_rate_hz)), leave_(leave) {}
 
-command::Command Pacer::Next(tick::Tick first_tick, tick::Tick due_tick) {
+std::optional<command::Command> Pacer::Next(tick::Tick first_tick, tick::Tick due_tick) {
   const std::uint64_t due_offset = OffsetOf(due_tick, first_tick);
+  if (due_offset < slot_ || DoneBeforeLeave()) {
+    return std::nullopt;
+  }
+  slot_ = due_offset + 1;
   if (next_ >= commands_.size() || commands_[next_].offset > due_offset) {
     return Filler(due_tick);
   }
@@ -109,10 +113,42 @@ command::Command Pacer::Filler(tick::Tick due_tick) {
   return filler;
 }
 
-Reenactment::Reenactment(Script script) : script_(std::move(script)), pacer_(script_.commands, script_.tick_rate_hz) {}
+std::vector<PairedDeath> PairDeaths(const Script& script, const ServerView& view,
+                                    const std::vector<ObservedDeath>& observed) {
+  const tick::Tick first = view.match_start.has_value() ? view.match_start->first_tick : 0;
+  std::vector<CapturedDeath> told;
+  told.reserve(observed.size());
+  for (const ObservedDeath& death : observed) {
+    told.push_back(CapturedDeath{.offset = static_cast<std::uint32_t>(OffsetOf(death.tick, first)),
+                                 .victim = NumberOf(script, view, death.victim),
+                                 .killer = NumberOf(script, view, death.killer)});
+  }
+  std::vector<bool> taken(told.size(), false);
+  std::vector<PairedDeath> pairs;
+  for (const CapturedDeath& death : script.deaths) {
+    PairedDeath pair{.captured = death, .observed = std::nullopt};
+    for (std::size_t i = 0; i < told.size(); ++i) {
+      if (!taken[i] && told[i].victim == death.victim) {
+        taken[i] = true;
+        pair.observed = told[i];
+        break;
+      }
+    }
+    pairs.push_back(pair);
+  }
+  for (std::size_t i = 0; i < told.size(); ++i) {
+    if (!taken[i]) {
+      pairs.push_back(PairedDeath{.captured = std::nullopt, .observed = told[i]});
+    }
+  }
+  return pairs;
+}
 
-command::Command Reenactment::NextCommand(const ServerView& view, command::Sequence next_sequence,
-                                          tick::Tick round_trip_ticks) {
+Reenactment::Reenactment(Script script)
+    : script_(std::move(script)), pacer_(script_.commands, script_.tick_rate_hz, script_.leave) {}
+
+std::optional<command::Command> Reenactment::NextCommand(const ServerView& view, command::Sequence next_sequence,
+                                                         tick::Tick round_trip_ticks) {
   if (view.matches_started != 1 || !view.in_match || !view.match_start.has_value()) {
     return command::Command{};
   }
@@ -121,9 +157,20 @@ command::Command Reenactment::NextCommand(const ServerView& view, command::Seque
   const std::uint64_t ahead =
       view.authoritative.has_value()
           ? next_sequence - std::min(view.authoritative->acknowledged_sequence, next_sequence - 1)
-          : ticks_in_match_ + 1;
-  ++ticks_in_match_;
-  return pacer_.Next(view.match_start->first_tick, DueTick(NewestTick(view), ahead, round_trip_ticks));
+          : sent_in_match_ + 1;
+  // A round trip's worth are in flight; more than that waiting would only
+  // grow the server's queue, at a client that ticks faster than it.
+  if (ahead > round_trip_ticks + 1 + kMaxCommandsQueued) {
+    return std::nullopt;
+  }
+  std::optional<command::Command> next =
+      pacer_.Next(view.match_start->first_tick, DueTick(NewestTick(view), ahead, round_trip_ticks));
+  if (next.has_value()) {
+    ++sent_in_match_;
+    last_sent_.store(next_sequence);
+  }
+  done_before_leave_.store(pacer_.DoneBeforeLeave());
+  return next;
 }
 
 Progress Reenactment::Check(const ServerView& view, tick::Tick round_trip_ticks) const {
@@ -138,41 +185,47 @@ Progress Reenactment::Check(const ServerView& view, tick::Tick round_trip_ticks)
   if (script_.end.has_value() && newest >= first + script_.end->offset) {
     return Progress::kEnded;
   }
-  // Disconnecting now reaches the server as a Command sent now would, on the
-  // tick its body is taken out before.
-  if (script_.leave.has_value() && DueTick(newest, 0, round_trip_ticks) >= first + *script_.leave) {
-    return Progress::kLeave;
+  // Leaving drops whatever the server still holds: only once every Command up
+  // to the Leave has gone, and a disconnect sent now reaches the server no
+  // sooner than the Leave's tick and a tick after the last of them is due to
+  // be handed to the World.
+  if (!script_.leave.has_value() || !done_before_leave_.load()) {
+    return Progress::kPlaying;
   }
-  return Progress::kPlaying;
+  const command::Sequence acknowledged =
+      view.authoritative.has_value() ? view.authoritative->acknowledged_sequence : command::Sequence{0};
+  const command::Sequence last_sent = last_sent_.load();
+  const tick::Tick arrives = DueTick(newest, 0, round_trip_ticks);
+  const bool all_handed = last_sent <= acknowledged || newest + (last_sent - acknowledged) + 1 < arrives;
+  return all_handed && arrives >= first + *script_.leave ? Progress::kLeave : Progress::kPlaying;
 }
 
-std::vector<std::string> Reenactment::Outcome(const ServerView& view, const std::vector<ObservedDeath>& observed,
-                                              tick::Tick last_tick) const {
-  const tick::Tick first = view.match_start.has_value() ? view.match_start->first_tick : 0;
-  std::vector<std::string> lines;
-  std::vector<bool> matched(observed.size(), false);
-  for (const CapturedDeath& death : script_.deaths) {
-    std::string line =
-        std::format("event=death victim={} killer={} captured_offset={}", death.victim, death.killer, death.offset);
-    for (std::size_t i = 0; i < observed.size(); ++i) {
-      if (!matched[i] && NumberOf(script_, view, observed[i].victim) == death.victim) {
-        matched[i] = true;
-        line += std::format(" observed_offset={} observed_killer={}", OffsetOf(observed[i].tick, first),
-                            NumberOf(script_, view, observed[i].killer));
-        break;
-      }
-    }
-    if (line.find("observed_offset") == std::string::npos) {
-      line += " observed=none";
-    }
-    lines.push_back(std::move(line));
+namespace {
+
+// pair's line: the captured Death, then the one told, or why there is none.
+std::string DescribeDeath(const PairedDeath& pair, std::optional<std::uint32_t> left_at) {
+  const CapturedDeath& named = pair.captured.has_value() ? *pair.captured : *pair.observed;
+  std::string line = std::format("event=death victim={} killer={}", named.victim, named.killer);
+  if (!pair.captured.has_value()) {
+    return line + std::format(" captured=none observed_offset={}", pair.observed->offset);
   }
-  for (std::size_t i = 0; i < observed.size(); ++i) {
-    if (!matched[i]) {
-      lines.push_back(std::format("event=death victim={} killer={} captured=none observed_offset={}",
-                                  NumberOf(script_, view, observed[i].victim),
-                                  NumberOf(script_, view, observed[i].killer), OffsetOf(observed[i].tick, first)));
-    }
+  line += std::format(" captured_offset={}", pair.captured->offset);
+  if (pair.observed.has_value()) {
+    return line + std::format(" observed_offset={} observed_killer={}", pair.observed->offset, pair.observed->killer);
+  }
+  const bool after_leave = left_at.has_value() && pair.captured->offset >= *left_at;
+  return line + (after_leave ? " observed=left" : " observed=none");
+}
+
+}  // namespace
+
+std::vector<std::string> Reenactment::Outcome(const ServerView& view, const std::vector<ObservedDeath>& observed,
+                                              tick::Tick last_tick, Progress how) const {
+  const tick::Tick first = view.match_start.has_value() ? view.match_start->first_tick : 0;
+  const std::optional<std::uint32_t> left_at = how == Progress::kLeave ? script_.leave : std::nullopt;
+  std::vector<std::string> lines;
+  for (const PairedDeath& pair : PairDeaths(script_, view, observed)) {
+    lines.push_back(DescribeDeath(pair, left_at));
   }
   std::string end = script_.end.has_value() ? std::format("event=match_end captured_offset={} captured_winner={}",
                                                           script_.end->offset, WinnerName(script_.end->winner))
@@ -182,7 +235,8 @@ std::vector<std::string> Reenactment::Outcome(const ServerView& view, const std:
         view.match_end->winner.transform([&](SessionId session) { return NumberOf(script_, view, session); });
     end += std::format(" observed_offset={} observed_winner={}", OffsetOf(last_tick, first), WinnerName(winner));
   } else {
-    end += std::format(" observed=none observed_offset={}", OffsetOf(last_tick, first));
+    end += std::format(" observed={} observed_offset={}", left_at.has_value() ? "left" : "none",
+                       OffsetOf(last_tick, first));
   }
   lines.push_back(std::move(end));
   return lines;

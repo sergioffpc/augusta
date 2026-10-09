@@ -1,8 +1,10 @@
 #include "augusta/reenactment.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <ios>
@@ -14,12 +16,14 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/capture_error.h"
 #include "augusta/command.h"
 #include "augusta/harness.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/tick.h"
 #include "capture.h"
+#include "command_queue.h"
 #include "match.h"
 
 // A Captured player (ADR-0050) without a network: its Script read from a
@@ -37,6 +41,7 @@ using augusta::harness::MatchPlayer;
 using augusta::harness::MatchStart;
 using augusta::harness::ObservedDeath;
 using augusta::harness::Pacer;
+using augusta::harness::PairDeaths;
 using augusta::harness::Progress;
 using augusta::harness::ReadScript;
 using augusta::harness::Reenactment;
@@ -221,28 +226,33 @@ std::vector<CapturedCommand> AtOffsets(const std::vector<std::uint32_t>& offsets
   return commands;
 }
 
+// The x its movement walks at, which tells the Commands of AtOffsets apart; 0 for none sent.
+float SpeedOf(const std::optional<Command>& sent) { return sent.has_value() ? sent->movement.direction.x : 0.0F; }
+
 // Requirements: US-21
 TEST(PacerTest, EachCommandGoesOutForTheTickOfItsOffsetWithItsSeenTimesDelayKept) {
-  Pacer pacer(AtOffsets({0, 1, 2}), kTickRate);
+  Pacer pacer(AtOffsets({10, 11, 12}), kTickRate, std::nullopt);
 
-  for (std::uint32_t offset = 0; offset < 3; ++offset) {
-    const Command sent = pacer.Next(kFirstTick, kFirstTick + 10 + offset);
-    EXPECT_EQ(sent.movement.direction.x, static_cast<float>(offset + 1)) << offset;
-    EXPECT_EQ(sent.seen_tick, kFirstTick + 10 + offset - 2) << offset;
+  for (std::uint32_t offset = 10; offset < 13; ++offset) {
+    const std::optional<Command> sent = pacer.Next(kFirstTick, kFirstTick + offset);
+    ASSERT_TRUE(sent.has_value()) << offset;
+    EXPECT_EQ(sent->movement.direction.x, static_cast<float>(offset - 9)) << offset;
+    EXPECT_EQ(sent->seen_tick, kFirstTick + offset - 2) << offset;
   }
   EXPECT_EQ(pacer.Sent(), 3U);
 }
 
 // Requirements: US-21
 TEST(PacerTest, BeforeItsFirstCommandIsDueThePacerSendsIdleCommands) {
-  Pacer pacer(AtOffsets({3}), kTickRate);
+  Pacer pacer(AtOffsets({3}), kTickRate, std::nullopt);
 
   for (Tick due = kFirstTick; due < kFirstTick + 3; ++due) {
-    const Command idle = pacer.Next(kFirstTick, due);
-    EXPECT_EQ(idle.movement.direction, Vec3()) << due;
-    EXPECT_FALSE(idle.fire) << due;
+    const std::optional<Command> idle = pacer.Next(kFirstTick, due);
+    ASSERT_TRUE(idle.has_value()) << due;
+    EXPECT_EQ(idle->movement.direction, Vec3()) << due;
+    EXPECT_FALSE(idle->fire) << due;
   }
-  EXPECT_EQ(pacer.Next(kFirstTick, kFirstTick + 3).movement.direction.x, 1.0F);
+  EXPECT_EQ(SpeedOf(pacer.Next(kFirstTick, kFirstTick + 3)), 1.0F);
 }
 
 // The gaps of a capture are where the server's queue held or idled: the pacer
@@ -252,43 +262,56 @@ TEST(PacerTest, AGapHoldsTheLastMovementWithoutItsActionsForTheHoldThenIdles) {
   std::vector<CapturedCommand> commands = AtOffsets({0, 20});
   commands[0].command.fire = true;
   commands[0].command.reload = true;
-  Pacer pacer(commands, kTickRate);
-  ASSERT_TRUE(pacer.Next(kFirstTick, kFirstTick).fire);
+  Pacer pacer(commands, kTickRate, std::nullopt);
+  ASSERT_TRUE(pacer.Next(kFirstTick, kFirstTick)->fire);
 
   for (int i = 1; i <= kHeldTicks; ++i) {
-    const Command held = pacer.Next(kFirstTick, kFirstTick + i);
-    EXPECT_EQ(held.movement.direction.x, 1.0F) << i;
-    EXPECT_EQ(held.yaw, 0.5F) << i;
-    EXPECT_FALSE(held.fire) << i;
-    EXPECT_FALSE(held.reload) << i;
+    const std::optional<Command> held = pacer.Next(kFirstTick, kFirstTick + i);
+    ASSERT_TRUE(held.has_value()) << i;
+    EXPECT_EQ(held->movement.direction.x, 1.0F) << i;
+    EXPECT_EQ(held->yaw, 0.5F) << i;
+    EXPECT_FALSE(held->fire) << i;
+    EXPECT_FALSE(held->reload) << i;
   }
-  const Command idle = pacer.Next(kFirstTick, kFirstTick + kHeldTicks + 1);
-  EXPECT_EQ(idle.movement.direction, Vec3());
-  EXPECT_EQ(idle.yaw, 0.5F);
+  const std::optional<Command> idle = pacer.Next(kFirstTick, kFirstTick + kHeldTicks + 1);
+  ASSERT_TRUE(idle.has_value());
+  EXPECT_EQ(idle->movement.direction, Vec3());
+  EXPECT_EQ(idle->yaw, 0.5F);
 }
 
 // Requirements: US-21
 TEST(PacerTest, ALateCommandIsNeverDroppedAndTheGapsAfterItCloseUp) {
-  Pacer pacer(AtOffsets({0, 1, 5}), kTickRate);
+  Pacer pacer(AtOffsets({0, 1, 5}), kTickRate, std::nullopt);
 
   // Due three ticks late: each goes out in its turn, none skipped.
-  EXPECT_EQ(pacer.Next(kFirstTick, kFirstTick + 3).movement.direction.x, 1.0F);
-  EXPECT_EQ(pacer.Next(kFirstTick, kFirstTick + 4).movement.direction.x, 2.0F);
+  EXPECT_EQ(SpeedOf(pacer.Next(kFirstTick, kFirstTick + 3)), 1.0F);
+  EXPECT_EQ(SpeedOf(pacer.Next(kFirstTick, kFirstTick + 4)), 2.0F);
   // The gap from offset 2 to 4 is gone: the third is on its offset again.
-  EXPECT_EQ(pacer.Next(kFirstTick, kFirstTick + 5).movement.direction.x, 3.0F);
+  EXPECT_EQ(SpeedOf(pacer.Next(kFirstTick, kFirstTick + 5)), 3.0F);
   EXPECT_EQ(pacer.Sent(), 3U);
 }
 
+// One Command for each server tick at most: a client ticking faster than
+// the server finds the tick its Command would be for already sent for.
 // Requirements: US-21
-TEST(PacerTest, ACommandDueEarlyWaitsForItsOffsetBehindFillers) {
-  Pacer pacer(AtOffsets({0, 1}), kTickRate);
-  ASSERT_EQ(pacer.Next(kFirstTick, kFirstTick).movement.direction.x, 1.0F);
+TEST(PacerTest, NothingGoesForATickACommandAlreadyWentFor) {
+  Pacer pacer(AtOffsets({0, 1}), kTickRate, std::nullopt);
+  ASSERT_EQ(SpeedOf(pacer.Next(kFirstTick, kFirstTick)), 1.0F);
 
-  // The queue grew: the next send is due on offset 0 again, so it holds.
-  const Command filler = pacer.Next(kFirstTick, kFirstTick);
-  EXPECT_FALSE(filler.fire);
+  EXPECT_FALSE(pacer.Next(kFirstTick, kFirstTick).has_value());
   EXPECT_EQ(pacer.Sent(), 1U);
-  EXPECT_EQ(pacer.Next(kFirstTick, kFirstTick + 1).movement.direction.x, 2.0F);
+  EXPECT_EQ(SpeedOf(pacer.Next(kFirstTick, kFirstTick + 1)), 2.0F);
+}
+
+// Requirements: US-21
+TEST(PacerTest, NothingGoesForTheLeavesTickOrAfterIt) {
+  Pacer pacer(AtOffsets({0}), kTickRate, 2);
+  ASSERT_TRUE(pacer.Next(kFirstTick, kFirstTick).has_value());
+  ASSERT_TRUE(pacer.Next(kFirstTick, kFirstTick + 1).has_value());
+  EXPECT_TRUE(pacer.DoneBeforeLeave());
+
+  EXPECT_FALSE(pacer.Next(kFirstTick, kFirstTick + 2).has_value());
+  EXPECT_FALSE(pacer.Next(kFirstTick, kFirstTick + 3).has_value());
 }
 
 // --- A run ---
@@ -304,7 +327,7 @@ Script ThreePlayerScript() {
   script.spawns = {Vec3(1, 0, 0), Vec3(2, 0, 0), Vec3(3, 0, 0)};
   script.spawn = script.spawns[1];
   script.commands = AtOffsets({0, 1});
-  script.deaths = {{.offset = 30, .victim = 3, .killer = 1}};
+  script.deaths = {{.offset = 30, .victim = 3, .killer = 1}, {.offset = 45, .victim = 1, .killer = 3}};
   script.leave = 40;
   script.end = augusta::harness::CapturedEnd{.offset = 50, .winner = 1};
   return script;
@@ -339,7 +362,7 @@ TEST(ReenactmentTest, OutsideItsMatchItSendsNothingButIdleCommands) {
   Reenactment run(ThreePlayerScript());
   ServerView lobby;
 
-  EXPECT_EQ(run.NextCommand(lobby, 1, 0).movement.direction, Vec3());
+  EXPECT_EQ(run.NextCommand(lobby, 1, 0).value().movement.direction, Vec3());
   EXPECT_EQ(run.Check(lobby, 0), Progress::kPlaying);
 }
 
@@ -352,30 +375,63 @@ TEST(ReenactmentTest, BeforeTheFirstStateTheServerIsTakenToHaveRunTheMatchsFirst
 
   // The server runs the Match's first tick as it sends Match start, so the
   // first Command can reach it on the second at the soonest.
-  EXPECT_EQ(on_time.NextCommand(InMatch(std::nullopt), 1, 0).movement.direction.x, 1.0F);
-  EXPECT_EQ(run.NextCommand(InMatch(std::nullopt), 1, 0).movement.direction.x, 1.0F);
+  EXPECT_EQ(SpeedOf(on_time.NextCommand(InMatch(std::nullopt), 1, 0)), 1.0F);
+  EXPECT_EQ(SpeedOf(run.NextCommand(InMatch(std::nullopt), 1, 0)), 1.0F);
   // State 1000 handed neither sequence 1 nor 2 to the World: the second is
   // due on 1002, late for its offset, and goes all the same.
-  EXPECT_EQ(run.NextCommand(InMatch(kFirstTick, 0), 2, 0).movement.direction.x, 2.0F);
+  EXPECT_EQ(SpeedOf(run.NextCommand(InMatch(kFirstTick, 0), 2, 0)), 2.0F);
 }
 
 // Requirements: US-21
 TEST(ReenactmentTest, ItCountsTheCommandsAheadOfItsOwnFromTheNewestState) {
   Reenactment run(ThreePlayerScript());
-  ASSERT_EQ(run.NextCommand(InMatch(std::nullopt), 5, 0).movement.direction.x, 1.0F);
+  // State 999 acknowledged sequence 4, of a Match before: sequence 5 is due on 1000, offset 0.
+  ASSERT_EQ(SpeedOf(run.NextCommand(InMatch(kFirstTick - 1, 4), 5, 0)), 1.0F);
 
-  // State 1000 acknowledged sequence 5, the first: sequence 6 is due on 1001, offset 1.
-  EXPECT_EQ(run.NextCommand(InMatch(kFirstTick, 5), 6, 0).movement.direction.x, 2.0F);
+  // State 1000 acknowledged sequence 5: sequence 6 is due on 1001, offset 1.
+  EXPECT_EQ(SpeedOf(run.NextCommand(InMatch(kFirstTick, 5), 6, 0)), 2.0F);
 }
 
 // Requirements: US-21
-TEST(ReenactmentTest, ItLeavesWhenItsCapturedLeaveIsDue) {
-  const Reenactment run(ThreePlayerScript());
+TEST(ReenactmentTest, ItSendsNothingWhileAsManyCommandsAsItKeepsQueuedAreAlreadyWaiting) {
+  Reenactment run(ThreePlayerScript());
+  const augusta::tick::Tick round_trip = 2;
+  // State 1000 handed sequence 1: 2 to 6, five, are in flight or queued, as
+  // many as a round trip and kMaxCommandsQueued hold.
+  const ServerView view = InMatch(kFirstTick, 1);
 
-  EXPECT_EQ(run.Check(InMatch(kFirstTick + 38), 0), Progress::kPlaying);
-  EXPECT_EQ(run.Check(InMatch(kFirstTick + 39), 0), Progress::kLeave);
-  // A slower connection disconnects as many ticks sooner.
-  EXPECT_EQ(run.Check(InMatch(kFirstTick + 36), 3), Progress::kLeave);
+  EXPECT_FALSE(run.NextCommand(view, 7, round_trip).has_value());
+  EXPECT_TRUE(run.NextCommand(InMatch(kFirstTick + 1, 2), 7, round_trip).has_value());
+}
+
+// Leaving drops whatever the server still holds of the player's Commands:
+// with more of them on their way than a round trip's worth, it waits for
+// every one before its Leave to be handed to the World.
+// Requirements: US-21
+TEST(ReenactmentTest, ItLeavesOnlyOnceEveryCommandBeforeItsLeaveHasReachedTheWorld) {
+  Script script = ThreePlayerScript();
+  script.commands = AtOffsets({37, 38, 39});
+  Reenactment run(script);
+  // Sequences 1 to 3 go for offsets 37 to 39, the last before the Leave at 40.
+  for (augusta::command::Sequence sequence = 1; sequence <= 3; ++sequence) {
+    ASSERT_TRUE(run.NextCommand(InMatch(kFirstTick + 35 + sequence, sequence - 1), sequence, 0).has_value());
+  }
+  ASSERT_FALSE(run.NextCommand(InMatch(kFirstTick + 39, 2), 4, 0).has_value());
+
+  // Tick 1039 is late enough, but the server still holds sequence 3.
+  EXPECT_EQ(run.Check(InMatch(kFirstTick + 39, 2), 0), Progress::kPlaying);
+  EXPECT_EQ(run.Check(InMatch(kFirstTick + 39, 3), 0), Progress::kLeave);
+}
+
+// Requirements: US-21
+TEST(ReenactmentTest, ItLeavesNoSoonerThanItsDisconnectWouldReachTheServerOnTheLeavesTick) {
+  Script script = ThreePlayerScript();
+  script.commands = AtOffsets({39});
+  Reenactment run(script);
+  ASSERT_TRUE(run.NextCommand(InMatch(kFirstTick + 36, 0), 1, 2).has_value());
+
+  EXPECT_EQ(run.Check(InMatch(kFirstTick + 36, 1), 2), Progress::kPlaying);
+  EXPECT_EQ(run.Check(InMatch(kFirstTick + 37, 1), 2), Progress::kLeave);
 }
 
 // Requirements: US-21
@@ -393,6 +449,28 @@ TEST(ReenactmentTest, ItEndsAtTheCapturesMatchEndOrTheServersWhicheverComesFirst
 }
 
 // Requirements: US-21
+TEST(PairDeathsTest, EachCapturedDeathIsPairedWithTheFirstToldOfItsVictimAndTheRestFollow) {
+  const Script script = ThreePlayerScript();
+  const std::vector<ObservedDeath> observed = {
+      {.tick = kFirstTick + 47, .victim = EntityId{21}, .killer = EntityId{23}},
+      {.tick = kFirstTick + 31, .victim = EntityId{23}, .killer = EntityId{22}},
+      {.tick = kFirstTick + 33, .victim = EntityId{23}, .killer = EntityId{21}},
+  };
+
+  const std::vector<augusta::harness::PairedDeath> pairs = PairDeaths(script, InMatch(std::nullopt), observed);
+
+  ASSERT_EQ(pairs.size(), 3U);
+  EXPECT_EQ(pairs[0].captured->offset, 30U);
+  EXPECT_EQ(pairs[0].observed->offset, 31U);
+  EXPECT_EQ(pairs[0].observed->killer, 2);
+  EXPECT_EQ(pairs[1].captured->offset, 45U);
+  EXPECT_EQ(pairs[1].observed->offset, 47U);
+  EXPECT_FALSE(pairs[2].captured.has_value());
+  EXPECT_EQ(pairs[2].observed->victim, 3);
+  EXPECT_EQ(pairs[2].observed->offset, 33U);
+}
+
+// Requirements: US-21
 TEST(ReenactmentTest, ItsOutcomePutsEachCapturedDeathAndTheMatchEndBesideWhatTheServerTold) {
   const Reenactment run(ThreePlayerScript());
   ServerView ended = InMatch(std::nullopt);
@@ -400,27 +478,32 @@ TEST(ReenactmentTest, ItsOutcomePutsEachCapturedDeathAndTheMatchEndBesideWhatThe
   ended.match_end = augusta::harness::MatchEnd{.winner = SessionId{13}};
   const std::vector<ObservedDeath> observed = {
       {.tick = kFirstTick + 31, .victim = EntityId{23}, .killer = EntityId{21}},
-      {.tick = kFirstTick + 45, .victim = EntityId{21}, .killer = EntityId{23}},
+      {.tick = kFirstTick + 35, .victim = EntityId{22}, .killer = EntityId{23}},
   };
 
-  const std::vector<std::string> lines = run.Outcome(ended, observed, kFirstTick + 52);
+  const std::vector<std::string> lines = run.Outcome(ended, observed, kFirstTick + 52, Progress::kEnded);
 
   EXPECT_EQ(lines, (std::vector<std::string>{
                        "event=death victim=3 killer=1 captured_offset=30 observed_offset=31 observed_killer=1",
-                       "event=death victim=1 killer=3 captured=none observed_offset=45",
+                       "event=death victim=1 killer=3 captured_offset=45 observed=none",
+                       "event=death victim=2 killer=3 captured=none observed_offset=35",
                        "event=match_end captured_offset=50 captured_winner=1 observed_offset=52 observed_winner=3",
                    }));
 }
 
+// What came after its Leave the client no longer saw: it says so, rather
+// than that the server never told it.
 // Requirements: US-21
-TEST(ReenactmentTest, ACapturedDeathTheServerNeverToldIsSaidSo) {
+TEST(ReenactmentTest, APlayerThatLeftSaysItSawNothingAfterItsLeave) {
   const Reenactment run(ThreePlayerScript());
 
-  const std::vector<std::string> lines = run.Outcome(InMatch(kFirstTick + 50), {}, kFirstTick + 50);
+  const std::vector<std::string> lines = run.Outcome(InMatch(kFirstTick + 40), {}, kFirstTick + 40, Progress::kLeave);
 
-  ASSERT_EQ(lines.size(), 2U);
-  EXPECT_EQ(lines[0], "event=death victim=3 killer=1 captured_offset=30 observed=none");
-  EXPECT_EQ(lines[1], "event=match_end captured_offset=50 captured_winner=1 observed=none observed_offset=50");
+  EXPECT_EQ(lines, (std::vector<std::string>{
+                       "event=death victim=3 killer=1 captured_offset=30 observed=none",
+                       "event=death victim=1 killer=3 captured_offset=45 observed=left",
+                       "event=match_end captured_offset=50 captured_winner=1 observed=left observed_offset=40",
+                   }));
 }
 
 // Requirements: US-21
@@ -432,6 +515,196 @@ TEST(ReenactmentTest, AServerOfAnotherPlayerCountIsSaidSo) {
   EXPECT_FALSE(run.PlayerCountMismatch(admission).has_value());
   admission.parameters.player_count = 2;
   EXPECT_EQ(run.PlayerCountMismatch(admission), "event=player_count_differs server=2 capture=3");
+}
+
+// --- A run against a server's queue over a link ---
+
+// A Captured player's client and a server's command queue (server::
+// CommandQueue) over a link of one_way ticks each way, the server ticking
+// every server_period units of time and the client every client_period: how
+// many Commands the queue dropped, each one it handed to the World and on
+// which tick, and when the player's body was taken out, if it left.
+struct LinkRun {
+  struct Handed {
+    Tick tick = 0;
+    Command command{};
+  };
+  std::vector<Handed> handed;
+  int dropped = 0;
+  std::size_t most_queued = 0;
+  // The Commands still queued when the player's body was taken out, and the tick it was before.
+  std::size_t lost_at_leave = 0;
+  std::optional<Tick> left_before;
+};
+
+LinkRun RunOverALink(const Script& script, int server_period, int client_period, int one_way, int server_ticks) {
+  struct Message {
+    int arrives = 0;
+    augusta::server::SequencedCommand command;
+  };
+  struct State {
+    int arrives = 0;
+    Tick tick = 0;
+    augusta::command::Sequence acknowledged = 0;
+  };
+  Reenactment run(script);
+  augusta::server::CommandQueue queue(kTickRate);
+  LinkRun result;
+  std::vector<Message> to_server;
+  std::vector<State> to_client;
+  std::optional<State> newest;
+  std::optional<int> disconnect_arrives;
+  bool connected = true;
+  augusta::command::Sequence next_sequence = 1;
+  const int latency = one_way * server_period;
+  const Tick round_trip = 2 * static_cast<Tick>(one_way);
+  for (int now = 0; now <= server_ticks * server_period; ++now) {
+    std::erase_if(to_server, [&](const Message& message) {
+      if (message.arrives > now || !connected) {
+        return message.arrives <= now;
+      }
+      const auto enqueued = queue.TryEnqueue(message.command);
+      result.dropped += enqueued == augusta::server::Enqueued::kDroppedOldest ? 1 : 0;
+      result.most_queued = std::max(result.most_queued, queue.Queued());
+      return true;
+    });
+    if (now % server_period == 0) {
+      const Tick tick = kFirstTick + static_cast<Tick>(now / server_period);
+      if (connected && disconnect_arrives.has_value() && *disconnect_arrives <= now) {
+        connected = false;
+        result.lost_at_leave = queue.Queued();
+        result.left_before = tick;
+      }
+      if (connected) {
+        const augusta::server::TickCommand next = queue.Next();
+        if (next.sent) {
+          result.handed.push_back({.tick = tick, .command = next.command});
+        }
+        to_client.push_back({.arrives = now + latency, .tick = tick, .acknowledged = next.acknowledged_sequence});
+      }
+    }
+    std::erase_if(to_client, [&](const State& state) {
+      if (state.arrives <= now && (!newest.has_value() || state.tick > newest->tick)) {
+        newest = state;
+      }
+      return state.arrives <= now;
+    });
+    if (now % client_period == 0 && !disconnect_arrives.has_value()) {
+      const ServerView view = newest.has_value() ? InMatch(newest->tick, newest->acknowledged) : InMatch(std::nullopt);
+      if (run.Check(view, round_trip) == Progress::kLeave) {
+        disconnect_arrives = now + latency;
+        continue;
+      }
+      if (const std::optional<Command> command = run.NextCommand(view, next_sequence, round_trip)) {
+        to_server.push_back({.arrives = now + latency, .command = {.sequence = next_sequence++, .command = *command}});
+      }
+    }
+  }
+  return result;
+}
+
+// A Script of player 2 of ThreePlayerScript's, walking with a view of its own
+// on every offset from 10 to 59 but for a gap from 30 to 34, each seen 3 ticks
+// before it was handed to the World, and no Leave.
+Script WalkingScript() {
+  Script script = ThreePlayerScript();
+  script.commands.clear();
+  for (std::uint32_t offset = 10; offset < 60; ++offset) {
+    if (offset >= 30 && offset < 35) {
+      continue;
+    }
+    Command command = Walk(1.0F);
+    command.yaw = 0.01F * static_cast<float>(offset);
+    script.commands.push_back(
+        {.offset = offset, .seen_offset = static_cast<std::int32_t>(offset) - 3, .command = command});
+  }
+  script.leave.reset();
+  script.end.reset();
+  return script;
+}
+
+// Each of script's Commands handed, in order, by the yaw it alone has: its
+// offset and its Seen time's delay as run handed it, or nullopt if it never was.
+std::vector<std::optional<std::pair<std::int64_t, std::int64_t>>> AsHanded(const Script& script, const LinkRun& run) {
+  std::vector<std::optional<std::pair<std::int64_t, std::int64_t>>> handed;
+  std::size_t from = 0;
+  for (const CapturedCommand& captured : script.commands) {
+    std::optional<std::pair<std::int64_t, std::int64_t>> found;
+    for (std::size_t i = from; i < run.handed.size(); ++i) {
+      if (run.handed[i].command.yaw == captured.command.yaw &&
+          run.handed[i].command.movement.direction == captured.command.movement.direction) {
+        const auto tick = static_cast<std::int64_t>(run.handed[i].tick);
+        found = std::pair{tick - static_cast<std::int64_t>(kFirstTick),
+                          tick - static_cast<std::int64_t>(run.handed[i].command.seen_tick)};
+        from = i + 1;
+        break;
+      }
+    }
+    handed.push_back(found);
+  }
+  return handed;
+}
+
+// A client whose clock runs a fifth fast sends as many Commands as the server
+// hands, never more: the queue stays short, none is dropped, and each reaches
+// the World on its offset with its Seen time's delay.
+// Requirements: US-21
+TEST(ReenactmentLinkTest, AClientFasterThanTheServerNeverOverrunsItsQueueAndKeepsEveryCommandOnItsTick) {
+  const Script script = WalkingScript();
+
+  const LinkRun run = RunOverALink(script, /*server_period=*/6, /*client_period=*/5, /*one_way=*/3, 80);
+
+  EXPECT_EQ(run.dropped, 0);
+  EXPECT_LE(run.most_queued, augusta::harness::kMaxCommandsQueued + 2);
+  const auto handed = AsHanded(script, run);
+  for (std::size_t i = 0; i < script.commands.size(); ++i) {
+    const CapturedCommand& captured = script.commands[i];
+    ASSERT_TRUE(handed[i].has_value()) << "the Command of offset " << captured.offset << " never arrived";
+    EXPECT_LE(std::abs(handed[i]->first - captured.offset), 2) << "offset " << captured.offset;
+    EXPECT_EQ(handed[i]->second, 3) << "the Seen time of offset " << captured.offset;
+  }
+}
+
+// A client whose clock runs slow falls behind, but drops nothing: every
+// Command reaches the World, in order, with its Seen time's delay.
+// Requirements: US-21
+TEST(ReenactmentLinkTest, AClientSlowerThanTheServerFallsBehindButLosesNoCommandNorItsSeenTimesDelay) {
+  const Script script = WalkingScript();
+
+  const LinkRun run = RunOverALink(script, /*server_period=*/6, /*client_period=*/7, /*one_way=*/2, 120);
+
+  EXPECT_EQ(run.dropped, 0);
+  const auto handed = AsHanded(script, run);
+  for (std::size_t i = 0; i < script.commands.size(); ++i) {
+    const CapturedCommand& captured = script.commands[i];
+    ASSERT_TRUE(handed[i].has_value()) << "the Command of offset " << captured.offset << " never arrived";
+    // Never more than a tick early: the client's newest State is that stale at most.
+    EXPECT_GE(handed[i]->first, static_cast<std::int64_t>(captured.offset) - 1) << "offset " << captured.offset;
+    EXPECT_LE(std::abs(handed[i]->second - 3), 1) << "the Seen time of offset " << captured.offset;
+  }
+}
+
+// With a round trip of 6 ticks, more Commands are on their way when the
+// Leave comes than the round trip alone tells: every one before it still
+// reaches the World, and the body is taken out on the Leave's tick or as
+// soon after as the disconnect can reach the server.
+// Requirements: US-21
+TEST(ReenactmentLinkTest, APlayerThatLeavesLosesNoCommandBeforeItsLeave) {
+  Script script = WalkingScript();
+  script.commands.erase(std::remove_if(script.commands.begin(), script.commands.end(),
+                                       [](const CapturedCommand& command) { return command.offset >= 40; }),
+                        script.commands.end());
+  script.leave = 40;
+
+  const LinkRun run = RunOverALink(script, /*server_period=*/6, /*client_period=*/5, /*one_way=*/3, 80);
+
+  EXPECT_EQ(run.lost_at_leave, 0U);
+  for (const auto& handed : AsHanded(script, run)) {
+    EXPECT_TRUE(handed.has_value());
+  }
+  ASSERT_TRUE(run.left_before.has_value());
+  EXPECT_GE(*run.left_before, kFirstTick + 40);
+  EXPECT_LE(*run.left_before, kFirstTick + 40 + 3 + 2);
 }
 
 }  // namespace

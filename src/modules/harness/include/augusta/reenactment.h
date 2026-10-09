@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_REENACTMENT_H_
 #define AUGUSTA_REENACTMENT_H_
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -118,34 +119,51 @@ struct ScriptError {
 /// tick_rate_hz, rounded up; 0 for none measured yet.
 [[nodiscard]] tick::Tick RoundTripTicks(int ping_ms, std::uint8_t tick_rate_hz);
 
-/// Which of a Script's Commands goes out on each Tick (ADR-0050). Each is sent
-/// once, in order, on the Tick that is due to have the server hand it to the
-/// World on its offset, or as soon after as it can: a late one is never
-/// dropped, and the gaps after it close up. On a Tick with none due, a filler
-/// keeps the server's queue in step as its own hold would have: the last
-/// Command without its fire or reload, its movement for up to
-/// command::kMaxHeldTime, then none.
+/// How many Commands a Captured player keeps waiting in the server's queue at
+/// most, beyond those a round trip holds in flight: about what the client's
+/// pacing aims for (tick::kTargetQueuedCommands), far below the server's own
+/// bound (server::kMaxQueuedCommands), so a client that ticks faster than the
+/// server never overruns the queue and has a Command dropped.
+inline constexpr std::uint64_t kMaxCommandsQueued = 2;
+
+/// Which of a Script's Commands goes out on each Tick (ADR-0050), one for
+/// each server tick at most, never two for the same one. Each captured Command
+/// is sent once, in order, for the tick it is due to be handed to the World on,
+/// its offset, or as soon after as it can: a late one is never dropped, and
+/// the gaps after it close up. For a tick with none due, a filler keeps the
+/// server's queue in step as its own hold would have: the last Command without
+/// its fire or reload, its movement for up to command::kMaxHeldTime, then none.
+/// Nothing is sent for the tick of the captured Leave or after it.
 class Pacer {
  public:
-  /// Paces commands, in offset order, for a server ticking at tick_rate_hz.
-  Pacer(std::vector<CapturedCommand> commands, std::uint8_t tick_rate_hz);
+  /// Paces commands, in offset order, for a server ticking at tick_rate_hz,
+  /// up to leave, the offset of the player's Leave, if it has one.
+  Pacer(std::vector<CapturedCommand> commands, std::uint8_t tick_rate_hz, std::optional<std::uint32_t> leave);
 
   /// The Command to send now, if the server is due to hand it to the World on
   /// due_tick, of a Match whose first tick is first_tick: its Seen time's tick
   /// is due_tick less the delay the capture had, so Lag compensation judges it
-  /// as far back as in the playtest.
-  [[nodiscard]] command::Command Next(tick::Tick first_tick, tick::Tick due_tick);
+  /// as far back as in the playtest. nullopt to send none: a Command already
+  /// went for due_tick or one after it, or the Leave has come.
+  [[nodiscard]] std::optional<command::Command> Next(tick::Tick first_tick, tick::Tick due_tick);
 
   /// How many of the Script's Commands have gone out.
   [[nodiscard]] std::size_t Sent() const { return next_; }
 
+  /// Whether every tick before the Leave has had its Command sent, so nothing
+  /// more is: false without a Leave.
+  [[nodiscard]] bool DoneBeforeLeave() const { return leave_.has_value() && slot_ >= *leave_; }
+
  private:
-  // The filler for a Tick with nothing due.
+  // The filler for a tick with nothing due.
   [[nodiscard]] command::Command Filler(tick::Tick due_tick);
 
   std::vector<CapturedCommand> commands_;
   int max_held_ticks_;
+  std::optional<std::uint32_t> leave_;
   std::size_t next_ = 0;
+  // The offset of the first tick no Command has been sent for yet.
+  std::uint64_t slot_ = 0;
   // The last Command sent, the delay of its Seen time, and how many fillers
   // have held its movement since.
   std::optional<command::Command> last_;
@@ -157,7 +175,8 @@ class Pacer {
 enum class Progress : std::uint8_t {
   /// Not yet in its Match, or playing it.
   kPlaying,
-  /// Its captured Leave is due: it disconnects.
+  /// Its captured Leave has come, and every Command it sent before it has been
+  /// handed to the World: it disconnects, and the run ends.
   kLeave,
   /// The capture's Match end or the server's has come: the run ends.
   kEnded,
@@ -170,6 +189,22 @@ struct ObservedDeath {
   EntityId killer{};
 };
 
+/// A captured Death beside the one the server told of the same victim, the
+/// latter in the capture's terms: its players by their numbers in the capture
+/// (0 for one the capture lacks), its tick as an offset from the Match's
+/// first. Either may be missing, not both.
+struct PairedDeath {
+  std::optional<CapturedDeath> captured;
+  std::optional<CapturedDeath> observed;
+};
+
+/// Each of the script's Deaths, in its order, beside the first of observed of
+/// the same victim not taken by an earlier one, then each of observed none
+/// took. view is the run's, with the Match start that names its players:
+/// each is told apart by where it spawned (Script::spawns).
+[[nodiscard]] std::vector<PairedDeath> PairDeaths(const Script& script, const ServerView& view,
+                                                  const std::vector<ObservedDeath>& observed);
+
 /// One Captured player's run: its Script and its pacing.
 class Reenactment {
  public:
@@ -179,27 +214,26 @@ class Reenactment {
 
   /// The Command for the Session's next Tick (Prediction thread), from view
   /// and the sequence that Tick sends under (Session::NextSequence), with
-  /// round_trip_ticks the connection's round trip in ticks. In the first
-  /// Match the client is in, the pacing's; otherwise an idle Command, which a
-  /// Session outside a match does not send. Only the first Match is
-  /// reenacted: the run ends with it.
-  [[nodiscard]] command::Command NextCommand(const ServerView& view, command::Sequence next_sequence,
-                                             tick::Tick round_trip_ticks);
+  /// round_trip_ticks the connection's round trip in ticks: in the first Match
+  /// the client is in, the pacing's, or nullopt to skip the Tick, when
+  /// kMaxCommandsQueued are already waiting beyond a round trip's or the
+  /// pacing has none to send. Outside it, an idle Command, which a Session
+  /// outside a match does not send. Only the first Match is reenacted: the
+  /// run ends with it.
+  [[nodiscard]] std::optional<command::Command> NextCommand(const ServerView& view, command::Sequence next_sequence,
+                                                            tick::Tick round_trip_ticks);
 
   /// Whether, as of view, the run plays on, leaves at its captured Leave, or
   /// has reached the capture's Match end or the server's. Any thread.
   [[nodiscard]] Progress Check(const ServerView& view, tick::Tick round_trip_ticks) const;
 
-  /// The lines a run logs when it ends (ADR-0050), as logfmt fields to follow
-  /// `subsystem=reenactment`: each captured Death beside the one the server
-  /// told of the same victim, if any, then each told Death the capture lacks,
-  /// then the capture's Match end beside the server's. A player is named by
-  /// its number in the capture, told apart in the server's Match by where it
-  /// spawned, 0 for one the capture lacks. view is the run's last, with the
-  /// Match start that names its players; observed, the Deaths it was told;
-  /// last_tick, the newest server tick it saw.
+  /// The lines a run logs when it ends as how says (ADR-0050), as logfmt
+  /// fields to follow `subsystem=reenactment`: each of PairDeaths' pairs,
+  /// then the capture's Match end beside the server's. What came after a
+  /// Leave, which the client no longer saw, is said to be so (observed=left).
+  /// last_tick is the newest server tick the run saw.
   [[nodiscard]] std::vector<std::string> Outcome(const ServerView& view, const std::vector<ObservedDeath>& observed,
-                                                 tick::Tick last_tick) const;
+                                                 tick::Tick last_tick, Progress how) const;
 
   /// The line a run logs at admission when the server's Player count is not
   /// the capture's number of players, which it plays on regardless; nullopt
@@ -208,9 +242,13 @@ class Reenactment {
 
  private:
   const Script script_;
-  // Prediction thread only: the pacing, and how many Ticks it has sent in its Match.
+  // Prediction thread only: the pacing, and how many Commands it has sent in its Match.
   Pacer pacer_;
-  std::uint64_t ticks_in_match_ = 0;
+  std::uint64_t sent_in_match_ = 0;
+  // Written on the Prediction thread, read by Check: the sequence of the last
+  // Command sent, 0 for none, and whether the pacing is done before the Leave.
+  std::atomic<command::Sequence> last_sent_{0};
+  std::atomic<bool> done_before_leave_{false};
 };
 
 }  // namespace augusta::harness

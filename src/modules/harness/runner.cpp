@@ -9,6 +9,7 @@
 
 #include <nvtx3/nvtx3.hpp>
 
+#include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/logging.h"
@@ -106,11 +107,14 @@ supervisor::WorkerResult Runner::PredictionThreadMain() {
   const auto nominal_tick = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
   PredictionActivity activity;
   tick::Clock::time_point deadline = tick::Clock::now();
+  prediction::State state{};
   while (!workers_.StopRequested()) {
     const nvtx3::scoped_range range{"Prediction Tick"};
     const tick::Clock::time_point tick_start = tick::Clock::now();
 
-    const prediction::State state = session_.Tick(hooks_.next_command(), delta_time.count());
+    if (const std::optional<command::Command> command = hooks_.next_command()) {
+      state = session_.Tick(*command, delta_time.count());
+    }
     if (supervisor::WorkerResult failed = SessionResult(session_); !failed.has_value()) {
       return failed;
     }

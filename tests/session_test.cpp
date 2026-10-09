@@ -2154,9 +2154,13 @@ class ReenactmentHostTest : public ::testing::Test {
       if (session.GetPhase() != Phase::kMatch || session.GetConnectionState() != ConnectionState::kConnected) {
         continue;
       }
+      // A Captured player with enough Commands already waiting skips the tick.
+      const std::optional<Command> command = command_of(i);
+      if (!command.has_value()) {
+        continue;
+      }
       sending.push_back(static_cast<augusta::server::SessionId>(std::to_underlying(*session.GetSessionId())));
-      const Command command = command_of(i);
-      session.Tick(command, kFixedTick);
+      session.Tick(*command, kFixedTick);
     }
     const auto give_up = std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
     ExchangeUntil(host, Pointers(sessions), [&] {
