@@ -22,6 +22,10 @@ constexpr std::string_view kMetricsPortKey = "metrics.port";
 constexpr std::uint32_t kMaxMetricsPort = std::numeric_limits<std::uint16_t>::max();
 constexpr std::string_view kRecordingModeKey = "simulation.recording_mode";
 constexpr std::string_view kCaptureKey = "simulation.capture";
+constexpr std::string_view kRecordingKey = "simulation.recording";
+constexpr std::string_view kReplayCapturesKey = "replay.captures";
+constexpr std::string_view kReplayMaxViewersKey = "replay.max_viewers";
+constexpr std::uint32_t kMaxReplayViewers = std::numeric_limits<std::uint8_t>::max();
 
 std::expected<std::uint8_t, ConfigError> RequireTickRate(const ConfigValues& values) {
   return RequireWholeNumber(values, kTickRateKey, 1, kMaxTickRate).transform([](std::uint32_t rate) {
@@ -60,13 +64,56 @@ std::expected<bool, ConfigError> OptionalStrictRecording(const ConfigValues& val
   return mode == "strict";
 }
 
+// A key that may not be set with replay.captures, or that needs it.
+ConfigError ReplayEntryError(std::string_view key, std::string_view reason) {
+  return ConfigError{
+      .code = ConfigErrorCode::kInvalidEntry, .subject = std::string(key), .reason = std::string(reason), .file = {}};
+}
+
+// What a replay server is given beyond the rest of the file: its captures'
+// directory, empty for a live server, and how many Replays it runs at once.
+// A replay server runs no Match, so none of it is captured or recorded.
+struct ReplaySettings {
+  std::filesystem::path captures;
+  std::uint8_t max_viewers = kDefaultReplayMaxViewers;
+};
+
+std::expected<ReplaySettings, ConfigError> OptionalReplay(const ConfigValues& values,
+                                                          const std::filesystem::path& root) {
+  auto captures = OptionalPath(values, kReplayCapturesKey, root);
+  if (!captures) {
+    return std::unexpected(captures.error());
+  }
+  if (captures->empty()) {
+    if (values.contains(kReplayMaxViewersKey)) {
+      return std::unexpected(ReplayEntryError(kReplayMaxViewersKey, "needs replay.captures"));
+    }
+    return ReplaySettings{};
+  }
+  for (const std::string_view key : {kCaptureKey, kRecordingKey}) {
+    if (values.contains(key)) {
+      return std::unexpected(ReplayEntryError(key, "cannot be set on a replay server: it runs no Match"));
+    }
+  }
+  std::uint8_t max_viewers = kDefaultReplayMaxViewers;
+  if (values.contains(kReplayMaxViewersKey)) {
+    const auto read = RequireWholeNumber(values, kReplayMaxViewersKey, 1, kMaxReplayViewers);
+    if (!read) {
+      return std::unexpected(read.error());
+    }
+    max_viewers = static_cast<std::uint8_t>(*read);
+  }
+  return ReplaySettings{.captures = *std::move(captures), .max_viewers = max_viewers};
+}
+
 }  // namespace
 
 std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 10> kKeys{
-      "base_dir",        "content.pack", "content.public_key",     kTickRateKey,    "simulation.recording",
-      kRecordingModeKey, kCaptureKey,    "network.listen_address", "logging.level", kMetricsPortKey,
+  static constexpr std::array<std::string_view, 12> kKeys{
+      "base_dir",          "content.pack",         "content.public_key",     kTickRateKey,
+      kRecordingKey,       kRecordingModeKey,      kCaptureKey,              "network.listen_address",
+      "logging.level",     kMetricsPortKey,        kReplayCapturesKey,       kReplayMaxViewersKey,
   };
   const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = {}});
   if (!values) {
@@ -94,7 +141,7 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!log_level) {
     return std::unexpected(log_level.error());
   }
-  auto recording_path = OptionalPath(*values, "simulation.recording", *root);
+  auto recording_path = OptionalPath(*values, kRecordingKey, *root);
   if (!recording_path) {
     return std::unexpected(recording_path.error());
   }
@@ -110,6 +157,10 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!metrics_port) {
     return std::unexpected(metrics_port.error());
   }
+  auto replay = OptionalReplay(*values, *root);
+  if (!replay) {
+    return std::unexpected(replay.error());
+  }
   return ServerConfig{
       .pack_path = *std::move(pack_path),
       .public_key_path = *std::move(public_key_path),
@@ -120,6 +171,8 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
       .strict_recording = *strict_recording,
       .capture_directory = *std::move(capture_directory),
       .metrics_port = *metrics_port,
+      .replay_captures = std::move(replay->captures),
+      .replay_max_viewers = replay->max_viewers,
   };
 }
 
@@ -133,6 +186,10 @@ std::string DescribeServerConfigError(const ConfigError& error) {
   }
   if (error.subject == kTickRateKey) {
     return DescribeConfigError(error, std::format("'{}' must be an integer from 1 to {}", error.subject, kMaxTickRate));
+  }
+  if (error.subject == kReplayMaxViewersKey) {
+    return DescribeConfigError(error,
+                               std::format("'{}' must be an integer from 1 to {}", error.subject, kMaxReplayViewers));
   }
   if (error.subject == kMetricsPortKey) {
     return DescribeConfigError(error,

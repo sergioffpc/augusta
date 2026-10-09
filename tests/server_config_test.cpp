@@ -130,6 +130,61 @@ TEST(ParseServerConfigTest, RejectsAnEmptyCaptureDirectory) {
   EXPECT_EQ(config.error().subject, "simulation.capture");
 }
 
+// Requirements: US-21
+TEST(ParseServerConfigTest, ServesNoReplaysByDefault) {
+  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_TRUE(config->replay_captures.empty());
+  EXPECT_EQ(config->replay_max_viewers, augusta::config::kDefaultReplayMaxViewers);
+}
+
+// Requirements: US-21
+TEST(ParseServerConfigTest, ReadsAReplayServersCapturesRelativeToTheBaseDirAndItsMostViewers) {
+  const auto config = ParseServerConfig(
+      std::string(kMinimalServerConfig) + "replay:\n  captures: captures/firebase\n  max_viewers: 12\n", kFileDir);
+
+  ASSERT_TRUE(config.has_value()) << DescribeServerConfigError(config.error());
+  EXPECT_EQ(config->replay_captures, kRoot / "captures" / "firebase");
+  EXPECT_EQ(config->replay_max_viewers, 12);
+}
+
+TEST(ParseServerConfigTest, RejectsMostViewersThatAreNotAnIntegerFromOneTo255) {
+  for (const std::string_view viewers : {"0", "256", "-1", "two", "1.5"}) {
+    const auto config = ParseServerConfig(std::string(kMinimalServerConfig) +
+                                              "replay:\n  captures: captures\n  max_viewers: \"" +
+                                              std::string(viewers) + "\"\n",
+                                          kFileDir);
+
+    ASSERT_FALSE(config.has_value()) << viewers;
+    EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidNumber) << viewers;
+    EXPECT_EQ(config.error().subject, "replay.max_viewers") << viewers;
+  }
+}
+
+// A cap on Replays means nothing to a server that serves none.
+TEST(ParseServerConfigTest, RejectsMostViewersWithoutCaptures) {
+  const auto config = ParseServerConfig(std::string(kMinimalServerConfig) + "replay:\n  max_viewers: 2\n", kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
+  EXPECT_EQ(config.error().subject, "replay.max_viewers");
+}
+
+// A replay server runs no Match (ADR-0051), so there is none to capture or record.
+TEST(ParseServerConfigTest, RejectsCapturingOrRecordingOnAReplayServer) {
+  for (const std::string_view key : {"capture", "recording"}) {
+    const auto config =
+        ParseServerConfig(std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  " +
+                              std::string(key) + ": somewhere\nreplay:\n  captures: captures\n",
+                          kFileDir);
+
+    ASSERT_FALSE(config.has_value()) << key;
+    EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry) << key;
+    EXPECT_EQ(config.error().subject, "simulation." + std::string(key));
+  }
+}
+
 TEST(ParseServerConfigTest, RecordsOptionallyByDefault) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 
@@ -286,6 +341,13 @@ TEST(DescribeServerConfigErrorTest, SaysWhatATickRateMustBe) {
       {.code = ConfigErrorCode::kInvalidNumber, .subject = "simulation.tick_rate_hz", .reason = {}, .file = {}});
 
   EXPECT_EQ(message, "'simulation.tick_rate_hz' must be an integer from 1 to 255");
+}
+
+TEST(DescribeServerConfigErrorTest, SaysWhatTheMostViewersMustBe) {
+  const auto message = DescribeServerConfigError(
+      {.code = ConfigErrorCode::kInvalidNumber, .subject = "replay.max_viewers", .reason = {}, .file = {}});
+
+  EXPECT_EQ(message, "'replay.max_viewers' must be an integer from 1 to 255");
 }
 
 TEST(DescribeServerConfigErrorTest, SaysWhatAMetricsPortMustBe) {
