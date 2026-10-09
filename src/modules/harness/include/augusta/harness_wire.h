@@ -15,6 +15,7 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
+#include "augusta/reenactment.h"
 #include "augusta/tick.h"
 
 /// \file
@@ -94,6 +95,22 @@ struct SequencedCommand {
 /// A match's end the server sent, in the engine's terms: a winner of
 /// protocol::kDraw is none.
 [[nodiscard]] MatchEnd FromWire(const protocol::MatchEndWire& end);
+
+/// A command as the protocol carries it, in the engine's terms, its Seen
+/// time's tick seen_age before seen_tick.
+[[nodiscard]] command::Command FromWire(const protocol::CommandWire& command, tick::Tick seen_tick);
+
+/// hash in the engine's terms.
+[[nodiscard]] assets::PackHash FromWire(const protocol::PackHashWire& hash);
+
+/// A Command a capture holds (ADR-0050), in the engine's terms.
+[[nodiscard]] CapturedCommand FromWire(const protocol::CapturedCommandWire& command);
+
+/// A Death a capture holds, in the engine's terms.
+[[nodiscard]] CapturedDeath FromWire(const protocol::CapturedDeathWire& death);
+
+/// A capture's Match end, in the engine's terms: a winner of 0 is a Draw.
+[[nodiscard]] CapturedEnd FromWire(const protocol::CapturedMatchEndWire& end);
 
 /// hash as the protocol carries it.
 [[nodiscard]] protocol::PackHashWire ToWire(const assets::PackHash& hash);

@@ -462,6 +462,12 @@ add_executable(augusta_capture_tests capture_test.cpp)
 target_link_libraries(augusta_capture_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_capture_tests DISCOVERY_TIMEOUT 30)
 
+# A Captured player (ADR-0050): its Script read from a capture a Capturer
+# writes, and its pacing and progress from Server views built by hand.
+add_executable(augusta_reenactment_tests reenactment_test.cpp)
+target_link_libraries(augusta_reenactment_tests PRIVATE augusta_harness augustad_host GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_reenactment_tests DISCOVERY_TIMEOUT 30)
+
 # Match recordings (ADR-0048), on the example scenario as the server loads it
 # from its golden server pack. Their replay is tools/replay's, tested there.
 add_executable(augusta_recording_tests recording_test.cpp)

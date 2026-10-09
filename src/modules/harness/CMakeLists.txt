@@ -1,11 +1,13 @@
 add_library(
   augusta_harness
   STATIC
+  capture_script.cpp
   command_stream.cpp
   harness.cpp
   harness_wire.cpp
   inbox.cpp
   netcode_stats.cpp
+  reenactment.cpp
   runner.cpp
   server_view.cpp
 )

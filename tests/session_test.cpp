@@ -5,8 +5,10 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <ios>
 #include <limits>
 #include <map>
@@ -41,6 +43,7 @@
 #include "augusta/prediction.h"
 #include "augusta/primitives.h"
 #include "augusta/protocol.h"
+#include "augusta/reenactment.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
@@ -69,6 +72,8 @@
 namespace {
 
 using augusta::command::Command;
+using augusta::harness::CapturedCommand;
+using augusta::harness::CapturedPlayer;
 using augusta::harness::Death;
 using augusta::harness::EntityId;
 using augusta::harness::Failure;
@@ -76,6 +81,10 @@ using augusta::harness::FailureKind;
 using augusta::harness::HitConfirmation;
 using augusta::harness::JoinRefusal;
 using augusta::harness::Phase;
+using augusta::harness::Progress;
+using augusta::harness::ReadScript;
+using augusta::harness::Reenactment;
+using augusta::harness::Script;
 using augusta::harness::ServerView;
 using augusta::harness::Session;
 using augusta::harness::SessionConfig;
@@ -2058,6 +2067,234 @@ TEST(CaptureHostConfigTest, AHostRefusesACaptureDirectoryItCannotCreate) {
   EXPECT_THROW(Host(config, Scenario{.collision = {}, .spawn_points = {}, .characters = {}, .client_pack = {}}),
                std::runtime_error);
   std::filesystem::remove(file);
+}
+
+// ADR-0050 end to end: a playtest of two players captured on one server, then
+// both reenacted at once, joining in the other order, against another server
+// with reenactments on and other Spawn points, whose own capture of the run is
+// compared with the playtest's.
+class ReenactmentHostTest : public ::testing::Test {
+ protected:
+  static constexpr float kFloorY = 0.0F;
+  static constexpr int kPlaytestSteps = 40;
+  // The second player disconnects after this many steps of the playtest.
+  static constexpr int kLeavingStep = 25;
+  // How far before the newest State's tick each playtest Command says it was seen.
+  static constexpr augusta::tick::Tick kSeenDelay = 2;
+  // How many ticks off its captured one a reenacted Command may reach the World (ADR-0050).
+  static constexpr std::int64_t kTolerance = 2;
+
+  ReenactmentHostTest() : playtest_(Directory("playtest")), reenacted_(Directory("reenacted")) {}
+  ~ReenactmentHostTest() override {
+    std::filesystem::remove_all(playtest_);
+    std::filesystem::remove_all(reenacted_);
+  }
+
+  ReenactmentHostTest(const ReenactmentHostTest&) = delete;
+  ReenactmentHostTest& operator=(const ReenactmentHostTest&) = delete;
+  ReenactmentHostTest(ReenactmentHostTest&&) = delete;
+  ReenactmentHostTest& operator=(ReenactmentHostTest&&) = delete;
+
+  // Unique to this test and run: ctest may run tests side by side.
+  static std::filesystem::path Directory(const std::string& run) {
+    return std::filesystem::temp_directory_path() /
+           ("augusta_session_reenactment_" + run + "_" + std::to_string(std::random_device{}()));
+  }
+
+  // A server of two players on the floor with spawn_points, capturing into captures.
+  static std::unique_ptr<Host> Server(const std::filesystem::path& captures, std::vector<Vec3> spawn_points,
+                                      bool reenactments) {
+    HostConfig config = TestHostConfig(WithPlayerCount(2));
+    config.capture_directory = captures;
+    config.reenactments = reenactments;
+    return std::make_unique<Host>(config, Scenario{.collision = {FloorAt(kFloorY)},
+                                                   .spawn_points = std::move(spawn_points),
+                                                   .characters = {{.path = kCharacter, .hitboxes = {}}}});
+  }
+
+  // One step of the whole Match: every client of sessions still connected
+  // ticks command_of(its index), the host ticks once each one's Command has
+  // reached it, and the State comes back.
+  template <typename CommandOf>
+  static void Step(Host& host, const std::vector<std::unique_ptr<Session>>& sessions, CommandOf command_of) {
+    std::vector<augusta::server::SessionId> sending;
+    for (std::size_t i = 0; i < sessions.size(); ++i) {
+      Session& session = *sessions[i];
+      if (session.GetPhase() != Phase::kMatch || session.GetConnectionState() != ConnectionState::kConnected) {
+        continue;
+      }
+      sending.push_back(static_cast<augusta::server::SessionId>(std::to_underlying(*session.GetSessionId())));
+      const Command command = command_of(i);
+      session.Tick(command, kFixedTick);
+    }
+    const auto give_up = std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
+    ExchangeUntil(host, Pointers(sessions), [&] {
+      return std::chrono::steady_clock::now() >= give_up ||
+             std::ranges::all_of(sending, [&](augusta::server::SessionId id) { return host.QueuedCommands(id) > 0; });
+    });
+    host.Tick(kFixedTick);
+    Settle(host, Pointers(sessions));
+  }
+
+  // The playtest's Command of player (from 0) on step: each a view of its own,
+  // so each is told apart in a capture, seen kSeenDelay before the newest State.
+  static Command PlaytestCommand(const Session& session, std::size_t player, int step) {
+    Command command;
+    command.movement.direction = Vec3(player == 0 ? 1.0F : -1.0F, 0.0F, 0.0F);
+    command.yaw = augusta::math::SnapAngle(0.02F * static_cast<float>(step) + (player == 0 ? 0.0F : 1.0F));
+    const auto state = session.GetAuthoritativeState();
+    const augusta::tick::Tick newest = state.has_value() ? state->tick : session.GetMatchStart()->first_tick;
+    command.seen_tick = newest - kSeenDelay;
+    return command;
+  }
+
+  // The one capture in directory, once its host is gone, as player's Script.
+  static Script ReadPlayer(const std::filesystem::path& directory, CapturedPlayer player) {
+    const std::vector<std::filesystem::path> files(std::filesystem::directory_iterator(directory), {});
+    EXPECT_EQ(files.size(), 1U);
+    std::ifstream in(files.empty() ? std::filesystem::path{} : files.front(), std::ios::binary);
+    auto script = ReadScript(in, player);
+    EXPECT_TRUE(script.has_value());
+    return script.value_or(Script{});
+  }
+
+  // Plays the playtest: two players walk apart, each with a view of its own
+  // every step, the second leaving at kLeavingStep, until the host ends it.
+  void Playtest() {
+    const std::unique_ptr<Host> host = Server(playtest_, {Vec3(10, kFloorY, 0), Vec3(20, kFloorY, 5)}, false);
+    std::vector<std::unique_ptr<Session>> sessions;
+    for (int i = 0; i < 2; ++i) {
+      sessions.push_back(
+          std::make_unique<Session>(TestSessionConfig(host->ListenEndpoint()), WorldWithFloorAt(kFloorY)));
+      sessions.back()->Connect();
+    }
+    ASSERT_TRUE(DriveIntoMatch(*host, Pointers(sessions)));
+    for (int step = 0; step < kPlaytestSteps; ++step) {
+      if (step == kLeavingStep) {
+        sessions[1]->Disconnect();
+      }
+      Step(*host, sessions, [&](std::size_t i) { return PlaytestCommand(*sessions[i], i, step); });
+    }
+    host->EndMatch();
+    host->Tick(kFixedTick);
+  }
+
+  // Reenacts both players of the playtest at once, the second joining first,
+  // until each has left or reached the capture's Match end; returns where
+  // the run's Match start put each player of the playtest, by its number.
+  std::vector<Vec3> Reenact() {
+    const std::unique_ptr<Host> host = Server(reenacted_, {Vec3(-30, kFloorY, 0), Vec3(-40, kFloorY, 5)}, true);
+    std::vector<std::unique_ptr<Session>> sessions;
+    std::vector<std::unique_ptr<Reenactment>> runs;
+    for (const CapturedPlayer player : {CapturedPlayer{2}, CapturedPlayer{1}}) {
+      Script script = ReadPlayer(playtest_, player);
+      sessions.push_back(std::make_unique<Session>(
+          SessionConfig{.server = host->ListenEndpoint(), .character = script.character, .spawn = script.spawn},
+          WorldWithFloorAt(kFloorY)));
+      sessions.back()->Connect();
+      runs.push_back(std::make_unique<Reenactment>(std::move(script)));
+    }
+    EXPECT_TRUE(DriveIntoMatch(*host, Pointers(sessions)));
+    std::vector<Vec3> spawned;
+    for (const auto& session : sessions) {
+      for (const auto& player : session->GetMatchStart().value().players) {
+        if (player.session == session->GetSessionId()) {
+          spawned.insert(spawned.begin(), player.spawn);
+        }
+      }
+    }
+    std::vector<bool> done(runs.size(), false);
+    for (int step = 0; step < kPlaytestSteps * 2 && !std::ranges::all_of(done, std::identity{}); ++step) {
+      for (std::size_t i = 0; i < runs.size(); ++i) {
+        const Progress progress = runs[i]->Check(*sessions[i]->GetServerView(), 0);
+        if (progress == Progress::kLeave && !done[i]) {
+          sessions[i]->Disconnect();
+        }
+        done[i] = done[i] || progress != Progress::kPlaying;
+      }
+      Step(*host, sessions, [&](std::size_t i) {
+        return runs[i]->NextCommand(*sessions[i]->GetServerView(), sessions[i]->NextSequence(), 0);
+      });
+    }
+    host->EndMatch();
+    host->Tick(kFixedTick);
+    return spawned;
+  }
+
+  // Expects every Command of played to reach the World in reenacted, in
+  // order, within kTolerance ticks of its offset and with its Seen time's
+  // delay; reenacted holds the fillers of its gaps besides.
+  static void ExpectReenacted(const Script& played, const Script& reenacted) {
+    std::size_t next = 0;
+    for (const CapturedCommand& command : played.commands) {
+      const auto found =
+          std::find_if(reenacted.commands.begin() + static_cast<std::ptrdiff_t>(next), reenacted.commands.end(),
+                       [&](const CapturedCommand& candidate) {
+                         return candidate.command.yaw == command.command.yaw &&
+                                candidate.command.movement.direction == command.command.movement.direction;
+                       });
+      ASSERT_NE(found, reenacted.commands.end()) << "the Command of offset " << command.offset << " never arrived";
+      next = static_cast<std::size_t>(found - reenacted.commands.begin()) + 1;
+      EXPECT_LE(std::abs(static_cast<std::int64_t>(found->offset) - command.offset), kTolerance)
+          << "captured at " << command.offset << ", reenacted at " << found->offset;
+      EXPECT_LE(std::abs((static_cast<std::int64_t>(found->offset) - found->seen_offset) -
+                         (static_cast<std::int64_t>(command.offset) - command.seen_offset)),
+                kTolerance)
+          << "the Seen time of the Command of offset " << command.offset;
+    }
+  }
+
+  std::filesystem::path playtest_;
+  std::filesystem::path reenacted_;
+};
+
+// Requirements: US-21
+TEST_F(ReenactmentHostTest, EveryCapturedPlayerSpawnsWhereTheCaptureHasItAndItsCommandsReachTheWorldOnTheirTicks) {
+  Playtest();
+  const std::vector<Vec3> spawned = Reenact();
+
+  for (const CapturedPlayer player : {CapturedPlayer{1}, CapturedPlayer{2}}) {
+    SCOPED_TRACE(+player);
+    const Script played = ReadPlayer(playtest_, player);
+    ASSERT_GE(spawned.size(), 2U);
+    EXPECT_EQ(spawned[player - 1], played.spawn);
+    // The run numbers its players in its own Match start's order: it is told
+    // apart by where it spawned.
+    const std::vector<Vec3> run_spawns = ReadPlayer(reenacted_, 1).spawns;
+    const auto number = std::ranges::find(run_spawns, played.spawn);
+    ASSERT_NE(number, run_spawns.end());
+    const Script reenacted = ReadPlayer(reenacted_, static_cast<CapturedPlayer>(number - run_spawns.begin() + 1));
+    EXPECT_EQ(reenacted.character, played.character);
+    ASSERT_GT(played.commands.size(), 10U);
+    ExpectReenacted(played, reenacted);
+    if (played.leave.has_value()) {
+      ASSERT_TRUE(reenacted.leave.has_value());
+      EXPECT_LE(std::abs(static_cast<std::int64_t>(*reenacted.leave) - *played.leave), kTolerance)
+          << "left at " << *played.leave << ", reenacted at " << *reenacted.leave;
+    }
+  }
+  EXPECT_TRUE(ReadPlayer(playtest_, 2).leave.has_value());
+}
+
+// Requirements: US-21
+TEST_F(ReenactmentHostTest, AServerWithReenactmentsOnStillAdmitsAJoinRequestWhereGamePolicyPlacesIt) {
+  const std::unique_ptr<Host> host = Server(reenacted_, {Vec3(-30, kFloorY, 0), Vec3(-40, kFloorY, 5)}, true);
+  std::vector<std::unique_ptr<Session>> sessions;
+  sessions.push_back(std::make_unique<Session>(
+      SessionConfig{.server = host->ListenEndpoint(), .character = kCharacter, .spawn = Vec3(7, kFloorY, 7)},
+      WorldWithFloorAt(kFloorY)));
+  sessions.push_back(std::make_unique<Session>(TestSessionConfig(host->ListenEndpoint()), WorldWithFloorAt(kFloorY)));
+  for (const auto& session : sessions) {
+    session->Connect();
+  }
+
+  ASSERT_TRUE(DriveIntoMatch(*host, Pointers(sessions)));
+
+  std::vector<Vec3> spawns;
+  for (const auto& player : sessions[0]->GetMatchStart().value().players) {
+    spawns.push_back(player.spawn);
+  }
+  EXPECT_EQ(spawns, (std::vector<Vec3>{Vec3(7, kFloorY, 7), Vec3(-30, kFloorY, 0)}));
 }
 
 // One client on a floor, on the server's stamina rules: a bar that empties in
