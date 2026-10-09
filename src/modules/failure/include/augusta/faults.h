@@ -32,8 +32,6 @@ enum class Site : std::uint8_t {
   kWorkerExecution,
   kTransportSend,
   kTransportReceive,
-  kRecordingWrite,
-  kRecordingFlush,
   kCaptureWrite,
   kMetricsAccept,
 };

@@ -20,16 +20,13 @@
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
-#include "augusta/policy_actions.h"
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
-#include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "capture.h"
 #include "command_queue.h"
 #include "host_metrics.h"
 #include "match.h"
-#include "recording.h"
 #include "simulation_mapping.h"
 
 namespace augusta::server {
@@ -83,7 +80,7 @@ protocol::BodyPartWire ToWire(ballistics::BodyPart part) {
   return protocol::BodyPartWire{};
 }
 
-// A payload the protocol could not carry, of the message or record type
+// A payload the protocol could not carry, of the message or capture record type
 // named under key: a broken invariant of the server's, never a peer's input.
 failure::Failure BrokenInvariant(protocol::EncodeError error, std::string_view key, std::uint8_t type) {
   return failure::Failure{.code = failure::Code::kInvariantViolated,
@@ -96,12 +93,6 @@ failure::Failure BrokenInvariant(protocol::EncodeError error, std::string_view k
 std::expected<protocol::BytesWire, failure::Failure> EncodeToSend(const protocol::MessageWire& message) {
   return protocol::Encode(message).transform_error([&message](protocol::EncodeError error) {
     return BrokenInvariant(error, "message_type", static_cast<std::uint8_t>(protocol::TypeOf(message)));
-  });
-}
-
-std::expected<protocol::BytesWire, failure::Failure> EncodeToRecord(const protocol::RecordWire& record) {
-  return protocol::EncodeRecord(record).transform_error([&record](protocol::EncodeError error) {
-    return BrokenInvariant(error, "record_type", static_cast<std::uint8_t>(protocol::TypeOf(record)));
   });
 }
 
@@ -335,223 +326,6 @@ std::vector<SequencedCommand> FromWire(const protocol::CommandsWire& message) {
     commands.push_back(FromWire(command, message.seen_tick));
   }
   return commands;
-}
-
-protocol::RecordingHeaderWire ToWire(const RecordingHeader& header) {
-  protocol::RecordingHeaderWire wire{
-      .server_pack = {}, .engine_version = header.engine_version, .tick_rate_hz = header.tick_rate_hz};
-  std::ranges::copy(header.server_pack, wire.server_pack.begin());
-  return wire;
-}
-
-RecordingHeader FromWire(const protocol::RecordingHeaderWire& header) {
-  return RecordingHeader{.engine_version = header.engine_version,
-                         .server_pack = FromWire(header.server_pack),
-                         .tick_rate_hz = header.tick_rate_hz};
-}
-
-namespace {
-
-// A recorded command in full: its Seen time's tick goes beside it, so its age is 0.
-protocol::RecordedCommandWire ToWire(const simulation::PlayerCommand& command) {
-  return protocol::RecordedCommandWire{
-      .seen_tick = command.command.seen_tick,
-      .command = ToWire(command.command),
-      .entity = server::ToWire(FromSimulation(command.entity)),
-  };
-}
-
-simulation::EntityId FromWire(protocol::EntityIdWire entity) {
-  return static_cast<simulation::EntityId>(std::to_underlying(entity));
-}
-
-simulation::SessionId FromWire(protocol::SessionIdWire session) {
-  return static_cast<simulation::SessionId>(std::to_underlying(session));
-}
-
-ballistics::BodyPart FromWire(protocol::BodyPartWire part) {
-  switch (part) {
-    case protocol::BodyPartWire::kHead:
-      return ballistics::BodyPart::kHead;
-    case protocol::BodyPartWire::kTorso:
-      return ballistics::BodyPart::kTorso;
-    case protocol::BodyPartWire::kLimb:
-      return ballistics::BodyPart::kLimb;
-  }
-  std::unreachable();
-}
-
-protocol::RecordedBodyWire ToWire(const simulation::EntityState& body) {
-  return protocol::RecordedBodyWire{
-      .state = {.entity = server::ToWire(FromSimulation(body.entity)),
-                .body = server::ToWire(body.body),
-                .yaw = body.yaw},
-      .rifle = {.cooldown = body.rifle.cooldown,
-                .reload_remaining = body.rifle.reload_remaining,
-                .recoil_pitch = body.rifle.recoil.pitch,
-                .recoil_yaw = body.rifle.recoil.yaw,
-                .rounds = body.rifle.rounds,
-                .burst_index = body.rifle.burst_index},
-      .health = body.health,
-  };
-}
-
-simulation::EntityState FromWire(const protocol::RecordedBodyWire& body) {
-  const protocol::BodyStateWire& state = body.state.body;
-  return simulation::EntityState{
-      .entity = FromWire(body.state.entity),
-      .body = {.position = state.position,
-               .velocity = state.velocity,
-               .stance = FromWire(state.stance),
-               .stamina = state.stamina,
-               .exhausted = (state.flags & protocol::BodyStateWire::kExhausted) != 0},
-      .yaw = body.state.yaw,
-      .health = body.health,
-      .rifle = {.cooldown = body.rifle.cooldown,
-                .reload_remaining = body.rifle.reload_remaining,
-                .recoil = {.pitch = body.rifle.recoil_pitch, .yaw = body.rifle.recoil_yaw},
-                .rounds = body.rifle.rounds,
-                .burst_index = body.rifle.burst_index},
-  };
-}
-
-protocol::RecordedHitWire ToWire(const simulation::Hit& hit) {
-  return protocol::RecordedHitWire{
-      .damage = hit.damage,
-      .health = hit.health,
-      .shooter = server::ToWire(FromSimulation(hit.shooter)),
-      .target = server::ToWire(FromSimulation(hit.target)),
-      .part = ToWire(hit.part),
-      .flags = hit.reached_zero ? protocol::RecordedHitWire::kReachedZero : std::uint8_t{0},
-  };
-}
-
-simulation::Hit FromWire(const protocol::RecordedHitWire& hit) {
-  return simulation::Hit{
-      .shooter = FromWire(hit.shooter),
-      .target = FromWire(hit.target),
-      .damage = hit.damage,
-      .health = hit.health,
-      .part = FromWire(hit.part),
-      .reached_zero = (hit.flags & protocol::RecordedHitWire::kReachedZero) != 0,
-  };
-}
-
-protocol::DeathWire ToWire(const simulation::Death& death) {
-  return protocol::DeathWire{.victim = server::ToWire(FromSimulation(death.victim)),
-                             .killer = server::ToWire(FromSimulation(death.killer)),
-                             .yaw = death.yaw,
-                             .pitch = death.pitch,
-                             .part = ToWire(death.part)};
-}
-
-simulation::Death FromWire(const protocol::DeathWire& death) {
-  return simulation::Death{.victim = FromWire(death.victim),
-                           .killer = FromWire(death.killer),
-                           .yaw = death.yaw,
-                           .pitch = death.pitch,
-                           .part = FromWire(death.part)};
-}
-
-// Each of from, converted by convert.
-template <typename To, typename From, typename Convert>
-std::vector<To> Converted(const std::vector<From>& from, Convert convert) {
-  std::vector<To> to;
-  to.reserve(from.size());
-  for (const From& element : from) {
-    to.push_back(convert(element));
-  }
-  return to;
-}
-
-}  // namespace
-
-protocol::RecordedTickWire ToWire(const TickRecord& record) {
-  const TickInput& input = record.input;
-  const TickOutcome& outcome = record.outcome;
-  protocol::RecordedTickWire wire{
-      .removed = Converted<protocol::EntityIdWire>(
-          input.removed, [](simulation::EntityId entity) { return ToWire(FromSimulation(entity)); }),
-      .match_start = {},
-      .commands = Converted<protocol::RecordedCommandWire>(
-          input.commands, [](const simulation::PlayerCommand& command) { return ToWire(command); }),
-      .bodies = Converted<protocol::RecordedBodyWire>(outcome.bodies,
-                                                      [](const simulation::EntityState& body) { return ToWire(body); }),
-      .shots = Converted<protocol::ShotWire>(outcome.shots,
-                                             [&](const simulation::Shot& shot) {
-                                               return protocol::ShotWire{
-                                                   .tick = outcome.tick,
-                                                   .origin = shot.origin,
-                                                   .shooter = ToWire(FromSimulation(shot.shooter)),
-                                                   .yaw = shot.yaw,
-                                                   .pitch = shot.pitch};
-                                             }),
-      .hits =
-          Converted<protocol::RecordedHitWire>(outcome.hits, [](const simulation::Hit& hit) { return ToWire(hit); }),
-      .deaths =
-          Converted<protocol::DeathWire>(outcome.deaths, [](const simulation::Death& death) { return ToWire(death); }),
-      .delta_time = input.delta_time,
-      .winner = protocol::kDraw,
-      .flags = input.match_ended ? protocol::RecordedTickWire::kMatchEnded : std::uint8_t{0},
-  };
-  wire.match_start.reserve(input.match_start.size());
-  for (std::size_t i = 0; i < input.match_start.size(); ++i) {
-    const RecordedEntrant& entrant = input.match_start[i];
-    wire.match_start.push_back(protocol::MatchPlayerWire{.spawn = outcome.spawns.at(i),
-                                                         .session = ToWire(FromSimulation(entrant.identity.session)),
-                                                         .entity = ToWire(FromSimulation(entrant.entity)),
-                                                         .character = entrant.identity.character});
-  }
-  if (outcome.match_end.has_value()) {
-    wire.flags |= protocol::RecordedTickWire::kPolicyMatchEnd;
-    if (outcome.match_end->winner.has_value()) {
-      wire.winner = ToWire(FromSimulation(*outcome.match_end->winner));
-    }
-  }
-  return wire;
-}
-
-TickRecord FromWire(const protocol::RecordedTickWire& record, tick::Tick tick) {
-  TickRecord result{
-      .input = {.removed = Converted<simulation::EntityId>(
-                    record.removed, [](protocol::EntityIdWire entity) { return FromWire(entity); }),
-                .match_start = {},
-                .commands = Converted<simulation::PlayerCommand>(
-                    record.commands,
-                    [](const protocol::RecordedCommandWire& command) {
-                      return simulation::PlayerCommand{.entity = FromWire(command.entity),
-                                                       .command = FromWire(command.command, command.seen_tick)};
-                    }),
-                .delta_time = record.delta_time,
-                .match_ended = (record.flags & protocol::RecordedTickWire::kMatchEnded) != 0},
-      .outcome = {.tick = tick,
-                  .spawns = {},
-                  .bodies = Converted<simulation::EntityState>(
-                      record.bodies, [](const protocol::RecordedBodyWire& body) { return FromWire(body); }),
-                  .shots = Converted<simulation::Shot>(record.shots,
-                                                       [](const protocol::ShotWire& shot) {
-                                                         return simulation::Shot{.shooter = FromWire(shot.shooter),
-                                                                                 .origin = shot.origin,
-                                                                                 .yaw = shot.yaw,
-                                                                                 .pitch = shot.pitch};
-                                                       }),
-                  .hits = Converted<simulation::Hit>(
-                      record.hits, [](const protocol::RecordedHitWire& hit) { return FromWire(hit); }),
-                  .deaths = Converted<simulation::Death>(
-                      record.deaths, [](const protocol::DeathWire& death) { return FromWire(death); }),
-                  .match_end = std::nullopt},
-  };
-  for (const protocol::MatchPlayerWire& player : record.match_start) {
-    result.input.match_start.push_back(
-        RecordedEntrant{.entity = FromWire(player.entity),
-                        .identity = {.session = FromWire(player.session), .character = player.character}});
-    result.outcome.spawns.push_back(player.spawn);
-  }
-  if ((record.flags & protocol::RecordedTickWire::kPolicyMatchEnd) != 0) {
-    result.outcome.match_end = simulation::MatchEnd{
-        .winner = record.winner == protocol::kDraw ? std::nullopt : std::optional(FromWire(record.winner))};
-  }
-  return result;
 }
 
 namespace {

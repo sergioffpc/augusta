@@ -77,33 +77,6 @@ TEST(ParseServerConfigTest, DefaultsTheListenAddress) {
 }
 
 // Requirements: US-21
-TEST(ParseServerConfigTest, RecordsNoMatchByDefault) {
-  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_TRUE(config->recording_path.empty());
-}
-
-// Requirements: US-21
-TEST(ParseServerConfigTest, ReadsARecordingPathRelativeToTheBaseDir) {
-  const auto config = ParseServerConfig(
-      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  recording: logs/match.rec\n",
-      kFileDir);
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->recording_path, kRoot / "logs" / "match.rec");
-}
-
-TEST(ParseServerConfigTest, RejectsAnEmptyRecordingPath) {
-  const auto config = ParseServerConfig(
-      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  recording: \"\"\n", kFileDir);
-
-  ASSERT_FALSE(config.has_value());
-  EXPECT_EQ(config.error().code, ConfigErrorCode::kEmptyValue);
-  EXPECT_EQ(config.error().subject, "simulation.recording");
-}
-
-// Requirements: US-21
 TEST(ParseServerConfigTest, CapturesNoMatchByDefault) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 
@@ -128,38 +101,6 @@ TEST(ParseServerConfigTest, RejectsAnEmptyCaptureDirectory) {
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kEmptyValue);
   EXPECT_EQ(config.error().subject, "simulation.capture");
-}
-
-TEST(ParseServerConfigTest, RecordsOptionallyByDefault) {
-  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->strict_recording);
-}
-
-TEST(ParseServerConfigTest, ReadsEitherRecordingMode) {
-  const auto strict = ParseServerConfig(
-      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  recording_mode: strict\n",
-      kFileDir);
-  const auto optional = ParseServerConfig(
-      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  recording_mode: optional\n",
-      kFileDir);
-
-  ASSERT_TRUE(strict.has_value());
-  EXPECT_TRUE(strict->strict_recording);
-  ASSERT_TRUE(optional.has_value());
-  EXPECT_FALSE(optional->strict_recording);
-}
-
-TEST(ParseServerConfigTest, RejectsARecordingModeThatIsNeitherOptionalNorStrict) {
-  const auto config = ParseServerConfig(
-      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  recording_mode: required\n",
-      kFileDir);
-
-  ASSERT_FALSE(config.has_value());
-  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
-  EXPECT_EQ(config.error().subject, "simulation.recording_mode");
-  EXPECT_EQ(DescribeServerConfigError(config.error()), "'simulation.recording_mode' must be optional or strict");
 }
 
 TEST(ParseServerConfigTest, DefaultsTheLogLevel) {

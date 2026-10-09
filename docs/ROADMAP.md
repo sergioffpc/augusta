@@ -185,12 +185,9 @@ from their manifests and each runs on its own server
 - Netcode tests: Scripted players through a simulated impaired link, nightly
 - Benchmarks of the server tick (per phase), the protocol, pack loading and
   ballistics
-- Match recording and replay on SimulationWorld, checked by a golden match
-  (ADR-0048, since superseded by ADR-0050 and ADR-0051 for v3)
 
-**Exercises:** ADR-0013, ADR-0048 **Exit criteria:** `augusta-swarm` plays a
-server through its Match ends; the nightly runs the netcode tests and the
-benchmarks
+**Exercises:** ADR-0013 **Exit criteria:** `augusta-swarm` plays a server
+through its Match ends; the nightly runs the netcode tests and the benchmarks
 
 ### M11 — Codebase & Developer Experience (M)
 

@@ -11,8 +11,8 @@
 /// \file
 /// How the server's files hold records one after another: each record's
 /// payload after its length, little-endian, in as many bytes as its file's
-/// FrameFormat says. A Match recording (recording.h, ADR-0048) takes 4 bytes,
-/// a Match capture (capture.h, ADR-0050) one; what a payload holds is theirs.
+/// FrameFormat says. A Match capture (capture.h, ADR-0050) takes one; what a
+/// payload holds is its own.
 /// Pure stream I/O, on whichever thread holds the stream.
 namespace augusta::server {
 
@@ -25,9 +25,6 @@ struct FrameFormat {
   /// past it is never written.
   std::size_t max_payload = 0;
 };
-
-/// A Match recording's frames: its records hold whole Authoritative States.
-inline constexpr FrameFormat kRecordingFrames{.length_bytes = 4, .max_payload = std::size_t{64} * 1024};
 
 /// A Match capture's frames: none of its records, header included, passes 255
 /// bytes, so one byte of length is enough (#463).

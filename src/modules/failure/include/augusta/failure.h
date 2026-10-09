@@ -26,7 +26,7 @@ enum class Disposition : std::uint8_t {
   kPeer,
   /// One Session ends; the others and the Match go on.
   kSession,
-  /// An optional, non-authoritative subsystem (recording, metrics) stops or
+  /// An optional, non-authoritative subsystem (metrics) stops or
   /// degrades, observably; authority is untouched.
   kSubsystem,
   /// The runtime stops: no new work is admitted, its workers are stopped and
@@ -38,7 +38,7 @@ enum class Disposition : std::uint8_t {
 
 /// A failure's stable identity. Its values are fixed once released, so logs,
 /// metrics and exit classifications keep meaning the same thing; a new failure
-/// gets a new value, never a reused one.
+/// gets a new value, never a reused one. 100, 101 and 207 are retired.
 enum class Code : std::uint16_t {
   /// A peer sent a message that does not decode or is not allowed now.
   kInvalidPeerInput = 1,
@@ -51,10 +51,6 @@ enum class Code : std::uint16_t {
   /// The connection ended before the server admitted this client: nothing
   /// answered, or what did was not a compatible server.
   kServerUnreachable = 5,
-  /// The Match recording could not be written.
-  kRecordingWriteFailed = 100,
-  /// The Match recording could not be flushed.
-  kRecordingFlushFailed = 101,
   /// The metrics endpoint stopped accepting connections.
   kMetricsEndpointFailed = 102,
   /// The local transport could not be initialized.
@@ -72,9 +68,6 @@ enum class Code : std::uint16_t {
   /// An invariant protocol correctness, authority or a resource's lifetime
   /// depends on does not hold.
   kInvariantViolated = 206,
-  /// A strict Match recording, which a replay or verification run needs whole,
-  /// could not be written or flushed.
-  kStrictRecordingFailed = 207,
   /// The command line or config file is not usable.
   kInvalidConfiguration = 300,
   /// A content pack, map, scenario or script is not usable.

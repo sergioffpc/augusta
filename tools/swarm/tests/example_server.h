@@ -94,8 +94,6 @@ class ExampleServer {
     host_.emplace(server::HostConfig{.tick_rate_hz = kTickRate,
                                      .parameters = parameters,
                                      .listen = {.address = "127.0.0.1:0"},
-                                     .recording = {},
-                                     .recording_mode = {},
                                      .server_pack = {},
                                      .capture_directory = {},
                                      .faults = nullptr},

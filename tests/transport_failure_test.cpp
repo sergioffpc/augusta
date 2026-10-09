@@ -87,8 +87,6 @@ HostConfig HostConfigWith(Faults* faults) {
   return HostConfig{.tick_rate_hz = kTickRate,
                     .parameters = {},
                     .listen = Endpoint{.address = "127.0.0.1:0"},
-                    .recording = {},
-                    .recording_mode = {},
                     .server_pack = {},
                     .capture_directory = {},
                     .faults = faults};

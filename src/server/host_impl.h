@@ -6,7 +6,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <fstream>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -34,7 +33,6 @@
 #include "host_metrics.h"
 #include "match.h"
 #include "misbehaviour.h"
-#include "recording.h"
 #include "tick_messages.h"
 
 /// \file
@@ -60,15 +58,13 @@ struct Host::Impl {
   };
 
   // Written in place by both threads, lock-free; read by the metrics endpoint's.
-  // Declared before the recording, which writes its state here until it is
-  // closed.
   HostMetrics metrics;
-  // Declared before the socket so it is constructed first; see
-  // BuildRecordedSimulation. Simulation thread only, with the file it records
-  // to, if any, the body each player in it controls, and whether the match
-  // those bodies are in is still in the simulation.
-  std::ofstream recording_file;
-  RecordedSimulation simulation;
+  // The authoritative world with the map's collision already in it, declared
+  // before the socket so it is constructed first: a map that is rejected never
+  // leaves a bound port behind. Simulation thread only, with the body each
+  // player in it controls, and whether the match those bodies are in is still
+  // in the simulation.
+  simulation::World simulation;
   // Each Match's capture, if HostConfig::capture_directory asks for them (ADR-0050).
   std::unique_ptr<Capturer> capturer;
   std::unordered_map<SessionId, EntityId> bodies;

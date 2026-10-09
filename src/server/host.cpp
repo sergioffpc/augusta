@@ -7,8 +7,6 @@
 #include <expected>
 #include <filesystem>
 #include <format>
-#include <fstream>
-#include <ios>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -24,7 +22,6 @@
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/scripting.h"
-#include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "augusta/version.h"
 #include "capture.h"
@@ -33,7 +30,6 @@
 #include "host_impl.h"
 #include "host_metrics.h"
 #include "match.h"
-#include "recording.h"
 #include "simulation_mapping.h"
 #include "tick_messages.h"
 #include "wire.h"
@@ -41,33 +37,6 @@
 namespace augusta::server {
 
 namespace {
-
-// The authoritative world with the map's collision already in it, recording
-// to file if config asks for a recording (ADR-0048), its state counted into
-// metrics. Built before the socket exists, so a map that is rejected never
-// leaves a bound port behind.
-RecordedSimulation BuildRecordedSimulation(const HostConfig& config, const Scenario& scenario, scripting::Engine policy,
-                                           std::ofstream& file, HostMetrics& metrics) {
-  simulation::World world = BuildSimulation(config.parameters, config.tick_rate_hz, scenario, std::move(policy));
-  if (config.recording.empty()) {
-    return {std::move(world), std::nullopt};
-  }
-  file.open(config.recording, std::ios::binary | std::ios::trunc);
-  if (!file) {
-    throw std::runtime_error(std::format("server::Host: cannot write a recording to {}", config.recording.string()));
-  }
-  LI("subsystem=server event=recording_enabled path={} mode={}", config.recording.string(),
-     RecordingModeName(config.recording_mode));
-  return {std::move(world),
-          Recorder(file,
-                   RecordingHeader{.engine_version = std::string(EngineVersion()),
-                                   .server_pack = config.server_pack,
-                                   .tick_rate_hz = config.tick_rate_hz},
-                   RecorderOptions{.mode = config.recording_mode,
-                                   .faults = config.faults,
-                                   .on_state = [&metrics](RecordingState state) { SetRecordingState(metrics, state); },
-                                   .capacity = kRecordQueueCapacity})};
-}
 
 // What captures each Match into the directory config names, if it names one
 // (ADR-0050), creating it first; none otherwise.
@@ -110,7 +79,7 @@ std::vector<std::string> CharacterPaths(const std::vector<Character>& characters
 
 Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy)
     : metrics(config.tick_rate_hz),
-      simulation(BuildRecordedSimulation(config, scenario, std::move(policy), recording_file, metrics)),
+      simulation(BuildSimulation(config.parameters, config.tick_rate_hz, scenario, std::move(policy))),
       capturer(BuildCapturer(config, scenario.client_pack)),
       tick_rate_hz(config.tick_rate_hz),
       parameters(config.parameters),
@@ -205,19 +174,6 @@ std::size_t Host::QueuedCommands(SessionId session) const {
 }
 
 const HostMetrics& Host::Metrics() const { return impl_->metrics; }
-
-std::optional<failure::Failure> Host::RecordingFailure() const {
-  std::optional<failure::Failure> lost = impl_->simulation.RecordingFailure();
-  if (lost.has_value() && failure::DispositionOf(lost->code) != failure::Disposition::kRuntime) {
-    return std::nullopt;
-  }
-  return lost;
-}
-
-std::optional<failure::Failure> Host::FinishRecording() {
-  impl_->simulation.WaitUntilRecorded();
-  return RecordingFailure();
-}
 
 std::optional<failure::Failure> Host::TakeTransportFailure() { return impl_->transport_failure.Take(); }
 

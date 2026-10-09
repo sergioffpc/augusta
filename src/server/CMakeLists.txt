@@ -110,9 +110,9 @@ augusta_set_module_scope(augustad_connection_health SERVER_ONLY)
 # The server's socket and SimulationWorld without threads or a clock, so a test
 # can drive a match by hand (see host.h), and the conversions Host makes at its
 # edges: between the protocol's plain types and the engine's (see wire.h), and
-# into SimulationWorld's (see simulation_mapping.h); with the match recording
-# Host writes (see recording.h, ADR-0048), which tools/replay replays, and what
-# it counts for the metrics endpoint (see host_metrics.h, ADR-0049).
+# into SimulationWorld's (see simulation_mapping.h); with the Match capture
+# Host writes (see capture.h, ADR-0050), and what it counts for the metrics
+# endpoint (see host_metrics.h, ADR-0049).
 add_library(
   augustad_host
   STATIC
@@ -123,7 +123,6 @@ add_library(
   host_match.cpp
   host_metrics.cpp
   host_network.cpp
-  recording.cpp
   simulation_mapping.cpp
   tick_messages.cpp
   wire.cpp

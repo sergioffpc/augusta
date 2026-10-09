@@ -19,9 +19,6 @@ tests/fixtures/example-packs/*.pack -filter -diff -merge binary
 # Authored cue sounds are PCM WAV files (ADR-0020).
 *.wav filter=lfs diff=lfs merge=lfs -text
 
-# Match recordings are records in the protocol's binary encoding (ADR-0048).
-*.rec binary
-
 # Fuzz seeds and crash fixtures are raw payloads, with no extension to go by
 # (tests/fuzz/README.md).
 tests/fuzz/corpus/** binary

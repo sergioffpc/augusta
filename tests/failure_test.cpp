@@ -31,8 +31,6 @@ TEST(FailureTest, EachCodeIsClassifiedIntoTheScopeItIsRecoveredAt) {
   EXPECT_EQ(DispositionOf(Code::kPeerConnectionLost), Disposition::kSession);
   EXPECT_EQ(DispositionOf(Code::kJoinRefused), Disposition::kSession);
   EXPECT_EQ(DispositionOf(Code::kServerUnreachable), Disposition::kSession);
-  EXPECT_EQ(DispositionOf(Code::kRecordingWriteFailed), Disposition::kSubsystem);
-  EXPECT_EQ(DispositionOf(Code::kRecordingFlushFailed), Disposition::kSubsystem);
   EXPECT_EQ(DispositionOf(Code::kMetricsEndpointFailed), Disposition::kSubsystem);
   EXPECT_EQ(DispositionOf(Code::kTransportInitFailed), Disposition::kRuntime);
   EXPECT_EQ(DispositionOf(Code::kListenerSetupFailed), Disposition::kRuntime);
@@ -41,7 +39,6 @@ TEST(FailureTest, EachCodeIsClassifiedIntoTheScopeItIsRecoveredAt) {
   EXPECT_EQ(DispositionOf(Code::kWorkerCreationFailed), Disposition::kRuntime);
   EXPECT_EQ(DispositionOf(Code::kWorkerFailed), Disposition::kRuntime);
   EXPECT_EQ(DispositionOf(Code::kInvariantViolated), Disposition::kRuntime);
-  EXPECT_EQ(DispositionOf(Code::kStrictRecordingFailed), Disposition::kRuntime);
   EXPECT_EQ(DispositionOf(Code::kInvalidConfiguration), Disposition::kProcess);
   EXPECT_EQ(DispositionOf(Code::kInvalidContent), Disposition::kProcess);
   EXPECT_EQ(DispositionOf(Code::kDependencyInitFailed), Disposition::kProcess);
@@ -110,11 +107,11 @@ TEST(FaultsTest, AnUnarmedSiteNeverTrips) {
 
 TEST(FaultsTest, AnArmedSiteTripsAsManyTimesAsItWasArmedFor) {
   Faults faults;
-  faults.Arm(Site::kRecordingWrite, "disk full", 2);
+  faults.Arm(Site::kCaptureWrite, "disk full", 2);
 
-  EXPECT_EQ(faults.Trip(Site::kRecordingWrite), "disk full");
-  EXPECT_EQ(faults.Trip(Site::kRecordingWrite), "disk full");
-  EXPECT_FALSE(faults.Trip(Site::kRecordingWrite).has_value());
+  EXPECT_EQ(faults.Trip(Site::kCaptureWrite), "disk full");
+  EXPECT_EQ(faults.Trip(Site::kCaptureWrite), "disk full");
+  EXPECT_FALSE(faults.Trip(Site::kCaptureWrite).has_value());
 }
 
 TEST(FaultsTest, ArmingOneSiteLeavesTheOthersAlone) {
