@@ -75,14 +75,15 @@ target_link_libraries(augustad_lock_free_metrics PUBLIC prometheus-cpp::core)
 augusta_set_module_scope(augustad_lock_free_metrics SERVER_ONLY)
 
 # The HTTP endpoint serving /metrics and /livez (see metrics.h, ADR-0049):
-# prometheus-cpp's core keeps and formats the metrics, Boost.Beast serves them.
+# prometheus-cpp's core keeps and formats the metrics, Boost.Beast serves them;
+# its permanent failure is a subsystem one in the shared error model (ADR-0033).
 find_package(prometheus-cpp CONFIG REQUIRED)
 find_package(boost_beast CONFIG REQUIRED)
 add_library(augustad_metrics STATIC metrics.cpp)
 target_include_directories(augustad_metrics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augustad_metrics
-  PUBLIC augusta_tick prometheus-cpp::core
+  PUBLIC augusta_failure augusta_tick prometheus-cpp::core
   PRIVATE augustad_liveness augusta_logging augusta_version Boost::beast
 )
 # std::getenv reads the commit the image stamps in; MSVC deprecates it for
@@ -102,7 +103,7 @@ target_include_directories(augustad_connection_health PUBLIC ${CMAKE_CURRENT_SOU
 target_link_libraries(
   augustad_connection_health
   PUBLIC augusta_networking augustad_match augustad_lock_free_metrics
-  PRIVATE augusta_protocol
+  PRIVATE augusta_primitives
 )
 augusta_set_module_scope(augustad_connection_health SERVER_ONLY)
 
@@ -130,6 +131,7 @@ target_link_libraries(
   augustad_host
   PUBLIC
     augusta_ballistics
+    augusta_failure
     augusta_networking
     augusta_parameters
     augusta_physics
@@ -154,10 +156,22 @@ add_library(augustad_runtime STATIC runtime.cpp)
 target_include_directories(augustad_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augustad_runtime
-  PUBLIC augustad_host augusta_networking augusta_parameters augusta_physics augusta_simulation augusta_supervisor
-  PRIVATE augusta_assets augusta_logging augusta_tick augustad_connection_health augustad_metrics
+  PUBLIC augustad_host augusta_failure augusta_networking augusta_parameters augusta_physics augusta_simulation
+  PRIVATE augusta_assets augusta_logging augusta_supervisor augusta_tick augustad_connection_health augustad_metrics
 )
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)
+
+# augustad's phases behind the application boundary - config, transport,
+# content, runtime - each classifying its own failure (see application.h,
+# ADR-0033); tested with the golden server pack and injected faults.
+add_library(augustad_application STATIC application.cpp)
+target_include_directories(augustad_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(
+  augustad_application
+  PUBLIC augusta_application augusta_config augusta_failure augusta_server_config augustad_runtime
+  PRIVATE augusta_assets augusta_logging augusta_networking augustad_content augustad_host
+)
+augusta_set_module_scope(augustad_application SERVER_ONLY)
 
 # What a crash leaves in the log: the fatal signal and a symbolized stack
 # (ADR-0047). Abseil symbolizes, being async-signal-safe where the
@@ -175,16 +189,18 @@ add_executable(augustad main.cpp)
 target_link_libraries(
   augustad
   PRIVATE
-    augusta_assets
+    augusta_application
     augusta_config
-    augustad_content
+    augusta_server_config
+    augustad_application
     augustad_crash
-    augusta_parameters
     augusta_version
     augusta_logging
-    augusta_networking
     augustad_runtime
 )
+# The headless server itself, not only its libraries: a client-only module
+# linked straight into it fails the configure (tests/server_boundary.cmake).
+augusta_set_module_scope(augustad SERVER_ONLY)
 
 # On Linux the debug info is split off into augustad.debug beside it (ADR-0047):
 # the binary keeps its symbol table, which the crash handler symbolizes with,

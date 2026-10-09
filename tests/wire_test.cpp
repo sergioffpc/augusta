@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -13,6 +15,7 @@
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
+#include "augusta/failure.h"
 #include "augusta/grid.h"
 #include "augusta/harness.h"
 #include "augusta/harness_wire.h"
@@ -41,7 +44,15 @@ using augusta::server::SessionId;
 // message as the other peer decodes it.
 template <typename MessageWire>
 MessageWire ThroughTheWire(const MessageWire& message) {
-  return std::get<MessageWire>(augusta::protocol::Decode(augusta::protocol::Encode(message)).value());
+  return std::get<MessageWire>(augusta::protocol::Decode(augusta::protocol::Encode(message).value()).value());
+}
+
+// What the server sends recipient of updates, as the client takes it in.
+augusta::harness::AuthoritativeState ReceivedBy(const augusta::replication::Updates& updates,
+                                                const augusta::replication::RecipientUpdate& recipient) {
+  augusta::protocol::AuthoritativeStateWire sent = augusta::server::ToWire(updates);
+  augusta::server::Address(sent, recipient);
+  return augusta::harness::FromWire(ThroughTheWire(sent));
 }
 
 // The number a Session ID carries, on either side: each peer has its own type for it.
@@ -185,16 +196,15 @@ TEST(WireTest, AnExhaustedBodyReachesTheClientStillExhausted) {
   BodyState exhausted = Body(1.0F, Stance::kStanding);
   exhausted.stamina = 0.1F;
   exhausted.exhausted = true;
-  const augusta::replication::Update sent{
-      .recipient = augusta::simulation::EntityId{1},
+  const augusta::replication::Updates sent{
       .tick = 7,
-      .acknowledged_sequence = 3,
       .bodies = {{.entity = augusta::simulation::EntityId{1}, .body = exhausted},
                  {.entity = augusta::simulation::EntityId{2}, .body = Body(2.0F, Stance::kProne)}},
+      .recipients = {},
   };
 
   const augusta::harness::AuthoritativeState received =
-      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+      ReceivedBy(sent, {.entity = augusta::simulation::EntityId{1}, .acknowledged_sequence = 3});
 
   ASSERT_EQ(received.bodies.size(), 2U);
   EXPECT_TRUE(received.bodies[0].body.exhausted);
@@ -202,24 +212,24 @@ TEST(WireTest, AnExhaustedBodyReachesTheClientStillExhausted) {
 }
 
 TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
-  const augusta::replication::Update sent{
-      .recipient = augusta::simulation::EntityId{2},
+  const augusta::replication::Updates sent{
       .tick = 42,
-      .acknowledged_sequence = 17,
       .bodies = {{.entity = augusta::simulation::EntityId{1}, .body = Body(1.0F, Stance::kStanding)},
                  {.entity = augusta::simulation::EntityId{2},
                   .body = Body(2.0F, Stance::kCrouching),
                   .yaw = augusta::math::SnapAngle(-2.345678F)},
                  {.entity = augusta::simulation::EntityId{3}, .body = Body(3.0F, Stance::kProne), .yaw = 1.5F}},
-      .queued_commands = 2,
+      .recipients = {},
   };
+  const augusta::replication::RecipientUpdate recipient{
+      .entity = augusta::simulation::EntityId{2}, .acknowledged_sequence = 17, .health = 55.0F, .queued_commands = 2};
 
-  const augusta::harness::AuthoritativeState received =
-      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+  const augusta::harness::AuthoritativeState received = ReceivedBy(sent, recipient);
 
   EXPECT_EQ(received.tick, sent.tick);
-  EXPECT_EQ(received.acknowledged_sequence, sent.acknowledged_sequence);
-  EXPECT_EQ(received.queued_commands, sent.queued_commands);
+  EXPECT_EQ(received.acknowledged_sequence, recipient.acknowledged_sequence);
+  EXPECT_EQ(received.health, recipient.health);
+  EXPECT_EQ(received.queued_commands, recipient.queued_commands);
   ASSERT_EQ(received.bodies.size(), sent.bodies.size());
   for (std::size_t i = 0; i < sent.bodies.size(); ++i) {
     EXPECT_EQ(Number(received.bodies[i].entity), Number(sent.bodies[i].entity));
@@ -232,11 +242,14 @@ TEST(WireTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
 // the exact floats the server stepped them to, and its Recoil offset, which
 // weapon::Step keeps on the angle grid, as the server had it.
 TEST(WireTest, TheRecipientsRifleReachesTheClientExactly) {
-  const augusta::replication::Update sent{
-      .recipient = augusta::simulation::EntityId{1},
+  const augusta::replication::Updates updates{
       .tick = 7,
-      .acknowledged_sequence = 3,
       .bodies = {{.entity = augusta::simulation::EntityId{1}, .body = Body(1.0F, Stance::kStanding)}},
+      .recipients = {},
+  };
+  const augusta::replication::RecipientUpdate sent{
+      .entity = augusta::simulation::EntityId{1},
+      .acknowledged_sequence = 3,
       .rifle = {.cooldown = 0.1F - (1.0F / 60.0F),
                 .reload_remaining = 2.4833333F,
                 .recoil = {.pitch = augusta::math::SnapAngle(0.0421F), .yaw = augusta::math::SnapAngle(-0.0037F)},
@@ -244,12 +257,12 @@ TEST(WireTest, TheRecipientsRifleReachesTheClientExactly) {
                 .burst_index = 4},
   };
 
-  const augusta::harness::AuthoritativeState received =
-      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+  const augusta::harness::AuthoritativeState received = ReceivedBy(updates, sent);
 
   EXPECT_EQ(received.rifle, sent.rifle);
 }
 
+// Requirements: US-22
 TEST(WireTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged) {
   augusta::parameters::Parameters parameters;
   parameters.stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F};
@@ -450,6 +463,59 @@ TEST(WireTest, ADeathTheServerTellsReachesTheClientUnchanged) {
     EXPECT_EQ(received.pitch, sent.pitch);
     EXPECT_EQ(received.part, part);
   }
+}
+
+// The value of failure's context under key, or empty if it has none.
+std::string ContextOf(const augusta::failure::Failure& failure, std::string_view key) {
+  for (const auto& field : failure.context) {
+    if (field.key == key) {
+      return field.value;
+    }
+  }
+  return {};
+}
+
+// Either peer's edge turns a message the protocol cannot carry into the broken
+// invariant that stops its runtime (ADR-0033), naming the message's type.
+TEST(WireTest, AMessageEitherPeerCannotEncodeIsAnInvariantFailureNamingItsType) {
+  const augusta::protocol::LobbyWire too_long{
+      .version = 1, .roster = {{.character = std::string(augusta::protocol::kMaxCharacterNameLength + 1, 'c')}}};
+  const augusta::protocol::ReadyWire fine{.version = 1};
+
+  for (const auto& encoded : {augusta::server::EncodeToSend(too_long), augusta::harness::EncodeToSend(too_long)}) {
+    ASSERT_FALSE(encoded.has_value());
+    EXPECT_EQ(encoded.error().code, augusta::failure::Code::kInvariantViolated);
+    EXPECT_EQ(ContextOf(encoded.error(), "message_type"), "6");
+    EXPECT_FALSE(encoded.error().detail.empty());
+  }
+  EXPECT_EQ(augusta::server::EncodeToSend(fine).value(), augusta::protocol::Encode(fine).value());
+  EXPECT_EQ(augusta::harness::EncodeToSend(fine).value(), augusta::protocol::Encode(fine).value());
+}
+
+TEST(WireTest, ARecordTheServerCannotEncodeIsAnInvariantFailureNamingItsType) {
+  const augusta::protocol::RecordingHeaderWire too_long{
+      .server_pack = {},
+      .engine_version = std::string(augusta::protocol::kMaxEngineVersionLength + 1, 'v'),
+      .tick_rate_hz = 60};
+
+  const auto encoded = augusta::server::EncodeToRecord(too_long);
+
+  ASSERT_FALSE(encoded.has_value());
+  EXPECT_EQ(encoded.error().code, augusta::failure::Code::kInvariantViolated);
+  EXPECT_EQ(ContextOf(encoded.error(), "record_type"), "1");
+}
+
+// A refusal no case of ToWire names is a corrupted one: it travels on as a
+// value the protocol lacks, which Encode refuses, rather than as undefined
+// behaviour.
+TEST(WireTest, ACorruptedRefusalIsNotEncoded) {
+  const auto corrupted = static_cast<augusta::server::JoinRefusal>(99);
+
+  const auto encoded =
+      augusta::server::EncodeToSend(augusta::protocol::JoinRefusedWire{.reason = augusta::server::ToWire(corrupted)});
+
+  ASSERT_FALSE(encoded.has_value());
+  EXPECT_EQ(encoded.error().code, augusta::failure::Code::kInvariantViolated);
 }
 
 }  // namespace

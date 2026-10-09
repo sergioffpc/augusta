@@ -158,7 +158,7 @@ TEST(ProtocolDecodeSeedsTest, EveryMessageKindHasASeed) {
 TEST(ProtocolDecodeSeedsTest, EverySeedIsWhatEncodeWrites) {
   for (const Seed& seed : Seeds()) {
     SCOPED_TRACE(seed.name);
-    EXPECT_EQ(ReadFile(SeedPath(seed)), Encode(seed.message)) << "regenerate the seeds (tests/fuzz/README.md)";
+    EXPECT_EQ(ReadFile(SeedPath(seed)), Encode(seed.message).value()) << "regenerate the seeds (tests/fuzz/README.md)";
   }
 }
 
@@ -167,7 +167,7 @@ TEST(ProtocolDecodeSeedsTest, EverySeedIsWhatEncodeWrites) {
 // target does (tests/fuzz/CMakeLists.txt).
 TEST(ProtocolDecodeSeedsTest, DISABLED_RegenerateSeeds) {
   for (const Seed& seed : Seeds()) {
-    const BytesWire payload = Encode(seed.message);
+    const BytesWire payload = Encode(seed.message).value();
     std::ofstream out(SeedPath(seed), std::ios::binary | std::ios::trunc);
     out.write(reinterpret_cast<const char*>(payload.data()), static_cast<std::streamsize>(payload.size()));
     ASSERT_TRUE(out.good()) << SeedPath(seed);

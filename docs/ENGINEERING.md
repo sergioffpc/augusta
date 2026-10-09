@@ -56,9 +56,11 @@ decisions already made in ARCHITECTURE.md:
     1. `clang-format` check, alone in its own fast job — gates everything below
        (`needs:`), so a formatting slip fails in seconds instead of after a full
        Windows + Linux + sanitizers build
-    2. Build + test the client on a Windows runner (MSVC)
-    3. Build + test the server on a Linux runner (clang, ADR-0008), plus
-       `clang-tidy` (Google style checks profile)
+    2. Build + test the client on a Windows runner (MSVC), with the server's
+       development-only Windows x64 build (NFR-04)
+    3. Build + test the server on a Linux runner (clang, ADR-0008), its
+       production platform, Linux x86-64 (NFR-04), plus `clang-tidy` (Google
+       style checks profile)
     4. ASan + UBSan test build and a short fuzzing run per target (both Linux
        only), only for `pull_request` runs — skipped on the `push` that lands
        after merge, since the PR already validated it
@@ -76,7 +78,8 @@ decisions already made in ARCHITECTURE.md:
       2026). On Linux, where nuget.exe runs under Mono and fails certificate
       checks, it is a files cache in the Actions cache, one entry for every
       Linux job (all clang), saved only when a job built a package it didn't
-      restore.
+      restore - except the `tools` job's Linux leg, whose `tools/pack/cpp`
+      manifest keeps an entry of its own.
     - Falcor is not built on every run: the `falcor-prebuilt` workflow builds it
       once for each combination of submodule commit, `falcor.patch` and Falcor
       features, and publishes it as an asset of a `falcor-*` release, which the
@@ -115,7 +118,7 @@ decisions already made in ARCHITECTURE.md:
   test key and from any development key. Its private key is kept off the repo
   and out of every CI secret. The client and server packs of a release come from
   one cook run signed with it, since Join refuses a client pack not cooked with
-  the server pack (ADR-0019, ADR-0038). Only the public key, `augusta.pub`,
+  the server pack (ADR-0019, ADR-0038). Only the public key, `signing.pub`,
   travels with the packs, named by each executable's config (ADR-0034).
 - **Provenance and SBOMs:** what packs get from their signature, the release
   executables and every published server image get from GitHub artifact
@@ -139,13 +142,23 @@ decisions already made in ARCHITECTURE.md:
       --predicate-type https://spdx.dev/Document/v2.3
     ```
 
+- **Vulnerability scanning:** the server image is scanned by trivy as CI builds
+  it, and is published only if clean. The latest release's executables are
+  scanned every night by grype, from their SBOMs (`nightly-jobs.yml`'s
+  `sbom-scan`), so a CVE published after the release still fails a run. No
+  vulnerability database knows vcpkg's purls, so `scripts/sbom-cpes.py` first
+  adds each port's NVD CPE, and fails on a port that has neither a CPE nor a
+  written reason for having none. Both fail on a high or critical CVE; the image
+  only on one with a fix available, the executables on any, since the NVD gives
+  most of its ranges with no fixed version.
+
 ## Git Workflow
 
 - **Branching model:** Git Flow — `main` (production/release) + `develop`
   (integration), with `feature/*`, `release/*`, `hotfix/*` branches.
 - **Tags/releases:** created only when there's an actual release to make (e.g.,
-  reaching v1) — ROADMAP.md milestones (M0–M6) are internal checkpoints, not
-  tagged releases.
+  v1.0.0) — ROADMAP.md milestones (M0–M17) are internal checkpoints, not tagged
+  releases.
 - **Pull requests:** used even solo — `feature/*` → `develop`,
   `release/*`/`hotfix/*` → `main`, and the same `release/*`/`hotfix/*` branch
   back into `develop`, go through a PR so CI gates the merge; no formal review
@@ -172,11 +185,18 @@ no self-hosted GitHub Actions runner in this pipeline).
 - **Isolation:** two fixed, long-lived Kubernetes namespaces — `staging` (tracks
   `main`) and `develop` (tracks `develop`). No per-branch/ephemeral namespaces.
 - **Container images:** built in CI, pushed to GitHub Container Registry (GHCR).
-- **Server exposure:** plain Kubernetes `Service` (`NodePort`, port
-  auto-assigned by Kubernetes) — no Agones. Agones solves fleet-scale dynamic
-  allocation, which this project doesn't need (one server instance per scenario
-  per environment, each fixed in Git, ADR-0026); revisit only if
-  matchmaking/dynamic multi-server allocation is ever needed (Beyond v1).
+  The server image is `scratch` with an Ubuntu 26.04 root cut by chisel: the
+  libraries `augustad` links, `tini`, and no shell (ADR-0054). A running server
+  is inspected from an ephemeral container, `kubectl debug --target=augustad`,
+  not `kubectl exec`.
+- **Server exposure:** plain Kubernetes `Service` (`NodePort`) — no Agones.
+  Agones solves fleet-scale dynamic allocation, which this project doesn't need
+  (one server instance per scenario per environment, each fixed in Git,
+  ADR-0026); revisit only if matchmaking/dynamic multi-server allocation is ever
+  needed. Each server pins its node port, so LAN clients keep one address, from
+  its environment's own range so `develop` and `staging` never collide on the
+  shared node: `develop` 30700-30799, `staging` 30800-30899. The chart refuses a
+  server without a node port in its range.
 - **CD mechanism:** pull-based via Flux, running inside the k3s cluster and
   reconciling each branch's `HelmRelease` from Git — nothing outside the cluster
   needs inbound access to the LAN, and no external PR can trigger execution on
@@ -188,7 +208,7 @@ no self-hosted GitHub Actions runner in this pipeline).
   and can be shared across multiple server instances/versions. Stored on a
   shared `hostPath` persistent volume on the k3s node, which `augusta-publish`
   fills after signing (ADR-0026): `<hostPath>/<scenario>/<packVersion>/` holds a
-  scenario's `server.pack` and the `augusta.pub` key it is signed with,
+  scenario's `server.pack` and the `signing.pub` key it is signed with,
   `<packVersion>` being the first 12 hex characters of the server pack's BLAKE3
   hash. A published folder is never rewritten. Each environment's Helm values
   list its servers, one per scenario, each naming the `packVersion` it runs; a
@@ -209,50 +229,76 @@ no self-hosted GitHub Actions runner in this pipeline).
   default listen port (UDP 27015) on the host, so a native Windows `augustac`
   reaches a container-hosted `augustad` at `127.0.0.1:27015`. Published rather
   than forwarded: VS Code's port forwarding is TCP-only.
-- **Server / shared core (Linux, dev container):** `.devcontainer/` gives this
-  side as a container, for VS Code or Codespaces, without mutating a host: CI's
-  runner Ubuntu release, whose distro packages fix the same LLVM major as CI's,
-  with the toolchain `.github/actions/setup-linux-build` installs (kept in step
-  with it by hand), clang (ADR-0008), CMake, Ninja, vcpkg, clang-tidy,
-  clang-format, gdb, GitHub CLI, kubectl, helm, Doxygen, the hooks' formatters
-  and linters (uv for yamllint, ruff, shfmt, shellcheck, actionlint, gersemi,
-  Prettier and pymarkdown, standalone yamlfmt, StyLua, luacheck and taplo, at
-  CI's pinned versions; no PowerShell, so no PSScriptAnalyzer), and CI's Linux
-  vcpkg binary cache configuration (a files provider in the checkout's
-  `.vcpkg-bincache`). The image builds for the host's architecture (amd64 or
-  arm64) rather than emulating CI's amd64. sccache's cache lives in a volume
-  shared by every container of the repository; the build trees in a volume per
-  container, so they never collide with a Windows build of the same checkout.
-  One environment, not a container beside a WSL bootstrap: two recipes for the
-  same toolchain drift apart. The client has no container equivalent (see
-  below).
+- **Server / shared core (Linux, dev container or host):** `.devcontainer/`
+  gives this side as a container, for VS Code or Codespaces, without mutating a
+  host, and `scripts/bootstrap.sh` installs the same on an Ubuntu 26.04 host
+  (its Linux half, `scripts/bootstrap/linux.sh`; the image hashes only the two,
+  so a Windows-only change doesn't rebuild it). The script is the one recipe for
+  it: the image runs its `toolchain` step, the container's post-create its
+  `checkout` step (submodules, vcpkg, hooks), and a host both. It installs CI's
+  runner Ubuntu release's packages, whose LLVM major is CI's, with the toolchain
+  `.github/actions/setup-linux-build` installs (kept in step with it by hand),
+  clang (ADR-0008), CMake, Ninja, vcpkg, clang-tidy, clang-format, gdb, GitHub
+  CLI, kubectl, helm, Doxygen, the hooks' formatters and linters (uv for
+  yamllint, ruff, shfmt, shellcheck, actionlint, gersemi, Prettier and
+  pymarkdown, standalone yamlfmt, StyLua, luacheck and taplo, at CI's pinned
+  versions), and CI's Linux vcpkg binary cache configuration (a files provider
+  in the checkout's `.vcpkg-bincache`). The image builds for the host's
+  architecture (amd64 or arm64) rather than emulating CI's amd64. sccache's
+  cache lives in a volume shared by every container of the repository; the build
+  trees in a volume per container, so they never collide with a Windows build of
+  the same checkout. One recipe, not a container beside a separate host
+  bootstrap: two recipes for the same toolchain drift apart. The client has no
+  container equivalent (see below).
+- **macOS (through the dev container):** nothing builds natively on macOS (the
+  presets are Linux's and Windows'), and nothing is installed there but git, Git
+  LFS and Docker or Podman, which `scripts/bootstrap.sh` installs through
+  Homebrew (its macOS half, `scripts/bootstrap/macos.sh`, which also creates the
+  container). `scripts/dev-container.sh [command]` runs a command (a shell by
+  default) in the dev container's image from a terminal: one container per
+  checkout, kept running, with the checkout mounted at its host path so a git
+  worktree's `.git` resolves inside too, a `build/` volume of its own, and
+  sccache's and vcpkg's caches in volumes every checkout shares.
+  `scripts/dev-container.sh make configure PRESET=linux-debug` gives the hooks
+  the compile commands clang-tidy needs. On macOS the `pre-commit` and
+  `pre-push` hooks run their formatters and linters through it; git itself
+  (identity, signing, credentials, LFS) stays on the host. A second bootstrap of
+  the hooks' tools for macOS would drift from the container's, as two recipes
+  for one toolchain do.
 - **Client (Windows, native):** built and run natively — never cross-compiled
   from Linux (not viable given Falcor/D3D12/NVIDIA SDK's MSVC-specific toolchain
-  assumptions). A `scripts/bootstrap-windows.ps1` script (winget-driven)
-  installs Visual Studio Build Tools system-wide (default install location) —
-  simpler than pinning a project-specific path, at the cost of not being able to
-  side-by-side independent Build Tools versions per project — plus the Windows
-  SDK, CMake, Ninja, GNU make, vcpkg, Git, uv (for yamllint and the formatters
-  and linters uv runs, below), standalone yamlfmt, StyLua, luacheck and taplo,
-  the PSScriptAnalyzer module, and LLVM's clang-format/clang-tidy (for the hooks
-  below), pinned to the LLVM major CI's Ubuntu runner ships so the hooks agree
-  with CI's gates. (A fully hermetic, registry-free alternative — clang-cl +
-  xwin-extracted SDK/CRT — was considered and rejected: Falcor's CMake presets
-  only test/support MSVC on Windows, and stacking an unsupported compiler on top
-  of an already-unmaintained dependency, ADR-0009, isn't worth the purity.)
-- **Asset cooker setup (opt-in):** `tools/pack/scripts/bootstrap-windows.ps1`
-  builds the pack environment under a caller-chosen assets root (ADR-0030): a
-  uv-managed Python environment with `tools/pack` installed editable, its native
-  modules, signing keys and sample authoring content.
+  assumptions). The same `scripts/bootstrap.sh`, run in Git Bash as
+  Administrator (its Windows half, `scripts/bootstrap/windows.sh`,
+  winget-driven; one entry point and one `checkout` step and set of pinned
+  formatter versions for both platforms, and no PowerShell: Git for Windows is
+  the one prerequisite, which cloning needs anyway) installs Visual Studio Build
+  Tools system-wide (default install location) — simpler than pinning a
+  project-specific path, at the cost of not being able to side-by-side
+  independent Build Tools versions per project — plus the Windows SDK, CMake,
+  Ninja, GNU make, vcpkg, Git, uv (for yamllint and the formatters and linters
+  uv runs, below), standalone yamlfmt, StyLua, luacheck and taplo, and LLVM's
+  clang-format/clang-tidy (for the hooks below), pinned to the LLVM major CI's
+  Ubuntu runner ships so the hooks agree with CI's gates. (A fully hermetic,
+  registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was considered
+  and rejected: Falcor's CMake presets only test/support MSVC on Windows, and
+  stacking an unsupported compiler on top of an already-unmaintained dependency,
+  ADR-0009, isn't worth the purity.)
+- **Asset cooker setup (opt-in):** `tools/pack/scripts/bootstrap.sh` (Windows in
+  Git Bash, or Linux - the platforms vcpkg's DirectXTex port, which the cooker's
+  `_textconv` wraps, builds for) builds the pack environment under a
+  caller-chosen assets root (ADR-0030): a uv-managed Python environment with
+  `tools/pack` installed editable, its native modules, signing keys and sample
+  authoring content.
 - **USD Composer setup (authoring-only, opt-in):**
-  `tools/composer/scripts/bootstrap-windows.ps1` builds NVIDIA Omniverse USD
-  Composer via kit-app-template and fetches Adobe's USD-Fileformat-plugins under
-  the same assets root. These heavier, GPU-dependent tools are deliberately kept
-  out of `bootstrap-windows.ps1` and are never linked into shipped binaries
-  (ARCHITECTURE.md §2); only content authors need them. `meshoptimizer` and
-  DirectXTex are `tools/pack/cpp`'s own C++ build dependencies (two small
-  pybind11 modules, no OpenUSD - see ADR-0030) — vendored via `vcpkg.json`
-  (ADR-0025) like the rest of the codebase, not fetched by this script.
+  `tools/composer/scripts/bootstrap.sh` (Windows in Git Bash, or Linux) builds
+  NVIDIA Omniverse USD Composer via kit-app-template and fetches Adobe's
+  USD-Fileformat-plugins under the same assets root. These heavier,
+  GPU-dependent tools are deliberately kept out of `scripts/bootstrap.sh` and
+  are never linked into shipped binaries (ARCHITECTURE.md §2); only content
+  authors need them. `meshoptimizer` and DirectXTex are `tools/pack/cpp`'s own
+  C++ build dependencies (two small pybind11 modules, no OpenUSD - see ADR-0030)
+  — vendored via `vcpkg.json` (ADR-0025) like the rest of the codebase, not
+  fetched by this script.
 - **Editor experience:** a committed `.vscode/extensions.json` lists recommended
   extensions (C++ tools, CMake Tools, clangd/clang-format, EditorConfig, Lua,
   YAML/Helm, GitHub Actions) — VS Code prompts to install these whenever the
@@ -289,35 +335,33 @@ no self-hosted GitHub Actions runner in this pipeline).
   also the Even Better TOML extension's engine: it formats staged files in
   `pre-commit`, lints changed ones in `pre-push`, and CI's `format` job runs
   both in check mode.
-- Python, shell, the workflows, CMake, Markdown and PowerShell each have a
-  formatter, a linter or both, every one but PSScriptAnalyzer run by uv at a
-  pinned version (`uv tool run`), so nothing is installed for them but uv.
-  Python follows the Google Python Style Guide (ADR-0012): ruff 0.16.10 formats
-  and lints (`ruff.toml`: 80 columns; the guide's checks - pylint's, naming,
-  Google-convention docstrings, one import per line, no relative imports - and
-  bugbear, pyupgrade and simplify). Shell scripts and the git hooks follow the
-  Google Shell Style Guide (ADR-0012), in Bash: shfmt 4.2.0 formats (by
-  `.editorconfig`: two-space indent, indented `case` patterns, a continued `|`
-  or `&&` starting the next line) and shellcheck 0.11.0 lints (`.shellcheckrc`:
-  the guide's optional checks, `[[ ]]`, braced and quoted expansions). The
-  workflows: actionlint 1.7.12 (`.github/actionlint.yaml`), with shellcheck on
-  their `run:` scripts. CMake: gersemi 0.29.2 formats (`.gersemirc`: 120
-  columns, two-space indent, the project's own functions read from `cmake/`).
-  Markdown follows the Google Markdown style guide (ADR-0012): Prettier 3.9.9
-  formats (`.prettierrc.yaml`), with Node run from its PyPI wheel: paragraphs
-  wrapped at 80 columns, a nested list or a block in a list item indented 4
-  spaces (as the guide asks and MkDocs needs), and code blocks left as written.
-  pymarkdown 0.9.40 lints with markdownlint's rules (`.pymarkdown.json`) set to
-  the guide (80 columns but for headings, tables, code blocks and a long URL;
-  ATX headings; fenced code blocks; no trailing whitespace), less what the guide
-  leaves to the writer (ordered-list numbering, emphasis as a heading) and what
-  Prettier decides (blank lines around lists, table alignment). PowerShell:
-  PSScriptAnalyzer 1.25.0 lints and formats (`PSScriptAnalyzerSettings.psd1`,
-  through `scripts/psscriptanalyzer.ps1`), with consistent indentation off since
-  it pulls a continued line back to its statement's indent, and `Write-Host`
-  allowed, being how the bootstraps talk to the person running them. The
-  formatters run on staged files in `pre-commit`, the linters on changed files
-  in `pre-push`, and CI's `format` job runs all of them in check mode.
+- Python, shell, the workflows, CMake and Markdown each have a formatter, a
+  linter or both, every one run by uv at a pinned version (`uv tool run`), so
+  nothing is installed for them but uv. Python follows the Google Python Style
+  Guide (ADR-0012): ruff 0.16.10 formats and lints (`ruff.toml`: 80 columns; the
+  guide's checks - pylint's, naming, Google-convention docstrings, one import
+  per line, no relative imports - and bugbear, pyupgrade and simplify). Shell
+  scripts and the git hooks follow the Google Shell Style Guide (ADR-0012), in
+  Bash: shfmt 4.2.0 formats (by `.editorconfig`: two-space indent, indented
+  `case` patterns, a continued `|` or `&&` starting the next line) and
+  shellcheck 0.11.0 lints (`.shellcheckrc`: the guide's optional checks,
+  `[[ ]]`, braced and quoted expansions). The workflows: actionlint 1.7.12
+  (`.github/actionlint.yaml`), with shellcheck on their `run:` scripts. CMake:
+  gersemi 0.29.2 formats (`.gersemirc`: 120 columns, two-space indent, the
+  project's own functions read from `cmake/`). Markdown follows the Google
+  Markdown style guide (ADR-0012): Prettier 3.9.9 formats (`.prettierrc.yaml`),
+  with Node run from its PyPI wheel: paragraphs wrapped at 80 columns, a nested
+  list or a block in a list item indented 4 spaces (as the guide asks and MkDocs
+  needs), and code blocks left as written. pymarkdown 0.9.40 lints with
+  markdownlint's rules (`.pymarkdown.json`) set to the guide (80 columns but for
+  headings, tables, code blocks and a long URL; ATX headings; fenced code
+  blocks; no trailing whitespace), less what the guide leaves to the writer
+  (ordered-list numbering, emphasis as a heading) and what Prettier decides
+  (blank lines around lists, table alignment). The repository has no PowerShell
+  scripts: its scripts are Bash, and the one Windows-native helper,
+  `scripts/vcenv.cmd`, is a batch file. The formatters run on staged files in
+  `pre-commit`, the linters on changed files in `pre-push`, and CI's `format`
+  job runs all of them in check mode.
 - JSON has no tool of its own: `CMakePresets.json` and `vcpkg.json` are
   validated by CMake and vcpkg on every configure, and the `.vscode` files are
   the editor's, formatted by it on save.
@@ -346,6 +390,8 @@ no self-hosted GitHub Actions runner in this pipeline).
   kube-prometheus-stack in the k3s cluster scrapes and Grafana draws, for both
   `develop` and `staging` (ADR-0049, which holds the catalogue). Everything is
   measured on the server: clients report nothing.
+- **Log aggregation:** Loki keeps every pod's log for 15 days, shipped by Alloy,
+  and Grafana queries it beside the metrics (ADR-0053).
 - **Liveness:** `/livez` fails when the tick loop has not finished a tick for 5
   seconds, and is the Deployment's liveness probe, so a hung server restarts on
   its own (ADR-0049).
@@ -359,8 +405,9 @@ no self-hosted GitHub Actions runner in this pipeline).
 - **No formal client frame-rate target.** Deliberately not turned into an NFR —
   frame rate is judged subjectively while playing/testing, not automated or
   gated in CI.
-- **Memory strategy:** rely on Flecs' and PhysX's built-in allocators for v1; no
-  custom arena/pool allocators until profiling shows a concrete need.
+- **Memory strategy:** rely on Flecs' and PhysX's built-in allocators; no custom
+  arena/pool allocators until profiling shows a concrete need.
 - Google Benchmark is used for targeted micro-benchmarks of hot-path code (the
-  server tick, ballistics, serialization, pack loading) — not a blanket
-  requirement for every function. The nightly tracks them over time (ADR-0013).
+  server tick and its capture, replication, a PresentationWorld frame,
+  ballistics, serialization, pack loading) — not a blanket requirement for every
+  function. The nightly tracks them over time (ADR-0013).

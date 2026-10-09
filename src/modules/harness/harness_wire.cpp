@@ -2,14 +2,17 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <expected>
 #include <limits>
 #include <optional>
 #include <span>
+#include <string>
 #include <utility>
 
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
+#include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -50,6 +53,16 @@ ballistics::BodyPart FromWire(protocol::BodyPartWire part) {
 }
 
 }  // namespace
+
+std::expected<protocol::BytesWire, failure::Failure> EncodeToSend(const protocol::MessageWire& message) {
+  return protocol::Encode(message).transform_error([&message](protocol::EncodeError error) {
+    return failure::Failure{
+        .code = failure::Code::kInvariantViolated,
+        .context = {{.key = "message_type",
+                     .value = std::to_string(static_cast<std::uint8_t>(protocol::TypeOf(message)))}},
+        .detail = std::string(protocol::DescribeEncodeError(error))};
+  });
+}
 
 SessionId FromWire(protocol::SessionIdWire session) {
   return static_cast<SessionId>(static_cast<std::uint32_t>(session));

@@ -51,6 +51,18 @@ scenario: {{ .scenario }}
 {{- printf "%s/%s/%s" .root.Values.assetPacks.hostPath .scenario $version -}}
 {{- end -}}
 
+{{/* A server's node port, empty for Kubernetes to assign one, after checking
+     it is in service.nodePortRange when the environment sets one. */}}
+{{- define "augustad.nodePort" -}}
+{{- $port := (index .root.Values.servers .scenario).nodePort -}}
+{{- with .root.Values.service.nodePortRange -}}
+{{- if not (and $port (ge (int $port) (int .first)) (le (int $port) (int .last))) -}}
+{{- fail (printf "servers.%s.nodePort must be pinned in this environment's service.nodePortRange, %d-%d" $.scenario (int .first) (int .last)) -}}
+{{- end -}}
+{{- end -}}
+{{- $port | default "" -}}
+{{- end -}}
+
 {{/* A server's startup settings (ADR-0034), as config/augustad.example.yaml
      documents them. The pack and its key come from the server's own folder
      of the asset-pack volume, mounted at the config's base_dir. */}}
@@ -58,7 +70,7 @@ scenario: {{ .scenario }}
 base_dir: /srv/augusta/pack
 content:
   pack: server.pack
-  public_key: augusta.pub
+  public_key: signing.pub
 simulation:
   tick_rate_hz: {{ .root.Values.server.tickRateHz }}
 network:

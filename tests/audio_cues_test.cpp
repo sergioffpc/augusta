@@ -48,12 +48,14 @@ void ExpectNear(const Vec3& actual, const Vec3& expected) {
   EXPECT_NEAR(actual.z, expected.z, kTolerance);
 }
 
+// Requirements: US-18
 TEST(CueSelectorTest, AFrameWhereNothingHappenedPlaysNoCue) {
   const FrameInput input;
 
   EXPECT_TRUE(CueSelector().Select(input, 0).empty());
 }
 
+// Requirements: US-18
 TEST(CueSelectorTest, EachRoundThePredictedFireFiredIsTheLocalPlayersOwnGunshot) {
   const FrameInput input;
 
@@ -63,6 +65,7 @@ TEST(CueSelectorTest, EachRoundThePredictedFireFiredIsTheLocalPlayersOwnGunshot)
   EXPECT_EQ(CueSelector().Select(input, 2), expected);
 }
 
+// Requirements: US-18
 TEST(CueSelectorTest, AnotherPlayersShotIsAGunshotHeardFromWhereItWasFired) {
   FrameInput input;
   input.local_entity = EntityId{1};
@@ -72,6 +75,7 @@ TEST(CueSelectorTest, AnotherPlayersShotIsAGunshotHeardFromWhereItWasFired) {
   EXPECT_EQ(CueSelector().Select(input, 0), expected);
 }
 
+// Requirements: US-18
 TEST(CueSelectorTest, TheLocalPlayersOwnShotIsNotHeardAgain) {
   FrameInput input;
   input.local_entity = EntityId{1};
@@ -81,6 +85,7 @@ TEST(CueSelectorTest, TheLocalPlayersOwnShotIsNotHeardAgain) {
   EXPECT_TRUE(CueSelector().Select(input, 0).empty());
 }
 
+// Requirements: US-18
 TEST(CueSelectorTest, AHitConfirmationIsTheHitMarkerHeardAsTheListenersOwn) {
   FrameInput input;
   input.hit_confirmations = 1;
@@ -89,6 +94,7 @@ TEST(CueSelectorTest, AHitConfirmationIsTheHitMarkerHeardAsTheListenersOwn) {
   EXPECT_EQ(CueSelector().Select(input, 0), expected);
 }
 
+// Requirements: US-18
 TEST(CueSelectorTest, HitsConfirmedTogetherAreHeardAsOneHitMarker) {
   FrameInput input;
   input.hit_confirmations = 3;
@@ -97,6 +103,7 @@ TEST(CueSelectorTest, HitsConfirmedTogetherAreHeardAsOneHitMarker) {
   EXPECT_EQ(CueSelector().Select(input, 0), expected);
 }
 
+// Requirements: US-18
 TEST(CueSelectorTest, FiringAloneIsNoHitMarker) {
   FrameInput input;
   input.local_entity = EntityId{1};
@@ -108,6 +115,7 @@ TEST(CueSelectorTest, FiringAloneIsNoHitMarker) {
   }
 }
 
+// Requirements: US-18
 TEST(CueSelectorTest, ADropInTheLocalPlayersHealthIsAHitTakenHeardAsTheListenersOwn) {
   CueSelector selector;
   FrameInput input;
@@ -120,6 +128,7 @@ TEST(CueSelectorTest, ADropInTheLocalPlayersHealthIsAHitTakenHeardAsTheListeners
   EXPECT_EQ(selector.Select(input, 0), expected);
 }
 
+// Requirements: US-18
 TEST(CueSelectorTest, HealthThatHoldsOrStartsAMatchIsNoHitTaken) {
   CueSelector selector;
   FrameInput input;
@@ -134,26 +143,31 @@ TEST(CueSelectorTest, HealthThatHoldsOrStartsAMatchIsNoHitTaken) {
   EXPECT_TRUE(selector.Select(input, 0).empty());
 }
 
+// Requirements: US-18
 TEST(CueSelectorTest, ADeathIsHeardFromWhereTheServerLastReportedTheBody) {
   CueSelector selector;
   FrameInput input;
   input.local_entity = EntityId{1};
-  input.snapshot = WorldSnapshot{.tick = 10, .tick_duration = kTickDuration, .bodies = {BodyAt(EntityId{2}, kThere)}};
+  const WorldSnapshot listed{.tick = 10, .tick_duration = kTickDuration, .bodies = {BodyAt(EntityId{2}, kThere)}};
+  input.snapshot = &listed;
   EXPECT_TRUE(selector.Select(input, 0).empty());
 
   // The body left the simulation, and the updates, before its Death arrived.
-  input.snapshot = WorldSnapshot{.tick = 11, .tick_duration = kTickDuration, .bodies = {}};
+  const WorldSnapshot gone{.tick = 11, .tick_duration = kTickDuration, .bodies = {}};
+  input.snapshot = &gone;
   input.deaths = {EntityId{2}};
 
   const std::vector<CuePlay> expected = {CuePlay{.cue = Cue::kDeath, .position = kThere}};
   EXPECT_EQ(selector.Select(input, 0), expected);
 }
 
+// Requirements: US-18
 TEST(CueSelectorTest, TheLocalPlayersOwnDeathIsHeardFromWhereItsBodyWas) {
   CueSelector selector;
   FrameInput input;
   input.local_entity = EntityId{1};
-  input.snapshot = WorldSnapshot{.tick = 10, .tick_duration = kTickDuration, .bodies = {BodyAt(EntityId{1}, kThere)}};
+  const WorldSnapshot snapshot{.tick = 10, .tick_duration = kTickDuration, .bodies = {BodyAt(EntityId{1}, kThere)}};
+  input.snapshot = &snapshot;
   EXPECT_TRUE(selector.Select(input, 0).empty());
 
   input.deaths = {EntityId{1}};
@@ -162,6 +176,7 @@ TEST(CueSelectorTest, TheLocalPlayersOwnDeathIsHeardFromWhereItsBodyWas) {
   EXPECT_EQ(selector.Select(input, 0), expected);
 }
 
+// Requirements: US-18
 TEST(CueSelectorTest, TheWinnerHearsTheMatchWonStingerAsTheListenersOwnOnce) {
   CueSelector selector;
   FrameInput input;
@@ -174,6 +189,7 @@ TEST(CueSelectorTest, TheWinnerHearsTheMatchWonStingerAsTheListenersOwnOnce) {
   EXPECT_TRUE(selector.Select(input, 0).empty());
 }
 
+// Requirements: US-18
 TEST(CueSelectorTest, EveryoneButTheWinnerHearsTheMatchLostStinger) {
   CueSelector selector;
   FrameInput input;
@@ -184,6 +200,7 @@ TEST(CueSelectorTest, EveryoneButTheWinnerHearsTheMatchLostStinger) {
   EXPECT_EQ(selector.Select(input, 0), expected);
 }
 
+// Requirements: US-18
 TEST(CueSelectorTest, ADrawIsHeardAsTheMatchLostStinger) {
   CueSelector selector;
   FrameInput input;
@@ -194,6 +211,7 @@ TEST(CueSelectorTest, ADrawIsHeardAsTheMatchLostStinger) {
   EXPECT_EQ(selector.Select(input, 0), expected);
 }
 
+// Requirements: US-18
 TEST(CueSelectorTest, EachMatchsEndIsHeard) {
   CueSelector selector;
   FrameInput input;
@@ -209,15 +227,17 @@ TEST(CueSelectorTest, EachMatchsEndIsHeard) {
   EXPECT_EQ(selector.Select(input, 0), expected);
 }
 
+// Requirements: US-18
 TEST(CueSelectorTest, TheDeathThatEndsTheMatchIsHeardWithItsStinger) {
   CueSelector selector;
   FrameInput input;
   input.local_entity = EntityId{1};
-  input.snapshot = WorldSnapshot{.tick = 10, .tick_duration = kTickDuration, .bodies = {BodyAt(EntityId{2}, kThere)}};
+  const WorldSnapshot snapshot{.tick = 10, .tick_duration = kTickDuration, .bodies = {BodyAt(EntityId{2}, kThere)}};
+  input.snapshot = &snapshot;
   (void)selector.Select(input, 0);
 
   // The match is over, so there is no update any more.
-  input.snapshot.reset();
+  input.snapshot = nullptr;
   input.deaths = {EntityId{2}};
   input.match_end = MatchEnd{.winner = EntityId{1}};
 
@@ -226,6 +246,7 @@ TEST(CueSelectorTest, TheDeathThatEndsTheMatchIsHeardWithItsStinger) {
   EXPECT_EQ(selector.Select(input, 0), expected);
 }
 
+// Requirements: US-18
 TEST(ListenerOfTest, TheListenerHearsFromTheCameraFacingWhereItLooks) {
   const Camera camera{.position = Vec3(1.0F, 1.7F, 2.0F),
                       .rotation = augusta::command::ViewRotation(std::numbers::pi_v<float> / 2.0F, 0.0F),

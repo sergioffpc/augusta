@@ -4,21 +4,20 @@
 
 See [VISION.md](./VISION.md) for full vision. Summary: a realistic,
 physics-driven, server-authoritative multiplayer FPS simulator engine, built in
-C++ with a Windows client (rendering via NVIDIA Falcor/D3D12) and a headless
-Linux server, as a learning project in low-level systems and networking
-programming.
+C++ with a Windows client and a headless Linux server.
 
 Top quality goals (see [REQUIREMENTS.md](./REQUIREMENTS.md) for full NFR list):
 
 1. Server-authoritative correctness (NFR-05)
 2. Realistic, consistent ballistics (NFR-03)
-3. Stable performance under v1 load (NFR-01, NFR-06)
+3. Stable performance under load (NFR-01, NFR-06)
 4. Platform targeting, Windows client + Linux server (NFR-04)
 
 ## 2. Architecture Constraints
 
 - **Technical:** C++, CMake + Ninja + sccache. Client: Windows-only, rendering
-  via NVIDIA Falcor (D3D12). Server: Linux-only, headless.
+  via NVIDIA Falcor (D3D12). Server: Linux x86-64 in production (Windows x64 and
+  Linux arm64 builds for development only, NFR-04), headless.
 - **Licensing:** third-party dependencies must be free/open-source (Flecs [MIT],
   PhysX [BSD-3], GameNetworkingSockets [BSD-3], Falcor [BSD-3], Steam Audio
   [Apache 2.0], miniaudio [MIT], Slang [Apache 2.0])
@@ -32,23 +31,24 @@ Top quality goals (see [REQUIREMENTS.md](./REQUIREMENTS.md) for full NFR list):
   2.0, stage cleanup), usd-validation-nvidia (Apache 2.0 + CC-BY-4.0,
   validation), and Adobe's USD-Fileformat-plugins (Apache 2.0, glTF/FBX/OBJ
   ingestion as USD layers, ADR-0016) — all offline/build-time only.
-- **Organizational:** solo developer / small informal team, hobby project, no
-  fixed deadline, milestone-driven
+- **Organizational:** solo developer / small informal team, no fixed deadline,
+  milestone-driven
 
 ## 3. System Scope and Context
 
 **Business context:** Players connect directly to a dedicated server via
-IP:port. No matchmaking, master server, or third-party platform integration in
-v1.
+IP:port.
 
 **Technical context:**
 
 - Client executable (Windows only): rendering (Falcor/D3D12), input, audio,
   local prediction
-- Dedicated server executable (Linux only): headless, authoritative simulation
+- Dedicated server executable (Linux in production, Windows for development
+  only - NFR-04): headless, authoritative simulation
 - Scripted players tool (`augusta-swarm`, Windows and Linux): a server's worth
   of headless clients, for load and end-to-end tests (ADR-0013)
-- Communication: GameNetworkingSockets over UDP, unencrypted in v1
+- Communication: GameNetworkingSockets over UDP, encrypted (AES-GCM-256) but
+  unauthenticated
 
 ```text
 +--------+          +------------------------+
@@ -66,8 +66,7 @@ v1.
 - Client-side prediction for responsiveness, reconciled by restoring the
   authoritative server state and replaying the unacknowledged commands from it,
   with the visible jump smoothed in presentation (see ADR-0004)
-- Multithreaded from v1: dedicated Main/Render, Simulation, and Network I/O
-  threads
+- Multithreaded: dedicated Main/Render, Simulation, and Network I/O threads
 - Custom lightweight binary protocol for game-state messages
 - Mechanism vs. policy vs. data separation: engine mechanism (movement, physics,
   ballistics, hit detection) is C++; game policy (Match lifecycle, win
@@ -75,8 +74,8 @@ v1.
   dedicated Scripts/Behaviours phase; tunable balance values are data-driven
   configuration — a third category (see §8, ADR-0022, ADR-0023)
 - Rendering built on NVIDIA Falcor (D3D12), used exclusively by the Windows
-  client. The server is Linux-only, headless, and entirely decoupled from
-  Falcor/graphics-API concerns.
+  client. The server runs in production on Linux only (NFR-04), headless, and
+  entirely decoupled from Falcor/graphics-API concerns.
 - Audio via Valve's Steam Audio (Apache 2.0), used by the Windows client for
   spatial audio; no audio dependency on the headless Linux server.
 - Shaders authored in Slang — already Falcor's default shader compiler (targets
@@ -122,6 +121,10 @@ v1.
   with it, a visual only. Deciding a bullet's outcome (hit detection, damage)
   stays server-side (ADR-0024, ADR-0044).
 - Networking Protocol — message definitions + custom binary serialization
+- Primitives — the Tick and command sequence widths and the player, command and
+  recoil-kick bounds for the engine and the protocol to share
+  (augusta_primitives), depending on no other module, so neither side needs the
+  other's for them
 - Command — one tick's player intent (augusta_command): what the client's Input
   handling samples and the server screens and simulates, so the server links no
   client input code
@@ -210,7 +213,7 @@ the other five run — ADR-0024)
 Neither client world contains a Scripts/Behaviours phase — game policy is
 exclusively server-authoritative.
 
-**Server-only** (Linux-only, headless)
+**Server-only** (Linux in production, Windows for development; headless)
 
 - Networking — receives client commands, sends authoritative state; the only
   server component that touches the network
@@ -330,7 +333,7 @@ after the tick.
 **Scenario: Match End**
 
 1. Server evaluates the win condition each tick (game policy, the scenario's
-   rules; in v1 last player standing)
+   rules; last player standing)
 2. When it is met, the decision is a typed Match end action in that tick's
    result; the server ends the Match after the tick, removes every body and
    bullet in flight, and sends Match end, with the winner or a draw, reliably;
@@ -340,8 +343,8 @@ after the tick.
 
 ## 7. Deployment View
 
-v1 gameplay: a Linux dedicated server process and up to 8 Windows client
-processes, on the same LAN/localhost.
+Linux dedicated server process and up to 8 Windows client processes, on the same
+LAN/localhost.
 
 Non-production development/test deployment: the server also runs on a
 self-hosted, single-node k3s cluster (developer's own hardware), two fixed,
@@ -356,16 +359,16 @@ Production deployment (`main`) is explicitly out of scope/undecided for now.
 
 - **Units:** 1 engine unit = 1 meter (real-world scale, required for realistic
   ballistics)
-- **Threading:** fixed dedicated threads, no generic job/task scheduler in v1.
-  Client: 3 threads (Main/Render, Simulation [ECS + PhysX], Network I/O).
-  Server: 3 threads (Simulation, Network I/O, Metrics) — no render thread, since
-  it's headless (see ADR-0005, ADR-0049). Each piece of mutable state has one
-  owning thread and crosses to another only as an immutable value: transport
-  callbacks publish events that the Network I/O owner applies outside their
-  locks, the client reads what the server said through one immutable Server
-  view, and SimulationWorld returns a `TickResult`. A runtime supervisor owns
-  the worker threads, their stop request and the first failure, which a runtime
-  reports rather than terminating the process.
+- **Threading:** fixed dedicated threads, no generic job/task scheduler. Client:
+  3 threads (Main/Render, Simulation [ECS + PhysX], Network I/O). Server: 3
+  threads (Simulation, Network I/O, Metrics) — no render thread, since it's
+  headless (see ADR-0005, ADR-0049). Each piece of mutable state has one owning
+  thread and crosses to another only as an immutable value: transport callbacks
+  publish events that the Network I/O owner applies outside their locks, the
+  client reads what the server said through one immutable Server view, and
+  SimulationWorld returns a `TickResult`. A runtime supervisor owns the worker
+  threads, their stop request and the first failure, which a runtime reports
+  rather than terminating the process.
 - **Determinism strategy:** PhysX does not guarantee cross-platform bit-exact
   determinism (confirmed: NVIDIA docs state cross-platform determinism is
   unsupported). Client prediction is therefore treated as approximate: the
@@ -378,8 +381,10 @@ Production deployment (`main`) is explicitly out of scope/undecided for now.
   of such rejections within a sliding window, or that connects and is not
   admitted to the Lobby within a deadline (boundary constants, set so an honest
   client under NFR-02's latency and loss never reaches them; routine rejections
-  never count); encryption deliberately deferred past v1 (trusted LAN testing
-  only)
+  never count). Every connection is encrypted, GameNetworkingSockets' default
+  (AES-GCM-256, Curve25519 key exchange), but not authenticated: with no
+  certificate authority, each peer presents a self-signed certificate, so a
+  man-in-the-middle on the network goes undetected (trusted LAN only)
 - **No I/O inside ECS worlds:** ECS worlds are pure state transformations.
   Device input, networking, rendering, and audio output are all handled by
   dedicated boundary components outside the worlds, which translate between the
@@ -432,9 +437,14 @@ not affect numbering.
   compensation and replication
 - [ADR-0045](./adr/0045-dynamic-bodies.md) — Dynamic bodies:
   server-authoritative Props, client-only cosmetics, fixed-step simulate
-- [ADR-0048](./adr/0048-match-recording-and-replay.md) — Match recording and
-  replay: SimulationWorld's input and outcome per tick, in the protocol's
-  encoding
+- [ADR-0048](./adr/0048-match-recording-and-replay.md) — (Superseded by
+  ADR-0050, ADR-0051) Match recording and replay: SimulationWorld's input and
+  outcome per tick, in the protocol's encoding
+- [ADR-0050](./adr/0050-match-capture-and-reenactment.md) — Match capture and
+  Reenactment: one Match's client actions, played again by augustac against a
+  live server
+- [ADR-0051](./adr/0051-replay.md) — Replay: augustad re-runs a Match capture
+  and streams it to Replay viewers
 
 ### Tooling & Build
 
@@ -460,6 +470,12 @@ not affect numbering.
   core dumps, a logged stack, and split debug info
 - [ADR-0049](./adr/0049-metrics-and-liveness.md) — Metrics and liveness:
   Prometheus pull from augustad, kube-prometheus-stack via Flux
+- [ADR-0052](./adr/0052-python-scripted-agents.md) — Agents: players scripted in
+  Python through Intents the Harness runs
+- [ADR-0053](./adr/0053-log-aggregation.md) — Log aggregation: Loki and Alloy
+  beside kube-prometheus-stack
+- [ADR-0054](./adr/0054-chiselled-server-image.md) — Server image: a chiselled
+  Ubuntu 26.04 root on `scratch`
 
 ### Rendering & Audio
 
@@ -522,11 +538,13 @@ to NFR-07).
   ("rubber-banding") if divergence grows too fast.
 - **Scope ambition vs. solo-dev bandwidth:** ECS + custom physics/ballistics +
   client prediction + multithreading + a new networking library is a lot of new
-  surface area to learn and integrate simultaneously for v1.
+  surface area to learn and integrate simultaneously.
 - **GameNetworkingSockets build complexity:** pulls in transitive dependencies
   (protobuf, OpenSSL) that add cross-platform build maintenance overhead.
-- **No encryption in v1:** acceptable only under the stated trusted-LAN
-  assumption; must be revisited before any non-trusted deployment.
+- **No authentication of peers:** connections are encrypted, but neither side
+  proves who it is, so a man-in-the-middle goes undetected. Acceptable only
+  under the stated trusted-LAN assumption; certificates signed by a project
+  certificate authority are needed before any non-trusted deployment.
 - **Falcor dependency** (see ADR-0009): a fork/vendor of the source is
   recommended to insulate against upstream abandonment.
 - **Cross-OS local development:** building and testing requires both a Windows
@@ -540,8 +558,8 @@ to NFR-07).
 - **Signing key management:** losing or leaking the pack-signing private key
   would require re-keying and re-signing all shipped packs — back it up securely
   and keep it out of version control.
-- **Full rebake on every cook** is acceptable at v1's asset scale; will need
-  incremental invalidation (e.g., content-hash-based) if asset count grows
+- **Full rebake on every cook** is acceptable at the current asset scale; will
+  need incremental invalidation (e.g., content-hash-based) if asset count grows
   significantly.
 - **Lua sandbox correctness:** security relies on a carefully curated restricted
   environment; an incomplete sandbox (e.g., leaking `load`/`dofile`, or a C++

@@ -84,6 +84,13 @@ class PeerTable {
   /// connection was closed by this side: it is neither pending nor connected.
   void Forget(std::uint32_t connection);
 
+  /// connection is ended by this side because the transport could not keep it
+  /// (a reliable message its full queue could not take): forgotten, as Forget
+  /// does, and reported as a kDisconnected (kConnectionLost) event, since its
+  /// owner hears of no departure otherwise. Returns the transport call it
+  /// needs: kClose, or kNone if it was not open.
+  [[nodiscard]] TransportCall Lose(std::uint32_t connection);
+
   [[nodiscard]] bool IsConnected(std::uint32_t connection) const;
 
   /// Every connected peer's connection.

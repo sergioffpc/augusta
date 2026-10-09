@@ -12,6 +12,8 @@
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
+#include "augusta/failure.h"
+#include "augusta/faults.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
@@ -37,7 +39,9 @@
 /// different threads, as in Runner: Connect, Disconnect, PumpEvents,
 /// ExchangeMessages, GetConnectionState and GetConnectionStats from the Network
 /// I/O thread, and Tick from the Prediction thread (the transport is safe to
-/// send from both).
+/// send from both). A failure of the local transport inside any of them is kept
+/// for the caller to take (Session::TakeTransportFailure) and stop on; the
+/// server ending the connection is the Session's own Failure instead.
 namespace augusta::harness {
 
 /// The server's name for one connected player (CONTEXT.md, "Session ID"), as
@@ -242,7 +246,8 @@ struct ServerView {
   /// The newest Roster, kept through a match.
   std::optional<Lobby> lobby;
   /// The last match's start, and how many have started: a new count is a new
-  /// match for the prediction to start over in.
+  /// match for the prediction to start over in, and the match whose Shots, Hit
+  /// confirmations and Deaths a view takes (Session::TakeShots).
   std::optional<MatchStart> match_start;
   std::uint32_t matches_started = 0;
   /// Whether this client is playing in a match: from its Match start to its Match end.
@@ -275,6 +280,9 @@ struct SessionConfig {
   /// The character to ask to play, by its name in the scenario's manifest (e.g.
   /// "soldier"): the server admits only one of its scenario's (ADR-0042).
   std::string character;
+  /// For a test: asked at every send and receive (networking.h), so the
+  /// transport fails there; null otherwise. Must outlive the Session.
+  failure::Faults* faults = nullptr;
 };
 
 /// The client's network connection and PredictionWorld, without a window or a GPU.
@@ -318,6 +326,20 @@ class Session {
   /// Connect, while connecting or connected, and after Disconnect (which the
   /// caller asked for, so it is not a failure). Safe to read from any thread.
   [[nodiscard]] std::optional<Failure> GetFailure() const;
+
+  /// The first failure of the local transport a send or receive met
+  /// (failure::Code::kTransportSendFailed, kTransportReceiveFailed), once;
+  /// nullopt before one and after it has been taken. A runtime failure, not
+  /// the server's doing: Runner's thread that takes it stops on it. Safe from
+  /// any thread.
+  [[nodiscard]] std::optional<failure::Failure> TakeTransportFailure();
+
+  /// The first message this client could not encode, as the broken invariant
+  /// it is (failure::Code::kInvariantViolated, ADR-0033), once; nullopt before
+  /// one and after it has been taken. What it was is not sent: whoever runs
+  /// the Session stops on it, as on a transport failure. ExchangeMessages,
+  /// ReportReady and Tick may each meet one. Safe from any thread.
+  [[nodiscard]] std::optional<failure::Failure> TakeInvariantFailure();
 
   /// The connection's quality numbers, or nullopt if not connected.
   [[nodiscard]] std::optional<networking::ConnectionStats> GetConnectionStats() const;
@@ -373,26 +395,30 @@ class Session {
   /// from any thread.
   [[nodiscard]] std::optional<AuthoritativeState> GetAuthoritativeState() const;
 
-  /// The Shots of the match in progress, or of the last one if back in the
-  /// Lobby, received since the last call, in the order they arrived; the newest
-  /// kMaxPendingShots of them if more did. One that arrives outside a match or
-  /// names a body not in it is dropped, and a match starts with none. Received
-  /// by ExchangeMessages; safe to call from any thread.
+  /// The Shots of the match view is of (ServerView::matches_started): the
+  /// match in progress, or the last one if back in the Lobby. Those received
+  /// since the last call, in the order they arrived; the newest
+  /// kMaxPendingShots of them if more did. One of an earlier match is never
+  /// taken: once a view of a match is held, none of the one before is left to
+  /// take. One of a later match is kept for a view of it, so what a reader
+  /// draws is always of the match its view is of. One that arrives outside a
+  /// match or names a body not in it is dropped. Received by ExchangeMessages;
+  /// safe to call from any thread.
+  [[nodiscard]] std::vector<Shot> TakeShots(const ServerView& view);
+  /// TakeShots for the newest Server view (GetServerView).
   [[nodiscard]] std::vector<Shot> TakeShots();
 
-  /// The Hit confirmations of the match in progress, or of the last one if back
-  /// in the Lobby, received since the last call, in the order they arrived; the
-  /// newest kMaxPendingHitConfirmations of them if more did. One that arrives
-  /// outside a match or names a body not in it is dropped, and a match starts
-  /// with none. Received by ExchangeMessages; safe to call from any thread.
+  /// The Hit confirmations of the match view is of, as TakeShots hands out
+  /// Shots; the newest kMaxPendingHitConfirmations of them if more arrived.
+  [[nodiscard]] std::vector<HitConfirmation> TakeHitConfirmations(const ServerView& view);
+  /// TakeHitConfirmations for the newest Server view (GetServerView).
   [[nodiscard]] std::vector<HitConfirmation> TakeHitConfirmations();
 
-  /// The Deaths of the match in progress, or of the last one if back in the
-  /// Lobby (those that ended it among them), received since the last call, in
-  /// the order they arrived; the newest kMaxPendingDeaths of them if more did.
-  /// One that arrives outside a match or names a body not in it is dropped, and
-  /// a match starts with none. Received by ExchangeMessages; safe to call from
-  /// any thread.
+  /// The Deaths of the match view is of (those that ended it among them), as
+  /// TakeShots hands out Shots; the newest kMaxPendingDeaths of them if more
+  /// arrived.
+  [[nodiscard]] std::vector<Death> TakeDeaths(const ServerView& view);
+  /// TakeDeaths for the newest Server view (GetServerView).
   [[nodiscard]] std::vector<Death> TakeDeaths();
 
   /// Whether this client's own player is alive: in a match, and neither told

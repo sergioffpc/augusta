@@ -74,22 +74,22 @@ def test_a_cook_is_published_under_its_scenario_and_server_pack_hash(
     client_pack, server_pack, public_key, server_hash = cook
     node = LocalNode(tmp_path / "node")
 
-    release = publish.prepare("augusta", client_pack, server_pack, public_key)
+    release = publish.prepare("firebase", client_pack, server_pack, public_key)
     copied = publish.publish(release, node)
 
     assert copied
     assert release.version == server_hash.hex()[:12]
     assert (
         release.directory
-        == f"/srv/augusta/asset-packs/augusta/{release.version}"
+        == f"/srv/augusta/asset-packs/firebase/{release.version}"
     )
-    folder = node.root / "augusta" / release.version
+    folder = node.root / "firebase" / release.version
     assert sorted(path.name for path in folder.iterdir()) == [
-        "augusta.pub",
         "server.pack",
+        "signing.pub",
     ]
     assert (folder / "server.pack").read_bytes() == server_pack.read_bytes()
-    assert (folder / "augusta.pub").read_bytes() == public_key.read_bytes()
+    assert (folder / "signing.pub").read_bytes() == public_key.read_bytes()
 
 
 def test_publishing_a_version_already_on_the_node_copies_nothing(
@@ -97,7 +97,7 @@ def test_publishing_a_version_already_on_the_node_copies_nothing(
 ):
     client_pack, server_pack, public_key, _ = cook
     node = LocalNode(tmp_path / "node")
-    release = publish.prepare("augusta", client_pack, server_pack, public_key)
+    release = publish.prepare("firebase", client_pack, server_pack, public_key)
     publish.publish(release, node)
 
     assert not publish.publish(release, node)
@@ -109,8 +109,8 @@ def test_a_version_folder_holding_other_files_is_never_overwritten(
 ):
     client_pack, server_pack, public_key, _ = cook
     node = LocalNode(tmp_path / "node")
-    release = publish.prepare("augusta", client_pack, server_pack, public_key)
-    folder = node.root / "augusta" / release.version
+    release = publish.prepare("firebase", client_pack, server_pack, public_key)
+    folder = node.root / "firebase" / release.version
     folder.mkdir(parents=True)
     (folder / "server.pack").write_bytes(b"something else")
 
@@ -137,14 +137,14 @@ def test_a_server_pack_from_another_cook_is_refused(tmp_path, cook, key_pair):
     )
 
     with pytest.raises(PublishError, match="not from the same cook"):
-        publish.prepare("augusta", client_pack, other_server, public_key)
+        publish.prepare("firebase", client_pack, other_server, public_key)
 
 
 def test_a_client_pack_given_as_the_server_pack_is_refused(cook):
     client_pack, _, public_key, _ = cook
 
     with pytest.raises(PublishError, match="not a server pack"):
-        publish.prepare("augusta", client_pack, client_pack, public_key)
+        publish.prepare("firebase", client_pack, client_pack, public_key)
 
 
 def test_packs_signed_by_another_key_are_refused(tmp_path, cook):
@@ -153,7 +153,7 @@ def test_packs_signed_by_another_key_are_refused(tmp_path, cook):
     other_key.write_bytes(keys.generate_keypair()[0])
 
     with pytest.raises(PublishError, match="signature is not valid"):
-        publish.prepare("augusta", client_pack, server_pack, other_key)
+        publish.prepare("firebase", client_pack, server_pack, other_key)
 
 
 def test_a_missing_pack_is_refused(tmp_path, cook):
@@ -161,13 +161,13 @@ def test_a_missing_pack_is_refused(tmp_path, cook):
 
     with pytest.raises(PublishError):
         publish.prepare(
-            "augusta", client_pack, tmp_path / "missing.pack", public_key
+            "firebase", client_pack, tmp_path / "missing.pack", public_key
         )
 
 
 @pytest.mark.parametrize(
     "scenario",
-    ["Augusta", "-augusta", "augusta-", "../augusta", "a_b", "a" * 47, ""],
+    ["Firebase", "-firebase", "firebase-", "../firebase", "a_b", "a" * 47, ""],
 )
 def test_a_scenario_name_no_server_can_be_named_by_is_refused(scenario, cook):
     client_pack, server_pack, public_key, _ = cook

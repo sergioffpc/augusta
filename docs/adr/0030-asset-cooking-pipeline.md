@@ -46,9 +46,9 @@ mesh/collider/hitbox/spawn-point/texture data exactly as the original C++ walker
 did (ADR-0015/ADR-0032's authoring conventions). Two pieces have no Python
 equivalent and stay native, as small independent pybind11 extension modules
 built from `tools/pack/cpp/` (`_meshoptimizer`, wrapping the vertex
-weld/simplify/reorder/quantize pass, ADR-0016; `_textconv`, wrapping
-DirectXTex's WIC load + BC7/BC5/BC4 compression + DDS encode, ADR-0017) — both
-stateless, taking/returning plain bytes, with **no USD dependency of their
+weld/simplify/reorder/quantize pass, ADR-0016; `_textconv`, wrapping stb_image's
+PNG/JPEG load and DirectXTex's BC7/BC5/BC4 compression + DDS encode, ADR-0017) —
+both stateless, taking/returning plain bytes, with **no USD dependency of their
 own**. That last point is load-bearing, not incidental: an earlier version of
 this cooker was itself a C++ program linking vcpkg's own OpenUSD build directly,
 called from Python via a third pybind11 module. It crashed on import with a

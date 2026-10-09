@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -38,6 +39,7 @@
 #include "augusta/physics.h"
 #include "augusta/policy_actions.h"
 #include "augusta/prediction.h"
+#include "augusta/primitives.h"
 #include "augusta/protocol.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
@@ -136,7 +138,9 @@ HostConfig TestHostConfig(const Parameters& parameters = kTestParameters, std::u
       .parameters = parameters,
       .listen = Endpoint{.address = kLoopbackAnyPort},
       .recording = {},
+      .recording_mode = {},
       .server_pack = {},
+      .faults = nullptr,
   };
 }
 
@@ -226,11 +230,12 @@ class RawClient {
     return accepted.empty() ? std::nullopt : std::optional<SessionIdWire>(accepted.front().session);
   }
 
-  void Send(const augusta::protocol::MessageWire& message) { SendPayload(augusta::protocol::Encode(message)); }
+  void Send(const augusta::protocol::MessageWire& message) { SendPayload(augusta::protocol::Encode(message).value()); }
 
   // Sends bytes as they are, whether or not they are a message.
   void SendPayload(const augusta::protocol::BytesWire& payload) {
-    client_.Send(payload, augusta::networking::Reliability::kReliable);
+    // Dropped once the server has disconnected it, which a test may be after.
+    ASSERT_TRUE(client_.Send(payload, augusta::networking::Reliability::kReliable).has_value());
   }
 
   // The Authoritative State updates received since the last call.
@@ -277,7 +282,8 @@ class RawClient {
   // cooperative, and returns the Authoritative States among it.
   std::vector<augusta::protocol::AuthoritativeStateWire> Drain() {
     std::vector<augusta::protocol::AuthoritativeStateWire> states;
-    for (const auto& payload : client_.ReceiveMessages()) {
+    const auto payloads = client_.ReceiveMessages().value();
+    for (const auto& payload : payloads) {
       const auto message = augusta::protocol::Decode(payload);
       if (!message.has_value()) {
         continue;
@@ -402,8 +408,10 @@ class SessionTest : public ::testing::Test {
   Session session_;
 };
 
+// Requirements: US-01
 TEST_F(SessionTest, ConnectsToAHostDrivenByHand) { EXPECT_TRUE(ConnectSession()); }
 
+// Requirements: US-04
 TEST_F(SessionTest, PredictionMovesOnlyByTheCommandEachTickIsGiven) {
   ASSERT_TRUE(ConnectSession());
   ASSERT_TRUE(DriveIntoMatch(host_, {&session_}));
@@ -422,6 +430,7 @@ TEST_F(SessionTest, PredictionMovesOnlyByTheCommandEachTickIsGiven) {
   EXPECT_NEAR(idle.local_body.position.x, walked.local_body.position.x, 0.05F);
 }
 
+// Requirements: US-01
 TEST_F(SessionTest, StaysConnectedWhileTheTestAlternatesTicksAndNetworkWork) {
   ASSERT_TRUE(ConnectSession());
 
@@ -451,7 +460,7 @@ bool HasSessionGauges(const ConnectionHealth& health) {
 class JoinTest : public ::testing::Test {
  protected:
   JoinTest()
-      : host_(TestHostConfig(WithPlayerCount(augusta::protocol::kMaxPlayers)),
+      : host_(TestHostConfig(WithPlayerCount(augusta::primitives::kMaxPlayers)),
               Scenario{.collision = {},
                        .spawn_points = {},
                        .characters = {{.path = kCharacter, .hitboxes = {}}},
@@ -490,7 +499,7 @@ class JoinTest : public ::testing::Test {
 
   // Fills the Lobby with kMaxPlayers clients and starts their match.
   void StartAFullMatch() {
-    for (std::size_t i = 0; i < augusta::protocol::kMaxPlayers; ++i) {
+    for (std::size_t i = 0; i < augusta::primitives::kMaxPlayers; ++i) {
       AddClient();
     }
     ASSERT_TRUE(WaitForAnswers());
@@ -501,6 +510,7 @@ class JoinTest : public ::testing::Test {
   std::vector<std::unique_ptr<Session>> sessions_;
 };
 
+// Requirements: US-01
 TEST_F(JoinTest, AClientWithTheMatchingVersionIsAdmittedWithASessionId) {
   Session& client = AddClient();
 
@@ -511,6 +521,7 @@ TEST_F(JoinTest, AClientWithTheMatchingVersionIsAdmittedWithASessionId) {
   EXPECT_EQ(client.GetPhase(), Phase::kLobby);
 }
 
+// Requirements: US-01
 TEST_F(JoinTest, SessionIdsAreUniqueAmongConnectedClients) {
   constexpr int kClients = 3;
   for (int i = 0; i < kClients; ++i) {
@@ -527,6 +538,7 @@ TEST_F(JoinTest, SessionIdsAreUniqueAmongConnectedClients) {
   EXPECT_EQ(ids.size(), static_cast<std::size_t>(kClients));
 }
 
+// Requirements: NFR-07
 TEST_F(JoinTest, EachConnectionIsSampledWithTheSessionItCarries) {
   const Session& client = AddClient();
   ASSERT_TRUE(WaitForAnswers());
@@ -539,6 +551,7 @@ TEST_F(JoinTest, EachConnectionIsSampledWithTheSessionItCarries) {
   EXPECT_EQ(static_cast<std::uint32_t>(*samples.front().session), static_cast<std::uint32_t>(*client.GetSessionId()));
 }
 
+// Requirements: NFR-07
 TEST_F(JoinTest, ASessionThatEndsLeavesTheSampleAndItsGaugesGo) {
   Session& client = AddClient();
   ASSERT_TRUE(WaitForAnswers());
@@ -556,6 +569,7 @@ TEST_F(JoinTest, ASessionThatEndsLeavesTheSampleAndItsGaugesGo) {
   EXPECT_FALSE(HasSessionGauges(health));
 }
 
+// Requirements: NFR-07
 TEST_F(JoinTest, AConnectionThatHasNotJoinedIsSampledWithoutASession) {
   RawClient silent(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   std::vector<ConnectionSample> samples;
@@ -568,6 +582,7 @@ TEST_F(JoinTest, AConnectionThatHasNotJoinedIsSampledWithoutASession) {
   EXPECT_FALSE(samples.front().session.has_value());
 }
 
+// Requirements: US-01
 TEST_F(JoinTest, AClientWithAnotherEngineVersionIsRefusedForTheVersion) {
   Session& client = AddClient("0.0.0-not-the-servers");
 
@@ -578,6 +593,7 @@ TEST_F(JoinTest, AClientWithAnotherEngineVersionIsRefusedForTheVersion) {
   EXPECT_EQ(client.GetPhase(), Phase::kNotAdmitted);
 }
 
+// Requirements: US-01
 TEST_F(JoinTest, ARefusedClientReportsTheRefusalAsItsFailure) {
   Session& client = AddClient("0.0.0-not-the-servers");
 
@@ -589,6 +605,7 @@ TEST_F(JoinTest, ARefusedClientReportsTheRefusalAsItsFailure) {
   EXPECT_EQ(failure->refusal, JoinRefusal::kVersionMismatch);
 }
 
+// Requirements: US-01, NFR-08
 TEST_F(JoinTest, AClientWithAnotherClientPackIsRefusedForThePack) {
   Session& client = AddClient(std::string(augusta::EngineVersion()), kCharacter, ClientPack(2));
 
@@ -598,6 +615,7 @@ TEST_F(JoinTest, AClientWithAnotherClientPackIsRefusedForThePack) {
   EXPECT_FALSE(client.GetSessionId().has_value());
 }
 
+// Requirements: US-02, US-16
 TEST_F(JoinTest, AClientThatPicksACharacterTheScenarioLacksIsRefusedForIt) {
   Session& client = AddClient(std::string(augusta::EngineVersion()), "characters/nobody");
 
@@ -611,6 +629,7 @@ TEST_F(JoinTest, AClientThatPicksACharacterTheScenarioLacksIsRefusedForIt) {
   EXPECT_EQ(failure->refusal, JoinRefusal::kUnknownCharacter);
 }
 
+// Requirements: US-01
 TEST_F(JoinTest, AWrongVersionIsReportedBeforeAnUnknownCharacter) {
   Session& client = AddClient("0.0.0-not-the-servers", "characters/nobody");
 
@@ -619,6 +638,7 @@ TEST_F(JoinTest, AWrongVersionIsReportedBeforeAnUnknownCharacter) {
   EXPECT_EQ(client.GetRefusal(), JoinRefusal::kVersionMismatch);
 }
 
+// Requirements: US-01
 TEST_F(JoinTest, AnAdmittedClientHasNoFailure) {
   Session& client = AddClient();
 
@@ -627,8 +647,9 @@ TEST_F(JoinTest, AnAdmittedClientHasNoFailure) {
   EXPECT_FALSE(client.GetFailure().has_value());
 }
 
+// Requirements: US-02
 TEST_F(JoinTest, TheNinthClientIsRefusedBecauseTheLobbyIsFull) {
-  for (std::size_t i = 0; i < augusta::protocol::kMaxPlayers; ++i) {
+  for (std::size_t i = 0; i < augusta::primitives::kMaxPlayers; ++i) {
     AddClient();
   }
   ASSERT_TRUE(WaitForAnswers());
@@ -643,6 +664,7 @@ TEST_F(JoinTest, TheNinthClientIsRefusedBecauseTheLobbyIsFull) {
   EXPECT_FALSE(ninth.GetSessionId().has_value());
 }
 
+// Requirements: US-02
 TEST_F(JoinTest, AClientThatConnectsDuringAMatchIsRefusedBecauseOneIsInProgress) {
   StartAFullMatch();
 
@@ -657,6 +679,7 @@ TEST_F(JoinTest, AClientThatConnectsDuringAMatchIsRefusedBecauseOneIsInProgress)
 }
 
 // Waiting for the match to end is no use to a client that can never play here.
+// Requirements: US-02
 TEST_F(JoinTest, DuringAMatchAWrongVersionOrCharacterIsStillWhatAClientIsTold) {
   StartAFullMatch();
 
@@ -686,6 +709,7 @@ TEST_F(JoinTest, DuringAMatchAWrongVersionOrCharacterIsStillWhatAClientIsTold) {
 // missed-tick bug, just the test not giving the network any real time to
 // work in. Pacing to 60 Hz gives it that time throughout, the same as a real
 // session would have.
+// Requirements: US-04, US-05, NFR-01, NFR-06
 TEST_F(JoinTest, EightClientsMoveSprintAndChangeStanceForARoundWithNoMissedTicks) {
   constexpr int kRoundTicks = 600;             // 10 real seconds at kTestTickRate, paced.
   constexpr std::uint32_t kAckTolerance = 20;  // A few round trips' worth still in flight.
@@ -942,6 +966,7 @@ class MovementTest : public ::testing::Test {
   Session session_;
 };
 
+// Requirements: US-04
 TEST_F(MovementTest, AForwardCommandMovesTheAuthoritativePlayerAndTheStateReachesTheClient) {
   const float start = Self().position.x;
 
@@ -952,6 +977,7 @@ TEST_F(MovementTest, AForwardCommandMovesTheAuthoritativePlayerAndTheStateReache
   EXPECT_GT(Self().position.x, start + 2.0F);
 }
 
+// Requirements: US-04
 TEST_F(MovementTest, TheServerAcknowledgesTheCommandsItHasProcessed) {
   constexpr int kSteps = 20;
   for (int i = 0; i < kSteps; ++i) {
@@ -964,6 +990,7 @@ TEST_F(MovementTest, TheServerAcknowledgesTheCommandsItHasProcessed) {
   EXPECT_LE(state->acknowledged_sequence, kSettleTicks + kSteps);
 }
 
+// Requirements: US-04
 TEST_F(MovementTest, StanceCommandsChangeTheAuthoritativeStanceAndSpeed) {
   const auto walk_at = [&](Stance stance) {
     for (int i = 0; i < 20; ++i) {
@@ -981,6 +1008,7 @@ TEST_F(MovementTest, StanceCommandsChangeTheAuthoritativeStanceAndSpeed) {
   EXPECT_GT(crouching, prone + 0.3F);
 }
 
+// Requirements: US-04, NFR-02
 TEST_F(MovementTest, ALostDatagramDoesNotLoseAMovementCommand) {
   constexpr int kDeliveredSteps = 2;
   constexpr int kLostCommands = 3;
@@ -1013,6 +1041,7 @@ TEST_F(MovementTest, ALostDatagramDoesNotLoseAMovementCommand) {
   EXPECT_EQ(acknowledged, last_sent);
 }
 
+// Requirements: US-04, NFR-02
 TEST_F(MovementTest, AtAHundredMillisecondsOfLatencyNoCommandIsLostAndThePredictionSettlesOnTheServer) {
   constexpr int kOneWayLatencyMs = 50;
   constexpr int kWalkSteps = 60;
@@ -1029,6 +1058,7 @@ TEST_F(MovementTest, AtAHundredMillisecondsOfLatencyNoCommandIsLostAndThePredict
   EXPECT_LT(PredictionError(Run(kSettleSteps, Command{})), 0.05F);
 }
 
+// Requirements: US-04, NFR-02
 TEST_F(MovementTest, WithPacketLossEveryCommandIsStillProcessedAndThePredictionStaysConsistent) {
   constexpr float kLossPercent = 20.0F;
   constexpr int kWalkSteps = 60;
@@ -1123,10 +1153,12 @@ class PacingTest : public MovementTest {
   static constexpr int kPacedTicks = 240;  // Four seconds at 60 Hz.
 };
 
+// Requirements: NFR-02
 TEST_F(PacingTest, AClientWhoseClockRunsTwoPercentFastKeepsTheServersQueueOfItsCommandsShort) {
   ExpectPacedOnTarget(RunPaced(1.02, kPacedTicks));
 }
 
+// Requirements: NFR-02
 TEST_F(PacingTest, AClientWhoseClockRunsTwoPercentSlowKeepsTheServerFromRunningOutOfItsCommands) {
   ExpectPacedOnTarget(RunPaced(0.98, kPacedTicks));
 }
@@ -1148,6 +1180,7 @@ class DivergedMovementTest : public MovementTest {
   DivergedMovementTest() : MovementTest({FloorAt(kGroundHeight), WallAt(kWallX)}) {}
 };
 
+// Requirements: NFR-02
 TEST_F(DivergedMovementTest, ADivergenceAtAHundredMillisecondsOfLatencyIsCorrectedWithinTheBudget) {
   constexpr int kOneWayLatencyMs = 50;
   constexpr int kWalkSteps = 90;
@@ -1340,6 +1373,7 @@ class MatchOf : public LoopbackMatch {
 
 using SpawnTest = MatchOf<2>;
 
+// Requirements: US-03
 TEST_F(SpawnTest, EachClientIsToldTheBodyItControlsAndSeesEveryBodyByIt) {
   Session& first = Join();
   Session& second = Join();
@@ -1353,6 +1387,7 @@ TEST_F(SpawnTest, EachClientIsToldTheBodyItControlsAndSeesEveryBodyByIt) {
   EXPECT_TRUE(PositionSeenBy(second, *first.GetEntityId()).has_value());
 }
 
+// Requirements: US-03
 TEST_F(SpawnTest, TwoClientsInAMatchSpawnAtDifferentSpawnPoints) {
   Session& first = Join();
   Session& second = Join();
@@ -1369,6 +1404,7 @@ TEST_F(SpawnTest, TwoClientsInAMatchSpawnAtDifferentSpawnPoints) {
   EXPECT_NEAR(second_position->z, SpawnPoints()[1].z, 0.1F);
 }
 
+// Requirements: US-03
 TEST_F(SpawnTest, AClientsPredictionStartsAtTheSpawnPointMatchStartGaveIt) {
   Join();
   Session& second = Join();
@@ -1381,6 +1417,7 @@ TEST_F(SpawnTest, AClientsPredictionStartsAtTheSpawnPointMatchStartGaveIt) {
   EXPECT_NEAR(body.position.z, SpawnPoints()[1].z, 0.1F);
 }
 
+// Requirements: US-03, US-16
 TEST_F(SpawnTest, EveryClientIsToldEveryPlayersCharacterAndSpawnPointAtMatchStart) {
   Session& first = Join();
   Session& second = Join();
@@ -1431,6 +1468,7 @@ class PolicySpawnTest : public LoopbackMatch {
   PolicySpawnTest() : LoopbackMatch(BackwardsSetup()) {}
 };
 
+// Requirements: US-03
 TEST_F(PolicySpawnTest, EveryClientIsToldTheDistinctSpawnPointPolicyGaveEachPlayer) {
   for (int i = 0; i < 3; ++i) {
     Join();
@@ -1448,6 +1486,7 @@ TEST_F(PolicySpawnTest, EveryClientIsToldTheDistinctSpawnPointPolicyGaveEachPlay
   }
 }
 
+// Requirements: US-03
 TEST_F(PolicySpawnTest, TheFirstAuthoritativeStatePlacesEachBodyAtItsSpawnPointAtFullHealth) {
   for (int i = 0; i < 3; ++i) {
     Join();
@@ -1471,6 +1510,7 @@ TEST_F(PolicySpawnTest, TheFirstAuthoritativeStatePlacesEachBodyAtItsSpawnPointA
 
 using SpawnWrapTest = MatchOf<4>;
 
+// Requirements: US-03
 TEST_F(SpawnWrapTest, MorePlayersThanSpawnPointsWrapInsteadOfFailing) {
   for (int i = 0; i < 4; ++i) {
     Join();
@@ -1489,6 +1529,7 @@ TEST_F(SpawnWrapTest, MorePlayersThanSpawnPointsWrapInsteadOfFailing) {
 // A Lobby of three, which a test fills or not (ADR-0043).
 using LobbyTest = MatchOf<3>;
 
+// Requirements: US-02, US-16
 TEST_F(LobbyTest, AdmittedClientsAreToldWhoIsInTheLobbyAndWithWhichCharacter) {
   Session& first = Join();
   Session& second = Join();
@@ -1510,6 +1551,7 @@ TEST_F(LobbyTest, AdmittedClientsAreToldWhoIsInTheLobbyAndWithWhichCharacter) {
   EXPECT_EQ(first.GetLobby()->version, second.GetLobby()->version);
 }
 
+// Requirements: US-02
 TEST_F(LobbyTest, TheRosterVersionGrowsOnEveryJoinAndLeave) {
   Session& first = Join();
   ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return first.GetLobby().has_value(); }));
@@ -1527,6 +1569,7 @@ TEST_F(LobbyTest, TheRosterVersionGrowsOnEveryJoinAndLeave) {
   EXPECT_NE(first.GetLobby()->roster[0].session, leaver);
 }
 
+// Requirements: US-02
 TEST_F(LobbyTest, NoMatchStartsBeforeTheLobbyHoldsThePlayerCountEvenWithEveryoneReady) {
   Join();
   Join();
@@ -1548,6 +1591,7 @@ TEST_F(LobbyTest, NoMatchStartsBeforeTheLobbyHoldsThePlayerCountEvenWithEveryone
   }
 }
 
+// Requirements: US-02
 TEST_F(LobbyTest, AMatchStartsOnTheTickTheLastClientOfAFullLobbyIsReady) {
   for (int i = 0; i < 3; ++i) {
     Join();
@@ -1572,6 +1616,7 @@ TEST_F(LobbyTest, AMatchStartsOnTheTickTheLastClientOfAFullLobbyIsReady) {
 
 using ReadyTest = MatchOf<2>;
 
+// Requirements: US-02
 TEST_F(ReadyTest, ANewcomerMakesTheClientsAlreadyThereNotReadyUntilTheyReportTheNewRoster) {
   Session& first = Join();
   ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return first.GetLobby().has_value(); }));
@@ -1594,6 +1639,7 @@ TEST_F(ReadyTest, ANewcomerMakesTheClientsAlreadyThereNotReadyUntilTheyReportThe
   EXPECT_EQ(host_.Tick(kFixedTick).state.bodies.size(), 2U);
 }
 
+// Requirements: US-02
 TEST_F(ReadyTest, AClientInTheLobbyNeitherPredictsNorSendsCommands) {
   Session& first = Join();
   const augusta::prediction::State idle = first.Tick(Command{}, kFixedTick);
@@ -1613,6 +1659,7 @@ TEST_F(ReadyTest, AClientInTheLobbyNeitherPredictsNorSendsCommands) {
 
 using MidMatchTest = MatchOf<3>;
 
+// Requirements: NFR-06
 TEST_F(MidMatchTest, APlayerWhoDisconnectsLeavesTheOthersStateAndTheSimulationAndTheMatchGoesOn) {
   for (int i = 0; i < 3; ++i) {
     Join();
@@ -1641,6 +1688,7 @@ std::uint32_t PauseTicks() {
       std::ceil(std::chrono::duration<float>(augusta::server::kMatchPause).count() * kTestTickRate));
 }
 
+// Requirements: US-14
 TEST_F(MatchCycleTest, EndingTheMatchSendsEveryoneBackToTheLobbyUnderANewRoster) {
   Join();
   Join();
@@ -1686,6 +1734,7 @@ TEST_F(MatchCycleTest, AServerViewKeepsTheMomentItWasTakenAt) {
   EXPECT_FALSE(in_lobby->OwnAlive());
 }
 
+// Requirements: US-14
 TEST_F(MatchCycleTest, AfterMatchEndNoBodyIsSimulatedAndNoStateReachesAClient) {
   Join();
   Join();
@@ -1702,6 +1751,7 @@ TEST_F(MatchCycleTest, AfterMatchEndNoBodyIsSimulatedAndNoStateReachesAClient) {
   }
 }
 
+// Requirements: US-14
 TEST_F(MatchCycleTest, TheNextMatchStartsExactlyThePauseAfterTheLastEndedAndNotOneTickEarlier) {
   Join();
   Join();
@@ -1723,6 +1773,7 @@ TEST_F(MatchCycleTest, TheNextMatchStartsExactlyThePauseAfterTheLastEndedAndNotO
   EXPECT_EQ(host_.Tick(kFixedTick).state.bodies.size(), 2U);
 }
 
+// Requirements: US-03, US-14, US-16
 TEST_F(MatchCycleTest, PlayersKeepTheirSessionAndCharacterAndTheNextMatchHandsOutTheSpawnPointsAfresh) {
   Session& first = Join();
   Session& second = Join();
@@ -1751,6 +1802,7 @@ TEST_F(MatchCycleTest, PlayersKeepTheirSessionAndCharacterAndTheNextMatchHandsOu
   EXPECT_NEAR(states_.at(&second).local_body.position.x, SpawnPoints()[1].x, 0.1F);
 }
 
+// Requirements: US-14
 TEST_F(MatchCycleTest, AMatchWhoseLastPlayerLeavesEndsOnItsOwnAndTheLobbyTakesPlayersAgain) {
   Join();
   Join();
@@ -1796,11 +1848,23 @@ class RecordingHostTest : public LoopbackMatch {
   // After every Host of the suite has closed the file.
   static void TearDownTestSuite() { std::filesystem::remove(RecordingPath()); }
 
+  // The recording once its writer has reached the tick the match ended
+  // before: the Host, which outlives the test, writes it on a thread of its own.
   static augusta::server::Recording ReadBack() {
-    std::ifstream in(RecordingPath(), std::ios::binary);
-    auto recording = augusta::server::ReadRecording(in);
-    EXPECT_TRUE(recording.has_value());
-    return recording.value_or(augusta::server::Recording{});
+    constexpr auto kPatience = std::chrono::seconds(5);
+    constexpr auto kRetryAfter = std::chrono::milliseconds(10);
+    const auto deadline = std::chrono::steady_clock::now() + kPatience;
+    while (true) {
+      std::ifstream in(RecordingPath(), std::ios::binary);
+      auto recording = augusta::server::ReadRecording(in);
+      const bool written =
+          recording.has_value() && !recording->ticks.empty() && recording->ticks.back().input.match_ended;
+      if (written || std::chrono::steady_clock::now() >= deadline) {
+        EXPECT_TRUE(recording.has_value());
+        return recording.value_or(augusta::server::Recording{});
+      }
+      std::this_thread::sleep_for(kRetryAfter);
+    }
   }
 
   // The match the tests record: two clients join, walk forward, fire, and the
@@ -1817,6 +1881,7 @@ class RecordingHostTest : public LoopbackMatch {
   }
 };
 
+// Requirements: US-21
 TEST_F(RecordingHostTest, EveryTickTheHostRanIsRecordedWithTheCommandsItTookIn) {
   PlayAMatch();
   const augusta::server::Recording recording = ReadBack();
@@ -1891,6 +1956,7 @@ class StaminaTest : public LoopbackMatch {
   Session* client_ = nullptr;
 };
 
+// Requirements: US-05
 TEST_F(StaminaTest, SustainedSprintRunsStaminaOutAndTheServerForcesAWalkUntilItRecoversAboveTheThreshold) {
   const float fresh_speed = MeanSpeedOver(10, Moving(/*sprint=*/true));
   // A second of sprinting runs the bar out.
@@ -1912,6 +1978,7 @@ TEST_F(StaminaTest, SustainedSprintRunsStaminaOutAndTheServerForcesAWalkUntilItR
 }
 
 // US-05: the client predicts the forced walk exactly as the server applies it.
+// Requirements: US-05, NFR-02
 TEST_F(StaminaTest, AClientThatSprintsToExhaustionAndOnThroughRecoveryNeverCorrects) {
   const Vec3 before = states_.at(client_).total_correction;
   bool was_exhausted = false;
@@ -1929,6 +1996,7 @@ TEST_F(StaminaTest, AClientThatSprintsToExhaustionAndOnThroughRecoveryNeverCorre
   EXPECT_EQ(states_.at(client_).total_correction, before);
 }
 
+// Requirements: US-05
 TEST_F(StaminaTest, StaminaRecoversWhileNotSprintingAndSprintIsAllowedAgainOnlyAboveTheThreshold) {
   Run(100, Moving(/*sprint=*/true));
   const float drained = Authoritative().stamina;
@@ -1945,6 +2013,7 @@ TEST_F(StaminaTest, StaminaRecoversWhileNotSprintingAndSprintIsAllowedAgainOnlyA
   EXPECT_GT(Speed(Authoritative()), kWalkSpeed + 1.0F);
 }
 
+// Requirements: US-05
 TEST_F(StaminaTest, AClientPredictsItsStaminaWithTheServersRulesNotItsOwn) {
   // The client was built with rules that never drain: it can only be following the server's.
   Run(45, Moving(/*sprint=*/true));
@@ -1959,6 +2028,7 @@ TEST_F(StaminaTest, AClientPredictsItsStaminaWithTheServersRulesNotItsOwn) {
 // off them: the direction, the view, and the stamina the rules drain and
 // refill. A client that predicts correctly rounds as the server did, so
 // reconciliation never has a jump to make for rounding.
+// Requirements: US-05, NFR-02
 TEST_F(StaminaTest, AClientThatPredictsCorrectlyNeverCorrectsForTheRoundingOnTheWire) {
   Command command = Moving(/*sprint=*/true);
   command.movement.direction = Vec3(0.3F, 0.0F, 0.7F);
@@ -1997,6 +2067,7 @@ class ScriptedParametersTest : public LoopbackMatch {
   ScriptedParametersTest() : LoopbackMatch(OnTheFloor({}, LoadScript())) {}
 };
 
+// Requirements: US-05, US-22
 TEST_F(ScriptedParametersTest, AClientPredictsItsStaminaWithTheRulesOfTheServersScript) {
   Session& client = Join();
   ASSERT_TRUE(StartMatch());
@@ -2012,6 +2083,7 @@ TEST_F(ScriptedParametersTest, AClientPredictsItsStaminaWithTheRulesOfTheServers
   EXPECT_NEAR(states_.at(&client).local_body.stamina, BodySeenBy(client, *client.GetEntityId())->stamina, 0.1F);
 }
 
+// Requirements: US-07, US-08, US-22
 TEST_F(ScriptedParametersTest, AClientPredictsItsRifleWithTheValuesOfTheServersScript) {
   Session& client = Join();
   ASSERT_TRUE(StartMatch());
@@ -2071,7 +2143,8 @@ class ScriptedServer {
         server_.Accept(event.peer);
       }
     }
-    for (const auto& message : server_.ReceiveMessages()) {
+    const auto messages = server_.ReceiveMessages().value();
+    for (const auto& message : messages) {
       peer_ = message.from;
       const auto decoded = augusta::protocol::Decode(message.payload);
       if (!decoded.has_value()) {
@@ -2111,11 +2184,11 @@ class ScriptedServer {
     return state;
   }
 
-  void Send(const augusta::protocol::MessageWire& message) { SendPayload(augusta::protocol::Encode(message)); }
+  void Send(const augusta::protocol::MessageWire& message) { SendPayload(augusta::protocol::Encode(message).value()); }
 
   // Sends bytes as they are, whether or not they are a message.
   void SendPayload(const augusta::protocol::BytesWire& payload) {
-    server_.Send(*peer_, payload, augusta::networking::Reliability::kReliable);
+    ASSERT_TRUE(server_.Send(*peer_, payload, augusta::networking::Reliability::kReliable).has_value());
   }
 
   // How many CommandsWire messages the client has sent.
@@ -2174,6 +2247,7 @@ class ScriptedServerTest : public ::testing::Test {
   Session session_;
 };
 
+// Requirements: US-22
 TEST_F(ScriptedServerTest, AClientPredictsWithTheParametersItWasAdmittedWith) {
   ASSERT_TRUE(session_.GetParameters().has_value());
   EXPECT_FLOAT_EQ(session_.GetParameters()->stamina.deplete_per_second, 0.0F);
@@ -2182,6 +2256,7 @@ TEST_F(ScriptedServerTest, AClientPredictsWithTheParametersItWasAdmittedWith) {
   EXPECT_GT(PredictedStaminaAfterSprinting(60), 0.99F);
 }
 
+// Requirements: NFR-12
 TEST_F(ScriptedServerTest, BytesThatAreNoMessageChangeNothingAndTheClientKeepsRunning) {
   // A Lobby cut short, and a type nobody has.
   for (const auto& payload :
@@ -2256,6 +2331,7 @@ TEST_F(ScriptedServerTest, StatesPastThirtyTwoBitsOfTicksAreStillNewestWins) {
   EXPECT_GT(server_.CommandsReceived(), sent_before);
 }
 
+// Requirements: US-14
 TEST_F(ScriptedServerTest, AStateThatArrivesAfterMatchEndIsDroppedAndTheClientIsBackInTheLobby) {
   server_.Send(ScriptedServer::StateOf(1, {kScriptedEntity}));
   Settle();
@@ -2269,6 +2345,7 @@ TEST_F(ScriptedServerTest, AStateThatArrivesAfterMatchEndIsDroppedAndTheClientIs
   EXPECT_FALSE(session_.GetAuthoritativeState().has_value());
 }
 
+// Requirements: US-14
 TEST_F(ScriptedServerTest, AfterMatchEndTheClientStopsPredictingAndSendingCommands) {
   Settle();
   PredictedStaminaAfterSprinting(10);
@@ -2317,6 +2394,7 @@ TEST_F(ScriptedLobbyTest, AMatchStartThatLeavesThisClientOutIsDropped) {
   EXPECT_FALSE(session_.GetMatchStart().has_value());
 }
 
+// Requirements: US-03
 TEST_F(ScriptedLobbyTest, NothingIsSentBeforeMatchStartAndTheFirstTickInAMatchStartsAtItsSpawnPoint) {
   Command walk;
   walk.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
@@ -2338,6 +2416,7 @@ TEST_F(ScriptedLobbyTest, NothingIsSentBeforeMatchStartAndTheFirstTickInAMatchSt
   EXPECT_GT(server_.CommandsReceived(), 0);
 }
 
+// Requirements: US-02
 TEST_F(ScriptedLobbyTest, ReadyIsSentOnlyWhenToldAndOnlyForTheNewestRoster) {
   server_.Send(
       augusta::protocol::LobbyWire{.version = 1, .roster = {{.session = kScriptedSession, .character = kCharacter}}});
@@ -2357,6 +2436,7 @@ TEST_F(ScriptedLobbyTest, ReadyIsSentOnlyWhenToldAndOnlyForTheNewestRoster) {
 
 // A client takes the parameters it joins with as the server's, so values that
 // fail the range checks make it drop the Join accepted rather than predict on them.
+// Requirements: US-22
 TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseParametersFailTheRangeChecks) {
   ScriptedServer server;
   Parameters threshold_of_one;
@@ -2364,7 +2444,7 @@ TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseParametersFailTheRange
   for (const Parameters& bad :
        {Parameters{.stamina = {.deplete_per_second = -1.0F}},
         Parameters{.stamina = {.regen_per_second = std::numeric_limits<float>::quiet_NaN()}}, threshold_of_one,
-        Parameters{.player_count = 0}, Parameters{.player_count = augusta::protocol::kMaxPlayers + 1}}) {
+        Parameters{.player_count = 0}, Parameters{.player_count = augusta::primitives::kMaxPlayers + 1}}) {
     // One server for every case: it answers whichever session sent last.
     Session session(TestSessionConfig(server.LocalEndpoint()), EmptyWorld());
 
@@ -2381,6 +2461,7 @@ class TickRateTest : public LoopbackMatch {
   TickRateTest() : LoopbackMatch(OnTheFloor({}, kTestParameters, kServerRate)) {}
 };
 
+// Requirements: US-22
 TEST_F(TickRateTest, AClientLearnsTheServersTickRateWhenItJoins) {
   Session& client = Join();
 
@@ -2415,6 +2496,7 @@ TEST_F(TickRateTest, AClientTickingAtTheRateItWasToldAgreesWithTheServerWithoutC
 }
 
 // A client that has not joined holds nothing a server decides.
+// Requirements: US-22
 TEST_F(SessionTest, AClientHoldsNoParametersUntilTheServerAdmitsIt) {
   EXPECT_FALSE(session_.GetParameters().has_value());
   EXPECT_FALSE(session_.GetTickRate().has_value());
@@ -2428,6 +2510,7 @@ TEST_F(SessionTest, AClientHoldsNoParametersUntilTheServerAdmitsIt) {
 
 // A server whose tick rate is unusable (zero): the client drops the Join
 // accepted rather than divide by it.
+// Requirements: US-22
 TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseTickRateFailsTheChecks) {
   Host host(TestHostConfig(kTestParameters, 0),
             Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
@@ -2449,6 +2532,7 @@ TEST(SessionFailureTest, ASessionThatNeverConnectedHasNoFailure) {
   EXPECT_FALSE(session.GetFailure().has_value());
 }
 
+// Requirements: US-01
 TEST(SessionFailureTest, AServerNobodyIsListeningAtIsUnreachable) {
   // Set before connecting: the timeout only reaches new connections.
   augusta::networking::SimulateNetworkConditions({.timeout_ms = 500});
@@ -2469,6 +2553,7 @@ TEST(SessionFailureTest, AServerNobodyIsListeningAtIsUnreachable) {
   EXPECT_EQ(failure->kind, FailureKind::kServerUnreachable);
 }
 
+// Requirements: US-01
 TEST(SessionFailureTest, AServerThatGoesAwayDuringAMatchIsAConnectionLost) {
   auto host = std::make_unique<Host>(
       TestHostConfig(),
@@ -2511,6 +2596,7 @@ TEST(SessionFailureTest, EndingTheSessionOneselfIsNotAFailure) {
   EXPECT_FALSE(session.GetFailure().has_value());
 }
 
+// Requirements: US-01
 TEST(SessionFailureTest, EveryFailureIsDescribedForThePlayerAndARefusalSaysWhy) {
   const std::string unreachable = augusta::harness::DescribeFailure({.kind = FailureKind::kServerUnreachable});
   const std::string lost = augusta::harness::DescribeFailure({.kind = FailureKind::kConnectionLost});
@@ -2540,31 +2626,33 @@ class RobustnessOf : public MatchOf<kPlayers> {
 };
 
 using RobustnessTest = RobustnessOf<1>;
-using FullMatchRobustnessTest = RobustnessOf<augusta::protocol::kMaxPlayers>;
+using FullMatchRobustnessTest = RobustnessOf<augusta::primitives::kMaxPlayers>;
 
+// Requirements: NFR-06
 TEST_F(FullMatchRobustnessTest, AfterAClientDisconnectsItsPlayerIsAbsentFromOthersStateAndNoOneTakesItsPlace) {
-  for (std::size_t i = 0; i < augusta::protocol::kMaxPlayers; ++i) {
+  for (std::size_t i = 0; i < augusta::primitives::kMaxPlayers; ++i) {
     Join();
   }
   ASSERT_TRUE(StartMatch());
   Run(kSettleTicks);
   Session& watcher = *sessions_.front();
-  ASSERT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::protocol::kMaxPlayers);
+  ASSERT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::primitives::kMaxPlayers);
   const auto leaver = *sessions_.back()->GetEntityId();
 
   sessions_.back()->Disconnect();
   Run(kSettleTicks);
 
-  EXPECT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::protocol::kMaxPlayers - 1);
+  EXPECT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::primitives::kMaxPlayers - 1);
   EXPECT_FALSE(PositionSeenBy(watcher, leaver).has_value());
 
   Session& ninth = Connect();
   Run(kSettleTicks);
 
   EXPECT_EQ(ninth.GetRefusal(), JoinRefusal::kMatchInProgress);
-  EXPECT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::protocol::kMaxPlayers - 1);
+  EXPECT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::primitives::kMaxPlayers - 1);
 }
 
+// Requirements: NFR-06
 TEST_F(RobustnessTest, AClientThatDropsWithoutClosingKeepsTheServerTickingAndIsRemovedOnceItTimesOut) {
   // Set before the connection exists: the timeout only reaches new connections.
   augusta::networking::SimulateNetworkConditions({.timeout_ms = 500});
@@ -2663,7 +2751,7 @@ class ImpossibleCommandTest : public LoopbackMatch {
   // A message of as many Commands as the protocol allows, each acting, numbered from 1.
   static protocol::CommandsWire MostCommands() {
     protocol::CommandsWire most;
-    for (std::size_t i = 1; i <= protocol::kMaxCommandsPerMessage; ++i) {
+    for (std::size_t i = 1; i <= augusta::primitives::kMaxCommandsPerMessage; ++i) {
       most.commands.push_back(Acting(i));
     }
     return most;
@@ -2741,6 +2829,7 @@ class ImpossibleCommandTest : public LoopbackMatch {
   std::size_t bystander_shots_ = 0;
 };
 
+// Requirements: US-15, NFR-05
 TEST_F(ImpossibleCommandTest, AMovementLongerThanAnyInputDeviceProducesIsRejected) {
   auto too_long = Acting(1);
   too_long.command.direction = Vec3(1.5F, 0.0F, 1.5F);
@@ -2750,6 +2839,7 @@ TEST_F(ImpossibleCommandTest, AMovementLongerThanAnyInputDeviceProducesIsRejecte
   ExpectRejected({too_long, too_long_upward});
 }
 
+// Requirements: US-15, NFR-05
 TEST_F(ImpossibleCommandTest, APitchPastStraightUpOrDownIsRejected) {
   auto past_up = Acting(1);
   past_up.command.pitch = 3.0F;
@@ -2759,6 +2849,7 @@ TEST_F(ImpossibleCommandTest, APitchPastStraightUpOrDownIsRejected) {
   ExpectRejected({past_up, past_down});
 }
 
+// Requirements: US-15, NFR-05
 TEST_F(ImpossibleCommandTest, AYawOutsideOneTurnIsRejected) {
   auto past_half_a_turn = Acting(1);
   past_half_a_turn.command.yaw = 3.9F;
@@ -2768,6 +2859,7 @@ TEST_F(ImpossibleCommandTest, AYawOutsideOneTurnIsRejected) {
   ExpectRejected({past_half_a_turn, past_half_a_turn_back});
 }
 
+// Requirements: US-15, NFR-05
 TEST_F(ImpossibleCommandTest, ARejectedCommandLeavesTheGoodOnesOfItsMessageTakenIn) {
   // 1 is good; 2 and 3 are impossible; 4 is good but neither walks nor fires.
   auto impossible_yaw = Acting(2);
@@ -2791,6 +2883,7 @@ TEST_F(ImpossibleCommandTest, ARejectedCommandLeavesTheGoodOnesOfItsMessageTaken
 // The wire carries a Command's numbers as whole counts of their grids
 // (augusta/grid.h), so it has nowhere to carry a NaN or an infinity: a NaN a
 // client puts in arrives as 0, an infinity as its grid's bound.
+// Requirements: US-15, NFR-05
 TEST_F(ImpossibleCommandTest, NoNumberOfACommandReachesTheServerAsNaNOrInfinity) {
   constexpr float kNaN = std::numeric_limits<float>::quiet_NaN();
   constexpr float kInfinity = std::numeric_limits<float>::infinity();
@@ -2828,6 +2921,7 @@ TEST_F(ImpossibleCommandTest, NoNumberOfACommandReachesTheServerAsNaNOrInfinity)
   ExpectRejected({infinite_yaw, infinite_pitch, infinite_movement});
 }
 
+// Requirements: US-15, NFR-05
 TEST_F(ImpossibleCommandTest, ACommandWhoseSequenceIsNotNewerThanTheLastTakenInRepeatsNothing) {
   adversary_.Send(protocol::CommandsWire{.commands = {Acting(1)}});
   const Told fired = RunAndTell();
@@ -2850,13 +2944,14 @@ TEST_F(ImpossibleCommandTest, ACommandWhoseSequenceIsNotNewerThanTheLastTakenInR
   EXPECT_NEAR(after.position.z, fired.position.z, kStill);
 }
 
+// Requirements: US-15, NFR-05
 TEST_F(ImpossibleCommandTest, BytesThatAreNoMessageChangeNothing) {
   using protocol::BytesWire;
-  BytesWire truncated_state = protocol::Encode(protocol::AuthoritativeStateWire{.bodies = {{}}});
+  BytesWire truncated_state = protocol::Encode(protocol::AuthoritativeStateWire{.bodies = {{}}}).value();
   truncated_state.resize(truncated_state.size() / 2);
-  BytesWire commands_with_trailing_bytes = protocol::Encode(protocol::CommandsWire{.commands = {Acting(1)}});
+  BytesWire commands_with_trailing_bytes = protocol::Encode(protocol::CommandsWire{.commands = {Acting(1)}}).value();
   commands_with_trailing_bytes.push_back(std::byte{7});
-  BytesWire truncated_commands = protocol::Encode(protocol::CommandsWire{.commands = {Acting(1)}});
+  BytesWire truncated_commands = protocol::Encode(protocol::CommandsWire{.commands = {Acting(1)}}).value();
   truncated_commands.pop_back();
   const BytesWire garbage[] = {
       BytesWire{},
@@ -2880,6 +2975,7 @@ TEST_F(ImpossibleCommandTest, BytesThatAreNoMessageChangeNothing) {
   ExpectTheNextHonestCommandTaken(before);
 }
 
+// Requirements: US-15, NFR-05
 TEST_F(ImpossibleCommandTest, AMessageOnlyTheServerSendsChangesNothingWhenAClientSendsIt) {
   const auto bystander_health = bystander_->GetHealth();
   const EntityIdWire bystander{std::to_underlying(*bystander_->GetEntityId())};
@@ -2913,16 +3009,18 @@ TEST_F(ImpossibleCommandTest, AMessageOnlyTheServerSendsChangesNothingWhenAClien
   ExpectTheNextHonestCommandTaken(before);
 }
 
+// Requirements: US-15, NFR-05
 TEST_F(ImpossibleCommandTest, ACommandMessageWithMoreCommandsThanTheProtocolAllowsIsRefusedWhole) {
   // Encode writes no such message, so it is put together by hand: one of
   // kMaxCommandsPerMessage commands, with one more spliced in before its Seen tick.
   constexpr std::size_t kHeader = 2;  // The message type and the count.
   constexpr std::size_t kSeenTick = sizeof(augusta::tick::Tick);
-  const protocol::BytesWire encoded = protocol::Encode(MostCommands());
+  const protocol::BytesWire encoded = protocol::Encode(MostCommands()).value();
   const protocol::BytesWire extra =
-      protocol::Encode(protocol::CommandsWire{.commands = {Acting(protocol::kMaxCommandsPerMessage + 1)}});
+      protocol::Encode(protocol::CommandsWire{.commands = {Acting(augusta::primitives::kMaxCommandsPerMessage + 1)}})
+          .value();
   protocol::BytesWire too_many(encoded.begin(), encoded.end() - static_cast<std::ptrdiff_t>(kSeenTick));
-  too_many[1] = static_cast<std::byte>(protocol::kMaxCommandsPerMessage + 1);
+  too_many[1] = static_cast<std::byte>(augusta::primitives::kMaxCommandsPerMessage + 1);
   too_many.insert(too_many.end(), extra.begin() + static_cast<std::ptrdiff_t>(kHeader), extra.end());
   ASSERT_EQ(protocol::Decode(too_many).error(), protocol::DecodeError::kFieldTooLong);
   const Told before = Now();
@@ -2933,6 +3031,7 @@ TEST_F(ImpossibleCommandTest, ACommandMessageWithMoreCommandsThanTheProtocolAllo
   ExpectTheNextHonestCommandTaken(before);
 }
 
+// Requirements: US-15, NFR-05
 TEST_F(ImpossibleCommandTest, CommandsFromAPeerThatHasNotBeenAdmittedMoveNothing) {
   RawClient intruder(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(intruder.Connect(host_));
@@ -3032,6 +3131,7 @@ class ImpossibleLobbyOf : public LoopbackMatch {
 
 using ImpossibleReadyTest = ImpossibleLobbyOf<2>;
 
+// Requirements: US-15, NFR-05
 TEST_F(ImpossibleReadyTest, AReadyForAnyRosterButTheCurrentOneStartsNoMatch) {
   Session& bystander = Join();
   RawClient adversary(host_.ListenEndpoint(), RawClient::Mode::kScripted);
@@ -3055,6 +3155,7 @@ TEST_F(ImpossibleReadyTest, AReadyForAnyRosterButTheCurrentOneStartsNoMatch) {
 
 using ImpossibleRejoinTest = ImpossibleLobbyOf<3>;
 
+// Requirements: US-15, NFR-05
 TEST_F(ImpossibleRejoinTest, ASecondJoinFromAnAdmittedPlayerChangesNeitherThePlayerCountNorItsCharacter) {
   Join();
   RawClient adversary(host_.ListenEndpoint(), RawClient::Mode::kScripted);
@@ -3113,6 +3214,7 @@ TEST_F(ImpossibleRejoinTest, ASecondJoinFromAnAdmittedPlayerChangesNeitherThePla
 
 using ImpossibleJoinTest = ImpossibleLobbyOf<2>;
 
+// Requirements: US-15, NFR-05
 TEST_F(ImpossibleJoinTest, AJoinThatCanNeverPlayHereIsRefusedAndTheLobbyIsToldNothingOfIt) {
   Session& bystander = Join();
   const std::uint32_t version = FirstLobby().version;
@@ -3170,6 +3272,7 @@ constexpr std::size_t kFlood = 3 * augusta::server::kMisbehaviourThreshold;
 using MisbehaviourTest = RobustnessOf<2>;
 using LobbyMisbehaviourTest = RobustnessOf<3>;
 
+// Requirements: US-15, NFR-05
 TEST_F(MisbehaviourTest, APeerFloodingMalformedMessagesIsDisconnectedAndItsBodyLeavesWhileAnHonestClientPlaysOn) {
   augusta::logging::Init();
   Session& honest = Join();
@@ -3209,6 +3312,7 @@ TEST_F(MisbehaviourTest, APeerFloodingMalformedMessagesIsDisconnectedAndItsBodyL
 #endif
 }
 
+// Requirements: US-15, NFR-05
 TEST_F(LobbyMisbehaviourTest, AMisbehavingPlayerDisconnectedFromTheLobbyChangesTheRosterEveryClientIsTold) {
   Session& first = Join();
   Session& second = Join();
@@ -3236,6 +3340,7 @@ TEST_F(LobbyMisbehaviourTest, AMisbehavingPlayerDisconnectedFromTheLobbyChangesT
   EXPECT_EQ(raw.GetConnectionState(), ConnectionState::kDisconnected);
 }
 
+// Requirements: US-15, NFR-05
 TEST_F(MisbehaviourTest, StaleRepeatsAndCommandsInFlightAcrossAMatchEndNeverDisconnect) {
   Session& honest = Join();
   RawClient raw(host_.ListenEndpoint());
@@ -3274,6 +3379,7 @@ TEST_F(MisbehaviourTest, StaleRepeatsAndCommandsInFlightAcrossAMatchEndNeverDisc
 // reaches the misbehaviour threshold through a full match.
 using HonestClientTest = MovementTest;
 
+// Requirements: NFR-02
 TEST_F(HonestClientTest, AtAHundredMillisecondsOfLatencyAndWithPacketLossAClientStaysConnectedThroughAFullMatch) {
   augusta::logging::Init();
   constexpr int kOneWayLatencyMs = 50;
@@ -3328,6 +3434,7 @@ class AdmissionDeadlineTest : public RobustnessOf<2> {
   }
 };
 
+// Requirements: NFR-05
 TEST_F(AdmissionDeadlineTest, APeerThatConnectsAndSendsNothingIsDisconnectedOnceTheDeadlinePassesAndNotBefore) {
   augusta::logging::Init();
   const Clock::time_point before = Clock::now();
@@ -3357,6 +3464,7 @@ TEST_F(AdmissionDeadlineTest, APeerThatConnectsAndSendsNothingIsDisconnectedOnce
 #endif
 }
 
+// Requirements: NFR-05
 TEST_F(AdmissionDeadlineTest, APeerThatSendsAnythingButAJoinIsDisconnectedAtTheDeadline) {
   augusta::logging::Init();
   const Clock::time_point before = Clock::now();
@@ -3379,6 +3487,7 @@ TEST_F(AdmissionDeadlineTest, APeerThatSendsAnythingButAJoinIsDisconnectedAtTheD
   EXPECT_NE(log.find(" reason=\"not admitted in time\""), std::string::npos) << log;
 }
 
+// Requirements: NFR-05
 TEST_F(AdmissionDeadlineTest, AClientThatJoinsWithinTheDeadlineIsAdmittedAndStaysConnected) {
   Session& honest = Join();
   RawClient idle(host_.ListenEndpoint(), RawClient::Mode::kScripted);
@@ -3395,6 +3504,7 @@ TEST_F(AdmissionDeadlineTest, AClientThatJoinsWithinTheDeadlineIsAdmittedAndStay
   EXPECT_EQ(honest.GetLobby()->roster.size(), 1U);
 }
 
+// Requirements: NFR-05
 TEST_F(AdmissionDeadlineTest, ARefusedClientIsToldWhyBeforeTheDeadlineDisconnectsIt) {
   RawClient raw(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(raw.Connect(host_));
@@ -3411,6 +3521,7 @@ TEST_F(AdmissionDeadlineTest, ARefusedClientIsToldWhyBeforeTheDeadlineDisconnect
   EXPECT_EQ(refused.front().reason, protocol::JoinRefusalWire::kVersionMismatch);
 }
 
+// Requirements: NFR-05
 TEST_F(AdmissionDeadlineTest, AJoinRefusedAsTheDeadlinePassesIsStillToldBeforeTheConnectionEnds) {
   RawClient raw(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(raw.Connect(host_));
@@ -3519,6 +3630,7 @@ class FireMatchOf : public LoopbackMatch {
 
 using FireTest = FireMatchOf<1>;
 
+// Requirements: US-07
 TEST_F(FireTest, HoldingFireFiresAtTheFireRateUntilTheMagazineIsEmpty) {
   Session& client = *sessions_.front();
 
@@ -3531,6 +3643,7 @@ TEST_F(FireTest, HoldingFireFiresAtTheFireRateUntilTheMagazineIsEmpty) {
   EXPECT_EQ(ShotsOf(client).size(), kMagazine);
 }
 
+// Requirements: US-07
 TEST_F(FireTest, AOneTickPressOfFireGivesExactlyOneShot) {
   Session& client = *sessions_.front();
 
@@ -3540,6 +3653,7 @@ TEST_F(FireTest, AOneTickPressOfFireGivesExactlyOneShot) {
   EXPECT_EQ(ShotsOf(client).size(), 1U);
 }
 
+// Requirements: US-07
 TEST_F(FireTest, NoShotIsFiredWhileFireIsNotHeld) {
   Session& client = *sessions_.front();
 
@@ -3548,6 +3662,7 @@ TEST_F(FireTest, NoShotIsFiredWhileFireIsNotHeld) {
   EXPECT_TRUE(ShotsOf(client).empty());
 }
 
+// Requirements: US-08
 TEST_F(FireTest, AfterAReloadOfAnEmptyMagazineTheShotsResumeForAFullMagazine) {
   Session& client = *sessions_.front();
   Run(120, Firing());
@@ -3566,6 +3681,7 @@ TEST_F(FireTest, AfterAReloadOfAnEmptyMagazineTheShotsResumeForAFullMagazine) {
   EXPECT_EQ(ShotsOf(client).size(), 2U * kMagazine);
 }
 
+// Requirements: US-08
 TEST_F(FireTest, AReloadPressWithAFullMagazineStartsNothingAndFireContinues) {
   Session& client = *sessions_.front();
 
@@ -3578,6 +3694,7 @@ TEST_F(FireTest, AReloadPressWithAFullMagazineStartsNothingAndFireContinues) {
 
 // A Command's reload is a press (the sampler sets it on one tick), but the
 // server does not count on it: sent on every tick, it still starts one reload.
+// Requirements: US-08
 TEST_F(FireTest, ReloadSentOnEveryTickStartsOneReloadNotOneEveryTick) {
   Session& client = *sessions_.front();
   Run(120, Firing());
@@ -3594,6 +3711,7 @@ TEST_F(FireTest, ReloadSentOnEveryTickStartsOneReloadNotOneEveryTick) {
 
 using FireDuelTest = FireMatchOf<2>;
 
+// Requirements: US-07, US-10
 TEST_F(FireDuelTest, EveryClientIsToldOfAShotWithItsShooterTickOriginAndDirection) {
   Session& shooter = *sessions_[0];
   Session& bystander = *sessions_[1];
@@ -3627,6 +3745,7 @@ TEST_F(FireDuelTest, EveryClientIsToldOfAShotWithItsShooterTickOriginAndDirectio
 
 // A Shot is reliable (ADR-0044): under the packet loss of the movement tests,
 // every client still hears every round, in the order they were fired.
+// Requirements: US-07, NFR-02
 TEST_F(FireDuelTest, WithPacketLossEveryClientStillReceivesEveryShot) {
   constexpr float kLossPercent = 20.0F;
   constexpr int kTicks = 90;
@@ -3763,6 +3882,7 @@ class PredictedFireTest : public FireMatchOf<1> {
 };
 
 // US-08: the ammo count and the reload, predicted exactly as the server applies them.
+// Requirements: US-07, US-08
 TEST_F(PredictedFireTest, AClientThatFiresAndReloadsPredictsTheAmmoTheServerHasAfterEveryCommand) {
   std::vector<std::uint8_t> rounds;
   FireReloadAndFire([&](const Command& command) {
@@ -3788,6 +3908,7 @@ TEST_F(PredictedFireTest, AClientThatFiresAndReloadsPredictsTheAmmoTheServerHasA
 // The M3 stamina tests' "never corrects", for the rifle: the client runs a
 // round trip ahead of the server, and what comes back never takes a round or a
 // reload back.
+// Requirements: US-07, NFR-02
 TEST_F(PredictedFireTest, AtAHundredMillisecondsOfLatencyAClientWhoseInputsAllArriveNeverCorrectsItsRifle) {
   constexpr int kOneWayLatencyMs = 50;
   augusta::networking::SimulateNetworkConditions({.latency_ms = kOneWayLatencyMs});
@@ -3802,6 +3923,7 @@ TEST_F(PredictedFireTest, AtAHundredMillisecondsOfLatencyAClientWhoseInputsAllAr
 
 // A lost datagram's commands arrive with the next one (ADR-0038), late and
 // several at once, and still each on a tick of its own.
+// Requirements: US-07, NFR-02
 TEST_F(PredictedFireTest, WithPacketLossAClientWhoseInputsAllArriveNeverCorrectsItsRifle) {
   constexpr float kLossPercent = 20.0F;
   augusta::networking::SimulateNetworkConditions({.loss_percent = kLossPercent});
@@ -3824,6 +3946,7 @@ TEST_F(PredictedFireTest, WithPacketLossAClientWhoseInputsAllArriveNeverCorrects
 // US-09 for the recoil: a burst from the hip, a moment off the trigger that
 // recovers only part of it, a burst in ADS and a rest, all predicted a round
 // trip ahead of the server, and never taken back.
+// Requirements: US-09, NFR-02
 TEST_F(PredictedFireTest, AtAHundredMillisecondsOfLatencyAClientWhoseInputsAllArriveNeverCorrectsItsRecoil) {
   constexpr int kOneWayLatencyMs = 50;
   constexpr int kBurstTicks = 20;
@@ -3893,6 +4016,7 @@ class RecoilTest : public FireMatchOf<1> {
   std::size_t fired_ = 0;
 };
 
+// Requirements: US-09
 TEST_F(RecoilTest, TheShotsOfAHeldBurstFollowThePatternCumulativelyAndASecondBurstFromTheSameViewRepeatsThem) {
   const std::vector<Shot> first = Burst(5);
   // Long enough off the trigger for the recoil to recover.
@@ -3916,6 +4040,7 @@ TEST_F(RecoilTest, TheShotsOfAHeldBurstFollowThePatternCumulativelyAndASecondBur
   }
 }
 
+// Requirements: US-09
 TEST_F(RecoilTest, ReleasingAndFiringAgainAtOnceRestartsThePatternOnTopOfWhatHasNotRecovered) {
   Burst(3);
   Step(Command{});
@@ -3931,6 +4056,7 @@ TEST_F(RecoilTest, ReleasingAndFiringAgainAtOnceRestartsThePatternOnTopOfWhatHas
   EXPECT_EQ(shots[1].yaw - shots[0].yaw, 0.0F);
 }
 
+// Requirements: US-09, US-06
 TEST_F(RecoilTest, TheSameBurstInAdsClimbsByTheScaledKicks) {
   const std::vector<Shot> shots = Burst(4, FiringFromTheView(/*ads=*/true));
 
@@ -3946,6 +4072,7 @@ TEST_F(RecoilTest, TheSameBurstInAdsClimbsByTheScaledKicks) {
 // The Recoil offset is the rifle's, on top of the view: the client predicts it
 // and never sends it, so the server turns the body by the view alone, and adds
 // the recoil to it once, itself.
+// Requirements: US-09, US-15
 TEST_F(RecoilTest, TheViewAClientSendsNeverIncludesItsRecoil) {
   Session& client = *sessions_.front();
 
@@ -4156,6 +4283,7 @@ class HitMatchOf : public LoopbackMatch {
 
 using HitLineTest = HitMatchOf<3>;
 
+// Requirements: US-11
 TEST_F(HitLineTest, ShootingAStandingTargetsHeadTorsoAndLimbConfirmsEachToTheShooterAlone) {
   Session& shooter = Standing(0);
   Session& target = Standing(1);
@@ -4181,6 +4309,7 @@ TEST_F(HitLineTest, ShootingAStandingTargetsHeadTorsoAndLimbConfirmsEachToTheSho
 }
 
 // The third player stands behind the second, on the line the shooter fires along.
+// Requirements: US-11
 TEST_F(HitLineTest, WithTwoTargetsInLineOnlyTheNearerIsHit) {
   Session& near = Standing(1);
 
@@ -4195,6 +4324,7 @@ TEST_F(HitLineTest, WithTwoTargetsInLineOnlyTheNearerIsHit) {
 using HitDuelTest = HitMatchOf<2>;
 
 // A body 2.1 m tall standing is 1.3 m tall crouched and 0.7 m prone, and its hitboxes with it.
+// Requirements: US-11
 TEST_F(HitDuelTest, AShotWhereAStandingHeadWouldBeMissesACrouchedOrProneTargetAndOneAtItsLoweredBodyHits) {
   Session& shooter = Standing(0);
   Session& target = Standing(1);
@@ -4226,6 +4356,7 @@ TEST_F(HitDuelTest, AShotWhereAStandingHeadWouldBeMissesACrouchedOrProneTargetAn
 // The target's right arm is at +X while it faces yaw 0, and at -X once it has
 // turned half a turn: every client is told where it faces, and its hitboxes
 // turn with it.
+// Requirements: US-11
 TEST_F(HitDuelTest, AShotAtATargetsSideHitsAccordingToItsReplicatedFacing) {
   Session& shooter = Standing(0);
   Session& target = Standing(1);
@@ -4267,6 +4398,7 @@ class WalledHitTest : public HitMatchOf<2> {
   WalledHitTest() : HitMatchOf<2>(/*walled=*/true) {}
 };
 
+// Requirements: US-10, US-11
 TEST_F(WalledHitTest, ATargetBehindAWallIsNotHitAndTheWallIs) {
   Session& shooter = Standing(0);
 
@@ -4281,6 +4413,7 @@ TEST_F(WalledHitTest, ATargetBehindAWallIsNotHitAndTheWallIs) {
 using LoneHitTest = HitMatchOf<1>;
 
 // The eye is inside the shooter's own head hitbox, which every round leaves through.
+// Requirements: US-11
 TEST_F(LoneHitTest, AShooterFiringForwardWhileMovingNeverHitsItself) {
   Session& shooter = Standing(0);
   Command& command = CommandOf(shooter);
@@ -4342,6 +4475,7 @@ class LagCompensatedHitTest : public HitMatchOf<2> {
 };
 
 // US-11, ADR-0044: a shot that hits on the shooter's screen hits on the server.
+// Requirements: US-11, NFR-02
 TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairAtItsSeenTimeGetsAHitConfirmation) {
   Session& shooter = Standing(0);
   Session& target = Standing(1);
@@ -4393,7 +4527,7 @@ TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairAtI
 // 1/256 rad, about 4 cm at the partner. No one has health enough to die.
 class FullAutoMatchTest : public LoopbackMatch {
  protected:
-  static constexpr std::size_t kPlayers = augusta::protocol::kMaxPlayers;
+  static constexpr std::size_t kPlayers = augusta::primitives::kMaxPlayers;
   static constexpr float kEyeHeight = 1.6F;
   static constexpr float kPairSpacing = 5.0F;
   static constexpr float kPairDistance = 10.0F;
@@ -4443,6 +4577,7 @@ class FullAutoMatchTest : public LoopbackMatch {
 // each reports the Seen time of the update it was last sent, so the hits are lag compensated. The
 // server keeps up with every client's commands, tells every client of every
 // Shot, and every shooter of every one of its hits.
+// Requirements: US-07, US-08, US-11, NFR-01, NFR-06
 TEST_F(FullAutoMatchTest, EightClientsMoveFireFullAutoReloadAndHitEachOtherForAMatchWithNoMissedTicks) {
   constexpr int kMatchTicks = 600;             // 10 real seconds at kTestTickRate, paced.
   constexpr std::uint32_t kAckTolerance = 20;  // A few round trips' worth still in flight.
@@ -4710,6 +4845,7 @@ TEST_F(ScriptedServerTest, AClientThatIsNeverAskedKeepsOnlyTheNewestShots) {
 
 using DeathTest = HitMatchOf<3>;
 
+// Requirements: US-13
 TEST_F(DeathTest, APlayerShotToZeroHealthDiesAndEveryClientIsToldWhoKilledItAndWhere) {
   Session& shooter = Standing(0);
   Session& victim = Standing(1);
@@ -4729,6 +4865,7 @@ TEST_F(DeathTest, APlayerShotToZeroHealthDiesAndEveryClientIsToldWhoKilledItAndW
   }
 }
 
+// Requirements: US-13
 TEST_F(DeathTest, TheDeadBodyIsGoneFromEveryClientsStateFromThenOn) {
   Session& victim = Standing(1);
 
@@ -4744,6 +4881,7 @@ TEST_F(DeathTest, TheDeadBodyIsGoneFromEveryClientsStateFromThenOn) {
 
 // A Death is reliable: under the packet loss of the movement tests, every
 // client is still told of it.
+// Requirements: US-13, NFR-02
 TEST_F(DeathTest, WithPacketLossEveryClientStillReceivesTheDeath) {
   constexpr float kLossPercent = 20.0F;
   Session& victim = Standing(1);
@@ -4772,6 +4910,7 @@ TEST_F(DeathTest, WithPacketLossEveryClientStillReceivesTheDeath) {
 }
 
 // The dead player walks at the shooter, turned to face it, firing.
+// Requirements: US-13, US-15
 TEST_F(DeathTest, ADeadPlayersFireAndMovementChangeNothingOnTheServer) {
   Session& shooter = Standing(0);
   Session& victim = Standing(1);
@@ -4791,6 +4930,7 @@ TEST_F(DeathTest, ADeadPlayersFireAndMovementChangeNothingOnTheServer) {
 }
 
 // The third player stands behind the second, on the line the shooter fires along.
+// Requirements: US-13
 TEST_F(DeathTest, ABulletAimedThroughWhereTheDeadPlayerStoodHitsWhatIsBehindIt) {
   Session& victim = Standing(1);
   Session& behind = Standing(2);
@@ -4803,6 +4943,7 @@ TEST_F(DeathTest, ABulletAimedThroughWhereTheDeadPlayerStoodHitsWhatIsBehindIt) 
   EXPECT_EQ(std::to_underlying(hits_.back().target), std::to_underlying(*behind.GetEntityId()));
 }
 
+// Requirements: US-13
 TEST_F(DeathTest, ADeadPlayersOwnClientKnowsItIsDeadAndItsHealthAndStopsPredicting) {
   Session& victim = Standing(1);
   Settle(host_, Pointers(sessions_));
@@ -4833,6 +4974,7 @@ using NextMatchTest = HitMatchOf<2>;
 
 // Nothing carries over (US-03): the shooter emptied rounds and the victim died,
 // yet both start the next Match alive, at full health, with full rifles.
+// Requirements: US-03, US-14
 TEST_F(NextMatchTest, TheSecondMatchOfARunStartsWithFullHealthAndFullMagazines) {
   Session& victim = Standing(1);
   Kill(victim);
@@ -4911,6 +5053,7 @@ TEST_F(ScriptedServerTest, ADeathNobodyAskedForIsNotHandedOutInTheNextMatch) {
 }
 
 // Told of its own death, a client predicts no more, even before an update says so.
+// Requirements: US-13
 TEST_F(ScriptedServerTest, AClientToldOfItsOwnDeathStopsPredicting) {
   Settle();
   Command walk;
@@ -4938,6 +5081,108 @@ TEST_F(ScriptedLobbyTest, ADeathThatArrivesOutsideAMatchIsDropped) {
   EXPECT_TRUE(session_.TakeDeaths().empty());
   EXPECT_TRUE(session_.IsAlive());
   EXPECT_FALSE(session_.GetHealth().has_value());
+}
+
+// A reader still holding the Server view of a Match that has ended takes
+// nothing of the next one, even once it has started and sent its own, and the
+// last one's events nobody took are obsolete by then; the next Match's view
+// takes that Match's own and nothing of the last.
+TEST_F(ScriptedServerTest, AServerViewTakesTheShotsHitsAndDeathsOfItsOwnMatchOnly) {
+  const auto send_match_events = [&](augusta::tick::Tick tick) {
+    augusta::protocol::ShotWire shot = ShotBy(kScriptedEntity);
+    shot.tick = tick;
+    server_.Send(shot);
+    server_.Send(HitOn(kScriptedEntity));
+    server_.Send(DeathOf(kScriptedEntity, kScriptedEntity));
+  };
+  send_match_events(1);
+  server_.Send(augusta::protocol::MatchEndWire{});
+  Settle();
+  const std::shared_ptr<const ServerView> ended = session_.GetServerView();
+  ASSERT_EQ(ended->GetPhase(), Phase::kLobby);
+
+  server_.Send(ScriptedServer::StartOfAlone());
+  send_match_events(2);
+  Settle();
+  const std::shared_ptr<const ServerView> next = session_.GetServerView();
+  ASSERT_EQ(next->matches_started, ended->matches_started + 1);
+
+  EXPECT_TRUE(session_.TakeShots(*ended).empty());
+  EXPECT_TRUE(session_.TakeHitConfirmations(*ended).empty());
+  EXPECT_TRUE(session_.TakeDeaths(*ended).empty());
+
+  const std::vector<Shot> next_shots = session_.TakeShots(*next);
+  ASSERT_EQ(next_shots.size(), 1U);
+  EXPECT_EQ(next_shots[0].tick, 2U);
+  EXPECT_EQ(session_.TakeHitConfirmations(*next).size(), 1U);
+  EXPECT_EQ(session_.TakeDeaths(*next).size(), 1U);
+}
+
+// The Network I/O thread takes in Match after Match, each with its own Shot,
+// Hit confirmation and Death tagged with its Match's count (a sixty-fourth of
+// it for an angle, which the wire keeps exact within its range), while another
+// thread reads the Server view and takes: what it takes is never of a Match
+// before the one it last saw start, and what it takes with a view is of that
+// view's Match alone.
+TEST_F(ScriptedServerTest, AReaderThatHasSeenAMatchStartNeverTakesTheEventsOfAnEarlierOne) {
+  constexpr std::uint32_t kMatches = 100;
+  const auto tag = [](std::uint32_t match) { return static_cast<float>(match) / 64.0F; };
+  Settle();
+  const std::uint32_t first = session_.GetServerView()->matches_started;
+  for (std::uint32_t match = first; match < first + kMatches; ++match) {
+    augusta::protocol::ShotWire shot = ShotBy(kScriptedEntity);
+    shot.tick = match;
+    augusta::protocol::HitConfirmationWire hit = HitOn(kScriptedEntity);
+    hit.damage = tag(match);
+    augusta::protocol::DeathWire death = DeathOf(kScriptedEntity, kScriptedEntity);
+    death.yaw = tag(match);
+    server_.Send(shot);
+    server_.Send(hit);
+    server_.Send(death);
+    server_.Send(augusta::protocol::MatchEndWire{});
+    server_.Send(ScriptedServer::StartOfAlone());
+  }
+
+  std::atomic<bool> done{false};
+  std::atomic<int> foreign{0};
+  std::atomic<int> stale{0};
+  std::thread reader([&] {
+    while (!done.load()) {
+      const std::shared_ptr<const ServerView> view = session_.GetServerView();
+      const std::uint32_t match = view->matches_started;
+      for (const Shot& shot : session_.TakeShots(*view)) {
+        foreign += shot.tick != match ? 1 : 0;
+      }
+      for (const HitConfirmation& hit : session_.TakeHitConfirmations(*view)) {
+        foreign += hit.damage != tag(match) ? 1 : 0;
+      }
+      for (const Death& death : session_.TakeDeaths(*view)) {
+        foreign += death.yaw != tag(match) ? 1 : 0;
+      }
+      const std::uint32_t seen = session_.GetServerView()->matches_started;
+      for (const Shot& shot : session_.TakeShots()) {
+        stale += shot.tick < seen ? 1 : 0;
+      }
+      for (const HitConfirmation& hit : session_.TakeHitConfirmations()) {
+        stale += hit.damage < tag(seen) ? 1 : 0;
+      }
+      for (const Death& death : session_.TakeDeaths()) {
+        stale += death.yaw < tag(seen) ? 1 : 0;
+      }
+    }
+  });
+  const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+  while (session_.GetServerView()->matches_started < first + kMatches && std::chrono::steady_clock::now() < deadline) {
+    server_.Pump();
+    session_.PumpEvents();
+    session_.ExchangeMessages();
+  }
+  done = true;
+  reader.join();
+
+  ASSERT_EQ(session_.GetServerView()->matches_started, first + kMatches);
+  EXPECT_EQ(foreign.load(), 0);
+  EXPECT_EQ(stale.load(), 0);
 }
 
 // The example scenario's Game policy, read out of its golden server pack by the
@@ -5000,6 +5245,7 @@ class LastStandingMatchOf : public HitMatchOf<kPlayers> {
 
 using LastStandingDuelTest = LastStandingMatchOf<2>;
 
+// Requirements: US-14
 TEST_F(LastStandingDuelTest, OneKillingTheOtherEndsTheMatchAndBothAreToldTheKillerWonAndAreBackInTheLobby) {
   Session& shooter = Standing(0);
   Session& victim = Standing(1);
@@ -5016,6 +5262,7 @@ TEST_F(LastStandingDuelTest, OneKillingTheOtherEndsTheMatchAndBothAreToldTheKill
 
 // Match end is reliable: under the packet loss of the movement tests, both
 // clients are still told it, and who won.
+// Requirements: US-14, NFR-02
 TEST_F(LastStandingDuelTest, WithPacketLossBothAreStillToldTheMatchEndedAndWhoWon) {
   constexpr float kLossPercent = 20.0F;
   Session& shooter = Standing(0);
@@ -5037,6 +5284,7 @@ TEST_F(LastStandingDuelTest, WithPacketLossBothAreStillToldTheMatchEndedAndWhoWo
 }
 
 // Each takes the other to 50 of health, then both die on the same tick.
+// Requirements: US-14
 TEST_F(LastStandingDuelTest, TheLastTwoDyingOnTheSameTickIsADraw) {
   Volley();
   ASSERT_TRUE(match_ends_.empty());
@@ -5053,6 +5301,7 @@ TEST_F(LastStandingDuelTest, TheLastTwoDyingOnTheSameTickIsADraw) {
 }
 
 // The players of the next match start it afresh: full health and full magazines.
+// Requirements: US-14
 TEST_F(LastStandingDuelTest, TheNextMatchStartsOnItsOwnOnceEveryoneIsReadyAgainNoSoonerThanThePauseAfterTheLast) {
   constexpr auto kDeadline = std::chrono::seconds(15);
   Kill(Standing(1));
@@ -5091,6 +5340,7 @@ TEST_F(LastStandingDuelTest, TheNextMatchStartsOnItsOwnOnceEveryoneIsReadyAgainN
   }
 }
 
+// Requirements: US-14, NFR-07
 TEST_F(LastStandingDuelTest, EveryMatchEndIsLoggedWithItsWinnerItsDurationAndItsReason) {
   augusta::logging::Init();
   Session& shooter = Standing(0);
@@ -5106,9 +5356,10 @@ TEST_F(LastStandingDuelTest, EveryMatchEndIsLoggedWithItsWinnerItsDurationAndIts
       << log;
 }
 
-// Those who leave are out of the match (US-20): the one left standing wins.
+// Those who leave are out of the match (US-14): the one left standing wins.
 using LastStandingTrioTest = LastStandingMatchOf<3>;
 
+// Requirements: US-14
 TEST_F(LastStandingTrioTest, WhenAllButOnePlayerDisconnectTheOneLeftWins) {
   Session& survivor = Standing(2);
   Standing(0).Disconnect();
@@ -5130,7 +5381,7 @@ TEST_F(LastStandingTrioTest, WhenAllButOnePlayerDisconnectTheOneLeftWins) {
 // reload, and whose every round kicks the aim up by 1/256 rad. Five torso hits kill.
 class EightPlayerMatchTest : public LoopbackMatch {
  protected:
-  static constexpr std::size_t kPlayers = augusta::protocol::kMaxPlayers;
+  static constexpr std::size_t kPlayers = augusta::primitives::kMaxPlayers;
   static constexpr float kEyeHeight = 1.6F;
   static constexpr float kTorsoHeight = 1.2F;
   static constexpr float kSpacing = 4.0F;
@@ -5194,6 +5445,7 @@ class EightPlayerMatchTest : public LoopbackMatch {
 // every client's commands, the dead's included, to the end, which the example
 // rules decide with that player as winner, and every client is told
 // of every Death and of the winner.
+// Requirements: US-14, NFR-01, NFR-06
 TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMissedTicks) {
   constexpr int kTickLimit = 900;  // The Match ends some 540 ticks in.
   constexpr int kFirstTurnTick = 60;
@@ -5315,7 +5567,7 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
   }
 }
 
-// A Match of one, for development (ADR-0043). In v1 only rounds kill and none
+// A Match of one, for development (ADR-0043). Only rounds kill and none
 // hits its own shooter, so a lone player cannot die over the network: that its
 // death is a draw is checked through SimulationWorld
 // (example_rules_test.cpp); here, that a lone player plays on, and that a
@@ -5336,6 +5588,7 @@ class SoloLastStandingTest : public SoloMatchTest {
   SoloLastStandingTest() : SoloMatchTest(ExamplePolicy()) {}
 };
 
+// Requirements: US-14
 TEST_F(SoloLastStandingTest, ALonePlayerPlaysOnUnderTheExampleObjectives) {
   Session& client = Join();
   ASSERT_TRUE(StartMatch());
@@ -5357,6 +5610,7 @@ class SoloDrawTest : public SoloMatchTest {
   }
 };
 
+// Requirements: US-14
 TEST_F(SoloDrawTest, ASoloMatchEndedAsADrawIsToldToItsPlayerAsADrawAndItIsBackInTheLobby) {
   Session& client = Join();
   ASSERT_TRUE(StartMatch() || client.GetMatchEnd().has_value());
@@ -5597,6 +5851,7 @@ class CorrectedActionTest : public AdversaryMatch {
 // Teleport, structural: a Command has no field for a position, so all a client
 // can do is ask to move. This one also claims, in a message only the server
 // sends, to be far away, and asks for the longest movement the boundary takes.
+// Requirements: US-15, NFR-05
 TEST_F(CorrectedActionTest, AClientThatClaimsAPositionEndsWhereItsSprintTakesItAsAnHonestOneDoes) {
   const Vec3 claimed(500.0F, kFloorY, 500.0F);
   const Vec3 adversary_from = Seen(Adversary());
@@ -5618,6 +5873,7 @@ TEST_F(CorrectedActionTest, AClientThatClaimsAPositionEndsWhereItsSprintTakesItA
 
 // Speed hack: the server takes one Command a tick, and past the queue's cap
 // drops the oldest.
+// Requirements: US-15, NFR-05
 TEST_F(CorrectedActionTest, AClientSendingMoreCommandsThanTicksMovesNoFasterThanAnHonestOne) {
   const Vec3 adversary_from = Seen(Adversary());
   const Vec3 honest_from = Seen(HonestEntity());
@@ -5636,6 +5892,7 @@ TEST_F(CorrectedActionTest, AClientSendingMoreCommandsThanTicksMovesNoFasterThan
 
 // Fire rate: held fire fires at the rifle's rate whatever the client does with
 // the trigger. This one sends two Commands a tick, letting go and pressing again.
+// Requirements: US-15, NFR-05
 TEST_F(CorrectedActionTest, PressingFireAnewTwiceATickFiresNoFasterThanTheRiflesRate) {
   const Tick from = NextTick();
   HonestCommand() = Firing();
@@ -5652,6 +5909,7 @@ TEST_F(CorrectedActionTest, PressingFireAnewTwiceATickFiresNoFasterThanTheRifles
 }
 
 // Infinite ammo: the magazine is the server's.
+// Requirements: US-15, NFR-05
 TEST_F(CorrectedActionTest, HoldingFireWithAnEmptyMagazineFiresNothingMore) {
   EmptyBothMagazines();
 
@@ -5663,17 +5921,20 @@ TEST_F(CorrectedActionTest, HoldingFireWithAnEmptyMagazineFiresNothingMore) {
 }
 
 // Reload skip: no round fires on a tick of a reload.
+// Requirements: US-15, NFR-05
 TEST_F(CorrectedActionTest, FireDuringAReloadFiresNothingUntilItCompletes) {
   ExpectFirstRoundAfterAReloadWhileSending(kFire);
 }
 
 // Reload spam: a reload is never started over, and never done sooner. A press
 // once a round has left the magazine starts another, so it only costs rounds.
+// Requirements: US-15, NFR-05
 TEST_F(CorrectedActionTest, ReloadOnEveryTickRefillsNoSoonerThanTheReloadTime) {
   ExpectFirstRoundAfterAReloadWhileSending(kFire | kReload);
 }
 
 // Stamina: the server keeps the stamina, so sprint is only ever asked for.
+// Requirements: US-15, NFR-05
 TEST_F(CorrectedActionTest, SprintingWithNoStaminaIsHeldToAWalkUntilItRecoversAboveTheThreshold) {
   const Vec3 adversary_from = Seen(Adversary());
   const Vec3 honest_from = Seen(HonestEntity());
@@ -5709,6 +5970,7 @@ TEST_F(CorrectedActionTest, SprintingWithNoStaminaIsHeldToAWalkUntilItRecoversAb
 // server knows whose Command it is by the connection alone. The adversary
 // numbers its Commands on from the honest player's, walking and firing, while
 // the honest player stands still.
+// Requirements: US-15, NFR-05
 TEST_F(CorrectedActionTest, CommandsNumberedAsAnotherPlayersMoveAndFireOnlyTheSendersOwnBody) {
   const auto honest_before = Honest().GetAuthoritativeState();
   ASSERT_TRUE(honest_before.has_value());
@@ -5847,6 +6109,7 @@ class CorrectedAimTest : public AdversaryMatch {
 
 // Seen time too old: one older than the Shooter's delay's cap is judged at the
 // cap, as one reporting a Seen time exactly that old is (ADR-0044).
+// Requirements: US-15, NFR-05
 TEST_F(CorrectedAimTest, ASeenTimeOlderThanTheShootersDelaysCapIsJudgedAtTheCap) {
   Strafe();
 
@@ -5860,6 +6123,7 @@ TEST_F(CorrectedAimTest, ASeenTimeOlderThanTheShootersDelaysCapIsJudgedAtTheCap)
 
 // Seen time in the future: one newer than any update sent is judged at the newest
 // sent, the last tick's, as one reporting that update is.
+// Requirements: US-15, NFR-05
 TEST_F(CorrectedAimTest, ASeenTimeNewerThanAnyUpdateSentIsJudgedAtTheNewestSent) {
   Strafe();
 
@@ -5874,6 +6138,7 @@ TEST_F(CorrectedAimTest, ASeenTimeNewerThanAnyUpdateSentIsJudgedAtTheNewestSent)
 // Seen time fraction: the wire carries a fraction from 0 to 255/256 (augusta/grid.h),
 // so one past 1 arrives as 255/256 and one below 0 as 0, and Lag compensation
 // holds what arrives within 0 to 1 besides.
+// Requirements: US-15, NFR-05
 TEST_F(CorrectedAimTest, ASeenTimeFractionOutsideZeroToOneIsHeldWithinIt) {
   constexpr float kNearlyOne = 255.0F / 256.0F;
   // A round reporting the Seen time of 5 ticks before it, well within the Hitbox
@@ -5895,6 +6160,7 @@ TEST_F(CorrectedAimTest, ASeenTimeFractionOutsideZeroToOneIsHeldWithinIt) {
 // Spectator: a dead player's body has left the simulation, so its Commands have
 // nothing to move, turn or fire, which is what a dead honest client, sending
 // nothing, gets too.
+// Requirements: US-15, NFR-05
 TEST_F(CorrectedAimTest, ADeadPlayersCommandsMoveTurnAndFireNothing) {
   // The target shoots the adversary twice in the head, from the update it was told last.
   for (int round = 0; round < 2; ++round) {
@@ -5935,6 +6201,7 @@ TEST_F(CorrectedAimTest, ADeadPlayersCommandsMoveTurnAndFireNothing) {
 // health or a kill. The adversary fires wide twice, the second time claiming,
 // in the messages only the server sends, that its round hit and killed the
 // target and won it the Match: it gets what the first, honest, round got.
+// Requirements: US-15, NFR-05
 TEST_F(CorrectedAimTest, AClientThatClaimsAHitAKillAndAWinHurtsNoOne) {
   const auto wide = [&] { return SeenOn(AdversaryTold().tick, TargetWire()) + Vec3(5.0F, kHeadHeight, 0.0F); };
   FireAt(wide(), AdversaryTold().tick, 0.0F);
@@ -5961,6 +6228,7 @@ TEST_F(CorrectedAimTest, AClientThatClaimsAHitAKillAndAWinHurtsNoOne) {
 // spawn point, facing yaw 0, with a full magazine and none of them taken in.
 using CorrectedLobbyTest = ImpossibleLobbyOf<2>;
 
+// Requirements: US-15, NFR-05
 TEST_F(CorrectedLobbyTest, CommandsFromAPlayerInTheLobbyAffectNothing) {
   Session& honest = Join();
   RawClient adversary(host_.ListenEndpoint(), RawClient::Mode::kScripted);
@@ -5969,7 +6237,7 @@ TEST_F(CorrectedLobbyTest, CommandsFromAPlayerInTheLobbyAffectNothing) {
   ASSERT_TRUE(current.has_value());
   // Walking, turned, firing and reloading, numbered from 1, as the first Commands of a Match would be.
   protocol::CommandsWire walking;
-  for (augusta::command::Sequence sequence = 1; sequence <= protocol::kMaxCommandsPerMessage; ++sequence) {
+  for (augusta::command::Sequence sequence = 1; sequence <= augusta::primitives::kMaxCommandsPerMessage; ++sequence) {
     walking.commands.push_back({.sequence = sequence,
                                 .command = {.direction = Vec3(1.0F, 0.0F, 0.0F),
                                             .yaw = 1.0F,
@@ -6038,6 +6306,7 @@ std::uint64_t Discarded(const HostMetrics& metrics) {
          metrics.commands_outside_match.Value() + metrics.commands_before_joining.Value();
 }
 
+// Requirements: NFR-07
 TEST_F(HostCountsTest, EveryTickIsCountedWithHowItKeptToTheSchedule) {
   host_.RecordTiming({.duration = std::chrono::milliseconds(3), .late = true});
   host_.RecordTiming({.duration = std::chrono::milliseconds(30), .overrun = true, .resynchronised = true});
@@ -6053,6 +6322,7 @@ TEST_F(HostCountsTest, EveryTickIsCountedWithHowItKeptToTheSchedule) {
   EXPECT_EQ(metrics.tick_rate_hz, kTestTickRate);
 }
 
+// Requirements: NFR-07
 TEST_F(HostCountsTest, JoinsAreCountedByResultAndTheSessionsAndTheLobbyByWhoIsIn) {
   Join();
   Join();
@@ -6068,6 +6338,7 @@ TEST_F(HostCountsTest, JoinsAreCountedByResultAndTheSessionsAndTheLobbyByWhoIsIn
   EXPECT_EQ(metrics.match_in_progress.Value(), 0.0);
 }
 
+// Requirements: NFR-07
 TEST_F(HostCountsTest, AMatchIsCountedFromItsStartToItsEnd) {
   Join();
   Join();
@@ -6091,6 +6362,7 @@ TEST_F(HostCountsTest, AMatchIsCountedFromItsStartToItsEnd) {
   EXPECT_GE(durations.sum, static_cast<double>(kSettleTicks) / kTestTickRate);
 }
 
+// Requirements: NFR-07
 TEST_F(HostCountsTest, AMatchWhoseLastPlayerLeavesIsAbandonedAndEachDepartureIsCountedFromTheMatch) {
   Join();
   Join();
@@ -6109,6 +6381,7 @@ TEST_F(HostCountsTest, AMatchWhoseLastPlayerLeavesIsAbandonedAndEachDepartureIsC
   EXPECT_EQ(metrics.match_in_progress.Value(), 0.0);
 }
 
+// Requirements: NFR-07
 TEST_F(HostCountsTest, APlayerWhoLeavesTheLobbyIsCountedFromTheLobby) {
   Join().Disconnect();
   const HostMetrics& metrics = host_.Metrics();
@@ -6119,6 +6392,7 @@ TEST_F(HostCountsTest, APlayerWhoLeavesTheLobbyIsCountedFromTheLobby) {
   EXPECT_EQ(metrics.lobby_players.Value(), 0.0);
 }
 
+// Requirements: NFR-07
 TEST_F(HostCountsTest, EveryMessageIsCountedByTypeAndEveryUpdateByItsSize) {
   Join();
   Join();
@@ -6141,6 +6415,7 @@ TEST_F(HostCountsTest, EveryMessageIsCountedByTypeAndEveryUpdateByItsSize) {
   EXPECT_EQ(augusta::server::Totals(metrics).messages, metrics.messages_received.Total());
 }
 
+// Requirements: NFR-07
 TEST_F(HostCountsTest, AFloodOfMalformedMessagesIsCountedAsMisbehaviourAndItsDisconnectOnce) {
   RawClient raw(host_.ListenEndpoint());
   ASSERT_TRUE(raw.Join(host_));
@@ -6161,6 +6436,7 @@ TEST_F(HostCountsTest, AFloodOfMalformedMessagesIsCountedAsMisbehaviourAndItsDis
   EXPECT_EQ(totals.misbehaving, 1U);
 }
 
+// Requirements: NFR-07
 TEST_F(HostCountsTest, CommandsOutsideAMatchAreDiscardedAsRoutineNotAsMisbehaviour) {
   RawClient raw(host_.ListenEndpoint());
   ASSERT_TRUE(raw.Join(host_));
@@ -6174,6 +6450,7 @@ TEST_F(HostCountsTest, CommandsOutsideAMatchAreDiscardedAsRoutineNotAsMisbehavio
   EXPECT_EQ(augusta::server::Totals(metrics).stale, 2U);
 }
 
+// Requirements: NFR-07
 TEST_F(HostCountsTest, CommandsFromAPeerThatHasNotJoinedAreMisbehaviour) {
   RawClient raw(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(raw.Connect(host_));
@@ -6189,6 +6466,7 @@ TEST_F(HostCountsTest, CommandsFromAPeerThatHasNotJoinedAreMisbehaviour) {
   EXPECT_EQ(metrics.commands_outside_match.Value(), 0U);
 }
 
+// Requirements: NFR-07
 TEST_F(HostCountsTest, APeerDisconnectedForNotBeingAdmittedInTimeIsCountedBeforeAdmission) {
   RawClient raw(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(raw.Connect(host_));
@@ -6205,6 +6483,7 @@ TEST_F(HostCountsTest, APeerDisconnectedForNotBeingAdmittedInTimeIsCountedBefore
 
 using SoloHostCountsTest = MatchOf<1>;
 
+// Requirements: NFR-07
 TEST_F(SoloHostCountsTest, CommandsTheQueueTurnsAwayAreDiscardedByWhy) {
   RawClient raw(host_.ListenEndpoint());
   ASSERT_TRUE(raw.Join(host_));
@@ -6227,6 +6506,7 @@ TEST_F(SoloHostCountsTest, CommandsTheQueueTurnsAwayAreDiscardedByWhy) {
 // Commands still in a message when its sender is disconnected for misbehaving
 // are never taken in, and never counted received: every command counted
 // received is either taken in or discarded.
+// Requirements: NFR-07
 TEST_F(SoloHostCountsTest, CommandsLeftInTheMessageOfAPeerDisconnectedMidwayAreNeitherReceivedNorDiscarded) {
   RawClient raw(host_.ListenEndpoint());
   ASSERT_TRUE(raw.Join(host_));
@@ -6245,7 +6525,7 @@ TEST_F(SoloHostCountsTest, CommandsLeftInTheMessageOfAPeerDisconnectedMidwayAreN
   // 7 and 7, then the 16th misbehaviour is the second command of 8.
   raw.Send(out_of_range(7));
   raw.Send(out_of_range(7));
-  raw.Send(out_of_range(protocol::kMaxCommandsPerMessage));
+  raw.Send(out_of_range(augusta::primitives::kMaxCommandsPerMessage));
   ASSERT_TRUE(raw.ServeUntil(host_, [&] { return raw.GetConnectionState() == ConnectionState::kDisconnected; }));
 
   const HostMetrics& metrics = host_.Metrics();
@@ -6257,6 +6537,7 @@ TEST_F(SoloHostCountsTest, CommandsLeftInTheMessageOfAPeerDisconnectedMidwayAreN
 // A command that reports no Seen time is judged at the Shooter's delay's cap.
 using FireCountsTest = FireMatchOf<1>;
 
+// Requirements: NFR-07
 TEST_F(FireCountsTest, EveryRoundIsCountedWithItsShootersDelayAndARoundAtTheCapAsCapped) {
   Step(Firing());
   Run(kTicksPerRound);
@@ -6270,8 +6551,23 @@ TEST_F(FireCountsTest, EveryRoundIsCountedWithItsShootersDelayAndARoundAtTheCapA
   EXPECT_EQ(metrics.shooters_delay_capped.Value(), 1U);
 }
 
+// 800 m/s against a range of 1000 m: a round flies 75 ticks.
+// Requirements: NFR-07
+TEST_F(FireCountsTest, ARoundIsCountedInFlightUntilItsFlightEnds) {
+  const HostMetrics& metrics = host_.Metrics();
+  EXPECT_EQ(metrics.bullets_in_flight.Value(), 0.0);
+
+  Step(Firing());
+  Run(kTicksPerRound);
+  EXPECT_EQ(metrics.bullets_in_flight.Value(), 1.0);
+
+  Run(75);
+  EXPECT_EQ(metrics.bullets_in_flight.Value(), 0.0);
+}
+
 using WinnerCountsTest = LastStandingMatchOf<2>;
 
+// Requirements: NFR-07
 TEST_F(WinnerCountsTest, EveryHitIsCountedByBodyPartAndAMatchWithAWinnerAsWon) {
   ShootAt(Standing(1), Vec3(0.0F, kTorsoHeight, 0.0F));
   Kill(Standing(1));

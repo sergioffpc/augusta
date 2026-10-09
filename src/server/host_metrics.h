@@ -1,8 +1,10 @@
 #ifndef AUGUSTA_SERVER_HOST_METRICS_H_
 #define AUGUSTA_SERVER_HOST_METRICS_H_
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -16,11 +18,13 @@
 #include "lock_free_metrics.h"
 #include "match.h"
 #include "misbehaviour.h"
+#include "recording.h"
 
 /// \file
 /// What the server counts about itself, for the metrics endpoint (metrics.h)
 /// to expose: ADR-0049's catalogue of the Tick, Lobby and Match, Sessions,
-/// Misbehaviour, Network and Combat families, each named and labelled as it says.
+/// Misbehaviour, Network, Combat and Recording families, each named and labelled
+/// as it says.
 /// The Host owns one, and its Network I/O and Simulation threads write each value
 /// in place where the event happens; the endpoint's thread only collects. Every
 /// counter, gauge and histogram here is lock-free (lock_free_metrics.h), so
@@ -127,11 +131,22 @@ struct HostMetrics final : prometheus::Collectable {
   Histogram shooters_delay;
   /// Rounds whose Shooter's delay the cap held (simulation::kMaxShootersDelay).
   Counter shooters_delay_capped;
+  /// Bullets still flying after the last tick (simulation::State's bullets_in_flight).
+  Gauge bullets_in_flight;
+
+  /// The Match recording's state, written by whichever thread it changes on
+  /// (SetRecordingState) and published whole, so a scrape never sees two
+  /// states or none; nullopt while nothing is recorded.
+  std::atomic<std::optional<RecordingState>> recording_state;
+  static_assert(std::atomic<std::optional<RecordingState>>::is_always_lock_free);
 };
 
 /// The heartbeat's running totals (heartbeat.h), read from metrics' counters:
 /// the heartbeat line counts nothing of its own.
 [[nodiscard]] Activity Totals(const HostMetrics& metrics);
+
+/// Publishes state as the Match recording's.
+void SetRecordingState(HostMetrics& metrics, RecordingState state);
 
 /// Counts payload, an encoded message the server is sending, by its type and size.
 void CountSent(HostMetrics& metrics, std::span<const std::byte> payload);

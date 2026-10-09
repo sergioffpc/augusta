@@ -22,7 +22,7 @@ client and server packs must come from that one cook run, since Join refuses a
 client pack not cooked with the server pack (ADR-0019, ADR-0038). Each server
 reads its pack from its own folder of the node's shared volume,
 `/srv/augusta/asset-packs/<scenario>/<packVersion>/`, holding `server.pack` and
-the `augusta.pub` it is signed with
+the `signing.pub` it is signed with
 ([`charts/augustad/values.yaml`](../../charts/augustad/values.yaml)). A new cook
 has a new `packVersion`, so `augusta-publish` puts it in a new folder, and the
 server is pointed at it through Git, which keeps the old folder in place as the
@@ -31,7 +31,7 @@ rollback.
 ## Where packs go on the node
 
 Each server mounts its own version's folder read-only and reads `server.pack`
-and `augusta.pub` from it
+and `signing.pub` from it
 ([`deployment.yaml`](../../charts/augustad/templates/deployment.yaml)). Every
 `packVersion` an environment's `servers` name
 (`git grep -n packVersion -- clusters/`) needs, on the node:
@@ -41,26 +41,21 @@ and `augusta.pub` from it
 └── <scenario>/
     └── <packVersion>/    # the server pack's BLAKE3 hash, first 12 hex characters
         ├── server.pack   # the server pack of one cook run
-        └── augusta.pub   # the 32-byte public key that cook was signed with,
-                          # renamed to augusta.pub whatever its name was locally
+        └── signing.pub   # the 32-byte public key that cook was signed with,
+                          # renamed to signing.pub whatever its name was locally
 ```
 
 `augusta-publish` writes exactly this, and never over a folder that exists. The
 volume is a `hostPath` of type `Directory`: until the folder is there, the pod
 waits in `ContainerCreating` and its events name the missing path. A pack that
-does not verify against `augusta.pub` makes the server exit at startup, and the
+does not verify against `signing.pub` makes the server exit at startup, and the
 pod crash-loops. The client pack never goes on the node.
-
-Staging is the exception until `main` carries develop's chart (see the comment
-in [`staging.yaml`](../../clusters/onprem/apps/staging.yaml)): its one server
-reads `/srv/augusta/asset-packs/<packVersion>/server.pack` and `augusta.pub`,
-copied there by hand, in the pack format of `main`'s server.
 
 ## Prerequisites
 
 - The pack environment, built with
-  `tools\pack\scripts\bootstrap-windows.ps1 <AssetsRoot>` (Windows, ADR-0030).
-  The commands below set `$AssetsRoot` to it.
+  `tools/pack/scripts/bootstrap.sh <AssetsRoot>` (Windows, ADR-0030). The
+  commands below set `$AssetsRoot` to it.
 - The authoring content the current packs were cooked from, under
   `<AssetsRoot>\authoring\` (only the example scenario is in the repository).
 - For the release key: the offline location the release private key is kept in.
@@ -75,7 +70,7 @@ copied there by hand, in the pack format of `main`'s server.
 ## Steps
 
 1. Choose the new folder name, `<Id>`, unused on the node (for example the
-   scenario name and a date, `augusta-2026-10`), and set it up in PowerShell:
+   scenario name and a date, `firebase-2026-10`), and set it up in PowerShell:
 
     ```powershell
     $AssetsRoot = "<AssetsRoot>"
@@ -83,7 +78,7 @@ copied there by hand, in the pack format of `main`'s server.
     ```
 
 2. Generate the new keypair under a new prefix. `augusta-keygen` overwrites
-   whatever is at the prefix, so never reuse `keys\augusta` or an existing one:
+   whatever is at the prefix, so never reuse `keys\signing` or an existing one:
 
     ```powershell
     & "$AssetsRoot\bin\augusta-keygen.exe" "$AssetsRoot\keys\$Id"
@@ -96,13 +91,13 @@ copied there by hand, in the pack format of `main`'s server.
 3. Cook the scenario once, signed with the new key, into the new folder:
 
     ```powershell
-    & "$AssetsRoot\bin\augusta-pack.exe" augusta `
+    & "$AssetsRoot\bin\augusta-pack.exe" firebase `
       --signing-key "$AssetsRoot\keys\$Id.key" `
       --client-output-pack "$AssetsRoot\packs\$Id\client.pack" `
       --server-output-pack "$AssetsRoot\packs\$Id\server.pack"
     ```
 
-    Replace `augusta` with the scenario the environment runs.
+    Replace `firebase` with the scenario the environment runs.
 
 4. Verify both packs against the new public key, and check the old key no longer
    verifies them:
@@ -110,11 +105,11 @@ copied there by hand, in the pack format of `main`'s server.
     ```powershell
     & "$AssetsRoot\bin\augusta-verify.exe" "$AssetsRoot\packs\$Id\server.pack" --public-key "$AssetsRoot\keys\$Id.pub"
     & "$AssetsRoot\bin\augusta-verify.exe" "$AssetsRoot\packs\$Id\client.pack" --public-key "$AssetsRoot\keys\$Id.pub"
-    & "$AssetsRoot\bin\augusta-verify.exe" "$AssetsRoot\packs\$Id\server.pack" --public-key "$AssetsRoot\keys\augusta.pub"
+    & "$AssetsRoot\bin\augusta-verify.exe" "$AssetsRoot\packs\$Id\server.pack" --public-key "$AssetsRoot\keys\signing.pub"
     ```
 
     The first two print `OK:`; the third must exit 1 (substitute the old key's
-    path if it is not `keys\augusta.pub`).
+    path if it is not `keys\signing.pub`).
 
 5. Smoke-test locally: run `augustad` and `augustac` with configs
    ([`config/augustad.example.yaml`](../../config/augustad.example.yaml),
@@ -127,13 +122,13 @@ copied there by hand, in the pack format of `main`'s server.
    verifies both packs against the key, and that they come from one cook:
 
     ```powershell
-    & "$AssetsRoot\bin\augusta-publish.exe" augusta --host <node> `
+    & "$AssetsRoot\bin\augusta-publish.exe" firebase --host <node> `
       --public-key "$AssetsRoot\keys\$Id.pub" `
       --client-pack "$AssetsRoot\packs\$Id\client.pack" `
       --server-pack "$AssetsRoot\packs\$Id\server.pack"
     ```
 
-    Replace `augusta` with the scenario. It prints the folder it wrote and the
+    Replace `firebase` with the scenario. It prints the folder it wrote and the
     `packVersion` to serve it with.
 
 7. Point the scenario's server at the new version: on a `feature/*` branch off
@@ -175,7 +170,7 @@ kubectl -n develop logs deploy/augustad-<scenario> | grep 'event=pack_verified'
 The pod mounts the new version's folder
 (`kubectl -n develop get deploy augustad-<scenario> -o yaml | grep asset-packs`),
 and keeps running: the server exits at startup on a pack that does not verify
-against `augusta.pub`. A client with the new `client.pack` and `<Id>.pub` logs
+against `signing.pub`. A client with the new `client.pack` and `<Id>.pub` logs
 `event=pack_verified` and joins.
 
 ## Rollback / abort

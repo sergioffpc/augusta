@@ -2,12 +2,14 @@
 
 #include <chrono>
 #include <cstdint>
+#include <expected>
 #include <optional>
 #include <thread>
 #include <utility>
 
 #include <nvtx3/nvtx3.hpp>
 
+#include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
@@ -53,6 +55,19 @@ class PredictionActivity {
   float correction_m_ = 0.0F;
 };
 
+// The runtime failure session met on any thread, if any - its local
+// transport's, or a message it could not encode - for the Runner thread that
+// takes it to stop on (ADR-0033). Each is taken once, so one thread reports it.
+supervisor::WorkerResult SessionResult(Session& session) {
+  if (std::optional<failure::Failure> failed = session.TakeTransportFailure()) {
+    return std::unexpected(std::move(*failed));
+  }
+  if (std::optional<failure::Failure> broken = session.TakeInvariantFailure()) {
+    return std::unexpected(std::move(*broken));
+  }
+  return {};
+}
+
 // How long the next Tick lasts: the server's tick, paced by how many of the
 // client's commands the server last said it held (tick.h).
 tick::Clock::duration NextTickDuration(const Session& session, tick::Clock::duration nominal) {
@@ -63,13 +78,13 @@ tick::Clock::duration NextTickDuration(const Session& session, tick::Clock::dura
 }  // namespace
 
 Runner::Runner(Session& session, RunnerHooks hooks) : session_(session), hooks_(std::move(hooks)) {
-  workers_.Spawn("prediction", [this] { PredictionThreadMain(); });
-  workers_.Spawn("network", [this] { NetworkThreadMain(); });
+  workers_.Spawn("prediction", [this] { return PredictionThreadMain(); });
+  workers_.Spawn("network", [this] { return NetworkThreadMain(); });
 }
 
 Runner::~Runner() { workers_.StopAndJoin(); }
 
-std::optional<supervisor::WorkerFailure> Runner::Failure() const { return workers_.Failure(); }
+std::optional<failure::Failure> Runner::Failure() const { return workers_.Failure(); }
 
 std::optional<float> Runner::WaitForTickRate() {
   constexpr auto kPollInterval = std::chrono::milliseconds(10);
@@ -82,10 +97,10 @@ std::optional<float> Runner::WaitForTickRate() {
   return std::nullopt;
 }
 
-void Runner::PredictionThreadMain() {
+supervisor::WorkerResult Runner::PredictionThreadMain() {
   const auto tick_rate_hz = WaitForTickRate();
   if (!tick_rate_hz.has_value()) {
-    return;
+    return {};
   }
   const auto delta_time = std::chrono::duration<float>(1.0F / *tick_rate_hz);
   const auto nominal_tick = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
@@ -96,6 +111,9 @@ void Runner::PredictionThreadMain() {
     const tick::Clock::time_point tick_start = tick::Clock::now();
 
     const prediction::State state = session_.Tick(hooks_.next_command(), delta_time.count());
+    if (supervisor::WorkerResult failed = SessionResult(session_); !failed.has_value()) {
+      return failed;
+    }
     activity.Record(state, tick_start);
 
     // The tick spans its schedule, not its wake-ups, so a reader blending
@@ -108,11 +126,12 @@ void Runner::PredictionThreadMain() {
 
     std::this_thread::sleep_until(deadline);
   }
+  return {};
 }
 
 // The transport has no wait on incoming work, so the wait between rounds
 // bounds how late a received message is handled, and how long stopping takes.
-void Runner::NetworkThreadMain() {
+supervisor::WorkerResult Runner::NetworkThreadMain() {
   constexpr auto kNetworkRoundWait = std::chrono::milliseconds(1);
   session_.Connect();
   while (!workers_.StopRequested()) {
@@ -121,12 +140,17 @@ void Runner::NetworkThreadMain() {
       session_.PumpEvents();
       session_.ExchangeMessages();
     }
+    if (supervisor::WorkerResult failed = SessionResult(session_); !failed.has_value()) {
+      session_.Disconnect();
+      return failed;
+    }
     if (hooks_.on_network_round) {
       hooks_.on_network_round();
     }
     std::this_thread::sleep_for(kNetworkRoundWait);
   }
   session_.Disconnect();
+  return {};
 }
 
 }  // namespace augusta::harness

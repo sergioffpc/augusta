@@ -1,17 +1,20 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <limits>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <utility>
 #include <variant>
 #include <vector>
 
+#include "augusta/failure.h"
+#include "augusta/first_failure.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/policy_actions.h"
-#include "augusta/protocol.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
 #include "command_queue.h"
@@ -31,9 +34,11 @@ static_assert(kMaxQueuedCommands <= std::numeric_limits<std::uint8_t>::max());
 
 namespace {
 
-// What the tick of result fired and hit, and at what Shooter's delay.
+// What the tick of result fired and hit, at what Shooter's delay, and how many
+// bullets it left in flight.
 void CountCombat(HostMetrics& metrics, const simulation::TickResult& result) {
   metrics.shots.Increment(result.state.shots.size());
+  metrics.bullets_in_flight.Set(static_cast<double>(result.state.bullets_in_flight));
   for (const simulation::Hit& hit : result.state.hits) {
     metrics.hit_confirmations[hit.part].Increment();
   }
@@ -73,7 +78,7 @@ void Host::Impl::EndMatch(const std::optional<SessionId>& winner, EndReason reas
   if (!ended.has_value()) {
     return;
   }
-  SendTo(ended->players, protocol::Encode(ToWire(*ended)));
+  SendTo(ended->players, EncodeToSend(ToWire(*ended)));
   CountMatchEnded(reason, ended->winner);
   LogMatchEnded(reason, ended->winner, ended->players.size());
   SetLobbyGauges();
@@ -113,7 +118,7 @@ void Host::Impl::StartMatchIfReady() {
   match_start_tick = tick + 1;
   metrics.matches_started.Increment();
   SetLobbyGauges();
-  SendTo(sessions, protocol::Encode(ToWire(*start, spawns)));
+  SendTo(sessions, EncodeToSend(ToWire(*start, spawns)));
   LI("subsystem=serverruntime event=match_started tick={} players={}", match_start_tick, sessions.size());
 }
 
@@ -159,7 +164,16 @@ simulation::TickResult Host::Tick(float delta_time) {
   const Impl::TickInput input = impl.PrepareTick();
   const simulation::TickResult result = impl.simulation.Tick(input.commands, delta_time);
   impl.tick = result.state.tick;
-  SendTickMessages(impl.network, impl.metrics, result.state, impl.tick, input.to);
+  if (std::optional<failure::Failure> recorded = impl.simulation.Failure()) {
+    impl.invariant_failure.Record(*std::move(recorded));
+  }
+  if (auto sent = SendTickMessages(impl.network, impl.metrics, result.state, impl.tick, input.to); !sent.has_value()) {
+    // Either the tick's messages could not be encoded, and none was sent, or
+    // the local transport failed sending them: each kept where a worker takes it.
+    failure::FirstFailure& kept =
+        sent.error().code == failure::Code::kInvariantViolated ? impl.invariant_failure : impl.transport_failure;
+    kept.Record(std::move(sent.error()));
+  }
   impl.metrics.match_players_alive.Set(static_cast<double>(result.state.alive.size()));
   CountCombat(impl.metrics, result);
   LogCombat(result.state);

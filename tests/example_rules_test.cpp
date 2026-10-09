@@ -223,6 +223,7 @@ class ExampleRulesTest : public ::testing::TestWithParam<std::size_t> {
 // and that one wins.
 class LastPlayerStandingTest : public ExampleRulesTest {};
 
+// Requirements: US-14
 TEST_P(LastPlayerStandingTest, TheLastPlayerAliveWinsOnTheTickTheOthersAreAllDead) {
   const std::size_t players = GetParam();
   Arena arena(players);
@@ -238,6 +239,7 @@ TEST_P(LastPlayerStandingTest, TheLastPlayerAliveWinsOnTheTickTheOthersAreAllDea
   EXPECT_EQ(arena.Ends()[0].second.winner, Arena::Session(0));
 }
 
+// Requirements: US-14
 TEST_P(LastPlayerStandingTest, TheLastTwoDyingOnTheSameTickIsADraw) {
   const std::size_t players = GetParam();
   Arena arena(players);
@@ -253,8 +255,9 @@ TEST_P(LastPlayerStandingTest, TheLastTwoDyingOnTheSameTickIsADraw) {
   EXPECT_FALSE(arena.Ends()[0].second.winner.has_value());
 }
 
-// The players who leave are out of the Match for the win condition (US-20):
+// The players who leave are out of the Match for the win condition (US-14):
 // the one left wins, by the same rule.
+// Requirements: US-14
 TEST_P(LastPlayerStandingTest, WhenAllButOnePlayerLeaveTheOneLeftWins) {
   const std::size_t players = GetParam();
   Arena arena(players);
@@ -271,6 +274,7 @@ TEST_P(LastPlayerStandingTest, WhenAllButOnePlayerLeaveTheOneLeftWins) {
 
 // A Match everyone has left has no one for policy to decide on: the server
 // ends it on its own, as it always has.
+// Requirements: US-14
 TEST_P(LastPlayerStandingTest, AMatchEveryoneHasLeftIsNotEndedByTheRules) {
   const std::size_t players = GetParam();
   Arena arena(players);
@@ -283,6 +287,7 @@ TEST_P(LastPlayerStandingTest, AMatchEveryoneHasLeftIsNotEndedByTheRules) {
   EXPECT_TRUE(arena.Ends().empty());
 }
 
+// Requirements: US-14
 TEST_P(LastPlayerStandingTest, WhileTwoOrMoreAreAliveTheMatchGoesOn) {
   const std::size_t players = GetParam();
   Arena arena(players);
@@ -299,12 +304,13 @@ INSTANTIATE_TEST_SUITE_P(PlayerCounts, LastPlayerStandingTest, ::testing::Range<
 
 // A Match that started with one player (ADR-0043's development Match) is a
 // draw once that player dies, and goes on while it lives.
+// Requirements: US-14
 TEST_F(ExampleRulesTest, ASoloMatchGoesOnWhileItsPlayerLivesAndIsADrawWhenItDies) {
   Arena arena(1);
   arena.Wait(10 * kTickRate);
   ASSERT_TRUE(arena.Ends().empty());
 
-  // In v1 only rounds kill, and a round never hits its shooter: the round that
+  // Only rounds kill, and a round never hits its shooter: the round that
   // kills the solo player is fired by another player, 30 m off, who leaves
   // while it is in flight.
   arena.Add(1, Vec3(0.0F, 0.5F, -30.0F));

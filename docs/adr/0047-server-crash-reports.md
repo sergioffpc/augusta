@@ -84,5 +84,7 @@ pod ran.
 - Only the thread that installs the handler could have an alternate signal
   stack, so none does: a stack overflow cannot run the handler, and leaves the
   core without the logged stack.
+- The image has no shell or debugger (ADR-0054): a core is read off the node,
+  never inside the pod, and a live server is inspected with `kubectl debug`.
 - On Windows (a development build only) the same handler runs through the CRT's
   `signal`, symbolizing through the PDB; no core is written there.

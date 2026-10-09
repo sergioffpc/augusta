@@ -28,6 +28,13 @@ spec:
       # augustad stops within a tick of SIGTERM (src/server/main.cpp), so this
       # is not sized for a match to end: a rollout may cut one (ADR-0026).
       terminationGracePeriodSeconds: 10
+      # The image's own user (the Dockerfile's AUGUSTA_UID, ADR-0054): the kubelet
+      # refuses to start the server as root, and a `kubectl debug` ephemeral
+      # container runs as the server does, so it can read the server's files.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
       containers:
         - name: augustad
           image: "{{ $.Values.image.repository }}:{{ include "augustad.imageTag" $ }}"

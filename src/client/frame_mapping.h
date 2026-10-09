@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "augusta/command.h"
@@ -57,6 +58,38 @@ namespace augusta::client {
 /// characters: presentation needs nothing else of Match start.
 [[nodiscard]] std::vector<presentation::PlayerCharacter> CharactersOf(
     const std::optional<harness::MatchStart>& match_start);
+
+/// The Server view's newest Authoritative State update and its match's
+/// characters in presentation's own types, converted only when the server has
+/// sent new ones and lent to every render frame in between
+/// (presentation::FrameInput). Main/Render thread only, like the frames it lends
+/// to.
+class ConvertedServerView {
+ public:
+  /// Brings the conversions up to date with view. The Authoritative State update
+  /// is converted again only when its match (ServerView::matches_started) or its
+  /// tick differs from the last converted: within a match the Inbox only ever
+  /// publishes a newer tick. The characters are converted again only when
+  /// another match has started. The tick rate is taken as fixed: the server
+  /// tells it once, when it admits this client.
+  void Update(const harness::ServerView& view);
+
+  /// The last Update's view's newest Authoritative State update (SnapshotOf),
+  /// or null outside a match. Valid until the next Update.
+  [[nodiscard]] const presentation::WorldSnapshot* Snapshot() const;
+
+  /// The last Update's view's characters (CharactersOf), in Session order.
+  /// Valid until the next Update.
+  [[nodiscard]] std::span<const presentation::PlayerCharacter> Characters() const;
+
+ private:
+  // The match snapshot_ is of: a new one can start back at a tick already seen.
+  std::uint32_t snapshot_match_ = 0;
+  std::optional<presentation::WorldSnapshot> snapshot_;
+  // The match characters_ are of; 0 before the first.
+  std::uint32_t characters_match_ = 0;
+  std::vector<presentation::PlayerCharacter> characters_;
+};
 
 /// What view says the match this client was last in ended with, its winner named
 /// by the body it played, from that match's Match start; nullopt before the first

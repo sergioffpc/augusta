@@ -29,6 +29,7 @@ Verdict RecordTimes(MisbehaviourTracker& tracker, PeerRejection rejection, std::
   return verdict;
 }
 
+// Requirements: US-15, NFR-05
 TEST(MisbehaviourTrackerTest, BelowTheThresholdThePeerIsKept) {
   MisbehaviourTracker tracker;
 
@@ -37,6 +38,7 @@ TEST(MisbehaviourTrackerTest, BelowTheThresholdThePeerIsKept) {
   }
 }
 
+// Requirements: US-15, NFR-05
 TEST(MisbehaviourTrackerTest, AtTheThresholdADisconnectIsDecided) {
   MisbehaviourTracker tracker;
   RecordTimes(tracker, PeerRejection::kUndecodable, kMisbehaviourThreshold - 1);
@@ -44,6 +46,7 @@ TEST(MisbehaviourTrackerTest, AtTheThresholdADisconnectIsDecided) {
   EXPECT_EQ(tracker.Record(PeerRejection::kUndecodable, kStart), Verdict::kDisconnect);
 }
 
+// Requirements: US-15, NFR-05
 TEST(MisbehaviourTrackerTest, EveryNonRoutineRejectionCountsTowardTheSameThreshold) {
   MisbehaviourTracker tracker;
   const PeerRejection kinds[] = {PeerRejection::kUndecodable, PeerRejection::kNotAClientMessage,
@@ -58,6 +61,7 @@ TEST(MisbehaviourTrackerTest, EveryNonRoutineRejectionCountsTowardTheSameThresho
   EXPECT_EQ(verdict, Verdict::kDisconnect);
 }
 
+// Requirements: US-15, NFR-05
 TEST(MisbehaviourTrackerTest, RejectionsOlderThanTheWindowAgeOut) {
   MisbehaviourTracker tracker;
   RecordTimes(tracker, PeerRejection::kUndecodable, kMisbehaviourThreshold - 1);
@@ -65,6 +69,7 @@ TEST(MisbehaviourTrackerTest, RejectionsOlderThanTheWindowAgeOut) {
   EXPECT_EQ(tracker.Record(PeerRejection::kUndecodable, kStart + kMisbehaviourWindow), Verdict::kKeep);
 }
 
+// Requirements: US-15, NFR-05
 TEST(MisbehaviourTrackerTest, RejectionsStillInsideTheWindowCount) {
   MisbehaviourTracker tracker;
   RecordTimes(tracker, PeerRejection::kUndecodable, kMisbehaviourThreshold - 1);
@@ -73,6 +78,7 @@ TEST(MisbehaviourTrackerTest, RejectionsStillInsideTheWindowCount) {
             Verdict::kDisconnect);
 }
 
+// Requirements: US-15, NFR-05
 TEST(MisbehaviourTrackerTest, ASteadyTrickleBelowTheRateNeverDisconnects) {
   MisbehaviourTracker tracker;
   // A little slower than one fewer than the threshold per window, forever.
@@ -85,6 +91,7 @@ TEST(MisbehaviourTrackerTest, ASteadyTrickleBelowTheRateNeverDisconnects) {
   }
 }
 
+// Requirements: US-15, NFR-05
 TEST(MisbehaviourTrackerTest, RoutineRejectionsNeverCount) {
   MisbehaviourTracker tracker;
   const PeerRejection routine[] = {PeerRejection::kStaleCommand, PeerRejection::kCommandsOutsideMatch,
@@ -98,6 +105,7 @@ TEST(MisbehaviourTrackerTest, RoutineRejectionsNeverCount) {
   EXPECT_EQ(RecordTimes(tracker, PeerRejection::kStaleCommand, kMisbehaviourThreshold), Verdict::kKeep);
 }
 
+// Requirements: US-15, NFR-05
 TEST(MisbehaviourTrackerTest, OnlyTheNonRoutineRejectionsAreMisbehaviour) {
   EXPECT_TRUE(IsMisbehaviour(PeerRejection::kUndecodable));
   EXPECT_TRUE(IsMisbehaviour(PeerRejection::kNotAClientMessage));

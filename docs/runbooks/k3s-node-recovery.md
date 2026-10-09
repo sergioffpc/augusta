@@ -27,7 +27,7 @@ needs no deploy key.
 
 The only state not in Git is the asset packs on the node's shared volume:
 `/srv/augusta/asset-packs/<scenario>/<packVersion>/server.pack` and
-`augusta.pub` for each server the `HelmRelease` values in
+`signing.pub` for each server the `HelmRelease` values in
 `clusters/onprem/apps/` list
 ([`charts/augustad/values.yaml`](../../charts/augustad/values.yaml)). Without
 them the servers never start; the layout, and how a missing folder shows, is
@@ -187,10 +187,9 @@ kubectl -n monitoring get pods
 - The node is `Ready`; every Flux source, Kustomization and `HelmRelease` is
   `Ready`.
 - Every server logged `event=pack_verified` and keeps running.
-- Each server's Service is on the node port its `HelmRelease` pins (`develop`'s
-  `augusta` on 30777). A server without one gets a node port from Kubernetes,
-  which a rebuild changes: give LAN clients the new one from the `get svc`
-  command.
+- Each server's Service is on the node port its `HelmRelease` pins, in its
+  environment's range: `develop`'s 30700-30799 (`firebase` on 30700),
+  `staging`'s 30800-30899 (`firebase` on 30800).
 - Every pod in `monitoring` is `Running`, and Grafana answers on node port 30300
   (pinned in `infrastructure/monitoring.yaml`).
 

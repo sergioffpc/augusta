@@ -1,6 +1,8 @@
 #include "augusta/ballistics.h"
 
+#include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <optional>
 #include <span>
@@ -43,6 +45,14 @@ std::optional<float> CrossingFraction(const math::Vec3& from, const math::Vec3& 
 
 }  // namespace
 
+std::uint32_t MaxFlightSteps(float step_seconds) {
+  // A thousandth of a step off, so a step of 1/rate seconds a float rounds down
+  // does not count one more step than kMaxFlightTime holds.
+  constexpr double kRoundingSlack = 0.001;
+  const double steps = std::chrono::duration<double>(kMaxFlightTime).count() / step_seconds;
+  return static_cast<std::uint32_t>(std::ceil(steps - kRoundingSlack));
+}
+
 World::World() = default;
 
 BulletHandle World::Fire(const math::Vec3& origin, const math::Vec3& direction, float initial_speed,
@@ -61,11 +71,7 @@ StepResult World::Step(BulletHandle handle, float delta_time, const physics::Wor
   Bullet& bullet = bullets_.at(handle);
   BulletState& state = bullet.state;
   const math::Vec3 from = state.position;
-
-  // Semi-implicit Euler: the new velocity moves the bullet, so the drop
-  // over a flight does not depend on how its ticks are split.
-  state.velocity.y -= bullet.config.gravity * delta_time;
-  state.position += state.velocity * delta_time;
+  state = Advanced(bullet, delta_time);
 
   StepResult result;
   result.state = state;
@@ -92,13 +98,29 @@ StepResult World::Step(BulletHandle handle, float delta_time, const physics::Wor
     }
   }
 
-  if (!nearest && math::Length(state.position - bullet.origin) > bullet.config.max_range) {
+  ++bullet.steps;
+  if (!nearest && (math::Length(state.position - bullet.origin) > bullet.config.max_range ||
+                   bullet.steps >= MaxFlightSteps(delta_time))) {
     result.outcome = Outcome::kExpired;
   }
   if (result.outcome != Outcome::kInFlight) {
     bullets_.erase(handle);
   }
   return result;
+}
+
+Segment World::NextSegment(BulletHandle handle, float delta_time) const {
+  const Bullet& bullet = bullets_.at(handle);
+  return Segment{.from = bullet.state.position, .to = Advanced(bullet, delta_time).position};
+}
+
+BulletState World::Advanced(const Bullet& bullet, float delta_time) {
+  // Semi-implicit Euler: the new velocity moves the bullet, so the drop
+  // over a flight does not depend on how its ticks are split.
+  BulletState state = bullet.state;
+  state.velocity.y -= bullet.config.gravity * delta_time;
+  state.position += state.velocity * delta_time;
+  return state;
 }
 
 }  // namespace augusta::ballistics

@@ -28,7 +28,7 @@ import nacl.bindings
 
 from pack.wire import ByteWriter
 
-# Pragmatic v1 sanity limits (wire_format.h/assets.cpp) - narrowing
+# Pragmatic sanity limits (wire_format.h/assets.cpp) - narrowing
 # guards, not just validation: every limit here is comfortably under
 # UINT32_MAX.
 MAX_PATH_LENGTH = 4096
@@ -107,7 +107,7 @@ ED25519_SIGNATURE_SIZE = 64
 
 
 class EncodeError(ValueError):
-    """Raised when a blob exceeds a v1 size limit."""
+    """Raised when a blob exceeds a size limit."""
 
 
 @dataclass

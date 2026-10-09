@@ -26,11 +26,17 @@ spec:
         kind: GitRepository
         name: augusta-develop
   values:
+    # develop's node ports (charts/augustad values.yaml), apart from
+    # staging's on the same node.
+    service:
+      nodePortRange:
+        first: 30700
+        last: 30799
     # A server per scenario (ADR-0026), each running the pack version
     # augusta-publish printed for it.
     servers:
-      augusta:
-        packVersion: "88d2bfc69e91"
+      firebase:
+        packVersion: "9d0c7edd5b34"
         # Pinned (rather than left to Kubernetes to assign) so this server
         # has a stable address for LAN clients to connect to.
-        nodePort: 30777
+        nodePort: 30700
