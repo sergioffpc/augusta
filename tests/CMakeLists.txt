@@ -679,6 +679,7 @@ if(WIN32)
       augusta_config
       augusta_failure
       augusta_harness
+      augusta_protocol
       GTest::gtest
       GTest::gtest_main
   )

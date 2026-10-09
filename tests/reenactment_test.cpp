@@ -199,6 +199,14 @@ TEST(DueTickTest, ACommandIsNeverHandedBeforeItCanReachTheServer) {
   EXPECT_EQ(DueTick(100, 0, 0), 101U);
 }
 
+TEST(RoundTripTicksTest, APingIsCountedInWholeTicksRoundedUp) {
+  EXPECT_EQ(augusta::harness::RoundTripTicks(0, kTickRate), 0U);
+  EXPECT_EQ(augusta::harness::RoundTripTicks(-1, kTickRate), 0U);
+  EXPECT_EQ(augusta::harness::RoundTripTicks(1, kTickRate), 1U);
+  EXPECT_EQ(augusta::harness::RoundTripTicks(50, kTickRate), 3U);
+  EXPECT_EQ(augusta::harness::RoundTripTicks(100, 30), 3U);
+}
+
 // --- Pacing ---
 
 // commands, one at each of offsets, walking at 1, 2, 3 ...

@@ -35,6 +35,13 @@ includes client Input. A tool with a settings file of its own (`augusta-swarm`'s
 functions (`ReadConfigValues`, `RequirePath`, ...), but declares its keys and
 their meaning itself, next to it: the module holds no key of a tool.
 
+**Extended by ADR-0050**: `augustac` also takes `--reenact <capture>` and
+`--player <n>`, together, which make one run a Captured player: a capture is
+chosen for one run, not kept as a setting. An executable names such options of
+its own to the shared parser (`augusta_client_config`'s
+`kClientCommandLineOptions`), which lists them in its usage; every other
+setting still comes from the file.
+
 YAML because the repository already keeps its configuration in JSON and YAML (CI
 workflows, Helm charts, cluster manifests, `vcpkg.json`, CMake presets): a third
 format for one more kind of config is one more thing to know, not a better tool.

@@ -67,6 +67,15 @@ tick::Tick DueTick(tick::Tick newest_tick, std::uint64_t ahead, tick::Tick round
   return newest_tick + std::max<std::uint64_t>(ahead, round_trip_ticks + 1);
 }
 
+tick::Tick RoundTripTicks(int ping_ms, std::uint8_t tick_rate_hz) {
+  constexpr std::uint64_t kMillisecondsPerSecond = 1000;
+  if (ping_ms <= 0) {
+    return 0;
+  }
+  const std::uint64_t scaled = static_cast<std::uint64_t>(ping_ms) * tick_rate_hz;
+  return (scaled + kMillisecondsPerSecond - 1) / kMillisecondsPerSecond;
+}
+
 Pacer::Pacer(std::vector<CapturedCommand> commands, std::uint8_t tick_rate_hz)
     : commands_(std::move(commands)), max_held_ticks_(command::HeldTicks(tick_rate_hz)) {}
 
