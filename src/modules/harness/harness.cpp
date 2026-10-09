@@ -50,7 +50,11 @@ struct Session::Impl {
   Impl(const SessionConfig& config, prediction::World world)
       : server(config.server),
         join_request{
-            .engine_version = config.engine_version, .client_pack = config.client_pack, .character = config.character},
+            .engine_version = config.engine_version,
+            .client_pack = config.client_pack,
+            .character = config.character,
+            .spawn = config.spawn,
+        },
         network(config.faults),
         commands(std::move(world)) {}
 
@@ -85,6 +89,8 @@ std::string_view DescribeJoinRefusal(JoinRefusal reason) {
       return "a match is in progress: try again once it ends";
     case JoinRefusal::kPackMismatch:
       return "client pack does not match the server's";
+    case JoinRefusal::kReenactmentsNotAccepted:
+      return "the server does not take reenactments: it needs simulation.reenactments on";
   }
   return "unknown refusal";
 }
@@ -232,6 +238,8 @@ std::optional<float> Session::GetHealth() const {
 }
 
 std::optional<EntityId> Session::GetEntityId() const { return impl_->inbox.View()->OwnEntity(); }
+
+command::Sequence Session::NextSequence() const { return impl_->commands.NextSequence(); }
 
 prediction::State Session::Tick(const command::Command& command, float delta_time) {
   Impl& impl = *impl_;

@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <span>
 #include <string>
 
@@ -10,6 +11,7 @@
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
+#include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
@@ -40,6 +42,8 @@ struct JoinRequest {
   assets::PackHash client_pack{};
   /// The character it asks to play, by its name in the scenario's manifest.
   std::string character;
+  /// Where it asks to spawn, as a Captured player (ADR-0050); nullopt for anyone else.
+  std::optional<math::Vec3> spawn = std::nullopt;
 };
 
 /// One tick's command under the sequence this client gave it.
@@ -94,8 +98,9 @@ struct SequencedCommand {
 /// hash as the protocol carries it.
 [[nodiscard]] protocol::PackHashWire ToWire(const assets::PackHash& hash);
 
-/// request as the protocol carries it.
-[[nodiscard]] protocol::JoinRequestWire ToWire(const JoinRequest& request);
+/// request as the protocol carries it: a Reenact request when it names a
+/// spawn, a Join request otherwise.
+[[nodiscard]] protocol::MessageWire ToWire(const JoinRequest& request);
 
 /// command as the protocol carries it in a message whose Seen tick is
 /// seen_tick: its own Seen time's tick as how far before that it is, no further

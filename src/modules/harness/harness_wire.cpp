@@ -80,6 +80,8 @@ JoinRefusal FromWire(protocol::JoinRefusalWire reason) {
       return JoinRefusal::kMatchInProgress;
     case protocol::JoinRefusalWire::kPackMismatch:
       return JoinRefusal::kPackMismatch;
+    case protocol::JoinRefusalWire::kReenactmentsNotAccepted:
+      return JoinRefusal::kReenactmentsNotAccepted;
   }
   // Decode admits only the reasons above.
   std::unreachable();
@@ -213,7 +215,15 @@ protocol::PackHashWire ToWire(const assets::PackHash& hash) {
   return result;
 }
 
-protocol::JoinRequestWire ToWire(const JoinRequest& request) {
+protocol::MessageWire ToWire(const JoinRequest& request) {
+  if (request.spawn.has_value()) {
+    return protocol::ReenactRequestWire{
+        .engine_version = request.engine_version,
+        .client_pack = ToWire(request.client_pack),
+        .character = request.character,
+        .spawn = *request.spawn,
+    };
+  }
   return protocol::JoinRequestWire{
       .engine_version = request.engine_version,
       .client_pack = ToWire(request.client_pack),

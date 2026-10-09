@@ -607,6 +607,23 @@ TEST_F(JoinTest, ARefusedClientReportsTheRefusalAsItsFailure) {
   EXPECT_EQ(failure->refusal, JoinRefusal::kVersionMismatch);
 }
 
+// Requirements: US-21
+TEST_F(JoinTest, AClientThatAsksForItsSpawnIsRefusedByAServerThatTakesNoReenactments) {
+  sessions_.push_back(std::make_unique<Session>(SessionConfig{.server = host_.ListenEndpoint(),
+                                                              .client_pack = ClientPack(1),
+                                                              .character = kCharacter,
+                                                              .spawn = Vec3(1.0F, 0.0F, 1.0F)},
+                                                EmptyWorld()));
+  Session& client = *sessions_.back();
+  client.Connect();
+
+  ASSERT_TRUE(WaitForAnswers());
+
+  EXPECT_EQ(client.GetRefusal(), JoinRefusal::kReenactmentsNotAccepted);
+  EXPECT_EQ(client.GetFailure().value().refusal, JoinRefusal::kReenactmentsNotAccepted);
+  EXPECT_FALSE(client.GetSessionId().has_value());
+}
+
 // Requirements: US-01, NFR-08
 TEST_F(JoinTest, AClientWithAnotherClientPackIsRefusedForThePack) {
   Session& client = AddClient(std::string(augusta::EngineVersion()), kCharacter, ClientPack(2));
@@ -3208,7 +3225,7 @@ class ImpossibleLobbyOf : public LoopbackMatch {
 
   // Connects adversary, has it send request, and runs the network until the
   // server has answered it.
-  bool AskToJoin(RawClient& adversary, const protocol::JoinRequestWire& request) {
+  bool AskToJoin(RawClient& adversary, const protocol::MessageWire& request) {
     if (!adversary.Connect(host_)) {
       return false;
     }
@@ -3382,6 +3399,31 @@ TEST_F(ImpossibleJoinTest, AJoinThatCanNeverPlayHereIsRefusedAndTheLobbyIsToldNo
   const augusta::harness::Lobby lobby = FirstLobby();
   EXPECT_EQ(lobby.version, version);
   EXPECT_EQ(lobby.roster.size(), 1U);
+  EXPECT_EQ(bystander.GetPhase(), Phase::kLobby);
+}
+
+// ADR-0050: a Reenact request names its own spawn, which only a server with
+// simulation.reenactments takes; any other refuses it, whatever else it holds.
+// Requirements: US-15, NFR-05, US-21
+TEST_F(ImpossibleJoinTest, AReenactRequestToAServerThatTakesNoneIsRefusedAndTheLobbyIsToldNothingOfIt) {
+  Session& bystander = Join();
+  const std::uint32_t version = FirstLobby().version;
+  const protocol::JoinRequestWire honest = HonestJoinRequest();
+  RawClient adversary(host_.ListenEndpoint(), RawClient::Mode::kScripted);
+
+  ASSERT_TRUE(AskToJoin(adversary, protocol::ReenactRequestWire{.engine_version = honest.engine_version,
+                                                                .client_pack = honest.client_pack,
+                                                                .character = honest.character,
+                                                                .spawn = Vec3(3.0F, 0.0F, -7.0F)}));
+  RunLobby({&adversary});
+
+  const auto refused = adversary.ReceivedOf<protocol::JoinRefusedWire>();
+  ASSERT_EQ(refused.size(), 1U);
+  EXPECT_EQ(refused.front().reason, protocol::JoinRefusalWire::kReenactmentsNotAccepted);
+  EXPECT_TRUE(adversary.ReceivedOf<protocol::JoinAcceptedWire>().empty());
+  EXPECT_TRUE(adversary.ReceivedOf<protocol::LobbyWire>().empty());
+  EXPECT_EQ(FirstLobby().version, version);
+  EXPECT_EQ(FirstLobby().roster.size(), 1U);
   EXPECT_EQ(bystander.GetPhase(), Phase::kLobby);
 }
 
