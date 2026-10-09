@@ -72,7 +72,7 @@ struct HostConfig {
   assets::PackHash server_pack{};
   /// The directory to capture every Match into (ADR-0050), created if
   /// missing; empty captures none.
-  std::filesystem::path capture;
+  std::filesystem::path capture_directory;
   /// For a test: asked at listener setup, at every send and receive
   /// (networking.h) and at the recording's write and flush, so the transport
   /// or the disk fails there; null otherwise. Must outlive the Host.
@@ -87,7 +87,7 @@ class Host {
   /// triangle list) and the scenario's Game policy (none by default), and starts
   /// listening (throws networking::TransportFailure if the address can't be
   /// bound, or std::runtime_error if HostConfig::recording can't be written or
-  /// HostConfig::capture can't be created).
+  /// HostConfig::capture_directory can't be created).
   /// Content is loaded from the server pack by the caller (see content.h).
   Host(const HostConfig& config, Scenario scenario, scripting::Engine policy = {});
   ~Host();

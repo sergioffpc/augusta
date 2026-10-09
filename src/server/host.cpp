@@ -72,17 +72,17 @@ RecordedSimulation BuildRecordedSimulation(const HostConfig& config, const Scena
 // What captures each Match into the directory config names, if it names one
 // (ADR-0050), creating it first; none otherwise.
 std::unique_ptr<Capturer> BuildCapturer(const HostConfig& config, const assets::PackHash& client_pack) {
-  if (config.capture.empty()) {
+  if (config.capture_directory.empty()) {
     return nullptr;
   }
   std::error_code error;
-  std::filesystem::create_directories(config.capture, error);
+  std::filesystem::create_directories(config.capture_directory, error);
   if (error) {
     throw std::runtime_error(std::format("server::Host: cannot create the capture directory {}: {}",
-                                         config.capture.string(), error.message()));
+                                         config.capture_directory.string(), error.message()));
   }
-  LI("subsystem=capture event=capture_enabled directory={}", config.capture.string());
-  return std::make_unique<Capturer>(config.capture,
+  LI("subsystem=capture event=capture_enabled directory={}", config.capture_directory.string());
+  return std::make_unique<Capturer>(config.capture_directory,
                                     CaptureHeader{.engine_version = std::string(EngineVersion()),
                                                   .server_pack = config.server_pack,
                                                   .client_pack = client_pack,

@@ -116,7 +116,7 @@ class RecordingFailureTest : public ::testing::Test {
         .recording = mode.has_value() ? path_ : std::filesystem::path{},
         .recording_mode = mode.value_or(RecordingMode::kOptional),
         .server_pack = {},
-        .capture = {},
+        .capture_directory = {},
         .faults = &faults_,
     };
   }

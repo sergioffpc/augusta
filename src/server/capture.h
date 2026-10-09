@@ -230,6 +230,10 @@ class Capturer {
   [[nodiscard]] CapturedPlayer PlayerOf(EntityId entity) const;
   // Offset of tick from the Match's first.
   [[nodiscard]] std::uint32_t OffsetOf(tick::Tick tick) const;
+  // encoded, a record EncodeToCapture made, if a capture's frame holds it.
+  // Otherwise nullopt: a broken invariant is kept as Failure, and a record too
+  // long stops the Match's capture.
+  std::optional<std::vector<std::byte>> Admit(std::expected<std::vector<std::byte>, failure::Failure> encoded);
   void Queue(const CaptureRecord& record);
 
   const std::filesystem::path directory_;

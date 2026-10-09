@@ -13,7 +13,7 @@ import struct
 
 MAGIC = b"AUGCAP\r\n"
 # The format version this reader reads (protocol::kCaptureFormatVersion).
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 _HEADER = 1
 _JOIN = 2
@@ -49,8 +49,8 @@ class CapturedPlayer:
 
 
 @dataclasses.dataclass
-class Capture:
-    """A capture's header and what its records say."""
+class CaptureHeader:
+    """What a captured Match ran on and when it started."""
 
     format_version: int
     engine_version: str
@@ -58,6 +58,13 @@ class Capture:
     client_pack: bytes
     tick_rate_hz: int
     started: datetime.datetime
+
+
+@dataclasses.dataclass
+class Capture:
+    """A capture's header and what its records say."""
+
+    header: CaptureHeader
     players: list[CapturedPlayer]
     # The offset of the last record, its Match end's if it has one.
     last_offset: int
@@ -129,7 +136,7 @@ def _frames(data: bytes) -> tuple[list[bytes], bool]:
     return records, False
 
 
-def _read_header(payload: bytes) -> dict:
+def _read_header(payload: bytes) -> CaptureHeader:
     reader = _Reader(payload)
     if reader.u8() != _HEADER:
         raise CaptureError("the capture does not start with its header")
@@ -139,16 +146,16 @@ def _read_header(payload: bytes) -> dict:
             f"capture format version {format_version}, this reader reads "
             f"{FORMAT_VERSION}"
         )
-    header = {
-        "format_version": format_version,
-        "engine_version": reader.string(),
-        "server_pack": reader.take(_PACK_HASH_SIZE),
-        "client_pack": reader.take(_PACK_HASH_SIZE),
-        "tick_rate_hz": reader.u8(),
-        "started": datetime.datetime.fromtimestamp(
+    header = CaptureHeader(
+        format_version=format_version,
+        engine_version=reader.string(),
+        server_pack=reader.take(_PACK_HASH_SIZE),
+        client_pack=reader.take(_PACK_HASH_SIZE),
+        tick_rate_hz=reader.u8(),
+        started=datetime.datetime.fromtimestamp(
             reader.i64() / 1000, tz=datetime.UTC
         ),
-    }
+    )
     reader.end()
     return header
 
@@ -165,7 +172,7 @@ def read_capture(data: bytes) -> Capture:
     if not records:
         raise CaptureError("the capture has no header")
     capture = Capture(
-        **_read_header(records[0]),
+        header=_read_header(records[0]),
         players=[],
         last_offset=0,
         ended=False,
@@ -184,9 +191,15 @@ def read_capture(data: bytes) -> Capture:
         reader = _Reader(payload)
         kind = reader.u8()
         offset = reader.u32()
+        # As src/server/capture.cpp's Follows: Joins first, at 0, in order,
+        # then the events in tick order, and nothing after the Match end.
+        if capture.ended or offset < capture.last_offset:
+            raise CaptureError("a record is out of order")
         capture.last_offset = offset
         if kind == _JOIN:
             number = reader.u8()
+            if number != len(capture.players) + 1 or offset != 0:
+                raise CaptureError(f"player {number} joins out of order")
             capture.players.append(
                 CapturedPlayer(
                     number=number,
@@ -218,17 +231,18 @@ def read_capture(data: bytes) -> Capture:
 
 def format_capture(capture: Capture) -> list[str]:
     """What `augusta-inspect` prints for capture, line by line."""
+    header = capture.header
     ticks = capture.last_offset + 1
-    seconds = ticks / capture.tick_rate_hz if capture.tick_rate_hz else 0.0
+    seconds = ticks / header.tick_rate_hz if header.tick_rate_hz else 0.0
     lines = [
         "Match capture",
-        f"  format version  {capture.format_version}",
-        f"  engine version  {capture.engine_version}",
-        f"  server pack     {capture.server_pack.hex()}",
-        f"  client pack     {capture.client_pack.hex()}",
-        f"  tick rate       {capture.tick_rate_hz} Hz",
+        f"  format version  {header.format_version}",
+        f"  engine version  {header.engine_version}",
+        f"  server pack     {header.server_pack.hex()}",
+        f"  client pack     {header.client_pack.hex()}",
+        f"  tick rate       {header.tick_rate_hz} Hz",
         "  started         "
-        + capture.started.isoformat(timespec="milliseconds"),
+        + header.started.isoformat(timespec="milliseconds"),
         f"  length          {ticks} ticks, {seconds:.2f} s",
         "",
         f"Players ({len(capture.players)}; --player takes the number)",

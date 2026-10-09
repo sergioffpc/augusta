@@ -23,11 +23,11 @@ SEED = (
 def test_a_capture_the_server_wrote_reads_as_it_was_played():
     read = capture.read_capture(SEED.read_bytes())
 
-    assert read.engine_version == "2.0.1"
-    assert read.server_pack == bytes([1]) * 32
-    assert read.client_pack == bytes([2]) * 32
-    assert read.tick_rate_hz == 60
-    assert read.started.isoformat() == "2026-10-09T10:15:00.123000+00:00"
+    assert read.header.engine_version == "2.0.1"
+    assert read.header.server_pack == bytes([1]) * 32
+    assert read.header.client_pack == bytes([2]) * 32
+    assert read.header.tick_rate_hz == 60
+    assert read.header.started.isoformat() == "2026-10-09T10:15:00.123000+00:00"
     assert [(p.number, p.session, p.character) for p in read.players] == [
         (1, 7, "soldier"),
         (2, 8, "sniper"),
@@ -72,3 +72,11 @@ def test_inspect_prints_a_capture_it_tells_from_a_pack(capsys, tmp_path):
         "died at 5, killed by 1  left at 6" in out
     )
     assert "Match end  at 6, won by 1" in out
+
+
+def test_a_record_after_the_match_end_is_refused():
+    # A Leave of player 1 at offset 9: type, offset, player, after its length.
+    data = SEED.read_bytes() + bytes([6, 4, 9, 0, 0, 0, 1])
+
+    with pytest.raises(capture.CaptureError):
+        capture.read_capture(data)

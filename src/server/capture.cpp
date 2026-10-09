@@ -40,12 +40,11 @@ namespace augusta::server {
 
 namespace {
 
-// Decision: whether next may follow the records of capture so far (ADR-0050):
-// every Join first, numbered from 1 in order, then the events in tick order,
-// each naming a player a Join did, and nothing after the Match end.
-bool Follows(const Capture& capture, const CaptureRecord& next) {
-  const auto joins = static_cast<std::size_t>(std::ranges::count_if(
-      capture.records, [](const CaptureRecord& record) { return std::holds_alternative<CapturedJoin>(record.event); }));
+// Decision: whether next may follow the records of capture so far, joins of
+// them Joins (ADR-0050): every Join first, numbered from 1 in order, then the
+// events in tick order, each naming a player a Join did, and nothing after
+// the Match end.
+bool Follows(const Capture& capture, std::size_t joins, const CaptureRecord& next) {
   if (!capture.records.empty()) {
     const CaptureRecord& last = capture.records.back();
     if (next.offset < last.offset || std::holds_alternative<CapturedMatchEnd>(last.event)) {
@@ -134,6 +133,7 @@ std::expected<Capture, CaptureError> ReadCapture(std::istream& in) {
     return std::unexpected(header.error());
   }
   Capture capture{.header = *std::move(header), .records = {}, .torn = false};
+  std::size_t joins = 0;
   protocol::BytesWire payload;
   for (Frame frame = ReadFrame(in, kCaptureFrames, payload); frame != Frame::kEnd;
        frame = ReadFrame(in, kCaptureFrames, payload)) {
@@ -149,9 +149,10 @@ std::expected<Capture, CaptureError> ReadCapture(std::istream& in) {
     }
     const auto wire = protocol::DecodeCaptureRecord(payload);
     std::optional<CaptureRecord> record = wire.has_value() ? FromWire(*wire) : std::nullopt;
-    if (!record.has_value() || !Follows(capture, *record)) {
+    if (!record.has_value() || !Follows(capture, joins, *record)) {
       return std::unexpected(CaptureError::kMalformed);
     }
+    joins += std::holds_alternative<CapturedJoin>(record->event) ? 1 : 0;
     capture.records.push_back(*std::move(record));
   }
   return capture;
@@ -217,7 +218,7 @@ class Capturer::Writer {
       // Dropping this record and going on would leave a capture missing one
       // in its middle; stopping here keeps every one before it.
       if (records_queued_ >= capacity_) {
-        StopLocked(match, CaptureStop::kQueueFull, {});
+        StopLocked(match, CaptureStop::kQueueFull);
         return;
       }
       ++records_queued_;
@@ -228,7 +229,7 @@ class Capturer::Writer {
 
   void Stop(std::uint64_t match, CaptureStop stop) {
     const std::scoped_lock lock(mutex_);
-    StopLocked(match, stop, {});
+    StopLocked(match, stop);
   }
 
   void WaitUntilWritten() {
@@ -238,6 +239,16 @@ class Capturer::Writer {
 
  private:
   enum class Kind : std::uint8_t { kOpen, kRecord, kClose };
+
+  // Where the writer lost a Match's file, as its capture_stopped line names it.
+  enum class Step : std::uint8_t { kCreate, kWrite };
+
+  struct Loss {
+    Step step;
+    std::string detail;
+  };
+
+  static std::string_view StepName(Step step) { return step == Step::kCreate ? "create" : "write"; }
 
   struct Item {
     Kind kind;
@@ -270,17 +281,18 @@ class Capturer::Writer {
       }
       writing_ = true;
       lock.unlock();
-      std::optional<std::string> failure = Handle(item);
+      std::optional<Loss> loss = Handle(item);
       lock.lock();
       writing_ = false;
-      if (failure.has_value()) {
+      if (loss.has_value()) {
         // Whatever of the record reached the file reads back as a torn last
         // record; writing on would put whole records after it no reader reaches.
         std::erase_if(queue_,
                       [&](const Item& queued) { return queued.kind == Kind::kRecord && queued.match == item.match; });
         records_queued_ = static_cast<std::size_t>(
             std::ranges::count_if(queue_, [](const Item& queued) { return queued.kind == Kind::kRecord; }));
-        StopLocked(item.match, CaptureStop::kWriteFailed, *std::move(failure));
+        StopLocked(item.match, CaptureStop::kWriteFailed,
+                   std::format("step={} detail=\"{}\"", StepName(loss->step), loss->detail));
       }
       if (queue_.empty()) {
         written_.notify_all();
@@ -290,7 +302,7 @@ class Capturer::Writer {
 
   // Mechanism: carries out item on the writer's own file, or says why the
   // file failed. Writer thread only.
-  std::optional<std::string> Handle(const Item& item) {
+  std::optional<Loss> Handle(const Item& item) {
     switch (item.kind) {
       case Kind::kOpen:
         return OpenFile(item);
@@ -303,10 +315,10 @@ class Capturer::Writer {
     return std::nullopt;
   }
 
-  std::optional<std::string> OpenFile(const Item& item) {
+  std::optional<Loss> OpenFile(const Item& item) {
     file_ = std::ofstream(item.path, std::ios::binary | std::ios::trunc);
     if (!file_) {
-      return std::format("cannot create {}", item.path.string());
+      return Loss{.step = Step::kCreate, .detail = item.path.string()};
     }
     file_match_ = item.match;
     path_ = item.path;
@@ -317,16 +329,16 @@ class Capturer::Writer {
   }
 
   // Writes and flushes payload's frame. An injected fault fails the file, as the disk would.
-  std::optional<std::string> Persist(const protocol::BytesWire& payload) {
+  std::optional<Loss> Persist(const protocol::BytesWire& payload) {
     if (std::optional<std::string> fault =
             faults_ == nullptr ? std::nullopt : faults_->Trip(failure::Site::kCaptureWrite)) {
       file_.setstate(std::ios::badbit);
-      return fault;
+      return Loss{.step = Step::kWrite, .detail = *std::move(fault)};
     }
     WriteFrame(file_, kCaptureFrames, payload);
     file_.flush();
     if (!file_) {
-      return std::format("cannot write {}", path_.string());
+      return Loss{.step = Step::kWrite, .detail = path_.string()};
     }
     ++records_;
     return std::nullopt;
@@ -350,14 +362,15 @@ class Capturer::Writer {
     }
   }
 
-  // match's capture stops at stop: reported once, nothing more of it queued,
-  // and its file closed once the writer gets to it. With mutex_ held.
-  void StopLocked(std::uint64_t match, CaptureStop stop, std::string detail) {
+  // match's capture stops at stop: reported once, with what the writer knows
+  // of it in where, nothing more of it queued, and its file closed once the
+  // writer gets to it. With mutex_ held.
+  void StopLocked(std::uint64_t match, CaptureStop stop, std::string_view where = {}) {
     if (!stopped_.insert(match).second) {
       return;
     }
-    LW("subsystem=capture event=capture_stopped match={} reason={} detail=\"{}\"", match, CaptureStopName(stop),
-       detail);
+    LW("subsystem=capture event=capture_stopped match={} reason={}{}{}", match, CaptureStopName(stop),
+       where.empty() ? "" : " ", where);
   }
 
   failure::Faults* const faults_;
@@ -397,12 +410,12 @@ void Capturer::StartMatch(const std::vector<CaptureEntrant>& players, tick::Tick
   open_ = true;
   first_tick_ = first_tick;
   players_.clear();
+  sessions_.clear();
   CaptureHeader header = header_;
   header.started = std::chrono::floor<std::chrono::milliseconds>(started);
-  auto encoded = EncodeToCapture(ToWire(header));
+  std::optional<protocol::BytesWire> encoded = Admit(EncodeToCapture(ToWire(header)));
   if (!encoded.has_value()) {
-    failure_ = std::move(encoded.error());
-    open_ = false;
+    // No file is opened: its Joins and the rest are dropped by the writer.
     return;
   }
   writer_->Open(matches_, directory_ / CaptureFileName(header.started, matches_), *std::move(encoded));
@@ -480,23 +493,28 @@ std::uint32_t Capturer::OffsetOf(tick::Tick tick) const {
       std::clamp<std::int64_t>(Offset(first_tick_, tick), 0, std::numeric_limits<std::uint32_t>::max()));
 }
 
-void Capturer::Queue(const CaptureRecord& record) {
-  auto encoded = EncodeToCapture(ToWire(record));
+std::optional<std::vector<std::byte>> Capturer::Admit(std::expected<std::vector<std::byte>, failure::Failure> encoded) {
   // Not the capture's loss but the server's own bug, which stops the runtime
   // (ADR-0033): kept for Host to take, and nothing of it written.
   if (!encoded.has_value()) {
     if (!failure_.has_value()) {
       failure_ = std::move(encoded.error());
     }
-    return;
+    return std::nullopt;
   }
   // A record ReadCapture would refuse would make every record after it
   // unreadable; stopping here keeps the file readable up to it.
   if (encoded->size() > kCaptureFrames.max_payload) {
     writer_->Stop(matches_, CaptureStop::kRecordTooLong);
-    return;
+    return std::nullopt;
   }
-  writer_->Push(matches_, *std::move(encoded));
+  return *std::move(encoded);
+}
+
+void Capturer::Queue(const CaptureRecord& record) {
+  if (std::optional<protocol::BytesWire> encoded = Admit(EncodeToCapture(ToWire(record)))) {
+    writer_->Push(matches_, *std::move(encoded));
+  }
 }
 
 }  // namespace augusta::server

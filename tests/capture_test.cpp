@@ -12,9 +12,11 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <sys/stat.h>
 
 #include "augusta/command.h"
 #include "augusta/faults.h"
@@ -175,6 +177,7 @@ TEST_F(CaptureTest, ADrawEndsWithNoWinner) {
             AsWritten({CaptureRecord{.offset = 0, .event = CapturedMatchEnd{.winner = std::nullopt}}}));
 }
 
+// Requirements: US-21
 TEST_F(CaptureTest, EachMatchIsAFileOfItsOwn) {
   {
     Capturer capturer(directory_, Header());
@@ -218,6 +221,7 @@ TEST_F(CaptureTest, EventsOfBodiesNotInTheMatchAreNotCaptured) {
   EXPECT_EQ(Read(Files().front()).records.size(), 3U);
 }
 
+// Requirements: US-21
 TEST_F(CaptureTest, AFailedWriteStopsTheCaptureKeepingEveryRecordBeforeIt) {
   Faults faults;
   {
@@ -264,6 +268,39 @@ TEST_F(CaptureTest, ARecordThatFindsTheQueueFullStopsTheCapture) {
   EXPECT_TRUE(capture.records.empty());
 }
 
+// NFR-01: a disk that stalls holds up the writer, never the Simulation thread.
+// The file is a FIFO with no reader yet, so the writer blocks opening it.
+// Requirements: NFR-01, US-21
+TEST_F(CaptureTest, ADiskThatStallsNeverHoldsUpTheCallerAndStopsTheCaptureOnceItsQueueIsFull) {
+  const std::filesystem::path fifo = directory_ / CaptureFileName(kStarted, 1);
+  ASSERT_EQ(mkfifo(fifo.c_str(), 0600), 0);
+  constexpr std::size_t kCapacity = 4;
+  std::string drained;
+  std::thread reader;
+  {
+    Capturer capturer(directory_, Header(), CaptureOptions{.capacity = kCapacity});
+    const auto before = std::chrono::steady_clock::now();
+    capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
+    for (std::uint64_t tick = kFirstTick; tick < kFirstTick + 100; ++tick) {
+      capturer.Command(tick, EntityId{70}, Walk(tick));
+    }
+    capturer.EndMatch(kFirstTick + 100, std::nullopt);
+    EXPECT_LT(std::chrono::steady_clock::now() - before, std::chrono::seconds{1});
+    // Unblocks the writer, which then writes what it queued before the stop.
+    reader = std::thread([&] {
+      std::ifstream in(fifo, std::ios::binary);
+      drained.assign(std::istreambuf_iterator<char>(in), {});
+    });
+  }
+  reader.join();
+
+  std::istringstream in(drained, std::ios::binary);
+  const auto capture = ReadCapture(in);
+  ASSERT_TRUE(capture.has_value());
+  // Both Joins and the Commands that found room; nothing after the stop.
+  EXPECT_EQ(capture->records.size(), kCapacity);
+}
+
 // A file of the capture written in one Match, for ReadCapture's own tests.
 class ReadCaptureTest : public CaptureTest {
  protected:
@@ -292,6 +329,7 @@ TEST_F(ReadCaptureTest, AFileWithoutTheMagicIsNoCapture) {
   EXPECT_EQ(ReadBytes("AUG").error(), CaptureError::kNotACapture);
 }
 
+// Requirements: US-21
 TEST_F(ReadCaptureTest, ALastRecordCutShortIsDroppedAndReported) {
   const std::string bytes = Bytes();
   const auto torn = ReadBytes(bytes.substr(0, bytes.size() - 1));

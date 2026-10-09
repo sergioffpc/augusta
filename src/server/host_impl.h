@@ -69,7 +69,7 @@ struct Host::Impl {
   // those bodies are in is still in the simulation.
   std::ofstream recording_file;
   RecordedSimulation simulation;
-  // Each Match's capture, if HostConfig::capture asks for them (ADR-0050).
+  // Each Match's capture, if HostConfig::capture_directory asks for them (ADR-0050).
   std::unique_ptr<Capturer> capturer;
   std::unordered_map<SessionId, EntityId> bodies;
   bool simulating_match = false;

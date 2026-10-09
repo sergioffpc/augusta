@@ -643,7 +643,7 @@ inline constexpr std::array<std::byte, 8> kCaptureMagic{std::byte{'A'},  std::by
                                                         std::byte{'\r'}, std::byte{'\n'}};
 
 /// The capture format this engine writes, in CaptureHeaderWire::format_version.
-inline constexpr std::uint8_t kCaptureFormatVersion = 1;
+inline constexpr std::uint8_t kCaptureFormatVersion = 2;
 
 /// The first byte of every record of a capture.
 enum class CaptureRecordTypeWire : std::uint8_t {

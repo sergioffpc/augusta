@@ -141,7 +141,7 @@ HostConfig TestHostConfig(const Parameters& parameters = kTestParameters, std::u
       .recording = {},
       .recording_mode = {},
       .server_pack = {},
-      .capture = {},
+      .capture_directory = {},
       .faults = nullptr,
   };
 }
@@ -1927,7 +1927,7 @@ class CaptureHostTest : public LoopbackMatch {
 
   static HostSetup CaptureSetup(const std::filesystem::path& directory) {
     HostSetup setup = OnTheFloor(SpawnPoints(), WithPlayerCount(2));
-    setup.config.capture = directory;
+    setup.config.capture_directory = directory;
     return setup;
   }
 
@@ -2012,6 +2012,7 @@ TEST_F(CaptureHostTest, AMatchPlayedToItsEndLeavesOneCaptureOfWhatItsPlayersDid)
 }
 
 // ADR-0050: a capture's offsets count from the Match's first tick, which Match start names.
+// Requirements: US-21
 TEST_F(CaptureHostTest, EveryClientReadsTheMatchsFirstTickFromMatchStart) {
   Session& first = Join();
   Session& second = Join();
@@ -2029,7 +2030,7 @@ TEST(CaptureHostConfigTest, AHostRefusesACaptureDirectoryItCannotCreate) {
       std::filesystem::temp_directory_path() / ("augusta_capture_file_" + std::to_string(std::random_device{}()));
   std::ofstream(file) << "not a directory";
   HostConfig config = TestHostConfig();
-  config.capture = file / "captures";
+  config.capture_directory = file / "captures";
   EXPECT_THROW(Host(config, Scenario{.collision = {}, .spawn_points = {}, .characters = {}, .client_pack = {}}),
                std::runtime_error);
   std::filesystem::remove(file);
