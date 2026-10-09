@@ -42,6 +42,7 @@ using augusta::protocol::MatchStartWire;
 using augusta::protocol::MessageWire;
 using augusta::protocol::ParametersWire;
 using augusta::protocol::ReadyWire;
+using augusta::protocol::ReenactRequestWire;
 using augusta::protocol::RosterEntryWire;
 using augusta::protocol::SequencedCommandWire;
 using augusta::protocol::SessionIdWire;
@@ -132,6 +133,11 @@ std::vector<Seed> Seeds() {
                             .yaw = 1.5F,
                             .pitch = -0.25F,
                             .part = BodyPartWire::kTorso}},
+      {.name = "reenact_request",
+       .message = ReenactRequestWire{.engine_version = "0.1.0",
+                                     .client_pack = {},
+                                     .character = "soldier",
+                                     .spawn = Vec3(-8.0F, 0.0F, 16.5F)}},
   };
 }
 

@@ -90,6 +90,8 @@ enum class MessageTypeWire : std::uint8_t {
   kHitConfirmation = 11,
   /// Server to client: a player in the match died (US-13).
   kDeath = 12,
+  /// Client to server: asks to join the Lobby as a Captured player, naming its spawn (ADR-0050).
+  kReenactRequest = 13,
 };
 
 /// Longest engine version string a JoinRequestWire may carry, in bytes.
@@ -243,6 +245,8 @@ enum class JoinRefusalWire : std::uint8_t {
   kMatchInProgress = 4,
   /// The client's pack is not the one cooked with the server's.
   kPackMismatch = 5,
+  /// A Reenact request reached a server that does not take them (ADR-0050).
+  kReenactmentsNotAccepted = 6,
 };
 
 /// Client to server: the first message on a new connection.
@@ -256,6 +260,22 @@ struct JoinRequestWire {
   std::string character;
 
   bool operator==(const JoinRequestWire&) const = default;
+};
+
+/// Client to server: a Captured player's first message on a new connection, in
+/// place of a JoinRequestWire (ADR-0050): its fields, checked the same way,
+/// and where the capture spawned the player, which the server places it at.
+struct ReenactRequestWire {
+  /// As JoinRequestWire::engine_version.
+  std::string engine_version;
+  /// As JoinRequestWire::client_pack.
+  PackHashWire client_pack{};
+  /// As JoinRequestWire::character.
+  std::string character;
+  /// Where the capture's Match start spawned the player, on the position grid.
+  math::Vec3 spawn{};
+
+  bool operator==(const ReenactRequestWire&) const = default;
 };
 
 /// One dynamic body inside an Authoritative State update.
@@ -463,7 +483,7 @@ struct DeathWire {
 /// Any message of the protocol.
 using MessageWire =
     std::variant<JoinRequestWire, JoinAcceptedWire, JoinRefusedWire, CommandsWire, AuthoritativeStateWire, LobbyWire,
-                 ReadyWire, MatchStartWire, MatchEndWire, ShotWire, HitConfirmationWire, DeathWire>;
+                 ReadyWire, MatchStartWire, MatchEndWire, ShotWire, HitConfirmationWire, DeathWire, ReenactRequestWire>;
 
 /// A payload is this many bytes, the same type networking::Payload names.
 using BytesWire = std::vector<std::byte>;

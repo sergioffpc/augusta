@@ -132,6 +132,15 @@ void showValue(const MessageWire& message, std::ostream& out) {
           << static_cast<std::uint32_t>(death.killer) << ", part " << +static_cast<std::uint8_t>(death.part) << ", yaw "
           << death.yaw << ", pitch " << death.pitch << "}";
     }
+    void operator()(const ReenactRequestWire& request) const {
+      out << "ReenactRequest{engine_version " << rc::toString(request.engine_version) << ", client_pack";
+      for (const std::byte byte : request.client_pack) {
+        out << " " << std::to_integer<int>(byte);
+      }
+      out << ", character " << rc::toString(request.character) << ", spawn ";
+      showValue(request.spawn, out);
+      out << "}";
+    }
   };
   std::visit(Printer{.out = out}, message);
 }
@@ -180,6 +189,7 @@ using augusta::protocol::PackHashWire;
 using augusta::protocol::ParametersWire;
 using augusta::protocol::ReadyWire;
 using augusta::protocol::RecoilKickWire;
+using augusta::protocol::ReenactRequestWire;
 using augusta::protocol::RifleWire;
 using augusta::protocol::RosterEntryWire;
 using augusta::protocol::SequencedCommandWire;
@@ -267,6 +277,15 @@ rc::Gen<JoinRequestWire> JoinRequest() {
       rc::gen::set(&JoinRequestWire::client_pack, PackHash()), rc::gen::set(&JoinRequestWire::character, Character()));
 }
 
+rc::Gen<ReenactRequestWire> ReenactRequest() {
+  return rc::gen::build<ReenactRequestWire>(
+      rc::gen::set(&ReenactRequestWire::engine_version,
+                   UpTo<std::string>(kMaxEngineVersionLength, rc::gen::arbitrary<char>())),
+      rc::gen::set(&ReenactRequestWire::client_pack, PackHash()),
+      rc::gen::set(&ReenactRequestWire::character, Character()),
+      rc::gen::set(&ReenactRequestWire::spawn, Vec3OnGrid(kPositionGrid)));
+}
+
 rc::Gen<JoinAcceptedWire> JoinAccepted() {
   const auto stamina = rc::gen::build<StaminaWire>(rc::gen::set(&StaminaWire::deplete_per_second, FiniteFloat()),
                                                    rc::gen::set(&StaminaWire::regen_per_second, FiniteFloat()),
@@ -296,10 +315,11 @@ rc::Gen<JoinAcceptedWire> JoinAccepted() {
 }
 
 rc::Gen<JoinRefusedWire> JoinRefused() {
-  return rc::gen::build<JoinRefusedWire>(rc::gen::set(
-      &JoinRefusedWire::reason, rc::gen::element(JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kLobbyFull,
-                                                 JoinRefusalWire::kUnknownCharacter, JoinRefusalWire::kMatchInProgress,
-                                                 JoinRefusalWire::kPackMismatch)));
+  return rc::gen::build<JoinRefusedWire>(
+      rc::gen::set(&JoinRefusedWire::reason,
+                   rc::gen::element(JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kLobbyFull,
+                                    JoinRefusalWire::kUnknownCharacter, JoinRefusalWire::kMatchInProgress,
+                                    JoinRefusalWire::kPackMismatch, JoinRefusalWire::kReenactmentsNotAccepted)));
 }
 
 rc::Gen<CommandsWire> Commands() {
@@ -386,7 +406,8 @@ rc::Gen<MessageWire> Message() {
                         rc::gen::cast<MessageWire>(AuthoritativeState()), rc::gen::cast<MessageWire>(Lobby()),
                         rc::gen::cast<MessageWire>(Ready()), rc::gen::cast<MessageWire>(MatchStart()),
                         rc::gen::cast<MessageWire>(MatchEnd()), rc::gen::cast<MessageWire>(Shot()),
-                        rc::gen::cast<MessageWire>(HitConfirmation()), rc::gen::cast<MessageWire>(Death()));
+                        rc::gen::cast<MessageWire>(HitConfirmation()), rc::gen::cast<MessageWire>(Death()),
+                        rc::gen::cast<MessageWire>(ReenactRequest()));
 }
 
 RC_GTEST_PROP(ProtocolPropertyTest, EveryMessageSurvivesEncodeThenDecode, ()) {
