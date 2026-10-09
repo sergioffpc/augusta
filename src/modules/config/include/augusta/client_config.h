@@ -1,8 +1,11 @@
 #ifndef AUGUSTA_CLIENT_CONFIG_H_
 #define AUGUSTA_CLIENT_CONFIG_H_
 
+#include <array>
+#include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -11,7 +14,9 @@
 
 /// \file
 /// The client's startup settings, augustac.yaml, read under augusta::config's
-/// rules (ADR-0034). Client-only: it binds the player's controls, so it is the
+/// rules (ADR-0034), and the options its command line takes besides the shared
+/// ones: `--reenact <capture> --player <n>`, which make one run a Captured
+/// player (ADR-0050). Client-only: it binds the player's controls, so it is the
 /// one config that depends on client Input (see augusta/server_config.h for
 /// the server's).
 namespace augusta::config {
@@ -59,6 +64,29 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
 /// Reads and parses the client config at file; its `base_dir` is relative to
 /// file's directory. Errors carry file.
 std::expected<ClientConfig, ConfigError> LoadClientConfig(const std::filesystem::path& file);
+
+/// The options augustac's command line takes besides `--config`, `--help` and
+/// `--version` (ParseCommandLine's own_options): a capture is chosen for one
+/// run, not kept as a setting (ADR-0050).
+inline constexpr std::array<CommandLineOption, 2> kClientCommandLineOptions{{
+    {.name = "reenact", .value = "<capture>", .description = "reenact a player of this Match capture (ADR-0050)"},
+    {.name = "player", .value = "<n>", .description = "the player of the capture to reenact, from 1"},
+}};
+
+/// What `--reenact <capture> --player <n>` asks for: to play player n of the
+/// capture again against the configured server.
+struct ReenactArguments {
+  /// The capture file, taken as given (relative to the working directory).
+  std::filesystem::path capture;
+  /// The player's number in the capture, from 1.
+  std::uint8_t player = 0;
+};
+
+/// What command_line asks to reenact: nullopt with neither `--reenact` nor
+/// `--player`, which plays as a person does. A kInvalidArguments error with
+/// one but not the other, an empty capture, or a player that is not a whole
+/// number from 1 to 255.
+std::expected<std::optional<ReenactArguments>, ConfigError> ReadReenactArguments(const CommandLine& command_line);
 
 }  // namespace augusta::config
 

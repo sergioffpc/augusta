@@ -10,6 +10,7 @@
 #include <fstream>
 #include <functional>
 #include <ios>
+#include <map>
 #include <optional>
 #include <set>
 #include <span>
@@ -18,6 +19,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #include <boost/dll/runtime_symbol_info.hpp>
 #include <boost/program_options.hpp>
@@ -151,15 +153,22 @@ std::string Phrase(const ConfigError& error) {
 }
 
 // The usage message ParseCommandLine's help and errors show.
-std::string Usage(std::string_view program, std::string_view default_file_name) {
+std::string Usage(std::string_view program, std::string_view default_file_name,
+                  std::span<const CommandLineOption> own_options) {
+  std::string synopsis;
+  std::string described;
+  for (const CommandLineOption& option : own_options) {
+    synopsis += std::format(" [--{} {}]", option.name, option.value);
+    described += std::format("\n  {:<17}{}", std::format("--{} {}", option.name, option.value), option.description);
+  }
   return std::format(
-      "usage: {0} [--config <file>]\n"
+      "usage: {0} [--config <file>]{2}\n"
       "       {0} --help | --version\n"
       "  --config <file>  the config file, relative to the working directory\n"
-      "                   (without it, {1} next to the executable)\n"
+      "                   (without it, {1} next to the executable){3}\n"
       "  --help           print this message and exit\n"
       "  --version        print the version and exit",
-      program, default_file_name);
+      program, default_file_name, synopsis, described);
 }
 
 }  // namespace
@@ -270,13 +279,21 @@ std::string DescribeConfigError(const ConfigError& error, std::string_view phras
 }
 
 std::expected<CommandLine, ConfigError> ParseCommandLine(int argc, const char* const* argv, std::string_view program,
-                                                         std::string_view default_file_name, std::string_view version) {
-  const auto usage = Usage(program, default_file_name);
+                                                         std::string_view default_file_name, std::string_view version,
+                                                         std::span<const CommandLineOption> own_options) {
+  const auto usage = Usage(program, default_file_name, own_options);
 
   namespace po = boost::program_options;
   po::options_description options;
   options.add_options()("config", po::value<std::string>(), "config file, relative to the working directory")(
       "help", "print the usage and exit")("version", "print the version and exit");
+  // By name, as the arguments are looked up once parsed.
+  std::vector<std::string> own_names;
+  own_names.reserve(own_options.size());
+  for (const CommandLineOption& option : own_options) {
+    own_names.emplace_back(option.name);
+    options.add_options()(own_names.back().c_str(), po::value<std::string>(), std::string(option.description).c_str());
+  }
 
   // Prefix guessing is off so `--conf` is an error, not a silent `--config`;
   // the empty positional description makes a bare argument an error too,
@@ -304,18 +321,28 @@ std::expected<CommandLine, ConfigError> ParseCommandLine(int argc, const char* c
                        .message = std::format("{} {}", program, version),
                        .action = CommandLineAction::kShowVersion};
   }
+  std::map<std::string, std::string, std::less<>> given;
+  for (const std::string& name : own_names) {
+    if (!arguments[name].empty()) {
+      given.emplace(name, arguments[name].as<std::string>());
+    }
+  }
   if (arguments["config"].empty()) {
     const auto directory = ExecutableDirectory();
     if (!directory) {
       return Fail(ConfigErrorCode::kExecutableDirectoryUnknown, std::string(default_file_name));
     }
-    return CommandLine{.config_file = *directory / default_file_name, .message = {}, .action = CommandLineAction::kRun};
+    return CommandLine{.config_file = *directory / default_file_name,
+                       .message = {},
+                       .action = CommandLineAction::kRun,
+                       .options = std::move(given)};
   }
   const auto& file = arguments["config"].as<std::string>();
   if (file.empty()) {
     return Fail(ConfigErrorCode::kInvalidArguments, std::format("--config needs a file name\n{}", usage));
   }
-  return CommandLine{.config_file = file, .message = {}, .action = CommandLineAction::kRun};
+  return CommandLine{
+      .config_file = file, .message = {}, .action = CommandLineAction::kRun, .options = std::move(given)};
 }
 
 }  // namespace augusta::config

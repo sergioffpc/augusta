@@ -6,8 +6,11 @@
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -23,6 +26,8 @@ using augusta::config::ConfigErrorCode;
 using augusta::config::DescribeConfigError;
 using augusta::config::LoadClientConfig;
 using augusta::config::ParseClientConfig;
+using augusta::config::ReadReenactArguments;
+using augusta::config::ReenactArguments;
 
 // The directory of the (imaginary) config file: what a relative base_dir is
 // relative to.
@@ -561,6 +566,73 @@ TEST_F(LoadConfigTest, NamesTheFileWhenItsContentsAreInvalid) {
   EXPECT_EQ(config.error().file, file);
   EXPECT_EQ(config.error().code, ConfigErrorCode::kMissingKey);
   EXPECT_EQ(config.error().subject, "content.pack");
+}
+
+// augustac's command line as main reads it, with its own options (ADR-0050).
+std::expected<augusta::config::CommandLine, ConfigError> ParseClientCommandLine(std::vector<const char*> args) {
+  args.insert(args.begin(), "augustac");
+  return augusta::config::ParseCommandLine(static_cast<int>(args.size()), args.data(), "augustac", "augustac.yaml",
+                                           "1.2.3", augusta::config::kClientCommandLineOptions);
+}
+
+// What augustac's command line asks to reenact, read.
+std::expected<std::optional<ReenactArguments>, ConfigError> Reenact(std::vector<const char*> args) {
+  const auto command_line = ParseClientCommandLine(std::move(args));
+  EXPECT_TRUE(command_line.has_value());
+  return ReadReenactArguments(command_line.value_or(augusta::config::CommandLine{}));
+}
+
+TEST(ReadReenactArgumentsTest, WithoutReenactTheClientPlaysAsAPerson) {
+  const auto reenact = Reenact({"--config", "my.yaml"});
+
+  ASSERT_TRUE(reenact.has_value());
+  EXPECT_FALSE(reenact->has_value());
+}
+
+// Requirements: US-21
+TEST(ReadReenactArgumentsTest, ReenactAndPlayerNameTheCaptureAsGivenAndThePlayersNumber) {
+  const auto reenact = Reenact({"--reenact", "captures/playtest.capture", "--player", "3"});
+
+  ASSERT_TRUE(reenact.has_value());
+  ASSERT_TRUE(reenact->has_value());
+  EXPECT_EQ((*reenact)->capture, std::filesystem::path("captures") / "playtest.capture");
+  EXPECT_EQ((*reenact)->player, 3);
+}
+
+// Requirements: US-21
+TEST(ReadReenactArgumentsTest, OneWithoutTheOtherIsRefused) {
+  for (const auto& args :
+       {std::vector<const char*>{"--reenact", "a.capture"}, std::vector<const char*>{"--player", "1"}}) {
+    const auto reenact = Reenact(args);
+
+    ASSERT_FALSE(reenact.has_value());
+    EXPECT_EQ(reenact.error().code, ConfigErrorCode::kInvalidArguments);
+    EXPECT_TRUE(Contains(reenact.error().subject, "--reenact <capture> --player <n>")) << reenact.error().subject;
+  }
+}
+
+// Requirements: US-21
+TEST(ReadReenactArgumentsTest, APlayerThatIsNotANumberFromOneTo255IsRefused) {
+  for (const char* player : {"0", "256", "-1", "one", "1.5", ""}) {
+    const auto reenact = Reenact({"--reenact", "a.capture", "--player", player});
+
+    ASSERT_FALSE(reenact.has_value()) << player;
+    EXPECT_EQ(reenact.error().code, ConfigErrorCode::kInvalidArguments) << player;
+  }
+}
+
+TEST(ReadReenactArgumentsTest, AnEmptyCaptureIsRefused) {
+  const auto reenact = Reenact({"--reenact", "", "--player", "1"});
+
+  ASSERT_FALSE(reenact.has_value());
+  EXPECT_EQ(reenact.error().code, ConfigErrorCode::kInvalidArguments);
+}
+
+TEST(ReadReenactArgumentsTest, TheUsageSaysHowToReenact) {
+  const auto command_line = ParseClientCommandLine({"--help"});
+
+  ASSERT_TRUE(command_line.has_value());
+  EXPECT_TRUE(Contains(command_line->message, "[--reenact <capture>] [--player <n>]")) << command_line->message;
 }
 
 }  // namespace
