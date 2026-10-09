@@ -70,11 +70,14 @@ FROM ubuntu:26.04 AS runtime
 # updates, and CI fails an image with a fixable high or critical CVE. CI
 # rebuilds this stage every time (no-cache-filters), so a cached layer never
 # holds an update back.
+# The base image also ships Pebble (/usr/bin/pebble and its /var/lib/pebble
+# state), a Go binary no package owns, so no upgrade ever patches its Go
+# runtime. augustad runs under tini, not Pebble, so it is removed.
 RUN apt-get update && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends \
       libstdc++6 \
       tini \
-    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /var/lib/apt/lists/* /usr/bin/pebble /var/lib/pebble \
     && useradd --system --no-create-home --shell /usr/sbin/nologin augusta
 
 COPY --from=build /workspace/stage/ /
