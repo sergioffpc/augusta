@@ -1,7 +1,9 @@
 # The servers' alert rules (ADR-0049). They route to no receiver yet, so a
 # firing alert shows only in Grafana and Alertmanager. Each server has its own,
 # scoped to its metrics Service in this release's namespace, so develop and
-# staging, and every scenario in them, alert apart.
+# staging, and every scenario in them, alert apart. The capture filesystem
+# (ADR-0050) is the node's, shared by every server of every environment, so its
+# rules come once, with the release that ships the dashboards (develop's).
 {{- if .Values.servers }}
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
@@ -83,5 +85,66 @@ spec:
           annotations:
             summary: augustad for {{ $where }} sees high packet loss
             description: '{{ printf "{{ $value | humanizePercentage }}" }} of {{ printf "{{ $labels.direction }}" }} packets have been lost for 5 minutes.'
+        # A Match capture stopped before its Match end (ADR-0050): a record
+        # too long, a writer queue the disk did not keep up with, a failed
+        # write, or the retention budget. The Match went on without it, and
+        # the next Match is captured afresh. Stays firing for the 10 minutes
+        # the stop is in the window.
+        - alert: AugustadCaptureStopped
+          expr: increase(augustad_capture_stops_total{ {{- $matcher -}} }[10m]) > 0
+          labels:
+            severity: warning
+            scenario: {{ $scenario }}
+          annotations:
+            summary: augustad for {{ $where }} stopped a Match capture
+            description: augustad for {{ $where }} stopped a Match capture early ({{ printf "{{ $labels.reason }}" }}) in the last 10 minutes. Its capture_stopped log line says which Match and where.
+        # Retention has failed to delete captures for 30 minutes: the capture
+        # directory grows past its limits until it is fixed.
+        - alert: AugustadCaptureRetentionFailing
+          expr: increase(augustad_capture_retention_failures_total{ {{- $matcher -}} }[10m]) > 0
+          for: 30m
+          labels:
+            severity: warning
+            scenario: {{ $scenario }}
+          annotations:
+            summary: augustad for {{ $where }} cannot delete old captures
+            description: augustad for {{ $where }} has failed to delete captures its retention trims for 30 minutes, so its capture directory is over its limits.
+    {{- end }}
+    {{- if .Values.dashboards.enabled }}
+    {{- $mount := printf "mountpoint=%q" ((.Values.captures | default dict).hostPath | default "/srv/augusta/captures") }}
+    - name: augustad-capture-filesystem
+      rules:
+        # The capture filesystem, as node-exporter sees it at the mount point
+        # captures.hostPath names. Past 95% a server's next write may fail,
+        # stopping its capture.
+        - alert: AugustadCaptureFilesystemAlmostFull
+          expr: |
+            1 - node_filesystem_avail_bytes{ {{- $mount -}} } / node_filesystem_size_bytes{ {{- $mount -}} } > 0.85
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: The capture filesystem is almost full
+            description: '{{ printf "{{ $labels.mountpoint }}" }} is {{ printf "{{ $value | humanizePercentage }}" }} full: lower the servers'' retention limits or grow the filesystem.'
+        - alert: AugustadCaptureFilesystemAlmostFull
+          expr: |
+            1 - node_filesystem_avail_bytes{ {{- $mount -}} } / node_filesystem_size_bytes{ {{- $mount -}} } > 0.95
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: The capture filesystem is almost full
+            description: '{{ printf "{{ $labels.mountpoint }}" }} is {{ printf "{{ $value | humanizePercentage }}" }} full: captures will soon fail to write.'
+        # At the rate of the last 6 hours, the filesystem is full within 6
+        # more. Held for an hour, so a burst of Matches does not fire it.
+        - alert: AugustadCaptureFilesystemFillingUp
+          expr: |
+            predict_linear(node_filesystem_avail_bytes{ {{- $mount -}} }[6h], 6 * 3600) < 0
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: The capture filesystem fills up within 6 hours
+            description: At the rate of the last 6 hours, {{ printf "{{ $labels.mountpoint }}" }} is full within 6 hours.
     {{- end }}
 {{- end }}

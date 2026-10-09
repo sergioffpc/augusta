@@ -38,7 +38,6 @@ using augusta::server::CaptureHeader;
 using augusta::server::CaptureOptions;
 using augusta::server::Capturer;
 using augusta::server::CaptureRetention;
-using augusta::server::CaptureRetentionObserver;
 using augusta::server::CompletedCapture;
 using augusta::server::EntityId;
 using augusta::server::IsCaptureFileName;
@@ -366,28 +365,23 @@ TEST_F(CaptureRetentionTest, DeletionsRunOffTheCallersThreadAndAreObserved) {
   for (const int hours_ago : {3, 2, 1}) {
     Seed(hours_ago, 100);
   }
-  std::vector<std::thread::id> deleters;
-  std::size_t files = 0;
-  std::uintmax_t bytes = 0;
-  const CaptureRetentionObserver observer{
-      .on_deleted = [&] { deleters.push_back(std::this_thread::get_id()); },
-      .on_delete_failed = {},
-      .on_directory =
-          [&](std::size_t directory_files, std::uintmax_t directory_bytes) {
-            files = directory_files;
-            bytes = directory_bytes;
-          },
-  };
+  // What the Capturer tells its observer of retention, and on which thread.
+  struct Told final : augusta::server::CaptureObserver {
+    std::vector<std::thread::id> deleters;
+    augusta::server::CaptureDirectoryUsage usage;
+    void OnRetentionDeleted() override { deleters.push_back(std::this_thread::get_id()); }
+    void OnDirectory(augusta::server::CaptureDirectoryUsage directory) override { usage = directory; }
+  } told;
   {
     Capturer capturer(directory_, Header(),
-                      CaptureOptions{.retention = {.max_files = 2, .max_bytes = std::nullopt}, .observer = observer});
+                      CaptureOptions{.retention = {.max_files = 2, .max_bytes = std::nullopt}, .observer = &told});
     Play(capturer, kStarted, 2);
   }
 
-  ASSERT_EQ(deleters.size(), 2U);
-  EXPECT_TRUE(std::ranges::none_of(deleters, [](std::thread::id id) { return id == std::this_thread::get_id(); }));
-  EXPECT_EQ(files, 2U);
-  EXPECT_EQ(bytes, Bytes());
+  ASSERT_EQ(told.deleters.size(), 2U);
+  EXPECT_TRUE(std::ranges::none_of(told.deleters, [](std::thread::id id) { return id == std::this_thread::get_id(); }));
+  EXPECT_EQ(told.usage.files, 2U);
+  EXPECT_EQ(told.usage.bytes, Bytes());
 }
 
 }  // namespace

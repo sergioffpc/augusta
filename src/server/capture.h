@@ -154,6 +154,63 @@ enum class CaptureStop : std::uint8_t {
 /// "record_too_long", "queue_full", "write_failed" or "retention_budget".
 [[nodiscard]] std::string_view CaptureStopName(CaptureStop stop);
 
+/// Whether a server captures, as augustad_capture_state names it.
+enum class CaptureState : std::uint8_t {
+  /// Captures are not configured: the server has no Capturer.
+  kOff,
+  /// No Match is open.
+  kIdle,
+  /// The Match open is being captured.
+  kCapturing,
+  /// The Match open's capture stopped early (CaptureStop), until its Match end.
+  kStopped,
+};
+
+/// What a capture directory holds of captures: the files CaptureDirectory
+/// counts as captures, whoever wrote them.
+struct CaptureDirectoryUsage {
+  std::uint64_t files = 0;
+  std::uint64_t bytes = 0;
+
+  bool operator==(const CaptureDirectoryUsage&) const = default;
+};
+
+/// Told what a Capturer does, for the server's metrics (HostMetrics) to count:
+/// a Capturer knows nothing of how it is counted. Each call comes from the
+/// Simulation thread or the Capturer's writer, some with the writer's lock
+/// held, so none may block (NFR-01). Each does nothing unless overridden.
+class CaptureObserver {
+ public:
+  CaptureObserver() = default;
+  virtual ~CaptureObserver() = default;
+  CaptureObserver(const CaptureObserver&) = delete;
+  CaptureObserver& operator=(const CaptureObserver&) = delete;
+  CaptureObserver(CaptureObserver&&) = delete;
+  CaptureObserver& operator=(CaptureObserver&&) = delete;
+
+  /// The server's captures entered state: kIdle as the Capturer is made, then
+  /// as each Match opens, stops or ends.
+  virtual void OnState(CaptureState /*state*/) {}
+  /// The writer created a Match's file.
+  virtual void OnStarted() {}
+  /// The writer closed a Match's file with every record of it written.
+  virtual void OnCompleted() {}
+  /// A Match's capture stopped early, told once per capture.
+  virtual void OnStopped(CaptureStop /*stop*/) {}
+  /// The writer wrote bytes more to a file: its magic or a record's frame.
+  virtual void OnWritten(std::size_t /*bytes*/) {}
+  /// records are queued for the writer and not yet written.
+  virtual void OnQueued(std::size_t /*records*/) {}
+  /// What the capture directory holds, the capture being written included, as
+  /// the writer scans it as each Match's file is about to be created, then as
+  /// it writes and as retention deletes (CaptureDirectory).
+  virtual void OnDirectory(CaptureDirectoryUsage /*usage*/) {}
+  /// Retention deleted a completed capture (CaptureRetention).
+  virtual void OnRetentionDeleted() {}
+  /// Retention could not delete a completed capture.
+  virtual void OnRetentionDeleteFailed() {}
+};
+
 /// How many records a Capturer holds that its writer has not yet written:
 /// about 4 seconds of a full Match's Commands at 60 Hz, past which the disk is
 /// not keeping up and the capture stops.
@@ -179,8 +236,8 @@ struct CaptureOptions {
   std::size_t capacity = kCaptureQueueCapacity;
   /// What the directory is kept within; off by default, deleting nothing.
   CaptureRetention retention{};
-  /// What retention reports as it works, for the metrics.
-  CaptureRetentionObserver observer{};
+  /// Told what the Capturer does, if given; it must outlive the Capturer.
+  CaptureObserver* observer = nullptr;
 };
 
 /// Captures every Match a server runs into a directory of its own, one file
@@ -191,9 +248,11 @@ struct CaptureOptions {
 /// events, and only encodes and queues; the Capturer's writer thread creates,
 /// writes, flushes and closes the files. A Match's capture stops at a record
 /// too long, one that finds the queue full, a failed write, or one past the
-/// retention budget, logged once at WARN as event=capture_stopped: its file keeps every whole record before it,
+/// retention budget, logged once at WARN as event=capture_stopped: its file
+/// keeps every whole record before it,
 /// and the next Match is captured afresh. Destroying the Capturer waits for
-/// every record queued to be written.
+/// every record queued to be written. Its CaptureOptions::observer, if any, is
+/// told each of these as it happens, on the thread it happens on.
 class Capturer {
  public:
   /// Captures into directory, which must exist, each file under header with

@@ -71,7 +71,8 @@ RecordedSimulation BuildRecordedSimulation(const HostConfig& config, const Scena
 
 // What captures each Match into the directory config names, if it names one
 // (ADR-0050), creating it first; none otherwise.
-std::unique_ptr<Capturer> BuildCapturer(const HostConfig& config, const assets::PackHash& client_pack) {
+std::unique_ptr<Capturer> BuildCapturer(const HostConfig& config, const assets::PackHash& client_pack,
+                                        CaptureMetrics& observer) {
   if (config.capture_directory.empty()) {
     return nullptr;
   }
@@ -82,6 +83,7 @@ std::unique_ptr<Capturer> BuildCapturer(const HostConfig& config, const assets::
                                          config.capture_directory.string(), error.message()));
   }
   LI("subsystem=capture event=capture_enabled directory={}", config.capture_directory.string());
+  observer.SetRetention(config.capture_retention);
   return std::make_unique<Capturer>(config.capture_directory,
                                     CaptureHeader{.engine_version = std::string(EngineVersion()),
                                                   .server_pack = config.server_pack,
@@ -91,7 +93,7 @@ std::unique_ptr<Capturer> BuildCapturer(const HostConfig& config, const assets::
                                     CaptureOptions{.faults = config.faults,
                                                    .capacity = kCaptureQueueCapacity,
                                                    .retention = config.capture_retention,
-                                                   .observer = {}});
+                                                   .observer = &observer});
 }
 
 // The ticks of kMatchPause at tick_rate_hz, rounded up so the pause is never shorter.
@@ -114,7 +116,7 @@ std::vector<std::string> CharacterPaths(const std::vector<Character>& characters
 Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy)
     : metrics(config.tick_rate_hz),
       simulation(BuildRecordedSimulation(config, scenario, std::move(policy), recording_file, metrics)),
-      capturer(BuildCapturer(config, scenario.client_pack)),
+      capturer(BuildCapturer(config, scenario.client_pack, capture_metrics)),
       tick_rate_hz(config.tick_rate_hz),
       parameters(config.parameters),
       characters(ToSimulation(scenario.characters)),
