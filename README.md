@@ -150,6 +150,23 @@ make format-check
 make lint
 ```
 
+### Agent Skills
+
+The development flows in [CLAUDE.md](CLAUDE.md) (main, engineering) run on
+[Matt Pocock's skills](https://github.com/mattpocock/skills). Install them
+either as editable files, choosing the skills and agents you use:
+
+```bash
+npx skills@latest add mattpocock/skills
+```
+
+and update them with `npx skills update`; or, in Claude Code, as the complete
+set in a managed, read-only plugin from the official marketplace:
+
+```bash
+claude plugins install mattpocock-skills
+```
+
 ## Documentation
 
 - [VISION.md](docs/VISION.md) — product vision
