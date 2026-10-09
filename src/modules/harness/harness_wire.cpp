@@ -80,6 +80,10 @@ JoinRefusal FromWire(protocol::JoinRefusalWire reason) {
       return JoinRefusal::kMatchInProgress;
     case protocol::JoinRefusalWire::kPackMismatch:
       return JoinRefusal::kPackMismatch;
+    case protocol::JoinRefusalWire::kReplayServer:
+      return JoinRefusal::kReplayServer;
+    case protocol::JoinRefusalWire::kUnknownCapture:
+      return JoinRefusal::kUnknownCapture;
   }
   // Decode admits only the reasons above.
   std::unreachable();

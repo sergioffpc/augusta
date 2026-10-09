@@ -195,6 +195,10 @@ enum class JoinRefusal : std::uint8_t {
   kMatchInProgress,
   /// This client's pack is not the one cooked with the server's.
   kPackMismatch,
+  /// The server is a replay server, which only replays Match captures (ADR-0051).
+  kReplayServer,
+  /// The capture this client asked to watch is none the replay server replays (ADR-0051).
+  kUnknownCapture,
 };
 
 /// A short lowercase description of reason, for logs and for the player.

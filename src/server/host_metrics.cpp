@@ -61,6 +61,10 @@ constexpr std::string_view JoinRefusalLabel(JoinRefusal reason) {
       return "match_in_progress";
     case JoinRefusal::kPackMismatch:
       return "pack_mismatch";
+    case JoinRefusal::kReplayServer:
+      return "replay_server";
+    case JoinRefusal::kUnknownCapture:
+      return "unknown_capture";
   }
   return {};
 }
@@ -125,6 +129,14 @@ constexpr std::string_view MessageTypeLabel(MessageType type) {
       return "hit_confirmation";
     case MessageType::kDeath:
       return "death";
+    case MessageType::kReplayListRequest:
+      return "replay_list_request";
+    case MessageType::kReplayList:
+      return "replay_list";
+    case MessageType::kReplayRequest:
+      return "replay_request";
+    case MessageType::kReplayView:
+      return "replay_view";
   }
   return {};
 }

@@ -139,6 +139,14 @@ MessageType TypeOf(std::span<const std::byte> payload) {
       return MessageType::kHitConfirmation;
     case protocol::MessageTypeWire::kDeath:
       return MessageType::kDeath;
+    case protocol::MessageTypeWire::kReplayListRequest:
+      return MessageType::kReplayListRequest;
+    case protocol::MessageTypeWire::kReplayList:
+      return MessageType::kReplayList;
+    case protocol::MessageTypeWire::kReplayRequest:
+      return MessageType::kReplayRequest;
+    case protocol::MessageTypeWire::kReplayView:
+      return MessageType::kReplayView;
   }
   std::unreachable();
 }
@@ -155,6 +163,10 @@ protocol::JoinRefusalWire ToWire(JoinRefusal reason) {
       return protocol::JoinRefusalWire::kMatchInProgress;
     case JoinRefusal::kPackMismatch:
       return protocol::JoinRefusalWire::kPackMismatch;
+    case JoinRefusal::kReplayServer:
+      return protocol::JoinRefusalWire::kReplayServer;
+    case JoinRefusal::kUnknownCapture:
+      return protocol::JoinRefusalWire::kUnknownCapture;
   }
   // As ToWire(BodyPart): a value the protocol lacks, which Encode refuses.
   return protocol::JoinRefusalWire{};

@@ -132,6 +132,34 @@ void showValue(const MessageWire& message, std::ostream& out) {
           << static_cast<std::uint32_t>(death.killer) << ", part " << +static_cast<std::uint8_t>(death.part) << ", yaw "
           << death.yaw << ", pitch " << death.pitch << "}";
     }
+    void operator()(const ReplayListRequestWire& /*request*/) const { out << "ReplayListRequest{}"; }
+    void operator()(const ReplayListWire& list) const {
+      out << "ReplayList{";
+      for (const ReplayListingWire& listing : list.replays) {
+        out << rc::toString(listing.name) << ": started " << listing.started_unix_ms << ", ticks " << listing.ticks
+            << ", tick_rate_hz " << +listing.tick_rate_hz << ", characters";
+        for (const std::string& character : listing.characters) {
+          out << " " << rc::toString(character);
+        }
+        out << "; ";
+      }
+      out << "}";
+    }
+    void operator()(const ReplayRequestWire& request) const {
+      out << "ReplayRequest{engine_version " << rc::toString(request.engine_version) << ", client_pack";
+      for (const std::byte byte : request.client_pack) {
+        out << " " << std::to_integer<int>(byte);
+      }
+      out << ", capture " << rc::toString(request.capture) << "}";
+    }
+    void operator()(const ReplayViewWire& view) const {
+      out << "ReplayView{tick " << view.tick << ", ";
+      for (const PlayerViewWire& player : view.players) {
+        out << static_cast<std::uint32_t>(player.entity) << ": pitch " << player.pitch << ", flags " << +player.flags
+            << "; ";
+      }
+      out << "}";
+    }
   };
   std::visit(Printer{.out = out}, message);
 }
@@ -178,8 +206,14 @@ using augusta::protocol::MatchStartWire;
 using augusta::protocol::MessageWire;
 using augusta::protocol::PackHashWire;
 using augusta::protocol::ParametersWire;
+using augusta::protocol::PlayerViewWire;
 using augusta::protocol::ReadyWire;
 using augusta::protocol::RecoilKickWire;
+using augusta::protocol::ReplayListingWire;
+using augusta::protocol::ReplayListRequestWire;
+using augusta::protocol::ReplayListWire;
+using augusta::protocol::ReplayRequestWire;
+using augusta::protocol::ReplayViewWire;
 using augusta::protocol::RifleWire;
 using augusta::protocol::RosterEntryWire;
 using augusta::protocol::SequencedCommandWire;
@@ -299,7 +333,8 @@ rc::Gen<JoinRefusedWire> JoinRefused() {
   return rc::gen::build<JoinRefusedWire>(rc::gen::set(
       &JoinRefusedWire::reason, rc::gen::element(JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kLobbyFull,
                                                  JoinRefusalWire::kUnknownCharacter, JoinRefusalWire::kMatchInProgress,
-                                                 JoinRefusalWire::kPackMismatch)));
+                                                 JoinRefusalWire::kPackMismatch, JoinRefusalWire::kReplayServer,
+                                                 JoinRefusalWire::kUnknownCapture)));
 }
 
 rc::Gen<CommandsWire> Commands() {
@@ -379,6 +414,42 @@ rc::Gen<DeathWire> Death() {
       rc::gen::set(&DeathWire::part, rc::gen::element(BodyPartWire::kHead, BodyPartWire::kTorso, BodyPartWire::kLimb)));
 }
 
+// A capture's name: any bytes up to the longest a message may carry.
+rc::Gen<std::string> CaptureName() {
+  return UpTo<std::string>(augusta::protocol::kMaxCaptureNameLength, rc::gen::arbitrary<char>());
+}
+
+rc::Gen<ReplayListWire> ReplayList() {
+  const auto listing = rc::gen::build<ReplayListingWire>(
+      rc::gen::set(&ReplayListingWire::started_unix_ms, rc::gen::arbitrary<std::int64_t>()),
+      rc::gen::set(&ReplayListingWire::characters, UpTo<std::vector<std::string>>(kMaxPlayers, Character())),
+      rc::gen::set(&ReplayListingWire::name, CaptureName()),
+      rc::gen::set(&ReplayListingWire::ticks, rc::gen::arbitrary<std::uint32_t>()),
+      rc::gen::set(&ReplayListingWire::tick_rate_hz, rc::gen::arbitrary<std::uint8_t>()));
+  // A few listings cover the list's encoding; its count's limit is checked by
+  // example (protocol_test.cpp).
+  return rc::gen::build<ReplayListWire>(
+      rc::gen::set(&ReplayListWire::replays, UpTo<std::vector<ReplayListingWire>>(4, listing)));
+}
+
+rc::Gen<ReplayRequestWire> ReplayRequest() {
+  return rc::gen::build<ReplayRequestWire>(
+      rc::gen::set(&ReplayRequestWire::engine_version,
+                   UpTo<std::string>(kMaxEngineVersionLength, rc::gen::arbitrary<char>())),
+      rc::gen::set(&ReplayRequestWire::client_pack, PackHash()),
+      rc::gen::set(&ReplayRequestWire::capture, CaptureName()));
+}
+
+rc::Gen<ReplayViewWire> ReplayView() {
+  const auto player = rc::gen::build<PlayerViewWire>(
+      rc::gen::set(&PlayerViewWire::pitch, OnGrid(kAngleGrid)),
+      rc::gen::set(&PlayerViewWire::entity, AnyId<EntityIdWire>()),
+      rc::gen::set(&PlayerViewWire::flags, rc::gen::element<std::uint8_t>(0, PlayerViewWire::kAds)));
+  return rc::gen::build<ReplayViewWire>(
+      rc::gen::set(&ReplayViewWire::tick, rc::gen::arbitrary<augusta::primitives::Tick>()),
+      rc::gen::set(&ReplayViewWire::players, UpTo<std::vector<PlayerViewWire>>(kMaxPlayers, player)));
+}
+
 // Any message of the protocol, within its limits.
 rc::Gen<MessageWire> Message() {
   return rc::gen::oneOf(rc::gen::cast<MessageWire>(JoinRequest()), rc::gen::cast<MessageWire>(JoinAccepted()),
@@ -386,7 +457,9 @@ rc::Gen<MessageWire> Message() {
                         rc::gen::cast<MessageWire>(AuthoritativeState()), rc::gen::cast<MessageWire>(Lobby()),
                         rc::gen::cast<MessageWire>(Ready()), rc::gen::cast<MessageWire>(MatchStart()),
                         rc::gen::cast<MessageWire>(MatchEnd()), rc::gen::cast<MessageWire>(Shot()),
-                        rc::gen::cast<MessageWire>(HitConfirmation()), rc::gen::cast<MessageWire>(Death()));
+                        rc::gen::cast<MessageWire>(HitConfirmation()), rc::gen::cast<MessageWire>(Death()),
+                        rc::gen::just(MessageWire{ReplayListRequestWire{}}), rc::gen::cast<MessageWire>(ReplayList()),
+                        rc::gen::cast<MessageWire>(ReplayRequest()), rc::gen::cast<MessageWire>(ReplayView()));
 }
 
 RC_GTEST_PROP(ProtocolPropertyTest, EveryMessageSurvivesEncodeThenDecode, ()) {

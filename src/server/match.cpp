@@ -33,6 +33,10 @@ std::string_view DescribeJoinRefusal(JoinRefusal reason) {
       return "a match is in progress: try again once it ends";
     case JoinRefusal::kPackMismatch:
       return "client pack does not match the server's";
+    case JoinRefusal::kReplayServer:
+      return "the server is a replay server: it only replays Match captures";
+    case JoinRefusal::kUnknownCapture:
+      return "the replay server replays no such capture";
   }
   return "unknown refusal";
 }
