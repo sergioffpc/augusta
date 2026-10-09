@@ -110,10 +110,10 @@ jobs:
             echo "run_toml=false" >> "$GITHUB_OUTPUT"
           fi
 
-          # Python, shell, Markdown, CMake, PowerShell and the workflows, and
+          # Python, shell, Markdown, CMake and the workflows, and
           # the rules each is formatted and linted by.
           if echo "$changed" \
-              | grep -qE '(\.(py|sh|md|cmake|ps1)$|(^|/)CMakeLists\.txt$|^\.githooks/|^\.github/workflows/|^\.github/actionlint\.yaml$|^(ruff\.toml|\.shellcheckrc|\.gersemirc|\.pymarkdown\.json|\.prettierrc\.yaml|PSScriptAnalyzerSettings\.psd1|\.editorconfig)$)'; then
+              | grep -qE '(\.(py|sh|md|cmake)$|(^|/)CMakeLists\.txt$|^\.githooks/|^\.github/workflows/|^\.github/actionlint\.yaml$|^(ruff\.toml|\.shellcheckrc|\.gersemirc|\.pymarkdown\.json|\.prettierrc\.yaml|\.editorconfig)$)'; then
             echo "run_lint=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_lint=false" >> "$GITHUB_OUTPUT"
@@ -149,6 +149,11 @@ jobs:
       - name: Check C++ formatting
         if: needs.changes.outputs.run_build == 'true'
         run: find src tests tools \( -name '*.cpp' -o -name '*.h' \) -print0 | xargs -0 clang-format --dry-run --Werror
+      - name: Check the tests' requirement markers
+        # Every requirement a test names is one docs/REQUIREMENTS.md has, and
+        # every marker is directly above a test (ADR-0013).
+        if: needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_lint == 'true'
+        run: python3 scripts/requirements-matrix.py --check
       - name: Check YAML formatting and lint
         if: needs.changes.outputs.run_yaml == 'true'
         run: |
@@ -221,31 +226,16 @@ jobs:
             | xargs -0 uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9 --log-level warn --check
           git ls-files -z -- '*.md' ':!:third_party/*' ':!:CHANGELOG.md' \
             | xargs -0 uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pymarkdown.json scan
-      - name: Install PSScriptAnalyzer
-        if: needs.changes.outputs.run_lint == 'true'
-        shell: bash
-        run: |
-          install_dir="$RUNNER_TEMP/PSScriptAnalyzer"
-          mkdir -p "$install_dir"
-          curl -fsSLo "$RUNNER_TEMP/psscriptanalyzer.zip" \
-            https://www.powershellgallery.com/api/v2/package/PSScriptAnalyzer/1.25.0
-          printf '%s  %s\n' '14e634c828eb98efb9f40b2918ba90f139ed5eccdf663a2a747736d996995d60' \
-            "$RUNNER_TEMP/psscriptanalyzer.zip" | sha256sum --check --status
-          unzip -q "$RUNNER_TEMP/psscriptanalyzer.zip" -d "$install_dir"
-          # shellcheck disable=SC2016 # $env:PSModulePath is PowerShell's, for pwsh to expand
-          echo "PSModulePath=$RUNNER_TEMP:$(pwsh -NoProfile -Command '$env:PSModulePath')" >> "$GITHUB_ENV"
-      - name: Check PowerShell formatting and lint
-        if: needs.changes.outputs.run_lint == 'true'
-        # It takes seconds; a hung analyzer fails here instead of at the job's
-        # six-hour limit.
-        timeout-minutes: 5
-        run: pwsh -NoProfile -File scripts/psscriptanalyzer.ps1
   client:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true'
     # Pinned rather than windows-latest, so the toolchain doesn't shift
     # underneath us when GitHub migrates the "latest" runner image.
     runs-on: windows-2025
+    # Git Bash, as everywhere else: no PowerShell in the repository.
+    defaults:
+      run:
+        shell: bash
     env:
       # packman, which fetches Falcor's binary dependencies when Falcor is built
       # from source, keeps its cache on the drive its own script is on unless
@@ -262,17 +252,17 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Bootstrap vcpkg
-        shell: pwsh
-        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+        run: ./third_party/vcpkg/bootstrap-vcpkg.bat -disableMetrics
       - name: Configure vcpkg NuGet cache
-        shell: pwsh
+        env:
+          FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+          FEED_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $nugetPath = & ".\third_party\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
-          & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
-          & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
+          nuget="$(cygpath -u "$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1 | tr -d '\r')")"
+          "$nuget" sources add -Name GitHubPackages -Source "$FEED_URL" -Username "$GITHUB_REPOSITORY_OWNER" -Password "$FEED_TOKEN" -StorePasswordInClearText
+          "$nuget" setapikey "$FEED_TOKEN" -Source GitHubPackages
       - name: Configure
         run: cmake --preset windows
-        shell: pwsh
         # Configure downloads the prebuilt Falcor published for this Falcor
         # (cmake/FalcorPrebuilt.cmake, falcor-prebuilt.yml). Without one - a pull
         # request that changes Falcor, or before that workflow has published it -
@@ -280,7 +270,6 @@ jobs:
         # downloads, cached here.
       - name: Check for a prebuilt Falcor
         id: falcor
-        shell: bash
         run: echo "prebuilt=$(sed -n 's/^AUGUSTA_FALCOR_PREBUILT_USED:INTERNAL=//p' build/x64-windows/CMakeCache.txt)" >> "$GITHUB_OUTPUT"
       - name: Restore packman's downloads
         id: packman-cache
@@ -290,6 +279,8 @@ jobs:
           path: C:\packman-repo
           key: falcor-packman-${{ hashFiles('third_party/falcor/dependencies.xml', 'cmake/patches/falcor.patch') }}
       - name: Build
+        # all includes augustad: this job is the build matrix's Windows x64
+        # server, the development-only one (NFR-04, cmake/AugustaPlatform.cmake).
         run: cmake --build --preset windows --target all augusta_tests
         # Saved right after the Build that downloaded them, so a failing test
         # can't keep it from saving.
@@ -311,22 +302,22 @@ jobs:
         # like the format job's tools, as the image has no winget, the
         # bootstrap's package manager. Installed beside the image's LLVM and
         # put ahead of it on PATH.
-        shell: pwsh
+        # MSYS_NO_PATHCONV: Git Bash would otherwise take the NSIS installer's
+        # /S and /D= for paths and rewrite them.
+        env:
+          MSYS_NO_PATHCONV: 1
         run: |
-          $ProgressPreference = 'SilentlyContinue'
-          $installer = "$env:RUNNER_TEMP\LLVM-21.1.8-win64.exe"
-          Invoke-WebRequest -Uri https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.8/LLVM-21.1.8-win64.exe -OutFile $installer
-          if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne '7a5386c26497db1691f320121e5b113364dd0274b98e55f15f4dbc00c0450113') {
-            throw "LLVM installer checksum mismatch"
-          }
-          Start-Process -FilePath $installer -ArgumentList '/S', "/D=$env:RUNNER_TEMP\llvm" -Wait
-          "$env:RUNNER_TEMP\llvm\bin" >> $env:GITHUB_PATH
+          installer="$RUNNER_TEMP/LLVM-21.1.8-win64.exe"
+          curl -fsSLo "$installer" https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.8/LLVM-21.1.8-win64.exe
+          printf '%s  %s\n' 7a5386c26497db1691f320121e5b113364dd0274b98e55f15f4dbc00c0450113 \
+            "$installer" | sha256sum --check --status
+          "$installer" /S "/D=$(cygpath -w "$RUNNER_TEMP/llvm")"
+          cygpath -w "$RUNNER_TEMP/llvm/bin" >> "$GITHUB_PATH"
       - name: Lint
         # .clang-tidy's misc-include-cleaner alone (the Makefile's tidy target
         # says why -w) on what the server job's Linux build can't lint: the
         # Windows-only sources and tests. After Build, which generates headers
         # Falcor's own include.
-        shell: bash
         run: >-
           git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'src/modules/audio/output_miniaudio.cpp' 'src/modules/audio/miniaudio.cpp' 'tests/client_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 4 clang-tidy --quiet -p=build/x64-windows --checks=-*,misc-include-cleaner --extra-arg=-w
       - name: Test
@@ -387,6 +378,8 @@ jobs:
           git ls-files 'tests/*.cpp' 'tools/replay/tests/*.cpp' 'tools/swarm/tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 8 clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
           exit "$status"
       - name: Build
+        # all includes augustad: this job is the build matrix's Linux x86-64
+        # server, the production one (NFR-04, cmake/AugustaPlatform.cmake).
         run: cmake --build --preset linux --target all augusta_tests
       - name: Test
         run: ctest --preset linux
@@ -395,10 +388,25 @@ jobs:
     if: needs.changes.outputs.run_tools == 'true'
     # Builds and tests the offline tools (tools/), including that each still
     # writes the golden output the runtime's tests load (ADR-0013). A new
-    # tool adds steps here, not a job. Windows: the asset cooker's native
-    # modules wrap DirectXTex (ADR-0017), and the cooker only ever runs on
-    # Windows (tools/README.md).
-    runs-on: windows-2025
+    # tool adds steps here, not a job. Windows, where the content authors cook,
+    # and Linux, the asset cooker's other platform (tools/README.md): the same
+    # pytest suite, golden packs included - a cook gives the same bytes on
+    # either platform.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            preset: windows
+            python: tools/.venv/Scripts/python.exe
+          - os: ubuntu-26.04
+            preset: linux
+            python: tools/.venv/bin/python
+    runs-on: ${{ matrix.os }}
+    # Git Bash on Windows, as everywhere else: no PowerShell in the repository.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -408,16 +416,46 @@ jobs:
         # and third_party/falcor is large.
         run: git submodule update --init --depth 1 third_party/vcpkg
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        if: runner.os == 'Windows'
+      - name: Install build tools
+        if: runner.os == 'Linux'
+        # clang: the linux preset compiles with it. autoconf/autoconf-archive/
+        # automake/libtool: vcpkg's python3 port (pybind11's dependency) builds
+        # via autotools on Linux. libomp-dev: DirectXTex's CMake config finds
+        # OpenMP, and clang's runtime isn't on the runner image.
+        run: sudo apt-get update && sudo apt-get install -y clang libomp-dev ninja-build autoconf autoconf-archive automake libtool
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      - name: Bootstrap vcpkg
-        shell: pwsh
-        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+      - name: Bootstrap vcpkg (Windows)
+        if: runner.os == 'Windows'
+        run: ./third_party/vcpkg/bootstrap-vcpkg.bat -disableMetrics
       - name: Configure vcpkg NuGet cache
-        shell: pwsh
+        if: runner.os == 'Windows'
+        env:
+          FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+          FEED_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $nugetPath = & ".\third_party\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
-          & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
-          & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
+          nuget="$(cygpath -u "$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1 | tr -d '\r')")"
+          "$nuget" sources add -Name GitHubPackages -Source "$FEED_URL" -Username "$GITHUB_REPOSITORY_OWNER" -Password "$FEED_TOKEN" -StorePasswordInClearText
+          "$nuget" setapikey "$FEED_TOKEN" -Source GitHubPackages
+      - name: Use a local vcpkg binary cache
+        if: runner.os == 'Linux'
+        # The local files provider, as the server job does (see there why not
+        # the NuGet feed) - but a cache of its own, not setup-linux-build's:
+        # tools/pack/cpp's manifest isn't the root one every job sharing that
+        # cache installs, and save-vcpkg-cache drops whatever the root build
+        # didn't install.
+        run: |
+          echo "VCPKG_BINARY_SOURCES=clear;files,$GITHUB_WORKSPACE/.vcpkg-bincache,readwrite" >> "$GITHUB_ENV"
+          echo "VCPKG_CACHE_KEY=vcpkg-bincache-pack-linux-clang-$(git rev-parse HEAD:third_party/vcpkg)-${{ hashFiles('tools/pack/cpp/vcpkg.json') }}" >> "$GITHUB_ENV"
+      - name: Restore and save vcpkg binaries
+        if: runner.os == 'Linux'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .vcpkg-bincache
+          key: ${{ env.VCPKG_CACHE_KEY }}
+      - name: Bootstrap vcpkg (Linux)
+        if: runner.os == 'Linux'
+        run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
@@ -427,11 +465,13 @@ jobs:
         run: uv sync --locked
       - name: Build the native modules
         # Into tools/pack/src/pack, against the venv's own interpreter, as
-        # tools/pack/scripts/bootstrap-windows.ps1 does.
-        shell: pwsh
+        # tools/pack/scripts/bootstrap.sh does - a mixed-slash path from cygpath
+        # on Windows, as is on Linux.
         run: |
-          cmake --preset windows -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$PWD/tools/.venv/Scripts/python.exe"
-          cmake --build tools/pack/cpp/build/x64-windows
+          python="$PWD/${{ matrix.python }}"
+          [[ "$RUNNER_OS" == Windows ]] && python="$(cygpath -m "$python")"
+          cmake --preset ${{ matrix.preset }} -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$python"
+          cmake --build tools/pack/cpp/build/x64-${{ matrix.preset }}
       - name: Test (pytest)
         working-directory: tools/pack
         run: uv run pytest
@@ -545,12 +585,16 @@ jobs:
         env:
           TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
         run: |
+          # The file holds other releases (Loki, Alloy): pick the stack's by
+          # name, and its repository by the release's sourceRef.
           stack=clusters/onprem/infrastructure/monitoring.yaml
+          stack_release='select(.kind == "HelmRelease" and .metadata.name == "kube-prometheus-stack")'
+          repo=$(yq --no-doc "$stack_release | .spec.chart.spec.sourceRef.name" "$stack")
           schemas="$RUNNER_TEMP/monitoring-crd-schemas"
           mkdir -p "$schemas"
           helm show crds kube-prometheus-stack \
-            --repo "$(yq --no-doc 'select(.kind == "HelmRepository") | .spec.url' "$stack")" \
-            --version "$(yq --no-doc 'select(.kind == "HelmRelease") | .spec.chart.spec.version' "$stack")" \
+            --repo "$(yq --no-doc "select(.kind == \"HelmRepository\" and .metadata.name == \"$repo\") | .spec.url" "$stack")" \
+            --version "$(yq --no-doc "$stack_release | .spec.chart.spec.version" "$stack")" \
             > "$schemas/crds.yaml"
           (cd "$schemas" && FILENAME_FORMAT='{fullgroup}_{kind}_{version}' \
             uv run --no-project --with pyyaml python "$RUNNER_TEMP/kubeconform/openapi2jsonschema.py" \

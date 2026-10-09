@@ -9,9 +9,12 @@ clock or state, used by both client and server (ADR-0006).
 body state, command, stance and parameters, as plain fields) and the math types
 (`math::Vec3`); never another module's structs. So `augusta_protocol` depends on
 nothing but `augusta_math`, which also holds the grids its numbers travel on,
-and a module changing its own structs never changes what travels. A protocol
-type that mirrors one of the engine's carries the suffix `Wire`: `BodyStateWire`
-for `physics::BodyState`, and the Authoritative State message is
+and `augusta_primitives`, whose Tick and sequence widths and player, command and
+recoil bounds it encodes without owning or re-exporting them; a module changing
+its own structs never changes what travels. `tests/protocol_boundary.cmake`
+fails if the protocol includes or links anything else. A protocol type that
+mirrors one of the engine's carries the suffix `Wire`: `BodyStateWire` for
+`physics::BodyState`, and the Authoritative State message is
 `AuthoritativeStateWire`, for the client's `harness::AuthoritativeState`. Every
 protocol type carries the suffix, so none reads like an engine type. Each peer
 converts between the protocol's types and its own at its edge and nowhere else:
@@ -41,9 +44,13 @@ The spawn position moves from Join accepted to Match start, which gives every
 player's. Each Lobby entry and each player in Match start carries its
 character's name.
 
-**Extended by ADR-0048**: a match recording is written in this encoding, as
-records of its own (a header and one per tick) that are never messages, so it
-carries a command in the bytes a Commands message does.
+**Extended by ADR-0050 and ADR-0051** (replacing ADR-0048's match recording): a
+Match capture is written in this encoding, as records of its own (a header and
+one per event) that are never messages, so it carries a command in the bytes a
+Commands message does; Match start gains the Match's first tick; and the Reenact
+request, Replay list request, Replay request and Replay view join the catalogue,
+with the Join refused reasons _reenactments not accepted_, _replay server_ and
+_unknown capture_.
 
 **Wire shape.** One message is one transport payload: a one-byte `MessageType`
 followed by that type's fields, fixed-width and little-endian; a string is a
@@ -59,10 +66,11 @@ reconnect, so it travels in 8 bytes wherever it appears (an Authoritative
 State's tick, a Shot's, a Commands message's Seen tick): 4 would wrap after
 about 828 days at 60 Hz. A command sequence, and the acknowledged sequence that
 answers it, counts one connection's commands and starts over at 1 on the next;
-it travels in 8 bytes too (`command::Sequence`, as `tick::Tick` is the tick's
-type), so no session, however long, can wrap it, at the cost of 4 bytes per
-sequenced command over 4. Neither ever wraps, so every receiver orders them as
-plain numbers.
+it travels in 8 bytes too, so no session, however long, can wrap it, at the cost
+of 4 bytes per sequenced command over 4. Both widths are `augusta_primitives`'
+(`primitives::Tick`, `primitives::Sequence`), which the codec and the engine's
+`tick::Tick` and `command::Sequence` take alike. Neither ever wraps, so every
+receiver orders them as plain numbers.
 
 **Quantized numbers.** A body's and a command's numbers travel as a whole count
 of a grid's step, not as floats. The step is a power of two, so a count times
@@ -149,6 +157,16 @@ allocating, and rejects a payload with bytes left over once its message is
 complete, so a message has exactly one encoding. Every receiver drops what fails
 to decode and logs it; a malformed message never changes state.
 
+**Outbound invariants.** `Encode` and `EncodeRecord` check their own side as
+strictly, in every build: they return `std::expected<BytesWire, EncodeError>`
+(ADR-0033), where the error is `kFieldTooLong`, `kReservedBits` or
+`kInvalidEnum`, and give no payload at all for a message or record a field of
+which the protocol cannot carry, so nothing cut off or misframed is ever sent or
+recorded. Such a field is the sender's bug, never a peer's input: each peer's
+edge (`server/wire.h`, `augusta/harness_wire.h`) turns the error into a
+`kInvariantViolated` failure naming the message or record type, and the runtime
+that sent it stops (ADR-0033).
+
 **Reliability split.** The sender names a `networking::Reliability` for every
 send (ADR-0003's transport offers both). A message that must arrive, and whose
 loss would leave the two sides disagreeing, is reliable; a message a newer one
@@ -167,7 +185,7 @@ supersedes is unreliable.
 | Match end           | server → client | reliable    | the Match is over and its players are back in the Lobby (ADR-0043), sent to every player still in it after the deaths of its last tick: the session ID of the winner Game policy declared (US-14), or 0 for a draw (session IDs start at 1)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Shot                | server → client | reliable    | one round a player fired, sent to every player in the Match, the shooter included: the entity ID of the shooter's body, the server tick it was fired on, its origin, and its direction as a yaw and a pitch (ADR-0044)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Hit confirmation    | server → client | reliable    | one round the recipient fired that hit a player, sent to the shooter alone: the entity ID of the body hit, one byte for the body part (head, torso or limb, from 1), and the damage as a 32-bit float, as the Parameters give it (ADR-0044)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Death               | server → client | reliable    | one player in the Match died, sent to every player in it, the victim included: the entity ID of the victim's body, the entity ID of the killer's body (whose round killed it, which never lacks one: in v1 only rounds kill), one byte for the body part the killing round struck (from 1), and the direction it was fired in as a yaw and a pitch (US-13, ADR-0045)                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Death               | server → client | reliable    | one player in the Match died, sent to every player in it, the victim included: the entity ID of the victim's body, the entity ID of the killer's body (whose round killed it, which never lacks one: only rounds kill), one byte for the body part the killing round struck (from 1), and the direction it was fired in as a yaw and a pitch (US-13, ADR-0045)                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 Per-tick traffic is unreliable because a newer message supersedes an older one,
 and it is made loss-tolerant without retransmission:

@@ -30,18 +30,21 @@ std::string LoggedLine(std::chrono::sys_seconds time, std::string_view message) 
   return augusta::logging::FormatLine(time, augusta::logging::Severity::kCritical, message, false) + "\n";
 }
 
+// Requirements: NFR-10
 TEST(CrashFormat, SignalLineIsACriticalLogLine) {
   CrashLine line{};
   EXPECT_EQ(FormatCrashSignalLine(line, kFixedTime, SIGSEGV),
             LoggedLine(kFixedTime, "subsystem=server event=crash signal=SIGSEGV"));
 }
 
+// Requirements: NFR-10
 TEST(CrashFormat, SignalWithoutANameIsWrittenAsItsNumber) {
   CrashLine line{};
   EXPECT_EQ(FormatCrashSignalLine(line, kFixedTime, 77),
             LoggedLine(kFixedTime, "subsystem=server event=crash signal=77"));
 }
 
+// Requirements: NFR-10
 TEST(CrashFormat, FrameLineNamesIndexAddressAndQuotedSymbol) {
   CrashLine line{};
   EXPECT_EQ(FormatCrashFrameLine(line, kFixedTime, 3, 0x7f00deadbeefU, "augusta::server::Host::Step(int)"),
@@ -50,12 +53,14 @@ TEST(CrashFormat, FrameLineNamesIndexAddressAndQuotedSymbol) {
                        "symbol=\"augusta::server::Host::Step(int)\""));
 }
 
+// Requirements: NFR-10
 TEST(CrashFormat, UnresolvedFrameHasNoSymbol) {
   CrashLine line{};
   EXPECT_EQ(FormatCrashFrameLine(line, kFixedTime, 0, 0x10U, nullptr),
             LoggedLine(kFixedTime, "subsystem=server event=crash_frame index=0 pc=0x10"));
 }
 
+// Requirements: NFR-10
 TEST(CrashFormat, QuotesAndBackslashesInASymbolAreEscaped) {
   CrashLine line{};
   // The symbol f("\") is written "f(\"\\\")".
@@ -63,6 +68,7 @@ TEST(CrashFormat, QuotesAndBackslashesInASymbolAreEscaped) {
             LoggedLine(kFixedTime, "subsystem=server event=crash_frame index=0 pc=0x10 symbol=\"f(\\\"\\\\\\\")\""));
 }
 
+// Requirements: NFR-10
 TEST(CrashFormat, SymbolTooLongForTheLineIsCutButStillClosed) {
   CrashLine line{};
   const std::string symbol(line.size() * 2, 'x');
@@ -85,10 +91,12 @@ void CrashWithStdoutOnStderr() {
 
 // gtest's regular expressions on Windows have no character classes, hence the
 // plain substrings.
+// Requirements: NFR-10
 TEST(CrashHandlerDeathTest, FatalSignalIsLoggedBeforeTheProcessDies) {
   EXPECT_DEATH(CrashWithStdoutOnStderr(), "CRITICAL subsystem=server event=crash signal=SIGSEGV");
 }
 
+// Requirements: NFR-10
 TEST(CrashHandlerDeathTest, FatalSignalLogsTheStack) {
   EXPECT_DEATH(CrashWithStdoutOnStderr(), "CRITICAL subsystem=server event=crash_frame index=0 pc=0x");
 }

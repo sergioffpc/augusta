@@ -4,11 +4,14 @@
 #include <chrono>
 #include <cstdint>
 #include <exception>
+#include <expected>
 #include <memory>
 #include <optional>
 #include <thread>
 #include <utility>
 
+#include "augusta/failure.h"
+#include "augusta/faults.h"
 #include "augusta/logging.h"
 #include "augusta/scripting.h"
 #include "augusta/supervisor.h"
@@ -36,14 +39,19 @@ struct ServerRuntime::Impl {
   // Null until Run() starts it, and if it could not start. Declared after
   // last_tick_end and connection_health, which it reads.
   std::unique_ptr<MetricsEndpoint> metrics;
+  // What the supervisor asks when no test has given it faults: nothing is
+  // ever armed in it.
+  failure::Faults no_faults;
   // The two threads' stop request and first failure (ADR-0005). Declared after
   // host, so it stops and joins the Network I/O thread before host goes.
   supervisor::Supervisor workers;
 
-  Impl(const HostConfig& config, std::uint16_t metrics_port, Scenario scenario, scripting::Engine policy)
+  Impl(const HostConfig& config, std::uint16_t metrics_port, Scenario scenario, scripting::Engine policy,
+       failure::Faults* faults)
       : tick_rate_hz(config.tick_rate_hz),
         metrics_port(metrics_port),
-        host(config, std::move(scenario), std::move(policy)) {}
+        host(config, std::move(scenario), std::move(policy)),
+        workers(faults != nullptr ? *faults : no_faults) {}
 
   // The endpoint is not a supervised worker (ADR-0049): a server whose endpoint
   // can't start keeps running without it, and in the cluster its liveness
@@ -58,37 +66,65 @@ struct ServerRuntime::Impl {
     }
   }
 
+  // The runtime failure Host met on either thread, if any, for the worker that
+  // takes it to stop on (ADR-0033): its local transport's, without which the
+  // runtime cannot go on, or a message or record it could not encode, a
+  // broken invariant. Each is taken once, so one worker reports it.
+  supervisor::WorkerResult HostResult() {
+    if (std::optional<failure::Failure> failed = host.TakeTransportFailure()) {
+      return std::unexpected(std::move(*failed));
+    }
+    if (std::optional<failure::Failure> broken = host.TakeInvariantFailure()) {
+      return std::unexpected(std::move(*broken));
+    }
+    return {};
+  }
+
   // Network I/O thread body (ADR-0005): pumps the connection, and once a
   // heartbeat interval samples every client's Connection health (ADR-0049),
-  // until a stop is requested, waiting kNetworkRoundWait between rounds rather
-  // than spinning a core. The transport has no wait on incoming work, so that
-  // wait bounds how late a received message is handled, and how long stopping
-  // takes.
-  void NetworkThreadMain() {
+  // until a stop is requested or the Host meets a runtime failure, waiting
+  // kNetworkRoundWait between rounds rather than spinning a core. The
+  // transport has no wait on incoming work, so that wait bounds how late a
+  // received message is handled, and how long stopping takes.
+  supervisor::WorkerResult NetworkThreadMain() {
     constexpr auto kNetworkRoundWait = std::chrono::milliseconds(1);
     std::chrono::steady_clock::time_point next_sample = std::chrono::steady_clock::now() + kHeartbeatInterval;
     while (!workers.StopRequested()) {
       const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
       host.PumpNetwork(now);
+      if (supervisor::WorkerResult failed = HostResult(); !failed.has_value()) {
+        return failed;
+      }
       if (now >= next_sample) {
         connection_health.Record(host.SampleConnections());
         next_sample = now + kHeartbeatInterval;
       }
       std::this_thread::sleep_for(kNetworkRoundWait);
     }
+    return {};
   }
 
   // Simulation thread body (ADR-0005): ticks Host on its fixed schedule until a
-  // stop is requested.
-  void SimulationLoop() {
+  // stop is requested or the Host meets a runtime failure, or until a strict
+  // recording has lost a tick, which is the runtime's failure: no tick runs
+  // once it is known (ADR-0033, ADR-0048). The recording's writer finds a loss
+  // after the tick that lost it, so a few ticks may run, unrecorded, before it
+  // is.
+  supervisor::WorkerResult SimulationLoop() {
     const auto delta_time = std::chrono::duration<float>(1.0F / tick_rate_hz);
     const auto tick_duration = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
     LI("subsystem=serverruntime event=loop_starting loop=simulation");
     tick::Clock::time_point deadline = tick::Clock::now();
     while (!workers.StopRequested()) {
+      if (std::optional<failure::Failure> lost = host.RecordingFailure()) {
+        return std::unexpected(*std::move(lost));
+      }
       const tick::Clock::time_point tick_start = tick::Clock::now();
 
       host.Tick(delta_time.count());
+      if (supervisor::WorkerResult failed = HostResult(); !failed.has_value()) {
+        return failed;
+      }
 
       const tick::Clock::time_point tick_end = tick::Clock::now();
       host.RecordTiming(tick::Measure(deadline, tick_duration, tick_start, tick_end));
@@ -97,21 +133,27 @@ struct ServerRuntime::Impl {
       std::this_thread::sleep_until(deadline);
     }
     LI("subsystem=serverruntime event=loop_stopping loop=simulation");
+    // The writer may find a strict recording's loss after the last check, or
+    // in what it still had queued at the stop: the run fails all the same.
+    if (std::optional<failure::Failure> lost = host.FinishRecording()) {
+      return std::unexpected(*std::move(lost));
+    }
+    return {};
   }
 };
 
 ServerRuntime::ServerRuntime(const HostConfig& config, std::uint16_t metrics_port, Scenario scenario,
-                             scripting::Engine policy)
-    : impl_(std::make_unique<Impl>(config, metrics_port, std::move(scenario), std::move(policy))) {}
+                             scripting::Engine policy, failure::Faults* faults)
+    : impl_(std::make_unique<Impl>(config, metrics_port, std::move(scenario), std::move(policy), faults)) {}
 
 ServerRuntime::~ServerRuntime() = default;
 
-std::optional<supervisor::WorkerFailure> ServerRuntime::Run() {
+std::optional<failure::Failure> ServerRuntime::Run() {
   Impl& impl = *impl_;
   impl.last_tick_end.store(tick::Clock::now(), std::memory_order_relaxed);
   impl.StartMetrics();
-  impl.workers.Spawn("network", [&impl] { impl.NetworkThreadMain(); });
-  impl.workers.Run("simulation", [&impl] { impl.SimulationLoop(); });
+  impl.workers.Spawn("network", [&impl] { return impl.NetworkThreadMain(); });
+  impl.workers.Run("simulation", [&impl] { return impl.SimulationLoop(); });
   impl.workers.StopAndJoin();
   return impl.workers.Failure();
 }

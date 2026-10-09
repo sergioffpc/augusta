@@ -23,6 +23,7 @@ constexpr std::int64_t kLastSecond = std::min<std::int64_t>(
 // Any time from the epoch to kLastSecond is written as the log sink's
 // FormatLine writes it, leap days and all, though the crash lines can't use its
 // std::format.
+// Requirements: NFR-10
 RC_GTEST_PROP(CrashFormatProperty, TimestampMatchesTheLogSinks, ()) {
   const std::chrono::sys_seconds time{std::chrono::seconds{*rc::gen::inRange<std::int64_t>(0, kLastSecond + 1)}};
   augusta::server::CrashLine line{};

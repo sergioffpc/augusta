@@ -14,12 +14,12 @@
 #include <thread>
 #include <vector>
 
+#include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/logging.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/runner.h"
-#include "augusta/supervisor.h"
 #include "netcode_stats.h"
 #include "scripted_player.h"
 
@@ -111,7 +111,7 @@ class Player {
 
   bool Failed() {
     if (const auto worker = runner_->Failure(); worker.has_value()) {
-      LogFailureOnce(supervisor::DescribeWorkerFailure(*worker));
+      LogFailureOnce(failure::DescribeFailure(*worker));
       return true;
     }
     if (const auto session = session_.GetFailure(); session.has_value()) {

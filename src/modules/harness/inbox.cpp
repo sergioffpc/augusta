@@ -52,11 +52,13 @@ void Inbox::Receive(const networking::Payload& payload) {
 
 std::shared_ptr<const ServerView> Inbox::View() const { return view_.load(); }
 
-std::vector<Shot> Inbox::TakeShots() { return shots_.Take(); }
+std::vector<Shot> Inbox::TakeShots(std::uint32_t matches_started) { return shots_.Take(matches_started); }
 
-std::vector<HitConfirmation> Inbox::TakeHitConfirmations() { return hit_confirmations_.Take(); }
+std::vector<HitConfirmation> Inbox::TakeHitConfirmations(std::uint32_t matches_started) {
+  return hit_confirmations_.Take(matches_started);
+}
 
-std::vector<Death> Inbox::TakeDeaths() { return deaths_.Take(); }
+std::vector<Death> Inbox::TakeDeaths(std::uint32_t matches_started) { return deaths_.Take(matches_started); }
 
 bool Inbox::TakeIn(const protocol::MessageWire& message) {
   if (const auto* accepted = std::get_if<protocol::JoinAcceptedWire>(&message)) {
@@ -129,7 +131,6 @@ void Inbox::OnMatchStart(MatchStart start) {
     next.authoritative.reset();
     next.dead.clear();
   });
-  ForgetCombat();
   LI("subsystem=harness event=match_started players={}", players);
 }
 
@@ -140,7 +141,8 @@ void Inbox::OnMatchEnd(const MatchEnd& end) {
     next.match_end = end;
   });
   // The fight's last events, the Deaths that ended the match among them, are
-  // still taken; the next Match start forgets those that were not.
+  // still taken: they stay under this match, which a view takes until the next
+  // starts.
   if (end.winner.has_value()) {
     LI("subsystem=harness event=match_ended winner={}", std::to_underlying(*end.winner));
   } else {
@@ -162,7 +164,7 @@ void Inbox::OnShot(const Shot& shot) {
                shot.tick);
     return;
   }
-  shots_.Add(shot);
+  shots_.Add(current->matches_started, shot);
 }
 
 // Keeps hit for TakeHitConfirmations if it is of the match in progress, as OnShot does a Shot.
@@ -177,7 +179,7 @@ void Inbox::OnHitConfirmation(const HitConfirmation& hit) {
                "subsystem=harness event=dropped reason=\"hit confirmation names a body not in the match\"");
     return;
   }
-  hit_confirmations_.Add(hit);
+  hit_confirmations_.Add(current->matches_started, hit);
 }
 
 // Keeps death for TakeDeaths, and its victim as dead for the rest of the
@@ -195,7 +197,7 @@ void Inbox::OnDeath(const Death& death) {
     return;
   }
   Publish([&](ServerView& next) { next.dead.push_back(death.victim); });
-  deaths_.Add(death);
+  deaths_.Add(current->matches_started, death);
   LI("subsystem=harness event=death victim={} killer={} part={}", std::to_underlying(death.victim),
      std::to_underlying(death.killer), BodyPartName(death.part));
 }
@@ -219,14 +221,6 @@ void Inbox::OnAuthoritativeState(AuthoritativeState state) {
     return;
   }
   Publish([&](ServerView& next) { next.authoritative = std::move(state); });
-}
-
-// The Shots, the Hit confirmations and the Deaths of one match are not the next one's to draw.
-// Match end keeps them: the tick that ends a match sends its own just before it.
-void Inbox::ForgetCombat() {
-  shots_.Clear();
-  hit_confirmations_.Clear();
-  deaths_.Clear();
 }
 
 }  // namespace augusta::harness

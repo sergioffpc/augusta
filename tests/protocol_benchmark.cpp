@@ -4,6 +4,7 @@
 #include <benchmark/benchmark.h>
 
 #include "augusta/math.h"
+#include "augusta/primitives.h"
 #include "augusta/protocol.h"
 
 // The two messages the server handles every tick for every player (ADR-0038):
@@ -24,7 +25,7 @@ using augusta::protocol::SequencedCommandWire;
 AuthoritativeStateWire FullAuthoritativeState() {
   AuthoritativeStateWire message;
   message.tick = 123'456;
-  for (std::size_t player = 0; player < augusta::protocol::kMaxPlayers; ++player) {
+  for (std::size_t player = 0; player < augusta::primitives::kMaxPlayers; ++player) {
     EntityStateWire entity;
     entity.entity = static_cast<EntityIdWire>(player + 1);
     entity.body.position = Vec3(static_cast<float>(player) * 3.0F, 0.0F, -12.5F);
@@ -43,7 +44,7 @@ AuthoritativeStateWire FullAuthoritativeState() {
 CommandsWire FullCommands() {
   CommandsWire message;
   message.seen_tick = 123'450;
-  for (std::size_t index = 0; index < augusta::protocol::kMaxCommandsPerMessage; ++index) {
+  for (std::size_t index = 0; index < augusta::primitives::kMaxCommandsPerMessage; ++index) {
     SequencedCommandWire command;
     command.sequence = 4'322 + index;
     command.command.direction = Vec3(0.0F, 0.0F, -1.0F);
@@ -57,14 +58,14 @@ CommandsWire FullCommands() {
 
 void BM_ProtocolEncode(benchmark::State& state, const MessageWire& message) {
   for (auto _ : state) {
-    benchmark::DoNotOptimize(augusta::protocol::Encode(message));
+    benchmark::DoNotOptimize(augusta::protocol::Encode(message).value());
   }
 }
 BENCHMARK_CAPTURE(BM_ProtocolEncode, authoritative_state, MessageWire{FullAuthoritativeState()});
 BENCHMARK_CAPTURE(BM_ProtocolEncode, commands, MessageWire{FullCommands()});
 
 void BM_ProtocolDecode(benchmark::State& state, const MessageWire& message) {
-  const BytesWire payload = augusta::protocol::Encode(message);
+  const BytesWire payload = augusta::protocol::Encode(message).value();
   if (!augusta::protocol::Decode(payload).has_value()) {
     state.SkipWithError("the encoded message does not decode");
     return;

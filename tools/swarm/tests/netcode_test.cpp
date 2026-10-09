@@ -94,6 +94,7 @@ class ImpairedLinkTest : public ::testing::TestWithParam<Profile> {
   void TearDown() override { augusta::networking::SimulateNetworkConditions({}); }
 };
 
+// Requirements: NFR-02, NFR-06
 TEST_P(ImpairedLinkTest, ScriptedPlayersPlayThroughWithBoundedCorrectionsAndConfirmedHits) {
   const ExampleServer server(kPlayers);
   augusta::networking::SimulateNetworkConditions(GetParam().conditions);

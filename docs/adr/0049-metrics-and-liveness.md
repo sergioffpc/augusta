@@ -34,10 +34,18 @@ count the same events from the same counters, so the log line and the series
 cannot disagree. The Network I/O thread samples every connection's transport
 status (`GetConnectionRealTimeStatus`) once a heartbeat interval (1 second). The
 endpoint thread is not a supervised worker: if it fails, the failure is logged
-and the tick loop keeps running, because an HTTP request must never stop it.
-`/livez` goes down with the endpoint, though, so in the cluster the liveness
-probe then restarts the pod: a dead endpoint ends the Match in progress, as a
-hung tick does.
+and the tick loop keeps running, because an HTTP request must never stop it. A
+request that fails is answered `500` and logged at `WARN`, and a failure on one
+connection, or a peer that disconnects, ends only that connection. A failure to
+accept is retried after a wait of 100 ms that doubles with each failure in a
+row, never in a tight loop; the fifth in a row, or the endpoint's thread
+failing, is the endpoint's permanent failure, a `subsystem` one (ADR-0033): the
+endpoint stops serving and closes its port. Its degraded state is observable as
+exactly that, a refused `/livez` and one `ERR` line
+(`code=metrics_endpoint_failed`), and not as a metric, which a dead endpoint
+could not serve. The Simulation and Network I/O threads are not signalled and
+run on, so in the cluster the liveness probe then restarts the pod: a dead
+endpoint ends the Match in progress, as a hung tick does.
 
 **Names.** Every metric is named `augustad_<what>_<unit>`. Units are base units
 (`_seconds`, `_bytes`, `_ratio`, `_hertz`), and counters end in `_total`. Each
@@ -81,6 +89,8 @@ an address or a Character's name. The domain words are CONTEXT.md's.
 |                   | `augustad_hit_confirmations_total`                                                    | counter                                                     | `body_part` = `head`, `torso`, `limb`                                               |
 |                   | `augustad_shooters_delay_seconds`                                                     | histogram                                                   |                                                                                     |
 |                   | `augustad_shooters_delay_capped_total` (at the 250 ms cap, ADR-0044)                  | counter                                                     |                                                                                     |
+|                   | `augustad_bullets_in_flight` (after the last tick, ADR-0002's flight cap)             | gauge                                                       |                                                                                     |
+| Recording         | `augustad_recording_state` (the Match recording's, ADR-0048)                          | gauge, 0 or 1                                               | `state` = `enabled`, `degraded`, `stopped`                                          |
 | Process           | `augustad_build_info` = 1                                                             | gauge                                                       | `version`, `commit`                                                                 |
 |                   | `augustad_start_time_seconds`                                                         | gauge                                                       |                                                                                     |
 
@@ -89,7 +99,9 @@ with: admission's refusals, the transport's end reasons (and a disconnect for
 misbehaving), the misbehaviour kinds and the command queue's discards (and its
 overflow, and commands from a player not in a match or a peer that has not
 joined). Every command counted received is taken in or discarded; those a peer
-sent after the one that got it disconnected are neither.
+sent after the one that got it disconnected are neither. A message counts as
+sent, in the Network family, only once the transport has accepted it: one it
+dropped, or refused, was never sent (ADR-0003).
 
 `augustad_build_info`'s `commit` is the commit the server image was built from,
 which the image's runtime stage sets as the `AUGUSTA_COMMIT` environment
@@ -102,13 +114,15 @@ show the one player whose connection is bad; the RTT, quality and jitter gauges
 are named apart from their histograms (`augustad_session_connection_*`), because
 one name cannot be both a histogram and a gauge in the exposition. A value the
 transport has not measured yet (a negative quality, or no jitter yet, right
-after connecting) is not recorded. Each Session's gauges are read together, so
-the Network I/O thread publishes them whole, each Session's into one of a fixed
-set of slots, one per player the Lobby can hold, which the endpoint reads
-without the writer ever waiting on it. A Session's gauges are removed at the
-first sample after the Session ends, so within a heartbeat interval. Session IDs
-are never reused, so every Session leaves its own series behind, but no more
-than the Player count are live at once, which a 15-day retention easily holds.
+after connecting) is not recorded. Every Session's gauges are read together, so
+the Network I/O thread publishes them whole, once a sample, into a fixed set of
+slots, one per player the Lobby can hold, which the endpoint reads without the
+writer ever waiting on it: a scrape never mixes two samples, nor shows a Session
+that one sample ended alongside one that the next sample added. A Session's
+gauges are removed at the first sample after the Session ends, so within a
+heartbeat interval. Session IDs are never reused, so every Session leaves its
+own series behind, but no more than the Player count are live at once, which a
+15-day retention easily holds.
 
 CPU, memory and restarts are not `augustad`'s metrics: the stack's kubelet and
 cAdvisor scrape already has them per pod.
@@ -132,9 +146,9 @@ histograms and one line per Session). Each selects its environment from the
 namespace label itself, and then a server from the scenarios that environment
 runs, so only one release ships them, `develop`'s: a second copy would load the
 same dashboards again. Alert rules are `PrometheusRule`s in the `augustad` chart
-(server down, tick overruns sustained, packet loss high), one set per server,
-each alert labelled with its scenario. They route to no receiver yet, so they
-show only in Grafana and Alertmanager.
+(server down, server restarted, tick overruns sustained, packet loss high), one
+set per server, each alert labelled with its scenario. They route to no receiver
+yet, so they show only in Grafana and Alertmanager.
 
 ## Considered Options
 

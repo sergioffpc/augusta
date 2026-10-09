@@ -67,6 +67,7 @@ TEST_F(InputTest, WithNothingHeldThePlayerStandsStill) {
   EXPECT_EQ(command.movement.desired_stance, Stance::kStanding);
 }
 
+// Requirements: US-04
 TEST_F(InputTest, WasdMoveForwardBackLeftAndRightOfAnUnturnedView) {
   Press(Key::kW);
   ExpectNear(input_.Sample().movement.direction, Vec3(0.0F, 0.0F, -1.0F));
@@ -81,6 +82,7 @@ TEST_F(InputTest, WasdMoveForwardBackLeftAndRightOfAnUnturnedView) {
   ExpectNear(input_.Sample().movement.direction, Vec3(1.0F, 0.0F, 0.0F));
 }
 
+// Requirements: US-04
 TEST_F(InputTest, AHeldKeyKeepsMovingUntilItIsReleased) {
   Press(Key::kW);
   ExpectNear(input_.Sample().movement.direction, Vec3(0.0F, 0.0F, -1.0F));
@@ -89,6 +91,7 @@ TEST_F(InputTest, AHeldKeyKeepsMovingUntilItIsReleased) {
   ExpectNear(input_.Sample().movement.direction, Vec3(0.0F, 0.0F, 0.0F));
 }
 
+// Requirements: US-04
 TEST_F(InputTest, OppositeKeysCancel) {
   Press(Key::kW);
   Press(Key::kS);
@@ -97,6 +100,7 @@ TEST_F(InputTest, OppositeKeysCancel) {
   ExpectNear(input_.Sample().movement.direction, Vec3(0.0F, 0.0F, 0.0F));
 }
 
+// Requirements: US-04
 TEST_F(InputTest, ADiagonalIsNoFasterThanAStraightLine) {
   Press(Key::kW);
   Press(Key::kD);
@@ -105,6 +109,7 @@ TEST_F(InputTest, ADiagonalIsNoFasterThanAStraightLine) {
   ExpectNear(direction, Vec3(std::numbers::sqrt2_v<float> / 2, 0.0F, -std::numbers::sqrt2_v<float> / 2));
 }
 
+// Requirements: US-04
 TEST_F(InputTest, MovementFollowsWhereTheViewHasTurned) {
   MoveMouse(0.0F, 0.0F);
   Turn(std::numbers::pi_v<float> / 2);  // A quarter turn left: now looking down -X.
@@ -115,6 +120,7 @@ TEST_F(InputTest, MovementFollowsWhereTheViewHasTurned) {
   ExpectNear(input_.Sample().movement.direction, Vec3(0.0F, 0.0F, -1.0F));
 }
 
+// Requirements: US-04
 TEST_F(InputTest, ADiagonalFollowsAViewTurnedOffTheAxes) {
   MoveMouse(0.0F, 0.0F);
   Turn(-std::numbers::pi_v<float> / 4);  // An eighth of a turn right.
@@ -126,6 +132,7 @@ TEST_F(InputTest, ADiagonalFollowsAViewTurnedOffTheAxes) {
   ExpectNear(input_.Sample().movement.direction, Vec3(1.0F, 0.0F, 0.0F));
 }
 
+// Requirements: US-04, US-05
 TEST_F(InputTest, ShiftHeldSprints) {
   Press(Key::kLeftShift);
   EXPECT_TRUE(input_.Sample().movement.sprint);
@@ -133,6 +140,7 @@ TEST_F(InputTest, ShiftHeldSprints) {
   EXPECT_FALSE(input_.Sample().movement.sprint);
 }
 
+// Requirements: US-04
 TEST_F(InputTest, CtrlHeldCrouchesAndZHeldGoesProneWinningOverCtrl) {
   Press(Key::kLeftControl);
   EXPECT_EQ(input_.Sample().movement.desired_stance, Stance::kCrouching);
@@ -191,6 +199,7 @@ TEST_F(InputTest, TheCurrentAimTurnsWithTheMouseBetweenSamples) {
   EXPECT_FLOAT_EQ(command.yaw, 0.0F);
 }
 
+// Requirements: US-06
 TEST_F(InputTest, TheCurrentAimHoldsAdsWhileItsKeyIsHeldBetweenSamples) {
   (void)input_.Sample();
 
@@ -231,8 +240,10 @@ TEST_F(InputTest, YawWrapsSoTurningForeverStaysWithinOneTurn) {
   EXPECT_NEAR(yaw, std::remainder(1000.0F, 2 * std::numbers::pi_v<float>), 1e-3F);
 }
 
+// Requirements: US-20
 TEST_F(InputTest, TheCursorStartsCaptured) { EXPECT_TRUE(input_.CursorCaptured()); }
 
+// Requirements: US-20
 TEST_F(InputTest, EscapeReleasesTheCursor) {
   Press(Key::kEscape);
   EXPECT_FALSE(input_.CursorCaptured());
@@ -240,6 +251,7 @@ TEST_F(InputTest, EscapeReleasesTheCursor) {
   EXPECT_FALSE(input_.CursorCaptured());
 }
 
+// Requirements: US-20
 TEST_F(InputTest, WhileTheCursorIsReleasedTheMouseDoesNotTurnTheView) {
   MoveMouse(0.0F, 0.0F);
   Press(Key::kEscape);
@@ -249,17 +261,20 @@ TEST_F(InputTest, WhileTheCursorIsReleasedTheMouseDoesNotTurnTheView) {
   EXPECT_FLOAT_EQ(command.pitch, 0.0F);
 }
 
+// Requirements: US-20
 TEST_F(InputTest, AClickWhileReleasedCapturesTheCursorAgain) {
   Press(Key::kEscape);
   Click();
   EXPECT_TRUE(input_.CursorCaptured());
 }
 
+// Requirements: US-20
 TEST_F(InputTest, AClickWhileCapturedChangesNothing) {
   Click();
   EXPECT_TRUE(input_.CursorCaptured());
 }
 
+// Requirements: US-20
 TEST_F(InputTest, RecapturingDoesNotTurnTheViewByWhereTheCursorWasLeft) {
   MoveMouse(0.0F, 0.0F);
   Press(Key::kEscape);
@@ -270,6 +285,7 @@ TEST_F(InputTest, RecapturingDoesNotTurnTheViewByWhereTheCursorWasLeft) {
   EXPECT_NEAR(input_.Sample().yaw, -10.0F * kSensitivity, kTolerance);
 }
 
+// Requirements: US-20
 TEST_F(InputTest, ReleasingTheCursorLetsGoOfEveryHeldKey) {
   Press(Key::kW);
   Press(Key::kLeftShift);
@@ -279,6 +295,7 @@ TEST_F(InputTest, ReleasingTheCursorLetsGoOfEveryHeldKey) {
   EXPECT_FALSE(command.movement.sprint);
 }
 
+// Requirements: US-20
 TEST_F(InputTest, WhileTheCursorIsReleasedKeysDoNothing) {
   Press(Key::kEscape);
   Press(Key::kW);
@@ -288,6 +305,7 @@ TEST_F(InputTest, WhileTheCursorIsReleasedKeysDoNothing) {
   EXPECT_EQ(command.movement.desired_stance, Stance::kStanding);
 }
 
+// Requirements: US-20
 TEST_F(InputTest, AfterRecapturingKeysCountOnceThePlayerPressesThemAgain) {
   Press(Key::kEscape);
   Press(Key::kW);  // Ignored: pressed while released.
@@ -298,12 +316,14 @@ TEST_F(InputTest, AfterRecapturingKeysCountOnceThePlayerPressesThemAgain) {
   ExpectNear(input_.Sample().movement.direction, Vec3(0.0F, 0.0F, -1.0F));
 }
 
+// Requirements: US-20
 TEST_F(InputTest, AMouseButtonClickWhileReleasedCapturesTheCursorWhicheverButtonItIs) {
   Press(Key::kEscape);
   Press(Key::kMouseRight);
   EXPECT_TRUE(input_.CursorCaptured());
 }
 
+// Requirements: US-20
 TEST_F(InputTest, AKeyboardKeyWhileReleasedDoesNotCaptureTheCursor) {
   Press(Key::kEscape);
   Release(Key::kEscape);
@@ -327,6 +347,7 @@ Keymap Rebound() {
   return keymap;
 }
 
+// Requirements: US-20
 TEST(KeymapTest, TheDefaultsAreWasdShiftCtrlZMouseAndR) {
   const Keymap& keymap = augusta::input::kDefaultKeymap;
   EXPECT_EQ(keymap[static_cast<std::size_t>(Control::kMoveForward)], Key::kW);
@@ -341,6 +362,7 @@ TEST(KeymapTest, TheDefaultsAreWasdShiftCtrlZMouseAndR) {
   EXPECT_EQ(keymap[static_cast<std::size_t>(Control::kReload)], Key::kR);
 }
 
+// Requirements: US-06, US-07
 TEST_F(InputTest, TheLeftButtonHeldFiresAndTheRightButtonHeldAims) {
   Press(Key::kMouseLeft);
   Press(Key::kMouseRight);
@@ -355,6 +377,7 @@ TEST_F(InputTest, TheLeftButtonHeldFiresAndTheRightButtonHeldAims) {
   EXPECT_FALSE(command.ads);
 }
 
+// Requirements: US-08
 TEST_F(InputTest, ReloadIsOnlyTheTickAfterItsKeyIsPressed) {
   Press(Key::kR);
   EXPECT_TRUE(input_.Sample().reload);
@@ -365,12 +388,14 @@ TEST_F(InputTest, ReloadIsOnlyTheTickAfterItsKeyIsPressed) {
   EXPECT_TRUE(input_.Sample().reload);
 }
 
+// Requirements: US-08
 TEST_F(InputTest, APressAndReleaseBetweenTwoTicksStillReloads) {
   Press(Key::kR);
   Release(Key::kR);
   EXPECT_TRUE(input_.Sample().reload);
 }
 
+// Requirements: US-07, US-20
 TEST_F(InputTest, TheClickThatRecapturesTheCursorDoesNotFire) {
   Press(Key::kEscape);
   Release(Key::kEscape);
@@ -381,12 +406,14 @@ TEST_F(InputTest, TheClickThatRecapturesTheCursorDoesNotFire) {
   EXPECT_TRUE(input_.Sample().fire);
 }
 
+// Requirements: US-08, US-20
 TEST_F(InputTest, AReloadPressedWhileTheCursorIsReleasedIsIgnored) {
   Press(Key::kEscape);
   Press(Key::kR);
   EXPECT_FALSE(input_.Sample().reload);
 }
 
+// Requirements: US-20
 TEST(KeymapTest, ReboundCombatControlsMoveToTheirNewKeys) {
   Input input(Config{.mouse_sensitivity = kSensitivity, .keymap = Rebound()});
   for (const Key key : {Key::kMouseMiddle, Key::kF, Key::kE}) {
@@ -398,6 +425,7 @@ TEST(KeymapTest, ReboundCombatControlsMoveToTheirNewKeys) {
   EXPECT_TRUE(command.reload);
 }
 
+// Requirements: US-20
 TEST(KeymapTest, ReboundControlsMoveToTheirNewKeys) {
   Input input(Config{.mouse_sensitivity = kSensitivity, .keymap = Rebound()});
   const auto press = [&](Key key) { input.OnKeyEvent({.key = key, .state = KeyState::kPressed}); };
@@ -412,6 +440,7 @@ TEST(KeymapTest, ReboundControlsMoveToTheirNewKeys) {
   EXPECT_EQ(command.movement.desired_stance, Stance::kProne);
 }
 
+// Requirements: US-20
 TEST(KeymapTest, TheOldKeysOfReboundControlsDoNothing) {
   Input input(Config{.mouse_sensitivity = kSensitivity, .keymap = Rebound()});
   for (const Key key : {Key::kW, Key::kD, Key::kLeftShift, Key::kLeftControl, Key::kZ, Key::kMouseLeft, Key::kR}) {
@@ -425,6 +454,7 @@ TEST(KeymapTest, TheOldKeysOfReboundControlsDoNothing) {
   EXPECT_FALSE(command.reload);
 }
 
+// Requirements: US-20
 TEST(KeymapTest, AControlOnAMouseButtonIsHeldUntilTheButtonIsReleased) {
   Input input(Config{.mouse_sensitivity = kSensitivity, .keymap = Rebound()});
   input.OnKeyEvent({.key = Key::kMouseRight, .state = KeyState::kPressed});
@@ -433,6 +463,7 @@ TEST(KeymapTest, AControlOnAMouseButtonIsHeldUntilTheButtonIsReleased) {
   EXPECT_EQ(input.Sample().movement.desired_stance, Stance::kStanding);
 }
 
+// Requirements: US-20
 TEST(KeymapTest, ReboundOppositeControlsStillCancelAndProneStillWins) {
   Input input(Config{.mouse_sensitivity = kSensitivity, .keymap = Rebound()});
   for (const Key key : {Key::kUp, Key::kDown, Key::kLeft, Key::kRight, Key::kC, Key::kMouseRight}) {
@@ -461,6 +492,7 @@ TEST(KeyNameTest, KeysAreNamedAsAPlayerWouldWriteThem) {
   EXPECT_EQ(augusta::input::KeyNamed("MouseRight"), Key::kMouseRight);
 }
 
+// Requirements: US-20
 TEST(KeyNameTest, AnUnknownNameIsNoKey) {
   EXPECT_FALSE(augusta::input::KeyNamed("w").has_value());
   EXPECT_FALSE(augusta::input::KeyNamed("Shift").has_value());

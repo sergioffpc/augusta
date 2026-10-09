@@ -142,10 +142,14 @@ skipped: a branch cut from `main` already has everything `main` has.
     ```
 
 10. Merge the release back into `develop`. The branch was deleted when step 7
-    merged, so push it again from the local copy, which is at the same commit:
+    merged, so push it again from the local copy. Fast-forward it to `main`
+    first: the tag is on `main`'s merge commit, which the branch alone never
+    reaches, and `develop` must contain the tag (see Verification):
 
     ```sh
     git switch release/vX.Y.Z
+    git fetch origin
+    git merge --ff-only origin/main
     git push -u origin release/vX.Y.Z
     gh pr create --base develop --title "chore(release): merge vX.Y.Z back into develop" --body "<what reaches develop>"
     ```

@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "admission.h"
+#include "augusta/first_failure.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/protocol.h"
@@ -47,13 +48,13 @@ void Host::Impl::HandleJoinRequest(networking::PeerId peer, const JoinRequest& r
   if (!admission.has_value()) {
     LI("subsystem=serverruntime event=join_refused peer={} reason=\"{}\"", PeerNumber(peer),
        DescribeJoinRefusal(admission.error()));
-    Reply(peer, protocol::Encode(protocol::JoinRefusedWire{.reason = ToWire(admission.error())}));
+    Reply(peer, EncodeToSend(protocol::JoinRefusedWire{.reason = ToWire(admission.error())}));
     metrics.joins_refused[admission.error()].Increment();
     Judge(peer, PeerRejection::kJoinRefused, now);
     return;
   }
   admission_deadlines.Admitted(peer);
-  Reply(peer, protocol::Encode(ToWire(*admission, tick_rate_hz, parameters)));
+  Reply(peer, EncodeToSend(ToWire(*admission, tick_rate_hz, parameters)));
   if (players.try_emplace(admission->session, Player{.peer = peer, .commands = CommandQueue{tick_rate_hz}}).second) {
     metrics.joins_admitted.Increment();
     SetLobbyGauges();
@@ -244,7 +245,13 @@ void Host::PumpNetwork(std::chrono::steady_clock::time_point now) {
       }
     }
   }
-  for (const networking::PeerMessage& message : impl.network.ReceiveMessages()) {
+  auto received = impl.network.ReceiveMessages();
+  if (!received.has_value()) {
+    // Nothing more this round: the runtime stops on it.
+    impl.transport_failure.Record(std::move(received.error()));
+    return;
+  }
+  for (const networking::PeerMessage& message : *received) {
     LT("subsystem=serverruntime event=received peer={} bytes={}", PeerNumber(message.from), message.payload.size());
     const std::lock_guard<std::mutex> lock(impl.mutex);
     if (impl.expelled.contains(message.from)) {

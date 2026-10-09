@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <format>
 #include <fstream>
 #include <ios>
@@ -15,9 +16,10 @@
 #include <utility>
 #include <vector>
 
+#include "augusta/failure.h"
+#include "augusta/first_failure.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
-#include "augusta/protocol.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
@@ -37,10 +39,11 @@ namespace augusta::server {
 namespace {
 
 // The authoritative world with the map's collision already in it, recording
-// to file if config asks for a recording (ADR-0048). Built before the socket
-// exists, so a map that is rejected never leaves a bound port behind.
+// to file if config asks for a recording (ADR-0048), its state counted into
+// metrics. Built before the socket exists, so a map that is rejected never
+// leaves a bound port behind.
 RecordedSimulation BuildRecordedSimulation(const HostConfig& config, const Scenario& scenario, scripting::Engine policy,
-                                           std::ofstream& file) {
+                                           std::ofstream& file, HostMetrics& metrics) {
   simulation::World world = BuildSimulation(config.parameters, config.tick_rate_hz, scenario, std::move(policy));
   if (config.recording.empty()) {
     return {std::move(world), std::nullopt};
@@ -49,9 +52,17 @@ RecordedSimulation BuildRecordedSimulation(const HostConfig& config, const Scena
   if (!file) {
     throw std::runtime_error(std::format("server::Host: cannot write a recording to {}", config.recording.string()));
   }
-  return {std::move(world), Recorder(file, RecordingHeader{.engine_version = std::string(EngineVersion()),
-                                                           .server_pack = config.server_pack,
-                                                           .tick_rate_hz = config.tick_rate_hz})};
+  LI("subsystem=server event=recording_enabled path={} mode={}", config.recording.string(),
+     RecordingModeName(config.recording_mode));
+  return {std::move(world),
+          Recorder(file,
+                   RecordingHeader{.engine_version = std::string(EngineVersion()),
+                                   .server_pack = config.server_pack,
+                                   .tick_rate_hz = config.tick_rate_hz},
+                   RecorderOptions{.mode = config.recording_mode,
+                                   .faults = config.faults,
+                                   .on_state = [&metrics](RecordingState state) { SetRecordingState(metrics, state); },
+                                   .capacity = kRecordQueueCapacity})};
 }
 
 // The ticks of kMatchPause at tick_rate_hz, rounded up so the pause is never shorter.
@@ -72,13 +83,13 @@ std::vector<std::string> CharacterPaths(const std::vector<Character>& characters
 }  // namespace
 
 Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy)
-    : simulation(BuildRecordedSimulation(config, scenario, std::move(policy), recording_file)),
+    : metrics(config.tick_rate_hz),
+      simulation(BuildRecordedSimulation(config, scenario, std::move(policy), recording_file, metrics)),
       tick_rate_hz(config.tick_rate_hz),
       parameters(config.parameters),
       characters(ToSimulation(scenario.characters)),
       spawn_points(std::move(scenario.spawn_points)),
-      network(config.listen),
-      metrics(config.tick_rate_hz),
+      network(config.listen, config.faults),
       match(MatchConfig{
           .engine_version = std::string(EngineVersion()),
           .client_pack = scenario.client_pack,
@@ -87,13 +98,30 @@ Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine 
           .pause_ticks = PauseTicks(config.tick_rate_hz),
       }) {}
 
-void Host::Impl::Reply(networking::PeerId peer, const networking::Payload& message) {
-  SendCounted(network, metrics, peer, message, networking::Reliability::kReliable);
+void Host::Impl::Deliver(networking::PeerId peer, const networking::Payload& payload) {
+  // Dropped is the peer's outcome: its departure, if it is leaving, arrives as an event.
+  if (networking::SendResult sent = SendCounted(network, metrics, peer, payload, networking::Reliability::kReliable);
+      !sent.has_value()) {
+    transport_failure.Record(std::move(sent.error()));
+  }
 }
 
-void Host::Impl::SendTo(const std::vector<SessionId>& sessions, const networking::Payload& message) {
+void Host::Impl::Reply(networking::PeerId peer, const std::expected<networking::Payload, failure::Failure>& message) {
+  if (!message.has_value()) {
+    invariant_failure.Record(message.error());
+    return;
+  }
+  Deliver(peer, *message);
+}
+
+void Host::Impl::SendTo(const std::vector<SessionId>& sessions,
+                        const std::expected<networking::Payload, failure::Failure>& message) {
+  if (!message.has_value()) {
+    invariant_failure.Record(message.error());
+    return;
+  }
   for (const SessionId session : sessions) {
-    SendCounted(network, metrics, players.at(session).peer, message, networking::Reliability::kReliable);
+    Deliver(players.at(session).peer, *message);
   }
 }
 
@@ -104,7 +132,7 @@ void Host::Impl::SendRoster() {
   for (const RosterEntry& entry : roster.players) {
     sessions.push_back(entry.session);
   }
-  SendTo(sessions, protocol::Encode(ToWire(roster)));
+  SendTo(sessions, EncodeToSend(ToWire(roster)));
 }
 
 void Host::Impl::SetLobbyGauges() {
@@ -119,6 +147,8 @@ Host::Host(const HostConfig& config, Scenario scenario, scripting::Engine policy
 Host::~Host() = default;
 
 networking::Endpoint Host::ListenEndpoint() const { return impl_->network.LocalEndpoint(); }
+
+std::optional<failure::Failure> Host::TakeInvariantFailure() { return impl_->invariant_failure.Take(); }
 
 void Host::RecordTiming(const tick::Timing& timing) {
   HostMetrics& metrics = impl_->metrics;
@@ -148,5 +178,20 @@ std::size_t Host::QueuedCommands(SessionId session) const {
 }
 
 const HostMetrics& Host::Metrics() const { return impl_->metrics; }
+
+std::optional<failure::Failure> Host::RecordingFailure() const {
+  std::optional<failure::Failure> lost = impl_->simulation.RecordingFailure();
+  if (lost.has_value() && failure::DispositionOf(lost->code) != failure::Disposition::kRuntime) {
+    return std::nullopt;
+  }
+  return lost;
+}
+
+std::optional<failure::Failure> Host::FinishRecording() {
+  impl_->simulation.WaitUntilRecorded();
+  return RecordingFailure();
+}
+
+std::optional<failure::Failure> Host::TakeTransportFailure() { return impl_->transport_failure.Take(); }
 
 }  // namespace augusta::server

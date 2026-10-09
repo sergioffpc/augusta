@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <fstream>
 #include <mutex>
 #include <optional>
@@ -15,6 +16,8 @@
 #include <vector>
 
 #include "admission.h"
+#include "augusta/failure.h"
+#include "augusta/first_failure.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
@@ -54,6 +57,10 @@ struct Host::Impl {
     TickRecipients to;
   };
 
+  // Written in place by both threads, lock-free; read by the metrics endpoint's.
+  // Declared before the recording, which writes its state here until it is
+  // closed.
+  HostMetrics metrics;
   // Declared before the socket so it is constructed first; see
   // BuildRecordedSimulation. Simulation thread only, with the file it records
   // to, if any, the body each player in it controls, and whether the match
@@ -78,8 +85,11 @@ struct Host::Impl {
 
   // Thread-safe by the transport's contract, used from both threads.
   networking::Server network;
-  // Written in place by both threads, lock-free; read by the metrics endpoint's.
-  HostMetrics metrics;
+  // The first local transport failure either thread met, until a worker takes it.
+  failure::FirstFailure transport_failure;
+  // The first outbound message or record either thread could not encode: a
+  // broken invariant, never sent, until a worker takes it (ADR-0033).
+  failure::FirstFailure invariant_failure;
 
   // Guards everything below: written by the Network I/O thread as clients
   // join, leave and send commands, and by the Simulation thread as matches
@@ -104,11 +114,16 @@ struct Host::Impl {
 
   Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy);
 
-  // Sending to players (host.cpp), each message already encoded (wire.h),
-  // counted as it is sent (SendCounted).
-  void Reply(networking::PeerId peer, const networking::Payload& message);
+  // Sending to players (host.cpp), each message as EncodeToSend left it
+  // (wire.h), reliably, counted as the transport accepts it (SendCounted).
+  // One the protocol could not carry is sent to no one and kept in
+  // invariant_failure; a local transport failure is kept in transport_failure.
+  void Reply(networking::PeerId peer, const std::expected<networking::Payload, failure::Failure>& message);
+  // Sends payload, already encoded, to peer reliably, as Reply does.
+  void Deliver(networking::PeerId peer, const networking::Payload& payload);
   // Sends message reliably to the player of each of sessions.
-  void SendTo(const std::vector<SessionId>& sessions, const networking::Payload& message);
+  void SendTo(const std::vector<SessionId>& sessions,
+              const std::expected<networking::Payload, failure::Failure>& message);
   // Tells everyone in the Lobby who is in it, after it changed.
   void SendRoster();
   // Sets the metrics' gauges of who is joined, in the Lobby and in a match,

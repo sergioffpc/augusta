@@ -9,7 +9,7 @@
 # (CMake's default when unset) and DESTDIR, e.g.
 #   make install prefix=/opt/augusta DESTDIR=/tmp/stage
 #
-# On Windows every command runs through scripts\vcenv.ps1, which loads the
+# On Windows every command runs through scripts\vcenv.cmd, which loads the
 # Visual Studio Build Tools environment first (cl.exe needs it, see README).
 # GNU make for Windows: `winget install ezwinports.make`.
 
@@ -17,7 +17,7 @@ ifeq ($(OS),Windows_NT)
 SHELL := cmd.exe
 .SHELLFLAGS := /c
 PRESET ?= windows
-RUN := powershell -NoProfile -ExecutionPolicy Bypass -File scripts\vcenv.ps1
+RUN := scripts\vcenv.cmd
 else
 PRESET ?= linux
 RUN :=
@@ -43,14 +43,6 @@ GERSEMI := uv tool run gersemi@0.29.2
 PYMARKDOWN := uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pymarkdown.json
 # Prettier is a Node package: uv runs Node from its PyPI wheel, and npx Prettier.
 PRETTIER := uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9
-# PSScriptAnalyzer is a PowerShell module: Windows PowerShell here, PowerShell 7
-# (pwsh) elsewhere, skipped where there is none (CI still runs it).
-ifeq ($(OS),Windows_NT)
-psscriptanalyzer = powershell -NoProfile -ExecutionPolicy Bypass -File scripts/psscriptanalyzer.ps1 $(1)
-else
-psscriptanalyzer = if command -v pwsh >/dev/null; then pwsh -NoProfile -File scripts/psscriptanalyzer.ps1 $(1); \
-  else echo "pwsh not found - skipping PSScriptAnalyzer"; fi
-endif
 
 # What CI's Lint step runs clang-tidy on: every src .cpp except the two
 # Windows-only trees and the audio module's Windows-only output device, which
@@ -84,7 +76,7 @@ INCLUDE_SOURCES := $(filter-out $(TIDY_SOURCES),$(shell git ls-files -- "src/*.c
 INCLUDE_CHECKS := $(addprefix include-cleaner/,$(INCLUDE_SOURCES))
 
 .DEFAULT_GOAL := all
-.PHONY: all help configure build test check install uninstall clean distclean format format-check tidy lint docs
+.PHONY: all help configure build test check coverage install uninstall clean distclean format format-check tidy lint docs
 
 all: build
 
@@ -97,6 +89,7 @@ help:
 	$(info $()  build         configure, then compile the binaries (no tests))
 	$(info $()  test          build, then compile the tests and run ctest)
 	$(info $()  check         the same as test)
+	$(info $()  coverage      test under the linux-coverage preset, then its report into build/x64-linux-coverage/report)
 	$(info $()  install       build, then cmake --install augustad (prefix=..., DESTDIR=...))
 	$(info $()  uninstall     remove what install put in place (same DESTDIR))
 	$(info $()  clean         remove build outputs, keep the configuration)
@@ -120,6 +113,14 @@ test: build
 	$(RUN) ctest --preset $(PRESET)
 
 check: test
+
+# The tests' coverage (ADR-0013), whatever PRESET says: the linux-coverage
+# preset's tests, then their llvm-cov report. The last run's profiles go first,
+# so the report is of this run alone.
+coverage:
+	cmake -E rm -rf build/x64-linux-coverage/profiles
+	$(MAKE) --no-print-directory test PRESET=linux-coverage
+	bash scripts/coverage-report.sh
 
 # DESTDIR reaches cmake --install through the environment: make exports a
 # variable set on its command line. PREFIX is taken for the GNU prefix too.
@@ -155,7 +156,6 @@ format:
 	$(SHFMT) -w $(shell git ls-files -- $(SHELL_SOURCES))
 	$(GERSEMI) -i $(shell git ls-files -- $(CMAKE_SOURCES))
 	$(PRETTIER) --log-level warn --write $(shell git ls-files -- $(MARKDOWN_SOURCES))
-	$(call psscriptanalyzer,-Fix)
 
 format-check:
 	clang-format --dry-run --Werror $(shell git ls-files -- $(CXX_SOURCES))
@@ -173,11 +173,8 @@ format-check:
 	$(GERSEMI) --check $(shell git ls-files -- $(CMAKE_SOURCES))
 	$(PRETTIER) --log-level warn --check $(shell git ls-files -- $(MARKDOWN_SOURCES))
 	$(PYMARKDOWN) scan $(shell git ls-files -- $(MARKDOWN_SOURCES))
-	$(call psscriptanalyzer)
 
-# -p is written -p=<dir> because PowerShell reads a bare -p as its own
-# -PipelineVariable when vcenv.ps1 forwards the arguments, and clang-tidy would
-# then run without the compile commands. Configuring first keeps
+# Configuring first keeps
 # compile_commands.json in step with the sources (a file new on a branch has no
 # entry until then).
 tidy: configure

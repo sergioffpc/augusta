@@ -21,6 +21,7 @@
 #include "lock_free_metrics.h"
 #include "match.h"
 #include "misbehaviour.h"
+#include "recording.h"
 
 // What the Host counts, as the metrics endpoint collects it: the catalogue's
 // names, types and labels (ADR-0049), and the heartbeat's totals read from the
@@ -33,6 +34,7 @@ using augusta::server::HostMetrics;
 using augusta::server::JoinRefusal;
 using augusta::server::Leaving;
 using augusta::server::PeerRejection;
+using augusta::server::RecordingState;
 using augusta::server::Rejection;
 using augusta::server::Totals;
 using prometheus::ClientMetric;
@@ -84,6 +86,7 @@ std::set<std::string> ValuesOf(const MetricFamily& family, const std::string& na
   return values;
 }
 
+// Requirements: NFR-07
 TEST(HostMetricsTest, EveryMetricOfTheCatalogueIsCollectedWithItsType) {
   const HostMetrics metrics(kTickRate);
   const std::vector<MetricFamily> families = metrics.Collect();
@@ -116,6 +119,8 @@ TEST(HostMetricsTest, EveryMetricOfTheCatalogueIsCollectedWithItsType) {
       {"augustad_hit_confirmations_total", MetricType::Counter},
       {"augustad_shooters_delay_seconds", MetricType::Histogram},
       {"augustad_shooters_delay_capped_total", MetricType::Counter},
+      {"augustad_bullets_in_flight", MetricType::Gauge},
+      {"augustad_recording_state", MetricType::Gauge},
   };
   for (const auto& [name, type] : catalogue) {
     EXPECT_EQ(Family(families, name).type, type) << name;
@@ -124,6 +129,32 @@ TEST(HostMetricsTest, EveryMetricOfTheCatalogueIsCollectedWithItsType) {
   EXPECT_EQ(families.size(), catalogue.size());
 }
 
+// The value of each augustad_recording_state series, by its state label.
+std::map<std::string, double> RecordingStates(const HostMetrics& metrics) {
+  std::map<std::string, double> states;
+  for (const ClientMetric& series : Family(metrics.Collect(), "augustad_recording_state").metric) {
+    states.emplace(LabelsOf(series).at("state"), series.gauge.value);
+  }
+  return states;
+}
+
+// Requirements: NFR-07
+TEST(HostMetricsTest, NoRecordingStateIsSetWhileNothingIsRecorded) {
+  const HostMetrics metrics(kTickRate);
+  EXPECT_EQ(RecordingStates(metrics),
+            (std::map<std::string, double>{{"enabled", 0.0}, {"degraded", 0.0}, {"stopped", 0.0}}));
+}
+
+// Requirements: NFR-07
+TEST(HostMetricsTest, OnlyTheRecordingsCurrentStateIsSet) {
+  HostMetrics metrics(kTickRate);
+  augusta::server::SetRecordingState(metrics, RecordingState::kEnabled);
+  augusta::server::SetRecordingState(metrics, RecordingState::kDegraded);
+  EXPECT_EQ(RecordingStates(metrics),
+            (std::map<std::string, double>{{"enabled", 0.0}, {"degraded", 1.0}, {"stopped", 0.0}}));
+}
+
+// Requirements: NFR-07
 TEST(HostMetricsTest, TheTickRateIsTheConfiguredOne) {
   const HostMetrics metrics(kTickRate);
 
@@ -131,6 +162,7 @@ TEST(HostMetricsTest, TheTickRateIsTheConfiguredOne) {
   EXPECT_EQ(Series(Family(families, "augustad_tick_rate_hertz"), {}).gauge.value, kTickRate);
 }
 
+// Requirements: NFR-07
 TEST(HostMetricsTest, TheTickDurationHasTheCataloguesBucketsInSeconds) {
   const HostMetrics metrics(kTickRate);
 
@@ -148,6 +180,7 @@ TEST(HostMetricsTest, TheTickDurationHasTheCataloguesBucketsInSeconds) {
   }
 }
 
+// Requirements: NFR-07
 TEST(HostMetricsTest, AHistogramCountsEachObservationInEveryBucketThatHoldsIt) {
   Histogram histogram({1.0, 2.0, 4.0});
 
@@ -161,6 +194,7 @@ TEST(HostMetricsTest, AHistogramCountsEachObservationInEveryBucketThatHoldsIt) {
   EXPECT_DOUBLE_EQ(snapshot.sum, 14.5);
 }
 
+// Requirements: NFR-07
 TEST(HostMetricsTest, JoinsAreLabelledByResultAndARefusalByItsReason) {
   HostMetrics metrics(kTickRate);
   metrics.joins_admitted.Increment();
@@ -175,6 +209,7 @@ TEST(HostMetricsTest, JoinsAreLabelledByResultAndARefusalByItsReason) {
                                                               "match_in_progress", "pack_mismatch"}));
 }
 
+// Requirements: NFR-07
 TEST(HostMetricsTest, DisconnectsAreLabelledByHowThePlayerLeftAndFromWhere) {
   HostMetrics metrics(kTickRate);
   metrics.disconnects_from_match[Leaving::kTimedOut].Increment();
@@ -188,6 +223,7 @@ TEST(HostMetricsTest, DisconnectsAreLabelledByHowThePlayerLeftAndFromWhere) {
   EXPECT_EQ(ValuesOf(disconnects, "phase"), (std::set<std::string>{"admission", "lobby", "match"}));
 }
 
+// Requirements: NFR-07
 TEST(HostMetricsTest, MisbehaviourIsLabelledByItsKindAndOnlyMisbehaviourHasOne) {
   HostMetrics metrics(kTickRate);
   metrics.misbehaviour[PeerRejection::kUndecodable].Increment(3);
@@ -201,6 +237,7 @@ TEST(HostMetricsTest, MisbehaviourIsLabelledByItsKindAndOnlyMisbehaviourHasOne) 
                                    "commands_before_joining"}));
 }
 
+// Requirements: NFR-07
 TEST(HostMetricsTest, DiscardedCommandsAreLabelledByWhyTheyWereTurnedAway) {
   HostMetrics metrics(kTickRate);
   metrics.commands_rejected[Rejection::kOutOfRange].Increment();
@@ -215,6 +252,7 @@ TEST(HostMetricsTest, DiscardedCommandsAreLabelledByWhyTheyWereTurnedAway) {
                                                                   "outside_match", "before_joining"}));
 }
 
+// Requirements: NFR-07
 TEST(HostMetricsTest, MessagesAreLabelledByTheirType) {
   HostMetrics metrics(kTickRate);
   metrics.messages_sent[augusta::server::MessageType::kAuthoritativeState].Increment();
@@ -230,6 +268,7 @@ TEST(HostMetricsTest, MessagesAreLabelledByTheirType) {
   EXPECT_EQ(ValuesOf(Family(families, "augustad_messages_received_total"), "type"), types);
 }
 
+// Requirements: NFR-07
 TEST(HostMetricsTest, MatchesEndedAreLabelledByOutcome) {
   HostMetrics metrics(kTickRate);
   metrics.matches_ended_with_winner.Increment();
@@ -241,6 +280,7 @@ TEST(HostMetricsTest, MatchesEndedAreLabelledByOutcome) {
   EXPECT_EQ(ValuesOf(ended, "outcome"), (std::set<std::string>{"winner", "draw", "abandoned"}));
 }
 
+// Requirements: NFR-07
 TEST(HostMetricsTest, HitConfirmationsAreLabelledByBodyPart) {
   HostMetrics metrics(kTickRate);
   metrics.hit_confirmations[augusta::ballistics::BodyPart::kHead].Increment();
@@ -253,6 +293,7 @@ TEST(HostMetricsTest, HitConfirmationsAreLabelledByBodyPart) {
 }
 
 // The heartbeat line and the series read one set of counters.
+// Requirements: NFR-07
 TEST(HostMetricsTest, TheHeartbeatsTotalsAreReadFromTheSameCounters) {
   HostMetrics metrics(kTickRate);
   metrics.ticks.Increment(5);

@@ -16,6 +16,7 @@ using augusta::presentation::FiredRounds;
 using augusta::presentation::kMuzzleFlashSeconds;
 using augusta::presentation::MuzzleOf;
 
+// Requirements: US-19
 TEST(AgeTest, AnEffectShowsUntilItsLifetimeIsUp) {
   std::vector<Effect> effects{{.position = Vec3(1.0F, 2.0F, 3.0F), .age = 0.0F}};
 
@@ -36,6 +37,7 @@ TEST(AgeTest, OnlyTheEffectsWhoseTimeIsUpGo) {
   EXPECT_FLOAT_EQ(effects.front().age, 0.3F);
 }
 
+// Requirements: US-19
 TEST(MuzzleOfTest, TheMuzzleIsAheadOfTheEyeWhereTheRoundLeavesFor) {
   const Vec3 eye(1.0F, 1.7F, 2.0F);
   const Vec3 direction(0.0F, 0.0F, -1.0F);
@@ -47,12 +49,14 @@ TEST(MuzzleOfTest, TheMuzzleIsAheadOfTheEyeWhereTheRoundLeavesFor) {
   EXPECT_LT(muzzle.z, eye.z);
 }
 
+// Requirements: US-18, US-19
 TEST(FiredRoundsTest, TheFirstStateSeenFiresNothingNew) {
   FiredRounds fired;
 
   EXPECT_EQ(fired.Update(7), 0U);
 }
 
+// Requirements: US-18, US-19
 TEST(FiredRoundsTest, EveryRoundFiredSinceTheLastStateSeenIsNew) {
   FiredRounds fired;
   (void)fired.Update(7);

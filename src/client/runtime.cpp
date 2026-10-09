@@ -11,14 +11,15 @@
 #include <string>
 #include <thread>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include <nvtx3/nvtx3.hpp>
 
+#include "application.h"
 #include "augusta/audio.h"
 #include "augusta/command.h"
 #include "augusta/cues.h"
+#include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/input.h"
 #include "augusta/interpolation.h"
@@ -31,7 +32,6 @@
 #include "augusta/presentation.h"
 #include "augusta/renderer.h"
 #include "augusta/runner.h"
-#include "augusta/supervisor.h"
 #include "augusta/tick.h"
 #include "character_loader.h"
 #include "content.h"
@@ -55,16 +55,6 @@ struct RunnerJoiner {
 };
 
 }  // namespace
-
-std::string DescribeRunFailure(const RunFailure& failure) {
-  if (const auto* session = std::get_if<harness::Failure>(&failure)) {
-    return harness::DescribeFailure(*session);
-  }
-  if (const auto* worker = std::get_if<supervisor::WorkerFailure>(&failure)) {
-    return supervisor::DescribeWorkerFailure(*worker);
-  }
-  return DescribeCharacterError(std::get<CharacterError>(failure));
-}
 
 struct ClientRuntime::Impl {
   RuntimeConfig config;
@@ -96,6 +86,11 @@ struct ClientRuntime::Impl {
   // otherwise once it holds real payload.
   std::mutex latest_tick_mutex;
   LatestTick latest_tick;
+
+  // Main/Render thread only: the Server view's Authoritative State and Match
+  // start as presentation's types, converted when they change and lent to
+  // every render frame in between (NextFrameInput).
+  ConvertedServerView converted_view;
 
   // What the last render frame showed the other players at, or nullopt while
   // it showed none: written once per Main/Render frame, read once per
@@ -206,15 +201,15 @@ struct ClientRuntime::Impl {
     return latest_tick;
   }
 
-  // Why the run must end, if a worker or the session has failed. A worker has
-  // logged its own failure where it failed; the session's is logged here.
-  std::optional<RunFailure> GetRunFailure() {
+  // Why the run must end, if a worker or the session has failed, classified.
+  // Not logged here: the application boundary writes the client's one terminal
+  // event for it (augusta/application.h).
+  std::optional<failure::Failure> GetRunFailure() {
     if (auto worker_failure = runner->Failure(); worker_failure.has_value()) {
       return std::move(*worker_failure);
     }
     if (const auto session_failure = session->GetFailure(); session_failure.has_value()) {
-      LE("subsystem=clientruntime event=session_failed reason=\"{}\"", harness::DescribeFailure(*session_failure));
-      return *session_failure;
+      return ClassifySessionFailure(*session_failure);
     }
     return std::nullopt;
   }
@@ -224,7 +219,7 @@ struct ClientRuntime::Impl {
   // fly by and ADS zooms to. So every render frame is drawn admitted. Returns
   // why the run failed first, if it did; returns nothing if the window closed
   // first. Main/Render thread only.
-  std::optional<RunFailure> WaitForAdmission() {
+  std::optional<failure::Failure> WaitForAdmission() {
     constexpr auto kPollInterval = std::chrono::milliseconds(10);
     while (!renderer.ShouldClose()) {
       if (auto failure = GetRunFailure(); failure.has_value()) {
@@ -249,10 +244,13 @@ struct ClientRuntime::Impl {
   //
   // Everything the server has said is read from one Server view, so the
   // state, the bodies it names and the match it belongs to are of one moment
-  // (ADR-0005), however the Network I/O thread interleaves with this one.
+  // (ADR-0005), however the Network I/O thread interleaves with this one; the
+  // events taken are of that view's match too. The snapshot and characters
+  // are lent from converted_view, so the frame must run before the next call.
   presentation::FrameInput NextFrameInput() {
     const LatestTick latest = GetLatestTick();
     const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
+    converted_view.Update(*view);
     presentation::FrameInput frame{
         .ticks = {.previous = latest.previous,
                   .latest = latest.latest,
@@ -260,19 +258,19 @@ struct ClientRuntime::Impl {
         .aim = ToPresentation(input.CurrentAim()),
         .fire = input.IsHeld(input::Control::kFire),
         .local_entity = std::nullopt,
-        .snapshot = SnapshotOf(*view),
-        .characters = CharactersOf(view->match_start),
+        .snapshot = converted_view.Snapshot(),
+        .characters = converted_view.Characters(),
         .shots = {},
-        .hit_confirmations = static_cast<std::uint32_t>(session->TakeHitConfirmations().size()),
+        .hit_confirmations = static_cast<std::uint32_t>(session->TakeHitConfirmations(*view).size()),
         .deaths = {},
         .health = view->authoritative.transform([](const harness::AuthoritativeState& state) { return state.health; }),
         .match_end = MatchEndOf(*view),
     };
     frame.local_entity = view->OwnEntity().transform([](harness::EntityId entity) { return ToPresentation(entity); });
-    for (const harness::Shot& shot : session->TakeShots()) {
+    for (const harness::Shot& shot : session->TakeShots(*view)) {
       frame.shots.push_back(ToPresentation(shot));
     }
-    for (const harness::Death& death : session->TakeDeaths()) {
+    for (const harness::Death& death : session->TakeDeaths(*view)) {
       frame.deaths.push_back(ToPresentation(death.victim));
     }
     return frame;
@@ -318,7 +316,7 @@ ClientRuntime::ClientRuntime(const RuntimeConfig& config, Content content)
 
 ClientRuntime::~ClientRuntime() = default;
 
-std::optional<RunFailure> ClientRuntime::Run() {
+std::optional<failure::Failure> ClientRuntime::Run() {
   Impl& impl = *impl_;
   impl.runner.emplace(*impl.session,
                       harness::RunnerHooks{
@@ -328,7 +326,7 @@ std::optional<RunFailure> ClientRuntime::Run() {
                       });
   const RunnerJoiner joiner{.runner = impl.runner};
 
-  std::optional<RunFailure> failure = impl.WaitForAdmission();
+  std::optional<failure::Failure> failure = impl.WaitForAdmission();
   if (failure.has_value()) {
     return failure;
   }
@@ -342,8 +340,7 @@ std::optional<RunFailure> ClientRuntime::Run() {
       break;
     }
     if (const auto load_failure = impl_->GetReadyForLobby(); load_failure.has_value()) {
-      LE("subsystem=clientruntime event=character_load_failed reason=\"{}\"", DescribeCharacterError(*load_failure));
-      failure = *load_failure;
+      failure = ClassifyCharacterError(*load_failure);
       break;
     }
     const nvtx3::scoped_range range{"Main/Render Frame"};

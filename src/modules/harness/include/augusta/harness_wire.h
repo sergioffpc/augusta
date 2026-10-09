@@ -2,11 +2,13 @@
 #define AUGUSTA_HARNESS_WIRE_H_
 
 #include <cstdint>
+#include <expected>
 #include <span>
 #include <string>
 
 #include "augusta/assets.h"
 #include "augusta/command.h"
+#include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -19,8 +21,16 @@
 /// engine's right after Decode, and what it sends, turned back right before
 /// Encode. The only place on the client where a protocol::*Wire type meets an
 /// engine type. Pure field-by-field copies; whether a value is one the client
-/// accepts is decided after, by whoever takes it in.
+/// accepts is decided after, by whoever takes it in. What it sends is encoded
+/// here too, so a payload the protocol cannot carry becomes the broken
+/// invariant that stops the client's runtime (ADR-0033) before anything of it
+/// leaves.
 namespace augusta::harness {
+
+/// message encoded, or, if a field of it is beyond what the protocol carries,
+/// no payload but a failure::Code::kInvariantViolated naming its type
+/// (`message_type=`): what the Session never sends.
+[[nodiscard]] std::expected<protocol::BytesWire, failure::Failure> EncodeToSend(const protocol::MessageWire& message);
 
 /// What this client asks when it joins, in the engine's terms.
 struct JoinRequest {

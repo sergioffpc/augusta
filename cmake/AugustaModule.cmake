@@ -1,16 +1,17 @@
-# Tags each augusta_* module target (and the two runtime targets,
-# augustac_runtime/augustad_runtime) with which side of the client/server
-# split it belongs to, and checks that no tagged target's declared
-# dependencies cross a boundary it isn't allowed to cross - turning
+# Tags each augusta_* module target (and the runtime targets and executables,
+# augustac_runtime/augustad_runtime and augustac/augustad) with which side
+# of the client/server split it belongs to, and checks that no tagged
+# target's declared dependencies cross a boundary it isn't allowed to
+# cross - turning
 # docs/ARCHITECTURE.md §5's Shared Core/Client-only/Server-only split
 # into a configure-time check instead of relying on code review to catch
 # a client-only module linked into augustad_runtime (or vice versa).
 #
 # Usage: call augusta_set_module_scope(<target> <SHARED|CLIENT_ONLY|
-# SERVER_ONLY>) right after a module's own add_library() (or after
-# augustac_runtime/augustad_runtime's own target_link_libraries() call),
+# SERVER_ONLY>) right after a module's own add_library() (or after a
+# runtime target's or executable's own target_link_libraries() call),
 # then call augusta_check_module_scopes() exactly once, after every
-# module and both runtime targets have been defined.
+# tagged target has been defined.
 include_guard(GLOBAL)
 
 set_property(GLOBAL PROPERTY AUGUSTA_MODULE_SCOPE_TARGETS "")

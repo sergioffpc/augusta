@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/client_config.h"
 #include "augusta/config.h"
 
 // augusta-swarm.yaml's keys, read under ADR-0034's rules.

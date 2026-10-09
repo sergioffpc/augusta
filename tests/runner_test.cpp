@@ -7,17 +7,21 @@
 #include <mutex>
 #include <optional>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #include "augusta/command.h"
+#include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
+#include "augusta/protocol.h"
 #include "augusta/supervisor.h"
 #include "augusta/tick.h"
 #include "content.h"
@@ -79,6 +83,16 @@ Command Walking() {
   return command;
 }
 
+// The value of the failure's context under key, or empty if it has none.
+std::string ContextOf(const augusta::failure::Failure& failure, std::string_view key) {
+  for (const auto& field : failure.context) {
+    if (field.key == key) {
+      return field.value;
+    }
+  }
+  return {};
+}
+
 // Where the newest Authoritative State in view puts this client's player, if it names it.
 std::optional<Vec3> OwnPosition(const ServerView& view) {
   const auto entity = view.OwnEntity();
@@ -100,7 +114,9 @@ class RunnerTest : public ::testing::Test {
                          .parameters = {},
                          .listen = Endpoint{.address = "127.0.0.1:0"},
                          .recording = {},
-                         .server_pack = {}},
+                         .recording_mode = {},
+                         .server_pack = {},
+                         .faults = nullptr},
               Scenario{.collision = {FloorAt(kGroundHeight)},
                        .spawn_points = {},
                        .characters = {{.path = kCharacter, .hitboxes = {}}}}),
@@ -179,9 +195,75 @@ TEST_F(RunnerTest, ACommandSourceThatThrowsStopsTheRunnerWithAFailureOfThePredic
 
   ASSERT_TRUE(ServeUntil([&] { return runner.Failure().has_value(); }));
 
-  const augusta::supervisor::WorkerFailure failure = *runner.Failure();
-  EXPECT_EQ(failure.thread, "prediction");
-  EXPECT_EQ(failure.reason, "no input");
+  const augusta::failure::Failure failure = *runner.Failure();
+  EXPECT_EQ(failure.code, augusta::failure::Code::kWorkerFailed);
+  EXPECT_EQ(ContextOf(failure, augusta::supervisor::kThreadContextKey), "prediction");
+  EXPECT_EQ(failure.detail, "no input");
+}
+
+// Once the Network I/O thread fails, the Prediction thread finishes at most
+// the Tick it is in: a Tick that already sees the failure, and so the stop
+// requested before it, is the last one. Nothing ticks once the Runner is gone.
+TEST_F(RunnerTest, ANetworkThreadFailureStopsThePredictionTicksAndBothThreadsAreJoined) {
+  constexpr auto kSeveralTicks = std::chrono::milliseconds(200);
+  std::atomic<const Runner*> running{nullptr};
+  std::atomic<int> ticks = 0;
+  std::atomic<int> ticks_seeing_the_failure = 0;
+  std::atomic<bool> fail_next_round = false;
+  {
+    const Runner runner(session_, RunnerHooks{.next_command = [] { return Command{}; },
+                                              .on_tick =
+                                                  [&](const PredictedTick&) {
+                                                    ++ticks;
+                                                    const Runner* const current = running.load();
+                                                    if (current != nullptr && current->Failure().has_value()) {
+                                                      ++ticks_seeing_the_failure;
+                                                    }
+                                                  },
+                                              .on_network_round =
+                                                  [&] {
+                                                    if (fail_next_round) {
+                                                      throw std::runtime_error("link down");
+                                                    }
+                                                  }});
+    running = &runner;
+    ASSERT_TRUE(ServeUntil([&] { return ticks >= kTickRate / 4; }));
+
+    fail_next_round = true;
+    ASSERT_TRUE(ServeUntil([&] { return runner.Failure().has_value(); }));
+    // Long enough for several more Ticks, had the stop not ended them.
+    std::this_thread::sleep_for(kSeveralTicks);
+
+    const augusta::failure::Failure failure = *runner.Failure();
+    EXPECT_EQ(failure.code, augusta::failure::Code::kWorkerFailed);
+    EXPECT_EQ(ContextOf(failure, augusta::supervisor::kThreadContextKey), "network");
+    EXPECT_EQ(failure.detail, "link down");
+  }
+  const int ticks_when_joined = ticks;
+  std::this_thread::sleep_for(kSeveralTicks);
+
+  EXPECT_LE(ticks_seeing_the_failure.load(), 1);
+  EXPECT_EQ(ticks.load(), ticks_when_joined);
+}
+
+// A Join request naming a character longer than the protocol carries is never
+// sent, in any build: the Network I/O thread stops on a broken invariant
+// (ADR-0033) instead, and the server admits no one.
+TEST_F(RunnerTest, AJoinRequestTheProtocolCannotCarryStopsTheRunnerWithAnInvariantFailureOfTheNetworkThread) {
+  Session session(SessionConfig{.server = host_.ListenEndpoint(),
+                                .character = std::string(augusta::protocol::kMaxCharacterNameLength + 1, 'c')},
+                  WorldWithFloor());
+  const Runner runner(session,
+                      RunnerHooks{.next_command = [] { return Command{}; }, .on_tick = {}, .on_network_round = {}});
+
+  ASSERT_TRUE(ServeUntil([&] { return runner.Failure().has_value(); }));
+
+  const augusta::failure::Failure failure = *runner.Failure();
+  EXPECT_EQ(failure.code, augusta::failure::Code::kInvariantViolated);
+  EXPECT_EQ(ContextOf(failure, augusta::supervisor::kThreadContextKey), "network");
+  EXPECT_FALSE(session.GetSessionId().has_value());
+  // The Runner took it: it is reported once.
+  EXPECT_FALSE(session.TakeInvariantFailure().has_value());
 }
 
 }  // namespace
