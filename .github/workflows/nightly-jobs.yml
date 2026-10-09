@@ -64,7 +64,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [protocol_decode, pack_load]
+        target: [protocol_decode, capture_read, pack_load]
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
       CORPUS: fuzz-corpus/${{ matrix.target }}

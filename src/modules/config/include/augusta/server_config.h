@@ -52,6 +52,9 @@ struct ServerConfig {
   /// "strict", true here, for a replay or verification run that needs it whole,
   /// whose server then stops with a failure (ADR-0048).
   bool strict_recording = false;
+  /// Key `simulation.capture`: the directory to capture every Match into, one
+  /// file each (ADR-0050), created if missing. Empty, the default, captures nothing.
+  std::filesystem::path capture_directory;
   /// Key `metrics.port`: the TCP port, 1..65535, the metrics endpoint serves
   /// /metrics and /livez on, on every interface (ADR-0049).
   std::uint16_t metrics_port = kDefaultMetricsPort;

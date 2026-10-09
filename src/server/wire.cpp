@@ -1,6 +1,7 @@
 #include "wire.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -9,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "augusta/assets.h"
@@ -23,6 +25,7 @@
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
+#include "capture.h"
 #include "command_queue.h"
 #include "host_metrics.h"
 #include "match.h"
@@ -45,6 +48,23 @@ static_assert(static_cast<std::uint8_t>(physics::Stance::kProne) ==
 protocol::StanceWire ToWire(physics::Stance stance) { return static_cast<protocol::StanceWire>(stance); }
 
 physics::Stance FromWire(protocol::StanceWire stance) { return static_cast<physics::Stance>(stance); }
+
+// command as a Commands message carries it, but for its Seen time's tick,
+// which whoever stores it keeps beside it: its age is 0.
+protocol::CommandWire ToWire(const command::Command& command) {
+  std::uint8_t flags = 0;
+  flags |= command.movement.sprint ? protocol::CommandWire::kSprint : std::uint8_t{0};
+  flags |= command.ads ? protocol::CommandWire::kAds : std::uint8_t{0};
+  flags |= command.fire ? protocol::CommandWire::kFire : std::uint8_t{0};
+  flags |= command.reload ? protocol::CommandWire::kReload : std::uint8_t{0};
+  return protocol::CommandWire{.direction = command.movement.direction,
+                               .yaw = command.yaw,
+                               .pitch = command.pitch,
+                               .seen_fraction = command.seen_fraction,
+                               .flags = flags,
+                               .desired_stance = ToWire(command.movement.desired_stance),
+                               .seen_age = 0};
+}
 
 // The protocol carries a pack's hash as the assets module computes it.
 static_assert(protocol::kPackHashSize == assets::kPackHashSize);
@@ -207,8 +227,9 @@ protocol::LobbyWire ToWire(const Roster& roster) {
   return lobby;
 }
 
-protocol::MatchStartWire ToWire(const MatchStart& start, std::span<const math::Vec3> spawns) {
+protocol::MatchStartWire ToWire(const MatchStart& start, std::span<const math::Vec3> spawns, tick::Tick first_tick) {
   protocol::MatchStartWire message;
+  message.first_tick = first_tick;
   message.players.reserve(start.players.size());
   for (std::size_t i = 0; i < start.players.size(); ++i) {
     const MatchPlayer& player = start.players[i];
@@ -333,21 +354,9 @@ namespace {
 
 // A recorded command in full: its Seen time's tick goes beside it, so its age is 0.
 protocol::RecordedCommandWire ToWire(const simulation::PlayerCommand& command) {
-  const command::Command& sent = command.command;
-  std::uint8_t flags = 0;
-  flags |= sent.movement.sprint ? protocol::CommandWire::kSprint : std::uint8_t{0};
-  flags |= sent.ads ? protocol::CommandWire::kAds : std::uint8_t{0};
-  flags |= sent.fire ? protocol::CommandWire::kFire : std::uint8_t{0};
-  flags |= sent.reload ? protocol::CommandWire::kReload : std::uint8_t{0};
   return protocol::RecordedCommandWire{
-      .seen_tick = sent.seen_tick,
-      .command = {.direction = sent.movement.direction,
-                  .yaw = sent.yaw,
-                  .pitch = sent.pitch,
-                  .seen_fraction = sent.seen_fraction,
-                  .flags = flags,
-                  .desired_stance = ToWire(sent.movement.desired_stance),
-                  .seen_age = 0},
+      .seen_tick = command.command.seen_tick,
+      .command = ToWire(command.command),
       .entity = server::ToWire(FromSimulation(command.entity)),
   };
 }
@@ -543,6 +552,107 @@ TickRecord FromWire(const protocol::RecordedTickWire& record, tick::Tick tick) {
         .winner = record.winner == protocol::kDraw ? std::nullopt : std::optional(FromWire(record.winner))};
   }
   return result;
+}
+
+namespace {
+
+protocol::PackHashWire ToWire(const assets::PackHash& hash) {
+  protocol::PackHashWire wire{};
+  std::ranges::copy(hash, wire.begin());
+  return wire;
+}
+
+// One overload per event: its record, at offset.
+struct CapturedEventToWire {
+  std::uint32_t offset;
+
+  protocol::CaptureRecordWire operator()(const CapturedJoin& join) const {
+    return protocol::CapturedJoinWire{.spawn = join.spawn,
+                                      .offset = offset,
+                                      .session = server::ToWire(join.session),
+                                      .character = join.character,
+                                      .player = join.player};
+  }
+  protocol::CaptureRecordWire operator()(const CapturedCommand& command) const {
+    return protocol::CapturedCommandWire{.command = ToWire(command.command),
+                                         .offset = offset,
+                                         .seen_offset = command.seen_offset,
+                                         .player = command.player};
+  }
+  protocol::CaptureRecordWire operator()(const CapturedLeave& leave) const {
+    return protocol::CapturedLeaveWire{.offset = offset, .player = leave.player};
+  }
+  protocol::CaptureRecordWire operator()(const CapturedDeath& death) const {
+    return protocol::CapturedDeathWire{.offset = offset, .victim = death.victim, .killer = death.killer};
+  }
+  protocol::CaptureRecordWire operator()(const CapturedMatchEnd& end) const {
+    return protocol::CapturedMatchEndWire{.offset = offset, .winner = end.winner.value_or(0)};
+  }
+};
+
+// One overload per record: its event, nullopt for the header, which is none.
+struct CaptureRecordFromWire {
+  std::optional<CaptureRecord> operator()(const protocol::CaptureHeaderWire& /*header*/) const { return std::nullopt; }
+  std::optional<CaptureRecord> operator()(const protocol::CapturedJoinWire& join) const {
+    return CaptureRecord{.offset = join.offset,
+                         .event = CapturedJoin{.player = join.player,
+                                               .session = static_cast<SessionId>(std::to_underlying(join.session)),
+                                               .character = join.character,
+                                               .spawn = join.spawn}};
+  }
+  std::optional<CaptureRecord> operator()(const protocol::CapturedCommandWire& command) const {
+    return CaptureRecord{.offset = command.offset,
+                         .event = CapturedCommand{.player = command.player,
+                                                  .seen_offset = command.seen_offset,
+                                                  .command = server::FromWire(command.command, 0)}};
+  }
+  std::optional<CaptureRecord> operator()(const protocol::CapturedLeaveWire& leave) const {
+    return CaptureRecord{.offset = leave.offset, .event = CapturedLeave{.player = leave.player}};
+  }
+  std::optional<CaptureRecord> operator()(const protocol::CapturedDeathWire& death) const {
+    return CaptureRecord{.offset = death.offset,
+                         .event = CapturedDeath{.victim = death.victim, .killer = death.killer}};
+  }
+  std::optional<CaptureRecord> operator()(const protocol::CapturedMatchEndWire& end) const {
+    return CaptureRecord{.offset = end.offset,
+                         .event = CapturedMatchEnd{
+                             .winner = end.winner == 0 ? std::nullopt : std::optional<CapturedPlayer>(end.winner)}};
+  }
+};
+
+}  // namespace
+
+std::expected<protocol::BytesWire, failure::Failure> EncodeToCapture(const protocol::CaptureRecordWire& record) {
+  return protocol::EncodeCaptureRecord(record).transform_error([&record](protocol::EncodeError error) {
+    return BrokenInvariant(error, "capture_record_type", static_cast<std::uint8_t>(protocol::TypeOf(record)));
+  });
+}
+
+protocol::CaptureHeaderWire ToWire(const CaptureHeader& header) {
+  return protocol::CaptureHeaderWire{.server_pack = ToWire(header.server_pack),
+                                     .client_pack = ToWire(header.client_pack),
+                                     .engine_version = header.engine_version,
+                                     .started_unix_ms = header.started.time_since_epoch().count(),
+                                     .format_version = protocol::kCaptureFormatVersion,
+                                     .tick_rate_hz = header.tick_rate_hz};
+}
+
+CaptureHeader FromWire(const protocol::CaptureHeaderWire& header) {
+  return CaptureHeader{
+      .engine_version = header.engine_version,
+      .server_pack = FromWire(header.server_pack),
+      .client_pack = FromWire(header.client_pack),
+      .tick_rate_hz = header.tick_rate_hz,
+      .started = std::chrono::sys_time<std::chrono::milliseconds>(std::chrono::milliseconds(header.started_unix_ms)),
+  };
+}
+
+protocol::CaptureRecordWire ToWire(const CaptureRecord& record) {
+  return std::visit(CapturedEventToWire{.offset = record.offset}, record.event);
+}
+
+std::optional<CaptureRecord> FromWire(const protocol::CaptureRecordWire& record) {
+  return std::visit(CaptureRecordFromWire{}, record);
 }
 
 }  // namespace augusta::server

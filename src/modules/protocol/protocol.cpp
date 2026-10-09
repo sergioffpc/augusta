@@ -486,7 +486,10 @@ MatchPlayerWire ReadMatchPlayer(Reader& reader) {
 }
 
 MatchStartWire ReadMatchStart(Reader& reader) {
-  return MatchStartWire{.players = ReadList(reader, primitives::kMaxPlayers, ReadMatchPlayer)};
+  MatchStartWire start;
+  start.players = ReadList(reader, primitives::kMaxPlayers, ReadMatchPlayer);
+  start.first_tick = reader.ReadTick();
+  return start;
 }
 
 ShotWire ReadShot(Reader& reader) {
@@ -665,6 +668,7 @@ struct Encoder {
   void operator()(const MatchStartWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kMatchStart));
     WriteList(out, message.players, primitives::kMaxPlayers, WriteMatchPlayer);
+    WriteTick(out, message.first_tick);
   }
 
   void operator()(const MatchEndWire& message) const {
@@ -812,6 +816,132 @@ struct RecordEncoder {
   }
 };
 
+void WriteSigned32(Writer& out, std::int32_t value) { WriteU32(out, std::bit_cast<std::uint32_t>(value)); }
+
+CaptureHeaderWire ReadCaptureHeader(Reader& reader) {
+  CaptureHeaderWire header;
+  header.format_version = reader.ReadU8();
+  header.engine_version = reader.ReadString(kMaxEngineVersionLength);
+  header.server_pack = reader.ReadPackHash();
+  header.client_pack = reader.ReadPackHash();
+  header.tick_rate_hz = reader.ReadU8();
+  header.started_unix_ms = std::bit_cast<std::int64_t>(reader.ReadTick());
+  return header;
+}
+
+CapturedJoinWire ReadCapturedJoin(Reader& reader) {
+  CapturedJoinWire join;
+  join.offset = reader.ReadU32();
+  join.player = reader.ReadU8();
+  join.session = static_cast<SessionIdWire>(reader.ReadU32());
+  join.character = reader.ReadCharacter();
+  join.spawn = reader.ReadVec3(math::kPositionGrid);
+  return join;
+}
+
+// The command goes last, so a reader that only counts commands (augusta-inspect)
+// stops before it.
+CapturedCommandWire ReadCapturedCommand(Reader& reader) {
+  CapturedCommandWire command;
+  command.offset = reader.ReadU32();
+  command.player = reader.ReadU8();
+  command.seen_offset = std::bit_cast<std::int32_t>(reader.ReadU32());
+  command.command = ReadCommand(reader);
+  return command;
+}
+
+CapturedLeaveWire ReadCapturedLeave(Reader& reader) {
+  CapturedLeaveWire leave;
+  leave.offset = reader.ReadU32();
+  leave.player = reader.ReadU8();
+  return leave;
+}
+
+CapturedDeathWire ReadCapturedDeath(Reader& reader) {
+  CapturedDeathWire death;
+  death.offset = reader.ReadU32();
+  death.victim = reader.ReadU8();
+  death.killer = reader.ReadU8();
+  return death;
+}
+
+CapturedMatchEndWire ReadCapturedMatchEnd(Reader& reader) {
+  CapturedMatchEndWire end;
+  end.offset = reader.ReadU32();
+  end.winner = reader.ReadU8();
+  return end;
+}
+
+// nullopt when type is not a record of a capture.
+std::optional<CaptureRecordWire> ReadCaptureRecordBody(CaptureRecordTypeWire type, Reader& reader) {
+  switch (type) {
+    case CaptureRecordTypeWire::kHeader:
+      return ReadCaptureHeader(reader);
+    case CaptureRecordTypeWire::kJoin:
+      return ReadCapturedJoin(reader);
+    case CaptureRecordTypeWire::kCommand:
+      return ReadCapturedCommand(reader);
+    case CaptureRecordTypeWire::kLeave:
+      return ReadCapturedLeave(reader);
+    case CaptureRecordTypeWire::kDeath:
+      return ReadCapturedDeath(reader);
+    case CaptureRecordTypeWire::kMatchEnd:
+      return ReadCapturedMatchEnd(reader);
+  }
+  return std::nullopt;
+}
+
+// One overload per record: the type tag, then the fields, an event's offset first.
+struct CaptureRecordEncoder {
+  Writer& out;
+
+  void operator()(const CaptureHeaderWire& header) const {
+    WriteU8(out, static_cast<std::uint8_t>(CaptureRecordTypeWire::kHeader));
+    WriteU8(out, header.format_version);
+    WriteString(out, header.engine_version, kMaxEngineVersionLength);
+    WritePackHash(out, header.server_pack);
+    WritePackHash(out, header.client_pack);
+    WriteU8(out, header.tick_rate_hz);
+    WriteTick(out, std::bit_cast<primitives::Tick>(header.started_unix_ms));
+  }
+
+  void operator()(const CapturedJoinWire& join) const {
+    WriteU8(out, static_cast<std::uint8_t>(CaptureRecordTypeWire::kJoin));
+    WriteU32(out, join.offset);
+    WriteU8(out, join.player);
+    WriteU32(out, static_cast<std::uint32_t>(join.session));
+    WriteCharacter(out, join.character);
+    WriteVec3(out, join.spawn, math::kPositionGrid);
+  }
+
+  void operator()(const CapturedCommandWire& command) const {
+    WriteU8(out, static_cast<std::uint8_t>(CaptureRecordTypeWire::kCommand));
+    WriteU32(out, command.offset);
+    WriteU8(out, command.player);
+    WriteSigned32(out, command.seen_offset);
+    WriteCommand(out, command.command);
+  }
+
+  void operator()(const CapturedLeaveWire& leave) const {
+    WriteU8(out, static_cast<std::uint8_t>(CaptureRecordTypeWire::kLeave));
+    WriteU32(out, leave.offset);
+    WriteU8(out, leave.player);
+  }
+
+  void operator()(const CapturedDeathWire& death) const {
+    WriteU8(out, static_cast<std::uint8_t>(CaptureRecordTypeWire::kDeath));
+    WriteU32(out, death.offset);
+    WriteU8(out, death.victim);
+    WriteU8(out, death.killer);
+  }
+
+  void operator()(const CapturedMatchEndWire& end) const {
+    WriteU8(out, static_cast<std::uint8_t>(CaptureRecordTypeWire::kMatchEnd));
+    WriteU32(out, end.offset);
+    WriteU8(out, end.winner);
+  }
+};
+
 // A payload whose body was read into body by reader, after its type byte: the
 // body, unless its type is unknown (nullopt), the read met a problem, or bytes
 // remain.
@@ -851,6 +981,36 @@ std::expected<RecordWire, DecodeError> DecodeRecord(std::span<const std::byte> p
   }
   Reader reader(payload.subspan(1));
   return Finish(ReadRecordBody(static_cast<RecordTypeWire>(payload.front()), reader), reader);
+}
+
+std::expected<BytesWire, EncodeError> EncodeCaptureRecord(const CaptureRecordWire& record) {
+  Writer out;
+  std::visit(CaptureRecordEncoder{.out = out}, record);
+  return std::move(out).Finish();
+}
+
+CaptureRecordTypeWire TypeOf(const CaptureRecordWire& record) {
+  struct Type {
+    CaptureRecordTypeWire operator()(const CaptureHeaderWire& /*wire*/) const { return CaptureRecordTypeWire::kHeader; }
+    CaptureRecordTypeWire operator()(const CapturedJoinWire& /*wire*/) const { return CaptureRecordTypeWire::kJoin; }
+    CaptureRecordTypeWire operator()(const CapturedCommandWire& /*wire*/) const {
+      return CaptureRecordTypeWire::kCommand;
+    }
+    CaptureRecordTypeWire operator()(const CapturedLeaveWire& /*wire*/) const { return CaptureRecordTypeWire::kLeave; }
+    CaptureRecordTypeWire operator()(const CapturedDeathWire& /*wire*/) const { return CaptureRecordTypeWire::kDeath; }
+    CaptureRecordTypeWire operator()(const CapturedMatchEndWire& /*wire*/) const {
+      return CaptureRecordTypeWire::kMatchEnd;
+    }
+  };
+  return std::visit(Type{}, record);
+}
+
+std::expected<CaptureRecordWire, DecodeError> DecodeCaptureRecord(std::span<const std::byte> payload) {
+  if (payload.empty()) {
+    return std::unexpected(DecodeError::kEmpty);
+  }
+  Reader reader(payload.subspan(1));
+  return Finish(ReadCaptureRecordBody(static_cast<CaptureRecordTypeWire>(payload.front()), reader), reader);
 }
 
 std::expected<BytesWire, EncodeError> Encode(const MessageWire& message) {

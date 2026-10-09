@@ -205,6 +205,22 @@ TEST(CommandQueueTest, HeldAndIdleTicksNeverRepeatAOneShotAction) {
   EXPECT_FALSE(held.command.fire);
 }
 
+// ADR-0050: a Match capture keeps only what the client sent, never the
+// server's own held or idle movement.
+TEST(CommandQueueTest, SaysWhichTicksGetACommandTheClientSent) {
+  CommandQueue queue{kTickRate};
+  const auto idle = queue.Next();
+  ASSERT_TRUE(queue.TryEnqueue(Walk(1)).has_value());
+  ASSERT_FALSE(queue.TryEnqueue(Walk(1)).has_value());
+
+  const auto sent = queue.Next();
+  const auto held = queue.Next();
+
+  EXPECT_FALSE(idle.sent);
+  EXPECT_TRUE(sent.sent);
+  EXPECT_FALSE(held.sent);
+}
+
 TEST(CommandQueueTest, WithNothingEverReceivedAPlayerStandsStill) {
   CommandQueue queue{kTickRate};
 

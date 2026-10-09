@@ -163,6 +163,8 @@ struct MatchPlayer {
 /// What the server said when a match started: everyone in it, this client's own player included.
 struct MatchStart {
   std::vector<MatchPlayer> players;
+  /// The Match's first server tick: what a Match capture's offsets count from (ADR-0050).
+  tick::Tick first_tick = 0;
 };
 
 /// What the server said when a match ended (US-14).

@@ -134,6 +134,11 @@ target_link_libraries(
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_protocol_recording_tests DISCOVERY_TIMEOUT 30)
 
+# A Match capture's records, in the protocol's encoding (ADR-0050).
+add_executable(augusta_protocol_capture_tests protocol_capture_test.cpp)
+target_link_libraries(augusta_protocol_capture_tests PRIVATE augusta_protocol GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_protocol_capture_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_protocol_property_tests protocol_property_test.cpp)
 target_link_libraries(
   augusta_protocol_property_tests
@@ -451,6 +456,11 @@ target_compile_definitions(
 )
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_server_application_tests DISCOVERY_TIMEOUT 30)
+
+# Match captures (ADR-0050): a Capturer's files, read back, with no Host.
+add_executable(augusta_capture_tests capture_test.cpp)
+target_link_libraries(augusta_capture_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_capture_tests DISCOVERY_TIMEOUT 30)
 
 # Match recordings (ADR-0048), on the example scenario as the server loads it
 # from its golden server pack. Their replay is tools/replay's, tested there.

@@ -20,6 +20,7 @@
 #include "augusta/policy_actions.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
+#include "frames.h"
 
 /// \file
 /// A match recording (ADR-0048): what server::Host handed its SimulationWorld
@@ -104,7 +105,7 @@ struct Recording {
 /// The longest record a recording holds, in bytes: many times the largest a
 /// tick of the most players makes, so a length past it is a corrupted one, and
 /// is refused before anything is allocated for it.
-inline constexpr std::size_t kMaxRecordSize = std::size_t{64} * 1024;
+inline constexpr std::size_t kMaxRecordSize = kRecordingFrames.max_payload;
 
 enum class RecordingError : std::uint8_t {
   /// The stream could not be read, or was never opened.

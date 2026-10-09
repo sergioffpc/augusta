@@ -524,7 +524,7 @@ jobs:
         run: |
           mkdir -p fuzz-crashes
           status=0
-          for target in protocol_decode pack_load; do
+          for target in protocol_decode capture_read pack_load; do
             mkdir -p "fuzz-corpus/$target"
             "build/x64-linux-fuzz/tests/fuzz/augusta_${target}_fuzz" \
               -max_total_time=60 -timeout=5 -artifact_prefix="fuzz-crashes/$target-" \

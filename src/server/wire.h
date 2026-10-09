@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -15,6 +16,7 @@
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
 #include "augusta/tick.h"
+#include "capture.h"
 #include "command_queue.h"
 #include "host_metrics.h"
 #include "match.h"
@@ -24,7 +26,7 @@
 /// The server's edge with the Networking Protocol (ADR-0038): what server::Host
 /// sends, turned from the engine's types into the protocol's plain ones right
 /// before Encode, and what it receives, turned back right after Decode; and a
-/// match recording's records (recording.h), the same way. The only
+/// match recording's records (recording.h) and a Match capture's (capture.h), the same way. The only
 /// place on the server where a protocol::*Wire type meets an engine type: Match,
 /// CommandQueue and replication never see one. Pure field-by-field copies;
 /// whether a value is one the server accepts is decided after, by whoever takes
@@ -41,6 +43,11 @@ namespace augusta::server {
 /// record encoded, or no payload but the broken invariant naming its type
 /// (`record_type=`), as EncodeToSend: what a recording never holds.
 [[nodiscard]] std::expected<protocol::BytesWire, failure::Failure> EncodeToRecord(const protocol::RecordWire& record);
+
+/// record encoded, or no payload but the broken invariant naming its type
+/// (`capture_record_type=`), as EncodeToSend: what a capture never holds.
+[[nodiscard]] std::expected<protocol::BytesWire, failure::Failure> EncodeToCapture(
+    const protocol::CaptureRecordWire& record);
 
 /// session as the protocol carries it.
 [[nodiscard]] protocol::SessionIdWire ToWire(SessionId session);
@@ -71,8 +78,9 @@ namespace augusta::server {
 
 /// A match's start as the protocol carries it, its players spawned where
 /// SimulationWorld put them: each of start.players at the spawns entry of the
-/// same index.
-[[nodiscard]] protocol::MatchStartWire ToWire(const MatchStart& start, std::span<const math::Vec3> spawns);
+/// same index; first_tick is the Match's first tick.
+[[nodiscard]] protocol::MatchStartWire ToWire(const MatchStart& start, std::span<const math::Vec3> spawns,
+                                              tick::Tick first_tick);
 
 /// A match's end as the protocol carries it: a draw names protocol::kDraw.
 [[nodiscard]] protocol::MatchEndWire ToWire(const MatchEnd& end);
@@ -123,6 +131,18 @@ void Address(protocol::AuthoritativeStateWire& state, const replication::Recipie
 
 /// A recording's record of tick, as the World numbers it, in the engine's terms.
 [[nodiscard]] TickRecord FromWire(const protocol::RecordedTickWire& record, tick::Tick tick);
+
+/// A Match capture's header as its record (ADR-0050), in this engine's format version.
+[[nodiscard]] protocol::CaptureHeaderWire ToWire(const CaptureHeader& header);
+
+/// A capture's header record in the engine's terms; its format version is the reader's to check.
+[[nodiscard]] CaptureHeader FromWire(const protocol::CaptureHeaderWire& header);
+
+/// One event of a capture as its record.
+[[nodiscard]] protocol::CaptureRecordWire ToWire(const CaptureRecord& record);
+
+/// A capture's record in the engine's terms; nullopt for its header, which is no event.
+[[nodiscard]] std::optional<CaptureRecord> FromWire(const protocol::CaptureRecordWire& record);
 
 }  // namespace augusta::server
 

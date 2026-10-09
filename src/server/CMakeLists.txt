@@ -116,6 +116,8 @@ augusta_set_module_scope(augustad_connection_health SERVER_ONLY)
 add_library(
   augustad_host
   STATIC
+  capture.cpp
+  frames.cpp
   host.cpp
   host_log.cpp
   host_match.cpp

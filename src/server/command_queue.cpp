@@ -79,7 +79,7 @@ TickCommand CommandQueue::Next() {
     last_ = next.command;
     held_ticks_ = 0;
     acknowledged_ = next.sequence;
-    return TickCommand{.command = next.command, .acknowledged_sequence = acknowledged_};
+    return TickCommand{.command = next.command, .acknowledged_sequence = acknowledged_, .sent = true};
   }
   if (!last_.has_value()) {
     TickCommand idle{};

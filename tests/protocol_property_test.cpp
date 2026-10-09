@@ -113,7 +113,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
         showValue(player.spawn, out);
         out << "; ";
       }
-      out << "}";
+      out << "first tick " << start.first_tick << "}";
     }
     void operator()(const MatchEndWire& end) const {
       out << "MatchEnd{winner " << static_cast<std::uint32_t>(end.winner) << "}";
@@ -348,7 +348,8 @@ rc::Gen<MatchStartWire> MatchStart() {
                                                       rc::gen::set(&MatchPlayerWire::entity, AnyId<EntityIdWire>()),
                                                       rc::gen::set(&MatchPlayerWire::character, Character()));
   return rc::gen::build<MatchStartWire>(
-      rc::gen::set(&MatchStartWire::players, UpTo<std::vector<MatchPlayerWire>>(kMaxPlayers, player)));
+      rc::gen::set(&MatchStartWire::players, UpTo<std::vector<MatchPlayerWire>>(kMaxPlayers, player)),
+      rc::gen::set(&MatchStartWire::first_tick, rc::gen::arbitrary<std::uint64_t>()));
 }
 
 rc::Gen<MatchEndWire> MatchEnd() {
