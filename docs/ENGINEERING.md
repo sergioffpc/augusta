@@ -248,11 +248,13 @@ no self-hosted GitHub Actions runner in this pipeline).
   container equivalent (see below).
 - **macOS (through the dev container):** nothing builds natively on macOS (the
   presets are Linux's and Windows'), and nothing is installed there but git, Git
-  LFS and Docker or Podman. `scripts/dev-container.sh [command]` runs a command
-  (a shell by default) in the dev container's image from a terminal: one
-  container per checkout, kept running, with the checkout mounted at its host
-  path so a git worktree's `.git` resolves inside too, a `build/` volume of its
-  own, and sccache's and vcpkg's caches in volumes every checkout shares.
+  LFS and Docker or Podman, which `scripts/bootstrap.sh` installs through
+  Homebrew (its macOS half, `scripts/bootstrap/macos.sh`, which also creates the
+  container). `scripts/dev-container.sh [command]` runs a command (a shell by
+  default) in the dev container's image from a terminal: one container per
+  checkout, kept running, with the checkout mounted at its host path so a git
+  worktree's `.git` resolves inside too, a `build/` volume of its own, and
+  sccache's and vcpkg's caches in volumes every checkout shares.
   `scripts/dev-container.sh make configure PRESET=linux-debug` gives the hooks
   the compile commands clang-tidy needs. On macOS the `pre-commit` and
   `pre-push` hooks run their formatters and linters through it; git itself
