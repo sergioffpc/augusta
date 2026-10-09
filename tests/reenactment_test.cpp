@@ -27,6 +27,7 @@
 // Server views built by hand.
 namespace {
 
+using augusta::capture_file::ReadError;
 using augusta::command::Command;
 using augusta::harness::CapturedCommand;
 using augusta::harness::CapturedPlayer;
@@ -164,15 +165,15 @@ TEST_F(ReadScriptTest, ACaptureWithoutThePlayerAskedForGivesNoScript) {
   const std::filesystem::path path = CaptureAMatch();
   for (const CapturedPlayer player : {CapturedPlayer{0}, CapturedPlayer{3}}) {
     std::ifstream in(path, std::ios::binary);
-    EXPECT_EQ(ReadScript(in, player).error(), ScriptError::kNoSuchPlayer) << +player;
+    EXPECT_EQ(ReadScript(in, player).error(), ScriptError{.capture = std::nullopt}) << +player;
   }
 }
 
 TEST_F(ReadScriptTest, AFileThatIsNoCaptureGivesNoScript) {
   std::istringstream pack("AUGPACK\r\n and the rest");
-  EXPECT_EQ(ReadScript(pack, 1).error(), ScriptError::kNotACapture);
+  EXPECT_EQ(ReadScript(pack, 1).error(), ScriptError{.capture = ReadError::kNotACapture});
   std::ifstream missing(directory_ / "missing.capture", std::ios::binary);
-  EXPECT_EQ(ReadScript(missing, 1).error(), ScriptError::kUnreadable);
+  EXPECT_EQ(ReadScript(missing, 1).error(), ScriptError{.capture = ReadError::kUnreadable});
 }
 
 TEST_F(ReadScriptTest, ACaptureCutShortKeepsEveryWholeRecordAndSaysItIsTorn) {

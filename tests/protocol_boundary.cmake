@@ -2,7 +2,10 @@
 # modules past it - the harness's API, the server's Match, Host and command
 # queue, replication, presentation, ClientRuntime - may name a protocol type
 # or include the protocol's header. Only the two adapters convert:
-# harness_wire.h on the client and server/wire.h on the server.
+# harness_wire.h on the client and server/wire.h on the server, which both
+# call augusta/shared_wire.h for the shared core's own types (a Command, a
+# stance, a pack's hash), and augusta/capture_file.h reads a Match capture's
+# records for either.
 #
 # Keeps the harness at ClientRuntime's edge the same way: no presentation
 # header may name a harness type or include a harness header, so presentation

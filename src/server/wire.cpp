@@ -23,6 +23,7 @@
 #include "augusta/policy_actions.h"
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
+#include "augusta/shared_wire.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "capture.h"
@@ -36,38 +37,13 @@ namespace augusta::server {
 
 namespace {
 
-// The protocol numbers its stances as the engine does; a stance added to one
-// and not the other breaks the build here, not the wire.
-static_assert(static_cast<std::uint8_t>(physics::Stance::kStanding) ==
-              static_cast<std::uint8_t>(protocol::StanceWire::kStanding));
-static_assert(static_cast<std::uint8_t>(physics::Stance::kCrouching) ==
-              static_cast<std::uint8_t>(protocol::StanceWire::kCrouching));
-static_assert(static_cast<std::uint8_t>(physics::Stance::kProne) ==
-              static_cast<std::uint8_t>(protocol::StanceWire::kProne));
-
-protocol::StanceWire ToWire(physics::Stance stance) { return static_cast<protocol::StanceWire>(stance); }
-
-physics::Stance FromWire(protocol::StanceWire stance) { return static_cast<physics::Stance>(stance); }
+// The shared core's own types convert as the client converts them.
+using wire::FromWire;
+using wire::ToWire;
 
 // command as a Commands message carries it, but for its Seen time's tick,
 // which whoever stores it keeps beside it: its age is 0.
-protocol::CommandWire ToWire(const command::Command& command) {
-  std::uint8_t flags = 0;
-  flags |= command.movement.sprint ? protocol::CommandWire::kSprint : std::uint8_t{0};
-  flags |= command.ads ? protocol::CommandWire::kAds : std::uint8_t{0};
-  flags |= command.fire ? protocol::CommandWire::kFire : std::uint8_t{0};
-  flags |= command.reload ? protocol::CommandWire::kReload : std::uint8_t{0};
-  return protocol::CommandWire{.direction = command.movement.direction,
-                               .yaw = command.yaw,
-                               .pitch = command.pitch,
-                               .seen_fraction = command.seen_fraction,
-                               .flags = flags,
-                               .desired_stance = ToWire(command.movement.desired_stance),
-                               .seen_age = 0};
-}
-
-// The protocol carries a pack's hash as the assets module computes it.
-static_assert(protocol::kPackHashSize == assets::kPackHashSize);
+protocol::CommandWire StoredToWire(const command::Command& command) { return ToWire(command, command.seen_tick); }
 
 protocol::BodyPartWire ToWire(ballistics::BodyPart part) {
   switch (part) {
@@ -299,12 +275,6 @@ protocol::DeathWire ToWire(const replication::Death& death) {
   };
 }
 
-assets::PackHash FromWire(const protocol::PackHashWire& hash) {
-  assets::PackHash result{};
-  std::ranges::copy(hash, result.begin());
-  return result;
-}
-
 JoinRequest FromWire(const protocol::JoinRequestWire& request) {
   return JoinRequest{
       .engine_version = request.engine_version,
@@ -320,21 +290,6 @@ JoinRequest FromWire(const protocol::ReenactRequestWire& request) {
       .character = request.character,
       .spawn = request.spawn,
   };
-}
-
-command::Command FromWire(const protocol::CommandWire& command, tick::Tick seen_tick) {
-  command::Command result;
-  result.movement.direction = command.direction;
-  result.movement.sprint = (command.flags & protocol::CommandWire::kSprint) != 0;
-  result.movement.desired_stance = FromWire(command.desired_stance);
-  result.yaw = command.yaw;
-  result.pitch = command.pitch;
-  result.ads = (command.flags & protocol::CommandWire::kAds) != 0;
-  result.fire = (command.flags & protocol::CommandWire::kFire) != 0;
-  result.reload = (command.flags & protocol::CommandWire::kReload) != 0;
-  result.seen_tick = seen_tick - std::min<tick::Tick>(command.seen_age, seen_tick);
-  result.seen_fraction = command.seen_fraction;
-  return result;
 }
 
 SequencedCommand FromWire(const protocol::SequencedCommandWire& command, tick::Tick seen_tick) {
@@ -369,7 +324,7 @@ namespace {
 protocol::RecordedCommandWire ToWire(const simulation::PlayerCommand& command) {
   return protocol::RecordedCommandWire{
       .seen_tick = command.command.seen_tick,
-      .command = ToWire(command.command),
+      .command = StoredToWire(command.command),
       .entity = server::ToWire(FromSimulation(command.entity)),
   };
 }
@@ -569,12 +524,6 @@ TickRecord FromWire(const protocol::RecordedTickWire& record, tick::Tick tick) {
 
 namespace {
 
-protocol::PackHashWire ToWire(const assets::PackHash& hash) {
-  protocol::PackHashWire wire{};
-  std::ranges::copy(hash, wire.begin());
-  return wire;
-}
-
 // One overload per event: its record, at offset.
 struct CapturedEventToWire {
   std::uint32_t offset;
@@ -587,7 +536,7 @@ struct CapturedEventToWire {
                                       .player = join.player};
   }
   protocol::CaptureRecordWire operator()(const CapturedCommand& command) const {
-    return protocol::CapturedCommandWire{.command = ToWire(command.command),
+    return protocol::CapturedCommandWire{.command = StoredToWire(command.command),
                                          .offset = offset,
                                          .seen_offset = command.seen_offset,
                                          .player = command.player};
@@ -617,7 +566,7 @@ struct CaptureRecordFromWire {
     return CaptureRecord{.offset = command.offset,
                          .event = CapturedCommand{.player = command.player,
                                                   .seen_offset = command.seen_offset,
-                                                  .command = server::FromWire(command.command, 0)}};
+                                                  .command = wire::FromWire(command.command, 0)}};
   }
   std::optional<CaptureRecord> operator()(const protocol::CapturedLeaveWire& leave) const {
     return CaptureRecord{.offset = leave.offset, .event = CapturedLeave{.player = leave.player}};

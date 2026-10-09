@@ -103,18 +103,11 @@ void Address(protocol::AuthoritativeStateWire& state, const replication::Recipie
 /// A Death replication planned, as the message every client in the match is sent.
 [[nodiscard]] protocol::DeathWire ToWire(const replication::Death& death);
 
-/// hash in the engine's terms.
-[[nodiscard]] assets::PackHash FromWire(const protocol::PackHashWire& hash);
-
 /// A join a client asked for, in the engine's terms.
 [[nodiscard]] JoinRequest FromWire(const protocol::JoinRequestWire& request);
 
 /// A Captured player's Reenact request, in the engine's terms: a join that names its spawn (ADR-0050).
 [[nodiscard]] JoinRequest FromWire(const protocol::ReenactRequestWire& request);
-
-/// A command a client sent in a message whose Seen tick is seen_tick, in the
-/// engine's terms: its own Seen time's tick is that many ticks before it, or 0.
-[[nodiscard]] command::Command FromWire(const protocol::CommandWire& command, tick::Tick seen_tick);
 
 /// A sequenced command a client sent in a message whose Seen tick is seen_tick,
 /// in the engine's terms.

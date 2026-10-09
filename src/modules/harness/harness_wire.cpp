@@ -18,27 +18,16 @@
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
 #include "augusta/reenactment.h"
+#include "augusta/shared_wire.h"
 #include "augusta/tick.h"
 
 namespace augusta::harness {
 
 namespace {
 
-// The protocol numbers its stances as the engine does; a stance added to one
-// and not the other breaks the build here, not the wire.
-static_assert(static_cast<std::uint8_t>(physics::Stance::kStanding) ==
-              static_cast<std::uint8_t>(protocol::StanceWire::kStanding));
-static_assert(static_cast<std::uint8_t>(physics::Stance::kCrouching) ==
-              static_cast<std::uint8_t>(protocol::StanceWire::kCrouching));
-static_assert(static_cast<std::uint8_t>(physics::Stance::kProne) ==
-              static_cast<std::uint8_t>(protocol::StanceWire::kProne));
-
-physics::Stance FromWire(protocol::StanceWire stance) { return static_cast<physics::Stance>(stance); }
-
-protocol::StanceWire ToWire(physics::Stance stance) { return static_cast<protocol::StanceWire>(stance); }
-
-// The protocol carries a pack's hash as the assets module computes it.
-static_assert(protocol::kPackHashSize == assets::kPackHashSize);
+// The shared core's own types convert as the server converts them.
+using wire::FromWire;
+using wire::ToWire;
 
 ballistics::BodyPart FromWire(protocol::BodyPartWire part) {
   switch (part) {
@@ -210,27 +199,6 @@ MatchEnd FromWire(const protocol::MatchEndWire& end) {
   return MatchEnd{.winner = end.winner == protocol::kDraw ? std::nullopt : std::optional(FromWire(end.winner))};
 }
 
-command::Command FromWire(const protocol::CommandWire& command, tick::Tick seen_tick) {
-  command::Command result;
-  result.movement.direction = command.direction;
-  result.movement.sprint = (command.flags & protocol::CommandWire::kSprint) != 0;
-  result.movement.desired_stance = FromWire(command.desired_stance);
-  result.yaw = command.yaw;
-  result.pitch = command.pitch;
-  result.ads = (command.flags & protocol::CommandWire::kAds) != 0;
-  result.fire = (command.flags & protocol::CommandWire::kFire) != 0;
-  result.reload = (command.flags & protocol::CommandWire::kReload) != 0;
-  result.seen_tick = seen_tick - std::min<tick::Tick>(command.seen_age, seen_tick);
-  result.seen_fraction = command.seen_fraction;
-  return result;
-}
-
-assets::PackHash FromWire(const protocol::PackHashWire& hash) {
-  assets::PackHash result{};
-  std::ranges::copy(hash, result.begin());
-  return result;
-}
-
 CapturedCommand FromWire(const protocol::CapturedCommandWire& command) {
   return CapturedCommand{
       .offset = command.offset, .seen_offset = command.seen_offset, .command = FromWire(command.command, 0)};
@@ -243,12 +211,6 @@ CapturedDeath FromWire(const protocol::CapturedDeathWire& death) {
 CapturedEnd FromWire(const protocol::CapturedMatchEndWire& end) {
   return CapturedEnd{.offset = end.offset,
                      .winner = end.winner == 0 ? std::nullopt : std::optional<CapturedPlayer>(end.winner)};
-}
-
-protocol::PackHashWire ToWire(const assets::PackHash& hash) {
-  protocol::PackHashWire result{};
-  std::ranges::copy(hash, result.begin());
-  return result;
 }
 
 protocol::MessageWire ToWire(const JoinRequest& request) {
@@ -264,32 +226,6 @@ protocol::MessageWire ToWire(const JoinRequest& request) {
       .engine_version = request.engine_version,
       .client_pack = ToWire(request.client_pack),
       .character = request.character,
-  };
-}
-
-protocol::CommandWire ToWire(const command::Command& command, tick::Tick seen_tick) {
-  const tick::Tick age = seen_tick > command.seen_tick ? seen_tick - command.seen_tick : 0U;
-  std::uint8_t flags = 0;
-  if (command.movement.sprint) {
-    flags |= protocol::CommandWire::kSprint;
-  }
-  if (command.ads) {
-    flags |= protocol::CommandWire::kAds;
-  }
-  if (command.fire) {
-    flags |= protocol::CommandWire::kFire;
-  }
-  if (command.reload) {
-    flags |= protocol::CommandWire::kReload;
-  }
-  return protocol::CommandWire{
-      .direction = command.movement.direction,
-      .yaw = command.yaw,
-      .pitch = command.pitch,
-      .seen_fraction = command.seen_fraction,
-      .flags = flags,
-      .desired_stance = ToWire(command.movement.desired_stance),
-      .seen_age = static_cast<std::uint8_t>(std::min<tick::Tick>(age, std::numeric_limits<std::uint8_t>::max())),
   };
 }
 

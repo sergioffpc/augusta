@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/capture_error.h"
 #include "augusta/command.h"
 #include "augusta/harness.h"
 #include "augusta/math.h"
@@ -90,25 +91,20 @@ struct Script {
 };
 
 /// Why a capture gives no Script.
-enum class ScriptError : std::uint8_t {
-  /// The stream could not be read, or was never opened.
-  kUnreadable,
-  /// It does not start with a capture's magic.
-  kNotACapture,
-  /// Its header is missing, or of a format version this engine does not read.
-  kUnsupported,
-  /// A record does not decode, comes out of order, or names a player no Join did.
-  kMalformed,
-  /// It has no player of the number asked for.
-  kNoSuchPlayer,
+struct ScriptError {
+  /// Why the capture does not read (augusta/capture_file.h), or nullopt when it
+  /// reads but has no player of the number asked for.
+  std::optional<capture_file::ReadError> capture;
+
+  bool operator==(const ScriptError&) const = default;
 };
 
 /// What to tell whoever runs the process about error.
-[[nodiscard]] std::string_view DescribeScriptError(ScriptError error);
+[[nodiscard]] std::string DescribeScriptError(const ScriptError& error);
 
-/// Player player's part of the capture in, as a Capturer writes one
-/// (ADR-0050). A last record cut short is dropped and reported in
-/// Script::torn.
+/// Player player's part of the capture in, as a Capturer writes one and
+/// augusta/capture_file.h reads it (ADR-0050). A last record cut short is
+/// dropped and reported in Script::torn.
 [[nodiscard]] std::expected<Script, ScriptError> ReadScript(std::istream& in, CapturedPlayer player);
 
 /// The server tick a Command sent now is handed to the World on, as best the

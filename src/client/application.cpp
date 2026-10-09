@@ -74,7 +74,7 @@ std::expected<std::optional<harness::Script>, failure::Failure> ReadReenactment(
     return std::unexpected(failure::Failure{.code = failure::Code::kInvalidConfiguration,
                                             .context = {{.key = "capture", .value = reenact.capture.string()},
                                                         {.key = "player", .value = std::to_string(reenact.player)}},
-                                            .detail = std::string(harness::DescribeScriptError(script.error()))});
+                                            .detail = harness::DescribeScriptError(script.error())});
   }
   if (script->torn) {
     LW("subsystem=client event=capture_torn capture={} reason=\"its last record was cut short and is dropped\"",
