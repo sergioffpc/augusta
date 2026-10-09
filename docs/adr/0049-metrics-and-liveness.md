@@ -91,6 +91,13 @@ an address or a Character's name. The domain words are CONTEXT.md's.
 |                   | `augustad_shooters_delay_capped_total` (at the 250 ms cap, ADR-0044)                  | counter                                                     |                                                                                     |
 |                   | `augustad_bullets_in_flight` (after the last tick, ADR-0002's flight cap)             | gauge                                                       |                                                                                     |
 | Recording         | `augustad_recording_state` (the Match recording's, ADR-0048)                          | gauge, 0 or 1                                               | `state` = `enabled`, `degraded`, `stopped`                                          |
+| Capture           | `augustad_capture_state` (the Match capture's, ADR-0050)                              | gauge, 0 or 1                                               | `state` = `off`, `idle`, `capturing`, `stopped`                                     |
+|                   | `augustad_captures_started_total` (Matches whose capture's file was created)          | counter                                                     |                                                                                     |
+|                   | `augustad_captures_completed_total` (captures that reached their Match end)           | counter                                                     |                                                                                     |
+|                   | `augustad_capture_stops_total` (captures stopped before their Match end)              | counter                                                     | `reason` = `record_too_long`, `queue_full`, `write_failed`, `retention_budget`      |
+|                   | `augustad_capture_written_bytes_total`                                                | counter                                                     |                                                                                     |
+|                   | `augustad_capture_queue_records` (waiting in the writer's bounded queue)              | gauge                                                       |                                                                                     |
+|                   | `augustad_capture_directory_files`, `augustad_capture_directory_bytes`                | gauge                                                       |                                                                                     |
 | Process           | `augustad_build_info` = 1                                                             | gauge                                                       | `version`, `commit`                                                                 |
 |                   | `augustad_start_time_seconds`                                                         | gauge                                                       |                                                                                     |
 
@@ -124,6 +131,17 @@ heartbeat interval. Session IDs are never reused, so every Session leaves its
 own series behind, but no more than the Player count are live at once, which a
 15-day retention easily holds.
 
+The Capture family is counted where the capture's log lines are written
+(ADR-0050), by the Simulation thread or the capture's writer thread, through an
+observer the capture module is handed: the module itself knows nothing of
+Prometheus. `augustad_capture_state` is `off` while the server has no capture
+directory, and `stopped` from a capture's early stop until its Match end. The
+directory's gauges count the files named as captures are, scanned by the writer
+as each Match's file is created, plus what it has written since, so they cover
+every capture in the directory, not only this run's. `retention_budget` is the
+stop of the capture directory's retention, labelled from the start so its series
+exists at 0.
+
 CPU, memory and restarts are not `augustad`'s metrics: the stack's kubelet and
 cAdvisor scrape already has them per pod.
 
@@ -140,15 +158,24 @@ scenario (ADR-0026), by a `scenario` label the `ServiceMonitor` copies from each
 server's metrics Service.
 
 Dashboards are code: JSON in ConfigMaps that Grafana's sidecar loads, kept in
-the repository next to the chart. There are two, "Server" (tick, Lobby and
-Match, Sessions, misbehaviour, network, combat) and "Connection health" (the
-histograms and one line per Session). Each selects its environment from the
-namespace label itself, and then a server from the scenarios that environment
-runs, so only one release ships them, `develop`'s: a second copy would load the
-same dashboards again. Alert rules are `PrometheusRule`s in the `augustad` chart
-(server down, server restarted, tick overruns sustained, packet loss high), one
-set per server, each alert labelled with its scenario. They route to no receiver
-yet, so they show only in Grafana and Alertmanager.
+the repository next to the chart. There are three, "Server" (tick, Lobby and
+Match, Sessions, misbehaviour, network, combat), "Connection health" (the
+histograms and one line per Session) and "Match captures" (the capture
+filesystem's use, size and time to full from node-exporter, at the mount point
+the chart's `captures.hostPath` names; each server's capture state, write rate,
+directory and retention; stops, writer queue depth, retention failures and the
+capture subsystem's log lines from Loki, ADR-0053). Each selects its environment
+from the namespace label itself, and then a server, or for captures any number
+of them, from the scenarios that environment runs, so only one release ships
+them, `develop`'s: a second copy would load the same dashboards again. Alert
+rules are `PrometheusRule`s in the `augustad` chart (server down, server
+restarted, tick overruns sustained, packet loss high, capture stopped, capture
+retention failing), one set per server, each alert labelled with its scenario.
+The capture filesystem's rules (almost full, a warning past 85% for 10 minutes
+and critical past 95%; filling up, full within 6 hours at the last 6 hours'
+rate) are the node's, not a server's, so they come once, with the release that
+ships the dashboards. They route to no receiver yet, so they show only in
+Grafana and Alertmanager.
 
 ## Considered Options
 
