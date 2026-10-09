@@ -49,8 +49,9 @@ the way a message is (ADR-0007, ADR-0038): a one-byte type and its fields, a
 Command in the very bytes a Commands message carries it in. They are
 `augusta_protocol`'s, next to the messages, but never messages: neither decoder
 yields the other's. A file is the header, then the records in order, each after
-its length in 4 little-endian bytes, none longer than 64 KiB: a reader refuses a
-longer length before allocating for it.
+its length in one byte, so none is longer than 255 bytes: the longest, the
+header with its engine version and a Join with its Character's name, are about
+110 and 85, and a Command about 20, so a wider length would only add zeros.
 
 **The disk is written on a thread of the capture's own.** The Simulation thread
 encodes each record as the tick produces it and hands it to the capture's writer
@@ -215,3 +216,11 @@ nothing checks it. Seeing the Match as it was played is a Replay's job
 - **A spawn field on the Join request**: rejected - every person's Join would
   carry a field only a Captured player fills, and the server would check on
   every Join what a separate message lets it refuse by its type.
+- **Each length in 4 bytes, up to 64 KiB, as the Match recording's**: rejected
+  (#463) - no record comes near 256 bytes, so three of every record's four
+  length bytes were zeros, about a tenth of a capture made mostly of Commands. A
+  record type that ever needs more is a new format version, which the header
+  carries.
+- **Each length as a varint**: rejected - one byte for every record a capture
+  holds, as a plain byte is, for a decoder of its own and a longer record no
+  capture has.
