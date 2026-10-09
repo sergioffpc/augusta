@@ -18,6 +18,7 @@
 
 #include "augusta/ballistics.h"
 #include "capture.h"
+#include "capture_retention.h"
 #include "command_queue.h"
 #include "heartbeat.h"
 #include "host_log.h"
@@ -154,6 +155,34 @@ constexpr std::string_view BodyPartLabel(ballistics::BodyPart part) {
   return {};
 }
 
+constexpr std::string_view CaptureStopLabel(CaptureStop stop) {
+  switch (stop) {
+    case CaptureStop::kRecordTooLong:
+      return "record_too_long";
+    case CaptureStop::kQueueFull:
+      return "queue_full";
+    case CaptureStop::kWriteFailed:
+      return "write_failed";
+    case CaptureStop::kRetentionBudget:
+      return "retention_budget";
+  }
+  return {};
+}
+
+constexpr std::string_view CaptureStateLabel(CaptureState state) {
+  switch (state) {
+    case CaptureState::kOff:
+      return "off";
+    case CaptureState::kIdle:
+      return "idle";
+    case CaptureState::kCapturing:
+      return "capturing";
+    case CaptureState::kStopped:
+      return "stopped";
+  }
+  return {};
+}
+
 // Each range of counters is exactly the values its label names: an enum value
 // added, or a reorder, fails here rather than indexing past a range.
 static_assert(LabelledExactly<JoinRefusalCounters>(JoinRefusalLabel));
@@ -162,6 +191,7 @@ static_assert(LabelledExactly<MisbehaviourCounters>(MisbehaviourLabel));
 static_assert(LabelledExactly<MessageCounters>(MessageTypeLabel));
 static_assert(LabelledExactly<RejectionCounters>(RejectionLabel));
 static_assert(LabelledExactly<BodyPartCounters>(BodyPartLabel));
+static_assert(LabelledExactly<CaptureStopCounters>(CaptureStopLabel));
 
 // What Judge counts as misbehaviour is what MisbehaviourCounters has a counter for.
 consteval bool MisbehaviourIsLabelled() {
@@ -325,6 +355,63 @@ void AppendCaptureHealth(std::vector<MetricFamily>& families, const HostMetrics&
                             MetricType::Gauge, std::move(states)));
 }
 
+void AppendCapture(std::vector<MetricFamily>& families, const HostMetrics& metrics) {
+  const CaptureState current = metrics.capture_state.load(std::memory_order_relaxed);
+  std::vector<ClientMetric> states;
+  for (const CaptureState state :
+       {CaptureState::kOff, CaptureState::kIdle, CaptureState::kCapturing, CaptureState::kStopped}) {
+    ClientMetric series;
+    series.label = {{.name = "state", .value = std::string(CaptureStateLabel(state))}};
+    series.gauge.value = current == state ? 1.0 : 0.0;
+    states.push_back(std::move(series));
+  }
+  families.push_back(Family("augustad_capture_state",
+                            "1 for the Match capture's state, 0 for the others; off while captures are not configured.",
+                            MetricType::Gauge, std::move(states)));
+  families.push_back(
+      CounterFamily("augustad_captures_started_total", "Matches whose capture was opened.", metrics.captures_started));
+  families.push_back(CounterFamily("augustad_captures_completed_total", "Captures that reached their Match end.",
+                                   metrics.captures_completed));
+  std::vector<ClientMetric> stops;
+  AppendLabelled(stops, metrics.capture_stops, "reason", CaptureStopLabel);
+  families.push_back(Family("augustad_capture_stops_total", "Captures stopped before their Match end, by why.",
+                            MetricType::Counter, std::move(stops)));
+  families.push_back(CounterFamily("augustad_capture_written_bytes_total", "Bytes the capture writer wrote.",
+                                   metrics.capture_written_bytes));
+  families.push_back(GaugeFamily("augustad_capture_queue_records",
+                                 "Records waiting in the capture writer's bounded queue.",
+                                 metrics.capture_queue_records));
+  families.push_back(
+      GaugeFamily("augustad_capture_directory_files",
+                  "Captures in the capture directory: as found at Match start, plus the one written since.",
+                  metrics.capture_directory_files));
+  families.push_back(GaugeFamily("augustad_capture_directory_bytes",
+                                 "Bytes of the captures in the capture directory: as found at Match start, plus what "
+                                 "was written since.",
+                                 metrics.capture_directory_bytes));
+  families.push_back(CounterFamily("augustad_capture_retention_deleted_total",
+                                   "Completed captures the capture directory's retention deleted.",
+                                   metrics.capture_retention_deleted));
+  families.push_back(CounterFamily("augustad_capture_retention_failures_total",
+                                   "Completed captures the capture directory's retention failed to delete.",
+                                   metrics.capture_retention_failures));
+  // Absent while unset, so a dashboard draws only the limits there are.
+  if (metrics.capture_retention_max_files.has_value()) {
+    ClientMetric limit;
+    limit.gauge.value = static_cast<double>(*metrics.capture_retention_max_files);
+    families.push_back(Family("augustad_capture_retention_max_files",
+                              "How many captures the capture directory's retention keeps.", MetricType::Gauge,
+                              {std::move(limit)}));
+  }
+  if (metrics.capture_retention_max_bytes.has_value()) {
+    ClientMetric limit;
+    limit.gauge.value = static_cast<double>(*metrics.capture_retention_max_bytes);
+    families.push_back(Family("augustad_capture_retention_max_bytes",
+                              "The total size, in bytes, the capture directory's retention keeps its captures within.",
+                              MetricType::Gauge, {std::move(limit)}));
+  }
+}
+
 }  // namespace
 
 HostMetrics::HostMetrics(std::uint8_t tick_rate_hz)
@@ -344,6 +431,7 @@ std::vector<prometheus::MetricFamily> HostMetrics::Collect() const {
   AppendNetwork(families, *this);
   AppendCombat(families, *this);
   AppendRecording(families, *this);
+  AppendCapture(families, *this);
   AppendCaptureHealth(families, *this);
   return families;
 }
@@ -367,13 +455,39 @@ void SetRecordingState(HostMetrics& metrics, RecordingState state) {
   metrics.recording_state.store(state, std::memory_order_relaxed);
 }
 
-void SetCaptureHealth(HostMetrics& metrics, CaptureHealth health) {
-  metrics.capture_health.store(health, std::memory_order_relaxed);
-}
-
 void CountSent(HostMetrics& metrics, std::span<const std::byte> payload) {
   metrics.sent_bytes.Increment(payload.size());
   metrics.messages_sent[TypeOf(payload)].Increment();
+}
+
+void CaptureMetrics::SetRetention(const CaptureRetention& retention) {
+  metrics_.capture_retention_max_files = retention.max_files;
+  metrics_.capture_retention_max_bytes = retention.max_bytes;
+}
+
+void CaptureMetrics::OnState(CaptureState state) { metrics_.capture_state.store(state, std::memory_order_relaxed); }
+
+void CaptureMetrics::OnStarted() { metrics_.captures_started.Increment(); }
+
+void CaptureMetrics::OnCompleted() { metrics_.captures_completed.Increment(); }
+
+void CaptureMetrics::OnStopped(CaptureStop stop) { metrics_.capture_stops[stop].Increment(); }
+
+void CaptureMetrics::OnWritten(std::size_t bytes) { metrics_.capture_written_bytes.Increment(bytes); }
+
+void CaptureMetrics::OnQueued(std::size_t records) { metrics_.capture_queue_records.Set(static_cast<double>(records)); }
+
+void CaptureMetrics::OnDirectory(CaptureDirectoryUsage usage) {
+  metrics_.capture_directory_files.Set(static_cast<double>(usage.files));
+  metrics_.capture_directory_bytes.Set(static_cast<double>(usage.bytes));
+}
+
+void CaptureMetrics::OnRetentionDeleted() { metrics_.capture_retention_deleted.Increment(); }
+
+void CaptureMetrics::OnRetentionDeleteFailed() { metrics_.capture_retention_failures.Increment(); }
+
+void CaptureMetrics::OnHealth(CaptureHealth health) {
+  metrics_.capture_health.store(health, std::memory_order_relaxed);
 }
 
 }  // namespace augusta::server

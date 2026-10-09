@@ -4,7 +4,7 @@ Brings the single-node k3s cluster that runs the `develop` and `staging`
 environments back up, either by recovering the running install or by rebuilding
 it from the repository. The cluster's design is ADR-0026
 ([CD strategy](../adr/0026-cd-strategy.md)) and
-[ENGINEERING.md's Deployment & CD](../ENGINEERING.md#deployment-cd).
+[ENGINEERING.md's Deployment & CD](../ENGINEERING.md#deployment--cd).
 
 ## When to use
 

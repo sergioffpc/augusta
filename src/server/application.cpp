@@ -1,5 +1,6 @@
 #include "application.h"
 
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <memory>
@@ -15,6 +16,7 @@
 #include "augusta/networking.h"
 #include "augusta/server_config.h"
 #include "capture.h"
+#include "capture_retention.h"
 #include "content.h"
 #include "host.h"
 #include "recording.h"
@@ -23,6 +25,8 @@
 namespace augusta::server {
 
 namespace {
+
+constexpr std::uintmax_t kMiB = std::uintmax_t{1024} * 1024;
 
 failure::Failure ContentFailure(const std::filesystem::path& pack_path, std::string detail) {
   return {.code = failure::Code::kInvalidContent,
@@ -63,6 +67,9 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
       .server_pack = pack->Hash(),
       .capture_directory = file_config.capture_directory,
       .capture_mode = file_config.strict_capture ? CaptureMode::kStrict : CaptureMode::kOptional,
+      .capture_retention = CaptureRetention{.max_files = file_config.capture_max_files,
+                                            .max_bytes = file_config.capture_max_mib.transform(
+                                                [](std::uint32_t mib) { return std::uintmax_t{mib} * kMiB; })},
   };
   return std::make_unique<ServerRuntime>(host_config, file_config.metrics_port, std::move(content->scenario),
                                          std::move(content->policy), faults);

@@ -46,6 +46,18 @@ simulation:
   # Match's capture short while the server and its Match go on; strict, for a
   # playtest whose point is the capture, stops the server with a failure.
   # capture_mode: optional
+  # What the capture directory is kept within (optional, default no limit),
+  # oldest Match first: only its own files named and marked as captures count,
+  # and the Match being captured is never deleted (ADR-0050). Either limit may
+  # be set alone; each must be an integer of at least 1.
+  # capture_retention:
+  #   # Captures kept, the new one included: each Match start deletes the
+  #   # oldest until fewer than this remain.
+  #   max_files: 200
+  #   # Their total size in MiB, the Match being captured included: the oldest
+  #   # are deleted as it is written to stay under it. A Match that alone
+  #   # outgrows it stops its capture there, logged once.
+  #   max_mib: 2048
 network:
   # Local address to listen on (optional, default 0.0.0.0:27015).
   listen_address: 0.0.0.0:27015

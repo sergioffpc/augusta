@@ -1,5 +1,31 @@
 # arc42 Architecture Document — FPS Simulator Engine
 
+## Contents
+
+<!-- pyml disable md051 -->
+
+- [1. Introduction and Goals](#1-introduction-and-goals)
+- [2. Architecture Constraints](#2-architecture-constraints)
+- [3. System Scope and Context](#3-system-scope-and-context)
+- [4. Solution Strategy](#4-solution-strategy)
+- [5. Building Block View](#5-building-block-view)
+- [6. Runtime View](#6-runtime-view)
+- [7. Deployment View](#7-deployment-view)
+- [8. Crosscutting Concepts](#8-crosscutting-concepts)
+- [9. Architecture Decisions (ADRs)](#9-architecture-decisions-adrs)
+    - [Core Engine](#core-engine)
+    - [Tooling & Build](#tooling--build)
+    - [Rendering & Audio](#rendering--audio)
+    - [Asset Pipeline](#asset-pipeline)
+    - [Client Runtime](#client-runtime)
+    - [Server Runtime](#server-runtime)
+    - [Infrastructure & CD](#infrastructure--cd)
+- [10. Quality Requirements](#10-quality-requirements)
+- [11. Risks and Technical Debt](#11-risks-and-technical-debt)
+- [12. Glossary](#12-glossary)
+
+<!-- pyml enable md051 -->
+
 ## 1. Introduction and Goals
 
 See [VISION.md](./VISION.md) for full vision. Summary: a realistic,

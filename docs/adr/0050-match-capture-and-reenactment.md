@@ -63,21 +63,21 @@ before it. A server that stops abruptly leaves every whole record written by
 then; a record cut short is dropped when read, and reported.
 
 **Optional or strict (#398).** `simulation.capture_mode` says what losing a
-record costs the run, ADR-0033's dispositions. A record too long or one that
-finds the queue full is a loss as much as a failed create, write or flush, since
-the capture misses it all the same. `optional`, the default, is the debugging
-aid above: the run's first loss is logged once at `ERR` as
-`event=capture_degraded`, a failure of the `subsystem` named for what went wrong
-(`capture_write_failed` for a create or write, `capture_flush_failed`,
-`capture_queue_full` for a disk that fell behind, `capture_record_too_long`),
-the captures are `degraded` from then on, and the next Match is still captured
-afresh; the Match's authority never changes. A playtest whose point is the
-capture runs `strict`: any loss is `strict_capture_failed`, a `runtime` failure,
-nothing more is captured, and the Simulation thread stops the runtime on it
-before its next tick, the supervisor writing the one `ERR` line. A capture that
-loses nothing is written the same in either mode, and neither mode makes a tick
-wait for the disk: a stalled disk fails a strict run only once its queue is
-full.
+record costs the run, ADR-0033's dispositions. A record too long, one that finds
+the queue full or one past the retention budget is a loss as much as a failed
+create, write or flush, since the capture misses it all the same. `optional`,
+the default, is the debugging aid above: the run's first loss is logged once at
+`ERR` as `event=capture_degraded`, a failure of the `subsystem` named for what
+went wrong (`capture_write_failed` for a create or write,
+`capture_flush_failed`, `capture_queue_full` for a disk that fell behind,
+`capture_record_too_long`, `capture_retention_budget`), the captures are
+`degraded` from then on, and the next Match is still captured afresh; the
+Match's authority never changes. A playtest whose point is the capture runs
+`strict`: any loss is `strict_capture_failed`, a `runtime` failure, nothing more
+is captured, and the Simulation thread stops the runtime on it before its next
+tick, the supervisor writing the one `ERR` line. A capture that loses nothing is
+written the same in either mode, and neither mode makes a tick wait for the
+disk: a stalled disk fails a strict run only once its queue is full.
 
 **The captures' health is one-way: `enabled`, then `degraded`, then `stopped`.**
 It is the `augustad_capture_health` metric (ADR-0049), and each change of it a
@@ -93,6 +93,22 @@ degraded run's loss stays in its `capture_disabled` line as `lost=true`.
 (ADR-0034) names a directory; without it nothing is captured. Each Match is a
 file of its own, named by when it started and its number in the server's run, so
 a server that runs many Matches keeps every one.
+
+**A server keeps its capture directory within a count and a size, oldest Match
+first (#461).** `simulation.capture_retention` sets `max_files`, `max_mib` or
+both; without it nothing is deleted, and `0` or a negative value fails the
+config. Only the directory's own regular files named as captures and starting
+with the magic count, oldest by the Match start in the name, never the mtime;
+the Match in progress is never one. At each Match start, before its file is
+created, the oldest are deleted until fewer than `max_files` remain. `max_mib`
+is a hard cap, the Match in progress included: before each record the writer
+deletes the oldest completed capture while the directory's total plus that
+record would pass it, and stops the capture with `retention_budget` when none is
+left, the file keeping every record before it. All of it runs on the writer
+thread, from one scan per Match start plus the bytes it writes and frees, never
+a rescan per record. A deletion that fails is logged once per Match start and
+stops nothing: a filesystem sized to the cap is the backstop (#460). Each
+server's budget is its own; the servers sharing a filesystem must sum to fit it.
 
 **Match start names the Match's first tick.** A Captured player must turn the
 capture's offsets back into ticks of the server it plays against, and

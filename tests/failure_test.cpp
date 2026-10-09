@@ -38,6 +38,7 @@ TEST(FailureTest, EachCodeIsClassifiedIntoTheScopeItIsRecoveredAt) {
   EXPECT_EQ(DispositionOf(Code::kCaptureFlushFailed), Disposition::kSubsystem);
   EXPECT_EQ(DispositionOf(Code::kCaptureQueueFull), Disposition::kSubsystem);
   EXPECT_EQ(DispositionOf(Code::kCaptureRecordTooLong), Disposition::kSubsystem);
+  EXPECT_EQ(DispositionOf(Code::kCaptureRetentionBudget), Disposition::kSubsystem);
   EXPECT_EQ(DispositionOf(Code::kTransportInitFailed), Disposition::kRuntime);
   EXPECT_EQ(DispositionOf(Code::kListenerSetupFailed), Disposition::kRuntime);
   EXPECT_EQ(DispositionOf(Code::kTransportSendFailed), Disposition::kRuntime);

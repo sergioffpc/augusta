@@ -66,6 +66,9 @@ enum class Code : std::uint16_t {
   kCaptureQueueFull = 105,
   /// An optional Match capture's record is longer than a capture's frame holds.
   kCaptureRecordTooLong = 106,
+  /// An optional Match capture's record would take its directory past its
+  /// retention budget, with no completed capture left to delete.
+  kCaptureRetentionBudget = 107,
   /// The local transport could not be initialized.
   kTransportInitFailed = 200,
   /// The listen socket or poll group could not be set up.

@@ -42,6 +42,8 @@ std::string_view CodeName(Code code) {
       return "capture_queue_full";
     case Code::kCaptureRecordTooLong:
       return "capture_record_too_long";
+    case Code::kCaptureRetentionBudget:
+      return "capture_retention_budget";
     case Code::kTransportInitFailed:
       return "transport_init_failed";
     case Code::kListenerSetupFailed:
@@ -136,6 +138,7 @@ Disposition DispositionOf(Code code) {
     case Code::kCaptureFlushFailed:
     case Code::kCaptureQueueFull:
     case Code::kCaptureRecordTooLong:
+    case Code::kCaptureRetentionBudget:
       return Disposition::kSubsystem;
     case Code::kTransportInitFailed:
     case Code::kListenerSetupFailed:
