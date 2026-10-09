@@ -1997,7 +1997,8 @@ TEST_F(CaptureHostTest, AMatchPlayedToItsEndLeavesOneCaptureOfWhatItsPlayersDid)
     EXPECT_EQ(join->player, i + 1);
     EXPECT_EQ(join->character, kCharacter);
   }
-  for (const augusta::server::CapturedPlayer player : {1, 2}) {
+  using augusta::server::CapturedPlayer;
+  for (const CapturedPlayer player : {CapturedPlayer{1}, CapturedPlayer{2}}) {
     const auto sent = std::ranges::count_if(capture.records, [player](const augusta::server::CaptureRecord& record) {
       const auto* command = std::get_if<augusta::server::CapturedCommand>(&record.event);
       return command != nullptr && command->player == player && command->command.movement.direction.x == 1.0F &&
