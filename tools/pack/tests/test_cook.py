@@ -170,6 +170,27 @@ def test_a_texture_whose_image_is_missing_is_refused(tmp_path, key_pair):
     assert raised.value.prim_path == "TestMesh/Mat/DiffuseTexture"
 
 
+def test_a_texture_whose_image_is_not_a_png_or_jpeg_is_refused(
+    tmp_path, key_pair
+):
+    stage_dir = tmp_path / "stage"
+    stage_dir.mkdir()
+    shutil.copy(FIXTURES_DIR / "texture_fixture.usda", stage_dir)
+    (stage_dir / "texture_fixture.png").write_bytes(b"not an image")
+
+    with pytest.raises(CookError) as raised:
+        cook_scenario(
+            stage_dir / "texture_fixture.usda",
+            [],
+            tmp_path / "client.pack",
+            tmp_path / "server.pack",
+            key_pair.private_key,
+        )
+
+    assert raised.value.code == "texture_load_failed"
+    assert raised.value.prim_path == "TestMesh/Mat/DiffuseTexture"
+
+
 def test_scripts_go_into_the_server_pack_only(tmp_path, key_pair):
     client_path = tmp_path / "client.pack"
     server_path = tmp_path / "server.pack"

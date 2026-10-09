@@ -11,7 +11,9 @@ import sys
 def default_assets_root() -> Path:
     """The assets root of the venv this interpreter runs from.
 
-    sys.executable is <assets-root>/python/pack/Scripts/python.exe inside the
-    uv tool venv tools/pack/scripts/bootstrap.sh installs this project into.
+    sys.prefix is <assets-root>/python/pack, the uv tool venv
+    tools/pack/scripts/bootstrap.sh installs this project into. Not
+    sys.executable: on Linux the venv's bin/python links to uv's own
+    interpreter, outside the assets root.
     """
-    return Path(sys.executable).resolve().parents[3]
+    return Path(sys.prefix).parents[1]
