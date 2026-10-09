@@ -7,6 +7,16 @@ Work moves idea → ship along one spine of skills, in order: `/grill-with-docs`
 runs each step; only `/code-review` is yours to invoke. When a step ends, name
 the next one.
 
+### Engineering flow
+
+Keeps the codebase and issue list healthy and feeds work into the main flow; its
+skills are used as needed, in no order. The user runs
+`/improve-codebase-architecture` (refactoring candidates), `/triage` (raw issues
+into workable ones) and `/implement-spec` (a whole spec at once with parallel
+subagents, in place of `/implement`). Yours to invoke: `/diagnosing-bugs` for a
+hard bug, from a failing repro; `/wizard` for setup steps only a human can
+perform.
+
 ### Git flow
 
 Git Flow (`docs/ENGINEERING.md`, Branching model): `feature/*` → `develop`;
