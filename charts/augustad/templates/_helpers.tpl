@@ -73,6 +73,17 @@ content:
   public_key: signing.pub
 simulation:
   tick_rate_hz: {{ .root.Values.server.tickRateHz }}
+{{- with (.root.Values.captures).retention }}
+{{- if or .maxFiles .maxMiB }}
+  capture_retention:
+{{- with .maxFiles }}
+    max_files: {{ . }}
+{{- end }}
+{{- with .maxMiB }}
+    max_mib: {{ . }}
+{{- end }}
+{{- end }}
+{{- end }}
 network:
   listen_address: 0.0.0.0:{{ .root.Values.service.port }}
 metrics:

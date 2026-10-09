@@ -61,6 +61,17 @@ dashboards:
 # read-only.
 assetPacks:
   hostPath: /srv/augusta/asset-packs
+# Match captures (ADR-0050).
+captures:
+  # What each server keeps its capture directory within, oldest Match first,
+  # rendered as simulation.capture_retention (config/augustad.example.yaml):
+  # maxFiles captures and maxMiB MiB in all, either alone, each an integer of
+  # at least 1. Left unset, nothing is deleted. Every server's maxMiB summed
+  # must fit the filesystem the directories share.
+  #   retention:
+  #     maxFiles: 200
+  #     maxMiB: 2048
+  retention: {}
 # The servers an environment runs, one per scenario (ADR-0026), keyed by the
 # scenario's name (ADR-0041): a Deployment, game Service and metrics Service
 # each, named augustad-<scenario>. A server serves its scenario's pack and no

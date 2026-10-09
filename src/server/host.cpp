@@ -88,7 +88,10 @@ std::unique_ptr<Capturer> BuildCapturer(const HostConfig& config, const assets::
                                                   .client_pack = client_pack,
                                                   .tick_rate_hz = config.tick_rate_hz,
                                                   .started = {}},
-                                    CaptureOptions{.faults = config.faults, .capacity = kCaptureQueueCapacity});
+                                    CaptureOptions{.faults = config.faults,
+                                                   .capacity = kCaptureQueueCapacity,
+                                                   .retention = config.capture_retention,
+                                                   .observer = {}});
 }
 
 // The ticks of kMatchPause at tick_rate_hz, rounded up so the pause is never shorter.
