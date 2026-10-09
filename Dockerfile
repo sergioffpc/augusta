@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1
 
+# The unprivileged user and group the server runs as, by ID (ADR-0054). The
+# chart's securityContext names the same ID.
+ARG AUGUSTA_UID=65532
+
 # Build stage: same base as the CI Linux runner (see .github/workflows/ci.yml)
 # so the image is built with the exact toolchain/glibc combination CI already
 # validates the server against.
@@ -61,35 +65,92 @@ RUN cmake --preset linux -DAUGUSTA_TOOLS=OFF \
 FROM scratch AS debuginfo
 COPY --from=build /workspace/build/x64-linux/src/server/augustad.debug /
 
-# Runtime stage: just what `cmake --install` staged and the shared libraries
-# it links against (vcpkg's own dependencies are linked statically) - no build
-# toolchain, no vcpkg source tree.
-FROM ubuntu:26.04 AS runtime
+# The runtime stage's root filesystem: only the Ubuntu 26.04 files augustad
+# and tini run on, cut from the archive's packages by chisel (ADR-0054), with
+# no shell, apt, dpkg or Pebble. CI rebuilds this stage every time
+# (no-cache-filters), so each image takes the archive's current security
+# updates rather than a cached layer's.
+FROM ubuntu:26.04 AS rootfs
 
-# Upgraded, not just installed onto: the base image trails Ubuntu's security
-# updates, and CI fails an image with a fixable high or critical CVE. CI
-# rebuilds this stage every time (no-cache-filters), so a cached layer never
-# holds an update back.
-# The base image also ships Pebble (/usr/bin/pebble and its /var/lib/pebble
-# state), a Go binary no package owns, so no upgrade ever patches its Go
-# runtime. augustad runs under tini, not Pebble, so it is removed.
-RUN apt-get update && apt-get upgrade -y --no-install-recommends \
-    && apt-get install -y --no-install-recommends \
-      libstdc++6 \
-      tini \
-    && rm -rf /var/lib/apt/lists/* /usr/bin/pebble /var/lib/pebble \
-    && useradd --system --no-create-home --shell /usr/sbin/nologin augusta
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
+# The package lists stay: apt-cache reads the control stanza of each package
+# chisel cuts from them, below.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      curl \
+      git \
+      jq \
+      zstd
+
+ARG CHISEL_VERSION=v1.5.1
+ARG CHISEL_SHA256=caa1f84ef144c3311d95ee464c1b72dd237e99055a8c58b791a5591abd42d9a1
+RUN curl -fsSLo /tmp/chisel.tar.gz \
+      "https://github.com/canonical/chisel/releases/download/${CHISEL_VERSION}/chisel_${CHISEL_VERSION}_linux_amd64.tar.gz" \
+    && echo "${CHISEL_SHA256}  /tmp/chisel.tar.gz" | sha256sum --check --status \
+    && tar -xzf /tmp/chisel.tar.gz -C /usr/local/bin chisel \
+    && rm /tmp/chisel.tar.gz
+
+# The slice definitions, pinned to a commit of chisel-releases' ubuntu-26.04
+# branch, with this repository's own for the packages it has none for
+# (chisel/slices/). The packages themselves are the archive's current ones.
+ARG CHISEL_RELEASES_COMMIT=a7e010b2ba31c1b05c4e2beca95486b73cec5822
+RUN git init -q /chisel-releases \
+    && git -C /chisel-releases fetch -q --depth 1 \
+      https://github.com/canonical/chisel-releases.git "${CHISEL_RELEASES_COMMIT}" \
+    && git -C /chisel-releases checkout -q FETCH_HEAD
+COPY chisel/slices/ /chisel-releases/slices/
+
+# augustad links libc, libm, libstdc++ and libgcc_s; base-files_chisel writes
+# chisel's manifest of what was cut.
+RUN mkdir /rootfs \
+    && chisel cut --release /chisel-releases --root /rootfs \
+      base-files_base \
+      base-files_release-info \
+      base-files_chisel \
+      base-passwd_data \
+      libc6_libs \
+      libgcc-s1_libs \
+      libstdc++6_libs \
+      tini_bins
+
+# trivy reads no chisel manifest, so each package it lists also gets the
+# archive's control stanza in dpkg's status.d, as distroless images do, which
+# trivy and the SBOM read like a dpkg database: without it the image's scan
+# would find no OS packages at all. A version the package lists above lack
+# (the archive moved on in between) fails the build rather than drop a
+# package from the scan.
+RUN mkdir -p /rootfs/var/lib/dpkg/status.d \
+    && zstd -dc /rootfs/var/lib/chisel/manifest.wall \
+      | jq -r 'select(.kind == "package") | "\(.name) \(.version)"' \
+      | while read -r name version; do \
+          apt-cache show "${name}=${version}" | awk -v RS= 'NR == 1' \
+            > "/rootfs/var/lib/dpkg/status.d/${name}" || exit 1; \
+        done
+
+# The server's user, by name too, for what a debug container shows of it.
+ARG AUGUSTA_UID
+RUN echo "augusta:x:${AUGUSTA_UID}:${AUGUSTA_UID}::/nonexistent:/usr/sbin/nologin" >> /rootfs/etc/passwd \
+    && echo "augusta:x:${AUGUSTA_UID}:" >> /rootfs/etc/group
+
+# Runtime stage: the chiselled root and what `cmake --install` staged (vcpkg's
+# own dependencies are linked statically) - no build toolchain, no vcpkg
+# source tree, no shell (ADR-0054).
+FROM scratch AS runtime
+
+COPY --from=rootfs /rootfs/ /
 COPY --from=build /workspace/stage/ /
 
 # The commit the image is built from, which augustad reports as
-# augustad_build_info's commit label (ADR-0049). Set here, in the stage rebuilt
-# every time, rather than compiled in, so a new commit does not invalidate the
-# cached build.
+# augustad_build_info's commit label (ADR-0049). Set here, in the last stage,
+# rather than compiled in, so a new commit does not invalidate the cached
+# build.
 ARG AUGUSTA_COMMIT=unknown
 ENV AUGUSTA_COMMIT=${AUGUSTA_COMMIT}
 
-USER augusta
+# By number, so the chart's runAsNonRoot can check it is not root.
+ARG AUGUSTA_UID
+USER ${AUGUSTA_UID}:${AUGUSTA_UID}
 # tini is PID 1, not augustad: the kernel drops a signal PID 1 sends itself
 # with no handler for it, so augustad re-raising a fatal signal from its crash
 # handler would neither end it nor dump its core (ADR-0047). tini forwards

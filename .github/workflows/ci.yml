@@ -63,7 +63,7 @@ jobs:
           fi
 
           if echo "$changed" \
-              | grep -qE '^(Dockerfile$|\.dockerignore$|\.hadolint\.yaml$|charts/|\.github/workflows/ci\.yml$)'; then
+              | grep -qE '^(Dockerfile$|\.dockerignore$|\.hadolint\.yaml$|chisel/|charts/|\.github/workflows/ci\.yml$)'; then
             echo "run_container=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_container=false" >> "$GITHUB_OUTPUT"
@@ -710,10 +710,10 @@ jobs:
           # Into the runner's Docker, for the scan below - published only
           # once it passes.
           load: true
-          # The runtime stage is rebuilt every time, so it takes Ubuntu's
-          # current security updates (the Dockerfile's apt-get upgrade)
-          # rather than a cached layer's.
-          no-cache-filters: runtime
+          # The rootfs stage is rebuilt every time, so the slices chisel cuts
+          # are of Ubuntu's current packages, security updates included,
+          # rather than a cached layer's (ADR-0054).
+          no-cache-filters: rootfs
           # Reported as augustad_build_info's commit label (ADR-0049).
           build-args: AUGUSTA_COMMIT=${{ steps.short-sha.outputs.value }}
           # sha-<first 12 characters of the commit> is the tag the chart runs:

@@ -185,6 +185,10 @@ no self-hosted GitHub Actions runner in this pipeline).
 - **Isolation:** two fixed, long-lived Kubernetes namespaces — `staging` (tracks
   `main`) and `develop` (tracks `develop`). No per-branch/ephemeral namespaces.
 - **Container images:** built in CI, pushed to GitHub Container Registry (GHCR).
+  The server image is `scratch` with an Ubuntu 26.04 root cut by chisel: the
+  libraries `augustad` links, `tini`, and no shell (ADR-0054). A running server
+  is inspected from an ephemeral container, `kubectl debug --target=augustad`,
+  not `kubectl exec`.
 - **Server exposure:** plain Kubernetes `Service` (`NodePort`) — no Agones.
   Agones solves fleet-scale dynamic allocation, which this project doesn't need
   (one server instance per scenario per environment, each fixed in Git,
