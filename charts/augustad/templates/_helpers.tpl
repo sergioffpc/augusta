@@ -63,6 +63,17 @@ scenario: {{ .scenario }}
 {{- $port | default "" -}}
 {{- end -}}
 
+{{/* Where the capture volume is mounted in every server's container. */}}
+{{- define "augustad.capturesMount" -}}
+/srv/augusta/captures
+{{- end -}}
+
+{{/* A server's own folder of the capture volume: <namespace>/<scenario>, so
+     no two servers on the node, in one environment or two, share one. */}}
+{{- define "augustad.captureFolder" -}}
+{{- printf "%s/%s/%s" (include "augustad.capturesMount" .) .root.Release.Namespace .scenario -}}
+{{- end -}}
+
 {{/* A server's startup settings (ADR-0034), as config/augustad.example.yaml
      documents them. The pack and its key come from the server's own folder
      of the asset-pack volume, mounted at the config's base_dir. */}}
@@ -73,6 +84,9 @@ content:
   public_key: signing.pub
 simulation:
   tick_rate_hz: {{ .root.Values.server.tickRateHz }}
+  {{- if .root.Values.captures.hostPath }}
+  capture: {{ include "augustad.captureFolder" . }}
+  {{- end }}
 network:
   listen_address: 0.0.0.0:{{ .root.Values.service.port }}
 metrics:

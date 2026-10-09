@@ -33,6 +33,13 @@ The only state not in Git is the asset packs on the node's shared volume:
 them the servers never start; the layout, and how a missing folder shows, is
 [Where packs go on the node](pack-key-rotation.md#where-packs-go-on-the-node).
 
+The Match captures (ADR-0050) of every environment that turns them on (its
+`HelmRelease` sets `captures.hostPath`; `develop` does) are on the node too, in
+`/srv/augusta/captures/<namespace>/<scenario>/`, on a filesystem of their own
+([The capture filesystem](#the-capture-filesystem)). They are debugging data: a
+rebuild may keep or drop them, but the filesystem must be set up again before
+Flux starts those servers.
+
 Prometheus keeps its last 15 days of series on a `local-path` volume on the node
 (ADR-0049). A rebuild loses them, and Prometheus starts again empty; no step
 restores them.
@@ -59,6 +66,84 @@ restores them.
   with `origin/develop` fetched: the `flux-system` GitRepository tracks
   `develop`.
 
+## The capture filesystem
+
+Servers whose environment sets `captures.hostPath` mount `/srv/augusta/captures`
+read-write, and each writes its captures into its own `<namespace>/<scenario>/`
+folder there: a capture's name (when its Match started and its number in the
+server's run) is unique only within one server. augustad creates that folder
+itself, and refuses to start if it cannot.
+
+- **Path and owner:** `/srv/augusta/captures`, owned by `65532:65532`, mode
+  `0755`: the server image's user (ADR-0054). The chart's `hostPath` volume is
+  of type `Directory`, so the kubelet never creates it, as `root:root`, in its
+  place; a pod whose directory is missing waits in `ContainerCreating`.
+- **Filesystem:** an ext4 image of fixed size, `/srv/augusta/captures.img`,
+  loop-mounted on that path. Its blocks are allocated when it is made, so
+  captures never take more of the node's disk than that and never cause
+  DiskPressure. A full filesystem fails a capture's next write: augustad stops
+  that Match's capture, logged once
+  (`subsystem=capture event=capture_stopped reason=write_failed`), and the
+  server and its Match go on.
+- **Size:** 4 GiB. It must hold, at once, every capturing server's retention cap
+  (#461: each server deletes its own oldest captures when a Match starts, until
+  they fit its `captures.retention.maxMiB`, the Match in progress included),
+  plus slack for the filesystem's own overhead:
+  `size >= capturing servers * maxMiB + 256 MiB`. `develop`'s one server
+  (`firebase`) at a `maxMiB` of up to 3840 fits; at about 15 KB a second with 8
+  players at 60 Hz, 1 GiB is about 19 hours of Matches. A new capturing server,
+  or a higher `maxMiB`, grows the image first (below). Until #461 lands nothing
+  deletes captures, and a full filesystem only stops them.
+
+Set it up once per node, before Flux starts a capturing server:
+
+```sh
+ssh <node>
+sudo install -d -o root -g root -m 0755 /srv/augusta/captures
+sudo fallocate -l 4GiB /srv/augusta/captures.img
+sudo mkfs.ext4 -q -m 0 -L augusta-captures /srv/augusta/captures.img
+echo '/srv/augusta/captures.img /srv/augusta/captures ext4 loop,nodev,nosuid,noexec,x-systemd.before=k3s.service 0 2' \
+  | sudo tee -a /etc/fstab
+sudo systemctl daemon-reload
+sudo mount /srv/augusta/captures
+sudo install -d -o 65532 -g 65532 -m 0755 /srv/augusta/captures
+findmnt /srv/augusta/captures
+ls -ld /srv/augusta/captures
+```
+
+The mount point itself stays `root:root`; only the mounted filesystem's root is
+`65532`. If the image is ever not mounted, augustad cannot create its folder in
+the bare directory and refuses to start, rather than write captures to the
+node's own disk. A server started before the mount sees the bare directory until
+its pod is restarted (`kubectl -n <namespace> rollout restart deploy/<name>`).
+
+To grow it, stop every capturing server first: a running pod keeps the
+filesystem in use. From the workstation, for each capturing environment:
+
+```sh
+flux suspend helmrelease augustad-<environment> -n flux-system
+kubectl -n <environment> scale deploy -l app.kubernetes.io/name=augustad --replicas 0
+```
+
+Then on the node:
+
+```sh
+sudo umount /srv/augusta/captures
+sudo fallocate -l <new-size>GiB /srv/augusta/captures.img
+sudo e2fsck -f /srv/augusta/captures.img
+sudo resize2fs /srv/augusta/captures.img
+sudo mount /srv/augusta/captures
+```
+
+Then from the workstation, for each environment stopped above:
+
+```sh
+kubectl -n <environment> scale deploy -l app.kubernetes.io/name=augustad --replicas 1
+flux resume helmrelease augustad-<environment> -n flux-system
+```
+
+Record the new size in this section.
+
 ## Part A: Recover
 
 1. Check the k3s service and its log on the node:
@@ -67,12 +152,13 @@ restores them.
     ssh <node>
     sudo systemctl status k3s
     sudo journalctl -u k3s --since "1 hour ago" --no-pager | tail -n 200
-    df -h / /var/lib/rancher /srv/augusta
+    df -h / /var/lib/rancher /srv/augusta /srv/augusta/captures
     ```
 
     A full disk (DiskPressure, evicted pods, a datastore that cannot write) is
     fixed by freeing space before anything else, for example
-    `sudo k3s crictl rmi --prune` for unused images.
+    `sudo k3s crictl rmi --prune` for unused images. A full
+    `/srv/augusta/captures` needs no freeing: it stops captures, not servers.
 
 2. Restart k3s and wait for the node:
 
@@ -148,6 +234,10 @@ restores them.
     be replaced by a new one under the same version. Cook, publish and point the
     server at the new version instead.
 
+    Set up [the capture filesystem](#the-capture-filesystem) again, if the
+    node's OS or disk was replaced: `/etc/fstab` and the image went with them.
+    k3s's uninstall script leaves both.
+
 6. Install Flux from the repository's own manifests as `develop` has them, read
    straight from `origin/develop` so the checkout's branch is left alone: its
    controllers first, then the sync objects that point it at the repository:
@@ -180,6 +270,8 @@ kubectl -n develop rollout status deploy -l app.kubernetes.io/name=augustad --ti
 kubectl -n staging rollout status deploy -l app.kubernetes.io/name=augustad --timeout 30m
 kubectl -n develop logs -l app.kubernetes.io/name=augustad --prefix | grep 'event=pack_verified'
 kubectl -n staging logs -l app.kubernetes.io/name=augustad --prefix | grep 'event=pack_verified'
+kubectl -n develop logs -l app.kubernetes.io/name=augustad --prefix | grep 'event=capture_enabled'
+ssh <node> "findmnt /srv/augusta/captures && sudo ls -lR /srv/augusta/captures"
 kubectl get svc -A -l app.kubernetes.io/name=augustad
 kubectl -n monitoring get pods
 ```
@@ -187,6 +279,9 @@ kubectl -n monitoring get pods
 - The node is `Ready`; every Flux source, Kustomization and `HelmRelease` is
   `Ready`.
 - Every server logged `event=pack_verified` and keeps running.
+- Every `develop` server logged `event=capture_enabled` with its own
+  `/srv/augusta/captures/develop/<scenario>` directory; the capture filesystem
+  is mounted, and a Match played to its end leaves a `.capture` file there.
 - Each server's Service is on the node port its `HelmRelease` pins, in its
   environment's range: `develop`'s 30700-30799 (`firebase` on 30700),
   `staging`'s 30800-30899 (`firebase` on 30800).
