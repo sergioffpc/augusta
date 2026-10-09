@@ -61,6 +61,18 @@ dashboards:
 # read-only.
 assetPacks:
   hostPath: /srv/augusta/asset-packs
+# Match captures (ADR-0050): a directory on the k3s node every server writes
+# its own into, under <hostPath>/<namespace>/<scenario>/, since a capture's
+# name is unique only within its server. Left empty, the default, nothing is
+# captured and nothing is mounted. The directory must already exist, owned by
+# the server's user, 65532, on a filesystem of its own of fixed size, so a full
+# one stops captures and never fills the node
+# (docs/runbooks/k3s-node-recovery.md). augustad creates the subdirectories
+# itself.
+#   captures:
+#     hostPath: /srv/augusta/captures
+captures:
+  hostPath: ""
 # The servers an environment runs, one per scenario (ADR-0026), keyed by the
 # scenario's name (ADR-0041): a Deployment, game Service and metrics Service
 # each, named augustad-<scenario>. A server serves its scenario's pack and no

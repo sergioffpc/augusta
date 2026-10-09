@@ -40,3 +40,7 @@ spec:
         # Pinned (rather than left to Kubernetes to assign) so this server
         # has a stable address for LAN clients to connect to.
         nodePort: 30700
+    # Captures every Match (ADR-0050) into the node's capture volume
+    # (docs/runbooks/k3s-node-recovery.md), for debugging what develop runs.
+    captures:
+      hostPath: /srv/augusta/captures

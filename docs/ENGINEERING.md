@@ -220,6 +220,22 @@ no self-hosted GitHub Actions runner in this pipeline).
   publishes beside each image as its `sha-<12>-debuginfo` tag; a release's
   `augustad-linux-x64.debug` reads only that release binary, which no image runs
   (ADR-0047).
+- **Server pod:** runs as UID/GID 65532 with no privilege escalation, every
+  capability dropped, the `RuntimeDefault` seccomp profile and a read-only root
+  filesystem; augustad writes only to its capture volume, if any. None of it
+  changes core dumps, which the kernel pipes to the node's `systemd-coredump`,
+  or `kubectl debug --target=augustad`: its ephemeral container has its own root
+  filesystem and `securityContext`, and reads the server's files through
+  `/proc/<pid>/root/` as the same user.
+- **Match captures:** an environment turns them on in its Helm values
+  (`captures.hostPath`, `develop` only), and each of its servers then captures
+  every Match (ADR-0050) into `<hostPath>/<namespace>/<scenario>/` on the node,
+  a folder of its own, since capture names are unique only within one server.
+  `<hostPath>` is `/srv/augusta/captures`, owned by 65532, a 4 GiB ext4 image
+  loop-mounted there, so a full one stops captures and never fills the node. Its
+  size holds every capturing server's retention cap
+  (`captures.retention.maxMiB`, #461) plus slack. Node setup:
+  [The capture filesystem](runbooks/k3s-node-recovery.md#the-capture-filesystem).
 
 ## Developer Environment
 
