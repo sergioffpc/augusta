@@ -12,6 +12,8 @@
 #include <prometheus/metric_family.h>
 
 #include "augusta/ballistics.h"
+#include "capture.h"
+#include "capture_retention.h"
 #include "command_queue.h"
 #include "heartbeat.h"
 #include "host_log.h"
@@ -23,10 +25,11 @@
 /// \file
 /// What the server counts about itself, for the metrics endpoint (metrics.h)
 /// to expose: ADR-0049's catalogue of the Tick, Lobby and Match, Sessions,
-/// Misbehaviour, Network, Combat and Recording families, each named and labelled
-/// as it says.
-/// The Host owns one, and its Network I/O and Simulation threads write each value
-/// in place where the event happens; the endpoint's thread only collects. Every
+/// Misbehaviour, Network, Combat, Recording and Capture families, each named
+/// and labelled as it says.
+/// The Host owns one, and its Network I/O and Simulation threads, and its
+/// Capturer's writer (through CaptureMetrics), write each value in place where
+/// the event happens; the endpoint's thread only collects. Every
 /// counter, gauge and histogram here is lock-free (lock_free_metrics.h), so
 /// neither thread ever waits on a scrape. The heartbeat line (heartbeat.h) reads its totals from the
 /// same counters (Totals), so the line and the series count each event once.
@@ -66,6 +69,7 @@ using MisbehaviourCounters =
 using MessageCounters = EnumCounters<MessageType, MessageType::kJoinRequest, MessageType::kReplayView>;
 using RejectionCounters = EnumCounters<Rejection, Rejection::kStale, Rejection::kOutOfRange>;
 using BodyPartCounters = EnumCounters<ballistics::BodyPart, ballistics::BodyPart::kHead, ballistics::BodyPart::kLimb>;
+using CaptureStopCounters = EnumCounters<CaptureStop, CaptureStop::kRecordTooLong, CaptureStop::kRetentionBudget>;
 
 /// Everything ADR-0049's catalogue has the server count but its Process family
 /// and Connection health, written in place by the Host's threads, and collected
@@ -143,6 +147,47 @@ struct HostMetrics final : prometheus::Collectable {
   /// states or none; nullopt while nothing is recorded.
   std::atomic<std::optional<RecordingState>> recording_state;
   static_assert(std::atomic<std::optional<RecordingState>>::is_always_lock_free);
+
+  // Capture, written by the Simulation thread and the Capturer's writer
+  // through CaptureMetrics.
+  std::atomic<CaptureState> capture_state{CaptureState::kOff};
+  static_assert(std::atomic<CaptureState>::is_always_lock_free);
+  Counter captures_started;
+  Counter captures_completed;
+  CaptureStopCounters capture_stops;
+  Counter capture_written_bytes;
+  Gauge capture_queue_records;
+  Gauge capture_directory_files;
+  Gauge capture_directory_bytes;
+  Counter capture_retention_deleted;
+  Counter capture_retention_failures;
+  /// The capture directory's retention limits (#461), each absent while unset.
+  /// Written once, as the Host is built, before the metrics endpoint serves.
+  std::optional<std::size_t> capture_retention_max_files;
+  std::optional<std::uintmax_t> capture_retention_max_bytes;
+};
+
+/// Counts what a Capturer tells it into metrics' Capture family, lock-free,
+/// from whichever thread tells it. It must not outlive metrics.
+class CaptureMetrics final : public CaptureObserver {
+ public:
+  explicit CaptureMetrics(HostMetrics& metrics) : metrics_(metrics) {}
+
+  /// Publishes retention's limits, as the Host is built.
+  void SetRetention(const CaptureRetention& retention);
+
+  void OnState(CaptureState state) override;
+  void OnStarted() override;
+  void OnCompleted() override;
+  void OnStopped(CaptureStop stop) override;
+  void OnWritten(std::size_t bytes) override;
+  void OnQueued(std::size_t records) override;
+  void OnDirectory(CaptureDirectoryUsage usage) override;
+  void OnRetentionDeleted() override;
+  void OnRetentionDeleteFailed() override;
+
+ private:
+  HostMetrics& metrics_;
 };
 
 /// The heartbeat's running totals (heartbeat.h), read from metrics' counters:

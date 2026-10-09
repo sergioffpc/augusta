@@ -21,6 +21,7 @@
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
+#include "capture_retention.h"
 #include "connection_sample.h"
 #include "content.h"
 #include "host_metrics.h"
@@ -73,6 +74,8 @@ struct HostConfig {
   /// The directory to capture every Match into (ADR-0050), created if
   /// missing; empty captures none.
   std::filesystem::path capture_directory;
+  /// What that directory is kept within, oldest capture first; off by default.
+  CaptureRetention capture_retention{};
   /// For a test: asked at listener setup, at every send and receive
   /// (networking.h) and at the recording's write and flush, so the transport
   /// or the disk fails there; null otherwise. Must outlive the Host.

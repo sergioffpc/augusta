@@ -485,6 +485,14 @@ target_link_libraries(
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_replay_server_tests DISCOVERY_TIMEOUT 30)
 
+# A capture directory kept within a count and a size (ADR-0050, #461).
+add_executable(augusta_capture_retention_tests capture_retention_test.cpp)
+target_link_libraries(
+  augusta_capture_retention_tests
+  PRIVATE augustad_host augusta_logging GTest::gtest GTest::gtest_main
+)
+gtest_discover_tests(augusta_capture_retention_tests DISCOVERY_TIMEOUT 30)
+
 # Match recordings (ADR-0048), on the example scenario as the server loads it
 # from its golden server pack. Their replay is tools/replay's, tested there.
 add_executable(augusta_recording_tests recording_test.cpp)

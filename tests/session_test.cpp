@@ -2032,6 +2032,37 @@ TEST_F(CaptureHostTest, EveryClientReadsTheMatchsFirstTickFromMatchStart) {
   EXPECT_GE(first.GetAuthoritativeState().value().tick, first_tick);
 }
 
+// The capturer's writer counts on a thread of its own, after the file
+// ReadBack waits for has its Match end.
+// Requirements: NFR-07
+TEST_F(CaptureHostTest, AMatchCapturedToItsEndIsCounted) {
+  PlayAMatch();
+  ASSERT_FALSE(ReadBack().records.empty());
+
+  const augusta::server::HostMetrics& metrics = host_.Metrics();
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (metrics.captures_completed.Value() == 0 && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(metrics.captures_started.Value(), 1U);
+  EXPECT_EQ(metrics.captures_completed.Value(), 1U);
+  EXPECT_EQ(metrics.capture_stops.Total(), 0U);
+  EXPECT_EQ(metrics.capture_state.load(), augusta::server::CaptureState::kIdle);
+  EXPECT_EQ(metrics.capture_directory_files.Value(), 1.0);
+  EXPECT_GT(metrics.capture_written_bytes.Value(), 0U);
+  EXPECT_EQ(metrics.capture_directory_bytes.Value(), static_cast<double>(metrics.capture_written_bytes.Value()));
+}
+
+// Requirements: NFR-07
+TEST_F(CaptureHostTest, CapturesAreCapturingWhileAMatchIsInProgress) {
+  Join();
+  Join();
+  ASSERT_TRUE(StartMatch());
+  Step();
+
+  EXPECT_EQ(host_.Metrics().capture_state.load(), augusta::server::CaptureState::kCapturing);
+}
+
 TEST(CaptureHostConfigTest, AHostRefusesACaptureDirectoryItCannotCreate) {
   const std::filesystem::path file =
       std::filesystem::temp_directory_path() / ("augusta_capture_file_" + std::to_string(std::random_device{}()));
@@ -6437,6 +6468,11 @@ using HostCountsTest = MatchOf<2>;
 std::uint64_t Discarded(const HostMetrics& metrics) {
   return metrics.commands_rejected.Total() + metrics.commands_overflowed.Value() +
          metrics.commands_outside_match.Value() + metrics.commands_before_joining.Value();
+}
+
+// Requirements: NFR-07
+TEST_F(HostCountsTest, CapturesAreOffWithoutACaptureDirectory) {
+  EXPECT_EQ(host_.Metrics().capture_state.load(), augusta::server::CaptureState::kOff);
 }
 
 // Requirements: NFR-07
