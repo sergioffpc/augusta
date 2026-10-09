@@ -1,5 +1,21 @@
 ## Agent skills
 
+### Main flow
+
+Work moves idea → ship along one spine of skills, in order: `/grill-with-docs` →
+`/to-spec` → `/to-tickets` → `/implement` → `/code-review` → `/retro`. The user
+runs each step; only `/code-review` is yours to invoke. When a step ends, name
+the next one.
+
+### Git flow
+
+Git Flow (`docs/ENGINEERING.md`, Branching model): `feature/*` → `develop`;
+`release/*`/`hotfix/*` → `main`, then back into `develop` by
+`docs/runbooks/cut-release.md` step 10 — a release is done once `develop`
+contains its tag. A stacked PR takes its parent's fixes by merging the parent
+branch. On macOS, build, test and lint through `scripts/dev-container.sh`; only
+CI's `client` job reproduces Windows-only failures.
+
 ### Issue tracker
 
 Issues are tracked in this repo's GitHub Issues, using the `gh` CLI. See
