@@ -1,6 +1,6 @@
 name: Save the vcpkg binary cache
 description: >
-  Saves .vcpkg-bincache for later Linux jobs to restore (setup-linux-build's "Restore vcpkg binaries"), holding only the packages this job's build installed, and only when that differs from what it restored: an unchanged cache is already saved, and saving it again would only push other caches out of the repository's 10 GB. The entry it replaces on this ref is deleted. Run it right after the step that configures the build, so a failing test later can't keep it from saving.
+  Saves .vcpkg-bincache for later Linux jobs to restore (restore-vcpkg-cache), holding only the packages this job's build installed, and only when that differs from what it restored: an unchanged cache is already saved, and saving it again would only push other caches out of the repository's 10 GB. The entry it replaces on this ref is deleted. Run it right after the step that configures the build, so a failing test later can't keep it from saving.
 
 runs:
   using: composite
@@ -38,7 +38,8 @@ runs:
     - name: Save vcpkg binaries
       # Keyed by the listing, so jobs of one run that installed the same
       # packages save one entry: the first reserves the key, the rest skip with
-      # a warning.
+      # a warning. The prefix says "clang", but the ports are built with the
+      # system compiler (restore-vcpkg-cache says why the prefix stays).
       if: steps.listing.outputs.changed == 'true'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:

@@ -106,9 +106,15 @@ decisions already made in ARCHITECTURE.md:
       (vcpkg's native GitHub-Actions-cache backend was removed upstream in
       2026). On Linux, where nuget.exe runs under Mono and fails certificate
       checks, it is a files cache in the Actions cache, one entry for every
-      Linux job (all clang), saved only when a job built a package it didn't
-      restore - except the `tools` job's Linux leg, whose `tools/pack/cpp`
-      manifest keeps an entry of its own.
+      Linux job, saved only when a job built a package it didn't restore -
+      except the `tools` job's Linux leg, whose `tools/pack/cpp` manifest keeps
+      an entry of its own. vcpkg builds its ports with the system compiler
+      (`/usr/bin/c++`, Ubuntu's g++) for the default `x64-linux` triplet; the
+      presets' clang compiles the project alone. So the entry's packages are the
+      same whatever preset a job configures, and the server image's dependency
+      layer, built on the same Ubuntu, restores them too: the container jobs
+      mount the entry read-only into its `vcpkg install`, and it builds from
+      source only the packages the entry lacks.
     - Falcor is not built on every run: the `falcor-prebuilt` workflow builds it
       once for each combination of submodule commit, `falcor.patch` and Falcor
       features, and publishes it as an asset of a `falcor-*` release, which the

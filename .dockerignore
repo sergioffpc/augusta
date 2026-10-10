@@ -17,3 +17,7 @@ vcpkg_installed/
 
 docs
 *.md
+
+# The CI Linux jobs' vcpkg binary cache - passed as a context of its own
+# (vcpkg-bincache), see Dockerfile
+.vcpkg-bincache

@@ -1,6 +1,6 @@
 name: Build and scan the server image
 description: >
-  Builds the server image into the runner's Docker (loaded, not pushed), from the registry layer cache, and fails on a high or critical CVE trivy finds in it. Both ci.yml's container jobs run it: container-verify to check the image, container-publish to rebuild the image it then pushes, so what it publishes is an image that was scanned. Tags it sha-<12> and, on a push, with the branch name. Assumes the repository is checked out with its submodules and buildx is set up; a job that reads or writes the cache logs in to GHCR first.
+  Builds the server image into the runner's Docker (loaded, not pushed), from the registry layer cache and the Linux jobs' vcpkg binary cache, and fails on a high or critical CVE trivy finds in it. Both ci.yml's container jobs run it: container-verify to check the image, container-publish to rebuild the image it then pushes, so what it publishes is an image that was scanned. Tags it sha-<12> and, on a push, with the branch name. Assumes the repository is checked out with its submodules and buildx is set up; a job that reads or writes the cache logs in to GHCR first.
 
 inputs:
   cache-to:
@@ -16,6 +16,10 @@ outputs:
 runs:
   using: composite
   steps:
+    # The Linux jobs' vcpkg binaries, which the Dockerfile's dependency install
+    # restores from rather than build all its packages from source, when that
+    # layer isn't cached already.
+    - uses: ./.github/actions/restore-vcpkg-cache
     - name: Install trivy
       shell: bash
       run: |
@@ -44,6 +48,8 @@ runs:
         no-cache-filters: rootfs
         # Reported as augustad_build_info's commit label (ADR-0049).
         build-args: AUGUSTA_COMMIT=${{ steps.short-sha.outputs.value }}
+        # Mounted read-only by the dependency install alone (see Dockerfile).
+        build-contexts: vcpkg-bincache=.vcpkg-bincache
         # sha-<first 12 characters of the commit> is the tag the chart runs:
         # Flux versions a Git-sourced chart <version>+<the same 12 characters>.
         # The branch name tag is for people. github.ref_name is only a plain
