@@ -137,7 +137,7 @@ std::expected<void, CaptureError> ReadMagic(std::istream& in) {
 
 std::expected<CaptureHeader, CaptureError> ReadHeader(std::istream& in) {
   protocol::BytesWire payload;
-  const Frame frame = ReadFrame(in, kCaptureFrames, payload);
+  const Frame frame = ReadFrame(in, payload);
   if (frame == Frame::kUnreadable) {
     return std::unexpected(CaptureError::kUnreadable);
   }
@@ -187,17 +187,13 @@ std::expected<Capture, CaptureError> ReadCapture(std::istream& in) {
   Capture capture{.header = *std::move(header), .records = {}, .torn = false};
   std::size_t joins = 0;
   protocol::BytesWire payload;
-  for (Frame frame = ReadFrame(in, kCaptureFrames, payload); frame != Frame::kEnd;
-       frame = ReadFrame(in, kCaptureFrames, payload)) {
+  for (Frame frame = ReadFrame(in, payload); frame != Frame::kEnd; frame = ReadFrame(in, payload)) {
     if (frame == Frame::kUnreadable) {
       return std::unexpected(CaptureError::kUnreadable);
     }
     if (frame == Frame::kTorn) {
       capture.torn = true;
       break;
-    }
-    if (frame == Frame::kTooLong) {
-      return std::unexpected(CaptureError::kMalformed);
     }
     const auto wire = protocol::DecodeCaptureRecord(payload);
     std::optional<CaptureRecord> record = wire.has_value() ? FromWire(*wire) : std::nullopt;
@@ -462,7 +458,7 @@ class Capturer::Writer {
   // the file with them.
   std::optional<Failed> OpenFile(const Item& item) {
     if (!directory_.Open(item.match, item.path.filename().string(),
-                         protocol::kCaptureMagic.size() + FrameSize(kCaptureFrames, item.payload.size()))) {
+                         protocol::kCaptureMagic.size() + FrameSize(item.payload.size()))) {
       return Failed{.step = CaptureStep::kRetentionBudget, .detail = {}};
     }
     file_ = std::ofstream(item.path, std::ios::binary | std::ios::trunc);
@@ -487,7 +483,7 @@ class Capturer::Writer {
 
   // Makes room in the directory for payload's frame, then writes it.
   std::optional<Failed> Persist(const protocol::BytesWire& payload) {
-    if (!directory_.Reserve(FrameSize(kCaptureFrames, payload.size()))) {
+    if (!directory_.Reserve(FrameSize(payload.size()))) {
       return Failed{.step = CaptureStep::kRetentionBudget, .detail = {}};
     }
     return Write(payload);
@@ -500,7 +496,7 @@ class Capturer::Writer {
       file_.setstate(std::ios::badbit);
       return Failed{.step = CaptureStep::kWrite, .detail = *std::move(fault)};
     }
-    WriteFrame(file_, kCaptureFrames, payload);
+    WriteFrame(file_, payload);
     if (!file_) {
       return Failed{.step = CaptureStep::kWrite, .detail = path_.string()};
     }
@@ -513,7 +509,7 @@ class Capturer::Writer {
       return Failed{.step = CaptureStep::kFlush, .detail = path_.string()};
     }
     ++records_;
-    observer_->OnWritten(FrameSize(kCaptureFrames, payload.size()));
+    observer_->OnWritten(FrameSize(payload.size()));
     return std::nullopt;
   }
 
@@ -763,7 +759,7 @@ std::optional<std::vector<std::byte>> Capturer::Admit(std::expected<std::vector<
   }
   // A record ReadCapture would refuse would make every record after it
   // unreadable; stopping here keeps the file readable up to it.
-  if (encoded->size() > kCaptureFrames.max_payload) {
+  if (encoded->size() > kMaxFramePayload) {
     writer_->Stop(matches_, CaptureStep::kRecordTooLong);
     return std::nullopt;
   }

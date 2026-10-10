@@ -142,7 +142,7 @@ enum class CaptureError : std::uint8_t {
 
 /// Why a Match's capture stopped before its Match end, as logs name it.
 enum class CaptureStop : std::uint8_t {
-  /// A record is longer than a capture's frame holds (kCaptureFrames).
+  /// A record is longer than a capture's frame holds (kMaxFramePayload).
   kRecordTooLong,
   /// A record found kCaptureQueueCapacity records still unwritten: the disk is not keeping up.
   kQueueFull,
@@ -191,7 +191,7 @@ enum class CaptureStep : std::uint8_t {
   /// A record found kCaptureQueueCapacity records still unwritten: the disk is
   /// not keeping up.
   kQueueFull,
-  /// A record is longer than a capture's frame holds (kCaptureFrames).
+  /// A record is longer than a capture's frame holds (kMaxFramePayload).
   kRecordTooLong,
   /// A record would take the directory past CaptureRetention::max_bytes with
   /// no completed capture left to delete.
@@ -308,8 +308,8 @@ struct CaptureOptions {
 
 /// Captures every Match a server runs into a directory of its own, one file
 /// each (CaptureFileName), each file the capture's magic then its records,
-/// framed as frames.h writes kCaptureFrames, the header first, the directory
-/// kept within CaptureOptions::retention (capture_retention.h). Every call but the
+/// framed as frames.h writes them, the header first, the directory kept
+/// within CaptureOptions::retention (capture_retention.h). Every call but the
 /// destructor is the Simulation thread's, in the order the tick makes its
 /// events, and only encodes and queues; the Capturer's writer thread creates,
 /// writes, flushes and closes the files. A Match's capture stops at a record

@@ -327,11 +327,9 @@ augusta::server::Capture ReadWhole(const std::filesystem::path& file) {
 void Rewrite(const std::filesystem::path& file, const augusta::server::Capture& capture) {
   std::ofstream out(file, std::ios::binary | std::ios::trunc);
   out.write(reinterpret_cast<const char*>(protocol::kCaptureMagic.data()), protocol::kCaptureMagic.size());
-  augusta::server::WriteFrame(out, augusta::server::kCaptureFrames,
-                              augusta::server::EncodeToCapture(augusta::server::ToWire(capture.header)).value());
+  augusta::server::WriteFrame(out, augusta::server::EncodeToCapture(augusta::server::ToWire(capture.header)).value());
   for (const augusta::server::CaptureRecord& record : capture.records) {
-    augusta::server::WriteFrame(out, augusta::server::kCaptureFrames,
-                                augusta::server::EncodeToCapture(augusta::server::ToWire(record)).value());
+    augusta::server::WriteFrame(out, augusta::server::EncodeToCapture(augusta::server::ToWire(record)).value());
   }
 }
 
