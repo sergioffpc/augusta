@@ -57,6 +57,9 @@ jobs:
         run: |
           mkdir -p dist
           cp build/x64-windows/src/client/augustac.exe dist/augustac-windows-x64.exe
+          # Its PDB, from this same build, so its GUID and age are the ones
+          # this binary's debug directory names (ADR-0055).
+          cp build/x64-windows/src/client/augustac.pdb dist/augustac-windows-x64.pdb
       # Falcor and NVTX are submodules, not vcpkg ports, so they are named by
       # their commits. What Falcor itself fetches with packman is not listed.
       - name: SBOM
@@ -79,6 +82,7 @@ jobs:
           name: client-binary
           path: |
             dist/augustac-windows-x64.exe
+            dist/augustac-windows-x64.pdb
             dist/augustac-windows-x64.spdx.json
   server:
     runs-on: ubuntu-26.04
@@ -189,6 +193,7 @@ jobs:
         run: |
           gh release create "${{ github.ref_name }}" \
             dist/client-binary/augustac-windows-x64.exe \
+            dist/client-binary/augustac-windows-x64.pdb \
             dist/client-binary/augustac-windows-x64.spdx.json \
             dist/server-binary/augustad-linux-x64 \
             dist/server-binary/augustad-linux-x64.debug \
