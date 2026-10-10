@@ -530,6 +530,27 @@ TEST_F(ConnectedNetworkingTest, AClientThatClosesItsConnectionIsReportedAsClosed
   EXPECT_EQ(reason, DisconnectReason::kClosedByPeer);
 }
 
+// What the server sent reliably before closing is the client's to receive
+// even once it has seen the close: a reply that explains it, or the last of a
+// Replay, is not lost with the connection.
+TEST_F(ConnectedNetworkingTest, WhatArrivedBeforeTheServerClosedIsStillReceivedAfterTheClose) {
+  const std::vector<std::string> sent = NumberedMessages(kBurst);
+  for (const std::string& message : sent) {
+    ASSERT_EQ(server_->Send(*peer_, MakePayload(message), Reliability::kReliable), SendOutcome::kAccepted);
+  }
+  server_->Disconnect(*peer_);
+  ASSERT_TRUE(
+      PollUntil([&] { client_->PumpEvents(); }, [&] { return client_->GetState() == ConnectionState::kDisconnected; }));
+
+  std::vector<std::string> received;
+  for (const Payload& payload : client_->ReceiveMessages().value()) {
+    received.push_back(PayloadToString(payload));
+  }
+
+  EXPECT_EQ(received, sent);
+  EXPECT_TRUE(client_->ReceiveMessages().value().empty());
+}
+
 TEST_F(ConnectedNetworkingTest, TheServerReportsTheStatsOfEachConnectedPeer) {
   std::vector<PeerStats> stats;
   ASSERT_TRUE(PollUntil([&] { PollBoth(); },
