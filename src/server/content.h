@@ -4,10 +4,10 @@
 #include <cstdint>
 #include <expected>
 #include <string>
-#include <string_view>
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/failure.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -58,28 +58,17 @@ struct Content {
   scripting::Engine policy;
 };
 
-/// Which part of the startup content could not be loaded; what was wrong with
-/// it is logged where it failed.
-enum class ContentError {
-  kCollisionLoading,
-  kSpawnPointsLoading,
-  kCharactersLoading,
-  kClientPackHashLoading,
-  kParametersLoading,
-  kPolicyLoading,
-};
-
-[[nodiscard]] std::string_view DescribeContentError(ContentError error);
-
 /// Loads startup content from the verified pack for a server ticking at
 /// tick_rate_hz, which the Parameters script may check its values against
-/// (ADR-0039), logging what is wrong with it.
+/// (ADR-0039), or returns what is wrong with it: failure::Code::kInvalidContent,
+/// with the pack's path and the part of it that failed as context, for the
+/// application boundary to report.
 /// Every character must have a hitbox for each body part and an eye: every hit
 /// on a player resolves to a body part (US-11) and every Shot leaves from its
 /// shooter's eye (US-07), so the server runs only on characters it can judge
 /// and fire for.
-[[nodiscard]] std::expected<Content, ContentError> LoadServerContent(const assets::Pack& pack,
-                                                                     std::uint8_t tick_rate_hz);
+[[nodiscard]] std::expected<Content, failure::Failure> LoadServerContent(const assets::Pack& pack,
+                                                                         std::uint8_t tick_rate_hz);
 
 }  // namespace augusta::server
 

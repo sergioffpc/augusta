@@ -13,10 +13,8 @@
 #include "augusta/client_config.h"
 #include "augusta/config.h"
 #include "augusta/failure.h"
-#include "augusta/faults.h"
 #include "augusta/harness.h"
 #include "augusta/logging.h"
-#include "augusta/networking.h"
 #include "augusta/reenactment.h"
 #include "character_loader.h"
 #include "content.h"
@@ -96,15 +94,6 @@ std::expected<void, failure::Failure> CheckReenactmentPack(const harness::Script
                        .detail = "the capture was made with another client pack than the one loaded"});
 }
 
-std::expected<void, failure::Failure> InitializeClientTransport(failure::Faults* faults) {
-  return failure::Guard(failure::Code::kTransportInitFailed, [faults] {
-    if (faults != nullptr) {
-      faults->ThrowIfTripped(failure::Site::kDependencyInit);
-    }
-    networking::Init();
-  });
-}
-
 std::expected<LoadedClient, failure::Failure> LoadClient(const config::ClientConfig& file_config) {
   const std::filesystem::path& pack_path = file_config.pack_path;
   auto verified = assets::LoadVerifiedPack(pack_path, file_config.public_key_path);
@@ -117,7 +106,7 @@ std::expected<LoadedClient, failure::Failure> LoadClient(const config::ClientCon
 
   auto content = LoadClientContent(*pack, file_config.character);
   if (!content) {
-    return std::unexpected(ContentFailure(pack_path, std::string(DescribeContentError(content.error()))));
+    return std::unexpected(std::move(content.error()));
   }
   return LoadedClient{.pack = std::move(pack), .content = *std::move(content)};
 }

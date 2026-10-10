@@ -5,6 +5,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/config.h"
+#include "augusta/failure.h"
 #include "augusta/logging.h"
 #include "augusta/map.h"
 #include "augusta/networking.h"
@@ -80,6 +81,9 @@ int main(int argc, char** argv) {
   LI("subsystem=swarm event=starting version={}", augusta::EngineVersion());
 
   // Once, process-wide, before any Session is constructed - see networking.h.
-  augusta::networking::Init();
+  if (const auto initialized = augusta::networking::Init(); !initialized) {
+    LE("subsystem=swarm event=networking_init_failed {}", augusta::failure::DescribeFailure(initialized.error()));
+    return 1;
+  }
   return Run(*settings);
 }

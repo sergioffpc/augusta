@@ -53,7 +53,7 @@ constexpr auto kPatience = std::chrono::seconds(10);
 // Init and Shutdown once for the whole process, as in networking_test.cpp.
 class NetworkingEnvironment : public ::testing::Environment {
  public:
-  void SetUp() override { augusta::networking::Init(); }
+  void SetUp() override { ASSERT_TRUE(augusta::networking::Init().has_value()); }
   void TearDown() override { augusta::networking::Shutdown(); }
 };
 

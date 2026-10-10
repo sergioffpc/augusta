@@ -6,12 +6,10 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
-#include <format>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <ranges>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -68,8 +66,9 @@ std::vector<std::string> PathsOf(const std::vector<Character>& characters) {
 std::filesystem::path RequireDirectory(const std::filesystem::path& directory) {
   std::error_code error;
   if (!std::filesystem::is_directory(directory, error)) {
-    throw std::runtime_error(
-        std::format("server::ReplayServer: the replay captures directory {} is not a directory", directory.string()));
+    throw failure::ClassifiedFailure(failure::Failure{.code = failure::Code::kInvalidConfiguration,
+                                                      .context = {{.key = "directory", .value = directory.string()}},
+                                                      .detail = "the replay captures directory is not a directory"});
   }
   return directory;
 }

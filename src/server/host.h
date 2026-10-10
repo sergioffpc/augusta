@@ -85,12 +85,12 @@ struct HostConfig {
 /// The server's listening socket and its SimulationWorld, without threads or a clock.
 class Host {
  public:
-  /// Constructs SimulationWorld with scenario's collision (throws
-  /// std::runtime_error if a map mesh, or a character's hitbox, is not a whole
-  /// triangle list) and the scenario's Game policy (none by default), and starts
-  /// listening (throws networking::TransportFailure if the address can't be
-  /// bound, or std::runtime_error if HostConfig::capture_directory can't be
-  /// created).
+  /// Constructs SimulationWorld with scenario's collision and the scenario's
+  /// Game policy (none by default), and starts listening. Throws
+  /// failure::ClassifiedFailure, its Code saying which: kInvalidContent if a map
+  /// mesh, or a character's hitbox, is not a whole triangle list (see
+  /// simulation_mapping.h), kInvalidConfiguration if HostConfig::capture_directory
+  /// can't be created, or what networking::Server's constructor throws.
   /// Content is loaded from the server pack by the caller (see content.h).
   Host(const HostConfig& config, Scenario scenario, scripting::Engine policy = {});
   ~Host();

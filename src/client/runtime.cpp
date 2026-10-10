@@ -10,7 +10,6 @@
 #include <mutex>
 #include <optional>
 #include <set>
-#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -172,8 +171,10 @@ struct ClientRuntime::Impl {
       return map::AddCollision(presentation, map.collision);
     });
     if (!added) {
-      throw std::runtime_error(
-          std::format("ClientRuntime: map collision rejected: {}", physics::DescribeCollisionMeshError(added.error())));
+      throw failure::ClassifiedFailure(failure::Failure{
+          .code = failure::Code::kInvalidContent,
+          .context = {},
+          .detail = std::format("map collision rejected: {}", physics::DescribeCollisionMeshError(added.error()))});
     }
     // A Captured player asks to join at its captured spawn (ADR-0050).
     session.emplace(harness::SessionConfig{.server = cfg.server,

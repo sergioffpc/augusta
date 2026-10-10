@@ -51,7 +51,7 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructReplayR
       .server_pack = pack.Hash(),
       .captures = file_config.replay_captures,
       .max_viewers = file_config.replay_max_viewers,
-      .faults = nullptr,
+      .faults = faults,
   };
   return std::make_unique<ServerRuntime>(replay_config, file_config.metrics_port, std::move(content.scenario),
                                          *std::move(policy), faults);
@@ -75,7 +75,7 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
 
   auto content = LoadServerContent(*pack, file_config.tick_rate_hz);
   if (!content) {
-    return std::unexpected(ContentFailure(pack_path, std::string(DescribeContentError(content.error()))));
+    return std::unexpected(std::move(content.error()));
   }
   if (!file_config.replay_captures.empty()) {
     return ConstructReplayRuntime(file_config, *pack, *std::move(content), faults);
@@ -95,6 +95,7 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
                                             .max_bytes = file_config.capture_max_mib.transform(
                                                 [](std::uint32_t mib) { return std::uintmax_t{mib} * kMiB; })},
       .reenactments = file_config.reenactments,
+      .faults = faults,
   };
   return std::make_unique<ServerRuntime>(host_config, file_config.metrics_port, std::move(content->scenario),
                                          std::move(content->policy), faults);
@@ -118,14 +119,7 @@ application::Lifecycle<ServerRuntime> ServerLifecycle(const config::ServerConfig
   return {
       // networking::Init() must run once, process-wide, before any Server is
       // constructed - see networking.h.
-      .initialize = [faults]() -> std::expected<void, failure::Failure> {
-        return failure::Guard(failure::Code::kTransportInitFailed, [faults] {
-          if (faults != nullptr) {
-            faults->ThrowIfTripped(failure::Site::kDependencyInit);
-          }
-          networking::Init();
-        });
-      },
+      .initialize = [faults] { return networking::Init(faults); },
       .construct = [file_config, faults] { return ConstructRuntime(file_config, faults); },
       .run = [](ServerRuntime& runtime) { return runtime.Run(); },
   };

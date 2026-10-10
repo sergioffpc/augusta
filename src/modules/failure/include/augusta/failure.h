@@ -17,8 +17,9 @@
 /// the dependency's own words as detail, kept for diagnosis but never what
 /// recovery branches on. It decides nothing about recovery itself: the boundary
 /// that owns the scope a Disposition names stops the peer, Session, subsystem,
-/// runtime or process, and writes the one ERR or CRIT line (ADR-0029). Other
-/// modules' own error types stay as they are until they are moved onto it.
+/// runtime or process, and writes the one ERR or CRIT line (ADR-0029). A
+/// module's own error type is for an outcome that is not an operational
+/// failure, mapped to a Code where it becomes one.
 /// faults.h is the controlled fault injection tests make dependencies fail with.
 namespace augusta::failure {
 

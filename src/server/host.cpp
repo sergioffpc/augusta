@@ -6,11 +6,9 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
-#include <format>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -49,8 +47,10 @@ std::unique_ptr<Capturer> BuildCapturer(const HostConfig& config, const assets::
   std::error_code error;
   std::filesystem::create_directories(config.capture_directory, error);
   if (error) {
-    throw std::runtime_error(std::format("server::Host: cannot create the capture directory {}: {}",
-                                         config.capture_directory.string(), error.message()));
+    throw failure::ClassifiedFailure(
+        failure::Failure{.code = failure::Code::kInvalidConfiguration,
+                         .context = {{.key = "directory", .value = config.capture_directory.string()}},
+                         .detail = error.message()});
   }
   LI("subsystem=capture event=capture_enabled directory={} mode={}", config.capture_directory.string(),
      CaptureModeName(config.capture_mode));

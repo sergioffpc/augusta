@@ -38,9 +38,9 @@ namespace augusta::server {
 [[nodiscard]] ballistics::BodyPart ToBallistics(assets::BodyPart part);
 
 /// hitbox, of the character at path, as the triangles a bullet is tested
-/// against. Throws std::runtime_error, naming the character, if its mesh is not
-/// a whole, in-range triangle list: a pack's mesh blob is not checked for that
-/// when it is decoded.
+/// against. Throws failure::ClassifiedFailure (failure::Code::kInvalidContent),
+/// naming the character, if its mesh is not a whole, in-range triangle list: a
+/// pack's mesh blob is not checked for that when it is decoded.
 [[nodiscard]] simulation::CharacterHitbox ToSimulation(const assets::HitboxData& hitbox, const std::string& path);
 
 /// Each of characters as SimulationWorld takes it, by its path. Throws as the
@@ -49,8 +49,8 @@ namespace augusta::server {
     const std::vector<Character>& characters);
 
 /// SimulationWorld on parameters at tick_rate_hz, with scenario's collision and
-/// the scenario's Game policy. Throws std::runtime_error if a map mesh is not a
-/// whole triangle list.
+/// the scenario's Game policy. Throws failure::ClassifiedFailure
+/// (failure::Code::kInvalidContent) if a map mesh is not a whole triangle list.
 [[nodiscard]] simulation::World BuildSimulation(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz,
                                                 const Scenario& scenario, scripting::Engine policy);
 

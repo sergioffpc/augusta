@@ -34,6 +34,7 @@
 // ever be one OS.
 namespace {
 
+using augusta::failure::ClassifiedFailure;
 using augusta::failure::Code;
 using augusta::failure::Disposition;
 using augusta::failure::DispositionOf;
@@ -52,7 +53,6 @@ using augusta::networking::Reliability;
 using augusta::networking::SendOutcome;
 using augusta::networking::Server;
 using augusta::networking::SimulateNetworkConditions;
-using augusta::networking::TransportFailure;
 
 // How long PollUntil sleeps between polls - short enough not to add
 // meaningful latency to the test, long enough not to busy-spin.
@@ -228,7 +228,7 @@ bool PerformRoundTrip(Server& server, Client& client, RoundTripResult& result) {
 // Shutdown().
 class NetworkingEnvironment : public ::testing::Environment {
  public:
-  void SetUp() override { augusta::networking::Init(); }
+  void SetUp() override { ASSERT_TRUE(augusta::networking::Init().has_value()); }
   void TearDown() override { augusta::networking::Shutdown(); }
 };
 
@@ -636,6 +636,18 @@ TEST_F(NetworkingTest, TheDefaultTimeoutIsBackOnceTheConditionsAreReset) {
 
 // ---- Local transport failures (ADR-0033) ----
 
+// A transport the process cannot start ends it before any runtime exists.
+TEST_F(NetworkingTest, ATransportThatCannotBeInitializedIsATransportInitFailure) {
+  Faults faults;
+  faults.Arm(Site::kDependencyInit, "GameNetworkingSockets_Init failed");
+
+  const auto initialized = augusta::networking::Init(&faults);
+
+  ASSERT_FALSE(initialized.has_value());
+  EXPECT_EQ(initialized.error().code, Code::kTransportInitFailed);
+  EXPECT_EQ(initialized.error().detail, "GameNetworkingSockets_Init failed");
+}
+
 // A transport that cannot listen is the runtime's failure, typed, so the
 // application boundary classifies it by its code and never by its message.
 TEST_F(NetworkingTest, AServerThatCannotSetUpItsListenerThrowsAListenerSetupFailure) {
@@ -645,10 +657,29 @@ TEST_F(NetworkingTest, AServerThatCannotSetUpItsListenerThrowsAListenerSetupFail
   try {
     const Server server(Endpoint{.address = kLoopbackAnyPort}, &faults);
     FAIL() << "listening succeeded on a failed listener setup";
-  } catch (const TransportFailure& error) {
-    EXPECT_EQ(error.Failure().code, Code::kListenerSetupFailed);
-    EXPECT_EQ(DispositionOf(error.Failure().code), Disposition::kRuntime);
-    EXPECT_EQ(error.Failure().detail, "no socket");
+  } catch (const ClassifiedFailure& error) {
+    EXPECT_EQ(error.GetFailure().code, Code::kListenerSetupFailed);
+    EXPECT_EQ(DispositionOf(error.GetFailure().code), Disposition::kRuntime);
+    EXPECT_EQ(error.GetFailure().detail, "no socket");
+  }
+}
+
+TEST_F(NetworkingTest, AServerAddressThatDoesNotParseIsAConfigurationFailure) {
+  try {
+    const Server server(Endpoint{.address = "not an address"});
+    FAIL() << "listening succeeded on an address that does not parse";
+  } catch (const ClassifiedFailure& error) {
+    EXPECT_EQ(error.GetFailure().code, Code::kInvalidConfiguration);
+  }
+}
+
+TEST_F(NetworkingTest, AClientAddressThatDoesNotParseIsAConfigurationFailure) {
+  Client client;
+  try {
+    client.Connect(Endpoint{.address = "not an address"});
+    FAIL() << "connecting began to an address that does not parse";
+  } catch (const ClassifiedFailure& error) {
+    EXPECT_EQ(error.GetFailure().code, Code::kInvalidConfiguration);
   }
 }
 

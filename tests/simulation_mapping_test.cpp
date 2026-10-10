@@ -1,6 +1,5 @@
 #include "simulation_mapping.h"
 
-#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -8,6 +7,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
+#include "augusta/failure.h"
 #include "augusta/math.h"
 #include "augusta/simulation.h"
 #include "content.h"
@@ -59,7 +59,14 @@ TEST(SimulationMappingTest, AHitboxThatIsNotAWholeTriangleListIsRejected) {
   HitboxData hitbox = Triangle(BodyPart::kTorso);
   hitbox.mesh.indices = {0, 1};
 
-  EXPECT_THROW(static_cast<void>(ToSimulation(hitbox, "medic")), std::runtime_error);
+  try {
+    static_cast<void>(ToSimulation(hitbox, "medic"));
+    FAIL() << "a hitbox that is not a whole triangle list was taken";
+  } catch (const augusta::failure::ClassifiedFailure& thrown) {
+    EXPECT_EQ(thrown.GetFailure().code, augusta::failure::Code::kInvalidContent);
+    ASSERT_FALSE(thrown.GetFailure().context.empty());
+    EXPECT_EQ(thrown.GetFailure().context.front().value, "medic");
+  }
 }
 
 TEST(SimulationMappingTest, EachCharacterIsKeptByItsPath) {

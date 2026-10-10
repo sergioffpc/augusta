@@ -13,7 +13,7 @@ target_include_directories(
 )
 target_link_libraries(
   augustac_content
-  PUBLIC augusta_assets augusta_cues augusta_input augusta_math augusta_physics
+  PUBLIC augusta_assets augusta_cues augusta_failure augusta_input augusta_math augusta_physics
   PRIVATE augusta_logging augusta_map
 )
 augusta_set_module_scope(augustac_content CLIENT_ONLY)

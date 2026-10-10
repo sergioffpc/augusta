@@ -76,7 +76,7 @@ constexpr auto kReplayListPatience = std::chrono::seconds(10);
 // augustac --replays (ADR-0051): asks the server file_config names for the
 // captures it replays and prints them, or says why it could not.
 augusta::application::Outcome ListReplays(const augusta::config::ClientConfig& file_config) {
-  if (auto initialized = augusta::client::InitializeClientTransport(); !initialized) {
+  if (auto initialized = augusta::networking::Init(); !initialized) {
     return std::move(initialized.error());
   }
   augusta::harness::ReplayListQuery query(augusta::networking::Endpoint{.address = file_config.server_address});
@@ -97,9 +97,10 @@ augusta::application::Outcome ListReplays(const augusta::config::ClientConfig& f
 }
 
 // Loads what the runtime is made from and constructs it, as reenactment's
-// Captured player if there is one (ADR-0050); the runtime's own exception (no
-// window or GPU device, a rejected collision mesh) the application boundary
-// classifies. replay, set, names the capture to watch.
+// Captured player if there is one (ADR-0050); the runtime's own exception the
+// application boundary classifies: a dependency's (no window or GPU device), or
+// one already classified (a rejected collision mesh). replay, set, names the
+// capture to watch.
 std::expected<std::unique_ptr<Client>, augusta::failure::Failure> ConstructClient(
     const augusta::config::ClientConfig& file_config, const std::optional<augusta::harness::Script>& reenactment,
     const std::optional<std::string>& replay) {
@@ -137,7 +138,8 @@ augusta::application::Lifecycle<Client> ClientLifecycle(const augusta::config::C
                                                         const std::optional<augusta::harness::Script>& reenactment,
                                                         const std::optional<std::string>& replay) {
   return {
-      .initialize = [] { return augusta::client::InitializeClientTransport(); },
+      // Once, process-wide, before any ClientRuntime is constructed (networking.h).
+      .initialize = [] { return augusta::networking::Init(); },
       .construct = [&file_config, &reenactment, &replay] { return ConstructClient(file_config, reenactment, replay); },
       .run = [](Client& client) { return client.runtime->Run(); },
   };
@@ -174,7 +176,15 @@ int main(int argc, char** argv) {
   LI("subsystem=client event=starting version={}", augusta::EngineVersion());
 
   if (run->mode == augusta::config::ClientMode::kListReplays) {
-    return augusta::application::Conclude(kSubsystem, ListReplays(*file_config));
+    // A server address that does not parse throws, classified, from the query;
+    // anything else escaping it is classified as a run's, its phase named.
+    auto listed = augusta::failure::Guard(augusta::failure::Code::kWorkerFailed,
+                                          [&file_config] { return ListReplays(*file_config); });
+    if (!listed) {
+      listed.error().context.push_back({.key = "phase", .value = "list_replays"});
+      return augusta::application::Conclude(kSubsystem, listed.error());
+    }
+    return augusta::application::Conclude(kSubsystem, *listed);
   }
   const std::optional<std::string> replay =
       run->mode == augusta::config::ClientMode::kWatchReplay ? std::optional(run->capture) : std::nullopt;

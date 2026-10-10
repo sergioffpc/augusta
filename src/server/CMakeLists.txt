@@ -21,7 +21,7 @@ add_library(augustad_content STATIC content.cpp)
 target_include_directories(augustad_content PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augustad_content
-  PUBLIC augusta_assets augusta_math augusta_parameters augusta_physics augusta_scripting
+  PUBLIC augusta_assets augusta_failure augusta_math augusta_parameters augusta_physics augusta_scripting
   PRIVATE augusta_logging augusta_map augustad_parameters_loader augustad_policy_loader
 )
 augusta_set_module_scope(augustad_content SERVER_ONLY)

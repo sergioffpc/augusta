@@ -96,9 +96,10 @@ struct ViewerMessage {
 class ReplayServer {
  public:
   /// Builds one World of scenario first, so a Map that is rejected throws
-  /// std::runtime_error before a socket exists, as Host's constructor does;
-  /// throws std::runtime_error too if config.captures is not a directory, and
-  /// networking::TransportFailure if the address can't be bound.
+  /// before a socket exists, as Host's constructor does. Throws
+  /// failure::ClassifiedFailure: kInvalidContent for that Map,
+  /// kInvalidConfiguration if config.captures is not a directory, or what
+  /// networking::Server's constructor throws.
   ReplayServer(const ReplayServerConfig& config, Scenario scenario, PolicyMaker policy);
   ~ReplayServer();
 

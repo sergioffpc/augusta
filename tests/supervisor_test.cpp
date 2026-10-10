@@ -117,6 +117,42 @@ TEST(SupervisorTest, AFailureWhileStoppingDoesNotReplaceTheFirstCause) {
   EXPECT_EQ(failure->detail, "first");
 }
 
+// Every worker fails at once while a stop is requested from outside: one of
+// them is the first cause, and every one is joined. Under the sanitizers
+// (ADR-0013) a race in recording failures during a concurrent shutdown shows here.
+TEST(SupervisorTest, FailuresRacingAStopFromOutsideLeaveOneFirstCauseAndEveryWorkerJoined) {
+  constexpr int kWorkers = 8;
+  Supervisor supervisor;
+  std::atomic<bool> go{false};
+  std::atomic<int> returned{0};
+  for (int worker = 0; worker < kWorkers; ++worker) {
+    supervisor.Spawn("worker" + std::to_string(worker), [&]() -> WorkerResult {
+      while (!go) {
+        std::this_thread::yield();
+      }
+      ++returned;
+      return std::unexpected(Failure{.code = Code::kTransportSendFailed, .context = {}, .detail = "refused"});
+    });
+  }
+  std::thread outside([&] {
+    while (!go) {
+      std::this_thread::yield();
+    }
+    supervisor.RequestStop();
+  });
+
+  go = true;
+  outside.join();
+  supervisor.StopAndJoin();
+
+  EXPECT_EQ(returned, kWorkers);
+  EXPECT_EQ(supervisor.GetState(), State::kStopped);
+  const std::optional<Failure> failure = supervisor.Failure();
+  ASSERT_TRUE(failure.has_value());
+  EXPECT_EQ(failure->code, Code::kTransportSendFailed);
+  EXPECT_TRUE(ContextOf(*failure, kThreadContextKey).starts_with("worker"));
+}
+
 TEST(SupervisorTest, AFailureAWorkerReturnsIsTheFirstCauseWithItsOwnCodeAndContext) {
   Supervisor supervisor;
   std::atomic<bool> other_stopped{false};

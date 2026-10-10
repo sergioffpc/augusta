@@ -30,12 +30,13 @@ namespace augusta::server {
 
 /// augustad's Lifecycle for file_config: initialize starts the transport
 /// (failure::Code::kTransportInitFailed); construct verifies the pack and loads
-/// its content (kInvalidContent), then constructs the ServerRuntime, whose
-/// exception (a rejected map mesh, a listen address that can't be bound, a
-/// capture directory that can't be created) the application boundary classifies; run
-/// runs it until Stop() or its first cause. faults, for tests only, is asked
-/// at the transport's initialization and by the runtime's supervisor, and
-/// must outlive the Lifecycle's run.
+/// its content (kInvalidContent), then constructs the ServerRuntime, which
+/// throws its failure already classified (a rejected map mesh, a listen address
+/// that can't be parsed or bound, a capture directory that can't be created;
+/// see host.h); run runs it until Stop() or its first cause. faults, for tests
+/// only, is asked at the transport's initialization, by the server at each of
+/// its sites (host.h) and by the runtime's supervisor, and must outlive the
+/// Lifecycle's run.
 [[nodiscard]] application::Lifecycle<ServerRuntime> ServerLifecycle(const config::ServerConfig& file_config,
                                                                     failure::Faults* faults = nullptr);
 
