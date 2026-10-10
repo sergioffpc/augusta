@@ -95,7 +95,8 @@ class Host {
   /// triangle list) and the scenario's Game policy (none by default), and starts
   /// listening (throws networking::TransportFailure if the address can't be
   /// bound, or std::runtime_error if HostConfig::recording can't be written or
-  /// HostConfig::capture_directory can't be created).
+  /// HostConfig::capture_directory can't be created; failure::ClassifiedFailure
+  /// if the protocol cannot carry the recording's header).
   /// Content is loaded from the server pack by the caller (see content.h).
   Host(const HostConfig& config, Scenario scenario, scripting::Engine policy = {});
   ~Host();
@@ -115,6 +116,8 @@ class Host {
   /// PumpNetwork and Tick may each find one, so the thread that runs each asks
   /// after it. Given once, as TakeTransportFailure is, so the runtime reports
   /// it once; nullopt before one and after it has been taken. From any thread.
+  /// Once it, or a transport failure, is met, taken or not, the Host sends
+  /// nothing more, valid messages included.
   [[nodiscard]] std::optional<failure::Failure> TakeInvariantFailure();
 
   /// Does one round of the Network I/O thread's work, at now: connection events

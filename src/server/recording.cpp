@@ -13,7 +13,6 @@
 #include <mutex>
 #include <optional>
 #include <ostream>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -326,11 +325,12 @@ class Recorder::Writer {
 namespace {
 
 // header's record. One the protocol cannot carry is the recording server's own
-// bug, found before the recording starts, when a failure may still throw.
+// bug, found before the recording starts, when a failure may still throw: it is
+// thrown whole, so the application boundary keeps its Code.
 protocol::BytesWire HeaderRecord(const RecordingHeader& header) {
   auto record = EncodeToRecord(ToWire(header));
   if (!record.has_value()) {
-    throw std::runtime_error("server::Recorder: " + failure::DescribeFailure(record.error()));
+    throw failure::ClassifiedFailure(std::move(record.error()));
   }
   return *std::move(record);
 }

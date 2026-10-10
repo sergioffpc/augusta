@@ -13,7 +13,9 @@ continuation. An invariant that protocol correctness, authority or a resource's
 lifetime depends on is checked in every build instead, where breaking it would
 emit or use invalid state: the check returns a `kInvariantViolated` failure and
 the runtime stops, so an assertion is only ever a development aid on top of it.
-Outbound protocol encoding is one (ADR-0038).
+Outbound protocol encoding is one (ADR-0038). Once a runtime has met such a
+failure, or a local transport failure, it sends nothing more, valid messages
+included, while its workers stop.
 
 An error is always a type, never a string: a function that reports failure
 returns a dedicated error type (an `enum class`, or a struct or class when the
@@ -47,7 +49,10 @@ its pack, loading its content) and running it. Each phase classifies its own
 failures with their `Code`; a dependency's exception escaping a phase is
 classified there too (`dependency_init_failed` while initializing or
 constructing, `worker_failed` while running, with `phase=` naming which), so no
-unclassified exception leaves `main`. A runtime's failure arrives as its
+unclassified exception leaves `main`. Startup code that has already classified
+its failure (a recording header the protocol cannot carry, `kInvariantViolated`)
+throws it whole as a `failure::ClassifiedFailure`, which `failure::Guard`
+returns with its `Code` unchanged. A runtime's failure arrives as its
 supervisor's first cause, its `Code` unchanged; the client classifies its
 Session ending on its own (`join_refused`, `server_unreachable`,
 `peer_connection_lost`) and a character it cannot load (`invalid_content`) the

@@ -730,6 +730,22 @@ TEST(RecordingFailureModeTest, ASimulationThatRecordsNothingHasNoRecordingFailur
   EXPECT_FALSE(simulation.RecordingFailure().has_value());
 }
 
+// A header the protocol cannot carry is the server's broken invariant, found
+// at startup: it is thrown whole, so the boundary's Guard keeps its Code
+// rather than taking it for a dependency's failure (ADR-0033).
+TEST(RecordingTest, AHeaderTheProtocolCannotCarryIsAnInvariantFailureGuardKeeps) {
+  std::ostringstream out(std::ios::binary);
+  RecordingHeader header = ExampleHeader();
+  header.engine_version = std::string(augusta::protocol::kMaxEngineVersionLength + 1, 'v');
+
+  const auto constructed =
+      augusta::failure::Guard(Code::kDependencyInitFailed, [&] { Recorder recorder(out, header); });
+
+  ASSERT_FALSE(constructed.has_value());
+  EXPECT_EQ(constructed.error().code, Code::kInvariantViolated);
+  EXPECT_TRUE(out.str().empty());
+}
+
 // A character's name longer than the protocol carries.
 std::string TooLongACharacter() { return std::string(augusta::protocol::kMaxCharacterNameLength + 1, 'c'); }
 

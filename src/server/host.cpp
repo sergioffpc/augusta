@@ -133,7 +133,12 @@ Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine 
           .pause_ticks = PauseTicks(config.tick_rate_hz),
       }) {}
 
+bool Host::Impl::Failed() const { return transport_failure.Recorded() || invariant_failure.Recorded(); }
+
 void Host::Impl::Deliver(networking::PeerId peer, const networking::Payload& payload) {
+  if (Failed()) {
+    return;
+  }
   // Dropped is the peer's outcome: its departure, if it is leaving, arrives as an event.
   if (networking::SendResult sent = SendCounted(network, metrics, peer, payload, networking::Reliability::kReliable);
       !sent.has_value()) {

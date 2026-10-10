@@ -40,7 +40,8 @@
 /// ExchangeMessages, GetConnectionState and GetConnectionStats from the Network
 /// I/O thread, and Tick from the Prediction thread (the transport is safe to
 /// send from both). A failure of the local transport inside any of them is kept
-/// for the caller to take (Session::TakeTransportFailure) and stop on; the
+/// for the caller to take (Session::TakeTransportFailure) and stop on, and the
+/// Session sends nothing more after it, or after a broken invariant; the
 /// server ending the connection is the Session's own Failure instead.
 namespace augusta::harness {
 
