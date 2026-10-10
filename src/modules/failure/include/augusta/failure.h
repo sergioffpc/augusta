@@ -4,8 +4,10 @@
 #include <cstdint>
 #include <exception>
 #include <expected>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 /// \file
@@ -122,9 +124,25 @@ struct Failure {
 /// `code=transport_send_failed disposition=runtime session=3 detail="..."`.
 [[nodiscard]] std::string DescribeFailure(const Failure& failure);
 
+/// What startup code that has already classified its failure throws (ADR-0033
+/// allows exceptions there), so that Guard keeps it whole, its Code included,
+/// rather than taking it for a dependency's. Its what() is the failure's
+/// DescribeFailure, for a catcher that knows only std::exception.
+class ClassifiedFailure : public std::runtime_error {
+ public:
+  explicit ClassifiedFailure(Failure failure)
+      : std::runtime_error(DescribeFailure(failure)), failure_(std::move(failure)) {}
+
+  [[nodiscard]] const Failure& GetFailure() const noexcept { return failure_; }
+
+ private:
+  Failure failure_;
+};
+
 /// Runs body, the call into a dependency that may throw, and returns what it
 /// returns; an exception escaping it becomes a Failure with code and the
-/// exception's message as detail. The one place a dependency's exception is
+/// exception's message as detail, except a ClassifiedFailure, which is
+/// returned as it was thrown. The one place a dependency's exception is
 /// allowed to reach: it goes no further than this call.
 template <typename Body>
 [[nodiscard]] std::expected<std::invoke_result_t<Body&>, Failure> Guard(Code code, Body&& body) {
@@ -136,6 +154,8 @@ template <typename Body>
     } else {
       return body();
     }
+  } catch (const ClassifiedFailure& classified) {
+    return std::unexpected(classified.GetFailure());
   } catch (const std::exception& error) {
     return std::unexpected(Failure{.code = code, .context = {}, .detail = error.what()});
   } catch (...) {

@@ -189,8 +189,8 @@ struct RecorderOptions {
 /// runtime to stop on.
 class Recorder {
  public:
-  /// Queues header for out first. Throws std::runtime_error if the protocol
-  /// cannot carry header.
+  /// Queues header for out first. Throws failure::ClassifiedFailure, a
+  /// failure::Code::kInvariantViolated, if the protocol cannot carry header.
   Recorder(std::ostream& out, const RecordingHeader& header, RecorderOptions options = {});
   ~Recorder();
   Recorder(Recorder&&) noexcept;
