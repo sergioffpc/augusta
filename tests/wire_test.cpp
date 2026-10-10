@@ -360,12 +360,15 @@ TEST(WireTest, TheAdmissionTheServerSendsReachesTheClientUnchanged) {
 TEST(WireTest, EveryRefusalTheServerSendsReachesTheClientAsTheSameReason) {
   using ClientRefusal = augusta::harness::JoinRefusal;
   using ServerRefusal = augusta::server::JoinRefusal;
-  const std::array<std::pair<ServerRefusal, ClientRefusal>, 5> reasons = {{
+  const std::array<std::pair<ServerRefusal, ClientRefusal>, 8> reasons = {{
       {ServerRefusal::kVersionMismatch, ClientRefusal::kVersionMismatch},
       {ServerRefusal::kLobbyFull, ClientRefusal::kLobbyFull},
       {ServerRefusal::kUnknownCharacter, ClientRefusal::kUnknownCharacter},
       {ServerRefusal::kMatchInProgress, ClientRefusal::kMatchInProgress},
       {ServerRefusal::kPackMismatch, ClientRefusal::kPackMismatch},
+      {ServerRefusal::kReplayServer, ClientRefusal::kReplayServer},
+      {ServerRefusal::kUnknownCapture, ClientRefusal::kUnknownCapture},
+      {ServerRefusal::kNotAReplayServer, ClientRefusal::kNotAReplayServer},
   }};
 
   for (const auto& [sent, expected] : reasons) {

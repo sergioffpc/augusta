@@ -247,11 +247,10 @@ struct World::Impl {
   void OnCamera(float delta_time) {
     const nvtx3::scoped_range range{"Camera"};
     // The local player's Death clears with the match (OnInterpolation).
-    spectating = input->local_entity.has_value() && std::ranges::contains(dead, *input->local_entity);
+    spectating =
+        input->replay_viewer || (input->local_entity.has_value() && std::ranges::contains(dead, *input->local_entity));
     if (spectating) {
-      WatchLivingPlayer();
-      // Let go of ADS, so the next match starts from the hip.
-      (void)ads_zoom.Update(false, ads_field_of_view, delta_time);
+      WatchLivingPlayer(delta_time);
     } else {
       // shown and local_offset are already this frame's - OnInterpolation (the
       // previous phase) just updated them. Same base position as OnCommit's
@@ -270,9 +269,10 @@ struct World::Impl {
   }
 
   // A spectator's camera: at the eye of the living player it watches, as
-  // remote_players shows it this frame. With no one left alive it holds where
-  // it was, from the hip.
-  void WatchLivingPlayer() {
+  // remote_players shows it this frame, at its pitch and zoomed by its ADS if
+  // the frame has its view (a Replay viewer's), looking level from the hip
+  // otherwise. With no one left alive it holds where it was, from the hip.
+  void WatchLivingPlayer(float delta_time) {
     std::vector<EntityId> players;
     players.reserve(input->characters.size());
     for (const PlayerCharacter& player : input->characters) {
@@ -287,11 +287,17 @@ struct World::Impl {
     const std::optional<EntityId> watched = spectator.Update(players, living, input->fire);
     const auto shown_watched =
         std::ranges::find_if(remote_players, [&](const RemotePlayer& remote) { return remote.entity == watched; });
+    const auto view =
+        std::ranges::find_if(input->views, [&](const PlayerView& seen) { return seen.entity == watched; });
+    const bool viewed = shown_watched != remote_players.end() && view != input->views.end();
+    // Let go of ADS with no view to hold it, so the next match starts from the hip.
+    const float zoomed = ads_zoom.Update(viewed && view->ads, ads_field_of_view, delta_time);
     if (shown_watched == remote_players.end()) {
       camera.vertical_fov = kHipFieldOfView;
       return;
     }
-    camera = WatchedCamera(shown_watched->body, EyeOf(shown_watched->character));
+    camera = WatchedCamera(shown_watched->body, EyeOf(shown_watched->character), viewed ? view->pitch : 0.0F);
+    camera.vertical_fov = viewed ? zoomed : kHipFieldOfView;
   }
 
   // The eye standing of character, or the local player's character's if it was never set.

@@ -431,7 +431,8 @@ JoinAcceptedWire ReadJoinAccepted(Reader& reader) {
 }
 
 JoinRefusedWire ReadJoinRefused(Reader& reader) {
-  return JoinRefusedWire{.reason = reader.ReadEnum(JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kPackMismatch)};
+  return JoinRefusedWire{.reason =
+                             reader.ReadEnum(JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kNotAReplayServer)};
 }
 
 CommandsWire ReadCommands(Reader& reader) {
@@ -520,6 +521,41 @@ DeathWire ReadDeath(Reader& reader) {
   return death;
 }
 
+ReplayListingWire ReadReplayListing(Reader& reader) {
+  ReplayListingWire listing;
+  listing.name = reader.ReadString(kMaxCaptureNameLength);
+  listing.started_unix_ms = std::bit_cast<std::int64_t>(reader.ReadTick());
+  listing.ticks = reader.ReadU32();
+  listing.tick_rate_hz = reader.ReadU8();
+  listing.characters =
+      ReadList(reader, primitives::kMaxPlayers, [](Reader& character) { return character.ReadCharacter(); });
+  return listing;
+}
+
+ReplayRequestWire ReadReplayRequest(Reader& reader) {
+  // Braced initializers evaluate in order: the version, the pack, then the capture.
+  return ReplayRequestWire{
+      .engine_version = reader.ReadString(kMaxEngineVersionLength),
+      .client_pack = reader.ReadPackHash(),
+      .capture = reader.ReadString(kMaxCaptureNameLength),
+  };
+}
+
+PlayerViewWire ReadPlayerView(Reader& reader) {
+  PlayerViewWire view;
+  view.entity = static_cast<EntityIdWire>(reader.ReadU32());
+  view.pitch = reader.ReadSteps(math::kAngleGrid);
+  view.flags = reader.ToFlags(reader.ReadU8(), PlayerViewWire::kAds);
+  return view;
+}
+
+ReplayViewWire ReadReplayView(Reader& reader) {
+  ReplayViewWire view;
+  view.tick = reader.ReadTick();
+  view.players = ReadList(reader, primitives::kMaxPlayers, ReadPlayerView);
+  return view;
+}
+
 // nullopt when type is not a message of this protocol.
 std::optional<MessageWire> ReadBody(MessageTypeWire type, Reader& reader) {
   switch (type) {
@@ -547,6 +583,14 @@ std::optional<MessageWire> ReadBody(MessageTypeWire type, Reader& reader) {
       return ReadHitConfirmation(reader);
     case MessageTypeWire::kDeath:
       return ReadDeath(reader);
+    case MessageTypeWire::kReplayListRequest:
+      return ReplayListRequestWire{};
+    case MessageTypeWire::kReplayList:
+      return ReplayListWire{.replays = ReadList(reader, kMaxReplayListings, ReadReplayListing)};
+    case MessageTypeWire::kReplayRequest:
+      return ReadReplayRequest(reader);
+    case MessageTypeWire::kReplayView:
+      return ReadReplayView(reader);
   }
   return std::nullopt;
 }
@@ -606,6 +650,21 @@ void WriteDeath(Writer& out, const DeathWire& death) {
   WriteSteps(out, death.pitch, math::kAngleGrid);
 }
 
+void WriteReplayListing(Writer& out, const ReplayListingWire& listing) {
+  WriteString(out, listing.name, kMaxCaptureNameLength);
+  WriteTick(out, std::bit_cast<primitives::Tick>(listing.started_unix_ms));
+  WriteU32(out, listing.ticks);
+  WriteU8(out, listing.tick_rate_hz);
+  WriteList(out, listing.characters, primitives::kMaxPlayers,
+            [](Writer& character_out, const std::string& character) { WriteCharacter(character_out, character); });
+}
+
+void WritePlayerView(Writer& out, const PlayerViewWire& view) {
+  WriteU32(out, static_cast<std::uint32_t>(view.entity));
+  WriteSteps(out, view.pitch, math::kAngleGrid);
+  WriteU8(out, out.FromFlags(view.flags, PlayerViewWire::kAds));
+}
+
 // One overload per message: the type tag, then the fields.
 struct Encoder {
   Writer& out;
@@ -627,7 +686,7 @@ struct Encoder {
 
   void operator()(const JoinRefusedWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kJoinRefused));
-    WriteU8(out, out.FromEnum(message.reason, JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kPackMismatch));
+    WriteU8(out, out.FromEnum(message.reason, JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kNotAReplayServer));
   }
 
   void operator()(const CommandsWire& message) const {
@@ -691,6 +750,28 @@ struct Encoder {
   void operator()(const DeathWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kDeath));
     WriteDeath(out, message);
+  }
+
+  void operator()(const ReplayListRequestWire& /*message*/) const {
+    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kReplayListRequest));
+  }
+
+  void operator()(const ReplayListWire& message) const {
+    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kReplayList));
+    WriteList(out, message.replays, kMaxReplayListings, WriteReplayListing);
+  }
+
+  void operator()(const ReplayRequestWire& message) const {
+    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kReplayRequest));
+    WriteString(out, message.engine_version, kMaxEngineVersionLength);
+    WritePackHash(out, message.client_pack);
+    WriteString(out, message.capture, kMaxCaptureNameLength);
+  }
+
+  void operator()(const ReplayViewWire& message) const {
+    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kReplayView));
+    WriteTick(out, message.tick);
+    WriteList(out, message.players, primitives::kMaxPlayers, WritePlayerView);
   }
 };
 
@@ -1035,6 +1116,12 @@ MessageTypeWire TypeOf(const MessageWire& message) {
     MessageTypeWire operator()(const ShotWire& /*wire*/) const { return MessageTypeWire::kShot; }
     MessageTypeWire operator()(const HitConfirmationWire& /*wire*/) const { return MessageTypeWire::kHitConfirmation; }
     MessageTypeWire operator()(const DeathWire& /*wire*/) const { return MessageTypeWire::kDeath; }
+    MessageTypeWire operator()(const ReplayListRequestWire& /*wire*/) const {
+      return MessageTypeWire::kReplayListRequest;
+    }
+    MessageTypeWire operator()(const ReplayListWire& /*wire*/) const { return MessageTypeWire::kReplayList; }
+    MessageTypeWire operator()(const ReplayRequestWire& /*wire*/) const { return MessageTypeWire::kReplayRequest; }
+    MessageTypeWire operator()(const ReplayViewWire& /*wire*/) const { return MessageTypeWire::kReplayView; }
   };
   return std::visit(Type{}, message);
 }

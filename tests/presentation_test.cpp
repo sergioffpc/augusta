@@ -1,14 +1,19 @@
 #include "augusta/presentation.h"
 
 #include <algorithm>
+#include <chrono>
+#include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #include "augusta/audio.h"
+#include "augusta/command.h"
 #include "augusta/cues.h"
 #include "augusta/interpolation.h"
+#include "augusta/local_view.h"
 #include "augusta/math.h"
+#include "augusta/parameters.h"
 #include "augusta/tick.h"
 
 // PresentationWorld through RunFrame, one render frame at a time. An
@@ -22,6 +27,7 @@ using augusta::presentation::DynamicBody;
 using augusta::presentation::EntityId;
 using augusta::presentation::FrameInput;
 using augusta::presentation::PlayerCharacter;
+using augusta::presentation::PlayerView;
 using augusta::presentation::RemotePlayer;
 using augusta::presentation::State;
 using augusta::presentation::WorldSnapshot;
@@ -100,6 +106,75 @@ TEST_F(PresentationWorldTest, ASpectatorWatchesTheLivingPlayersInSessionOrder) {
   fire.fire = true;
   const State next = world.RunFrame(fire);
   EXPECT_NEAR(next.camera.position.x, -100.0F, kTolerance);
+}
+
+// The three players as a Replay viewer, which plays none of them, is shown them.
+FrameInput Watching(const WorldSnapshot& snapshot, const std::vector<PlayerCharacter>& characters,
+                    const std::vector<PlayerView>& views) {
+  FrameInput input;
+  input.replay_viewer = true;
+  input.snapshot = &snapshot;
+  input.characters = characters;
+  input.views = views;
+  return input;
+}
+
+// A Replay viewer is a Spectator from the first tick: it watches the first
+// player in Session order, its body drawn too, and moves on with fire.
+// Requirements: US-21
+TEST_F(PresentationWorldTest, AReplayViewerWatchesTheFirstPlayerFromTheStartAndMovesOnWithFire) {
+  const WorldSnapshot snapshot = ThreePlayersAt(5);
+  const std::vector<PlayerCharacter> characters = SessionOrder();
+
+  const State first = world.RunFrame(Watching(snapshot, characters, {}));
+  EXPECT_NEAR(first.camera.position.x, 0.0F, kTolerance);
+  EXPECT_EQ(first.remote_players.size(), 3U);
+  EXPECT_FALSE(first.crosshair);
+  EXPECT_FALSE(first.hit_marker);
+
+  FrameInput fire = Watching(snapshot, characters, {});
+  fire.fire = true;
+  const State next = world.RunFrame(fire);
+  EXPECT_NEAR(next.camera.position.x, 100.0F, kTolerance);
+}
+
+// The camera looks where the watched player looked, and zooms with its ADS,
+// as the Replay view of the tick says (ADR-0051).
+// Requirements: US-21
+TEST_F(PresentationWorldTest, AReplayViewersCameraTakesTheWatchedPlayersPitchAndAdsZoom) {
+  augusta::parameters::Parameters parameters;
+  parameters.rifle.ads_field_of_view = 0.5F;
+  world.SetParameters(parameters, static_cast<float>(kTickDuration));
+  const WorldSnapshot snapshot = ThreePlayersAt(5);
+  const std::vector<PlayerCharacter> characters = SessionOrder();
+  const std::vector<PlayerView> views = {{.entity = kLocal, .pitch = 0.25F, .ads = true},
+                                         {.entity = kSniper, .pitch = -0.5F, .ads = false}};
+
+  // The zoom takes its time, as frames measure it: past AdsZoom's transition.
+  State shown{};
+  for (int frame = 0; frame < 12; ++frame) {
+    shown = world.RunFrame(Watching(snapshot, characters, views));
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+
+  EXPECT_EQ(shown.camera.rotation, augusta::command::ViewRotation(0.0F, 0.25F));
+  EXPECT_NEAR(shown.camera.vertical_fov, 0.5F, kTolerance);
+}
+
+// A dead player's own spectating, on a live server, still looks level from the
+// hip: no Replay view is sent to a player.
+// Requirements: US-13
+TEST_F(PresentationWorldTest, ASpectatorWithoutAReplayViewLooksLevelFromTheHip) {
+  const WorldSnapshot snapshot = ThreePlayersAt(5);
+  const std::vector<PlayerCharacter> characters = SessionOrder();
+  FrameInput died = InMatch(snapshot, characters);
+  died.deaths = {kLocal};
+  died.aim = {.yaw = 1.0F, .pitch = 0.5F, .ads = true};
+
+  const State state = world.RunFrame(died);
+
+  EXPECT_EQ(state.camera.rotation, augusta::command::ViewRotation(0.0F, 0.0F));
+  EXPECT_FLOAT_EQ(state.camera.vertical_fov, augusta::presentation::kHipFieldOfView);
 }
 
 // Requirements: US-17

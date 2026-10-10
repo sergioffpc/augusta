@@ -90,6 +90,14 @@ enum class MessageTypeWire : std::uint8_t {
   kHitConfirmation = 11,
   /// Server to client: a player in the match died (US-13).
   kDeath = 12,
+  /// Client to server: asks a replay server which Match captures it replays (ADR-0051).
+  kReplayListRequest = 13,
+  /// Server to client: the Match captures a replay server replays, after which it closes the connection.
+  kReplayList = 14,
+  /// Client to server: asks a replay server to replay one Match capture to this client (ADR-0051).
+  kReplayRequest = 15,
+  /// Server to client: every player's pitch and ADS on one tick of a Replay, to its Replay viewer alone.
+  kReplayView = 16,
 };
 
 /// Longest engine version string a JoinRequestWire may carry, in bytes.
@@ -243,6 +251,12 @@ enum class JoinRefusalWire : std::uint8_t {
   kMatchInProgress = 4,
   /// The client's pack is not the one cooked with the server's.
   kPackMismatch = 5,
+  /// The server is a replay server: it takes Replay requests only (ADR-0051).
+  kReplayServer = 6,
+  /// The capture a Replay request names is none the replay server replays (ADR-0051).
+  kUnknownCapture = 7,
+  /// A Replay list request or a Replay request reached a live server, which replays nothing (ADR-0051).
+  kNotAReplayServer = 8,
 };
 
 /// Client to server: the first message on a new connection.
@@ -460,10 +474,90 @@ struct DeathWire {
   bool operator==(const DeathWire&) const = default;
 };
 
+/// Longest Match capture name a Replay message may carry, in bytes: a
+/// capture's file name (server::CaptureFileName's) is about half of it.
+inline constexpr std::size_t kMaxCaptureNameLength = 64;
+
+/// The most captures a Replay list names: as many as its one-byte count holds.
+inline constexpr std::size_t kMaxReplayListings = 255;
+
+/// Client to server: the first message on a connection that asks a replay
+/// server which captures it replays, instead of a Join request. It has no fields.
+struct ReplayListRequestWire {
+  bool operator==(const ReplayListRequestWire&) const = default;
+};
+
+/// One Match capture a replay server replays.
+struct ReplayListingWire {
+  /// When its Match started, in milliseconds since the Unix epoch, UTC.
+  std::int64_t started_unix_ms = 0;
+  /// Its players' Characters, in its Join order, at most primitives::kMaxPlayers,
+  /// each at most kMaxCharacterNameLength bytes.
+  std::vector<std::string> characters;
+  /// Its file name, which a Replay request names it by; at most kMaxCaptureNameLength bytes.
+  std::string name;
+  /// How long its Match lasted, in ticks at tick_rate_hz.
+  std::uint32_t ticks = 0;
+  std::uint8_t tick_rate_hz = 0;
+
+  bool operator==(const ReplayListingWire&) const = default;
+};
+
+/// Server to client: every capture the replay server replays, at most
+/// kMaxReplayListings, answering a Replay list request; the server then closes
+/// the connection.
+struct ReplayListWire {
+  std::vector<ReplayListingWire> replays;
+
+  bool operator==(const ReplayListWire&) const = default;
+};
+
+/// Client to server: the first message on a connection that watches a Replay,
+/// instead of a Join request (ADR-0051).
+struct ReplayRequestWire {
+  /// As JoinRequestWire::engine_version.
+  std::string engine_version;
+  /// As JoinRequestWire::client_pack.
+  PackHashWire client_pack{};
+  /// The capture to replay, by its name in the Replay list; at most
+  /// kMaxCaptureNameLength bytes. Never a path: the server matches it against
+  /// its listing.
+  std::string capture;
+
+  bool operator==(const ReplayRequestWire&) const = default;
+};
+
+/// Where one player of a Replay looked on a tick, from the Command the World ran.
+struct PlayerViewWire {
+  /// The bits of flags: the player held ADS.
+  static constexpr std::uint8_t kAds = 1U << 0U;
+
+  /// The view's pitch, in radians, on the angle grid.
+  float pitch = 0.0F;
+  /// The player's body.
+  EntityIdWire entity{};
+  /// kAds or not; no other bit.
+  std::uint8_t flags = 0;
+
+  bool operator==(const PlayerViewWire&) const = default;
+};
+
+/// Server to client, unreliably and to a Replay viewer alone: what each player
+/// saw on one tick of its Replay, which no Authoritative State carries.
+struct ReplayViewWire {
+  /// The tick, as the Authoritative State of the same tick names it.
+  primitives::Tick tick = 0;
+  /// Every player handed a Command on the tick, at most primitives::kMaxPlayers.
+  std::vector<PlayerViewWire> players;
+
+  bool operator==(const ReplayViewWire&) const = default;
+};
+
 /// Any message of the protocol.
 using MessageWire =
     std::variant<JoinRequestWire, JoinAcceptedWire, JoinRefusedWire, CommandsWire, AuthoritativeStateWire, LobbyWire,
-                 ReadyWire, MatchStartWire, MatchEndWire, ShotWire, HitConfirmationWire, DeathWire>;
+                 ReadyWire, MatchStartWire, MatchEndWire, ShotWire, HitConfirmationWire, DeathWire,
+                 ReplayListRequestWire, ReplayListWire, ReplayRequestWire, ReplayViewWire>;
 
 /// A payload is this many bytes, the same type networking::Payload names.
 using BytesWire = std::vector<std::byte>;

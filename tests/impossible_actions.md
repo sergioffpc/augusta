@@ -38,23 +38,27 @@ Each entry's protection is one of:
 
 Structural protections are the fragile ones. They hold only while no client
 message carries an outcome. A new field in `JoinRequestWire`, `CommandsWire`,
-`CommandWire` or `ReadyWire` that carries one (a position, a hit, a damage, an
-ammo count, a health, a kill) turns a structural entry into nothing at all. It
-needs a check at the boundary, an entry below, and a test. Any other new field
-still needs a line in the next table that says what bounds it.
+`CommandWire`, `ReadyWire` or `ReplayRequestWire` that carries one (a position,
+a hit, a damage, an ammo count, a health, a kill) turns a structural entry into
+nothing at all. It needs a check at the boundary, an entry below, and a test.
+Any other new field still needs a line in the next table that says what bounds
+it.
 
 What bounds every field a client sends today:
 
-| Message                | Field                                                           | What bounds it                                                                                                                         |
-| ---------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| any                    | message type                                                    | `Decode`: unknown types refused. `Host`: only JoinRequest, Commands and Ready are handled                                              |
-| `JoinRequestWire`      | `engine_version`, `client_pack`, `character`                    | `Decode`: length limits. `Match::Join`: each must be the server's (or one of its scenario's characters)                                |
-| `CommandsWire`         | `commands`                                                      | `Decode`: at most `kMaxCommandsPerMessage`                                                                                             |
-| `CommandsWire`         | `seen_tick`, with each command's `seen_age` and `seen_fraction` | Corrected by Lag compensation's clamps (ADR-0044)                                                                                      |
-| `SequencedCommandWire` | `sequence`                                                      | `Validate`: must be newer than the last taken in                                                                                       |
-| `CommandWire`          | `direction`, `yaw`, `pitch`                                     | Whole grid counts on the wire (`augusta/grid.h`), so always finite. `Validate`: within what a client can produce                       |
-| `CommandWire`          | `flags`, `desired_stance`                                       | `Decode`: the four flags and the stance fill one byte, and an unknown stance is refused. Each flag is an intent SimulationWorld judges |
-| `ReadyWire`            | `version`                                                       | `Match::Ready`: only the current Roster version counts                                                                                 |
+| Message                 | Field                                                           | What bounds it                                                                                                                                                                                                                                                                                        |
+| ----------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| any                     | message type                                                    | `Decode`: unknown types refused. `Host`: only JoinRequest, Commands and Ready are handled. `Host` refuses a ReplayListRequest or a ReplayRequest as not a replay server. `ReplayServer` (ADR-0051): only ReplayListRequest and ReplayRequest, a JoinRequest refused, and from a viewer nothing at all |
+| `JoinRequestWire`       | `engine_version`, `client_pack`, `character`                    | `Decode`: length limits. `Match::Join`: each must be the server's (or one of its scenario's characters)                                                                                                                                                                                               |
+| `CommandsWire`          | `commands`                                                      | `Decode`: at most `kMaxCommandsPerMessage`                                                                                                                                                                                                                                                            |
+| `CommandsWire`          | `seen_tick`, with each command's `seen_age` and `seen_fraction` | Corrected by Lag compensation's clamps (ADR-0044)                                                                                                                                                                                                                                                     |
+| `SequencedCommandWire`  | `sequence`                                                      | `Validate`: must be newer than the last taken in                                                                                                                                                                                                                                                      |
+| `CommandWire`           | `direction`, `yaw`, `pitch`                                     | Whole grid counts on the wire (`augusta/grid.h`), so always finite. `Validate`: within what a client can produce                                                                                                                                                                                      |
+| `CommandWire`           | `flags`, `desired_stance`                                       | `Decode`: the four flags and the stance fill one byte, and an unknown stance is refused. Each flag is an intent SimulationWorld judges                                                                                                                                                                |
+| `ReadyWire`             | `version`                                                       | `Match::Ready`: only the current Roster version counts                                                                                                                                                                                                                                                |
+| `ReplayListRequestWire` | none                                                            | Structural: it has no field                                                                                                                                                                                                                                                                           |
+| `ReplayRequestWire`     | `engine_version`, `client_pack`                                 | `Decode`: length limits. `ReplayServer`: each must be the server's                                                                                                                                                                                                                                    |
+| `ReplayRequestWire`     | `capture`                                                       | `Decode`: at most `kMaxCaptureNameLength`. `ReplayCatalog::Find`: matched against the directory's listing, never opened as a path                                                                                                                                                                     |
 
 ## Rejected
 

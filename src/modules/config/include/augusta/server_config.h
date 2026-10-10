@@ -26,6 +26,9 @@ inline constexpr std::string_view kDefaultListenAddress = "0.0.0.0:27015";
 /// Default TCP port the server's metrics endpoint listens on (ADR-0049).
 inline constexpr std::uint16_t kDefaultMetricsPort = 9464;
 
+/// How many Replays a replay server runs at once by default (ADR-0051).
+inline constexpr std::uint8_t kDefaultReplayMaxViewers = 4;
+
 /// What augustad.yaml holds. Its required key `base_dir` is where the relative
 /// paths below start from; it is applied, not kept.
 struct ServerConfig {
@@ -74,6 +77,15 @@ struct ServerConfig {
   /// Key `metrics.port`: the TCP port, 1..65535, the metrics endpoint serves
   /// /metrics and /livez on, on every interface (ADR-0049).
   std::uint16_t metrics_port = kDefaultMetricsPort;
+  /// Key `replay.captures`: the directory of Match captures a replay server
+  /// replays (ADR-0051). Set, augustad runs no Lobby and no Match, and serves
+  /// only Replays; it then captures and records nothing, so neither
+  /// `simulation.capture` nor `simulation.recording` may be set with it.
+  /// Empty, the default, runs a live server.
+  std::filesystem::path replay_captures;
+  /// Key `replay.max_viewers`: how many Replays, 1..255, a replay server runs
+  /// at once; only with `replay.captures`.
+  std::uint8_t replay_max_viewers = kDefaultReplayMaxViewers;
 };
 
 /// Parses a server config from yaml_text. A relative `base_dir` key is resolved

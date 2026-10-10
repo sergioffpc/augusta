@@ -27,6 +27,10 @@ constexpr std::string_view kCaptureModeKey = "simulation.capture_mode";
 constexpr std::string_view kCaptureMaxFilesKey = "simulation.capture_retention.max_files";
 constexpr std::string_view kCaptureMaxMibKey = "simulation.capture_retention.max_mib";
 constexpr std::uint32_t kMaxCaptureLimit = std::numeric_limits<std::uint32_t>::max();
+constexpr std::string_view kRecordingKey = "simulation.recording";
+constexpr std::string_view kReplayCapturesKey = "replay.captures";
+constexpr std::string_view kReplayMaxViewersKey = "replay.max_viewers";
+constexpr std::uint32_t kMaxReplayViewers = std::numeric_limits<std::uint8_t>::max();
 
 std::expected<std::uint8_t, ConfigError> RequireTickRate(const ConfigValues& values) {
   return RequireWholeNumber(values, kTickRateKey, 1, kMaxTickRate).transform([](std::uint32_t rate) {
@@ -74,6 +78,46 @@ std::expected<bool, ConfigError> OptionalStrict(const ConfigValues& values, std:
   return mode == "strict";
 }
 
+// A key that may not be set with replay.captures, or that needs it.
+ConfigError ReplayEntryError(std::string_view key, std::string_view reason) {
+  return ConfigError{
+      .code = ConfigErrorCode::kInvalidEntry, .subject = std::string(key), .reason = std::string(reason), .file = {}};
+}
+
+// Reads a replay server's settings into config: its captures' directory,
+// empty for a live server, and how many Replays it runs at once. A replay
+// server runs no Match, so none of it is captured or recorded.
+std::expected<void, ConfigError> ReadReplay(const ConfigValues& values, const std::filesystem::path& root,
+                                            ServerConfig& config) {
+  auto captures = OptionalPath(values, kReplayCapturesKey, root);
+  if (!captures) {
+    return std::unexpected(captures.error());
+  }
+  if (captures->empty()) {
+    if (values.contains(kReplayMaxViewersKey)) {
+      return std::unexpected(ReplayEntryError(kReplayMaxViewersKey, "needs replay.captures"));
+    }
+    return {};
+  }
+  for (const std::string_view key :
+       {kCaptureKey, kCaptureModeKey, kCaptureMaxFilesKey, kCaptureMaxMibKey, kRecordingKey, kRecordingModeKey}) {
+    if (values.contains(key)) {
+      return std::unexpected(ReplayEntryError(key, "cannot be set on a replay server: it runs no Match"));
+    }
+  }
+  std::uint8_t max_viewers = kDefaultReplayMaxViewers;
+  if (values.contains(kReplayMaxViewersKey)) {
+    const auto read = RequireWholeNumber(values, kReplayMaxViewersKey, 1, kMaxReplayViewers);
+    if (!read) {
+      return std::unexpected(read.error());
+    }
+    max_viewers = static_cast<std::uint8_t>(*read);
+  }
+  config.replay_captures = *std::move(captures);
+  config.replay_max_viewers = max_viewers;
+  return {};
+}
+
 // The ServerConfig values holds, each relative path in it from root.
 std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& values,
                                                           const std::filesystem::path& root) {
@@ -93,7 +137,7 @@ std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& va
   if (!log_level) {
     return std::unexpected(log_level.error());
   }
-  auto recording_path = OptionalPath(values, "simulation.recording", root);
+  auto recording_path = OptionalPath(values, kRecordingKey, root);
   if (!recording_path) {
     return std::unexpected(recording_path.error());
   }
@@ -134,6 +178,7 @@ std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& va
       .capture_max_files = *capture_max_files,
       .capture_max_mib = *capture_max_mib,
       .metrics_port = *metrics_port,
+      .replay_captures = {},
   };
 }
 
@@ -141,12 +186,22 @@ std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& va
 
 std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 13> kKeys{
-      "base_dir",        "content.pack",           "content.public_key",
-      kTickRateKey,      "simulation.recording",   kRecordingModeKey,
-      kCaptureKey,       kCaptureModeKey,          kCaptureMaxFilesKey,
-      kCaptureMaxMibKey, "network.listen_address", "logging.level",
+  static constexpr std::array<std::string_view, 15> kKeys{
+      "base_dir",
+      "content.pack",
+      "content.public_key",
+      kTickRateKey,
+      kRecordingKey,
+      kRecordingModeKey,
+      kCaptureKey,
+      kCaptureModeKey,
+      kCaptureMaxFilesKey,
+      kCaptureMaxMibKey,
+      "network.listen_address",
+      "logging.level",
       kMetricsPortKey,
+      kReplayCapturesKey,
+      kReplayMaxViewersKey,
   };
   const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = {}});
   if (!values) {
@@ -158,7 +213,9 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!root) {
     return std::unexpected(root.error());
   }
-  return ServerConfigFrom(*values, *root);
+  return ServerConfigFrom(*values, *root).and_then([&](ServerConfig config) {
+    return ReadReplay(*values, *root, config).transform([&config] { return std::move(config); });
+  });
 }
 
 std::expected<ServerConfig, ConfigError> LoadServerConfig(const std::filesystem::path& file) {
@@ -171,6 +228,10 @@ std::string DescribeServerConfigError(const ConfigError& error) {
   }
   if (error.subject == kTickRateKey) {
     return DescribeConfigError(error, std::format("'{}' must be an integer from 1 to {}", error.subject, kMaxTickRate));
+  }
+  if (error.subject == kReplayMaxViewersKey) {
+    return DescribeConfigError(error,
+                               std::format("'{}' must be an integer from 1 to {}", error.subject, kMaxReplayViewers));
   }
   if (error.subject == kMetricsPortKey) {
     return DescribeConfigError(error,

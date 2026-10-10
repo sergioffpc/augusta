@@ -74,3 +74,19 @@ logging:
   # (once a second: ticks, messages, drops, corrections) without the per-packet
   # trace firehose; set trace when debugging the network layer itself.
   level: debug
+# Replay mode (optional, default off; ADR-0051). Set replay.captures and
+# augustad is a replay server: it runs no Lobby and no Match, refuses every Join,
+# and replays the Match captures of that directory made on its own server pack,
+# at its tick rate, to augustac --replays and --replay <capture>. Each viewer
+# watches a Replay of its own from the first tick, which logs the first Death or
+# Match end that differs from its capture's. A live server can capture into the
+# same directory: they are two processes. A replay server captures and records
+# nothing, so simulation.capture and simulation.recording must be left unset.
+# replay:
+#   # The directory of Match captures to replay (required for replay mode); it
+#   # must exist.
+#   captures: captures/firebase
+#   # How many Replays run at once (optional, default 4): 1 to 255. Each runs a
+#   # SimulationWorld of its own on the Simulation thread; one more viewer is
+#   # refused as a full Lobby refuses a player.
+#   max_viewers: 4
