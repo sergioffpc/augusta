@@ -61,7 +61,7 @@ existing checkout, run `scripts/bootstrap.sh` instead.
 Bash, which installs Visual Studio Build Tools and GNU make among the rest:
 
 ```powershell
-winget install --id Git.Git --exact --source winget --accept-package-agreements --accept-source-agreements; & "$env:ProgramFiles\Git\bin\bash.exe" -c "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/main/scripts/bootstrap.sh | bash"
+winget install --id Git.Git --exact --source winget --accept-package-agreements --accept-source-agreements; & "$env:ProgramFiles\Git\bin\bash.exe" -c "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash"
 ```
 
 Open a new terminal after setup. The Makefile loads the Visual Studio Build
@@ -71,7 +71,7 @@ Tools environment automatically for each command on Windows.
 container's toolchain on the host, through sudo:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/main/scripts/bootstrap.sh | bash
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash
 ```
 
 **Dev container (server / shared core):** open the repository in VS Code's Dev
@@ -86,7 +86,7 @@ and Podman (unless Docker is already there), starts Podman's machine, then
 builds the dev container's image and creates the checkout's container:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/main/scripts/bootstrap.sh | bash
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash
 ```
 
 `scripts/dev-container.sh` opens a shell in that container from a terminal (or

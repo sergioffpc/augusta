@@ -81,7 +81,7 @@ bootstrap_from_pipe() {
   if [[ -d "${dir}/.git" ]]; then
     echo "bootstrap: ${dir} already exists - bootstrapping it as it is." >&2
   else
-    git clone "${REPOSITORY}" "${dir}"
+    git clone --branch develop "${REPOSITORY}" "${dir}"
   fi
   bash "${dir}/scripts/bootstrap.sh" "$@"
   git -C "${dir}" lfs pull
