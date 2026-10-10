@@ -247,10 +247,11 @@ jobs:
           if-no-files-found: ignore
   benchmarks:
     # The hot-path micro-benchmarks (ADR-0013), compared with the history the
-    # nights before kept on the benchmarks branch. A shared runner is noisy, so
-    # only a benchmark more than twice as slow as the night before fails the job,
-    # which opens the nightly-failure issue like any other; the slower result is
-    # recorded all the same, so the next night compares with it.
+    # nights before kept on the benchmarks branch, one history per runner CPU
+    # model. A shared runner is noisy, so only a benchmark more than twice as
+    # slow as the last night on the same CPU fails the job, which opens the
+    # nightly-failure issue like any other; the slower result is recorded all
+    # the same, so the next night compares with it.
     runs-on: ubuntu-26.04
     permissions:
       # Pushing the night's results to the benchmarks branch.
@@ -280,6 +281,13 @@ jobs:
         # A scheduled run's own commit is main's, not the one benchmarked.
         id: commit
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Find the runner's CPU
+        # GitHub-hosted runners of one label come on several CPU models, the
+        # fastest about twice as quick as the slowest at these benchmarks: a
+        # night is only compared with the nights before on the same model.
+        id: cpu
+        run: |
+          echo "model=$(sed -n 's/^model name[[:space:]]*: *//p' /proc/cpuinfo | head -n 1)" >> "$GITHUB_OUTPUT"
       - name: Start the history
         # The first night on develop starts the benchmarks branch, with one
         # empty commit, for the step below to record on. A manual run on
@@ -303,7 +311,7 @@ jobs:
         # compared with them and leaves no trace.
         uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
         with:
-          name: Hot paths
+          name: Hot paths (${{ steps.cpu.outputs.model }})
           tool: googlecpp
           output-file-path: benchmark-results.json
           ref: ${{ steps.commit.outputs.sha }}

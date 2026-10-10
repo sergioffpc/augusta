@@ -172,9 +172,13 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   shared runner is noisy, so the threshold is generous: a benchmark more than
   twice as slow as the night before fails the nightly, reported like any other
   failure. The slower result is recorded all the same, so one regression fails
-  one night, not every night after it. Benchmarks are also run by hand when a
-  profile (NVTX in Nsight Systems) points at a hot spot. They never gate a pull
-  request, and NFR-01 stays the only formal performance target.
+  one night, not every night after it. The runners of one label come on several
+  CPU models, the fastest about twice as quick as the slowest, so each model
+  keeps its own history, named after it, and "the night before" is the last
+  night on the same model; a model's first night has nothing to compare with.
+  Benchmarks are also run by hand when a profile (NVTX in Nsight Systems) points
+  at a hot spot. They never gate a pull request, and NFR-01 stays the only
+  formal performance target.
 
 ## Out of scope
 
