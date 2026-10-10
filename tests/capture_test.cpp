@@ -775,4 +775,17 @@ TEST_F(ReadCaptureTest, ARecordNamingAPlayerNoJoinDidIsRefused) {
   EXPECT_EQ(ReadBytes(out.str()).error(), CaptureError::kMalformed);
 }
 
+// The longest payload a frame holds reads back whole: its length fills the
+// frame's one byte.
+TEST(FramesTest, APayloadOfTheLongestLengthReadsBackWhole) {
+  const std::vector<std::byte> written(augusta::server::kMaxFramePayload, std::byte{0xAB});
+  std::stringstream stream(std::ios::in | std::ios::out | std::ios::binary);
+  augusta::server::WriteFrame(stream, written);
+
+  std::vector<std::byte> read;
+  EXPECT_EQ(augusta::server::ReadFrame(stream, read), augusta::server::Frame::kRead);
+  EXPECT_EQ(read, written);
+  EXPECT_EQ(augusta::server::ReadFrame(stream, read), augusta::server::Frame::kEnd);
+}
+
 }  // namespace
