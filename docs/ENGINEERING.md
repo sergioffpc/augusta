@@ -87,6 +87,16 @@ decisions already made in ARCHITECTURE.md:
        3 load those same packs — the contract between the Python writer and the
        C++ reader of the pack format (ADR-0013). The golden packs are signed
        with a committed test key; the real release private key never touches CI
+    7. The server image, in two jobs. `container-verify` needs only `changes`,
+       so it runs alongside the server build: Helm and Dockerfile lint, then the
+       image built into the runner's Docker and scanned by trivy. It runs on
+       every push, and on a pull request when the image or chart changed.
+       `container-publish`, on a push only, waits for both it and the server
+       job, rebuilds the image from the layer cache `container-verify` just
+       wrote (every stage but `rootfs`, ADR-0054, is a cache hit), scans it
+       again, and only then pushes it with its `-debuginfo` image and
+       attestations - so a published image is always a scanned one, of a commit
+       whose tests passed
     - Dependency restore: `vcpkg install` (manifest mode) before the build step,
       both runners. Binary cache via a GitHub Packages NuGet feed on Windows
       (vcpkg's native GitHub-Actions-cache backend was removed upstream in
@@ -106,7 +116,9 @@ decisions already made in ARCHITECTURE.md:
       binaries, packman's downloads for a Falcor built from source, sccache
       objects. The server image's Docker layers live in GHCR
       (`augustad:buildcache`) instead: at several GB they would evict the rest,
-      and every pull request would rebuild its dependencies from source.
+      and every pull request would rebuild its dependencies from source. Only a
+      push's `container-verify` writes them; a pull request reads them, and a
+      fork's reads nothing.
 
 - **Nightly** (on `develop`): long fuzzing runs, TSan, property-based tests at a
   high case count, a `llvm-cov` coverage report, and the hot-path

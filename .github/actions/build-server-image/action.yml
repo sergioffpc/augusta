@@ -1,0 +1,70 @@
+name: Build and scan the server image
+description: >
+  Builds the server image into the runner's Docker (loaded, not pushed), from the registry layer cache, and fails on a high or critical CVE trivy finds in it. Both ci.yml's container jobs run it: container-verify to check the image, container-publish to rebuild the image it then pushes, so what it publishes is an image that was scanned. Tags it sha-<12> and, on a push, with the branch name. Assumes the repository is checked out with its submodules and buildx is set up; a job that reads or writes the cache logs in to GHCR first.
+
+inputs:
+  cache-to:
+    description: >
+      Whether to write the registry layer cache: "true" only on container-verify's push run, so a push writes it once and a pull request never does.
+
+    required: false
+    default: "false"
+outputs:
+  short-sha:
+    description: The first 12 characters of the commit, as the sha-<12> tag has them.
+    value: ${{ steps.short-sha.outputs.value }}
+runs:
+  using: composite
+  steps:
+    - name: Install trivy
+      shell: bash
+      run: |
+        install_dir="$RUNNER_TEMP/trivy"
+        mkdir -p "$install_dir"
+        curl -fsSLo "$install_dir/trivy.tar.gz" \
+          https://github.com/aquasecurity/trivy/releases/download/v0.75.0/trivy_0.75.0_Linux-64bit.tar.gz
+        printf '%s  %s\n' \
+          'c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f' "$install_dir/trivy.tar.gz" \
+          | sha256sum --check --status
+        tar -xzf "$install_dir/trivy.tar.gz" -C "$install_dir" trivy
+        echo "$install_dir" >> "$GITHUB_PATH"
+    - id: short-sha
+      shell: bash
+      run: echo "value=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+    - name: Build server image
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      with:
+        context: .
+        # Into the runner's Docker, for the scan below - published only once
+        # it passes.
+        load: true
+        # The rootfs stage is rebuilt every time, so the slices chisel cuts are
+        # of Ubuntu's current packages, security updates included, rather than
+        # a cached layer's (ADR-0054).
+        no-cache-filters: rootfs
+        # Reported as augustad_build_info's commit label (ADR-0049).
+        build-args: AUGUSTA_COMMIT=${{ steps.short-sha.outputs.value }}
+        # sha-<first 12 characters of the commit> is the tag the chart runs:
+        # Flux versions a Git-sourced chart <version>+<the same 12 characters>.
+        # The branch name tag is for people. github.ref_name is only a plain
+        # branch name (safe as a Docker tag) on push - for pull_request it's
+        # "<pr-number>/merge", which Docker rejects.
+        tags: |
+          ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.short-sha.outputs.value }}
+          ${{ github.event_name == 'push' && format('ghcr.io/{0}/augustad:{1}', github.repository_owner, github.ref_name) || '' }}
+        # A commit that leaves src/ alone reuses the cached build. The layers
+        # live in GHCR, next to the image, not in the Actions cache: at several
+        # GB they took most of its 10 GB, and GitHub evicted the vcpkg and
+        # Falcor caches every pull request restores from develop. A fork's pull
+        # request, not logged in, reads nothing and builds from scratch.
+        cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/augustad:buildcache
+        cache-to: ${{ inputs.cache-to == 'true' && format('type=registry,ref=ghcr.io/{0}/augustad:buildcache,mode=max', github.repository_owner) || '' }}
+    - name: Scan server image
+      # Fails on a high or critical CVE that has a fix. A failure here leaves
+      # the commit unpublished, and so undeployed: Flux's upgrade times out
+      # waiting for its image rather than run a vulnerable one. trivy fetches
+      # its vulnerability database each run, so a CVE published since can fail
+      # an unchanged commit - as intended.
+      shell: bash
+      run: >-
+        trivy image --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.short-sha.outputs.value }}

@@ -79,16 +79,18 @@ its image to the last good commit's `sha-<12>` tag instead.
 ### Roll back develop
 
 1. If the failure is an upgrade still waiting for its image (`timeout: 30m` in
-   `develop.yaml` covers CI still pushing `sha-<12>`), check the `container` job
-   of that commit's CI run first:
+   `develop.yaml` covers CI still pushing `sha-<12>`), check the
+   `container-verify` and `container-publish` jobs of that commit's CI run
+   first:
 
     ```sh
     gh run list --workflow ci.yml --branch develop --limit 5
     ```
 
-    A failed `container` job (build or trivy scan) means the image was never
-    published; the fix is the rollback below, or a new commit that publishes
-    one.
+    A failed `container-verify` or `container-publish` job (build or trivy
+    scan), or a skipped `container-publish` (the server job failed), means the
+    image was never published; the fix is the rollback below, or a new commit
+    that publishes one.
 
 2. **Restore service now (optional, when the environment cannot wait for CI).**
    Stop Flux from reconciling the release, then roll Helm back to the last good
