@@ -13,7 +13,9 @@ continuation. An invariant that protocol correctness, authority or a resource's
 lifetime depends on is checked in every build instead, where breaking it would
 emit or use invalid state: the check returns a `kInvariantViolated` failure and
 the runtime stops, so an assertion is only ever a development aid on top of it.
-Outbound protocol encoding is one (ADR-0038).
+Outbound protocol encoding is one (ADR-0038). Once a runtime has met such a
+failure, or a local transport failure, it sends nothing more, valid messages
+included, while its workers stop.
 
 An error is always a type, never a string: a function that reports failure
 returns a dedicated error type (an `enum class`, or a struct or class when the
@@ -37,8 +39,8 @@ than the call that converts it into a `Failure` (`failure::Guard`), and the
 boundary that owns the disposition's scope writes the one `ERR` or `CRIT` line
 for it (ADR-0029). Module error types predating the model stay until each domain
 moves onto it; a module may keep its own type for outcomes that are not
-operational failures (a malformed recording, a missing config key) and map it to
-a `Code` at the boundary.
+operational failures (a malformed capture, a missing config key) and map it to a
+`Code` at the boundary.
 
 Each executable's `main` runs behind one application boundary
 (`augusta::application`): reading its config file, then a `Lifecycle` of
@@ -47,8 +49,10 @@ its pack, loading its content) and running it. Each phase classifies its own
 failures with their `Code`; a dependency's exception escaping a phase is
 classified there too (`dependency_init_failed` while initializing or
 constructing, `worker_failed` while running, with `phase=` naming which), so no
-unclassified exception leaves `main`. A runtime's failure arrives as its
-supervisor's first cause, its `Code` unchanged; the client classifies its
+unclassified exception leaves `main`. Startup code that has already classified
+its failure throws it whole as a `failure::ClassifiedFailure`, which
+`failure::Guard` returns with its `Code` unchanged. A runtime's failure arrives
+as its supervisor's first cause, its `Code` unchanged; the client classifies its
 Session ending on its own (`join_refused`, `server_unreachable`,
 `peer_connection_lost`) and a character it cannot load (`invalid_content`) the
 same way. The runtime is released before the outcome is reported, and the
@@ -61,9 +65,9 @@ written where its stop was decided; the terminal event is the process's.
 Runtime-boundary tests make dependencies fail through controlled fault injection
 (`failure::Faults`): a runtime asks it at each named site (dependency
 initialization, listener setup, worker creation and execution, transport send
-and receive, recording and capture write and flush, metrics endpoint acceptance)
-and fails the way that dependency does when a test has armed the site. Nothing
-arms a site outside a test, and an unarmed site costs one relaxed atomic load.
+and receive, capture write and flush, metrics endpoint acceptance) and fails the
+way that dependency does when a test has armed the site. Nothing arms a site
+outside a test, and an unarmed site costs one relaxed atomic load.
 
 ## Considered Options
 

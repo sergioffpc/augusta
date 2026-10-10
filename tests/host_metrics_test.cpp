@@ -25,7 +25,6 @@
 #include "lock_free_metrics.h"
 #include "match.h"
 #include "misbehaviour.h"
-#include "recording.h"
 
 // What the Host counts, as the metrics endpoint collects it: the catalogue's
 // names, types and labels (ADR-0049), and the heartbeat's totals read from the
@@ -43,7 +42,6 @@ using augusta::server::HostMetrics;
 using augusta::server::JoinRefusal;
 using augusta::server::Leaving;
 using augusta::server::PeerRejection;
-using augusta::server::RecordingState;
 using augusta::server::Rejection;
 using augusta::server::Totals;
 using prometheus::ClientMetric;
@@ -129,7 +127,6 @@ TEST(HostMetricsTest, EveryMetricOfTheCatalogueIsCollectedWithItsType) {
       {"augustad_shooters_delay_seconds", MetricType::Histogram},
       {"augustad_shooters_delay_capped_total", MetricType::Counter},
       {"augustad_bullets_in_flight", MetricType::Gauge},
-      {"augustad_recording_state", MetricType::Gauge},
       {"augustad_capture_state", MetricType::Gauge},
       {"augustad_captures_started_total", MetricType::Counter},
       {"augustad_captures_completed_total", MetricType::Counter},
@@ -140,6 +137,8 @@ TEST(HostMetricsTest, EveryMetricOfTheCatalogueIsCollectedWithItsType) {
       {"augustad_capture_retention_deleted_total", MetricType::Counter},
       {"augustad_capture_retention_failures_total", MetricType::Counter},
       {"augustad_capture_directory_bytes", MetricType::Gauge},
+      {"augustad_replays", MetricType::Gauge},
+      {"augustad_replay_tick_duration_seconds", MetricType::Histogram},
       {"augustad_capture_health", MetricType::Gauge},
   };
   for (const auto& [name, type] : catalogue) {
@@ -147,31 +146,6 @@ TEST(HostMetricsTest, EveryMetricOfTheCatalogueIsCollectedWithItsType) {
     EXPECT_FALSE(Family(families, name).help.empty()) << name;
   }
   EXPECT_EQ(families.size(), catalogue.size());
-}
-
-// The value of each augustad_recording_state series, by its state label.
-std::map<std::string, double> RecordingStates(const HostMetrics& metrics) {
-  std::map<std::string, double> states;
-  for (const ClientMetric& series : Family(metrics.Collect(), "augustad_recording_state").metric) {
-    states.emplace(LabelsOf(series).at("state"), series.gauge.value);
-  }
-  return states;
-}
-
-// Requirements: NFR-07
-TEST(HostMetricsTest, NoRecordingStateIsSetWhileNothingIsRecorded) {
-  const HostMetrics metrics(kTickRate);
-  EXPECT_EQ(RecordingStates(metrics),
-            (std::map<std::string, double>{{"enabled", 0.0}, {"degraded", 0.0}, {"stopped", 0.0}}));
-}
-
-// Requirements: NFR-07
-TEST(HostMetricsTest, OnlyTheRecordingsCurrentStateIsSet) {
-  HostMetrics metrics(kTickRate);
-  augusta::server::SetRecordingState(metrics, RecordingState::kEnabled);
-  augusta::server::SetRecordingState(metrics, RecordingState::kDegraded);
-  EXPECT_EQ(RecordingStates(metrics),
-            (std::map<std::string, double>{{"enabled", 0.0}, {"degraded", 1.0}, {"stopped", 0.0}}));
 }
 
 // The value of each augustad_capture_state series, by its state label.
@@ -348,7 +322,8 @@ TEST(HostMetricsTest, JoinsAreLabelledByResultAndARefusalByItsReason) {
   EXPECT_EQ(Series(joins, {{"result", "refused"}, {"reason", "lobby_full"}}).counter.value, 1.0);
   EXPECT_EQ(ValuesOf(joins, "reason"),
             (std::set<std::string>{"version_mismatch", "lobby_full", "unknown_character", "match_in_progress",
-                                   "pack_mismatch", "reenactments_not_accepted"}));
+                                   "pack_mismatch", "replay_server", "unknown_capture", "not_a_replay_server",
+                                   "reenactments_not_accepted"}));
 }
 
 // Requirements: NFR-07
@@ -403,10 +378,23 @@ TEST(HostMetricsTest, MessagesAreLabelledByTheirType) {
 
   EXPECT_EQ(Series(Family(families, "augustad_messages_sent_total"), {{"type", "authoritative_state"}}).counter.value,
             1.0);
-  const std::set<std::string> types = {
-      "join_request",   "join_accepted", "join_refused", "commands", "authoritative_state", "lobby",
-      "ready",          "match_start",   "match_end",    "shot",     "hit_confirmation",    "death",
-      "reenact_request"};
+  const std::set<std::string> types = {"join_request",
+                                       "join_accepted",
+                                       "join_refused",
+                                       "commands",
+                                       "authoritative_state",
+                                       "lobby",
+                                       "ready",
+                                       "match_start",
+                                       "match_end",
+                                       "shot",
+                                       "hit_confirmation",
+                                       "death",
+                                       "replay_list_request",
+                                       "replay_list",
+                                       "replay_request",
+                                       "replay_view",
+                                       "reenact_request"};
   EXPECT_EQ(ValuesOf(Family(families, "augustad_messages_sent_total"), "type"), types);
   EXPECT_EQ(ValuesOf(Family(families, "augustad_messages_received_total"), "type"), types);
 }

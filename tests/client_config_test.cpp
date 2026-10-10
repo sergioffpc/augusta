@@ -5,7 +5,9 @@
 #include <expected>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <ios>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -26,6 +28,7 @@ using augusta::config::ConfigErrorCode;
 using augusta::config::DescribeConfigError;
 using augusta::config::LoadClientConfig;
 using augusta::config::ParseClientConfig;
+using augusta::config::ReadClientRun;
 using augusta::config::ReadReenactArguments;
 using augusta::config::ReenactArguments;
 
@@ -39,6 +42,51 @@ const std::filesystem::path kRoot = kFileDir / "content";
 bool Contains(const std::string& text, std::string_view part) { return text.find(part) != std::string::npos; }
 
 std::string Absolute(std::string_view name) { return (std::filesystem::absolute(name)).generic_string(); }
+
+augusta::config::CommandLine WithOptions(std::map<std::string, std::string, std::less<>> options) {
+  return augusta::config::CommandLine{.config_file = "augustac.yaml",
+                                      .message = {},
+                                      .options = std::move(options),
+                                      .action = augusta::config::CommandLineAction::kRun};
+}
+
+TEST(ReadClientRunTest, WithoutAReplayOptionTheClientPlays) {
+  const auto run = ReadClientRun(WithOptions({}));
+
+  ASSERT_TRUE(run.has_value());
+  EXPECT_EQ(run->mode, augusta::config::ClientMode::kPlay);
+}
+
+// Requirements: US-21
+TEST(ReadClientRunTest, ReplaysListsTheServersCapturesAndReplayWatchesOne) {
+  const auto listing = ReadClientRun(WithOptions({{"replays", ""}}));
+  const auto watching = ReadClientRun(WithOptions({{"replay", "20261009T101500123Z-0001.capture"}}));
+
+  ASSERT_TRUE(listing.has_value());
+  EXPECT_EQ(listing->mode, augusta::config::ClientMode::kListReplays);
+  ASSERT_TRUE(watching.has_value());
+  EXPECT_EQ(watching->mode, augusta::config::ClientMode::kWatchReplay);
+  EXPECT_EQ(watching->capture, "20261009T101500123Z-0001.capture");
+}
+
+TEST(ReadClientRunTest, ListingAndWatchingAtOnceOrWatchingNothingIsRejected) {
+  const auto both = ReadClientRun(WithOptions({{"replays", ""}, {"replay", "a.capture"}}));
+  const auto nothing = ReadClientRun(WithOptions({{"replay", ""}}));
+
+  ASSERT_FALSE(both.has_value());
+  EXPECT_EQ(both.error().code, ConfigErrorCode::kInvalidArguments);
+  ASSERT_FALSE(nothing.has_value());
+  EXPECT_EQ(nothing.error().code, ConfigErrorCode::kInvalidArguments);
+}
+
+TEST(ReadClientRunTest, TheClientsOptionsAreItsReplayOnes) {
+  const char* const args[] = {"augustac", "--replay", "a.capture"};
+  const auto command_line =
+      augusta::config::ParseCommandLine(3, args, "augustac", "augustac.yaml", "1.2.3", augusta::config::kClientOptions);
+
+  ASSERT_TRUE(command_line.has_value());
+  EXPECT_EQ(ReadClientRun(*command_line)->capture, "a.capture");
+}
 
 TEST(ParseClientConfigTest, ReadsEveryKey) {
   const auto config = ParseClientConfig(
@@ -572,7 +620,7 @@ TEST_F(LoadConfigTest, NamesTheFileWhenItsContentsAreInvalid) {
 std::expected<augusta::config::CommandLine, ConfigError> ParseClientCommandLine(std::vector<const char*> args) {
   args.insert(args.begin(), "augustac");
   return augusta::config::ParseCommandLine(static_cast<int>(args.size()), args.data(), "augustac", "augustac.yaml",
-                                           "1.2.3", augusta::config::kClientCommandLineOptions);
+                                           "1.2.3", augusta::config::kClientOptions);
 }
 
 // What augustac's command line asks to reenact, read.
@@ -618,6 +666,17 @@ TEST(ReadReenactArgumentsTest, APlayerThatIsNotANumberFromOneTo255IsRefused) {
 
     ASSERT_FALSE(reenact.has_value()) << player;
     EXPECT_EQ(reenact.error().code, ConfigErrorCode::kInvalidArguments) << player;
+  }
+}
+
+// Requirements: US-21
+TEST(ReadReenactArgumentsTest, AReenactmentIsNeitherAReplayNorTheReplayList) {
+  for (const auto& args : {std::vector<const char*>{"--reenact", "a.capture", "--player", "1", "--replays"},
+                           std::vector<const char*>{"--reenact", "a.capture", "--player", "1", "--replay", "b"}}) {
+    const auto reenact = Reenact(args);
+
+    ASSERT_FALSE(reenact.has_value());
+    EXPECT_EQ(reenact.error().code, ConfigErrorCode::kInvalidArguments);
   }
 }
 

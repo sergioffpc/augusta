@@ -31,7 +31,16 @@ the capture names no tick of the server that made it:
   is the server's own and is not captured, and a Command a Commands message
   repeats is captured once.
 - **Leave**: a player whose connection ended mid-Match, at the offset of the
-  tick the server took its body out.
+  tick the server took its body out. That is the tick after which the body is
+  gone, and the Leave comes before that tick's Commands and Deaths. One
+  exception: a player who left in the moment between the Match end Game policy
+  decided and the server taking the Match out is captured at the last tick's
+  offset, after that tick's Commands and Deaths, just before the Match end. A
+  reader that has to know whether a Leave at the Match end's offset came before
+  or after that tick (a Replay, ADR-0051) reads it as after when it follows that
+  tick's Commands or Deaths, or comes right before the Match end. A player who
+  left just before a last tick on which nobody sent a Command and nobody died is
+  the one case this order cannot tell apart.
 - **Death**: who died, who killed them, and the offset of the tick.
 - **Match end**: the last event, at the offset of the Match's last tick, with
   its winner or a Draw.

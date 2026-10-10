@@ -147,6 +147,28 @@ std::expected<ClientConfig, ConfigError> LoadClientConfig(const std::filesystem:
   return LoadConfigFile<ClientConfig>(file, ParseClientConfig);
 }
 
+std::expected<ClientRun, ConfigError> ReadClientRun(const CommandLine& command_line) {
+  const auto replay = command_line.options.find("replay");
+  const bool listing = command_line.options.contains("replays");
+  if (replay != command_line.options.end() && listing) {
+    return std::unexpected(ConfigError{.code = ConfigErrorCode::kInvalidArguments,
+                                       .subject = "--replays and --replay are one or the other",
+                                       .reason = {},
+                                       .file = {}});
+  }
+  if (listing) {
+    return ClientRun{.mode = ClientMode::kListReplays, .capture = {}};
+  }
+  if (replay == command_line.options.end()) {
+    return ClientRun{};
+  }
+  if (replay->second.empty()) {
+    return std::unexpected(ConfigError{
+        .code = ConfigErrorCode::kInvalidArguments, .subject = "--replay needs a capture", .reason = {}, .file = {}});
+  }
+  return ClientRun{.mode = ClientMode::kWatchReplay, .capture = replay->second};
+}
+
 std::expected<std::optional<ReenactArguments>, ConfigError> ReadReenactArguments(const CommandLine& command_line) {
   const auto capture = command_line.options.find("reenact");
   const auto player = command_line.options.find("player");
@@ -161,6 +183,9 @@ std::expected<std::optional<ReenactArguments>, ConfigError> ReadReenactArguments
   };
   if (capture == command_line.options.end() || player == command_line.options.end()) {
     return invalid("a reenactment needs both");
+  }
+  if (command_line.options.contains("replay") || command_line.options.contains("replays")) {
+    return invalid("a reenactment is neither --replay nor --replays");
   }
   if (capture->second.empty()) {
     return invalid("--reenact needs a capture file");

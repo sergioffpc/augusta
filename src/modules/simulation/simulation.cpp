@@ -763,17 +763,6 @@ void World::RemovePlayer(EntityId entity) {
   impl.players.erase(slot);
 }
 
-void World::PlaceBody(EntityId entity, const physics::BodyState& state) {
-  Impl& impl = *impl_;
-  const auto slot = impl.players.find(entity);
-  if (slot == impl.players.end() || !slot->second.body.has_value()) {
-    return;
-  }
-  const physics::BodyHandle handle = *slot->second.body;
-  const physics::BodyState placed = impl.physics.Restore(handle, state, impl.physics.Fall(handle));
-  slot->second.entity.set<Body>({.handle = handle, .state = placed});
-}
-
 std::vector<math::Vec3> World::StartMatch(const std::vector<MatchPlayer>& players,
                                           const std::vector<math::Vec3>& spawn_points) {
   EndMatch();

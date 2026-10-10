@@ -122,6 +122,17 @@ TEST(MatchTest, ChecksTheClientPackAfterTheVersionAndBeforeTheCharacter) {
             JoinRefusal::kPackMismatch);
 }
 
+// Every way in - a Join request, a Replay request (ADR-0051) - is checked
+// by the same version-then-pack order before anything it asks for.
+// Requirements: US-01
+TEST(RefusalOfClientTest, RefusesAnotherVersionFirstThenAnotherPackAndAdmitsTheServersOwn) {
+  const augusta::server::ClientTerms terms{.engine_version = kVersion, .client_pack = {}};
+
+  EXPECT_EQ(augusta::server::RefusalOfClient("other", OtherClientPack(), terms), JoinRefusal::kVersionMismatch);
+  EXPECT_EQ(augusta::server::RefusalOfClient(kVersion, OtherClientPack(), terms), JoinRefusal::kPackMismatch);
+  EXPECT_EQ(augusta::server::RefusalOfClient(kVersion, PackHash{}, terms), std::nullopt);
+}
+
 // Requirements: US-01
 TEST(MatchTest, SessionIdsAreUniqueAndIndependentOfTheTransportHandle) {
   Match match(Config());

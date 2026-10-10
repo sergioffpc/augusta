@@ -111,6 +111,17 @@ const presentation::WorldSnapshot* ConvertedServerView::Snapshot() const {
 
 std::span<const presentation::PlayerCharacter> ConvertedServerView::Characters() const { return characters_; }
 
+std::vector<presentation::PlayerView> ViewsOf(const harness::ServerView& view) {
+  std::vector<presentation::PlayerView> views;
+  if (view.replay_view.has_value()) {
+    views.reserve(view.replay_view->players.size());
+    for (const harness::PlayerView& player : view.replay_view->players) {
+      views.push_back({.entity = ToPresentation(player.entity), .pitch = player.pitch, .ads = player.ads});
+    }
+  }
+  return views;
+}
+
 std::optional<presentation::MatchEnd> MatchEndOf(const harness::ServerView& view) {
   return view.match_end.transform([&view](const harness::MatchEnd& end) {
     presentation::MatchEnd match_end;

@@ -39,6 +39,10 @@ struct RuntimeConfig {
   /// The hash of the client pack loaded, which the server checks is the one
   /// cooked with its own.
   assets::PackHash client_pack{};
+  /// Set, the client is a Replay viewer (ADR-0051, `augustac --replay`): it
+  /// watches the capture of this name on a replay server instead of playing,
+  /// and its run ends, as the window closing ends it, once the Replay has.
+  std::optional<std::string> replay;
   /// The capture's player to be, as a Captured player (`--reenact`, ADR-0050):
   /// it joins at its spawn with a Reenact request, as character, which must be
   /// its. nullopt to play from the player's input.
@@ -100,9 +104,11 @@ class ClientRuntime {
   /// fails (which stops the others), which is what it returns, classified
   /// (application.h) - a thread's first cause as its supervisor recorded it:
   /// the caller reports it and exits, since there is no reconnecting. nullopt
-  /// if the player closed the window, or a Captured player's run left at its
-  /// captured Leave or reached the capture's Match end or the server's, which
-  /// it logs beside what the capture holds (ADR-0050).
+  /// if the player closed the window, or a Replay viewer's Replay ended
+  /// (RuntimeConfig::replay), which loads every player's character once its
+  /// Match starts, as there is no Lobby to load them in; or a Captured player's
+  /// run left at its captured Leave or reached the capture's Match end or the
+  /// server's, which it logs beside what the capture holds (ADR-0050).
   /// Always stops and joins both spawned threads before returning or
   /// propagating an exception (see ~ClientRuntime). Must be called from
   /// the same thread that constructed this ClientRuntime (ADR-0009's

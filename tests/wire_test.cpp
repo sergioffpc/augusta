@@ -382,12 +382,15 @@ TEST(WireTest, TheAdmissionTheServerSendsReachesTheClientUnchanged) {
 TEST(WireTest, EveryRefusalTheServerSendsReachesTheClientAsTheSameReason) {
   using ClientRefusal = augusta::harness::JoinRefusal;
   using ServerRefusal = augusta::server::JoinRefusal;
-  const std::array<std::pair<ServerRefusal, ClientRefusal>, 6> reasons = {{
+  const std::array<std::pair<ServerRefusal, ClientRefusal>, 9> reasons = {{
       {ServerRefusal::kVersionMismatch, ClientRefusal::kVersionMismatch},
       {ServerRefusal::kLobbyFull, ClientRefusal::kLobbyFull},
       {ServerRefusal::kUnknownCharacter, ClientRefusal::kUnknownCharacter},
       {ServerRefusal::kMatchInProgress, ClientRefusal::kMatchInProgress},
       {ServerRefusal::kPackMismatch, ClientRefusal::kPackMismatch},
+      {ServerRefusal::kReplayServer, ClientRefusal::kReplayServer},
+      {ServerRefusal::kUnknownCapture, ClientRefusal::kUnknownCapture},
+      {ServerRefusal::kNotAReplayServer, ClientRefusal::kNotAReplayServer},
       {ServerRefusal::kReenactmentsNotAccepted, ClientRefusal::kReenactmentsNotAccepted},
   }};
 
@@ -516,17 +519,20 @@ TEST(WireTest, AMessageEitherPeerCannotEncodeIsAnInvariantFailureNamingItsType) 
   EXPECT_EQ(augusta::harness::EncodeToSend(fine).value(), augusta::protocol::Encode(fine).value());
 }
 
-TEST(WireTest, ARecordTheServerCannotEncodeIsAnInvariantFailureNamingItsType) {
-  const augusta::protocol::RecordingHeaderWire too_long{
+TEST(WireTest, ACaptureRecordTheServerCannotEncodeIsAnInvariantFailureNamingItsType) {
+  const augusta::protocol::CaptureHeaderWire too_long{
       .server_pack = {},
+      .client_pack = {},
       .engine_version = std::string(augusta::protocol::kMaxEngineVersionLength + 1, 'v'),
+      .started_unix_ms = 0,
+      .format_version = augusta::protocol::kCaptureFormatVersion,
       .tick_rate_hz = 60};
 
-  const auto encoded = augusta::server::EncodeToRecord(too_long);
+  const auto encoded = augusta::server::EncodeToCapture(too_long);
 
   ASSERT_FALSE(encoded.has_value());
   EXPECT_EQ(encoded.error().code, augusta::failure::Code::kInvariantViolated);
-  EXPECT_EQ(ContextOf(encoded.error(), "record_type"), "1");
+  EXPECT_EQ(ContextOf(encoded.error(), "capture_record_type"), "1");
 }
 
 // A refusal no case of ToWire names is a corrupted one: it travels on as a

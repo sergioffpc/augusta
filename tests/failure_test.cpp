@@ -2,25 +2,30 @@
 
 #include <atomic>
 #include <expected>
+#include <optional>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #include "augusta/faults.h"
+#include "augusta/first_failure.h"
 
 // The shared error model (ADR-0033): a stable code classifies a failure into
 // the scope it is recovered at, whatever its dependency said; a controlled
 // fault stands in for a dependency failing, so a test can make one fail.
 namespace {
 
+using augusta::failure::ClassifiedFailure;
 using augusta::failure::Code;
 using augusta::failure::DescribeFailure;
 using augusta::failure::Disposition;
 using augusta::failure::DispositionOf;
 using augusta::failure::Failure;
 using augusta::failure::Faults;
+using augusta::failure::FirstFailure;
 using augusta::failure::Guard;
 using augusta::failure::InjectedFault;
 using augusta::failure::Site;
@@ -31,8 +36,6 @@ TEST(FailureTest, EachCodeIsClassifiedIntoTheScopeItIsRecoveredAt) {
   EXPECT_EQ(DispositionOf(Code::kPeerConnectionLost), Disposition::kSession);
   EXPECT_EQ(DispositionOf(Code::kJoinRefused), Disposition::kSession);
   EXPECT_EQ(DispositionOf(Code::kServerUnreachable), Disposition::kSession);
-  EXPECT_EQ(DispositionOf(Code::kRecordingWriteFailed), Disposition::kSubsystem);
-  EXPECT_EQ(DispositionOf(Code::kRecordingFlushFailed), Disposition::kSubsystem);
   EXPECT_EQ(DispositionOf(Code::kMetricsEndpointFailed), Disposition::kSubsystem);
   EXPECT_EQ(DispositionOf(Code::kCaptureWriteFailed), Disposition::kSubsystem);
   EXPECT_EQ(DispositionOf(Code::kCaptureFlushFailed), Disposition::kSubsystem);
@@ -46,7 +49,6 @@ TEST(FailureTest, EachCodeIsClassifiedIntoTheScopeItIsRecoveredAt) {
   EXPECT_EQ(DispositionOf(Code::kWorkerCreationFailed), Disposition::kRuntime);
   EXPECT_EQ(DispositionOf(Code::kWorkerFailed), Disposition::kRuntime);
   EXPECT_EQ(DispositionOf(Code::kInvariantViolated), Disposition::kRuntime);
-  EXPECT_EQ(DispositionOf(Code::kStrictRecordingFailed), Disposition::kRuntime);
   EXPECT_EQ(DispositionOf(Code::kStrictCaptureFailed), Disposition::kRuntime);
   EXPECT_EQ(DispositionOf(Code::kInvalidConfiguration), Disposition::kProcess);
   EXPECT_EQ(DispositionOf(Code::kInvalidContent), Disposition::kProcess);
@@ -99,6 +101,29 @@ TEST(FailureTest, GuardTurnsADependencyExceptionIntoTheFailureKeepingWhatItSaid)
   EXPECT_EQ(result.error().detail, "address in use");
 }
 
+// Startup code that has already classified its failure throws it whole: Guard
+// keeps its Code, context and detail instead of taking it for a dependency's.
+TEST(FailureTest, GuardKeepsAClassifiedFailureThrownWhole) {
+  const Failure thrown{.code = Code::kInvariantViolated,
+                       .context = {{.key = "record_type", .value = "header"}},
+                       .detail = "string too long"};
+  const std::expected<void, Failure> result =
+      Guard(Code::kDependencyInitFailed, [&] { throw ClassifiedFailure(thrown); });
+
+  ASSERT_FALSE(result.has_value());
+  EXPECT_EQ(result.error().code, Code::kInvariantViolated);
+  ASSERT_EQ(result.error().context.size(), 1U);
+  EXPECT_EQ(result.error().context.front().key, "record_type");
+  EXPECT_EQ(result.error().context.front().value, "header");
+  EXPECT_EQ(result.error().detail, "string too long");
+}
+
+// Caught as any other exception, it still says what failed.
+TEST(FailureTest, AClassifiedFailureThrownDescribesItself) {
+  const Failure thrown{.code = Code::kInvariantViolated, .context = {}, .detail = "string too long"};
+  EXPECT_EQ(std::string(ClassifiedFailure(thrown).what()), DescribeFailure(thrown));
+}
+
 TEST(FailureTest, GuardTurnsSomethingThrownThatIsNotAnExceptionIntoTheFailure) {
   constexpr int kNotAnException = 42;
   const std::expected<int, Failure> result = Guard(Code::kWorkerFailed, []() -> int { throw kNotAnException; });
@@ -106,6 +131,30 @@ TEST(FailureTest, GuardTurnsSomethingThrownThatIsNotAnExceptionIntoTheFailure) {
   ASSERT_FALSE(result.has_value());
   EXPECT_EQ(result.error().code, Code::kWorkerFailed);
   EXPECT_EQ(result.error().detail, "unknown exception");
+}
+
+TEST(FirstFailureTest, OnlyTheFirstFailureIsKeptAndTakenOnce) {
+  FirstFailure first;
+  first.Record(Failure{.code = Code::kTransportSendFailed, .context = {}, .detail = {}});
+  first.Record(Failure{.code = Code::kInvariantViolated, .context = {}, .detail = {}});
+
+  const std::optional<Failure> taken = first.Take();
+
+  ASSERT_TRUE(taken.has_value());
+  EXPECT_EQ(taken->code, Code::kTransportSendFailed);
+  EXPECT_FALSE(first.Take().has_value());
+}
+
+// What keeps it goes on knowing it has failed after a worker took the failure.
+TEST(FirstFailureTest, AFailureStaysRecordedAfterItIsTaken) {
+  FirstFailure first;
+  EXPECT_FALSE(first.Recorded());
+
+  first.Record(Failure{.code = Code::kTransportSendFailed, .context = {}, .detail = {}});
+  EXPECT_TRUE(first.Recorded());
+  static_cast<void>(first.Take());
+
+  EXPECT_TRUE(first.Recorded());
 }
 
 TEST(FaultsTest, AnUnarmedSiteNeverTrips) {
@@ -116,11 +165,11 @@ TEST(FaultsTest, AnUnarmedSiteNeverTrips) {
 
 TEST(FaultsTest, AnArmedSiteTripsAsManyTimesAsItWasArmedFor) {
   Faults faults;
-  faults.Arm(Site::kRecordingWrite, "disk full", 2);
+  faults.Arm(Site::kCaptureWrite, "disk full", 2);
 
-  EXPECT_EQ(faults.Trip(Site::kRecordingWrite), "disk full");
-  EXPECT_EQ(faults.Trip(Site::kRecordingWrite), "disk full");
-  EXPECT_FALSE(faults.Trip(Site::kRecordingWrite).has_value());
+  EXPECT_EQ(faults.Trip(Site::kCaptureWrite), "disk full");
+  EXPECT_EQ(faults.Trip(Site::kCaptureWrite), "disk full");
+  EXPECT_FALSE(faults.Trip(Site::kCaptureWrite).has_value());
 }
 
 TEST(FaultsTest, ArmingOneSiteLeavesTheOthersAlone) {

@@ -1,6 +1,7 @@
 #include "host_metrics.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
@@ -17,6 +18,7 @@
 #include <prometheus/metric_type.h>
 
 #include "augusta/ballistics.h"
+#include "augusta/tick.h"
 #include "capture.h"
 #include "capture_retention.h"
 #include "command_queue.h"
@@ -25,7 +27,6 @@
 #include "lock_free_metrics.h"
 #include "match.h"
 #include "misbehaviour.h"
-#include "recording.h"
 #include "wire.h"
 
 namespace augusta::server {
@@ -63,6 +64,12 @@ constexpr std::string_view JoinRefusalLabel(JoinRefusal reason) {
       return "match_in_progress";
     case JoinRefusal::kPackMismatch:
       return "pack_mismatch";
+    case JoinRefusal::kReplayServer:
+      return "replay_server";
+    case JoinRefusal::kUnknownCapture:
+      return "unknown_capture";
+    case JoinRefusal::kNotAReplayServer:
+      return "not_a_replay_server";
     case JoinRefusal::kReenactmentsNotAccepted:
       return "reenactments_not_accepted";
   }
@@ -129,6 +136,14 @@ constexpr std::string_view MessageTypeLabel(MessageType type) {
       return "hit_confirmation";
     case MessageType::kDeath:
       return "death";
+    case MessageType::kReplayListRequest:
+      return "replay_list_request";
+    case MessageType::kReplayList:
+      return "replay_list";
+    case MessageType::kReplayRequest:
+      return "replay_request";
+    case MessageType::kReplayView:
+      return "replay_view";
     case MessageType::kReenactRequest:
       return "reenact_request";
   }
@@ -331,20 +346,6 @@ void AppendCombat(std::vector<MetricFamily>& families, const HostMetrics& metric
                                  metrics.bullets_in_flight));
 }
 
-void AppendRecording(std::vector<MetricFamily>& families, const HostMetrics& metrics) {
-  const std::optional<RecordingState> current = metrics.recording_state.load(std::memory_order_relaxed);
-  std::vector<ClientMetric> states;
-  for (const RecordingState state : {RecordingState::kEnabled, RecordingState::kDegraded, RecordingState::kStopped}) {
-    ClientMetric series;
-    series.label = {{.name = "state", .value = std::string(RecordingStateName(state))}};
-    series.gauge.value = current == state ? 1.0 : 0.0;
-    states.push_back(std::move(series));
-  }
-  families.push_back(Family("augustad_recording_state",
-                            "1 for the Match recording's state, 0 for the others; 0 for all while none is recorded.",
-                            MetricType::Gauge, std::move(states)));
-}
-
 void AppendCaptureHealth(std::vector<MetricFamily>& families, const HostMetrics& metrics) {
   const std::optional<CaptureHealth> current = metrics.capture_health.load(std::memory_order_relaxed);
   std::vector<ClientMetric> states;
@@ -423,7 +424,8 @@ HostMetrics::HostMetrics(std::uint8_t tick_rate_hz)
       tick_duration(kTickBuckets),
       match_duration(kMatchBuckets),
       authoritative_state_update_bytes(kUpdateBuckets),
-      shooters_delay(kShootersDelayBuckets) {}
+      shooters_delay(kShootersDelayBuckets),
+      replay_tick_duration(kTickBuckets) {}
 
 std::vector<prometheus::MetricFamily> HostMetrics::Collect() const {
   std::vector<MetricFamily> families;
@@ -434,10 +436,23 @@ std::vector<prometheus::MetricFamily> HostMetrics::Collect() const {
                                     "kind", MisbehaviourLabel));
   AppendNetwork(families, *this);
   AppendCombat(families, *this);
-  AppendRecording(families, *this);
   AppendCapture(families, *this);
+  families.push_back(GaugeFamily("augustad_replays", "Replays running, on a replay server (ADR-0051).", replays));
+  families.push_back(HistogramFamily("augustad_replay_tick_duration_seconds",
+                                     "How long each Replay's tick took: its World's tick and what it sent its viewer.",
+                                     replay_tick_duration));
   AppendCaptureHealth(families, *this);
   return families;
+}
+
+std::optional<Activity> CountTick(HostMetrics& metrics, Heartbeat& heartbeat, const tick::Timing& timing,
+                                  std::chrono::steady_clock::time_point now) {
+  metrics.tick_duration.Observe(std::chrono::duration<double>(timing.duration).count());
+  metrics.ticks.Increment();
+  metrics.ticks_late.Increment(timing.late ? 1 : 0);
+  metrics.tick_overruns.Increment(timing.overrun ? 1 : 0);
+  metrics.tick_resyncs.Increment(timing.resynchronised ? 1 : 0);
+  return heartbeat.Record(Totals(metrics), now);
 }
 
 Activity Totals(const HostMetrics& metrics) {
@@ -453,10 +468,6 @@ Activity Totals(const HostMetrics& metrics) {
                      metrics.disconnects_from_lobby[Leaving::kMisbehaving].Value() +
                      metrics.disconnects_from_match[Leaving::kMisbehaving].Value(),
   };
-}
-
-void SetRecordingState(HostMetrics& metrics, RecordingState state) {
-  metrics.recording_state.store(state, std::memory_order_relaxed);
 }
 
 void CountSent(HostMetrics& metrics, std::span<const std::byte> payload) {

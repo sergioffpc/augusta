@@ -120,12 +120,35 @@ enum class JoinRefusal : std::uint8_t {
   kMatchInProgress,
   /// The client's pack is not the one cooked with the server's.
   kPackMismatch,
+  /// The server is a replay server, which takes Replay requests only (ADR-0051).
+  kReplayServer,
+  /// The capture a Replay request names is none the replay server replays (ADR-0051).
+  kUnknownCapture,
+  /// A Replay list request or a Replay request reached a live server, which replays nothing (ADR-0051).
+  kNotAReplayServer,
   /// A Reenact request reached a match that takes none (ADR-0050).
   kReenactmentsNotAccepted,
 };
 
 /// A short lowercase description of reason, for logs.
 [[nodiscard]] std::string_view DescribeJoinRefusal(JoinRefusal reason);
+
+/// What a server admits a client by before anything the client asks for: the
+/// engine and the client pack it must have (ADR-0043).
+struct ClientTerms {
+  /// The engine version (augusta::EngineVersion).
+  std::string engine_version;
+  /// The hash of the client pack.
+  assets::PackHash client_pack{};
+};
+
+/// Why a client of engine_version with client_pack can never be admitted on
+/// terms, or nullopt if it can: its version first, then its pack, so a client
+/// that can never be admitted hears that before anything it asked for. The one
+/// check every way in takes first - a Join request, a Replay request
+/// (ADR-0051) - so a check added here is every way's.
+[[nodiscard]] std::optional<JoinRefusal> RefusalOfClient(std::string_view engine_version,
+                                                         const assets::PackHash& client_pack, const ClientTerms& terms);
 
 /// What a peer's leaving did, for Host to act on.
 enum class Departure : std::uint8_t {
@@ -230,8 +253,7 @@ class Match {
   // The members ordered by session.
   [[nodiscard]] std::vector<Member> MembersBySession() const;
 
-  std::string engine_version_;
-  assets::PackHash client_pack_;
+  ClientTerms terms_;
   std::vector<std::string> characters_;
   std::size_t player_count_;
   std::uint32_t pause_ticks_;

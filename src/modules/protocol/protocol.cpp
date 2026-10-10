@@ -531,6 +531,41 @@ DeathWire ReadDeath(Reader& reader) {
   return death;
 }
 
+ReplayListingWire ReadReplayListing(Reader& reader) {
+  ReplayListingWire listing;
+  listing.name = reader.ReadString(kMaxCaptureNameLength);
+  listing.started_unix_ms = std::bit_cast<std::int64_t>(reader.ReadTick());
+  listing.ticks = reader.ReadU32();
+  listing.tick_rate_hz = reader.ReadU8();
+  listing.characters =
+      ReadList(reader, primitives::kMaxPlayers, [](Reader& character) { return character.ReadCharacter(); });
+  return listing;
+}
+
+ReplayRequestWire ReadReplayRequest(Reader& reader) {
+  // Braced initializers evaluate in order: the version, the pack, then the capture.
+  return ReplayRequestWire{
+      .engine_version = reader.ReadString(kMaxEngineVersionLength),
+      .client_pack = reader.ReadPackHash(),
+      .capture = reader.ReadString(kMaxCaptureNameLength),
+  };
+}
+
+PlayerViewWire ReadPlayerView(Reader& reader) {
+  PlayerViewWire view;
+  view.entity = static_cast<EntityIdWire>(reader.ReadU32());
+  view.pitch = reader.ReadSteps(math::kAngleGrid);
+  view.flags = reader.ToFlags(reader.ReadU8(), PlayerViewWire::kAds);
+  return view;
+}
+
+ReplayViewWire ReadReplayView(Reader& reader) {
+  ReplayViewWire view;
+  view.tick = reader.ReadTick();
+  view.players = ReadList(reader, primitives::kMaxPlayers, ReadPlayerView);
+  return view;
+}
+
 // nullopt when type is not a message of this protocol.
 std::optional<MessageWire> ReadBody(MessageTypeWire type, Reader& reader) {
   switch (type) {
@@ -558,6 +593,14 @@ std::optional<MessageWire> ReadBody(MessageTypeWire type, Reader& reader) {
       return ReadHitConfirmation(reader);
     case MessageTypeWire::kDeath:
       return ReadDeath(reader);
+    case MessageTypeWire::kReplayListRequest:
+      return ReplayListRequestWire{};
+    case MessageTypeWire::kReplayList:
+      return ReplayListWire{.replays = ReadList(reader, kMaxReplayListings, ReadReplayListing)};
+    case MessageTypeWire::kReplayRequest:
+      return ReadReplayRequest(reader);
+    case MessageTypeWire::kReplayView:
+      return ReadReplayView(reader);
     case MessageTypeWire::kReenactRequest:
       return ReadReenactRequest(reader);
   }
@@ -617,6 +660,21 @@ void WriteDeath(Writer& out, const DeathWire& death) {
   WriteU8(out, out.FromEnum(death.part, BodyPartWire::kHead, BodyPartWire::kLimb));
   WriteSteps(out, death.yaw, math::kAngleGrid);
   WriteSteps(out, death.pitch, math::kAngleGrid);
+}
+
+void WriteReplayListing(Writer& out, const ReplayListingWire& listing) {
+  WriteString(out, listing.name, kMaxCaptureNameLength);
+  WriteTick(out, std::bit_cast<primitives::Tick>(listing.started_unix_ms));
+  WriteU32(out, listing.ticks);
+  WriteU8(out, listing.tick_rate_hz);
+  WriteList(out, listing.characters, primitives::kMaxPlayers,
+            [](Writer& character_out, const std::string& character) { WriteCharacter(character_out, character); });
+}
+
+void WritePlayerView(Writer& out, const PlayerViewWire& view) {
+  WriteU32(out, static_cast<std::uint32_t>(view.entity));
+  WriteSteps(out, view.pitch, math::kAngleGrid);
+  WriteU8(out, out.FromFlags(view.flags, PlayerViewWire::kAds));
 }
 
 // One overload per message: the type tag, then the fields.
@@ -714,127 +772,27 @@ struct Encoder {
     WriteCharacter(out, message.character);
     WriteVec3(out, message.spawn, math::kPositionGrid);
   }
-};
 
-// A recorded hit's body part takes the low two bits of one byte and its flags
-// the one above them; the top five are always 0.
-constexpr std::uint8_t kHitPartMask = 0x03U;
-constexpr std::uint8_t kHitFlagsMask = RecordedHitWire::kReachedZero;
-constexpr unsigned kHitFlagsShift = 2U;
-
-constexpr std::uint8_t kTickFlagsMask = RecordedTickWire::kMatchEnded | RecordedTickWire::kPolicyMatchEnd;
-
-void WriteEntityId(Writer& out, EntityIdWire entity) { WriteU32(out, static_cast<std::uint32_t>(entity)); }
-
-EntityIdWire ReadEntityId(Reader& reader) { return static_cast<EntityIdWire>(reader.ReadU32()); }
-
-void WriteRecordedCommand(Writer& out, const RecordedCommandWire& recorded) {
-  WriteEntityId(out, recorded.entity);
-  WriteTick(out, recorded.seen_tick);
-  WriteCommand(out, recorded.command);
-}
-
-RecordedCommandWire ReadRecordedCommand(Reader& reader) {
-  RecordedCommandWire recorded;
-  recorded.entity = ReadEntityId(reader);
-  recorded.seen_tick = reader.ReadTick();
-  recorded.command = ReadCommand(reader);
-  return recorded;
-}
-
-void WriteRecordedBody(Writer& out, const RecordedBodyWire& body) {
-  WriteEntityState(out, body.state);
-  WriteWeaponState(out, body.rifle);
-  WriteF32(out, body.health);
-}
-
-RecordedBodyWire ReadRecordedBody(Reader& reader) {
-  RecordedBodyWire body;
-  body.state = ReadEntityState(reader);
-  body.rifle = ReadWeaponState(reader);
-  body.health = reader.ReadF32();
-  return body;
-}
-
-void WriteRecordedHit(Writer& out, const RecordedHitWire& hit) {
-  WriteEntityId(out, hit.shooter);
-  WriteEntityId(out, hit.target);
-  const std::uint8_t part = out.FromEnum(hit.part, BodyPartWire::kHead, BodyPartWire::kLimb);
-  const std::uint8_t flags = out.FromFlags(hit.flags, kHitFlagsMask);
-  WriteU8(out, static_cast<std::uint8_t>(part | (flags << kHitFlagsShift)));
-  WriteF32(out, hit.damage);
-  WriteF32(out, hit.health);
-}
-
-RecordedHitWire ReadRecordedHit(Reader& reader) {
-  RecordedHitWire hit;
-  hit.shooter = ReadEntityId(reader);
-  hit.target = ReadEntityId(reader);
-  const std::uint8_t packed = reader.ReadU8();
-  hit.part = reader.ToEnum(static_cast<std::uint8_t>(packed & kHitPartMask), BodyPartWire::kHead, BodyPartWire::kLimb);
-  hit.flags = reader.ToFlags(static_cast<std::uint8_t>(packed >> kHitFlagsShift), kHitFlagsMask);
-  hit.damage = reader.ReadF32();
-  hit.health = reader.ReadF32();
-  return hit;
-}
-
-RecordingHeaderWire ReadRecordingHeader(Reader& reader) {
-  RecordingHeaderWire header;
-  header.engine_version = reader.ReadString(kMaxEngineVersionLength);
-  header.server_pack = reader.ReadPackHash();
-  header.tick_rate_hz = reader.ReadU8();
-  return header;
-}
-
-RecordedTickWire ReadRecordedTick(Reader& reader) {
-  RecordedTickWire tick;
-  tick.removed = ReadList(reader, primitives::kMaxPlayers, ReadEntityId);
-  tick.match_start = ReadList(reader, primitives::kMaxPlayers, ReadMatchPlayer);
-  tick.commands = ReadList(reader, primitives::kMaxPlayers, ReadRecordedCommand);
-  tick.bodies = ReadList(reader, primitives::kMaxPlayers, ReadRecordedBody);
-  tick.shots = ReadList(reader, primitives::kMaxPlayers, ReadShot);
-  tick.hits = ReadList(reader, kMaxRecordedHits, ReadRecordedHit);
-  tick.deaths = ReadList(reader, primitives::kMaxPlayers, ReadDeath);
-  tick.delta_time = reader.ReadF32();
-  tick.winner = static_cast<SessionIdWire>(reader.ReadU32());
-  tick.flags = reader.ToFlags(reader.ReadU8(), kTickFlagsMask);
-  return tick;
-}
-
-// nullopt when type is not a record of a recording.
-std::optional<RecordWire> ReadRecordBody(RecordTypeWire type, Reader& reader) {
-  switch (type) {
-    case RecordTypeWire::kHeader:
-      return ReadRecordingHeader(reader);
-    case RecordTypeWire::kTick:
-      return ReadRecordedTick(reader);
-  }
-  return std::nullopt;
-}
-
-// One overload per record: the type tag, then the fields.
-struct RecordEncoder {
-  Writer& out;
-
-  void operator()(const RecordingHeaderWire& header) const {
-    WriteU8(out, static_cast<std::uint8_t>(RecordTypeWire::kHeader));
-    WriteString(out, header.engine_version, kMaxEngineVersionLength);
-    WritePackHash(out, header.server_pack);
-    WriteU8(out, header.tick_rate_hz);
+  void operator()(const ReplayListRequestWire& /*message*/) const {
+    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kReplayListRequest));
   }
 
-  void operator()(const RecordedTickWire& tick) const {
-    WriteU8(out, static_cast<std::uint8_t>(RecordTypeWire::kTick));
-    WriteList(out, tick.removed, primitives::kMaxPlayers, WriteEntityId);
-    WriteList(out, tick.match_start, primitives::kMaxPlayers, WriteMatchPlayer);
-    WriteList(out, tick.commands, primitives::kMaxPlayers, WriteRecordedCommand);
-    WriteList(out, tick.bodies, primitives::kMaxPlayers, WriteRecordedBody);
-    WriteList(out, tick.shots, primitives::kMaxPlayers, WriteShot);
-    WriteList(out, tick.hits, kMaxRecordedHits, WriteRecordedHit);
-    WriteList(out, tick.deaths, primitives::kMaxPlayers, WriteDeath);
-    WriteF32(out, tick.delta_time);
-    WriteU32(out, static_cast<std::uint32_t>(tick.winner));
-    WriteU8(out, out.FromFlags(tick.flags, kTickFlagsMask));
+  void operator()(const ReplayListWire& message) const {
+    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kReplayList));
+    WriteList(out, message.replays, kMaxReplayListings, WriteReplayListing);
+  }
+
+  void operator()(const ReplayRequestWire& message) const {
+    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kReplayRequest));
+    WriteString(out, message.engine_version, kMaxEngineVersionLength);
+    WritePackHash(out, message.client_pack);
+    WriteString(out, message.capture, kMaxCaptureNameLength);
+  }
+
+  void operator()(const ReplayViewWire& message) const {
+    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kReplayView));
+    WriteTick(out, message.tick);
+    WriteList(out, message.players, primitives::kMaxPlayers, WritePlayerView);
   }
 };
 
@@ -983,28 +941,6 @@ std::expected<Payload, DecodeError> Finish(std::optional<Payload> body, const Re
 
 }  // namespace
 
-std::expected<BytesWire, EncodeError> EncodeRecord(const RecordWire& record) {
-  Writer out;
-  std::visit(RecordEncoder{.out = out}, record);
-  return std::move(out).Finish();
-}
-
-RecordTypeWire TypeOf(const RecordWire& record) {
-  struct Type {
-    RecordTypeWire operator()(const RecordingHeaderWire& /*wire*/) const { return RecordTypeWire::kHeader; }
-    RecordTypeWire operator()(const RecordedTickWire& /*wire*/) const { return RecordTypeWire::kTick; }
-  };
-  return std::visit(Type{}, record);
-}
-
-std::expected<RecordWire, DecodeError> DecodeRecord(std::span<const std::byte> payload) {
-  if (payload.empty()) {
-    return std::unexpected(DecodeError::kEmpty);
-  }
-  Reader reader(payload.subspan(1));
-  return Finish(ReadRecordBody(static_cast<RecordTypeWire>(payload.front()), reader), reader);
-}
-
 std::expected<BytesWire, EncodeError> EncodeCaptureRecord(const CaptureRecordWire& record) {
   Writer out;
   std::visit(CaptureRecordEncoder{.out = out}, record);
@@ -1057,6 +993,12 @@ MessageTypeWire TypeOf(const MessageWire& message) {
     MessageTypeWire operator()(const ShotWire& /*wire*/) const { return MessageTypeWire::kShot; }
     MessageTypeWire operator()(const HitConfirmationWire& /*wire*/) const { return MessageTypeWire::kHitConfirmation; }
     MessageTypeWire operator()(const DeathWire& /*wire*/) const { return MessageTypeWire::kDeath; }
+    MessageTypeWire operator()(const ReplayListRequestWire& /*wire*/) const {
+      return MessageTypeWire::kReplayListRequest;
+    }
+    MessageTypeWire operator()(const ReplayListWire& /*wire*/) const { return MessageTypeWire::kReplayList; }
+    MessageTypeWire operator()(const ReplayRequestWire& /*wire*/) const { return MessageTypeWire::kReplayRequest; }
+    MessageTypeWire operator()(const ReplayViewWire& /*wire*/) const { return MessageTypeWire::kReplayView; }
     MessageTypeWire operator()(const ReenactRequestWire& /*wire*/) const { return MessageTypeWire::kReenactRequest; }
   };
   return std::visit(Type{}, message);

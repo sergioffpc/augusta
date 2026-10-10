@@ -45,10 +45,9 @@
 /// physics::World keeps every body on, and weapon::Step a rifle's Recoil
 /// offset); the other floats (the Parameters, a rifle's times, a hit's damage)
 /// travel as their IEEE-754 bits.
-/// The server's match recordings (ADR-0048) are written in the same encoding,
-/// as records of their own (RecordWire), so a recording carries a command
-/// exactly as a Commands message does. Its Match captures (ADR-0050) are too,
-/// as records of their own again (CaptureRecordWire).
+/// The server's Match captures (ADR-0050) are written in the same encoding,
+/// as records of their own (CaptureRecordWire), so a capture carries a command
+/// exactly as a Commands message does.
 /// A client message carries intent, never an outcome: tests/impossible_actions.md
 /// (US-15, NFR-05) lists what bounds each of its fields. A new one needs a line
 /// there, and if it carries an outcome (a position, a hit, an ammo count), a
@@ -90,8 +89,16 @@ enum class MessageTypeWire : std::uint8_t {
   kHitConfirmation = 11,
   /// Server to client: a player in the match died (US-13).
   kDeath = 12,
+  /// Client to server: asks a replay server which Match captures it replays (ADR-0051).
+  kReplayListRequest = 13,
+  /// Server to client: the Match captures a replay server replays, after which it closes the connection.
+  kReplayList = 14,
+  /// Client to server: asks a replay server to replay one Match capture to this client (ADR-0051).
+  kReplayRequest = 15,
+  /// Server to client: every player's pitch and ADS on one tick of a Replay, to its Replay viewer alone.
+  kReplayView = 16,
   /// Client to server: asks to join the Lobby as a Captured player, naming its spawn (ADR-0050).
-  kReenactRequest = 13,
+  kReenactRequest = 17,
 };
 
 /// Longest engine version string a JoinRequestWire may carry, in bytes.
@@ -245,8 +252,14 @@ enum class JoinRefusalWire : std::uint8_t {
   kMatchInProgress = 4,
   /// The client's pack is not the one cooked with the server's.
   kPackMismatch = 5,
+  /// The server is a replay server: it takes Replay requests only (ADR-0051).
+  kReplayServer = 6,
+  /// The capture a Replay request names is none the replay server replays (ADR-0051).
+  kUnknownCapture = 7,
+  /// A Replay list request or a Replay request reached a live server, which replays nothing (ADR-0051).
+  kNotAReplayServer = 8,
   /// A Reenact request reached a server that does not take them (ADR-0050).
-  kReenactmentsNotAccepted = 6,
+  kReenactmentsNotAccepted = 9,
 };
 
 /// Client to server: the first message on a new connection.
@@ -480,10 +493,90 @@ struct DeathWire {
   bool operator==(const DeathWire&) const = default;
 };
 
+/// Longest Match capture name a Replay message may carry, in bytes: a
+/// capture's file name (server::CaptureFileName's) is about half of it.
+inline constexpr std::size_t kMaxCaptureNameLength = 64;
+
+/// The most captures a Replay list names: as many as its one-byte count holds.
+inline constexpr std::size_t kMaxReplayListings = 255;
+
+/// Client to server: the first message on a connection that asks a replay
+/// server which captures it replays, instead of a Join request. It has no fields.
+struct ReplayListRequestWire {
+  bool operator==(const ReplayListRequestWire&) const = default;
+};
+
+/// One Match capture a replay server replays.
+struct ReplayListingWire {
+  /// When its Match started, in milliseconds since the Unix epoch, UTC.
+  std::int64_t started_unix_ms = 0;
+  /// Its players' Characters, in its Join order, at most primitives::kMaxPlayers,
+  /// each at most kMaxCharacterNameLength bytes.
+  std::vector<std::string> characters;
+  /// Its file name, which a Replay request names it by; at most kMaxCaptureNameLength bytes.
+  std::string name;
+  /// How long its Match lasted, in ticks at tick_rate_hz.
+  std::uint32_t ticks = 0;
+  std::uint8_t tick_rate_hz = 0;
+
+  bool operator==(const ReplayListingWire&) const = default;
+};
+
+/// Server to client: every capture the replay server replays, at most
+/// kMaxReplayListings, answering a Replay list request; the server then closes
+/// the connection.
+struct ReplayListWire {
+  std::vector<ReplayListingWire> replays;
+
+  bool operator==(const ReplayListWire&) const = default;
+};
+
+/// Client to server: the first message on a connection that watches a Replay,
+/// instead of a Join request (ADR-0051).
+struct ReplayRequestWire {
+  /// As JoinRequestWire::engine_version.
+  std::string engine_version;
+  /// As JoinRequestWire::client_pack.
+  PackHashWire client_pack{};
+  /// The capture to replay, by its name in the Replay list; at most
+  /// kMaxCaptureNameLength bytes. Never a path: the server matches it against
+  /// its listing.
+  std::string capture;
+
+  bool operator==(const ReplayRequestWire&) const = default;
+};
+
+/// Where one player of a Replay looked on a tick, from the Command the World ran.
+struct PlayerViewWire {
+  /// The bits of flags: the player held ADS.
+  static constexpr std::uint8_t kAds = 1U << 0U;
+
+  /// The view's pitch, in radians, on the angle grid.
+  float pitch = 0.0F;
+  /// The player's body.
+  EntityIdWire entity{};
+  /// kAds or not; no other bit.
+  std::uint8_t flags = 0;
+
+  bool operator==(const PlayerViewWire&) const = default;
+};
+
+/// Server to client, unreliably and to a Replay viewer alone: what each player
+/// saw on one tick of its Replay, which no Authoritative State carries.
+struct ReplayViewWire {
+  /// The tick, as the Authoritative State of the same tick names it.
+  primitives::Tick tick = 0;
+  /// Every player handed a Command on the tick, at most primitives::kMaxPlayers.
+  std::vector<PlayerViewWire> players;
+
+  bool operator==(const ReplayViewWire&) const = default;
+};
+
 /// Any message of the protocol.
 using MessageWire =
     std::variant<JoinRequestWire, JoinAcceptedWire, JoinRefusedWire, CommandsWire, AuthoritativeStateWire, LobbyWire,
-                 ReadyWire, MatchStartWire, MatchEndWire, ShotWire, HitConfirmationWire, DeathWire, ReenactRequestWire>;
+                 ReadyWire, MatchStartWire, MatchEndWire, ShotWire, HitConfirmationWire, DeathWire,
+                 ReplayListRequestWire, ReplayListWire, ReplayRequestWire, ReplayViewWire, ReenactRequestWire>;
 
 /// A payload is this many bytes, the same type networking::Payload names.
 using BytesWire = std::vector<std::byte>;
@@ -535,123 +628,10 @@ enum class EncodeError : std::uint8_t {
 /// A short lowercase description of error, for logs.
 [[nodiscard]] std::string_view DescribeEncodeError(EncodeError error);
 
-// A match recording (ADR-0048): what the server's SimulationWorld was handed
-// and what it resolved, tick by tick, in this protocol's encoding. Not a
-// message: a record never travels, Decode never yields one, nor DecodeRecord a
-// message. A record is one payload as a message is, a one-byte RecordTypeWire
-// followed by its fields, read under the same untrusted-input rules.
-
-/// The first byte of every record of a match recording.
-enum class RecordTypeWire : std::uint8_t {
-  /// What a replay must run on: a recording's first record, and its only one of this type.
-  kHeader = 1,
-  /// One tick of SimulationWorld.
-  kTick = 2,
-};
-
-/// The most hits a tick's record holds: the one list of it the players do not bound.
-inline constexpr std::size_t kMaxRecordedHits = 255;
-
-/// What a recording was made on: the server pack whose content a replay must
-/// load, the engine that recorded it, and the tick rate it ran at.
-struct RecordingHeaderWire {
-  /// The hash of the server pack (ADR-0031).
-  PackHashWire server_pack{};
-  /// The recording engine's version (augusta::EngineVersion); at most kMaxEngineVersionLength bytes.
-  std::string engine_version;
-  std::uint8_t tick_rate_hz = 0;
-
-  bool operator==(const RecordingHeaderWire&) const = default;
-};
-
-/// The command one player's body was moved by on one tick.
-struct RecordedCommandWire {
-  /// The tick of the command's Seen time, in full: command.seen_age counts back from it.
-  primitives::Tick seen_tick = 0;
-  CommandWire command{};
-  EntityIdWire entity{};
-
-  bool operator==(const RecordedCommandWire&) const = default;
-};
-
-/// One body as of the end of a tick, with what only its own player is told.
-struct RecordedBodyWire {
-  EntityStateWire state{};
-  WeaponStateWire rifle{};
-  /// As AuthoritativeStateWire::health.
-  float health = 0.0F;
-
-  bool operator==(const RecordedBodyWire&) const = default;
-};
-
-/// One bullet that struck a player on a tick.
-struct RecordedHitWire {
-  /// The bits of flags: this hit took the target's health to zero.
-  static constexpr std::uint8_t kReachedZero = 1U << 0U;
-
-  float damage = 0.0F;
-  /// The target's health after it.
-  float health = 0.0F;
-  EntityIdWire shooter{};
-  EntityIdWire target{};
-  BodyPartWire part = BodyPartWire::kTorso;
-  /// kReachedZero or not; no other bit.
-  std::uint8_t flags = 0;
-
-  bool operator==(const RecordedHitWire&) const = default;
-};
-
-/// One tick of SimulationWorld as the server ran it: what it was handed before
-/// and on the tick, then what it resolved.
-struct RecordedTickWire {
-  /// The bits of flags: the Match in the world was ended before the tick, and
-  /// Game policy ended the Match on it, with winner.
-  static constexpr std::uint8_t kMatchEnded = 1U << 0U;
-  static constexpr std::uint8_t kPolicyMatchEnd = 1U << 1U;
-
-  /// The bodies taken out of the world before the tick, at most primitives::kMaxPlayers.
-  std::vector<EntityIdWire> removed;
-  /// The players of a Match started before the tick, each at the spawn it was
-  /// given, at most primitives::kMaxPlayers; empty when none started, since a Match always
-  /// has a player.
-  std::vector<MatchPlayerWire> match_start;
-  /// The tick's commands, at most primitives::kMaxPlayers.
-  std::vector<RecordedCommandWire> commands;
-  /// Every body as of the tick, at most primitives::kMaxPlayers.
-  std::vector<RecordedBodyWire> bodies;
-  /// The rounds fired on the tick, at most primitives::kMaxPlayers.
-  std::vector<ShotWire> shots;
-  /// At most kMaxRecordedHits.
-  std::vector<RecordedHitWire> hits;
-  /// At most primitives::kMaxPlayers.
-  std::vector<DeathWire> deaths;
-  /// The tick's duration, in seconds, as its bits.
-  float delta_time = 0.0F;
-  /// The Match end's winner when flags has kPolicyMatchEnd, or kDraw.
-  SessionIdWire winner = kDraw;
-  /// Any of kMatchEnded and kPolicyMatchEnd; no other bit.
-  std::uint8_t flags = 0;
-
-  bool operator==(const RecordedTickWire&) const = default;
-};
-
-using RecordWire = std::variant<RecordingHeaderWire, RecordedTickWire>;
-
-/// Encodes record as one payload, or reports the first field beyond its limit
-/// and gives no payload at all, as Encode does a message.
-[[nodiscard]] std::expected<BytesWire, EncodeError> EncodeRecord(const RecordWire& record);
-
-/// The type record's payload starts with.
-[[nodiscard]] RecordTypeWire TypeOf(const RecordWire& record);
-
-/// Decodes one record's payload, or reports what is wrong with it, as Decode does a message's.
-[[nodiscard]] std::expected<RecordWire, DecodeError> DecodeRecord(std::span<const std::byte> payload);
-
 // A Match capture (ADR-0050): one Match's client actions and markers, from its
 // Match start to its Match end, each at its offset in ticks from the Match's
-// first tick, in this protocol's encoding. Neither a message nor a Match
-// recording's record: Decode and DecodeRecord never yield one, nor
-// DecodeCaptureRecord either of theirs. A record is one payload as a message
+// first tick, in this protocol's encoding. Not a message: Decode never yields
+// one, nor DecodeCaptureRecord a message. A record is one payload as a message
 // is, a one-byte CaptureRecordTypeWire followed by its fields, read under the
 // same untrusted-input rules. A player is named by its number in the capture,
 // from 1, in its Join's order.

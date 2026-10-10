@@ -113,8 +113,6 @@ class RunnerTest : public ::testing::Test {
       : host_(HostConfig{.tick_rate_hz = kTickRate,
                          .parameters = {},
                          .listen = Endpoint{.address = "127.0.0.1:0"},
-                         .recording = {},
-                         .recording_mode = {},
                          .server_pack = {},
                          .capture_directory = {},
                          .capture_mode = {},

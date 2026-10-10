@@ -20,17 +20,18 @@
 #include "command_queue.h"
 #include "host_metrics.h"
 #include "match.h"
-#include "recording.h"
+#include "replay.h"
+#include "replay_catalog.h"
 
 /// \file
 /// The server's edge with the Networking Protocol (ADR-0038): what server::Host
 /// sends, turned from the engine's types into the protocol's plain ones right
 /// before Encode, and what it receives, turned back right after Decode; and a
-/// match recording's records (recording.h) and a Match capture's (capture.h), the same way. The only
+/// Match capture's records (capture.h), the same way. The only
 /// place on the server where a protocol::*Wire type meets an engine type: Match,
 /// CommandQueue and replication never see one. Pure field-by-field copies;
 /// whether a value is one the server accepts is decided after, by whoever takes
-/// it in. What the server sends or records is encoded here too, so a payload
+/// it in. What the server sends or captures is encoded here too, so a payload
 /// the protocol cannot carry becomes the broken invariant that stops the
 /// runtime (ADR-0033) before anything of it leaves.
 namespace augusta::server {
@@ -39,10 +40,6 @@ namespace augusta::server {
 /// no payload but a failure::Code::kInvariantViolated naming its type
 /// (`message_type=`): what Host never sends.
 [[nodiscard]] std::expected<protocol::BytesWire, failure::Failure> EncodeToSend(const protocol::MessageWire& message);
-
-/// record encoded, or no payload but the broken invariant naming its type
-/// (`record_type=`), as EncodeToSend: what a recording never holds.
-[[nodiscard]] std::expected<protocol::BytesWire, failure::Failure> EncodeToRecord(const protocol::RecordWire& record);
 
 /// record encoded, or no payload but the broken invariant naming its type
 /// (`capture_record_type=`), as EncodeToSend: what a capture never holds.
@@ -116,17 +113,17 @@ void Address(protocol::AuthoritativeStateWire& state, const replication::Recipie
 /// The commands a client sent in one message, oldest first, in the engine's terms.
 [[nodiscard]] std::vector<SequencedCommand> FromWire(const protocol::CommandsWire& message);
 
-/// A match recording's header as its record (ADR-0048).
-[[nodiscard]] protocol::RecordingHeaderWire ToWire(const RecordingHeader& header);
+/// A capture a replay server replays, as its Replay list names it (ADR-0051).
+[[nodiscard]] protocol::ReplayListingWire ToWire(const ReplayListing& listing);
 
-/// A recording's header record in the engine's terms.
-[[nodiscard]] RecordingHeader FromWire(const protocol::RecordingHeaderWire& header);
+/// The captures a replay server's Replay list names (ListedOf), as the list.
+[[nodiscard]] protocol::ReplayListWire ToWire(const std::vector<ReplayListing>& listings);
 
-/// One tick of a match recording as its record.
-[[nodiscard]] protocol::RecordedTickWire ToWire(const TickRecord& record);
+/// What each player of a Replay looked like on tick, as its viewer's Replay view.
+[[nodiscard]] protocol::ReplayViewWire ToWire(const std::vector<PlayerView>& views, tick::Tick tick);
 
-/// A recording's record of tick, as the World numbers it, in the engine's terms.
-[[nodiscard]] TickRecord FromWire(const protocol::RecordedTickWire& record, tick::Tick tick);
+/// A Replay a viewer asked for, in the engine's terms.
+[[nodiscard]] ReplayRequest FromWire(const protocol::ReplayRequestWire& request);
 
 /// A Match capture's header as its record (ADR-0050), in this engine's format version.
 [[nodiscard]] protocol::CaptureHeaderWire ToWire(const CaptureHeader& header);

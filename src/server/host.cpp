@@ -7,8 +7,6 @@
 #include <expected>
 #include <filesystem>
 #include <format>
-#include <fstream>
-#include <ios>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -24,7 +22,6 @@
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/scripting.h"
-#include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "augusta/version.h"
 #include "capture.h"
@@ -33,7 +30,6 @@
 #include "host_impl.h"
 #include "host_metrics.h"
 #include "match.h"
-#include "recording.h"
 #include "simulation_mapping.h"
 #include "tick_messages.h"
 #include "wire.h"
@@ -41,33 +37,6 @@
 namespace augusta::server {
 
 namespace {
-
-// The authoritative world with the map's collision already in it, recording
-// to file if config asks for a recording (ADR-0048), its state counted into
-// metrics. Built before the socket exists, so a map that is rejected never
-// leaves a bound port behind.
-RecordedSimulation BuildRecordedSimulation(const HostConfig& config, const Scenario& scenario, scripting::Engine policy,
-                                           std::ofstream& file, HostMetrics& metrics) {
-  simulation::World world = BuildSimulation(config.parameters, config.tick_rate_hz, scenario, std::move(policy));
-  if (config.recording.empty()) {
-    return {std::move(world), std::nullopt};
-  }
-  file.open(config.recording, std::ios::binary | std::ios::trunc);
-  if (!file) {
-    throw std::runtime_error(std::format("server::Host: cannot write a recording to {}", config.recording.string()));
-  }
-  LI("subsystem=server event=recording_enabled path={} mode={}", config.recording.string(),
-     RecordingModeName(config.recording_mode));
-  return {std::move(world),
-          Recorder(file,
-                   RecordingHeader{.engine_version = std::string(EngineVersion()),
-                                   .server_pack = config.server_pack,
-                                   .tick_rate_hz = config.tick_rate_hz},
-                   RecorderOptions{.mode = config.recording_mode,
-                                   .faults = config.faults,
-                                   .on_state = [&metrics](RecordingState state) { SetRecordingState(metrics, state); },
-                                   .capacity = kRecordQueueCapacity})};
-}
 
 // What captures each Match into the directory config names, if it names one
 // (ADR-0050), creating it first, what it does counted into metrics through
@@ -118,7 +87,7 @@ std::vector<std::string> CharacterPaths(const std::vector<Character>& characters
 
 Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy)
     : metrics(config.tick_rate_hz),
-      simulation(BuildRecordedSimulation(config, scenario, std::move(policy), recording_file, metrics)),
+      simulation(BuildSimulation(config.parameters, config.tick_rate_hz, scenario, std::move(policy))),
       capturer(BuildCapturer(config, scenario.client_pack, capture_metrics)),
       tick_rate_hz(config.tick_rate_hz),
       parameters(config.parameters),
@@ -138,7 +107,12 @@ Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine 
   }
 }
 
+bool Host::Impl::Failed() const { return transport_failure.Recorded() || invariant_failure.Recorded(); }
+
 void Host::Impl::Deliver(networking::PeerId peer, const networking::Payload& payload) {
+  if (Failed()) {
+    return;
+  }
   // Dropped is the peer's outcome: its departure, if it is leaving, arrives as an event.
   if (networking::SendResult sent = SendCounted(network, metrics, peer, payload, networking::Reliability::kReliable);
       !sent.has_value()) {
@@ -191,13 +165,8 @@ networking::Endpoint Host::ListenEndpoint() const { return impl_->network.LocalE
 std::optional<failure::Failure> Host::TakeInvariantFailure() { return impl_->invariant_failure.Take(); }
 
 void Host::RecordTiming(const tick::Timing& timing) {
-  HostMetrics& metrics = impl_->metrics;
-  metrics.tick_duration.Observe(std::chrono::duration<double>(timing.duration).count());
-  metrics.ticks.Increment();
-  metrics.ticks_late.Increment(timing.late ? 1 : 0);
-  metrics.tick_overruns.Increment(timing.overrun ? 1 : 0);
-  metrics.tick_resyncs.Increment(timing.resynchronised ? 1 : 0);
-  const std::optional<Activity> second = impl_->heartbeat.Record(Totals(metrics), std::chrono::steady_clock::now());
+  const std::optional<Activity> second =
+      CountTick(impl_->metrics, impl_->heartbeat, timing, std::chrono::steady_clock::now());
   if (!second.has_value()) {
     return;
   }
@@ -218,19 +187,6 @@ std::size_t Host::QueuedCommands(SessionId session) const {
 }
 
 const HostMetrics& Host::Metrics() const { return impl_->metrics; }
-
-std::optional<failure::Failure> Host::RecordingFailure() const {
-  std::optional<failure::Failure> lost = impl_->simulation.RecordingFailure();
-  if (lost.has_value() && failure::DispositionOf(lost->code) != failure::Disposition::kRuntime) {
-    return std::nullopt;
-  }
-  return lost;
-}
-
-std::optional<failure::Failure> Host::FinishRecording() {
-  impl_->simulation.WaitUntilRecorded();
-  return RecordingFailure();
-}
 
 std::optional<failure::Failure> Host::CaptureFailure() const {
   // Only a strict capture stops: an optional one that lost a record degrades.

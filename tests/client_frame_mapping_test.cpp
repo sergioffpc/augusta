@@ -23,6 +23,7 @@ using augusta::client::CombatEffectsOf;
 using augusta::client::ConvertedServerView;
 using augusta::client::MatchEndOf;
 using augusta::client::SnapshotOf;
+using augusta::client::ViewsOf;
 using augusta::client::WithSeenTime;
 using augusta::harness::EntityId;
 using augusta::harness::SessionId;
@@ -102,6 +103,27 @@ TEST(MatchEndOfTest, IsNoneWhileNoMatchHasEnded) {
 }
 
 // Requirements: US-19
+// Requirements: US-21
+TEST(ViewsOfTest, AreEachPlayersPitchAndAdsOfTheNewestReplayView) {
+  augusta::harness::ServerView view;
+  view.replay_view = augusta::harness::ReplayView{
+      .tick = 9,
+      .players = {{.entity = EntityId{1}, .pitch = 0.25F, .ads = true}, {.entity = EntityId{2}, .pitch = -0.5F}}};
+
+  const std::vector<augusta::presentation::PlayerView> views = ViewsOf(view);
+
+  ASSERT_EQ(views.size(), 2U);
+  EXPECT_EQ(views[0].entity, augusta::presentation::EntityId{1});
+  EXPECT_FLOAT_EQ(views[0].pitch, 0.25F);
+  EXPECT_TRUE(views[0].ads);
+  EXPECT_FLOAT_EQ(views[1].pitch, -0.5F);
+  EXPECT_FALSE(views[1].ads);
+}
+
+TEST(ViewsOfTest, AreNoneForAClientThatIsNoReplayViewer) {
+  EXPECT_TRUE(ViewsOf(augusta::harness::ServerView{}).empty());
+}
+
 TEST(CombatEffectsOfTest, FadesEachEffectByItsAgeOverItsLifetime) {
   augusta::presentation::State state;
   state.impacts = {{.position = Vec3(1.0F, 0.0F, 0.0F), .age = augusta::presentation::kImpactSeconds / 4.0F}};
