@@ -9,29 +9,17 @@ inputs:
 
     required: false
     default: "false"
-  vcpkg-cache-key:
-    description: >
-      The vcpkg binary cache entry to build from (restore-vcpkg-cache's key): container-publish passes the vcpkg-cache-key container-verify built from, so the dependency layer it rebuilds is a cache hit. Empty takes the newest.
-
-    required: false
-    default: ""
 outputs:
   short-sha:
     description: The first 12 characters of the commit, as the sha-<12> tag has them.
     value: ${{ steps.short-sha.outputs.value }}
-  vcpkg-cache-key:
-    description: The vcpkg binary cache entry the image was built from, empty when there was none.
-    value: ${{ steps.vcpkg-cache.outputs.matched-key }}
 runs:
   using: composite
   steps:
     # The Linux jobs' vcpkg binaries, which the Dockerfile's dependency install
     # restores from rather than build all its packages from source, when that
     # layer isn't cached already.
-    - id: vcpkg-cache
-      uses: ./.github/actions/restore-vcpkg-cache
-      with:
-        key: ${{ inputs.vcpkg-cache-key }}
+    - uses: ./.github/actions/restore-vcpkg-cache
     - name: Install trivy
       shell: bash
       run: |

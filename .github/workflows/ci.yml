@@ -660,8 +660,6 @@ jobs:
       contents: read
       # Writing the registry layer cache, on a push.
       packages: write
-    outputs:
-      vcpkg-cache-key: ${{ steps.image.outputs.vcpkg-cache-key }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -699,7 +697,6 @@ jobs:
       # Only a push writes the layer cache, as only a push publishes:
       # container-publish rebuilds from it.
       - name: Build and scan server image
-        id: image
         uses: ./.github/actions/build-server-image
         with:
           cache-to: ${{ github.event_name == 'push' }}
@@ -738,14 +735,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       # Rebuilt from the layer cache container-verify just wrote, so every
       # stage but rootfs is a cache hit, and scanned again: rootfs is cut anew,
-      # and what is pushed below must be an image that passed the scan. The
-      # vcpkg binaries are the entry container-verify built from too: the
-      # dependency layer's cache key covers them.
+      # and what is pushed below must be an image that passed the scan. It
+      # restores the newest vcpkg binaries, which the dependency layer's cache
+      # key covers: the entry container-verify built from, unless the server
+      # job saved a newer one meanwhile (and pruned that one), when that layer
+      # and the build after it run again.
       - name: Build and scan server image
         id: image
         uses: ./.github/actions/build-server-image
-        with:
-          vcpkg-cache-key: ${{ needs.container-verify.outputs.vcpkg-cache-key }}
       - name: Publish server image
         id: publish
         # The digest is read back from GHCR: the build only loaded the image,

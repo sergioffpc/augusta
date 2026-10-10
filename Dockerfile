@@ -55,7 +55,9 @@ COPY vcpkg.json ./
 # this command alone, it is in no layer and never written; built without it
 # (a local docker build, a fork), the context is the empty stage below. Its
 # contents are part of this layer's cache key, so a cache that gained packages
-# reruns the layer - as a manifest change, the reason it gains any, does.
+# reruns the layer: a manifest change runs it twice, once for the change, from
+# the cache as it was, and again once the server job's save of the new
+# packages is the cache restored.
 RUN --mount=type=bind,from=vcpkg-bincache,target=/vcpkg-bincache \
     VCPKG_BINARY_SOURCES="clear;files,/vcpkg-bincache,read" \
       ./third_party/vcpkg/vcpkg install --x-install-root=build/x64-linux/vcpkg_installed \
