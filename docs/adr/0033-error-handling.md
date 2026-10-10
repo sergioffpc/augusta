@@ -61,9 +61,9 @@ written where its stop was decided; the terminal event is the process's.
 Runtime-boundary tests make dependencies fail through controlled fault injection
 (`failure::Faults`): a runtime asks it at each named site (dependency
 initialization, listener setup, worker creation and execution, transport send
-and receive, recording write and flush, metrics endpoint acceptance) and fails
-the way that dependency does when a test has armed the site. Nothing arms a site
-outside a test, and an unarmed site costs one relaxed atomic load.
+and receive, recording and capture write and flush, metrics endpoint acceptance)
+and fails the way that dependency does when a test has armed the site. Nothing
+arms a site outside a test, and an unarmed site costs one relaxed atomic load.
 
 ## Considered Options
 

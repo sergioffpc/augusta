@@ -55,6 +55,14 @@ std::optional<failure::Failure> RecordingFailureOf(const ReplayServer& /*server*
 std::optional<failure::Failure> FinishRecordingOf(Host& host) { return host.FinishRecording(); }
 std::optional<failure::Failure> FinishRecordingOf(ReplayServer& /*server*/) { return std::nullopt; }
 
+// The failure a strict capture lost a record on (Host::CaptureFailure), and
+// the same once every capture is finished (Host::FinishCapture); a replay
+// server captures nothing.
+std::optional<failure::Failure> CaptureFailureOf(const Host& host) { return host.CaptureFailure(); }
+std::optional<failure::Failure> CaptureFailureOf(const ReplayServer& /*server*/) { return std::nullopt; }
+std::optional<failure::Failure> FinishCaptureOf(Host& host) { return host.FinishCapture(); }
+std::optional<failure::Failure> FinishCaptureOf(ReplayServer& /*server*/) { return std::nullopt; }
+
 }  // namespace
 
 // The threads, the metrics endpoint and the supervisor around Served, a Host
@@ -141,19 +149,22 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
     return {};
   }
 
-  // Simulation thread body (ADR-0005): ticks the server on its fixed schedule
-  // until a stop is requested or the server meets a runtime failure, or until
-  // a strict recording has lost a tick, which is the runtime's failure: no
-  // tick runs once it is known (ADR-0033, ADR-0048). The recording's writer
-  // finds a loss after the tick that lost it, so a few ticks may run,
-  // unrecorded, before it is.
-  supervisor::WorkerResult SimulationLoop() {
+  // The Simulation thread's ticks (ADR-0005): ticks the server on its fixed schedule
+  // until a stop is requested or it meets a runtime failure, or until a strict
+  // recording has lost a tick or a strict capture a record, which is the
+  // runtime's failure: no tick runs once it is known (ADR-0033, ADR-0048,
+  // ADR-0050). Their writers find a loss after the tick that lost it, so a few
+  // ticks may run, unrecorded, before it is.
+  supervisor::WorkerResult TickUntilStopped() {
     const auto delta_time = std::chrono::duration<float>(1.0F / tick_rate_hz);
     const auto tick_duration = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
     LI("subsystem=serverruntime event=loop_starting loop=simulation");
     tick::Clock::time_point deadline = tick::Clock::now();
     while (!workers.StopRequested()) {
       if (std::optional<failure::Failure> lost = RecordingFailureOf(served)) {
+        return std::unexpected(*std::move(lost));
+      }
+      if (std::optional<failure::Failure> lost = CaptureFailureOf(served)) {
         return std::unexpected(*std::move(lost));
       }
       const tick::Clock::time_point tick_start = tick::Clock::now();
@@ -176,6 +187,19 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
       return std::unexpected(*std::move(lost));
     }
     return {};
+  }
+
+  // Simulation thread body: TickUntilStopped, then, however it ended, the
+  // captures are finished (ADR-0050), so the metrics endpoint, which outlives
+  // the workers, reads them stopped. A strict capture's loss its writer finds
+  // only then still fails a run that would otherwise have succeeded.
+  supervisor::WorkerResult SimulationLoop() {
+    supervisor::WorkerResult result = TickUntilStopped();
+    std::optional<failure::Failure> lost = FinishCaptureOf(served);
+    if (result.has_value() && lost.has_value()) {
+      return std::unexpected(*std::move(lost));
+    }
+    return result;
   }
 
   std::optional<failure::Failure> Run() override {

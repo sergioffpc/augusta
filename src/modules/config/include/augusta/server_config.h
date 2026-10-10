@@ -59,6 +59,11 @@ struct ServerConfig {
   /// Key `simulation.capture`: the directory to capture every Match into, one
   /// file each (ADR-0050), created if missing. Empty, the default, captures nothing.
   std::filesystem::path capture_directory;
+  /// Key `simulation.capture_mode`: "optional", the default, for a capture
+  /// that only degrades if it cannot be written while the server goes on; or
+  /// "strict", true here, for a playtest whose point is the capture, whose
+  /// server then stops with a failure (ADR-0050).
+  bool strict_capture = false;
   /// Key `simulation.capture_retention.max_files`: how many captures the
   /// capture directory keeps, the Match's in progress included, the oldest
   /// deleted at each Match start (ADR-0050). At least 1; nullopt, the

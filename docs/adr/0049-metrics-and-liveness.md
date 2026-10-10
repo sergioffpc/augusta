@@ -100,6 +100,7 @@ an address or a Character's name. The domain words are CONTEXT.md's.
 |                   | `augustad_capture_directory_files`, `augustad_capture_directory_bytes`                | gauge                                                       |                                                                                     |
 | Replay            | `augustad_replays` (Replays running on a replay server, ADR-0051)                     | gauge                                                       |                                                                                     |
 |                   | `augustad_replay_tick_duration_seconds` (one Replay's tick and what it sends)         | histogram                                                   |                                                                                     |
+|                   | `augustad_capture_health` (the Match captures', ADR-0050)                             | gauge, 0 or 1                                               | `state` = `enabled`, `degraded`, `stopped`                                          |
 | Process           | `augustad_build_info` = 1                                                             | gauge                                                       | `version`, `commit`                                                                 |
 |                   | `augustad_start_time_seconds`                                                         | gauge                                                       |                                                                                     |
 
@@ -143,6 +144,13 @@ as each Match's file is created, plus what it has written since, so they cover
 every capture in the directory, not only this run's. `retention_budget` is the
 stop of the capture directory's retention, labelled from the start so its series
 exists at 0.
+
+`augustad_capture_health` is 0 for every state while the server captures
+nothing. Otherwise it is `enabled` from the start, `degraded` once an optional
+capture has lost a record, and `stopped` once the run's captures produce no more
+records: a strict capture lost one, or the runtime's last tick was captured. It
+reads `stopped` from then until the process exits, since the metrics endpoint
+outlives the runtime's workers (ADR-0050).
 
 CPU, memory and restarts are not `augustad`'s metrics: the stack's kubelet and
 cAdvisor scrape already has them per pod.

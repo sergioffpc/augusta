@@ -33,6 +33,7 @@
 namespace {
 
 using augusta::server::Activity;
+using augusta::server::CaptureHealth;
 using augusta::server::CaptureMetrics;
 using augusta::server::CaptureRetention;
 using augusta::server::CaptureState;
@@ -141,6 +142,7 @@ TEST(HostMetricsTest, EveryMetricOfTheCatalogueIsCollectedWithItsType) {
       {"augustad_capture_directory_bytes", MetricType::Gauge},
       {"augustad_replays", MetricType::Gauge},
       {"augustad_replay_tick_duration_seconds", MetricType::Histogram},
+      {"augustad_capture_health", MetricType::Gauge},
   };
   for (const auto& [name, type] : catalogue) {
     EXPECT_EQ(Family(families, name).type, type) << name;
@@ -269,6 +271,30 @@ TEST(HostMetricsTest, RetentionsLimitsAreAbsentUntilSet) {
 
   EXPECT_EQ(Series(Family(metrics.Collect(), "augustad_capture_retention_max_files"), {}).gauge.value, 200.0);
   EXPECT_FALSE(has("augustad_capture_retention_max_bytes"));
+}
+
+// The value of each augustad_capture_health series, by its state label.
+std::map<std::string, double> CaptureHealths(const HostMetrics& metrics) {
+  std::map<std::string, double> states;
+  for (const ClientMetric& series : Family(metrics.Collect(), "augustad_capture_health").metric) {
+    states.emplace(LabelsOf(series).at("state"), series.gauge.value);
+  }
+  return states;
+}
+
+TEST(HostMetricsTest, NoCaptureHealthIsSetWhileNothingIsCaptured) {
+  const HostMetrics metrics(kTickRate);
+  EXPECT_EQ(CaptureHealths(metrics),
+            (std::map<std::string, double>{{"enabled", 0.0}, {"degraded", 0.0}, {"stopped", 0.0}}));
+}
+
+TEST(HostMetricsTest, OnlyTheCapturesCurrentHealthIsSet) {
+  HostMetrics metrics(kTickRate);
+  CaptureMetrics counting(metrics);
+  counting.OnHealth(CaptureHealth::kEnabled);
+  counting.OnHealth(CaptureHealth::kDegraded);
+  EXPECT_EQ(CaptureHealths(metrics),
+            (std::map<std::string, double>{{"enabled", 0.0}, {"degraded", 1.0}, {"stopped", 0.0}}));
 }
 
 // Requirements: NFR-07
