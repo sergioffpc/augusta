@@ -179,13 +179,15 @@ enum class CommandLineAction : std::uint8_t {
   kShowVersion,
 };
 
-/// An option one executable's command line takes besides the shared ones:
-/// `--<name> <value>`, at most once.
+/// An option one executable's command line takes beyond `--config`, `--help`
+/// and `--version`: what is chosen for one run, not kept as a setting
+/// (ADR-0034), such as augustac's `--replay <capture>` (ADR-0051).
 struct CommandLineOption {
+  /// Its name, without the leading `--`.
   std::string_view name;
-  /// What the value is, as the usage shows it (`<capture>`).
+  /// What its value is called in the usage, or empty for an option with none.
   std::string_view value;
-  /// What it asks for, as the usage says it.
+  /// What it does, for the usage.
   std::string_view description;
 };
 
@@ -196,23 +198,24 @@ struct CommandLine {
   /// Only set for kShowHelp (the usage message) and kShowVersion
   /// (`<program> <version>`).
   std::string message;
-  CommandLineAction action = CommandLineAction::kRun;
-  /// Only set for kRun: the value of each of the executable's own options
-  /// given, by its name; what each must hold is the executable's to check.
+  /// Only set for kRun: each CommandLineOption given, by name, with its value,
+  /// empty for one that takes none. What they mean together is the
+  /// executable's to decide.
   std::map<std::string, std::string, std::less<>> options;
+  CommandLineAction action = CommandLineAction::kRun;
 };
 
 /// Reads the command line (argc/argv as main gets them). `--help` asks for the
 /// usage and `--version` for version, whatever else is on it (`--help` first);
 /// otherwise the config file is the path after `--config`, taken as given
 /// (relative to the working directory), or default_file_name in the running
-/// executable's directory when there is no `--config`. own_options, the
-/// executable's own (none by default), may each be given too. Any other
-/// arguments are a kInvalidArguments error whose subject is the usage message,
-/// naming program and its own options.
+/// executable's directory when there are no arguments. options are those the
+/// executable takes beyond these, each at most once. Any other arguments are a
+/// kInvalidArguments error whose subject is the usage message, naming program
+/// and each of options.
 std::expected<CommandLine, ConfigError> ParseCommandLine(int argc, const char* const* argv, std::string_view program,
                                                          std::string_view default_file_name, std::string_view version,
-                                                         std::span<const CommandLineOption> own_options = {});
+                                                         std::span<const CommandLineOption> options = {});
 
 }  // namespace augusta::config
 

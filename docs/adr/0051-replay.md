@@ -13,9 +13,13 @@ runs no Lobby and no Match, refuses every Join and Reenact request with a new
 Join refused reason, _replay server_, and serves only Replays. It loads its
 server pack as any augustad does, and serves only the captures made on that
 pack: a capture names the server pack its Match ran on (ADR-0050), and a Replay
-needs that pack's Map, Characters and Game policy. A live server and a replay
-server can share a directory, the live one capturing into it: they are two
-processes, so a Replay never shares a Simulation thread with a live Match.
+needs that pack's Map, Characters and Game policy. It also serves only the
+captures made at its own `simulation.tick_rate_hz` with its scenario's
+Characters. It ticks every Replay at its own rate, and the Parameters it loads
+are for that rate. Any other capture is left out of its Replay list, and a
+Replay request naming one is refused as _unknown capture_. A live server and a
+replay server can share a directory, the live one capturing into it: they are
+two processes, so a Replay never shares a Simulation thread with a live Match.
 
 **A Replay re-runs the capture, it does not play back an outcome.** A capture
 holds what the players did, not what the World resolved, so the replay server
@@ -61,15 +65,36 @@ message:
 A Replay request accepted starts a Replay of its own for that viewer, so two
 viewers of one capture each watch from the start at their own pace. The replay
 server runs at most `replay.max_viewers` at once, and refuses the next with
-_lobby full_, the reason a full Lobby gives.
+_lobby full_, the reason a full Lobby gives. A viewer sends nothing once its
+Replay starts: whatever it sends later, a request among them, is dropped and
+counted as misbehaviour (ADR-0049), and its Replay goes on.
+
+**Each viewer costs the Simulation thread one Match's tick.** The replay server
+ticks every Replay it runs on its one Simulation thread, each a SimulationWorld
+of its own plus what its viewer is sent. So `replay.max_viewers` Replays share
+NFR-01's tick budget, 16.7 ms at 60 Hz. The benchmark of a full Match's Replay
+(`BM_ReplayViewerTick`, `tests/replay_benchmark.cpp`) puts one viewer's tick at
+about a live tick's World tick (`BM_SimulationTick`): about 27 µs in the dev
+container. At that, the 255 viewers the setting allows fit in under half the
+budget. A slower machine or a heavier scenario must cap `replay.max_viewers` to
+fit. `augustad_replay_tick_duration_seconds` times each Replay's tick,
+`augustad_replays` counts them, and late and overrun ticks show in the Tick
+family as they do on a live server. The replay server lists its captures and
+builds each Replay's World on the Network I/O thread, which keeps what it read
+of each capture, so a list request costs a look at the directory rather than a
+read of every file. A tick takes its lock only to find its Replays and to close
+the ones that ended, never while stepping them.
 
 **A Replay viewer is a Spectator from the first tick.** The viewer is sent what
-a Match's Spectator is: the tick rate and Parameters, the Match start with its
-first tick, every Authoritative State, Shot and Death, and the Match end, after
-which the replay server closes the connection. It has no body, sends no Commands
-and predicts nothing; it draws every body by interpolating Authoritative States,
-as any client draws the other players, so it is as smooth as the other players
-always are. It watches the capture's first player and moves on with fire, as a
+a Match's Spectator is: the tick rate and Parameters, in a Join accepted whose
+session is 0, which no player has, since Session IDs start at 1 (ADR-0038). That
+is the value a Match end gives for a Draw, and a viewer plays no one, so neither
+can name it as a winner. Then the Match start with its first tick, every
+Authoritative State, Shot and Death, and the Match end, after which the replay
+server closes the connection. It has no body, sends no Commands and predicts
+nothing; it draws every body by interpolating Authoritative States, as any
+client draws the other players, so it is as smooth as the other players always
+are. It watches the capture's first player and moves on with fire, as a
 Spectator does.
 
 **A Replay sends what the watched player saw.** A Spectator's camera looks level
@@ -85,6 +110,11 @@ Reenactment, a capture is chosen for one run, so it joins the command line
 list, prints it and exits; `augustac --replay <capture>` watches that capture.
 The keyboard and mouse move nothing but which player is watched.
 
+**A live server tells a client asking for Replays that it is none.** A Replay
+list request or a Replay request sent to a live server is refused with another
+new reason, _not a replay server_, so `augustac --replays` or `--replay` pointed
+at the wrong server says so at once instead of waiting.
+
 ## Consequences
 
 - **A Replay reproduces a crash in the simulation, not in the network.** The
@@ -94,10 +124,10 @@ The keyboard and mouse move nothing but which player is watched.
 - **A Replay plays forward only.** Seeking means re-running from the first tick,
   and pausing or changing speed means the replay server ticking a run at another
   rate; none is decided here.
-- **The protocol grows by three messages and a refusal reason**: the Replay list
-  request, the Replay request and the Replay view, with _replay server_ and
-  _unknown capture_. A client of an older engine version is refused, as for any
-  protocol change.
+- **The protocol grows by four messages and three refusal reasons**: the Replay
+  list request, the Replay list, the Replay request and the Replay view, with
+  _replay server_, _unknown capture_ and _not a replay server_. A client of an
+  older engine version is refused, as for any protocol change.
 - **A replay server serves only its own pack's captures.** A capture made before
   a change to the scenario needs a replay server started on the pack it was made
   on.

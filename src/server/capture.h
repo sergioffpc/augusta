@@ -130,7 +130,7 @@ struct Capture {
 
 /// Why a Match's capture stopped before its Match end, as logs name it.
 enum class CaptureStop : std::uint8_t {
-  /// A record is longer than a capture's frame holds (capture_file::kCaptureFrames).
+  /// A record is longer than a capture's frame holds (capture_file::kMaxFramePayload).
   kRecordTooLong,
   /// A record found kCaptureQueueCapacity records still unwritten: the disk is not keeping up.
   kQueueFull,
@@ -179,7 +179,7 @@ enum class CaptureStep : std::uint8_t {
   /// A record found kCaptureQueueCapacity records still unwritten: the disk is
   /// not keeping up.
   kQueueFull,
-  /// A record is longer than a capture's frame holds (kCaptureFrames).
+  /// A record is longer than a capture's frame holds (capture_file::kMaxFramePayload).
   kRecordTooLong,
   /// A record would take the directory past CaptureRetention::max_bytes with
   /// no completed capture left to delete.

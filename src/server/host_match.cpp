@@ -207,25 +207,29 @@ void Host::Impl::CaptureDeaths(const simulation::TickResult& result) const {
   }
 }
 
+void Host::Impl::SendTick(const simulation::State& state, const TickRecipients& to) {
+  if (Failed()) {
+    return;
+  }
+  if (auto sent = SendTickMessages(network, metrics, state, tick, to); !sent.has_value()) {
+    // Either the tick's messages could not be encoded, and none was sent, or
+    // the local transport failed sending them: each kept where a worker takes it.
+    failure::FirstFailure& kept =
+        sent.error().code == failure::Code::kInvariantViolated ? invariant_failure : transport_failure;
+    kept.Record(std::move(sent.error()));
+  }
+}
+
 simulation::TickResult Host::Tick(float delta_time) {
   Impl& impl = *impl_;
   const Impl::TickInput input = impl.PrepareTick();
   const simulation::TickResult result = impl.simulation.Tick(input.commands, delta_time);
   impl.tick = result.state.tick;
-  if (std::optional<failure::Failure> recorded = impl.simulation.Failure()) {
-    impl.invariant_failure.Record(*std::move(recorded));
-  }
   impl.CaptureDeaths(result);
   if (impl.capturer && impl.capturer->Failure().has_value()) {
     impl.invariant_failure.Record(*impl.capturer->Failure());
   }
-  if (auto sent = SendTickMessages(impl.network, impl.metrics, result.state, impl.tick, input.to); !sent.has_value()) {
-    // Either the tick's messages could not be encoded, and none was sent, or
-    // the local transport failed sending them: each kept where a worker takes it.
-    failure::FirstFailure& kept =
-        sent.error().code == failure::Code::kInvariantViolated ? impl.invariant_failure : impl.transport_failure;
-    kept.Record(std::move(sent.error()));
-  }
+  impl.SendTick(result.state, input.to);
   impl.metrics.match_players_alive.Set(static_cast<double>(result.state.alive.size()));
   CountCombat(impl.metrics, result);
   LogCombat(result.state);

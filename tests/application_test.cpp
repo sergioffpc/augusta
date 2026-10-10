@@ -23,6 +23,7 @@ using augusta::application::Conclude;
 using augusta::application::Execute;
 using augusta::application::Lifecycle;
 using augusta::application::Outcome;
+using augusta::failure::ClassifiedFailure;
 using augusta::failure::Code;
 using augusta::failure::Failure;
 
@@ -149,6 +150,23 @@ TEST(ApplicationTest, AnExceptionEscapingConstructionIsAClassifiedDependencyFail
   EXPECT_EQ(trace, (Trace{"initialize"}));
 }
 
+// Construction that has already classified its failure throws it whole, and it
+// keeps its Code: a broken invariant is not taken for a dependency's failure.
+TEST(ApplicationTest, AClassifiedFailureThrownDuringConstructionKeepsItsCode) {
+  Trace trace;
+  Lifecycle<FakeRuntime> lifecycle = Succeeding(trace);
+  lifecycle.construct = []() -> std::expected<std::unique_ptr<FakeRuntime>, Failure> {
+    throw ClassifiedFailure(Failure{.code = Code::kInvariantViolated, .context = {}, .detail = "string too long"});
+  };
+
+  const Outcome outcome = Execute(lifecycle);
+
+  ASSERT_TRUE(outcome.has_value());
+  EXPECT_EQ(outcome->code, Code::kInvariantViolated);
+  EXPECT_EQ(ContextOf(*outcome, "phase"), "construct");
+  EXPECT_EQ(outcome->detail, "string too long");
+}
+
 TEST(ApplicationTest, AnExceptionEscapingTheRunIsAClassifiedWorkerFailureAfterWhichTheRuntimeIsReleased) {
   Trace trace;
   Lifecycle<FakeRuntime> lifecycle = Succeeding(trace);
@@ -208,7 +226,7 @@ TEST(ApplicationTest, ATerminalFailureWritesOneTerminalEventAndExitsNonZero) {
 }
 
 TEST(ApplicationTest, EveryDispositionOfTerminalFailureExitsNonZero) {
-  for (const Code code : {Code::kPeerConnectionLost, Code::kRecordingWriteFailed, Code::kTransportInitFailed,
+  for (const Code code : {Code::kPeerConnectionLost, Code::kMetricsEndpointFailed, Code::kTransportInitFailed,
                           Code::kInvalidConfiguration}) {
     EXPECT_NE(Concluded(Failure{.code = code, .context = {}, .detail = {}}).second, 0);
   }

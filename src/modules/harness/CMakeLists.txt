@@ -8,6 +8,7 @@ add_library(
   inbox.cpp
   netcode_stats.cpp
   reenactment.cpp
+  replay_list.cpp
   runner.cpp
   server_view.cpp
 )

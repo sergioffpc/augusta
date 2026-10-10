@@ -16,6 +16,7 @@
 #include "augusta/networking.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
+#include "augusta/primitives.h"
 #include "augusta/runner.h"
 #include "augusta/supervisor.h"
 #include "content.h"
@@ -28,9 +29,11 @@
 // Local transport failures at the runtime seams (ADR-0033): a send or receive
 // the local transport refuses becomes the runtime's typed failure, which its
 // worker escalates to the supervisor, while what a peer does - malformed
-// input, leaving - stays that peer's. The transport is made to fail by
-// controlled fault injection (failure::Faults), never by breaking the real
-// one; everything else is a real Host and Session over loopback.
+// input, leaving - stays that peer's. A runtime that has failed, on its
+// transport or on a broken invariant, sends nothing more. The transport is
+// made to fail by controlled fault injection (failure::Faults), never by
+// breaking the real one; everything else is a real Host and Session over
+// loopback.
 namespace {
 
 using augusta::command::Command;
@@ -87,8 +90,6 @@ HostConfig HostConfigWith(Faults* faults) {
   return HostConfig{.tick_rate_hz = kTickRate,
                     .parameters = {},
                     .listen = Endpoint{.address = "127.0.0.1:0"},
-                    .recording = {},
-                    .recording_mode = {},
                     .server_pack = {},
                     .capture_directory = {},
                     .capture_mode = {},
@@ -197,6 +198,23 @@ TEST_F(TransportFailureTest, AServerSendTheLocalTransportRefusesIsTheRuntimesFai
   EXPECT_FALSE(session_.GetSessionId().has_value()) << "a refused send arrived";
 }
 
+// A runtime that has failed sends nothing more, valid messages included, until
+// its worker stops it: the Roster that follows a refused Join accepted is not
+// sent either.
+TEST_F(TransportFailureTest, AfterAServerSendFailsTheHostSendsNothingMore) {
+  host_faults_.Arm(Site::kTransportSend, "socket closed");
+  session_.Connect();
+
+  ASSERT_TRUE(ExchangeUntil([&] { return host_.Metrics().messages_received.Total() > 0; }));
+  Settle();
+
+  const std::optional<Failure> failure = host_.TakeTransportFailure();
+  ASSERT_TRUE(failure.has_value());
+  EXPECT_EQ(failure->code, Code::kTransportSendFailed);
+  EXPECT_EQ(host_.Metrics().messages_sent.Total(), 0U) << "the Roster was sent after the runtime failed";
+  EXPECT_FALSE(session_.GetLobby().has_value());
+}
+
 TEST_F(TransportFailureTest, AServerReceiveTheLocalTransportFailsIsTheRuntimesFailure) {
   host_faults_.Arm(Site::kTransportReceive, "poll group gone");
 
@@ -273,6 +291,23 @@ TEST_F(TransportFailureTest, AClientSendTheLocalTransportRefusesIsTheClientsRunt
   EXPECT_FALSE(session_.GetFailure().has_value());
 }
 
+// As the Host: once its send has failed, the Session sends nothing more, not
+// even a Ready the transport would now take.
+TEST_F(TransportFailureTest, AfterAClientSendFailsTheSessionSendsNothingMore) {
+  session_.Connect();
+  ASSERT_TRUE(ExchangeUntil([&] { return session_.GetLobby().has_value(); }));
+  const std::uint32_t roster = session_.GetLobby()->version;
+  const std::uint64_t received = host_.Metrics().messages_received.Total();
+
+  session_faults_.Arm(Site::kTransportSend, "socket closed");
+  session_.ReportReady(roster);
+  ASSERT_TRUE(session_.TakeTransportFailure().has_value());
+  session_.ReportReady(roster);
+  Settle();
+
+  EXPECT_EQ(host_.Metrics().messages_received.Total(), received) << "a Ready was sent after the runtime failed";
+}
+
 TEST_F(TransportFailureTest, AClientReceiveTheLocalTransportFailsIsTheClientsRuntimeFailure) {
   session_.Connect();
   ASSERT_TRUE(ExchangeUntil([&] { return session_.GetConnectionState() == ConnectionState::kConnected; }));
@@ -321,6 +356,39 @@ TEST(ServerRuntimeTransportFailureTest, AServerTransportFailureEndsRunWithATyped
   EXPECT_EQ(failure->detail, "poll group gone");
   const std::string thread = ContextOf(*failure, augusta::supervisor::kThreadContextKey);
   EXPECT_TRUE(thread == "network" || thread == "simulation") << thread;
+}
+
+// A server whose Parameters hold more Recoil kicks than the protocol carries
+// cannot encode a Join accepted: a broken invariant (ADR-0033), sent to no one,
+// after which the Host sends nothing more - not even the Roster the join
+// changed.
+TEST(HostInvariantFailureTest, AJoinAcceptedTheProtocolCannotCarryIsAnInvariantFailureAndNothingIsSent) {
+  HostConfig config = HostConfigWith(nullptr);
+  config.parameters.rifle.recoil_pattern.resize(augusta::primitives::kMaxRecoilKicks + 1);
+  Host host(config, TestScenario());
+  Session session(SessionConfig{.server = host.ListenEndpoint(), .character = kCharacter}, WorldWithFloor());
+  const auto exchange = [&] {
+    host.PumpNetwork(std::chrono::steady_clock::now());
+    session.PumpEvents();
+    session.ExchangeMessages();
+  };
+  session.Connect();
+
+  ASSERT_TRUE(PollUntil(exchange, [&] { return host.Metrics().messages_received.Total() > 0; }));
+  const auto settled = std::chrono::steady_clock::now() + kSettle;
+  while (std::chrono::steady_clock::now() < settled) {
+    exchange();
+    std::this_thread::sleep_for(kPollInterval);
+  }
+
+  const std::optional<Failure> failure = host.TakeInvariantFailure();
+  ASSERT_TRUE(failure.has_value());
+  EXPECT_EQ(failure->code, Code::kInvariantViolated);
+  EXPECT_EQ(DispositionOf(failure->code), Disposition::kRuntime);
+  EXPECT_EQ(host.Metrics().messages_sent.Total(), 0U);
+  EXPECT_FALSE(session.GetSessionId().has_value());
+  EXPECT_FALSE(session.GetLobby().has_value());
+  EXPECT_FALSE(host.TakeTransportFailure().has_value());
 }
 
 // A message the peer's connection dropped was never sent, so the metrics do not

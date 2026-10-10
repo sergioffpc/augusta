@@ -16,38 +16,25 @@
 /// A Match capture's file format (ADR-0050), in one place for every side that
 /// reads or writes one: the server's Capturer and ReadCapture
 /// (src/server/capture.h) and a Captured player's harness::ReadScript. A file
-/// is the capture's magic, then each record's payload after its length - in
-/// one byte, as kCaptureFrames frames it - the header first. ReadCaptureFile
-/// checks the magic, the header's format version and the records' order (every
-/// Join first, numbered from 1, then the events in offset order, each naming a
-/// player a Join did, nothing after the Match end), and hands the records on
-/// in the protocol's own types: what they mean is each reader's to convert.
+/// is the capture's magic, then each record's payload after its length - in one
+/// byte (WriteFrame) - the header first. ReadCaptureFile checks the magic, the
+/// header's format version and the records' order (every Join first, numbered
+/// from 1, then the events in offset order, each naming a player a Join did,
+/// nothing after the Match end), and hands the records on in the protocol's own
+/// types: what they mean is each reader's to convert.
 /// Pure stream I/O, on whichever thread holds the stream.
 namespace augusta::capture_file {
 
-/// How one kind of file frames its records: each record's payload after its
-/// length, little-endian.
-struct FrameFormat {
-  /// How many bytes a payload's length takes, 1 to 4.
-  std::size_t length_bytes = 0;
-  /// The longest payload a frame holds, in bytes: a length past it is a
-  /// corrupted one, refused before anything is allocated for it, and a payload
-  /// past it is never written.
-  std::size_t max_payload = 0;
-};
+/// The longest payload a frame holds, in bytes: none of a capture's records,
+/// header included, passes it, so one byte of length is enough (#463).
+inline constexpr std::size_t kMaxFramePayload = 255;
 
-/// A Match capture's frames: none of its records, header included, passes 255
-/// bytes, so one byte of length is enough (#463).
-inline constexpr FrameFormat kCaptureFrames{.length_bytes = 1, .max_payload = 255};
+/// How many bytes a frame of a payload this long takes: its length, then it.
+[[nodiscard]] constexpr std::size_t FrameSize(std::size_t payload_size) { return 1 + payload_size; }
 
-/// How many bytes a frame of a payload this long takes in a file of format.
-[[nodiscard]] constexpr std::size_t FrameSize(const FrameFormat& format, std::size_t payload_size) {
-  return format.length_bytes + payload_size;
-}
-
-/// Writes payload's frame to out in format, whose state then says whether it
-/// was. payload is at most format.max_payload bytes.
-void WriteFrame(std::ostream& out, const FrameFormat& format, std::span<const std::byte> payload);
+/// Writes payload's frame to out, whose state then says whether it was.
+/// payload is at most kMaxFramePayload bytes.
+void WriteFrame(std::ostream& out, std::span<const std::byte> payload);
 
 /// How reading the next frame ended.
 enum class Frame : std::uint8_t {
@@ -56,15 +43,13 @@ enum class Frame : std::uint8_t {
   kEnd,
   /// The stream ended partway through a frame.
   kTorn,
-  /// Its length is more than its format's max_payload.
-  kTooLong,
   /// The stream failed: what it holds past here is unknown, so neither an end
   /// nor a torn frame can be told from it.
   kUnreadable,
 };
 
-/// Reads the next frame of format from in into payload.
-[[nodiscard]] Frame ReadFrame(std::istream& in, const FrameFormat& format, std::vector<std::byte>& payload);
+/// Reads the next frame from in into payload.
+[[nodiscard]] Frame ReadFrame(std::istream& in, std::vector<std::byte>& payload);
 
 /// A capture file's records, as the protocol decodes them.
 struct CaptureFile {

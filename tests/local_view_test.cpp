@@ -276,12 +276,22 @@ TEST(WatchedCameraTest, TheCameraIsAtTheWatchedPlayersEyeForItsStanceLookingLeve
                              .yaw = 0.6F,
                              .stance = Stance::kCrouching};
 
-  const Camera camera = WatchedCamera(crouching, kStandingEye);
+  const Camera camera = WatchedCamera(crouching, kStandingEye, 0.0F);
 
   ExpectNear(camera.position,
              Vec3(3.0F, 1.0F, -4.0F) + augusta::physics::LowerToStance(kStandingEye, Stance::kCrouching));
   EXPECT_EQ(camera.rotation, augusta::command::ViewRotation(0.6F, 0.0F));
   EXPECT_FLOAT_EQ(camera.vertical_fov, kHipFieldOfView);
+}
+
+// A Replay viewer is shown the watched player's pitch (ADR-0051).
+// Requirements: US-21
+TEST(WatchedCameraTest, TheCameraLooksAtTheWatchedPlayersPitchWhenItIsKnown) {
+  const RemoteBody standing{.position = Vec3(1.0F, 0.0F, 2.0F), .velocity = {}, .yaw = -0.4F, .stance = {}};
+
+  const Camera camera = WatchedCamera(standing, kStandingEye, 0.3F);
+
+  EXPECT_EQ(camera.rotation, augusta::command::ViewRotation(-0.4F, 0.3F));
 }
 
 }  // namespace

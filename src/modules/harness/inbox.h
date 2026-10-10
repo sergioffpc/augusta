@@ -25,7 +25,9 @@ namespace augusta::harness {
 /// The server's messages, as a Session reads them.
 class Inbox {
  public:
-  Inbox() = default;
+  /// viewer: whether the Session is a Replay viewer (ADR-0051), which is in
+  /// no Match start it is sent.
+  explicit Inbox(bool viewer = false) : viewer_(viewer) {}
 
   /// Not copyable or movable: the view and the pending events are shared with
   /// the threads that read them.
@@ -61,6 +63,7 @@ class Inbox {
   void OnHitConfirmation(const HitConfirmation& hit);
   void OnDeath(const Death& death);
   void OnAuthoritativeState(AuthoritativeState state);
+  void OnReplayView(ReplayView view);
 
   // Makes the next view from the current one changed by mutate, and publishes it.
   // Only the Network I/O thread publishes, so nothing can intervene between the load and the store.
@@ -71,6 +74,7 @@ class Inbox {
     view_.store(std::move(next));
   }
 
+  const bool viewer_;
   std::atomic<std::shared_ptr<const ServerView>> view_{std::make_shared<const ServerView>()};
   // The Shots, the Hit confirmations and the Deaths received and not yet taken,
   // each under the Match it is of. Not part of the view: they are handed out

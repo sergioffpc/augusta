@@ -88,3 +88,5 @@ pod ran.
   never inside the pod, and a live server is inspected with `kubectl debug`.
 - On Windows (a development build only) the same handler runs through the CRT's
   `signal`, symbolizing through the PDB; no core is written there.
+- The client's release binary gets its counterpart of the release's
+  `augustad-linux-x64.debug`, a PDB of the same build, in ADR-0055.

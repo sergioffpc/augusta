@@ -340,12 +340,6 @@ class World {
   /// bullets it fired fly on.
   void RemovePlayer(EntityId entity);
 
-  /// Puts entity's body at state, on the grids, keeping its fall tracking, as
-  /// if its last tick had ended there; a no-op if it has no body in the world.
-  /// A replay across builds re-syncs each body to the recorded one with it
-  /// (ADR-0048); the server never calls it.
-  void PlaceBody(EntityId entity, const physics::BodyState& state);
-
   /// Match start (US-03): the Match in the world ends first, as EndMatch ends
   /// it, then players, which name distinct entities, each get a Spawn point of
   /// spawn_points from Game policy (the rules' assign_spawns hook,

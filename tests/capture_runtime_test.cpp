@@ -119,8 +119,6 @@ class CaptureFailureTest : public ::testing::Test {
         .tick_rate_hz = kTickRate,
         .parameters = parameters,
         .listen = {.address = "127.0.0.1:0"},
-        .recording = {},
-        .recording_mode = {},
         .server_pack = {},
         .capture_directory = mode.has_value() ? directory_ : std::filesystem::path{},
         .capture_mode = mode.value_or(CaptureMode::kOptional),

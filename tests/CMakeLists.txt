@@ -20,12 +20,12 @@ add_executable(
   pack_benchmark.cpp
   presentation_benchmark.cpp
   protocol_benchmark.cpp
-  recording_benchmark.cpp
+  replay_benchmark.cpp
   replication_benchmark.cpp
   simulation_benchmark.cpp
 )
 # The tick runs the example scenario's Game policy, as the server loads it from
-# its golden server pack; recording and replication are server::Host's own
+# its golden server pack; replication is server::Host's own
 # (augustad_host), and a render frame plays the golden client pack's cue sounds.
 target_link_libraries(
   augusta_benchmarks
@@ -124,15 +124,6 @@ add_executable(augusta_protocol_tests protocol_test.cpp)
 target_link_libraries(augusta_protocol_tests PRIVATE augusta_primitives augusta_protocol GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_protocol_tests DISCOVERY_TIMEOUT 30)
-
-# A match recording's records, in the protocol's encoding (ADR-0048).
-add_executable(augusta_protocol_recording_tests protocol_recording_test.cpp)
-target_link_libraries(
-  augusta_protocol_recording_tests
-  PRIVATE augusta_primitives augusta_protocol GTest::gtest GTest::gtest_main
-)
-# Links PhysX through augusta_physics, so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_protocol_recording_tests DISCOVERY_TIMEOUT 30)
 
 # A Match capture's records, in the protocol's encoding (ADR-0050).
 add_executable(augusta_protocol_capture_tests protocol_capture_test.cpp)
@@ -462,6 +453,29 @@ add_executable(augusta_capture_tests capture_test.cpp)
 target_link_libraries(augusta_capture_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_capture_tests DISCOVERY_TIMEOUT 30)
 
+# A Replay (ADR-0051): a Match capture re-run on a fresh SimulationWorld and
+# checked against its markers, with no network.
+add_executable(augusta_server_replay_tests server_replay_test.cpp)
+target_link_libraries(
+  augusta_server_replay_tests
+  PRIVATE augustad_host augusta_scripting augusta_simulation GTest::gtest GTest::gtest_main
+)
+gtest_discover_tests(augusta_server_replay_tests DISCOVERY_TIMEOUT 30)
+
+# Which captures a replay server replays (ADR-0051), from directories of them.
+add_executable(augusta_replay_catalog_tests replay_catalog_test.cpp)
+target_link_libraries(augusta_replay_catalog_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_replay_catalog_tests DISCOVERY_TIMEOUT 30)
+
+# A replay server (ADR-0051) over loopback, on a Match a live Host captured.
+add_executable(augusta_replay_server_tests replay_server_test.cpp)
+target_link_libraries(
+  augusta_replay_server_tests
+  PRIVATE augustad_host augusta_harness augusta_logging augusta_scripting augusta_version GTest::gtest GTest::gtest_main
+)
+# Links networking and PhysX, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_replay_server_tests DISCOVERY_TIMEOUT 30)
+
 # A capture directory kept within a count and a size (ADR-0050, #461).
 add_executable(augusta_capture_retention_tests capture_retention_test.cpp)
 target_link_libraries(
@@ -475,39 +489,6 @@ gtest_discover_tests(augusta_capture_retention_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_reenactment_tests reenactment_test.cpp)
 target_link_libraries(augusta_reenactment_tests PRIVATE augusta_harness augustad_host GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_reenactment_tests DISCOVERY_TIMEOUT 30)
-
-# Match recordings (ADR-0048), on the example scenario as the server loads it
-# from its golden server pack. Their replay is tools/replay's, tested there.
-add_executable(augusta_recording_tests recording_test.cpp)
-target_link_libraries(
-  augusta_recording_tests
-  PRIVATE augustad_host augustad_content augusta_logging augusta_version GTest::gtest GTest::gtest_main
-)
-target_compile_definitions(
-  augusta_recording_tests
-  PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
-)
-# Links PhysX, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_recording_tests DISCOVERY_TIMEOUT 30)
-
-# A Match recording that cannot be written, optional or strict (ADR-0048,
-# ADR-0033): its write and flush failures injected (see faults.h), seen from the
-# Host and the ServerRuntime running it, with the log lines read off stdout.
-add_executable(augusta_recording_runtime_tests recording_runtime_test.cpp)
-target_link_libraries(
-  augusta_recording_runtime_tests
-  PRIVATE
-    augustad_host
-    augustad_runtime
-    augusta_failure
-    augusta_logging
-    augusta_networking
-    augusta_supervisor
-    GTest::gtest
-    GTest::gtest_main
-)
-# Links networking and PhysX through augustad_host, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_recording_runtime_tests DISCOVERY_TIMEOUT 30)
 
 # A Match capture that cannot be written, optional or strict (ADR-0050,
 # ADR-0033): its write and flush failures injected (see faults.h), seen from the
@@ -731,7 +712,7 @@ add_subdirectory(fuzz)
 add_custom_target(augusta_tests)
 set(test_directories ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/fuzz)
 if(AUGUSTA_TOOLS)
-  list(APPEND test_directories ${CMAKE_SOURCE_DIR}/tools/replay/tests ${CMAKE_SOURCE_DIR}/tools/swarm/tests)
+  list(APPEND test_directories ${CMAKE_SOURCE_DIR}/tools/swarm/tests)
 endif()
 foreach(directory IN LISTS test_directories)
   get_property(directory_targets DIRECTORY ${directory} PROPERTY BUILDSYSTEM_TARGETS)

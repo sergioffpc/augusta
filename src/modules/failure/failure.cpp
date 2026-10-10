@@ -28,10 +28,6 @@ std::string_view CodeName(Code code) {
       return "join_refused";
     case Code::kServerUnreachable:
       return "server_unreachable";
-    case Code::kRecordingWriteFailed:
-      return "recording_write_failed";
-    case Code::kRecordingFlushFailed:
-      return "recording_flush_failed";
     case Code::kMetricsEndpointFailed:
       return "metrics_endpoint_failed";
     case Code::kCaptureWriteFailed:
@@ -58,8 +54,6 @@ std::string_view CodeName(Code code) {
       return "worker_failed";
     case Code::kInvariantViolated:
       return "invariant_violated";
-    case Code::kStrictRecordingFailed:
-      return "strict_recording_failed";
     case Code::kStrictCaptureFailed:
       return "strict_capture_failed";
     case Code::kInvalidConfiguration:
@@ -131,8 +125,6 @@ Disposition DispositionOf(Code code) {
     case Code::kJoinRefused:
     case Code::kServerUnreachable:
       return Disposition::kSession;
-    case Code::kRecordingWriteFailed:
-    case Code::kRecordingFlushFailed:
     case Code::kMetricsEndpointFailed:
     case Code::kCaptureWriteFailed:
     case Code::kCaptureFlushFailed:
@@ -147,7 +139,6 @@ Disposition DispositionOf(Code code) {
     case Code::kWorkerCreationFailed:
     case Code::kWorkerFailed:
     case Code::kInvariantViolated:
-    case Code::kStrictRecordingFailed:
     case Code::kStrictCaptureFailed:
       return Disposition::kRuntime;
     case Code::kInvalidConfiguration:

@@ -90,7 +90,7 @@ std::size_t Occurrences(std::string_view text, std::string_view needle) {
 
 TEST(ServerApplicationTest, AConfigFileThatCannotBeReadIsAConfigurationFailure) {
   const auto config = ReadServerConfig(CommandLine{
-      .config_file = "no/such/augustad.yaml", .message = {}, .action = CommandLineAction::kRun, .options = {}});
+      .config_file = "no/such/augustad.yaml", .message = {}, .options = {}, .action = CommandLineAction::kRun});
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, Code::kInvalidConfiguration);
@@ -152,6 +152,34 @@ TEST(ServerApplicationTest, AWorkerFailureReachesTheOutcomeWithItsTypedCause) {
   EXPECT_EQ(outcome->code, Code::kWorkerFailed);
   EXPECT_FALSE(ContextOf(*outcome, "thread").empty());
   EXPECT_EQ(outcome->detail, "injected");
+}
+
+// With replay.captures set, augustad runs a replay server (ADR-0051) on the
+// same pack, threads and supervisor as a live one.
+// Requirements: US-21
+TEST(ServerApplicationTest, AReplayServerRunsOnThePackUntilItsFirstCause) {
+  Faults faults;
+  faults.Arm(Site::kWorkerExecution, "injected");
+  ServerConfig config = ExampleConfig();
+  config.replay_captures = std::filesystem::temp_directory_path();
+
+  const Outcome outcome = Served(config, faults);
+
+  ASSERT_TRUE(outcome.has_value());
+  EXPECT_EQ(outcome->code, Code::kWorkerFailed);
+  EXPECT_EQ(outcome->detail, "injected");
+}
+
+TEST(ServerApplicationTest, AReplayServerWhoseCapturesAreNoDirectoryIsAClassifiedConstructionFailure) {
+  Faults faults;
+  ServerConfig config = ExampleConfig();
+  config.replay_captures = kPacks / "no-such-captures";
+
+  const Outcome outcome = Served(config, faults);
+
+  ASSERT_TRUE(outcome.has_value());
+  EXPECT_EQ(outcome->code, Code::kDependencyInitFailed);
+  EXPECT_EQ(ContextOf(*outcome, "phase"), "construct");
 }
 
 TEST(ServerApplicationTest, AWorkerThatCannotStartReachesTheOutcomeWithItsTypedCause) {

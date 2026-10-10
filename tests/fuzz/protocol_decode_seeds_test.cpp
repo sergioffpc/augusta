@@ -41,8 +41,14 @@ using augusta::protocol::MatchPlayerWire;
 using augusta::protocol::MatchStartWire;
 using augusta::protocol::MessageWire;
 using augusta::protocol::ParametersWire;
+using augusta::protocol::PlayerViewWire;
 using augusta::protocol::ReadyWire;
 using augusta::protocol::ReenactRequestWire;
+using augusta::protocol::ReplayListingWire;
+using augusta::protocol::ReplayListRequestWire;
+using augusta::protocol::ReplayListWire;
+using augusta::protocol::ReplayRequestWire;
+using augusta::protocol::ReplayViewWire;
 using augusta::protocol::RosterEntryWire;
 using augusta::protocol::SequencedCommandWire;
 using augusta::protocol::SessionIdWire;
@@ -133,6 +139,23 @@ std::vector<Seed> Seeds() {
                             .yaw = 1.5F,
                             .pitch = -0.25F,
                             .part = BodyPartWire::kTorso}},
+      {.name = "replay_list_request", .message = ReplayListRequestWire{}},
+      {.name = "replay_list",
+       .message = ReplayListWire{.replays = {ReplayListingWire{.started_unix_ms = 1'791'000'000'123,
+                                                               .characters = {"soldier", "sniper"},
+                                                               .name = "20261009T120000123Z-0001.capture",
+                                                               .ticks = 7200,
+                                                               .tick_rate_hz = 60}}}},
+      {.name = "replay_request",
+       .message =
+           ReplayRequestWire{
+               .engine_version = "0.1.0", .client_pack = {}, .capture = "20261009T120000123Z-0001.capture"}},
+      {.name = "replay_view",
+       .message = ReplayViewWire{.tick = 1200,
+                                 .players = {PlayerViewWire{.pitch = -0.25F,
+                                                            .entity = static_cast<EntityIdWire>(1),
+                                                            .flags = PlayerViewWire::kAds},
+                                             PlayerViewWire{.pitch = 0.5F, .entity = static_cast<EntityIdWire>(2)}}}},
       {.name = "reenact_request",
        .message = ReenactRequestWire{.engine_version = "0.1.0",
                                      .client_pack = {},

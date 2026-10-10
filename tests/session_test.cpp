@@ -62,7 +62,6 @@
 #include "misbehaviour.h"
 #include "parameters_loader.h"
 #include "policy_loader.h"
-#include "recording.h"
 #include "wire.h"
 
 // The seam the M3 tickets test through (issue #73): a real server host and a
@@ -147,8 +146,6 @@ HostConfig TestHostConfig(const Parameters& parameters = kTestParameters, std::u
       .tick_rate_hz = tick_rate_hz,
       .parameters = parameters,
       .listen = Endpoint{.address = kLoopbackAnyPort},
-      .recording = {},
-      .recording_mode = {},
       .server_pack = {},
       .capture_directory = {},
       .capture_mode = {},
@@ -1850,95 +1847,6 @@ TEST_F(MatchCycleTest, AMatchWhoseLastPlayerLeavesEndsOnItsOwnAndTheLobbyTakesPl
       << augusta::harness::DescribeJoinRefusal(next.GetRefusal().value_or(JoinRefusal::kVersionMismatch));
 }
 
-// A host on the floor that records every tick it runs (ADR-0048), for a match
-// of two.
-class RecordingHostTest : public LoopbackMatch {
- protected:
-  static std::vector<Vec3> SpawnPoints() { return {Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F)}; }
-
-  static HostSetup FloorSetup() { return OnTheFloor(SpawnPoints(), WithPlayerCount(2)); }
-
-  // Unique to this process: ctest may run the tests of this suite side by side.
-  static const std::filesystem::path& RecordingPath() {
-    static const std::filesystem::path path =
-        std::filesystem::temp_directory_path() /
-        ("augusta_session_recording_" + std::to_string(std::random_device{}()) + ".rec");
-    return path;
-  }
-
-  static HostSetup RecordingSetup() {
-    HostSetup setup = FloorSetup();
-    setup.config.recording = RecordingPath();
-    return setup;
-  }
-
-  RecordingHostTest() : LoopbackMatch(RecordingSetup()) {}
-
-  // After every Host of the suite has closed the file.
-  static void TearDownTestSuite() { std::filesystem::remove(RecordingPath()); }
-
-  // The recording once its writer has reached the tick the match ended
-  // before: the Host, which outlives the test, writes it on a thread of its own.
-  static augusta::server::Recording ReadBack() {
-    constexpr auto kPatience = std::chrono::seconds(5);
-    constexpr auto kRetryAfter = std::chrono::milliseconds(10);
-    const auto deadline = std::chrono::steady_clock::now() + kPatience;
-    while (true) {
-      std::ifstream in(RecordingPath(), std::ios::binary);
-      auto recording = augusta::server::ReadRecording(in);
-      const bool written =
-          recording.has_value() && !recording->ticks.empty() && recording->ticks.back().input.match_ended;
-      if (written || std::chrono::steady_clock::now() >= deadline) {
-        EXPECT_TRUE(recording.has_value());
-        return recording.value_or(augusta::server::Recording{});
-      }
-      std::this_thread::sleep_for(kRetryAfter);
-    }
-  }
-
-  // The match the tests record: two clients join, walk forward, fire, and the
-  // host ends the match.
-  void PlayAMatch() {
-    Join();
-    Join();
-    ASSERT_TRUE(StartMatch());
-    Command fire = Forward();
-    fire.fire = true;
-    Run(kSettleTicks, fire);
-    host_.EndMatch();
-    ServerTick();
-  }
-};
-
-// Requirements: US-21
-TEST_F(RecordingHostTest, EveryTickTheHostRanIsRecordedWithTheCommandsItTookIn) {
-  PlayAMatch();
-  const augusta::server::Recording recording = ReadBack();
-
-  ASSERT_FALSE(recording.ticks.empty());
-  EXPECT_EQ(recording.header.tick_rate_hz, kTestTickRate);
-  EXPECT_EQ(recording.header.engine_version, augusta::EngineVersion());
-  const auto started = std::ranges::find_if(
-      recording.ticks, [](const augusta::server::TickRecord& tick) { return !tick.input.match_start.empty(); });
-  ASSERT_NE(started, recording.ticks.end());
-  EXPECT_EQ(started->input.match_start.size(), 2U);
-  const bool walked_forward = std::ranges::any_of(recording.ticks, [](const augusta::server::TickRecord& tick) {
-    return tick.input.commands.size() == 2 && std::ranges::all_of(tick.input.commands, [](const auto& command) {
-             return command.command.movement.direction.x == 1.0F && command.command.fire;
-           });
-  });
-  EXPECT_TRUE(walked_forward);
-  EXPECT_TRUE(recording.ticks.back().input.match_ended);
-}
-
-TEST(RecordingHostConfigTest, AHostRefusesARecordingItCannotWrite) {
-  HostConfig config = TestHostConfig();
-  // A directory, which no file can be opened as.
-  config.recording = std::filesystem::temp_directory_path();
-  EXPECT_THROW(Host(config, Scenario{.collision = {}, .spawn_points = {}, .characters = {}, .client_pack = {}}),
-               std::runtime_error);
-}
-
 // A directory removed only once everything declared after it is gone: as a
 // base ahead of LoopbackMatch it outlives the Host, whose capture file Windows
 // will not delete while it is still open.
@@ -2309,7 +2217,9 @@ TEST_F(ReenactmentHostTest, EveryCapturedPlayerSpawnsWhereTheCaptureHasItAndItsC
           << "left at " << *played.leave << ", reenacted at " << *reenacted.leave;
     }
   }
-  EXPECT_TRUE(ReadPlayer(playtest_, 2).leave.has_value());
+  // The playtest's players are numbered in the order they were admitted, which
+  // the two connecting at once leaves open: whichever it is, one left.
+  EXPECT_NE(ReadPlayer(playtest_, 1).leave.has_value(), ReadPlayer(playtest_, 2).leave.has_value());
 }
 
 // Requirements: US-21
@@ -2326,11 +2236,15 @@ TEST_F(ReenactmentHostTest, AServerWithReenactmentsOnStillAdmitsAJoinRequestWher
 
   ASSERT_TRUE(DriveIntoMatch(*host, Pointers(sessions)));
 
+  // Both connect at once, so either may be admitted first: the Match start
+  // lists them in that order, which this does not look at.
   std::vector<Vec3> spawns;
   for (const auto& player : sessions[0]->GetMatchStart().value().players) {
     spawns.push_back(player.spawn);
   }
-  EXPECT_EQ(spawns, (std::vector<Vec3>{Vec3(7, kFloorY, 7), Vec3(-30, kFloorY, 0)}));
+  ASSERT_EQ(spawns.size(), 2U);
+  EXPECT_EQ(std::ranges::count(spawns, Vec3(7, kFloorY, 7)), 1);
+  EXPECT_EQ(std::ranges::count(spawns, Vec3(-30, kFloorY, 0)), 1);
 }
 
 // One client on a floor, on the server's stamina rules: a bar that empties in

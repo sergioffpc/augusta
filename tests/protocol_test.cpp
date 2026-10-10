@@ -58,8 +58,14 @@ using augusta::protocol::MessageTypeWire;
 using augusta::protocol::MessageWire;
 using augusta::protocol::PackHashWire;
 using augusta::protocol::ParametersWire;
+using augusta::protocol::PlayerViewWire;
 using augusta::protocol::ReadyWire;
 using augusta::protocol::ReenactRequestWire;
+using augusta::protocol::ReplayListingWire;
+using augusta::protocol::ReplayListRequestWire;
+using augusta::protocol::ReplayListWire;
+using augusta::protocol::ReplayRequestWire;
+using augusta::protocol::ReplayViewWire;
 using augusta::protocol::RifleWire;
 using augusta::protocol::RosterEntryWire;
 using augusta::protocol::SequencedCommandWire;
@@ -88,15 +94,17 @@ constexpr auto kMatchEndType = static_cast<std::uint8_t>(MessageTypeWire::kMatch
 constexpr auto kShotType = static_cast<std::uint8_t>(MessageTypeWire::kShot);
 constexpr auto kHitConfirmationType = static_cast<std::uint8_t>(MessageTypeWire::kHitConfirmation);
 constexpr auto kDeathType = static_cast<std::uint8_t>(MessageTypeWire::kDeath);
+constexpr auto kReplayListRequestType = static_cast<std::uint8_t>(MessageTypeWire::kReplayListRequest);
 constexpr auto kReenactRequestType = static_cast<std::uint8_t>(MessageTypeWire::kReenactRequest);
 // How many bytes a tick takes on the wire: as many as primitives::Tick has.
 constexpr int kTickBytes = static_cast<int>(sizeof(augusta::primitives::Tick));
 constexpr int kSequenceBytes = static_cast<int>(sizeof(augusta::primitives::Sequence));
 
 // Every refusal the protocol has.
-constexpr std::array<JoinRefusalWire, 6> kEveryRefusal = {
-    JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kLobbyFull,    JoinRefusalWire::kUnknownCharacter,
-    JoinRefusalWire::kMatchInProgress, JoinRefusalWire::kPackMismatch, JoinRefusalWire::kReenactmentsNotAccepted};
+constexpr std::array<JoinRefusalWire, 9> kEveryRefusal = {
+    JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kLobbyFull,        JoinRefusalWire::kUnknownCharacter,
+    JoinRefusalWire::kMatchInProgress, JoinRefusalWire::kPackMismatch,     JoinRefusalWire::kReplayServer,
+    JoinRefusalWire::kUnknownCapture,  JoinRefusalWire::kNotAReplayServer, JoinRefusalWire::kReenactmentsNotAccepted};
 
 // A client pack hash of 1, 2, 3 ... 32, so its bytes are told apart on the wire.
 PackHashWire CountingPackHash() {
@@ -215,7 +223,7 @@ TEST(ProtocolTest, AReenactRequestIsAJoinRequestsFieldsUnderItsOwnTypeThenTheSpa
   const BytesWire reenact_bytes = Encode(reenact).value();
 
   ASSERT_GT(reenact_bytes.size(), join_bytes.size());
-  EXPECT_EQ(kReenactRequestType, 13);
+  EXPECT_EQ(kReenactRequestType, 17);
   EXPECT_EQ(reenact_bytes.front(), static_cast<std::byte>(kReenactRequestType));
   EXPECT_TRUE(std::equal(join_bytes.begin() + 1, join_bytes.end(), reenact_bytes.begin() + 1));
 }
@@ -568,13 +576,13 @@ TEST(ProtocolTest, AnEmptyPayloadIsEmpty) { EXPECT_EQ(Decode(BytesWire{}).error(
 // Requirements: NFR-12
 TEST(ProtocolTest, AnUnknownTypeIsRejected) {
   EXPECT_EQ(Decode(BytesOf({0})).error(), DecodeError::kUnknownType);
-  EXPECT_EQ(Decode(BytesOf({14, 0, 0, 0, 0})).error(), DecodeError::kUnknownType);
+  EXPECT_EQ(Decode(BytesOf({18, 0, 0, 0, 0})).error(), DecodeError::kUnknownType);
   EXPECT_EQ(Decode(BytesOf({0xFF})).error(), DecodeError::kUnknownType);
 }
 
 // Requirements: NFR-12
 TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
-  const std::array<MessageWire, 13> messages = {
+  const std::array<MessageWire, 16> messages = {
       JoinRequestWire{.engine_version = "0.1.0", .character = "soldier"},
       ReenactRequestWire{.engine_version = "0.1.0", .character = "soldier", .spawn = Vec3(1.0F, 2.0F, 3.0F)},
       JoinAcceptedWire{.session = static_cast<SessionIdWire>(7), .character = "soldier"},
@@ -587,7 +595,10 @@ TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
       ShotWire{.tick = 9, .origin = Vec3(1.0F, 2.0F, 3.0F), .shooter = static_cast<EntityIdWire>(7)},
       HitConfirmationWire{.target = static_cast<EntityIdWire>(7), .damage = 20.0F, .part = BodyPartWire::kHead},
       DeathWire{.victim = static_cast<EntityIdWire>(7), .killer = static_cast<EntityIdWire>(8)},
-      MatchEndWire{.winner = static_cast<SessionIdWire>(3)}};
+      MatchEndWire{.winner = static_cast<SessionIdWire>(3)},
+      ReplayListWire{.replays = {ReplayListingWire{.characters = {"soldier"}, .name = "a.capture", .ticks = 9}}},
+      ReplayRequestWire{.engine_version = "0.1.0", .capture = "a.capture"},
+      ReplayViewWire{.tick = 4, .players = {PlayerViewWire{.pitch = 0.5F, .entity = static_cast<EntityIdWire>(1)}}}};
   for (const MessageWire& message : messages) {
     const BytesWire whole = Encode(message).value();
     for (std::size_t length = 1; length < whole.size(); ++length) {
@@ -620,7 +631,7 @@ TEST(ProtocolTest, ALengthOf255IsRejectedBeforeAnythingIsAllocatedForIt) {
 // Requirements: NFR-12
 TEST(ProtocolTest, ARefusalReasonOutsideTheEnumerationIsInvalid) {
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 0})).error(), DecodeError::kInvalidEnum);
-  EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 7})).error(), DecodeError::kInvalidEnum);
+  EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 10})).error(), DecodeError::kInvalidEnum);
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 0xFF})).error(), DecodeError::kInvalidEnum);
 }
 
@@ -642,6 +653,108 @@ TEST(ProtocolTest, BytesAfterAMessageAreTrailing) {
   EXPECT_EQ(Decode(BytesOf({kReadyType, 1, 0, 0, 0, 0})).error(), DecodeError::kTrailingBytes);
   EXPECT_EQ(Decode(BytesOf({kMatchEndType, 1, 0, 0, 0, 0})).error(), DecodeError::kTrailingBytes);
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 1, 1})).error(), DecodeError::kTrailingBytes);
+  EXPECT_EQ(Decode(BytesOf({kReplayListRequestType, 0})).error(), DecodeError::kTrailingBytes);
+}
+
+// The two refusals a replay server gives are appended after every older one,
+// which keep their wire values (ADR-0051).
+TEST(ProtocolTest, AReplayServersRefusalsFollowEveryOlderOne) {
+  EXPECT_EQ(Encode(JoinRefusedWire{.reason = JoinRefusalWire::kReplayServer}).value(), BytesOf({kJoinRefusedType, 6}));
+  EXPECT_EQ(Encode(JoinRefusedWire{.reason = JoinRefusalWire::kUnknownCapture}).value(),
+            BytesOf({kJoinRefusedType, 7}));
+  EXPECT_EQ(Encode(JoinRefusedWire{.reason = JoinRefusalWire::kNotAReplayServer}).value(),
+            BytesOf({kJoinRefusedType, 8}));
+}
+
+TEST(ProtocolTest, AReplayListRequestIsItsTypeAlone) {
+  EXPECT_EQ(Encode(ReplayListRequestWire{}).value(), BytesOf({kReplayListRequestType}));
+  EXPECT_TRUE(std::holds_alternative<ReplayListRequestWire>(RoundTrip(ReplayListRequestWire{})));
+}
+
+// Requirements: US-21
+TEST(ProtocolTest, AReplayListRoundTripsEachCapturesNameStartLengthAndCharacters) {
+  const ReplayListWire list{
+      .replays = {ReplayListingWire{.started_unix_ms = 1'791'000'000'123,
+                                    .characters = {"soldier", "sniper"},
+                                    .name = "20261009T120000123Z-0001.capture",
+                                    .ticks = 7200,
+                                    .tick_rate_hz = 60},
+                  ReplayListingWire{
+                      .started_unix_ms = -5, .characters = {}, .name = "b.capture", .ticks = 0, .tick_rate_hz = 30}}};
+
+  EXPECT_EQ(RoundTrip(list), MessageWire{list});
+}
+
+TEST(ProtocolTest, AnEmptyReplayListRoundTrips) {
+  EXPECT_EQ(RoundTrip(ReplayListWire{}), MessageWire{ReplayListWire{}});
+}
+
+// Requirements: NFR-12
+TEST(ProtocolTest, AReplayListsLongNamesAndListsAreTooLong) {
+  const std::string longest(augusta::protocol::kMaxCaptureNameLength, 'n');
+  EXPECT_TRUE(Encode(ReplayListWire{.replays = {ReplayListingWire{.characters = {}, .name = longest}}}).has_value());
+  EXPECT_EQ(Encode(ReplayListWire{.replays = {ReplayListingWire{.characters = {}, .name = longest + "n"}}}).error(),
+            EncodeError::kFieldTooLong);
+  ReplayListingWire crowded;
+  crowded.characters.assign(kMaxPlayers + 1, "soldier");
+  EXPECT_EQ(Encode(ReplayListWire{.replays = {crowded}}).error(), EncodeError::kFieldTooLong);
+  ReplayListWire many;
+  many.replays.resize(augusta::protocol::kMaxReplayListings + 1);
+  EXPECT_EQ(Encode(many).error(), EncodeError::kFieldTooLong);
+}
+
+TEST(ProtocolTest, AReplayRequestRoundTripsItsVersionPackAndCapture) {
+  const ReplayRequestWire request{
+      .engine_version = "0.1.0", .client_pack = CountingPackHash(), .capture = "20261009T120000123Z-0001.capture"};
+
+  EXPECT_EQ(RoundTrip(request), MessageWire{request});
+}
+
+// A capture is named, never pathed: the codec carries any name up to its
+// limit, and the replay server matches it against its listing (ADR-0051).
+// Requirements: NFR-12
+TEST(ProtocolTest, AReplayRequestsCaptureNameLongerThanAllowedIsTooLong) {
+  const std::string longest(augusta::protocol::kMaxCaptureNameLength, 'n');
+  EXPECT_TRUE(Encode(ReplayRequestWire{.engine_version = "", .client_pack = {}, .capture = longest}).has_value());
+  EXPECT_EQ(Encode(ReplayRequestWire{.engine_version = "", .client_pack = {}, .capture = longest + "n"}).error(),
+            EncodeError::kFieldTooLong);
+
+  BytesWire payload = Encode(ReplayRequestWire{}).value();
+  payload.back() = static_cast<std::byte>(augusta::protocol::kMaxCaptureNameLength + 1);
+  payload.resize(payload.size() + augusta::protocol::kMaxCaptureNameLength + 1, static_cast<std::byte>('n'));
+  EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
+}
+
+// Requirements: US-21
+TEST(ProtocolTest, AReplayViewRoundTripsEveryPlayersPitchAndAds) {
+  const ReplayViewWire view{
+      .tick = 0x1'0000'0002ULL,
+      .players = {
+          PlayerViewWire{
+              .pitch = SnapAngle(-0.75F), .entity = static_cast<EntityIdWire>(1), .flags = PlayerViewWire::kAds},
+          PlayerViewWire{.pitch = SnapAngle(1.25F), .entity = static_cast<EntityIdWire>(2), .flags = 0}}};
+
+  EXPECT_EQ(RoundTrip(view), MessageWire{view});
+}
+
+// A pitch on the angle grid as a Command's is, its entity and its ADS in a
+// byte: eight bytes a player.
+TEST(ProtocolTest, AReplayViewTravelsInEightBytesAPlayerAfterItsTick) {
+  const ReplayViewWire view{.tick = 1, .players = {PlayerViewWire{}, PlayerViewWire{}}};
+
+  EXPECT_EQ(Encode(view).value().size(), 1 + kTickBytes + 1 + (2 * 8));
+}
+
+// Requirements: NFR-12
+TEST(ProtocolTest, AReplayViewsUnusedFlagBitsAndExtraPlayersAreRefused) {
+  EXPECT_EQ(Encode(ReplayViewWire{.players = {PlayerViewWire{.flags = 0x02}}}).error(), EncodeError::kReservedBits);
+  ReplayViewWire crowded;
+  crowded.players.resize(kMaxPlayers + 1);
+  EXPECT_EQ(Encode(crowded).error(), EncodeError::kFieldTooLong);
+
+  BytesWire payload = Encode(ReplayViewWire{.players = {PlayerViewWire{}}}).value();
+  payload.back() = std::byte{0x02};
+  EXPECT_EQ(Decode(payload).error(), DecodeError::kInvalidEnum);
 }
 
 // A command with every field set to something other than its default.
@@ -1138,18 +1251,29 @@ TEST(ProtocolEncodeTest, AnEnumeratedValueTheEnumerationLacksIsNotEncoded) {
             EncodeError::kInvalidEnum);
   EXPECT_EQ(RefusalOf(AuthoritativeStateWire{.bodies = {body}}), EncodeError::kInvalidEnum);
   EXPECT_EQ(RefusalOf(JoinRefusedWire{}), EncodeError::kInvalidEnum);
-  EXPECT_EQ(RefusalOf(JoinRefusedWire{.reason = static_cast<JoinRefusalWire>(7)}), EncodeError::kInvalidEnum);
+  EXPECT_EQ(RefusalOf(JoinRefusedWire{.reason = static_cast<JoinRefusalWire>(10)}), EncodeError::kInvalidEnum);
   EXPECT_EQ(RefusalOf(HitConfirmationWire{.part = static_cast<BodyPartWire>(0)}), EncodeError::kInvalidEnum);
   EXPECT_EQ(RefusalOf(HitConfirmationWire{.part = kNoPart}), EncodeError::kInvalidEnum);
   EXPECT_EQ(RefusalOf(DeathWire{.part = kNoPart}), EncodeError::kInvalidEnum);
 }
 
 TEST(ProtocolEncodeTest, EveryMessageNamesItsTypeAsItsFirstByteWould) {
-  const std::vector<MessageWire> every = {
-      JoinRequestWire{}, JoinAcceptedWire{},       JoinRefusedWire{.reason = JoinRefusalWire::kLobbyFull},
-      CommandsWire{},    AuthoritativeStateWire{}, LobbyWire{},
-      ReadyWire{},       MatchStartWire{},         MatchEndWire{},
-      ShotWire{},        HitConfirmationWire{},    DeathWire{}};
+  const std::vector<MessageWire> every = {JoinRequestWire{},
+                                          JoinAcceptedWire{},
+                                          JoinRefusedWire{.reason = JoinRefusalWire::kLobbyFull},
+                                          CommandsWire{},
+                                          AuthoritativeStateWire{},
+                                          LobbyWire{},
+                                          ReadyWire{},
+                                          MatchStartWire{},
+                                          MatchEndWire{},
+                                          ShotWire{},
+                                          HitConfirmationWire{},
+                                          DeathWire{},
+                                          ReplayListRequestWire{},
+                                          ReplayListWire{},
+                                          ReplayRequestWire{},
+                                          ReplayViewWire{}};
   for (const MessageWire& message : every) {
     EXPECT_EQ(static_cast<std::byte>(augusta::protocol::TypeOf(message)), Encode(message).value().front());
   }

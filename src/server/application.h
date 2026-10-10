@@ -32,7 +32,7 @@ namespace augusta::server {
 /// (failure::Code::kTransportInitFailed); construct verifies the pack and loads
 /// its content (kInvalidContent), then constructs the ServerRuntime, whose
 /// exception (a rejected map mesh, a listen address that can't be bound, a
-/// recording that can't be written) the application boundary classifies; run
+/// capture directory that can't be created) the application boundary classifies; run
 /// runs it until Stop() or its first cause. faults, for tests only, is asked
 /// at the transport's initialization and by the runtime's supervisor, and
 /// must outlive the Lifecycle's run.

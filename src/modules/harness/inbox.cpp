@@ -79,6 +79,8 @@ bool Inbox::TakeIn(const protocol::MessageWire& message) {
     OnMatchStart(FromWire(*start));
   } else if (const auto* end = std::get_if<protocol::MatchEndWire>(&message)) {
     OnMatchEnd(FromWire(*end));
+  } else if (const auto* view = std::get_if<protocol::ReplayViewWire>(&message)) {
+    OnReplayView(FromWire(*view));
   } else {
     return false;
   }
@@ -115,10 +117,10 @@ void Inbox::OnLobby(Lobby lobby) {
 }
 
 // A Match start that leaves this client out is not one it can play: dropped,
-// as a malformed message is.
+// as a malformed message is. A Replay viewer's leaves it out: it plays no one.
 void Inbox::OnMatchStart(MatchStart start) {
   const std::shared_ptr<const ServerView> current = view_.load();
-  if (!current->accepted.has_value() || !IsInMatch(start, current->accepted->session)) {
+  if (!current->accepted.has_value() || (!viewer_ && !IsInMatch(start, current->accepted->session))) {
     LW_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"match start without this client\"");
     return;
   }
@@ -130,6 +132,7 @@ void Inbox::OnMatchStart(MatchStart start) {
     next.match_end.reset();
     next.authoritative.reset();
     next.dead.clear();
+    next.replay_view.reset();
   });
   LI("subsystem=harness event=match_started players={}", players);
 }
@@ -138,6 +141,7 @@ void Inbox::OnMatchEnd(const MatchEnd& end) {
   Publish([&](ServerView& next) {
     next.in_match = false;
     next.authoritative.reset();
+    next.replay_view.reset();
     next.match_end = end;
   });
   // The fight's last events, the Deaths that ended the match among them, are
@@ -221,6 +225,28 @@ void Inbox::OnAuthoritativeState(AuthoritativeState state) {
     return;
   }
   Publish([&](ServerView& next) { next.authoritative = std::move(state); });
+}
+
+// Keeps view if it is newer than the one held and of the Replay in progress,
+// as OnAuthoritativeState keeps a state: it travels as unreliably. A player's
+// client is sent none.
+void Inbox::OnReplayView(ReplayView view) {
+  const std::shared_ptr<const ServerView> current = view_.load();
+  if (!viewer_ || !current->in_match) {
+    LT("subsystem=harness event=dropped tick={} reason=\"replay view outside a replay\"", view.tick);
+    return;
+  }
+  const auto in_match = [&](const PlayerView& player) { return IsInMatch(*current->match_start, player.entity); };
+  if (!std::ranges::all_of(view.players, in_match)) {
+    LW_LIMITED(drop_warnings_,
+               "subsystem=harness event=dropped tick={} reason=\"replay view names a body not in the match\"",
+               view.tick);
+    return;
+  }
+  if (current->replay_view.has_value() && view.tick <= current->replay_view->tick) {
+    return;
+  }
+  Publish([&](ServerView& next) { next.replay_view = std::move(view); });
 }
 
 }  // namespace augusta::harness

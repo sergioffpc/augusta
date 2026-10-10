@@ -58,7 +58,7 @@ std::string ContextOf(const Failure& failure, std::string_view key) {
 
 TEST(ClientApplicationTest, AConfigFileThatCannotBeReadIsAConfigurationFailure) {
   const auto config = ReadClientConfig(CommandLine{
-      .config_file = "no/such/augustac.yaml", .message = {}, .action = CommandLineAction::kRun, .options = {}});
+      .config_file = "no/such/augustac.yaml", .message = {}, .options = {}, .action = CommandLineAction::kRun});
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, Code::kInvalidConfiguration);

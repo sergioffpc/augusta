@@ -57,16 +57,16 @@ decisions already made in ARCHITECTURE.md:
 - **Trigger:** `push` to `main`/`develop`, and `pull_request` targeting either;
   a separate nightly workflow runs on `develop` (ADR-0013). A `changes` job
   diffs against the base commit first and skips build/test/lint entirely when
-  nothing under `src/`, `tests/`, `tools/replay/` and `tools/swarm/` (the C++
-  tools, built and tested with the runtime), `tools/composer/examples/` (the
-  example scenario a test loads), `tools/pack/cpp/` (formatted by the `format`
-  job, though CI doesn't build it), `cmake/`, `config/` (the example configs a
-  test loads), `CMakeLists.txt`, `CMakePresets.json`, `vcpkg.json`, the
-  `third_party` submodule pointer, `.clang-format`/`.clang-tidy`, or the
-  workflow file itself or the composite actions it shares (`.github/actions/`)
-  changed (a docs-only PR shouldn't pay for a full build). `concurrency` cancels
-  a still-running run for the same branch/PR when a new push arrives, so
-  superseded runs don't keep burning minutes.
+  nothing under `src/`, `tests/`, `tools/swarm/` (the C++ tools, built and
+  tested with the runtime), `tools/composer/examples/` (the example scenario a
+  test loads), `tools/pack/cpp/` (formatted by the `format` job, though CI
+  doesn't build it), `cmake/`, `config/` (the example configs a test loads),
+  `CMakeLists.txt`, `CMakePresets.json`, `vcpkg.json`, the `third_party`
+  submodule pointer, `.clang-format`/`.clang-tidy`, or the workflow file itself
+  or the composite actions it shares (`.github/actions/`) changed (a docs-only
+  PR shouldn't pay for a full build). `concurrency` cancels a still-running run
+  for the same branch/PR when a new push arrives, so superseded runs don't keep
+  burning minutes.
 - **Pipeline stages:**
     1. `clang-format` check, alone in its own fast job — gates everything below
        (`needs:`), so a formatting slip fails in seconds instead of after a full
@@ -235,6 +235,11 @@ no self-hosted GitHub Actions runner in this pipeline).
   publishes beside each image as its `sha-<12>-debuginfo` tag; a release's
   `augustad-linux-x64.debug` reads only that release binary, which no image runs
   (ADR-0047).
+- **Client symbols:** each release attaches `augustac-windows-x64.pdb`, the PDB
+  of the `augustac-windows-x64.exe` beside it, which reads a crash of that
+  client or its Aftermath `.nv-gpudmp`. Rename it `augustac.pdb`, the name the
+  `.exe`'s debug directory gives it; the two match by GUID and age
+  (`dumpbin /headers`, ADR-0055).
 - **Server pod:** runs as UID/GID 65532 with no privilege escalation, every
   capability dropped, the `RuntimeDefault` seccomp profile and a read-only root
   filesystem; augustad writes only to its capture volume, if any. None of it

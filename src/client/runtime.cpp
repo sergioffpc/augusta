@@ -9,6 +9,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -108,8 +109,12 @@ struct ClientRuntime::Impl {
 
   // Main/Render thread only: the Server view's Authoritative State and Match
   // start as presentation's types, converted when they change and lent to
-  // every render frame in between (NextFrameInput).
+  // every render frame in between (NextFrameInput); a Replay viewer's views
+  // of the newest tick, lent to the frame they are converted for; and the
+  // characters a Replay viewer has loaded.
   ConvertedServerView converted_view;
+  std::vector<presentation::PlayerView> replay_views;
+  std::set<std::string, std::less<>> replay_characters;
 
   // What the last render frame showed the other players at, or nullopt while
   // it showed none: written once per Main/Render frame, read once per
@@ -174,6 +179,7 @@ struct ClientRuntime::Impl {
     session.emplace(harness::SessionConfig{.server = cfg.server,
                                            .client_pack = cfg.client_pack,
                                            .character = cfg.character,
+                                           .replay = cfg.replay,
                                            .spawn = cfg.reenactment.transform(
                                                [](const harness::Script& script) { return script.spawn; })},
                     std::move(world));
@@ -294,6 +300,37 @@ struct ClientRuntime::Impl {
     return std::nullopt;
   }
 
+  // A Replay viewer's characters to draw, once its Match has started: every
+  // player's not loaded yet, uploaded and handed to PresentationWorld as
+  // GetReadyForLobby does a Lobby's. A viewer is sent no Lobby and reports no
+  // Ready (ADR-0051). Main/Render thread only. Returns why a character could
+  // not be loaded, if one could not.
+  std::optional<CharacterError> LoadReplayCharacters() {
+    const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
+    if (!view->match_start.has_value()) {
+      return std::nullopt;
+    }
+    for (const harness::MatchPlayer& player : view->match_start->players) {
+      if (replay_characters.contains(player.character)) {
+        continue;
+      }
+      auto loaded = load_character(player.character);
+      if (!loaded.has_value()) {
+        return loaded.error();
+      }
+      renderer.SetCharacterMesh(player.character, loaded->mesh);
+      presentation.SetCharacterEye(player.character, loaded->eye);
+      LI("subsystem=clientruntime event=character_loaded character={}", player.character);
+      replay_characters.insert(player.character);
+    }
+    return std::nullopt;
+  }
+
+  // What to load before the next frame: a player's Lobby, or a Replay viewer's Match.
+  std::optional<CharacterError> LoadCharacters() {
+    return config.replay.has_value() ? LoadReplayCharacters() : GetReadyForLobby();
+  }
+
   LatestTick GetLatestTick() {
     std::lock_guard<std::mutex> lock(latest_tick_mutex);
     return latest_tick;
@@ -355,6 +392,8 @@ struct ClientRuntime::Impl {
     const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
     converted_view.Update(*view);
     const auto [aim, fire] = CurrentAim();
+    replay_views = ViewsOf(*view);
+    const bool viewer = config.replay.has_value();
     presentation::FrameInput frame{
         .ticks = {.previous = latest.previous,
                   .latest = latest.latest,
@@ -367,8 +406,13 @@ struct ClientRuntime::Impl {
         .shots = {},
         .hit_confirmations = static_cast<std::uint32_t>(session->TakeHitConfirmations(*view).size()),
         .deaths = {},
-        .health = view->authoritative.transform([](const harness::AuthoritativeState& state) { return state.health; }),
+        // A Replay viewer has no health of its own to lose.
+        .health = viewer ? std::optional<float>()
+                         : view->authoritative.transform(
+                               [](const harness::AuthoritativeState& state) { return state.health; }),
         .match_end = MatchEndOf(*view),
+        .replay_viewer = viewer,
+        .views = replay_views,
     };
     frame.local_entity = view->OwnEntity().transform([](harness::EntityId entity) { return ToPresentation(entity); });
     for (const harness::Shot& shot : session->TakeShots(*view)) {
@@ -449,7 +493,12 @@ std::optional<failure::Failure> ClientRuntime::Run() {
     if (failure.has_value()) {
       break;
     }
-    if (const auto load_failure = impl_->GetReadyForLobby(); load_failure.has_value()) {
+    // A Replay viewer's run is over once its Replay is: the server has closed the connection.
+    if (impl_->session->ReplayEnded()) {
+      LI("subsystem=clientruntime event=replay_ended");
+      break;
+    }
+    if (const auto load_failure = impl_->LoadCharacters(); load_failure.has_value()) {
       failure = ClassifyCharacterError(*load_failure);
       break;
     }

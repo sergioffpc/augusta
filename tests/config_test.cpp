@@ -111,6 +111,49 @@ TEST(ParseCommandLineTest, RejectsAnUnknownOptionAndExtraArguments) {
   ASSERT_FALSE(Parse({"--vers"}).has_value());
 }
 
+// The options one executable takes beyond the shared ones: a flag and one
+// with a value, as augustac's --replays and --replay <capture> (ADR-0051).
+constexpr std::array<CommandLineOption, 2> kOptions{{
+    {.name = "listen", .value = {}, .description = "list them and exit"},
+    {.name = "watch", .value = "thing", .description = "watch a thing"},
+}};
+
+std::expected<CommandLine, ConfigError> ParseWithOptions(std::vector<const char*> args) {
+  args.insert(args.begin(), "augustac");
+  return ParseCommandLine(static_cast<int>(args.size()), args.data(), "augustac", "augustac.yaml", "1.2.3", kOptions);
+}
+
+TEST(ParseCommandLineTest, AnOptionTheExecutableTakesIsReadWithItsValue) {
+  const auto watching = ParseWithOptions({"--config", "my.yaml", "--watch", "a.capture"});
+  const auto listing = ParseWithOptions({"--listen"});
+  const auto neither = ParseWithOptions({});
+
+  ASSERT_TRUE(watching.has_value()) << DescribeConfigError(watching.error());
+  EXPECT_EQ(watching->action, CommandLineAction::kRun);
+  EXPECT_EQ(watching->config_file, "my.yaml");
+  EXPECT_EQ(watching->options, (std::map<std::string, std::string, std::less<>>{{"watch", "a.capture"}}));
+  ASSERT_TRUE(listing.has_value());
+  EXPECT_EQ(listing->options, (std::map<std::string, std::string, std::less<>>{{"listen", ""}}));
+  ASSERT_TRUE(neither.has_value());
+  EXPECT_TRUE(neither->options.empty());
+}
+
+TEST(ParseCommandLineTest, AnOptionWithoutItsValueOrOneTheExecutableLacksIsRejected) {
+  EXPECT_FALSE(ParseWithOptions({"--watch"}).has_value());
+  EXPECT_FALSE(ParseWithOptions({"--listen", "extra"}).has_value());
+  EXPECT_FALSE(Parse({"--watch", "a.capture"}).has_value());
+}
+
+TEST(ParseCommandLineTest, UsageNamesEachOptionTheExecutableTakes) {
+  const auto command_line = ParseWithOptions({"--help"});
+
+  ASSERT_TRUE(command_line.has_value());
+  EXPECT_TRUE(Contains(command_line->message, "usage: augustac [--config <file>] [--listen] [--watch <thing>]"))
+      << command_line->message;
+  EXPECT_TRUE(Contains(command_line->message, "--watch <thing>")) << command_line->message;
+  EXPECT_TRUE(Contains(command_line->message, "watch a thing")) << command_line->message;
+}
+
 TEST(ParseCommandLineTest, UsageNamesTheProgramAndTheDefaultFile) {
   const char* const args[] = {"augustad", "nope"};
   const auto command_line = ParseCommandLine(2, args, "augustad", "augustad.yaml", "1.2.3");
@@ -125,8 +168,8 @@ TEST(ParseCommandLineTest, UsageNamesTheProgramAndTheDefaultFile) {
 // An executable's own options beyond the shared ones, as augustac's --reenact
 // and --player (ADR-0050).
 constexpr std::array<CommandLineOption, 2> kOwnOptions{{
-    {.name = "reenact", .value = "<capture>", .description = "the capture to reenact"},
-    {.name = "player", .value = "<n>", .description = "the player of it to be"},
+    {.name = "reenact", .value = "capture", .description = "the capture to reenact"},
+    {.name = "player", .value = "n", .description = "the player of it to be"},
 }};
 
 std::expected<CommandLine, ConfigError> ParseWithOwnOptions(std::vector<const char*> args) {
