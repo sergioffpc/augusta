@@ -8,8 +8,8 @@ add_library(augusta_agent_core STATIC agent.cpp)
 target_include_directories(augusta_agent_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augusta_agent_core
-  PUBLIC augusta_assets augusta_command augusta_harness augusta_physics
-  PRIVATE augusta_failure augusta_map augusta_prediction
+  PUBLIC augusta_assets augusta_command augusta_harness augusta_map augusta_physics
+  PRIVATE augusta_failure augusta_prediction
 )
 augusta_set_module_scope(augusta_agent_core CLIENT_ONLY)
 

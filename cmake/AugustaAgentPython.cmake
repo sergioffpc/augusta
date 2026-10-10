@@ -11,12 +11,19 @@
 include_guard(GLOBAL)
 
 function(augusta_find_agent_python out)
-  if(PYTHON_EXECUTABLE)
-    set(python "${PYTHON_EXECUTABLE}")
-  elseif(CMAKE_HOST_WIN32)
-    set(python "${CMAKE_CURRENT_SOURCE_DIR}/tools/.venv/Scripts/python.exe")
+  if(CMAKE_HOST_WIN32)
+    set(default "${CMAKE_CURRENT_SOURCE_DIR}/tools/.venv/Scripts/python.exe")
   else()
-    set(python "${CMAKE_CURRENT_SOURCE_DIR}/tools/.venv/bin/python")
+    set(default "${CMAKE_CURRENT_SOURCE_DIR}/tools/.venv/bin/python")
+  endif()
+  # Named by the caller, unless it is the default this function chose last
+  # time: pybind11 caches the interpreter it was given, which a later
+  # configure must not take for the caller's choice.
+  set(named FALSE)
+  set(python "${default}")
+  if(PYTHON_EXECUTABLE AND NOT PYTHON_EXECUTABLE STREQUAL "${AUGUSTA_AGENT_PYTHON_DEFAULTED}")
+    set(named TRUE)
+    set(python "${PYTHON_EXECUTABLE}")
   endif()
 
   execute_process(
@@ -28,12 +35,20 @@ function(augusta_find_agent_python out)
   )
   if(result EQUAL 0 AND version STREQUAL "3.12")
     message(STATUS "Agents' Python module: built against ${python}")
+    if(NOT named)
+      set(
+        AUGUSTA_AGENT_PYTHON_DEFAULTED
+        "${python}"
+        CACHE INTERNAL
+        "The tools environment's interpreter, found by default"
+      )
+    endif()
     set(${out} "${python}" PARENT_SCOPE)
     return()
   endif()
 
   set(reason "${python} is not a Python 3.12 that runs here")
-  if(PYTHON_EXECUTABLE)
+  if(named)
     message(FATAL_ERROR "PYTHON_EXECUTABLE: ${reason}.")
   endif()
   message(

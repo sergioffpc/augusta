@@ -8,12 +8,14 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "augusta/assets.h"
 #include "augusta/command.h"
 #include "augusta/harness.h"
 #include "augusta/intent.h"
+#include "augusta/map.h"
 #include "augusta/physics.h"
 #include "augusta/runner.h"
 
@@ -32,15 +34,22 @@ struct LoadedPack {
   std::vector<physics::CollisionMesh> map;
 };
 
+/// Why LoadPack failed: the pack or its key did not verify, or its Map did not load.
+using LoadPackError = std::variant<assets::VerifiedPackError, map::MapError>;
+
 /// Verifies the client pack at pack_path with the key at public_key_path and
-/// loads its Map's collision, as augustac does before it connects; on failure,
-/// a sentence saying why.
-[[nodiscard]] std::expected<LoadedPack, std::string> LoadPack(const std::filesystem::path& pack_path,
-                                                              const std::filesystem::path& public_key_path);
+/// loads its Map's collision, as augustac does before it connects.
+[[nodiscard]] std::expected<LoadedPack, LoadPackError> LoadPack(const std::filesystem::path& pack_path,
+                                                                const std::filesystem::path& public_key_path);
+
+/// What to tell the script about why LoadPack failed, for the same paths.
+[[nodiscard]] std::string DescribeLoadPackError(const LoadPackError& error, const std::filesystem::path& pack_path,
+                                                const std::filesystem::path& public_key_path);
 
 /// What an Agent has been told as of one moment, and its own body as its
 /// prediction last left it.
 struct AgentView {
+  /// Never null.
   std::shared_ptr<const harness::ServerView> server;
   physics::BodyState own{};
 };
@@ -64,6 +73,8 @@ class Agent {
   /// Holds command on every channel (IntentExecutor::SetRaw).
   void SetRaw(const command::Command& command);
 
+  /// What it has been told so far, and its body as of its last Tick: a copy,
+  /// which nothing changes once taken.
   [[nodiscard]] AgentView View() const;
 
   /// Why the Agent stopped playing, as the sentence augustac would show, or
@@ -71,9 +82,10 @@ class Agent {
   [[nodiscard]] std::optional<std::string> Failure() const;
 
  private:
-  [[nodiscard]] physics::BodyState Own() const;
-  // The Runner's Network I/O thread, each round.
-  void GetReady();
+  [[nodiscard]] physics::BodyState OwnBody() const;
+  // Reports Ready for a Roster it has not yet. The Runner's Network I/O
+  // thread, each round.
+  void ReportReadyForNewRoster();
 
   harness::Session session_;
   harness::IntentExecutor intents_;

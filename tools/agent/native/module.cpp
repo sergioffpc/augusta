@@ -58,6 +58,12 @@ Vec3Tuple ToTuple(const Vec3& vector) { return {vector.x, vector.y, vector.z}; }
 
 Vec3 ToVec3(const Vec3Tuple& tuple) { return {std::get<0>(tuple), std::get<1>(tuple), std::get<2>(tuple)}; }
 
+// A Session or Entity ID as the number the script sees.
+template <typename Id>
+std::uint32_t Number(Id id) {
+  return static_cast<std::uint32_t>(id);
+}
+
 template <typename T>
 py::tuple ToPyTuple(const std::vector<T>& items) {
   return py::tuple(py::cast(items));
@@ -100,8 +106,7 @@ void DefContextManager(Class& bound) {
 // Who is in the Lobby.
 void BindLobby(py::module_& module) {
   py::class_<RosterEntry>(module, "RosterEntry")
-      .def_property_readonly("session",
-                             [](const RosterEntry& entry) { return static_cast<std::uint32_t>(entry.session); })
+      .def_property_readonly("session", [](const RosterEntry& entry) { return Number(entry.session); })
       .def_readonly("character", &RosterEntry::character);
 
   py::class_<Lobby>(module, "Lobby")
@@ -112,10 +117,8 @@ void BindLobby(py::module_& module) {
 // A Match's players and bodies, and an Agent's own.
 void BindMatch(py::module_& module) {
   py::class_<MatchPlayer>(module, "MatchPlayer")
-      .def_property_readonly("session",
-                             [](const MatchPlayer& player) { return static_cast<std::uint32_t>(player.session); })
-      .def_property_readonly("entity",
-                             [](const MatchPlayer& player) { return static_cast<std::uint32_t>(player.entity); })
+      .def_property_readonly("session", [](const MatchPlayer& player) { return Number(player.session); })
+      .def_property_readonly("entity", [](const MatchPlayer& player) { return Number(player.entity); })
       .def_readonly("character", &MatchPlayer::character)
       .def_property_readonly("spawn", [](const MatchPlayer& player) { return ToTuple(player.spawn); });
 
@@ -125,7 +128,7 @@ void BindMatch(py::module_& module) {
       .def_readonly("stance", &BodyState::stance);
 
   py::class_<EntityBody>(module, "EntityBody")
-      .def_property_readonly("entity", [](const EntityBody& body) { return static_cast<std::uint32_t>(body.entity); })
+      .def_property_readonly("entity", [](const EntityBody& body) { return Number(body.entity); })
       .def_readonly("body", &EntityBody::body)
       .def_readonly("yaw", &EntityBody::yaw);
 
@@ -152,7 +155,7 @@ void BindView(py::module_& module) {
                                if (!view.server->accepted.has_value()) {
                                  return std::nullopt;
                                }
-                               return static_cast<std::uint32_t>(view.server->accepted->session);
+                               return Number(view.server->accepted->session);
                              })
       .def_property_readonly("lobby", [](const AgentView& view) { return view.server->lobby; })
       .def_property_readonly("matches_started", [](const AgentView& view) { return view.server->matches_started; })
@@ -168,7 +171,7 @@ void BindView(py::module_& module) {
                                if (!entity.has_value()) {
                                  return std::nullopt;
                                }
-                               return static_cast<std::uint32_t>(*entity);
+                               return Number(*entity);
                              })
       .def_property_readonly("authoritative", [](const AgentView& view) { return view.server->authoritative; })
       .def_readonly("own", &AgentView::own);
@@ -217,7 +220,7 @@ void BindAgent(py::module_& module) {
       [](const std::filesystem::path& path, const std::filesystem::path& public_key) {
         auto pack = augusta::agent::LoadPack(path, public_key);
         if (!pack) {
-          throw PackError(pack.error());
+          throw PackError(augusta::agent::DescribeLoadPackError(pack.error(), path, public_key));
         }
         return *std::move(pack);
       },
