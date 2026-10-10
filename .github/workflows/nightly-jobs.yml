@@ -284,10 +284,13 @@ jobs:
       - name: Find the runner's CPU
         # GitHub-hosted runners of one label come on several CPU models, the
         # fastest about twice as quick as the slowest at these benchmarks: a
-        # night is only compared with the nights before on the same model.
+        # night is only compared with the nights before on the same model. No
+        # model name fails the step, not lumps every such night together.
         id: cpu
         run: |
-          echo "model=$(sed -n 's/^model name[[:space:]]*: *//p' /proc/cpuinfo | head -n 1)" >> "$GITHUB_OUTPUT"
+          model="$(sed -n 's/^model name[[:space:]]*: *//p' /proc/cpuinfo | head -n 1)"
+          test -n "$model"
+          echo "model=$model" >> "$GITHUB_OUTPUT"
       - name: Start the history
         # The first night on develop starts the benchmarks branch, with one
         # empty commit, for the step below to record on. A manual run on
