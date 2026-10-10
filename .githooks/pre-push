@@ -89,6 +89,13 @@ main() {
     MINGW* | MSYS* | CYGWIN*) windows=1 build_dir=build/x64-windows-debug ;;
     *) windows=0 build_dir=build/x64-linux-debug ;;
   esac
+  # A checkout that only ran `make test` has the release build alone: its
+  # compile commands serve clang-tidy as well, so the push needs no second
+  # build.
+  if [[ ! -f "${build_dir}/compile_commands.json" &&
+    -f "${build_dir%-debug}/compile_commands.json" ]]; then
+    build_dir=${build_dir%-debug}
+  fi
 
   # The files touched by the pushed commits the remote does not have yet: for
   # a new branch, its commits off develop/main; for an existing one, the new
@@ -201,7 +208,7 @@ EOF
       local preset
       preset=$(basename "${build_dir}" | sed 's/^x64-//')
       echo "pre-push: ${build_dir}/compile_commands.json not found -" \
-        "configure the debug build first (make configure PRESET=${preset};" \
+        "configure a build first (make configure PRESET=${preset};" \
         "on macOS, through scripts/dev-container.sh)," \
         "or push with --no-verify to skip clang-tidy." >&2
       exit 1
