@@ -15,9 +15,7 @@
 /// YAML file (ADR-0034) instead of a list of command-line arguments. By default
 /// each executable reads one fixed-name file from its own directory;
 /// `--config <file>` points it at another, and `--help` and `--version` are the
-/// only other arguments but for an executable's own few, which choose what one
-/// run does rather than keep a setting (augustac's `--reenact`, ADR-0050).
-/// Shared by both (ADR-0006).
+/// only other arguments. Shared by both (ADR-0006).
 ///
 /// The file groups its keys into sections (`content`, `network`, `logging`,
 /// ...), each a mapping; a key is named by its dotted path

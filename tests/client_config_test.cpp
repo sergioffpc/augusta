@@ -79,16 +79,6 @@ TEST(ReadClientRunTest, ListingAndWatchingAtOnceOrWatchingNothingIsRejected) {
   EXPECT_EQ(nothing.error().code, ConfigErrorCode::kInvalidArguments);
 }
 
-// A Replay is watched, a Reenactment played: one run is one or the other.
-TEST(ReadClientRunTest, AReplayAndAReenactmentAtOnceAreRejected) {
-  for (const char* const replay : {"replays", "replay"}) {
-    const auto run = ReadClientRun(WithOptions({{replay, "a.capture"}, {"reenact", "a.capture"}, {"player", "1"}}));
-
-    ASSERT_FALSE(run.has_value()) << replay;
-    EXPECT_EQ(run.error().code, ConfigErrorCode::kInvalidArguments) << replay;
-  }
-}
-
 TEST(ReadClientRunTest, AReenactmentAloneIsPlayed) {
   const auto run = ReadClientRun(WithOptions({{"reenact", "a.capture"}, {"player", "1"}}));
 
@@ -683,6 +673,17 @@ TEST(ReadReenactArgumentsTest, APlayerThatIsNotANumberFromOneTo255IsRefused) {
 
     ASSERT_FALSE(reenact.has_value()) << player;
     EXPECT_EQ(reenact.error().code, ConfigErrorCode::kInvalidArguments) << player;
+  }
+}
+
+// Requirements: US-21
+TEST(ReadReenactArgumentsTest, AReenactmentIsNeitherAReplayNorTheReplayList) {
+  for (const auto& args : {std::vector<const char*>{"--reenact", "a.capture", "--player", "1", "--replays"},
+                           std::vector<const char*>{"--reenact", "a.capture", "--player", "1", "--replay", "b"}}) {
+    const auto reenact = Reenact(args);
+
+    ASSERT_FALSE(reenact.has_value());
+    EXPECT_EQ(reenact.error().code, ConfigErrorCode::kInvalidArguments);
   }
 }
 

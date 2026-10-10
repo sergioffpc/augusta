@@ -66,19 +66,19 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
 std::expected<ClientConfig, ConfigError> LoadClientConfig(const std::filesystem::path& file);
 
 /// What augustac's command line takes beyond `--config`, `--help` and
-/// `--version`: a Replay (ADR-0051) or a Reenactment (ADR-0050) is chosen for
-/// one run, so it is asked for there, not in augustac.yaml (ADR-0034).
+/// `--version`: a Replay (ADR-0051) or a capture to reenact (ADR-0050) is
+/// chosen for one run, so it is asked for there, not in augustac.yaml
+/// (ADR-0034).
 inline constexpr std::array<CommandLineOption, 4> kClientOptions{{
     {.name = "replays", .value = {}, .description = "print the captures the server replays, then exit"},
     {.name = "replay", .value = "capture", .description = "watch the capture of this name the server replays"},
-    {.name = "reenact", .value = "capture", .description = "reenact a player of this Match capture (ADR-0050)"},
+    {.name = "reenact", .value = "capture", .description = "reenact a player of this Match capture file"},
     {.name = "player", .value = "n", .description = "the player of the capture to reenact, from 1"},
 }};
 
 /// What one run of augustac does.
 enum class ClientMode : std::uint8_t {
-  /// Joins the server and plays, as a person or, with `--reenact`, as a
-  /// capture's player (ReadReenactArguments).
+  /// Joins the server and plays, or reenacts a capture's player (ReadReenactArguments).
   kPlay,
   /// Asks the replay server for its Replay list, prints it and exits (`--replays`).
   kListReplays,
@@ -94,8 +94,7 @@ struct ClientRun {
 };
 
 /// The run command_line, read with kClientOptions, asks for; kInvalidArguments
-/// if it asks to list the captures and watch one at once, names no capture, or
-/// asks for a Replay and a Reenactment at once.
+/// if it asks to list the captures and watch one at once, or names no capture.
 std::expected<ClientRun, ConfigError> ReadClientRun(const CommandLine& command_line);
 
 /// What `--reenact <capture> --player <n>` asks for: to play player n of the
@@ -109,8 +108,9 @@ struct ReenactArguments {
 
 /// What command_line, read with kClientOptions, asks to reenact: nullopt with
 /// neither `--reenact` nor `--player`, which plays as a person does. A
-/// kInvalidArguments error with one but not the other, an empty capture, or a
-/// player that is not a whole number from 1 to 255.
+/// kInvalidArguments error with one but not the other, with `--replays` or
+/// `--replay` too, an empty capture, or a player that is not a whole number
+/// from 1 to 255.
 std::expected<std::optional<ReenactArguments>, ConfigError> ReadReenactArguments(const CommandLine& command_line);
 
 }  // namespace augusta::config

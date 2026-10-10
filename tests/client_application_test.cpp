@@ -122,8 +122,8 @@ TEST(ClientApplicationTest, ACharacterThatCannotBeLoadedIsAContentFailure) {
 CommandLine ReenactCommandLine(const std::filesystem::path& capture, const std::string& player) {
   return CommandLine{.config_file = "augustac.yaml",
                      .message = {},
-                     .action = CommandLineAction::kRun,
-                     .options = {{"reenact", capture.string()}, {"player", player}}};
+                     .options = {{"reenact", capture.string()}, {"player", player}},
+                     .action = CommandLineAction::kRun};
 }
 
 // A capture of one player, the soldier, at (4, 0, -2), made with a client pack of 9s.
@@ -150,7 +150,7 @@ std::filesystem::path WriteCapture(const std::string& name) {
 
 TEST(ClientApplicationTest, ARunThatAsksToReenactNothingPlaysAsAPerson) {
   const auto reenactment = ReadReenactment(
-      CommandLine{.config_file = "augustac.yaml", .message = {}, .action = CommandLineAction::kRun, .options = {}});
+      CommandLine{.config_file = "augustac.yaml", .message = {}, .options = {}, .action = CommandLineAction::kRun});
 
   ASSERT_TRUE(reenactment.has_value());
   EXPECT_FALSE(reenactment->has_value());
