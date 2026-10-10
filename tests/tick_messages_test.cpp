@@ -47,6 +47,7 @@ std::vector<Sent> SendAll(const State& state, augusta::tick::Tick tick, const Ti
   const auto handed =
       ForEachTickMessage(state, tick, to, [&sent](PeerId peer, const Payload& payload, Reliability reliability) {
         sent.push_back(Sent{.peer = peer, .payload = payload, .reliability = reliability});
+        return true;
       });
   EXPECT_TRUE(handed.has_value());
   return sent;
@@ -238,6 +239,7 @@ TEST(TickMessagesTest, AnUpdateTheProtocolCannotCarryIsNotSentAndIsAnInvariantFa
   const auto handed = ForEachTickMessage(state, 42, ThreePlayers(),
                                          [&sent](PeerId peer, const Payload& payload, Reliability reliability) {
                                            sent.push_back({peer, payload, reliability});
+                                           return true;
                                          });
 
   ASSERT_FALSE(handed.has_value());
@@ -261,11 +263,28 @@ TEST(TickMessagesTest, AMessageTheProtocolCannotCarrySendsNoneOfTheTicks) {
   const auto handed = ForEachTickMessage(state, 42, ThreePlayers(),
                                          [&sent](PeerId peer, const Payload& payload, Reliability reliability) {
                                            sent.push_back({peer, payload, reliability});
+                                           return true;
                                          });
 
   ASSERT_FALSE(handed.has_value());
   EXPECT_EQ(handed.error().code, augusta::failure::Code::kInvariantViolated);
   EXPECT_TRUE(sent.empty());
+}
+
+// A sink that declines a message is handed nothing more of the tick: how the
+// Host stops sending once its runtime has failed mid-tick (ADR-0033).
+TEST(TickMessagesTest, NothingMoreIsHandedOnOnceTheSinkDeclines) {
+  ASSERT_GT(SendAll(TwoBodies(), 42, ThreePlayers()).size(), 1U);
+  std::vector<Sent> sent;
+
+  const auto handed = ForEachTickMessage(TwoBodies(), 42, ThreePlayers(),
+                                         [&sent](PeerId peer, const Payload& payload, Reliability reliability) {
+                                           sent.push_back({peer, payload, reliability});
+                                           return false;
+                                         });
+
+  EXPECT_TRUE(handed.has_value());
+  EXPECT_EQ(sent.size(), 1U);
 }
 
 }  // namespace
