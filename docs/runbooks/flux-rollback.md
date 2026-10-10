@@ -38,8 +38,8 @@ itself: a failed upgrade stays failed until Git or a person changes it.
 Both environments run the image CI published for their chart's own commit
 (`image.tag` is left empty, [`values.yaml`](../../charts/augustad/values.yaml)),
 so going back to an earlier commit, by Helm or by Git, goes back to its image.
-They differ only in the branch the revert lands on: `develop` for `develop`,
-`main` for `staging`.
+They differ in the branch the revert lands on: `develop` for `develop`, `main`
+for `staging`, except that a `staging.yaml` change deploys from `develop`.
 
 ## Prerequisites
 
@@ -144,16 +144,23 @@ They differ only in the branch the revert lands on: `develop` for `develop`,
 
 Follow [Roll back develop](#roll-back-develop) with `augustad-staging`,
 `-n staging`, `staging.yaml`, `augusta-main` and `--branch main` in place of
-develop's, except for where the revert goes:
+develop's. A bad `staging.yaml` change is reverted on `develop` exactly as
+there. Any other bad change is reverted on `main`, so step 3 becomes:
 
-- Step 3: revert or fix the bad change on a `hotfix/*` branch off `origin/main`,
-  with `--base main`. After it merges, bring the same branch back into `develop`
-  with a second pull request, `--base develop`, as Git Flow does for every
-  hotfix. When the bad change is a published release, the fix ships as the next
-  patch release ([Cut a Release](cut-release.md#rollback--abort)).
-- A bad `staging.yaml` change is the exception: it deploys from `develop` (see
-  [What runs where](#what-runs-where)), so it is reverted exactly as in
-  [Roll back develop](#roll-back-develop) step 3.
+```sh
+git fetch origin
+git switch -c hotfix/revert-<topic> origin/main
+git revert --no-commit -m 1 <bad-merge>   # drop -m 1 for a non-merge commit
+git commit -m "revert: <what is reverted>"
+git push -u origin hotfix/revert-<topic>
+gh pr create --base main --title "revert: <what is reverted>" --body "<why>"
+```
+
+Once that pull request merges (step 4), resume and reconcile as in step 5:
+staging needs nothing more. Then bring the same branch back into `develop` with
+a second pull request, `--base develop`, as Git Flow does for every hotfix. When
+the bad change is a published release, the fix ships as the next patch release
+([Cut a Release](cut-release.md#rollback--abort)).
 
 ## Verification
 
