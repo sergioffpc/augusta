@@ -38,7 +38,8 @@ runs:
     - name: Save vcpkg binaries
       # Keyed by the listing, so jobs of one run that installed the same
       # packages save one entry: the first reserves the key, the rest skip with
-      # a warning.
+      # a warning. The prefix says "clang", but the ports are built with the
+      # system compiler (restore-vcpkg-cache says why the prefix stays).
       if: steps.listing.outputs.changed == 'true'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:

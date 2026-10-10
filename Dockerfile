@@ -4,6 +4,10 @@
 # chart's securityContext names the same ID.
 ARG AUGUSTA_UID=65532
 
+# The vcpkg binary cache the dependency install reads, empty unless the build
+# replaces this stage with a vcpkg-bincache build context.
+FROM scratch AS vcpkg-bincache
+
 # Build stage: same base as the CI Linux runner (see .github/workflows/ci.yml)
 # so the image is built with the exact toolchain/glibc combination CI already
 # validates the server against.
@@ -44,7 +48,17 @@ COPY vcpkg.json ./
 # them installed and builds none. Built after COPY src instead, a change to
 # any source rebuilt all of them. The scratch trees go in the same layer, so
 # the registry cache doesn't carry them.
-RUN ./third_party/vcpkg/vcpkg install --x-install-root=build/x64-linux/vcpkg_installed \
+# vcpkg restores what it can from the vcpkg-bincache context, the CI Linux
+# jobs' binary cache (ci.yml's container jobs pass it), and builds the rest
+# from source: vcpkg builds its ports with the system compiler on the same
+# Ubuntu as those jobs, so their ABI hashes match. Bind-mounted read-only, for
+# this command alone, it is in no layer and never written; built without it
+# (a local docker build, a fork), the context is the empty stage below. Its
+# contents are part of this layer's cache key, so a cache that gained packages
+# reruns the layer - as a manifest change, the reason it gains any, does.
+RUN --mount=type=bind,from=vcpkg-bincache,target=/vcpkg-bincache \
+    VCPKG_BINARY_SOURCES="clear;files,/vcpkg-bincache,read" \
+      ./third_party/vcpkg/vcpkg install --x-install-root=build/x64-linux/vcpkg_installed \
     && rm -rf third_party/vcpkg/buildtrees third_party/vcpkg/packages third_party/vcpkg/downloads \
       /root/.cache/vcpkg
 

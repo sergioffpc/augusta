@@ -63,7 +63,7 @@ jobs:
           fi
 
           if echo "$changed" \
-              | grep -qE '^(Dockerfile$|\.dockerignore$|\.hadolint\.yaml$|chisel/|charts/|\.github/workflows/ci\.yml$|\.github/actions/build-server-image/)'; then
+              | grep -qE '^(Dockerfile$|\.dockerignore$|\.hadolint\.yaml$|chisel/|charts/|\.github/workflows/ci\.yml$|\.github/actions/(build-server-image|restore-vcpkg-cache)/)'; then
             echo "run_container=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_container=false" >> "$GITHUB_OUTPUT"
@@ -660,6 +660,8 @@ jobs:
       contents: read
       # Writing the registry layer cache, on a push.
       packages: write
+    outputs:
+      vcpkg-cache-key: ${{ steps.image.outputs.vcpkg-cache-key }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -697,6 +699,7 @@ jobs:
       # Only a push writes the layer cache, as only a push publishes:
       # container-publish rebuilds from it.
       - name: Build and scan server image
+        id: image
         uses: ./.github/actions/build-server-image
         with:
           cache-to: ${{ github.event_name == 'push' }}
@@ -735,10 +738,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       # Rebuilt from the layer cache container-verify just wrote, so every
       # stage but rootfs is a cache hit, and scanned again: rootfs is cut anew,
-      # and what is pushed below must be an image that passed the scan.
+      # and what is pushed below must be an image that passed the scan. The
+      # vcpkg binaries are the entry container-verify built from too: the
+      # dependency layer's cache key covers them.
       - name: Build and scan server image
         id: image
         uses: ./.github/actions/build-server-image
+        with:
+          vcpkg-cache-key: ${{ needs.container-verify.outputs.vcpkg-cache-key }}
       - name: Publish server image
         id: publish
         # The digest is read back from GHCR: the build only loaded the image,
@@ -759,6 +766,9 @@ jobs:
           target: debuginfo
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.image.outputs.short-sha }}-debuginfo
+          # The vcpkg binaries the image step restored, or the build stage
+          # misses the layer cache.
+          build-contexts: vcpkg-bincache=.vcpkg-bincache
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/augustad:buildcache
       - name: Attest debug info provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2

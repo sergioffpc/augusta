@@ -1,6 +1,6 @@
 name: Build and scan the server image
 description: >
-  Builds the server image into the runner's Docker (loaded, not pushed), from the registry layer cache, and fails on a high or critical CVE trivy finds in it. Both ci.yml's container jobs run it: container-verify to check the image, container-publish to rebuild the image it then pushes, so what it publishes is an image that was scanned. Tags it sha-<12> and, on a push, with the branch name. Assumes the repository is checked out with its submodules and buildx is set up; a job that reads or writes the cache logs in to GHCR first.
+  Builds the server image into the runner's Docker (loaded, not pushed), from the registry layer cache and the Linux jobs' vcpkg binary cache, and fails on a high or critical CVE trivy finds in it. Both ci.yml's container jobs run it: container-verify to check the image, container-publish to rebuild the image it then pushes, so what it publishes is an image that was scanned. Tags it sha-<12> and, on a push, with the branch name. Assumes the repository is checked out with its submodules and buildx is set up; a job that reads or writes the cache logs in to GHCR first.
 
 inputs:
   cache-to:
@@ -9,13 +9,29 @@ inputs:
 
     required: false
     default: "false"
+  vcpkg-cache-key:
+    description: >
+      The vcpkg binary cache entry to build from (restore-vcpkg-cache's key): container-publish passes the vcpkg-cache-key container-verify built from, so the dependency layer it rebuilds is a cache hit. Empty takes the newest.
+
+    required: false
+    default: ""
 outputs:
   short-sha:
     description: The first 12 characters of the commit, as the sha-<12> tag has them.
     value: ${{ steps.short-sha.outputs.value }}
+  vcpkg-cache-key:
+    description: The vcpkg binary cache entry the image was built from, empty when there was none.
+    value: ${{ steps.vcpkg-cache.outputs.matched-key }}
 runs:
   using: composite
   steps:
+    # The Linux jobs' vcpkg binaries, which the Dockerfile's dependency install
+    # restores from rather than build all its packages from source, when that
+    # layer isn't cached already.
+    - id: vcpkg-cache
+      uses: ./.github/actions/restore-vcpkg-cache
+      with:
+        key: ${{ inputs.vcpkg-cache-key }}
     - name: Install trivy
       shell: bash
       run: |
@@ -44,6 +60,8 @@ runs:
         no-cache-filters: rootfs
         # Reported as augustad_build_info's commit label (ADR-0049).
         build-args: AUGUSTA_COMMIT=${{ steps.short-sha.outputs.value }}
+        # Mounted read-only by the dependency install alone (see Dockerfile).
+        build-contexts: vcpkg-bincache=.vcpkg-bincache
         # sha-<first 12 characters of the commit> is the tag the chart runs:
         # Flux versions a Git-sourced chart <version>+<the same 12 characters>.
         # The branch name tag is for people. github.ref_name is only a plain

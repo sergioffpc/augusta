@@ -1,0 +1,45 @@
+name: Restore the vcpkg binary cache
+description: >
+  Restores into .vcpkg-bincache the newest vcpkg binary cache any Linux job saved (see save-vcpkg-cache), or the entry key names when it is still there, and records what it restored for save-vcpkg-cache to compare against. The directory exists afterwards even when nothing was restored, so a job can always hand it on.
+
+inputs:
+  key:
+    description: >
+      An entry to restore by its exact key, ahead of the newest one: container-publish passes the one container-verify restored, so it rebuilds the image from the same binaries. Empty restores the newest.
+
+    required: false
+    default: ""
+outputs:
+  matched-key:
+    description: The key of the entry restored, empty when none was.
+    value: ${{ steps.restore.outputs.cache-matched-key }}
+runs:
+  using: composite
+  steps:
+    # Without a key, the default never matches, so the prefix picks the newest
+    # entry, this branch's first and then the base branch's. vcpkg names each
+    # archive by its package's ABI hash, so an entry holding packages this job
+    # doesn't need costs nothing but the download.
+    #
+    # The ABI hash covers the compiler that built a package, and vcpkg builds
+    # its ports with the system compiler (/usr/bin/c++, Ubuntu 26.04's g++) for
+    # the default x64-linux triplet - the presets' clang compiles the project
+    # alone. So every Linux job, and the server image's dependency layer on the
+    # same Ubuntu, can share the entry; an archive another compiler built just
+    # never matches. The key's "clang" predates that being written down: it
+    # stays, as renaming it would drop every entry already saved.
+    - name: Restore vcpkg binaries
+      id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .vcpkg-bincache
+        key: ${{ inputs.key || format('vcpkg-bincache-linux-clang-restore-{0}', github.run_id) }}
+        restore-keys: |
+          vcpkg-bincache-linux-clang-
+    - name: Record the restored vcpkg binaries
+      # What save-vcpkg-cache compares against, to save only when this job
+      # added a package.
+      shell: bash
+      run: |
+        mkdir -p .vcpkg-bincache
+        echo "VCPKG_BINCACHE_RESTORED=$(find .vcpkg-bincache -type f | sort | sha256sum | cut -c1-64)" >> "$GITHUB_ENV"
