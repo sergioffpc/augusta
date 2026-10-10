@@ -241,6 +241,20 @@ std::optional<std::string> ReceiveTripped(failure::Faults* faults) {
   return faults != nullptr ? faults->Trip(failure::Site::kTransportReceive) : std::nullopt;
 }
 
+// Appends to into the next batch of messages received on connection; returns
+// how many, or -1 if the transport failed to receive.
+int ReceiveBatch(HSteamNetConnection connection, std::vector<Payload>& into) {
+  std::array<ISteamNetworkingMessage*, kMaxMessagesPerBatch> incoming;
+  const int count =
+      SteamNetworkingSockets()->ReceiveMessagesOnConnection(connection, incoming.data(), kMaxMessagesPerBatch);
+  for (int i = 0; i < count; ++i) {
+    const auto* bytes = static_cast<const std::byte*>(incoming[i]->m_pData);
+    into.emplace_back(bytes, bytes + incoming[i]->m_cbSize);
+    incoming[i]->Release();
+  }
+  return count;
+}
+
 // Listens on addr with options. GameNetworkingSockets refuses port 0, so for
 // it this listens on a port the OS reports free (see FreeUdpPort) - asking
 // again if it fails to bind there - and leaves the one it bound in addr.
@@ -328,6 +342,10 @@ struct Client::Impl {
   std::mutex mutex;
   HSteamNetConnection connection = k_HSteamNetConnection_Invalid;
   ConnectionState state = ConnectionState::kDisconnected;
+  // What arrived on a connection the server ended, taken off it before it
+  // was closed, for the next ReceiveMessages: the server sent it before
+  // closing, often to say why. Guarded by mutex.
+  std::vector<Payload> received_before_close;
   // Filled by the status-changed callback, drained by PumpEvents.
   TransportEventQueue transport_events;
 
@@ -340,6 +358,9 @@ struct Client::Impl {
       transition = ApplyToClient(connection, state, event);
       state = transition.state;
       if (transition.ended) {
+        // Closing the connection releases what it still holds unread.
+        while (ReceiveBatch(connection, received_before_close) > 0) {
+        }
         connection = k_HSteamNetConnection_Invalid;
       }
     }
@@ -380,6 +401,8 @@ void Client::Connect(const Endpoint& server) {
   options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, impl_->registration.Id());
 
   std::lock_guard<std::mutex> lock(impl_->mutex);
+  // A connection's leftovers are never read as the next one's.
+  impl_->received_before_close.clear();
   impl_->connection =
       SteamNetworkingSockets()->ConnectByIPAddress(addr, static_cast<int>(options.size()), options.data());
   // A connection GNS refused to create never gets a status-changed callback,
@@ -400,6 +423,8 @@ void Client::Disconnect() {
     SteamNetworkingSockets()->CloseConnection(impl_->connection, 0, nullptr, false);
     impl_->connection = k_HSteamNetConnection_Invalid;
   }
+  // Closing it here is the caller's choice: what is left unread goes too.
+  impl_->received_before_close.clear();
   impl_->state = ConnectionState::kDisconnected;
 }
 
@@ -446,33 +471,26 @@ SendResult Client::Send(const Payload& payload, Reliability reliability) {
     case SendVerdict::kLocalFailure:
       break;
   }
-  return std::unexpected(LocalFailure(failure::Code::kTransportSendFailed, {{"role", "client"}}, sent.Detail()));
+  return std::unexpected(
+      LocalFailure(failure::Code::kTransportSendFailed, {{.key = "role", .value = "client"}}, sent.Detail()));
 }
 
 std::expected<std::vector<Payload>, failure::Failure> Client::ReceiveMessages() {
   const std::lock_guard<std::mutex> lock(impl_->mutex);
   if (impl_->connection == k_HSteamNetConnection_Invalid) {
-    return std::vector<Payload>{};
+    return std::exchange(impl_->received_before_close, {});
   }
 
   std::vector<Payload> messages;
-  std::array<ISteamNetworkingMessage*, kMaxMessagesPerBatch> incoming;
   while (true) {
     std::optional<std::string> tripped = ReceiveTripped(impl_->faults);
-    const int count = tripped.has_value() ? -1
-                                          : SteamNetworkingSockets()->ReceiveMessagesOnConnection(
-                                                impl_->connection, incoming.data(), kMaxMessagesPerBatch);
+    const int count = tripped.has_value() ? -1 : ReceiveBatch(impl_->connection, messages);
     if (count < 0) {
-      return std::unexpected(LocalFailure(failure::Code::kTransportReceiveFailed, {{"role", "client"}},
+      return std::unexpected(LocalFailure(failure::Code::kTransportReceiveFailed, {{.key = "role", .value = "client"}},
                                           tripped.value_or("ReceiveMessagesOnConnection returned -1")));
     }
     if (count == 0) {
       break;
-    }
-    for (int i = 0; i < count; ++i) {
-      const auto* bytes = static_cast<const std::byte*>(incoming[i]->m_pData);
-      messages.emplace_back(bytes, bytes + incoming[i]->m_cbSize);
-      incoming[i]->Release();
     }
   }
   if (!messages.empty()) {
@@ -561,8 +579,8 @@ Server::Server(const Endpoint& local_endpoint, failure::Faults* faults) : impl_(
   options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, impl_->registration.Id());
 
   const auto listener_failure = [&](std::string detail) {
-    return TransportFailure(
-        LocalFailure(failure::Code::kListenerSetupFailed, {{"address", local_endpoint.address}}, std::move(detail)));
+    return TransportFailure(LocalFailure(failure::Code::kListenerSetupFailed,
+                                         {{.key = "address", .value = local_endpoint.address}}, std::move(detail)));
   };
   if (faults != nullptr) {
     if (std::optional<std::string> tripped = faults->Trip(failure::Site::kListenerSetup)) {
@@ -643,8 +661,9 @@ SendResult Server::Impl::SendLocked(HSteamNetConnection connection, const Payloa
     case SendVerdict::kLocalFailure:
       break;
   }
-  return std::unexpected(LocalFailure(failure::Code::kTransportSendFailed,
-                                      {{"role", "server"}, {"peer", std::to_string(connection)}}, sent.Detail()));
+  return std::unexpected(LocalFailure(
+      failure::Code::kTransportSendFailed,
+      {{.key = "role", .value = "server"}, {.key = "peer", .value = std::to_string(connection)}}, sent.Detail()));
 }
 
 SendResult Server::Send(PeerId peer, const Payload& payload, Reliability reliability) {
@@ -693,7 +712,7 @@ std::expected<std::vector<PeerMessage>, failure::Failure> Server::ReceiveMessage
                                           : SteamNetworkingSockets()->ReceiveMessagesOnPollGroup(
                                                 impl_->poll_group, incoming.data(), kMaxMessagesPerBatch);
     if (count < 0) {
-      return std::unexpected(LocalFailure(failure::Code::kTransportReceiveFailed, {{"role", "server"}},
+      return std::unexpected(LocalFailure(failure::Code::kTransportReceiveFailed, {{.key = "role", .value = "server"}},
                                           tripped.value_or("ReceiveMessagesOnPollGroup returned -1")));
     }
     if (count == 0) {

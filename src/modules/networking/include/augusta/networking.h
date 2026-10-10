@@ -247,7 +247,9 @@ class Client {
   [[nodiscard]] SendResult Send(const Payload& payload, Reliability reliability);
 
   /// Returns every message received since the last call, in arrival
-  /// order: empty once drained, or while not connected. Fails
+  /// order: empty once drained, or while not connected. What arrived before
+  /// the server closed the connection is still returned once, after
+  /// PumpEvents has seen the close; Connect and Disconnect drop it. Fails
   /// (failure::Code::kTransportReceiveFailed) only when the local transport
   /// cannot receive on a connection it holds, never for an empty queue.
   [[nodiscard]] std::expected<std::vector<Payload>, failure::Failure> ReceiveMessages();
