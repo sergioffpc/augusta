@@ -17,7 +17,6 @@
 #include <optional>
 #include <random>
 #include <set>
-#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -32,6 +31,7 @@
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
+#include "augusta/failure.h"
 #include "augusta/grid.h"
 #include "augusta/harness.h"
 #include "augusta/logging.h"
@@ -71,6 +71,7 @@
 namespace {
 
 using augusta::command::Command;
+using augusta::failure::Code;
 using augusta::harness::CapturedCommand;
 using augusta::harness::CapturedPlayer;
 using augusta::harness::Death;
@@ -104,6 +105,17 @@ using augusta::server::ConnectionSample;
 using augusta::server::Host;
 using augusta::server::HostConfig;
 using augusta::server::Scenario;
+
+// The Code of the failure::ClassifiedFailure construct throws, or nullopt if it
+// throws none.
+std::optional<Code> CodeThrownBy(const std::function<void()>& construct) {
+  try {
+    construct();
+  } catch (const augusta::failure::ClassifiedFailure& thrown) {
+    return thrown.GetFailure().code;
+  }
+  return std::nullopt;
+}
 
 constexpr auto kPollInterval = std::chrono::milliseconds(10);
 constexpr auto kPollDeadline = std::chrono::seconds(5);
@@ -161,7 +173,7 @@ SessionConfig TestSessionConfig(const Endpoint& server, const std::string& chara
 // Init and Shutdown once for the whole process, as in networking_test.cpp.
 class SessionEnvironment : public ::testing::Environment {
  public:
-  void SetUp() override { augusta::networking::Init(); }
+  void SetUp() override { ASSERT_TRUE(augusta::networking::Init().has_value()); }
   void TearDown() override { augusta::networking::Shutdown(); }
 };
 
@@ -870,17 +882,21 @@ TEST(MapHostTest, AHostRefusesACharacterHitboxThatIsNotAWholeTriangleList) {
       .mesh = {.points = {Vec3(0.0F, 0.0F, 0.0F), Vec3(1.0F, 0.0F, 0.0F), Vec3(0.0F, 1.0F, 0.0F)},
                .indices = {0, 1, 3}}};
 
-  EXPECT_THROW(
-      Host(TestHostConfig(),
-           Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {hitbox}}}}),
-      std::runtime_error);
+  EXPECT_EQ(
+      CodeThrownBy([&] {
+        Host(TestHostConfig(),
+             Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {hitbox}}}});
+      }),
+      Code::kInvalidContent);
 }
 
 TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
-  EXPECT_THROW(Host(TestHostConfig(), Scenario{.collision = {CollisionMesh{}},
-                                               .spawn_points = {},
-                                               .characters = {{.path = kCharacter, .hitboxes = {}}}}),
-               std::runtime_error);
+  EXPECT_EQ(CodeThrownBy([] {
+              Host(TestHostConfig(), Scenario{.collision = {CollisionMesh{}},
+                                              .spawn_points = {},
+                                              .characters = {{.path = kCharacter, .hitboxes = {}}}});
+            }),
+            Code::kInvalidContent);
 }
 
 // A client in a match of its own on a host with flat ground, driven tick by tick.
@@ -2004,8 +2020,10 @@ TEST(CaptureHostConfigTest, AHostRefusesACaptureDirectoryItCannotCreate) {
   std::ofstream(file) << "not a directory";
   HostConfig config = TestHostConfig();
   config.capture_directory = file / "captures";
-  EXPECT_THROW(Host(config, Scenario{.collision = {}, .spawn_points = {}, .characters = {}, .client_pack = {}}),
-               std::runtime_error);
+  EXPECT_EQ(CodeThrownBy([&] {
+              Host(config, Scenario{.collision = {}, .spawn_points = {}, .characters = {}, .client_pack = {}});
+            }),
+            Code::kInvalidConfiguration);
   std::filesystem::remove(file);
 }
 

@@ -11,7 +11,6 @@
 #include <memory>
 #include <optional>
 #include <random>
-#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -23,6 +22,7 @@
 #include "augusta/assets.h"
 #include "augusta/capture_file.h"
 #include "augusta/command.h"
+#include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
@@ -86,7 +86,7 @@ constexpr const char* kLastManStanding = R"(
 
 class NetworkEnvironment : public ::testing::Environment {
  public:
-  void SetUp() override { augusta::networking::Init(); }
+  void SetUp() override { ASSERT_TRUE(augusta::networking::Init().has_value()); }
   void TearDown() override { augusta::networking::Shutdown(); }
 };
 
@@ -883,16 +883,20 @@ TEST(LiveServerReplayTest, ALiveServerRefusesReplayRequestsAsNoReplayServer) {
 }
 
 TEST(ReplayServerConfigTest, AReplayServerRefusesACapturesDirectoryThatIsNone) {
-  EXPECT_THROW(ReplayServer(ReplayServerConfig{.tick_rate_hz = kTickRate,
-                                               .parameters = Rules(),
-                                               .listen = Endpoint{.address = kLoopbackAnyPort},
-                                               .server_pack = {},
-                                               .captures = std::filesystem::temp_directory_path() /
-                                                           "augusta_replay_server_no_such_directory",
-                                               .max_viewers = 1,
-                                               .faults = nullptr},
-                            TwoInALine(), Policy),
-               std::runtime_error);
+  try {
+    ReplayServer(ReplayServerConfig{.tick_rate_hz = kTickRate,
+                                    .parameters = Rules(),
+                                    .listen = Endpoint{.address = kLoopbackAnyPort},
+                                    .server_pack = {},
+                                    .captures = std::filesystem::temp_directory_path() /
+                                                "augusta_replay_server_no_such_directory",
+                                    .max_viewers = 1,
+                                    .faults = nullptr},
+                 TwoInALine(), Policy);
+    FAIL() << "a replay server started on a captures directory that is none";
+  } catch (const augusta::failure::ClassifiedFailure& thrown) {
+    EXPECT_EQ(thrown.GetFailure().code, augusta::failure::Code::kInvalidConfiguration);
+  }
 }
 
 // A list of more captures than a Replay list holds names the newest.

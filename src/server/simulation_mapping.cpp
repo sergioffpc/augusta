@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
-#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -11,6 +10,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
+#include "augusta/failure.h"
 #include "augusta/map.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -51,8 +51,10 @@ ballistics::BodyPart ToBallistics(assets::BodyPart part) {
 simulation::CharacterHitbox ToSimulation(const assets::HitboxData& hitbox, const std::string& path) {
   const assets::MeshData& mesh = hitbox.mesh;
   if (const auto valid = physics::ValidateCollisionMesh({.points = mesh.points, .indices = mesh.indices}); !valid) {
-    throw std::runtime_error(std::format("server::Host: hitbox of character {} rejected: {}", path,
-                                         physics::DescribeCollisionMeshError(valid.error())));
+    throw failure::ClassifiedFailure(failure::Failure{
+        .code = failure::Code::kInvalidContent,
+        .context = {{.key = "character", .value = path}},
+        .detail = std::format("hitbox rejected: {}", physics::DescribeCollisionMeshError(valid.error()))});
   }
   simulation::CharacterHitbox result{.part = ToBallistics(hitbox.part), .triangles = {}};
   result.triangles.reserve(mesh.indices.size() / 3);
@@ -82,8 +84,10 @@ simulation::World BuildSimulation(const parameters::Parameters& parameters, std:
                                   const Scenario& scenario, scripting::Engine policy) {
   simulation::World simulation(parameters, tick_rate_hz, std::move(policy));
   if (const auto added = map::AddCollision(simulation, scenario.collision); !added) {
-    throw std::runtime_error(
-        std::format("map collision rejected: {}", physics::DescribeCollisionMeshError(added.error())));
+    throw failure::ClassifiedFailure(failure::Failure{
+        .code = failure::Code::kInvalidContent,
+        .context = {},
+        .detail = std::format("map collision rejected: {}", physics::DescribeCollisionMeshError(added.error()))});
   }
   return simulation;
 }

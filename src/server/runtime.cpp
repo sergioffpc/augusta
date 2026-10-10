@@ -3,10 +3,10 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <exception>
 #include <expected>
 #include <memory>
 #include <optional>
+#include <string>
 #include <thread>
 #include <utility>
 
@@ -91,15 +91,20 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
 
   // The endpoint is not a supervised worker (ADR-0049): a server whose endpoint
   // can't start keeps running without it, and in the cluster its liveness
-  // probe then fails.
+  // probe then fails. Its failure is the subsystem's (ADR-0033), reported here,
+  // where it is recovered, as the endpoint reports one it meets later.
   void StartMetrics() {
-    try {
-      metrics = std::make_unique<MetricsEndpoint>(metrics_port, last_tick_end,
-                                                  ServerMetrics{served.Metrics(), connection_health});
-      LI("subsystem=serverruntime event=metrics_serving port={}", metrics_port);
-    } catch (const std::exception& error) {
-      LE("subsystem=serverruntime event=metrics_failed port={} error={}", metrics_port, error.what());
+    auto started = failure::Guard(failure::Code::kMetricsEndpointFailed, [this] {
+      return std::make_unique<MetricsEndpoint>(metrics_port, last_tick_end,
+                                               ServerMetrics{served.Metrics(), connection_health});
+    });
+    if (!started) {
+      started.error().context.push_back({.key = "port", .value = std::to_string(metrics_port)});
+      LE("subsystem=metrics event=unavailable {}", failure::DescribeFailure(started.error()));
+      return;
     }
+    metrics = *std::move(started);
+    LI("subsystem=serverruntime event=metrics_serving port={}", metrics_port);
   }
 
   // The runtime failure the server met on either thread, if any, for the

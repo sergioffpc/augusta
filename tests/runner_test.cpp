@@ -56,7 +56,7 @@ constexpr float kGroundHeight = -0.5F;
 
 class RunnerEnvironment : public ::testing::Environment {
  public:
-  void SetUp() override { augusta::networking::Init(); }
+  void SetUp() override { ASSERT_TRUE(augusta::networking::Init().has_value()); }
   void TearDown() override { augusta::networking::Shutdown(); }
 };
 

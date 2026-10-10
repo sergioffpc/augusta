@@ -65,8 +65,8 @@ class MetricsEndpoint {
   /// sets, "unknown" without it, and augustad_start_time_seconds is now.
   /// faults, when given, is asked at failure::Site::kMetricsAccept before each
   /// accept, a trip failing it as the acceptor would; only a test gives one,
-  /// and it must outlive this. Throws std::runtime_error if the port can't be
-  /// bound.
+  /// and it must outlive this. Throws the dependency's exception if the port
+  /// can't be bound, which its caller converts (failure::Guard).
   MetricsEndpoint(std::uint16_t port, const std::atomic<tick::Clock::time_point>& last_tick_end,
                   ServerMetrics server_metrics, failure::Faults* faults = nullptr);
 

@@ -6,7 +6,6 @@
 #include <expected>
 #include <memory>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -55,8 +54,10 @@ namespace augusta::networking {
 
 /// One-time process-wide setup for the underlying transport library. Call
 /// exactly once at process startup, before constructing any Client or
-/// Server.
-void Init();
+/// Server. Fails (failure::Code::kTransportInitFailed) with the library's own
+/// words as detail, which its caller reports. faults, when given, is asked
+/// first (failure::Site::kDependencyInit), so a test makes it fail.
+[[nodiscard]] std::expected<void, failure::Failure> Init(failure::Faults* faults = nullptr);
 
 /// Releases the transport library's process-wide state. Call at most
 /// once, after every Client/Server has been destroyed. augustac/augustad
@@ -65,19 +66,6 @@ void Init();
 /// instances before exiting (e.g. a test) needs it, or GameNetworkingSockets'
 /// still-referenced OpenSSL state reads as a leak under ASan.
 void Shutdown();
-
-/// What Server's constructor throws when the local transport cannot listen
-/// (failure::Code::kListenerSetupFailed): the failure, typed, so the
-/// application boundary classifies it by its code rather than its message.
-class TransportFailure : public std::runtime_error {
- public:
-  explicit TransportFailure(failure::Failure failure);
-
-  [[nodiscard]] const failure::Failure& Failure() const { return failure_; }
-
- private:
-  failure::Failure failure_;
-};
 
 /// How one message is delivered.
 enum class Reliability {
@@ -219,7 +207,8 @@ class Client {
   Client(Client&&) = delete;
   Client& operator=(Client&&) = delete;
 
-  /// Begins connecting to server; returns immediately. Throws if
+  /// Begins connecting to server; returns immediately. Throws
+  /// failure::ClassifiedFailure (failure::Code::kInvalidConfiguration) if
   /// server.address does not parse; if the transport cannot create the
   /// connection, GetState() reports kDisconnected on return instead of
   /// kConnecting. Calling again before GetState() reports kDisconnected
@@ -315,12 +304,14 @@ struct PeerMessage {
 class Server {
  public:
   /// Starts listening on local_endpoint - on a free port of its own choosing
-  /// if that names port 0 (see LocalEndpoint). Throws std::runtime_error if
-  /// local_endpoint does not parse, and TransportFailure if the transport
-  /// cannot set up its listen socket or poll group (e.g. the address can't be
-  /// bound). faults, when given, is asked at listener setup and at every send
-  /// and receive (failure::Site::kListenerSetup, kTransportSend,
-  /// kTransportReceive); it must outlive the Server.
+  /// if that names port 0 (see LocalEndpoint). Throws
+  /// failure::ClassifiedFailure, which the application boundary keeps whole:
+  /// failure::Code::kInvalidConfiguration if local_endpoint does not parse,
+  /// kListenerSetupFailed if the transport cannot set up its listen socket or
+  /// poll group (e.g. the address can't be bound). faults, when given, is
+  /// asked at listener setup and at every send and receive
+  /// (failure::Site::kListenerSetup, kTransportSend, kTransportReceive); it
+  /// must outlive the Server.
   explicit Server(const Endpoint& local_endpoint, failure::Faults* faults = nullptr);
 
   /// Closes the listen socket and every connected peer's connection.

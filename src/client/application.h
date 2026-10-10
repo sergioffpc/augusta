@@ -9,7 +9,6 @@
 #include "augusta/client_config.h"
 #include "augusta/config.h"
 #include "augusta/failure.h"
-#include "augusta/faults.h"
 #include "augusta/harness.h"
 #include "augusta/reenactment.h"
 #include "character_loader.h"
@@ -47,11 +46,6 @@ namespace augusta::client {
 /// fit.
 [[nodiscard]] std::expected<void, failure::Failure> CheckReenactmentPack(const harness::Script& script,
                                                                          const assets::PackHash& loaded);
-
-/// Starts the transport, once per process, before any ClientRuntime is
-/// constructed (networking.h), or returns the failure::Code::kTransportInitFailed
-/// failure saying why it did not. faults, for tests only, is asked first.
-[[nodiscard]] std::expected<void, failure::Failure> InitializeClientTransport(failure::Faults* faults = nullptr);
 
 /// The verified pack and what a ClientRuntime is made from. The runtime holds
 /// on to the pack (it loads the characters other players bring from it), so

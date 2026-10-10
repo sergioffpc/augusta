@@ -41,7 +41,7 @@ const std::filesystem::path kPacks{AUGUSTA_EXAMPLE_PACKS};
 // so the tests below replace the initialize phase unless they make it fail.
 class ServerApplicationEnvironment : public ::testing::Environment {
  public:
-  void SetUp() override { augusta::networking::Init(); }
+  void SetUp() override { ASSERT_TRUE(augusta::networking::Init().has_value()); }
   void TearDown() override { augusta::networking::Shutdown(); }
 };
 
@@ -130,7 +130,21 @@ TEST(ServerApplicationTest, APackThatDoesNotVerifyIsAContentFailure) {
   EXPECT_EQ(ContextOf(*outcome, "path"), config.pack_path.string());
 }
 
-TEST(ServerApplicationTest, AListenAddressThatCannotBeUsedIsAClassifiedConstructionFailure) {
+// A pack that verifies but holds the client's content, not a server's.
+TEST(ServerApplicationTest, APackWithoutServerContentIsAContentFailure) {
+  Faults faults;
+  ServerConfig config = ExampleConfig();
+  config.pack_path = kPacks / "client.pack";
+
+  const Outcome outcome = Served(config, faults);
+
+  ASSERT_TRUE(outcome.has_value());
+  EXPECT_EQ(outcome->code, Code::kInvalidContent);
+  EXPECT_EQ(ContextOf(*outcome, "path"), config.pack_path.string());
+  EXPECT_FALSE(outcome->detail.empty());
+}
+
+TEST(ServerApplicationTest, AListenAddressThatDoesNotParseIsAConfigurationFailure) {
   Faults faults;
   ServerConfig config = ExampleConfig();
   config.listen_address = "not an address";
@@ -138,8 +152,34 @@ TEST(ServerApplicationTest, AListenAddressThatCannotBeUsedIsAClassifiedConstruct
   const Outcome outcome = Served(config, faults);
 
   ASSERT_TRUE(outcome.has_value());
-  EXPECT_EQ(outcome->code, Code::kDependencyInitFailed);
+  EXPECT_EQ(outcome->code, Code::kInvalidConfiguration);
+  EXPECT_EQ(ContextOf(*outcome, "address"), "not an address");
   EXPECT_EQ(ContextOf(*outcome, "phase"), "construct");
+}
+
+TEST(ServerApplicationTest, AListenerThatCannotBeSetUpIsAListenerFailure) {
+  Faults faults;
+  faults.Arm(Site::kListenerSetup, "address in use");
+
+  const Outcome outcome = Served(ExampleConfig(), faults);
+
+  ASSERT_TRUE(outcome.has_value());
+  EXPECT_EQ(outcome->code, Code::kListenerSetupFailed);
+  EXPECT_EQ(outcome->detail, "address in use");
+  EXPECT_EQ(ContextOf(*outcome, "phase"), "construct");
+}
+
+// A file where the capture directory should be: no directory can be made there.
+TEST(ServerApplicationTest, ACaptureDirectoryThatCannotBeMadeIsAConfigurationFailure) {
+  Faults faults;
+  ServerConfig config = ExampleConfig();
+  config.capture_directory = kPacks / "server.pack" / "captures";
+
+  const Outcome outcome = Served(config, faults);
+
+  ASSERT_TRUE(outcome.has_value());
+  EXPECT_EQ(outcome->code, Code::kInvalidConfiguration);
+  EXPECT_EQ(ContextOf(*outcome, "directory"), config.capture_directory.string());
 }
 
 TEST(ServerApplicationTest, AWorkerFailureReachesTheOutcomeWithItsTypedCause) {
@@ -170,7 +210,7 @@ TEST(ServerApplicationTest, AReplayServerRunsOnThePackUntilItsFirstCause) {
   EXPECT_EQ(outcome->detail, "injected");
 }
 
-TEST(ServerApplicationTest, AReplayServerWhoseCapturesAreNoDirectoryIsAClassifiedConstructionFailure) {
+TEST(ServerApplicationTest, AReplayServerWhoseCapturesAreNoDirectoryIsAConfigurationFailure) {
   Faults faults;
   ServerConfig config = ExampleConfig();
   config.replay_captures = kPacks / "no-such-captures";
@@ -178,8 +218,8 @@ TEST(ServerApplicationTest, AReplayServerWhoseCapturesAreNoDirectoryIsAClassifie
   const Outcome outcome = Served(config, faults);
 
   ASSERT_TRUE(outcome.has_value());
-  EXPECT_EQ(outcome->code, Code::kDependencyInitFailed);
-  EXPECT_EQ(ContextOf(*outcome, "phase"), "construct");
+  EXPECT_EQ(outcome->code, Code::kInvalidConfiguration);
+  EXPECT_EQ(ContextOf(*outcome, "directory"), config.replay_captures.string());
 }
 
 TEST(ServerApplicationTest, AWorkerThatCannotStartReachesTheOutcomeWithItsTypedCause) {
@@ -204,8 +244,31 @@ TEST(ServerApplicationTest, ARuntimeFailureEndsInOneTerminalEventAndANonZeroExit
   const std::string written = testing::internal::GetCapturedStdout();
 
   EXPECT_NE(status, 0);
+  // The runtime's line, where its stop was decided, and the process's terminal
+  // event (ADR-0033): one each, and no other at ERROR or above.
+  EXPECT_EQ(Occurrences(written, "ERROR"), 1U) << written;
+  EXPECT_EQ(Occurrences(written, "subsystem=supervisor event=worker_failed"), 1U) << written;
   EXPECT_EQ(Occurrences(written, "CRITICAL"), 1U) << written;
   EXPECT_EQ(Occurrences(written, "subsystem=server event=terminal_failure code=worker_creation_failed"), 1U) << written;
+}
+
+// The content loader returns what is wrong rather than logging it: the
+// boundary's terminal event is the only line at ERROR or above.
+TEST(ServerApplicationTest, AStartupFailureIsLoggedOnceByTheBoundaryThatDecidesIt) {
+  augusta::logging::Init();
+  augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
+  Faults faults;
+  ServerConfig config = ExampleConfig();
+  config.pack_path = kPacks / "client.pack";
+
+  testing::internal::CaptureStdout();
+  const int status = Conclude("server", Served(config, faults));
+  const std::string written = testing::internal::GetCapturedStdout();
+
+  EXPECT_NE(status, 0);
+  EXPECT_EQ(Occurrences(written, "ERROR"), 0U) << written;
+  EXPECT_EQ(Occurrences(written, "CRITICAL"), 1U) << written;
+  EXPECT_EQ(Occurrences(written, "subsystem=server event=terminal_failure code=invalid_content"), 1U) << written;
 }
 
 }  // namespace

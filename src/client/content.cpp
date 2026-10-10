@@ -1,13 +1,14 @@
 #include "content.h"
 
 #include <expected>
-#include <format>
-#include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "augusta/assets.h"
 #include "augusta/cues.h"
+#include "augusta/failure.h"
 #include "augusta/logging.h"
 #include "augusta/map.h"
 #include "augusta/math.h"
@@ -19,43 +20,46 @@ namespace augusta::client {
 
 namespace {
 
+// The pack's content failing: what was wrong, with which part of it, context
+// naming the pack first.
+failure::Failure ContentFailure(const assets::Pack& pack, std::vector<failure::ContextField> context,
+                                std::string detail) {
+  context.insert(context.begin(), {.key = "path", .value = pack.Path().string()});
+  return {.code = failure::Code::kInvalidContent, .context = std::move(context), .detail = std::move(detail)};
+}
+
 // Only the scene graph and its meshes are consumed so far (what the renderer
 // draws); collision/hitbox/texture resolution waits for the ECS
-// component shapes and gameplay code that will use them. Reports what is
-// wrong and returns nullopt.
-std::optional<renderer::Scene> LoadScene(const assets::Pack& pack, const math::Vec3& eye) {
+// component shapes and gameplay code that will use them.
+std::expected<renderer::Scene, failure::Failure> LoadScene(const assets::Pack& pack, const math::Vec3& eye) {
   auto scene = LoadRenderScene(pack, eye);
   if (!scene) {
-    LE("subsystem=client event=scene_loading_failed path={} error={}", pack.Path().string(),
-       DescribeSceneError(scene.error()));
-    return std::nullopt;
+    return std::unexpected(
+        ContentFailure(pack, {{.key = "asset", .value = "scene"}}, DescribeSceneError(scene.error())));
   }
   LI("subsystem=client event=scene_loaded meshes={}", scene->meshes.size());
   return *std::move(scene);
 }
 
 // The eye of character, the one this player asked to play, from pack: where its
-// camera sits. Reports what is wrong and returns nullopt.
-std::optional<math::Vec3> LoadEye(const assets::Pack& pack, std::string_view character) {
+// camera sits.
+std::expected<math::Vec3, failure::Failure> LoadEye(const assets::Pack& pack, std::string_view character) {
   auto eye = LoadCharacterEye(character, [&pack](std::string_view path) { return pack.ResolveEye(path); });
   if (!eye) {
-    LE("subsystem=client event=character_eye_loading_failed path={} error={}", pack.Path().string(),
-       DescribeCharacterError(eye.error()));
-    return std::nullopt;
+    return std::unexpected(ContentFailure(pack, {{.key = "character", .value = std::string(character)}},
+                                          DescribeCharacterError(eye.error())));
   }
   return *eye;
 }
 
 // Loads a character's mesh and eye from pack by its path, which must be one of
-// the scenario's characters (ADR-0042); pack must outlive it. Reports what is
-// wrong with the character list and returns nullopt.
-std::optional<CharacterLoader> CharacterLoaderFor(const assets::Pack& pack) {
+// the scenario's characters (ADR-0042); pack must outlive it. Fails if the
+// character list does not load.
+std::expected<CharacterLoader, failure::Failure> CharacterLoaderFor(const assets::Pack& pack) {
   auto characters = pack.ResolveCharacters();
   if (!characters) {
-    LE("subsystem=client event=character_loading_failed path={} error={}", pack.Path().string(),
-       std::format("{} {}", assets::kCharactersPath,
-                   assets::DescribeResolveError(characters.error(), "character list")));
-    return std::nullopt;
+    return std::unexpected(ContentFailure(pack, {{.key = "asset", .value = std::string(assets::kCharactersPath)}},
+                                          assets::DescribeResolveError(characters.error(), "character list")));
   }
   return [&pack, characters = *std::move(characters)](std::string_view character) {
     return LoadCharacterMesh(characters, character, [&pack](std::string_view path) { return pack.ResolveMesh(path); })
@@ -67,26 +71,24 @@ std::optional<CharacterLoader> CharacterLoaderFor(const assets::Pack& pack) {
   };
 }
 
-// The map's collision from pack. Reports what is wrong and returns nullopt.
-std::optional<Map> LoadMap(const assets::Pack& pack) {
+// The map's collision from pack.
+std::expected<Map, failure::Failure> LoadMap(const assets::Pack& pack) {
   auto collision = map::LoadCollision(pack);
   if (!collision) {
-    LE("subsystem=client event=map_loading_failed path={} error={}", pack.Path().string(),
-       map::DescribeMapError(collision.error()));
-    return std::nullopt;
+    return std::unexpected(
+        ContentFailure(pack, {{.key = "asset", .value = "collision"}}, map::DescribeMapError(collision.error())));
   }
   LI("subsystem=client event=map_loaded colliders={}", collision->size());
   return Map{.collision = *std::move(collision)};
 }
 
 // Every cue's sound (ADR-0020), loaded at startup so a pack missing one is found
-// before a Match rather than during one. Reports what is wrong and returns nullopt.
-std::optional<audio::CueSounds> LoadCueSounds(const assets::Pack& pack) {
+// before a Match rather than during one.
+std::expected<audio::CueSounds, failure::Failure> LoadCueSounds(const assets::Pack& pack) {
   auto sounds = audio::LoadCueSounds(pack);
   if (!sounds) {
-    LE("subsystem=client event=cue_sounds_loading_failed path={} error={}", pack.Path().string(),
-       audio::DescribeCueSoundError(sounds.error()));
-    return std::nullopt;
+    return std::unexpected(
+        ContentFailure(pack, {{.key = "asset", .value = "cue_sounds"}}, audio::DescribeCueSoundError(sounds.error())));
   }
   LI("subsystem=client event=cue_sounds_loaded cues={}", sounds->size());
   return *std::move(sounds);
@@ -94,48 +96,32 @@ std::optional<audio::CueSounds> LoadCueSounds(const assets::Pack& pack) {
 
 }  // namespace
 
-std::string_view DescribeContentError(ContentError error) {
-  switch (error) {
-    case ContentError::kEyeLoading:
-      return "character eye loading failed";
-    case ContentError::kSceneLoading:
-      return "scene loading failed";
-    case ContentError::kCharacterLoading:
-      return "character loading failed";
-    case ContentError::kMapLoading:
-      return "map loading failed";
-    case ContentError::kCueSoundsLoading:
-      return "cue sounds loading failed";
-  }
-  return "unknown content error";
-}
-
-std::expected<Content, ContentError> LoadClientContent(const assets::Pack& pack, std::string_view character) {
+std::expected<Content, failure::Failure> LoadClientContent(const assets::Pack& pack, std::string_view character) {
   // The camera is attached to the character this player asked to play, at its eye.
   const auto eye = LoadEye(pack, character);
   if (!eye) {
-    return std::unexpected(ContentError::kEyeLoading);
+    return std::unexpected(eye.error());
   }
 
   auto scene = LoadScene(pack, *eye);
   if (!scene) {
-    return std::unexpected(ContentError::kSceneLoading);
+    return std::unexpected(std::move(scene.error()));
   }
 
   // A character is loaded only once another player in the Lobby brings it (ADR-0043).
   auto load_character = CharacterLoaderFor(pack);
   if (!load_character) {
-    return std::unexpected(ContentError::kCharacterLoading);
+    return std::unexpected(std::move(load_character.error()));
   }
 
   auto map = LoadMap(pack);
   if (!map) {
-    return std::unexpected(ContentError::kMapLoading);
+    return std::unexpected(std::move(map.error()));
   }
 
   auto cue_sounds = LoadCueSounds(pack);
   if (!cue_sounds) {
-    return std::unexpected(ContentError::kCueSoundsLoading);
+    return std::unexpected(std::move(cue_sounds.error()));
   }
 
   return Content{.eye = *eye,

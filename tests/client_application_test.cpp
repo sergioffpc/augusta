@@ -12,7 +12,6 @@
 #include "augusta/client_config.h"
 #include "augusta/config.h"
 #include "augusta/failure.h"
-#include "augusta/faults.h"
 #include "augusta/harness.h"
 #include "augusta/math.h"
 #include "augusta/protocol.h"
@@ -30,7 +29,6 @@ using augusta::client::CharacterErrorCode;
 using augusta::client::CheckReenactmentPack;
 using augusta::client::ClassifyCharacterError;
 using augusta::client::ClassifySessionFailure;
-using augusta::client::InitializeClientTransport;
 using augusta::client::LoadClient;
 using augusta::client::ReadClientConfig;
 using augusta::client::ReadReenactment;
@@ -39,8 +37,6 @@ using augusta::config::CommandLine;
 using augusta::config::CommandLineAction;
 using augusta::failure::Code;
 using augusta::failure::Failure;
-using augusta::failure::Faults;
-using augusta::failure::Site;
 using augusta::harness::FailureKind;
 using augusta::harness::JoinRefusal;
 
@@ -65,17 +61,6 @@ TEST(ClientApplicationTest, AConfigFileThatCannotBeReadIsAConfigurationFailure) 
   EXPECT_FALSE(config.error().detail.empty());
 }
 
-TEST(ClientApplicationTest, ATransportThatCannotBeInitializedIsATransportFailure) {
-  Faults faults;
-  faults.Arm(Site::kDependencyInit, "GameNetworkingSockets_Init failed");
-
-  const auto initialized = InitializeClientTransport(&faults);
-
-  ASSERT_FALSE(initialized.has_value());
-  EXPECT_EQ(initialized.error().code, Code::kTransportInitFailed);
-  EXPECT_EQ(initialized.error().detail, "GameNetworkingSockets_Init failed");
-}
-
 TEST(ClientApplicationTest, APackThatDoesNotVerifyIsAContentFailure) {
   ClientConfig config;
   config.pack_path = kPacks / "missing.pack";
@@ -87,6 +72,36 @@ TEST(ClientApplicationTest, APackThatDoesNotVerifyIsAContentFailure) {
   ASSERT_FALSE(loaded.has_value());
   EXPECT_EQ(loaded.error().code, Code::kInvalidContent);
   EXPECT_EQ(ContextOf(loaded.error(), "path"), config.pack_path.string());
+}
+
+TEST(ClientApplicationTest, AnUnknownCharacterInAVerifiedPackIsAContentFailure) {
+  ClientConfig config;
+  config.pack_path = kPacks / "client.pack";
+  config.public_key_path = kPacks / "test.pub";
+  config.character = "ghost";
+
+  const auto loaded = LoadClient(config);
+
+  ASSERT_FALSE(loaded.has_value());
+  EXPECT_EQ(loaded.error().code, Code::kInvalidContent);
+  EXPECT_EQ(ContextOf(loaded.error(), "path"), config.pack_path.string());
+  EXPECT_EQ(ContextOf(loaded.error(), "character"), "ghost");
+  EXPECT_FALSE(loaded.error().detail.empty());
+}
+
+// A pack that verifies but holds the server's content, not a client's.
+TEST(ClientApplicationTest, APackWithoutClientContentIsAContentFailure) {
+  ClientConfig config;
+  config.pack_path = kPacks / "server.pack";
+  config.public_key_path = kPacks / "test.pub";
+  config.character = "soldier";
+
+  const auto loaded = LoadClient(config);
+
+  ASSERT_FALSE(loaded.has_value());
+  EXPECT_EQ(loaded.error().code, Code::kInvalidContent);
+  EXPECT_EQ(ContextOf(loaded.error(), "path"), config.pack_path.string());
+  EXPECT_FALSE(loaded.error().detail.empty());
 }
 
 TEST(ClientApplicationTest, ARefusedJoinEndsTheClientsSession) {

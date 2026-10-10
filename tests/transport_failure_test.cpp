@@ -71,7 +71,7 @@ constexpr const char* kCharacter = "soldier";
 
 class TransportFailureEnvironment : public ::testing::Environment {
  public:
-  void SetUp() override { augusta::networking::Init(); }
+  void SetUp() override { ASSERT_TRUE(augusta::networking::Init().has_value()); }
   void TearDown() override { augusta::networking::Shutdown(); }
 };
 
@@ -356,6 +356,35 @@ TEST(ServerRuntimeTransportFailureTest, AServerTransportFailureEndsRunWithATyped
   EXPECT_EQ(failure->detail, "poll group gone");
   const std::string thread = ContextOf(*failure, augusta::supervisor::kThreadContextKey);
   EXPECT_TRUE(thread == "network" || thread == "simulation") << thread;
+}
+
+// augustad told to stop from outside (a SIGTERM) just as its transport fails:
+// whichever wins the race, Run returns with both threads joined before the Host
+// they use goes, and a failure it returns is the transport's. Each round lands
+// the two a little later; under the sanitizers (ADR-0013) a failure during a
+// concurrent shutdown shows here as a race or a use after free.
+TEST(ServerRuntimeTransportFailureTest, ATransportFailureRacingAStopFromOutsideEndsRunWithEveryThreadJoined) {
+  constexpr int kRounds = 8;
+  int failed = 0;
+  for (int round = 0; round < kRounds; ++round) {
+    Faults faults;
+    faults.Arm(Site::kTransportReceive, "poll group gone", Faults::kEveryTime);
+    ServerRuntime runtime(HostConfigWith(&faults), 0, TestScenario());
+    std::thread outside([&runtime, round] {
+      std::this_thread::sleep_for(std::chrono::milliseconds(round));
+      runtime.Stop();
+    });
+
+    const std::optional<Failure> failure = runtime.Run();
+    outside.join();
+
+    if (failure.has_value()) {
+      EXPECT_EQ(failure->code, Code::kTransportReceiveFailed) << "round " << round;
+      ++failed;
+    }
+  }
+  // The later rounds give the failure time to land first: the race is run, not only the stop.
+  EXPECT_GT(failed, 0);
 }
 
 // A server whose Parameters hold more Recoil kicks than the protocol carries

@@ -72,8 +72,8 @@ class ClientRuntime {
   /// since where content comes from is the executable's business, not the
   /// orchestrator's. load_character is called in the Lobby for each
   /// character another player brings (ADR-0043); it must stay callable until
-  /// Run() returns. Throws std::runtime_error if physics rejects a collision
-  /// mesh.
+  /// Run() returns. Throws failure::ClassifiedFailure
+  /// (failure::Code::kInvalidContent) if physics rejects a collision mesh.
   ClientRuntime(const RuntimeConfig& config, Content content);
 
   /// Run() always stops and joins the Prediction and Network I/O

@@ -10,7 +10,6 @@
 #include <mutex>
 #include <optional>
 #include <span>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -209,6 +208,14 @@ failure::Failure LocalFailure(failure::Code code, std::vector<failure::ContextFi
   return failure::Failure{.code = code, .context = std::move(context), .detail = std::move(detail)};
 }
 
+// What a constructor or Connect throws for an address that does not parse: the
+// config named it, so it is the config's failure.
+failure::ClassifiedFailure UnparsedAddress(const std::string& address) {
+  return failure::ClassifiedFailure(failure::Failure{.code = failure::Code::kInvalidConfiguration,
+                                                     .context = {{.key = "address", .value = address}},
+                                                     .detail = "not a numeric host:port"});
+}
+
 // One message sent to connection, as what SendMessageToConnection answers, or
 // as k_EResultFail - the transport failing - with the armed fault's detail
 // when faults has kTransportSend armed.
@@ -284,16 +291,18 @@ HSteamListenSocket CreateListenSocket(SteamNetworkingIPAddr& addr,
 
 }  // namespace
 
-TransportFailure::TransportFailure(failure::Failure failure)
-    : std::runtime_error(failure::DescribeFailure(failure)), failure_(std::move(failure)) {}
-
-void Init() {
+std::expected<void, failure::Failure> Init(failure::Faults* faults) {
+  if (faults != nullptr) {
+    if (std::optional<std::string> tripped = faults->Trip(failure::Site::kDependencyInit)) {
+      return std::unexpected(LocalFailure(failure::Code::kTransportInitFailed, {}, *std::move(tripped)));
+    }
+  }
   SteamNetworkingErrMsg err_msg;
   if (!GameNetworkingSockets_Init(nullptr, err_msg)) {
-    LE("subsystem=networking event=init_failed reason={}", err_msg);
-    throw std::runtime_error(std::string("networking::Init: ") + err_msg);
+    return std::unexpected(LocalFailure(failure::Code::kTransportInitFailed, {}, err_msg));
   }
   LI("subsystem=networking event=init");
+  return {};
 }
 
 void Shutdown() {
@@ -381,7 +390,7 @@ void Client::Connect(const Endpoint& server) {
   SteamNetworkingIPAddr addr;
   addr.Clear();
   if (!addr.ParseString(server.address.c_str())) {
-    throw std::runtime_error("networking::Client::Connect: invalid address " + server.address);
+    throw UnparsedAddress(server.address);
   }
   LI("subsystem=networking event=connecting role=client server_addr={}", server.address);
 
@@ -563,7 +572,7 @@ Server::Server(const Endpoint& local_endpoint, failure::Faults* faults) : impl_(
   SteamNetworkingIPAddr addr;
   addr.Clear();
   if (!addr.ParseString(local_endpoint.address.c_str())) {
-    throw std::runtime_error("networking::Server: invalid address " + local_endpoint.address);
+    throw UnparsedAddress(local_endpoint.address);
   }
 
   // Two config values applied to every connection accepted through this
@@ -579,8 +588,8 @@ Server::Server(const Endpoint& local_endpoint, failure::Faults* faults) : impl_(
   options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, impl_->registration.Id());
 
   const auto listener_failure = [&](std::string detail) {
-    return TransportFailure(LocalFailure(failure::Code::kListenerSetupFailed,
-                                         {{.key = "address", .value = local_endpoint.address}}, std::move(detail)));
+    return failure::ClassifiedFailure(LocalFailure(
+        failure::Code::kListenerSetupFailed, {{.key = "address", .value = local_endpoint.address}}, std::move(detail)));
   };
   if (faults != nullptr) {
     if (std::optional<std::string> tripped = faults->Trip(failure::Site::kListenerSetup)) {

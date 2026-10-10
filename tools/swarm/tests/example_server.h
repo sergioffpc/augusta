@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
+#include "augusta/failure.h"
 #include "augusta/map.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
@@ -34,7 +35,7 @@ inline constexpr const char* kCharacter = "soldier";
 // see networking::Shutdown. Each test file registers one.
 class NetworkingEnvironment : public ::testing::Environment {
  public:
-  void SetUp() override { networking::Init(); }
+  void SetUp() override { ASSERT_TRUE(networking::Init().has_value()); }
   void TearDown() override { networking::Shutdown(); }
 };
 
@@ -86,7 +87,7 @@ class ExampleServer {
     const assets::Pack server_pack = ExamplePack("server.pack");
     auto content = server::LoadServerContent(server_pack, kTickRate);
     if (!content.has_value()) {
-      ADD_FAILURE() << server::DescribeContentError(content.error());
+      ADD_FAILURE() << failure::DescribeFailure(content.error());
       return;
     }
     parameters::Parameters parameters = content->parameters;
