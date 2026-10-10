@@ -26,6 +26,7 @@
 #include "augusta/harness.h"
 #include "augusta/input.h"
 #include "augusta/interpolation.h"
+#include "augusta/local_view.h"
 #include "augusta/logging.h"
 #include "augusta/map.h"
 #include "augusta/math.h"
