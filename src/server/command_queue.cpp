@@ -1,8 +1,6 @@
 #include "command_queue.h"
 
-#include <chrono>
 #include <cmath>
-#include <cstdint>
 #include <expected>
 #include <string_view>
 
@@ -53,10 +51,6 @@ std::expected<void, Rejection> Validate(const SequencedCommand& command, command
     return std::unexpected(Rejection::kOutOfRange);
   }
   return {};
-}
-
-int HeldTicks(std::uint8_t tick_rate_hz) {
-  return static_cast<int>(std::chrono::ceil<std::chrono::seconds>(kMaxHeldTime * tick_rate_hz).count());
 }
 
 std::expected<Enqueued, Rejection> CommandQueue::TryEnqueue(const SequencedCommand& command) {

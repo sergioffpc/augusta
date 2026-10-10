@@ -3,6 +3,7 @@
 
 #include <expected>
 #include <memory>
+#include <optional>
 
 #include "augusta/assets.h"
 #include "augusta/client_config.h"
@@ -10,12 +11,14 @@
 #include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/harness.h"
+#include "augusta/reenactment.h"
 #include "character_loader.h"
 #include "content.h"
 
 /// \file
 /// How augustac's phases classify their failures behind the application
-/// boundary (augusta/application.h, ADR-0033): an unusable config, a transport
+/// boundary (augusta/application.h, ADR-0033): an unusable config or capture to
+/// reenact, a transport
 /// that does not start, a pack or content that does not load, a Session that
 /// ends on its own, a character that cannot be loaded. main.cpp runs these as
 /// its Lifecycle around ClientRuntime (runtime.h), which classifies its run's
@@ -30,6 +33,20 @@ namespace augusta::client {
 /// to answer before this.
 [[nodiscard]] std::expected<config::ClientConfig, failure::Failure> ReadClientConfig(
     const std::expected<config::CommandLine, config::ConfigError>& command_line);
+
+/// The Script of the player command_line asks to reenact (`--reenact <capture>
+/// --player <n>`, ADR-0050), or nullopt if it asks for none; or the
+/// failure::Code::kInvalidConfiguration failure saying why the arguments, the
+/// capture or its player are unusable, its context naming the capture's path.
+[[nodiscard]] std::expected<std::optional<harness::Script>, failure::Failure> ReadReenactment(
+    const config::CommandLine& command_line);
+
+/// Whether script's capture may be reenacted with the client pack of hash
+/// loaded: the failure::Code::kInvalidConfiguration failure if it names
+/// another, whose Commands and spawns this pack's Map and Characters need not
+/// fit.
+[[nodiscard]] std::expected<void, failure::Failure> CheckReenactmentPack(const harness::Script& script,
+                                                                         const assets::PackHash& loaded);
 
 /// Starts the transport, once per process, before any ClientRuntime is
 /// constructed (networking.h), or returns the failure::Code::kTransportInitFailed

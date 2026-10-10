@@ -160,6 +160,24 @@ TEST_F(RunnerTest, MovesThePlayerOnTheServerByTheCommandsItsSourceGives) {
   EXPECT_FALSE(runner.Failure().has_value());
 }
 
+// A source with no Command for a Tick skips it: nothing is sent, and the Tick
+// still runs on its schedule (a Captured player holding to the server's ticks,
+// ADR-0050).
+// Requirements: US-21
+TEST_F(RunnerTest, ASourceWithNoCommandSkipsTheTickAndSendsNothing) {
+  std::atomic<int> ticks = 0;
+  const Runner runner(session_, RunnerHooks{.next_command = [] { return std::optional<Command>{}; },
+                                            .on_tick = [&](const PredictedTick& /*tick*/) { ++ticks; },
+                                            .on_network_round = {}});
+  ASSERT_TRUE(ServeUntil([&] { return session_.GetAuthoritativeState().has_value(); }));
+  const int ticks_in_match = ticks.load();
+
+  ASSERT_TRUE(ServeUntil([&] { return ticks.load() >= ticks_in_match + kTickRate / 2; }));
+
+  EXPECT_EQ(session_.GetAuthoritativeState()->acknowledged_sequence, 0U);
+  EXPECT_FALSE(runner.Failure().has_value());
+}
+
 TEST_F(RunnerTest, TellsItsHooksOfEveryTickAtTheServersPacedRateAndOfEveryNetworkRound) {
   std::mutex mutex;
   std::vector<PredictedTick> ticks;

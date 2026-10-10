@@ -356,7 +356,8 @@ struct ReplayServer::Impl {
       HandleReplayListRequest(message.from, lock);
     } else if (const auto* request = std::get_if<protocol::ReplayRequestWire>(&*decoded)) {
       HandleReplayRequest(message.from, FromWire(*request), now, lock);
-    } else if (std::holds_alternative<protocol::JoinRequestWire>(*decoded)) {
+    } else if (std::holds_alternative<protocol::JoinRequestWire>(*decoded) ||
+               std::holds_alternative<protocol::ReenactRequestWire>(*decoded)) {
       RefuseToPlay(message.from, now);
     } else {
       Drop(message, "not a replay request", now);

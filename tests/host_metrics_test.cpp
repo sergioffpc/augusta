@@ -322,7 +322,8 @@ TEST(HostMetricsTest, JoinsAreLabelledByResultAndARefusalByItsReason) {
   EXPECT_EQ(Series(joins, {{"result", "refused"}, {"reason", "lobby_full"}}).counter.value, 1.0);
   EXPECT_EQ(ValuesOf(joins, "reason"),
             (std::set<std::string>{"version_mismatch", "lobby_full", "unknown_character", "match_in_progress",
-                                   "pack_mismatch", "replay_server", "unknown_capture", "not_a_replay_server"}));
+                                   "pack_mismatch", "replay_server", "unknown_capture", "not_a_replay_server",
+                                   "reenactments_not_accepted"}));
 }
 
 // Requirements: NFR-07
@@ -392,7 +393,8 @@ TEST(HostMetricsTest, MessagesAreLabelledByTheirType) {
                                        "replay_list_request",
                                        "replay_list",
                                        "replay_request",
-                                       "replay_view"};
+                                       "replay_view",
+                                       "reenact_request"};
   EXPECT_EQ(ValuesOf(Family(families, "augustad_messages_sent_total"), "type"), types);
   EXPECT_EQ(ValuesOf(Family(families, "augustad_messages_received_total"), "type"), types);
 }

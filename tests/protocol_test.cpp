@@ -1,5 +1,6 @@
 #include "augusta/protocol.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <concepts>
@@ -59,6 +60,7 @@ using augusta::protocol::PackHashWire;
 using augusta::protocol::ParametersWire;
 using augusta::protocol::PlayerViewWire;
 using augusta::protocol::ReadyWire;
+using augusta::protocol::ReenactRequestWire;
 using augusta::protocol::ReplayListingWire;
 using augusta::protocol::ReplayListRequestWire;
 using augusta::protocol::ReplayListWire;
@@ -93,15 +95,16 @@ constexpr auto kShotType = static_cast<std::uint8_t>(MessageTypeWire::kShot);
 constexpr auto kHitConfirmationType = static_cast<std::uint8_t>(MessageTypeWire::kHitConfirmation);
 constexpr auto kDeathType = static_cast<std::uint8_t>(MessageTypeWire::kDeath);
 constexpr auto kReplayListRequestType = static_cast<std::uint8_t>(MessageTypeWire::kReplayListRequest);
+constexpr auto kReenactRequestType = static_cast<std::uint8_t>(MessageTypeWire::kReenactRequest);
 // How many bytes a tick takes on the wire: as many as primitives::Tick has.
 constexpr int kTickBytes = static_cast<int>(sizeof(augusta::primitives::Tick));
 constexpr int kSequenceBytes = static_cast<int>(sizeof(augusta::primitives::Sequence));
 
 // Every refusal the protocol has.
-constexpr std::array<JoinRefusalWire, 8> kEveryRefusal = {
-    JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kLobbyFull,       JoinRefusalWire::kUnknownCharacter,
-    JoinRefusalWire::kMatchInProgress, JoinRefusalWire::kPackMismatch,    JoinRefusalWire::kReplayServer,
-    JoinRefusalWire::kUnknownCapture,  JoinRefusalWire::kNotAReplayServer};
+constexpr std::array<JoinRefusalWire, 9> kEveryRefusal = {
+    JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kLobbyFull,        JoinRefusalWire::kUnknownCharacter,
+    JoinRefusalWire::kMatchInProgress, JoinRefusalWire::kPackMismatch,     JoinRefusalWire::kReplayServer,
+    JoinRefusalWire::kUnknownCapture,  JoinRefusalWire::kNotAReplayServer, JoinRefusalWire::kReenactmentsNotAccepted};
 
 // A client pack hash of 1, 2, 3 ... 32, so its bytes are told apart on the wire.
 PackHashWire CountingPackHash() {
@@ -191,6 +194,49 @@ EntityStateWire BodyAt(std::uint32_t entity, float x) {
   body.body.stance = augusta::protocol::StanceWire::kCrouching;
   body.body.stamina = 0.75F;
   return body;
+}
+
+// ADR-0050: a Captured player's first message is a Reenact request, the Join
+// request's fields in the Join request's encoding, then its spawn.
+// Requirements: US-21
+TEST(ProtocolTest, AReenactRequestRoundTripsWithItsSpawn) {
+  const ReenactRequestWire request{.engine_version = "0.1.0",
+                                   .client_pack = CountingPackHash(),
+                                   .character = "soldier",
+                                   .spawn = Vec3(10.0F, 0.5F, -20.0F)};
+
+  const auto decoded = RoundTrip(request);
+
+  ASSERT_TRUE(std::holds_alternative<ReenactRequestWire>(decoded));
+  EXPECT_EQ(std::get<ReenactRequestWire>(decoded), request);
+}
+
+// Requirements: US-21
+TEST(ProtocolTest, AReenactRequestIsAJoinRequestsFieldsUnderItsOwnTypeThenTheSpawn) {
+  const JoinRequestWire join{.engine_version = "0.1.0", .client_pack = CountingPackHash(), .character = "soldier"};
+  const ReenactRequestWire reenact{.engine_version = join.engine_version,
+                                   .client_pack = join.client_pack,
+                                   .character = join.character,
+                                   .spawn = Vec3(1.0F, 2.0F, 3.0F)};
+
+  const BytesWire join_bytes = Encode(join).value();
+  const BytesWire reenact_bytes = Encode(reenact).value();
+
+  ASSERT_GT(reenact_bytes.size(), join_bytes.size());
+  EXPECT_EQ(kReenactRequestType, 17);
+  EXPECT_EQ(reenact_bytes.front(), static_cast<std::byte>(kReenactRequestType));
+  EXPECT_TRUE(std::equal(join_bytes.begin() + 1, join_bytes.end(), reenact_bytes.begin() + 1));
+}
+
+// Requirements: NFR-12
+TEST(ProtocolTest, AReenactRequestsVersionAndCharacterAreBoundAsAJoinRequestsAre) {
+  ReenactRequestWire long_version;
+  long_version.engine_version = std::string(kMaxEngineVersionLength + 1, 'v');
+  ReenactRequestWire long_character;
+  long_character.character = std::string(augusta::protocol::kMaxCharacterNameLength + 1, 'c');
+
+  EXPECT_EQ(Encode(long_version).error(), EncodeError::kFieldTooLong);
+  EXPECT_EQ(Encode(long_character).error(), EncodeError::kFieldTooLong);
 }
 
 TEST(ProtocolTest, JoinAcceptedRoundTrips) {
@@ -530,14 +576,15 @@ TEST(ProtocolTest, AnEmptyPayloadIsEmpty) { EXPECT_EQ(Decode(BytesWire{}).error(
 // Requirements: NFR-12
 TEST(ProtocolTest, AnUnknownTypeIsRejected) {
   EXPECT_EQ(Decode(BytesOf({0})).error(), DecodeError::kUnknownType);
-  EXPECT_EQ(Decode(BytesOf({17, 0, 0, 0, 0})).error(), DecodeError::kUnknownType);
+  EXPECT_EQ(Decode(BytesOf({18, 0, 0, 0, 0})).error(), DecodeError::kUnknownType);
   EXPECT_EQ(Decode(BytesOf({0xFF})).error(), DecodeError::kUnknownType);
 }
 
 // Requirements: NFR-12
 TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
-  const std::array<MessageWire, 15> messages = {
+  const std::array<MessageWire, 16> messages = {
       JoinRequestWire{.engine_version = "0.1.0", .character = "soldier"},
+      ReenactRequestWire{.engine_version = "0.1.0", .character = "soldier", .spawn = Vec3(1.0F, 2.0F, 3.0F)},
       JoinAcceptedWire{.session = static_cast<SessionIdWire>(7), .character = "soldier"},
       JoinRefusedWire{.reason = JoinRefusalWire::kMatchInProgress},
       CommandsWire{.commands = {SequencedCommandWire{.sequence = 1}, {.sequence = 2}}},
@@ -584,7 +631,7 @@ TEST(ProtocolTest, ALengthOf255IsRejectedBeforeAnythingIsAllocatedForIt) {
 // Requirements: NFR-12
 TEST(ProtocolTest, ARefusalReasonOutsideTheEnumerationIsInvalid) {
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 0})).error(), DecodeError::kInvalidEnum);
-  EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 9})).error(), DecodeError::kInvalidEnum);
+  EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 10})).error(), DecodeError::kInvalidEnum);
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 0xFF})).error(), DecodeError::kInvalidEnum);
 }
 
@@ -1204,7 +1251,7 @@ TEST(ProtocolEncodeTest, AnEnumeratedValueTheEnumerationLacksIsNotEncoded) {
             EncodeError::kInvalidEnum);
   EXPECT_EQ(RefusalOf(AuthoritativeStateWire{.bodies = {body}}), EncodeError::kInvalidEnum);
   EXPECT_EQ(RefusalOf(JoinRefusedWire{}), EncodeError::kInvalidEnum);
-  EXPECT_EQ(RefusalOf(JoinRefusedWire{.reason = static_cast<JoinRefusalWire>(9)}), EncodeError::kInvalidEnum);
+  EXPECT_EQ(RefusalOf(JoinRefusedWire{.reason = static_cast<JoinRefusalWire>(10)}), EncodeError::kInvalidEnum);
   EXPECT_EQ(RefusalOf(HitConfirmationWire{.part = static_cast<BodyPartWire>(0)}), EncodeError::kInvalidEnum);
   EXPECT_EQ(RefusalOf(HitConfirmationWire{.part = kNoPart}), EncodeError::kInvalidEnum);
   EXPECT_EQ(RefusalOf(DeathWire{.part = kNoPart}), EncodeError::kInvalidEnum);

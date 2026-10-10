@@ -47,6 +47,12 @@ simulation:
   #   # are deleted as it is written to stay under it. A Match that alone
   #   # outgrows it stops its capture there, logged once.
   #   max_mib: 2048
+  # Whether a Captured player's Reenact request is admitted (optional, default
+  # false): true lets augustac --reenact join and spawn where its capture has
+  # it, which the server takes on trust; false refuses it with "reenactments
+  # not accepted" (ADR-0050). A debugging setting: never on for a server open
+  # to players.
+  # reenactments: false
 network:
   # Local address to listen on (optional, default 0.0.0.0:27015).
   listen_address: 0.0.0.0:27015

@@ -484,6 +484,12 @@ target_link_libraries(
 )
 gtest_discover_tests(augusta_capture_retention_tests DISCOVERY_TIMEOUT 30)
 
+# A Captured player (ADR-0050): its Script read from a capture a Capturer
+# writes, and its pacing and progress from Server views built by hand.
+add_executable(augusta_reenactment_tests reenactment_test.cpp)
+target_link_libraries(augusta_reenactment_tests PRIVATE augusta_harness augustad_host GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_reenactment_tests DISCOVERY_TIMEOUT 30)
+
 # A Match capture that cannot be written, optional or strict (ADR-0050,
 # ADR-0033): its write and flush failures injected (see faults.h), seen from the
 # Host and the ServerRuntime running it, with the log lines read off stdout.

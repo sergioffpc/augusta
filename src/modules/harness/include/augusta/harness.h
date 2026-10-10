@@ -220,6 +220,8 @@ enum class JoinRefusal : std::uint8_t {
   kUnknownCapture,
   /// This client asked a live server for Replays, which only a replay server serves (ADR-0051).
   kNotAReplayServer,
+  /// This client asked to join as a Captured player, and the server takes none (ADR-0050).
+  kReenactmentsNotAccepted,
 };
 
 /// A short lowercase description of reason, for logs and for the player.
@@ -318,6 +320,10 @@ struct SessionConfig {
   /// the server's Replay list. It is then a Spectator from the first tick: it
   /// predicts nothing and sends no Command, and character is not asked for.
   std::optional<std::string> replay = std::nullopt;
+  /// Where to ask to spawn, for a Captured player (ADR-0050): it joins with a
+  /// Reenact request naming it in place of a Join request. nullopt, the
+  /// default, for anyone else, whom Game policy places.
+  std::optional<math::Vec3> spawn = std::nullopt;
 };
 
 /// The client's network connection and PredictionWorld, without a window or a GPU.
@@ -478,6 +484,12 @@ class Session {
   /// match in progress, or the last one if back in the Lobby; nullopt before
   /// the first. Set by ExchangeMessages; safe to read from any thread.
   [[nodiscard]] std::optional<EntityId> GetEntityId() const;
+
+  /// The sequence the command of the next Tick in a match goes under: what a
+  /// caller that paces its commands to the server's ticks counts from (the
+  /// Authoritative State's acknowledged sequence is the last handed to the
+  /// World). Prediction thread, as Tick.
+  [[nodiscard]] command::Sequence NextSequence() const;
 
   /// Runs one fixed tick of PredictionWorld for command and returns its state.
   /// The Seen time command reports (command::Command) is the caller's to fill, from

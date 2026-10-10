@@ -23,9 +23,10 @@
 #include <thread>
 #include <unordered_set>
 #include <utility>
-#include <variant>
 #include <vector>
 
+#include "augusta/capture_error.h"
+#include "augusta/capture_file.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
@@ -34,7 +35,6 @@
 #include "augusta/protocol.h"
 #include "augusta/tick.h"
 #include "capture_retention.h"
-#include "frames.h"
 #include "match.h"
 #include "wire.h"
 
@@ -92,66 +92,6 @@ failure::Code OptionalLossCode(CaptureStep step) {
   return failure::Code::kCaptureWriteFailed;
 }
 
-// Decision: whether next may follow the records of capture so far, joins of
-// them Joins (ADR-0050): every Join first, numbered from 1 in order, then the
-// events in tick order, each naming a player a Join did, and nothing after
-// the Match end.
-bool Follows(const Capture& capture, std::size_t joins, const CaptureRecord& next) {
-  if (!capture.records.empty()) {
-    const CaptureRecord& last = capture.records.back();
-    if (next.offset < last.offset || std::holds_alternative<CapturedMatchEnd>(last.event)) {
-      return false;
-    }
-  }
-  const auto known = [joins](CapturedPlayer player) { return player >= 1 && player <= joins; };
-  if (const auto* join = std::get_if<CapturedJoin>(&next.event)) {
-    return joins == capture.records.size() && join->player == joins + 1 && next.offset == 0;
-  }
-  if (const auto* command = std::get_if<CapturedCommand>(&next.event)) {
-    return known(command->player);
-  }
-  if (const auto* leave = std::get_if<CapturedLeave>(&next.event)) {
-    return known(leave->player);
-  }
-  if (const auto* death = std::get_if<CapturedDeath>(&next.event)) {
-    return known(death->victim) && known(death->killer);
-  }
-  const auto& end = std::get<CapturedMatchEnd>(next.event);
-  return !end.winner.has_value() || known(*end.winner);
-}
-
-// Reads a capture's magic off the front of in.
-std::expected<void, CaptureError> ReadMagic(std::istream& in) {
-  std::array<char, protocol::kCaptureMagic.size()> magic{};
-  in.read(magic.data(), magic.size());
-  if (in.bad()) {
-    return std::unexpected(CaptureError::kUnreadable);
-  }
-  if (static_cast<std::size_t>(in.gcount()) != magic.size() ||
-      !std::ranges::equal(magic, protocol::kCaptureMagic,
-                          [](char read, std::byte expected) { return static_cast<std::byte>(read) == expected; })) {
-    return std::unexpected(CaptureError::kNotACapture);
-  }
-  return {};
-}
-
-std::expected<CaptureHeader, CaptureError> ReadHeader(std::istream& in) {
-  protocol::BytesWire payload;
-  const Frame frame = ReadFrame(in, payload);
-  if (frame == Frame::kUnreadable) {
-    return std::unexpected(CaptureError::kUnreadable);
-  }
-  if (frame != Frame::kRead) {
-    return std::unexpected(CaptureError::kUnsupported);
-  }
-  const auto record = protocol::DecodeCaptureRecord(payload);
-  const auto* header = record.has_value() ? std::get_if<protocol::CaptureHeaderWire>(&*record) : nullptr;
-  if (header == nullptr || header->format_version != protocol::kCaptureFormatVersion) {
-    return std::unexpected(CaptureError::kUnsupported);
-  }
-  return FromWire(*header);
-}
-
 // How many ticks to is after from: negative when it is before.
 std::int64_t Offset(tick::Tick from, tick::Tick to) {
   return static_cast<std::int64_t>(to) - static_cast<std::int64_t>(from);
@@ -159,49 +99,18 @@ std::int64_t Offset(tick::Tick from, tick::Tick to) {
 
 }  // namespace
 
-std::string_view DescribeCaptureError(CaptureError error) {
-  switch (error) {
-    case CaptureError::kUnreadable:
-      return "the capture could not be read";
-    case CaptureError::kNotACapture:
-      return "the file does not start with a capture's magic";
-    case CaptureError::kUnsupported:
-      return "the capture's header is missing or of a format version this engine does not read";
-    case CaptureError::kMalformed:
-      return "a record of the capture does not decode or is out of order";
+std::expected<Capture, capture_file::ReadError> ReadCapture(std::istream& in) {
+  auto file = capture_file::ReadCaptureFile(in);
+  if (!file.has_value()) {
+    return std::unexpected(file.error());
   }
-  return "unknown capture error";
-}
-
-std::expected<Capture, CaptureError> ReadCapture(std::istream& in) {
-  if (!in) {
-    return std::unexpected(CaptureError::kUnreadable);
-  }
-  if (auto magic = ReadMagic(in); !magic.has_value()) {
-    return std::unexpected(magic.error());
-  }
-  auto header = ReadHeader(in);
-  if (!header.has_value()) {
-    return std::unexpected(header.error());
-  }
-  Capture capture{.header = *std::move(header), .records = {}, .torn = false};
-  std::size_t joins = 0;
-  protocol::BytesWire payload;
-  for (Frame frame = ReadFrame(in, payload); frame != Frame::kEnd; frame = ReadFrame(in, payload)) {
-    if (frame == Frame::kUnreadable) {
-      return std::unexpected(CaptureError::kUnreadable);
+  Capture capture{.header = FromWire(file->header), .records = {}, .torn = file->torn};
+  capture.records.reserve(file->records.size());
+  for (const protocol::CaptureRecordWire& wire : file->records) {
+    // The file's order admits no header past the first, which alone gives none.
+    if (std::optional<CaptureRecord> record = FromWire(wire)) {
+      capture.records.push_back(*std::move(record));
     }
-    if (frame == Frame::kTorn) {
-      capture.torn = true;
-      break;
-    }
-    const auto wire = protocol::DecodeCaptureRecord(payload);
-    std::optional<CaptureRecord> record = wire.has_value() ? FromWire(*wire) : std::nullopt;
-    if (!record.has_value() || !Follows(capture, joins, *record)) {
-      return std::unexpected(CaptureError::kMalformed);
-    }
-    joins += std::holds_alternative<CapturedJoin>(record->event) ? 1 : 0;
-    capture.records.push_back(*std::move(record));
   }
   return capture;
 }
@@ -458,7 +367,7 @@ class Capturer::Writer {
   // the file with them.
   std::optional<Failed> OpenFile(const Item& item) {
     if (!directory_.Open(item.match, item.path.filename().string(),
-                         protocol::kCaptureMagic.size() + FrameSize(item.payload.size()))) {
+                         protocol::kCaptureMagic.size() + capture_file::FrameSize(item.payload.size()))) {
       return Failed{.step = CaptureStep::kRetentionBudget, .detail = {}};
     }
     file_ = std::ofstream(item.path, std::ios::binary | std::ios::trunc);
@@ -483,7 +392,7 @@ class Capturer::Writer {
 
   // Makes room in the directory for payload's frame, then writes it.
   std::optional<Failed> Persist(const protocol::BytesWire& payload) {
-    if (!directory_.Reserve(FrameSize(payload.size()))) {
+    if (!directory_.Reserve(capture_file::FrameSize(payload.size()))) {
       return Failed{.step = CaptureStep::kRetentionBudget, .detail = {}};
     }
     return Write(payload);
@@ -496,7 +405,7 @@ class Capturer::Writer {
       file_.setstate(std::ios::badbit);
       return Failed{.step = CaptureStep::kWrite, .detail = *std::move(fault)};
     }
-    WriteFrame(file_, payload);
+    capture_file::WriteFrame(file_, payload);
     if (!file_) {
       return Failed{.step = CaptureStep::kWrite, .detail = path_.string()};
     }
@@ -509,7 +418,7 @@ class Capturer::Writer {
       return Failed{.step = CaptureStep::kFlush, .detail = path_.string()};
     }
     ++records_;
-    observer_->OnWritten(FrameSize(payload.size()));
+    observer_->OnWritten(capture_file::FrameSize(payload.size()));
     return std::nullopt;
   }
 
@@ -759,7 +668,7 @@ std::optional<std::vector<std::byte>> Capturer::Admit(std::expected<std::vector<
   }
   // A record ReadCapture would refuse would make every record after it
   // unreadable; stopping here keeps the file readable up to it.
-  if (encoded->size() > kMaxFramePayload) {
+  if (encoded->size() > capture_file::kMaxFramePayload) {
     writer_->Stop(matches_, CaptureStep::kRecordTooLong);
     return std::nullopt;
   }

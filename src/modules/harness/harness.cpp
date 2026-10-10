@@ -52,7 +52,11 @@ struct Session::Impl {
   Impl(const SessionConfig& config, prediction::World world)
       : server(config.server),
         join_request{
-            .engine_version = config.engine_version, .client_pack = config.client_pack, .character = config.character},
+            .engine_version = config.engine_version,
+            .client_pack = config.client_pack,
+            .character = config.character,
+            .spawn = config.spawn,
+        },
         replay_request(config.replay.transform([&config](const std::string& capture) {
           return ReplayRequest{
               .engine_version = config.engine_version, .client_pack = config.client_pack, .capture = capture};
@@ -107,6 +111,8 @@ std::string_view DescribeJoinRefusal(JoinRefusal reason) {
       return "the server is a live server, not a replay server: join it without --replays or --replay";
     case JoinRefusal::kUnknownCapture:
       return "the replay server replays no such capture: list them with --replays";
+    case JoinRefusal::kReenactmentsNotAccepted:
+      return "the server does not take reenactments: it needs simulation.reenactments on";
   }
   return "unknown refusal";
 }
@@ -264,6 +270,8 @@ std::optional<float> Session::GetHealth() const {
 }
 
 std::optional<EntityId> Session::GetEntityId() const { return impl_->inbox.View()->OwnEntity(); }
+
+command::Sequence Session::NextSequence() const { return impl_->commands.NextSequence(); }
 
 prediction::State Session::Tick(const command::Command& command, float delta_time) {
   Impl& impl = *impl_;

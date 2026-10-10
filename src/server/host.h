@@ -73,6 +73,9 @@ struct HostConfig {
   CaptureMode capture_mode = CaptureMode::kOptional;
   /// What that directory is kept within, oldest capture first; off by default.
   CaptureRetention capture_retention{};
+  /// Whether a Captured player's Reenact request is admitted, at the spawn it
+  /// names (ADR-0050); without it each is refused. Never for a server open to players.
+  bool reenactments = false;
   /// For a test: asked at listener setup, at every send and receive
   /// (networking.h) and at the capture's write and flush, so the transport or
   /// the disk fails there; null otherwise. Must outlive the Host.

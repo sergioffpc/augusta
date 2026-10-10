@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <span>
 #include <string>
 
@@ -10,9 +11,11 @@
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
+#include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
+#include "augusta/reenactment.h"
 #include "augusta/tick.h"
 
 /// \file
@@ -20,7 +23,8 @@
 /// harness::Session receives, turned from the protocol's plain types into the
 /// engine's right after Decode, and what it sends, turned back right before
 /// Encode. The only place on the client where a protocol::*Wire type meets an
-/// engine type. Pure field-by-field copies; whether a value is one the client
+/// engine type, but for the shared core's own, which convert in
+/// augusta/shared_wire.h as on the server. Pure field-by-field copies; whether a value is one the client
 /// accepts is decided after, by whoever takes it in. What it sends is encoded
 /// here too, so a payload the protocol cannot carry becomes the broken
 /// invariant that stops the client's runtime (ADR-0033) before anything of it
@@ -40,6 +44,8 @@ struct JoinRequest {
   assets::PackHash client_pack{};
   /// The character it asks to play, by its name in the scenario's manifest.
   std::string character;
+  /// Where it asks to spawn, as a Captured player (ADR-0050); nullopt for anyone else.
+  std::optional<math::Vec3> spawn = std::nullopt;
 };
 
 /// What this client asks when it watches a Replay (ADR-0051), in the engine's terms.
@@ -101,6 +107,9 @@ struct SequencedCommand {
 /// protocol::kDraw is none.
 [[nodiscard]] MatchEnd FromWire(const protocol::MatchEndWire& end);
 
+/// A Command a capture holds (ADR-0050), in the engine's terms.
+[[nodiscard]] CapturedCommand FromWire(const protocol::CapturedCommandWire& command);
+
 /// A Replay view the replay server sent, in the engine's terms.
 [[nodiscard]] ReplayView FromWire(const protocol::ReplayViewWire& view);
 
@@ -110,16 +119,15 @@ struct SequencedCommand {
 /// request as the protocol carries it.
 [[nodiscard]] protocol::ReplayRequestWire ToWire(const ReplayRequest& request);
 
-/// hash as the protocol carries it.
-[[nodiscard]] protocol::PackHashWire ToWire(const assets::PackHash& hash);
+/// A Death a capture holds, in the engine's terms.
+[[nodiscard]] CapturedDeath FromWire(const protocol::CapturedDeathWire& death);
 
-/// request as the protocol carries it.
-[[nodiscard]] protocol::JoinRequestWire ToWire(const JoinRequest& request);
+/// A capture's Match end, in the engine's terms: a winner of 0 is a Draw.
+[[nodiscard]] CapturedEnd FromWire(const protocol::CapturedMatchEndWire& end);
 
-/// command as the protocol carries it in a message whose Seen tick is
-/// seen_tick: its own Seen time's tick as how far before that it is, no further
-/// than a byte tells.
-[[nodiscard]] protocol::CommandWire ToWire(const command::Command& command, tick::Tick seen_tick);
+/// request as the protocol carries it: a Reenact request when it names a
+/// spawn, a Join request otherwise.
+[[nodiscard]] protocol::MessageWire ToWire(const JoinRequest& request);
 
 /// commands, oldest first, as the one message that carries them; its Seen tick
 /// is the newest of theirs.

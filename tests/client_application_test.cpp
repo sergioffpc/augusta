@@ -1,15 +1,22 @@
+#include <cstddef>
 #include <filesystem>
+#include <fstream>
+#include <ios>
 #include <string>
 #include <string_view>
 
 #include <gtest/gtest.h>
 
 #include "application.h"
+#include "augusta/assets.h"
 #include "augusta/client_config.h"
 #include "augusta/config.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/harness.h"
+#include "augusta/math.h"
+#include "augusta/protocol.h"
+#include "augusta/reenactment.h"
 #include "character_loader.h"
 
 // augustac's application boundary (ADR-0033): whatever its startup or its
@@ -20,11 +27,13 @@ namespace {
 
 using augusta::client::CharacterError;
 using augusta::client::CharacterErrorCode;
+using augusta::client::CheckReenactmentPack;
 using augusta::client::ClassifyCharacterError;
 using augusta::client::ClassifySessionFailure;
 using augusta::client::InitializeClientTransport;
 using augusta::client::LoadClient;
 using augusta::client::ReadClientConfig;
+using augusta::client::ReadReenactment;
 using augusta::config::ClientConfig;
 using augusta::config::CommandLine;
 using augusta::config::CommandLineAction;
@@ -105,6 +114,95 @@ TEST(ClientApplicationTest, ACharacterThatCannotBeLoadedIsAContentFailure) {
 
   EXPECT_EQ(failure.code, Code::kInvalidContent);
   EXPECT_EQ(ContextOf(failure, "character"), "ghost");
+}
+
+// --- A Captured player (ADR-0050) ---
+
+// The command line `augustac --reenact capture --player player`.
+CommandLine ReenactCommandLine(const std::filesystem::path& capture, const std::string& player) {
+  return CommandLine{.config_file = "augustac.yaml",
+                     .message = {},
+                     .options = {{"reenact", capture.string()}, {"player", player}},
+                     .action = CommandLineAction::kRun};
+}
+
+// A capture of one player, the soldier, at (4, 0, -2), made with a client pack of 9s.
+std::filesystem::path WriteCapture(const std::string& name) {
+  namespace protocol = augusta::protocol;
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / name;
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  out.write(reinterpret_cast<const char*>(protocol::kCaptureMagic.data()), protocol::kCaptureMagic.size());
+  protocol::CaptureHeaderWire header{
+      .engine_version = "1.0.0", .format_version = protocol::kCaptureFormatVersion, .tick_rate_hz = 60};
+  header.client_pack.fill(std::byte{9});
+  const protocol::CaptureRecordWire records[] = {
+      header,
+      protocol::CapturedJoinWire{
+          .spawn = {4, 0, -2}, .session = protocol::SessionIdWire{1}, .character = "soldier", .player = 1},
+  };
+  for (const protocol::CaptureRecordWire& record : records) {
+    const protocol::BytesWire payload = protocol::EncodeCaptureRecord(record).value();
+    out.put(static_cast<char>(payload.size()));
+    out.write(reinterpret_cast<const char*>(payload.data()), static_cast<std::streamsize>(payload.size()));
+  }
+  return path;
+}
+
+TEST(ClientApplicationTest, ARunThatAsksToReenactNothingPlaysAsAPerson) {
+  const auto reenactment = ReadReenactment(
+      CommandLine{.config_file = "augustac.yaml", .message = {}, .options = {}, .action = CommandLineAction::kRun});
+
+  ASSERT_TRUE(reenactment.has_value());
+  EXPECT_FALSE(reenactment->has_value());
+}
+
+// Requirements: US-21
+TEST(ClientApplicationTest, ARunReenactsThePlayerOfTheCaptureItNames) {
+  const std::filesystem::path capture = WriteCapture("augusta_client_reenact_one.capture");
+
+  const auto reenactment = ReadReenactment(ReenactCommandLine(capture, "1"));
+
+  ASSERT_TRUE(reenactment.has_value());
+  ASSERT_TRUE(reenactment->has_value());
+  EXPECT_EQ((*reenactment)->character, "soldier");
+  EXPECT_EQ((*reenactment)->spawn, augusta::math::Vec3(4, 0, -2));
+  std::filesystem::remove(capture);
+}
+
+// Requirements: US-21
+TEST(ClientApplicationTest, ACaptureThatDoesNotLoadOrLacksThePlayerIsAConfigurationFailure) {
+  const std::filesystem::path capture = WriteCapture("augusta_client_reenact_two.capture");
+  const std::filesystem::path missing = std::filesystem::temp_directory_path() / "augusta_no_such.capture";
+
+  for (const CommandLine& command_line : {ReenactCommandLine(capture, "2"), ReenactCommandLine(missing, "1")}) {
+    const auto reenactment = ReadReenactment(command_line);
+
+    ASSERT_FALSE(reenactment.has_value());
+    EXPECT_EQ(reenactment.error().code, Code::kInvalidConfiguration);
+    EXPECT_EQ(ContextOf(reenactment.error(), "capture"), command_line.options.at("reenact"));
+  }
+  std::filesystem::remove(capture);
+}
+
+TEST(ClientApplicationTest, ReenactWithoutPlayerIsAConfigurationFailure) {
+  CommandLine command_line = ReenactCommandLine("a.capture", "1");
+  command_line.options.erase("player");
+
+  const auto reenactment = ReadReenactment(command_line);
+
+  ASSERT_FALSE(reenactment.has_value());
+  EXPECT_EQ(reenactment.error().code, Code::kInvalidConfiguration);
+}
+
+// Requirements: US-21
+TEST(ClientApplicationTest, ACaptureOfAnotherClientPackIsAConfigurationFailure) {
+  augusta::harness::Script script;
+  script.client_pack.fill(std::byte{9});
+  augusta::assets::PackHash loaded{};
+
+  EXPECT_EQ(CheckReenactmentPack(script, loaded).error().code, Code::kInvalidConfiguration);
+  loaded.fill(std::byte{9});
+  EXPECT_TRUE(CheckReenactmentPack(script, loaded).has_value());
 }
 
 }  // namespace

@@ -70,6 +70,8 @@ constexpr std::string_view JoinRefusalLabel(JoinRefusal reason) {
       return "unknown_capture";
     case JoinRefusal::kNotAReplayServer:
       return "not_a_replay_server";
+    case JoinRefusal::kReenactmentsNotAccepted:
+      return "reenactments_not_accepted";
   }
   return {};
 }
@@ -142,6 +144,8 @@ constexpr std::string_view MessageTypeLabel(MessageType type) {
       return "replay_request";
     case MessageType::kReplayView:
       return "replay_view";
+    case MessageType::kReenactRequest:
+      return "reenact_request";
   }
   return {};
 }

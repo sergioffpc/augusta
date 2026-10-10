@@ -165,6 +165,50 @@ TEST(ParseCommandLineTest, UsageNamesTheProgramAndTheDefaultFile) {
   EXPECT_TRUE(Contains(command_line.error().subject, "augustad.yaml")) << command_line.error().subject;
 }
 
+// An executable's own options beyond the shared ones, as augustac's --reenact
+// and --player (ADR-0050).
+constexpr std::array<CommandLineOption, 2> kOwnOptions{{
+    {.name = "reenact", .value = "capture", .description = "the capture to reenact"},
+    {.name = "player", .value = "n", .description = "the player of it to be"},
+}};
+
+std::expected<CommandLine, ConfigError> ParseWithOwnOptions(std::vector<const char*> args) {
+  args.insert(args.begin(), "augustac");
+  return ParseCommandLine(static_cast<int>(args.size()), args.data(), "augustac", "augustac.yaml", "1.2.3",
+                          kOwnOptions);
+}
+
+TEST(ParseCommandLineTest, AnExecutablesOwnOptionsAreReadByNameBesideTheConfig) {
+  const auto command_line = ParseWithOwnOptions({"--config", "my.yaml", "--reenact", "a.capture", "--player", "2"});
+
+  ASSERT_TRUE(command_line.has_value()) << DescribeConfigError(command_line.error());
+  EXPECT_EQ(command_line->action, CommandLineAction::kRun);
+  EXPECT_EQ(command_line->config_file, std::filesystem::path("my.yaml"));
+  EXPECT_EQ(command_line->options,
+            (std::map<std::string, std::string, std::less<>>{{"player", "2"}, {"reenact", "a.capture"}}));
+}
+
+TEST(ParseCommandLineTest, AnOwnOptionLeftOutIsNotRead) {
+  const auto command_line = ParseWithOwnOptions({});
+
+  ASSERT_TRUE(command_line.has_value());
+  EXPECT_TRUE(command_line->options.empty());
+}
+
+TEST(ParseCommandLineTest, TheUsageListsAnExecutablesOwnOptions) {
+  const auto command_line = ParseWithOwnOptions({"--help"});
+
+  ASSERT_TRUE(command_line.has_value());
+  EXPECT_TRUE(Contains(command_line->message, "usage: augustac [--config <file>] [--reenact <capture>] [--player <n>]"))
+      << command_line->message;
+  EXPECT_TRUE(Contains(command_line->message, "the capture to reenact")) << command_line->message;
+}
+
+TEST(ParseCommandLineTest, AnotherExecutablesOptionIsUnknown) {
+  ASSERT_FALSE(Parse({"--reenact", "a.capture"}).has_value());
+  ASSERT_FALSE(ParseWithOwnOptions({"--reenact"}).has_value());
+}
+
 TEST(DescribeConfigErrorTest, NamesTheKeyAndTheFile) {
   const ConfigError error{
       .code = ConfigErrorCode::kMissingKey, .subject = "pack", .reason = {}, .file = "dir/augustac.yaml"};

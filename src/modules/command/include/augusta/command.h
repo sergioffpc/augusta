@@ -1,6 +1,9 @@
 #ifndef AUGUSTA_COMMAND_H_
 #define AUGUSTA_COMMAND_H_
 
+#include <chrono>
+#include <cstdint>
+
 #include <glm/ext/quaternion_trigonometric.hpp>
 
 #include "augusta/math.h"
@@ -68,6 +71,17 @@ struct Command {
 /// sequence that answers it (ADR-0038); its width is the primitives', which the
 /// wire takes too.
 using Sequence = primitives::Sequence;
+
+/// How long the server's command queue repeats a player's last movement on
+/// the ticks no new Command arrived for, before it idles
+/// (server::CommandQueue); a Captured player fills a capture's gaps the same
+/// way (ADR-0050).
+inline constexpr std::chrono::milliseconds kMaxHeldTime{100};
+
+/// kMaxHeldTime in ticks at tick_rate_hz, rounded up so the hold is never shorter.
+[[nodiscard]] constexpr int HeldTicks(std::uint8_t tick_rate_hz) {
+  return static_cast<int>(std::chrono::ceil<std::chrono::seconds>(kMaxHeldTime * tick_rate_hz).count());
+}
 
 /// Where a view with this yaw and pitch looks, as a unit vector.
 [[nodiscard]] inline math::Vec3 ViewDirection(float yaw, float pitch) {

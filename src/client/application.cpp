@@ -2,7 +2,10 @@
 
 #include <expected>
 #include <filesystem>
+#include <fstream>
+#include <ios>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -14,6 +17,7 @@
 #include "augusta/harness.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
+#include "augusta/reenactment.h"
 #include "character_loader.h"
 #include "content.h"
 
@@ -50,6 +54,46 @@ std::expected<config::ClientConfig, failure::Failure> ReadClientConfig(
         return failure::Failure{
             .code = failure::Code::kInvalidConfiguration, .context = {}, .detail = config::DescribeConfigError(error)};
       });
+}
+
+std::expected<std::optional<harness::Script>, failure::Failure> ReadReenactment(
+    const config::CommandLine& command_line) {
+  const auto arguments = config::ReadReenactArguments(command_line);
+  if (!arguments.has_value()) {
+    return std::unexpected(failure::Failure{.code = failure::Code::kInvalidConfiguration,
+                                            .context = {},
+                                            .detail = config::DescribeConfigError(arguments.error())});
+  }
+  if (!arguments->has_value()) {
+    return std::nullopt;
+  }
+  const config::ReenactArguments& reenact = **arguments;
+  std::ifstream in(reenact.capture, std::ios::binary);
+  auto script = harness::ReadScript(in, reenact.player);
+  if (!script.has_value()) {
+    return std::unexpected(failure::Failure{.code = failure::Code::kInvalidConfiguration,
+                                            .context = {{.key = "capture", .value = reenact.capture.string()},
+                                                        {.key = "player", .value = std::to_string(reenact.player)}},
+                                            .detail = harness::DescribeScriptError(script.error())});
+  }
+  if (script->torn) {
+    LW("subsystem=client event=capture_torn capture={} reason=\"its last record was cut short and is dropped\"",
+       reenact.capture.string());
+  }
+  LI("subsystem=client event=reenacting capture={} player={} character={} commands={}", reenact.capture.string(),
+     reenact.player, script->character, script->commands.size());
+  return *std::move(script);
+}
+
+std::expected<void, failure::Failure> CheckReenactmentPack(const harness::Script& script,
+                                                           const assets::PackHash& loaded) {
+  if (script.client_pack == loaded) {
+    return {};
+  }
+  return std::unexpected(
+      failure::Failure{.code = failure::Code::kInvalidConfiguration,
+                       .context = {},
+                       .detail = "the capture was made with another client pack than the one loaded"});
 }
 
 std::expected<void, failure::Failure> InitializeClientTransport(failure::Faults* faults) {

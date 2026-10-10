@@ -1,11 +1,13 @@
 add_library(
   augusta_harness
   STATIC
+  capture_script.cpp
   command_stream.cpp
   harness.cpp
   harness_wire.cpp
   inbox.cpp
   netcode_stats.cpp
+  reenactment.cpp
   replay_list.cpp
   runner.cpp
   server_view.cpp
@@ -24,6 +26,8 @@ target_link_libraries(
     augusta_failure
     augusta_physics
     augusta_protocol
+    augusta_capture_file
+    augusta_shared_wire
     augusta_supervisor
     augusta_tick
     augusta_version

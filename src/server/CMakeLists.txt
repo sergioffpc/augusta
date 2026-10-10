@@ -118,7 +118,6 @@ add_library(
   STATIC
   capture.cpp
   capture_retention.cpp
-  frames.cpp
   host.cpp
   host_log.cpp
   host_match.cpp
@@ -150,6 +149,8 @@ target_link_libraries(
     augustad_heartbeat
     augusta_assets
     augusta_protocol
+    augusta_capture_file
+    augusta_shared_wire
     augusta_replication
     augusta_tick
     augustad_lock_free_metrics

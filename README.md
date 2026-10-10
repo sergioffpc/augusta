@@ -119,6 +119,16 @@ make
 & "build/x64-windows/src/client/augustac.exe" --config config/augustac.yaml
 ```
 
+To bring back a playtest from its Match capture (ADR-0050), start a server with
+`simulation.reenactments: true` on the capture's packs, then one client per
+captured player, all at once, each the player of the capture `--player` names:
+
+```powershell
+& "build/x64-windows/src/client/augustac.exe" --config config/augustac.yaml --reenact captures/20261009T101500123Z-0001.capture --player 1
+```
+
+`augusta-inspect` lists a capture's players by those numbers.
+
 Create each local YAML from its `*.example.yaml` file and edit its pack and
 public-key paths to point to cooked content before running. `make` builds the
 default release preset (`windows` on Windows, `linux` on Linux). `make install`

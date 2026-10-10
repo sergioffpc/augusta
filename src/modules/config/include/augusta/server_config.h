@@ -65,6 +65,10 @@ struct ServerConfig {
   /// included, the oldest deleted to stay within it (ADR-0050). At least 1;
   /// nullopt, the default, sets no limit.
   std::optional<std::uint32_t> capture_max_mib;
+  /// Key `simulation.reenactments`: "true" to admit a Captured player's Reenact
+  /// request at the spawn it names (ADR-0050), "false", the default, to refuse
+  /// each. A debugging setting, never on for a server open to players.
+  bool reenactments = false;
   /// Key `metrics.port`: the TCP port, 1..65535, the metrics endpoint serves
   /// /metrics and /livez on, on every interface (ADR-0049).
   std::uint16_t metrics_port = kDefaultMetricsPort;

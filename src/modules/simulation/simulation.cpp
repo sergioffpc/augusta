@@ -769,10 +769,22 @@ std::vector<math::Vec3> World::StartMatch(const std::vector<MatchPlayer>& player
   Impl& impl = *impl_;
   // A Map without Spawn points spawns everyone at the origin.
   const std::vector<math::Vec3> points = spawn_points.empty() ? std::vector<math::Vec3>{math::Vec3{}} : spawn_points;
+  // Game policy places the players that name no spawn of their own, in their order.
+  std::vector<MatchPlayer> assigned;
+  for (const MatchPlayer& player : players) {
+    if (!player.spawn.has_value()) {
+      assigned.push_back(player);
+    }
+  }
+  std::vector<std::size_t> indices;
+  if (!assigned.empty()) {
+    indices = impl.AssignSpawns(assigned, points.size());
+  }
   std::vector<math::Vec3> spawned;
   spawned.reserve(players.size());
-  for (const std::size_t index : impl.AssignSpawns(players, points.size())) {
-    spawned.push_back(points[index]);
+  std::size_t next = 0;
+  for (const MatchPlayer& player : players) {
+    spawned.push_back(player.spawn.has_value() ? *player.spawn : points[indices[next++]]);
   }
   for (std::size_t i = 0; i < players.size(); ++i) {
     AddPlayer(players[i].entity, spawned[i], players[i].character, players[i].identity);

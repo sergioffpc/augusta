@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -335,12 +336,33 @@ TEST(WireTest, AJoinRequestTheClientSendsReachesTheServerUnchanged) {
   const augusta::harness::JoinRequest sent{
       .engine_version = "1.2.3", .client_pack = client_pack, .character = "soldier"};
 
-  const augusta::server::JoinRequest received =
-      augusta::server::FromWire(ThroughTheWire(augusta::harness::ToWire(sent)));
+  const augusta::server::JoinRequest received = augusta::server::FromWire(
+      ThroughTheWire(std::get<augusta::protocol::JoinRequestWire>(augusta::harness::ToWire(sent))));
 
   EXPECT_EQ(received.engine_version, sent.engine_version);
   EXPECT_EQ(received.client_pack, sent.client_pack);
   EXPECT_EQ(received.character, sent.character);
+  EXPECT_FALSE(received.spawn.has_value());
+}
+
+// Requirements: US-21
+TEST(WireTest, AJoinThatNamesASpawnTravelsAsAReenactRequestAndReachesTheServerUnchanged) {
+  augusta::assets::PackHash client_pack{};
+  client_pack.front() = std::byte{0xCD};
+  const augusta::harness::JoinRequest sent{.engine_version = "1.2.3",
+                                           .client_pack = client_pack,
+                                           .character = "soldier",
+                                           .spawn = augusta::math::SnapPosition(Vec3(4.5F, 0.25F, -9.75F))};
+
+  const augusta::protocol::MessageWire wire = augusta::harness::ToWire(sent);
+  ASSERT_TRUE(std::holds_alternative<augusta::protocol::ReenactRequestWire>(wire));
+  const augusta::server::JoinRequest received =
+      augusta::server::FromWire(ThroughTheWire(std::get<augusta::protocol::ReenactRequestWire>(wire)));
+
+  EXPECT_EQ(received.engine_version, sent.engine_version);
+  EXPECT_EQ(received.client_pack, sent.client_pack);
+  EXPECT_EQ(received.character, sent.character);
+  EXPECT_EQ(received.spawn, sent.spawn);
 }
 
 TEST(WireTest, TheAdmissionTheServerSendsReachesTheClientUnchanged) {
@@ -360,7 +382,7 @@ TEST(WireTest, TheAdmissionTheServerSendsReachesTheClientUnchanged) {
 TEST(WireTest, EveryRefusalTheServerSendsReachesTheClientAsTheSameReason) {
   using ClientRefusal = augusta::harness::JoinRefusal;
   using ServerRefusal = augusta::server::JoinRefusal;
-  const std::array<std::pair<ServerRefusal, ClientRefusal>, 8> reasons = {{
+  const std::array<std::pair<ServerRefusal, ClientRefusal>, 9> reasons = {{
       {ServerRefusal::kVersionMismatch, ClientRefusal::kVersionMismatch},
       {ServerRefusal::kLobbyFull, ClientRefusal::kLobbyFull},
       {ServerRefusal::kUnknownCharacter, ClientRefusal::kUnknownCharacter},
@@ -369,6 +391,7 @@ TEST(WireTest, EveryRefusalTheServerSendsReachesTheClientAsTheSameReason) {
       {ServerRefusal::kReplayServer, ClientRefusal::kReplayServer},
       {ServerRefusal::kUnknownCapture, ClientRefusal::kUnknownCapture},
       {ServerRefusal::kNotAReplayServer, ClientRefusal::kNotAReplayServer},
+      {ServerRefusal::kReenactmentsNotAccepted, ClientRefusal::kReenactmentsNotAccepted},
   }};
 
   for (const auto& [sent, expected] : reasons) {

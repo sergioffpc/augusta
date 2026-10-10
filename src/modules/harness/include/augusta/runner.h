@@ -38,8 +38,11 @@ struct PredictedTick {
 /// What the caller of a Runner supplies, and what it is told, each on the
 /// thread it is called from.
 struct RunnerHooks {
-  /// The Command for the coming Tick. Prediction thread.
-  std::function<command::Command()> next_command;
+  /// The Command for the coming Tick, or nullopt to skip it: nothing is
+  /// predicted or sent, and the Tick's state is the last one's (a Captured
+  /// player that already has enough Commands waiting at the server,
+  /// ADR-0050). Prediction thread.
+  std::function<std::optional<command::Command>()> next_command;
   /// Each Tick, once it has run. Prediction thread; may be empty.
   std::function<void(const PredictedTick&)> on_tick;
   /// Each round of network work, once it is done. Network I/O thread, so the

@@ -2,13 +2,17 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <format>
+#include <optional>
 #include <ranges>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 
 #include "augusta/config.h"
@@ -163,6 +167,37 @@ std::expected<ClientRun, ConfigError> ReadClientRun(const CommandLine& command_l
         .code = ConfigErrorCode::kInvalidArguments, .subject = "--replay needs a capture", .reason = {}, .file = {}});
   }
   return ClientRun{.mode = ClientMode::kWatchReplay, .capture = replay->second};
+}
+
+std::expected<std::optional<ReenactArguments>, ConfigError> ReadReenactArguments(const CommandLine& command_line) {
+  const auto capture = command_line.options.find("reenact");
+  const auto player = command_line.options.find("player");
+  if (capture == command_line.options.end() && player == command_line.options.end()) {
+    return std::nullopt;
+  }
+  const auto invalid = [](std::string_view why) {
+    return std::unexpected(ConfigError{.code = ConfigErrorCode::kInvalidArguments,
+                                       .subject = std::format("{}: augustac --reenact <capture> --player <n>", why),
+                                       .reason = {},
+                                       .file = {}});
+  };
+  if (capture == command_line.options.end() || player == command_line.options.end()) {
+    return invalid("a reenactment needs both");
+  }
+  if (command_line.options.contains("replay") || command_line.options.contains("replays")) {
+    return invalid("a reenactment is neither --replay nor --replays");
+  }
+  if (capture->second.empty()) {
+    return invalid("--reenact needs a capture file");
+  }
+  constexpr unsigned kMaxPlayer = 255;
+  unsigned number = 0;
+  const std::string& text = player->second;
+  const auto parsed = std::from_chars(text.data(), text.data() + text.size(), number);
+  if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() || number < 1 || number > kMaxPlayer) {
+    return invalid("--player must be a whole number from 1 to 255");
+  }
+  return ReenactArguments{.capture = capture->second, .player = static_cast<std::uint8_t>(number)};
 }
 
 }  // namespace augusta::config

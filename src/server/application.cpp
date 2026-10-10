@@ -94,6 +94,7 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
       .capture_retention = CaptureRetention{.max_files = file_config.capture_max_files,
                                             .max_bytes = file_config.capture_max_mib.transform(
                                                 [](std::uint32_t mib) { return std::uintmax_t{mib} * kMiB; })},
+      .reenactments = file_config.reenactments,
   };
   return std::make_unique<ServerRuntime>(host_config, file_config.metrics_port, std::move(content->scenario),
                                          std::move(content->policy), faults);

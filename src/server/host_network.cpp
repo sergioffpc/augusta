@@ -60,6 +60,10 @@ void Host::Impl::HandleJoinRequest(networking::PeerId peer, const JoinRequest& r
     LI("subsystem=serverruntime event=lobby_joined peer={} session={} character={} players={} version={}",
        PeerNumber(peer), SessionNumber(admission->session), admission->character, match.PlayerCount(),
        match.GetRoster().version);
+    if (request.spawn.has_value()) {
+      LI("subsystem=serverruntime event=reenactment_joined session={} spawn=({:.3f},{:.3f},{:.3f})",
+         SessionNumber(admission->session), request.spawn->x, request.spawn->y, request.spawn->z);
+    }
     SendRoster();
   }
 }
@@ -135,6 +139,8 @@ void Host::Impl::HandleMessage(const networking::PeerMessage& message, std::chro
   metrics.messages_received[TypeOf(message.payload)].Increment();
   if (const auto* request = std::get_if<protocol::JoinRequestWire>(&*decoded)) {
     HandleJoinRequest(message.from, FromWire(*request), now);
+  } else if (const auto* reenact = std::get_if<protocol::ReenactRequestWire>(&*decoded)) {
+    HandleJoinRequest(message.from, FromWire(*reenact), now);
   } else if (const auto* commands = std::get_if<protocol::CommandsWire>(&*decoded)) {
     HandleCommands(message.from, FromWire(*commands), now);
   } else if (const auto* ready = std::get_if<protocol::ReadyWire>(&*decoded)) {

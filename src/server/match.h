@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/math.h"
 #include "augusta/networking.h"
 
 /// \file
@@ -21,7 +22,9 @@
 /// character, numbers every version of the Lobby's Roster, counts who is Ready
 /// for which, and decides when a match starts and when it has ended. Where each
 /// player spawns is not its to decide: Game policy assigns Spawn points in
-/// SimulationWorld at Match start. Pure bookkeeping (no I/O, no clock: Host
+/// SimulationWorld at Match start, but for a Captured player (ADR-0050), whose
+/// Reenact request names its own spawn, which Match keeps and hands on at Match
+/// start. Pure bookkeeping (no I/O, no clock: Host
 /// tells it each tick that passes), so all of it is tested without a network;
 /// what to do with the answer - reply, log, spawn bodies - is Host's mechanism.
 namespace augusta::server {
@@ -64,6 +67,9 @@ struct MatchPlayer {
   EntityId entity{};
   /// Its character (see RosterEntry::character).
   std::string character;
+  /// Where it spawns, if it named its own in a Reenact request (ADR-0050);
+  /// nullopt for Game policy to assign.
+  std::optional<math::Vec3> spawn = std::nullopt;
 };
 
 /// Who a match starts with.
@@ -97,6 +103,9 @@ struct JoinRequest {
   /// The character the player chose, by its name in the scenario's manifest
   /// (e.g. "soldier", ADR-0042).
   std::string character;
+  /// Where a Captured player asks to spawn, which only a Reenact request names
+  /// (ADR-0050); nullopt for a Join request.
+  std::optional<math::Vec3> spawn = std::nullopt;
 };
 
 /// Why a join is refused.
@@ -117,6 +126,8 @@ enum class JoinRefusal : std::uint8_t {
   kUnknownCapture,
   /// A Replay list request or a Replay request reached a live server, which replays nothing (ADR-0051).
   kNotAReplayServer,
+  /// A Reenact request reached a match that takes none (ADR-0050).
+  kReenactmentsNotAccepted,
 };
 
 /// A short lowercase description of reason, for logs.
@@ -165,6 +176,9 @@ struct MatchConfig {
   std::size_t player_count = 1;
   /// How many ticks must pass after a match ends before the next can start.
   std::uint32_t pause_ticks = 0;
+  /// Whether a Reenact request, whose spawn is taken on trust, is admitted
+  /// (`simulation.reenactments`, ADR-0050); without it each is refused.
+  bool reenactments = false;
 };
 
 /// The Lobby, and the match its players go on to, keyed by the transport's handle for each player.
@@ -172,8 +186,9 @@ class Match {
  public:
   explicit Match(MatchConfig config);
 
-  /// Admits peer to the Lobby as request asks, or says why not: its version
-  /// first, then its pack, then its character, then whether a match is in
+  /// Admits peer to the Lobby as request asks, or says why not: a Reenact
+  /// request (one with a spawn) to a match that takes none first, then its
+  /// version, then its pack, then its character, then whether a match is in
   /// progress, then whether the Lobby is full. A peer that has already joined
   /// gets the admission it already has.
   [[nodiscard]] std::expected<Admission, JoinRefusal> Join(networking::PeerId peer, const JoinRequest& request);
@@ -229,6 +244,8 @@ class Match {
   struct Member {
     SessionId session;
     std::string character;
+    // Where it asked to spawn, if it joined through a Reenact request.
+    std::optional<math::Vec3> spawn;
     // The Roster version this player's client last loaded for; 0 for none.
     std::uint32_t ready_version = 0;
   };
@@ -240,6 +257,7 @@ class Match {
   std::vector<std::string> characters_;
   std::size_t player_count_;
   std::uint32_t pause_ticks_;
+  bool reenactments_;
   bool in_match_ = false;
   // Versions start at 1 once anyone has joined, so a ready_version of 0 never counts.
   std::uint32_t roster_version_ = 0;

@@ -21,6 +21,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
+#include "augusta/capture_file.h"
 #include "augusta/command.h"
 #include "augusta/harness.h"
 #include "augusta/logging.h"
@@ -34,7 +35,6 @@
 #include "augusta/version.h"
 #include "capture.h"
 #include "content.h"
-#include "frames.h"
 #include "host.h"
 #include "host_metrics.h"
 #include "match.h"
@@ -327,9 +327,10 @@ augusta::server::Capture ReadWhole(const std::filesystem::path& file) {
 void Rewrite(const std::filesystem::path& file, const augusta::server::Capture& capture) {
   std::ofstream out(file, std::ios::binary | std::ios::trunc);
   out.write(reinterpret_cast<const char*>(protocol::kCaptureMagic.data()), protocol::kCaptureMagic.size());
-  augusta::server::WriteFrame(out, augusta::server::EncodeToCapture(augusta::server::ToWire(capture.header)).value());
+  augusta::capture_file::WriteFrame(out,
+                                    augusta::server::EncodeToCapture(augusta::server::ToWire(capture.header)).value());
   for (const augusta::server::CaptureRecord& record : capture.records) {
-    augusta::server::WriteFrame(out, augusta::server::EncodeToCapture(augusta::server::ToWire(record)).value());
+    augusta::capture_file::WriteFrame(out, augusta::server::EncodeToCapture(augusta::server::ToWire(record)).value());
   }
 }
 
@@ -400,6 +401,24 @@ TEST_F(ReplayServerTest, AJoinRequestIsRefusedAsAReplayServerWouldRefuseAnyReque
   RawClient player(server->ListenEndpoint());
   player.Send(protocol::JoinRequestWire{
       .engine_version = std::string(augusta::EngineVersion()), .client_pack = {}, .character = kCharacter});
+
+  ASSERT_TRUE(RunUntil(*server, {&player}, [&] { return player.Refused(); }));
+
+  EXPECT_EQ(player.Refusal(), protocol::JoinRefusalWire::kReplayServer);
+  EXPECT_TRUE(player.ReceivedOf<protocol::JoinAcceptedWire>().empty());
+  EXPECT_EQ(server->Viewers(), 0U);
+}
+
+// A Captured player asks to play as a Join request does (ADR-0050): a replay
+// server refuses it the same way, whether or not it would take reenactments.
+// Requirements: US-21
+TEST_F(ReplayServerTest, AReenactRequestIsRefusedAsAReplayServerRefusesAnyRequestToPlay) {
+  const std::unique_ptr<ReplayServer> server = Serve();
+  RawClient player(server->ListenEndpoint());
+  player.Send(protocol::ReenactRequestWire{.engine_version = std::string(augusta::EngineVersion()),
+                                           .client_pack = {},
+                                           .character = kCharacter,
+                                           .spawn = augusta::math::Vec3(1.0F, 0.0F, 2.0F)});
 
   ASSERT_TRUE(RunUntil(*server, {&player}, [&] { return player.Refused(); }));
 
@@ -697,6 +716,21 @@ TEST_F(ReplayViewerTest, APlayersClientIsRefusedAsAReplayServerRefusesAnyRequest
   const std::unique_ptr<ReplayServer> server = Serve();
   augusta::harness::Session player(
       augusta::harness::SessionConfig{.server = server->ListenEndpoint(), .character = kCharacter},
+      augusta::prediction::World());
+  player.Connect();
+
+  ASSERT_TRUE(RunUntil(*server, player, [&] { return player.GetFailure().has_value(); }));
+
+  EXPECT_EQ(player.GetFailure()->refusal, augusta::harness::JoinRefusal::kReplayServer);
+}
+
+// A Captured player's client on a replay server is told what it is.
+// Requirements: US-21
+TEST_F(ReplayViewerTest, ACapturedPlayersClientIsRefusedAsAReplayServerRefusesAnyRequestToPlay) {
+  const std::unique_ptr<ReplayServer> server = Serve();
+  augusta::harness::Session player(
+      augusta::harness::SessionConfig{
+          .server = server->ListenEndpoint(), .character = kCharacter, .spawn = augusta::math::Vec3(1.0F, 0.0F, 2.0F)},
       augusta::prediction::World());
   player.Connect();
 

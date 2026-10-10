@@ -371,6 +371,16 @@ JoinRequestWire ReadJoinRequest(Reader& reader) {
   };
 }
 
+ReenactRequestWire ReadReenactRequest(Reader& reader) {
+  // The Join request's fields in its order, then the spawn.
+  return ReenactRequestWire{
+      .engine_version = reader.ReadString(kMaxEngineVersionLength),
+      .client_pack = reader.ReadPackHash(),
+      .character = reader.ReadCharacter(),
+      .spawn = reader.ReadVec3(math::kPositionGrid),
+  };
+}
+
 EntityStateWire ReadEntityState(Reader& reader) {
   EntityStateWire state;
   state.entity = static_cast<EntityIdWire>(reader.ReadU32());
@@ -431,8 +441,8 @@ JoinAcceptedWire ReadJoinAccepted(Reader& reader) {
 }
 
 JoinRefusedWire ReadJoinRefused(Reader& reader) {
-  return JoinRefusedWire{.reason =
-                             reader.ReadEnum(JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kNotAReplayServer)};
+  return JoinRefusedWire{
+      .reason = reader.ReadEnum(JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kReenactmentsNotAccepted)};
 }
 
 CommandsWire ReadCommands(Reader& reader) {
@@ -591,6 +601,8 @@ std::optional<MessageWire> ReadBody(MessageTypeWire type, Reader& reader) {
       return ReadReplayRequest(reader);
     case MessageTypeWire::kReplayView:
       return ReadReplayView(reader);
+    case MessageTypeWire::kReenactRequest:
+      return ReadReenactRequest(reader);
   }
   return std::nullopt;
 }
@@ -686,7 +698,8 @@ struct Encoder {
 
   void operator()(const JoinRefusedWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kJoinRefused));
-    WriteU8(out, out.FromEnum(message.reason, JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kNotAReplayServer));
+    WriteU8(out,
+            out.FromEnum(message.reason, JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kReenactmentsNotAccepted));
   }
 
   void operator()(const CommandsWire& message) const {
@@ -750,6 +763,14 @@ struct Encoder {
   void operator()(const DeathWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kDeath));
     WriteDeath(out, message);
+  }
+
+  void operator()(const ReenactRequestWire& message) const {
+    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kReenactRequest));
+    WriteString(out, message.engine_version, kMaxEngineVersionLength);
+    WritePackHash(out, message.client_pack);
+    WriteCharacter(out, message.character);
+    WriteVec3(out, message.spawn, math::kPositionGrid);
   }
 
   void operator()(const ReplayListRequestWire& /*message*/) const {
@@ -978,6 +999,7 @@ MessageTypeWire TypeOf(const MessageWire& message) {
     MessageTypeWire operator()(const ReplayListWire& /*wire*/) const { return MessageTypeWire::kReplayList; }
     MessageTypeWire operator()(const ReplayRequestWire& /*wire*/) const { return MessageTypeWire::kReplayRequest; }
     MessageTypeWire operator()(const ReplayViewWire& /*wire*/) const { return MessageTypeWire::kReplayView; }
+    MessageTypeWire operator()(const ReenactRequestWire& /*wire*/) const { return MessageTypeWire::kReenactRequest; }
   };
   return std::visit(Type{}, message);
 }

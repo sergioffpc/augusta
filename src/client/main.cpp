@@ -18,6 +18,7 @@
 #include "augusta/harness.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
+#include "augusta/reenactment.h"
 #include "augusta/version.h"
 #include "runtime.h"
 
@@ -95,14 +96,21 @@ augusta::application::Outcome ListReplays(const augusta::config::ClientConfig& f
       augusta::harness::Failure{.kind = augusta::harness::FailureKind::kServerUnreachable, .refusal = {}}));
 }
 
-// Loads what the runtime is made from and constructs it; the runtime's own
-// exception (no window or GPU device, a rejected collision mesh) the
-// application boundary classifies. replay, set, names the capture to watch.
+// Loads what the runtime is made from and constructs it, as reenactment's
+// Captured player if there is one (ADR-0050); the runtime's own exception (no
+// window or GPU device, a rejected collision mesh) the application boundary
+// classifies. replay, set, names the capture to watch.
 std::expected<std::unique_ptr<Client>, augusta::failure::Failure> ConstructClient(
-    const augusta::config::ClientConfig& file_config, const std::optional<std::string>& replay) {
+    const augusta::config::ClientConfig& file_config, const std::optional<augusta::harness::Script>& reenactment,
+    const std::optional<std::string>& replay) {
   auto loaded = augusta::client::LoadClient(file_config);
   if (!loaded) {
     return std::unexpected(std::move(loaded.error()));
+  }
+  if (reenactment.has_value()) {
+    if (auto fits = augusta::client::CheckReenactmentPack(*reenactment, loaded->pack->Hash()); !fits) {
+      return std::unexpected(std::move(fits.error()));
+    }
   }
 
   augusta::client::RuntimeConfig config;
@@ -112,6 +120,7 @@ std::expected<std::unique_ptr<Client>, augusta::failure::Failure> ConstructClien
   config.input = file_config.input;
   config.character = file_config.character;
   config.client_pack = loaded->pack->Hash();
+  config.reenactment = reenactment;
   config.replay = replay;
 
   auto client = std::make_unique<Client>();
@@ -121,13 +130,15 @@ std::expected<std::unique_ptr<Client>, augusta::failure::Failure> ConstructClien
 }
 
 // augustac's Lifecycle for file_config (augusta/application.h): the transport,
-// then the client, then its run until the window closes or it fails - with no
-// reconnecting and no connection screen, it says what happened and exits.
+// then the client, then its run until the window closes, its reenactment or
+// Replay ends or it fails - with no reconnecting and no connection screen, it
+// says what happened and exits.
 augusta::application::Lifecycle<Client> ClientLifecycle(const augusta::config::ClientConfig& file_config,
+                                                        const std::optional<augusta::harness::Script>& reenactment,
                                                         const std::optional<std::string>& replay) {
   return {
       .initialize = [] { return augusta::client::InitializeClientTransport(); },
-      .construct = [&file_config, &replay] { return ConstructClient(file_config, replay); },
+      .construct = [&file_config, &reenactment, &replay] { return ConstructClient(file_config, reenactment, replay); },
       .run = [](Client& client) { return client.runtime->Run(); },
   };
 }
@@ -143,7 +154,8 @@ int main(int argc, char** argv) {
   // Settings come from a config file - augustac.yaml next to the executable
   // unless --config names another (ADR-0034) - not from the command line,
   // which otherwise only asks for --help or --version (printed, then exit),
-  // and what one run is for: a Replay to list or watch (ADR-0051).
+  // and what one run is for: a Replay to list or watch (ADR-0051), or a
+  // capture's player to reenact (ADR-0050).
   const auto command_line =
       augusta::config::ParseCommandLine(argc, argv, "augustac", augusta::config::kClientConfigFileName,
                                         augusta::EngineVersion(), augusta::config::kClientOptions);
@@ -152,7 +164,7 @@ int main(int argc, char** argv) {
     return 0;
   }
   const auto run = command_line.and_then(augusta::config::ReadClientRun);
-  const auto file_config = augusta::client::ReadClientConfig(
+  auto file_config = augusta::client::ReadClientConfig(
       run.and_then([&command_line](const augusta::config::ClientRun& /*read*/) { return command_line; }));
   if (!file_config) {
     return augusta::application::Conclude(kSubsystem, file_config.error());
@@ -166,6 +178,17 @@ int main(int argc, char** argv) {
   }
   const std::optional<std::string> replay =
       run->mode == augusta::config::ClientMode::kWatchReplay ? std::optional(run->capture) : std::nullopt;
-  return augusta::application::Conclude(kSubsystem,
-                                        augusta::application::Execute(ClientLifecycle(*file_config, replay)));
+
+  // ReadClientConfig read the command line whole, so it has a value here.
+  const auto reenactment = augusta::client::ReadReenactment(*command_line);
+  if (!reenactment) {
+    return augusta::application::Conclude(kSubsystem, reenactment.error());
+  }
+  // A Captured player plays its capture's Character, not the config's.
+  if (reenactment->has_value()) {
+    file_config->character = (*reenactment)->character;
+  }
+
+  return augusta::application::Conclude(
+      kSubsystem, augusta::application::Execute(ClientLifecycle(*file_config, *reenactment, replay)));
 }

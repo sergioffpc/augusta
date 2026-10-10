@@ -19,6 +19,7 @@ Match::Match(MatchConfig config)
       characters_(std::move(config.characters)),
       player_count_(config.player_count),
       pause_ticks_(config.pause_ticks),
+      reenactments_(config.reenactments),
       ticks_since_end_(config.pause_ticks) {}
 
 std::string_view DescribeJoinRefusal(JoinRefusal reason) {
@@ -39,6 +40,8 @@ std::string_view DescribeJoinRefusal(JoinRefusal reason) {
       return "the replay server replays no such capture";
     case JoinRefusal::kNotAReplayServer:
       return "the server is a live server, not a replay server";
+    case JoinRefusal::kReenactmentsNotAccepted:
+      return "the server does not take reenactments";
   }
   return "unknown refusal";
 }
@@ -59,8 +62,11 @@ std::expected<Admission, JoinRefusal> Match::Join(networking::PeerId peer, const
     return Admission{.session = existing->second.session, .character = existing->second.character};
   }
   // A client that can never play here should hear that before it hears "wait":
-  // the version, then the pack its characters come from, then the character,
-  // then whether it could join later.
+  // whether it may name its spawn at all, the version, then the pack its
+  // characters come from, then the character, then whether it could join later.
+  if (request.spawn.has_value() && !reenactments_) {
+    return std::unexpected(JoinRefusal::kReenactmentsNotAccepted);
+  }
   if (const std::optional<JoinRefusal> refusal = RefusalOfClient(request.engine_version, request.client_pack, terms_)) {
     return std::unexpected(*refusal);
   }
@@ -75,9 +81,11 @@ std::expected<Admission, JoinRefusal> Match::Join(networking::PeerId peer, const
     return std::unexpected(JoinRefusal::kLobbyFull);
   }
   // A newcomer bumps the version, so no one is Ready until they have loaded its character.
-  const Member& member =
-      members_.emplace(peer, Member{.session = static_cast<SessionId>(next_session_++), .character = *found})
-          .first->second;
+  const Member& member = members_
+                             .emplace(peer, Member{.session = static_cast<SessionId>(next_session_++),
+                                                   .character = *found,
+                                                   .spawn = request.spawn})
+                             .first->second;
   ++roster_version_;
   return Admission{.session = member.session, .character = member.character};
 }
@@ -134,8 +142,10 @@ std::optional<MatchStart> Match::TryStart() {
   in_match_ = true;
   MatchStart start;
   for (const Member& member : MembersBySession()) {
-    start.players.push_back(MatchPlayer{
-        .session = member.session, .entity = static_cast<EntityId>(next_entity_++), .character = member.character});
+    start.players.push_back(MatchPlayer{.session = member.session,
+                                        .entity = static_cast<EntityId>(next_entity_++),
+                                        .character = member.character,
+                                        .spawn = member.spawn});
   }
   return start;
 }

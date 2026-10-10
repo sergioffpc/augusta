@@ -43,6 +43,7 @@ using augusta::protocol::MessageWire;
 using augusta::protocol::ParametersWire;
 using augusta::protocol::PlayerViewWire;
 using augusta::protocol::ReadyWire;
+using augusta::protocol::ReenactRequestWire;
 using augusta::protocol::ReplayListingWire;
 using augusta::protocol::ReplayListRequestWire;
 using augusta::protocol::ReplayListWire;
@@ -155,6 +156,11 @@ std::vector<Seed> Seeds() {
                                                             .entity = static_cast<EntityIdWire>(1),
                                                             .flags = PlayerViewWire::kAds},
                                              PlayerViewWire{.pitch = 0.5F, .entity = static_cast<EntityIdWire>(2)}}}},
+      {.name = "reenact_request",
+       .message = ReenactRequestWire{.engine_version = "0.1.0",
+                                     .client_pack = {},
+                                     .character = "soldier",
+                                     .spawn = Vec3(-8.0F, 0.0F, 16.5F)}},
   };
 }
 

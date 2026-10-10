@@ -22,12 +22,13 @@
 #include <sys/stat.h>
 #endif
 
+#include "augusta/capture_error.h"
+#include "augusta/capture_file.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/math.h"
 #include "augusta/protocol.h"
-#include "frames.h"
 #include "match.h"
 #include "wire.h"
 
@@ -36,6 +37,7 @@
 // hand, as Host hands them on the Simulation thread.
 namespace {
 
+using augusta::capture_file::ReadError;
 using augusta::command::Command;
 using augusta::failure::Code;
 using augusta::failure::DescribeFailure;
@@ -52,7 +54,6 @@ using augusta::server::CapturedJoin;
 using augusta::server::CapturedLeave;
 using augusta::server::CapturedMatchEnd;
 using augusta::server::CaptureEntrant;
-using augusta::server::CaptureError;
 using augusta::server::CaptureFileName;
 using augusta::server::CaptureHeader;
 using augusta::server::CaptureHealth;
@@ -732,7 +733,7 @@ class ReadCaptureTest : public CaptureTest {
     return {std::istreambuf_iterator<char>(in), {}};
   }
 
-  static std::expected<Capture, CaptureError> ReadBytes(const std::string& bytes) {
+  static std::expected<Capture, ReadError> ReadBytes(const std::string& bytes) {
     std::istringstream in(bytes, std::ios::binary);
     return ReadCapture(in);
   }
@@ -742,8 +743,8 @@ class ReadCaptureTest : public CaptureTest {
 TEST_F(ReadCaptureTest, AFileWithoutTheMagicIsNoCapture) {
   std::string bytes = Bytes();
   bytes[0] = 'P';
-  EXPECT_EQ(ReadBytes(bytes).error(), CaptureError::kNotACapture);
-  EXPECT_EQ(ReadBytes("AUG").error(), CaptureError::kNotACapture);
+  EXPECT_EQ(ReadBytes(bytes).error(), ReadError::kNotACapture);
+  EXPECT_EQ(ReadBytes("AUG").error(), ReadError::kNotACapture);
 }
 
 // Requirements: US-21
@@ -761,7 +762,7 @@ TEST_F(ReadCaptureTest, AnotherFormatVersionIsRefused) {
   // The header record's format version: after the magic, its 1-byte length and its type.
   bytes[augusta::protocol::kCaptureMagic.size() + 1 + 1] =
       static_cast<char>(augusta::protocol::kCaptureFormatVersion + 1);
-  EXPECT_EQ(ReadBytes(bytes).error(), CaptureError::kUnsupported);
+  EXPECT_EQ(ReadBytes(bytes).error(), ReadError::kUnsupported);
 }
 
 // Requirements: NFR-12
@@ -769,23 +770,23 @@ TEST_F(ReadCaptureTest, ARecordNamingAPlayerNoJoinDidIsRefused) {
   std::string bytes = Bytes();
   std::ostringstream out(bytes, std::ios::binary | std::ios::ate);
   // After the Match end, which nothing may follow, and of a player 9.
-  augusta::server::WriteFrame(
+  augusta::capture_file::WriteFrame(
       out,
       augusta::protocol::EncodeCaptureRecord(augusta::protocol::CapturedLeaveWire{.offset = 5, .player = 9}).value());
-  EXPECT_EQ(ReadBytes(out.str()).error(), CaptureError::kMalformed);
+  EXPECT_EQ(ReadBytes(out.str()).error(), ReadError::kMalformed);
 }
 
 // The longest payload a frame holds reads back whole: its length fills the
 // frame's one byte.
 TEST(FramesTest, APayloadOfTheLongestLengthReadsBackWhole) {
-  const std::vector<std::byte> written(augusta::server::kMaxFramePayload, std::byte{0xAB});
+  const std::vector<std::byte> written(augusta::capture_file::kMaxFramePayload, std::byte{0xAB});
   std::stringstream stream(std::ios::in | std::ios::out | std::ios::binary);
-  augusta::server::WriteFrame(stream, written);
+  augusta::capture_file::WriteFrame(stream, written);
 
   std::vector<std::byte> read;
-  EXPECT_EQ(augusta::server::ReadFrame(stream, read), augusta::server::Frame::kRead);
+  EXPECT_EQ(augusta::capture_file::ReadFrame(stream, read), augusta::capture_file::Frame::kRead);
   EXPECT_EQ(read, written);
-  EXPECT_EQ(augusta::server::ReadFrame(stream, read), augusta::server::Frame::kEnd);
+  EXPECT_EQ(augusta::capture_file::ReadFrame(stream, read), augusta::capture_file::Frame::kEnd);
 }
 
 }  // namespace
