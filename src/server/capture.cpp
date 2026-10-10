@@ -85,7 +85,7 @@ std::expected<void, CaptureError> ReadMagic(std::istream& in) {
 
 std::expected<CaptureHeader, CaptureError> ReadHeader(std::istream& in) {
   protocol::BytesWire payload;
-  const Frame frame = ReadFrame(in, kCaptureFrames, payload);
+  const Frame frame = ReadFrame(in, payload);
   if (frame == Frame::kUnreadable) {
     return std::unexpected(CaptureError::kUnreadable);
   }
@@ -135,17 +135,13 @@ std::expected<Capture, CaptureError> ReadCapture(std::istream& in) {
   Capture capture{.header = *std::move(header), .records = {}, .torn = false};
   std::size_t joins = 0;
   protocol::BytesWire payload;
-  for (Frame frame = ReadFrame(in, kCaptureFrames, payload); frame != Frame::kEnd;
-       frame = ReadFrame(in, kCaptureFrames, payload)) {
+  for (Frame frame = ReadFrame(in, payload); frame != Frame::kEnd; frame = ReadFrame(in, payload)) {
     if (frame == Frame::kUnreadable) {
       return std::unexpected(CaptureError::kUnreadable);
     }
     if (frame == Frame::kTorn) {
       capture.torn = true;
       break;
-    }
-    if (frame == Frame::kTooLong) {
-      return std::unexpected(CaptureError::kMalformed);
     }
     const auto wire = protocol::DecodeCaptureRecord(payload);
     std::optional<CaptureRecord> record = wire.has_value() ? FromWire(*wire) : std::nullopt;
@@ -335,7 +331,7 @@ class Capturer::Writer {
       file_.setstate(std::ios::badbit);
       return Loss{.step = Step::kWrite, .detail = *std::move(fault)};
     }
-    WriteFrame(file_, kCaptureFrames, payload);
+    WriteFrame(file_, payload);
     file_.flush();
     if (!file_) {
       return Loss{.step = Step::kWrite, .detail = path_.string()};
@@ -504,7 +500,7 @@ std::optional<std::vector<std::byte>> Capturer::Admit(std::expected<std::vector<
   }
   // A record ReadCapture would refuse would make every record after it
   // unreadable; stopping here keeps the file readable up to it.
-  if (encoded->size() > kCaptureFrames.max_payload) {
+  if (encoded->size() > kMaxFramePayload) {
     writer_->Stop(matches_, CaptureStop::kRecordTooLong);
     return std::nullopt;
   }

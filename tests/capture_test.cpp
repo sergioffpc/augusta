@@ -359,7 +359,7 @@ TEST_F(ReadCaptureTest, ARecordNamingAPlayerNoJoinDidIsRefused) {
   std::ostringstream out(bytes, std::ios::binary | std::ios::ate);
   // After the Match end, which nothing may follow, and of a player 9.
   augusta::server::WriteFrame(
-      out, augusta::server::kCaptureFrames,
+      out,
       augusta::protocol::EncodeCaptureRecord(augusta::protocol::CapturedLeaveWire{.offset = 5, .player = 9}).value());
   EXPECT_EQ(ReadBytes(out.str()).error(), CaptureError::kMalformed);
 }
