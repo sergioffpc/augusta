@@ -1,20 +1,32 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = "==3.12.*"
 
 [manifest]
 members = [
+    "augusta-agent",
     "augusta-tools",
     "pack",
 ]
 
 [[package]]
+name = "augusta-agent"
+version = "0.1.0"
+source = { editable = "agent" }
+
+[[package]]
 name = "augusta-tools"
 version = "0.1.0"
 source = { virtual = "." }
+default-groups = ["dev", "docs"]
 
 [package.dev-dependencies]
+agent = [
+    { name = "augusta-agent" },
+    { name = "pytest" },
+]
 dev = [
+    { name = "augusta-agent" },
     { name = "pack" },
     { name = "pytest" },
 ]
@@ -26,7 +38,12 @@ docs = [
 [package.metadata]
 
 [package.metadata.requires-dev]
+agent = [
+    { name = "augusta-agent", editable = "agent" },
+    { name = "pytest", specifier = ">=8" },
+]
 dev = [
+    { name = "augusta-agent", editable = "agent" },
     { name = "pack", editable = "pack" },
     { name = "pytest", specifier = ">=8" },
 ]

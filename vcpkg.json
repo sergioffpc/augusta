@@ -32,5 +32,13 @@
       "platform": "windows"
     },
     "yaml-cpp"
-  ]
+  ],
+  "features": {
+    "agent": {
+      "description": "The Agents' Python module (tools/agent): the root CMakeLists.txt turns it on with AUGUSTA_TOOLS and the tools environment's Python",
+      "dependencies": [
+        "pybind11"
+      ]
+    }
+  }
 }
