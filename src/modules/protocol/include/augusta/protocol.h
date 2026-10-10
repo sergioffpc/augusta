@@ -255,6 +255,8 @@ enum class JoinRefusalWire : std::uint8_t {
   kReplayServer = 6,
   /// The capture a Replay request names is none the replay server replays (ADR-0051).
   kUnknownCapture = 7,
+  /// A Replay list request or a Replay request reached a live server, which replays nothing (ADR-0051).
+  kNotAReplayServer = 8,
 };
 
 /// Client to server: the first message on a new connection.

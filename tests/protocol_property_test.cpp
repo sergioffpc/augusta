@@ -330,11 +330,12 @@ rc::Gen<JoinAcceptedWire> JoinAccepted() {
 }
 
 rc::Gen<JoinRefusedWire> JoinRefused() {
-  return rc::gen::build<JoinRefusedWire>(rc::gen::set(
-      &JoinRefusedWire::reason, rc::gen::element(JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kLobbyFull,
-                                                 JoinRefusalWire::kUnknownCharacter, JoinRefusalWire::kMatchInProgress,
-                                                 JoinRefusalWire::kPackMismatch, JoinRefusalWire::kReplayServer,
-                                                 JoinRefusalWire::kUnknownCapture)));
+  return rc::gen::build<JoinRefusedWire>(
+      rc::gen::set(&JoinRefusedWire::reason,
+                   rc::gen::element(JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kLobbyFull,
+                                    JoinRefusalWire::kUnknownCharacter, JoinRefusalWire::kMatchInProgress,
+                                    JoinRefusalWire::kPackMismatch, JoinRefusalWire::kReplayServer,
+                                    JoinRefusalWire::kUnknownCapture, JoinRefusalWire::kNotAReplayServer)));
 }
 
 rc::Gen<CommandsWire> Commands() {

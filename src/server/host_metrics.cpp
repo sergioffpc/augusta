@@ -1,6 +1,7 @@
 #include "host_metrics.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
@@ -17,6 +18,7 @@
 #include <prometheus/metric_type.h>
 
 #include "augusta/ballistics.h"
+#include "augusta/tick.h"
 #include "capture.h"
 #include "capture_retention.h"
 #include "command_queue.h"
@@ -67,6 +69,8 @@ constexpr std::string_view JoinRefusalLabel(JoinRefusal reason) {
       return "replay_server";
     case JoinRefusal::kUnknownCapture:
       return "unknown_capture";
+    case JoinRefusal::kNotAReplayServer:
+      return "not_a_replay_server";
   }
   return {};
 }
@@ -417,7 +421,8 @@ HostMetrics::HostMetrics(std::uint8_t tick_rate_hz)
       tick_duration(kTickBuckets),
       match_duration(kMatchBuckets),
       authoritative_state_update_bytes(kUpdateBuckets),
-      shooters_delay(kShootersDelayBuckets) {}
+      shooters_delay(kShootersDelayBuckets),
+      replay_tick_duration(kTickBuckets) {}
 
 std::vector<prometheus::MetricFamily> HostMetrics::Collect() const {
   std::vector<MetricFamily> families;
@@ -430,7 +435,21 @@ std::vector<prometheus::MetricFamily> HostMetrics::Collect() const {
   AppendCombat(families, *this);
   AppendRecording(families, *this);
   AppendCapture(families, *this);
+  families.push_back(GaugeFamily("augustad_replays", "Replays running, on a replay server (ADR-0051).", replays));
+  families.push_back(HistogramFamily("augustad_replay_tick_duration_seconds",
+                                     "How long each Replay's tick took: its World's tick and what it sent its viewer.",
+                                     replay_tick_duration));
   return families;
+}
+
+std::optional<Activity> CountTick(HostMetrics& metrics, Heartbeat& heartbeat, const tick::Timing& timing,
+                                  std::chrono::steady_clock::time_point now) {
+  metrics.tick_duration.Observe(std::chrono::duration<double>(timing.duration).count());
+  metrics.ticks.Increment();
+  metrics.ticks_late.Increment(timing.late ? 1 : 0);
+  metrics.tick_overruns.Increment(timing.overrun ? 1 : 0);
+  metrics.tick_resyncs.Increment(timing.resynchronised ? 1 : 0);
+  return heartbeat.Record(Totals(metrics), now);
 }
 
 Activity Totals(const HostMetrics& metrics) {

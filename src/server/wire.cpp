@@ -169,6 +169,8 @@ protocol::JoinRefusalWire ToWire(JoinRefusal reason) {
       return protocol::JoinRefusalWire::kReplayServer;
     case JoinRefusal::kUnknownCapture:
       return protocol::JoinRefusalWire::kUnknownCapture;
+    case JoinRefusal::kNotAReplayServer:
+      return protocol::JoinRefusalWire::kNotAReplayServer;
   }
   // As ToWire(BodyPart): a value the protocol lacks, which Encode refuses.
   return protocol::JoinRefusalWire{};

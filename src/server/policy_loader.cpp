@@ -1,7 +1,6 @@
 #include "policy_loader.h"
 
 #include <expected>
-#include <functional>
 #include <string>
 #include <utility>
 
@@ -38,19 +37,16 @@ std::expected<scripting::Engine, PolicyLoadError> LoadPolicy(const assets::Pack&
   return *std::move(engine);
 }
 
-std::expected<std::function<scripting::Engine()>, PolicyLoadError> LoadPolicyMaker(const assets::Pack& pack) {
+std::expected<PolicyMaker, PolicyLoadError> LoadPolicyMaker(const assets::Pack& pack) {
   const auto rules = pack.ResolveScript(scripting::kRulesScriptPath);
   if (!rules && rules.error() == assets::ResolveError::kNotFound) {
-    return std::function<scripting::Engine()>([] { return scripting::Engine{}; });
+    return PolicyMaker([] { return scripting::Engine{}; });
   }
   if (auto checked = LoadPolicy(pack); !checked) {
     return std::unexpected(std::move(checked.error()));
   }
-  return std::function<scripting::Engine()>([text = *rules] {
-    // Loaded once already, from the same text: Load cannot fail now.
-    auto engine = scripting::Engine::Load(text);
-    return engine ? *std::move(engine) : scripting::Engine{};
-  });
+  // Loaded once already, from the same text: Load cannot fail now.
+  return PolicyMaker([text = *rules] { return *scripting::Engine::Load(text); });
 }
 
 }  // namespace augusta::server

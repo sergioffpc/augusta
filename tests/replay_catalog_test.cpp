@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <ios>
 #include <optional>
 #include <random>
 #include <string>
@@ -96,7 +97,8 @@ TEST_F(ReplayCatalogTest, ListsEachCaptureItReplaysWithItsStartLengthAndCharacte
   const std::string first = Write();
   const std::string second = Write(1, kTickRate, {"sniper"}, 9);
 
-  const std::vector<ReplayListing> listed = ReplayCatalog(directory_, Terms()).List();
+  ReplayCatalog catalog(directory_, Terms());
+  const std::vector<ReplayListing> listed = catalog.List();
 
   ASSERT_EQ(listed.size(), 2U);
   EXPECT_EQ(listed[0].name, first);
@@ -118,10 +120,33 @@ TEST_F(ReplayCatalogTest, LeavesOutCapturesOfAnotherPackRateOrScenario) {
   Write(1, 30);
   Write(1, kTickRate, {"soldier", "medic"});
 
-  const std::vector<ReplayListing> listed = ReplayCatalog(directory_, Terms()).List();
+  ReplayCatalog catalog(directory_, Terms());
+  const std::vector<ReplayListing> listed = catalog.List();
 
   ASSERT_EQ(listed.size(), 1U);
   EXPECT_EQ(listed[0].name, replayable);
+}
+
+// A list request costs a look at the directory: a capture already read is
+// not read again while its size and last write stay as they were.
+TEST_F(ReplayCatalogTest, ListingAgainReadsOnlyTheCapturesThatChanged) {
+  const std::string kept = Write();
+  const std::string changed = Write(1, kTickRate, {"sniper"}, 9);
+  ReplayCatalog catalog(directory_, Terms());
+  ASSERT_EQ(catalog.List().size(), 2U);
+  // Both overwritten, of the same size: one at its old time, as if untouched.
+  for (const std::string& name : {kept, changed}) {
+    const std::filesystem::path file = directory_ / name;
+    const auto size = std::filesystem::file_size(file);
+    const auto written = std::filesystem::last_write_time(file);
+    std::ofstream(file, std::ios::binary | std::ios::trunc) << std::string(size, 'x');
+    std::filesystem::last_write_time(file, name == kept ? written : written + std::chrono::seconds(5));
+  }
+
+  const std::vector<ReplayListing> listed = catalog.List();
+
+  ASSERT_EQ(listed.size(), 1U);
+  EXPECT_EQ(listed[0].name, kept);
 }
 
 TEST_F(ReplayCatalogTest, LeavesOutWhatIsNoCapture) {
@@ -130,14 +155,16 @@ TEST_F(ReplayCatalogTest, LeavesOutWhatIsNoCapture) {
   std::ofstream(directory_ / "readme.txt") << "hello";
   std::filesystem::create_directories(directory_ / "nested.capture");
 
-  const std::vector<ReplayListing> listed = ReplayCatalog(directory_, Terms()).List();
+  ReplayCatalog catalog(directory_, Terms());
+  const std::vector<ReplayListing> listed = catalog.List();
 
   ASSERT_EQ(listed.size(), 1U);
   EXPECT_EQ(listed[0].name, replayable);
 }
 
 TEST_F(ReplayCatalogTest, ADirectoryThatIsGoneListsNothing) {
-  EXPECT_TRUE(ReplayCatalog(root_ / "missing", Terms()).List().empty());
+  ReplayCatalog catalog(root_ / "missing", Terms());
+  EXPECT_TRUE(catalog.List().empty());
 }
 
 // Requirements: US-21

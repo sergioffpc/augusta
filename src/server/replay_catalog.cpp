@@ -1,6 +1,7 @@
 #include "replay_catalog.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <ios>
@@ -8,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -75,17 +77,33 @@ std::vector<std::filesystem::directory_entry> ReplayCatalog::Entries() const {
   return entries;
 }
 
-std::vector<ReplayListing> ReplayCatalog::List() const {
+std::vector<ReplayListing> ReplayCatalog::List() {
   std::vector<ReplayListing> listings;
+  std::unordered_map<std::string, Read> still;
   for (const std::filesystem::directory_entry& entry : Entries()) {
-    const std::optional<Capture> capture = ReadCaptureAt(entry.path());
-    if (!capture.has_value()) {
-      continue;
+    std::string name = entry.path().filename().string();
+    std::error_code error;
+    const std::uintmax_t size = entry.file_size(error);
+    const std::filesystem::file_time_type written = entry.last_write_time(error);
+    const auto known = read_.find(name);
+    Read read;
+    if (!error && known != read_.end() && known->second.size == size && known->second.written == written) {
+      read = std::move(known->second);
+    } else {
+      const std::optional<Capture> capture = ReadCaptureAt(entry.path());
+      read = Read{.size = size,
+                  .written = written,
+                  .listing = capture.has_value() ? ListingOf(name, *capture, terms_) : std::nullopt};
     }
-    if (std::optional<ReplayListing> listing = ListingOf(entry.path().filename().string(), *capture, terms_)) {
-      listings.push_back(*std::move(listing));
+    if (read.listing.has_value()) {
+      listings.push_back(*read.listing);
+    }
+    // A file whose size or time could not be told is read afresh next time.
+    if (!error) {
+      still.emplace(std::move(name), std::move(read));
     }
   }
+  read_ = std::move(still);
   return listings;
 }
 

@@ -432,7 +432,7 @@ JoinAcceptedWire ReadJoinAccepted(Reader& reader) {
 
 JoinRefusedWire ReadJoinRefused(Reader& reader) {
   return JoinRefusedWire{.reason =
-                             reader.ReadEnum(JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kUnknownCapture)};
+                             reader.ReadEnum(JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kNotAReplayServer)};
 }
 
 CommandsWire ReadCommands(Reader& reader) {
@@ -686,7 +686,7 @@ struct Encoder {
 
   void operator()(const JoinRefusedWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kJoinRefused));
-    WriteU8(out, out.FromEnum(message.reason, JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kUnknownCapture));
+    WriteU8(out, out.FromEnum(message.reason, JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kNotAReplayServer));
   }
 
   void operator()(const CommandsWire& message) const {

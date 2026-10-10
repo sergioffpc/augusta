@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include "augusta/assets.h"
@@ -65,7 +66,12 @@ struct ReplayRequest {
 [[nodiscard]] std::optional<ReplayListing> ListingOf(std::string name, const Capture& capture,
                                                      const ReplayTerms& terms);
 
-/// The captures of one directory a replay server replays.
+/// The captures of one directory a replay server replays. It keeps what it
+/// read of each file by the file's name, size and last write, so listing the
+/// directory again reads only the files that changed since: a list request
+/// costs a look at the directory, not a read of every capture in it. Not
+/// thread-safe: one thread lists and finds, the replay server's Network I/O
+/// thread.
 class ReplayCatalog {
  public:
   ReplayCatalog(std::filesystem::path directory, ReplayTerms terms);
@@ -73,7 +79,7 @@ class ReplayCatalog {
   /// Every capture of the directory it replays, ordered by name, which for
   /// one server's captures is when they started (CaptureFileName). A file
   /// that does not read as a capture is left out.
-  [[nodiscard]] std::vector<ReplayListing> List() const;
+  [[nodiscard]] std::vector<ReplayListing> List();
 
   /// The capture of the directory's listing named name, read, if it is one
   /// List lists; nullopt for any other name, a path among them.
@@ -83,8 +89,16 @@ class ReplayCatalog {
   // The regular files of the directory whose names end in ".capture", by name.
   [[nodiscard]] std::vector<std::filesystem::directory_entry> Entries() const;
 
+  // What List read of one file, as it was when read.
+  struct Read {
+    std::uintmax_t size = 0;
+    std::filesystem::file_time_type written;
+    std::optional<ReplayListing> listing;
+  };
+
   std::filesystem::path directory_;
   ReplayTerms terms_;
+  std::unordered_map<std::string, Read> read_;
 };
 
 }  // namespace augusta::server

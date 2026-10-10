@@ -21,6 +21,7 @@
 #include "heartbeat.h"
 #include "host.h"
 #include "metrics.h"
+#include "policy_loader.h"
 #include "replay_server.h"
 
 namespace augusta::server {
@@ -64,7 +65,7 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
   // 60 Hz, no missed ticks).
   std::uint8_t tick_rate_hz;
   std::uint16_t metrics_port;
-  Served host;
+  Served served;
   // When the Simulation thread last finished a tick, which the metrics
   // endpoint's /livez reads (ADR-0049). Run() starts it at its own start.
   std::atomic<tick::Clock::time_point> last_tick_end;
@@ -78,7 +79,7 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
   // ever armed in it.
   failure::Faults no_faults;
   // The two threads' stop request and first failure (ADR-0005). Declared after
-  // host, so it stops and joins the Network I/O thread before host goes.
+  // served, so it stops and joins the Network I/O thread before served goes.
   supervisor::Supervisor workers;
 
   template <typename Config, typename Policy>
@@ -86,7 +87,7 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
           failure::Faults* faults)
       : tick_rate_hz(config.tick_rate_hz),
         metrics_port(metrics_port_in),
-        host(config, std::move(scenario), std::move(policy)),
+        served(config, std::move(scenario), std::move(policy)),
         workers(faults != nullptr ? *faults : no_faults) {}
 
   // The endpoint is not a supervised worker (ADR-0049): a server whose endpoint
@@ -95,7 +96,7 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
   void StartMetrics() {
     try {
       metrics = std::make_unique<MetricsEndpoint>(metrics_port, last_tick_end,
-                                                  ServerMetrics{host.Metrics(), connection_health});
+                                                  ServerMetrics{served.Metrics(), connection_health});
       LI("subsystem=serverruntime event=metrics_serving port={}", metrics_port);
     } catch (const std::exception& error) {
       LE("subsystem=serverruntime event=metrics_failed port={} error={}", metrics_port, error.what());
@@ -106,11 +107,11 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
   // worker that takes it to stop on (ADR-0033): its local transport's, without
   // which the runtime cannot go on, or a message or record it could not
   // encode, a broken invariant. Each is taken once, so one worker reports it.
-  supervisor::WorkerResult HostResult() {
-    if (std::optional<failure::Failure> failed = host.TakeTransportFailure()) {
+  supervisor::WorkerResult ServedResult() {
+    if (std::optional<failure::Failure> failed = served.TakeTransportFailure()) {
       return std::unexpected(std::move(*failed));
     }
-    if (std::optional<failure::Failure> broken = host.TakeInvariantFailure()) {
+    if (std::optional<failure::Failure> broken = served.TakeInvariantFailure()) {
       return std::unexpected(std::move(*broken));
     }
     return {};
@@ -127,12 +128,12 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
     std::chrono::steady_clock::time_point next_sample = std::chrono::steady_clock::now() + kHeartbeatInterval;
     while (!workers.StopRequested()) {
       const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
-      host.PumpNetwork(now);
-      if (supervisor::WorkerResult failed = HostResult(); !failed.has_value()) {
+      served.PumpNetwork(now);
+      if (supervisor::WorkerResult failed = ServedResult(); !failed.has_value()) {
         return failed;
       }
       if (now >= next_sample) {
-        connection_health.Record(host.SampleConnections());
+        connection_health.Record(served.SampleConnections());
         next_sample = now + kHeartbeatInterval;
       }
       std::this_thread::sleep_for(kNetworkRoundWait);
@@ -152,18 +153,18 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
     LI("subsystem=serverruntime event=loop_starting loop=simulation");
     tick::Clock::time_point deadline = tick::Clock::now();
     while (!workers.StopRequested()) {
-      if (std::optional<failure::Failure> lost = RecordingFailureOf(host)) {
+      if (std::optional<failure::Failure> lost = RecordingFailureOf(served)) {
         return std::unexpected(*std::move(lost));
       }
       const tick::Clock::time_point tick_start = tick::Clock::now();
 
-      TickOnce(host, delta_time.count());
-      if (supervisor::WorkerResult failed = HostResult(); !failed.has_value()) {
+      TickOnce(served, delta_time.count());
+      if (supervisor::WorkerResult failed = ServedResult(); !failed.has_value()) {
         return failed;
       }
 
       const tick::Clock::time_point tick_end = tick::Clock::now();
-      host.RecordTiming(tick::Measure(deadline, tick_duration, tick_start, tick_end));
+      served.RecordTiming(tick::Measure(deadline, tick_duration, tick_start, tick_end));
       last_tick_end.store(tick_end, std::memory_order_relaxed);
       deadline = tick::NextDeadline(deadline, tick_duration, tick_end);
       std::this_thread::sleep_until(deadline);
@@ -171,7 +172,7 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
     LI("subsystem=serverruntime event=loop_stopping loop=simulation");
     // The writer may find a strict recording's loss after the last check, or
     // in what it still had queued at the stop: the run fails all the same.
-    if (std::optional<failure::Failure> lost = FinishRecordingOf(host)) {
+    if (std::optional<failure::Failure> lost = FinishRecordingOf(served)) {
       return std::unexpected(*std::move(lost));
     }
     return {};

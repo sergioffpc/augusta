@@ -85,7 +85,7 @@ std::string_view DescribeJoinRefusal(JoinRefusal reason) {
     case JoinRefusal::kVersionMismatch:
       return "client version does not match the server";
     case JoinRefusal::kLobbyFull:
-      return "the lobby is full";
+      return "the lobby is full, or the replay server runs all the Replays it may";
     case JoinRefusal::kUnknownCharacter:
       return "the server's scenario has no such character";
     case JoinRefusal::kMatchInProgress:
@@ -94,6 +94,8 @@ std::string_view DescribeJoinRefusal(JoinRefusal reason) {
       return "client pack does not match the server's";
     case JoinRefusal::kReplayServer:
       return "the server is a replay server: watch a capture with --replay, or list them with --replays";
+    case JoinRefusal::kNotAReplayServer:
+      return "the server is a live server, not a replay server: join it without --replays or --replay";
     case JoinRefusal::kUnknownCapture:
       return "the replay server replays no such capture: list them with --replays";
   }

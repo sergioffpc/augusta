@@ -38,10 +38,15 @@ std::string DescribePolicyLoadError(const PolicyLoadError& error);
 /// error: the scenario has no Game policy, and the mechanism decides alone.
 std::expected<scripting::Engine, PolicyLoadError> LoadPolicy(const assets::Pack& pack);
 
+/// Makes a scenario's Game policy afresh each time it is called: every
+/// World that runs the policy needs an engine of its own (a replay server's
+/// every Replay, ADR-0051).
+using PolicyMaker = std::function<scripting::Engine()>;
+
 /// What makes the engine LoadPolicy loads, afresh for each World that runs it
 /// (a replay server's every Replay, ADR-0051), or the error LoadPolicy gives:
 /// the rules are checked once, here, so making them again cannot fail.
-std::expected<std::function<scripting::Engine()>, PolicyLoadError> LoadPolicyMaker(const assets::Pack& pack);
+std::expected<PolicyMaker, PolicyLoadError> LoadPolicyMaker(const assets::Pack& pack);
 
 }  // namespace augusta::server
 

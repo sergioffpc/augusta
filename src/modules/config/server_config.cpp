@@ -98,6 +98,22 @@ std::expected<bool, ConfigError> OptionalStrictRecording(const ConfigValues& val
   return mode == "strict";
 }
 
+// Reads simulation.recording, relative to root, and how strict it is into config.
+std::expected<void, ConfigError> ReadRecording(const ConfigValues& values, const std::filesystem::path& root,
+                                               ServerConfig& config) {
+  auto path = OptionalPath(values, kRecordingKey, root);
+  if (!path) {
+    return std::unexpected(path.error());
+  }
+  const auto strict = OptionalStrictRecording(values);
+  if (!strict) {
+    return std::unexpected(strict.error());
+  }
+  config.recording_path = *std::move(path);
+  config.strict_recording = *strict;
+  return {};
+}
+
 // A key that may not be set with replay.captures, or that needs it.
 ConfigError ReplayEntryError(std::string_view key, std::string_view reason) {
   return ConfigError{
@@ -172,14 +188,6 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!log_level) {
     return std::unexpected(log_level.error());
   }
-  auto recording_path = OptionalPath(*values, kRecordingKey, *root);
-  if (!recording_path) {
-    return std::unexpected(recording_path.error());
-  }
-  const auto strict_recording = OptionalStrictRecording(*values);
-  if (!strict_recording) {
-    return std::unexpected(strict_recording.error());
-  }
   const auto metrics_port = OptionalMetricsPort(*values);
   if (!metrics_port) {
     return std::unexpected(metrics_port.error());
@@ -190,8 +198,8 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
       .tick_rate_hz = *tick_rate_hz,
       .listen_address = OptionalString(*values, "network.listen_address", kDefaultListenAddress),
       .log_level = *std::move(log_level),
-      .recording_path = *std::move(recording_path),
-      .strict_recording = *strict_recording,
+      .recording_path = {},
+      .strict_recording = false,
       .capture_directory = {},
       .capture_max_files = std::nullopt,
       .capture_max_mib = std::nullopt,
@@ -199,7 +207,8 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
       .replay_captures = {},
       .replay_max_viewers = kDefaultReplayMaxViewers,
   };
-  return ReadCapture(*values, *root, config)
+  return ReadRecording(*values, *root, config)
+      .and_then([&] { return ReadCapture(*values, *root, config); })
       .and_then([&] { return ReadReplay(*values, *root, config); })
       .transform([&config] { return std::move(config); });
 }

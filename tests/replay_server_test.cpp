@@ -36,7 +36,9 @@
 #include "content.h"
 #include "frames.h"
 #include "host.h"
+#include "host_metrics.h"
 #include "match.h"
+#include "misbehaviour.h"
 #include "replay_catalog.h"
 #include "wire.h"
 
@@ -766,6 +768,90 @@ TEST(DescribeReplayListTest, ItNamesEachCaptureWithItsStartLengthAndCharacters) 
             "20261009T101500123Z-0001.capture  started 2026-10-09 10:15:00 UTC  lasted 2:05  soldier, sniper\n"
             "b.capture  started 2026-10-09 10:16:00 UTC  lasted 0:00  soldier");
   EXPECT_EQ(augusta::harness::DescribeReplayList({}), "the server replays no capture");
+}
+
+// A viewer has asked for its Replay: a list request or a Join request from
+// it later is dropped and judged, never answered, and its Replay goes on to
+// its end.
+// Requirements: US-21
+TEST_F(ReplayServerTest, AViewersLaterRequestsAreDroppedAndItsReplayGoesOn) {
+  const std::string name = CaptureAKill(directory_.Path());
+  ReadWhole(directory_.Path() / name);
+  const std::unique_ptr<ReplayServer> server = Serve();
+  RawClient viewer(server->ListenEndpoint());
+  viewer.Send(RequestFor(name));
+  ASSERT_TRUE(RunUntil(*server, {&viewer}, [&] { return !viewer.ReceivedOf<protocol::MatchStartWire>().empty(); }));
+  server->Tick();
+
+  viewer.Send(protocol::ReplayListRequestWire{});
+  viewer.Send(protocol::JoinRequestWire{
+      .engine_version = std::string(augusta::EngineVersion()), .client_pack = {}, .character = kCharacter});
+  viewer.Send(RequestFor(name));
+  ASSERT_TRUE(RunUntil(*server, {&viewer}, [&] {
+    return server->Metrics().messages_received[augusta::server::MessageType::kReplayRequest].Value() == 2;
+  }));
+  EXPECT_EQ(server->Viewers(), 1U);
+
+  ASSERT_TRUE(RunUntil(*server, {&viewer}, [&] { return viewer.State() == ConnectionState::kDisconnected; }, true));
+  EXPECT_TRUE(viewer.ReceivedOf<protocol::ReplayListWire>().empty());
+  EXPECT_TRUE(viewer.ReceivedOf<protocol::JoinRefusedWire>().empty());
+  EXPECT_EQ(viewer.ReceivedOf<protocol::MatchEndWire>().size(), 1U);
+  EXPECT_EQ(server->Metrics().misbehaviour[augusta::server::PeerRejection::kNotAClientMessage].Value(), 3U);
+}
+
+// Each Replay's tick is timed into the server's metrics, so what every
+// viewer costs the Simulation thread's tick budget shows (ADR-0051).
+// Requirements: US-21
+TEST_F(ReplayServerTest, EachReplaysTickIsTimedIntoTheMetrics) {
+  const std::string name = CaptureAKill(directory_.Path());
+  ReadWhole(directory_.Path() / name);
+  const std::unique_ptr<ReplayServer> server = Serve();
+  RawClient first(server->ListenEndpoint());
+  RawClient second(server->ListenEndpoint());
+  first.Send(RequestFor(name));
+  second.Send(RequestFor(name));
+  ASSERT_TRUE(RunUntil(*server, {&first, &second}, [&] { return server->Viewers() == 2; }));
+  EXPECT_EQ(server->Metrics().replays.Value(), 2.0);
+
+  constexpr int kTicks = 3;
+  for (int i = 0; i < kTicks; ++i) {
+    server->Tick();
+  }
+
+  const auto timed = server->Metrics().replay_tick_duration.Read();
+  EXPECT_EQ(timed.cumulative_counts.back(), 2U * kTicks);
+  EXPECT_GT(timed.sum, 0.0);
+}
+
+// augustac --replays or --replay against a live server is told it is none,
+// rather than waiting for an answer that never comes.
+// Requirements: US-21
+TEST(LiveServerReplayTest, ALiveServerRefusesReplayRequestsAsNoReplayServer) {
+  Host host(HostConfig{.tick_rate_hz = kTickRate,
+                       .parameters = Rules(),
+                       .listen = Endpoint{.address = kLoopbackAnyPort},
+                       .recording = {},
+                       .recording_mode = {},
+                       .server_pack = {},
+                       .capture_directory = {},
+                       .faults = nullptr},
+            TwoInALine());
+  augusta::harness::ReplayListQuery query(host.ListenEndpoint());
+  RawClient viewer(host.ListenEndpoint());
+  viewer.Send(RequestFor("a.capture"));
+
+  const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+  while ((!query.GetFailure().has_value() || !viewer.Refused()) && std::chrono::steady_clock::now() < deadline) {
+    host.PumpNetwork(std::chrono::steady_clock::now());
+    query.Pump();
+    viewer.Serve();
+    std::this_thread::sleep_for(kPollInterval);
+  }
+
+  ASSERT_TRUE(query.GetFailure().has_value());
+  EXPECT_EQ(query.GetFailure()->kind, augusta::harness::FailureKind::kRefused);
+  EXPECT_EQ(query.GetFailure()->refusal, augusta::harness::JoinRefusal::kNotAReplayServer);
+  EXPECT_EQ(viewer.Refusal(), protocol::JoinRefusalWire::kNotAReplayServer);
 }
 
 TEST(ReplayServerConfigTest, AReplayServerRefusesACapturesDirectoryThatIsNone) {

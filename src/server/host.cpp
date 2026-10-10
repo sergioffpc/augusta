@@ -183,13 +183,8 @@ networking::Endpoint Host::ListenEndpoint() const { return impl_->network.LocalE
 std::optional<failure::Failure> Host::TakeInvariantFailure() { return impl_->invariant_failure.Take(); }
 
 void Host::RecordTiming(const tick::Timing& timing) {
-  HostMetrics& metrics = impl_->metrics;
-  metrics.tick_duration.Observe(std::chrono::duration<double>(timing.duration).count());
-  metrics.ticks.Increment();
-  metrics.ticks_late.Increment(timing.late ? 1 : 0);
-  metrics.tick_overruns.Increment(timing.overrun ? 1 : 0);
-  metrics.tick_resyncs.Increment(timing.resynchronised ? 1 : 0);
-  const std::optional<Activity> second = impl_->heartbeat.Record(Totals(metrics), std::chrono::steady_clock::now());
+  const std::optional<Activity> second =
+      CountTick(impl_->metrics, impl_->heartbeat, timing, std::chrono::steady_clock::now());
   if (!second.has_value()) {
     return;
   }

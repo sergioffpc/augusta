@@ -139,6 +139,8 @@ TEST(HostMetricsTest, EveryMetricOfTheCatalogueIsCollectedWithItsType) {
       {"augustad_capture_retention_deleted_total", MetricType::Counter},
       {"augustad_capture_retention_failures_total", MetricType::Counter},
       {"augustad_capture_directory_bytes", MetricType::Gauge},
+      {"augustad_replays", MetricType::Gauge},
+      {"augustad_replay_tick_duration_seconds", MetricType::Histogram},
   };
   for (const auto& [name, type] : catalogue) {
     EXPECT_EQ(Family(families, name).type, type) << name;
@@ -322,7 +324,7 @@ TEST(HostMetricsTest, JoinsAreLabelledByResultAndARefusalByItsReason) {
   EXPECT_EQ(Series(joins, {{"result", "refused"}, {"reason", "lobby_full"}}).counter.value, 1.0);
   EXPECT_EQ(ValuesOf(joins, "reason"),
             (std::set<std::string>{"version_mismatch", "lobby_full", "unknown_character", "match_in_progress",
-                                   "pack_mismatch", "replay_server", "unknown_capture"}));
+                                   "pack_mismatch", "replay_server", "unknown_capture", "not_a_replay_server"}));
 }
 
 // Requirements: NFR-07

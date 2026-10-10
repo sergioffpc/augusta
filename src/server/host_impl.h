@@ -34,6 +34,7 @@
 #include "host_metrics.h"
 #include "match.h"
 #include "misbehaviour.h"
+#include "peer_gate.h"
 #include "recording.h"
 #include "tick_messages.h"
 
@@ -115,12 +116,10 @@ struct Host::Impl {
   // A peer can send malformed messages as fast as it likes, so their warnings
   // are limited; the heartbeat still counts every one.
   logging::Throttle drop_warnings{std::chrono::seconds{1}};
-  // Each connected peer's misbehaviour, and the peers disconnected for it during
-  // this PumpNetwork, whose messages still in its batch are ignored.
-  std::unordered_map<networking::PeerId, MisbehaviourTracker> misbehaviour;
-  std::unordered_set<networking::PeerId> expelled;
-  // The deadline of each connected peer not yet admitted to the Lobby.
-  AdmissionDeadlines admission_deadlines;
+  // Each connected peer's admission deadline and misbehaviour, and the peers
+  // expelled during this PumpNetwork, whose messages still in its batch are
+  // ignored (peer_gate.h).
+  PeerGate gate{metrics};
 
   Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy);
 
@@ -149,7 +148,7 @@ struct Host::Impl {
                       std::chrono::steady_clock::time_point now);
   void RecordRejection(networking::PeerId peer, const SequencedCommand& command, Rejection rejection);
   Verdict Judge(networking::PeerId peer, PeerRejection rejection, std::chrono::steady_clock::time_point now);
-  void ExpelUnadmitted(std::chrono::steady_clock::time_point now);
+  void RefuseAsNoReplayServer(networking::PeerId peer, std::chrono::steady_clock::time_point now);
   void Expel(networking::PeerId peer, std::string_view reason);
   void HandleDisconnect(networking::PeerId peer, Leaving how);
 

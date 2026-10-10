@@ -2,6 +2,7 @@
 #define AUGUSTA_SERVER_HOST_METRICS_H_
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -12,6 +13,7 @@
 #include <prometheus/metric_family.h>
 
 #include "augusta/ballistics.h"
+#include "augusta/tick.h"
 #include "capture.h"
 #include "capture_retention.h"
 #include "command_queue.h"
@@ -60,7 +62,7 @@ enum class MessageType : std::uint8_t {
   kReplayView,
 };
 
-using JoinRefusalCounters = EnumCounters<JoinRefusal, JoinRefusal::kVersionMismatch, JoinRefusal::kUnknownCapture>;
+using JoinRefusalCounters = EnumCounters<JoinRefusal, JoinRefusal::kVersionMismatch, JoinRefusal::kNotAReplayServer>;
 using LeavingCounters = EnumCounters<Leaving, Leaving::kLeft, Leaving::kMisbehaving>;
 /// The misbehaviours only: the first of PeerRejection's values (misbehaviour.h),
 /// which host_metrics.cpp checks.
@@ -165,6 +167,13 @@ struct HostMetrics final : prometheus::Collectable {
   /// Written once, as the Host is built, before the metrics endpoint serves.
   std::optional<std::size_t> capture_retention_max_files;
   std::optional<std::uintmax_t> capture_retention_max_bytes;
+
+  // Replay (ADR-0051), a replay server's only, written by the Simulation
+  // thread: how many Replays run, and how long one Replay's tick takes - its
+  // SimulationWorld's tick and what it sends its viewer - of the tick the
+  // Simulation thread runs every Replay in.
+  Gauge replays;
+  Histogram replay_tick_duration;
 };
 
 /// Counts what a Capturer tells it into metrics' Capture family, lock-free,
@@ -189,6 +198,13 @@ class CaptureMetrics final : public CaptureObserver {
  private:
   HostMetrics& metrics_;
 };
+
+/// Counts a tick the Simulation loop ran with timing into metrics' Tick
+/// family, and returns what Network I/O and the ticks did over the heartbeat
+/// interval it ends (heartbeat.h), at now, if it ends one: the line its server
+/// writes. How every server counts its ticks.
+[[nodiscard]] std::optional<Activity> CountTick(HostMetrics& metrics, Heartbeat& heartbeat, const tick::Timing& timing,
+                                                std::chrono::steady_clock::time_point now);
 
 /// The heartbeat's running totals (heartbeat.h), read from metrics' counters:
 /// the heartbeat line counts nothing of its own.

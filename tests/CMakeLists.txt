@@ -21,6 +21,7 @@ add_executable(
   presentation_benchmark.cpp
   protocol_benchmark.cpp
   recording_benchmark.cpp
+  replay_benchmark.cpp
   replication_benchmark.cpp
   simulation_benchmark.cpp
 )

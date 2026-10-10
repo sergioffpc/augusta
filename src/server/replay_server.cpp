@@ -13,15 +13,13 @@
 #include <ranges>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
 
-#include "admission.h"
-#include "augusta/assets.h"
 #include "augusta/failure.h"
 #include "augusta/first_failure.h"
 #include "augusta/logging.h"
@@ -40,6 +38,8 @@
 #include "host_metrics.h"
 #include "match.h"
 #include "misbehaviour.h"
+#include "peer_gate.h"
+#include "policy_loader.h"
 #include "replay.h"
 #include "replay_catalog.h"
 #include "simulation_mapping.h"
@@ -126,7 +126,9 @@ std::vector<ReplayListing> ListedOf(const std::vector<ReplayListing>& listings) 
 }
 
 struct ReplayServer::Impl {
-  // One Replay and the capture it is of, by its viewer's connection.
+  // One Replay and the capture it is of. Shared with a tick under way, so the
+  // Network I/O thread can forget a viewer that leaves while the Simulation
+  // thread still steps its Replay outside the lock.
   struct Viewer {
     std::string capture;
     std::unique_ptr<Replay> replay;
@@ -136,12 +138,13 @@ struct ReplayServer::Impl {
   const std::uint8_t tick_rate_hz;
   const parameters::Parameters parameters;
   const std::size_t max_viewers;
-  const assets::PackHash client_pack;
+  const ClientTerms terms;
   // What every Replay's World is built from, unchanged for the server's life.
   const Scenario scenario;
   const std::unordered_map<std::string, simulation::Character> characters;
   const PolicyMaker policy;
-  const ReplayCatalog catalog;
+  // Network I/O thread only, without the lock: listing reads the disk.
+  ReplayCatalog catalog;
 
   networking::Server network;
   failure::FirstFailure transport_failure;
@@ -150,10 +153,8 @@ struct ReplayServer::Impl {
   // Guards everything below: the Network I/O thread adds viewers, and both
   // threads take them out.
   mutable std::mutex mutex;
-  std::unordered_map<networking::PeerId, Viewer> viewers;
-  std::unordered_map<networking::PeerId, MisbehaviourTracker> misbehaviour;
-  std::unordered_set<networking::PeerId> expelled;
-  AdmissionDeadlines admission_deadlines;
+  std::unordered_map<networking::PeerId, std::shared_ptr<Viewer>> viewers;
+  PeerGate gate{metrics};
   logging::Throttle drop_warnings{std::chrono::seconds{1}};
   // Simulation thread only.
   Heartbeat heartbeat{std::chrono::steady_clock::now()};
@@ -163,7 +164,7 @@ struct ReplayServer::Impl {
         tick_rate_hz(config.tick_rate_hz),
         parameters(config.parameters),
         max_viewers(config.max_viewers),
-        client_pack(scenario_in.client_pack),
+        terms{.engine_version = std::string(EngineVersion()), .client_pack = scenario_in.client_pack},
         scenario(std::move(scenario_in)),
         characters(ToSimulation(scenario.characters)),
         policy(std::move(policy_in)),
@@ -187,7 +188,7 @@ struct ReplayServer::Impl {
   }
 
   // Sends payload, an encoded message, to peer as reliability says, counted
-  // as Host counts what it sends.
+  // as Host counts what it sends. From either thread, with or without the lock.
   void Deliver(networking::PeerId peer, const networking::Payload& payload, networking::Reliability reliability) {
     networking::SendResult sent = SendCounted(network, metrics, peer, payload, reliability);
     if (!sent.has_value()) {
@@ -208,33 +209,55 @@ struct ReplayServer::Impl {
     Deliver(peer, *payload, reliability);
   }
 
+  void SetGauges() {
+    metrics.sessions.Set(static_cast<double>(viewers.size()));
+    metrics.replays.Set(static_cast<double>(viewers.size()));
+  }
+
+  // Everything of peer, whose connection is gone, is forgotten, its Replay
+  // with it. With mutex held.
+  void Forget(networking::PeerId peer) {
+    gate.Left(peer);
+    viewers.erase(peer);
+    SetGauges();
+  }
+
   // Closes peer's connection from this side, once what was sent to it
   // reliably has arrived. The transport reports no departure for it, so its
   // state goes here. With mutex held.
   void Close(networking::PeerId peer) {
     network.Disconnect(peer);
-    expelled.insert(peer);
+    gate.Expelled(peer);
     Forget(peer);
   }
 
-  void Forget(networking::PeerId peer) {
-    misbehaviour.erase(peer);
-    admission_deadlines.Left(peer);
-    viewers.erase(peer);
-    metrics.sessions.Set(static_cast<double>(viewers.size()));
+  // peer's connection ended as how says. With mutex held.
+  void HandleDisconnect(networking::PeerId peer, Leaving how) {
+    if (viewers.contains(peer)) {
+      LI("subsystem=replay event=viewer_left peer={} how={}", PeerNumber(peer), LeavingName(how));
+      metrics.disconnects_from_match[how].Increment();
+    } else {
+      metrics.disconnects_before_admission[how].Increment();
+    }
+    Forget(peer);
   }
 
-  // Counts rejection toward peer's misbehaviour, and disconnects it once it
-  // has misbehaved too often. With mutex held.
+  // Disconnects peer for misbehaving or for not asking in time, for
+  // reason, which only decides what is logged: a viewer's Replay ends with
+  // it. With mutex held.
+  void Expel(networking::PeerId peer, std::string_view reason) {
+    LW("subsystem=replay event=misbehaving_disconnected peer={} reason=\"{}\"", PeerNumber(peer), reason);
+    (viewers.contains(peer) ? metrics.disconnects_from_match
+                            : metrics.disconnects_before_admission)[Leaving::kMisbehaving]
+        .Increment();
+    Close(peer);
+  }
+
+  // Counts rejection toward peer's misbehaviour, and expels it once it has
+  // misbehaved too often. With mutex held.
   void Judge(networking::PeerId peer, PeerRejection rejection, std::chrono::steady_clock::time_point now) {
-    if (IsMisbehaviour(rejection)) {
-      metrics.misbehaviour[rejection].Increment();
-    }
-    if (misbehaviour[peer].Record(rejection, now) == Verdict::kDisconnect) {
-      LW("subsystem=replay event=misbehaving_disconnected peer={} reason=\"{}\"", PeerNumber(peer),
-         DescribePeerRejection(rejection));
-      metrics.disconnects_before_admission[Leaving::kMisbehaving].Increment();
-      Close(peer);
+    if (gate.Judge(peer, rejection, now) == Verdict::kDisconnect) {
+      Expel(peer, DescribePeerRejection(rejection));
     }
   }
 
@@ -254,38 +277,28 @@ struct ReplayServer::Impl {
   }
 
   // Answers a Replay list request with the captures replayed here, then
-  // closes the connection. With mutex held.
-  void HandleReplayListRequest(networking::PeerId peer) {
+  // closes the connection: a peer asks once a connection, and what else it
+  // sent in the round is ignored. The directory is looked at with lock, which
+  // holds mutex, let go, so no tick waits on the disk.
+  void HandleReplayListRequest(networking::PeerId peer, std::unique_lock<std::mutex>& lock) {
+    lock.unlock();
     const std::vector<ReplayListing> listed = ListedOf(catalog.List());
+    lock.lock();
     LI("subsystem=replay event=replay_list peer={} captures={}", PeerNumber(peer), listed.size());
     Send(peer, ToWire(listed), networking::Reliability::kReliable);
     Close(peer);
   }
 
-  // Why request is refused before its capture is looked for: its version,
-  // then its pack, as a Join's are (ADR-0043).
-  [[nodiscard]] std::optional<JoinRefusal> RefusalOf(const ReplayRequest& request) const {
-    if (request.engine_version != EngineVersion()) {
-      return JoinRefusal::kVersionMismatch;
-    }
-    if (request.client_pack != client_pack) {
-      return JoinRefusal::kPackMismatch;
-    }
-    return std::nullopt;
-  }
-
   // Starts a Replay of the capture request names for peer, or refuses it:
-  // after its version and pack, its capture, then whether max_viewers already
-  // run. The capture is read and the World built here, on the Network I/O
-  // thread and with lock, which holds mutex, let go, so no tick waits on
-  // either. Only this thread adds viewers, so none joins in the meantime.
+  // after its version and pack (RefusalOfClient), its capture, then whether
+  // max_viewers already run. The capture is read and the World built here, on
+  // the Network I/O thread and with lock, which holds mutex, let go, so no
+  // tick waits on either. Only this thread adds viewers, so none joins in the
+  // meantime.
   void HandleReplayRequest(networking::PeerId peer, const ReplayRequest& request,
                            std::chrono::steady_clock::time_point now, std::unique_lock<std::mutex>& lock) {
-    if (viewers.contains(peer)) {
-      LD("subsystem=replay event=dropped peer={} reason=\"a second replay request\"", PeerNumber(peer));
-      return;
-    }
-    if (const std::optional<JoinRefusal> refusal = RefusalOf(request)) {
+    if (const std::optional<JoinRefusal> refusal =
+            RefusalOfClient(request.engine_version, request.client_pack, terms)) {
       Refuse(peer, *refusal, now);
       return;
     }
@@ -301,17 +314,27 @@ struct ReplayServer::Impl {
       return;
     }
     lock.unlock();
-    auto replay = std::make_unique<Replay>(*std::move(capture), NewWorld(), characters);
+    auto viewer = std::make_shared<Viewer>(Viewer{
+        .capture = request.capture, .replay = std::make_unique<Replay>(*std::move(capture), NewWorld(), characters)});
     lock.lock();
-    admission_deadlines.Admitted(peer);
+    gate.Admitted(peer);
     Send(peer, ToWire(Admission{.session = kViewerSession, .character = {}}, tick_rate_hz, parameters),
          networking::Reliability::kReliable);
-    Send(peer, ToWire(replay->Start(), replay->Spawns(), replay->FirstTick()), networking::Reliability::kReliable);
-    viewers.emplace(peer, Viewer{.capture = request.capture, .replay = std::move(replay)});
+    Send(peer, ToWire(viewer->replay->Start(), viewer->replay->Spawns(), viewer->replay->FirstTick()),
+         networking::Reliability::kReliable);
+    viewers.emplace(peer, std::move(viewer));
     metrics.joins_admitted.Increment();
-    metrics.sessions.Set(static_cast<double>(viewers.size()));
+    SetGauges();
     LI("subsystem=replay event=replay_started peer={} capture={} viewers={}", PeerNumber(peer), request.capture,
        viewers.size());
+  }
+
+  // Drops what message brought and judges its peer, for reason. With mutex held.
+  void Drop(const networking::PeerMessage& message, std::string_view reason,
+            std::chrono::steady_clock::time_point now) {
+    LW_LIMITED(drop_warnings, "subsystem=replay event=dropped_malformed peer={} bytes={} reason=\"{}\"",
+               PeerNumber(message.from), message.payload.size(), reason);
+    Judge(message.from, PeerRejection::kNotAClientMessage, now);
   }
 
   // With lock, which holds mutex.
@@ -325,24 +348,27 @@ struct ReplayServer::Impl {
       return;
     }
     metrics.messages_received[TypeOf(message.payload)].Increment();
-    if (std::holds_alternative<protocol::ReplayListRequestWire>(*decoded)) {
-      HandleReplayListRequest(message.from);
+    // A viewer has asked for its Replay and sends nothing more: whatever it
+    // sends, a request among them, is dropped and judged, and its Replay goes on.
+    if (viewers.contains(message.from)) {
+      Drop(message, "a viewer sends nothing", now);
+    } else if (std::holds_alternative<protocol::ReplayListRequestWire>(*decoded)) {
+      HandleReplayListRequest(message.from, lock);
     } else if (const auto* request = std::get_if<protocol::ReplayRequestWire>(&*decoded)) {
       HandleReplayRequest(message.from, FromWire(*request), now, lock);
     } else if (std::holds_alternative<protocol::JoinRequestWire>(*decoded)) {
       RefuseToPlay(message.from, now);
     } else {
-      // Commands and Readies among them: a viewer sends nothing once watching.
-      LW_LIMITED(drop_warnings,
-                 "subsystem=replay event=dropped_malformed peer={} bytes={} reason=\"not a replay request\"",
-                 PeerNumber(message.from), message.payload.size());
-      Judge(message.from, PeerRejection::kNotAClientMessage, now);
+      Drop(message, "not a replay request", now);
     }
   }
 
-  // Runs viewer's Replay one tick and sends it what the tick resolved;
-  // returns whether the Replay has ended. With mutex held.
+  // Runs viewer's Replay one tick and sends it what the tick resolved, timed
+  // into the metrics; returns whether the Replay has ended. Simulation thread,
+  // without the lock: only this thread steps a Replay, and the transport and
+  // the metrics are safe from any thread.
   bool TickViewer(networking::PeerId peer, Viewer& viewer) {
+    const auto start = std::chrono::steady_clock::now();
     const ReplayTick tick = viewer.replay->Step();
     if (tick.divergence.has_value()) {
       LW("subsystem=replay event=replay_diverged peer={} capture={} {}", PeerNumber(peer), viewer.capture,
@@ -357,6 +383,8 @@ struct ReplayServer::Impl {
         Deliver(peer, message.payload, message.reliability);
       }
     }
+    metrics.replay_tick_duration.Observe(
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
     if (!tick.end.has_value()) {
       return false;
     }
@@ -375,70 +403,43 @@ networking::Endpoint ReplayServer::ListenEndpoint() const { return impl_->networ
 
 void ReplayServer::PumpNetwork(std::chrono::steady_clock::time_point now) {
   Impl& impl = *impl_;
-  for (const networking::PeerEvent& event : impl.network.PumpEvents()) {
-    switch (event.type) {
-      case networking::PeerEventType::kConnectRequested: {
-        impl.network.Accept(event.peer);
-        const std::lock_guard<std::mutex> lock(impl.mutex);
-        impl.admission_deadlines.Connected(event.peer, now);
-        break;
-      }
-      case networking::PeerEventType::kConnected:
-        break;
-      case networking::PeerEventType::kDisconnected: {
-        const std::lock_guard<std::mutex> lock(impl.mutex);
-        if (impl.viewers.contains(event.peer)) {
-          LI("subsystem=replay event=viewer_left peer={}", PeerNumber(event.peer));
-        }
-        impl.Forget(event.peer);
-        break;
-      }
-    }
-  }
-  auto received = impl.network.ReceiveMessages();
-  if (!received.has_value()) {
-    impl.transport_failure.Record(std::move(received.error()));
-    return;
-  }
-  for (const networking::PeerMessage& message : *received) {
-    std::unique_lock<std::mutex> lock(impl.mutex);
-    if (impl.expelled.contains(message.from)) {
-      continue;
-    }
-    impl.metrics.received_bytes.Increment(message.payload.size());
-    impl.HandleMessage(message, now, lock);
-  }
-  const std::lock_guard<std::mutex> lock(impl.mutex);
-  for (const networking::PeerId peer : impl.admission_deadlines.TakeOverdue(now)) {
-    LW("subsystem=replay event=misbehaving_disconnected peer={} reason=\"not admitted in time\"", PeerNumber(peer));
-    impl.metrics.disconnects_before_admission[Leaving::kMisbehaving].Increment();
-    impl.Close(peer);
-  }
-  impl.expelled.clear();
+  PumpPeers(impl.network, impl.metrics, impl.mutex, impl.gate, now,
+            PeerHandlers{
+                .disconnected = [&impl](networking::PeerId peer, Leaving how) { impl.HandleDisconnect(peer, how); },
+                .message = [&impl, now](const networking::PeerMessage& message,
+                                        std::unique_lock<std::mutex>& lock) { impl.HandleMessage(message, now, lock); },
+                .overdue = [&impl](networking::PeerId peer) { impl.Expel(peer, "not admitted in time"); },
+            },
+            impl.transport_failure);
 }
 
 void ReplayServer::Tick() {
   Impl& impl = *impl_;
-  const std::lock_guard<std::mutex> lock(impl.mutex);
-  std::vector<networking::PeerId> ended;
-  for (auto& [peer, viewer] : impl.viewers) {
-    if (impl.TickViewer(peer, viewer)) {
-      ended.push_back(peer);
+  std::vector<std::pair<networking::PeerId, std::shared_ptr<Impl::Viewer>>> watching;
+  {
+    const std::lock_guard<std::mutex> lock(impl.mutex);
+    watching.assign(impl.viewers.begin(), impl.viewers.end());
+  }
+  // Each Replay is stepped without the lock, so the Network I/O thread waits
+  // on none of them: only a viewer's own lookup is under it.
+  std::vector<std::pair<networking::PeerId, std::shared_ptr<Impl::Viewer>>> ended;
+  for (const auto& [peer, viewer] : watching) {
+    if (impl.TickViewer(peer, *viewer)) {
+      ended.emplace_back(peer, viewer);
     }
   }
-  for (const networking::PeerId peer : ended) {
-    impl.Close(peer);
+  const std::lock_guard<std::mutex> lock(impl.mutex);
+  for (const auto& [peer, viewer] : ended) {
+    // Unless it left meanwhile, and the connection is another's by now.
+    if (const auto still = impl.viewers.find(peer); still != impl.viewers.end() && still->second == viewer) {
+      impl.Close(peer);
+    }
   }
 }
 
 void ReplayServer::RecordTiming(const tick::Timing& timing) {
-  HostMetrics& metrics = impl_->metrics;
-  metrics.tick_duration.Observe(std::chrono::duration<double>(timing.duration).count());
-  metrics.ticks.Increment();
-  metrics.ticks_late.Increment(timing.late ? 1 : 0);
-  metrics.tick_overruns.Increment(timing.overrun ? 1 : 0);
-  metrics.tick_resyncs.Increment(timing.resynchronised ? 1 : 0);
-  const std::optional<Activity> second = impl_->heartbeat.Record(Totals(metrics), std::chrono::steady_clock::now());
+  const std::optional<Activity> second =
+      CountTick(impl_->metrics, impl_->heartbeat, timing, std::chrono::steady_clock::now());
   if (!second.has_value()) {
     return;
   }

@@ -217,6 +217,8 @@ enum class JoinRefusal : std::uint8_t {
   kReplayServer,
   /// The capture this client asked to watch is none the replay server replays (ADR-0051).
   kUnknownCapture,
+  /// This client asked a live server for Replays, which only a replay server serves (ADR-0051).
+  kNotAReplayServer,
 };
 
 /// A short lowercase description of reason, for logs and for the player.

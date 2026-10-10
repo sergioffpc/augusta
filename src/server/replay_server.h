@@ -23,6 +23,7 @@
 #include "content.h"
 #include "host_metrics.h"
 #include "match.h"
+#include "policy_loader.h"
 #include "replay.h"
 #include "replay_catalog.h"
 
@@ -71,9 +72,6 @@ struct ReplayServerConfig {
   /// otherwise. Must outlive the ReplayServer.
   failure::Faults* faults = nullptr;
 };
-
-/// Makes the scenario's Game policy afresh: every Replay's World needs one of its own.
-using PolicyMaker = std::function<scripting::Engine()>;
 
 /// One message a Replay viewer is sent, encoded, and how.
 struct ViewerMessage {

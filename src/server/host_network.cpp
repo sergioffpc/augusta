@@ -8,8 +8,6 @@
 #include <variant>
 #include <vector>
 
-#include "admission.h"
-#include "augusta/first_failure.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/protocol.h"
@@ -21,6 +19,7 @@
 #include "host_metrics.h"
 #include "match.h"
 #include "misbehaviour.h"
+#include "peer_gate.h"
 #include "wire.h"
 
 namespace augusta::server {
@@ -53,7 +52,7 @@ void Host::Impl::HandleJoinRequest(networking::PeerId peer, const JoinRequest& r
     Judge(peer, PeerRejection::kJoinRefused, now);
     return;
   }
-  admission_deadlines.Admitted(peer);
+  gate.Admitted(peer);
   Reply(peer, EncodeToSend(ToWire(*admission, tick_rate_hz, parameters)));
   if (players.try_emplace(admission->session, Player{.peer = peer, .commands = CommandQueue{tick_rate_hz}}).second) {
     metrics.joins_admitted.Increment();
@@ -140,6 +139,9 @@ void Host::Impl::HandleMessage(const networking::PeerMessage& message, std::chro
     HandleCommands(message.from, FromWire(*commands), now);
   } else if (const auto* ready = std::get_if<protocol::ReadyWire>(&*decoded)) {
     HandleReady(message.from, ready->version, now);
+  } else if (std::holds_alternative<protocol::ReplayListRequestWire>(*decoded) ||
+             std::holds_alternative<protocol::ReplayRequestWire>(*decoded)) {
+    RefuseAsNoReplayServer(message.from, now);
   } else {
     LW_LIMITED(drop_warnings,
                "subsystem=serverruntime event=dropped_malformed peer={} bytes={} reason=\"not a client message\"",
@@ -148,25 +150,27 @@ void Host::Impl::HandleMessage(const networking::PeerMessage& message, std::chro
   }
 }
 
+// A live server replays nothing (ADR-0051): a Replay list request or a
+// Replay request is told so, so `augustac --replays` or `--replay` against it
+// says what is wrong rather than waiting.
+void Host::Impl::RefuseAsNoReplayServer(networking::PeerId peer, std::chrono::steady_clock::time_point now) {
+  constexpr JoinRefusal kReason = JoinRefusal::kNotAReplayServer;
+  LI("subsystem=serverruntime event=join_refused peer={} reason=\"{}\"", PeerNumber(peer),
+     DescribeJoinRefusal(kReason));
+  Reply(peer, EncodeToSend(protocol::JoinRefusedWire{.reason = ToWire(kReason)}));
+  metrics.joins_refused[kReason].Increment();
+  Judge(peer, PeerRejection::kJoinRefused, now);
+}
+
 // Counts rejection, at now, toward peer's misbehaviour and, once it has
 // misbehaved too often, disconnects it, as a departure like any other.
 // Returns which.
 Verdict Host::Impl::Judge(networking::PeerId peer, PeerRejection rejection, std::chrono::steady_clock::time_point now) {
-  if (IsMisbehaviour(rejection)) {
-    metrics.misbehaviour[rejection].Increment();
-  }
-  const Verdict verdict = misbehaviour[peer].Record(rejection, now);
+  const Verdict verdict = gate.Judge(peer, rejection, now);
   if (verdict == Verdict::kDisconnect) {
     Expel(peer, DescribePeerRejection(rejection));
   }
   return verdict;
-}
-
-// Disconnects each peer whose admission deadline has passed at now.
-void Host::Impl::ExpelUnadmitted(std::chrono::steady_clock::time_point now) {
-  for (const networking::PeerId peer : admission_deadlines.TakeOverdue(now)) {
-    Expel(peer, "not admitted in time");
-  }
 }
 
 // Disconnects peer for misbehaving or for not being admitted in time, for
@@ -179,7 +183,7 @@ void Host::Impl::Expel(networking::PeerId peer, std::string_view reason) {
   } else {
     LW("subsystem=serverruntime event=misbehaving_disconnected peer={} reason=\"{}\"", PeerNumber(peer), reason);
   }
-  expelled.insert(peer);
+  gate.Expelled(peer);
   network.Disconnect(peer);
   HandleDisconnect(peer, Leaving::kMisbehaving);
 }
@@ -187,8 +191,7 @@ void Host::Impl::Expel(networking::PeerId peer, std::string_view reason) {
 // A player whose connection ended leaves at once; a body it had leaves the
 // simulation at the start of the next tick. how only decides what is logged.
 void Host::Impl::HandleDisconnect(networking::PeerId peer, Leaving how) {
-  misbehaviour.erase(peer);
-  admission_deadlines.Left(peer);
+  gate.Left(peer);
   const std::optional<SessionId> session = match.SessionOf(peer);
   if (!session.has_value()) {
     metrics.disconnects_before_admission[how].Increment();
@@ -223,48 +226,14 @@ void Host::Impl::HandleDisconnect(networking::PeerId peer, Leaving how) {
 
 void Host::PumpNetwork(std::chrono::steady_clock::time_point now) {
   Impl& impl = *impl_;
-  for (const networking::PeerEvent& event : impl.network.PumpEvents()) {
-    switch (event.type) {
-      case networking::PeerEventType::kConnectRequested: {
-        // Every connection is accepted, since a refusal is a message and needs
-        // the connection to travel on; whether the peer joins the Lobby is
-        // decided by its JoinRequestWire, within kAdmissionDeadline.
-        impl.network.Accept(event.peer);
-        const std::lock_guard<std::mutex> lock(impl.mutex);
-        impl.admission_deadlines.Connected(event.peer, now);
-        break;
-      }
-      case networking::PeerEventType::kConnected:
-        break;
-      case networking::PeerEventType::kDisconnected: {
-        const std::lock_guard<std::mutex> lock(impl.mutex);
-        impl.HandleDisconnect(event.peer, event.reason == networking::DisconnectReason::kConnectionLost
-                                              ? Leaving::kTimedOut
-                                              : Leaving::kLeft);
-        break;
-      }
-    }
-  }
-  auto received = impl.network.ReceiveMessages();
-  if (!received.has_value()) {
-    // Nothing more this round: the runtime stops on it.
-    impl.transport_failure.Record(std::move(received.error()));
-    return;
-  }
-  for (const networking::PeerMessage& message : *received) {
-    LT("subsystem=serverruntime event=received peer={} bytes={}", PeerNumber(message.from), message.payload.size());
-    const std::lock_guard<std::mutex> lock(impl.mutex);
-    if (impl.expelled.contains(message.from)) {
-      continue;
-    }
-    impl.metrics.received_bytes.Increment(message.payload.size());
-    impl.HandleMessage(message, now);
-  }
-  const std::lock_guard<std::mutex> lock(impl.mutex);
-  // After the messages, so a Join that arrived in time is never too late.
-  impl.ExpelUnadmitted(now);
-  // A closed connection delivers nothing more.
-  impl.expelled.clear();
+  PumpPeers(impl.network, impl.metrics, impl.mutex, impl.gate, now,
+            PeerHandlers{
+                .disconnected = [&impl](networking::PeerId peer, Leaving how) { impl.HandleDisconnect(peer, how); },
+                .message = [&impl, now](const networking::PeerMessage& message,
+                                        std::unique_lock<std::mutex>& /*lock*/) { impl.HandleMessage(message, now); },
+                .overdue = [&impl](networking::PeerId peer) { impl.Expel(peer, "not admitted in time"); },
+            },
+            impl.transport_failure);
 }
 
 std::vector<ConnectionSample> Host::SampleConnections() {

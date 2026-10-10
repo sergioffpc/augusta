@@ -124,6 +124,7 @@ add_library(
   host_match.cpp
   host_metrics.cpp
   host_network.cpp
+  peer_gate.cpp
   recording.cpp
   replay.cpp
   replay_catalog.cpp

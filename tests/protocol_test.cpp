@@ -98,10 +98,10 @@ constexpr int kTickBytes = static_cast<int>(sizeof(augusta::primitives::Tick));
 constexpr int kSequenceBytes = static_cast<int>(sizeof(augusta::primitives::Sequence));
 
 // Every refusal the protocol has.
-constexpr std::array<JoinRefusalWire, 7> kEveryRefusal = {
-    JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kLobbyFull,    JoinRefusalWire::kUnknownCharacter,
-    JoinRefusalWire::kMatchInProgress, JoinRefusalWire::kPackMismatch, JoinRefusalWire::kReplayServer,
-    JoinRefusalWire::kUnknownCapture};
+constexpr std::array<JoinRefusalWire, 8> kEveryRefusal = {
+    JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kLobbyFull,       JoinRefusalWire::kUnknownCharacter,
+    JoinRefusalWire::kMatchInProgress, JoinRefusalWire::kPackMismatch,    JoinRefusalWire::kReplayServer,
+    JoinRefusalWire::kUnknownCapture,  JoinRefusalWire::kNotAReplayServer};
 
 // A client pack hash of 1, 2, 3 ... 32, so its bytes are told apart on the wire.
 PackHashWire CountingPackHash() {
@@ -584,7 +584,7 @@ TEST(ProtocolTest, ALengthOf255IsRejectedBeforeAnythingIsAllocatedForIt) {
 // Requirements: NFR-12
 TEST(ProtocolTest, ARefusalReasonOutsideTheEnumerationIsInvalid) {
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 0})).error(), DecodeError::kInvalidEnum);
-  EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 8})).error(), DecodeError::kInvalidEnum);
+  EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 9})).error(), DecodeError::kInvalidEnum);
   EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 0xFF})).error(), DecodeError::kInvalidEnum);
 }
 
@@ -615,6 +615,8 @@ TEST(ProtocolTest, AReplayServersRefusalsFollowEveryOlderOne) {
   EXPECT_EQ(Encode(JoinRefusedWire{.reason = JoinRefusalWire::kReplayServer}).value(), BytesOf({kJoinRefusedType, 6}));
   EXPECT_EQ(Encode(JoinRefusedWire{.reason = JoinRefusalWire::kUnknownCapture}).value(),
             BytesOf({kJoinRefusedType, 7}));
+  EXPECT_EQ(Encode(JoinRefusedWire{.reason = JoinRefusalWire::kNotAReplayServer}).value(),
+            BytesOf({kJoinRefusedType, 8}));
 }
 
 TEST(ProtocolTest, AReplayListRequestIsItsTypeAlone) {
@@ -1202,7 +1204,7 @@ TEST(ProtocolEncodeTest, AnEnumeratedValueTheEnumerationLacksIsNotEncoded) {
             EncodeError::kInvalidEnum);
   EXPECT_EQ(RefusalOf(AuthoritativeStateWire{.bodies = {body}}), EncodeError::kInvalidEnum);
   EXPECT_EQ(RefusalOf(JoinRefusedWire{}), EncodeError::kInvalidEnum);
-  EXPECT_EQ(RefusalOf(JoinRefusedWire{.reason = static_cast<JoinRefusalWire>(8)}), EncodeError::kInvalidEnum);
+  EXPECT_EQ(RefusalOf(JoinRefusedWire{.reason = static_cast<JoinRefusalWire>(9)}), EncodeError::kInvalidEnum);
   EXPECT_EQ(RefusalOf(HitConfirmationWire{.part = static_cast<BodyPartWire>(0)}), EncodeError::kInvalidEnum);
   EXPECT_EQ(RefusalOf(HitConfirmationWire{.part = kNoPart}), EncodeError::kInvalidEnum);
   EXPECT_EQ(RefusalOf(DeathWire{.part = kNoPart}), EncodeError::kInvalidEnum);
