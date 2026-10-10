@@ -6,6 +6,7 @@ add_library(
   harness.cpp
   harness_wire.cpp
   inbox.cpp
+  intent.cpp
   netcode_stats.cpp
   reenactment.cpp
   replay_list.cpp

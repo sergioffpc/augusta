@@ -17,6 +17,7 @@
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
+#include "augusta/intent.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/physics.h"
@@ -155,6 +156,22 @@ TEST_F(RunnerTest, MovesThePlayerOnTheServerByTheCommandsItsSourceGives) {
   const Runner runner(session_, RunnerHooks{.next_command = Walking, .on_tick = {}, .on_network_round = {}});
   ASSERT_TRUE(ServeUntil([&] { return OwnPosition(*session_.GetServerView()).has_value(); }));
   const float start = OwnPosition(*session_.GetServerView())->x;
+
+  EXPECT_TRUE(ServeUntil([&] { return OwnPosition(*session_.GetServerView())->x > start + 1.0F; }));
+  EXPECT_FALSE(runner.Failure().has_value());
+}
+
+// An Agent's Runner takes each Command from its Intents (ADR-0052), set from
+// another thread while it runs.
+TEST_F(RunnerTest, MovesThePlayerByTheIntentsAnExecutorCarriesOut) {
+  augusta::harness::IntentExecutor executor;
+  const auto from_intents = [&] { return executor.NextCommand(*session_.GetServerView(), {}); };
+  const Runner runner(session_, RunnerHooks{.next_command = from_intents, .on_tick = {}, .on_network_round = {}});
+  ASSERT_TRUE(ServeUntil([&] { return OwnPosition(*session_.GetServerView()).has_value(); }));
+  const float start = OwnPosition(*session_.GetServerView())->x;
+
+  executor.SetMovement(augusta::harness::Move{
+      .direction = Vec3(1.0F, 0.0F, 0.0F), .sprint = false, .stance = augusta::physics::Stance::kStanding});
 
   EXPECT_TRUE(ServeUntil([&] { return OwnPosition(*session_.GetServerView())->x > start + 1.0F; }));
   EXPECT_FALSE(runner.Failure().has_value());

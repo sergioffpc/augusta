@@ -519,6 +519,12 @@ target_link_libraries(
 # Links PhysX through augusta_prediction, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_netcode_stats_tests DISCOVERY_TIMEOUT 30)
 
+# The Command each Intent yields and how it ends, from Server views built by hand.
+add_executable(augusta_intent_tests intent_test.cpp)
+target_link_libraries(augusta_intent_tests PRIVATE augusta_harness augusta_math GTest::gtest GTest::gtest_main)
+# Links PhysX through augusta_harness, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_intent_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_runner_tests runner_test.cpp)
 target_link_libraries(augusta_runner_tests PRIVATE augusta_harness augustad_host GTest::gtest GTest::gtest_main)
 # Links networking and PhysX, so the same first-launch cost applies as above.
