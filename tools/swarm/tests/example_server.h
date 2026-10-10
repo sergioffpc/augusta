@@ -98,6 +98,7 @@ class ExampleServer {
                                      .recording_mode = {},
                                      .server_pack = {},
                                      .capture_directory = {},
+                                     .capture_mode = {},
                                      .faults = nullptr},
                   *std::move(content));
   }

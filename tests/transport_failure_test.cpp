@@ -91,6 +91,7 @@ HostConfig HostConfigWith(Faults* faults) {
                     .recording_mode = {},
                     .server_pack = {},
                     .capture_directory = {},
+                    .capture_mode = {},
                     .faults = faults};
 }
 

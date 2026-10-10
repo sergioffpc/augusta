@@ -62,6 +62,33 @@ fails stops the capture there, logged once, and the file keeps every record
 before it. A server that stops abruptly leaves every whole record written by
 then; a record cut short is dropped when read, and reported.
 
+**Optional or strict (#398).** `simulation.capture_mode` says what losing a
+record costs the run, ADR-0033's dispositions. A record too long, one that finds
+the queue full or one past the retention budget is a loss as much as a failed
+create, write or flush, since the capture misses it all the same. `optional`,
+the default, is the debugging aid above: the run's first loss is logged once at
+`ERR` as `event=capture_degraded`, a failure of the `subsystem` named for what
+went wrong (`capture_write_failed` for a create or write,
+`capture_flush_failed`, `capture_queue_full` for a disk that fell behind,
+`capture_record_too_long`, `capture_retention_budget`), the captures are
+`degraded` from then on, and the next Match is still captured afresh; the
+Match's authority never changes. A playtest whose point is the capture runs
+`strict`: any loss is `strict_capture_failed`, a `runtime` failure, nothing more
+is captured, and the Simulation thread stops the runtime on it before its next
+tick, the supervisor writing the one `ERR` line. A capture that loses nothing is
+written the same in either mode, and neither mode makes a tick wait for the
+disk: a stalled disk fails a strict run only once its queue is full.
+
+**The captures' health is one-way: `enabled`, then `degraded`, then `stopped`.**
+It is the `augustad_capture_health` metric (ADR-0049), and each change of it a
+log line (`capture_enabled ... mode=`, `capture_degraded`,
+`capture_disabled ... lost=`). `stopped` means the run's captures produce no
+more records: a strict capture lost one, or the Simulation thread has run its
+last tick, however its loop ended, and waited for the writer to write what was
+queued. Both happen before the runtime returns, while its metrics endpoint still
+serves, so a scrape between then and the process's exit reads `stopped`; a
+degraded run's loss stays in its `capture_disabled` line as `lost=true`.
+
 **augustad captures only when asked.** `simulation.capture` in `augustad.yaml`
 (ADR-0034) names a directory; without it nothing is captured. Each Match is a
 file of its own, named by when it started and its number in the server's run, so

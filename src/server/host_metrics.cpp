@@ -341,6 +341,20 @@ void AppendRecording(std::vector<MetricFamily>& families, const HostMetrics& met
                             MetricType::Gauge, std::move(states)));
 }
 
+void AppendCaptureHealth(std::vector<MetricFamily>& families, const HostMetrics& metrics) {
+  const std::optional<CaptureHealth> current = metrics.capture_health.load(std::memory_order_relaxed);
+  std::vector<ClientMetric> states;
+  for (const CaptureHealth health : {CaptureHealth::kEnabled, CaptureHealth::kDegraded, CaptureHealth::kStopped}) {
+    ClientMetric series;
+    series.label = {{.name = "state", .value = std::string(CaptureHealthName(health))}};
+    series.gauge.value = current == health ? 1.0 : 0.0;
+    states.push_back(std::move(series));
+  }
+  families.push_back(Family("augustad_capture_health",
+                            "1 for the Match captures' health, 0 for the others; 0 for all while none is captured.",
+                            MetricType::Gauge, std::move(states)));
+}
+
 void AppendCapture(std::vector<MetricFamily>& families, const HostMetrics& metrics) {
   const CaptureState current = metrics.capture_state.load(std::memory_order_relaxed);
   std::vector<ClientMetric> states;
@@ -418,6 +432,7 @@ std::vector<prometheus::MetricFamily> HostMetrics::Collect() const {
   AppendCombat(families, *this);
   AppendRecording(families, *this);
   AppendCapture(families, *this);
+  AppendCaptureHealth(families, *this);
   return families;
 }
 
@@ -470,5 +485,9 @@ void CaptureMetrics::OnDirectory(CaptureDirectoryUsage usage) {
 void CaptureMetrics::OnRetentionDeleted() { metrics_.capture_retention_deleted.Increment(); }
 
 void CaptureMetrics::OnRetentionDeleteFailed() { metrics_.capture_retention_failures.Increment(); }
+
+void CaptureMetrics::OnHealth(CaptureHealth health) {
+  metrics_.capture_health.store(health, std::memory_order_relaxed);
+}
 
 }  // namespace augusta::server

@@ -70,7 +70,8 @@ RecordedSimulation BuildRecordedSimulation(const HostConfig& config, const Scena
 }
 
 // What captures each Match into the directory config names, if it names one
-// (ADR-0050), creating it first; none otherwise.
+// (ADR-0050), creating it first, what it does counted into metrics through
+// observer; none otherwise.
 std::unique_ptr<Capturer> BuildCapturer(const HostConfig& config, const assets::PackHash& client_pack,
                                         CaptureMetrics& observer) {
   if (config.capture_directory.empty()) {
@@ -82,7 +83,8 @@ std::unique_ptr<Capturer> BuildCapturer(const HostConfig& config, const assets::
     throw std::runtime_error(std::format("server::Host: cannot create the capture directory {}: {}",
                                          config.capture_directory.string(), error.message()));
   }
-  LI("subsystem=capture event=capture_enabled directory={}", config.capture_directory.string());
+  LI("subsystem=capture event=capture_enabled directory={} mode={}", config.capture_directory.string(),
+     CaptureModeName(config.capture_mode));
   observer.SetRetention(config.capture_retention);
   return std::make_unique<Capturer>(config.capture_directory,
                                     CaptureHeader{.engine_version = std::string(EngineVersion()),
@@ -90,7 +92,8 @@ std::unique_ptr<Capturer> BuildCapturer(const HostConfig& config, const assets::
                                                   .client_pack = client_pack,
                                                   .tick_rate_hz = config.tick_rate_hz,
                                                   .started = {}},
-                                    CaptureOptions{.faults = config.faults,
+                                    CaptureOptions{.mode = config.capture_mode,
+                                                   .faults = config.faults,
                                                    .capacity = kCaptureQueueCapacity,
                                                    .retention = config.capture_retention,
                                                    .observer = &observer});
@@ -222,6 +225,25 @@ std::optional<failure::Failure> Host::RecordingFailure() const {
 std::optional<failure::Failure> Host::FinishRecording() {
   impl_->simulation.WaitUntilRecorded();
   return RecordingFailure();
+}
+
+std::optional<failure::Failure> Host::CaptureFailure() const {
+  // Only a strict capture stops: an optional one that lost a record degrades.
+  if (!impl_->capturer || impl_->capturer->Health() != CaptureHealth::kStopped) {
+    return std::nullopt;
+  }
+  std::optional<failure::Failure> lost = impl_->capturer->Loss();
+  if (lost.has_value() && failure::DispositionOf(lost->code) != failure::Disposition::kRuntime) {
+    return std::nullopt;
+  }
+  return lost;
+}
+
+std::optional<failure::Failure> Host::FinishCapture() {
+  if (impl_->capturer) {
+    impl_->capturer->Finish();
+  }
+  return CaptureFailure();
 }
 
 std::optional<failure::Failure> Host::TakeTransportFailure() { return impl_->transport_failure.Take(); }
