@@ -16,6 +16,7 @@ CMakeCache.txt
 cmake_install.cmake
 CTestTestfile.cmake
 _deps/
+CMakeUserPresets.json
 
 # Visual Studio
 .vs/
@@ -42,6 +43,9 @@ _deps/
 .ninja_log
 compile_commands.json
 
+# clangd index
+.cache/
+
 # Packages / vcpkg
 vcpkg_installed/
 packages/
@@ -55,6 +59,7 @@ __pycache__/
 *.egg-info/
 .venv/
 .pytest_cache/
+.ruff_cache/
 
 # Native _meshoptimizer/_textconv extension modules (tools/pack/
 # cpp/*_bindings.cpp) and any runtime DLLs they need alongside them
@@ -73,6 +78,17 @@ tools/pack/src/pack/*.dll
 # meant to be committed, so it is never matched here.
 config/augustac.yaml
 config/augustad.yaml
+
+# Claude Code per-user state (project .claude/settings.json stays tracked)
+.claude/settings.local.json
+.claude/worktrees/
+.claude/*.lock
+
+# NVIDIA tooling output: Aftermath GPU crash dumps, Nsight Systems reports,
+# Nsight Graphics captures
+*.nv-gpudmp
+*.nsys-rep
+*.ngfx-capture
 
 # OS
 .DS_Store
