@@ -73,6 +73,7 @@ JOBS ?= $(shell nproc)
 endif
 INCLUDE_SOURCES := $(filter-out $(TIDY_SOURCES),$(shell git ls-files -- "src/*.cpp" "tests/*.cpp" "tools/swarm/tests/*.cpp" $(INCLUDE_EXCLUDES)))
 # One target per file, so a parallel make runs them side by side.
+TIDY_CHECKS := $(addprefix tidy/,$(TIDY_SOURCES))
 INCLUDE_CHECKS := $(addprefix include-cleaner/,$(INCLUDE_SOURCES))
 
 .DEFAULT_GOAL := all
@@ -178,10 +179,12 @@ format-check:
 # compile_commands.json in step with the sources (a file new on a branch has no
 # entry until then).
 tidy: configure
-	$(RUN) clang-tidy -p=$(BUILD_DIR) $(TIDY_SOURCES)
-	$(MAKE) --no-print-directory -j $(JOBS) -k -Otarget $(INCLUDE_CHECKS)
+	$(MAKE) --no-print-directory -j $(JOBS) -k -Otarget $(TIDY_CHECKS) $(INCLUDE_CHECKS)
 
-.PHONY: $(INCLUDE_CHECKS)
+.PHONY: $(TIDY_CHECKS) $(INCLUDE_CHECKS)
+$(TIDY_CHECKS): tidy/%:
+	$(RUN) clang-tidy -p=$(BUILD_DIR) $*
+
 $(INCLUDE_CHECKS): include-cleaner/%:
 	$(RUN) clang-tidy --quiet -p=$(BUILD_DIR) --checks=-*,misc-include-cleaner --extra-arg=-w $*
 
