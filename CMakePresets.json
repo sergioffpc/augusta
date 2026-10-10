@@ -131,12 +131,14 @@
       "name": "linux",
       "configurePreset": "linux",
       "output": { "outputOnFailure": true },
+      "execution": { "jobs": 4 },
       "filter": { "exclude": { "label": "^netcode$" } }
     },
     {
       "name": "linux-debug",
       "configurePreset": "linux-debug",
       "output": { "outputOnFailure": true },
+      "execution": { "jobs": 4 },
       "filter": { "exclude": { "label": "^netcode$" } }
     },
     {
@@ -149,6 +151,7 @@
       "name": "linux-san",
       "configurePreset": "linux-san",
       "output": { "outputOnFailure": true },
+      "execution": { "jobs": 4 },
       "filter": { "exclude": { "label": "^netcode$" } }
     },
     {
