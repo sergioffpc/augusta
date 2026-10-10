@@ -25,6 +25,7 @@
 #include "augusta/capture_error.h"
 #include "augusta/capture_file.h"
 #include "augusta/command.h"
+#include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/math.h"
 #include "augusta/protocol.h"
@@ -38,6 +39,10 @@ namespace {
 
 using augusta::capture_file::ReadError;
 using augusta::command::Command;
+using augusta::failure::Code;
+using augusta::failure::DescribeFailure;
+using augusta::failure::Disposition;
+using augusta::failure::DispositionOf;
 using augusta::failure::Faults;
 using augusta::failure::Site;
 using augusta::math::Vec3;
@@ -51,13 +56,17 @@ using augusta::server::CapturedMatchEnd;
 using augusta::server::CaptureEntrant;
 using augusta::server::CaptureFileName;
 using augusta::server::CaptureHeader;
+using augusta::server::CaptureHealth;
+using augusta::server::CaptureMode;
 using augusta::server::CaptureObserver;
 using augusta::server::CaptureOptions;
 using augusta::server::Capturer;
 using augusta::server::CaptureRecord;
 using augusta::server::CaptureState;
+using augusta::server::CaptureStep;
 using augusta::server::CaptureStop;
 using augusta::server::EntityId;
+using augusta::server::LostCapture;
 using augusta::server::ReadCapture;
 using augusta::server::SessionId;
 
@@ -152,6 +161,29 @@ class Told final : public CaptureObserver {
   mutable std::mutex mutex_;
   Telling told_;
 };
+
+// Each health a Capturer entered, in order, from whichever thread it entered it on.
+class HealthLog final : public CaptureObserver {
+ public:
+  void OnHealth(CaptureHealth health) override {
+    const std::scoped_lock lock(mutex_);
+    entered_.push_back(health);
+  }
+
+  [[nodiscard]] std::vector<CaptureHealth> Entered() {
+    const std::scoped_lock lock(mutex_);
+    return entered_;
+  }
+
+ private:
+  std::mutex mutex_;
+  std::vector<CaptureHealth> entered_;
+};
+
+// Whether failure's description names text.
+bool Names(const augusta::failure::Failure& failure, const std::string& text) {
+  return DescribeFailure(failure).find(text) != std::string::npos;
+}
 
 class CaptureTest : public ::testing::Test {
  protected:
@@ -334,12 +366,237 @@ TEST_F(CaptureTest, ARecordThatFindsTheQueueFullStopsTheCapture) {
   EXPECT_TRUE(capture.records.empty());
 }
 
+// Requirements: US-21
+TEST_F(CaptureTest, AnOptionalCaptureThatFailsToWriteDegradesAndCapturesTheNextMatchAfresh) {
+  Faults faults;
+  HealthLog health;
+  {
+    Capturer capturer(directory_, Header(),
+                      CaptureOptions{.mode = CaptureMode::kOptional, .faults = &faults, .observer = &health});
+    faults.Arm(Site::kCaptureWrite, "disk full", 1);
+    capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
+    capturer.EndMatch(kFirstTick, std::nullopt);
+    capturer.WaitUntilWritten();
+
+    EXPECT_EQ(capturer.Health(), CaptureHealth::kDegraded);
+    const std::optional<augusta::failure::Failure> lost = capturer.Loss();
+    ASSERT_TRUE(lost.has_value());
+    EXPECT_EQ(lost->code, Code::kCaptureWriteFailed);
+    EXPECT_EQ(DispositionOf(lost->code), Disposition::kSubsystem);
+    EXPECT_TRUE(Names(*lost, "match=1 step=write")) << DescribeFailure(*lost);
+    EXPECT_EQ(lost->detail, "disk full");
+
+    capturer.StartMatch(TwoPlayers(), kFirstTick + 10, kStarted + std::chrono::seconds{1});
+    capturer.EndMatch(kFirstTick + 10, std::nullopt);
+  }
+
+  const std::vector<std::filesystem::path> files = Files();
+  ASSERT_EQ(files.size(), 2U);
+  EXPECT_EQ(Read(files.back()).records.size(), 3U);
+  EXPECT_EQ(health.Entered(),
+            (std::vector<CaptureHealth>{CaptureHealth::kEnabled, CaptureHealth::kDegraded, CaptureHealth::kStopped}));
+}
+
+TEST_F(CaptureTest, AnOptionalCaptureWhoseFlushFailsDegradesOnAFlushFailure) {
+  Faults faults;
+  Capturer capturer(directory_, Header(), CaptureOptions{.mode = CaptureMode::kOptional, .faults = &faults});
+  faults.Arm(Site::kCaptureFlush, "flush refused", 1);
+  capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
+  capturer.WaitUntilWritten();
+
+  EXPECT_EQ(capturer.Health(), CaptureHealth::kDegraded);
+  const std::optional<augusta::failure::Failure> lost = capturer.Loss();
+  ASSERT_TRUE(lost.has_value());
+  EXPECT_EQ(lost->code, Code::kCaptureFlushFailed);
+  EXPECT_TRUE(Names(*lost, "match=1 step=flush")) << DescribeFailure(*lost);
+}
+
+TEST_F(CaptureTest, AnOptionalCaptureKeepsItsFirstLossOnly) {
+  Faults faults;
+  Capturer capturer(directory_, Header(), CaptureOptions{.mode = CaptureMode::kOptional, .faults = &faults});
+  faults.Arm(Site::kCaptureWrite, "disk full", Faults::kEveryTime);
+  capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
+  capturer.EndMatch(kFirstTick, std::nullopt);
+  capturer.StartMatch(TwoPlayers(), kFirstTick + 10, kStarted + std::chrono::seconds{1});
+  capturer.EndMatch(kFirstTick + 10, std::nullopt);
+  capturer.WaitUntilWritten();
+
+  EXPECT_EQ(capturer.Health(), CaptureHealth::kDegraded);
+  ASSERT_TRUE(capturer.Loss().has_value());
+  EXPECT_TRUE(Names(*capturer.Loss(), "match=1 ")) << DescribeFailure(*capturer.Loss());
+}
+
+// Requirements: US-21
+TEST_F(CaptureTest, AStrictCaptureThatFailsToWriteIsARuntimeFailureAndCapturesNothingMore) {
+  Faults faults;
+  HealthLog health;
+  {
+    Capturer capturer(directory_, Header(),
+                      CaptureOptions{.mode = CaptureMode::kStrict, .faults = &faults, .observer = &health});
+    capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
+    capturer.WaitUntilWritten();
+    faults.Arm(Site::kCaptureWrite, "disk full", 1);
+    capturer.Command(kFirstTick, EntityId{70}, Walk(0));
+    capturer.WaitUntilWritten();
+
+    EXPECT_EQ(capturer.Health(), CaptureHealth::kStopped);
+    const std::optional<augusta::failure::Failure> lost = capturer.Loss();
+    ASSERT_TRUE(lost.has_value());
+    EXPECT_EQ(lost->code, Code::kStrictCaptureFailed);
+    EXPECT_EQ(DispositionOf(lost->code), Disposition::kRuntime);
+    EXPECT_TRUE(Names(*lost, "match=1 step=write")) << DescribeFailure(*lost);
+    EXPECT_EQ(lost->detail, "disk full");
+
+    capturer.EndMatch(kFirstTick + 1, std::nullopt);
+    capturer.StartMatch(TwoPlayers(), kFirstTick + 10, kStarted + std::chrono::seconds{1});
+    capturer.EndMatch(kFirstTick + 10, std::nullopt);
+  }
+
+  // The first Match's header and Joins, written before the disk failed, and no second file.
+  const std::vector<std::filesystem::path> files = Files();
+  ASSERT_EQ(files.size(), 1U);
+  EXPECT_EQ(Read(files.front()).records.size(), 2U);
+  EXPECT_EQ(health.Entered(), (std::vector<CaptureHealth>{CaptureHealth::kEnabled, CaptureHealth::kStopped}));
+}
+
+TEST_F(CaptureTest, AStrictCaptureWhoseFlushFailsIsARuntimeFailure) {
+  Faults faults;
+  Capturer capturer(directory_, Header(), CaptureOptions{.mode = CaptureMode::kStrict, .faults = &faults});
+  faults.Arm(Site::kCaptureFlush, "flush refused", 1);
+  capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
+  capturer.WaitUntilWritten();
+
+  EXPECT_EQ(capturer.Health(), CaptureHealth::kStopped);
+  const std::optional<augusta::failure::Failure> lost = capturer.Loss();
+  ASSERT_TRUE(lost.has_value());
+  EXPECT_EQ(lost->code, Code::kStrictCaptureFailed);
+  EXPECT_TRUE(Names(*lost, "match=1 step=flush")) << DescribeFailure(*lost);
+}
+
+TEST_F(CaptureTest, AStrictCaptureWhoseQueueIsFullFailsAtOnce) {
+  Capturer capturer(directory_, Header(), CaptureOptions{.mode = CaptureMode::kStrict, .capacity = 0});
+  capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
+
+  // Known on the caller's thread, with no wait for the writer.
+  EXPECT_EQ(capturer.Health(), CaptureHealth::kStopped);
+  ASSERT_TRUE(capturer.Loss().has_value());
+  EXPECT_EQ(capturer.Loss()->code, Code::kStrictCaptureFailed);
+  EXPECT_TRUE(Names(*capturer.Loss(), "step=queue_full")) << DescribeFailure(*capturer.Loss());
+}
+
+// Requirements: US-21
+TEST_F(CaptureTest, AnOptionalCaptureWhoseQueueIsFullIsASlowDiskNotAFailedWrite) {
+  Capturer capturer(directory_, Header(), CaptureOptions{.mode = CaptureMode::kOptional, .capacity = 0});
+  capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
+
+  EXPECT_EQ(capturer.Health(), CaptureHealth::kDegraded);
+  ASSERT_TRUE(capturer.Loss().has_value());
+  EXPECT_EQ(capturer.Loss()->code, Code::kCaptureQueueFull);
+  EXPECT_EQ(DispositionOf(capturer.Loss()->code), Disposition::kSubsystem);
+  EXPECT_TRUE(Names(*capturer.Loss(), "code=capture_queue_full")) << DescribeFailure(*capturer.Loss());
+}
+
+TEST(LostCaptureTest, AnOptionalCapturesLossIsNamedForTheStepItWasLostAt) {
+  const auto code_at = [](CaptureStep step) { return LostCapture(CaptureMode::kOptional, 3, step, {}).code; };
+  EXPECT_EQ(code_at(CaptureStep::kCreate), Code::kCaptureWriteFailed);
+  EXPECT_EQ(code_at(CaptureStep::kWrite), Code::kCaptureWriteFailed);
+  EXPECT_EQ(code_at(CaptureStep::kFlush), Code::kCaptureFlushFailed);
+  EXPECT_EQ(code_at(CaptureStep::kQueueFull), Code::kCaptureQueueFull);
+  EXPECT_EQ(code_at(CaptureStep::kRecordTooLong), Code::kCaptureRecordTooLong);
+  for (const CaptureStep step : {CaptureStep::kCreate, CaptureStep::kWrite, CaptureStep::kFlush,
+                                 CaptureStep::kQueueFull, CaptureStep::kRecordTooLong}) {
+    EXPECT_EQ(DispositionOf(code_at(step)), Disposition::kSubsystem);
+  }
+}
+
+TEST(LostCaptureTest, AStrictCapturesLossIsTheRuntimesWhateverItsStep) {
+  for (const CaptureStep step : {CaptureStep::kCreate, CaptureStep::kWrite, CaptureStep::kFlush,
+                                 CaptureStep::kQueueFull, CaptureStep::kRecordTooLong}) {
+    EXPECT_EQ(LostCapture(CaptureMode::kStrict, 3, step, {}).code, Code::kStrictCaptureFailed);
+  }
+}
+
+TEST(LostCaptureTest, ALossNamesItsMatchStepAndDetail) {
+  EXPECT_EQ(DescribeFailure(LostCapture(CaptureMode::kOptional, 3, CaptureStep::kRecordTooLong, "300 bytes")),
+            "code=capture_record_too_long disposition=subsystem match=3 step=record_too_long detail=\"300 bytes\"");
+}
+
+// Requirements: US-21
+TEST_F(CaptureTest, AFinishedCaptureIsStoppedAndCapturesNothingMore) {
+  HealthLog health;
+  {
+    Capturer capturer(directory_, Header(), CaptureOptions{.mode = CaptureMode::kOptional, .observer = &health});
+    capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
+    capturer.Command(kFirstTick, EntityId{70}, Walk(0));
+    capturer.Finish();
+
+    EXPECT_EQ(capturer.Health(), CaptureHealth::kStopped);
+    EXPECT_FALSE(capturer.Loss().has_value());
+    capturer.Command(kFirstTick + 1, EntityId{70}, Walk(0));
+    capturer.StartMatch(TwoPlayers(), kFirstTick + 10, kStarted + std::chrono::seconds{1});
+    capturer.EndMatch(kFirstTick + 10, std::nullopt);
+  }
+
+  // The first Match up to the Finish: both Joins and its one Command; no second file.
+  const std::vector<std::filesystem::path> files = Files();
+  ASSERT_EQ(files.size(), 1U);
+  EXPECT_EQ(Read(files.front()).records.size(), 3U);
+  EXPECT_EQ(health.Entered(), (std::vector<CaptureHealth>{CaptureHealth::kEnabled, CaptureHealth::kStopped}));
+}
+
+TEST_F(CaptureTest, ADegradedCaptureIsStoppedOnceFinishedKeepingItsLoss) {
+  Faults faults;
+  HealthLog health;
+  Capturer capturer(directory_, Header(),
+                    CaptureOptions{.mode = CaptureMode::kOptional, .faults = &faults, .observer = &health});
+  faults.Arm(Site::kCaptureWrite, "disk full", 1);
+  capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
+  capturer.Finish();
+
+  EXPECT_EQ(capturer.Health(), CaptureHealth::kStopped);
+  ASSERT_TRUE(capturer.Loss().has_value());
+  EXPECT_EQ(capturer.Loss()->code, Code::kCaptureWriteFailed);
+  EXPECT_EQ(health.Entered(),
+            (std::vector<CaptureHealth>{CaptureHealth::kEnabled, CaptureHealth::kDegraded, CaptureHealth::kStopped}));
+}
+
+// Requirements: US-21
+TEST_F(CaptureTest, ACaptureThatLosesNothingIsTheSameInEitherMode) {
+  std::vector<std::string> written;
+  for (const CaptureMode mode : {CaptureMode::kOptional, CaptureMode::kStrict}) {
+    const std::filesystem::path directory = directory_ / (mode == CaptureMode::kStrict ? "strict" : "optional");
+    std::filesystem::create_directories(directory);
+    HealthLog health;
+    {
+      Capturer capturer(directory, Header(), CaptureOptions{.mode = mode, .observer = &health});
+      capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
+      capturer.Command(kFirstTick, EntityId{70}, Walk(kFirstTick - 2));
+      capturer.Death(kFirstTick + 5, EntityId{80}, EntityId{70});
+      capturer.EndMatch(kFirstTick + 6, SessionId{7});
+      capturer.WaitUntilWritten();
+      EXPECT_EQ(capturer.Health(), CaptureHealth::kEnabled);
+      EXPECT_FALSE(capturer.Loss().has_value());
+    }
+    EXPECT_EQ(health.Entered(), (std::vector<CaptureHealth>{CaptureHealth::kEnabled, CaptureHealth::kStopped}));
+    std::ifstream in(directory / CaptureFileName(kStarted, 1), std::ios::binary);
+    written.emplace_back(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  }
+
+  ASSERT_EQ(written.size(), 2U);
+  EXPECT_FALSE(written.front().empty());
+  EXPECT_EQ(written.front(), written.back());
+}
+
 #ifndef _WIN32
-// NFR-01: a disk that stalls holds up the writer, never the Simulation thread.
+// A capture in the mode the test's parameter names.
+class StalledDiskTest : public CaptureTest, public ::testing::WithParamInterface<CaptureMode> {};
+
+// NFR-01: a disk that stalls holds up the writer, never the Simulation thread,
+// in either mode: a strict capture fails the run, but only once its queue is full.
 // The file is a FIFO with no reader yet, so the writer blocks opening it.
 // POSIX only: Windows has no FIFO at a file path, and augustad runs on Linux.
 // Requirements: NFR-01, US-21
-TEST_F(CaptureTest, ADiskThatStallsNeverHoldsUpTheCallerAndStopsTheCaptureOnceItsQueueIsFull) {
+TEST_P(StalledDiskTest, ADiskThatStallsNeverHoldsUpTheCallerAndStopsTheCaptureOnceItsQueueIsFull) {
   const std::filesystem::path fifo = directory_ / CaptureFileName(kStarted, 1);
   ASSERT_EQ(mkfifo(fifo.c_str(), 0600), 0);
   constexpr std::size_t kCapacity = 4;
@@ -347,7 +604,8 @@ TEST_F(CaptureTest, ADiskThatStallsNeverHoldsUpTheCallerAndStopsTheCaptureOnceIt
   std::thread reader;
   Told told;
   {
-    Capturer capturer(directory_, Header(), CaptureOptions{.capacity = kCapacity, .observer = &told});
+    Capturer capturer(directory_, Header(),
+                      CaptureOptions{.mode = GetParam(), .capacity = kCapacity, .observer = &told});
     const auto before = std::chrono::steady_clock::now();
     capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
     for (std::uint64_t tick = kFirstTick; tick < kFirstTick + 100; ++tick) {
@@ -355,6 +613,10 @@ TEST_F(CaptureTest, ADiskThatStallsNeverHoldsUpTheCallerAndStopsTheCaptureOnceIt
     }
     capturer.EndMatch(kFirstTick + 100, std::nullopt);
     EXPECT_LT(std::chrono::steady_clock::now() - before, std::chrono::seconds{1});
+    ASSERT_TRUE(capturer.Loss().has_value());
+    EXPECT_EQ(capturer.Loss()->code,
+              GetParam() == CaptureMode::kStrict ? Code::kStrictCaptureFailed : Code::kCaptureQueueFull);
+    EXPECT_TRUE(Names(*capturer.Loss(), "step=queue_full")) << DescribeFailure(*capturer.Loss());
     // Unblocks the writer, which then writes what it queued before the stop.
     reader = std::thread([&] {
       std::ifstream in(fifo, std::ios::binary);
@@ -450,6 +712,11 @@ TEST_F(CaptureTest, AFailedWriteIsToldAsWriteFailed) {
   EXPECT_EQ(telling.states.back(), CaptureState::kIdle);
   EXPECT_EQ(telling.completed, 0U);
 }
+
+INSTANTIATE_TEST_SUITE_P(EitherMode, StalledDiskTest, ::testing::Values(CaptureMode::kOptional, CaptureMode::kStrict),
+                         [](const ::testing::TestParamInfo<CaptureMode>& info) {
+                           return info.param == CaptureMode::kStrict ? std::string("Strict") : std::string("Optional");
+                         });
 #endif
 
 // A file of the capture written in one Match, for ReadCapture's own tests.

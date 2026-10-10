@@ -23,18 +23,19 @@ constexpr std::string_view kMetricsPortKey = "metrics.port";
 constexpr std::uint32_t kMaxMetricsPort = std::numeric_limits<std::uint16_t>::max();
 constexpr std::string_view kRecordingModeKey = "simulation.recording_mode";
 constexpr std::string_view kCaptureKey = "simulation.capture";
+constexpr std::string_view kCaptureModeKey = "simulation.capture_mode";
 constexpr std::string_view kCaptureMaxFilesKey = "simulation.capture_retention.max_files";
 constexpr std::string_view kCaptureMaxMibKey = "simulation.capture_retention.max_mib";
 constexpr std::uint32_t kMaxCaptureLimit = std::numeric_limits<std::uint32_t>::max();
 constexpr std::string_view kReenactmentsKey = "simulation.reenactments";
 
 // Every key augustad.yaml may hold.
-constexpr std::array<std::string_view, 13> kServerKeys{
-    "base_dir",       "content.pack",           "content.public_key",
-    kTickRateKey,     "simulation.recording",   kRecordingModeKey,
-    kCaptureKey,      kCaptureMaxFilesKey,      kCaptureMaxMibKey,
-    kReenactmentsKey, "network.listen_address", "logging.level",
-    kMetricsPortKey,
+constexpr std::array<std::string_view, 14> kServerKeys{
+    "base_dir",        "content.pack",         "content.public_key",
+    kTickRateKey,      "simulation.recording", kRecordingModeKey,
+    kCaptureKey,       kCaptureModeKey,        kCaptureMaxFilesKey,
+    kCaptureMaxMibKey, kReenactmentsKey,       "network.listen_address",
+    "logging.level",   kMetricsPortKey,
 };
 
 std::expected<std::uint8_t, ConfigError> RequireTickRate(const ConfigValues& values) {
@@ -71,33 +72,12 @@ std::expected<std::optional<std::uint32_t>, ConfigError> OptionalCaptureLimit(co
   return RequireWholeNumber(values, key, 1, kMaxCaptureLimit);
 }
 
-// Reads simulation.capture, relative to root, and its retention's limits into config.
-std::expected<void, ConfigError> ReadCapture(const ConfigValues& values, const std::filesystem::path& root,
-                                             ServerConfig& config) {
-  auto directory = OptionalPath(values, kCaptureKey, root);
-  if (!directory) {
-    return std::unexpected(directory.error());
-  }
-  auto max_files = OptionalCaptureLimit(values, kCaptureMaxFilesKey);
-  if (!max_files) {
-    return std::unexpected(max_files.error());
-  }
-  auto max_mib = OptionalCaptureLimit(values, kCaptureMaxMibKey);
-  if (!max_mib) {
-    return std::unexpected(max_mib.error());
-  }
-  config.capture_directory = *std::move(directory);
-  config.capture_max_files = *max_files;
-  config.capture_max_mib = *max_mib;
-  return {};
-}
-
-// Whether the recording is strict: "optional" when absent.
-std::expected<bool, ConfigError> OptionalStrictRecording(const ConfigValues& values) {
-  const std::string mode = OptionalString(values, kRecordingModeKey, "optional");
+// Whether the mode under key is strict: "optional" when absent.
+std::expected<bool, ConfigError> OptionalStrict(const ConfigValues& values, std::string_view key) {
+  const std::string mode = OptionalString(values, key, "optional");
   if (mode != "optional" && mode != "strict") {
     return std::unexpected(ConfigError{.code = ConfigErrorCode::kInvalidEntry,
-                                       .subject = std::string(kRecordingModeKey),
+                                       .subject = std::string(key),
                                        .reason = "must be optional or strict",
                                        .file = {}});
   }
@@ -116,6 +96,70 @@ std::expected<bool, ConfigError> OptionalReenactments(const ConfigValues& values
   return taken == "true";
 }
 
+// The ServerConfig values holds, each relative path in it from root.
+std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& values,
+                                                          const std::filesystem::path& root) {
+  auto pack_path = RequirePath(values, "content.pack", root);
+  if (!pack_path) {
+    return std::unexpected(pack_path.error());
+  }
+  auto public_key_path = RequirePath(values, "content.public_key", root);
+  if (!public_key_path) {
+    return std::unexpected(public_key_path.error());
+  }
+  const auto tick_rate_hz = RequireTickRate(values);
+  if (!tick_rate_hz) {
+    return std::unexpected(tick_rate_hz.error());
+  }
+  auto log_level = OptionalLogLevel(values, "logging.level", kDefaultLogLevel);
+  if (!log_level) {
+    return std::unexpected(log_level.error());
+  }
+  auto recording_path = OptionalPath(values, "simulation.recording", root);
+  if (!recording_path) {
+    return std::unexpected(recording_path.error());
+  }
+  const auto strict_recording = OptionalStrict(values, kRecordingModeKey);
+  if (!strict_recording) {
+    return std::unexpected(strict_recording.error());
+  }
+  auto capture_directory = OptionalPath(values, kCaptureKey, root);
+  if (!capture_directory) {
+    return std::unexpected(capture_directory.error());
+  }
+  const auto strict_capture = OptionalStrict(values, kCaptureModeKey);
+  if (!strict_capture) {
+    return std::unexpected(strict_capture.error());
+  }
+  const auto capture_max_files = OptionalCaptureLimit(values, kCaptureMaxFilesKey);
+  if (!capture_max_files) {
+    return std::unexpected(capture_max_files.error());
+  }
+  const auto capture_max_mib = OptionalCaptureLimit(values, kCaptureMaxMibKey);
+  if (!capture_max_mib) {
+    return std::unexpected(capture_max_mib.error());
+  }
+  const auto metrics_port = OptionalMetricsPort(values);
+  if (!metrics_port) {
+    return std::unexpected(metrics_port.error());
+  }
+  return ServerConfig{
+      .pack_path = *std::move(pack_path),
+      .public_key_path = *std::move(public_key_path),
+      .tick_rate_hz = *tick_rate_hz,
+      .listen_address = OptionalString(values, "network.listen_address", kDefaultListenAddress),
+      .log_level = *std::move(log_level),
+      .recording_path = *std::move(recording_path),
+      .strict_recording = *strict_recording,
+      .capture_directory = *std::move(capture_directory),
+      .strict_capture = *strict_capture,
+      .capture_max_files = *capture_max_files,
+      .capture_max_mib = *capture_max_mib,
+      .reenactments = false,
+      .metrics_port = *metrics_port,
+  };
+}
+
 }  // namespace
 
 std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml_text,
@@ -130,54 +174,12 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!root) {
     return std::unexpected(root.error());
   }
-  auto pack_path = RequirePath(*values, "content.pack", *root);
-  if (!pack_path) {
-    return std::unexpected(pack_path.error());
-  }
-  auto public_key_path = RequirePath(*values, "content.public_key", *root);
-  if (!public_key_path) {
-    return std::unexpected(public_key_path.error());
-  }
-  const auto tick_rate_hz = RequireTickRate(*values);
-  if (!tick_rate_hz) {
-    return std::unexpected(tick_rate_hz.error());
-  }
-  auto log_level = OptionalLogLevel(*values, "logging.level", kDefaultLogLevel);
-  if (!log_level) {
-    return std::unexpected(log_level.error());
-  }
-  auto recording_path = OptionalPath(*values, "simulation.recording", *root);
-  if (!recording_path) {
-    return std::unexpected(recording_path.error());
-  }
-  const auto strict_recording = OptionalStrictRecording(*values);
-  if (!strict_recording) {
-    return std::unexpected(strict_recording.error());
-  }
-  const auto metrics_port = OptionalMetricsPort(*values);
-  if (!metrics_port) {
-    return std::unexpected(metrics_port.error());
-  }
-  ServerConfig config{
-      .pack_path = *std::move(pack_path),
-      .public_key_path = *std::move(public_key_path),
-      .tick_rate_hz = *tick_rate_hz,
-      .listen_address = OptionalString(*values, "network.listen_address", kDefaultListenAddress),
-      .log_level = *std::move(log_level),
-      .recording_path = *std::move(recording_path),
-      .strict_recording = *strict_recording,
-      .capture_directory = {},
-      .capture_max_files = std::nullopt,
-      .capture_max_mib = std::nullopt,
-      .reenactments = false,
-      .metrics_port = *metrics_port,
-  };
-  return ReadCapture(*values, *root, config)
-      .and_then([&values] { return OptionalReenactments(*values); })
-      .transform([&config](bool reenactments) {
-        config.reenactments = reenactments;
-        return std::move(config);
-      });
+  return ServerConfigFrom(*values, *root).and_then([&values](ServerConfig config) {
+    return OptionalReenactments(*values).transform([&config](bool reenactments) {
+      config.reenactments = reenactments;
+      return std::move(config);
+    });
+  });
 }
 
 std::expected<ServerConfig, ConfigError> LoadServerConfig(const std::filesystem::path& file) {

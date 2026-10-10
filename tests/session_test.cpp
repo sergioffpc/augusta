@@ -151,6 +151,7 @@ HostConfig TestHostConfig(const Parameters& parameters = kTestParameters, std::u
       .recording_mode = {},
       .server_pack = {},
       .capture_directory = {},
+      .capture_mode = {},
       .faults = nullptr,
   };
 }

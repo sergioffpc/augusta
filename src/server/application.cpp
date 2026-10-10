@@ -15,6 +15,7 @@
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/server_config.h"
+#include "capture.h"
 #include "capture_retention.h"
 #include "content.h"
 #include "host.h"
@@ -65,6 +66,7 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
       .recording_mode = file_config.strict_recording ? RecordingMode::kStrict : RecordingMode::kOptional,
       .server_pack = pack->Hash(),
       .capture_directory = file_config.capture_directory,
+      .capture_mode = file_config.strict_capture ? CaptureMode::kStrict : CaptureMode::kOptional,
       .capture_retention = CaptureRetention{.max_files = file_config.capture_max_files,
                                             .max_bytes = file_config.capture_max_mib.transform(
                                                 [](std::uint32_t mib) { return std::uintmax_t{mib} * kMiB; })},

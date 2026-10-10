@@ -117,6 +117,7 @@ class RunnerTest : public ::testing::Test {
                          .recording_mode = {},
                          .server_pack = {},
                          .capture_directory = {},
+                         .capture_mode = {},
                          .faults = nullptr},
               Scenario{.collision = {FloorAt(kGroundHeight)},
                        .spawn_points = {},

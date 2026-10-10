@@ -101,6 +101,7 @@ class RecordedHostMatch {
                          .recording_mode = augusta::server::RecordingMode::kStrict,
                          .server_pack = {},
                          .capture_directory = {},
+                         .capture_mode = {},
                          .faults = nullptr},
               TwoPlayerFloor(), {}) {
     for (int i = 0; i < 2; ++i) {

@@ -34,6 +34,11 @@ TEST(FailureTest, EachCodeIsClassifiedIntoTheScopeItIsRecoveredAt) {
   EXPECT_EQ(DispositionOf(Code::kRecordingWriteFailed), Disposition::kSubsystem);
   EXPECT_EQ(DispositionOf(Code::kRecordingFlushFailed), Disposition::kSubsystem);
   EXPECT_EQ(DispositionOf(Code::kMetricsEndpointFailed), Disposition::kSubsystem);
+  EXPECT_EQ(DispositionOf(Code::kCaptureWriteFailed), Disposition::kSubsystem);
+  EXPECT_EQ(DispositionOf(Code::kCaptureFlushFailed), Disposition::kSubsystem);
+  EXPECT_EQ(DispositionOf(Code::kCaptureQueueFull), Disposition::kSubsystem);
+  EXPECT_EQ(DispositionOf(Code::kCaptureRecordTooLong), Disposition::kSubsystem);
+  EXPECT_EQ(DispositionOf(Code::kCaptureRetentionBudget), Disposition::kSubsystem);
   EXPECT_EQ(DispositionOf(Code::kTransportInitFailed), Disposition::kRuntime);
   EXPECT_EQ(DispositionOf(Code::kListenerSetupFailed), Disposition::kRuntime);
   EXPECT_EQ(DispositionOf(Code::kTransportSendFailed), Disposition::kRuntime);
@@ -42,6 +47,7 @@ TEST(FailureTest, EachCodeIsClassifiedIntoTheScopeItIsRecoveredAt) {
   EXPECT_EQ(DispositionOf(Code::kWorkerFailed), Disposition::kRuntime);
   EXPECT_EQ(DispositionOf(Code::kInvariantViolated), Disposition::kRuntime);
   EXPECT_EQ(DispositionOf(Code::kStrictRecordingFailed), Disposition::kRuntime);
+  EXPECT_EQ(DispositionOf(Code::kStrictCaptureFailed), Disposition::kRuntime);
   EXPECT_EQ(DispositionOf(Code::kInvalidConfiguration), Disposition::kProcess);
   EXPECT_EQ(DispositionOf(Code::kInvalidContent), Disposition::kProcess);
   EXPECT_EQ(DispositionOf(Code::kDependencyInitFailed), Disposition::kProcess);

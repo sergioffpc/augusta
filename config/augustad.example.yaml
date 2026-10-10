@@ -41,6 +41,11 @@ simulation:
   # written stops, logged once, while the server and its Match go on. A
   # debugging setting: never on for a server open to players.
   # capture: captures/firebase
+  # What losing a record of a capture costs (optional, default optional):
+  # optional, for a debugging aid, logs the failure once and leaves that
+  # Match's capture short while the server and its Match go on; strict, for a
+  # playtest whose point is the capture, stops the server with a failure.
+  # capture_mode: optional
   # What the capture directory is kept within (optional, default no limit),
   # oldest Match first: only its own files named and marked as captures count,
   # and the Match being captured is never deleted (ADR-0050). Either limit may

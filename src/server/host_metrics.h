@@ -163,6 +163,11 @@ struct HostMetrics final : prometheus::Collectable {
   /// Written once, as the Host is built, before the metrics endpoint serves.
   std::optional<std::size_t> capture_retention_max_files;
   std::optional<std::uintmax_t> capture_retention_max_bytes;
+  /// The Match captures' health, written by whichever thread it changes on
+  /// (CaptureMetrics::OnHealth) and published whole, as recording_state is;
+  /// nullopt while nothing is captured.
+  std::atomic<std::optional<CaptureHealth>> capture_health;
+  static_assert(std::atomic<std::optional<CaptureHealth>>::is_always_lock_free);
 };
 
 /// Counts what a Capturer tells it into metrics' Capture family, lock-free,
@@ -183,6 +188,7 @@ class CaptureMetrics final : public CaptureObserver {
   void OnDirectory(CaptureDirectoryUsage usage) override;
   void OnRetentionDeleted() override;
   void OnRetentionDeleteFailed() override;
+  void OnHealth(CaptureHealth health) override;
 
  private:
   HostMetrics& metrics_;
