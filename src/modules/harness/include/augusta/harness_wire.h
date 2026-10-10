@@ -42,6 +42,16 @@ struct JoinRequest {
   std::string character;
 };
 
+/// What this client asks when it watches a Replay (ADR-0051), in the engine's terms.
+struct ReplayRequest {
+  /// Its engine version (augusta::EngineVersion).
+  std::string engine_version;
+  /// The hash of the client pack it loaded.
+  assets::PackHash client_pack{};
+  /// The capture to watch, by its name in the replay server's Replay list.
+  std::string capture;
+};
+
 /// One tick's command under the sequence this client gave it.
 struct SequencedCommand {
   command::Sequence sequence = 0;
@@ -90,6 +100,15 @@ struct SequencedCommand {
 /// A match's end the server sent, in the engine's terms: a winner of
 /// protocol::kDraw is none.
 [[nodiscard]] MatchEnd FromWire(const protocol::MatchEndWire& end);
+
+/// A Replay view the replay server sent, in the engine's terms.
+[[nodiscard]] ReplayView FromWire(const protocol::ReplayViewWire& view);
+
+/// A capture of a replay server's Replay list, in the engine's terms.
+[[nodiscard]] ReplayListing FromWire(const protocol::ReplayListingWire& listing);
+
+/// request as the protocol carries it.
+[[nodiscard]] protocol::ReplayRequestWire ToWire(const ReplayRequest& request);
 
 /// hash as the protocol carries it.
 [[nodiscard]] protocol::PackHashWire ToWire(const assets::PackHash& hash);

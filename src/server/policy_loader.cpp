@@ -37,4 +37,16 @@ std::expected<scripting::Engine, PolicyLoadError> LoadPolicy(const assets::Pack&
   return *std::move(engine);
 }
 
+std::expected<PolicyMaker, PolicyLoadError> LoadPolicyMaker(const assets::Pack& pack) {
+  const auto rules = pack.ResolveScript(scripting::kRulesScriptPath);
+  if (!rules && rules.error() == assets::ResolveError::kNotFound) {
+    return PolicyMaker([] { return scripting::Engine{}; });
+  }
+  if (auto checked = LoadPolicy(pack); !checked) {
+    return std::unexpected(std::move(checked.error()));
+  }
+  // Loaded once already, from the same text: Load cannot fail now.
+  return PolicyMaker([text = *rules] { return *scripting::Engine::Load(text); });
+}
+
 }  // namespace augusta::server

@@ -119,6 +119,10 @@ augusta_set_module_scope(augustac CLIENT_ONLY)
 # NOMINMAX: the <windows.h> it includes for that would otherwise define min/max.
 target_link_libraries(augustac PRIVATE winmm)
 target_compile_definitions(augustac PRIVATE NOMINMAX)
+# Release writes augustac.pdb beside augustac.exe, what a released client's
+# crash or GPU crash dump is read with (ADR-0055). /DEBUG turns /OPT:REF and
+# /OPT:ICF off unless they are named, so they are: the code is Release's own.
+target_link_options(augustac PRIVATE "$<$<CONFIG:Release>:/DEBUG:FULL;/OPT:REF;/OPT:ICF>")
 
 # Falcor.dll (ADR-0009) and its own runtime dependencies (D3D12 Agility SDK,
 # dxcompiler, ...) and shader library need to sit next to augustac.exe -

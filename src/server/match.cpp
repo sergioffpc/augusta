@@ -9,13 +9,13 @@
 #include <utility>
 #include <vector>
 
+#include "augusta/assets.h"
 #include "augusta/networking.h"
 
 namespace augusta::server {
 
 Match::Match(MatchConfig config)
-    : engine_version_(std::move(config.engine_version)),
-      client_pack_(config.client_pack),
+    : terms_{.engine_version = std::move(config.engine_version), .client_pack = config.client_pack},
       characters_(std::move(config.characters)),
       player_count_(config.player_count),
       pause_ticks_(config.pause_ticks),
@@ -26,15 +26,32 @@ std::string_view DescribeJoinRefusal(JoinRefusal reason) {
     case JoinRefusal::kVersionMismatch:
       return "client version does not match the server";
     case JoinRefusal::kLobbyFull:
-      return "the lobby is full";
+      return "the lobby is full, or the replay server runs all the Replays it may";
     case JoinRefusal::kUnknownCharacter:
       return "the server's scenario has no such character";
     case JoinRefusal::kMatchInProgress:
       return "a match is in progress: try again once it ends";
     case JoinRefusal::kPackMismatch:
       return "client pack does not match the server's";
+    case JoinRefusal::kReplayServer:
+      return "the server is a replay server: it only replays Match captures";
+    case JoinRefusal::kUnknownCapture:
+      return "the replay server replays no such capture";
+    case JoinRefusal::kNotAReplayServer:
+      return "the server is a live server, not a replay server";
   }
   return "unknown refusal";
+}
+
+std::optional<JoinRefusal> RefusalOfClient(std::string_view engine_version, const assets::PackHash& client_pack,
+                                           const ClientTerms& terms) {
+  if (engine_version != terms.engine_version) {
+    return JoinRefusal::kVersionMismatch;
+  }
+  if (client_pack != terms.client_pack) {
+    return JoinRefusal::kPackMismatch;
+  }
+  return std::nullopt;
 }
 
 std::expected<Admission, JoinRefusal> Match::Join(networking::PeerId peer, const JoinRequest& request) {
@@ -44,11 +61,8 @@ std::expected<Admission, JoinRefusal> Match::Join(networking::PeerId peer, const
   // A client that can never play here should hear that before it hears "wait":
   // the version, then the pack its characters come from, then the character,
   // then whether it could join later.
-  if (request.engine_version != engine_version_) {
-    return std::unexpected(JoinRefusal::kVersionMismatch);
-  }
-  if (request.client_pack != client_pack_) {
-    return std::unexpected(JoinRefusal::kPackMismatch);
+  if (const std::optional<JoinRefusal> refusal = RefusalOfClient(request.engine_version, request.client_pack, terms_)) {
+    return std::unexpected(*refusal);
   }
   const auto found = std::ranges::find(characters_, request.character);
   if (found == characters_.end()) {

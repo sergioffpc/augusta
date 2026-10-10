@@ -502,6 +502,8 @@ not affect numbering.
   beside kube-prometheus-stack
 - [ADR-0054](./adr/0054-chiselled-server-image.md) — Server image: a chiselled
   Ubuntu 26.04 root on `scratch`
+- [ADR-0055](./adr/0055-client-release-symbols.md) — Client symbols: a PDB with
+  each release
 
 ### Rendering & Audio
 

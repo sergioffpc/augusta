@@ -91,6 +91,11 @@ class ConvertedServerView {
   std::vector<presentation::PlayerCharacter> characters_;
 };
 
+/// Every player's view on the newest tick of the Replay view watches, as
+/// presentation's own (FrameInput::views); empty for any client but a Replay
+/// viewer's, and outside a Replay (ADR-0051).
+[[nodiscard]] std::vector<presentation::PlayerView> ViewsOf(const harness::ServerView& view);
+
 /// What view says the match this client was last in ended with, its winner named
 /// by the body it played, from that match's Match start; nullopt before the first
 /// ends and while one is in progress. A winner missing from Match start is none.

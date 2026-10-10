@@ -137,6 +137,8 @@ TEST(HostMetricsTest, EveryMetricOfTheCatalogueIsCollectedWithItsType) {
       {"augustad_capture_retention_deleted_total", MetricType::Counter},
       {"augustad_capture_retention_failures_total", MetricType::Counter},
       {"augustad_capture_directory_bytes", MetricType::Gauge},
+      {"augustad_replays", MetricType::Gauge},
+      {"augustad_replay_tick_duration_seconds", MetricType::Histogram},
       {"augustad_capture_health", MetricType::Gauge},
   };
   for (const auto& [name, type] : catalogue) {
@@ -318,8 +320,9 @@ TEST(HostMetricsTest, JoinsAreLabelledByResultAndARefusalByItsReason) {
 
   EXPECT_EQ(Series(joins, {{"result", "admitted"}}).counter.value, 1.0);
   EXPECT_EQ(Series(joins, {{"result", "refused"}, {"reason", "lobby_full"}}).counter.value, 1.0);
-  EXPECT_EQ(ValuesOf(joins, "reason"), (std::set<std::string>{"version_mismatch", "lobby_full", "unknown_character",
-                                                              "match_in_progress", "pack_mismatch"}));
+  EXPECT_EQ(ValuesOf(joins, "reason"),
+            (std::set<std::string>{"version_mismatch", "lobby_full", "unknown_character", "match_in_progress",
+                                   "pack_mismatch", "replay_server", "unknown_capture", "not_a_replay_server"}));
 }
 
 // Requirements: NFR-07
@@ -374,9 +377,22 @@ TEST(HostMetricsTest, MessagesAreLabelledByTheirType) {
 
   EXPECT_EQ(Series(Family(families, "augustad_messages_sent_total"), {{"type", "authoritative_state"}}).counter.value,
             1.0);
-  const std::set<std::string> types = {
-      "join_request", "join_accepted", "join_refused", "commands", "authoritative_state", "lobby",
-      "ready",        "match_start",   "match_end",    "shot",     "hit_confirmation",    "death"};
+  const std::set<std::string> types = {"join_request",
+                                       "join_accepted",
+                                       "join_refused",
+                                       "commands",
+                                       "authoritative_state",
+                                       "lobby",
+                                       "ready",
+                                       "match_start",
+                                       "match_end",
+                                       "shot",
+                                       "hit_confirmation",
+                                       "death",
+                                       "replay_list_request",
+                                       "replay_list",
+                                       "replay_request",
+                                       "replay_view"};
   EXPECT_EQ(ValuesOf(Family(families, "augustad_messages_sent_total"), "type"), types);
   EXPECT_EQ(ValuesOf(Family(families, "augustad_messages_received_total"), "type"), types);
 }

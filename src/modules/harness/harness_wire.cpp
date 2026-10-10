@@ -1,6 +1,7 @@
 #include "augusta/harness_wire.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <expected>
 #include <limits>
@@ -80,6 +81,12 @@ JoinRefusal FromWire(protocol::JoinRefusalWire reason) {
       return JoinRefusal::kMatchInProgress;
     case protocol::JoinRefusalWire::kPackMismatch:
       return JoinRefusal::kPackMismatch;
+    case protocol::JoinRefusalWire::kReplayServer:
+      return JoinRefusal::kReplayServer;
+    case protocol::JoinRefusalWire::kUnknownCapture:
+      return JoinRefusal::kUnknownCapture;
+    case protocol::JoinRefusalWire::kNotAReplayServer:
+      return JoinRefusal::kNotAReplayServer;
   }
   // Decode admits only the reasons above.
   std::unreachable();
@@ -211,6 +218,34 @@ protocol::PackHashWire ToWire(const assets::PackHash& hash) {
   protocol::PackHashWire result{};
   std::ranges::copy(hash, result.begin());
   return result;
+}
+
+ReplayView FromWire(const protocol::ReplayViewWire& view) {
+  ReplayView result{.tick = view.tick, .players = {}};
+  result.players.reserve(view.players.size());
+  for (const protocol::PlayerViewWire& player : view.players) {
+    result.players.push_back(PlayerView{.entity = FromWire(player.entity),
+                                        .pitch = player.pitch,
+                                        .ads = (player.flags & protocol::PlayerViewWire::kAds) != 0});
+  }
+  return result;
+}
+
+ReplayListing FromWire(const protocol::ReplayListingWire& listing) {
+  return ReplayListing{
+      .name = listing.name,
+      .started = std::chrono::sys_time<std::chrono::milliseconds>(std::chrono::milliseconds(listing.started_unix_ms)),
+      .ticks = listing.ticks,
+      .tick_rate_hz = listing.tick_rate_hz,
+      .characters = listing.characters};
+}
+
+protocol::ReplayRequestWire ToWire(const ReplayRequest& request) {
+  return protocol::ReplayRequestWire{
+      .engine_version = request.engine_version,
+      .client_pack = ToWire(request.client_pack),
+      .capture = request.capture,
+  };
 }
 
 protocol::JoinRequestWire ToWire(const JoinRequest& request) {

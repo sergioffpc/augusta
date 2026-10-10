@@ -107,6 +107,8 @@ class Host {
   /// PumpNetwork and Tick may each find one, so the thread that runs each asks
   /// after it. Given once, as TakeTransportFailure is, so the runtime reports
   /// it once; nullopt before one and after it has been taken. From any thread.
+  /// Once it, or a transport failure, is met, taken or not, the Host sends
+  /// nothing more, valid messages included.
   [[nodiscard]] std::optional<failure::Failure> TakeInvariantFailure();
 
   /// Does one round of the Network I/O thread's work, at now: connection events
