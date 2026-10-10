@@ -696,7 +696,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       # Only a push writes the layer cache, as only a push publishes:
       # container-publish rebuilds from it.
-      - uses: ./.github/actions/build-server-image
+      - name: Build and scan server image
+        uses: ./.github/actions/build-server-image
         with:
           cache-to: ${{ github.event_name == 'push' }}
   container-publish:
@@ -704,9 +705,11 @@ jobs:
     # Only main/develop pushes publish, and only once both the server's tests
     # and the image's checks passed. The server job only runs when run_build is
     # true (see changes above), so a skipped result there is fine - only an
-    # actual failure should block publishing.
+    # actual failure should block publishing. !cancelled() rather than
+    # always(): a run cancelled by a newer push must not publish its older
+    # commit's branch tag over the newer one's.
     if: |
-      always() && github.event_name == 'push' &&
+      !cancelled() && github.event_name == 'push' &&
       needs.container-verify.result == 'success' &&
       (needs.server.result == 'success' || needs.server.result == 'skipped')
     runs-on: ubuntu-26.04
@@ -733,7 +736,8 @@ jobs:
       # Rebuilt from the layer cache container-verify just wrote, so every
       # stage but rootfs is a cache hit, and scanned again: rootfs is cut anew,
       # and what is pushed below must be an image that passed the scan.
-      - id: image
+      - name: Build and scan server image
+        id: image
         uses: ./.github/actions/build-server-image
       - name: Publish server image
         id: publish
