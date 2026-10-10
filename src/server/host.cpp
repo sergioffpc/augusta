@@ -39,8 +39,10 @@ namespace augusta::server {
 namespace {
 
 // What captures each Match into the directory config names, if it names one
-// (ADR-0050), creating it first; none otherwise.
-std::unique_ptr<Capturer> BuildCapturer(const HostConfig& config, const assets::PackHash& client_pack) {
+// (ADR-0050), creating it first, what it does counted into metrics through
+// observer; none otherwise.
+std::unique_ptr<Capturer> BuildCapturer(const HostConfig& config, const assets::PackHash& client_pack,
+                                        CaptureMetrics& observer) {
   if (config.capture_directory.empty()) {
     return nullptr;
   }
@@ -50,14 +52,20 @@ std::unique_ptr<Capturer> BuildCapturer(const HostConfig& config, const assets::
     throw std::runtime_error(std::format("server::Host: cannot create the capture directory {}: {}",
                                          config.capture_directory.string(), error.message()));
   }
-  LI("subsystem=capture event=capture_enabled directory={}", config.capture_directory.string());
+  LI("subsystem=capture event=capture_enabled directory={} mode={}", config.capture_directory.string(),
+     CaptureModeName(config.capture_mode));
+  observer.SetRetention(config.capture_retention);
   return std::make_unique<Capturer>(config.capture_directory,
                                     CaptureHeader{.engine_version = std::string(EngineVersion()),
                                                   .server_pack = config.server_pack,
                                                   .client_pack = client_pack,
                                                   .tick_rate_hz = config.tick_rate_hz,
                                                   .started = {}},
-                                    CaptureOptions{.faults = config.faults, .capacity = kCaptureQueueCapacity});
+                                    CaptureOptions{.mode = config.capture_mode,
+                                                   .faults = config.faults,
+                                                   .capacity = kCaptureQueueCapacity,
+                                                   .retention = config.capture_retention,
+                                                   .observer = &observer});
 }
 
 // The ticks of kMatchPause at tick_rate_hz, rounded up so the pause is never shorter.
@@ -80,7 +88,7 @@ std::vector<std::string> CharacterPaths(const std::vector<Character>& characters
 Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy)
     : metrics(config.tick_rate_hz),
       simulation(BuildSimulation(config.parameters, config.tick_rate_hz, scenario, std::move(policy))),
-      capturer(BuildCapturer(config, scenario.client_pack)),
+      capturer(BuildCapturer(config, scenario.client_pack, capture_metrics)),
       tick_rate_hz(config.tick_rate_hz),
       parameters(config.parameters),
       characters(ToSimulation(scenario.characters)),
@@ -174,6 +182,25 @@ std::size_t Host::QueuedCommands(SessionId session) const {
 }
 
 const HostMetrics& Host::Metrics() const { return impl_->metrics; }
+
+std::optional<failure::Failure> Host::CaptureFailure() const {
+  // Only a strict capture stops: an optional one that lost a record degrades.
+  if (!impl_->capturer || impl_->capturer->Health() != CaptureHealth::kStopped) {
+    return std::nullopt;
+  }
+  std::optional<failure::Failure> lost = impl_->capturer->Loss();
+  if (lost.has_value() && failure::DispositionOf(lost->code) != failure::Disposition::kRuntime) {
+    return std::nullopt;
+  }
+  return lost;
+}
+
+std::optional<failure::Failure> Host::FinishCapture() {
+  if (impl_->capturer) {
+    impl_->capturer->Finish();
+  }
+  return CaptureFailure();
+}
 
 std::optional<failure::Failure> Host::TakeTransportFailure() { return impl_->transport_failure.Take(); }
 

@@ -4,6 +4,21 @@ Covers CI/CD, code quality, design philosophy, observability, and performance.
 Complements [ARCHITECTURE.md](./ARCHITECTURE.md) (system design) and
 [ROADMAP.md](./ROADMAP.md) (milestones).
 
+## Contents
+
+<!-- pyml disable md051 -->
+
+- [Design Philosophy](#design-philosophy)
+- [CI/CD](#cicd)
+- [Git Workflow](#git-workflow)
+- [Deployment & CD](#deployment--cd)
+- [Developer Environment](#developer-environment)
+- [Code Quality](#code-quality)
+- [Observability](#observability)
+- [Performance](#performance)
+
+<!-- pyml enable md051 -->
+
 ## Design Philosophy
 
 A short set of principles this project holds itself to, distilled from the

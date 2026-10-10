@@ -89,6 +89,7 @@ HostConfig HostConfigWith(Faults* faults) {
                     .listen = Endpoint{.address = "127.0.0.1:0"},
                     .server_pack = {},
                     .capture_directory = {},
+                    .capture_mode = {},
                     .faults = faults};
 }
 

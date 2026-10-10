@@ -26,7 +26,7 @@ enum class Disposition : std::uint8_t {
   kPeer,
   /// One Session ends; the others and the Match go on.
   kSession,
-  /// An optional, non-authoritative subsystem (metrics) stops or
+  /// An optional, non-authoritative subsystem (a Match capture, metrics) stops or
   /// degrades, observably; authority is untouched.
   kSubsystem,
   /// The runtime stops: no new work is admitted, its workers are stopped and
@@ -53,6 +53,18 @@ enum class Code : std::uint16_t {
   kServerUnreachable = 5,
   /// The metrics endpoint stopped accepting connections.
   kMetricsEndpointFailed = 102,
+  /// An optional Match capture could not create or write its file.
+  kCaptureWriteFailed = 103,
+  /// An optional Match capture could not flush its file.
+  kCaptureFlushFailed = 104,
+  /// An optional Match capture's record found its writer's queue full: the
+  /// disk is not keeping up with the Match.
+  kCaptureQueueFull = 105,
+  /// An optional Match capture's record is longer than a capture's frame holds.
+  kCaptureRecordTooLong = 106,
+  /// An optional Match capture's record would take its directory past its
+  /// retention budget, with no completed capture left to delete.
+  kCaptureRetentionBudget = 107,
   /// The local transport could not be initialized.
   kTransportInitFailed = 200,
   /// The listen socket or poll group could not be set up.
@@ -68,6 +80,9 @@ enum class Code : std::uint16_t {
   /// An invariant protocol correctness, authority or a resource's lifetime
   /// depends on does not hold.
   kInvariantViolated = 206,
+  /// A strict Match capture, which a playtest is run for, lost a record: it
+  /// could not be written or flushed, or its Match outran it.
+  kStrictCaptureFailed = 208,
   /// The command line or config file is not usable.
   kInvalidConfiguration = 300,
   /// A content pack, map, scenario or script is not usable.

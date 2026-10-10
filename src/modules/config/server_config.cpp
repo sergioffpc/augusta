@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <format>
 #include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -21,6 +22,10 @@ constexpr std::uint32_t kMaxTickRate = std::numeric_limits<std::uint8_t>::max();
 constexpr std::string_view kMetricsPortKey = "metrics.port";
 constexpr std::uint32_t kMaxMetricsPort = std::numeric_limits<std::uint16_t>::max();
 constexpr std::string_view kCaptureKey = "simulation.capture";
+constexpr std::string_view kCaptureModeKey = "simulation.capture_mode";
+constexpr std::string_view kCaptureMaxFilesKey = "simulation.capture_retention.max_files";
+constexpr std::string_view kCaptureMaxMibKey = "simulation.capture_retention.max_mib";
+constexpr std::uint32_t kMaxCaptureLimit = std::numeric_limits<std::uint32_t>::max();
 
 std::expected<std::uint8_t, ConfigError> RequireTickRate(const ConfigValues& values) {
   return RequireWholeNumber(values, kTickRateKey, 1, kMaxTickRate).transform([](std::uint32_t rate) {
@@ -47,13 +52,89 @@ std::expected<std::filesystem::path, ConfigError> OptionalPath(const ConfigValue
   return RequirePath(values, key, root);
 }
 
+// A capture retention limit: nullopt when absent; when present, at least 1.
+std::expected<std::optional<std::uint32_t>, ConfigError> OptionalCaptureLimit(const ConfigValues& values,
+                                                                              std::string_view key) {
+  if (!values.contains(key)) {
+    return std::nullopt;
+  }
+  return RequireWholeNumber(values, key, 1, kMaxCaptureLimit);
+}
+
+// Whether the mode under key is strict: "optional" when absent.
+std::expected<bool, ConfigError> OptionalStrict(const ConfigValues& values, std::string_view key) {
+  const std::string mode = OptionalString(values, key, "optional");
+  if (mode != "optional" && mode != "strict") {
+    return std::unexpected(ConfigError{.code = ConfigErrorCode::kInvalidEntry,
+                                       .subject = std::string(key),
+                                       .reason = "must be optional or strict",
+                                       .file = {}});
+  }
+  return mode == "strict";
+}
+
+// The ServerConfig values holds, each relative path in it from root.
+std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& values,
+                                                          const std::filesystem::path& root) {
+  auto pack_path = RequirePath(values, "content.pack", root);
+  if (!pack_path) {
+    return std::unexpected(pack_path.error());
+  }
+  auto public_key_path = RequirePath(values, "content.public_key", root);
+  if (!public_key_path) {
+    return std::unexpected(public_key_path.error());
+  }
+  const auto tick_rate_hz = RequireTickRate(values);
+  if (!tick_rate_hz) {
+    return std::unexpected(tick_rate_hz.error());
+  }
+  auto log_level = OptionalLogLevel(values, "logging.level", kDefaultLogLevel);
+  if (!log_level) {
+    return std::unexpected(log_level.error());
+  }
+  auto capture_directory = OptionalPath(values, kCaptureKey, root);
+  if (!capture_directory) {
+    return std::unexpected(capture_directory.error());
+  }
+  const auto strict_capture = OptionalStrict(values, kCaptureModeKey);
+  if (!strict_capture) {
+    return std::unexpected(strict_capture.error());
+  }
+  const auto capture_max_files = OptionalCaptureLimit(values, kCaptureMaxFilesKey);
+  if (!capture_max_files) {
+    return std::unexpected(capture_max_files.error());
+  }
+  const auto capture_max_mib = OptionalCaptureLimit(values, kCaptureMaxMibKey);
+  if (!capture_max_mib) {
+    return std::unexpected(capture_max_mib.error());
+  }
+  const auto metrics_port = OptionalMetricsPort(values);
+  if (!metrics_port) {
+    return std::unexpected(metrics_port.error());
+  }
+  return ServerConfig{
+      .pack_path = *std::move(pack_path),
+      .public_key_path = *std::move(public_key_path),
+      .tick_rate_hz = *tick_rate_hz,
+      .listen_address = OptionalString(values, "network.listen_address", kDefaultListenAddress),
+      .log_level = *std::move(log_level),
+      .capture_directory = *std::move(capture_directory),
+      .strict_capture = *strict_capture,
+      .capture_max_files = *capture_max_files,
+      .capture_max_mib = *capture_max_mib,
+      .metrics_port = *metrics_port,
+  };
+}
+
 }  // namespace
 
 std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 8> kKeys{
-      "base_dir",  "content.pack",           "content.public_key", kTickRateKey,
-      kCaptureKey, "network.listen_address", "logging.level",      kMetricsPortKey,
+  static constexpr std::array<std::string_view, 11> kKeys{
+      "base_dir",          "content.pack",    "content.public_key",
+      kTickRateKey,        kCaptureKey,       kCaptureModeKey,
+      kCaptureMaxFilesKey, kCaptureMaxMibKey, "network.listen_address",
+      "logging.level",     kMetricsPortKey,
   };
   const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = {}});
   if (!values) {
@@ -65,39 +146,7 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!root) {
     return std::unexpected(root.error());
   }
-  auto pack_path = RequirePath(*values, "content.pack", *root);
-  if (!pack_path) {
-    return std::unexpected(pack_path.error());
-  }
-  auto public_key_path = RequirePath(*values, "content.public_key", *root);
-  if (!public_key_path) {
-    return std::unexpected(public_key_path.error());
-  }
-  const auto tick_rate_hz = RequireTickRate(*values);
-  if (!tick_rate_hz) {
-    return std::unexpected(tick_rate_hz.error());
-  }
-  auto log_level = OptionalLogLevel(*values, "logging.level", kDefaultLogLevel);
-  if (!log_level) {
-    return std::unexpected(log_level.error());
-  }
-  auto capture_directory = OptionalPath(*values, kCaptureKey, *root);
-  if (!capture_directory) {
-    return std::unexpected(capture_directory.error());
-  }
-  const auto metrics_port = OptionalMetricsPort(*values);
-  if (!metrics_port) {
-    return std::unexpected(metrics_port.error());
-  }
-  return ServerConfig{
-      .pack_path = *std::move(pack_path),
-      .public_key_path = *std::move(public_key_path),
-      .tick_rate_hz = *tick_rate_hz,
-      .listen_address = OptionalString(*values, "network.listen_address", kDefaultListenAddress),
-      .log_level = *std::move(log_level),
-      .capture_directory = *std::move(capture_directory),
-      .metrics_port = *metrics_port,
-  };
+  return ServerConfigFrom(*values, *root);
 }
 
 std::expected<ServerConfig, ConfigError> LoadServerConfig(const std::filesystem::path& file) {
@@ -114,6 +163,10 @@ std::string DescribeServerConfigError(const ConfigError& error) {
   if (error.subject == kMetricsPortKey) {
     return DescribeConfigError(error,
                                std::format("'{}' must be an integer from 1 to {}", error.subject, kMaxMetricsPort));
+  }
+  if (error.subject == kCaptureMaxFilesKey || error.subject == kCaptureMaxMibKey) {
+    return DescribeConfigError(error,
+                               std::format("'{}' must be an integer from 1 to {}", error.subject, kMaxCaptureLimit));
   }
   return DescribeConfigError(error);
 }

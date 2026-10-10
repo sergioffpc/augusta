@@ -21,6 +21,8 @@
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
+#include "capture.h"
+#include "capture_retention.h"
 #include "connection_sample.h"
 #include "content.h"
 #include "host_metrics.h"
@@ -66,9 +68,14 @@ struct HostConfig {
   /// The directory to capture every Match into (ADR-0050), created if
   /// missing; empty captures none.
   std::filesystem::path capture_directory;
+  /// What losing a record of a capture costs: an optional one degrades while
+  /// the Host goes on, a strict one is Host::CaptureFailure.
+  CaptureMode capture_mode = CaptureMode::kOptional;
+  /// What that directory is kept within, oldest capture first; off by default.
+  CaptureRetention capture_retention{};
   /// For a test: asked at listener setup, at every send and receive
-  /// (networking.h) and at the capture's write, so the transport
-  /// or the disk fails there; null otherwise. Must outlive the Host.
+  /// (networking.h) and at the capture's write and flush, so the transport or
+  /// the disk fails there; null otherwise. Must outlive the Host.
   failure::Faults* faults = nullptr;
 };
 
@@ -150,6 +157,21 @@ class Host {
   /// What it has counted (ADR-0049), for the metrics endpoint to collect and a
   /// test to read. From any thread; it lives as long as the Host.
   [[nodiscard]] const HostMetrics& Metrics() const;
+
+  /// The failure a strict capture lost a record on
+  /// (failure::Code::kStrictCaptureFailed), which the runtime must stop on
+  /// before it ticks again; nullopt while it has lost none, when the capture
+  /// is optional, whose loss only degrades it, or when nothing is captured.
+  /// From any thread.
+  [[nodiscard]] std::optional<failure::Failure> CaptureFailure() const;
+
+  /// CaptureFailure once every record queued so far is written, waiting for
+  /// the capture's writer, which then stops the captures (Capturer::Finish):
+  /// the last word on whether a strict capture is whole, for the runtime to
+  /// ask once it ticks no more, so its metrics read the captures stopped until
+  /// the process exits. A stalled disk holds it up. From the Simulation
+  /// thread, after its last Tick.
+  [[nodiscard]] std::optional<failure::Failure> FinishCapture();
 
   /// The first failure of the local transport PumpNetwork or Tick met (a send,
   /// or a receive, it refused: failure::Code::kTransportSendFailed,

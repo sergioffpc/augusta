@@ -2,6 +2,12 @@
 
 Generated from the Conventional Commits history by git-cliff (cliff.toml).
 
+## 2.0.2 - 2026-10-09
+
+### Bug Fixes
+
+- **docker:** drop the base image's unpatched Pebble from the runtime stage
+
 ## 2.0.1 - 2026-10-08
 
 ### Bug Fixes

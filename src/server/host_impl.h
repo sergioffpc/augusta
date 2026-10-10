@@ -65,6 +65,9 @@ struct Host::Impl {
   // player in it controls, and whether the match those bodies are in is still
   // in the simulation.
   simulation::World simulation;
+  // What the capturer tells of itself, counted into metrics; declared before
+  // it, so it outlives the capturer's writer.
+  CaptureMetrics capture_metrics{metrics};
   // Each Match's capture, if HostConfig::capture_directory asks for them (ADR-0050).
   std::unique_ptr<Capturer> capturer;
   std::unordered_map<SessionId, EntityId> bodies;

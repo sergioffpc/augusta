@@ -104,14 +104,20 @@ struct ServerRuntime::Impl {
     return {};
   }
 
-  // Simulation thread body (ADR-0005): ticks Host on its fixed schedule until a
-  // stop is requested or the Host meets a runtime failure.
-  supervisor::WorkerResult SimulationLoop() {
+  // The Simulation thread's ticks (ADR-0005): ticks Host on its fixed schedule until a
+  // stop is requested or the Host meets a runtime failure, or until a strict
+  // capture has lost a record, which is the runtime's failure: no tick runs
+  // once it is known (ADR-0033, ADR-0050). Its writer finds a loss after the
+  // tick that lost it, so a few ticks may run, uncaptured, before it is.
+  supervisor::WorkerResult TickUntilStopped() {
     const auto delta_time = std::chrono::duration<float>(1.0F / tick_rate_hz);
     const auto tick_duration = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
     LI("subsystem=serverruntime event=loop_starting loop=simulation");
     tick::Clock::time_point deadline = tick::Clock::now();
     while (!workers.StopRequested()) {
+      if (std::optional<failure::Failure> lost = host.CaptureFailure()) {
+        return std::unexpected(*std::move(lost));
+      }
       const tick::Clock::time_point tick_start = tick::Clock::now();
 
       host.Tick(delta_time.count());
@@ -127,6 +133,19 @@ struct ServerRuntime::Impl {
     }
     LI("subsystem=serverruntime event=loop_stopping loop=simulation");
     return {};
+  }
+
+  // Simulation thread body: TickUntilStopped, then, however it ended, the
+  // captures are finished (ADR-0050), so the metrics endpoint, which outlives
+  // the workers, reads them stopped. A strict capture's loss its writer finds
+  // only then still fails a run that would otherwise have succeeded.
+  supervisor::WorkerResult SimulationLoop() {
+    supervisor::WorkerResult result = TickUntilStopped();
+    std::optional<failure::Failure> lost = host.FinishCapture();
+    if (result.has_value() && lost.has_value()) {
+      return std::unexpected(*std::move(lost));
+    }
+    return result;
   }
 };
 

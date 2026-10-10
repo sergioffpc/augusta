@@ -117,6 +117,7 @@ add_library(
   augustad_host
   STATIC
   capture.cpp
+  capture_retention.cpp
   frames.cpp
   host.cpp
   host_log.cpp
