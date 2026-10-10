@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -126,6 +127,8 @@ std::string_view DescribeReadError(ReadError error) {
 }
 
 void WriteFrame(std::ostream& out, std::span<const std::byte> payload) {
+  // A longer one's length would not fit its byte (Capturer::Admit stops it first).
+  assert(payload.size() <= kMaxFramePayload);
   out.put(static_cast<char>(payload.size()));
   out.write(reinterpret_cast<const char*>(payload.data()), static_cast<std::streamsize>(payload.size()));
 }
