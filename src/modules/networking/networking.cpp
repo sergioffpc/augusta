@@ -471,7 +471,8 @@ SendResult Client::Send(const Payload& payload, Reliability reliability) {
     case SendVerdict::kLocalFailure:
       break;
   }
-  return std::unexpected(LocalFailure(failure::Code::kTransportSendFailed, {{"role", "client"}}, sent.Detail()));
+  return std::unexpected(
+      LocalFailure(failure::Code::kTransportSendFailed, {{.key = "role", .value = "client"}}, sent.Detail()));
 }
 
 std::expected<std::vector<Payload>, failure::Failure> Client::ReceiveMessages() {
@@ -485,7 +486,7 @@ std::expected<std::vector<Payload>, failure::Failure> Client::ReceiveMessages() 
     std::optional<std::string> tripped = ReceiveTripped(impl_->faults);
     const int count = tripped.has_value() ? -1 : ReceiveBatch(impl_->connection, messages);
     if (count < 0) {
-      return std::unexpected(LocalFailure(failure::Code::kTransportReceiveFailed, {{"role", "client"}},
+      return std::unexpected(LocalFailure(failure::Code::kTransportReceiveFailed, {{.key = "role", .value = "client"}},
                                           tripped.value_or("ReceiveMessagesOnConnection returned -1")));
     }
     if (count == 0) {
@@ -578,8 +579,8 @@ Server::Server(const Endpoint& local_endpoint, failure::Faults* faults) : impl_(
   options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, impl_->registration.Id());
 
   const auto listener_failure = [&](std::string detail) {
-    return TransportFailure(
-        LocalFailure(failure::Code::kListenerSetupFailed, {{"address", local_endpoint.address}}, std::move(detail)));
+    return TransportFailure(LocalFailure(failure::Code::kListenerSetupFailed,
+                                         {{.key = "address", .value = local_endpoint.address}}, std::move(detail)));
   };
   if (faults != nullptr) {
     if (std::optional<std::string> tripped = faults->Trip(failure::Site::kListenerSetup)) {
@@ -660,8 +661,9 @@ SendResult Server::Impl::SendLocked(HSteamNetConnection connection, const Payloa
     case SendVerdict::kLocalFailure:
       break;
   }
-  return std::unexpected(LocalFailure(failure::Code::kTransportSendFailed,
-                                      {{"role", "server"}, {"peer", std::to_string(connection)}}, sent.Detail()));
+  return std::unexpected(LocalFailure(
+      failure::Code::kTransportSendFailed,
+      {{.key = "role", .value = "server"}, {.key = "peer", .value = std::to_string(connection)}}, sent.Detail()));
 }
 
 SendResult Server::Send(PeerId peer, const Payload& payload, Reliability reliability) {
@@ -710,7 +712,7 @@ std::expected<std::vector<PeerMessage>, failure::Failure> Server::ReceiveMessage
                                           : SteamNetworkingSockets()->ReceiveMessagesOnPollGroup(
                                                 impl_->poll_group, incoming.data(), kMaxMessagesPerBatch);
     if (count < 0) {
-      return std::unexpected(LocalFailure(failure::Code::kTransportReceiveFailed, {{"role", "server"}},
+      return std::unexpected(LocalFailure(failure::Code::kTransportReceiveFailed, {{.key = "role", .value = "server"}},
                                           tripped.value_or("ReceiveMessagesOnPollGroup returned -1")));
     }
     if (count == 0) {
