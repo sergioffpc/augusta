@@ -31,13 +31,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /workspace
 
-# vcpkg bootstrap depends only on the submodule + manifest, not on source
-# changes, so it's copied and run first to keep that layer cached across
-# src/ edits.
+# Only what the vcpkg layers read comes in before them, so they stay cached
+# across source and CMake edits: the bootstrap reads the submodule alone, and
+# the install below it and the manifest (no overlays, no
+# vcpkg-configuration.json).
 COPY third_party/vcpkg third_party/vcpkg
-COPY cmake cmake
-COPY vcpkg.json CMakeLists.txt CMakePresets.json ./
 RUN ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+COPY vcpkg.json ./
 
 # The dependencies too, into the install root the linux preset's configure
 # uses (manifest mode, <binaryDir>/vcpkg_installed): that configure then finds
@@ -48,6 +48,11 @@ RUN ./third_party/vcpkg/vcpkg install --x-install-root=build/x64-linux/vcpkg_ins
     && rm -rf third_party/vcpkg/buildtrees third_party/vcpkg/packages third_party/vcpkg/downloads \
       /root/.cache/vcpkg
 
+# The build scripts come in only now, after the dependencies: copied before
+# them, a CMake-only change rebuilt every vcpkg package. vcpkg reads none of
+# cmake/ (its patches are Falcor's, the Windows-only renderer's).
+COPY cmake cmake
+COPY CMakeLists.txt CMakePresets.json ./
 COPY src src
 COPY tests tests
 
