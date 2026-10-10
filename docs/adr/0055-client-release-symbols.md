@@ -32,13 +32,13 @@ attested `.exe` it matches.
 age and the path it was written to. The PDB holds the same GUID and age, and a
 debugger loads a PDB only when both match. The `.exe`'s:
 
-```sh
+```text
 dumpbin /headers augustac-windows-x64.exe   # Debug Directories: Format: RSDS, {GUID}, age, path
 ```
 
 The PDB's (`llvm-pdbutil`, from LLVM):
 
-```sh
+```text
 llvm-pdbutil dump --summary augustac.pdb    # GUID and Age
 ```
 

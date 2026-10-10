@@ -237,8 +237,8 @@ no self-hosted GitHub Actions runner in this pipeline).
   (ADR-0047).
 - **Client symbols:** each release attaches `augustac-windows-x64.pdb`, the PDB
   of the `augustac-windows-x64.exe` beside it, which reads a crash of that
-  client or its Aftermath `.nv-gpudmp`. Renamed `augustac.pdb`, the name the
-  `.exe`'s debug directory gives it, and matched to it by GUID and age
+  client or its Aftermath `.nv-gpudmp`. Rename it `augustac.pdb`, the name the
+  `.exe`'s debug directory gives it; the two match by GUID and age
   (`dumpbin /headers`, ADR-0055).
 - **Server pod:** runs as UID/GID 65532 with no privilege escalation, every
   capability dropped, the `RuntimeDefault` seccomp profile and a read-only root

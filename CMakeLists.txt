@@ -42,7 +42,8 @@ if(MSVC)
   # Every configuration keeps its debug info, embedded in each object file
   # (/Z7), which sccache caches - not /Zi's PDB shared between compiles, which
   # it cannot. Every target, as on Linux: augustac's Release link gathers it
-  # into augustac.pdb, published with each release (ADR-0055).
+  # into augustac.pdb, published with each release (ADR-0055). A normal
+  # variable, not a cache one, so a -D cannot drop the published symbols.
   set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT Embedded)
 else()
   add_compile_options(-Wall -Wextra -Werror)
