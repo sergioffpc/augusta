@@ -39,12 +39,14 @@ struct TickRecipients {
                                                  networking::PeerId peer, const networking::Payload& payload,
                                                  networking::Reliability reliability);
 
-/// Takes one message a tick sends: payload, an encoded message, to peer as reliability says.
-using TickMessageSink = std::function<void(networking::PeerId, const networking::Payload&, networking::Reliability)>;
+/// Takes one message a tick sends: payload, an encoded message, to peer as
+/// reliability says. Returns whether to go on: false hands on nothing more.
+using TickMessageSink = std::function<bool(networking::PeerId, const networking::Payload&, networking::Reliability)>;
 
 /// Hands send every message tick's state holds for the recipients, in the
 /// order the Host sends them: each recipient's Authoritative State update, in
-/// the order of to.recipients; then every Shot, Hit confirmation and Death.
+/// the order of to.recipients; then every Shot, Hit confirmation and Death,
+/// until send declines one.
 /// The decision SendTickMessages puts on the wire, apart so it is tested
 /// without a network. Every message is encoded before any is handed on, so if
 /// the protocol cannot carry one, none of the tick's is: the broken invariant
@@ -57,10 +59,12 @@ using TickMessageSink = std::function<void(networking::PeerId, const networking:
 /// metrics what the transport accepted. Stops at, and returns, the broken
 /// invariant (failure::Code::kInvariantViolated) before sending anything, as
 /// ForEachTickMessage does, or the local transport's first failure; a
-/// recipient that drops a message is its own outcome.
+/// recipient that drops a message is its own outcome. Asks halted before each
+/// message, and sends nothing more once it says the runtime has failed.
 [[nodiscard]] std::expected<void, failure::Failure> SendTickMessages(networking::Server& network, HostMetrics& metrics,
                                                                      const simulation::State& state, tick::Tick tick,
-                                                                     const TickRecipients& to);
+                                                                     const TickRecipients& to,
+                                                                     const std::function<bool()>& halted);
 
 }  // namespace augusta::server
 

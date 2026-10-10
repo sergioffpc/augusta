@@ -94,9 +94,6 @@ struct Host::Impl {
   // The first outbound message or record either thread could not encode: a
   // broken invariant, never sent, until a worker takes it (ADR-0033).
   failure::FirstFailure invariant_failure;
-  // Whether either failure has been recorded, taken or not: the runtime has
-  // failed, and the Host sends nothing more until its workers stop.
-  [[nodiscard]] bool Failed() const;
 
   // Guards everything below: written by the Network I/O thread as clients
   // join, leave and send commands, and by the Simulation thread as matches
@@ -128,6 +125,11 @@ struct Host::Impl {
   // invariant_failure; a local transport failure is kept in transport_failure.
   // Once either is, the runtime has failed (Failed), and nothing more is sent.
   void Reply(networking::PeerId peer, const std::expected<networking::Payload, failure::Failure>& message);
+  // Whether either failure has been recorded, taken or not: the runtime has
+  // failed, and the Host sends nothing more until its workers stop. Checked
+  // before each send, so one already under way on the other thread may still
+  // go out; the worker stops the runtime right after.
+  [[nodiscard]] bool Failed() const;
   // Sends payload, already encoded, to peer reliably, as Reply does.
   void Deliver(networking::PeerId peer, const networking::Payload& payload);
   // Sends message reliably to the player of each of sessions.
@@ -165,7 +167,7 @@ struct Host::Impl {
   void TakeOutEndedMatch();
   TickInput PrepareTick();
   void CaptureDeaths(const simulation::TickResult& result) const;
-  // Sends the tick of state's messages to, unless the runtime has failed.
+  // Sends state's tick messages to `to`, stopping once the runtime has failed.
   void SendTick(const simulation::State& state, const TickRecipients& to);
 };
 

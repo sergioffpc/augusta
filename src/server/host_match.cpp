@@ -206,10 +206,9 @@ void Host::Impl::CaptureDeaths(const simulation::TickResult& result) const {
 }
 
 void Host::Impl::SendTick(const simulation::State& state, const TickRecipients& to) {
-  if (Failed()) {
-    return;
-  }
-  if (auto sent = SendTickMessages(network, metrics, state, tick, to); !sent.has_value()) {
+  // Asked before each message: a failure the Network I/O thread records
+  // mid-tick stops the rest of the tick's messages too.
+  if (auto sent = SendTickMessages(network, metrics, state, tick, to, [this] { return Failed(); }); !sent.has_value()) {
     // Either the tick's messages could not be encoded, and none was sent, or
     // the local transport failed sending them: each kept where a worker takes it.
     failure::FirstFailure& kept =

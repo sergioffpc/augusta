@@ -1,6 +1,7 @@
 #include "tick_messages.h"
 
 #include <expected>
+#include <functional>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -89,7 +90,9 @@ std::expected<void, failure::Failure> ForEachTickMessage(const simulation::State
 
   for (const Addressed& outgoing : tick_messages) {
     for (const networking::PeerId peer : outgoing.peers) {
-      send(peer, outgoing.payload, outgoing.reliability);
+      if (!send(peer, outgoing.payload, outgoing.reliability)) {
+        return {};
+      }
     }
   }
   return {};
@@ -97,25 +100,28 @@ std::expected<void, failure::Failure> ForEachTickMessage(const simulation::State
 
 std::expected<void, failure::Failure> SendTickMessages(networking::Server& network, HostMetrics& metrics,
                                                        const simulation::State& state, tick::Tick tick,
-                                                       const TickRecipients& to) {
+                                                       const TickRecipients& to, const std::function<bool()>& halted) {
   std::optional<failure::Failure> failed;
   // Nothing is handed on if the tick's messages could not all be encoded.
-  if (auto handed =
-          ForEachTickMessage(state, tick, to,
-                             [&network, &metrics, &failed](networking::PeerId peer, const networking::Payload& payload,
-                                                           networking::Reliability reliability) {
-                               // Once the transport has failed, nothing more is sent on it.
-                               if (failed.has_value()) {
-                                 return;
-                               }
-                               networking::SendResult sent = SendCounted(network, metrics, peer, payload, reliability);
-                               if (!sent.has_value()) {
-                                 failed = std::move(sent.error());
-                               } else if (*sent == networking::SendOutcome::kAccepted &&
-                                          TypeOf(payload) == MessageType::kAuthoritativeState) {
-                                 metrics.authoritative_state_update_bytes.Observe(static_cast<double>(payload.size()));
-                               }
-                             });
+  if (auto handed = ForEachTickMessage(
+          state, tick, to,
+          [&network, &metrics, &failed, &halted](networking::PeerId peer, const networking::Payload& payload,
+                                                 networking::Reliability reliability) {
+            // Once the transport has failed, or the runtime has elsewhere,
+            // nothing more is sent.
+            if (halted()) {
+              return false;
+            }
+            networking::SendResult sent = SendCounted(network, metrics, peer, payload, reliability);
+            if (!sent.has_value()) {
+              failed = std::move(sent.error());
+              return false;
+            }
+            if (*sent == networking::SendOutcome::kAccepted && TypeOf(payload) == MessageType::kAuthoritativeState) {
+              metrics.authoritative_state_update_bytes.Observe(static_cast<double>(payload.size()));
+            }
+            return true;
+          });
       !handed.has_value()) {
     return handed;
   }

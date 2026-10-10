@@ -61,13 +61,18 @@ struct Session::Impl {
         inbox(config.replay.has_value()),
         commands(std::move(world)) {}
 
+  // Whether either failure has been recorded, taken or not: the runtime has
+  // failed, and the Session sends nothing more. Checked before each send, so
+  // one already under way on another thread may still go out.
+  [[nodiscard]] bool Failed() const { return transport_failure.Recorded() || invariant_failure.Recorded(); }
+
   // Sends message to the server as reliability says; returns whether the
   // transport accepted it. A message the protocol cannot carry is not sent:
   // it is kept in invariant_failure. A local transport failure is kept in
-  // transport_failure. Once either is, the runtime has failed, and nothing more
-  // is sent.
+  // transport_failure. Once either is, the runtime has failed (Failed), and
+  // nothing more is sent.
   bool Send(const protocol::MessageWire& message, networking::Reliability reliability) {
-    if (transport_failure.Recorded() || invariant_failure.Recorded()) {
+    if (Failed()) {
       return false;
     }
     auto payload = EncodeToSend(message);
