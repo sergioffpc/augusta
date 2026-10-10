@@ -47,15 +47,6 @@ struct ServerConfig {
   /// Only lowers what the build already compiles in (AUGUSTA_LOG_ACTIVE_LEVEL);
   /// a Release build has no TRACE/DEBUG to raise it back to.
   std::string log_level{kDefaultLogLevel};
-  /// Key `simulation.recording`: where to write a recording of every tick
-  /// SimulationWorld runs, replacing any file there, for augusta-replay
-  /// (ADR-0048). Empty, the default, records nothing.
-  std::filesystem::path recording_path;
-  /// Key `simulation.recording_mode`: "optional", the default, for a recording
-  /// that only degrades if it cannot be written while the server goes on; or
-  /// "strict", true here, for a replay or verification run that needs it whole,
-  /// whose server then stops with a failure (ADR-0048).
-  bool strict_recording = false;
   /// Key `simulation.capture`: the directory to capture every Match into, one
   /// file each (ADR-0050), created if missing. Empty, the default, captures nothing.
   std::filesystem::path capture_directory;
@@ -79,9 +70,8 @@ struct ServerConfig {
   std::uint16_t metrics_port = kDefaultMetricsPort;
   /// Key `replay.captures`: the directory of Match captures a replay server
   /// replays (ADR-0051). Set, augustad runs no Lobby and no Match, and serves
-  /// only Replays; it then captures and records nothing, so neither
-  /// `simulation.capture` nor `simulation.recording` may be set with it.
-  /// Empty, the default, runs a live server.
+  /// only Replays; it then captures nothing, so no `simulation.capture` key
+  /// may be set with it. Empty, the default, runs a live server.
   std::filesystem::path replay_captures;
   /// Key `replay.max_viewers`: how many Replays, 1..255, a replay server runs
   /// at once; only with `replay.captures`.

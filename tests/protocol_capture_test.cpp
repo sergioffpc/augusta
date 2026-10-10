@@ -27,7 +27,6 @@ using augusta::protocol::CommandsWire;
 using augusta::protocol::CommandWire;
 using augusta::protocol::DecodeCaptureRecord;
 using augusta::protocol::DecodeError;
-using augusta::protocol::DecodeRecord;
 using augusta::protocol::Encode;
 using augusta::protocol::EncodeCaptureRecord;
 using augusta::protocol::EncodeError;
@@ -119,12 +118,11 @@ TEST(ProtocolCaptureTest, ACapturedCommandIsEncodedAsACommandsMessageEncodesIt) 
   EXPECT_NE(std::search(record.begin(), record.end(), command.begin(), command.end()), record.end());
 }
 
-// ADR-0050: a record is never a message, nor a Match recording's record.
+// ADR-0050: a record is never a message.
 // Requirements: NFR-12
-TEST(ProtocolCaptureTest, NeitherOtherDecoderTakesACaptureRecord) {
+TEST(ProtocolCaptureTest, TheMessageDecoderNeverTakesACaptureRecord) {
   const BytesWire bytes = EncodeCaptureRecord(Header()).value();
   EXPECT_FALSE(augusta::protocol::Decode(bytes).has_value());
-  EXPECT_FALSE(DecodeRecord(bytes).has_value());
 }
 
 // Requirements: NFR-12

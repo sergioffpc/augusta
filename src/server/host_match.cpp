@@ -223,9 +223,6 @@ simulation::TickResult Host::Tick(float delta_time) {
   const Impl::TickInput input = impl.PrepareTick();
   const simulation::TickResult result = impl.simulation.Tick(input.commands, delta_time);
   impl.tick = result.state.tick;
-  if (std::optional<failure::Failure> recorded = impl.simulation.Failure()) {
-    impl.invariant_failure.Record(*std::move(recorded));
-  }
   impl.CaptureDeaths(result);
   if (impl.capturer && impl.capturer->Failure().has_value()) {
     impl.invariant_failure.Record(*impl.capturer->Failure());

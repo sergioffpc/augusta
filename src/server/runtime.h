@@ -43,7 +43,7 @@ class ServerRuntime {
   /// A replay server's runtime (ADR-0051): as above, but what it runs is a
   /// ReplayServer on config, scenario and policy (see replay_server.h, which
   /// says what it throws), whose Replays each tick at config.tick_rate_hz. It
-  /// records nothing, so it has no recording to fail.
+  /// captures nothing, so it has no capture to fail.
   ServerRuntime(const ReplayServerConfig& config, std::uint16_t metrics_port, Scenario scenario, PolicyMaker policy,
                 failure::Faults* faults = nullptr);
 
@@ -67,10 +67,8 @@ class ServerRuntime {
   /// Authoritative State onward - until Stop() is called or either thread
   /// fails, the local transport failing among the ways it can
   /// (Host::TakeTransportFailure), which stops the other (supervisor.h):
-  /// neither ticks nor pumps the network again once the stop is requested. A
-  /// strict recording that lost a tick (Host::RecordingFailure) fails the
-  /// Simulation thread before it ticks again, or, found only at the stop, as it
-  /// returns (Host::FinishRecording). Always stops and joins the Network I/O
+  /// neither ticks nor pumps the network again once the stop is requested.
+  /// Always stops and joins the Network I/O
   /// thread before returning, and so before Host, which it uses, can go.
   /// Returns the first cause that stopped it, nullopt if Stop() did:
   /// the caller reports it and exits. Must not be called more than once.

@@ -226,7 +226,7 @@ TEST(ApplicationTest, ATerminalFailureWritesOneTerminalEventAndExitsNonZero) {
 }
 
 TEST(ApplicationTest, EveryDispositionOfTerminalFailureExitsNonZero) {
-  for (const Code code : {Code::kPeerConnectionLost, Code::kRecordingWriteFailed, Code::kTransportInitFailed,
+  for (const Code code : {Code::kPeerConnectionLost, Code::kMetricsEndpointFailed, Code::kTransportInitFailed,
                           Code::kInvalidConfiguration}) {
     EXPECT_NE(Concluded(Failure{.code = code, .context = {}, .detail = {}}).second, 0);
   }

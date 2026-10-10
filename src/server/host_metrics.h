@@ -22,13 +22,12 @@
 #include "lock_free_metrics.h"
 #include "match.h"
 #include "misbehaviour.h"
-#include "recording.h"
 
 /// \file
 /// What the server counts about itself, for the metrics endpoint (metrics.h)
 /// to expose: ADR-0049's catalogue of the Tick, Lobby and Match, Sessions,
-/// Misbehaviour, Network, Combat, Recording and Capture families, each named
-/// and labelled as it says.
+/// Misbehaviour, Network, Combat and Capture families, each named and labelled
+/// as it says.
 /// The Host owns one, and its Network I/O and Simulation threads, and its
 /// Capturer's writer (through CaptureMetrics), write each value in place where
 /// the event happens; the endpoint's thread only collects. Every
@@ -144,12 +143,6 @@ struct HostMetrics final : prometheus::Collectable {
   /// Bullets still flying after the last tick (simulation::State's bullets_in_flight).
   Gauge bullets_in_flight;
 
-  /// The Match recording's state, written by whichever thread it changes on
-  /// (SetRecordingState) and published whole, so a scrape never sees two
-  /// states or none; nullopt while nothing is recorded.
-  std::atomic<std::optional<RecordingState>> recording_state;
-  static_assert(std::atomic<std::optional<RecordingState>>::is_always_lock_free);
-
   // Capture, written by the Simulation thread and the Capturer's writer
   // through CaptureMetrics.
   std::atomic<CaptureState> capture_state{CaptureState::kOff};
@@ -175,8 +168,8 @@ struct HostMetrics final : prometheus::Collectable {
   Gauge replays;
   Histogram replay_tick_duration;
   /// The Match captures' health, written by whichever thread it changes on
-  /// (CaptureMetrics::OnHealth) and published whole, as recording_state is;
-  /// nullopt while nothing is captured.
+  /// (CaptureMetrics::OnHealth) and published whole, so a scrape never sees
+  /// two states or none; nullopt while nothing is captured.
   std::atomic<std::optional<CaptureHealth>> capture_health;
   static_assert(std::atomic<std::optional<CaptureHealth>>::is_always_lock_free);
 };
@@ -215,9 +208,6 @@ class CaptureMetrics final : public CaptureObserver {
 /// The heartbeat's running totals (heartbeat.h), read from metrics' counters:
 /// the heartbeat line counts nothing of its own.
 [[nodiscard]] Activity Totals(const HostMetrics& metrics);
-
-/// Publishes state as the Match recording's.
-void SetRecordingState(HostMetrics& metrics, RecordingState state);
 
 /// Counts payload, an encoded message the server is sending, by its type and size.
 void CountSent(HostMetrics& metrics, std::span<const std::byte> payload);

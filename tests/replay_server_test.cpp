@@ -232,8 +232,6 @@ std::string CaptureAKill(const std::filesystem::path& directory) {
   HostConfig config{.tick_rate_hz = kTickRate,
                     .parameters = Rules(),
                     .listen = Endpoint{.address = kLoopbackAnyPort},
-                    .recording = {},
-                    .recording_mode = {},
                     .server_pack = {},
                     .capture_directory = directory,
                     .faults = nullptr};
@@ -830,8 +828,6 @@ TEST(LiveServerReplayTest, ALiveServerRefusesReplayRequestsAsNoReplayServer) {
   Host host(HostConfig{.tick_rate_hz = kTickRate,
                        .parameters = Rules(),
                        .listen = Endpoint{.address = kLoopbackAnyPort},
-                       .recording = {},
-                       .recording_mode = {},
                        .server_pack = {},
                        .capture_directory = {},
                        .faults = nullptr},

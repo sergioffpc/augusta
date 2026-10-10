@@ -20,7 +20,6 @@
 #include "content.h"
 #include "host.h"
 #include "policy_loader.h"
-#include "recording.h"
 #include "replay_server.h"
 #include "runtime.h"
 
@@ -89,8 +88,6 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
       // they are set.
       .parameters = content->parameters,
       .listen = {.address = file_config.listen_address},
-      .recording = file_config.recording_path,
-      .recording_mode = file_config.strict_recording ? RecordingMode::kStrict : RecordingMode::kOptional,
       .server_pack = pack->Hash(),
       .capture_directory = file_config.capture_directory,
       .capture_mode = file_config.strict_capture ? CaptureMode::kStrict : CaptureMode::kOptional,

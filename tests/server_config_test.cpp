@@ -78,33 +78,6 @@ TEST(ParseServerConfigTest, DefaultsTheListenAddress) {
 }
 
 // Requirements: US-21
-TEST(ParseServerConfigTest, RecordsNoMatchByDefault) {
-  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_TRUE(config->recording_path.empty());
-}
-
-// Requirements: US-21
-TEST(ParseServerConfigTest, ReadsARecordingPathRelativeToTheBaseDir) {
-  const auto config = ParseServerConfig(
-      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  recording: logs/match.rec\n",
-      kFileDir);
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->recording_path, kRoot / "logs" / "match.rec");
-}
-
-TEST(ParseServerConfigTest, RejectsAnEmptyRecordingPath) {
-  const auto config = ParseServerConfig(
-      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  recording: \"\"\n", kFileDir);
-
-  ASSERT_FALSE(config.has_value());
-  EXPECT_EQ(config.error().code, ConfigErrorCode::kEmptyValue);
-  EXPECT_EQ(config.error().subject, "simulation.recording");
-}
-
-// Requirements: US-21
 TEST(ParseServerConfigTest, CapturesNoMatchByDefault) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 
@@ -172,18 +145,16 @@ TEST(ParseServerConfigTest, RejectsMostViewersWithoutCaptures) {
   EXPECT_EQ(config.error().subject, "replay.max_viewers");
 }
 
-// A replay server runs no Match (ADR-0051), so there is none to capture or record.
-TEST(ParseServerConfigTest, RejectsCapturingOrRecordingOnAReplayServer) {
-  for (const std::string_view key : {"capture", "recording"}) {
-    const auto config =
-        ParseServerConfig(std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  " +
-                              std::string(key) + ": somewhere\nreplay:\n  captures: captures\n",
-                          kFileDir);
+// A replay server runs no Match (ADR-0051), so there is none to capture.
+TEST(ParseServerConfigTest, RejectsCapturingOnAReplayServer) {
+  const auto config =
+      ParseServerConfig(std::string(kServerConfigWithoutTickRate) +
+                            "simulation:\n  tick_rate_hz: 60\n  capture: somewhere\nreplay:\n  captures: captures\n",
+                        kFileDir);
 
-    ASSERT_FALSE(config.has_value()) << key;
-    EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry) << key;
-    EXPECT_EQ(config.error().subject, "simulation." + std::string(key));
-  }
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
+  EXPECT_EQ(config.error().subject, "simulation.capture");
 }
 
 TEST(ParseServerConfigTest, RejectsACaptureRetentionOnAReplayServer) {
@@ -280,38 +251,6 @@ TEST(DescribeServerConfigErrorTest, SaysWhatACaptureRetentionLimitMustBe) {
                                                   .file = {}});
 
   EXPECT_EQ(message, "'simulation.capture_retention.max_mib' must be an integer from 1 to 4294967295");
-}
-
-TEST(ParseServerConfigTest, RecordsOptionallyByDefault) {
-  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->strict_recording);
-}
-
-TEST(ParseServerConfigTest, ReadsEitherRecordingMode) {
-  const auto strict = ParseServerConfig(
-      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  recording_mode: strict\n",
-      kFileDir);
-  const auto optional = ParseServerConfig(
-      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  recording_mode: optional\n",
-      kFileDir);
-
-  ASSERT_TRUE(strict.has_value());
-  EXPECT_TRUE(strict->strict_recording);
-  ASSERT_TRUE(optional.has_value());
-  EXPECT_FALSE(optional->strict_recording);
-}
-
-TEST(ParseServerConfigTest, RejectsARecordingModeThatIsNeitherOptionalNorStrict) {
-  const auto config = ParseServerConfig(
-      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  recording_mode: required\n",
-      kFileDir);
-
-  ASSERT_FALSE(config.has_value());
-  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
-  EXPECT_EQ(config.error().subject, "simulation.recording_mode");
-  EXPECT_EQ(DescribeServerConfigError(config.error()), "'simulation.recording_mode' must be optional or strict");
 }
 
 TEST(ParseServerConfigTest, DefaultsTheLogLevel) {

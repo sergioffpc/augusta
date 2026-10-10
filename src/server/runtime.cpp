@@ -46,15 +46,6 @@ namespace {
 void TickOnce(Host& host, float delta_time) { static_cast<void>(host.Tick(delta_time)); }
 void TickOnce(ReplayServer& server, float /*delta_time*/) { server.Tick(); }
 
-// The failure a strict recording lost a tick on (Host::RecordingFailure); a
-// replay server records nothing.
-std::optional<failure::Failure> RecordingFailureOf(const Host& host) { return host.RecordingFailure(); }
-std::optional<failure::Failure> RecordingFailureOf(const ReplayServer& /*server*/) { return std::nullopt; }
-
-// As RecordingFailureOf, once every tick run so far is written (Host::FinishRecording).
-std::optional<failure::Failure> FinishRecordingOf(Host& host) { return host.FinishRecording(); }
-std::optional<failure::Failure> FinishRecordingOf(ReplayServer& /*server*/) { return std::nullopt; }
-
 // The failure a strict capture lost a record on (Host::CaptureFailure), and
 // the same once every capture is finished (Host::FinishCapture); a replay
 // server captures nothing.
@@ -151,19 +142,15 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
 
   // The Simulation thread's ticks (ADR-0005): ticks the server on its fixed schedule
   // until a stop is requested or it meets a runtime failure, or until a strict
-  // recording has lost a tick or a strict capture a record, which is the
-  // runtime's failure: no tick runs once it is known (ADR-0033, ADR-0048,
-  // ADR-0050). Their writers find a loss after the tick that lost it, so a few
-  // ticks may run, unrecorded, before it is.
+  // capture has lost a record, which is the runtime's failure: no tick runs
+  // once it is known (ADR-0033, ADR-0050). Its writer finds a loss after the
+  // tick that lost it, so a few ticks may run, uncaptured, before it is.
   supervisor::WorkerResult TickUntilStopped() {
     const auto delta_time = std::chrono::duration<float>(1.0F / tick_rate_hz);
     const auto tick_duration = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
     LI("subsystem=serverruntime event=loop_starting loop=simulation");
     tick::Clock::time_point deadline = tick::Clock::now();
     while (!workers.StopRequested()) {
-      if (std::optional<failure::Failure> lost = RecordingFailureOf(served)) {
-        return std::unexpected(*std::move(lost));
-      }
       if (std::optional<failure::Failure> lost = CaptureFailureOf(served)) {
         return std::unexpected(*std::move(lost));
       }
@@ -181,11 +168,6 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
       std::this_thread::sleep_until(deadline);
     }
     LI("subsystem=serverruntime event=loop_stopping loop=simulation");
-    // The writer may find a strict recording's loss after the last check, or
-    // in what it still had queued at the stop: the run fails all the same.
-    if (std::optional<failure::Failure> lost = FinishRecordingOf(served)) {
-      return std::unexpected(*std::move(lost));
-    }
     return {};
   }
 
