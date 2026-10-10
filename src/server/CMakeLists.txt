@@ -117,12 +117,17 @@ add_library(
   augustad_host
   STATIC
   capture.cpp
+  capture_retention.cpp
   frames.cpp
   host.cpp
   host_log.cpp
   host_match.cpp
   host_metrics.cpp
   host_network.cpp
+  peer_gate.cpp
+  replay.cpp
+  replay_catalog.cpp
+  replay_server.cpp
   simulation_mapping.cpp
   tick_messages.cpp
   wire.cpp
@@ -170,7 +175,7 @@ target_include_directories(augustad_application PUBLIC ${CMAKE_CURRENT_SOURCE_DI
 target_link_libraries(
   augustad_application
   PUBLIC augusta_application augusta_config augusta_failure augusta_server_config augustad_runtime
-  PRIVATE augusta_assets augusta_logging augusta_networking augustad_content augustad_host
+  PRIVATE augusta_assets augusta_logging augusta_networking augustad_content augustad_host augustad_policy_loader
 )
 augusta_set_module_scope(augustad_application SERVER_ONLY)
 

@@ -28,6 +28,8 @@ namespace augusta::harness {
 struct Session::Impl {
   networking::Endpoint server;
   JoinRequest join_request;
+  // Set for a Replay viewer, which asks with it instead of join_request (ADR-0051).
+  std::optional<ReplayRequest> replay_request;
   networking::Client network;
 
   // Network I/O thread only.
@@ -51,14 +53,23 @@ struct Session::Impl {
       : server(config.server),
         join_request{
             .engine_version = config.engine_version, .client_pack = config.client_pack, .character = config.character},
+        replay_request(config.replay.transform([&config](const std::string& capture) {
+          return ReplayRequest{
+              .engine_version = config.engine_version, .client_pack = config.client_pack, .capture = capture};
+        })),
         network(config.faults),
+        inbox(config.replay.has_value()),
         commands(std::move(world)) {}
 
   // Sends message to the server as reliability says; returns whether the
   // transport accepted it. A message the protocol cannot carry is not sent:
   // it is kept in invariant_failure. A local transport failure is kept in
-  // transport_failure.
+  // transport_failure. Once either is, the runtime has failed, and nothing more
+  // is sent.
   bool Send(const protocol::MessageWire& message, networking::Reliability reliability) {
+    if (transport_failure.Recorded() || invariant_failure.Recorded()) {
+      return false;
+    }
     auto payload = EncodeToSend(message);
     if (!payload.has_value()) {
       invariant_failure.Record(std::move(payload.error()));
@@ -78,13 +89,19 @@ std::string_view DescribeJoinRefusal(JoinRefusal reason) {
     case JoinRefusal::kVersionMismatch:
       return "client version does not match the server";
     case JoinRefusal::kLobbyFull:
-      return "the lobby is full";
+      return "the lobby is full, or the replay server runs all the Replays it may";
     case JoinRefusal::kUnknownCharacter:
       return "the server's scenario has no such character";
     case JoinRefusal::kMatchInProgress:
       return "a match is in progress: try again once it ends";
     case JoinRefusal::kPackMismatch:
       return "client pack does not match the server's";
+    case JoinRefusal::kReplayServer:
+      return "the server is a replay server: watch a capture with --replay, or list them with --replays";
+    case JoinRefusal::kNotAReplayServer:
+      return "the server is a live server, not a replay server: join it without --replays or --replay";
+    case JoinRefusal::kUnknownCapture:
+      return "the replay server replays no such capture: list them with --replays";
   }
   return "unknown refusal";
 }
@@ -125,7 +142,11 @@ void Session::ExchangeMessages() {
   if (!impl.sent_join_request && impl.network.GetState() == networking::ConnectionState::kConnected) {
     // Once, whatever the transport did with it: reliable delivery is the
     // transport's, and a send it dropped or refused ends the connection or the runtime.
-    impl.Send(ToWire(impl.join_request), networking::Reliability::kReliable);
+    if (impl.replay_request.has_value()) {
+      impl.Send(ToWire(*impl.replay_request), networking::Reliability::kReliable);
+    } else {
+      impl.Send(ToWire(impl.join_request), networking::Reliability::kReliable);
+    }
     impl.sent_join_request = true;
   }
   auto received = impl.network.ReceiveMessages();
@@ -148,11 +169,17 @@ std::optional<Failure> Session::GetFailure() const {
   if (server_view->refusal.has_value()) {
     return Failure{.kind = FailureKind::kRefused, .refusal = *server_view->refusal};
   }
-  if (!impl_->wanted.load() || impl_->network.GetState() != networking::ConnectionState::kDisconnected) {
+  if (!impl_->wanted.load() || impl_->network.GetState() != networking::ConnectionState::kDisconnected ||
+      ReplayEnded()) {
     return std::nullopt;
   }
   const bool was_admitted = server_view->accepted.has_value();
   return Failure{.kind = was_admitted ? FailureKind::kConnectionLost : FailureKind::kServerUnreachable};
+}
+
+bool Session::ReplayEnded() const {
+  return impl_->replay_request.has_value() && impl_->inbox.View()->match_end.has_value() &&
+         impl_->network.GetState() == networking::ConnectionState::kDisconnected;
 }
 
 std::optional<failure::Failure> Session::TakeTransportFailure() { return impl_->transport_failure.Take(); }
@@ -235,6 +262,10 @@ std::optional<EntityId> Session::GetEntityId() const { return impl_->inbox.View(
 
 prediction::State Session::Tick(const command::Command& command, float delta_time) {
   Impl& impl = *impl_;
+  // A Replay viewer has no body to predict and no Command the server would take.
+  if (impl.replay_request.has_value()) {
+    return prediction::State{};
+  }
   // One view for the whole tick, so the sequence, the reconciliation and the
   // commands sent all agree on what the server had said.
   const CommandTick tick = impl.commands.Tick(*impl.inbox.View(), command, delta_time);

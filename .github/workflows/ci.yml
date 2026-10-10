@@ -295,6 +295,13 @@ jobs:
         with:
           prefix: falcor-packman-
           keep: falcor-packman-${{ hashFiles('third_party/falcor/dependencies.xml', 'cmake/patches/falcor.patch') }}
+      - name: Check augustac's PDB
+        # Each release publishes it (ADR-0055): the build leaves it beside
+        # augustac.exe, whose debug directory names it. -headers rather than
+        # /headers, which Git Bash would rewrite as a path.
+        run: |
+          test -f build/x64-windows/src/client/augustac.pdb
+          dumpbin -nologo -headers build/x64-windows/src/client/augustac.exe | grep -E 'Format: RSDS, .*augustac\.pdb'
       - name: Install clang-tidy
         # LLVM 21.1.8, the version the server job's distro package and the
         # Windows bootstrap give, so both platforms agree on which header

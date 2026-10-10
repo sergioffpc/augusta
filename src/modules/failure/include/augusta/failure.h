@@ -4,8 +4,10 @@
 #include <cstdint>
 #include <exception>
 #include <expected>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 /// \file
@@ -26,7 +28,7 @@ enum class Disposition : std::uint8_t {
   kPeer,
   /// One Session ends; the others and the Match go on.
   kSession,
-  /// An optional, non-authoritative subsystem (metrics) stops or
+  /// An optional, non-authoritative subsystem (a Match capture, metrics) stops or
   /// degrades, observably; authority is untouched.
   kSubsystem,
   /// The runtime stops: no new work is admitted, its workers are stopped and
@@ -53,6 +55,18 @@ enum class Code : std::uint16_t {
   kServerUnreachable = 5,
   /// The metrics endpoint stopped accepting connections.
   kMetricsEndpointFailed = 102,
+  /// An optional Match capture could not create or write its file.
+  kCaptureWriteFailed = 103,
+  /// An optional Match capture could not flush its file.
+  kCaptureFlushFailed = 104,
+  /// An optional Match capture's record found its writer's queue full: the
+  /// disk is not keeping up with the Match.
+  kCaptureQueueFull = 105,
+  /// An optional Match capture's record is longer than a capture's frame holds.
+  kCaptureRecordTooLong = 106,
+  /// An optional Match capture's record would take its directory past its
+  /// retention budget, with no completed capture left to delete.
+  kCaptureRetentionBudget = 107,
   /// The local transport could not be initialized.
   kTransportInitFailed = 200,
   /// The listen socket or poll group could not be set up.
@@ -68,6 +82,9 @@ enum class Code : std::uint16_t {
   /// An invariant protocol correctness, authority or a resource's lifetime
   /// depends on does not hold.
   kInvariantViolated = 206,
+  /// A strict Match capture, which a playtest is run for, lost a record: it
+  /// could not be written or flushed, or its Match outran it.
+  kStrictCaptureFailed = 208,
   /// The command line or config file is not usable.
   kInvalidConfiguration = 300,
   /// A content pack, map, scenario or script is not usable.
@@ -100,9 +117,25 @@ struct Failure {
 /// `code=transport_send_failed disposition=runtime session=3 detail="..."`.
 [[nodiscard]] std::string DescribeFailure(const Failure& failure);
 
+/// What startup code that has already classified its failure throws (ADR-0033
+/// allows exceptions there), so that Guard keeps it whole, its Code included,
+/// rather than taking it for a dependency's. Its what() is the failure's
+/// DescribeFailure, for a catcher that knows only std::exception.
+class ClassifiedFailure : public std::runtime_error {
+ public:
+  explicit ClassifiedFailure(Failure failure)
+      : std::runtime_error(DescribeFailure(failure)), failure_(std::move(failure)) {}
+
+  [[nodiscard]] const Failure& GetFailure() const noexcept { return failure_; }
+
+ private:
+  Failure failure_;
+};
+
 /// Runs body, the call into a dependency that may throw, and returns what it
 /// returns; an exception escaping it becomes a Failure with code and the
-/// exception's message as detail. The one place a dependency's exception is
+/// exception's message as detail, except a ClassifiedFailure, which is
+/// returned as it was thrown. The one place a dependency's exception is
 /// allowed to reach: it goes no further than this call.
 template <typename Body>
 [[nodiscard]] std::expected<std::invoke_result_t<Body&>, Failure> Guard(Code code, Body&& body) {
@@ -114,6 +147,8 @@ template <typename Body>
     } else {
       return body();
     }
+  } catch (const ClassifiedFailure& classified) {
+    return std::unexpected(classified.GetFailure());
   } catch (const std::exception& error) {
     return std::unexpected(Failure{.code = code, .context = {}, .detail = error.what()});
   } catch (...) {

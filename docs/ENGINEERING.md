@@ -4,6 +4,21 @@ Covers CI/CD, code quality, design philosophy, observability, and performance.
 Complements [ARCHITECTURE.md](./ARCHITECTURE.md) (system design) and
 [ROADMAP.md](./ROADMAP.md) (milestones).
 
+## Contents
+
+<!-- pyml disable md051 -->
+
+- [Design Philosophy](#design-philosophy)
+- [CI/CD](#cicd)
+- [Git Workflow](#git-workflow)
+- [Deployment & CD](#deployment--cd)
+- [Developer Environment](#developer-environment)
+- [Code Quality](#code-quality)
+- [Observability](#observability)
+- [Performance](#performance)
+
+<!-- pyml enable md051 -->
+
 ## Design Philosophy
 
 A short set of principles this project holds itself to, distilled from the
@@ -220,6 +235,11 @@ no self-hosted GitHub Actions runner in this pipeline).
   publishes beside each image as its `sha-<12>-debuginfo` tag; a release's
   `augustad-linux-x64.debug` reads only that release binary, which no image runs
   (ADR-0047).
+- **Client symbols:** each release attaches `augustac-windows-x64.pdb`, the PDB
+  of the `augustac-windows-x64.exe` beside it, which reads a crash of that
+  client or its Aftermath `.nv-gpudmp`. Rename it `augustac.pdb`, the name the
+  `.exe`'s debug directory gives it; the two match by GUID and age
+  (`dumpbin /headers`, ADR-0055).
 - **Server pod:** runs as UID/GID 65532 with no privilege escalation, every
   capability dropped, the `RuntimeDefault` seccomp profile and a read-only root
   filesystem; augustad writes only to its capture volume, if any. None of it

@@ -37,6 +37,11 @@ markdown_extensions:
   - tables
   - toc:
       permalink: true
+      # GitHub's heading anchors, so a link to one works on GitHub and on the
+      # site alike: "M0 — Project & Setup" is #m0--project--setup on both.
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
   - pymdownx.superfences
 hooks:
   - tools/docs/hooks.py

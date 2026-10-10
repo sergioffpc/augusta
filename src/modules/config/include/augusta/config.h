@@ -177,6 +177,18 @@ enum class CommandLineAction : std::uint8_t {
   kShowVersion,
 };
 
+/// An option one executable's command line takes beyond `--config`, `--help`
+/// and `--version`: what is chosen for one run, not kept as a setting
+/// (ADR-0034), such as augustac's `--replay <capture>` (ADR-0051).
+struct CommandLineOption {
+  /// Its name, without the leading `--`.
+  std::string_view name;
+  /// What its value is called in the usage, or empty for an option with none.
+  std::string_view value;
+  /// What it does, for the usage.
+  std::string_view description;
+};
+
 /// The command line, read: the action, and what the executable needs for it.
 struct CommandLine {
   /// Only set for kRun.
@@ -184,6 +196,10 @@ struct CommandLine {
   /// Only set for kShowHelp (the usage message) and kShowVersion
   /// (`<program> <version>`).
   std::string message;
+  /// Only set for kRun: each CommandLineOption given, by name, with its value,
+  /// empty for one that takes none. What they mean together is the
+  /// executable's to decide.
+  std::map<std::string, std::string, std::less<>> options;
   CommandLineAction action = CommandLineAction::kRun;
 };
 
@@ -191,11 +207,13 @@ struct CommandLine {
 /// usage and `--version` for version, whatever else is on it (`--help` first);
 /// otherwise the config file is the path after `--config`, taken as given
 /// (relative to the working directory), or default_file_name in the running
-/// executable's directory when there are no arguments. Any other arguments are
-/// a kInvalidArguments error whose subject is the usage message, naming
-/// program.
+/// executable's directory when there are no arguments. options are those the
+/// executable takes beyond these, each at most once. Any other arguments are a
+/// kInvalidArguments error whose subject is the usage message, naming program
+/// and each of options.
 std::expected<CommandLine, ConfigError> ParseCommandLine(int argc, const char* const* argv, std::string_view program,
-                                                         std::string_view default_file_name, std::string_view version);
+                                                         std::string_view default_file_name, std::string_view version,
+                                                         std::span<const CommandLineOption> options = {});
 
 }  // namespace augusta::config
 

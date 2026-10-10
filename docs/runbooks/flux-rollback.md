@@ -3,7 +3,7 @@
 Returns the `develop` or `staging` environment to a working server after a
 commit that Flux deployed broke it. How the environments are deployed is
 ADR-0026 ([CD strategy](../adr/0026-cd-strategy.md)) and
-[ENGINEERING.md's Deployment & CD](../ENGINEERING.md#deployment-cd).
+[ENGINEERING.md's Deployment & CD](../ENGINEERING.md#deployment--cd).
 
 ## When to use
 
@@ -18,7 +18,7 @@ not verify (the server's last log line names `server.pack` or `signing.pub`): no
 rollback fixes that, the files must be put in place
 ([Where packs go on the node](pack-key-rotation.md#where-packs-go-on-the-node)).
 Moving an environment back to its previous pack folder is the rollback step of
-[Rotate the Pack Signing Key](pack-key-rotation.md#rollback-abort).
+[Rotate the Pack Signing Key](pack-key-rotation.md#rollback--abort).
 
 ## What runs where
 
@@ -176,7 +176,7 @@ its image to the last good commit's `sha-<12>` tag instead.
    `--base main`. After it merges, bring the same branch back into `develop`
    with a second pull request, `--base develop`, as Git Flow does for every
    hotfix. When the bad change is a published release, the fix ships as the next
-   patch release ([Cut a Release](cut-release.md#rollback-abort)).
+   patch release ([Cut a Release](cut-release.md#rollback--abort)).
 
 3. Remove the pin once `main`'s head is good: on a `feature/*` branch off
    `develop`, delete the `image.tag` line from `staging.yaml` and merge it

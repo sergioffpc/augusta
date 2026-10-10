@@ -1,6 +1,8 @@
 #ifndef AUGUSTA_CLIENT_CONFIG_H_
 #define AUGUSTA_CLIENT_CONFIG_H_
 
+#include <array>
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <string>
@@ -59,6 +61,35 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
 /// Reads and parses the client config at file; its `base_dir` is relative to
 /// file's directory. Errors carry file.
 std::expected<ClientConfig, ConfigError> LoadClientConfig(const std::filesystem::path& file);
+
+/// What augustac's command line takes beyond `--config`, `--help` and
+/// `--version`: a Replay (ADR-0051) is chosen for one run, so it is asked for
+/// there, not in augustac.yaml (ADR-0034).
+inline constexpr std::array<CommandLineOption, 2> kClientOptions{{
+    {.name = "replays", .value = {}, .description = "print the captures the server replays, then exit"},
+    {.name = "replay", .value = "capture", .description = "watch the capture of this name the server replays"},
+}};
+
+/// What one run of augustac does.
+enum class ClientMode : std::uint8_t {
+  /// Joins the server and plays.
+  kPlay,
+  /// Asks the replay server for its Replay list, prints it and exits (`--replays`).
+  kListReplays,
+  /// Watches one capture on the replay server (`--replay <capture>`).
+  kWatchReplay,
+};
+
+/// A run of augustac, as its command line asks for it.
+struct ClientRun {
+  ClientMode mode = ClientMode::kPlay;
+  /// The capture to watch, by its name in the Replay list; only for kWatchReplay.
+  std::string capture;
+};
+
+/// The run command_line, read with kClientOptions, asks for; kInvalidArguments
+/// if it asks to list the captures and watch one at once, or names no capture.
+std::expected<ClientRun, ConfigError> ReadClientRun(const CommandLine& command_line);
 
 }  // namespace augusta::config
 

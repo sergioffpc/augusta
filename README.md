@@ -14,6 +14,18 @@ A realistic, physics-driven multiplayer FPS simulator engine —
 server-authoritative, with a Windows client and a headless Linux dedicated
 server.
 
+## Contents
+
+- [Highlights](#highlights)
+- [Status](#status)
+- [Development Setup](#development-setup)
+    - [Bootstrap](#bootstrap)
+    - [Build and Run](#build-and-run)
+    - [Tests](#tests)
+    - [Agent Skills](#agent-skills)
+- [Documentation](#documentation)
+- [License](#license)
+
 ## Highlights
 
 - **Server-authoritative** — the Linux dedicated server is the single source of
@@ -109,11 +121,11 @@ make
 
 Create each local YAML from its `*.example.yaml` file and edit its pack and
 public-key paths to point to cooked content before running. `make` builds the
-default release preset (`windows` on Windows, `linux` on Linux). To install the
-server, use `make install prefix=C:/augusta` on Windows (a development build;
-Linux x86-64 is the only production server platform) or choose a Unix-style
-prefix on Linux. Configuring on any other platform stops with the supported list
-(NFR-04).
+default release preset (`windows` on Windows, `linux` on Linux). `make install`
+installs only the server; the client has no install step and runs from its build
+directory. Use `prefix=C:/augusta` on Windows (a development build; Linux x86-64
+is the only production server platform) or a Unix-style prefix on Linux.
+Configuring on any other platform stops with the supported list (NFR-04).
 
 ### Tests
 

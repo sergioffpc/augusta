@@ -1,8 +1,11 @@
 #ifndef AUGUSTA_SERVER_HOST_METRICS_H_
 #define AUGUSTA_SERVER_HOST_METRICS_H_
 
+#include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -10,6 +13,9 @@
 #include <prometheus/metric_family.h>
 
 #include "augusta/ballistics.h"
+#include "augusta/tick.h"
+#include "capture.h"
+#include "capture_retention.h"
 #include "command_queue.h"
 #include "heartbeat.h"
 #include "host_log.h"
@@ -20,10 +26,11 @@
 /// \file
 /// What the server counts about itself, for the metrics endpoint (metrics.h)
 /// to expose: ADR-0049's catalogue of the Tick, Lobby and Match, Sessions,
-/// Misbehaviour, Network and Combat families, each named and labelled as it
-/// says.
-/// The Host owns one, and its Network I/O and Simulation threads write each value
-/// in place where the event happens; the endpoint's thread only collects. Every
+/// Misbehaviour, Network, Combat and Capture families, each named and labelled
+/// as it says.
+/// The Host owns one, and its Network I/O and Simulation threads, and its
+/// Capturer's writer (through CaptureMetrics), write each value in place where
+/// the event happens; the endpoint's thread only collects. Every
 /// counter, gauge and histogram here is lock-free (lock_free_metrics.h), so
 /// neither thread ever waits on a scrape. The heartbeat line (heartbeat.h) reads its totals from the
 /// same counters (Totals), so the line and the series count each event once.
@@ -48,17 +55,22 @@ enum class MessageType : std::uint8_t {
   kShot,
   kHitConfirmation,
   kDeath,
+  kReplayListRequest,
+  kReplayList,
+  kReplayRequest,
+  kReplayView,
 };
 
-using JoinRefusalCounters = EnumCounters<JoinRefusal, JoinRefusal::kVersionMismatch, JoinRefusal::kPackMismatch>;
+using JoinRefusalCounters = EnumCounters<JoinRefusal, JoinRefusal::kVersionMismatch, JoinRefusal::kNotAReplayServer>;
 using LeavingCounters = EnumCounters<Leaving, Leaving::kLeft, Leaving::kMisbehaving>;
 /// The misbehaviours only: the first of PeerRejection's values (misbehaviour.h),
 /// which host_metrics.cpp checks.
 using MisbehaviourCounters =
     EnumCounters<PeerRejection, PeerRejection::kUndecodable, PeerRejection::kCommandsBeforeJoining>;
-using MessageCounters = EnumCounters<MessageType, MessageType::kJoinRequest, MessageType::kDeath>;
+using MessageCounters = EnumCounters<MessageType, MessageType::kJoinRequest, MessageType::kReplayView>;
 using RejectionCounters = EnumCounters<Rejection, Rejection::kStale, Rejection::kOutOfRange>;
 using BodyPartCounters = EnumCounters<ballistics::BodyPart, ballistics::BodyPart::kHead, ballistics::BodyPart::kLimb>;
+using CaptureStopCounters = EnumCounters<CaptureStop, CaptureStop::kRecordTooLong, CaptureStop::kRetentionBudget>;
 
 /// Everything ADR-0049's catalogue has the server count but its Process family
 /// and Connection health, written in place by the Host's threads, and collected
@@ -130,7 +142,68 @@ struct HostMetrics final : prometheus::Collectable {
   Counter shooters_delay_capped;
   /// Bullets still flying after the last tick (simulation::State's bullets_in_flight).
   Gauge bullets_in_flight;
+
+  // Capture, written by the Simulation thread and the Capturer's writer
+  // through CaptureMetrics.
+  std::atomic<CaptureState> capture_state{CaptureState::kOff};
+  static_assert(std::atomic<CaptureState>::is_always_lock_free);
+  Counter captures_started;
+  Counter captures_completed;
+  CaptureStopCounters capture_stops;
+  Counter capture_written_bytes;
+  Gauge capture_queue_records;
+  Gauge capture_directory_files;
+  Gauge capture_directory_bytes;
+  Counter capture_retention_deleted;
+  Counter capture_retention_failures;
+  /// The capture directory's retention limits (#461), each absent while unset.
+  /// Written once, as the Host is built, before the metrics endpoint serves.
+  std::optional<std::size_t> capture_retention_max_files;
+  std::optional<std::uintmax_t> capture_retention_max_bytes;
+
+  // Replay (ADR-0051), a replay server's only, written by the Simulation
+  // thread: how many Replays run, and how long one Replay's tick takes - its
+  // SimulationWorld's tick and what it sends its viewer - of the tick the
+  // Simulation thread runs every Replay in.
+  Gauge replays;
+  Histogram replay_tick_duration;
+  /// The Match captures' health, written by whichever thread it changes on
+  /// (CaptureMetrics::OnHealth) and published whole, so a scrape never sees
+  /// two states or none; nullopt while nothing is captured.
+  std::atomic<std::optional<CaptureHealth>> capture_health;
+  static_assert(std::atomic<std::optional<CaptureHealth>>::is_always_lock_free);
 };
+
+/// Counts what a Capturer tells it into metrics' Capture family, lock-free,
+/// from whichever thread tells it. It must not outlive metrics.
+class CaptureMetrics final : public CaptureObserver {
+ public:
+  explicit CaptureMetrics(HostMetrics& metrics) : metrics_(metrics) {}
+
+  /// Publishes retention's limits, as the Host is built.
+  void SetRetention(const CaptureRetention& retention);
+
+  void OnState(CaptureState state) override;
+  void OnStarted() override;
+  void OnCompleted() override;
+  void OnStopped(CaptureStop stop) override;
+  void OnWritten(std::size_t bytes) override;
+  void OnQueued(std::size_t records) override;
+  void OnDirectory(CaptureDirectoryUsage usage) override;
+  void OnRetentionDeleted() override;
+  void OnRetentionDeleteFailed() override;
+  void OnHealth(CaptureHealth health) override;
+
+ private:
+  HostMetrics& metrics_;
+};
+
+/// Counts a tick the Simulation loop ran with timing into metrics' Tick
+/// family, and returns what Network I/O and the ticks did over the heartbeat
+/// interval it ends (heartbeat.h), at now, if it ends one: the line its server
+/// writes. How every server counts its ticks.
+[[nodiscard]] std::optional<Activity> CountTick(HostMetrics& metrics, Heartbeat& heartbeat, const tick::Timing& timing,
+                                                std::chrono::steady_clock::time_point now);
 
 /// The heartbeat's running totals (heartbeat.h), read from metrics' counters:
 /// the heartbeat line counts nothing of its own.

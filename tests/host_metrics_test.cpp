@@ -4,8 +4,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -15,6 +17,8 @@
 #include <prometheus/metric_type.h>
 
 #include "augusta/ballistics.h"
+#include "capture.h"
+#include "capture_retention.h"
 #include "command_queue.h"
 #include "heartbeat.h"
 #include "host_log.h"
@@ -28,6 +32,11 @@
 namespace {
 
 using augusta::server::Activity;
+using augusta::server::CaptureHealth;
+using augusta::server::CaptureMetrics;
+using augusta::server::CaptureRetention;
+using augusta::server::CaptureState;
+using augusta::server::CaptureStop;
 using augusta::server::Histogram;
 using augusta::server::HostMetrics;
 using augusta::server::JoinRefusal;
@@ -118,12 +127,146 @@ TEST(HostMetricsTest, EveryMetricOfTheCatalogueIsCollectedWithItsType) {
       {"augustad_shooters_delay_seconds", MetricType::Histogram},
       {"augustad_shooters_delay_capped_total", MetricType::Counter},
       {"augustad_bullets_in_flight", MetricType::Gauge},
+      {"augustad_capture_state", MetricType::Gauge},
+      {"augustad_captures_started_total", MetricType::Counter},
+      {"augustad_captures_completed_total", MetricType::Counter},
+      {"augustad_capture_stops_total", MetricType::Counter},
+      {"augustad_capture_written_bytes_total", MetricType::Counter},
+      {"augustad_capture_queue_records", MetricType::Gauge},
+      {"augustad_capture_directory_files", MetricType::Gauge},
+      {"augustad_capture_retention_deleted_total", MetricType::Counter},
+      {"augustad_capture_retention_failures_total", MetricType::Counter},
+      {"augustad_capture_directory_bytes", MetricType::Gauge},
+      {"augustad_replays", MetricType::Gauge},
+      {"augustad_replay_tick_duration_seconds", MetricType::Histogram},
+      {"augustad_capture_health", MetricType::Gauge},
   };
   for (const auto& [name, type] : catalogue) {
     EXPECT_EQ(Family(families, name).type, type) << name;
     EXPECT_FALSE(Family(families, name).help.empty()) << name;
   }
   EXPECT_EQ(families.size(), catalogue.size());
+}
+
+// The value of each augustad_capture_state series, by its state label.
+std::map<std::string, double> CaptureStates(const HostMetrics& metrics) {
+  std::map<std::string, double> states;
+  for (const ClientMetric& series : Family(metrics.Collect(), "augustad_capture_state").metric) {
+    states.emplace(LabelsOf(series).at("state"), series.gauge.value);
+  }
+  return states;
+}
+
+// Requirements: NFR-07
+TEST(HostMetricsTest, CapturesAreOffUntilACapturerSaysOtherwise) {
+  const HostMetrics metrics(kTickRate);
+  EXPECT_EQ(CaptureStates(metrics),
+            (std::map<std::string, double>{{"off", 1.0}, {"idle", 0.0}, {"capturing", 0.0}, {"stopped", 0.0}}));
+}
+
+// Requirements: NFR-07
+TEST(HostMetricsTest, OnlyTheCapturesCurrentStateIsSet) {
+  HostMetrics metrics(kTickRate);
+  CaptureMetrics counting(metrics);
+  counting.OnState(CaptureState::kIdle);
+  counting.OnState(CaptureState::kCapturing);
+  EXPECT_EQ(CaptureStates(metrics),
+            (std::map<std::string, double>{{"off", 0.0}, {"idle", 0.0}, {"capturing", 1.0}, {"stopped", 0.0}}));
+}
+
+// Requirements: NFR-07
+TEST(HostMetricsTest, CaptureStopsAreLabelledByReason) {
+  HostMetrics metrics(kTickRate);
+  CaptureMetrics counting(metrics);
+  counting.OnStopped(CaptureStop::kQueueFull);
+  counting.OnStopped(CaptureStop::kWriteFailed);
+  counting.OnStopped(CaptureStop::kQueueFull);
+  counting.OnStopped(CaptureStop::kRetentionBudget);
+
+  const std::vector<MetricFamily> families = metrics.Collect();
+  const MetricFamily& stops = Family(families, "augustad_capture_stops_total");
+
+  EXPECT_EQ(Series(stops, {{"reason", "queue_full"}}).counter.value, 2.0);
+  EXPECT_EQ(Series(stops, {{"reason", "write_failed"}}).counter.value, 1.0);
+  EXPECT_EQ(Series(stops, {{"reason", "retention_budget"}}).counter.value, 1.0);
+  EXPECT_EQ(ValuesOf(stops, "reason"),
+            (std::set<std::string>{"record_too_long", "queue_full", "write_failed", "retention_budget"}));
+}
+
+// Requirements: NFR-07
+TEST(HostMetricsTest, WhatTheCaptureWriterDoesIsCounted) {
+  HostMetrics metrics(kTickRate);
+  CaptureMetrics counting(metrics);
+  counting.OnStarted();
+  counting.OnStarted();
+  counting.OnCompleted();
+  counting.OnWritten(100);
+  counting.OnWritten(20);
+  counting.OnQueued(7);
+  counting.OnDirectory({.files = 3, .bytes = 500});
+
+  const std::vector<MetricFamily> families = metrics.Collect();
+
+  EXPECT_EQ(Series(Family(families, "augustad_captures_started_total"), {}).counter.value, 2.0);
+  EXPECT_EQ(Series(Family(families, "augustad_captures_completed_total"), {}).counter.value, 1.0);
+  EXPECT_EQ(Series(Family(families, "augustad_capture_written_bytes_total"), {}).counter.value, 120.0);
+  EXPECT_EQ(Series(Family(families, "augustad_capture_queue_records"), {}).gauge.value, 7.0);
+  EXPECT_EQ(Series(Family(families, "augustad_capture_directory_files"), {}).gauge.value, 3.0);
+  EXPECT_EQ(Series(Family(families, "augustad_capture_directory_bytes"), {}).gauge.value, 500.0);
+}
+
+// Requirements: NFR-07
+TEST(HostMetricsTest, RetentionsDeletionsAndFailuresAreCounted) {
+  HostMetrics metrics(kTickRate);
+  CaptureMetrics counting(metrics);
+  counting.OnRetentionDeleted();
+  counting.OnRetentionDeleted();
+  counting.OnRetentionDeleteFailed();
+
+  const std::vector<MetricFamily> families = metrics.Collect();
+
+  EXPECT_EQ(Series(Family(families, "augustad_capture_retention_deleted_total"), {}).counter.value, 2.0);
+  EXPECT_EQ(Series(Family(families, "augustad_capture_retention_failures_total"), {}).counter.value, 1.0);
+}
+
+// A panel draws only the limits there are as thresholds (#462).
+// Requirements: NFR-07
+TEST(HostMetricsTest, RetentionsLimitsAreAbsentUntilSet) {
+  HostMetrics metrics(kTickRate);
+  const auto has = [&metrics](std::string_view name) {
+    return std::ranges::any_of(metrics.Collect(), [name](const MetricFamily& family) { return family.name == name; });
+  };
+  EXPECT_FALSE(has("augustad_capture_retention_max_files"));
+  EXPECT_FALSE(has("augustad_capture_retention_max_bytes"));
+
+  CaptureMetrics(metrics).SetRetention(CaptureRetention{.max_files = 200, .max_bytes = std::nullopt});
+
+  EXPECT_EQ(Series(Family(metrics.Collect(), "augustad_capture_retention_max_files"), {}).gauge.value, 200.0);
+  EXPECT_FALSE(has("augustad_capture_retention_max_bytes"));
+}
+
+// The value of each augustad_capture_health series, by its state label.
+std::map<std::string, double> CaptureHealths(const HostMetrics& metrics) {
+  std::map<std::string, double> states;
+  for (const ClientMetric& series : Family(metrics.Collect(), "augustad_capture_health").metric) {
+    states.emplace(LabelsOf(series).at("state"), series.gauge.value);
+  }
+  return states;
+}
+
+TEST(HostMetricsTest, NoCaptureHealthIsSetWhileNothingIsCaptured) {
+  const HostMetrics metrics(kTickRate);
+  EXPECT_EQ(CaptureHealths(metrics),
+            (std::map<std::string, double>{{"enabled", 0.0}, {"degraded", 0.0}, {"stopped", 0.0}}));
+}
+
+TEST(HostMetricsTest, OnlyTheCapturesCurrentHealthIsSet) {
+  HostMetrics metrics(kTickRate);
+  CaptureMetrics counting(metrics);
+  counting.OnHealth(CaptureHealth::kEnabled);
+  counting.OnHealth(CaptureHealth::kDegraded);
+  EXPECT_EQ(CaptureHealths(metrics),
+            (std::map<std::string, double>{{"enabled", 0.0}, {"degraded", 1.0}, {"stopped", 0.0}}));
 }
 
 // Requirements: NFR-07
@@ -177,8 +320,9 @@ TEST(HostMetricsTest, JoinsAreLabelledByResultAndARefusalByItsReason) {
 
   EXPECT_EQ(Series(joins, {{"result", "admitted"}}).counter.value, 1.0);
   EXPECT_EQ(Series(joins, {{"result", "refused"}, {"reason", "lobby_full"}}).counter.value, 1.0);
-  EXPECT_EQ(ValuesOf(joins, "reason"), (std::set<std::string>{"version_mismatch", "lobby_full", "unknown_character",
-                                                              "match_in_progress", "pack_mismatch"}));
+  EXPECT_EQ(ValuesOf(joins, "reason"),
+            (std::set<std::string>{"version_mismatch", "lobby_full", "unknown_character", "match_in_progress",
+                                   "pack_mismatch", "replay_server", "unknown_capture", "not_a_replay_server"}));
 }
 
 // Requirements: NFR-07
@@ -233,9 +377,22 @@ TEST(HostMetricsTest, MessagesAreLabelledByTheirType) {
 
   EXPECT_EQ(Series(Family(families, "augustad_messages_sent_total"), {{"type", "authoritative_state"}}).counter.value,
             1.0);
-  const std::set<std::string> types = {
-      "join_request", "join_accepted", "join_refused", "commands", "authoritative_state", "lobby",
-      "ready",        "match_start",   "match_end",    "shot",     "hit_confirmation",    "death"};
+  const std::set<std::string> types = {"join_request",
+                                       "join_accepted",
+                                       "join_refused",
+                                       "commands",
+                                       "authoritative_state",
+                                       "lobby",
+                                       "ready",
+                                       "match_start",
+                                       "match_end",
+                                       "shot",
+                                       "hit_confirmation",
+                                       "death",
+                                       "replay_list_request",
+                                       "replay_list",
+                                       "replay_request",
+                                       "replay_view"};
   EXPECT_EQ(ValuesOf(Family(families, "augustad_messages_sent_total"), "type"), types);
   EXPECT_EQ(ValuesOf(Family(families, "augustad_messages_received_total"), "type"), types);
 }

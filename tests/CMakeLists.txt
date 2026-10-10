@@ -20,6 +20,7 @@ add_executable(
   pack_benchmark.cpp
   presentation_benchmark.cpp
   protocol_benchmark.cpp
+  replay_benchmark.cpp
   replication_benchmark.cpp
   simulation_benchmark.cpp
 )
@@ -451,6 +452,57 @@ gtest_discover_tests(augusta_server_application_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_capture_tests capture_test.cpp)
 target_link_libraries(augusta_capture_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_capture_tests DISCOVERY_TIMEOUT 30)
+
+# A Replay (ADR-0051): a Match capture re-run on a fresh SimulationWorld and
+# checked against its markers, with no network.
+add_executable(augusta_server_replay_tests server_replay_test.cpp)
+target_link_libraries(
+  augusta_server_replay_tests
+  PRIVATE augustad_host augusta_scripting augusta_simulation GTest::gtest GTest::gtest_main
+)
+gtest_discover_tests(augusta_server_replay_tests DISCOVERY_TIMEOUT 30)
+
+# Which captures a replay server replays (ADR-0051), from directories of them.
+add_executable(augusta_replay_catalog_tests replay_catalog_test.cpp)
+target_link_libraries(augusta_replay_catalog_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_replay_catalog_tests DISCOVERY_TIMEOUT 30)
+
+# A replay server (ADR-0051) over loopback, on a Match a live Host captured.
+add_executable(augusta_replay_server_tests replay_server_test.cpp)
+target_link_libraries(
+  augusta_replay_server_tests
+  PRIVATE augustad_host augusta_harness augusta_logging augusta_scripting augusta_version GTest::gtest GTest::gtest_main
+)
+# Links networking and PhysX, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_replay_server_tests DISCOVERY_TIMEOUT 30)
+
+# A capture directory kept within a count and a size (ADR-0050, #461).
+add_executable(augusta_capture_retention_tests capture_retention_test.cpp)
+target_link_libraries(
+  augusta_capture_retention_tests
+  PRIVATE augustad_host augusta_logging GTest::gtest GTest::gtest_main
+)
+gtest_discover_tests(augusta_capture_retention_tests DISCOVERY_TIMEOUT 30)
+
+# A Match capture that cannot be written, optional or strict (ADR-0050,
+# ADR-0033): its write and flush failures injected (see faults.h), seen from the
+# Host and the ServerRuntime running it, with the log lines read off stdout.
+add_executable(augusta_capture_runtime_tests capture_runtime_test.cpp)
+target_link_libraries(
+  augusta_capture_runtime_tests
+  PRIVATE
+    augustad_host
+    augustad_runtime
+    augusta_failure
+    augusta_logging
+    augusta_networking
+    augusta_parameters
+    augusta_supervisor
+    GTest::gtest
+    GTest::gtest_main
+)
+# Links networking and PhysX through augustad_host, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_capture_runtime_tests DISCOVERY_TIMEOUT 30)
 
 # What a player's ticks add up to, from Prediction States built by hand.
 add_executable(augusta_netcode_stats_tests netcode_stats_test.cpp)

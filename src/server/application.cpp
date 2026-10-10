@@ -1,5 +1,6 @@
 #include "application.h"
 
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <memory>
@@ -14,18 +15,46 @@
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/server_config.h"
+#include "capture.h"
+#include "capture_retention.h"
 #include "content.h"
 #include "host.h"
+#include "policy_loader.h"
+#include "replay_server.h"
 #include "runtime.h"
 
 namespace augusta::server {
 
 namespace {
 
+constexpr std::uintmax_t kMiB = std::uintmax_t{1024} * 1024;
+
 failure::Failure ContentFailure(const std::filesystem::path& pack_path, std::string detail) {
   return {.code = failure::Code::kInvalidContent,
           .context = {{.key = "path", .value = pack_path.string()}},
           .detail = std::move(detail)};
+}
+
+// A replay server's runtime (ADR-0051), on the content loaded from pack: each
+// Replay's World makes the pack's Game policy afresh, so the policy is kept
+// as what makes it rather than as the one engine content loaded.
+std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructReplayRuntime(
+    const config::ServerConfig& file_config, const assets::Pack& pack, Content content, failure::Faults* faults) {
+  auto policy = LoadPolicyMaker(pack);
+  if (!policy) {
+    return std::unexpected(ContentFailure(pack.Path(), DescribePolicyLoadError(policy.error())));
+  }
+  const ReplayServerConfig replay_config{
+      .tick_rate_hz = file_config.tick_rate_hz,
+      .parameters = content.parameters,
+      .listen = {.address = file_config.listen_address},
+      .server_pack = pack.Hash(),
+      .captures = file_config.replay_captures,
+      .max_viewers = file_config.replay_max_viewers,
+      .faults = nullptr,
+  };
+  return std::make_unique<ServerRuntime>(replay_config, file_config.metrics_port, std::move(content.scenario),
+                                         *std::move(policy), faults);
 }
 
 // Verifies the pack the file's settings name, loads its content and constructs
@@ -48,6 +77,9 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
   if (!content) {
     return std::unexpected(ContentFailure(pack_path, std::string(DescribeContentError(content.error()))));
   }
+  if (!file_config.replay_captures.empty()) {
+    return ConstructReplayRuntime(file_config, *pack, *std::move(content), faults);
+  }
 
   const HostConfig host_config{
       .tick_rate_hz = file_config.tick_rate_hz,
@@ -58,6 +90,10 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
       .listen = {.address = file_config.listen_address},
       .server_pack = pack->Hash(),
       .capture_directory = file_config.capture_directory,
+      .capture_mode = file_config.strict_capture ? CaptureMode::kStrict : CaptureMode::kOptional,
+      .capture_retention = CaptureRetention{.max_files = file_config.capture_max_files,
+                                            .max_bytes = file_config.capture_max_mib.transform(
+                                                [](std::uint32_t mib) { return std::uintmax_t{mib} * kMiB; })},
   };
   return std::make_unique<ServerRuntime>(host_config, file_config.metrics_port, std::move(content->scenario),
                                          std::move(content->policy), faults);

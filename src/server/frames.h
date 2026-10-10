@@ -19,6 +19,9 @@ namespace augusta::server {
 /// header included, passes it, so one byte of length is enough (#463).
 inline constexpr std::size_t kMaxFramePayload = 255;
 
+/// How many bytes a frame of a payload this long takes: its length, then it.
+[[nodiscard]] constexpr std::size_t FrameSize(std::size_t payload_size) { return 1 + payload_size; }
+
 /// Writes payload's frame to out, whose state then says whether it was.
 /// payload is at most kMaxFramePayload bytes.
 void WriteFrame(std::ostream& out, std::span<const std::byte> payload);

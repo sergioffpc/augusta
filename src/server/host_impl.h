@@ -33,6 +33,7 @@
 #include "host_metrics.h"
 #include "match.h"
 #include "misbehaviour.h"
+#include "peer_gate.h"
 #include "tick_messages.h"
 
 /// \file
@@ -65,6 +66,9 @@ struct Host::Impl {
   // player in it controls, and whether the match those bodies are in is still
   // in the simulation.
   simulation::World simulation;
+  // What the capturer tells of itself, counted into metrics; declared before
+  // it, so it outlives the capturer's writer.
+  CaptureMetrics capture_metrics{metrics};
   // Each Match's capture, if HostConfig::capture_directory asks for them (ADR-0050).
   std::unique_ptr<Capturer> capturer;
   std::unordered_map<SessionId, EntityId> bodies;
@@ -90,6 +94,9 @@ struct Host::Impl {
   // The first outbound message or record either thread could not encode: a
   // broken invariant, never sent, until a worker takes it (ADR-0033).
   failure::FirstFailure invariant_failure;
+  // Whether either failure has been recorded, taken or not: the runtime has
+  // failed, and the Host sends nothing more until its workers stop.
+  [[nodiscard]] bool Failed() const;
 
   // Guards everything below: written by the Network I/O thread as clients
   // join, leave and send commands, and by the Simulation thread as matches
@@ -108,12 +115,10 @@ struct Host::Impl {
   // A peer can send malformed messages as fast as it likes, so their warnings
   // are limited; the heartbeat still counts every one.
   logging::Throttle drop_warnings{std::chrono::seconds{1}};
-  // Each connected peer's misbehaviour, and the peers disconnected for it during
-  // this PumpNetwork, whose messages still in its batch are ignored.
-  std::unordered_map<networking::PeerId, MisbehaviourTracker> misbehaviour;
-  std::unordered_set<networking::PeerId> expelled;
-  // The deadline of each connected peer not yet admitted to the Lobby.
-  AdmissionDeadlines admission_deadlines;
+  // Each connected peer's admission deadline and misbehaviour, and the peers
+  // expelled during this PumpNetwork, whose messages still in its batch are
+  // ignored (peer_gate.h).
+  PeerGate gate{metrics};
 
   Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy);
 
@@ -121,6 +126,7 @@ struct Host::Impl {
   // (wire.h), reliably, counted as the transport accepts it (SendCounted).
   // One the protocol could not carry is sent to no one and kept in
   // invariant_failure; a local transport failure is kept in transport_failure.
+  // Once either is, the runtime has failed (Failed), and nothing more is sent.
   void Reply(networking::PeerId peer, const std::expected<networking::Payload, failure::Failure>& message);
   // Sends payload, already encoded, to peer reliably, as Reply does.
   void Deliver(networking::PeerId peer, const networking::Payload& payload);
@@ -142,7 +148,7 @@ struct Host::Impl {
                       std::chrono::steady_clock::time_point now);
   void RecordRejection(networking::PeerId peer, const SequencedCommand& command, Rejection rejection);
   Verdict Judge(networking::PeerId peer, PeerRejection rejection, std::chrono::steady_clock::time_point now);
-  void ExpelUnadmitted(std::chrono::steady_clock::time_point now);
+  void RefuseAsNoReplayServer(networking::PeerId peer, std::chrono::steady_clock::time_point now);
   void Expel(networking::PeerId peer, std::string_view reason);
   void HandleDisconnect(networking::PeerId peer, Leaving how);
 
@@ -159,6 +165,8 @@ struct Host::Impl {
   void TakeOutEndedMatch();
   TickInput PrepareTick();
   void CaptureDeaths(const simulation::TickResult& result) const;
+  // Sends the tick of state's messages to, unless the runtime has failed.
+  void SendTick(const simulation::State& state, const TickRecipients& to);
 };
 
 }  // namespace augusta::server

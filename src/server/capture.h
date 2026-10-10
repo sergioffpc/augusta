@@ -21,6 +21,7 @@
 #include "augusta/faults.h"
 #include "augusta/math.h"
 #include "augusta/tick.h"
+#include "capture_retention.h"
 #include "match.h"
 
 /// \file
@@ -33,8 +34,10 @@
 /// stalls never holds up a tick (NFR-01). ReadCapture reads a file back. The
 /// records are the Networking Protocol's, in its encoding, converted in
 /// wire.h, so this header names only the engine's types. A capture that cannot
-/// be written stops, logged once, and the Match goes on without it: a capture
-/// is a debugging aid, never a runtime failure.
+/// be written stops, keeping every whole record before it. What that costs the
+/// run is its CaptureMode (#398, ADR-0033): an optional capture, a debugging
+/// aid, degrades and the Match goes on without it; a strict one, for a
+/// playtest whose point is the capture, is the runtime's terminal failure.
 namespace augusta::server {
 
 /// What a captured Match ran on and when it started.
@@ -145,10 +148,133 @@ enum class CaptureStop : std::uint8_t {
   kQueueFull,
   /// The file could not be created, written or flushed.
   kWriteFailed,
+  /// The record would take the directory past CaptureRetention::max_bytes with
+  /// no completed capture left to delete: the Match alone fills it.
+  kRetentionBudget,
 };
 
-/// "record_too_long", "queue_full" or "write_failed".
+/// "record_too_long", "queue_full", "write_failed" or "retention_budget".
 [[nodiscard]] std::string_view CaptureStopName(CaptureStop stop);
+
+/// What losing a capture's record costs the run.
+enum class CaptureMode : std::uint8_t {
+  /// A debugging aid: the capture degrades, and the Match goes on as it would
+  /// without one. augustad's default.
+  kOptional,
+  /// Evidence a playtest is run for: losing a record is a terminal runtime
+  /// failure (failure::Code::kStrictCaptureFailed).
+  kStrict,
+};
+
+/// Where a server's captures are in their one-way life, as logs and the
+/// augustad_capture_health metric name it.
+enum class CaptureHealth : std::uint8_t {
+  /// No capture has lost a record.
+  kEnabled,
+  /// An optional capture lost a record: that Match's capture stopped there, and
+  /// each Match after it is still captured afresh.
+  kDegraded,
+  /// Nothing more is captured, until the process exits: the run's last tick
+  /// was captured (Capturer::Finish), or a strict capture lost a record and the
+  /// runtime is to stop on it.
+  kStopped,
+};
+
+/// Where a capture lost a record, as its Failure's context names it.
+enum class CaptureStep : std::uint8_t {
+  /// The file could not be created.
+  kCreate,
+  /// A record could not be written.
+  kWrite,
+  /// A record could not be flushed.
+  kFlush,
+  /// A record found kCaptureQueueCapacity records still unwritten: the disk is
+  /// not keeping up.
+  kQueueFull,
+  /// A record is longer than a capture's frame holds (kMaxFramePayload).
+  kRecordTooLong,
+  /// A record would take the directory past CaptureRetention::max_bytes with
+  /// no completed capture left to delete.
+  kRetentionBudget,
+};
+
+/// "create", "write", "flush", "queue_full", "record_too_long" or
+/// "retention_budget".
+[[nodiscard]] std::string_view CaptureStepName(CaptureStep step);
+
+/// Decision: what losing a record of the match-th Match's capture at step is in
+/// mode, with the disk's own words as detail. A strict capture's loss is the
+/// runtime's (failure::Code::kStrictCaptureFailed); an optional one's is its
+/// own subsystem's, named for the step: kCaptureWriteFailed (create, write),
+/// kCaptureFlushFailed, kCaptureQueueFull, kCaptureRecordTooLong or
+/// kCaptureRetentionBudget.
+[[nodiscard]] failure::Failure LostCapture(CaptureMode mode, std::uint64_t match, CaptureStep step, std::string detail);
+
+/// "optional" or "strict", as logs name mode.
+[[nodiscard]] std::string_view CaptureModeName(CaptureMode mode);
+
+/// "enabled", "degraded" or "stopped", as logs and metrics name health.
+[[nodiscard]] std::string_view CaptureHealthName(CaptureHealth health);
+
+/// Whether a server captures, as augustad_capture_state names it.
+enum class CaptureState : std::uint8_t {
+  /// Captures are not configured: the server has no Capturer.
+  kOff,
+  /// No Match is open.
+  kIdle,
+  /// The Match open is being captured.
+  kCapturing,
+  /// The Match open's capture stopped early (CaptureStop), until its Match end.
+  kStopped,
+};
+
+/// What a capture directory holds of captures: the files CaptureDirectory
+/// counts as captures, whoever wrote them.
+struct CaptureDirectoryUsage {
+  std::uint64_t files = 0;
+  std::uint64_t bytes = 0;
+
+  bool operator==(const CaptureDirectoryUsage&) const = default;
+};
+
+/// Told what a Capturer does, for the server's metrics (HostMetrics) to count:
+/// a Capturer knows nothing of how it is counted. Each call comes from the
+/// Simulation thread or the Capturer's writer, some with the writer's lock
+/// held, so none may block (NFR-01). Each does nothing unless overridden.
+class CaptureObserver {
+ public:
+  CaptureObserver() = default;
+  virtual ~CaptureObserver() = default;
+  CaptureObserver(const CaptureObserver&) = delete;
+  CaptureObserver& operator=(const CaptureObserver&) = delete;
+  CaptureObserver(CaptureObserver&&) = delete;
+  CaptureObserver& operator=(CaptureObserver&&) = delete;
+
+  /// The server's captures entered state: kIdle as the Capturer is made, then
+  /// as each Match opens, stops or ends.
+  virtual void OnState(CaptureState /*state*/) {}
+  /// The writer created a Match's file.
+  virtual void OnStarted() {}
+  /// The writer closed a Match's file with every record of it written.
+  virtual void OnCompleted() {}
+  /// A Match's capture stopped early, told once per capture.
+  virtual void OnStopped(CaptureStop /*stop*/) {}
+  /// The writer wrote bytes more to a file: its magic or a record's frame.
+  virtual void OnWritten(std::size_t /*bytes*/) {}
+  /// records are queued for the writer and not yet written.
+  virtual void OnQueued(std::size_t /*records*/) {}
+  /// What the capture directory holds, the capture being written included, as
+  /// the writer scans it as each Match's file is about to be created, then as
+  /// it writes and as retention deletes (CaptureDirectory).
+  virtual void OnDirectory(CaptureDirectoryUsage /*usage*/) {}
+  /// Retention deleted a completed capture (CaptureRetention).
+  virtual void OnRetentionDeleted() {}
+  /// Retention could not delete a completed capture.
+  virtual void OnRetentionDeleteFailed() {}
+  /// The server's captures entered health: kEnabled as the Capturer is made,
+  /// then each change of it, kStopped last.
+  virtual void OnHealth(CaptureHealth /*health*/) {}
+};
 
 /// How many records a Capturer holds that its writer has not yet written:
 /// about 4 seconds of a full Match's Commands at 60 Hz, past which the disk is
@@ -167,24 +293,39 @@ struct CaptureEntrant {
 
 /// How a Capturer captures, beyond its directory and header.
 struct CaptureOptions {
-  /// Asked before each write (failure::Site::kCaptureWrite), a trip failing
-  /// the file as the disk would; only a test gives one, and it must outlive
-  /// the Capturer.
+  CaptureMode mode = CaptureMode::kOptional;
+  /// Asked before each write (failure::Site::kCaptureWrite) and flush
+  /// (kCaptureFlush), a trip failing the file as the disk would; only a test
+  /// gives one, and it must outlive the Capturer.
   failure::Faults* faults = nullptr;
   /// kCaptureQueueCapacity but in tests.
   std::size_t capacity = kCaptureQueueCapacity;
+  /// What the directory is kept within; off by default, deleting nothing.
+  CaptureRetention retention{};
+  /// Told what the Capturer does, if given; it must outlive the Capturer.
+  CaptureObserver* observer = nullptr;
 };
 
 /// Captures every Match a server runs into a directory of its own, one file
 /// each (CaptureFileName), each file the capture's magic then its records,
-/// framed as frames.h writes them, the header first. Every call but the
+/// framed as frames.h writes them, the header first, the directory kept
+/// within CaptureOptions::retention (capture_retention.h). Every call but the
 /// destructor is the Simulation thread's, in the order the tick makes its
 /// events, and only encodes and queues; the Capturer's writer thread creates,
 /// writes, flushes and closes the files. A Match's capture stops at a record
-/// too long, one that finds the queue full, or a failed write, logged once at
-/// WARN as event=capture_stopped: its file keeps every whole record before it,
-/// and the next Match is captured afresh. Destroying the Capturer waits for
-/// every record queued to be written.
+/// too long, one that finds the queue full, a failed create, write or flush, or
+/// one past the retention budget, logged once at WARN as event=capture_stopped:
+/// its file keeps every whole record before it.
+///
+/// The run's first such loss is kept as Loss. An optional capture then
+/// degrades, logged once at ERR as event=capture_degraded, and the next Match
+/// is captured afresh; a strict one stops, logged at INFO as
+/// event=capture_disabled, captures nothing more, and the runtime that asks
+/// Loss stops on it, whose boundary writes the one ERR line (ADR-0033). A
+/// capture that loses nothing is written the same in either mode. Finish, or
+/// destroying the Capturer, waits for every record queued to be written, then
+/// stops the captures. Its CaptureOptions::observer, if any, is told each of
+/// these as it happens, on the thread it happens on.
 class Capturer {
  public:
   /// Captures into directory, which must exist, each file under header with
@@ -215,8 +356,27 @@ class Capturer {
   void EndMatch(tick::Tick last_tick, std::optional<SessionId> winner);
 
   /// Waits until every record queued so far is written, or dropped because
-  /// its capture stopped. A stalled disk holds it up. A test's only.
+  /// its capture stopped, so Health and Loss then account for every record
+  /// queued so far. A stalled disk holds it up. Simulation thread.
   void WaitUntilWritten();
+
+  /// Waits until every record queued so far is written, then stops the
+  /// captures (CaptureHealth::kStopped), logged once as event=capture_disabled:
+  /// everything handed in after is dropped. For the runtime, after its last
+  /// tick, so the captures read stopped while its metrics are still served. A
+  /// stalled disk holds it up. Simulation thread.
+  void Finish();
+
+  /// A loss on the writer thread shows here once that thread gets to it. Any
+  /// thread.
+  [[nodiscard]] CaptureHealth Health() const;
+
+  /// The run's first loss, nullopt while no capture has lost a record: a
+  /// subsystem failure (kCaptureWriteFailed, kCaptureFlushFailed) of an
+  /// optional capture, a runtime one (kStrictCaptureFailed) of a strict one,
+  /// with the Match and the step (create, write, flush, queue_full or
+  /// record_too_long) it was lost at as context. Any thread.
+  [[nodiscard]] std::optional<failure::Failure> Loss() const;
 
   /// The broken invariant the first record the protocol could not carry was
   /// (failure::Code::kInvariantViolated), or nullopt: once set, the runtime

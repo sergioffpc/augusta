@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -101,6 +102,155 @@ TEST(ParseServerConfigTest, RejectsAnEmptyCaptureDirectory) {
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kEmptyValue);
   EXPECT_EQ(config.error().subject, "simulation.capture");
+}
+
+// Requirements: US-21
+TEST(ParseServerConfigTest, ServesNoReplaysByDefault) {
+  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_TRUE(config->replay_captures.empty());
+  EXPECT_EQ(config->replay_max_viewers, augusta::config::kDefaultReplayMaxViewers);
+}
+
+// Requirements: US-21
+TEST(ParseServerConfigTest, ReadsAReplayServersCapturesRelativeToTheBaseDirAndItsMostViewers) {
+  const auto config = ParseServerConfig(
+      std::string(kMinimalServerConfig) + "replay:\n  captures: captures/firebase\n  max_viewers: 12\n", kFileDir);
+
+  ASSERT_TRUE(config.has_value()) << DescribeServerConfigError(config.error());
+  EXPECT_EQ(config->replay_captures, kRoot / "captures" / "firebase");
+  EXPECT_EQ(config->replay_max_viewers, 12);
+}
+
+TEST(ParseServerConfigTest, RejectsMostViewersThatAreNotAnIntegerFromOneTo255) {
+  for (const std::string_view viewers : {"0", "256", "-1", "two", "1.5"}) {
+    const auto config =
+        ParseServerConfig(std::string(kMinimalServerConfig) + "replay:\n  captures: captures\n  max_viewers: \"" +
+                              std::string(viewers) + "\"\n",
+                          kFileDir);
+
+    ASSERT_FALSE(config.has_value()) << viewers;
+    EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidNumber) << viewers;
+    EXPECT_EQ(config.error().subject, "replay.max_viewers") << viewers;
+  }
+}
+
+// A cap on Replays means nothing to a server that serves none.
+TEST(ParseServerConfigTest, RejectsMostViewersWithoutCaptures) {
+  const auto config = ParseServerConfig(std::string(kMinimalServerConfig) + "replay:\n  max_viewers: 2\n", kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
+  EXPECT_EQ(config.error().subject, "replay.max_viewers");
+}
+
+// A replay server runs no Match (ADR-0051), so there is none to capture.
+TEST(ParseServerConfigTest, RejectsCapturingOnAReplayServer) {
+  const auto config =
+      ParseServerConfig(std::string(kServerConfigWithoutTickRate) +
+                            "simulation:\n  tick_rate_hz: 60\n  capture: somewhere\nreplay:\n  captures: captures\n",
+                        kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
+  EXPECT_EQ(config.error().subject, "simulation.capture");
+}
+
+TEST(ParseServerConfigTest, RejectsACaptureRetentionOnAReplayServer) {
+  const auto config =
+      ParseServerConfig(std::string(kServerConfigWithoutTickRate) +
+                            "simulation:\n  tick_rate_hz: 60\n  capture_retention:\n    max_files: \"3\"\n"
+                            "replay:\n  captures: captures\n",
+                        kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
+  EXPECT_EQ(config.error().subject, "simulation.capture_retention.max_files");
+}
+
+TEST(ParseServerConfigTest, CapturesOptionallyByDefault) {
+  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_FALSE(config->strict_capture);
+}
+
+TEST(ParseServerConfigTest, ReadsEitherCaptureMode) {
+  const auto strict = ParseServerConfig(
+      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  capture_mode: strict\n",
+      kFileDir);
+  const auto optional = ParseServerConfig(
+      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  capture_mode: optional\n",
+      kFileDir);
+
+  ASSERT_TRUE(strict.has_value());
+  EXPECT_TRUE(strict->strict_capture);
+  ASSERT_TRUE(optional.has_value());
+  EXPECT_FALSE(optional->strict_capture);
+}
+
+TEST(ParseServerConfigTest, RejectsACaptureModeThatIsNeitherOptionalNorStrict) {
+  const auto config = ParseServerConfig(
+      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  capture_mode: required\n",
+      kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
+  EXPECT_EQ(config.error().subject, "simulation.capture_mode");
+  EXPECT_EQ(DescribeServerConfigError(config.error()), "'simulation.capture_mode' must be optional or strict");
+}
+
+TEST(ParseServerConfigTest, KeepsEveryCaptureByDefault) {
+  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->capture_max_files, std::nullopt);
+  EXPECT_EQ(config->capture_max_mib, std::nullopt);
+}
+
+// Requirements: US-21
+TEST(ParseServerConfigTest, ReadsTheCaptureRetention) {
+  const auto config =
+      ParseServerConfig(ServerConfigWith("  capture_retention:\n    max_files: 200\n    max_mib: 2048\n"), kFileDir);
+
+  ASSERT_TRUE(config.has_value()) << DescribeServerConfigError(config.error());
+  EXPECT_EQ(config->capture_max_files, 200U);
+  EXPECT_EQ(config->capture_max_mib, 2048U);
+}
+
+TEST(ParseServerConfigTest, ReadsEitherCaptureRetentionLimitAlone) {
+  const auto files = ParseServerConfig(ServerConfigWith("  capture_retention:\n    max_files: 1\n"), kFileDir);
+  const auto mib = ParseServerConfig(ServerConfigWith("  capture_retention:\n    max_mib: 1\n"), kFileDir);
+
+  ASSERT_TRUE(files.has_value());
+  EXPECT_EQ(files->capture_max_files, 1U);
+  EXPECT_EQ(files->capture_max_mib, std::nullopt);
+  ASSERT_TRUE(mib.has_value());
+  EXPECT_EQ(mib->capture_max_files, std::nullopt);
+  EXPECT_EQ(mib->capture_max_mib, 1U);
+}
+
+// Requirements: US-21
+TEST(ParseServerConfigTest, RejectsACaptureRetentionLimitThatIsNotAWholeNumberAboveZero) {
+  for (const std::string key : {"max_files", "max_mib"}) {
+    for (const char* limit : {"0", "-1", "-200", "1.5", "abc", "", "4294967296"}) {
+      const auto config = ParseServerConfig(
+          ServerConfigWith("  capture_retention:\n    " + key + ": '" + std::string(limit) + "'\n"), kFileDir);
+
+      ASSERT_FALSE(config.has_value()) << key << " " << limit;
+      EXPECT_EQ(config.error().subject, "simulation.capture_retention." + key) << limit;
+    }
+  }
+}
+
+TEST(DescribeServerConfigErrorTest, SaysWhatACaptureRetentionLimitMustBe) {
+  const auto message = DescribeServerConfigError({.code = ConfigErrorCode::kInvalidNumber,
+                                                  .subject = "simulation.capture_retention.max_mib",
+                                                  .reason = {},
+                                                  .file = {}});
+
+  EXPECT_EQ(message, "'simulation.capture_retention.max_mib' must be an integer from 1 to 4294967295");
 }
 
 TEST(ParseServerConfigTest, DefaultsTheLogLevel) {
@@ -227,6 +377,13 @@ TEST(DescribeServerConfigErrorTest, SaysWhatATickRateMustBe) {
       {.code = ConfigErrorCode::kInvalidNumber, .subject = "simulation.tick_rate_hz", .reason = {}, .file = {}});
 
   EXPECT_EQ(message, "'simulation.tick_rate_hz' must be an integer from 1 to 255");
+}
+
+TEST(DescribeServerConfigErrorTest, SaysWhatTheMostViewersMustBe) {
+  const auto message = DescribeServerConfigError(
+      {.code = ConfigErrorCode::kInvalidNumber, .subject = "replay.max_viewers", .reason = {}, .file = {}});
+
+  EXPECT_EQ(message, "'replay.max_viewers' must be an integer from 1 to 255");
 }
 
 TEST(DescribeServerConfigErrorTest, SaysWhatAMetricsPortMustBe) {
