@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <type_traits>
@@ -25,7 +26,8 @@
 /// Each channel holds at most one Intent, set or cleared on its own; a Raw
 /// Intent holds one whole Command on all three at once. Whoever sets an Intent
 /// may be told once how it ended: Replaced when its channel is set again or
-/// cleared, Done when a one-shot has been sent.
+/// cleared, Done when a one-shot has been sent, and Arrived, Blocked or
+/// TargetGone when what an Intent tracks says it is over.
 namespace augusta::harness {
 
 /// How an Intent ended; each is told at most one.
@@ -34,6 +36,12 @@ enum class IntentEnding : std::uint8_t {
   kReplaced,
   /// A one-shot (Reload) was sent.
   kDone,
+  /// A MoveTo's body reached its point.
+  kArrived,
+  /// A MoveTo's body came no nearer its point for about a second.
+  kBlocked,
+  /// An AimAt's target died or left the Match.
+  kTargetGone,
 };
 
 /// Movement: hold a direction, with sprint and stance (physics::MovementInput).
@@ -44,10 +52,29 @@ struct Move {
   physics::Stance stance = physics::Stance::kStanding;
 };
 
+/// Movement: head in a straight line along the floor from the body, where its
+/// prediction leaves it, to a point, with sprint and stance; no navigation,
+/// only what the Map's collision lets the body do. Ends Arrived once the body
+/// is within half a metre of it along the floor, or Blocked once the body has
+/// come no nearer for about a second.
+struct MoveTo {
+  math::Vec3 point{};
+  bool sprint = false;
+  physics::Stance stance = physics::Stance::kStanding;
+};
+
 /// Aim: hold a view, in radians (command::Command's yaw and pitch).
 struct Look {
   float yaw = 0.0F;
   float pitch = 0.0F;
+};
+
+/// Aim: every tick, look from the eye of the body, where its prediction leaves
+/// it, at the torso of another, where the newest Authoritative State places it.
+/// Ends TargetGone once the target is dead, its body has left the newest state
+/// (its player left the Match) or the Match it was aimed in is over.
+struct AimAt {
+  EntityId target{};
 };
 
 /// Trigger: hold the trigger, as full-auto fire.
@@ -56,9 +83,14 @@ struct HoldFire {};
 /// Trigger: reload once, then end Done.
 struct Reload {};
 
-using MovementIntent = std::variant<Move>;
-using AimIntent = std::variant<Look>;
-using TriggerIntent = std::variant<HoldFire, Reload>;
+/// Trigger: fire in short Bursts and release the trigger between them, long
+/// enough for the Recoil offset to recover; reload once the magazine is empty,
+/// then go on. Never ends on its own.
+struct FireBursts {};
+
+using MovementIntent = std::variant<Move, MoveTo>;
+using AimIntent = std::variant<Look, AimAt>;
+using TriggerIntent = std::variant<HoldFire, Reload, FireBursts>;
 
 /// Told how an Intent ended: on the thread that set or cleared its channel for
 /// Replaced, on NextCommand's (the Prediction thread) for any other ending, so
@@ -94,10 +126,23 @@ class IntentExecutor {
   [[nodiscard]] command::Command NextCommand(const ServerView& view, const physics::BodyState& own);
 
  private:
+  // What an Intent that tracks something has counted so far, from the first
+  // tick it was carried out on; each Intent uses only its own part.
+  struct Tracking {
+    // MoveTo: the nearest along the floor its body has come to its point, and
+    // the ticks since it last came nearer.
+    float nearest = std::numeric_limits<float>::max();
+    int ticks_without_progress = 0;
+    // AimAt: the Match it was first carried out in (ServerView::matches_started).
+    std::optional<std::uint32_t> match;
+    // FireBursts: the ticks since its Burst-and-release cycle began.
+    int trigger_ticks = 0;
+  };
   template <typename Intent>
   struct Held {
     Intent intent;
     OnIntentEnded on_ended;
+    Tracking tracking{};
   };
   // An Intent that has ended, to be told once the lock is let go.
   struct Ended {
@@ -108,9 +153,25 @@ class IntentExecutor {
   // Ends the Raw and the Intent on channel Replaced, and holds next there.
   template <typename Intent>
   void Replace(std::optional<Held<Intent>>& channel, std::type_identity_t<std::optional<Held<Intent>>> next);
-  // Writes what the channels hold into command, and what ends on this tick
-  // into ended. The caller holds the lock.
-  void ApplyChannels(command::Command& command, std::vector<Ended>& ended);
+  // Writes what held's Intent comes to on this tick into command, as of view
+  // and own (see NextCommand), and says how it ends on this tick, if it does.
+  static std::optional<IntentEnding> Carry(Held<MovementIntent>& held, const ServerView& view,
+                                           const physics::BodyState& own, command::Command& command);
+  static std::optional<IntentEnding> Carry(Held<AimIntent>& held, const ServerView& view, const physics::BodyState& own,
+                                           command::Command& command);
+  static std::optional<IntentEnding> Carry(Held<TriggerIntent>& held, const ServerView& view,
+                                           const physics::BodyState& own, command::Command& command);
+  // Carries out what channel holds into command, and empties it into ended if
+  // it ends on this tick. The caller holds the lock.
+  template <typename Intent>
+  static void CarryChannel(std::optional<Held<Intent>>& channel, const ServerView& view, const physics::BodyState& own,
+                           command::Command& command, std::vector<Ended>& ended);
+  // Whether aim_at's target is gone as of view: dead, out of the newest state,
+  // or in a Match since over. Never before it has been carried out once.
+  static bool TargetGone(const AimAt& aim_at, const Tracking& tracking, const ServerView& view);
+  // Ends the aim channel's AimAt TargetGone into ended, if its target is gone
+  // as of view. The caller holds the lock.
+  void EndAimIfTargetGone(const ServerView& view, std::vector<Ended>& ended);
 
   std::mutex mutex_;
   std::optional<Held<MovementIntent>> movement_;
