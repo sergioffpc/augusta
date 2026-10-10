@@ -389,7 +389,7 @@ jobs:
         # server, the production one (NFR-04, cmake/AugustaPlatform.cmake).
         run: cmake --build --preset linux --target all augusta_tests
       - name: Test
-        run: ctest --preset linux
+        run: ctest --preset linux --parallel "$(nproc)"
   tools:
     needs: changes
     if: needs.changes.outputs.run_tools == 'true'
@@ -501,7 +501,7 @@ jobs:
       - name: Build
         run: cmake --build --preset linux-san --target all augusta_tests
       - name: Test
-        run: ctest --preset linux-san
+        run: ctest --preset linux-san --parallel "$(nproc)"
   fuzz:
     # A short run per fuzz target (ADR-0013): long enough to catch an obvious
     # crash before merge. The long runs, over a corpus kept between them, are

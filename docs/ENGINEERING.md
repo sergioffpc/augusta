@@ -75,7 +75,11 @@ decisions already made in ARCHITECTURE.md:
        development-only Windows x64 build (NFR-04)
     3. Build + test the server on a Linux runner (clang, ADR-0008), its
        production platform, Linux x86-64 (NFR-04), plus `clang-tidy` (Google
-       style checks profile)
+       style checks profile). It and the sanitizers job run the tests one per
+       core of the runner (`ctest --parallel "$(nproc)"`), so they follow the
+       runner's size: each test listens on a port of its own (`:0`) and names
+       its temporary files after itself, so they don't contend. The presets
+       themselves stay serial, as do the nightly and release runs.
     4. ASan + UBSan test build and a short fuzzing run per target (both Linux
        only), only for `pull_request` runs — skipped on the `push` that lands
        after merge, since the PR already validated it
