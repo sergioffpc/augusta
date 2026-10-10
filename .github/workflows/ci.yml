@@ -370,10 +370,10 @@ jobs:
         # src/modules/audio/CMakeLists.txt), and aren't part of this Linux configure's build graph
         # at all, so they have no compile_commands.json entry here - excluded
         # rather than linted against the wrong platform's (missing) compile
-        # flags. Note: clang-tidy given multiple files in one invocation
-        # cascades a spurious error onto every file *after* the first one
-        # missing its compile_commands entry, not just that file itself - so
-        # a stray Windows-only file left in this list fails the whole batch.
+        # flags. One file per clang-tidy, on every core: a serial run over the
+        # whole list took most of the job. One file per invocation also
+        # keeps a stray Windows-only file to its own error, where a multi-file
+        # invocation cascades it onto every file after it.
         # The C++ tools (tools/swarm) are built with them, so
         # linted alike, and their tests like the runtime's.
         # Then the tests get .clang-tidy's misc-include-cleaner alone, as the
@@ -381,7 +381,7 @@ jobs:
         # client tests are the client job's.
         run: |
           status=0
-          find src tools/swarm -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' -print0 | xargs -0 clang-tidy -p build/x64-linux || status=1
+          find src tools/swarm -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' -print0 | xargs -0 -P "$(nproc)" -n 1 clang-tidy -p build/x64-linux || status=1
           git ls-files 'tests/*.cpp' 'tools/swarm/tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 8 clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
           exit "$status"
       - name: Build
