@@ -39,11 +39,11 @@ import re
 
 import yaml
 
-from pack.pack import MAX_CHARACTERS
-from pack.sounds import CUES
-from pack.sounds import CueSounds
-from pack.sounds import read_sound
-from pack.sounds import SoundError
+from augusta_pack.pack import MAX_CHARACTERS
+from augusta_pack.sounds import CUES
+from augusta_pack.sounds import CueSounds
+from augusta_pack.sounds import read_sound
+from augusta_pack.sounds import SoundError
 
 USD_EXTENSIONS = (".usd", ".usda", ".usdc", ".usdz")
 

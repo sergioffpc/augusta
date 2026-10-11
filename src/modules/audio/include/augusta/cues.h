@@ -14,7 +14,7 @@
 /// client plays, fixed in code. A scenario ships a mono PCM sound for each in its
 /// client pack, addressed `<sounds prefix>/<cue name>`, and the client loads them
 /// all at startup, so a missing one is found before a Match rather than during
-/// one. The cooker (tools/pack/src/pack/sounds.py) holds the same catalogue.
+/// one. The cooker (tools/pack/src/augusta_pack/sounds.py) holds the same catalogue.
 namespace augusta::audio {
 
 /// A named client sound event.

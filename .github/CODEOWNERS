@@ -12,7 +12,8 @@
 /src/client/        @sergioffpc
 /src/modules/       @sergioffpc
 
-# Content and dev tools, including pack signing (tools/pack/src/pack/keys.py).
+# Content and dev tools, including pack signing
+# (tools/pack/src/augusta_pack/keys.py).
 /tools/             @sergioffpc
 
 # Build and supply chain.

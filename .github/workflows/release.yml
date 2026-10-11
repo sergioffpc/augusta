@@ -182,8 +182,8 @@ jobs:
         run: uv sync --locked
       - name: Build the native modules
         run: |
-          cmake --preset windows -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$(cygpath -m "$PWD/tools/.venv/Scripts/python.exe")"
-          cmake --build tools/pack/cpp/build/x64-windows
+          cmake --preset windows -S tools/pack/native "-DPYTHON_EXECUTABLE=$(cygpath -m "$PWD/tools/.venv/Scripts/python.exe")"
+          cmake --build tools/pack/native/build/x64-windows
       - name: Test (pytest)
         working-directory: tools/pack
         run: uv run pytest

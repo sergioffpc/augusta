@@ -39,7 +39,7 @@ endif()
 # pipeline (ADR-0030) - thin wrappers over meshoptimizer (ADR-0016) and
 # stb_image + DirectXTex (ADR-0017), the only two pieces of the pipeline with no Python
 # equivalent. Everything else (USD stage walking, the pack container
-# format, key generation) is pure Python, in ../src/pack - see
+# format, key generation) is pure Python, in ../src/augusta_pack - see
 # that project's cook.py/pack.py/keys.py.
 #
 # Neither module links USD. The pipeline's own USD access goes through
@@ -52,10 +52,10 @@ find_package(directxtex CONFIG REQUIRED)
 find_package(Stb REQUIRED)
 find_package(pybind11 CONFIG REQUIRED)
 
-# Both build straight into ../src/pack so `import pack.
-# _meshoptimizer` / `_textconv` just work once that project is installed
-# (editable or not) - no separate copy step.
-set(AUGUSTA_PACK_PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src/pack")
+# Both build straight into ../src/augusta_pack so `import
+# augusta_pack._meshoptimizer` / `_textconv` just work once that project is
+# installed (editable or not) - no separate copy step.
+set(AUGUSTA_PACK_PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src/augusta_pack")
 
 pybind11_add_module(augusta_meshoptimizer_py meshoptimizer_bindings.cpp)
 target_link_libraries(augusta_meshoptimizer_py PRIVATE meshoptimizer::meshoptimizer)

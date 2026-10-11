@@ -62,15 +62,15 @@ __pycache__/
 .ruff_cache/
 
 # Native _meshoptimizer/_textconv extension modules (tools/pack/
-# cpp/*_bindings.cpp) and any runtime DLLs they need alongside them
+# native/*_bindings.cpp) and any runtime DLLs they need alongside them
 # (DirectXTex, meshoptimizer, ...) - CMake builds these straight into this
 # path (RUNTIME_OUTPUT_DIRECTORY); compiled binaries, not source.
 # pybind11's actual filenames are ABI-tagged (e.g.
 # _meshoptimizer.cp312-win_amd64.pyd, or a .so on Linux) - Python resolves
 # that back to the plain module name on import regardless.
-tools/pack/src/pack/*.pyd
-tools/pack/src/pack/*.so
-tools/pack/src/pack/*.dll
+tools/pack/src/augusta_pack/*.pyd
+tools/pack/src/augusta_pack/*.so
+tools/pack/src/augusta_pack/*.dll
 # Likewise the Agents' _native module (tools/agent/native), which the root
 # build writes into its package with the DLLs it needs on Windows.
 tools/agent/src/augusta_agent/*.pyd

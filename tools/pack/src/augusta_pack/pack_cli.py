@@ -12,14 +12,14 @@ import argparse
 from pathlib import Path
 import sys
 
-from pack import capture
-from pack import pack
-from pack.assets_root import default_assets_root
-from pack.keys import read_public_key
-from pack.reader import PackError
-from pack.reader import read_pack
-from pack.reader import TRAILER_SIZE
-from pack.reader import verify_pack
+from augusta_pack import capture
+from augusta_pack import pack
+from augusta_pack.assets_root import default_assets_root
+from augusta_pack.keys import read_public_key
+from augusta_pack.reader import PackError
+from augusta_pack.reader import read_pack
+from augusta_pack.reader import TRAILER_SIZE
+from augusta_pack.reader import verify_pack
 
 _PACK_EXTENSION = ".pack"
 

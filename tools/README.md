@@ -64,8 +64,8 @@ scenarios/<scenario>.yaml -> the map's and characters' stages -> usd-optimize ->
    result. ADR-0031, ADR-0032.
 
 The whole pipeline is pure Python except for two small pybind11 modules in
-[pack/cpp/](pack/cpp/): `_meshoptimizer` (ADR-0016) and `_textconv` (ADR-0017).
-They have no USD dependency on purpose; see ADR-0030 for why.
+[pack/native/](pack/native/): `_meshoptimizer` (ADR-0016) and `_textconv`
+(ADR-0017). They have no USD dependency on purpose; see ADR-0030 for why.
 
 ### Setup
 
@@ -387,43 +387,43 @@ to stderr and exits `1`.
 
 ### Layout
 
-| Path                               | Role                                                                                                                                                                                                                                                                                                                             |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pack/src/pack/cli.py`             | `augusta-pack` entry point                                                                                                                                                                                                                                                                                                       |
-| `pack/src/pack/scenario.py`        | Scenario folder resolution (stage, `*.lua` scripts, cue sounds)                                                                                                                                                                                                                                                                  |
-| `pack/src/pack/sounds.py`          | The cue catalogue and the mono PCM WAV reader                                                                                                                                                                                                                                                                                    |
-| `pack/src/pack/optimize.py`        | usd-optimize step                                                                                                                                                                                                                                                                                                                |
-| `pack/src/pack/validate.py`        | usd-validation-nvidia step                                                                                                                                                                                                                                                                                                       |
-| `pack/src/pack/cook.py`            | Stage walk and asset conversion                                                                                                                                                                                                                                                                                                  |
-| `pack/src/pack/pack.py`, `wire.py` | Pack wire format, hashing, signing                                                                                                                                                                                                                                                                                               |
-| `pack/src/pack/keys.py`            | `augusta-keygen` and key file I/O                                                                                                                                                                                                                                                                                                |
-| `pack/src/pack/pack_cli.py`        | `augusta-inspect` and `augusta-verify` entry points                                                                                                                                                                                                                                                                              |
-| `pack/src/pack/publish.py`         | `augusta-publish` entry point                                                                                                                                                                                                                                                                                                    |
-| `pack/src/pack/reader.py`          | Pack container parsing and verification (the read side of `pack.py`)                                                                                                                                                                                                                                                             |
-| `pack/src/pack/capture.py`         | Match capture reading for `augusta-inspect` (the read side of `src/server/capture.cpp`)                                                                                                                                                                                                                                          |
-| `pack/src/pack/assets_root.py`     | Assets-root inference shared by the entry points                                                                                                                                                                                                                                                                                 |
-| `pack/cpp/`                        | Standalone CMake/vcpkg project for the two native modules. It builds straight into `pack/src/pack/`.                                                                                                                                                                                                                             |
-| `composer/`                        | Composer bootstrap, playback file that scaffolds the app, and `augusta-composer.sh` (launches it)                                                                                                                                                                                                                                |
-| `pack/tests/`                      | pytest suite and the USD fixtures it cooks (see Running the tests)                                                                                                                                                                                                                                                               |
-| `composer/examples/authoring/`     | A committed `<assets-root>/authoring/` sample the pack bootstrap seeds into a fresh assets root: `maps/firebase.usda` (ADR-0015), `characters/soldier.usda` (ADR-0040), `sounds/` (placeholder cue sounds, ADR-0020), `scripts/` (Parameters and rules, ADR-0039, ADR-0022), `scenarios/firebase.yaml` composing them (ADR-0041) |
-| `pack/scripts/bootstrap.sh`        | Builds the pack assets root                                                                                                                                                                                                                                                                                                      |
+| Path                                       | Role                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pack/src/augusta_pack/cli.py`             | `augusta-pack` entry point                                                                                                                                                                                                                                                                                                       |
+| `pack/src/augusta_pack/scenario.py`        | Scenario folder resolution (stage, `*.lua` scripts, cue sounds)                                                                                                                                                                                                                                                                  |
+| `pack/src/augusta_pack/sounds.py`          | The cue catalogue and the mono PCM WAV reader                                                                                                                                                                                                                                                                                    |
+| `pack/src/augusta_pack/optimize.py`        | usd-optimize step                                                                                                                                                                                                                                                                                                                |
+| `pack/src/augusta_pack/validate.py`        | usd-validation-nvidia step                                                                                                                                                                                                                                                                                                       |
+| `pack/src/augusta_pack/cook.py`            | Stage walk and asset conversion                                                                                                                                                                                                                                                                                                  |
+| `pack/src/augusta_pack/pack.py`, `wire.py` | Pack wire format, hashing, signing                                                                                                                                                                                                                                                                                               |
+| `pack/src/augusta_pack/keys.py`            | `augusta-keygen` and key file I/O                                                                                                                                                                                                                                                                                                |
+| `pack/src/augusta_pack/pack_cli.py`        | `augusta-inspect` and `augusta-verify` entry points                                                                                                                                                                                                                                                                              |
+| `pack/src/augusta_pack/publish.py`         | `augusta-publish` entry point                                                                                                                                                                                                                                                                                                    |
+| `pack/src/augusta_pack/reader.py`          | Pack container parsing and verification (the read side of `pack.py`)                                                                                                                                                                                                                                                             |
+| `pack/src/augusta_pack/capture.py`         | Match capture reading for `augusta-inspect` (the read side of `src/server/capture.cpp`)                                                                                                                                                                                                                                          |
+| `pack/src/augusta_pack/assets_root.py`     | Assets-root inference shared by the entry points                                                                                                                                                                                                                                                                                 |
+| `pack/native/`                             | Standalone CMake/vcpkg project for the two native modules. It builds straight into `pack/src/augusta_pack/`.                                                                                                                                                                                                                     |
+| `composer/`                                | Composer bootstrap, playback file that scaffolds the app, and `augusta-composer.sh` (launches it)                                                                                                                                                                                                                                |
+| `pack/tests/`                              | pytest suite and the USD fixtures it cooks (see Running the tests)                                                                                                                                                                                                                                                               |
+| `composer/examples/authoring/`             | A committed `<assets-root>/authoring/` sample the pack bootstrap seeds into a fresh assets root: `maps/firebase.usda` (ADR-0015), `characters/soldier.usda` (ADR-0040), `sounds/` (placeholder cue sounds, ADR-0020), `scripts/` (Parameters and rules, ADR-0039, ADR-0022), `scenarios/firebase.yaml` composing them (ADR-0041) |
+| `pack/scripts/bootstrap.sh`                | Builds the pack assets root                                                                                                                                                                                                                                                                                                      |
 
 ### Rebuilding the native modules
 
 The bootstrap builds them once and skips the step if the `.pyd` (Windows) or
-`.so` (Linux) files exist. To rebuild after changing `cpp/`, delete them from
-`src/pack/` and re-run the bootstrap, or build directly:
+`.so` (Linux) files exist. To rebuild after changing `native/`, delete them from
+`src/augusta_pack/` and re-run the bootstrap, or build directly:
 
 ```powershell
-cmake --preset windows -S tools\pack\cpp "-DPYTHON_EXECUTABLE=<assets-root>\python\pack\Scripts\python.exe"
-cmake --build tools\pack\cpp\build\x64-windows
+cmake --preset windows -S tools\pack\native "-DPYTHON_EXECUTABLE=<assets-root>\python\pack\Scripts\python.exe"
+cmake --build tools\pack\native\build\x64-windows
 ```
 
 On Linux, with the `linux` preset (clang):
 
 ```bash
-cmake --preset linux -S tools/pack/cpp "-DPYTHON_EXECUTABLE=<assets-root>/python/pack/bin/python"
-cmake --build tools/pack/cpp/build/x64-linux
+cmake --preset linux -S tools/pack/native "-DPYTHON_EXECUTABLE=<assets-root>/python/pack/bin/python"
+cmake --build tools/pack/native/build/x64-linux
 ```
 
 `PYTHON_EXECUTABLE` must point at the venv so the extension's ABI matches the
@@ -433,14 +433,14 @@ interpreter that imports it.
 
 The tests live in [pack/tests/](pack/tests/) and run with pytest in the tools'
 shared environment, `tools/.venv` (see Python environment above), not the assets
-root's venv. They need the native modules built into `src/pack/` (above) against
-that environment's interpreter:
+root's venv. They need the native modules built into `src/augusta_pack/` (above)
+against that environment's interpreter:
 
 ```powershell
 cd tools
 uv sync
-cmake --preset windows -S pack\cpp "-DPYTHON_EXECUTABLE=$PWD\.venv\Scripts\python.exe"
-cmake --build pack\cpp\build\x64-windows
+cmake --preset windows -S pack\native "-DPYTHON_EXECUTABLE=$PWD\.venv\Scripts\python.exe"
+cmake --build pack\native\build\x64-windows
 uv run pytest pack
 ```
 
@@ -449,8 +449,8 @@ On Linux:
 ```bash
 cd tools
 uv sync
-cmake --preset linux -S pack/cpp "-DPYTHON_EXECUTABLE=$PWD/.venv/bin/python"
-cmake --build pack/cpp/build/x64-linux
+cmake --preset linux -S pack/native "-DPYTHON_EXECUTABLE=$PWD/.venv/bin/python"
+cmake --build pack/native/build/x64-linux
 uv run pytest pack
 ```
 

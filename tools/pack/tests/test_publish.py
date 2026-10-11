@@ -9,10 +9,10 @@ import hashlib
 from pathlib import Path
 import shutil
 
-from pack import keys
-from pack import pack
-from pack import publish
-from pack.publish import PublishError
+from augusta_pack import keys
+from augusta_pack import pack
+from augusta_pack import publish
+from augusta_pack.publish import PublishError
 import pytest
 
 ENTRIES = [

@@ -33,17 +33,17 @@ import tempfile
 import time
 import uuid
 
-from pack.assets_root import default_assets_root
-from pack.cook import cook_scenario
-from pack.cook import CookError
-from pack.keys import read_private_key
-from pack.optimize import optimize_stage
-from pack.optimize import OptimizeError
-from pack.progress import Progress
-from pack.scenario import resolve_scenario
-from pack.scenario import ScenarioError
-from pack.validate import validate_stage
-from pack.validate import ValidationError
+from augusta_pack.assets_root import default_assets_root
+from augusta_pack.cook import cook_scenario
+from augusta_pack.cook import CookError
+from augusta_pack.keys import read_private_key
+from augusta_pack.optimize import optimize_stage
+from augusta_pack.optimize import OptimizeError
+from augusta_pack.progress import Progress
+from augusta_pack.scenario import resolve_scenario
+from augusta_pack.scenario import ScenarioError
+from augusta_pack.validate import validate_stage
+from augusta_pack.validate import ValidationError
 
 
 def main(argv: list[str] | None = None) -> int:

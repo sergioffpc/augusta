@@ -59,7 +59,7 @@ decisions already made in ARCHITECTURE.md:
   diffs against the base commit first and skips build/test/lint entirely when
   nothing under `src/`, `tests/`, `tools/agent/` (the C++ tools, built and
   tested with the runtime), `tools/composer/examples/` (the example scenario a
-  test loads), `tools/pack/cpp/` (formatted by the `format` job, though CI
+  test loads), `tools/pack/native/` (formatted by the `format` job, though CI
   doesn't build it), `cmake/`, `config/` (the example configs a test loads),
   `CMakeLists.txt`, `CMakePresets.json`, `vcpkg.json`, the `third_party`
   submodule pointer, `.clang-format`/`.clang-tidy`, or the workflow file itself
@@ -116,8 +116,8 @@ decisions already made in ARCHITECTURE.md:
       2026). On Linux, where nuget.exe runs under Mono and fails certificate
       checks, it is a files cache in the Actions cache, one entry for every
       Linux job, saved only when a job built a package it didn't restore -
-      except the `tools` job's Linux leg, whose `tools/pack/cpp` manifest keeps
-      an entry of its own. vcpkg builds its ports with the system compiler
+      except the `tools` job's Linux leg, whose `tools/pack/native` manifest
+      keeps an entry of its own. vcpkg builds its ports with the system compiler
       (`/usr/bin/c++`, Ubuntu's g++) for the default `x64-linux` triplet; the
       presets' clang compiles the project alone. So the entry's packages are the
       same whatever preset a job configures, and the server image's dependency
@@ -378,10 +378,10 @@ no self-hosted GitHub Actions runner in this pipeline).
   USD-Fileformat-plugins under the same assets root. These heavier,
   GPU-dependent tools are deliberately kept out of `scripts/bootstrap.sh` and
   are never linked into shipped binaries (ARCHITECTURE.md §2); only content
-  authors need them. `meshoptimizer` and DirectXTex are `tools/pack/cpp`'s own
-  C++ build dependencies (two small pybind11 modules, no OpenUSD - see ADR-0030)
-  — vendored via `vcpkg.json` (ADR-0025) like the rest of the codebase, not
-  fetched by this script.
+  authors need them. `meshoptimizer` and DirectXTex are `tools/pack/native`'s
+  own C++ build dependencies (two small pybind11 modules, no OpenUSD - see
+  ADR-0030) — vendored via `vcpkg.json` (ADR-0025) like the rest of the
+  codebase, not fetched by this script.
 - **Editor experience:** a committed `.vscode/extensions.json` lists recommended
   extensions (C++ tools, CMake Tools, clangd/clang-format, EditorConfig, Lua,
   YAML/Helm, GitHub Actions) — VS Code prompts to install these whenever the

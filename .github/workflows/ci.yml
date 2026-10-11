@@ -59,7 +59,7 @@ jobs:
           changed="$(git diff --name-only "$base" "${{ github.sha }}")"
 
           if echo "$changed" \
-              | grep -qE '^(src/|tests/|tools/agent/|tools/composer/examples/|tools/pack/cpp/|tools/(pyproject\.toml|uv\.lock)$|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/)'; then
+              | grep -qE '^(src/|tests/|tools/agent/|tools/composer/examples/|tools/pack/native/|tools/(pyproject\.toml|uv\.lock)$|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/)'; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
@@ -477,12 +477,12 @@ jobs:
         if: runner.os == 'Linux'
         # The local files provider, as the server job does (see there why not
         # the NuGet feed) - but a cache of its own, not setup-linux-build's:
-        # tools/pack/cpp's manifest isn't the root one every job sharing that
+        # tools/pack/native's manifest isn't the root one every job sharing that
         # cache installs, and save-vcpkg-cache drops whatever the root build
         # didn't install.
         run: |
           echo "VCPKG_BINARY_SOURCES=clear;files,$GITHUB_WORKSPACE/.vcpkg-bincache,readwrite" >> "$GITHUB_ENV"
-          echo "VCPKG_CACHE_KEY=vcpkg-bincache-pack-linux-clang-$(git rev-parse HEAD:third_party/vcpkg)-${{ hashFiles('tools/pack/cpp/vcpkg.json') }}" >> "$GITHUB_ENV"
+          echo "VCPKG_CACHE_KEY=vcpkg-bincache-pack-linux-clang-$(git rev-parse HEAD:third_party/vcpkg)-${{ hashFiles('tools/pack/native/vcpkg.json') }}" >> "$GITHUB_ENV"
       - name: Restore and save vcpkg binaries
         if: runner.os == 'Linux'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -500,14 +500,14 @@ jobs:
         working-directory: tools
         run: uv sync --locked
       - name: Build the native modules
-        # Into tools/pack/src/pack, against the venv's own interpreter, as
-        # tools/pack/scripts/bootstrap.sh does - a mixed-slash path from cygpath
-        # on Windows, as is on Linux.
+        # Into tools/pack/src/augusta_pack, against the venv's own interpreter,
+        # as tools/pack/scripts/bootstrap.sh does - a mixed-slash path from
+        # cygpath on Windows, as is on Linux.
         run: |
           python="$PWD/${{ matrix.python }}"
           [[ "$RUNNER_OS" == Windows ]] && python="$(cygpath -m "$python")"
-          cmake --preset ${{ matrix.preset }} -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$python"
-          cmake --build tools/pack/cpp/build/x64-${{ matrix.preset }}
+          cmake --preset ${{ matrix.preset }} -S tools/pack/native "-DPYTHON_EXECUTABLE=$python"
+          cmake --build tools/pack/native/build/x64-${{ matrix.preset }}
       - name: Test (pytest)
         working-directory: tools/pack
         run: uv run pytest

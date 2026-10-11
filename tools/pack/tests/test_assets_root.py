@@ -6,7 +6,7 @@ The uv tool venv tools/pack/scripts/bootstrap.sh builds is
 
 import sys
 
-from pack.assets_root import default_assets_root
+from augusta_pack.assets_root import default_assets_root
 
 
 def test_the_assets_root_is_two_levels_above_the_venv(tmp_path, monkeypatch):

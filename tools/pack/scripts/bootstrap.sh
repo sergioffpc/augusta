@@ -177,15 +177,15 @@ main() {
     "$(native_path "${pack_project}")"
 
   # --- Native modules build (ADR-0030) ---
-  # tools/pack/cpp is its own standalone CMake project (own
+  # tools/pack/native is its own standalone CMake project (own
   # vcpkg.json/CMakePresets.json, independent of the client/server build)
-  # that builds the two pybind11 modules straight into ../src/pack, so
-  # `import pack._meshoptimizer`/`_textconv` just work with no separate copy
-  # step. PYTHON_EXECUTABLE (the variable pybind11's vcpkg port's legacy
-  # FindPythonInterp reads) points cmake at this venv, so the built
-  # extensions' ABI matches the interpreter that imports them.
-  local native_source_dir="${pack_project}/cpp"
-  local pack_package_dir="${pack_project}/src/pack"
+  # that builds the two pybind11 modules straight into ../src/augusta_pack,
+  # so `import augusta_pack._meshoptimizer`/`_textconv` just work with no
+  # separate copy step. PYTHON_EXECUTABLE (the variable pybind11's vcpkg
+  # port's legacy FindPythonInterp reads) points cmake at this venv, so the
+  # built extensions' ABI matches the interpreter that imports them.
+  local native_source_dir="${pack_project}/native"
+  local pack_package_dir="${pack_project}/src/augusta_pack"
   if ! native_modules_built "${pack_package_dir}" "${module_suffix}"; then
     echo "Building the native modules (${native_source_dir})..."
     "${build_env[@]}" cmake --preset "${preset}" \
