@@ -1,0 +1,107 @@
+# The images the cluster trusts by who signed them, not by digest (ADR-0057):
+# augustad only as this repository's CI workflow signed it, on develop or main
+# (ci.yml, .github/actions/sign-image), and Flux's and Kyverno's controllers
+# as their publishers' release workflows did. An augustad image pushed to GHCR
+# by anyone else fails it, as does any of these images without a signature.
+# Every other image is trusted by its digest instead (ADR-0057).
+#
+# Signatures are keyless (cosign, Fulcio certificates for GitHub's OIDC
+# tokens): an identity is the workflow that signed, not a key the cluster
+# keeps. Kyverno counts any Sigstore bundle of that identity for the image's
+# digest, so the provenance and SBOM attestations the same workflow pushes
+# beside augustad's images verify too, as only that workflow can make them.
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: verify-image-signatures
+spec:
+  # Reported, not refused, until the cluster's policies are enforced.
+  validationActions:
+    - Audit
+  # Kyverno down, or the registry slow, holds the pod back rather than admit
+  # it unchecked (ADR-0057); Kyverno's webhooks skip kube-system and kyverno
+  # (clusters/onprem/infrastructure/kyverno.yaml). A check fetches the image's
+  # manifest and its signatures, more than the 10 s webhook default allows on
+  # a cold cache.
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 30
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  # A pod running none of these images is not this policy's, so it is not in
+  # its reports at all: k3s's own in kube-system, which the background scan
+  # covers, nor any other workload's.
+  matchConditions:
+    - name: runs-a-signed-publishers-image
+      expression: |-
+        (object.spec.containers +
+          (has(object.spec.initContainers) ? object.spec.initContainers : []) +
+          (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers : []))
+        .exists(c, c.image.matches(
+          "^(ghcr\\.io/sergioffpc/augustad[:@]|ghcr\\.io/fluxcd/|(reg\\.kyverno\\.io|ghcr\\.io)/kyverno/)"))
+  matchImageReferences:
+    - glob: ghcr.io/sergioffpc/augustad:*
+    - glob: ghcr.io/sergioffpc/augustad@*
+    - glob: ghcr.io/fluxcd/*
+    - glob: reg.kyverno.io/kyverno/*
+    - glob: ghcr.io/kyverno/*
+  # A tag, as augustad's chart and Flux's components reference theirs, is
+  # resolved to the digest it points to, checked, and pinned in the pod, so
+  # the node runs the image whose signature passed. On main augustad's
+  # sha-<12> tag is the index of both architectures, which CI signs as well
+  # as each architecture's image.
+  validationConfigurations:
+    mutateDigest: true
+    verifyDigest: false
+  attestors:
+    # The cosign verify in .github/actions/sign-image checks the same
+    # identity, so an image CI publishes is one this admits.
+    - name: augusta
+      cosign:
+        keyless:
+          identities:
+            - subjectRegExp: ^https://github\.com/sergioffpc/augusta/\.github/workflows/ci\.yml@refs/heads/(develop|main)$
+              issuer: https://token.actions.githubusercontent.com
+    # Any workflow of the fluxcd organization: its controllers are released
+    # by its shared gha-workflows (https://fluxcd.io/flux/security/).
+    - name: flux
+      cosign:
+        keyless:
+          identities:
+            - subjectRegExp: ^https://github\.com/fluxcd/.*$
+              issuer: https://token.actions.githubusercontent.com
+    # Kyverno's release workflow on a release tag, its signatures kept apart
+    # from its images (https://kyverno.io/docs/security/). reg.kyverno.io
+    # serves the same digests as ghcr.io/kyverno.
+    - name: kyverno
+      cosign:
+        keyless:
+          identities:
+            - subjectRegExp: ^https://github\.com/kyverno/kyverno/\.github/workflows/release\.yaml@refs/tags/v.*$
+              issuer: https://token.actions.githubusercontent.com
+        source:
+          repository: ghcr.io/kyverno/signatures
+  variables:
+    # Every image the pod runs, a debugging container's included.
+    - name: images
+      expression: |-
+        object.spec.containers.map(c, c.image) +
+        (has(object.spec.initContainers) ? object.spec.initContainers.map(c, c.image) : []) +
+        (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers.map(c, c.image) : [])
+  validations:
+    - expression: |-
+        variables.images.all(image,
+          image.matches("^ghcr\\.io/sergioffpc/augustad[:@]") ?
+            verifyImageSignatures(image, [attestors.augusta]) > 0 :
+          image.startsWith("ghcr.io/fluxcd/") ?
+            verifyImageSignatures(image, [attestors.flux]) > 0 :
+          image.matches("^(reg\\.kyverno\\.io|ghcr\\.io)/kyverno/") ?
+            verifyImageSignatures(image, [attestors.kyverno]) > 0 :
+          true)
+      messageExpression: |-
+        "every augustad, Flux and Kyverno image must be signed by its publisher: " +
+        variables.images.join(", ")

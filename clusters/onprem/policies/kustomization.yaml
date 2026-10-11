@@ -8,3 +8,4 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - node-port-range.yaml
+  - verify-image-signatures.yaml

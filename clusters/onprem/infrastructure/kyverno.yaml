@@ -78,3 +78,11 @@ spec:
     test:
       image:
         tag: v1.19.1@sha256:31bb42ce7f5b2e27c1cf633aeff4f0cad1f5bb63761e2cb09f0e25cdd26572bf
+    # The chart filters kyverno out of everything Kyverno does. Taken out of
+    # that filter, Kyverno's own pods are in the background scan, whose
+    # reports show their images' signatures checked (verify-image-signatures);
+    # the chart's webhooks still skip the namespace (its default
+    # config.webhooks), so Kyverno never waits on itself to start.
+    config:
+      resourceFiltersExcludeNamespaces:
+        - kyverno

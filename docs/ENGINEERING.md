@@ -191,6 +191,25 @@ decisions already made in ARCHITECTURE.md:
       --predicate-type https://spdx.dev/Document/v2.3
     ```
 
+- **Image signatures:** every server image CI publishes on `develop` or `main`
+  is also signed with cosign, keylessly, by digest: each architecture's image,
+  and on `main` the index of both (`.github/actions/sign-image`). The job
+  verifies the signature at once against the identity the cluster admits, this
+  repository's `ci.yml` on `develop` or `main`, and fails if it does not verify.
+  In the cluster, Kyverno's `verify-image-signatures` policy checks the same
+  identity for `augustad`, and the publishers' for Flux's and Kyverno's images
+  (ADR-0057). cosign also counts the image's attestations, which the same
+  workflow signs, so the signature proper is the entry whose type is
+  `https://sigstore.dev/cosign/sign/v1`:
+
+    ```sh
+    cosign verify ghcr.io/sergioffpc/augustad:sha-<12> \
+      --certificate-identity-regexp \
+        '^https://github\.com/sergioffpc/augusta/\.github/workflows/ci\.yml@refs/heads/(develop|main)$' \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+      | jq '.[].critical.type'
+    ```
+
 - **Vulnerability scanning:** the server image is scanned by trivy as CI builds
   it, and is published only if clean. The latest release's executables are
   scanned every night by grype, from their SBOMs (`nightly-jobs.yml`'s
