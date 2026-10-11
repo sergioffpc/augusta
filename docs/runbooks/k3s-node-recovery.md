@@ -20,6 +20,9 @@ it from the repository. The cluster's design is ADR-0026
 - A change to k3s's configuration (`clusters/onprem/node/`) or release
   (`K3S_VERSION`) has merged, or the node's CIS hardening is to be checked:
   [The k3s configuration](#the-k3s-configuration).
+- A change to the node's firewall, SSH, update or audit policy has merged, the
+  maintainer's addresses change, or a game port range is to face the internet:
+  [The node's OS](#the-nodes-os).
 
 ## What the cluster holds
 
@@ -54,7 +57,8 @@ restores them.
 
 ## Prerequisites
 
-- Console or SSH access, with `sudo`, to the node (`<node>` below). The
+- SSH access to the node (`<node>` below), by key, from one of the maintainer's
+  addresses, as a user with `sudo`, not root ([SSH](#ssh)); or its console. The
   repository does not record its address or OS.
 - A Debian 13 node.
   [`scripts/bootstrap-node.sh`](../../scripts/bootstrap-node.sh) (README.md,
@@ -63,8 +67,9 @@ restores them.
   release it pins (`K3S_VERSION`, whose Kubernetes version is
   `KUBERNETES_VERSION` in the `manifests` job of
   [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)) with
-  [its configuration](#the-k3s-configuration), and Flux. It skips what the node
-  already has.
+  [its configuration](#the-k3s-configuration),
+  [the OS's hardening](#the-nodes-os), and Flux. It skips what the node already
+  has.
 - For a rebuild, a copy of every environment's pack folder: either taken from
   the node in step B1, or re-made from the pack environment that cooked them
   (`<AssetsRoot>\packs\<scenario>\server.pack` and the public key it was signed
@@ -72,8 +77,9 @@ restores them.
   defines no backup of the volume.
 - The server image, `ghcr.io/sergioffpc/augustad`, pullable without credentials:
   the chart sets no `imagePullSecrets`, so the GHCR package must be public.
-- On the workstation: `kubectl` and the `flux` CLI
-  ([as for a rollback](flux-rollback.md#prerequisites)), and this repository
+- On the workstation: `kubectl`, the `flux` CLI
+  ([as for a rollback](flux-rollback.md#prerequisites)) and `openssl`, the
+  day-to-day kubeconfig ([Cluster access](#cluster-access)), and this repository
   with `origin/develop` fetched: the `flux-system` GitRepository tracks
   `develop`.
 
@@ -141,34 +147,254 @@ The mount point itself stays `root:root`; only the mounted filesystem's root is
 `augusta`'s. If the image is ever not mounted, augustad cannot create its folder
 in the bare directory and refuses to start, rather than write captures to the
 node's own disk. A server started before the mount sees the bare directory until
-its pod is restarted (`kubectl -n <namespace> rollout restart deploy/<name>`).
+its pod is restarted (**cluster-admin**, on the node:
+`sudo k3s kubectl -n <namespace> rollout restart deploy/<name>`).
 
 To grow it, stop every capturing server first: a running pod keeps the
 filesystem in use. From the workstation, for each capturing environment:
 
 ```sh
 flux suspend helmrelease augustad-<environment> -n flux-system
-kubectl -n <environment> scale deploy -l app.kubernetes.io/name=augustad --replicas 0
 ```
 
-Then on the node:
+Then on the node, scaling each of them to zero (**cluster-admin**) before
+growing the image:
 
 ```sh
+sudo k3s kubectl -n <environment> scale deploy -l app.kubernetes.io/name=augustad --replicas 0
 sudo umount /srv/augusta/captures
 sudo fallocate -l <new-size>GiB /srv/augusta/captures.img
 sudo e2fsck -f /srv/augusta/captures.img
 sudo resize2fs /srv/augusta/captures.img
 sudo mount /srv/augusta/captures
+sudo k3s kubectl -n <environment> scale deploy -l app.kubernetes.io/name=augustad --replicas 1
 ```
 
 Then from the workstation, for each environment stopped above:
 
 ```sh
-kubectl -n <environment> scale deploy -l app.kubernetes.io/name=augustad --replicas 1
 flux resume helmrelease augustad-<environment> -n flux-system
 ```
 
 Record the new size in this section.
+
+## The node's OS
+
+Debian 13 is hardened against a compromised device on the LAN and a stolen
+credential (ADR-0057). Its configuration is in
+[`clusters/onprem/node/`](../../clusters/onprem/node), beside k3s's, and
+`scripts/bootstrap-node.sh` writes it on every run, before k3s's:
+
+| In the repository              | On the node                                                  | What it sets                                                                   |
+| ------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `nftables.conf`                | `/etc/nftables.conf`                                         | [The firewall](#the-firewall).                                                 |
+| `nftables.service.conf`        | `/etc/systemd/system/nftables.service.d/augusta.conf`        | Stopping the firewall removes its table alone, not k3s's.                      |
+| `sshd.conf`                    | `/etc/ssh/sshd_config.d/10-augusta.conf`                     | [SSH](#ssh): keys only, no root login.                                         |
+| `unattended-upgrades.conf`     | `/etc/apt/apt.conf.d/52augusta-upgrades`                     | [Updates](#updates): Debian's security updates, a reboot at 05:00 when needed. |
+| `apt-daily-upgrade.timer.conf` | `/etc/systemd/system/apt-daily-upgrade.timer.d/augusta.conf` | Updates install between 04:00 and 04:30.                                       |
+| `audit.rules`                  | `/etc/audit/rules.d/augusta.rules`                           | [The audit trail](#the-audit-trail).                                           |
+
+To change any of it, merge the change to `develop`, then run the bootstrap on
+the node, which writes what changed and reloads the service that reads it:
+
+```sh
+ssh <node> "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash"
+```
+
+The first run on a node installed before this section existed is the same
+command, once your key is in place ([SSH](#ssh)); the node takes the address you
+run it from as the maintainer's ([The firewall](#the-firewall)). On a node whose
+k3s is not hardened yet, the run then stops at
+[Harden a running node](#harden-a-running-node), with the OS's part written.
+Then [Verification](#verification)'s port scan and refused logins.
+
+### The firewall
+
+nftables denies every inbound connection that is not listed:
+
+| Port                  | From                                                          | For                                        |
+| --------------------- | ------------------------------------------------------------- | ------------------------------------------ |
+| 22/TCP, 6443/TCP      | The maintainer's addresses                                    | SSH, and `kubectl` and `flux`.             |
+| 30700-30899/UDP       | The LAN (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7) | The game ports of `develop` and `staging`. |
+| 30300/TCP             | The LAN                                                       | Grafana.                                   |
+| 6443, 9100, 10250/TCP | The node's own pods (10.42.0.0/16, on `cni0`)                 | Prometheus's scrapes.                      |
+| Anything              | The node itself                                               | The kubelet, flannel, k3s's own ports.     |
+
+The pod and service networks (10.42.0.0/16, 10.43.0.0/16) take traffic from the
+node's pods alone: a LAN host that routes them through the node reaches nothing.
+The LAN is the private ranges: a client on a global IPv6 address counts as the
+internet, so LAN players join over IPv4. Ping, path MTU and address
+configuration (DHCP, IPv6 neighbour discovery) are let in too. Outbound is not
+filtered. The table, `inet augusta`, filters before kube-proxy redirects a node
+port to its pod, and lives beside k3s's own tables: never `nft flush ruleset` on
+the node, which deletes those too. To see it and what it holds:
+
+```sh
+sudo nft list table inet augusta
+```
+
+**The maintainer's addresses** are the node's, not the repository's:
+`/etc/nftables.d/admin-addresses.nft`, which the bootstrap writes. A new node
+takes the address of the SSH session that runs it, so run it as yourself, not
+under `sudo`, which hides the session from it. To set them, pass each address or
+range, the one you are connecting from included:
+
+```sh
+ssh <node> "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash -s -- --admin <address> [--admin <address>...]"
+```
+
+The list given replaces the node's. If it leaves out the session's own address,
+the bootstrap takes the firewall down again and stops, rather than leave you
+unable to reconnect. Locked out all the same (a workstation's address changed),
+fix the list from the node's console and reload:
+`sudo systemctl reload nftables`.
+
+**Facing the internet** is one rule and one router forward, never for SSH, the
+API server or Grafana. In `nftables.conf`, before the final `drop`, add the
+range with no source, for example `staging`'s:
+
+```text
+udp dport 30800-30899 accept
+```
+
+merge it, run the bootstrap, and forward that UDP range on the router to the
+node.
+
+### SSH
+
+sshd takes keys only: no password, no keyboard-interactive prompt, no root
+login, whatever another drop-in says. Log in as your own user and `sudo`.
+
+Before the bootstrap first writes this, your key must be in that user's
+`~/.ssh/authorized_keys` on the node: it stops when the user running it is root
+or has no key there. Make the key hardware-backed where you have a FIDO2
+security key, so that a copy of the key file is useless without it and every
+login needs a touch:
+
+```sh
+ssh-keygen -t ed25519-sk -C "<you>@augusta-node"
+ssh-copy-id -i ~/.ssh/id_ed25519_sk.pub <node>
+```
+
+Without one, an `ed25519` key with a passphrase (`ssh-keygen -t ed25519`, then a
+passphrase at its prompt). Remove any other key from `authorized_keys` once the
+new one works.
+
+### Updates
+
+`unattended-upgrades` installs Debian's security updates every night between
+04:00 and 04:30, and nothing else. When one needs a reboot (a kernel, libc), the
+node reboots at 05:00, whoever is logged in, cutting any Match in progress
+(ADR-0026 accepts a cut Match); k3s, the servers and the capture filesystem
+start again with it. k3s is not a Debian package: it changes only by
+[Upgrade k3s](#upgrade-k3s).
+
+```sh
+ssh <node>
+sudo unattended-upgrade --dry-run --debug 2>&1 | grep 'Allowed origins'
+sudo tail /var/log/unattended-upgrades/unattended-upgrades.log
+cat /var/run/reboot-required 2>/dev/null
+```
+
+The first prints only `Debian-Security`; the last says whether a reboot waits
+for 05:00.
+
+### The audit trail
+
+auditd records every login, by SSH or on the console (PAM's `USER_START`, with
+the account and the address), and a change to the files below, each under a key:
+
+| Key            | What changed                                        |
+| -------------- | --------------------------------------------------- |
+| `k3s-config`   | `/etc/rancher/k3s/`, the k3s binary or its service. |
+| `sshd`         | sshd's configuration.                               |
+| `privilege`    | `sudoers`, and every `sudo` or `su` by a person.    |
+| `identity`     | `passwd`, `group`, `shadow`, `gshadow`.             |
+| `firewall`     | `/etc/nftables.conf`, `/etc/nftables.d/`.           |
+| `updates`      | `/etc/apt/apt.conf.d/`.                             |
+| `audit-config` | `/etc/audit/`.                                      |
+
+```sh
+ssh <node>
+sudo ausearch -i -m USER_START -ts today | grep sshd
+sudo ausearch -i -k k3s-config -ts today
+```
+
+The log is `/var/log/audit/audit.log`, rotated by auditd.
+
+## Cluster access
+
+Two identities reach the API server, from the maintainer's addresses only
+([The firewall](#the-firewall)):
+
+- **Day to day: `augusta:operators`.** A client certificate that expires a day
+  after it is issued, in `~/.kube/augusta.yaml` on the workstation. It reads
+  everything but Secrets, and suspends, resumes and reconciles every Flux
+  source, Kustomization and `HelmRelease`. It cannot create, change or delete a
+  workload, a Secret, a Role or ClusterRole, or a binding, nor change a Flux
+  object beyond `spec.suspend` and its `reconcile.fluxcd.io/` annotations (a
+  source's URL or a release's values would deploy anything). Its role and that
+  limit are in
+  [`clusters/onprem/infrastructure/operator.yaml`](../../clusters/onprem/infrastructure/operator.yaml).
+- **cluster-admin.** k3s's own kubeconfig, `/etc/rancher/k3s/k3s.yaml`, which
+  stays on the node: never keep a copy of it elsewhere. Only the steps marked
+  **cluster-admin** in these runbooks need it, and every `sudo k3s kubectl` run
+  on the node is one.
+
+### Issue or renew the day-to-day kubeconfig
+
+On the workstation, from this repository, with `openssl` and SSH to the node as
+a user with `sudo`:
+
+```sh
+scripts/operator-kubeconfig.sh <node>
+export KUBECONFIG=~/.kube/augusta.yaml
+kubectl get nodes
+```
+
+It makes a new key, which stays on the workstation, and has the node sign its
+certificate for 24 hours, then prints when it expires. Run it again whenever
+`kubectl` answers `the server has asked for the client to provide credentials`:
+an expired certificate is the usual cause. The certificate names you by your
+workstation user, which the API server's audit log records.
+
+To check what it may do:
+
+```sh
+kubectl auth can-i --list
+kubectl get pods -A
+flux get all -A
+flux suspend kustomization apps -n flux-system
+flux resume kustomization apps -n flux-system
+kubectl -n develop create deployment probe --image=busybox
+kubectl create clusterrolebinding probe --clusterrole=cluster-admin --user=probe
+kubectl -n flux-system patch gitrepository flux-system --type merge -p '{"spec":{"interval":"2m"}}'
+```
+
+The reads and the Flux commands work; the last three are refused, the patch by
+the `augusta-operator-flux` policy.
+
+### Use cluster-admin
+
+A **cluster-admin** step that runs on the node uses `sudo k3s kubectl` there.
+One that needs a tool on the workstation (`helm`, a `kubectl` across many steps)
+takes k3s's kubeconfig for that shell alone, and removes it when done:
+
+```sh
+export KUBECONFIG="$(mktemp)"
+ssh <node> "sudo cat /etc/rancher/k3s/k3s.yaml" \
+  | sed 's#https://127.0.0.1:6443#https://<node-address>:6443#' > "${KUBECONFIG}"
+# ... the cluster-admin step ...
+rm "${KUBECONFIG}"
+export KUBECONFIG=~/.kube/augusta.yaml
+```
+
+A copy of k3s's kubeconfig kept from before (the old Part B step 4 wrote
+`~/.kube/augusta.yaml` from it) is cluster-admin until its certificate expires,
+about a year after k3s issued it: replace it by issuing the day-to-day one
+above. Revoking it sooner means rotating k3s's client CA
+([`k3s certificate rotate-ca`](https://docs.k3s.io/cli/certificate#certificate-authority-ca-certificates)),
+which also ends every node and controller certificate signed by it.
 
 ## Volumes
 
@@ -205,7 +431,8 @@ claim; its previous ones stay `Bound`, so reverting the line takes them up
 again, even while the previous pod still runs from them. Removing a server, or
 turning captures off, leaves its volumes and claims too. To list them, and to
 remove those of a version no `HelmRelease` names any more (the claim first, then
-its volume; the folder stays):
+its volume; the folder stays), which is **cluster-admin**
+([Use cluster-admin](#use-cluster-admin)):
 
 ```sh
 kubectl get pv -l app.kubernetes.io/name=augustad
@@ -518,9 +745,15 @@ On the node, after a rebuild, a configuration change or an upgrade:
 
     ```sh
     scp asset-packs.tgz <node>:/tmp/
-    ssh <node> "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash -s -- --packs /tmp/asset-packs.tgz"
+    ssh <node> "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash -s -- --packs /tmp/asset-packs.tgz [--admin <address>...]"
     ssh <node> "rm /tmp/asset-packs.tgz; sudo ls -lR /srv/augusta/asset-packs"
     ```
+
+    On a reinstalled OS, log in as your own user, with your key already in its
+    `authorized_keys`: from this run on SSH takes keys only, not root
+    ([SSH](#ssh)), and only from the maintainer's addresses, which are this
+    session's unless `--admin` lists them ([The firewall](#the-firewall)). A
+    node that kept its OS keeps its list.
 
     From there Flux manages itself (the `flux-system` Kustomization applies
     `clusters/onprem/flux-system/`), then installs the monitoring stack and both
@@ -535,14 +768,18 @@ On the node, after a rebuild, a configuration change or an upgrade:
     new one under the same version. Cook, publish and point the server at the
     new version instead.
 
-4. Copy the kubeconfig to the workstation and point it at the node:
+4. Issue the day-to-day kubeconfig ([Cluster access](#cluster-access)); the new
+   cluster has a new CA, so the old one no longer verifies:
 
     ```sh
-    ssh <node> "sudo cat /etc/rancher/k3s/k3s.yaml" > ~/.kube/augusta.yaml
-    sed -i 's#https://127.0.0.1:6443#https://<node-address>:6443#' ~/.kube/augusta.yaml
+    scripts/operator-kubeconfig.sh <node>
     export KUBECONFIG=~/.kube/augusta.yaml
     kubectl get nodes
     ```
+
+    It reads nothing until Flux has applied its role with the `infrastructure`
+    Kustomization, a few minutes after step 3: until then `kubectl` answers
+    `Forbidden`.
 
 5. Watch it converge:
 
@@ -598,6 +835,31 @@ kubectl get namespaces -L pod-security.kubernetes.io/enforce
 
 - After a rebuild, the node also passes
   [Verify the hardening](#verify-the-hardening).
+
+Then the OS's hardening. From a LAN host that is not one of the maintainer's
+addresses, scan the node:
+
+```sh
+nmap -Pn -sT -p- --open <node-address>
+```
+
+- It shows 30300 alone open. The game ports are UDP, which this scan does not
+  show: a client on that host still joins a Match in either environment.
+
+From an admin address, try a password login, root's, and your key:
+
+```sh
+ssh -o PubkeyAuthentication=no <user>@<node-address>
+ssh -o PubkeyAuthentication=no root@<node-address>
+ssh <user>@<node-address> true
+kubectl get nodes
+```
+
+- The first two are refused with `Permission denied (publickey)`, with no
+  password prompt; the key login and `kubectl` work.
+- [Updates](#updates)' checks show `Debian-Security` alone, and
+  [The audit trail](#the-audit-trail)'s show the login just made, from that
+  address.
 
 ## Rollback / abort
 

@@ -4,3 +4,4 @@ resources:
   - kube-system.yaml
   - kyverno.yaml
   - monitoring.yaml
+  - operator.yaml
