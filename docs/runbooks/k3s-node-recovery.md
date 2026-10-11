@@ -20,6 +20,9 @@ it from the repository. The cluster's design is ADR-0026
 - A change to k3s's configuration (`clusters/onprem/node/`) or release
   (`K3S_VERSION`) has merged, or the node's CIS hardening is to be checked:
   [The k3s configuration](#the-k3s-configuration).
+- A source, `HelmRelease`, Prometheus target or log stream stopped after a
+  change to a NetworkPolicy, or the isolation is to be checked:
+  [Network isolation](#network-isolation).
 - A change to the node's firewall, SSH, update or audit policy has merged, the
   maintainer's addresses change, or a game port range is to face the internet:
   [The node's OS](#the-nodes-os).
@@ -395,6 +398,68 @@ about a year after k3s issued it: replace it by issuing the day-to-day one
 above. Revoking it sooner means rotating k3s's client CA
 ([`k3s certificate rotate-ca`](https://docs.k3s.io/cli/certificate#certificate-authority-ca-certificates)),
 which also ends every node and controller certificate signed by it.
+
+## Network isolation
+
+Every namespace but `kube-system` and `default` denies ingress and egress by
+default, and each flow is allowed by name (ADR-0057): `augustad`'s by its chart
+([`networkpolicy.yaml`](../../charts/augustad/templates/networkpolicy.yaml)),
+Flux's in
+[`flux-system/network-policies.yaml`](../../clusters/onprem/flux-system/network-policies.yaml),
+Kyverno's and the monitoring stack's in
+[`infrastructure/network-policies.yaml`](../../clusters/onprem/infrastructure/network-policies.yaml).
+`staging` joins once it runs a release that ships the chart's NetworkPolicy
+([`namespaces.yaml`](../../clusters/onprem/apps/namespaces.yaml)). A pod that
+cannot reach what it needs times out rather than being refused: a target `down`
+in Prometheus, a Flux source not `Ready`, a Grafana panel with no data.
+
+### Verify the isolation
+
+On the node (**cluster-admin**: the day-to-day identity creates no pod):
+
+1. A container beside `augustad`, as its own user, reaches nothing, by name or
+   by address:
+
+    ```sh
+    pod="$(sudo k3s kubectl -n develop get pod -l app.kubernetes.io/name=augustad,scenario=firebase -o name)"
+    sudo k3s kubectl -n develop debug "${pod}" --profile=restricted \
+      --image=docker.io/library/busybox:1.37.0 --target=augustad -i --quiet -- \
+      sh -c 'nslookup github.com; nc -z -w 5 140.82.121.4 443; echo "exit $?"'
+    ```
+
+    The lookup times out and `nc` exits `1`.
+
+2. A pod in `develop` reaches neither Loki nor Grafana:
+
+    ```sh
+    loki="$(sudo k3s kubectl -n monitoring get svc loki -o jsonpath='{.spec.clusterIP}')"
+    grafana="$(sudo k3s kubectl -n monitoring get svc kube-prometheus-stack-grafana -o jsonpath='{.spec.clusterIP}')"
+    sudo k3s kubectl -n develop run netprobe --rm -i --quiet --restart=Never \
+      --image=docker.io/library/busybox:1.37.0 --overrides='{"spec": {
+        "securityContext": {"runAsNonRoot": true, "runAsUser": 65534, "seccompProfile": {"type": "RuntimeDefault"}},
+        "containers": [{"name": "netprobe", "image": "docker.io/library/busybox:1.37.0",
+          "command": ["sh", "-c", "nc -z -w 5 '"${loki}"' 3100; echo loki $?; nc -z -w 5 '"${grafana}"' 80; echo grafana $?"],
+          "securityContext": {"allowPrivilegeEscalation": false, "capabilities": {"drop": ["ALL"]}}}]}}'
+    ```
+
+    It prints `loki 1` and `grafana 1`.
+
+3. Everything allowed still flows: [Verification](#verification)'s Flux, server
+   and Grafana checks, and in Grafana every Prometheus target `up` and Loki
+   showing the last minutes' logs of every namespace.
+
+### Flux cannot fetch
+
+A change to `flux-system`'s NetworkPolicies that cuts source-controller off from
+GitHub also keeps Flux from fetching the revision that fixes it. Merge the fix
+to `develop`, then on the node (**cluster-admin**) delete the namespace's
+NetworkPolicies, which leaves it open:
+
+```sh
+sudo k3s kubectl -n flux-system delete networkpolicy --all
+```
+
+Flux fetches the fix and applies its NetworkPolicies again with it.
 
 ## Volumes
 
@@ -835,6 +900,8 @@ kubectl get namespaces -L pod-security.kubernetes.io/enforce
 
 - After a rebuild, the node also passes
   [Verify the hardening](#verify-the-hardening).
+- Each namespace's NetworkPolicies hold:
+  [Verify the isolation](#verify-the-isolation).
 
 Then the OS's hardening. From a LAN host that is not one of the maintainer's
 addresses, scan the node:

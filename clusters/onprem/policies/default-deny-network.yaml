@@ -1,0 +1,68 @@
+# A pod runs only in a namespace that denies ingress and egress by default
+# (ADR-0057), where every flow is one a NetworkPolicy allows by name: one
+# NetworkPolicy, or two, selecting every pod with no rule to let anything in
+# or out, and none with a rule that lets everything in or out (a rule naming
+# no peer and no port), which would undo it. flux install generates one such
+# rule unless told --network-policy=false (clusters/onprem/flux-system).
+#
+# Judged per pod rather than per namespace, as a namespace has no
+# NetworkPolicy until after it exists. The cluster's NetworkPolicies are read
+# from the API server; CI reads them from the rendered manifests, and a
+# fixture from its own.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: default-deny-network
+spec:
+  # Reported, not refused, until the cluster's policies are enforced.
+  validationActions:
+    - Audit
+  # Kyverno extends a policy on pods to the pod templates of Deployments,
+  # DaemonSets, StatefulSets, Jobs and CronJobs, which CI's rendered manifests
+  # hold rather than pods.
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  # Every namespace but k3s's own (kube-system) and the one it leaves empty
+  # (default). staging joins once it runs a release whose chart lets its
+  # servers' traffic in, the first tagged after #536
+  # (clusters/onprem/apps/namespaces.yaml).
+  matchConditions:
+    - name: isolated-namespace
+      expression: |-
+        has(object.metadata.namespace) &&
+        object.metadata.namespace in ["develop", "flux-system", "kyverno", "monitoring", "monitoring-node"]
+  variables:
+    - name: networkPolicies
+      expression: |-
+        dyn(resource.List("networking.k8s.io/v1", "networkpolicies", object.metadata.namespace)).items
+    - name: everyPod
+      expression: |-
+        variables.networkPolicies.filter(p, size(p.spec.?podSelector.orValue({})) == 0)
+    - name: deniesIngress
+      expression: |-
+        variables.everyPod.exists(p,
+          "Ingress" in p.spec.?policyTypes.orValue([]) && size(p.spec.?ingress.orValue([])) == 0)
+    - name: deniesEgress
+      expression: |-
+        variables.everyPod.exists(p,
+          "Egress" in p.spec.?policyTypes.orValue([]) && size(p.spec.?egress.orValue([])) == 0)
+    - name: allowingAll
+      expression: |-
+        variables.networkPolicies.filter(p,
+          p.spec.?ingress.orValue([]).exists(r, size(r.?from.orValue([])) == 0 && size(r.?ports.orValue([])) == 0) ||
+          p.spec.?egress.orValue([]).exists(r, size(r.?to.orValue([])) == 0 && size(r.?ports.orValue([])) == 0))
+        .map(p, p.metadata.name)
+  validations:
+    - expression: variables.deniesIngress && variables.deniesEgress
+      messageExpression: |-
+        object.metadata.namespace + " must deny " +
+        (variables.deniesIngress ? "egress" : variables.deniesEgress ? "ingress" : "ingress and egress") +
+        " by default: a NetworkPolicy selecting every pod, with no rule (ADR-0057)"
+    - expression: size(variables.allowingAll) == 0
+      messageExpression: |-
+        "NetworkPolicies in " + object.metadata.namespace + " let everything in or out: " +
+        variables.allowingAll.join(", ") + " (ADR-0057)"
