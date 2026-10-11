@@ -477,6 +477,8 @@ kubectl -n develop logs -l app.kubernetes.io/name=augustad --prefix | grep 'even
 ssh <node> "findmnt /srv/augusta/captures && sudo ls -lR /srv/augusta/captures"
 kubectl get svc -A -l app.kubernetes.io/name=augustad
 kubectl -n monitoring get pods
+kubectl -n monitoring-node get pods
+kubectl get namespaces -L pod-security.kubernetes.io/enforce
 ```
 
 - The node is `Ready`; every Flux source, Kustomization and `HelmRelease` is
@@ -488,6 +490,9 @@ kubectl -n monitoring get pods
 - Each server's Service is on the node port its `HelmRelease` pins, in its
   environment's range: `develop`'s 30700-30799 (`firebase` on 30700),
   `staging`'s 30800-30899 (`firebase` on 30800).
+- node-exporter, alone in `monitoring-node`, is `Running`. `flux-system`,
+  `kyverno` and `monitoring` enforce the `restricted` Pod Security level;
+  `kube-system` and `monitoring-node`, `privileged` (ADR-0057).
 - Every pod in `monitoring` is `Running`, and Grafana answers on node port 30300
   (pinned in `infrastructure/monitoring.yaml`): it opens with no login on every
   dashboard, offers no way to edit or save one, shows no login form, and refuses

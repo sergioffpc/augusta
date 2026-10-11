@@ -9,4 +9,5 @@ kind: Kustomization
 resources:
   - image-digest.yaml
   - node-port-range.yaml
+  - privileged-namespace-workloads.yaml
   - secret-allowlist.yaml
