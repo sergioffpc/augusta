@@ -33,7 +33,7 @@ two augustad `HelmRelease` objects and their GitRepository sources in
 reads the public repository over HTTPS with no credentials, so a rebuilt cluster
 needs no deploy key.
 
-The only state not in Git is the asset packs on the node's shared volume:
+The only state not in Git is the asset packs in the node's pack folder:
 `/srv/augusta/asset-packs/<scenario>/<packVersion>/server.pack` and
 `signing.pub` for each server the `HelmRelease` values in
 `clusters/onprem/apps/` list
@@ -109,9 +109,10 @@ server's run) is unique only within one server. augustad creates that folder
 itself, and refuses to start if it cannot.
 
 - **Path and owner:** `/srv/augusta/captures`, owned by `augusta:augusta`, mode
-  `0755`: [the server's user](#the-servers-user). The chart's `hostPath` volume
-  is of type `Directory`, so the kubelet never creates it, as `root:root`, in
-  its place; a pod whose directory is missing waits in `ContainerCreating`.
+  `0755`: [the server's user](#the-servers-user). Each server mounts it from a
+  `local` PersistentVolume ([Volumes](#volumes)), whose folder the kubelet never
+  creates, as `root:root`, in its place; a pod whose directory is missing waits
+  in `ContainerCreating`.
 - **Filesystem:** an ext4 image of fixed size, `/srv/augusta/captures.img`,
   readable by root only and loop-mounted on that path. Its blocks are allocated
   when it is made, so captures never take more of the node's disk than that and
@@ -168,6 +169,93 @@ flux resume helmrelease augustad-<environment> -n flux-system
 ```
 
 Record the new size in this section.
+
+## Volumes
+
+No server mounts a folder of the node as a `hostPath` volume, which the
+`restricted` Pod Security Standard that `develop` enforces forbids (ADR-0057).
+For each server the chart makes a `local` PersistentVolume on each folder it
+mounts, and a claim bound to it by name
+([`templates/volumes.yaml`](../../charts/augustad/templates/volumes.yaml)):
+
+- **Pack:** the claim `augustad-<scenario>-pack-<packVersion>` and the volume
+  `<namespace>-augustad-<scenario>-pack-<packVersion>`, on
+  `/srv/augusta/asset-packs/<scenario>/<packVersion>/`, read-only.
+- **Captures,** when the environment turns them on: the claim
+  `augustad-<scenario>-captures` and the volume
+  `<namespace>-augustad-<scenario>-captures`, on `/srv/augusta/captures`,
+  read-write.
+
+Each volume is pinned to the node k3s labels
+`node-role.kubernetes.io/control-plane=true`, the k3s server, so the node needs
+no label of its own. A volume whose folder is missing leaves its pod waiting in
+`ContainerCreating`, its `FailedMount` event naming the folder:
+
+```sh
+kubectl -n <environment> get events --field-selector reason=FailedMount
+# MountVolume.NewMounter initialization failed for volume
+# "develop-augustad-firebase-pack-<packVersion>" : path
+# "/srv/augusta/asset-packs/firebase/<packVersion>" does not exist
+```
+
+Helm never deletes these volumes and claims (`helm.sh/resource-policy: keep`),
+and a volume's reclaim policy is `Retain`, so nothing in Kubernetes deletes the
+node's folders. A server moved to a new `packVersion` gets a new volume and
+claim; its previous ones stay `Bound`, so reverting the line takes them up
+again, even while the previous pod still runs from them. Removing a server, or
+turning captures off, leaves its volumes and claims too. To list them, and to
+remove those of a version no `HelmRelease` names any more (the claim first, then
+its volume; the folder stays):
+
+```sh
+kubectl get pv -l app.kubernetes.io/name=augustad
+kubectl -n <environment> get pvc -l app.kubernetes.io/name=augustad
+git grep -n packVersion -- clusters/onprem/apps
+kubectl -n <environment> delete pvc augustad-<scenario>-pack-<packVersion>
+kubectl delete pv <environment>-augustad-<scenario>-pack-<packVersion>
+```
+
+Delete both or neither: a volume whose claim is deleted is left `Released`, and
+never binds a new claim of that name, so a server reverted to that version would
+wait for it. A volume's folder cannot change, so changing `assetPacks.hostPath`
+or `captures.hostPath` fails the upgrade until the release's volumes and claims
+under the old folder are removed as above.
+
+A rebuilt cluster has none of them: Flux makes those of the versions the
+`HelmRelease`s name, from the same folders.
+
+### Move a running cluster off hostPath volumes
+
+The first `develop` revision with this layout (#530) changes the running cluster
+on its own; nothing on the node changes. This section goes once `staging`
+enforces `restricted` (step 3).
+
+1. Before it merges, check the node carries k3s's label, and every `packVersion`
+   `git grep -n packVersion -- clusters/onprem/apps` lists is published:
+
+    ```sh
+    kubectl get nodes -l node-role.kubernetes.io/control-plane=true
+    ssh <node> "sudo ls -l /srv/augusta/asset-packs/*/"
+    ```
+
+2. Once Flux reconciles it, `develop` is labelled `restricted` and its servers
+   are replaced by pods mounting their volumes, cutting any Match in progress
+   (ADR-0026). Warnings that the old pods use `hostPath` are expected while they
+   still run. `staging` keeps its pods until a release with this layout is
+   tagged:
+
+    ```sh
+    flux reconcile kustomization apps -n flux-system --with-source
+    kubectl get ns develop staging --show-labels
+    kubectl -n develop rollout status deploy -l app.kubernetes.io/name=augustad --timeout 30m
+    kubectl get pv -l app.kubernetes.io/name=augustad
+    kubectl -n develop logs -l app.kubernetes.io/name=augustad --prefix | grep -E 'event=(pack_verified|capture_enabled)'
+    ```
+
+3. Once `staging` runs that release, label it `restricted` in
+   `clusters/onprem/apps/namespaces.yaml` and drop it from
+   `clusters/onprem/policies/host-path-volumes.yaml` in one pull request, then
+   check its servers the same way.
 
 ## The k3s configuration
 
@@ -475,13 +563,17 @@ kubectl -n develop logs -l app.kubernetes.io/name=augustad --prefix | grep 'even
 kubectl -n staging logs -l app.kubernetes.io/name=augustad --prefix | grep 'event=pack_verified'
 kubectl -n develop logs -l app.kubernetes.io/name=augustad --prefix | grep 'event=capture_enabled'
 ssh <node> "findmnt /srv/augusta/captures && sudo ls -lR /srv/augusta/captures"
+kubectl get ns develop staging --show-labels
+kubectl get pv -l app.kubernetes.io/name=augustad
 kubectl get svc -A -l app.kubernetes.io/name=augustad
 kubectl -n monitoring get pods
 ```
 
 - The node is `Ready`; every Flux source, Kustomization and `HelmRelease` is
   `Ready`.
-- Every server logged `event=pack_verified` and keeps running.
+- Every server logged `event=pack_verified` and keeps running, from the volumes
+  of the `packVersion` its `HelmRelease` names, each `Bound`
+  ([Volumes](#volumes)); `develop` enforces `restricted`.
 - Every `develop` server logged `event=capture_enabled` with its own
   `/srv/augusta/captures/develop/<scenario>` directory; the capture filesystem
   is mounted, and a Match played to its end leaves a `.capture` file there.
