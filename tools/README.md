@@ -354,14 +354,19 @@ the public key, and checks that the server pack names that client pack in its
 header (ADR-0031). It then copies only the server pack and the public key, as
 `server.pack` and `signing.pub`, into
 `/srv/augusta/asset-packs/<scenario>/<version>/`, `<version>` being the first 12
-hex characters of the server pack's BLAKE3 hash, owned by `root:augusta` so only
+hex characters of the server pack's BLAKE3 hash, in the `augusta` group so only
 the servers' group reads it. The folder is assembled beside its final place and
 renamed into it, so it never exists half-written, and a folder that exists is
 never written again: publishing the same cook twice checks the node holds the
 same files and copies nothing, and a folder holding other files is an error.
+Once written, the folder is read-only, to the publish user too.
 
-It runs `ssh` and `scp` from `PATH` (on Windows, the OpenSSH client), as a user
-that can `sudo` on the node without a password.
+It runs `ssh` from `PATH` (on Windows, the OpenSSH client), as the node's
+`augusta-publish` user, with no `sudo`. That user's key runs nothing but the
+node's end of publishing
+([`augusta-publish-receive.sh`](../clusters/onprem/node/augusta-publish-receive.sh),
+ADR-0057); setting it up is
+[The publish user](../docs/runbooks/k3s-node-recovery.md#the-publish-user).
 
 #### `augusta-publish` reference
 
@@ -373,7 +378,7 @@ augusta-publish [-h] --host HOST [--assets-root ASSETS_ROOT] [--client-pack CLIE
 | Argument                    | Default                                      | Description                                                                                                                     |
 | --------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `scenario` (required)       |                                              | Scenario name (ADR-0041), which also names its server in the cluster: lowercase letters, digits and `-`, at most 46 characters. |
-| `--host HOST` (required)    |                                              | The k3s node, as `ssh` names it (an address, or an alias in `~/.ssh/config`).                                                   |
+| `--host HOST` (required)    |                                              | The k3s node as its `augusta-publish` user, as `ssh` names it (`augusta-publish@<node>`, or an alias in `~/.ssh/config`).       |
 | `-h`, `--help`              |                                              | Print the usage and option list, then exit.                                                                                     |
 | `--assets-root ASSETS_ROOT` | the root of the venv the command runs from   | Assets root, for the defaults below only.                                                                                       |
 | `--client-pack CLIENT_PACK` | `<assets-root>/packs/<scenario>/client.pack` | The client pack of the cook. Verified, never copied.                                                                            |

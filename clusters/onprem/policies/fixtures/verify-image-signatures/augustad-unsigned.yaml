@@ -1,0 +1,16 @@
+# A server on v1.0.0's augustad image, which CI published before it signed
+# or attested its images: real, on GHCR, and with no signature of this
+# repository's workflow.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: augustad-firebase
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: augustad
+    app.kubernetes.io/instance: augustad
+    scenario: firebase
+spec:
+  containers:
+    - name: augustad
+      image: ghcr.io/sergioffpc/augustad:sha-f6e03442e921@sha256:dee0157f2b1985e2d6b11f53ca929748d3cdbf84bed55f926120b74a0a0fdae0

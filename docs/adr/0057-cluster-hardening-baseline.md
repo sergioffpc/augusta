@@ -32,6 +32,13 @@ each server, a `local` PersistentVolume on the same folder of the Node
 the claim bound to it, so adding or moving a server is still one line in its
 `HelmRelease` (ADR-0026).
 
+**Publishing a pack needs no root.** `augusta-publish` logs in as the Node's
+`augusta-publish` user, which owns the pack folder, is not the Servers' user nor
+in their group, and has no `sudo`. Its key is restricted in `authorized_keys`
+(`restrict`, no shell, PTY or forwarding) to a forced command that only writes a
+new `<scenario>/<packVersion>/` folder and leaves it read-only, so a stolen
+publish key can add a pack and nothing else: never replace one a Server runs.
+
 **The cluster holds no Secret.** Nothing in it needs one: Grafana has no login
 at all, anonymous viewers only, its dashboards, data sources and alerts all from
 Git; Loki and Prometheus answer only inside the cluster. The one Secret in Git
@@ -79,3 +86,9 @@ API server, a process of the Node, is reached by its port.
 - An upstream chart upgrade can fail admission until its images' digests are
   updated with it.
 - The node-exporter moves out of `monitoring` into `monitoring-node`.
+- Kyverno admits any Sigstore bundle the identity made for the image's digest,
+  so CI's own provenance and SBOM attestations satisfy the policy as its cosign
+  signature does: admission proves an image came from this repository's CI
+  workflow, not that a signature proper exists. CI's publish job proves that,
+  checking the verified bundles for a cosign signature (`jq` on `critical.type`)
+  and failing without one.

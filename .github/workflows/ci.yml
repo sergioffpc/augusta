@@ -85,9 +85,10 @@ jobs:
 
           # The offline tools (tools/pack, tools/composer), and the golden
           # output of theirs the runtime's tests load, which the tools job checks
-          # they still write. tools/docs is the docs workflow's, not theirs.
+          # they still write; and the node's end of augusta-publish, which its
+          # tests run. tools/docs is the docs workflow's, not theirs.
           if echo "$changed" \
-              | grep -qE '^(tools/(pack|composer)/|tools/(pyproject\.toml|uv\.lock)$|tests/fixtures/example-packs/|\.github/workflows/ci\.yml$)'; then
+              | grep -qE '^(tools/(pack|composer)/|tools/(pyproject\.toml|uv\.lock)$|tests/fixtures/example-packs/|clusters/onprem/node/augusta-publish-receive\.sh$|\.github/workflows/ci\.yml$)'; then
             echo "run_tools=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_tools=false" >> "$GITHUB_OUTPUT"
@@ -768,19 +769,27 @@ jobs:
         # merges. A violation of a policy the cluster only audits still fails,
         # since --audit-warn is left off. A policy that looks objects up in
         # the cluster (default-deny-network, its NetworkPolicies) finds the
-        # rendered ones, as Flux would apply them.
+        # rendered ones, as Flux would apply them. Image signature policies
+        # are left to their fixtures below: the chart runs the image of the
+        # commit under test, which CI publishes and signs only once it lands
+        # on develop or main, so no pull request's render could pass them.
         shell: bash
         run: |
           kubectl kustomize clusters/onprem/policies > "$RUNNER_TEMP/policies.yaml"
+          yq 'select(.kind != "ImageValidatingPolicy")' "$RUNNER_TEMP/policies.yaml" \
+            > "$RUNNER_TEMP/rendered-policies.yaml"
           yq ea "$NETWORK_POLICIES_CONTEXT" "$RUNNER_TEMP"/rendered/*.yaml > "$RUNNER_TEMP/context.yaml"
-          kyverno apply "$RUNNER_TEMP/policies.yaml" --resource "$RUNNER_TEMP/rendered" \
+          kyverno apply "$RUNNER_TEMP/rendered-policies.yaml" --resource "$RUNNER_TEMP/rendered" \
             --context-file "$RUNNER_TEMP/context.yaml" --remove-color
       - name: Refuse each policy's negative fixtures
         # Every policy refuses each manifest in its fixtures/<name>/: a policy
         # that admits one checks nothing, and a policy with none is unchecked.
         # Read from the report rather than the exit status, which an error
         # loading the policy or the fixture would fail just the same. A
-        # fixture's own NetworkPolicies are the cluster's it is judged in.
+        # fixture's own NetworkPolicies are the cluster's it is judged in. An
+        # image signature policy fetches its fixtures' images and signatures
+        # from their registries; one it cannot fetch is an error, not a
+        # refusal, so its fixtures are real images.
         shell: bash
         run: |
           policies="$RUNNER_TEMP/policies.yaml"
@@ -878,9 +887,9 @@ jobs:
     permissions:
       contents: read
       packages: write
-      # Signing the image's provenance and SBOM attestations (Sigstore, through
-      # the workflow's OIDC token), storing them in the repository and pushing
-      # them to GHCR beside the image.
+      # Signing the image, and its provenance and SBOM attestations (Sigstore,
+      # through the workflow's OIDC token), storing the attestations in the
+      # repository and pushing all of them to GHCR beside the image.
       id-token: write
       attestations: write
       artifact-metadata: write
@@ -925,6 +934,12 @@ jobs:
           fi
           digest=$(docker buildx imagetools inspect "$sha_tag" --format '{{.Manifest.Digest}}')
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      # What the cluster admits an augustad image by (ADR-0057). Signed before
+      # it is attested, so the verify after signing sees the signature alone.
+      - name: Sign server image
+        uses: ./.github/actions/sign-image
+        with:
+          digest: ${{ steps.publish.outputs.digest }}
       # The published binary's debug info (the Dockerfile's debuginfo stage,
       # from the build layer the image was just built from), kept beside the
       # image for as long as it: what reads a core dump of it (ADR-0047).
@@ -1015,6 +1030,11 @@ jobs:
           docker push "$image:sha-${{ steps.image.outputs.short-sha }}-arm64"
           digest=$(docker buildx imagetools inspect "$image:sha-${{ steps.image.outputs.short-sha }}-arm64" --format '{{.Manifest.Digest}}')
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      # As container-publish's, before it is attested.
+      - name: Sign server image
+        uses: ./.github/actions/sign-image
+        with:
+          digest: ${{ steps.publish.outputs.digest }}
       - name: Publish server debug info
         id: debuginfo
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -1053,10 +1073,12 @@ jobs:
           sbom-path: augustad-image.spdx.json
           push-to-registry: true
   # Makes main's sha-<12>, main and sha-<12>-debuginfo tags the index of both
-  # architectures' manifests, which the two jobs above attested; the index's
-  # own provenance is attested here. A node pulls its own architecture's
-  # manifest from it. Until it runs (or if it fails), those tags are amd64's
-  # alone, as container-publish pushed them.
+  # architectures' manifests, which the two jobs above signed and attested;
+  # the index is signed and its own provenance attested here. A node pulls its
+  # own architecture's manifest from it, but the cluster resolves the sha-<12>
+  # tag it runs to the index, so the index's signature is the one it checks.
+  # Until it runs (or if it fails), those tags are amd64's alone, as
+  # container-publish pushed them.
   container-index:
     needs: [container-publish, container-publish-arm64]
     if: |
@@ -1070,6 +1092,10 @@ jobs:
       attestations: write
       artifact-metadata: write
     steps:
+      # For the signing action alone.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/actions/sign-image
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -1092,6 +1118,10 @@ jobs:
             "$image@${{ needs.container-publish-arm64.outputs.debuginfo }}"
           echo "image=$(docker buildx imagetools inspect "$image:$tag" --format '{{.Manifest.Digest}}')" >> "$GITHUB_OUTPUT"
           echo "debuginfo=$(docker buildx imagetools inspect "$image:$tag-debuginfo" --format '{{.Manifest.Digest}}')" >> "$GITHUB_OUTPUT"
+      - name: Sign image index
+        uses: ./.github/actions/sign-image
+        with:
+          digest: ${{ steps.index.outputs.image }}
       - name: Attest image index provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:

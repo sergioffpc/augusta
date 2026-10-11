@@ -46,9 +46,10 @@ and `signing.pub` from it
 ```
 
 `augusta-publish` writes exactly this, and never over a folder that exists,
-owned by `root:augusta`, folders `0750` and files `0640`: only the servers'
-group reads it ([The server's user](k3s-node-recovery.md#the-servers-user)). The
-server mounts the folder as a `local` PersistentVolume
+owned by `augusta-publish:augusta`, the version's folder `0550` and its files
+`0440`: only the servers' group reads it, and once written the publish key
+cannot change it ([The server's user](k3s-node-recovery.md#the-servers-user)).
+The server mounts the folder as a `local` PersistentVolume
 ([Volumes](k3s-node-recovery.md#volumes)): until the folder is there, the pod
 waits in `ContainerCreating` and its `FailedMount` event names the missing path.
 A pack that does not verify against `signing.pub` makes the server exit at
@@ -64,8 +65,12 @@ startup, and the pod crash-loops. The client pack never goes on the node.
 - For the release key: the offline location the release private key is kept in.
   The repository does not record it; it is never in the repository or a CI
   secret.
-- SSH access to the k3s node (`<node>` below, as `ssh` names it), as a user that
-  can `sudo` without a password. The repository does not record its address.
+- The publish key, which reaches the k3s node as its `augusta-publish` user
+  (`augusta-publish` below, as `ssh` names it), with no `sudo`
+  ([The publish user](k3s-node-recovery.md#the-publish-user)). The repository
+  does not record the node's address.
+- For step 10 alone, SSH access to the node (`<node>` below) as a user with
+  `sudo` ([SSH](k3s-node-recovery.md#ssh)).
 - The day-to-day kubeconfig
   ([Cluster access](k3s-node-recovery.md#cluster-access)), `kubectl`, and the
   `flux` CLI (see
@@ -128,7 +133,7 @@ startup, and the pod crash-loops. The client pack never goes on the node.
    verifies both packs against the key, and that they come from one cook:
 
     ```powershell
-    & "$AssetsRoot\bin\augusta-publish.exe" firebase --host <node> `
+    & "$AssetsRoot\bin\augusta-publish.exe" firebase --host augusta-publish `
       --public-key "$AssetsRoot\keys\$Id.pub" `
       --client-pack "$AssetsRoot\packs\$Id\client.pack" `
       --server-pack "$AssetsRoot\packs\$Id\server.pack"
