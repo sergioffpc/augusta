@@ -30,6 +30,7 @@
 #include "augusta/intent.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
+#include "augusta/netcode_stats.h"
 #include "augusta/networking.h"
 #include "augusta/physics.h"
 #include "report.h"
@@ -41,6 +42,7 @@ namespace {
 
 using augusta::agent::Agent;
 using augusta::agent::AgentFailure;
+using augusta::agent::AgentStats;
 using augusta::agent::AgentView;
 using augusta::agent::IntentEnded;
 using augusta::agent::LoadedPack;
@@ -50,19 +52,33 @@ using augusta::agent::ReportQueue;
 using augusta::agent::ReportSink;
 using augusta::ballistics::BodyPart;
 using augusta::command::Command;
+using augusta::harness::AimAt;
+using augusta::harness::AimIntent;
 using augusta::harness::AuthoritativeState;
 using augusta::harness::Death;
 using augusta::harness::EntityBody;
+using augusta::harness::EntityId;
+using augusta::harness::FireBursts;
 using augusta::harness::HitConfirmation;
+using augusta::harness::HoldFire;
 using augusta::harness::IntentEnding;
 using augusta::harness::Lobby;
+using augusta::harness::Look;
 using augusta::harness::MatchEnd;
 using augusta::harness::MatchPlayer;
 using augusta::harness::MatchStart;
+using augusta::harness::Move;
+using augusta::harness::MovementIntent;
+using augusta::harness::MoveTo;
+using augusta::harness::NetcodeStats;
 using augusta::harness::Phase;
+using augusta::harness::Reload;
 using augusta::harness::RosterEntry;
 using augusta::harness::Shot;
+using augusta::harness::TriggerIntent;
 using augusta::math::Vec3;
+using augusta::networking::ConnectionStats;
+using augusta::networking::SimulatedConditions;
 using augusta::physics::BodyState;
 using augusta::physics::Stance;
 
@@ -303,6 +319,13 @@ void BindView(py::module_& module) {
                                }
                                return Number(view.server->accepted->session);
                              })
+      .def_property_readonly("player_count",
+                             [](const AgentView& view) -> std::optional<std::uint8_t> {
+                               if (!view.server->accepted.has_value()) {
+                                 return std::nullopt;
+                               }
+                               return view.server->accepted->parameters.player_count;
+                             })
       .def_property_readonly("lobby", [](const AgentView& view) { return view.server->lobby; })
       .def_property_readonly("matches_started", [](const AgentView& view) { return view.server->matches_started; })
       .def_property_readonly("in_match", [](const AgentView& view) { return view.server->in_match; })
@@ -320,6 +343,14 @@ void BindView(py::module_& module) {
                                return Number(*entity);
                              })
       .def_property_readonly("authoritative", [](const AgentView& view) { return view.server->authoritative; })
+      .def_property_readonly("dead",
+                             [](const AgentView& view) {
+                               std::vector<std::uint32_t> dead;
+                               for (const EntityId entity : view.server->dead) {
+                                 dead.push_back(Number(entity));
+                               }
+                               return ToPyTuple(dead);
+                             })
       .def_readonly("own", &AgentView::own);
 }
 
@@ -363,7 +394,10 @@ void BindReports(py::module_& module) {
 
   py::enum_<IntentEnding>(module, "IntentEnding")
       .value("REPLACED", IntentEnding::kReplaced)
-      .value("DONE", IntentEnding::kDone);
+      .value("DONE", IntentEnding::kDone)
+      .value("ARRIVED", IntentEnding::kArrived)
+      .value("BLOCKED", IntentEnding::kBlocked)
+      .value("TARGET_GONE", IntentEnding::kTargetGone);
 
   py::class_<IntentEnded>(module, "IntentEnded")
       .def_readonly("intent", &IntentEnded::intent)
@@ -405,6 +439,100 @@ void BindCommand(py::module_& module) {
       .def_readonly("reload", &Command::reload);
 }
 
+// The Intents a script sets on an Agent's channels (augusta/intent.h).
+void BindIntents(py::module_& module) {
+  py::class_<Move>(module, "Move")
+      .def(py::init([](const Vec3Tuple& direction, bool sprint, Stance stance) {
+             return Move{.direction = ToVec3(direction), .sprint = sprint, .stance = stance};
+           }),
+           py::arg("direction"), py::kw_only(), py::arg("sprint") = false, py::arg("stance") = Stance::kStanding)
+      .def_property_readonly("direction", [](const Move& move) { return ToTuple(move.direction); })
+      .def_readonly("sprint", &Move::sprint)
+      .def_readonly("stance", &Move::stance);
+
+  py::class_<MoveTo>(module, "MoveTo")
+      .def(py::init([](const Vec3Tuple& point, bool sprint, Stance stance) {
+             return MoveTo{.point = ToVec3(point), .sprint = sprint, .stance = stance};
+           }),
+           py::arg("point"), py::kw_only(), py::arg("sprint") = false, py::arg("stance") = Stance::kStanding)
+      .def_property_readonly("point", [](const MoveTo& move_to) { return ToTuple(move_to.point); })
+      .def_readonly("sprint", &MoveTo::sprint)
+      .def_readonly("stance", &MoveTo::stance);
+
+  py::class_<Look>(module, "Look")
+      .def(py::init([](float yaw, float pitch) { return Look{.yaw = yaw, .pitch = pitch}; }), py::arg("yaw"),
+           py::arg("pitch"))
+      .def_readonly("yaw", &Look::yaw)
+      .def_readonly("pitch", &Look::pitch);
+
+  py::class_<AimAt>(module, "AimAt")
+      .def(py::init([](std::uint32_t target) { return AimAt{.target = static_cast<EntityId>(target)}; }),
+           py::arg("target"))
+      .def_property_readonly("target", [](const AimAt& aim_at) { return Number(aim_at.target); });
+
+  py::class_<HoldFire>(module, "HoldFire").def(py::init<>());
+  py::class_<Reload>(module, "Reload").def(py::init<>());
+  py::class_<FireBursts>(module, "FireBursts").def(py::init<>());
+}
+
+// What an Agent's prediction, fire and link have come to.
+void BindStats(py::module_& module) {
+  py::class_<NetcodeStats>(module, "NetcodeStats")
+      .def_readonly("match_ticks", &NetcodeStats::match_ticks)
+      .def_readonly("corrections", &NetcodeStats::corrections)
+      .def_readonly("largest_correction_m", &NetcodeStats::largest_correction_m)
+      .def_readonly("rounds_fired", &NetcodeStats::rounds_fired)
+      .def_readonly("hit_confirmations", &NetcodeStats::hit_confirmations)
+      .def_property_readonly("correction_rate", &NetcodeStats::CorrectionRate)
+      .def_property_readonly("hit_rate", &NetcodeStats::HitRate);
+
+  py::class_<ConnectionStats>(module, "ConnectionStats")
+      .def_readonly("ping_ms", &ConnectionStats::ping_ms)
+      .def_readonly("quality_local", &ConnectionStats::quality_local)
+      .def_readonly("quality_remote", &ConnectionStats::quality_remote)
+      .def_readonly("in_bytes_per_sec", &ConnectionStats::in_bytes_per_sec)
+      .def_readonly("out_bytes_per_sec", &ConnectionStats::out_bytes_per_sec)
+      .def_readonly("max_jitter_us", &ConnectionStats::max_jitter_us)
+      .def_readonly("pending_bytes", &ConnectionStats::pending_bytes);
+
+  py::class_<AgentStats>(module, "Stats")
+      .def_readonly("netcode", &AgentStats::netcode)
+      .def_readonly("connection", &AgentStats::connection);
+}
+
+// The faults every link of the process is given: the transport's simulated
+// conditions (networking.h), but for its timeout, which stays the transport's.
+void BindLinkFaults(py::module_& module) {
+  py::class_<SimulatedConditions>(module, "LinkFaults")
+      .def(py::init([](int latency_ms, int jitter_mean_ms, int jitter_max_ms, float loss_percent, float reorder_percent,
+                       int reorder_delay_ms) {
+             return SimulatedConditions{.latency_ms = latency_ms,
+                                        .jitter_mean_ms = jitter_mean_ms,
+                                        .jitter_max_ms = jitter_max_ms,
+                                        .loss_percent = loss_percent,
+                                        .reorder_percent = reorder_percent,
+                                        .reorder_delay_ms = reorder_delay_ms,
+                                        .timeout_ms = 0};
+           }),
+           py::kw_only(), py::arg("latency_ms") = 0, py::arg("jitter_mean_ms") = 0, py::arg("jitter_max_ms") = 0,
+           py::arg("loss_percent") = 0.0F, py::arg("reorder_percent") = 0.0F, py::arg("reorder_delay_ms") = 0)
+      .def_readonly("latency_ms", &SimulatedConditions::latency_ms)
+      .def_readonly("jitter_mean_ms", &SimulatedConditions::jitter_mean_ms)
+      .def_readonly("jitter_max_ms", &SimulatedConditions::jitter_max_ms)
+      .def_readonly("loss_percent", &SimulatedConditions::loss_percent)
+      .def_readonly("reorder_percent", &SimulatedConditions::reorder_percent)
+      .def_readonly("reorder_delay_ms", &SimulatedConditions::reorder_delay_ms);
+
+  module.def(
+      "impair_links",
+      [](const std::optional<SimulatedConditions>& faults) {
+        augusta::networking::SimulateNetworkConditions(faults.value_or(SimulatedConditions{}));
+      },
+      py::arg("faults"),
+      "Gives every packet the process sends from now on faults, or none if None: every Agent's link, the "
+      "handshake of one still connecting among them, and an in-process server's.");
+}
+
 void BindAgent(py::module_& module) {
   py::register_exception<PackError>(module, "PackError");
 
@@ -432,8 +560,22 @@ void BindAgent(py::module_& module) {
       .def(
           "set_raw", [](AgentHandle& self, const Command& command) { return self.Get().SetRaw(command); },
           py::arg("command"))
+      .def(
+          "set_movement",
+          [](AgentHandle& self, const MovementIntent& intent) { return self.Get().SetMovement(intent); },
+          py::arg("intent"))
+      .def(
+          "set_aim", [](AgentHandle& self, const AimIntent& intent) { return self.Get().SetAim(intent); },
+          py::arg("intent"))
+      .def(
+          "set_trigger", [](AgentHandle& self, const TriggerIntent& intent) { return self.Get().SetTrigger(intent); },
+          py::arg("intent"))
+      .def("clear_movement", [](AgentHandle& self) { self.Get().ClearMovement(); })
+      .def("clear_aim", [](AgentHandle& self) { self.Get().ClearAim(); })
+      .def("clear_trigger", [](AgentHandle& self) { self.Get().ClearTrigger(); })
       .def("ready", [](AgentHandle& self) { self.Get().Ready(); })
       .def("view", [](AgentHandle& self) { return self.Get().View(); })
+      .def("stats", [](AgentHandle& self) { return self.Get().Stats(); })
       .def("close", &AgentHandle::Close);
 }
 
@@ -466,6 +608,9 @@ PYBIND11_MODULE(_native, module) {
   Dispatch::Get();
   py::module_::import("atexit").attr("register")(py::cpp_function([] { Dispatch::Get().Stop(); }));
   BindCommand(module);
+  BindIntents(module);
+  BindStats(module);
+  BindLinkFaults(module);
   BindView(module);
   BindReports(module);
   BindAgent(module);

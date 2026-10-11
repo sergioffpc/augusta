@@ -79,12 +79,16 @@ own decisions, never a tick, and no Python code runs on a native thread.
 - `load_pack(path, public_key)` verifies the client pack and loads its Map's
   collision once, raising if either fails, as augustac does before it opens a
   socket (ADR-0018). Every Agent of the script shares it.
-- `Agent(server, pack, character, faults=None, auto_ready=True)` connects one
-  player, under a `harness::Runner` of its own. `faults` simulates latency,
-  jitter, loss and reordering on its link, as the netcode tests do
-  (`augusta/faults.h`). With `auto_ready`, it reports Ready for every Roster as
-  soon as it is sent, as a Scripted player did; without, the script calls
-  `agent.ready()`.
+- `Agent(server, pack, character, auto_ready=True)` connects one player, under a
+  `harness::Runner` of its own. With `auto_ready`, it reports Ready for every
+  Roster as soon as it is sent, as a Scripted player did; without, the script
+  calls `agent.ready()`.
+- `impair_links(LinkFaults(...))` simulates latency, jitter, loss and reordering
+  on every packet the process sends, as the netcode tests do
+  (`networking::SimulateNetworkConditions`), and `impair_links(None)` restores
+  the real network. It is the process's, not an Agent's: the transport's
+  simulated conditions are global, so a script wanting Agents on different links
+  runs them in different processes.
 - `agent.stats()` returns the Agent's NetcodeStats - what its prediction and
   fire came to - and its connection's statistics. NetcodeStats moves from
   `tools/swarm` into `augusta_harness`.

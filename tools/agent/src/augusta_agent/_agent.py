@@ -21,6 +21,9 @@ Event = (
     | _native.MatchStart
     | _native.MatchEnd
 )
+MovementIntent = _native.Move | _native.MoveTo
+AimIntent = _native.Look | _native.AimAt
+TriggerIntent = _native.HoldFire | _native.Reload | _native.FireBursts
 
 
 # The spec's name (ADR-0052): what a script catches is that the Agent failed.
@@ -82,6 +85,38 @@ class Agent:
         """Why the Agent stopped playing, or None while it has not."""
         return self._failure
 
+    def set_movement(
+        self, intent: MovementIntent
+    ) -> asyncio.Future[_native.IntentEnding]:
+        """Moves as intent says, every tick; returns how it ends.
+
+        Move holds a direction and ends only REPLACED; MoveTo heads straight
+        for its point and ends ARRIVED there, or BLOCKED once it has come no
+        nearer for about a second.
+        """
+        return self._set(lambda: self._native.set_movement(intent))
+
+    def set_aim(
+        self, intent: AimIntent
+    ) -> asyncio.Future[_native.IntentEnding]:
+        """Aims as intent says, every tick; returns how it ends.
+
+        Look holds a view and ends only REPLACED; AimAt follows its target's
+        body and ends TARGET_GONE once it is dead or out of the Match.
+        """
+        return self._set(lambda: self._native.set_aim(intent))
+
+    def set_trigger(
+        self, intent: TriggerIntent
+    ) -> asyncio.Future[_native.IntentEnding]:
+        """Works the trigger as intent says; returns how it ends.
+
+        HoldFire holds it and FireBursts fires in Bursts, reloading when the
+        magazine is empty: both end only REPLACED. Reload reloads once and
+        ends DONE.
+        """
+        return self._set(lambda: self._native.set_trigger(intent))
+
     def set_raw(
         self, command: _native.Command
     ) -> asyncio.Future[_native.IntentEnding]:
@@ -90,15 +125,19 @@ class Agent:
         Its reload is sent on one tick only and its Seen time is the
         Harness's. The Raw Intent ends REPLACED once any channel is set.
         """
-        ending = self._loop.create_future()
-        # Awaiting it is the script's choice: one it lets go of that fails
-        # is not an unretrieved exception.
-        ending.add_done_callback(_retrieve)
-        if self._failure is not None:
-            ending.set_exception(AgentFailed(self._failure))
-            return ending
-        self._endings[self._native.set_raw(command)] = ending
-        return ending
+        return self._set(lambda: self._native.set_raw(command))
+
+    def clear_movement(self) -> None:
+        """Stands still; the movement Intent ends REPLACED."""
+        self._native.clear_movement()
+
+    def clear_aim(self) -> None:
+        """Holds the last view; the aim Intent ends REPLACED."""
+        self._native.clear_aim()
+
+    def clear_trigger(self) -> None:
+        """Releases the trigger; the trigger Intent ends REPLACED."""
+        self._native.clear_trigger()
 
     def ready(self) -> None:
         """Reports Ready for the newest Roster; nothing outside the Lobby."""
@@ -107,6 +146,14 @@ class Agent:
     def view(self) -> _native.View:
         """What it has been told so far, and its predicted body: a copy."""
         return self._native.view()
+
+    def stats(self) -> _native.Stats:
+        """What its prediction and fire have come to, and its link: a copy.
+
+        netcode counts from its first tick; connection is as of its last
+        round of network work, None before it first connected.
+        """
+        return self._native.stats()
 
     async def next_event(self) -> Event:
         """The next event it was told of, waiting for one if none is.
@@ -130,6 +177,20 @@ class Agent:
             pending.cancel()
         self._event_waiters.clear()
         self._endings.clear()
+
+    def _set(
+        self, set_intent: Callable[[], int]
+    ) -> asyncio.Future[_native.IntentEnding]:
+        """Sets an Intent with set_intent; returns how it ends."""
+        ending = self._loop.create_future()
+        # Awaiting it is the script's choice: one it lets go of that fails
+        # is not an unretrieved exception.
+        ending.add_done_callback(_retrieve)
+        if self._failure is not None:
+            ending.set_exception(AgentFailed(self._failure))
+            return ending
+        self._endings[set_intent()] = ending
+        return ending
 
     def _receive(self, report) -> None:
         """Takes one Report, on the loop's thread."""
