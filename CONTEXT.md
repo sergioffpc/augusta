@@ -253,9 +253,7 @@ _Avoid_: Client session, bot
 through a Harness (ADR-0052): the script observes what the server tells the
 Agent and its events, and chooses Intents; the Harness turns them into a Command
 every tick. A load test and an AI playing the game are the same thing with
-different scripts. _Avoid_: Bot (too vague: it names anything automated),
-Scripted player (the fixed C++ behaviour that augusta-swarm played, which Agents
-replaced)
+different scripts. _Avoid_: Bot (too vague: it names anything automated)
 
 **Intent**: What an Agent is doing on one of its channels - movement, aim or
 trigger - until its script replaces it, such as moving to a point, aiming at a

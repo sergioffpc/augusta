@@ -210,14 +210,14 @@ from their manifests and each runs on its own server
 
 ### M10 — Test & Performance Tooling (M)
 
-- `augusta-swarm`: a scenario's Player count of Scripted players against a
-  server, for load and end-to-end tests
-- Netcode tests: Scripted players through a simulated impaired link, nightly
+- A load test: a scenario's Player count of headless clients against a server,
+  each playing a fixed behaviour
+- Netcode tests: those clients through a simulated impaired link, nightly
 - Benchmarks of the server tick (per phase), the protocol, pack loading and
   ballistics
 
-**Exercises:** ADR-0013 **Exit criteria:** `augusta-swarm` plays a server
-through its Match ends; the nightly runs the netcode tests and the benchmarks
+**Exercises:** ADR-0013 **Exit criteria:** the load test plays a server through
+its Match ends; the nightly runs the netcode tests and the benchmarks
 
 ### M11 — Codebase & Developer Experience (M)
 
@@ -245,15 +245,14 @@ fails under it. It meets US-21, US-23 and NFR-09.
 
 - Intents in `augusta_harness`: movement, aim and trigger channels, plus Raw,
   carried out every tick under the Runner
-- `tools/agent`: the netcode and Match loop tests over a fixture of Intents;
-  `tools/swarm` removed
+- `tools/agent`: the netcode and Match loop tests over a fixture of Intents
 - Python in the root build under `AUGUSTA_TOOLS`, and the pybind11 module over
   the Harness
 - The `augusta_agent` package (asyncio), its pytest smoke test against an
   in-process server, and the `load_test.py` and `raw_hold.py` examples
 
 **Exercises:** US-23, ADR-0052, ADR-0005, ADR-0013 **Exit criteria:**
-`load_test.py` replaces `augusta-swarm` and passes against `develop`
+`load_test.py` plays a server through its Match ends against `develop`
 
 ### M13 — Match Capture & Reenactment (M)
 

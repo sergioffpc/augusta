@@ -71,8 +71,8 @@ IP:port.
   local prediction
 - Dedicated server executable (Linux in production, Windows for development
   only - NFR-04): headless, authoritative simulation
-- Scripted players tool (`augusta-swarm`, Windows and Linux): a server's worth
-  of headless clients, for load and end-to-end tests (ADR-0013)
+- Agents (`tools/agent`, Windows and Linux): players a Python script controls,
+  such as the load test's (ADR-0013, ADR-0052)
 - Communication: GameNetworkingSockets over UDP, encrypted (AES-GCM-256) but
   unauthenticated
 

@@ -52,28 +52,28 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   a shared CI runner, so it is checked by hand on the r630 cluster before each
   release; once Flux runs the `develop` release (ADR-0026), it becomes a CronJob
   of 8 Harness clients in that namespace.
-- **The load test is built with everything else, and run by hand.**
-  `augusta-swarm` (`tools/swarm`) runs the scenario's Player count of Scripted
-  players, each on a Harness, against a server, and exits non-zero unless every
-  one sees the Match ends it was asked for before a timeout. The C++ tools build
-  together or not at all, with the CMake option `AUGUSTA_TOOLS`, on by default:
-  every build, pull requests included, compiles and lints the tool and runs its
-  tests, the whole Match loop against an in-process `server::Host` among them,
-  but not the netcode tests below, which every test preset leaves out and only
-  the nightly runs. The tool itself is run by hand, against a local `augustad`
-  or the r630 cluster's. The server image turns the option off: it builds
-  `augustad` alone.
+- **The load test's module is built with everything else, and the load test run
+  by hand.** `load_test.py` (`tools/agent/examples`, ADR-0052) runs the
+  scenario's Player count of Agents against a server, and exits non-zero unless
+  every one sees the Match ends it was asked for before a timeout. The C++ tools
+  build together or not at all, with the CMake option `AUGUSTA_TOOLS`, on by
+  default: every build, pull requests included, compiles and lints the Agents'
+  module and runs its C++ tests, the whole Match loop against an in-process
+  `server::Host` among them, but not the netcode tests below, which every test
+  preset leaves out and only the nightly runs. The script itself is run by hand,
+  against a local `augustad` or the r630 cluster's. The server image turns the
+  option off: it builds `augustad` alone.
 - **Netcode under an impaired link, nightly.** Prediction and reconciliation
   (ADR-0004) and lag compensation (ADR-0044) are only proven under bad network
-  conditions, and a whole run of Scripted players under them takes minutes of
-  real time. So the nightly builds the `linux` preset and runs the tests
-  labelled `netcode` (the `linux-netcode` test preset; every other test preset
-  leaves them out): four Scripted players through five Matches against an
-  in-process `server::Host`, under the transport's own simulated conditions
-  (GameNetworkingSockets' fake packet lag, jitter, loss and reordering, on every
-  packet either side sends) rather than `tc netem`, which would need root on the
-  runner and a server in another process for no more realism on loopback. Three
-  profiles, one way each, so a round trip is twice the latency:
+  conditions, and a whole run of Agents under them takes minutes of real time.
+  So the nightly builds the `linux` preset and runs the tests labelled `netcode`
+  (the `linux-netcode` test preset; every other test preset leaves them out):
+  four Agents through five Matches against an in-process `server::Host`, under
+  the transport's own simulated conditions (GameNetworkingSockets' fake packet
+  lag, jitter, loss and reordering, on every packet either side sends) rather
+  than `tc netem`, which would need root on the runner and a server in another
+  process for no more realism on loopback. Three profiles, one way each, so a
+  round trip is twice the latency:
 
     | Profile    | Latency | Jitter (mean / max) | Loss | Reordered (extra delay) |
     | ---------- | ------- | ------------------- | ---- | ----------------------- |
@@ -81,10 +81,10 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
     | NFR-02     | 50 ms   | 10 / 30 ms          | 5%   | 2% (20 ms)              |
     | Worst case | 75 ms   | 10 / 30 ms          | 10%  | 5% (20 ms)              |
 
-    The worst case is the most this netcode is held to: a Scripted player's
-    Shooter's delay (about a round trip, the jitter both ways and the ticks its
-    commands wait queued) stays within lag compensation's 250 ms cap. At every
-    profile, every player must see every Match end with no disconnect; no single
+    The worst case is the most this netcode is held to: an Agent's Shooter's
+    delay (about a round trip, the jitter both ways and the ticks its commands
+    wait queued) stays within lag compensation's 250 ms cap. At every profile,
+    every player must see every Match end with no disconnect; no single
     correction may reach the 2 m that the presentation shows at once instead of
     sliding (ADR-0004), and corrections may happen on at most 5% of the players'
     Match ticks; and at least 40% of the rounds fired must come back as Hit
