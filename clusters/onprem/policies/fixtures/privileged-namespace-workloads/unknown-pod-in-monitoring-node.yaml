@@ -1,0 +1,23 @@
+# A pod that is not node-exporter in monitoring-node, which admits any pod
+# Pod Security allows, the host's own namespaces and filesystem among them.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: node-shell
+  namespace: monitoring-node
+spec:
+  hostPID: true
+  hostNetwork: true
+  containers:
+    - name: shell
+      image: docker.io/library/busybox:1.37.0
+      command: [nsenter, --target, "1", --mount, --uts, --ipc, --net, --pid, --, sh]
+      securityContext:
+        privileged: true
+      volumeMounts:
+        - name: root
+          mountPath: /host
+  volumes:
+    - name: root
+      hostPath:
+        path: /

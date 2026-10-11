@@ -3,6 +3,33 @@
 # namespace. The augustad chart (apps) brings its own ServiceMonitor,
 # PrometheusRules and dashboards. Loki keeps every pod's logs and Alloy ships
 # them there, so Grafana shows them beside the metrics (ADR-0053).
+#
+# Its namespace runs under the restricted Pod Security Standard (ADR-0057):
+# every pod in it is non-root, escalates no privilege, drops every capability
+# and runs under the runtime's seccomp profile, as each chart's values below
+# make it where its defaults do not.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# node-exporter alone: it reads the Node's /proc, /sys and filesystems from
+# the host's network and PID namespaces, which no Pod Security level short of
+# privileged allows. clusters/onprem/policies/privileged-namespace-workloads.yaml
+# admits nothing else here.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring-node
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
@@ -20,13 +47,14 @@ metadata:
 spec:
   interval: 30m
   releaseName: kube-prometheus-stack
+  # The namespace above, with its Pod Security labels, as for Loki and Alloy
+  # below: not one Flux creates.
   targetNamespace: monitoring
   # Its own release storage, as each augustad environment has (apps).
   storageNamespace: monitoring
   # The first install pulls every component's image.
   timeout: 15m
   install:
-    createNamespace: true
     crds: CreateReplace
   # A chart upgrade brings its operator's CRDs up to date with it.
   upgrade:
@@ -50,6 +78,13 @@ spec:
       enabled: false
     kubeEtcd:
       enabled: false
+    # The one component that cannot meet restricted, alone in its privileged
+    # namespace (above). Prometheus still finds its ServiceMonitor, as it
+    # watches every namespace's, and its series and their labels but
+    # namespace are unchanged, so the dashboards and rules that read them are
+    # too.
+    prometheus-node-exporter:
+      namespaceOverride: monitoring-node
     prometheus:
       prometheusSpec:
         retention: 15d
@@ -122,8 +157,6 @@ spec:
   releaseName: loki
   targetNamespace: monitoring
   storageNamespace: monitoring
-  install:
-    createNamespace: true
   chart:
     spec:
       chart: loki
@@ -136,6 +169,12 @@ spec:
     loki:
       # One tenant: Grafana and Alloy reach Loki only from inside the cluster.
       auth_enabled: false
+      # The chart's pod runs as non-root, escalates nothing and drops every
+      # capability; restricted also asks for the runtime's seccomp profile,
+      # for Loki and its rules sidecar alike.
+      podSecurityContext:
+        seccompProfile:
+          type: RuntimeDefault
       commonConfig:
         replication_factor: 1
       storage:
@@ -193,8 +232,6 @@ spec:
   releaseName: alloy
   targetNamespace: monitoring
   storageNamespace: monitoring
-  install:
-    createNamespace: true
   dependsOn:
     - name: loki
   chart:
@@ -210,8 +247,25 @@ spec:
     controller:
       type: deployment
       replicas: 1
+    # The chart sets no security context, and Alloy's image runs as root
+    # unless told otherwise. restricted wants a non-root user: the image's
+    # own alloy (473) is enough to read the logs through the API and write
+    # its data under /tmp. The config reloader beside it meets restricted
+    # already.
+    global:
+      podSecurityContext:
+        runAsNonRoot: true
+        runAsUser: 473
+        runAsGroup: 473
+        seccompProfile:
+          type: RuntimeDefault
     alloy:
       enableReporting: false
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
       configMap:
         content: |
           discovery.kubernetes "pods" {
