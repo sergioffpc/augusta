@@ -333,3 +333,16 @@ sights, trading movement/hip-fire speed for accuracy. _Avoid_: Zoom, scope
 from a living player's eye, chosen in Session order and moved on with fire, and
 its input moves, turns and fires nothing. It never respawns. _Avoid_: Ghost,
 observer, dead cam
+
+### Deployment
+
+**Node**: The physical machine the cluster runs on, and every Environment's
+Servers with it: what is hardened, patched and rebuilt as one. _Avoid_: Server
+(the Authoritative server, `augustad`, is a workload on the Node, not the Node),
+host, k3s server, box
+
+**Environment**: One long-lived deployment that tracks one branch and runs a
+Server per scenario it serves: `develop` (tracks `develop`) and `staging`
+(tracks `main`), both on the Node and kept apart from each other (ADR-0026).
+_Avoid_: Stage, namespace (the namespace is how an Environment is kept apart,
+not the Environment), preview
