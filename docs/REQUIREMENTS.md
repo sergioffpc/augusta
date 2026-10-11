@@ -5,7 +5,7 @@ server-authoritative, physics-based ballistics, 2–8 players per Match, played
 with one rifle on one test map.
 
 Each requirement names the release that first met it (v1.0.0, v2.0.0), or the
-one it is planned for.
+one it is planned for ("later" when that release has no version yet).
 
 ---
 
@@ -402,7 +402,7 @@ so a slow one delays its own decisions, never a tick. `load_test.py` replaces
 
 ### US-24: Join a Server with Room
 
-Version: v3 (planned)
+Version: later (planned, no version yet)
 
 As a player, I want my client to join whichever server of the scenario has room,
 so that I can play when one server's Lobby is full or its Match is under way.
@@ -645,7 +645,7 @@ The fuzz targets' seeds and regressions replay under ctest on every preset
 
 ### NFR-13: Horizontal Scalability
 
-Version: v3 (planned)
+Version: later (planned, no version yet)
 
 ```text
 Source:      Players of one scenario, more than one Match's Player count of them
@@ -661,15 +661,15 @@ Measure:     At least 4 servers of one scenario run 8-player Matches at once,
              server is one Git change (NFR-11)
 ```
 
-Planned for v3, and not met by v1 or v2: they run one server per scenario per
-environment (ADR-0026), whose Deployment keeps `replicas: 1` because each
-replica would be another Lobby and Match behind the same address. NFR-06 is one
-server's capacity for one Match; this requirement is how many Matches run at
-once, one server each.
+Planned for a later release, and not met by v1 or v2: they run one server per
+scenario per environment (ADR-0026), whose Deployment keeps `replicas: 1`
+because each replica would be another Lobby and Match behind the same address.
+NFR-06 is one server's capacity for one Match; this requirement is how many
+Matches run at once, one server each.
 
 ### NFR-14: Client-side Observability Under Load
 
-Version: v3 (planned)
+Version: later (planned, no version yet)
 
 ```text
 Source:      Developer running a load test

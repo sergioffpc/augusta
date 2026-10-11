@@ -23,13 +23,14 @@ that first met it, or the one it is planned for.
     - [M9 — Scenario Composition (S)](#m9--scenario-composition-s)
     - [M10 — Test & Performance Tooling (M)](#m10--test--performance-tooling-m)
     - [M11 — Codebase & Developer Experience (M)](#m11--codebase--developer-experience-m)
-- [v3 — Reproducible and Scalable (planned, 3.0.0)](#v3--reproducible-and-scalable-planned-300)
+- [v3 — Reproducible (planned, 3.0.0)](#v3--reproducible-planned-300)
     - [M12 — Agents (M)](#m12--agents-m)
-    - [M13 — Client-side Metrics (S)](#m13--client-side-metrics-s)
-    - [M14 — Match Capture & Reenactment (M)](#m14--match-capture--reenactment-m)
-    - [M15 — Replay (M)](#m15--replay-m)
-    - [M16 — Horizontal Scalability (M)](#m16--horizontal-scalability-m)
-    - [M17 — Hardening & v3 Release (S)](#m17--hardening--v3-release-s)
+    - [M13 — Match Capture & Reenactment (M)](#m13--match-capture--reenactment-m)
+    - [M14 — Replay (M)](#m14--replay-m)
+    - [M15 — Hardening & v3 Release (S)](#m15--hardening--v3-release-s)
+- [Later — Scalable (planned, no version yet)](#later--scalable-planned-no-version-yet)
+    - [M16 — Client-side Metrics (S)](#m16--client-side-metrics-s)
+    - [M17 — Horizontal Scalability (M)](#m17--horizontal-scalability-m)
 - [Not yet planned](#not-yet-planned)
 
 <!-- pyml enable md051 -->
@@ -234,12 +235,11 @@ through its Match ends; the nightly runs the netcode tests and the benchmarks
 **Exercises:** ADR-0012, ADR-0021, ADR-0046 **Exit criteria:** CI checks every
 language's format and lint; the documentation site publishes from `develop`
 
-## v3 — Reproducible and Scalable (planned, 3.0.0)
+## v3 — Reproducible (planned, 3.0.0)
 
-v3 makes what goes wrong under load reproducible, and runs more than one Match
-of a scenario at once. Players with no one at the keyboard come first: Agents
-are the load that proves the rest, and Match captures bring back what fails
-under it. It meets US-21, US-23, US-24, NFR-09, NFR-13 and NFR-14.
+v3 makes what goes wrong under load reproducible. Players with no one at the
+keyboard come first: Agents are the load, and Match captures bring back what
+fails under it. It meets US-21, US-23 and NFR-09.
 
 ### M12 — Agents (M)
 
@@ -255,7 +255,38 @@ under it. It meets US-21, US-23, US-24, NFR-09, NFR-13 and NFR-14.
 **Exercises:** US-23, ADR-0052, ADR-0005, ADR-0013 **Exit criteria:**
 `load_test.py` replaces `augusta-swarm` and passes against `develop`
 
-### M13 — Client-side Metrics (S)
+### M13 — Match Capture & Reenactment (M)
+
+- `augustad` captures every Match's client actions
+- The Reenact request, and `augustac --reenact` playing one Captured player
+  against a live server
+
+**Exercises:** ADR-0050, ADR-0038, US-21 **Exit criteria:** a playtest's capture
+is reenacted against a real server, each Captured player sending its Commands at
+their ticks
+
+### M14 — Replay (M)
+
+- `augustad` in replay mode re-runs a capture on a fresh SimulationWorld
+- Replay viewers: `augustac --replays` and `--replay <capture>`
+
+**Exercises:** ADR-0051, US-21, NFR-09 **Exit criteria:** a capture is watched
+from any player's view, its Deaths and Match end as captured
+
+### M15 — Hardening & v3 Release (S)
+
+- Verification of every requirement planned for v3; each then names v3
+- Release 3.0.0
+
+**Exit criteria:** every requirement planned for v3 is met
+
+## Later — Scalable (planned, no version yet)
+
+A later release runs more than one Match of a scenario at once, with Agents as
+the load that proves it. It meets US-24, NFR-13 and NFR-14; its version is
+chosen when it is cut.
+
+### M16 — Client-side Metrics (S)
 
 - Each Agent's NetcodeStats (Reconciliation corrections, interpolation running
   dry, fire) and connection statistics served on `/metrics` from the load test
@@ -266,25 +297,7 @@ under it. It meets US-21, US-23, US-24, NFR-09, NFR-13 and NFR-14.
 test Job started by one Git change shows its Agents' metrics in Grafana beside
 the server's
 
-### M14 — Match Capture & Reenactment (M)
-
-- `augustad` captures every Match's client actions
-- The Reenact request, and `augustac --reenact` playing one Captured player
-  against a live server
-
-**Exercises:** ADR-0050, ADR-0038, US-21 **Exit criteria:** a playtest's capture
-is reenacted against a real server, each Captured player sending its Commands at
-their ticks
-
-### M15 — Replay (M)
-
-- `augustad` in replay mode re-runs a capture on a fresh SimulationWorld
-- Replay viewers: `augustac --replays` and `--replay <capture>`
-
-**Exercises:** ADR-0051, US-21, NFR-09 **Exit criteria:** a capture is watched
-from any player's view, its Deaths and Match end as captured
-
-### M16 — Horizontal Scalability (M)
+### M17 — Horizontal Scalability (M)
 
 - An ADR for NFR-13, amending ADR-0026 and ADR-0034: several servers of a
   scenario declared in Git, each with its own Service
@@ -294,13 +307,6 @@ from any player's view, its Deaths and Match end as captured
 **Exercises:** NFR-13, US-24, NFR-11, NFR-01, ADR-0026, ADR-0034 **Exit
 criteria:** 4 servers of one scenario run 8-player Matches of Agents at once at
 60 Hz with no missed ticks; adding or removing a server is one Git change
-
-### M17 — Hardening & v3 Release (S)
-
-- Verification of every requirement planned for v3; each then names v3
-- Release 3.0.0
-
-**Exit criteria:** every requirement planned for v3 is met
 
 ---
 
