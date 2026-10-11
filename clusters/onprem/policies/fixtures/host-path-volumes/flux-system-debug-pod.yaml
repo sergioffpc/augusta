@@ -1,0 +1,18 @@
+# A bare pod in flux-system reading the Node's k3s state.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: debug
+  namespace: flux-system
+spec:
+  containers:
+    - name: shell
+      image: busybox:1.37
+      command: [sleep, infinity]
+      volumeMounts:
+        - name: k3s
+          mountPath: /k3s
+  volumes:
+    - name: k3s
+      hostPath:
+        path: /var/lib/rancher/k3s

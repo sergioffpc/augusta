@@ -265,15 +265,24 @@ no self-hosted GitHub Actions runner in this pipeline).
 - **Access:** LAN-only — no public exposure, no VPN/tunnel needed for now.
 - **Asset packs:** built and signed manually, separately from the CD pipeline
   (see ADR-0018, CI/CD above). Packs are versioned independently of code deploys
-  and can be shared across multiple server instances/versions. Stored on a
-  shared `hostPath` persistent volume on the k3s node, which `augusta-publish`
-  fills after signing (ADR-0026): `<hostPath>/<scenario>/<packVersion>/` holds a
-  scenario's `server.pack` and the `signing.pub` key it is signed with,
-  `<packVersion>` being the first 12 hex characters of the server pack's BLAKE3
-  hash. A published folder is never rewritten. Each environment's Helm values
-  list its servers, one per scenario, each naming the `packVersion` it runs; a
-  server mounts only that folder, read-only. The chart writes each server's
-  `augustad.yaml` from its values.
+  and can be shared across multiple server instances/versions. Stored in a
+  folder of the k3s node, `assetPacks.hostPath` (`/srv/augusta/asset-packs`),
+  which `augusta-publish` fills after signing (ADR-0026):
+  `<scenario>/<packVersion>/` in it holds a scenario's `server.pack` and the
+  `signing.pub` key it is signed with, `<packVersion>` being the first 12 hex
+  characters of the server pack's BLAKE3 hash. A published folder is never
+  rewritten. Each environment's Helm values list its servers, one per scenario,
+  each naming the `packVersion` it runs; the chart makes, for each server, a
+  `local` PersistentVolume on that folder alone, read-only and pinned to the
+  node, and the claim bound to it (ADR-0057), both named by the version:
+  `<namespace>-augustad-<scenario>-pack-<packVersion>` and
+  `augustad-<scenario>-pack-<packVersion>`. A new version is a new volume and
+  claim, and the previous ones stay, so reverting the line goes back to them;
+  Helm never deletes either, nor Kubernetes the folder
+  ([Volumes](runbooks/k3s-node-recovery.md#volumes)). A server whose version is
+  not published waits in `ContainerCreating`, its `FailedMount` event naming the
+  missing folder. The chart writes each server's `augustad.yaml` from its
+  values.
 - **Crash dumps:** a crashing server logs its stack and leaves a kernel core
   dump. The k3s node must run `systemd-coredump` as its core handler, which
   keeps the dump (`coredumpctl`). A cluster core is read with the debug info CI
@@ -300,9 +309,11 @@ no self-hosted GitHub Actions runner in this pipeline).
   (`captures.hostPath`, `develop` only), and each of its servers then captures
   every Match (ADR-0050) into `<hostPath>/<namespace>/<scenario>/` on the node,
   a folder of its own, since capture names are unique only within one server.
-  `<hostPath>` is `/srv/augusta/captures`, owned by `augusta`, a 4 GiB ext4
-  image loop-mounted there, so a full one stops captures and never fills the
-  node. Its size holds every capturing server's retention cap
+  Each server mounts `<hostPath>` read-write as a `local` PersistentVolume of
+  its own, `<namespace>-augustad-<scenario>-captures`, made and kept as the
+  packs' are. `<hostPath>` is `/srv/augusta/captures`, owned by `augusta`, a 4
+  GiB ext4 image loop-mounted there, so a full one stops captures and never
+  fills the node. Its size holds every capturing server's retention cap
   (`captures.retention.maxMiB`, #461) plus slack. Node setup:
   [The capture filesystem](runbooks/k3s-node-recovery.md#the-capture-filesystem).
 - **Admission policies:** Kyverno runs in the cluster, installed by Flux with
@@ -315,6 +326,13 @@ no self-hosted GitHub Actions runner in this pipeline).
   also requires each policy to refuse its negative fixtures in
   `fixtures/<policy>/`. Adding a policy is its file, its entry in the
   Kustomization and its fixtures, with no change to CI.
+- **Pod Security:** `develop` enforces the `restricted` Pod Security Standard,
+  which the chart's pods meet: they mount the node's folders from
+  PersistentVolumes, never as `hostPath` volumes, which a `host-path-volumes`
+  policy reports outside the `privileged` namespaces (ADR-0057). `staging` is
+  audited and warned against `restricted`, and enforces it once it runs the
+  first release tagged after #530, whose chart is the first without `hostPath`
+  volumes; until then the policy admits it too.
 - **No Secrets:** the cluster holds no credential. A `secret-allowlist` policy
   reports any Secret but Flux's trusted public keys, Helm's release records and
   those the charts make themselves, each listed by name (ADR-0057).
