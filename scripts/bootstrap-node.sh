@@ -14,6 +14,17 @@
 #
 # Usage: scripts/bootstrap-node.sh [--packs <asset-packs.tgz>]
 #   Piped from curl: curl ... | bash -s -- [--packs <asset-packs.tgz>]
+
+# POSIX, so that sh (dash on Debian) gets here: it would run the rest with
+# every [[ ]] failing, which skips steps instead of stopping.
+# shellcheck disable=SC2292 # [[ ]] is what sh lacks
+if [ -z "${BASH_VERSION:-}" ]; then
+  if [ -f "$0" ]; then
+    exec bash "$0" "$@"
+  fi
+  echo "bootstrap-node: run it with bash, not sh." >&2
+  exit 2
+fi
 set -euo pipefail
 
 # The cluster's k3s release: its Kubernetes version is CI's
@@ -142,6 +153,12 @@ install_k3s() {
 # Installs Flux's controllers, then the sync objects that point it at the
 # repository; from there Flux manages itself and installs the rest.
 install_flux() {
+  # Once synced, Flux owns its own manifests: applying them again from here
+  # conflicts with its kustomize-controller over their fields.
+  if kubectl -n flux-system get gitrepository flux-system >/dev/null 2>&1; then
+    log "Flux is already installed and syncing - leaving it."
+    return
+  fi
   curl -fsSL "${MANIFESTS}/gotk-components.yaml" \
     | kubectl apply --server-side -f -
   kubectl wait --for=condition=Established crd --all --timeout=2m
