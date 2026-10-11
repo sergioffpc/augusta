@@ -36,10 +36,14 @@ set -euo pipefail
 readonly K3S_VERSION=v1.36.4+k3s1
 # What the flux-system GitRepository tracks (clusters/onprem/flux-system/).
 readonly MANIFESTS=https://raw.githubusercontent.com/sergioffpc/augusta/develop/clusters/onprem/flux-system
-# k3s's configuration, from the same branch.
+# k3s's configuration, from the same branch: the files the runbook's "The k3s
+# configuration" lists, kept in step with it.
 readonly NODE_CONFIG=https://raw.githubusercontent.com/sergioffpc/augusta/develop/clusters/onprem/node
 readonly K3S_CONFIG_FILES=(config.yaml audit-policy.yaml admission.yaml)
 readonly SYSCTL_FILE=90-kubelet.conf
+# What k3s secrets-encrypt enable, or a first start with secrets-encryption,
+# writes.
+readonly ENCRYPTION_CONFIG=/var/lib/rancher/k3s/server/cred/encryption-config.json
 # The server image's user (ADR-0054), which the node has too.
 readonly SERVER_USER=augusta SERVER_ID=65532
 readonly VOLUME=/srv/augusta
@@ -153,7 +157,19 @@ differs() {
 # without them.
 configure_k3s() {
   local downloads changed="" file
+  # A node installed before its configuration was in the repository runs
+  # without secrets encryption prepared; written now, the configuration's
+  # secrets-encryption would take it unprepared at k3s's next restart.
+  if command -v k3s >/dev/null 2>&1 \
+    && ! as_root test -e "${ENCRYPTION_CONFIG}"; then
+    log "k3s runs without secrets encryption prepared - leaving its" \
+      "configuration. See docs/runbooks/k3s-node-recovery.md, Harden a" \
+      "running node."
+    exit 1
+  fi
   downloads="$(mktemp -d)"
+  # shellcheck disable=SC2064 # downloads is set once, here
+  trap "rm -rf -- '${downloads}'" EXIT
   for file in "${K3S_CONFIG_FILES[@]}" "${SYSCTL_FILE}"; do
     curl -fsSL "${NODE_CONFIG}/${file}" -o "${downloads}/${file}"
   done
@@ -179,7 +195,6 @@ configure_k3s() {
   # makes it.
   as_root install -d -o root -g root -m 0700 /var/lib/rancher/k3s/server \
     /var/lib/rancher/k3s/server/logs
-  rm -rf "${downloads}"
 
   if [[ -n "${changed}" ]] && command -v k3s >/dev/null 2>&1; then
     log "k3s's configuration changed; the running k3s takes it when it" \

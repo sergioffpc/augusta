@@ -215,8 +215,9 @@ Once, on a node installed before its configuration was in the repository. The
 configuration applies as a change does (above), except for secrets encryption:
 the existing Secrets are encrypted in steps, as k3s's
 [Enable Secrets Encryption on an Existing Cluster](https://docs.k3s.io/cli/secrets-encrypt#enable-secrets-encryption-on-an-existing-cluster)
-describes. Do it before the bootstrap runs on that node for anything else: a run
-writes the configuration, and k3s would take it unprepared at its next restart.
+describes. Until step 1 has prepared encryption, the bootstrap refuses to run on
+that node: it would write the configuration, and k3s would take it unprepared at
+its next restart.
 
 1. Check that encryption is off, and prepare it while k3s still runs without it:
 
