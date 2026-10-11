@@ -33,17 +33,32 @@ each server, a `local` PersistentVolume on the same folder of the Node
 the claim bound to it, so adding or moving a server is still one line in its
 `HelmRelease` (ADR-0026).
 
+**Publishing a pack needs no root.** `augusta-publish` logs in as the Node's
+`augusta-publish` user, which owns the pack folder, is not the Servers' user nor
+in their group, and has no `sudo`. Its key is restricted in `authorized_keys`
+(`restrict`, no shell, PTY or forwarding) to a forced command that only writes a
+new `<scenario>/<packVersion>/` folder and leaves it read-only, so a stolen
+publish key can add a pack and nothing else: never replace one a Server runs.
+
 **The cluster holds no Secret.** Nothing in it needs one: Grafana has no login
 at all, anonymous viewers only, its dashboards, data sources and alerts all from
 Git; Loki and Prometheus answer only inside the cluster. The one Secret in Git
 is Flux's trusted signing keys, which are public (ADR-0056).
 
-**`augustad` cannot reach out, nor in past its container.** Every namespace
-denies ingress and egress by default, each flow allowed by name; `augustad`
-takes UDP on its game port and Prometheus's scrape, and sends nothing out. It
-runs in a user namespace (`hostUsers: false`), so its UID maps to no one on the
-Node, under a seccomp profile of the syscalls it makes rather than
+**`augustad` cannot reach out, nor in past its container.** Every namespace but
+k3s's own denies ingress and egress by default, each flow allowed by name;
+`augustad` takes UDP on its game port and Prometheus's scrape, and sends nothing
+out. It runs in a user namespace (`hostUsers: false`), so its UID maps to no one
+on the Node, under a seccomp profile of the syscalls it makes rather than
 `RuntimeDefault`.
+
+Flux's NetworkPolicies are ours, not the ones `flux install` generates, which
+let its controllers reach anywhere. A Kyverno policy refuses a pod in a
+namespace with no default deny, or with a rule that lets everything in or out.
+NetworkPolicies name addresses, not hosts: what must reach GitHub, GHCR, the
+Helm repositories or Sigstore (Flux's source-controller, Kyverno's image
+verification) reaches HTTPS on the internet, never the LAN or the cluster; the
+API server, a process of the Node, is reached by its port.
 
 **Security events are searchable, and the important ones alert.** Loki keeps,
 beside every pod's log (ADR-0053), the API server's audit log, the Node's logins

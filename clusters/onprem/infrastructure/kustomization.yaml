@@ -5,6 +5,7 @@ resources:
   - kube-system.yaml
   - kyverno.yaml
   - monitoring.yaml
+  - network-policies.yaml
   - operator.yaml
   - security-alerts.yaml
 # The cluster's own dashboards, as code (ADR-0049), loaded by Grafana's

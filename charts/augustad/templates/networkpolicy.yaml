@@ -1,0 +1,36 @@
+# Every server takes its game port from anyone and its metrics port from
+# Prometheus alone, and sends nothing out (ADR-0057): not even DNS, as augustad
+# opens no connection of its own. The namespace denies everything else by
+# default (clusters/onprem/apps/namespaces.yaml); this says so for the servers
+# themselves, wherever the chart is installed. The kubelet's probes come from
+# the Node, which a NetworkPolicy does not stop.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "augustad.fullname" . }}
+  labels:
+    {{- include "augustad.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "augustad.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # From any address: the LAN's clients reach it through the node port, as
+    # the Node's firewall lets them.
+    - ports:
+        - port: game
+          protocol: UDP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.metrics.prometheus.namespace }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.metrics.prometheus.podLabels | nindent 14 }}
+      ports:
+        - port: metrics
+          protocol: TCP
+  egress: []

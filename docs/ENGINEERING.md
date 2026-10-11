@@ -321,8 +321,8 @@ no self-hosted GitHub Actions runner in this pipeline).
   or `kubectl debug --target=augustad`: its ephemeral container has its own root
   filesystem and `securityContext`, and reads the server's files through
   `/proc/<pid>/root/` as the same user. The node has that user too, `augusta`
-  (ADR-0054): the asset packs are `root:augusta`, readable by its group alone,
-  and the capture volume is its own
+  (ADR-0054): the asset packs are `augusta-publish:augusta`, readable by its
+  group alone, and the capture volume is its own
   ([The server's user](runbooks/k3s-node-recovery.md#the-servers-user)).
 - **Match captures:** an environment turns them on in its Helm values
   (`captures.hostPath`, `develop` only), and each of its servers then captures

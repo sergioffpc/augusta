@@ -1,8 +1,8 @@
 #!/bin/bash
 # Bootstraps the k3s node that runs the develop and staging environments
 # (ADR-0026), on Debian 13, as a user that can sudo: the crash-core handler
-# and the tools that read a core, the server's user, the asset-pack volume and
-# the capture filesystem
+# and the tools that read a core, the server's user, the publish user and its
+# key, the asset-pack volume and the capture filesystem
 # (docs/runbooks/k3s-node-recovery.md), the OS's hardening (a firewall, SSH by
 # key only, unattended security updates, an audit trail), k3s at the cluster's
 # release with its hardened configuration (clusters/onprem/node/, ADR-0057),
@@ -21,15 +21,18 @@
 #
 # It never writes the asset packs' contents: they are the one state not in Git.
 # --packs puts back an archive taken from a node (the runbook's part B), else
-# augusta-publish fills the volume.
+# augusta-publish fills the volume, as the augusta-publish user, whose one key
+# --publish-key gives (a public key file on the node), replacing the node's.
 #
 # Run it as the user you log in with, not under sudo, which hides the SSH
 # session from it.
 #
 # Usage:
-#   scripts/bootstrap-node.sh [--packs <asset-packs.tgz>] [--admin <address>]...
+#   scripts/bootstrap-node.sh [--packs <asset-packs.tgz>]
+#     [--publish-key <key.pub>] [--admin <address>]...
 # Piped from curl:
-#   curl ... | bash -s -- [--packs <asset-packs.tgz>] [--admin <address>]...
+#   curl ... | bash -s -- [--packs <asset-packs.tgz>] [--publish-key <key.pub>]
+#     [--admin <address>]...
 
 # POSIX, so that sh (dash on Debian) gets here: it would run the rest with
 # every [[ ]] failing, which skips steps instead of stopping.
@@ -58,12 +61,20 @@ readonly SYSCTL_FILE=90-kubelet.conf
 # The OS's, from the same place: the files the runbook's "The node's OS" lists.
 readonly OS_FILES=(nftables.conf nftables.service.conf sshd.conf
   unattended-upgrades.conf apt-daily-upgrade.timer.conf audit.rules)
+# The publish key's forced command, from the same place.
+readonly RECEIVER_FILE=augusta-publish-receive.sh
+readonly RECEIVER=/usr/local/bin/augusta-publish-receive
 readonly ADMIN_ADDRESSES=/etc/nftables.d/admin-addresses.nft
 # What k3s secrets-encrypt enable, or a first start with secrets-encryption,
 # writes.
 readonly ENCRYPTION_CONFIG=/var/lib/rancher/k3s/server/cred/encryption-config.json
 # The server image's user (ADR-0054), which the node has too.
 readonly SERVER_USER=augusta SERVER_ID=65532
+# Who augusta-publish logs in as (ADR-0057): it owns the asset packs and can do
+# nothing but publish. Not the servers' user, nor in their group, and no sudo.
+# Its home and authorized_keys are root's, so it cannot add a key of its own.
+readonly PUBLISH_USER=augusta-publish
+readonly PUBLISH_HOME=/var/lib/augusta-publish
 readonly VOLUME=/srv/augusta
 readonly CAPTURE_IMAGE="${VOLUME}/captures.img" CAPTURE_SIZE=4GiB
 readonly CAPTURE_FSTAB="${CAPTURE_IMAGE} ${VOLUME}/captures ext4 loop,nodev,nosuid,noexec,x-systemd.before=k3s.service 0 2"
@@ -126,25 +137,74 @@ create_server_user() {
   fi
 }
 
-# Creates the asset-pack volume, and fills it from an archive if given one.
+# Creates the publish user and its forced command.
+# Globals:
+#   DOWNLOADS
+create_publish_user() {
+  if ! getent passwd "${PUBLISH_USER}" >/dev/null; then
+    # A shell: sshd runs the forced command with it. The key never gets one.
+    as_root useradd --system --user-group --no-create-home \
+      --home-dir "${PUBLISH_HOME}" --shell /bin/sh "${PUBLISH_USER}"
+  fi
+  install_node_file "${RECEIVER_FILE}" "${RECEIVER}" 0755
+  as_root install -d -o root -g root -m 0755 "${PUBLISH_HOME}" \
+    "${PUBLISH_HOME}/.ssh"
+}
+
+# Writes the publish user's one key, restricted to its forced command, in place
+# of the node's, when given one.
+# Globals:
+#   DOWNLOADS
+# Arguments:
+#   The publish key's public key file, or nothing.
+write_publish_key() {
+  local keys="${PUBLISH_HOME}/.ssh/authorized_keys"
+  if [[ -n "${1:-}" ]]; then
+    # One key, with no options of its own: they would come after this one's.
+    if [[ "$(grep -c . "$1")" -ne 1 ]] \
+      || ! grep -qE '^(ssh-|sk-|ecdsa-)' "$1" \
+      || ! ssh-keygen -l -f "$1" >/dev/null; then
+      log "$1 is not one public key, as ssh-keygen writes it."
+      exit 1
+    fi
+    # restrict: no shell, PTY, port, agent or X11 forwarding; the command is
+    # all the key runs, whatever its holder asks for.
+    printf 'restrict,command="%s" %s\n' "${RECEIVER}" "$(grep . "$1")" \
+      >"${DOWNLOADS}/publish-keys"
+    as_root install -o root -g root -m 0644 "${DOWNLOADS}/publish-keys" \
+      "${keys}"
+  elif ! as_root test -s "${keys}"; then
+    log "${PUBLISH_USER} has no key, and nothing can publish: give it with" \
+      "--publish-key."
+  fi
+}
+
+# Creates the asset-pack volume, fills it from an archive if given one, and
+# gives everything in it its owner and modes.
 # Arguments:
 #   The archive of asset-packs/, or nothing.
 create_pack_volume() {
   local packs="${VOLUME}/asset-packs"
-  # Only when missing: an existing volume keeps the modes its servers read it
-  # with.
-  if [[ ! -d "${packs}" ]]; then
-    as_root install -d -o root -g root -m 0755 "${VOLUME}"
-    as_root install -d -o root -g "${SERVER_USER}" -m 0750 "${packs}"
-  fi
+  as_root install -d -o root -g root -m 0755 "${VOLUME}"
+  as_root install -d -o "${PUBLISH_USER}" -g "${SERVER_USER}" -m 2750 \
+    "${packs}"
   if [[ -n "${1:-}" ]]; then
     if [[ -n "$(as_root find "${packs}" -mindepth 1 -print -quit)" ]]; then
       log "${packs} is not empty - leaving it, not unpacking $1."
-      return
+    else
+      as_root tar -C "${VOLUME}" -xzf "$1" asset-packs
     fi
-    # As root, tar keeps the archive's owners and modes.
-    as_root tar -C "${VOLUME}" -xzf "$1" asset-packs
   fi
+  # The publish user's, read by the servers' group alone: the scenarios'
+  # folders take new versions, and inherit the group (setgid); a version's
+  # folder and files are read-only, as publishing leaves them. Its staging
+  # folders (.<version>.partial) keep their modes.
+  as_root chown -R "${PUBLISH_USER}:${SERVER_USER}" "${packs}"
+  as_root find "${packs}" -mindepth 1 -maxdepth 1 -type d -exec chmod 2750 {} +
+  as_root find "${packs}" -mindepth 2 -maxdepth 2 -type d ! -name '.*' \
+    -exec chmod 0550 {} +
+  as_root find "${packs}" -mindepth 3 -maxdepth 3 -type f ! -path '*/.*' \
+    -exec chmod 0440 {} +
 }
 
 create_capture_filesystem() {
@@ -175,7 +235,8 @@ download_node_config() {
   readonly DOWNLOADS
   # shellcheck disable=SC2064 # DOWNLOADS is set once, here
   trap "rm -rf -- '${DOWNLOADS}'" EXIT
-  for file in "${K3S_CONFIG_FILES[@]}" "${SYSCTL_FILE}" "${OS_FILES[@]}"; do
+  for file in "${K3S_CONFIG_FILES[@]}" "${SYSCTL_FILE}" "${OS_FILES[@]}" \
+    "${RECEIVER_FILE}"; do
     curl -fsSL "${NODE_CONFIG}/${file}" -o "${DOWNLOADS}/${file}"
   done
 }
@@ -423,12 +484,13 @@ install_flux() {
 
 # Prints how to run it, and exits.
 usage() {
-  echo "usage: $0 [--packs <asset-packs.tgz>] [--admin <address>]..." >&2
+  echo "usage: $0 [--packs <asset-packs.tgz>] [--publish-key <key.pub>]" \
+    "[--admin <address>]..." >&2
   exit 2
 }
 
 main() {
-  local packs="" admins=()
+  local packs="" publish_key="" admins=()
   while (($# > 0)); do
     case "$1" in
       --packs)
@@ -436,6 +498,12 @@ main() {
           usage
         fi
         packs="$(realpath "$2")"
+        ;;
+      --publish-key)
+        if (($# < 2)) || [[ ! -f "$2" ]]; then
+          usage
+        fi
+        publish_key="$(realpath "$2")"
         ;;
       --admin)
         if (($# < 2)) || [[ -z "$2" ]]; then
@@ -452,6 +520,8 @@ main() {
   install_packages
   download_node_config
   create_server_user
+  create_publish_user
+  write_publish_key "${publish_key}"
   create_pack_volume "${packs}"
   create_capture_filesystem
   configure_firewall "${admins[@]}"
