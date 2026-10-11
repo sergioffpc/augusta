@@ -369,17 +369,113 @@ after the tick.
 
 ## 7. Deployment View
 
-Linux dedicated server process and up to 8 Windows client processes, on the same
-LAN/localhost.
+A Match is one Linux `augustad` server and 2–8 Windows `augustac` clients on one
+trusted LAN (§11). The server runs in one of two places:
 
-Non-production development/test deployment: the server also runs on a
-self-hosted, single-node k3s cluster (developer's own hardware), two fixed,
-long-lived Kubernetes namespaces (`staging` tracks `main`, `develop` tracks
-`develop`) — no per-branch/ephemeral namespaces — see ENGINEERING.md, Deployment
-& CD. LAN-only access; this removes the need for a separate Linux VM/WSL2 just
-to run the server locally, since k3s now hosts it.
+- **The k3s cluster:** a self-hosted, single-node k3s cluster on the developer's
+  own hardware, where Flux deploys `develop` and `main` (ADR-0026). This is the
+  standing environment, and what the diagrams below show.
+- **Local:** `augustad` and the clients run by hand on one machine or across the
+  LAN, with a locally cooked pack and their own config files (ADR-0034). Nothing
+  is deployed; this is for development and tests.
 
-Production deployment (`main`) is explicitly out of scope/undecided for now.
+There is no production environment. `main` runs in `staging`, a test environment
+like `develop`; deploying to players beyond the LAN is undecided. The values
+below (namespaces, node ports, paths) are those of ENGINEERING.md, Deployment &
+CD, which is their reference; ADR-0026 gives the reasons.
+
+### 7.1 Topology
+
+What runs on the node, and who reaches it:
+
+```text
+ LAN                       k3s node (single, self-hosted)
++-------------------+     +-------------------------------------------------+
+| Windows PC        |     | ns develop      (tracks develop)                |
+|                   | UDP |   augustad-<scenario>   :7777 <- NodePort 307xx |
+|  augustac.exe     |---->|   metrics + /livez      :9464                   |
+|  client.pack      |     | ns staging      (tracks main)                   |
+|  signing.pub      |     |   augustad-<scenario>   :7777 <- NodePort 308xx |
+|                   |     |   metrics + /livez      :9464                   |
+|  browser          |     | ns monitoring                                   |
+|                   |---->|   Grafana               <- NodePort 30300       |
++-------------------+ HTTP|   Prometheus  scrapes   :9464 (ServiceMonitor)  |
+                          |   Loki <- Alloy <- every container's log        |
+                          | ns flux-system                                  |
+                          |   Flux: a GitRepository + HelmRelease per env   |
+                          |                                                 |
+                          | hostPath                                        |
+                          |   /srv/augusta/asset-packs/<scenario>/<ver>/    |
+                          |     server.pack + signing.pub, mounted ro       |
+                          |   /srv/augusta/captures/<ns>/<scenario>/        |
+                          |     Match captures, develop only                |
+                          | systemd-coredump        keeps server core dumps |
+                          +-------------------------------------------------+
+```
+
+- **One server per scenario per environment:** each `augustad-<scenario>` is a
+  Deployment of one pod with its own game Service, a node port pinned in its
+  environment's range (`develop` 30700-30799, `staging` 30800-30899), and its
+  own metrics Service. A client connects to the node's address and that port.
+- **Packs:** a server mounts only the folder of the pack version its
+  environment's values name. The client pack is not on the node: the client
+  loads its own copy, which must come from the same cook (ADR-0019).
+- **Observability:** Prometheus scrapes each server's `/metrics` and the
+  Deployment probes its `/livez` (ADR-0049); Alloy ships container logs to Loki
+  (ADR-0053); Grafana shows both, the one service on the node meant for a
+  browser.
+- **Debugging:** a server is inspected with `kubectl debug --target=augustad`,
+  its image having no shell (ADR-0054), and its core dumps are kept by the
+  node's `systemd-coredump` (ADR-0047).
+
+### 7.2 Delivery
+
+How each piece reaches the node or the player:
+
+```text
+ developer machine         GitHub                          k3s node
++------------------+ push +--------------------------+ pull +----------------+
+| source           |----->| repo: develop, main      |<-----| Flux, every 1m |
+|                  |  PR  |  clusters/onprem/        |      |  HelmRelease   |
+|                  |      |  charts/augustad         |      |  -> augustad   |
+|                  |      |                          |      |     pods       |
+|                  |      | CI, on each push         |      |                |
+|                  |      |  -> GHCR augustad:       |<-----| image pull     |
+|                  |      |     sha-<12>             | pull |                |
+|                  |      |     sha-<12>-debuginfo   |      |                |
+|                  |      | release, on a v* tag     |      |                |
+|                  |      |  -> GitHub Release       |      |                |
+| cook + sign      |      +--------------------------+      |                |
+| (signing key)    |                  |                     |                |
+|                  | augusta-publish (ssh + scp)            |                |
+|  server.pack ----+--------------------------------------->| asset-packs/   |
+|  client.pack ... |                  |                     +----------------+
++-----------.------+                  | augustac.exe + .pdb
+            .                         v
+            .  by hand, no      +-----------------+
+            ....channel .......>| Windows PC      |
+               defined          +-----------------+
+```
+
+- **Server code:** a merge to `develop` or `main` is all a deploy takes. CI
+  builds the image from that commit and pushes it to GHCR as `sha-<12>`; Flux
+  pulls the branch, and its `HelmRelease` upgrades the chart, which runs the
+  image of the chart's own commit. No CI runner reaches the cluster; Flux only
+  pulls.
+- **Server packs:** cooked and signed on the developer's machine, never in CI.
+  `augusta-publish` copies a server pack and its `signing.pub` to the node, in a
+  new folder named by its version, which changes nothing that runs. A pull
+  request then sets that `packVersion` in the environment's `HelmRelease`, and
+  Flux deploys it like any other change.
+- **Client:** a `v*` tag's release workflow attaches `augustac-windows-x64.exe`
+  and its `.pdb` to the GitHub Release (ADR-0055;
+  [cut-release](runbooks/cut-release.md)).
+- **Client packs:** no channel is defined. A client pack is copied by hand from
+  the cook that made its server pack, beside the `signing.pub` it is signed with
+  ([pack-key-rotation](runbooks/pack-key-rotation.md)).
+- **Rollback:** reverting the commit that changed a `HelmRelease` rolls its
+  servers back; an older pack folder is never removed
+  ([flux-rollback](runbooks/flux-rollback.md)).
 
 ## 8. Crosscutting Concepts
 
