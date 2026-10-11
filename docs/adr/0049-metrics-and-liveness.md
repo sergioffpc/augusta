@@ -1,5 +1,12 @@
 # Metrics and Liveness: Prometheus Pull from augustad, kube-prometheus-stack via Flux
 
+> Amended by ADR-0057: node-exporter runs alone in a `privileged`
+> `monitoring-node` namespace, since it needs the Node's network, PID namespace
+> and filesystems; the rest of the stack stays in `monitoring`, under the
+> `restricted` Pod Security Standard. Where this record puts node-exporter in
+> `monitoring`, read `monitoring-node`; its series and the queries that read
+> them are unchanged.
+
 `augustad` serves Prometheus metrics and a liveness check over HTTP. A
 kube-prometheus-stack in the k3s cluster scrapes it, keeps the series and draws
 them in Grafana. The metrics answer two questions: is the server healthy (its
