@@ -256,10 +256,10 @@ no self-hosted GitHub Actions runner in this pipeline).
   (ADR-0056), against public keys kept in Git
   ([`trusted-signers.yaml`](../clusters/onprem/flux-system/trusted-signers.yaml)).
   `develop`'s HEAD, which the `flux-system` source tracks too, must be signed by
-  the maintainer's SSH signing key or GitHub's `web-flow` key (a pull request
-  merged on GitHub). `staging` runs the newest `vX.Y.Z` tag by semver, verified
-  against the maintainer's key alone: a merge to `main` changes nothing that
-  runs, and `staging` moves when the release's signed tag is pushed
+  one of the maintainer's SSH signing keys or GitHub's `web-flow` key (a pull
+  request merged on GitHub). `staging` runs the newest `vX.Y.Z` tag by semver,
+  verified against the maintainer's keys alone: a merge to `main` changes
+  nothing that runs, and `staging` moves when the release's signed tag is pushed
   ([Cut a Release](runbooks/cut-release.md)). A revision that fails verification
   leaves its environment on the last verified one.
 - **Access:** LAN-only — no public exposure, no VPN/tunnel needed for now.

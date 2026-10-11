@@ -2,7 +2,8 @@
 # unencrypted in Git. Applied by the flux-system Kustomization, and by
 # scripts/bootstrap-node.sh before the GitRepository that needs it. Rotating a
 # key stops reconciliation until it is updated here, from a commit the old keys
-# still verify.
+# still verify. The maintainer's keys are their SSH signing keys on GitHub, one
+# per machine, named after it; both Secrets hold all of them.
 #
 # develop's branch, which flux-system's GitRepository tracks too: its HEAD is a
 # pull request's merge commit, signed by GitHub's web-flow key
@@ -14,7 +15,10 @@ metadata:
   namespace: flux-system
 type: Opaque
 stringData:
-  maintainer.sshpub: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICaMfwnkMczYH+rpkwEOxepA0UVLkKuOqZVNg+KL5eml
+  macbook-pro-macos.sshpub: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICaMfwnkMczYH+rpkwEOxepA0UVLkKuOqZVNg+KL5eml
+  p620-windows.sshpub: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHgO2/wam7B4kcqDznXR6JzrEM9wvlIhihbsxAM4AWkO
+  p620-wsl-ubuntu.sshpub: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKZ+FquOxp894wstvT4hlINyMel1y39C8u8tF5Bw6ICt
+  r630-debian.sshpub: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFGygrUEEMgD0GypSCuGYomXRloYFTTnElD+NRB+GR90
   web-flow.asc: |
     -----BEGIN PGP PUBLIC KEY BLOCK-----
 
@@ -67,4 +71,7 @@ metadata:
   namespace: flux-system
 type: Opaque
 stringData:
-  maintainer.sshpub: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICaMfwnkMczYH+rpkwEOxepA0UVLkKuOqZVNg+KL5eml
+  macbook-pro-macos.sshpub: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICaMfwnkMczYH+rpkwEOxepA0UVLkKuOqZVNg+KL5eml
+  p620-windows.sshpub: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHgO2/wam7B4kcqDznXR6JzrEM9wvlIhihbsxAM4AWkO
+  p620-wsl-ubuntu.sshpub: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKZ+FquOxp894wstvT4hlINyMel1y39C8u8tF5Bw6ICt
+  r630-debian.sshpub: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFGygrUEEMgD0GypSCuGYomXRloYFTTnElD+NRB+GR90

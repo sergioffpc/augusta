@@ -27,7 +27,7 @@ skipped: a branch cut from `main` already has everything `main` has.
   it merges.
 - Commit and tag signing configured locally (the `v*` tags are signed, annotated
   tags), and the repository's hooks active
-  (`git config core.hooksPath .githooks`). The tag must be signed with the SSH
+  (`git config core.hooksPath .githooks`). The tag must be signed with an SSH
   signing key Flux trusts for releases (`trusted-signers-release` in
   [`trusted-signers.yaml`](../../clusters/onprem/flux-system/trusted-signers.yaml)),
   or `staging` never runs it.
