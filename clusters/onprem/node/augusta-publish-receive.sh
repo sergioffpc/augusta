@@ -6,34 +6,36 @@
 # command asked for in SSH_ORIGINAL_COMMAND, which is checked here word by word
 # and never run.
 #
-# augusta-publish (tools/pack) is its one client. A folder is
-# <scenario>/<version> under the pack volume:
+# augusta-publish (tools/pack) is its one client, and a publish is one
+# connection, so one touch of a FIDO2 key:
 #
-#   digests <folder>            the SHA-256 of each file in it, as sha256sum
-#                               prints them; exits 3 when it does not exist.
-#   receive <folder> <name>     stdin into <name>, server.pack or signing.pub,
-#                               in the folder's staging place beside it.
-#   commit <folder> server.pack=<sha256> signing.pub=<sha256>
-#                               the staging place, holding exactly those files
-#                               with those digests, made read-only and renamed
-#                               into the folder.
+#   publish <folder> server.pack=<sha256>:<bytes> signing.pub=<sha256>:<bytes>
 #
-# A folder that exists is never written again: receive and commit refuse it,
-# and commit leaves it 0550 with its files 0440, read-only to this user too.
-# The user owns them and could change their modes back, but its key runs
-# nothing but this.
+# A folder is <scenario>/<version> under the pack volume. stdin holds the
+# files back to back, in the order the command names them, each exactly its
+# size: no archive is parsed here, and the names are the command's alone. They
+# are written to the folder's staging place beside it, checked against their
+# sizes and digests, made read-only and renamed into the folder.
+#
+# A folder that exists is never written again: publish reads nothing into the
+# volume for it, and exits 3 when it holds exactly the files named, 4 when it
+# holds others. A published folder is 0550 with its files 0440, read-only to
+# this user too. The user owns them and could change their modes back, but its
+# key runs nothing but this. Publishes to one scenario take turns.
 # The volume's setgid group, the servers' (k3s-node-recovery.md, The server's
-# user), passes to everything created in it. Exits 2 for anything else asked,
-# 1 when a command fails.
+# user), passes to everything created in it. Exits 0 once published, 2 for
+# anything else asked, 1 when a publish fails, leaving no folder and no staging
+# place.
 set -euo pipefail
 
 readonly PACKS=/srv/augusta/asset-packs
-readonly MISSING=3
+readonly PUBLISHED=3 OTHER_FILES=4
 # A scenario as augusta-publish takes one, and a version: the first 12 hex
 # characters of the server pack's BLAKE3 hash.
 readonly FOLDER_PATTERN='^[a-z0-9]([a-z0-9-]{0,44}[a-z0-9])?/[0-9a-f]{12}$'
 readonly NAMES=(server.pack signing.pub)
-readonly DIGEST_PATTERN='^[0-9a-f]{64}$'
+# <sha256>:<bytes>, the size in decimal with no leading zero.
+readonly FILE_PATTERN='^[0-9a-f]{64}:(0|[1-9][0-9]{0,14})$'
 
 # Group-readable only: the servers' group reads, no one else.
 umask 0027
@@ -56,79 +58,103 @@ check_folder() {
 }
 
 # Arguments:
-#   A file name, as the client named it.
-check_name() {
-  local name
-  for name in "${NAMES[@]}"; do
-    if [[ "$1" == "${name}" ]]; then
-      return
+#   <name>=<sha256>:<bytes> for each file a pack folder holds, as the client
+#   named them.
+check_files() {
+  local pair given
+  for pair in "$@"; do
+    if [[ ! "${pair#*=}" =~ ${FILE_PATTERN} ]]; then
+      refuse "not <sha256>:<bytes> for ${pair%%=*}: ${pair#*=}"
     fi
   done
-  refuse "not a file a pack folder holds: $1"
+  # Every file a pack folder holds, each once.
+  given="$(printf '%s\n' "${@%%=*}" | sort)"
+  if [[ "${given}" != "$(printf '%s\n' "${NAMES[@]}" | sort)" ]]; then
+    refuse "a publish names ${NAMES[*]}, not: ${*%%=*}"
+  fi
 }
 
 # Arguments:
-#   A folder.
+#   <name>=<sha256>:<bytes> for each file.
 # Outputs:
-#   Its staging place: a hidden sibling no server is pointed at.
-staging_of() {
-  echo "${PACKS}/${1%/*}/.${1#*/}.partial"
+#   Their digests as sha256sum prints them, sorted by name.
+expected_digests() {
+  local pair digest
+  for pair in "$@"; do
+    digest="${pair#*=}"
+    printf '%s  %s\n' "${digest%%:*}" "${pair%%=*}"
+  done | sort -k 2
 }
 
-# Exits 1 when a folder is published already.
 # Arguments:
-#   A folder.
+#   A directory.
+# Outputs:
+#   The digests of the files in it as sha256sum prints them, sorted by name.
+held_digests() {
+  (cd "$1" && sha256sum -- *) | sort -k 2
+}
+
+# Exits when a folder is published already: 3 when it holds exactly the files
+# expected, 4 when it holds others.
+# Arguments:
+#   A folder, its files' digests as expected_digests prints them.
 refuse_published() {
-  if [[ -e "${PACKS}/$1" ]]; then
-    log "${PACKS}/$1 is published already and is never written again."
+  if [[ ! -e "${PACKS}/$1" ]]; then
+    return
+  fi
+  if [[ "$(held_digests "${PACKS}/$1")" == "$2" ]]; then
+    log "${PACKS}/$1 is published already, with those files."
+    exit "${PUBLISHED}"
+  fi
+  log "${PACKS}/$1 is published already and holds other files;" \
+    "it is never written again."
+  exit "${OTHER_FILES}"
+}
+
+# Publishes a folder from stdin, or exits: 3 or 4 when it is published already
+# (refuse_published), 1 when stdin is not the files named.
+# Arguments:
+#   A folder, then <name>=<sha256>:<bytes> for each file, in stdin's order.
+publish() {
+  local folder="$1" expected lock staging pair size offset=0 total=0
+  shift
+  expected="$(expected_digests "$@")"
+  mkdir -p "${PACKS}/${folder%/*}"
+  # One publish to a scenario at a time, held until this exits: two of one
+  # version would share its staging place.
+  exec {lock}<"${PACKS}/${folder%/*}"
+  flock "${lock}"
+  refuse_published "${folder}" "${expected}"
+
+  # A hidden sibling no server is pointed at, left by no failure: a folder is
+  # there whole or not at all. Writable again before it is removed, should it
+  # be sealed when its rename fails.
+  staging="${PACKS}/${folder%/*}/.${folder#*/}.partial"
+  # shellcheck disable=SC2064 # staging is set once, here
+  trap "chmod u+w -- '${staging}' 2>/dev/null || true
+    rm -rf -- '${staging}'" EXIT
+  rm -rf -- "${staging}"
+  mkdir "${staging}"
+  for pair in "$@"; do
+    total=$((total + ${pair##*:}))
+  done
+  # One byte past the files named, to tell a longer stdin from theirs; never
+  # more, whatever is sent.
+  head -c "$((total + 1))" >"${staging}/.stream"
+  if [[ "$(stat -c %s "${staging}/.stream")" != "${total}" ]]; then
+    log "stdin for ${folder} is not ${total} bytes, the files named."
     exit 1
   fi
-}
-
-# Arguments:
-#   A folder.
-# Outputs:
-#   The SHA-256 of each file in it, as sha256sum prints them. Exits 3 when it
-#   does not exist.
-digests() {
-  local folder="${PACKS}/$1"
-  if [[ ! -d "${folder}" ]]; then
-    exit "${MISSING}"
-  fi
-  cd "${folder}"
-  sha256sum -- *
-}
-
-# Arguments:
-#   A folder, a file name.
-receive() {
-  local staging
-  refuse_published "$1"
-  staging="$(staging_of "$1")"
-  mkdir -p "${PACKS}/${1%/*}" "${staging}"
-  cat >"${staging}/$2"
-}
-
-# Publishes a folder from its staging place, or exits 1 and removes the
-# staging place when that does not hold exactly the files named.
-# Arguments:
-#   A folder, then <name>=<sha256> for each file it holds.
-commit() {
-  local folder="$1" staging expected="" received="" pair
-  shift
-  refuse_published "${folder}"
-  staging="$(staging_of "${folder}")"
-  # Both as sha256sum prints them, sorted by name.
   for pair in "$@"; do
-    expected+="${pair#*=}  ${pair%%=*}"$'\n'
+    size="${pair##*:}"
+    dd if="${staging}/.stream" of="${staging}/${pair%%=*}" bs=64K \
+      skip="${offset}" count="${size}" iflag=skip_bytes,count_bytes \
+      status=none
+    offset=$((offset + size))
   done
-  expected="$(printf '%s' "${expected}" | sort -k 2)"
-  if [[ -d "${staging}" ]]; then
-    received="$(cd "${staging}" && sha256sum -- * | sort -k 2)" || true
-  fi
-  if [[ -z "${received}" || "${received}" != "${expected}" ]]; then
+  rm -- "${staging}/.stream"
+  if [[ "$(held_digests "${staging}")" != "${expected}" ]]; then
     log "what was received for ${folder} is not the files named."
-    rm -rf -- "${staging}"
     exit 1
   fi
   # Read-only before it is renamed into place, which within one folder needs
@@ -142,40 +168,20 @@ commit() {
 # Globals:
 #   SSH_ORIGINAL_COMMAND, the command, which sshd sets.
 main() {
-  local words names=() given pair
+  local words
   if [[ "${SSH_ORIGINAL_COMMAND:-}" == *$'\n'* ]]; then
     refuse "one command per connection, on one line."
   fi
   # Split on blanks, never expanded: no word is a glob or a variable here.
   read -r -a words <<<"${SSH_ORIGINAL_COMMAND:-}"
   case "${words[0]:-} ${#words[@]}" in
-    "digests 2")
+    "publish 4")
       check_folder "${words[1]}"
-      digests "${words[1]}"
-      ;;
-    "receive 3")
-      check_folder "${words[1]}"
-      check_name "${words[2]}"
-      receive "${words[1]}" "${words[2]}"
-      ;;
-    "commit 4")
-      check_folder "${words[1]}"
-      for pair in "${words[@]:2}"; do
-        names+=("${pair%%=*}")
-        if [[ ! "${pair#*=}" =~ ${DIGEST_PATTERN} ]]; then
-          refuse "not a SHA-256 for ${pair%%=*}: ${pair#*=}"
-        fi
-      done
-      # Every file a pack folder holds, each once.
-      given="$(printf '%s\n' "${names[@]}" | sort)"
-      if [[ "${given}" != "$(printf '%s\n' "${NAMES[@]}" | sort)" ]]; then
-        refuse "a commit names ${NAMES[*]}, not: ${names[*]}"
-      fi
-      commit "${words[@]:1}"
+      check_files "${words[@]:2}"
+      publish "${words[@]:1}"
       ;;
     *)
-      refuse "only digests, receive and commit, not:" \
-        "${SSH_ORIGINAL_COMMAND:-}"
+      refuse "only publish, not: ${SSH_ORIGINAL_COMMAND:-}"
       ;;
   esac
 }

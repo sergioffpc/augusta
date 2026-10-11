@@ -20,17 +20,20 @@ pack once its HelmRelease names the printed version (clusters/onprem/apps/).
 The node is reached with the OpenSSH client (ssh) on PATH, as the node's
 augusta-publish user, whose key does nothing but run the node's end of
 publishing (clusters/onprem/node/augusta-publish-receive.sh, ADR-0057): no
-shell, no sudo. That end writes a version's folder once, and leaves it
-read-only.
+shell, no sudo. A publish is one connection, so one touch of a FIDO2 key. That
+end writes a version's folder once, and leaves it read-only.
 """
 
 import argparse
+from collections.abc import Iterable
+import contextlib
 from dataclasses import dataclass
 import hashlib
 from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 from typing import IO, Protocol
 
 from augusta_pack.assets_root import default_assets_root
@@ -74,16 +77,18 @@ class Release:
 class Node(Protocol):
     """The asset-pack volume of the node the servers run on."""
 
-    def digests(self, folder: str) -> dict[str, str] | None:
-        """The SHA-256 of each file in folder, by name.
-
-        None if folder does not exist.
-        """
-
-    def install(self, folder: str, files: dict[str, Path]) -> None:
+    def put(
+        self, folder: str, files: dict[str, Path], digests: dict[str, str]
+    ) -> bool:
         """Creates folder holding files, each under its name, all at once.
 
-        It never exists partly written. Fails if it exists already.
+        digests is the SHA-256 of each file, by name. folder never exists
+        partly written. Returns False, copying nothing, if it holds exactly
+        those files already.
+
+        Raises:
+            PublishError: folder holds other files, or what arrived is not
+                files.
         """
 
 
@@ -132,21 +137,8 @@ def publish(release: Release, node: Node) -> bool:
     Returns whether it copied anything. Raises PublishError if the folder holds
     other files or the copy does not match.
     """
-    expected = {name: _sha256(path) for name, path in release.files.items()}
-    existing = node.digests(release.folder)
-    if existing is not None:
-        if existing != expected:
-            raise PublishError(
-                f"{release.directory} already exists on the node and holds "
-                f"other files"
-            )
-        return False
-    node.install(release.folder, release.files)
-    if node.digests(release.folder) != expected:
-        raise PublishError(
-            f"{release.directory} on the node does not match the local files"
-        )
-    return True
+    digests = {name: _sha256(path) for name, path in release.files.items()}
+    return node.put(release.folder, release.files, digests)
 
 
 def _sha256(path: Path) -> str:
@@ -157,65 +149,99 @@ def _sha256(path: Path) -> str:
 class SshNode:
     """The node reached as host by ssh, through its publish key's command.
 
-    Each call is one of the commands
-    clusters/onprem/node/augusta-publish-receive.sh takes.
+    A put is one connection running the one command
+    clusters/onprem/node/augusta-publish-receive.sh takes, publish: one
+    authentication, so one touch of a FIDO2 key.
     """
 
-    # Exit status of digests when the folder is missing, apart from ssh's own
-    # 255 and the forced command's 1 and 2.
-    _MISSING = 3
+    # The forced command's exit status for a folder that holds those files
+    # already, apart from ssh's own 255 and the forced command's 1, 2 and 4.
+    _PUBLISHED = 3
+    _CHUNK = 1 << 16
 
     def __init__(self, host: str):
         self._host = host
 
-    def digests(self, folder: str) -> dict[str, str] | None:
-        """See Node.digests."""
-        result = self._ssh(f"digests {folder}", check=False)
-        if result.returncode == self._MISSING:
-            return None
-        if result.returncode != 0:
-            raise PublishError(
-                f"cannot read {folder} on {self._host}: {result.stderr.strip()}"
-            )
-        digests = {}
-        for line in result.stdout.splitlines():
-            digest, name = line.split(maxsplit=1)
-            digests[name.lstrip("*")] = digest
-        return digests
-
-    def install(self, folder: str, files: dict[str, Path]) -> None:
-        """See Node.install."""
-        # Received beside the folder, then renamed into it once it holds every
-        # file with its digest: a failed copy never leaves a folder a server
-        # could be pointed at.
-        for name, path in files.items():
-            with open(path, "rb") as stdin:
-                self._ssh(f"receive {folder} {name}", stdin=stdin)
-        self._ssh(
-            f"commit {folder} "
-            + " ".join(
-                f"{name}={_sha256(path)}" for name, path in files.items()
-            )
-        )
-
-    def _ssh(
-        self,
-        command: str,
-        check: bool = True,
-        stdin: int | IO[bytes] = subprocess.DEVNULL,
-    ) -> subprocess.CompletedProcess:
-        args = ["ssh", self._host, command]
+    def put(
+        self, folder: str, files: dict[str, Path], digests: dict[str, str]
+    ) -> bool:
+        """See Node.put."""
+        # The files go back to back on stdin, each its size, in the command's
+        # order: the node parses no archive, and takes names from the command.
         try:
-            result = subprocess.run(
-                args, stdin=stdin, capture_output=True, text=True, check=False
+            named = " ".join(
+                f"{name}={digests[name]}:{path.stat().st_size}"
+                for name, path in files.items()
             )
         except OSError as error:
-            raise PublishError(f"cannot run ssh: {error}") from error
-        if check and result.returncode != 0:
             raise PublishError(
-                f"ssh to {self._host} failed: {result.stderr.strip()}"
+                f"cannot read {error.filename}: {error}"
+            ) from error
+        # A file, not a pipe: ssh never blocks on its stderr while stdin is
+        # still being written.
+        with tempfile.TemporaryFile() as stderr:
+            try:
+                ssh = subprocess.Popen(
+                    ["ssh", self._host, f"publish {folder} {named}"],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=stderr,
+                )
+            except OSError as error:
+                raise PublishError(f"cannot run ssh: {error}") from error
+            try:
+                self._send(files.values(), ssh.stdin)
+                ssh.wait()
+            finally:
+                # Interrupted, or a file unreadable: the node, its stdin cut
+                # short, publishes nothing.
+                if ssh.poll() is None:
+                    ssh.kill()
+                    ssh.wait()
+            stderr.seek(0)
+            message = stderr.read().decode(errors="replace").strip()
+        if ssh.returncode == self._PUBLISHED:
+            return False
+        if ssh.returncode != 0:
+            raise PublishError(
+                f"publishing {folder} on {self._host}: {message}"
             )
-        return result
+        return True
+
+    @classmethod
+    def _send(cls, paths: Iterable[Path], stdin: IO[bytes]) -> None:
+        """Writes the files to ssh's stdin back to back, then closes it.
+
+        Stops early once the node stops reading.
+
+        Raises:
+            PublishError: a file cannot be read.
+        """
+        try:
+            for path in paths:
+                with open(path, "rb") as f:
+                    while chunk := f.read(cls._CHUNK):
+                        if not _write(stdin, chunk):
+                            return
+        except OSError as error:
+            raise PublishError(f"cannot read {path}: {error}") from error
+        finally:
+            with contextlib.suppress(OSError):
+                stdin.close()
+
+
+def _write(stdin: IO[bytes], chunk: bytes) -> bool:
+    """Writes chunk to ssh's stdin; returns whether the node still reads.
+
+    It stops once the folder is there already, or it refused: its exit status
+    and stderr say which.
+    """
+    try:
+        stdin.write(chunk)
+    except OSError:
+        # BrokenPipeError; EINVAL on Windows.
+        return False
+    return True
 
 
 def main(argv: list[str] | None = None) -> int:

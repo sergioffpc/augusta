@@ -129,10 +129,10 @@ else, and nothing else logs in as it.
 The key is the publisher's, whoever holds the pack signing key (ADR-0026), and
 not their login key. Make it hardware-backed where you have a FIDO2 security
 key, as for [SSH](#ssh), or an `ed25519` key with a passphrase, used from one of
-[the maintainer's addresses](#the-firewall). A publish makes up to five
-connections, each needing the key (a touch, for a FIDO2 key). Give it to the
-node with `--publish-key`, which replaces the key the node had: the same command
-rotates it.
+[the maintainer's addresses](#the-firewall). A publish is one connection, so it
+needs the key once (one touch, for a FIDO2 key). Give it to the node with
+`--publish-key`, which replaces the key the node had: the same command rotates
+it.
 
 ```sh
 ssh-keygen -t ed25519-sk -C "<you>@augusta-publish" -f ~/.ssh/augusta_publish
@@ -153,6 +153,15 @@ Host augusta-publish
 
 A node without a key is told so by the bootstrap; nothing can publish to it
 until one is given.
+
+`augusta-publish` and the node's command change together: they speak one
+protocol, and neither takes an older one's. Once a change to
+`augusta-publish-receive.sh` is on `develop`, rerun the bootstrap on the node,
+with no options, before the next publish:
+
+```sh
+ssh <node> "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash"
+```
 
 ## The capture filesystem
 
@@ -1184,10 +1193,10 @@ ssh -o ExitOnForwardFailure=yes -N -R 0:localhost:22 augusta-publish
 ssh <node> "sudo -u augusta-publish touch /srv/augusta/asset-packs/<scenario>/<packVersion>/probe"
 ```
 
-- The first gets no shell: it prints `only digests, receive and commit` and
-  exits `2`. The second fails with `remote port forwarding failed`. The third,
-  for any published version, fails with `Permission denied`: the folder is
-  read-only to the publish user.
+- The first gets no shell: it prints `only publish` and exits `2`. The second
+  fails with `remote port forwarding failed`. The third, for any published
+  version, fails with `Permission denied`: the folder is read-only to the
+  publish user.
 - [Updates](#updates)' checks show `Debian-Security` alone, and
   [The audit trail](#the-audit-trail)'s show the login just made, from that
   address.
