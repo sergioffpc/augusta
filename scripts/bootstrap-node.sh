@@ -60,7 +60,7 @@ readonly K3S_CONFIG_FILES=(config.yaml audit-policy.yaml admission.yaml)
 # The kernel parameters, loaded in this order. The kubelet's is last and sorts
 # last in /etc/sysctl.d, so no other file can override what
 # protect-kernel-defaults requires.
-readonly SYSCTL_FILES=(90-kubelet.conf)
+readonly SYSCTL_FILES=(80-hardening.conf 90-kubelet.conf)
 # The OS's, from the same place: the files the runbook's "The node's OS" lists.
 readonly OS_FILES=(nftables.conf nftables.service.conf sshd.conf
   unattended-upgrades.conf apt-daily-upgrade.timer.conf audit.rules)

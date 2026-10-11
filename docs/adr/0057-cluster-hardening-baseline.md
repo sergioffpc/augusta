@@ -52,6 +52,16 @@ out. It runs in a user namespace (`hostUsers: false`), so its UID maps to no one
 on the Node, under a seccomp profile of the syscalls it makes rather than
 `RuntimeDefault`.
 
+**A process that escapes it lands on a hardened kernel.** The Node's kernel
+parameters hide kernel addresses (`kptr_restrict`), leave ptrace to root
+(`ptrace_scope=2`), refuse to load a kernel without a reboot
+(`kexec_load_disabled`), give no user namespace to an unprivileged process
+(`unprivileged_userns_clone=0`), blind BPF's JIT, send no ICMP redirect and take
+no IPv6 one, and drop a packet whose source no interface could reach back (loose
+`rp_filter`, as strict drops flannel's VXLAN). `augustad`'s user namespace is
+the container runtime's, made as root, so it still has one; podman on the Node,
+which reads a crashed server's image (ADR-0047), runs under `sudo`.
+
 Flux's NetworkPolicies are ours, not the ones `flux install` generates, which
 let its controllers reach anywhere. A Kyverno policy refuses a pod in a
 namespace with no default deny, or with a rule that lets everything in or out.
@@ -101,6 +111,9 @@ each alert in Alertmanager, from Loki's ruler, with ADR-0049's receivers.
   root-only files as root.
 - Loki, which anything in the cluster can read, holds who did what to the
   cluster and the Node, though no Secret's contents.
+- kexec stays refused until the Node reboots, even with its parameter removed,
+  so a crash kernel (kdump) needs both. A rootless container on the Node does
+  not start.
 - Kyverno admits any Sigstore bundle the identity made for the image's digest,
   so CI's own provenance and SBOM attestations satisfy the policy as its cosign
   signature does: admission proves an image came from this repository's CI

@@ -241,6 +241,7 @@ credential (ADR-0057). Its configuration is in
 | `unattended-upgrades.conf`     | `/etc/apt/apt.conf.d/52augusta-upgrades`                     | [Updates](#updates): Debian's security updates, a reboot at 05:00 when needed. |
 | `apt-daily-upgrade.timer.conf` | `/etc/systemd/system/apt-daily-upgrade.timer.d/augusta.conf` | Updates install between 04:00 and 04:30.                                       |
 | `audit.rules`                  | `/etc/audit/rules.d/augusta.rules`                           | [The audit trail](#the-audit-trail).                                           |
+| `80-hardening.conf`            | `/etc/sysctl.d/80-hardening.conf`                            | [The kernel](#the-kernel)'s hardening.                                         |
 
 To change any of it, merge the change to `develop`, then run the bootstrap on
 the node, which writes what changed and reloads the service that reads it:
@@ -369,6 +370,28 @@ sudo ausearch -i -k k3s-config -ts today
 ```
 
 The log is `/var/log/audit/audit.log`, rotated by auditd.
+
+### The kernel
+
+**Its hardening** denies a process that escapes a server's container the
+footholds Debian leaves open (ADR-0057): kernel addresses are hidden, only root
+can ptrace, no kernel loads without a reboot, an unprivileged process gets no
+user namespace, and the Node neither sends ICMP redirects nor takes IPv6 ones.
+Two things work differently for it:
+
+- podman, which takes a crashed server's binary out of its image (ADR-0047),
+  runs under `sudo`: rootless, it cannot make its user namespace.
+- `kexec_load_disabled` holds until the next reboot. A crash kernel (kdump)
+  needs its line removed from `80-hardening.conf` and a reboot.
+
+The bootstrap applies the kernel parameters at once. To see what the kernel
+runs:
+
+```sh
+ssh <node> 'for f in /etc/sysctl.d/[0-9]*.conf; do sudo sysctl $(grep -o "^[a-z][^=]*" "$f"); done'
+```
+
+Each key reads back the value its file sets.
 
 ## Cluster access
 
