@@ -1,6 +1,6 @@
 # The Environments' namespaces, with their Pod Security labels (ADR-0057): not
 # ones Flux creates for their HelmReleases. The chart's pods meet restricted
-# (non-root, no privilege escalation, every capability dropped, the runtime's
+# (non-root, no privilege escalation, every capability dropped, augustad's own
 # seccomp profile), and mount their packs and captures from local
 # PersistentVolumes rather than hostPath volumes, which restricted forbids.
 apiVersion: v1

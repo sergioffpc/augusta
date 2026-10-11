@@ -1,0 +1,10 @@
+{
+  "defaultAction": "SCMP_ACT_KILL_PROCESS",
+  "architectures": ["SCMP_ARCH_X86_64"],
+  "syscalls": [
+    {
+      "names": [],
+      "action": "SCMP_ACT_ALLOW"
+    }
+  ]
+}

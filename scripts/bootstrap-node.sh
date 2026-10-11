@@ -6,6 +6,7 @@
 # (docs/runbooks/k3s-node-recovery.md), the OS's hardening (a firewall, SSH by
 # key only, unattended security updates, an audit trail), k3s at the cluster's
 # release with its hardened configuration (clusters/onprem/node/, ADR-0057),
+# the servers' seccomp profile,
 # and Flux from the repository's own manifests, which then installs everything
 # else (clusters/onprem/). Each step is skipped when the node already has it,
 # so a re-run finishes an interrupted one; the node's configuration is written
@@ -61,6 +62,11 @@ readonly SYSCTL_FILE=90-kubelet.conf
 # The OS's, from the same place: the files the runbook's "The node's OS" lists.
 readonly OS_FILES=(nftables.conf nftables.service.conf sshd.conf
   unattended-upgrades.conf apt-daily-upgrade.timer.conf audit.rules)
+# The servers' seccomp profile, from the same place, where the kubelet reads a
+# pod's Localhost profile: under its root directory, k3s's /var/lib/kubelet,
+# at the localhostProfile the chart names (ADR-0057).
+readonly SECCOMP_FILE=augustad-seccomp.json
+readonly SECCOMP_PROFILE=/var/lib/kubelet/seccomp/augusta/augustad.json
 # The publish key's forced command, from the same place.
 readonly RECEIVER_FILE=augusta-publish-receive.sh
 readonly RECEIVER=/usr/local/bin/augusta-publish-receive
@@ -236,7 +242,7 @@ download_node_config() {
   # shellcheck disable=SC2064 # DOWNLOADS is set once, here
   trap "rm -rf -- '${DOWNLOADS}'" EXIT
   for file in "${K3S_CONFIG_FILES[@]}" "${SYSCTL_FILE}" "${OS_FILES[@]}" \
-    "${RECEIVER_FILE}"; do
+    "${RECEIVER_FILE}" "${SECCOMP_FILE}"; do
     curl -fsSL "${NODE_CONFIG}/${file}" -o "${DOWNLOADS}/${file}"
   done
 }
@@ -443,6 +449,19 @@ configure_k3s() {
   fi
 }
 
+# Installs the servers' seccomp profile, before k3s starts a server that needs
+# it. A server already running keeps the profile it started with until it
+# restarts.
+install_seccomp_profile() {
+  if differs "${DOWNLOADS}/${SECCOMP_FILE}" "${SECCOMP_PROFILE}" \
+    && as_root test -e "${SECCOMP_PROFILE}"; then
+    log "the servers' seccomp profile changed; a running server takes it" \
+      "when it restarts. See docs/runbooks/k3s-node-recovery.md, The" \
+      "server's seccomp profile."
+  fi
+  install_node_file "${SECCOMP_FILE}" "${SECCOMP_PROFILE}" 0644
+}
+
 install_k3s() {
   if command -v k3s >/dev/null 2>&1; then
     local installed
@@ -529,6 +548,7 @@ main() {
   configure_updates
   configure_audit
   configure_k3s
+  install_seccomp_profile
   install_k3s
   install_flux
 
