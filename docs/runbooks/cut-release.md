@@ -5,9 +5,9 @@ Takes `develop` to a tagged release on `main` through a Git Flow
 back into `develop`. The branching model, changelog and release workflow are
 [ENGINEERING.md's Git Workflow](../ENGINEERING.md#git-workflow) and
 [CI/CD](../ENGINEERING.md#cicd); what deploys a release to `staging` is ADR-0026
-([CD strategy](../adr/0026-cd-strategy.md)) and ADR-0056 (signed revisions);
-what a release is tested with is ADR-0013
-([testing](../adr/0013-testing-and-benchmarking.md)).
+([CD strategy](../adr/0026-cd-strategy.md)) and ADR-0056
+([signed revisions](../adr/0056-signed-revisions-for-flux.md)); what a release
+is tested with is ADR-0013 ([testing](../adr/0013-testing-and-benchmarking.md)).
 
 ## When to use
 
