@@ -71,3 +71,9 @@ Node, under a seccomp profile of the syscalls it makes rather than
 - An upstream chart upgrade can fail admission until its images' digests are
   updated with it.
 - The node-exporter moves out of `monitoring` into `monitoring-node`.
+- Kyverno admits any Sigstore bundle the identity made for the image's digest,
+  so CI's own provenance and SBOM attestations satisfy the policy as its cosign
+  signature does: admission proves an image came from this repository's CI
+  workflow, not that a signature proper exists. CI's publish job proves that,
+  checking the verified bundles for a cosign signature (`jq` on `critical.type`)
+  and failing without one.
