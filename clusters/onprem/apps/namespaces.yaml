@@ -1,0 +1,27 @@
+# The Environments' namespaces, with their Pod Security labels (ADR-0057): not
+# ones Flux creates for their HelmReleases. The chart's pods meet restricted
+# (non-root, no privilege escalation, every capability dropped, the runtime's
+# seccomp profile), and mount their packs and captures from local
+# PersistentVolumes rather than hostPath volumes, which restricted forbids.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: develop
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# staging runs the latest release's chart (ADR-0056), which mounts its packs as
+# hostPath volumes until the first release after #530 is tagged: until then it
+# is only audited and warned against restricted. Once that release runs in
+# staging, enforce restricted here and drop staging from the host-path-volumes
+# policy (clusters/onprem/policies).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: staging
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

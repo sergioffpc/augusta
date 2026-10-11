@@ -6,6 +6,8 @@ metadata:
 spec:
   interval: 5m
   releaseName: augustad
+  # The namespace in namespaces.yaml, with its Pod Security labels: not one
+  # Flux creates.
   targetNamespace: staging
   # Defaults to this HelmRelease's own namespace (flux-system) if unset,
   # which every environment shares - pin it to targetNamespace so each
@@ -16,8 +18,6 @@ spec:
   # values.yaml), which can still be building when Flux picks the commit up:
   # wait for it rather than fail the upgrade.
   timeout: 30m
-  install:
-    createNamespace: true
   chart:
     spec:
       chart: charts/augustad

@@ -58,15 +58,19 @@ dashboards:
 # and in it one per published pack, named by its version (the first 12 hex
 # characters of the server pack's BLAKE3 hash) and holding server.pack and the
 # signing.pub it is signed with. Each server mounts its own version's folder
-# read-only.
+# read-only, as a local PersistentVolume of its own, named by its namespace,
+# scenario and version (templates/volumes.yaml). A PersistentVolume's path
+# never changes, so neither may this once servers run from it.
 assetPacks:
   hostPath: /srv/augusta/asset-packs
 # Match captures (ADR-0050): a directory on the k3s node every server writes
 # its own into, under <hostPath>/<namespace>/<scenario>/, since a capture's
-# name is unique only within its server. Left empty, the default, nothing is
-# captured and nothing is mounted. The directory must already exist, owned by
-# the server's user, augusta (65532), on a filesystem of its own of fixed size, so a full
-# one stops captures and never fills the node
+# name is unique only within its server. Each server mounts it read-write, as a
+# local PersistentVolume of its own (templates/volumes.yaml), so this cannot
+# change either once servers run from it. Left empty, the default, nothing is
+# captured and nothing is mounted. The directory must already exist, owned by the
+# server's user, augusta (65532), on a filesystem of its own of fixed size, so a
+# full one stops captures and never fills the node
 # (docs/runbooks/k3s-node-recovery.md). augustad creates the subdirectories
 # itself.
 #   captures:
@@ -84,7 +88,8 @@ captures:
   retention: {}
 # The servers an environment runs, one per scenario (ADR-0026), keyed by the
 # scenario's name (ADR-0041): a Deployment, game Service and metrics Service
-# each, named augustad-<scenario>. A server serves its scenario's pack and no
+# each, named augustad-<scenario>, and a PersistentVolume and claim for each
+# folder of the Node it mounts. A server serves its scenario's pack and no
 # other. Every entry names the pack version it serves, as augusta-publish
 # prints it: quoted, since a version of digits alone would otherwise read as a
 # number. It may pin its node port (left unset, Kubernetes assigns one), and
